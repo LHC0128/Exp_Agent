@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "exp-agent"
+version = "0.1.0"
+description = "实验自动化平台 — 仪器控制、数据采集与分析"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["src"]
