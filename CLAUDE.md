@@ -19,8 +19,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 src/
-  sds_acquisition/       # 示波器控制（已实现）
-  signal_generator/      # 信号发生器（预留）
+  sds_acquisition/       # 示波器控制 (SDS 系列，已实现)
+  signal_generator/      # 信号发生器 (DG4000 系列，已实现)
   lockin_amplifier/      # 锁相放大器（预留）
   experiments/           # 实验脚本（预留）
 examples/                # Jupyter notebook 示例

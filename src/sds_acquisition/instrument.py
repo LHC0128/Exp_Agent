@@ -57,17 +57,25 @@ class SDSInstrument:
     # 底层 I/O
     # ------------------------------------------------------------------
 
+    def _ensure_connected(self) -> None:
+        """若未连接则自动连接."""
+        if self._inst is None:
+            self.connect()
+
     def write(self, command: str) -> None:
+        self._ensure_connected()
         logger.debug(">> %s", command)
         self._inst.write(command)
 
     def query(self, command: str) -> str:
+        self._ensure_connected()
         logger.debug(">> %s", command)
         resp = self._inst.query(command).strip()
         logger.debug("<< %s", resp)
         return resp
 
     def read_raw(self) -> bytes:
+        self._ensure_connected()
         return self._inst.read_raw()
 
     def query_float(self, command: str) -> float:
