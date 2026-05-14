@@ -25,6 +25,8 @@ docs/                    # 模块文档
 | `sds_acquisition` | SDS 系列示波器 | PyVISA + SCPI | [📄 文档](docs/sds_acquisition.md) · [📓 Notebook](examples/data_acquisition_demo.ipynb) |
 | `signal_generator` | DG4000 系列信号发生器 | PyVISA + SCPI | [📄 文档](docs/signal_generator.md) · [📓 Notebook](examples/signal_generator_demo.ipynb) |
 | `lockin_amplifier` | Zurich Instruments HF2 锁相放大器 | LabOne API (zhinst) | [📄 文档](docs/lockin_amplifier.md) · [📓 Notebook](examples/lockin_amplifier_demo.ipynb) |
+| `gs200` | Yokogawa GS200 直流电压/电流源 | PyVISA + SCPI | [📄 文档](docs/gs200.md) · [📓 Notebook](examples/gs200_demo.ipynb) |
+| `tec_controller` | 光测未来 TEC103 温控器 | 串口 (ASCII) | [📄 文档](docs/tec_controller.md) · [📓 Notebook](examples/tec_controller_demo.ipynb) |
 
 ## 环境
 

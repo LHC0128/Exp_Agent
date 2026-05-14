@@ -22,13 +22,15 @@ src/
   sds_acquisition/       # 示波器控制 (SDS 系列，已实现)
   signal_generator/      # 信号发生器 (DG4000 系列，已实现)
   lockin_amplifier/      # 锁相放大器（HF2，已实现）
+  gs200/                 # 直流电压/电流源（Yokogawa GS200，已实现）
+  tec_controller/        # 温控器（光测未来 TEC103，已实现）
   experiments/           # 实验脚本（预留）
 examples/                # Jupyter notebook 示例
 data/                    # 原始数据
 params/                  # 实验参数、配置
 results/                 # 实验结果（图片、图表等）
 manuals/                 # 设备编程手册、技术文档
-docs/                    # 模块文档（sds_acquisition.md, signal_generator.md, lockin_amplifier.md）
+docs/                    # 模块文档（sds_acquisition.md, signal_generator.md, lockin_amplifier.md, gs200.md, tec_controller.md）
 ```
 
 ## 环境
@@ -44,3 +46,4 @@ docs/                    # 模块文档（sds_acquisition.md, signal_generator.m
 可直接 `import`，无需设置 `PYTHONPATH`。
 
 - HF2 锁相放大器依赖 `zhinst` 包：`agent_exp_env\Scripts\pip install zhinst`
+- TEC103 温控器依赖 `pyserial` 包：`agent_exp_env\Scripts\pip install pyserial`
