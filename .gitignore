@@ -7,3 +7,5 @@ params/
 results/
 manuals/
 *.egg-info/
+.claude/
+~/
