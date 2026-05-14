@@ -1,0 +1,126 @@
+# =============================================================================
+# params/safety_limits.yaml — 安全限值（全局配置）
+# =============================================================================
+# 用途：定义每个输出物理量的安全范围，防止操作失误损坏设备。
+#       所有通过此文件定义的限值，在生成代码时会自动插入边界检查。
+#
+# 注意：这里记录的是"物理量层面的限值"（如最大磁场对应最大电流），
+#       与具体仪器绑定时，代码层会额外调用仪器自身的保护功能
+#       （如 GS200 的 set_current_limit / set_voltage_limit）。
+#
+# 字段说明：
+#   min              — 最小值（低于此值无物理意义或危险）
+#   max              — 最大值（超过此值会损坏设备）
+#   ramp_rate        — 爬升速率（物理量单位/秒，null 表示不限制）
+#   output_off_on_error — 出错时是否自动关闭输出
+# =============================================================================
+
+safety_limits:
+  # ---- 直流源 ----
+  main_magnetic_field:
+    min: 0.0
+    max: 0.01
+    ramp_rate: null
+    output_off_on_error: true
+    description: "GS200 电流源控制主磁场，范围 0-10 mA"
+
+  # ---- 信号发生器 ----
+  Z_magnetic_field:
+    min: 0.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "Z方向磁场，范围 0-10 V"
+
+  Time_sequence_2:
+    min: 0.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: false
+    description: "预留时序信号，10V 方波"
+
+  Pump_laser_power:
+    min: 0.0
+    max: 2.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "Pump光功率 DC 电平控制，范围 0-2 V"
+
+  Probe_laser_power:
+    min: 0.0
+    max: 2.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "Probe光功率 DC 电平控制，范围 0-2 V"
+
+  X_magnetic_field:
+    min: 0.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "X方向磁场，范围 0-10 V"
+
+  Y_magnetic_field:
+    min: 0.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "Y方向磁场，范围 0-10 V"
+
+  Pump_modulation:
+    min: 0.0
+    max: 0.18
+    ramp_rate: null
+    output_off_on_error: true
+    description: "Pump AOM 驱动，幅值不超过 180 mV"
+
+  Time_sequence:
+    min: 0.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: false
+    description: "时序信号，10V 方波"
+
+  Temp_Cont:
+    min: 0.0
+    max: 5.0
+    ramp_rate: null
+    output_off_on_error: false
+    description: "温度控制信号，不可随意更改"
+
+  Temp_Switch:
+    min: 0.0
+    max: 5.0
+    ramp_rate: null
+    output_off_on_error: false
+    description: "温度开关，5V 打开/0V 关闭，不可用 OFF 模式"
+
+  # ---- 温控器 ----
+  temperature:
+    min: 20.0
+    max: 110.0
+    ramp_rate: 1.0
+    output_off_on_error: true
+    description: "铷原子 Cell 温度，范围 20-110 °C，升温速率限制 1°C/s"
+
+  # ---- 锁相 & 示波器（只读，无输出限值） ----
+  lockin_r:
+    min: null
+    max: null
+    ramp_rate: null
+    output_off_on_error: false
+    description: "只读设备，无限值"
+
+  lockin_xy:
+    min: null
+    max: null
+    ramp_rate: null
+    output_off_on_error: false
+    description: "只读设备，无限值"
+
+  scope_waveform:
+    min: null
+    max: null
+    ramp_rate: null
+    output_off_on_error: false
+    description: "只读设备，无限值"

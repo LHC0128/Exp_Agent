@@ -3,9 +3,12 @@ __pycache__/
 *.pyc
 .env
 data/
-params/
 results/
 manuals/
 *.egg-info/
-.claude/
+
+# 忽略 claude 本地设置，但跟踪 skills
+.claude/*
+!.claude/skills/
+
 ~/

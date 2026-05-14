@@ -1,0 +1,133 @@
+# =============================================================================
+# params/mapping.yaml — 物理量→仪器通道映射（全局配置）
+# =============================================================================
+# 用途：记录物理量与具体仪器、通道、连接地址的对应关系。
+#       当仪器连接方式变化时（如换 USB 口、换设备），只需修改此文件，
+#       所有实验代码自动适配。
+#
+# 管理方式：版本控制。有变化时直接修改此文件，在 CLAUDE.md 或 commit
+#           message 中注明变更原因。
+# =============================================================================
+
+mapping:
+  # ---- 直流源 ----
+  main_magnetic_field:
+    instrument: gs200
+    label: "主磁场"
+    resource: "USB0::0x0B21::0x0039::90Z631552::INSTR"
+    channel: null
+    source_function: "CURRent"
+    description: "磁力仪中主磁场控制，单位mA，通过电流控制磁场强度，范围0-10mA"
+
+  # ---- 信号发生器 ----
+  Z_magnetic_field:
+    instrument: signal_generator
+    label: "Z方向磁场"
+    resource: "USB0::0x1AB1::0x0641::DG4E242401288::INSTR"
+    channel: 1
+    description: "输出的大小对应着Z方向磁场强度，一般为任意波或三角波，范围0-10 V"
+
+  Time_sequence_2:
+    instrument: signal_generator
+    label: "时序信号2"
+    resource: "USB0::0x1AB1::0x0641::DG4E242401288::INSTR"
+    channel: 2
+    description: "暂时没有用到，预留的时序信号输出通道，一般为10Hz10V的方波"
+
+  Pump_laser_power:
+    instrument: signal_generator
+    label: "Pump光功率"
+    resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
+    channel: 1
+    description: "输出大小对应着Pump光功率，通过调节信号发生器的DC电平控制输出功率，范围0-2 V"
+
+  Probe_laser_power:
+    instrument: signal_generator
+    label: "Probe光功率"
+    resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
+    channel: 2
+    description: "输出大小对应着Probe光功率，通过调节信号发生器的DC电平控制输出功率，范围0-2 V"
+
+  X_magnetic_field:
+    instrument: signal_generator
+    label: "X方向磁场"
+    resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
+    channel: 1
+    description: "输出大小对应着X方向磁场，一般为任意波，范围0-10 V"
+
+  Y_magnetic_field:
+    instrument: signal_generator
+    label: "Y方向磁场"
+    resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
+    channel: 2
+    description: "输出大小对应着Y方向磁场，一般为任意波，范围0-10 V"
+
+  Pump_modulation:
+    instrument: signal_generator
+    label: "Pump调制信号"
+    resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
+    channel: 1
+    description: "控制Pump光的AOM，用于周期性开关Pump光，一般为任意波(任意波前部分为100MHz的正弦震荡，后面部分为60MHz的正弦震荡，因为不同频率信号使得AOM衍射角度不同，所以当衍射角度为100MHz对应角度时Pump光打开)，通过改变任意波的频率即可实现光的开关，幅值不能超过180mV"
+
+  Time_sequence:
+    instrument: signal_generator
+    label: "时序信号"
+    resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
+    channel: 2
+    description: "时序信号，一般为10Hz10V的方波"
+
+  Temp_Cont:
+    instrument: signal_generator
+    label: "温度控制信号"
+    resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
+    channel: 1
+    description: "控制温度的信号， 不能更改"
+
+  Temp_Switch:
+    instrument: signal_generator
+    label: "温度开关信号"
+    resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
+    channel: 2
+    description: "温度开关信号，5V为打开，DC0V为关闭，不能采用OFF模式，因为OFF模式下输出不稳定。一般为打开状态。因为温控会产生磁场，所以在数据采集或者校准锁相放大器相位的时候关闭"
+
+  # ---- 温控器 ----
+  temperature:
+    instrument: tec_controller
+    label: "Cell温度"
+    resource: "COM3"
+    channel: 1
+    description: "铷原子Cell温度控制，单位摄氏度，通过串口发送指令控制温度，范围20-110摄氏度"
+    # 使用方式: tec.set_target_temperature(C, channel=1)
+
+  # ---- 锁相放大器 ----
+  lockin_r:
+    instrument: lockin_amplifier
+    label: "锁相幅度 R"
+    resource: null
+    device_id: "dev18246"
+    host: "127.0.0.1"
+    port: 8005
+    demod_idx: 0
+    description: "HF2 解调器 0 幅度输出"
+    # 使用方式: demod.read_demod_sample(instr, 0) -> {"r": ..., "x": ..., ...}
+
+  lockin_xy:
+    instrument: lockin_amplifier
+    label: "锁相 X/Y"
+    resource: null
+    device_id: "dev18246"
+    host: "127.0.0.1"
+    port: 8005
+    demod_idx: 1
+    description: "HF2 解调器 1 X/Y 输出"
+
+  # ---- 示波器 ----
+  scope_waveform:
+    instrument: sds_acquisition
+    label: "示波器波形"
+    resource: "USB0::0xF4EC::0x1015::SDSEV82X900704::INSTR"
+    channel: null
+    description: "SDS 示波器波形采集"
+    # 使用方式:
+    #   acquirer = SDSAcquisition(SDSInstrument(resource))
+    #   results = acquirer.acquire_all(config)

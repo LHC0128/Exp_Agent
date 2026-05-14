@@ -1,0 +1,24 @@
+# params/experiment_types/transmission_spectrum.yaml
+# 实验类型：透射光谱测量
+
+experiment_type: transmission_spectrum
+
+default_params:
+  scan:
+    variable: probe_frequency
+    start: 100                    # Hz
+    stop: 10e6                    # Hz
+    num_points: 100
+    settle_time: 0.1
+
+  fixed:
+    laser_power: 2.0
+
+  acquisition:
+    record: ["lockin_r", "lockin_xy"]
+    average_per_point: 3
+
+  timing:
+    pre_scan_delay: 0.5
+    post_scan_delay: 0.05
+    inter_point_delay: 0.05
