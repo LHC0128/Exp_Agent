@@ -237,3 +237,25 @@ class HF2Instrument:
     def idn(self) -> str:
         """设备标识."""
         return self.get_string(f"/{self.device_id}/features/devtype")
+
+    # ------------------------------------------------------------------
+    # 系统设置
+    # ------------------------------------------------------------------
+
+    def set_extclk(self, enabled: bool) -> None:
+        """设置外部时钟源.
+
+        True  = 使用外部 10 MHz 参考时钟
+        False = 使用内部时钟
+
+        参数
+        ----------
+        enabled : bool
+        """
+        self.set_int(f"/{self.device_id}/system/extclk", 1 if enabled else 0)
+        self.sync()
+        logger.info("时钟源: %s", "外部 10 MHz" if enabled else "内部时钟")
+
+    def get_extclk(self) -> bool:
+        """读取当前是否使用外部时钟源."""
+        return bool(self.get_int(f"/{self.device_id}/system/extclk"))

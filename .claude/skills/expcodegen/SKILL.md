@@ -1,8 +1,7 @@
 ---
 name: expcodegen
-description: 根据自然语言描述的实验方案，自动生成实验 Jupyter Notebook 代码。支持多设备控制、参数扫描、安全限值保护。
-trigger: 用户希望生成实验代码、编写实验脚本、创建 notebook
----
+description: '根据自然语言描述的实验方案，自动生成实验 Jupyter Notebook 代码。支持多设备控制、参数扫描、安全限值保护。Use when: 用户希望生成实验代码、编写实验脚本、创建 notebook'
+user-invocable: true
 
 # ExpCodeGen Skill — 实验代码生成器
 
@@ -142,7 +141,10 @@ magnetic_field:
 ```python
 from pathlib import Path
 import sys
-project_root = Path.cwd().parent
+# 自动定位项目根目录（以 params/ 目录为标记）
+project_root = Path.cwd()
+while not (project_root / "params").exists() and project_root.parent != project_root:
+    project_root = project_root.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
@@ -173,7 +175,7 @@ import matplotlib.pyplot as plt
 ### Cell 2：加载配置
 
 ```python
-# 加载物理量→仪器映射
+# 加载物理量→仪器映射，选择争取的编码方式
 with open(project_root / "params" / "mapping.yaml") as f:
     MAPPING = yaml.safe_load(f)["mapping"]
 
@@ -191,9 +193,10 @@ SCAN_START = {起始值}
 SCAN_STOP = {终止值}
 SCAN_NUM = {点数}
 SETTLE_TIME = {等待时间}            # 每点等待稳定 (s)
+PRE_SCAN_DELAY = 0                # 扫描前打开温控等待稳定 (s)，默认 0
 
 # 固定参数（注释掉不需要的）
-# FIXED_PARAMS = {{"{物理量名}": {值}, ...}}
+# FIXED_PARAMS = {"{物理量名}": {值}, ...}
 
 # HF2 需要单独显示的配置参数（如有）
 # HF2_DEMOD_CFG = {{
@@ -203,8 +206,8 @@ SETTLE_TIME = {等待时间}            # 每点等待稳定 (s)
 # ==========================================
 
 # 安全边界检查函数
-def clamp_value(name, value):
-    """将数值限制在安全范围内，超出则报错"""
+def validate_safety_limit(name, value):
+    """检查数值是否在安全范围内，超出则报错"""
     lim = LIMITS.get(name)
     if lim is None:
         return value
@@ -219,7 +222,7 @@ def clamp_value(name, value):
 ### Cell 3：连接设备
 
 ```python
-devices = {{}}
+devices = {}  # 空字典
 
 try:
     # ---- [按需] 连接 GS200 ----
@@ -231,7 +234,8 @@ try:
     #     # 设置硬件保护
     #     lim = LIMITS["{物理量名}"]
     #     if gs_cfg["source_function"] == "CURRent":
-    #         gs.set_current_limit(lim["max"])
+    #         # safety_limits.yaml 中 GS200 电流限值单位为 mA, set_current_limit 单位为 A
+    #         gs.set_current_limit(lim["max"] / 1000.0)
     #     else:
     #         gs.set_voltage_limit(lim["max"])
     #     if lim.get("ramp_rate"):
@@ -297,7 +301,7 @@ print(f"运行目录: {{run_dir}}")
 # scan_cfg = MAPPING[SCAN_VARIABLE]
 # ...
 # 安全边界检查
-# clamp_value(SCAN_VARIABLE, SCAN_START)
+# validate_safety_limit(SCAN_VARIABLE, SCAN_START)
 
 print("初始值设置完成")
 ```
@@ -306,7 +310,7 @@ print("初始值设置完成")
 
 ```python
 # 将所有配置快照到 params.yaml（自包含，独立于全局配置）
-initial_snapshot = {{
+initial_snapshot = {
     "experiment_type": EXPERIMENT_TYPE,
     "purpose": PURPOSE,
     "timestamp": timestamp,
@@ -315,22 +319,22 @@ initial_snapshot = {{
     "scan_stop": SCAN_STOP,
     "scan_num": SCAN_NUM,
     "settle_time": SETTLE_TIME,
-    "fixed_params": {{}},  # 如有固定参数，记录在此
+    "fixed_params": {},  # 如有固定参数，记录在此
     "mapping_snapshot": MAPPING,
     "safety_limits_snapshot": LIMITS,
     # 如有 HF2/示波器等其他配置也一并记录
-}}
+}
 
 with open(run_dir / "params.yaml", "w", encoding="utf-8") as f:
     yaml.dump(initial_snapshot, f, default_flow_style=False)
 
 # 保存元数据
 with open(run_dir / "metadata.yaml", "w", encoding="utf-8") as f:
-    yaml.dump({{
+    yaml.dump({
         "experiment_type": EXPERIMENT_TYPE,
         "purpose": PURPOSE,
         "timestamp": timestamp,
-    }}, f)
+    }, f)
 
 print(f"参数已保存至: {{run_dir / 'params.yaml'}}")
 ```
@@ -338,21 +342,18 @@ print(f"参数已保存至: {{run_dir / 'params.yaml'}}")
 ### Cell 6：实验主循环
 
 ```python
-# 扫描数组
 scan_values = np.linspace(SCAN_START, SCAN_STOP, SCAN_NUM)
 num_points = len(scan_values)
 
-# 数据容器
-# recorded_data = {{"scan": scan_values, "物理量1": [], "物理量2": []}}
-recorded_data = {{"scan": scan_values}}
+recorded_data = {"scan": scan_values}
 
-time.sleep(PRE_SCAN_DELAY)  # 扫描前等待（如有）
+time.sleep(PRE_SCAN_DELAY)  # 扫描前等待稳定
 
 for i, val in enumerate(scan_values):
-    print(f"[{{i+1}}/{{num_points}}] {{SCAN_VARIABLE}} = {{val:.6f}}", end="")
+    print(f"[{i+1}/{num_points}] {SCAN_VARIABLE} = {val:.6f}", end="")
 
     # ---- 1. 安全边界检查 ----
-    val = clamp_value(SCAN_VARIABLE, val)
+    val = validate_safety_limit(SCAN_VARIABLE, val)
 
     # ---- 2. 设置扫描值（按实际设备生成） ----
     # 【GS200 电流模式】gs.set_current(val)
@@ -375,7 +376,7 @@ for i, val in enumerate(scan_values):
     #
     # 【示波器波形】scope_results = acquirer.acquire_all(scope_cfg)
     #   → 每次扫描点保存一个波形文件
-    #   → np.savez(raw_dir / f"scope_{{i:03d}}.npz", ...)
+    #   → np.savez(raw_dir / f"scope_{i:03d}.npz", ...)
     #
     # 【温度读数】temp_now = tec.get_temperature(channel=1)
     #   → recorded_data.setdefault("temperature", []).append(temp_now)
@@ -394,30 +395,26 @@ print("扫描完成!")
 ### Cell 7：保存扫描数据
 
 ```python
-# 保存主要扫描数据
 np.savez(raw_dir / "scan_data.npz", **recorded_data)
 
-# 保存 CSV 便于人类阅读
 try:
     import pandas as pd
-    df = pd.DataFrame({{k: v for k, v in recorded_data.items()}})
+    df = pd.DataFrame({k: v for k, v in recorded_data.items()})
     df.to_csv(raw_dir / "scan_log.csv", index=False)
 except ImportError:
-    # 无 pandas 时用纯文本保存
     header = ",".join(recorded_data.keys())
     rows = np.column_stack(list(recorded_data.values()))
     np.savetxt(raw_dir / "scan_log.csv", rows,
                delimiter=",", header=header, comments="")
 
-print(f"数据已保存至: {{raw_dir}}")
+print(f"数据已保存至: {raw_dir}")
 ```
 
-### Cell 8：绘制结果（可选）
+### Cell 8：绘制结果
 
 ```python
 fig, ax = plt.subplots(figsize=(8, 5))
 
-# 绘制扫描曲线
 # ax.plot(recorded_data["scan"], recorded_data["r"], "o-", label="R")
 
 ax.set_xlabel("{扫描变量} ({单位})")
@@ -430,30 +427,35 @@ plt.tight_layout()
 plot_path = results_dir / "scan_result.png"
 fig.savefig(plot_path, dpi=150, bbox_inches="tight")
 plt.show()
-print(f"图表已保存: {{plot_path}}")
+print(f"图表已保存: {plot_path}")
 ```
 
 ### Cell 9：安全断开
 
 ```python
-# 安全关闭所有输出设备（按实际设备生成）
-# for name, dev in devices.items():
-#     if isinstance(dev, GS200Instrument) and dev.connected:
-#         dev.set_output(False)
-#     if isinstance(dev, TECInstrument) and dev.connected:
-#         dev.set_enable(False)
+# 安全关闭所有输出设备
+for name, dev in devices.items():
+    try:
+        if hasattr(dev, "set_output"):
+            dev.set_output(False)
+        if hasattr(dev, "set_enable"):
+            dev.set_enable(False)
+    except Exception as e:
+        print(f"{name} 关闭失败: {e}")
 
 # 断开所有连接
-# for name, dev in devices.items():
-#     if hasattr(dev, "disconnect"):
-#         try:
-#             dev.disconnect()
-#             print(f"{{name}} 已断开")
-#         except Exception as e:
-#             print(f"{{name}} 断开失败: {{e}}")
+for name, dev in devices.items():
+    if hasattr(dev, "disconnect"):
+        try:
+            dev.disconnect()
+            print(f"{name} 已断开")
+        except Exception as e:
+            print(f"{name} 断开失败: {e}")
 
 print("设备已安全断开")
 ```
+
+
 
 ---
 
@@ -509,7 +511,7 @@ from sds_acquisition import SDSInstrument, SDSAcquisition, AcquisitionConfig, ..
 
 ### 安全守则（代码生成强制规则）
 
-1. **所有输出类设备在设置前做 `clamp_value()` 边界检查**
+1. **所有输出类设备在设置前做 `validate_safety_limit()` 边界检查**
 2. **GS200 必须调用 `set_current_limit()` / `set_voltage_limit()` 做硬件保护**
 3. **GS200/DG4000 扫描结束必须关闭输出（`set_output(False)`）**
 4. **TEC103 结束必须关闭输出（`set_enable(False)`）**

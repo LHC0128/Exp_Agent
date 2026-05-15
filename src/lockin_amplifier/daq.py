@@ -47,6 +47,20 @@ class DAQCollector:
         self._mod.set("dataAcquisitionModule/type", config.trigger_type)
         self._mod.set("dataAcquisitionModule/duration", config.duration)
 
+        # 触发设置（trigger_type=1 时有效）
+        if config.trigger_type == 1:
+            # triggernode: 使用辅助输入通道作为触发源
+            trigger_node = f"/{config.device}/auxins/{config.trigger_channel}/sample.AuxIn{config.trigger_channel}"
+            self._mod.set("dataAcquisitionModule/triggernode", trigger_node)
+            self._mod.set("dataAcquisitionModule/level", config.trigger_level)
+            self._mod.set("dataAcquisitionModule/hysteresis", 0.5)
+            if config.trigger_delay > 0:
+                self._mod.set("dataAcquisitionModule/trigger/delay", config.trigger_delay)
+            logger.info(
+                "DAQ 触发配置: triggernode=%s, level=%.3f V, delay=%.3f s",
+                trigger_node, config.trigger_level, config.trigger_delay,
+            )
+
         # 网格设置
         self._mod.set("dataAcquisitionModule/grid/mode", config.grid_mode)
         self._mod.set("dataAcquisitionModule/grid/cols", config.grid_cols)
@@ -71,13 +85,26 @@ class DAQCollector:
         if self._mod is None:
             raise RuntimeError("DAQ 模块未配置，请先调用 configure()")
 
-        self._subscribed_paths = []
         base = self._instr.demod_path(demod_idx)
         for sp in signal_paths:
             full_path = f"{base}/{sp}"
             self._mod.subscribe(full_path)
             self._subscribed_paths.append(full_path)
             logger.debug("DAQ 订阅: %s", full_path)
+
+    def subscribe_raw(self, path: str) -> None:
+        """订阅任意完整节点路径（非解调器信号）.
+
+        参数
+        ----------
+        path : str
+            完整节点路径，例如 /dev18246/auxins/0/sample.AuxIn0
+        """
+        if self._mod is None:
+            raise RuntimeError("DAQ 模块未配置，请先调用 configure()")
+        self._mod.subscribe(path)
+        self._subscribed_paths.append(path)
+        logger.debug("DAQ 订阅(原始节点): %s", path)
 
     def execute(self) -> None:
         """开始执行采集."""
@@ -100,7 +127,8 @@ class DAQCollector:
             return True
         return bool(self._mod.finished())
 
-    def wait(self, target: float = 1.0, poll_interval: float = 0.1) -> None:
+    def wait(self, target: float = 1.0, poll_interval: float = 0.1,
+             timeout: float = 0.0) -> None:
         """等待采集达到指定进度.
 
         参数
@@ -109,12 +137,27 @@ class DAQCollector:
             目标进度 (0~1)，默认 1.0
         poll_interval : float
             轮询间隔 (s)
+        timeout : float
+            超时时间 (s)，0 表示不限
         """
         if self._mod is None:
             return
+        elapsed = 0.0
         while self._mod.progress() < target:
             time.sleep(poll_interval)
-        logger.info("DAQ 采集进度: %.1f%%", self._mod.progress() * 100)
+            elapsed += poll_interval
+            if timeout > 0 and elapsed >= timeout:
+                prog = float(self._mod.progress())
+                logger.warning(
+                    "DAQ 采集超时 (timeout=%.1f s, progress=%.1f%%)",
+                    timeout, prog * 100,
+                )
+                raise TimeoutError(
+                    f"DAQ 采集超时 ({timeout:.0f}s)，进度 {prog*100:.0f}%。"
+                    "可能原因：触发信号未到达、触发电平不匹配、或 aux 输入未配置。"
+                )
+        prog_final = np.asarray(self._mod.progress()).item()
+        logger.info("DAQ 采集进度: %.1f%%", prog_final * 100)
 
     def read(self, flat: bool = True) -> dict:
         """读取采集数据.
@@ -182,8 +225,10 @@ def acquire_data(
     try:
         collector.configure(config)
         collector.subscribe(config.signal_paths, demod_idx)
+        for extra_path in config.extra_paths:
+            collector.subscribe_raw(extra_path)
         collector.execute()
-        collector.wait(1.0)
+        collector.wait(1.0, timeout=timeout)
         raw = collector.read()
         logger.info("数据采集完成，共 %d 个信号路径", len(raw))
 
@@ -194,8 +239,8 @@ def acquire_data(
 
         results = []
         for path, raw_value in raw.items():
-            # 只保留包含 "sample." 的信号路径，过滤掉 DAQ 模块参数
-            if "sample." not in path:
+            # 过滤掉 DAQ 模块参数节点，保留信号数据
+            if "sample." not in path and "sample" not in path:
                 continue
             signal_name = path.split("/")[-1]
 

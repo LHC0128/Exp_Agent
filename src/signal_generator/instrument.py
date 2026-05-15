@@ -25,7 +25,7 @@ ModType = Literal[
 ]
 
 SweepSpacing = Literal["LINear", "LOGarithmic"]
-BurstMode = Literal["TRIGgered", "GATed"]
+BurstMode = Literal["TRIGgered", "GATed", "INFinity"]
 VoltageUnit = Literal["VPP", "VRMS", "DBM"]
 OutputPolarity = Literal["NORMal", "INVerted"]
 SyncPolarity = Literal["POSitive", "NEGative"]

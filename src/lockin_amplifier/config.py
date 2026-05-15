@@ -182,6 +182,14 @@ class DAQConfig:
         设备 ID
     trigger_type : int
         触发模式: 0=连续, 1=边沿触发
+    trigger_channel : int
+        触发输入通道 (HF2 DIO 通道, 0-7), trigger_type=1 时有效
+    trigger_level : float
+        触发电平 (V), trigger_type=1 时有效
+    trigger_slope : int
+        触发边沿: 0=上升沿, 1=下降沿, trigger_type=1 时有效
+    trigger_delay : float
+        触发后延迟采集时间 (s), trigger_type=1 时有效
     duration : float
         采集时长 (s)
     grid_cols : int
@@ -197,6 +205,10 @@ class DAQConfig:
 
     device: str = "dev2006"
     trigger_type: int = 0
+    trigger_channel: int = 0
+    trigger_level: float = 1.5
+    trigger_slope: int = 0  # 0=rising, 1=falling
+    trigger_delay: float = 0.0
     duration: float = 0.1
     grid_cols: int = 500
     grid_rows: int = 1
@@ -204,6 +216,8 @@ class DAQConfig:
     signal_paths: List[str] = field(default_factory=lambda: [
         "sample.r", "sample.x", "sample.y", "sample.theta",
     ])
+    extra_paths: List[str] = field(default_factory=list)
+    """额外订阅的完整节点路径列表（非解调器信号），如 ['/dev18246/auxins/0/sample.AuxIn0']"""
 
     @classmethod
     def from_yaml(cls, path: str) -> "DAQConfig":

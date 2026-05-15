@@ -32,7 +32,7 @@ mapping:
     label: "时序信号2"
     resource: "USB0::0x1AB1::0x0641::DG4E242401288::INSTR"
     channel: 2
-    description: "暂时没有用到，预留的时序信号输出通道，一般为10Hz10V的方波"
+    description: "暂时没有用到，预留的时序信号输出通道，暂时为0VDC输出"
 
   Pump_laser_power:
     instrument: signal_generator
@@ -53,14 +53,14 @@ mapping:
     label: "X方向磁场"
     resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
     channel: 1
-    description: "输出大小对应着X方向磁场，一般为任意波，范围0-10 V"
+    description: "输出大小对应着X方向磁场，一般为任意波，范围-10-10 V"
 
   Y_magnetic_field:
     instrument: signal_generator
     label: "Y方向磁场"
     resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
     channel: 2
-    description: "输出大小对应着Y方向磁场，一般为任意波，范围0-10 V"
+    description: "输出大小对应着Y方向磁场，一般为任意波，范围-10-10 V"
 
   Pump_modulation:
     instrument: signal_generator
@@ -76,19 +76,19 @@ mapping:
     channel: 2
     description: "时序信号，一般为10Hz10V的方波"
 
-  Temp_Cont:
+  Heat_Control:
     instrument: signal_generator
-    label: "温度控制信号"
-    resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
+    label: "加热信号"
+    resource: "USB0::0x1AB1::0x0646::DG9Q271200104::INSTR"
     channel: 1
-    description: "控制温度的信号， 不能更改"
+    description: "加热信号，不可更改"
 
   Temp_Switch:
     instrument: signal_generator
     label: "温度开关信号"
-    resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
+    resource: "USB0::0x1AB1::0x0646::DG9Q271200104::INSTR"
     channel: 2
-    description: "温度开关信号，5V为打开，DC0V为关闭，不能采用OFF模式，因为OFF模式下输出不稳定。一般为打开状态。因为温控会产生磁场，所以在数据采集或者校准锁相放大器相位的时候关闭"
+    description: "温度开关信号，5V为打开，DC0VOFF为关闭。一般为打开状态。因为温控会产生磁场，所以在数据采集或者校准锁相放大器相位的时候关闭"
 
   # ---- 温控器 ----
   temperature:

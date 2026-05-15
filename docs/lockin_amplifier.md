@@ -13,7 +13,8 @@
 | 输入量程 | /SIGINS/N/RANGE | +/- V |
 | 耦合方式 | /SIGINS/N/AC | AC/DC 耦合 |
 | 相位校准 | /DEMODS/N/PHASESHIFT | 手动或自动校准使 Y ≈ 0 |
-| DAQ 采集 | Data Acquisition Module | 连续/触发模式，可设采样率/时长/点数 |
+| 时钟源 | /SYSTEM/EXTCLK | 内部时钟 / 外部 10 MHz 参考 |
+| DAQ 采集 | Data Acquisition Module | 连续/触发模式，可设采样率/时长/点数/触发通道/电平/边沿 |
 | 辅助输出 | /AUXOUTS/N | 将解调信号路由到物理接口 |
 
 ## 硬件模块
@@ -68,12 +69,28 @@ demod.configure_signal_output(instr, SignalOutputConfig(output_index=0, range=1.
 # 5. 相位校准
 demod.auto_calibrate_phase(instr, demod_idx=0)
 
-# 6. DAQ 采集
+# 6. DAQ 采集（连续模式）
 results = daq.acquire_data(instr, DAQConfig(duration=0.1),
                             demod_idx=0, actual_rate=actual_rate)
 
+# 6b. DAQ 采集（触发模式，同步外部信号）
+trigger_cfg = DAQConfig(
+    duration=0.1,
+    trigger_type=1,            # 边沿触发
+    trigger_channel=0,         # 触发输入通道（辅助输入1对应通道0）
+    trigger_level=2.5,         # 触发电平 (V)
+    trigger_slope=0,           # 0=上升沿, 1=下降沿
+    trigger_delay=0.0,         # 触发后延迟 (s)
+    signal_paths=["sample.r", "sample.x", "sample.y"],
+)
+results = daq.acquire_data(instr, trigger_cfg, demod_idx=0)
+
 # 7. 辅助输出
 auxout.configure_aux_output(instr, AuxOutConfig(output_select=2))
+
+# 8. 时钟源设置（外部 10 MHz 参考）
+instr.set_extclk(True)          # 外部时钟
+# instr.set_extclk(False)       # 内部时钟
 
 # 断开
 instr.disconnect()
@@ -126,6 +143,16 @@ daq:
   duration: 0.1
   grid_cols: 1000
   signal_paths: [sample.r, sample.x, sample.y, sample.theta]
+
+daq_triggered:
+  trigger_type: 1
+  trigger_channel: 0
+  trigger_level: 2.5
+  trigger_slope: 0
+  trigger_delay: 0.0
+  duration: 0.1
+  grid_cols: 1000
+  signal_paths: [sample.r, sample.x, sample.y]
 ```
 
 ## 注意事项

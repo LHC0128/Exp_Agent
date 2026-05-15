@@ -18,22 +18,22 @@
 safety_limits:
   # ---- 直流源 ----
   main_magnetic_field:
-    min: 0.0
-    max: 0.01
+    min: 0
+    max: 10
     ramp_rate: null
     output_off_on_error: true
     description: "GS200 电流源控制主磁场，范围 0-10 mA"
 
   # ---- 信号发生器 ----
   Z_magnetic_field:
-    min: 0.0
+    min: -10.0
     max: 10.0
     ramp_rate: null
     output_off_on_error: true
-    description: "Z方向磁场，范围 0-10 V"
+    description: "Z方向磁场，范围 -10 到 10 V"
 
   Time_sequence_2:
-    min: 0.0
+    min: -10.0
     max: 10.0
     ramp_rate: null
     output_off_on_error: false
@@ -54,28 +54,28 @@ safety_limits:
     description: "Probe光功率 DC 电平控制，范围 0-2 V"
 
   X_magnetic_field:
-    min: 0.0
+    min: -10.0
     max: 10.0
     ramp_rate: null
     output_off_on_error: true
-    description: "X方向磁场，范围 0-10 V"
+    description: "X方向磁场，范围 -10-10 V"
 
   Y_magnetic_field:
-    min: 0.0
+    min: -10.0
     max: 10.0
     ramp_rate: null
     output_off_on_error: true
-    description: "Y方向磁场，范围 0-10 V"
+    description: "Y方向磁场，范围 -10-10 V"
 
   Pump_modulation:
-    min: 0.0
+    min: -0.18
     max: 0.18
     ramp_rate: null
     output_off_on_error: true
     description: "Pump AOM 驱动，幅值不超过 180 mV"
 
   Time_sequence:
-    min: 0.0
+    min: -10.0
     max: 10.0
     ramp_rate: null
     output_off_on_error: false
