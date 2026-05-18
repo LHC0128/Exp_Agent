@@ -3,7 +3,7 @@ name: expcodegen
 description: '根据自然语言描述的实验方案，自动生成实验 Jupyter Notebook 代码。支持多设备控制、参数扫描、安全限值保护。Use when: 用户希望生成实验代码、编写实验脚本、创建 notebook'
 user-invocable: true
 
-# ExpCodeGen Skill — 实验代码生成器
+# ExpCodeGen Skill — 实验代码生成器 (v2)
 
 ## 概述
 
@@ -15,7 +15,7 @@ user-invocable: true
 |------|------|----------|
 | `params/mapping.yaml` | 物理量↔仪器通道映射 | 低（换设备/换接口时改） |
 | `params/safety_limits.yaml` | 各物理量安全限值 | 低（设备更换时调整） |
-| `params/experiment_types/<type>.yaml` | 某类实验的默认参数模板 | 中（新增实验类型时创建） |
+| `docs/<experiment_type>.md` | 实验类型文档（含 YAML frontmatter） | 中（新增实验类型时创建） |
 
 三个配置文件彼此独立，方便单独修改不影响其他配置。
 
@@ -26,15 +26,17 @@ user-invocable: true
 ```
 data/
   <experiment_type>/                  # 实验类型（如 magneto_optical_kerr）
-    <YYYYMMDD>_<HHMMSS>_<purpose>/    # 单次运行
+    <MMDD>_<HHMM>_<tag>/              # 单次运行（简洁命名）
       params.yaml           # 运行时参数快照（含 mapping、限值、扫描参数）
       metadata.yaml         # 实验元数据（类型、目的、操作人）
       raw/                  # 原始数据
         scan_data.npz       # 扫描数据
+        noise_raw/          # 噪声原始数据（逐次保存）
         scope_waveform.npz  # 示波器波形（如适用）
       results/              # 分析结果
-        plots/*.png         # 图表
-        analysis.npz        # 分析结果（可选）
+        dispersion_curve.png
+        full_analysis.png
+        analysis.json       # 分析结果（如灵敏度值）
 ```
 
 ---
@@ -45,7 +47,7 @@ data/
 
 让用户用自然语言描述实验。引导用户说清楚以下要素：
 
-- **实验类型**是什么？（如磁光 Kerr 效应、透射谱测量），这将作为 `data/` 下的目录名
+- **实验类型**是什么？（如磁光 Kerr 效应、透射谱测量、静磁场灵敏度），这将作为 `data/` 下的目录名
 - **实验目的**（可选，用于 notebook 标题/说明）
 - **涉及哪些物理量**（如磁场、光功率、温度、锁相信号、示波器波形）
 - **哪些物理量是扫描变量**，范围多少？（如"磁场从 0 到 0.18 A，20 点"）
@@ -74,6 +76,34 @@ magnetic_field:              # 物理量名 (snake_case)，代码中作为变量
   port: 8005                # [仅 HF2] LabOne 服务器端口
   demod_idx: 0              # [仅 HF2] 解调器索引
   description: "..."        # 文字说明
+```
+
+### Step 2b：读取实验类型文档
+
+检查 `docs/` 目录下是否存在对应的 `.md` 文档（文件名匹配实验类型，如 `static_mag_sens.md`）。
+
+如果存在：
+- **读取 YAML frontmatter**：获取 `defaults`、`required_devices`、`scan_mode` 等结构化参数
+- **读取注意事项**：将 `注意事项` 章节中的修复经验写入生成的代码注释中
+- **若无对应文档** → 回退到通用模板
+
+实验类型文档规范（`docs/*.md`）：
+
+```yaml
+---
+title: 实验名称
+type: experiment_type
+scan_mode: point_by_point | continuous_ramp
+defaults:              # 默认参数，生成代码时填入
+  PARAM_NAME: value
+required_devices:      # 所需设备清单
+  - instrument: gs200 | signal_generator | ...
+    role: main_field | sweep | ...
+    channels: [1]
+learned_notes:         # 修复经验总结
+  - 噪声测量后恢复解调器
+  - grid_cols 使用 actual_rate
+---
 ```
 
 ### Step 3：读取安全限值
@@ -106,11 +136,33 @@ magnetic_field:
 
 如果用户没有明确，根据常见实验类型给出合理默认值。也可检查 `params/experiment_types/` 下是否存在对应模板文件。
 
-### Step 5：生成 Jupyter Notebook
+### Step 5：检测实验类型 → 选择代码模板
 
-在 `experiments/` 目录下创建 notebook，文件名 `experiments/<实验类型>_<YYYYMMDD>.ipynb`。
+> v2 增强：支持 "点扫描" 和 "连续扫场" 两种模式。
 
-生成代码时遵循以下模板，根据实际涉及设备动态填充各单元内容。
+在 Step 1 中判断用户的实验属于哪种模式，并选择对应模板。
+
+#### 模式 A：点扫描 (point_by_point)
+适合：透射谱、磁光 Kerr 等，逐点设置→稳定→读数
+
+```python
+for i in range(SCAN_NUM):
+    set_value(scan_values[i])
+    time.sleep(SETTLE_TIME)
+    read_data()
+```
+
+#### 模式 B：连续扫场 (continuous_ramp)
+适合：灵敏度测量等，使用 DG4000 RAMP 波形 + HF2 DAQ 触发同步
+
+```python
+# 1 次 RAMP 扫场 = 1 个完整周期 → DAQ 触发采集
+dg_sweep.setup_ramp(...)
+dg_sweep.set_sync_state(True)
+daq_results = daq.acquire_data(...)
+```
+
+判断依据：实验类型文档中的 `scan_mode` 字段（如 `docs/*.md` 的 YAML frontmatter）。
 
 ---
 
@@ -175,7 +227,7 @@ import matplotlib.pyplot as plt
 ### Cell 2：加载配置
 
 ```python
-# 加载物理量→仪器映射，选择争取的编码方式
+# 加载物理量→仪器映射
 with open(project_root / "params" / "mapping.yaml") as f:
     MAPPING = yaml.safe_load(f)["mapping"]
 
@@ -187,23 +239,25 @@ with open(project_root / "params" / "safety_limits.yaml") as f:
 EXPERIMENT_TYPE = "{实验类型}"
 PURPOSE = "{实验目的}"
 
-# 扫描参数
-SCAN_VARIABLE = "{扫描物理量名}"     # 对应 mapping.yaml 中的 key
-SCAN_START = {起始值}
-SCAN_STOP = {终止值}
-SCAN_NUM = {点数}
-SETTLE_TIME = {等待时间}            # 每点等待稳定 (s)
-PRE_SCAN_DELAY = 0                # 扫描前打开温控等待稳定 (s)，默认 0
+# 扫描参数（点扫描模式）
+# SCAN_VARIABLE = "{扫描物理量名}"
+# SCAN_START = {起始值}
+# SCAN_STOP = {终止值}
+# SCAN_NUM = {点数}
+# SETTLE_TIME = {等待时间}
 
-# 固定参数（注释掉不需要的）
+# 连续扫场参数（连续扫场模式）
+# RAMP_LOW = {值}
+# RAMP_HIGH = {值}
+# RAMP_FREQ = {值}
+# RAMP_SYMMETRY = {值}
+# DAQ_DURATION = {值}
+
+# ========== 固定参数 ==========
 # FIXED_PARAMS = {"{物理量名}": {值}, ...}
 
-# HF2 需要单独显示的配置参数（如有）
-# HF2_DEMOD_CFG = {{
-#     "demod_idx": 0, "rate": 20e3, "time_constant": 0.001, ...
-# }}
-# HF2_DAQ_CFG = {{"duration": 0.1, "signal_paths": [..., ...]}}
-# ==========================================
+# ========== 运行目录命名 ==========
+RUN_TAG = "{short_tag}"
 
 # 安全边界检查函数
 def validate_safety_limit(name, value):
@@ -231,15 +285,11 @@ try:
     #     gs = GS200Instrument(gs_cfg["resource"])
     #     gs.connect()
     #     print(f"GS200 已连接: {gs.idn()}")
-    #     # 设置硬件保护
     #     lim = LIMITS["{物理量名}"]
     #     if gs_cfg["source_function"] == "CURRent":
-    #         # safety_limits.yaml 中 GS200 电流限值单位为 mA, set_current_limit 单位为 A
     #         gs.set_current_limit(lim["max"] / 1000.0)
     #     else:
     #         gs.set_voltage_limit(lim["max"])
-    #     if lim.get("ramp_rate"):
-    #         print(f"  注意: 爬升速率限制 {lim['ramp_rate']} {gs_cfg.get('source_function','')}/s")
     #     devices["{物理量名}"] = gs
 
     # ---- [按需] 连接 DG4000 ----
@@ -261,201 +311,103 @@ try:
     #     device_id=hf2_cfg["device_id"],
     # )
     # hfi.connect()
-    # # 配置解调器（按需）
-    # from lockin_amplifier import SignalInputConfig, OscillatorConfig, DemodulatorConfig
-    # demod.configure_signal_input(hfi, SignalInputConfig(...))
-    # demod.configure_oscillator(hfi, OscillatorConfig(...))
-    # demod.configure_demodulator(hfi, DemodulatorConfig(...))
     # devices["lockin"] = hfi
 
-    # ---- [按需] 连接 SDS ----
-    # scope_cfg = MAPPING["{物理量名}"]
-    # from sds_acquisition import SDSAcquisition, SDSInstrument, AcquisitionConfig
-    # sds_instr = SDSInstrument(scope_cfg["resource"])
-    # sds_instr.connect()
-    # acquirer = SDSAcquisition(sds_instr)
-    # devices["scope"] = (sds_instr, acquirer)
-
 except Exception as e:
-    print(f"设备连接失败: {{e}}")
+    print(f"设备连接失败: {e}")
     raise
 ```
 
 ### Cell 4：设置初始值并创建运行目录
 
 ```python
-# 创建本次运行目录
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-run_dir = project_root / "data" / EXPERIMENT_TYPE / f"{{timestamp}}_{PURPOSE}"
+# 创建本次运行目录 (简洁命名: MMDD_HHMM_tag)
+timestamp = datetime.now().strftime("%m%d_%H%M")
+run_dir = project_root / "data" / EXPERIMENT_TYPE / f"{timestamp}_{RUN_TAG}"
 run_dir.mkdir(parents=True, exist_ok=True)
 (raw_dir := run_dir / "raw").mkdir(exist_ok=True)
 (results_dir := run_dir / "results").mkdir(exist_ok=True)
-print(f"运行目录: {{run_dir}}")
+print(f"运行目录: {run_dir}")
 
 # 设置固定参数（按需）
 # dg.set_amplitude(FIXED_PARAMS["laser_power"], channel=1)
 # tec.set_target_temperature(FIXED_PARAMS["temperature"], channel=1)
 # tec.set_enable(True, channel=1)
 
-# 设置扫描起始值
-# scan_cfg = MAPPING[SCAN_VARIABLE]
-# ...
-# 安全边界检查
-# validate_safety_limit(SCAN_VARIABLE, SCAN_START)
-
 print("初始值设置完成")
 ```
 
-### Cell 5：保存初始参数快照
+### Cell 5：数据采集
 
-```python
-# 将所有配置快照到 params.yaml（自包含，独立于全局配置）
-initial_snapshot = {
-    "experiment_type": EXPERIMENT_TYPE,
-    "purpose": PURPOSE,
-    "timestamp": timestamp,
-    "scan_variable": SCAN_VARIABLE,
-    "scan_start": SCAN_START,
-    "scan_stop": SCAN_STOP,
-    "scan_num": SCAN_NUM,
-    "settle_time": SETTLE_TIME,
-    "fixed_params": {},  # 如有固定参数，记录在此
-    "mapping_snapshot": MAPPING,
-    "safety_limits_snapshot": LIMITS,
-    # 如有 HF2/示波器等其他配置也一并记录
-}
+根据模式选择：
 
-with open(run_dir / "params.yaml", "w", encoding="utf-8") as f:
-    yaml.dump(initial_snapshot, f, default_flow_style=False)
-
-# 保存元数据
-with open(run_dir / "metadata.yaml", "w", encoding="utf-8") as f:
-    yaml.dump({
-        "experiment_type": EXPERIMENT_TYPE,
-        "purpose": PURPOSE,
-        "timestamp": timestamp,
-    }, f)
-
-print(f"参数已保存至: {{run_dir / 'params.yaml'}}")
-```
-
-### Cell 6：实验主循环
+#### 模式 A：逐点扫描 (point_by_point)
 
 ```python
 scan_values = np.linspace(SCAN_START, SCAN_STOP, SCAN_NUM)
-num_points = len(scan_values)
-
 recorded_data = {"scan": scan_values}
 
-time.sleep(PRE_SCAN_DELAY)  # 扫描前等待稳定
-
 for i, val in enumerate(scan_values):
-    print(f"[{i+1}/{num_points}] {SCAN_VARIABLE} = {val:.6f}", end="")
-
-    # ---- 1. 安全边界检查 ----
     val = validate_safety_limit(SCAN_VARIABLE, val)
+    # 设置扫描值 → 等待稳定 → 采集数据
+    # ...
+    recorded_data.setdefault("r", []).append(sample["r"])
 
-    # ---- 2. 设置扫描值（按实际设备生成） ----
-    # 【GS200 电流模式】gs.set_current(val)
-    # 【GS200 电压模式】gs.set_voltage(val)
-    # 【DG4000 幅度】dg.set_amplitude(val, channel=...)
-    # 【DG4000 频率】dg.set_frequency(val, channel=...)
-    # 【TEC103 温度】tec.set_target_temperature(val, channel=...)
-
-    # ---- 3. 等待稳定 ----
-    time.sleep(SETTLE_TIME)
-
-    # ---- 4. 采集数据（按实际设备生成） ----
-    #
-    # 【锁相单点读数】sample = demod.read_demod_sample(hfi, demod_idx=0)
-    #   → recorded_data.setdefault("r", []).append(sample["r"])
-    #   → recorded_data.setdefault("x", []).append(sample["x"])
-    #
-    # 【锁相 DAQ 采集】daq_results = daq.acquire_data(hfi, daq_cfg, demod_idx=0)
-    #   → 每个 daq_result.values 记录平均或原始值
-    #
-    # 【示波器波形】scope_results = acquirer.acquire_all(scope_cfg)
-    #   → 每次扫描点保存一个波形文件
-    #   → np.savez(raw_dir / f"scope_{i:03d}.npz", ...)
-    #
-    # 【温度读数】temp_now = tec.get_temperature(channel=1)
-    #   → recorded_data.setdefault("temperature", []).append(temp_now)
-    #
-
-    print(f"  ✓")
-
-# 将列表转为 numpy 数组
-for key in recorded_data:
-    if key != "scan":
-        recorded_data[key] = np.array(recorded_data[key])
-
-print("扫描完成!")
-```
-
-### Cell 7：保存扫描数据
-
-```python
 np.savez(raw_dir / "scan_data.npz", **recorded_data)
-
-try:
-    import pandas as pd
-    df = pd.DataFrame({k: v for k, v in recorded_data.items()})
-    df.to_csv(raw_dir / "scan_log.csv", index=False)
-except ImportError:
-    header = ",".join(recorded_data.keys())
-    rows = np.column_stack(list(recorded_data.values()))
-    np.savetxt(raw_dir / "scan_log.csv", rows,
-               delimiter=",", header=header, comments="")
-
-print(f"数据已保存至: {raw_dir}")
 ```
 
-### Cell 8：绘制结果
+#### 模式 B：连续扫场 (continuous_ramp)
 
 ```python
-fig, ax = plt.subplots(figsize=(8, 5))
+# 启动 RAMP 扫场
+dg_sweep.setup_ramp(freq=RAMP_FREQ, amplitude=(RAMP_HIGH - RAMP_LOW),
+                    offset=0.0, symmetry=RAMP_SYMMETRY, channel=1)
+dg_sweep.set_sync_state(True, channel=1)
 
-# ax.plot(recorded_data["scan"], recorded_data["r"], "o-", label="R")
+# DAQ 触发采集（注意: grid_cols 使用 actual_rate）
+daq_cfg = DAQConfig(
+    device=MAPPING["lockin_r"]["device_id"],
+    trigger_type=1, duration=DAQ_DURATION,
+    grid_cols=int(actual_rate * DAQ_DURATION),  # 用 actual_rate 而非常量！
+    signal_paths=["sample.r", "sample.x", "sample.y"],
+)
+daq_results = daq.acquire_data(hfi, config=daq_cfg, demod_idx=0,
+                               actual_rate=actual_rate, timeout=DAQ_DURATION + 10.0)
 
-ax.set_xlabel("{扫描变量} ({单位})")
-ax.set_ylabel("{测量量} ({单位})")
-ax.set_title("{实验标题}")
-ax.legend()
-ax.grid(True, alpha=0.3)
-plt.tight_layout()
-
-plot_path = results_dir / "scan_result.png"
-fig.savefig(plot_path, dpi=150, bbox_inches="tight")
-plt.show()
-print(f"图表已保存: {plot_path}")
+# 停止扫场
+dg_sweep.set_output(False, channel=1)
+dg_sweep.set_sync_state(False, channel=1)
 ```
 
-### Cell 9：安全断开
+### Cell 6：安全断开
 
 ```python
-# 安全关闭所有输出设备
+# 关闭所有设备输出
 for name, dev in devices.items():
     try:
-        if hasattr(dev, "set_output"):
+        if name == "dg_temp":  # 保持温度开关开启
+            if hasattr(dev, "set_output"):
+                dev.set_output(False, channel=1)
+            continue
+        if hasattr(dev, "all_off"):
+            dev.all_off()                     # 关双通道
+        elif hasattr(dev, "set_output"):
             dev.set_output(False)
-        if hasattr(dev, "set_enable"):
-            dev.set_enable(False)
     except Exception as e:
         print(f"{name} 关闭失败: {e}")
 
-# 断开所有连接
+# 显式关闭 SYNC
+for sync_name in ["dg_sweep", "dg_mod"]:
+    dev = devices.get(sync_name)
+    if dev and hasattr(dev, "set_sync_state"):
+        dev.set_sync_state(False, channel=1)
+        dev.set_sync_state(False, channel=2)
+
+# 断开连接
 for name, dev in devices.items():
     if hasattr(dev, "disconnect"):
-        try:
-            dev.disconnect()
-            print(f"{name} 已断开")
-        except Exception as e:
-            print(f"{name} 断开失败: {e}")
-
-print("设备已安全断开")
+        dev.disconnect()
 ```
-
-
 
 ---
 
@@ -473,97 +425,11 @@ from lockin_amplifier import HF2Instrument, demod, daq, ...
 from sds_acquisition import SDSInstrument, SDSAcquisition, AcquisitionConfig, ...
 ```
 
-实验中用到了哪些设备就导入对应的库，不要全部导入。
+### 修复经验（自动注入注释）
 
-### 设备 API 速查
+当实验类型文档的 `learned_notes` 字段有内容时，在对应位置自动生成带有 `# [经验]` 标记的注释：
 
-**GS200（直流电压/电流源）：**
-- `set_source_function("CURRent"|"VOLTage")`
-- `set_current(A)` / `get_current()` / `set_voltage(V)` / `get_voltage()`
-- `set_output(bool)` / `get_output()`
-- `set_current_limit(A)` / `set_voltage_limit(V)` ← **安全防护，必须调用**
-
-**DG4000（信号发生器）：**
-- `setup_sine(freq, ampl, offset)` / `setup_dc(offset)` 等快捷方法（自动打开输出）
-- `set_frequency(Hz)` / `set_amplitude(Vpp)` / `set_offset(V)` / `set_high_level(V)`
-- `set_output(bool, channel=1)` / `all_off()`
-
-**TEC103（温控器）：**
-- `set_target_temperature(°C, channel=1)` / `get_temperature(channel=1)`
-- `set_enable(bool, channel=1)` / `get_enable(channel=1)`
-- `set_output_mode(mode, channel=1)` — 0=双向, 1=制冷, 2=加热, 3=手动
-- `set_pid(kp, ki, kd, channel=1)` / `set_slope(°C/s, channel=1)`
-- `get_all_temperatures() → dict` — 返回 TC1, TC2, 内部温度
-
-**HF2（锁相放大器）：**
-- `demod.read_demod_sample(instr, demod_idx=0) → dict` — 返回 x, y, r, theta, freq, phase
-- `daq.acquire_data(instr, config, demod_idx=0) → List[DAQResult]` — DAQ 采集
-- `demod.configure_signal_input(instr, config)` / `configure_oscillator(instr, config)`
-- `demod.configure_demodulator(instr, config) → float` — 返回实际采样率
-- `demod.configure_signal_output(instr, config)` / `auto_calibrate_phase(instr, ...)`
-
-**SDS（示波器）：**
-- `SDSInstrument(resource)` → `connect()` → 底层通信
-- `acquire = SDSAcquisition(instr)` → 采集控制器
-- `acquire.acquire_all(AcquisitionConfig) → List[AcquisitionResult]`
-- 每个 `AcquisitionResult` 有 `.voltage`, `.time`, `.channel` 属性
-- 保存函数：`save_to_npz(path, results)`, `save_to_csv(path, results)`, `save_to_mat(path, results)`
-
-### 安全守则（代码生成强制规则）
-
-1. **所有输出类设备在设置前做 `validate_safety_limit()` 边界检查**
-2. **GS200 必须调用 `set_current_limit()` / `set_voltage_limit()` 做硬件保护**
-3. **GS200/DG4000 扫描结束必须关闭输出（`set_output(False)`）**
-4. **TEC103 结束必须关闭输出（`set_enable(False)`）**
-5. **HF2 结束断开 LabOne 连接**
-6. **SDS 结束断开 VISA 连接**
-7. **使用 `try/finally` 确保异常时也能断开所有设备**
-8. **检测到 NaN/inf 等异常值时停止扫描并关闭所有输出**
-9. **扫描结束后即使正常完成，也要关闭所有输出设备**
-
-### Notebook 格式规则
-
-- 所有图表标注使用**英文**，代码注释使用**中文**
-- Markdown 单元使用**中文**
-- 时间戳格式：`YYYYMMDD_HHMMSS`
-- 变量名使用 `snake_case`
-
----
-
-## 与用户的交互模板
-
-### 初次交互
-
-我将帮你生成实验代码。请逐步告诉我以下信息：
-
-1. **实验类型**是什么？（如 `magneto_optical_kerr`，将作为 `data/` 下的目录名）
-2. **实验目的**？（一句话描述）
-3. **涉及哪些物理量**？哪些是**扫描变量**（范围？点数？）？哪些是**固定值**？
-4. **每个扫描点记录什么数据**？
-5. 对应的 `params/mapping.yaml` 中是否已定义了所需物理量？（我会检查）
-6. `params/safety_limits.yaml` 中限值是否齐全？
-
-### 映射缺失时
-
-物理量 `{name}` 在 `params/mapping.yaml` 中未定义。请提供：
-
-- 使用哪台仪器控制？（GS200 / DG4000 / TEC103 / HF2 / SDS）
-- 仪器的连接地址？（VISA 资源串 / COM 口 / LabOne 参数）
-- 通道号？（如适用）
-- GS200 的话，电流模式还是电压模式？
-
-我会更新 `params/mapping.yaml`，后续实验可复用。
-
-### 安全限值缺失时
-
-物理量 `{name}` 在 `params/safety_limits.yaml` 中未定义。请提供：
-
-- 最小值：____
-- 最大值：____（超过会损坏设备？）
-- 爬升速率限制（如需要）：____
-
-我会更新 `params/safety_limits.yaml`。
-
-### 实验类型模板复用
-
-`params/experiment_types/` 下已有模板 `{type}.yaml`，是否参考其中的默认参数？或者自定义本次运行参数？
+```python
+# [经验] grid_cols 必须使用 actual_rate 而非硬编码常量
+grid_cols=int(actual_rate * DAQ_DURATION)
+```
