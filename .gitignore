@@ -12,3 +12,9 @@ manuals/
 !.claude/skills/
 
 ~/
+
+# 未发表论文
+paper/
+
+# 废弃旧代码
+oldcode.ipynb

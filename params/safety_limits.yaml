@@ -75,11 +75,11 @@ safety_limits:
     description: "Pump AOM 驱动，幅值不超过 180 mV"
 
   Time_sequence:
-    min: -10.0
-    max: 10.0
+    min: -10
+    max: 10
     ramp_rate: null
     output_off_on_error: false
-    description: "时序信号，10V 方波"
+    description: "Pump 光调制信号，通过射频开关控制Pump_modulation"
 
   Temp_Cont:
     min: 0.0

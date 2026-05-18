@@ -2,8 +2,8 @@
 title: Z 磁场频率标定
 type: experiment_type
 description: Bell-Bloom 磁力仪中，外扫 Z 电压、内扫 Pump 调制频率找共振峰，多点线性回归标定 V→B 转换系数
-keywords: [calibration, Zeeman, Bell-Bloom, Larmor frequency, R signal, lock-in]
-version: 1
+keywords: [calibration, Zeeman, Bell-Bloom, Larmor frequency, R signal, lock-in, RF switch]
+version: 2
 
 scan_mode: nested_scan           # 外层 Z 电压，内层频率
 
@@ -20,6 +20,18 @@ defaults:
   SETTLE_TIME: 0.5              # 每点等待稳定时间 (s)
   DEMOD_RATE: 1000              # 解调器输出速率 (Sa/s)
   DEMOD_TC: 0.001               # 解调器时间常数 (s)
+  # ---- RF 开关控制信号 ----
+  RF_GATE_AMPLITUDE: 5.0        # CH2 门控脉冲幅度 (Vpp)
+  RF_GATE_OFFSET: 2.5           # CH2 门控脉冲偏置 (V)
+
+# ========== RF 开关方案说明 ==========
+# Pump 调制不再使用任意波, 改用 RF 开关:
+#   dg_mod CH1: 100MHz 连续正弦波 → RF 开关 IN
+#   dg_mod CH2: 脉冲方波 (TTL)    → RF 开关 CTRL
+#   RF 开关 OUT → AOM (串 0.1μF 隔直电容)
+#   扫描时只改变 CH2 脉冲频率, CH1 保持 100MHz 不变
+#   10Hz 时序信号由 dg_sweep CH2 提供
+# ======================================
 
 # ========== mapping.yaml 中的 key ==========
 mapping_keys:
@@ -34,7 +46,7 @@ mapping_keys:
     description: "Probe 光功率"
   Pump_modulation:
     role: scan_inner             # 内层扫描变量！
-    description: "Pump 调制任意波，重复频率逐点改变找共振"
+    description: "Pump 调制: CH1 100MHz 正弦 + CH2 脉冲门控 → RF 开关 → AOM"
   Temp_Switch:
     role: fixed
     description: "温度开关"
@@ -89,10 +101,10 @@ B_abs
 在每个 Z 电压 $V_Z$ 下，需要知道该点的绝对磁场 $B_\text{abs}$。方法是扫描 Pump 调制频率找共振峰。
 
 Bell-Bloom 磁力仪中：
-- DG4000 CH1 输出幅度调制的 Pump 光（USER 任意波）
-- 当调制频率 $f_\text{pump}$ 等于 Zeeman 共振频率 $f_\text{Larmor}$ 时，R 信号最大
-- HF2 锁相振荡器频率跟随 $f_\text{pump}$，解调 R 信号
-- 两者**必须同步**——锁相解调的是 Probe 光携带的原子响应，其频谱分量就在调制频率处
+- **RF 开关方案**: DG4000 CH1 输出 100MHz 连续正弦波 → RF 开关 IN；CH2 输出脉冲方波 → RF 开关 CTRL
+- 当脉冲重复频率 $f_\text{pulse}$ 等于 Zeeman 共振频率 $f_\text{Larmor}$ 时，R 信号最大
+- HF2 锁相振荡器频率跟随 $f_\text{pulse}$，解调 R 信号
+- 两者**必须同步**——锁相解调的是 Probe 光携带的原子响应，其频谱分量就在脉冲重复频率处
 
 $$f_\text{Larmor} = \frac{g_F \mu_B}{h} \cdot B_\text{abs}$$
 
@@ -103,8 +115,8 @@ for each V_Z in [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3] V:    ← 外层
     设 DG4000 CH2 输出 = V_Z
     for each f in [70, 72, ..., 110] kHz:                   ← 内层
         同时设置：
-          DG4000 CH1: apply_wave("USER", freq=f)
-          HF2 osc/0:  set_freq(f)
+          DG4000 CH2 (dg_mod): setup_pulse(freq=f, ...)   ← 改变门控频率
+          HF2 osc/0:            set_freq(f)
         等稳定后读 R 信号
     找 R 峰值 → f_Larmor
     B_abs = f_Larmor / (γ/2π)
@@ -116,15 +128,19 @@ for each V_Z in [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3] V:    ← 外层
 ## 实验流程
 
 ### Phase 1: 准备
-1. 连接所有设备
+1. 连接所有设备，确认 RF 开关接线
 2. 设置温度控制：
    - 打开 TEC103 温控器，设定目标温度
    - 打开温度开关（DG4000 CH2 输出 5V）
-   - **等待温度稳定后再继续**（可通过 `tec.get_temperature()` 监测，波动 < 0.05°C 后开始实验）
+   - **等待温度稳定后再继续**（波动 < 0.05°C 后开始）
 3. 设置主磁场（GS200 恒流模式）
-4. 生成 Pump 调制任意波（初始频率设为预期共振值附近）
-5. 相位校准
-6. X/Y 补偿磁场输出关闭
+4. 配置 RF 开关方案：
+   - **dg_mod CH1**: `setup_sine(freq=100e6, amplitude=0.18Vpp)` → RF 开关 IN
+   - **dg_mod CH2**: `setup_pulse(freq=90kHz, width=560ns, 5Vpp+2.5V)` → RF 开关 CTRL
+   - RF 开关 OUT → AOM（需串 **0.1μF 隔直电容**）
+5. 注意：10Hz 时序信号由 `dg_sweep` CH2 提供（不再占用 `dg_mod` CH2）
+6. 相位校准
+7. X/Y 补偿磁场输出关闭
 
 ### Phase 2: 嵌套扫描
 ```python
@@ -139,23 +155,24 @@ for V_Z in Z_voltages:
     dg_sweep.set_output(True, channel=1)
     time.sleep(0.3)
 
-    # 采集前关闭温度开关，消除温控磁场干扰
-    dg_temp.set_output(False, channel=2)
-    time.sleep(0.2)
-
     r_list = []
     for f in scan_freqs:
-        # --- 内层：同时设置调制频率和解调频率 ---
-        dg_mod.apply_wave("USER", channel=1, freq=f, ...)
+        # 采集前关闭温度开关
+        dg_temp.set_output(False, channel=2)
+
+        # --- 内层：改变 RF 开关门控频率 (CH1 100MHz 保持不动) ---
+        pulse_width = (PUMP_MOD_DUTY / 100.0) / f
+        dg_mod.setup_pulse(freq=f, amplitude=RF_GATE_AMPLITUDE,
+                           offset=RF_GATE_OFFSET, width=pulse_width, channel=2)
+        # 同步 HF2 解调频率
         demod.set_reference_frequency(hfi, freq=f, osc_idx=0)
         time.sleep(SETTLE_TIME)
 
         sample = demod.read_demod_sample(hfi, demod_idx=0)
         r_list.append(sample["r"])
 
-    # 采集结束立即恢复温度开关
-    dg_temp.set_output(True, channel=2)
-    time.sleep(1.5)  # 等待温度稳定后再进行下一轮
+        # 采集结束立即恢复温度开关
+        dg_temp.set_output(True, channel=2)
 
     results[V_Z] = {"freqs": scan_freqs, "r": np.array(r_list)}
 
@@ -197,44 +214,10 @@ B_offset = intercept            # nT
 print(f"k_Z = {k_Z:.1f} nT/V")
 print(f"B_offset = {B_offset:.1f} nT (本底磁场)")
 print(f"R² = {r_value**2:.4f}")
-
-# 更新灵敏度实验中的校准系数
-Z_V_TO_NT = k_Z
-Z_V_TO_FT = k_Z * 1e6
 ```
 
-## 数据解析规则
-
-### 各 V_Z 下的共振峰定位
-
-```
-R signal at V_Z = +0.1 V           R signal at V_Z = -0.1 V
-  |                                  |
-  |    /\                            |        /\
-  |  /    \                          |      /    \
-  |/______\____→ f_pump              |/____\______→ f_pump
-    f_res                             f_res
-  (偏大, 场大)                       (偏小, 场小)
-```
-
-### 校准曲线
-
-最终的校准图有两张：
-1. **各 V_Z 下的 R(f) 曲线**（子图阵列或叠加，直观看到共振峰偏移）
-2. **B_abs vs V_Z 线性回归**（斜率即 $k_Z$)
-
-## 注意事项
-- 调制任意波的 USER 波形内容不变，只改变 `apply_wave` 的 `freq` 参数
-- 每步需给 HF2 PLL 足够时间锁定新频率（`SETTLE_TIME` 建议 0.5s 以上）
-- 也可考虑将 DG4000 CH1 的 SYNC 输出接 HF2 的参考输入，实现硬件自动同步（视硬件接线而定）
-- 标定频率范围应覆盖共振峰两侧，以便准确拟合线宽和峰位
-- **温度管理**：与静磁场灵敏度实验相同，每次频率扫描前关闭温度开关（消除温控磁场干扰），扫描后立即恢复。两次扫描之间等待 1.5s 让温度恢复稳定。温度波动会影响 Zeeman 共振频率测量结果。
-
-```python
-# 典型采集循环中的温度控制模式
-dg_temp.set_output(False, channel=2)   # 关闭→采集
-# ... 频率扫描 ...
-dg_temp.set_output(True, channel=2)    # 恢复→等待稳定
-time.sleep(1.5)
-```
-- 每轮外层 Z 电压更新后，等待 0.5~1s 让磁场稳定后再开始内层频率扫描
+## 硬件连接注意事项
+- RF 开关输出端需串 **0.1μF 隔直电容**再接 AOM
+- DG4000 CH2 脉冲幅度 5Vpp、offset 2.5V → 0~5V TTL 电平
+- 100MHz BNC 线尽量短，避免信号反射
+- RF 开关需独立 DC 电源供电

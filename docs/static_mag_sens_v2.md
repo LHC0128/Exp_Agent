@@ -3,7 +3,7 @@ title: 静磁场灵敏度测量
 type: experiment_type
 description: 测量静磁场的色散线形，根据色散斜率和功率谱密度计算磁场灵敏度
 keywords: [dispersion, sensitivity, PSD, RAMP sweep, lock-in]
-version: 1
+version: 2
 
 # ========== 扫描方式 ==========
 scan_mode: continuous_ramp       # point_by_point | continuous_ramp
@@ -35,7 +35,7 @@ required_devices:
   - instrument: signal_generator    # X/Y 补偿磁场
     role: compensation
     channels: [1, 2]
-  - instrument: signal_generator    # Pump 调制
+  - instrument: signal_generator    # Pump 调制 (RF 开关方案)
     role: modulation
     channels: [1, 2]
   - instrument: signal_generator    # 温度开关
@@ -50,8 +50,15 @@ required_devices:
     demod_channels: 1
     has_daq: true
 
+# ========== RF 开关方案说明 ==========
+# Pump 调制不再使用任意波, 改用 RF 开关:
+#   dg_mod CH1: 100MHz 连续正弦波 → RF 开关 IN
+#   dg_mod CH2: 脉冲方波 (TTL)    → RF 开关 CTRL
+#   RF 开关 OUT → AOM (串 0.1μF 隔直电容)
+#   扫描时只改变 CH2 脉冲频率, CH1 保持 100MHz 不变
+# ======================================
+
 # ========== mapping.yaml 中的 key 与角色对应 ==========
-# skill 据此从 params/mapping.yaml 中查找各物理量的配置
 mapping_keys:
   Z_magnetic_field:               # 扫场变量
     role: sweep
@@ -70,7 +77,7 @@ mapping_keys:
     description: "Y 方向补偿磁场"
   Pump_modulation:                # 固定参数
     role: modulation
-    description: "Pump 调制任意波 + 时序方波"
+    description: "Pump 调制: CH1 100MHz 正弦 + CH2 脉冲门控 → RF 开关 → AOM"
   Temp_Switch:                    # 固定参数（实验过程中会通断）
     role: temp_switch
     description: "温度开关继电器 (5V=ON, 0V=OFF)"
@@ -85,7 +92,6 @@ mapping_keys:
     description: "HF2 锁相放大器，读取解调信号"
 
 # ========== 固定参数（哪些 mapping_key 是固定值） ==========
-# 这些物理量在实验中设一次初值后不再改变
 fixed_params:
   - Pump_laser_power
   - Probe_laser_power
@@ -104,7 +110,11 @@ fixed_params:
 
 ### Phase 1: 准备
 1. 连接所有设备，设置固定参数
-2. 生成 Pump 调制任意波（100MHz/60MHz 交替，AOM 控制）
+2. 配置 RF 开关 Pump 调制：
+   - **dg_mod CH1**: `setup_sine(freq=100e6, amplitude=0.18Vpp)` → RF 开关 IN
+   - **dg_mod CH2**: `setup_pulse(freq=90kHz, width=560ns, 5Vpp+2.5V)` → RF 开关 CTRL
+   - RF 开关 OUT → AOM（需串 **0.1μF 隔直电容**）
+3. 注意：10Hz 时序信号由 `dg_sweep` CH2 提供（不再占用 `dg_mod` CH2）
 
 ### Phase 2: 相位校准
 1. **关闭 Z 磁场输出** (DC 0V + 输出 OFF)
@@ -159,9 +169,15 @@ fall_end   = s + (1.0 - s) * (1 - crop)
 fall_mask  = (t_cycle >= fall_start) & (t_cycle < fall_end)
 ```
 
-### 注意事项 (由修复经验总结)
+### 硬件连接注意事项
+- RF 开关输出端需串 **0.1μF 隔直电容**再接 AOM，否则 DC 偏置会损坏 AOM
+- DG4000 CH2 脉冲幅度 5Vpp、offset 2.5V → 0~5V TTL 电平，适配多数 RF 开关
+- 100MHz BNC 线尽量短，避免信号反射
+- RF 开关需独立 DC 电源供电（如 +5V/GND/-5V）
+
+### 其他注意事项 (由修复经验总结)
 - 噪声测量后**必须恢复**解调器配置，否则第二次运行异常
 - `grid_cols` 必须使用 `actual_rate` 而非硬编码常量 `HF2_DEMOD_RATE`
-- Cleanup 时使用 `all_off()` 关双通道，显式关 SYNC
+- Cleanup 时保持输出状态不变，仅断开通信连接
 - 温度开关在 cleanup 中保持开启
 - 每次噪声采集完立即恢复温度开关，防止温度漂移

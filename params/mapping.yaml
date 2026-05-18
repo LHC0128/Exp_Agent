@@ -64,17 +64,17 @@ mapping:
 
   Pump_modulation:
     instrument: signal_generator
-    label: "Pump调制信号"
+    label: "Pump调制"
     resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
     channel: 1
-    description: "控制Pump光的AOM，用于周期性开关Pump光，一般为任意波(任意波前部分为100MHz的正弦震荡，后面部分为60MHz的正弦震荡，因为不同频率信号使得AOM衍射角度不同，所以当衍射角度为100MHz对应角度时Pump光打开)，通过改变任意波的频率即可实现光的开关，幅值不能超过180mV"
+    description: "100MHz 连续正弦波 → RF 开关 IN → RF 开关 OUT → AOM，控制 Pump 光耦合进入光纤。幅度范围 0-0.18V"
 
   Time_sequence:
     instrument: signal_generator
     label: "时序信号"
     resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
     channel: 2
-    description: "时序信号，一般为10Hz10V的方波"
+    description: "脉冲方波 → RF 开关 CTRL，门控 100MHz RF 信号的通断。频率即 Pump 调制频率（如 90kHz），占空比 5%，5Vpp+2.5V offset"
 
   Heat_Control:
     instrument: signal_generator

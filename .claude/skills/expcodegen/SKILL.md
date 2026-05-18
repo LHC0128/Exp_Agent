@@ -9,6 +9,15 @@ user-invocable: true
 
 将自然语言描述的实验方案，自动转化为可执行的 Jupyter Notebook（存放在 `experiments/` 目录下）。
 
+## 核心原则：数据采集与分析分离
+
+所有实验 Notebook 均采用此架构：
+- **数据采集 Cell**：仅执行扫描 + 保存原始 `.npz` 文件，不含分析逻辑
+- **数据分析 & 绘图 Cell**：自包含，优先从 `.npz` 文件加载数据，也支持使用内存变量
+- 好处：重启 kernel 后仍可复现分析结果，数据与代码解耦
+
+生成代码时**必须始终遵循此原则**，将采集与分析和绘图拆分为两个独立 Cell。
+
 ### 配置文件总览
 
 | 文件 | 用途 | 变更频率 |
@@ -18,26 +27,6 @@ user-invocable: true
 | `docs/<experiment_type>.md` | 实验类型文档（含 YAML frontmatter） | 中（新增实验类型时创建） |
 
 三个配置文件彼此独立，方便单独修改不影响其他配置。
-
-### 数据目录结构
-
-每次实验运行产生一个独立目录，自包含所有数据：
-
-```
-data/
-  <experiment_type>/                  # 实验类型（如 magneto_optical_kerr）
-    <MMDD>_<HHMM>_<tag>/              # 单次运行（简洁命名）
-      params.yaml           # 运行时参数快照（含 mapping、限值、扫描参数）
-      metadata.yaml         # 实验元数据（类型、目的、操作人）
-      raw/                  # 原始数据
-        scan_data.npz       # 扫描数据
-        noise_raw/          # 噪声原始数据（逐次保存）
-        scope_waveform.npz  # 示波器波形（如适用）
-      results/              # 分析结果
-        dispersion_curve.png
-        full_analysis.png
-        analysis.json       # 分析结果（如灵敏度值）
-```
 
 ---
 
@@ -55,14 +44,15 @@ data/
 - **每个扫描点记录什么数据**？（如"锁相 R 值、示波器波形"）
 - **实验时序**（每点等待稳定时间等）
 
-> 如果用户描述不够清晰，通过提问引导补全。
+> 如果用户未明确指定以下信息，通过提问引导补全：实验类型、扫描变量及其范围/点数、固定参数及其取值、每个扫描点记录的数据、实验时序（稳定时间等）。
 
 ### Step 2：读取物理量↔仪器映射
 
-检查 `params/mapping.yaml`，看用户描述的物理量是否都已定义。
+Step 2a — 检查覆盖度：将用户描述的物理量与 `params/mapping.yaml` 中的 key 逐一比对。
 
-- **已定义** → 从中提取各物理量对应的仪器类型、连接地址、通道等信息
-- **缺少某个物理量** → 询问用户该物理量的仪器信息，然后更新 `params/mapping.yaml`
+Step 2b — 处理缺失：如有物理量未在映射文件中定义，询问用户该物理量的仪器信息（仪器类型、连接地址、通道等），然后更新 `params/mapping.yaml`。
+
+Step 2c — 提取信息：从映射文件中读取已定义物理量的仪器类型、资源地址、通道号等信息，用于后续生成连接代码。
 
 ```python
 # 映射文件字段说明
@@ -78,7 +68,7 @@ magnetic_field:              # 物理量名 (snake_case)，代码中作为变量
   description: "..."        # 文字说明
 ```
 
-### Step 2b：读取实验类型文档
+### Step 3：读取实验类型文档
 
 检查 `docs/` 目录下是否存在对应的 `.md` 文档（文件名匹配实验类型，如 `static_mag_sens.md`）。
 
@@ -106,7 +96,7 @@ learned_notes:         # 修复经验总结
 ---
 ```
 
-### Step 3：读取安全限值
+### Step 4：读取安全限值
 
 从 `params/safety_limits.yaml` 加载限值。
 
@@ -123,18 +113,6 @@ magnetic_field:
 ```
 
 对于 GS200，除限值检查外，还需在代码中额外调用 `set_current_limit()` / `set_voltage_limit()` 做硬件级保护。
-
-### Step 4：分析实验流程
-
-根据 Step 1-3 的信息，生成实验流程：
-
-1. **扫描参数**：哪个物理量是扫描变量？起止范围？点数/步长？
-2. **固定参数**：哪些物理量设固定初值？
-3. **记录数据**：每个扫描点读什么？（锁相解调值、示波器波形……）
-4. **实验时序**：扫描前延迟、设置后等待稳定时间、点间间隔
-5. **结果目录**：`data/<实验类型>/<时间戳>_<目的>/`
-
-如果用户没有明确，根据常见实验类型给出合理默认值。也可检查 `params/experiment_types/` 下是否存在对应模板文件。
 
 ### Step 5：检测实验类型 → 选择代码模板
 
@@ -168,25 +146,11 @@ daq_results = daq.acquire_data(...)
 
 ## Notebook 万能模板 ↓
 
-以下模板是设备无关的通用结构。每个单元根据实验中实际涉及的设备动态生成具体代码。
+以下模板是设备无关的通用结构。
 
-### Cell 0：标题
+### Cell 0：标题 (markdown)
 
-```markdown
-# {实验标题}
-
-{实验目的/描述}
-
-## 涉及设备
-- {物理量} → {仪器类型} @ {resource}
-
-## 安全限值
-- {物理量}: [{min}, {max}] {unit}
-
-## 实验参数
-- 扫描: {变量} {start} → {stop}
-- 固定: {变量} = {value}
-```
+写入实验名称、目的、涉及设备、参数概览。
 
 ### Cell 1：路径与导入
 
@@ -276,47 +240,21 @@ def validate_safety_limit(name, value):
 ### Cell 3：连接设备
 
 ```python
-devices = {}  # 空字典
-
+devices = {}
 try:
-    # ---- [按需] 连接 GS200 ----
-    # if "gs200" in [MAPPING[k]["instrument"] for k in ...]:
-    #     gs_cfg = MAPPING["{物理量名}"]
-    #     gs = GS200Instrument(gs_cfg["resource"])
-    #     gs.connect()
-    #     print(f"GS200 已连接: {gs.idn()}")
-    #     lim = LIMITS["{物理量名}"]
-    #     if gs_cfg["source_function"] == "CURRent":
-    #         gs.set_current_limit(lim["max"] / 1000.0)
-    #     else:
-    #         gs.set_voltage_limit(lim["max"])
-    #     devices["{物理量名}"] = gs
-
-    # ---- [按需] 连接 DG4000 ----
-    # dg = DG4000Instrument(cfg["resource"], channel=cfg["channel"])
-    # dg.connect()
-    # devices["{物理量名}"] = dg
-
-    # ---- [按需] 连接 TEC103 ----
-    # tec = TECInstrument(port=cfg["resource"])
-    # tec.connect()
-    # devices["{物理量名}"] = tec
-
-    # ---- [按需] 连接 HF2 ----
-    # hf2_cfg = MAPPING["{物理量名}"]
-    # hfi = HF2Instrument(
-    #     host=hf2_cfg.get("host", "127.0.0.1"),
-    #     port=hf2_cfg.get("port", 8005),
-    #     api_level=1,
-    #     device_id=hf2_cfg["device_id"],
-    # )
-    # hfi.connect()
-    # devices["lockin"] = hfi
-
+    # 按实验涉及的仪器逐个连接，例如：
+    # cfg = MAPPING["{物理量名}"]
+    # dev = GS200Instrument(cfg["resource"]); dev.connect(); devices["..."] = dev
+    # dev = DG4000Instrument(cfg["resource"], channel=cfg["channel"]); dev.connect()
+    # dev = TECInstrument(port=cfg["resource"]); dev.connect()
+    # hfi = HF2Instrument(host=..., port=..., api_level=1, device_id=...); hfi.connect()
 except Exception as e:
     print(f"设备连接失败: {e}")
     raise
 ```
+
+> 每种仪器连接后调用 `set_current_limit()`/`set_voltage_limit()`（GS200）或 `set_ref_clock_source()`（DG4000）等初始化。
+> 所有设备存入 `devices` 字典，后续通过该字典引用。
 
 ### Cell 4：设置初始值并创建运行目录
 
@@ -354,6 +292,7 @@ for i, val in enumerate(scan_values):
     recorded_data.setdefault("r", []).append(sample["r"])
 
 np.savez(raw_dir / "scan_data.npz", **recorded_data)
+print(f"原始数据已保存: {raw_dir / 'scan_data.npz'}")
 ```
 
 #### 模式 B：连续扫场 (continuous_ramp)
@@ -374,39 +313,47 @@ daq_cfg = DAQConfig(
 daq_results = daq.acquire_data(hfi, config=daq_cfg, demod_idx=0,
                                actual_rate=actual_rate, timeout=DAQ_DURATION + 10.0)
 
+# 保存原始 DAQ 数据
+np.savez(raw_dir / "daq_data.npz", **daq_results)
+
 # 停止扫场
 dg_sweep.set_output(False, channel=1)
 dg_sweep.set_sync_state(False, channel=1)
 ```
 
-### Cell 6：安全断开
+### Cell 6：数据分析 & 绘图
+
+独立于数据采集 Cell，优先从 `raw/scan_data.npz` 加载，后备用内存变量。
 
 ```python
-# 关闭所有设备输出
+data_path = raw_dir / "scan_data.npz"
+if data_path.exists():
+    loaded = np.load(data_path)
+    print(f"✅ 从 {data_path} 加载数据成功")
+else:
+    if "关键变量" not in dir():
+        raise FileNotFoundError(f"找不到 {data_path}")
+
+# 分析逻辑 → 绘图 → fig.savefig(results_dir / "analysis.png")
+# 分析结果 → yaml.dump(result, open(results_dir / "analysis.yaml", "w"))
+```
+
+### Cell 7：安全断开
+
+```python
 for name, dev in devices.items():
     try:
-        if name == "dg_temp":  # 保持温度开关开启
-            if hasattr(dev, "set_output"):
-                dev.set_output(False, channel=1)
-            continue
-        if hasattr(dev, "all_off"):
-            dev.all_off()                     # 关双通道
-        elif hasattr(dev, "set_output"):
-            dev.set_output(False)
+        if hasattr(dev, "all_off"): dev.all_off()
+        elif hasattr(dev, "set_output"): dev.set_output(False)
     except Exception as e:
         print(f"{name} 关闭失败: {e}")
-
-# 显式关闭 SYNC
-for sync_name in ["dg_sweep", "dg_mod"]:
-    dev = devices.get(sync_name)
+for name in ["dg_sweep", "dg_mod"]:
+    dev = devices.get(name)
     if dev and hasattr(dev, "set_sync_state"):
         dev.set_sync_state(False, channel=1)
         dev.set_sync_state(False, channel=2)
-
-# 断开连接
 for name, dev in devices.items():
-    if hasattr(dev, "disconnect"):
-        dev.disconnect()
+    if hasattr(dev, "disconnect"): dev.disconnect()
 ```
 
 ---
@@ -415,21 +362,21 @@ for name, dev in devices.items():
 
 ### 引用 `src/` 中的库
 
-所有本地包已通过 `pip install -e .` 安装到 `agent_exp_env`，可直接 import：
+所有本地包已通过 `pip install -e .` 安装，直接 import：
 
 ```python
 from gs200 import GS200Instrument
 from signal_generator import DG4000Instrument
 from tec_controller import TECInstrument
 from lockin_amplifier import HF2Instrument, demod, daq, ...
-from sds_acquisition import SDSInstrument, SDSAcquisition, AcquisitionConfig, ...
+from sds_acquisition import SDSInstrument, SDSAcquisition, ...
 ```
 
 ### 修复经验（自动注入注释）
 
-当实验类型文档的 `learned_notes` 字段有内容时，在对应位置自动生成带有 `# [经验]` 标记的注释：
+实验类型文档 `learned_notes` → 对应位置生成 `# [经验]` 注释。
 
 ```python
 # [经验] grid_cols 必须使用 actual_rate 而非硬编码常量
-grid_cols=int(actual_rate * DAQ_DURATION)
+grid_cols = int(actual_rate * DAQ_DURATION)
 ```

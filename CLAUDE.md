@@ -10,27 +10,94 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 这是一个实验项目，涵盖实验设计、数据记录、数据分析等多个环节。项目由我和用户协作推进，共同维护。
 
+## 实验代码生成 Skill
+
+本仓库包含一个自定义 AI Skill（`.claude/skills/expcodegen/SKILL.md`），用于根据自然语言描述自动生成实验 Notebook 代码。
+
+调用方式：在与 Claude 对话中描述实验方案，Skill 会自动读取 `params/mapping.yaml`、`params/safety_limits.yaml` 以及 `docs/*.md` 实验类型文档，生成完整的 Jupyter Notebook。
+
 ## 代码规范
 
 - Python 绘图的所有标注（坐标轴标签、图例、标题、注释等）使用**英文**，便于图表在论文/报告中的复用。
 - 其他代码注释、文档字符串、提交信息等使用**中文**（遵循语言要求）。
+- 实验参数在 Cell 顶部集中定义，使用全大写命名（如 `SCAN_RANGE`、`FIXED_PARAMS`）。
+- 安全限值检查：所有输出量设置前调用 `validate_safety_limit()`。
+- 扫描循环用 `try/finally` 包裹，确保异常时设备能恢复安全状态。
+
+## 实验类型文档规范
+
+`docs/*.md` 是实验类型的结构化描述，包含 YAML frontmatter：
+
+```yaml
+---
+title: 实验名称
+type: experiment_type
+scan_mode: point_by_point | continuous_ramp | nested_scan
+defaults:              # Notebook 默认参数
+  PARAM_NAME: value
+mapping_keys:          # 涉及物理量及其角色
+  key_name:
+    role: scan | fixed | detection
+required_devices:      # 所需设备清单
+learned_notes:         # 修复经验（自动注入代码注释）
+---
+```
 
 ## 目录结构
 
 ```
 src/
-  sds_acquisition/       # 示波器控制 (SDS 系列，已实现)
-  signal_generator/      # 信号发生器 (DG4000 系列，已实现)
-  lockin_amplifier/      # 锁相放大器（HF2，已实现）
-  gs200/                 # 直流电压/电流源（Yokogawa GS200，已实现）
-  tec_controller/        # 温控器（光测未来 TEC103，已实现）
-  experiments/           # 实验脚本（预留）
-examples/                # Jupyter notebook 示例
-data/                    # 原始数据
-params/                  # 实验参数、配置
-results/                 # 实验结果（图片、图表等）
+  sds_acquisition/       # 示波器控制 (SDS 系列)
+  signal_generator/      # 信号发生器 (DG4000 系列)
+  lockin_amplifier/      # 锁相放大器 (Zurich HF2)
+  gs200/                 # 直流电压/电流源 (Yokogawa GS200)
+  tec_controller/        # 温控器 (光测未来 TEC103)
+experiments/             # 实验 Jupyter Notebook
+  Static_Magnetic_Field_Sensitivity.ipynb
+  XY_Compensation_Calibration.ipynb
+  Z_Field_Calibration.ipynb
+examples/                # 设备使用示例 Notebook
+  data_acquisition_demo.ipynb
+  gs200_demo.ipynb
+  lockin_amplifier_demo.ipynb
+  signal_generator_demo.ipynb
+  tec_controller_demo.ipynb
+data/                    # 原始数据（按实验类型分目录）
+  Static_Magnetic_Field_Sensitivity/
+  XY_Compensation_Calibration/
+  Z_Field_Calibration/
+params/                  # 实验参数、YAML 配置文件
+  mapping.yaml           # 物理量↔仪器通道映射
+  safety_limits.yaml     # 各物理量安全限值
+  experiment_types/      # 实验类型模板（预留）
+results/                 # 实验分析结果（图片、图表等）
 manuals/                 # 设备编程手册、技术文档
-docs/                    # 模块文档（sds_acquisition.md, signal_generator.md, lockin_amplifier.md, gs200.md, tec_controller.md）
+docs/                    # 文档
+  experiment_template.md      # 实验方案填写模板
+  XY_Compensation_Calibration.md  # X/Y 补偿校准实验文档
+  z_field_calibration.md      # Z 磁场标定实验文档
+  static_mag_sens.md          # 静磁场灵敏度实验文档
+  gs200.md                    # GS200 模块文档
+  signal_generator.md         # DG4000 模块文档
+  lockin_amplifier.md         # HF2 模块文档
+  sds_acquisition.md          # SDS 示波器模块文档
+  tec_controller.md           # TEC103 模块文档
+.claude/
+  skills/expcodegen/SKILL.md  # 实验代码生成 Skill
+```
+
+## 单次实验运行目录结构
+
+```
+data/<实验类型>/MMDD_HHMM_tag/
+  experiment_config.yaml    # 运行时完整配置（可复现用）
+  raw/                      # 原始数据
+    scan_data.npz           # 粗扫数据
+    refine_data.npz         # 精细扫描数据（可选）
+  results/                  # 分析结果
+    *.png                   # 图表
+    optimal_xy.yaml         # 校准结果（XY 补偿）
+    analysis.yaml           # 分析结果（灵敏度等）
 ```
 
 ## 环境
@@ -45,5 +112,9 @@ docs/                    # 模块文档（sds_acquisition.md, signal_generator.m
 **注意**：`sds_acquisition` 等仪器控制包已通过 `pip install -e .` 安装到虚拟环境中，
 可直接 `import`，无需设置 `PYTHONPATH`。
 
-- HF2 锁相放大器依赖 `zhinst` 包：`agent_exp_env\Scripts\pip install zhinst`
-- TEC103 温控器依赖 `pyserial` 包：`agent_exp_env\Scripts\pip install pyserial`
+### 第三方依赖
+
+- HF2 锁相放大器：`agent_exp_env\Scripts\pip install zhinst`
+- TEC103 温控器：`agent_exp_env\Scripts\pip install pyserial`
+- 仪器通信：`agent_exp_env\Scripts\pip install pyvisa pyvisa-py`
+- 数据处理：`agent_exp_env\Scripts\pip install numpy scipy matplotlib pyyaml`
