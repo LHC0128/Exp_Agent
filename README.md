@@ -8,13 +8,14 @@
 src/
   sds_acquisition/       # SDS 系列示波器控制
   signal_generator/      # DG4000 系列信号发生器控制
-  lockin_amplifier/      # HF2 锁相放大器控制
+  lockin_amplifier/      # HF2 锁相放大器控制（含 DAQ 模块）
   gs200/                 # Yokogawa GS200 直流电压/电流源
   tec_controller/        # 光测未来 TEC103 温控器
 experiments/             # 实验 Jupyter Notebook
   Static_Magnetic_Field_Sensitivity.ipynb   # 静磁场灵敏度测量
   XY_Compensation_Calibration.ipynb        # X/Y 补偿磁场校准
   Z_Field_Calibration.ipynb                # Z 磁场频率标定
+  Noise_Spectrum_XY_Ctrl.ipynb             # X/Y 控制噪声谱测量 ★
 examples/                # 设备使用示例 Notebook
 data/                    # 原始数据（按实验类型分目录）
 params/                  # 实验参数、YAML 配置文件
@@ -39,9 +40,10 @@ docs/                    # 模块文档 + 实验类型文档
 
 | 实验 | 文档 | 说明 |
 |------|------|------|
-| 静磁场灵敏度测量 | [📄 文档](docs/static_mag_sens.md) | 连续扫场测色散线形，计算磁场灵敏度 |
+| 静磁场灵敏度测量 | [📄 文档](docs/static_mag_sens_v2.md) | 连续扫场测色散线形，计算磁场灵敏度 |
 | X/Y 补偿磁场校准 | [📄 文档](docs/XY_Compensation_Calibration.md) | 二维扫描找 R 最大点，消除横磁场 |
 | Z 磁场频率标定 | [📄 文档](docs/z_field_calibration.md) | 多点 V→B 线性回归标定 |
+| X/Y 控制噪声谱测量 | [📄 文档](docs/noise_spectrum_xy_ctrl.md) | 扫描 XY 幅度测量 PSD，提取原子/光子噪声谱 ★ |
 
 ### 采集与分析分离
 

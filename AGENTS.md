@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents when working with code in this repository.
 
 ## 注意事项
 
@@ -12,13 +12,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-这是一个实验项目，涵盖实验设计、数据记录、数据分析等多个环节。项目由我和用户协作推进，共同维护。
+这是一个实验项目，涵盖实验设计、数据记录、数据分析等多个环节。项目由用户主导，AI 辅助推进。
 
 ## 实验代码生成 Skill
 
-本仓库包含一个自定义 AI Skill（`.claude/skills/expcodegen/SKILL.md`），用于根据自然语言描述自动生成实验 Notebook 代码。
+本仓库包含一个自定义 AI Skill（`.agents/skills/expcodegen/SKILL.md`），用于根据自然语言描述自动生成实验 Notebook 代码。
 
-调用方式：在与 Claude 对话中描述实验方案，Skill 会自动读取 `params/mapping.yaml`、`params/safety_limits.yaml` 以及 `docs/*.md` 实验类型文档，生成完整的 Jupyter Notebook。
+调用方式：在与 AI 对话中描述实验方案，Skill 会自动读取 `params/mapping.yaml`、`params/safety_limits.yaml` 以及 `docs/*.md` 实验类型文档，生成完整的 Jupyter Notebook。
 
 ## 代码规范
 
@@ -91,9 +91,9 @@ docs/                    # 文档
   sds_acquisition.md          # SDS 示波器模块文档
   tec_controller.md           # TEC103 模块文档
 .claude/
-  skills/expcodegen/SKILL.md  # 实验代码生成 Skill
+  skills/expcodegen/SKILL.md  # 实验代码生成 Skill（Claude Code 用）
 .agents/
-  skills/expcodegen/SKILL.md  # 实验代码生成 Skill（AGENTS 兼容）
+  skills/expcodegen/SKILL.md  # 实验代码生成 Skill（通用 AI Agent 用）
 ```
 
 ## 单次实验运行目录结构
