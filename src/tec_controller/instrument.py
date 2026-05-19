@@ -49,7 +49,14 @@ class TECInstrument:
     # ------------------------------------------------------------------
 
     def connect(self) -> None:
-        """打开串口连接."""
+        """打开串口连接。防御式：已有连接则先断开再重连。"""
+        # 防御式清理：如果已有旧连接未释放，先关闭
+        if self._serial is not None:
+            try:
+                self._serial.close()
+            except Exception:
+                pass
+            self._serial = None
         self._serial = serial.Serial(
             port=self.port,
             baudrate=self.baudrate,
@@ -73,6 +80,19 @@ class TECInstrument:
     @property
     def connected(self) -> bool:
         return self._serial is not None and self._serial.is_open
+
+    # ------------------------------------------------------------------
+    # 自动清理
+    # ------------------------------------------------------------------
+
+    def __del__(self) -> None:
+        """对象销毁时自动释放串口（防御式编程，避免 GC 竞态）。"""
+        try:
+            ser = getattr(self, "_serial", None)
+            if ser is not None and ser.is_open:
+                ser.close()
+        except Exception:
+            pass
 
     def __enter__(self) -> "TECInstrument":
         self.connect()
