@@ -1,7 +1,7 @@
 ---
 title: X/Y 交流控制噪声谱测量
 type: experiment_type
-description: 扫描 X/Y 补偿线圈的交流控制场幅度，测量不同控制强度下的功率谱密度 $S_{S_1}(\omega, \Omega_\text{Ctrl})$，通过二维拟合同时提取原子噪声谱 $S_\beta(\omega)$ 和光子噪声 $N_{S_1}(\omega)$
+description: 扫描 X/Y 补偿线圈的交流控制场幅度，测量不同控制强度下的功率谱密度 $S_{S_1}(\omega, \Omega_\text{Ctrl})$，通过二维拟合同时提取可控噪声谱 $S_\beta(\omega)$ 和不可控噪声 $N_{S_1}(\omega)$
 keywords: [noise spectrum, XY control, PSD, Welch, Lorentzian, burst mode, Floquet, noise spectroscopy, HF2 DAQ]
 version: 2
 paper_ref: paper/optimal_control.tex
@@ -106,13 +106,13 @@ learned_notes:
 |-------------|---------|------|
 | $\Omega_\text{Ctrl}$ | X/Y 交流控制幅度 → 有效 Rabi 频率 | 通过 X/Y 线圈施加交流磁场，幅度为扫描变量 |
 | $S_{S_1}(\omega, \Omega_\text{Ctrl})$ | Welch PSD of HF2 解调 Y 信号 | 每个幅度点采集的噪声 PSD |
-| $S_\beta(\omega)$ | 可调噪声（原子噪声） | 二维拟合提取的目标 1 |
-| $N_{S_1}(\omega)$ | 不可调噪声（光子噪声 + 电子噪声） | 二维拟合提取的目标 2 |
+| $S_\beta(\omega)$ | 可调噪声（可控噪声） | 二维拟合提取的目标 1 |
+| $N_{S_1}(\omega)$ | 不可调噪声（不可控噪声 + 电子噪声） | 二维拟合提取的目标 2 |
 | $L(\omega, \Omega_\text{Ctrl})$ | 洛伦兹滤波函数 | 控制场调制的系统响应函数 |
 
 ## 原理
 
-在 Bell-Bloom 磁力仪中，探测光 $S_1$ 的功率谱密度由原子噪声和光子噪声共同贡献：
+在 Bell-Bloom 磁力仪中，探测光 $S_1$ 的功率谱密度由可控噪声和不可控噪声共同贡献：
 
 $$S_{S_1}(\omega) = N_{S_1}(\omega) + 4G^2 S_2^2 L(\omega, \Omega_\text{Ctrl}) S_\beta(\omega)$$
 
@@ -163,15 +163,15 @@ $$S_{S_1}(\Omega_\text{Ctrl}; \omega) = N_{S_1}(\omega) + A \cdot \frac{\gamma^2
 |---------|------|------|
 | `gamma` | $\gamma$ | 洛伦兹线宽 (Hz) |
 | `Amp` | $A$ | $\propto S_\beta(\omega)$，振幅 (V²/Hz) |
-| `D` | $N_{S_1}(\omega)$ | 基线噪声 = 光子噪声 + 电子噪声 (V²/Hz) |
+| `D` | $N_{S_1}(\omega)$ | 基线噪声 = 不可控噪声 + 电子噪声 (V²/Hz) |
 | `dw` | $\Delta\omega$ | 控制频率偏移 (Hz) |
 
 分析 Cell 自动保存 `results/noise_spectra.npz`，可直接被最优控制设计 Notebook 加载：
 
 ```python
 data = np.load("results/noise_spectra.npz")
-S_beta = data["S_beta"]          # 原子噪声谱 (V²/Hz)
-N_S1 = data["N_S1"]              # 光子噪声谱 (V²/Hz)
+S_beta = data["S_beta"]          # 可控噪声谱 (V²/Hz)
+N_S1 = data["N_S1"]              # 不可控噪声谱 (V²/Hz)
 freq_axis = data["freq_axis"]    # 频率轴 (Hz)
 ```
 
@@ -185,7 +185,7 @@ freq_axis = data["freq_axis"]    # 频率轴 (Hz)
 HF2 解调器 Y 输出（digital）→ DAQ 模块 → 时域波形
 ```
 
-采集 `sample.y`（校相 + 偏置后的正交分量），包含原子噪声信息。
+采集 `sample.y`（校相 + 偏置后的正交分量），包含可控噪声信息。
 
 ### 扫描策略
 
@@ -298,7 +298,7 @@ data/Noise_Spectrum_XY_Ctrl/
       calibration.png           # 标定图（散点 + 拟合 + PSD 伪彩图 + 验证）
       noise_spectrum_2d.png     # 控制幅度 × 频率的 PSD 伪彩图
       noise_spectrum_lines.png  # 典型幅度的 PSD 线图
-      noise_spectra_extracted.png # 提取的原子/光子噪声谱
+      noise_spectra_extracted.png # 提取的可控/不可控噪声谱
 ```
 
 ### 分析结果

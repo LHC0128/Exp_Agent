@@ -43,7 +43,7 @@ docs/                    # 模块文档 + 实验类型文档
 | 静磁场灵敏度测量 | [📄 文档](docs/static_mag_sens_v2.md) | 连续扫场测色散线形，计算磁场灵敏度 |
 | X/Y 补偿磁场校准 | [📄 文档](docs/XY_Compensation_Calibration.md) | 二维扫描找 R 最大点，消除横磁场 |
 | Z 磁场频率标定 | [📄 文档](docs/z_field_calibration.md) | 多点 V→B 线性回归标定 |
-| X/Y 控制噪声谱测量 | [📄 文档](docs/noise_spectrum_xy_ctrl.md) | 扫描 XY 幅度测量 PSD，提取原子/光子噪声谱 ★ |
+| X/Y 控制噪声谱测量 | [📄 文档](docs/noise_spectrum_xy_ctrl.md) | 扫描 XY 幅度测量 PSD，提取可控/不可控噪声谱 ★ |
 
 ### 采集与分析分离
 
