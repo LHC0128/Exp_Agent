@@ -256,10 +256,41 @@ except Exception as e:
 > 每种仪器连接后调用 `set_current_limit()`/`set_voltage_limit()`（GS200）或 `set_ref_clock_source()`（DG4000）等初始化。
 > 所有设备存入 `devices` 字典，后续通过该字典引用。
 
-### Cell 4：设置初始值并创建运行目录
+### Cell 4：设置初始值
+
+按以下顺序执行：
+1. ✅ 设置固定参数（光功率 DC、磁场电流、温度设定等）
+2. ✅ 等待温度稳定（`while` 循环轮询，±1°C 容差）
+3. ✅ 配置 Pump 调制（RF 开关方案：CH1 载波 + CH2 脉冲门控 + SYNC）
+4. ✅ **最后**创建运行目录 + 保存 `experiment_config.yaml`
 
 ```python
-# 创建本次运行目录 (简洁命名: MMDD_HHMM_tag)
+# ---- 1. Pump 光功率 (DC) ----
+validate_safety_limit("Pump_laser_power", FIXED_PARAMS["Pump_laser_power"])
+dg_laser.setup_dc(FIXED_PARAMS["Pump_laser_power"], channel=1)
+# ---- 2. Probe 光功率 (DC) ----
+dg_laser.setup_dc(FIXED_PARAMS["Probe_laser_power"], channel=2)
+# ---- 3. 主磁场 ----
+gs.set_current(FIXED_PARAMS["main_magnetic_field"] / 1000.0)
+gs.set_output(True)
+# ---- 4. 温度控制 ----
+tec.set_target_temperature(FIXED_PARAMS["temperature"], channel=1)
+tec.set_enable(True, channel=1)
+while True:                          # 等待温度稳定
+    time.sleep(5)
+    t = tec.get_temperature(channel=1)
+    if abs(t - FIXED_PARAMS['temperature']) < 1:
+        break
+# ---- 5. 温度开关 (ON) ----
+dg_temp.setup_dc(FIXED_PARAMS["Temp_Switch"], channel=2)
+
+# ---- Pump 调制配置（RF 开关方案）----
+dg_mod.setup_sine(freq=100e6, amplitude=PUMP_MOD_AMPLITUDE, channel=1)
+dg_mod.setup_pulse(freq=PUMP_MOD_FREQ, amplitude=5.0, offset=2.5, channel=2)
+dg_mod.set_pulse_dcycle(PUMP_MOD_DUTY, channel=2)
+dg_mod.set_sync_state(True, channel=2)
+
+# ========== 创建运行目录（所有参数就绪后）==========
 timestamp = datetime.now().strftime("%m%d_%H%M")
 run_dir = project_root / "data" / EXPERIMENT_TYPE / f"{timestamp}_{RUN_TAG}"
 run_dir.mkdir(parents=True, exist_ok=True)
@@ -267,10 +298,20 @@ run_dir.mkdir(parents=True, exist_ok=True)
 (results_dir := run_dir / "results").mkdir(exist_ok=True)
 print(f"运行目录: {run_dir}")
 
-# 设置固定参数（按需）
-# dg.set_amplitude(FIXED_PARAMS["laser_power"], channel=1)
-# tec.set_target_temperature(FIXED_PARAMS["temperature"], channel=1)
-# tec.set_enable(True, channel=1)
+# ========== 保存实验配置到运行目录 ==========
+config = {
+    "experiment_type": EXPERIMENT_TYPE,
+    "purpose": PURPOSE,
+    "timestamp": timestamp,
+    "scan_params": { ... },        # 扫描参数
+    "fixed_params": FIXED_PARAMS,  # 固定参数
+    "pump_modulation": { ... },    # Pump 调制参数
+    "hf2_demod": { ... },          # HF2 解调器参数
+}
+config_path = run_dir / "experiment_config.yaml"
+with open(config_path, "w", encoding="utf-8") as f:
+    yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+print(f"实验配置已保存: {config_path}")
 
 print("初始值设置完成")
 ```

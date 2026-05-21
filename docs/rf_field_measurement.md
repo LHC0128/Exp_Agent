@@ -1,47 +1,59 @@
 ---
-title: 射频场测量
+title: 射频场灵敏度测量（AM 外部调制方案）
 type: experiment_type
-description: 利用 Bell-Bloom 磁力仪测量射频场的幅度和频率响应。通过 X/Y 方向线圈施加预计算的任意波形控制场，使用 HF2 双解调器级联结构（Demod 0 → Demod 3）提取射频场相关信息。
-keywords: [RF field, Bell-Bloom, arbitrary waveform, double demodulation, cascaded demodulator, HF2 DAQ]
-version: 1
+description: 利用 Bell-Bloom 磁力仪测量 Z 方向射频场灵敏度。通过 DG4000 AM 外部调制模式产生 X/Y 旋转控制场，dg_sweep CH1 Burst 正弦波输出 Z 射频场，扫描 Z 射频场幅度获得响应曲线，结合 Demod 3 的噪声 PSD 计算灵敏度。参照静磁场灵敏度测量流程分为响应曲线测量和灵敏度测量两部分。
+keywords: [RF field, sensitivity, AM external modulation, cascaded demodulator, HF2 DAQ, DG4000, dispersion, PSD]
+version: 2
 
-scan_mode: point_by_point      # 每点加载任意波形文件并采集
+scan_mode: point_by_point      # 逐点扫描 Z 射频场幅度
 
 # ========== 默认参数 ==========
 defaults:
-  # ---- 扫描参数 ----
-  RF_AMP_START: 0.01           # 射频场幅度扫描起始 (V)
-  RF_AMP_STOP: 5.0             # 射频场幅度扫描终止 (V)
+  # ---- 响应曲线扫描参数（Phase A）----
+  RF_AMP_START: 0.01           # Z 射频场幅度扫描起始 (V)
+  RF_AMP_STOP: 5.0             # Z 射频场幅度扫描终止 (V)
   RF_AMP_POINTS: 200           # 扫描点数
-  RF_SETTLE_TIME: 0.5          # 每点等待稳定时间 (s)
-  # ---- 任意波形文件 ----
-  ARB_WAVEFORM_DIR: "arb_waveforms/"  # 任意波形数据文件存放目录
-  ARB_WAVEFORM_FILE: "rf_ctrl_waveform.csv"  # 默认波形文件名
-  # ---- X/Y 控制信号 ----
-  XY_CTRL_FREQ: 90000          # X/Y 控制载波频率 (Hz)，等于 Larmor 频率
-  XY_CTRL_PHASE: 90            # X/Y 控制信号相对 Pump 调制的相位延迟 (deg)
-  XY_CTRL_QUAD: 90             # X 与 Y 之间的正交相位差 (deg)
+  RF_SETTLE_TIME: 0.3          # 每点等待稳定时间 (s)
+  # ---- 噪声采集参数（Phase B）----
+  NOISE_N_AVG: 10              # 噪声采集平均次数
+  NOISE_DURATION: 1.0          # 每次噪声采集时长 (s)
+  NOISE_RATE: 100000           # 噪声采集采样率 (Sa/s)
+  NOISE_NPERSEG: 10000         # Welch PSD 每段点数
+  # ---- 包络 A(t) 参数 ----
+  # [经验] DG4000 MOD Input 满量程 1.3V，外部 AM 线性响应。
+  #       方波 A(t)=0V → AM 输出=0（自然载波抑制）
+  #       方波 A(t)=1.3V → AM 输出=载波满幅度
+  A_ENV_FREQ: 1000             # A(t) 包络频率 (Hz)
+  A_ENV_AMPLITUDE: 1.3         # A(t) 包络幅度 (Vpp)
+  A_ENV_OFFSET: 0.65           # A(t) DC 偏置 (V)，0~1.3V 方波
+  A_ENV_SHAPE: "SQUare"        # 包络波形：方波 0V ↔ 1.3V
+  # ---- X/Y 载波参数（dg_comp AM 模式）----
+  XY_CARRIER_FREQ: 90000       # X/Y 载波频率 (Hz)，等于 Larmor 频率
+  XY_CARRIER_AMPLITUDE: 5.0   # 载波幅度 (Vpp)
+  XY_CARRIER_PHASE: 0          # CH1 载波初始相位 (deg)，校相后确定
+  XY_CARRIER_QUAD: 90          # CH2 相对 CH1 的相位差 (deg)
+  XY_AM_DEPTH: 100             # AM 调制深度 (%)
+  # ---- Z 射频场参数（dg_sweep CH1 Burst）----
+  Z_RF_FREQ: 10000             # Z 射频场频率 (Hz)
+  Z_RF_AMPLITUDE_INIT: 1.0     # Z 射频场幅度初始值 (Vpp)，响应曲线扫描变量
   # ---- Pump 调制参数 ----
   PUMP_MOD_FREQ: 90000         # Pump 调制频率 (Hz)，与 Larmor 频率一致
   PUMP_MOD_DUTY: 5             # 脉冲占空比 (%)
-  # ---- HF2 解调器 0 配置（主信号解调） ----
+  # ---- HF2 解调器 0 配置（主信号解调，需尽可能小的 TC 以响应射频场）----
   DEMOD0_IDX: 0                # 解调器 0（主信号检波）
   DEMOD0_OSC_IDX: 0            # 振荡器 0，频率 = PUMP_MOD_FREQ
   DEMOD0_OSC_FREQ: 90000       # 振荡器 0 频率 (Hz)
   DEMOD0_SIGNAL_RANGE: 2.0     # 信号输入量程 (V)
   DEMOD0_ORDER: 4              # 解调滤波器阶数
-  DEMOD0_TC: 0.000692          # 解调时间常数 (s)
+  DEMOD0_TC: 1e-5              # 解调时间常数 (s)，尽可能小以保留射频场调制信息
   DEMOD0_RATE: 100000          # 解调输出数据速率 (Sa/s)
-  # ---- HF2 解调器 3 配置（射频场解调） ----
+  # ---- HF2 解调器 3 配置（射频场解调）----
   DEMOD3_IDX: 3                # 解调器 3（射频场检测）
-  DEMOD3_OSC_IDX: 1            # 振荡器 1，频率 = 射频场频率
-  DEMOD3_ADC_SELECT: 2         # 信号输入源: 2 = Demod 0 内部输出
-  DEMOD3_ORDER: 8              # 解调滤波器阶数（射频场检测使用高阶滤波）
-  DEMOD3_TC: 0.000692          # 解调时间常数 (s)
-  DEMOD3_RATE: 1000            # 解调输出数据速率 (Sa/s)
-  # ---- HF2 DAQ 采集配置 ----
-  HF2_DAQ_DURATION: 1.0        # DAQ 采集时长 (s)
-  HF2_DAQ_RATE: 1000           # DAQ 采样率 (Sa/s)
+  DEMOD3_OSC_IDX: 1            # 振荡器 1，频率 = Z_RF_FREQ
+  DEMOD3_ADC_SELECT: 2         # 信号输入源: 2 = Demod 0 内部 Y 输出
+  DEMOD3_ORDER: 8              # 解调滤波器阶数
+  DEMOD3_TC: 0.001             # 解调时间常数 (s)，响应曲线测量时使用
+  DEMOD3_RATE: 1000            # 解调输出数据速率 (Sa/s)，响应曲线测量时使用
   # ---- 固定参数 ----
   PUMP_LASER_POWER: 0.1        # Pump 光功率 DC (V)
   PROBE_LASER_POWER: 0.1       # Probe 光功率 DC (V)
@@ -50,17 +62,20 @@ defaults:
 # ========== mapping.yaml 中的 key ==========
 mapping_keys:
   X_magnetic_field:
-    role: scan_rf_xy
-    description: "DG4000 (DG4E234902522) CH1，任意波模式，加载预计算波形控制 X 方向射频场"
+    role: rf_xy_carrier
+    description: "DG4000 (DG4E234902522) CH1，AM 模式，载波 90kHz，载波相位 θ，调制源 = EXT"
   Y_magnetic_field:
-    role: scan_rf_xy
-    description: "同一 DG4000 CH2，任意波模式，加载预计算波形控制 Y 方向射频场，相位 X+90°"
+    role: rf_xy_carrier
+    description: "同一 DG4000 CH2，AM 模式，载波 90kHz，载波相位 θ+90°，调制源 = EXT"
   Z_magnetic_field:
-    role: off
-    description: "本实验不使用，仅连接并关闭输出"
+    role: rf_source_sweep
+    description: "DG4000 (DG4E242401288) CH1，Burst 正弦波，幅度为扫描变量，输出 Z 方向射频场"
+  Time_sequence_2:
+    role: am_modulation_source
+    description: "DG4000 (DG4E242401288) CH2，任意波模式输出 A(t) → BNC → dg_comp MOD Input"
   main_magnetic_field:
     role: fixed
-    description: "主磁场（GS200 恒流 ~9.305 mA），实验过程中固定不变"
+    description: "主磁场（GS200 恒流 ~9.3 mA），实验过程中固定不变"
   Pump_laser_power:
     role: fixed
     description: "Pump 光功率 DC 电平控制"
@@ -78,7 +93,7 @@ mapping_keys:
     description: "DG4000 (DG4E222800868)：CH1 100MHz 正弦，CH2 脉冲门控"
   lockin_r:
     role: primary_demodulation + rf_demodulation
-    description: "HF2 锁相：Demod 0 主信号解调 + Demod 3 射频场解调（输入来自 Demod 0 Y 输出）"
+    description: "HF2 锁相：Demod 0 主信号解调 + Demod 3 射频场解调（adcselect=2 级联）"
 
 # ========== 固定参数（在整个实验中不变的） ==========
 fixed_params:
@@ -87,185 +102,210 @@ fixed_params:
   - Probe_laser_power
   - temperature
   - Temp_Switch
-  - Z_magnetic_field
 
 # ========== 修复经验 ==========
 learned_notes:
-  - 任意波形须提前计算并保存为数据文件（CSV 格式），实验时通过 DG4000 的 `setup_arb()` 加载
+  - A(t) 通过 dg_sweep CH2 任意波输出→BNC→dg_comp MOD Input，作为外部 AM 调制源
+  - dg_comp CH1/CH2 共享同一外部调制信号，保证 X/Y 同步
+  - ⚠️ DG4000 在 AM 模式下调制器会额外引入通道间相位延迟差异，直接设 PHASe:ADJust 90° 时实际输出 ≠ 90°。必须采用分通道校相方法：先关 CH2 单独校准 CH1 相位，再开 CH2 以 R 最大化为目标梯度上升搜索 CH2 最优相位
+  - AM 模式连续输出，无外部触发同步，载波与 Pump 的相位关系通过迭代校相确定
+  - 所有 DG4000 共享 10MHz 外部参考，频率锁定后相位不随时间漂移
+  - Demod 0 的 TC 需尽可能小（≤10μs），使其带宽足够宽以响应射频场对原子的调制
+  - Demod 3 在响应曲线采集时使用较大 TC（如 1ms）以抑制噪声，在噪声采集时可改用更小 TC
+  - 噪声采集后必须恢复解调器配置，否则第二次运行异常
   - 扫描循环须用 try/finally 包裹，确保异常时恢复温度开关
-  - 幅度变化使用 set_amplitude() 或重新加载波形文件，避免退出用户自定义模式
-  - 每次幅度变化后需等待稳定时间（0.5s）让系统稳定
-  - 外部触发同步：dg_mod CH2 SYNC → dg_comp Ext Trig，确保任意波与 Pump 调制固定相位关系
-  - 解调器 3 的 `adcselect = 2` 将 Demod 0 的 Y 输出路由为 Demod 3 的信号输入（级联解调架构）
-  - 射频场相位校准独立进行：配置好 Demod 3 后调用 `auto_calibrate_phase(demod_idx=3)` 
-  - 双解调器架构：Demod 0 使用 OSC 0 在 Pump 频率解调，Demod 3 使用 OSC 1 在射频频率解调
-  - Demod 0 的 output 通过 FPGA 内部路由至 Demod 3 的 input，无需外部跳线
-  - 幅度扫描中使用 `set_amplitude()` 而非 `setup_sine()`，避免重绘波形导致相位跳变
+  - 噪声测量每次采集完立即恢复温度开关，防止温度漂移
+  - 两级相位校准相互独立：先 Demod 0 校相（主信号对齐），再 Demod 3 校相（射频场对齐）
 ---
 
-# 射频场测量
-
-## 论文对照
-
-| 论文符号 | 实验实现 | 说明 |
-|---------|---------|------|
-| $B_\text{RF}$ | 射频场幅度 | X/Y 线圈产生的射频场，由任意波定义 |
-| $S_{S_1}(\omega)$ | HF2 Demod 3 解调信号 | 双解调后的射频场响应信号 |
-| $\Omega_\text{RF}$ | 射频 Rabi 频率 | 射频场有效驱动强度 |
+# 射频场灵敏度测量（AM 外部调制方案）
 
 ## 原理
 
-在 Bell-Bloom 磁力仪中，射频场通过 X/Y 补偿线圈施加到原子气室。与传统使用正弦 Burst 模式的噪声谱测量不同，本实验使用**预计算的任意波形**驱动 X/Y 线圈，实现更灵活的射频场控制。
+本实验测量 Bell-Bloom 磁力仪对 Z 方向射频场的灵敏度。通过 X/Y 线圈施加 AM 调制的旋转控制场使和场沿原子自旋方向，Z 射频场（待测）由 dg_sweep CH1 Burst 正弦波产生。
 
-### 双解调器级联架构
+Z 射频场灵敏度的测量分为两个阶段：
 
-实验使用 HF2 锁相放大器的**双解调器级联**结构：
+**Phase A — 响应曲线测量**：
+扫描 Z 射频场幅度 $B_\text{RF}$，读取 HF2 Demod 3 的输出（$X_3, Y_3, R_3$），获得射频场响应曲线。对响应曲线做色散拟合得到斜率 $\mathrm{d}R/\mathrm{d}B_\text{RF}$。
+
+**Phase B — 噪声测量与灵敏度计算**：
+在响应曲线斜率最大点（灵敏度最优工作点），关闭 Z 射频场，利用 Demod 3 采集噪声信号，计算功率谱密度 PSD。灵敏度计算公式为：
+
+$$\delta B_\text{RF}(f) = \frac{\sqrt{\text{PSD}_{\text{Demod3}}(f)}}{|\mathrm{d}R/\mathrm{d}B_\text{RF}|}$$
+
+## 双解调器级联架构
 
 ```
 Signal Input 0 (光电探测器)
     │
     ▼
 Demod 0 ─── 振荡器 0 (PUMP_MOD_FREQ ≈ 90 kHz)
-    │         解调 Pump 调制信号，输出 X₀, Y₀
-    │
-    ├── X₀ → 实时幅频响应（主信号检波）
+    │         解调 Pump 调制信号
+    │         TC 尽可能小 (≤10μs) → 带宽足够宽以响应射频场
     │
     └── Y₀ → FPGA 内部路由 (adcselect=2)
                 │
                 ▼
-            Demod 3 ─── 振荡器 1 (射频场频率 f_RF)
-                         级联解调，提取射频场响应
+            Demod 3 ─── 振荡器 1 (Z_RF_FREQ)
+                         二次解调，提取射频场响应
                          输出 X₃, Y₃, R₃
 ```
 
-**关键概念**：
-- **Demod 0**：以 Pump 调制频率（~90 kHz）解调光电探测器信号，获取主 Bell-Bloom 信号
-- **Demod 3**：将 Demod 0 的 Y 输出作为输入信号，以射频场频率 $f_\text{RF}$ 进行第二次解调，提取射频场响应
+**关键**：Demod 0 的 TC 必须尽可能小（如 10μs 或更小），使其解调带宽覆盖可能的射频场频率范围。Demod 3 的 TC 可独立选择（响应曲线测量时 1ms 以滤波，噪声采集时可改用高速率）。
 
-这种级联架构的优势在于，射频场对原子的影响表现为对 Bell-Bloom 信号的调制，通过二次解调可以高效提取该调制分量。
-
-### 任意波形控制
-
-X/Y 控制信号使用 DG4000 的**用户自定义任意波模式**（Arbitrary Waveform），波形数据预先计算并保存为文件：
-
-1. **波形计算**（离线）：根据目标射频场特性，计算 X/Y 通道的任意波序列
-2. **文件保存**：波形数据保存为 CSV 或二进制文件，存放在 `data/arb_waveforms/` 目录
-3. **实验加载**：通过 `setup_arb()` 将波形文件加载到 DG4000，设置频率参数和幅度
+## 硬件连接与信号路由
 
 ```
-任意波数据文件格式 (CSV):
-    t(s), X_channel(V), Y_channel(V)
-    0.0,  0.5,          0.0
-    1e-6, 0.48,         0.02
-    ...
+┌────────────────────────────────────────────────────────────────────┐
+│                       10MHz 外部参考时钟总线                        │
+│                                                                   │
+│  ┌─dg_mod──────┐  ┌─dg_comp──────┐  ┌─dg_sweep──────┐            │
+│  │CH1:100MHz   │  │CH1:X AM载波  │  │CH1:Z RF Burst│←幅度扫描   │
+│  │CH2:脉冲门控  │  │CH2:Y AM载波  │  │CH2:A(t) 任意波│──BNC──┐   │
+│  │SYNC → Trig  │  │MOD Input ◄───┼──┼──────────────┘       │   │
+│  └─────────────┘  └──────────────┘  └───────────────────────┘   │
+│                                                                   │
+│  ┌─dg_laser────┐  ┌─温控DG4000───┐  ┌─HF2──────────┐           │
+│  │CH1:Pump DC  │  │CH2:Temp开关  │  │Sig In 0      │           │
+│  │CH2:Probe DC │  │              │  │Demod 0+3     │           │
+│  └─────────────┘  └──────────────┘  └──────────────┘           │
+└────────────────────────────────────────────────────────────────────┘
 ```
-
-波形文件命名规范：`<描述>_<频率>Hz_<幅度>V.csv`
-
-### 相位校准流程
-
-本实验包含两级相位校准：
-
-**Phase 1 — Demod 0 自动相位校准**（与传统方案相同）：
-1. 关闭温控、XYZ 磁场
-2. 配置信号输入、振荡器 0、Demod 0
-3. `auto_calibrate_phase(demod_idx=0)` 校准解调器 0 相位
-4. 得到 `calibrated_phase_0`
-
-**Phase 2 — Demod 3 射频场相位校准**（新增）：
-1. 加载已知射频场任意波信号
-2. 配置振荡器 1 频率 = 射频场指定频率
-3. 配置 Demod 3（adcselect=2, osc_select=1）
-4. 开启射频场输出
-5. `auto_calibrate_phase(demod_idx=3)` 校准解调器 3 相位
-6. 得到 `calibrated_phase_3`
-
-## 硬件连接
 
 | 信号 | 仪器 | 通道 | 说明 |
 |------|------|------|------|
-| X 控制 | DG4000 (DG4E234902522) | CH1 | 任意波模式，加载预计算波形 |
-| Y 控制 | DG4000 (DG4E234902522) | CH2 | 任意波模式，加载预计算波形，X+90° |
-| Pump 调制 | DG4000 (DG4E222800868) | CH1+CH2 | RF 开关：100MHz 正弦 + 脉冲门控 |
-| SYNC 触发 | DG4000 (DG4E222800868) | CH2 SYNC → dg_comp Ext Trig | Pump 调制同步触发任意波 |
+| X 控制 | DG4E234902522 (dg_comp) | CH1 | AM 模式，载波 90kHz，相位 θ |
+| Y 控制 | DG4E234902522 (dg_comp) | CH2 | AM 模式，载波 90kHz，相位 θ+90° |
+| AM 调制源 | DG4E242401288 (dg_sweep) | CH2 → dg_comp MOD Input | A(t) 任意波，BNC 连接 |
+| Z 射频场（扫描变量） | DG4E242401288 (dg_sweep) | CH1 | Burst 正弦波，幅度为扫描变量 |
+| Pump 调制 | DG4E222800868 (dg_mod) | CH1+CH2 | RF 开关：100MHz 正弦 + 脉冲门控 |
+| SYNC 触发 | DG4E222800868 (dg_mod) | CH2 SYNC → dg_sweep Ext Trig | 触发 Z 射频场 Burst |
 | 主磁场 | GS200 | - | 恒流模式，~9.3 mA |
-| Pump 光功率 | DG4000 (DG4E231500376) | CH1 DC | Pump 激光功率控制 |
-| Probe 光功率 | DG4000 (DG4E231500376) | CH2 DC | Probe 激光功率控制 |
+| Pump 光功率 | DG4E231500376 (dg_laser) | CH1 DC | Pump 激光功率控制 |
+| Probe 光功率 | DG4E231500376 (dg_laser) | CH2 DC | Probe 激光功率控制 |
 | 温度控制 | TEC103 | - | 气室温度控制 |
-| 温度开关 | DG4000 (DG4E271200104) | CH2 | TTL 电平控制温控通断 |
-| 主信号解调 + 射频场解调 | HF2 锁相 | 信号输入 0 | Demod 0 + Demod 3 级联 |
+| 温度开关 | DG9Q271200104 | CH2 | TTL 电平控制温控通断 |
+| 信号检测 | HF2 锁相 | 信号输入 0 | Demod 0 + Demod 3 级联 |
+
+## 相位校准流程
+
+### Phase 1 — Demod 0 校相（主信号对齐）
+1. 关闭温控、XY/Z 输出
+2. 配置 HF2 信号输入、振荡器 0、Demod 0（TC=DEMOD0_TC=10μs）
+3. `auto_calibrate_phase(demod_idx=0)` → `calibrated_phase_0`
+
+### Phase 2 — X/Y 载波校相（对齐 Pump 调制 + 修正 AM 相位偏差）
+**⚠️ AM 模式下 CH1/CH2 的 90° 相位差不再是精确的**，必须通过分通道校相确定：
+1. 加载 A(t) 到 dg_sweep CH2，开启连续输出
+2. 启动 dg_comp AM 模式，**先只开 CH1**，关闭 CH2
+3. 关闭温控，读 HF2 Demod 0 相位偏移
+4. 迭代修正 `XY_CARRIER_PHASE`（CH1 相位）直到收敛
+5. **开启 CH2**，以 R 最大化为目标，梯度上升搜索 CH2 最优相位
+6. 计算实际相位差 `actual_quad = (CH2_phase - CH1_phase) % 360`
+7. 记录该偏差用于后续实验
+
+### Phase 3 — Demod 3 校相（射频场对齐）
+1. 预开启 Z 射频场（小幅度，如 0.5Vpp）
+2. 配置振荡器 1 频率 = Z_RF_FREQ，Demod 3（adcselect=2, osc_select=1, TC=0.001, rate=1000）
+3. 关闭温控 → `auto_calibrate_phase(demod_idx=3)` → 恢复温控
+4. 得到 `calibrated_phase_3`
 
 ## 实验流程
 
-1. **连接所有设备**：GS200（主磁场）、DG4000×4（X/Y 控制、Pump 调制、光功率、温度开关）、TEC103（温度）、HF2（锁相）
-2. **设置初始条件**：
-   - 关闭 Z、X、Y 输出
-   - Pump/Probe 光功率 DC，`validate_safety_limit()` 检查
-   - 主磁场（GS200 恒流 ~9.3 mA），调用 `set_current_limit()`
-   - 温度开关 ON → 设定温度（100°C）→ 等待稳定
-3. **Pump 调制配置**：
-   - CH1: 100MHz 连续正弦波 → RF 开关 IN
-   - CH2: 脉冲门控（90 kHz, 5% duty）→ RF 开关 CTRL
-   - CH2 SYNC ON → 用作 dg_comp 外部触发
-4. **Demod 0 配置与相位校准**（Phase 1）：
-   - 配置信号输入、振荡器 0、Demod 0（TC=0.692ms, rate=100kSa/s）
-   - 关闭温控 → `auto_calibrate_phase(demod_idx=0)` → 恢复温控
-5. **加载任意波形到 X/Y DG4000**：
-   - `setup_arb()` 从预计算文件加载 X 通道波形
-   - 加载 Y 通道波形（X+90° 相位）
-   - 配置外部触发同步
-6. **Demod 3 配置与射频场相位校准**（Phase 2）：
-   - 配置振荡器 1 频率（射频场频率）
-   - 配置 Demod 3（adcselect=2, osc_select=1, TC=0.692ms, rate=1kSa/s）
-   - 开启 X/Y 输出 → 关闭温控 → `auto_calibrate_phase(demod_idx=3)` → 恢复温控
-7. **数据采集扫描**（try/finally 保护）：
-   - 按幅度序列逐点加载不同幅度的任意波形
-   - 每点关闭温控 → 等待稳定 → 读取 Demod 3 的 X/Y/R → 保存数据 → 恢复温控
-   - 可选：HF2 DAQ 采集 Demod 3 的时域波形
-8. **数据分析**（可离线执行）：
-   - 加载所有扫描点的 Demod 3 解调数据
-   - 分析射频场响应曲线（幅度响应、相位响应）
-   - 提取射频场参数（共振频率、幅度、线宽等）
+### 准备阶段
+1. **连接所有设备**，设置初始条件（光功率、主磁场、温度）
+2. **Pump 调制配置**：CH1 100MHz 正弦 + CH2 脉冲门控，CH2 SYNC ON
+3. **Phase 1**: Demod 0 自动相位校准（TC=10μs）
+4. **加载 A(t) 到 dg_sweep CH2**：标准波形用 `setup_sine()` 等，USER 波形用 `send_arbitrary_waveform()`
+5. **配置 X/Y AM 调制（dg_comp）**：
+   - CH1: `setup_sine(freq=XY_CARRIER_FREQ, phase=0)` → `set_mod_type("AM")` → `set_mod_am_source("EXT")` → `set_mod_am_depth(100)` → `set_mod_state(ON)`
+   - CH2: 同上，phase=90
+6. **Phase 2**: X/Y 载波相位校准
+7. **配置 Demod 3**：`DemodulatorConfig(demod_index=3, adcselect=2, osc_select=1, ...)`
+8. **Phase 3**: Demod 3 射频场相位校准
+
+### Phase A — 响应曲线测量（幅度扫描）
+1. 将 Demod 3 配置为适合响应曲线测量的参数（TC=~1ms, rate=~1000Sa/s）
+2. 幅度序列：`amplitudes = np.linspace(RF_AMP_START, RF_AMP_STOP, RF_AMP_POINTS)`
+3. try/finally 保护扫描循环：
+   ```python
+   try:
+       for i, amp in enumerate(amplitudes):
+           # 设置 Z 射频场幅度
+           dg_sweep.set_amplitude(amp, channel=1)
+           time.sleep(RF_SETTLE_TIME)
+           # 关闭温控
+           dg_temp.set_output(False, channel=2)
+           time.sleep(0.3)
+           # 读取 Demod 3 的 X/Y/R
+           sample = demod.read_demod_sample(hfi, demod_idx=3)
+           # 保存数据
+           # 恢复温控
+           dg_temp.set_output(True, channel=2)
+           time.sleep(1)
+   finally:
+       dg_temp.set_output(True, channel=2)
+   ```
+4. 绘制响应曲线 $R_3$ vs $B_\text{RF}$，色散拟合得到斜率 $\mathrm{d}R/\mathrm{d}B_\text{RF}$
+
+### Phase B — 噪声测量与灵敏度计算
+1. 确定最优工作点（响应曲线斜率最大处对应的 $B_\text{RF}=0$ 或接近 0）
+2. 将 Demod 3 切换至噪声采集参数（更小 TC, 更高 rate）：
+   ```python
+   noise_demod_cfg = DemodulatorConfig(
+       demod_index=3, enable=True, rate=NOISE_RATE,
+       input_channel=2, osc_select=1,
+       time_constant=1e-5, order=4,  # 小 TC 高带宽
+       phase=calibrated_phase_3,
+   )
+   demod.configure_demodulator(hfi, noise_demod_cfg)
+   ```
+3. 关闭 Z 射频场输出，关闭温度开关
+4. 采集 NOISE_N_AVG 次 Demod 3 噪声，逐次保存：
+   ```python
+   for n in range(NOISE_N_AVG):
+       dg_temp.set_output(False, channel=2)
+       time.sleep(0.3)
+       # Demod 3 DAQ 采集或直接轮询读取
+       noise = demod.read_demod_samples(...)  # 采集 Y 或 R 信号
+       np.save(raw_dir / f"noise_D3_{n:04d}.npy", noise)
+       dg_temp.set_output(True, channel=2)
+       time.sleep(2)  # 恢复稳定
+   ```
+5. Welch 法计算各次 PSD，等权平均得 PSD_avg
+6. **恢复 Demod 3 至测量配置**
+7. 灵敏度计算：$\delta B_\text{RF}(f) = \sqrt{\text{PSD}_\text{avg}(f)} / |\mathrm{d}R/\mathrm{d}B_\text{RF}|$
+8. 取色散线宽内低频段中位数作为灵敏度
 
 ## 输出数据
 
-### 运行目录结构
-
 ```
-data/RF_Field_Measurement/
+data/RF_Field_Sensitivity/
   MMDD_HHMM_rf/
     experiment_config.yaml        # 实验完整配置
-    arb_waveform_source/          # 使用的任意波形源文件
-      rf_ctrl_waveform.csv
+    arb_waveform_source/          # 使用的任意波源文件
     raw/
-      scan_data.npz               # Demod 3 逐点数据（X, Y, R, θ）
-      waveform_D3_C000.npy        # 可选：Demod 3 DAQ 时域波形
-      waveform_D3_C001.npy
+      response_data.npz           # 响应曲线逐点数据（X₃, Y₃, R₃ vs B_RF）
+      noise_D3_0000.npy           # Demod 3 噪声波形
+      noise_D3_0001.npy
       ...
     results/
-      rf_response.npz             # 射频场响应曲线
-      rf_peak_fit.npz             # 共振峰拟合参数
-      analysis.yaml               # 分析结果汇总
-      rf_response.png             # 射频场响应图
+      response_fit.npz            # 响应曲线拟合参数（斜率等）
+      psd_avg.npz                 # 平均 PSD + 频率轴
+      sensitivity.npz             # 灵敏度曲线 δB(f)
+      response_curve.png          # 响应曲线图
+      sensitivity.png             # 灵敏度图
 ```
-
-### 分析结果
-
-| 参数 | 含义 |
-|------|------|
-| f_RF | 射频场共振频率 (Hz) |
-| Amp_RF | 射频场共振幅度 (V) |
-| gamma_RF | 射频场共振线宽 (Hz) |
-| phase_RF | 射频场相位偏移 (deg) |
 
 ## 注意事项
 
-- [经验] 任意波形需提前用外部脚本计算并保存，Notebook 仅负责加载和设置幅度
-- [经验] 扫描循环须用 try/finally 包裹，确保异常时恢复温度开关
-- [经验] 幅度变化后需重新加载波形或修改幅值系数，避免退出任意波模式
-- [经验] Demod 3 的 `adcselect = 2` 将 Demod 0 输出路由至 Demod 3 输入
-- [经验] 两级相位校准相互独立，先校准 Demod 0，再校准 Demod 3
-- [经验] Demod 0 使用低 TC（高带宽）保留射频场调制信息，Demod 3 使用适当 TC 抑制噪声
-- [经验] 外部触发同步 + 共享 10MHz 参考时钟保证任意波与 Pump 调制固定相位关系
-- [经验] HF2 DAQ 采集可使用 demod_idx=3 的 sample.x, sample.y
-- [经验] 实验中若更换任意波形文件，需重新执行 Demod 3 相位校准
+- [经验] AM 外部调制源（dg_sweep CH2）必须与载波（dg_comp）共享 10MHz 参考时钟
+- [经验] CH1/CH2 载波相位差 90° 通过 `set_phase_adjust()` 设置，首次实验建议用示波器验证
+- [经验] **Demod 0 的 TC 必须尽可能小**（如 10μs 或更小），确保带宽覆盖射频场频率
+- [经验] Demod 3 在响应曲线测量时可用较大 TC（~1ms）抑制噪声；噪声采集时改用更小 TC
+- [经验] 噪声测量后**必须恢复** Demod 3 的解调器配置，否则第二次运行异常
+- [经验] 响应曲线扫描循环须用 try/finally 包裹，确保异常时恢复温度开关
+- [经验] 每次噪声采集完立即恢复温度开关，防止温度漂移
+- [经验] Demod 3 的 `adcselect = 2` 将 Demod 0 的 Y 输出路由为输入
+- [经验] 两级解调相位校准相互独立，先 Demod 0 再 Demod 3
