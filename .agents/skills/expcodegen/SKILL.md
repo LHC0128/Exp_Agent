@@ -382,19 +382,21 @@ else:
 ### Cell 7：安全断开
 
 ```python
+# ---- 断开所有设备（保持输出状态不变） ----
+
+print("正在断开设备...")
+print("（所有设备输出状态保持当前设置不变）")
+
+# 仅断开连接，不改变任何输出状态
 for name, dev in devices.items():
-    try:
-        if hasattr(dev, "all_off"): dev.all_off()
-        elif hasattr(dev, "set_output"): dev.set_output(False)
-    except Exception as e:
-        print(f"{name} 关闭失败: {e}")
-for name in ["dg_sweep", "dg_mod"]:
-    dev = devices.get(name)
-    if dev and hasattr(dev, "set_sync_state"):
-        dev.set_sync_state(False, channel=1)
-        dev.set_sync_state(False, channel=2)
-for name, dev in devices.items():
-    if hasattr(dev, "disconnect"): dev.disconnect()
+    if hasattr(dev, "disconnect"):
+        try:
+            dev.disconnect()
+            print(f"  {name} 已断开")
+        except Exception as e:
+            print(f"  {name} 断开失败: {e}")
+
+print("所有设备已断开")
 ```
 
 ---

@@ -37,16 +37,30 @@ mapping:
   Pump_laser_power:
     instrument: signal_generator
     label: "Pump光功率"
-    resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
+    resource: "USB0::0x1AB1::0x0646::DG9Q280100002::INSTR"
     channel: 1
     description: "输出大小对应着Pump光功率，通过调节信号发生器的DC电平控制输出功率，范围0-2 V"
 
   Probe_laser_power:
     instrument: signal_generator
     label: "Probe光功率"
-    resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
+    resource: "USB0::0x1AB1::0x0646::DG9Q280100002::INSTR"
     channel: 2
     description: "输出大小对应着Probe光功率，通过调节信号发生器的DC电平控制输出功率，范围0-2 V"
+
+  X_magnetic_field_AM:
+    instrument: signal_generator
+    label: "X方向磁场 AM"
+    resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
+    channel: 1
+    description: "输出大小对应着X方向磁场 AM，通过调节信号发生器的DC电平控制输出功率，范围-2-2 V"
+
+  Y_magnetic_field_AM:
+    instrument: signal_generator
+    label: "Y方向磁场 AM"
+    resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
+    channel: 2
+    description: "输出大小对应着Y方向磁场 AM，通过调节信号发生器的DC电平控制输出功率，范围-2-2 V"
 
   X_magnetic_field:
     instrument: signal_generator

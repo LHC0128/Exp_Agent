@@ -118,7 +118,7 @@ class DAQCollector:
         """采集进度 [0, 1]."""
         if self._mod is None:
             return 0.0
-        return self._mod.progress()
+        return np.asarray(self._mod.progress()).item()
 
     @property
     def finished(self) -> bool:
@@ -143,11 +143,11 @@ class DAQCollector:
         if self._mod is None:
             return
         elapsed = 0.0
-        while self._mod.progress() < target:
+        while np.asarray(self._mod.progress()).item() < target:
             time.sleep(poll_interval)
             elapsed += poll_interval
             if timeout > 0 and elapsed >= timeout:
-                prog = float(self._mod.progress())
+                prog = np.asarray(self._mod.progress()).item()
                 logger.warning(
                     "DAQ 采集超时 (timeout=%.1f s, progress=%.1f%%)",
                     timeout, prog * 100,
