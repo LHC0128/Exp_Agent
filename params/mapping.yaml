@@ -76,6 +76,13 @@ mapping:
     channel: 2
     description: "输出大小对应着Y方向磁场，一般为任意波，范围-10-10 V"
 
+  rf_coil:
+    instrument: signal_generator
+    label: "RF 线圈 (Y方向)"
+    resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
+    channel: 2
+    description: "RF 线圈驱动（MORS 扫频 / T2 FID 脉冲），与 Y_magnetic_field 共用同一物理通道。沿 Y 方向，垂直于主磁场 B_z 和光传播方向 X，激发横向自旋相干"
+
   Pump_modulation:
     instrument: signal_generator
     label: "Pump调制"

@@ -19,7 +19,7 @@ safety_limits:
   # ---- 直流源 ----
   main_magnetic_field:
     min: 0
-    max: 10
+    max: 101
     ramp_rate: null
     output_off_on_error: true
     description: "GS200 电流源控制主磁场，范围 0-10 mA"
@@ -66,6 +66,13 @@ safety_limits:
     ramp_rate: null
     output_off_on_error: true
     description: "Y方向磁场，范围 -10-10 V"
+
+  rf_coil:
+    min: 0.0
+    max: 2.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "RF 线圈驱动 (Y方向)，MORS/T2 用。弱驱动上限 2V，大功率可能展宽谱线或烧毁线圈"
 
   Pump_modulation:
     min: -0.18
