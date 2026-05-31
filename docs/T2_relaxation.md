@@ -1,36 +1,44 @@
 ---
-title: 横向弛豫时间 T₂ 标定 (FID 时域法 + MORS 频域法)
+title: 横向弛豫时间 T₂ 标定（光学 FID 时域法 + MORS 频域法）
 type: experiment_type
-description: 两种独立方法标定横向弛豫时间 T₂：FID 时域法（短 RF 脉冲激发横向自旋后采集 LIA 解调包络，指数衰减拟合）和 MORS 频域法（MORS 谱共振峰 Lorentzian 拟合得 FWHM，反推 T₂ = 1/(π·FWHM)）。Bell-Bloom 下 FWHM 可与 PSD 洛伦兹拟合结果交叉验证
-keywords: [T2, transverse relaxation, FID, free induction decay, MORS, Lorentzian, FWHM, RF pulse, exponential fit, Bell-Bloom]
-version: 1
+description: 两种独立方法标定横向弛豫时间 T₂。方法一：RF 开关门控 Pump AOM 产生 Ω_L 频率调制 Pump 光 Burst 激发横向自旋相干，关断后示波器采集 PD 阻尼振荡信号，拟合得 T₂。方法二：MORS 谱共振峰 Lorentzian 拟合得 FWHM，反推 T₂ = 2/Γ。Bell-Bloom 下可与 PSD 洛伦兹拟合结果交叉验证
+keywords: [T2, transverse relaxation, FID, free induction decay, optical FID, MORS, Lorentzian, FWHM, RF switch, AOM carrier, burst, damped oscillation fit, Bell-Bloom]
+version: 2
 
-scan_mode: single_point         # FID 单次采集 / MORS 频域依赖 MORS_polarization 扫频数据
+scan_mode: single_point         # 光学 FID 单次采集 / MORS 频域依赖 MORS_polarization 扫频数据
 
 # ========== 默认参数 ==========
 defaults:
   # ---- Pump 光 ----
-  PUMP_POWER: 0.1               # Pump 光功率 (V)，制备 CSS
+  PUMP_POWER: 0.1               # Pump 光 DC 功率 (V)，决定泵浦光强偏置
+  # ---- RF 开关: AOM 载波 (CH1) ----
+  AOM_CARRIER_FREQ: 100.0e6     # AOM 载波频率 (Hz)，固定 100 MHz
+  AOM_CARRIER_AMPLITUDE: 0.1    # AOM 载波幅度 (V)，安全限值 ≤ 0.18V
+  # ---- RF 开关: 门控脉冲 (CH2) ----
+  RF_GATE_FREQ: 90000           # 门控脉冲频率 (Hz) = Ω_L/2π，等于 Larmor 进动频率
+  RF_GATE_AMPLITUDE: 5.0        # 门控脉冲幅度 (Vpp)，5V TTL 电平驱动 RF 开关 CTRL
+  RF_GATE_OFFSET: 2.5           # 门控脉冲 DC 偏置 (V)，5Vpp + 2.5V offset = 0~5V
+  BURST_NCYCLES: 5000           # Burst 周期数，5000/90000 ≈ 55.6 ms
   # ---- Probe 光 ----
   PROBE_POWER: 0.1              # Probe 光功率 (V)，Bell-Bloom CW 常开
   # ---- 主磁场 ----
-  MAIN_FIELD_mA: 9.305          # 正常工作主磁场 (mA)，Ω_L/2π ≈ 90 kHz
-  # ---- LIA 解调参数 ----
+  MAIN_FIELD_mA: 9.30           # 正常工作主磁场 (mA)，Ω_L/2π ≈ 90 kHz
+  # ---- 示波器采集 ----
+  SCOPE_SAMPLE_RATE: 1.0e6      # 示波器采样率 (Sa/s)，≥ 20×f_L 以分辨 90 kHz 载波
+  SCOPE_DURATION: 0.1           # 采集时长 (s)，覆盖 Burst (~55.6 ms) + FID 衰减 (~5×T₂)
+  SCOPE_TRIGGER_SOURCE: external # 触发源：CH2 (RF 门控) 同步输出
+  SCOPE_TRIGGER_LEVEL: 1.5      # 触发电平 (V)
+  SCOPE_TRIGGER_SLOPE: rising   # 上升沿触发（Burst 起始时刻）
+  ACQ_REPEATS: 20               # 重复次数，取平均提高信噪比
+  # ---- LIA 监控参数 ----
   HF2_DEMOD_IDX: 1              # 解调器索引
   HF2_OSC_FREQ: 90000           # 振荡器频率 (Hz)，固定为 Ω_L
   HF2_SIGNAL_RANGE: 2.0         # 信号输入量程 (V)
   HF2_DEMOD_ORDER: 4            # 解调滤波器阶数
-  HF2_DEMOD_TC: 7.85e-07        # 解调时间常数 (s)，高带宽以捕捉指数衰减
-  HF2_DEMOD_RATE: 100000        # 解调输出数据速率 (Sa/s)
-  # ---- FID RF 脉冲参数 ----
-  RF_PULSE_FREQ: 90000          # RF 脉冲频率 (Hz)，等于 Ω_L/2π
-  RF_PULSE_AMPLITUDE: 0.1       # RF 脉冲幅度 (V)，对应 π/2 或小角度脉冲
-  RF_PULSE_WIDTH: 5.0e-6        # RF 脉冲宽度 (s)，≪ T₂
-  # ---- 采集参数 ----
-  ACQ_DURATION: 0.05            # FID 采集时长 (s)，≥ 5×T₂
-  ACQ_REPEATS: 20               # 重复次数
+  HF2_DEMOD_TC: 0.001           # 解调时间常数 (s)，监控用，无需高带宽
+  HF2_DEMOD_RATE: 10000         # 解调输出数据速率 (Sa/s)
   # ---- 温度控制 ----
-  TEC_TEMPERATURE: 85.0         # 气室温度 (°C)
+  TEC_TEMPERATURE: 100.0        # 气室温度 (°C)
 
 # ========== 所需设备 ==========
 required_devices:
@@ -39,16 +47,18 @@ required_devices:
   - instrument: signal_generator    # Probe 光功率 (DG912 Pro CH2)，CW 常开
     role: laser_probe
     channels: [2]
-  - instrument: signal_generator    # Pump 光功率 (DG912 Pro CH1)，制备 CSS
+  - instrument: signal_generator    # Pump 光功率 DC 偏置 (DG912 Pro CH1)
     role: laser_pump
     channels: [1]
-  - instrument: signal_generator    # RF 脉冲信号源（FID 激发），短脉冲输出
-    role: rf_coil
-    channels: [1]
-  - instrument: lockin_amplifier    # 锁相放大器（固定 Ω_L 参考，DAQ 采集解调后 X 路包络）
+  - instrument: signal_generator    # RF 开关: CH1=100MHz AOM载波(CW) + CH2=90kHz方波Burst(门控,同步输出触发示波器) (DG4E222800868)
+    role: rf_switch
+    channels: [1, 2]
+  - instrument: sds_acquisition     # 示波器采集 PD 原始信号（含 90 kHz 载波的 FID 阻尼振荡）
     role: detection
+  - instrument: lockin_amplifier    # 锁相放大器（实时监控 PD 信号）
+    role: monitor
     demod_channels: 1
-    has_daq: true
+    has_daq: false
   - instrument: tec_controller      # 温控器（TEC103）
     role: temperature
 
@@ -62,16 +72,25 @@ mapping_keys:
     description: "Probe 光功率，Bell-Bloom CW 常开"
   Pump_laser_power:
     role: fixed
-    description: "Pump 光功率，开启制备 CSS（FID 测量中 Pump 可开可关，需注明条件）"
-  rf_pulse:
-    role: trigger
-    description: "RF 脉冲信号，频率 = Ω_L/2π，短脉宽 (≪ T₂)，激发横向自旋后立即关断"
-  lockin_x:
+    description: "Pump 光 DC 功率偏置，决定泵浦光强"
+  pump_modulation:
+    role: carrier
+    description: "RF 开关 CH1：100 MHz 正弦 CW → RF 开关 IN → AOM 驱动载波"
+  Time_sequence:
+    role: excitation
+    description: "RF 开关 CH2：90 kHz 方波 Burst N 周期 → RF 开关 CTRL，门控 100 MHz 通断产生调制 Pump 光；同步输出连示波器外触发"
+  scope_waveform:
     role: detection
-    description: "LIA 解调后 X 路输出，记录 FID 指数衰减包络"
+    description: "示波器采集 PD 原始信号——含 90 kHz 载波的 FID 阻尼振荡"
+  lockin_xy:
+    role: monitor
+    description: "LIA 实时监控 PD 信号幅度/相位"
   temperature:
     role: fixed
     description: "气室温度（TEC103 控制）"
+  Temp_Switch:
+    role: temp_gating
+    description: "温度开关，每点采集时关闭以消除温控磁场干扰"
 
 # ========== 固定参数 ==========
 fixed_params:
@@ -81,68 +100,87 @@ fixed_params:
 
 # ========== 修复经验 ==========
 learned_notes:
-  - RF 线圈与 Y_magnetic_field 共用同一物理通道 (DG4E234902522 CH2)，代码中使用 mapping_key `rf_coil` 以语义区分
-  - RF 脉冲宽度必须 ≪ T₂（T₂=3 ms 时脉宽 < 300 μs），推荐 ≤ 10 μs，否则脉宽展宽带来系统误差
-  - RF 脉冲关断后须确认无残余 RF 泄漏，否则泄漏信号混入 LIA 输出破坏指数衰减包络
-  - Pump 光在 FID 中可开可关，但两种条件得到的 T₂ 不同（开泵浦时自旋交换展宽增加），必须注明条件
-  - 低极化度（~74%）时 FID 时域信号出现多频震荡（多个频率分量叠加），需用多频阻尼振荡模型拟合
-  - 高极化度（~99%）时 FID 基本符合单指数衰减，拟合更可靠
-  - 原始 PD 信号（解调前）为 e^{-t/T₂}·cos(Ω_L t + φ)，LIA 解调后振荡项被去除仅剩包络，直接采集 LIA 输出拟合即可
+  - RF 开关信号链路：CH1 (Pump_modulation) 输出 100 MHz 正弦 CW（AOM 载波）→ RF 开关 IN；CH2 (Time_sequence) 输出 90 kHz 方波 Burst（门控）→ RF 开关 CTRL；RF 开关 OUT → AOM
+  - CH2 门控频率必须精确等于 Ω_L/2π (90 kHz)，频率偏差会导致 FID 阻尼振荡出现拍频，拟合 T₂ 偏小
+  - Burst 模式使用 CH2 手动触发 (MANual trigger source)，CH2 同步输出 (Sync Output) 连接示波器 EXT TRIG 输入，上升沿对准 Burst 起始时刻
+  - Burst 结束后 CH2 输出停止 (0V)，RF 开关阻断 100 MHz 载波 → AOM 无驱动 → Pump 光等效关断，自旋自由进动衰减
+  - AOM 始终工作在 100 MHz（标准 AOM 中心频率），90 kHz 调制由 RF 开关门控实现，无需改变 AOM 驱动频率
+  - 低极化度（~74%）时 FID 出现多频阻尼振荡，需用多频阻尼振荡模型拟合；高极化度（~99%）时基本为单频阻尼振荡
+  - 示波器采样率 ≥ 20×f_L (即 ≥ 1.8 MSa/s) 以准确分辨 90 kHz 载波波形；若采样率不足，可改用数字解调提取包络再拟合
+  - 数据分析可直接拟合阻尼振荡 V(t) = A·exp(-(t-t₀)/T₂)·cos(2πf_L(t-t₀)+φ) + V_DC，也可先数字解调提取包络再拟合指数衰减
+  - Pump 光 DC 功率 (PUMP_POWER) 影响极化度，不同 DC 功率下 T₂ 不同，必须注明条件
+  - Bell-Bloom 特有验证：PSD 洛伦兹拟合得到的 FWHM 应与光学 FID/MORS 法独立标定的 T₂ 一致（差异 < 20%），详见 Projection_noise.md
+  - LIA 在本实验中仅用于实时监控，不参与数据采集；示波器是主检测设备
+  - 每次采集前（acquire data）关闭 Temp_Switch 以消除温控加热电流产生的磁场干扰，采集完成后恢复
   - MORS 频域法依赖 MORS_polarization.md 的 MORS 谱数据，RF 驱动功率必须足够低（弱驱动），否则功率展宽使 FWHM 偏大、T₂ 被低估
-  - Bell-Bloom 模式下 T₂ 标定流程与频闪 QND 模式完全一致，Probe 保持 CW 常开
-  - Bell-Bloom 特有验证：PSD 洛伦兹拟合得到的 FWHM 应与 FID/MORS 法独立标定的 T₂ 一致（差异 < 20%），详见 Projection_noise.md
 ---
 
-> **坐标系**：主磁场 $B$ 沿 **Z**，光沿 **X** 传播，RF 线圈沿 **Y**（垂直于二者，激发横向自旋）。
+> **坐标系**：主磁场 $B$ 沿 **Z**，光沿 **X** 传播。
 
 # 横向弛豫时间 T₂ 标定
 
-## 方法一：FID 时域法
+## 方法一：光学 FID 时域法
 
 ### 原理
 
-CSS 态下施加短 RF 脉冲激发横向自旋，关断 RF 后自旋自由进动并指数衰减。LIA 解调去除载波，输出为 DC 附近的指数衰减包络：
+RF 开关门控 Pump AOM 产生调制 Pump 光：CH1 (Pump_modulation) 输出 100 MHz 正弦 CW 作为 AOM 载波，CH2 (Time_sequence) 输出 90 kHz 方波 Burst 作为 RF 开关门控信号。CH2 高电平时 100 MHz 通过 RF 开关驱动 AOM、Pump 光进入气室；低电平时阻断、Pump 光关断。由此产生 90 kHz 调制的 Pump 光，以 Larmor 频率（$\Omega_L/2\pi$ ≈ 90 kHz）激发横向自旋相干。Burst 结束后 CH2 回到 0V → RF 开关阻断 → AOM 无驱动 → Pump 光等效关断，自旋在 $B_z$ 中以 $\Omega_L$ 自由进动，Faraday 旋光信号为指数衰减的阻尼振荡：
 
 $$
-\boxed{X(t) \propto e^{-t/T_2}} \tag{3.20}
+\boxed{V(t) = A e^{-(t-t_0)/T_2} \cos(2\pi f_L (t-t_0) + \phi) + V_{\text{DC}}} \qquad (t \geq t_0)
 $$
 
-> 原始 PD 信号（解调前）为 $\propto e^{-t/T_2} \cos(\Omega_L t + \phi_0)$，LIA 解调后振荡项被去除，仅剩包络。直接采集 LIA 输出拟合指数衰减即可。
+其中 $t_0$ 为 Burst 结束时刻，$f_L = \Omega_L/2\pi$ 为 Larmor 频率，$V_{\text{DC}}$ 为 PD 直流偏置。
+
+示波器直接采集 PD 原始信号（含载波），通过拟合阻尼振荡提取 $T_2$。
+
+> 也可先做数字解调（混频 + 低通滤波）提取包络 $R(t) = \sqrt{I^2 + Q^2}$，再对 $R(t)$ 做单指数拟合 $R(t) = A e^{-(t-t_0)/T_2} + R_{\text{DC}}$。
 
 ### 时序示意
 
 ```
-泵浦光:  ████████████████████████████（可关可不关，需注明条件）
-RF脉冲:  ________________|██|_____________________
-探测光:  ████████████████████████████████████████████（CW 持续）
-采集:    ___________________|→ FID 信号采集 →.......
+ CH1 (AOM载波): ████████████████████████████████████████████████ (100 MHz CW 持续)
+ CH2 (RF门控):  ____|████████████████████████████|________________
+                    ↑ Burst 5000 cycles @ 90 kHz  ↑ 0V, RF开关阻断
+                    = 55.6 ms                       Pump 等效 OFF
+ Pump光(等效):  ____|▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓|________________
+                    90 kHz 调制 Pump ON            Pump OFF
+ 探测光:        ████████████████████████████████████████████████████ (CW)
+ Pump DC:       ████████████████████████████████████████████████████ (常开)
+ 示波器:        ____|→ 采集（含 Burst + FID 衰减）→...............
+                    ↑ CH2 同步输出触发（上升沿）
 ```
 
 ### 实验步骤
 
-1. 开启泵浦光，制备 CSS（保持直到极化饱和）
-2. 探测光保持 CW 常开（Bell-Bloom 模式）
-3. **施加短 RF 脉冲**：信号源输出频率 $=\Omega_L/2\pi$ 的短脉冲
-   - 脉宽 $\ll T_2$（如 5 μs，对应 T₂≈3 ms）
-   - 脉冲角度：$\pi/2$ 或小角度脉冲
-4. **立即关闭 RF**，同时开始采集 LIA 解调后的 X 路输出
-5. 采集时长至少 $5\times T_2$，确保包络衰减至基线
-6. 重复 ≥ 20 次取平均，提高信噪比
+1. 开启 Pump DC 偏置和 Probe 光（CW），主磁场设为正常值
+2. **RF 开关配置**（DG4E222800868 双通道）：
+   - CH1 (Pump_modulation)：100 MHz 正弦 CW，幅度 ≤ 0.18V → RF 开关 IN（AOM 载波，持续输出）
+   - CH2 (Time_sequence)：90 kHz 方波（50% 占空比），5 Vpp + 2.5V offset → RF 开关 CTRL
+   - CH2 Burst 模式：N = 5000 周期 (~55.6 ms)，手动触发源 (MANual)
+   - CH2 同步输出 (Sync Output) 连接示波器 EXT TRIG 输入
+3. **示波器配置**：外触发 (EXT)、上升沿、采集时长 ~100 ms（覆盖 Burst + 衰减）
+4. 关闭 Temp_Switch（消除温控磁场干扰）
+5. 手动触发 CH2 Burst → RF 开关通断 5000 次 → 90 kHz 调制 Pump 光激发自旋相干
+6. 示波器同步采集 PD 波形，重复 ≥ 20 次取平均
+7. 恢复 Temp_Switch
 
 ### 数据分析
 
-对 LIA 解调后的 X(t) 包络做指数衰减拟合：
+**直接拟合法**（推荐）：对 Burst 结束后的 PD 波形做非线性最小二乘拟合：
 
 $$
-X(t) = A e^{-t/T_2} + X_{\text{DC}}
+V(t) = A e^{-(t-t_0)/T_2} \cos(2\pi f_L (t-t_0) + \phi) + V_{\text{DC}}, \quad t > t_0
 $$
 
-- $X_{\text{DC}}$：LIA 的 DC 偏置（热态残余）
-- **低极化度（~74%）**：多频率分量导致震荡，需用多频阻尼振荡模型：
+拟合参数：$A$（初始幅度）、$T_2$（横向弛豫时间）、$f_L$（Larmor 频率）、$\phi$（初始相位）、$V_{\text{DC}}$（直流偏置）。
+
+**数字解调法**（备选）：软件混频 + LPF 提取包络，再指数拟合。
+
+- **低极化度（~74%）**：多频率分量 → 阻尼振荡含多个频率，需用多频模型：
   $$
-  X(t) = \sum_k A_k e^{-t/T_{2,k}} \cos(\omega_k t + \phi_k) + X_{\text{DC}}
+  V(t) = \sum_k A_k e^{-(t-t_0)/T_{2,k}} \cos(2\pi f_{L,k} (t-t_0) + \phi_k) + V_{\text{DC}}
   $$
-- **高极化度（~99%）**：基本符合单指数衰减，拟合更可靠
+- **高极化度（~99%）**：基本为单频阻尼振荡，单频拟合可靠
 
 ---
 
@@ -150,13 +188,13 @@ $$
 
 ### 原理
 
-连续弱 RF 驱动下，MORS 谱共振峰的半高全宽 (FWHM) 由 $T_2$ 决定。从 MORS 谱中提取 $\Gamma$ 后：
+连续弱 RF 驱动下，MORS 谱共振峰的半高全宽 (FWHM) 由 $T_2$ 决定。从 MORS 谱中提取线宽 $\Gamma$（FWHM，单位 rad/s）后：
 
 $$
-\boxed{T_2 = \frac{1}{\pi \Gamma}} \tag{3.21}
+\boxed{T_2 = \frac{2}{\Gamma}} \tag{3.21}
 $$
 
-> 使用 Hz 单位时：$T_2 = \dfrac{1}{\pi \cdot \mathrm{FWHM(Hz)}}$
+> 若 $\Gamma$ 单位为 Hz：$T_2 = \dfrac{1}{\pi \cdot \Gamma_\text{Hz}}$
 
 ### 实验步骤
 
@@ -182,7 +220,7 @@ $$
 
 | 方法 | 优点 | 缺点 | 适用场景 |
 |------|------|------|---------|
-| FID 时域法 | 直观、物理图像清晰 | 需精确 RF 脉冲时序 | 高极化度、单分量衰减 |
+| 光学 FID 时域法 | 无需 RF 线圈、光路简单、时序直观 | 需精确 Burst 时序、示波器采样率要求高 | 高极化度、单分量衰减 |
 | MORS 频域法 | 可同时获得极化度、不依赖时序 | 多峰拟合复杂、对磁场均匀性敏感 | 全极化度范围、参数综合标定 |
 
 ## Bell-Bloom 特有交叉验证
@@ -198,17 +236,20 @@ Bell-Bloom 磁力仪下 PSD 洛伦兹拟合的 FWHM 也给出 $T_2^{\text{PSD}}$
 
 ## 实验注意事项
 
-- 两种方法可在不同探测光功率与泵浦条件下交叉比较
-- 时域法要求 RF 脉冲宽度 $\ll T_2$，且关断后无残余 RF 泄漏
-- 频域法中 RF 驱动功率必须足够低（弱驱动），否则功率展宽会使 $\Gamma$ 偏大，$T_2$ 被低估
-- FID 中 Pump 光开/关两种条件得到的 $T_2$ 不同（开泵浦时自旋交换碰撞增加展宽），必须注明条件
+- Pump 调制频率必须精确等于 $\Omega_L/2\pi$，频率偏差导致 FID 出现拍频，拟合 $T_2$ 偏小
+- Burst 结束后 Pump 光等效关断（AOM 偏转）；若 AOM 在 90 kHz 驱动下效率不足，需确认 Pump 光是否真正关断
+- 示波器采样率应 ≥ 20×f_L（≥ 1.8 MSa/s）以分辨载波波形
+- 两种方法可在不同探测光功率与 Pump DC 功率条件下交叉比较
+- MORS 频域法中 RF 驱动功率必须足够低（弱驱动），否则功率展宽使 $\Gamma$ 偏大
 
 ## 常见问题
 
 | 现象 | 可能原因 | 解决 |
 |------|---------|------|
-| FID 包络有震荡 | 低极化度多频分量叠加 | 使用多频阻尼振荡模型拟合 |
-| FID 衰减偏离指数 | RF 脉宽不满足 $\ll T_2$ 或残余 RF 泄漏 | 缩短脉宽，检查 RF 开关隔离度 |
+| FID 阻尼振荡有拍频 | Pump 调制频率与 $\Omega_L$ 有偏差 | 微调 Pump_mod 频率使拍频消失 |
+| FID 含多个频率分量 | 低极化度多 Zeeman 子能级 | 使用多频阻尼振荡模型拟合 |
+| FID 衰减偏离指数 | Burst 结束后 Pump 光未完全关断 | 检查 AOM 偏转效率，确认 Pump 残余光功率 |
+| 示波器波形信噪比差 | 采样率不足或未取平均 | 提高采样率，增加重复次数取平均 |
 | MORS FWHM 偏大 | RF 功率过大导致功率展宽 | 降低 RF 幅度，验证线性区 |
-| MORS 拟合 T₂ 与 FID T₂ 不一致 | 两种方法对应不同物理条件 | 确认 Pump 条件和 Probe 功率一致 |
+| MORS 拟合 T₂ 与光学 FID T₂ 不一致 | Pump 条件、温度或 Probe 功率不同 | 确认实验条件一致 |
 | PSD 洛伦兹 T₂ 与其他方法不一致 | 测量线路响应混入 | 检查 LIA LPF 设置，用更高 TC 排除线路展宽 |

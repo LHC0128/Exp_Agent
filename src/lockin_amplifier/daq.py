@@ -54,11 +54,13 @@ class DAQCollector:
             self._mod.set("dataAcquisitionModule/triggernode", trigger_node)
             self._mod.set("dataAcquisitionModule/level", config.trigger_level)
             self._mod.set("dataAcquisitionModule/hysteresis", 0.5)
+            edge_str = "falling" if config.trigger_slope == 1 else "rising"
+            self._mod.set("dataAcquisitionModule/edge", edge_str)
             if config.trigger_delay > 0:
                 self._mod.set("dataAcquisitionModule/trigger/delay", config.trigger_delay)
             logger.info(
-                "DAQ 触发配置: triggernode=%s, level=%.3f V, delay=%.3f s",
-                trigger_node, config.trigger_level, config.trigger_delay,
+                "DAQ 触发配置: triggernode=%s, level=%.3f V, edge=%s, delay=%.3f s",
+                trigger_node, config.trigger_level, edge_str, config.trigger_delay,
             )
 
         # 网格设置

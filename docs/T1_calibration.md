@@ -5,7 +5,7 @@ description: CSS 制备后通过 Bell-Bloom 方法（关断 Pump_modulation 的 
 keywords: [T1, longitudinal relaxation, Faraday rotation, spin polarization, PD DC, exponential fit, probe power dependence, Bell-Bloom, oscilloscope]
 version: 2
 geometry:
-  main_field: Z
+  main_field: X
   light_propagation: X
 
 scan_mode: point_by_point      # 多功率扫描（单功率 T₁ 测量时只取一个功率点即可）
@@ -22,7 +22,7 @@ defaults:
   PROBE_POWER: 0.05             # 探测光功率 (V)，弱探测以减小对 T₁ 的干扰
   PROBE_POWER_LIST: [0.01, 0.02, 0.04, 0.06, 0.08, 0.1]  # 多功率扫描用 (V)
   # ---- 主磁场 ----
-  MAIN_FIELD_mA: 9.305          # 正常工作主磁场 (mA)，Ω_L/2π ≈ 90 kHz
+  MAIN_FIELD_mA: 9.305          # T₁ 测量时磁场沿 X 方向 (mA)，Ω_L/2π ≈ 90 kHz
   # ---- 示波器采集参数 ----
   SCOPE_TIMEBASE: 0.05          # 示波器时基 (s/div)，覆盖 3~5×T₁
   SCOPE_SAMPLE_RATE: 10000      # 示波器采样率 (Sa/s)
@@ -95,7 +95,7 @@ learned_notes:
   - Bell-Bloom CW 探测模式下 T₁ 标定流程与频闪 QND 模式完全一致，探测光保持 CW 常开即可
 ---
 
-> **坐标系**：主磁场 $B$ 沿 **Z**，光沿 **X** 传播，RF 线圈沿 **Y**。
+> **坐标系**：主磁场 $B$ 沿 **X**（与探测光同向），光沿 **X** 传播，RF 线圈沿 **Y**。T₁ 测量时磁场沿 X 使得 $\langle J_x \rangle$ 为纵向分量，避免 Larmor 进动。
 
 # Faraday 旋光角与纵向弛豫时间 T₁ 标定
 
@@ -147,14 +147,14 @@ Time_sequence(90kHz 方波) ────────────┘ (CTRL 门控
 
 探测光(线偏振, CW) → 铷泡 → λ/2波片 → PBS → PD1(V_x) ──→ 示波器 CH1
                                             → PD2(V_y) ──→ 示波器 CH2
-B_z (主磁场, Z方向)
+B_x (主磁场, X方向，与探测光同轴)
 ```
 
 | 光路/信号 | 状态 | 说明 |
 |------|------|------|
 | Pump 光 | Bell-Bloom 调制，Time_sequence 门控 | 100MHz 载波经 RF 开关 + AOM 耦合入光纤。关断 = Time_sequence 置 0V DC |
 | 探测光 (Probe) | **CW 常开**，弱功率 | Bell-Bloom 连续 CW，功率尽量低以减小测量干扰 |
-| 主磁场 $B_z$ | 正常值 | Ω_L 不变，沿 Z 方向 |
+| 主磁场 $B_x$ | 正常值 | Ω_L 不变，沿 X 方向（与探测光同轴） |
 | λ/2 波片 | 已补偿 | CSS 态下 PD1/PD2 光强尽量接近 |
 | PD1/PD2 → 示波器 | DC 耦合采集 | 示波器双通道同步采集，记录衰减波形 |
 
@@ -207,11 +207,19 @@ Time_sequence(90kHz方波): |█████████████████
 
 ### θ_F 计算
 
+平衡偏振探测中，$\lambda/2$ 波片 + PBS 将 Faraday 旋光角转换为两路光强差：
+
 $$
-\theta_F = \arctan \sqrt{\left| \frac{V_x}{V_y} \right|} - \arctan \sqrt{\left| \frac{V_x^{(0)}}{V_y^{(0)}} \right|} \tag{3.13}
+\theta_F = \frac{1}{2}\arcsin\left(\frac{V_x - V_y}{V_x + V_y}\right) - \theta_F^{(0)}
 $$
 
-其中 $V_x^{(0)}$、$V_y^{(0)}$ 为热态参考值（Pump 关闭后长时间等待至热平衡测得）。
+小角度近似下：
+
+$$
+\theta_F \approx \frac{V_x - V_y}{2(V_x + V_y)} - \theta_F^{(0)}
+$$
+
+其中 $\theta_F^{(0)}$ 为热态残余旋光角（Pump 关闭后长时间等待至热平衡测得的偏置）。
 
 ### T₁ 指数拟合
 
@@ -229,7 +237,7 @@ $$
 例（论文图 3-15）：
 
 $$
-\Gamma_1^{-1}(P_{\text{probe}}) = 23.26 + 0.0293 P_{\text{probe}}
+T_1^{-1}(P_{\text{probe}}) = 23.26 + 0.0293 P_{\text{probe}}
 $$
 
 | 参数 | 数值示例 | 物理机制 |

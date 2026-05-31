@@ -19,7 +19,7 @@ safety_limits:
   # ---- 直流源 ----
   main_magnetic_field:
     min: 0
-    max: 101
+    max: 10
     ramp_rate: null
     output_off_on_error: true
     description: "GS200 电流源控制主磁场，范围 0-10 mA"
@@ -41,17 +41,17 @@ safety_limits:
 
   Pump_laser_power:
     min: 0.0
-    max: 2.0
+    max: 1.0
     ramp_rate: null
     output_off_on_error: true
-    description: "Pump光功率 DC 电平控制，范围 0-2 V"
+    description: "Pump光功率 DC 电平控制，范围 0-1V"
 
   Probe_laser_power:
     min: 0.0
-    max: 2.0
+    max: 1.0
     ramp_rate: null
     output_off_on_error: true
-    description: "Probe光功率 DC 电平控制，范围 0-2 V"
+    description: "Probe光功率 DC 电平控制，范围 0-1 V"
 
   X_magnetic_field:
     min: -10.0
@@ -80,6 +80,13 @@ safety_limits:
     ramp_rate: null
     output_off_on_error: true
     description: "Pump AOM 驱动，幅值不超过 180 mV"
+
+  PUMP_MOD_DUTY:
+    min: 1
+    max: 50
+    ramp_rate: null
+    output_off_on_error: false
+    description: "Pump 脉冲占空比 (%)，范围 1-50%，避免过大占空比导致 AOM 过热"
 
   Time_sequence:
     min: -10
