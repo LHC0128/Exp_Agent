@@ -1,4 +1,4 @@
-"""多参数优化扫描 — 顺序扫描 Pump power, Probe power, duty, main_B fine."""
+"""多参数优化扫描 — 精细扫描 Pump, Probe, Duty, main_B，XY验证."""
 import sys; sys.path.insert(0, '.')
 import yaml, time, numpy as np
 from pathlib import Path
@@ -40,10 +40,6 @@ QUALITY_THRESHOLDS = {
     "residual_sign_change_ratio_min": 0.0,
 }
 
-# =====================================================================
-# ★ 优化扫描序列 — 在此配置 ★
-# =====================================================================
-# 当前基准参数 (从之前测试中 B=9.3mA 为最佳工作点)
 BASELINE = {
     "main_magnetic_field": 9.3,
     "Pump_laser_power": 0.2,
@@ -54,7 +50,7 @@ BASELINE = {
 }
 
 OPTIMIZE_SEQUENCE = [
-    # 1) 精细扫描主磁场 (B=9.30mA 附近 ±0.02mA)
+    # 1) 精细扫描主磁场 (9.28-9.32 mA)
     {
         "parameter": "main_magnetic_field",
         "values": [9.28, 9.29, 9.30, 9.31, 9.32],
@@ -68,7 +64,7 @@ OPTIMIZE_SEQUENCE = [
         "stabilize_time": 2.0,
         "recalibrate_phase": True,
     },
-    # 3) 低功率段精细扫描 Probe
+    # 3) 精细扫描 Probe
     {
         "parameter": "Probe_laser_power",
         "values": [0.12, 0.15, 0.18, 0.20, 0.25, 0.30],
@@ -82,17 +78,17 @@ OPTIMIZE_SEQUENCE = [
         "stabilize_time": 2.0,
         "recalibrate_phase": False,
     },
-    # 5) X 补偿磁场小范围扫描 (验证零场是否最优)
+    # 5) X 补偿磁场验证 (±0.1V)
     {
         "parameter": "X_magnetic_field",
-        "values": [-0.3, -0.15, 0, 0.15, 0.3],
+        "values": [-0.10, -0.05, 0, 0.05, 0.10],
         "stabilize_time": 1.5,
         "recalibrate_phase": False,
     },
-    # 6) Y 补偿磁场小范围扫描 (验证零场是否最优)
+    # 6) Y 补偿磁场验证 (±0.1V)
     {
         "parameter": "Y_magnetic_field",
-        "values": [-0.3, -0.15, 0, 0.15, 0.3],
+        "values": [-0.10, -0.05, 0, 0.05, 0.10],
         "stabilize_time": 1.5,
         "recalibrate_phase": False,
     },
@@ -100,7 +96,6 @@ OPTIMIZE_SEQUENCE = [
 
 total_iters = sum(len(s["values"]) for s in OPTIMIZE_SEQUENCE)
 print(f"优化扫描: {len(OPTIMIZE_SEQUENCE)} 个维度, 共 {total_iters} 次迭代")
-print(f"基准参数: {BASELINE}")
 
 # ===== Connect devices =====
 print("\n连接设备...")
@@ -131,8 +126,10 @@ print(f"  HF2: {hfi.idn}")
 print("\n设置基准参数...")
 dg_laser.setup_dc(BASELINE["Pump_laser_power"], channel=1)
 dg_laser.setup_dc(BASELINE["Probe_laser_power"], channel=2)
-dg_comp.setup_dc(0, channel=1); dg_comp.set_output(False, channel=1)
-dg_comp.setup_dc(0, channel=2); dg_comp.set_output(False, channel=2)
+dg_comp.setup_dc(BASELINE["X_magnetic_field"], channel=1)
+dg_comp.set_output(abs(BASELINE["X_magnetic_field"]) > 0, channel=1)
+dg_comp.setup_dc(BASELINE["Y_magnetic_field"], channel=2)
+dg_comp.set_output(abs(BASELINE["Y_magnetic_field"]) > 0, channel=2)
 gs.set_current(BASELINE["main_magnetic_field"] / 1000); gs.set_output(True)
 dg_temp.setup_dc(5.0, channel=2)
 dg_sweep.setup_square(freq=10, amplitude=10, offset=0, dcycle=50, channel=2)
@@ -180,8 +177,10 @@ def restore_baseline():
     pw_new = (current_duty / 100) / PUMP_MOD_FREQ
     dg_mod.setup_pulse(freq=PUMP_MOD_FREQ, amplitude=RF_GATE_AMPLITUDE,
                        offset=RF_GATE_OFFSET, width=pw_new, channel=2)
-    dg_comp.setup_dc(BASELINE["X_magnetic_field"], channel=1); dg_comp.set_output(abs(BASELINE["X_magnetic_field"])>0, channel=1)
-    dg_comp.setup_dc(BASELINE["Y_magnetic_field"], channel=2); dg_comp.set_output(abs(BASELINE["Y_magnetic_field"])>0, channel=2)
+    dg_comp.setup_dc(BASELINE["X_magnetic_field"], channel=1)
+    dg_comp.set_output(abs(BASELINE["X_magnetic_field"]) > 0, channel=1)
+    dg_comp.setup_dc(BASELINE["Y_magnetic_field"], channel=2)
+    dg_comp.set_output(abs(BASELINE["Y_magnetic_field"]) > 0, channel=2)
     time.sleep(1.0)
 
 def apply_param(name, val):
@@ -199,21 +198,19 @@ def apply_param(name, val):
         pw_new = (current_duty / 100) / PUMP_MOD_FREQ
         dg_mod.setup_pulse(freq=PUMP_MOD_FREQ, amplitude=RF_GATE_AMPLITUDE,
                            offset=RF_GATE_OFFSET, width=pw_new, channel=2)
-    dg_comp.setup_dc(BASELINE["X_magnetic_field"], channel=1); dg_comp.set_output(abs(BASELINE["X_magnetic_field"])>0, channel=1)
-    dg_comp.setup_dc(BASELINE["Y_magnetic_field"], channel=2); dg_comp.set_output(abs(BASELINE["Y_magnetic_field"])>0, channel=2)
+    elif name == "X_magnetic_field":
+        dg_comp.setup_dc(val, channel=1)
+        dg_comp.set_output(abs(val) > 0, channel=1)
+    elif name == "Y_magnetic_field":
+        dg_comp.setup_dc(val, channel=2)
+        dg_comp.set_output(abs(val) > 0, channel=2)
 
 def get_all_params(override=None):
     p = dict(BASELINE)
     p["PUMP_MOD_AMPLITUDE"] = PUMP_MOD_AMPLITUDE
-    # 更新当前的 duty
     p["PUMP_MOD_DUTY"] = current_duty
     if override: p.update(override)
     return p
-
-    elif name == "X_magnetic_field":
-        dg_comp.setup_dc(val, channel=1); dg_comp.set_output(abs(val)>0, channel=1)
-    elif name == "Y_magnetic_field":
-        dg_comp.setup_dc(val, channel=2); dg_comp.set_output(abs(val)>0, channel=2)
 
 # ===== Scan loop =====
 summary_path = Path("data") / EXPERIMENT_TYPE / "run_summary.csv"
@@ -232,7 +229,6 @@ try:
         print(f"[维度 {seq_idx+1}/{len(OPTIMIZE_SEQUENCE)}] {pname}: {values}")
         print(f"{'='*60}")
 
-        # ★ 恢复基准参数，确保每个维度从相同起点开始
         print("  恢复基准参数...")
         restore_baseline()
         time.sleep(stab)
@@ -250,13 +246,12 @@ try:
 
             print(f"\n--- [{iter_counter}/{total_iters}] {pname} = {val} ---")
 
-            # Apply
             apply_param(pname, val)
             time.sleep(stab)
 
             if do_recal:
                 p = recalibrate()
-                print(f"  Phase recalibrated: {p:.2f}deg")
+                print(f"  Phase: {p:.2f}deg")
             else:
                 print(f"  Phase kept: {phase:.2f}deg")
 
@@ -306,17 +301,16 @@ try:
             if fit_result.is_valid:
                 print(f"  Fit OK: R^2={fit_result.r_squared:.3f}, "
                       f"slope={fit_result.slope_V_per_fT:.2e} V/fT, "
-                      f"gamma={fit_result.gamma_nT:.1f}nT")
+                      f"HWHM={fit_result.gamma_nT:.1f}nT")
             else:
                 print(f"  Fit REJ: {fit_result.rejection_reasons}")
 
-            # Noise acquisition
+            # Noise
             noise_dcfg = DemodulatorConfig(demod_index=0, enable=True, rate=50000,
                                            input_channel=0, osc_select=0, harmonic=1,
                                            time_constant=1e-6, order=4, phase=phase)
             actual_noise_rate = demod.configure_demodulator(hfi, noise_dcfg)
             time.sleep(0.3)
-
             dg_sweep.setup_dc(0, channel=1); dg_sweep.set_output(False, channel=1)
             time.sleep(0.5)
             fs_noise = float(actual_noise_rate)
@@ -349,13 +343,13 @@ try:
             np.savez(run_dir / "raw" / "noise_data.npz",
                      psd_avg=psd_avg, freq=freq_arr, fs=fs_noise, n_avg=NOISE_N_AVG)
 
-            # Restore demodulator
+            # Restore demodulator to scan rate
             restore_cfg = DemodulatorConfig(demod_index=0, enable=True, rate=1000,
                                             input_channel=0, osc_select=0, harmonic=1,
                                             time_constant=0.001, order=4, phase=phase)
             actual_rate = demod.configure_demodulator(hfi, restore_cfg); time.sleep(0.2)
 
-            # Sensitivity
+            # Sensitivity (new algorithm: flat region median)
             sens_result = compute_sensitivity(psd_avg, freq_arr,
                                               slope_V_per_fT=fit_result.slope_V_per_fT,
                                               f_larmor_Hz=fit_result.f_larmor_Hz)
@@ -367,25 +361,23 @@ try:
                              n_avg=NOISE_N_AVG, freq_resolution_Hz=freq_res)
 
             status = "OK" if fit_result.is_valid else "REJ"
-            print(f"  [{status}] Sens={sens_result.sens_flat:.1f} fT/sqrtHz, "
+            print(f"  [{status}] Sens={sens_result.sens_flat:.0f} fT/sqrtHz, "
                   f"HWHM={fit_result.gamma_nT:.1f}nT, "
-                  f"f_larmor={fit_result.f_larmor_Hz:.1f}Hz, "
+                  f"f_larmor={fit_result.f_larmor_Hz:.0f}Hz, "
                   f"R^2={fit_result.r_squared:.3f}")
             all_results.append({
                 "param": pname, "value": val,
                 "fit": fit_result, "sens": sens_result, "status": status,
             })
 
-            # Running best
             valid_res = [r for r in all_results if r["status"] == "OK"]
             if valid_res:
                 best = min(valid_res, key=lambda r: r["sens"].sens_flat)
                 print(f"  >>> Best so far: {best['param']}={best['value']}, "
-                      f"Sens={best['sens'].sens_flat:.1f} fT/sqrtHz")
+                      f"Sens={best['sens'].sens_flat:.0f} fT/sqrtHz")
 
 finally:
     t_end = datetime.now()
-    # ---- Summary ----
     print("\n" + "=" * 60)
     print("OPTIMIZATION COMPLETE")
     print(f"Duration: {(t_end - t_start).total_seconds() / 60:.1f} min")
@@ -395,22 +387,17 @@ finally:
     rejected = [r for r in all_results if r["status"] != "OK"]
     print(f"Valid: {len(valid_res)}/{len(all_results)}, Rejected: {len(rejected)}")
 
-    # Sort by sensitivity
     valid_res.sort(key=lambda r: r["sens"].sens_flat)
 
-    print("\n=== Top 10 Results ===")
-    print(f"{'Rank':<5} {'Param':<25} {'Value':<8} {'Sens(fT/sqrtHz)':<16} {'HWHM(nT)':<10} {'Slope(V/fT)':<14} {'R^2':<8}")
-    print("-" * 86)
-    for rank, r in enumerate(valid_res[:10]):
+    print("\n=== All Results (sorted) ===")
+    print(f"{'Rank':<5} {'Param':<24} {'Value':<10} {'Sens(fT/sqrtHz)':<16} {'HWHM(nT)':<10} {'Slope(V/fT)':<14} {'R^2':<7}")
+    print("-" * 90)
+    for rank, r in enumerate(valid_res):
         fr = r["fit"]; sr = r["sens"]
-        print(f"{rank+1:<5} {r['param']:<25} {str(r['value']):<8} "
-              f"{sr.sens_flat:<16.1f} {fr.gamma_nT:<10.1f} "
-              f"{fr.slope_V_per_fT:<14.2e} {fr.r_squared:<8.3f}")
+        print(f"{rank+1:<5} {r['param']:<24} {str(r['value']):<10} "
+              f"{sr.sens_flat:<16.0f} {fr.gamma_nT:<10.1f} "
+              f"{fr.slope_V_per_fT:<14.2e} {fr.r_squared:<7.3f}")
 
-    if not valid_res:
-        print("No valid results!")
-
-    # Cleanup
     try:
         dg_temp.set_output(True, channel=2)
         dg_sweep.set_output(False, channel=1)

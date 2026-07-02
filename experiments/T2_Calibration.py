@@ -182,12 +182,14 @@ try:
     dg_rf_switch.connect()
     devices["dg_rf_switch"] = dg_rf_switch
     print(f"DG4000 RF 开关已连接: AOM载波 CH{AOM_CARRIER_CH}, 门控 CH{RF_GATE_CH}")
-    # ---- Temp_Switch ----
+    # ---- Temp_Switch (DG9000 Pro, 必须用 DG900Instrument) ----
     temp_sw_cfg = MAPPING.get("Temp_Switch")
-    dg_temp_sw = DG4000Instrument(temp_sw_cfg["resource"], channel=temp_sw_cfg["channel"])
+    # [重要] resource 是 DG9Q... 前缀 → DG900 Pro 系列;  DG4000Instrument 不兼容
+    dg_temp_sw = DG900Instrument(temp_sw_cfg["resource"], channel=temp_sw_cfg["channel"])
     dg_temp_sw.connect()
+    dg_temp_sw.set_output(False)   # 初始关闭, 减少磁场干扰风险
     devices["dg_temp_sw"] = dg_temp_sw
-    print(f"Temp_Switch 已连接: {temp_sw_cfg['resource']}")
+    print(f"Temp_Switch (DG900) 已连接: {temp_sw_cfg['resource']}")
     # ---- SDS 示波器 ----
     scope_cfg = MAPPING["scope_waveform"]
     sds_inst = SDSInstrument(scope_cfg["resource"])

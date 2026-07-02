@@ -813,18 +813,15 @@ class DG4000Instrument:
     MAX_ARB_POINTS_TOTAL = 512 * 1024
 
     def send_arbitrary_waveform(self, values, channel: Optional[int] = None):
-        """发送自定义波形到易失性存储器.
+        """发送自定义波形到易失性存储器（ASCII 格式）.
 
         将用户定义的波形数据（归一化到 [-1, +1]）写入信号发生器的
-        易失性波形存储区，波形会自动切换到 CUSTom 类型。
+        易失性波形存储区。使用 ASCII 逗号分隔、5 位小数格式（用户已验证）。
 
         参数
         ----------
         values : array-like
             一个周期内的波形数据点，归一化到 [-1, +1]。
-            -1 对应最小值 (−amplitude/2), +1 对应最大值 (+amplitude/2)。
-            支持 list、numpy.ndarray 等可迭代对象。
-            点数范围: 2 ~ 16384（如需更大的点数请使用 DAC16 二进制模式）。
         channel : int, optional
             通道号，默认使用实例绑定的通道。
         """
@@ -835,14 +832,13 @@ class DG4000Instrument:
             raise ValueError(
                 f"点数需在 2 ~ {self.MAX_ARB_POINTS} 之间，实际为 {n}")
 
-        # 检查范围 [-1, 1]
-        for i, v in enumerate(pts):
-            if v < -1 or v > 1:
-                raise ValueError(
-                    f"所有值必须在 [-1, +1] 范围内，第 {i} 个值为 {v}")
+        # 裁剪到 [-1, 1] 并转为 5 位小数
+        clipped = [max(-1.0, min(1.0, float(v))) for v in pts]
+        rounded = [round(v, 5) for v in clipped]
 
-        # 格式: :SOURce<n>:TRACe:DATA:DATA VOLATILE,val1,val2,...
-        val_str = ",".join(f"{v:e}" for v in pts)
+        # 先设点数，再发 ASCII 数据
+        self.write(f":SOURce{ch}:TRACe:DATA:POINts VOLATILE,{n}")
+        val_str = ",".join(f"{v:.5f}" for v in rounded)
         self.write(f":SOURce{ch}:TRACe:DATA:DATA VOLATILE,{val_str}")
 
     def setup_arbitrary(self, y_values, freq: float = 1000.0,
@@ -851,14 +847,19 @@ class DG4000Instrument:
                         channel: Optional[int] = None) -> None:
         """一键配置自定义波形输出.
 
-        将 y_values 发送到仪器并输出，相当于任意波形发生器的
-        "定义波形 → 设置参数 → 打开输出" 完整流程。
+        按照用户已验证的工作流程：
+        1. 退出 DC（切到 SINusoid）→ APPLy:USER 设置参数
+        2. 上传波形数据到 VOLATILE 存储区
+        3. 打开输出
+
+        关键：APPLy:USER 在 USER/非DC 状态下正常工作，
+        仅在 DC 状态下会被特殊处理（忽略 freq/amp/phase）。
+        因此先切到 SINusoid 退出 DC 态。
 
         参数
         ----------
         y_values : array-like
             一个周期内的波形数据，归一化到 [-1, +1]。
-            例如 np.sin() 的输出范围正好适用。
         freq : float
             波形重复频率 (Hz), 默认 1 kHz。
         amplitude : float
@@ -871,10 +872,19 @@ class DG4000Instrument:
             通道号，默认使用实例绑定的通道。
         """
         ch = self._ch(channel)
+
+        # Step 1: 退出 DC（切到 SINusoid 确保 APPLy:USER 不被特殊处理）
+        self.set_shape("SINusoid", channel=ch)
+        time.sleep(0.05)
+
+        # Step 2: APPLy:USER 设置参数并切换到 USER 模式
+        self.write(
+            f":SOURce{ch}:APPLy:USER {freq:e},{amplitude:e},{offset:e},{phase:e}")
+
+        # Step 3: 上传波形数据到 VOLATILE
         self.send_arbitrary_waveform(y_values, channel=ch)
-        self.apply_wave("USER", channel=ch,
-                        freq=freq, amp=amplitude,
-                        offset=offset, phase=phase)
+
+        # Step 4: 确保输出打开
         self.set_output(True, channel=ch)
 
     def set_custom_point(self, point: int, value: float,

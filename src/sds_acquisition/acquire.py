@@ -140,12 +140,12 @@ class SDSAcquisition:
             preamble.code_per_div,
         )
 
-        # 时间轴
+        # 时间轴 — build_time_axis 自动从 preamble 推算 scope 实际 timebase_scale
+        # 这样即使 SDS 仲裁后实际 timebase 与我们请求的不同, 时间轴仍准确
         time_axis = build_time_axis(
             len(adc_codes),
             preamble.horiz_interval,
             preamble.horiz_offset,
-            timebase_scale,
             horiz_divisions,
         )
 

@@ -59,13 +59,17 @@ def build_time_axis(
     num_points: int,
     horiz_interval: float,
     horiz_offset: float,
-    timebase_scale: float,
     horiz_divisions: int = 10,
+    timebase_scale: float = None,
 ) -> np.ndarray:
     """
-    构建时间轴。
-    t[i] = -timebase_scale * horiz_divisions / 2 + i * horiz_interval + horiz_offset
+    构建时间轴.
+    [关键] timebase_scale 不传时, 由 horiz_interval * num_points / horiz_divisions
+    从 preamble 字段自动推算, 等价于 scope 实际运行的 (memory+rate+timebase) 协调后的
+    真实时间基准 — 即使 SDS 内部仲裁后实际值与我们请求不同, 时间轴仍准确.
     """
+    if timebase_scale is None:
+        timebase_scale = horiz_interval * num_points / horiz_divisions
     t0 = -timebase_scale * horiz_divisions / 2 + horiz_offset
     return t0 + np.arange(num_points, dtype=np.float64) * horiz_interval
 

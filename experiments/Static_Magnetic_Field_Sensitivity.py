@@ -64,9 +64,9 @@ RAMP_SYMMETRY = 20
 DAQ_DURATION = 1
 
 FIXED_PARAMS = {
-    "Pump_laser_power": 0.2,         "Probe_laser_power": 0.2,
+    "Pump_laser_power": 0.3,         "Probe_laser_power": 0.12,
     "temperature": 100,              "Temp_Switch": 5.0,
-    "Time_sequence": 10.0,           "main_magnetic_field": 9.3,
+    "Time_sequence": 10.0,           "main_magnetic_field": 9.31,
     "X_magnetic_field": 0,         "Y_magnetic_field": 0,
     "Time_sequence_2": 0.0,         
 }
