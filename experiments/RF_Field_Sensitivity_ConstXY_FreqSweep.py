@@ -54,7 +54,7 @@
 # | **HF2** (dev18246) | Demod 0 (90 kHz): 主信号解调; Demod 3 (Z 驱动): 射频场解调 (走物理回环: Demod0 Y → AuxOut2 → SigIn2 DC → Demod3) |
 #
 # ## 注意事项（与本仓库约定一致）
-# - **不要**碰 `rf_coil`（mapping.yaml 备注：与 `Y_magnetic_field` 共享 DG4E234902522 CH2）。
+# - **不要**碰 `rf_coil`（mapping.yaml 备注：共享 DG4E234902522 CH2）。
 #   本实验已将该通道作为 Y 控制场载波，不会再调用 `rf_coil`。
 # - 所有输出量设置前调用 `validate_safety_limit()`。
 # - 扫描循环用 `try/finally` 包裹，异常时设备恢复安全状态。
@@ -127,9 +127,11 @@ RUN_TAG = "constxy_freq"
 ACQUISITION_MODE = "both"
 
 # ========== XY 方向恒定场参数（顶部可调）==========
-LARMOR_FREQ_HZ = 2000             # XY 方向恒定场对应的 Larmor 进动频率 (Hz)
-A_ENV_K = 13724                   # Ω → 电压转换斜率 (Hz/V)
-A_ENV_B = 66                      # Ω → 电压转换截距 (Hz)
+LARMOR_FREQ_HZ = 7000             # XY 方向恒定场对应的 Larmor 进动频率 (Hz)
+# A_ENV_K = 13724                   # Ω → 电压转换斜率 (Hz/V)
+# A_ENV_B = 66                      # Ω → 电压转换截距 (Hz)
+A_ENV_K = 16319                   # Ω → 电压转换斜率 (Hz/V)
+A_ENV_B = 2121                      # Ω → 电压转换截距 (Hz)
 XY_DC_VOLTAGE = (LARMOR_FREQ_HZ - A_ENV_B) / A_ENV_K
 print(f"XY DC 电压: {XY_DC_VOLTAGE:.4f} V (对应 Larmor 频率 = {LARMOR_FREQ_HZ} Hz)")
 
@@ -247,8 +249,6 @@ FIXED_PARAMS = {
     "temperature": 100,
     "Temp_Switch": 5.0,
     "Time_sequence": 5.0,
-    "X_magnetic_field": 0,        # 占位：XY 由 dg_comp AM + dg_am DC 控制，不走直送
-    "Y_magnetic_field": 0,        # 同上
     "Time_sequence_2": 0.0,
 }
 
@@ -256,7 +256,7 @@ FIXED_PARAMS = {
 for k, v in FIXED_PARAMS.items():
     validate_safety_limit(k, v)
 validate_safety_limit("Z_magnetic_field", Z_RF_AMPLITUDE)
-# 显式声明本实验不占用 rf_coil（与 Y_magnetic_field 共用 DG4E234902522 CH2）
+# 显式声明本实验不占用 rf_coil（共享 DG4E234902522 CH2）
 validate_safety_limit("rf_coil", 0.0)
 
 print(f"实验类型: {EXPERIMENT_TYPE}")
@@ -572,23 +572,13 @@ validate_safety_limit("Probe_laser_power", FIXED_PARAMS["Probe_laser_power"])
 dg_laser.setup_dc(FIXED_PARAMS["Probe_laser_power"], channel=2)
 print(f"Probe 光功率: {FIXED_PARAMS['Probe_laser_power']} V DC")
 
-# ---- 3. X/Y 补偿磁场直送通道占位（XY 由 dg_comp + dg_am 控制，这里关闭直送）----
-validate_safety_limit("X_magnetic_field", FIXED_PARAMS["X_magnetic_field"])
-validate_safety_limit("Y_magnetic_field", FIXED_PARAMS["Y_magnetic_field"])
-dg_comp.setup_dc(FIXED_PARAMS["X_magnetic_field"], channel=1)
-dg_comp.setup_dc(FIXED_PARAMS["Y_magnetic_field"], channel=2)
-dg_comp.set_output(False, channel=1)
-dg_comp.set_output(False, channel=2)
-print(f"X 直送: {FIXED_PARAMS['X_magnetic_field']} V (OFF)")
-print(f"Y 直送: {FIXED_PARAMS['Y_magnetic_field']} V (OFF)")
-
-# ---- 4. 主磁场 (GS200, 电流模式) ----
+# ---- 3. 主磁场 (GS200, 电流模式) ----
 validate_safety_limit("main_magnetic_field", FIXED_PARAMS["main_magnetic_field"])
 gs.set_current(FIXED_PARAMS["main_magnetic_field"] / 1000.0)  # mA → A
 gs.set_output(True)
 print(f"主磁场: {FIXED_PARAMS['main_magnetic_field']} mA")
 
-# ---- 5. 温度控制（等待稳定 ±1°C）----
+# ---- 4. 温度控制（等待稳定 ±1°C）----
 validate_safety_limit("temperature", FIXED_PARAMS["temperature"])
 tec.set_target_temperature(FIXED_PARAMS["temperature"], channel=1)
 tec.set_enable(True, channel=1)
@@ -940,8 +930,8 @@ config = {
     "mapping_snapshot": MAPPING,
     "safety_limits_snapshot": LIMITS,
     "note_rf_coil": (
-        "实验未占用 rf_coil 物理通道；rf_coil 与 Y_magnetic_field 共享 "
-        "DG4E234902522 CH2，本实验将该通道作为 Y 控制场载波。"
+        "实验未占用 rf_coil 物理通道；DG4E234902522 CH2 "
+        "在本实验中作为 Y 控制场载波。"
     ),
 }
 # ---- 先保存配置快照（Phase 1 内容），Phase 2 校准后再补充字段 ----

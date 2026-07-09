@@ -53,14 +53,14 @@ mapping:
     label: "X方向磁场 AM"
     resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
     channel: 1
-    description: "输出大小对应着X方向磁场 AM，通过调节信号发生器的DC电平控制输出功率，范围-2-2 V"
+    description: "输出大小对应着X方向磁场 AM，用作 dg_comp 外部 AM 输入；当前安全限值允许 -2.5 到 1.5 V"
 
   Y_magnetic_field_AM:
     instrument: signal_generator
     label: "Y方向磁场 AM"
     resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
     channel: 2
-    description: "输出大小对应着Y方向磁场 AM，通过调节信号发生器的DC电平控制输出功率，范围-2-2 V"
+    description: "输出大小对应着Y方向磁场 AM，用作 dg_comp 外部 AM 输入；当前安全限值允许 -2.5 到 1.5 V"
 
   X_magnetic_field:
     instrument: signal_generator

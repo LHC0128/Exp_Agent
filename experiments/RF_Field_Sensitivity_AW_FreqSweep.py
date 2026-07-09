@@ -23,7 +23,7 @@
 # |------|------|
 # | **dg_mod** (DG4E222800868) | CH1: 100MHz 正弦 → RF 开关 IN; CH2: 脉冲门控 (90kHz, 5% 占空比) |
 # | **dg_comp** (DG4E234902522) | CH1/CH2: X/Y 载波 (90kHz), AM 外部调制模式 |
-# | **dg_am** (DG4E231500376) | CH1: X AM A(t) 包络 (含 MOD_OFFSET_X); CH2: Y AM A(t) 包络 (含 MOD_OFFSET_Y) |
+# | **dg_am** (DG4E231500376) | CH1/CH2: X/Y AM 物理电压包络（由 Ω_ctrl 按单一标定坐标转换） |
 # | **dg_sweep** (DG4E242401288) | CH1: Z 射频场 Burst 正弦 (频率扫描); CH2: 触发直通 → dg_am Ext Trig |
 # | **dg_laser** (DG9Q280100002) | CH1: Pump 光功率 DC; CH2: Probe 光功率 DC |
 # | **dg_temp** (DG9Q271200104) | CH2: 温度开关 (5V ON / 0V OFF) |
@@ -114,7 +114,7 @@ Z_RF_FREQ_POINTS = 101             # 频率扫描点数
 Z_RF_FREQ_LOG_SPACED = False       # True: 对数均匀; False: 线性均匀
 
 # ---- Z 射频场固定幅度 ----
-Z_RF_AMPLITUDE = 0.01              # Z 射频场固定幅度 (Vpp)
+Z_RF_AMPLITUDE = 0.05              # Z 射频场固定幅度 (Vpp)
 
 # ---- 每频点测量参数 ----
 FREQ_SETTLE_TIME = 0.5            # 切换频率后等待稳定时间 (s)
@@ -123,17 +123,29 @@ POINT_DURATION_s = 1.0             # yfft 模式下每频点 DAQ 采集时长 (s
 # ---- 相位扫描参数（嵌套在频率扫描内部）----
 PHASE_START = 0                   # 起始相位 (deg)
 PHASE_STOP = 360                  # 终止相位 (deg)
-PHASE_POINTS = 1                 # 相位点数
+PHASE_POINTS = 10                 # 相位点数
 PHASE_SETTLE_TIME = 0.1           # 切换相位后等待稳定时间 (s)
 
 # ---- 包络 A(t) 参数（任意波方案）----
 A_ENV_FREQ = 500                 # A(t) 基频 (Hz)
-A_ENV_K = 13724                   # Ω → 电压转换斜率 (Hz/V)
-A_ENV_B = 66                      # Ω → 电压转换截距 (Hz)
+A_ENV_K = 16319.281020056458     # Ω → AM 物理电压转换斜率 (Hz/V), 来自 XY_DC_Voltage_Calibration
+A_ENV_B = 2121.8563579769193      # Ω → AM 物理电压转换截距 (Hz), 已包含综合零点
+A_ENV_K_X = A_ENV_K
+A_ENV_B_X = A_ENV_B
+A_ENV_K_Y = A_ENV_K
+A_ENV_B_Y = A_ENV_B
 ARB_WAVEFORM_FILE = "control_waveformAW.csv"  # Ω_ctrl(t) 波形 CSV
-# ★ MOD 偏置补偿
-MOD_OFFSET_X = -0.147             # X 通道 MOD DC 偏置 (V)
-MOD_OFFSET_Y = -0.119             # Y 通道 MOD DC 偏置 (V)
+
+# AM 电压换算模式：
+#   linear_voltage: V_AM = (Ω_ctrl - B_eff) / K_eff，默认且推荐；不要再额外叠加 MOD_OFFSET。
+#   zero_centered: V_AM = V_zero + Ω_ctrl / K_eff，用独立零点电压表示。
+AM_VOLTAGE_CONVERSION_MODE = "linear_voltage"
+AM_ZERO_V_X = -0.1487540739959558  # 历史 MOD 零点，仅 zero_centered 模式使用
+AM_ZERO_V_Y = -0.12523177770966548
+
+# 历史 MOD 偏置常量：保留用于配置记录/对照，不在 linear_voltage 模式中叠加。
+MOD_OFFSET_X = AM_ZERO_V_X
+MOD_OFFSET_Y = AM_ZERO_V_Y
 
 # ---- X/Y 载波参数（AM 外部调制方案）----
 XY_CARRIER_FREQ = 90e3            # X/Y 载波频率 (Hz)
@@ -146,15 +158,15 @@ Y_AM_DEPTH = 100                  # Y 通道 AM 调制深度 (%)
 
 # ========== X/Y 载波相位校准参数（Phase 2）==========
 ENABLE_XY_CARRIER_PHASE_CAL = True
+XY_PHASE_CAL_DC_X = 1.0           # X 校相时 dg_am CH1 DC 包络 (V)，提高校相信号幅度
+XY_PHASE_CAL_DC_Y = 1.0           # Y 校相时 dg_am CH2 DC 包络 (V)，提高校相信号幅度
 XY_PHASE_CAL_MAX_ITER_X = 5       # CH1 校相最大迭代次数
 XY_PHASE_CAL_MAX_ITER_Y = 15      # CH2 校相最大迭代次数
 XY_PHASE_CAL_TOL_DEG = 0.5        # |theta°| < tol 即视为收敛
 XY_PHASE_CAL_SETTLE_s = 0.5       # 每次 set_phase_adjust 后的等待时间
-TARGET_XY_PHASE_DIFF_deg = 90.0   # 目标 X→Y 相位差 (旋转场)
 
 # ---- Z 射频场幅度转换系数 ----
 Z_V_TO_NT = 3517 / 2              # V → nT 转换系数
-Z_V_TO_FT = Z_V_TO_NT * 1e6       # V → fT 转换系数
 
 # ---- Pump 调制参数 ----
 PUMP_MOD_FREQ = 90000             # Pump 调制频率 (Hz)
@@ -213,10 +225,6 @@ FIXED_PARAMS = {
     "main_magnetic_field": 9.31,
     "temperature": 100,
     "Temp_Switch": 5.0,
-    "Time_sequence": 5.0,
-    "X_magnetic_field": 0,        # 占位：XY 由 dg_comp AM + dg_am 控制，不走直送
-    "Y_magnetic_field": 0,        # 同上
-    "Time_sequence_2": 0.0,
 }
 
 # ---- 安全校验 ----
@@ -233,7 +241,7 @@ if Z_RF_FREQ_LOG_SPACED:
         np.log10(Z_RF_FREQ_STOP), Z_RF_FREQ_POINTS
     )
 else:
-    freq_list = np.linspace(Z_RF_FREQ_START, Z_RF_FREQ_STOP, Z_RF_FREQ_POINTS)
+    freq_list = np.linspace(Z_RF_FREQ_START, Z_RF_FREQ_STOP, Z_RF_FREQ_POINTS)+50
 
 has_baseline = (Z_RF_FREQ_START == 0.0)
 
@@ -409,12 +417,12 @@ while True:
         break
 
 # ---- 6. dg_am 初始值（DC 偏置，等待后续任意波配置）----
-dg_am.setup_dc(MOD_OFFSET_X, channel=1)
-dg_am.setup_dc(MOD_OFFSET_Y, channel=2)
+dg_am.setup_dc(0.0, channel=1)
+dg_am.setup_dc(0.0, channel=2)
 dg_am.set_output(False, channel=1)
 dg_am.set_output(False, channel=2)
-print(f"dg_am CH1(X AM): DC={MOD_OFFSET_X:.3f}V, 输出 OFF")
-print(f"dg_am CH2(Y AM): DC={MOD_OFFSET_Y:.3f}V, 输出 OFF")
+print("dg_am CH1(X AM): standby DC=0.000V, 输出 OFF")
+print("dg_am CH2(Y AM): standby DC=0.000V, 输出 OFF")
 
 # ---- 7. Pump 调制配置（RF 开关方案）----
 print("\n--- Pump 调制配置 ---")
@@ -478,11 +486,19 @@ config = {
     },
     "envelope": {
         "A_ENV_FREQ_Hz": A_ENV_FREQ,
+        "AM_VOLTAGE_CONVERSION_MODE": AM_VOLTAGE_CONVERSION_MODE,
         "A_ENV_K_Hz_per_V": A_ENV_K,
         "A_ENV_B_Hz": A_ENV_B,
+        "A_ENV_K_X_Hz_per_V": A_ENV_K_X,
+        "A_ENV_B_X_Hz": A_ENV_B_X,
+        "A_ENV_K_Y_Hz_per_V": A_ENV_K_Y,
+        "A_ENV_B_Y_Hz": A_ENV_B_Y,
         "ARB_WAVEFORM_FILE": ARB_WAVEFORM_FILE,
-        "MOD_OFFSET_X_V": MOD_OFFSET_X,
-        "MOD_OFFSET_Y_V": MOD_OFFSET_Y,
+        "AM_ZERO_V_X": AM_ZERO_V_X,
+        "AM_ZERO_V_Y": AM_ZERO_V_Y,
+        "MOD_OFFSET_X_V_legacy_not_applied": MOD_OFFSET_X,
+        "MOD_OFFSET_Y_V_legacy_not_applied": MOD_OFFSET_Y,
+        "offset_double_compensation_guard": "linear_voltage mode already includes the AM zero in B_eff; do not add MOD_OFFSET",
     },
     "xy_carrier": {
         "XY_CARRIER_FREQ_Hz": XY_CARRIER_FREQ,
@@ -490,6 +506,8 @@ config = {
         "Y_CARRIER_AMPLITUDE_Vpp": Y_CARRIER_AMPLITUDE,
         "X_AM_DEPTH_pct": X_AM_DEPTH,
         "Y_AM_DEPTH_pct": Y_AM_DEPTH,
+        "XY_PHASE_CAL_DC_X_V": XY_PHASE_CAL_DC_X,
+        "XY_PHASE_CAL_DC_Y_V": XY_PHASE_CAL_DC_Y,
     },
     "hf2_demod0": {
         "demod_idx": DEMOD0_IDX,
@@ -783,39 +801,86 @@ print("=" * 60)
 # ---- Step A: 加载 Ω_ctrl(t) → A(t) → 计算参数（先不写入 dg_am）----
 print("\n从 CSV 加载 Ω_ctrl(t) 并计算 A(t) 任意波参数...")
 
+def omega_to_am_voltage(omega_ctrl_hz, channel):
+    """把 Ω_ctrl(Hz) 转成 dg_am 外部 AM 物理电压。"""
+    omega_ctrl_hz = np.asarray(omega_ctrl_hz, dtype=float)
+    ch = str(channel).lower()
+    if ch in ("x", "1", "ch1"):
+        k_eff, b_eff, v_zero = A_ENV_K_X, A_ENV_B_X, AM_ZERO_V_X
+    elif ch in ("y", "2", "ch2"):
+        k_eff, b_eff, v_zero = A_ENV_K_Y, A_ENV_B_Y, AM_ZERO_V_Y
+    else:
+        raise ValueError(f"未知 AM 通道: {channel!r}")
+
+    if AM_VOLTAGE_CONVERSION_MODE == "linear_voltage":
+        return (omega_ctrl_hz - b_eff) / k_eff
+    if AM_VOLTAGE_CONVERSION_MODE == "zero_centered":
+        return v_zero + omega_ctrl_hz / k_eff
+    raise ValueError(
+        "AM_VOLTAGE_CONVERSION_MODE 必须为 'linear_voltage' 或 'zero_centered'; "
+        "不要使用 (Ω-B)/K + MOD_OFFSET 的混合补偿"
+    )
+
+
+def build_aw_params(v_waveform):
+    """把物理电压波形转换为 DG arbitrary 的 normalized/Vpp/offset 参数。"""
+    v_waveform = np.asarray(v_waveform, dtype=float)
+    v_min = float(np.min(v_waveform))
+    v_max = float(np.max(v_waveform))
+    v_center = (v_max + v_min) / 2.0
+    v_half_range = (v_max - v_min) / 2.0
+    if v_half_range <= 0:
+        normalized = np.zeros_like(v_waveform)
+        vpp = 0.002
+    else:
+        normalized = (v_waveform - v_center) / v_half_range
+        vpp = 2.0 * v_half_range
+    return {
+        "waveform_V": v_waveform,
+        "normalized": normalized,
+        "vpp": float(vpp),
+        "offset": float(v_center),
+        "min": float(v_min),
+        "max": float(v_max),
+    }
+
+
 waveform_path = project_root / "experiments" / ARB_WAVEFORM_FILE
 waveform_data = np.loadtxt(waveform_path, delimiter=",", skiprows=1)
 omega_ctrl = waveform_data[:, 1]  # Ω_ctrl (Hz)
 
-# A(t) = (Ω_ctrl - B) / K
-a_waveform = (omega_ctrl - A_ENV_B) / A_ENV_K
+# 推荐坐标：linear_voltage 直接使用 V_AM=(Ω_ctrl-B_eff)/K_eff，不再额外加 MOD_OFFSET。
+x_aw = build_aw_params(omega_to_am_voltage(omega_ctrl, "x"))
+y_aw = build_aw_params(omega_to_am_voltage(omega_ctrl, "y"))
 
-# 归一化参数
-a_min = float(np.min(a_waveform))
-a_max = float(np.max(a_waveform))
-a_center = (a_max + a_min) / 2.0
-a_half_range = (a_max - a_min) / 2.0
-a_normalized = (a_waveform - a_center) / a_half_range
-arb_vpp = 2.0 * a_half_range
+# 兼容旧变量名（用于后续少量打印/配置）：以 X 通道为代表。
+a_waveform = x_aw["waveform_V"]
+a_min = x_aw["min"]
+a_max = x_aw["max"]
+a_center = x_aw["offset"]
+a_normalized = x_aw["normalized"]
+arb_vpp = x_aw["vpp"]
 
-# 校相期间使用的 DC 值: 与正常运行时 AM 包络平均值接近
-# 用 a_center + MOD_OFFSET_X/Y 作为校相 DC，和实际运行最一致
-CALIB_DC_X = a_center + MOD_OFFSET_X
-CALIB_DC_Y = a_center + MOD_OFFSET_Y
+# 校相期间使用较大的独立 DC 包络；这是物理 AM 电压，不再叠加 MOD_OFFSET。
+CALIB_DC_X = float(XY_PHASE_CAL_DC_X)
+CALIB_DC_Y = float(XY_PHASE_CAL_DC_Y)
+validate_safety_limit("X_magnetic_field_AM", CALIB_DC_X)
+validate_safety_limit("Y_magnetic_field_AM", CALIB_DC_Y)
 
-# 任意波输出电压范围（用于安全校验）
-x_offset_final = a_center + MOD_OFFSET_X
-y_offset_final = a_center + MOD_OFFSET_Y
-x_min_out = x_offset_final - arb_vpp / 2.0
-x_max_out = x_offset_final + arb_vpp / 2.0
-y_min_out = y_offset_final - arb_vpp / 2.0
-y_max_out = y_offset_final + arb_vpp / 2.0
+x_offset_final = x_aw["offset"]
+y_offset_final = y_aw["offset"]
+x_min_out = x_aw["min"]
+x_max_out = x_aw["max"]
+y_min_out = y_aw["min"]
+y_max_out = y_aw["max"]
 
-print(f"  A(t) 范围: [{a_min:.3f}, {a_max:.3f}] V, 中心={a_center:.3f}V")
-print(f"  任意波 Vpp={arb_vpp:.3f}V, freq={A_ENV_FREQ}Hz")
+print(f"  AM conversion mode: {AM_VOLTAGE_CONVERSION_MODE}")
+print(f"  Ω_ctrl 范围: [{np.min(omega_ctrl):.2f}, {np.max(omega_ctrl):.2f}] Hz, mean={np.mean(omega_ctrl):.2f} Hz")
+print(f"  CH1 AM 电压范围: [{x_min_out:.3f},{x_max_out:.3f}] V, offset={x_offset_final:.3f}V, Vpp={x_aw['vpp']:.3f}V")
+print(f"  CH2 AM 电压范围: [{y_min_out:.3f},{y_max_out:.3f}] V, offset={y_offset_final:.3f}V, Vpp={y_aw['vpp']:.3f}V")
+print(f"  等效均值 Ω: X={np.mean(x_aw['waveform_V']) * A_ENV_K_X + A_ENV_B_X:.1f} Hz, "
+      f"Y={np.mean(y_aw['waveform_V']) * A_ENV_K_Y + A_ENV_B_Y:.1f} Hz")
 print(f"  校相 DC 值: X={CALIB_DC_X:.3f}V, Y={CALIB_DC_Y:.3f}V")
-print(f"  任意波输出范围: X=[{x_min_out:.3f},{x_max_out:.3f}] V, "
-      f"Y=[{y_min_out:.3f},{y_max_out:.3f}] V")
 
 # 安全校验任意波输出范围
 for ch_name, v_min, v_max in [("X_magnetic_field_AM", x_min_out, x_max_out),
@@ -854,6 +919,15 @@ def configure_xy_carrier_for_phase_cal(dg_comp_inst, x_phase_deg, y_phase_deg):
     print(f"  dg_comp CH2: {XY_CARRIER_FREQ/1e3:.0f} kHz, "
           f"{Y_CARRIER_AMPLITUDE} Vpp, AM EXT depth {Y_AM_DEPTH}%, "
           f"phase={y_phase_deg:.2f}°")
+
+
+def apply_z_rf_burst_phase(dg_sweep_inst, phase_deg):
+    """设置 Z 射频 Burst 起始相位，并重新开关输出使相位生效。"""
+    dg_sweep_inst.set_output(False, channel=1)
+    dg_sweep_inst.set_burst_state(False, channel=1)
+    dg_sweep_inst.set_burst_phase(float(phase_deg), channel=1)
+    dg_sweep_inst.set_burst_state(True, channel=1)
+    dg_sweep_inst.set_output(True, channel=1)
 
 
 def set_xy_phase_cal_am_dc(dg_am_inst, v_dc_x, v_dc_y):
@@ -957,8 +1031,7 @@ def calibrate_xy_carrier_phase(dg_comp_inst, dg_am_inst, hfi_inst,
     result["y_carrier_phase_calibrated_deg"] = y_phase
     result["xy_phase_diff_deg"] = (y_phase - x_phase) % 360
     print(f"    CH2 最终载波相位 = {y_phase:.2f}°")
-    print(f"    实际相位差 = {result['xy_phase_diff_deg']:.2f}° "
-          f"(target {TARGET_XY_PHASE_DIFF_deg:.1f}°)")
+    print(f"    实际相位差 = {result['xy_phase_diff_deg']:.2f}°")
     return result
 
 
@@ -1011,19 +1084,19 @@ validate_safety_limit("Y_magnetic_field_AM", y_offset_final)
 validate_safety_limit("Y_magnetic_field_AM", y_min_out)
 validate_safety_limit("Y_magnetic_field_AM", y_max_out)
 
-# CH1 (X): A(t) + MOD_OFFSET_X
+# CH1 (X): 物理 AM 电压波形
 dg_am.setup_arbitrary(
-    a_normalized.copy(), freq=A_ENV_FREQ,
-    amplitude=arb_vpp, offset=x_offset_final, phase=0.0, channel=1,
+    x_aw["normalized"].copy(), freq=A_ENV_FREQ,
+    amplitude=x_aw["vpp"], offset=x_aw["offset"], phase=0.0, channel=1,
 )
-print(f"  CH1 (X): 任意波 {A_ENV_FREQ}Hz, Vpp={arb_vpp:.3f}V, offset={x_offset_final:.3f}V")
+print(f"  CH1 (X): 任意波 {A_ENV_FREQ}Hz, Vpp={x_aw['vpp']:.3f}V, offset={x_aw['offset']:.3f}V")
 
-# CH2 (Y): A(t) + MOD_OFFSET_Y
+# CH2 (Y): 物理 AM 电压波形
 dg_am.setup_arbitrary(
-    a_normalized.copy(), freq=A_ENV_FREQ,
-    amplitude=arb_vpp, offset=y_offset_final, phase=0.0, channel=2,
+    y_aw["normalized"].copy(), freq=A_ENV_FREQ,
+    amplitude=y_aw["vpp"], offset=y_aw["offset"], phase=0.0, channel=2,
 )
-print(f"  CH2 (Y): 任意波 {A_ENV_FREQ}Hz, Vpp={arb_vpp:.3f}V, offset={y_offset_final:.3f}V")
+print(f"  CH2 (Y): 任意波 {A_ENV_FREQ}Hz, Vpp={y_aw['vpp']:.3f}V, offset={y_aw['offset']:.3f}V")
 
 # Burst 模式 + 外部触发
 for ch in [1, 2]:
@@ -1111,6 +1184,7 @@ try:
         else:
             dg_sweep.setup_sine(freq=z_rf_freq, amplitude=Z_RF_AMPLITUDE,
                                 offset=0.0, phase=0.0, channel=1)
+            dg_sweep.set_burst_phase(0.0, channel=1)
             dg_sweep.set_burst_state(True, channel=1)
             dg_sweep.set_burst_mode("INFinity", channel=1)
             dg_sweep.set_burst_trigger_source("EXTernal", channel=1)
@@ -1153,9 +1227,9 @@ try:
             time.sleep(TEMP_SWITCH_OFF_LEAD)
 
             try:
-                # 设置 Z 射频场相位
+                # 设置 Z 射频场 Burst 起始相位，并重新开关输出使下一次触发按新相位开始。
                 if not is_baseline:
-                    dg_sweep.set_phase_adjust(phase_deg, channel=1)
+                    apply_z_rf_burst_phase(dg_sweep, phase_deg)
                     time.sleep(PHASE_SETTLE_TIME)
 
                 # ---- 5. 按 ACQUISITION_MODE 采集 ----

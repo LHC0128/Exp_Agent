@@ -53,6 +53,20 @@ safety_limits:
     output_off_on_error: true
     description: "Probe光功率 DC 电平控制，范围 0-1 V"
 
+  X_magnetic_field_AM:
+    min: -10
+    max: 10
+    ramp_rate: null
+    output_off_on_error: true
+    description: "X方向磁场 AM 包络输出，允许负电压；当前 AW 示波器检查范围约 -2.35 到 1.34 V"
+
+  Y_magnetic_field_AM:
+    min: -10
+    max: 10
+    ramp_rate: null
+    output_off_on_error: true
+    description: "Y方向磁场 AM 包络输出，允许负电压；当前 AW 示波器检查范围约 -2.32 到 1.37 V"
+
   X_magnetic_field:
     min: -10.0
     max: 10.0

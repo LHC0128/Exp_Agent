@@ -64,14 +64,14 @@ RAMP_SYMMETRY = 20
 DAQ_DURATION = 1
 
 FIXED_PARAMS = {
-    "Pump_laser_power": 0.3,         "Probe_laser_power": 0.12,
+    "Pump_laser_power": 0.3,         "Probe_laser_power": 0.1,
     "temperature": 100,              "Temp_Switch": 5.0,
-    "Time_sequence": 10.0,           "main_magnetic_field": 9.31,
+    "Time_sequence": 10.0,           "main_magnetic_field": 1.023,
     "X_magnetic_field": 0,         "Y_magnetic_field": 0,
     "Time_sequence_2": 0.0,         
 }
 
-PUMP_MOD_FREQ = 90e3                # Pump 调制重复频率 (Hz)
+PUMP_MOD_FREQ = 10e3                # Pump 调制重复频率 (Hz)
 PUMP_MOD_AMPLITUDE = 0.18           # 100MHz 载波幅度 (Vpp)
 PUMP_MOD_DUTY = 5                   # 脉冲占空比 (%), 与任意波方案一致
 
@@ -91,8 +91,15 @@ HF2_NOISE_RATE = 50000
 HF2_NOISE_TC = 1e-6
 
 # ========== 噪声采集参数 ==========
-NOISE_N_AVG = 5            # 噪声采集次数，增大可降低频谱涨落
+NOISE_N_AVG = 20            # 噪声采集次数，增大可降低频谱涨落
 NOISE_DURATION = 1.0        # 每次采集时长 (s)
+
+# ========== GS200 电流量程噪声对比 ==========
+# 单位: A。GS200 的 1 mA 档实测可设置到约 1.2 mA，因此检查时保留余量。
+# 常用候选: 0.001=1 mA 档, 0.01=10 mA 档, 0.1=100 mA 档。
+GS200_CURRENT_RANGES = [0.001]
+GS200_RANGE_HEADROOM = 1.2 
+GS200_RANGE_SETTLE_TIME = 1.0
 
 # ========== 磁场校准 ==========
 Z_V_TO_NT = 3517
@@ -124,6 +131,12 @@ def validate_safety_limit(name, value):
                 f"[安全拦截] {name}={value} 超出范围 [{lo}, {hi}]"
             )
     return value
+
+
+def format_current_range_label(current_range_A):
+    """生成适合文件名和图例使用的 GS200 电流量程标签."""
+    current_range_mA = float(current_range_A) * 1000.0
+    return f"{current_range_mA:g}mA"
 
 
 devices = {}
@@ -429,7 +442,7 @@ try:
     dg_sweep.set_output(False, channel=1)
     dg_sweep.set_sync_state(False, channel=1)
     dg_temp.set_output(True, channel=2)
-    time.sleep(2)
+    time.sleep(3)
 
     print("=" * 50)
     print("数据采集完成")
@@ -500,6 +513,9 @@ snapshot = {
     "pump_mod_freq": PUMP_MOD_FREQ,
     "pump_mod_amplitude": PUMP_MOD_AMPLITUDE,
     "pump_mod_duty": PUMP_MOD_DUTY,
+    "gs200_current_ranges_A": GS200_CURRENT_RANGES,
+    "gs200_range_headroom": GS200_RANGE_HEADROOM,
+    "gs200_range_settle_time_s": GS200_RANGE_SETTLE_TIME,
 }
 with open(run_dir / "params.yaml", "w", encoding="utf-8") as f:
     yaml.dump(snapshot, f, default_flow_style=False)
@@ -604,77 +620,158 @@ dg_sweep.setup_dc(0.0, channel=1)
 dg_sweep.set_output(False, channel=1)
 time.sleep(0.5)
 
-# ===== 多次采集，逐次保存到硬盘，避免内存累积 =====
+# ===== 按 GS200 电流量程采集噪声，逐次保存到硬盘 =====
 # 每次采集时短暂关闭温控开关，采集后立即恢复，避免长时间温控中断导致温度漂移
 fs_noise = float(actual_rate_noise)
-noise_dir = raw_dir / "noise_raw"
-noise_dir.mkdir(exist_ok=True)
+noise_root_dir = raw_dir / "noise_raw"
+noise_root_dir.mkdir(exist_ok=True)
+
+main_current_A = FIXED_PARAMS["main_magnetic_field"] / 1000.0
+if not GS200_CURRENT_RANGES:
+    raise ValueError("GS200_CURRENT_RANGES 为空，无法进行量程噪声对比")
 
 # 记录初始温度作为基准
 initial_temp = tec.get_temperature(channel=1)
 print(f"初始温度: {initial_temp:.2f} °C")
 
-for i in tqdm(range(NOISE_N_AVG), desc="采集噪声"):
-    # 采集前关闭温控 (消除温控磁场对噪声测量的干扰)
-    dg_temp.set_output(False, channel=2)
-    noise_cfg = DAQConfig(device=MAPPING["lockin_r"]["device_id"],
-        trigger_type=0, duration=NOISE_DURATION,
-        grid_cols=int(fs_noise * NOISE_DURATION),
-        grid_rows=1, grid_mode=2, signal_paths=["sample.y"])
-    noise_results = daq.acquire_data(hfi, config=noise_cfg,
-        demod_idx=HF2_DEMOD_IDX, actual_rate=fs_noise,
-        timeout=NOISE_DURATION + 5.0)
-    # 采集完立即恢复温控，等待温度稳定后再进行下一次
-    dg_temp.set_output(True, channel=2)
-    time.sleep(2)
-    y = noise_results[0].values
-    # 保存到硬盘后立即释放内存
-    np.save(noise_dir / f"noise_{i:04d}.npy", y)
-    del y, noise_results
-    # 观察温度波动
-    # if i == 0 or i == NOISE_N_AVG - 1:
-    #     t_now = tec.get_temperature(channel=1)
-    #     print(f"  第 {i+1} 次采集后温度: {t_now:.2f} °C (偏差 {t_now - initial_temp:+.3f} °C)")
-
-# ---- 读出保存的文件并累积 PSD ----
-psd_sum = None
+psd_by_range = []
+current_range_set_A = []
+current_range_actual_A = []
+current_set_actual_A = []
 freq = None
 nperseg = int(fs_noise * NOISE_DURATION)
 
-for i in tqdm(range(NOISE_N_AVG), desc="计算 PSD"):
-    y = np.load(noise_dir / f"noise_{i:04d}.npy")
-    _, psd = scipy_signal.welch(y - np.mean(y), fs=fs_noise,
-                                nperseg=nperseg, scaling="density")
-    if psd_sum is None:
-        freq = _
-        psd_sum = psd.copy()
-    else:
-        psd_sum += psd
-    del y, psd
+try:
+    for range_idx, current_range_A in enumerate(GS200_CURRENT_RANGES):
+        current_range_A = float(current_range_A)
+        range_limit_A = current_range_A * GS200_RANGE_HEADROOM
+        if abs(main_current_A) > range_limit_A:
+            raise ValueError(
+                f"GS200 量程 {current_range_A*1000:g} mA 的允许检查上限 "
+                f"{range_limit_A*1000:g} mA 小于当前主磁场 "
+                f"{main_current_A*1000:g} mA；如仪器实际允许更高过量程，"
+                f"请调大 GS200_RANGE_HEADROOM"
+            )
 
-psd_avg = psd_sum / NOISE_N_AVG
+        range_label = format_current_range_label(current_range_A)
+        print("=" * 50)
+        print(f"GS200 电流量程 {range_idx + 1}/{len(GS200_CURRENT_RANGES)}: {range_label}")
 
-# 保存平均结果
-np.savez(raw_dir / "noise_data.npz",
-         psd_avg=psd_avg, freq=freq,
-         fs=fs_noise, n_avg=NOISE_N_AVG)
+        # set_current() 使用自动量程；这里在电流设定后手动切换目标量程。
+        gs.set_current_range(current_range_A)
+        time.sleep(GS200_RANGE_SETTLE_TIME)
+        actual_range_A = gs.get_current_range()
+        actual_current_A = gs.get_current()
+        print(
+            f"  请求量程: {current_range_A*1000:g} mA, "
+            f"检查上限: {range_limit_A*1000:g} mA, "
+            f"实际量程: {actual_range_A*1000:g} mA, "
+            f"电流设定: {actual_current_A*1000:g} mA"
+        )
 
-print(f"噪声采集完成: {NOISE_N_AVG} 次, 分辨率 {freq[1]-freq[0]:.1f} Hz")
-raw_file_size = NOISE_N_AVG * int(fs_noise * NOISE_DURATION) * 8 / 1024 / 1024
-print(f"  原始数据已保存: {noise_dir}/ (共 {raw_file_size:.1f} MB)")
+        noise_dir = noise_root_dir / f"gs200_range_{range_label}"
+        noise_dir.mkdir(exist_ok=True)
 
-# ---- 恢复解调器至采集配置 ----
-print("恢复解调器至采集配置...")
-restore_demod_cfg = DemodulatorConfig(
-    demod_index=HF2_DEMOD_IDX, enable=True,
-    rate=HF2_DEMOD_RATE, input_channel=0,
-    osc_select=0, harmonic=1,
-    time_constant=HF2_DEMOD_TC, order=HF2_DEMOD_ORDER,
-    phase=calibrated_phase,
-)
-demod.configure_demodulator(hfi, restore_demod_cfg)
-time.sleep(0.2)
-print("解调器已恢复 (rate=1000 Sa/s, TC=1ms)")
+        for i in tqdm(range(NOISE_N_AVG), desc=f"采集噪声 {range_label}"):
+            # 采集前关闭温控 (消除温控磁场对噪声测量的干扰)
+            dg_temp.set_output(False, channel=2)
+            time.sleep(0.5)  # 等待温控磁场消退
+            noise_cfg = DAQConfig(device=MAPPING["lockin_r"]["device_id"],
+                trigger_type=0, duration=NOISE_DURATION,
+                grid_cols=int(fs_noise * NOISE_DURATION),
+                grid_rows=1, grid_mode=2, signal_paths=["sample.y"])
+            noise_results = daq.acquire_data(hfi, config=noise_cfg,
+                demod_idx=HF2_DEMOD_IDX, actual_rate=fs_noise,
+                timeout=NOISE_DURATION + 5.0)
+            # 采集完立即恢复温控，等待温度稳定后再进行下一次
+            dg_temp.set_output(True, channel=2)
+            time.sleep(2)
+            y = noise_results[0].values
+            # 保存到硬盘后立即释放内存
+            np.save(noise_dir / f"noise_{i:04d}.npy", y)
+            del y, noise_results
+
+        # ---- 读出该量程保存的文件并累积 PSD ----
+        psd_sum = None
+        freq_this = None
+        for i in tqdm(range(NOISE_N_AVG), desc=f"计算 PSD {range_label}"):
+            y = np.load(noise_dir / f"noise_{i:04d}.npy")
+            freq_this, psd = scipy_signal.welch(y - np.mean(y), fs=fs_noise,
+                                                nperseg=nperseg, scaling="density")
+            if psd_sum is None:
+                psd_sum = psd.copy()
+            else:
+                psd_sum += psd
+            del y, psd
+
+        psd_avg = psd_sum / NOISE_N_AVG
+        if freq is None:
+            freq = freq_this
+        elif not np.array_equal(freq, freq_this):
+            raise RuntimeError("不同 GS200 量程得到的 PSD 频率轴不一致")
+
+        np.savez(
+            raw_dir / f"noise_data_gs200_range_{range_label}.npz",
+            psd_avg=psd_avg, freq=freq, fs=fs_noise, n_avg=NOISE_N_AVG,
+            current_range_A=current_range_A,
+            current_range_actual_A=actual_range_A,
+            current_setpoint_A=main_current_A,
+            current_setpoint_actual_A=actual_current_A,
+        )
+
+        psd_by_range.append(psd_avg)
+        current_range_set_A.append(current_range_A)
+        current_range_actual_A.append(actual_range_A)
+        current_set_actual_A.append(actual_current_A)
+
+    psd_by_range = np.array(psd_by_range)
+    current_range_set_A = np.array(current_range_set_A, dtype=float)
+    current_range_actual_A = np.array(current_range_actual_A, dtype=float)
+    current_set_actual_A = np.array(current_set_actual_A, dtype=float)
+
+    np.savez(
+        raw_dir / "noise_range_scan.npz",
+        psd_avg_by_range=psd_by_range,
+        freq=freq,
+        fs=fs_noise,
+        n_avg=NOISE_N_AVG,
+        current_range_set_A=current_range_set_A,
+        current_range_actual_A=current_range_actual_A,
+        current_setpoint_A=main_current_A,
+        current_setpoint_actual_A=current_set_actual_A,
+    )
+
+    # 兼容旧分析流程: 默认 noise_data.npz 指向第一个量程
+    np.savez(
+        raw_dir / "noise_data.npz",
+        psd_avg=psd_by_range[0], freq=freq,
+        fs=fs_noise, n_avg=NOISE_N_AVG,
+        current_range_A=current_range_set_A[0],
+        current_range_actual_A=current_range_actual_A[0],
+        current_setpoint_A=main_current_A,
+        current_setpoint_actual_A=current_set_actual_A[0],
+    )
+
+finally:
+    # 确保异常时也恢复温控开关和解调器配置
+    dg_temp.set_output(True, channel=2)
+
+    print("恢复解调器至采集配置...")
+    restore_demod_cfg = DemodulatorConfig(
+        demod_index=HF2_DEMOD_IDX, enable=True,
+        rate=HF2_DEMOD_RATE, input_channel=0,
+        osc_select=0, harmonic=1,
+        time_constant=HF2_DEMOD_TC, order=HF2_DEMOD_ORDER,
+        phase=calibrated_phase,
+    )
+    demod.configure_demodulator(hfi, restore_demod_cfg)
+    time.sleep(0.2)
+    print("解调器已恢复 (rate=1000 Sa/s, TC=1ms)")
+
+print(f"噪声采集完成: {NOISE_N_AVG} 次/量程, 分辨率 {freq[1]-freq[0]:.1f} Hz")
+raw_file_size = len(GS200_CURRENT_RANGES) * NOISE_N_AVG * int(fs_noise * NOISE_DURATION) * 8 / 1024 / 1024
+print(f"  原始数据已保存: {noise_root_dir}/ (共 {raw_file_size:.1f} MB)")
+print(f"  量程汇总已保存: {raw_dir / 'noise_range_scan.npz'}")
 
 # %% Cell 11
 # ===== 灵敏度分析: Y 色散拟合 + PSD + 合并绘图 =====
@@ -721,25 +818,89 @@ else:
     Yp = np.array([])
 Bp = Vp * Z_V_TO_FT
 
-# ---- 2. 灵敏度: 加载平均 PSD 计算灵敏度谱 ----
-noise_data = np.load(raw_dir / "noise_data.npz")
-freq = noise_data["freq"]
-psd = noise_data["psd_avg"]                    # 平均 PSD
-n_avg = int(noise_data["n_avg"])               # 采集次数
-freq_resolution = float(freq[1] - freq[0])
-
-sens_result = compute_sensitivity(
-    psd, freq,
-    slope_V_per_fT=fit_result.slope_V_per_fT,
-    f_larmor_Hz=fit_result.f_larmor_Hz,
-)
-
-print(f"加载平均 PSD: {n_avg} 次平均, 分辨率 {freq_resolution:.1f} Hz")
-if fit_result.is_valid:
-    print(f"平坦段 ({sens_result.flat_fmin:.0f}-{sens_result.flat_fmax:.0f} Hz) 中位数: {sens_result.sens_flat:.0f} fT/√Hz")
+# ---- 2. 灵敏度: 加载不同 GS200 电流量程下的平均 PSD 计算灵敏度谱 ----
+range_scan_path = raw_dir / "noise_range_scan.npz"
+if range_scan_path.exists():
+    noise_data = np.load(range_scan_path)
+    freq = noise_data["freq"]
+    psd_by_range = noise_data["psd_avg_by_range"]
+    current_range_set_A = noise_data["current_range_set_A"]
+    current_range_actual_A = noise_data["current_range_actual_A"]
+    current_setpoint_A = float(noise_data["current_setpoint_A"])
+    n_avg = int(noise_data["n_avg"])
 else:
-    print(f"平坦段 ({sens_result.flat_fmin:.0f}-{sens_result.flat_fmax:.0f} Hz) 中位数: {sens_result.sens_flat:.0f} fT/√Hz [拟合无效, 灵敏度不可靠!]")
+    # 兼容历史单量程数据
+    noise_data = np.load(raw_dir / "noise_data.npz")
+    freq = noise_data["freq"]
+    psd_by_range = np.array([noise_data["psd_avg"]])
+    fallback_range = float(noise_data["current_range_A"]) if "current_range_A" in noise_data else np.nan
+    fallback_range_actual = float(noise_data["current_range_actual_A"]) if "current_range_actual_A" in noise_data else fallback_range
+    current_range_set_A = np.array([fallback_range])
+    current_range_actual_A = np.array([fallback_range_actual])
+    current_setpoint_A = FIXED_PARAMS["main_magnetic_field"] / 1000.0
+    n_avg = int(noise_data["n_avg"])
 
+freq_resolution = float(freq[1] - freq[0])
+sensitivity_by_range = []
+range_summary = []
+for idx, psd_range in enumerate(psd_by_range):
+    sens_i = compute_sensitivity(
+        psd_range, freq,
+        slope_V_per_fT=fit_result.slope_V_per_fT,
+        f_larmor_Hz=fit_result.f_larmor_Hz,
+    )
+    sensitivity_by_range.append(sens_i)
+    range_label = format_current_range_label(current_range_set_A[idx])
+    range_summary.append({
+        "range_label": range_label,
+        "current_range_set_A": float(current_range_set_A[idx]),
+        "current_range_actual_A": float(current_range_actual_A[idx]),
+        "current_setpoint_A": current_setpoint_A,
+        "sens_flat_fT_per_sqrt_Hz": float(sens_i.sens_flat),
+        "flat_fmin_Hz": float(sens_i.flat_fmin),
+        "flat_fmax_Hz": float(sens_i.flat_fmax),
+    })
+
+sens_flat_values = np.array([item.sens_flat for item in sensitivity_by_range], dtype=float)
+best_range_idx = int(np.nanargmin(sens_flat_values))
+sens_result = sensitivity_by_range[best_range_idx]
+psd = psd_by_range[best_range_idx]
+best_range_label = range_summary[best_range_idx]["range_label"]
+
+print(f"加载 GS200 量程 PSD: {len(sensitivity_by_range)} 个量程, 每档 {n_avg} 次平均, 分辨率 {freq_resolution:.1f} Hz")
+for item in range_summary:
+    print(
+        f"  {item['range_label']} 档: "
+        f"实际量程 {item['current_range_actual_A']*1000:g} mA, "
+        f"平坦段中位数 {item['sens_flat_fT_per_sqrt_Hz']:.0f} fT/√Hz"
+    )
+if fit_result.is_valid:
+    print(
+        f"最佳量程: {best_range_label}, "
+        f"平坦段 ({sens_result.flat_fmin:.0f}-{sens_result.flat_fmax:.0f} Hz) "
+        f"中位数: {sens_result.sens_flat:.0f} fT/√Hz"
+    )
+else:
+    print(
+        f"最佳量程: {best_range_label}, "
+        f"平坦段 ({sens_result.flat_fmin:.0f}-{sens_result.flat_fmax:.0f} Hz) "
+        f"中位数: {sens_result.sens_flat:.0f} fT/√Hz [拟合无效, 灵敏度不可靠!]"
+    )
+
+np.savez(
+    results_dir / "gs200_current_range_sensitivity.npz",
+    freq=freq,
+    psd_avg_by_range=psd_by_range,
+    sens_corrected_by_range=np.array([s.sens_corrected for s in sensitivity_by_range]),
+    sens_raw_by_range=np.array([s.sens_raw for s in sensitivity_by_range]),
+    sens_flat_by_range=sens_flat_values,
+    current_range_set_A=current_range_set_A,
+    current_range_actual_A=current_range_actual_A,
+    best_range_idx=best_range_idx,
+)
+with open(results_dir / "gs200_current_range_summary.yaml", "w", encoding="utf-8") as f:
+    yaml.dump({"best_range_label": best_range_label, "ranges": range_summary}, f,
+              allow_unicode=True, sort_keys=False)
 # ---- 3. 记录结果 ----
 params_dict = {
     "Pump_laser_power": FIXED_PARAMS["Pump_laser_power"],
@@ -750,6 +911,8 @@ params_dict = {
     "temperature": FIXED_PARAMS["temperature"],
     "PUMP_MOD_DUTY": PUMP_MOD_DUTY,
     "PUMP_MOD_AMPLITUDE": PUMP_MOD_AMPLITUDE,
+    "GS200_current_range_A": float(current_range_set_A[best_range_idx]),
+    "GS200_current_range_actual_A": float(current_range_actual_A[best_range_idx]),
 }
 summary_dir = project_root / "data" / EXPERIMENT_TYPE
 write_run_record(
@@ -779,18 +942,27 @@ if not fit_result.is_valid:
 ax1.set_title(title1); ax1.legend(fontsize=8)
 ax1.grid(True, alpha=0.3)
 
-ax2.plot(sens_result.freq, sens_result.sens_corrected, "steelblue", lw=0.8,
-         alpha=0.6, label="Sensitivity corrected")
-# 高亮平坦段
+colors = plt.cm.tab10(np.linspace(0, 1, max(len(sensitivity_by_range), 1)))
+for idx, sens_i in enumerate(sensitivity_by_range):
+    label = (
+        f"{range_summary[idx]['range_label']} range "
+        f"({sens_i.sens_flat:.0f} fT/√Hz)"
+    )
+    lw = 1.4 if idx == best_range_idx else 0.8
+    alpha = 0.9 if idx == best_range_idx else 0.55
+    ax2.plot(sens_i.freq, sens_i.sens_corrected, color=colors[idx],
+             lw=lw, alpha=alpha, label=label)
+
+# 高亮最佳量程的平坦段
 fm = sens_result.flat_mask
 ax2.plot(sens_result.freq[fm], sens_result.sens_corrected[fm], "darkgreen",
-         lw=1.5, alpha=0.9,
-         label=f"Flat: {sens_result.flat_fmin:.0f}-{sens_result.flat_fmax:.0f} Hz")
-ax2.plot(sens_result.freq, sens_result.sens_raw, "orange", lw=0.5, alpha=0.4,
-         label="Raw (uncorrected)")
+         lw=1.8, alpha=0.9,
+         label=f"Best flat: {sens_result.flat_fmin:.0f}-{sens_result.flat_fmax:.0f} Hz")
+ax2.plot(sens_result.freq, sens_result.sens_raw, "gray", lw=0.5, alpha=0.35,
+         label=f"Raw ({best_range_label})")
 if sens_result.sens_flat > 0:
     ax2.axhline(sens_result.sens_flat, color="darkgreen", ls="--", alpha=0.7,
-                label=f"Sensitivity = {sens_result.sens_flat:.0f} fT/√Hz")
+                label=f"Best = {sens_result.sens_flat:.0f} fT/√Hz")
 ax2.axvline(fit_result.f_larmor_Hz, color="red", ls=":", alpha=0.5,
             label=f"HWHM = {fit_result.f_larmor_Hz:.0f} Hz")
 ax2.axvline(sens_result.flat_fmax, color="gray", ls=":", alpha=0.4, lw=0.8)
@@ -800,7 +972,7 @@ title2 = "Sensitivity spectrum (flat region median)"
 if not fit_result.is_valid:
     title2 += " [INVALID]"
 ax2.set_title(title2); ax2.grid(True, alpha=0.3, which="both")
-ax2.set_xlim(0.5, max(fit_result.f_larmor_Hz * 2, 500))
+ax2.set_xlim(0.5, max(fit_result.f_larmor_Hz * 2, 1000))
 ax2.set_ylim(5e1, 5e6)
 ax2.set_yscale("log")
 
