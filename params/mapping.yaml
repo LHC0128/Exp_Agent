@@ -37,6 +37,7 @@ mapping:
   Pump_laser_power:
     instrument: signal_generator
     label: "Pump光功率"
+    device_label: "光功率"
     resource: "USB0::0x1AB1::0x0646::DG9Q280100002::INSTR"
     channel: 1
     description: "输出大小对应着Pump光功率，通过调节信号发生器的DC电平控制输出功率，范围0-2 V"
@@ -51,6 +52,7 @@ mapping:
   X_magnetic_field_AM:
     instrument: signal_generator
     label: "X方向磁场 AM"
+    device_label: "XY方向AM信号"
     resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
     channel: 1
     description: "输出大小对应着X方向磁场 AM，用作 dg_comp 外部 AM 输入；当前安全限值允许 -2.5 到 1.5 V"
@@ -65,6 +67,7 @@ mapping:
   X_magnetic_field:
     instrument: signal_generator
     label: "X方向磁场"
+    device_label: "XY方向磁场"
     resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
     channel: 1
     description: "输出大小对应着X方向磁场，一般为任意波，范围-10-10 V"
@@ -102,7 +105,7 @@ mapping:
     label: "加热信号"
     resource: "USB0::0x1AB1::0x0646::DG9Q271200104::INSTR"
     channel: 1
-    description: "加热信号，不可更改"
+    description: "加热信号，可在 GUI 中读取和设置；写入受 safety_limits.yaml 限制"
 
   Temp_Switch:
     instrument: signal_generator

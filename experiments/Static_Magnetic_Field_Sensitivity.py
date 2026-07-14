@@ -17,6 +17,8 @@
 
 # %% Cell 1
 from pathlib import Path
+import json
+import os
 import sys
 # 自动定位项目根目录
 project_root = Path.cwd()
@@ -35,11 +37,13 @@ import matplotlib.pyplot as plt
 from gs200 import GS200Instrument
 from signal_generator import DG4000Instrument, DG900Instrument
 from tec_controller import TECInstrument
+
 from lockin_amplifier import (
     HF2Instrument, DAQConfig, DAQResult,
     SignalInputConfig, OscillatorConfig, DemodulatorConfig,
     demod, daq,
 )
+from lab_workflows.static_sensitivity import StaticSensitivityParams
 
 print("库导入完成")
 
@@ -56,17 +60,21 @@ with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f
 EXPERIMENT_TYPE = "Static_Magnetic_Field_Sensitivity"
 PURPOSE = "dispersion_and_sensitivity"
 
+
+
 SCAN_VARIABLE = "Z_magnetic_field"
-RAMP_LOW = -0.5
-RAMP_HIGH = 0.5
+RAMP_LOW = -0.3
+RAMP_HIGH = 0.3
 RAMP_FREQ = 1.0
 RAMP_SYMMETRY = 20
 DAQ_DURATION = 1
 
 FIXED_PARAMS = {
-    "Pump_laser_power": 0.3,         "Probe_laser_power": 0.1,
+    "Pump_laser_power": 0.5,         "Probe_laser_power": 0.2,
     "temperature": 100,              "Temp_Switch": 5.0,
-    "Time_sequence": 10.0,           "main_magnetic_field": 1.023,
+    # "Time_sequence": 10.0,           "main_magnetic_field": 0.51,
+    # "Time_sequence": 10.0,           "main_magnetic_field": 9.3,
+    "Time_sequence": 10.0,           "main_magnetic_field": 1.03,
     "X_magnetic_field": 0,         "Y_magnetic_field": 0,
     "Time_sequence_2": 0.0,         
 }
@@ -94,10 +102,16 @@ HF2_NOISE_TC = 1e-6
 NOISE_N_AVG = 20            # 噪声采集次数，增大可降低频谱涨落
 NOISE_DURATION = 1.0        # 每次采集时长 (s)
 
+# ========== 温度稳定判据 ==========
+TEMP_TOLERANCE_C = 1.0      # 温度允许偏差 (°C)
+TEMP_STABLE_READS = 3       # 连续满足偏差要求的读数次数
+TEMP_POLL_INTERVAL_S = 5.0  # 温度轮询间隔 (s)
+MAX_TEMP_WAIT_S = 1200.0    # 最长等待时间 (s)
+
 # ========== GS200 电流量程噪声对比 ==========
 # 单位: A。GS200 的 1 mA 档实测可设置到约 1.2 mA，因此检查时保留余量。
 # 常用候选: 0.001=1 mA 档, 0.01=10 mA 档, 0.1=100 mA 档。
-GS200_CURRENT_RANGES = [0.001]
+GS200_CURRENT_RANGES = [0.01]
 GS200_RANGE_HEADROOM = 1.2 
 GS200_RANGE_SETTLE_TIME = 1.0
 
@@ -114,6 +128,60 @@ DAQ_TRIGGER_SLOPE = 0
 # 格式: MMDD_HHMM_短标签，如 "0517_1120_sens"
 # 在此处修改短标签即可自定义目录名
 RUN_TAG = "sens"
+
+# GUI 与命令行入口共用 params/static_sensitivity.yaml 中的默认值。
+# GUI 运行时仅用环境变量覆盖本次运行，不改写仓库配置。
+_shared_params = StaticSensitivityParams.from_yaml()
+if os.environ.get("LAB_STATIC_CONFIG"):
+    _shared_params = StaticSensitivityParams.from_dict(
+        json.loads(os.environ["LAB_STATIC_CONFIG"])
+    )
+
+RAMP_LOW = _shared_params.ramp_low
+RAMP_HIGH = _shared_params.ramp_high
+RAMP_FREQ = _shared_params.ramp_freq
+RAMP_SYMMETRY = _shared_params.ramp_symmetry
+DAQ_DURATION = _shared_params.daq_duration
+FIXED_PARAMS.update({
+    "Pump_laser_power": _shared_params.pump_laser_power,
+    "Probe_laser_power": _shared_params.probe_laser_power,
+    "temperature": _shared_params.temperature,
+    "Temp_Switch": _shared_params.temp_switch,
+    "main_magnetic_field": _shared_params.main_magnetic_field,
+    "X_magnetic_field": _shared_params.x_magnetic_field,
+    "Y_magnetic_field": _shared_params.y_magnetic_field,
+    "Time_sequence": _shared_params.time_sequence,
+    "Time_sequence_2": _shared_params.time_sequence_2,
+})
+PUMP_MOD_FREQ = _shared_params.pump_mod_freq
+PUMP_MOD_AMPLITUDE = _shared_params.pump_mod_amplitude
+PUMP_MOD_DUTY = _shared_params.pump_mod_duty
+RF_GATE_AMPLITUDE = _shared_params.rf_gate_amplitude
+RF_GATE_OFFSET = _shared_params.rf_gate_offset
+RF_GATE_DELAY = _shared_params.rf_gate_delay
+HF2_DEMOD_IDX = _shared_params.hf2_demod_idx
+HF2_OSC_FREQ = PUMP_MOD_FREQ
+HF2_DEMOD_ORDER = _shared_params.hf2_demod_order
+HF2_SIGNAL_RANGE = _shared_params.hf2_signal_range
+HF2_DEMOD_RATE = _shared_params.hf2_demod_rate
+HF2_DEMOD_TC = _shared_params.hf2_demod_tc
+HF2_NOISE_RATE = _shared_params.hf2_noise_rate
+HF2_NOISE_TC = _shared_params.hf2_noise_tc
+NOISE_N_AVG = _shared_params.noise_n_avg
+NOISE_DURATION = _shared_params.noise_duration
+TEMP_TOLERANCE_C = _shared_params.temp_tolerance_c
+TEMP_STABLE_READS = _shared_params.temp_stable_reads
+TEMP_POLL_INTERVAL_S = _shared_params.temp_poll_interval_s
+MAX_TEMP_WAIT_S = _shared_params.max_temp_wait_s
+GS200_CURRENT_RANGES = _shared_params.gs200_current_ranges
+GS200_RANGE_HEADROOM = _shared_params.gs200_range_headroom
+GS200_RANGE_SETTLE_TIME = _shared_params.gs200_range_settle_time
+Z_V_TO_NT = _shared_params.z_v_to_nt
+Z_V_TO_FT = Z_V_TO_NT * 1_000_000
+DAQ_TRIGGER_CHANNEL = _shared_params.daq_trigger_channel
+DAQ_TRIGGER_LEVEL = _shared_params.daq_trigger_level
+DAQ_TRIGGER_SLOPE = _shared_params.daq_trigger_slope
+RUN_TAG = _shared_params.run_tag
 
 print("配置已加载")
 
@@ -133,10 +201,62 @@ def validate_safety_limit(name, value):
     return value
 
 
+def check_cancelled():
+    """GUI 请求取消时，仅在明确的安全检查点退出。"""
+    cancel_path = os.environ.get("LAB_CANCEL_FILE")
+    if cancel_path and Path(cancel_path).exists():
+        raise KeyboardInterrupt("收到 GUI 安全停止请求")
+
+
 def format_current_range_label(current_range_A):
     """生成适合文件名和图例使用的 GS200 电流量程标签."""
     current_range_mA = float(current_range_A) * 1000.0
     return f"{current_range_mA:g}mA"
+
+
+def wait_for_temperature_stable(
+    tec,
+    target_c,
+    tolerance_c=TEMP_TOLERANCE_C,
+    stable_reads=TEMP_STABLE_READS,
+    poll_interval_s=TEMP_POLL_INTERVAL_S,
+    max_wait_s=MAX_TEMP_WAIT_S,
+):
+    """轮询 TEC 实际温度，连续满足容差后才返回."""
+    validate_safety_limit("temperature", target_c)
+    stable_reads = max(1, int(stable_reads))
+    start = time.time()
+    stable_count = 0
+
+    while True:
+        check_cancelled()
+        temp_now = tec.get_temperature(channel=1)
+        if not np.isfinite(temp_now):
+            raise RuntimeError("TEC 返回的温度读数无效，请检查温度传感器连接")
+
+        delta = abs(temp_now - target_c)
+        if delta <= tolerance_c:
+            stable_count += 1
+        else:
+            stable_count = 0
+
+        elapsed_s = time.time() - start
+        print(
+            f"温度读数: {temp_now:.2f} °C, 目标: {target_c:.2f} °C, "
+            f"偏差: {delta:.2f} °C, 稳定计数: {stable_count}/{stable_reads}"
+        )
+
+        if stable_count >= stable_reads:
+            print(f"温度已稳定: {temp_now:.2f} °C")
+            return temp_now
+
+        if elapsed_s > max_wait_s:
+            raise TimeoutError(
+                f"温度在 {max_wait_s:.0f}s 内未稳定到 "
+                f"{target_c:.2f}±{tolerance_c:.2f} °C"
+            )
+
+        time.sleep(poll_interval_s)
 
 
 devices = {}
@@ -253,13 +373,13 @@ print(f"主磁场: {FIXED_PARAMS['main_magnetic_field']} mA")
 validate_safety_limit("temperature", FIXED_PARAMS["temperature"])
 tec.set_target_temperature(FIXED_PARAMS["temperature"], channel=1)
 tec.set_enable(True, channel=1)
-temp_now = tec.get_temperature(channel=1)
-print(f"温度设定: {FIXED_PARAMS['temperature']} °C, 当前: {temp_now:.1f} °C")
+print(f"温度设定: {FIXED_PARAMS['temperature']} °C")
 
-# 6. 温度开关 (ON)
+# 6. 温度开关 (ON)，打开后等待 TEC 实际温度稳定
 validate_safety_limit("Temp_Switch", FIXED_PARAMS["Temp_Switch"])
 dg_temp.setup_dc(FIXED_PARAMS["Temp_Switch"], channel=2)
 print(f"温度开关: ON ({FIXED_PARAMS['Temp_Switch']} V)")
+temp_now = wait_for_temperature_stable(tec, FIXED_PARAMS["temperature"])
 
 # 7. 时序信号 (10Hz 方波) → 移到 dg_sweep CH2
 validate_safety_limit("Time_sequence", FIXED_PARAMS["Time_sequence"])
@@ -520,6 +640,21 @@ snapshot = {
 with open(run_dir / "params.yaml", "w", encoding="utf-8") as f:
     yaml.dump(snapshot, f, default_flow_style=False)
 
+experiment_config = {
+    "experiment_type": EXPERIMENT_TYPE,
+    "run_tag": RUN_TAG,
+    "timestamp": timestamp,
+    "parameters": _shared_params.to_dict(),
+    "mapping_snapshot": MAPPING,
+    "safety_limits_snapshot": LIMITS,
+    "actual_rates": {
+        "hf2_demod_rate_Sa_s": float(actual_rate),
+    },
+    "data_files": ["raw/scan_data.npz", "raw/scan_log.csv"],
+}
+with open(run_dir / "experiment_config.yaml", "w", encoding="utf-8") as f:
+    yaml.safe_dump(experiment_config, f, allow_unicode=True, sort_keys=False)
+
 print(f"数据已保存至: {run_dir}")
 
 # %% Cell 9
@@ -643,6 +778,7 @@ nperseg = int(fs_noise * NOISE_DURATION)
 
 try:
     for range_idx, current_range_A in enumerate(GS200_CURRENT_RANGES):
+        check_cancelled()
         current_range_A = float(current_range_A)
         range_limit_A = current_range_A * GS200_RANGE_HEADROOM
         if abs(main_current_A) > range_limit_A:
@@ -673,6 +809,7 @@ try:
         noise_dir.mkdir(exist_ok=True)
 
         for i in tqdm(range(NOISE_N_AVG), desc=f"采集噪声 {range_label}"):
+            check_cancelled()
             # 采集前关闭温控 (消除温控磁场对噪声测量的干扰)
             dg_temp.set_output(False, channel=2)
             time.sleep(0.5)  # 等待温控磁场消退
@@ -695,6 +832,7 @@ try:
         psd_sum = None
         freq_this = None
         for i in tqdm(range(NOISE_N_AVG), desc=f"计算 PSD {range_label}"):
+            check_cancelled()
             y = np.load(noise_dir / f"noise_{i:04d}.npy")
             freq_this, psd = scipy_signal.welch(y - np.mean(y), fs=fs_noise,
                                                 nperseg=nperseg, scaling="density")
@@ -978,7 +1116,10 @@ ax2.set_yscale("log")
 
 plt.tight_layout()
 fig.savefig(results_dir / "full_analysiswithoutpump.png", dpi=150, bbox_inches="tight")
-plt.show()
+if not os.environ.get("LAB_STATIC_CONFIG"):
+    plt.show()
+else:
+    plt.close(fig)
 print(f"分析图已保存: {results_dir / 'full_analysiswithoutpump.png'}")
 
 # %% [markdown] Cell 12

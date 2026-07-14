@@ -309,7 +309,10 @@ def read_demod_sample(
     result = {}
     for key in ("x", "y", "frequency", "phase", "timestamp"):
         values = sample.get(key, [])
-        result[key] = values[-1] if values else 0.0
+        value = values[-1] if values else 0.0
+        if hasattr(value, "item"):
+            value = value.item()
+        result[key] = value
 
     result["r"] = math.hypot(result["x"], result["y"])
     result["theta"] = math.atan2(result["y"], result["x"])

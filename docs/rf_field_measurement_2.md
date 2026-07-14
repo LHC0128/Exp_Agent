@@ -285,3 +285,18 @@ data/RF_Field_Sensitivity/
 - [经验] 噪声测量后**必须恢复** Demod 3 的解调器配置
 - [经验] 每次噪声采集完立即恢复温度开关，防止温度漂移
 - [经验] 扫描循环须用 try/finally 包裹，异常时恢复温度开关
+
+## 跨运行幅频响应对比
+
+`experiments/RF_Field_Sensitivity_AW_FreqSweep_compare.py` 用于叠加比较多个
+DirectAW 频率扫描运行的 `freq_response_amplitude`。程序读取各运行目录中的
+`results/analysis.json`，使用与单次运行图一致的 `R_V_median`，不连接仪器，也不
+改写原始数据。
+
+当前默认比较：
+
+- `0713_1644_freq_resp_direct_aw`（`control_waveformAW_v3.csv`）
+- `0714_1035_freq_resp_direct_aw`（`control_waveformAW_const.csv`）
+
+输出保存到
+`results/RF_Field_Sensitivity_AW_FreqSweep_DirectAW/0713_1644_vs_0714_1035/freq_response_amplitude_comparison.png`。

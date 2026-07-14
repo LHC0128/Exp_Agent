@@ -469,7 +469,7 @@ _Nc = config.get("burst_pump", {}).get("burst_cycles", 1000)
 COND_TEXT = (
     f"$f_L={_fc:.0f}" + r"\,\mathrm{kHz},\;"
     f"\\mathrm{{duty}}={_dc:.1f}" + r"\%,"
-    f"\;N={_Nc}$"
+    rf"\;N={_Nc}$"
 )
 
 # --- assemble data arrays ---

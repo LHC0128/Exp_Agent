@@ -116,6 +116,13 @@ safety_limits:
     output_off_on_error: false
     description: "温度控制信号，不可随意更改"
 
+  Heat_Control:
+    min: -0.25
+    max: 0.25
+    ramp_rate: null
+    output_off_on_error: true
+    description: "加热交流信号，保守限制为当前 0.5 Vpp 波形对应的 -0.25 至 0.25 V"
+
   Temp_Switch:
     min: 0.0
     max: 5.0

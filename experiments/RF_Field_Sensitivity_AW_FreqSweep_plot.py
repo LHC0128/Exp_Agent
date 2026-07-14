@@ -25,7 +25,8 @@ import matplotlib.pyplot as plt
 print("库导入完成")
 
 # %% Cell 2
-EXPERIMENT_TYPE = "RF_Field_Sensitivity_AW_FreqSweep"
+# EXPERIMENT_TYPE = "RF_Field_Sensitivity_AW_FreqSweep"
+EXPERIMENT_TYPE = "RF_Field_Sensitivity_AW_FreqSweep_DirectAW"
 PRIMARY_RESPONSE_METHOD = "r_median"  # r_median, r_mean, coherent, r_max_legacy
 
 USE_LATEST = True
@@ -163,20 +164,11 @@ print(f"  median phase CV: {np.nanmedian(r_cv):.4f}, max phase CV: {np.nanmax(r_
 plt.rcParams.update({"figure.dpi": 120, "font.size": 11, "axes.labelsize": 12})
 
 fig1, ax1 = plt.subplots(figsize=(10, 5.8))
-ax1.plot(valid_freqs, primary_response, ".-", color="C0", lw=1.4, ms=5,
-         label=f"Primary: {PRIMARY_RESPONSE_METHOD}")
-ax1.plot(valid_freqs, r_mean, "-", color="C1", lw=1.0, alpha=0.75, label="R mean over phase")
-ax1.plot(valid_freqs, r_median, "--", color="C2", lw=1.0, alpha=0.75, label="R median over phase")
-if np.any(np.isfinite(coherent)):
-    ax1.plot(valid_freqs, coherent, "-", color="C4", lw=1.0, alpha=0.75,
-             label="Coherent phase-1 component")
-ax1.plot(valid_freqs, r_max_legacy, ":", color="0.35", lw=1.0,
-         label="Legacy R max over phase")
-ax1.axvline(primary_peak["freq_Hz"], color="red", ls="--", lw=0.8, alpha=0.6,
-            label=f"Primary peak: {primary_peak['freq_Hz']:.1f} Hz")
+ax1.plot(valid_freqs, r_median, ".-", color="C0", lw=1.4, ms=5,
+         label="R median over phase")
 ax1.set_xlabel("Z RF Frequency (Hz)")
 ax1.set_ylabel("Demod 3 response (V)")
-ax1.set_title("RF Field Frequency Response - Robust Amplitude")
+ax1.set_title("RF Field Frequency Response - Median Amplitude")
 ax1.legend(fontsize=8)
 ax1.grid(True, alpha=0.3)
 plt.tight_layout()

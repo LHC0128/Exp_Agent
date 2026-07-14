@@ -1,0 +1,55 @@
+schema_version: 1
+tags:
+- id: measurement
+  label: 静磁场
+- id: calibration
+  label: 射频场
+- id: optimization
+  label: 高带宽
+- id: verification
+  label: 标定
+- id: tag-15b058ba
+  label: 其他
+assignments:
+  noise-spectrum-xy: calibration
+  noise-spectrum-xy-v2: calibration
+  photon-shot-noise: verification
+  projection-noise: verification
+  rf-sensitivity-aw: calibration
+  rf-sensitivity-aw-frequency: optimization
+  rf-sensitivity-direct-aw-frequency: optimization
+  rf-sensitivity-constxy-frequency: optimization
+  bb-duty-scan-burst: verification
+  bb-power-scan-burst: verification
+  t1-calibration: verification
+  t2-calibration: verification
+  xy-aw-voltage-calibration: verification
+  xy-dc-voltage-calibration: verification
+  xy-direct-aw-dc-calibration: verification
+  aw-const-omega-check: verification
+  aw-const-omega-awscale-check: tag-15b058ba
+  static-sensitivity-optimize: measurement
+  static-sensitivity-optimize-local: measurement
+  aw-waveform-scope-check: tag-15b058ba
+  dg-am-comp-transfer-check: tag-15b058ba
+  temperature-switch-pid-cycle: tag-15b058ba
+experiment_descriptions:
+  noise-spectrum-xy: 测量 XY 控制条件下的噪声谱，dg_am 作为触发信号，使得 dg_comp 两路同相输出。
+  noise-spectrum-xy-v2: 测量 XY 控制条件下的噪声谱，dg_am 作为调制信号。
+  photon-shot-noise: 测量光子散粒噪声随 Probe 光功率的变化，测量锁相放大器 XY 的噪声谱本底。
+  projection-noise: 改变主磁场，测量锁相放大器XY的噪声谱
+  rf-sensitivity-aw: 测量射频灵敏度，dg_am 作为触发信号，使得 dg_comp 两路同相输出。
+  rf-sensitivity-aw-frequency: 测量射频频率响应，dg_am 作为调制信号。
+  rf-sensitivity-constxy-frequency: AM调制的方测量频率响应。
+  rf-sensitivity-direct-aw-frequency: 测量射频频率响应，dg_am 作为触发信号，使得 dg_comp 两路同相输出。
+  xy-direct-aw-dc-calibration: DirectAW 加常数控制的方式，外加不同频率射频场，寻找频率响应的最大值的位置，来对 控制 进行标定。
+experiment_titles:
+  noise-spectrum-xy: XY 控制测量噪声谱 （DirectAW）
+  noise-spectrum-xy-v2: XY 控制噪声谱 （AM）
+  photon-shot-noise: 光子散粒噪声
+  projection-noise: 原子自旋投影噪声
+  rf-sensitivity-aw: RF 灵敏度（DirectAW）
+  rf-sensitivity-aw-frequency: RF 频率响应（AM）
+  rf-sensitivity-constxy-frequency: RF 频率响应（ConstXY）
+  rf-sensitivity-direct-aw-frequency: RF 频率响应（DirectAW）
+  xy-direct-aw-dc-calibration: XY DirectAW DC 标定
