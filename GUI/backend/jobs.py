@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from threading import Lock, Thread
+from threading import Lock, RLock, Thread
 from typing import Any, Callable
 from uuid import uuid4
 
 from lab_workflows.common import CancellationToken, ProgressEvent, WorkflowCancelled
+
+
+TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+DEFAULT_MAX_TERMINAL_JOBS = 100
 
 
 def _json_safe(value: Any) -> Any:
@@ -39,6 +43,7 @@ class Job:
     error: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     cancellation: CancellationToken = field(default_factory=CancellationToken, repr=False)
+    finished_order: int | None = field(default=None, repr=False)
 
     def public(self) -> dict[str, Any]:
         return {
@@ -58,10 +63,14 @@ class Job:
 
 
 class JobManager:
-    def __init__(self) -> None:
+    def __init__(self, max_terminal_jobs: int = DEFAULT_MAX_TERMINAL_JOBS) -> None:
+        if max_terminal_jobs < 0:
+            raise ValueError("max_terminal_jobs 不能小于 0")
         self.jobs: dict[str, Job] = {}
         self.hardware_lock = Lock()
-        self.jobs_lock = Lock()
+        self.jobs_lock = RLock()
+        self.max_terminal_jobs = max_terminal_jobs
+        self._finished_sequence = 0
 
     def create(
         self,
@@ -88,57 +97,130 @@ class JobManager:
     ) -> None:
         acquired = hardware_required and self.hardware_lock.acquire(blocking=False)
         if hardware_required and not acquired:
-            job.status = "failed"
-            job.error = "其他硬件任务正在运行"
-            job.message = job.error
-            job.finished_at = datetime.now().isoformat(timespec="seconds")
+            self._finish(
+                job,
+                status="failed",
+                message="其他硬件任务正在运行",
+                error="其他硬件任务正在运行",
+            )
             return
+        status = "completed"
+        message = "任务完成"
+        error = None
+        result: Any = None
+        stage = "complete"
+        percent: float | None = 100
         try:
-            job.status = "running"
-            job.started_at = datetime.now().isoformat(timespec="seconds")
+            with self.jobs_lock:
+                job.status = "running"
+                job.started_at = datetime.now().isoformat(timespec="seconds")
             self.event(job, ProgressEvent("start", "任务开始", 0))
-            job.result = runner(job)
-            job.status = "completed"
-            job.stage = "complete"
-            job.percent = 100
-            job.message = "任务完成"
+            result = runner(job)
         except WorkflowCancelled as exc:
-            job.status = "cancelled"
-            job.message = str(exc)
+            status = "cancelled"
+            message = str(exc)
+            stage = job.stage
+            percent = job.percent
         except Exception as exc:
-            job.status = "failed"
-            job.error = str(exc)
-            job.message = str(exc)
+            status = "failed"
+            error = str(exc)
+            message = str(exc)
+            stage = job.stage
+            percent = job.percent
         finally:
-            job.finished_at = datetime.now().isoformat(timespec="seconds")
             if acquired:
                 self.hardware_lock.release()
+        self._finish(
+            job,
+            status=status,
+            message=message,
+            result=result,
+            error=error,
+            stage=stage,
+            percent=percent,
+        )
+
+    def _finish(
+        self,
+        job: Job,
+        *,
+        status: str,
+        message: str,
+        result: Any = None,
+        error: str | None = None,
+        stage: str | None = None,
+        percent: float | None = None,
+    ) -> None:
+        """原子地写入终态，并淘汰最旧的已结束任务。"""
+        with self.jobs_lock:
+            job.status = status
+            job.message = message
+            job.result = result
+            job.error = error
+            if stage is not None:
+                job.stage = stage
+            if percent is not None:
+                job.percent = percent
+            job.finished_at = datetime.now().isoformat(timespec="seconds")
+            self._finished_sequence += 1
+            job.finished_order = self._finished_sequence
+            self._prune_terminal_locked()
+
+    def _prune_terminal_locked(self) -> None:
+        finished = sorted(
+            (
+                job
+                for job in self.jobs.values()
+                if job.status in TERMINAL_STATUSES and job.finished_order is not None
+            ),
+            key=lambda item: item.finished_order or 0,
+        )
+        excess = len(finished) - self.max_terminal_jobs
+        for old_job in finished[:max(0, excess)]:
+            self.jobs.pop(old_job.id, None)
 
     def event(self, job: Job, event: ProgressEvent) -> None:
-        payload = {
-            "index": len(job.events),
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            **asdict(event),
-        }
-        job.events.append(payload)
-        job.stage = event.stage
-        job.message = event.message
-        if event.percent is not None:
-            job.percent = event.percent
+        with self.jobs_lock:
+            payload = {
+                "index": len(job.events),
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                **asdict(event),
+            }
+            job.events.append(payload)
+            job.stage = event.stage
+            job.message = event.message
+            if event.percent is not None:
+                job.percent = event.percent
 
     def get(self, job_id: str) -> Job:
-        try:
-            return self.jobs[job_id]
-        except KeyError as exc:
-            raise KeyError(f"未知任务: {job_id}") from exc
+        with self.jobs_lock:
+            try:
+                return self.jobs[job_id]
+            except KeyError as exc:
+                raise KeyError(f"未知任务: {job_id}") from exc
+
+    def list_public(self) -> list[dict[str, Any]]:
+        """返回从新到旧的一致任务快照。"""
+        with self.jobs_lock:
+            return [job.public() for job in reversed(list(self.jobs.values()))]
+
+    def stream_state(
+        self,
+        job: Job,
+        start_index: int,
+    ) -> tuple[list[dict[str, Any]], str]:
+        """为 SSE 复制指定位置之后的事件和当前状态。"""
+        with self.jobs_lock:
+            return [dict(event) for event in job.events[start_index:]], job.status
 
     def cancel(self, job_id: str) -> Job:
-        job = self.get(job_id)
-        if job.status not in {"queued", "running"}:
-            raise ValueError("任务已经结束，无法取消")
-        job.cancellation.cancel()
-        job.message = "已请求安全停止"
-        return job
+        with self.jobs_lock:
+            job = self.get(job_id)
+            if job.status not in {"queued", "running"}:
+                raise ValueError("任务已经结束，无法取消")
+            job.cancellation.cancel()
+            job.message = "已请求安全停止"
+            return job
 
 
 manager = JobManager()
