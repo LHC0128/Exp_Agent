@@ -117,6 +117,20 @@ class DG4000Instrument:
     def query_int(self, command: str) -> int:
         return int(float(self.query(command)))
 
+    @staticmethod
+    def _expand_scpi_value(value: str) -> str:
+        names = {
+            "INT": "INTernal", "EXT": "EXTernal", "MAN": "MANual",
+            "TRIG": "TRIGgered", "GAT": "GATed", "INF": "INFinity",
+            "POS": "POSitive", "NEG": "NEGative",
+            "NORM": "NORMal", "INV": "INVerted",
+            "SIN": "SINusoid", "SQU": "SQUare", "TRI": "TRIangle",
+            "RAMP": "RAMP", "NRAM": "NRAMp", "NOIS": "NOISe",
+            "ARB": "ARBitrary", "FSK": "FSKey",
+        }
+        normalized = value.strip().strip('"').upper()
+        return names.get(normalized, value.strip().strip('"'))
+
     # ==================================================================
     # IEEE 488.2 公用命令
     # ==================================================================
@@ -237,10 +251,22 @@ class DG4000Instrument:
         """设置方波占空比 (%)."""
         self.write(f":SOURce{self._ch(channel)}:FUNCtion:SQUare:DCYCle {percent}")
 
+    def get_square_dcycle(self, channel: Optional[int] = None) -> float:
+        """读取方波占空比。"""
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:FUNCtion:SQUare:DCYCle?"
+        )
+
     def set_ramp_symmetry(self, percent: float,
                           channel: Optional[int] = None) -> None:
         """设置斜波对称度 (%)."""
         self.write(f":SOURce{self._ch(channel)}:FUNCtion:RAMP:SYMMetry {percent}")
+
+    def get_ramp_symmetry(self, channel: Optional[int] = None) -> float:
+        """读取斜波对称度。"""
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:FUNCtion:RAMP:SYMMetry?"
+        )
 
     # ==================================================================
     # 频率 / 周期
@@ -387,6 +413,11 @@ class DG4000Instrument:
         """设置调制类型."""
         self.write(f":SOURce{self._ch(channel)}:MOD:TYPE {mod_type}")
 
+    def get_mod_type(self, channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(
+            self.query(f":SOURce{self._ch(channel)}:MOD:TYPE?")
+        )
+
     def set_mod_state(self, state: bool,
                       channel: Optional[int] = None) -> None:
         """打开/关闭调制."""
@@ -395,7 +426,7 @@ class DG4000Instrument:
 
     def get_mod_state(self, channel: Optional[int] = None) -> bool:
         return self.query(
-            f":SOURce{self._ch(channel)}:MOD:STATe?") == "ON"
+            f":SOURce{self._ch(channel)}:MOD:STATe?").upper() in {"1", "ON"}
 
     def set_mod_source(self, source: str,
                        channel: Optional[int] = None) -> None:
@@ -408,6 +439,13 @@ class DG4000Instrument:
         mod_type = self.query(f":SOURce{ch}:MOD:TYPe?").strip()
         self.write(f":SOURce{ch}:MOD:{mod_type}:SOURce {source}")
 
+    def get_mod_source(self, channel: Optional[int] = None) -> str:
+        ch = self._ch(channel)
+        mod_type = self.query(f":SOURce{ch}:MOD:TYPe?").strip()
+        return self._expand_scpi_value(
+            self.query(f":SOURce{ch}:MOD:{mod_type}:SOURce?")
+        )
+
     # ---- AM ----
 
     def set_mod_am_depth(self, depth: float,
@@ -415,10 +453,20 @@ class DG4000Instrument:
         """设置 AM 调制深度 (0-120%)."""
         self.write(f":SOURce{self._ch(channel)}:MOD:AM:DEPTh {depth}")
 
+    def get_mod_am_depth(self, channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:MOD:AM:DEPTh?"
+        )
+
     def set_mod_am_source(self, source: str,
                           channel: Optional[int] = None) -> None:
         """设置 AM 调制源 (INTernal | EXTernal)."""
         self.write(f":SOURce{self._ch(channel)}:MOD:AM:SOURce {source}")
+
+    def get_mod_am_source(self, channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(
+            self.query(f":SOURce{self._ch(channel)}:MOD:AM:SOURce?")
+        )
 
     def set_mod_am_internal_freq(self, freq: float,
                                  channel: Optional[int] = None) -> None:
@@ -426,11 +474,23 @@ class DG4000Instrument:
         self.write(
             f":SOURce{self._ch(channel)}:MOD:AM:INTernal:FREQuency {freq:e}")
 
+    def get_mod_am_internal_freq(self,
+                                 channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:MOD:AM:INTernal:FREQuency?"
+        )
+
     def set_mod_am_internal_func(self, func: WaveShape,
                                  channel: Optional[int] = None) -> None:
         """设置 AM 内部调制波形."""
         self.write(
             f":SOURce{self._ch(channel)}:MOD:AM:INTernal:FUNCtion {func}")
+
+    def get_mod_am_internal_func(self,
+                                 channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(self.query(
+            f":SOURce{self._ch(channel)}:MOD:AM:INTernal:FUNCtion?"
+        ))
 
     # ---- FM ----
 
@@ -440,19 +500,41 @@ class DG4000Instrument:
         self.write(
             f":SOURce{self._ch(channel)}:MOD:FM:DEViation {deviation:e}")
 
+    def get_mod_fm_deviation(self, channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:MOD:FM:DEViation?"
+        )
+
     def set_mod_fm_source(self, source: str,
                           channel: Optional[int] = None) -> None:
         self.write(f":SOURce{self._ch(channel)}:MOD:FM:SOURce {source}")
+
+    def get_mod_fm_source(self, channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(
+            self.query(f":SOURce{self._ch(channel)}:MOD:FM:SOURce?")
+        )
 
     def set_mod_fm_internal_freq(self, freq: float,
                                  channel: Optional[int] = None) -> None:
         self.write(
             f":SOURce{self._ch(channel)}:MOD:FM:INTernal:FREQuency {freq:e}")
 
+    def get_mod_fm_internal_freq(self,
+                                 channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:MOD:FM:INTernal:FREQuency?"
+        )
+
     def set_mod_fm_internal_func(self, func: WaveShape,
                                  channel: Optional[int] = None) -> None:
         self.write(
             f":SOURce{self._ch(channel)}:MOD:FM:INTernal:FUNCtion {func}")
+
+    def get_mod_fm_internal_func(self,
+                                 channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(self.query(
+            f":SOURce{self._ch(channel)}:MOD:FM:INTernal:FUNCtion?"
+        ))
 
     # ---- PM ----
 
@@ -461,19 +543,41 @@ class DG4000Instrument:
         """设置 PM 相偏 (度)."""
         self.write(f":SOURce{self._ch(channel)}:MOD:PM:DEViation {deviation}")
 
+    def get_mod_pm_deviation(self, channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:MOD:PM:DEViation?"
+        )
+
     def set_mod_pm_source(self, source: str,
                           channel: Optional[int] = None) -> None:
         self.write(f":SOURce{self._ch(channel)}:MOD:PM:SOURce {source}")
+
+    def get_mod_pm_source(self, channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(
+            self.query(f":SOURce{self._ch(channel)}:MOD:PM:SOURce?")
+        )
 
     def set_mod_pm_internal_freq(self, freq: float,
                                  channel: Optional[int] = None) -> None:
         self.write(
             f":SOURce{self._ch(channel)}:MOD:PM:INTernal:FREQuency {freq:e}")
 
+    def get_mod_pm_internal_freq(self,
+                                 channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:MOD:PM:INTernal:FREQuency?"
+        )
+
     def set_mod_pm_internal_func(self, func: WaveShape,
                                  channel: Optional[int] = None) -> None:
         self.write(
             f":SOURce{self._ch(channel)}:MOD:PM:INTernal:FUNCtion {func}")
+
+    def get_mod_pm_internal_func(self,
+                                 channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(self.query(
+            f":SOURce{self._ch(channel)}:MOD:PM:INTernal:FUNCtion?"
+        ))
 
     # ---- FSK ----
 
@@ -483,19 +587,39 @@ class DG4000Instrument:
         self.write(
             f":SOURce{self._ch(channel)}:MOD:FSKey:FREQuency {freq:e}")
 
+    def get_mod_fsk_frequency(self, channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:MOD:FSKey:FREQuency?"
+        )
+
     def set_mod_fsk_rate(self, rate: float,
                          channel: Optional[int] = None) -> None:
         """设置 FSK 跳频速率 (Hz)."""
         self.write(
             f":SOURce{self._ch(channel)}:MOD:FSKey:INTernal:RATE {rate:e}")
 
+    def get_mod_fsk_rate(self, channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:MOD:FSKey:INTernal:RATE?"
+        )
+
     def set_mod_fsk_polarity(self, polarity: OutputPolarity,
                              channel: Optional[int] = None) -> None:
         self.write(f":SOURce{self._ch(channel)}:MOD:FSKey:POLarity {polarity}")
 
+    def get_mod_fsk_polarity(self, channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(self.query(
+            f":SOURce{self._ch(channel)}:MOD:FSKey:POLarity?"
+        ))
+
     def set_mod_fsk_source(self, source: str,
                            channel: Optional[int] = None) -> None:
         self.write(f":SOURce{self._ch(channel)}:MOD:FSKey:SOURce {source}")
+
+    def get_mod_fsk_source(self, channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(self.query(
+            f":SOURce{self._ch(channel)}:MOD:FSKey:SOURce?"
+        ))
 
     # ---- PWM ----
 
@@ -505,19 +629,42 @@ class DG4000Instrument:
         self.write(
             f":SOURce{self._ch(channel)}:MOD:PWM:DEViation:DCYCle {percent}")
 
+    def get_mod_pwm_deviation_dcycle(self,
+                                     channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:MOD:PWM:DEViation:DCYCle?"
+        )
+
     def set_mod_pwm_internal_freq(self, freq: float,
                                   channel: Optional[int] = None) -> None:
         self.write(
             f":SOURce{self._ch(channel)}:MOD:PWM:INTernal:FREQuency {freq:e}")
+
+    def get_mod_pwm_internal_freq(self,
+                                  channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:MOD:PWM:INTernal:FREQuency?"
+        )
 
     def set_mod_pwm_internal_func(self, func: WaveShape,
                                   channel: Optional[int] = None) -> None:
         self.write(
             f":SOURce{self._ch(channel)}:MOD:PWM:INTernal:FUNCtion {func}")
 
+    def get_mod_pwm_internal_func(self,
+                                  channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(self.query(
+            f":SOURce{self._ch(channel)}:MOD:PWM:INTernal:FUNCtion?"
+        ))
+
     def set_mod_pwm_source(self, source: str,
                            channel: Optional[int] = None) -> None:
         self.write(f":SOURce{self._ch(channel)}:MOD:PWM:SOURce {source}")
+
+    def get_mod_pwm_source(self, channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(self.query(
+            f":SOURce{self._ch(channel)}:MOD:PWM:SOURce?"
+        ))
 
     # ==================================================================
     # 扫描 (SWEep)
@@ -573,20 +720,37 @@ class DG4000Instrument:
         self.write(f":SOURce{self._ch(channel)}:BURSt:STATe "
                    f"{'ON' if state else 'OFF'}")
 
+    def get_burst_state(self, channel: Optional[int] = None) -> bool:
+        return self.query(
+            f":SOURce{self._ch(channel)}:BURSt:STATe?").upper() in {"1", "ON"}
+
     def set_burst_mode(self, mode: BurstMode,
                        channel: Optional[int] = None) -> None:
         """设置脉冲串模式: TRIGgered / GATed."""
         self.write(f":SOURce{self._ch(channel)}:BURSt:MODE {mode}")
 
-    def set_burst_ncycles(self, n: int,
+    def get_burst_mode(self, channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(
+            self.query(f":SOURce{self._ch(channel)}:BURSt:MODE?")
+        )
+
+    def set_burst_ncycles(self, n,
                           channel: Optional[int] = None) -> None:
         """设置脉冲串周期数 (1-50000)."""
         self.write(f":SOURce{self._ch(channel)}:BURSt:NCYCles {n}")
+
+    def get_burst_ncycles(self, channel: Optional[int] = None):
+        value = self.query(f":SOURce{self._ch(channel)}:BURSt:NCYCles?")
+        numeric = None if value.upper().startswith("INF") else float(value)
+        return "INFinity" if numeric is None or numeric >= 9e37 else int(numeric)
 
     def set_burst_phase(self, angle: float,
                         channel: Optional[int] = None) -> None:
         """设置脉冲串起始相位 (度)."""
         self.write(f":SOURce{self._ch(channel)}:BURSt:PHASe {angle}")
+
+    def get_burst_phase(self, channel: Optional[int] = None) -> float:
+        return self.query_float(f":SOURce{self._ch(channel)}:BURSt:PHASe?")
 
     def set_burst_period(self, seconds: float,
                          channel: Optional[int] = None) -> None:
@@ -594,10 +758,20 @@ class DG4000Instrument:
         self.write(
             f":SOURce{self._ch(channel)}:BURSt:INTernal:PERiod {seconds:e}")
 
+    def get_burst_period(self, channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:BURSt:INTernal:PERiod?"
+        )
+
     def set_burst_delay(self, seconds: float,
                         channel: Optional[int] = None) -> None:
         """设置脉冲串延迟 (s)."""
         self.write(f":SOURce{self._ch(channel)}:BURSt:TDELay {seconds:e}")
+
+    def get_burst_delay(self, channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:BURSt:TDELay?"
+        )
 
     def set_burst_trigger_source(self, source: str,
                                  channel: Optional[int] = None) -> None:
@@ -605,11 +779,23 @@ class DG4000Instrument:
         self.write(
             f":SOURce{self._ch(channel)}:BURSt:TRIGger:SOURce {source}")
 
+    def get_burst_trigger_source(self,
+                                 channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(self.query(
+            f":SOURce{self._ch(channel)}:BURSt:TRIGger:SOURce?"
+        ))
+
     def set_burst_trigger_slope(self, slope: str,
                                 channel: Optional[int] = None) -> None:
         """设置脉冲串触发边沿: POSitive | NEGative."""
         self.write(
             f":SOURce{self._ch(channel)}:BURSt:TRIGger:SLOPe {slope}")
+
+    def get_burst_trigger_slope(self,
+                                channel: Optional[int] = None) -> str:
+        return self._expand_scpi_value(self.query(
+            f":SOURce{self._ch(channel)}:BURSt:TRIGger:SLOPe?"
+        ))
 
     def burst_trigger(self, channel: Optional[int] = None) -> None:
         """手动触发一次脉冲串."""
@@ -642,6 +828,12 @@ class DG4000Instrument:
                         channel: Optional[int] = None) -> None:
         """设置脉冲延迟 (s)."""
         self.write(f":SOURce{self._ch(channel)}:PULSe:DELay {delay:e}")
+
+    def get_pulse_delay(self, channel: Optional[int] = None) -> float:
+        """读取脉冲延迟。"""
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:PULSe:DELay?"
+        )
 
     def set_pulse_leading(self, seconds: float,
                           channel: Optional[int] = None) -> None:
@@ -844,13 +1036,14 @@ class DG4000Instrument:
     def setup_arbitrary(self, y_values, freq: float = 1000.0,
                         amplitude: float = 5.0, offset: float = 0.0,
                         phase: float = 0.0,
-                        channel: Optional[int] = None) -> None:
+                        channel: Optional[int] = None,
+                        output: bool = True) -> None:
         """一键配置自定义波形输出.
 
         按照用户已验证的工作流程：
         1. 退出 DC（切到 SINusoid）→ APPLy:USER 设置参数
         2. 上传波形数据到 VOLATILE 存储区
-        3. 打开输出
+        3. 按需打开输出
 
         关键：APPLy:USER 在 USER/非DC 状态下正常工作，
         仅在 DC 状态下会被特殊处理（忽略 freq/amp/phase）。
@@ -870,6 +1063,8 @@ class DG4000Instrument:
             初始相位 (度, 0-360), 默认 0°。
         channel : int, optional
             通道号，默认使用实例绑定的通道。
+        output : bool
+            是否在配置完成后打开输出。需要先配置 Burst/触发再开输出时设为 False。
         """
         ch = self._ch(channel)
 
@@ -884,8 +1079,9 @@ class DG4000Instrument:
         # Step 3: 上传波形数据到 VOLATILE
         self.send_arbitrary_waveform(y_values, channel=ch)
 
-        # Step 4: 确保输出打开
-        self.set_output(True, channel=ch)
+        # Step 4: 按需打开输出
+        if output:
+            self.set_output(True, channel=ch)
 
     def set_custom_point(self, point: int, value: float,
                          channel: Optional[int] = None) -> None:

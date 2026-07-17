@@ -71,6 +71,8 @@ fixed_params:
   - Y_magnetic_field
 ---
 
+> **历史方案说明：** 本文描述的是扫描 Pump 调制频率的旧 Bell–Bloom 标定方案。当前 Mx 高主场构型请使用 [Mx 高主场 Z 磁场频率标定](mx_z_field_calibration.md)，两者实验 ID、数据目录和拟合模型相互独立。
+
 # Z 磁场频率标定（Bell-Bloom 磁力仪）
 
 ## 原理

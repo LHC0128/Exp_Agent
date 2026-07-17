@@ -12,6 +12,10 @@ manuals/
 .agents/
 AGENTS.md
 CLAUDE.md
+!GUI/AGENTS.md
+GUI/frontend/node_modules/
+GUI/frontend/dist/
+GUI/frontend/*.tsbuildinfo
 
 ~/
 

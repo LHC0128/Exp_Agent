@@ -133,6 +133,9 @@ class SDSInstrument:
         else:
             self.write(f":ACQuire:TYPE {acq_type}")
 
+    def get_acquire_type(self) -> str:
+        return self.query(":ACQuire:TYPE?")
+
     def get_actual_points(self) -> float:
         return self.query_float(":ACQuire:POINts?")
 
@@ -143,8 +146,14 @@ class SDSInstrument:
     def set_timebase_scale(self, scale: float) -> None:
         self.write(f":TIMebase:SCALe {scale:.6E}")
 
+    def get_timebase_scale(self) -> float:
+        return self.query_float(":TIMebase:SCALe?")
+
     def set_timebase_delay(self, delay: float) -> None:
         self.write(f":TIMebase:DELay {delay:.6E}")
+
+    def get_timebase_delay(self) -> float:
+        return self.query_float(":TIMebase:DELay?")
 
     # ------------------------------------------------------------------
     # 通道设置
@@ -153,20 +162,39 @@ class SDSInstrument:
     def set_channel_state(self, channel: int, state: bool) -> None:
         self.write(f":CHANnel{channel}:SWITch {'ON' if state else 'OFF'}")
 
+    def get_channel_state(self, channel: int) -> bool:
+        return self.query(f":CHANnel{channel}:SWITch?").upper() in {"1", "ON"}
+
     def set_channel_scale(self, channel: int, scale: float) -> None:
         self.write(f":CHANnel{channel}:SCALe {scale:.6E}")
+
+    def get_channel_scale(self, channel: int) -> float:
+        return self.query_float(f":CHANnel{channel}:SCALe?")
 
     def set_channel_offset(self, channel: int, offset: float) -> None:
         self.write(f":CHANnel{channel}:OFFSet {offset:.6E}")
 
+    def get_channel_offset(self, channel: int) -> float:
+        return self.query_float(f":CHANnel{channel}:OFFSet?")
+
     def set_channel_coupling(self, channel: int, coupling: str) -> None:
         self.write(f":CHANnel{channel}:COUPling {coupling}")
+
+    def get_channel_coupling(self, channel: int) -> str:
+        return self.query(f":CHANnel{channel}:COUPling?")
 
     def set_channel_impedance(self, channel: int, impedance: str) -> None:
         self.write(f":CHANnel{channel}:IMPedance {impedance}")
 
+    def get_channel_impedance(self, channel: int) -> str:
+        return self.query(f":CHANnel{channel}:IMPedance?")
+
     def set_channel_probe(self, channel: int, attenuation: float) -> None:
         self.write(f":CHANnel{channel}:PROBe VALue,{attenuation:.6E}")
+
+    def get_channel_probe(self, channel: int) -> float:
+        response = self.query(f":CHANnel{channel}:PROBe?")
+        return float(response.split(",")[-1])
 
     # ------------------------------------------------------------------
     # 触发设置
@@ -175,17 +203,32 @@ class SDSInstrument:
     def set_trigger_mode(self, mode: str) -> None:
         self.write(f":TRIGger:MODE {mode}")
 
+    def get_trigger_mode(self) -> str:
+        return self.query(":TRIGger:MODE?")
+
     def set_trigger_type(self, trig_type: str) -> None:
         self.write(f":TRIGger:TYPE {trig_type}")
+
+    def get_trigger_type(self) -> str:
+        return self.query(":TRIGger:TYPE?")
 
     def set_trigger_source(self, source: str) -> None:
         self.write(f":TRIGger:EDGE:SOURce {source}")
 
+    def get_trigger_source(self) -> str:
+        return self.query(":TRIGger:EDGE:SOURce?")
+
     def set_trigger_slope(self, slope: str) -> None:
         self.write(f":TRIGger:EDGE:SLOPe {slope}")
 
+    def get_trigger_slope(self) -> str:
+        return self.query(":TRIGger:EDGE:SLOPe?")
+
     def set_trigger_level(self, level: float) -> None:
         self.write(f":TRIGger:EDGE:LEVel {level:.6E}")
+
+    def get_trigger_level(self) -> float:
+        return self.query_float(":TRIGger:EDGE:LEVel?")
 
     def trigger_run(self) -> None:
         self.write(":TRIGger:RUN")

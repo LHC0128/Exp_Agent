@@ -9,4 +9,13 @@ description = "实验自动化平台 — 仪器控制、数据采集与分析"
 requires-python = ">=3.10"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "."]
+include = [
+  "gs200*",
+  "lockin_amplifier*",
+  "sds_acquisition*",
+  "sensitivity_analysis*",
+  "signal_generator*",
+  "tec_controller*",
+  "lab_workflows*",
+]

@@ -84,7 +84,7 @@ from tqdm import tqdm
 
 # 设备库
 from gs200 import GS200Instrument
-from signal_generator import DG4000Instrument, DG900Instrument
+from lab_workflows.devices import create_signal_generator
 from tec_controller import TECInstrument
 from sds_acquisition import SDSInstrument
 from lockin_amplifier import (
@@ -284,7 +284,7 @@ try:
 
     # ---- DG4000: Z 磁场（频率扫描 + 触发源）----
     dg_sweep_cfg = MAPPING["Z_magnetic_field"]
-    dg_sweep = DG4000Instrument(dg_sweep_cfg["resource"], channel=1)
+    dg_sweep = create_signal_generator(dg_sweep_cfg["resource"], channel=1)
     dg_sweep.connect()
     print(f"dg_sweep (Z 场) 已连接: {dg_sweep.idn()}")
     dg_sweep.set_ref_clock_source("EXTernal")
@@ -294,7 +294,7 @@ try:
 
     # ---- DG4000: X/Y 补偿磁场 (AM 载波, dg_comp) ----
     dg_comp_cfg = MAPPING["X_magnetic_field"]
-    dg_comp = DG4000Instrument(dg_comp_cfg["resource"], channel=1)
+    dg_comp = create_signal_generator(dg_comp_cfg["resource"], channel=1)
     dg_comp.connect()
     print(f"dg_comp 已连接: {dg_comp.idn()}")
     dg_comp.set_ref_clock_source("EXTernal")
@@ -304,7 +304,7 @@ try:
 
     # ---- DG4000: X/Y AM DC 包络控制 (dg_am) ----
     dg_am_cfg = MAPPING["X_magnetic_field_AM"]
-    dg_am = DG4000Instrument(dg_am_cfg["resource"], channel=1)
+    dg_am = create_signal_generator(dg_am_cfg["resource"], channel=1)
     dg_am.connect()
     print(f"dg_am 已连接: {dg_am.idn()}")
     dg_am.set_ref_clock_source("EXTernal")
@@ -316,21 +316,21 @@ try:
 
     # ---- DG4000: Pump 调制 + 时序门控 (dg_mod) ----
     dg_mod_cfg = MAPPING["Pump_modulation"]
-    dg_mod = DG4000Instrument(dg_mod_cfg["resource"], channel=1)
+    dg_mod = create_signal_generator(dg_mod_cfg["resource"], channel=1)
     dg_mod.connect()
     print(f"dg_mod 已连接: {dg_mod.idn()}")
     devices["dg_mod"] = dg_mod
 
     # ---- DG900: Pump/Probe 光功率 (DC, dg_laser) ----
     dg_laser_cfg = MAPPING["Pump_laser_power"]
-    dg_laser = DG900Instrument(dg_laser_cfg["resource"], channel=1)
+    dg_laser = create_signal_generator(dg_laser_cfg["resource"], channel=1)
     dg_laser.connect()
     print(f"dg_laser 已连接: {dg_laser.idn()}")
     devices["dg_laser"] = dg_laser
 
     # ---- DG900: 温度开关 ----
     dg_temp_cfg = MAPPING["Temp_Switch"]
-    dg_temp = DG900Instrument(dg_temp_cfg["resource"], channel=2)
+    dg_temp = create_signal_generator(dg_temp_cfg["resource"], channel=2)
     dg_temp.connect()
     print(f"dg_temp 已连接: {dg_temp.idn()}")
     devices["dg_temp"] = dg_temp
