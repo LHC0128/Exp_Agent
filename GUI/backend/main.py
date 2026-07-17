@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,6 +36,12 @@ from lab_workflows.experiments.catalog import (
 from lab_workflows.phase_calibration import calibrate_demod0_safely
 
 from .jobs import Job, manager
+from .schemas import (
+    DeviceSnapshot,
+    DeviceSummary,
+    GeneratorChannelSettingsBody,
+    ScopeSettingsBody,
+)
 
 
 app = FastAPI(title="Bell-Bloom 实验控制台", version="0.1.0")
@@ -56,10 +62,6 @@ async def disable_api_cache(request, call_next):
         response.headers["Cache-Control"] = "no-store, max-age=0"
         response.headers["Pragma"] = "no-cache"
     return response
-
-
-class SettingsBody(BaseModel):
-    settings: dict[str, Any] = Field(default_factory=dict)
 
 
 class PhaseBody(BaseModel):
@@ -127,26 +129,42 @@ def health():
     return {"status": "ok", "hardware_busy": manager.hardware_lock.locked()}
 
 
-@app.get("/api/devices")
+@app.get("/api/devices", response_model=list[DeviceSummary])
 def devices():
     return [record.to_dict() for record in discover_devices()]
 
 
-@app.post("/api/devices/{device_id}/refresh")
+@app.post("/api/devices/{device_id}/refresh", response_model=DeviceSnapshot)
 def refresh_device(device_id: str):
     return _with_short_hardware_lock(lambda: read_device(device_id))
 
 
-@app.put("/api/devices/{device_id}/channels/{channel}")
-def update_channel(device_id: str, channel: int, body: SettingsBody):
+@app.put(
+    "/api/devices/{device_id}/channels/{channel}",
+    response_model=DeviceSnapshot,
+)
+def update_channel(
+    device_id: str,
+    channel: int,
+    body: GeneratorChannelSettingsBody,
+):
     return _with_short_hardware_lock(
-        lambda: apply_generator_channel(device_id, channel, body.settings)
+        lambda: apply_generator_channel(
+            device_id,
+            channel,
+            body.settings.model_dump(exclude_unset=True),
+        )
     )
 
 
-@app.put("/api/devices/{device_id}/scope")
-def update_scope(device_id: str, body: SettingsBody):
-    return _with_short_hardware_lock(lambda: apply_scope(device_id, body.settings))
+@app.put("/api/devices/{device_id}/scope", response_model=DeviceSnapshot)
+def update_scope(device_id: str, body: ScopeSettingsBody):
+    return _with_short_hardware_lock(
+        lambda: apply_scope(
+            device_id,
+            body.settings.model_dump(exclude_unset=True),
+        )
+    )
 
 
 @app.post("/api/clocks/sync")
@@ -366,7 +384,7 @@ def experiment_run(experiment_id: str, body: ExperimentBody):
 
 @app.get("/api/jobs")
 def jobs():
-    return [job.public() for job in reversed(list(manager.jobs.values()))]
+    return manager.list_public()
 
 
 @app.get("/api/jobs/{job_id}")
@@ -383,21 +401,37 @@ def cancel_job(job_id: str):
 
 
 @app.get("/api/jobs/{job_id}/events")
-async def job_events(job_id: str):
+async def job_events(job_id: str, request: Request):
     current = _job_or_404(job_id)
+    try:
+        index = max(0, int(request.headers.get("last-event-id", "0")))
+    except ValueError:
+        index = 0
 
     async def stream():
-        index = 0
+        nonlocal index
         while True:
-            while index < len(current.events):
-                yield f"data: {json.dumps(current.events[index], ensure_ascii=False)}\n\n"
-                index += 1
-            if current.status in {"completed", "failed", "cancelled"}:
-                yield f"data: {json.dumps({'done': True, 'status': current.status}, ensure_ascii=False)}\n\n"
+            events, status = manager.stream_state(current, index)
+            for event in events:
+                index = int(event["index"]) + 1
+                payload = json.dumps(event, ensure_ascii=False)
+                yield f"id: {index}\ndata: {payload}\n\n"
+            if status in {"completed", "failed", "cancelled"}:
+                payload = json.dumps(
+                    {"done": True, "status": status},
+                    ensure_ascii=False,
+                )
+                yield f"id: {index + 1}\ndata: {payload}\n\n"
+                break
+            if await request.is_disconnected():
                 break
             await asyncio.sleep(0.25)
 
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/runs")

@@ -30,6 +30,22 @@ npm run dev
 
 Vite 会把 `/api` 转发到本机 FastAPI。
 
+## 前端结构
+
+- `frontend/src/pages/`：路由页面，只编排页面级状态和 API 调用。
+- `frontend/src/components/`：布局、表单、任务视图和仪器编辑器。
+- `frontend/src/types/api.ts`：与后端 Pydantic 模型对齐的 API 类型。
+- `frontend/src/App.tsx`：仅保留应用布局入口，不承载页面实现。
+
+设备写入接口使用严格 Pydantic 请求模型，未知设置字段会返回验证错误；
+设备回读使用按 `type` 区分的信号发生器/示波器快照模型。
+
+## 任务进度
+
+运行中的任务通过 `/api/jobs/{id}/events` SSE 增量推送进度；页面刷新恢复和任务结束后
+只读取一次完整 Job 快照。后端仅保留最近 100 个已完成、失败或取消的任务，运行中的任务
+不会被淘汰。实验原始数据和分析结果保存在 `data/`，不受内存任务淘汰影响。
+
 ## 共享模块
 
 实验脚本不依赖 GUI，可以直接复用平级目录中的工作流：
