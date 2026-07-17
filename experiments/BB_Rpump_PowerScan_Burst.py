@@ -56,7 +56,7 @@ from tqdm import tqdm
 
 # 设备库
 from gs200 import GS200Instrument
-from signal_generator import DG4000Instrument, DG900Instrument
+from lab_workflows.devices import create_signal_generator
 from tec_controller import TECInstrument
 from sds_acquisition import (
     SDSInstrument, SDSAcquisition,
@@ -145,8 +145,7 @@ SCALE_MAX = 10.0                         # 最大 V/div
 
 # ========== Temp_Switch (DG9000 Pro Ch 5V=ON/0V=OFF, 采集期间必须关闭) ==========
 # [经验] 温控通断引入的磁场会干扰 Bell-Bloom 原子信号, 采集前必须 set 0V, 采集后恢复 5V
-# [重要] mapping.yaml 中 Temp_Switch 的 resource 是 DG9Q... 标识, 必须用 DG900Instrument
-#        (DG9000 Pro 用 :APPLy:DC 命令, 而 DG4000Instrument 用 :FUNCtion:SHAPe DC, 不兼容)
+# [重要] Temp_Switch 的 DG900 型号只在 mapping.yaml 的 model 字段配置
 TEMP_SWITCH_CHANNEL = MAPPING.get("Temp_Switch", {}).get("channel", None)
 TEMP_SWITCH_OFF_V = 0.0                  # 关闭温控时的 TTL 电平
 TEMP_SWITCH_ON_V = 5.0                   # 开启温控时的 TTL 电平
@@ -208,7 +207,7 @@ try:
         cfg = MAPPING.get(key)
         if cfg:
             try:
-                dev = DG4000Instrument(cfg["resource"], channel=cfg["channel"])
+                dev = create_signal_generator(cfg["resource"], channel=cfg["channel"])
                 dev.connect()
                 dev.set_output(False)
                 devices[f"safe_{key}"] = dev
@@ -221,7 +220,7 @@ try:
     time_seq_cfg = MAPPING["Time_sequence"]
     assert pump_mod_cfg["resource"] == time_seq_cfg["resource"], \
         "Pump_modulation/Time_sequence 不在同一台 DG4000"
-    dg_rf = DG4000Instrument(pump_mod_cfg["resource"])
+    dg_rf = create_signal_generator(pump_mod_cfg["resource"])
     dg_rf.connect()
     print(f"DG4000 RF 开关已连接: {dg_rf.idn()}")
     dg_rf.set_ref_clock_source("EXTernal")
@@ -235,7 +234,7 @@ try:
     pump_cfg = MAPPING["Pump_laser_power"]
     probe_cfg = MAPPING["Probe_laser_power"]
     assert pump_cfg["resource"] == probe_cfg["resource"], "Pump/Probe 不在同一 DG900"
-    dg_laser = DG900Instrument(pump_cfg["resource"], channel=pump_cfg["channel"])
+    dg_laser = create_signal_generator(pump_cfg["resource"], channel=pump_cfg["channel"])
     dg_laser.connect()
     print(f"DG900 已连接: {dg_laser.idn()}")
     dg_laser.setup_dc(PUMP_POWER[0], channel=pump_cfg["channel"])
@@ -261,12 +260,11 @@ try:
     devices["sds_inst"] = sds_inst
     devices["acquirer"] = acquirer
 
-    # ---- 可选: Temp_Switch (DG9000 Pro, 用 DG900Instrument) ----
+    # ---- 可选: Temp_Switch（型号由 mapping.yaml 决定）----
     temp_sw_cfg = MAPPING.get("Temp_Switch")
     if temp_sw_cfg:
-        # [重要] resource 含 DG9Q 标识 → DG900 Pro 系列, 必须用 DG900Instrument
-        #        (DG4000Instrument 用 :FUNCtion:SHAPe DC, DG9000 不支持)
-        dg_temp_sw = DG900Instrument(temp_sw_cfg["resource"], channel=temp_sw_cfg["channel"])
+        # 工厂按 model 选择驱动，不从 resource 字符串推断型号。
+        dg_temp_sw = create_signal_generator(temp_sw_cfg["resource"], channel=temp_sw_cfg["channel"])
         dg_temp_sw.connect()
         dg_temp_sw.setup_dc(TEMP_SWITCH_ON_V, channel=temp_sw_cfg["channel"])  # 5V: 温控 ON
         print(f"  Temp_Switch CH{temp_sw_cfg['channel']}: {TEMP_SWITCH_ON_V}V (温控 ON, DG900)")

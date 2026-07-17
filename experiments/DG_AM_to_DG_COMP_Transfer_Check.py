@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 
-from signal_generator import DG4000Instrument
+from lab_workflows.devices import create_signal_generator
 from sds_acquisition import (
     SDSInstrument, SDSAcquisition, AcquisitionConfig,
     ChannelConfig, TriggerConfig, save_to_npz,
@@ -270,7 +270,7 @@ devices = {}
 
 try:
     dg_comp_cfg = MAPPING["X_magnetic_field"]
-    dg_comp = DG4000Instrument(dg_comp_cfg["resource"], channel=1)
+    dg_comp = create_signal_generator(dg_comp_cfg["resource"], channel=1)
     dg_comp.connect()
     dg_comp.set_ref_clock_source("EXTernal")
     dg_comp.set_output(False, channel=1)
@@ -279,7 +279,7 @@ try:
     print(f"dg_comp 已连接: {dg_comp.idn()}")
 
     dg_am_cfg = MAPPING["X_magnetic_field_AM"]
-    dg_am = DG4000Instrument(dg_am_cfg["resource"], channel=1)
+    dg_am = create_signal_generator(dg_am_cfg["resource"], channel=1)
     dg_am.connect()
     dg_am.set_ref_clock_source("EXTernal")
     dg_am.set_output(False, channel=1)

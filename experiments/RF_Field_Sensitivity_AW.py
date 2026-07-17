@@ -26,7 +26,16 @@ import numpy as np
 import yaml
 
 from gs200 import GS200Instrument
-from signal_generator import DG4000Instrument, DG900Instrument
+from lab_workflows.devices import (
+    create_signal_generator,
+    signal_generator_max_arb_points,
+)
+from lab_workflows.steps import (
+    DirectAWPhaseCalibrationConfig,
+    PhaseCalibrationConfig,
+    calibrate_demod_phase,
+    calibrate_direct_aw_phase,
+)
 from tec_controller import TECInstrument
 from lockin_amplifier import (
     HF2Instrument,
@@ -43,6 +52,7 @@ print("所有库导入成功")
 # %% Cell 2
 with open(project_root / "params" / "mapping.yaml", encoding="utf-8") as f:
     MAPPING = yaml.safe_load(f)["mapping"]
+MAX_ARB_POINTS = signal_generator_max_arb_points(MAPPING["X_magnetic_field"])
 
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
@@ -77,6 +87,8 @@ XY_CTRL_PHASE = 0.0
 XY_CTRL_QUAD = 90.0
 XY_CTRL_PHASE_TOL_DEG = 1.0
 XY_CTRL_PHASE_MAX_ITER = 8
+XY_CTRL_PHASE_MIN_R_V = 1e-12
+XY_CTRL_PHASE_MIN_R_RATIO = 0.1
 XY_PHASE_SETTLE_TIME = 0.8
 
 # dg_am 只作为 dg_comp 外触发源。
@@ -177,7 +189,7 @@ try:
     devices["gs200"] = gs
 
     dg_comp_cfg = MAPPING["X_magnetic_field"]
-    dg_comp = DG4000Instrument(dg_comp_cfg["resource"], channel=1)
+    dg_comp = create_signal_generator(dg_comp_cfg["resource"], channel=1)
     dg_comp.connect()
     print(f"补偿场 DG4000 已连接: {dg_comp.idn()}")
     dg_comp.set_ref_clock_source("EXTernal")
@@ -189,7 +201,7 @@ try:
     devices["dg_comp"] = dg_comp
 
     dg_am_cfg = MAPPING["X_magnetic_field_AM"]
-    dg_am = DG4000Instrument(dg_am_cfg["resource"], channel=1)
+    dg_am = create_signal_generator(dg_am_cfg["resource"], channel=1)
     dg_am.connect()
     print(f"dg_am 已连接: {dg_am.idn()}")
     dg_am.set_ref_clock_source("EXTernal")
@@ -201,7 +213,7 @@ try:
     devices["dg_am"] = dg_am
 
     dg_sweep_cfg = MAPPING["Z_magnetic_field"]
-    dg_sweep = DG4000Instrument(dg_sweep_cfg["resource"], channel=1)
+    dg_sweep = create_signal_generator(dg_sweep_cfg["resource"], channel=1)
     dg_sweep.connect()
     print(f"dg_sweep DG4000 已连接: {dg_sweep.idn()}")
     dg_sweep.set_ref_clock_source("EXTernal")
@@ -213,13 +225,13 @@ try:
     devices["dg_sweep"] = dg_sweep
 
     dg_mod_cfg = MAPPING["Pump_modulation"]
-    dg_mod = DG4000Instrument(dg_mod_cfg["resource"], channel=1)
+    dg_mod = create_signal_generator(dg_mod_cfg["resource"], channel=1)
     dg_mod.connect()
     print(f"调制 DG4000 已连接: {dg_mod.idn()}")
     devices["dg_mod"] = dg_mod
 
     dg_temp_cfg = MAPPING["Temp_Switch"]
-    dg_temp = DG900Instrument(dg_temp_cfg["resource"], channel=2)
+    dg_temp = create_signal_generator(dg_temp_cfg["resource"], channel=2)
     dg_temp.connect()
     print(f"温控开关 DG900 已连接: {dg_temp.idn()}")
     devices["dg_temp"] = dg_temp
@@ -231,7 +243,7 @@ try:
     devices["tec"] = tec
 
     dg_laser_cfg = MAPPING["Pump_laser_power"]
-    dg_laser = DG900Instrument(dg_laser_cfg["resource"], channel=1)
+    dg_laser = create_signal_generator(dg_laser_cfg["resource"], channel=1)
     dg_laser.connect()
     print(f"光功率 DG900 已连接: {dg_laser.idn()}")
     devices["dg_laser"] = dg_laser
@@ -476,10 +488,10 @@ def load_control_envelope():
     source_repeat_freq = 1.0 / source_period_s
     aw_period_s = 1.0 / AW_REPEAT_FREQ
     n_aw_points = int(round(aw_period_s / dt))
-    if n_aw_points < 2 or n_aw_points > DG4000Instrument.MAX_ARB_POINTS:
+    if n_aw_points < 2 or n_aw_points > MAX_ARB_POINTS:
         raise ValueError(
             f"AW 公共周期点数 {n_aw_points} 超出 DG4000 限制 "
-            f"2~{DG4000Instrument.MAX_ARB_POINTS}；请调整 AW_REPEAT_FREQ 或 CSV 采样间隔"
+            f"2~{MAX_ARB_POINTS}；请调整 AW_REPEAT_FREQ 或 CSV 采样间隔"
         )
 
     actual_aw_period_s = n_aw_points * dt
@@ -738,9 +750,16 @@ demod0_cfg = DemodulatorConfig(
     phase=0.0,
 )
 actual_rate_d0_calib = demod.configure_demodulator(hfi, demod0_cfg)
-calibrated_phase_0 = demod.auto_calibrate_phase(
-    hfi, demod_idx=DEMOD0_IDX, tolerance_deg=1.0, settle_time=0.2
+demod0_phase_result = calibrate_demod_phase(
+    hfi,
+    PhaseCalibrationConfig(
+        demod_idx=DEMOD0_IDX,
+        tolerance_deg=1.0,
+        max_attempts=5,
+        settle_time=0.2,
+    ),
 )
+calibrated_phase_0 = demod0_phase_result.phase_shift_deg
 
 dg_temp.set_output(True, channel=2)
 time.sleep(0.5)
@@ -759,7 +778,7 @@ def apply_phase_and_measure(phase_deg):
         f"  phase={phase_deg:.2f}°, theta={theta_deg:+.2f}°, "
         f"R={sample['r']:.6e}"
     )
-    return theta_deg, sample
+    return sample
 # %% Cell 8
 phase_history = []
 phase_sign = None
@@ -767,55 +786,41 @@ dg_temp.set_output(False, channel=2)
 time.sleep(0.5)
 
 try:
-    theta0, sample0 = apply_phase_and_measure(XY_CTRL_PHASE)
-    phase_history.append({
-        "iteration": 0,
-        "xy_ctrl_phase_deg": float(XY_CTRL_PHASE),
-        "theta_deg": float(theta0),
-        "r": float(sample0["r"]),
-        "mode": "initial",
-    })
-
-    if abs(theta0) >= XY_CTRL_PHASE_TOL_DEG:
-        minus_phase = (XY_CTRL_PHASE - theta0) % 360.0
-        theta_minus, sample_minus = apply_phase_and_measure(minus_phase)
-
-        phase_history.extend([
-            {
-                "iteration": 1,
-                "xy_ctrl_phase_deg": float(minus_phase),
-                "theta_deg": float(theta_minus),
-                "r": float(sample_minus["r"]),
-                "mode": "fixed_minus",
-            },
-        ])
-
-        phase_sign = -1.0
-        XY_CTRL_PHASE = minus_phase
-        theta_now = theta_minus
-        print("  固定更新方向: phase -= theta")
-
-        for iteration in range(2, XY_CTRL_PHASE_MAX_ITER + 1):
-            if abs(theta_now) < XY_CTRL_PHASE_TOL_DEG:
-                break
-            XY_CTRL_PHASE = (XY_CTRL_PHASE + phase_sign * theta_now) % 360.0
-            theta_now, sample_now = apply_phase_and_measure(XY_CTRL_PHASE)
-            phase_history.append({
-                "iteration": iteration,
-                "xy_ctrl_phase_deg": float(XY_CTRL_PHASE),
-                "theta_deg": float(theta_now),
-                "r": float(sample_now["r"]),
-                "mode": "iterate",
-            })
-    else:
-        theta_now = theta0
-        phase_sign = 0.0
+    direct_aw_phase_result = calibrate_direct_aw_phase(
+        XY_CTRL_PHASE,
+        apply_phase_and_measure,
+        DirectAWPhaseCalibrationConfig(
+            tolerance_deg=XY_CTRL_PHASE_TOL_DEG,
+            max_measurements=XY_CTRL_PHASE_MAX_ITER + 1,
+            minimum_r_v=XY_CTRL_PHASE_MIN_R_V,
+            minimum_r_ratio=XY_CTRL_PHASE_MIN_R_RATIO,
+        ),
+    )
+    XY_CTRL_PHASE = direct_aw_phase_result.final_phase_deg
+    theta_now = direct_aw_phase_result.final_theta_deg
+    phase_sign = -1.0
+    phase_history = [
+        {
+            "iteration": item.iteration,
+            "xy_ctrl_phase_deg": item.phase_deg,
+            "theta_deg": item.theta_deg,
+            "r": item.r_v,
+            "minimum_r_V": item.minimum_r_v,
+            "accepted": item.accepted,
+            "mode": (
+                item.mode
+                if not item.accepted or item.iteration == 0
+                else "fixed_minus" if item.iteration == 1 else "iterate"
+            ),
+        }
+        for item in direct_aw_phase_result.history
+    ]
 
 finally:
     dg_temp.set_output(True, channel=2)
     time.sleep(0.5)
 
-phase_cal_success = abs(theta_now) < XY_CTRL_PHASE_TOL_DEG
+phase_cal_success = direct_aw_phase_result.converged
 print(
     f"XY_CTRL_PHASE 校准完成: phase={XY_CTRL_PHASE:.2f}°, "
     f"theta={theta_now:+.2f}°, success={phase_cal_success}"
@@ -854,6 +859,9 @@ config["xy_phase_calibration"] = {
     "success": bool(phase_cal_success),
     "final_theta_deg": float(theta_now),
     "phase_update_sign": float(phase_sign),
+    "minimum_r_V": float(XY_CTRL_PHASE_MIN_R_V),
+    "minimum_r_ratio": float(XY_CTRL_PHASE_MIN_R_RATIO),
+    "best_r_V": float(direct_aw_phase_result.best_r_v),
     "history": phase_history,
 }
 config["actual_rates"]["demod0_calib_Sa_s"] = float(actual_rate_d0_calib)

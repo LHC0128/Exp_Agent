@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from .safety_shutdown import DisconnectTarget, disconnect_device_mapping, disconnect_devices
+
 
 class DeviceSession:
     """保存已连接设备，避免同一物理仪器被重复打开。"""
@@ -40,20 +42,19 @@ class DeviceSession:
         return tuple(self._connection_order)
 
     def cleanup_connection_failure(self) -> None:
-        for device in reversed(self._connection_order):
-            try:
-                if hasattr(device, "disconnect"):
-                    device.disconnect()
-            except Exception:
-                pass
+        disconnect_device_mapping({
+            str(index): device
+            for index, device in enumerate(reversed(self._connection_order))
+        })
         self._connection_order.clear()
         self._by_resource.clear()
         self._semantic.clear()
 
     def disconnect_tec_only(self) -> None:
         tec = self._semantic.get("tec")
-        if tec and hasattr(tec, "disconnect"):
-            tec.disconnect()
+        errors = disconnect_devices((DisconnectTarget("TEC", tec),))
+        if errors:
+            raise RuntimeError("；".join(errors))
 
     def __contains__(self, semantic_name: str) -> bool:
         return semantic_name in self._semantic

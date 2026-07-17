@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from lockin_amplifier import HF2Instrument
-from signal_generator import DG4000Instrument, DG900Instrument
-
-from .common import ProgressCallback, emit, find_project_root, load_mapping, load_yaml
+from .common import ProgressCallback, emit, load_mapping
+from .devices import create_signal_generator, signal_generator_model
+from .steps.clock import (
+    load_clock_profile,
+    synchronize_clock_device,
+)
 
 
 @dataclass(slots=True)
@@ -28,10 +30,6 @@ class ClockResult:
         return asdict(self)
 
 
-def _normalize(value: str) -> str:
-    return "EXT" if str(value).upper().startswith("EXT") else "INT"
-
-
 def _discover_clock_devices() -> list[dict[str, Any]]:
     mapping = load_mapping()
     devices: dict[str, dict[str, Any]] = {}
@@ -43,7 +41,7 @@ def _discover_clock_devices() -> list[dict[str, Any]]:
         if not resource or channel is None:
             continue
         short = resource.split("::")[3]
-        device_type = "DG4000" if "::0x0641::" in resource else "DG900"
+        device_type = signal_generator_model(cfg)
         entry = devices.setdefault(
             resource,
             {
@@ -52,8 +50,11 @@ def _discover_clock_devices() -> list[dict[str, Any]]:
                 "short": short,
                 "label": cfg.get("label", key),
                 "channels": set(),
+                "config": cfg,
             },
         )
+        if entry['type'] != device_type:
+            raise ValueError(f'Conflicting models for resource {resource}')
         entry["channels"].add(int(channel))
 
     hf2_cfg = mapping.get("lockin_r", {}) or mapping.get("lockin_xy", {})
@@ -65,15 +66,6 @@ def _discover_clock_devices() -> list[dict[str, Any]]:
             "config": hf2_cfg,
         }
     return list(devices.values())
-
-
-def load_clock_profile(path: Path | None = None) -> dict[str, str]:
-    root = find_project_root()
-    data = load_yaml(path or root / "params" / "clock_sources.yaml")
-    default = _normalize(data.get("defaults_to", "EXT"))
-    profile = {str(key): _normalize(value) for key, value in data.get("devices", {}).items()}
-    profile["__default__"] = default
-    return profile
 
 
 def synchronize_clocks(
@@ -92,15 +84,11 @@ def synchronize_clocks(
         instrument = None
         try:
             if spec["type"] in {"DG4000", "DG900"}:
-                cls = DG4000Instrument if spec["type"] == "DG4000" else DG900Instrument
-                instrument = cls(spec["resource"], channel=min(spec["channels"]))
-                instrument.connect()
-                before = _normalize(instrument.get_ref_clock_source())
-                instrument.set_ref_clock_source(
-                    "EXTernal" if target == "EXT" else "INTernal"
+                instrument = create_signal_generator(
+                    spec["config"], channel=min(spec["channels"])
                 )
-                time.sleep(0.2)
-                after = _normalize(instrument.get_ref_clock_source())
+                instrument.connect()
+                clock_cfg = spec["config"]
             else:
                 cfg = spec["config"]
                 instrument = HF2Instrument(
@@ -110,12 +98,17 @@ def synchronize_clocks(
                     device_id=cfg["device_id"],
                 )
                 instrument.connect()
-                before = "EXT" if instrument.get_extclk() else "INT"
-                instrument.set_extclk(target == "EXT")
-                time.sleep(0.2)
-                after = "EXT" if instrument.get_extclk() else "INT"
-            ok = after == target
-            error = "" if ok else f"期望 {target}，实际 {after}"
+                clock_cfg = cfg
+            record = synchronize_clock_device(
+                instrument,
+                clock_cfg,
+                profile=profile,
+            )
+            before = record.before
+            after = record.actual
+            target = record.target
+            ok = record.ok
+            error = record.error
         except Exception as exc:
             ok, error = False, str(exc)
         finally:

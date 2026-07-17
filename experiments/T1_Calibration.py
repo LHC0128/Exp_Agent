@@ -38,7 +38,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 
-from signal_generator import DG4000Instrument, DG900Instrument
+from lab_workflows.devices import create_signal_generator
 from tec_controller import TECInstrument
 from sds_acquisition import (
     SDSInstrument, SDSAcquisition,
@@ -141,7 +141,7 @@ devices = {}
 try:
     # ---- DG4000: X 方向磁场 (dg_x) ----
     cfg_x = MAPPING["X_magnetic_field"]
-    dg_x = DG4000Instrument(cfg_x["resource"], channel=cfg_x["channel"])
+    dg_x = create_signal_generator(cfg_x["resource"], channel=cfg_x["channel"])
     dg_x.connect()
     print(f"dg_x 已连接: {dg_x.idn()}")
     devices["dg_x"] = dg_x
@@ -154,7 +154,7 @@ try:
 
     # ---- 安全：关闭 Z 磁场 (独立设备, 防止串扰) ----
     cfg_z = MAPPING["Z_magnetic_field"]
-    dg_z = DG4000Instrument(cfg_z["resource"], channel=cfg_z["channel"])
+    dg_z = create_signal_generator(cfg_z["resource"], channel=cfg_z["channel"])
     dg_z.connect()
     dg_z.set_output(False)
     devices["dg_z"] = dg_z
@@ -162,21 +162,21 @@ try:
 
     # ---- DG4000: Pump 调制 (CH1 载波 + CH2 门控方波) ----
     cfg_pump = MAPPING["Pump_modulation"]
-    dg_pump = DG4000Instrument(cfg_pump["resource"])
+    dg_pump = create_signal_generator(cfg_pump["resource"])
     dg_pump.connect()
     print(f"dg_pump 已连接: {dg_pump.idn()}")
     devices["dg_pump"] = dg_pump
 
     # ---- DG900: Probe 光功率 (dg_probe) ----
     cfg_probe = MAPPING["Probe_laser_power"]
-    dg_probe = DG900Instrument(cfg_probe["resource"], channel=cfg_probe["channel"])
+    dg_probe = create_signal_generator(cfg_probe["resource"], channel=cfg_probe["channel"])
     dg_probe.connect()
     print(f"dg_probe 已连接: {dg_probe.idn()}")
     devices["dg_probe"] = dg_probe
 
     # ---- DG900: 温控开关 (dg_ts) ----
     cfg_ts = MAPPING["Temp_Switch"]
-    dg_ts = DG900Instrument(cfg_ts["resource"], channel=cfg_ts["channel"])
+    dg_ts = create_signal_generator(cfg_ts["resource"], channel=cfg_ts["channel"])
     dg_ts.connect()
     print(f"dg_ts 已连接: {dg_ts.idn()}")
     devices["dg_ts"] = dg_ts

@@ -1,0 +1,42 @@
+﻿# Optimal Control Parameters (CMA-ES Target Response Fit)
+# Generated: 2026-07-14 16:13:35
+
+## System Parameters
+parameter,value,unit
+omega0/(2π),250.00,Hz
+R/(2π),220.00,Hz
+max |Omega_ctrl|/(2π),30000.00,Hz
+T,4.0000,ms
+
+## Target Bands
+band_index,lo_kHz,hi_kHz
+1,1,8
+
+## Optimization Results
+best_k,4
+best_objective,1.68119451
+n_fourier_terms,10
+
+"## Fourier Coefficients: a_n, b_n"
+n,a_n,b_n
+1,-1.72426013,-0.45228526
+2,1.75708510,-3.93897235
+3,0.82134860,1.42340413
+4,0.39691249,-1.13918722
+5,-1.77344222,1.38616303
+6,2.43850467,-0.09563338
+7,-0.64504418,2.20975186
+8,0.08393801,-0.26094845
+9,0.15060914,1.27745430
+10,0.06699295,-1.23729698
+
+"## Full Parameter Array [k, a1, b1, a2, b2, ...]"
+4.00000000,-1.72426013,-0.45228526,1.75708510,-3.93897235,0.82134860,1.42340413,0.39691249,-1.13918722,-1.77344222,1.38616303,2.43850467,-0.09563338,-0.64504418,2.20975186,0.08393801,-0.26094845,0.15060914,1.27745430,0.06699295,-1.23729698
+
+## Extra Information
+CV_opt,0.089081
+meanR_opt,0.000035
+gain_score_opt,0.048641
+suppression_max_norm_opt,0.638200
+tail_max_norm_opt,0.463797
+max_ctrl_Hz,30000.00

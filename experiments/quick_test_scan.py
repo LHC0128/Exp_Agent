@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from scipy import signal as scipy_signal
 from gs200 import GS200Instrument
-from signal_generator import DG4000Instrument, DG900Instrument
+from lab_workflows.devices import create_signal_generator
 from lockin_amplifier import (
     HF2Instrument, DAQConfig,
     SignalInputConfig, OscillatorConfig, DemodulatorConfig,
@@ -50,19 +50,19 @@ try:
     gs.set_source_function("CURRent"); gs.set_current_limit(10/1000)
     print(f"  GS200: {gs.idn()}")
 
-    dg_sweep = DG4000Instrument(MAPPING["Z_magnetic_field"]["resource"], channel=1)
+    dg_sweep = create_signal_generator(MAPPING["Z_magnetic_field"]["resource"], channel=1)
     dg_sweep.connect(); dg_sweep.set_ref_clock_source("EXTernal")
 
-    dg_laser = DG900Instrument(MAPPING["Pump_laser_power"]["resource"], channel=1)
+    dg_laser = create_signal_generator(MAPPING["Pump_laser_power"]["resource"], channel=1)
     dg_laser.connect()
 
-    dg_comp = DG4000Instrument(MAPPING["X_magnetic_field"]["resource"], channel=1)
+    dg_comp = create_signal_generator(MAPPING["X_magnetic_field"]["resource"], channel=1)
     dg_comp.connect(); dg_comp.set_ref_clock_source("EXTernal")
 
-    dg_mod = DG4000Instrument(MAPPING["Pump_modulation"]["resource"], channel=1)
+    dg_mod = create_signal_generator(MAPPING["Pump_modulation"]["resource"], channel=1)
     dg_mod.connect()
 
-    dg_temp = DG900Instrument(MAPPING["Temp_Switch"]["resource"], channel=2)
+    dg_temp = create_signal_generator(MAPPING["Temp_Switch"]["resource"], channel=2)
     dg_temp.connect()
 
     hfi = HF2Instrument(host="127.0.0.1", port=8005, api_level=1, device_id="dev18246")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from ..common import CancellationToken, ProgressCallback
 
@@ -17,6 +17,7 @@ ExperimentRunner = Callable[
     dict[str, Any],
 ]
 AnalysisRunner = Callable[[Path, ProgressCallback | None], dict[str, Any]]
+ExecutionMode = Literal["typed_workflow", "legacy_script"]
 
 
 @dataclass(slots=True)
@@ -29,6 +30,7 @@ class ExperimentDefinition:
     description: str
     data_type: str
     required_devices: tuple[str, ...]
+    execution_mode: ExecutionMode = "typed_workflow"
     acquisition_program: str = ""
     analysis_program: str | None = None
     wiring_notes: tuple[str, ...] = ()
@@ -52,6 +54,7 @@ class ExperimentDefinition:
             "description": self.description,
             "data_type": self.data_type,
             "required_devices": list(self.required_devices),
+            "execution_mode": self.execution_mode,
             "acquisition_program": self.acquisition_program,
             "analysis_program": self.analysis_program,
             "wiring_notes": list(self.wiring_notes),

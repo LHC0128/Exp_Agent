@@ -153,11 +153,12 @@ function Tools() {
   return <><PageHead eyebrow="SYSTEM TOOLS" title="功能模块" description="执行跨设备准备流程；同一时间只允许运行一个硬件任务。" /><div className="tool-grid"><article><small>REFERENCE CLOCK</small><h2>参考时钟同步</h2><p>按共享时钟配置逐台设置并回读信号发生器与 HF2。</p><button onClick={startClock}>开始同步</button></article><article><small>DEMODULATOR 0</small><h2>相位自动校准</h2><p>自动关闭 Z 场和温控干扰，完成后恢复原始状态。</p><button onClick={startPhase}>开始安全校相</button></article></div><JobView job={job} onUpdate={setJob} /></>;
 }
 
-type SchemaOption = { value: string; label: string };
+type SchemaOption = { value: string | number; label: string };
 type SchemaField = { name: string; label: string; unit: string; group: string; default: any; minimum?: number; maximum?: number; description?: string; options?: SchemaOption[] };
 type ParameterGroup = "basic" | "advanced";
 type ParameterLayout = Record<ParameterGroup, string[]>;
-type ExperimentDefinition = { id: string; title: string; category: string; category_label: string; family: string; variant: string; description: string; required_devices: string[]; acquisition_program: string; analysis_program: string | null; wiring_notes: string[]; safety_notes: string[]; supports_cancel: boolean; can_analyze: boolean };
+type ExperimentSchema = { fields: SchemaField[]; parameter_layout?: ParameterLayout; parameter_layout_saved?: boolean };
+type ExperimentDefinition = { id: string; title: string; category: string; category_label: string; family: string; variant: string; description: string; required_devices: string[]; execution_mode: "typed_workflow" | "legacy_script"; acquisition_program: string; analysis_program: string | null; wiring_notes: string[]; safety_notes: string[]; supports_cancel: boolean; can_analyze: boolean };
 type ExperimentTag = { id: string; label: string };
 type ExperimentCatalogConfig = { schema_version: number; tags: ExperimentTag[]; assignments: Record<string, string>; experiment_descriptions: Record<string, string>; experiment_titles: Record<string, string> };
 
@@ -222,7 +223,7 @@ function ExperimentCatalog() {
       setStatus(`“${result.experiment.title}”的名称和介绍已保存`);
     } catch (reason) { setStatus(String(reason)); } finally { setSaving(""); }
   };
-  return <><PageHead eyebrow="EXPERIMENT CENTER" title="实验中心" description="所有正式 Python 实验使用统一参数、预检、运行与分析入口。" action={<button className="secondary" onClick={() => setManageTags((value) => !value)}>{manageTags ? "完成编辑" : "管理分类与实验信息"}</button>} />{error && <div className="alert error">实验目录加载失败：{error}<button className="secondary" onClick={() => window.location.reload()}>刷新页面</button></div>}{manageTags && <section className="tag-manager"><div className="tag-manager-head"><div><small>TAG MANAGEMENT</small><h2>添加或重命名标签</h2><p>在下方每张实验卡片中修改该实验自己的名称、介绍和所属分类。</p></div><div className="tag-add"><input value={newTag} placeholder="新标签名称" maxLength={30} onChange={(event) => setNewTag(event.target.value)} /><button disabled={saving === "new" || !newTag.trim()} onClick={add}>添加标签</button></div></div><div className="tag-editor-list">{tags.map((tag) => <div key={tag.id}><span>{experiments.filter((item) => item.category === tag.id).length} 个实验</span><input value={tagNames[tag.id] ?? tag.label} maxLength={30} aria-label={`${tag.label}名称`} onChange={(event) => setTagNames((current) => ({ ...current, [tag.id]: event.target.value }))} /><button className="secondary" disabled={saving === tag.id || tagNames[tag.id]?.trim() === tag.label} onClick={() => rename(tag)}>保存名称</button></div>)}</div>{status && <div className={`alert ${status.startsWith("Error") ? "error" : "success"}`}>{status}</div>}</section>}<div className="catalog-filters"><button className={category === "all" ? "active" : ""} onClick={() => setCategory("all")}>全部 <span>{experiments.length}</span></button>{tags.map((tag) => <button className={category === tag.id ? "active" : ""} key={tag.id} onClick={() => setCategory(tag.id)}>{tag.label} <span>{experiments.filter((item) => item.category === tag.id).length}</span></button>)}</div>{status && !manageTags && <div className="alert success">{status}</div>}<div className="experiment-catalog">{visible.map((item) => <article key={item.id}><div className="catalog-meta"><span>{item.category_label}</span></div>{manageTags ? <div className="experiment-metadata-editor"><label><span>实验名称</span><input value={experimentTitles[item.id] ?? item.title} maxLength={80} aria-label={`${item.title}名称`} onChange={(event) => setExperimentTitles((current) => ({ ...current, [item.id]: event.target.value }))} /></label><label><span>实验介绍</span><textarea value={experimentDescriptions[item.id] ?? item.description} maxLength={500} aria-label={`${item.title}介绍`} placeholder="填写这个实验的简要介绍" onChange={(event) => setExperimentDescriptions((current) => ({ ...current, [item.id]: event.target.value }))} /></label><button className="secondary" disabled={saving === `metadata:${item.id}` || ((experimentTitles[item.id] ?? "").trim() === item.title && (experimentDescriptions[item.id] ?? "").trim() === item.description)} onClick={() => saveMetadata(item)}>保存名称和介绍</button></div> : <><h2>{item.title}</h2><p>{item.description || "暂未填写实验介绍。"}</p></>}<div className="catalog-programs"><div><span>采集</span><code>{item.acquisition_program}</code></div><div><span>分析</span><code>{item.analysis_program || "无独立分析程序"}</code></div></div><div className="catalog-card-actions"><NavLink to={`/experiments/${item.id}`}>配置实验 →</NavLink>{manageTags && <label><span>所属分类</span><select value={item.category} disabled={saving === item.id} onChange={(event) => move(item.id, event.target.value)}>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.label}</option>)}</select></label>}</div></article>)}</div></>;
+  return <><PageHead eyebrow="EXPERIMENT CENTER" title="实验中心" description="所有正式 Python 实验使用统一参数、预检、运行与分析入口。" action={<button className="secondary" onClick={() => setManageTags((value) => !value)}>{manageTags ? "完成编辑" : "管理分类与实验信息"}</button>} />{error && <div className="alert error">实验目录加载失败：{error}<button className="secondary" onClick={() => window.location.reload()}>刷新页面</button></div>}{manageTags && <section className="tag-manager"><div className="tag-manager-head"><div><small>TAG MANAGEMENT</small><h2>添加或重命名标签</h2><p>在下方每张实验卡片中修改该实验自己的名称、介绍和所属分类。</p></div><div className="tag-add"><input value={newTag} placeholder="新标签名称" maxLength={30} onChange={(event) => setNewTag(event.target.value)} /><button disabled={saving === "new" || !newTag.trim()} onClick={add}>添加标签</button></div></div><div className="tag-editor-list">{tags.map((tag) => <div key={tag.id}><span>{experiments.filter((item) => item.category === tag.id).length} 个实验</span><input value={tagNames[tag.id] ?? tag.label} maxLength={30} aria-label={`${tag.label}名称`} onChange={(event) => setTagNames((current) => ({ ...current, [tag.id]: event.target.value }))} /><button className="secondary" disabled={saving === tag.id || tagNames[tag.id]?.trim() === tag.label} onClick={() => rename(tag)}>保存名称</button></div>)}</div>{status && <div className={`alert ${status.startsWith("Error") ? "error" : "success"}`}>{status}</div>}</section>}<div className="catalog-filters"><button className={category === "all" ? "active" : ""} onClick={() => setCategory("all")}>全部 <span>{experiments.length}</span></button>{tags.map((tag) => <button className={category === tag.id ? "active" : ""} key={tag.id} onClick={() => setCategory(tag.id)}>{tag.label} <span>{experiments.filter((item) => item.category === tag.id).length}</span></button>)}</div>{status && !manageTags && <div className="alert success">{status}</div>}<div className="experiment-catalog">{visible.map((item) => <article key={item.id}><div className="catalog-meta"><span>{item.category_label}</span><i>{item.execution_mode === "typed_workflow" ? "新模式" : "旧模式"}</i></div>{manageTags ? <div className="experiment-metadata-editor"><label><span>实验名称</span><input value={experimentTitles[item.id] ?? item.title} maxLength={80} aria-label={`${item.title}名称`} onChange={(event) => setExperimentTitles((current) => ({ ...current, [item.id]: event.target.value }))} /></label><label><span>实验介绍</span><textarea value={experimentDescriptions[item.id] ?? item.description} maxLength={500} aria-label={`${item.title}介绍`} placeholder="填写这个实验的简要介绍" onChange={(event) => setExperimentDescriptions((current) => ({ ...current, [item.id]: event.target.value }))} /></label><button className="secondary" disabled={saving === `metadata:${item.id}` || ((experimentTitles[item.id] ?? "").trim() === item.title && (experimentDescriptions[item.id] ?? "").trim() === item.description)} onClick={() => saveMetadata(item)}>保存名称和介绍</button></div> : <><h2>{item.title}</h2><p>{item.description || "暂未填写实验介绍。"}</p></>}<div className="catalog-programs"><div><span>采集</span><code>{item.acquisition_program}</code></div><div><span>分析</span><code>{item.analysis_program || "无独立分析程序"}</code></div></div><div className="catalog-card-actions"><NavLink to={`/experiments/${item.id}`}>配置实验 →</NavLink>{manageTags && <label><span>所属分类</span><select value={item.category} disabled={saving === item.id} onChange={(event) => move(item.id, event.target.value)}>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.label}</option>)}</select></label>}</div></article>)}</div></>;
 }
 
 function defaultParameterLayout(fields: SchemaField[]): ParameterLayout {
@@ -232,7 +233,19 @@ function defaultParameterLayout(fields: SchemaField[]): ParameterLayout {
   };
 }
 
-function loadParameterLayout(fields: SchemaField[], storageKey: string): ParameterLayout {
+function validatedParameterLayout(fields: SchemaField[], value: unknown): ParameterLayout | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<ParameterLayout>;
+  if (!Array.isArray(candidate.basic) || !Array.isArray(candidate.advanced)) return undefined;
+  const fieldNames = fields.map((field) => field.name);
+  const validNames = new Set(fieldNames);
+  const allNames = [...candidate.basic, ...candidate.advanced];
+  if (allNames.some((name) => typeof name !== "string" || !validNames.has(name))) return undefined;
+  if (new Set(allNames).size !== allNames.length || allNames.length !== fieldNames.length) return undefined;
+  return { basic: [...candidate.basic], advanced: [...candidate.advanced] };
+}
+
+function loadLocalParameterLayout(fields: SchemaField[], storageKey: string): ParameterLayout {
   const fallback = defaultParameterLayout(fields);
   try {
     const saved = JSON.parse(window.localStorage.getItem(storageKey) || "null") as Partial<ParameterLayout> | null;
@@ -263,13 +276,19 @@ function Experiment() {
   const [dropTarget, setDropTarget] = useState<string>();
   const [preflight, setPreflight] = useState<{ ok: boolean; errors: string[] }>();
   const [defaultsStatus, setDefaultsStatus] = useState<{ ok: boolean; message: string }>();
+  const [schemaError, setSchemaError] = useState("");
   const [savingDefaults, setSavingDefaults] = useState(false);
   const [starting, setStarting] = useState(false);
   const [job, setJob] = useState<Job>();
   useEffect(() => {
-    setDefinition(undefined); setFields([]); setJob(undefined); setPreflight(undefined); setDefaultsStatus(undefined);
+    setDefinition(undefined); setFields([]); setJob(undefined); setPreflight(undefined); setDefaultsStatus(undefined); setSchemaError("");
     api<ExperimentDefinition>(`/api/experiments/${experimentId}`).then(setDefinition);
-    api<{ fields: SchemaField[] }>(`/api/experiments/${experimentId}/schema`).then((schema) => { setFields(schema.fields); setValues(Object.fromEntries(schema.fields.map((item) => [item.name, item.default]))); setLayout(loadParameterLayout(schema.fields, layoutKey)); });
+    api<ExperimentSchema>(`/api/experiments/${experimentId}/schema`).then((schema) => {
+      const savedLayout = schema.parameter_layout_saved ? validatedParameterLayout(schema.fields, schema.parameter_layout) : undefined;
+      setFields(schema.fields);
+      setValues(Object.fromEntries(schema.fields.map((item) => [item.name, item.default])));
+      setLayout(savedLayout || (schema.parameter_layout_saved ? defaultParameterLayout(schema.fields) : loadLocalParameterLayout(schema.fields, layoutKey)));
+    }).catch((reason) => setSchemaError(String(reason)));
   }, [experimentId]);
   useEffect(() => { api<Job[]>("/api/jobs").then((jobs) => {
     const matching = jobs.filter((item) => item.kind === `experiment:${experimentId}`);
@@ -305,8 +324,12 @@ function Experiment() {
     setSavingDefaults(true);
     setDefaultsStatus(undefined);
     try {
-      const result = await api<{ ok: boolean; message: string; schema: { fields: SchemaField[] } }>(`/api/experiments/${experimentId}/defaults`, { method: "PUT", body: JSON.stringify({ parameters: values }) });
+      const result = await api<{ ok: boolean; message: string; schema: ExperimentSchema }>(`/api/experiments/${experimentId}/defaults`, { method: "PUT", body: JSON.stringify({ parameters: values, parameter_layout: layout }) });
+      const savedLayout = result.schema.parameter_layout_saved ? validatedParameterLayout(result.schema.fields, result.schema.parameter_layout) : undefined;
+      if (!savedLayout) throw new Error("后端未确认参数分类已保存，请重启 GUI 后端后重试");
+      if (JSON.stringify(savedLayout) !== JSON.stringify(layout)) throw new Error("后端回传的参数分类与当前布局不一致，未刷新页面布局");
       setFields(result.schema.fields);
+      setLayout(savedLayout);
       setDefaultsStatus({ ok: true, message: result.message });
     } catch (error) {
       setDefaultsStatus({ ok: false, message: String(error) });
@@ -350,7 +373,7 @@ function Experiment() {
     </div>}
   </section>;
   };
-  return <><PageHead eyebrow={`${definition?.category_label || "EXPERIMENT"} · ${definition?.variant || ""}`} title={definition?.title || "正在载入实验"} description={definition?.description || "读取实验定义与默认参数。"} /><section className="experiment-card">{definition && <div className="experiment-notes"><span>所需设备：{definition.required_devices.join(" · ")}</span>{definition.wiring_notes.map((note) => <p key={note}>{note}</p>)}</div>}<div className="experiment-strip"><div><Status>CONFIGURATION</Status><h2>实验参数</h2></div><button className="secondary" disabled={savingDefaults || !fields.length} onClick={saveDefaults}>{savingDefaults ? "保存中…" : "存为默认参数"}</button></div><div className={`parameter-layout ${advancedCollapsed ? "advanced-collapsed" : ""}`}>{renderGroup("basic", "基础参数")}{renderGroup("advanced", "高级参数")}</div><div className="experiment-actions"><button className="secondary" disabled={starting || jobActive || !fields.length} onClick={check}>仅预检</button><button disabled={starting || jobActive || !fields.length} onClick={run}>{jobActive ? "实验运行中" : starting ? "正在启动…" : "预检并运行实验"}</button></div>{defaultsStatus && <div className={`alert ${defaultsStatus.ok ? "success" : "error"}`}>{defaultsStatus.message}</div>}{preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflight.ok ? "参数预检通过，可以启动实验。" : preflight.errors.join("；")}</div>}</section><JobView job={job} onUpdate={setJob} /></>;
+  return <><PageHead eyebrow={`${definition?.category_label || "EXPERIMENT"} · ${definition?.variant || ""}`} title={definition?.title || "正在载入实验"} description={definition?.description || "读取实验定义与默认参数。"} /><section className="experiment-card">{definition && <div className="experiment-notes"><span>所需设备：{definition.required_devices.join(" · ")} · {definition.execution_mode === "typed_workflow" ? "新模式" : "旧模式"}</span>{definition.wiring_notes.map((note) => <p key={note}>{note}</p>)}</div>}<div className="experiment-strip"><div><Status>CONFIGURATION</Status><h2>实验参数</h2></div><button className="secondary" disabled={savingDefaults || !fields.length} onClick={saveDefaults}>{savingDefaults ? "保存中…" : "存为默认参数"}</button></div>{schemaError && <div className="alert error">实验参数加载失败：{schemaError}。请确认 GUI 后端已重启后刷新页面。</div>}<div className={`parameter-layout ${advancedCollapsed ? "advanced-collapsed" : ""}`}>{renderGroup("basic", "基础参数")}{renderGroup("advanced", "高级参数")}</div><div className="experiment-actions"><button className="secondary" disabled={starting || jobActive || !fields.length} onClick={check}>仅预检</button><button disabled={starting || jobActive || !fields.length} onClick={run}>{jobActive ? "实验运行中" : starting ? "正在启动…" : "预检并运行实验"}</button></div>{defaultsStatus && <div className={`alert ${defaultsStatus.ok ? "success" : "error"}`}>{defaultsStatus.message}</div>}{preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflight.ok ? "参数预检通过，可以启动实验。" : preflight.errors.join("；")}</div>}</section><JobView job={job} onUpdate={setJob} /></>;
 }
 
 function Runs() {

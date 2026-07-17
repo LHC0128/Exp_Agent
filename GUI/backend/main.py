@@ -24,11 +24,14 @@ from lab_workflows.instrument_control import (
 from lab_workflows.experiments import get_experiment, list_experiments
 from lab_workflows.experiments.catalog import (
     add_tag,
+    apply_parameter_layout,
     assign_tag,
     public_catalog,
     rename_tag,
     set_experiment_description,
     set_experiment_metadata,
+    set_parameter_layout,
+    validate_parameter_layout,
 )
 from lab_workflows.phase_calibration import calibrate_demod0_safely
 
@@ -67,6 +70,15 @@ class PhaseBody(BaseModel):
 
 class ExperimentBody(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class ParameterLayoutBody(BaseModel):
+    basic: list[str]
+    advanced: list[str]
+
+
+class ExperimentDefaultsBody(ExperimentBody):
+    parameter_layout: ParameterLayoutBody | None = None
 
 
 class AnalysisBody(BaseModel):
@@ -172,6 +184,14 @@ def _experiment_or_404(experiment_id: str):
 
 def _default_categories() -> dict[str, str]:
     return {definition.id: definition.category for definition in list_experiments()}
+
+
+def _experiment_schema(definition) -> dict[str, Any]:
+    return apply_parameter_layout(
+        definition.id,
+        definition.schema(),
+        _default_categories(),
+    )
 
 
 def _experiment_public(definition, catalog: dict[str, Any] | None = None):
@@ -283,20 +303,41 @@ def update_experiment_metadata(
 
 @app.get("/api/experiments/{experiment_id}/schema")
 def experiment_schema(experiment_id: str):
-    return _experiment_or_404(experiment_id).schema()
+    return _experiment_schema(_experiment_or_404(experiment_id))
 
 
 @app.put("/api/experiments/{experiment_id}/defaults")
-def save_experiment_defaults(experiment_id: str, body: ExperimentBody):
+def save_experiment_defaults(experiment_id: str, body: ExperimentDefaultsBody):
     definition = _experiment_or_404(experiment_id)
+    schema = definition.schema()
+    layout = None
+    saved_schema = None
     try:
+        if body.parameter_layout is not None:
+            layout = validate_parameter_layout(
+                {
+                    "basic": body.parameter_layout.basic,
+                    "advanced": body.parameter_layout.advanced,
+                },
+                schema.get("fields", []),
+            )
         definition.save_defaults(body.parameters)
+        if layout is not None:
+            set_parameter_layout(
+                experiment_id,
+                layout,
+                schema.get("fields", []),
+                _default_categories(),
+            )
+        saved_schema = _experiment_schema(definition)
+        if layout is not None and saved_schema.get("parameter_layout") != layout:
+            raise RuntimeError("参数分类写入后回读不一致")
     except (ValueError, TypeError, RuntimeError) as exc:
         raise HTTPException(422, {"errors": [str(exc)]}) from exc
     return {
         "ok": True,
-        "message": "当前参数已保存为默认值",
-        "schema": definition.schema(),
+        "message": "当前参数及分类已保存为默认值" if layout is not None else "当前参数已保存为默认值",
+        "schema": saved_schema,
     }
 
 

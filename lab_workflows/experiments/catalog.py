@@ -19,6 +19,8 @@ DEFAULT_TAGS = (
     {"id": "verification", "label": "硬件验证"},
 )
 
+PARAMETER_GROUPS = ("basic", "advanced")
+
 
 def catalog_path() -> Path:
     return find_project_root() / "params" / "experiment_catalog.yaml"
@@ -58,13 +60,125 @@ def _normalize(
         if experiment_id in default_categories
         and 0 < len(str(title).strip()) <= 80
     }
+    parameter_layouts = {
+        experiment_id: {
+            group: [str(name) for name in layout.get(group, []) if str(name)]
+            if isinstance(layout.get(group), list)
+            else []
+            for group in PARAMETER_GROUPS
+        }
+        for experiment_id, layout in (payload.get("parameter_layouts") or {}).items()
+        if experiment_id in default_categories and isinstance(layout, dict)
+    }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "tags": tags,
         "assignments": assignments,
         "experiment_descriptions": experiment_descriptions,
         "experiment_titles": experiment_titles,
+        "parameter_layouts": parameter_layouts,
     }
+
+
+def _normalize_parameter_layout(
+    layout: dict[str, Any] | None,
+    fields: list[dict[str, Any]],
+    *,
+    strict: bool,
+) -> dict[str, list[str]]:
+    """按当前 schema 规范化参数分组；严格模式用于保存前校验。"""
+    layout = layout or {}
+    field_names = [str(field["name"]) for field in fields]
+    valid_names = set(field_names)
+    normalized = {group: [] for group in PARAMETER_GROUPS}
+    used: set[str] = set()
+    unknown: set[str] = set()
+    duplicates: set[str] = set()
+
+    for group in PARAMETER_GROUPS:
+        raw_names = layout.get(group, [])
+        if strict and not isinstance(raw_names, list):
+            raise ValueError(f"{group} 参数分类必须是列表")
+        if not isinstance(raw_names, list):
+            continue
+        for raw_name in raw_names:
+            name = str(raw_name)
+            if name not in valid_names:
+                unknown.add(name)
+                continue
+            if name in used:
+                duplicates.add(name)
+                continue
+            normalized[group].append(name)
+            used.add(name)
+
+    if strict:
+        extra_groups = sorted(set(layout) - set(PARAMETER_GROUPS))
+        missing = sorted(valid_names - used)
+        if extra_groups:
+            raise ValueError(f"未知参数分类: {extra_groups}")
+        if unknown:
+            raise ValueError(f"分类中包含未知参数: {sorted(unknown)}")
+        if duplicates:
+            raise ValueError(f"参数重复出现在分类中: {sorted(duplicates)}")
+        if missing:
+            raise ValueError(f"参数未归入基础或高级分类: {missing}")
+        return normalized
+
+    for field in fields:
+        name = str(field["name"])
+        if name in used:
+            continue
+        group = "basic" if field.get("group") == "basic" else "advanced"
+        normalized[group].append(name)
+    return normalized
+
+
+def validate_parameter_layout(
+    layout: dict[str, Any],
+    fields: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    """校验前端提交的完整参数布局并返回规范化副本。"""
+    return _normalize_parameter_layout(layout, fields, strict=True)
+
+
+def apply_parameter_layout(
+    experiment_id: str,
+    schema: dict[str, Any],
+    default_categories: dict[str, str],
+) -> dict[str, Any]:
+    """将已保存的基础/高级分类及顺序合并到实验 schema。"""
+    fields = list(schema.get("fields") or [])
+    saved = load_catalog(default_categories)["parameter_layouts"].get(experiment_id)
+    if not saved:
+        return {**schema, "parameter_layout_saved": False}
+    layout = _normalize_parameter_layout(saved, fields, strict=False)
+    fields_by_name = {str(field["name"]): field for field in fields}
+    merged_fields = []
+    for group in PARAMETER_GROUPS:
+        for name in layout[group]:
+            merged_fields.append({**fields_by_name[name], "group": group})
+    return {
+        **schema,
+        "fields": merged_fields,
+        "parameter_layout": layout,
+        "parameter_layout_saved": True,
+    }
+
+
+def set_parameter_layout(
+    experiment_id: str,
+    layout: dict[str, Any],
+    fields: list[dict[str, Any]],
+    default_categories: dict[str, str],
+) -> None:
+    """保存单个实验的基础/高级参数分类及组内顺序。"""
+    if experiment_id not in default_categories:
+        raise KeyError(f"未知实验: {experiment_id}")
+    normalized = validate_parameter_layout(layout, fields)
+    catalog = load_catalog(default_categories)
+    catalog["parameter_layouts"][experiment_id] = normalized
+    save_catalog(catalog, default_categories)
 
 
 def load_catalog(default_categories: dict[str, str]) -> dict[str, Any]:

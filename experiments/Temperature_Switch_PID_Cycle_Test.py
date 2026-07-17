@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 
-from signal_generator import DG900Instrument
+from lab_workflows.devices import create_signal_generator
 from tec_controller import TECInstrument
 
 print("库导入完成")
@@ -218,7 +218,7 @@ devices = {}
 
 try:
     temp_cfg = MAPPING["Temp_Switch"]
-    dg_temp = DG900Instrument(temp_cfg["resource"], channel=temp_cfg["channel"])
+    dg_temp = create_signal_generator(temp_cfg["resource"], channel=temp_cfg["channel"])
     dg_temp.connect()
     devices["dg_temp"] = dg_temp
     print(f"dg_temp 已连接: {dg_temp.idn()}")

@@ -1,4 +1,4 @@
-﻿# %% [markdown] Cell 0
+# %% [markdown] Cell 0
 # # AW 常数 Omega_ctrl 标定 sanity check
 #
 # 用同一条 AW -> external AM -> XY 旋转场链路输出常数 Omega_ctrl，短扫 Z RF 频率，
@@ -32,7 +32,7 @@ import numpy as np
 import yaml
 from tqdm import tqdm
 
-from signal_generator import DG4000Instrument, DG900Instrument
+from lab_workflows.devices import create_signal_generator
 from lockin_amplifier import (
     HF2Instrument,
     OscillatorConfig,
@@ -434,7 +434,7 @@ def connect_dg4000(mapping_key, device_key):
     cfg = MAPPING[mapping_key]
     resource = cfg["resource"]
     if resource not in resource_cache:
-        dev = DG4000Instrument(resource, channel=cfg.get("channel") or 1)
+        dev = create_signal_generator(resource, channel=cfg.get("channel") or 1)
         dev.connect()
         dev.set_ref_clock_source("EXTernal")
         resource_cache[resource] = dev
@@ -449,7 +449,7 @@ try:
     dg_sweep = connect_dg4000("Z_magnetic_field", "dg_sweep")
 
     dg_temp_cfg = MAPPING["Temp_Switch"]
-    dg_temp = DG900Instrument(dg_temp_cfg["resource"], channel=dg_temp_cfg["channel"])
+    dg_temp = create_signal_generator(dg_temp_cfg["resource"], channel=dg_temp_cfg["channel"])
     dg_temp.connect()
     devices["dg_temp"] = dg_temp
     print(f"dg_temp 已连接: {dg_temp.idn()}")

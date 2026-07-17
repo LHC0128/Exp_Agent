@@ -1,6 +1,7 @@
 ---
 title: 射频场灵敏度测量（直接任意波方案）
 type: experiment_type
+execution_mode: typed_workflow
 description: 利用 Bell-Bloom 磁力仪测量 Z 方向射频场灵敏度。X/Y 控制场使用 DG4000 直接任意波模式，预计算 X(t)=A(t)·cos(ω_L·t) 和 Y(t)=A(t)·sin(ω_L·t) 加载到 Burst 模式。扫描 Z 射频场幅度获得响应曲线，结合 Demod 3 噪声 PSD 计算灵敏度。
 keywords: [RF field, sensitivity, direct arbitrary waveform, Burst mode, cascaded demodulator, HF2 DAQ]
 version: 2
@@ -23,6 +24,10 @@ defaults:
   XY_CARRIER_FREQ: 90000       # X/Y 载波频率 (Hz)，等于 Larmor 频率
   XY_CTRL_PHASE: 0             # X/Y 控制信号相对 Pump 调制的相位延迟 (deg)
   XY_CTRL_QUAD: 90             # X 与 Y 之间的正交相位差 (deg)
+  XY_CTRL_PHASE_TOL_DEG: 0.5
+  XY_CTRL_PHASE_MAX_ITER: 8
+  XY_CTRL_PHASE_MIN_R_V: 1.0e-12
+  XY_CTRL_PHASE_MIN_R_RATIO: 0.1
   ARB_WAVEFORM_DIR: "arb_waveforms/"  # 任意波文件存放目录
   ARB_WAVEFORM_FILE: "xy_waveform.csv"  # 默认波形文件名
   ARB_SAMPLE_RATE: 500000      # 任意波采样率 (Sa/s)
@@ -112,10 +117,23 @@ learned_notes:
   - 每次噪声采集完立即恢复温度开关，防止温度漂移
   - 扫描循环须用 try/finally 包裹，确保异常时恢复温度开关
   - 两级相位校准相互独立，先 Demod 0 再 Demod 3
+  - Demod 0 与 DirectAW 校相调用 lab_workflows.steps 共享算法；DirectAW 的低 R 样本不参与相位更新
   - Demod 3 的 adcselect=2 将 Demod 0 的 Y 输出路由为输入（级联解调）
 ---
 
 # 射频场灵敏度测量（直接任意波方案）
+
+## 当前频率扫描入口
+
+稳定 ID `rf-sensitivity-direct-aw-frequency` 已迁移为强类型新模式。参数模型、采集
+工作流和分析器位于
+`lab_workflows/experiment_modules/rf_sensitivity_direct_aw_frequency/`；
+`experiments/RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py` 和共享 plot 文件为薄入口。
+GUI/YAML 仍使用原有大写键，任意波 CSV 选项由模型显式声明并动态读取
+`experiments/*.csv`。旧脚本原有的线性扫描 `+50 Hz` 行为现已显式声明为高级参数
+`Z_RF_FREQ_OFFSET_HZ`，因此默认输入 0–20 kHz 时实际频点为 50–20050 Hz，不包含
+0 Hz 基线。本文档中其他 RF 方案仍可能处于旧模式，以 GUI 卡片标记和
+`docs/experiment_migration_status.md` 为准。
 
 ## 原理
 
@@ -152,7 +170,8 @@ dg_mod CH2 SYNC ──BNC三通──→ dg_comp Ext Trig  (Burst 触发)
                            ──→ dg_sweep Ext Trig (Z RF Burst 触发)
 ```
 
-所有 DG4000 共享 10MHz 外部参考时钟，频率锁死，初始相位由触发沿对齐。
+参考时钟以 `params/clock_sources.yaml` 为准：Pump 调制 DG4000 使用内部时钟，
+其余已连接 DG4000、两台 DG900 和 HF2 使用外部时钟；频率锁定后，初始相位由触发沿对齐。
 
 ## 波形预计算
 
@@ -206,13 +225,14 @@ Y_norm = Y_t / np.max(np.abs(Y_t))
 ### Phase 1 — Demod 0 校相（主信号对齐）
 1. 关闭温控、XY/Z 输出
 2. 配置 HF2 信号输入、振荡器 0、Demod 0（TC=DEMOD0_TC=10μs）
-3. `auto_calibrate_phase(demod_idx=0)` → `calibrated_phase_0`
+3. 调用共享 `calibrate_demod_phase()` → `calibrated_phase_0`
 
 ### Phase 2 — X/Y 任意波校相（Burst 相位对齐 Pump）
 1. 加载 X(t)/Y(t) 任意波到 dg_comp
 2. 配置 Burst INFINITY + 外部触发
 3. 关闭温控，读 HF2 Demod 0 相位偏移
-4. 迭代修正 `XY_CTRL_PHASE`（更新 `set_burst_phase`）直到收敛
+4. 调用共享 `calibrate_direct_aw_phase()` 迭代修正 `XY_CTRL_PHASE`，直到收敛；
+   低于绝对下限或历史最佳 R 的 10% 的样本只记录、不更新相位
 
 ### Phase 3 — Demod 3 校相（射频场对齐）
 1. 开启 Z 射频场 Burst（dg_sweep CH1，小幅度）
@@ -300,3 +320,9 @@ DirectAW 频率扫描运行的 `freq_response_amplitude`。程序读取各运行
 
 输出保存到
 `results/RF_Field_Sensitivity_AW_FreqSweep_DirectAW/0713_1644_vs_0714_1035/freq_response_amplitude_comparison.png`。
+
+## 统一安全收尾
+
+正常完成、异常、取消和 Ctrl+C 均调用共享 `run_safety_shutdown()`：归零并关闭
+Z 射频场、DirectAW 和触发通道，恢复温度开关，只断开 TEC；主磁场、Pump/Probe
+光功率、Pump 调制和全部 HF2 设置保持不变。连接阶段失败则释放已建立的全部连接。

@@ -22,6 +22,7 @@ mapping:
   # ---- 信号发生器 ----
   Z_magnetic_field:
     instrument: signal_generator
+    model: DG4000
     label: "Z方向磁场"
     resource: "USB0::0x1AB1::0x0641::DG4E242401288::INSTR"
     channel: 1
@@ -29,6 +30,7 @@ mapping:
 
   Time_sequence_2:
     instrument: signal_generator
+    model: DG4000
     label: "时序信号2"
     resource: "USB0::0x1AB1::0x0641::DG4E242401288::INSTR"
     channel: 2
@@ -36,6 +38,7 @@ mapping:
 
   Pump_laser_power:
     instrument: signal_generator
+    model: DG900
     label: "Pump光功率"
     device_label: "光功率"
     resource: "USB0::0x1AB1::0x0646::DG9Q280100002::INSTR"
@@ -44,6 +47,7 @@ mapping:
 
   Probe_laser_power:
     instrument: signal_generator
+    model: DG900
     label: "Probe光功率"
     resource: "USB0::0x1AB1::0x0646::DG9Q280100002::INSTR"
     channel: 2
@@ -51,6 +55,7 @@ mapping:
 
   X_magnetic_field_AM:
     instrument: signal_generator
+    model: DG4000
     label: "X方向磁场 AM"
     device_label: "XY方向AM信号"
     resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
@@ -59,6 +64,7 @@ mapping:
 
   Y_magnetic_field_AM:
     instrument: signal_generator
+    model: DG4000
     label: "Y方向磁场 AM"
     resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
     channel: 2
@@ -66,6 +72,7 @@ mapping:
 
   X_magnetic_field:
     instrument: signal_generator
+    model: DG4000
     label: "X方向磁场"
     device_label: "XY方向磁场"
     resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
@@ -74,6 +81,7 @@ mapping:
 
   Y_magnetic_field:
     instrument: signal_generator
+    model: DG4000
     label: "Y方向磁场"
     resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
     channel: 2
@@ -81,6 +89,7 @@ mapping:
 
   rf_coil:
     instrument: signal_generator
+    model: DG4000
     label: "RF 线圈 (Y方向)"
     resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
     channel: 2
@@ -88,6 +97,7 @@ mapping:
 
   Pump_modulation:
     instrument: signal_generator
+    model: DG4000
     label: "Pump调制"
     resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
     channel: 1
@@ -95,6 +105,7 @@ mapping:
 
   Time_sequence:
     instrument: signal_generator
+    model: DG4000
     label: "时序信号"
     resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
     channel: 2
@@ -102,6 +113,7 @@ mapping:
 
   Heat_Control:
     instrument: signal_generator
+    model: DG900
     label: "加热信号"
     resource: "USB0::0x1AB1::0x0646::DG9Q271200104::INSTR"
     channel: 1
@@ -109,6 +121,7 @@ mapping:
 
   Temp_Switch:
     instrument: signal_generator
+    model: DG900
     label: "温度开关信号"
     resource: "USB0::0x1AB1::0x0646::DG9Q271200104::INSTR"
     channel: 2

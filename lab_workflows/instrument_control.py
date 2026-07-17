@@ -5,17 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from sds_acquisition import SDSInstrument
-from signal_generator import DG4000Instrument, DG900Instrument
 
 from .common import load_safety_limits, validate_safety_limit
-from .devices import DeviceRecord, find_device
+from .devices import DeviceRecord, SIGNAL_GENERATOR_DRIVERS, find_device
 
 
 def _connect(record: DeviceRecord):
-    if record.type == "DG4000":
-        instrument = DG4000Instrument(record.resource)
-    elif record.type == "DG900":
-        instrument = DG900Instrument(record.resource)
+    if record.type in SIGNAL_GENERATOR_DRIVERS:
+        instrument = SIGNAL_GENERATOR_DRIVERS[record.type](record.resource)
     elif record.type == "SDS":
         instrument = SDSInstrument(record.resource)
     else:

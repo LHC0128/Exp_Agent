@@ -7,6 +7,21 @@ from .arbitrary import (
     ExternalAMStrategy,
     upload_arbitrary,
 )
+from .clock import (
+    ClockSyncRecord,
+    clock_device_id,
+    load_clock_profile,
+    normalize_clock_source,
+    synchronize_clock_device,
+    synchronize_connected_clocks,
+)
+from .direct_aw_phase import (
+    DirectAWPhaseCalibrationConfig,
+    DirectAWPhaseCalibrationResult,
+    DirectAWPhaseMeasurement,
+    calibrate_direct_aw_phase,
+    wrap_phase_deg,
+)
 from .phase import (
     PhaseCalibrationConfig,
     PhaseCalibrationResult,
@@ -14,6 +29,17 @@ from .phase import (
     phase_calibration_guard,
 )
 from .run_directory import RunDirectory, create_run_directory
+from .safety_shutdown import (
+    DGChannelShutdown,
+    DisconnectTarget,
+    STANDARD_PRESERVED_OUTPUTS,
+    SafetyShutdownReport,
+    ShutdownAction,
+    TemperatureSwitchRestore,
+    disconnect_device_mapping,
+    disconnect_devices,
+    run_safety_shutdown,
+)
 from .session import DeviceSession
 from .temperature import set_temperature_switch, wait_for_temperature_stable
 
@@ -22,14 +48,34 @@ __all__ = [
     "ArbitraryWaveformSpec",
     "DeviceSession",
     "DirectAWStrategy",
+    "DirectAWPhaseCalibrationConfig",
+    "DirectAWPhaseCalibrationResult",
+    "DirectAWPhaseMeasurement",
+    "DGChannelShutdown",
+    "DisconnectTarget",
     "ExternalAMStrategy",
     "PhaseCalibrationConfig",
     "PhaseCalibrationResult",
     "RunDirectory",
+    "STANDARD_PRESERVED_OUTPUTS",
+    "SafetyShutdownReport",
+    "ShutdownAction",
+    "TemperatureSwitchRestore",
     "calibrate_demod_phase",
+    "calibrate_direct_aw_phase",
     "create_run_directory",
+    "disconnect_device_mapping",
+    "disconnect_devices",
     "phase_calibration_guard",
+    "run_safety_shutdown",
     "set_temperature_switch",
     "upload_arbitrary",
+    "ClockSyncRecord",
+    "clock_device_id",
+    "load_clock_profile",
+    "normalize_clock_source",
+    "synchronize_clock_device",
+    "synchronize_connected_clocks",
     "wait_for_temperature_stable",
+    "wrap_phase_deg",
 ]

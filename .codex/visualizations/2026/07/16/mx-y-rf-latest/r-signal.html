@@ -1,0 +1,93 @@
+<div id="mx-r-signal">
+  <div class="viz-row text-small" aria-hidden="true">
+    <span><span class="r-key r-key-scalar"></span>Mean of HF2 R samples</span>
+    <span><span class="r-key r-key-vector"></span>Magnitude of mean X/Y vector</span>
+    <span><span class="r-key r-key-outlier"></span>Phase-instability candidate</span>
+  </div>
+  <svg viewBox="0 0 720 430" role="img" aria-labelledby="mx-r-title mx-r-desc">
+    <title id="mx-r-title">R signal versus signed Y RF amplitude</title>
+    <desc id="mx-r-desc">The R signal rises symmetrically from nearly zero at zero RF amplitude, peaks near plus and minus 0.11 Vpp, and contains three phase-instability candidates.</desc>
+    <g class="r-grid"></g>
+    <g class="r-axes"></g>
+    <path class="r-line r-vector"></path>
+    <path class="r-line r-scalar"></path>
+    <g class="r-points"></g>
+    <g class="r-outliers"></g>
+    <rect class="r-overlay" x="66" y="20" width="630" height="342"></rect>
+    <text class="r-axis-label" x="381" y="414" text-anchor="middle">Signed Y RF amplitude (Vpp)</text>
+    <text class="r-axis-label" transform="translate(17 191) rotate(-90)" text-anchor="middle">Demod R (V)</text>
+  </svg>
+  <div id="mx-r-readout" class="text-small text-muted" aria-live="polite">Move across the curve to inspect a point.</div>
+</div>
+<style>
+  #mx-r-signal { width: 100%; color: var(--foreground); }
+  #mx-r-signal .viz-row { gap: 1rem; margin-bottom: .25rem; }
+  #mx-r-signal .r-key { display: inline-block; width: 1.4rem; height: 2px; margin-right: .35rem; vertical-align: middle; background: var(--viz-series-1); }
+  #mx-r-signal .r-key-vector { background: var(--viz-series-2); border-top: 1px dashed var(--background); }
+  #mx-r-signal .r-key-outlier { width: .55rem; height: .55rem; border: 2px solid var(--destructive); border-radius: 50%; background: transparent; }
+  #mx-r-signal svg { width: 100%; height: auto; display: block; }
+  #mx-r-signal .r-grid line { stroke: var(--border); stroke-width: 1; }
+  #mx-r-signal .r-axes line { stroke: var(--muted-foreground); stroke-width: 1; }
+  #mx-r-signal .r-axes text, #mx-r-signal .r-axis-label { fill: var(--muted-foreground); font-size: 12px; }
+  #mx-r-signal .r-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  #mx-r-signal .r-scalar { stroke: var(--viz-series-1); }
+  #mx-r-signal .r-vector { stroke: var(--viz-series-2); stroke-dasharray: 6 4; }
+  #mx-r-signal .r-points circle { fill: var(--viz-series-1); }
+  #mx-r-signal .r-outliers circle { fill: var(--background); stroke: var(--destructive); stroke-width: 2; }
+  #mx-r-signal .r-outliers text { fill: var(--foreground); font-size: 11px; }
+  #mx-r-signal .r-overlay { fill: transparent; pointer-events: all; }
+  #mx-r-readout { min-height: 1.4em; text-align: center; }
+</style>
+<script>
+(() => {
+  const root = document.getElementById("mx-r-signal");
+  if (!root) return;
+  const data = [{"a":-0.2,"rs":0.8945677,"rv":0.89456744},{"a":-0.195,"rs":0.89935323,"rv":0.89935299},{"a":-0.19,"rs":0.89585731,"rv":0.89585701},{"a":-0.185,"rs":0.90505712,"rv":0.90505683},{"a":-0.18,"rs":0.90968958,"rv":0.90968938},{"a":-0.175,"rs":0.92051272,"rv":0.92051251},{"a":-0.17,"rs":0.92460981,"rv":0.92460956},{"a":-0.165,"rs":0.92681846,"rv":0.92681823},{"a":-0.16,"rs":0.93053102,"rv":0.93053077},{"a":-0.155,"rs":0.93811091,"rv":0.93811068},{"a":-0.15,"rs":0.94308364,"rv":0.9430834},{"a":-0.145,"rs":0.94720948,"rv":0.94720922},{"a":-0.14,"rs":0.95364601,"rv":0.95364575},{"a":-0.135,"rs":0.95095421,"rv":0.95095397},{"a":-0.13,"rs":0.95916724,"rv":0.95916698},{"a":-0.125,"rs":0.96138743,"rv":0.96138716},{"a":-0.12,"rs":0.96411626,"rv":0.964116},{"a":-0.115,"rs":0.96519641,"rv":0.96519572},{"a":-0.11,"rs":0.96817189,"rv":0.96817158},{"a":-0.105,"rs":0.96548829,"rv":0.96548787},{"a":-0.1,"rs":0.96629046,"rv":0.96628987},{"a":-0.095,"rs":0.96640376,"rv":0.96640337},{"a":-0.09,"rs":0.55355215,"rv":0.46438153},{"a":-0.085,"rs":0.96257569,"rv":0.96257526},{"a":-0.08,"rs":0.95805605,"rv":0.95805561},{"a":-0.075,"rs":0.95537396,"rv":0.9553735},{"a":-0.07,"rs":0.94389981,"rv":0.94389925},{"a":-0.065,"rs":0.92857795,"rv":0.92857746},{"a":-0.06,"rs":0.91314083,"rv":0.91314039},{"a":-0.055,"rs":0.88729458,"rv":0.8872941},{"a":-0.05,"rs":0.85899644,"rv":0.85899598},{"a":-0.045,"rs":0.82493842,"rv":0.82493789},{"a":-0.04,"rs":0.78076888,"rv":0.78076821},{"a":-0.035,"rs":0.73045663,"rv":0.73045621},{"a":-0.03,"rs":0.66697139,"rv":0.66697098},{"a":-0.025,"rs":0.59341342,"rv":0.59341306},{"a":-0.02,"rs":0.49971751,"rv":0.49971711},{"a":-0.015,"rs":0.39290043,"rv":0.39290017},{"a":-0.01,"rs":0.27002062,"rv":0.27002042},{"a":-0.005,"rs":0.13331316,"rv":0.13331306},{"a":0,"rs":0.00002822,"rv":0.00000367},{"a":0.005,"rs":0.13435096,"rv":0.13435086},{"a":0.01,"rs":0.27195687,"rv":0.27195666},{"a":0.015,"rs":0.39562607,"rv":0.3956258},{"a":0.02,"rs":0.5013868,"rv":0.50138632},{"a":0.025,"rs":0.59331939,"rv":0.59331904},{"a":0.03,"rs":0.66978913,"rv":0.66978872},{"a":0.035,"rs":0.48653545,"rv":0.44277221},{"a":0.04,"rs":0.78468874,"rv":0.78468829},{"a":0.045,"rs":0.83367722,"rv":0.83367668},{"a":0.05,"rs":0.86725625,"rv":0.86725576},{"a":0.055,"rs":0.89423904,"rv":0.89423864},{"a":0.06,"rs":0.91683706,"rv":0.9168367},{"a":0.065,"rs":0.93117935,"rv":0.93117902},{"a":0.07,"rs":0.94078832,"rv":0.94078788},{"a":0.075,"rs":0.95174894,"rv":0.95174861},{"a":0.08,"rs":0.95373653,"rv":0.95373619},{"a":0.085,"rs":0.95954219,"rv":0.95954187},{"a":0.09,"rs":0.96060466,"rv":0.96060424},{"a":0.095,"rs":0.96554348,"rv":0.96554311},{"a":0.1,"rs":0.96643565,"rv":0.96643535},{"a":0.105,"rs":0.96698392,"rv":0.9669836},{"a":0.11,"rs":0.96438377,"rv":0.9643834},{"a":0.115,"rs":0.96602047,"rv":0.9660202},{"a":0.12,"rs":0.96258922,"rv":0.96258896},{"a":0.125,"rs":0.96059009,"rv":0.96058978},{"a":0.13,"rs":0.95535917,"rv":0.95535882},{"a":0.135,"rs":0.95104078,"rv":0.95104041},{"a":0.14,"rs":0.95015844,"rv":0.95015812},{"a":0.145,"rs":0.94710126,"rv":0.94710095},{"a":0.15,"rs":0.94318851,"rv":0.9431882},{"a":0.155,"rs":0.93722151,"rv":0.93722122},{"a":0.16,"rs":0.93365857,"rv":0.9336582},{"a":0.165,"rs":0.92605924,"rv":0.92605894},{"a":0.17,"rs":0.92130885,"rv":0.92130859},{"a":0.175,"rs":0.7323713,"rv":0.63878719},{"a":0.18,"rs":0.90564215,"rv":0.90564162},{"a":0.185,"rs":0.8944211,"rv":0.89442072},{"a":0.19,"rs":0.89038793,"rv":0.89038765},{"a":0.195,"rs":0.88552813,"rv":0.8855278},{"a":0.2,"rs":0.88135293,"rv":0.88135268}];
+  const svg = root.querySelector("svg");
+  const NS = "http://www.w3.org/2000/svg";
+  const left = 66, right = 696, top = 20, bottom = 362;
+  const sx = v => left + (v + 0.2) / 0.4 * (right - left);
+  const sy = v => bottom - v / 1.0 * (bottom - top);
+  const add = (parent, name, attrs, text) => {
+    const el = document.createElementNS(NS, name);
+    Object.entries(attrs || {}).forEach(([k,v]) => el.setAttribute(k, v));
+    if (text != null) el.textContent = text;
+    parent.appendChild(el);
+    return el;
+  };
+  const grid = root.querySelector(".r-grid");
+  const axes = root.querySelector(".r-axes");
+  [-0.2,-0.1,0,0.1,0.2].forEach(v => {
+    add(grid,"line",{x1:sx(v),y1:top,x2:sx(v),y2:bottom});
+    add(axes,"text",{x:sx(v),y:382,"text-anchor":"middle"},v.toFixed(1));
+  });
+  [0,0.2,0.4,0.6,0.8,1.0].forEach(v => {
+    add(grid,"line",{x1:left,y1:sy(v),x2:right,y2:sy(v)});
+    add(axes,"text",{x:57,y:sy(v)+4,"text-anchor":"end"},v.toFixed(1));
+  });
+  add(axes,"line",{x1:left,y1:bottom,x2:right,y2:bottom});
+  add(axes,"line",{x1:left,y1:top,x2:left,y2:bottom});
+  const path = key => data.map((d,i) => (i ? "L" : "M") + sx(d.a).toFixed(2) + " " + sy(d[key]).toFixed(2)).join(" ");
+  root.querySelector(".r-scalar").setAttribute("d",path("rs"));
+  root.querySelector(".r-vector").setAttribute("d",path("rv"));
+  const points = root.querySelector(".r-points");
+  const outliers = root.querySelector(".r-outliers");
+  data.forEach(d => {
+    add(points,"circle",{cx:sx(d.a),cy:sy(d.rs),r:2.1});
+    if (Math.abs(d.rs-d.rv)>0.01) {
+      add(outliers,"circle",{cx:sx(d.a),cy:sy(d.rs),r:6});
+      add(outliers,"text",{x:sx(d.a)+7,y:sy(d.rs)-7},(d.a>=0?"+":"")+d.a.toFixed(3));
+    }
+  });
+  const readout = document.getElementById("mx-r-readout");
+  const overlay = root.querySelector(".r-overlay");
+  overlay.addEventListener("mousemove", event => {
+    const rect = svg.getBoundingClientRect();
+    const vx = (event.clientX-rect.left)/rect.width*720;
+    const amp = (vx-left)/(right-left)*0.4-0.2;
+    const d = data.reduce((best,item) => Math.abs(item.a-amp)<Math.abs(best.a-amp)?item:best,data[0]);
+    const flag = Math.abs(d.rs-d.rv)>0.01 ? " · phase-instability candidate" : "";
+    readout.textContent = "Amplitude " + (d.a>=0?"+":"") + d.a.toFixed(3) + " Vpp · mean R " + d.rs.toFixed(6) + " V · |mean(X+iY)| " + d.rv.toFixed(6) + " V" + flag;
+  });
+})();
+</script>

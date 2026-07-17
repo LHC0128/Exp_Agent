@@ -6,9 +6,8 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from lockin_amplifier import HF2Instrument
-from signal_generator import DG4000Instrument, DG900Instrument
-
 from .common import ProgressCallback, emit, load_mapping
+from .devices import create_signal_generator
 from .steps import (
     DeviceSession,
     PhaseCalibrationConfig,
@@ -41,8 +40,8 @@ def calibrate_demod0_safely(
     z_cfg = mapping["Z_magnetic_field"]
     temp_cfg = mapping["Temp_Switch"]
     hf_cfg = mapping["lockin_r"]
-    z = DG4000Instrument(z_cfg["resource"], channel=int(z_cfg["channel"]))
-    temp = DG900Instrument(temp_cfg["resource"], channel=int(temp_cfg["channel"]))
+    z = create_signal_generator(z_cfg)
+    temp = create_signal_generator(temp_cfg)
     hf2 = HF2Instrument(
         host=hf_cfg.get("host", "127.0.0.1"),
         port=hf_cfg.get("port", 8005),

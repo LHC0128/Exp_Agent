@@ -8,7 +8,7 @@ import os
 import subprocess
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import yaml
@@ -120,6 +120,7 @@ class LegacyScriptAdapter:
         data_type: str,
         plot_name: str | None = None,
         field_metadata: dict[str, dict[str, Any]] | None = None,
+        preflight_validator: Callable[[dict[str, Any]], list[str]] | None = None,
     ) -> None:
         root = find_project_root()
         self.root = root
@@ -129,6 +130,7 @@ class LegacyScriptAdapter:
         self.data_type = data_type
         self.defaults_path = root / "params" / "experiments" / f"{experiment_id}.yaml"
         self.field_metadata = field_metadata or {}
+        self.preflight_validator = preflight_validator
 
     def _field_options(self, metadata: dict[str, Any]) -> list[Any]:
         """返回静态选项，或实时扫描仓库内指定目录生成文件选项。"""
@@ -229,6 +231,10 @@ class LegacyScriptAdapter:
                 validate_safety_limit(safety_key, float(value), limits)
             except ValueError as exc:
                 errors.append(str(exc))
+        if self.preflight_validator:
+            resolved = dict(defaults)
+            resolved.update(values)
+            errors.extend(self.preflight_validator(resolved))
         return errors
 
     @staticmethod

@@ -133,10 +133,10 @@ safety_limits:
   # ---- 温控器 ----
   temperature:
     min: 20.0
-    max: 110.0
+    max: 130.0
     ramp_rate: 1.0
     output_off_on_error: true
-    description: "铷原子 Cell 温度，范围 20-110 °C，升温速率限制 1°C/s"
+    description: "铷原子 Cell 温度，范围 20-130 °C，升温速率限制 1°C/s"
 
   # ---- 锁相 & 示波器（只读，无输出限值） ----
   lockin_r:
