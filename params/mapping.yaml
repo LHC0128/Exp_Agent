@@ -17,7 +17,7 @@ mapping:
     resource: "USB0::0x0B21::0x0039::90Z631552::INSTR"
     channel: null
     source_function: "CURRent"
-    description: "磁力仪中主磁场控制，单位mA，通过电流控制磁场强度，范围0-10mA"
+    description: "磁力仪中主磁场控制，单位mA，通过电流控制磁场强度，范围-10到10mA"
 
   # ---- 信号发生器 ----
   Z_magnetic_field:
@@ -52,6 +52,26 @@ mapping:
     resource: "USB0::0x1AB1::0x0646::DG9Q280100002::INSTR"
     channel: 2
     description: "输出大小对应着Probe光功率，通过调节信号发生器的DC电平控制输出功率，范围0-2 V"
+
+  # ---- Probe 激光器 ----
+  probe_laser:
+    instrument: toptica_dlc_pro
+    model: DLC_PRO
+    label: "Probe 激光"
+    resource: "192.168.124.68"
+    device_id: "DLC_PRO_53043"
+    controller_serial: "DLC PRO_53043"
+    laser_head_serial: "24105"
+    laser_channel: 1
+    command_port: 1998
+    monitoring_port: 1999
+    timeout: 5.0
+    remote_emission_control_enabled: false
+    current_safety_key: probe_laser_current
+    temperature_safety_key: probe_laser_temperature
+    pzt_safety_key: probe_laser_pzt_voltage
+    scan_amplitude_safety_key: probe_laser_scan_amplitude
+    description: "TOPTICA DLC pro Probe 激光；PZT 电压映射为 Laser 1 Scan Offset，扫描频率只读"
 
   X_magnetic_field_AM:
     instrument: signal_generator

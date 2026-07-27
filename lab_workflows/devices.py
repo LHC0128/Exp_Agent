@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping
 
+from gs200 import GS200Instrument
 from signal_generator import DG4000Instrument, DG900Instrument
+from toptica_laser import DLCProInstrument
 
 from .common import load_mapping
 
@@ -13,6 +15,14 @@ from .common import load_mapping
 SIGNAL_GENERATOR_DRIVERS = {
     "DG4000": DG4000Instrument,
     "DG900": DG900Instrument,
+}
+
+CURRENT_SOURCE_DRIVERS = {
+    "GS200": GS200Instrument,
+}
+
+LASER_DRIVERS = {
+    "DLC_PRO": DLCProInstrument,
 }
 
 
@@ -61,6 +71,22 @@ def create_signal_generator(
     return driver(str(resource), channel=int(selected_channel))
 
 
+def create_dlc_pro(config: Mapping[str, Any]) -> DLCProInstrument:
+    """按 mapping.yaml 创建 DLC pro，不在此处建立网络连接。"""
+    if config.get("instrument") != "toptica_dlc_pro":
+        raise ValueError("配置不是 toptica_dlc_pro 映射")
+    resource = str(config.get("resource", "")).strip()
+    if not resource:
+        raise ValueError("DLC pro 映射缺少 resource")
+    return DLCProInstrument(
+        resource,
+        laser_channel=int(config.get("laser_channel", 1)),
+        command_port=int(config.get("command_port", 1998)),
+        monitoring_port=int(config.get("monitoring_port", 1999)),
+        timeout=float(config.get("timeout", 5.0)),
+    )
+
+
 def signal_generator_max_arb_points(config: Any) -> int:
     config = _resolve_signal_generator_config(config)
     driver = SIGNAL_GENERATOR_DRIVERS[signal_generator_model(config)]
@@ -107,6 +133,65 @@ def discover_devices() -> list[DeviceRecord]:
         kind = cfg.get("instrument")
         resource = cfg.get("resource")
         channel = cfg.get("channel")
+        if kind == "toptica_dlc_pro" and resource:
+            device_id = str(cfg.get("device_id", "")).strip()
+            if not device_id:
+                raise ValueError(f"DLC pro 映射 {key} 缺少 device_id")
+            record_key = f"toptica:{resource}:{cfg.get('laser_channel', 1)}"
+            records[record_key] = DeviceRecord(
+                id=device_id,
+                type="DLC_PRO",
+                label=cfg.get("label", key),
+                resource=str(resource),
+                short_resource=str(
+                    cfg.get("controller_serial", device_id)
+                ),
+                options={
+                    "mapping_key": key,
+                    "laser_channel": int(cfg.get("laser_channel", 1)),
+                    "command_port": int(cfg.get("command_port", 1998)),
+                    "monitoring_port": int(cfg.get("monitoring_port", 1999)),
+                    "timeout": float(cfg.get("timeout", 5.0)),
+                    "controller_serial": str(
+                        cfg.get("controller_serial", device_id)
+                    ),
+                    "laser_head_serial": str(
+                        cfg.get("laser_head_serial", "")
+                    ),
+                    "remote_emission_control_enabled": bool(
+                        cfg.get("remote_emission_control_enabled", False)
+                    ),
+                    "current_safety_key": str(
+                        cfg.get("current_safety_key", "")
+                    ),
+                    "temperature_safety_key": str(
+                        cfg.get("temperature_safety_key", "")
+                    ),
+                    "pzt_safety_key": str(
+                        cfg.get("pzt_safety_key", "")
+                    ),
+                    "scan_amplitude_safety_key": str(
+                        cfg.get("scan_amplitude_safety_key", "")
+                    ),
+                },
+            )
+            continue
+        if kind == "gs200" and resource:
+            short = _short_resource(resource)
+            if resource in records:
+                raise ValueError(f"设备资源被重复配置为不同类型: {resource}")
+            records[resource] = DeviceRecord(
+                id=short,
+                type="GS200",
+                label=cfg.get("label", key),
+                resource=resource,
+                short_resource=short,
+                options={
+                    "mapping_key": key,
+                    "source_function": cfg.get("source_function", "CURRent"),
+                },
+            )
+            continue
         if kind == "signal_generator" and resource and channel is not None:
             if key == "rf_coil":
                 continue

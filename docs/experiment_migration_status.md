@@ -16,6 +16,15 @@
 |---|---|---|
 | `static-sensitivity` | `lab_workflows/static_sensitivity.py` | 新模式 |
 | `noise-spectrum-xy` | `lab_workflows/experiment_modules/noise_spectrum_xy/` | 本轮迁移 |
+| `noise-spectrum-xy-demod3-r` | `lab_workflows/experiment_modules/noise_spectrum_xy_demod3_r/` | 新模式 |
+| `mx-y-rf-sensitivity` | `lab_workflows/experiment_modules/mx_y_rf_sensitivity/` | 新模式 |
+| `mx-main-field-calibration` | `lab_workflows/experiment_modules/mx_main_field_calibration/` | 新模式 |
+| `mx-main-field-noise-spectrum` | `lab_workflows/experiment_modules/mx_main_field_noise_spectrum/` | 新模式 |
+| `mx-main-field-scope-noise-spectrum` | `lab_workflows/experiment_modules/mx_main_field_scope_noise_spectrum/` | 新模式 |
+| `mx-xy-residual-field-calibration` | `lab_workflows/experiment_modules/mx_xy_residual_field_calibration/` | 新模式 |
+| `mx-z-field-calibration` | `lab_workflows/experiment_modules/mx_z_field_calibration/` | 新模式 |
+| `mx-z-noise-spectrum` | `lab_workflows/experiment_modules/mx_z_noise_spectrum/` | 新模式 |
+| `projection-noise` | `lab_workflows/experiment_modules/projection_noise/` | SDS 原始 PD 采集迁移 |
 | `rf-sensitivity-direct-aw-frequency` | `lab_workflows/experiment_modules/rf_sensitivity_direct_aw_frequency/` | 本轮迁移 |
 | `xy-direct-aw-dc-calibration` | `lab_workflows/experiment_modules/xy_direct_aw_dc_calibration/` | 本轮迁移 |
 | `t2-calibration` | `lab_workflows/experiment_modules/t2_calibration/` | 本轮迁移 |
@@ -31,7 +40,6 @@
 |---|---|
 | `noise-spectrum-xy-v2` | XY 控制噪声谱 v2 |
 | `photon-shot-noise` | 光子散粒噪声 |
-| `projection-noise` | 投影噪声 |
 | `rf-sensitivity-aw` | RF 灵敏度（任意波） |
 | `rf-sensitivity-aw-frequency` | RF 灵敏度频率扫描（外部 AM） |
 | `rf-sensitivity-constxy-frequency` | RF 灵敏度频率扫描（ConstXY） |

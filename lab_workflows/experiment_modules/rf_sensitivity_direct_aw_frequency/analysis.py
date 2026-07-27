@@ -20,10 +20,21 @@ import numpy as np
 import yaml
 
 from lab_workflows.experiment_runtime import runtime_run_dir
+from lab_workflows.plotting import (
+    COLOR_GRAY,
+    COLOR_GREEN,
+    COLOR_OPTIMAL,
+    COLOR_PURPLE,
+    COLOR_TRAD,
+    format_axis,
+    new_figure,
+    save_figure,
+    set_plot_style,
+    style_legend,
+)
 
 import matplotlib
-matplotlib.use(os.environ.get("MPLBACKEND", "TkAgg"))
-import matplotlib.pyplot as plt
+matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
 
 print("库导入完成")
 
@@ -155,42 +166,36 @@ print(f"  legacy R_max peak: {legacy_peak['freq_Hz']:.1f} Hz, R={legacy_peak['R_
 print(f"  median phase CV: {np.nanmedian(r_cv):.4f}, max phase CV: {np.nanmax(r_cv):.4f}")
 
 # %% Cell 4
-plt.rcParams.update({"figure.dpi": 120, "font.size": 11, "axes.labelsize": 12})
+set_plot_style("paper")
 
-fig1, ax1 = plt.subplots(figsize=(10, 5.8))
-ax1.plot(valid_freqs, r_median, ".-", color="C0", lw=1.4, ms=5,
+fig1, ax1 = new_figure()
+ax1.plot(valid_freqs, r_median, ".-", color=COLOR_OPTIMAL,
          label="R median over phase")
-ax1.set_xlabel("Z RF Frequency (Hz)")
-ax1.set_ylabel("Demod 3 response (V)")
-ax1.set_title("RF Field Frequency Response - Median Amplitude")
-ax1.legend(fontsize=8)
-ax1.grid(True, alpha=0.3)
-plt.tight_layout()
-fig1.savefig(results_dir / "freq_response_amplitude.png", dpi=150, bbox_inches="tight")
-fig1.savefig(results_dir / "freq_response_amplitude_robust.png", dpi=150, bbox_inches="tight")
+format_axis(
+    ax1,
+    xlabel="Z RF frequency (Hz)",
+    ylabel="Demod3 response (V)",
+)
+style_legend(ax1)
+save_figure(fig1, results_dir / "freq_response_amplitude.png", close=False)
+save_figure(fig1, results_dir / "freq_response_amplitude_robust.png")
 print(f"图已保存: {results_dir / 'freq_response_amplitude.png'}")
-plt.show()
 
-fig2, ax2 = plt.subplots(figsize=(10, 5.5))
-ax2.plot(valid_freqs, r_max_phase, ".-", color="C2", lw=1.0, ms=4,
+fig2, ax2 = new_figure(kind="wide")
+ax2.plot(valid_freqs, r_max_phase, ".-", color=COLOR_GREEN,
          label="Legacy phase at R_max")
-ax2.plot(valid_freqs, r_max_phase_unwrapped, "-", color="C3", lw=1.0, alpha=0.7,
+ax2.plot(valid_freqs, r_max_phase_unwrapped, "-", color=COLOR_TRAD, alpha=0.7,
          label="Legacy phase unwrapped")
 if np.any(np.isfinite(coherent_phase_deg)):
-    ax2.plot(valid_freqs, unwrap_phase_deg(coherent_phase_deg), "-", color="C4", lw=1.0,
+    ax2.plot(valid_freqs, unwrap_phase_deg(coherent_phase_deg), "-", color=COLOR_PURPLE,
              label="Coherent component phase")
-ax2.axvline(primary_peak["freq_Hz"], color="red", ls="--", lw=0.8, alpha=0.5)
-ax2.set_xlabel("Z RF Frequency (Hz)")
-ax2.set_ylabel("Phase (deg)")
-ax2.set_title("RF Field Frequency Response - Phase Diagnostics")
-ax2.legend(fontsize=8)
-ax2.grid(True, alpha=0.3)
-plt.tight_layout()
-fig2.savefig(results_dir / "freq_response_phase.png", dpi=150, bbox_inches="tight")
+ax2.axvline(primary_peak["freq_Hz"], color=COLOR_GRAY, linestyle="--")
+format_axis(ax2, xlabel="Z RF frequency (Hz)", ylabel="Phase (deg)")
+style_legend(ax2)
+save_figure(fig2, results_dir / "freq_response_phase.png")
 print(f"图已保存: {results_dir / 'freq_response_phase.png'}")
-plt.show()
 
-fig3, ax3 = plt.subplots(figsize=(10, 6))
+fig3, ax3 = new_figure(kind="square")
 phase_ext = np.concatenate([phases - 360, phases, phases + 360])
 r_ext = np.tile(r_matrix, (1, 3))
 im = ax3.pcolormesh(phase_ext, freqs, r_ext, cmap="viridis", shading="auto")
@@ -198,26 +203,25 @@ if len(phases) == 1:
     ax3.set_xlim(float(phases[0]) - 1.0, float(phases[0]) + 1.0)
 else:
     ax3.set_xlim(phases[0], phases[-1])
-ax3.set_xlabel("Z RF burst phase (deg)")
-ax3.set_ylabel("Z RF Frequency (Hz)")
-ax3.set_title("R(freq, phase) Heatmap")
+format_axis(
+    ax3,
+    xlabel="Z RF burst phase (deg)",
+    ylabel="Z RF frequency (Hz)",
+)
 cb = fig3.colorbar(im, ax=ax3)
 cb.set_label("R (V)")
-plt.tight_layout()
-fig3.savefig(results_dir / "freq_phase_heatmap.png", dpi=150, bbox_inches="tight")
+save_figure(fig3, results_dir / "freq_phase_heatmap.png")
 print(f"图已保存: {results_dir / 'freq_phase_heatmap.png'}")
-plt.show()
 
-fig4, ax4 = plt.subplots(figsize=(10, 4.8))
-ax4.plot(valid_freqs, r_cv, ".-", color="C5", lw=1.0, ms=4)
-ax4.set_xlabel("Z RF Frequency (Hz)")
-ax4.set_ylabel("std(R over phase) / mean(R)")
-ax4.set_title("Phase Scan Stability Diagnostic")
-ax4.grid(True, alpha=0.3)
-plt.tight_layout()
-fig4.savefig(results_dir / "phase_scan_cv.png", dpi=150, bbox_inches="tight")
+fig4, ax4 = new_figure()
+ax4.plot(valid_freqs, r_cv, ".-", color=COLOR_TRAD)
+format_axis(
+    ax4,
+    xlabel="Z RF frequency (Hz)",
+    ylabel="std(R over phase) / mean(R)",
+)
+save_figure(fig4, results_dir / "phase_scan_cv.png")
 print(f"图已保存: {results_dir / 'phase_scan_cv.png'}")
-plt.show()
 
 # %% Cell 5
 analysis = {

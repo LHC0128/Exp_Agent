@@ -107,14 +107,15 @@ def _convert_value(name: str, value: Any, annotation: Any) -> Any:
     return value
 
 
-def _field_type(annotation: Any) -> str:
+def schema_field_type(annotation: Any) -> str:
+    """将 Python 类型注解转换为 GUI 支持的 schema 类型。"""
     origin = get_origin(annotation)
     if origin is Literal:
         args = get_args(annotation)
-        return _field_type(type(args[0])) if args else "string"
+        return schema_field_type(type(args[0])) if args else "string"
     if _is_union(origin):
         concrete = [item for item in get_args(annotation) if item is not type(None)]
-        return _field_type(concrete[0]) if concrete else "string"
+        return schema_field_type(concrete[0]) if concrete else "string"
     if origin is list:
         return "array"
     if annotation is bool:
@@ -261,7 +262,7 @@ class ExperimentParams:
             entry = {
                 "name": str(metadata["external_name"]),
                 "label": str(metadata["label"]),
-                "type": _field_type(hints[item.name]),
+                "type": schema_field_type(hints[item.name]),
                 "default": values[item.name],
                 "unit": str(metadata.get("unit", "")),
                 "group": str(metadata.get("group", "advanced")),

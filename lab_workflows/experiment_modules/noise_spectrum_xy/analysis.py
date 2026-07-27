@@ -17,17 +17,31 @@ if str(project_root) not in sys.path:
 import numpy as np
 import yaml
 import matplotlib
-matplotlib.use(os.environ.get("MPLBACKEND", "TkAgg"))
-import matplotlib.pyplot as plt
+matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
 from scipy import signal as scipy_signal
-from scipy.optimize import curve_fit
 
+from lab_workflows.analysis.noise_spectrum_separation import fit_noise_separation
 from lab_workflows.experiment_runtime import runtime_run_dir
 from lab_workflows.experiment_modules.noise_spectrum_xy.calibration import (
     fit_robust_linear_calibration,
 )
+from lab_workflows.plotting import (
+    COLOR_CYAN,
+    COLOR_GRAY,
+    COLOR_GREEN,
+    COLOR_OPTIMAL,
+    COLOR_ORANGE,
+    COLOR_PURPLE,
+    COLOR_TRAD,
+    PAPER_WIDE,
+    format_axis,
+    new_figure,
+    save_figure,
+    set_plot_style,
+    style_legend,
+)
 
-plt.rcParams.update({"figure.dpi": 120, "font.size": 11, "axes.labelsize": 12})
+set_plot_style("paper")
 
 EXPERIMENT_TYPE = "Noise_Spectrum_XY_Ctrl"
 run_dir = runtime_run_dir()
@@ -303,21 +317,23 @@ np.savez(results_dir / "calibration.npz",
 print(f"标定结果已保存: {results_dir / 'calibration.npz'}")
 
 # ---- 标定图（1×2：散点拟合 + PSD伪彩图纵轴为Ω_Ctrl） ----
-fig_cal, axes_cal = plt.subplots(1, 2, figsize=(14, 5))
+fig_cal, axes_cal = new_figure(nrows=1, ncols=2, kind="wide")
 
 # 图 a: 散点 + 拟合
 ax = axes_cal[0]
 if len(V_rejected):
-    ax.scatter(V_rejected, f_rejected / 1000, s=4, alpha=0.25,
-               color="tab:red", label="Rejected nonlinear peaks")
-ax.scatter(V_cal, f_cal / 1000, s=3, alpha=0.5, color="gray", label="Column peaks")
-ax.plot(amplitudes_used, omega_ctrl / 1000, "r-", linewidth=2,
+    ax.scatter(V_rejected, f_rejected / 1000, alpha=0.35,
+               color=COLOR_TRAD, label="Rejected nonlinear peaks")
+ax.scatter(V_cal, f_cal / 1000, color=COLOR_GRAY, label="Column peaks")
+ax.plot(amplitudes_used, omega_ctrl / 1000, color=COLOR_OPTIMAL,
         label=f"Robust fit: $\\Omega_{{\\mathrm{{Ctrl}}}}$ = {k:.0f}·V + {b:.0f}")
-ax.set_xlabel("DirectAW Envelope (V)")
-ax.set_ylabel("$\\Omega_{\\mathrm{Ctrl}}$ (kHz)")
+format_axis(
+    ax,
+    xlabel="DirectAW envelope (V)",
+    ylabel="$\\Omega_{\\mathrm{Ctrl}}$ (kHz)",
+)
 ax.set_title(f"Column-wise Peak Finding (k={k:.0f}, b={b:.0f})")
-ax.legend(fontsize=9)
-ax.grid(True, alpha=0.3)
+style_legend(ax)
 
 # 图 b: 原始 PSD log（纵轴映射为 Ω_Ctrl，x轴聚焦至脊线区域）
 ax = axes_cal[1]
@@ -326,33 +342,42 @@ omega_min, omega_max = omega_ctrl[0], omega_ctrl[-1]
 extent = [freq_axis[0], freq_axis[-1], omega_min, omega_max]
 ax.imshow(psd_log, aspect="auto", origin="lower", extent=extent, cmap="inferno")
 ax.plot([omega_min, omega_max], [omega_min, omega_max],
-        "c--", linewidth=1.5, label=f"$\\Omega_{{\\mathrm{{Ctrl}}}}$ = {k:.0f}·V + {b:.0f}")
+        color=COLOR_CYAN, linestyle="--",
+        label=f"$\\Omega_{{\\mathrm{{Ctrl}}}}$ = {k:.0f}·V + {b:.0f}")
 ax.set_xlim(0, omega_max)
 ax.set_ylim(omega_min, omega_max)
-ax.set_xlabel("Frequency (Hz)")
-ax.set_ylabel("$\\Omega_{\\mathrm{Ctrl}}$ (Hz)")
+format_axis(
+    ax,
+    xlabel="Frequency (Hz)",
+    ylabel="$\\Omega_{\\mathrm{Ctrl}}$ (Hz)",
+)
 ax.set_title("Raw PSD (log10) with Calibrated Ridge")
-ax.legend(fontsize=8)
+style_legend(ax)
 
-fig_cal.tight_layout()
-fig_cal.savefig(results_dir / "calibration.png", dpi=150)
+save_figure(fig_cal, results_dir / "calibration.png")
 print(f"标定图已保存: {results_dir / 'calibration.png'}")
 
 # %% Cell 19
 # 诊断：查看特定频率列沿幅度轴的 PSD 曲线
 test_freqs = [1000, 3000, 10000,20000]  # Hz
-fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+fig, axes = new_figure(
+    figsize=(PAPER_WIDE[0], 2.0 * PAPER_WIDE[1]),
+    nrows=2,
+    ncols=2,
+)
 for ax, f_idx in zip(axes.flatten(), [np.argmin(np.abs(freq_axis - f)) for f in test_freqs]):
-    ax.plot(amplitudes_used, psd_matrix[:, f_idx], 'o-', ms=3)
+    ax.plot(amplitudes_used, psd_matrix[:, f_idx], 'o-', color=COLOR_OPTIMAL)
     ax.axvline(amplitudes_used[np.argmax(psd_matrix[:, f_idx])],
-               color='r', ls='--', label=f'peak @ {amplitudes_used[np.argmax(psd_matrix[:, f_idx])]:.2f}V')
-    ax.set_xlabel('Control Amplitude (V)')
-    ax.set_ylabel(f'PSD @ {freq_axis[f_idx]:.0f} Hz')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+               color=COLOR_TRAD, linestyle='--',
+               label=f'peak @ {amplitudes_used[np.argmax(psd_matrix[:, f_idx])]:.2f}V')
+    format_axis(
+        ax,
+        xlabel='Control amplitude (V)',
+        ylabel=f'PSD @ {freq_axis[f_idx]:.0f} Hz',
+    )
+    style_legend(ax)
 
-fig.tight_layout()
-fig.savefig(results_dir / "psd_column_diagnostics.png", dpi=150, bbox_inches="tight")
+save_figure(fig, results_dir / "psd_column_diagnostics.png")
 print(f"PSD 频率列诊断图已保存: {results_dir / 'psd_column_diagnostics.png'}")
 
 # %% Cell 20
@@ -363,117 +388,33 @@ print(f"PSD 频率列诊断图已保存: {results_dir / 'psd_column_diagnostics.
 #
 # 拟合参数: gamma (γ), Amp (A), D (N_S1), dw (Δω)
 
-def lorentzian_vs_omega(omega_ctrl, gamma, Amp, D, dw, omega_fixed):
-    """洛伦兹函数: PSD vs 控制强度，在固定频率 omega_fixed 上"""
-    w = omega_fixed
-    Om = omega_ctrl + dw
-    return D + Amp * (gamma**2 + w**2) / (
-        (gamma**2 - w**2 + Om**2)**2 + 4 * w**2 * gamma**2
-    )
-
-# ---- 逆向估计 Amp 初始值（来自 oldcode） ----
-def estimate_amp_guess(psd_max, gamma_guess, omega_fixed):
-    """
-    从洛伦兹峰值的解析公式反向求解 Amp:
-    在共振时 (OmegaCtrl ~ omega), 洛伦兹分母 ≈ (γ² - ω² + ω²)² = γ⁴, 分子 = γ² + ω²
-    → 峰高 ≈ Amp × (γ² + ω²) / γ⁴
-    → Amp ≈ 峰高 × γ⁴ / (γ² + ω²)
-    """
-    peak_height = psd_max
-    denom = (gamma_guess**2 + omega_fixed**2)
-    return peak_height * (gamma_guess**4 + 4 * gamma_guess**2 * omega_fixed**2) / denom
-
 # ---- 配置拟合参数 ----
 PEAK_MARGIN = 10000        # 脊线附近 ±10 kHz 内检测共振峰
 GAMMA_GUESS = 300          # 初始线宽估计
 
-# 构造 Ω_Ctrl 轴
-omega_ctrl_axis = omega_ctrl
-
-n_freq = len(freq_axis)
-popt_list = np.full((n_freq, 4), np.nan)  # gamma, Amp, D, dw
-perr_list = np.full((n_freq, 4), np.nan)
-fit_mask = np.zeros(n_freq, dtype=bool)
-
 print("洛伦兹拟合中...")
-for j in range(n_freq):
-    psd_slice = psd_matrix[:, j]
-    if np.all(np.isnan(psd_slice)):
-        continue
-
-    SwFreq = freq_axis[j]
-
-    # ---- 只在脊线附近 [SwFreq-10k, SwFreq+10k] 内检测峰 ----
-    peak_range = [SwFreq - PEAK_MARGIN, SwFreq + PEAK_MARGIN]
-    peak_idx_lo = np.searchsorted(omega_ctrl_axis, peak_range[0])
-    peak_idx_hi = np.searchsorted(omega_ctrl_axis, peak_range[1])
-    if peak_idx_hi <= peak_idx_lo:
-        continue
-
-    local_slice = psd_slice[peak_idx_lo:peak_idx_hi]
-    median_val = np.nanmedian(psd_slice)
-    std_val = np.nanstd(psd_slice)
-    max_val = np.nanmax(local_slice)
-
-    # ---- 预筛选：max - median > 2σ 时才尝试拟合 ----
-    if max_val - median_val <= 2 * std_val:
-        continue
-
-    valid = ~np.isnan(psd_slice) & ~np.isnan(omega_ctrl_axis)
-    if np.sum(valid) < 10:
-        continue
-
-    x_data = omega_ctrl_axis[valid]
-    y_data = psd_slice[valid]
-
-    # ---- 初始值估计 ----
-    gamma_guess = GAMMA_GUESS
-    baseline_guess = median_val
-    Amp_guess = estimate_amp_guess(max_val - median_val, gamma_guess, SwFreq)
-    dw_guess = 0.0
-
-    try:
-        popt, pcov = curve_fit(
-            lambda x, g, A, D, dw: lorentzian_vs_omega(x, g, A, D, dw, SwFreq),
-            x_data, y_data,
-            p0=[gamma_guess, Amp_guess, baseline_guess, dw_guess],
-            maxfev=5000,
-        )
-        # Amp 和 gamma 取绝对值
-        popt_list[j, :] = [np.abs(popt[0]), np.abs(popt[1]), popt[2], popt[3]]
-        perr_list[j, :] = np.sqrt(np.diag(pcov))
-        fit_mask[j] = True
-    except (RuntimeError, ValueError) as e:
-        pass  # 拟合失败，保留 NaN
-
-fitted_count = np.sum(fit_mask)
-print(f"拟合完成: {fitted_count}/{n_freq} 频率点拟合成功 ({100*fitted_count/n_freq:.1f}%)")
-
-# [经验] 失败点用线性插值填充（仅在脊线附近的合理频率范围内）
-FIT_OMEGA_MARGIN = 0.5  # 脊线外扩 50%
-f_lo_fit = max(0, omega_ctrl[0] * (1 - FIT_OMEGA_MARGIN))
-f_hi_fit = omega_ctrl[-1] * (1 + FIT_OMEGA_MARGIN)
-
-if fitted_count > 0 and fitted_count < n_freq:
-    from scipy.interpolate import interp1d
-
-    for param_idx in range(4):
-        near_ridge = (freq_axis >= f_lo_fit) & (freq_axis <= f_hi_fit)
-        mask_near = fit_mask & near_ridge
-        if np.sum(mask_near) > 2:
-            interp_func = interp1d(
-                np.where(mask_near)[0], popt_list[mask_near, param_idx],
-                kind="linear", fill_value="extrapolate",
-            )
-            fill_idx = np.where(~fit_mask & near_ridge)[0]
-            for idx in fill_idx:
-                popt_list[idx, param_idx] = float(interp_func(idx))
-
+fit_result = fit_noise_separation(
+    psd_matrix,
+    freq_axis,
+    omega_ctrl,
+    peak_margin_hz=PEAK_MARGIN,
+    gamma_guess_hz=GAMMA_GUESS,
+)
+popt_list = fit_result.parameters
+perr_list = fit_result.uncertainties
+fit_mask = fit_result.fit_mask
+fitted_count = int(np.count_nonzero(fit_mask))
+n_freq = len(freq_axis)
+print(
+    f"拟合完成: {fitted_count}/{n_freq} 频率点拟合成功 "
+    f"({100*fitted_count/n_freq:.1f}%)"
+)
+if np.any(fit_result.interpolated_mask):
     print("脊线附近失败点已用线性插值填充，远离脊线的保持 NaN")
 
 # 提取噪声谱
-S_beta = popt_list[:, 1].copy()  # Amp → 可控噪声
-N_S1   = popt_list[:, 2].copy()  # D → 不可控噪声
+S_beta = fit_result.s_beta
+N_S1 = fit_result.n_s1
 
 # 保存拟合结果
 np.savez(
@@ -481,6 +422,7 @@ np.savez(
     popt=popt_list,
     perr=perr_list,
     fit_mask=fit_mask,
+    interpolated_mask=fit_result.interpolated_mask,
     freq_axis=freq_axis,
     param_names=["gamma", "Amp", "D", "dw"],
 )
@@ -514,7 +456,7 @@ print(f"  freq_axis: {freq_axis[0]:.0f} - {freq_axis[-1]:.0f} Hz")
 # ===== 绘制结果图 =====
 
 # ---- 图 1: PSD 二维伪彩图（纵轴映射为 Ω_Ctrl，聚焦脊线区域） ----
-fig1, ax1 = plt.subplots(figsize=(10, 6))
+fig1, ax1 = new_figure(kind="square")
 psd_log = np.log10(np.maximum(psd_matrix, 1e-20))
 # 百分位截断：裁剪颜色范围，排除极大噪声峰干扰，凸显脊背
 vmin_pct, vmax_pct = 5, 95
@@ -530,35 +472,38 @@ im = ax1.imshow(psd_log, aspect="auto", origin="lower",
 ax1.set_xlim(0, omega_max_1)
 # 叠加标定脊线（对角线上 Ω_Ctrl = ω）
 ax1.plot([omega_min_1, omega_max_1], [omega_min_1, omega_max_1],
-         "c--", linewidth=1.5, label=f"$\\Omega_{{\\mathrm{{Ctrl}}}}$ = {k:.0f}·V + {b:.0f}")
-ax1.set_xlabel("Frequency (Hz)")
-ax1.set_ylabel("$\\Omega_{\\mathrm{Ctrl}}$ (Hz)")
-ax1.set_title("PSD $S_{S_1}(\\omega, \\Omega_\\mathrm{Ctrl})$ (zoomed to ridge region)")
+         color=COLOR_CYAN, linestyle="--",
+         label=f"$\\Omega_{{\\mathrm{{Ctrl}}}}$ = {k:.0f}·V + {b:.0f}")
+format_axis(
+    ax1,
+    xlabel="Frequency (Hz)",
+    ylabel="$\\Omega_{\\mathrm{Ctrl}}$ (Hz)",
+)
 cb1 = fig1.colorbar(im, ax=ax1, label="$\\log_{10}$ PSD (V²/Hz)")
-fig1.tight_layout()
-fig1.savefig(results_dir / "noise_spectrum_2d.png", dpi=150)
+style_legend(ax1)
+save_figure(fig1, results_dir / "noise_spectrum_2d.png")
 print(f"PSD 伪彩图已保存")
 
 # ---- 图 2: 提取的噪声谱 ----
-fig2, (ax2a, ax2b) = plt.subplots(1, 2, figsize=(14, 5))
+fig2, (ax2a, ax2b) = new_figure(nrows=1, ncols=2, kind="wide")
 
-ax2a.loglog(freq_axis, S_beta, "b-", linewidth=1.5)
-ax2a.set_xlabel("Frequency (Hz)")
-ax2a.set_ylabel("$S_\\beta(\\omega)$ (V²/Hz)")
-ax2a.set_title("Controllable Noise Spectrum $S_\\beta(\\omega)$")
-ax2a.grid(True, alpha=0.3)
+ax2a.loglog(freq_axis, S_beta, color=COLOR_OPTIMAL)
+format_axis(
+    ax2a,
+    xlabel="Frequency (Hz)",
+    ylabel="$S_\\beta(\\omega)$ (V²/Hz)",
+)
 
-ax2b.loglog(freq_axis, N_S1, "r-", linewidth=1.5)
-ax2b.set_xlabel("Frequency (Hz)")
-ax2b.set_ylabel("$N_{S_1}(\\omega)$ (V²/Hz)")
-ax2b.set_title("Uncontrollable Noise $N_{S_1}(\\omega)$")
-ax2b.grid(True, alpha=0.3)
+ax2b.loglog(freq_axis, N_S1, color=COLOR_TRAD)
+format_axis(
+    ax2b,
+    xlabel="Frequency (Hz)",
+    ylabel="$N_{S_1}(\\omega)$ (V²/Hz)",
+)
 
-fig2.tight_layout()
-fig2.savefig(results_dir / "noise_spectra_extracted.png", dpi=150)
+save_figure(fig2, results_dir / "noise_spectra_extracted.png")
 print(f"提取的噪声谱已保存")
 
-plt.show()
 print(f"\n所有图表已保存至: {results_dir}")
 
 # %% Cell 24
@@ -661,33 +606,41 @@ for p in peaks_neg:
 detected_features.sort(key=lambda x: x["height"], reverse=True)
 
 # ---- 绘制诊断图 ----
-fig_diag, axes_diag = plt.subplots(2, 2, figsize=(14, 10))
+fig_diag, axes_diag = new_figure(
+    figsize=(PAPER_WIDE[0], 2.0 * PAPER_WIDE[1]),
+    nrows=2,
+    ncols=2,
+)
 
 # (a) 正斜率积分
 ax0 = axes_diag[0, 0]
-ax0.plot(slope_candidates, integration_score, 'k-', linewidth=1)
+ax0.plot(slope_candidates, integration_score, color=COLOR_GRAY)
 for feat in detected_features[:5]:
     if feat["type"] != "positive": continue
-    ax0.axvline(feat["slope"], color='r', linestyle='--', alpha=0.5)
-    ax0.text(feat["slope"], feat["height"]*1.1, f's={feat["slope"]:.2f}', fontsize=9, ha='center')
-ax0.axvline(1.0, color='c', linestyle='-', alpha=0.7, label='s=1 (Main ridge)')
-ax0.set_xlabel("Slope s (ω = s · Ω_Ctrl)")
-ax0.set_ylabel("Integrated intensity")
+    ax0.axvline(feat["slope"], color=COLOR_TRAD, linestyle='--', alpha=0.5)
+    ax0.text(feat["slope"], feat["height"]*1.1, f's={feat["slope"]:.2f}', ha='center')
+ax0.axvline(1.0, color=COLOR_CYAN, label='s=1 (Main ridge)')
+format_axis(
+    ax0,
+    xlabel="Slope s (ω = s · Ω_Ctrl)",
+    ylabel="Integrated intensity",
+)
 ax0.set_title("(a) Positive slope analysis")
-ax0.legend(fontsize=8)
-ax0.grid(True, alpha=0.3)
+style_legend(ax0)
 
 # (b) 负斜率积分
 ax1 = axes_diag[0, 1]
-ax1.plot(s_neg_candidates, best_scores_neg, 'k-', linewidth=1)
+ax1.plot(s_neg_candidates, best_scores_neg, color=COLOR_GRAY)
 for feat in detected_features[:5]:
     if feat["type"] != "negative": continue
-    ax1.axvline(feat["slope"], color='r', linestyle='--', alpha=0.5)
-    ax1.text(feat["slope"], feat["height"]*1.1, f's={feat["slope"]:.2f}', fontsize=9, ha='center')
-ax1.set_xlabel("Slope s_neg (ω = s_neg·Ω_Ctrl + offset)")
-ax1.set_ylabel("Best offset-integrated intensity")
+    ax1.axvline(feat["slope"], color=COLOR_TRAD, linestyle='--', alpha=0.5)
+    ax1.text(feat["slope"], feat["height"]*1.1, f's={feat["slope"]:.2f}', ha='center')
+format_axis(
+    ax1,
+    xlabel="Slope s_neg (ω = s_neg·Ω_Ctrl + offset)",
+    ylabel="Best offset-integrated intensity",
+)
 ax1.set_title("(b) Negative slope analysis")
-ax1.grid(True, alpha=0.3)
 
 # (c) PSD 原图 + 标注检测到的特征
 ax2 = axes_diag[1, 0]
@@ -698,22 +651,21 @@ ax2.set_xlim(0, omega_max_diag)
 
 # 标注主脊线
 ax2.plot([omega_ctrl[0], omega_ctrl[-1]], [omega_ctrl[0], omega_ctrl[-1]],
-         "c-", linewidth=2, alpha=0.8, label="s=+1 (Main ridge)")
+         color=COLOR_CYAN, label="s=+1 (Main ridge)")
 
 # 标注检测到的正斜率特征
-colors_line = ['r--', 'y--', 'g--', 'm--', 'w--']
+colors_line = [COLOR_TRAD, COLOR_ORANGE, COLOR_GREEN, COLOR_PURPLE, COLOR_GRAY]
 for idx_feat, feat in enumerate(detected_features[:8]):
     if feat["type"] == "positive" and abs(feat["slope"] - 1.0) > 0.05:
         s = feat["slope"]
         ax2.plot([omega_ctrl[0], omega_ctrl[-1]],
                  [omega_ctrl[0]*s, omega_ctrl[-1]*s],
-                 colors_line[idx_feat % len(colors_line)],
-                 linewidth=1.2, alpha=0.6,
+                 color=colors_line[idx_feat % len(colors_line)],
+                 linestyle="--", alpha=0.7,
                  label=f's=+{s:.2f}')
-ax2.set_xlabel("Frequency ω (Hz)")
-ax2.set_ylabel("Ω_Ctrl (Hz)")
+format_axis(ax2, xlabel="Frequency ω (Hz)", ylabel="Ω_Ctrl (Hz)")
 ax2.set_title("(c) PSD with detected features")
-ax2.legend(fontsize=6, loc='upper left')
+style_legend(ax2, loc='upper left')
 
 # (d) 负斜率特征标注（ω = s·Ω_Ctrl + offset，选取最优 offset）
 ax3 = axes_diag[1, 1]
@@ -721,7 +673,7 @@ ax3.imshow(psd_for_analysis, aspect="auto", origin="lower",
            extent=extent_d, cmap="inferno")
 ax3.set_xlim(0, omega_max_diag)
 ax3.plot([omega_ctrl[0], omega_ctrl[-1]], [omega_ctrl[0], omega_ctrl[-1]],
-         "c-", linewidth=2, alpha=0.8, label="s=+1 (Main ridge)")
+         color=COLOR_CYAN, label="s=+1 (Main ridge)")
 
 # 标注负斜率特征（选最优 offset 画线）
 for idx_feat, feat in enumerate(detected_features[:8]):
@@ -746,18 +698,15 @@ for idx_feat, feat in enumerate(detected_features[:8]):
     mask_line = (w_line >= freq_axis[0]) & (w_line <= freq_axis[-1])
     if np.sum(mask_line) > 10:
         ax3.plot(omega_ctrl[mask_line], w_line[mask_line],
-                 colors_line[idx_feat % len(colors_line)],
-                 linewidth=1.5, alpha=0.7,
+                 color=colors_line[idx_feat % len(colors_line)],
+                 linestyle="--", alpha=0.7,
                  label=f's={s_neg:.2f}, off={best_off:.0f}Hz')
 
-ax3.set_xlabel("Frequency ω (Hz)")
-ax3.set_ylabel("Ω_Ctrl (Hz)")
+format_axis(ax3, xlabel="Frequency ω (Hz)", ylabel="Ω_Ctrl (Hz)")
 ax3.set_title("(d) Negative-slope features on PSD")
-ax3.legend(fontsize=6, loc='upper left')
+style_legend(ax3, loc='upper left')
 
-fig_diag.tight_layout()
-fig_diag.savefig(results_dir / "diagonal_analysis.png", dpi=150)
-plt.show()
+save_figure(fig_diag, results_dir / "diagonal_analysis.png")
 
 # ---- 打印结果解读 ----
 print("\n" + "=" * 65)

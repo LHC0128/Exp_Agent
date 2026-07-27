@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, get_type_hints
 
 import yaml
 
 from ..common import find_project_root, load_yaml
+from ..experiment_params import schema_field_type
 
 
 def ui(
@@ -104,12 +105,13 @@ class StaticSensitivityParams:
     @classmethod
     def schema(cls, values: "StaticSensitivityParams" | None = None) -> dict[str, Any]:
         current = (values or cls()).to_dict()
+        hints = get_type_hints(cls)
         result = []
         for item in fields(cls):
             result.append(
                 {
                     "name": item.name,
-                    "type": "array" if item.name == "gs200_current_ranges" else item.type.__class__.__name__,
+                    "type": schema_field_type(hints[item.name]),
                     "default": current[item.name],
                     **dict(item.metadata),
                 }

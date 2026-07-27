@@ -1,6 +1,6 @@
 # Bell-Bloom 实验控制台
 
-本地 Web GUI，用于读取和设置实验仪器、同步参考时钟、校准 Demod0，
+本地 Web GUI，用于读取和设置实验仪器（包括 GS200 主磁场电流源和 TOPTICA DLC pro Probe 激光）、同步参考时钟、校准 Demod0，
 以及从统一“实验中心”配置、预检、运行和重新分析正式 Python 实验。
 
 ## 安装
@@ -38,7 +38,18 @@ Vite 会把 `/api` 转发到本机 FastAPI。
 - `frontend/src/App.tsx`：仅保留应用布局入口，不承载页面实现。
 
 设备写入接口使用严格 Pydantic 请求模型，未知设置字段会返回验证错误；
-设备回读使用按 `type` 区分的信号发生器/示波器快照模型。
+设备回读使用按 `type` 区分的 GS200、DLC pro、信号发生器和示波器快照模型。
+
+“仪器控制”中的 GS200 模块只开放 `main_magnetic_field` 电流设定值（mA）和输出开关；
+源模式、电流量程、限压和限流只读。电流范围从 `params/safety_limits.yaml` 读取，
+当前为 `-10～10 mA`。输出从 OFF 切换到 ON 时，浏览器会再次显示目标电流并要求确认；
+设备连接后的写入或回读发生异常时，后端按 `output_off_on_error` 尽力关闭输出。
+
+TOPTICA DLC pro 模块开放激光电流、温度、PZT Scan Offset、扫描幅度和扫描启停，
+扫描频率与 Laser Enabled 只读。Emission 使用独立高风险接口：远程 ON 默认由
+`remote_emission_control_enabled=false` 禁止，开放后仍需现场安全勾选、输入控制器
+编号和浏览器再次确认；OFF 无需确认但会强制回读。DLC pro 通信或回读异常时不自动
+关光或回滚，界面会提示设备状态可能未知。完整说明见 `docs/toptica_dlc_pro.md`。
 
 ## 任务进度
 

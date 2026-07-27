@@ -1,249 +1,197 @@
 ---
-title: 热态投影噪声标定 (PSD 法)
-type: experiment_type
-description: 采集热态（Pump 关闭）和纯光噪声（主磁场偏置）条件下的 LIA 解调 X/Y 时间序列，通过 PSD 频域分析剔除技术噪声后积分得方差，计算等效耦合强度 κ̃² 并反推投影噪声极限 PNL。支持 PSD 洛伦兹拟合交叉验证 T₂
-keywords: [projection noise, PNL, thermal state, PSD, Welch, kappa_tilde, shot noise, lock-in, F=1 correction, T2 cross-validation]
-version: 2
-geometry:
-  main_field: Z
-  light_propagation: X
-
-scan_mode: point_by_point      # 两阶段采集：纯光噪声 → 热态噪声
-
-# ========== 默认参数 ==========
+title: 原子自旋投影噪声示波器测量
+type: Projection_noise
+scan_mode: point_by_point
 defaults:
-  # ---- 探测光 ----
-  PROBE_POWER: 0.1              # 探测光功率 (V)，应使用 Photon_shot_noise 标定得到的工作功率
-  # ---- 主磁场 ----
-  MAIN_FIELD_NORMAL_mA: 9.305   # 正常工作主磁场 (mA)，Ω_L/2π ≈ 90 kHz
-  MAIN_FIELD_OFFSET_mA: 5.0     # 偏置主磁场 (mA)，使 Ω_L 移出 LIA 带宽
-  # ---- 采集参数 ----
-  ACQ_DURATION: 5.0             # DAQ 单次采集时长 (s)
-  ACQ_REPEATS: 20               # 每阶段重复采集次数
-  NPERSEG: 10000                # Welch PSD 每段点数
-  # ---- HF2 DAQ 参数 ----
-  HF2_DEMOD_IDX: 0              # 解调器索引
-  HF2_OSC_FREQ: 90000           # 振荡器频率 (Hz)
-  HF2_SIGNAL_RANGE: 2.0         # 信号输入量程 (V)
-  HF2_DEMOD_ORDER: 4            # 解调滤波器阶数
-  HF2_DEMOD_TC: 7.85e-07        # 解调时间常数 (s)，高带宽噪声采集
-  HF2_DEMOD_RATE: 100000        # 解调输出速率 (Sa/s)
-  # ---- PSD 积分参数 ----
-  PSD_INTEG_FMIN: 10            # PSD 积分下限 (Hz)，排除 DC 附近漂移
-  PSD_INTEG_FMAX: 2000          # PSD 积分上限 (Hz)，LIA LPF 带宽
-  # ---- 技术噪声剔除 ----
-  NOTCH_FREQS: [50, 100, 150]   # 需剔除的工频谐波 (Hz)
-  NOTCH_WIDTH: 2                # 剔除窗口半宽 (Hz)
-  # ---- F=1 修正因子 ----
-  F1_CORRECTION: 0.833          # 5/6，远失谐等耦合近似；有 repump 时设为 1.0
-  PNL_THERMAL_RATIO: 0.8        # 0.8 = 4/5，PNL/热态方差比
-
-# ========== 所需设备 ==========
-required_devices:
-  - instrument: gs200
-    role: main_field
-  - instrument: signal_generator
-    role: laser_probe
-    mapping_key: Probe_laser_power
-    channels: [2]
-  - instrument: signal_generator
-    role: laser_pump
-    mapping_key: Pump_laser_power
-    channels: [1]
-  - instrument: signal_generator
-    role: temp_switch
-    mapping_key: Temp_Switch
-    channels: [2]
-  - instrument: tec_controller
-    role: temperature
-  - instrument: lockin_amplifier
-    role: detection
-    demod_channels: 2
-    has_daq: true
-
-# ========== mapping.yaml 中的 key ==========
+  TARGET_LARMOR_FREQUENCY_HZ: 90000
+  MAIN_FIELD_CALIBRATION_SOURCE_RUN: 0720_124208_mx_main_field_cal
+  SCOPE_SAMPLE_RATE: 500000
+  SCOPE_DURATION: 1
+  ACQ_REPEATS: 100
+  MEASURE_FIELD_OFF_CONTROL: true
+  WELCH_NPERSEG: 50000
+  FIT_HALF_WIDTH_HZ: 5000
+  FIXED_PARAMS.Pump_laser_power: 0.0
 mapping_keys:
   main_magnetic_field:
     role: scan
-    description: "主磁场在两值间切换：OFFSET 值 (5 mA) 测纯光噪声，NORMAL 值 (9.305 mA) 测热态噪声"
-  Probe_laser_power:
-    role: fixed
-    description: "探测光功率，固定为工作值（需先经 Photon_shot_noise 标定确认散粒噪声主导）"
+  scope_waveform:
+    role: detection
   Pump_laser_power:
     role: fixed
-    description: "Pump 光功率，全程关闭 (0 V)"
-  lockin_xy:
-    role: detection
-    description: "HF2 DAQ 采集解调后 X/Y 时间序列，X 为主通道、Y 为验证通道"
-  temperature:
+  Probe_laser_power:
     role: fixed
-    description: "气室温度（TEC103 控制）"
   Temp_Switch:
     role: temp_gating
-    description: "温度开关，采集时关闭以消除温控 PWM 磁场干扰"
-
-# ========== 固定参数 ==========
-fixed_params:
-  - Probe_laser_power
-  - Pump_laser_power
-  - temperature
-  - Temp_Switch
-
-# ========== 修复经验 ==========
+  temperature:
+    role: fixed
+required_devices:
+  - GS200
+  - DG900
+  - SDS
+  - TEC103
 learned_notes:
-  - 采集前必须确认 LIA 解调相位已对准自旋进动方向（ϕ₀ 使 X 路信号最大化）
-  - PSD 上 50 Hz 及其谐波的尖峰必须在积分前剔除，否则会高估 PNL
-  - X 和 Y 的 PSD 在积分带宽内应基本平坦（白噪声），若出现明显滚降说明 LPF 带宽不足
-  - 热态 X/Y 方差应大致相等（各向同性），差异 > 20% 需检查解调相位或偏振
-  - F=1 到 F=2 的贡献不能在 PSD 上通过频率分离，须用理论耦合系数修正（因子 5/6）
-  - 有 repump 时将 F1_CORRECTION 设为 1.0，无需理论修正
-  - 温度开关在 DAQ 采集期间必须关闭，采集完成后立即恢复
+  - PD 原始信号接 SDS CH1，直接在 Larmor 频率附近观察自旋噪声峰。
+  - `MEASURE_FIELD_OFF_CONTROL` 控制是否测量 GS200 输出关闭背景，默认开启。
+  - 关闭对照组选项时，直接对 `field_on` PSD 做带常数背景的洛伦兹拟合。
+  - 每帧采集期间温控开关为 0 V DC + output ON，帧间恢复 5 V DC + output ON。
 ---
 
-# 热态投影噪声标定 (PSD 法)
+# 原子自旋投影噪声示波器测量
 
-## 原理
+## 实验入口
 
-### 为什么要用 PSD 方法
+- 采集：`experiments/Projection_noise.py`
+- 离线分析：`experiments/Projection_noise_plot.py <run_dir>`
+- 稳定实验 ID：`projection-noise`
+- 运行目录：`data/Projection_noise/<run>/`
 
-LIA 输出的时域方差包含所有频率成分的技术噪声（50 Hz 工频、谐波、EMI 等），这些经典噪声若被计入"量子噪声基准"，会导致 PNL 被高估。
+该实验不再使用 HF2 DAQ。PD 原始输出接入 SDS CH1，直接采集时域电压并计算 RF PSD，在主场标定预测的 Larmor 频率附近拟合洛伦兹自旋噪声峰。
 
-**推荐流程**：
+## 实验条件
 
-```
-X(t), Y(t) 时间序列 → Welch PSD → 剔除技术噪声尖峰 → 积分得 Var(X)
-```
+- Pump 光：默认 `0 V` 且输出 OFF；可在 `0–1 V` 安全范围内设置，非零时输出 ON。
+- Probe 光：`0.3 V`，输出 ON。
+- 气室温度：`120 °C`。
+- SDS：CH1、DC、1 MΩ、1×探头、AUTO 基础配置；每帧由 FTRIG 强制采集，不使用外部触发。
+- 请求采样率：`500 kSa/s`。
+- 每帧时长：`1 s`。
+- 主场打开阶段：`100` 帧。
+- 可选主场关闭对照阶段：`100` 帧。
 
-| | 直接用 X(t) 求方差 | 先 FFT 求 PSD 再积分 |
-|---|---|---|
-| 能否剔除技术噪声 | 不能 | **能** — 频谱上尖峰一目了然 |
-| 能否验证白噪声假设 | 不能 | **能** — 检查 PSD 是否平坦 |
-| 适用场景 | 快速估算 | **标定 PNL / κ̃²（推荐）** |
+## 主场标定与可选对照组流程
 
-数学上二者等价（Parseval 定理）：
+默认固定读取：
 
-$$
-\mathrm{Var}(X) = \int_{0}^{BW} \mathrm{PSD}(f) \, df
-$$
-
-### 两阶段测量
-
-| 阶段 | 主磁场 | Pump 光 | 测量量 | 物理含义 |
-|------|--------|---------|--------|---------|
-| Phase 1 | **偏置** (5 mA，Ω_L 移出带宽) | OFF | $\mathrm{Var}(X^{\text{light}})$ | 纯光散粒噪声 + 电噪声 |
-| Phase 2 | **正常** (9.305 mA，Ω_L 在带宽内) | OFF | $\mathrm{Var}(X^{\text{thermal}})$ | 光噪声 + 热态原子自旋噪声 |
-
-### 核心公式
-
-**等效耦合强度** $\tilde{\kappa}^2$：
-
-$$
-\boxed{\tilde{\kappa}^2 =
-\frac{\mathrm{Var}(X^{\text{thermal}}) - \mathrm{Var}(X^{\text{light}})}
-{\mathrm{Var}(X^{\text{light}})}
-\times \underbrace{0.8}_{4/5}
-\times \underbrace{\frac{5}{6}}_{F=2\text{ 占比}}
-} \tag{3.8'}
-$$
-
-- 因子 **0.8**：$\mathrm{Var}(J_z^{PNL}) / \mathrm{Var}(J_z^{\text{thermal}}) = 4/5$
-- 因子 **5/6**：远失谐等耦合近似下 $F{=}2$ 在总原子噪声中的占比；有 repump 时改为 1
-
-**投影噪声极限**（归一化到光噪声）：
-
-$$
-\mathrm{Var}(X^{PNL}) = \mathrm{Var}(X^{\text{light}}) \times \left(1 + \tilde{\kappa}^2 \times \frac{6}{5}\right)
-$$
-
-## 实验配置
-
-| 光路 | Phase 1 (纯光噪声) | Phase 2 (热态噪声) |
-|------|:---:|:---:|
-| 泵浦光 (Pump) | OFF | OFF |
-| 探测光 (Probe) | 正常工作功率 | 同左 |
-| 主磁场 $B_x$ | **偏置** (5 mA) | **正常** (9.305 mA) |
-| 锁相放大器 | 正常设置 | 同左 |
-
-## 实验步骤
-
-### Phase 1：纯光噪声测量
-
-1. Pump 光关闭（确保 AOM 关断隔离度足够）
-2. 主磁场设为偏置值（如 5 mA），使 $\Omega_L$ 偏离 LIA 参考频率 90 kHz 几十 kHz
-3. 关闭温度开关，等待 0.1 s
-4. HF2 DAQ 采集 X、Y 时间序列（$N_{\text{repeat}} = 20$ 次，每次 5 s）
-5. 恢复温度开关
-
-### Phase 2：热态噪声测量
-
-1. Pump 光保持关闭
-2. 主磁场**恢复**到正常值（9.305 mA）
-3. 等待原子回到热平衡（≥ 100 ms，确保 $T_1 \sim 30$ ms 弛豫完成）
-4. 关闭温度开关，等待 0.1 s
-5. HF2 DAQ 采集 X、Y 时间序列（$N_{\text{repeat}} = 20$ 次，每次 5 s）
-6. 恢复温度开关
-
-## 数据采集参数
-
-| 参数 | 建议值 | 说明 |
-|------|--------|------|
-| 采集通道 | X 和 Y 双通道 | X 为主通道，Y 用于验证噪声各向同性 |
-| 采样率 | ≥ 50 kSa/s | 用 100 kSa/s，确保 ~2 kHz 带宽 Nyquist |
-| 单次采集时长 | 5 s | 兼顾统计精度和低频漂移 |
-| 重复次数 | ≥ 20 次 | 确保方差/PSD 统计稳定 |
-| Welch 段长 | 10000 点 | 频率分辨率 ~10 Hz @ 100 kSa/s |
-| PSD 积分范围 | 10~2000 Hz | 排除 DC 漂移和超出 LPF 带宽的高频 |
-
-## 数据分析流程
-
-### Step 1：Welch PSD 计算
-
-对每段 X(t)、Y(t) 分别做 Welch 周期图：
-
-```
-S_xx(f), S_yy(f) = welch(x, fs=rate, nperseg=NPERSEG)
+```text
+data/Mx_Main_Field_Calibration/
+  0720_124208_mx_main_field_cal/results/analysis.yaml
 ```
 
-### Step 2：技术噪声剔除
+标定关系为：
 
-在 PSD 上标记并剔除已知技术噪声频率（50 Hz 工频谐波等）：
-
-```python
-mask = np.ones_like(freqs, dtype=bool)
-for f0 in NOTCH_FREQS:
-    mask[(freqs > f0 - width) & (freqs < f0 + width)] = False
-S_clean = S[mask]
+```text
+f_Hz = 9671.91741380711 × I_mA + 196.65637261343872
 ```
 
-### Step 3：积分得方差
+目标 `90 kHz` 对应：
 
-在剔除后的频段 [fmin, fmax] 内对 PSD 积分：
+```text
+I = 9.28495765474467 mA
+```
+
+预检要求标定运行成功，并对反算电流执行 `main_magnetic_field` 全局安全校验。
+
+GUI 和默认 YAML 中的 `MEASURE_FIELD_OFF_CONTROL` 决定是否采集关闭电流源的对照组，默认值为 `true`，因此旧配置保持原有两阶段行为。
+
+开启对照组时，采集顺序为：
+
+1. `field_off`：GS200 输出 OFF，采集 100 帧背景噪声。
+2. 保持 GS200 输出 OFF，安全设置 `9.28495765474467 mA`。
+3. 打开 GS200 输出，等待 `1 s`。
+4. `field_on`：采集 100 帧包含自旋噪声的 PD 波形。
+
+关闭对照组时，跳过第 1 步，安全设置并打开 GS200 后只采集 `field_on`。无论是否测量对照组，正常、异常、取消和 Ctrl+C 都恢复 GS200 的源模式、电流、输出、量程和限流到实验开始前状态。
+
+## 每帧温控门控
+
+每一次示波器尝试都执行完整门控，不是每个阶段只切换一次：
+
+1. 将 `Temp_Switch` 设置为 `0 V DC + Output ON`。
+2. 等待 `0.3 s`。
+3. SDS 采集完整 `1 s` 波形；整个采集期间保持 `0 V DC + Output ON`。
+4. 在 `finally` 中恢复 `5 V DC + Output ON`，即使采集失败或收到取消请求也执行恢复。
+5. 恢复后等待 `1 s`，再开始下一帧或下一次自动量程尝试。
+
+帧间、阶段切换期间以及实验结束后均保持 `5 V DC + Output ON`。
+
+## 示波器完整帧与自动量程
+
+- 固定采样率存储模式为 `FSRate`，配置后回读实际采样率和实际点数。
+- 每帧执行 `RUN → FTRIG 强制提交一帧 → 等待 FTRIG 完成 → STOP → 读取波形`，不要求输入信号满足边沿触发条件。
+- 返回点数少于 preamble 声明值、少于 `WELCH_NPERSEG` 或实际时长不足时重试，连续三次失败才终止。
+- 初始量程为 `0.4 V/div`，范围限制为 `0.01–10 V/div`。
+- `SCOPE_VERTICAL_DIVISIONS=8` 表示示波器垂直方向总共 8 格；自动量程使用的单侧范围为 `V/div × 8 / 2`。
+- 使用波形中心调整 SDS offset；目标 offset 与当前值的差异不超过单侧显示范围的 `0.2` 时直接接受，超过该范围才重新居中。
+- 使用相对中心的半峰峰值调整量程；首次波形同时是候选正式帧，量程和 offset 都满足要求时直接保存，否则才按新设置重新采集。每帧最多尝试三次，并且只保存最终接受的波形。
+- 若测量两个阶段，量程和 offset 状态会跨阶段连续继承。
+
+## 原始数据
+
+```text
+data/Projection_noise/<run>/
+  experiment_config.yaml
+  raw/
+    scope_acquisition_index.npz
+    field_off/                  # 仅 MEASURE_FIELD_OFF_CONTROL=true 时存在
+      waveform_0000.npz
+      ...
+      waveform_0099.npz
+    field_on/
+      waveform_0000.npz
+      ...
+      waveform_0099.npz
+  results/
+```
+
+波形采用紧凑 ADC NPZ，只保存原始 ADC 码、preamble 与配置快照；分析时无损重建电压和真实时间轴。索引保存阶段、帧号、实际采样率、实际时长、量程、offset、自动量程尝试次数和 GS200 状态。
+
+## PSD 与洛伦兹拟合
+
+每帧使用以下 Welch 参数：
+
+- Hann 窗；
+- `WELCH_NPERSEG=50000`；
+- 50% overlap；
+- constant detrend；
+- 单边 PSD density，单位 `V²/Hz`。
+
+开启对照组时，分别平均 `field_off` 和 `field_on` 的 PSD，并计算：
+
+```text
+ΔS(f) = S_field_on(f) - S_field_off(f)
+```
+
+关闭对照组时，不生成 `field_off/`，直接使用 `S_field_on(f)` 作为拟合输入。结果中的 `control_group_measured` 和 `analysis_mode` 会分别记录是否测量对照组以及使用 `field_on_minus_field_off` 还是 `field_on_only`；图表标签也会据此区分 PSD 差值和主场打开 PSD。
+
+默认只在预测中心 `90 kHz ± 5 kHz` 内拟合：
 
 $$
-\mathrm{Var} = \int_{f_{\min}}^{f_{\max}} S(f) \, df \approx \sum_i S(f_i) \cdot \Delta f
+S_{\mathrm{fit}}(f)=C+\frac{A\gamma^2}{(f-f_0)^2+\gamma^2}.
 $$
 
-### Step 4：计算 $\tilde{\kappa}^2$ 和 PNL
+`A`、`γ`、`f₀` 和 `C` 均由数据决定；`f₀` 仅限制在拟合窗口内，使用稳健损失降低孤立技术尖峰影响。输出：
 
-代入公式 (3.8')。
+- 中心频率 `f₀`；
+- HWHM `γ` 和 FWHM `2γ`；
+- $T_2=1/(2\pi\gamma)$；
+- 洛伦兹面积 $\pi A\gamma$；
+- 参数不确定度、R² 和残差。
 
-## 热态对称性检查
+拟合失败时结果明确标记失败，不回退到旧脚本的固定 `328 Hz` 线宽，也不生成理论替代值。新 SDS 运行不计算 κ̃² 或 PNL。
 
-采集完成后的自动验证项：
+## 分析结果
 
-| 检查项 | 判据 | 不通过时 |
-|--------|------|---------|
-| $\langle X \rangle \approx 0, \langle Y \rangle \approx 0$ | $|mean| < \sqrt{\mathrm{Var}}/\sqrt{N}$ | 检查 DC 偏置 |
-| $\mathrm{Var}(X) \approx \mathrm{Var}(Y)$ | $|\mathrm{Var}_X - \mathrm{Var}_Y| / \mathrm{Var}_X < 0.2$ | 检查解调相位对准 |
-| PSD 平坦性 | 带宽内起伏 $< \pm 3$ dB | 检查 LPF 设置 |
-| 无窄带尖峰 | 超出白噪声基线 $> 10$ dB 的峰 | 标记并剔除 |
+```text
+results/
+  psd_spectra.npz
+  lorentzian_fit.npz
+  lorentzian_fit.csv
+  scope_psd_overview.png
+  spin_noise_lorentzian_fit.png
+  analysis.yaml
+  analysis.json
+```
 
-## 常见问题
+所有图中坐标轴、图例、标题和注释使用英文。
 
-| 现象 | 可能原因 | 解决 |
-|------|---------|------|
-| 热态噪声比预期小 | 泵浦光泄漏，原子被部分极化 | 检查 Pump AOM 关断隔离度 |
-| 热态噪声比预期大 | 环境磁噪声、地回路 | 查看 PSD 有无技术噪声尖峰，检查接地 |
-| 热态 X/Y 方差差异大 | 解调相位未对准 | 做数值正交旋转验证 |
-| PSD 高频端滚降 | LIA LPF 带宽不足 | 检查/增大 DEMOD_RATE 或降低 TC |
-| $\tilde{\kappa}^2$ 为负 | 热态噪声 < 纯光噪声 | 检查主磁场是否确实恢复了正常值 |
+## 历史数据兼容
+
+若指定运行目录仍包含旧文件：
+
+```text
+raw/waveforms_phase1_light.npz
+raw/waveforms_thermal.npz
+```
+
+离线入口会自动使用 HF2 X/Y 兼容分析分支，输出 `legacy_psd_spectra.npz` 和兼容图；不会把旧基带数据套入新的 90 kHz SDS 拟合模型。

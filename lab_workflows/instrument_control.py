@@ -2,17 +2,36 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from sds_acquisition import SDSInstrument
 
 from .common import load_safety_limits, validate_safety_limit
-from .devices import DeviceRecord, SIGNAL_GENERATOR_DRIVERS, find_device
+from .devices import (
+    CURRENT_SOURCE_DRIVERS,
+    DeviceRecord,
+    LASER_DRIVERS,
+    SIGNAL_GENERATOR_DRIVERS,
+    find_device,
+)
 
 
 def _connect(record: DeviceRecord):
     if record.type in SIGNAL_GENERATOR_DRIVERS:
         instrument = SIGNAL_GENERATOR_DRIVERS[record.type](record.resource)
+    elif record.type in CURRENT_SOURCE_DRIVERS:
+        instrument = CURRENT_SOURCE_DRIVERS[record.type](record.resource)
+    elif record.type in LASER_DRIVERS:
+        instrument = LASER_DRIVERS[record.type](
+            record.resource,
+            laser_channel=int(record.options.get("laser_channel", 1)),
+            command_port=int(record.options.get("command_port", 1998)),
+            monitoring_port=int(
+                record.options.get("monitoring_port", 1999)
+            ),
+            timeout=float(record.options.get("timeout", 5.0)),
+        )
     elif record.type == "SDS":
         instrument = SDSInstrument(record.resource)
     else:
@@ -247,11 +266,278 @@ def _read_generator_channel(instrument, device_type: str, channel) -> dict[str, 
     return state
 
 
+def _gs200_mapping_key(record: DeviceRecord) -> str:
+    mapping_key = str(record.options.get("mapping_key", "")).strip()
+    if not mapping_key:
+        raise ValueError(f"GS200 设备 {record.id} 缺少 mapping_key")
+    return mapping_key
+
+
+def _gs200_safety_rule(mapping_key: str) -> dict[str, Any]:
+    rule = load_safety_limits().get(mapping_key)
+    if not rule or rule.get("min") is None or rule.get("max") is None:
+        raise ValueError(f"{mapping_key} 缺少完整的安全上下限")
+    low = float(rule["min"])
+    high = float(rule["max"])
+    if not math.isfinite(low) or not math.isfinite(high) or low > high:
+        raise ValueError(f"{mapping_key} 的安全上下限无效")
+    return rule
+
+
+def _finite_float(field: str, value: Any, *, scale: float = 1.0) -> float:
+    converted = float(value) * scale
+    if not math.isfinite(converted):
+        raise ValueError(f"GS200 {field} 不是有限数值")
+    return converted
+
+
+def _read_gs200_state(record: DeviceRecord, instrument) -> dict[str, Any]:
+    """读取 GS200 状态；非电流模式不把源电平误标为电流。"""
+    mapping_key = _gs200_mapping_key(record)
+    rule = _gs200_safety_rule(mapping_key)
+    device = record.to_dict()
+    device.pop("channels", None)
+    source_function = str(instrument.get_source_function()).strip()
+    is_current_mode = source_function.upper().startswith("CURR")
+    current_ma = (
+        _finite_float("电流设定值", instrument.get_current(), scale=1000.0)
+        if is_current_mode
+        else None
+    )
+    current_range_ma = (
+        _finite_float("电流量程", instrument.get_current_range(), scale=1000.0)
+        if is_current_mode
+        else None
+    )
+    if current_ma is not None:
+        validate_safety_limit(mapping_key, current_ma, {mapping_key: rule})
+    return {
+        **device,
+        "idn": instrument.idn(),
+        "mapping_key": mapping_key,
+        "source_function": source_function,
+        "output": bool(instrument.get_output()),
+        "current_ma": current_ma,
+        "current_range_ma": current_range_ma,
+        "voltage_limit_v": _finite_float("限压", instrument.get_voltage_limit()),
+        "current_limit_ma": _finite_float(
+            "限流",
+            instrument.get_current_limit(),
+            scale=1000.0,
+        ),
+        "min_current_ma": float(rule["min"]),
+        "max_current_ma": float(rule["max"]),
+    }
+
+
+def _raise_after_gs200_error(
+    instrument,
+    mapping_key: str,
+    error: Exception,
+) -> None:
+    """按安全配置尽力关闭输出，并保留原始异常上下文。"""
+    try:
+        rule = load_safety_limits().get(mapping_key, {})
+        should_shutdown = bool(rule.get("output_off_on_error", True))
+    except Exception:
+        should_shutdown = True
+    if should_shutdown:
+        try:
+            instrument.set_output(False)
+        except Exception as shutdown_error:
+            raise RuntimeError(
+                f"{error}；GS200 输出关断失败: {shutdown_error}"
+            ) from error
+    raise error
+
+
+_LASER_SAFETY_OPTIONS = {
+    "current": "current_safety_key",
+    "temperature": "temperature_safety_key",
+    "pzt": "pzt_safety_key",
+    "scan_amplitude": "scan_amplitude_safety_key",
+}
+
+
+def _laser_safety_rules(
+    record: DeviceRecord,
+) -> dict[str, tuple[str, dict[str, Any]]]:
+    """读取完整且有效的 DLC pro 安全限值；缺项时禁止控制。"""
+    all_rules = load_safety_limits()
+    result: dict[str, tuple[str, dict[str, Any]]] = {}
+    for name, option_key in _LASER_SAFETY_OPTIONS.items():
+        safety_key = str(record.options.get(option_key, "")).strip()
+        if not safety_key:
+            raise ValueError(f"DLC pro 缺少 {option_key} 配置")
+        rule = all_rules.get(safety_key)
+        if not rule or rule.get("min") is None or rule.get("max") is None:
+            raise ValueError(f"{safety_key} 缺少完整的安全上下限")
+        low = _finite_laser_float(f"{safety_key} 下限", rule["min"])
+        high = _finite_laser_float(f"{safety_key} 上限", rule["max"])
+        if low > high:
+            raise ValueError(f"{safety_key} 的安全上下限无效")
+        result[name] = (safety_key, rule)
+    return result
+
+
+def _finite_laser_float(field: str, value: Any) -> float:
+    try:
+        converted = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"DLC pro {field} 必须是数值") from exc
+    if not math.isfinite(converted):
+        raise ValueError(f"DLC pro {field} 不是有限数值")
+    return converted
+
+
+def _validate_laser_envelope(
+    pzt_voltage_v: Any,
+    scan_amplitude_vpp: Any,
+    rules: dict[str, tuple[str, dict[str, Any]]],
+) -> tuple[float, float]:
+    pzt = _finite_laser_float("PZT 电压", pzt_voltage_v)
+    amplitude = _finite_laser_float("扫描幅度", scan_amplitude_vpp)
+    pzt_key, pzt_rule = rules["pzt"]
+    amplitude_key, amplitude_rule = rules["scan_amplitude"]
+    validate_safety_limit(pzt_key, pzt, {pzt_key: pzt_rule})
+    validate_safety_limit(
+        amplitude_key,
+        amplitude,
+        {amplitude_key: amplitude_rule},
+    )
+    low = float(pzt_rule["min"])
+    high = float(pzt_rule["max"])
+    envelope_low = pzt - amplitude / 2.0
+    envelope_high = pzt + amplitude / 2.0
+    if envelope_low < low or envelope_high > high:
+        raise ValueError(
+            "DLC pro 扫描包络越界："
+            f"{pzt:g} V ± {amplitude:g} Vpp / 2 = "
+            f"{envelope_low:g}～{envelope_high:g} V，"
+            f"允许范围为 {low:g}～{high:g} V"
+        )
+    return pzt, amplitude
+
+
+def _laser_identity(record: DeviceRecord, instrument) -> dict[str, str]:
+    controller_serial = instrument.get_controller_serial()
+    laser_head_serial = instrument.get_laser_head_serial()
+    expected_controller = str(
+        record.options.get("controller_serial", "")
+    ).strip()
+    expected_head = str(record.options.get("laser_head_serial", "")).strip()
+    if expected_controller and controller_serial != expected_controller:
+        raise RuntimeError(
+            "DLC pro 控制器身份不匹配："
+            f"期望 {expected_controller!r}，实际 {controller_serial!r}"
+        )
+    if expected_head and laser_head_serial != expected_head:
+        raise RuntimeError(
+            "DLC pro 激光头身份不匹配："
+            f"期望 {expected_head!r}，实际 {laser_head_serial!r}"
+        )
+    return {
+        "controller_serial": controller_serial,
+        "laser_head_serial": laser_head_serial,
+    }
+
+
+def _read_dlc_pro_state(
+    record: DeviceRecord,
+    instrument,
+) -> dict[str, Any]:
+    rules = _laser_safety_rules(record)
+    identity = _laser_identity(record, instrument)
+    device = record.to_dict()
+    device.pop("channels", None)
+    current_key, current_rule = rules["current"]
+    temperature_key, temperature_rule = rules["temperature"]
+    pzt_key, pzt_rule = rules["pzt"]
+    amplitude_key, amplitude_rule = rules["scan_amplitude"]
+    return {
+        **device,
+        **identity,
+        "system_type": instrument.get_system_type(),
+        "system_label": instrument.get_system_label(),
+        "firmware_version": instrument.get_firmware_version(),
+        "system_health_code": instrument.get_system_health_code(),
+        "system_health": instrument.get_system_health(),
+        "interlock_open": instrument.get_interlock_open(),
+        "front_key_locked": instrument.get_front_key_locked(),
+        "emission": instrument.get_emission(),
+        "laser_type": instrument.get_laser_type(),
+        "laser_product_name": instrument.get_laser_product_name(),
+        "laser_enabled": instrument.get_laser_enabled(),
+        "laser_health_code": instrument.get_laser_health_code(),
+        "laser_health": instrument.get_laser_health(),
+        "laser_emission": instrument.get_laser_emission(),
+        "laser_head_model": instrument.get_laser_head_model(),
+        "current_set_ma": instrument.get_laser_current_set_ma(),
+        "current_actual_ma": instrument.get_laser_current_actual_ma(),
+        "current_clip_ma": instrument.get_laser_current_clip_ma(),
+        "current_clip_limit_ma": (
+            instrument.get_laser_current_clip_limit_ma()
+        ),
+        "min_current_ma": float(current_rule["min"]),
+        "max_current_ma": float(current_rule["max"]),
+        "temperature_set_c": instrument.get_laser_temperature_set_c(),
+        "temperature_actual_c": instrument.get_laser_temperature_actual_c(),
+        "min_temperature_c": float(temperature_rule["min"]),
+        "max_temperature_c": float(temperature_rule["max"]),
+        "pzt_voltage_v": instrument.get_pzt_voltage_v(),
+        "pzt_actual_v": instrument.get_pzt_voltage_actual_v(),
+        "min_pzt_voltage_v": float(pzt_rule["min"]),
+        "max_pzt_voltage_v": float(pzt_rule["max"]),
+        "scan_amplitude_vpp": instrument.get_scan_amplitude_vpp(),
+        "min_scan_amplitude_vpp": float(amplitude_rule["min"]),
+        "max_scan_amplitude_vpp": float(amplitude_rule["max"]),
+        "scan_frequency_hz": instrument.get_scan_frequency_hz(),
+        "scan_enabled": instrument.get_scan_enabled(),
+        "scan_unit": instrument.get_scan_unit(),
+        "scan_output_channel": instrument.get_scan_output_channel(),
+        "remote_emission_control_enabled": bool(
+            record.options.get(
+                "remote_emission_control_enabled",
+                False,
+            )
+        ),
+        "safety_keys": {
+            "current": current_key,
+            "temperature": temperature_key,
+            "pzt": pzt_key,
+            "scan_amplitude": amplitude_key,
+        },
+        "state_known": True,
+    }
+
+
+def _raise_laser_state_unknown(error: Exception) -> None:
+    raise RuntimeError(
+        f"{error}；设备状态可能未知，请检查 DLC pro/TOPAS"
+    ) from error
+
+
 def read_device(device_id: str) -> dict[str, Any]:
     """连接设备并返回页面需要的完整状态。"""
     record = find_device(device_id)
     instrument = _connect(record)
     try:
+        if record.type == "DLC_PRO":
+            try:
+                return _read_dlc_pro_state(record, instrument)
+            except Exception as exc:
+                _raise_laser_state_unknown(exc)
+
+        if record.type == "GS200":
+            try:
+                return _read_gs200_state(record, instrument)
+            except Exception as exc:
+                _raise_after_gs200_error(
+                    instrument,
+                    _gs200_mapping_key(record),
+                    exc,
+                )
+
         if record.type in {"DG4000", "DG900"}:
             channels = [
                 _read_generator_channel(instrument, record.type, channel)
@@ -513,6 +799,361 @@ def apply_generator_channel(
     finally:
         instrument.disconnect()
     return read_device(device_id)
+
+
+def apply_current_source(
+    device_id: str,
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    """安全设置 GS200 主磁场电流和输出状态，并返回实际回读值。"""
+    if not settings or not ({"current_ma", "output"} & settings.keys()):
+        raise ValueError("电流源设置至少需要 current_ma 或 output")
+
+    record = find_device(device_id)
+    if record.type != "GS200":
+        raise TypeError("该接口仅用于 GS200 电流源")
+    mapping_key = _gs200_mapping_key(record)
+    rule = _gs200_safety_rule(mapping_key)
+    current_ma = settings.get("current_ma")
+    if current_ma is not None:
+        current_ma = _finite_float("目标电流", current_ma)
+        validate_safety_limit(mapping_key, current_ma, {mapping_key: rule})
+
+    instrument = _connect(record)
+    try:
+        try:
+            output_before = bool(instrument.get_output())
+            requested_output = settings.get("output")
+            if requested_output is True and not output_before:
+                if current_ma is None:
+                    raise ValueError("开启 GS200 输出时必须同时提供 current_ma")
+                if settings.get("confirm_output_enable") is not True:
+                    raise ValueError("开启 GS200 输出需要二次确认")
+
+            if requested_output is False:
+                instrument.set_output(False)
+
+            if current_ma is not None:
+                instrument.set_current(current_ma / 1000.0)
+                source_function = str(instrument.get_source_function()).strip()
+                if not source_function.upper().startswith("CURR"):
+                    raise RuntimeError(
+                        f"GS200 写入后仍处于 {source_function!r} 模式"
+                    )
+                actual_current_ma = _finite_float(
+                    "电流回读值",
+                    instrument.get_current(),
+                    scale=1000.0,
+                )
+                validate_safety_limit(
+                    mapping_key,
+                    actual_current_ma,
+                    {mapping_key: rule},
+                )
+
+            if requested_output is True:
+                instrument.set_output(True)
+
+            return _read_gs200_state(record, instrument)
+        except Exception as exc:
+            _raise_after_gs200_error(instrument, mapping_key, exc)
+    finally:
+        instrument.disconnect()
+
+
+def _normalize_laser_settings(
+    record: DeviceRecord,
+    settings: dict[str, Any],
+    rules: dict[str, tuple[str, dict[str, Any]]],
+) -> dict[str, Any]:
+    allowed = {
+        "current_set_ma",
+        "temperature_set_c",
+        "pzt_voltage_v",
+        "scan_amplitude_vpp",
+        "scan_enabled",
+    }
+    unknown = set(settings) - allowed
+    if unknown:
+        raise ValueError(
+            "DLC pro 设置包含未知字段: " + ", ".join(sorted(unknown))
+        )
+    if not settings:
+        raise ValueError("DLC pro 设置至少需要一个控制量")
+
+    normalized: dict[str, Any] = {}
+    numeric_fields = {
+        "current_set_ma": ("激光电流", "current"),
+        "temperature_set_c": ("激光温度", "temperature"),
+        "pzt_voltage_v": ("PZT 电压", "pzt"),
+        "scan_amplitude_vpp": ("扫描幅度", "scan_amplitude"),
+    }
+    for field, (label, rule_name) in numeric_fields.items():
+        if field not in settings or settings[field] is None:
+            continue
+        value = _finite_laser_float(label, settings[field])
+        safety_key, rule = rules[rule_name]
+        validate_safety_limit(safety_key, value, {safety_key: rule})
+        normalized[field] = value
+
+    if "scan_enabled" in settings:
+        if not isinstance(settings["scan_enabled"], bool):
+            raise TypeError("DLC pro 扫描启停值必须为布尔值")
+        normalized["scan_enabled"] = settings["scan_enabled"]
+
+    if not normalized:
+        raise ValueError("DLC pro 设置至少需要一个非空控制量")
+    if (
+        "pzt_voltage_v" in normalized
+        and "scan_amplitude_vpp" in normalized
+    ):
+        _validate_laser_envelope(
+            normalized["pzt_voltage_v"],
+            normalized["scan_amplitude_vpp"],
+            rules,
+        )
+    return normalized
+
+
+def _validate_laser_targets(
+    normalized: dict[str, Any],
+    snapshot: dict[str, Any],
+    rules: dict[str, tuple[str, dict[str, Any]]],
+) -> tuple[float, float]:
+    target_current = normalized.get("current_set_ma")
+    if target_current is not None:
+        current_clip = _finite_laser_float(
+            "实时 current-clip",
+            snapshot["current_clip_ma"],
+        )
+        if target_current > current_clip:
+            raise ValueError(
+                f"DLC pro 激光电流 {target_current:g} mA 超过设备实时 "
+                f"current-clip {current_clip:g} mA"
+            )
+    target_pzt = normalized.get(
+        "pzt_voltage_v",
+        snapshot["pzt_voltage_v"],
+    )
+    target_amplitude = normalized.get(
+        "scan_amplitude_vpp",
+        snapshot["scan_amplitude_vpp"],
+    )
+    return _validate_laser_envelope(
+        target_pzt,
+        target_amplitude,
+        rules,
+    )
+
+
+def _laser_envelope_is_valid(
+    pzt_voltage_v: float,
+    scan_amplitude_vpp: float,
+    rules: dict[str, tuple[str, dict[str, Any]]],
+) -> bool:
+    try:
+        _validate_laser_envelope(pzt_voltage_v, scan_amplitude_vpp, rules)
+    except ValueError:
+        return False
+    return True
+
+
+def _apply_laser_scan_targets(
+    instrument,
+    normalized: dict[str, Any],
+    snapshot: dict[str, Any],
+    rules: dict[str, tuple[str, dict[str, Any]]],
+) -> None:
+    change_pzt = "pzt_voltage_v" in normalized
+    change_amplitude = "scan_amplitude_vpp" in normalized
+    if not change_pzt and not change_amplitude:
+        return
+    target_pzt = float(
+        normalized.get("pzt_voltage_v", snapshot["pzt_voltage_v"])
+    )
+    target_amplitude = float(
+        normalized.get(
+            "scan_amplitude_vpp",
+            snapshot["scan_amplitude_vpp"],
+        )
+    )
+    current_pzt = float(snapshot["pzt_voltage_v"])
+    current_amplitude = float(snapshot["scan_amplitude_vpp"])
+
+    if change_pzt and not change_amplitude:
+        instrument.set_pzt_voltage_v(target_pzt)
+        return
+    if change_amplitude and not change_pzt:
+        instrument.set_scan_amplitude_vpp(target_amplitude)
+        return
+    if _laser_envelope_is_valid(target_pzt, current_amplitude, rules):
+        instrument.set_pzt_voltage_v(target_pzt)
+        instrument.set_scan_amplitude_vpp(target_amplitude)
+    elif _laser_envelope_is_valid(current_pzt, target_amplitude, rules):
+        instrument.set_scan_amplitude_vpp(target_amplitude)
+        instrument.set_pzt_voltage_v(target_pzt)
+    else:
+        # 两个端点都无法一步安全到达时，先将扫描幅度收至 0。
+        instrument.set_scan_amplitude_vpp(0.0)
+        instrument.set_pzt_voltage_v(target_pzt)
+        instrument.set_scan_amplitude_vpp(target_amplitude)
+
+
+def apply_laser_settings(
+    device_id: str,
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    """安全设置 DLC pro 电流、温度、PZT 和扫描状态。"""
+    record = find_device(device_id)
+    if record.type != "DLC_PRO":
+        raise TypeError("该接口仅用于 TOPTICA DLC pro 激光器")
+    rules = _laser_safety_rules(record)
+    normalized = _normalize_laser_settings(record, settings, rules)
+
+    instrument = _connect(record)
+    try:
+        try:
+            before = _read_dlc_pro_state(record, instrument)
+        except Exception as exc:
+            _raise_laser_state_unknown(exc)
+        _validate_laser_targets(normalized, before, rules)
+
+        try:
+            if "current_set_ma" in normalized:
+                instrument.set_laser_current_ma(
+                    normalized["current_set_ma"]
+                )
+            if "temperature_set_c" in normalized:
+                instrument.set_laser_temperature_c(
+                    normalized["temperature_set_c"]
+                )
+            _apply_laser_scan_targets(
+                instrument,
+                normalized,
+                before,
+                rules,
+            )
+            if "scan_enabled" in normalized:
+                instrument.set_scan_enabled(normalized["scan_enabled"])
+            return _read_dlc_pro_state(record, instrument)
+        except Exception as exc:
+            _raise_laser_state_unknown(exc)
+    finally:
+        instrument.disconnect()
+
+
+def _validate_emission_preconditions(
+    snapshot: dict[str, Any],
+    rules: dict[str, tuple[str, dict[str, Any]]],
+) -> None:
+    if int(snapshot["system_health_code"]) != 0:
+        raise RuntimeError("DLC pro 系统健康状态异常，拒绝开启 Emission")
+    if int(snapshot["laser_health_code"]) != 0:
+        raise RuntimeError("DLC pro 激光头健康状态异常，拒绝开启 Emission")
+    if bool(snapshot["interlock_open"]):
+        raise RuntimeError("DLC pro 联锁回路断开，拒绝开启 Emission")
+    if not bool(snapshot["laser_enabled"]):
+        raise RuntimeError("DLC pro Laser Enabled 为 OFF，拒绝开启 Emission")
+
+    values = (
+        ("current", "current_set_ma"),
+        ("current", "current_actual_ma"),
+        ("temperature", "temperature_set_c"),
+        ("temperature", "temperature_actual_c"),
+        ("pzt", "pzt_voltage_v"),
+        ("pzt", "pzt_actual_v"),
+        ("scan_amplitude", "scan_amplitude_vpp"),
+    )
+    for rule_name, field in values:
+        safety_key, rule = rules[rule_name]
+        value = _finite_laser_float(field, snapshot[field])
+        validate_safety_limit(safety_key, value, {safety_key: rule})
+    current_clip = _finite_laser_float(
+        "current-clip",
+        snapshot["current_clip_ma"],
+    )
+    if float(snapshot["current_set_ma"]) > current_clip:
+        raise RuntimeError(
+            "DLC pro 电流设定值超过实时 current-clip，拒绝开启 Emission"
+        )
+    _validate_laser_envelope(
+        snapshot["pzt_voltage_v"],
+        snapshot["scan_amplitude_vpp"],
+        rules,
+    )
+
+
+def apply_laser_emission(
+    device_id: str,
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    """通过独立高风险接口控制 Emission，并强制回读。"""
+    allowed = {
+        "enabled",
+        "safety_acknowledged",
+        "confirm_emission_enable",
+        "confirmation_text",
+    }
+    unknown = set(settings) - allowed
+    if unknown:
+        raise ValueError(
+            "Emission 设置包含未知字段: " + ", ".join(sorted(unknown))
+        )
+    if not isinstance(settings.get("enabled"), bool):
+        raise TypeError("Emission 设置必须包含布尔值 enabled")
+
+    record = find_device(device_id)
+    if record.type != "DLC_PRO":
+        raise TypeError("该接口仅用于 TOPTICA DLC pro 激光器")
+    enabled = settings["enabled"]
+    remote_allowed = bool(
+        record.options.get("remote_emission_control_enabled", False)
+    )
+    if enabled:
+        if not remote_allowed:
+            raise PermissionError(
+                "远程 Emission ON 默认禁用；确认 SI 模块、激光等级、"
+                "联锁和警示回路后方可修改 mapping.yaml 开放"
+            )
+        if settings.get("safety_acknowledged") is not True:
+            raise ValueError("开启 Emission 前必须勾选安全确认")
+        if settings.get("confirm_emission_enable") is not True:
+            raise ValueError("开启 Emission 需要再次确认")
+        expected_text = str(
+            record.options.get("controller_serial", record.id)
+        )
+        if settings.get("confirmation_text") != expected_text:
+            raise ValueError(
+                f"开启 Emission 必须输入 {expected_text}"
+            )
+
+    rules = _laser_safety_rules(record)
+    instrument = _connect(record)
+    try:
+        try:
+            before = _read_dlc_pro_state(record, instrument)
+        except Exception as exc:
+            _raise_laser_state_unknown(exc)
+        if enabled:
+            _validate_emission_preconditions(before, rules)
+        try:
+            instrument.set_emission(
+                enabled,
+                remote_enable_allowed=remote_allowed,
+            )
+            after = _read_dlc_pro_state(record, instrument)
+            if (
+                bool(after["emission"]) is not enabled
+                or bool(after["laser_emission"]) is not enabled
+            ):
+                raise RuntimeError(
+                    "Emission 最终回读与请求状态不一致"
+                )
+            return after
+        except Exception as exc:
+            _raise_laser_state_unknown(exc)
+    finally:
+        instrument.disconnect()
 
 
 def apply_scope(device_id: str, settings: dict[str, Any]) -> dict[str, Any]:

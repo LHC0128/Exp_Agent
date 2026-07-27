@@ -23,14 +23,26 @@ if str(project_root) not in sys.path:
 import json
 
 import matplotlib
-matplotlib.use(os.environ.get("MPLBACKEND", "TkAgg"))
-import matplotlib.pyplot as plt
+matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
 import numpy as np
 from scipy import optimize as scipy_optimize
 from scipy import signal as scipy_signal
 import yaml
 
 from lab_workflows.experiment_runtime import runtime_run_dir
+from lab_workflows.plotting import (
+    COLOR_GRAY,
+    COLOR_OPTIMAL,
+    COLOR_ORANGE,
+    COLOR_PURPLE,
+    COLOR_TRAD,
+    PAPER_WIDE,
+    format_axis,
+    new_figure,
+    save_figure,
+    set_plot_style,
+    style_legend,
+)
 
 print("离线分析库导入完成")
 
@@ -135,14 +147,6 @@ def frequency_keep_mask(freqs, excluded_bands_Hz):
             raise ValueError(f"无效杂散频带: {lower_Hz}--{upper_Hz} Hz")
         keep &= ~((freqs >= lower_Hz) & (freqs <= upper_Hz))
     return keep
-
-
-def show_or_close(figure):
-    """交互运行时显示图形，GUI/Agg 模式下保存后直接释放。"""
-    if "agg" in matplotlib.get_backend().lower():
-        plt.close(figure)
-    else:
-        plt.show()
 
 
 def raw_maximum(freqs, response):
@@ -677,9 +681,9 @@ for magnitude in sorted(set(np.abs(envelope_values))):
 
 # %% Cell 6
 # ========== 绘图 ==========
-plt.rcParams.update({"figure.dpi": 120, "font.size": 10, "axes.labelsize": 11})
+set_plot_style("paper")
 
-fig1, ax1 = plt.subplots(figsize=(9, 5.5))
+fig1, ax1 = new_figure(kind="wide")
 ax1.errorbar(
     envelope_values[calibration_fit_mask],
     peak_freq_Hz[calibration_fit_mask],
@@ -689,7 +693,7 @@ ax1.errorbar(
         0.0,
     ),
     fmt="o",
-    color="C0",
+    color=COLOR_OPTIMAL,
     capsize=3,
     label="Peak center used for calibration",
 )
@@ -704,7 +708,7 @@ if np.any(excluded_fit_mask):
             0.0,
         ),
         fmt="x",
-        color="0.5",
+        color=COLOR_GRAY,
         capsize=3,
         label="Excluded from calibration fit",
     )
@@ -712,10 +716,8 @@ if np.any(near_excluded_band):
     ax1.scatter(
         envelope_values[near_excluded_band],
         peak_freq_Hz[near_excluded_band],
-        s=75,
         facecolors="none",
-        edgecolors="C1",
-        linewidths=1.4,
+        edgecolors=COLOR_ORANGE,
         label="Near excluded band",
         zorder=4,
     )
@@ -731,7 +733,7 @@ if absolute_fit["success"]:
         absolute_fit["slope_Hz_per_V"] * np.abs(x_grid[fit_grid_mask])
         + absolute_fit["intercept_Hz"],
         "-",
-        color="C3",
+        color=COLOR_TRAD,
         label=f"Absolute-voltage fit (R²={absolute_fit['r_squared']:.3f})",
     )
     fit_annotation = (
@@ -752,37 +754,35 @@ if absolute_fit["success"]:
         transform=ax1.transAxes,
         ha="right",
         va="center",
-        fontsize=9,
         bbox={
             "boxstyle": "round,pad=0.35",
             "facecolor": "white",
-            "edgecolor": "C3",
+            "edgecolor": COLOR_TRAD,
             "alpha": 0.88,
         },
     )
-ax1.axvline(0.0, color="black", lw=0.8, alpha=0.5)
-ax1.set_xlabel("DirectAW constant envelope voltage (V)")
-ax1.set_ylabel("Response peak frequency (Hz)")
-ax1.set_title("DirectAW DC voltage calibration (sweep-limited points excluded)")
-ax1.grid(True, alpha=0.3)
-ax1.legend(fontsize=8)
-fig1.tight_layout()
-fig1.savefig(results_dir / "direct_aw_dc_calibration_curve.png", dpi=150, bbox_inches="tight")
-show_or_close(fig1)
+ax1.axvline(0.0, color=COLOR_GRAY, linestyle="--")
+format_axis(
+    ax1,
+    xlabel="DirectAW constant envelope voltage (V)",
+    ylabel="Response peak frequency (Hz)",
+)
+style_legend(ax1)
+save_figure(fig1, results_dir / "direct_aw_dc_calibration_curve.png")
 
-fig2, ax2 = plt.subplots(figsize=(9, 4.8))
+fig2, ax2 = new_figure()
 if absolute_fit["success"]:
     abs_prediction = (
         absolute_fit["slope_Hz_per_V"] * np.abs(envelope_values)
         + absolute_fit["intercept_Hz"]
     )
     abs_residual = peak_freq_Hz - abs_prediction
-    ax2.axhline(0.0, color="black", lw=0.8)
+    ax2.axhline(0.0, color=COLOR_GRAY, linestyle="--")
     ax2.plot(
         envelope_values[calibration_fit_mask],
         abs_residual[calibration_fit_mask],
         "o-",
-        color="C3",
+        color=COLOR_OPTIMAL,
         label="Used for calibration",
     )
     if np.any(excluded_fit_mask):
@@ -790,19 +790,18 @@ if absolute_fit["success"]:
             envelope_values[excluded_fit_mask],
             abs_residual[excluded_fit_mask],
             "x",
-            color="0.5",
+            color=COLOR_GRAY,
             label="Excluded",
         )
 else:
     abs_residual = np.full_like(peak_freq_Hz, np.nan)
-ax2.set_xlabel("DirectAW constant envelope voltage (V)")
-ax2.set_ylabel("Absolute-fit residual (Hz)")
-ax2.set_title("DirectAW calibration residual")
-ax2.grid(True, alpha=0.3)
-ax2.legend(fontsize=8)
-fig2.tight_layout()
-fig2.savefig(results_dir / "direct_aw_dc_calibration_residual.png", dpi=150, bbox_inches="tight")
-show_or_close(fig2)
+format_axis(
+    ax2,
+    xlabel="DirectAW constant envelope voltage (V)",
+    ylabel="Absolute-fit residual (Hz)",
+)
+style_legend(ax2)
+save_figure(fig2, results_dir / "direct_aw_dc_calibration_residual.png")
 
 available_examples = []
 for target in EXAMPLE_VOLTAGES_V:
@@ -810,64 +809,86 @@ for target in EXAMPLE_VOLTAGES_V:
     value = float(envelope_values[idx])
     if value not in available_examples:
         available_examples.append(value)
-fig3, axes3 = plt.subplots(
-    len(available_examples), 1, figsize=(9, 2.6 * len(available_examples)), sharex=True
+fig3, axes3 = new_figure(
+    figsize=(PAPER_WIDE[0], 1.8 * len(available_examples)),
+    nrows=len(available_examples),
+    ncols=1,
+    sharex=True,
 )
 axes3 = np.atleast_1d(axes3)
 for ax, voltage in zip(axes3, available_examples):
     result = per_voltage[voltage]
-    ax.plot(result["z_freq_Hz"], result["primary_response_V"], "o", ms=3, label=result["primary_method"])
+    ax.plot(
+        result["z_freq_Hz"],
+        result["primary_response_V"],
+        "o",
+        color=COLOR_OPTIMAL,
+        label=result["primary_method"],
+    )
     keep = frequency_keep_mask(result["z_freq_Hz"], FIXED_SPUR_BANDS_HZ)
     if np.any(~keep):
         ax.plot(
             result["z_freq_Hz"][~keep],
             result["primary_response_V"][~keep],
             "x",
-            color="C3",
-            ms=5,
+            color=COLOR_GRAY,
             label="Excluded fixed spur",
         )
     for lower_Hz, upper_Hz in FIXED_SPUR_BANDS_HZ:
-        ax.axvspan(lower_Hz, upper_Hz, color="C3", alpha=0.08)
+        ax.axvspan(lower_Hz, upper_Hz, color=COLOR_TRAD, alpha=0.08)
     fit = result["primary_fit"]
     if fit["success"]:
         ax.plot(
             fit["fit_freq_Hz"],
             fit["fit_response_V"],
             "-",
-            lw=1.2,
+            color=COLOR_TRAD,
             label=fit.get("model", "Selected fit").replace("_", " ").title(),
         )
-    ax.axvline(fit["center_Hz"], color="C3", ls="--", lw=0.9)
-    ax.set_ylabel("Response (V)")
+    ax.axvline(fit["center_Hz"], color=COLOR_TRAD, linestyle="--")
+    format_axis(ax, ylabel="Response (V)")
     ax.set_title(f"Envelope = {voltage:+.2f} V, center = {fit['center_Hz']:.1f} Hz")
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=8)
-axes3[-1].set_xlabel("Z RF frequency (Hz)")
-fig3.tight_layout()
-fig3.savefig(results_dir / "direct_aw_frequency_response_examples.png", dpi=150, bbox_inches="tight")
-show_or_close(fig3)
+    style_legend(ax)
+format_axis(axes3[-1], xlabel="Z RF frequency (Hz)")
+save_figure(fig3, results_dir / "direct_aw_frequency_response_examples.png")
 
-fig4, (ax4a, ax4b) = plt.subplots(2, 1, figsize=(8.5, 8), sharex=True)
+fig4, (ax4a, ax4b) = new_figure(
+    figsize=(PAPER_WIDE[0], 2.0 * PAPER_WIDE[1]),
+    nrows=2,
+    ncols=1,
+    sharex=True,
+)
 if pair_rows:
     pair_abs_v = np.array([row["abs_voltage_V"] for row in pair_rows])
     pair_pos = np.array([row["f_positive_Hz"] for row in pair_rows])
     pair_neg = np.array([row["f_negative_Hz"] for row in pair_rows])
     pair_delta = pair_pos - pair_neg
-    ax4a.plot(pair_abs_v, pair_pos, "o-", label="Positive envelope")
-    ax4a.plot(pair_abs_v, pair_neg, "s-", label="Negative envelope")
-    ax4b.axhline(0.0, color="black", lw=0.8)
-    ax4b.plot(pair_abs_v, pair_delta, "o-", color="C4")
-ax4a.set_ylabel("Peak frequency (Hz)")
+    ax4a.plot(
+        pair_abs_v,
+        pair_pos,
+        "o-",
+        color=COLOR_OPTIMAL,
+        label="Positive envelope",
+    )
+    ax4a.plot(
+        pair_abs_v,
+        pair_neg,
+        "s--",
+        color=COLOR_TRAD,
+        label="Negative envelope",
+    )
+    ax4b.axhline(0.0, color=COLOR_GRAY, linestyle="--")
+    ax4b.plot(pair_abs_v, pair_delta, "o-", color=COLOR_PURPLE)
+format_axis(ax4a, ylabel="Peak frequency (Hz)")
 ax4a.set_title("DirectAW sign symmetry")
-ax4a.grid(True, alpha=0.3)
-ax4a.legend(fontsize=8)
-ax4b.set_xlabel("Absolute envelope voltage (V)")
-ax4b.set_ylabel("f(+V) - f(-V) (Hz)")
-ax4b.grid(True, alpha=0.3)
-fig4.tight_layout()
-fig4.savefig(results_dir / "direct_aw_sign_symmetry.png", dpi=150, bbox_inches="tight")
-show_or_close(fig4)
+if pair_rows:
+    style_legend(ax4a)
+format_axis(
+    ax4b,
+    xlabel="Absolute envelope voltage (V)",
+    ylabel="f(+V) - f(-V) (Hz)",
+)
+save_figure(fig4, results_dir / "direct_aw_sign_symmetry.png")
 
 # %% Cell 7
 # ========== 结果保存 ==========

@@ -34,7 +34,7 @@ export type DeviceChannel = {
 
 export type Device = {
   id: string;
-  type: "DG4000" | "DG900" | "SDS";
+  type: "DG4000" | "DG900" | "GS200" | "DLC_PRO" | "SDS";
   label: string;
   resource: string;
   short_resource: string;
@@ -168,7 +168,91 @@ export type ScopeSettings = Pick<
   | "trigger"
 >;
 
-export type DeviceSnapshot = GeneratorSnapshot | ScopeSnapshot;
+export type CurrentSourceSnapshot = Omit<Device, "type" | "channels"> & {
+  type: "GS200";
+  idn: string;
+  mapping_key: string;
+  source_function: string;
+  output: boolean;
+  current_ma: number | null;
+  current_range_ma: number | null;
+  voltage_limit_v: number;
+  current_limit_ma: number;
+  min_current_ma: number;
+  max_current_ma: number;
+};
+
+export type CurrentSourceSettings = {
+  current_ma?: number;
+  output?: boolean;
+  confirm_output_enable?: boolean;
+};
+
+export type LaserSnapshot = Omit<Device, "type" | "channels"> & {
+  type: "DLC_PRO";
+  controller_serial: string;
+  system_type: string;
+  system_label: string;
+  firmware_version: string;
+  system_health_code: number;
+  system_health: string;
+  interlock_open: boolean;
+  front_key_locked: boolean;
+  emission: boolean;
+  laser_type: string;
+  laser_product_name: string;
+  laser_enabled: boolean;
+  laser_health_code: number;
+  laser_health: string;
+  laser_emission: boolean;
+  laser_head_model: string;
+  laser_head_serial: string;
+  current_set_ma: number;
+  current_actual_ma: number;
+  current_clip_ma: number;
+  current_clip_limit_ma: number;
+  min_current_ma: number;
+  max_current_ma: number;
+  temperature_set_c: number;
+  temperature_actual_c: number;
+  min_temperature_c: number;
+  max_temperature_c: number;
+  pzt_voltage_v: number;
+  pzt_actual_v: number;
+  min_pzt_voltage_v: number;
+  max_pzt_voltage_v: number;
+  scan_amplitude_vpp: number;
+  min_scan_amplitude_vpp: number;
+  max_scan_amplitude_vpp: number;
+  scan_frequency_hz: number;
+  scan_enabled: boolean;
+  scan_unit: string;
+  scan_output_channel: number;
+  remote_emission_control_enabled: boolean;
+  safety_keys: Record<string, string>;
+  state_known: boolean;
+};
+
+export type LaserSettings = {
+  current_set_ma?: number;
+  temperature_set_c?: number;
+  pzt_voltage_v?: number;
+  scan_amplitude_vpp?: number;
+  scan_enabled?: boolean;
+};
+
+export type LaserEmissionSettings = {
+  enabled: boolean;
+  safety_acknowledged?: boolean;
+  confirm_emission_enable?: boolean;
+  confirmation_text?: string;
+};
+
+export type DeviceSnapshot =
+  | GeneratorSnapshot
+  | ScopeSnapshot
+  | CurrentSourceSnapshot
+  | LaserSnapshot;
 
 export type ParameterValue = string | number | boolean | null | number[] | string[];
 export type ParameterValues = Record<string, ParameterValue>;

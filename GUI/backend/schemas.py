@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 
 class StrictModel(BaseModel):
@@ -29,7 +29,7 @@ class DeviceBase(StrictModel):
 
 
 class DeviceSummary(DeviceBase):
-    type: Literal["DG4000", "DG900", "SDS"]
+    type: Literal["DG4000", "DG900", "GS200", "DLC_PRO", "SDS"]
     channels: list[DeviceChannel]
 
 
@@ -124,8 +124,70 @@ class ScopeDeviceSnapshot(DeviceBase):
     trigger: ScopeTriggerSnapshot
 
 
+class CurrentSourceDeviceSnapshot(DeviceBase):
+    type: Literal["GS200"]
+    idn: str
+    mapping_key: str
+    source_function: str
+    output: bool
+    current_ma: float | None
+    current_range_ma: float | None
+    voltage_limit_v: float
+    current_limit_ma: float
+    min_current_ma: float
+    max_current_ma: float
+
+
+class LaserDeviceSnapshot(DeviceBase):
+    type: Literal["DLC_PRO"]
+    controller_serial: str
+    system_type: str
+    system_label: str
+    firmware_version: str
+    system_health_code: int
+    system_health: str
+    interlock_open: bool
+    front_key_locked: bool
+    emission: bool
+    laser_type: str
+    laser_product_name: str
+    laser_enabled: bool
+    laser_health_code: int
+    laser_health: str
+    laser_emission: bool
+    laser_head_model: str
+    laser_head_serial: str
+    current_set_ma: float
+    current_actual_ma: float
+    current_clip_ma: float
+    current_clip_limit_ma: float
+    min_current_ma: float
+    max_current_ma: float
+    temperature_set_c: float
+    temperature_actual_c: float
+    min_temperature_c: float
+    max_temperature_c: float
+    pzt_voltage_v: float
+    pzt_actual_v: float
+    min_pzt_voltage_v: float
+    max_pzt_voltage_v: float
+    scan_amplitude_vpp: float
+    min_scan_amplitude_vpp: float
+    max_scan_amplitude_vpp: float
+    scan_frequency_hz: float
+    scan_enabled: bool
+    scan_unit: str
+    scan_output_channel: int
+    remote_emission_control_enabled: bool
+    safety_keys: dict[str, str]
+    state_known: bool
+
+
 DeviceSnapshot = Annotated[
-    GeneratorDeviceSnapshot | ScopeDeviceSnapshot,
+    GeneratorDeviceSnapshot
+    | ScopeDeviceSnapshot
+    | CurrentSourceDeviceSnapshot
+    | LaserDeviceSnapshot,
     Field(discriminator="type"),
 ]
 
@@ -209,3 +271,57 @@ class ScopeSettings(StrictModel):
 
 class ScopeSettingsBody(StrictModel):
     settings: ScopeSettings
+
+
+class CurrentSourceSettings(StrictModel):
+    current_ma: float | None = None
+    output: bool | None = None
+    confirm_output_enable: bool = False
+
+    @model_validator(mode="after")
+    def require_setting(self):
+        if self.current_ma is None and self.output is None:
+            raise ValueError("电流源设置至少需要 current_ma 或 output")
+        return self
+
+
+class CurrentSourceSettingsBody(StrictModel):
+    settings: CurrentSourceSettings
+
+
+class LaserSettings(StrictModel):
+    current_set_ma: float | None = None
+    temperature_set_c: float | None = None
+    pzt_voltage_v: float | None = None
+    scan_amplitude_vpp: float | None = None
+    scan_enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def require_setting(self):
+        if all(
+            value is None
+            for value in (
+                self.current_set_ma,
+                self.temperature_set_c,
+                self.pzt_voltage_v,
+                self.scan_amplitude_vpp,
+                self.scan_enabled,
+            )
+        ):
+            raise ValueError("激光器设置至少需要一个控制量")
+        return self
+
+
+class LaserSettingsBody(StrictModel):
+    settings: LaserSettings
+
+
+class LaserEmissionSettings(StrictModel):
+    enabled: bool
+    safety_acknowledged: bool = False
+    confirm_emission_enable: bool = False
+    confirmation_text: str | None = None
+
+
+class LaserEmissionSettingsBody(StrictModel):
+    settings: LaserEmissionSettings

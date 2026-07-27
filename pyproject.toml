@@ -7,6 +7,9 @@ name = "exp-agent"
 version = "0.1.0"
 description = "实验自动化平台 — 仪器控制、数据采集与分析"
 requires-python = ">=3.10"
+dependencies = [
+  "toptica-lasersdk==3.3.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src", "."]
@@ -17,5 +20,6 @@ include = [
   "sensitivity_analysis*",
   "signal_generator*",
   "tec_controller*",
+  "toptica_laser*",
   "lab_workflows*",
 ]

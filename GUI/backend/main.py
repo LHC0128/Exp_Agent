@@ -17,7 +17,10 @@ from lab_workflows.clock_sync import synchronize_clocks
 from lab_workflows.common import find_project_root
 from lab_workflows.devices import discover_devices
 from lab_workflows.instrument_control import (
+    apply_current_source,
     apply_generator_channel,
+    apply_laser_emission,
+    apply_laser_settings,
     apply_scope,
     read_device,
 )
@@ -37,9 +40,12 @@ from lab_workflows.phase_calibration import calibrate_demod0_safely
 
 from .jobs import Job, manager
 from .schemas import (
+    CurrentSourceSettingsBody,
     DeviceSnapshot,
     DeviceSummary,
     GeneratorChannelSettingsBody,
+    LaserEmissionSettingsBody,
+    LaserSettingsBody,
     ScopeSettingsBody,
 )
 
@@ -161,6 +167,48 @@ def update_channel(
 def update_scope(device_id: str, body: ScopeSettingsBody):
     return _with_short_hardware_lock(
         lambda: apply_scope(
+            device_id,
+            body.settings.model_dump(exclude_unset=True),
+        )
+    )
+
+
+@app.put(
+    "/api/devices/{device_id}/current-source",
+    response_model=DeviceSnapshot,
+)
+def update_current_source(
+    device_id: str,
+    body: CurrentSourceSettingsBody,
+):
+    return _with_short_hardware_lock(
+        lambda: apply_current_source(
+            device_id,
+            body.settings.model_dump(exclude_unset=True),
+        )
+    )
+
+
+@app.put("/api/devices/{device_id}/laser", response_model=DeviceSnapshot)
+def update_laser(device_id: str, body: LaserSettingsBody):
+    return _with_short_hardware_lock(
+        lambda: apply_laser_settings(
+            device_id,
+            body.settings.model_dump(exclude_unset=True),
+        )
+    )
+
+
+@app.put(
+    "/api/devices/{device_id}/emission",
+    response_model=DeviceSnapshot,
+)
+def update_laser_emission(
+    device_id: str,
+    body: LaserEmissionSettingsBody,
+):
+    return _with_short_hardware_lock(
+        lambda: apply_laser_emission(
             device_id,
             body.settings.model_dump(exclude_unset=True),
         )

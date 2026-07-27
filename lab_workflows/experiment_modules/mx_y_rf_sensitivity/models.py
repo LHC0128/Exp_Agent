@@ -50,7 +50,7 @@ class MxYRFParams(ExperimentParams):
     noise_rate_sa_s: float = parameter(default=50000.0, external_name="NOISE_RATE_SA_S", label="噪声请求采样率", unit="Sa/s", group="advanced", minimum=1)
     noise_time_constant_s: float = parameter(default=1e-6, external_name="NOISE_TIME_CONSTANT_S", label="噪声时间常数", unit="s", group="advanced", minimum=0)
     noise_demod_order: int = parameter(default=4, external_name="NOISE_DEMOD_ORDER", label="噪声解调阶数", group="advanced", minimum=1)
-    low_freq_skip_hz: float = parameter(default=3.0, external_name="LOW_FREQ_SKIP_HZ", label="灵敏度低频跳过", unit="Hz", group="advanced", minimum=0)
+    low_freq_skip_hz: float = parameter(default=3.0, external_name="LOW_FREQ_SKIP_HZ", label="平坦段搜索最低频率", unit="Hz", group="advanced", minimum=0)
 
     demod_idx: int = parameter(default=0, external_name="DEMOD_IDX", label="HF2 Demod 索引", group="advanced", minimum=0)
     demod_osc_idx: int = parameter(default=0, external_name="DEMOD_OSC_IDX", label="HF2 振荡器索引", group="advanced", minimum=0)

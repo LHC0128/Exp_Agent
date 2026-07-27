@@ -12,6 +12,20 @@ import numpy as np
 import yaml
 
 from ...experiment_runtime import runtime_run_dir
+from ...plotting import (
+    COLOR_GRAY,
+    COLOR_GREEN,
+    COLOR_OPTIMAL,
+    COLOR_ORANGE,
+    COLOR_PURPLE,
+    COLOR_TRAD,
+    PAPER_STANDARD,
+    format_axis,
+    new_figure,
+    save_figure,
+    set_plot_style,
+    style_legend,
+)
 from .analysis_core import (
     absolute_dispersive_response,
     amplitude_gamma_to_hz,
@@ -25,7 +39,9 @@ from .analysis_core import (
 from .models import MxYRFParams
 
 matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
-import matplotlib.pyplot as plt
+
+
+SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ = 150.0
 
 
 def _builtin(value: Any) -> Any:
@@ -96,27 +112,26 @@ def _plot_full_analysis(
     dense_field_nt = dense_amplitude * calibration
     slope_v_per_ft = primary_slope / (calibration * 1e6)
 
-    fig, (ax1, ax2) = plt.subplots(
+    fig, (ax1, ax2) = new_figure(
+        (PAPER_STANDARD[0], PAPER_STANDARD[1] * 2.25),
         2,
         1,
-        figsize=(9, 8),
-        height_ratios=[1.2, 1],
+        height_ratios=[1.0, 1.0],
     )
     ax1.plot(
         field_nt[fit_mask],
         r_mean_v[fit_mask],
         "o",
-        ms=3.5,
-        label="Accepted R",
+        color=COLOR_OPTIMAL,
+        label="Data",
     )
     if np.any(bad_point_mask):
         ax1.plot(
             field_nt[bad_point_mask],
             r_mean_v[bad_point_mask],
             "x",
-            ms=7,
-            mew=1.5,
-            label="Excluded unstable point",
+            color=COLOR_TRAD,
+            label="Excluded",
         )
     ax1.plot(
         dense_field_nt,
@@ -124,26 +139,28 @@ def _plot_full_analysis(
             dense_amplitude,
             *response_fit.parameters,
         ),
-        "k--",
-        lw=1.5,
-        label=(
-            f"Absolute dispersive fit ({slope_v_per_ft:.3e} V/fT, "
-            f"R²={response_fit.r_squared:.3f})"
-        ),
+        "--",
+        color=COLOR_TRAD,
+        label=f"Fit ($R^2$={response_fit.r_squared:.3f})",
     )
     ax1.axvline(
         response_fit.center * calibration,
-        color="gray",
+        color=COLOR_GRAY,
         ls=":",
         alpha=0.5,
     )
-    ax1.set(
+    format_axis(
+        ax1,
         xlabel="Signed Y RF field amplitude (nT)",
         ylabel="Demod R (V)",
-        title="Y RF Amplitude Response",
     )
-    ax1.grid(True, alpha=0.3)
-    ax1.legend(fontsize=8)
+    ax1.text(
+        0.03,
+        0.08,
+        f"Slope = {slope_v_per_ft:.2e} V/fT",
+        transform=ax1.transAxes,
+    )
+    style_legend(ax1, loc="best")
 
     positive = frequency_hz > 0
     corrected_ft = sensitivity["corrected_ft_per_sqrt_hz"]
@@ -152,9 +169,8 @@ def _plot_full_analysis(
     ax2.plot(
         frequency_hz[positive],
         corrected_ft[positive],
-        color="C0",
-        lw=1.4,
-        label="Linewidth-corrected",
+        color=COLOR_OPTIMAL,
+        label="Corrected",
     )
     if np.any(flat_mask):
         flat_min_hz = float(frequency_hz[flat_mask].min())
@@ -162,50 +178,55 @@ def _plot_full_analysis(
         ax2.plot(
             frequency_hz[flat_mask],
             corrected_ft[flat_mask],
-            color="darkgreen",
-            lw=1.8,
-            label=f"Flat region: {flat_min_hz:.0f}-{flat_max_hz:.0f} Hz",
+            color=COLOR_GREEN,
+            label=f"Flat: {flat_min_hz:.0f}-{flat_max_hz:.0f} Hz",
         )
-        ax2.axvline(flat_max_hz, color="gray", ls=":", alpha=0.4, lw=0.8)
+        ax2.axvline(flat_max_hz, color=COLOR_GRAY, ls=":", alpha=0.5)
     ax2.plot(
         frequency_hz[positive],
         raw_ft[positive],
-        color="gray",
-        lw=0.5,
-        alpha=0.35,
+        color=COLOR_GRAY,
+        lw=0.7,
+        alpha=0.45,
         label="Raw",
     )
-    flat_median_ft = sensitivity["flat_median_ft_per_sqrt_hz"]
-    if np.isfinite(flat_median_ft) and flat_median_ft > 0:
-        ax2.axhline(
-            flat_median_ft,
-            color="darkgreen",
-            ls="--",
-            alpha=0.7,
-            label=f"Median = {flat_median_ft:.0f} fT/√Hz",
-        )
+    ax2.axhline(
+        SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ,
+        color=COLOR_PURPLE,
+        ls="--",
+        label=(
+            f"Reference: {SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ:.0f} "
+            "fT/√Hz"
+        ),
+    )
     if hwhm_hz is not None:
         ax2.axvline(
             hwhm_hz,
-            color="red",
+            color=COLOR_ORANGE,
             ls=":",
             alpha=0.5,
-            label=f"HWHM = {hwhm_hz:.0f} Hz",
+            label=f"HWHM: {hwhm_hz:.0f} Hz",
         )
-    ax2.set(
+    format_axis(
+        ax2,
         xlabel="Frequency (Hz)",
         ylabel="Sensitivity (fT/√Hz)",
-        title="Y RF Sensitivity Spectrum (Flat Region Median)",
     )
     ax2.set_xlim(0.5, max((hwhm_hz or 0.0) * 2, 1000.0))
     ax2.set_yscale("log")
-    ax2.grid(True, alpha=0.3, which="both")
-    ax2.legend(fontsize=8)
+    ax2.grid(True, which="both")
+    style_legend(
+        ax2,
+        loc="upper right",
+        fontsize=6.5,
+        ncol=2,
+        columnspacing=0.8,
+        handlelength=2.2,
+        labelspacing=0.25,
+    )
 
     filename = "full_analysis.png"
-    fig.tight_layout()
-    fig.savefig(results_dir / filename, dpi=160, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, results_dir / filename)
     return filename
 
 
@@ -345,9 +366,12 @@ def analyze(run_dir: Path) -> dict[str, Any]:
         low_freq_skip_hz=params.low_freq_skip_hz,
         y_rf_nt_per_vpp=params.y_rf_nt_per_vpp,
     )
-    if hwhm_hz is not None and not np.any(sensitivity["flat_mask"]):
+    if hwhm_hz is not None and not bool(
+        sensitivity["flat_detection_success"]
+    ):
         warnings.append(
-            "3 Hz 到 HWHM 的代表频段无有效 PSD 点，未报告灵敏度单值"
+            "自动平坦段识别失败，未报告灵敏度单值："
+            f"{sensitivity['flat_detection_reason']}"
         )
 
     np.savez(
@@ -381,22 +405,22 @@ def analyze(run_dir: Path) -> dict[str, Any]:
         float(amplitude_vpp.max()),
         1000,
     )
-    fig, ax = plt.subplots(figsize=(8.5, 5.2))
+    set_plot_style("paper")
+    fig, ax = new_figure()
     ax.plot(
         amplitude_vpp[fit_mask],
         r_mean_v[fit_mask],
         "o",
-        ms=3.5,
-        label="Accepted R",
+        color=COLOR_OPTIMAL,
+        label="Data",
     )
     if np.any(bad_point_mask):
         ax.plot(
             amplitude_vpp[bad_point_mask],
             r_mean_v[bad_point_mask],
             "x",
-            ms=7,
-            mew=1.5,
-            label="Excluded unstable point",
+            color=COLOR_TRAD,
+            label="Excluded",
         )
     ax.plot(
         dense_amplitude,
@@ -404,7 +428,8 @@ def analyze(run_dir: Path) -> dict[str, Any]:
             dense_amplitude,
             *response_fit.parameters,
         ),
-        "-",
+        "--",
+        color=COLOR_TRAD,
         label="Absolute dispersive fit",
     )
     if linear["success"]:
@@ -416,19 +441,17 @@ def analyze(run_dir: Path) -> dict[str, Any]:
             linear["slope"]
             * np.abs(x_local - response_fit.center)
             + linear["intercept"],
-            "--",
+            ":",
+            color=COLOR_GREEN,
             label="Central |V-V0| fit",
         )
-    ax.set(
+    format_axis(
+        ax,
         xlabel="Signed Y RF amplitude (Vpp)",
         ylabel="Demod R (V)",
-        title="Mx Y RF Absolute Dispersive Response",
     )
-    ax.grid(alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(results_dir / "amplitude_response.png", dpi=160)
-    plt.close(fig)
+    style_legend(ax)
+    save_figure(fig, results_dir / "amplitude_response.png")
 
     if (
         frequency_scan_hz is not None
@@ -440,12 +463,12 @@ def analyze(run_dir: Path) -> dict[str, Any]:
             float(frequency_scan_hz.max()),
             1000,
         )
-        fig, ax = plt.subplots(figsize=(8.5, 5.2))
+        fig, ax = new_figure()
         ax.plot(
             frequency_scan_hz,
             frequency_response_v,
             "o",
-            ms=3,
+            color=COLOR_OPTIMAL,
             label="Measured R",
         )
         ax.plot(
@@ -454,33 +477,34 @@ def analyze(run_dir: Path) -> dict[str, Any]:
                 dense_frequency,
                 *linewidth_fit.parameters,
             ),
-            "-",
+            "--",
+            color=COLOR_TRAD,
             label="R-Lorentzian fit",
         )
-        ax.set(
+        format_axis(
+            ax,
             xlabel="Y RF frequency (Hz)",
             ylabel="Demod R (V)",
-            title="Swept-Frequency Resonance Linewidth",
         )
-        ax.grid(alpha=0.3)
-        ax.legend()
-        fig.tight_layout()
-        fig.savefig(results_dir / "frequency_linewidth.png", dpi=160)
-        plt.close(fig)
+        style_legend(ax)
+        save_figure(fig, results_dir / "frequency_linewidth.png")
 
     positive = frequency_hz > 0
-    fig, ax = plt.subplots(figsize=(8.5, 5.2))
-    ax.loglog(frequency_hz[positive], np.sqrt(psd_r[positive]), label="R ASD")
-    ax.set(
+    fig, ax = new_figure()
+    ax.loglog(
+        frequency_hz[positive],
+        np.sqrt(psd_r[positive]),
+        color=COLOR_OPTIMAL,
+        label="R ASD",
+    )
+    format_axis(
+        ax,
         xlabel="Frequency (Hz)",
         ylabel="ASD (V/√Hz)",
-        title="Zero-Y-RF R Noise Spectrum",
     )
-    ax.grid(which="both", alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(results_dir / "noise_psd.png", dpi=160)
-    plt.close(fig)
+    ax.grid(which="both")
+    style_legend(ax)
+    save_figure(fig, results_dir / "noise_psd.png")
 
     full_analysis_file = _plot_full_analysis(
         results_dir=results_dir,
@@ -514,15 +538,41 @@ def analyze(run_dir: Path) -> dict[str, Any]:
         "linewidth": linewidth_result,
         "actual_noise_rates_sa_s": rates,
         "flat_band_hz": (
-            [params.low_freq_skip_hz, hwhm_hz]
-            if hwhm_hz is not None
+            sensitivity["flat_band_hz"].tolist()
+            if bool(sensitivity["flat_detection_success"])
             else None
         ),
+        "flat_detection": {
+            "success": sensitivity["flat_detection_success"],
+            "reason": sensitivity["flat_detection_reason"],
+            "candidate_count": sensitivity[
+                "flat_detection_candidate_count"
+            ],
+            "median_cv": sensitivity["flat_detection_median_cv"],
+            "median_p10_p90_span": sensitivity[
+                "flat_detection_median_p10_p90_span"
+            ],
+            "drift": sensitivity["flat_detection_drift"],
+            "relative_mad": sensitivity[
+                "flat_detection_relative_mad"
+            ],
+            "rise_sigma": sensitivity["flat_detection_rise_sigma"],
+            "low_boundary_p10_p90_hz": sensitivity[
+                "flat_detection_low_boundary_p10_p90_hz"
+            ],
+            "high_boundary_p10_p90_hz": sensitivity[
+                "flat_detection_high_boundary_p10_p90_hz"
+            ],
+        },
         "flat_median_vpp_per_sqrt_hz": sensitivity[
             "flat_median_vpp_per_sqrt_hz"
         ],
         "flat_median_ft_per_sqrt_hz": sensitivity.get(
             "flat_median_ft_per_sqrt_hz"
+        ),
+        "plot_profile": "paper",
+        "sensitivity_reference_ft_per_sqrt_hz": (
+            SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ
         ),
         "warnings": warnings,
         "files": [

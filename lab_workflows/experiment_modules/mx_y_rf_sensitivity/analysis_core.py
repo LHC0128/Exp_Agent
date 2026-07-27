@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 from scipy import signal
 from scipy.optimize import curve_fit
+from scipy.stats import theilslopes
 
 from sensitivity_analysis.fitting import LARMOR_PER_NT
 
@@ -359,6 +360,330 @@ def average_welch_psd(waveforms: list[np.ndarray], sample_rates: list[float]) ->
     return frequencies, np.mean(np.asarray(spectra), axis=0)
 
 
+_FLAT_BIN_COUNTS = (30, 40, 50, 60)
+_FLAT_OBSERVATION_FACTORS = (1.5, 2.0, 2.5)
+_FLAT_MEDIAN_CV_MAX = 0.03
+_FLAT_MEDIAN_SPAN_MAX = 0.08
+_FLAT_DRIFT_MAX = 0.20
+_FLAT_RELATIVE_MAD_MAX = 0.15
+_FLAT_RISE_SIGMA_MIN = 3.0
+
+
+def _fit_nonnegative_hinges(
+    design: np.ndarray,
+    values: np.ndarray,
+) -> tuple[float, np.ndarray, float]:
+    """拟合截距和两个非负铰链斜率，并用 Huber 损失评分。"""
+    best: tuple[float, np.ndarray, float] | None = None
+    for columns in ((0, 1, 2), (0, 1), (0, 2), (0,)):
+        coefficients = np.zeros(3, dtype=float)
+        coefficients[list(columns)] = np.linalg.lstsq(
+            design[:, columns],
+            values,
+            rcond=None,
+        )[0]
+        if coefficients[1] < -1e-12 or coefficients[2] < -1e-12:
+            continue
+        residual = values - design @ coefficients
+        centered = residual - np.median(residual)
+        scale = (
+            1.4826 * float(np.median(np.abs(centered)))
+            + np.finfo(float).eps
+        )
+        threshold = 1.5 * scale
+        absolute = np.abs(centered)
+        loss = float(
+            np.mean(
+                np.where(
+                    absolute <= threshold,
+                    0.5 * absolute**2,
+                    threshold * (absolute - 0.5 * threshold),
+                )
+            )
+        )
+        if best is None or loss < best[0]:
+            best = (loss, coefficients, scale)
+    if best is None:
+        raise RuntimeError("平坦段铰链模型无法得到非负斜率")
+    return best
+
+
+def _detect_flat_band_variant(
+    frequency_hz: np.ndarray,
+    sensitivity: np.ndarray,
+    *,
+    hwhm_hz: float,
+    minimum_frequency_hz: float,
+    bin_count: int,
+    observation_factor: float,
+) -> dict[str, float] | None:
+    observation_max_hz = min(
+        float(np.max(frequency_hz)),
+        observation_factor * hwhm_hz,
+    )
+    valid = (
+        np.isfinite(frequency_hz)
+        & np.isfinite(sensitivity)
+        & (sensitivity > 0)
+        & (frequency_hz >= minimum_frequency_hz)
+        & (frequency_hz <= observation_max_hz)
+    )
+    frequency = frequency_hz[valid]
+    values = sensitivity[valid]
+    if frequency.size < 24 or float(np.ptp(frequency)) <= 0:
+        return None
+
+    log_values = np.log(values)
+    edges = np.linspace(
+        float(np.min(frequency)),
+        float(np.max(frequency)),
+        bin_count + 1,
+    )
+    binned_frequency: list[float] = []
+    binned_log_values: list[float] = []
+    for index, (lower, upper) in enumerate(zip(edges[:-1], edges[1:])):
+        mask = (frequency >= lower) & (
+            (frequency < upper)
+            if index < bin_count - 1
+            else (frequency <= upper)
+        )
+        if np.count_nonzero(mask) < 3:
+            continue
+        binned_frequency.append(float(np.median(frequency[mask])))
+        binned_log_values.append(float(np.median(log_values[mask])))
+
+    x = np.asarray(binned_frequency, dtype=float)
+    z = np.asarray(binned_log_values, dtype=float)
+    n_bins = x.size
+    minimum_flat_bins = max(8, int(round(0.18 * n_bins)))
+    minimum_high_bins = max(4, int(round(0.10 * n_bins)))
+    if n_bins < minimum_flat_bins + minimum_high_bins:
+        return None
+
+    best: tuple[float, int, int, np.ndarray, float] | None = None
+    for low_index in range(
+        0,
+        n_bins - minimum_flat_bins - minimum_high_bins + 1,
+    ):
+        for high_index in range(
+            low_index + minimum_flat_bins - 1,
+            n_bins - minimum_high_bins,
+        ):
+            design = np.column_stack(
+                (
+                    np.ones(n_bins),
+                    np.maximum(0.0, x[low_index] - x),
+                    np.maximum(0.0, x - x[high_index]),
+                )
+            )
+            loss, coefficients, scale = _fit_nonnegative_hinges(
+                design,
+                z,
+            )
+            candidate = (
+                loss,
+                low_index,
+                high_index,
+                coefficients,
+                scale,
+            )
+            if best is None or candidate[0] < best[0]:
+                best = candidate
+    if best is None:
+        return None
+
+    _, low_index, high_index, coefficients, scale = best
+    low_hz = (
+        float(x[low_index])
+        if coefficients[1] * (x[low_index] - x[0]) > scale
+        else float(np.min(frequency))
+    )
+    high_hz = float(x[high_index])
+    flat = (frequency >= low_hz) & (frequency <= high_hz)
+    flat_bins = (x >= low_hz) & (x <= high_hz)
+    if np.count_nonzero(flat) < 8 or np.count_nonzero(flat_bins) < 3:
+        return None
+
+    flat_x = x[flat_bins]
+    flat_z = z[flat_bins]
+    slope = float(theilslopes(flat_z, flat_x)[0])
+    drift = abs(
+        float(
+            np.expm1(
+                np.clip(slope * float(np.ptp(flat_x)), -50.0, 50.0)
+            )
+        )
+    )
+    log_mad = 1.4826 * float(
+        np.median(np.abs(flat_z - np.median(flat_z)))
+    )
+    relative_mad = float(np.expm1(min(log_mad, 50.0)))
+    rise_sigma = float(
+        coefficients[2] * (x[-1] - high_hz) / scale
+    )
+    return {
+        "low_hz": low_hz,
+        "high_hz": high_hz,
+        "median": float(np.median(values[flat])),
+        "drift": drift,
+        "relative_mad": relative_mad,
+        "rise_sigma": rise_sigma,
+    }
+
+
+def detect_flat_sensitivity_band(
+    frequency_hz: np.ndarray,
+    sensitivity: np.ndarray,
+    *,
+    hwhm_hz: float | None,
+    minimum_frequency_hz: float,
+) -> dict[str, Any]:
+    """自动识别连续平坦段，并验证不同分析设置下的中位数稳定性。"""
+    frequency = np.asarray(frequency_hz, dtype=float)
+    values = np.asarray(sensitivity, dtype=float)
+    empty_mask = np.zeros_like(values, dtype=bool)
+    empty = {
+        "success": False,
+        "reason": "",
+        "band_hz": np.asarray([np.nan, np.nan], dtype=float),
+        "mask": empty_mask,
+        "median": float("nan"),
+        "candidate_count": 0,
+        "median_cv": float("nan"),
+        "median_p10_p90_span": float("nan"),
+        "drift": float("nan"),
+        "relative_mad": float("nan"),
+        "rise_sigma": float("nan"),
+        "low_boundary_p10_p90_hz": np.asarray(
+            [np.nan, np.nan],
+            dtype=float,
+        ),
+        "high_boundary_p10_p90_hz": np.asarray(
+            [np.nan, np.nan],
+            dtype=float,
+        ),
+    }
+    if frequency.shape != values.shape:
+        raise ValueError("灵敏度与频率轴形状不一致")
+    if hwhm_hz is None or not np.isfinite(hwhm_hz) or hwhm_hz <= 0:
+        return {**empty, "reason": "缺少有效 HWHM，无法确定平台搜索尺度"}
+
+    candidates = [
+        candidate
+        for bin_count in _FLAT_BIN_COUNTS
+        for observation_factor in _FLAT_OBSERVATION_FACTORS
+        if (
+            candidate := _detect_flat_band_variant(
+                frequency,
+                values,
+                hwhm_hz=float(hwhm_hz),
+                minimum_frequency_hz=float(minimum_frequency_hz),
+                bin_count=bin_count,
+                observation_factor=observation_factor,
+            )
+        )
+        is not None
+    ]
+    if len(candidates) < 6:
+        return {
+            **empty,
+            "reason": "有效平台候选少于 6 组",
+            "candidate_count": len(candidates),
+        }
+
+    medians = np.asarray(
+        [item["median"] for item in candidates],
+        dtype=float,
+    )
+    median_of_medians = float(np.median(medians))
+    median_cv = (
+        1.4826
+        * float(np.median(np.abs(medians - median_of_medians)))
+        / median_of_medians
+    )
+    median_span = float(
+        (np.percentile(medians, 90) - np.percentile(medians, 10))
+        / median_of_medians
+    )
+    low_boundaries = np.asarray(
+        [item["low_hz"] for item in candidates],
+        dtype=float,
+    )
+    high_boundaries = np.asarray(
+        [item["high_hz"] for item in candidates],
+        dtype=float,
+    )
+    drift = float(np.median([item["drift"] for item in candidates]))
+    relative_mad = float(
+        np.median([item["relative_mad"] for item in candidates])
+    )
+    rise_sigma = float(
+        np.median([item["rise_sigma"] for item in candidates])
+    )
+
+    failures: list[str] = []
+    if median_cv > _FLAT_MEDIAN_CV_MAX:
+        failures.append(
+            f"中位数稳健 CV={median_cv:.1%}>{_FLAT_MEDIAN_CV_MAX:.1%}"
+        )
+    if median_span > _FLAT_MEDIAN_SPAN_MAX:
+        failures.append(
+            "中位数 P10-P90 跨度="
+            f"{median_span:.1%}>{_FLAT_MEDIAN_SPAN_MAX:.1%}"
+        )
+    if drift > _FLAT_DRIFT_MAX:
+        failures.append(
+            f"平台漂移={drift:.1%}>{_FLAT_DRIFT_MAX:.1%}"
+        )
+    if relative_mad > _FLAT_RELATIVE_MAD_MAX:
+        failures.append(
+            "平台相对 MAD="
+            f"{relative_mad:.1%}>{_FLAT_RELATIVE_MAD_MAX:.1%}"
+        )
+    if rise_sigma < _FLAT_RISE_SIGMA_MIN:
+        failures.append(
+            f"高频上升证据={rise_sigma:.1f}σ<{_FLAT_RISE_SIGMA_MIN:.1f}σ"
+        )
+
+    low_hz = float(np.median(low_boundaries))
+    high_hz = float(np.median(high_boundaries))
+    flat_mask = (
+        np.isfinite(frequency)
+        & np.isfinite(values)
+        & (values > 0)
+        & (frequency >= low_hz)
+        & (frequency <= high_hz)
+    )
+    if not np.any(flat_mask):
+        failures.append("自动平台区间内没有有效频谱点")
+    success = not failures
+    return {
+        "success": success,
+        "reason": "" if success else "；".join(failures),
+        "band_hz": np.asarray([low_hz, high_hz], dtype=float),
+        "mask": flat_mask if success else empty_mask,
+        "median": (
+            float(np.median(values[flat_mask]))
+            if success
+            else float("nan")
+        ),
+        "candidate_count": len(candidates),
+        "median_cv": median_cv,
+        "median_p10_p90_span": median_span,
+        "drift": drift,
+        "relative_mad": relative_mad,
+        "rise_sigma": rise_sigma,
+        "low_boundary_p10_p90_hz": np.percentile(
+            low_boundaries,
+            [10, 90],
+        ),
+        "high_boundary_p10_p90_hz": np.percentile(
+            high_boundaries,
+            [10, 90],
+        ),
+    }
+
+
 def sensitivity_spectrum(
     psd_r_v2_per_hz: np.ndarray,
     frequency_hz: np.ndarray,
@@ -376,18 +701,40 @@ def sensitivity_spectrum(
     if hwhm_hz is not None and hwhm_hz > 0:
         correction = np.sqrt(1.0 + (np.asarray(frequency_hz, dtype=float) / hwhm_hz) ** 2)
     corrected_vpp = raw_vpp * correction
-    flat_mask = np.zeros_like(raw_vpp, dtype=bool)
-    median_vpp = float("nan")
-    if hwhm_hz is not None and hwhm_hz >= low_freq_skip_hz:
-        flat_mask = (frequency_hz >= low_freq_skip_hz) & (frequency_hz <= hwhm_hz) & np.isfinite(corrected_vpp)
-        if np.any(flat_mask):
-            median_vpp = float(np.median(corrected_vpp[flat_mask]))
+    flat = detect_flat_sensitivity_band(
+        np.asarray(frequency_hz, dtype=float),
+        corrected_vpp,
+        hwhm_hz=hwhm_hz,
+        minimum_frequency_hz=low_freq_skip_hz,
+    )
+    median_vpp = float(flat["median"])
     result: dict[str, Any] = {
         "raw_vpp_per_sqrt_hz": raw_vpp,
         "corrected_vpp_per_sqrt_hz": corrected_vpp,
         "correction_factor": correction,
-        "flat_mask": flat_mask,
+        "flat_mask": flat["mask"],
+        "flat_band_hz": flat["band_hz"],
         "flat_median_vpp_per_sqrt_hz": median_vpp,
+        "flat_detection_success": np.bool_(flat["success"]),
+        "flat_detection_reason": np.str_(flat["reason"]),
+        "flat_detection_candidate_count": np.int64(
+            flat["candidate_count"]
+        ),
+        "flat_detection_median_cv": np.float64(flat["median_cv"]),
+        "flat_detection_median_p10_p90_span": np.float64(
+            flat["median_p10_p90_span"]
+        ),
+        "flat_detection_drift": np.float64(flat["drift"]),
+        "flat_detection_relative_mad": np.float64(
+            flat["relative_mad"]
+        ),
+        "flat_detection_rise_sigma": np.float64(flat["rise_sigma"]),
+        "flat_detection_low_boundary_p10_p90_hz": flat[
+            "low_boundary_p10_p90_hz"
+        ],
+        "flat_detection_high_boundary_p10_p90_hz": flat[
+            "high_boundary_p10_p90_hz"
+        ],
     }
     if y_rf_nt_per_vpp > 0:
         factor = y_rf_nt_per_vpp * 1e6

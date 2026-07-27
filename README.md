@@ -20,6 +20,7 @@ src/
   sensitivity_analysis/   # 灵敏度拟合、汇总与分析
   signal_generator/       # DG4000 / DG900 控制
   tec_controller/         # TEC103 控制
+  toptica_laser/          # TOPTICA DLC pro Probe 激光控制
 
 experiments/
   *.ipynb                 # 交互式实验 Notebook
@@ -33,6 +34,7 @@ params/                   # YAML 配置（映射与安全限值）
   experiments/            # 正式实验的版本化默认参数
 lab_workflows/            # GUI 与命令行共用的实验契约、参数模型和安全步骤
   experiment_modules/     # 新模式实验的模型、采集工作流与离线分析器
+  plotting/               # 论文图（默认）与 A0 海报共享绘图规范
 GUI/                      # 本地 Web 实验控制台
 data/                     # 原始实验数据
 results/                  # 结果图表
@@ -48,6 +50,7 @@ results/                  # 结果图表
 | `lockin_amplifier` | Zurich Instruments HF2 | Demod、DAQ、AuxOut 配置 |
 | `gs200` | Yokogawa GS200 | 主磁场电流源控制 |
 | `tec_controller` | TEC103 | 温控器串口控制 |
+| `toptica_laser` | TOPTICA DLC pro | Probe 激光电流、温度、PZT 与扫描控制 |
 | `sensitivity_analysis` | 分析工具 | 拟合、灵敏度计算、结果汇总 |
 
 相关说明可见：
@@ -57,11 +60,13 @@ results/                  # 结果图表
 - `docs/lockin_amplifier.md`
 - `docs/gs200.md`
 - `docs/tec_controller.md`
+- `docs/toptica_dlc_pro.md`
 
 ## GUI 基础使用
 
-GUI 是运行在实验电脑本机的 Web 控制台，可用于读取和设置 DG4000、DG900 Pro、
-SDS 示波器等仪器，并运行仓库中已接入的实验流程。
+GUI 是运行在实验电脑本机的 Web 控制台，可用于读取和设置 GS200 主磁场电流源、
+TOPTICA DLC pro Probe 激光、DG4000、DG900 Pro、SDS 示波器等仪器，并运行仓库中
+已接入的实验流程。
 
 ### 首次安装
 
@@ -97,11 +102,11 @@ Set-Location D:\Code\exp_agent\GUI
 
 1. 进入“仪器控制”页面，选择左侧设备；页面会自动回读设备当前参数。
 2. 使用“读取设备参数”按钮可再次刷新仪器状态。
-3. 在“基础波形”“调制”或“Burst”标签中修改参数。
-4. 点击“应用并回读”；写入前会检查 `params/safety_limits.yaml`，写入后以仪器实际回读值更新页面。
+3. 信号发生器可在“基础波形”“调制”或“Burst”标签中修改参数；GS200 只开放主磁场电流设定值和输出开关；DLC pro 开放电流、温度、PZT、扫描幅度和扫描启停，扫描频率只读。
+4. 点击“应用并回读”；写入前会检查 `params/safety_limits.yaml`，写入后以仪器实际回读值更新页面。GS200 从 OFF 切换到 ON 时会二次确认；DLC pro 的远程 Emission ON 默认禁止，安全流程见 `docs/toptica_dlc_pro.md`。
 5. 实验结束后，在启动 GUI 的 PowerShell 窗口按 `Ctrl+C` 停止服务。
 
-“实验中心”统一展示 26 个正式 Python 采集入口，并提供动态参数、默认值保存、
+“实验中心”统一展示 32 个正式 Python 采集入口，并提供动态参数、默认值保存、
 无副作用预检、运行日志、安全停止和离线重新分析。每张实验卡片同时显示对应的
 采集程序和独立分析程序；没有独立分析脚本时会明确标注。`*.ipynb` 不进入实验中心，
 `*_plot.py` 只作为对应实验的分析器。卡片还会明确显示“新模式”或“旧模式”；完整
@@ -131,7 +136,7 @@ experiments ───┘
 - `legacy_script`：过渡期兼容模式，仍从旧脚本常量生成参数并通过隔离适配器执行。
   它不会被当作新实验模板。
 
-当前共有 7 个新模式实验和 19 个旧模式实验。GUI 参数表单只展示新模式模型显式
+当前共有 14 个新模式实验和 18 个旧模式实验。GUI 参数表单只展示新模式模型显式
 声明的字段，不会因为工作流中新增一个全大写运行时常量而意外增加表单项目。
 
 `t2-calibration` 已迁移为强类型光学 FID 工作流：保持 `T2_Calibration` 数据目录与
@@ -163,20 +168,30 @@ experiments ───┘
 - `XY_DirectAW_DC_Calibration.py` / `XY_DirectAW_DC_Calibration_plot.py`
 - `Noise_Spectrum_XY_Demod3_R.py` / `Noise_Spectrum_XY_Demod3_R_plot.py`
 - `Mx_Y_RF_Sensitivity.py` / `Mx_Y_RF_Sensitivity_plot.py`
+- `Mx_Main_Field_Calibration.py` / `Mx_Main_Field_Calibration_plot.py`
+- `Mx_Main_Field_Noise_Spectrum.py` / `Mx_Main_Field_Noise_Spectrum_plot.py`
+- `Mx_Main_Field_Scope_Noise_Spectrum.py` / `Mx_Main_Field_Scope_Noise_Spectrum_plot.py`
 - `Mx_Z_Field_Calibration.py` / `Mx_Z_Field_Calibration_plot.py`
+- `Mx_Z_Noise_Spectrum.py` / `Mx_Z_Noise_Spectrum_plot.py`
+- `Mx_XY_Residual_Field_Calibration.py` / `Mx_XY_Residual_Field_Calibration_plot.py`
 
 ## 当前实验清单
 
 | 方向 | 主要入口 | 相关文档 |
 |---|---|---|
 | 光散粒噪声 | `experiments/Photon_shot_noise.py` | `docs/Photon_shot_noise.md` |
-| 热态投影噪声 | `experiments/Projection_noise.py` | `docs/Projection_noise.md` |
+| 原子自旋投影噪声（SDS） | `experiments/Projection_noise.py`、`experiments/Projection_noise_plot.py` | `docs/Projection_noise.md` |
 | 静磁场灵敏度 | `experiments/Static_Magnetic_Field_Sensitivity.py`、`experiments/Static_Magnetic_Field_Sensitivity_Optimize.py` | `docs/static_mag_sens_v2.md` |
 | Mx Y 向 RF 场灵敏度 | `experiments/Mx_Y_RF_Sensitivity.py`、`experiments/Mx_Y_RF_Sensitivity_plot.py` | `docs/mx_y_rf_sensitivity.md` |
+| Mx 主磁场频率标定 | `experiments/Mx_Main_Field_Calibration.py`、`experiments/Mx_Main_Field_Calibration_plot.py` | `docs/mx_main_field_calibration.md` |
+| Mx 主磁场控制噪声谱 | `experiments/Mx_Main_Field_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Noise_Spectrum_plot.py` | `docs/mx_main_field_noise_spectrum.md` |
+| Mx 主磁场示波器噪声谱（固定 X/Y DC 补偿，可选 AC/DC 耦合） | `experiments/Mx_Main_Field_Scope_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Scope_Noise_Spectrum_plot.py` | `docs/mx_main_field_scope_noise_spectrum.md` |
 | Mx 高主场 Z 磁场频率标定 | `experiments/Mx_Z_Field_Calibration.py`、`experiments/Mx_Z_Field_Calibration_plot.py` | `docs/mx_z_field_calibration.md` |
+| Mx Z 直流控制噪声谱 | `experiments/Mx_Z_Noise_Spectrum.py`、`experiments/Mx_Z_Noise_Spectrum_plot.py` | `docs/mx_z_noise_spectrum.md` |
+| Mx XY 剩磁二维校准（SDS） | `experiments/Mx_XY_Residual_Field_Calibration.py`、`experiments/Mx_XY_Residual_Field_Calibration_plot.py` | `docs/mx_xy_residual_field_calibration.md` |
 | T1 / T2 标定 | `experiments/T1_Calibration.py`、`experiments/T2_Calibration.py` | `docs/T1_calibration.md`、`docs/T2_relaxation.md` |
 | X/Y 补偿与通道验证 | `experiments/XY_Compensation_Calibration.ipynb`、`experiments/XY_Channel_Calibration.ipynb`、`experiments/XY_AM_Transfer.ipynb`、`experiments/XY_MOD_ZeroOffset.ipynb`、`experiments/XY_Output_Verification.ipynb` | `docs/XY_Compensation_Calibration.md`、`docs/z_field_calibration.md` |
-| 噪声谱测量 | `experiments/Noise_Spectrum_XY_Ctrl.ipynb`、`experiments/Noise_Spectrum_XY_Ctrl_v2.ipynb` | `docs/noise_spectrum_xy_ctrl.md` |
+| XY 控制噪声谱测量 | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
 | Demod3 R 噪声谱测量 | `experiments/Noise_Spectrum_XY_Demod3_R.py`、`experiments/Noise_Spectrum_XY_Demod3_R_plot.py` | `docs/noise_spectrum_xy_demod3_r.md` |
 | MORS 相关 | `experiments/MORS_feasibility_test.ipynb`、`experiments/MORS_feasibility_test_v2.ipynb`、`experiments/MORS_polarization_pulsed.ipynb` | `docs/MORS_polarization.md` |
 | RF 场灵敏度 Notebook | `experiments/RF_Field_Sensitivity.ipynb`、`experiments/RF_Field_Sensitivity_AW.ipynb` | `docs/rf_field_measurement.md`、`docs/rf_field_measurement_2.md` |
@@ -205,6 +220,10 @@ data/<实验类型>/MMDD_HHMM_tag/
 ```
 
 分析脚本应尽量只依赖本地数据，不依赖在线仪器状态。
+
+所有新增或重构的 Python 实验图默认使用 `lab_workflows.plotting` 的 `paper` 配置；
+制作 A0 海报面板时显式选择 `a0_poster`。尺寸、配色、导出和科研表达约定见
+`docs/plotting_style.md`。
 
 ## 配置管理
 

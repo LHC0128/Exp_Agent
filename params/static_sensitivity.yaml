@@ -1,19 +1,19 @@
 run_tag: sens
 pump_laser_power: 0.5
 probe_laser_power: 0.2
-temperature: 100
-main_magnetic_field: 1.03
+temperature: 120
+main_magnetic_field: 9.28
 x_magnetic_field: 0
 y_magnetic_field: 0
-ramp_low: -0.1
-ramp_high: 0.1
+ramp_low: -0.4
+ramp_high: 0.4
 ramp_freq: 1
 ramp_symmetry: 20
 daq_duration: 1
-pump_mod_freq: 10000
+pump_mod_freq: 90000
 pump_mod_amplitude: 0.18
 pump_mod_duty: 5
-noise_n_avg: 10
+noise_n_avg: 1
 noise_duration: 1
 temp_switch: 5
 time_sequence: 10
@@ -33,7 +33,7 @@ temp_stable_reads: 3
 temp_poll_interval_s: 5
 max_temp_wait_s: 1200
 gs200_current_ranges:
-- 0.001
+- 0.01
 gs200_range_headroom: 1.2
 gs200_range_settle_time: 1
 z_v_to_nt: 3517

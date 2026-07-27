@@ -9,15 +9,26 @@ import matplotlib
 import numpy as np
 import yaml
 
-matplotlib.use(os.environ.get("MPLBACKEND", "TkAgg"))
-import matplotlib.pyplot as plt
+matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
 
 from lab_workflows.experiment_runtime import runtime_run_dir
+from lab_workflows.plotting import (
+    COLOR_GRAY,
+    COLOR_OPTIMAL,
+    COLOR_TRAD,
+    PAPER_WIDE,
+    format_axis,
+    new_figure,
+    save_figure,
+    set_plot_style,
+    style_legend,
+)
 
 from .analysis_core import analyze_r_matrix
 
 
 def main() -> None:
+    set_plot_style("paper")
     run_dir = runtime_run_dir()
     raw_path = run_dir / "raw" / "demod3_r_mean_matrix.npz"
     config_path = run_dir / "experiment_config.yaml"
@@ -86,48 +97,51 @@ def main() -> None:
         float(analysis.calibrated_control_frequency_hz[0]),
         float(analysis.calibrated_control_frequency_hz[-1]),
     ]
-    fig, ax = plt.subplots(figsize=(9, 6))
+    fig, ax = new_figure(kind="square")
     image = ax.imshow(r_matrix, aspect="auto", origin="lower", extent=extent, cmap="viridis")
-    ax.set_xlabel("Demod3 frequency (Hz)")
-    ax.set_ylabel("Calibrated control frequency (Hz)")
-    ax.set_title("Mean Demod3 R matrix")
+    format_axis(
+        ax,
+        xlabel="Demod3 frequency (Hz)",
+        ylabel="Calibrated control frequency (Hz)",
+    )
     fig.colorbar(image, ax=ax, label="Mean R (V)")
-    fig.tight_layout()
-    fig.savefig(results_dir / "demod3_r_matrix.png", dpi=160)
-    plt.close(fig)
+    save_figure(fig, results_dir / "demod3_r_matrix.png")
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = new_figure()
     inlier = calibration.inlier_mask
     ax.scatter(
         analysis.ridge_envelope_v[~inlier],
         analysis.ridge_frequency_hz[~inlier],
-        s=18,
-        color="tab:red",
+        color=COLOR_TRAD,
         label="Rejected ridge points",
     )
     ax.scatter(
         analysis.ridge_envelope_v[inlier],
         analysis.ridge_frequency_hz[inlier],
-        s=18,
-        color="tab:blue",
+        color=COLOR_OPTIMAL,
         label="Calibration ridge points",
     )
     x_line = np.linspace(float(np.min(envelope)), float(np.max(envelope)), 300)
     ax.plot(
         x_line,
         calibration.slope_hz_per_v * x_line + calibration.intercept_hz,
-        color="black",
+        color=COLOR_GRAY,
         label="Robust linear fit",
     )
-    ax.set_xlabel("DirectAW envelope (V)")
-    ax.set_ylabel("Ridge frequency (Hz)")
-    ax.set_title("Demod3 R ridge calibration")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(results_dir / "calibration.png", dpi=160)
-    plt.close(fig)
+    format_axis(
+        ax,
+        xlabel="DirectAW envelope (V)",
+        ylabel="Ridge frequency (Hz)",
+    )
+    style_legend(ax)
+    save_figure(fig, results_dir / "calibration.png")
 
-    fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True)
+    fig, axes = new_figure(
+        figsize=(PAPER_WIDE[0], 2.0 * PAPER_WIDE[1]),
+        nrows=2,
+        ncols=2,
+        sharex=True,
+    )
     labels = (
         (0, "Linewidth (Hz)"),
         (1, "Fit amplitude"),
@@ -135,15 +149,16 @@ def main() -> None:
         (3, "Frequency offset (Hz)"),
     )
     for ax, (parameter_idx, label) in zip(axes.flat, labels, strict=True):
-        ax.plot(demod3_frequency, analysis.fit_parameters[:, parameter_idx], ".-", ms=3)
-        ax.set_ylabel(label)
-        ax.grid(alpha=0.25)
+        ax.plot(
+            demod3_frequency,
+            analysis.fit_parameters[:, parameter_idx],
+            ".-",
+            color=COLOR_OPTIMAL,
+        )
+        format_axis(ax, ylabel=label)
     for ax in axes[-1]:
-        ax.set_xlabel("Demod3 frequency (Hz)")
-    fig.suptitle("Demod3 R profile fits")
-    fig.tight_layout()
-    fig.savefig(results_dir / "r_spectra.png", dpi=160)
-    plt.close(fig)
+        format_axis(ax, xlabel="Demod3 frequency (Hz)")
+    save_figure(fig, results_dir / "r_spectra.png")
 
     summary = {
         "experiment_id": config.get("experiment_id"),

@@ -206,7 +206,7 @@ class SharedWorkflowTests(unittest.TestCase):
         self.assertAlmostEqual(result.final_phase_deg, 30.0)
     def test_device_discovery_groups_physical_devices(self):
         devices = discover_devices()
-        self.assertEqual(len(devices), 7)
+        self.assertEqual(len(devices), 9)
         keys = {
             channel.mapping_key
             for device in devices
@@ -229,6 +229,21 @@ class SharedWorkflowTests(unittest.TestCase):
         types = {device.id: device.type for device in devices}
         self.assertEqual(types['DG9Q280100002'], 'DG900')
         self.assertEqual(types['DG4E231500376'], 'DG4000')
+        self.assertEqual(types['90Z631552'], 'GS200')
+        self.assertEqual(types['DLC_PRO_53043'], 'DLC_PRO')
+        dlc_pro = next(
+            device for device in devices if device.id == "DLC_PRO_53043"
+        )
+        self.assertEqual(dlc_pro.resource, "192.168.124.68")
+        self.assertFalse(
+            dlc_pro.options["remote_emission_control_enabled"]
+        )
+        main_field_devices = [
+            device
+            for device in devices
+            if device.options.get("mapping_key") == "main_magnetic_field"
+        ]
+        self.assertEqual(len(main_field_devices), 1)
 
     def test_signal_generator_factory_uses_explicit_model(self):
         dg900 = create_signal_generator({

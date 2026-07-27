@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../api";
+import { CurrentSourceEditor } from "../components/instruments/CurrentSourceEditor";
 import { GeneratorEditor } from "../components/instruments/GeneratorEditor";
+import { LaserEditor } from "../components/instruments/LaserEditor";
 import { ScopeEditor } from "../components/instruments/ScopeEditor";
 import { PageHead } from "../components/PageHead";
 import type { Device, DeviceSnapshot } from "../types/api";
@@ -52,7 +54,15 @@ export function InstrumentsPage() {
         <div className="device-list">
           {devices.map((device) => (
             <button className={selected?.id === device.id ? "selected" : ""} onClick={() => setSelected(device)} key={device.id}>
-              <span className={`device-icon ${device.type.toLowerCase()}`}>{device.type === "SDS" ? "OSC" : "GEN"}</span>
+              <span className={`device-icon ${device.type.toLowerCase()}`}>
+                {device.type === "SDS"
+                  ? "OSC"
+                  : device.type === "GS200"
+                    ? "SRC"
+                    : device.type === "DLC_PRO"
+                      ? "LAS"
+                      : "GEN"}
+              </span>
               <div><strong>{device.label}</strong><small>{device.type} · {device.short_resource}</small></div><i />
             </button>
           ))}
@@ -63,6 +73,10 @@ export function InstrumentsPage() {
             <div className="empty"><span>↻</span><h3>读取当前设备参数</h3><p>选择设备后点击右上角按钮，将仪器面板上的最新设置同步到这里。</p></div>
           ) : snapshot.type === "SDS" ? (
             <ScopeEditor key={snapshot.id} snapshot={snapshot} onSaved={cacheSnapshot} />
+          ) : snapshot.type === "GS200" ? (
+            <CurrentSourceEditor key={snapshot.id} snapshot={snapshot} onSaved={cacheSnapshot} />
+          ) : snapshot.type === "DLC_PRO" ? (
+            <LaserEditor key={snapshot.id} snapshot={snapshot} onSaved={cacheSnapshot} />
           ) : (
             <GeneratorEditor key={snapshot.id} snapshot={snapshot} onSaved={cacheSnapshot} />
           )}

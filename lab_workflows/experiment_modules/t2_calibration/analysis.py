@@ -10,13 +10,23 @@ from typing import Any
 import matplotlib
 
 matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
-import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from scipy.optimize import curve_fit
 from scipy.signal import hilbert
 
 from ...experiment_runtime import runtime_run_dir
+from ...plotting import (
+    COLOR_GRAY,
+    COLOR_OPTIMAL,
+    COLOR_TRAD,
+    PAPER_WIDE,
+    format_axis,
+    new_figure,
+    save_figure,
+    set_plot_style,
+    style_legend,
+)
 
 
 _T2_MIN_S = 1e-6
@@ -246,39 +256,54 @@ def _analyze_single(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
     success = fit_result.success
     amplitude, t2_s, fitted_frequency, phase, offset = optimum
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axes = new_figure(
+        figsize=(PAPER_WIDE[0], 2.0 * PAPER_WIDE[1]),
+        nrows=2,
+        ncols=2,
+    )
     axis = axes[0, 0]
-    axis.plot(fid_time * 1000, fid_waveform, linewidth=0.4, color="steelblue", label="Data")
+    axis.plot(fid_time * 1000, fid_waveform, color=COLOR_OPTIMAL, label="Data")
     if success:
         fitted = damped_oscillation(fid_time, *optimum)
-        axis.plot(fid_time * 1000, fitted, "--", linewidth=1.2, color="darkorange", label=f"T2 = {t2_ms:.2f} ms")
+        axis.plot(
+            fid_time * 1000,
+            fitted,
+            "--",
+            color=COLOR_TRAD,
+            label=f"T2 = {t2_ms:.2f} ms",
+        )
         envelope = amplitude * np.exp(-fid_time / t2_s)
-        axis.plot(fid_time * 1000, envelope + offset, ":", color="red", linewidth=1.0)
-        axis.plot(fid_time * 1000, -envelope + offset, ":", color="red", linewidth=1.0)
-    axis.set_xlabel("Time (ms)")
-    axis.set_ylabel("PD Voltage (V)")
+        axis.plot(fid_time * 1000, envelope + offset, ":", color=COLOR_GRAY)
+        axis.plot(fid_time * 1000, -envelope + offset, ":", color=COLOR_GRAY)
+    format_axis(axis, xlabel="Time (ms)", ylabel="PD voltage (V)")
     axis.set_title(f"Optical FID - T2 = {t2_ms:.2f} ms")
     axis.set_xlim(0.0, _PLOT_SHORT_WINDOW_S * 1000.0)
-    axis.legend(fontsize=8)
-    axis.grid(True, alpha=0.3)
+    style_legend(axis)
 
     axis = axes[0, 1]
     zoom = min(_PLOT_SHORT_WINDOW_S, float(fid_time[-1]))
     zoom_mask = fid_time <= zoom
-    axis.plot(fid_time[zoom_mask] * 1000, fid_waveform[zoom_mask], linewidth=0.4, color="steelblue")
+    axis.plot(
+        fid_time[zoom_mask] * 1000,
+        fid_waveform[zoom_mask],
+        color=COLOR_OPTIMAL,
+    )
     if success:
-        axis.plot(fid_time[zoom_mask] * 1000, damped_oscillation(fid_time[zoom_mask], *optimum), "--", linewidth=1.2, color="darkorange")
-    axis.set_xlabel("Time (ms)")
-    axis.set_ylabel("PD Voltage (V)")
+        axis.plot(
+            fid_time[zoom_mask] * 1000,
+            damped_oscillation(fid_time[zoom_mask], *optimum),
+            "--",
+            color=COLOR_TRAD,
+        )
+    format_axis(axis, xlabel="Time (ms)", ylabel="PD voltage (V)")
     axis.set_title(f"First {zoom * 1000:.0f} ms (zoom)")
     axis.set_xlim(0.0, _PLOT_SHORT_WINDOW_S * 1000.0)
-    axis.grid(True, alpha=0.3)
 
     axis = axes[1, 0]
     if success:
         residual = fid_waveform - damped_oscillation(fid_time, *optimum)
-        axis.plot(fid_time * 1000, residual, linewidth=0.3, color="gray")
-        axis.axhline(0, color="black", linestyle=":", linewidth=0.8)
+        axis.plot(fid_time * 1000, residual, color=COLOR_GRAY)
+        axis.axhline(0, color=COLOR_GRAY, linestyle=":")
         axis.set_title(f"Residual (RMS = {np.std(residual):.4f} V)")
     else:
         axis.text(
@@ -290,25 +315,19 @@ def _analyze_single(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
             va="center",
         )
         axis.set_title("Residual")
-    axis.set_xlabel("Time (ms)")
-    axis.set_ylabel("Residual (V)")
+    format_axis(axis, xlabel="Time (ms)", ylabel="Residual (V)")
     axis.set_xlim(0.0, _PLOT_SHORT_WINDOW_S * 1000.0)
-    axis.grid(True, alpha=0.3)
 
     axis = axes[1, 1]
     for waveform in waveforms[:20]:
-        axis.plot(time_axis * 1000, waveform, linewidth=0.12, alpha=0.5, color="steelblue")
-    axis.plot(time_axis * 1000, average, linewidth=0.8, color="darkorange", label="Average")
-    axis.set_xlabel("Time (ms)")
-    axis.set_ylabel("PD Voltage (V)")
+        axis.plot(time_axis * 1000, waveform, alpha=0.25, color=COLOR_GRAY)
+    axis.plot(time_axis * 1000, average, color=COLOR_TRAD, label="Average")
+    format_axis(axis, xlabel="Time (ms)", ylabel="PD voltage (V)")
     axis.set_title(f"All {min(len(waveforms), 20)} Shots + Average")
     axis.set_xlim(0.0, _PLOT_SHORT_WINDOW_S * 1000.0)
-    axis.legend()
-    axis.grid(True, alpha=0.3)
-    fig.tight_layout()
+    style_legend(axis)
     figure_path = results_dir / "T2_fid_analysis.png"
-    fig.savefig(figure_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, figure_path)
 
     result = {
         "method": "optical_FID",
@@ -360,7 +379,7 @@ def _analyze_power_scan(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
         r_squared_values[index] = fit_result.r_squared
 
     artifacts: list[str] = []
-    fig, axis = plt.subplots(figsize=(7, 4.5))
+    fig, axis = new_figure()
     valid_plot = successes & np.isfinite(t2_values) & np.isfinite(t2_uncertainties)
     if np.any(valid_plot):
         axis.errorbar(
@@ -369,6 +388,7 @@ def _analyze_power_scan(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
             yerr=t2_uncertainties[valid_plot],
             fmt="o-",
             capsize=3,
+            color=COLOR_OPTIMAL,
         )
     else:
         axis.text(
@@ -379,14 +399,9 @@ def _analyze_power_scan(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
             ha="center",
             va="center",
         )
-    axis.set_xlabel("Probe Power (V)")
-    axis.set_ylabel("T2 (ms)")
-    axis.set_title("T2 vs Probe Power")
-    axis.grid(True, alpha=0.3)
-    fig.tight_layout()
+    format_axis(axis, xlabel="Probe power (V)", ylabel="T2 (ms)")
     path = results_dir / "T2_vs_probe_power.png"
-    fig.savefig(path)
-    plt.close(fig)
+    save_figure(fig, path)
     artifacts.append(str(path))
 
     valid = successes & np.isfinite(t2_values) & (t2_values > 0)
@@ -407,18 +422,31 @@ def _analyze_power_scan(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
         intercept = float(coefficients[1])
         t2_zero_ms = 1.0 / intercept if intercept > 0 else np.inf
         polynomial = np.poly1d(coefficients)
-        fig, axis = plt.subplots(figsize=(7, 4.5))
-        axis.errorbar(valid_powers, inverse_t2, yerr=inverse_uncertainty, fmt="o", capsize=3, label="Data")
+        fig, axis = new_figure()
+        axis.errorbar(
+            valid_powers,
+            inverse_t2,
+            yerr=inverse_uncertainty,
+            fmt="o",
+            capsize=3,
+            color=COLOR_OPTIMAL,
+            label="Data",
+        )
         fit_powers = np.linspace(valid_powers.min(), valid_powers.max(), 50)
-        axis.plot(fit_powers, polynomial(fit_powers), "r--", label=f"T2,0^-1={intercept:.2f} ms^-1, alpha={alpha:.3f}")
-        axis.set_xlabel("Probe Power (V)")
-        axis.set_ylabel("T2^-1 (ms^-1)")
-        axis.set_title("T2^-1 vs Probe Power")
-        axis.legend()
-        axis.grid(True, alpha=0.3)
-        fig.tight_layout()
-        fig.savefig(inverse_path)
-        plt.close(fig)
+        axis.plot(
+            fit_powers,
+            polynomial(fit_powers),
+            "--",
+            color=COLOR_TRAD,
+            label=f"T2,0^-1={intercept:.2f} ms^-1, alpha={alpha:.3f}",
+        )
+        format_axis(
+            axis,
+            xlabel="Probe power (V)",
+            ylabel="T2^-1 (ms^-1)",
+        )
+        style_legend(axis)
+        save_figure(fig, inverse_path)
         artifacts.append(str(inverse_path))
     else:
         inverse_path.unlink(missing_ok=True)
@@ -430,8 +458,11 @@ def _analyze_power_scan(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
         (_PLOT_LONG_WINDOW_S, results_dir / "T2_all_fid_curves_0_10ms.png"),
     )
     for plot_window_s, path in overview_plots:
-        fig, axes = plt.subplots(
-            rows, columns, figsize=(3.5 * columns, 3 * rows), squeeze=False
+        fig, axes = new_figure(
+            figsize=(PAPER_WIDE[0], 1.9 * rows),
+            nrows=rows,
+            ncols=columns,
+            squeeze=False,
         )
         flat_axes = axes.flatten()
         for index, axis in enumerate(flat_axes):
@@ -441,15 +472,14 @@ def _analyze_power_scan(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
             axis.plot(
                 time_axis * 1000,
                 average_stack[index],
-                linewidth=0.4,
-                color="steelblue",
+                color=COLOR_OPTIMAL,
             )
             if successes[index]:
                 axis.plot(
                     time_axis * 1000,
                     damped_oscillation(time_axis, *optimums[index]),
-                    "r--",
-                    linewidth=1.0,
+                    "--",
+                    color=COLOR_TRAD,
                 )
                 axis.text(
                     0.97,
@@ -458,8 +488,7 @@ def _analyze_power_scan(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
                     transform=axis.transAxes,
                     ha="right",
                     va="top",
-                    fontsize=9,
-                    color="red",
+                    color=COLOR_TRAD,
                 )
             else:
                 axis.text(
@@ -469,22 +498,12 @@ def _analyze_power_scan(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
                     transform=axis.transAxes,
                     ha="right",
                     va="top",
-                    fontsize=8,
-                    color="red",
+                    color=COLOR_TRAD,
                 )
             axis.set_title(f"Probe = {powers[index]:.3f} V")
-            axis.set_xlabel("Time (ms)")
-            axis.set_ylabel("PD Voltage (V)")
+            format_axis(axis, xlabel="Time (ms)", ylabel="PD voltage (V)")
             axis.set_xlim(0.0, plot_window_s * 1000.0)
-            axis.grid(True, alpha=0.3)
-        fig.suptitle(
-            f"T2 FID Decay Curves - 0-{plot_window_s * 1000:g} ms",
-            fontsize=14,
-            y=1.01,
-        )
-        fig.tight_layout()
-        fig.savefig(path, dpi=150, bbox_inches="tight")
-        plt.close(fig)
+        save_figure(fig, path)
         artifacts.append(str(path))
 
     result = {
@@ -508,6 +527,7 @@ def _analyze_power_scan(raw_dir: Path, results_dir: Path) -> dict[str, Any]:
 
 
 def analyze(run_dir: Path) -> dict[str, Any]:
+    set_plot_style("paper")
     """只分析给定运行目录中的 raw，并将结果写入同目录 results。"""
     raw_dir, results_dir = _require_run_directory(run_dir)
     power_scan = raw_dir / "power_scan_waveforms.npz"

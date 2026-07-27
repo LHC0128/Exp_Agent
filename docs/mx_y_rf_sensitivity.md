@@ -72,9 +72,11 @@ R(V)=|A(V-V_0)/((V-V_0)^2+\gamma^2)+C|.
 
 ## 灵敏度结果
 
-主结果由零 Y RF 时的 R PSD 除以绝对值色散拟合得到的斜率幅值。若有有效 HWHM，则进行 Lorentzian 频率响应校正，并取 3 Hz 至 HWHM 内校正后灵敏度的中位数。
+主结果由零 Y RF 时的 R PSD 除以绝对值色散拟合得到的斜率幅值。若有有效 HWHM，则进行 Lorentzian 频率响应校正。单值灵敏度不再使用固定的 3 Hz 至 HWHM 频段，而是在校正后灵敏度谱上自动识别连续平坦段，再对该区间内未平滑的原始频谱值取中位数。`LOW_FREQ_SKIP_HZ` 只定义自动搜索允许使用的最低候选频率，不再直接作为平坦段下边界。
 
-当 `Y_RF_NT_PER_VPP > 0` 时生成 `results/full_analysis.png`。图形版式参照静磁场灵敏度实验的 `full_analysiswithoutpump.png`：上半部分绘制 Y RF 场幅度响应及绝对值色散拟合，下半部分绘制 `fT/√Hz` 原始与线宽校正灵敏度谱，并标出平坦频段、中位数和 HWHM。分析器不再生成 `sensitivity_voltage.png`；电压等效灵敏度仍保存在 `results/sensitivity.npz`，用于数值追溯。
+自动识别先对灵敏度取对数并做分箱中位数，以降低窄带尖峰的影响，再用带低频和高频非负铰链的鲁棒平台模型确定上下边界。分析器同时改变分箱数量和观察范围生成多组候选；只有候选中位数稳健 CV 不超过 3%、P10–P90 跨度不超过 8%、平台整体漂移不超过 20%、相对 MAD 不超过 15%，且平台后的高频上升证据不少于 3σ 时才报告单值。任一条件不满足时不回退到固定频段，而是在 `warnings` 中说明失败原因。检测边界、稳定性指标和判定结果写入 `analysis.yaml/json` 的 `flat_detection`，并以扁平字段写入 `sensitivity.npz`。
+
+当 `Y_RF_NT_PER_VPP > 0` 时生成 `results/full_analysis.png`。图形使用项目统一的默认 `paper` 配置：上半部分绘制 Y RF 场幅度响应及绝对值色散拟合，下半部分绘制 `fT/√Hz` 原始与线宽校正灵敏度谱，并标出平坦频段、HWHM 和 150 fT/√Hz 参考虚线。参考线只用于绘图，实际平坦区中位数仍写入 `analysis.yaml/json` 和 `sensitivity.npz`。分析器不再生成 `sensitivity_voltage.png`；电压等效灵敏度仍保存在 `results/sensitivity.npz`，用于数值追溯。
 
 线圈标定系数为 0 时仍保存 `Vpp/√Hz` 数值数组，但不生成磁场灵敏度图；模式 2 同时不报告等效 HWHM 和频段中位数。
 

@@ -14,6 +14,7 @@ from lab_workflows.experiment_modules.mx_y_rf_sensitivity.analysis_core import (
     absolute_dispersive_response,
     amplitude_gamma_to_hz,
     average_welch_psd,
+    detect_flat_sensitivity_band,
     dispersive_response,
     fit_absolute_dispersive_response,
     fit_dispersive_response,
@@ -21,7 +22,10 @@ from lab_workflows.experiment_modules.mx_y_rf_sensitivity.analysis_core import (
     lorentzian_response,
     sensitivity_spectrum,
 )
-from lab_workflows.experiment_modules.mx_y_rf_sensitivity.analysis import analyze
+from lab_workflows.experiment_modules.mx_y_rf_sensitivity.analysis import (
+    SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ,
+    analyze,
+)
 from lab_workflows.experiment_modules.mx_y_rf_sensitivity.definition import (
     DEFINITION,
 )
@@ -336,11 +340,54 @@ def test_psd_uses_actual_rate_and_unit_conversion() -> None:
     )
     assert result["raw_vpp_per_sqrt_hz"][10] == pytest.approx(1e-6)
     assert result["raw_ft_per_sqrt_hz"][10] == pytest.approx(5.0)
-    assert np.any(result["flat_mask"])
     assert amplitude_gamma_to_hz(0.02, 5.0) == pytest.approx(
         0.1 * LARMOR_PER_NT
     )
     assert amplitude_gamma_to_hz(0.02, 0.0) is None
+
+
+def test_flat_sensitivity_band_is_detected_from_spectrum_shape() -> None:
+    rng = np.random.default_rng(31)
+    frequency = np.arange(1.0, 2501.0)
+    sensitivity = 300.0 * np.exp(
+        rng.normal(scale=0.04, size=frequency.size)
+    )
+    low = frequency < 80.0
+    high = frequency > 500.0
+    sensitivity[low] *= np.exp((80.0 - frequency[low]) / 35.0)
+    sensitivity[high] *= np.exp((frequency[high] - 500.0) / 700.0)
+    sensitivity[[120, 275, 420, 880]] *= 8.0
+
+    result = detect_flat_sensitivity_band(
+        frequency,
+        sensitivity,
+        hwhm_hz=1000.0,
+        minimum_frequency_hz=3.0,
+    )
+
+    assert result["success"]
+    assert 20.0 <= result["band_hz"][0] <= 180.0
+    assert 350.0 <= result["band_hz"][1] <= 700.0
+    assert result["median"] == pytest.approx(300.0, rel=0.08)
+    assert result["median_cv"] <= 0.03
+    assert result["rise_sigma"] >= 3.0
+
+
+def test_flat_sensitivity_band_rejects_monotonic_spectrum() -> None:
+    frequency = np.arange(1.0, 2501.0)
+    sensitivity = 100.0 * np.exp(frequency / 700.0)
+
+    result = detect_flat_sensitivity_band(
+        frequency,
+        sensitivity,
+        hwhm_hz=1000.0,
+        minimum_frequency_hz=3.0,
+    )
+
+    assert not result["success"]
+    assert not np.any(result["mask"])
+    assert np.isnan(result["median"])
+    assert result["reason"]
 
 
 def test_analysis_generates_field_full_analysis_without_voltage_plot(tmp_path) -> None:
@@ -392,6 +439,13 @@ def test_analysis_generates_field_full_analysis_without_voltage_plot(tmp_path) -
     assert not (run_dir / "results" / "sensitivity_voltage.png").exists()
     assert "full_analysis.png" in result["files"]
     assert "sensitivity_voltage.png" not in result["files"]
+    assert result["plot_profile"] == "paper"
+    assert "flat_detection" in result
+    assert "candidate_count" in result["flat_detection"]
+    assert result["sensitivity_reference_ft_per_sqrt_hz"] == pytest.approx(
+        150.0
+    )
+    assert SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ == pytest.approx(150.0)
 
 
 class _FakeDG:

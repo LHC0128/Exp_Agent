@@ -12,7 +12,12 @@ tags:
   label: 其他
 assignments:
   mx-y-rf-sensitivity: calibration
+  mx-main-field-calibration: verification
+  mx-main-field-noise-spectrum: calibration
+  mx-main-field-scope-noise-spectrum: calibration
   mx-z-field-calibration: verification
+  mx-z-noise-spectrum: calibration
+  mx-xy-residual-field-calibration: verification
   noise-spectrum-xy: calibration
   noise-spectrum-xy-v2: calibration
   photon-shot-noise: verification
@@ -37,12 +42,23 @@ assignments:
   temperature-switch-pid-cycle: tag-15b058ba
 experiment_descriptions:
   mx-y-rf-sensitivity: Mx 构型下仅采集 Demod0 R，使用绝对值色散拟合斜率和零 RF 的 PSD_R 测量灵敏度，并支持两种线宽定义。
+  mx-main-field-calibration: 在 Mx 构型下扫描 GS200 主场电流和 Y RF 频率，由离线 Lorentzian 中心拟合标定
+    Hz/mA 和 nT/mA。
+  mx-main-field-noise-spectrum: 固定 HF2 为 90 kHz，按实测标定降低 GS200 主场电流，以正控制频率轴从 Demod0
+    R 的二维 PSD 分离 S_beta 与 N_S1。
+  mx-main-field-scope-noise-spectrum: 按主场标定外推扫描 0–50 kHz Larmor 控制频率，保持可配置的 X/Y DC
+    剩磁补偿，可选 SDS AC/DC 耦合并使用自适应量程与偏置居中采集 PD 原始波形；关断后恢复 DC 耦合、归零关闭 X/Y，并使用共同 Lorentzian
+    响应和秩一控制背景的二维全局拟合分离调制噪声与 N_S1。
   mx-z-field-calibration: 在 Mx 高主场构型下扫描 Z 直流偏置和 Y RF 频率，由离线 Lorentzian 中心拟合标定 Z 通道的
     Hz/V。
+  mx-z-noise-spectrum: 在 Mx 高主场构型下扫描严格标定的 Z 直流控制失谐，固定 HF2 为 90 kHz，并从 Demod0 R 的二维
+    PSD 分离 S_beta 与 N_S1。
+  mx-xy-residual-field-calibration: 在扫描主场下直接读取 SDS CH1 平衡探测器直流均值，二维扫描 X/Y DC 补偿场并用
+    Bloch 曲面拟合剩磁平衡点。
   noise-spectrum-xy: 测量 XY 控制条件下的噪声谱，dg_am 作为触发信号，使得 dg_comp 两路同相输出。
   noise-spectrum-xy-v2: 测量 XY 控制条件下的噪声谱，dg_am 作为调制信号。
   photon-shot-noise: 测量光子散粒噪声随 Probe 光功率的变化，测量锁相放大器 XY 的噪声谱本底。
-  projection-noise: 改变主磁场，测量锁相放大器XY的噪声谱
+  projection-noise: 采集 GS200 输出打开时的 SDS CH1 PD 原始噪声谱，可选测量输出关闭对照组，并在主场标定预测中心附近自由拟合洛伦兹自旋噪声峰。
   rf-sensitivity-aw: 测量射频灵敏度，dg_am 作为触发信号，使得 dg_comp 两路同相输出。
   rf-sensitivity-aw-frequency: 测量射频频率响应，dg_am 作为调制信号。
   rf-sensitivity-constxy-frequency: AM调制的方测量频率响应。
@@ -50,7 +66,12 @@ experiment_descriptions:
   xy-direct-aw-dc-calibration: DirectAW 加常数控制的方式，外加不同频率射频场，寻找频率响应的最大值的位置，来对 控制 进行标定。
 experiment_titles:
   mx-y-rf-sensitivity: Mx Y 向 RF 场灵敏度
+  mx-main-field-calibration: Mx 主磁场频率标定
+  mx-main-field-noise-spectrum: Mx 主磁场控制噪声谱
+  mx-main-field-scope-noise-spectrum: Mx 主磁场示波器噪声谱
   mx-z-field-calibration: Mx 高主场 Z 磁场频率标定
+  mx-z-noise-spectrum: Mx Z 直流控制噪声谱
+  mx-xy-residual-field-calibration: Mx XY 剩磁二维校准
   noise-spectrum-xy: XY 控制测量噪声谱 （DirectAW）
   noise-spectrum-xy-v2: XY 控制噪声谱 （AM）
   photon-shot-noise: 光子散粒噪声
@@ -61,6 +82,166 @@ experiment_titles:
   rf-sensitivity-direct-aw-frequency: RF 频率响应（DirectAW）
   xy-direct-aw-dc-calibration: XY DirectAW DC 标定
 parameter_layouts:
+  mx-xy-residual-field-calibration:
+    basic:
+    - RUN_TAG
+    - SCAN_MAIN_FIELD_MA
+    - X_FIELD_START_V
+    - X_FIELD_STOP_V
+    - X_FIELD_POINTS
+    - Y_FIELD_START_V
+    - Y_FIELD_STOP_V
+    - Y_FIELD_POINTS
+    - POINT_REPEATS
+    - SCOPE_SAMPLE_RATE
+    - SCOPE_DURATION
+    - TEMP_SWITCH_OFF_SETTLE_S
+    - TEMP_SWITCH_ON_SETTLE_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    advanced:
+    - SCOPE_INITIAL_SCALE
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+  projection-noise:
+    basic:
+    - RUN_TAG
+    - TARGET_LARMOR_FREQUENCY_HZ
+    - MAIN_FIELD_CALIBRATION_SOURCE_RUN
+    - MAIN_FIELD_SETTLE_S
+    - MEASURE_FIELD_OFF_CONTROL
+    - SCOPE_SAMPLE_RATE
+    - SCOPE_DURATION
+    - ACQ_REPEATS
+    - FIT_HALF_WIDTH_HZ
+    - TEMP_SWITCH_OFF_SETTLE_S
+    - TEMP_SWITCH_ON_SETTLE_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    advanced:
+    - SCOPE_INITIAL_SCALE
+    - WELCH_NPERSEG
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+  mx-main-field-scope-noise-spectrum:
+    basic:
+    - RUN_TAG
+    - CONTROL_FREQUENCY_START_HZ
+    - CONTROL_FREQUENCY_STOP_HZ
+    - CONTROL_FREQUENCY_POINTS
+    - MAIN_FIELD_CALIBRATION_HZ_PER_MA
+    - MAIN_FIELD_CALIBRATION_INTERCEPT_HZ
+    - FIXED_PARAMS.X_magnetic_field
+    - FIXED_PARAMS.Y_magnetic_field
+    - SCOPE_SAMPLE_RATE
+    - SCOPE_DURATION
+    - SCOPE_AC_COUPLING
+    - TEMP_SWITCH_OFF_SETTLE_S
+    - TEMP_SWITCH_ON_SETTLE_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    advanced:
+    - MAIN_FIELD_CALIBRATION_SOURCE_RUN
+    - SCOPE_INITIAL_SCALE
+    - WELCH_NPERSEG
+    - FIT_PEAK_MARGIN_HZ
+    - FIT_HALF_WIDTH_HZ
+    - FIT_GAMMA_GUESS_HZ
+    - FIT_EXAMPLE_PLOT_COUNT
+    - GLOBAL_2D_ANALYSIS_ENABLED
+    - GLOBAL_FIT_FREQUENCY_MIN_HZ
+    - GLOBAL_CORE_FIT_FREQUENCY_MIN_HZ
+    - GLOBAL_FIT_FREQUENCY_MAX_HZ
+    - GLOBAL_BACKGROUND_MARGIN_HZ
+    - GLOBAL_CV_FOLDS
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+  mx-main-field-noise-spectrum:
+    basic:
+    - RUN_TAG
+    - CONTROL_FREQUENCY_START_HZ
+    - CONTROL_FREQUENCY_STOP_HZ
+    - CONTROL_FREQUENCY_POINTS
+    - HF2_REFERENCE_FREQUENCY_HZ
+    - MAIN_FIELD_CALIBRATION_HZ_PER_MA
+    - MAIN_FIELD_CALIBRATION_INTERCEPT_HZ
+    - ACQUISITION_DURATION_S
+    - REQUESTED_RATE_SA_S
+    - TEMP_SWITCH_OFF_SETTLE_S
+    - TEMP_SWITCH_ON_SETTLE_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    advanced:
+    - MAIN_FIELD_CALIBRATION_SOURCE_RUN
+    - MAIN_FIELD_CALIBRATION_MIN_MA
+    - MAIN_FIELD_CALIBRATION_MAX_MA
+    - WELCH_NPERSEG
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - DEMOD_TIME_CONSTANT_S
+    - DEMOD_ORDER
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - FIT_PEAK_MARGIN_HZ
+    - FIT_GAMMA_GUESS_HZ
+  mx-main-field-calibration:
+    basic:
+    - RUN_TAG
+    - MAIN_FIELD_START_MA
+    - MAIN_FIELD_STOP_MA
+    - MAIN_FIELD_STEP_MA
+    - MAIN_FIELD_REFERENCE_CURRENT_MA
+    - MAIN_FIELD_REFERENCE_FREQUENCY_HZ
+    - MAIN_FIELD_INITIAL_HZ_PER_MA
+    - FREQUENCY_HALF_WIDTH_HZ
+    - FREQUENCY_STEP_HZ
+    - Y_RF_AMPLITUDE_VPP
+    - GYROMAGNETIC_RATIO_HZ_PER_NT
+    - SETTLE_TIME_S
+    - FREQUENCY_DURATION_S
+    - TEMP_SWITCH_ON_LAG_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - LINEAR_R_SQUARED_MIN
   xy-direct-aw-dc-calibration:
     basic:
     - RUN_TAG
@@ -308,3 +489,37 @@ parameter_layouts:
     - PUMP_CARRIER_AMPLITUDE_VPP
     - PUMP_GATE_VOLTAGE_V
     - LINEAR_R_SQUARED_MIN
+  mx-z-noise-spectrum:
+    basic:
+    - RUN_TAG
+    - TARGET_DETUNING_START_HZ
+    - TARGET_DETUNING_STOP_HZ
+    - TARGET_DETUNING_POINTS
+    - ZERO_BIAS_REFERENCE_FREQUENCY_HZ
+    - Z_CALIBRATION_HZ_PER_V
+    - Z_CALIBRATION_INTERCEPT_HZ
+    - ACQUISITION_DURATION_S
+    - REQUESTED_RATE_SA_S
+    - TEMP_SWITCH_OFF_SETTLE_S
+    - TEMP_SWITCH_ON_SETTLE_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    advanced:
+    - Z_CALIBRATION_SOURCE_RUN
+    - WELCH_NPERSEG
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - DEMOD_TIME_CONSTANT_S
+    - DEMOD_ORDER
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - FIT_PEAK_MARGIN_HZ
+    - FIT_GAMMA_GUESS_HZ

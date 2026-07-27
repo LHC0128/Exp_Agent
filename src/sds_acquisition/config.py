@@ -39,6 +39,7 @@ class AcquisitionConfig:
     sampling_time: float = 0.01           # s, 总采集时间窗口
     acquire_type: str = "NORMal"          # NORMal, PEAK, AVERage, ERES
     acquire_type_param: Optional[int] = None  # AVERage:<times> / ERES:<bits>
+    memory_management: Optional[str] = None  # AUTO, FSRate, FMDepth；None 表示保持当前模式
     interpolation: str = "ON"
 
     # 时基 (timebase_scale = sampling_time / horizontal_divisions)

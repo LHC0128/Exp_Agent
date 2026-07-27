@@ -12,11 +12,29 @@ from ..experiment_modules.noise_spectrum_xy.definition import (
 from ..experiment_modules.noise_spectrum_xy_demod3_r.definition import (
     DEFINITION as NOISE_SPECTRUM_XY_DEMOD3_R_DEFINITION,
 )
+from ..experiment_modules.projection_noise.definition import (
+    DEFINITION as PROJECTION_NOISE_DEFINITION,
+)
 from ..experiment_modules.mx_y_rf_sensitivity.definition import (
     DEFINITION as MX_Y_RF_SENSITIVITY_DEFINITION,
 )
+from ..experiment_modules.mx_main_field_calibration.definition import (
+    DEFINITION as MX_MAIN_FIELD_CALIBRATION_DEFINITION,
+)
+from ..experiment_modules.mx_main_field_noise_spectrum.definition import (
+    DEFINITION as MX_MAIN_FIELD_NOISE_SPECTRUM_DEFINITION,
+)
+from ..experiment_modules.mx_main_field_scope_noise_spectrum.definition import (
+    DEFINITION as MX_MAIN_FIELD_SCOPE_NOISE_SPECTRUM_DEFINITION,
+)
 from ..experiment_modules.mx_z_field_calibration.definition import (
     DEFINITION as MX_Z_FIELD_CALIBRATION_DEFINITION,
+)
+from ..experiment_modules.mx_z_noise_spectrum.definition import (
+    DEFINITION as MX_Z_NOISE_SPECTRUM_DEFINITION,
+)
+from ..experiment_modules.mx_xy_residual_field_calibration.definition import (
+    DEFINITION as MX_XY_RESIDUAL_FIELD_CALIBRATION_DEFINITION,
 )
 from ..experiment_modules.rf_sensitivity_direct_aw_frequency.definition import (
     DEFINITION as RF_DIRECT_AW_FREQUENCY_DEFINITION,
@@ -134,12 +152,17 @@ _DEFINITIONS = [
         auto_analyze=False,
     ),
     MX_Y_RF_SENSITIVITY_DEFINITION,
+    MX_MAIN_FIELD_CALIBRATION_DEFINITION,
+    MX_MAIN_FIELD_NOISE_SPECTRUM_DEFINITION,
+    MX_MAIN_FIELD_SCOPE_NOISE_SPECTRUM_DEFINITION,
     MX_Z_FIELD_CALIBRATION_DEFINITION,
+    MX_Z_NOISE_SPECTRUM_DEFINITION,
+    MX_XY_RESIDUAL_FIELD_CALIBRATION_DEFINITION,
     NOISE_SPECTRUM_XY_DEFINITION,
     NOISE_SPECTRUM_XY_DEMOD3_R_DEFINITION,
     _legacy("noise-spectrum-xy-v2", "XY 控制噪声谱 v2", "measurement", "noise", "v2", "Noise_Spectrum_XY_Ctrl_v2.py", "Noise_Spectrum_XY_Ctrl_v2_plot.py", "第二版 XY 控制噪声谱流程。", _DEVICES["xy"]),
     _legacy("photon-shot-noise", "光子散粒噪声", "measurement", "fundamental-noise", "photon", "Photon_shot_noise.py", "Photon_shot_noise_plot.py", "测量光子散粒噪声随实验参数的变化。"),
-    _legacy("projection-noise", "投影噪声", "measurement", "fundamental-noise", "projection", "Projection_noise.py", "Projection_noise_plot.py", "测量原子投影噪声。"),
+    PROJECTION_NOISE_DEFINITION,
     _legacy("rf-sensitivity-aw", "RF 灵敏度（任意波）", "measurement", "rf-sensitivity", "external-am", "RF_Field_Sensitivity_AW.py", "RF_Field_Sensitivity_AW_plot.py", "使用任意波与外部 AM 方案测量 RF 灵敏度。", _DEVICES["xy"]),
     _legacy("rf-sensitivity-aw-frequency", "RF 灵敏度频率扫描（外部 AM）", "measurement", "rf-sensitivity", "external-am", "RF_Field_Sensitivity_AW_FreqSweep.py", "RF_Field_Sensitivity_AW_FreqSweep_plot.py", "扫描 RF 频率的外部 AM 硬件方案。", _DEVICES["xy"]),
     RF_DIRECT_AW_FREQUENCY_DEFINITION,

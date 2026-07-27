@@ -6,6 +6,9 @@ type NumberFieldProps = {
   onChange: (value: number) => void;
   type?: "number";
   disabled?: boolean;
+  min?: number;
+  max?: number;
+  step?: number | "any";
 };
 
 type TextFieldProps = {
@@ -26,6 +29,9 @@ export function Field(props: NumberFieldProps | TextFieldProps) {
         type={type}
         value={value ?? ""}
         disabled={disabled}
+        min={props.type === "text" ? undefined : props.min}
+        max={props.type === "text" ? undefined : props.max}
+        step={props.type === "text" ? undefined : props.step}
         onChange={(event) => {
           if (props.type === "text") props.onChange(event.target.value);
           else props.onChange(Number(event.target.value));

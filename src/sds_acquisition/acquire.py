@@ -41,6 +41,8 @@ class SDSAcquisition:
         self._configure_trigger(config.trigger)
 
     def _configure_acquisition(self, config: AcquisitionConfig) -> None:
+        if config.memory_management is not None:
+            self._inst.set_memory_management(config.memory_management)
         self._inst.set_sampling_rate(config.sampling_rate)
         self._inst.set_acquire_type(config.acquire_type, config.acquire_type_param)
 
@@ -96,6 +98,10 @@ class SDSAcquisition:
         trim_points: int = 0,
     ) -> AcquisitionResult:
         source = f"C{channel}"
+        # Siglent 官方分片读取顺序先复位起点，再选择源并读取 preamble。
+        # 起点会跨查询保留；若沿用上一轮的非零起点，整帧 POINT 设置可能
+        # 越界，部分固件随后会用零长度二进制块响应 DATA?。
+        self._inst.set_waveform_start(0)
         self._inst.set_waveform_source(source)
 
         # 显式设置字节序（大端序），确保 WORD 模式解析正确
@@ -118,7 +124,6 @@ class SDSAcquisition:
             raw_data = self._read_multi_slice(total_points, max_slice)
         else:
             self._inst.set_waveform_points(total_points)
-            self._inst.set_waveform_start(0)
             raw_data = self._inst.get_waveform_data()
 
         # 二进制 → ADC 码

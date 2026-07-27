@@ -92,13 +92,17 @@ class SDSInstrument:
 
     @staticmethod
     def _strip_binary_header(data: bytes) -> bytes:
-        """移除 SCPI 二进制块头，返回纯数据。"""
-        if data and data[0:1] == b"#":
-            digits_start = 1
-            digits_end = digits_start + int(chr(data[1]))
+        """移除标准或带 Siglent 前缀的 SCPI 二进制块头。"""
+        marker = data.find(b"#")
+        if marker >= 0 and len(data) >= marker + 2:
+            digit_count = int(chr(data[marker + 1]))
+            digits_start = marker + 2
+            digits_end = digits_start + digit_count
+            if len(data) < digits_end:
+                raise ValueError("SCPI 二进制块长度字段不完整")
             length = int(data[digits_start:digits_end])
-            header_len = 2 + len(str(length))
-            return data[header_len:header_len + length]
+            payload_start = digits_end
+            return data[payload_start:payload_start + length]
         return data
 
     # ------------------------------------------------------------------
@@ -120,6 +124,25 @@ class SDSInstrument:
 
     def get_sampling_rate(self) -> float:
         return self.query_float(":ACQuire:SRATe?")
+
+    def set_memory_management(self, mode: str) -> None:
+        """设置存储管理模式：自动、固定采样率或固定存储深度。"""
+        canonical_modes = {
+            "AUTO": "AUTO",
+            "FSRATE": "FSRate",
+            "FMDEPTH": "FMDepth",
+        }
+        normalized = str(mode).strip().upper()
+        try:
+            canonical = canonical_modes[normalized]
+        except KeyError as exc:
+            raise ValueError(
+                "示波器存储管理模式必须为 AUTO、FSRate 或 FMDepth"
+            ) from exc
+        self.write(f":ACQuire:MMANagement {canonical}")
+
+    def get_memory_management(self) -> str:
+        return self.query(":ACQuire:MMANagement?")
 
     def set_memory_depth(self, depth: str) -> None:
         self.write(f":ACQuire:MDEPth {depth}")

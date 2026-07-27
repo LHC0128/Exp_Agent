@@ -150,7 +150,9 @@ def load_npz(filepath: str) -> Tuple[List[AcquisitionResult], Optional[Dict]]:
             time_axis = build_time_axis(
                 len(raw) if raw is not None else len(voltage),
                 ch_preamble["horiz_interval"],
-                ch_preamble.get("horiz_offset", 0), tb, hdiv,
+                ch_preamble.get("horiz_offset", 0),
+                horiz_divisions=hdiv,
+                timebase_scale=tb,
             )
 
         if voltage is None:
@@ -265,8 +267,11 @@ def load_h5(filepath: str) -> Tuple[List[AcquisitionResult], Optional[Dict]]:
                 hdiv = 10
 
             time_axis = build_time_axis(
-                len(raw), preamble_dict["horiz_interval"],
-                preamble_dict.get("horiz_offset", 0), tb, hdiv,
+                len(raw),
+                preamble_dict["horiz_interval"],
+                preamble_dict.get("horiz_offset", 0),
+                horiz_divisions=hdiv,
+                timebase_scale=tb,
             )
 
             results.append(AcquisitionResult(

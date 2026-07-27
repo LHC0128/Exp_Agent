@@ -81,10 +81,10 @@ class ExperimentPlatformTests(unittest.TestCase):
         self.assertIn("LAB_TYPED_PARAMETERS", output)
         self.assertIn("RuntimeError", output)
 
-    def test_registry_contains_only_27_formal_experiments(self):
+    def test_registry_contains_only_32_formal_experiments(self):
         definitions = list_experiments()
-        self.assertEqual(len(definitions), 27)
-        self.assertEqual(len({item.id for item in definitions}), 27)
+        self.assertEqual(len(definitions), 32)
+        self.assertEqual(len({item.id for item in definitions}), 32)
         self.assertNotIn("quick-test-scan", {item.id for item in definitions})
 
     def test_new_and_legacy_execution_modes_are_explicit(self):
@@ -95,7 +95,12 @@ class ExperimentPlatformTests(unittest.TestCase):
             "rf-sensitivity-direct-aw-frequency",
             "xy-direct-aw-dc-calibration",
             "t2-calibration",
+            "mx-y-rf-sensitivity",
+            "mx-main-field-calibration",
+            "mx-xy-residual-field-calibration",
             "mx-z-field-calibration",
+            "mx-z-noise-spectrum",
+            "noise-spectrum-xy-demod3-r",
         ):
             self.assertEqual(definitions[experiment_id].execution_mode, "typed_workflow")
         self.assertEqual(definitions["noise-spectrum-xy-v2"].execution_mode, "legacy_script")
@@ -108,7 +113,12 @@ class ExperimentPlatformTests(unittest.TestCase):
             "rf-sensitivity-direct-aw-frequency",
             "xy-direct-aw-dc-calibration",
             "t2-calibration",
+            "mx-y-rf-sensitivity",
+            "mx-main-field-calibration",
+            "mx-xy-residual-field-calibration",
             "mx-z-field-calibration",
+            "mx-z-noise-spectrum",
+            "noise-spectrum-xy-demod3-r",
         ):
             definition = get_experiment(experiment_id)
             self.assertIsInstance(definition.schema_provider.__self__, TypedWorkflowAdapter)
