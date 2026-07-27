@@ -18,6 +18,9 @@ from ..experiment_modules.projection_noise.definition import (
 from ..experiment_modules.mx_y_rf_sensitivity.definition import (
     DEFINITION as MX_Y_RF_SENSITIVITY_DEFINITION,
 )
+from ..experiment_modules.mx_y_rf_power_optimization.definition import (
+    DEFINITION as MX_Y_RF_POWER_OPTIMIZATION_DEFINITION,
+)
 from ..experiment_modules.mx_main_field_calibration.definition import (
     DEFINITION as MX_MAIN_FIELD_CALIBRATION_DEFINITION,
 )
@@ -152,6 +155,7 @@ _DEFINITIONS = [
         auto_analyze=False,
     ),
     MX_Y_RF_SENSITIVITY_DEFINITION,
+    MX_Y_RF_POWER_OPTIMIZATION_DEFINITION,
     MX_MAIN_FIELD_CALIBRATION_DEFINITION,
     MX_MAIN_FIELD_NOISE_SPECTRUM_DEFINITION,
     MX_MAIN_FIELD_SCOPE_NOISE_SPECTRUM_DEFINITION,

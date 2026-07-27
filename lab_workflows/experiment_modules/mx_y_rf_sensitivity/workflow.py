@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable
 
 import numpy as np
@@ -44,6 +45,10 @@ from .scan import build_amplitude_axis, build_frequency_axis, signed_amplitude_h
 EXPERIMENT_ID = "mx-y-rf-sensitivity"
 DATA_TYPE = "Mx_Y_RF_Sensitivity"
 EXECUTION_MODE = "typed_workflow"
+
+
+class RPointQualityError(RuntimeError):
+    """单个 R 点在限定次数内始终未通过质量门限。"""
 
 
 class _RuntimeCancellation:
@@ -108,6 +113,77 @@ def _set_pump_gate_on(device: Any, channel: int, voltage_v: float) -> None:
     device.set_mod_state(False, channel=channel)
     device.setup_dc(voltage_v, channel=channel)
     device.set_output(True, channel=channel)
+
+
+def _configure_y_rf_sine_source(
+    params: MxYRFParams,
+    rf: Any,
+    channel: int,
+) -> None:
+    """把 Y RF 通道恢复为幅度扫描所需的正弦波状态。"""
+    initial_amplitude = max(
+        params.frequency_rf_amplitude_vpp,
+        1e-6,
+    )
+    validate_safety_limit("rf_coil", initial_amplitude)
+    rf.set_burst_state(False, channel=channel)
+    rf.set_mod_state(False, channel=channel)
+    rf.setup_sine(
+        params.y_rf_frequency_hz,
+        initial_amplitude,
+        offset=0.0,
+        phase=0.0,
+        channel=channel,
+    )
+    rf.set_output(False, channel=channel)
+
+
+def _configure_response_demodulator(
+    params: MxYRFParams,
+    hf2: Any,
+) -> float:
+    """恢复幅度响应采集所需的 HF2 Demod0 配置并返回实际速率。"""
+    demod.configure_oscillator(
+        hf2,
+        OscillatorConfig(
+            osc_index=params.demod_osc_idx,
+            frequency=params.y_rf_frequency_hz,
+        ),
+    )
+    return float(
+        demod.configure_demodulator(
+            hf2,
+            DemodulatorConfig(
+                demod_index=params.demod_idx,
+                enable=True,
+                rate=params.response_rate_sa_s,
+                input_channel=0,
+                osc_select=params.demod_osc_idx,
+                harmonic=1,
+                time_constant=params.response_time_constant_s,
+                order=params.response_demod_order,
+                phase=float(
+                    hf2.get_double(
+                        f"{hf2.demod_path(params.demod_idx)}/phaseshift"
+                    )
+                ),
+            ),
+        )
+    )
+
+
+def _restore_response_acquisition_state(
+    params: MxYRFParams,
+    devices: dict[str, Any],
+    channels: dict[str, int],
+) -> float:
+    """在每次幅度扫描前同时恢复 Y RF 正弦波与 HF2 响应配置。"""
+    _configure_y_rf_sine_source(
+        params,
+        devices["xy_field"],
+        channels["y_rf"],
+    )
+    return _configure_response_demodulator(params, devices["hf2"])
 
 
 def _configure_reference_clocks(
@@ -274,15 +350,11 @@ def _configure_outputs(
     xy_field.setup_dc(0.0, channel=channels["x_field"])
     xy_field.set_output(False, channel=channels["x_field"])
     validate_safety_limit("rf_coil", 0.0)
-    xy_field.set_burst_state(False, channel=channels["y_rf"])
-    xy_field.set_mod_state(False, channel=channels["y_rf"])
-    initial_amplitude = max(
-        params.frequency_rf_amplitude_vpp,
-        1e-6,
+    _configure_y_rf_sine_source(
+        params,
+        xy_field,
+        channels["y_rf"],
     )
-    validate_safety_limit("rf_coil", initial_amplitude)
-    xy_field.setup_sine(params.y_rf_frequency_hz, initial_amplitude, offset=0.0, phase=0.0, channel=channels["y_rf"])
-    xy_field.set_output(False, channel=channels["y_rf"])
 
     laser = devices["laser"]
     validate_safety_limit("Pump_laser_power", params.pump_laser_power_v)
@@ -338,21 +410,7 @@ def _configure_outputs(
         hf2,
         SignalInputConfig(input_index=0, range=params.hf2_signal_range_v, ac_coupling=True, diff=False, impedance=50),
     )
-    demod.configure_oscillator(hf2, OscillatorConfig(osc_index=params.demod_osc_idx, frequency=params.y_rf_frequency_hz))
-    actual_rate = demod.configure_demodulator(
-        hf2,
-        DemodulatorConfig(
-            demod_index=params.demod_idx,
-            enable=True,
-            rate=params.response_rate_sa_s,
-            input_channel=0,
-            osc_select=params.demod_osc_idx,
-            harmonic=1,
-            time_constant=params.response_time_constant_s,
-            order=params.response_demod_order,
-            phase=float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift")),
-        ),
-    )
+    actual_rate = _configure_response_demodulator(params, hf2)
     print(f"Mx 工作点已配置，温度 {actual_temperature:.2f} °C，Demod0 实际速率 {actual_rate:.3f} Sa/s")
     return float(actual_rate), clock_sources
 
@@ -456,7 +514,7 @@ def _acquire_valid_r_point(
         )
         if accepted:
             return summary, attempt, filename
-    raise RuntimeError(
+    raise RPointQualityError(
         f"{file_stem} 连续 {params.r_point_max_attempts} 次 "
         f"std(R) > {params.r_bad_point_std_threshold_v:.6g} V"
     )
@@ -535,18 +593,25 @@ def _acquire_amplitude_scan(
     run_dir: Any,
     devices: dict[str, Any],
     channels: dict[str, int],
-    actual_rate: float,
+    expected_actual_rate: float,
     device_id: str,
-) -> None:
+) -> float:
     axis = build_amplitude_axis(params)
     summaries: list[dict[str, float]] = []
     hardware_records: list[dict[str, Any]] = []
     accepted_attempts: list[int] = []
     accepted_files: list[str] = []
     rf = devices["xy_field"]
-    hf2 = devices["hf2"]
-    rf.set_frequency(params.y_rf_frequency_hz, channel=channels["y_rf"])
-    demod.configure_oscillator(hf2, OscillatorConfig(osc_index=params.demod_osc_idx, frequency=params.y_rf_frequency_hz))
+    actual_rate = _restore_response_acquisition_state(
+        params,
+        devices,
+        channels,
+    )
+    if not np.isclose(actual_rate, expected_actual_rate):
+        print(
+            "HF2 响应采样率回读已更新: "
+            f"{expected_actual_rate:.3f} -> {actual_rate:.3f} Sa/s"
+        )
     for index, amplitude in enumerate(axis):
         check_cancelled()
         print(f"Y RF 幅度点 {index + 1}/{len(axis)}: {amplitude:+.6f} Vpp")
@@ -587,6 +652,7 @@ def _acquire_amplitude_scan(
         ),
         actual_rate_sa_s=np.float64(actual_rate),
     )
+    return actual_rate
 
 
 def _set_y_rf_zero_off(rf: Any, channel: int) -> None:
@@ -649,6 +715,102 @@ def _acquire_noise(
     return float(actual_rate)
 
 
+def connect_mx_y_rf_devices(
+    mapping: dict[str, dict[str, Any]],
+    session: DeviceSession,
+) -> tuple[dict[str, Any], dict[str, int]]:
+    """连接 Mx Y RF 构型使用的设备，并复用同物理资源。"""
+    return _connect_devices(mapping, session)
+
+
+def snapshot_mx_y_rf_state(
+    devices: dict[str, Any],
+    channels: dict[str, int],
+) -> dict[str, Any]:
+    """保存配置前的设备身份和输出状态。"""
+    return _initial_state_snapshot(devices, channels)
+
+
+def configure_mx_y_rf_outputs(
+    params: MxYRFParams,
+    devices: dict[str, Any],
+    channels: dict[str, int],
+    mapping: dict[str, dict[str, Any]],
+) -> tuple[float, dict[str, dict[str, str]]]:
+    """配置参考 Mx Y RF 工作点。"""
+    return _configure_outputs(params, devices, channels, mapping)
+
+
+def acquire_mx_y_rf_point(
+    params: MxYRFParams,
+    raw_dir: Path,
+    devices: dict[str, Any],
+    channels: dict[str, int],
+    actual_response_rate: float,
+    device_id: str,
+    *,
+    results_dir: Path | None = None,
+) -> dict[str, Any]:
+    """把一个完整工作点的原始数据写入指定目录。"""
+    raw_dir = Path(raw_dir)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    target_results = Path(results_dir) if results_dir is not None else raw_dir
+    target_results.mkdir(parents=True, exist_ok=True)
+    point_run_dir = SimpleNamespace(raw=raw_dir, results=target_results)
+    frequency_fit = None
+    try:
+        if params.linewidth_mode == "frequency_sweep":
+            frequency_fit = _acquire_frequency_scan(
+                params,
+                point_run_dir,
+                devices,
+                channels,
+                actual_response_rate,
+                device_id,
+            )
+        actual_response_rate = _acquire_amplitude_scan(
+            params,
+            point_run_dir,
+            devices,
+            channels,
+            actual_response_rate,
+            device_id,
+        )
+        actual_noise_rate = _acquire_noise(
+            params,
+            point_run_dir,
+            devices,
+            channels,
+            device_id,
+        )
+    finally:
+        _set_y_rf_zero_off(devices["xy_field"], channels["y_rf"])
+    return {
+        "actual_response_rate_sa_s": actual_response_rate,
+        "actual_noise_rate_sa_s": actual_noise_rate,
+        "frequency_gate_fit": frequency_fit,
+    }
+
+
+def restore_mx_y_rf_laser_powers(
+    devices: dict[str, Any],
+    channels: dict[str, int],
+    *,
+    pump_power_v: float,
+    probe_power_v: float,
+) -> None:
+    """恢复 Pump/Probe DC 基准功率并保持两路输出开启。"""
+    laser = devices.get("laser")
+    if laser is None:
+        return
+    validate_safety_limit("Pump_laser_power", pump_power_v)
+    validate_safety_limit("Probe_laser_power", probe_power_v)
+    laser.setup_dc(pump_power_v, channel=channels["pump_laser"])
+    laser.set_output(True, channel=channels["pump_laser"])
+    laser.setup_dc(probe_power_v, channel=channels["probe_laser"])
+    laser.set_output(True, channel=channels["probe_laser"])
+
+
 def run(params: MxYRFParams) -> Path:
     root = find_project_root()
     mapping = load_mapping(root)
@@ -688,11 +850,20 @@ def run(params: MxYRFParams) -> Path:
         )
         run_dir.update_config(clock_sources=clock_sources)
         device_id = str(mapping["lockin_r"]["device_id"])
-        frequency_fit = None
-        if params.linewidth_mode == "frequency_sweep":
-            frequency_fit = _acquire_frequency_scan(params, run_dir, devices, channels, actual_response_rate, device_id)
-        _acquire_amplitude_scan(params, run_dir, devices, channels, actual_response_rate, device_id)
-        actual_noise_rate = _acquire_noise(params, run_dir, devices, channels, device_id)
+        point_result = acquire_mx_y_rf_point(
+            params,
+            run_dir.raw,
+            devices,
+            channels,
+            actual_response_rate,
+            device_id,
+            results_dir=run_dir.results,
+        )
+        frequency_fit = point_result["frequency_gate_fit"]
+        actual_response_rate = point_result[
+            "actual_response_rate_sa_s"
+        ]
+        actual_noise_rate = point_result["actual_noise_rate_sa_s"]
         completion_status = "completed"
         run_dir.update_config(
             completion_status=completion_status,

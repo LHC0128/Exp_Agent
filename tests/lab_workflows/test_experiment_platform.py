@@ -81,10 +81,10 @@ class ExperimentPlatformTests(unittest.TestCase):
         self.assertIn("LAB_TYPED_PARAMETERS", output)
         self.assertIn("RuntimeError", output)
 
-    def test_registry_contains_only_32_formal_experiments(self):
+    def test_registry_contains_only_33_formal_experiments(self):
         definitions = list_experiments()
-        self.assertEqual(len(definitions), 32)
-        self.assertEqual(len({item.id for item in definitions}), 32)
+        self.assertEqual(len(definitions), 33)
+        self.assertEqual(len({item.id for item in definitions}), 33)
         self.assertNotIn("quick-test-scan", {item.id for item in definitions})
 
     def test_new_and_legacy_execution_modes_are_explicit(self):
@@ -96,6 +96,7 @@ class ExperimentPlatformTests(unittest.TestCase):
             "xy-direct-aw-dc-calibration",
             "t2-calibration",
             "mx-y-rf-sensitivity",
+            "mx-y-rf-power-optimization",
             "mx-main-field-calibration",
             "mx-xy-residual-field-calibration",
             "mx-z-field-calibration",
@@ -114,6 +115,7 @@ class ExperimentPlatformTests(unittest.TestCase):
             "xy-direct-aw-dc-calibration",
             "t2-calibration",
             "mx-y-rf-sensitivity",
+            "mx-y-rf-power-optimization",
             "mx-main-field-calibration",
             "mx-xy-residual-field-calibration",
             "mx-z-field-calibration",

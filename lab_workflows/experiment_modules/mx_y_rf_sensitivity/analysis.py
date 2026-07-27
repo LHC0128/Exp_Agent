@@ -28,15 +28,10 @@ from ...plotting import (
 )
 from .analysis_core import (
     absolute_dispersive_response,
-    amplitude_gamma_to_hz,
-    average_welch_psd,
-    central_absolute_linear_fit,
-    fit_absolute_dispersive_response,
-    fit_lorentzian_response,
     lorentzian_response,
-    sensitivity_spectrum,
 )
 from .models import MxYRFParams
+from .point_analysis import evaluate_mx_y_rf_point
 
 matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
 
@@ -69,21 +64,6 @@ def _load_params(run_dir: Path) -> tuple[MxYRFParams, dict[str, Any]]:
     return params, config
 
 
-def _load_noise(raw_dir: Path, count: int) -> tuple[list[dict[str, np.ndarray]], list[float]]:
-    records: list[dict[str, np.ndarray]] = []
-    rates: list[float] = []
-    for index in range(count):
-        path = raw_dir / f"noise_{index:03d}.npz"
-        if not path.exists():
-            raise FileNotFoundError(f"缺少噪声记录: {path}")
-        with np.load(path) as data:
-            records.append({
-                "r_v": np.asarray(data["r_v"], dtype=float)
-            })
-            rates.append(float(data["actual_rate_sa_s"]))
-    return records, rates
-
-
 def _plot_full_analysis(
     *,
     results_dir: Path,
@@ -97,11 +77,14 @@ def _plot_full_analysis(
     frequency_hz: np.ndarray,
     sensitivity: dict[str, Any],
     hwhm_hz: float | None,
+    filename: str = "full_analysis.png",
+    title: str | None = None,
 ) -> str | None:
     """按静磁场完整分析图版式绘制磁场灵敏度。"""
     if "corrected_ft_per_sqrt_hz" not in sensitivity:
         return None
 
+    set_plot_style("paper")
     dense_amplitude = np.linspace(
         float(amplitude_vpp.min()),
         float(amplitude_vpp.max()),
@@ -160,6 +143,8 @@ def _plot_full_analysis(
         f"Slope = {slope_v_per_ft:.2e} V/fT",
         transform=ax1.transAxes,
     )
+    if title:
+        ax1.set_title(title)
     style_legend(ax1, loc="best")
 
     positive = frequency_hz > 0
@@ -225,7 +210,6 @@ def _plot_full_analysis(
         labelspacing=0.25,
     )
 
-    filename = "full_analysis.png"
     save_figure(fig, results_dir / filename)
     return filename
 
@@ -237,44 +221,14 @@ def analyze(run_dir: Path) -> dict[str, Any]:
     results_dir.mkdir(parents=True, exist_ok=True)
     params, config = _load_params(run_dir)
 
-    amplitude_path = raw_dir / "amplitude_scan.npz"
-    if not amplitude_path.exists():
-        raise FileNotFoundError(f"缺少幅度扫描汇总: {amplitude_path}")
-    with np.load(amplitude_path) as data:
-        amplitude_vpp = np.asarray(data["signed_amplitude_vpp"], dtype=float)
-        r_key = (
-            "r_mean_v"
-            if "r_mean_v" in data.files
-            else "r_scalar_mean_v"
-        )
-        r_mean_v = np.asarray(data[r_key], dtype=float)
-        r_std_v = np.asarray(data["r_std_v"], dtype=float)
-
-    bad_point_mask = (
-        ~np.isfinite(amplitude_vpp)
-        | ~np.isfinite(r_mean_v)
-        | ~np.isfinite(r_std_v)
-        | (r_std_v > params.r_bad_point_std_threshold_v)
-    )
-    fit_mask = ~bad_point_mask
-    response_fit = fit_absolute_dispersive_response(
-        amplitude_vpp[fit_mask],
-        r_mean_v[fit_mask],
-        r_squared_min=params.fit_r_squared_min,
-        relative_gamma_uncertainty_max=params.fit_relative_gamma_uncertainty_max,
-    )
-    response_result = {
-        **response_fit.to_dict(),
-        "linewidth_kind": "amplitude_domain",
-        "response_signal": "R",
-        "model": "abs(A*(V-V0)/((V-V0)^2+gamma^2)+C)",
-        "bad_point_criterion": "std(R) > threshold",
-        "bad_point_std_threshold_v": params.r_bad_point_std_threshold_v,
-        "excluded_point_count": int(np.count_nonzero(bad_point_mask)),
-        "excluded_amplitude_vpp": amplitude_vpp[
-            bad_point_mask
-        ].tolist(),
-    }
+    evaluation = evaluate_mx_y_rf_point(raw_dir, params)
+    amplitude_vpp = evaluation["amplitude_vpp"]
+    r_mean_v = evaluation["r_mean_v"]
+    r_std_v = evaluation["r_std_v"]
+    bad_point_mask = evaluation["bad_point_mask"]
+    fit_mask = evaluation["fit_mask"]
+    response_fit = evaluation["response_fit"]
+    response_result = evaluation["response_result"]
     if not response_fit.success:
         payload = {"success": False, "response_fit": response_result}
         (results_dir / "analysis.yaml").write_text(
@@ -284,95 +238,21 @@ def analyze(run_dir: Path) -> dict[str, Any]:
         raise RuntimeError(
             "幅度色散拟合质量不合格: " + "；".join(response_fit.rejection_reasons)
         )
-
-    primary_slope = abs(response_fit.amplitude / response_fit.gamma**2)
-    linear = central_absolute_linear_fit(
-        amplitude_vpp[fit_mask],
-        r_mean_v[fit_mask],
-        center=response_fit.center,
-        gamma=response_fit.gamma,
-        gamma_fraction=params.linear_check_gamma_fraction,
-    )
-    slope_difference = (
-        abs(abs(float(linear["slope"])) - primary_slope) / primary_slope
-        if linear["success"] and primary_slope > 0
-        else float("nan")
-    )
-    warnings: list[str] = []
-    if np.isfinite(slope_difference) and slope_difference > params.slope_agreement_tolerance:
-        warnings.append(
-            f"中心线性斜率与色散零点导数相差 {slope_difference:.1%}，"
-            f"超过 {params.slope_agreement_tolerance:.1%}"
-        )
-
-    frequency_scan_hz: np.ndarray | None = None
-    frequency_response_v: np.ndarray | None = None
-    linewidth_fit = None
-    if params.linewidth_mode == "frequency_sweep":
-        frequency_path = raw_dir / "frequency_scan.npz"
-        if not frequency_path.exists():
-            raise FileNotFoundError(f"缺少模式1扫频汇总: {frequency_path}")
-        with np.load(frequency_path) as data:
-            frequency_scan_hz = np.asarray(data["frequency_hz"], dtype=float)
-            frequency_response_v = np.asarray(data["r_scalar_mean_v"], dtype=float)
-        linewidth_fit = fit_lorentzian_response(
-            frequency_scan_hz,
-            frequency_response_v,
-            r_squared_min=params.fit_r_squared_min,
-            relative_gamma_uncertainty_max=params.fit_relative_gamma_uncertainty_max,
-        )
-        if not linewidth_fit.success:
-            raise RuntimeError(
-                "模式1 R-Lorentzian 拟合质量不合格: "
-                + "；".join(linewidth_fit.rejection_reasons)
-            )
-        hwhm_hz: float | None = linewidth_fit.gamma
-        linewidth_result = {
-            **linewidth_fit.to_dict(),
-            "linewidth_kind": "frequency_sweep_true_hwhm",
-            "hwhm_hz": hwhm_hz,
-        }
-    else:
-        hwhm_hz = amplitude_gamma_to_hz(
-            response_fit.gamma,
-            params.y_rf_nt_per_vpp,
-        )
-        linewidth_result = {
-            "success": hwhm_hz is not None,
-            "linewidth_kind": "amplitude_equivalent",
-            "gamma_vpp": response_fit.gamma,
-            "hwhm_hz": hwhm_hz,
-            "note": (
-                "Rabi/amplitude-equivalent HWHM; "
-                "not a swept-frequency resonance linewidth"
-            ),
-        }
-        if hwhm_hz is None:
-            warnings.append(
-                "Y_RF_NT_PER_VPP 未填写：不计算模式2等效 HWHM 和频段中位数"
-            )
-
-    noise, rates = _load_noise(raw_dir, params.noise_n_avg)
-    frequency_hz, psd_r = average_welch_psd(
-        [item["r_v"] for item in noise],
-        rates,
-    )
-
-    sensitivity = sensitivity_spectrum(
-        psd_r,
-        frequency_hz,
-        slope_signal_v_per_vpp=primary_slope,
-        hwhm_hz=hwhm_hz,
-        low_freq_skip_hz=params.low_freq_skip_hz,
-        y_rf_nt_per_vpp=params.y_rf_nt_per_vpp,
-    )
-    if hwhm_hz is not None and not bool(
-        sensitivity["flat_detection_success"]
-    ):
-        warnings.append(
-            "自动平坦段识别失败，未报告灵敏度单值："
-            f"{sensitivity['flat_detection_reason']}"
-        )
+    if evaluation["invalid_reasons"] and params.linewidth_mode == "frequency_sweep":
+        raise RuntimeError("；".join(evaluation["invalid_reasons"]))
+    primary_slope = evaluation["primary_slope"]
+    linear = evaluation["linear"]
+    slope_difference = evaluation["slope_difference"]
+    warnings = evaluation["warnings"]
+    frequency_scan_hz = evaluation["frequency_scan_hz"]
+    frequency_response_v = evaluation["frequency_response_v"]
+    linewidth_fit = evaluation["linewidth_fit"]
+    hwhm_hz = evaluation["hwhm_hz"]
+    linewidth_result = evaluation["linewidth_result"]
+    rates = evaluation["noise_rates"]
+    frequency_hz = evaluation["frequency_hz"]
+    psd_r = evaluation["psd_r"]
+    sensitivity = evaluation["sensitivity"]
 
     np.savez(
         results_dir / "response_fit.npz",

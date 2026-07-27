@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+import shutil
 from types import SimpleNamespace
+from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -32,6 +35,9 @@ from lab_workflows.experiment_modules.mx_y_rf_sensitivity.definition import (
 from lab_workflows.experiment_modules.mx_y_rf_sensitivity.models import (
     MxYRFParams,
 )
+from lab_workflows.experiment_modules.mx_y_rf_sensitivity.point_analysis import (
+    evaluate_mx_y_rf_point,
+)
 from lab_workflows.experiment_modules.mx_y_rf_sensitivity.scan import (
     build_amplitude_axis,
     signed_amplitude_hardware,
@@ -39,11 +45,23 @@ from lab_workflows.experiment_modules.mx_y_rf_sensitivity.scan import (
 from lab_workflows.experiment_modules.mx_y_rf_sensitivity.workflow import (
     _acquire_valid_r_point,
     _configure_reference_clocks,
+    _restore_response_acquisition_state,
     _set_y_rf_zero_off,
     safe_shutdown,
 )
 from lab_workflows.experiments.registry import get_experiment
 from sensitivity_analysis.fitting import LARMOR_PER_NT
+
+
+@pytest.fixture
+def local_tmp_path() -> Path:
+    root = Path(__file__).resolve().parents[2] / "data"
+    path = root / f".test_mx_y_rf_sensitivity_{uuid4().hex}"
+    path.mkdir(mode=0o777)
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def test_default_params_and_registry_contract() -> None:
@@ -346,6 +364,40 @@ def test_psd_uses_actual_rate_and_unit_conversion() -> None:
     assert amplitude_gamma_to_hz(0.02, 0.0) is None
 
 
+def test_rejected_response_fit_can_continue_for_diagnostics(
+    local_tmp_path: Path,
+) -> None:
+    raw_dir = local_tmp_path / "raw"
+    raw_dir.mkdir()
+    params = MxYRFParams(noise_n_avg=1)
+    amplitude = np.linspace(-0.2, 0.2, 21)
+    np.savez(
+        raw_dir / "amplitude_scan.npz",
+        signed_amplitude_vpp=amplitude,
+        r_mean_v=np.full_like(amplitude, 0.0034),
+        r_std_v=np.full_like(amplitude, 1e-4),
+    )
+    rng = np.random.default_rng(42)
+    np.savez(
+        raw_dir / "noise_000.npz",
+        r_v=rng.normal(scale=1e-4, size=4096),
+        actual_rate_sa_s=np.float64(4096.0),
+    )
+
+    strict = evaluate_mx_y_rf_point(raw_dir, params)
+    diagnostic = evaluate_mx_y_rf_point(
+        raw_dir,
+        params,
+        include_rejected_fit_diagnostics=True,
+    )
+
+    assert not strict["valid"]
+    assert "sensitivity" not in strict
+    assert not diagnostic["valid"]
+    assert "幅度色散拟合质量不合格" in diagnostic["invalid_reasons"][0]
+    assert "sensitivity" in diagnostic
+
+
 def test_flat_sensitivity_band_is_detected_from_spectrum_shape() -> None:
     rng = np.random.default_rng(31)
     frequency = np.arange(1.0, 2501.0)
@@ -487,6 +539,69 @@ class _FakeTEC:
 
     def disconnect(self) -> None:
         self.disconnected = True
+
+
+class _FakeHF2:
+    def demod_path(self, index: int) -> str:
+        return f"/dev/demods/{index}"
+
+    def get_double(self, path: str) -> float:
+        assert path == "/dev/demods/0/phaseshift"
+        return 12.5
+
+
+def test_response_state_is_restored_after_noise_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lab_workflows.experiment_modules.mx_y_rf_sensitivity.workflow as workflow
+
+    rf = _FakeDG()
+    oscillator_configs: list[object] = []
+    demodulator_configs: list[object] = []
+    monkeypatch.setattr(
+        workflow.demod,
+        "configure_oscillator",
+        lambda hf2, config: oscillator_configs.append(config),
+    )
+
+    def fake_configure_demodulator(hf2, config):
+        demodulator_configs.append(config)
+        return 899.465
+
+    monkeypatch.setattr(
+        workflow.demod,
+        "configure_demodulator",
+        fake_configure_demodulator,
+    )
+    params = MxYRFParams(
+        y_rf_frequency_hz=90000.0,
+        frequency_rf_amplitude_vpp=0.05,
+        response_rate_sa_s=1000.0,
+        response_time_constant_s=0.001,
+        response_demod_order=4,
+    )
+
+    actual_rate = _restore_response_acquisition_state(
+        params,
+        {"xy_field": rf, "hf2": _FakeHF2()},
+        {"y_rf": 2},
+    )
+
+    assert actual_rate == pytest.approx(899.465)
+    assert rf.calls == [
+        ("burst", 2, False),
+        ("mod", 2, False),
+        ("sine", 2, 90000.0, 0.05, 0.0, 0.0),
+        ("output", 2, False),
+    ]
+    assert len(oscillator_configs) == 1
+    assert oscillator_configs[0].frequency == pytest.approx(90000.0)
+    assert len(demodulator_configs) == 1
+    config = demodulator_configs[0]
+    assert config.rate == pytest.approx(1000.0)
+    assert config.time_constant == pytest.approx(0.001)
+    assert config.order == 4
+    assert config.phase == pytest.approx(12.5)
 
 
 def test_noise_acquisition_sets_y_rf_to_zero_dc_and_output_off() -> None:

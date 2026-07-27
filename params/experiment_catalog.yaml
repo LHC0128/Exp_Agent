@@ -12,6 +12,7 @@ tags:
   label: 其他
 assignments:
   mx-y-rf-sensitivity: calibration
+  mx-y-rf-power-optimization: calibration
   mx-main-field-calibration: verification
   mx-main-field-noise-spectrum: calibration
   mx-main-field-scope-noise-spectrum: calibration
@@ -42,6 +43,7 @@ assignments:
   temperature-switch-pid-cycle: tag-15b058ba
 experiment_descriptions:
   mx-y-rf-sensitivity: Mx 构型下仅采集 Demod0 R，使用绝对值色散拟合斜率和零 RF 的 PSD_R 测量灵敏度，并支持两种线宽定义。
+  mx-y-rf-power-optimization: 在 Mx Y 向 RF 构型下二维扫描 Pump/Probe 光功率，逐点测量完整灵敏度并按平坦频段中位数寻找最优工作点。
   mx-main-field-calibration: 在 Mx 构型下扫描 GS200 主场电流和 Y RF 频率，由离线 Lorentzian 中心拟合标定
     Hz/mA 和 nT/mA。
   mx-main-field-noise-spectrum: 固定 HF2 为 90 kHz，按实测标定降低 GS200 主场电流，以正控制频率轴从 Demod0
@@ -66,6 +68,7 @@ experiment_descriptions:
   xy-direct-aw-dc-calibration: DirectAW 加常数控制的方式，外加不同频率射频场，寻找频率响应的最大值的位置，来对 控制 进行标定。
 experiment_titles:
   mx-y-rf-sensitivity: Mx Y 向 RF 场灵敏度
+  mx-y-rf-power-optimization: Mx Y RF 光功率灵敏度优化
   mx-main-field-calibration: Mx 主磁场频率标定
   mx-main-field-noise-spectrum: Mx 主磁场控制噪声谱
   mx-main-field-scope-noise-spectrum: Mx 主磁场示波器噪声谱
@@ -429,6 +432,54 @@ parameter_layouts:
     - R_POINT_MAX_ATTEMPTS
     - FREQUENCY_SETTLE_TIME_S
     - FREQUENCY_DURATION_S
+    - NOISE_RATE_SA_S
+    - NOISE_TIME_CONSTANT_S
+    - NOISE_DEMOD_ORDER
+    - LOW_FREQ_SKIP_HZ
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - FIT_R_SQUARED_MIN
+    - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
+    - LINEAR_CHECK_GAMMA_FRACTION
+    - SLOPE_AGREEMENT_TOLERANCE
+  mx-y-rf-power-optimization:
+    basic:
+    - RUN_TAG
+    - PUMP_POWER_START_V
+    - PUMP_POWER_STOP_V
+    - PUMP_POWER_POINTS
+    - PROBE_POWER_START_V
+    - PROBE_POWER_STOP_V
+    - PROBE_POWER_POINTS
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - Y_RF_FREQUENCY_HZ
+    - Y_RF_AMP_START_VPP
+    - Y_RF_AMP_STOP_VPP
+    - Y_RF_AMP_POINTS
+    - RESPONSE_SETTLE_TIME_S
+    - RESPONSE_DURATION_S
+    - Y_RF_NT_PER_VPP
+    - NOISE_N_AVG
+    - NOISE_DURATION_S
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
     - NOISE_RATE_SA_S
     - NOISE_TIME_CONSTANT_S
     - NOISE_DEMOD_ORDER
