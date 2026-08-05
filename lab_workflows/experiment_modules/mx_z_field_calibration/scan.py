@@ -27,6 +27,11 @@ def predicted_center_hz(params: MxZFieldCalibrationParams, z_bias_v: float) -> f
     )
 
 
+def initial_rf_frequency_hz(params: MxZFieldCalibrationParams) -> float:
+    """返回首个 Z 扫描点的预测中心，供采集前初始化 RF 与 HF2。"""
+    return predicted_center_hz(params, float(build_z_axis(params)[0]))
+
+
 def build_frequency_axis(params: MxZFieldCalibrationParams, z_bias_v: float) -> np.ndarray:
     center = predicted_center_hz(params, z_bias_v)
     count = int(round(2.0 * params.frequency_half_width_hz / params.frequency_step_hz))

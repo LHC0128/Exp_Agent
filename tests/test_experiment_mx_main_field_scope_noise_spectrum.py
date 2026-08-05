@@ -305,7 +305,7 @@ def test_global_2d_core_fit_projects_low_frequency_diagnostics() -> None:
     assert accuracy.quantitative_valid_mask[index_2000]
 
 
-def test_psd_map_x_limit_matches_control_frequency_stop(
+def test_psd_map_limits_and_colors_match_control_frequency_range(
     monkeypatch: pytest.MonkeyPatch,
     local_tmp_path,
 ) -> None:
@@ -315,12 +315,13 @@ def test_psd_map_x_limit_matches_control_frequency_stop(
 
     def capture_figure(figure, path) -> None:
         captured["xlim"] = figure.axes[0].get_xlim()
+        captured["ylim"] = figure.axes[0].get_ylim()
         captured["clim"] = figure.axes[0].collections[0].get_clim()
 
     monkeypatch.setattr(analysis, "save_figure", capture_figure)
     monkeypatch.setattr(analysis, "style_legend", lambda axis: None)
     frequency_hz = np.linspace(0.0, 100000.0, 101)
-    control_hz = np.linspace(500.0, 50000.0, 100)
+    control_hz = np.linspace(10000.0, 50000.0, 100)
     psd = np.logspace(-11.0, -9.0, control_hz.size * frequency_hz.size).reshape(
         control_hz.size, frequency_hz.size
     )
@@ -333,11 +334,110 @@ def test_psd_map_x_limit_matches_control_frequency_stop(
         fit_max_hz=45000.0,
     )
 
-    assert captured["xlim"] == pytest.approx((0.0, 50.0))
-    displayed_log_psd = np.log10(psd[:, frequency_hz <= control_hz[-1]])
+    assert captured["xlim"] == pytest.approx((10.0, 50.0))
+    assert captured["ylim"] == pytest.approx((10.0, 50.0))
+    displayed_log_psd = np.log10(
+        psd[
+            :,
+            (frequency_hz >= control_hz[0])
+            & (frequency_hz <= control_hz[-1]),
+        ]
+    )
     expected_clim = np.percentile(displayed_log_psd, [1.0, 99.5])
     assert captured["clim"] == pytest.approx(tuple(expected_clim))
     assert captured["clim"][1] < np.log10(psd[0, 1])
+
+
+def test_fit_examples_only_select_frequencies_inside_control_range(
+    monkeypatch: pytest.MonkeyPatch,
+    local_tmp_path,
+) -> None:
+    import lab_workflows.experiment_modules.mx_main_field_scope_noise_spectrum.analysis as analysis
+
+    selected_frequency_hz: list[float] = []
+
+    def capture_figure(figure, path) -> None:
+        return None
+
+    def capture_legend(axis, *, title: str, **kwargs) -> None:
+        selected_frequency_hz.append(float(title.split(": ", 1)[1].split()[0]) * 1000.0)
+
+    monkeypatch.setattr(analysis, "save_figure", capture_figure)
+    monkeypatch.setattr(analysis, "style_legend", capture_legend)
+    control_hz = np.linspace(10000.0, 20000.0, 101)
+    frequency_hz = np.linspace(1000.0, 25000.0, 49)
+    psd = np.full((control_hz.size, frequency_hz.size), 1.0e-9)
+    parameters = np.column_stack(
+        [
+            np.full(frequency_hz.size, 300.0),
+            np.full(frequency_hz.size, 1.0e-3),
+            np.full(frequency_hz.size, 1.0e-9),
+            np.zeros(frequency_hz.size),
+        ]
+    )
+    fit = NoiseSeparationResult(
+        parameters=parameters,
+        uncertainties=np.ones_like(parameters),
+        fit_mask=np.ones(frequency_hz.size, dtype=bool),
+        interpolated_mask=np.zeros(frequency_hz.size, dtype=bool),
+        s_beta=parameters[:, 1],
+        n_s1=parameters[:, 2],
+    )
+
+    files = analysis._plot_fit_examples(
+        local_tmp_path,
+        control_hz,
+        frequency_hz,
+        psd,
+        fit,
+        count=10,
+        fit_half_width_hz=5000.0,
+    )
+
+    assert len(files) == 10
+    assert min(selected_frequency_hz) >= control_hz[0]
+    assert max(selected_frequency_hz) <= control_hz[-1]
+
+
+def test_global_fit_examples_select_frequencies_inside_control_range(
+    monkeypatch: pytest.MonkeyPatch,
+    local_tmp_path,
+) -> None:
+    import lab_workflows.experiment_modules.mx_main_field_scope_noise_spectrum.analysis as analysis
+
+    captured: dict[str, list[str]] = {}
+
+    def capture_figure(figure, path) -> None:
+        captured["titles"] = [axis.get_title() for axis in figure.axes]
+
+    monkeypatch.setattr(analysis, "save_figure", capture_figure)
+    monkeypatch.setattr(analysis, "style_legend", lambda axis: None)
+    control_hz = np.linspace(10000.0, 20000.0, 21)
+    frequency_hz = np.linspace(500.0, 25000.0, 50)
+    matrix_shape = (control_hz.size, frequency_hz.size)
+    fit = SimpleNamespace(
+        frequency_hz=frequency_hz,
+        control_frequency_hz=control_hz,
+        background_profile=np.ones(control_hz.size),
+        n_s1=np.full(frequency_hz.size, 1.0e-9),
+        c_s_beta=np.full(frequency_hz.size, 1.0e-3),
+        response_matrix=np.ones(matrix_shape),
+        model_matrix=np.full(matrix_shape, 2.0e-9),
+    )
+
+    analysis._plot_global_2d_examples(
+        local_tmp_path,
+        np.full(matrix_shape, 2.0e-9),
+        fit,
+    )
+
+    selected_frequency_hz = [
+        float(title.split(": ", 1)[1].split()[0]) * 1000.0
+        for title in captured["titles"]
+    ]
+    assert len(selected_frequency_hz) == 4
+    assert min(selected_frequency_hz) >= control_hz[0]
+    assert max(selected_frequency_hz) <= control_hz[-1]
 
 
 def test_global_noise_spectra_use_linear_frequency_axis_from_zero(

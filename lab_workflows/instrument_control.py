@@ -742,60 +742,76 @@ def apply_generator_channel(
 
     instrument = _connect(record)
     try:
-        _apply_basic_waveform(instrument, record.type, channel_number, settings)
-
-        mod = dict(settings.get("mod") or {})
-        burst = dict(settings.get("burst") or {})
-        if mod and burst and mod.get("enabled") and burst.get("enabled"):
-            target = settings.get("target_mode")
-            if target == "mod":
-                burst["enabled"] = False
-            elif target == "burst":
-                mod["enabled"] = False
-            else:
-                raise ValueError("Mod 与 Burst 不能同时启用")
-
-        if mod or burst:
+        try:
             if record.type == "DG900":
-                if burst.get("enabled"):
-                    instrument.disable_all_mod(channel_number)
-                    _apply_burst(instrument, channel_number, burst)
-                    instrument.set_burst_state(True, channel_number)
-                elif mod.get("enabled"):
-                    instrument.set_burst_state(False, channel_number)
-                    instrument.disable_all_mod(channel_number)
-                    if (mod.get("type") or "AM") == "PWM" and not str(
-                            settings.get("shape", "")).upper().startswith("PULS"):
-                        raise ValueError("PWM 调制要求基础波形为 PULSe")
-                    _apply_modulation(
-                        instrument, record.type, channel_number, mod
-                    )
-                    instrument.set_mod_type_state(
-                        mod.get("type") or "AM", True, channel_number
-                    )
-                else:
-                    instrument.set_burst_state(False, channel_number)
-                    instrument.disable_all_mod(channel_number)
-            else:
-                if burst.get("enabled"):
-                    instrument.set_mod_state(False, channel_number)
-                    _apply_burst(instrument, channel_number, burst)
-                    instrument.set_burst_state(True, channel_number)
-                elif mod.get("enabled"):
-                    instrument.set_burst_state(False, channel_number)
-                    if (mod.get("type") or "AM") == "PWM" and not str(
-                            settings.get("shape", "")).upper().startswith("PULS"):
-                        raise ValueError("PWM 调制要求基础波形为 PULSe")
-                    _apply_modulation(
-                        instrument, record.type, channel_number, mod
-                    )
-                    instrument.set_mod_state(True, channel_number)
-                else:
-                    instrument.set_burst_state(False, channel_number)
-                    instrument.set_mod_state(False, channel_number)
+                instrument.clear_status()
 
-        if "output" in settings:
-            instrument.set_output(bool(settings["output"]), channel_number)
+            _apply_basic_waveform(instrument, record.type, channel_number, settings)
+
+            mod = dict(settings.get("mod") or {})
+            burst = dict(settings.get("burst") or {})
+            if mod and burst and mod.get("enabled") and burst.get("enabled"):
+                target = settings.get("target_mode")
+                if target == "mod":
+                    burst["enabled"] = False
+                elif target == "burst":
+                    mod["enabled"] = False
+                else:
+                    raise ValueError("Mod 与 Burst 不能同时启用")
+
+            if mod or burst:
+                if record.type == "DG900":
+                    if burst.get("enabled"):
+                        instrument.disable_all_mod(channel_number)
+                        _apply_burst(instrument, channel_number, burst)
+                        instrument.set_burst_state(True, channel_number)
+                    elif mod.get("enabled"):
+                        instrument.set_burst_state(False, channel_number)
+                        instrument.disable_all_mod(channel_number)
+                        if (mod.get("type") or "AM") == "PWM" and not str(
+                                settings.get("shape", "")).upper().startswith("PULS"):
+                            raise ValueError("PWM 调制要求基础波形为 PULSe")
+                        _apply_modulation(
+                            instrument, record.type, channel_number, mod
+                        )
+                        instrument.set_mod_type_state(
+                            mod.get("type") or "AM", True, channel_number
+                        )
+                    else:
+                        instrument.set_burst_state(False, channel_number)
+                        instrument.disable_all_mod(channel_number)
+                else:
+                    if burst.get("enabled"):
+                        instrument.set_mod_state(False, channel_number)
+                        _apply_burst(instrument, channel_number, burst)
+                        instrument.set_burst_state(True, channel_number)
+                    elif mod.get("enabled"):
+                        instrument.set_burst_state(False, channel_number)
+                        if (mod.get("type") or "AM") == "PWM" and not str(
+                                settings.get("shape", "")).upper().startswith("PULS"):
+                            raise ValueError("PWM 调制要求基础波形为 PULSe")
+                        _apply_modulation(
+                            instrument, record.type, channel_number, mod
+                        )
+                        instrument.set_mod_state(True, channel_number)
+                    else:
+                        instrument.set_burst_state(False, channel_number)
+                        instrument.set_mod_state(False, channel_number)
+
+            if "output" in settings:
+                instrument.set_output(bool(settings["output"]), channel_number)
+
+            if record.type == "DG900":
+                instrument.wait_for_operation_complete()
+                instrument.raise_for_errors()
+        except Exception:
+            rule = load_safety_limits().get(channel.mapping_key, {})
+            if rule.get("output_off_on_error"):
+                try:
+                    instrument.set_output(False, channel_number)
+                except Exception:
+                    pass
+            raise
     finally:
         instrument.disconnect()
     return read_device(device_id)

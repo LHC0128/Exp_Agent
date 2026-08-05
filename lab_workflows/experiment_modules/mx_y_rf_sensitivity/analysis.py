@@ -36,9 +36,6 @@ from .point_analysis import evaluate_mx_y_rf_point
 matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
 
 
-SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ = 150.0
-
-
 def _builtin(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _builtin(item) for key, item in value.items()}
@@ -51,13 +48,16 @@ def _builtin(value: Any) -> Any:
     return value
 
 
-def _load_params(run_dir: Path) -> tuple[MxYRFParams, dict[str, Any]]:
+def _load_params(
+    run_dir: Path,
+    params_type: type[MxYRFParams] = MxYRFParams,
+) -> tuple[MxYRFParams, dict[str, Any]]:
     config_path = run_dir / "experiment_config.yaml"
     if not config_path.exists():
         raise FileNotFoundError(f"未找到实验配置: {config_path}")
     with config_path.open(encoding="utf-8") as stream:
         config = yaml.safe_load(stream) or {}
-    params = MxYRFParams.from_external(
+    params = params_type.from_external(
         config.get("parameters", {}),
         schema_version=int(config.get("schema_version", 1)),
     )
@@ -79,6 +79,8 @@ def _plot_full_analysis(
     hwhm_hz: float | None,
     filename: str = "full_analysis.png",
     title: str | None = None,
+    slope_method_label: str | None = None,
+    local_slope_fit: dict[str, Any] | None = None,
 ) -> str | None:
     """按静磁场完整分析图版式绘制磁场灵敏度。"""
     if "corrected_ft_per_sqrt_hz" not in sensitivity:
@@ -126,6 +128,29 @@ def _plot_full_analysis(
         color=COLOR_TRAD,
         label=f"Fit ($R^2$={response_fit.r_squared:.3f})",
     )
+    if local_slope_fit is not None and local_slope_fit["success"]:
+        local_mask = np.asarray(local_slope_fit["mask"], dtype=bool)
+        fit_amplitude = amplitude_vpp[fit_mask]
+        local_amplitude = fit_amplitude[local_mask]
+        local_order = np.argsort(local_amplitude)
+        local_amplitude = local_amplitude[local_order]
+        local_response = (
+            local_slope_fit["slope"]
+            * np.abs(local_amplitude - response_fit.center)
+            + local_slope_fit["intercept"]
+        )
+        ax1.plot(
+            local_amplitude * calibration,
+            local_response,
+            "-.",
+            color=COLOR_PURPLE,
+            marker="o",
+            markerfacecolor="none",
+            label=(
+                "Local data "
+                f"($R^2$={local_slope_fit['r_squared']:.3f})"
+            ),
+        )
     ax1.axvline(
         response_fit.center * calibration,
         color=COLOR_GRAY,
@@ -140,12 +165,16 @@ def _plot_full_analysis(
     ax1.text(
         0.03,
         0.08,
-        f"Slope = {slope_v_per_ft:.2e} V/fT",
+        (
+            f"{slope_method_label}: {slope_v_per_ft:.2e} V/fT"
+            if slope_method_label
+            else f"Slope = {slope_v_per_ft:.2e} V/fT"
+        ),
         transform=ax1.transAxes,
     )
     if title:
         ax1.set_title(title)
-    style_legend(ax1, loc="best")
+    style_legend(ax1, loc="upper right", fontsize=7.5)
 
     positive = frequency_hz > 0
     corrected_ft = sensitivity["corrected_ft_per_sqrt_hz"]
@@ -160,6 +189,9 @@ def _plot_full_analysis(
     if np.any(flat_mask):
         flat_min_hz = float(frequency_hz[flat_mask].min())
         flat_max_hz = float(frequency_hz[flat_mask].max())
+        flat_median_ft = float(
+            sensitivity["flat_median_ft_per_sqrt_hz"]
+        )
         ax2.plot(
             frequency_hz[flat_mask],
             corrected_ft[flat_mask],
@@ -167,6 +199,16 @@ def _plot_full_analysis(
             label=f"Flat: {flat_min_hz:.0f}-{flat_max_hz:.0f} Hz",
         )
         ax2.axvline(flat_max_hz, color=COLOR_GRAY, ls=":", alpha=0.5)
+        if np.isfinite(flat_median_ft) and flat_median_ft > 0:
+            ax2.axhline(
+                flat_median_ft,
+                color=COLOR_PURPLE,
+                ls="--",
+                label=(
+                    f"Sensitivity (flat median): {flat_median_ft:.1f} "
+                    "fT/√Hz"
+                ),
+            )
     ax2.plot(
         frequency_hz[positive],
         raw_ft[positive],
@@ -174,15 +216,6 @@ def _plot_full_analysis(
         lw=0.7,
         alpha=0.45,
         label="Raw",
-    )
-    ax2.axhline(
-        SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ,
-        color=COLOR_PURPLE,
-        ls="--",
-        label=(
-            f"Reference: {SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ:.0f} "
-            "fT/√Hz"
-        ),
     )
     if hwhm_hz is not None:
         ax2.axvline(
@@ -214,12 +247,16 @@ def _plot_full_analysis(
     return filename
 
 
-def analyze(run_dir: Path) -> dict[str, Any]:
+def analyze(
+    run_dir: Path,
+    *,
+    params_type: type[MxYRFParams] = MxYRFParams,
+) -> dict[str, Any]:
     run_dir = Path(run_dir).resolve()
     raw_dir = run_dir / "raw"
     results_dir = run_dir / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
-    params, config = _load_params(run_dir)
+    params, config = _load_params(run_dir, params_type)
 
     evaluation = evaluate_mx_y_rf_point(raw_dir, params)
     amplitude_vpp = evaluation["amplitude_vpp"]
@@ -253,6 +290,9 @@ def analyze(run_dir: Path) -> dict[str, Any]:
     frequency_hz = evaluation["frequency_hz"]
     psd_r = evaluation["psd_r"]
     sensitivity = evaluation["sensitivity"]
+    zero_point_linear = evaluation["zero_point_linear"]
+    zero_point_slope = evaluation["zero_point_slope"]
+    zero_point_sensitivity = evaluation["zero_point_sensitivity"]
 
     np.savez(
         results_dir / "response_fit.npz",
@@ -267,6 +307,11 @@ def analyze(run_dir: Path) -> dict[str, Any]:
         fit_parameters=np.asarray(response_fit.parameters),
         fit_uncertainties=np.asarray(response_fit.uncertainties),
         primary_slope_v_per_vpp=np.float64(primary_slope),
+        zero_point_slope_v_per_vpp=np.float64(zero_point_slope),
+        zero_point_fit_mask=np.asarray(
+            zero_point_linear["mask"],
+            dtype=bool,
+        ),
     )
     np.savez(
         results_dir / "noise_psd.npz",
@@ -279,6 +324,12 @@ def analyze(run_dir: Path) -> dict[str, Any]:
         frequency_hz=frequency_hz,
         **sensitivity,
     )
+    if zero_point_sensitivity is not None:
+        np.savez(
+            results_dir / "sensitivity_zero_point.npz",
+            frequency_hz=frequency_hz,
+            **zero_point_sensitivity,
+        )
 
     dense_amplitude = np.linspace(
         float(amplitude_vpp.min()),
@@ -324,6 +375,19 @@ def analyze(run_dir: Path) -> dict[str, Any]:
             ":",
             color=COLOR_GREEN,
             label="Central |V-V0| fit",
+        )
+    if zero_point_linear["success"]:
+        zero_mask = np.asarray(zero_point_linear["mask"], dtype=bool)
+        fit_x = amplitude_vpp[fit_mask]
+        x_local = fit_x[zero_mask]
+        ax.plot(
+            x_local,
+            zero_point_linear["slope"]
+            * np.abs(x_local - response_fit.center)
+            + zero_point_linear["intercept"],
+            "-.",
+            color=COLOR_PURPLE,
+            label="Adaptive zero-point data slope",
         )
     format_axis(
         ax,
@@ -399,6 +463,25 @@ def analyze(run_dir: Path) -> dict[str, Any]:
         sensitivity=sensitivity,
         hwhm_hz=hwhm_hz,
     )
+    zero_point_full_analysis_file = None
+    if zero_point_sensitivity is not None:
+        zero_point_full_analysis_file = _plot_full_analysis(
+            results_dir=results_dir,
+            params=params,
+            amplitude_vpp=amplitude_vpp,
+            r_mean_v=r_mean_v,
+            fit_mask=fit_mask,
+            bad_point_mask=bad_point_mask,
+            response_fit=response_fit,
+            primary_slope=zero_point_slope,
+            frequency_hz=frequency_hz,
+            sensitivity=zero_point_sensitivity,
+            hwhm_hz=hwhm_hz,
+            filename="full_analysis_zero_point.png",
+            title="Zero-point measured-data slope method",
+            slope_method_label="Zero-point slope",
+            local_slope_fit=zero_point_linear,
+        )
 
     result = {
         "success": True,
@@ -415,6 +498,57 @@ def analyze(run_dir: Path) -> dict[str, Any]:
             key: value for key, value in linear.items() if key != "mask"
         },
         "relative_slope_difference": slope_difference,
+        "zero_point_method": {
+            "name": "adaptive_zero_point_absolute_linear",
+            "description": (
+                "Global dispersive fit locates V0; the slope is regressed "
+                "from at least five nearest measured R-versus-|V-V0| points "
+                "with at least two points on each side."
+            ),
+            "valid": evaluation["zero_point_valid"],
+            "invalid_reasons": evaluation["zero_point_invalid_reasons"],
+            "slope_v_per_vpp": zero_point_slope,
+            "linear_fit": {
+                key: value
+                for key, value in zero_point_linear.items()
+                if key != "mask"
+            },
+            "flat_median_vpp_per_sqrt_hz": (
+                zero_point_sensitivity[
+                    "flat_median_vpp_per_sqrt_hz"
+                ]
+                if zero_point_sensitivity is not None
+                else None
+            ),
+            "flat_median_ft_per_sqrt_hz": (
+                zero_point_sensitivity.get(
+                    "flat_median_ft_per_sqrt_hz"
+                )
+                if zero_point_sensitivity is not None
+                else None
+            ),
+            "flat_detection": (
+                {
+                    "success": zero_point_sensitivity[
+                        "flat_detection_success"
+                    ],
+                    "reason": zero_point_sensitivity[
+                        "flat_detection_reason"
+                    ],
+                    "flat_band_hz": (
+                        zero_point_sensitivity["flat_band_hz"].tolist()
+                        if bool(
+                            zero_point_sensitivity[
+                                "flat_detection_success"
+                            ]
+                        )
+                        else None
+                    ),
+                }
+                if zero_point_sensitivity is not None
+                else None
+            ),
+        },
         "linewidth": linewidth_result,
         "actual_noise_rates_sa_s": rates,
         "flat_band_hz": (
@@ -451,17 +585,24 @@ def analyze(run_dir: Path) -> dict[str, Any]:
             "flat_median_ft_per_sqrt_hz"
         ),
         "plot_profile": "paper",
-        "sensitivity_reference_ft_per_sqrt_hz": (
-            SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ
-        ),
         "warnings": warnings,
         "files": [
             "response_fit.npz",
             "noise_psd.npz",
             "sensitivity.npz",
+            *(
+                ["sensitivity_zero_point.npz"]
+                if zero_point_sensitivity is not None
+                else []
+            ),
             "amplitude_response.png",
             "noise_psd.png",
             *([full_analysis_file] if full_analysis_file else []),
+            *(
+                [zero_point_full_analysis_file]
+                if zero_point_full_analysis_file
+                else []
+            ),
         ],
     }
     (results_dir / "analysis.yaml").write_text(

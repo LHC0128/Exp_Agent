@@ -21,7 +21,7 @@ DEFINITION = ExperimentDefinition(
     variant="scope-pd",
     description="采集 GS200 输出打开时的 SDS PD 原始噪声谱，可选测量输出关闭对照组，并在主场标定预测中心附近自由拟合洛伦兹自旋噪声峰。",
     data_type="Projection_noise",
-    required_devices=("GS200", "DG900", "SDS", "TEC103"),
+    required_devices=("GS200", "DG900", "DG4000", "SDS"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Projection_noise.py",
     analysis_program="experiments/Projection_noise_plot.py",
@@ -34,6 +34,8 @@ DEFINITION = ExperimentDefinition(
         "可选对照阶段保持 GS200 输出关闭；主场打开阶段的电流由固定 Mx 主场标定反算并逐次通过全局安全校验。",
         "每帧采集期间温控为 0 V DC + output ON，帧间和结束后恢复 5 V DC + output ON。",
         "正常、异常和取消均停止 SDS，并恢复 GS200 完整运行前状态。",
+        "XY、Z 辅助场以及 Pump 载波/门控在初始化和结束时均关闭归零，"
+        "避免继承上一实验的残余输出。",
     ),
     schema_version=ProjectionNoiseParams.schema_version,
     schema_provider=ADAPTER.schema,

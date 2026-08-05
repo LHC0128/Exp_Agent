@@ -15,6 +15,7 @@ from lab_workflows.experiment_modules.mx_z_field_calibration.models import (
 from lab_workflows.experiment_modules.mx_z_field_calibration.scan import (
     build_frequency_axis,
     build_z_axis,
+    initial_rf_frequency_hz,
     predicted_center_hz,
 )
 from lab_workflows.experiment_modules.mx_z_field_calibration.workflow import (
@@ -53,6 +54,23 @@ def test_defaults_schema_and_registry_contract() -> None:
         "MIN_VALID_Z_POINTS",
         "MIN_VALID_Z_SPAN_V",
     }.isdisjoint(fields)
+
+
+def test_zero_center_and_zero_main_field_are_supported() -> None:
+    fields = {item["name"]: item for item in DEFINITION.schema()["fields"]}
+    assert fields["ZERO_BIAS_CENTER_FREQUENCY_HZ"]["minimum"] == 0.0
+    params = configured_params(
+        zero_bias_center_frequency_hz=0.0,
+        main_magnetic_field_ma=0.0,
+        z_initial_hz_per_v=10000.0,
+        z_bias_start_v=1.0,
+        z_bias_stop_v=2.0,
+        z_bias_step_v=1.0,
+        frequency_half_width_hz=1000.0,
+        frequency_step_hz=100.0,
+    )
+    assert params.validate() == []
+    assert initial_rf_frequency_hz(params) == pytest.approx(10000.0)
 
 
 def test_schema_v1_quality_thresholds_are_migrated_away() -> None:

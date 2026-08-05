@@ -21,7 +21,7 @@ DEFINITION = ExperimentDefinition(
     variant="mx-y-amplitude",
     description="主场与 Pump 光沿 Z、Probe 光沿 X，仅采集 Demod0 R，测量 Y 向 RF 场的绝对值色散响应、线宽与零场噪声灵敏度。",
     data_type="Mx_Y_RF_Sensitivity",
-    required_devices=("GS200", "DG900", "DG4000", "HF2", "TEC103"),
+    required_devices=("GS200", "DG900", "DG4000", "HF2"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Y_RF_Sensitivity.py",
     analysis_program="experiments/Mx_Y_RF_Sensitivity_plot.py",
@@ -31,7 +31,7 @@ DEFINITION = ExperimentDefinition(
         "时钟按 clock_sources.yaml 设置：Y RF/X 场 DG4000=EXT、Pump DG4000=INT、HF2=EXT，并在输出前回读验证。",
     ),
     safety_notes=(
-        "正常、异常和取消均关闭归零 Y RF 与 X 场，温控恢复 5V ON；Pump 100MHz 载波与 Time_sequence 5V DC ON 是实验专用保留输出。",
+        "正常、异常和取消均关闭归零 Z 辅助场、Y RF 与 X 场，温控恢复 5V ON；Pump 100MHz 载波与 Time_sequence 5V DC ON 是实验专用保留输出。",
         "正常结束只断开 TEC；主场、Pump/Probe 光功率和 HF2 配置保留。",
         "幅度点和模式1频率点仅在 std(R)≤0.01V 时接受，最多重采3次，连续失败即停止。",
     ),

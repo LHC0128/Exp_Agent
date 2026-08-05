@@ -35,7 +35,7 @@ class MxZFieldCalibrationParams(ExperimentParams):
         label="Z 零偏预测中心",
         unit="Hz",
         group="basic",
-        minimum=0.001,
+        minimum=0.0,
     )
     z_initial_hz_per_v: float = parameter(
         default=10621.690594509037,

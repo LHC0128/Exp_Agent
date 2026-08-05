@@ -15,6 +15,14 @@ class FakeInstrument:
         self.writes.append(command)
 
 
+class SequencedFakeInstrument(FakeInstrument):
+    def query(self, command):
+        response = self.responses[command]
+        if isinstance(response, list):
+            return response.pop(0)
+        return response
+
+
 class DriverGetterTests(unittest.TestCase):
     def test_dg900_dc_output_and_clock_queries(self):
         device = DG900Instrument("FAKE", channel=2)
@@ -76,6 +84,36 @@ class DriverGetterTests(unittest.TestCase):
             ":TRIGger1:SOURce EXTernal",
             ":TRIGger1:SLOPe POSitive",
         ])
+
+    def test_dg900_disable_all_mod_only_writes_enabled_types(self):
+        device = DG900Instrument("FAKE", channel=1)
+        fake = FakeInstrument({
+            ":SOURce1:AM:STATe?": "0",
+            ":SOURce1:FM:STATe?": "1",
+            ":SOURce1:PM:STATe?": "0",
+            ":SOURce1:FSKey:STATe?": "0",
+            ":SOURce1:PWM:STATe?": "0",
+        })
+        device._inst = fake
+
+        device.disable_all_mod()
+
+        self.assertEqual(fake.writes, [":SOURce1:FM:STATe OFF"])
+
+    def test_dg900_transaction_helpers_wait_and_surface_errors(self):
+        device = DG900Instrument("FAKE", channel=1)
+        fake = SequencedFakeInstrument({
+            "*OPC?": "1",
+            ":SYSTem:ERRor?": ["-222,Data out of range", '0,"No error"'],
+        })
+        device._inst = fake
+
+        device.clear_status()
+        device.wait_for_operation_complete()
+        with self.assertRaisesRegex(RuntimeError, "Data out of range"):
+            device.raise_for_errors()
+
+        self.assertEqual(fake.writes, ["*CLS"])
 
     def test_dg4000_mod_and_burst_getters_preserve_command_tree(self):
         device = DG4000Instrument("FAKE", channel=1)

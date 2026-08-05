@@ -81,10 +81,10 @@ class ExperimentPlatformTests(unittest.TestCase):
         self.assertIn("LAB_TYPED_PARAMETERS", output)
         self.assertIn("RuntimeError", output)
 
-    def test_registry_contains_only_33_formal_experiments(self):
+    def test_registry_contains_only_37_formal_experiments(self):
         definitions = list_experiments()
-        self.assertEqual(len(definitions), 33)
-        self.assertEqual(len({item.id for item in definitions}), 33)
+        self.assertEqual(len(definitions), 37)
+        self.assertEqual(len({item.id for item in definitions}), 37)
         self.assertNotIn("quick-test-scan", {item.id for item in definitions})
 
     def test_new_and_legacy_execution_modes_are_explicit(self):
@@ -101,6 +101,8 @@ class ExperimentPlatformTests(unittest.TestCase):
             "mx-xy-residual-field-calibration",
             "mx-z-field-calibration",
             "mx-z-noise-spectrum",
+            "mx-z-optimal-control-xy-leakage-response",
+            "mx-z-optimal-control-xyz-balance",
             "noise-spectrum-xy-demod3-r",
         ):
             self.assertEqual(definitions[experiment_id].execution_mode, "typed_workflow")
@@ -120,6 +122,7 @@ class ExperimentPlatformTests(unittest.TestCase):
             "mx-xy-residual-field-calibration",
             "mx-z-field-calibration",
             "mx-z-noise-spectrum",
+            "mx-z-optimal-control-xyz-balance",
             "noise-spectrum-xy-demod3-r",
         ):
             definition = get_experiment(experiment_id)

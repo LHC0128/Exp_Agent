@@ -333,6 +333,140 @@ def central_absolute_linear_fit(
     }
 
 
+def adaptive_zero_point_absolute_linear_fit(
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    center: float,
+    minimum_points: int = 5,
+    minimum_points_per_side: int = 2,
+) -> dict[str, Any]:
+    """用零点两侧最近的实测点计算局部 ``R-|V-V0|`` 斜率。
+
+    先在拟合得到的零点两侧各选至少 ``minimum_points_per_side`` 个最近
+    实测点，再按距零点从近到远补足 ``minimum_points`` 个点。该方法只用
+    全局色散拟合确定零点，不使用全局拟合曲线的导数。
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    finite_mask = np.isfinite(x) & np.isfinite(y)
+    empty_mask = np.zeros(x.shape, dtype=bool)
+    base_result = {
+        "method": "adaptive_zero_point_absolute_linear",
+        "success": False,
+        "slope": float("nan"),
+        "intercept": float("nan"),
+        "r_squared": float("nan"),
+        "n_points": 0,
+        "minimum_points": int(minimum_points),
+        "minimum_points_per_side": int(minimum_points_per_side),
+        "left_point_count": 0,
+        "right_point_count": 0,
+        "window_vpp": None,
+        "max_abs_distance_vpp": float("nan"),
+        "rejection_reasons": [],
+        "mask": empty_mask,
+    }
+    if minimum_points < 3:
+        raise ValueError("minimum_points 必须不小于 3")
+    if minimum_points_per_side < 1:
+        raise ValueError("minimum_points_per_side 必须不小于 1")
+    if minimum_points < 2 * minimum_points_per_side:
+        raise ValueError(
+            "minimum_points 不得小于 minimum_points_per_side 的两倍"
+        )
+    if not np.isfinite(center):
+        return {
+            **base_result,
+            "rejection_reasons": ["零点中心不是有限值"],
+        }
+
+    finite_indices = np.flatnonzero(finite_mask)
+    left_indices = finite_indices[x[finite_indices] < center]
+    right_indices = finite_indices[x[finite_indices] > center]
+    reasons: list[str] = []
+    if finite_indices.size < minimum_points:
+        reasons.append(
+            f"有效点数 {finite_indices.size} < {minimum_points}"
+        )
+    if left_indices.size < minimum_points_per_side:
+        reasons.append(
+            f"零点左侧有效点数 {left_indices.size} < "
+            f"{minimum_points_per_side}"
+        )
+    if right_indices.size < minimum_points_per_side:
+        reasons.append(
+            f"零点右侧有效点数 {right_indices.size} < "
+            f"{minimum_points_per_side}"
+        )
+    if reasons:
+        return {
+            **base_result,
+            "rejection_reasons": reasons,
+        }
+
+    left_order = left_indices[
+        np.argsort(np.abs(x[left_indices] - center))
+    ]
+    right_order = right_indices[
+        np.argsort(np.abs(x[right_indices] - center))
+    ]
+    selected = list(left_order[:minimum_points_per_side])
+    selected.extend(right_order[:minimum_points_per_side])
+    selected_set = set(map(int, selected))
+    remaining = [
+        int(index)
+        for index in finite_indices[
+            np.argsort(np.abs(x[finite_indices] - center))
+        ]
+        if int(index) not in selected_set
+    ]
+    selected.extend(remaining[: minimum_points - len(selected)])
+    selected_indices = np.asarray(sorted(set(map(int, selected))), dtype=int)
+    mask = np.zeros(x.shape, dtype=bool)
+    mask[selected_indices] = True
+
+    distance = np.abs(x[mask] - center)
+    if distance.size < minimum_points or np.ptp(distance) <= 0.0:
+        return {
+            **base_result,
+            "n_points": int(distance.size),
+            "rejection_reasons": ["局部点的零点距离跨度不足"],
+            "mask": mask,
+        }
+    slope, intercept = np.polyfit(distance, y[mask], 1)
+    predicted = slope * distance + intercept
+    ss_res = float(np.sum((y[mask] - predicted) ** 2))
+    ss_tot = float(np.sum((y[mask] - np.mean(y[mask])) ** 2))
+    r_squared = (
+        1.0 - ss_res / ss_tot
+        if ss_tot > 1e-30
+        else 0.0
+    )
+    selected_x = x[mask]
+    left_count = int(np.count_nonzero(selected_x < center))
+    right_count = int(np.count_nonzero(selected_x > center))
+    if not np.isfinite(slope) or slope <= 0.0:
+        reasons.append(f"局部斜率 {slope:.6g} 不是正有限值")
+    return {
+        **base_result,
+        "success": not reasons,
+        "slope": float(slope),
+        "intercept": float(intercept),
+        "r_squared": float(r_squared),
+        "n_points": int(distance.size),
+        "left_point_count": left_count,
+        "right_point_count": right_count,
+        "window_vpp": [
+            float(np.min(selected_x)),
+            float(np.max(selected_x)),
+        ],
+        "max_abs_distance_vpp": float(np.max(distance)),
+        "rejection_reasons": reasons,
+        "mask": mask,
+    }
+
+
 def average_welch_psd(waveforms: list[np.ndarray], sample_rates: list[float]) -> tuple[np.ndarray, np.ndarray]:
     if not waveforms or len(waveforms) != len(sample_rates):
         raise ValueError("PSD 波形和采样率数量不一致或为空")

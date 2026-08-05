@@ -118,6 +118,21 @@ with TECInstrument("COM3") as tec:
 | 停止位 | 1 |
 | 校验位 | 无 |
 
+## 实验中的可选连接
+
+正式实验会尝试连接 `params/mapping.yaml` 中配置的 TEC 串口。若 `COM3`
+已被 TEC 桌面温控软件占用，实验会输出警告并继续运行：
+
+- 不再设置 TEC 目标温度，也不等待温度稳定；
+- 仍按原流程控制 DG900 的 `Temp_Switch`，在采集窗口关闭温控磁场并在之后恢复；
+- 不会用目标温度冒充实测值；记录温控状态的新模式工作流会把
+  `initial_temperature_c` 写为 `null`，并记录
+  `temperature_control.control_source: external_software`；
+- 操作者必须在外部温控软件中确认目标温度和温控状态。
+
+`Temperature_Switch_PID_Cycle_Test.py` 是 TEC/PID 专项实验，仍要求独占连接
+TEC 串口；没有 TEC 连接时不会降级运行。
+
 ## 命令格式
 
 所有 ASCII 指令以 `@` 结尾，响应以 `@\r\n` 结尾：

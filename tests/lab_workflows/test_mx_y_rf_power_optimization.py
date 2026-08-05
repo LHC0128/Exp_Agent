@@ -446,6 +446,12 @@ def test_run_restores_baseline_on_all_exit_paths(
 
 def _synthetic_evaluation(value: float | None) -> dict:
     valid = value is not None
+    zero_point_value = (
+        float(value) * 1.5
+        if value is not None
+        else None
+    )
+    zero_point_valid = zero_point_value is not None
     return {
         "valid": valid,
         "invalid_reasons": [] if valid else ["自动平坦段识别失败"],
@@ -458,6 +464,27 @@ def _synthetic_evaluation(value: float | None) -> dict:
         ),
         "response_result": {"success": True},
         "primary_slope": 10.0,
+        "zero_point_linear": {
+            "method": "adaptive_zero_point_absolute_linear",
+            "success": True,
+            "slope": 8.0,
+            "intercept": 0.0,
+            "r_squared": 0.95,
+            "n_points": 5,
+            "minimum_points": 5,
+            "minimum_points_per_side": 2,
+            "left_point_count": 2,
+            "right_point_count": 3,
+            "window_vpp": [-0.1, 0.1],
+            "max_abs_distance_vpp": 0.1,
+            "rejection_reasons": [],
+            "mask": np.asarray([True, True, True]),
+        },
+        "zero_point_slope": 8.0,
+        "zero_point_valid": zero_point_valid,
+        "zero_point_invalid_reasons": (
+            [] if zero_point_valid else ["自动平坦段识别失败"]
+        ),
         "hwhm_hz": 100.0,
         "sensitivity": {
             "flat_detection_success": valid,
@@ -468,6 +495,21 @@ def _synthetic_evaluation(value: float | None) -> dict:
             "corrected_ft_per_sqrt_hz": np.asarray([100.0, 100.0]),
             "flat_median_ft_per_sqrt_hz": (
                 float(value) if value is not None else np.nan
+            ),
+        },
+        "zero_point_sensitivity": {
+            "flat_detection_success": zero_point_valid,
+            "flat_detection_reason": (
+                "ok" if zero_point_valid else "no flat band"
+            ),
+            "flat_band_hz": np.asarray([10.0, 100.0]),
+            "flat_mask": np.asarray([True, True]),
+            "raw_ft_per_sqrt_hz": np.asarray([150.0, 150.0]),
+            "corrected_ft_per_sqrt_hz": np.asarray([150.0, 150.0]),
+            "flat_median_ft_per_sqrt_hz": (
+                zero_point_value
+                if zero_point_value is not None
+                else np.nan
             ),
         },
         "amplitude_vpp": np.asarray([-0.1, 0.0, 0.1]),
@@ -561,6 +603,20 @@ def test_analysis_selects_known_optimum_and_excludes_invalid_point(
     assert (run_dir / "results" / "slope_heatmap.png").exists()
     assert (run_dir / "results" / "hwhm_heatmap.png").exists()
     assert (run_dir / "results" / "best_point_full_analysis.png").exists()
+    assert (
+        run_dir / "results" / "zero_point_sensitivity_heatmap.png"
+    ).exists()
+    assert (
+        run_dir / "results" / "zero_point_slope_heatmap.png"
+    ).exists()
+    assert (
+        run_dir / "results" / "best_zero_point_full_analysis.png"
+    ).exists()
+    assert result["zero_point_method"]["valid_point_count"] == 3
+    assert (
+        result["zero_point_method"]["best_point"]["key"]
+        == "pump_000_probe_001"
+    )
     assert len(result["point_full_analysis_files"]) == 4
     for key in values:
         assert (
@@ -572,7 +628,12 @@ def test_analysis_selects_known_optimum_and_excludes_invalid_point(
         ).exists()
     with np.load(run_dir / "results" / "optimization.npz") as data:
         assert data["valid_mask"].sum() == 3
+        assert data["zero_point_valid_mask"].sum() == 3
         assert data["flat_median_ft_per_sqrt_hz"][0, 1] == 100.0
+        assert (
+            data["zero_point_flat_median_ft_per_sqrt_hz"][0, 1]
+            == 150.0
+        )
 
 
 def test_analysis_reports_zero_valid_points_after_writing_diagnostics(

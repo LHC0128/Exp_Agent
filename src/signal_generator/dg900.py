@@ -126,6 +126,29 @@ class DG900Instrument:
         logger.debug(">> %s", command)
         self._inst.write(command)
 
+    def clear_status(self) -> None:
+        """清除上一事务遗留的状态和错误队列."""
+        self.write("*CLS")
+
+    def wait_for_operation_complete(self) -> None:
+        """等待此前发送的命令全部执行完成."""
+        response = self.query("*OPC?").strip()
+        if response not in {"1", "+1"}:
+            raise RuntimeError(f"DG900 *OPC? 返回异常: {response!r}")
+
+    def raise_for_errors(self, *, max_errors: int = 20) -> None:
+        """读取 SCPI 错误队列，发现当前事务错误时立即失败."""
+        errors: list[str] = []
+        for _ in range(max_errors):
+            response = self.query(":SYSTem:ERRor?").strip()
+            if response.startswith("0,") or response.startswith("+0,"):
+                break
+            errors.append(response)
+        else:
+            errors.append("错误队列在限定次数内未清空")
+        if errors:
+            raise RuntimeError("DG900 设置失败: " + "; ".join(errors))
+
     def query(self, command: str) -> str:
         """发送 SCPI 查询并返回响应."""
         self._ensure_connected()
@@ -297,8 +320,10 @@ class DG900Instrument:
         return None
 
     def disable_all_mod(self, channel: Optional[int] = None) -> None:
+        """关闭当前启用的调制，避免向不兼容波形写入无效状态命令."""
         for mod_type in self.MOD_TYPES:
-            self.set_mod_type_state(mod_type, False, channel)
+            if self.get_mod_type_state(mod_type, channel):
+                self.set_mod_type_state(mod_type, False, channel)
 
     def _set_mod_value(self, mod_type: str, suffix: str, value,
                        channel: Optional[int]) -> None:

@@ -53,6 +53,11 @@ results/                  # 结果图表
 | `toptica_laser` | TOPTICA DLC pro | Probe 激光电流、温度、PZT 与扫描控制 |
 | `sensitivity_analysis` | 分析工具 | 拟合、灵敏度计算、结果汇总 |
 
+常规正式实验将 TEC103 视为可选控制设备：若 `COM3` 已被 TEC 桌面软件占用，
+实验会警告并跳过设温与稳定等待，其他采集流程继续运行。此时请在外部软件中
+确认温度；TEC/PID 专项实验仍要求独占串口。详见
+[`docs/tec_controller.md`](docs/tec_controller.md)。
+
 相关说明可见：
 
 - `docs/sds_acquisition.md`
@@ -106,7 +111,7 @@ Set-Location D:\Code\exp_agent\GUI
 4. 点击“应用并回读”；写入前会检查 `params/safety_limits.yaml`，写入后以仪器实际回读值更新页面。GS200 从 OFF 切换到 ON 时会二次确认；DLC pro 的远程 Emission ON 默认禁止，安全流程见 `docs/toptica_dlc_pro.md`。
 5. 实验结束后，在启动 GUI 的 PowerShell 窗口按 `Ctrl+C` 停止服务。
 
-“实验中心”统一展示 32 个正式 Python 采集入口，并提供动态参数、默认值保存、
+“实验中心”统一展示 37 个正式 Python 采集入口，并提供动态参数、默认值保存、
 无副作用预检、运行日志、安全停止和离线重新分析。每张实验卡片同时显示对应的
 采集程序和独立分析程序；没有独立分析脚本时会明确标注。`*.ipynb` 不进入实验中心，
 `*_plot.py` 只作为对应实验的分析器。卡片还会明确显示“新模式”或“旧模式”；完整
@@ -136,7 +141,7 @@ experiments ───┘
 - `legacy_script`：过渡期兼容模式，仍从旧脚本常量生成参数并通过隔离适配器执行。
   它不会被当作新实验模板。
 
-当前共有 14 个新模式实验和 18 个旧模式实验。GUI 参数表单只展示新模式模型显式
+当前共有 19 个新模式实验和 18 个旧模式实验。GUI 参数表单只展示新模式模型显式
 声明的字段，不会因为工作流中新增一个全大写运行时常量而意外增加表单项目。
 
 `t2-calibration` 已迁移为强类型光学 FID 工作流：保持 `T2_Calibration` 数据目录与
@@ -168,7 +173,11 @@ experiments ───┘
 - `XY_DirectAW_DC_Calibration.py` / `XY_DirectAW_DC_Calibration_plot.py`
 - `Noise_Spectrum_XY_Demod3_R.py` / `Noise_Spectrum_XY_Demod3_R_plot.py`
 - `Mx_Y_RF_Sensitivity.py` / `Mx_Y_RF_Sensitivity_plot.py`
+- `Mx_Z_Optimal_Control_RF_Sensitivity.py` / `Mx_Z_Optimal_Control_RF_Sensitivity_plot.py`
+- `Mx_Z_Optimal_Control_XY_Leakage_Response.py` / `Mx_Z_Optimal_Control_XY_Leakage_Response_plot.py`
+- `Mx_Z_Optimal_Control_XYZ_Balance.py` / `Mx_Z_Optimal_Control_XYZ_Balance_plot.py`
 - `Mx_Y_RF_Power_Optimization.py` / `Mx_Y_RF_Power_Optimization_plot.py`
+- `Mx_Y_RF_Probe_Detuning_Optimization.py` / `Mx_Y_RF_Probe_Detuning_Optimization_plot.py`
 - `Mx_Main_Field_Calibration.py` / `Mx_Main_Field_Calibration_plot.py`
 - `Mx_Main_Field_Noise_Spectrum.py` / `Mx_Main_Field_Noise_Spectrum_plot.py`
 - `Mx_Main_Field_Scope_Noise_Spectrum.py` / `Mx_Main_Field_Scope_Noise_Spectrum_plot.py`
@@ -184,7 +193,11 @@ experiments ───┘
 | 原子自旋投影噪声（SDS） | `experiments/Projection_noise.py`、`experiments/Projection_noise_plot.py` | `docs/Projection_noise.md` |
 | 静磁场灵敏度 | `experiments/Static_Magnetic_Field_Sensitivity.py`、`experiments/Static_Magnetic_Field_Sensitivity_Optimize.py` | `docs/static_mag_sens_v2.md` |
 | Mx Y 向 RF 场灵敏度 | `experiments/Mx_Y_RF_Sensitivity.py`、`experiments/Mx_Y_RF_Sensitivity_plot.py` | `docs/mx_y_rf_sensitivity.md` |
-| Mx Y RF 光功率灵敏度优化（含逐点完整诊断图与 tqdm ETA） | `experiments/Mx_Y_RF_Power_Optimization.py`、`experiments/Mx_Y_RF_Power_Optimization_plot.py` | `docs/mx_y_rf_power_optimization.md` |
+| Mx Z 最优控制 RF 灵敏度（X DC + Y RF 偏置平衡剩磁场；Y RF 非零时使用 Demod0 X/Y 成对正交校相） | `experiments/Mx_Z_Optimal_Control_RF_Sensitivity.py`、`experiments/Mx_Z_Optimal_Control_RF_Sensitivity_plot.py` | `docs/mx_z_optimal_control_rf_sensitivity.md` |
+| Mx Z 最优控制 XY 泄露响应（二维扫描同形 X/Y 触发任意波并报告实测最小 R 网格点） | `experiments/Mx_Z_Optimal_Control_XY_Leakage_Response.py`、`experiments/Mx_Z_Optimal_Control_XY_Leakage_Response_plot.py` | `docs/mx_z_optimal_control_xy_leakage_response.md` |
+| Mx Z 最优控制 XYZ 平衡场（X/Y DG4000 DC + Z GS200 三维扫描，以实测 Demod0 R 最小点为结果） | `experiments/Mx_Z_Optimal_Control_XYZ_Balance.py`、`experiments/Mx_Z_Optimal_Control_XYZ_Balance_plot.py` | `docs/mx_z_optimal_control_xyz_balance.md` |
+| Mx Y RF 光功率灵敏度优化（含逐点诊断图、tqdm ETA、拟合导数与零点实测斜率双排名） | `experiments/Mx_Y_RF_Power_Optimization.py`、`experiments/Mx_Y_RF_Power_Optimization_plot.py` | `docs/mx_y_rf_power_optimization.md` |
+| Mx Y RF Probe 光功率与 PZT 失谐灵敏度优化（支持固定 Probe 单点；不连接 TEC，保留温控开关门控） | `experiments/Mx_Y_RF_Probe_Detuning_Optimization.py`、`experiments/Mx_Y_RF_Probe_Detuning_Optimization_plot.py` | `docs/mx_y_rf_probe_detuning_optimization.md` |
 | Mx 主磁场频率标定 | `experiments/Mx_Main_Field_Calibration.py`、`experiments/Mx_Main_Field_Calibration_plot.py` | `docs/mx_main_field_calibration.md` |
 | Mx 主磁场控制噪声谱 | `experiments/Mx_Main_Field_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Noise_Spectrum_plot.py` | `docs/mx_main_field_noise_spectrum.md` |
 | Mx 主磁场示波器噪声谱（固定 X/Y DC 补偿，可选 AC/DC 耦合） | `experiments/Mx_Main_Field_Scope_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Scope_Noise_Spectrum_plot.py` | `docs/mx_main_field_scope_noise_spectrum.md` |

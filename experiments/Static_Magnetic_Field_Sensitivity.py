@@ -36,6 +36,9 @@ import matplotlib.pyplot as plt
 # 设备库
 from gs200 import GS200Instrument
 from lab_workflows.devices import create_signal_generator
+from lab_workflows.steps import (
+    configure_temperature_control as configure_optional_temperature,
+)
 from tec_controller import TECInstrument
 
 from lockin_amplifier import (
@@ -306,7 +309,14 @@ try:
     # ---- TEC103: 温度控制器 ----
     tec_cfg = MAPPING["temperature"]
     tec = TECInstrument(port=tec_cfg["resource"])
-    tec.connect()
+    try:
+        tec.connect()
+    except Exception as exc:
+        print(
+            f"[警告] TEC103 连接失败（{tec_cfg['resource']}）：{exc}。"
+            "该设备将由外部程序负责，实验继续运行。"
+        )
+        tec = None
     devices["tec"] = tec
 
     # ---- HF2: 锁相放大器 ----
@@ -370,16 +380,22 @@ gs.set_output(True)
 print(f"主磁场: {FIXED_PARAMS['main_magnetic_field']} mA")
 
 # 5. 温度控制
-validate_safety_limit("temperature", FIXED_PARAMS["temperature"])
-tec.set_target_temperature(FIXED_PARAMS["temperature"], channel=1)
-tec.set_enable(True, channel=1)
-print(f"温度设定: {FIXED_PARAMS['temperature']} °C")
+temperature_status = configure_optional_temperature(
+    tec,
+    FIXED_PARAMS["temperature"],
+    channel=1,
+    tolerance_c=TEMP_TOLERANCE_C,
+    stable_reads=TEMP_STABLE_READS,
+    poll_interval_s=TEMP_POLL_INTERVAL_S,
+    timeout_s=MAX_TEMP_WAIT_S,
+)
+print(f"温度目标: {FIXED_PARAMS['temperature']} °C")
 
 # 6. 温度开关 (ON)，打开后等待 TEC 实际温度稳定
 validate_safety_limit("Temp_Switch", FIXED_PARAMS["Temp_Switch"])
 dg_temp.setup_dc(FIXED_PARAMS["Temp_Switch"], channel=2)
 print(f"温度开关: ON ({FIXED_PARAMS['Temp_Switch']} V)")
-temp_now = wait_for_temperature_stable(tec, FIXED_PARAMS["temperature"])
+temp_now = temperature_status.actual_temperature_c
 
 # 7. 时序信号 (10Hz 方波) → 移到 dg_sweep CH2
 validate_safety_limit("Time_sequence", FIXED_PARAMS["Time_sequence"])
@@ -766,8 +782,12 @@ if not GS200_CURRENT_RANGES:
     raise ValueError("GS200_CURRENT_RANGES 为空，无法进行量程噪声对比")
 
 # 记录初始温度作为基准
-initial_temp = tec.get_temperature(channel=1)
-print(f"初始温度: {initial_temp:.2f} °C")
+if tec is not None:
+    initial_temp = tec.get_temperature(channel=1)
+    print(f"初始温度: {initial_temp:.2f} °C")
+else:
+    initial_temp = None
+    print("初始温度: 由外部软件控制（未读取）")
 
 psd_by_range = []
 current_range_set_A = []

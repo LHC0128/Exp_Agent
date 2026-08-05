@@ -191,8 +191,12 @@ try:
     # ---- TEC103 温控器 ----
     cfg_tec = MAPPING["temperature"]
     tec = TECInstrument(port=cfg_tec["resource"])
-    tec.connect()
-    print(f"tec 已连接: TEC103 @ {cfg_tec['resource']}")
+    try:
+        tec.connect()
+        print(f"tec 已连接: TEC103 @ {cfg_tec['resource']}")
+    except Exception as exc:
+        print(f"[警告] TEC103 连接失败：{exc}。实验继续，由外部软件负责温控。")
+        tec = None
     devices["tec"] = tec
 
 except Exception as e:

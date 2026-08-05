@@ -28,8 +28,8 @@ required_devices:
   - DG4000
   - DG900
   - HF2
-  - TEC103
 learned_notes:
+  - TEC103 为可选控制设备；COM3 被外部温控软件占用时跳过设温和稳定等待。
   - Demod0 Y 通过 AuxOut2 和物理线缆接入 Signal Input 2 DC，再由 Demod3 解调。
   - 每个 Demod3 频点连续采集 0.1 s 的 sample.r，只保存算术平均值，不保存时序数组。
   - 每扫描 25 个 Demod3 频点恢复温控 2 s；切频后的 0.2 s 稳定等待同时覆盖波形上传和温控关闭后的等待。

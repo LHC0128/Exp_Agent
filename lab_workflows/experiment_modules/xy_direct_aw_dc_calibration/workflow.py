@@ -57,6 +57,7 @@ from lab_workflows.steps import (
     TemperatureSwitchRestore,
     calibrate_demod_phase,
     calibrate_direct_aw_phase,
+    configure_temperature_control,
     disconnect_device_mapping,
     run_safety_shutdown,
     synchronize_connected_clocks,
@@ -320,7 +321,14 @@ try:
 
     tec_cfg = MAPPING["temperature"]
     tec = TECInstrument(port=tec_cfg["resource"])
-    tec.connect()
+    try:
+        tec.connect()
+    except Exception as exc:
+        print(
+            f"[警告] TEC103 连接失败（{tec_cfg['resource']}）：{exc}。"
+            "该设备将由外部程序负责，实验继续运行。"
+        )
+        tec = None
     devices["tec"] = tec
 
     hf2_cfg = MAPPING["lockin_r"]
@@ -492,14 +500,15 @@ gs.set_output(True)
 dg_temp.setup_dc(FIXED_PARAMS["Temp_Switch"], channel=2)
 dg_temp.set_output(True, channel=2)
 
-tec.set_target_temperature(FIXED_PARAMS["temperature"], channel=1)
-tec.set_enable(True, channel=1)
-while True:
-    current_temp = tec.get_temperature(channel=1)
-    print(f"当前温度: {current_temp:.2f} °C")
-    if abs(current_temp - FIXED_PARAMS["temperature"]) < 1.0:
-        break
-    time.sleep(5.0)
+temperature_status = configure_temperature_control(
+    tec,
+    FIXED_PARAMS["temperature"],
+    channel=1,
+    tolerance_c=1.0,
+    stable_reads=1,
+    poll_interval_s=5.0,
+    timeout_s=1200.0,
+)
 
 for ch in (1, 2):
     dg_mod.set_burst_state(False, channel=ch)

@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 
 from lab_workflows.clock_sync import load_clock_profile
+from lab_workflows.experiments.registry import list_experiments
 from lab_workflows.devices import (
     create_signal_generator,
     discover_devices,
@@ -18,12 +19,15 @@ from lab_workflows.static_sensitivity import (
 from lab_workflows.static_sensitivity.workflow import _build_subprocess_environment
 from lab_workflows.steps import (
     DGChannelShutdown,
+    DeviceSession,
     DirectAWPhaseCalibrationConfig,
     DisconnectTarget,
     STANDARD_PRESERVED_OUTPUTS,
     ShutdownAction,
     TemperatureSwitchRestore,
     calibrate_direct_aw_phase,
+    configure_fixed_dc_field,
+    configure_temperature_control,
     disconnect_device_mapping,
     run_safety_shutdown,
     synchronize_connected_clocks,
@@ -44,6 +48,94 @@ class RecordingSafetyDevice:
 
 
 class SharedWorkflowTests(unittest.TestCase):
+    def test_fixed_dc_field_nonzero_opens_output(self):
+        device = RecordingSafetyDevice()
+
+        configured = configure_fixed_dc_field(
+            device,
+            1,
+            "X_magnetic_field",
+            -0.01,
+        )
+
+        self.assertEqual(configured, -0.01)
+        self.assertEqual(
+            device.calls,
+            [
+                ("set_burst_state", (False,), {"channel": 1}),
+                ("set_mod_state", (False,), {"channel": 1}),
+                ("setup_dc", (-0.01,), {"channel": 1}),
+                ("set_output", (True,), {"channel": 1}),
+            ],
+        )
+
+    def test_optional_device_connection_failure_is_recorded_and_nonfatal(self):
+        class BusyDevice:
+            def connect(self):
+                raise PermissionError("COM3 正在使用中")
+
+        session = DeviceSession()
+        device = session.connect_optional(
+            "tec",
+            "COM3",
+            BusyDevice,
+            device_label="TEC103",
+        )
+
+        self.assertIsNone(device)
+        self.assertIn("COM3 正在使用中", session.optional_connection_errors()["tec"])
+        self.assertIsNone(session.get("tec"))
+
+    def test_temperature_control_skips_unavailable_tec_without_fake_readback(self):
+        status = configure_temperature_control(
+            None,
+            100.0,
+            stable_reads=1,
+            poll_interval_s=0.0,
+            timeout_s=1.0,
+        )
+
+        self.assertFalse(status.controlled_by_experiment)
+        self.assertEqual(status.control_source, "external_software")
+        self.assertIsNone(status.actual_temperature_c)
+
+    def test_temperature_control_keeps_existing_connected_flow(self):
+        class FakeTEC:
+            def __init__(self):
+                self.target = None
+                self.enabled = False
+
+            def set_target_temperature(self, value, channel=1):
+                self.target = (value, channel)
+
+            def set_enable(self, enabled, channel=1):
+                self.enabled = (enabled, channel)
+
+            def get_temperature(self, channel=1):
+                return 100.0
+
+        tec = FakeTEC()
+        status = configure_temperature_control(
+            tec,
+            100.0,
+            stable_reads=1,
+            poll_interval_s=0.0,
+            timeout_s=1.0,
+        )
+
+        self.assertTrue(status.controlled_by_experiment)
+        self.assertEqual(status.actual_temperature_c, 100.0)
+        self.assertEqual(tec.target, (100.0, 1))
+        self.assertEqual(tec.enabled, (True, 1))
+
+    def test_only_tec_pid_diagnostic_requires_tec103(self):
+        requiring_tec = {
+            definition.id
+            for definition in list_experiments()
+            if "TEC103" in definition.required_devices
+        }
+        self.assertEqual(requiring_tec, {"temperature-switch-pid-cycle"})
+
     def test_standard_preserved_state_keeps_hf2_unchanged(self):
         self.assertEqual(
             STANDARD_PRESERVED_OUTPUTS,

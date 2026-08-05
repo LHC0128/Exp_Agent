@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 from .analysis_core import (
+    adaptive_zero_point_absolute_linear_fit,
     amplitude_gamma_to_hz,
     average_welch_psd,
     central_absolute_linear_fit,
@@ -111,6 +112,16 @@ def evaluate_mx_y_rf_point(
         gamma=response_fit.gamma,
         gamma_fraction=params.linear_check_gamma_fraction,
     )
+    zero_point_linear = adaptive_zero_point_absolute_linear_fit(
+        amplitude_vpp[fit_mask],
+        r_mean_v[fit_mask],
+        center=response_fit.center,
+    )
+    zero_point_slope = (
+        float(zero_point_linear["slope"])
+        if zero_point_linear["success"]
+        else float("nan")
+    )
     slope_difference = (
         abs(abs(float(linear["slope"])) - primary_slope) / primary_slope
         if linear["success"] and primary_slope > 0
@@ -124,6 +135,16 @@ def evaluate_mx_y_rf_point(
         warnings.append(
             f"中心线性斜率与色散零点导数相差 {slope_difference:.1%}，"
             f"超过 {params.slope_agreement_tolerance:.1%}"
+        )
+    if (
+        zero_point_linear["success"]
+        and float(zero_point_linear["r_squared"])
+        < params.fit_r_squared_min
+    ):
+        warnings.append(
+            "零点局部实测斜率回归的 "
+            f"R^2={zero_point_linear['r_squared']:.4f}，"
+            f"低于全局拟合参考门槛 {params.fit_r_squared_min:.4f}"
         )
 
     frequency_scan_hz: np.ndarray | None = None
@@ -198,6 +219,16 @@ def evaluate_mx_y_rf_point(
         low_freq_skip_hz=params.low_freq_skip_hz,
         y_rf_nt_per_vpp=params.y_rf_nt_per_vpp,
     )
+    zero_point_sensitivity: dict[str, Any] | None = None
+    if zero_point_linear["success"]:
+        zero_point_sensitivity = sensitivity_spectrum(
+            psd_r,
+            frequency_hz,
+            slope_signal_v_per_vpp=zero_point_slope,
+            hwhm_hz=hwhm_hz,
+            low_freq_skip_hz=params.low_freq_skip_hz,
+            y_rf_nt_per_vpp=params.y_rf_nt_per_vpp,
+        )
     flat_success = bool(sensitivity["flat_detection_success"])
     if hwhm_hz is not None and not flat_success:
         warnings.append(
@@ -213,6 +244,21 @@ def evaluate_mx_y_rf_point(
             "自动平坦段识别失败: "
             f"{sensitivity['flat_detection_reason']}"
         )
+    zero_point_invalid_reasons = list(response_rejection_reasons)
+    if not zero_point_linear["success"]:
+        zero_point_invalid_reasons.append(
+            "零点局部实测斜率计算失败: "
+            + "；".join(zero_point_linear["rejection_reasons"])
+        )
+    if hwhm_hz is None:
+        zero_point_invalid_reasons.append("缺少有效的幅度等效 HWHM")
+    if zero_point_sensitivity is not None and not bool(
+        zero_point_sensitivity["flat_detection_success"]
+    ):
+        zero_point_invalid_reasons.append(
+            "零点局部斜率法自动平坦段识别失败: "
+            f"{zero_point_sensitivity['flat_detection_reason']}"
+        )
     result.update(
         {
             "valid": not invalid_reasons,
@@ -221,6 +267,11 @@ def evaluate_mx_y_rf_point(
             "primary_slope": primary_slope,
             "linear": linear,
             "slope_difference": slope_difference,
+            "zero_point_linear": zero_point_linear,
+            "zero_point_slope": zero_point_slope,
+            "zero_point_sensitivity": zero_point_sensitivity,
+            "zero_point_valid": not zero_point_invalid_reasons,
+            "zero_point_invalid_reasons": zero_point_invalid_reasons,
             "frequency_scan_hz": frequency_scan_hz,
             "frequency_response_v": frequency_response_v,
             "linewidth_fit": linewidth_fit,

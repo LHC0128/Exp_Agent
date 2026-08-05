@@ -15,6 +15,16 @@ defaults:
 mapping_keys:
   main_magnetic_field:
     role: scan
+  Z_magnetic_field:
+    role: fixed
+  X_magnetic_field:
+    role: fixed
+  Y_magnetic_field:
+    role: fixed
+  Pump_modulation:
+    role: fixed
+  Time_sequence:
+    role: fixed
   scope_waveform:
     role: detection
   Pump_laser_power:
@@ -28,9 +38,11 @@ mapping_keys:
 required_devices:
   - GS200
   - DG900
+  - DG4000
   - SDS
-  - TEC103
 learned_notes:
+  - TEC103 为可选控制设备；COM3 被外部温控软件占用时跳过设温和稳定等待。
+  - 初始化和结束时均关闭归零 XY、Z 辅助场以及 Pump 载波/门控，避免继承上一实验的残余输出。
   - PD 原始信号接 SDS CH1，直接在 Larmor 频率附近观察自旋噪声峰。
   - `MEASURE_FIELD_OFF_CONTROL` 控制是否测量 GS200 输出关闭背景，默认开启。
   - 关闭对照组选项时，直接对 `field_on` PSD 做带常数背景的洛伦兹拟合。
@@ -58,6 +70,8 @@ learned_notes:
 - 每帧时长：`1 s`。
 - 主场打开阶段：`100` 帧。
 - 可选主场关闭对照阶段：`100` 帧。
+- 无关输出：XY、Z 辅助场以及 Pump 100 MHz 载波/门控均关闭 Burst 和调制，
+  设置为 `0 V DC + Output OFF`。
 
 ## 主场标定与可选对照组流程
 

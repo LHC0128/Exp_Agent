@@ -30,6 +30,7 @@ from ...steps import (
     SafetyShutdownReport,
     ShutdownAction,
     TemperatureSwitchRestore,
+    configure_temperature_control,
     create_run_directory,
     run_safety_shutdown,
     set_temperature_switch,
@@ -86,6 +87,7 @@ def _initial_state_snapshot(devices: dict[str, Any], channels: dict[str, int]) -
     }
     outputs: dict[str, Any] = {}
     for semantic, channel_name in (
+        ("z_field", "z_field"),
         ("xy_field", "x_field"),
         ("xy_field", "y_rf"),
         ("laser", "pump_laser"),
@@ -178,12 +180,22 @@ def _restore_response_acquisition_state(
     channels: dict[str, int],
 ) -> float:
     """在每次幅度扫描前同时恢复 Y RF 正弦波与 HF2 响应配置。"""
-    _configure_y_rf_sine_source(
+    actual_rate = _temperature_gated_acquire(
         params,
-        devices["xy_field"],
-        channels["y_rf"],
+        devices,
+        channels,
+        set_y_rf=lambda: _configure_y_rf_sine_source(
+            params,
+            devices["xy_field"],
+            channels["y_rf"],
+        ),
+        settle_time_s=0.0,
+        acquire=lambda: _configure_response_demodulator(
+            params,
+            devices["hf2"],
+        ),
     )
-    return _configure_response_demodulator(params, devices["hf2"])
+    return float(actual_rate)
 
 
 def _configure_reference_clocks(
@@ -197,6 +209,7 @@ def _configure_reference_clocks(
         devices,
         mapping,
         {
+            "z_field": "Z_magnetic_field",
             "xy_field": "rf_coil",
             "laser": "Pump_laser_power",
             "pump_rf": "Pump_modulation",
@@ -211,7 +224,12 @@ def _configure_reference_clocks(
     }
 
 
-def _connect_devices(mapping: dict[str, dict[str, Any]], session: DeviceSession) -> tuple[dict[str, Any], dict[str, int]]:
+def _connect_devices(
+    mapping: dict[str, dict[str, Any]],
+    session: DeviceSession,
+    *,
+    connect_tec: bool = True,
+) -> tuple[dict[str, Any], dict[str, int]]:
     devices: dict[str, Any] = {}
     channels: dict[str, int] = {}
 
@@ -219,6 +237,12 @@ def _connect_devices(mapping: dict[str, dict[str, Any]], session: DeviceSession)
     devices["gs200"] = session.connect(
         "gs200", gs_cfg["resource"], lambda: GS200Instrument(gs_cfg["resource"])
     )
+
+    z_cfg = mapping["Z_magnetic_field"]
+    devices["z_field"] = session.connect(
+        "z_field", z_cfg["resource"], lambda: create_signal_generator(z_cfg)
+    )
+    channels["z_field"] = int(z_cfg["channel"])
 
     x_cfg = mapping["X_magnetic_field"]
     rf_cfg = mapping["rf_coil"]
@@ -268,18 +292,32 @@ def _connect_devices(mapping: dict[str, dict[str, Any]], session: DeviceSession)
         ),
     )
 
-    tec_cfg = mapping["temperature"]
-    devices["tec"] = session.connect(
-        "tec", tec_cfg["resource"], lambda: TECInstrument(port=tec_cfg["resource"])
-    )
+    if connect_tec:
+        tec_cfg = mapping["temperature"]
+        devices["tec"] = session.connect_optional(
+            "tec",
+            tec_cfg["resource"],
+            lambda: TECInstrument(port=tec_cfg["resource"]),
+            device_label="TEC103",
+        )
     return devices, channels
 
 
 def safe_shutdown(
     devices: dict[str, Any], channels: dict[str, int], params: MxYRFParams
 ) -> SafetyShutdownReport:
-    """关闭 XY 磁场并强制保持 Pump 连续常开。"""
+    """关闭 Z/XY 磁场并强制保持 Pump 连续常开。"""
     dg_channels: list[DGChannelShutdown] = []
+    z_field = devices.get("z_field")
+    if z_field is not None and "z_field" in channels:
+        dg_channels.append(
+            DGChannelShutdown(
+                z_field,
+                channels["z_field"],
+                "Z_magnetic_field",
+                "Z 辅助场",
+            )
+        )
     xy_field = devices.get("xy_field")
     if xy_field is not None:
         if "x_field" in channels:
@@ -336,13 +374,53 @@ def safe_shutdown(
     )
 
 
+def _configure_temperature_control(
+    params: MxYRFParams,
+    devices: dict[str, Any],
+    channels: dict[str, int],
+    *,
+    control_tec: bool,
+) -> float | None:
+    """开启温控开关，并按实验选择是否连接和配置 TEC。"""
+    set_temperature_switch(
+        devices["temp_switch"],
+        True,
+        channel=channels["temp_switch"],
+    )
+    if not control_tec:
+        print("温控开关已开启；当前实验不连接 TEC，也不等待温度稳定")
+        return None
+
+    status = configure_temperature_control(
+        devices.get("tec"),
+        params.temperature_c,
+        channel=1,
+        tolerance_c=params.temperature_tolerance_c,
+        stable_reads=params.temperature_stable_reads,
+        poll_interval_s=params.temperature_poll_interval_s,
+        timeout_s=params.temperature_timeout_s,
+        cancellation=_RuntimeCancellation(),
+        stability_waiter=wait_for_temperature_stable,
+    )
+    return status.actual_temperature_c
+
+
 def _configure_outputs(
     params: MxYRFParams,
     devices: dict[str, Any],
     channels: dict[str, int],
     mapping: dict[str, dict[str, Any]],
+    *,
+    control_tec: bool = True,
 ) -> tuple[float, dict[str, dict[str, str]]]:
     clock_sources = _configure_reference_clocks(devices, mapping)
+    z_field = devices["z_field"]
+    validate_safety_limit("Z_magnetic_field", 0.0)
+    z_field.set_burst_state(False, channel=channels["z_field"])
+    z_field.set_mod_state(False, channel=channels["z_field"])
+    z_field.setup_dc(0.0, channel=channels["z_field"])
+    z_field.set_output(False, channel=channels["z_field"])
+
     xy_field = devices["xy_field"]
     validate_safety_limit("X_magnetic_field", 0.0)
     xy_field.set_burst_state(False, channel=channels["x_field"])
@@ -350,10 +428,17 @@ def _configure_outputs(
     xy_field.setup_dc(0.0, channel=channels["x_field"])
     xy_field.set_output(False, channel=channels["x_field"])
     validate_safety_limit("rf_coil", 0.0)
-    _configure_y_rf_sine_source(
+    _temperature_gated_acquire(
         params,
-        xy_field,
-        channels["y_rf"],
+        devices,
+        channels,
+        set_y_rf=lambda: _configure_y_rf_sine_source(
+            params,
+            xy_field,
+            channels["y_rf"],
+        ),
+        settle_time_s=0.0,
+        acquire=lambda: None,
     )
 
     laser = devices["laser"]
@@ -389,20 +474,11 @@ def _configure_outputs(
         params.pump_gate_voltage_v,
     )
 
-    set_temperature_switch(devices["temp_switch"], True, channel=channels["temp_switch"])
-    validate_safety_limit("temperature", params.temperature_c)
-    tec = devices["tec"]
-    tec.set_target_temperature(params.temperature_c, channel=1)
-    tec.set_enable(True, channel=1)
-    actual_temperature = wait_for_temperature_stable(
-        tec,
-        params.temperature_c,
-        channel=1,
-        tolerance_c=params.temperature_tolerance_c,
-        stable_reads=params.temperature_stable_reads,
-        poll_interval_s=params.temperature_poll_interval_s,
-        timeout_s=params.temperature_timeout_s,
-        cancellation=_RuntimeCancellation(),
+    actual_temperature = _configure_temperature_control(
+        params,
+        devices,
+        channels,
+        control_tec=control_tec,
     )
 
     hf2 = devices["hf2"]
@@ -411,7 +487,16 @@ def _configure_outputs(
         SignalInputConfig(input_index=0, range=params.hf2_signal_range_v, ac_coupling=True, diff=False, impedance=50),
     )
     actual_rate = _configure_response_demodulator(params, hf2)
-    print(f"Mx 工作点已配置，温度 {actual_temperature:.2f} °C，Demod0 实际速率 {actual_rate:.3f} Sa/s")
+    if actual_temperature is None:
+        print(
+            "Mx 工作点已配置，TEC 未连接，"
+            f"Demod0 实际速率 {actual_rate:.3f} Sa/s"
+        )
+    else:
+        print(
+            f"Mx 工作点已配置，温度 {actual_temperature:.2f} °C，"
+            f"Demod0 实际速率 {actual_rate:.3f} Sa/s"
+        )
     return float(actual_rate), clock_sources
 
 
@@ -445,10 +530,13 @@ def _temperature_gated_acquire(
     devices: dict[str, Any],
     channels: dict[str, int],
     *,
+    set_y_rf: Callable[[], None],
     settle_time_s: float,
-    acquire: Callable[[], dict[str, np.ndarray]],
-) -> dict[str, np.ndarray]:
+    acquire: Callable[[], Any],
+) -> Any:
+    """按“设置 Y RF→温控关→等待→采集→温控开→等待”执行。"""
     check_cancelled()
+    set_y_rf()
     set_temperature_switch(devices["temp_switch"], False, channel=channels["temp_switch"])
     try:
         _sleep(params.temp_switch_off_lead_s)
@@ -467,6 +555,7 @@ def _acquire_valid_r_point(
     *,
     file_stem: str,
     metadata: dict[str, Any],
+    set_y_rf: Callable[[], None],
     settle_time_s: float,
     duration_s: float,
     actual_rate: float,
@@ -479,6 +568,7 @@ def _acquire_valid_r_point(
             params,
             devices,
             channels,
+            set_y_rf=set_y_rf,
             settle_time_s=settle_time_s,
             acquire=lambda: acquire_r(
                 hf2,
@@ -537,12 +627,27 @@ def _acquire_frequency_scan(
     for index, frequency in enumerate(axis):
         check_cancelled()
         print(f"模式1频率点 {index + 1}/{len(axis)}: {frequency:.3f} Hz")
-        validate_safety_limit("rf_coil", params.frequency_rf_amplitude_vpp)
-        rf.set_frequency(float(frequency), channel=channels["y_rf"])
-        rf.set_phase_adjust(0.0, channel=channels["y_rf"])
-        rf.set_amplitude(params.frequency_rf_amplitude_vpp, channel=channels["y_rf"])
-        rf.set_output(True, channel=channels["y_rf"])
-        demod.configure_oscillator(hf2, OscillatorConfig(osc_index=params.demod_osc_idx, frequency=float(frequency)))
+
+        def set_frequency_point() -> None:
+            validate_safety_limit(
+                "rf_coil",
+                params.frequency_rf_amplitude_vpp,
+            )
+            rf.set_frequency(float(frequency), channel=channels["y_rf"])
+            rf.set_phase_adjust(0.0, channel=channels["y_rf"])
+            rf.set_amplitude(
+                params.frequency_rf_amplitude_vpp,
+                channel=channels["y_rf"],
+            )
+            rf.set_output(True, channel=channels["y_rf"])
+            demod.configure_oscillator(
+                hf2,
+                OscillatorConfig(
+                    osc_index=params.demod_osc_idx,
+                    frequency=float(frequency),
+                ),
+            )
+
         summary, attempt, filename = _acquire_valid_r_point(
             params,
             run_dir,
@@ -555,6 +660,7 @@ def _acquire_frequency_scan(
                     params.frequency_rf_amplitude_vpp
                 ),
             },
+            set_y_rf=set_frequency_point,
             settle_time_s=params.frequency_settle_time_s,
             duration_s=params.frequency_duration_s,
             actual_rate=actual_rate,
@@ -563,7 +669,6 @@ def _acquire_frequency_scan(
         summaries.append(summary)
         accepted_attempts.append(attempt)
         accepted_files.append(filename)
-    rf.set_output(False, channel=channels["y_rf"])
     r_values = np.asarray([item["r_scalar_mean_v"] for item in summaries])
     np.savez(
         run_dir.raw / "frequency_scan.npz",
@@ -615,7 +720,14 @@ def _acquire_amplitude_scan(
     for index, amplitude in enumerate(axis):
         check_cancelled()
         print(f"Y RF 幅度点 {index + 1}/{len(axis)}: {amplitude:+.6f} Vpp")
-        hardware = _set_signed_rf(rf, channels["y_rf"], float(amplitude))
+        hardware_amplitude, hardware_phase, output_on = (
+            signed_amplitude_hardware(float(amplitude))
+        )
+        hardware = {
+            "hardware_amplitude_vpp": hardware_amplitude,
+            "hardware_phase_deg": hardware_phase,
+            "output_on": output_on,
+        }
         summary, attempt, filename = _acquire_valid_r_point(
             params,
             run_dir,
@@ -626,6 +738,11 @@ def _acquire_amplitude_scan(
                 "signed_amplitude_vpp": np.float64(amplitude),
                 **hardware,
             },
+            set_y_rf=lambda amplitude=amplitude: _set_signed_rf(
+                rf,
+                channels["y_rf"],
+                float(amplitude),
+            ),
             settle_time_s=params.response_settle_time_s,
             duration_s=params.response_duration_s,
             actual_rate=actual_rate,
@@ -635,7 +752,6 @@ def _acquire_amplitude_scan(
         hardware_records.append(hardware)
         accepted_attempts.append(attempt)
         accepted_files.append(filename)
-    rf.set_output(False, channel=channels["y_rf"])
     np.savez(
         run_dir.raw / "amplitude_scan.npz",
         signed_amplitude_vpp=axis,
@@ -663,16 +779,41 @@ def _set_y_rf_zero_off(rf: Any, channel: int) -> None:
     rf.set_output(False, channel=channel)
 
 
+def _set_y_rf_zero_off_with_temperature_sequence(
+    params: MxYRFParams,
+    devices: dict[str, Any],
+    channels: dict[str, int],
+) -> None:
+    """按标准温控时序把 Y RF 恢复为零输出。"""
+    if devices.get("temp_switch") is None or "temp_switch" not in channels:
+        _set_y_rf_zero_off(devices["xy_field"], channels["y_rf"])
+        return
+    _temperature_gated_acquire(
+        params,
+        devices,
+        channels,
+        set_y_rf=lambda: _set_y_rf_zero_off(
+            devices["xy_field"],
+            channels["y_rf"],
+        ),
+        settle_time_s=0.0,
+        acquire=lambda: {},
+    )
+
+
 def _acquire_noise(
     params: MxYRFParams,
     run_dir: Any,
     devices: dict[str, Any],
     channels: dict[str, int],
     device_id: str,
+    *,
+    set_y_rf_off_state: Callable[[], None] | None = None,
+    y_rf_dc_v: float = 0.0,
+    y_rf_output_on: bool = False,
 ) -> float:
     rf = devices["xy_field"]
     hf2 = devices["hf2"]
-    _set_y_rf_zero_off(rf, channels["y_rf"])
     actual_rate = demod.configure_demodulator(
         hf2,
         DemodulatorConfig(
@@ -687,6 +828,9 @@ def _acquire_noise(
             phase=float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift")),
         ),
     )
+    rf_off_setter = set_y_rf_off_state or (
+        lambda: _set_y_rf_zero_off(rf, channels["y_rf"])
+    )
     for index in range(params.noise_n_avg):
         check_cancelled()
         print(f"零 Y RF 噪声 {index + 1}/{params.noise_n_avg}")
@@ -694,6 +838,7 @@ def _acquire_noise(
             params,
             devices,
             channels,
+            set_y_rf=rf_off_setter,
             settle_time_s=0.0,
             acquire=lambda: acquire_r(
                 hf2,
@@ -707,8 +852,8 @@ def _acquire_noise(
             run_dir.raw / f"noise_{index:03d}.npz",
             payload,
             {
-                "y_rf_dc_v": np.float64(0.0),
-                "y_rf_output_on": np.uint8(0),
+                "y_rf_dc_v": np.float64(y_rf_dc_v),
+                "y_rf_output_on": np.uint8(y_rf_output_on),
             },
             float(actual_rate),
         )
@@ -718,9 +863,15 @@ def _acquire_noise(
 def connect_mx_y_rf_devices(
     mapping: dict[str, dict[str, Any]],
     session: DeviceSession,
+    *,
+    connect_tec: bool = True,
 ) -> tuple[dict[str, Any], dict[str, int]]:
     """连接 Mx Y RF 构型使用的设备，并复用同物理资源。"""
-    return _connect_devices(mapping, session)
+    return _connect_devices(
+        mapping,
+        session,
+        connect_tec=connect_tec,
+    )
 
 
 def snapshot_mx_y_rf_state(
@@ -736,9 +887,17 @@ def configure_mx_y_rf_outputs(
     devices: dict[str, Any],
     channels: dict[str, int],
     mapping: dict[str, dict[str, Any]],
+    *,
+    control_tec: bool = True,
 ) -> tuple[float, dict[str, dict[str, str]]]:
     """配置参考 Mx Y RF 工作点。"""
-    return _configure_outputs(params, devices, channels, mapping)
+    return _configure_outputs(
+        params,
+        devices,
+        channels,
+        mapping,
+        control_tec=control_tec,
+    )
 
 
 def acquire_mx_y_rf_point(
@@ -784,7 +943,11 @@ def acquire_mx_y_rf_point(
             device_id,
         )
     finally:
-        _set_y_rf_zero_off(devices["xy_field"], channels["y_rf"])
+        _set_y_rf_zero_off_with_temperature_sequence(
+            params,
+            devices,
+            channels,
+        )
     return {
         "actual_response_rate_sa_s": actual_response_rate,
         "actual_noise_rate_sa_s": actual_noise_rate,

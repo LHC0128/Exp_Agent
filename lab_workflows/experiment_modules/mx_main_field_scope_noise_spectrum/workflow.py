@@ -36,7 +36,9 @@ from ...steps import (
     TemperatureSwitchRestore,
     create_run_directory,
     acquire_autoranged_waveform,
+    configure_fixed_dc_field,
     configure_fixed_rate_scope,
+    configure_temperature_control,
     next_auto_offset,
     next_auto_range_scale,
     read_complete_scope_record,
@@ -84,20 +86,6 @@ def _sleep(seconds: float) -> None:
 def _validate_main_field_current(current_ma: float) -> float:
     """只执行全局安全校验；主场标定允许按实验约定外推。"""
     return float(validate_safety_limit("main_magnetic_field", float(current_ma)))
-
-
-def _configure_fixed_dc_field(
-    device: Any,
-    channel: int,
-    safety_key: str,
-    voltage_v: float,
-) -> None:
-    """配置固定 DC 补偿场；严格的零值表示写入 0 V 后关闭输出。"""
-    voltage_v = float(validate_safety_limit(safety_key, float(voltage_v)))
-    device.set_burst_state(False, channel=channel)
-    device.set_mod_state(False, channel=channel)
-    device.setup_dc(voltage_v, channel=channel)
-    device.set_output(voltage_v != 0.0, channel=channel)
 
 
 def _scope_settings(
@@ -226,8 +214,11 @@ def _connect_devices(
     )
 
     tec_cfg = mapping["temperature"]
-    devices["tec"] = session.connect(
-        "tec", tec_cfg["resource"], lambda: TECInstrument(port=tec_cfg["resource"])
+    devices["tec"] = session.connect_optional(
+        "tec",
+        tec_cfg["resource"],
+        lambda: TECInstrument(port=tec_cfg["resource"]),
+        device_label="TEC103",
     )
     return devices, channels
 
@@ -359,7 +350,7 @@ def _configure_outputs(
     devices: dict[str, Any],
     channels: dict[str, int],
     mapping: dict[str, dict[str, Any]],
-) -> tuple[float, dict[str, dict[str, Any]]]:
+) -> tuple[float | None, dict[str, dict[str, Any]]]:
     """配置连续 Pump/Probe、固定 XY 补偿、初始主场和温控。"""
     clock_sources = synchronize_connected_clocks(
         devices,
@@ -385,7 +376,7 @@ def _configure_outputs(
         ("x_field", "X_magnetic_field", params.x_dc_field_v),
         ("y_rf", "Y_magnetic_field", params.y_dc_field_v),
     ):
-        _configure_fixed_dc_field(
+        configure_fixed_dc_field(
             xy_field,
             channels[channel_name],
             safety_key,
@@ -432,12 +423,8 @@ def _configure_outputs(
     set_temperature_switch(
         devices["temp_switch"], True, channel=channels["temp_switch"]
     )
-    validate_safety_limit("temperature", params.temperature_c)
-    tec = devices["tec"]
-    tec.set_target_temperature(params.temperature_c, channel=1)
-    tec.set_enable(True, channel=1)
-    actual_temperature = wait_for_temperature_stable(
-        tec,
+    temperature_status = configure_temperature_control(
+        devices.get("tec"),
         params.temperature_c,
         channel=1,
         tolerance_c=params.temperature_tolerance_c,
@@ -445,8 +432,9 @@ def _configure_outputs(
         poll_interval_s=params.temperature_poll_interval_s,
         timeout_s=params.temperature_timeout_s,
         cancellation=_RuntimeCancellation(),
+        stability_waiter=wait_for_temperature_stable,
     )
-    return float(actual_temperature), clock_sources
+    return temperature_status.actual_temperature_c, clock_sources
 
 
 def _configure_scope(
@@ -867,6 +855,14 @@ def run(params: MxMainFieldScopeNoiseSpectrumParams) -> Path:
         scope_config, scope_snapshot = _configure_scope(params, devices)
         run_dir.update_config(
             initial_temperature_c=actual_temperature,
+            temperature_control={
+                "target_temperature_c": params.temperature_c,
+                "actual_temperature_c": actual_temperature,
+                "controlled_by_experiment": actual_temperature is not None,
+                "control_source": (
+                    "tec103" if actual_temperature is not None else "external_software"
+                ),
+            },
             clock_sources=clock_sources,
             scope_configuration=scope_snapshot,
             actual_rates={"scope_sa_s": scope_snapshot["actual_sample_rate_sa_s"]},

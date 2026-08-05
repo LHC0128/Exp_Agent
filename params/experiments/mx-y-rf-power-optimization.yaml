@@ -3,8 +3,8 @@ parameters:
   RUN_TAG: mx_y_rf_power_opt
   LINEWIDTH_MODE: amplitude_equivalent
   Y_RF_FREQUENCY_HZ: 90000.0
-  Y_RF_AMP_START_VPP: -0.2
-  Y_RF_AMP_STOP_VPP: 0.2
+  Y_RF_AMP_START_VPP: -0.1
+  Y_RF_AMP_STOP_VPP: 0.1
   Y_RF_AMP_POINTS: 21
   RESPONSE_SETTLE_TIME_S: 0.1
   RESPONSE_DURATION_S: 0.2

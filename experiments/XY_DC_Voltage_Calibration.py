@@ -103,6 +103,7 @@ from tqdm import tqdm
 from gs200 import GS200Instrument
 from lab_workflows.devices import create_signal_generator
 from tec_controller import TECInstrument
+from lab_workflows.steps import configure_temperature_control
 from sds_acquisition import SDSInstrument
 from lockin_amplifier import (
     HF2Instrument, DAQConfig,
@@ -437,8 +438,12 @@ try:
     # ---- TEC103: 温度控制器 ----
     tec_cfg = MAPPING["temperature"]
     tec = TECInstrument(port=tec_cfg["resource"])
-    tec.connect()
-    print(f"TEC103 已连接")
+    try:
+        tec.connect()
+        print("TEC103 已连接")
+    except Exception as exc:
+        print(f"[警告] TEC103 连接失败：{exc}。实验继续，由外部软件负责温控。")
+        tec = None
     devices["tec"] = tec
 
     # ---- HF2: 锁相放大器 ----
@@ -800,18 +805,9 @@ print(f"主磁场: {FIXED_PARAMS['main_magnetic_field']} mA")
 
 # ---- 4. 温度控制（等待稳定 ±1°C）----
 validate_safety_limit("temperature", FIXED_PARAMS["temperature"])
-tec.set_target_temperature(FIXED_PARAMS["temperature"], channel=1)
-tec.set_enable(True, channel=1)
-temp_now = tec.get_temperature(channel=1)
-print(f"温度设定: {FIXED_PARAMS['temperature']} °C, 当前: {temp_now:.1f} °C")
-print("等待温度稳定...")
-while True:
-    time.sleep(5)
-    t = tec.get_temperature(channel=1)
-    print(f"  当前温度: {t:.2f} °C")
-    if abs(t - FIXED_PARAMS["temperature"]) < 1:
-        print(f"温度已稳定: {t:.2f} °C")
-        break
+configure_temperature_control(
+    tec, FIXED_PARAMS["temperature"], tolerance_c=1.0, stable_reads=1
+)
 
 # ---- 5. 温度开关 (ON) ----
 validate_safety_limit("Temp_Switch", FIXED_PARAMS["Temp_Switch"])

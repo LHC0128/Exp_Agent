@@ -30,6 +30,7 @@ from ...steps import (
     SafetyShutdownReport,
     ShutdownAction,
     TemperatureSwitchRestore,
+    configure_temperature_control,
     create_run_directory,
     restore_main_field_state,
     run_safety_shutdown,
@@ -180,7 +181,7 @@ def _configure_outputs(
     devices: dict[str, Any],
     channels: dict[str, int],
     mapping: dict[str, dict[str, Any]],
-) -> tuple[float, float, dict[str, dict[str, str]], dict[str, Any]]:
+) -> tuple[float, float | None, dict[str, dict[str, str]], dict[str, Any]]:
     """配置 Mx 连续 Pump、首个主场点与固定 90 kHz Demod0。"""
     clock_sources = _configure_reference_clocks(devices, mapping)
 
@@ -243,12 +244,8 @@ def _configure_outputs(
     set_temperature_switch(
         devices["temp_switch"], True, channel=channels["temp_switch"]
     )
-    validate_safety_limit("temperature", params.temperature_c)
-    tec = devices["tec"]
-    tec.set_target_temperature(params.temperature_c, channel=1)
-    tec.set_enable(True, channel=1)
-    actual_temperature = wait_for_temperature_stable(
-        tec,
+    temperature_status = configure_temperature_control(
+        devices.get("tec"),
         params.temperature_c,
         channel=1,
         tolerance_c=params.temperature_tolerance_c,
@@ -256,7 +253,9 @@ def _configure_outputs(
         poll_interval_s=params.temperature_poll_interval_s,
         timeout_s=params.temperature_timeout_s,
         cancellation=_RuntimeCancellation(),
+        stability_waiter=wait_for_temperature_stable,
     )
+    actual_temperature = temperature_status.actual_temperature_c
 
     hf2 = devices["hf2"]
     demod.configure_signal_input(
@@ -312,11 +311,16 @@ def _configure_outputs(
             "impedance_ohm": 50,
         },
     }
+    temperature_text = (
+        f"{actual_temperature:.2f} °C"
+        if actual_temperature is not None
+        else "由外部软件控制（未读取）"
+    )
     print(
-        f"Mx 主场噪声谱工作点已配置，温度 {actual_temperature:.2f} °C，"
+        f"Mx 主场噪声谱工作点已配置，温度 {temperature_text}，"
         f"Demod0 实际速率 {actual_rate:.6f} Sa/s"
     )
-    return actual_rate, float(actual_temperature), clock_sources, hf2_snapshot
+    return actual_rate, actual_temperature, clock_sources, hf2_snapshot
 
 
 def _temperature_gated_acquire(
@@ -552,6 +556,14 @@ def run(params: MxMainFieldNoiseSpectrumParams) -> Path:
         run_dir.update_config(
             actual_rates={"demod0_r_sa_s": actual_rate},
             initial_temperature_c=actual_temperature,
+            temperature_control={
+                "target_temperature_c": params.temperature_c,
+                "actual_temperature_c": actual_temperature,
+                "controlled_by_experiment": actual_temperature is not None,
+                "control_source": (
+                    "tec103" if actual_temperature is not None else "external_software"
+                ),
+            },
             clock_sources=clock_sources,
             hf2_configuration=hf2_snapshot,
         )

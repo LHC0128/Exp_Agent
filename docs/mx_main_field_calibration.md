@@ -40,8 +40,8 @@ required_devices:
   - DG900
   - DG4000
   - HF2
-  - TEC103
 learned_notes:
+  - TEC103 为可选控制设备；COM3 被外部温控软件占用时跳过设温和稳定等待。
   - 7 至 10 mA 范围不跨越总场零点，使用普通线性模型。
   - 设置主场电流后不单独等待；首个频点的温控关闭统一等待同时覆盖主场稳定。
   - 频率到磁场使用可配置的 GYROMAGNETIC_RATIO_HZ_PER_NT，默认 7.0 Hz/nT。

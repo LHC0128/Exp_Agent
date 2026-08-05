@@ -146,9 +146,48 @@ class InstrumentControlTests(unittest.TestCase):
 
         self.assertEqual(result, {"ok": True})
         names = [call[0] for call in instrument.method_calls]
+        self.assertLess(names.index("clear_status"), names.index("set_shape"))
         self.assertLess(names.index("set_burst_state"), names.index("set_mod_type_state"))
         self.assertLess(names.index("set_mod_type_state"), names.index("set_output"))
+        self.assertLess(
+            names.index("set_output"),
+            names.index("wait_for_operation_complete"),
+        )
+        self.assertLess(
+            names.index("wait_for_operation_complete"),
+            names.index("raise_for_errors"),
+        )
         instrument.disable_all_mod.assert_called_once_with(1)
+        instrument.disconnect.assert_called_once()
+
+    def test_heat_control_write_error_turns_output_off(self):
+        record = DeviceRecord(
+            id="DG9QTEST", type="DG900", label="加热信号",
+            resource="FAKE", short_resource="DG9QTEST",
+            channels=[ChannelRecord(1, "Heat_Control", "加热信号")],
+        )
+        instrument = MagicMock()
+        instrument.raise_for_errors.side_effect = RuntimeError("SCPI 错误")
+        with (
+            patch("lab_workflows.instrument_control.find_device", return_value=record),
+            patch("lab_workflows.instrument_control._connect", return_value=instrument),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "SCPI 错误"):
+                apply_generator_channel(
+                    record.id,
+                    1,
+                    {
+                        "shape": "SINusoid",
+                        "frequency": 26000.0,
+                        "amplitude": 0.5,
+                        "offset": 0.0,
+                        "output": True,
+                        "mod": {"enabled": False},
+                        "burst": {"enabled": False},
+                    },
+                )
+
+        self.assertEqual(instrument.set_output.call_args_list[-1].args, (False, 1))
         instrument.disconnect.assert_called_once()
 
     def test_read_only_channel_rejects_write_before_connect(self):

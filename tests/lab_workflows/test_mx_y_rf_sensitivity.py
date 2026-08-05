@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import numpy as np
@@ -14,6 +15,7 @@ from lab_workflows.experiment_modules.mx_y_rf_sensitivity.acquisition import (
     summarize_r,
 )
 from lab_workflows.experiment_modules.mx_y_rf_sensitivity.analysis_core import (
+    adaptive_zero_point_absolute_linear_fit,
     absolute_dispersive_response,
     amplitude_gamma_to_hz,
     average_welch_psd,
@@ -26,7 +28,7 @@ from lab_workflows.experiment_modules.mx_y_rf_sensitivity.analysis_core import (
     sensitivity_spectrum,
 )
 from lab_workflows.experiment_modules.mx_y_rf_sensitivity.analysis import (
-    SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ,
+    _plot_full_analysis,
     analyze,
 )
 from lab_workflows.experiment_modules.mx_y_rf_sensitivity.definition import (
@@ -45,6 +47,7 @@ from lab_workflows.experiment_modules.mx_y_rf_sensitivity.scan import (
 from lab_workflows.experiment_modules.mx_y_rf_sensitivity.workflow import (
     _acquire_valid_r_point,
     _configure_reference_clocks,
+    _configure_temperature_control,
     _restore_response_acquisition_state,
     _set_y_rf_zero_off,
     safe_shutdown,
@@ -122,7 +125,7 @@ def test_r_only_daq_normalization() -> None:
 
 def test_bad_r_point_is_saved_and_reacquired(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
+    local_tmp_path: Path,
 ) -> None:
     import lab_workflows.experiment_modules.mx_y_rf_sensitivity.workflow as workflow
 
@@ -146,7 +149,10 @@ def test_bad_r_point_is_saved_and_reacquired(
     monkeypatch.setattr(
         workflow,
         "_temperature_gated_acquire",
-        lambda *args, acquire, **kwargs: acquire(),
+        lambda *args, set_y_rf, acquire, **kwargs: (
+            set_y_rf(),
+            acquire(),
+        )[1],
     )
     params = MxYRFParams(
         r_bad_point_std_threshold_v=0.01,
@@ -154,11 +160,12 @@ def test_bad_r_point_is_saved_and_reacquired(
     )
     summary, attempt, filename = _acquire_valid_r_point(
         params,
-        SimpleNamespace(raw=tmp_path),
+        SimpleNamespace(raw=local_tmp_path),
         {"hf2": object()},
         {},
         file_stem="amplitude_0001",
         metadata={"signed_amplitude_vpp": 0.1},
+        set_y_rf=lambda: None,
         settle_time_s=0.0,
         duration_s=0.1,
         actual_rate=1000.0,
@@ -167,10 +174,14 @@ def test_bad_r_point_is_saved_and_reacquired(
     assert attempt == 1
     assert filename == "amplitude_0001_attempt_01.npz"
     assert summary["r_std_v"] == pytest.approx(0.0)
-    with np.load(tmp_path / "amplitude_0001_attempt_00.npz") as first:
+    with np.load(
+        local_tmp_path / "amplitude_0001_attempt_00.npz"
+    ) as first:
         assert int(first["quality_accepted"]) == 0
         assert set(first.files).isdisjoint({"x_v", "y_v"})
-    with np.load(tmp_path / "amplitude_0001_attempt_01.npz") as second:
+    with np.load(
+        local_tmp_path / "amplitude_0001_attempt_01.npz"
+    ) as second:
         assert int(second["quality_accepted"]) == 1
 
 
@@ -203,6 +214,11 @@ def test_reference_clocks_follow_repository_profile() -> None:
     pump = _FakeClockDG()
     hf2 = _FakeClockHF2()
     mapping = {
+        "Z_magnetic_field": {
+            "instrument": "signal_generator",
+            "model": "DG4000",
+            "resource": "USB0::VENDOR::MODEL::Z_SERIAL::INSTR",
+        },
         "rf_coil": {
             "instrument": "signal_generator",
             "model": "DG4000",
@@ -230,6 +246,7 @@ def test_reference_clocks_follow_repository_profile() -> None:
     }
     result = _configure_reference_clocks(
         {
+            "z_field": _FakeClockDG(),
             "xy_field": xy,
             "laser": _FakeClockDG(),
             "pump_rf": pump,
@@ -239,6 +256,7 @@ def test_reference_clocks_follow_repository_profile() -> None:
         mapping,
         profile={
             "__default__": "EXT",
+            "Z_SERIAL": "EXT",
             "XY_SERIAL": "EXT",
             "LASER_SERIAL": "EXT",
             "PUMP_SERIAL": "INT",
@@ -247,6 +265,7 @@ def test_reference_clocks_follow_repository_profile() -> None:
         },
     )
     assert result == {
+        "z_field": {"target": "EXT", "actual": "EXT"},
         "xy_field": {"target": "EXT", "actual": "EXT"},
         "laser": {"target": "EXT", "actual": "EXT"},
         "pump_rf": {"target": "INT", "actual": "INT"},
@@ -257,6 +276,11 @@ def test_reference_clocks_follow_repository_profile() -> None:
 
 def test_reference_clock_readback_mismatch_stops_configuration() -> None:
     mapping = {
+        "Z_magnetic_field": {
+            "instrument": "signal_generator",
+            "model": "DG4000",
+            "resource": "USB0::VENDOR::MODEL::Z_SERIAL::INSTR",
+        },
         "rf_coil": {
             "instrument": "signal_generator",
             "model": "DG4000",
@@ -275,6 +299,7 @@ def test_reference_clock_readback_mismatch_stops_configuration() -> None:
     with pytest.raises(RuntimeError, match="xy_field 时钟源设置失败"):
         _configure_reference_clocks(
             {
+                "z_field": _FakeClockDG(),
                 "xy_field": _FakeClockDG(ignore_setting=True),
                 "pump_rf": _FakeClockDG(),
                 "hf2": _FakeClockHF2(),
@@ -282,6 +307,7 @@ def test_reference_clock_readback_mismatch_stops_configuration() -> None:
             mapping,
             profile={
                 "__default__": "EXT",
+                "Z_SERIAL": "EXT",
                 "XY_SERIAL": "EXT",
                 "PUMP_SERIAL": "INT",
                 "HF2_SERIAL": "EXT",
@@ -332,6 +358,45 @@ def test_absolute_dispersive_r_fit_after_bad_point_exclusion() -> None:
     assert abs(fit.amplitude) / fit.gamma**2 == pytest.approx(
         0.198 / 0.096**2,
         rel=0.08,
+    )
+
+
+def test_adaptive_zero_point_slope_uses_balanced_nearest_measured_points() -> None:
+    amplitude = np.linspace(-0.2, 0.2, 21)
+    response = 4.5 * np.abs(amplitude - 0.003) + 0.01
+    response[[0, -1]] += 10.0
+
+    result = adaptive_zero_point_absolute_linear_fit(
+        amplitude,
+        response,
+        center=0.003,
+    )
+
+    assert result["success"]
+    assert result["n_points"] == 5
+    assert result["left_point_count"] >= 2
+    assert result["right_point_count"] >= 2
+    assert result["slope"] == pytest.approx(4.5)
+    assert result["r_squared"] == pytest.approx(1.0)
+    selected = amplitude[result["mask"]]
+    assert selected.min() >= -0.041
+    assert selected.max() <= 0.041
+
+
+def test_adaptive_zero_point_slope_rejects_unbalanced_scan() -> None:
+    amplitude = np.linspace(0.0, 0.2, 11)
+    response = amplitude.copy()
+
+    result = adaptive_zero_point_absolute_linear_fit(
+        amplitude,
+        response,
+        center=0.0,
+    )
+
+    assert not result["success"]
+    assert any(
+        "零点左侧有效点数" in reason
+        for reason in result["rejection_reasons"]
     )
 
 
@@ -442,8 +507,78 @@ def test_flat_sensitivity_band_rejects_monotonic_spectrum() -> None:
     assert result["reason"]
 
 
-def test_analysis_generates_field_full_analysis_without_voltage_plot(tmp_path) -> None:
-    run_dir = tmp_path / "run"
+def test_full_analysis_marks_detected_flat_median_as_sensitivity(
+    monkeypatch: pytest.MonkeyPatch,
+    local_tmp_path: Path,
+) -> None:
+    from matplotlib.axes import Axes
+
+    horizontal_lines: list[tuple[float, str | None]] = []
+    original_axhline = Axes.axhline
+
+    def record_axhline(
+        self,
+        y=0,
+        *args,
+        **kwargs,
+    ):
+        horizontal_lines.append((float(y), kwargs.get("label")))
+        return original_axhline(self, y, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "axhline", record_axhline)
+    amplitude = np.linspace(-0.2, 0.2, 5)
+    frequency = np.asarray([0.0, 10.0, 20.0, 30.0])
+    filename = _plot_full_analysis(
+        results_dir=local_tmp_path,
+        params=MxYRFParams(y_rf_nt_per_vpp=1000.0),
+        amplitude_vpp=amplitude,
+        r_mean_v=absolute_dispersive_response(
+            amplitude,
+            0.1,
+            0.05,
+            0.0,
+            0.01,
+        ),
+        fit_mask=np.ones(amplitude.size, dtype=bool),
+        bad_point_mask=np.zeros(amplitude.size, dtype=bool),
+        response_fit=SimpleNamespace(
+            parameters=(0.1, 0.05, 0.0, 0.01),
+            r_squared=0.99,
+            center=0.0,
+        ),
+        primary_slope=40.0,
+        frequency_hz=frequency,
+        sensitivity={
+            "corrected_ft_per_sqrt_hz": np.asarray(
+                [500.0, 321.0, 322.0, 450.0]
+            ),
+            "raw_ft_per_sqrt_hz": np.asarray(
+                [480.0, 300.0, 301.0, 400.0]
+            ),
+            "flat_mask": np.asarray([False, True, True, False]),
+            "flat_median_ft_per_sqrt_hz": np.float64(321.5),
+        },
+        hwhm_hz=None,
+    )
+
+    assert filename == "full_analysis.png"
+    assert (local_tmp_path / filename).is_file()
+    assert horizontal_lines == [
+        (
+            pytest.approx(321.5),
+            "Sensitivity (flat median): 321.5 fT/√Hz",
+        )
+    ]
+    assert all(
+        label is None or "Reference" not in label
+        for _, label in horizontal_lines
+    )
+
+
+def test_analysis_generates_field_full_analysis_without_voltage_plot(
+    local_tmp_path: Path,
+) -> None:
+    run_dir = local_tmp_path / "run"
     raw_dir = run_dir / "raw"
     raw_dir.mkdir(parents=True)
     parameters = MxYRFParams(
@@ -488,16 +623,23 @@ def test_analysis_generates_field_full_analysis_without_voltage_plot(tmp_path) -
     result = analyze(run_dir)
 
     assert (run_dir / "results" / "full_analysis.png").is_file()
+    assert (
+        run_dir / "results" / "full_analysis_zero_point.png"
+    ).is_file()
+    assert (
+        run_dir / "results" / "sensitivity_zero_point.npz"
+    ).is_file()
     assert not (run_dir / "results" / "sensitivity_voltage.png").exists()
     assert "full_analysis.png" in result["files"]
+    assert "full_analysis_zero_point.png" in result["files"]
+    assert "sensitivity_zero_point.npz" in result["files"]
     assert "sensitivity_voltage.png" not in result["files"]
     assert result["plot_profile"] == "paper"
     assert "flat_detection" in result
+    assert result["zero_point_method"]["valid"]
+    assert result["zero_point_method"]["linear_fit"]["n_points"] == 5
     assert "candidate_count" in result["flat_detection"]
-    assert result["sensitivity_reference_ft_per_sqrt_hz"] == pytest.approx(
-        150.0
-    )
-    assert SENSITIVITY_REFERENCE_FT_PER_SQRT_HZ == pytest.approx(150.0)
+    assert "sensitivity_reference_ft_per_sqrt_hz" not in result
 
 
 class _FakeDG:
@@ -556,8 +698,15 @@ def test_response_state_is_restored_after_noise_configuration(
     import lab_workflows.experiment_modules.mx_y_rf_sensitivity.workflow as workflow
 
     rf = _FakeDG()
+    temperature = _FakeDG()
     oscillator_configs: list[object] = []
     demodulator_configs: list[object] = []
+    monkeypatch.setattr(workflow, "_sleep", lambda _duration: None)
+    monkeypatch.setattr(
+        workflow,
+        "_uncancellable_sleep",
+        lambda _duration: None,
+    )
     monkeypatch.setattr(
         workflow.demod,
         "configure_oscillator",
@@ -583,8 +732,12 @@ def test_response_state_is_restored_after_noise_configuration(
 
     actual_rate = _restore_response_acquisition_state(
         params,
-        {"xy_field": rf, "hf2": _FakeHF2()},
-        {"y_rf": 2},
+        {
+            "xy_field": rf,
+            "hf2": _FakeHF2(),
+            "temp_switch": temperature,
+        },
+        {"y_rf": 2, "temp_switch": 1},
     )
 
     assert actual_rate == pytest.approx(899.465)
@@ -593,6 +746,12 @@ def test_response_state_is_restored_after_noise_configuration(
         ("mod", 2, False),
         ("sine", 2, 90000.0, 0.05, 0.0, 0.0),
         ("output", 2, False),
+    ]
+    assert temperature.calls == [
+        ("dc", 1, 0.0),
+        ("output", 1, True),
+        ("dc", 1, 5.0),
+        ("output", 1, True),
     ]
     assert len(oscillator_configs) == 1
     assert oscillator_configs[0].frequency == pytest.approx(90000.0)
@@ -616,19 +775,135 @@ def test_noise_acquisition_sets_y_rf_to_zero_dc_and_output_off() -> None:
     ]
 
 
+def test_y_rf_setting_precedes_temperature_gated_wait_and_acquisition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lab_workflows.experiment_modules.mx_y_rf_sensitivity.workflow as workflow
+
+    events: list[str] = []
+    monkeypatch.setattr(
+        workflow,
+        "set_temperature_switch",
+        lambda _device, enabled, *, channel: events.append(
+            f"temp_{'on' if enabled else 'off'}"
+        ),
+    )
+    monkeypatch.setattr(
+        workflow,
+        "_sleep",
+        lambda duration: events.append(f"sleep_{duration}"),
+    )
+    monkeypatch.setattr(
+        workflow,
+        "_uncancellable_sleep",
+        lambda duration: events.append(f"sleep_{duration}"),
+    )
+
+    payload = workflow._temperature_gated_acquire(
+        MxYRFParams(
+            temp_switch_off_lead_s=0.2,
+            temp_switch_on_lag_s=0.3,
+        ),
+        {"temp_switch": object()},
+        {"temp_switch": 2},
+        set_y_rf=lambda: events.append("set_y_rf"),
+        settle_time_s=0.4,
+        acquire=lambda: events.append("acquire") or {"r": np.ones(1)},
+    )
+
+    assert payload["r"].tolist() == [1.0]
+    assert events == [
+        "set_y_rf",
+        "temp_off",
+        "sleep_0.2",
+        "sleep_0.4",
+        "acquire",
+        "temp_on",
+        "sleep_0.3",
+    ]
+
+
+def test_temperature_switch_is_not_toggled_when_y_rf_setting_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lab_workflows.experiment_modules.mx_y_rf_sensitivity.workflow as workflow
+
+    events: list[str] = []
+    monkeypatch.setattr(
+        workflow,
+        "set_temperature_switch",
+        lambda _device, enabled, *, channel: events.append(
+            f"temp_{'on' if enabled else 'off'}"
+        ),
+    )
+    monkeypatch.setattr(workflow, "_sleep", lambda _duration: None)
+    monkeypatch.setattr(
+        workflow,
+        "_uncancellable_sleep",
+        lambda _duration: events.append("on_lag"),
+    )
+
+    def fail_to_set_y_rf() -> None:
+        events.append("set_y_rf")
+        raise RuntimeError("Y RF 设置失败")
+
+    with pytest.raises(RuntimeError, match="Y RF 设置失败"):
+        workflow._temperature_gated_acquire(
+            MxYRFParams(),
+            {"temp_switch": object()},
+            {"temp_switch": 2},
+            set_y_rf=fail_to_set_y_rf,
+            settle_time_s=0.0,
+            acquire=lambda: {"r": np.ones(1)},
+        )
+
+    assert events == ["set_y_rf"]
+
+
+def test_temperature_switch_is_controlled_without_tec(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lab_workflows.experiment_modules.mx_y_rf_sensitivity.workflow as workflow
+
+    temperature = _FakeDG()
+    wait_calls: list[tuple] = []
+    monkeypatch.setattr(
+        workflow,
+        "wait_for_temperature_stable",
+        lambda *args, **kwargs: wait_calls.append((args, kwargs)),
+    )
+
+    actual_temperature = _configure_temperature_control(
+        MxYRFParams(),
+        {"temp_switch": temperature},
+        {"temp_switch": 2},
+        control_tec=False,
+    )
+
+    assert actual_temperature is None
+    assert temperature.calls == [
+        ("dc", 2, 5.0),
+        ("output", 2, True),
+    ]
+    assert wait_calls == []
+
+
 def test_safe_shutdown_preserves_pump_and_zeros_xy() -> None:
+    z = _FakeDG()
     xy = _FakeDG()
     pump = _FakeDG()
     temperature = _FakeDG()
     tec = _FakeTEC()
     report = safe_shutdown(
         {
+            "z_field": z,
             "xy_field": xy,
             "pump_rf": pump,
             "temp_switch": temperature,
             "tec": tec,
         },
         {
+            "z_field": 1,
             "x_field": 1,
             "y_rf": 2,
             "pump_carrier": 1,
@@ -638,6 +913,8 @@ def test_safe_shutdown_preserves_pump_and_zeros_xy() -> None:
         MxYRFParams(),
     )
     assert report.completed
+    assert ("dc", 1, 0.0) in z.calls
+    assert ("output", 1, False) in z.calls
     for channel in (1, 2):
         assert ("dc", channel, 0.0) in xy.calls
         assert ("output", channel, False) in xy.calls
@@ -649,3 +926,79 @@ def test_safe_shutdown_preserves_pump_and_zeros_xy() -> None:
     assert ("output", 2, True) in temperature.calls
     assert tec.disconnected
     assert "Time_sequence" in report.preserved_outputs
+
+
+def test_configure_outputs_zeros_z_field_before_mx_working_point(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lab_workflows.experiment_modules.mx_y_rf_sensitivity.workflow as workflow
+
+    z_field = MagicMock()
+    devices = {
+        "z_field": z_field,
+        "xy_field": MagicMock(),
+        "laser": MagicMock(),
+        "gs200": MagicMock(),
+        "pump_rf": MagicMock(),
+        "temp_switch": MagicMock(),
+        "hf2": MagicMock(),
+    }
+    channels = {
+        "z_field": 1,
+        "x_field": 1,
+        "y_rf": 2,
+        "pump_laser": 1,
+        "probe_laser": 2,
+        "pump_carrier": 1,
+        "pump_gate": 2,
+        "temp_switch": 2,
+    }
+    monkeypatch.setattr(workflow, "_configure_reference_clocks", lambda *a: {})
+    monkeypatch.setattr(
+        workflow,
+        "_temperature_gated_acquire",
+        lambda *args, set_y_rf, acquire, **kwargs: (
+            set_y_rf(),
+            acquire(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        workflow, "_configure_temperature_control", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        workflow, "_configure_response_demodulator", lambda *a: 1000.0
+    )
+    monkeypatch.setattr(
+        workflow.demod, "configure_signal_input", lambda *a, **k: None
+    )
+
+    actual_rate, clock_sources = workflow._configure_outputs(
+        MxYRFParams(),
+        devices,
+        channels,
+        {"main_magnetic_field": {"source_function": "CURRent"}},
+    )
+
+    assert actual_rate == pytest.approx(1000.0)
+    assert clock_sources == {}
+    z_field.set_burst_state.assert_called_once_with(False, channel=1)
+    z_field.set_mod_state.assert_called_once_with(False, channel=1)
+    z_field.setup_dc.assert_called_once_with(0.0, channel=1)
+    z_field.set_output.assert_called_once_with(False, channel=1)
+
+
+def test_safe_shutdown_without_tec_still_restores_temperature_switch() -> None:
+    temperature = _FakeDG()
+
+    report = safe_shutdown(
+        {"temp_switch": temperature},
+        {"temp_switch": 2},
+        MxYRFParams(),
+    )
+
+    assert report.completed
+    assert report.disconnect_errors == ()
+    assert temperature.calls == [
+        ("dc", 2, 5.0),
+        ("output", 2, True),
+    ]

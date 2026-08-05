@@ -40,12 +40,12 @@ from lab_workflows.steps import (
     TemperatureSwitchRestore,
     calibrate_demod_phase,
     calibrate_direct_aw_phase,
+    configure_temperature_control,
     create_run_directory,
     run_safety_shutdown,
     set_temperature_switch,
     synchronize_connected_clocks,
     upload_arbitrary,
-    wait_for_temperature_stable,
 )
 
 from .acquisition import acquire_demod_r_mean
@@ -181,10 +181,11 @@ def run() -> Path:
         )
 
         tec_cfg = mapping["temperature"]
-        tec = session.connect(
+        tec = session.connect_optional(
             "tec",
             str(tec_cfg["resource"]),
             lambda: TECInstrument(port=tec_cfg["resource"]),
+            device_label="TEC103",
         )
 
         hf2_cfg = mapping["lockin_r"]
@@ -243,10 +244,7 @@ def run() -> Path:
 
         validate_safety_limit("Temp_Switch", params.temp_switch, limits)
         set_temp(True)
-        validate_safety_limit("temperature", params.temperature, limits)
-        tec.set_target_temperature(params.temperature, channel=1)
-        tec.set_enable(True, channel=1)
-        wait_for_temperature_stable(
+        temperature_status = configure_temperature_control(
             tec,
             params.temperature,
             channel=1,
@@ -254,6 +252,10 @@ def run() -> Path:
             stable_reads=params.temperature_stable_reads,
             poll_interval_s=params.temperature_poll_interval_s,
             timeout_s=params.temperature_timeout_s,
+        )
+        run_dir.update_config(
+            temperature_control=temperature_status.to_dict(),
+            initial_temperature_c=temperature_status.actual_temperature_c,
         )
 
         for key, device, channel in (

@@ -30,6 +30,7 @@ from lab_workflows.steps import (
     next_auto_offset,
     next_auto_range_scale,
 )
+from lab_workflows.steps.state import StateGuard
 from sds_acquisition import AcquisitionResult, save_to_npz
 
 
@@ -98,13 +99,28 @@ def test_configure_outputs_switches_pump_for_nonzero_power(
     laser = MagicMock()
     tec = MagicMock()
     gs200 = MagicMock()
+    z_field = MagicMock()
+    xy_field = MagicMock()
+    pump_rf = MagicMock()
     devices = {
         "laser": laser,
         "tec": tec,
         "gs200": gs200,
         "temp_switch": MagicMock(),
+        "z_field": z_field,
+        "xy_field": xy_field,
+        "pump_rf": pump_rf,
     }
-    channels = {"pump_laser": 1, "probe_laser": 2, "temp_switch": 2}
+    channels = {
+        "pump_laser": 1,
+        "probe_laser": 2,
+        "temp_switch": 2,
+        "z_field": 1,
+        "x_field": 1,
+        "y_field": 2,
+        "pump_carrier": 1,
+        "pump_gate": 2,
+    }
     mapping = {"main_magnetic_field": {"source_function": "CURRent"}}
     monkeypatch.setattr(workflow, "synchronize_connected_clocks", lambda *a: {})
     monkeypatch.setattr(workflow, "set_temperature_switch", lambda *a, **k: None)
@@ -125,6 +141,52 @@ def test_configure_outputs_switches_pump_for_nonzero_power(
     assert actual_temperature == pytest.approx(120.0)
     laser.setup_dc.assert_any_call(pump_power_v, channel=1)
     laser.set_output.assert_any_call(expected_output, channel=1)
+    for device, channel in (
+        (z_field, 1),
+        (xy_field, 1),
+        (xy_field, 2),
+        (pump_rf, 1),
+        (pump_rf, 2),
+    ):
+        device.set_burst_state.assert_any_call(False, channel=channel)
+        device.set_mod_state.assert_any_call(False, channel=channel)
+        device.setup_dc.assert_any_call(0.0, channel=channel)
+        device.set_output.assert_any_call(False, channel=channel)
+
+
+def test_safe_shutdown_keeps_all_unrelated_projection_outputs_off() -> None:
+    import lab_workflows.experiment_modules.projection_noise.workflow as workflow
+
+    z_field = MagicMock()
+    xy_field = MagicMock()
+    pump_rf = MagicMock()
+    report = workflow.safe_shutdown(
+        {
+            "z_field": z_field,
+            "xy_field": xy_field,
+            "pump_rf": pump_rf,
+        },
+        {
+            "z_field": 1,
+            "x_field": 1,
+            "y_field": 2,
+            "pump_carrier": 1,
+            "pump_gate": 2,
+        },
+        StateGuard(),
+    )
+
+    assert report.completed
+    assert "Pump_modulation" not in report.preserved_outputs
+    for device, channel in (
+        (z_field, 1),
+        (xy_field, 1),
+        (xy_field, 2),
+        (pump_rf, 1),
+        (pump_rf, 2),
+    ):
+        device.setup_dc.assert_any_call(0.0, channel=channel)
+        device.set_output.assert_any_call(False, channel=channel)
 
 
 def test_vertical_divisions_are_total_screen_divisions() -> None:

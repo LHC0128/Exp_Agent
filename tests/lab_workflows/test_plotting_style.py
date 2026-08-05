@@ -54,14 +54,45 @@ def test_default_png_uses_paper_size_and_300_dpi(tmp_path) -> None:
 
 
 def test_typed_analyzers_use_shared_paper_plotting_api() -> None:
-    assert len(_TYPED_ANALYSIS_FILES) == 12
+    delegated_grid_analyzers = 0
+    delegated_phase_analyzers = 0
     for path in _TYPED_ANALYSIS_FILES:
         source = path.read_text(encoding="utf-8")
+        if "mx_y_rf_grid_analysis import" in source:
+            delegated_grid_analyzers += 1
+            assert "analyze_mx_y_rf_grid(" in source, path
+            continue
+        if "phase_plot import" in source:
+            delegated_phase_analyzers += 1
+            assert "plot_phase_calibration(" in source, path
+            continue
         assert "plotting import" in source, path
-        assert 'set_plot_style("paper")' in source, path
         assert "new_figure(" in source, path
         assert "save_figure(" in source, path
         assert "matplotlib.pyplot" not in source, path
         assert "plt.subplots" not in source, path
         assert ".savefig(" not in source, path
         assert '"TkAgg"' not in source, path
+    assert delegated_grid_analyzers == 2
+    assert delegated_phase_analyzers == 1
+    grid_source = (
+        _REPOSITORY_ROOT
+        / "lab_workflows"
+        / "experiment_modules"
+        / "mx_y_rf_grid_analysis.py"
+    ).read_text(encoding="utf-8")
+    assert "plotting import" in grid_source
+    assert 'set_plot_style("paper")' in grid_source
+    assert "new_figure(" in grid_source
+    assert "save_figure(" in grid_source
+    phase_source = (
+        _REPOSITORY_ROOT
+        / "lab_workflows"
+        / "experiment_modules"
+        / "mx_z_optimal_control_rf_sensitivity"
+        / "phase_plot.py"
+    ).read_text(encoding="utf-8")
+    assert "plotting import" in phase_source
+    assert 'set_plot_style("paper")' in phase_source
+    assert "new_figure(" in phase_source
+    assert "save_figure(" in phase_source

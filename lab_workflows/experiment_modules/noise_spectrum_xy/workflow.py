@@ -47,6 +47,7 @@ from lab_workflows.steps import (
     TemperatureSwitchRestore,
     calibrate_demod_phase,
     calibrate_direct_aw_phase,
+    configure_temperature_control,
     disconnect_device_mapping,
     run_safety_shutdown,
     set_temperature_switch,
@@ -340,8 +341,15 @@ try:
     # ---- TEC103: 温度控制器 ----
     tec_cfg = MAPPING["temperature"]
     tec = TECInstrument(port=tec_cfg["resource"])
-    tec.connect()
-    print(f"TEC103 已连接")
+    try:
+        tec.connect()
+        print("TEC103 已连接")
+    except Exception as exc:
+        print(
+            f"[警告] TEC103 连接失败（{tec_cfg['resource']}）：{exc}。"
+            "该设备将由外部程序负责，实验继续运行。"
+        )
+        tec = None
     devices["tec"] = tec
 
     # ---- DG900: Pump/Probe 光功率 ----
@@ -441,23 +449,18 @@ set_temp_switch(True)
 print(f"温度开关: ON ({FIXED_PARAMS['Temp_Switch']} V)")
 
 # ---- 5. 温度控制 ----
-validate_safety_limit("temperature", FIXED_PARAMS["temperature"])
-tec.set_target_temperature(FIXED_PARAMS["temperature"], channel=1)
-tec.set_enable(True, channel=1)
-temp_now = tec.get_temperature(channel=1)
-print(f"温度设定: {FIXED_PARAMS['temperature']} °C, 当前: {temp_now:.1f} °C")
-print("等待温度稳定...")
-while True:
-    time.sleep(5)
-    t = tec.get_temperature(channel=1)
-    print(f"  当前温度: {t:.2f} °C")
-    try:
-        t2 = tec.get_temperature(channel=1)
-        if abs(t2 - FIXED_PARAMS['temperature']) < 1:
-            print(f"温度已稳定: {t:.2f} °C")
-            break
-    except:
-        pass
+temperature_status = configure_temperature_control(
+    tec,
+    FIXED_PARAMS["temperature"],
+    channel=1,
+    tolerance_c=1.0,
+    stable_reads=1,
+    poll_interval_s=5.0,
+    timeout_s=1200.0,
+)
+temp_now = temperature_status.actual_temperature_c
+if temp_now is not None:
+    print(f"温度已稳定: {temp_now:.2f} °C")
 
 # ---- 6. Z 磁场输出确认关闭 ----
 validate_safety_limit("Z_magnetic_field", 0.0)

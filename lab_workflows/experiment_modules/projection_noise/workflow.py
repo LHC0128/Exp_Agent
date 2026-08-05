@@ -21,6 +21,7 @@ from ...common import (
 from ...devices import create_signal_generator
 from ...experiment_runtime import check_cancelled, load_runtime_params
 from ...steps import (
+    DGChannelShutdown,
     DeviceSession,
     DisconnectTarget,
     STANDARD_PRESERVED_OUTPUTS,
@@ -31,6 +32,7 @@ from ...steps import (
     TemperatureSwitchRestore,
     acquire_autoranged_waveform,
     configure_fixed_rate_scope,
+    configure_temperature_control,
     create_run_directory,
     read_complete_scope_record,
     restore_main_field_state,
@@ -93,7 +95,7 @@ def _scope_settings(params: ProjectionNoiseParams) -> ScopeCaptureSettings:
 def _connect_devices(
     mapping: dict[str, dict[str, Any]], session: DeviceSession
 ) -> tuple[dict[str, Any], dict[str, int]]:
-    """连接主场、光功率、温控、SDS 和 TEC。"""
+    """连接实验设备及需要显式关闭的残余输出源。"""
     devices: dict[str, Any] = {}
     channels: dict[str, int] = {}
 
@@ -101,6 +103,34 @@ def _connect_devices(
     devices["gs200"] = session.connect(
         "gs200", gs_cfg["resource"], lambda: GS200Instrument(gs_cfg["resource"])
     )
+
+    z_cfg = mapping["Z_magnetic_field"]
+    devices["z_field"] = session.connect(
+        "z_field", z_cfg["resource"], lambda: create_signal_generator(z_cfg)
+    )
+    channels["z_field"] = int(z_cfg["channel"])
+
+    x_cfg = mapping["X_magnetic_field"]
+    y_cfg = mapping["Y_magnetic_field"]
+    if x_cfg["resource"] != y_cfg["resource"]:
+        raise ValueError("X_magnetic_field 与 Y_magnetic_field 必须位于同一台设备")
+    devices["xy_field"] = session.connect(
+        "xy_field", x_cfg["resource"], lambda: create_signal_generator(x_cfg)
+    )
+    channels["x_field"] = int(x_cfg["channel"])
+    channels["y_field"] = int(y_cfg["channel"])
+
+    carrier_cfg = mapping["Pump_modulation"]
+    gate_cfg = mapping["Time_sequence"]
+    if carrier_cfg["resource"] != gate_cfg["resource"]:
+        raise ValueError("Pump_modulation 与 Time_sequence 必须位于同一台设备")
+    devices["pump_rf"] = session.connect(
+        "pump_rf",
+        carrier_cfg["resource"],
+        lambda: create_signal_generator(carrier_cfg),
+    )
+    channels["pump_carrier"] = int(carrier_cfg["channel"])
+    channels["pump_gate"] = int(gate_cfg["channel"])
 
     pump_cfg = mapping["Pump_laser_power"]
     probe_cfg = mapping["Probe_laser_power"]
@@ -131,8 +161,11 @@ def _connect_devices(
     )
 
     tec_cfg = mapping["temperature"]
-    devices["tec"] = session.connect(
-        "tec", tec_cfg["resource"], lambda: TECInstrument(port=tec_cfg["resource"])
+    devices["tec"] = session.connect_optional(
+        "tec",
+        tec_cfg["resource"],
+        lambda: TECInstrument(port=tec_cfg["resource"]),
+        device_label="TEC103",
     )
     return devices, channels
 
@@ -143,6 +176,11 @@ def _device_snapshot(
 ) -> dict[str, Any]:
     keys = (
         "main_magnetic_field",
+        "Z_magnetic_field",
+        "X_magnetic_field",
+        "Y_magnetic_field",
+        "Pump_modulation",
+        "Time_sequence",
         "Pump_laser_power",
         "Probe_laser_power",
         "Temp_Switch",
@@ -160,16 +198,35 @@ def _configure_outputs(
     devices: dict[str, Any],
     channels: dict[str, int],
     mapping: dict[str, dict[str, Any]],
-) -> tuple[float, dict[str, dict[str, Any]]]:
+) -> tuple[float | None, dict[str, dict[str, Any]]]:
     """配置热态光学条件、温控和 GS200 安全初始状态。"""
     clock_sources = synchronize_connected_clocks(
         devices,
         mapping,
         {
+            "z_field": "Z_magnetic_field",
+            "xy_field": "X_magnetic_field",
+            "pump_rf": "Pump_modulation",
             "laser": "Pump_laser_power",
             "temp_switch": "Temp_Switch",
         },
     )
+    off_channels = (
+        ("z_field", "z_field", "Z_magnetic_field"),
+        ("xy_field", "x_field", "X_magnetic_field"),
+        ("xy_field", "y_field", "Y_magnetic_field"),
+        ("pump_rf", "pump_carrier", "Pump_modulation"),
+        ("pump_rf", "pump_gate", "Time_sequence"),
+    )
+    for device_name, channel_name, safety_key in off_channels:
+        validate_safety_limit(safety_key, 0.0)
+        device = devices[device_name]
+        channel = channels[channel_name]
+        device.set_burst_state(False, channel=channel)
+        device.set_mod_state(False, channel=channel)
+        device.setup_dc(0.0, channel=channel)
+        device.set_output(False, channel=channel)
+
     laser = devices["laser"]
     validate_safety_limit("Pump_laser_power", params.pump_laser_power_v)
     laser.setup_dc(params.pump_laser_power_v, channel=channels["pump_laser"])
@@ -184,12 +241,8 @@ def _configure_outputs(
     set_temperature_switch(
         devices["temp_switch"], True, channel=channels["temp_switch"]
     )
-    validate_safety_limit("temperature", params.temperature_c)
-    tec = devices["tec"]
-    tec.set_target_temperature(params.temperature_c, channel=1)
-    tec.set_enable(True, channel=1)
-    actual_temperature = wait_for_temperature_stable(
-        tec,
+    temperature_status = configure_temperature_control(
+        devices.get("tec"),
         params.temperature_c,
         channel=1,
         tolerance_c=params.temperature_tolerance_c,
@@ -197,7 +250,9 @@ def _configure_outputs(
         poll_interval_s=params.temperature_poll_interval_s,
         timeout_s=params.temperature_timeout_s,
         cancellation=_RuntimeCancellation(),
+        stability_waiter=wait_for_temperature_stable,
     )
+    actual_temperature = temperature_status.actual_temperature_c
 
     gs200 = devices["gs200"]
     gs_cfg = mapping["main_magnetic_field"]
@@ -206,7 +261,7 @@ def _configure_outputs(
         gs200.set_source_function(gs_cfg["source_function"])
     limits = load_safety_limits()
     gs200.set_current_limit(float(limits["main_magnetic_field"]["max"]) / 1000.0)
-    return float(actual_temperature), clock_sources
+    return actual_temperature, clock_sources
 
 
 def _temperature_gated_capture(
@@ -373,7 +428,22 @@ def safe_shutdown(
     channels: dict[str, int],
     main_field_guard: StateGuard,
 ) -> SafetyShutdownReport:
-    """停止示波器、恢复温控和 GS200，并仅断开 TEC。"""
+    """关闭无关输出、停止示波器、恢复温控和 GS200。"""
+    dg_channels: list[DGChannelShutdown] = []
+    for device_name, channel_name, safety_key, label in (
+        ("z_field", "z_field", "Z_magnetic_field", "Z 辅助场"),
+        ("xy_field", "x_field", "X_magnetic_field", "X 磁场"),
+        ("xy_field", "y_field", "Y_magnetic_field", "Y 磁场"),
+        ("pump_rf", "pump_carrier", "Pump_modulation", "Pump 100MHz 载波"),
+        ("pump_rf", "pump_gate", "Time_sequence", "Pump RF 门控"),
+    ):
+        device = devices.get(device_name)
+        channel = channels.get(channel_name)
+        if device is not None and channel is not None:
+            dg_channels.append(
+                DGChannelShutdown(device, channel, safety_key, label)
+            )
+
     extra_actions: list[ShutdownAction] = []
     if devices.get("scope") is not None:
         extra_actions.append(
@@ -385,10 +455,15 @@ def safe_shutdown(
             devices["temp_switch"], channels["temp_switch"]
         )
     report = run_safety_shutdown(
+        dg_channels=dg_channels,
         temperature_switch=temperature_restore,
         extra_actions=extra_actions,
         disconnect_targets=(DisconnectTarget("TEC", devices.get("tec")),),
-        preserved_outputs=STANDARD_PRESERVED_OUTPUTS,
+        preserved_outputs=tuple(
+            output
+            for output in STANDARD_PRESERVED_OUTPUTS
+            if output != "Pump_modulation"
+        ),
     )
     guard_errors = tuple(main_field_guard.restore())
     return SafetyShutdownReport(
@@ -497,6 +572,14 @@ def run(params: ProjectionNoiseParams) -> Path:
         )
         run_dir.update_config(
             initial_temperature_c=actual_temperature,
+            temperature_control={
+                "target_temperature_c": params.temperature_c,
+                "actual_temperature_c": actual_temperature,
+                "controlled_by_experiment": actual_temperature is not None,
+                "control_source": (
+                    "tec103" if actual_temperature is not None else "external_software"
+                ),
+            },
             clock_sources=clock_sources,
             scope_configuration=scope_snapshot,
             actual_rates={"scope_sa_s": scope_snapshot["actual_sample_rate_sa_s"]},

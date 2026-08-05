@@ -31,6 +31,7 @@ from ...steps import (
     SafetyShutdownReport,
     ShutdownAction,
     TemperatureSwitchRestore,
+    configure_temperature_control,
     create_run_directory,
     run_safety_shutdown,
     set_temperature_switch,
@@ -242,8 +243,11 @@ def _connect_devices(
     )
 
     tec_cfg = mapping["temperature"]
-    devices["tec"] = session.connect(
-        "tec", tec_cfg["resource"], lambda: TECInstrument(port=tec_cfg["resource"])
+    devices["tec"] = session.connect_optional(
+        "tec",
+        tec_cfg["resource"],
+        lambda: TECInstrument(port=tec_cfg["resource"]),
+        device_label="TEC103",
     )
     return devices, channels
 
@@ -294,12 +298,8 @@ def _configure_outputs(
     devices: dict[str, Any],
     channels: dict[str, int],
 ) -> dict[str, Any]:
-    tec = devices["tec"]
-    validate_safety_limit("temperature", params.tec_temperature)
-    tec.set_target_temperature(params.tec_temperature, channel=1)
-    tec.set_enable(True, channel=1)
-    actual_temperature = wait_for_temperature_stable(
-        tec,
+    temperature_status = configure_temperature_control(
+        devices.get("tec"),
         params.tec_temperature,
         channel=1,
         tolerance_c=1.0,
@@ -307,7 +307,9 @@ def _configure_outputs(
         poll_interval_s=5.0,
         timeout_s=1200.0,
         cancellation=_RuntimeCancellation(),
+        stability_waiter=wait_for_temperature_stable,
     )
+    actual_temperature = temperature_status.actual_temperature_c
 
     gs200 = devices["gs200"]
     validate_safety_limit("main_magnetic_field", params.main_field_ma)
@@ -384,7 +386,13 @@ def _configure_outputs(
     rf.set_output(True, channel=gate_channel)
 
     return {
-        "temperature": {"target_C": params.tec_temperature, "actual_C": float(actual_temperature), "channel": 1},
+        "temperature": {
+            "target_C": params.tec_temperature,
+            "actual_C": actual_temperature,
+            "channel": 1,
+            "controlled_by_experiment": temperature_status.controlled_by_experiment,
+            "control_source": temperature_status.control_source,
+        },
         "main_field": {"current_mA": params.main_field_ma, "hardware_current_limit_A": 0.015},
         "laser": {"pump_V": params.pump_power, "initial_probe_V": float(initial_probe), "pump_channel": channels["pump"], "probe_channel": channels["probe"]},
         "rf_gate": {

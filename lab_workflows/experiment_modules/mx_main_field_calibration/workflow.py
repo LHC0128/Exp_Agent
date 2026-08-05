@@ -30,6 +30,7 @@ from ...steps import (
     SafetyShutdownReport,
     ShutdownAction,
     TemperatureSwitchRestore,
+    configure_temperature_control,
     create_run_directory,
     restore_main_field_state,
     run_safety_shutdown,
@@ -148,8 +149,11 @@ def _connect_devices(
     )
 
     tec_cfg = mapping["temperature"]
-    devices["tec"] = session.connect(
-        "tec", tec_cfg["resource"], lambda: TECInstrument(port=tec_cfg["resource"])
+    devices["tec"] = session.connect_optional(
+        "tec",
+        tec_cfg["resource"],
+        lambda: TECInstrument(port=tec_cfg["resource"]),
+        device_label="TEC103",
     )
     return devices, channels
 
@@ -291,7 +295,7 @@ def _configure_outputs(
     devices: dict[str, Any],
     channels: dict[str, int],
     mapping: dict[str, dict[str, Any]],
-) -> tuple[float, float, dict[str, dict[str, str]]]:
+) -> tuple[float, float | None, dict[str, dict[str, str]]]:
     clock_sources = _configure_reference_clocks(devices, mapping)
 
     z_field = devices["z_field"]
@@ -347,12 +351,8 @@ def _configure_outputs(
     _set_pump_gate_on(pump_rf, channels["pump_gate"], params.pump_gate_voltage_v)
 
     set_temperature_switch(devices["temp_switch"], True, channel=channels["temp_switch"])
-    validate_safety_limit("temperature", params.temperature_c)
-    tec = devices["tec"]
-    tec.set_target_temperature(params.temperature_c, channel=1)
-    tec.set_enable(True, channel=1)
-    actual_temperature = wait_for_temperature_stable(
-        tec,
+    temperature_status = configure_temperature_control(
+        devices.get("tec"),
         params.temperature_c,
         channel=1,
         tolerance_c=params.temperature_tolerance_c,
@@ -360,7 +360,9 @@ def _configure_outputs(
         poll_interval_s=params.temperature_poll_interval_s,
         timeout_s=params.temperature_timeout_s,
         cancellation=_RuntimeCancellation(),
+        stability_waiter=wait_for_temperature_stable,
     )
+    actual_temperature = temperature_status.actual_temperature_c
 
     hf2 = devices["hf2"]
     demod.configure_signal_input(
@@ -394,11 +396,16 @@ def _configure_outputs(
             phase=float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift")),
         ),
     )
+    temperature_text = (
+        f"{actual_temperature:.2f} °C"
+        if actual_temperature is not None
+        else "由外部软件控制（未读取）"
+    )
     print(
-        f"Mx 主场标定工作点已配置，温度 {actual_temperature:.2f} °C，"
+        f"Mx 主场标定工作点已配置，温度 {temperature_text}，"
         f"Demod0 实际速率 {float(actual_rate):.3f} Sa/s"
     )
-    return float(actual_rate), float(actual_temperature), clock_sources
+    return float(actual_rate), actual_temperature, clock_sources
 
 
 def _temperature_gated_acquire(
@@ -662,6 +669,14 @@ def run(params: MxMainFieldCalibrationParams) -> Path:
         run_dir.update_config(
             actual_rates={"response_sa_s": actual_rate},
             initial_temperature_c=actual_temperature,
+            temperature_control={
+                "target_temperature_c": params.temperature_c,
+                "actual_temperature_c": actual_temperature,
+                "controlled_by_experiment": actual_temperature is not None,
+                "control_source": (
+                    "tec103" if actual_temperature is not None else "external_software"
+                ),
+            },
             clock_sources=clock_sources,
         )
         data_files = _acquire_scan(

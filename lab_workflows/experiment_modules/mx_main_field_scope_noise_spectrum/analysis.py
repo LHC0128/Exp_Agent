@@ -43,6 +43,7 @@ matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
 
 PSD_HEATMAP_LOWER_PERCENTILE = 1.0
 PSD_HEATMAP_UPPER_PERCENTILE = 99.5
+GLOBAL_2D_EXAMPLE_PLOT_COUNT = 4
 
 
 def _builtin(value: Any) -> Any:
@@ -177,8 +178,13 @@ def _plot_psd_matrix(
     filename = "noise_spectrum_2d.png"
     figure, axis = new_figure(kind="square")
     log_psd = np.log10(np.maximum(psd_matrix, np.finfo(float).tiny))
+    display_start_hz = float(control_frequency_hz[0])
     display_stop_hz = float(control_frequency_hz[-1])
-    displayed = log_psd[:, frequency_axis_hz <= display_stop_hz]
+    display_frequency_mask = (
+        (frequency_axis_hz >= display_start_hz)
+        & (frequency_axis_hz <= display_stop_hz)
+    )
+    displayed = log_psd[:, display_frequency_mask]
     finite_displayed = displayed[np.isfinite(displayed)]
     if finite_displayed.size == 0:
         raise ValueError("PSD 显示频段内没有有限数值")
@@ -197,10 +203,11 @@ def _plot_psd_matrix(
         vmin=float(color_min),
         vmax=float(color_max),
     )
+    diagonal_min = max(float(frequency_axis_hz[0]), display_start_hz)
     diagonal_max = min(float(frequency_axis_hz[-1]), float(control_frequency_hz[-1]))
     axis.plot(
-        [0.0, diagonal_max / 1000.0],
-        [0.0, diagonal_max / 1000.0],
+        [diagonal_min / 1000.0, diagonal_max / 1000.0],
+        [diagonal_min / 1000.0, diagonal_max / 1000.0],
         color=COLOR_CYAN,
         linestyle="--",
         label="Expected ridge",
@@ -217,7 +224,8 @@ def _plot_psd_matrix(
         xlabel="PD PSD frequency (kHz)",
         ylabel="Control frequency (kHz)",
     )
-    axis.set_xlim(0.0, display_stop_hz / 1000.0)
+    axis.set_xlim(display_start_hz / 1000.0, display_stop_hz / 1000.0)
+    axis.set_ylim(display_start_hz / 1000.0, display_stop_hz / 1000.0)
     style_legend(axis)
     figure.colorbar(
         image,
@@ -346,7 +354,11 @@ def _plot_fit_examples(
     direct_mask = fit.fit_mask & np.all(
         np.isfinite(fit.parameters), axis=1
     )
-    centered_mask = direct_mask & (
+    in_control_range_mask = (
+        (frequency_axis_hz >= control_frequency_hz[0])
+        & (frequency_axis_hz <= control_frequency_hz[-1])
+    )
+    centered_mask = direct_mask & in_control_range_mask & (
         frequency_axis_hz - fit_half_width_hz >= control_frequency_hz[0]
     ) & (
         frequency_axis_hz + fit_half_width_hz <= control_frequency_hz[-1]
@@ -354,7 +366,7 @@ def _plot_fit_examples(
     valid_mask = (
         centered_mask
         if np.count_nonzero(centered_mask) >= count
-        else direct_mask
+        else direct_mask & in_control_range_mask
     )
     selected = _select_example_indices(frequency_axis_hz, valid_mask, count)
     files: list[str] = []
@@ -577,15 +589,27 @@ def _plot_global_2d_examples(
     fit: GlobalNoiseSeparationResult,
 ) -> str:
     filename = "global_2d_fit_examples.png"
-    targets = np.asarray([1000.0, 2000.0, 11000.0, 30000.0])
-    indices = [int(np.argmin(np.abs(fit.frequency_hz - target))) for target in targets]
+    in_control_range_mask = (
+        (fit.frequency_hz >= fit.control_frequency_hz[0])
+        & (fit.frequency_hz <= fit.control_frequency_hz[-1])
+    )
+    indices = _select_example_indices(
+        fit.frequency_hz,
+        in_control_range_mask,
+        GLOBAL_2D_EXAMPLE_PLOT_COUNT,
+    )
+    if indices.size == 0:
+        raise ValueError(
+            "二维全局拟合结果在控制频率范围内没有可用于示例图的 PSD 频率"
+        )
     figure, axes = new_figure(
-        figsize=(PAPER_WIDE[0], 4.0 * PAPER_WIDE[1]),
-        nrows=4,
+        figsize=(PAPER_WIDE[0], float(indices.size) * PAPER_WIDE[1]),
+        nrows=int(indices.size),
         ncols=1,
         sharex=True,
     )
-    for axis, index in zip(axes, indices):
+    axes_array = np.atleast_1d(axes)
+    for axis, index in zip(axes_array, indices):
         background = fit.background_profile * fit.n_s1[index]
         modulated = fit.response_matrix[:, index] * fit.c_s_beta[index]
         axis.semilogy(
@@ -618,7 +642,7 @@ def _plot_global_2d_examples(
         format_axis(axis, ylabel="PSD (V²/Hz)")
         axis.set_title(f"PSD frequency: {fit.frequency_hz[index] / 1000.0:.3f} kHz")
         style_legend(axis)
-    format_axis(axes[-1], xlabel="Control frequency (kHz)")
+    format_axis(axes_array[-1], xlabel="Control frequency (kHz)")
     save_figure(figure, results_dir / filename)
     return filename
 

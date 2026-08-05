@@ -12,7 +12,11 @@ tags:
   label: 其他
 assignments:
   mx-y-rf-sensitivity: calibration
+  mx-z-optimal-control-rf-sensitivity: calibration
+  mx-z-optimal-control-xy-leakage-response: calibration
+  mx-z-optimal-control-xyz-balance: calibration
   mx-y-rf-power-optimization: calibration
+  mx-y-rf-probe-detuning-optimization: calibration
   mx-main-field-calibration: verification
   mx-main-field-noise-spectrum: calibration
   mx-main-field-scope-noise-spectrum: calibration
@@ -43,7 +47,16 @@ assignments:
   temperature-switch-pid-cycle: tag-15b058ba
 experiment_descriptions:
   mx-y-rf-sensitivity: Mx 构型下仅采集 Demod0 R，使用绝对值色散拟合斜率和零 RF 的 PSD_R 测量灵敏度，并支持两种线宽定义。
+  mx-z-optimal-control-rf-sensitivity: 按配置启停 GS200 主场，以 X DC 和 Y RF 偏置平衡 XY 剩磁场，并叠加
+    Z 向周期最优控制；校相幅度非零时同步采集 Demod0 R/X/Y 并以 180° 成对复差分校相后测量 RF 灵敏度，校相幅度为零时保持 Y DC 补偿、扫描
+    Z 控制 Burst 相位并仅测量剩磁响应。
+  mx-z-optimal-control-xy-leakage-response: 保持 Z 周期最优控制，二维扫描同形 X/Y 触发任意波的带符号幅度，采集
+    Demod0 R 并保留实测网格最小点。
+  mx-z-optimal-control-xyz-balance: 保持 Z 周期最优控制，以 DG4000 DC 扫描 X/Y、GS200 电流扫描 Z，采集
+    Demod0 R 并报告实测三维网格最小点；任一轴可用 START=STOP、POINTS=1 固定。
   mx-y-rf-power-optimization: 在 Mx Y 向 RF 构型下二维扫描 Pump/Probe 光功率，逐点测量完整灵敏度并按平坦频段中位数寻找最优工作点。
+  mx-y-rf-probe-detuning-optimization: 在 Mx Y 向 RF 构型下固定 Pump，扫描 Probe 光功率和 DLC pro
+    PZT Scan Offset；Probe 轴可设为单点。实验不连接 TEC，但保留 Temp_Switch 采集门控。
   mx-main-field-calibration: 在 Mx 构型下扫描 GS200 主场电流和 Y RF 频率，由离线 Lorentzian 中心拟合标定
     Hz/mA 和 nT/mA。
   mx-main-field-noise-spectrum: 固定 HF2 为 90 kHz，按实测标定降低 GS200 主场电流，以正控制频率轴从 Demod0
@@ -68,7 +81,11 @@ experiment_descriptions:
   xy-direct-aw-dc-calibration: DirectAW 加常数控制的方式，外加不同频率射频场，寻找频率响应的最大值的位置，来对 控制 进行标定。
 experiment_titles:
   mx-y-rf-sensitivity: Mx Y 向 RF 场灵敏度
+  mx-z-optimal-control-rf-sensitivity: Mx Z 最优控制 RF 灵敏度
+  mx-z-optimal-control-xy-leakage-response: Mx Z 最优控制 XY 泄露响应
+  mx-z-optimal-control-xyz-balance: Mx Z 最优控制 XYZ 平衡场
   mx-y-rf-power-optimization: Mx Y RF 光功率灵敏度优化
+  mx-y-rf-probe-detuning-optimization: Mx Y RF Probe 光功率与失谐灵敏度优化
   mx-main-field-calibration: Mx 主磁场频率标定
   mx-main-field-noise-spectrum: Mx 主磁场控制噪声谱
   mx-main-field-scope-noise-spectrum: Mx 主磁场示波器噪声谱
@@ -455,6 +472,157 @@ parameter_layouts:
     - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
     - LINEAR_CHECK_GAMMA_FRACTION
     - SLOPE_AGREEMENT_TOLERANCE
+  mx-z-optimal-control-rf-sensitivity:
+    basic:
+    - RUN_TAG
+    - Y_RF_FREQUENCY_HZ
+    - Y_RF_AMP_START_VPP
+    - Y_RF_AMP_STOP_VPP
+    - Y_RF_AMP_POINTS
+    - RESPONSE_SETTLE_TIME_S
+    - RESPONSE_DURATION_S
+    - Y_RF_NT_PER_VPP
+    - NOISE_N_AVG
+    - NOISE_DURATION_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    - CONTROL_VERSION
+    - Z_CALIBRATION_SOURCE_RUN
+    - CONTROL_SCALE
+    - Z_AW_OUTPUT_VPP
+    - PHASE_CAL_RF_AMPLITUDE_VPP
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    - PHASE_SCAN_START_DEG
+    - PHASE_SCAN_STOP_DEG
+    - PHASE_SCAN_STEP_DEG
+    - FIXED_PARAMS.X_magnetic_field
+    - FIXED_PARAMS.Y_magnetic_field
+    - FIXED_PARAMS.main_magnetic_field
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - NOISE_RATE_SA_S
+    - NOISE_TIME_CONSTANT_S
+    - NOISE_DEMOD_ORDER
+    - LOW_FREQ_SKIP_HZ
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - FIT_R_SQUARED_MIN
+    - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
+    - LINEAR_CHECK_GAMMA_FRACTION
+    - SLOPE_AGREEMENT_TOLERANCE
+    - CONTROL_RESULTS_ROOT
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - PHASE_FIT_R_SQUARED_MIN
+    - PHASE_FIT_AMPLITUDE_SIGMA_MIN
+    - PHASE_OUTLIER_SIGMA_THRESHOLD
+    - PHASE_OUTLIER_MAX_REACQUIRE_POINTS
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+  mx-z-optimal-control-xy-leakage-response:
+    basic:
+    - RUN_TAG
+    - X_CONTROL_AMP_START_VPP
+    - X_CONTROL_AMP_STOP_VPP
+    - X_CONTROL_AMP_POINTS
+    - Y_CONTROL_AMP_START_VPP
+    - Y_CONTROL_AMP_STOP_VPP
+    - Y_CONTROL_AMP_POINTS
+    - DEMOD_FREQUENCY_HZ
+    - RESPONSE_SETTLE_TIME_S
+    - RESPONSE_DURATION_S
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    - CONTROL_VERSION
+    - Z_CALIBRATION_SOURCE_RUN
+    - CONTROL_SCALE
+    - Z_AW_OUTPUT_VPP
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - CONTROL_RESULTS_ROOT
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+  mx-z-optimal-control-xyz-balance:
+    basic:
+    - RUN_TAG
+    - X_FIELD_START_V
+    - X_FIELD_STOP_V
+    - X_FIELD_POINTS
+    - Y_FIELD_START_V
+    - Y_FIELD_STOP_V
+    - Y_FIELD_POINTS
+    - Z_FIELD_START_MA
+    - Z_FIELD_STOP_MA
+    - Z_FIELD_POINTS
+    - DEMOD_FREQUENCY_HZ
+    - RESPONSE_SETTLE_TIME_S
+    - RESPONSE_DURATION_S
+    - TEMP_SWITCH_ON_LAG_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    - CONTROL_VERSION
+    - Z_CALIBRATION_SOURCE_RUN
+    - CONTROL_SCALE
+    - Z_AW_OUTPUT_VPP
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - CONTROL_RESULTS_ROOT
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
   mx-y-rf-power-optimization:
     basic:
     - RUN_TAG
@@ -492,6 +660,55 @@ parameter_layouts:
     - RESPONSE_DEMOD_ORDER
     - TEMP_SWITCH_OFF_LEAD_S
     - TEMP_SWITCH_ON_LAG_S
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - FIT_R_SQUARED_MIN
+    - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
+    - LINEAR_CHECK_GAMMA_FRACTION
+    - SLOPE_AGREEMENT_TOLERANCE
+  mx-y-rf-probe-detuning-optimization:
+    basic:
+    - RUN_TAG
+    - PZT_VOLTAGE_START_V
+    - PZT_VOLTAGE_STOP_V
+    - PZT_VOLTAGE_POINTS
+    - PZT_SETTLE_TIME_S
+    - PROBE_POWER_START_V
+    - PROBE_POWER_STOP_V
+    - PROBE_POWER_POINTS
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - Y_RF_FREQUENCY_HZ
+    - Y_RF_AMP_START_VPP
+    - Y_RF_AMP_STOP_VPP
+    - Y_RF_AMP_POINTS
+    - RESPONSE_SETTLE_TIME_S
+    - RESPONSE_DURATION_S
+    - Y_RF_NT_PER_VPP
+    - NOISE_N_AVG
+    - NOISE_DURATION_S
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - NOISE_RATE_SA_S
+    - NOISE_TIME_CONSTANT_S
+    - NOISE_DEMOD_ORDER
+    - LOW_FREQ_SKIP_HZ
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
     - TEMPERATURE_TOLERANCE_C
     - TEMPERATURE_STABLE_READS
     - TEMPERATURE_POLL_INTERVAL_S

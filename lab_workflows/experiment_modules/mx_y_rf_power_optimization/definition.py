@@ -24,7 +24,7 @@ DEFINITION = ExperimentDefinition(
         "逐点测量完整灵敏度并寻找最优工作点。"
     ),
     data_type="Mx_Y_RF_Power_Optimization",
-    required_devices=("GS200", "DG900", "DG4000", "HF2", "TEC103"),
+    required_devices=("GS200", "DG900", "DG4000", "HF2"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Y_RF_Power_Optimization.py",
     analysis_program="experiments/Mx_Y_RF_Power_Optimization_plot.py",
@@ -34,7 +34,7 @@ DEFINITION = ExperimentDefinition(
     ),
     safety_notes=(
         "所有功率写入前按 0–1 V 安全限值校验；质量坏点标记无效后继续，设备错误立即停止。",
-        "正常、取消和异常均关闭归零 X/Y 场，并恢复 Pump=0.5 V、Probe=0.3 V 基准输出。",
+        "正常、取消和异常均关闭归零 Z 辅助场和 X/Y 场，并恢复 Pump=0.5 V、Probe=0.3 V 基准输出。",
     ),
     schema_version=MxYRFPowerOptimizationParams.schema_version,
     schema_provider=ADAPTER.schema,

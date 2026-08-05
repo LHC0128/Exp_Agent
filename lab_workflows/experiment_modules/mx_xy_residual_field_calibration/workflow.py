@@ -18,6 +18,7 @@ from ...steps import (
     ScopeCaptureSettings,
     acquire_autoranged_waveform,
     configure_fixed_rate_scope,
+    configure_temperature_control,
     create_run_directory,
     read_complete_scope_record,
     restore_main_field_state,
@@ -123,7 +124,7 @@ def _configure_outputs(
     devices: dict[str, Any],
     channels: dict[str, int],
     mapping: dict[str, dict[str, Any]],
-) -> tuple[float, dict[str, dict[str, Any]]]:
+) -> tuple[float | None, dict[str, dict[str, Any]]]:
     clock_sources = synchronize_connected_clocks(
         devices,
         mapping,
@@ -174,12 +175,8 @@ def _configure_outputs(
     _set_pump_gate_on(pump_rf, channels["pump_gate"], params.pump_gate_voltage_v)
 
     set_temperature_switch(devices["temp_switch"], True, channel=channels["temp_switch"])
-    validate_safety_limit("temperature", params.temperature_c)
-    tec = devices["tec"]
-    tec.set_target_temperature(params.temperature_c, channel=1)
-    tec.set_enable(True, channel=1)
-    actual_temperature = wait_for_temperature_stable(
-        tec,
+    temperature_status = configure_temperature_control(
+        devices.get("tec"),
         params.temperature_c,
         channel=1,
         tolerance_c=params.temperature_tolerance_c,
@@ -187,8 +184,9 @@ def _configure_outputs(
         poll_interval_s=params.temperature_poll_interval_s,
         timeout_s=params.temperature_timeout_s,
         cancellation=_RuntimeCancellation(),
+        stability_waiter=wait_for_temperature_stable,
     )
-    return float(actual_temperature), clock_sources
+    return temperature_status.actual_temperature_c, clock_sources
 
 
 def _configure_scope(
@@ -410,6 +408,14 @@ def run(params: MxXYResidualFieldCalibrationParams) -> Path:
         scope_config, scope_snapshot = _configure_scope(params, devices)
         run_dir.update_config(
             initial_temperature_c=actual_temperature,
+            temperature_control={
+                "target_temperature_c": params.temperature_c,
+                "actual_temperature_c": actual_temperature,
+                "controlled_by_experiment": actual_temperature is not None,
+                "control_source": (
+                    "tec103" if actual_temperature is not None else "external_software"
+                ),
+            },
             clock_sources=clock_sources,
             scope_configuration=scope_snapshot,
             actual_rates={"scope_sa_s": scope_snapshot["actual_sample_rate_sa_s"]},

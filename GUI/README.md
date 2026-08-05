@@ -39,6 +39,8 @@ Vite 会把 `/api` 转发到本机 FastAPI。
 
 设备写入接口使用严格 Pydantic 请求模型，未知设置字段会返回验证错误；
 设备回读使用按 `type` 区分的 GS200、DLC pro、信号发生器和示波器快照模型。
+DG900 通道设置会等待仪器完成全部命令并检查 SCPI 错误队列后再回读；关闭调制时
+只操作实际启用的类型，避免连续加热波形被不兼容的 PWM 状态命令干扰。
 
 “仪器控制”中的 GS200 模块只开放 `main_magnetic_field` 电流设定值（mA）和输出开关；
 源模式、电流量程、限压和限流只读。电流范围从 `params/safety_limits.yaml` 读取，
@@ -79,7 +81,7 @@ from lab_workflows.steps import calibrate_demod_phase, DirectAWStrategy
 - 新实验先实现 `lab_workflows` 契约，再注册到 `lab_workflows/experiments/registry.py`。
 - 卡片中的“新模式”对应 `typed_workflow`：表单字段来自显式强类型参数模型，
   不扫描工作流中的全大写变量；“旧模式”对应 `legacy_script` 兼容适配器。
-- 当前 8 个实验为新模式、19 个实验为旧模式；逐个维护旧脚本时应迁移成
+- 当前 19 个实验为新模式、18 个实验为旧模式；逐个维护旧脚本时应迁移成
   `lab_workflows/experiment_modules/` 中的模型、工作流、分析器和薄入口。
 - 参数模型内部使用 `snake_case`，通过 `external_name` 保持 GUI/YAML 的历史大写键兼容。
 - T2 标定表单来自 `T2CalibrationParams` 的显式字段；固定接线通道、TTL 电平、

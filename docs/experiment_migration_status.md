@@ -18,6 +18,7 @@
 | `noise-spectrum-xy` | `lab_workflows/experiment_modules/noise_spectrum_xy/` | 本轮迁移 |
 | `noise-spectrum-xy-demod3-r` | `lab_workflows/experiment_modules/noise_spectrum_xy_demod3_r/` | 新模式 |
 | `mx-y-rf-sensitivity` | `lab_workflows/experiment_modules/mx_y_rf_sensitivity/` | 新模式 |
+| `mx-z-optimal-control-xyz-balance` | `lab_workflows/experiment_modules/mx_z_optimal_control_xyz_balance/` | 新模式 |
 | `mx-main-field-calibration` | `lab_workflows/experiment_modules/mx_main_field_calibration/` | 新模式 |
 | `mx-main-field-noise-spectrum` | `lab_workflows/experiment_modules/mx_main_field_noise_spectrum/` | 新模式 |
 | `mx-main-field-scope-noise-spectrum` | `lab_workflows/experiment_modules/mx_main_field_scope_noise_spectrum/` | 新模式 |

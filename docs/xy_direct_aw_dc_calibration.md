@@ -33,9 +33,9 @@ required_devices:
   - GS200
   - DG4000
   - DG900
-  - TEC103
   - HF2
 learned_notes:
+  - TEC103 为可选控制设备；COM3 被外部温控软件占用时跳过设温和稳定等待。
   - DirectAW 由 dg_comp CH1/CH2 直接输出，不经过 dg_am 外部 AM 调制。
   - dg_trigger 在 DirectAW 校相前打开并同相初始化，之后持续输出；每轮先开 dg_comp Burst，再开 dg_comp Output，迭代期间不重启触发源。
   - Demod0 与 DirectAW 校相分别调用 lab_workflows.steps 中的共享步骤；DirectAW 的低 R 样本不参与相位更新。

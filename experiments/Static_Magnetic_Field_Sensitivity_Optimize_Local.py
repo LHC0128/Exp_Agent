@@ -298,7 +298,11 @@ try:
 
     tec_cfg = MAPPING["temperature"]
     tec = TECInstrument(port=tec_cfg["resource"])
-    tec.connect()
+    try:
+        tec.connect()
+    except Exception as exc:
+        print(f"[警告] TEC103 连接失败：{exc}。实验继续，由外部软件负责温控。")
+        tec = None
     devices["tec"] = tec
 
     hf2_cfg = MAPPING["lockin_r"]
@@ -406,8 +410,14 @@ def apply_all_params(devs, params):
         print(f"  GS200 量程设置跳过: {e}")
     print(f"  主磁场: {params['main_magnetic_field']} mA")
 
-    tec.set_target_temperature(params["temperature"], channel=1)
-    tec.set_enable(True, channel=1)
+    if tec is not None:
+        tec.set_target_temperature(params["temperature"], channel=1)
+        tec.set_enable(True, channel=1)
+    else:
+        print(
+            f"[警告] 跳过 TEC 设温；请确认外部软件维持 "
+            f"{params['temperature']:.2f} °C。"
+        )
 
     dg_temp.setup_dc(params["Temp_Switch"], channel=2)
     dg_temp.set_output(True, channel=2)
@@ -788,7 +798,10 @@ def run_single_point(iteration, parameter, value):
         print("  恢复基准并应用扫描参数...")
         apply_all_params(devices, params)
         time.sleep(2.0)
-        wait_for_temperature_stable(devices["tec"], params["temperature"])
+        if devices.get("tec") is not None:
+            wait_for_temperature_stable(devices["tec"], params["temperature"])
+        else:
+            print("  TEC 未连接，跳过温度稳定等待")
 
         print("  重新校准 HF2 相位...")
         calibrate_phase(devices)

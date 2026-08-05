@@ -38,8 +38,8 @@ required_devices:
   - DG900
   - DG4000
   - HF2
-  - TEC103
 learned_notes:
+  - TEC103 为可选控制设备；COM3 被外部温控软件占用时跳过设温和稳定等待。
   - 9.3 mA 高主场下，Z 偏置 -3 至 +3 V 不跨过总场零点，使用普通线性模型。
   - 采集工作流不执行共振拟合；全部 Lorentzian 和线性标定均由离线分析器完成。
   - 每个频点独立关闭温控采集，随后恢复 5 V 并等待 1 s。
@@ -56,6 +56,8 @@ f_0(V_Z)=K_Z V_Z+f_{0V}.
 \]
 
 主场与 Pump 光沿 Z，Probe 光沿 X；`rf_coil` 沿 Y，HF2 Demod0 只采集 R。默认主场为 9.3 mA，零偏预测中心为 90 kHz。`Z_INITIAL_HZ_PER_V=10621.690594509037` 只用于确定每个 Z 电压的局部扫频窗口，不作为最终标定结论。
+
+`FIXED_PARAMS.main_magnetic_field` 与 `ZERO_BIAS_CENTER_FREQUENCY_HZ` 均允许设置为 `0`。当零偏预测中心为 `0 Hz` 时，采集前使用首个 Z 扫描点的预测中心初始化 Y RF 与 HF2；所有实际扫频点仍必须大于 `0 Hz`，否则预检会拒绝运行。
 
 ## 扫描流程
 
