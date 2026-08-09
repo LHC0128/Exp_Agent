@@ -18,6 +18,9 @@ from ..experiment_modules.projection_noise.definition import (
 from ..experiment_modules.mx_y_rf_sensitivity.definition import (
     DEFINITION as MX_Y_RF_SENSITIVITY_DEFINITION,
 )
+from ..experiment_modules.mx_y_rf_sensitivity_drift.definition import (
+    DEFINITION as MX_Y_RF_SENSITIVITY_DRIFT_DEFINITION,
+)
 from ..experiment_modules.mx_z_optimal_control_rf_sensitivity.definition import (
     DEFINITION as MX_Z_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
 )
@@ -167,6 +170,7 @@ _DEFINITIONS = [
         auto_analyze=False,
     ),
     MX_Y_RF_SENSITIVITY_DEFINITION,
+    MX_Y_RF_SENSITIVITY_DRIFT_DEFINITION,
     MX_Z_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
     MX_Z_OPTIMAL_CONTROL_XY_LEAKAGE_RESPONSE_DEFINITION,
     MX_Z_OPTIMAL_CONTROL_XYZ_BALANCE_DEFINITION,

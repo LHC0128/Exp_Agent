@@ -111,7 +111,7 @@ Set-Location D:\Code\exp_agent\GUI
 4. 点击“应用并回读”；写入前会检查 `params/safety_limits.yaml`，写入后以仪器实际回读值更新页面。GS200 从 OFF 切换到 ON 时会二次确认；DLC pro 的远程 Emission ON 默认禁止，安全流程见 `docs/toptica_dlc_pro.md`。
 5. 实验结束后，在启动 GUI 的 PowerShell 窗口按 `Ctrl+C` 停止服务。
 
-“实验中心”统一展示 37 个正式 Python 采集入口，并提供动态参数、默认值保存、
+“实验中心”统一展示 38 个正式 Python 采集入口，并提供动态参数、默认值保存、
 无副作用预检、运行日志、安全停止和离线重新分析。每张实验卡片同时显示对应的
 采集程序和独立分析程序；没有独立分析脚本时会明确标注。`*.ipynb` 不进入实验中心，
 `*_plot.py` 只作为对应实验的分析器。卡片还会明确显示“新模式”或“旧模式”；完整
@@ -141,7 +141,7 @@ experiments ───┘
 - `legacy_script`：过渡期兼容模式，仍从旧脚本常量生成参数并通过隔离适配器执行。
   它不会被当作新实验模板。
 
-当前共有 19 个新模式实验和 18 个旧模式实验。GUI 参数表单只展示新模式模型显式
+当前共有 20 个新模式实验和 18 个旧模式实验。GUI 参数表单只展示新模式模型显式
 声明的字段，不会因为工作流中新增一个全大写运行时常量而意外增加表单项目。
 
 `t2-calibration` 已迁移为强类型光学 FID 工作流：保持 `T2_Calibration` 数据目录与
@@ -322,3 +322,7 @@ agent_exp_env\Scripts\pip freeze > requirements.txt
 - `docs/*.md`
 
 从而尽量保证实验脚本、文档和安全约束保持一致。
+
+### Mx Y RF 灵敏度长飘
+
+`experiments/Mx_Y_RF_Sensitivity_Drift.py` 按可配置的总时间和间隔重复 Mx Y RF 灵敏度测量，自动计算轮数并在每轮完成后更新趋势结果；离线重建入口为 `experiments/Mx_Y_RF_Sensitivity_Drift_plot.py`。

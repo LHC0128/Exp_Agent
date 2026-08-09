@@ -12,6 +12,7 @@ tags:
   label: 其他
 assignments:
   mx-y-rf-sensitivity: calibration
+  mx-y-rf-sensitivity-drift: calibration
   mx-z-optimal-control-rf-sensitivity: calibration
   mx-z-optimal-control-xy-leakage-response: calibration
   mx-z-optimal-control-xyz-balance: calibration
@@ -46,6 +47,7 @@ assignments:
   dg-am-comp-transfer-check: tag-15b058ba
   temperature-switch-pid-cycle: tag-15b058ba
 experiment_descriptions:
+  mx-y-rf-sensitivity-drift: 按固定时间间隔重复 Mx Y RF 灵敏度测量，每轮完成后立即分析并更新灵敏度与线宽趋势。
   mx-y-rf-sensitivity: Mx 构型下仅采集 Demod0 R，使用绝对值色散拟合斜率和零 RF 的 PSD_R 测量灵敏度，并支持两种线宽定义。
   mx-z-optimal-control-rf-sensitivity: 按配置启停 GS200 主场，以 X DC 和 Y RF 偏置平衡 XY 剩磁场，并叠加
     Z 向周期最优控制；校相幅度非零时同步采集 Demod0 R/X/Y 并以 180° 成对复差分校相后测量 RF 灵敏度，校相幅度为零时保持 Y DC 补偿、扫描
@@ -444,6 +446,57 @@ parameter_layouts:
     - FIXED_PARAMS.Probe_laser_power
     - FIXED_PARAMS.main_magnetic_field
     - FIXED_PARAMS.temperature
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - FREQUENCY_SETTLE_TIME_S
+    - FREQUENCY_DURATION_S
+    - NOISE_RATE_SA_S
+    - NOISE_TIME_CONSTANT_S
+    - NOISE_DEMOD_ORDER
+    - LOW_FREQ_SKIP_HZ
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - FIT_R_SQUARED_MIN
+    - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
+    - LINEAR_CHECK_GAMMA_FRACTION
+    - SLOPE_AGREEMENT_TOLERANCE
+  mx-y-rf-sensitivity-drift:
+    basic:
+    - RUN_TAG
+    - Y_RF_FREQUENCY_HZ
+    - Y_RF_AMP_START_VPP
+    - Y_RF_AMP_STOP_VPP
+    - Y_RF_AMP_POINTS
+    - RESPONSE_SETTLE_TIME_S
+    - RESPONSE_DURATION_S
+    - Y_RF_NT_PER_VPP
+    - FREQUENCY_START_HZ
+    - FREQUENCY_STOP_HZ
+    - FREQUENCY_POINTS
+    - FREQUENCY_RF_AMPLITUDE_VPP
+    - NOISE_N_AVG
+    - NOISE_DURATION_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    - DRIFT_INTERVAL_S
+    - DRIFT_DURATION_S
+    - DRIFT_START_IMMEDIATELY
     advanced:
     - R_BAD_POINT_STD_THRESHOLD_V
     - R_POINT_MAX_ATTEMPTS

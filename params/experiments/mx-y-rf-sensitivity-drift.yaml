@@ -1,6 +1,6 @@
-schema_version: 2
+schema_version: 1
 parameters:
-  RUN_TAG: mx_y_rf
+  RUN_TAG: mx_y_rf_drift
   LINEWIDTH_MODE: amplitude_equivalent
   Y_RF_FREQUENCY_HZ: 90000.0
   Y_RF_AMP_START_VPP: -0.1
@@ -46,3 +46,6 @@ parameters:
   FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX: 0.5
   LINEAR_CHECK_GAMMA_FRACTION: 0.25
   SLOPE_AGREEMENT_TOLERANCE: 0.2
+  DRIFT_INTERVAL_S: 1800.0
+  DRIFT_DURATION_S: 86400.0
+  DRIFT_START_IMMEDIATELY: true
