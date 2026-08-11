@@ -29,6 +29,7 @@ from ...steps import (
     ShutdownAction,
     TemperatureSwitchRestore,
     configure_temperature_control,
+    connect_signal_generator_routes,
     create_run_directory,
     run_safety_shutdown,
     set_temperature_switch,
@@ -103,33 +104,39 @@ def _connect_devices(
 
     x_cfg = mapping["X_magnetic_field"]
     rf_cfg = mapping["rf_coil"]
-    if x_cfg["resource"] != rf_cfg["resource"]:
-        raise ValueError("X_magnetic_field 与 rf_coil 必须位于同一台 XY 场信号源")
-    devices["xy_field"] = session.connect(
-        "xy_field", rf_cfg["resource"], lambda: create_signal_generator(rf_cfg)
+    devices["xy_field"], routed_channels = connect_signal_generator_routes(
+        session,
+        "xy_field",
+        {
+            "x_field": ("X_magnetic_field", x_cfg),
+            "y_rf": ("rf_coil", rf_cfg),
+        },
     )
-    channels["x_field"] = int(x_cfg["channel"])
-    channels["y_rf"] = int(rf_cfg["channel"])
+    channels.update(routed_channels)
 
     pump_cfg = mapping["Pump_laser_power"]
     probe_cfg = mapping["Probe_laser_power"]
-    if pump_cfg["resource"] != probe_cfg["resource"]:
-        raise ValueError("Pump_laser_power 与 Probe_laser_power 必须位于同一设备")
-    devices["laser"] = session.connect(
-        "laser", pump_cfg["resource"], lambda: create_signal_generator(pump_cfg)
+    devices["laser"], routed_channels = connect_signal_generator_routes(
+        session,
+        "laser",
+        {
+            "pump_laser": ("Pump_laser_power", pump_cfg),
+            "probe_laser": ("Probe_laser_power", probe_cfg),
+        },
     )
-    channels["pump_laser"] = int(pump_cfg["channel"])
-    channels["probe_laser"] = int(probe_cfg["channel"])
+    channels.update(routed_channels)
 
     carrier_cfg = mapping["Pump_modulation"]
     gate_cfg = mapping["Time_sequence"]
-    if carrier_cfg["resource"] != gate_cfg["resource"]:
-        raise ValueError("Pump_modulation 与 Time_sequence 必须位于同一设备")
-    devices["pump_rf"] = session.connect(
-        "pump_rf", carrier_cfg["resource"], lambda: create_signal_generator(carrier_cfg)
+    devices["pump_rf"], routed_channels = connect_signal_generator_routes(
+        session,
+        "pump_rf",
+        {
+            "pump_carrier": ("Pump_modulation", carrier_cfg),
+            "pump_gate": ("Time_sequence", gate_cfg),
+        },
     )
-    channels["pump_carrier"] = int(carrier_cfg["channel"])
-    channels["pump_gate"] = int(gate_cfg["channel"])
+    channels.update(routed_channels)
 
     temp_cfg = mapping["Temp_Switch"]
     devices["temp_switch"] = session.connect(

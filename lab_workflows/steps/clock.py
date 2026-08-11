@@ -32,16 +32,44 @@ def normalize_clock_source(value: Any) -> str:
 
 
 def load_clock_profile(path: Path | None = None) -> dict[str, str]:
-    """读取 ``clock_sources.yaml`` 并标准化所有目标值。"""
+    """读取设备库时钟配置；显式路径和旧文件仅作为兼容入口。"""
     root = find_project_root()
-    data = load_yaml(path or root / "params" / "clock_sources.yaml")
+    if path is not None:
+        data = load_yaml(path)
+        default = normalize_clock_source(data.get("defaults_to", "EXT"))
+        profile = {
+            str(key): normalize_clock_source(value)
+            for key, value in data.get("devices", {}).items()
+        }
+        profile["__default__"] = default
+        return profile
+
+    from ..instrument_config import load_device_definitions
+
+    profile: dict[str, str] = {"__default__": "EXT"}
+    for device in load_device_definitions(root).values():
+        if device.reference_clock is None:
+            continue
+        if device.instrument == "lockin_amplifier":
+            device_id = str(device.connection.get("device_id", "")).strip()
+        elif device.resource:
+            fields = device.resource.split("::")
+            device_id = fields[3] if len(fields) > 3 else device.device_id
+        else:
+            device_id = device.device_id
+        if device_id:
+            profile[device_id] = normalize_clock_source(device.reference_clock)
+    if len(profile) > 1:
+        return profile
+
+    data = load_yaml(root / "params" / "clock_sources.yaml")
     default = normalize_clock_source(data.get("defaults_to", "EXT"))
-    profile = {
+    legacy_profile = {
         str(key): normalize_clock_source(value)
         for key, value in data.get("devices", {}).items()
     }
-    profile["__default__"] = default
-    return profile
+    legacy_profile["__default__"] = default
+    return legacy_profile
 
 
 def clock_device_id(config: Mapping[str, Any]) -> str:
@@ -128,31 +156,56 @@ def synchronize_connected_clocks(
     """
     targets = dict(profile) if profile is not None else load_clock_profile(profile_path)
     results: dict[str, dict[str, Any]] = {}
+    synchronized_devices: set[int] = set()
     for semantic_name, mapping_key in assignments.items():
         if semantic_name not in devices:
             raise KeyError(f"工作流缺少时钟设备: {semantic_name}")
         if mapping_key not in mapping:
             raise KeyError(f"mapping 缺少时钟设备配置: {mapping_key}")
-        record = synchronize_clock_device(
-            devices[semantic_name],
-            mapping[mapping_key],
-            profile=targets,
-            settle_s=settle_s,
-        )
-        results[semantic_name] = record.to_dict()
-        if record.ok:
-            print(
-                f"  {semantic_name} ({record.device_id}) 时钟源: "
-                f"{record.before} → {record.actual}"
-            )
+        instrument = devices[semantic_name]
+        route_getter = getattr(instrument, "iter_physical_routes", None)
+        if callable(route_getter):
+            candidates = [
+                (route.device, route.mapping_key)
+                for route in route_getter()
+            ]
         else:
-            message = (
-                f"{semantic_name} 时钟源设置失败：设备 {record.device_id}，"
-                f"目标 {record.target}，实际 {record.actual}"
+            candidates = [(instrument, mapping_key)]
+
+        for index, (physical_device, physical_mapping_key) in enumerate(candidates):
+            marker = id(physical_device)
+            if marker in synchronized_devices:
+                continue
+            synchronized_devices.add(marker)
+            if physical_mapping_key not in mapping:
+                raise KeyError(
+                    f"mapping 缺少时钟设备配置: {physical_mapping_key}"
+                )
+            record = synchronize_clock_device(
+                physical_device,
+                mapping[physical_mapping_key],
+                profile=targets,
+                settle_s=settle_s,
             )
-            if record.error:
-                message += f"，错误: {record.error}"
-            if strict:
-                raise RuntimeError(message)
-            print(f"  ⚠ {message}")
+            result_name = (
+                semantic_name
+                if index == 0
+                else f"{semantic_name}:{physical_mapping_key}"
+            )
+            results[result_name] = record.to_dict()
+            if record.ok:
+                print(
+                    f"  {result_name} ({record.device_id}) 时钟源: "
+                    f"{record.before} → {record.actual}"
+                )
+            else:
+                message = (
+                    f"{result_name} 时钟源设置失败：设备 {record.device_id}，"
+                    f"目标 {record.target}，实际 {record.actual}"
+                )
+                if record.error:
+                    message += f"，错误: {record.error}"
+                if strict:
+                    raise RuntimeError(message)
+                print(f"  ⚠ {message}")
     return results

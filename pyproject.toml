@@ -16,6 +16,7 @@ dependencies = [
 where = ["src", "."]
 include = [
   "gs200*",
+  "keithley_6221*",
   "lockin_amplifier*",
   "sds_acquisition*",
   "sensitivity_analysis*",

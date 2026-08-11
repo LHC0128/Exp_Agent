@@ -28,7 +28,7 @@ DEFINITION = ExperimentDefinition(
     wiring_notes=(
         "主磁场和 Pump 光沿 Z，Probe 光沿 X；rf_coil CH2 产生 Y 向 RF 场，X_magnetic_field CH1 保持关闭。",
         "HF2 Demod0 使用 Input 1，并以 Y RF 频率直接解调；DAQ 只订阅 R，不执行 X/Y 相位校准。",
-        "时钟按 clock_sources.yaml 设置：Y RF/X 场 DG4000=EXT、Pump DG4000=INT、HF2=EXT，并在输出前回读验证。",
+        "时钟按 devices.yaml 中各设备的 reference_clock 设置，并在输出前回读验证。",
     ),
     safety_notes=(
         "正常、异常和取消均关闭归零 Z 辅助场、Y RF 与 X 场，温控恢复 5V ON；Pump 100MHz 载波与 Time_sequence 5V DC ON 是实验专用保留输出。",

@@ -1,190 +1,178 @@
-# =============================================================================
-# params/mapping.yaml — 物理量→仪器通道映射（全局配置）
-# =============================================================================
-# 用途：记录物理量与具体仪器、通道、连接地址的对应关系。
-#       当仪器连接方式变化时（如换 USB 口、换设备），只需修改此文件，
-#       所有实验代码自动适配。
-#
-# 管理方式：版本控制。有变化时直接修改此文件，在 CLAUDE.md 或 commit
-#           message 中注明变更原因。
-# =============================================================================
-
+schema_version: 2
 mapping:
-  # ---- 直流源 ----
   main_magnetic_field:
     instrument: gs200
-    label: "主磁场"
-    resource: "USB0::0x0B21::0x0039::90Z631552::INSTR"
-    channel: null
-    source_function: "CURRent"
-    description: "磁力仪中主磁场控制，单位mA，通过电流控制磁场强度，范围-10到10mA"
-
-  # ---- 信号发生器 ----
+    device_id: gs200_90z631552
+    label: 主磁场
+    source_function: CURRent
+    description: 磁力仪中主磁场控制，单位mA，通过电流控制磁场强度，范围-10到10mA
   Z_magnetic_field:
     instrument: signal_generator
-    model: DG4000
-    label: "Z方向磁场"
-    resource: "USB0::0x1AB1::0x0641::DG4E242401288::INSTR"
-    channel: 1
-    description: "输出的大小对应着Z方向磁场强度，一般为任意波或三角波，范围0-10 V"
-
+    device_id: dg9q263800417
+    endpoint:
+      kind: channel
+      index: 1
+    label: Z方向磁场
+    description: 输出的大小对应着Z方向磁场强度，一般为任意波或三角波，范围0-10 V
   Time_sequence_2:
     instrument: signal_generator
-    model: DG4000
-    label: "时序信号2"
-    resource: "USB0::0x1AB1::0x0641::DG4E242401288::INSTR"
-    channel: 2
-    description: "暂时没有用到，预留的时序信号输出通道，暂时为0VDC输出"
-
+    device_id: dg9q263800417
+    endpoint:
+      kind: channel
+      index: 2
+    label: 时序信号2
+    description: 暂时没有用到，预留的时序信号输出通道，暂时为0VDC输出
   Pump_laser_power:
     instrument: signal_generator
-    model: DG900
-    label: "Pump光功率"
-    device_label: "光功率"
-    resource: "USB0::0x1AB1::0x0646::DG9Q280100002::INSTR"
-    channel: 1
-    description: "输出大小对应着Pump光功率，通过调节信号发生器的DC电平控制输出功率，范围0-2 V"
-
+    device_id: dg9q280100002
+    endpoint:
+      kind: channel
+      index: 1
+    label: Pump光功率
+    description: 输出大小对应着Pump光功率，通过调节信号发生器的DC电平控制输出功率，范围0-2 V
   Probe_laser_power:
     instrument: signal_generator
-    model: DG900
-    label: "Probe光功率"
-    resource: "USB0::0x1AB1::0x0646::DG9Q280100002::INSTR"
-    channel: 2
-    description: "输出大小对应着Probe光功率，通过调节信号发生器的DC电平控制输出功率，范围0-2 V"
-
-  # ---- Probe 激光器 ----
+    device_id: dg9q280100002
+    endpoint:
+      kind: channel
+      index: 2
+    label: Probe光功率
+    description: 输出大小对应着Probe光功率，通过调节信号发生器的DC电平控制输出功率，范围0-2 V
   probe_laser:
     instrument: toptica_dlc_pro
-    model: DLC_PRO
-    label: "Probe 激光"
-    resource: "192.168.124.68"
-    device_id: "DLC_PRO_53043"
-    controller_serial: "DLC PRO_53043"
-    laser_head_serial: "24105"
-    laser_channel: 1
-    command_port: 1998
-    monitoring_port: 1999
-    timeout: 5.0
-    remote_emission_control_enabled: false
+    device_id: dlc_pro_53043
+    endpoint:
+      kind: laser_channel
+      index: 1
+    label: Probe 激光
     current_safety_key: probe_laser_current
     temperature_safety_key: probe_laser_temperature
     pzt_safety_key: probe_laser_pzt_voltage
     scan_amplitude_safety_key: probe_laser_scan_amplitude
-    description: "TOPTICA DLC pro Probe 激光；PZT 电压映射为 Laser 1 Scan Offset，扫描频率只读"
-
+    description: TOPTICA DLC pro Probe 激光；PZT 电压映射为 Laser 1 Scan Offset，扫描频率只读
   X_magnetic_field_AM:
     instrument: signal_generator
-    model: DG4000
-    label: "X方向磁场 AM"
-    device_label: "XY方向AM信号"
-    resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
-    channel: 1
-    description: "输出大小对应着X方向磁场 AM，用作 dg_comp 外部 AM 输入；当前安全限值允许 -2.5 到 1.5 V"
-
+    device_id: dg4e231500376
+    endpoint:
+      kind: channel
+      index: 1
+    label: X方向磁场 AM
+    description: 输出大小对应着X方向磁场 AM，用作外部 AM 输入
   Y_magnetic_field_AM:
     instrument: signal_generator
-    model: DG4000
-    label: "Y方向磁场 AM"
-    resource: "USB0::0x1AB1::0x0641::DG4E231500376::INSTR"
-    channel: 2
-    description: "输出大小对应着Y方向磁场 AM，用作 dg_comp 外部 AM 输入；当前安全限值允许 -2.5 到 1.5 V"
-
+    device_id: dg4e231500376
+    endpoint:
+      kind: channel
+      index: 2
+    label: Y方向磁场 AM
+    description: 输出大小对应着Y方向磁场 AM，用作外部 AM 输入
   X_magnetic_field:
     instrument: signal_generator
-    model: DG4000
-    label: "X方向磁场"
-    device_label: "XY方向磁场"
-    resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
-    channel: 1
-    description: "输出大小对应着X方向磁场，一般为任意波，范围-10-10 V"
-
+    device_id: dg4e234902522
+    endpoint:
+      kind: channel
+      index: 1
+    label: X方向磁场
+    description: 输出大小对应着X方向磁场，一般为任意波，范围-10到10 V
   Y_magnetic_field:
     instrument: signal_generator
-    model: DG4000
-    label: "Y方向磁场"
-    resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
-    channel: 2
-    description: "输出大小对应着Y方向磁场，一般为任意波，范围-10-10 V"
-
+    device_id: dg4e234902522
+    endpoint:
+      kind: channel
+      index: 2
+    label: Y方向磁场
+    description: 输出大小对应着Y方向磁场，一般为任意波，范围-10到10 V
   rf_coil:
     instrument: signal_generator
-    model: DG4000
-    label: "RF 线圈 (Y方向)"
-    resource: "USB0::0x1AB1::0x0641::DG4E234902522::INSTR"
-    channel: 2
-    description: "RF 线圈驱动（MORS 扫频 / T2 FID 脉冲），与 Y_magnetic_field 共用同一物理通道。沿 Y 方向，垂直于主磁场 B_z 和光传播方向 X，激发横向自旋相干"
-
+    device_id: dg4e234902522
+    endpoint:
+      kind: channel
+      index: 2
+    label: RF 线圈 (Y方向)
+    description: RF 线圈驱动（MORS 扫频 / T2 FID 脉冲），与 Y_magnetic_field 共用同一物理通道
   Pump_modulation:
     instrument: signal_generator
-    model: DG4000
-    label: "Pump调制"
-    resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
-    channel: 1
-    description: "100MHz 连续正弦波 → RF 开关 IN → RF 开关 OUT → AOM，控制 Pump 光耦合进入光纤。幅度范围 0-0.18V"
-
+    device_id: dg4e222800868
+    endpoint:
+      kind: channel
+      index: 1
+    label: Pump调制
+    description: 100MHz 连续正弦波经 RF 开关与 AOM 控制 Pump 光
   Time_sequence:
     instrument: signal_generator
-    model: DG4000
-    label: "时序信号"
-    resource: "USB0::0x1AB1::0x0641::DG4E222800868::INSTR"
-    channel: 2
-    description: "脉冲方波 → RF 开关 CTRL，门控 100MHz RF 信号的通断。频率即 Pump 调制频率（如 90kHz），占空比 5%，5Vpp+2.5V offset"
-
+    device_id: dg4e222800868
+    endpoint:
+      kind: channel
+      index: 2
+    label: 时序信号
+    description: 脉冲方波门控 Pump 调制 RF 信号
   Heat_Control:
     instrument: signal_generator
-    model: DG900
-    label: "加热信号"
-    resource: "USB0::0x1AB1::0x0646::DG9Q271200104::INSTR"
-    channel: 1
-    description: "加热信号，可在 GUI 中读取和设置；写入受 safety_limits.yaml 限制"
-
+    device_id: dg9q271200104
+    endpoint:
+      kind: channel
+      index: 1
+    label: 加热信号
+    description: 加热信号，可在 GUI 中读取和设置；写入受 safety_limits.yaml 限制
   Temp_Switch:
     instrument: signal_generator
-    model: DG900
-    label: "温度开关信号"
-    resource: "USB0::0x1AB1::0x0646::DG9Q271200104::INSTR"
-    channel: 2
-    description: "温度开关信号，5V为打开，DC0VOFF为关闭。一般为打开状态。因为温控会产生磁场，所以在数据采集或者校准锁相放大器相位的时候关闭"
-
-  # ---- 温控器 ----
+    device_id: dg9q271200104
+    endpoint:
+      kind: channel
+      index: 2
+    label: 温度开关信号
+    description: 温度开关信号，5V为打开，DC0V为关闭
   temperature:
     instrument: tec_controller
-    label: "Cell温度"
-    resource: "COM3"
-    channel: 1
-    description: "铷原子Cell温度控制，单位摄氏度，通过串口发送指令控制温度，范围20-110摄氏度"
-    # 使用方式: tec.set_target_temperature(C, channel=1)
-
-  # ---- 锁相放大器 ----
+    device_id: tec103_com3
+    endpoint:
+      kind: channel
+      index: 1
+    label: Cell温度
+    description: 铷原子Cell温度控制，单位摄氏度
   lockin_r:
     instrument: lockin_amplifier
-    label: "锁相幅度 R"
-    resource: null
-    device_id: "dev18246"
-    host: "127.0.0.1"
-    port: 8005
-    demod_idx: 0
-    description: "HF2 解调器 0 幅度输出"
-    # 使用方式: demod.read_demod_sample(instr, 0) -> {"r": ..., "x": ..., ...}
-
+    device_id: hf2_dev18246
+    endpoint:
+      kind: demod
+      index: 0
+    label: 锁相幅度 R
+    description: HF2 解调器 0 幅度输出
   lockin_xy:
     instrument: lockin_amplifier
-    label: "锁相 X/Y"
-    resource: null
-    device_id: "dev18246"
-    host: "127.0.0.1"
-    port: 8005
-    demod_idx: 1
-    description: "HF2 解调器 1 X/Y 输出"
-
-  # ---- 示波器 ----
+    device_id: hf2_dev18246
+    endpoint:
+      kind: demod
+      index: 1
+    label: 锁相 X/Y
+    description: HF2 解调器 1 X/Y 输出
   scope_waveform:
     instrument: sds_acquisition
-    label: "示波器波形"
-    resource: "USB0::0xF4EC::0x1015::SDSEV82X900704::INSTR"
-    channel: null
-    description: "SDS 示波器波形采集"
-    # 使用方式:
-    #   acquirer = SDSAcquisition(SDSInstrument(resource))
-    #   results = acquirer.acquire_all(config)
+    device_id: sds_sdsev82x900704
+    label: 示波器波形
+    description: SDS 示波器波形采集
+constraints:
+  shared_channel_groups:
+    y_field_rf:
+    - Y_magnetic_field
+    - rf_coil
+  colocation_groups:
+    z_sequence:
+    - Z_magnetic_field
+    - Time_sequence_2
+    laser_power:
+    - Pump_laser_power
+    - Probe_laser_power
+    xy_field:
+    - X_magnetic_field
+    - Y_magnetic_field
+    - rf_coil
+    xy_am:
+    - X_magnetic_field_AM
+    - Y_magnetic_field_AM
+    pump_rf:
+    - Pump_modulation
+    - Time_sequence
+    hf2_demods:
+    - lockin_r
+    - lockin_xy

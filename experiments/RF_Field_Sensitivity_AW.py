@@ -30,6 +30,7 @@ from lab_workflows.devices import (
     create_signal_generator,
     signal_generator_max_arb_points,
 )
+from lab_workflows.common import load_mapping
 from lab_workflows.steps import (
     DirectAWPhaseCalibrationConfig,
     PhaseCalibrationConfig,
@@ -51,8 +52,7 @@ from lockin_amplifier import (
 print("所有库导入成功")
 
 # %% Cell 2
-with open(project_root / "params" / "mapping.yaml", encoding="utf-8") as f:
-    MAPPING = yaml.safe_load(f)["mapping"]
+MAPPING = load_mapping(project_root)
 MAX_ARB_POINTS = signal_generator_max_arb_points(MAPPING["X_magnetic_field"])
 
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:

@@ -50,7 +50,7 @@ learned_notes:
 - rf_coil 产生 Y 向 RF 场；X_magnetic_field 和 Z_magnetic_field 始终归零并关闭。
 - Pump AOM 使用 100 MHz、0.18 Vpp；Time_sequence 保持既有 50 Ω 设置，固定为 5 V DC 且输出开启，使 Pump 光常开。
 - HF2 Demod0 使用 Input 1、AC 耦合、50 Ω、2 V 量程，并以 Y RF 频率直接解调；DAQ 只订阅 R。
-- 参考时钟遵循 params/clock_sources.yaml：Y RF/X 场 DG4000 使用外部 10 MHz，Pump DG4000 使用内部时钟，HF2 使用外部 10 MHz。实验在任何输出配置前设置并回读验证，任一设备不一致即停止。
+- 参考时钟遵循 `params/devices.yaml` 中当前绑定设备的 `reference_clock`。实验在任何输出配置前设置并回读验证，任一设备不一致即停止。
 
 ## 采集顺序
 

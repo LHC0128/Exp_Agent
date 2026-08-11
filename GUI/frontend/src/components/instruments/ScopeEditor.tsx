@@ -1,16 +1,18 @@
 import { useState } from "react";
 
 import { api } from "../../api";
-import type { ScopeChannelSnapshot, ScopeSettings, ScopeSnapshot, ScopeTriggerSnapshot } from "../../types/api";
+import type { ControlRoute, ControlTargetResponse, ScopeChannelSnapshot, ScopeSettings, ScopeSnapshot, ScopeTriggerSnapshot } from "../../types/api";
 import { Field } from "../FormFields";
 import { Status } from "../Status";
 
 type ScopeEditorProps = {
   snapshot: ScopeSnapshot;
-  onSaved: (value: ScopeSnapshot) => void;
+  route: ControlRoute;
+  onSaved: (value: ControlTargetResponse) => void;
+  onError: (reason: unknown) => void;
 };
 
-export function ScopeEditor({ snapshot, onSaved }: ScopeEditorProps) {
+export function ScopeEditor({ snapshot, route, onSaved, onError }: ScopeEditorProps) {
   const [state, setState] = useState<ScopeSnapshot>(snapshot);
   const set = <Key extends keyof ScopeSnapshot>(key: Key, value: ScopeSnapshot[Key]) => {
     setState((old) => ({ ...old, [key]: value }));
@@ -39,11 +41,13 @@ export function ScopeEditor({ snapshot, onSaved }: ScopeEditorProps) {
       channels: state.channels,
       trigger: state.trigger,
     };
-    const saved = await api<ScopeSnapshot>(`/api/devices/${snapshot.id}/scope`, {
-      method: "PUT",
-      body: JSON.stringify({ settings }),
-    });
-    onSaved(saved);
+    try {
+      const saved = await api<ControlTargetResponse>(`/api/control-targets/${encodeURIComponent(route.mappingKey)}/scope`, {
+        method: "PUT",
+        body: JSON.stringify({ device_library_revision: route.deviceLibraryRevision, physical_mapping_revision: route.physicalMappingRevision, settings }),
+      });
+      onSaved(saved);
+    } catch (reason) { onError(reason); }
   };
 
   return (

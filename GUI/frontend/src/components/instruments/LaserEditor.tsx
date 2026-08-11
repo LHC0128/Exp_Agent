@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import { api } from "../../api";
 import type {
+  ControlRoute,
+  ControlTargetResponse,
   LaserEmissionSettings,
   LaserSettings,
   LaserSnapshot,
@@ -11,10 +13,12 @@ import { Status } from "../Status";
 
 type LaserEditorProps = {
   snapshot: LaserSnapshot;
-  onSaved: (value: LaserSnapshot) => void;
+  route: ControlRoute;
+  onSaved: (value: ControlTargetResponse) => void;
+  onError: (reason: unknown) => void;
 };
 
-export function LaserEditor({ snapshot, onSaved }: LaserEditorProps) {
+export function LaserEditor({ snapshot, route, onSaved, onError }: LaserEditorProps) {
   const [currentMa, setCurrentMa] = useState(snapshot.current_set_ma);
   const [temperatureC, setTemperatureC] = useState(snapshot.temperature_set_c);
   const [pztVoltageV, setPztVoltageV] = useState(snapshot.pzt_voltage_v);
@@ -65,13 +69,14 @@ export function LaserEditor({ snapshot, onSaved }: LaserEditorProps) {
     };
     setSaving(true);
     try {
-      const saved = await api<LaserSnapshot>(
-        `/api/devices/${snapshot.id}/laser`,
-        { method: "PUT", body: JSON.stringify({ settings }) },
+      const saved = await api<ControlTargetResponse>(
+        `/api/control-targets/${encodeURIComponent(route.mappingKey)}/laser`,
+        { method: "PUT", body: JSON.stringify({ device_library_revision: route.deviceLibraryRevision, physical_mapping_revision: route.physicalMappingRevision, settings }) },
       );
       onSaved(saved);
     } catch (reason) {
       setError(String(reason));
+      onError(reason);
     } finally {
       setSaving(false);
     }
@@ -101,13 +106,14 @@ export function LaserEditor({ snapshot, onSaved }: LaserEditorProps) {
 
     setEmissionSaving(true);
     try {
-      const saved = await api<LaserSnapshot>(
-        `/api/devices/${snapshot.id}/emission`,
-        { method: "PUT", body: JSON.stringify({ settings }) },
+      const saved = await api<ControlTargetResponse>(
+        `/api/control-targets/${encodeURIComponent(route.mappingKey)}/emission`,
+        { method: "PUT", body: JSON.stringify({ device_library_revision: route.deviceLibraryRevision, physical_mapping_revision: route.physicalMappingRevision, settings }) },
       );
       onSaved(saved);
     } catch (reason) {
       setError(String(reason));
+      onError(reason);
     } finally {
       setEmissionSaving(false);
     }

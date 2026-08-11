@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from signal_generator import DG4000Instrument, DG900Instrument
 
@@ -114,6 +115,104 @@ class DriverGetterTests(unittest.TestCase):
             device.raise_for_errors()
 
         self.assertEqual(fake.writes, ["*CLS"])
+
+    def test_dg900_infinite_burst_uses_triggered_infinite_cycles(self):
+        device = DG900Instrument("FAKE", channel=2)
+        fake = FakeInstrument({})
+        device._inst = fake
+        device.set_burst_mode("INFinity")
+        self.assertEqual(fake.writes, [
+            ":SOURce2:BURSt:MODE TRIGgered",
+            ":SOURce2:BURSt:NCYCles INFinity",
+        ])
+
+    def test_dg900_phase_sync_output_load_and_unit_use_pro_commands(self):
+        device = DG900Instrument("FAKE", channel=2)
+        fake = FakeInstrument({})
+        device._inst = fake
+        device.phase_init()
+        device.set_sync_state(False)
+        device.set_output_load("INFinity")
+        device.set_voltage_unit("VRMS")
+        self.assertEqual(fake.writes, [
+            ":SOURce2:PHASe:SYNChronize",
+            ":OUTPut2:SYNC OFF",
+            ":OUTPut2:LOAD INFinity",
+            ":SOURce2:VOLTage:UNIT VRMS",
+        ])
+
+    def test_dg900_setup_dc_matches_common_output_contract(self):
+        device = DG900Instrument("FAKE", channel=1)
+        fake = FakeInstrument({})
+        device._inst = fake
+        device.setup_dc(0.25)
+        self.assertEqual(fake.writes, [
+            ":SOURce1:APPLy:DC DEF,DEF,0.25",
+            ":OUTPut1:STATe ON",
+        ])
+
+    def test_dg900_arbitrary_upload_uses_dac16_and_transactions(self):
+        device = DG900Instrument("FAKE", channel=1)
+        fake = SequencedFakeInstrument({
+            "*OPC?": "1",
+            ":SYSTem:ERRor?": ['0,"No error"'],
+        })
+        device._inst = fake
+        device.send_arbitrary_waveform([-1.0, 0.0, 1.0] * 11)
+        self.assertEqual(fake.writes[0], "*CLS")
+        self.assertTrue(fake.writes[1].startswith(
+            ":SOURce1:TRACe:DATA:DAC16 CODE,END,-32768,0,32767"
+        ))
+
+    def test_dg900_arbitrary_rejects_short_waveform(self):
+        device = DG900Instrument("FAKE")
+        with self.assertRaisesRegex(ValueError, "32"):
+            device.send_arbitrary_waveform([0.0] * 31)
+
+    def test_dg900_arbitrary_accepts_maximum_and_rejects_overflow(self):
+        class SizedCodes:
+            def __init__(self, size):
+                self.size = size
+
+            def __len__(self):
+                return self.size
+
+        device = DG900Instrument("FAKE")
+        device._inst = SequencedFakeInstrument({
+            "*OPC?": "1",
+            ":SYSTem:ERRor?": ['0,"No error"'],
+        })
+        with patch.object(
+            device, "_arb_codes", return_value=SizedCodes(device.MAX_ARB_POINTS)
+        ), patch.object(device, "_arb_chunks", return_value=["0"]):
+            device.send_arbitrary_waveform([0.0])
+        with patch.object(
+            device,
+            "_arb_codes",
+            return_value=SizedCodes(device.MAX_ARB_POINTS + 1),
+        ):
+            with self.assertRaisesRegex(ValueError, "16777216"):
+                device.send_arbitrary_waveform([0.0])
+
+    def test_dg900_arbitrary_chunks_stay_within_20kb(self):
+        device = DG900Instrument("FAKE")
+        chunks = device._arb_chunks([-32768, 32767] * 5000)
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(len(chunk.encode("ascii")) <= 20_000 for chunk in chunks))
+
+    def test_dg900_arbitrary_failure_restores_output_state(self):
+        device = DG900Instrument("FAKE")
+        fake = FakeInstrument({":OUTPut1:STATe?": "ON"})
+        device._inst = fake
+        with patch.object(
+            device, "send_arbitrary_waveform", side_effect=RuntimeError("upload failed")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "upload failed"):
+                device.setup_arbitrary([0.0] * 32, output=False)
+        self.assertEqual(fake.writes, [
+            ":OUTPut1:STATe OFF",
+            ":OUTPut1:STATe ON",
+        ])
 
     def test_dg4000_mod_and_burst_getters_preserve_command_tree(self):
         device = DG4000Instrument("FAKE", channel=1)

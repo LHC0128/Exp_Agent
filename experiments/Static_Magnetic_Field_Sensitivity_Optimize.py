@@ -40,6 +40,7 @@ from scipy import signal as scipy_signal
 
 from gs200 import GS200Instrument
 from lab_workflows.devices import create_signal_generator
+from lab_workflows.common import load_mapping
 from tec_controller import TECInstrument
 from lockin_amplifier import (
     HF2Instrument, DAQConfig, DAQResult,
@@ -55,8 +56,7 @@ print("所有库导入成功")
 
 # %% Cell 2
 # ========== 加载配置 ==========
-with open(project_root / "params" / "mapping.yaml", encoding="utf-8") as f:
-    MAPPING = yaml.safe_load(f)["mapping"]
+MAPPING = load_mapping(project_root)
 
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]

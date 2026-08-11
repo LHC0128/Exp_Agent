@@ -170,8 +170,7 @@ dg_mod CH2 SYNC ──BNC三通──→ dg_comp Ext Trig  (Burst 触发)
                            ──→ dg_sweep Ext Trig (Z RF Burst 触发)
 ```
 
-参考时钟以 `params/clock_sources.yaml` 为准：Pump 调制 DG4000 使用内部时钟，
-其余已连接 DG4000、两台 DG900 和 HF2 使用外部时钟；频率锁定后，初始相位由触发沿对齐。
+参考时钟以 `params/devices.yaml` 中当前绑定设备的 `reference_clock` 为准；频率锁定后，初始相位由触发沿对齐。
 
 ## 波形预计算
 

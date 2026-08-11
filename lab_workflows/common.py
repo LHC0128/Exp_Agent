@@ -26,8 +26,9 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_mapping(root: Path | None = None) -> dict[str, dict[str, Any]]:
-    root = root or find_project_root()
-    return load_yaml(root / "params" / "mapping.yaml").get("mapping", {})
+    from .instrument_config import resolve_mapping
+
+    return resolve_mapping(root)
 
 
 def load_safety_limits(root: Path | None = None) -> dict[str, dict[str, Any]]:

@@ -3,18 +3,34 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from typing import Any
 
+from lockin_amplifier import HF2Instrument, demod
 from sds_acquisition import SDSInstrument
+from tec_controller import TECInstrument
 
 from .common import load_safety_limits, validate_safety_limit
 from .devices import (
+    ChannelRecord,
     CURRENT_SOURCE_DRIVERS,
     DeviceRecord,
     LASER_DRIVERS,
     SIGNAL_GENERATOR_DRIVERS,
     find_device,
 )
+from .instrument_config import (
+    DeviceDefinition,
+    Endpoint,
+    load_device_definitions,
+    load_mapping_document,
+    public_device_library,
+    public_physical_mappings,
+)
+
+
+class ControlRevisionConflict(RuntimeError):
+    """控制请求基于的设备库或物理量映射已经过期。"""
 
 
 def _connect(record: DeviceRecord):
@@ -34,6 +50,19 @@ def _connect(record: DeviceRecord):
         )
     elif record.type == "SDS":
         instrument = SDSInstrument(record.resource)
+    elif record.type == "TEC103":
+        instrument = TECInstrument(
+            record.resource,
+            baudrate=int(record.options.get("baudrate", 38400)),
+            timeout=float(record.options.get("timeout", 0.5)),
+        )
+    elif record.type == "HF2":
+        instrument = HF2Instrument(
+            host=str(record.options.get("host", "127.0.0.1")),
+            port=int(record.options.get("port", 8005)),
+            device_id=str(record.options.get("device_id", record.id)),
+            interface=str(record.options.get("interface", "PCIe")),
+        )
     else:
         raise ValueError(f"不支持的设备类型: {record.type}")
     instrument.connect()
@@ -213,8 +242,14 @@ def _read_generator_channel(instrument, device_type: str, channel) -> dict[str, 
         state = {
             **waveform,
             "shape": shape,
-            "voltage_unit": None,
-            "load": None,
+            "voltage_unit": _optional_query(
+                errors, "voltage_unit",
+                lambda: instrument.get_voltage_unit(channel.number),
+            ),
+            "load": _optional_query(
+                errors, "load",
+                lambda: instrument.get_output_load(channel.number),
+            ),
         }
     else:
         shape = _canonical_shape(instrument.get_shape(channel.number))
@@ -230,6 +265,9 @@ def _read_generator_channel(instrument, device_type: str, channel) -> dict[str, 
     state.update({
         "number": channel.number,
         "mapping_key": channel.mapping_key,
+        "mapping_keys": list(
+            getattr(channel, "mapping_keys", [channel.mapping_key])
+        ),
         "label": channel.label,
         "read_only": channel.read_only,
         "output": instrument.get_output(channel.number),
@@ -270,6 +308,13 @@ def _gs200_mapping_key(record: DeviceRecord) -> str:
     mapping_key = str(record.options.get("mapping_key", "")).strip()
     if not mapping_key:
         raise ValueError(f"GS200 设备 {record.id} 缺少 mapping_key")
+    return mapping_key
+
+
+def _6221_mapping_key(record: DeviceRecord) -> str:
+    mapping_key = str(record.options.get("mapping_key", "")).strip()
+    if not mapping_key:
+        raise ValueError(f"Keithley 6221 设备 {record.id} 缺少 mapping_key")
     return mapping_key
 
 
@@ -328,6 +373,99 @@ def _read_gs200_state(record: DeviceRecord, instrument) -> dict[str, Any]:
         "min_current_ma": float(rule["min"]),
         "max_current_ma": float(rule["max"]),
     }
+
+
+def _finite_6221(field: str, value: Any, *, scale: float = 1.0) -> float:
+    converted = float(value) * scale
+    if not math.isfinite(converted):
+        raise ValueError(f"Keithley 6221 {field} 不是有限数值")
+    return converted
+
+
+def _6221_duration_state(instrument) -> dict[str, Any]:
+    duration_time = instrument.get_waveform_duration_time()
+    duration_cycles = instrument.get_waveform_duration_cycles()
+    time_infinite = str(duration_time).upper() == "INF"
+    cycles_infinite = str(duration_cycles).upper() == "INF"
+    if time_infinite and cycles_infinite:
+        mode, value = "INFINITE", None
+    elif not time_infinite and cycles_infinite:
+        mode, value = "TIME", _finite_6221("波形时长", duration_time)
+    elif time_infinite and not cycles_infinite:
+        mode, value = "CYCLES", _finite_6221("波形周期数", duration_cycles)
+    else:
+        mode, value = "MIXED", None
+    return {
+        "duration_mode": mode,
+        "duration_value": value,
+        "duration_time_s": duration_time,
+        "duration_cycles": duration_cycles,
+    }
+
+
+def _read_6221_state(record: DeviceRecord, instrument) -> dict[str, Any]:
+    """读取 6221 的直流设置和可可靠查询的波形配置。"""
+    mapping_key = _6221_mapping_key(record)
+    rule = _gs200_safety_rule(mapping_key)
+    current_ma = _finite_6221("电流设定值", instrument.get_current(), scale=1000.0)
+    validate_safety_limit(mapping_key, current_ma, {mapping_key: rule})
+    shape = str(instrument.get_waveform_function()).strip().upper()
+    device = record.to_dict()
+    device.pop("channels", None)
+    waveform = {
+        "shape": shape,
+        "frequency_hz": _finite_6221("波形频率", instrument.get_waveform_frequency()),
+        "amplitude_peak_ma": _finite_6221(
+            "波形峰值幅度", instrument.get_waveform_amplitude(), scale=1000.0
+        ),
+        "offset_ma": _finite_6221(
+            "波形偏置", instrument.get_waveform_offset(), scale=1000.0
+        ),
+        "duty_cycle_percent": _finite_6221(
+            "波形占空比", instrument.get_waveform_duty_cycle()
+        ),
+        "ranging": str(instrument.get_waveform_ranging()).strip().upper(),
+        **_6221_duration_state(instrument),
+        "arbitrary_point_count": (
+            int(instrument.get_arbitrary_point_count()) if shape == "ARB" else 0
+        ),
+    }
+    return {
+        **device,
+        "idn": instrument.idn(),
+        "mapping_key": mapping_key,
+        "output": bool(instrument.get_output()),
+        "current_ma": current_ma,
+        "current_range_ma": _finite_6221(
+            "电流量程", instrument.get_current_range(), scale=1000.0
+        ),
+        "autorange": bool(instrument.get_autorange()),
+        "compliance_v": _finite_6221("Compliance", instrument.get_compliance()),
+        "analog_filter": bool(instrument.get_analog_filter()),
+        "output_response": str(instrument.get_output_response()).strip().upper(),
+        "min_current_ma": float(rule["min"]),
+        "max_current_ma": float(rule["max"]),
+        "waveform": waveform,
+    }
+
+
+def _raise_after_6221_error(instrument, error: Exception) -> None:
+    """发生读写错误后依次中止波形、关闭输出并归零。"""
+    shutdown_errors: list[str] = []
+    for label, action in (
+        ("中止波形", instrument.abort_waveform),
+        ("关闭输出", lambda: instrument.set_output(False)),
+        ("电流归零", lambda: instrument.set_current(0.0)),
+    ):
+        try:
+            action()
+        except Exception as shutdown_error:
+            shutdown_errors.append(f"{label}失败: {shutdown_error}")
+    if shutdown_errors:
+        raise RuntimeError(
+            f"{error}；Keithley 6221 安全关断异常: {'；'.join(shutdown_errors)}"
+        ) from error
+    raise error
 
 
 def _raise_after_gs200_error(
@@ -538,6 +676,12 @@ def read_device(device_id: str) -> dict[str, Any]:
                     exc,
                 )
 
+        if record.type == "6221":
+            try:
+                return _read_6221_state(record, instrument)
+            except Exception as exc:
+                _raise_after_6221_error(instrument, exc)
+
         if record.type in {"DG4000", "DG900"}:
             channels = [
                 _read_generator_channel(instrument, record.type, channel)
@@ -631,15 +775,14 @@ def _apply_basic_waveform(instrument, device_type: str, channel: int,
     for key, setter in waveform_specific:
         if settings.get(key) is not None:
             setter(float(settings[key]), channel)
-    if device_type == "DG4000":
-        if settings.get("voltage_unit"):
-            instrument.set_voltage_unit(settings["voltage_unit"], channel)
-        if settings.get("load") is not None:
-            load = settings["load"]
-            instrument.set_output_load(
-                "INF" if str(load).upper().startswith("INF") else float(load),
-                channel,
-            )
+    if settings.get("voltage_unit"):
+        instrument.set_voltage_unit(settings["voltage_unit"], channel)
+    if settings.get("load") is not None:
+        load = settings["load"]
+        instrument.set_output_load(
+            "INF" if str(load).upper().startswith("INF") else float(load),
+            channel,
+        )
 
 
 def _apply_modulation(instrument, device_type: str, channel: int,
@@ -738,7 +881,16 @@ def apply_generator_channel(
         raise PermissionError(f"{channel.label} 在通用设备页只读")
     if record.type not in {"DG4000", "DG900"}:
         raise TypeError("该接口仅用于信号发生器")
-    _validate_generator_output(channel.mapping_key, settings)
+    mapping_key = str(settings.pop("mapping_key", "")).strip()
+    if not mapping_key:
+        if len(channel.mapping_keys) != 1:
+            raise ValueError("共享通道写入前必须明确选择物理量语义")
+        mapping_key = channel.mapping_keys[0]
+    if mapping_key not in channel.mapping_keys:
+        raise ValueError(
+            f"{mapping_key} 未绑定到设备 {device_id} CH{channel_number}"
+        )
+    _validate_generator_output(mapping_key, settings)
 
     instrument = _connect(record)
     try:
@@ -805,7 +957,7 @@ def apply_generator_channel(
                 instrument.wait_for_operation_complete()
                 instrument.raise_for_errors()
         except Exception:
-            rule = load_safety_limits().get(channel.mapping_key, {})
+            rule = load_safety_limits().get(mapping_key, {})
             if rule.get("output_off_on_error"):
                 try:
                     instrument.set_output(False, channel_number)
@@ -822,12 +974,18 @@ def apply_current_source(
     settings: dict[str, Any],
 ) -> dict[str, Any]:
     """安全设置 GS200 主磁场电流和输出状态，并返回实际回读值。"""
-    if not settings or not ({"current_ma", "output"} & settings.keys()):
-        raise ValueError("电流源设置至少需要 current_ma 或 output")
-
     record = find_device(device_id)
     if record.type != "GS200":
         raise TypeError("该接口仅用于 GS200 电流源")
+    unsupported = sorted(
+        set(settings) - {"current_ma", "output", "confirm_output_enable"}
+    )
+    if unsupported:
+        raise ValueError(
+            "GS200 不支持 Keithley 6221 专属字段: " + ", ".join(unsupported)
+        )
+    if not settings or not ({"current_ma", "output"} & settings.keys()):
+        raise ValueError("电流源设置至少需要 current_ma 或 output")
     mapping_key = _gs200_mapping_key(record)
     rule = _gs200_safety_rule(mapping_key)
     current_ma = settings.get("current_ma")
@@ -1215,3 +1373,803 @@ def apply_scope(device_id: str, settings: dict[str, Any]) -> dict[str, Any]:
     finally:
         instrument.disconnect()
     return read_device(device_id)
+
+
+_CONTROL_TYPES = {
+    "signal_generator": ("generator", None),
+    "gs200": ("current_source", None),
+    "keithley_6221": ("current_source", None),
+    "toptica_dlc_pro": ("laser", None),
+    "sds_acquisition": ("scope", None),
+    "tec_controller": ("tec", None),
+    "lockin_amplifier": ("hf2", True),
+}
+
+
+def _short_device_resource(device: DeviceDefinition) -> str:
+    if not device.resource:
+        return str(device.connection.get("device_id", device.device_id))
+    fields = device.resource.split("::")
+    return fields[3] if len(fields) > 3 else device.resource
+
+
+def _shared_aliases(mapping_key: str, mapping_document: dict[str, Any]) -> list[str]:
+    for members in mapping_document["constraints"]["shared_channel_groups"].values():
+        if mapping_key in members:
+            return [key for key in members if key != mapping_key]
+    return []
+
+
+def list_control_targets() -> dict[str, Any]:
+    """返回按 mapping.yaml 顺序排列的可控物理量，不访问任何硬件。"""
+    library = public_device_library()
+    mapping_document = public_physical_mappings()
+    devices = load_device_definitions()
+    limits = load_safety_limits()
+    targets: list[dict[str, Any]] = []
+    for mapping_key, config in mapping_document["mapping"].items():
+        # rf_coil 是 Y_magnetic_field 的历史别名，控制页只保留一个入口。
+        if mapping_key == "rf_coil":
+            continue
+        device_id = str(config.get("device_id", "")).strip()
+        device = devices.get(device_id)
+        if not device or device.instrument not in _CONTROL_TYPES:
+            continue
+        kind, forced_read_only = _CONTROL_TYPES[device.instrument]
+        endpoint = Endpoint.from_dict(config.get("endpoint"))
+        safety = dict(limits.get(mapping_key) or {})
+        targets.append({
+            "mapping_key": mapping_key,
+            "label": str(config.get("label", mapping_key)),
+            "description": "",
+            "kind": kind,
+            "device_id": device_id,
+            "device_label": device.label,
+            "model": device.model,
+            "short_resource": _short_device_resource(device),
+            "endpoint": (
+                {"kind": endpoint.kind, "index": endpoint.index}
+                if endpoint else None
+            ),
+            "shared_mapping_keys": (
+                [] if mapping_key == "Y_magnetic_field"
+                else _shared_aliases(mapping_key, mapping_document)
+            ),
+            "safety": safety,
+            "read_only": bool(forced_read_only),
+        })
+    return {
+        "device_library_revision": library["revision"],
+        "physical_mapping_revision": mapping_document["revision"],
+        "targets": targets,
+    }
+
+
+def _resolve_control_target(
+    mapping_key: str,
+    device_library_revision: str,
+    physical_mapping_revision: str,
+) -> tuple[dict[str, Any], DeviceDefinition, Endpoint | None]:
+    catalog = list_control_targets()
+    if (
+        catalog["device_library_revision"] != device_library_revision
+        or catalog["physical_mapping_revision"] != physical_mapping_revision
+    ):
+        raise ControlRevisionConflict("设备库或物理量映射已变化，请重新加载后再操作")
+    target = next(
+        (item for item in catalog["targets"] if item["mapping_key"] == mapping_key),
+        None,
+    )
+    if target is None:
+        raise KeyError(f"物理量 {mapping_key} 不存在或当前未映射")
+    device = load_device_definitions()[target["device_id"]]
+    endpoint_payload = target.get("endpoint")
+    endpoint = Endpoint.from_dict(endpoint_payload)
+    return target, device, endpoint
+
+
+def _target_record(
+    target: dict[str, Any], device: DeviceDefinition, endpoint: Endpoint | None
+) -> DeviceRecord:
+    type_by_instrument = {
+        "signal_generator": device.model.upper(),
+        "gs200": "GS200",
+        "keithley_6221": "6221",
+        "toptica_dlc_pro": "DLC_PRO",
+        "sds_acquisition": "SDS",
+        "tec_controller": "TEC103",
+        "lockin_amplifier": "HF2",
+    }
+    options = {"device_id": device.device_id, **device.connection}
+    mapping = load_mapping_document()["mapping"][target["mapping_key"]]
+    options.update({
+        key: value
+        for key, value in mapping.items()
+        if key.endswith("_safety_key") or key in {
+            "source_function", "remote_emission_control_enabled"
+        }
+    })
+    options["mapping_key"] = target["mapping_key"]
+    channel = []
+    if endpoint and endpoint.kind == "channel":
+        channel = [ChannelRecord(
+            endpoint.index,
+            target["mapping_key"],
+            target["label"],
+            mapping_keys=[target["mapping_key"], *target["shared_mapping_keys"]],
+        )]
+    if endpoint and endpoint.kind == "laser_channel":
+        options["laser_channel"] = endpoint.index
+    return DeviceRecord(
+        id=device.device_id,
+        type=type_by_instrument[device.instrument],
+        label=device.label,
+        resource=device.resource or "",
+        short_resource=_short_device_resource(device),
+        channels=channel,
+        options=options,
+    )
+
+
+def _read_scope_state(record: DeviceRecord, instrument) -> dict[str, Any]:
+    channels = [{
+        "number": number,
+        "label": f"CH{number}",
+        "enabled": instrument.get_channel_state(number),
+        "scale": instrument.get_channel_scale(number),
+        "offset": instrument.get_channel_offset(number),
+        "coupling": instrument.get_channel_coupling(number),
+        "impedance": instrument.get_channel_impedance(number),
+        "probe": instrument.get_channel_probe(number),
+    } for number in range(1, 5)]
+    return {
+        **record.to_dict(), "idn": instrument.idn(),
+        "sampling_rate": instrument.get_sampling_rate(),
+        "memory_depth": instrument.get_memory_depth(),
+        "acquire_type": instrument.get_acquire_type(),
+        "timebase_scale": instrument.get_timebase_scale(),
+        "timebase_delay": instrument.get_timebase_delay(),
+        "channels": channels,
+        "trigger": {
+            "mode": instrument.get_trigger_mode(),
+            "type": instrument.get_trigger_type(),
+            "source": instrument.get_trigger_source(),
+            "slope": instrument.get_trigger_slope(),
+            "level": instrument.get_trigger_level(),
+        },
+    }
+
+
+def _read_tec_state(record: DeviceRecord, instrument, channel: int) -> dict[str, Any]:
+    mapping_key = str(record.options["mapping_key"])
+    rule = _gs200_safety_rule(mapping_key)
+    return {
+        "type": "TEC103", "id": record.id, "label": record.label,
+        "resource": record.resource, "short_resource": record.short_resource,
+        "options": record.options, "channel": channel,
+        "target_temperature_c": instrument.get_target_temperature(channel),
+        "actual_temperature_c": (
+            lambda value: value if math.isfinite(value) else None
+        )(float(instrument.get_temperature(channel))),
+        "enabled": instrument.get_enable(channel),
+        "output_mode": instrument.get_output_mode(channel),
+        "resistance_kohm": instrument.get_resistance(channel),
+        "min_temperature_c": float(rule["min"]),
+        "max_temperature_c": float(rule["max"]),
+    }
+
+
+def _read_hf2_state(record: DeviceRecord, instrument, demod_idx: int) -> dict[str, Any]:
+    sample = demod.read_demod_sample(instrument, demod_idx)
+    base = instrument.demod_path(demod_idx)
+    return {
+        "type": "HF2", "id": record.id, "label": record.label,
+        "resource": record.resource, "short_resource": record.short_resource,
+        "options": record.options, "demod_idx": demod_idx,
+        "x": float(sample["x"]), "y": float(sample["y"]),
+        "r": float(sample["r"]), "phase": float(sample["phase"]),
+        "frequency": float(sample["frequency"]),
+        "enabled": bool(instrument.get_int(f"{base}/enable")),
+        "sample_rate": float(instrument.get_double(f"{base}/rate")),
+        "time_constant": float(instrument.get_double(f"{base}/timeconstant")),
+        "order": int(instrument.get_int(f"{base}/order")),
+        "harmonic": int(instrument.get_int(f"{base}/harmonic")),
+        "phase_shift": float(instrument.get_double(f"{base}/phaseshift")),
+    }
+
+
+def _read_target_connected(
+    target: dict[str, Any], record: DeviceRecord, endpoint: Endpoint | None, instrument
+) -> dict[str, Any]:
+    if target["kind"] == "generator":
+        if endpoint is None or endpoint.kind != "channel":
+            raise TypeError(f"{target['mapping_key']} 缺少信号源通道端点")
+        return {
+            **record.to_dict(), "idn": instrument.idn(),
+            "reference_clock": instrument.get_ref_clock_source(),
+            "channels": [_read_generator_channel(instrument, record.type, record.channels[0])],
+        }
+    if target["kind"] == "current_source":
+        if record.type == "GS200":
+            return _read_gs200_state(record, instrument)
+        if record.type == "6221":
+            return _read_6221_state(record, instrument)
+        raise TypeError(f"不支持的电流源型号: {record.type}")
+    if target["kind"] == "laser":
+        return _read_dlc_pro_state(record, instrument)
+    if target["kind"] == "scope":
+        return _read_scope_state(record, instrument)
+    if target["kind"] == "tec":
+        if endpoint is None or endpoint.kind != "channel":
+            raise TypeError(f"{target['mapping_key']} 缺少 TEC 通道端点")
+        return _read_tec_state(record, instrument, endpoint.index)
+    if target["kind"] == "hf2":
+        if endpoint is None or endpoint.kind != "demod":
+            raise TypeError(f"{target['mapping_key']} 缺少 HF2 Demod 端点")
+        return _read_hf2_state(record, instrument, endpoint.index)
+    raise TypeError(f"不支持的控制目标类型: {target['kind']}")
+
+
+def read_control_target(
+    mapping_key: str, device_library_revision: str, physical_mapping_revision: str
+) -> dict[str, Any]:
+    target, device, endpoint = _resolve_control_target(
+        mapping_key, device_library_revision, physical_mapping_revision
+    )
+    record = _target_record(target, device, endpoint)
+    instrument = _connect(record)
+    try:
+        try:
+            snapshot = _read_target_connected(target, record, endpoint, instrument)
+        except Exception as exc:
+            if record.type == "6221":
+                _raise_after_6221_error(instrument, exc)
+            raise
+    finally:
+        instrument.disconnect()
+    return {
+        "target": target, "snapshot": snapshot,
+        "read_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def read_control_targets(
+    device_library_revision: str, physical_mapping_revision: str
+) -> list[dict[str, Any]]:
+    """在一次配置校验中顺序读取全部控制目标。"""
+    catalog = list_control_targets()
+    if (
+        catalog["device_library_revision"] != device_library_revision
+        or catalog["physical_mapping_revision"] != physical_mapping_revision
+    ):
+        raise ControlRevisionConflict("设备库或物理量映射已变化，请重新加载后再操作")
+    results = []
+    for target in catalog["targets"]:
+        instrument = None
+        try:
+            device = load_device_definitions()[target["device_id"]]
+            endpoint = Endpoint.from_dict(target.get("endpoint"))
+            record = _target_record(target, device, endpoint)
+            instrument = _connect(record)
+            try:
+                snapshot = _read_target_connected(target, record, endpoint, instrument)
+            except Exception as exc:
+                if record.type == "6221":
+                    _raise_after_6221_error(instrument, exc)
+                raise
+            results.append(_control_response(target, snapshot))
+        except Exception as exc:
+            results.append({"target": target, "snapshot": None, "read_at": None, "error": str(exc)})
+        finally:
+            if instrument is not None:
+                instrument.disconnect()
+    return results
+
+
+def _control_response(target: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "target": target, "snapshot": snapshot,
+        "read_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _apply_generator_connected(
+    target: dict[str, Any], record: DeviceRecord, instrument, settings: dict[str, Any]
+) -> None:
+    channel = record.channels[0].number
+    current = _read_generator_channel(instrument, record.type, record.channels[0])
+    current_unit = str(current.get("voltage_unit") or "").upper()
+    requested_unit = str(settings.get("voltage_unit") or current_unit).upper()
+    only_turning_off = settings.get("output") is False and set(settings) <= {"output"}
+    only_switching_vpp = requested_unit == "VPP" and set(settings) <= {"voltage_unit"}
+    if current_unit != "VPP" and not (only_turning_off or only_switching_vpp):
+        raise ValueError("当前电压单位不是 Vpp；只能关闭输出，或先切换为 Vpp 并重新读取")
+    if current_unit == "VPP" and requested_unit not in {"", "VPP"}:
+        raise ValueError("控制页写入必须保持 Vpp；切换到其他电压单位不受支持")
+    if not only_turning_off and not only_switching_vpp:
+        merged = {
+            "offset": settings.get("offset", current.get("offset")),
+            "amplitude": settings.get("amplitude", current.get("amplitude")),
+        }
+        if str(settings.get("shape", current.get("shape", ""))).upper() == "DC":
+            merged["amplitude"] = 0.0
+        _validate_generator_output(target["mapping_key"], merged)
+
+    if record.type == "DG900":
+        instrument.clear_status()
+    _apply_basic_waveform(instrument, record.type, channel, settings)
+    mod = dict(settings.get("mod") or {})
+    burst = dict(settings.get("burst") or {})
+    if mod.get("enabled") and burst.get("enabled"):
+        selected = settings.get("target_mode")
+        if selected == "mod":
+            burst["enabled"] = False
+        elif selected == "burst":
+            mod["enabled"] = False
+        else:
+            raise ValueError("Mod 与 Burst 不能同时启用")
+    if mod or burst:
+        if record.type == "DG900":
+            if burst.get("enabled"):
+                instrument.disable_all_mod(channel)
+                _apply_burst(instrument, channel, burst)
+                instrument.set_burst_state(True, channel)
+            elif mod.get("enabled"):
+                instrument.set_burst_state(False, channel)
+                instrument.disable_all_mod(channel)
+                if (mod.get("type") or "AM") == "PWM" and not str(
+                    settings.get("shape", current.get("shape", ""))
+                ).upper().startswith("PULS"):
+                    raise ValueError("PWM 调制要求基础波形为 PULSe")
+                _apply_modulation(instrument, record.type, channel, mod)
+                instrument.set_mod_type_state(mod.get("type") or "AM", True, channel)
+            else:
+                instrument.set_burst_state(False, channel)
+                instrument.disable_all_mod(channel)
+        else:
+            if burst.get("enabled"):
+                instrument.set_mod_state(False, channel)
+                _apply_burst(instrument, channel, burst)
+                instrument.set_burst_state(True, channel)
+            elif mod.get("enabled"):
+                instrument.set_burst_state(False, channel)
+                if (mod.get("type") or "AM") == "PWM" and not str(
+                    settings.get("shape", current.get("shape", ""))
+                ).upper().startswith("PULS"):
+                    raise ValueError("PWM 调制要求基础波形为 PULSe")
+                _apply_modulation(instrument, record.type, channel, mod)
+                instrument.set_mod_state(True, channel)
+            else:
+                instrument.set_burst_state(False, channel)
+                instrument.set_mod_state(False, channel)
+    if "output" in settings:
+        instrument.set_output(bool(settings["output"]), channel)
+    if record.type == "DG900":
+        instrument.wait_for_operation_complete()
+        instrument.raise_for_errors()
+
+
+def apply_control_target_generator(
+    mapping_key: str, device_library_revision: str,
+    physical_mapping_revision: str, settings: dict[str, Any]
+) -> dict[str, Any]:
+    target, device, endpoint = _resolve_control_target(
+        mapping_key, device_library_revision, physical_mapping_revision
+    )
+    if target["kind"] != "generator" or endpoint is None or endpoint.kind != "channel":
+        raise TypeError(f"{mapping_key} 不是信号发生器通道")
+    record = _target_record(target, device, endpoint)
+    instrument = _connect(record)
+    try:
+        try:
+            _apply_generator_connected(target, record, instrument, dict(settings))
+            snapshot = _read_target_connected(target, record, endpoint, instrument)
+        except Exception:
+            rule = load_safety_limits().get(mapping_key, {})
+            if rule.get("output_off_on_error"):
+                try:
+                    instrument.set_output(False, endpoint.index)
+                except Exception:
+                    pass
+            raise
+    finally:
+        instrument.disconnect()
+    return _control_response(target, snapshot)
+
+
+def _normalize_6221_waveform(
+    mapping_key: str,
+    waveform: dict[str, Any],
+    rule: dict[str, Any],
+) -> dict[str, Any]:
+    action = str(waveform.get("action", "")).strip().lower()
+    if action not in {"configure", "configure_and_start", "abort"}:
+        raise ValueError("waveform.action 无效")
+    if action == "abort":
+        extra = set(waveform) - {"action", "confirm_start"}
+        if extra:
+            raise ValueError("中止波形时不能携带波形配置字段")
+        return {"action": action}
+
+    required = {
+        "shape", "frequency_hz", "amplitude_peak_ma", "offset_ma",
+        "ranging", "duration_mode",
+    }
+    missing = sorted(key for key in required if waveform.get(key) is None)
+    if missing:
+        raise ValueError("配置波形缺少字段: " + ", ".join(missing))
+    if action == "configure_and_start" and waveform.get("confirm_start") is not True:
+        raise ValueError("启动 Keithley 6221 波形必须完成二次确认")
+
+    shape = str(waveform["shape"]).strip().upper()
+    if shape not in {"SIN", "SQU", "RAMP", "ARB"}:
+        raise ValueError("waveform.shape 只能是 SIN、SQU、RAMP 或 ARB")
+    frequency_hz = _finite_6221("波形频率", waveform["frequency_hz"])
+    amplitude_ma = _finite_6221("波形峰值幅度", waveform["amplitude_peak_ma"])
+    offset_ma = _finite_6221("波形偏置", waveform["offset_ma"])
+    if not 1e-3 <= frequency_hz <= 1e5:
+        raise ValueError("波形频率必须在 0.001 Hz 到 100000 Hz 之间")
+    if not 2e-9 <= amplitude_ma <= 105:
+        raise ValueError("波形峰值幅度必须在 0.000000002 mA 到 105 mA 之间")
+    if not -105 <= offset_ma <= 105:
+        raise ValueError("波形偏置必须在 -105 mA 到 105 mA 之间")
+
+    duty = _finite_6221(
+        "波形占空比", waveform.get("duty_cycle_percent", 50.0)
+    )
+    if not 0 <= duty <= 100:
+        raise ValueError("波形占空比必须在 0% 到 100% 之间")
+    ranging = str(waveform["ranging"]).strip().upper()
+    if ranging not in {"BEST", "FIXED"}:
+        raise ValueError("波形量程方式只能是 BEST 或 FIXED")
+    duration_mode = str(waveform["duration_mode"]).strip().upper()
+    if duration_mode not in {"TIME", "CYCLES", "INFINITE"}:
+        raise ValueError("波形时长模式只能是 TIME、CYCLES 或 INFINITE")
+    duration_value = waveform.get("duration_value")
+    if duration_mode == "INFINITE":
+        if duration_value is not None:
+            raise ValueError("无限时长不能提供 duration_value")
+    elif duration_value is None:
+        raise ValueError("有限波形时长必须提供 duration_value")
+    else:
+        duration_value = _finite_6221("波形时长", duration_value)
+        if duration_mode == "TIME" and not 100e-9 <= duration_value <= 999999.999:
+            raise ValueError("时间时长必须在 100 ns 到 999999.999 s 之间")
+        if duration_mode == "CYCLES" and not 0.001 <= duration_value <= 99999999900:
+            raise ValueError("周期数必须在 0.001 到 99999999900 之间")
+
+    points = waveform.get("arbitrary_points")
+    if shape == "ARB":
+        if points is None:
+            raise ValueError("任意波必须提供 arbitrary_points")
+        points = [_finite_6221("任意波点", value) for value in points]
+        if not 2 <= len(points) <= 65535:
+            raise ValueError("任意波点数必须在 2 到 65535 之间")
+        if any(value < -1 or value > 1 for value in points):
+            raise ValueError("任意波点必须在 [-1, 1] 范围内")
+        envelope_low = offset_ma + amplitude_ma * min(points)
+        envelope_high = offset_ma + amplitude_ma * max(points)
+    else:
+        if points is not None:
+            raise ValueError("只有 ARB 波形可以提供 arbitrary_points")
+        envelope_low = offset_ma - amplitude_ma
+        envelope_high = offset_ma + amplitude_ma
+
+    if envelope_low < -105 or envelope_high > 105:
+        raise ValueError(
+            f"Keithley 6221 波形包络 [{envelope_low:g}, {envelope_high:g}] mA "
+            "超出设备 ±105 mA 边界"
+        )
+    validate_safety_limit(mapping_key, envelope_low, {mapping_key: rule})
+    validate_safety_limit(mapping_key, envelope_high, {mapping_key: rule})
+    return {
+        "action": action,
+        "shape": shape,
+        "frequency_hz": frequency_hz,
+        "amplitude_peak_ma": amplitude_ma,
+        "offset_ma": offset_ma,
+        "duty_cycle_percent": duty,
+        "ranging": ranging,
+        "duration_mode": duration_mode,
+        "duration_value": duration_value,
+        "arbitrary_points": points,
+        "envelope_low_ma": envelope_low,
+        "envelope_high_ma": envelope_high,
+    }
+
+
+def _apply_6221_waveform_connected(instrument, waveform: dict[str, Any]) -> None:
+    instrument.abort_waveform()
+    instrument.set_output(False)
+    if waveform["action"] == "abort":
+        instrument.set_current(0.0)
+        instrument.wait_for_operation_complete()
+        instrument.raise_for_errors()
+        return
+
+    instrument.set_waveform_function(waveform["shape"])
+    instrument.set_waveform_frequency(waveform["frequency_hz"])
+    instrument.set_waveform_amplitude(waveform["amplitude_peak_ma"] / 1000.0)
+    instrument.set_waveform_offset(waveform["offset_ma"] / 1000.0)
+    if waveform["shape"] == "SQU":
+        instrument.set_waveform_duty_cycle(waveform["duty_cycle_percent"])
+    instrument.set_waveform_ranging(waveform["ranging"])
+    instrument.set_waveform_duration(
+        waveform["duration_mode"], waveform["duration_value"]
+    )
+    if waveform["shape"] == "ARB":
+        instrument.upload_arbitrary(waveform["arbitrary_points"])
+    instrument.wait_for_operation_complete()
+    instrument.raise_for_errors()
+    instrument.set_output(False)
+    if waveform["action"] == "configure_and_start":
+        instrument.arm_waveform()
+        instrument.start_waveform()
+        instrument.wait_for_operation_complete()
+        instrument.raise_for_errors()
+
+
+def _apply_6221_dc_connected(
+    mapping_key: str,
+    instrument,
+    settings: dict[str, Any],
+    rule: dict[str, Any],
+) -> None:
+    current_ma = settings.get("current_ma")
+    if current_ma is not None:
+        current_ma = _finite_6221("目标电流", current_ma)
+        validate_safety_limit(mapping_key, current_ma, {mapping_key: rule})
+    range_ma = settings.get("current_range_ma")
+    if range_ma is not None:
+        range_ma = _finite_6221("电流量程", range_ma)
+        if range_ma <= 0:
+            raise ValueError("电流量程必须大于 0")
+    if settings.get("autorange") is True and range_ma is not None:
+        raise ValueError("启用 autorange 时不能同时设置 current_range_ma")
+
+    instrument.abort_waveform()
+    output_before = bool(instrument.get_output())
+    requested_output = settings.get("output")
+    disruptive = bool(
+        {"current_range_ma", "autorange", "output_response"} & set(settings)
+    )
+    requires_enable_confirmation = requested_output is True and (
+        not output_before or disruptive
+    )
+    if requires_enable_confirmation and (
+        current_ma is None or settings.get("confirm_output_enable") is not True
+    ):
+        raise ValueError("开启 Keithley 6221 直流输出必须提供电流并完成二次确认")
+    if disruptive or requested_output is False:
+        instrument.set_output(False)
+
+    if current_ma is not None:
+        instrument.set_current(current_ma / 1000.0)
+    if "autorange" in settings:
+        instrument.set_autorange(bool(settings["autorange"]))
+    if range_ma is not None:
+        if "autorange" not in settings:
+            instrument.set_autorange(False)
+        instrument.set_current_range(range_ma / 1000.0)
+    if "compliance_v" in settings:
+        instrument.set_compliance(
+            _finite_6221("Compliance", settings["compliance_v"])
+        )
+    if "analog_filter" in settings:
+        instrument.set_analog_filter(bool(settings["analog_filter"]))
+    if "output_response" in settings:
+        instrument.set_output_response(str(settings["output_response"]))
+    if requested_output is True:
+        instrument.set_output(True)
+    instrument.wait_for_operation_complete()
+    instrument.raise_for_errors()
+
+
+def apply_control_target_current_source(
+    mapping_key: str, device_library_revision: str,
+    physical_mapping_revision: str, settings: dict[str, Any]
+) -> dict[str, Any]:
+    target, device, endpoint = _resolve_control_target(
+        mapping_key, device_library_revision, physical_mapping_revision
+    )
+    if target["kind"] != "current_source":
+        raise TypeError(f"{mapping_key} 不是电流源")
+    record = _target_record(target, device, endpoint)
+    rule = _gs200_safety_rule(mapping_key)
+
+    if record.type == "GS200":
+        allowed = {"current_ma", "output", "confirm_output_enable"}
+        unsupported = sorted(set(settings) - allowed)
+        if unsupported:
+            raise ValueError(
+                "GS200 不支持 Keithley 6221 专属字段: " + ", ".join(unsupported)
+            )
+        current_ma = settings.get("current_ma")
+        if current_ma is not None:
+            current_ma = _finite_float("目标电流", current_ma)
+            validate_safety_limit(mapping_key, current_ma, {mapping_key: rule})
+        instrument = _connect(record)
+        try:
+            try:
+                output_before = bool(instrument.get_output())
+                requested_output = settings.get("output")
+                if requested_output is True and not output_before:
+                    if current_ma is None or settings.get("confirm_output_enable") is not True:
+                        raise ValueError("开启 GS200 输出必须提供电流并完成二次确认")
+                if requested_output is False:
+                    instrument.set_output(False)
+                if current_ma is not None:
+                    instrument.set_current(current_ma / 1000.0)
+                if requested_output is True:
+                    instrument.set_output(True)
+                snapshot = _read_gs200_state(record, instrument)
+            except Exception as exc:
+                _raise_after_gs200_error(instrument, mapping_key, exc)
+        finally:
+            instrument.disconnect()
+        return _control_response(target, snapshot)
+
+    if record.type != "6221":
+        raise TypeError(f"不支持的电流源型号: {record.type}")
+
+    waveform = settings.get("waveform")
+    dc_fields = set(settings) - {"waveform"}
+    if waveform is not None and dc_fields:
+        raise ValueError("Keithley 6221 的直流字段与 waveform 不能同时设置")
+    if waveform is not None:
+        normalized_waveform = _normalize_6221_waveform(
+            mapping_key, dict(waveform), rule
+        )
+    elif not dc_fields:
+        raise ValueError("Keithley 6221 设置至少需要一个直流字段或 waveform")
+    else:
+        normalized_waveform = None
+        allowed = {
+            "current_ma", "output", "confirm_output_enable",
+            "current_range_ma", "autorange", "compliance_v",
+            "analog_filter", "output_response",
+        }
+        unsupported = sorted(dc_fields - allowed)
+        if unsupported:
+            raise ValueError("Keithley 6221 不支持字段: " + ", ".join(unsupported))
+
+    instrument = _connect(record)
+    try:
+        try:
+            if normalized_waveform is not None:
+                _apply_6221_waveform_connected(instrument, normalized_waveform)
+            else:
+                _apply_6221_dc_connected(mapping_key, instrument, settings, rule)
+            snapshot = _read_6221_state(record, instrument)
+        except Exception as exc:
+            _raise_after_6221_error(instrument, exc)
+    finally:
+        instrument.disconnect()
+    return _control_response(target, snapshot)
+
+
+def apply_control_target_laser(
+    mapping_key: str, device_library_revision: str,
+    physical_mapping_revision: str, settings: dict[str, Any]
+) -> dict[str, Any]:
+    target, device, endpoint = _resolve_control_target(
+        mapping_key, device_library_revision, physical_mapping_revision
+    )
+    if target["kind"] != "laser":
+        raise TypeError(f"{mapping_key} 不是 DLC pro 激光器")
+    record = _target_record(target, device, endpoint)
+    rules = _laser_safety_rules(record)
+    normalized = _normalize_laser_settings(record, settings, rules)
+    instrument = _connect(record)
+    try:
+        before = _read_dlc_pro_state(record, instrument)
+        _validate_laser_targets(normalized, before, rules)
+        if "current_set_ma" in normalized:
+            instrument.set_laser_current_ma(normalized["current_set_ma"])
+        if "temperature_set_c" in normalized:
+            instrument.set_laser_temperature_c(normalized["temperature_set_c"])
+        _apply_laser_scan_targets(instrument, normalized, before, rules)
+        if "scan_enabled" in normalized:
+            instrument.set_scan_enabled(normalized["scan_enabled"])
+        snapshot = _read_dlc_pro_state(record, instrument)
+    except Exception as exc:
+        _raise_laser_state_unknown(exc)
+    finally:
+        instrument.disconnect()
+    return _control_response(target, snapshot)
+
+
+def apply_control_target_emission(
+    mapping_key: str, device_library_revision: str,
+    physical_mapping_revision: str, settings: dict[str, Any]
+) -> dict[str, Any]:
+    target, device, endpoint = _resolve_control_target(
+        mapping_key, device_library_revision, physical_mapping_revision
+    )
+    if target["kind"] != "laser":
+        raise TypeError(f"{mapping_key} 不是 DLC pro 激光器")
+    record = _target_record(target, device, endpoint)
+    enabled = settings.get("enabled")
+    if not isinstance(enabled, bool):
+        raise TypeError("Emission 设置必须包含布尔值 enabled")
+    remote_allowed = bool(record.options.get("remote_emission_control_enabled", False))
+    if enabled:
+        if not remote_allowed:
+            raise PermissionError("远程 Emission ON 当前未在设备库中开放")
+        if settings.get("safety_acknowledged") is not True or settings.get("confirm_emission_enable") is not True:
+            raise ValueError("开启 Emission 必须完成两次安全确认")
+        expected = str(record.options.get("controller_serial", record.id))
+        if settings.get("confirmation_text") != expected:
+            raise ValueError(f"开启 Emission 必须输入 {expected}")
+    instrument = _connect(record)
+    try:
+        before = _read_dlc_pro_state(record, instrument)
+        if enabled:
+            _validate_emission_preconditions(before, _laser_safety_rules(record))
+        instrument.set_emission(enabled, remote_enable_allowed=remote_allowed)
+        snapshot = _read_dlc_pro_state(record, instrument)
+    except Exception as exc:
+        _raise_laser_state_unknown(exc)
+    finally:
+        instrument.disconnect()
+    return _control_response(target, snapshot)
+
+
+def apply_control_target_tec(
+    mapping_key: str, device_library_revision: str,
+    physical_mapping_revision: str, settings: dict[str, Any]
+) -> dict[str, Any]:
+    target, device, endpoint = _resolve_control_target(
+        mapping_key, device_library_revision, physical_mapping_revision
+    )
+    if target["kind"] != "tec" or endpoint is None or endpoint.kind != "channel":
+        raise TypeError(f"{mapping_key} 不是 TEC 温控通道")
+    if set(settings) != {"target_temperature_c"}:
+        raise ValueError("TEC 控制页只允许设置目标温度")
+    value = float(settings["target_temperature_c"])
+    validate_safety_limit(mapping_key, value, load_safety_limits())
+    record = _target_record(target, device, endpoint)
+    instrument = _connect(record)
+    try:
+        instrument.set_target_temperature(value, endpoint.index)
+        snapshot = _read_tec_state(record, instrument, endpoint.index)
+    finally:
+        instrument.disconnect()
+    return _control_response(target, snapshot)
+
+
+def apply_control_target_scope(
+    mapping_key: str, device_library_revision: str,
+    physical_mapping_revision: str, settings: dict[str, Any]
+) -> dict[str, Any]:
+    target, device, endpoint = _resolve_control_target(
+        mapping_key, device_library_revision, physical_mapping_revision
+    )
+    if target["kind"] != "scope":
+        raise TypeError(f"{mapping_key} 不是 SDS 示波器")
+    record = _target_record(target, device, endpoint)
+    instrument = _connect(record)
+    try:
+        if settings.get("sampling_rate") is not None:
+            instrument.set_sampling_rate(float(settings["sampling_rate"]))
+        if settings.get("memory_depth"):
+            instrument.set_memory_depth(str(settings["memory_depth"]))
+        if settings.get("acquire_type"):
+            instrument.set_acquire_type(str(settings["acquire_type"]), settings.get("acquire_type_param"))
+        if settings.get("timebase_scale") is not None:
+            instrument.set_timebase_scale(float(settings["timebase_scale"]))
+        if settings.get("timebase_delay") is not None:
+            instrument.set_timebase_delay(float(settings["timebase_delay"]))
+        for channel in settings.get("channels", []):
+            number = int(channel["number"])
+            for key, setter in (("enabled", instrument.set_channel_state), ("scale", instrument.set_channel_scale), ("offset", instrument.set_channel_offset), ("coupling", instrument.set_channel_coupling), ("impedance", instrument.set_channel_impedance), ("probe", instrument.set_channel_probe)):
+                if key in channel:
+                    setter(number, channel[key])
+        trigger = settings.get("trigger", {})
+        for key, setter in (("mode", instrument.set_trigger_mode), ("type", instrument.set_trigger_type), ("source", instrument.set_trigger_source), ("slope", instrument.set_trigger_slope), ("level", instrument.set_trigger_level)):
+            if key in trigger:
+                setter(trigger[key])
+        snapshot = _read_scope_state(record, instrument)
+    finally:
+        instrument.disconnect()
+    return _control_response(target, snapshot)

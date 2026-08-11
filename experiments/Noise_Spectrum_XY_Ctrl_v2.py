@@ -31,6 +31,7 @@ from tqdm import tqdm
 # 设备库
 from gs200 import GS200Instrument
 from lab_workflows.devices import create_signal_generator
+from lab_workflows.common import load_mapping
 from tec_controller import TECInstrument
 from lab_workflows.steps import configure_temperature_control
 from sds_acquisition import SDSInstrument, SDSAcquisition, AcquisitionConfig, ChannelConfig
@@ -49,8 +50,7 @@ print("所有库导入成功")
 
 # %% Cell 4
 # 加载物理量→仪器映射
-with open(project_root / "params" / "mapping.yaml", encoding="utf-8") as f:
-    MAPPING = yaml.safe_load(f)["mapping"]
+MAPPING = load_mapping(project_root)
 
 # 加载安全限值
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:

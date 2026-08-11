@@ -7,6 +7,13 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 from ..common import CancellationToken, ProgressCallback
+from .requirements import (
+    ARBITRARY_MAPPING_KEYS,
+    INFINITE_BURST_MAPPING_KEYS,
+    MAPPING_ENDPOINT_FIELDS,
+    MAPPING_INSTRUMENTS,
+    TYPED_MAPPING_REQUIREMENTS,
+)
 
 
 SchemaProvider = Callable[[], dict[str, Any]]
@@ -30,6 +37,7 @@ class ExperimentDefinition:
     description: str
     data_type: str
     required_devices: tuple[str, ...]
+    required_mapping_keys: tuple[str, ...] = ()
     execution_mode: ExecutionMode = "typed_workflow"
     acquisition_program: str = ""
     analysis_program: str | None = None
@@ -44,6 +52,78 @@ class ExperimentDefinition:
     experiment_runner: ExperimentRunner | None = field(default=None, repr=False)
     analysis_runner: AnalysisRunner | None = field(default=None, repr=False)
 
+    def __post_init__(self) -> None:
+        if self.execution_mode == "typed_workflow" and not self.required_mapping_keys:
+            self.required_mapping_keys = TYPED_MAPPING_REQUIREMENTS.get(self.id, ())
+
+    def _mapping_errors(self) -> list[str]:
+        if self.execution_mode != "typed_workflow":
+            return []
+        from ..common import load_mapping
+
+        try:
+            mapping = load_mapping()
+        except Exception as exc:
+            return [f"设备映射配置无效: {exc}"]
+        missing = [key for key in self.required_mapping_keys if key not in mapping]
+        errors = [f"实验缺少物理量映射: {key}" for key in missing]
+        for key in self.required_mapping_keys:
+            config = mapping.get(key)
+            if not config:
+                continue
+            expected_instrument = MAPPING_INSTRUMENTS.get(
+                key, "signal_generator"
+            )
+            actual_instrument = str(config.get("instrument", ""))
+            if actual_instrument != expected_instrument:
+                errors.append(
+                    f"{key} 需要 {expected_instrument}，当前设备类型为 "
+                    f"{actual_instrument or '未知'}"
+                )
+            endpoint_field = MAPPING_ENDPOINT_FIELDS.get(
+                key,
+                "channel" if expected_instrument == "signal_generator" else None,
+            )
+            if endpoint_field and config.get(endpoint_field) is None:
+                errors.append(f"{key} 缺少所需端点 {endpoint_field}")
+        for key in ARBITRARY_MAPPING_KEYS.get(self.id, ()):
+            config = mapping.get(key, {})
+            if not config.get("capabilities", {}).get("supports_arbitrary", False):
+                errors.append(f"{key} 当前设备缺少任意波能力 supports_arbitrary")
+        for key in INFINITE_BURST_MAPPING_KEYS.get(self.id, ()):
+            config = mapping.get(key, {})
+            if not config.get("capabilities", {}).get(
+                "supports_infinite_burst", False
+            ):
+                errors.append(
+                    f"{key} 当前设备缺少无限 Burst 能力 supports_infinite_burst"
+                )
+        return errors
+
+    def _public_required_devices(self) -> list[str]:
+        if not self.required_mapping_keys:
+            return list(self.required_devices)
+        from ..common import load_mapping
+
+        try:
+            mapping = load_mapping()
+        except Exception:
+            return list(self.required_devices)
+        result: list[str] = []
+        seen: set[str] = set()
+        for key in self.required_mapping_keys:
+            config = mapping.get(key, {})
+            marker = str(
+                config.get("device_id") or config.get("resource") or key
+            )
+            if marker in seen:
+                continue
+            seen.add(marker)
+            label = str(config.get("label", key))
+            model = str(config.get("model", config.get("instrument", "")))
+            result.append(f"{label} ({model})" if model else label)
+        return result
+
     def public(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -53,7 +133,8 @@ class ExperimentDefinition:
             "variant": self.variant,
             "description": self.description,
             "data_type": self.data_type,
-            "required_devices": list(self.required_devices),
+            "required_devices": self._public_required_devices(),
+            "required_mapping_keys": list(self.required_mapping_keys),
             "execution_mode": self.execution_mode,
             "acquisition_program": self.acquisition_program,
             "analysis_program": self.analysis_program,
@@ -79,7 +160,10 @@ class ExperimentDefinition:
         self.defaults_saver(values)
 
     def preflight(self, values: dict[str, Any]) -> list[str]:
-        return self.preflight_runner(values) if self.preflight_runner else []
+        errors = self._mapping_errors()
+        if self.preflight_runner:
+            errors.extend(self.preflight_runner(values))
+        return errors
 
     def run(
         self,
@@ -89,6 +173,9 @@ class ExperimentDefinition:
     ) -> dict[str, Any]:
         if not self.experiment_runner:
             raise RuntimeError(f"实验 {self.id} 尚未接入运行工作流")
+        mapping_errors = self._mapping_errors()
+        if mapping_errors:
+            raise ValueError("；".join(mapping_errors))
         return self.experiment_runner(values, progress, cancellation)
 
     def analyze(

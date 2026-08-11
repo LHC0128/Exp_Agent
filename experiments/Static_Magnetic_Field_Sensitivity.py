@@ -35,9 +35,13 @@ import matplotlib.pyplot as plt
 
 # 设备库
 from gs200 import GS200Instrument
-from lab_workflows.devices import create_signal_generator
+from lab_workflows.common import load_mapping
+from lab_workflows.instrument_config import instrument_config_snapshot
 from lab_workflows.steps import (
+    DeviceSession,
+    connect_signal_generator_routes,
     configure_temperature_control as configure_optional_temperature,
+    synchronize_connected_clocks,
 )
 from tec_controller import TECInstrument
 
@@ -52,8 +56,7 @@ print("库导入完成")
 
 # %% Cell 2
 # 加载物理量→仪器映射
-with open(project_root / "params" / "mapping.yaml", encoding="utf-8") as f:
-    MAPPING = yaml.safe_load(f)["mapping"]
+MAPPING = load_mapping(project_root)
 
 # 加载安全限值
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
@@ -263,12 +266,14 @@ def wait_for_temperature_stable(
 
 
 devices = {}
+session = DeviceSession()
 
 try:
     # ---- GS200: 主磁场 ----
     gs_cfg = MAPPING["main_magnetic_field"]
-    gs = GS200Instrument(gs_cfg["resource"])
-    gs.connect()
+    gs = session.connect(
+        "gs200", gs_cfg["resource"], lambda: GS200Instrument(gs_cfg["resource"])
+    )
     gs.set_source_function(gs_cfg["source_function"])
     # safety_limits.yaml 存储单位: mA, set_current_limit 单位: A
     gs.set_current_limit(LIMITS["main_magnetic_field"]["max"] / 1000.0)
@@ -276,63 +281,106 @@ try:
 
     # ---- DG4000: Z 磁场扫描 (共 2 通道) ----
     dg_sweep_cfg = MAPPING["Z_magnetic_field"]
-    dg_sweep = create_signal_generator(dg_sweep_cfg["resource"], channel=1)
-    dg_sweep.connect()
-    dg_sweep.set_ref_clock_source("EXTernal")
+    dg_sweep, _ = connect_signal_generator_routes(
+        session,
+        "dg_sweep",
+        {
+            "z": ("Z_magnetic_field", dg_sweep_cfg),
+            "sequence_2": ("Time_sequence_2", MAPPING["Time_sequence_2"]),
+        },
+        logical_channels={"z": 1, "sequence_2": 2},
+    )
     devices["dg_sweep"] = dg_sweep
 
     # ---- DG912 Pro: Pump/Probe 光功率 (DC) ----
     dg_laser_cfg = MAPPING["Pump_laser_power"]
-    dg_laser = create_signal_generator(dg_laser_cfg["resource"], channel=1)
-    dg_laser.connect()
+    dg_laser, _ = connect_signal_generator_routes(
+        session,
+        "dg_laser",
+        {
+            "pump": ("Pump_laser_power", dg_laser_cfg),
+            "probe": ("Probe_laser_power", MAPPING["Probe_laser_power"]),
+        },
+        logical_channels={"pump": 1, "probe": 2},
+    )
     devices["dg_laser"] = dg_laser
 
     # ---- DG4000: X/Y 补偿磁场 ----
     dg_comp_cfg = MAPPING["X_magnetic_field"]
-    dg_comp = create_signal_generator(dg_comp_cfg["resource"], channel=1)
-    dg_comp.connect()
-    dg_comp.set_ref_clock_source("EXTernal")
+    dg_comp, _ = connect_signal_generator_routes(
+        session,
+        "dg_comp",
+        {
+            "x": ("X_magnetic_field", dg_comp_cfg),
+            "y": ("Y_magnetic_field", MAPPING["Y_magnetic_field"]),
+        },
+        logical_channels={"x": 1, "y": 2},
+    )
     devices["dg_comp"] = dg_comp
 
     # ---- DG4000: Pump 调制 + 时序 ----
     dg_mod_cfg = MAPPING["Pump_modulation"]
-    dg_mod = create_signal_generator(dg_mod_cfg["resource"], channel=1)
-    dg_mod.connect()
+    dg_mod, _ = connect_signal_generator_routes(
+        session,
+        "dg_mod",
+        {
+            "carrier": ("Pump_modulation", dg_mod_cfg),
+            "gate": ("Time_sequence", MAPPING["Time_sequence"]),
+        },
+        logical_channels={"carrier": 1, "gate": 2},
+    )
     devices["dg_mod"] = dg_mod
 
     # ---- DG912 Pro: 温度开关 ----
     dg_temp_cfg = MAPPING["Temp_Switch"]
-    dg_temp = create_signal_generator(dg_temp_cfg["resource"], channel=2)
-    dg_temp.connect()
+    dg_temp, _ = connect_signal_generator_routes(
+        session,
+        "dg_temp",
+        {"temp": ("Temp_Switch", dg_temp_cfg)},
+        logical_channels={"temp": 2},
+    )
     devices["dg_temp"] = dg_temp
 
     # ---- TEC103: 温度控制器 ----
     tec_cfg = MAPPING["temperature"]
-    tec = TECInstrument(port=tec_cfg["resource"])
-    try:
-        tec.connect()
-    except Exception as exc:
-        print(
-            f"[警告] TEC103 连接失败（{tec_cfg['resource']}）：{exc}。"
-            "该设备将由外部程序负责，实验继续运行。"
-        )
-        tec = None
+    tec = session.connect_optional(
+        "tec",
+        tec_cfg["resource"],
+        lambda: TECInstrument(port=tec_cfg["resource"]),
+        device_label="TEC103",
+    )
     devices["tec"] = tec
 
     # ---- HF2: 锁相放大器 ----
     hf2_cfg = MAPPING["lockin_r"]
-    hfi = HF2Instrument(
-        host=hf2_cfg.get("host", "127.0.0.1"),
-        port=hf2_cfg.get("port", 8005),
-        api_level=1,
-        device_id=hf2_cfg["device_id"],
+    hfi = session.connect(
+        "hf2",
+        f"hf2://{hf2_cfg.get('host', '127.0.0.1')}/{hf2_cfg['device_id']}",
+        lambda: HF2Instrument(
+            host=hf2_cfg.get("host", "127.0.0.1"),
+            port=hf2_cfg.get("port", 8005),
+            api_level=1,
+            device_id=hf2_cfg["device_id"],
+        ),
     )
-    hfi.connect()
-    hfi.set_extclk(True)
     devices["hf2"] = hfi
+
+    clock_sources = synchronize_connected_clocks(
+        devices,
+        MAPPING,
+        {
+            "dg_sweep": "Z_magnetic_field",
+            "dg_laser": "Pump_laser_power",
+            "dg_comp": "X_magnetic_field",
+            "dg_mod": "Pump_modulation",
+            "dg_temp": "Temp_Switch",
+            "hf2": "lockin_r",
+        },
+    )
 
 except Exception as e:
     print(f"设备连接失败: {e}")
+    session.cleanup_connection_failure()
     raise
 
 print(f"设备连接完成: GS200, DG4000×3, DG912×2, TEC103, HF2 (共 {len(devices)})")
@@ -398,7 +446,7 @@ print(f"温度开关: ON ({FIXED_PARAMS['Temp_Switch']} V)")
 temp_now = temperature_status.actual_temperature_c
 
 # 7. 时序信号 (10Hz 方波) → 移到 dg_sweep CH2
-validate_safety_limit("Time_sequence", FIXED_PARAMS["Time_sequence"])
+validate_safety_limit("Time_sequence_2", FIXED_PARAMS["Time_sequence"])
 dg_sweep.setup_square(freq=10.0, amplitude=FIXED_PARAMS["Time_sequence"],
                       offset=0.0, dcycle=50.0, channel=2)
 dg_sweep.set_output(True, channel=2)
@@ -656,12 +704,18 @@ snapshot = {
 with open(run_dir / "params.yaml", "w", encoding="utf-8") as f:
     yaml.dump(snapshot, f, default_flow_style=False)
 
+instrument_snapshot = instrument_config_snapshot(project_root)
 experiment_config = {
     "experiment_type": EXPERIMENT_TYPE,
     "run_tag": RUN_TAG,
     "timestamp": timestamp,
     "parameters": _shared_params.to_dict(),
-    "mapping_snapshot": MAPPING,
+    "clock_sources": clock_sources,
+    "device_library_revision": instrument_snapshot["device_library_revision"],
+    "physical_mapping_revision": instrument_snapshot["physical_mapping_revision"],
+    "device_library_snapshot": instrument_snapshot["device_library"],
+    "physical_mapping_snapshot": instrument_snapshot["physical_mappings"],
+    "mapping_snapshot": instrument_snapshot["resolved_mapping"],
     "safety_limits_snapshot": LIMITS,
     "actual_rates": {
         "hf2_demod_rate_Sa_s": float(actual_rate),

@@ -87,7 +87,7 @@ I=\frac{f_\mathrm{HF2}-\Omega_\mathrm{Ctrl}-f_0}{K_f}.
 1. 使用 `DeviceSession` 连接 GS200、场控制 DG4000、光功率 DG900、Pump DG4000、
    温控开关 DG900、TEC103 和 HF2。
 2. 在任何输出设置前记录 GS200 的源模式、电流、输出、量程和限流，并按
-   `params/clock_sources.yaml` 设置、回读所有已连接时钟。
+   `params/devices.yaml` 中各设备的 `reference_clock` 设置、回读所有已连接时钟。
 3. 强制 Z/X/Y 场为 0 V、Output OFF，配置光功率、120 °C 温度、Pump 连续工作点和
    固定 90 kHz Demod0；保存 HF2 相位及硬件返回的实际采样率。
 4. 每个控制频率点依次执行：

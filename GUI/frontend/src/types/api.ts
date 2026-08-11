@@ -29,12 +29,13 @@ export type DeviceChannel = {
   number: number;
   label: string;
   mapping_key: string;
+  mapping_keys: string[];
   read_only: boolean;
 };
 
 export type Device = {
   id: string;
-  type: "DG4000" | "DG900" | "GS200" | "DLC_PRO" | "SDS";
+  type: "DG4000" | "DG900" | "GS200" | "6221" | "DLC_PRO" | "SDS";
   label: string;
   resource: string;
   short_resource: string;
@@ -78,6 +79,7 @@ export type BurstSnapshot = {
 export type GeneratorChannelSnapshot = {
   number: number;
   mapping_key: string;
+  mapping_keys: string[];
   label: string;
   read_only: boolean;
   output: boolean;
@@ -98,8 +100,9 @@ export type GeneratorChannelSnapshot = {
   readback_errors: ReadbackError[];
 };
 
-export type GeneratorChannelSettings = Pick<
+export type GeneratorChannelSettings = Partial<Pick<
   GeneratorChannelSnapshot,
+  | "mapping_key"
   | "output"
   | "shape"
   | "frequency"
@@ -115,7 +118,77 @@ export type GeneratorChannelSettings = Pick<
   | "target_mode"
   | "mod"
   | "burst"
->;
+>>;
+
+export type Endpoint = { kind: "channel" | "demod" | "laser_channel"; index: number };
+export type ControlTargetKind = "generator" | "current_source" | "laser" | "scope" | "tec" | "hf2";
+export type SafetyRule = {
+  min?: number | null;
+  max?: number | null;
+  ramp_rate?: number | null;
+  output_off_on_error?: boolean;
+  description?: string;
+};
+export type ControlTarget = {
+  mapping_key: string;
+  label: string;
+  description: string;
+  kind: ControlTargetKind;
+  device_id: string;
+  device_label: string;
+  model: string;
+  short_resource: string;
+  endpoint: Endpoint | null;
+  shared_mapping_keys: string[];
+  safety: SafetyRule;
+  read_only: boolean;
+};
+export type ControlTargetCatalog = {
+  device_library_revision: string;
+  physical_mapping_revision: string;
+  targets: ControlTarget[];
+};
+export type ControlRoute = {
+  mappingKey: string;
+  deviceLibraryRevision: string;
+  physicalMappingRevision: string;
+};
+export type DeviceConfig = {
+  instrument: string;
+  model: string;
+  label: string;
+  resource: string | null;
+  reference_clock: "INT" | "EXT" | null;
+  connection: Record<string, unknown>;
+  capabilities: Record<string, unknown>;
+};
+export type DeviceLibraryDocument = {
+  schema_version: number;
+  revision: string;
+  devices: Record<string, DeviceConfig>;
+};
+export type PhysicalMappingConfig = {
+  instrument: string;
+  device_id: string;
+  endpoint?: Endpoint;
+  label?: string;
+  description?: string;
+  [key: string]: unknown;
+};
+export type MappingConstraints = {
+  shared_channel_groups: Record<string, string[]>;
+  colocation_groups: Record<string, string[]>;
+};
+export type PhysicalMappingsDocument = {
+  schema_version: number;
+  revision: string;
+  mapping: Record<string, PhysicalMappingConfig>;
+  constraints: MappingConstraints;
+};
+export type VisaDiscovery = {
+  devices: Array<{ resource: string; idn: string; instrument: string; model: string }>;
+  errors: Array<{ resource: string; message: string }>;
+};
 
 export type GeneratorSnapshot = Omit<Device, "type" | "channels"> & {
   type: "DG4000" | "DG900";
@@ -168,7 +241,7 @@ export type ScopeSettings = Pick<
   | "trigger"
 >;
 
-export type CurrentSourceSnapshot = Omit<Device, "type" | "channels"> & {
+export type GS200Snapshot = Omit<Device, "type" | "channels"> & {
   type: "GS200";
   idn: string;
   mapping_key: string;
@@ -182,10 +255,62 @@ export type CurrentSourceSnapshot = Omit<Device, "type" | "channels"> & {
   max_current_ma: number;
 };
 
+export type Keithley6221WaveformSnapshot = {
+  shape: "SIN" | "SQU" | "RAMP" | "ARB";
+  frequency_hz: number;
+  amplitude_peak_ma: number;
+  offset_ma: number;
+  duty_cycle_percent: number;
+  ranging: "BEST" | "FIXED";
+  duration_mode: "TIME" | "CYCLES" | "INFINITE" | "MIXED";
+  duration_value: number | null;
+  duration_time_s: number | "INF";
+  duration_cycles: number | "INF";
+  arbitrary_point_count: number;
+};
+
+export type Keithley6221Snapshot = Omit<Device, "type" | "channels"> & {
+  type: "6221";
+  idn: string;
+  mapping_key: string;
+  output: boolean;
+  current_ma: number;
+  current_range_ma: number;
+  autorange: boolean;
+  compliance_v: number;
+  analog_filter: boolean;
+  output_response: "FAST" | "SLOW";
+  min_current_ma: number;
+  max_current_ma: number;
+  waveform: Keithley6221WaveformSnapshot;
+};
+
+export type CurrentSourceSnapshot = GS200Snapshot | Keithley6221Snapshot;
+
+export type Keithley6221WaveformSettings = {
+  action: "configure" | "configure_and_start" | "abort";
+  shape?: "SIN" | "SQU" | "RAMP" | "ARB";
+  frequency_hz?: number;
+  amplitude_peak_ma?: number;
+  offset_ma?: number;
+  duty_cycle_percent?: number;
+  ranging?: "BEST" | "FIXED";
+  duration_mode?: "TIME" | "CYCLES" | "INFINITE";
+  duration_value?: number;
+  arbitrary_points?: number[];
+  confirm_start?: boolean;
+};
+
 export type CurrentSourceSettings = {
   current_ma?: number;
   output?: boolean;
   confirm_output_enable?: boolean;
+  current_range_ma?: number;
+  autorange?: boolean;
+  compliance_v?: number;
+  analog_filter?: boolean;
+  output_response?: "FAST" | "SLOW";
+  waveform?: Keithley6221WaveformSettings;
 };
 
 export type LaserSnapshot = Omit<Device, "type" | "channels"> & {
@@ -248,11 +373,54 @@ export type LaserEmissionSettings = {
   confirmation_text?: string;
 };
 
+export type TecSnapshot = Omit<Device, "type" | "channels"> & {
+  type: "TEC103";
+  channel: number;
+  target_temperature_c: number;
+  actual_temperature_c: number | null;
+  enabled: boolean;
+  output_mode: number;
+  resistance_kohm: number;
+  min_temperature_c: number;
+  max_temperature_c: number;
+};
+
+export type Hf2Snapshot = Omit<Device, "type" | "channels"> & {
+  type: "HF2";
+  demod_idx: number;
+  x: number;
+  y: number;
+  r: number;
+  phase: number;
+  frequency: number;
+  enabled: boolean;
+  sample_rate: number;
+  time_constant: number;
+  order: number;
+  harmonic: number;
+  phase_shift: number;
+};
+
 export type DeviceSnapshot =
   | GeneratorSnapshot
   | ScopeSnapshot
   | CurrentSourceSnapshot
-  | LaserSnapshot;
+  | LaserSnapshot
+  | TecSnapshot
+  | Hf2Snapshot;
+
+export type ControlTargetResponse = {
+  target: ControlTarget;
+  snapshot: DeviceSnapshot;
+  read_at: string;
+};
+export type ControlTargetBulkItem = {
+  target: ControlTarget;
+  snapshot: DeviceSnapshot | null;
+  read_at: string | null;
+  error: string | null;
+};
+export type ControlTargetBulkResponse = { results: ControlTargetBulkItem[] };
 
 export type ParameterValue = string | number | boolean | null | number[] | string[];
 export type ParameterValues = Record<string, ParameterValue>;
@@ -286,6 +454,7 @@ export type ExperimentDefinition = {
   variant: string;
   description: string;
   required_devices: string[];
+  required_mapping_keys: string[];
   execution_mode: "typed_workflow" | "legacy_script";
   acquisition_program: string;
   analysis_program: string | null;

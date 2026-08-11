@@ -10,10 +10,10 @@
 |---|---|---|
 | 通道绑定 | — | 每个实例绑定固定通道，无需重复传参 |
 | 波形输出 | `:APPLy:<shape>` | SINusoid / SQUare / RAMP / PULSe / NOISe / DC |
-| 自定义波形 | `:TRACe:DATA:DATA` | 任意周期函数，归一化 [-1, +1] |
+| 自定义波形 | DG4000 `:TRACe:DATA:DATA`；DG900 `:TRACe:DATA:DAC16` | 任意周期函数，归一化 [-1, +1] |
 | 频率/周期 | `:FREQuency` / `:PERiod` | 1 µHz ~ 160 MHz (依波形类型) |
 | 幅度/偏置 | `:VOLTage:AMPLitude/OFFSet` | Vpp / VRMS / DBM 单位可选 |
-| 相位控制 | `:PHASe:ADJust` | 0° ~ 360°, 分辨率 0.01° |
+| 相位控制 | DG4000 `:PHASe:ADJust`；DG900 `:PHASe` / `:PHASe:SYNChronize` | 相位设置、回读和同相位操作 |
 | 方波占空比 | `:FUNCtion:SQUare:DCYCle` | 20% ~ 80% |
 | 斜波对称度 | `:FUNCtion:RAMP:SYMMetry` | 0% ~ 100% |
 | 脉冲参数 | `:PULSe:*` | 脉宽、占空比、延迟、边沿时间 |
@@ -63,6 +63,15 @@ dg = DG4000Instrument("USB0::...", channel=1)
 dg.setup_arbitrary(y, freq=50, amplitude=5.0)
 ```
 
+DG900 Pro 将归一化值转换为有符号 16 位码值，通过原生
+`:SOURce<n>:TRACe:DATA:DAC16 CODE,<flag>,...` 分块下载。点数必须为 32 至
+16 Mpts，每个 ASCII 数据块不超过 20 kB；下载完成后驱动执行 `*OPC?` 并检查完整
+错误队列。`setup_arbitrary()` 失败时会恢复调用前的输出开关状态。
+
+Direct-AW 的无限 Burst 在 DG900 Pro 上不是独立模式。统一接口
+`set_burst_mode("INFinity")` 会写入 `BURSt:MODE TRIGgered` 和
+`BURSt:NCYCles INFinity`，外部触发后持续输出；工作流不得再覆盖固定循环数。
+
 ## 调制示例
 
 ```python
@@ -95,14 +104,21 @@ dg.set_mod_type_state("AM", True)
   子系统；DG4000 继续使用 `:SOURce<n>:BURSt:TRIGger:*`。
 - DG900 Pro 不提供基础脉冲波形延迟命令，因此仅回读脉宽和起始相位；
   `burst.delay` 仍由 `:TRIGger<n>:DELay?` 正常回读。
+- DG900 Pro 使用 `:OUTPut<n>:SYNC` 控制同步输出，并以
+  `:SOURce<n>:PHASe:SYNChronize` 执行同相位操作；这两个方法与 DG4000 采用相同
+  Python 接口名 `set_sync_state()` 和 `phase_init()`。
+- 两系列 GUI 都可读写幅度单位和输出负载；Pulse Delay 仅在 DG4000 上显示。
 
 ## GUI 行为
 
-仪器控制页选择设备后自动回读，同时保留手动刷新按钮。每个通道按“基础波形”、
-“调制”和“Burst”分页显示，写入成功后用设备实际回读值替换表单状态。
+仪器控制页以多列网格展示全部物理量，打开时不连接硬件；可逐项读取，也可顺序读取
+全部目标。每个信号源面板只读取对应 mapping key 的通道。常用波形字段直接显示，波形细节、单位、负载、调制和
+Burst 默认折叠，写入成功后用设备实际回读值替换表单状态。
 
 - 启用 Mod 时自动关闭 Burst；启用 Burst 时自动关闭 Mod。
 - 基础输出电压写入前继续使用 `params/safety_limits.yaml` 校验。
+- `rf_coil` 作为 `Y_magnetic_field` 的历史别名不单独显示，手动控制统一使用 Y 场面板。
+- 非 Vpp 状态仅允许回读和关闭输出；其他写入前必须切换为 Vpp 并重新读取。
 - 非核心查询失败时，其余字段仍返回，并在 `readback_errors` 中记录失败字段。
 - 所有映射的信号源通道均显示实际回读值；`Heat_Control` 允许编辑，
   但写入仍受 `params/safety_limits.yaml` 的保守限值保护。
@@ -129,6 +145,7 @@ src/signal_generator/
   __init__.py        # 包导出
   instrument.py      # DG4000 PyVISA 封装 + SCPI 命令
   dg900.py           # DG900 Pro 官方 SCPI 封装
+  protocol.py        # 两系列公共协议与能力描述
   config.py          # 配置与多仪器管理 (SignalGeneratorConfig, MultiGeneratorSetup)
 ```
 

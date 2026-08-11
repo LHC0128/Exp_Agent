@@ -3,11 +3,27 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "GUI"))
 
-from backend.main import app, update_laser, update_laser_emission
-from backend.schemas import LaserEmissionSettingsBody, LaserSettingsBody
+from backend.main import (
+    DeviceLibraryBody,
+    PhysicalMappingsBody,
+    app,
+    manager,
+    update_device_library,
+    update_laser,
+    update_laser_emission,
+    update_physical_mappings,
+)
+from backend.schemas import (
+    CurrentSourceSettings,
+    LaserEmissionSettingsBody,
+    LaserSettingsBody,
+)
+from lab_workflows.instrument_config import RevisionConflict
 
 
 def laser_snapshot(**overrides):
@@ -70,6 +86,27 @@ def laser_snapshot(**overrides):
 
 
 class InstrumentRouteTests(unittest.TestCase):
+    def test_current_source_request_rejects_dc_and_waveform_mix(self):
+        with self.assertRaisesRegex(ValueError, "不能混在同一请求"):
+            CurrentSourceSettings.model_validate({
+                "current_ma": 1.0,
+                "waveform": {"action": "abort"},
+            })
+
+    def test_current_source_waveform_start_requires_confirmation(self):
+        with self.assertRaisesRegex(ValueError, "confirm_start"):
+            CurrentSourceSettings.model_validate({
+                "waveform": {
+                    "action": "configure_and_start",
+                    "shape": "SIN",
+                    "frequency_hz": 10.0,
+                    "amplitude_peak_ma": 1.0,
+                    "offset_ma": 0.0,
+                    "ranging": "BEST",
+                    "duration_mode": "INFINITE",
+                }
+            })
+
     def test_laser_route_passes_explicit_settings(self):
         returned = laser_snapshot(current_set_ma=202.0)
         with patch(
@@ -123,6 +160,77 @@ class InstrumentRouteTests(unittest.TestCase):
             ("/api/devices/{device_id}/emission", "PUT"),
             routes,
         )
+
+    def test_configuration_routes_are_registered(self):
+        routes = {
+            (route.path, method)
+            for route in app.routes
+            for method in getattr(route, "methods", set())
+        }
+        for expected in (
+            ("/api/device-library", "GET"),
+            ("/api/device-library", "PUT"),
+            ("/api/device-library/discover-visa", "POST"),
+            ("/api/physical-mappings", "GET"),
+            ("/api/physical-mappings", "PUT"),
+        ):
+            self.assertIn(expected, routes)
+
+    def test_control_target_routes_are_registered(self):
+        routes = {
+            (route.path, method)
+            for route in app.routes
+            for method in getattr(route, "methods", set())
+        }
+        for expected in (
+            ("/api/control-targets", "GET"),
+            ("/api/control-targets/refresh-all", "POST"),
+            ("/api/control-targets/{mapping_key}/refresh", "POST"),
+            ("/api/control-targets/{mapping_key}/generator", "PUT"),
+            ("/api/control-targets/{mapping_key}/current-source", "PUT"),
+            ("/api/control-targets/{mapping_key}/laser", "PUT"),
+            ("/api/control-targets/{mapping_key}/emission", "PUT"),
+            ("/api/control-targets/{mapping_key}/scope", "PUT"),
+            ("/api/control-targets/{mapping_key}/tec", "PUT"),
+        ):
+            self.assertIn(expected, routes)
+
+    def test_device_library_revision_conflict_returns_409(self):
+        body = DeviceLibraryBody(base_revision="old", devices={})
+        with patch(
+            "backend.main.save_device_library",
+            side_effect=RevisionConflict("stale"),
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                update_device_library(body)
+        self.assertEqual(caught.exception.status_code, 409)
+
+    def test_physical_mapping_validation_returns_422(self):
+        body = PhysicalMappingsBody(
+            base_revision="current",
+            mapping={},
+            constraints={
+                "shared_channel_groups": {},
+                "colocation_groups": {},
+            },
+        )
+        with patch(
+            "backend.main.save_physical_mappings",
+            side_effect=ValueError("invalid endpoint"),
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                update_physical_mappings(body)
+        self.assertEqual(caught.exception.status_code, 422)
+
+    def test_configuration_save_is_rejected_while_hardware_busy(self):
+        body = DeviceLibraryBody(base_revision="current", devices={})
+        self.assertTrue(manager.hardware_lock.acquire(blocking=False))
+        try:
+            with self.assertRaises(HTTPException) as caught:
+                update_device_library(body)
+        finally:
+            manager.hardware_lock.release()
+        self.assertEqual(caught.exception.status_code, 409)
 
 
 if __name__ == "__main__":

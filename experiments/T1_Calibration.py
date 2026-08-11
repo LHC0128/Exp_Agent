@@ -39,6 +39,7 @@ from scipy.optimize import curve_fit
 from tqdm import tqdm
 
 from lab_workflows.devices import create_signal_generator
+from lab_workflows.common import load_mapping
 from tec_controller import TECInstrument
 from sds_acquisition import (
     SDSInstrument, SDSAcquisition,
@@ -49,8 +50,7 @@ print("所有库导入成功")
 
 # %% Cell 2
 # 加载映射
-with open(project_root / "params" / "mapping.yaml", encoding="utf-8") as f:
-    MAPPING = yaml.safe_load(f)["mapping"]
+MAPPING = load_mapping(project_root)
 
 # 加载安全限值
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:

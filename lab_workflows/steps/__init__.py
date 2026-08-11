@@ -43,6 +43,11 @@ from .mx_z_optimal_control import (
     validate_z_trigger_mapping,
 )
 from .run_directory import RunDirectory, create_run_directory
+from .routed_signal_generator import (
+    RoutedSignalGenerator,
+    SignalGeneratorRoute,
+    connect_signal_generator_routes,
+)
 from .scope_waveform import (
     ScopeAutoRangeState,
     ScopeCaptureSettings,
@@ -87,10 +92,12 @@ __all__ = [
     "PhaseCalibrationConfig",
     "PhaseCalibrationResult",
     "RunDirectory",
+    "RoutedSignalGenerator",
     "ScopeAutoRangeState",
     "ScopeCaptureSettings",
     "STANDARD_PRESERVED_OUTPUTS",
     "SafetyShutdownReport",
+    "SignalGeneratorRoute",
     "ShutdownAction",
     "TemperatureSwitchRestore",
     "TemperatureControlStatus",
@@ -104,6 +111,7 @@ __all__ = [
     "configure_optimal_control_trigger",
     "configure_temperature_control",
     "configure_z_optimal_control_output",
+    "connect_signal_generator_routes",
     "create_run_directory",
     "disconnect_device_mapping",
     "disconnect_devices",

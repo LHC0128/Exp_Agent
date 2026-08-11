@@ -419,7 +419,6 @@ def run() -> Path:
             for channel in (1, 2):
                 dg_comp.set_burst_state(True, channel=channel)
                 dg_comp.set_burst_mode("INFinity", channel=channel)
-                dg_comp.set_burst_ncycles(50000, channel=channel)
                 dg_comp.set_burst_trigger_source("EXTernal", channel=channel)
                 dg_comp.set_burst_trigger_slope("POSitive", channel=channel)
                 dg_comp.set_burst_phase(0.0, channel=channel)

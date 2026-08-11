@@ -1,0 +1,169 @@
+schema_version: 1
+devices:
+  gs200_90z631552:
+    instrument: gs200
+    model: GS200
+    label: 主磁场电流源
+    resource: USB0::0x0B21::0x0039::90Z631552::INSTR
+    reference_clock: null
+    connection: {}
+    capabilities: {}
+  dg4e242401288:
+    instrument: signal_generator
+    model: DG4000
+    label: Z 场与时序信号源
+    resource: USB0::0x1AB1::0x0641::DG4E242401288::INSTR
+    reference_clock: EXT
+    connection: {}
+    capabilities:
+      channels:
+      - 1
+      - 2
+      min_arb_points: 2
+      max_arb_points: 16384
+      supports_arbitrary: true
+      supports_infinite_burst: true
+  dg9q280100002:
+    instrument: signal_generator
+    model: DG900
+    label: 光功率
+    resource: USB0::0x1AB1::0x0646::DG9Q280100002::INSTR
+    reference_clock: EXT
+    connection: {}
+    capabilities:
+      channels:
+      - 1
+      - 2
+      min_arb_points: 32
+      max_arb_points: 16777216
+      supports_arbitrary: true
+      supports_infinite_burst: true
+  dlc_pro_53043:
+    instrument: toptica_dlc_pro
+    model: DLC_PRO
+    label: Probe 激光
+    resource: 192.168.124.68
+    reference_clock: null
+    connection:
+      device_id: DLC_PRO_53043
+      controller_serial: DLC PRO_53043
+      laser_head_serial: '24105'
+      command_port: 1998
+      monitoring_port: 1999
+      timeout: 5
+      remote_emission_control_enabled: false
+    capabilities:
+      channels:
+      - 1
+  dg4e231500376:
+    instrument: signal_generator
+    model: DG4000
+    label: XY方向AM信号
+    resource: USB0::0x1AB1::0x0641::DG4E231500376::INSTR
+    reference_clock: EXT
+    connection: {}
+    capabilities:
+      channels:
+      - 1
+      - 2
+      min_arb_points: 2
+      max_arb_points: 16384
+      supports_arbitrary: true
+      supports_infinite_burst: true
+  dg4e234902522:
+    instrument: signal_generator
+    model: DG4000
+    label: XY方向磁场
+    resource: USB0::0x1AB1::0x0641::DG4E234902522::INSTR
+    reference_clock: EXT
+    connection: {}
+    capabilities:
+      channels:
+      - 1
+      - 2
+      min_arb_points: 2
+      max_arb_points: 16384
+      supports_arbitrary: true
+      supports_infinite_burst: true
+  dg4e222800868:
+    instrument: signal_generator
+    model: DG4000
+    label: Pump 调制信号源
+    resource: USB0::0x1AB1::0x0641::DG4E222800868::INSTR
+    reference_clock: INT
+    connection: {}
+    capabilities:
+      channels:
+      - 1
+      - 2
+      min_arb_points: 2
+      max_arb_points: 16384
+      supports_arbitrary: true
+      supports_infinite_burst: true
+  dg9q271200104:
+    instrument: signal_generator
+    model: DG900
+    label: 温控信号源
+    resource: USB0::0x1AB1::0x0646::DG9Q271200104::INSTR
+    reference_clock: EXT
+    connection: {}
+    capabilities:
+      channels:
+      - 1
+      - 2
+      min_arb_points: 32
+      max_arb_points: 16777216
+      supports_arbitrary: true
+      supports_infinite_burst: true
+  tec103_com3:
+    instrument: tec_controller
+    model: TEC103
+    label: Cell 温控器
+    resource: COM3
+    reference_clock: null
+    connection: {}
+    capabilities:
+      channels:
+      - 1
+  hf2_dev18246:
+    instrument: lockin_amplifier
+    model: HF2
+    label: HF2 锁相放大器
+    resource: null
+    reference_clock: EXT
+    connection:
+      device_id: dev18246
+      host: 127.0.0.1
+      port: 8005
+    capabilities:
+      channels:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+  sds_sdsev82x900704:
+    instrument: sds_acquisition
+    model: SDS
+    label: SDS 示波器
+    resource: USB0::0xF4EC::0x1015::SDSEV82X900704::INSTR
+    reference_clock: null
+    connection: {}
+    capabilities:
+      channels:
+      - 1
+      - 2
+      - 3
+      - 4
+  dg9q263800417:
+    instrument: signal_generator
+    model: DG900
+    label: Z 场与时序信号源新
+    resource: USB0::0x1AB1::0x0646::DG9Q263800417::INSTR
+    reference_clock: EXT
+    connection: {}
+    capabilities:
+      channels:
+      - 1
+      - 2

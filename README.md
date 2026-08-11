@@ -15,6 +15,7 @@
 ```text
 src/
   gs200/                  # GS200 控制
+  keithley_6221/          # Keithley 6221 电流源与内部波形控制
   lockin_amplifier/       # HF2 控制与 DAQ 接口
   sds_acquisition/        # SDS 示波器采集
   sensitivity_analysis/   # 灵敏度拟合、汇总与分析
@@ -49,6 +50,7 @@ results/                  # 结果图表
 | `signal_generator` | DG4000 / DG900 | 正弦、Burst、AM、任意波等控制 |
 | `lockin_amplifier` | Zurich Instruments HF2 | Demod、DAQ、AuxOut 配置 |
 | `gs200` | Yokogawa GS200 | 主磁场电流源控制 |
+| `keithley_6221` | Keithley 6221 | 精密直流、内部波形与易失性任意波控制 |
 | `tec_controller` | TEC103 | 温控器串口控制 |
 | `toptica_laser` | TOPTICA DLC pro | Probe 激光电流、温度、PZT 与扫描控制 |
 | `sensitivity_analysis` | 分析工具 | 拟合、灵敏度计算、结果汇总 |
@@ -64,12 +66,13 @@ results/                  # 结果图表
 - `docs/signal_generator.md`
 - `docs/lockin_amplifier.md`
 - `docs/gs200.md`
+- `docs/keithley_6221.md`
 - `docs/tec_controller.md`
 - `docs/toptica_dlc_pro.md`
 
 ## GUI 基础使用
 
-GUI 是运行在实验电脑本机的 Web 控制台，可用于读取和设置 GS200 主磁场电流源、
+GUI 是运行在实验电脑本机的 Web 控制台，可用于读取和设置 GS200、Keithley 6221 电流源、
 TOPTICA DLC pro Probe 激光、DG4000、DG900 Pro、SDS 示波器等仪器，并运行仓库中
 已接入的实验流程。
 
@@ -105,11 +108,12 @@ Set-Location D:\Code\exp_agent\GUI
 
 ### 基本操作
 
-1. 进入“仪器控制”页面，选择左侧设备；页面会自动回读设备当前参数。
-2. 使用“读取设备参数”按钮可再次刷新仪器状态。
-3. 信号发生器可在“基础波形”“调制”或“Burst”标签中修改参数；GS200 只开放主磁场电流设定值和输出开关；DLC pro 开放电流、温度、PZT、扫描幅度和扫描启停，扫描频率只读。
-4. 点击“应用并回读”；写入前会检查 `params/safety_limits.yaml`，写入后以仪器实际回读值更新页面。GS200 从 OFF 切换到 ON 时会二次确认；DLC pro 的远程 Emission ON 默认禁止，安全流程见 `docs/toptica_dlc_pro.md`。
-5. 实验结束后，在启动 GUI 的 PowerShell 窗口按 `Ctrl+C` 停止服务。
+1. 进入“仪器控制”的“物理量映射”标签，选择每个物理量使用的设备和端点，整批保存。
+2. 在“设备库”中维护型号、Resource、连接参数、能力和参考时钟；VISA 扫描只执行资源枚举与 `*IDN?` 查询。
+3. “设备控制”以多列网格展示全部物理量，可逐项“读取”，也可点击“连接并读取全部”；页面打开时不会自动连接硬件。
+4. 信号发生器常用波形参数直接显示，波形细节、负载、单位、调制和 Burst 位于折叠的高级区；`rf_coil` 作为历史别名不单独显示，统一由“Y方向磁场”面板控制。
+5. 点击“应用并回读”；写入前会检查当前 mapping key 的 `params/safety_limits.yaml`，写入后以实际回读值更新页面。非 Vpp 状态仅允许回读、关闭输出或切换为 Vpp。
+6. 实验结束后，在启动 GUI 的 PowerShell 窗口按 `Ctrl+C` 停止服务。
 
 “实验中心”统一展示 38 个正式 Python 采集入口，并提供动态参数、默认值保存、
 无副作用预检、运行日志、安全停止和离线重新分析。每张实验卡片同时显示对应的
@@ -242,32 +246,41 @@ data/<实验类型>/MMDD_HHMM_tag/
 
 ## 配置管理
 
-两个全局 YAML 配置文件由所有实验共享：
+全局设备、映射与安全配置由所有实验共享：
 
 | 文件 | 用途 |
 |---|---|
-| `params/mapping.yaml` | 物理量到设备型号、资源地址和通道的唯一映射 |
+| `params/devices.yaml` | 稳定设备 ID、型号、资源、连接参数、能力和参考时钟 |
+| `params/mapping.yaml` | 物理量到 `device_id` 和类型化端点的绑定，以及共享/同机约束 |
 | `params/safety_limits.yaml` | 输出量安全上下限 |
-| `params/clock_sources.yaml` | DG4000、DG900 与 HF2 的参考时钟目标 |
+| `params/clock_sources.yaml` | 旧入口的参考时钟兼容回退，不是新模式配置源 |
 | `params/experiments/<experiment-id>.yaml` | 正式实验的版本化默认参数，使用稳定外部键 |
 
-信号发生器条目必须同时配置 `model`、`resource` 和 `channel`：
+信号发生器设备与物理量绑定分别配置：
 
 ```yaml
-Pump_laser_power:
-  instrument: signal_generator
-  model: DG900
-  resource: USB0::0x1AB1::0x0646::DG9Q280100002::INSTR
-  channel: 1
+devices:
+  dg9q280100002:
+    instrument: signal_generator
+    model: DG900
+    resource: USB0::0x1AB1::0x0646::DG9Q280100002::INSTR
+    reference_clock: EXT
+
+mapping:
+  Pump_laser_power:
+    instrument: signal_generator
+    device_id: dg9q280100002
+    endpoint: {kind: channel, index: 1}
 ```
 
 正式 Python 实验统一调用 `lab_workflows.devices.create_signal_generator()`，
-由工厂读取 `model` 并选择 DG4000 或 DG900 驱动。更换信号发生器时，只需在
-`params/mapping.yaml` 更新对应条目的型号、资源地址和通道；实验脚本不再硬编码驱动类。
-同一物理资源的多个通道必须配置相同型号，否则设备发现和连接阶段会直接报错。
+由解析后的设备库定义选择 DG4000 或 DG900 Pro 驱动。更换信号发生器时，在 GUI
+修改设备与端点绑定即可；新模式不硬编码驱动型号。同一 resource 自动复用连接，
+不同 resource 的配对物理量由通道路由代理分别转发。详细规则见
+`docs/instrument_mapping.md`。
 
 新模式硬件工作流在设备连接完成后统一调用
-`lab_workflows.steps.synchronize_connected_clocks()`，按 `params/clock_sources.yaml`
+`lab_workflows.steps.synchronize_connected_clocks()`，按 `params/devices.yaml`
 设置已连接的 DG4000、DG900 和 HF2，并通过回读严格验证；任何设备不一致都会在实验正式输出配置前终止实验。
 
 所有实验在设置输出量前都应调用 `validate_safety_limit()`。

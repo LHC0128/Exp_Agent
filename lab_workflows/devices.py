@@ -6,10 +6,12 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping
 
 from gs200 import GS200Instrument
+from keithley_6221 import Keithley6221Instrument
 from signal_generator import DG4000Instrument, DG900Instrument
 from toptica_laser import DLCProInstrument
 
 from .common import load_mapping
+from .instrument_config import load_device_definitions
 
 
 SIGNAL_GENERATOR_DRIVERS = {
@@ -19,6 +21,7 @@ SIGNAL_GENERATOR_DRIVERS = {
 
 CURRENT_SOURCE_DRIVERS = {
     "GS200": GS200Instrument,
+    "6221": Keithley6221Instrument,
 }
 
 LASER_DRIVERS = {
@@ -102,6 +105,11 @@ class ChannelRecord:
     mapping_key: str
     label: str
     read_only: bool = False
+    mapping_keys: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.mapping_keys and self.mapping_key:
+            self.mapping_keys = [self.mapping_key]
 
 
 @dataclass(slots=True)
@@ -124,120 +132,128 @@ def _short_resource(resource: str) -> str:
 
 
 def discover_devices() -> list[DeviceRecord]:
-    """返回 GUI 可管理设备；共享 CH2 仅按 Y_magnetic_field 展示。"""
+    """从设备库返回 GUI 可管理设备，并附加物理量绑定别名。"""
     mapping = load_mapping()
+    library = load_device_definitions()
     records: dict[str, DeviceRecord] = {}
-    channel_keys: set[tuple[str, int]] = set()
+    device_records: dict[str, DeviceRecord] = {}
+
+    for device_id, device in library.items():
+        resource = device.resource
+        if device.instrument == "signal_generator" and resource:
+            short = _short_resource(resource)
+            record = DeviceRecord(
+                id=short,
+                type=signal_generator_model(
+                    {"instrument": "signal_generator", "model": device.model}
+                ),
+                label=device.label,
+                resource=resource,
+                short_resource=short,
+                options={"device_id": device_id},
+            )
+            records[resource] = record
+            device_records[device_id] = record
+        elif device.instrument == "gs200" and resource:
+            short = _short_resource(resource)
+            record = DeviceRecord(
+                id=short,
+                type="GS200",
+                label=device.label,
+                resource=resource,
+                short_resource=short,
+                options={"device_id": device_id},
+            )
+            records[resource] = record
+            device_records[device_id] = record
+        elif device.instrument == "keithley_6221" and resource:
+            short = _short_resource(resource)
+            record = DeviceRecord(
+                id=short,
+                type="6221",
+                label=device.label,
+                resource=resource,
+                short_resource=short,
+                options={"device_id": device_id},
+            )
+            records[resource] = record
+            device_records[device_id] = record
+        elif device.instrument == "toptica_dlc_pro" and resource:
+            control_id = str(device.connection.get("device_id", device_id))
+            record = DeviceRecord(
+                id=control_id,
+                type="DLC_PRO",
+                label=device.label,
+                resource=resource,
+                short_resource=str(
+                    device.connection.get("controller_serial", control_id)
+                ),
+                options={"device_id": device_id, **device.connection},
+            )
+            records[f"toptica:{resource}"] = record
+            device_records[device_id] = record
+        elif device.instrument == "sds_acquisition" and resource:
+            short = _short_resource(resource)
+            record = DeviceRecord(
+                id=short,
+                type="SDS",
+                label=device.label,
+                resource=resource,
+                short_resource=short,
+                options={"device_id": device_id},
+                channels=[
+                    ChannelRecord(index, "scope_waveform", f"CH{index}")
+                    for index in range(1, 5)
+                ],
+            )
+            records[resource] = record
+            device_records[device_id] = record
 
     for key, cfg in mapping.items():
         kind = cfg.get("instrument")
         resource = cfg.get("resource")
         channel = cfg.get("channel")
-        if kind == "toptica_dlc_pro" and resource:
-            device_id = str(cfg.get("device_id", "")).strip()
-            if not device_id:
-                raise ValueError(f"DLC pro 映射 {key} 缺少 device_id")
-            record_key = f"toptica:{resource}:{cfg.get('laser_channel', 1)}"
-            records[record_key] = DeviceRecord(
-                id=device_id,
-                type="DLC_PRO",
-                label=cfg.get("label", key),
-                resource=str(resource),
-                short_resource=str(
-                    cfg.get("controller_serial", device_id)
-                ),
-                options={
-                    "mapping_key": key,
-                    "laser_channel": int(cfg.get("laser_channel", 1)),
-                    "command_port": int(cfg.get("command_port", 1998)),
-                    "monitoring_port": int(cfg.get("monitoring_port", 1999)),
-                    "timeout": float(cfg.get("timeout", 5.0)),
-                    "controller_serial": str(
-                        cfg.get("controller_serial", device_id)
-                    ),
-                    "laser_head_serial": str(
-                        cfg.get("laser_head_serial", "")
-                    ),
-                    "remote_emission_control_enabled": bool(
-                        cfg.get("remote_emission_control_enabled", False)
-                    ),
-                    "current_safety_key": str(
-                        cfg.get("current_safety_key", "")
-                    ),
-                    "temperature_safety_key": str(
-                        cfg.get("temperature_safety_key", "")
-                    ),
-                    "pzt_safety_key": str(
-                        cfg.get("pzt_safety_key", "")
-                    ),
-                    "scan_amplitude_safety_key": str(
-                        cfg.get("scan_amplitude_safety_key", "")
-                    ),
-                },
-            )
+        device_id = str(cfg.get("device_id", ""))
+        record = device_records.get(device_id)
+        if not record:
             continue
-        if kind == "gs200" and resource:
-            short = _short_resource(resource)
-            if resource in records:
-                raise ValueError(f"设备资源被重复配置为不同类型: {resource}")
-            records[resource] = DeviceRecord(
-                id=short,
-                type="GS200",
-                label=cfg.get("label", key),
-                resource=resource,
-                short_resource=short,
-                options={
-                    "mapping_key": key,
-                    "source_function": cfg.get("source_function", "CURRent"),
-                },
-            )
-            continue
-        if kind == "signal_generator" and resource and channel is not None:
-            if key == "rf_coil":
-                continue
-            device_type = signal_generator_model(cfg)
-            short = _short_resource(resource)
-            record = records.setdefault(
-                resource,
-                DeviceRecord(
-                    id=short,
-                    type=device_type,
-                    label=cfg.get("device_label", cfg.get("label", key)),
-                    resource=resource,
-                    short_resource=short,
+        if kind == "toptica_dlc_pro":
+            record.options.update({
+                "mapping_key": key,
+                "laser_channel": int(cfg.get("laser_channel", 1)),
+                "current_safety_key": str(cfg.get("current_safety_key", "")),
+                "temperature_safety_key": str(cfg.get("temperature_safety_key", "")),
+                "pzt_safety_key": str(cfg.get("pzt_safety_key", "")),
+                "scan_amplitude_safety_key": str(
+                    cfg.get("scan_amplitude_safety_key", "")
                 ),
+            })
+        elif kind in {"gs200", "keithley_6221"}:
+            record.options.update({
+                "mapping_key": key,
+                "source_function": cfg.get("source_function", "CURRent"),
+            })
+        elif kind == "signal_generator" and resource and channel is not None:
+            existing = next(
+                (item for item in record.channels if item.number == int(channel)),
+                None,
             )
-            if record.type != device_type:
-                raise ValueError(
-                    f'Conflicting models for resource {resource}: '
-                    f'{record.type} / {device_type}'
-                )
-            marker = (resource, int(channel))
-            if marker not in channel_keys:
+            if existing:
+                if key not in existing.mapping_keys:
+                    existing.mapping_keys.append(key)
+                    existing.label = " / ".join(
+                        mapping[item].get("label", item)
+                        for item in existing.mapping_keys
+                    )
+            else:
                 record.channels.append(
                     ChannelRecord(
                         int(channel),
                         key,
                         cfg.get("label", key),
+                        mapping_keys=[key],
                     )
                 )
-                channel_keys.add(marker)
-
-    scope = mapping.get("scope_waveform", {})
-    if scope.get("resource"):
-        resource = scope["resource"]
-        short = _short_resource(resource)
-        records[resource] = DeviceRecord(
-            id=short,
-            type="SDS",
-            label=scope.get("label", "示波器"),
-            resource=resource,
-            short_resource=short,
-            channels=[
-                ChannelRecord(index, "scope_waveform", f"CH{index}")
-                for index in range(1, 5)
-            ],
-        )
     return list(records.values())
 
 

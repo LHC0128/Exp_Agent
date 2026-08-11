@@ -17,12 +17,30 @@ from lab_workflows.clock_sync import synchronize_clocks
 from lab_workflows.common import find_project_root
 from lab_workflows.devices import discover_devices
 from lab_workflows.instrument_control import (
+    ControlRevisionConflict,
+    apply_control_target_current_source,
+    apply_control_target_emission,
+    apply_control_target_generator,
+    apply_control_target_laser,
+    apply_control_target_scope,
+    apply_control_target_tec,
     apply_current_source,
     apply_generator_channel,
     apply_laser_emission,
     apply_laser_settings,
     apply_scope,
+    list_control_targets,
+    read_control_target,
+    read_control_targets,
     read_device,
+)
+from lab_workflows.instrument_config import (
+    RevisionConflict,
+    discover_visa_devices,
+    public_device_library,
+    public_physical_mappings,
+    save_device_library,
+    save_physical_mappings,
 )
 from lab_workflows.experiments import get_experiment, list_experiments
 from lab_workflows.experiments.catalog import (
@@ -40,6 +58,16 @@ from lab_workflows.phase_calibration import calibrate_demod0_safely
 
 from .jobs import Job, manager
 from .schemas import (
+    ControlCurrentSourceBody,
+    ControlEmissionBody,
+    ControlGeneratorBody,
+    ControlLaserBody,
+    ControlRevisionBody,
+    ControlScopeBody,
+    ControlTargetCatalog,
+    ControlTargetBulkResponse,
+    ControlTargetResponse,
+    ControlTecBody,
     CurrentSourceSettingsBody,
     DeviceSnapshot,
     DeviceSummary,
@@ -110,6 +138,17 @@ class ExperimentMetadataBody(BaseModel):
     description: str
 
 
+class DeviceLibraryBody(BaseModel):
+    base_revision: str
+    devices: dict[str, dict[str, Any]]
+
+
+class PhysicalMappingsBody(BaseModel):
+    base_revision: str
+    mapping: dict[str, dict[str, Any]]
+    constraints: dict[str, dict[str, list[str]]]
+
+
 def _job_or_404(job_id: str) -> Job:
     try:
         return manager.get(job_id)
@@ -122,6 +161,8 @@ def _with_short_hardware_lock(action):
         raise HTTPException(409, "其他硬件任务正在运行")
     try:
         return action()
+    except ControlRevisionConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     except (KeyError, ValueError, TypeError, PermissionError) as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
@@ -138,6 +179,131 @@ def health():
 @app.get("/api/devices", response_model=list[DeviceSummary])
 def devices():
     return [record.to_dict() for record in discover_devices()]
+
+
+@app.get("/api/control-targets", response_model=ControlTargetCatalog)
+def control_targets():
+    return list_control_targets()
+
+
+@app.post(
+    "/api/control-targets/{mapping_key}/refresh",
+    response_model=ControlTargetResponse,
+)
+def refresh_control_target(mapping_key: str, body: ControlRevisionBody):
+    return _with_short_hardware_lock(lambda: read_control_target(
+        mapping_key,
+        body.device_library_revision,
+        body.physical_mapping_revision,
+    ))
+
+
+@app.post("/api/control-targets/refresh-all", response_model=ControlTargetBulkResponse)
+def refresh_all_control_targets(body: ControlRevisionBody):
+    results = _with_short_hardware_lock(lambda: read_control_targets(
+        body.device_library_revision,
+        body.physical_mapping_revision,
+    ))
+    return {"results": results}
+
+
+@app.put("/api/control-targets/{mapping_key}/generator", response_model=ControlTargetResponse)
+def update_control_generator(mapping_key: str, body: ControlGeneratorBody):
+    return _with_short_hardware_lock(lambda: apply_control_target_generator(
+        mapping_key, body.device_library_revision, body.physical_mapping_revision,
+        body.settings.model_dump(exclude_unset=True),
+    ))
+
+
+@app.put("/api/control-targets/{mapping_key}/current-source", response_model=ControlTargetResponse)
+def update_control_current_source(mapping_key: str, body: ControlCurrentSourceBody):
+    return _with_short_hardware_lock(lambda: apply_control_target_current_source(
+        mapping_key, body.device_library_revision, body.physical_mapping_revision,
+        body.settings.model_dump(exclude_unset=True),
+    ))
+
+
+@app.put("/api/control-targets/{mapping_key}/laser", response_model=ControlTargetResponse)
+def update_control_laser(mapping_key: str, body: ControlLaserBody):
+    return _with_short_hardware_lock(lambda: apply_control_target_laser(
+        mapping_key, body.device_library_revision, body.physical_mapping_revision,
+        body.settings.model_dump(exclude_unset=True),
+    ))
+
+
+@app.put("/api/control-targets/{mapping_key}/emission", response_model=ControlTargetResponse)
+def update_control_emission(mapping_key: str, body: ControlEmissionBody):
+    return _with_short_hardware_lock(lambda: apply_control_target_emission(
+        mapping_key, body.device_library_revision, body.physical_mapping_revision,
+        body.settings.model_dump(exclude_unset=True),
+    ))
+
+
+@app.put("/api/control-targets/{mapping_key}/scope", response_model=ControlTargetResponse)
+def update_control_scope(mapping_key: str, body: ControlScopeBody):
+    return _with_short_hardware_lock(lambda: apply_control_target_scope(
+        mapping_key, body.device_library_revision, body.physical_mapping_revision,
+        body.settings.model_dump(exclude_unset=True),
+    ))
+
+
+@app.put("/api/control-targets/{mapping_key}/tec", response_model=ControlTargetResponse)
+def update_control_tec(mapping_key: str, body: ControlTecBody):
+    return _with_short_hardware_lock(lambda: apply_control_target_tec(
+        mapping_key, body.device_library_revision, body.physical_mapping_revision,
+        body.settings.model_dump(exclude_unset=True),
+    ))
+
+
+@app.get("/api/device-library")
+def device_library():
+    return public_device_library(ROOT)
+
+
+def _require_configuration_idle() -> None:
+    if manager.hardware_lock.locked():
+        raise HTTPException(409, "硬件任务运行期间不能修改设备配置")
+
+
+@app.put("/api/device-library")
+def update_device_library(body: DeviceLibraryBody):
+    _require_configuration_idle()
+    try:
+        return save_device_library(
+            body.devices,
+            base_revision=body.base_revision,
+            root=ROOT,
+        )
+    except RevisionConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, {"errors": [str(exc)]}) from exc
+
+
+@app.post("/api/device-library/discover-visa")
+def discover_device_library():
+    return _with_short_hardware_lock(discover_visa_devices)
+
+
+@app.get("/api/physical-mappings")
+def physical_mappings():
+    return public_physical_mappings(ROOT)
+
+
+@app.put("/api/physical-mappings")
+def update_physical_mappings(body: PhysicalMappingsBody):
+    _require_configuration_idle()
+    try:
+        return save_physical_mappings(
+            body.mapping,
+            body.constraints,
+            base_revision=body.base_revision,
+            root=ROOT,
+        )
+    except RevisionConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, {"errors": [str(exc)]}) from exc
 
 
 @app.post("/api/devices/{device_id}/refresh", response_model=DeviceSnapshot)

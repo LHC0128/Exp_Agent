@@ -89,7 +89,7 @@ V_Z=\frac{90000\ \mathrm{Hz}+\Delta f-90302.74646653689\ \mathrm{Hz}}
 
 1. 连接 GS200、Z/XY 场 DG4000、光功率 DG900、Pump DG4000、温控开关
    DG900、TEC103 和 HF2；同一物理设备通过 `DeviceSession` 复用。
-2. 按 `params/clock_sources.yaml` 设置并回读全部已连接设备的参考时钟；任一设备
+2. 按 `params/devices.yaml` 的 `reference_clock` 设置并回读全部已连接设备的参考时钟；任一设备
    不一致即在输出配置前停止。
 3. 配置 Mx 工作点：主场 9.333 mA、Pump/Probe 0.5/0.3 V、气室 120 °C、
    Pump 100 MHz/0.18 Vpp、Pump 门控 5 V DC ON。

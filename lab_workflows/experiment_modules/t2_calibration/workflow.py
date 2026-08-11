@@ -32,6 +32,7 @@ from ...steps import (
     ShutdownAction,
     TemperatureSwitchRestore,
     configure_temperature_control,
+    connect_signal_generator_routes,
     create_run_directory,
     run_safety_shutdown,
     set_temperature_switch,
@@ -184,7 +185,6 @@ def _connect_devices(
     for semantic, key in (
         ("x_field", "X_magnetic_field"),
         ("y_field", "Y_magnetic_field"),
-        ("z_field", "Z_magnetic_field"),
     ):
         cfg = mapping[key]
         devices[semantic] = session.connect(
@@ -193,30 +193,41 @@ def _connect_devices(
             lambda cfg=cfg: create_signal_generator(cfg),
         )
         channels[semantic] = int(cfg["channel"])
+    z_cfg = mapping["Z_magnetic_field"]
     time_sequence_2_cfg = mapping["Time_sequence_2"]
-    if time_sequence_2_cfg["resource"] != mapping["Z_magnetic_field"]["resource"]:
-        raise ValueError("Time_sequence_2 与 Z_magnetic_field 必须位于同一物理设备")
-    channels["time_sequence_2"] = int(time_sequence_2_cfg["channel"])
+    devices["z_field"], routed_channels = connect_signal_generator_routes(
+        session,
+        "z_field",
+        {
+            "z_field": ("Z_magnetic_field", z_cfg),
+            "time_sequence_2": ("Time_sequence_2", time_sequence_2_cfg),
+        },
+    )
+    channels.update(routed_channels)
 
     pump_cfg = mapping["Pump_laser_power"]
     probe_cfg = mapping["Probe_laser_power"]
-    if pump_cfg["resource"] != probe_cfg["resource"]:
-        raise ValueError("Pump_laser_power 与 Probe_laser_power 必须位于同一物理设备")
-    devices["laser"] = session.connect(
-        "laser", pump_cfg["resource"], lambda: create_signal_generator(pump_cfg)
+    devices["laser"], routed_channels = connect_signal_generator_routes(
+        session,
+        "laser",
+        {
+            "pump": ("Pump_laser_power", pump_cfg),
+            "probe": ("Probe_laser_power", probe_cfg),
+        },
     )
-    channels["pump"] = int(pump_cfg["channel"])
-    channels["probe"] = int(probe_cfg["channel"])
+    channels.update(routed_channels)
 
     carrier_cfg = mapping["Pump_modulation"]
     gate_cfg = mapping["Time_sequence"]
-    if carrier_cfg["resource"] != gate_cfg["resource"]:
-        raise ValueError("Pump_modulation 与 Time_sequence 必须位于同一物理设备")
-    devices["rf_switch"] = session.connect(
-        "rf_switch", carrier_cfg["resource"], lambda: create_signal_generator(carrier_cfg)
+    devices["rf_switch"], routed_channels = connect_signal_generator_routes(
+        session,
+        "rf_switch",
+        {
+            "aom_carrier": ("Pump_modulation", carrier_cfg),
+            "rf_gate": ("Time_sequence", gate_cfg),
+        },
     )
-    channels["aom_carrier"] = int(carrier_cfg["channel"])
-    channels["rf_gate"] = int(gate_cfg["channel"])
+    channels.update(routed_channels)
 
     temp_cfg = mapping["Temp_Switch"]
     devices["temp_switch"] = session.connect(

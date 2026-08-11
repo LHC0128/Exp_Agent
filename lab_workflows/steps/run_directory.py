@@ -9,7 +9,8 @@ from typing import Any
 
 import yaml
 
-from ..common import find_project_root, load_mapping, load_safety_limits
+from ..common import find_project_root, load_safety_limits
+from ..instrument_config import instrument_config_snapshot
 
 
 @dataclass(slots=True)
@@ -46,13 +47,18 @@ def create_run_directory(
     raw.mkdir(parents=True, exist_ok=False)
     results.mkdir(exist_ok=True)
     config_path = root / "experiment_config.yaml"
+    instrument_snapshot = instrument_config_snapshot(project_root)
     config = {
         "experiment_type": experiment_type,
         "schema_version": schema_version,
         "run_tag": run_tag,
         "timestamp": timestamp,
         "parameters": parameters,
-        "mapping_snapshot": load_mapping(project_root),
+        "mapping_snapshot": instrument_snapshot["resolved_mapping"],
+        "device_library_revision": instrument_snapshot["device_library_revision"],
+        "physical_mapping_revision": instrument_snapshot["physical_mapping_revision"],
+        "device_library_snapshot": instrument_snapshot["device_library"],
+        "physical_mapping_snapshot": instrument_snapshot["physical_mappings"],
         "safety_limits_snapshot": load_safety_limits(project_root),
         "actual_rates": {},
         "data_files": [],

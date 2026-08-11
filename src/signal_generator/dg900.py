@@ -30,6 +30,9 @@ class DG900Instrument:
     """RIGOL DG900 Pro 系列 PyVISA 封装."""
 
     MOD_TYPES = ("AM", "FM", "PM", "FSKey", "PWM")
+    MIN_ARB_POINTS = 32
+    MAX_ARB_POINTS = 16 * 1024 * 1024
+    MAX_ARB_CHUNK_BYTES = 20_000
 
     _SHAPE_NAMES = {
         "SIN": "SINusoid",
@@ -55,6 +58,7 @@ class DG900Instrument:
         "TIM": "TIMer",
         "POS": "POSitive",
         "NEG": "NEGative",
+        "INF": "INFinity",
         "SIN": "SINusoid",
         "SQU": "SQUare",
         "TRI": "TRIangle",
@@ -71,6 +75,7 @@ class DG900Instrument:
         self.channel = channel
         self._rm: Optional[pyvisa.ResourceManager] = None
         self._inst: Optional[MessageBasedResource] = None
+        self._selected_mod_types: dict[int, str] = {}
 
     # ------------------------------------------------------------------
     # 内部工具
@@ -111,6 +116,13 @@ class DG900Instrument:
             except Exception:
                 pass
             self._rm = None
+
+    def __enter__(self) -> "DG900Instrument":
+        self.connect()
+        return self
+
+    def __exit__(self, *args) -> None:
+        self.disconnect()
 
     def idn(self) -> str:
         """查询设备标识."""
@@ -242,6 +254,18 @@ class DG900Instrument:
     def get_phase(self, channel: Optional[int] = None) -> float:
         return self.query_float(f":SOURce{self._ch(channel)}:PHASe?")
 
+    def set_phase_adjust(self, phase: float,
+                         channel: Optional[int] = None) -> None:
+        """兼容 DG4000 的相位方法名。"""
+        self.set_phase(phase, channel)
+
+    def get_phase_adjust(self, channel: Optional[int] = None) -> float:
+        return self.get_phase(channel)
+
+    def phase_init(self, channel: Optional[int] = None) -> None:
+        """执行 DG900 Pro 原生同相位操作。"""
+        self.write(f":SOURce{self._ch(channel)}:PHASe:SYNChronize")
+
     def set_square_dcycle(self, percent: float,
                           channel: Optional[int] = None) -> None:
         self.write(
@@ -273,6 +297,17 @@ class DG900Instrument:
             f":SOURce{self._ch(channel)}:FUNCtion:PULSe:WIDTh?"
         )
 
+    def set_pulse_dcycle(self, percent: float,
+                         channel: Optional[int] = None) -> None:
+        self.write(
+            f":SOURce{self._ch(channel)}:FUNCtion:PULSe:DCYCle {percent}"
+        )
+
+    def get_pulse_dcycle(self, channel: Optional[int] = None) -> float:
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:FUNCtion:PULSe:DCYCle?"
+        )
+
     # ------------------------------------------------------------------
     # DC 输出（核心）
     # ------------------------------------------------------------------
@@ -287,6 +322,7 @@ class DG900Instrument:
         """
         ch = self._ch(channel)
         self.write(f":SOURce{ch}:APPLy:DC DEF,DEF,{voltage}")
+        self.set_output(True, ch)
 
     def get_dc_voltage(self, channel: Optional[int] = None) -> float:
         """读取 DC 输出电平。"""
@@ -318,6 +354,37 @@ class DG900Instrument:
             if self.get_mod_type_state(mod_type, channel):
                 return mod_type
         return None
+
+    def set_mod_type(self, mod_type: str,
+                     channel: Optional[int] = None) -> None:
+        """选择兼容接口后续 ``set_mod_state`` 使用的调制类型。"""
+        if mod_type not in self.MOD_TYPES:
+            raise ValueError(f"DG900 不支持调制类型: {mod_type}")
+        self._selected_mod_types[self._ch(channel)] = mod_type
+
+    def get_mod_type(self, channel: Optional[int] = None) -> str:
+        ch = self._ch(channel)
+        return (
+            self.get_active_mod_type(ch)
+            or self._selected_mod_types.get(ch, "AM")
+        )
+
+    def set_mod_state(self, state: bool,
+                      channel: Optional[int] = None) -> None:
+        ch = self._ch(channel)
+        if not state:
+            self.disable_all_mod(ch)
+            return
+        mod_type = (
+            self._selected_mod_types.get(ch)
+            or self.get_active_mod_type(ch)
+            or "AM"
+        )
+        self.disable_all_mod(ch)
+        self.set_mod_type_state(mod_type, True, ch)
+
+    def get_mod_state(self, channel: Optional[int] = None) -> bool:
+        return self.get_active_mod_type(channel) is not None
 
     def disable_all_mod(self, channel: Optional[int] = None) -> None:
         """关闭当前启用的调制，避免向不兼容波形写入无效状态命令."""
@@ -434,12 +501,25 @@ class DG900Instrument:
 
     def set_burst_mode(self, mode: str,
                        channel: Optional[int] = None) -> None:
-        self.write(f":SOURce{self._ch(channel)}:BURSt:MODE {mode}")
+        ch = self._ch(channel)
+        if str(mode).upper().startswith("INF"):
+            self.write(f":SOURce{ch}:BURSt:MODE TRIGgered")
+            self.set_burst_ncycles("INFinity", ch)
+            return
+        self.write(f":SOURce{ch}:BURSt:MODE {mode}")
 
     def get_burst_mode(self, channel: Optional[int] = None) -> str:
-        return self._expand_value(
-            self.query(f":SOURce{self._ch(channel)}:BURSt:MODE?")
+        ch = self._ch(channel)
+        mode = self._expand_value(
+            self.query(f":SOURce{ch}:BURSt:MODE?")
         )
+        if mode == "TRIGgered":
+            try:
+                if self.get_burst_ncycles(ch) == "INFinity":
+                    return "INFinity"
+            except Exception:
+                pass
+        return mode
 
     def set_burst_ncycles(self, cycles,
                           channel: Optional[int] = None) -> None:
@@ -512,6 +592,37 @@ class DG900Instrument:
         value = self.query(f":OUTPut{ch}:STATe?").strip().upper()
         return value in {"1", "ON"}
 
+    def set_output_load(self, ohms,
+                        channel: Optional[int] = None) -> None:
+        value = "INFinity" if str(ohms).upper() in {"INF", "INFINITY"} else ohms
+        self.write(f":OUTPut{self._ch(channel)}:LOAD {value}")
+
+    def get_output_load(self, channel: Optional[int] = None) -> str:
+        return self._expand_value(
+            self.query(f":OUTPut{self._ch(channel)}:LOAD?")
+        )
+
+    def set_voltage_unit(self, unit: str,
+                         channel: Optional[int] = None) -> None:
+        normalized = str(unit).upper()
+        if normalized not in {"VPP", "VRMS", "DBM"}:
+            raise ValueError("幅度单位必须为 VPP、VRMS 或 DBM")
+        self.write(f":SOURce{self._ch(channel)}:VOLTage:UNIT {normalized}")
+
+    def get_voltage_unit(self, channel: Optional[int] = None) -> str:
+        return self.query(
+            f":SOURce{self._ch(channel)}:VOLTage:UNIT?"
+        ).strip().upper()
+
+    def set_sync_state(self, state: bool,
+                       channel: Optional[int] = None) -> None:
+        self.write(
+            f":OUTPut{self._ch(channel)}:SYNC {'ON' if state else 'OFF'}"
+        )
+
+    def get_sync_state(self, channel: Optional[int] = None) -> bool:
+        return self.query_bool(f":OUTPut{self._ch(channel)}:SYNC?")
+
     def set_ref_clock_source(self, source: str = "EXTernal") -> None:
         """设置参考时钟源 (INTernal / EXTernal)."""
         self.write(f":SYSTem:ROSCillator:SOURce {source}")
@@ -519,3 +630,129 @@ class DG900Instrument:
     def get_ref_clock_source(self) -> str:
         """读取参考时钟源。"""
         return self.query(":SYSTem:ROSCillator:SOURce?")
+
+    # ------------------------------------------------------------------
+    # 便捷波形与任意波兼容接口
+    # ------------------------------------------------------------------
+
+    def setup_sine(self, freq: float, amplitude: float,
+                   offset: float = 0.0, phase: float = 0.0,
+                   channel: Optional[int] = None) -> None:
+        ch = self._ch(channel)
+        self.apply_wave("SINusoid", freq, amplitude, offset, phase, ch)
+        self.set_output(True, ch)
+
+    def setup_square(self, freq: float, amplitude: float,
+                     offset: float = 0.0, dcycle: float = 50.0,
+                     phase: float = 0.0,
+                     channel: Optional[int] = None) -> None:
+        ch = self._ch(channel)
+        self.apply_wave("SQUare", freq, amplitude, offset, phase, ch)
+        self.set_square_dcycle(dcycle, ch)
+        self.set_output(True, ch)
+
+    def setup_ramp(self, freq: float, amplitude: float,
+                   offset: float = 0.0, symmetry: float = 50.0,
+                   phase: float = 0.0,
+                   channel: Optional[int] = None) -> None:
+        ch = self._ch(channel)
+        self.apply_wave("RAMP", freq, amplitude, offset, phase, ch)
+        self.set_ramp_symmetry(symmetry, ch)
+        self.set_output(True, ch)
+
+    def setup_pulse(self, freq: float, amplitude: float,
+                    offset: float = 0.0, width: Optional[float] = None,
+                    channel: Optional[int] = None) -> None:
+        ch = self._ch(channel)
+        self.apply_wave("PULSe", freq, amplitude, offset, None, ch)
+        if width is not None:
+            self.set_pulse_width(width, ch)
+        self.set_output(True, ch)
+
+    def setup_noise(self, amplitude: float, offset: float = 0.0,
+                    channel: Optional[int] = None) -> None:
+        ch = self._ch(channel)
+        self.apply_wave("NOISe", None, amplitude, offset, None, ch)
+        self.set_output(True, ch)
+
+    @staticmethod
+    def _arb_codes(values) -> list[int]:
+        codes = []
+        for raw in values:
+            value = max(-1.0, min(1.0, float(raw)))
+            scale = 32767 if value >= 0 else 32768
+            codes.append(int(round(value * scale)))
+        return codes
+
+    def _arb_chunks(self, codes: list[int]) -> list[str]:
+        chunks: list[str] = []
+        current: list[str] = []
+        size = 0
+        for code in codes:
+            token = str(code)
+            added = len(token) + (1 if current else 0)
+            if current and size + added > self.MAX_ARB_CHUNK_BYTES:
+                chunks.append(",".join(current))
+                current = []
+                size = 0
+                added = len(token)
+            current.append(token)
+            size += added
+        if current:
+            chunks.append(",".join(current))
+        return chunks
+
+    def send_arbitrary_waveform(self, values,
+                                channel: Optional[int] = None) -> None:
+        """按 DG900 Pro 手册将归一化波表分块下载到易失存储器。"""
+        ch = self._ch(channel)
+        codes = self._arb_codes(values)
+        if not self.MIN_ARB_POINTS <= len(codes) <= self.MAX_ARB_POINTS:
+            raise ValueError(
+                f"点数需在 {self.MIN_ARB_POINTS} ~ {self.MAX_ARB_POINTS} 之间，"
+                f"实际为 {len(codes)}"
+            )
+        chunks = self._arb_chunks(codes)
+        self.clear_status()
+        for index, data in enumerate(chunks):
+            if len(chunks) == 1 or index == len(chunks) - 1:
+                flag = "END"
+            elif index == 0:
+                flag = "HEADer"
+            else:
+                flag = "CONTinue"
+            self.write(
+                f":SOURce{ch}:TRACe:DATA:DAC16 CODE,{flag},{data}"
+            )
+        self.wait_for_operation_complete()
+        self.raise_for_errors()
+
+    def setup_arbitrary(self, y_values, freq: float = 1000.0,
+                        amplitude: float = 5.0, offset: float = 0.0,
+                        phase: float = 0.0,
+                        channel: Optional[int] = None,
+                        output: bool = True) -> None:
+        ch = self._ch(channel)
+        output_before: bool | None = None
+        try:
+            output_before = self.get_output(ch)
+        except Exception:
+            pass
+        try:
+            if not output:
+                self.set_output(False, ch)
+            self.send_arbitrary_waveform(y_values, ch)
+            self.apply_wave("ARBitrary", freq, amplitude, offset, phase, ch)
+            if output:
+                self.set_output(True, ch)
+        except Exception:
+            if output_before is not None:
+                try:
+                    self.set_output(output_before, ch)
+                except Exception:
+                    logger.exception("DG900 任意波失败后恢复输出状态失败")
+            raise
+
+    def all_off(self) -> None:
+        for channel in (1, 2):
+            self.set_output(False, channel)

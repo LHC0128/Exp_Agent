@@ -6,6 +6,7 @@ from datetime import datetime
 from scipy import signal as scipy_signal
 from gs200 import GS200Instrument
 from lab_workflows.devices import create_signal_generator
+from lab_workflows.common import load_mapping
 from lockin_amplifier import (
     HF2Instrument, DAQConfig,
     SignalInputConfig, OscillatorConfig, DemodulatorConfig,
@@ -13,8 +14,7 @@ from lockin_amplifier import (
 )
 from sensitivity_analysis import fit_dispersive, compute_sensitivity, write_run_record
 
-with open("params/mapping.yaml", encoding="utf-8") as f:
-    MAPPING = yaml.safe_load(f)["mapping"]
+MAPPING = load_mapping()
 with open("params/safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
 

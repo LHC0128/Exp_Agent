@@ -65,8 +65,9 @@ from tqdm import tqdm
 
 # 设备库
 from gs200 import GS200Instrument
+from lab_workflows.common import load_mapping
+from lab_workflows.instrument_config import instrument_config_snapshot
 from lab_workflows.devices import (
-    create_signal_generator,
     signal_generator_max_arb_points,
 )
 from lab_workflows.experiment_runtime import (
@@ -80,6 +81,7 @@ from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_frequency.models 
 from lab_workflows.steps import (
     DGChannelShutdown,
     DirectAWPhaseCalibrationConfig,
+    DeviceSession,
     DisconnectTarget,
     STANDARD_PRESERVED_OUTPUTS,
     PhaseCalibrationConfig,
@@ -87,7 +89,7 @@ from lab_workflows.steps import (
     calibrate_demod_phase,
     calibrate_direct_aw_phase,
     configure_temperature_control,
-    disconnect_device_mapping,
+    connect_signal_generator_routes,
     run_safety_shutdown,
     synchronize_connected_clocks,
 )
@@ -103,8 +105,7 @@ print("所有库导入成功")
 
 # %% Cell 2
 # ========== 加载配置 ==========
-with open(project_root / "params" / "mapping.yaml", encoding="utf-8") as f:
-    MAPPING = yaml.safe_load(f)["mapping"]
+MAPPING = load_mapping(project_root)
 MAX_ARB_POINTS = signal_generator_max_arb_points(MAPPING["X_magnetic_field"])
 
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
@@ -285,12 +286,14 @@ print("配置已加载")
 # %% Cell 3
 # ========== 连接设备 ==========
 devices = {}
+session = DeviceSession()
 
 try:
     # ---- GS200: 主磁场 ----
     gs_cfg = MAPPING["main_magnetic_field"]
-    gs = GS200Instrument(gs_cfg["resource"])
-    gs.connect()
+    gs = session.connect(
+        "gs200", gs_cfg["resource"], lambda: GS200Instrument(gs_cfg["resource"])
+    )
     print(f"GS200 已连接: {gs.idn()}")
     gs.set_source_function(gs_cfg["source_function"])
     gs.set_current_limit(LIMITS["main_magnetic_field"]["max"] / 1000.0)
@@ -298,8 +301,15 @@ try:
 
     # ---- DG4000: X/Y 补偿磁场（AM 载波输出）----
     dg_comp_cfg = MAPPING["X_magnetic_field"]
-    dg_comp = create_signal_generator(dg_comp_cfg["resource"], channel=1)
-    dg_comp.connect()
+    dg_comp, _ = connect_signal_generator_routes(
+        session,
+        "dg_comp",
+        {
+            "x": ("X_magnetic_field", dg_comp_cfg),
+            "y": ("Y_magnetic_field", MAPPING["Y_magnetic_field"]),
+        },
+        logical_channels={"x": 1, "y": 2},
+    )
     print(f"补偿场 DG4000 已连接: {dg_comp.idn()}")
     # 初始关闭，避免继承上一轮实验的 burst/mod 状态。
     for ch in (1, 2):
@@ -311,8 +321,15 @@ try:
 
     # ---- DG4000: X/Y direct-AW 触发源 (dg_am) ----
     dg_am_cfg = MAPPING["X_magnetic_field_AM"]
-    dg_am = create_signal_generator(dg_am_cfg["resource"], channel=1)
-    dg_am.connect()
+    dg_am, _ = connect_signal_generator_routes(
+        session,
+        "dg_am",
+        {
+            "x_am": ("X_magnetic_field_AM", dg_am_cfg),
+            "y_am": ("Y_magnetic_field_AM", MAPPING["Y_magnetic_field_AM"]),
+        },
+        logical_channels={"x_am": 1, "y_am": 2},
+    )
     print(f"dg_am 已连接: {dg_am.idn()}")
     for ch in (1, 2):
         dg_am.set_burst_state(False, channel=ch)
@@ -323,8 +340,15 @@ try:
 
     # ---- DG4000: Z 射频场（dg_sweep）----
     dg_sweep_cfg = MAPPING["Z_magnetic_field"]
-    dg_sweep = create_signal_generator(dg_sweep_cfg["resource"], channel=1)
-    dg_sweep.connect()
+    dg_sweep, _ = connect_signal_generator_routes(
+        session,
+        "dg_sweep",
+        {
+            "z": ("Z_magnetic_field", dg_sweep_cfg),
+            "sequence_2": ("Time_sequence_2", MAPPING["Time_sequence_2"]),
+        },
+        logical_channels={"z": 1, "sequence_2": 2},
+    )
     print(f"dg_sweep DG4000 已连接: {dg_sweep.idn()}")
     for ch in (1, 2):
         dg_sweep.set_burst_state(False, channel=ch)
@@ -335,48 +359,65 @@ try:
 
     # ---- DG4000: Pump 调制 ----
     dg_mod_cfg = MAPPING["Pump_modulation"]
-    dg_mod = create_signal_generator(dg_mod_cfg["resource"], channel=1)
-    dg_mod.connect()
+    dg_mod, _ = connect_signal_generator_routes(
+        session,
+        "dg_mod",
+        {
+            "carrier": ("Pump_modulation", dg_mod_cfg),
+            "gate": ("Time_sequence", MAPPING["Time_sequence"]),
+        },
+        logical_channels={"carrier": 1, "gate": 2},
+    )
     print(f"调制 DG4000 已连接: {dg_mod.idn()}")
     devices["dg_mod"] = dg_mod
 
     # ---- DG900: 温度开关 (ConstXY 已确认是 DG900，不是 DG4000) ----
     dg_temp_cfg = MAPPING["Temp_Switch"]
-    dg_temp = create_signal_generator(dg_temp_cfg["resource"], channel=2)
-    dg_temp.connect()
+    dg_temp, _ = connect_signal_generator_routes(
+        session,
+        "dg_temp",
+        {"temp": ("Temp_Switch", dg_temp_cfg)},
+        logical_channels={"temp": 2},
+    )
     print(f"温控 DG900 已连接: {dg_temp.idn()}")
     devices["dg_temp"] = dg_temp
 
     # ---- TEC103: 温度控制器 ----
     tec_cfg = MAPPING["temperature"]
-    tec = TECInstrument(port=tec_cfg["resource"])
-    try:
-        tec.connect()
-        print("TEC103 已连接")
-    except Exception as exc:
-        print(
-            f"[警告] TEC103 连接失败（{tec_cfg['resource']}）：{exc}。"
-            "该设备将由外部程序负责，实验继续运行。"
-        )
-        tec = None
+    tec = session.connect_optional(
+        "tec",
+        tec_cfg["resource"],
+        lambda: TECInstrument(port=tec_cfg["resource"]),
+        device_label="TEC103",
+    )
     devices["tec"] = tec
 
     # ---- DG900: Pump/Probe 光功率 (dg_laser) ----
     dg_laser_cfg = MAPPING["Pump_laser_power"]
-    dg_laser = create_signal_generator(dg_laser_cfg["resource"], channel=1)
-    dg_laser.connect()
+    dg_laser, _ = connect_signal_generator_routes(
+        session,
+        "dg_laser",
+        {
+            "pump": ("Pump_laser_power", dg_laser_cfg),
+            "probe": ("Probe_laser_power", MAPPING["Probe_laser_power"]),
+        },
+        logical_channels={"pump": 1, "probe": 2},
+    )
     print(f"光功率 DG900 已连接: {dg_laser.idn()}")
     devices["dg_laser"] = dg_laser
 
     # ---- HF2: 锁相放大器 ----
     hf2_cfg = MAPPING["lockin_r"]
-    hfi = HF2Instrument(
-        host=hf2_cfg.get("host", "127.0.0.1"),
-        port=hf2_cfg.get("port", 8005),
-        api_level=1,
-        device_id=hf2_cfg["device_id"],
+    hfi = session.connect(
+        "hf2",
+        f"hf2://{hf2_cfg.get('host', '127.0.0.1')}/{hf2_cfg['device_id']}",
+        lambda: HF2Instrument(
+            host=hf2_cfg.get("host", "127.0.0.1"),
+            port=hf2_cfg.get("port", 8005),
+            api_level=1,
+            device_id=hf2_cfg["device_id"],
+        ),
     )
-    hfi.connect()
     print(f"HF2 已连接: {hfi.idn}")
     devices["hf2"] = hfi
 
@@ -408,9 +449,7 @@ try:
 
 except Exception as e:
     print(f"设备连接失败: {e}")
-    disconnect_errors = disconnect_device_mapping(devices)
-    if disconnect_errors:
-        print("设备断开警告: " + "；".join(disconnect_errors))
+    session.cleanup_connection_failure()
     raise
 
 print(f"\n所有设备连接完成，共 {len(devices)} 个设备")
@@ -501,6 +540,7 @@ run_dir.mkdir(parents=True, exist_ok=True)
 print(f"\n运行目录: {run_dir}")
 
 # ---- 9. 保存实验配置 ----
+instrument_snapshot = instrument_config_snapshot(project_root)
 config = {
     "experiment_id": "rf-sensitivity-direct-aw-frequency",
     "schema_version": PARAMS.schema_version,
@@ -595,17 +635,14 @@ config = {
     "fixed_params": FIXED_PARAMS,
     "Z_V_to_nT": Z_V_TO_NT,
     "rf_coil_shared_channel_note": (
-        "RF coil and Y_magnetic_field share instrument DG4E234902522 CH2. "
+        "RF coil and Y_magnetic_field share the endpoint declared by the current mapping. "
         "When Z RF field output is ON, Y compensation field output MUST be OFF."
     ),
-    "mapping_snapshot": {
-        key: {k: v for k, v in cfg.items() if k != "display"}
-        for key, cfg in MAPPING.items()
-        if key in ("main_magnetic_field", "X_magnetic_field", "Y_magnetic_field",
-                   "X_magnetic_field_AM", "Y_magnetic_field_AM", "Z_magnetic_field",
-                   "Pump_modulation", "Time_sequence", "Temp_Switch", "lockin_r",
-                   "scope_waveform")
-    },
+    "device_library_revision": instrument_snapshot["device_library_revision"],
+    "physical_mapping_revision": instrument_snapshot["physical_mapping_revision"],
+    "device_library_snapshot": instrument_snapshot["device_library"],
+    "physical_mapping_snapshot": instrument_snapshot["physical_mappings"],
+    "mapping_snapshot": instrument_snapshot["resolved_mapping"],
     "safety_limits_snapshot": {
         key: LIMITS[key] for key in LIMITS
         if key in ("X_magnetic_field", "Y_magnetic_field", "Z_magnetic_field",
@@ -996,7 +1033,6 @@ def upload_xy_aw(phase_deg, outputs_on=True):
     for ch in (1, 2):
         dg_comp.set_burst_state(True, channel=ch)
         dg_comp.set_burst_mode("INFinity", channel=ch)
-        dg_comp.set_burst_ncycles(50000, channel=ch)
         dg_comp.set_burst_trigger_source("EXTernal", channel=ch)
         dg_comp.set_burst_trigger_slope("POSitive", channel=ch)
         dg_comp.set_burst_phase(0.0, channel=ch)

@@ -35,8 +35,9 @@ import yaml
 from tqdm import tqdm
 
 from gs200 import GS200Instrument
+from lab_workflows.common import load_mapping
+from lab_workflows.instrument_config import instrument_config_snapshot
 from lab_workflows.devices import (
-    create_signal_generator,
     signal_generator_max_arb_points,
 )
 from tec_controller import TECInstrument
@@ -51,6 +52,7 @@ from lab_workflows.experiment_modules.xy_direct_aw_dc_calibration.models import 
 from lab_workflows.steps import (
     DGChannelShutdown,
     DirectAWPhaseCalibrationConfig,
+    DeviceSession,
     DisconnectTarget,
     STANDARD_PRESERVED_OUTPUTS,
     PhaseCalibrationConfig,
@@ -58,7 +60,7 @@ from lab_workflows.steps import (
     calibrate_demod_phase,
     calibrate_direct_aw_phase,
     configure_temperature_control,
-    disconnect_device_mapping,
+    connect_signal_generator_routes,
     run_safety_shutdown,
     synchronize_connected_clocks,
 )
@@ -76,8 +78,7 @@ print("实验库导入完成")
 
 # %% Cell 2
 # ========== 配置与安全限值 ==========
-with open(project_root / "params" / "mapping.yaml", encoding="utf-8") as f:
-    MAPPING = yaml.safe_load(f)["mapping"]
+MAPPING = load_mapping(project_root)
 MAX_ARB_POINTS = signal_generator_max_arb_points(MAPPING["X_magnetic_field"])
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
@@ -265,6 +266,7 @@ print(
 # %% Cell 3
 # ========== 设备连接 ==========
 devices = {}
+session = DeviceSession()
 clock_verification = {}
 
 
@@ -279,66 +281,106 @@ def reset_dg_channels(inst):
 
 try:
     gs_cfg = MAPPING["main_magnetic_field"]
-    gs = GS200Instrument(gs_cfg["resource"])
-    gs.connect()
+    gs = session.connect(
+        "gs200", gs_cfg["resource"], lambda: GS200Instrument(gs_cfg["resource"])
+    )
     gs.set_source_function(gs_cfg["source_function"])
     gs.set_current_limit(LIMITS["main_magnetic_field"]["max"] / 1000.0)
     devices["gs200"] = gs
 
     comp_cfg = MAPPING["X_magnetic_field"]
-    dg_comp = create_signal_generator(comp_cfg["resource"], channel=1)
-    dg_comp.connect()
+    dg_comp, _ = connect_signal_generator_routes(
+        session,
+        "dg_comp",
+        {
+            "x": ("X_magnetic_field", comp_cfg),
+            "y": ("Y_magnetic_field", MAPPING["Y_magnetic_field"]),
+        },
+        logical_channels={"x": 1, "y": 2},
+    )
     devices["dg_comp"] = dg_comp
     reset_dg_channels(dg_comp)
 
     trigger_cfg = MAPPING["X_magnetic_field_AM"]
-    dg_trigger = create_signal_generator(trigger_cfg["resource"], channel=1)
-    dg_trigger.connect()
+    dg_trigger, _ = connect_signal_generator_routes(
+        session,
+        "dg_trigger",
+        {
+            "x_am": ("X_magnetic_field_AM", trigger_cfg),
+            "y_am": ("Y_magnetic_field_AM", MAPPING["Y_magnetic_field_AM"]),
+        },
+        logical_channels={"x_am": 1, "y_am": 2},
+    )
     devices["dg_trigger"] = dg_trigger
     reset_dg_channels(dg_trigger)
 
     sweep_cfg = MAPPING["Z_magnetic_field"]
-    dg_sweep = create_signal_generator(sweep_cfg["resource"], channel=1)
-    dg_sweep.connect()
+    dg_sweep, _ = connect_signal_generator_routes(
+        session,
+        "dg_sweep",
+        {
+            "z": ("Z_magnetic_field", sweep_cfg),
+            "sequence_2": ("Time_sequence_2", MAPPING["Time_sequence_2"]),
+        },
+        logical_channels={"z": 1, "sequence_2": 2},
+    )
     devices["dg_sweep"] = dg_sweep
     reset_dg_channels(dg_sweep)
 
     mod_cfg = MAPPING["Pump_modulation"]
-    dg_mod = create_signal_generator(mod_cfg["resource"], channel=1)
-    dg_mod.connect()
+    dg_mod, _ = connect_signal_generator_routes(
+        session,
+        "dg_mod",
+        {
+            "carrier": ("Pump_modulation", mod_cfg),
+            "gate": ("Time_sequence", MAPPING["Time_sequence"]),
+        },
+        logical_channels={"carrier": 1, "gate": 2},
+    )
     devices["dg_mod"] = dg_mod
     reset_dg_channels(dg_mod)
 
     laser_cfg = MAPPING["Pump_laser_power"]
-    dg_laser = create_signal_generator(laser_cfg["resource"], channel=1)
-    dg_laser.connect()
+    dg_laser, _ = connect_signal_generator_routes(
+        session,
+        "dg_laser",
+        {
+            "pump": ("Pump_laser_power", laser_cfg),
+            "probe": ("Probe_laser_power", MAPPING["Probe_laser_power"]),
+        },
+        logical_channels={"pump": 1, "probe": 2},
+    )
     devices["dg_laser"] = dg_laser
 
     temp_cfg = MAPPING["Temp_Switch"]
-    dg_temp = create_signal_generator(temp_cfg["resource"], channel=2)
-    dg_temp.connect()
+    dg_temp, _ = connect_signal_generator_routes(
+        session,
+        "dg_temp",
+        {"temp": ("Temp_Switch", temp_cfg)},
+        logical_channels={"temp": 2},
+    )
     devices["dg_temp"] = dg_temp
 
     tec_cfg = MAPPING["temperature"]
-    tec = TECInstrument(port=tec_cfg["resource"])
-    try:
-        tec.connect()
-    except Exception as exc:
-        print(
-            f"[警告] TEC103 连接失败（{tec_cfg['resource']}）：{exc}。"
-            "该设备将由外部程序负责，实验继续运行。"
-        )
-        tec = None
+    tec = session.connect_optional(
+        "tec",
+        tec_cfg["resource"],
+        lambda: TECInstrument(port=tec_cfg["resource"]),
+        device_label="TEC103",
+    )
     devices["tec"] = tec
 
     hf2_cfg = MAPPING["lockin_r"]
-    hfi = HF2Instrument(
-        host=hf2_cfg.get("host", "127.0.0.1"),
-        port=hf2_cfg.get("port", 8005),
-        api_level=1,
-        device_id=hf2_cfg["device_id"],
+    hfi = session.connect(
+        "hf2",
+        f"hf2://{hf2_cfg.get('host', '127.0.0.1')}/{hf2_cfg['device_id']}",
+        lambda: HF2Instrument(
+            host=hf2_cfg.get("host", "127.0.0.1"),
+            port=hf2_cfg.get("port", 8005),
+            api_level=1,
+            device_id=hf2_cfg["device_id"],
+        ),
     )
-    hfi.connect()
     devices["hf2"] = hfi
     clock_verification = synchronize_connected_clocks(
         devices,
@@ -354,7 +396,7 @@ try:
         },
     )
 except Exception:
-    disconnect_device_mapping(devices)
+    session.cleanup_connection_failure()
     raise
 
 print(f"设备连接完成，共 {len(devices)} 个设备对象")
@@ -440,7 +482,6 @@ def upload_direct_aw(envelope_v, phase_deg, output=True):
     for ch in (1, 2):
         dg_comp.set_burst_state(True, channel=ch)
         dg_comp.set_burst_mode("INFinity", channel=ch)
-        dg_comp.set_burst_ncycles(50000, channel=ch)
         dg_comp.set_burst_trigger_source("EXTernal", channel=ch)
         dg_comp.set_burst_trigger_slope("POSitive", channel=ch)
         dg_comp.set_burst_phase(0.0, channel=ch)
@@ -691,6 +732,7 @@ results_dir = run_dir / "results"
 raw_dir.mkdir(parents=True, exist_ok=True)
 results_dir.mkdir(parents=True, exist_ok=True)
 
+instrument_snapshot = instrument_config_snapshot(project_root)
 config = {
     "experiment_id": "xy-direct-aw-dc-calibration",
     "schema_version": PARAMS.schema_version,
@@ -756,7 +798,11 @@ config = {
     },
     "fixed_params": FIXED_PARAMS,
     "clock_verification": clock_verification,
-    "mapping_snapshot": MAPPING,
+    "device_library_revision": instrument_snapshot["device_library_revision"],
+    "physical_mapping_revision": instrument_snapshot["physical_mapping_revision"],
+    "device_library_snapshot": instrument_snapshot["device_library"],
+    "physical_mapping_snapshot": instrument_snapshot["physical_mappings"],
+    "mapping_snapshot": instrument_snapshot["resolved_mapping"],
     "safety_limits_snapshot": LIMITS,
     "data_files": [],
 }

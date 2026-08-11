@@ -27,6 +27,7 @@ import numpy as np
 import yaml
 
 from lab_workflows.devices import create_signal_generator
+from lab_workflows.common import load_mapping
 
 try:
     from sds_acquisition import (
@@ -46,8 +47,7 @@ print("库导入完成")
 
 # %% Cell 2
 # ========== 加载配置 ==========
-with open(project_root / "params" / "mapping.yaml", encoding="utf-8") as f:
-    MAPPING = yaml.safe_load(f)["mapping"]
+MAPPING = load_mapping(project_root)
 
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
