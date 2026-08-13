@@ -1,5 +1,13 @@
 schema_version: 1
 devices:
+  keithley_6221_4503331:
+    instrument: keithley_6221
+    model: '6221'
+    label: Keithley 6221 Z 主场电流源
+    resource: TCPIP0::169.254.100.22::1394::SOCKET
+    reference_clock: null
+    connection: {}
+    capabilities: {}
   gs200_90z631552:
     instrument: gs200
     model: GS200

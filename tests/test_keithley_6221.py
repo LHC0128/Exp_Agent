@@ -70,6 +70,24 @@ class Keithley6221DriverTests(unittest.TestCase):
         self.assertEqual(device.get_output_response(), "FAST")
         self.assertTrue(device.get_output())
 
+    def test_compliance_test_commands_and_parsing(self):
+        device, fake = self.make_device({
+            "CALC3:LIM:FAIL?": ["0", "1"],
+        })
+        device.set_compliance_test(True)
+        device.set_compliance_test(False)
+        self.assertFalse(device.is_in_compliance())
+        self.assertTrue(device.is_in_compliance())
+        self.assertEqual(
+            fake.writes,
+            ["CALC3:LIM:STAT ON", "CALC3:LIM:STAT OFF"],
+        )
+
+    def test_compliance_query_communication_failure_is_propagated(self):
+        device, _ = self.make_device()
+        with self.assertRaises(KeyError):
+            device.is_in_compliance()
+
     def test_dc_boundaries_and_non_finite_values_are_rejected(self):
         device, fake = self.make_device()
         device.set_current(-0.105)
@@ -158,6 +176,18 @@ class Keithley6221DriverTests(unittest.TestCase):
             "SOUR:WAVE:DUR:CYCL INF",
         ])
 
+    def test_firmware_large_duration_sentinel_is_infinite(self):
+        device, _ = self.make_device({
+            "SOUR:WAVE:DUR:TIME?": "+9.9e37",
+            "SOUR:WAVE:DUR:CYCL?": "9.900000E+37",
+        })
+        self.assertEqual(device.get_waveform_duration_time(), "INF")
+        self.assertEqual(device.get_waveform_duration_cycles(), "INF")
+
+    def test_fixed_ranging_firmware_abbreviation_is_canonicalized(self):
+        device, _ = self.make_device({"SOUR:WAVE:RANG?": "FIX"})
+        self.assertEqual(device.get_waveform_ranging(), "FIXED")
+
     def test_arbitrary_upload_batches_at_one_hundred_points(self):
         device, fake = self.make_device()
         points = [-1.0] + [0.0] * 199 + [1.0]
@@ -190,6 +220,34 @@ class Keithley6221DriverTests(unittest.TestCase):
         self.assertEqual(fake.writes, [
             "SOUR:WAVE:ABOR", "SOUR:WAVE:ARM", "SOUR:WAVE:INIT"
         ])
+
+    def test_external_trigger_commands_and_boundary(self):
+        device, fake = self.make_device({
+            "SOUR:WAVE:EXTR:ENAB?": "ON",
+            "SOUR:WAVE:EXTR:ILIN?": "1",
+            "SOUR:WAVE:EXTR:IGN?": "0",
+            "SOUR:WAVE:EXTR:IVAL?": "-0.05",
+        })
+        device.set_external_trigger(True)
+        device.set_external_trigger_line(1)
+        device.set_external_trigger_ignore(False)
+        device.set_external_trigger_inactive_value(-0.05)
+        self.assertTrue(device.get_external_trigger())
+        self.assertEqual(device.get_external_trigger_line(), 1)
+        self.assertFalse(device.get_external_trigger_ignore())
+        self.assertAlmostEqual(device.get_external_trigger_inactive_value(), -0.05)
+        self.assertEqual(fake.writes, [
+            "SOUR:WAVE:EXTR:ENAB ON",
+            "SOUR:WAVE:EXTR:ILIN 1",
+            "SOUR:WAVE:EXTR:IGN OFF",
+            "SOUR:WAVE:EXTR:IVAL -0.05",
+        ])
+        for line in (-1, 7, 1.5, True):
+            with self.assertRaises(ValueError):
+                device.set_external_trigger_line(line)
+        for value in (-1.01, 1.01, math.inf):
+            with self.assertRaises(ValueError):
+                device.set_external_trigger_inactive_value(value)
 
 
 if __name__ == "__main__":

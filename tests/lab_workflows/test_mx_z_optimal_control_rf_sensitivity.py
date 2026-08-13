@@ -72,10 +72,10 @@ def test_defaults_registry_and_real_sources() -> None:
         / "mx-z-optimal-control-rf-sensitivity.yaml"
     )
     assert params.validate(root) == []
-    assert params.y_rf_frequency_hz == pytest.approx(12000.0)
-    assert params.main_magnetic_field_ma == pytest.approx(0.0)
-    assert params.x_dc_field_v == pytest.approx(-0.01)
-    assert params.y_rf_offset_v == pytest.approx(0.008)
+    assert params.y_rf_frequency_hz == pytest.approx(30000.0)
+    assert params.main_magnetic_field_ma == pytest.approx(0.01)
+    assert params.x_dc_field_v == pytest.approx(0.01)
+    assert params.y_rf_offset_v == pytest.approx(0.01)
     assert params.linewidth_mode == "amplitude_equivalent"
     definition = get_experiment("mx-z-optimal-control-rf-sensitivity")
     assert definition is DEFINITION
@@ -86,17 +86,17 @@ def test_defaults_registry_and_real_sources() -> None:
         for field in definition.schema_provider()["fields"]
         if field["name"] == "FIXED_PARAMS.main_magnetic_field"
     )
-    assert main_field_schema["default"] == pytest.approx(0.0)
+    assert main_field_schema["default"] == pytest.approx(0.01)
     assert main_field_schema["unit"] == "mA"
     assert main_field_schema["group"] == "basic"
     schema_fields = {
         field["name"]: field for field in definition.schema_provider()["fields"]
     }
     assert schema_fields["FIXED_PARAMS.X_magnetic_field"]["default"] == pytest.approx(
-        -0.01
+        0.01
     )
     assert schema_fields["FIXED_PARAMS.Y_magnetic_field"]["default"] == pytest.approx(
-        0.008
+        0.01
     )
 
     theory = load_theory_control(
@@ -116,13 +116,13 @@ def test_defaults_registry_and_real_sources() -> None:
     )
     assert theory.time_s.size == 10000
     assert theory.time_s.size <= MAX_DG4000_ARB_POINTS
-    assert theory.repeat_frequency_hz == pytest.approx(12000.0)
+    assert theory.repeat_frequency_hz == pytest.approx(30000.0)
     assert calibration.slope_hz_per_v == pytest.approx(
         25157.23790615295
     )
     assert len(calibration.analysis_sha256) == 64
-    assert applied.minimum_v == pytest.approx(-0.9601221677864967)
-    assert applied.maximum_v == pytest.approx(0.9605459178331038)
+    assert applied.minimum_v == pytest.approx(-2.2597704241192624)
+    assert applied.maximum_v == pytest.approx(2.2598362031060795)
     assert applied.amplitude_vpp == pytest.approx(6.0)
     assert applied.offset_v == pytest.approx(0.0)
     assert applied.output_minimum_v == pytest.approx(-3.0)
@@ -767,6 +767,7 @@ def test_control_starts_once_and_y_rf_rearms_independently() -> None:
     )
     assert control.calls.count(("output", 1, True)) == 1
     assert ("trigger_source", 1, "EXTernal") in control.calls
+    assert ("trigger_slope", 1, "NEGative") in control.calls
     assert ("burst_mode", 1, "INFinity") in control.calls
     assert (
         "frequency",
@@ -830,7 +831,7 @@ def test_y_rf_zero_uses_dc_compensation_then_restores_burst_sine() -> None:
     assert ("burst_state", 2, True) in rf.calls
     assert ("burst_mode", 2, "INFinity") in rf.calls
     assert ("trigger_source", 2, "EXTernal") in rf.calls
-    assert ("trigger_slope", 2, "POSitive") in rf.calls
+    assert ("trigger_slope", 2, "NEGative") in rf.calls
     assert rf.calls[-1] == ("output", 2, True)
 
 

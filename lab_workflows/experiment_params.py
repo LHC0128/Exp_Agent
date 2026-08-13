@@ -29,6 +29,7 @@ def parameter(
     options: tuple[tuple[Any, str], ...] | None = None,
     options_from_directory: str | None = None,
     options_pattern: str = "*",
+    read_only: bool = False,
 ) -> Field[Any]:
     """声明模型字段及其稳定外部名称和 GUI 元数据。"""
     metadata = {
@@ -44,6 +45,7 @@ def parameter(
         "options": options,
         "options_from_directory": options_from_directory,
         "options_pattern": options_pattern,
+        "read_only": read_only,
     }
     kwargs: dict[str, Any] = {"metadata": metadata}
     if default is not MISSING:
@@ -269,6 +271,7 @@ class ExperimentParams:
                 "minimum": metadata.get("minimum"),
                 "maximum": metadata.get("maximum"),
                 "description": str(metadata.get("description", "")),
+                "read_only": bool(metadata.get("read_only", False)),
             }
             options = self._options(item, root)
             if options or metadata.get("options") is not None or metadata.get("options_from_directory"):

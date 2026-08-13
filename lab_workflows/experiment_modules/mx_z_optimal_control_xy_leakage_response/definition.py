@@ -34,7 +34,7 @@ DEFINITION = ExperimentDefinition(
     ),
     wiring_notes=(
         "Z_magnetic_field DG4000 CH1 输出最优控制；X_magnetic_field 与 Y_magnetic_field DG4000 CH1/CH2 输出同形任意波。",
-        "Time_sequence_2 CH2 需经分配后同时接入 Z 控制和 X/Y 控制两台 DG4000 的 Ext Trig。",
+        "Time_sequence_2 CH2 需经分配后同时接入 Z 控制和 X/Y 控制两台 DG4000 的 Ext Trig，所有任意波 Burst 均使用下降沿。",
         "软件只验证 Burst/触发配置，不能确认实体 BNC 分配线是否接通。",
         "HF2 Demod0 按独立 DEMOD_FREQUENCY_HZ 采集 R。",
     ),

@@ -39,6 +39,12 @@ from ..experiment_modules.mx_y_rf_probe_detuning_optimization.definition import 
 from ..experiment_modules.mx_main_field_calibration.definition import (
     DEFINITION as MX_MAIN_FIELD_CALIBRATION_DEFINITION,
 )
+from ..experiment_modules.mx_keithley_6221_main_field_calibration.definition import (
+    DEFINITION as MX_KEITHLEY_6221_MAIN_FIELD_CALIBRATION_DEFINITION,
+)
+from ..experiment_modules.mx_keithley_6221_optimal_control_rf_sensitivity.definition import (
+    DEFINITION as MX_KEITHLEY_6221_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
+)
 from ..experiment_modules.mx_main_field_noise_spectrum.definition import (
     DEFINITION as MX_MAIN_FIELD_NOISE_SPECTRUM_DEFINITION,
 )
@@ -177,6 +183,8 @@ _DEFINITIONS = [
     MX_Y_RF_POWER_OPTIMIZATION_DEFINITION,
     MX_Y_RF_PROBE_DETUNING_OPTIMIZATION_DEFINITION,
     MX_MAIN_FIELD_CALIBRATION_DEFINITION,
+    MX_KEITHLEY_6221_MAIN_FIELD_CALIBRATION_DEFINITION,
+    MX_KEITHLEY_6221_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
     MX_MAIN_FIELD_NOISE_SPECTRUM_DEFINITION,
     MX_MAIN_FIELD_SCOPE_NOISE_SPECTRUM_DEFINITION,
     MX_Z_FIELD_CALIBRATION_DEFINITION,

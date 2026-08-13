@@ -29,7 +29,7 @@ DEFINITION = ExperimentDefinition(
     acquisition_program="experiments/Mx_Z_Optimal_Control_XYZ_Balance.py",
     analysis_program="experiments/Mx_Z_Optimal_Control_XYZ_Balance_plot.py",
     wiring_notes=(
-        "Z_magnetic_field DG4000 CH1 输出最优控制；Time_sequence_2 CH2 接该 DG4000 的 Ext Trig。",
+        "Z_magnetic_field DG4000 CH1 输出最优控制；Time_sequence_2 CH2 接该 DG4000 的 Ext Trig，并使用下降沿启动 Burst。",
         "X_magnetic_field 与 Y_magnetic_field 使用同一台 DG4000 的 CH1/CH2 DC 输出。",
         "main_magnetic_field GS200 作为 Z 方向平衡场扫描源，与 DG4000 Z 最优控制叠加。",
         "HF2 Demod0 按 DEMOD_FREQUENCY_HZ 采集 R；软件不能确认实体触发 BNC 接线。",

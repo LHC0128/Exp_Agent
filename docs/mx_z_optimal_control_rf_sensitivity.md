@@ -3,22 +3,22 @@ title: Mx Z 最优控制 RF 灵敏度
 type: Mx_Z_Optimal_Control_RF_Sensitivity
 scan_mode: point_by_point
 defaults:
-  CONTROL_VERSION: v1
-  Z_CALIBRATION_SOURCE_RUN: 0728_161259_mx_z_cal
+  CONTROL_VERSION: v2
+  Z_CALIBRATION_SOURCE_RUN: 0730_170249_mx_z_cal
   CONTROL_SCALE: 1.0
-  Z_AW_OUTPUT_VPP: 4.0
+  Z_AW_OUTPUT_VPP: 6.0
   Z_AW_OUTPUT_OFFSET: 0.0
-  Y_RF_FREQUENCY_HZ: 12000.0
+  Y_RF_FREQUENCY_HZ: 30000.0
   Y_RF_AMP_START_VPP: -0.1
   Y_RF_AMP_STOP_VPP: 0.1
-  Y_RF_AMP_POINTS: 21
-  PHASE_CAL_RF_AMPLITUDE_VPP: 0.005
+  Y_RF_AMP_POINTS: 41
+  PHASE_CAL_RF_AMPLITUDE_VPP: 0.01
   PHASE_OUTLIER_SIGMA_THRESHOLD: 6.0
   PHASE_OUTLIER_MAX_REACQUIRE_POINTS: 4
   Y_RF_NT_PER_VPP: 1517.79147
-  FIXED_PARAMS.main_magnetic_field: 0.0
-  FIXED_PARAMS.X_magnetic_field: -0.01
-  FIXED_PARAMS.Y_magnetic_field: 0.008
+  FIXED_PARAMS.main_magnetic_field: 0.01
+  FIXED_PARAMS.X_magnetic_field: 0.01
+  FIXED_PARAMS.Y_magnetic_field: 0.01
 mapping_keys:
   main_magnetic_field:
     role: configured_current_and_restored
@@ -56,6 +56,7 @@ learned_notes:
   - 剩磁响应模式不要求相位拟合通过，扫描后不执行 RF 幅度和噪声采集。
   - 剩磁响应模式在所有退出路径恢复 CONTROL_BURST_PHASE_DEG。
   - 正常结束、取消或异常时均保持 Z 控制波形和输出状态不变，不归零、不关闭。
+  - Z 控制和 Y RF 的 DG4000 Burst 均使用外部下降沿触发，与 Keithley 6221 Trigger Link 输入保持同沿。
   - 共同触发实体接线由操作者核对，软件只验证仪器配置。
   - 控制换算只使用 Z 标定斜率，不使用约 90 kHz 截距。
 ---
@@ -109,14 +110,15 @@ u(t)=\frac{V_Z(t)-\mathrm{Z\_AW\_OUTPUT\_OFFSET}}
 \]
 
 若任一点的 \(|u(t)|>1\)，或 GUI 给定的完整输出范围超出 Z 通道安全
-限值，预检直接失败，不裁剪目标波形。默认使用 `4 Vpp / 0 V offset`。
+限值，预检直接失败，不裁剪目标波形。默认使用 `6 Vpp / 0 V offset`。
 
 ## 共同触发与两种相位模式
 
 `Time_sequence_2`（Z 控制 DG4000 CH2）输出 100 Hz、5 Vpp、
 2.5 V offset、50% duty 方波。该信号必须经分配后同时接入 Z 控制
-DG4000 和 Y RF DG4000 的 Ext Trig；两台仪器使用正沿外触发
-`Burst INFinity`。软件不能判断实体 BNC 线是否接通，运行前必须人工核对。
+DG4000 和 Y RF DG4000 的 Ext Trig；两台仪器使用下降沿外触发
+`Burst INFinity`，从而与 Keithley 6221 Trigger Link 的下降沿输入保持同沿。
+软件不能判断实体 BNC 线是否接通，运行前必须人工核对。
 
 当 `PHASE_CAL_RF_AMPLITUDE_VPP > 0` 时执行 RF 灵敏度模式。Z 控制被
 触发后连续运行，校相保持 Z 控制相位和 Output 不变，只扫描 Y RF

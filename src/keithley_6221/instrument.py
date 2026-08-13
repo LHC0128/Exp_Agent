@@ -49,6 +49,9 @@ class Keithley6221Instrument:
         self._rm = pyvisa.ResourceManager()
         self._inst = self._rm.open_resource(self.resource_string)
         self._inst.timeout = self.timeout
+        if "::SOCKET" in self.resource_string.upper():
+            self._inst.read_termination = "\n"
+            self._inst.write_termination = "\n"
         logger.info("已连接: %s", self.idn())
 
     def disconnect(self) -> None:
@@ -124,7 +127,9 @@ class Keithley6221Instrument:
         normalized = value.strip().strip('"').upper()
         if normalized in {"INF", "+INF", "INFINITY", "+INFINITY"}:
             return "INF"
-        return float(normalized)
+        converted = float(normalized)
+        # 6221 D04 固件用约 9.9e37 表示 SCPI 的无限时长。
+        return "INF" if abs(converted) >= 9e37 else converted
 
     def idn(self) -> str:
         return self.query("*IDN?")
@@ -191,6 +196,14 @@ class Keithley6221Instrument:
 
     def get_compliance(self) -> float:
         return float(self.query("CURR:COMP?"))
+
+    def set_compliance_test(self, enabled: bool) -> None:
+        """启用或关闭输出 Compliance 限值测试。"""
+        self.write(f"CALC3:LIM:STAT {'ON' if enabled else 'OFF'}")
+
+    def is_in_compliance(self) -> bool:
+        """返回当前输出是否已达到 Compliance 电压上限。"""
+        return self._parse_bool(self.query("CALC3:LIM:FAIL?"))
 
     def set_analog_filter(self, enabled: bool) -> None:
         self.write(f"CURR:FILT {'ON' if enabled else 'OFF'}")
@@ -276,7 +289,8 @@ class Keithley6221Instrument:
         self.write(f"SOUR:WAVE:RANG {normalized}")
 
     def get_waveform_ranging(self) -> str:
-        return self.query("SOUR:WAVE:RANG?").strip().strip('"').upper()
+        value = self.query("SOUR:WAVE:RANG?").strip().strip('"').upper()
+        return "FIXED" if value == "FIX" else value
 
     def set_waveform_duration(
         self, mode: str, value: float | None = None
@@ -349,3 +363,31 @@ class Keithley6221Instrument:
 
     def abort_waveform(self) -> None:
         self.write("SOUR:WAVE:ABOR")
+
+    def set_external_trigger(self, enabled: bool) -> None:
+        """启用或关闭波形外部 Trigger Link 触发。"""
+        self.write(f"SOUR:WAVE:EXTR:ENAB {'ON' if enabled else 'OFF'}")
+
+    def get_external_trigger(self) -> bool:
+        return self._parse_bool(self.query("SOUR:WAVE:EXTR:ENAB?"))
+
+    def set_external_trigger_line(self, line: int) -> None:
+        if isinstance(line, bool) or int(line) != line or not 0 <= int(line) <= 6:
+            raise ValueError("外部触发线必须是 0 到 6 的整数")
+        self.write(f"SOUR:WAVE:EXTR:ILIN {int(line)}")
+
+    def get_external_trigger_line(self) -> int:
+        return int(float(self.query("SOUR:WAVE:EXTR:ILIN?")))
+
+    def set_external_trigger_ignore(self, ignore: bool) -> None:
+        self.write(f"SOUR:WAVE:EXTR:IGN {'ON' if ignore else 'OFF'}")
+
+    def get_external_trigger_ignore(self) -> bool:
+        return self._parse_bool(self.query("SOUR:WAVE:EXTR:IGN?"))
+
+    def set_external_trigger_inactive_value(self, value: float) -> None:
+        inactive = self._bounded("外部触发非活动值", value, -1.0, 1.0)
+        self.write(f"SOUR:WAVE:EXTR:IVAL {self._format(inactive)}")
+
+    def get_external_trigger_inactive_value(self) -> float:
+        return float(self.query("SOUR:WAVE:EXTR:IVAL?"))

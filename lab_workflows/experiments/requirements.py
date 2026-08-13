@@ -9,6 +9,12 @@ FULL_HF2 = (
     "Probe_laser_power", "Pump_modulation", "Time_sequence",
     "Temp_Switch", "temperature", "lockin_r",
 )
+KEITHLEY_MAIN_FIELD = (*FULL_HF2, "keithley_6221_main_field")
+KEITHLEY_OPTIMAL_CONTROL = (
+    "main_magnetic_field", "keithley_6221_main_field", "Time_sequence_2",
+    "X_magnetic_field", "rf_coil", "Pump_laser_power", "Probe_laser_power",
+    "Pump_modulation", "Time_sequence", "Temp_Switch", "temperature", "lockin_r",
+)
 SCOPE = (
     "main_magnetic_field", "Z_magnetic_field", "X_magnetic_field",
     "Y_magnetic_field", "Pump_laser_power", "Probe_laser_power",
@@ -40,6 +46,8 @@ STATIC_SENSITIVITY = (
 TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "static-sensitivity": STATIC_SENSITIVITY,
     "mx-main-field-calibration": FULL_HF2,
+    "mx-keithley-6221-main-field-calibration": KEITHLEY_MAIN_FIELD,
+    "mx-keithley-6221-optimal-control-rf-sensitivity": KEITHLEY_OPTIMAL_CONTROL,
     "mx-main-field-noise-spectrum": FULL_HF2,
     "mx-main-field-scope-noise-spectrum": SCOPE,
     "mx-xy-residual-field-calibration": FULL_HF2,
@@ -88,6 +96,7 @@ INFINITE_BURST_MAPPING_KEYS: dict[str, tuple[str, ...]] = {
 
 MAPPING_INSTRUMENTS = {
     "main_magnetic_field": "gs200",
+    "keithley_6221_main_field": "keithley_6221",
     "temperature": "tec_controller",
     "lockin_r": "lockin_amplifier",
     "lockin_xy": "lockin_amplifier",

@@ -17,6 +17,13 @@
 
 safety_limits:
   # ---- 直流源 ----
+  keithley_6221_main_field:
+    min: -100.0
+    max: 100.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "Keithley 6221 控制 Z 主线圈，允许范围 -100 到 100 mA"
+
   main_magnetic_field:
     min: -10
     max: 10

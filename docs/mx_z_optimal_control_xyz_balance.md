@@ -4,16 +4,16 @@ type: Mx_Z_Optimal_Control_XYZ_Balance
 execution_mode: typed_workflow
 scan_mode: nested_scan
 defaults:
-  X_FIELD_START_V: -0.01
-  X_FIELD_STOP_V: 0.01
+  X_FIELD_START_V: -0.05
+  X_FIELD_STOP_V: 0.05
   X_FIELD_POINTS: 11
-  Y_FIELD_START_V: -0.01
-  Y_FIELD_STOP_V: 0.01
+  Y_FIELD_START_V: -0.05
+  Y_FIELD_STOP_V: 0.05
   Y_FIELD_POINTS: 11
-  Z_FIELD_START_MA: -0.01
-  Z_FIELD_STOP_MA: 0.01
-  Z_FIELD_POINTS: 11
-  DEMOD_FREQUENCY_HZ: 12000.0
+  Z_FIELD_START_MA: -0.02
+  Z_FIELD_STOP_MA: 0.02
+  Z_FIELD_POINTS: 5
+  DEMOD_FREQUENCY_HZ: 30000.0
   RESPONSE_SETTLE_TIME_S: 0.1
   RESPONSE_DURATION_S: 0.2
 mapping_keys:
@@ -42,6 +42,7 @@ learned_notes:
   - 最优点只按实测 Demod0 mean(R) 选择，不拟合、不复测、不换算 nT。
   - 分析图按每个 GS200 Z 电流分别显示 XY 平面，并对所有平面使用共同色标。
   - 扫描期间 X/Y 与 GS200 在零设定点也保持 Output ON。
+  - Z 最优控制 DG4000 Burst 使用共同触发方波的下降沿启动。
 ---
 
 # Mx Z 最优控制 XYZ 平衡场
@@ -60,12 +61,13 @@ Pump/Probe、温控和 HF2 Demod0 配置；最优控制只在开始时触发一�
 
 `Z_magnetic_field` DG4000 CH1 只输出周期最优控制，不作为 Z 平衡场扫描源。
 `Time_sequence_2` CH2 只需接入 Z 控制 DG4000 的 Ext Trig；X/Y 使用 DC 模式，
-不需要共同触发。
+不需要共同触发。Z 控制 Burst 使用下降沿启动，与 Keithley 6221 Trigger Link
+输入保持同沿。
 
 ## 扫描与采集
 
-默认 X/Y 为 `-0.01 V` 至 `+0.01 V`、各 11 点，Z 为 `-0.01 mA` 至
-`+0.01 mA`、11 点，共 1331 个点。数据数组固定使用 `(Z, X, Y)` 索引；实际
+默认 X/Y 为 `-0.05 V` 至 `+0.05 V`、各 11 点，Z 为 `-0.02 mA` 至
+`+0.02 mA`、5 点，共 605 个点。数据数组固定使用 `(Z, X, Y)` 索引；实际
 采集以 Z 为外层，X/Y 使用跨行、跨平面连续蛇形顺序，减少相邻点的大幅跳变。
 
 每个轴都允许配置为单点固定值。当 `*_FIELD_POINTS=1` 时，对应的

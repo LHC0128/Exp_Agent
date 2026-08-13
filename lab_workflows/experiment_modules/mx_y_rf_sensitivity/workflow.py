@@ -571,6 +571,9 @@ def _acquire_valid_r_point(
     """采集一个 R 点；标准差超限时完整保存并重新采集。"""
     hf2 = devices["hf2"]
     for attempt in range(params.r_point_max_attempts):
+        checker = devices.get("_compliance_checker")
+        if checker is not None:
+            checker(f"{file_stem} 采集前")
         payload = _temperature_gated_acquire(
             params,
             devices,
@@ -586,6 +589,8 @@ def _acquire_valid_r_point(
             ),
         )
         summary = summarize_r(payload)
+        if checker is not None:
+            checker(f"{file_stem} 采集后")
         accepted = (
             summary["r_std_v"]
             <= params.r_bad_point_std_threshold_v
@@ -840,6 +845,9 @@ def _acquire_noise(
     )
     for index in range(params.noise_n_avg):
         check_cancelled()
+        checker = devices.get("_compliance_checker")
+        if checker is not None:
+            checker(f"零 Y RF 噪声 {index + 1} 采集前")
         print(f"零 Y RF 噪声 {index + 1}/{params.noise_n_avg}")
         payload = _temperature_gated_acquire(
             params,
@@ -855,6 +863,8 @@ def _acquire_noise(
                 duration_s=params.noise_duration_s,
             ),
         )
+        if checker is not None:
+            checker(f"零 Y RF 噪声 {index + 1} 采集后")
         _save_point(
             run_dir.raw / f"noise_{index:03d}.npz",
             payload,

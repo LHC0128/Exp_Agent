@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import yaml
 
 import lab_workflows.instrument_config as instrument_config
+from lockin_amplifier import HF2Instrument
 from lab_workflows.instrument_config import (
     RevisionConflict,
     load_device_document,
@@ -44,6 +45,19 @@ class InstrumentConfigTests(unittest.TestCase):
                     "connection": {},
                     "capabilities": {"channels": [1, 2]},
                 },
+                "hf2_lab": {
+                    "instrument": "lockin_amplifier",
+                    "model": "HF2",
+                    "label": "HF2",
+                    "resource": None,
+                    "reference_clock": "EXT",
+                    "connection": {
+                        "device_id": "dev18246",
+                        "host": "127.0.0.1",
+                        "port": 8005,
+                    },
+                    "capabilities": {"channels": [0, 1, 2, 3, 4, 5]},
+                },
             },
         }
         self.mappings = {
@@ -60,6 +74,12 @@ class InstrumentConfigTests(unittest.TestCase):
                     "device_id": "dg_a",
                     "endpoint": {"kind": "channel", "index": 2},
                     "label": "RF",
+                },
+                "lockin_r": {
+                    "instrument": "lockin_amplifier",
+                    "device_id": "hf2_lab",
+                    "endpoint": {"kind": "demod", "index": 0},
+                    "label": "R",
                 },
             },
             "constraints": {
@@ -103,6 +123,35 @@ class InstrumentConfigTests(unittest.TestCase):
         self.assertEqual(mapping["x"]["model"], "DG4000")
         self.assertEqual(mapping["x"]["channel"], 1)
         self.assertEqual(mapping["x"]["reference_clock"], "EXT")
+        self.assertEqual(mapping["x"]["device_library_id"], "dg_a")
+        self.assertEqual(mapping["x"]["device_id"], "dg_a")
+        self.assertEqual(mapping["lockin_r"]["device_library_id"], "hf2_lab")
+        self.assertEqual(mapping["lockin_r"]["device_id"], "dev18246")
+        self.assertEqual(mapping["lockin_r"]["demod_idx"], 0)
+
+    def test_resolved_hf2_id_builds_labone_node_path(self):
+        class FakeDAQ:
+            def __init__(self):
+                self.calls = []
+
+            def setInt(self, path, value):
+                self.calls.append((path, value))
+
+            def sync(self):
+                self.calls.append(("sync",))
+
+        config = resolve_mapping(self.root)["lockin_r"]
+        instrument = HF2Instrument(device_id=config["device_id"])
+        daq = FakeDAQ()
+        instrument._daq = daq
+
+        instrument.set_extclk(True)
+
+        self.assertEqual(instrument.device_id, "dev18246")
+        self.assertEqual(
+            daq.calls,
+            [("/dev18246/system/extclk", 1), ("sync",)],
+        )
 
     def test_stale_revision_is_rejected(self):
         with self.assertRaises(RevisionConflict):

@@ -1,5 +1,10 @@
 schema_version: 2
 mapping:
+  keithley_6221_main_field:
+    instrument: keithley_6221
+    device_id: keithley_6221_4503331
+    label: Keithley 6221 Z 主磁场
+    description: 6221 独占 Z 主线圈时的主场电流，单位 mA；不得与 GS200 并联接入线圈
   main_magnetic_field:
     instrument: gs200
     device_id: gs200_90z631552
@@ -8,7 +13,7 @@ mapping:
     description: 磁力仪中主磁场控制，单位mA，通过电流控制磁场强度，范围-10到10mA
   Z_magnetic_field:
     instrument: signal_generator
-    device_id: dg9q263800417
+    device_id: dg4e242401288
     endpoint:
       kind: channel
       index: 1
@@ -16,7 +21,7 @@ mapping:
     description: 输出的大小对应着Z方向磁场强度，一般为任意波或三角波，范围0-10 V
   Time_sequence_2:
     instrument: signal_generator
-    device_id: dg9q263800417
+    device_id: dg4e242401288
     endpoint:
       kind: channel
       index: 2

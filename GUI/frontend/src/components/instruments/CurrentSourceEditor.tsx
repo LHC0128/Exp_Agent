@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { parse as parseYaml } from "yaml";
 
 import { api } from "../../api";
 import type {
@@ -142,6 +143,24 @@ function GS200Editor({
 
 type SourceView = "dc" | "waveform";
 type DurationMode = "TIME" | "CYCLES" | "INFINITE";
+type ArbitraryFileInfo = {
+  format: "frequency-series";
+  valueLabel: string;
+  sourceMin: number;
+  sourceMax: number;
+  normalizationCenter: number;
+  normalizationScale: number;
+  inferredFrequencyHz: number | null;
+};
+type ArbitrarySource = {
+  frequencyValuesHz: number[];
+  info: ArbitraryFileInfo;
+};
+type KeithleyCalibration = {
+  slopeHzPerMa: number;
+  interceptHz: number;
+  rSquared: number | null;
+};
 
 function numberLabel(value: number): string {
   return value.toLocaleString(undefined, { maximumSignificantDigits: 10 });
@@ -155,6 +174,174 @@ function pointRange(points: number[]): [number, number] {
     if (value > high) high = value;
   }
   return [low, high];
+}
+
+function splitArbitraryRow(line: string): string[] {
+  if (line.includes(",")) return line.split(",").map((value) => value.trim());
+  if (line.includes("\t")) return line.split("\t").map((value) => value.trim());
+  if (line.includes(";")) return line.split(";").map((value) => value.trim());
+  return [line.trim()];
+}
+
+function parseFiniteCell(value: string, lineNumber: number, columnName: string): number {
+  if (value === "") {
+    throw new Error(`第 ${lineNumber} 行的${columnName}为空`);
+  }
+  const converted = Number(value);
+  if (!Number.isFinite(converted)) {
+    throw new Error(`第 ${lineNumber} 行的${columnName}不是有限数值`);
+  }
+  return converted;
+}
+
+function parseArbitraryText(text: string): {
+  source: ArbitrarySource;
+} {
+  const rows = text
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .map((line, index) => ({ text: line.trim(), lineNumber: index + 1 }))
+    .filter((row) => row.text && !row.text.startsWith("#"));
+  if (rows.length === 0) throw new Error("任意波文件没有有效数据");
+
+  let parsedRows = rows.map((row) => ({
+    ...row,
+    cells: splitArbitraryRow(row.text),
+  }));
+  const firstIsHeader = parsedRows[0].cells.some((cell) => !Number.isFinite(Number(cell)));
+  let headers: string[] = [];
+  if (firstIsHeader) {
+    headers = parsedRows[0].cells.map((cell) => cell.trim());
+    parsedRows = parsedRows.slice(1);
+  }
+  if (parsedRows.length < 2) throw new Error("任意波至少需要 2 个数据点");
+  if (parsedRows.length > 65535) throw new Error("任意波点数不能超过 65,535");
+
+  const columnCount = parsedRows[0].cells.length;
+  if (columnCount !== 1 && columnCount !== 2) {
+    throw new Error("任意波文件必须是单列 frequency_Hz 或 time_s,frequency_Hz 两列数据");
+  }
+  const inconsistent = parsedRows.find((row) => row.cells.length !== columnCount);
+  if (inconsistent) throw new Error(`第 ${inconsistent.lineNumber} 行的列数不一致`);
+
+  const time = columnCount === 2
+    ? parsedRows.map((row) => parseFiniteCell(row.cells[0], row.lineNumber, "时间值"))
+    : null;
+  const frequencyValuesHz = parsedRows.map((row) => (
+    parseFiniteCell(
+      row.cells[columnCount - 1],
+      row.lineNumber,
+      "频率值",
+    )
+  ));
+  let inferredFrequencyHz: number | null = null;
+  if (time) {
+    const steps = time.slice(1).map((value, index) => value - time[index]);
+    if (steps.some((value) => value <= 0)) throw new Error("任意波时间轴必须严格递增");
+    const sortedSteps = [...steps].sort((left, right) => left - right);
+    const middle = Math.floor(sortedSteps.length / 2);
+    const medianStep = sortedSteps.length % 2
+      ? sortedSteps[middle]
+      : (sortedSteps[middle - 1] + sortedSteps[middle]) / 2;
+    const stepTolerance = Math.max(1e-15, Math.abs(medianStep) * 1e-6);
+    if (steps.some((value) => Math.abs(value - medianStep) > stepTolerance)) {
+      throw new Error("任意波时间轴必须等间隔");
+    }
+    inferredFrequencyHz = 1 / (frequencyValuesHz.length * medianStep);
+    if (!Number.isFinite(inferredFrequencyHz) || inferredFrequencyHz < 0.001 || inferredFrequencyHz > 100000) {
+      throw new Error("时间轴推导的重复频率超出 6221 的 0.001 到 100,000 Hz 范围");
+    }
+  }
+
+  const [sourceMin, sourceMax] = pointRange(frequencyValuesHz);
+  const normalizationCenter = (sourceMin + sourceMax) / 2;
+  const normalizationScale = (sourceMax - sourceMin) / 2;
+  if (!Number.isFinite(normalizationScale) || normalizationScale <= 0) {
+    throw new Error("Hz 任意波不能是恒定值");
+  }
+  return {
+    source: {
+      frequencyValuesHz,
+      info: {
+        format: "frequency-series",
+        valueLabel: headers[columnCount - 1] || "frequency_Hz",
+        sourceMin,
+        sourceMax,
+        normalizationCenter,
+        normalizationScale,
+        inferredFrequencyHz,
+      },
+    },
+  };
+}
+
+function parseKeithleyCalibration(text: string): KeithleyCalibration {
+  const payload = parseYaml(text) as Record<string, unknown> | null;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("标定文件必须是 YAML 或 JSON 对象");
+  }
+  if (payload.success === false) throw new Error("标定文件标记为 success: false");
+  if (
+    typeof payload.experiment_id === "string"
+    && payload.experiment_id !== "mx-keithley-6221-main-field-calibration"
+  ) {
+    throw new Error(`标定实验 ID 不匹配: ${payload.experiment_id}`);
+  }
+  const slopeHzPerMa = Number(payload.K_f_Hz_per_mA);
+  const interceptHz = Number(payload.f_0mA_Hz);
+  if (!Number.isFinite(slopeHzPerMa) || slopeHzPerMa <= 0) {
+    throw new Error("标定文件的 K_f_Hz_per_mA 必须是正有限值");
+  }
+  if (!Number.isFinite(interceptHz)) {
+    throw new Error("标定文件的 f_0mA_Hz 必须是有限值");
+  }
+  const fit = payload.frequency_linear_fit as Record<string, unknown> | undefined;
+  const rawRSquared = fit?.r_squared;
+  const rSquared = rawRSquared === undefined ? null : Number(rawRSquared);
+  if (rSquared !== null && !Number.isFinite(rSquared)) {
+    throw new Error("标定文件的 frequency_linear_fit.r_squared 不是有限值");
+  }
+  return { slopeHzPerMa, interceptHz, rSquared };
+}
+
+function convertFrequencySource(
+  source: ArbitrarySource,
+  calibration: KeithleyCalibration | null,
+): {
+  points: number[];
+  amplitudeMa: number | null;
+  offsetMa: number | null;
+  minimumMa: number | null;
+  maximumMa: number | null;
+} {
+  if (!calibration) {
+    const { normalizationCenter, normalizationScale } = source.info;
+    return {
+      points: source.frequencyValuesHz.map(
+        (value) => (value - normalizationCenter) / normalizationScale,
+      ),
+      amplitudeMa: null,
+      offsetMa: null,
+      minimumMa: null,
+      maximumMa: null,
+    };
+  }
+  const currentMa = source.frequencyValuesHz.map(
+    (value) => (value - calibration.interceptHz) / calibration.slopeHzPerMa,
+  );
+  const [minimumMa, maximumMa] = pointRange(currentMa);
+  const offsetMa = (minimumMa + maximumMa) / 2;
+  const amplitudeMa = (maximumMa - minimumMa) / 2;
+  if (!Number.isFinite(amplitudeMa) || amplitudeMa <= 0) {
+    throw new Error("标定换算后的电流波形必须有正的峰值幅度");
+  }
+  return {
+    points: currentMa.map((value) => (value - offsetMa) / amplitudeMa),
+    amplitudeMa,
+    offsetMa,
+    minimumMa,
+    maximumMa,
+  };
 }
 
 function Keithley6221Editor({
@@ -178,12 +365,22 @@ function Keithley6221Editor({
   const [dutyCycle, setDutyCycle] = useState(snapshot.waveform.duty_cycle_percent);
   const [ranging, setRanging] = useState<"BEST" | "FIXED">(snapshot.waveform.ranging);
   const initialDurationMode: DurationMode = snapshot.waveform.duration_mode === "MIXED"
-    ? "INFINITE"
+    ? "TIME"
     : snapshot.waveform.duration_mode;
   const [durationMode, setDurationMode] = useState<DurationMode>(initialDurationMode);
-  const [durationValue, setDurationValue] = useState(snapshot.waveform.duration_value ?? 1);
+  const [durationValue, setDurationValue] = useState(
+    snapshot.waveform.duration_value
+      ?? (typeof snapshot.waveform.duration_time_s === "number"
+        ? snapshot.waveform.duration_time_s
+        : 1),
+  );
   const [arbitraryPoints, setArbitraryPoints] = useState<number[] | null>(null);
+  const [arbitrarySource, setArbitrarySource] = useState<ArbitrarySource | null>(null);
   const [arbitraryFile, setArbitraryFile] = useState("");
+  const [arbitraryFileInfo, setArbitraryFileInfo] = useState<ArbitraryFileInfo | null>(null);
+  const [calibration, setCalibration] = useState<KeithleyCalibration | null>(null);
+  const [calibrationFile, setCalibrationFile] = useState("");
+  const [calibratedRangeMa, setCalibratedRangeMa] = useState<[number, number] | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -203,10 +400,15 @@ function Keithley6221Editor({
     setRanging(snapshot.waveform.ranging);
     setDurationMode(
       snapshot.waveform.duration_mode === "MIXED"
-        ? "INFINITE"
+        ? "TIME"
         : snapshot.waveform.duration_mode,
     );
-    setDurationValue(snapshot.waveform.duration_value ?? 1);
+    setDurationValue(
+      snapshot.waveform.duration_value
+        ?? (typeof snapshot.waveform.duration_time_s === "number"
+          ? snapshot.waveform.duration_time_s
+          : 1),
+    );
   }, [snapshot]);
 
   const send = async (settings: CurrentSourceSettings) => {
@@ -252,33 +454,88 @@ function Keithley6221Editor({
       if (!/\.(csv|txt)$/i.test(file.name)) {
         throw new Error("任意波文件必须是 .csv 或 .txt");
       }
-      const lines = (await file.text())
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-      if (lines[0]?.toLowerCase() === "value") lines.shift();
-      const values = lines.map((line, index) => {
-        if (/[,;\t]/.test(line)) {
-          throw new Error(`第 ${index + 1} 行不是单列数据`);
-        }
-        const value = Number(line);
-        if (!Number.isFinite(value)) {
-          throw new Error(`第 ${index + 1} 行不是有限数值`);
-        }
-        if (value < -1 || value > 1) {
-          throw new Error(`第 ${index + 1} 行超出 [-1, 1]`);
-        }
-        return value;
-      });
-      if (values.length < 2 || values.length > 65535) {
-        throw new Error("任意波点数必须在 2 到 65,535 之间");
+      const parsed = parseArbitraryText(await file.text());
+      const converted = convertFrequencySource(parsed.source, calibration);
+      if (
+        converted.minimumMa !== null
+        && converted.maximumMa !== null
+        && (
+          converted.minimumMa < snapshot.min_current_ma
+          || converted.maximumMa > snapshot.max_current_ma
+        )
+      ) {
+        throw new Error(
+          `标定换算电流 ${numberLabel(converted.minimumMa)} ～ ${numberLabel(converted.maximumMa)} mA `
+          + `超出安全范围 ${snapshot.min_current_ma} ～ ${snapshot.max_current_ma} mA`,
+        );
       }
-      setArbitraryPoints(values);
+      setArbitraryPoints(converted.points);
+      setArbitrarySource(parsed.source);
       setArbitraryFile(file.name);
+      setArbitraryFileInfo(parsed.source.info);
+      setCalibratedRangeMa(
+        converted.minimumMa === null || converted.maximumMa === null
+          ? null
+          : [converted.minimumMa, converted.maximumMa],
+      );
+      if (converted.amplitudeMa !== null) setAmplitudeMa(converted.amplitudeMa);
+      if (converted.offsetMa !== null) setOffsetMa(converted.offsetMa);
+      if (parsed.source.info.inferredFrequencyHz !== null) {
+        setFrequencyHz(parsed.source.info.inferredFrequencyHz);
+      }
     } catch (reason) {
       setArbitraryPoints(null);
+      setArbitrarySource(null);
       setArbitraryFile("");
+      setArbitraryFileInfo(null);
+      setCalibratedRangeMa(null);
       setError(String(reason));
+    }
+  };
+
+  const parseCalibrationFile = async (file: File | undefined) => {
+    if (!file) return;
+    setError("");
+    try {
+      if (!/\.(yaml|yml|json)$/i.test(file.name)) {
+        throw new Error("标定文件必须是 .yaml、.yml 或 .json");
+      }
+      const parsed = parseKeithleyCalibration(await file.text());
+      if (arbitrarySource) {
+        const converted = convertFrequencySource(arbitrarySource, parsed);
+        if (
+          converted.minimumMa === null
+          || converted.maximumMa === null
+          || converted.amplitudeMa === null
+          || converted.offsetMa === null
+        ) throw new Error("标定换算没有生成有效电流波形");
+        if (
+          converted.minimumMa < snapshot.min_current_ma
+          || converted.maximumMa > snapshot.max_current_ma
+        ) {
+          throw new Error(
+            `标定换算电流 ${numberLabel(converted.minimumMa)} ～ ${numberLabel(converted.maximumMa)} mA `
+            + `超出安全范围 ${snapshot.min_current_ma} ～ ${snapshot.max_current_ma} mA`,
+          );
+        }
+        setArbitraryPoints(converted.points);
+        setAmplitudeMa(converted.amplitudeMa);
+        setOffsetMa(converted.offsetMa);
+        setCalibratedRangeMa([converted.minimumMa, converted.maximumMa]);
+      }
+      setCalibration(parsed);
+      setCalibrationFile(file.name);
+    } catch (reason) {
+      setError(String(reason));
+    }
+  };
+
+  const clearCalibration = () => {
+    setCalibration(null);
+    setCalibrationFile("");
+    setCalibratedRangeMa(null);
+    if (arbitrarySource) {
+      setArbitraryPoints(convertFrequencySource(arbitrarySource, null).points);
     }
   };
 
@@ -376,13 +633,39 @@ function Keithley6221Editor({
             {durationMode !== "INFINITE" && <Field label={durationMode === "TIME" ? "时间 (s)" : "周期数"} value={durationValue} min={durationMode === "TIME" ? 1e-7 : 0.001} max={durationMode === "TIME" ? 999999.999 : 99999999900} step="any" disabled={saving} onChange={setDurationValue} />}
           </div>
           {shape === "ARB" && (
-            <div className="arb-file-row">
-              <label><span>任意波文件</span><input type="file" accept=".csv,.txt,text/csv,text/plain" disabled={saving} onChange={(event) => void parseArbitraryFile(event.target.files?.[0])} /></label>
-              <div className="arb-stats">
-                <strong>{arbitraryFile || "未导入"}</strong>
-                <span>点数 {arbitraryPoints?.length ?? snapshot.waveform.arbitrary_point_count}</span>
-                <span>Min {arbMin === null ? "—" : numberLabel(arbMin)}</span>
-                <span>Max {arbMax === null ? "—" : numberLabel(arbMax)}</span>
+            <div className="arb-imports">
+              <div className="arb-file-row">
+                <label><span>Hz 任意波文件</span><input type="file" accept=".csv,.txt,text/csv,text/plain" disabled={saving} onChange={(event) => void parseArbitraryFile(event.target.files?.[0])} /></label>
+                <div className="arb-stats">
+                  <strong>{arbitraryFile || "未导入"}</strong>
+                  <span>点数 {arbitraryPoints?.length ?? snapshot.waveform.arbitrary_point_count}</span>
+                  <span>ARB Min {arbMin === null ? "—" : numberLabel(arbMin)}</span>
+                  <span>ARB Max {arbMax === null ? "—" : numberLabel(arbMax)}</span>
+                  {arbitraryFileInfo && (
+                    <>
+                      <span>{arbitraryFileInfo.valueLabel}</span>
+                      <span>Hz 范围 {numberLabel(arbitraryFileInfo.sourceMin)} ～ {numberLabel(arbitraryFileInfo.sourceMax)}</span>
+                      <span>Hz 中心 {numberLabel(arbitraryFileInfo.normalizationCenter)}</span>
+                      <span>Hz 半跨度 {numberLabel(arbitraryFileInfo.normalizationScale)}</span>
+                      {arbitraryFileInfo.inferredFrequencyHz !== null && <span>重复频率 {numberLabel(arbitraryFileInfo.inferredFrequencyHz)} Hz</span>}
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="arb-file-row">
+                <label><span>6221 标定文件（可选）</span><input type="file" accept=".yaml,.yml,.json,application/yaml,application/json,text/yaml" disabled={saving} onChange={(event) => void parseCalibrationFile(event.target.files?.[0])} /></label>
+                <div className="arb-stats">
+                  <strong>{calibrationFile || "未使用标定，手动设置电流幅值/偏置"}</strong>
+                  {calibration && (
+                    <>
+                      <span>Kf {numberLabel(calibration.slopeHzPerMa)} Hz/mA</span>
+                      <span>f0 {numberLabel(calibration.interceptHz)} Hz</span>
+                      <span>R² {calibration.rSquared === null ? "—" : numberLabel(calibration.rSquared)}</span>
+                      {calibratedRangeMa && <span>电流 {numberLabel(calibratedRangeMa[0])} ～ {numberLabel(calibratedRangeMa[1])} mA</span>}
+                      <button className="secondary compact" type="button" disabled={saving} onClick={clearCalibration}>清除标定</button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}

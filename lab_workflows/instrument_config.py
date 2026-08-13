@@ -369,15 +369,18 @@ def resolve_mapping(root: Path | None = None) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     for key, raw_config in mappings_document["mapping"].items():
         config = dict(raw_config)
-        device_id = str(config.get("device_id", "")).strip()
-        if not device_id:
+        device_library_id = str(config.pop("device_id", "")).strip()
+        if not device_library_id:
             # 兼容旧 mapping.yaml。
             endpoint = Endpoint.from_dict(config.pop("endpoint", None))
             result[key] = {**config, **_endpoint_fields(endpoint)}
             continue
-        device = devices[device_id]
+        device = devices[device_library_id]
         endpoint = Endpoint.from_dict(config.pop("endpoint", None))
         connection = dict(device.connection)
+        connection_device_id = str(
+            connection.get("device_id") or device_library_id
+        ).strip()
         result[key] = {
             "instrument": device.instrument,
             "model": device.model,
@@ -385,7 +388,8 @@ def resolve_mapping(root: Path | None = None) -> dict[str, dict[str, Any]]:
             "resource": device.resource,
             **connection,
             **config,
-            "device_id": device_id,
+            "device_library_id": device_library_id,
+            "device_id": connection_device_id,
             "reference_clock": device.reference_clock,
             "capabilities": dict(device.capabilities),
             **_endpoint_fields(endpoint),

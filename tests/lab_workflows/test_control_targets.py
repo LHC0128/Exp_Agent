@@ -5,6 +5,7 @@ from keithley_6221 import Keithley6221Instrument
 from lab_workflows.devices import CURRENT_SOURCE_DRIVERS, ChannelRecord, DeviceRecord
 from lab_workflows.instrument_control import (
     ControlRevisionConflict,
+    _6221_duration_state,
     _apply_generator_connected,
     apply_control_target_current_source,
     list_control_targets,
@@ -41,18 +42,33 @@ class ControlTargetTests(unittest.TestCase):
         connect.assert_not_called()
         keys = [item["mapping_key"] for item in catalog["targets"]]
         self.assertEqual(keys[:3], [
-            "main_magnetic_field", "Z_magnetic_field", "Time_sequence_2"
+            "keithley_6221_main_field", "main_magnetic_field", "Z_magnetic_field"
         ])
-        z_target = catalog["targets"][1]
-        self.assertEqual(z_target["model"], "DG900")
-        self.assertEqual(z_target["device_id"], "dg9q263800417")
-        self.assertNotIn("dg4e242401288", {item["device_id"] for item in catalog["targets"]})
+        keithley_target = catalog["targets"][0]
+        self.assertEqual(keithley_target["model"], "6221")
+        self.assertEqual(keithley_target["device_id"], "keithley_6221_4503331")
+        self.assertEqual(keithley_target["safety"]["min"], -100.0)
+        self.assertEqual(keithley_target["safety"]["max"], 100.0)
+        z_target = catalog["targets"][2]
+        self.assertEqual(z_target["model"], "DG4000")
+        self.assertEqual(z_target["device_id"], "dg4e242401288")
 
     def test_keithley_6221_has_independent_registered_driver(self):
         self.assertIs(CURRENT_SOURCE_DRIVERS["6221"], Keithley6221Instrument)
         self.assertNotEqual(
             CURRENT_SOURCE_DRIVERS["6221"], CURRENT_SOURCE_DRIVERS["GS200"]
         )
+
+    def test_6221_firmware_equivalent_duration_readback_is_preserved(self):
+        instrument = MagicMock()
+        instrument.get_waveform_duration_time.return_value = 0.01
+        instrument.get_waveform_duration_cycles.return_value = 1.23
+        self.assertEqual(_6221_duration_state(instrument), {
+            "duration_mode": "MIXED",
+            "duration_value": 0.01,
+            "duration_time_s": 0.01,
+            "duration_cycles": 1.23,
+        })
 
     def test_rf_legacy_alias_is_hidden_and_y_field_keeps_full_safety(self):
         targets = {item["mapping_key"]: item for item in list_control_targets()["targets"]}

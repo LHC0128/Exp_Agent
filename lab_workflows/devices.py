@@ -213,7 +213,9 @@ def discover_devices() -> list[DeviceRecord]:
         kind = cfg.get("instrument")
         resource = cfg.get("resource")
         channel = cfg.get("channel")
-        device_id = str(cfg.get("device_id", ""))
+        device_id = str(
+            cfg.get("device_library_id", cfg.get("device_id", ""))
+        )
         record = device_records.get(device_id)
         if not record:
             continue

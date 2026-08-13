@@ -186,9 +186,10 @@ export function ExperimentPage() {
   const renderInput = (field: SchemaField) => {
     const value = values[field.name] ?? field.default;
     const label = `${field.label}${field.unit ? ` (${field.unit})` : ""}`;
+    const disabled = Boolean(field.read_only);
     if (field.options) {
       return (
-        <SelectField label={label} value={typeof value === "string" || typeof value === "number" ? value : ""} onChange={(selected) => {
+        <SelectField label={label} value={typeof value === "string" || typeof value === "number" ? value : ""} disabled={disabled} onChange={(selected) => {
           const matched = field.options?.find((option) => String(option.value) === selected);
           updateValue(field, matched?.value ?? selected);
         }}>
@@ -200,7 +201,7 @@ export function ExperimentPage() {
     }
     if (field.type === "boolean") {
       return (
-        <SelectField label={label} value={String(Boolean(value))} onChange={(selected) => updateValue(field, selected === "true")}>
+        <SelectField label={label} value={String(Boolean(value))} disabled={disabled} onChange={(selected) => updateValue(field, selected === "true")}>
           <option value="true">是</option><option value="false">否</option>
         </SelectField>
       );
@@ -212,6 +213,7 @@ export function ExperimentPage() {
           label={label}
           value={text}
           type="text"
+          disabled={disabled}
           onChange={(next) => updateValue(field, field.type === "array" ? parseArrayValue(next, field.default) : next)}
         />
       );
@@ -220,6 +222,7 @@ export function ExperimentPage() {
       <Field
         label={label}
         value={typeof value === "number" ? value : Number(value)}
+        disabled={disabled}
         onChange={(next) => updateValue(field, field.type === "integer" ? Math.trunc(next) : next)}
       />
     );

@@ -298,7 +298,7 @@ class SharedWorkflowTests(unittest.TestCase):
         self.assertAlmostEqual(result.final_phase_deg, 30.0)
     def test_device_discovery_groups_physical_devices(self):
         devices = discover_devices()
-        self.assertEqual(len(devices), 9)
+        self.assertEqual(len(devices), 11)
         keys = {
             channel.mapping_key
             for device in devices
@@ -322,6 +322,7 @@ class SharedWorkflowTests(unittest.TestCase):
         self.assertEqual(types['DG9Q280100002'], 'DG900')
         self.assertEqual(types['DG4E231500376'], 'DG4000')
         self.assertEqual(types['90Z631552'], 'GS200')
+        self.assertEqual(types['SOCKET'], '6221')
         self.assertEqual(types['DLC_PRO_53043'], 'DLC_PRO')
         dlc_pro = next(
             device for device in devices if device.id == "DLC_PRO_53043"

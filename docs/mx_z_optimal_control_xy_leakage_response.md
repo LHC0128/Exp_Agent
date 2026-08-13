@@ -48,6 +48,7 @@ learned_notes:
   - 负带符号幅度用绝对 Vpp 和相对 Z 基准相位增加 180° 实现。
   - 正常结束保留实测最小 R 网格点；异常与取消保留当时 X/Y 状态。
   - 所有结束路径均关闭归零 Time_sequence_2，但保留 Z/X/Y 当前输出。
+  - Z/X/Y 任意波 DG4000 Burst 均使用共同触发方波的下降沿启动。
 ---
 
 # Mx Z 最优控制 XY 泄露响应
@@ -64,7 +65,8 @@ Z 通道输出按控制版本和 Z 标定换算后的最优控制波形。X/Y �
 零幅度切换为 `0 V DC + Output OFF`。
 
 `Time_sequence_2` 必须由操作者分配到 Z 控制 DG4000 和 X/Y 控制 DG4000 的
-Ext Trig。软件验证两台设备的 Burst 和触发配置，但无法检查实体 BNC 连接。
+Ext Trig。所有任意波通道使用下降沿外触发，与 Keithley 6221 Trigger Link 输入
+保持同沿。软件验证两台设备的 Burst 和触发配置，但无法检查实体 BNC 连接。
 
 ## 二维扫描与采集
 

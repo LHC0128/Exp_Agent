@@ -203,6 +203,8 @@ def test_xy_controller_arms_both_channels_on_same_trigger() -> None:
     assert trigger.calls[-1] == ("output", 2, True, {})
     assert ("output", 1, True, {}) in xy.calls
     assert ("output", 2, True, {}) in xy.calls
+    assert ("trigger_slope", 1, "NEGative", {}) in xy.calls
+    assert ("trigger_slope", 2, "NEGative", {}) in xy.calls
 
 
 def test_xy_controller_uses_dc_off_at_zero_and_reloads_aw() -> None:

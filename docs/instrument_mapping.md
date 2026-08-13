@@ -25,7 +25,9 @@
 每个 mapping key 保存期望设备类型、`device_id`、类型化 `endpoint`、标签和说明。
 端点类型包括信号源/TEC 的 `channel`、HF2 的 `demod` 和 DLC pro 的
 `laser_channel`。`load_mapping()` 仍返回带 `instrument`、`model`、`resource`、
-`channel`、`demod_idx` 等字段的展开结构，供旧脚本兼容读取。
+`channel`、`demod_idx` 等字段的展开结构，供旧脚本兼容读取。展开结构中的
+`device_library_id` 保留设备库逻辑 ID；`device_id` 是驱动实际使用的连接 ID，
+例如 HF2 的 `dev18246`，避免把逻辑 ID `hf2_dev18246` 误用于 LabOne 节点路径。
 
 `constraints.shared_channel_groups` 显式允许多个物理量共用同一端点。未加入同一
 共享组的重复端点会被拒绝。设备控制页以 mapping key 为入口，共享端点的当前选择
@@ -61,6 +63,12 @@ GS200 与 Keithley 6221 是两个独立设备类型，但都映射到控制页�
 类别。GS200 只接受原有直流电流和输出字段；6221 另有量程、Compliance、滤波、响应
 速度及内部波形设置。6221 只有在设备库、物理 mapping 和对应安全限值都配置完整后才会
 进入控制目录；设备库接入本身不会自动创建物理绑定或安全规则。
+
+当前 `main_magnetic_field` 保持绑定 GS200，`keithley_6221_main_field` 独立绑定
+Keithley 6221。两个 key 表示同一只 Z 主线圈的不同驱动端点，不表示可以同时接入；
+运行 6221 主场标定时必须将 GS200 从线圈物理断开。当前映射编辑器按 key 声明的
+`instrument` 过滤候选设备，因此 `main_magnetic_field` 不能直接在 GS200 与 6221
+之间切换；若以后需要通用切换，必须先把旧实验的 GS200 专属调用重构为按型号分派。
 
 每次 GET 返回内容修订号；PUT 必须携带 `base_revision` 和完整草稿。保存使用进程锁、
 临时文件替换和保存后回读。过期修订返回 409，配置校验失败返回 422，硬件任务运行

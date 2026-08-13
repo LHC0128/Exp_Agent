@@ -394,7 +394,8 @@ def _6221_duration_state(instrument) -> dict[str, Any]:
     elif time_infinite and not cycles_infinite:
         mode, value = "CYCLES", _finite_6221("波形周期数", duration_cycles)
     else:
-        mode, value = "MIXED", None
+        # D04 固件会同时返回有限时间和按当前频率换算的周期数，无法回读用户原先选择的模式。
+        mode, value = "MIXED", _finite_6221("波形时长", duration_time)
     return {
         "duration_mode": mode,
         "duration_value": value,

@@ -36,7 +36,7 @@ DEFINITION = ExperimentDefinition(
     wiring_notes=(
         "Z_magnetic_field DG4000 CH1 输出最优控制；X_magnetic_field DG4000 CH1 输出固定 X DC 补偿。",
         "rf_coil DG4000 CH2 输出带 Y DC 补偿偏置的 Y RF Burst；RFY=0 时切换为纯 DC 补偿输出。",
-        "Time_sequence_2 CH2 的 100 Hz、5 Vpp 方波需经分配后同时接入 Z 控制与 Y RF 两台 DG4000 的 Ext Trig。",
+        "Time_sequence_2 CH2 的 100 Hz、5 Vpp 方波需经分配后同时接入 Z 控制与 Y RF 两台 DG4000 的 Ext Trig，两路 Burst 均使用下降沿。",
         "软件只回读 Burst/触发配置，不能确认实体 BNC 分配线是否接通；运行前必须人工核对。",
         "HF2 Demod0 以固定 Y RF 频率直接解调；Y RF 校相同步采集 R/X/Y，正式响应与噪声仍采集 R。",
         "PHASE_CAL_RF_AMPLITUDE_VPP=0 时禁用 RFY 交流分量但保持 Y DC 补偿，共同触发只需驱动 Z 控制 DG4000。",

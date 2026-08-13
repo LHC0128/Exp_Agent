@@ -211,8 +211,8 @@ def test_definition_and_defaults_are_registered() -> None:
     defaults = ADAPTER.defaults()
     assert defaults.x_field_points == 11
     assert defaults.y_field_points == 11
-    assert defaults.z_field_points == 11
-    assert defaults.demod_frequency_hz == pytest.approx(12000.0)
+    assert defaults.z_field_points == 5
+    assert defaults.demod_frequency_hz == pytest.approx(30000.0)
 
 
 def test_single_point_axis_requires_equal_start_and_stop() -> None:

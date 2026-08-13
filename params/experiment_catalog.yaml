@@ -19,6 +19,8 @@ assignments:
   mx-y-rf-power-optimization: calibration
   mx-y-rf-probe-detuning-optimization: calibration
   mx-main-field-calibration: verification
+  mx-keithley-6221-main-field-calibration: verification
+  mx-keithley-6221-optimal-control-rf-sensitivity: calibration
   mx-main-field-noise-spectrum: calibration
   mx-main-field-scope-noise-spectrum: calibration
   mx-z-field-calibration: verification
@@ -61,6 +63,10 @@ experiment_descriptions:
     PZT Scan Offset；Probe 轴可设为单点。实验不连接 TEC，但保留 Temp_Switch 采集门控。
   mx-main-field-calibration: 在 Mx 构型下扫描 GS200 主场电流和 Y RF 频率，由离线 Lorentzian 中心拟合标定
     Hz/mA 和 nT/mA。
+  mx-keithley-6221-main-field-calibration: Keithley 6221 独占 Z 主线圈并按可配置电流轴扫描，使用可选固定电流档位，按预测中心附近的
+    Y RF 共振频扫标定自由斜率和截距；GS200 必须物理断开并由程序归零关闭。
+  mx-keithley-6221-optimal-control-rf-sensitivity: 使用 6221 按 Time_sequence_2 每个外部触发输出一个周期的主场最优控制任意波，沿用
+    Mx RF 灵敏度采集与分析；GS200 必须物理断开。
   mx-main-field-noise-spectrum: 固定 HF2 为 90 kHz，按实测标定降低 GS200 主场电流，以正控制频率轴从 Demod0
     R 的二维 PSD 分离 S_beta 与 N_S1。
   mx-main-field-scope-noise-spectrum: 按主场标定外推扫描 0–50 kHz Larmor 控制频率，保持可配置的 X/Y DC
@@ -89,6 +95,8 @@ experiment_titles:
   mx-y-rf-power-optimization: Mx Y RF 光功率灵敏度优化
   mx-y-rf-probe-detuning-optimization: Mx Y RF Probe 光功率与失谐灵敏度优化
   mx-main-field-calibration: Mx 主磁场频率标定
+  mx-keithley-6221-main-field-calibration: Mx Keithley 6221 主磁场频率标定
+  mx-keithley-6221-optimal-control-rf-sensitivity: Mx Keithley 6221 最优控制 RF 灵敏度
   mx-main-field-noise-spectrum: Mx 主磁场控制噪声谱
   mx-main-field-scope-noise-spectrum: Mx 主磁场示波器噪声谱
   mx-z-field-calibration: Mx 高主场 Z 磁场频率标定
@@ -263,6 +271,48 @@ parameter_layouts:
     - PUMP_CARRIER_FREQUENCY_HZ
     - PUMP_CARRIER_AMPLITUDE_VPP
     - PUMP_GATE_VOLTAGE_V
+    - LINEAR_R_SQUARED_MIN
+  mx-keithley-6221-main-field-calibration:
+    basic:
+    - RUN_TAG
+    - CONFIRM_GS200_PHYSICALLY_DISCONNECTED
+    - KEITHLEY_CURRENT_START_MA
+    - KEITHLEY_CURRENT_STOP_MA
+    - KEITHLEY_CURRENT_STEP_MA
+    - KEITHLEY_CURRENT_RANGE_MA
+    - KEITHLEY_REFERENCE_CURRENT_MA
+    - KEITHLEY_REFERENCE_FREQUENCY_HZ
+    - KEITHLEY_INITIAL_HZ_PER_MA
+    - FREQUENCY_HALF_WIDTH_HZ
+    - FREQUENCY_STEP_HZ
+    - KEITHLEY_COMPLIANCE_V
+    - KEITHLEY_CURRENT_SETTLE_TIME_S
+    - Y_RF_AMPLITUDE_VPP
+    - FREQUENCY_DURATION_S
+    - TEMP_SWITCH_ON_LAG_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    advanced:
+    - FREQUENCY_SETTLE_TIME_S
+    - TEMP_SWITCH_OFF_LEAD_S
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - GYROMAGNETIC_RATIO_HZ_PER_NT
     - LINEAR_R_SQUARED_MIN
   xy-direct-aw-dc-calibration:
     basic:
@@ -588,6 +638,69 @@ parameter_layouts:
     - TRIGGER_AMPLITUDE_VPP
     - TRIGGER_OFFSET_V
     - TRIGGER_DUTY_PERCENT
+  mx-keithley-6221-optimal-control-rf-sensitivity:
+    basic:
+    - RUN_TAG
+    - Y_RF_AMP_START_VPP
+    - Y_RF_AMP_STOP_VPP
+    - Y_RF_AMP_POINTS
+    - RESPONSE_SETTLE_TIME_S
+    - RESPONSE_DURATION_S
+    - Y_RF_NT_PER_VPP
+    - NOISE_N_AVG
+    - NOISE_DURATION_S
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.X_magnetic_field
+    - FIXED_PARAMS.Y_magnetic_field
+    - FIXED_PARAMS.temperature
+    - CONTROL_VERSION
+    - KEITHLEY_CALIBRATION_SOURCE_RUN
+    - CONTROL_SCALE
+    - KEITHLEY_CURRENT_RANGE_MA
+    - PHASE_CAL_RF_AMPLITUDE_VPP
+    - CONFIRM_GS200_PHYSICALLY_DISCONNECTED
+    - TRIGGER_FREQUENCY_HZ
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - NOISE_RATE_SA_S
+    - NOISE_TIME_CONSTANT_S
+    - NOISE_DEMOD_ORDER
+    - LOW_FREQ_SKIP_HZ
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - FIT_R_SQUARED_MIN
+    - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
+    - LINEAR_CHECK_GAMMA_FRACTION
+    - SLOPE_AGREEMENT_TOLERANCE
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - PHASE_SCAN_START_DEG
+    - PHASE_SCAN_STOP_DEG
+    - PHASE_SCAN_STEP_DEG
+    - PHASE_FIT_R_SQUARED_MIN
+    - PHASE_FIT_AMPLITUDE_SIGMA_MIN
+    - PHASE_OUTLIER_SIGMA_THRESHOLD
+    - PHASE_OUTLIER_MAX_REACQUIRE_POINTS
+    - TRIGGER_AMPLITUDE_VPP
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+    - KEITHLEY_OUTPUT_RESPONSE
+    - KEITHLEY_COMPLIANCE_V
+    - KEITHLEY_TRIGGER_LINE
   mx-z-optimal-control-xy-leakage-response:
     basic:
     - RUN_TAG

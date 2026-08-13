@@ -6,7 +6,7 @@
 
 | 轴 | 物理量 | 说明 |
 |----|--------|------|
-| **Z** | 主磁场 $B$ | 由 GS200 控制，对应 Larmor 频率主轴 |
+| **Z** | 主磁场 $B$ | 由实验指定的 GS200 或 Keithley 6221 独占控制，对应 Larmor 频率主轴 |
 | **X** | 光传播方向 | Pump / Probe 光沿 X 传播 |
 | **Y** | RF / 横向控制方向 | 用于横向自旋激发、补偿场和调制控制 |
 
@@ -115,7 +115,7 @@ Set-Location D:\Code\exp_agent\GUI
 5. 点击“应用并回读”；写入前会检查当前 mapping key 的 `params/safety_limits.yaml`，写入后以实际回读值更新页面。非 Vpp 状态仅允许回读、关闭输出或切换为 Vpp。
 6. 实验结束后，在启动 GUI 的 PowerShell 窗口按 `Ctrl+C` 停止服务。
 
-“实验中心”统一展示 38 个正式 Python 采集入口，并提供动态参数、默认值保存、
+“实验中心”统一展示 39 个正式 Python 采集入口，并提供动态参数、默认值保存、
 无副作用预检、运行日志、安全停止和离线重新分析。每张实验卡片同时显示对应的
 采集程序和独立分析程序；没有独立分析脚本时会明确标注。`*.ipynb` 不进入实验中心，
 `*_plot.py` 只作为对应实验的分析器。卡片还会明确显示“新模式”或“旧模式”；完整
@@ -145,7 +145,7 @@ experiments ───┘
 - `legacy_script`：过渡期兼容模式，仍从旧脚本常量生成参数并通过隔离适配器执行。
   它不会被当作新实验模板。
 
-当前共有 20 个新模式实验和 18 个旧模式实验。GUI 参数表单只展示新模式模型显式
+当前共有 21 个新模式实验和 18 个旧模式实验。GUI 参数表单只展示新模式模型显式
 声明的字段，不会因为工作流中新增一个全大写运行时常量而意外增加表单项目。
 
 `t2-calibration` 已迁移为强类型光学 FID 工作流：保持 `T2_Calibration` 数据目录与
@@ -183,6 +183,8 @@ experiments ───┘
 - `Mx_Y_RF_Power_Optimization.py` / `Mx_Y_RF_Power_Optimization_plot.py`
 - `Mx_Y_RF_Probe_Detuning_Optimization.py` / `Mx_Y_RF_Probe_Detuning_Optimization_plot.py`
 - `Mx_Main_Field_Calibration.py` / `Mx_Main_Field_Calibration_plot.py`
+- `Mx_Keithley_6221_Main_Field_Calibration.py` / `Mx_Keithley_6221_Main_Field_Calibration_plot.py`
+- `Mx_Keithley_6221_Optimal_Control_RF_Sensitivity.py` / `Mx_Keithley_6221_Optimal_Control_RF_Sensitivity_plot.py`
 - `Mx_Main_Field_Noise_Spectrum.py` / `Mx_Main_Field_Noise_Spectrum_plot.py`
 - `Mx_Main_Field_Scope_Noise_Spectrum.py` / `Mx_Main_Field_Scope_Noise_Spectrum_plot.py`
 - `Mx_Z_Field_Calibration.py` / `Mx_Z_Field_Calibration_plot.py`
@@ -203,6 +205,8 @@ experiments ───┘
 | Mx Y RF 光功率灵敏度优化（含逐点诊断图、tqdm ETA、拟合导数与零点实测斜率双排名） | `experiments/Mx_Y_RF_Power_Optimization.py`、`experiments/Mx_Y_RF_Power_Optimization_plot.py` | `docs/mx_y_rf_power_optimization.md` |
 | Mx Y RF Probe 光功率与 PZT 失谐灵敏度优化（支持固定 Probe 单点；不连接 TEC，保留温控开关门控） | `experiments/Mx_Y_RF_Probe_Detuning_Optimization.py`、`experiments/Mx_Y_RF_Probe_Detuning_Optimization_plot.py` | `docs/mx_y_rf_probe_detuning_optimization.md` |
 | Mx 主磁场频率标定 | `experiments/Mx_Main_Field_Calibration.py`、`experiments/Mx_Main_Field_Calibration_plot.py` | `docs/mx_main_field_calibration.md` |
+| Mx Keithley 6221 主磁场频率标定 | `experiments/Mx_Keithley_6221_Main_Field_Calibration.py`、`experiments/Mx_Keithley_6221_Main_Field_Calibration_plot.py` | `docs/mx_keithley_6221_main_field_calibration.md` |
+| Mx Keithley 6221 最优控制 RF 灵敏度 | `experiments/Mx_Keithley_6221_Optimal_Control_RF_Sensitivity.py`、`experiments/Mx_Keithley_6221_Optimal_Control_RF_Sensitivity_plot.py` | `docs/mx_keithley_6221_optimal_control_rf_sensitivity.md` |
 | Mx 主磁场控制噪声谱 | `experiments/Mx_Main_Field_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Noise_Spectrum_plot.py` | `docs/mx_main_field_noise_spectrum.md` |
 | Mx 主磁场示波器噪声谱（固定 X/Y DC 补偿，可选 AC/DC 耦合） | `experiments/Mx_Main_Field_Scope_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Scope_Noise_Spectrum_plot.py` | `docs/mx_main_field_scope_noise_spectrum.md` |
 | Mx 高主场 Z 磁场频率标定 | `experiments/Mx_Z_Field_Calibration.py`、`experiments/Mx_Z_Field_Calibration_plot.py` | `docs/mx_z_field_calibration.md` |

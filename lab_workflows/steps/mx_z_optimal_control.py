@@ -20,6 +20,9 @@ from .arbitrary import ArbitraryWaveformSpec, upload_arbitrary
 from .temperature import configure_temperature_control, set_temperature_switch
 
 
+OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE = "NEGative"
+
+
 def validate_z_trigger_mapping(
     mapping: dict[str, dict[str, Any]],
 ) -> int:
@@ -143,7 +146,7 @@ def configure_z_optimal_control_output(
     theory: Any,
     applied: Any,
 ) -> None:
-    """上传并配置由外部正沿启动的 Z 最优控制波形。"""
+    """上传并配置由外部下降沿启动的 Z 最优控制波形。"""
     for value in (
         applied.minimum_v,
         applied.maximum_v,
@@ -170,7 +173,10 @@ def configure_z_optimal_control_output(
     device.set_burst_state(True, channel=channel)
     device.set_burst_mode("INFinity", channel=channel)
     device.set_burst_trigger_source("EXTernal", channel=channel)
-    device.set_burst_trigger_slope("POSitive", channel=channel)
+    device.set_burst_trigger_slope(
+        OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
+        channel=channel,
+    )
     device.set_burst_phase(
         params.control_burst_phase_deg % 360.0,
         channel=channel,

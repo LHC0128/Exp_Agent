@@ -33,8 +33,15 @@ from .main_field import (
     restore_main_field_state,
     snapshot_main_field_state,
 )
+from .keithley_6221 import (
+    KEITHLEY_6221_CURRENT_RANGE_OPTIONS_MA,
+    Keithley6221CurrentRangeCheck,
+    assess_keithley_6221_current_range,
+    require_keithley_6221_current_range,
+)
 from .magnetic_field import configure_fixed_dc_field
 from .mx_z_optimal_control import (
+    OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
     configure_main_field,
     configure_mx_z_optimal_control_workpoint,
     configure_optimal_control_trigger,
@@ -88,7 +95,10 @@ __all__ = [
     "DGChannelShutdown",
     "DisconnectTarget",
     "ExternalAMStrategy",
+    "KEITHLEY_6221_CURRENT_RANGE_OPTIONS_MA",
+    "Keithley6221CurrentRangeCheck",
     "MainFieldState",
+    "OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE",
     "PhaseCalibrationConfig",
     "PhaseCalibrationResult",
     "RunDirectory",
@@ -104,6 +114,7 @@ __all__ = [
     "calibrate_demod_phase",
     "calibrate_direct_aw_phase",
     "acquire_autoranged_waveform",
+    "assess_keithley_6221_current_range",
     "configure_fixed_rate_scope",
     "configure_fixed_dc_field",
     "configure_main_field",
@@ -119,6 +130,7 @@ __all__ = [
     "run_safety_shutdown",
     "save_optimal_control_source_snapshot",
     "restore_main_field_state",
+    "require_keithley_6221_current_range",
     "set_temperature_switch",
     "upload_arbitrary",
     "validate_z_trigger_mapping",

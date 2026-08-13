@@ -15,6 +15,7 @@ from ...steps import (
     DGChannelShutdown,
     DeviceSession,
     DisconnectTarget,
+    OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
     STANDARD_PRESERVED_OUTPUTS,
     SafetyShutdownReport,
     ShutdownAction,
@@ -165,7 +166,10 @@ def _configure_y_rf_output(
     device.set_burst_state(True, channel=channel)
     device.set_burst_mode("INFinity", channel=channel)
     device.set_burst_trigger_source("EXTernal", channel=channel)
-    device.set_burst_trigger_slope("POSitive", channel=channel)
+    device.set_burst_trigger_slope(
+        OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
+        channel=channel,
+    )
     device.set_burst_phase(0.0, channel=channel)
     device.set_output(False, channel=channel)
 
@@ -203,7 +207,10 @@ def _restore_y_rf_burst_sine(
     device.set_burst_state(True, channel=channel)
     device.set_burst_mode("INFinity", channel=channel)
     device.set_burst_trigger_source("EXTernal", channel=channel)
-    device.set_burst_trigger_slope("POSitive", channel=channel)
+    device.set_burst_trigger_slope(
+        OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
+        channel=channel,
+    )
     device.set_burst_phase(float(phase_deg) % 360.0, channel=channel)
     device.set_output(False, channel=channel)
 
@@ -367,6 +374,9 @@ def _acquire_valid_rxy_point(
     """采集一个 R/X/Y 点；复噪声超限时完整保存并重采。"""
     hf2 = devices["hf2"]
     for attempt in range(params.r_point_max_attempts):
+        checker = devices.get("_compliance_checker")
+        if checker is not None:
+            checker(f"{file_stem} 采集前")
         payload = _temperature_gated_acquire(
             params,
             devices,
@@ -382,6 +392,8 @@ def _acquire_valid_rxy_point(
             ),
         )
         summary = summarize_rxy(payload)
+        if checker is not None:
+            checker(f"{file_stem} 采集后")
         accepted = (
             summary["complex_std_v"]
             <= params.r_bad_point_std_threshold_v
@@ -1201,7 +1213,7 @@ def run(params: MxZOptimalControlRFParams) -> Path:
             "amplitude_vpp": params.trigger_amplitude_vpp,
             "offset_v": params.trigger_offset_v,
             "duty_percent": params.trigger_duty_percent,
-            "slope": "POSitive",
+            "slope": OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
             "wiring": (
                 "Time_sequence_2 CH2 to Z-control DG4000 Ext Trig; "
                 "Y-RF AC burst disabled while Y DC compensation remains applied"

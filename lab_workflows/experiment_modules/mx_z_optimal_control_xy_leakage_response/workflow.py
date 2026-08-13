@@ -16,6 +16,7 @@ from ...steps import (
     DGChannelShutdown,
     DeviceSession,
     DisconnectTarget,
+    OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
     STANDARD_PRESERVED_OUTPUTS,
     SafetyShutdownReport,
     ShutdownAction,
@@ -180,7 +181,7 @@ class _XYWaveformController:
                 channel=channel,
             )
             self.device.set_burst_trigger_slope(
-                "POSitive",
+                OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
                 channel=channel,
             )
             self.mode[channel_name] = "aw"
@@ -530,7 +531,7 @@ def run(params: MxZOptimalControlXYLeakageParams) -> Path:
             "amplitude_vpp": params.trigger_amplitude_vpp,
             "offset_v": params.trigger_offset_v,
             "duty_percent": params.trigger_duty_percent,
-            "slope": "POSitive",
+            "slope": OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
             "wiring": (
                 "Time_sequence_2 CH2 split to Z-control and X/Y-control "
                 "DG4000 Ext Trig"

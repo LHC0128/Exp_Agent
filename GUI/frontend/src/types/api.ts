@@ -128,6 +128,7 @@ export type SafetyRule = {
   ramp_rate?: number | null;
   output_off_on_error?: boolean;
   description?: string;
+  read_only?: boolean;
 };
 export type ControlTarget = {
   mapping_key: string;
@@ -436,6 +437,7 @@ export type SchemaField = {
   minimum?: number;
   maximum?: number;
   description?: string;
+  read_only?: boolean;
   options?: SchemaOption[];
 };
 export type ParameterGroup = "basic" | "advanced";
