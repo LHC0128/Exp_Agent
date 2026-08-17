@@ -122,7 +122,9 @@ class InstrumentControlTests(unittest.TestCase):
             {"shape": "DC", "offset": 0.35, "frequency": 1000.0, "amplitude": 2.0},
         )
         instrument.set_shape.assert_called_once_with("DC", 1)
-        instrument.set_offset.assert_called_once_with(0.35, 1)
+        # DG4162 实测 DC 波形下 VOLT:OFFS 写入无效，必须用 HIGH/LOW 三步写入
+        instrument.set_dc_voltage.assert_called_once_with(0.35, 1)
+        instrument.set_offset.assert_not_called()
         instrument.setup_dc.assert_not_called()
         # DC 波形下频率/幅度无意义，不得下发
         instrument.set_frequency.assert_not_called()

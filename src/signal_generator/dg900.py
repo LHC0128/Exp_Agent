@@ -312,6 +312,12 @@ class DG900Instrument:
     # DC 输出（核心）
     # ------------------------------------------------------------------
 
+    def set_dc_voltage(self, voltage: float,
+                       channel: Optional[int] = None) -> None:
+        """设置 DC 波形电平，不改变输出开关。"""
+        ch = self._ch(channel)
+        self.write(f":SOURce{ch}:APPLy:DC DEF,DEF,{voltage}")
+
     def setup_dc(self, voltage: float,
                  channel: Optional[int] = None) -> None:
         """设置 DC 电平并打开输出.
@@ -321,7 +327,7 @@ class DG900Instrument:
         设置偏置电压并开启输出。
         """
         ch = self._ch(channel)
-        self.write(f":SOURce{ch}:APPLy:DC DEF,DEF,{voltage}")
+        self.set_dc_voltage(voltage, channel=ch)
         self.set_output(True, ch)
 
     def get_dc_voltage(self, channel: Optional[int] = None) -> float:

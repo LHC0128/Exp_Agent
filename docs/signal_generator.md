@@ -109,6 +109,22 @@ dg.set_mod_type_state("AM", True)
   Python 接口名 `set_sync_state()` 和 `phase_init()`。
 - 两系列 GUI 都可读写幅度单位和输出负载；Pulse Delay 仅在 DG4000 上显示。
 
+## DG4162 DC 电平设置注意事项
+
+**已知仪器行为（DG4162 固件 00.01.14 实测）：DC 波形下
+`VOLTage:OFFSet` 写入会被静默忽略**——命令被接受、无 SCPI 错误，但寄存器
+不变、输出电压不改变。手册推荐的 `FUNC:DC + VOLT:OFFS` 在该固件上不生效，
+DC 电平实际由 `VOLTage:HIGH` / `VOLTage:LOW` 寄存器决定
+（电平 = (HIGH+LOW)/2，1 mV 分辨率），且写入受两条约束：
+
+- 新 HIGH 不大于当前 LOW 时，HIGH 写入被忽略；
+- 新 LOW 不小于当前 HIGH 时，LOW 会被压到 HIGH-1 mV。
+
+因此 `DG4000Instrument.set_dc_voltage(v)` 采用「先 LOW=v-1 mV、后 HIGH=v+1 mV、
+再 LOW=v-1 mV」三步写入，三步后电平恰为 v。`setup_dc()` 与仪器控制页的
+DC 应用路径都通过该方法设置电平，非 DC 波形的偏置仍使用 `VOLT:OFFS`
+（实测有效）。回读仍用 `VOLT:OFFS?`，DC 下返回 (HIGH+LOW)/2。
+
 ## GUI 行为
 
 仪器控制页以多列网格展示全部物理量，打开时不连接硬件；可逐项读取，也可顺序读取

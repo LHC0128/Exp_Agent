@@ -330,6 +330,24 @@ class DG4000Instrument:
         ch = self._ch(channel)
         self.write(f":SOURce{ch}:VOLTage:LEVel:IMMediate:LOW {voltage:e}")
 
+    def set_dc_voltage(self, voltage: float,
+                       channel: Optional[int] = None) -> None:
+        """设置 DC 波形的输出电平 (V).
+
+        DG4162（固件 00.01.14）实测：DC 波形下 ``VOLTage:OFFSet`` 写入
+        会被静默忽略（无 SCPI 错误、寄存器不变），DC 电平实际由
+        HIGH/LOW 寄存器决定（电平 = (HIGH+LOW)/2，1 mV 分辨率）。因此
+        这里用「先 LOW、后 HIGH、再 LOW」三步写入，兼容仪器对 H/L 的
+        约束（新 HIGH 不大于当前 LOW 时写入被忽略；新 LOW 不小于当前
+        HIGH 时会被压到 HIGH-1 mV）。三步完成后电平恰为 voltage。
+        """
+        ch = self._ch(channel)
+        low = float(voltage) - 0.001
+        high = float(voltage) + 0.001
+        self.set_low_level(low, channel=ch)
+        self.set_high_level(high, channel=ch)
+        self.set_low_level(low, channel=ch)
+
     def get_low_level(self, channel: Optional[int] = None) -> float:
         """查询低电平电压 (V)."""
         return self.query_float(
@@ -984,10 +1002,14 @@ class DG4000Instrument:
 
     def setup_dc(self, voltage: float,
                  channel: Optional[int] = None) -> None:
-        """一键配置 DC 输出并打开."""
+        """一键配置 DC 输出并打开.
+
+        注意：DG4162 实测 DC 波形下 VOLT:OFFS 写入无效，必须用
+        HIGH/LOW 设置电平，见 set_dc_voltage()。
+        """
         ch = self._ch(channel)
         self.set_shape("DC", channel=ch)
-        self.set_offset(voltage, channel=ch)
+        self.set_dc_voltage(voltage, channel=ch)
         self.set_output(True, channel=ch)
 
     def setup_noise(self, amplitude: float, offset: float = 0.0,
