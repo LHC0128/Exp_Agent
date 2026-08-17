@@ -28,8 +28,10 @@ devices:
 ```
 
 当前仓库已经配置设备实例 `keithley_6221_4503331`，并通过独立物理量
-`keithley_6221_main_field` 绑定到 Z 主线圈用途；对应安全范围为 `-100 到 100 mA`。
-`main_magnetic_field` 仍保留给 GS200，避免现有实验误用不同型号的驱动接口。
+`keithley_6221_main_field` 绑定到 Z 方向小磁场线圈用途；对应安全范围为 `-100 到 100 mA`。
+`main_magnetic_field` 仍保留给 GS200，用于独立的 Z 主磁场线圈。`mx-keithley-6221-main-field-calibration`
+仍是 6221 独占主线圈的历史标定实验；`mx-keithley-6221-optimal-control-rf-sensitivity`
+则允许 GS200 同时以非零电流驱动主磁场线圈。
 
 ## Python API
 

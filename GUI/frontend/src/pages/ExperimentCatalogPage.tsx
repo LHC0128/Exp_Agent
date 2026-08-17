@@ -13,6 +13,7 @@ export function ExperimentCatalogPage() {
   const [experiments, setExperiments] = useState<ExperimentDefinition[]>([]);
   const [tags, setTags] = useState<ExperimentTag[]>([]);
   const [category, setCategory] = useState("all");
+  const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [manageTags, setManageTags] = useState(false);
   const [newTag, setNewTag] = useState("");
@@ -20,6 +21,7 @@ export function ExperimentCatalogPage() {
   const [experimentTitles, setExperimentTitles] = useState<Record<string, string>>({});
   const [experimentDescriptions, setExperimentDescriptions] = useState<Record<string, string>>({});
   const [status, setStatus] = useState("");
+  const [statusError, setStatusError] = useState(false);
   const [saving, setSaving] = useState("");
 
   const loadCatalog = () => Promise.all([
@@ -35,25 +37,27 @@ export function ExperimentCatalogPage() {
   });
 
   useEffect(() => { loadCatalog().catch((reason) => setError(String(reason))); }, []);
-  const visible = category === "all" ? experiments : experiments.filter((item) => item.category === category);
+  const keyword = query.trim().toLowerCase();
+  const visible = (category === "all" ? experiments : experiments.filter((item) => item.category === category))
+    .filter((item) => !keyword || `${item.id} ${item.title} ${item.description}`.toLowerCase().includes(keyword));
 
   const add = async () => {
     if (!newTag.trim()) return;
-    setSaving("new"); setStatus("");
+    setSaving("new"); setStatus(""); setStatusError(false);
     try {
       await api("/api/experiment-tags", { method: "POST", body: JSON.stringify({ label: newTag }) });
       setNewTag(""); await loadCatalog(); setStatus("标签已添加");
-    } catch (reason) { setStatus(String(reason)); } finally { setSaving(""); }
+    } catch (reason) { setStatus(String(reason)); setStatusError(true); } finally { setSaving(""); }
   };
   const rename = async (tag: ExperimentTag) => {
-    setSaving(tag.id); setStatus("");
+    setSaving(tag.id); setStatus(""); setStatusError(false);
     try {
       await api(`/api/experiment-tags/${tag.id}`, { method: "PUT", body: JSON.stringify({ label: tagNames[tag.id] }) });
       await loadCatalog(); setStatus("标签名称已保存");
-    } catch (reason) { setStatus(String(reason)); } finally { setSaving(""); }
+    } catch (reason) { setStatus(String(reason)); setStatusError(true); } finally { setSaving(""); }
   };
   const move = async (experimentId: string, tagId: string) => {
-    setSaving(experimentId); setStatus("");
+    setSaving(experimentId); setStatus(""); setStatusError(false);
     try {
       const result = await api<{ experiment: ExperimentDefinition }>(`/api/experiments/${experimentId}/tag`, {
         method: "PUT",
@@ -61,10 +65,10 @@ export function ExperimentCatalogPage() {
       });
       setExperiments((items) => items.map((item) => item.id === experimentId ? result.experiment : item));
       setStatus(`“${result.experiment.title}”已移动到“${result.experiment.category_label}”`);
-    } catch (reason) { setStatus(String(reason)); } finally { setSaving(""); }
+    } catch (reason) { setStatus(String(reason)); setStatusError(true); } finally { setSaving(""); }
   };
   const saveMetadata = async (item: ExperimentDefinition) => {
-    setSaving(`metadata:${item.id}`); setStatus("");
+    setSaving(`metadata:${item.id}`); setStatus(""); setStatusError(false);
     try {
       const result = await api<{ experiment: ExperimentDefinition }>(`/api/experiments/${item.id}/metadata`, {
         method: "PUT",
@@ -77,7 +81,7 @@ export function ExperimentCatalogPage() {
       setExperimentTitles((current) => ({ ...current, [item.id]: result.experiment.title }));
       setExperimentDescriptions((current) => ({ ...current, [item.id]: result.experiment.description }));
       setStatus(`“${result.experiment.title}”的名称和介绍已保存`);
-    } catch (reason) { setStatus(String(reason)); } finally { setSaving(""); }
+    } catch (reason) { setStatus(String(reason)); setStatusError(true); } finally { setSaving(""); }
   };
 
   return (
@@ -104,14 +108,15 @@ export function ExperimentCatalogPage() {
               </div>
             ))}
           </div>
-          {status && <div className={`alert ${status.startsWith("Error") ? "error" : "success"}`}>{status}</div>}
+          {status && <div className={`alert ${statusError ? "error" : "success"}`}>{status}</div>}
         </section>
       )}
       <div className="catalog-filters">
         <button className={category === "all" ? "active" : ""} onClick={() => setCategory("all")}>全部 <span>{experiments.length}</span></button>
         {tags.map((tag) => <button className={category === tag.id ? "active" : ""} key={tag.id} onClick={() => setCategory(tag.id)}>{tag.label} <span>{experiments.filter((item) => item.category === tag.id).length}</span></button>)}
+        <input className="catalog-search" type="text" value={query} placeholder="搜索实验名称或 ID…" aria-label="搜索实验" onChange={(event) => setQuery(event.target.value)} />
       </div>
-      {status && !manageTags && <div className="alert success">{status}</div>}
+      {status && !manageTags && <div className={`alert ${statusError ? "error" : "success"}`}>{status}</div>}
       <div className="experiment-catalog">
         {visible.map((item) => (
           <article key={item.id}>

@@ -1,10 +1,12 @@
-"""Keithley 6221 固定电流档位与包络校验。"""
+"""Keithley 6221 固定电流档位、包络校验与最优控制任意波步骤。"""
 
 from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
 from typing import Any
+
+from ..common import validate_safety_limit
 
 
 KEITHLEY_6221_CURRENT_RANGE_OPTIONS_MA: tuple[tuple[float, str], ...] = (
@@ -100,3 +102,105 @@ def require_keithley_6221_current_range(
         f"需要至少 {result.required_peak_ma:.9g} mA"
         f"{recommendation}"
     )
+
+
+def configure_keithley_6221_optimal_control(
+    source: Any,
+    theory: Any,
+    applied: Any,
+    *,
+    current_range_ma: float,
+    compliance_v: float,
+) -> float:
+    """按理论波形配置 6221 ARB0 外触发最优控制，返回触发间隔归一化不活跃值。
+
+    ``theory`` 需要 ``repeat_frequency_hz``，``applied`` 需要归一化波形及
+    ``amplitude_peak_ma`` / ``offset_ma`` / ``minimum_ma`` / ``maximum_ma``。
+    """
+    validate_safety_limit("keithley_6221_main_field", applied.minimum_ma)
+    validate_safety_limit("keithley_6221_main_field", applied.maximum_ma)
+    require_keithley_6221_current_range(
+        current_range_ma,
+        applied.minimum_ma,
+        applied.maximum_ma,
+    )
+    source.abort_waveform()
+    source.set_output(False)
+    source.set_current(0.0)
+    source.set_autorange(False)
+    source.set_current_range(current_range_ma / 1000.0)
+    source.set_output_response("FAST")
+    source.set_analog_filter(False)
+    source.set_compliance(compliance_v)
+    source.set_compliance_test(True)
+    source.set_waveform_function("ARB0")
+    source.set_waveform_frequency(theory.repeat_frequency_hz)
+    source.set_waveform_amplitude(applied.amplitude_peak_ma / 1000.0)
+    source.set_waveform_offset(applied.offset_ma / 1000.0)
+    source.set_waveform_ranging("FIXED")
+    source.set_waveform_duration("CYCLES", 1.0)
+    source.upload_arbitrary(applied.normalized)
+    source.set_external_trigger(True)
+    source.set_external_trigger_line(1)
+    source.set_external_trigger_ignore(False)
+    inactive_normalized = float(-applied.offset_ma / applied.amplitude_peak_ma)
+    if not -1.0 <= inactive_normalized <= 1.0:
+        raise ValueError(
+            "6221 任意波包络不包含 0 mA，无法将触发间隔安全设置为 0 mA"
+        )
+    source.set_external_trigger_inactive_value(inactive_normalized)
+    source.wait_for_operation_complete()
+    source.raise_for_errors()
+    check_keithley_6221_compliance(source, "外部触发启动前")
+    source.arm_waveform()
+    source.start_waveform()
+    return inactive_normalized
+
+
+def shutdown_keithley_6221(source: Any) -> None:
+    """中止波形、关闭输出、归零并回读确认；任何一步失败都收集后统一抛出。"""
+    errors: list[str] = []
+
+    def verify() -> None:
+        current_a = float(source.get_current())
+        output_on = bool(source.get_output())
+        if abs(current_a) > 1e-12 or output_on:
+            raise RuntimeError(
+                f"回读为 {current_a:.9g} A、输出 {'ON' if output_on else 'OFF'}"
+            )
+
+    for label, action in (
+        ("ABORT", source.abort_waveform),
+        ("关闭输出", lambda: source.set_output(False)),
+        ("归零", lambda: source.set_current(0.0)),
+        ("回读确认", verify),
+    ):
+        try:
+            action()
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
+    if errors:
+        raise RuntimeError("6221 关断失败: " + "；".join(errors))
+
+
+def check_keithley_6221_compliance(source: Any, context: str) -> None:
+    """检查 Compliance；命中或通信失败时尽力完成安全关断。"""
+    try:
+        failed = bool(source.is_in_compliance())
+    except Exception as exc:
+        try:
+            shutdown_keithley_6221(source)
+        except Exception as shutdown_exc:
+            raise RuntimeError(
+                f"6221 在{context}检查 Compliance 失败: {exc}；"
+                f"关断同时失败: {shutdown_exc}"
+            ) from exc
+        raise RuntimeError(f"6221 在{context}检查 Compliance 失败: {exc}，已关断") from exc
+    if failed:
+        try:
+            shutdown_keithley_6221(source)
+        except Exception as shutdown_exc:
+            raise RuntimeError(
+                f"6221 在{context}进入 Compliance；关断同时失败: {shutdown_exc}"
+            ) from shutdown_exc
+        raise RuntimeError(f"6221 在{context}进入 Compliance，实验已安全终止")

@@ -31,6 +31,38 @@ def outside_absolute_sine(
     return baseline + amplitude * np.abs(np.sin(phase))
 
 
+DISPERSION_MODEL_NAME = "abs(dispersion(B_eff(phi)))"
+
+
+def dispersion_phase_response(
+    phase_deg: np.ndarray | float,
+    scale: float,
+    resonance_amplitude: float,
+    width: float,
+    residual_amplitude: float,
+    residual_phase_deg: float,
+    y_rf_amplitude_vpp: float,
+) -> np.ndarray:
+    """|色散| 折叠响应：R = |scale*(B-b0)/((B-b0)^2+w^2)|。
+
+    B(phi) = |A e^{i phi} + C e^{i phi_c}| 是 Y RF 矢量与剩磁射频成分的
+    合成等效幅度；改变相位即改变等效幅度，响应为色散线形的绝对值。
+    """
+    relative = np.deg2rad(
+        np.asarray(phase_deg, dtype=float) - residual_phase_deg
+    )
+    effective = np.sqrt(
+        y_rf_amplitude_vpp**2
+        + residual_amplitude**2
+        + 2.0
+        * y_rf_amplitude_vpp
+        * residual_amplitude
+        * np.cos(relative)
+    )
+    detuning = effective - resonance_amplitude
+    return np.abs(scale * detuning / (detuning**2 + width**2))
+
+
 @dataclass(frozen=True, slots=True)
 class PhaseFitResult:
     """单个相位模型的拟合结果。"""
@@ -63,6 +95,47 @@ class PhaseFitResult:
             "r_squared": self.r_squared,
             "selected_phase_deg": self.selected_phase_deg,
             "observed_max_phase_deg": self.observed_max_phase_deg,
+            "rejection_reasons": list(self.rejection_reasons),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DispersionPhaseFitResult:
+    """|色散| 折叠相位响应模型的拟合结果。
+
+    参数顺序为 (scale, resonance_amplitude, width, residual_amplitude,
+    residual_phase_deg)，模型为
+    R = |scale*(B-b0)/((B-b0)^2+w^2)|，B(phi) = |A e^{i phi} + C e^{i phi_c}|。
+    """
+
+    model: str
+    success: bool
+    parameters: tuple[float, float, float, float, float]
+    uncertainties: tuple[float, float, float, float, float]
+    covariance: tuple[tuple[float, ...], ...]
+    r_squared: float
+    selected_phase_deg: float
+    observed_max_phase_deg: float
+    peak_to_peak_v: float
+    noise_median_v: float
+    signal_to_noise: float
+    y_rf_amplitude_vpp: float
+    rejection_reasons: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "model": self.model,
+            "success": self.success,
+            "parameters": list(self.parameters),
+            "uncertainties": list(self.uncertainties),
+            "covariance": [list(row) for row in self.covariance],
+            "r_squared": self.r_squared,
+            "selected_phase_deg": self.selected_phase_deg,
+            "observed_max_phase_deg": self.observed_max_phase_deg,
+            "peak_to_peak_v": self.peak_to_peak_v,
+            "noise_median_v": self.noise_median_v,
+            "signal_to_noise": self.signal_to_noise,
+            "y_rf_amplitude_vpp": self.y_rf_amplitude_vpp,
             "rejection_reasons": list(self.rejection_reasons),
         }
 
@@ -472,18 +545,52 @@ def _fit_model(
     observed_max_phase = float(phase_deg[int(np.argmax(r_mean_v))] % 360.0)
     data_span = max(float(np.ptp(r_mean_v)), 1e-12)
     data_max = max(float(np.max(np.abs(r_mean_v))), data_span)
-    best: tuple[np.ndarray, np.ndarray, float] | None = None
+    data_mean = float(np.mean(r_mean_v))
+    data_min = float(np.min(r_mean_v))
+    # |C + A sin| 在 A<C（不触零）与 A>C（触零）两种形状下均有局部极小，
+    # 单一起点族会被尖点卡住；用多组 (基线, 幅度) 起点网格加线性谐波估计兜底。
+    starts: list[tuple[float, float, float]] = []
     for phase_guess in np.arange(0.0, 360.0, 30.0):
+        for baseline_guess, amplitude_guess in (
+            (data_min, data_span),
+            (data_mean, data_span / 2.0),
+            (data_mean, data_span),
+            (data_min, data_span / 2.0),
+        ):
+            starts.append(
+                (
+                    baseline_guess,
+                    amplitude_guess,
+                    float(phase_guess),
+                )
+            )
+    radians = np.deg2rad(np.asarray(phase_deg, dtype=float))
+    design = np.column_stack(
+        (
+            np.ones(phase_deg.size, dtype=float),
+            np.cos(radians),
+            np.sin(radians),
+        )
+    )
+    try:
+        linear, _, _, _ = np.linalg.lstsq(design, r_mean_v, rcond=None)
+        harmonic_amplitude = float(np.hypot(linear[1], linear[2]))
+        harmonic_phase = float(
+            np.rad2deg(np.arctan2(linear[2], linear[1]))
+        )
+        for harmonic_guess in (harmonic_phase, harmonic_phase + 180.0):
+            starts.append((float(linear[0]), harmonic_amplitude, harmonic_guess))
+    except np.linalg.LinAlgError:
+        pass
+
+    best: tuple[np.ndarray, np.ndarray, float] | None = None
+    for start in starts:
         try:
             parameters, covariance = curve_fit(
                 model,
                 phase_deg,
                 r_mean_v,
-                p0=(
-                    float(np.min(r_mean_v)),
-                    data_span,
-                    float(phase_guess),
-                ),
+                p0=start,
                 bounds=(
                     [baseline_bounds[0], 0.0, -720.0],
                     [baseline_bounds[1], data_max * 4.0, 720.0],
@@ -598,3 +705,189 @@ def fit_phase_scan(
         amplitude_sigma_min=None,
     )
     return primary, diagnostic
+
+
+def fit_dispersion_phase_scan(
+    phase_deg: np.ndarray,
+    r_mean_v: np.ndarray,
+    r_std_v: np.ndarray,
+    *,
+    y_rf_amplitude_vpp: float,
+    r_squared_min: float,
+    amplitude_sigma_min: float,
+) -> DispersionPhaseFitResult:
+    """用 |色散| 折叠模型拟合 R 对 Y RF 相位的响应。
+
+    正式模型：R = |scale*(B-b0)/((B-b0)^2+w^2)|，
+    B(phi) = |A e^{i phi} + C e^{i phi_c}|，A 固定为校相 Y RF 幅度。
+    多起点非线性拟合，选残差最小解；选中相位取拟合曲线峰值中
+    距离观测最大相位最近的峰。
+    """
+    phase = np.asarray(phase_deg, dtype=float).reshape(-1)
+    response = np.asarray(r_mean_v, dtype=float).reshape(-1)
+    noise = np.asarray(r_std_v, dtype=float).reshape(-1)
+    if phase.size < 6 or response.size != phase.size or noise.size != phase.size:
+        raise ValueError("|色散| 相位拟合至少需要 6 个等长的相位、R、R 噪声点")
+    if not (
+        np.all(np.isfinite(phase))
+        and np.all(np.isfinite(response))
+        and np.all(np.isfinite(noise))
+    ):
+        raise ValueError("|色散| 相位拟合包含 NaN 或无穷值")
+    if not np.isfinite(y_rf_amplitude_vpp) or y_rf_amplitude_vpp <= 0.0:
+        raise ValueError("|色散| 相位拟合的校相 Y RF 幅度必须为有限正值")
+    if np.any(noise < 0.0):
+        raise ValueError("|色散| 相位拟合的点噪声必须非负")
+
+    observed_max_phase = float(phase[int(np.argmax(response))] % 360.0)
+    data_span = max(float(np.ptp(response)), 1e-12)
+    data_max = max(float(np.max(np.abs(response))), data_span)
+    noise_median = float(np.median(noise))
+    amplitude_a = float(y_rf_amplitude_vpp)
+
+    # 多起点网格：剩磁幅度、工作点、线宽、剩磁相位分别覆盖常见情形。
+    starts: list[tuple[float, float, float, float, float]] = []
+    for residual_phase_guess in np.arange(0.0, 360.0, 30.0):
+        for residual_guess in (
+            0.2 * amplitude_a,
+            0.5 * amplitude_a,
+            amplitude_a,
+            2.0 * amplitude_a,
+        ):
+            for resonance_guess in (0.5 * amplitude_a, amplitude_a):
+                for width_guess in (
+                    0.05 * amplitude_a,
+                    0.2 * amplitude_a,
+                    0.5 * amplitude_a,
+                ):
+                    starts.append(
+                        (
+                            data_max * width_guess,
+                            resonance_guess,
+                            width_guess,
+                            residual_guess,
+                            float(residual_phase_guess),
+                        )
+                    )
+
+    scale_upper = 10.0 * amplitude_a * data_max
+    amplitude_upper = 5.0 * amplitude_a
+    bounds = (
+        [1e-12, 1e-12, 1e-12, 0.0, -720.0],
+        [scale_upper, amplitude_upper, 3.0 * amplitude_a, amplitude_upper, 720.0],
+    )
+    best: tuple[np.ndarray, np.ndarray, float] | None = None
+    for start in starts:
+        try:
+            parameters, covariance = curve_fit(
+                lambda phi, s, b0, w, c, pc: dispersion_phase_response(
+                    phi, s, b0, w, c, pc, amplitude_a
+                ),
+                phase,
+                response,
+                p0=start,
+                bounds=bounds,
+                maxfev=200000,
+            )
+        except (RuntimeError, ValueError, FloatingPointError):
+            continue
+        fitted = dispersion_phase_response(phase, *parameters, amplitude_a)
+        residual_sum = float(np.sum((response - fitted) ** 2))
+        if best is None or residual_sum < best[2]:
+            best = (parameters, covariance, residual_sum)
+
+    nan5 = (float("nan"),) * 5
+    reasons: list[str] = []
+    if best is None:
+        reasons.append("|色散| 相位拟合未收敛")
+        return DispersionPhaseFitResult(
+            model=DISPERSION_MODEL_NAME,
+            success=False,
+            parameters=nan5,
+            uncertainties=nan5,
+            covariance=tuple((float("nan"),) * 5 for _ in range(5)),
+            r_squared=float("nan"),
+            selected_phase_deg=float("nan"),
+            observed_max_phase_deg=observed_max_phase,
+            peak_to_peak_v=float("nan"),
+            noise_median_v=noise_median,
+            signal_to_noise=float("nan"),
+            y_rf_amplitude_vpp=amplitude_a,
+            rejection_reasons=tuple(reasons),
+        )
+
+    parameters_raw, covariance_raw, residual_sum = best
+    parameters = tuple(
+        float(value) if index != 4 else float(value) % 360.0
+        for index, value in enumerate(parameters_raw)
+    )
+    covariance_array = np.asarray(covariance_raw, dtype=float)
+    uncertainties = tuple(
+        float(value)
+        for value in np.sqrt(np.clip(np.diag(covariance_array), 0.0, None))
+    )
+    total_sum = float(np.sum((response - np.mean(response)) ** 2))
+    r_squared = (
+        1.0 - residual_sum / total_sum
+        if total_sum > 0.0
+        else float("-inf")
+    )
+    fitted = dispersion_phase_response(phase, *parameters, amplitude_a)
+    peak_to_peak = float(np.ptp(fitted))
+    signal_to_noise = (
+        peak_to_peak / noise_median
+        if noise_median > 0.0
+        else float("inf")
+    )
+
+    if not np.all(np.isfinite(covariance_array)):
+        reasons.append("|色散| 拟合协方差包含非有限值")
+    if not np.isfinite(r_squared) or r_squared < r_squared_min:
+        reasons.append(
+            f"|色散| 拟合 R^2={r_squared:.6g} 低于门槛 {r_squared_min:.6g}"
+        )
+    if (
+        not np.isfinite(signal_to_noise)
+        or signal_to_noise < amplitude_sigma_min
+    ):
+        reasons.append(
+            f"拟合响应峰谷差 {peak_to_peak:.6g} V 与中位点噪声 "
+            f"{noise_median:.6g} V 的比值 {signal_to_noise:.6g} "
+            f"低于 {amplitude_sigma_min:.6g}σ 门槛"
+        )
+
+    # 选中相位：拟合曲线的局部峰值中取距离观测最大相位最近的一个。
+    dense = np.linspace(0.0, 360.0, 1441)
+    curve = dispersion_phase_response(dense, *parameters, amplitude_a)
+    peak_mask = (
+        (curve[1:-1] > curve[:-2]) & (curve[1:-1] >= curve[2:])
+    )
+    peaks = dense[1:-1][peak_mask]
+    if peaks.size == 0:
+        peaks = np.asarray([dense[int(np.argmax(curve))]], dtype=float)
+    selected_phase = float(
+        min(
+            peaks,
+            key=lambda value: _circular_distance_deg(
+                float(value), observed_max_phase
+            ),
+        )
+    )
+    return DispersionPhaseFitResult(
+        model=DISPERSION_MODEL_NAME,
+        success=not reasons,
+        parameters=parameters,
+        uncertainties=uncertainties,
+        covariance=tuple(
+            tuple(float(value) for value in row)
+            for row in covariance_array
+        ),
+        r_squared=float(r_squared),
+        selected_phase_deg=selected_phase,
+        observed_max_phase_deg=observed_max_phase,
+        peak_to_peak_v=peak_to_peak,
+        noise_median_v=noise_median,
+        signal_to_noise=float(signal_to_noise),
+        y_rf_amplitude_vpp=amplitude_a,
+        rejection_reasons=tuple(reasons),
+    )

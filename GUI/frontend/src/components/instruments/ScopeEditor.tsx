@@ -14,6 +14,8 @@ type ScopeEditorProps = {
 
 export function ScopeEditor({ snapshot, route, onSaved, onError }: ScopeEditorProps) {
   const [state, setState] = useState<ScopeSnapshot>(snapshot);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const set = <Key extends keyof ScopeSnapshot>(key: Key, value: ScopeSnapshot[Key]) => {
     setState((old) => ({ ...old, [key]: value }));
   };
@@ -41,21 +43,29 @@ export function ScopeEditor({ snapshot, route, onSaved, onError }: ScopeEditorPr
       channels: state.channels,
       trigger: state.trigger,
     };
+    setSaving(true);
+    setError("");
     try {
       const saved = await api<ControlTargetResponse>(`/api/control-targets/${encodeURIComponent(route.mappingKey)}/scope`, {
         method: "PUT",
         body: JSON.stringify({ device_library_revision: route.deviceLibraryRevision, physical_mapping_revision: route.physicalMappingRevision, settings }),
       });
       onSaved(saved);
-    } catch (reason) { onError(reason); }
+    } catch (reason) {
+      setError(String(reason));
+      onError(reason);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <>
       <div className="workspace-head">
         <div><Status>CONNECTED</Status><h2>{snapshot.label}</h2><p>{snapshot.idn}</p></div>
-        <button onClick={save}>应用并回读</button>
+        <button disabled={saving} onClick={() => void save()}>{saving ? "应用中…" : "应用并回读"}</button>
       </div>
+      {error && <div className="alert error">{error}</div>}
       <section className="panel">
         <div className="panel-head"><h3>采集与时基</h3></div>
         <div className="form-grid">

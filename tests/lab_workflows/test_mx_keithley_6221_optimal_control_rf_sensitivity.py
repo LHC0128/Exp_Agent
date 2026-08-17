@@ -13,7 +13,7 @@ from lab_workflows.experiment_modules.mx_keithley_6221_optimal_control_rf_sensit
 from lab_workflows.experiment_modules.mx_keithley_6221_optimal_control_rf_sensitivity import analysis as analysis_module
 from lab_workflows.experiment_modules.mx_keithley_6221_optimal_control_rf_sensitivity.models import MxKeithley6221OptimalControlRFParams
 from lab_workflows.experiment_modules.mx_keithley_6221_optimal_control_rf_sensitivity.sources import build_applied_current, load_keithley_calibration, load_theory_control
-from lab_workflows.experiment_modules.mx_keithley_6221_optimal_control_rf_sensitivity.workflow import _configure_6221, _configure_trigger, _check_6221_compliance, safe_shutdown
+from lab_workflows.experiment_modules.mx_keithley_6221_optimal_control_rf_sensitivity.workflow import _configure_6221, _configure_gs200, _configure_trigger, _check_6221_compliance, safe_shutdown
 from lab_workflows.experiments.registry import get_experiment
 from lab_workflows.steps.keithley_6221 import assess_keithley_6221_current_range
 
@@ -35,7 +35,7 @@ def test_registry_schema_and_calibration_conversion() -> None:
     params = MxKeithley6221OptimalControlRFParams.from_yaml(
         ROOT / "params" / "experiments" / f"{DEFINITION.id}.yaml"
     )
-    params.confirm_gs200_disconnected = True
+    params.confirm_gs200_connected = True
     assert params.validate(ROOT) == []
     assert get_experiment(DEFINITION.id) is DEFINITION
     assert DEFINITION.execution_mode == "typed_workflow"
@@ -156,8 +156,35 @@ def test_compliance_failure_keeps_original_and_shutdown_error() -> None:
     assert [item[0] for item in source.calls[:3]] == ["is_in_compliance", "abort_waveform", "set_output"]
 
 
+def test_gs200_accepts_nonzero_main_field_setpoint() -> None:
+    gs200 = MagicMock()
+    gs200.get_current.return_value = 9.3e-3
+    gs200.get_output.return_value = True
+    actual = _configure_gs200(
+        gs200,
+        {"main_magnetic_field": {"source_function": "CURRent"}},
+        9.3,
+    )
+    assert actual == pytest.approx(9.3)
+    gs200.set_current_limit.assert_called_once_with(0.01)
+    assert gs200.set_current.call_args.args[0] == pytest.approx(9.3e-3)
+    gs200.set_output.assert_any_call(False)
+    gs200.set_output.assert_any_call(True)
+
+
+def test_main_field_summary_uses_recorded_output_state_at_zero_current() -> None:
+    assert analysis_module._main_field_measurement_summary(
+        {
+            "geometry": {
+                "gs200_main_field_current_ma": 0.0,
+                "gs200_output": "ON",
+            }
+        }
+    ) == "0 mA, output ON"
+
+
 def test_trigger_source_is_5v_50_percent_and_frequency_locked() -> None:
-    params = MxKeithley6221OptimalControlRFParams(confirm_gs200_disconnected=True)
+    params = MxKeithley6221OptimalControlRFParams(confirm_gs200_connected=True)
     device = MagicMock()
     _configure_trigger(params, device, 2, 30000.0, output=False)
     device.setup_square.assert_called_once_with(
@@ -175,7 +202,7 @@ def test_safe_shutdown_zeros_6221_and_gs200() -> None:
     gs200.get_output.return_value = False
     report = safe_shutdown(
         {"keithley": source, "gs200": gs200}, {},
-        MxKeithley6221OptimalControlRFParams(confirm_gs200_disconnected=True),
+        MxKeithley6221OptimalControlRFParams(confirm_gs200_connected=True),
     )
     assert report.completed
     source.abort_waveform.assert_called_once()
@@ -208,3 +235,39 @@ def test_analysis_reports_keithley_calibration_key(monkeypatch, local_tmp_path: 
     result = analysis_module.analyze(run_dir)
     assert result["keithley_calibration"] == {"source_run": "calibration-run"}
     assert "z_calibration" not in result
+
+
+def test_y_rf_frequency_is_visible_and_editable() -> None:
+    fields = {item["name"]: item for item in DEFINITION.schema()["fields"]}
+    assert "Y_RF_FREQUENCY_HZ" in fields
+    assert fields["Y_RF_FREQUENCY_HZ"]["read_only"] is False
+    assert fields["TRIGGER_FREQUENCY_HZ"]["read_only"] is True
+
+
+def test_derive_external_follows_control_version() -> None:
+    derived_v2 = DEFINITION.derive({})
+    theory_v2 = load_theory_control(
+        Path(r"D:\Code\theory_agent\simulate\results\oc_sens"), "v2"
+    )
+    assert derived_v2["TRIGGER_FREQUENCY_HZ"] == pytest.approx(
+        theory_v2.repeat_frequency_hz
+    )
+    derived_v4 = DEFINITION.derive({"CONTROL_VERSION": "v4"})
+    theory_v4 = load_theory_control(
+        Path(r"D:\Code\theory_agent\simulate\results\oc_sens"), "v4"
+    )
+    assert derived_v4["TRIGGER_FREQUENCY_HZ"] == pytest.approx(
+        theory_v4.repeat_frequency_hz
+    )
+    assert derived_v4["Y_RF_FREQUENCY_HZ"] == pytest.approx(
+        theory_v4.theory_rf_frequency_hz
+    )
+
+
+def test_v4_waveform_loads_with_integer_rf_periods() -> None:
+    theory = load_theory_control(
+        Path(r"D:\Code\theory_agent\simulate\results\oc_sens"), "v4"
+    )
+    assert theory.repeat_frequency_hz == pytest.approx(12000.0)
+    assert theory.theory_rf_frequency_hz == pytest.approx(12000.0)
+    assert theory.rf_periods_per_waveform == 1

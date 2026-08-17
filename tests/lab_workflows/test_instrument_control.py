@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from lab_workflows.devices import ChannelRecord, DeviceRecord
 from lab_workflows.instrument_control import (
+    _apply_basic_waveform,
     _read_generator_channel,
     _read_gs200_state,
     _validate_generator_output,
@@ -113,6 +114,37 @@ class InstrumentControlTests(unittest.TestCase):
         self.assertEqual(state["mod"]["am_depth"], 80.0)
         self.assertIsNone(state["burst"]["delay"])
         self.assertEqual(state["readback_errors"][0]["field"], "burst.delay")
+
+    def test_basic_waveform_dc_writes_dg4000_shape_and_offset(self):
+        instrument = MagicMock()
+        _apply_basic_waveform(
+            instrument, "DG4000", 1,
+            {"shape": "DC", "offset": 0.35, "frequency": 1000.0, "amplitude": 2.0},
+        )
+        instrument.set_shape.assert_called_once_with("DC", 1)
+        instrument.set_offset.assert_called_once_with(0.35, 1)
+        instrument.setup_dc.assert_not_called()
+        # DC 波形下频率/幅度无意义，不得下发
+        instrument.set_frequency.assert_not_called()
+        instrument.set_amplitude.assert_not_called()
+        # 不得擅自改变输出开关
+        instrument.set_output.assert_not_called()
+
+    def test_basic_waveform_dc_keeps_dg900_setup_dc_path(self):
+        instrument = MagicMock()
+        _apply_basic_waveform(instrument, "DG900", 1, {"shape": "DC", "offset": 0.35})
+        instrument.setup_dc.assert_called_once_with(0.35, 1)
+        instrument.set_shape.assert_not_called()
+        instrument.set_offset.assert_not_called()
+
+    def test_basic_waveform_non_dc_still_uses_set_shape_and_offset_setter(self):
+        instrument = MagicMock()
+        _apply_basic_waveform(
+            instrument, "DG4000", 1,
+            {"shape": "SINusoid", "frequency": 1000.0, "amplitude": 2.0, "offset": 0.1},
+        )
+        instrument.set_shape.assert_called_once_with("SINusoid", 1)
+        instrument.set_offset.assert_called_once_with(0.1, 1)
 
     def test_apply_mod_disables_burst_and_writes_output_last(self):
         record = DeviceRecord(

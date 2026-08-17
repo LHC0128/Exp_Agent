@@ -1,0 +1,5383 @@
+﻿{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bell-Bloom ʵ�����̨",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices": {
+      "get": {
+        "summary": "Devices",
+        "operationId": "devices_api_devices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceSummary"
+                  },
+                  "type": "array",
+                  "title": "Response Devices Api Devices Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets": {
+      "get": {
+        "summary": "Control Targets",
+        "operationId": "control_targets_api_control_targets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlTargetCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets/{mapping_key}/refresh": {
+      "post": {
+        "summary": "Refresh Control Target",
+        "operationId": "refresh_control_target_api_control_targets__mapping_key__refresh_post",
+        "parameters": [
+          {
+            "name": "mapping_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mapping Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlRevisionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlTargetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets/refresh-all": {
+      "post": {
+        "summary": "Refresh All Control Targets",
+        "operationId": "refresh_all_control_targets_api_control_targets_refresh_all_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlRevisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlTargetBulkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets/{mapping_key}/generator": {
+      "put": {
+        "summary": "Update Control Generator",
+        "operationId": "update_control_generator_api_control_targets__mapping_key__generator_put",
+        "parameters": [
+          {
+            "name": "mapping_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mapping Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlGeneratorBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlTargetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets/{mapping_key}/current-source": {
+      "put": {
+        "summary": "Update Control Current Source",
+        "operationId": "update_control_current_source_api_control_targets__mapping_key__current_source_put",
+        "parameters": [
+          {
+            "name": "mapping_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mapping Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlCurrentSourceBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlTargetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets/{mapping_key}/laser": {
+      "put": {
+        "summary": "Update Control Laser",
+        "operationId": "update_control_laser_api_control_targets__mapping_key__laser_put",
+        "parameters": [
+          {
+            "name": "mapping_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mapping Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlLaserBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlTargetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets/{mapping_key}/emission": {
+      "put": {
+        "summary": "Update Control Emission",
+        "operationId": "update_control_emission_api_control_targets__mapping_key__emission_put",
+        "parameters": [
+          {
+            "name": "mapping_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mapping Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlEmissionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlTargetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets/{mapping_key}/scope": {
+      "put": {
+        "summary": "Update Control Scope",
+        "operationId": "update_control_scope_api_control_targets__mapping_key__scope_put",
+        "parameters": [
+          {
+            "name": "mapping_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mapping Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlScopeBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlTargetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets/{mapping_key}/tec": {
+      "put": {
+        "summary": "Update Control Tec",
+        "operationId": "update_control_tec_api_control_targets__mapping_key__tec_put",
+        "parameters": [
+          {
+            "name": "mapping_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mapping Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlTecBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlTargetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/device-library": {
+      "get": {
+        "summary": "Device Library",
+        "operationId": "device_library_api_device_library_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Device Library",
+        "operationId": "update_device_library_api_device_library_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceLibraryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/device-library/discover-visa": {
+      "post": {
+        "summary": "Discover Device Library",
+        "operationId": "discover_device_library_api_device_library_discover_visa_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/physical-mappings": {
+      "get": {
+        "summary": "Physical Mappings",
+        "operationId": "physical_mappings_api_physical_mappings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Physical Mappings",
+        "operationId": "update_physical_mappings_api_physical_mappings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhysicalMappingsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{device_id}/refresh": {
+      "post": {
+        "summary": "Refresh Device",
+        "operationId": "refresh_device_api_devices__device_id__refresh_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/GeneratorDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ScopeDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CurrentSourceDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Keithley6221DeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LaserDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TecDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "DG4000": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "DG900": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "SDS": "#/components/schemas/ScopeDeviceSnapshot",
+                      "GS200": "#/components/schemas/CurrentSourceDeviceSnapshot",
+                      "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
+                      "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
+                      "TEC103": "#/components/schemas/TecDeviceSnapshot",
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  },
+                  "title": "Response Refresh Device Api Devices  Device Id  Refresh Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{device_id}/channels/{channel}": {
+      "put": {
+        "summary": "Update Channel",
+        "operationId": "update_channel_api_devices__device_id__channels__channel__put",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Channel"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratorChannelSettingsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/GeneratorDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ScopeDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CurrentSourceDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Keithley6221DeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LaserDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TecDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "DG4000": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "DG900": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "SDS": "#/components/schemas/ScopeDeviceSnapshot",
+                      "GS200": "#/components/schemas/CurrentSourceDeviceSnapshot",
+                      "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
+                      "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
+                      "TEC103": "#/components/schemas/TecDeviceSnapshot",
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  },
+                  "title": "Response Update Channel Api Devices  Device Id  Channels  Channel  Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{device_id}/scope": {
+      "put": {
+        "summary": "Update Scope",
+        "operationId": "update_scope_api_devices__device_id__scope_put",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeSettingsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/GeneratorDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ScopeDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CurrentSourceDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Keithley6221DeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LaserDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TecDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "DG4000": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "DG900": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "SDS": "#/components/schemas/ScopeDeviceSnapshot",
+                      "GS200": "#/components/schemas/CurrentSourceDeviceSnapshot",
+                      "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
+                      "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
+                      "TEC103": "#/components/schemas/TecDeviceSnapshot",
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  },
+                  "title": "Response Update Scope Api Devices  Device Id  Scope Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{device_id}/current-source": {
+      "put": {
+        "summary": "Update Current Source",
+        "operationId": "update_current_source_api_devices__device_id__current_source_put",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CurrentSourceSettingsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/GeneratorDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ScopeDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CurrentSourceDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Keithley6221DeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LaserDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TecDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "DG4000": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "DG900": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "SDS": "#/components/schemas/ScopeDeviceSnapshot",
+                      "GS200": "#/components/schemas/CurrentSourceDeviceSnapshot",
+                      "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
+                      "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
+                      "TEC103": "#/components/schemas/TecDeviceSnapshot",
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  },
+                  "title": "Response Update Current Source Api Devices  Device Id  Current Source Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{device_id}/laser": {
+      "put": {
+        "summary": "Update Laser",
+        "operationId": "update_laser_api_devices__device_id__laser_put",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaserSettingsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/GeneratorDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ScopeDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CurrentSourceDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Keithley6221DeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LaserDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TecDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "DG4000": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "DG900": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "SDS": "#/components/schemas/ScopeDeviceSnapshot",
+                      "GS200": "#/components/schemas/CurrentSourceDeviceSnapshot",
+                      "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
+                      "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
+                      "TEC103": "#/components/schemas/TecDeviceSnapshot",
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  },
+                  "title": "Response Update Laser Api Devices  Device Id  Laser Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{device_id}/emission": {
+      "put": {
+        "summary": "Update Laser Emission",
+        "operationId": "update_laser_emission_api_devices__device_id__emission_put",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaserEmissionSettingsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/GeneratorDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ScopeDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CurrentSourceDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Keithley6221DeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LaserDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TecDeviceSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "DG4000": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "DG900": "#/components/schemas/GeneratorDeviceSnapshot",
+                      "SDS": "#/components/schemas/ScopeDeviceSnapshot",
+                      "GS200": "#/components/schemas/CurrentSourceDeviceSnapshot",
+                      "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
+                      "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
+                      "TEC103": "#/components/schemas/TecDeviceSnapshot",
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                    }
+                  },
+                  "title": "Response Update Laser Emission Api Devices  Device Id  Emission Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clocks/sync": {
+      "post": {
+        "summary": "Sync Clocks",
+        "operationId": "sync_clocks_api_clocks_sync_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tools/demod0-phase-calibration": {
+      "post": {
+        "summary": "Phase Calibration",
+        "operationId": "phase_calibration_api_tools_demod0_phase_calibration_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhaseBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tools/keithley-waveform-convert": {
+      "post": {
+        "summary": "Keithley Waveform Convert",
+        "description": "������ӿڣ����� 6221 ���Ⲩ��궨�ı�������������磬������Ӳ����",
+        "operationId": "keithley_waveform_convert_api_tools_keithley_waveform_convert_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeithleyWaveformConvertBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiment-tags": {
+      "get": {
+        "summary": "Experiment Tags",
+        "operationId": "experiment_tags_api_experiment_tags_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Experiment Tag",
+        "operationId": "create_experiment_tag_api_experiment_tags_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiment-tags/{tag_id}": {
+      "put": {
+        "summary": "Update Experiment Tag",
+        "operationId": "update_experiment_tag_api_experiment_tags__tag_id__put",
+        "parameters": [
+          {
+            "name": "tag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tag Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments": {
+      "get": {
+        "summary": "Experiments",
+        "operationId": "experiments_api_experiments_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}": {
+      "get": {
+        "summary": "Experiment",
+        "operationId": "experiment_api_experiments__experiment_id__get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/tag": {
+      "put": {
+        "summary": "Update Experiment Assignment",
+        "operationId": "update_experiment_assignment_api_experiments__experiment_id__tag_put",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagAssignmentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/description": {
+      "put": {
+        "summary": "Update Experiment Description",
+        "operationId": "update_experiment_description_api_experiments__experiment_id__description_put",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentDescriptionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/metadata": {
+      "put": {
+        "summary": "Update Experiment Metadata",
+        "operationId": "update_experiment_metadata_api_experiments__experiment_id__metadata_put",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentMetadataBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/schema": {
+      "get": {
+        "summary": "Experiment Schema",
+        "operationId": "experiment_schema_api_experiments__experiment_id__schema_get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/defaults": {
+      "put": {
+        "summary": "Save Experiment Defaults",
+        "operationId": "save_experiment_defaults_api_experiments__experiment_id__defaults_put",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentDefaultsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/preflight": {
+      "post": {
+        "summary": "Experiment Preflight",
+        "operationId": "experiment_preflight_api_experiments__experiment_id__preflight_post",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/derive": {
+      "post": {
+        "summary": "Experiment Derive",
+        "operationId": "experiment_derive_api_experiments__experiment_id__derive_post",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/runs": {
+      "post": {
+        "summary": "Experiment Run",
+        "operationId": "experiment_run_api_experiments__experiment_id__runs_post",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "summary": "Jobs",
+        "operationId": "jobs_api_jobs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "summary": "Job",
+        "operationId": "job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/cancel": {
+      "post": {
+        "summary": "Cancel Job",
+        "operationId": "cancel_job_api_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/events": {
+      "get": {
+        "summary": "Job Events",
+        "operationId": "job_events_api_jobs__job_id__events_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "summary": "Runs",
+        "operationId": "runs_api_runs_get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/analyze": {
+      "post": {
+        "summary": "Analyze Run",
+        "operationId": "analyze_run_api_runs__run_id__analyze_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{experiment_id}/{run_id}/artifacts/{name}": {
+      "get": {
+        "summary": "Artifact",
+        "operationId": "artifact_api_runs__experiment_id___run_id__artifacts__name__get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{path}": {
+      "get": {
+        "summary": "Frontend",
+        "operationId": "frontend__path__get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnalysisBody": {
+        "properties": {
+          "experiment_id": {
+            "type": "string",
+            "title": "Experiment Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "experiment_id"
+        ],
+        "title": "AnalysisBody"
+      },
+      "BurstSettings": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "ncycles": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ncycles"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "delay": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delay"
+          },
+          "trigger_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Source"
+          },
+          "trigger_slope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Slope"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BurstSettings"
+      },
+      "BurstSnapshot": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "ncycles": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ncycles"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "delay": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delay"
+          },
+          "trigger_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Source"
+          },
+          "trigger_slope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Slope"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled",
+          "mode",
+          "ncycles",
+          "phase",
+          "period",
+          "delay",
+          "trigger_source",
+          "trigger_slope"
+        ],
+        "title": "BurstSnapshot"
+      },
+      "ControlCurrentSourceBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/CurrentSourceSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "settings"
+        ],
+        "title": "ControlCurrentSourceBody"
+      },
+      "ControlEmissionBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/LaserEmissionSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "settings"
+        ],
+        "title": "ControlEmissionBody"
+      },
+      "ControlEndpoint": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "channel",
+              "demod",
+              "laser_channel"
+            ],
+            "title": "Kind"
+          },
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "index"
+        ],
+        "title": "ControlEndpoint"
+      },
+      "ControlGeneratorBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/GeneratorChannelSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "settings"
+        ],
+        "title": "ControlGeneratorBody"
+      },
+      "ControlLaserBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/LaserSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "settings"
+        ],
+        "title": "ControlLaserBody"
+      },
+      "ControlRevisionBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision"
+        ],
+        "title": "ControlRevisionBody"
+      },
+      "ControlScopeBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ScopeSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "settings"
+        ],
+        "title": "ControlScopeBody"
+      },
+      "ControlTarget": {
+        "properties": {
+          "mapping_key": {
+            "type": "string",
+            "title": "Mapping Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "generator",
+              "current_source",
+              "laser",
+              "scope",
+              "tec",
+              "hf2"
+            ],
+            "title": "Kind"
+          },
+          "device_id": {
+            "type": "string",
+            "title": "Device Id"
+          },
+          "device_label": {
+            "type": "string",
+            "title": "Device Label"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "short_resource": {
+            "type": "string",
+            "title": "Short Resource"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ControlEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shared_mapping_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Shared Mapping Keys"
+          },
+          "safety": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Safety"
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mapping_key",
+          "label",
+          "description",
+          "kind",
+          "device_id",
+          "device_label",
+          "model",
+          "short_resource",
+          "endpoint",
+          "shared_mapping_keys",
+          "safety",
+          "read_only"
+        ],
+        "title": "ControlTarget"
+      },
+      "ControlTargetBulkItem": {
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/ControlTarget"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/GeneratorDeviceSnapshot"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ScopeDeviceSnapshot"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CurrentSourceDeviceSnapshot"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Keithley6221DeviceSnapshot"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LaserDeviceSnapshot"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TecDeviceSnapshot"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Hf2DeviceSnapshot"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "type",
+                  "mapping": {
+                    "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
+                    "DG4000": "#/components/schemas/GeneratorDeviceSnapshot",
+                    "DG900": "#/components/schemas/GeneratorDeviceSnapshot",
+                    "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
+                    "GS200": "#/components/schemas/CurrentSourceDeviceSnapshot",
+                    "HF2": "#/components/schemas/Hf2DeviceSnapshot",
+                    "SDS": "#/components/schemas/ScopeDeviceSnapshot",
+                    "TEC103": "#/components/schemas/TecDeviceSnapshot"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "title": "ControlTargetBulkItem"
+      },
+      "ControlTargetBulkResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ControlTargetBulkItem"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "title": "ControlTargetBulkResponse"
+      },
+      "ControlTargetCatalog": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ControlTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "targets"
+        ],
+        "title": "ControlTargetCatalog"
+      },
+      "ControlTargetResponse": {
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/ControlTarget"
+          },
+          "snapshot": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GeneratorDeviceSnapshot"
+              },
+              {
+                "$ref": "#/components/schemas/ScopeDeviceSnapshot"
+              },
+              {
+                "$ref": "#/components/schemas/CurrentSourceDeviceSnapshot"
+              },
+              {
+                "$ref": "#/components/schemas/Keithley6221DeviceSnapshot"
+              },
+              {
+                "$ref": "#/components/schemas/LaserDeviceSnapshot"
+              },
+              {
+                "$ref": "#/components/schemas/TecDeviceSnapshot"
+              },
+              {
+                "$ref": "#/components/schemas/Hf2DeviceSnapshot"
+              }
+            ],
+            "title": "Snapshot",
+            "discriminator": {
+              "propertyName": "type",
+              "mapping": {
+                "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
+                "DG4000": "#/components/schemas/GeneratorDeviceSnapshot",
+                "DG900": "#/components/schemas/GeneratorDeviceSnapshot",
+                "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
+                "GS200": "#/components/schemas/CurrentSourceDeviceSnapshot",
+                "HF2": "#/components/schemas/Hf2DeviceSnapshot",
+                "SDS": "#/components/schemas/ScopeDeviceSnapshot",
+                "TEC103": "#/components/schemas/TecDeviceSnapshot"
+              }
+            }
+          },
+          "read_at": {
+            "type": "string",
+            "title": "Read At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target",
+          "snapshot",
+          "read_at"
+        ],
+        "title": "ControlTargetResponse"
+      },
+      "ControlTecBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/TecSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "settings"
+        ],
+        "title": "ControlTecBody"
+      },
+      "CurrentSourceDeviceSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "short_resource": {
+            "type": "string",
+            "title": "Short Resource"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Options"
+          },
+          "type": {
+            "type": "string",
+            "const": "GS200",
+            "title": "Type"
+          },
+          "idn": {
+            "type": "string",
+            "title": "Idn"
+          },
+          "mapping_key": {
+            "type": "string",
+            "title": "Mapping Key"
+          },
+          "source_function": {
+            "type": "string",
+            "title": "Source Function"
+          },
+          "output": {
+            "type": "boolean",
+            "title": "Output"
+          },
+          "current_ma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Ma"
+          },
+          "current_range_ma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Range Ma"
+          },
+          "voltage_limit_v": {
+            "type": "number",
+            "title": "Voltage Limit V"
+          },
+          "current_limit_ma": {
+            "type": "number",
+            "title": "Current Limit Ma"
+          },
+          "min_current_ma": {
+            "type": "number",
+            "title": "Min Current Ma"
+          },
+          "max_current_ma": {
+            "type": "number",
+            "title": "Max Current Ma"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "resource",
+          "short_resource",
+          "type",
+          "idn",
+          "mapping_key",
+          "source_function",
+          "output",
+          "current_ma",
+          "current_range_ma",
+          "voltage_limit_v",
+          "current_limit_ma",
+          "min_current_ma",
+          "max_current_ma"
+        ],
+        "title": "CurrentSourceDeviceSnapshot"
+      },
+      "CurrentSourceSettings": {
+        "properties": {
+          "current_ma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Ma"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "confirm_output_enable": {
+            "type": "boolean",
+            "title": "Confirm Output Enable",
+            "default": false
+          },
+          "current_range_ma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Range Ma"
+          },
+          "autorange": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Autorange"
+          },
+          "compliance_v": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compliance V"
+          },
+          "analog_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analog Filter"
+          },
+          "output_response": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FAST",
+                  "SLOW"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Response"
+          },
+          "waveform": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Keithley6221WaveformSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CurrentSourceSettings"
+      },
+      "CurrentSourceSettingsBody": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/CurrentSourceSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "title": "CurrentSourceSettingsBody"
+      },
+      "DeviceChannel": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "mapping_key": {
+            "type": "string",
+            "title": "Mapping Key"
+          },
+          "mapping_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mapping Keys"
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number",
+          "label",
+          "mapping_key",
+          "read_only"
+        ],
+        "title": "DeviceChannel"
+      },
+      "DeviceLibraryBody": {
+        "properties": {
+          "base_revision": {
+            "type": "string",
+            "title": "Base Revision"
+          },
+          "devices": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Devices"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_revision",
+          "devices"
+        ],
+        "title": "DeviceLibraryBody"
+      },
+      "DeviceSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "short_resource": {
+            "type": "string",
+            "title": "Short Resource"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Options"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "DG4000",
+              "DG900",
+              "GS200",
+              "6221",
+              "DLC_PRO",
+              "SDS"
+            ],
+            "title": "Type"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceChannel"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "resource",
+          "short_resource",
+          "type",
+          "channels"
+        ],
+        "title": "DeviceSummary"
+      },
+      "ExperimentBody": {
+        "properties": {
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          }
+        },
+        "type": "object",
+        "title": "ExperimentBody"
+      },
+      "ExperimentDefaultsBody": {
+        "properties": {
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "parameter_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ParameterLayoutBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ExperimentDefaultsBody"
+      },
+      "ExperimentDescriptionBody": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "description"
+        ],
+        "title": "ExperimentDescriptionBody"
+      },
+      "ExperimentMetadataBody": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "description"
+        ],
+        "title": "ExperimentMetadataBody"
+      },
+      "GeneratorChannelSettings": {
+        "properties": {
+          "mapping_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Key"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "shape": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shape"
+          },
+          "frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency"
+          },
+          "amplitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amplitude"
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "voltage_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voltage Unit"
+          },
+          "load": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load"
+          },
+          "square_duty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Square Duty"
+          },
+          "ramp_symmetry": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ramp Symmetry"
+          },
+          "pulse_width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pulse Width"
+          },
+          "pulse_delay": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pulse Delay"
+          },
+          "target_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "mod",
+                  "burst"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Mode"
+          },
+          "mod": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModulationSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "burst": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BurstSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GeneratorChannelSettings"
+      },
+      "GeneratorChannelSettingsBody": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/GeneratorChannelSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "title": "GeneratorChannelSettingsBody"
+      },
+      "GeneratorChannelSnapshot": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "mapping_key": {
+            "type": "string",
+            "title": "Mapping Key"
+          },
+          "mapping_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mapping Keys"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only"
+          },
+          "output": {
+            "type": "boolean",
+            "title": "Output"
+          },
+          "shape": {
+            "type": "string",
+            "title": "Shape"
+          },
+          "frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency"
+          },
+          "amplitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amplitude"
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "voltage_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voltage Unit"
+          },
+          "load": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load"
+          },
+          "square_duty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Square Duty"
+          },
+          "ramp_symmetry": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ramp Symmetry"
+          },
+          "pulse_width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pulse Width"
+          },
+          "pulse_delay": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pulse Delay"
+          },
+          "mod": {
+            "$ref": "#/components/schemas/ModulationSnapshot"
+          },
+          "burst": {
+            "$ref": "#/components/schemas/BurstSnapshot"
+          },
+          "readback_errors": {
+            "items": {
+              "$ref": "#/components/schemas/ReadbackError"
+            },
+            "type": "array",
+            "title": "Readback Errors"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number",
+          "mapping_key",
+          "label",
+          "read_only",
+          "output",
+          "shape",
+          "frequency",
+          "amplitude",
+          "offset",
+          "phase",
+          "voltage_unit",
+          "load",
+          "square_duty",
+          "ramp_symmetry",
+          "pulse_width",
+          "pulse_delay",
+          "mod",
+          "burst",
+          "readback_errors"
+        ],
+        "title": "GeneratorChannelSnapshot"
+      },
+      "GeneratorDeviceSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "short_resource": {
+            "type": "string",
+            "title": "Short Resource"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Options"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "DG4000",
+              "DG900"
+            ],
+            "title": "Type"
+          },
+          "idn": {
+            "type": "string",
+            "title": "Idn"
+          },
+          "reference_clock": {
+            "type": "string",
+            "title": "Reference Clock"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/GeneratorChannelSnapshot"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "resource",
+          "short_resource",
+          "type",
+          "idn",
+          "reference_clock",
+          "channels"
+        ],
+        "title": "GeneratorDeviceSnapshot"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Hf2DeviceSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "short_resource": {
+            "type": "string",
+            "title": "Short Resource"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Options"
+          },
+          "type": {
+            "type": "string",
+            "const": "HF2",
+            "title": "Type"
+          },
+          "demod_idx": {
+            "type": "integer",
+            "title": "Demod Idx"
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "r": {
+            "type": "number",
+            "title": "R"
+          },
+          "phase": {
+            "type": "number",
+            "title": "Phase"
+          },
+          "frequency": {
+            "type": "number",
+            "title": "Frequency"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "sample_rate": {
+            "type": "number",
+            "title": "Sample Rate"
+          },
+          "time_constant": {
+            "type": "number",
+            "title": "Time Constant"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          },
+          "harmonic": {
+            "type": "integer",
+            "title": "Harmonic"
+          },
+          "phase_shift": {
+            "type": "number",
+            "title": "Phase Shift"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "resource",
+          "short_resource",
+          "type",
+          "demod_idx",
+          "x",
+          "y",
+          "r",
+          "phase",
+          "frequency",
+          "enabled",
+          "sample_rate",
+          "time_constant",
+          "order",
+          "harmonic",
+          "phase_shift"
+        ],
+        "title": "Hf2DeviceSnapshot"
+      },
+      "JsonValue": {},
+      "Keithley6221DeviceSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "short_resource": {
+            "type": "string",
+            "title": "Short Resource"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Options"
+          },
+          "type": {
+            "type": "string",
+            "const": "6221",
+            "title": "Type"
+          },
+          "idn": {
+            "type": "string",
+            "title": "Idn"
+          },
+          "mapping_key": {
+            "type": "string",
+            "title": "Mapping Key"
+          },
+          "output": {
+            "type": "boolean",
+            "title": "Output"
+          },
+          "current_ma": {
+            "type": "number",
+            "title": "Current Ma"
+          },
+          "current_range_ma": {
+            "type": "number",
+            "title": "Current Range Ma"
+          },
+          "autorange": {
+            "type": "boolean",
+            "title": "Autorange"
+          },
+          "compliance_v": {
+            "type": "number",
+            "title": "Compliance V"
+          },
+          "analog_filter": {
+            "type": "boolean",
+            "title": "Analog Filter"
+          },
+          "output_response": {
+            "type": "string",
+            "enum": [
+              "FAST",
+              "SLOW"
+            ],
+            "title": "Output Response"
+          },
+          "min_current_ma": {
+            "type": "number",
+            "title": "Min Current Ma"
+          },
+          "max_current_ma": {
+            "type": "number",
+            "title": "Max Current Ma"
+          },
+          "waveform": {
+            "$ref": "#/components/schemas/Keithley6221WaveformSnapshot"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "resource",
+          "short_resource",
+          "type",
+          "idn",
+          "mapping_key",
+          "output",
+          "current_ma",
+          "current_range_ma",
+          "autorange",
+          "compliance_v",
+          "analog_filter",
+          "output_response",
+          "min_current_ma",
+          "max_current_ma",
+          "waveform"
+        ],
+        "title": "Keithley6221DeviceSnapshot"
+      },
+      "Keithley6221WaveformSettings": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "configure",
+              "configure_and_start",
+              "abort"
+            ],
+            "title": "Action"
+          },
+          "shape": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "SIN",
+                  "SQU",
+                  "RAMP",
+                  "ARB"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shape"
+          },
+          "frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency Hz"
+          },
+          "amplitude_peak_ma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amplitude Peak Ma"
+          },
+          "offset_ma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset Ma"
+          },
+          "duty_cycle_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duty Cycle Percent"
+          },
+          "ranging": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "BEST",
+                  "FIXED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ranging"
+          },
+          "duration_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "TIME",
+                  "CYCLES",
+                  "INFINITE"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Mode"
+          },
+          "duration_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Value"
+          },
+          "arbitrary_points": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arbitrary Points"
+          },
+          "confirm_start": {
+            "type": "boolean",
+            "title": "Confirm Start",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "Keithley6221WaveformSettings"
+      },
+      "Keithley6221WaveformSnapshot": {
+        "properties": {
+          "shape": {
+            "type": "string",
+            "enum": [
+              "SIN",
+              "SQU",
+              "RAMP",
+              "ARB"
+            ],
+            "title": "Shape"
+          },
+          "frequency_hz": {
+            "type": "number",
+            "title": "Frequency Hz"
+          },
+          "amplitude_peak_ma": {
+            "type": "number",
+            "title": "Amplitude Peak Ma"
+          },
+          "offset_ma": {
+            "type": "number",
+            "title": "Offset Ma"
+          },
+          "duty_cycle_percent": {
+            "type": "number",
+            "title": "Duty Cycle Percent"
+          },
+          "ranging": {
+            "type": "string",
+            "enum": [
+              "BEST",
+              "FIXED"
+            ],
+            "title": "Ranging"
+          },
+          "duration_mode": {
+            "type": "string",
+            "enum": [
+              "TIME",
+              "CYCLES",
+              "INFINITE",
+              "MIXED"
+            ],
+            "title": "Duration Mode"
+          },
+          "duration_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Value"
+          },
+          "duration_time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "const": "INF"
+              }
+            ],
+            "title": "Duration Time S"
+          },
+          "duration_cycles": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "const": "INF"
+              }
+            ],
+            "title": "Duration Cycles"
+          },
+          "arbitrary_point_count": {
+            "type": "integer",
+            "title": "Arbitrary Point Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "shape",
+          "frequency_hz",
+          "amplitude_peak_ma",
+          "offset_ma",
+          "duty_cycle_percent",
+          "ranging",
+          "duration_mode",
+          "duration_value",
+          "duration_time_s",
+          "duration_cycles",
+          "arbitrary_point_count"
+        ],
+        "title": "Keithley6221WaveformSnapshot"
+      },
+      "KeithleyWaveformConvertBody": {
+        "properties": {
+          "arbitrary_text": {
+            "type": "string",
+            "title": "Arbitrary Text",
+            "default": ""
+          },
+          "calibration_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Text"
+          }
+        },
+        "type": "object",
+        "title": "KeithleyWaveformConvertBody"
+      },
+      "LaserDeviceSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "short_resource": {
+            "type": "string",
+            "title": "Short Resource"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Options"
+          },
+          "type": {
+            "type": "string",
+            "const": "DLC_PRO",
+            "title": "Type"
+          },
+          "controller_serial": {
+            "type": "string",
+            "title": "Controller Serial"
+          },
+          "system_type": {
+            "type": "string",
+            "title": "System Type"
+          },
+          "system_label": {
+            "type": "string",
+            "title": "System Label"
+          },
+          "firmware_version": {
+            "type": "string",
+            "title": "Firmware Version"
+          },
+          "system_health_code": {
+            "type": "integer",
+            "title": "System Health Code"
+          },
+          "system_health": {
+            "type": "string",
+            "title": "System Health"
+          },
+          "interlock_open": {
+            "type": "boolean",
+            "title": "Interlock Open"
+          },
+          "front_key_locked": {
+            "type": "boolean",
+            "title": "Front Key Locked"
+          },
+          "emission": {
+            "type": "boolean",
+            "title": "Emission"
+          },
+          "laser_type": {
+            "type": "string",
+            "title": "Laser Type"
+          },
+          "laser_product_name": {
+            "type": "string",
+            "title": "Laser Product Name"
+          },
+          "laser_enabled": {
+            "type": "boolean",
+            "title": "Laser Enabled"
+          },
+          "laser_health_code": {
+            "type": "integer",
+            "title": "Laser Health Code"
+          },
+          "laser_health": {
+            "type": "string",
+            "title": "Laser Health"
+          },
+          "laser_emission": {
+            "type": "boolean",
+            "title": "Laser Emission"
+          },
+          "laser_head_model": {
+            "type": "string",
+            "title": "Laser Head Model"
+          },
+          "laser_head_serial": {
+            "type": "string",
+            "title": "Laser Head Serial"
+          },
+          "current_set_ma": {
+            "type": "number",
+            "title": "Current Set Ma"
+          },
+          "current_actual_ma": {
+            "type": "number",
+            "title": "Current Actual Ma"
+          },
+          "current_clip_ma": {
+            "type": "number",
+            "title": "Current Clip Ma"
+          },
+          "current_clip_limit_ma": {
+            "type": "number",
+            "title": "Current Clip Limit Ma"
+          },
+          "min_current_ma": {
+            "type": "number",
+            "title": "Min Current Ma"
+          },
+          "max_current_ma": {
+            "type": "number",
+            "title": "Max Current Ma"
+          },
+          "temperature_set_c": {
+            "type": "number",
+            "title": "Temperature Set C"
+          },
+          "temperature_actual_c": {
+            "type": "number",
+            "title": "Temperature Actual C"
+          },
+          "min_temperature_c": {
+            "type": "number",
+            "title": "Min Temperature C"
+          },
+          "max_temperature_c": {
+            "type": "number",
+            "title": "Max Temperature C"
+          },
+          "pzt_voltage_v": {
+            "type": "number",
+            "title": "Pzt Voltage V"
+          },
+          "pzt_actual_v": {
+            "type": "number",
+            "title": "Pzt Actual V"
+          },
+          "min_pzt_voltage_v": {
+            "type": "number",
+            "title": "Min Pzt Voltage V"
+          },
+          "max_pzt_voltage_v": {
+            "type": "number",
+            "title": "Max Pzt Voltage V"
+          },
+          "scan_amplitude_vpp": {
+            "type": "number",
+            "title": "Scan Amplitude Vpp"
+          },
+          "min_scan_amplitude_vpp": {
+            "type": "number",
+            "title": "Min Scan Amplitude Vpp"
+          },
+          "max_scan_amplitude_vpp": {
+            "type": "number",
+            "title": "Max Scan Amplitude Vpp"
+          },
+          "scan_frequency_hz": {
+            "type": "number",
+            "title": "Scan Frequency Hz"
+          },
+          "scan_enabled": {
+            "type": "boolean",
+            "title": "Scan Enabled"
+          },
+          "scan_unit": {
+            "type": "string",
+            "title": "Scan Unit"
+          },
+          "scan_output_channel": {
+            "type": "integer",
+            "title": "Scan Output Channel"
+          },
+          "remote_emission_control_enabled": {
+            "type": "boolean",
+            "title": "Remote Emission Control Enabled"
+          },
+          "safety_keys": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Safety Keys"
+          },
+          "state_known": {
+            "type": "boolean",
+            "title": "State Known"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "resource",
+          "short_resource",
+          "type",
+          "controller_serial",
+          "system_type",
+          "system_label",
+          "firmware_version",
+          "system_health_code",
+          "system_health",
+          "interlock_open",
+          "front_key_locked",
+          "emission",
+          "laser_type",
+          "laser_product_name",
+          "laser_enabled",
+          "laser_health_code",
+          "laser_health",
+          "laser_emission",
+          "laser_head_model",
+          "laser_head_serial",
+          "current_set_ma",
+          "current_actual_ma",
+          "current_clip_ma",
+          "current_clip_limit_ma",
+          "min_current_ma",
+          "max_current_ma",
+          "temperature_set_c",
+          "temperature_actual_c",
+          "min_temperature_c",
+          "max_temperature_c",
+          "pzt_voltage_v",
+          "pzt_actual_v",
+          "min_pzt_voltage_v",
+          "max_pzt_voltage_v",
+          "scan_amplitude_vpp",
+          "min_scan_amplitude_vpp",
+          "max_scan_amplitude_vpp",
+          "scan_frequency_hz",
+          "scan_enabled",
+          "scan_unit",
+          "scan_output_channel",
+          "remote_emission_control_enabled",
+          "safety_keys",
+          "state_known"
+        ],
+        "title": "LaserDeviceSnapshot"
+      },
+      "LaserEmissionSettings": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "safety_acknowledged": {
+            "type": "boolean",
+            "title": "Safety Acknowledged",
+            "default": false
+          },
+          "confirm_emission_enable": {
+            "type": "boolean",
+            "title": "Confirm Emission Enable",
+            "default": false
+          },
+          "confirmation_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "LaserEmissionSettings"
+      },
+      "LaserEmissionSettingsBody": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/LaserEmissionSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "title": "LaserEmissionSettingsBody"
+      },
+      "LaserSettings": {
+        "properties": {
+          "current_set_ma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Set Ma"
+          },
+          "temperature_set_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature Set C"
+          },
+          "pzt_voltage_v": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pzt Voltage V"
+          },
+          "scan_amplitude_vpp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Amplitude Vpp"
+          },
+          "scan_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LaserSettings"
+      },
+      "LaserSettingsBody": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/LaserSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "title": "LaserSettingsBody"
+      },
+      "ModulationSettings": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "AM",
+                  "FM",
+                  "PM",
+                  "FSKey",
+                  "PWM"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "internal_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Internal Frequency"
+          },
+          "internal_function": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Internal Function"
+          },
+          "am_depth": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Am Depth"
+          },
+          "fm_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fm Deviation"
+          },
+          "pm_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pm Deviation"
+          },
+          "fsk_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fsk Frequency"
+          },
+          "fsk_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fsk Rate"
+          },
+          "fsk_polarity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fsk Polarity"
+          },
+          "pwm_duty_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pwm Duty Deviation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ModulationSettings"
+      },
+      "ModulationSnapshot": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "AM",
+                  "FM",
+                  "PM",
+                  "FSKey",
+                  "PWM"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "internal_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Internal Frequency"
+          },
+          "internal_function": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Internal Function"
+          },
+          "am_depth": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Am Depth"
+          },
+          "fm_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fm Deviation"
+          },
+          "pm_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pm Deviation"
+          },
+          "fsk_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fsk Frequency"
+          },
+          "fsk_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fsk Rate"
+          },
+          "fsk_polarity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fsk Polarity"
+          },
+          "pwm_duty_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pwm Duty Deviation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled",
+          "type",
+          "source",
+          "internal_frequency",
+          "internal_function",
+          "am_depth",
+          "fm_deviation",
+          "pm_deviation",
+          "fsk_frequency",
+          "fsk_rate",
+          "fsk_polarity",
+          "pwm_duty_deviation"
+        ],
+        "title": "ModulationSnapshot"
+      },
+      "ParameterLayoutBody": {
+        "properties": {
+          "basic": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Basic"
+          },
+          "advanced": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Advanced"
+          }
+        },
+        "type": "object",
+        "required": [
+          "basic",
+          "advanced"
+        ],
+        "title": "ParameterLayoutBody"
+      },
+      "PhaseBody": {
+        "properties": {
+          "tolerance_deg": {
+            "type": "number",
+            "title": "Tolerance Deg",
+            "default": 1.0
+          },
+          "max_attempts": {
+            "type": "integer",
+            "title": "Max Attempts",
+            "default": 5
+          },
+          "settle_time": {
+            "type": "number",
+            "title": "Settle Time",
+            "default": 0.2
+          }
+        },
+        "type": "object",
+        "title": "PhaseBody"
+      },
+      "PhysicalMappingsBody": {
+        "properties": {
+          "base_revision": {
+            "type": "string",
+            "title": "Base Revision"
+          },
+          "mapping": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Mapping"
+          },
+          "constraints": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Constraints"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_revision",
+          "mapping",
+          "constraints"
+        ],
+        "title": "PhysicalMappingsBody"
+      },
+      "ReadbackError": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "ReadbackError"
+      },
+      "ScopeChannelSettings": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset"
+          },
+          "coupling": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coupling"
+          },
+          "impedance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impedance"
+          },
+          "probe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probe"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number"
+        ],
+        "title": "ScopeChannelSettings"
+      },
+      "ScopeChannelSnapshot": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "scale": {
+            "type": "number",
+            "title": "Scale"
+          },
+          "offset": {
+            "type": "number",
+            "title": "Offset"
+          },
+          "coupling": {
+            "type": "string",
+            "title": "Coupling"
+          },
+          "impedance": {
+            "type": "string",
+            "title": "Impedance"
+          },
+          "probe": {
+            "type": "number",
+            "title": "Probe"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number",
+          "label",
+          "enabled",
+          "scale",
+          "offset",
+          "coupling",
+          "impedance",
+          "probe"
+        ],
+        "title": "ScopeChannelSnapshot"
+      },
+      "ScopeDeviceSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "short_resource": {
+            "type": "string",
+            "title": "Short Resource"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Options"
+          },
+          "type": {
+            "type": "string",
+            "const": "SDS",
+            "title": "Type"
+          },
+          "idn": {
+            "type": "string",
+            "title": "Idn"
+          },
+          "sampling_rate": {
+            "type": "number",
+            "title": "Sampling Rate"
+          },
+          "memory_depth": {
+            "type": "string",
+            "title": "Memory Depth"
+          },
+          "acquire_type": {
+            "type": "string",
+            "title": "Acquire Type"
+          },
+          "timebase_scale": {
+            "type": "number",
+            "title": "Timebase Scale"
+          },
+          "timebase_delay": {
+            "type": "number",
+            "title": "Timebase Delay"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeChannelSnapshot"
+            },
+            "type": "array",
+            "title": "Channels"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/ScopeTriggerSnapshot"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "resource",
+          "short_resource",
+          "type",
+          "idn",
+          "sampling_rate",
+          "memory_depth",
+          "acquire_type",
+          "timebase_scale",
+          "timebase_delay",
+          "channels",
+          "trigger"
+        ],
+        "title": "ScopeDeviceSnapshot"
+      },
+      "ScopeSettings": {
+        "properties": {
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling Rate"
+          },
+          "memory_depth": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Depth"
+          },
+          "acquire_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquire Type"
+          },
+          "acquire_type_param": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquire Type Param"
+          },
+          "timebase_scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timebase Scale"
+          },
+          "timebase_delay": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timebase Delay"
+          },
+          "channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScopeChannelSettings"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channels"
+          },
+          "trigger": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScopeTriggerSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ScopeSettings"
+      },
+      "ScopeSettingsBody": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/ScopeSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "title": "ScopeSettingsBody"
+      },
+      "ScopeTriggerSettings": {
+        "properties": {
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "slope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slope"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ScopeTriggerSettings"
+      },
+      "ScopeTriggerSnapshot": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "slope": {
+            "type": "string",
+            "title": "Slope"
+          },
+          "level": {
+            "type": "number",
+            "title": "Level"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode",
+          "type",
+          "source",
+          "slope",
+          "level"
+        ],
+        "title": "ScopeTriggerSnapshot"
+      },
+      "TagAssignmentBody": {
+        "properties": {
+          "tag_id": {
+            "type": "string",
+            "title": "Tag Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tag_id"
+        ],
+        "title": "TagAssignmentBody"
+      },
+      "TagBody": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "TagBody"
+      },
+      "TecDeviceSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "short_resource": {
+            "type": "string",
+            "title": "Short Resource"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Options"
+          },
+          "type": {
+            "type": "string",
+            "const": "TEC103",
+            "title": "Type"
+          },
+          "channel": {
+            "type": "integer",
+            "title": "Channel"
+          },
+          "target_temperature_c": {
+            "type": "number",
+            "title": "Target Temperature C"
+          },
+          "actual_temperature_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Temperature C"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "output_mode": {
+            "type": "integer",
+            "title": "Output Mode"
+          },
+          "resistance_kohm": {
+            "type": "number",
+            "title": "Resistance Kohm"
+          },
+          "min_temperature_c": {
+            "type": "number",
+            "title": "Min Temperature C"
+          },
+          "max_temperature_c": {
+            "type": "number",
+            "title": "Max Temperature C"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "resource",
+          "short_resource",
+          "type",
+          "channel",
+          "target_temperature_c",
+          "actual_temperature_c",
+          "enabled",
+          "output_mode",
+          "resistance_kohm",
+          "min_temperature_c",
+          "max_temperature_c"
+        ],
+        "title": "TecDeviceSnapshot"
+      },
+      "TecSettings": {
+        "properties": {
+          "target_temperature_c": {
+            "type": "number",
+            "title": "Target Temperature C"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_temperature_c"
+        ],
+        "title": "TecSettings"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

@@ -25,7 +25,7 @@ from .sources import (
 class MxKeithley6221OptimalControlRFParams(MxYRFParams):
     """6221 主场任意波控制下的 RF 灵敏度参数。"""
 
-    schema_version = 2
+    schema_version = 3
 
     run_tag: str = parameter(
         default="mx_6221_optimal_control_rf",
@@ -46,7 +46,10 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
         unit="Hz",
         group="basic",
         minimum=0.001,
-        visible=False,
+        description=(
+            "Y RF 驱动与 HF2 解调的共用频率；切换 CONTROL_VERSION 时"
+            "自动填充为理论 rf 频率，可手动修改。"
+        ),
     )
     y_rf_amp_start_vpp: float = parameter(
         default=-0.1,
@@ -127,9 +130,9 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
         unit="mA",
         group="basic",
         safety_key="main_magnetic_field",
-        minimum=0.0,
-        maximum=0.0,
-        description="GS200 必须物理断开，并由程序保持 0 mA 与输出关闭。",
+        minimum=-10.0,
+        maximum=10.0,
+        description="GS200 控制 Z 主磁场线圈；可设置非零电流，范围由 safety_limits.yaml 约束。",
     )
     x_dc_field_v: float = parameter(
         default=-0.01,
@@ -247,7 +250,12 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
         minimum=0.0,
         maximum=2.0,
         safety_key="rf_coil",
-        description="6221 变体固定使用 Y RF 正交校相；不支持控制波形相位扫描。",
+        description=(
+            "校相时 Y RF 幅度（复合拟合模型中固定为 A）；6221 变体固定使用 "
+            "Y RF 触发相位扫描，并用 Demod R 信号拟合 |色散| 折叠模型 "
+            "R = |scale*(B-b0)/((B-b0)^2+w^2)|、B(phi) = |A e^{i phi} + C e^{i phi_c}|"
+            "选择建设性相位；不支持控制波形相位扫描。"
+        ),
     )
     phase_scan_start_deg: float = parameter(
         default=0.0,
@@ -287,10 +295,14 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
     phase_fit_amplitude_sigma_min: float = parameter(
         default=3.0,
         external_name="PHASE_FIT_AMPLITUDE_SIGMA_MIN",
-        label="校相幅度最低显著性",
+        label="校相响应峰谷差最低显著性",
         unit="σ",
         group="advanced",
         minimum=0.0,
+        description=(
+            "|色散| 折叠拟合的响应峰谷差与中位点噪声之比的最低门槛；"
+            "低于该值认为相位响应不显著。"
+        ),
     )
     phase_outlier_sigma_threshold: float = parameter(
         default=6.0,
@@ -315,7 +327,10 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
         group="advanced",
         minimum=0.001,
         read_only=True,
-        description="由 CONTROL_VERSION 任意波时间轴自动计算，不能手动修改。",
+        description=(
+            "由 CONTROL_VERSION 任意波时间轴自动计算，不能手动修改；"
+            "GUI 在版本变化时自动刷新该只读显示。"
+        ),
     )
     trigger_amplitude_vpp: float = parameter(
         default=5.0,
@@ -348,12 +363,12 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
         read_only=True,
     )
 
-    confirm_gs200_disconnected: bool = parameter(
+    confirm_gs200_connected: bool = parameter(
         default=False,
-        external_name="CONFIRM_GS200_PHYSICALLY_DISCONNECTED",
-        label="确认 GS200 已从 Z 主线圈物理断开",
+        external_name="CONFIRM_GS200_PHYSICALLY_CONNECTED",
+        label="确认 GS200 已接入 Z 主磁场线圈",
         group="basic",
-        description="必须明确确认；设置 0 mA 不能替代物理断开。",
+        description="6221 接 Z 小磁场线圈，GS200 接 Z 主磁场线圈；必须明确确认接线正确。",
     )
     keithley_output_response: str = parameter(
         default="FAST",
@@ -393,11 +408,15 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
         values: dict[str, object],
         schema_version: int,
     ) -> dict[str, object]:
-        """旧配置缺少补偿场时保持原来的 XY 零输出行为。"""
+        """迁移旧配置并避免把旧的断开确认误当成新的接入确认。"""
         migrated = super(MxKeithley6221OptimalControlRFParams, cls).migrate_external(
             values,
             schema_version,
         )
+        if schema_version < 3 and "CONFIRM_GS200_PHYSICALLY_DISCONNECTED" in migrated:
+            # 旧确认的语义与新确认相反，不能静默转换为已接入。
+            migrated.pop("CONFIRM_GS200_PHYSICALLY_DISCONNECTED", None)
+            migrated.setdefault("CONFIRM_GS200_PHYSICALLY_CONNECTED", False)
         return migrated
 
     def phase_axis_deg(self) -> np.ndarray:
@@ -414,8 +433,8 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
 
     def validate_model(self) -> list[str]:
         errors = MxYRFParams.validate_model(self)
-        if not self.confirm_gs200_disconnected:
-            errors.append("必须确认 GS200 已从 Z 主线圈物理断开")
+        if not self.confirm_gs200_connected:
+            errors.append("必须确认 GS200 已接入 Z 主磁场线圈（6221 接 Z 小磁场线圈）")
         if self.keithley_output_response != "FAST":
             errors.append("6221 输出响应必须固定为 FAST")
         if self.keithley_compliance_v != 15.0:
@@ -454,7 +473,7 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
                     )
                 ):
                     errors.append(
-                        "Y RF 正交校相必须覆盖恰好一个 360° 周期，"
+                        "Y RF 校相必须覆盖恰好一个 360° 周期，"
                         "且不得重复首尾相位"
                     )
         trigger_low = self.trigger_offset_v - self.trigger_amplitude_vpp / 2.0
@@ -518,13 +537,23 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
                     "TRIGGER_FREQUENCY_HZ 必须等于理论任意波重复频率 "
                     f"{theory.repeat_frequency_hz:.9g} Hz"
                 )
-            if not np.isclose(
-                self.y_rf_frequency_hz,
-                theory.repeat_frequency_hz,
-                rtol=1e-9,
-                atol=1e-6,
-            ):
-                errors.append("Y_RF_FREQUENCY_HZ 必须等于理论任意波重复频率")
         except (OSError, TypeError, ValueError, KeyError) as exc:
             errors.append(str(exc))
         return errors
+
+    @classmethod
+    def derive_external(cls, values: dict[str, object]) -> dict[str, object]:
+        """按当前 CONTROL_VERSION 计算只读派生显示值（GUI 派生字段机制）。"""
+        defaults = cls()
+        root = Path(
+            str(values.get("CONTROL_RESULTS_ROOT") or defaults.control_results_root)
+        )
+        version = str(values.get("CONTROL_VERSION") or defaults.control_version)
+        try:
+            theory = load_theory_control(root, version)
+        except Exception:
+            return {}
+        return {
+            "TRIGGER_FREQUENCY_HZ": theory.repeat_frequency_hz,
+            "Y_RF_FREQUENCY_HZ": theory.theory_rf_frequency_hz,
+        }

@@ -81,10 +81,10 @@ class ExperimentPlatformTests(unittest.TestCase):
         self.assertIn("LAB_TYPED_PARAMETERS", output)
         self.assertIn("RuntimeError", output)
 
-    def test_registry_contains_only_40_formal_experiments(self):
+    def test_registry_contains_only_43_formal_experiments(self):
         definitions = list_experiments()
-        self.assertEqual(len(definitions), 40)
-        self.assertEqual(len({item.id for item in definitions}), 40)
+        self.assertEqual(len(definitions), 43)
+        self.assertEqual(len({item.id for item in definitions}), 43)
         self.assertNotIn("quick-test-scan", {item.id for item in definitions})
 
     def test_new_and_legacy_execution_modes_are_explicit(self):
@@ -96,11 +96,13 @@ class ExperimentPlatformTests(unittest.TestCase):
             "xy-direct-aw-dc-calibration",
             "t2-calibration",
             "mx-y-rf-sensitivity",
+            "mx-y-rf-frequency-response",
             "mx-y-rf-sensitivity-drift",
             "mx-y-rf-power-optimization",
             "mx-main-field-calibration",
             "mx-keithley-6221-main-field-calibration",
             "mx-keithley-6221-optimal-control-rf-sensitivity",
+            "mx-keithley-6221-optimal-control-xyz-balance",
             "mx-xy-residual-field-calibration",
             "mx-z-field-calibration",
             "mx-z-noise-spectrum",
@@ -120,11 +122,13 @@ class ExperimentPlatformTests(unittest.TestCase):
             "xy-direct-aw-dc-calibration",
             "t2-calibration",
             "mx-y-rf-sensitivity",
+            "mx-y-rf-frequency-response",
             "mx-y-rf-sensitivity-drift",
             "mx-y-rf-power-optimization",
             "mx-main-field-calibration",
             "mx-keithley-6221-main-field-calibration",
             "mx-keithley-6221-optimal-control-rf-sensitivity",
+            "mx-keithley-6221-optimal-control-xyz-balance",
             "mx-xy-residual-field-calibration",
             "mx-z-field-calibration",
             "mx-z-noise-spectrum",

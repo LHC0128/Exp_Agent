@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 import { api } from "../api";
 import type { Job, JobEvent, JobStatus } from "../types/api";
@@ -23,7 +23,71 @@ function isDoneEvent(value: unknown): value is { done: true; status: JobStatus }
   return event.done === true && ["completed", "failed", "cancelled"].includes(String(event.status));
 }
 
+type ClockItem = {
+  label?: unknown;
+  device_type?: unknown;
+  device_id?: unknown;
+  before?: unknown;
+  after?: unknown;
+  target?: unknown;
+  ok?: unknown;
+  error?: unknown;
+};
+
+function isClockSyncResult(value: unknown): value is ClockItem[] {
+  return Array.isArray(value) && value.every((item) => (
+    item && typeof item === "object" && "label" in item && "ok" in item
+  ));
+}
+
+function ClockSyncTable({ items }: { items: ClockItem[] }) {
+  return (
+    <div className="job-result-table-wrap">
+      <table className="job-result-table">
+        <thead>
+          <tr><th>设备</th><th>类型</th><th>修改前</th><th>修改后</th><th>目标</th><th>结果</th></tr>
+        </thead>
+        <tbody>
+          {items.map((item, index) => (
+            <tr key={index} className={item.ok ? "" : "row-failed"}>
+              <td>{String(item.label ?? item.device_id ?? "")}</td>
+              <td>{String(item.device_type ?? "")}</td>
+              <td>{String(item.before ?? "")}</td>
+              <td>{String(item.after ?? "")}</td>
+              <td>{String(item.target ?? "")}</td>
+              <td>{item.ok ? "成功" : `失败${item.error ? `：${item.error}` : ""}`}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ResultView({ job }: { job: Job }) {
+  const result = job.result;
+  if (result === undefined || result === null) return null;
+  const runDir = (result as { run_dir?: unknown }).run_dir;
+  return (
+    <div className="job-results">
+      {typeof runDir === "string" && (
+        <div className="alert success job-result">结果已保存：{runDir}</div>
+      )}
+      {job.kind === "clock-sync" && isClockSyncResult(result) && <ClockSyncTable items={result} />}
+      {job.kind !== "clock-sync" && runDir === undefined && (
+        <details className="job-result-details">
+          <summary>查看结果</summary>
+          <pre>{JSON.stringify(result, null, 2)}</pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function JobView({ job, onUpdate }: { job?: Job; onUpdate: JobUpdate }) {
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => { setExpanded(false); }, [job?.id]);
+
   useEffect(() => {
     if (!job || !["queued", "running"].includes(job.status)) return;
 
@@ -79,34 +143,41 @@ export function JobView({ job, onUpdate }: { job?: Job; onUpdate: JobUpdate }) {
   }, [job?.id, job?.status, onUpdate]);
 
   if (!job) return null;
-  const result = job.result as { run_dir?: string } | undefined;
   return (
     <div className="job">
       <div className="job-top">
         <Status tone={job.status === "failed" ? "bad" : job.status === "completed" ? "ok" : "work"}>
-          {job.status}
+          {job.status === "queued" ? "queued" : job.status}
         </Status>
         <strong>{job.message}</strong>
         <span>{Math.round(job.percent || 0)}%</span>
       </div>
       <div className="progress"><i style={{ width: `${job.percent || 0}%` }} /></div>
-      {job.status === "completed" && result?.run_dir && (
-        <div className="alert success job-result">结果已保存：{result.run_dir}</div>
-      )}
+      {job.status === "completed" && <ResultView job={job} />}
+      {job.status === "failed" && job.error && <div className="alert error">{job.error}</div>}
       <div className="log">
-        {job.events.slice(-12).map((event) => (
+        {(expanded ? job.events : job.events.slice(-12)).map((event) => (
           <p key={event.index}>
             <time>{event.timestamp?.split("T")[1]}</time>
             {event.message}
           </p>
         ))}
       </div>
-      {job.status === "running" && job.kind.startsWith("experiment:") && (
+      {job.events.length > 12 && (
+        <button className="secondary compact log-toggle" onClick={() => setExpanded((value) => !value)}>
+          {expanded ? "收起日志" : `查看全部 ${job.events.length} 条日志`}
+        </button>
+      )}
+      {["queued", "running"].includes(job.status) && (
         <button
           className="danger"
-          onClick={() => api<Job>(`/api/jobs/${job.id}/cancel`, { method: "POST" }).then((value) => onUpdate(value))}
+          onClick={() => api<Job>(`/api/jobs/${job.id}/cancel`, { method: "POST" })
+            .then((value) => onUpdate(value))
+            .catch(() => {
+              // 取消失败时保留当前状态，由 SSE 或轮询纠正。
+            })}
         >
-          安全停止
+          {job.kind.startsWith("experiment:") ? "安全停止" : "取消任务"}
         </button>
       )}
     </div>

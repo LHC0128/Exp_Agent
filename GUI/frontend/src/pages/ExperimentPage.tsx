@@ -3,66 +3,27 @@ import { useParams } from "react-router-dom";
 
 import { api } from "../api";
 import { Field, SelectField } from "../components/FormFields";
+import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { PageHead } from "../components/PageHead";
 import { Status } from "../components/Status";
+import {
+  defaultParameterLayout,
+  loadLocalParameterLayout,
+  parseArrayValue,
+  validatedParameterLayout,
+} from "./experimentHelpers";
 import type {
   ExperimentDefinition,
   ExperimentSchema,
   Job,
+  JobSummary,
   ParameterGroup,
   ParameterLayout,
   ParameterValue,
   ParameterValues,
   SchemaField,
 } from "../types/api";
-
-function defaultParameterLayout(fields: SchemaField[]): ParameterLayout {
-  return {
-    basic: fields.filter((field) => field.group === "basic").map((field) => field.name),
-    advanced: fields.filter((field) => field.group !== "basic").map((field) => field.name),
-  };
-}
-
-function validatedParameterLayout(fields: SchemaField[], value: unknown): ParameterLayout | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const candidate = value as Partial<ParameterLayout>;
-  if (!Array.isArray(candidate.basic) || !Array.isArray(candidate.advanced)) return undefined;
-  const fieldNames = fields.map((field) => field.name);
-  const validNames = new Set(fieldNames);
-  const allNames = [...candidate.basic, ...candidate.advanced];
-  if (allNames.some((name) => typeof name !== "string" || !validNames.has(name))) return undefined;
-  if (new Set(allNames).size !== allNames.length || allNames.length !== fieldNames.length) return undefined;
-  return { basic: [...candidate.basic], advanced: [...candidate.advanced] };
-}
-
-function loadLocalParameterLayout(fields: SchemaField[], storageKey: string): ParameterLayout {
-  const fallback = defaultParameterLayout(fields);
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(storageKey) || "null") as Partial<ParameterLayout> | null;
-    if (!saved) return fallback;
-    const validNames = new Set(fields.map((field) => field.name));
-    const used = new Set<string>();
-    const clean = (items: unknown) => Array.isArray(items)
-      ? items.filter((name): name is string => (
-        typeof name === "string" && validNames.has(name) && !used.has(name) && Boolean(used.add(name))
-      ))
-      : [];
-    const layout: ParameterLayout = { basic: clean(saved.basic), advanced: clean(saved.advanced) };
-    fields.forEach((field) => {
-      if (!used.has(field.name)) layout[field.group === "basic" ? "basic" : "advanced"].push(field.name);
-    });
-    return layout;
-  } catch {
-    return fallback;
-  }
-}
-
-function parseArrayValue(value: string, defaultValue: ParameterValue): number[] | string[] {
-  const items = value.split(",").map((item) => item.trim()).filter(Boolean);
-  if (Array.isArray(defaultValue) && defaultValue.some((item) => typeof item === "string")) return items;
-  return items.map(Number);
-}
 
 export function ExperimentPage() {
   const { experimentId = "static-sensitivity" } = useParams();
@@ -78,35 +39,77 @@ export function ExperimentPage() {
   const [preflight, setPreflight] = useState<{ ok: boolean; errors: string[] }>();
   const [defaultsStatus, setDefaultsStatus] = useState<{ ok: boolean; message: string }>();
   const [schemaError, setSchemaError] = useState("");
+  const [arrayDrafts, setArrayDrafts] = useState<Record<string, string>>({});
   const [savingDefaults, setSavingDefaults] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [actionError, setActionError] = useState("");
   const [job, setJob] = useState<Job>();
+  const { hardwareBusy, activeJobs } = useJobActivity();
 
   useEffect(() => {
+    let disposed = false;
     setDefinition(undefined); setFields([]); setJob(undefined); setPreflight(undefined);
-    setDefaultsStatus(undefined); setSchemaError("");
-    api<ExperimentDefinition>(`/api/experiments/${experimentId}`).then(setDefinition);
-    api<ExperimentSchema>(`/api/experiments/${experimentId}/schema`).then((schema) => {
+    setDefaultsStatus(undefined); setSchemaError(""); setActionError(""); setArrayDrafts({});
+    Promise.all([
+      api<ExperimentDefinition>(`/api/experiments/${experimentId}`),
+      api<ExperimentSchema>(`/api/experiments/${experimentId}/schema`),
+    ]).then(([definitionValue, schema]) => {
+      if (disposed) return;
       const savedLayout = schema.parameter_layout_saved
         ? validatedParameterLayout(schema.fields, schema.parameter_layout)
         : undefined;
+      setDefinition(definitionValue);
       setFields(schema.fields);
-      setValues(Object.fromEntries(schema.fields.map((item) => [item.name, item.default])));
+      const initial = Object.fromEntries(schema.fields.map((item) => [item.name, item.default]));
+      setValues(initial);
       setLayout(savedLayout || (
         schema.parameter_layout_saved
           ? defaultParameterLayout(schema.fields)
           : loadLocalParameterLayout(schema.fields, layoutKey)
       ));
-    }).catch((reason) => setSchemaError(String(reason)));
+      // 页面加载时仅刷新只读派生字段显示（如共同触发频率），不覆盖可编辑参数。
+      api<{ ok: boolean; values?: ParameterValues }>(`/api/experiments/${experimentId}/derive`, {
+        method: "POST",
+        body: JSON.stringify({ parameters: initial }),
+      }).then((result) => {
+        if (disposed || !result.ok || !result.values) return;
+        const readOnlyNames = new Set(
+          schema.fields.filter((item) => item.read_only).map((item) => item.name),
+        );
+        setValues((old) => {
+          const next = { ...old };
+          for (const [name, value] of Object.entries(result.values || {})) {
+            if (readOnlyNames.has(name)) next[name] = value;
+          }
+          return next;
+        });
+      }).catch(() => {
+        // 派生计算失败时保持默认显示，预检会给出具体错误。
+      });
+    }).catch((reason) => {
+      if (!disposed) setSchemaError(String(reason));
+    });
+    return () => { disposed = true; };
   }, [experimentId]);
 
   useEffect(() => {
-    api<Job[]>("/api/jobs").then((jobs) => {
+    let disposed = false;
+    api<JobSummary[]>("/api/jobs").then(async (jobs) => {
+      if (disposed) return;
       const matching = jobs.filter((item) => item.kind === `experiment:${experimentId}`);
       const recovered = matching.find((item) => ["queued", "running"].includes(item.status))
         || matching.find((item) => Boolean(item.started_at));
-      if (recovered) setJob(recovered);
+      if (!recovered) return;
+      try {
+        const full = await api<Job>(`/api/jobs/${recovered.id}`);
+        if (!disposed) setJob(full);
+      } catch {
+        if (!disposed) setJob({ ...recovered, events: [] });
+      }
+    }).catch(() => {
+      // 任务列表读取失败时保持无任务状态，不影响参数编辑。
     });
+    return () => { disposed = true; };
   }, [experimentId]);
   useEffect(() => {
     if (fields.length) window.localStorage.setItem(layoutKey, JSON.stringify(layout));
@@ -139,10 +142,17 @@ export function ExperimentPage() {
     if (dragging && dragging !== before) moveParameter(dragging, group, before);
     setDragging(undefined); setDropTarget(undefined);
   };
-  const check = () => api<{ ok: boolean; errors: string[] }>(`/api/experiments/${experimentId}/preflight`, {
-    method: "POST",
-    body: JSON.stringify({ parameters: values }),
-  }).then(setPreflight);
+  const check = async () => {
+    setActionError("");
+    try {
+      setPreflight(await api<{ ok: boolean; errors: string[] }>(`/api/experiments/${experimentId}/preflight`, {
+        method: "POST",
+        body: JSON.stringify({ parameters: values }),
+      }));
+    } catch (reason) {
+      setActionError(String(reason));
+    }
+  };
   const saveDefaults = async () => {
     setSavingDefaults(true); setDefaultsStatus(undefined);
     try {
@@ -162,9 +172,12 @@ export function ExperimentPage() {
     } finally { setSavingDefaults(false); }
   };
   const jobActive = Boolean(job && ["queued", "running"].includes(job.status));
+  const ownActive = Boolean(job && activeJobs.some((item) => item.id === job.id));
+  const blockedByOthers = hardwareBusy && !ownActive;
   const run = async () => {
     if (starting || jobActive) return;
     setStarting(true);
+    setActionError("");
     try {
       const result = await api<{ ok: boolean; errors: string[] }>(`/api/experiments/${experimentId}/preflight`, {
         method: "POST",
@@ -177,11 +190,26 @@ export function ExperimentPage() {
           body: JSON.stringify({ parameters: values }),
         }));
       }
+    } catch (reason) {
+      setActionError(String(reason));
     } finally { setStarting(false); }
   };
 
   const updateValue = (field: SchemaField, value: ParameterValue) => {
     setValues((old) => ({ ...old, [field.name]: value }));
+    if (field.name === "CONTROL_VERSION" || field.name === "CONTROL_RESULTS_ROOT") {
+      // 控制版本或结果目录变化时，刷新全部派生显示值（只读触发频率与默认 Y RF 频率）。
+      const next = { ...values, [field.name]: value };
+      api<{ ok: boolean; values?: ParameterValues }>(`/api/experiments/${experimentId}/derive`, {
+        method: "POST",
+        body: JSON.stringify({ parameters: next }),
+      }).then((result) => {
+        if (!result.ok || !result.values) return;
+        setValues((old) => ({ ...old, ...result.values }));
+      }).catch(() => {
+        // 派生计算失败时保持当前输入，预检会给出具体错误。
+      });
+    }
   };
   const renderInput = (field: SchemaField) => {
     const value = values[field.name] ?? field.default;
@@ -206,15 +234,32 @@ export function ExperimentPage() {
         </SelectField>
       );
     }
-    if (field.type === "string" || field.type === "array") {
-      const text = Array.isArray(value) ? value.join(", ") : typeof value === "string" ? value : "";
+    if (field.type === "string") {
       return (
         <Field
           label={label}
-          value={text}
+          value={typeof value === "string" ? value : ""}
           type="text"
           disabled={disabled}
-          onChange={(next) => updateValue(field, field.type === "array" ? parseArrayValue(next, field.default) : next)}
+          onChange={(next) => updateValue(field, next)}
+        />
+      );
+    }
+    if (field.type === "array") {
+      const draft = arrayDrafts[field.name] ?? (Array.isArray(value) ? value.join(", ") : "");
+      return (
+        <Field
+          label={label}
+          value={draft}
+          type="text"
+          disabled={disabled}
+          onChange={(next) => setArrayDrafts((old) => ({ ...old, [field.name]: next }))}
+          onBlur={() => {
+            const parsed = parseArrayValue(draft, field.default);
+            const committed = Array.isArray(value) ? value.join(", ") : "";
+            setArrayDrafts((old) => ({ ...old, [field.name]: parsed ? parsed.value.join(", ") : committed }));
+            if (parsed) updateValue(field, parsed.value);
+          }}
         />
       );
     }
@@ -223,6 +268,8 @@ export function ExperimentPage() {
         label={label}
         value={typeof value === "number" ? value : Number(value)}
         disabled={disabled}
+        min={field.minimum}
+        max={field.maximum}
         onChange={(next) => updateValue(field, field.type === "integer" ? Math.trunc(next) : next)}
       />
     );
@@ -294,12 +341,14 @@ export function ExperimentPage() {
         </div>
         {schemaError && <div className="alert error">实验参数加载失败：{schemaError}。请确认 GUI 后端已重启后刷新页面。</div>}
         <div className={`parameter-layout ${advancedCollapsed ? "advanced-collapsed" : ""}`}>{renderGroup("basic", "基础参数")}{renderGroup("advanced", "高级参数")}</div>
+        {blockedByOthers && <div className="alert">其他硬件任务正在运行，等待其完成后才能启动本实验。</div>}
         <div className="experiment-actions">
           <button className="secondary" disabled={starting || jobActive || !fields.length} onClick={check}>仅预检</button>
-          <button disabled={starting || jobActive || !fields.length} onClick={run}>{jobActive ? "实验运行中" : starting ? "正在启动…" : "预检并运行实验"}</button>
+          <button disabled={starting || jobActive || !fields.length || blockedByOthers} onClick={run}>{jobActive ? "实验运行中" : starting ? "正在启动…" : "预检并运行实验"}</button>
         </div>
         {defaultsStatus && <div className={`alert ${defaultsStatus.ok ? "success" : "error"}`}>{defaultsStatus.message}</div>}
         {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflight.ok ? "参数预检通过，可以启动实验。" : preflight.errors.join("；")}</div>}
+        {actionError && <div className="alert error">{actionError}</div>}
       </section>
       <JobView job={job} onUpdate={setJob} />
     </>

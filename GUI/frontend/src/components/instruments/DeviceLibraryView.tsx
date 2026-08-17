@@ -47,6 +47,8 @@ export function DeviceLibraryView() {
   };
   const remove = (id: string) => {
     if (!document) return;
+    const label = document.devices[id]?.label || id;
+    if (!window.confirm(`确认从设备库删除“${label}”（${id}）？`)) return;
     const devices = { ...document.devices }; delete devices[id];
     setDocument({ ...document, devices });
   };
@@ -85,6 +87,12 @@ export function DeviceLibraryView() {
             <label>型号<input value={device.model} onChange={(event) => update(id, { model: event.target.value })} /></label>
             <label>Resource<input value={device.resource || ""} onChange={(event) => update(id, { resource: event.target.value || null })} /></label>
             <label>参考时钟<select value={device.reference_clock || ""} onChange={(event) => update(id, { reference_clock: (event.target.value || null) as DeviceConfig["reference_clock"] })}><option value="">不适用</option><option value="INT">INT</option><option value="EXT">EXT</option></select></label>
+            <label className="device-config-wide">通道号列表（逗号分隔）<input value={((device.capabilities.channels as number[] | undefined) || []).join(", ")} onChange={(event) => update(id, {
+              capabilities: {
+                ...device.capabilities,
+                channels: event.target.value.split(",").map((item) => Number(item.trim())).filter((item) => Number.isFinite(item) && item > 0),
+              },
+            })} /></label>
           </section>
         ))}
       </div>

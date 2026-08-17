@@ -19,6 +19,7 @@ from .requirements import (
 SchemaProvider = Callable[[], dict[str, Any]]
 DefaultsSaver = Callable[[dict[str, Any]], None]
 PreflightRunner = Callable[[dict[str, Any]], list[str]]
+DeriveRunner = Callable[[dict[str, Any]], dict[str, Any]]
 ExperimentRunner = Callable[
     [dict[str, Any], ProgressCallback | None, CancellationToken | None],
     dict[str, Any],
@@ -49,6 +50,7 @@ class ExperimentDefinition:
     schema_provider: SchemaProvider | None = field(default=None, repr=False)
     defaults_saver: DefaultsSaver | None = field(default=None, repr=False)
     preflight_runner: PreflightRunner | None = field(default=None, repr=False)
+    derive_runner: DeriveRunner | None = field(default=None, repr=False)
     experiment_runner: ExperimentRunner | None = field(default=None, repr=False)
     analysis_runner: AnalysisRunner | None = field(default=None, repr=False)
 
@@ -164,6 +166,11 @@ class ExperimentDefinition:
         if self.preflight_runner:
             errors.extend(self.preflight_runner(values))
         return errors
+
+    def derive(self, values: dict[str, Any]) -> dict[str, Any]:
+        if not self.derive_runner:
+            return {}
+        return self.derive_runner(values)
 
     def run(
         self,

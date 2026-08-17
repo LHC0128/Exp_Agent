@@ -22,14 +22,22 @@ from ...plotting import (
     set_plot_style,
     style_legend,
 )
-from .phase import inside_absolute_sine, outside_absolute_sine
+from .phase import (
+    DISPERSION_MODEL_NAME,
+    dispersion_phase_response,
+    inside_absolute_sine,
+    outside_absolute_sine,
+)
 
 matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
 
 
-def _finite_parameters(fit: dict[str, Any]) -> tuple[float, float, float] | None:
+def _finite_parameters(
+    fit: dict[str, Any],
+    count: int,
+) -> tuple[float, ...] | None:
     values = np.asarray(fit.get("parameters", ()), dtype=float).reshape(-1)
-    if values.size != 3 or not np.all(np.isfinite(values)):
+    if values.size != count or not np.all(np.isfinite(values)):
         return None
     return tuple(float(value) for value in values)
 
@@ -247,8 +255,12 @@ def plot_phase_calibration(
 
     primary = payload.get("primary_fit", {})
     diagnostic = payload.get("diagnostic_fit", {})
-    primary_parameters = _finite_parameters(primary)
-    diagnostic_parameters = _finite_parameters(diagnostic)
+    primary_model = str(primary.get("model", ""))
+    if primary_model == DISPERSION_MODEL_NAME:
+        primary_parameters = _finite_parameters(primary, 5)
+    else:
+        primary_parameters = _finite_parameters(primary, 3)
+    diagnostic_parameters = _finite_parameters(diagnostic, 3)
     dense = np.linspace(0.0, 360.0, 1441)
 
     set_plot_style("paper")
@@ -269,9 +281,27 @@ def plot_phase_calibration(
         calibration_succeeded = payload.get("success") is True
     if primary_parameters is not None:
         status = "Primary fit" if calibration_succeeded else "Primary fit rejected"
+        if primary_model == DISPERSION_MODEL_NAME:
+            y_rf_amplitude = float(
+                primary.get("y_rf_amplitude_vpp")
+                or payload.get("phase_scan", {}).get(
+                    "rf_amplitude_vpp",
+                    0.0,
+                )
+            )
+            primary_curve = dispersion_phase_response(
+                dense,
+                *primary_parameters,
+                y_rf_amplitude,
+            )
+        else:
+            primary_curve = inside_absolute_sine(
+                dense,
+                *primary_parameters,
+            )
         ax.plot(
             dense,
-            inside_absolute_sine(dense, *primary_parameters),
+            primary_curve,
             "--",
             color=COLOR_TRAD,
             label=(
@@ -323,6 +353,9 @@ def plot_phase_calibration(
         ylabel="Demod R (V)",
     )
     ax.set_xlim(0.0, 360.0)
+    # Y 轴强制包含 0 点，便于观察 R 基线相对零点的高度。
+    y_low, y_high = ax.get_ylim()
+    ax.set_ylim(min(y_low, 0.0), max(y_high, 0.0))
     style_legend(ax)
     filename = "phase_calibration.png"
     save_figure(fig, Path(results_dir) / filename)

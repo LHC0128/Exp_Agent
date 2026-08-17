@@ -58,7 +58,10 @@ def _main_field_measurement_summary(config: dict[str, Any]) -> str:
     )
     if current_ma is None:
         raise ValueError("运行配置中的 GS200 主场电流不是有限数值")
-    output_state = "OFF" if current_ma == 0.0 else "ON"
+    output_state = str(geometry.get("gs200_output", "")).upper()
+    if output_state not in {"ON", "OFF"}:
+        # 兼容旧运行目录：旧工作流只允许 0 mA 且输出关闭。
+        output_state = "OFF" if current_ma == 0.0 else "ON"
     return f"{current_ma:g} mA, output {output_state}"
 
 

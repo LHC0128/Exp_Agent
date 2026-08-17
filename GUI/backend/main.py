@@ -42,6 +42,11 @@ from lab_workflows.instrument_config import (
     save_device_library,
     save_physical_mappings,
 )
+from lab_workflows.keithley_arb import (
+    convert_frequency_source,
+    parse_arbitrary_text,
+    parse_calibration_text,
+)
 from lab_workflows.experiments import get_experiment, list_experiments
 from lab_workflows.experiments.catalog import (
     add_tag,
@@ -104,6 +109,11 @@ class PhaseBody(BaseModel):
     settle_time: float = 0.2
 
 
+class KeithleyWaveformConvertBody(BaseModel):
+    arbitrary_text: str = ""
+    calibration_text: str | None = None
+
+
 class ExperimentBody(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
@@ -156,13 +166,18 @@ def _job_or_404(job_id: str) -> Job:
         raise HTTPException(404, str(exc)) from exc
 
 
+def _conflict(detail: str, code: str) -> HTTPException:
+    """409 响应附加结构化错误码，前端按 code 分支处理。"""
+    return HTTPException(409, detail, headers={"X-Error-Code": code})
+
+
 def _with_short_hardware_lock(action):
     if not manager.hardware_lock.acquire(blocking=False):
-        raise HTTPException(409, "其他硬件任务正在运行")
+        raise _conflict("其他硬件任务正在运行", "hardware_busy")
     try:
         return action()
     except ControlRevisionConflict as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise _conflict(str(exc), "revision_conflict") from exc
     except (KeyError, ValueError, TypeError, PermissionError) as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
@@ -173,7 +188,11 @@ def _with_short_hardware_lock(action):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "hardware_busy": manager.hardware_lock.locked()}
+    return {
+        "status": "ok",
+        "hardware_busy": manager.hardware_lock.locked(),
+        "queued_hardware_jobs": manager.queued_hardware_count(),
+    }
 
 
 @app.get("/api/devices", response_model=list[DeviceSummary])
@@ -262,7 +281,7 @@ def device_library():
 
 def _require_configuration_idle() -> None:
     if manager.hardware_lock.locked():
-        raise HTTPException(409, "硬件任务运行期间不能修改设备配置")
+        raise _conflict("硬件任务运行期间不能修改设备配置", "hardware_busy")
 
 
 @app.put("/api/device-library")
@@ -275,7 +294,7 @@ def update_device_library(body: DeviceLibraryBody):
             root=ROOT,
         )
     except RevisionConflict as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise _conflict(str(exc), "revision_conflict") from exc
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, {"errors": [str(exc)]}) from exc
 
@@ -301,7 +320,7 @@ def update_physical_mappings(body: PhysicalMappingsBody):
             root=ROOT,
         )
     except RevisionConflict as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise _conflict(str(exc), "revision_conflict") from exc
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, {"errors": [str(exc)]}) from exc
 
@@ -405,6 +424,31 @@ def phase_calibration(body: PhaseBody):
         ).to_dict(),
     )
     return job.public()
+
+
+@app.post("/api/tools/keithley-waveform-convert")
+def keithley_waveform_convert(body: KeithleyWaveformConvertBody):
+    """纯计算接口：解析 6221 任意波与标定文本并换算电流包络，不连接硬件。"""
+    try:
+        calibration = (
+            parse_calibration_text(body.calibration_text)
+            if body.calibration_text else None
+        )
+        source = (
+            parse_arbitrary_text(body.arbitrary_text)
+            if body.arbitrary_text.strip() else None
+        )
+        converted = (
+            convert_frequency_source(source, calibration)
+            if source is not None else None
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {
+        "source": source.to_dict() if source else None,
+        "calibration": calibration.to_dict() if calibration else None,
+        "waveform": converted.to_dict() if converted else None,
+    }
 
 
 def _experiment_or_404(experiment_id: str):
@@ -579,6 +623,17 @@ def experiment_preflight(experiment_id: str, body: ExperimentBody):
     return {"ok": not errors, "errors": errors}
 
 
+@app.post("/api/experiments/{experiment_id}/derive")
+def experiment_derive(experiment_id: str, body: ExperimentBody):
+    try:
+        values = _experiment_or_404(experiment_id).derive(body.parameters)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(422, {"errors": [str(exc)]}) from exc
+    return {"ok": True, "values": values}
+
+
 @app.post("/api/experiments/{experiment_id}/runs")
 def experiment_run(experiment_id: str, body: ExperimentBody):
     definition = _experiment_or_404(experiment_id)
@@ -598,7 +653,7 @@ def experiment_run(experiment_id: str, body: ExperimentBody):
 
 @app.get("/api/jobs")
 def jobs():
-    return manager.list_public()
+    return manager.list_summaries()
 
 
 @app.get("/api/jobs/{job_id}")
@@ -649,15 +704,24 @@ async def job_events(job_id: str, request: Request):
 
 
 @app.get("/api/runs")
-def runs():
+def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
+    definitions = [
+        definition for definition in list_experiments()
+        if experiment_id is None or definition.id == experiment_id
+    ]
     result = []
-    for definition in list_experiments():
+    for definition in definitions:
         base = ROOT / "data" / definition.data_type
         if not base.exists():
             continue
         for path in (item for item in base.iterdir() if item.is_dir()):
             results_dir = path / "results"
             artifacts = [item.name for item in results_dir.iterdir() if item.is_file()] if results_dir.exists() else []
+            try:
+                modified_at = path.stat().st_mtime
+            except OSError:
+                # 运行目录被并发清理时跳过，不让整个列表请求失败。
+                modified_at = 0.0
             result.append({
                 "id": path.name,
                 "experiment_id": definition.id,
@@ -665,9 +729,18 @@ def runs():
                 "path": str(path),
                 "artifacts": artifacts,
                 "can_analyze": definition.analysis_runner is not None,
-                "modified_at": path.stat().st_mtime,
+                "modified_at": modified_at,
             })
-    return sorted(result, key=lambda item: item["modified_at"], reverse=True)
+    result.sort(key=lambda item: item["modified_at"], reverse=True)
+    total = len(result)
+    page_size = max(1, min(limit, 200))
+    page_start = max(0, offset)
+    return {
+        "total": total,
+        "offset": page_start,
+        "limit": page_size,
+        "runs": result[page_start:page_start + page_size],
+    }
 
 
 def _run_dir(experiment_id: str, run_id: str) -> Path:
@@ -684,9 +757,12 @@ def analyze_run(run_id: str, body: AnalysisBody):
     definition = _experiment_or_404(body.experiment_id)
     run_dir = _run_dir(body.experiment_id, run_id)
     if not definition.analysis_runner:
-        raise HTTPException(409, "该实验没有独立离线分析器")
+        raise _conflict("该实验没有独立离线分析器", "no_analyzer")
+    kind = f"analysis:{definition.id}:{run_id}"
+    if manager.has_active_kind(kind):
+        raise _conflict("该运行目录的分析任务正在执行", "analysis_running")
     job = manager.create(
-        f"analysis:{definition.id}",
+        kind,
         lambda current: definition.analyze(
             run_dir, progress=lambda event: manager.event(current, event)
         ),
@@ -711,6 +787,8 @@ if FRONTEND.exists():
 
     @app.get("/{path:path}")
     def frontend(path: str):
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(404, f"接口不存在: /{path}")
         candidate = (FRONTEND / path).resolve()
         if FRONTEND.resolve() in candidate.parents and candidate.is_file():
             return FileResponse(candidate)

@@ -113,7 +113,7 @@ def test_all_typed_workflows_preflight_dg4000_and_dg900_mappings() -> None:
         item for item in list_experiments()
         if item.execution_mode == "typed_workflow"
     ]
-    assert len(definitions) == 20
+    assert len(definitions) == 25
     assert all(item.required_mapping_keys for item in definitions)
 
     for model, minimum, maximum in (

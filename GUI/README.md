@@ -35,7 +35,24 @@ Vite 会把 `/api` 转发到本机 FastAPI。
 - `frontend/src/pages/`：路由页面，只编排页面级状态和 API 调用。
 - `frontend/src/components/`：布局、表单、任务视图和仪器编辑器。
 - `frontend/src/types/api.ts`：与后端 Pydantic 模型对齐的 API 类型。
+- `frontend/src/types/openapi.d.ts`：由 `npm run generate:api` 从后端 OpenAPI 自动生成，用于比对接口漂移，不直接手改。
 - `frontend/src/App.tsx`：仅保留应用布局入口，不承载页面实现。
+
+后端 schema 变更后，重新生成类型并核对：
+
+```powershell
+Set-Location GUI
+..\agent_exp_env\Scripts\python.exe -m backend.openapi_dump > frontend\openapi.json
+Set-Location GUI\frontend
+npm run generate:api
+```
+
+前端测试使用 Vitest + Testing Library：
+
+```powershell
+Set-Location GUI\frontend
+npm test
+```
 
 设备写入接口使用严格 Pydantic 请求模型，未知设置字段会返回验证错误；
 设备回读使用按 `type` 区分的 GS200、DLC pro、信号发生器和示波器快照模型。
@@ -53,11 +70,25 @@ TOPTICA DLC pro 模块开放激光电流、温度、PZT Scan Offset、扫描幅�
 编号和浏览器再次确认；OFF 无需确认但会强制回读。DLC pro 通信或回读异常时不自动
 关光或回滚，界面会提示设备状态可能未知。完整说明见 `docs/toptica_dlc_pro.md`。
 
+Keithley 6221 的 Hz 任意波 CSV/TXT 解析与标定换算逻辑位于
+`lab_workflows/keithley_arb.py`（纯计算、无硬件），GUI 通过
+`POST /api/tools/keithley-waveform-convert` 上传文件文本获得解析与换算结果；
+标定实验 ID 通过 `CALIBRATION_EXPERIMENT_IDS` 别名集合兼容历史文件。
+
 ## 任务进度
 
 运行中的任务通过 `/api/jobs/{id}/events` SSE 增量推送进度；页面刷新恢复和任务结束后
-只读取一次完整 Job 快照。后端仅保留最近 100 个已完成、失败或取消的任务，运行中的任务
-不会被淘汰。实验原始数据和分析结果保存在 `data/`，不受内存任务淘汰影响。
+只读取一次完整 Job 快照。`GET /api/jobs` 只返回不含事件与结果的摘要。后端仅保留
+最近 100 个已完成、失败或取消的任务，运行中的任务不会被淘汰。实验原始数据和分析
+结果保存在 `data/`，不受内存任务淘汰影响。
+
+多个硬件任务不再冲突失败：后启动的任务进入排队状态，等前一个任务释放硬件后自动开始，
+排队期间可取消。页面顶部会显示全局任务横幅；硬件占用期间，“功能模块”和实验页的
+启动按钮、仪器控制页的读取按钮会自动禁用并提示。分析任务按 `(实验, 运行目录)` 去重，
+同一目录不会并发分析。
+
+结构化错误通过 `X-Error-Code` 响应头区分（`revision_conflict`、`hardware_busy`、
+`analysis_running`、`no_analyzer` 等），前端按错误码分支处理而不是匹配中文文案。
 
 ## 共享模块
 

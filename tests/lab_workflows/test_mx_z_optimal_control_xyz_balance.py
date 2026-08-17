@@ -420,3 +420,186 @@ def test_analysis_supports_all_axes_fixed(local_tmp_path: Path) -> None:
     result = analyze(run_dir)
     assert result["scan_shape_zyx"] == [1, 1, 1]
     assert result["measured_grid_minimum"]["r_mean_v"] == pytest.approx(0.4)
+
+
+def _write_vshape_run(
+    run_dir: Path,
+    *,
+    x0_offset: float = 0.0,
+    inject_outliers: bool = False,
+) -> None:
+    """写入 V 形响应数据：零点随 z 线性漂移，可注入孤立异常点。"""
+    raw_dir = run_dir / "raw"
+    raw_dir.mkdir(parents=True)
+    (run_dir / "experiment_config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "completion_status": "completed",
+                "control_source": {"version": "v1"},
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    x_axis = np.linspace(-0.03, 0.03, 13)
+    y_axis = np.linspace(-0.03, 0.03, 13)
+    z_axis = np.array([-0.02, -0.01, 0.0, 0.01, 0.02])
+    z_grid, x_grid, y_grid = np.meshgrid(z_axis, x_axis, y_axis, indexing="ij")
+    # 零点随 z 线性漂移：x0 = -z + x0_offset, y0 = 0.5 z + 0.01
+    x0 = -z_grid + x0_offset
+    y0 = 0.5 * z_grid + 0.01
+    r_mean = (
+        np.abs(2.0 * (x_grid - x0))
+        + np.abs(1.5 * (y_grid - y0))
+        + 0.02 * np.abs(z_grid - 0.01)
+        + 0.002
+    )
+    if inject_outliers:
+        # 注入在高值角落，邻域中位数偏差 >0.15 V 可被默认阈值标记；
+        # 同时会被 clean 网格排除，不影响各层最小点判定。
+        r_mean[0, 0, 0] = 0.5
+        r_mean[4, 12, 12] = 0.4
+    np.savez(
+        raw_dir / "xyz_balance_scan.npz",
+        x_field_v=x_axis,
+        y_field_v=y_axis,
+        z_field_ma=z_axis,
+        r_mean_v=r_mean,
+        r_std_v=np.full(r_mean.shape, 0.0005),
+        acquisition_order=np.arange(r_mean.size).reshape(r_mean.shape),
+        actual_rate_sa_s=np.float64(1000.0),
+    )
+
+
+def test_analysis_linear_fit_recovers_workpoint_and_coupling(
+    local_tmp_path: Path,
+) -> None:
+    run_dir = local_tmp_path / "vshape"
+    _write_vshape_run(run_dir)
+    result = analyze(run_dir)
+    linear = result["linear_fit"]
+    workpoint = linear["fitted_workpoint"]
+    # e 最小层 z=+0.01，零点 x0=-0.01, y0=+0.015
+    assert workpoint["z_field_ma"] == pytest.approx(0.01, abs=0.001)
+    assert workpoint["x_field_v"] == pytest.approx(-0.01, abs=0.002)
+    assert workpoint["y_field_v"] == pytest.approx(0.015, abs=0.002)
+    assert workpoint["extrapolated"] is False
+    assert workpoint["x_from_fit"] is True
+    assert workpoint["y_from_fit"] is True
+    assert linear["coupling"]["x0_slope_v_per_ma"] == pytest.approx(-1.0, abs=0.05)
+    assert linear["coupling"]["y0_slope_v_per_ma"] == pytest.approx(0.5, abs=0.05)
+    assert linear["next_scan_suggestion"] is None
+    assert result["interpretation"]["continuous_fit_performed"] is True
+    assert (run_dir / "results" / "balance_linear_fit.npz").is_file()
+    assert (run_dir / "results" / "xyz_balance_linear_fit.png").is_file()
+    saved = yaml.safe_load(
+        (run_dir / "results" / "analysis.yaml").read_text(encoding="utf-8")
+    )
+    assert saved["linear_fit"]["fitted_workpoint"]["x_field_v"] == pytest.approx(
+        -0.01, abs=0.002
+    )
+
+
+def test_analysis_linear_fit_marks_outliers_and_stays_robust(
+    local_tmp_path: Path,
+) -> None:
+    run_dir = local_tmp_path / "outliers"
+    _write_vshape_run(run_dir, inject_outliers=True)
+    result = analyze(run_dir)
+    linear = result["linear_fit"]
+    assert linear["outlier_detection"]["count"] == 2
+    workpoint = linear["fitted_workpoint"]
+    assert workpoint["x_field_v"] == pytest.approx(-0.01, abs=0.002)
+    assert workpoint["y_field_v"] == pytest.approx(0.015, abs=0.002)
+    assert any("邻域孤立点" in warning for warning in result["warnings"])
+
+
+def test_analysis_linear_fit_suggests_rescan_when_zero_at_edge(
+    local_tmp_path: Path,
+) -> None:
+    run_dir = local_tmp_path / "edge"
+    # x0 平移 +0.06 V：所有层的 x 零点都在扫描窗口外
+    _write_vshape_run(run_dir, x0_offset=0.06)
+    result = analyze(run_dir)
+    linear = result["linear_fit"]
+    suggestion = linear["next_scan_suggestion"]
+    assert suggestion is not None
+    assert suggestion["suggested_center"]["x_field_v"] == pytest.approx(
+        0.05, abs=0.01
+    )
+    # 所有层的谷都在窗口外时，z 选层被"离窗口距离"主导，只断言在扫描范围内
+    assert -0.02 <= suggestion["suggested_center"]["z_field_ma"] <= 0.02
+
+
+def _write_complex_run(
+    run_dir: Path,
+) -> None:
+    """复线性 y 响应 + e(z) 抛物线（顶点在层间）的数据。"""
+    raw_dir = run_dir / "raw"
+    raw_dir.mkdir(parents=True)
+    (run_dir / "experiment_config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "completion_status": "completed",
+                "control_source": {"version": "v1"},
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    x_axis = np.linspace(-0.03, 0.03, 13)
+    y_axis = np.linspace(-0.03, 0.03, 13)
+    z_axis = np.array([-0.02, -0.01, 0.0, 0.01, 0.02])
+    z_grid, x_grid, y_grid = np.meshgrid(z_axis, x_axis, y_axis, indexing="ij")
+    x0 = -z_grid + 0.004
+    y0 = 0.5 * z_grid + 0.01
+    # y 响应为复线性模：|Jy*(y-y0) + C|，C 与 Jy 有相位差
+    jy = 1.5 + 0.9j
+    c_val = 0.01 - 0.008j
+    r_mean = (
+        np.abs(2.0 * (x_grid - x0))
+        + np.abs(jy * (y_grid - y0) + c_val)
+        + 0.02 * (z_grid - 0.005) ** 2
+        + 0.002
+    )
+    np.savez(
+        raw_dir / "xyz_balance_scan.npz",
+        x_field_v=x_axis,
+        y_field_v=y_axis,
+        z_field_ma=z_axis,
+        r_mean_v=r_mean,
+        r_std_v=np.full(r_mean.shape, 0.0005),
+        acquisition_order=np.arange(r_mean.size).reshape(r_mean.shape),
+        actual_rate_sa_s=np.float64(1000.0),
+    )
+
+
+def test_analysis_complex_mod_recovers_y_zero_and_quadratic_z_vertex(
+    local_tmp_path: Path,
+) -> None:
+    run_dir = local_tmp_path / "complex"
+    _write_complex_run(run_dir)
+    result = analyze(run_dir)
+    linear = result["linear_fit"]
+    # z 层选择：e(z) 顶点在 z=+0.005（层间），应使用二次拟合顶点
+    assert linear["z_layer_fit"]["method"] == "quadratic_vertex"
+    assert linear["z_layer_fit"]["vertex_z_ma"] == pytest.approx(0.005, abs=0.002)
+    # 工作点：z=+0.005 顶点，x0 ≈ 0.004-0.005=-0.001，y0 ≈ 0.5*0.005+0.01=0.0125
+    wp = linear["fitted_workpoint"]
+    assert wp["z_field_ma"] == pytest.approx(0.005, abs=0.002)
+    # x0 取顶点最近层（z=0.01 层，x0=-0.006）或 z=0 层（x0=0.004）
+    # y0 复线性拟合应恢复 |Jy*(y-y0)+C| 的顶点
+    work_layer = next(
+        layer
+        for layer in linear["per_layer"]
+        if abs(layer["z_field_ma"] - 0.01) < 1e-9
+    )
+    y_fit = work_layer["y_fit"]
+    assert y_fit["mode"] == "complex_linear_mod"
+    # 理论顶点：|Jy*(y-y0)+C| 的模平方最小点
+    jy = 1.5 + 0.9j
+    c_val = 0.01 - 0.008j
+    y0_layer = 0.5 * 0.01 + 0.01
+    c_prime = c_val - jy * y0_layer
+    y_expected = -np.real(np.conj(jy) * c_prime) / abs(jy) ** 2
+    assert y_fit["s0"] == pytest.approx(y_expected, abs=0.002)

@@ -15,6 +15,18 @@ KEITHLEY_OPTIMAL_CONTROL = (
     "X_magnetic_field", "rf_coil", "Pump_laser_power", "Probe_laser_power",
     "Pump_modulation", "Time_sequence", "Temp_Switch", "temperature", "lockin_r",
 )
+KEITHLEY_OPTIMAL_CONTROL_XYZ_BALANCE = (
+    "main_magnetic_field", "keithley_6221_main_field", "Time_sequence_2",
+    "X_magnetic_field", "Y_magnetic_field", "Pump_laser_power",
+    "Probe_laser_power", "Pump_modulation", "Time_sequence", "Temp_Switch",
+    "temperature", "lockin_r",
+)
+KEITHLEY_OPTIMAL_CONTROL_BALANCED_SENSITIVITY = (
+    "main_magnetic_field", "keithley_6221_main_field", "Time_sequence_2",
+    "X_magnetic_field", "Y_magnetic_field", "rf_coil", "Pump_laser_power",
+    "Probe_laser_power", "Pump_modulation", "Time_sequence", "Temp_Switch",
+    "temperature", "lockin_r",
+)
 SCOPE = (
     "main_magnetic_field", "Z_magnetic_field", "X_magnetic_field",
     "Y_magnetic_field", "Pump_laser_power", "Probe_laser_power",
@@ -48,12 +60,15 @@ TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "mx-main-field-calibration": FULL_HF2,
     "mx-keithley-6221-main-field-calibration": KEITHLEY_MAIN_FIELD,
     "mx-keithley-6221-optimal-control-rf-sensitivity": KEITHLEY_OPTIMAL_CONTROL,
+    "mx-keithley-6221-optimal-control-xyz-balance": KEITHLEY_OPTIMAL_CONTROL_XYZ_BALANCE,
+    "mx-keithley-6221-optimal-control-balanced-sensitivity": KEITHLEY_OPTIMAL_CONTROL_BALANCED_SENSITIVITY,
     "mx-main-field-noise-spectrum": FULL_HF2,
     "mx-main-field-scope-noise-spectrum": SCOPE,
     "mx-xy-residual-field-calibration": FULL_HF2,
     "mx-y-rf-power-optimization": FULL_HF2,
     "mx-y-rf-probe-detuning-optimization": (*FULL_HF2, "probe_laser"),
     "mx-y-rf-sensitivity": FULL_HF2,
+    "mx-y-rf-frequency-response": FULL_HF2,
     "mx-y-rf-sensitivity-drift": FULL_HF2,
     "mx-z-field-calibration": FULL_HF2,
     "mx-z-noise-spectrum": FULL_HF2,

@@ -30,6 +30,7 @@ class TheoryControlSource:
     omega_ctrl_hz: np.ndarray
     repeat_frequency_hz: float
     theory_rf_frequency_hz: float
+    rf_periods_per_waveform: int
     waveform_sha256: str
     parameter_sha256: str
 
@@ -117,16 +118,16 @@ def load_theory_control(control_root: Path, version: str) -> TheoryControlSource
     )
     if not np.isfinite(theory_rf_frequency_hz) or theory_rf_frequency_hz <= 0:
         raise ValueError("理论 f_rf_Hz 必须是正有限值")
-    if not np.isclose(
-        repeat_frequency_hz,
-        theory_rf_frequency_hz,
-        rtol=1e-6,
-        atol=1e-6,
-    ):
+    # 控制波形允许包含整数个 RF 周期（例如 v4 每周期含 2 个 12 kHz 周期、
+    # 重复频率 6 kHz）；控制重复频率与 rf 频率不再要求相等。
+    ratio = theory_rf_frequency_hz / repeat_frequency_hz
+    if not np.isclose(ratio, round(ratio), rtol=1e-6, atol=1e-6) or round(ratio) < 1:
         raise ValueError(
-            "控制波形时间轴频率与理论 f_rf_Hz 不一致: "
-            f"{repeat_frequency_hz:.9g} Hz != {theory_rf_frequency_hz:.9g} Hz"
+            "理论 f_rf_Hz 必须是控制波形重复频率的正整数倍: "
+            f"{theory_rf_frequency_hz:.9g} Hz / {repeat_frequency_hz:.9g} Hz "
+            f"= {ratio:.9g}"
         )
+    rf_periods_per_waveform = int(round(ratio))
     return TheoryControlSource(
         version=version,
         waveform_path=waveform_path,
@@ -135,6 +136,7 @@ def load_theory_control(control_root: Path, version: str) -> TheoryControlSource
         omega_ctrl_hz=omega_ctrl_hz,
         repeat_frequency_hz=repeat_frequency_hz,
         theory_rf_frequency_hz=theory_rf_frequency_hz,
+        rf_periods_per_waveform=rf_periods_per_waveform,
         waveform_sha256=_sha256(waveform_path),
         parameter_sha256=_sha256(parameter_path),
     )

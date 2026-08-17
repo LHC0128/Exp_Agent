@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import yaml
+
 from gs200 import GS200Instrument
 from keithley_6221 import Keithley6221Instrument
 from lockin_amplifier import HF2Instrument
@@ -40,7 +43,10 @@ from ...steps import (
 )
 from ...steps.keithley_6221 import (
     Keithley6221CurrentRangeCheck,
+    check_keithley_6221_compliance,
+    configure_keithley_6221_optimal_control,
     require_keithley_6221_current_range,
+    shutdown_keithley_6221,
 )
 from ..mx_y_rf_sensitivity.workflow import (
     _acquire_noise,
@@ -48,10 +54,19 @@ from ..mx_y_rf_sensitivity.workflow import (
 )
 from ..mx_z_optimal_control_rf_sensitivity.workflow import (
     _acquire_amplitude_scan,
-    _acquire_phase_scan,
+    _acquire_valid_rxy_point,
     _configure_y_rf_output,
+    _reacquire_phase_outliers_once,
+    _rearm_y_rf,
+    _rxy_summary_arrays,
 )
 from .models import MxKeithley6221OptimalControlRFParams
+from .phase import (
+    fit_dispersion_phase_scan,
+    fit_phase_scan,
+    paired_phase_order,
+)
+from .phase_plot import plot_phase_calibration
 from .sources import (
     AppliedCurrentWaveform,
     KeithleyCalibrationSource,
@@ -124,67 +139,19 @@ def _configure_6221(
     current_range_ma: float,
     compliance_v: float,
 ) -> float:
-    validate_safety_limit("keithley_6221_main_field", applied.minimum_ma)
-    validate_safety_limit("keithley_6221_main_field", applied.maximum_ma)
-    require_keithley_6221_current_range(
-        current_range_ma,
-        applied.minimum_ma,
-        applied.maximum_ma,
+    """共享步骤薄包装：按理论波形配置 6221 ARB0 外触发最优控制。"""
+    return configure_keithley_6221_optimal_control(
+        source,
+        theory,
+        applied,
+        current_range_ma=current_range_ma,
+        compliance_v=compliance_v,
     )
-    source.abort_waveform()
-    source.set_output(False)
-    source.set_current(0.0)
-    source.set_autorange(False)
-    source.set_current_range(current_range_ma / 1000.0)
-    source.set_output_response("FAST")
-    source.set_analog_filter(False)
-    source.set_compliance(compliance_v)
-    source.set_compliance_test(True)
-    source.set_waveform_function("ARB0")
-    source.set_waveform_frequency(theory.repeat_frequency_hz)
-    source.set_waveform_amplitude(applied.amplitude_peak_ma / 1000.0)
-    source.set_waveform_offset(applied.offset_ma / 1000.0)
-    source.set_waveform_ranging("FIXED")
-    source.set_waveform_duration("CYCLES", 1.0)
-    source.upload_arbitrary(applied.normalized)
-    source.set_external_trigger(True)
-    source.set_external_trigger_line(1)
-    source.set_external_trigger_ignore(False)
-    inactive_normalized = float(-applied.offset_ma / applied.amplitude_peak_ma)
-    if not -1.0 <= inactive_normalized <= 1.0:
-        raise ValueError(
-            "6221 任意波包络不包含 0 mA，无法将触发间隔安全设置为 0 mA"
-        )
-    source.set_external_trigger_inactive_value(inactive_normalized)
-    source.wait_for_operation_complete()
-    source.raise_for_errors()
-    _check_6221_compliance(source, "外部触发启动前")
-    source.arm_waveform()
-    source.start_waveform()
-    return inactive_normalized
 
 
 def _check_6221_compliance(source: Any, context: str) -> None:
-    """检查 Compliance；命中或通信失败时尽力完成安全关断。"""
-    try:
-        failed = bool(source.is_in_compliance())
-    except Exception as exc:
-        try:
-            _shutdown_6221(source)
-        except Exception as shutdown_exc:
-            raise RuntimeError(
-                f"6221 在{context}检查 Compliance 失败: {exc}；"
-                f"关断同时失败: {shutdown_exc}"
-            ) from exc
-        raise RuntimeError(f"6221 在{context}检查 Compliance 失败: {exc}，已关断") from exc
-    if failed:
-        try:
-            _shutdown_6221(source)
-        except Exception as shutdown_exc:
-            raise RuntimeError(
-                f"6221 在{context}进入 Compliance；关断同时失败: {shutdown_exc}"
-            ) from shutdown_exc
-        raise RuntimeError(f"6221 在{context}进入 Compliance，实验已安全终止")
+    """共享步骤薄包装：检查 Compliance 并在命中时安全关断。"""
+    check_keithley_6221_compliance(source, context)
 
 
 def _install_compliance_checker(devices: dict[str, Any]) -> None:
@@ -200,6 +167,247 @@ def _configure_hf2(params: MxKeithley6221OptimalControlRFParams, devices: dict[s
     phase_shift_deg = float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift"))
     actual_rate = float(demod.configure_demodulator(hf2, DemodulatorConfig(demod_index=params.demod_idx, enable=True, rate=params.response_rate_sa_s, input_channel=0, osc_select=params.demod_osc_idx, harmonic=1, time_constant=params.response_time_constant_s, order=params.response_demod_order, phase=phase_shift_deg)))
     return actual_rate, {"demod_idx": params.demod_idx, "oscillator_idx": params.demod_osc_idx, "oscillator_frequency_hz": frequency_hz, "requested_response_rate_sa_s": params.response_rate_sa_s, "actual_response_rate_sa_s": actual_rate, "response_time_constant_s": params.response_time_constant_s, "response_order": params.response_demod_order, "phase_shift_deg": phase_shift_deg}
+
+
+def _acquire_phase_scan(
+    params: MxKeithley6221OptimalControlRFParams,
+    run_dir: Any,
+    devices: dict[str, Any],
+    channels: dict[str, int],
+    actual_rate: float,
+    device_id: str,
+) -> tuple[float, dict[str, Any]]:
+    """Y RF 触发相位校准：扫描 Y RF 相位，用 Demod R 信号拟合 |色散| 折叠模型。
+
+    6221 变体固定使用 Y RF 校相（不支持控制波形相位扫描）；采集同步记录
+    R/X/Y 并做跨相位离群重采。相位选择依赖 R 的物理复合模型
+    R = |scale*(B-b0)/((B-b0)^2+w^2)|，B(phi) = |A e^{i phi} + C e^{i phi_c}|：
+    改变相位即改变 Y RF 与剩磁射频成分合成的等效幅度，响应为色散线形的
+    绝对值折叠；另保留 C + A|sin(phi-phi0)| 作为诊断对照模型。
+    """
+    axis = paired_phase_order(params.phase_axis_deg())
+    mode = "y_rf_r_phase_calibration"
+    phase_target = "y_rf_burst"
+    summaries: list[dict[str, float]] = []
+    attempts: list[int] = []
+    files: list[str] = []
+    dummy_file: str | None = None
+    rf = devices["xy_field"]
+    dummy_phase = float(axis[0])
+
+    def set_dummy_phase() -> None:
+        _rearm_y_rf(
+            rf,
+            channels["y_rf"],
+            amplitude_vpp=params.phase_cal_rf_amplitude_vpp,
+            phase_deg=dummy_phase,
+            offset_v=params.y_rf_offset_v,
+        )
+
+    print(
+        "Y RF 校相 dummy 点: "
+        f"phase={dummy_phase:.3f} deg（采集后丢弃）"
+    )
+    _, _, dummy_file = _acquire_valid_rxy_point(
+        params,
+        run_dir,
+        devices,
+        channels,
+        file_stem="phase_dummy",
+        metadata={
+            "scanned_phase_deg": np.float64(dummy_phase),
+            "y_rf_burst_phase_deg": np.float64(dummy_phase),
+            "y_rf_amplitude_vpp": np.float64(
+                params.phase_cal_rf_amplitude_vpp
+            ),
+            "y_rf_dc_offset_v": np.float64(params.y_rf_offset_v),
+            "y_rf_output_on": np.uint8(True),
+            "discarded_dummy": np.uint8(True),
+        },
+        set_y_rf=set_dummy_phase,
+        settle_time_s=params.response_settle_time_s,
+        duration_s=params.response_duration_s,
+        actual_rate=actual_rate,
+        device_id=device_id,
+    )
+
+    for index, phase_deg in enumerate(axis):
+        check_cancelled()
+        print(
+            f"Y RF 校相 {index + 1}/{axis.size}: "
+            f"phase={phase_deg:.3f} deg"
+        )
+        metadata = {
+            "scanned_phase_deg": np.float64(phase_deg),
+            "y_rf_burst_phase_deg": np.float64(phase_deg),
+            "y_rf_amplitude_vpp": np.float64(
+                params.phase_cal_rf_amplitude_vpp
+            ),
+            "y_rf_dc_offset_v": np.float64(params.y_rf_offset_v),
+            "y_rf_output_on": np.uint8(True),
+        }
+
+        def set_phase(
+            phase_deg: float = float(phase_deg),
+        ) -> None:
+            _rearm_y_rf(
+                rf,
+                channels["y_rf"],
+                amplitude_vpp=params.phase_cal_rf_amplitude_vpp,
+                phase_deg=phase_deg,
+                offset_v=params.y_rf_offset_v,
+            )
+
+        summary, attempt, filename = _acquire_valid_rxy_point(
+            params,
+            run_dir,
+            devices,
+            channels,
+            file_stem=f"phase_{index:04d}",
+            metadata=metadata,
+            set_y_rf=set_phase,
+            settle_time_s=params.response_settle_time_s,
+            duration_s=params.response_duration_s,
+            actual_rate=actual_rate,
+            device_id=device_id,
+        )
+        summaries.append(summary)
+        attempts.append(attempt)
+        files.append(filename)
+
+    (
+        cross_phase_report,
+        initial_attempts,
+        initial_files,
+        cross_phase_reacquired,
+    ) = _reacquire_phase_outliers_once(
+        params,
+        run_dir,
+        devices,
+        channels,
+        axis,
+        summaries,
+        attempts,
+        files,
+        actual_rate=actual_rate,
+        device_id=device_id,
+    )
+
+    r_mean = np.asarray(
+        [item["r_scalar_mean_v"] for item in summaries],
+        dtype=float,
+    )
+    r_std = np.asarray([item["r_std_v"] for item in summaries], dtype=float)
+    x_mean, y_mean, complex_std = _rxy_summary_arrays(summaries)
+    x_std = np.asarray(
+        [item["x_std_v"] for item in summaries],
+        dtype=float,
+    )
+    y_std = np.asarray(
+        [item["y_std_v"] for item in summaries],
+        dtype=float,
+    )
+
+    primary = fit_dispersion_phase_scan(
+        axis,
+        r_mean,
+        r_std,
+        y_rf_amplitude_vpp=params.phase_cal_rf_amplitude_vpp,
+        r_squared_min=params.phase_fit_r_squared_min,
+        amplitude_sigma_min=params.phase_fit_amplitude_sigma_min,
+    )
+    _, diagnostic = fit_phase_scan(
+        axis,
+        r_mean,
+        r_squared_min=params.phase_fit_r_squared_min,
+        amplitude_sigma_min=params.phase_fit_amplitude_sigma_min,
+    )
+    final_outlier_phases = cross_phase_report["final_detection"][
+        "outlier_phase_deg"
+    ]
+    if final_outlier_phases:
+        reason = (
+            "单次重采后仍存在跨相位异常点: "
+            + ", ".join(
+                f"{float(value):.6g}°"
+                for value in final_outlier_phases
+            )
+        )
+        primary = replace(
+            primary,
+            success=False,
+            rejection_reasons=(*primary.rejection_reasons, reason),
+        )
+
+    phase_arrays: dict[str, Any] = {
+        "scanned_phase_deg": axis,
+        "y_rf_burst_phase_deg": axis,
+        "r_mean_v": r_mean,
+        "r_std_v": r_std,
+        "x_mean_v": x_mean,
+        "x_std_v": x_std,
+        "y_mean_v": y_mean,
+        "y_std_v": y_std,
+        "complex_std_v": complex_std,
+        "cross_phase_initial_residual_v": np.asarray(
+            cross_phase_report["initial_detection"]["residual_v"],
+            dtype=float,
+        ),
+        "cross_phase_final_residual_v": np.asarray(
+            cross_phase_report["final_detection"]["residual_v"],
+            dtype=float,
+        ),
+        "accepted_attempt_index": np.asarray(attempts, dtype=int),
+        "accepted_file": np.asarray(files),
+        "initial_accepted_attempt_index": np.asarray(
+            initial_attempts,
+            dtype=int,
+        ),
+        "initial_accepted_file": np.asarray(initial_files),
+        "cross_phase_reacquired": cross_phase_reacquired,
+        "actual_rate_sa_s": np.float64(actual_rate),
+        "x_dc_field_v": np.float64(params.x_dc_field_v),
+        "y_rf_dc_offset_v": np.float64(params.y_rf_offset_v),
+    }
+    payload = {
+        "mode": mode,
+        "phase_target": phase_target,
+        "success": primary.success,
+        "scan_completed": True,
+        "fit_accepted": primary.success,
+        "selected_phase_deg": primary.selected_phase_deg,
+        "selected_y_rf_phase_deg": primary.selected_phase_deg,
+        "primary_fit": primary.to_dict(),
+        "diagnostic_fit": diagnostic.to_dict(),
+        "cross_phase_reacquisition": cross_phase_report,
+        "phase_scan": {
+            "start_deg": params.phase_scan_start_deg,
+            "stop_deg": params.phase_scan_stop_deg,
+            "step_deg": params.phase_scan_step_deg,
+            "points": int(axis.size),
+            "rf_amplitude_vpp": params.phase_cal_rf_amplitude_vpp,
+            "rf_dc_offset_v": params.y_rf_offset_v,
+            "rf_output_on": True,
+            "control_restored_phase_deg": None,
+            "point_value": "mean(R/X/Y)",
+            "fit_signal": "R",
+            "fit_model": "abs(dispersion(B_eff(phi)))",
+            "acquisition_order": "phi_then_phi_plus_180",
+            "discarded_dummy_file": dummy_file,
+        },
+    }
+    np.savez(run_dir.raw / "phase_scan.npz", **phase_arrays)
+    (run_dir.results / "phase_calibration.yaml").write_text(
+        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    plot_phase_calibration(run_dir.raw, run_dir.results, payload)
+    if not primary.success:
+        raise RuntimeError(
+            "Y RF |色散| 折叠相位拟合不合格: "
+            + "；".join(primary.rejection_reasons)
+        )
+    return float(primary.selected_phase_deg), payload
 
 
 def _configure_trigger(
@@ -228,24 +436,37 @@ def _configure_trigger(
     device.set_output(output, channel=channel)
 
 
+def _configure_gs200(
+    gs200: GS200Instrument,
+    mapping: dict[str, dict[str, Any]],
+    current_ma: float,
+) -> float:
+    """配置 Z 主磁场 GS200；6221 只驱动独立的 Z 小磁场线圈。"""
+    validate_safety_limit("main_magnetic_field", current_ma)
+    config = mapping["main_magnetic_field"]
+    gs200.set_output(False)
+    if config.get("source_function"):
+        gs200.set_source_function(str(config["source_function"]))
+    gs200.set_current_limit(0.01)
+    gs200.set_current(float(current_ma) / 1000.0)
+    output_on = not np.isclose(float(current_ma), 0.0, atol=1e-12)
+    gs200.set_output(output_on)
+    actual_a = float(gs200.get_current())
+    if not np.isclose(actual_a, float(current_ma) / 1000.0, rtol=1e-6, atol=1e-9):
+        raise RuntimeError(
+            f"GS200 主磁场设定 {current_ma:.9g} mA，回读为 {actual_a * 1000.0:.9g} mA"
+        )
+    if bool(gs200.get_output()) != output_on:
+        raise RuntimeError(
+            "GS200 主磁场输出状态与设定不一致："
+            f"期望 {'ON' if output_on else 'OFF'}"
+        )
+    return actual_a * 1000.0
+
+
 def _shutdown_6221(source: Any) -> None:
-    errors: list[str] = []
-
-    def verify() -> None:
-        current_a = float(source.get_current())
-        output_on = bool(source.get_output())
-        if abs(current_a) > 1e-12 or output_on:
-            raise RuntimeError(
-                f"回读为 {current_a:.9g} A、输出 {'ON' if output_on else 'OFF'}"
-            )
-
-    for label, action in (("ABORT", source.abort_waveform), ("关闭输出", lambda: source.set_output(False)), ("归零", lambda: source.set_current(0.0)), ("回读确认", verify)):
-        try:
-            action()
-        except Exception as exc:
-            errors.append(f"{label}: {exc}")
-    if errors:
-        raise RuntimeError("6221 关断失败: " + "；".join(errors))
+    """共享步骤薄包装：中止波形、关闭输出、归零并回读确认。"""
+    shutdown_keithley_6221(source)
 
 
 def safe_shutdown(devices: dict[str, Any], channels: dict[str, int], params: MxKeithley6221OptimalControlRFParams) -> SafetyShutdownReport:
@@ -317,8 +538,8 @@ def _source_snapshot(
 
 def run(params: MxKeithley6221OptimalControlRFParams) -> Path:
     root = find_project_root()
-    if not params.confirm_gs200_disconnected:
-        raise ValueError("必须确认 GS200 已从 Z 主线圈物理断开")
+    if not params.confirm_gs200_connected:
+        raise ValueError("必须确认 GS200 已接入 Z 主磁场线圈（6221 接 Z 小磁场线圈）")
     mapping = load_mapping(root)
     theory = load_theory_control(Path(params.control_results_root), params.control_version)
     calibration = load_keithley_calibration(root, params.keithley_calibration_source_run)
@@ -328,8 +549,19 @@ def run(params: MxKeithley6221OptimalControlRFParams) -> Path:
         applied.minimum_ma,
         applied.maximum_ma,
     )
-    if not np.isclose(params.y_rf_frequency_hz, theory.repeat_frequency_hz, rtol=1e-9, atol=1e-6):
-        raise ValueError("Y_RF_FREQUENCY_HZ 必须等于理论任意波频率")
+    warnings: list[str] = []
+    if not np.isclose(
+        params.y_rf_frequency_hz,
+        theory.theory_rf_frequency_hz,
+        rtol=1e-9,
+        atol=1e-6,
+    ):
+        warning = (
+            "Y RF/HF2 频率与理论 rf 频率不同；共同触发只固定采集起始相位，"
+            "采集期间相对相位按频差演化"
+        )
+        warnings.append(warning)
+        print(f"[WARN] {warning}")
     run_dir = create_run_directory(DATA_TYPE, params.run_tag, params.to_external(), schema_version=params.schema_version, project_root=root)
     source_files = _source_snapshot(
         run_dir,
@@ -339,7 +571,8 @@ def run(params: MxKeithley6221OptimalControlRFParams) -> Path:
         current_range,
     )
     inactive_normalized = float(-applied.offset_ma / applied.amplitude_peak_ma)
-    run_dir.update_config(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, execution_mode=EXECUTION_MODE, measurement_mode="rf_sensitivity", geometry={"control_field": "Keithley 6221 Z main coil", "gs200_main_field": "physically_disconnected_zero_and_output_off", "control_current_min_ma": applied.minimum_ma, "control_current_max_ma": applied.maximum_ma}, control_source={"version": theory.version, "repeat_frequency_hz": theory.repeat_frequency_hz, "formula": "I_mA(t) = CONTROL_SCALE * (Omega_ctrl_Hz(t) - f_0mA_Hz) / K_f_Hz_per_mA"}, keithley_calibration={"source_run": calibration.run_name, "slope_hz_per_ma": calibration.slope_hz_per_ma, "intercept_hz": calibration.intercept_hz, "r_squared": calibration.r_squared}, keithley_source_configuration={"range_ma": params.keithley_current_range_ma, "range_a": params.keithley_current_range_ma / 1000.0, "autorange": False, "response": params.keithley_output_response, "analog_filter": False, "compliance_v": params.keithley_compliance_v}, trigger={"source": "Time_sequence_2", "frequency_hz": theory.repeat_frequency_hz, "slope": "NEGative", "keithley_line": 1, "ignore": "OFF", "inactive_value_normalized": inactive_normalized, "inactive_current_ma": 0.0, "wiring": "Time_sequence_2 CH2 split to 6221 Line 1 and Y RF DG4000 Ext Trig; 6221 Line 2 unused"}, applied_control={"minimum_ma": applied.minimum_ma, "maximum_ma": applied.maximum_ma, "amplitude_peak_ma": applied.amplitude_peak_ma, "offset_ma": applied.offset_ma, "points": int(applied.current_ma.size), "current_range_check": current_range.to_dict()}, warnings=[], acquisition_signals=["Demod0 R/X/Y during phase calibration", "Demod0 R during amplitude/noise acquisition"])
+    gs200_output = "ON" if not np.isclose(params.main_magnetic_field_ma, 0.0) else "OFF"
+    run_dir.update_config(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, execution_mode=EXECUTION_MODE, measurement_mode="rf_sensitivity", geometry={"control_field": "Keithley 6221 Z small-field coil", "main_field": "GS200 Z main-field coil", "gs200_main_field_current_ma": params.main_magnetic_field_ma, "gs200_output": gs200_output, "gs200_physical_connection_confirmed": params.confirm_gs200_connected, "control_current_min_ma": applied.minimum_ma, "control_current_max_ma": applied.maximum_ma}, control_source={"version": theory.version, "repeat_frequency_hz": theory.repeat_frequency_hz, "theory_rf_frequency_hz": theory.theory_rf_frequency_hz, "rf_periods_per_waveform": theory.rf_periods_per_waveform, "y_rf_frequency_hz": params.y_rf_frequency_hz, "formula": "I_mA(t) = CONTROL_SCALE * (Omega_ctrl_Hz(t) - f_0mA_Hz) / K_f_Hz_per_mA"}, keithley_calibration={"source_run": calibration.run_name, "slope_hz_per_ma": calibration.slope_hz_per_ma, "intercept_hz": calibration.intercept_hz, "r_squared": calibration.r_squared}, keithley_source_configuration={"coil": "Z small-field coil", "range_ma": params.keithley_current_range_ma, "range_a": params.keithley_current_range_ma / 1000.0, "autorange": False, "response": params.keithley_output_response, "analog_filter": False, "compliance_v": params.keithley_compliance_v}, gs200_source_configuration={"coil": "Z main-field coil", "setpoint_ma": params.main_magnetic_field_ma, "output": gs200_output}, trigger={"source": "Time_sequence_2", "frequency_hz": theory.repeat_frequency_hz, "slope": "NEGative", "keithley_line": 1, "ignore": "OFF", "inactive_value_normalized": inactive_normalized, "inactive_current_ma": 0.0, "wiring": "Time_sequence_2 CH2 split to 6221 Line 1 and Y RF DG4000 Ext Trig; 6221 Line 2 unused"}, applied_control={"minimum_ma": applied.minimum_ma, "maximum_ma": applied.maximum_ma, "amplitude_peak_ma": applied.amplitude_peak_ma, "offset_ma": applied.offset_ma, "points": int(applied.current_ma.size), "current_range_check": current_range.to_dict()}, warnings=warnings, acquisition_signals=["Demod0 R/X/Y during phase calibration", "Demod0 R during amplitude/noise acquisition"])
     session = DeviceSession()
     devices: dict[str, Any] = {}
     channels: dict[str, int] = {}
@@ -351,10 +584,10 @@ def run(params: MxKeithley6221OptimalControlRFParams) -> Path:
         connection_complete = True
         _install_compliance_checker(devices)
         _configure_trigger(params, devices["trigger"], channels["trigger"], theory.repeat_frequency_hz, output=False)
-        devices["gs200"].set_output(False)
-        devices["gs200"].set_current(0.0)
-        if abs(float(devices["gs200"].get_current())) > 1e-12 or bool(devices["gs200"].get_output()):
-            raise RuntimeError("GS200 未能保持 0 mA 且输出关闭")
+        actual_gs200_ma = _configure_gs200(
+            devices["gs200"], mapping, params.main_magnetic_field_ma
+        )
+        run_dir.update_config(actual_gs200_main_field_ma=actual_gs200_ma)
         xy = devices["xy_field"]
         configure_fixed_dc_field(xy, channels["x_field"], "X_magnetic_field", params.x_dc_field_v)
         _configure_y_rf_output(params, xy, channels["y_rf"])
@@ -375,7 +608,7 @@ def run(params: MxKeithley6221OptimalControlRFParams) -> Path:
             compliance_v=params.keithley_compliance_v,
         )
         _configure_trigger(params, devices["trigger"], channels["trigger"], theory.repeat_frequency_hz, output=True)
-        actual_rate, hf2_snapshot = _configure_hf2(params, devices, theory.repeat_frequency_hz)
+        actual_rate, hf2_snapshot = _configure_hf2(params, devices, params.y_rf_frequency_hz)
         device_id = str(mapping["lockin_r"]["device_id"])
         selected_phase, phase_payload = _acquire_phase_scan(params, run_dir, devices, channels, actual_rate, device_id)
         run_dir.update_config(clock_sources=clocks, hf2_configuration=hf2_snapshot, phase_calibration=phase_payload, selected_y_rf_phase_deg=selected_phase, trigger_inactive_value_normalized=configured_inactive, trigger_inactive_current_ma=0.0)

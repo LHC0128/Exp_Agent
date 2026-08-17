@@ -151,6 +151,11 @@ class ExperimentParams:
         }
 
     @classmethod
+    def derive_external(cls, values: dict[str, Any]) -> dict[str, Any]:
+        """按当前表单值计算只读派生显示值；默认实验无派生字段。"""
+        return {}
+
+    @classmethod
     def from_external(
         cls,
         values: dict[str, Any],

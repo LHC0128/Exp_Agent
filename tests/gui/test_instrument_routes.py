@@ -10,8 +10,10 @@ sys.path.insert(0, str(ROOT / "GUI"))
 
 from backend.main import (
     DeviceLibraryBody,
+    KeithleyWaveformConvertBody,
     PhysicalMappingsBody,
     app,
+    keithley_waveform_convert,
     manager,
     update_device_library,
     update_laser,
@@ -204,6 +206,41 @@ class InstrumentRouteTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as caught:
                 update_device_library(body)
         self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(caught.exception.headers.get("X-Error-Code"), "revision_conflict")
+
+    def test_hardware_busy_conflict_carries_error_code(self):
+        body = DeviceLibraryBody(base_revision="current", devices={})
+        self.assertTrue(manager.hardware_lock.acquire(blocking=False))
+        try:
+            with self.assertRaises(HTTPException) as caught:
+                update_device_library(body)
+        finally:
+            manager.hardware_lock.release()
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(caught.exception.headers.get("X-Error-Code"), "hardware_busy")
+
+    def test_keithley_waveform_convert_is_pure_computation(self):
+        body = KeithleyWaveformConvertBody(
+            arbitrary_text="1000\n3000\n5000\n",
+            calibration_text=(
+                "experiment_id: mx-keithley-6221-main-field-calibration\n"
+                "success: true\n"
+                "K_f_Hz_per_mA: 2.0\n"
+                "f_0mA_Hz: 1000.0\n"
+                "frequency_linear_fit:\n  r_squared: 0.999\n"
+            ),
+        )
+        result = keithley_waveform_convert(body)
+        self.assertEqual(result["calibration"]["slope_hz_per_ma"], 2.0)
+        self.assertEqual(result["waveform"]["minimum_ma"], 0.0)
+        self.assertEqual(result["waveform"]["maximum_ma"], 2000.0)
+        self.assertEqual(result["waveform"]["points"], [-1.0, 0.0, 1.0])
+
+    def test_keithley_waveform_convert_rejects_bad_input(self):
+        body = KeithleyWaveformConvertBody(arbitrary_text="恒定,恒定\n")
+        with self.assertRaises(HTTPException) as caught:
+            keithley_waveform_convert(body)
+        self.assertEqual(caught.exception.status_code, 422)
 
     def test_physical_mapping_validation_returns_422(self):
         body = PhysicalMappingsBody(

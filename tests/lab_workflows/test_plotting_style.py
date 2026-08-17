@@ -74,7 +74,7 @@ def test_typed_analyzers_use_shared_paper_plotting_api() -> None:
         assert ".savefig(" not in source, path
         assert '"TkAgg"' not in source, path
     assert delegated_grid_analyzers == 2
-    assert delegated_phase_analyzers == 1
+    assert delegated_phase_analyzers == 2
     grid_source = (
         _REPOSITORY_ROOT
         / "lab_workflows"

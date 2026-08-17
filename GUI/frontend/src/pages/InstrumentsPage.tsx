@@ -9,6 +9,7 @@ import { LaserEditor } from "../components/instruments/LaserEditor";
 import { PhysicalMappingsView } from "../components/instruments/PhysicalMappingsView";
 import { ScopeEditor } from "../components/instruments/ScopeEditor";
 import { TecEditor } from "../components/instruments/TecEditor";
+import { useJobActivity } from "../components/JobActivity";
 import { PageHead } from "../components/PageHead";
 import type { ControlRoute, ControlTarget, ControlTargetBulkResponse, ControlTargetCatalog, ControlTargetResponse, DeviceSnapshot } from "../types/api";
 
@@ -20,6 +21,7 @@ function DeviceControlView() {
   const [error, setError] = useState("");
   const [busyKey, setBusyKey] = useState("");
   const [readingAll, setReadingAll] = useState(false);
+  const { hardwareBusy } = useJobActivity();
 
   const loadCatalog = async () => {
     const value = await api<ControlTargetCatalog>("/api/control-targets");
@@ -34,7 +36,8 @@ function DeviceControlView() {
   const handleFailure = (reason: unknown) => {
     const message = String(reason);
     setError(message);
-    if (message.includes("已变化") || message.includes("409")) {
+    const code = (reason as { code?: string }).code;
+    if (code === "revision_conflict" || message.includes("已变化") || message.includes("409")) {
       setSnapshots({}); setReadAt({}); setTargetErrors({}); void loadCatalog();
     }
   };
@@ -96,14 +99,15 @@ function DeviceControlView() {
   };
   return (
     <>
-      <div className="config-toolbar control-toolbar"><div><h2>设备控制</h2><p>物理量设置总览</p></div><button onClick={() => void readAll()} disabled={!catalog || readingAll || !!busyKey}>{readingAll ? "正在读取全部…" : "连接并读取全部"}</button></div>
+      <div className="config-toolbar control-toolbar"><div><h2>设备控制</h2><p>物理量设置总览</p></div><button onClick={() => void readAll()} disabled={!catalog || readingAll || !!busyKey || hardwareBusy}>{readingAll ? "正在读取全部…" : hardwareBusy ? "其他硬件任务运行中" : "连接并读取全部"}</button></div>
       {error && <div className="alert error">{error}</div>}
+      {hardwareBusy && <div className="alert">其他硬件任务正在运行，设备读取与写入暂不可用。</div>}
       <div className="control-target-grid">
         {catalog?.targets.map((target) => {
           const snapshot = snapshots[target.mapping_key];
           const endpoint = target.endpoint ? `${target.endpoint.kind}${target.endpoint.index}` : "设备级";
           return <article className={`control-target-card kind-${target.kind}${snapshot ? " has-snapshot" : ""}`} key={target.mapping_key}>
-            <header><div><h3>{target.label}</h3><small>{target.model} · {endpoint}</small></div><button onClick={() => void readSnapshot(target)} disabled={readingAll || !!busyKey}>{busyKey === target.mapping_key ? "读取中…" : "读取"}</button></header>
+            <header><div><h3>{target.label}</h3><small>{target.model} · {endpoint}</small></div><button onClick={() => void readSnapshot(target)} disabled={readingAll || !!busyKey || hardwareBusy}>{busyKey === target.mapping_key ? "读取中…" : "读取"}</button></header>
             {target.safety.min != null && target.safety.max != null && <div className="target-limit">{target.safety.min} ～ {target.safety.max} {target.kind === "current_source" ? "mA" : target.kind === "tec" ? "°C" : "V"}</div>}
             {targetErrors[target.mapping_key] && <div className="target-read-error">{targetErrors[target.mapping_key]}</div>}
             {readAt[target.mapping_key] && <small className="read-time">{new Date(readAt[target.mapping_key]).toLocaleTimeString()}</small>}
@@ -118,7 +122,7 @@ function DeviceControlView() {
 type InstrumentView = "mapping" | "library" | "control";
 
 export function InstrumentsPage() {
-  const [view, setView] = useState<InstrumentView>("mapping");
+  const [view, setView] = useState<InstrumentView>("control");
   return (
     <>
       <PageHead eyebrow="INSTRUMENTS" title="仪器控制" description="管理物理量绑定、设备资源和实时参数。" />

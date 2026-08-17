@@ -33,5 +33,6 @@
 - Python：运行 `agent_exp_env\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"`。
 - Skill：运行 `agent_exp_env\Scripts\python.exe .agents\skills\expcodegen\scripts\validate_experiment.py --root .`。
 - 语法：对修改的实验入口运行 `python -m py_compile`。
-- 前端：在 `gui/frontend/` 运行 `npm run build`。
+- 前端：在 `gui/frontend/` 运行 `npm run build` 与 `npm test`（Vitest + Testing Library）。
+- API 类型：后端 schema 变更后运行 `python -m backend.openapi_dump > frontend/openapi.json`，再在 `gui/frontend/` 运行 `npm run generate:api`，并检查 `src/types/openapi.d.ts` 变更。
 - 未连接硬件时，至少完成所有无硬件测试和生产构建。

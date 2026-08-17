@@ -52,6 +52,52 @@ class JobManagerTests(unittest.TestCase):
         self.assertEqual(public["result"]["samples"], [1.0, 2.0])
         json.dumps(public)
 
+    def test_hardware_jobs_queue_instead_of_failing(self):
+        manager = JobManager()
+        release = Event()
+        first = manager.create(
+            "first",
+            lambda _job: release.wait(1),
+        )
+        for _ in range(100):
+            if first.status == "running":
+                break
+            time.sleep(0.01)
+        self.assertEqual(first.status, "running")
+
+        second = manager.create("second", lambda _job: {"value": 2})
+        time.sleep(0.05)
+        self.assertEqual(second.status, "queued")
+        self.assertTrue(any(event["message"] == "等待硬件空闲" for event in second.events))
+
+        release.set()
+        self.wait_until_finished(first)
+        self.wait_until_finished(second)
+        self.assertEqual(second.status, "completed")
+        self.assertEqual(second.result, {"value": 2})
+
+    def test_queued_hardware_job_can_be_cancelled(self):
+        manager = JobManager()
+        release = Event()
+        first = manager.create("first", lambda _job: release.wait(1))
+        for _ in range(100):
+            if first.status == "running":
+                break
+            time.sleep(0.01)
+
+        second = manager.create("second", lambda _job: {"value": 2})
+        time.sleep(0.05)
+        self.assertEqual(second.status, "queued")
+
+        manager.cancel(second.id)
+        self.wait_until_finished(second)
+        self.assertEqual(second.status, "cancelled")
+        self.assertEqual(second.message, "排队期间已取消")
+
+        release.set()
+        self.wait_until_finished(first)
+        self.assertEqual(first.status, "completed")
+
     def test_prunes_oldest_terminal_jobs(self):
         manager = JobManager(max_terminal_jobs=2)
         jobs = []

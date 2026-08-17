@@ -12,8 +12,23 @@ export function OverviewPage() {
   const [devices, setDevices] = useState<Device[]>([]);
 
   useEffect(() => {
-    api<Health>("/api/health").then(setHealth);
-    api<Device[]>("/api/devices").then(setDevices);
+    let disposed = false;
+    const refreshHealth = () => {
+      api<Health>("/api/health").then((value) => {
+        if (!disposed) setHealth(value);
+      }).catch(() => {
+        // 后端不可用时保持上次状态。
+      });
+    };
+    refreshHealth();
+    api<Device[]>("/api/devices").then(setDevices).catch(() => {
+      // 设备列表失败时保持空列表，不影响其他区域。
+    });
+    const timer = window.setInterval(refreshHealth, 3000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
   return (
@@ -33,7 +48,7 @@ export function OverviewPage() {
         <div className="metric">
           <span>已映射设备</span>
           <strong>{devices.length}</strong>
-          <small>信号发生器与示波器</small>
+          <small>设备库中的仪器</small>
         </div>
       </section>
       <section className="section">

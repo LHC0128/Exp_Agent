@@ -52,6 +52,15 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
     def schema(self) -> dict[str, Any]:
         return self.defaults().schema(self.root)
 
+    def derive(self, values: dict[str, Any]) -> dict[str, Any]:
+        """按当前表单值计算只读派生显示值；失败时返回空映射。"""
+        merged = self.defaults().to_external()
+        merged.update(values)
+        try:
+            return self.params_type.derive_external(merged)
+        except Exception:
+            return {}
+
     def save_defaults(self, values: dict[str, Any]) -> None:
         params = self._resolved(values)
         errors = params.validate(self.root)

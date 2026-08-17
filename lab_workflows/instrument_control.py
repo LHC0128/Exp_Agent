@@ -746,8 +746,17 @@ def _apply_basic_waveform(instrument, device_type: str, channel: int,
     shape = settings.get("shape")
     is_dc = str(shape).upper() == "DC"
     if shape:
-        if device_type == "DG900" and is_dc:
-            instrument.setup_dc(float(settings.get("offset", 0.0)), channel)
+        if is_dc:
+            # DC 波形只有偏置电压有效。DG900 用 :APPLy:DC 一键配置；
+            # DG4000 用 FUNCtion:SHAPe DC + VOLTage:OFFSet（与实验脚本
+            # setup_dc 的顺序一致），但不擅自打开输出，输出开关由调用方
+            # 随后单独设置。
+            dc_voltage = float(settings.get("offset") or 0.0)
+            if device_type == "DG900":
+                instrument.setup_dc(dc_voltage, channel)
+            else:
+                instrument.set_shape("DC", channel)
+                instrument.set_offset(dc_voltage, channel)
         else:
             instrument.set_shape(str(shape), channel)
     if not is_dc:

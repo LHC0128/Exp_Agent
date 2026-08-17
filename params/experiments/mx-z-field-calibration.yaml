@@ -2,7 +2,7 @@ schema_version: 2
 parameters:
   RUN_TAG: mx_z_cal
   ZERO_BIAS_CENTER_FREQUENCY_HZ: 0.0
-  Z_INITIAL_HZ_PER_V: 24000.0
+  Z_INITIAL_HZ_PER_V: 25000.0
   Z_PREDICTION_POLARITY: positive_increases_frequency
   Z_BIAS_START_V: 1.0
   Z_BIAS_STOP_V: 3.0
@@ -29,8 +29,8 @@ parameters:
   PUMP_CARRIER_FREQUENCY_HZ: 100000000.0
   PUMP_CARRIER_AMPLITUDE_VPP: 0.18
   PUMP_GATE_VOLTAGE_V: 5.0
-  FIXED_PARAMS.Pump_laser_power: 0.2
-  FIXED_PARAMS.Probe_laser_power: 0.2
+  FIXED_PARAMS.Pump_laser_power: 0.1
+  FIXED_PARAMS.Probe_laser_power: 0.05
   FIXED_PARAMS.main_magnetic_field: 0.0
   FIXED_PARAMS.temperature: 120.0
   LINEAR_R_SQUARED_MIN: 0.99

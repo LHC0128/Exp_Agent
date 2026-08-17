@@ -27,6 +27,11 @@ export function PhysicalMappingsView() {
   const [library, setLibrary] = useState<DeviceLibraryDocument>();
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [newKey, setNewKey] = useState("");
+  const [newInstrument, setNewInstrument] = useState("signal_generator");
+  const [newDeviceId, setNewDeviceId] = useState("");
+  const [newEndpointIndex, setNewEndpointIndex] = useState("");
+  const [newDescription, setNewDescription] = useState("");
 
   const load = async () => {
     setError("");
@@ -69,8 +74,45 @@ export function PhysicalMappingsView() {
     delete next.constraints[kind][name];
     setDocument(next);
   };
+  const addMapping = () => {
+    if (!document || !library) return;
+    const key = newKey.trim();
+    if (!key) { setError("请填写物理量键名"); return; }
+    if (document.mapping[key]) { setError(`物理量 ${key} 已存在`); return; }
+    const device = library.devices[newDeviceId];
+    if (!device) { setError("请选择设备"); return; }
+    const endpointIndex = Number(newEndpointIndex);
+    const endpoint = Number.isFinite(endpointIndex) && endpointIndex > 0
+      ? { kind: endpointKind(newInstrument), index: endpointIndex }
+      : undefined;
+    const next = clone(document);
+    next.mapping[key] = {
+      instrument: newInstrument,
+      device_id: newDeviceId,
+      label: key,
+      description: newDescription.trim(),
+      ...(endpoint ? { endpoint } : {}),
+    };
+    setDocument(next);
+    setNewKey(""); setNewDeviceId(""); setNewEndpointIndex(""); setNewDescription("");
+    setError("");
+  };
   const save = async () => {
-    if (!document) return;
+    if (!document || !library) return;
+    const mappingKeys = new Set(Object.keys(document.mapping));
+    const deviceIds = new Set(Object.keys(library.devices));
+    for (const member of Object.values(document.constraints.shared_channel_groups).flat()) {
+      if (!mappingKeys.has(member)) {
+        setError(`共享通道组成员“${member}”不是已存在的物理量键`);
+        return;
+      }
+    }
+    for (const member of Object.values(document.constraints.colocation_groups).flat()) {
+      if (!deviceIds.has(member)) {
+        setError(`同机组成员“${member}”不是已存在的设备 ID`);
+        return;
+      }
+    }
     setSaving(true);
     setError("");
     try {
@@ -97,6 +139,35 @@ export function PhysicalMappingsView() {
         <div><button className="secondary" onClick={() => void load()}>重新加载</button><button onClick={() => void save()} disabled={saving}>{saving ? "正在保存…" : "保存全部映射"}</button></div>
       </div>
       {error && <div className="alert error">{error}</div>}
+      <section className="mapping-add">
+        <div className="section-head"><h3>新增物理量</h3></div>
+        <div className="mapping-add-form">
+          <label><span>物理量键</span><input value={newKey} placeholder="例如 probe_detuning" onChange={(event) => setNewKey(event.target.value)} /></label>
+          <label><span>设备类型</span><select value={newInstrument} onChange={(event) => { setNewInstrument(event.target.value); setNewDeviceId(""); setNewEndpointIndex(""); }}>
+            <option value="signal_generator">信号发生器</option>
+            <option value="gs200">Yokogawa GS200</option>
+            <option value="keithley_6221">Keithley 6221</option>
+            <option value="sds_acquisition">示波器</option>
+            <option value="lockin_amplifier">HF2</option>
+            <option value="tec_controller">TEC</option>
+            <option value="toptica_dlc_pro">DLC pro</option>
+          </select></label>
+          <label><span>设备</span><select value={newDeviceId} onChange={(event) => { setNewDeviceId(event.target.value); setNewEndpointIndex(""); }}>
+            <option value="">选择设备</option>
+            {Object.entries(library.devices)
+              .filter(([, device]) => device.instrument === newInstrument)
+              .map(([id, device]) => <option key={id} value={id}>{device.label} · {device.model}</option>)}
+          </select></label>
+          <label><span>端点（可选）</span><select value={newEndpointIndex} onChange={(event) => setNewEndpointIndex(event.target.value)}>
+            <option value="">设备级</option>
+            {(((library.devices[newDeviceId]?.capabilities.channels) as number[] | undefined) || []).map((channel) => (
+              <option key={channel} value={channel}>{endpointLabel(endpointKind(newInstrument), channel)}</option>
+            ))}
+          </select></label>
+          <label><span>说明</span><input value={newDescription} onChange={(event) => setNewDescription(event.target.value)} /></label>
+          <button className="secondary" onClick={addMapping}>添加物理量</button>
+        </div>
+      </section>
       <div className="mapping-table">
         <div className="mapping-row mapping-header"><span>物理量</span><span>设备</span><span>端点</span><span>说明</span></div>
         {Object.entries(document.mapping).map(([key, config]) => {
@@ -110,10 +181,12 @@ export function PhysicalMappingsView() {
                 const deviceId = event.target.value;
                 const device = library.devices[deviceId];
                 const available = (device.capabilities.channels as number[] | undefined) || [];
-                updateMapping(key, {
-                  device_id: deviceId,
-                  endpoint: config.endpoint && available.length ? { kind: endpointKind(config.instrument), index: available[0] } : config.endpoint,
-                });
+                const endpoint = config.endpoint && available.includes(config.endpoint.index)
+                  ? config.endpoint
+                  : available.length
+                    ? { kind: endpointKind(config.instrument), index: available[0] }
+                    : undefined;
+                updateMapping(key, { device_id: deviceId, endpoint });
               }}>
                 {candidates.map(([id, device]) => <option value={id} key={id}>{device.label} · {device.model}</option>)}
               </select>

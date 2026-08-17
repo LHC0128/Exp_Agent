@@ -3,14 +3,14 @@ mapping:
   keithley_6221_main_field:
     instrument: keithley_6221
     device_id: keithley_6221_4503331
-    label: Keithley 6221 Z 主磁场
-    description: 6221 独占 Z 主线圈时的主场电流，单位 mA；不得与 GS200 并联接入线圈
+    label: Keithley 6221 Z 小磁场
+    description: 6221 控制 Z 方向小磁场线圈的任意波电流，单位 mA；与 GS200 主磁场线圈独立
   main_magnetic_field:
     instrument: gs200
     device_id: gs200_90z631552
-    label: 主磁场
+    label: GS200 Z 主磁场
     source_function: CURRent
-    description: 磁力仪中主磁场控制，单位mA，通过电流控制磁场强度，范围-10到10mA
+    description: 磁力仪中 Z 主磁场线圈控制，单位mA，通过电流控制磁场强度，范围-10到10mA；与 6221 小磁场线圈独立
   Z_magnetic_field:
     instrument: signal_generator
     device_id: dg4e242401288

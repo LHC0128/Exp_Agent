@@ -10,7 +10,7 @@ export type JobEvent = {
   data: Record<string, unknown>;
 };
 
-export type Job = {
+export type JobSummary = {
   id: string;
   kind: string;
   status: JobStatus;
@@ -20,6 +20,9 @@ export type Job = {
   created_at: string;
   started_at?: string | null;
   finished_at?: string | null;
+};
+
+export type Job = JobSummary & {
   result?: unknown;
   error?: string | null;
   events: JobEvent[];
@@ -302,6 +305,41 @@ export type Keithley6221WaveformSettings = {
   confirm_start?: boolean;
 };
 
+export type ArbitraryFileInfo = {
+  format: "frequency-series";
+  value_label: string;
+  source_min: number;
+  source_max: number;
+  normalization_center: number;
+  normalization_scale: number;
+  inferred_frequency_hz: number | null;
+};
+
+export type ArbitrarySourceInfo = {
+  frequency_values_hz: number[];
+  info: ArbitraryFileInfo;
+};
+
+export type KeithleyCalibrationInfo = {
+  slope_hz_per_ma: number;
+  intercept_hz: number;
+  r_squared: number | null;
+};
+
+export type KeithleyWaveformConvert = {
+  points: number[];
+  amplitude_ma: number | null;
+  offset_ma: number | null;
+  minimum_ma: number | null;
+  maximum_ma: number | null;
+};
+
+export type KeithleyWaveformConvertResponse = {
+  source: ArbitrarySourceInfo | null;
+  calibration: KeithleyCalibrationInfo | null;
+  waveform: KeithleyWaveformConvert | null;
+};
+
 export type CurrentSourceSettings = {
   current_ma?: number;
   output?: boolean;
@@ -481,4 +519,12 @@ export type RunSummary = {
   path: string;
   artifacts: string[];
   can_analyze: boolean;
+  modified_at: number;
+};
+
+export type RunsResponse = {
+  total: number;
+  offset: number;
+  limit: number;
+  runs: RunSummary[];
 };

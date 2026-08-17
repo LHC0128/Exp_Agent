@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from threading import Lock, RLock, Thread
+from threading import Condition, Lock, RLock, Thread
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -61,6 +62,20 @@ class Job:
             "events": _json_safe(self.events),
         }
 
+    def summary(self) -> dict[str, Any]:
+        """不含 events/result 的轻量摘要，供任务列表使用。"""
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "status": self.status,
+            "stage": self.stage,
+            "percent": self.percent,
+            "message": self.message,
+            "created_at": self.created_at,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+        }
+
 
 class JobManager:
     def __init__(self, max_terminal_jobs: int = DEFAULT_MAX_TERMINAL_JOBS) -> None:
@@ -69,6 +84,8 @@ class JobManager:
         self.jobs: dict[str, Job] = {}
         self.hardware_lock = Lock()
         self.jobs_lock = RLock()
+        self._hardware_queue: deque[Job] = deque()
+        self._hardware_condition = Condition()
         self.max_terminal_jobs = max_terminal_jobs
         self._finished_sequence = 0
 
@@ -95,15 +112,11 @@ class JobManager:
         runner: Callable[[Job], Any],
         hardware_required: bool,
     ) -> None:
-        acquired = hardware_required and self.hardware_lock.acquire(blocking=False)
-        if hardware_required and not acquired:
-            self._finish(
-                job,
-                status="failed",
-                message="其他硬件任务正在运行",
-                error="其他硬件任务正在运行",
-            )
-            return
+        acquired = False
+        if hardware_required:
+            if not self._wait_for_hardware(job):
+                return
+            acquired = True
         status = "completed"
         message = "任务完成"
         error = None
@@ -129,7 +142,7 @@ class JobManager:
             percent = job.percent
         finally:
             if acquired:
-                self.hardware_lock.release()
+                self._release_hardware()
         self._finish(
             job,
             status=status,
@@ -139,6 +152,38 @@ class JobManager:
             stage=stage,
             percent=percent,
         )
+
+    def _wait_for_hardware(self, job: Job) -> bool:
+        """硬件任务按 FIFO 排队等待硬件锁；排队期间取消返回 False。"""
+        with self._hardware_condition:
+            self._hardware_queue.append(job)
+            self.event(job, ProgressEvent("queued", "等待硬件空闲", 0))
+            while True:
+                if job.cancellation.cancelled:
+                    self._hardware_queue.remove(job)
+                    self._finish(
+                        job,
+                        status="cancelled",
+                        message="排队期间已取消",
+                        stage=job.stage,
+                        percent=job.percent,
+                    )
+                    return False
+                if self._hardware_queue[0] is job and self.hardware_lock.acquire(blocking=False):
+                    self._hardware_queue.popleft()
+                    self._hardware_condition.notify_all()
+                    return True
+                self._hardware_condition.wait(timeout=0.25)
+
+    def _release_hardware(self) -> None:
+        """释放硬件锁并唤醒排队的下一个硬件任务。"""
+        self.hardware_lock.release()
+        with self._hardware_condition:
+            self._hardware_condition.notify_all()
+
+    def queued_hardware_count(self) -> int:
+        with self._hardware_condition:
+            return len(self._hardware_queue)
 
     def _finish(
         self,
@@ -203,6 +248,18 @@ class JobManager:
         """返回从新到旧的一致任务快照。"""
         with self.jobs_lock:
             return [job.public() for job in reversed(list(self.jobs.values()))]
+
+    def list_summaries(self) -> list[dict[str, Any]]:
+        """返回从新到旧的任务摘要，不含事件与结果。"""
+        with self.jobs_lock:
+            return [job.summary() for job in reversed(list(self.jobs.values()))]
+
+    def has_active_kind(self, kind: str) -> bool:
+        with self.jobs_lock:
+            return any(
+                job.kind == kind and job.status in {"queued", "running"}
+                for job in self.jobs.values()
+            )
 
     def stream_state(
         self,

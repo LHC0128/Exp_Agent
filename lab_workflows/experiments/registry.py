@@ -18,6 +18,9 @@ from ..experiment_modules.projection_noise.definition import (
 from ..experiment_modules.mx_y_rf_sensitivity.definition import (
     DEFINITION as MX_Y_RF_SENSITIVITY_DEFINITION,
 )
+from ..experiment_modules.mx_y_rf_frequency_response.definition import (
+    DEFINITION as MX_Y_RF_FREQUENCY_RESPONSE_DEFINITION,
+)
 from ..experiment_modules.mx_y_rf_sensitivity_drift.definition import (
     DEFINITION as MX_Y_RF_SENSITIVITY_DRIFT_DEFINITION,
 )
@@ -44,6 +47,12 @@ from ..experiment_modules.mx_keithley_6221_main_field_calibration.definition imp
 )
 from ..experiment_modules.mx_keithley_6221_optimal_control_rf_sensitivity.definition import (
     DEFINITION as MX_KEITHLEY_6221_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
+)
+from ..experiment_modules.mx_keithley_6221_optimal_control_xyz_balance.definition import (
+    DEFINITION as MX_KEITHLEY_6221_OPTIMAL_CONTROL_XYZ_BALANCE_DEFINITION,
+)
+from ..experiment_modules.mx_keithley_6221_optimal_control_balanced_sensitivity.definition import (
+    DEFINITION as MX_KEITHLEY_6221_OPTIMAL_CONTROL_BALANCED_SENSITIVITY_DEFINITION,
 )
 from ..experiment_modules.mx_main_field_noise_spectrum.definition import (
     DEFINITION as MX_MAIN_FIELD_NOISE_SPECTRUM_DEFINITION,
@@ -176,6 +185,7 @@ _DEFINITIONS = [
         auto_analyze=False,
     ),
     MX_Y_RF_SENSITIVITY_DEFINITION,
+    MX_Y_RF_FREQUENCY_RESPONSE_DEFINITION,
     MX_Y_RF_SENSITIVITY_DRIFT_DEFINITION,
     MX_Z_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
     MX_Z_OPTIMAL_CONTROL_XY_LEAKAGE_RESPONSE_DEFINITION,
@@ -185,6 +195,8 @@ _DEFINITIONS = [
     MX_MAIN_FIELD_CALIBRATION_DEFINITION,
     MX_KEITHLEY_6221_MAIN_FIELD_CALIBRATION_DEFINITION,
     MX_KEITHLEY_6221_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
+    MX_KEITHLEY_6221_OPTIMAL_CONTROL_XYZ_BALANCE_DEFINITION,
+    MX_KEITHLEY_6221_OPTIMAL_CONTROL_BALANCED_SENSITIVITY_DEFINITION,
     MX_MAIN_FIELD_NOISE_SPECTRUM_DEFINITION,
     MX_MAIN_FIELD_SCOPE_NOISE_SPECTRUM_DEFINITION,
     MX_Z_FIELD_CALIBRATION_DEFINITION,
