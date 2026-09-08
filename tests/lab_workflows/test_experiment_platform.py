@@ -5,7 +5,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 
@@ -60,6 +60,26 @@ class FakeHF2:
 
 
 class ExperimentPlatformTests(unittest.TestCase):
+    def test_typed_cli_forwards_subprocess_output_to_terminal(self):
+        adapter = TypedWorkflowAdapter(
+            "test-cli-progress",
+            "TestCLIProgress",
+            XYDirectAWDCCalibrationParams,
+            "test.progress.module",
+        )
+        with patch(
+            "lab_workflows.experiments.typed.subprocess.Popen"
+        ) as popen, patch("builtins.print") as output:
+            process = popen.return_value
+            process.stdout = iter(["第一条进度\n", "\n", "第二条进度\n"])
+            process.wait.return_value = 0
+
+            adapter._execute("test.progress.module")
+
+        output.assert_has_calls(
+            [call("第一条进度", flush=True), call("第二条进度", flush=True)]
+        )
+
     def test_typed_workflow_module_startup_has_no_circular_import(self):
         root = Path(__file__).resolve().parents[2]
         environment = os.environ.copy()
@@ -81,10 +101,11 @@ class ExperimentPlatformTests(unittest.TestCase):
         self.assertIn("LAB_TYPED_PARAMETERS", output)
         self.assertIn("RuntimeError", output)
 
-    def test_registry_contains_only_43_formal_experiments(self):
+    def test_registry_contains_only_formal_experiments(self):
         definitions = list_experiments()
-        self.assertEqual(len(definitions), 43)
-        self.assertEqual(len({item.id for item in definitions}), 43)
+        self.assertEqual(len(definitions), 55)
+        self.assertEqual(len({item.id for item in definitions}), 55)
+        self.assertIn("scope-capture", {item.id for item in definitions})
         self.assertNotIn("quick-test-scan", {item.id for item in definitions})
 
     def test_new_and_legacy_execution_modes_are_explicit(self):
@@ -107,7 +128,14 @@ class ExperimentPlatformTests(unittest.TestCase):
             "mx-z-field-calibration",
             "mx-z-noise-spectrum",
             "mx-z-optimal-control-xy-leakage-response",
+            "mx-z-optimal-control-xy-noise-spectrum",
             "mx-z-optimal-control-xyz-balance",
+            "mx-z-optimal-control-xy-noise-spectrum",
+            "z-aw-waveform-scope-check",
+            "z-coil-current-frequency-response",
+            "mx-z-current-coupling-calibration",
+            "z-aw-current-waveform-scope-check",
+            "z-aw-closed-loop-waveform-correction",
             "noise-spectrum-xy-demod3-r",
         ):
             self.assertEqual(definitions[experiment_id].execution_mode, "typed_workflow")
@@ -133,6 +161,7 @@ class ExperimentPlatformTests(unittest.TestCase):
             "mx-z-field-calibration",
             "mx-z-noise-spectrum",
             "mx-z-optimal-control-xyz-balance",
+            "z-aw-waveform-scope-check",
             "noise-spectrum-xy-demod3-r",
         ):
             definition = get_experiment(experiment_id)

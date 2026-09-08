@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..common import CancellationToken, ProgressCallback
+from ..experiment_modules.scope_capture.definition import DEFINITION as SCOPE_CAPTURE_DEFINITION
 from ..experiment_modules.noise_spectrum_xy.definition import (
     DEFINITION as NOISE_SPECTRUM_XY_DEFINITION,
 )
@@ -21,17 +22,50 @@ from ..experiment_modules.mx_y_rf_sensitivity.definition import (
 from ..experiment_modules.mx_y_rf_frequency_response.definition import (
     DEFINITION as MX_Y_RF_FREQUENCY_RESPONSE_DEFINITION,
 )
+from ..experiment_modules.mx_y_optimal_control_rf_frequency_response.definition import (
+    DEFINITION as MX_Y_OPTIMAL_CONTROL_RF_FREQUENCY_RESPONSE_DEFINITION,
+)
 from ..experiment_modules.mx_y_rf_sensitivity_drift.definition import (
     DEFINITION as MX_Y_RF_SENSITIVITY_DRIFT_DEFINITION,
 )
 from ..experiment_modules.mx_z_optimal_control_rf_sensitivity.definition import (
     DEFINITION as MX_Z_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
 )
+from ..experiment_modules.mx_z_optimal_control_xy_rf_sensitivity.definition import (
+    DEFINITION as MX_Z_OPTIMAL_CONTROL_XY_RF_SENSITIVITY_DEFINITION,
+)
+from ..experiment_modules.mx_z_optimal_control_xy_noise_spectrum.definition import (
+    DEFINITION as MX_Z_OPTIMAL_CONTROL_XY_NOISE_SPECTRUM_DEFINITION,
+)
 from ..experiment_modules.mx_z_optimal_control_xy_leakage_response.definition import (
     DEFINITION as MX_Z_OPTIMAL_CONTROL_XY_LEAKAGE_RESPONSE_DEFINITION,
 )
+from ..experiment_modules.mx_z_optimal_control_xy_rf_phase_response.definition import (
+    DEFINITION as MX_Z_OPTIMAL_CONTROL_XY_RF_PHASE_RESPONSE_DEFINITION,
+)
 from ..experiment_modules.mx_z_optimal_control_xyz_balance.definition import (
     DEFINITION as MX_Z_OPTIMAL_CONTROL_XYZ_BALANCE_DEFINITION,
+)
+from ..experiment_modules.mx_z_optimal_control_dg4000_bias_xyz_balance.definition import (
+    DEFINITION as MX_Z_OPTIMAL_CONTROL_DG4000_BIAS_XYZ_BALANCE_DEFINITION,
+)
+from ..experiment_modules.z_aw_waveform_scope_check.definition import (
+    DEFINITION as Z_AW_WAVEFORM_SCOPE_CHECK_DEFINITION,
+)
+from ..experiment_modules.z_coil_inductance_frequency_response.definition import (
+    DEFINITION as Z_COIL_INDUCTANCE_FREQUENCY_RESPONSE_DEFINITION,
+)
+from ..experiment_modules.z_coil_current_frequency_response.definition import (
+    DEFINITION as Z_COIL_CURRENT_FREQUENCY_RESPONSE_DEFINITION,
+)
+from ..experiment_modules.mx_z_current_coupling_calibration.definition import (
+    DEFINITION as MX_Z_CURRENT_COUPLING_CALIBRATION_DEFINITION,
+)
+from ..experiment_modules.z_aw_current_waveform_scope_check.definition import (
+    DEFINITION as Z_AW_CURRENT_WAVEFORM_SCOPE_CHECK_DEFINITION,
+)
+from ..experiment_modules.z_aw_closed_loop_waveform_correction.definition import (
+    DEFINITION as Z_AW_CLOSED_LOOP_WAVEFORM_CORRECTION_DEFINITION,
 )
 from ..experiment_modules.mx_y_rf_power_optimization.definition import (
     DEFINITION as MX_Y_RF_POWER_OPTIMIZATION_DEFINITION,
@@ -163,6 +197,7 @@ def _run_static(
 
 
 _DEFINITIONS = [
+    SCOPE_CAPTURE_DEFINITION,
     ExperimentDefinition(
         id="static-sensitivity",
         title="静磁场灵敏度",
@@ -186,10 +221,21 @@ _DEFINITIONS = [
     ),
     MX_Y_RF_SENSITIVITY_DEFINITION,
     MX_Y_RF_FREQUENCY_RESPONSE_DEFINITION,
+    MX_Y_OPTIMAL_CONTROL_RF_FREQUENCY_RESPONSE_DEFINITION,
     MX_Y_RF_SENSITIVITY_DRIFT_DEFINITION,
     MX_Z_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
+    MX_Z_OPTIMAL_CONTROL_XY_RF_SENSITIVITY_DEFINITION,
+    MX_Z_OPTIMAL_CONTROL_XY_NOISE_SPECTRUM_DEFINITION,
     MX_Z_OPTIMAL_CONTROL_XY_LEAKAGE_RESPONSE_DEFINITION,
+    MX_Z_OPTIMAL_CONTROL_XY_RF_PHASE_RESPONSE_DEFINITION,
     MX_Z_OPTIMAL_CONTROL_XYZ_BALANCE_DEFINITION,
+    MX_Z_OPTIMAL_CONTROL_DG4000_BIAS_XYZ_BALANCE_DEFINITION,
+    Z_AW_WAVEFORM_SCOPE_CHECK_DEFINITION,
+    Z_COIL_INDUCTANCE_FREQUENCY_RESPONSE_DEFINITION,
+    Z_COIL_CURRENT_FREQUENCY_RESPONSE_DEFINITION,
+    MX_Z_CURRENT_COUPLING_CALIBRATION_DEFINITION,
+    Z_AW_CURRENT_WAVEFORM_SCOPE_CHECK_DEFINITION,
+    Z_AW_CLOSED_LOOP_WAVEFORM_CORRECTION_DEFINITION,
     MX_Y_RF_POWER_OPTIMIZATION_DEFINITION,
     MX_Y_RF_PROBE_DETUNING_OPTIMIZATION_DEFINITION,
     MX_MAIN_FIELD_CALIBRATION_DEFINITION,

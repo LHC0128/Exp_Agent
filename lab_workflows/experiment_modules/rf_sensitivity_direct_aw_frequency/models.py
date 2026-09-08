@@ -9,6 +9,7 @@ from typing import Literal
 import numpy as np
 
 from ...common import find_project_root
+from ...current_feedback import load_corrected_control_waveform
 from ...experiment_params import ExperimentParams, parameter
 
 
@@ -28,7 +29,9 @@ class RFDirectAWFrequencyParams(ExperimentParams):
     phase_stop: float = parameter(default=360.0, external_name="PHASE_STOP", label="相位扫描终点", unit="deg", group="basic")
     phase_points: int = parameter(default=10, external_name="PHASE_POINTS", label="相位扫描点数", group="basic", minimum=1)
     phase_settle_time: float = parameter(default=0.1, external_name="PHASE_SETTLE_TIME", label="相位稳定等待", unit="s", group="advanced", minimum=0)
+    arb_waveform_source: Literal["csv", "corrected_run"] = parameter(default="corrected_run", external_name="ARB_WAVEFORM_SOURCE", label="任意波来源", group="basic", options=(("csv", "实验 CSV 波形"), ("corrected_run", "闭环冻结波形")))
     arb_waveform_file: str = parameter(default="optimal_control_waveform.csv", external_name="ARB_WAVEFORM_FILE", label="任意波波形文件", group="basic", options_from_directory="experiments", options_pattern="*.csv")
+    corrected_control_source_run: str = parameter(default="obbv5", external_name="CORRECTED_CONTROL_SOURCE_RUN", label="闭环校正运行", group="basic", options_from_directory="data/Z_AW_Closed_Loop_Waveform_Correction", options_pattern="*", options_include_directories=True, description="任意波来源为闭环冻结波形时选择闭环实验结果。")
     a_env_freq: float = parameter(default=250.0, external_name="A_ENV_FREQ", label="包络重复频率", unit="Hz", group="basic", minimum=0.001)
     xy_ctrl_k_hz_per_v: float = parameter(default=15076.0, external_name="XY_CTRL_K_HZ_PER_V", label="DirectAW 标定斜率 K", unit="Hz/V", group="advanced", minimum=0.001)
     xy_ctrl_b_hz: float = parameter(default=-218.0, external_name="XY_CTRL_B_HZ", label="DirectAW 标定截距 B", unit="Hz", group="advanced")
@@ -94,16 +97,23 @@ class RFDirectAWFrequencyParams(ExperimentParams):
         trigger_high = self.xy_trigger_offset + self.xy_trigger_amplitude / 2
         if trigger_low < -10 or trigger_high > 10:
             errors.append(f"XY 外触发电平 [{trigger_low}, {trigger_high}] V 超出 ±10 V")
-        path = find_project_root() / "experiments" / self.arb_waveform_file
-        if not path.is_file():
-            errors.append(f"任意波文件不存在: {path}")
-        else:
+        root = find_project_root()
+        if self.arb_waveform_source == "corrected_run":
             try:
-                data = np.loadtxt(path, delimiter=",", skiprows=1)
-                if data.ndim != 2 or data.shape[1] < 2:
-                    errors.append(f"任意波文件至少需要两列: {path.name}")
-                elif data.size == 0 or not np.all(np.isfinite(data)):
-                    errors.append(f"任意波文件包含无效数据: {path.name}")
-            except (OSError, ValueError) as exc:
-                errors.append(f"任意波文件无法读取: {path.name}: {exc}")
+                load_corrected_control_waveform(root, self.corrected_control_source_run)
+            except (OSError, TypeError, ValueError, KeyError) as exc:
+                errors.append(str(exc))
+        else:
+            path = root / "experiments" / self.arb_waveform_file
+            if not path.is_file():
+                errors.append(f"任意波文件不存在: {path}")
+            else:
+                try:
+                    data = np.loadtxt(path, delimiter=",", skiprows=1)
+                    if data.ndim != 2 or data.shape[1] < 2:
+                        errors.append(f"任意波文件至少需要两列: {path.name}")
+                    elif data.size == 0 or not np.all(np.isfinite(data)):
+                        errors.append(f"任意波文件包含无效数据: {path.name}")
+                except (OSError, ValueError) as exc:
+                    errors.append(f"任意波文件无法读取: {path.name}: {exc}")
         return errors

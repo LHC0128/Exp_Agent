@@ -74,8 +74,9 @@ def test_default_control_requires_100ma_range_and_reports_margin() -> None:
         applied.maximum_ma,
     )
     assert result.satisfies
-    assert result.required_peak_ma == pytest.approx(89.9360265007)
-    assert result.margin_ma == pytest.approx(10.0639734993)
+    # YAML 默认 CONTROL_VERSION=v4 的电流包络峰值。
+    assert result.required_peak_ma == pytest.approx(38.507712625070454)
+    assert result.margin_ma == pytest.approx(61.492287374929546)
     assert result.recommended_range_ma == pytest.approx(100.0)
 
     params.keithley_current_range_ma = 20.0
@@ -245,7 +246,19 @@ def test_y_rf_frequency_is_visible_and_editable() -> None:
 
 
 def test_derive_external_follows_control_version() -> None:
-    derived_v2 = DEFINITION.derive({})
+    # 默认 CONTROL_VERSION 与 YAML 一致（v4）。
+    derived_default = DEFINITION.derive({})
+    theory_v4 = load_theory_control(
+        Path(r"D:\Code\theory_agent\simulate\results\oc_sens"), "v4"
+    )
+    assert derived_default["TRIGGER_FREQUENCY_HZ"] == pytest.approx(
+        theory_v4.repeat_frequency_hz
+    )
+    assert derived_default["Y_RF_FREQUENCY_HZ"] == pytest.approx(
+        theory_v4.theory_rf_frequency_hz
+    )
+    # 显式切换到 v2 时派生值跟随 v2 理论。
+    derived_v2 = DEFINITION.derive({"CONTROL_VERSION": "v2"})
     theory_v2 = load_theory_control(
         Path(r"D:\Code\theory_agent\simulate\results\oc_sens"), "v2"
     )
@@ -253,9 +266,6 @@ def test_derive_external_follows_control_version() -> None:
         theory_v2.repeat_frequency_hz
     )
     derived_v4 = DEFINITION.derive({"CONTROL_VERSION": "v4"})
-    theory_v4 = load_theory_control(
-        Path(r"D:\Code\theory_agent\simulate\results\oc_sens"), "v4"
-    )
     assert derived_v4["TRIGGER_FREQUENCY_HZ"] == pytest.approx(
         theory_v4.repeat_frequency_hz
     )

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { api } from "../api";
 import { CurrentSourceEditor } from "../components/instruments/CurrentSourceEditor";
@@ -110,6 +111,7 @@ function DeviceControlView() {
             <header><div><h3>{target.label}</h3><small>{target.model} · {endpoint}</small></div><button onClick={() => void readSnapshot(target)} disabled={readingAll || !!busyKey || hardwareBusy}>{busyKey === target.mapping_key ? "读取中…" : "读取"}</button></header>
             {target.safety.min != null && target.safety.max != null && <div className="target-limit">{target.safety.min} ～ {target.safety.max} {target.kind === "current_source" ? "mA" : target.kind === "tec" ? "°C" : "V"}</div>}
             {targetErrors[target.mapping_key] && <div className="target-read-error">{targetErrors[target.mapping_key]}</div>}
+            {target.mapping_key === "Z_magnetic_field" && <Link to="/tools#z-arbitrary-control">Z 任意波控制：预览、加载与触发 →</Link>}
             {readAt[target.mapping_key] && <small className="read-time">{new Date(readAt[target.mapping_key]).toLocaleTimeString()}</small>}
             {snapshot ? <div className="target-editor">{editorFor(target, snapshot)}</div> : <div className="target-unread">未读取</div>}
           </article>;

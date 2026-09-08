@@ -122,7 +122,7 @@ class InstrumentControlTests(unittest.TestCase):
             {"shape": "DC", "offset": 0.35, "frequency": 1000.0, "amplitude": 2.0},
         )
         instrument.set_shape.assert_called_once_with("DC", 1)
-        # DG4162 实测 DC 波形下 VOLT:OFFS 写入无效，必须用 HIGH/LOW 三步写入
+        # DC 设置统一走型号驱动的专用命令路径。
         instrument.set_dc_voltage.assert_called_once_with(0.35, 1)
         instrument.set_offset.assert_not_called()
         instrument.setup_dc.assert_not_called()
@@ -131,6 +131,39 @@ class InstrumentControlTests(unittest.TestCase):
         instrument.set_amplitude.assert_not_called()
         # 不得擅自改变输出开关
         instrument.set_output.assert_not_called()
+
+    def test_dg4000_dc_snapshot_reads_instrument_reported_setting(self):
+        instrument = MagicMock()
+        instrument.get_shape.return_value = "DC"
+        instrument.get_dc_voltage.return_value = 0.35
+        instrument.get_frequency.return_value = 0.0
+        instrument.get_amplitude.return_value = 0.0
+        instrument.get_phase_adjust.return_value = 0.0
+        instrument.get_voltage_unit.return_value = "VPP"
+        instrument.get_output_load.return_value = "INF"
+        instrument.get_output.return_value = True
+        instrument.get_mod_state.return_value = False
+        instrument.get_mod_type.return_value = ""
+        instrument.get_burst_state.return_value = False
+        instrument.get_burst_mode.return_value = "TRIGgered"
+        instrument.get_burst_ncycles.return_value = 1
+        instrument.get_burst_phase.return_value = 0.0
+        instrument.get_burst_period.return_value = 1.0
+        instrument.get_burst_delay.return_value = 0.0
+        instrument.get_burst_trigger_source.return_value = "INTernal"
+        instrument.get_burst_trigger_slope.return_value = "POSitive"
+        channel = SimpleNamespace(
+            number=1,
+            mapping_key="Z_magnetic_field",
+            label="Z方向磁场",
+            read_only=False,
+        )
+
+        state = _read_generator_channel(instrument, "DG4000", channel)
+
+        self.assertEqual(state["offset"], 0.35)
+        instrument.get_dc_voltage.assert_called_once_with(1)
+        instrument.get_offset.assert_not_called()
 
     def test_basic_waveform_dc_keeps_dg900_setup_dc_path(self):
         instrument = MagicMock()

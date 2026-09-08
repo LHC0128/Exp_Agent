@@ -119,9 +119,13 @@ export function JobView({ job, onUpdate }: { job?: Job; onUpdate: JobUpdate }) {
         const events = current.events.some((event) => event.index === payload.index)
           ? current.events
           : [...current.events, payload].sort((left, right) => left.index - right.index);
+        // 排队事件不能把任务状态无条件改成 running：
+        // queued 事件期间后端状态仍是 queued，详情页、全局横幅与
+        // SSE 必须保持一致；其余进度事件说明任务已真正开始运行。
+        const nextStatus = payload.stage === "queued" ? "queued" : "running";
         return {
           ...current,
-          status: "running",
+          status: nextStatus,
           stage: payload.stage,
           message: payload.message,
           percent: payload.percent ?? current.percent,

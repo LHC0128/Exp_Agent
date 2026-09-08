@@ -380,6 +380,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tools/z-arbitrary-control/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Z Arbitrary Sources */
+        get: operations["z_arbitrary_sources_api_tools_z_arbitrary_control_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tools/z-arbitrary-control/preview/{run_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Z Arbitrary Preview */
+        get: operations["z_arbitrary_preview_api_tools_z_arbitrary_control_preview__run_name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tools/z-arbitrary-control/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Z Arbitrary State */
+        get: operations["z_arbitrary_state_api_tools_z_arbitrary_control_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tools/z-arbitrary-control/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Z Arbitrary Action */
+        post: operations["z_arbitrary_action_api_tools_z_arbitrary_control_actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tools/keithley-waveform-convert": {
         parameters: {
             query?: never;
@@ -391,7 +459,7 @@ export interface paths {
         put?: never;
         /**
          * Keithley Waveform Convert
-         * @description ������ӿڣ����� 6221 ���Ⲩ��궨�ı�������������磬������Ӳ����
+         * @description 纯计算接口：解析 6221 任意波与标定文本并换算电流包络，不连接硬件。
          */
         post: operations["keithley_waveform_convert_api_tools_keithley_waveform_convert_post"];
         delete?: never;
@@ -685,6 +753,26 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{experiment_id}/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Run
+         * @description 选定运行目录的永久删除，与 GUI 采集/分析任务注册原子互斥。
+         */
+        delete: operations["delete_run_api_runs__experiment_id___run_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1759,6 +1847,142 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** ZArbitraryActionBody */
+        ZArbitraryActionBody: {
+            /** Device Library Revision */
+            device_library_revision: string;
+            /** Physical Mapping Revision */
+            physical_mapping_revision: string;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "configure" | "configure_and_start" | "stop";
+            /** Run Name */
+            run_name?: string | null;
+            /** Waveform Sha256 */
+            waveform_sha256?: string | null;
+            settings?: components["schemas"]["ZArbitrarySettingsBody"];
+        };
+        /** ZArbitraryApplied */
+        ZArbitraryApplied: {
+            /** Revisions */
+            revisions: string[];
+            /** Link Trigger */
+            link_trigger: boolean;
+            source: components["schemas"]["ZArbitrarySourceSummary"] | null;
+            settings: components["schemas"]["ZArbitrarySettingsBody"] | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "enabled" | "off" | "unknown";
+            /** Updated At */
+            updated_at: string;
+            /** Snapshots */
+            snapshots: components["schemas"]["ControlTargetResponse"][];
+        };
+        /** ZArbitraryPreview */
+        ZArbitraryPreview: {
+            /** Run Name */
+            run_name: string;
+            /** Waveform Sha256 */
+            waveform_sha256: string;
+            /** Points */
+            points: number;
+            /** Repeat Frequency Hz */
+            repeat_frequency_hz: number;
+            /** Period S */
+            period_s: number;
+            /** Amplitude Vpp */
+            amplitude_vpp: number;
+            /** Offset V */
+            offset_v: number;
+            /** Minimum V */
+            minimum_v: number;
+            /** Maximum V */
+            maximum_v: number;
+            /** Time S */
+            time_s: number[];
+            /** Voltage V */
+            voltage_v: number[];
+        };
+        /** ZArbitrarySettingsBody */
+        ZArbitrarySettingsBody: {
+            /**
+             * Control Burst Phase Deg
+             * @default 0
+             */
+            control_burst_phase_deg: number;
+            /** Output Amplitude Vpp */
+            output_amplitude_vpp?: number | null;
+            /**
+             * Link Trigger
+             * @default false
+             */
+            link_trigger: boolean;
+            /**
+             * Trigger Frequency Hz
+             * @default 100
+             */
+            trigger_frequency_hz: number;
+            /**
+             * Trigger Amplitude Vpp
+             * @default 5
+             */
+            trigger_amplitude_vpp: number;
+            /**
+             * Trigger Offset V
+             * @default 2.5
+             */
+            trigger_offset_v: number;
+            /**
+             * Trigger Duty Percent
+             * @default 50
+             */
+            trigger_duty_percent: number;
+        };
+        /** ZArbitrarySourceItem */
+        ZArbitrarySourceItem: {
+            /** Run Name */
+            run_name: string;
+            summary: components["schemas"]["ZArbitrarySourceSummary"] | null;
+            /** Error */
+            error: string | null;
+        };
+        /** ZArbitrarySourceSummary */
+        ZArbitrarySourceSummary: {
+            /** Run Name */
+            run_name: string;
+            /** Waveform Sha256 */
+            waveform_sha256: string;
+            /** Points */
+            points: number;
+            /** Repeat Frequency Hz */
+            repeat_frequency_hz: number;
+            /** Period S */
+            period_s: number;
+            /** Amplitude Vpp */
+            amplitude_vpp: number;
+            /** Offset V */
+            offset_v: number;
+            /** Minimum V */
+            minimum_v: number;
+            /** Maximum V */
+            maximum_v: number;
+        };
+        /** ZArbitraryStatus */
+        ZArbitraryStatus: {
+            /** Device Library Revision */
+            device_library_revision: string;
+            /** Physical Mapping Revision */
+            physical_mapping_revision: string;
+            /** Targets */
+            targets: components["schemas"]["ControlTarget"][];
+            /** Source Known */
+            source_known: boolean;
+            last_applied: components["schemas"]["ZArbitraryApplied"] | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -2492,6 +2716,110 @@ export interface operations {
             };
         };
     };
+    z_arbitrary_sources_api_tools_z_arbitrary_control_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZArbitrarySourceItem"][];
+                };
+            };
+        };
+    };
+    z_arbitrary_preview_api_tools_z_arbitrary_control_preview__run_name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZArbitraryPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    z_arbitrary_state_api_tools_z_arbitrary_control_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZArbitraryStatus"];
+                };
+            };
+        };
+    };
+    z_arbitrary_action_api_tools_z_arbitrary_control_actions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ZArbitraryActionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     keithley_waveform_convert_api_tools_keithley_waveform_convert_post: {
         parameters: {
             query?: never;
@@ -3062,6 +3390,38 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_run_api_runs__experiment_id___run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                run_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

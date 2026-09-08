@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import shutil
 from types import SimpleNamespace
@@ -137,6 +138,30 @@ def test_invalid_control_version_is_rejected() -> None:
     params = MxZOptimalControlRFParams(control_version="../v1")
     errors = params.validate()
     assert any("vN 格式" in error for error in errors)
+
+
+def test_noise_rf_defaults_and_gui_schema_preserve_legacy_behavior() -> None:
+    schema = {field["name"]: field for field in DEFINITION.schema_provider()["fields"]}
+    assert schema["NOISE_RF_ENABLED"]["default"] is False
+    assert schema["NOISE_RF_AMPLITUDE_VPP"]["default"] == pytest.approx(0.002)
+    assert schema["NOISE_RF_AMPLITUDE_VPP"]["unit"] == "Vpp"
+    params = MxZOptimalControlRFParams.from_external({}, schema_version=4)
+    assert params.noise_rf_enabled is False
+    assert params.noise_rf_amplitude_vpp == pytest.approx(0.002)
+    configured = MxZOptimalControlRFParams.from_external(
+        {"NOISE_RF_ENABLED": True, "NOISE_RF_AMPLITUDE_VPP": 0.013},
+        schema_version=4,
+    )
+    assert configured.noise_rf_enabled is True
+    assert configured.noise_rf_amplitude_vpp == pytest.approx(0.013)
+    for experiment_id in (
+        "mx-z-optimal-control-xy-rf-sensitivity",
+        "mx-z-optimal-control-xy-noise-spectrum",
+        "mx-y-optimal-control-rf-frequency-response",
+    ):
+        names = {field["name"] for field in get_experiment(experiment_id).schema()["fields"]}
+        assert "NOISE_RF_ENABLED" not in names
+        assert "NOISE_RF_AMPLITUDE_VPP" not in names
 
 
 def test_zero_phase_cal_rf_amplitude_enables_residual_mode() -> None:
@@ -696,6 +721,105 @@ def test_y_rf_offset_envelope_is_validated() -> None:
     assert any("Y RF 输出上限" in error for error in errors)
 
 
+@pytest.mark.parametrize(
+    ("enabled", "amplitude_vpp", "offset_v"),
+    [(False, 0.013, 0.008), (False, 0.013, 0.0),
+     (True, 0.013, 0.008), (True, 0.0, 0.008)],
+)
+def test_control_noise_sets_rf_and_saves_actual_state(
+    local_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    enabled: bool,
+    amplitude_vpp: float,
+    offset_v: float,
+) -> None:
+    """真实噪声循环配合模拟仪器验证输出、触发相位、温控时序和落盘。"""
+    from lab_workflows.experiment_modules.mx_y_rf_sensitivity import workflow as shared
+    from lab_workflows.experiment_modules.mx_z_optimal_control_rf_sensitivity import workflow
+
+    params = MxZOptimalControlRFParams(
+        noise_rf_enabled=enabled,
+        noise_rf_amplitude_vpp=amplitude_vpp,
+        noise_n_avg=2,
+        y_rf_offset_v=offset_v,
+    )
+    rf = _FakeDG()
+    hf2 = SimpleNamespace(
+        get_double=lambda path: 17.0,
+        demod_path=lambda index: f"/dev/demods/{index}",
+    )
+    config: dict[str, object] = {}
+    run_dir = SimpleNamespace(raw=local_tmp_path, update_config=lambda **kw: config.update(kw))
+    monkeypatch.setattr(shared.demod, "configure_demodulator", lambda *args: 4096.0)
+    monkeypatch.setattr(shared, "set_temperature_switch", lambda *args, **kw: None)
+    waits: list[float] = []
+    monkeypatch.setattr(shared, "_sleep", waits.append)
+    monkeypatch.setattr(shared, "_uncancellable_sleep", lambda duration: None)
+    actual_amplitude = amplitude_vpp if enabled else 0.0
+    rf_on = actual_amplitude > 0.0
+
+    def acquire(*args, **kwargs):
+        assert rf.calls[-1] == ("output", 2, bool(rf_on or offset_v != 0.0))
+        if rf_on:
+            assert ("amplitude", 2, actual_amplitude) in rf.calls
+            assert ("burst_phase", 2, 37.0) in rf.calls
+            assert not any(call[0] in {"sine", "dc", "burst_state"} for call in rf.calls)
+        else:
+            assert ("dc", 2, offset_v) in rf.calls
+            assert not any(call[0] in {"amplitude", "sine"} for call in rf.calls)
+        return {"time_s": np.arange(16) / 4096.0, "r": np.ones(16)}
+
+    monkeypatch.setattr(shared, "acquire_r", acquire)
+    rate = workflow._acquire_control_noise(
+        params, run_dir, {"xy_field": rf, "hf2": hf2, "temp_switch": object()},
+        {"y_rf": 2, "temp_switch": 1}, "dev", 397.0,
+    )
+    assert rate == pytest.approx(4096.0)
+    assert config["noise_rf"]["y_rf_enabled"] is rf_on
+    assert config["noise_rf"]["y_rf_amplitude_vpp"] == pytest.approx(actual_amplitude)
+    for index in range(2):
+        with np.load(local_tmp_path / f"noise_{index:03d}.npz") as data:
+            assert bool(data["y_rf_enabled"]) is rf_on
+            assert data["y_rf_amplitude_vpp"] == pytest.approx(actual_amplitude)
+            assert data["y_rf_dc_v"] == pytest.approx(offset_v)
+            assert data["y_rf_burst_phase_deg"] == pytest.approx(37.0)
+            assert data["y_rf_frequency_hz"] == pytest.approx(params.y_rf_frequency_hz)
+            assert bool(data["y_rf_output_on"]) is bool(rf_on or offset_v != 0.0)
+            assert data["actual_rate_sa_s"] == pytest.approx(4096.0)
+    output = capsys.readouterr().out
+    assert ("Y RF 开启噪声" if rf_on else "零 Y RF 噪声") in output
+    if rf_on:
+        assert "零 Y RF 噪声" not in output
+        assert waits.count(params.response_settle_time_s) >= 2
+
+
+@pytest.mark.parametrize("amplitude", [-0.001, 2.1, float("nan"), float("inf")])
+def test_noise_rf_rejects_invalid_amplitude(amplitude: float) -> None:
+    params = MxZOptimalControlRFParams(
+        noise_rf_enabled=True, noise_rf_amplitude_vpp=amplitude,
+    )
+    assert any("NOISE_RF_AMPLITUDE_VPP" in error for error in params.validate())
+
+
+def test_noise_rf_envelope_is_checked_before_instrument_commands(
+    local_tmp_path: Path,
+) -> None:
+    from lab_workflows.experiment_modules.mx_z_optimal_control_rf_sensitivity import workflow
+
+    params = MxZOptimalControlRFParams(
+        noise_rf_enabled=True, noise_rf_amplitude_vpp=0.4, y_rf_offset_v=9.9,
+    )
+    assert any("Y RF 输出上限" in error for error in params.validate())
+    rf = _FakeDG()
+    with pytest.raises(ValueError, match="Y_magnetic_field"):
+        workflow._acquire_control_noise(
+            params, SimpleNamespace(raw=local_tmp_path), {"xy_field": rf},
+            {"y_rf": 2}, "dev", 37.0,
+        )
+    assert rf.calls == []
+
+
 class _FakeGS200:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
@@ -1043,6 +1167,7 @@ def test_residual_phase_analysis_does_not_require_rf_scan_files(
 
 def test_offline_analysis_adds_phase_and_control_results(
     local_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run_dir = local_tmp_path / "run"
     raw_dir = run_dir / "raw"
@@ -1114,6 +1239,27 @@ def test_offline_analysis_adds_phase_and_control_results(
         encoding="utf-8",
     )
 
+    from lab_workflows.experiment_modules.mx_y_rf_sensitivity import (
+        point_analysis as shared_point_analysis,
+    )
+
+    original_fit = shared_point_analysis.fit_absolute_dispersive_response
+    captured: dict[str, object] = {}
+
+    def capture_fit(*args, **kwargs):
+        captured["relative_gamma_uncertainty_max"] = kwargs.get(
+            "relative_gamma_uncertainty_max"
+        )
+        captured["initial_center"] = kwargs.get("initial_center")
+        fitted = original_fit(*args, **kwargs)
+        return replace(fitted, relative_gamma_uncertainty=0.75)
+
+    monkeypatch.setattr(
+        shared_point_analysis,
+        "fit_absolute_dispersive_response",
+        capture_fit,
+    )
+
     result = analyze(run_dir)
 
     assert result["experiment_id"] == (
@@ -1131,3 +1277,73 @@ def test_offline_analysis_adds_phase_and_control_results(
     assert (results_dir / "full_analysis.png").is_file()
     assert (results_dir / "full_analysis_zero_point.png").is_file()
     assert "phase_calibration.png" in result["files"]
+    assert captured["relative_gamma_uncertainty_max"] is None
+    assert captured["initial_center"] == pytest.approx(0.0)
+    assert result["response_fit"]["relative_gamma_uncertainty"] == pytest.approx(
+        0.75
+    )
+    with np.load(results_dir / "response_fit.npz") as response_fit:
+        assert response_fit["fit_uncertainties"].shape == (4,)
+
+
+def test_offline_analysis_saves_measured_response_when_fit_fails(
+    local_tmp_path: Path,
+) -> None:
+    run_dir = local_tmp_path / "fit_failed_run"
+    raw_dir = run_dir / "raw"
+    results_dir = run_dir / "results"
+    raw_dir.mkdir(parents=True)
+    results_dir.mkdir()
+    params = MxZOptimalControlRFParams(noise_n_avg=1)
+    (run_dir / "experiment_config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "experiment_id": "mx-z-optimal-control-rf-sensitivity",
+                "schema_version": params.schema_version,
+                "parameters": params.to_external(),
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    phase = np.arange(0.0, 360.0, 10.0)
+    np.savez(
+        raw_dir / "phase_scan.npz",
+        y_rf_burst_phase_deg=phase,
+        r_mean_v=np.full_like(phase, 0.1),
+        r_std_v=np.full_like(phase, 1e-4),
+    )
+    (results_dir / "phase_calibration.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "success": True,
+                "selected_y_rf_phase_deg": 0.0,
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    amplitude = np.linspace(-0.1, 0.1, 21)
+    np.savez(
+        raw_dir / "amplitude_scan.npz",
+        signed_amplitude_vpp=amplitude,
+        r_mean_v=np.full_like(amplitude, 0.0034),
+        r_std_v=np.full_like(amplitude, 1e-4),
+    )
+
+    with pytest.raises(RuntimeError, match="幅度色散拟合质量不合格"):
+        analyze(run_dir)
+
+    measured_plot = results_dir / "amplitude_response.png"
+    assert measured_plot.is_file()
+    assert measured_plot.stat().st_size > 0
+    payload = yaml.safe_load(
+        (results_dir / "analysis.yaml").read_text(encoding="utf-8")
+    )
+    assert payload["success"] is False
+    assert payload["files"] == ["amplitude_response.png"]
+    assert payload["plot_profile"] == "paper"

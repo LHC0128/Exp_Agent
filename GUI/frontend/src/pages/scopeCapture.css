@@ -1,0 +1,52 @@
+.scope-page { min-width: 0; letter-spacing: 0; }
+.scope-heading { display: flex; gap: 18px; align-items: center; margin-bottom: 22px; }
+.scope-heading h1 { font-size: 26px; margin: 0; }
+.scope-heading span, .scope-muted { color: #6c7b7d; font-size: 12px; }
+.scope-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 290px; border-top: 1px solid #d3dddd; background: #fff; }
+.scope-display, .scope-controls { min-width: 0; }
+.scope-controls { border-left: 1px solid #d3dddd; }
+.scope-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #e2e8e8; }
+.scope-toolbar > span { margin-left: auto; color: #738080; font-size: 12px; }
+.scope-modes { display: inline-flex; border: 1px solid #cbd5d5; border-radius: 5px; overflow: hidden; }
+.scope-modes button { padding: 7px 20px; border-radius: 0; background: #fff; color: #536564; font-size: 13px; }
+.scope-modes button[aria-pressed="true"] { color: #fff; background: #185d57; }
+.scope-axis-scales { display: inline-flex; align-items: center; gap: 10px; color: #536564; font-size: 12px; }
+.scope-axis-scales label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.scope-axis-scales input { width: 14px; height: 14px; margin: 0; accent-color: #185d57; }
+.scope-page button:hover { transform: none; }
+.scope-page .scope-icon { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; background: transparent; color: #526664; border-radius: 4px; flex-shrink: 0; }
+.scope-page .scope-icon:hover { background: #eaf1f0; }
+.scope-page .scope-icon.danger { color: #b54349; margin-top: 0; }
+.scope-plot-wrap { position: relative; }
+.scope-chart { width: 100%; height: 470px; }
+.scope-empty { position: absolute; top: 46%; left: 0; width: 100%; text-align: center; color: #899596; font-size: 13px; pointer-events: none; }
+.scope-readout { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; border-top: 1px solid #e2e8e8; color: #768585; font-size: 11px; }
+.scope-readout b { display: block; margin-top: 5px; font-weight: 600; color: #2b4142; font-variant-numeric: tabular-nums; }
+.scope-settings, .scope-history { padding: 16px; }
+.scope-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.scope-section-head h2 { font-size: 15px; margin: 0; }
+.scope-section-head small { font-size: 11px; font-weight: 400; color: #7e8c8a; }
+.scope-settings label { display: grid; gap: 7px; font-size: 12px; color: #60716e; margin-bottom: 13px; }
+.scope-settings input, .scope-settings select { width: 100%; min-width: 0; border: 1px solid #ced9d6; border-radius: 4px; padding: 9px; background: white; color: #243d38; }
+.scope-settings input[type="checkbox"] { width: 17px; height: 17px; padding: 0; accent-color: #185d57; }
+.scope-start { width: 100%; display: flex; justify-content: center; gap: 8px; align-items: center; margin-top: 16px; border-radius: 5px; }
+.scope-history { border-top: 1px solid #d3dddd; }
+.scope-history-list { max-height: 320px; overflow-y: auto; }
+.scope-history-row { display: flex; align-items: center; gap: 7px; padding: 9px 0; border-bottom: 1px solid #e9eeee; }
+.scope-history-row input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: #185d57; flex-shrink: 0; }
+.scope-history-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 11px; color: #3d504e; }
+.scope-history-name small { display: block; color: #88948f; margin-top: 3px; }
+.scope-history-row input[type="color"] { width: 22px; height: 24px; padding: 0; border: 0; background: transparent; cursor: pointer; flex-shrink: 0; }
+.scope-display > .job { margin: 14px; border-radius: 5px; }
+.scope-page .job-top { flex-wrap: wrap; gap: 8px; }
+.scope-page .job-top strong { min-width: 0; overflow-wrap: anywhere; flex-basis: 65%; }
+.scope-page .job .alert, .scope-page .log { overflow-wrap: anywhere; }
+.scope-readout > span { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .scope-toolbar { flex-wrap: wrap; }
+  .scope-toolbar > span { font-size: 10px; }
+  .scope-heading span { display: block; }
+  .scope-page .job { padding: 12px; margin: 8px; }
+}
+@media (max-width: 1150px) { .scope-workspace { grid-template-columns: minmax(0, 1fr); } .scope-controls { border-left: 0; border-top: 1px solid #d3dddd; display: grid; grid-template-columns: 1fr 1fr; } .scope-history { border-top: 0; border-left: 1px solid #d3dddd; } }
+@media (max-width: 620px) { .scope-controls { grid-template-columns: 1fr; } .scope-history { border-left: 0; border-top: 1px solid #d3dddd; } .scope-chart { height: 340px; } .scope-heading { flex-wrap: wrap; gap: 8px; } .scope-heading h1 { font-size: 22px; } .scope-toolbar { padding: 10px; gap: 8px; } .scope-modes button { padding: 7px 14px; } }

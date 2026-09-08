@@ -1,7 +1,7 @@
 import logging
 import math
 import time
-from typing import List
+from typing import Callable, List
 
 from sds_acquisition.config import (
     AcquisitionConfig,
@@ -23,8 +23,12 @@ logger = logging.getLogger(__name__)
 class SDSAcquisition:
     """采集编排器：配置仪器 → 触发 → 读取波形 → 数据转换."""
 
-    def __init__(self, instrument: SDSInstrument):
+    def __init__(self, instrument: SDSInstrument, *,
+                 check_cancelled: Callable[[], None] | None = None,
+                 maximum_points: int | None = None):
         self._inst = instrument
+        self._check_cancelled = check_cancelled or (lambda: None)
+        self._maximum_points = maximum_points
 
     # ------------------------------------------------------------------
     # 完整配置应用
@@ -97,6 +101,7 @@ class SDSAcquisition:
         horiz_divisions: int = 10,
         trim_points: int = 0,
     ) -> AcquisitionResult:
+        self._check_cancelled()
         source = f"C{channel}"
         # Siglent 官方分片读取顺序先复位起点，再选择源并读取 preamble。
         # 起点会跨查询保留；若沿用上一轮的非零起点，整帧 POINT 设置可能
@@ -118,13 +123,19 @@ class SDSAcquisition:
 
         # 分片读取处理深度存储
         total_points = preamble.point_num
+        if total_points < 0 or (self._maximum_points is not None and total_points > self._maximum_points):
+            raise ValueError(f"波形点数 {total_points} 超出本次允许范围")
         max_slice = self._inst.get_waveform_max_points()
+        if max_slice <= 0:
+            raise ValueError("示波器分片点数上限无效")
 
         if total_points > max_slice:
             raw_data = self._read_multi_slice(total_points, max_slice)
         else:
             self._inst.set_waveform_points(total_points)
             raw_data = self._inst.get_waveform_data()
+
+        self._check_cancelled()
 
         # 二进制 → ADC 码
         adc_codes = extract_waveform_data(raw_data, width)
@@ -170,8 +181,10 @@ class SDSAcquisition:
         num_slices = math.ceil(total_points / max_slice)
         accumulated = b""
         for i in range(num_slices):
+            self._check_cancelled()
             start = int(i * max_slice)
             self._inst.set_waveform_start(start)
+            self._inst.set_waveform_points(min(max_slice, total_points - start))
             chunk = self._inst.get_waveform_data()
             accumulated += chunk
             logger.debug("分片 %d/%d: start=%d, 读取 %d bytes",

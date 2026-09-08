@@ -16,7 +16,6 @@ from lockin_amplifier import (
 )
 
 from ..common import validate_safety_limit
-from .arbitrary import ArbitraryWaveformSpec, upload_arbitrary
 from .temperature import configure_temperature_control, set_temperature_switch
 
 
@@ -113,6 +112,57 @@ def save_optimal_control_source_snapshot(
     ]
 
 
+def save_corrected_control_source_snapshot(
+    raw_dir: Path,
+    corrected: Any,
+    theory: Any,
+    applied: Any,
+) -> list[str]:
+    """保存闭环冻结波形、来源标定信息和实际下发波形。"""
+    waveform_copy = raw_dir / "source_corrected_control_waveform.npz"
+    shutil.copy2(corrected.waveform_path, waveform_copy)
+    manifest = {
+        "control_waveform_source": "corrected_run",
+        "corrected_run": corrected.run_name,
+        "waveform_sha256": corrected.waveform_sha256,
+        "current_coupling_calibration": {
+            "source_run": corrected.coupling_calibration_run,
+            "analysis_sha256": corrected.coupling_calibration_sha256,
+        },
+        "current_frequency_response": {
+            "source_run": corrected.frequency_response_run,
+            "frequency_response_sha256": corrected.frequency_response_sha256,
+        },
+        "applied_control": {
+            "repeat_frequency_hz": theory.repeat_frequency_hz,
+            "amplitude_vpp": applied.amplitude_vpp,
+            "offset_v": applied.offset_v,
+            "minimum_v": applied.minimum_v,
+            "maximum_v": applied.maximum_v,
+            "points": int(theory.time_s.size),
+        },
+    }
+    (raw_dir / "source_manifest.yaml").write_text(
+        yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    np.savez(
+        raw_dir / "applied_control_waveform.npz",
+        time_s=theory.time_s,
+        omega_ctrl_hz=theory.omega_ctrl_hz,
+        voltage_v=applied.voltage_v,
+        normalized=applied.normalized,
+        repeat_frequency_hz=np.float64(theory.repeat_frequency_hz),
+        amplitude_vpp=np.float64(applied.amplitude_vpp),
+        offset_v=np.float64(applied.offset_v),
+    )
+    return [
+        "raw/source_corrected_control_waveform.npz",
+        "raw/source_manifest.yaml",
+        "raw/applied_control_waveform.npz",
+    ]
+
+
 def configure_optimal_control_trigger(
     params: Any,
     device: Any,
@@ -120,23 +170,10 @@ def configure_optimal_control_trigger(
     *,
     output: bool,
 ) -> None:
-    """配置 Time_sequence_2 共同触发方波。"""
-    low = params.trigger_offset_v - params.trigger_amplitude_vpp / 2.0
-    high = params.trigger_offset_v + params.trigger_amplitude_vpp / 2.0
-    validate_safety_limit("Time_sequence_2", low)
-    validate_safety_limit("Time_sequence_2", high)
-    device.set_burst_state(False, channel=channel)
-    device.set_mod_state(False, channel=channel)
-    device.setup_square(
-        freq=params.trigger_frequency_hz,
-        amplitude=params.trigger_amplitude_vpp,
-        offset=params.trigger_offset_v,
-        dcycle=params.trigger_duty_percent,
-        phase=0.0,
-        channel=channel,
-    )
-    device.phase_init(channel=channel)
-    device.set_output(bool(output), channel=channel)
+    """兼容入口：复用独立任意波模块的共同触发配置。"""
+    from ..z_arbitrary_control import configure_optimal_control_trigger as configure
+
+    configure(params, device, channel, output=output)
 
 
 def configure_z_optimal_control_output(
@@ -146,42 +183,10 @@ def configure_z_optimal_control_output(
     theory: Any,
     applied: Any,
 ) -> None:
-    """上传并配置由外部下降沿启动的 Z 最优控制波形。"""
-    for value in (
-        applied.minimum_v,
-        applied.maximum_v,
-        applied.output_minimum_v,
-        applied.output_maximum_v,
-    ):
-        validate_safety_limit("Z_magnetic_field", value)
-    upload_arbitrary(
-        device,
-        ArbitraryWaveformSpec(
-            values=applied.normalized,
-            frequency=theory.repeat_frequency_hz,
-            amplitude=applied.amplitude_vpp,
-            offset=applied.offset_v,
-            phase=0.0,
-            channel=channel,
-            output=False,
-        ),
-    )
-    # DG4162 的 APPLy:USER 只可靠切换 USER 波形，参数需显式写入。
-    device.set_frequency(theory.repeat_frequency_hz, channel=channel)
-    device.set_amplitude(applied.amplitude_vpp, channel=channel)
-    device.set_offset(applied.offset_v, channel=channel)
-    device.set_burst_state(True, channel=channel)
-    device.set_burst_mode("INFinity", channel=channel)
-    device.set_burst_trigger_source("EXTernal", channel=channel)
-    device.set_burst_trigger_slope(
-        OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
-        channel=channel,
-    )
-    device.set_burst_phase(
-        params.control_burst_phase_deg % 360.0,
-        channel=channel,
-    )
-    device.set_output(True, channel=channel)
+    """兼容入口：保持既有实验的配置并开启输出行为。"""
+    from ..z_arbitrary_control import configure_z_optimal_control_output as configure
+
+    configure(params, device, channel, theory, applied)
 
 
 def configure_main_field(
@@ -218,8 +223,13 @@ def configure_mx_z_optimal_control_workpoint(
     ],
     pump_gate_setter: Callable[[Any, int, float], None],
     temperature_stability_waiter: Callable[..., float],
+    configure_main_field_output: bool = True,
 ) -> tuple[float, float | None, dict[str, dict[str, str]], dict[str, Any]]:
-    """配置两个 Z 最优控制实验共用的 Mx 工作点。"""
+    """配置 Z 最优控制实验共用的 Mx 工作点。
+
+    ``configure_main_field_output=False`` 用于 GS200 物理断开、由 DG4000
+    同一 Z 线圈提供偏置的实验；默认值保持原有 GS200 工作流行为。
+    """
     clock_sources = reference_clock_configurator(devices, mapping)
     configure_optimal_control_trigger(
         params,
@@ -228,11 +238,12 @@ def configure_mx_z_optimal_control_workpoint(
         output=False,
     )
     xy_output_configurator()
-    configure_main_field(
-        params,
-        devices["gs200"],
-        mapping["main_magnetic_field"],
-    )
+    if configure_main_field_output:
+        configure_main_field(
+            params,
+            devices["gs200"],
+            mapping["main_magnetic_field"],
+        )
 
     laser = devices["laser"]
     validate_safety_limit("Pump_laser_power", params.pump_laser_power_v)

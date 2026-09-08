@@ -93,6 +93,10 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
       burst: channel.burst,
     };
     const original = snapshot.channels[index];
+    if (route.mappingKey === "Z_magnetic_field" && ["USER", "ARBITRARY"].includes(channel.shape.toUpperCase())) {
+      // 冻结任意波由功能模块配置；此处只允许关闭，避免重写幅度和 Burst。
+      settings = { output: false };
+    }
     if ((original.voltage_unit || "").toUpperCase() !== "VPP") {
       if (original.output && !channel.output) settings = { output: false };
       else {
@@ -143,7 +147,8 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
       {channels.map((channel, index) => {
         const tab = tabs[channel.number] || "wave";
         const nonVpp = (channel.voltage_unit || "").toUpperCase() !== "VPP";
-        const disabled = channel.read_only || nonVpp;
+        const frozenArbitrary = route.mappingKey === "Z_magnetic_field" && ["USER", "ARBITRARY"].includes(channel.shape.toUpperCase());
+        const disabled = channel.read_only || nonVpp || frozenArbitrary;
         const mod = channel.mod;
         const burst = channel.burst;
         const modType = mod.type || "AM";
@@ -155,13 +160,14 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
                 <input
                   type="checkbox"
                   checked={channel.output}
-                  disabled={channel.read_only || (nonVpp && !channel.output)}
+                  disabled={channel.read_only || frozenArbitrary || (nonVpp && !channel.output)}
                   onChange={(event) => update(index, "output", event.target.checked)}
                 />
                 <span />
               </label>
             </div>
             {channel.read_only && <div className="alert">该通道按仓库约定只读，以下参数仅展示设备回读值。</div>}
+            {frozenArbitrary && <div className="alert">当前为任意波。预览、加载、相位及触发设置请使用 Z 任意波控制；此处保存只关闭 Z 输出。选择其他波形后可重新配置。</div>}
             {nonVpp && <div className="alert error">当前单位为 {channel.voltage_unit || "未知"}。可以回读或关闭输出；其他写入前必须切换为 Vpp。 <button type="button" onClick={() => void switchToVpp()} disabled={saving !== undefined}>切换为 Vpp 并重新读取</button></div>}
             {channel.readback_errors.length > 0 && (
               <div className="alert error">
@@ -169,7 +175,8 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
               </div>
             )}
             <div className="form-grid generator-basic-grid">
-              <SelectField label="波形" value={channel.shape} disabled={disabled} onChange={(value) => update(index, "shape", value)}>
+              <SelectField label="波形" value={channel.shape} disabled={channel.read_only || nonVpp} onChange={(value) => update(index, "shape", value)}>
+                {["USER", "ARBITRARY"].includes(channel.shape.toUpperCase()) && <option value={channel.shape}>Arbitrary</option>}
                 <option value="SINusoid">Sine</option><option value="SQUare">Square</option><option value="RAMP">Ramp</option><option value="PULSe">Pulse</option><option value="DC">DC</option>
               </SelectField>
               {!channel.shape.startsWith("DC") && <><Field label="频率 (Hz)" value={channel.frequency} disabled={disabled} onChange={(value) => update(index, "frequency", value)} /><Field label="幅度 (Vpp)" value={channel.amplitude} disabled={disabled} onChange={(value) => update(index, "amplitude", value)} /></>}
@@ -272,7 +279,7 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
             </details>
             <div className="panel-actions">
               <button disabled={channel.read_only || saving === channel.number || (nonVpp && !(snapshot.channels[index].output && !channel.output))} onClick={() => save(index)}>
-                {saving === channel.number ? "应用中…" : "应用并回读"}
+                {saving === channel.number ? "应用中…" : frozenArbitrary ? "关闭 Z 输出" : "应用并回读"}
               </button>
             </div>
           </section>

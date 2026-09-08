@@ -56,7 +56,7 @@ def test_defaults_schema_registry_and_target_current() -> None:
     assert "HF2" not in DEFINITION.required_devices
     fields = {item["name"]: item for item in DEFINITION.schema()["fields"]}
     assert fields["SCOPE_SAMPLE_RATE"]["default"] == 500000.0
-    assert fields["ACQ_REPEATS"]["default"] == 100
+    assert fields["ACQ_REPEATS"]["default"] == 10
     assert fields["FIT_HALF_WIDTH_HZ"]["default"] == 5000.0
     assert fields["FIXED_PARAMS.Pump_laser_power"]["minimum"] == 0.0
     assert fields["FIXED_PARAMS.Pump_laser_power"]["maximum"] == 1.0
@@ -64,12 +64,13 @@ def test_defaults_schema_registry_and_target_current() -> None:
         "name": "MEASURE_FIELD_OFF_CONTROL",
         "label": "测量关闭电流源对照组",
         "type": "boolean",
-        "default": True,
+        "default": False,
         "unit": "",
         "group": "basic",
         "minimum": None,
         "maximum": None,
         "description": "开启时先采集 GS200 输出关闭背景；关闭时仅采集主场打开数据。",
+        "read_only": False,
     }
     assert "SCOPE_PD_CHANNEL" not in fields
     assert params.scope_vertical_divisions == 8

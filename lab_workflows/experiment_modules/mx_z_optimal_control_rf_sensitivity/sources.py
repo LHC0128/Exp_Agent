@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from types import SimpleNamespace
 
 import numpy as np
 import yaml
@@ -17,6 +18,11 @@ from ...common import validate_safety_limit
 _VERSION_PATTERN = re.compile(r"^v[1-9]\d*$")
 _RUN_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 MAX_DG4000_ARB_POINTS = 16384
+THEORY_RESULTS_ROOT = Path(r"D:\Code\theory_agent\simulate\results")
+CONTROL_SOURCE_SET_ROOTS = {
+    "oc_sens": THEORY_RESULTS_ROOT / "oc_sens",
+    "oc_broadband_v2": THEORY_RESULTS_ROOT / "oc_broadband_v2",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +68,16 @@ class AppliedControlWaveform:
     max_abs_normalized: float
 
 
+def resolve_control_results_root(source_set: str) -> Path:
+    """将固定理论结果集名称解析为受控的结果根目录。"""
+    key = str(source_set).strip()
+    try:
+        return CONTROL_SOURCE_SET_ROOTS[key]
+    except KeyError as exc:
+        choices = "、".join(CONTROL_SOURCE_SET_ROOTS)
+        raise ValueError(f"CONTROL_SOURCE_SET 必须是 {choices}") from exc
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -99,7 +115,16 @@ def load_theory_control(control_root: Path, version: str) -> TheoryControlSource
     if not parameter_path.is_file():
         raise FileNotFoundError(f"未找到最优控制参数: {parameter_path}")
 
-    values = np.loadtxt(waveform_path, delimiter=",", comments="#", ndmin=2)
+    first_line = waveform_path.read_text(encoding="utf-8").splitlines()[0].strip().lower()
+    broadband_time_ms = "time_ms" in first_line
+    broadband_result = Path(control_root).name == "oc_broadband_v2"
+    values = np.loadtxt(
+        waveform_path,
+        delimiter=",",
+        comments="#",
+        skiprows=1 if broadband_time_ms else 0,
+        ndmin=2,
+    )
     if values.ndim != 2 or values.shape[1] != 2:
         raise ValueError(f"控制波形必须是 time_s,Omega_ctrl_Hz 两列: {waveform_path}")
     if values.shape[0] < 2:
@@ -113,6 +138,8 @@ def load_theory_control(control_root: Path, version: str) -> TheoryControlSource
         raise ValueError(f"控制波形包含 NaN 或无穷值: {waveform_path}")
 
     time_s = np.asarray(values[:, 0], dtype=float)
+    if broadband_time_ms:
+        time_s *= 1e-3
     omega_ctrl_hz = np.asarray(values[:, 1], dtype=float)
     steps = np.diff(time_s)
     if np.any(steps <= 0):
@@ -122,14 +149,26 @@ def load_theory_control(control_root: Path, version: str) -> TheoryControlSource
         raise ValueError("控制波形时间轴必须等间隔")
     repeat_frequency_hz = 1.0 / (time_s.size * step_s)
 
-    theory_version = _parse_parameter_value(parameter_path, "# Output version")
+    try:
+        theory_version = _parse_parameter_value(parameter_path, "# Output version")
+    except ValueError:
+        if not broadband_result:
+            raise
+        # oc_broadband_v2 的参数文件没有版本标记，版本由目录名确定。
+        theory_version = version
     if theory_version != version:
         raise ValueError(
             f"理论参数版本 {theory_version!r} 与目录版本 {version!r} 不一致"
         )
-    theory_rf_frequency_hz = float(
-        _parse_parameter_value(parameter_path, "f_rf_Hz")
-    )
+    try:
+        theory_rf_frequency_hz = float(
+            _parse_parameter_value(parameter_path, "f_rf_Hz")
+        )
+    except ValueError:
+        if not broadband_result:
+            raise
+        # 宽带结果用波形时间轴表达重复周期，参数文件不重复保存该字段。
+        theory_rf_frequency_hz = repeat_frequency_hz
     if not np.isfinite(theory_rf_frequency_hz) or theory_rf_frequency_hz <= 0:
         raise ValueError("理论 f_rf_Hz 必须是正有限值")
     if not np.isclose(
@@ -248,3 +287,47 @@ def build_applied_control(
         output_maximum_v=output_maximum_v,
         max_abs_normalized=max_abs_normalized,
     )
+
+
+def corrected_control_contract(
+    corrected: Any,
+) -> tuple[Any, AppliedControlWaveform]:
+    """把闭环冻结波形适配为 DG 任意波配置契约。"""
+    half_range = float(corrected.amplitude_vpp) / 2.0
+    output_minimum = float(corrected.offset_v) - half_range
+    output_maximum = float(corrected.offset_v) + half_range
+    voltage = np.asarray(corrected.voltage_v, dtype=float)
+    normalized = np.asarray(corrected.normalized, dtype=float)
+    if voltage.size == 0 or normalized.size != voltage.size:
+        raise ValueError("校正波形电压和归一化数组长度无效")
+    for value in (
+        float(np.min(voltage)),
+        float(np.max(voltage)),
+        output_minimum,
+        output_maximum,
+    ):
+        validate_safety_limit("Z_magnetic_field", value)
+    max_abs_normalized = float(np.max(np.abs(normalized)))
+    if max_abs_normalized > 1.0 + 1e-9:
+        raise ValueError("校正波形归一化值超出 [-1, 1]")
+    theory_contract = SimpleNamespace(
+        version=f"corrected:{corrected.run_name}",
+        time_s=np.asarray(corrected.time_s, dtype=float),
+        omega_ctrl_hz=np.asarray(corrected.omega_ctrl_hz, dtype=float),
+        repeat_frequency_hz=float(corrected.repeat_frequency_hz),
+        theory_rf_frequency_hz=float(corrected.repeat_frequency_hz),
+        waveform_sha256=corrected.waveform_sha256,
+        parameter_sha256="",
+    )
+    applied = AppliedControlWaveform(
+        voltage_v=voltage,
+        normalized=normalized,
+        amplitude_vpp=float(corrected.amplitude_vpp),
+        offset_v=float(corrected.offset_v),
+        minimum_v=float(np.min(voltage)),
+        maximum_v=float(np.max(voltage)),
+        output_minimum_v=output_minimum,
+        output_maximum_v=output_maximum,
+        max_abs_normalized=max_abs_normalized,
+    )
+    return theory_contract, applied

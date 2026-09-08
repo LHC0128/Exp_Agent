@@ -3,11 +3,11 @@ title: Mx Keithley 6221 最优控制 RF 灵敏度
 type: Mx_Keithley_6221_Optimal_Control_RF_Sensitivity
 scan_mode: point_by_point
 defaults:
-  CONTROL_VERSION: v2
+  CONTROL_VERSION: v4
   KEITHLEY_CALIBRATION_SOURCE_RUN: 0813_183404_mx_6221_main_field_cal
   CONTROL_SCALE: 1.0
   KEITHLEY_CURRENT_RANGE_MA: 100.0
-  Y_RF_FREQUENCY_HZ: 30000.0
+  Y_RF_FREQUENCY_HZ: 12000.0
   Y_RF_AMP_START_VPP: -0.1
   Y_RF_AMP_STOP_VPP: 0.1
   Y_RF_AMP_POINTS: 41
@@ -92,9 +92,9 @@ f_0 = 327.26386959353465 Hz
 I(t) = CONTROL_SCALE * (Omega_ctrl(t) - f_0) / K_f
 ```
 
-`v2` 波形为 10,000 点、约 30 kHz；当前默认换算包络约为
-`-89.9360 到 +88.9091 mA`，所需最小档位为 `89.9360 mA`。默认选择
-`100 mA` 档，裕量约 `10.0640 mA`，满足档位要求。设备波形 offset 固定为
+`v4` 波形理论重复频率与 rf 频率均为 12 kHz；当前默认换算包络约为
+`-38.5077 到 +37.4949 mA`，所需最小档位为 `38.5077 mA`。默认选择
+`100 mA` 档，裕量约 `61.4923 mA`，满足档位要求。设备波形 offset 固定为
 `0 mA`，程序用归一化任意波点表达不对称包络，并把末点改为物理 0 mA，
 不额外叠加直流偏置。
 

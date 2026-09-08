@@ -253,11 +253,20 @@ def _read_generator_channel(instrument, device_type: str, channel) -> dict[str, 
         }
     else:
         shape = _canonical_shape(instrument.get_shape(channel.number))
+        if shape == "DC":
+            # 使用型号驱动的 DC 查询路径；该值是仪器报告值，不等同于
+            # 示波器测得的物理输出电压。
+            offset = _optional_query(
+                errors, "offset",
+                lambda: instrument.get_dc_voltage(channel.number),
+            )
+        else:
+            offset = instrument.get_offset(channel.number)
         state = {
             "shape": shape,
             "frequency": instrument.get_frequency(channel.number),
             "amplitude": instrument.get_amplitude(channel.number),
-            "offset": instrument.get_offset(channel.number),
+            "offset": offset,
             "phase": instrument.get_phase_adjust(channel.number),
             "voltage_unit": instrument.get_voltage_unit(channel.number),
             "load": instrument.get_output_load(channel.number),
@@ -748,8 +757,7 @@ def _apply_basic_waveform(instrument, device_type: str, channel: int,
     if shape:
         if is_dc:
             # DC 波形只有偏置电压有效。DG900 用 :APPLy:DC 一键配置；
-            # DG4000 实测 DC 波形下 VOLT:OFFS 写入会被静默忽略，必须用
-            # HIGH/LOW 三步写入（见 DG4000Instrument.set_dc_voltage）。
+            # DG4000 用 VOLT:OFFS 专用命令（见 set_dc_voltage）。
             # 两者都不擅自打开输出，输出开关由调用方随后单独设置。
             dc_voltage = float(settings.get("offset") or 0.0)
             if device_type == "DG900":

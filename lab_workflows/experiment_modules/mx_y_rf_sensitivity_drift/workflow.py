@@ -12,6 +12,7 @@ import yaml
 from ...common import WorkflowCancelled, find_project_root, load_mapping
 from ...experiment_runtime import check_cancelled, load_runtime_params
 from ...steps import DeviceSession, create_run_directory
+from ...steps.run_finish import finalize_run_safety
 from ..mx_y_rf_sensitivity.analysis import analyze as analyze_single
 from ..mx_y_rf_sensitivity.models import MxYRFParams
 from ..mx_y_rf_sensitivity.workflow import (
@@ -260,17 +261,28 @@ def run(params: MxYRFDriftParams) -> Path:
             parent.update_config(completion_status="failed", failure_reason=failure_reason)
         raise
     finally:
-        shutdown_report = safe_shutdown(devices, channels, params)
-        if shutdown_report.errors:
-            print("安全关闭警告: " + "; ".join(shutdown_report.errors))
+        finish = finalize_run_safety(
+            shutdown=lambda: safe_shutdown(devices, channels, params),
+            completion_status=completion_status,
+            failure_reason=failure_reason,
+        )
+        if finish.cleanup_errors:
+            print("安全关闭失败: " + "; ".join(finish.cleanup_errors))
         if parent.config_path.exists():
             parent.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                safety_shutdown=shutdown_report.to_dict(),
+                completion_status=finish.completion_status,
+                failure_reason=finish.failure_reason,
+                safety_shutdown=finish.shutdown_report.to_dict(),
             )
         _write_manifest(manifest_path, records)
         _refresh_safely(parent.root)
+        if (
+            finish.completion_status != "completed"
+            and not finish.original_exception_pending
+        ):
+            raise RuntimeError(
+                f"实验结束但安全恢复失败: {finish.failure_reason}"
+            )
 
 
 def main() -> int:

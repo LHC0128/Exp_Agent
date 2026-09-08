@@ -205,7 +205,7 @@ class MxYRFProbeDetuningOptimizationParams(MxYRFParams):
         description="设为 1 时固定 Probe；此时扫描起点和终点必须相等。",
     )
     pzt_voltage_start_v: float = parameter(
-        default=60.0,
+        default=20.0,
         external_name="PZT_VOLTAGE_START_V",
         label="PZT 扫描起点",
         unit="V",
@@ -213,7 +213,7 @@ class MxYRFProbeDetuningOptimizationParams(MxYRFParams):
         safety_key="probe_laser_pzt_voltage",
     )
     pzt_voltage_stop_v: float = parameter(
-        default=100.0,
+        default=120.0,
         external_name="PZT_VOLTAGE_STOP_V",
         label="PZT 扫描终点",
         unit="V",
@@ -221,7 +221,7 @@ class MxYRFProbeDetuningOptimizationParams(MxYRFParams):
         safety_key="probe_laser_pzt_voltage",
     )
     pzt_voltage_points: int = parameter(
-        default=9,
+        default=21,
         external_name="PZT_VOLTAGE_POINTS",
         label="PZT 扫描点数",
         group="basic",

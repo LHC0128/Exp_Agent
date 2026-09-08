@@ -40,7 +40,7 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
         visible=False,
     )
     y_rf_frequency_hz: float = parameter(
-        default=30000.0,
+        default=12000.0,
         external_name="Y_RF_FREQUENCY_HZ",
         label="Y RF / HF2 固定频率",
         unit="Hz",
@@ -203,7 +203,7 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
     )
 
     control_version: str = parameter(
-        default="v2",
+        default="v4",
         external_name="CONTROL_VERSION",
         label="最优控制版本",
         group="basic",

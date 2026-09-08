@@ -75,6 +75,7 @@ from lab_workflows.experiment_runtime import (
     check_cancelled,
     load_runtime_params,
 )
+from lab_workflows.current_feedback import load_corrected_control_waveform
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_frequency.models import (
     RFDirectAWFrequencyParams,
 )
@@ -574,6 +575,10 @@ config = {
         "PHASE_SETTLE_TIME_s": PHASE_SETTLE_TIME,
     },
     "xy_direct_aw": {
+        "waveform_source": ARB_WAVEFORM_SOURCE,
+        "corrected_control_source_run": (
+            CORRECTED_CONTROL_SOURCE_RUN if ARB_WAVEFORM_SOURCE == "corrected_run" else None
+        ),
         "A_ENV_FREQ_Hz": A_ENV_FREQ,
         "XY_CTRL_K_Hz_per_V": XY_CTRL_K_HZ_PER_V,
         "XY_CTRL_B_Hz": XY_CTRL_B_HZ,
@@ -926,26 +931,35 @@ def build_aw_params(v_waveform):
 
 
 def load_control_envelope():
-    """加载 Omega_ctrl(t)，转换为直接输出到 X/Y 线圈前的包络电压。"""
-    waveform_path = project_root / "experiments" / ARB_WAVEFORM_FILE
-    with open(waveform_path, encoding="utf-8") as f:
-        header = f.readline().strip().lower()
-    data = np.loadtxt(waveform_path, delimiter=",", skiprows=1)
-    if data.ndim != 2 or data.shape[1] < 2:
-        raise ValueError(f"{waveform_path} 需要至少两列: time, Omega_ctrl_Hz")
-    if len(data) > MAX_ARB_POINTS:
-        raise ValueError(
-            f"AW 点数 {len(data)} 超出当前信号源限制 {MAX_ARB_POINTS}"
+    """加载 Omega_ctrl(t)，支持 CSV 或闭环冻结波形。"""
+    source = str(ARB_WAVEFORM_SOURCE)
+    if source == "corrected_run":
+        corrected = load_corrected_control_waveform(
+            project_root, CORRECTED_CONTROL_SOURCE_RUN
         )
-
-    time_raw = data[:, 0].astype(float)
-    if "time_ms" in header:
-        time_s = time_raw / 1000.0
-        time_unit = "ms"
-    else:
-        time_s = time_raw
+        time_s = np.asarray(corrected.time_s, dtype=float)
+        omega_ctrl_hz = np.asarray(corrected.omega_ctrl_hz, dtype=float)
         time_unit = "s"
-    omega_ctrl_hz = data[:, 1].astype(float)
+        waveform_path = corrected.waveform_path
+    else:
+        waveform_path = project_root / "experiments" / ARB_WAVEFORM_FILE
+        with open(waveform_path, encoding="utf-8") as f:
+            header = f.readline().strip().lower()
+        data = np.loadtxt(waveform_path, delimiter=",", skiprows=1)
+        if data.ndim != 2 or data.shape[1] < 2:
+            raise ValueError(f"{waveform_path} 需要至少两列: time, Omega_ctrl_Hz")
+        if len(data) > MAX_ARB_POINTS:
+            raise ValueError(
+                f"AW 点数 {len(data)} 超出当前信号源限制 {MAX_ARB_POINTS}"
+            )
+        time_raw = data[:, 0].astype(float)
+        if "time_ms" in header:
+            time_s = time_raw / 1000.0
+            time_unit = "ms"
+        else:
+            time_s = time_raw
+            time_unit = "s"
+        omega_ctrl_hz = data[:, 1].astype(float)
     if len(time_s) < 2:
         raise ValueError("控制波形至少需要 2 个采样点")
 
@@ -968,6 +982,8 @@ def load_control_envelope():
     envelope_v = (omega_ctrl_hz - XY_CTRL_B_HZ) / XY_CTRL_K_HZ_PER_V
     return {
         "path": waveform_path,
+        "source": source,
+        "source_run": CORRECTED_CONTROL_SOURCE_RUN if source == "corrected_run" else None,
         "time_s": time_s,
         "time_unit": time_unit,
         "omega_ctrl_hz": omega_ctrl_hz,

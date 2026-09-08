@@ -100,6 +100,59 @@ class ExperimentDefinition:
                 errors.append(
                     f"{key} 当前设备缺少无限 Burst 能力 supports_infinite_burst"
                 )
+        if self.id in {
+            "z-aw-waveform-scope-check",
+            "z-coil-inductance-frequency-response",
+            "z-aw-current-waveform-scope-check",
+            "z-aw-closed-loop-waveform-correction",
+            "z-coil-current-frequency-response",
+            "mx-z-optimal-control-dg4000-bias-xyz-balance",
+            "mx-z-optimal-control-xy-rf-phase-response",
+            "mx-z-optimal-control-xy-rf-sensitivity",
+            "mx-z-optimal-control-xy-noise-spectrum",
+        }:
+            z_config = mapping.get("Z_magnetic_field", {})
+            trigger_config = mapping.get("Time_sequence_2", {})
+            z_device = str(
+                z_config.get("device_id") or z_config.get("resource") or ""
+            )
+            trigger_device = str(
+                trigger_config.get("device_id")
+                or trigger_config.get("resource")
+                or ""
+            )
+            z_resource = str(z_config.get("resource") or "")
+            trigger_resource = str(trigger_config.get("resource") or "")
+            if (
+                z_device
+                and trigger_device
+                and z_device != trigger_device
+            ) or (
+                z_resource
+                and trigger_resource
+                and z_resource != trigger_resource
+            ):
+                errors.append("Z_magnetic_field 与 Time_sequence_2 必须位于同一台 DG4000")
+            for key in ("Z_magnetic_field", "Time_sequence_2"):
+                model = str(mapping.get(key, {}).get("model") or "")
+                if model and model.upper() != "DG4000":
+                    errors.append(f"{key} 必须连接 DG4000，当前为 {model}")
+            if self.id in {
+                "z-aw-waveform-scope-check",
+                "z-coil-inductance-frequency-response",
+                "z-aw-current-waveform-scope-check",
+                "z-aw-closed-loop-waveform-correction",
+                "z-coil-current-frequency-response",
+            } and not str(mapping.get("scope_waveform", {}).get("resource") or ""):
+                errors.append("scope_waveform 缺少示波器 resource")
+            z_channel = z_config.get("channel")
+            trigger_channel = trigger_config.get("channel")
+            if (
+                z_channel is not None
+                and trigger_channel is not None
+                and int(z_channel) == int(trigger_channel)
+            ):
+                errors.append("Z_magnetic_field 与 Time_sequence_2 必须使用不同 DG 通道")
         return errors
 
     def _public_required_devices(self) -> list[str]:

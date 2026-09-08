@@ -113,7 +113,7 @@ def test_all_typed_workflows_preflight_dg4000_and_dg900_mappings() -> None:
         item for item in list_experiments()
         if item.execution_mode == "typed_workflow"
     ]
-    assert len(definitions) == 25
+    assert len(definitions) == 26
     assert all(item.required_mapping_keys for item in definitions)
 
     for model, minimum, maximum in (
@@ -138,7 +138,14 @@ def test_all_typed_workflows_preflight_dg4000_and_dg900_mappings() -> None:
                 for item in definitions
                 if item._mapping_errors()
             }
-        assert failures == {}, (model, failures)
+        if model == "DG900":
+            assert set(failures) == {"z-aw-waveform-scope-check"}, (model, failures)
+            assert all(
+                "必须连接 DG4000" in error
+                for error in failures["z-aw-waveform-scope-check"]
+            )
+        else:
+            assert failures == {}, (model, failures)
 
 
 def test_experiment_device_labels_follow_current_mapping() -> None:

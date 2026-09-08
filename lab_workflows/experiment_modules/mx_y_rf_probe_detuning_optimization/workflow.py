@@ -23,6 +23,7 @@ from ...common import (
 from ...devices import create_dlc_pro
 from ...experiment_runtime import check_cancelled, load_runtime_params
 from ...steps import DeviceSession, create_run_directory
+from ...steps.run_finish import finalize_run_safety
 from ...steps.state import StateGuard
 from ..mx_y_rf_sensitivity.workflow import (
     RPointQualityError,
@@ -581,13 +582,7 @@ def run(params: MxYRFProbeDetuningOptimizationParams) -> Path:
             )
         raise
     finally:
-        shutdown_report = safe_shutdown(devices, channels, params)
         probe_laser_restore_errors = probe_laser_guard.restore()
-        if probe_laser_restore_errors:
-            print(
-                "Probe 激光状态保护警告: "
-                + "；".join(probe_laser_restore_errors)
-            )
         power_restore_error = None
         try:
             restore_mx_y_rf_laser_powers(
@@ -598,14 +593,36 @@ def run(params: MxYRFProbeDetuningOptimizationParams) -> Path:
             )
         except Exception as exc:
             power_restore_error = str(exc)
-            print(f"光功率基准恢复警告: {power_restore_error}")
-        if shutdown_report.errors:
-            print("安全关闭警告: " + "；".join(shutdown_report.errors))
+        finish = finalize_run_safety(
+            shutdown=lambda: safe_shutdown(devices, channels, params),
+            completion_status=completion_status,
+            failure_reason=failure_reason,
+            extra_errors=(
+                [
+                    f"恢复 DLC pro PZT/扫描状态: {item}"
+                    for item in probe_laser_restore_errors
+                ]
+                + (
+                    [f"光功率基准恢复: {power_restore_error}"]
+                    if power_restore_error
+                    else []
+                )
+            ),
+        )
+        if probe_laser_restore_errors:
+            print(
+                "Probe 激光状态保护失败: "
+                + "；".join(probe_laser_restore_errors)
+            )
+        if power_restore_error:
+            print(f"光功率基准恢复失败: {power_restore_error}")
+        if finish.shutdown_report.errors:
+            print("安全关闭失败: " + "；".join(finish.shutdown_report.errors))
         if run_dir.config_path.exists():
             run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                safety_shutdown=shutdown_report.to_dict(),
+                completion_status=finish.completion_status,
+                failure_reason=finish.failure_reason,
+                safety_shutdown=finish.shutdown_report.to_dict(),
                 probe_laser_restore={
                     **probe_laser_restore,
                     "guard_errors": probe_laser_restore_errors,
@@ -621,8 +638,15 @@ def run(params: MxYRFProbeDetuningOptimizationParams) -> Path:
                     "tec_connected": False,
                     "tec_disconnect_attempted": False,
                     "other_devices_preserved": True,
-                    "errors": list(shutdown_report.disconnect_errors),
+                    "errors": list(finish.shutdown_report.disconnect_errors),
                 },
+            )
+        if (
+            finish.completion_status != "completed"
+            and not finish.original_exception_pending
+        ):
+            raise RuntimeError(
+                f"实验结束但安全恢复失败: {finish.failure_reason}"
             )
 
 

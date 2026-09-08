@@ -143,7 +143,8 @@ def fit_absolute_dispersive_response(
     y: np.ndarray,
     *,
     r_squared_min: float = 0.85,
-    relative_gamma_uncertainty_max: float = 0.5,
+    relative_gamma_uncertainty_max: float | None = 0.5,
+    initial_center: float | None = None,
 ) -> FitResult:
     """拟合 R=|A(V-V0)/((V-V0)^2+gamma^2)+C|。"""
     x = np.asarray(x, dtype=float)
@@ -163,14 +164,20 @@ def fit_absolute_dispersive_response(
         )
     span = float(np.ptp(x))
     step = float(np.median(np.diff(np.sort(x))))
-    center0 = float(x[np.argmin(y)])
+    # 可由实验变体指定物理中心初值；未指定时保留 Mx Y 的历史初始化方式。
+    center0 = (
+        float(initial_center)
+        if initial_center is not None and np.isfinite(initial_center)
+        else float(x[np.argmin(y)])
+    )
     gamma0 = max(
         abs(float(x[np.argmax(y)]) - center0),
         span / 4.0,
         step,
     )
     amplitude0 = max(float(np.max(y)), np.finfo(float).eps) * 2.0 * gamma0
-    p0 = (amplitude0, gamma0, center0, 0.0)
+    offset0 = 0.0
+    p0 = (amplitude0, gamma0, center0, offset0)
     lower = (
         0.0,
         max(step * 0.05, np.finfo(float).eps),

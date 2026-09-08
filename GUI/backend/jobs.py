@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -184,6 +185,25 @@ class JobManager:
     def queued_hardware_count(self) -> int:
         with self._hardware_condition:
             return len(self._hardware_queue)
+
+    def try_acquire_short_hardware(self, *, timeout: float = 0.0) -> bool:
+        """短时仪器操作尝试获取硬件锁，且不绕过排队的硬件任务。
+
+        与硬件任务共享同一把锁和同一队列条件：只要还有排队任务，
+        短时操作就必须让位（等待排队任务消化，或按 timeout 返回
+        False），避免长任务排队后仍被短时接口插队。返回 False 表示
+        硬件正忙（长任务运行中或已有排队任务），调用方应返回
+        hardware_busy 冲突；成功时保证不会同时持有锁并返回 False。
+        """
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        with self._hardware_condition:
+            while True:
+                if not self._hardware_queue:
+                    return self.hardware_lock.acquire(blocking=False)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._hardware_condition.wait(timeout=min(0.25, remaining))
 
     def _finish(
         self,

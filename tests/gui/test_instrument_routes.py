@@ -1,6 +1,8 @@
 import sys
+import time
 import unittest
 from pathlib import Path
+from threading import Event
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -268,6 +270,43 @@ class InstrumentRouteTests(unittest.TestCase):
         finally:
             manager.hardware_lock.release()
         self.assertEqual(caught.exception.status_code, 409)
+
+    def test_configuration_save_rejected_while_hardware_job_queued(self):
+        """TOCTOU 场景：锁短暂空闲但已有排队任务时配置写入必须拒绝。"""
+        body = DeviceLibraryBody(base_revision="current", devices={})
+        release = Event()
+        first = manager.create("first", lambda _job: release.wait(1))
+        for _ in range(100):
+            if first.status == "running":
+                break
+            time.sleep(0.01)
+        second = manager.create("second", lambda _job: {"value": 2})
+        for _ in range(100):
+            if manager.queued_hardware_count() == 1:
+                break
+            time.sleep(0.01)
+        self.assertEqual(second.status, "queued")
+        # 释放第一个任务：锁短暂空闲，但第二个任务已排队，
+        # 配置写入不能利用该窗口直接落盘。
+        release.set()
+        with self.assertRaises(HTTPException) as caught:
+            update_device_library(body)
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(
+            caught.exception.headers.get("X-Error-Code"), "hardware_busy"
+        )
+        for _ in range(100):
+            if second.status in {"completed", "failed", "cancelled"}:
+                break
+            time.sleep(0.01)
+        # 队列清空且无任务运行后，写入与检查在硬件锁内原子完成。
+        with patch(
+            "backend.main.save_device_library",
+            return_value={"ok": True},
+        ) as save:
+            result = update_device_library(body)
+        self.assertEqual(result, {"ok": True})
+        save.assert_called_once()
 
 
 if __name__ == "__main__":

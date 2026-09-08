@@ -40,6 +40,9 @@ DIRECT_AW = (
     "Y_magnetic_field_AM",
 )
 OPTIMAL_CONTROL = (*FULL_HF2, "Time_sequence_2")
+DG4000_BIAS_OPTIMAL_CONTROL = tuple(
+    key for key in OPTIMAL_CONTROL if key != "main_magnetic_field"
+)
 T2 = (
     "main_magnetic_field", "X_magnetic_field", "Y_magnetic_field",
     "Z_magnetic_field", "Time_sequence_2",
@@ -56,6 +59,27 @@ STATIC_SENSITIVITY = (
 
 
 TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "z-aw-waveform-scope-check": (
+        "Z_magnetic_field",
+        "Time_sequence_2",
+        "scope_waveform",
+    ),
+    "z-aw-current-waveform-scope-check": (
+        "Z_magnetic_field",
+        "Time_sequence_2",
+        "scope_waveform",
+    ),
+    "z-aw-closed-loop-waveform-correction": (
+        "Z_magnetic_field",
+        "Time_sequence_2",
+        "scope_waveform",
+    ),
+    "z-coil-current-frequency-response": (
+        "Z_magnetic_field",
+        "Time_sequence_2",
+        "scope_waveform",
+    ),
+    "mx-z-current-coupling-calibration": (*FULL_HF2, "scope_waveform"),
     "static-sensitivity": STATIC_SENSITIVITY,
     "mx-main-field-calibration": FULL_HF2,
     "mx-keithley-6221-main-field-calibration": KEITHLEY_MAIN_FIELD,
@@ -69,12 +93,17 @@ TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "mx-y-rf-probe-detuning-optimization": (*FULL_HF2, "probe_laser"),
     "mx-y-rf-sensitivity": FULL_HF2,
     "mx-y-rf-frequency-response": FULL_HF2,
+    "mx-y-optimal-control-rf-frequency-response": OPTIMAL_CONTROL,
     "mx-y-rf-sensitivity-drift": FULL_HF2,
     "mx-z-field-calibration": FULL_HF2,
     "mx-z-noise-spectrum": FULL_HF2,
     "mx-z-optimal-control-rf-sensitivity": OPTIMAL_CONTROL,
+    "mx-z-optimal-control-xy-rf-sensitivity": OPTIMAL_CONTROL,
+    "mx-z-optimal-control-xy-noise-spectrum": OPTIMAL_CONTROL,
     "mx-z-optimal-control-xy-leakage-response": OPTIMAL_CONTROL,
+    "mx-z-optimal-control-xy-rf-phase-response": OPTIMAL_CONTROL,
     "mx-z-optimal-control-xyz-balance": OPTIMAL_CONTROL,
+    "mx-z-optimal-control-dg4000-bias-xyz-balance": DG4000_BIAS_OPTIMAL_CONTROL,
     "noise-spectrum-xy": DIRECT_AW,
     "noise-spectrum-xy-demod3-r": DIRECT_AW,
     "projection-noise": SCOPE,
@@ -93,20 +122,50 @@ ARBITRARY_MAPPING_KEYS: dict[str, tuple[str, ...]] = {
         "xy-direct-aw-dc-calibration",
     )
 }
+ARBITRARY_MAPPING_KEYS["z-aw-waveform-scope-check"] = ("Z_magnetic_field",)
+ARBITRARY_MAPPING_KEYS["z-aw-current-waveform-scope-check"] = ("Z_magnetic_field",)
+ARBITRARY_MAPPING_KEYS["z-aw-closed-loop-waveform-correction"] = ("Z_magnetic_field",)
 ARBITRARY_MAPPING_KEYS.update({
     experiment_id: ("Z_magnetic_field",)
     for experiment_id in (
+        "mx-y-optimal-control-rf-frequency-response",
         "mx-z-optimal-control-rf-sensitivity",
+        "mx-z-optimal-control-xy-rf-sensitivity",
+        "mx-z-optimal-control-xy-noise-spectrum",
         "mx-z-optimal-control-xy-leakage-response",
         "mx-z-optimal-control-xyz-balance",
+        "mx-z-optimal-control-dg4000-bias-xyz-balance",
     )
 })
+ARBITRARY_MAPPING_KEYS["mx-z-optimal-control-xy-rf-phase-response"] = (
+    "Z_magnetic_field",
+)
 
 
 INFINITE_BURST_MAPPING_KEYS: dict[str, tuple[str, ...]] = {
     experiment_id: ARBITRARY_MAPPING_KEYS[experiment_id]
     for experiment_id in ARBITRARY_MAPPING_KEYS
 }
+INFINITE_BURST_MAPPING_KEYS["z-aw-waveform-scope-check"] = ("Z_magnetic_field",)
+INFINITE_BURST_MAPPING_KEYS["z-coil-inductance-frequency-response"] = ("Z_magnetic_field",)
+INFINITE_BURST_MAPPING_KEYS["z-aw-current-waveform-scope-check"] = ("Z_magnetic_field",)
+INFINITE_BURST_MAPPING_KEYS["z-aw-closed-loop-waveform-correction"] = ("Z_magnetic_field",)
+INFINITE_BURST_MAPPING_KEYS["z-coil-current-frequency-response"] = ("Z_magnetic_field",)
+INFINITE_BURST_MAPPING_KEYS["mx-z-optimal-control-xy-rf-phase-response"] = (
+    "Z_magnetic_field",
+    "Y_magnetic_field",
+)
+INFINITE_BURST_MAPPING_KEYS["mx-z-optimal-control-xy-rf-sensitivity"] = (
+    "Z_magnetic_field",
+    "Y_magnetic_field",
+)
+INFINITE_BURST_MAPPING_KEYS["mx-z-optimal-control-xy-noise-spectrum"] = (
+    "Z_magnetic_field",
+)
+INFINITE_BURST_MAPPING_KEYS["mx-y-optimal-control-rf-frequency-response"] = (
+    "Z_magnetic_field",
+    "rf_coil",
+)
 
 
 MAPPING_INSTRUMENTS = {

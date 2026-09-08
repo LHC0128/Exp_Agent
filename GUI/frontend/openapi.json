@@ -1,7 +1,7 @@
-﻿{
+{
   "openapi": "3.1.0",
   "info": {
-    "title": "Bell-Bloom ʵ�����̨",
+    "title": "Bell-Bloom 实验控制台",
     "version": "0.1.0"
   },
   "paths": {
@@ -1119,10 +1119,125 @@
         }
       }
     },
+    "/api/tools/z-arbitrary-control/sources": {
+      "get": {
+        "summary": "Z Arbitrary Sources",
+        "operationId": "z_arbitrary_sources_api_tools_z_arbitrary_control_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ZArbitrarySourceItem"
+                  },
+                  "type": "array",
+                  "title": "Response Z Arbitrary Sources Api Tools Z Arbitrary Control Sources Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tools/z-arbitrary-control/preview/{run_name}": {
+      "get": {
+        "summary": "Z Arbitrary Preview",
+        "operationId": "z_arbitrary_preview_api_tools_z_arbitrary_control_preview__run_name__get",
+        "parameters": [
+          {
+            "name": "run_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZArbitraryPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tools/z-arbitrary-control/state": {
+      "get": {
+        "summary": "Z Arbitrary State",
+        "operationId": "z_arbitrary_state_api_tools_z_arbitrary_control_state_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZArbitraryStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tools/z-arbitrary-control/actions": {
+      "post": {
+        "summary": "Z Arbitrary Action",
+        "operationId": "z_arbitrary_action_api_tools_z_arbitrary_control_actions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ZArbitraryActionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tools/keithley-waveform-convert": {
       "post": {
         "summary": "Keithley Waveform Convert",
-        "description": "������ӿڣ����� 6221 ���Ⲩ��궨�ı�������������磬������Ӳ����",
+        "description": "纯计算接口：解析 6221 任意波与标定文本并换算电流包络，不连接硬件。",
         "operationId": "keithley_waveform_convert_api_tools_keithley_waveform_convert_post",
         "requestBody": {
           "content": {
@@ -1838,6 +1953,53 @@
               "type": "integer",
               "default": 0,
               "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{experiment_id}/{run_id}": {
+      "delete": {
+        "summary": "Delete Run",
+        "description": "选定运行目录的永久删除，与 GUI 采集/分析任务注册原子互斥。",
+        "operationId": "delete_run_api_runs__experiment_id___run_id__delete",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
             }
           }
         ],
@@ -5377,6 +5539,384 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ZArbitraryActionBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "configure",
+              "configure_and_start",
+              "stop"
+            ],
+            "title": "Action"
+          },
+          "run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Name"
+          },
+          "waveform_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waveform Sha256"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ZArbitrarySettingsBody"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "action"
+        ],
+        "title": "ZArbitraryActionBody"
+      },
+      "ZArbitraryApplied": {
+        "properties": {
+          "revisions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Revisions"
+          },
+          "link_trigger": {
+            "type": "boolean",
+            "title": "Link Trigger"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ZArbitrarySourceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ZArbitrarySettingsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "off",
+              "unknown"
+            ],
+            "title": "State"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/ControlTargetResponse"
+            },
+            "type": "array",
+            "title": "Snapshots"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revisions",
+          "link_trigger",
+          "source",
+          "settings",
+          "state",
+          "updated_at",
+          "snapshots"
+        ],
+        "title": "ZArbitraryApplied"
+      },
+      "ZArbitraryPreview": {
+        "properties": {
+          "run_name": {
+            "type": "string",
+            "title": "Run Name"
+          },
+          "waveform_sha256": {
+            "type": "string",
+            "title": "Waveform Sha256"
+          },
+          "points": {
+            "type": "integer",
+            "title": "Points"
+          },
+          "repeat_frequency_hz": {
+            "type": "number",
+            "title": "Repeat Frequency Hz"
+          },
+          "period_s": {
+            "type": "number",
+            "title": "Period S"
+          },
+          "amplitude_vpp": {
+            "type": "number",
+            "title": "Amplitude Vpp"
+          },
+          "offset_v": {
+            "type": "number",
+            "title": "Offset V"
+          },
+          "minimum_v": {
+            "type": "number",
+            "title": "Minimum V"
+          },
+          "maximum_v": {
+            "type": "number",
+            "title": "Maximum V"
+          },
+          "time_s": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Time S"
+          },
+          "voltage_v": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Voltage V"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_name",
+          "waveform_sha256",
+          "points",
+          "repeat_frequency_hz",
+          "period_s",
+          "amplitude_vpp",
+          "offset_v",
+          "minimum_v",
+          "maximum_v",
+          "time_s",
+          "voltage_v"
+        ],
+        "title": "ZArbitraryPreview"
+      },
+      "ZArbitrarySettingsBody": {
+        "properties": {
+          "control_burst_phase_deg": {
+            "type": "number",
+            "title": "Control Burst Phase Deg",
+            "default": 0.0
+          },
+          "output_amplitude_vpp": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Amplitude Vpp"
+          },
+          "link_trigger": {
+            "type": "boolean",
+            "title": "Link Trigger",
+            "default": false
+          },
+          "trigger_frequency_hz": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Trigger Frequency Hz",
+            "default": 100.0
+          },
+          "trigger_amplitude_vpp": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Trigger Amplitude Vpp",
+            "default": 5.0
+          },
+          "trigger_offset_v": {
+            "type": "number",
+            "title": "Trigger Offset V",
+            "default": 2.5
+          },
+          "trigger_duty_percent": {
+            "type": "number",
+            "maximum": 80.0,
+            "minimum": 20.0,
+            "title": "Trigger Duty Percent",
+            "default": 50.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ZArbitrarySettingsBody"
+      },
+      "ZArbitrarySourceItem": {
+        "properties": {
+          "run_name": {
+            "type": "string",
+            "title": "Run Name"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ZArbitrarySourceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_name",
+          "summary",
+          "error"
+        ],
+        "title": "ZArbitrarySourceItem"
+      },
+      "ZArbitrarySourceSummary": {
+        "properties": {
+          "run_name": {
+            "type": "string",
+            "title": "Run Name"
+          },
+          "waveform_sha256": {
+            "type": "string",
+            "title": "Waveform Sha256"
+          },
+          "points": {
+            "type": "integer",
+            "title": "Points"
+          },
+          "repeat_frequency_hz": {
+            "type": "number",
+            "title": "Repeat Frequency Hz"
+          },
+          "period_s": {
+            "type": "number",
+            "title": "Period S"
+          },
+          "amplitude_vpp": {
+            "type": "number",
+            "title": "Amplitude Vpp"
+          },
+          "offset_v": {
+            "type": "number",
+            "title": "Offset V"
+          },
+          "minimum_v": {
+            "type": "number",
+            "title": "Minimum V"
+          },
+          "maximum_v": {
+            "type": "number",
+            "title": "Maximum V"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_name",
+          "waveform_sha256",
+          "points",
+          "repeat_frequency_hz",
+          "period_s",
+          "amplitude_vpp",
+          "offset_v",
+          "minimum_v",
+          "maximum_v"
+        ],
+        "title": "ZArbitrarySourceSummary"
+      },
+      "ZArbitraryStatus": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ControlTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "source_known": {
+            "type": "boolean",
+            "title": "Source Known"
+          },
+          "last_applied": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ZArbitraryApplied"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "targets",
+          "source_known",
+          "last_applied"
+        ],
+        "title": "ZArbitraryStatus"
       }
     }
   }

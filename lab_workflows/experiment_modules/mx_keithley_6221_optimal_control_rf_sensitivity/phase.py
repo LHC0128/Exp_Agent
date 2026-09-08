@@ -141,6 +141,42 @@ class DispersionPhaseFitResult:
 
 
 @dataclass(frozen=True, slots=True)
+class DispersionPhaseOutlierDetection:
+    """基于非线性色散拟合残差的跨相位异常检测结果。"""
+
+    model: str
+    sigma_threshold: float
+    noise_multiplier: float
+    fit_success: bool
+    fit_r_squared: float
+    fit_rejection_reasons: tuple[str, ...]
+    median_residual_v: float
+    robust_sigma_v: float
+    median_point_std_v: float
+    threshold_v: float
+    residual_v: tuple[float, ...]
+    outlier_indices: tuple[int, ...]
+    outlier_phase_deg: tuple[float, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "model": self.model,
+            "sigma_threshold": self.sigma_threshold,
+            "noise_multiplier": self.noise_multiplier,
+            "fit_success": self.fit_success,
+            "fit_r_squared": self.fit_r_squared,
+            "fit_rejection_reasons": list(self.fit_rejection_reasons),
+            "median_residual_v": self.median_residual_v,
+            "robust_sigma_v": self.robust_sigma_v,
+            "median_point_std_v": self.median_point_std_v,
+            "threshold_v": self.threshold_v,
+            "residual_v": list(self.residual_v),
+            "outlier_indices": list(self.outlier_indices),
+            "outlier_phase_deg": list(self.outlier_phase_deg),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class QuadraturePhaseFitResult:
     """基于相差 180° 复数差分的 Y RF 校相结果。"""
 
@@ -715,6 +751,7 @@ def fit_dispersion_phase_scan(
     y_rf_amplitude_vpp: float,
     r_squared_min: float,
     amplitude_sigma_min: float,
+    max_starts: int | None = None,
 ) -> DispersionPhaseFitResult:
     """用 |色散| 折叠模型拟合 R 对 Y RF 相位的响应。
 
@@ -776,6 +813,18 @@ def fit_dispersion_phase_scan(
         [1e-12, 1e-12, 1e-12, 0.0, -720.0],
         [scale_upper, amplitude_upper, 3.0 * amplitude_a, amplitude_upper, 720.0],
     )
+    if max_starts is not None:
+        if max_starts < 1:
+            raise ValueError("|色散| 相位拟合的最大起点数必须大于 0")
+        if max_starts < len(starts):
+            # 保留整个剩磁相位范围，避免简单截断只覆盖少数相位起点。
+            indices = np.unique(
+                np.rint(
+                    np.linspace(0, len(starts) - 1, int(max_starts))
+                ).astype(int)
+            )
+            starts = [starts[int(index)] for index in indices]
+
     best: tuple[np.ndarray, np.ndarray, float] | None = None
     for start in starts:
         try:
@@ -890,4 +939,137 @@ def fit_dispersion_phase_scan(
         signal_to_noise=float(signal_to_noise),
         y_rf_amplitude_vpp=amplitude_a,
         rejection_reasons=tuple(reasons),
+    )
+
+
+def detect_dispersion_phase_outliers(
+    phase_deg: np.ndarray,
+    r_mean_v: np.ndarray,
+    r_std_v: np.ndarray,
+    *,
+    y_rf_amplitude_vpp: float,
+    sigma_threshold: float,
+    noise_multiplier: float = 10.0,
+    max_starts: int | None = 24,
+) -> DispersionPhaseOutlierDetection:
+    """用非线性色散模型残差识别相位异常点。
+
+    拟合门槛在此阶段关闭，只用拟合曲线建立稳健 MAD 阈值；最终是否接受
+    网格点仍由 ``fit_dispersion_phase_scan`` 的完整门槛决定。
+    """
+    phase = np.asarray(phase_deg, dtype=float).reshape(-1)
+    response = np.asarray(r_mean_v, dtype=float).reshape(-1)
+    noise = np.asarray(r_std_v, dtype=float).reshape(-1)
+    if not (phase.shape == response.shape == noise.shape):
+        raise ValueError("非线性色散离群检测的相位、R 均值、R 噪声长度不一致")
+    if phase.size < 8:
+        raise ValueError("非线性色散离群检测至少需要 8 个点")
+    if not (
+        np.all(np.isfinite(phase))
+        and np.all(np.isfinite(response))
+        and np.all(np.isfinite(noise))
+    ):
+        raise ValueError("非线性色散离群检测包含 NaN 或无穷值")
+    if np.any(noise < 0.0):
+        raise ValueError("非线性色散离群检测的单点噪声不能为负")
+    if sigma_threshold <= 0.0 or noise_multiplier <= 0.0:
+        raise ValueError("非线性色散离群检测阈值必须大于 0")
+
+    active = np.ones(phase.size, dtype=bool)
+    outlier_indices: list[int] = []
+    fit = None
+    residual = np.zeros_like(response)
+    threshold = 1e-12
+    median_residual = 0.0
+    robust_sigma = 0.0
+    median_point_std = float(np.median(noise))
+    # 逐次剔除最大稳健残差并重新拟合，避免一个严重坏点把非线性模型
+    # 拉向自身、从而掩盖第二个坏点。至少保留 6 个点供五参数模型拟合。
+    for _ in range(max(1, phase.size - 6)):
+        fit = fit_dispersion_phase_scan(
+            phase[active],
+            response[active],
+            noise[active],
+            y_rf_amplitude_vpp=y_rf_amplitude_vpp,
+            r_squared_min=float("-inf"),
+            amplitude_sigma_min=0.0,
+            max_starts=max_starts,
+        )
+        if not np.all(np.isfinite(fit.parameters)):
+            # 拟合完全不收敛时不把整条曲线误判为异常，交由最终拟合报告失败。
+            residual = np.zeros_like(response)
+            break
+        fitted = dispersion_phase_response(
+            phase,
+            *fit.parameters,
+            y_rf_amplitude_vpp,
+        )
+        residual = np.abs(response - fitted)
+        active_residual = residual[active]
+        median_residual = float(np.median(active_residual))
+        robust_sigma = float(
+            1.4826
+            * np.median(np.abs(active_residual - median_residual))
+        )
+        threshold = max(
+            median_residual + sigma_threshold * robust_sigma,
+            noise_multiplier * median_point_std,
+            1e-12,
+        )
+        candidates = np.flatnonzero(active & (residual > threshold))
+        if candidates.size == 0:
+            break
+        worst = int(candidates[np.argmax(residual[candidates])])
+        outlier_indices.append(worst)
+        active[worst] = False
+
+    if fit is None:
+        fit = fit_dispersion_phase_scan(
+            phase,
+            response,
+            noise,
+            y_rf_amplitude_vpp=y_rf_amplitude_vpp,
+            r_squared_min=float("-inf"),
+            amplitude_sigma_min=0.0,
+            max_starts=max_starts,
+        )
+    # 参数退化时，非线性模型可能通过改变线宽/尺度吸收单个坏点。
+    # 此时仅把一阶谐波检测作为保守兜底；正常情况下异常判定仍来自
+    # 非线性色散拟合残差，且两种检测结果会合并而不会减少重测点。
+    if not outlier_indices:
+        from ..mx_z_optimal_control_rf_sensitivity.phase import (
+            detect_r_phase_outliers,
+        )
+
+        harmonic = detect_r_phase_outliers(
+            phase,
+            response,
+            noise,
+            sigma_threshold=sigma_threshold,
+            noise_multiplier=noise_multiplier,
+        )
+        outlier_indices.extend(
+            int(index) for index in harmonic.outlier_indices
+        )
+        if outlier_indices:
+            residual = np.maximum(
+                residual,
+                np.asarray(harmonic.residual_v, dtype=float),
+            )
+    return DispersionPhaseOutlierDetection(
+        model=DISPERSION_MODEL_NAME,
+        sigma_threshold=float(sigma_threshold),
+        noise_multiplier=float(noise_multiplier),
+        fit_success=bool(np.all(np.isfinite(fit.parameters))),
+        fit_r_squared=float(fit.r_squared),
+        fit_rejection_reasons=tuple(fit.rejection_reasons),
+        median_residual_v=median_residual,
+        robust_sigma_v=robust_sigma,
+        median_point_std_v=median_point_std,
+        threshold_v=float(threshold),
+        residual_v=tuple(float(value) for value in residual),
+        outlier_indices=tuple(int(value) for value in outlier_indices),
+        outlier_phase_deg=tuple(
+            float(phase[index]) for index in outlier_indices
+        ),
     )

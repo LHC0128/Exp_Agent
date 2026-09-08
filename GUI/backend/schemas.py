@@ -493,6 +493,61 @@ class ControlGeneratorBody(ControlRevisionBody):
         return self
 
 
+class ZArbitrarySettingsBody(StrictModel):
+    control_burst_phase_deg: float = Field(default=0.0, allow_inf_nan=False)
+    output_amplitude_vpp: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    link_trigger: bool = False
+    trigger_frequency_hz: float = Field(default=100.0, gt=0, allow_inf_nan=False)
+    trigger_amplitude_vpp: float = Field(default=5.0, gt=0, allow_inf_nan=False)
+    trigger_offset_v: float = Field(default=2.5, allow_inf_nan=False)
+    trigger_duty_percent: float = Field(default=50.0, ge=20, le=80, allow_inf_nan=False)
+
+
+class ZArbitraryActionBody(ControlRevisionBody):
+    action: Literal["configure", "configure_and_start", "stop"]
+    run_name: str | None = None
+    waveform_sha256: str | None = None
+    settings: ZArbitrarySettingsBody = Field(default_factory=ZArbitrarySettingsBody)
+
+
+class ZArbitrarySourceSummary(StrictModel):
+    run_name: str
+    waveform_sha256: str
+    points: int
+    repeat_frequency_hz: float
+    period_s: float
+    amplitude_vpp: float
+    offset_v: float
+    minimum_v: float
+    maximum_v: float
+
+
+class ZArbitraryPreview(ZArbitrarySourceSummary):
+    time_s: list[float]
+    voltage_v: list[float]
+
+
+class ZArbitrarySourceItem(StrictModel):
+    run_name: str
+    summary: ZArbitrarySourceSummary | None
+    error: str | None
+
+
+class ZArbitraryApplied(StrictModel):
+    revisions: list[str]
+    link_trigger: bool
+    source: ZArbitrarySourceSummary | None
+    settings: ZArbitrarySettingsBody | None
+    state: Literal["enabled", "off", "unknown"]
+    updated_at: str
+    snapshots: list[ControlTargetResponse]
+
+
+class ZArbitraryStatus(ControlTargetCatalog):
+    source_known: bool
+    last_applied: ZArbitraryApplied | None
+
+
 class ControlCurrentSourceBody(ControlRevisionBody):
     settings: CurrentSourceSettings
 

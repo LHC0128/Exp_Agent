@@ -154,6 +154,35 @@ class ComplexPhaseOutlierDetection:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class RPhaseOutlierDetection:
+    """仅用 Demod0 R 相位曲线稳健识别跨相位异常点。"""
+
+    sigma_threshold: float
+    noise_multiplier: float
+    median_residual_v: float
+    robust_sigma_v: float
+    median_point_std_v: float
+    threshold_v: float
+    residual_v: tuple[float, ...]
+    outlier_indices: tuple[int, ...]
+    outlier_phase_deg: tuple[float, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "model": "r_first_harmonic_residual",
+            "sigma_threshold": self.sigma_threshold,
+            "noise_multiplier": self.noise_multiplier,
+            "median_residual_v": self.median_residual_v,
+            "robust_sigma_v": self.robust_sigma_v,
+            "median_point_std_v": self.median_point_std_v,
+            "threshold_v": self.threshold_v,
+            "residual_v": list(self.residual_v),
+            "outlier_indices": list(self.outlier_indices),
+            "outlier_phase_deg": list(self.outlier_phase_deg),
+        }
+
+
 def _circular_distance_deg(left: float, right: float) -> float:
     return abs((left - right + 180.0) % 360.0 - 180.0)
 
@@ -272,6 +301,76 @@ def detect_complex_phase_outliers(
         median_residual_v=median_residual,
         robust_sigma_v=robust_sigma,
         median_point_complex_std_v=median_point_std,
+        threshold_v=float(threshold),
+        residual_v=tuple(float(value) for value in residual),
+        outlier_indices=tuple(int(value) for value in outlier_indices),
+        outlier_phase_deg=tuple(
+            float(phase[index]) for index in outlier_indices
+        ),
+    )
+
+
+def detect_r_phase_outliers(
+    phase_deg: np.ndarray,
+    r_mean_v: np.ndarray,
+    r_std_v: np.ndarray,
+    *,
+    sigma_threshold: float,
+    noise_multiplier: float = 10.0,
+) -> RPhaseOutlierDetection:
+    """用 R 曲线的一阶谐波稳健残差识别触发错误点。
+
+    该检测器只用于采集期的异常相位重采，不替代正式的绝对值正弦拟合。
+    阈值同时受残差 MAD 和单点时间序列噪声约束，避免把正常的小幅相位
+    响应误判为异常。
+    """
+    phase = np.asarray(phase_deg, dtype=float).reshape(-1)
+    r_values = np.asarray(r_mean_v, dtype=float).reshape(-1)
+    point_std = np.asarray(r_std_v, dtype=float).reshape(-1)
+    if not (phase.shape == r_values.shape == point_std.shape):
+        raise ValueError("R 相位离群检测的相位、R 均值、R 噪声长度不一致")
+    if phase.size < 8:
+        raise ValueError("R 相位离群检测至少需要 8 个点")
+    if not (
+        np.all(np.isfinite(phase))
+        and np.all(np.isfinite(r_values))
+        and np.all(np.isfinite(point_std))
+    ):
+        raise ValueError("R 相位离群检测包含 NaN 或无穷值")
+    if np.any(point_std < 0.0):
+        raise ValueError("R 相位离群检测的单点噪声不能为负")
+    if sigma_threshold <= 0.0 or noise_multiplier <= 0.0:
+        raise ValueError("相位离群检测阈值必须大于 0")
+
+    radians = np.deg2rad(phase)
+    design = np.column_stack(
+        (
+            np.ones(phase.size, dtype=float),
+            np.cos(radians),
+            np.sin(radians),
+        )
+    )
+    coefficients, _, _, _ = np.linalg.lstsq(
+        design,
+        r_values,
+        rcond=None,
+    )
+    residual = np.abs(r_values - design @ coefficients)
+    median_residual = float(np.median(residual))
+    robust_sigma = float(
+        1.4826 * np.median(np.abs(residual - median_residual))
+    )
+    median_point_std = float(np.median(point_std))
+    robust_threshold = median_residual + sigma_threshold * robust_sigma
+    noise_threshold = noise_multiplier * median_point_std
+    threshold = max(robust_threshold, noise_threshold, 1e-12)
+    outlier_indices = np.flatnonzero(residual > threshold)
+    return RPhaseOutlierDetection(
+        sigma_threshold=float(sigma_threshold),
+        noise_multiplier=float(noise_multiplier),
+        median_residual_v=median_residual,
+        robust_sigma_v=robust_sigma,
+        median_point_std_v=median_point_std,
         threshold_v=float(threshold),
         residual_v=tuple(float(value) for value in residual),
         outlier_indices=tuple(int(value) for value in outlier_indices),

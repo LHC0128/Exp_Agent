@@ -72,6 +72,9 @@ results/                  # 结果图表
 
 ## GUI 基础使用
 
+示波器采集位于“实验中心 → 示波器采集”，支持通道/模式/边沿/电平触发设置、V/div 与垂直偏置、时域量程与超量程提示、单通道时间/频域显示、软件 Welch PSD、
+历史叠加、独立显示/隐藏、颜色和选定历史删除，详见 [示波器采集](docs/scope_capture.md)。
+
 GUI 是运行在实验电脑本机的 Web 控制台，可用于读取和设置 GS200、Keithley 6221 电流源、
 TOPTICA DLC pro Probe 激光、DG4000、DG900 Pro、SDS 示波器等仪器，并运行仓库中
 已接入的实验流程。
@@ -113,9 +116,10 @@ Set-Location D:\Code\exp_agent\GUI
 3. “设备控制”以多列网格展示全部物理量，可逐项“读取”，也可点击“连接并读取全部”；页面打开时不会自动连接硬件。
 4. 信号发生器常用波形参数直接显示，波形细节、负载、单位、调制和 Burst 位于折叠的高级区；`rf_coil` 作为历史别名不单独显示，统一由“Y方向磁场”面板控制。
 5. 点击“应用并回读”；写入前会检查当前 mapping key 的 `params/safety_limits.yaml`，写入后以实际回读值更新页面。非 Vpp 状态仅允许回读、关闭输出或切换为 Vpp。
-6. 实验结束后，在启动 GUI 的 PowerShell 窗口按 `Ctrl+C` 停止服务。
+6. 在“功能模块 → Z 任意波控制”选择闭环冻结结果，离线查看 V–t 图，再选择“仅加载，保持关闭”或“加载并启动”。可联动时序信号2并编辑触发参数；Z 面板提供快捷入口。详见 [任意波控制说明](docs/signal_generator.md#gui-z-任意波控制)。
+7. 实验结束后，在启动 GUI 的 PowerShell 窗口按 `Ctrl+C` 停止服务；服务停止不会自动关闭已启动的任意波，请先按需要执行模块的“停止”。
 
-“实验中心”统一展示 39 个正式 Python 采集入口，并提供动态参数、默认值保存、
+“实验中心”统一展示 55 个正式 Python 采集入口，并提供动态参数、默认值保存、
 无副作用预检、运行日志、安全停止和离线重新分析。每张实验卡片同时显示对应的
 采集程序和独立分析程序；没有独立分析脚本时会明确标注。`*.ipynb` 不进入实验中心，
 `*_plot.py` 只作为对应实验的分析器。卡片还会明确显示“新模式”或“旧模式”；完整
@@ -145,7 +149,7 @@ experiments ───┘
 - `legacy_script`：过渡期兼容模式，仍从旧脚本常量生成参数并通过隔离适配器执行。
   它不会被当作新实验模板。
 
-当前共有 21 个新模式实验和 18 个旧模式实验。GUI 参数表单只展示新模式模型显式
+当前共有 37 个新模式实验和 18 个旧模式实验。GUI 参数表单只展示新模式模型显式
 声明的字段，不会因为工作流中新增一个全大写运行时常量而意外增加表单项目。
 
 `t2-calibration` 已迁移为强类型光学 FID 工作流：保持 `T2_Calibration` 数据目录与
@@ -179,7 +183,9 @@ experiments ───┘
 - `Mx_Y_RF_Sensitivity.py` / `Mx_Y_RF_Sensitivity_plot.py`
 - `Mx_Z_Optimal_Control_RF_Sensitivity.py` / `Mx_Z_Optimal_Control_RF_Sensitivity_plot.py`
 - `Mx_Z_Optimal_Control_XY_Leakage_Response.py` / `Mx_Z_Optimal_Control_XY_Leakage_Response_plot.py`
+- `Mx_Z_Optimal_Control_XY_RF_Phase_Response.py` / `Mx_Z_Optimal_Control_XY_RF_Phase_Response_plot.py`
 - `Mx_Z_Optimal_Control_XYZ_Balance.py` / `Mx_Z_Optimal_Control_XYZ_Balance_plot.py`
+- `Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance.py` / `Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance_plot.py`
 - `Mx_Y_RF_Power_Optimization.py` / `Mx_Y_RF_Power_Optimization_plot.py`
 - `Mx_Y_RF_Probe_Detuning_Optimization.py` / `Mx_Y_RF_Probe_Detuning_Optimization_plot.py`
 - `Mx_Main_Field_Calibration.py` / `Mx_Main_Field_Calibration_plot.py`
@@ -190,6 +196,8 @@ experiments ───┘
 - `Mx_Z_Field_Calibration.py` / `Mx_Z_Field_Calibration_plot.py`
 - `Mx_Z_Noise_Spectrum.py` / `Mx_Z_Noise_Spectrum_plot.py`
 - `Mx_XY_Residual_Field_Calibration.py` / `Mx_XY_Residual_Field_Calibration_plot.py`
+- `Z_AW_Waveform_Scope_Check.py` / `Z_AW_Waveform_Scope_Check_plot.py`
+- `Z_Coil_Inductance_Frequency_Response.py` / `Z_Coil_Inductance_Frequency_Response_plot.py`
 
 ## 当前实验清单
 
@@ -200,9 +208,20 @@ experiments ───┘
 | 静磁场灵敏度 | `experiments/Static_Magnetic_Field_Sensitivity.py`、`experiments/Static_Magnetic_Field_Sensitivity_Optimize.py` | `docs/static_mag_sens_v2.md` |
 | Mx Y 向 RF 场灵敏度 | `experiments/Mx_Y_RF_Sensitivity.py`、`experiments/Mx_Y_RF_Sensitivity_plot.py` | `docs/mx_y_rf_sensitivity.md` |
 | Mx Y 向 RF 频率响应（模式1扫频方式；幅度可嵌套扫描，统一布洛赫线形拟合覆盖 Lorentzian 与 Rabi 劈裂双峰） | `experiments/Mx_Y_RF_Frequency_Response.py`、`experiments/Mx_Y_RF_Frequency_Response_plot.py` | `docs/mx_y_rf_frequency_response.md` |
-| Mx Z 最优控制 RF 灵敏度（X DC + Y RF 偏置平衡剩磁场；Y RF 非零时使用 Demod0 X/Y 成对正交校相） | `experiments/Mx_Z_Optimal_Control_RF_Sensitivity.py`、`experiments/Mx_Z_Optimal_Control_RF_Sensitivity_plot.py` | `docs/mx_z_optimal_control_rf_sensitivity.md` |
+| Mx Y 最优控制 RF 频率响应（观察版；逐频率扫描 Burst 相位并绘制 Demod0 R） | `experiments/Mx_Y_Optimal_Control_RF_Frequency_Response.py`、`experiments/Mx_Y_Optimal_Control_RF_Frequency_Response_plot.py` | `docs/mx_y_optimal_control_rf_frequency_response.md` |
+| Mx Z 最优控制 RF 灵敏度（X DC + Y RF 偏置平衡剩磁场；Demod0 X/Y 成对正交校相；噪声采集可开启 RF 并设置幅值，默认 0.002 Vpp） | `experiments/Mx_Z_Optimal_Control_RF_Sensitivity.py`、`experiments/Mx_Z_Optimal_Control_RF_Sensitivity_plot.py` | `docs/mx_z_optimal_control_rf_sensitivity.md` |
+| Mx Z 最优控制 XY 补偿偏置 RF 灵敏度（中心一次校相后扫描 X/Y DC 补偿并生成灵敏度地图） | `experiments/Mx_Z_Optimal_Control_XY_RF_Sensitivity.py`、`experiments/Mx_Z_Optimal_Control_XY_RF_Sensitivity_plot.py` | `docs/mx_z_optimal_control_xy_rf_sensitivity.md` |
+| Mx Z 最优控制 XY 噪声谱（Z 控制开启、Y RF 交流关闭，扫描 X/Y DC 偏置并统计 R ASD 中位数） | `experiments/Mx_Z_Optimal_Control_XY_Noise_Spectrum.py`、`experiments/Mx_Z_Optimal_Control_XY_Noise_Spectrum_plot.py` | `docs/mx_z_optimal_control_xy_noise_spectrum.md` |
 | Mx Z 最优控制 XY 泄露响应（二维扫描同形 X/Y 触发任意波并报告实测最小 R 网格点） | `experiments/Mx_Z_Optimal_Control_XY_Leakage_Response.py`、`experiments/Mx_Z_Optimal_Control_XY_Leakage_Response_plot.py` | `docs/mx_z_optimal_control_xy_leakage_response.md` |
+| Mx Z 最优控制 XY 平衡场 RF 相位响应（X/Y DC 网格逐点扫描 Y RF Burst 相位，使用 Demod0 R 非线性色散模型拟合） | `experiments/Mx_Z_Optimal_Control_XY_RF_Phase_Response.py`、`experiments/Mx_Z_Optimal_Control_XY_RF_Phase_Response_plot.py` | `docs/mx_z_optimal_control_xy_rf_phase_response.md` |
 | Mx Z 最优控制 XYZ 平衡场（X/Y DG4000 DC + Z GS200 三维扫描，以实测 Demod0 R 最小点为结果） | `experiments/Mx_Z_Optimal_Control_XYZ_Balance.py`、`experiments/Mx_Z_Optimal_Control_XYZ_Balance_plot.py` | `docs/mx_z_optimal_control_xyz_balance.md` |
+| Mx Z 最优控制 DG4000 偏置 XYZ 平衡场（GS200 断开；同一 DG4000 Z 任意波 offset 扫描，并采集 Demod0 X/Y/R） | `experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance.py`、`experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance_plot.py` | `docs/mx_z_optimal_control_dg4000_bias_xyz_balance.md` |
+| Z 任意波线圈波形一致性验证（SDS CH3 测量、CH4 硬件触发） | `experiments/Z_AW_Waveform_Scope_Check.py`、`experiments/Z_AW_Waveform_Scope_Check_plot.py` | `docs/z_aw_waveform_scope_check.md` |
+| Z 线圈电感效应频率响应（固定幅度正弦扫频、SDS CH3/CH4） | `experiments/Z_Coil_Inductance_Frequency_Response.py`、`experiments/Z_Coil_Inductance_Frequency_Response_plot.py` | `docs/z_coil_inductance_frequency_response.md` |
+| Z 线圈实际电流频率响应（低端采样电阻、复数 A/V 传递函数） | `experiments/Z_Coil_Current_Frequency_Response.py`、`experiments/Z_Coil_Current_Frequency_Response_plot.py` | `docs/z_coil_current_frequency_response.md` |
+| Mx Z 实际电流-耦合强度标定（正反向电流扫描） | `experiments/Mx_Z_Current_Coupling_Calibration.py`、`experiments/Mx_Z_Current_Coupling_Calibration_plot.py` | `docs/mx_z_current_coupling_calibration.md` |
+| Z 任意波实际电流波形验证 | `experiments/Z_AW_Current_Waveform_Scope_Check.py`、`experiments/Z_AW_Current_Waveform_Scope_Check_plot.py` | `docs/z_aw_current_waveform_scope_check.md` |
+| Z 任意波实际电流闭环校正（冻结最佳 hold-out 波形） | `experiments/Z_AW_Closed_Loop_Waveform_Correction.py`、`experiments/Z_AW_Closed_Loop_Waveform_Correction_plot.py` | `docs/z_aw_closed_loop_waveform_correction.md` |
 | Mx Y RF 光功率灵敏度优化（含逐点诊断图、tqdm ETA、拟合导数与零点实测斜率双排名） | `experiments/Mx_Y_RF_Power_Optimization.py`、`experiments/Mx_Y_RF_Power_Optimization_plot.py` | `docs/mx_y_rf_power_optimization.md` |
 | Mx Y RF Probe 光功率与 PZT 失谐灵敏度优化（支持固定 Probe 单点；不连接 TEC，保留温控开关门控） | `experiments/Mx_Y_RF_Probe_Detuning_Optimization.py`、`experiments/Mx_Y_RF_Probe_Detuning_Optimization_plot.py` | `docs/mx_y_rf_probe_detuning_optimization.md` |
 | Mx 主磁场频率标定 | `experiments/Mx_Main_Field_Calibration.py`、`experiments/Mx_Main_Field_Calibration_plot.py` | `docs/mx_main_field_calibration.md` |

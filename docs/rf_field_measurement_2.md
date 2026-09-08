@@ -130,7 +130,7 @@ learned_notes:
 `lab_workflows/experiment_modules/rf_sensitivity_direct_aw_frequency/`；
 `experiments/RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py` 和共享 plot 文件为薄入口。
 GUI/YAML 仍使用原有大写键，任意波 CSV 选项由模型显式声明并动态读取
-`experiments/*.csv`。旧脚本原有的线性扫描 `+50 Hz` 行为现已显式声明为高级参数
+`experiments/*.csv`；同时可选择 `Z_AW_Closed_Loop_Waveform_Correction` 运行目录中的闭环冻结波形，默认运行 `obbv5`。旧脚本原有的线性扫描 `+50 Hz` 行为现已显式声明为高级参数
 `Z_RF_FREQ_OFFSET_HZ`，因此默认输入 0–20 kHz 时实际频点为 50–20050 Hz，不包含
 0 Hz 基线。本文档中其他 RF 方案仍可能处于旧模式，以 GUI 卡片标记和
 `docs/experiment_migration_status.md` 为准。

@@ -247,10 +247,101 @@ def _plot_full_analysis(
     return filename
 
 
+def _plot_measured_amplitude_response(
+    *,
+    results_dir: Path,
+    amplitude_vpp: np.ndarray,
+    r_mean_v: np.ndarray,
+    r_std_v: np.ndarray,
+    bad_point_mask: np.ndarray,
+    filename: str = "amplitude_response.png",
+) -> str:
+    """拟合失败时仅绘制幅度扫描的实际测量数据。"""
+    amplitude = np.asarray(amplitude_vpp, dtype=float).reshape(-1)
+    response = np.asarray(r_mean_v, dtype=float).reshape(-1)
+    response_std = np.asarray(r_std_v, dtype=float).reshape(-1)
+    excluded = np.asarray(bad_point_mask, dtype=bool).reshape(-1)
+    if not (
+        amplitude.shape
+        == response.shape
+        == response_std.shape
+        == excluded.shape
+    ):
+        raise ValueError("幅度扫描绘图数组长度不一致")
+
+    finite = np.isfinite(amplitude) & np.isfinite(response)
+    set_plot_style("paper")
+    fig, ax = new_figure()
+    if np.any(finite):
+        order = np.argsort(amplitude[finite])
+        x_values = amplitude[finite][order]
+        y_values = response[finite][order]
+        yerr_values = response_std[finite][order]
+        use_errorbars = np.all(
+            np.isfinite(yerr_values) & (yerr_values >= 0.0)
+        )
+        if use_errorbars:
+            ax.errorbar(
+                x_values,
+                y_values,
+                yerr=yerr_values,
+                fmt="o-",
+                color=COLOR_OPTIMAL,
+                markersize=3.5,
+                linewidth=0.9,
+                capsize=2.0,
+                label="Measured R",
+            )
+        else:
+            ax.plot(
+                x_values,
+                y_values,
+                "o-",
+                color=COLOR_OPTIMAL,
+                markersize=3.5,
+                linewidth=0.9,
+                label="Measured R",
+            )
+
+        excluded_finite = finite & excluded
+        if np.any(excluded_finite):
+            excluded_order = np.argsort(amplitude[excluded_finite])
+            ax.plot(
+                amplitude[excluded_finite][excluded_order],
+                response[excluded_finite][excluded_order],
+                "x",
+                color=COLOR_TRAD,
+                markersize=6,
+                mew=1.2,
+                label="Excluded from fit",
+            )
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            "No finite measured points",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+    format_axis(
+        ax,
+        xlabel="Signed Y RF amplitude (Vpp)",
+        ylabel="Demod R (V)",
+    )
+    ax.set_title("Measured dispersive response (fit failed)")
+    if np.any(finite):
+        style_legend(ax)
+    save_figure(fig, results_dir / filename)
+    return filename
+
+
 def analyze(
     run_dir: Path,
     *,
     params_type: type[MxYRFParams] = MxYRFParams,
+    ignore_relative_gamma_uncertainty: bool = False,
+    initial_center: float | None = None,
 ) -> dict[str, Any]:
     run_dir = Path(run_dir).resolve()
     raw_dir = run_dir / "raw"
@@ -258,7 +349,12 @@ def analyze(
     results_dir.mkdir(parents=True, exist_ok=True)
     params, config = _load_params(run_dir, params_type)
 
-    evaluation = evaluate_mx_y_rf_point(raw_dir, params)
+    evaluation = evaluate_mx_y_rf_point(
+        raw_dir,
+        params,
+        ignore_relative_gamma_uncertainty=ignore_relative_gamma_uncertainty,
+        initial_center=initial_center,
+    )
     amplitude_vpp = evaluation["amplitude_vpp"]
     r_mean_v = evaluation["r_mean_v"]
     r_std_v = evaluation["r_std_v"]
@@ -267,7 +363,22 @@ def analyze(
     response_fit = evaluation["response_fit"]
     response_result = evaluation["response_result"]
     if not response_fit.success:
-        payload = {"success": False, "response_fit": response_result}
+        measured_plot = _plot_measured_amplitude_response(
+            results_dir=results_dir,
+            amplitude_vpp=amplitude_vpp,
+            r_mean_v=r_mean_v,
+            r_std_v=r_std_v,
+            bad_point_mask=bad_point_mask,
+        )
+        payload = {
+            "success": False,
+            "response_fit": response_result,
+            "plot_profile": "paper",
+            "warnings": [
+                "幅度色散拟合失败；已输出实际测量数据图，未绘制拟合曲线。"
+            ],
+            "files": [measured_plot],
+        }
         (results_dir / "analysis.yaml").write_text(
             yaml.safe_dump(_builtin(payload), allow_unicode=True, sort_keys=False),
             encoding="utf-8",

@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.0.3",
+    "echarts": "^6.1.0",
+    "lucide-react": "^1.41.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-router-dom": "7.18.1",

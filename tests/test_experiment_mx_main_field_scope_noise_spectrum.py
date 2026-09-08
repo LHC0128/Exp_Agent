@@ -74,13 +74,13 @@ def test_defaults_schema_registry_and_catalog_contract() -> None:
     assert "HF2" not in DEFINITION.required_devices
 
     fields = {item["name"]: item for item in DEFINITION.schema()["fields"]}
-    assert fields["CONTROL_FREQUENCY_POINTS"]["default"] == 500
+    assert fields["CONTROL_FREQUENCY_POINTS"]["default"] == 201
     assert fields["SCOPE_SAMPLE_RATE"]["default"] == 500000.0
-    assert fields["SCOPE_DURATION"]["default"] == 1.0
+    assert fields["SCOPE_DURATION"]["default"] == 2.0
     assert fields["SCOPE_AC_COUPLING"]["type"] == "boolean"
-    assert fields["SCOPE_AC_COUPLING"]["default"] is False
-    assert fields["FIXED_PARAMS.X_magnetic_field"]["default"] == pytest.approx(-0.015)
-    assert fields["FIXED_PARAMS.Y_magnetic_field"]["default"] == pytest.approx(-0.004)
+    assert fields["SCOPE_AC_COUPLING"]["default"] is True
+    assert fields["FIXED_PARAMS.X_magnetic_field"]["default"] == pytest.approx(-0.01)
+    assert fields["FIXED_PARAMS.Y_magnetic_field"]["default"] == pytest.approx(0.008)
     assert fields["FIT_EXAMPLE_PLOT_COUNT"]["default"] == 10
     assert fields["FIT_HALF_WIDTH_HZ"]["default"] == 5000.0
     assert fields["GLOBAL_FIT_FREQUENCY_MIN_HZ"]["default"] == 500.0
@@ -92,13 +92,13 @@ def test_defaults_schema_registry_and_catalog_contract() -> None:
         root / "params" / "experiments" / "mx-main-field-scope-noise-spectrum.yaml"
     )
     assert defaults.validate() == []
-    assert defaults.scope_ac_coupling is False
-    assert defaults.x_dc_field_v == pytest.approx(-0.015)
-    assert defaults.y_dc_field_v == pytest.approx(-0.004)
-    assert defaults.scope_initial_scale_v_div == pytest.approx(0.4)
+    assert defaults.scope_ac_coupling is True
+    assert defaults.x_dc_field_v == pytest.approx(-0.01)
+    assert defaults.y_dc_field_v == pytest.approx(0.008)
+    assert defaults.scope_initial_scale_v_div == pytest.approx(0.1)
     assert defaults.welch_nperseg == 20000
     assert defaults.fit_half_width_hz == pytest.approx(5000.0)
-    assert fields["SCOPE_INITIAL_SCALE"]["default"] == pytest.approx(0.4)
+    assert fields["SCOPE_INITIAL_SCALE"]["default"] == pytest.approx(0.1)
     assert fields["WELCH_NPERSEG"]["default"] == 20000
     with (root / "params" / "experiment_catalog.yaml").open(
         encoding="utf-8"

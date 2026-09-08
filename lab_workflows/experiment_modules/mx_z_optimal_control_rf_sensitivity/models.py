@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from ...common import find_project_root, validate_safety_limit
+from ...current_feedback import load_corrected_control_waveform
 from ...experiment_params import parameter
 from ..mx_y_rf_sensitivity.models import MxYRFParams
 from .sources import (
@@ -21,7 +22,26 @@ from .sources import (
 class MxZOptimalControlRFParams(MxYRFParams):
     """配置可选 GS200 主场，并叠加 Z 周期控制测量 Y RF 灵敏度。"""
 
-    schema_version = 3
+    schema_version = 4
+
+    noise_rf_enabled: bool = parameter(
+        default=False,
+        external_name="NOISE_RF_ENABLED",
+        label="噪声测量时开启 RF",
+        group="basic",
+        description="仅作用于 RF 灵敏度模式的噪声采集；沿用 Y RF 频率和校准相位。",
+    )
+    noise_rf_amplitude_vpp: float = parameter(
+        default=0.002,
+        external_name="NOISE_RF_AMPLITUDE_VPP",
+        label="噪声测量 RF 幅值",
+        unit="Vpp",
+        group="basic",
+        minimum=0.0,
+        maximum=2.0,
+        safety_key="rf_coil",
+        description="开启噪声 RF 时使用的峰峰值；设为 0 时仅保留 Y DC 补偿。",
+    )
 
     run_tag: str = parameter(
         default="mx_z_optimal_control_rf",
@@ -198,6 +218,20 @@ class MxZOptimalControlRFParams(MxYRFParams):
         label="最优控制版本",
         group="basic",
         description="按 vN 解析同版本的波形与理论参数文件。",
+    )
+    control_waveform_source: str = parameter(
+        default="theory",
+        external_name="CONTROL_WAVEFORM_SOURCE",
+        label="控制波形来源",
+        group="basic",
+        options=(("theory", "理论换算"), ("corrected_run", "闭环冻结波形")),
+    )
+    corrected_control_source_run: str = parameter(
+        default="",
+        external_name="CORRECTED_CONTROL_SOURCE_RUN",
+        label="闭环校正运行",
+        group="basic",
+        description="CONTROL_WAVEFORM_SOURCE=corrected_run 时必须填写。",
     )
     control_results_root: str = parameter(
         default=r"D:\Code\theory_agent\simulate\results\oc_sens",
@@ -381,9 +415,13 @@ class MxZOptimalControlRFParams(MxYRFParams):
 
     def validate_model(self) -> list[str]:
         errors = MxYRFParams.validate_model(self)
+        if not np.isfinite(self.noise_rf_amplitude_vpp):
+            errors.append("NOISE_RF_AMPLITUDE_VPP 必须是有限数值")
         if self.linewidth_mode != "amplitude_equivalent":
             errors.append("LINEWIDTH_MODE 必须固定为 amplitude_equivalent")
-        if self.control_scale <= 0:
+        if self.control_waveform_source not in {"theory", "corrected_run"}:
+            errors.append("CONTROL_WAVEFORM_SOURCE 必须是 theory 或 corrected_run")
+        if self.control_waveform_source == "theory" and self.control_scale <= 0:
             errors.append("CONTROL_SCALE 必须大于 0")
         if self.phase_scan_start_deg >= self.phase_scan_stop_deg:
             errors.append("相位扫描必须满足起始相位 < 终止相位")
@@ -422,6 +460,7 @@ class MxZOptimalControlRFParams(MxYRFParams):
             abs(self.y_rf_amp_start_vpp),
             abs(self.y_rf_amp_stop_vpp),
             self.phase_cal_rf_amplitude_vpp,
+            self.noise_rf_amplitude_vpp if self.noise_rf_enabled else 0.0,
         )
         for label, value in (
             (
@@ -440,21 +479,34 @@ class MxZOptimalControlRFParams(MxYRFParams):
 
         root = find_project_root()
         try:
-            theory = load_theory_control(
-                Path(self.control_results_root),
-                self.control_version,
-            )
-            calibration = load_z_calibration(
-                root,
-                self.z_calibration_source_run,
-            )
-            build_applied_control(
-                theory,
-                calibration,
-                self.control_scale,
-                output_vpp=self.z_aw_output_vpp,
-                output_offset_v=self.z_aw_output_offset_v,
-            )
+            if self.control_waveform_source == "corrected_run":
+                corrected = load_corrected_control_waveform(
+                    root,
+                    self.corrected_control_source_run,
+                )
+                for value in (
+                    float(np.min(corrected.voltage_v)),
+                    float(np.max(corrected.voltage_v)),
+                    corrected.offset_v - corrected.amplitude_vpp / 2.0,
+                    corrected.offset_v + corrected.amplitude_vpp / 2.0,
+                ):
+                    validate_safety_limit("Z_magnetic_field", value)
+            else:
+                theory = load_theory_control(
+                    Path(self.control_results_root),
+                    self.control_version,
+                )
+                calibration = load_z_calibration(
+                    root,
+                    self.z_calibration_source_run,
+                )
+                build_applied_control(
+                    theory,
+                    calibration,
+                    self.control_scale,
+                    output_vpp=self.z_aw_output_vpp,
+                    output_offset_v=self.z_aw_output_offset_v,
+                )
         except (OSError, TypeError, ValueError, KeyError) as exc:
             errors.append(str(exc))
         return errors

@@ -20,6 +20,7 @@ from lab_workflows.experiment_modules.mx_z_field_calibration.scan import (
 )
 from lab_workflows.experiment_modules.mx_z_field_calibration.workflow import (
     _acquire_scan,
+    _set_z_dc_bias,
     _temperature_gated_acquire,
     safe_shutdown,
 )
@@ -44,8 +45,11 @@ def test_defaults_schema_and_registry_contract() -> None:
     assert get_experiment("mx-z-field-calibration") is DEFINITION
     assert DEFINITION.execution_mode == "typed_workflow"
     fields = {item["name"]: item for item in DEFINITION.schema()["fields"]}
-    assert fields["FIXED_PARAMS.main_magnetic_field"]["default"] == 9.3
-    assert fields["ZERO_BIAS_CENTER_FREQUENCY_HZ"]["default"] == 90000.0
+    assert fields["FIXED_PARAMS.main_magnetic_field"]["default"] == 0.0
+    # schema 默认来自版本化 YAML（正式默认）：零偏预测中心为 0 Hz；
+    # 模型回退默认保持 90000.0 Hz。
+    assert fields["ZERO_BIAS_CENTER_FREQUENCY_HZ"]["default"] == 0.0
+    assert MxZFieldCalibrationParams().zero_bias_center_frequency_hz == 90000.0
     assert DEFINITION.schema()["schema_version"] == 2
     assert {
         "FIT_R_SQUARED_MIN",
@@ -213,12 +217,26 @@ def test_temperature_gate_restores_and_waits_after_failure(
 class _ScanDG:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
+        self.shape = "SINusoid"
+        self.reported_shape: str | None = None
+        self.output_on = False
 
     def setup_dc(self, value: float, *, channel: int) -> None:
         self.calls.append(("dc", channel, value))
+        self.shape = "DC"
+        self.output_on = True
+
+    def get_shape(self, *, channel: int) -> str:
+        self.calls.append(("read_shape", channel))
+        return self.shape if self.reported_shape is None else self.reported_shape
+
+    def get_output(self, *, channel: int) -> bool:
+        self.calls.append(("read_output", channel))
+        return self.output_on
 
     def set_output(self, state: bool, *, channel: int) -> None:
         self.calls.append(("output", channel, state))
+        self.output_on = state
 
     def set_frequency(self, value: float, *, channel: int) -> None:
         self.calls.append(("frequency", channel, value))
@@ -274,7 +292,31 @@ def test_setting_z_bias_has_no_dedicated_wait(
         1000.0,
         "dev",
     )
-    assert z_device.calls[:2] == [("dc", 1, -3.0), ("output", 1, True)]
+    assert z_device.calls[:4] == [
+        ("dc", 1, -3.0),
+        ("output", 1, True),
+        ("read_shape", 1),
+        ("read_output", 1),
+    ]
+    with np.load(raw / "z_scan_index.npz") as index_data:
+        assert index_data["z_bias_commanded_v"] == pytest.approx([-3.0])
+        assert "z_bias_actual_v" not in index_data.files
+
+
+def test_z_bias_mode_mismatch_turns_output_off() -> None:
+    z_device = _ScanDG()
+    z_device.reported_shape = "SINusoid"
+
+    with pytest.raises(RuntimeError, match="Z DC 配置验证失败"):
+        _set_z_dc_bias(z_device, 1, 1.0, output=True)
+
+    assert z_device.calls == [
+        ("dc", 1, 1.0),
+        ("output", 1, True),
+        ("read_shape", 1),
+        ("read_output", 1),
+        ("output", 1, False),
+    ]
 
 
 class _ShutdownDG:

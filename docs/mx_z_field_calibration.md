@@ -3,14 +3,14 @@ title: Mx 高主场 Z 磁场频率标定
 type: Mx_Z_Field_Calibration
 scan_mode: nested_scan
 defaults:
-  FIXED_PARAMS.main_magnetic_field: 9.3
-  ZERO_BIAS_CENTER_FREQUENCY_HZ: 90000.0
-  Z_INITIAL_HZ_PER_V: 10621.690594509037
-  Z_BIAS_START_V: -3.0
+  FIXED_PARAMS.main_magnetic_field: 0.0
+  ZERO_BIAS_CENTER_FREQUENCY_HZ: 0.0
+  Z_INITIAL_HZ_PER_V: 12500.0
+  Z_BIAS_START_V: 1.0
   Z_BIAS_STOP_V: 3.0
-  Z_BIAS_STEP_V: 1.0
-  FREQUENCY_HALF_WIDTH_HZ: 4000.0
-  FREQUENCY_STEP_HZ: 100.0
+  Z_BIAS_STEP_V: 0.5
+  FREQUENCY_HALF_WIDTH_HZ: 10000.0
+  FREQUENCY_STEP_HZ: 500.0
   Y_RF_AMPLITUDE_VPP: 0.05
 mapping_keys:
   main_magnetic_field:
@@ -40,7 +40,7 @@ required_devices:
   - HF2
 learned_notes:
   - TEC103 为可选控制设备；COM3 被外部温控软件占用时跳过设温和稳定等待。
-  - 9.3 mA 高主场下，Z 偏置 -3 至 +3 V 不跨过总场零点，使用普通线性模型。
+  - 默认配置关闭 GS200 主场（0 mA），Z 偏置 1 至 3 V 不跨过总场零点，使用普通线性模型。
   - 采集工作流不执行共振拟合；全部 Lorentzian 和线性标定均由离线分析器完成。
   - 每个频点独立关闭温控采集，随后恢复 5 V 并等待 1 s。
 ---
@@ -55,16 +55,16 @@ learned_notes:
 f_0(V_Z)=K_Z V_Z+f_{0V}.
 \]
 
-主场与 Pump 光沿 Z，Probe 光沿 X；`rf_coil` 沿 Y，HF2 Demod0 只采集 R。默认主场为 9.3 mA，零偏预测中心为 90 kHz。`Z_INITIAL_HZ_PER_V=10621.690594509037` 只用于确定每个 Z 电压的局部扫频窗口，不作为最终标定结论。
+主场与 Pump 光沿 Z，Probe 光沿 X；`rf_coil` 沿 Y，HF2 Demod0 只采集 R。默认主场为 0 mA，零偏预测中心为 0 Hz。`Z_INITIAL_HZ_PER_V=12500.0` 只用于确定每个 Z 电压的局部扫频窗口，不作为最终标定结论。
 
 `FIXED_PARAMS.main_magnetic_field` 与 `ZERO_BIAS_CENTER_FREQUENCY_HZ` 均允许设置为 `0`。当零偏预测中心为 `0 Hz` 时，采集前使用首个 Z 扫描点的预测中心初始化 Y RF 与 HF2；所有实际扫频点仍必须大于 `0 Hz`，否则预检会拒绝运行。
 
 ## 扫描流程
 
-Z 偏置按单向七点扫描：
+Z 偏置按默认五点扫描：
 
 ```text
--3, -2, -1, 0, +1, +2, +3 V
+1.0, 1.5, 2.0, 2.5, 3.0 V
 ```
 
 GUI 必须明确选择正 Z 电压使预测中心升高或降低。每个 Z 点的预测中心为：
@@ -73,7 +73,7 @@ GUI 必须明确选择正 Z 电压使预测中心升高或降低。每个 Z 点�
 f_\mathrm{pred}=f_\mathrm{GUI}+sK_\mathrm{initial}V_Z,
 \]
 
-其中 \(s=\pm1\)。每个 Z 点在预测中心 ±4 kHz 内以 100 Hz 步进扫描。设置新的 Z DC 偏置后不执行专用稳定等待。
+其中 \(s=\pm1\)。每个 Z 点在预测中心 ±10 kHz 内以 500 Hz 步进扫描。设置新的 Z DC 偏置时，DG4000 使用专用 `VOLTage:OFFSet` 命令；工作流只验证波形仍为 DC 且输出开关状态正确。DG4162 的内部电压查询不能作为物理输出回读，因此原始数据记录的是命令值 `z_bias_commanded_v`；实际链路是否响应应以示波器等外部测量为准。设置后不执行专用稳定等待。
 
 每个 Y RF 频点依次执行：
 
@@ -87,7 +87,7 @@ f_\mathrm{pred}=f_\mathrm{GUI}+sK_\mathrm{initial}V_Z,
 
 ## 离线分析
 
-分析器从 `raw/z_scan_index.npz` 和各 `raw/z_*/frequency_scan.npz` 重建七条频率响应，对每条响应拟合带基线 Lorentzian。正式中心只执行拟合所需的基础有效性检查：
+分析器从 `raw/z_scan_index.npz` 和各 `raw/z_*/frequency_scan.npz` 重建各 Z 偏置点的频率响应，对每条响应拟合带基线 Lorentzian。正式中心只执行拟合所需的基础有效性检查：
 
 - 拟合正常收敛且输入中至少有 5 个有限频率点；
 - HWHM 大于频率步进且小于扫描跨度的一半；

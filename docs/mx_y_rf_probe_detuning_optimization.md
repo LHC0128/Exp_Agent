@@ -4,14 +4,14 @@ type: Mx_Y_RF_Probe_Detuning_Optimization
 execution_mode: typed_workflow
 scan_mode: nested_scan
 defaults:
-  PZT_VOLTAGE_START_V: 60.0
-  PZT_VOLTAGE_STOP_V: 100.0
-  PZT_VOLTAGE_POINTS: 9
+  PZT_VOLTAGE_START_V: 20.0
+  PZT_VOLTAGE_STOP_V: 120.0
+  PZT_VOLTAGE_POINTS: 21
   PZT_SETTLE_TIME_S: 1.0
-  PROBE_POWER_START_V: 0.1
-  PROBE_POWER_STOP_V: 0.5
-  PROBE_POWER_POINTS: 7
-  FIXED_PARAMS.Pump_laser_power: 0.5
+  PROBE_POWER_START_V: 0.3
+  PROBE_POWER_STOP_V: 0.3
+  PROBE_POWER_POINTS: 1
+  FIXED_PARAMS.Pump_laser_power: 0.2
   FIXED_PARAMS.Probe_laser_power: 0.3
   Y_RF_FREQUENCY_HZ: 90000.0
   Y_RF_NT_PER_VPP: 1517.79147
@@ -64,11 +64,11 @@ PZT 电压仅作为 Probe 激光失谐的代理坐标。当前实验不包含 PZ
 
 ## 扫描与采集
 
-- PZT Scan Offset：60–100 V，共 9 点，作为外层升序轴。
-- Probe 功率控制电压：0.1–0.5 V，共 7 点，作为内层蛇形轴。
+- PZT Scan Offset：20–120 V，共 21 点，作为外层升序轴。
+- Probe 功率控制电压：默认固定 0.3 V；需要二维扫描时设置起点/终点/点数。
 - 只扫描 PZT 时，将 `PROBE_POWER_START_V` 和 `PROBE_POWER_STOP_V` 设置为同一个固定电压，并将 `PROBE_POWER_POINTS` 设置为 `1`。例如固定 Probe=0.3 V 时填写 `0.3 / 0.3 / 1`。
 - 当 Probe 点数大于等于 2 时，Probe 起点仍必须严格小于终点；点数为 1 但起止值不同的配置会在预检阶段拒绝。
-- Pump 功率固定为 0.5 V；实验结束恢复 Probe 功率为 0.3 V。
+- Pump 功率固定为 0.2 V；实验结束恢复 Probe 功率为 0.3 V。
 - 实验不连接 TEC103/COM3，也不执行目标温度设置或稳定等待；气室温度必须由实验外部预先稳定。
 - 每次切换 PZT 后等待 1.0 s；同一 PZT 行内改变 Probe 功率不增加独立等待。
 - 每个点使用 90 kHz Y RF、21 个带符号幅度点和 5 段 1 s 的零 RF 噪声。
@@ -134,6 +134,6 @@ data/Mx_Y_RF_Probe_Detuning_Optimization/<run>/
 2. 恢复初始 PZT Scan Offset。
 3. 恢复初始扫描幅度。
 4. 恢复初始扫描启停状态。
-5. 恢复 Pump=0.5 V、Probe=0.3 V 且保持输出开启。
+5. 恢复 Pump=0.2 V、Probe=0.3 V 且保持输出开启。
 
 若 DLC pro 写入或恢复回读失败，运行配置会记录“设备状态可能未知”，操作员必须检查 DLC pro 面板和 TOPAS。

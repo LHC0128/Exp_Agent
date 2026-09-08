@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +62,9 @@ from lab_workflows.experiments.catalog import (
     validate_parameter_layout,
 )
 from lab_workflows.phase_calibration import calibrate_demod0_safely
+from lab_workflows.z_arbitrary_control import (
+    ZArbitraryControlService, ZArbitrarySettings, list_sources, preview_source,
+)
 
 from .jobs import Job, manager
 from .schemas import (
@@ -80,6 +85,10 @@ from .schemas import (
     LaserEmissionSettingsBody,
     LaserSettingsBody,
     ScopeSettingsBody,
+    ZArbitraryActionBody,
+    ZArbitraryPreview,
+    ZArbitrarySourceItem,
+    ZArbitraryStatus,
 )
 
 
@@ -91,6 +100,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 ROOT = find_project_root()
+z_arbitrary_service = ZArbitraryControlService(ROOT)
 
 
 @app.middleware("http")
@@ -172,7 +182,9 @@ def _conflict(detail: str, code: str) -> HTTPException:
 
 
 def _with_short_hardware_lock(action):
-    if not manager.hardware_lock.acquire(blocking=False):
+    # 短时仪器操作与长任务共享同一把硬件锁和同一排队条件：
+    # 存在排队任务时拒绝插队，返回 hardware_busy。
+    if not manager.try_acquire_short_hardware():
         raise _conflict("其他硬件任务正在运行", "hardware_busy")
     try:
         return action()
@@ -279,24 +291,34 @@ def device_library():
     return public_device_library(ROOT)
 
 
-def _require_configuration_idle() -> None:
-    if manager.hardware_lock.locked():
+def _with_configuration_lock(action):
+    """设备库/物理映射写入：检查与写入在硬件锁内原子完成。
+
+    仅做一次 lock 检查后直接写入会留下 TOCTOU 竞态（检查后排队
+    任务可能立刻获得硬件锁并开始配置硬件），因此这里与硬件任务
+    调度同步：存在排队任务或运行中任务时拒绝，通过后持锁完成写入。
+    """
+    if not manager.try_acquire_short_hardware():
         raise _conflict("硬件任务运行期间不能修改设备配置", "hardware_busy")
-
-
-@app.put("/api/device-library")
-def update_device_library(body: DeviceLibraryBody):
-    _require_configuration_idle()
     try:
-        return save_device_library(
-            body.devices,
-            base_revision=body.base_revision,
-            root=ROOT,
-        )
+        return action()
     except RevisionConflict as exc:
         raise _conflict(str(exc), "revision_conflict") from exc
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, {"errors": [str(exc)]}) from exc
+    finally:
+        manager.hardware_lock.release()
+
+
+@app.put("/api/device-library")
+def update_device_library(body: DeviceLibraryBody):
+    return _with_configuration_lock(
+        lambda: save_device_library(
+            body.devices,
+            base_revision=body.base_revision,
+            root=ROOT,
+        )
+    )
 
 
 @app.post("/api/device-library/discover-visa")
@@ -311,18 +333,14 @@ def physical_mappings():
 
 @app.put("/api/physical-mappings")
 def update_physical_mappings(body: PhysicalMappingsBody):
-    _require_configuration_idle()
-    try:
-        return save_physical_mappings(
+    return _with_configuration_lock(
+        lambda: save_physical_mappings(
             body.mapping,
             body.constraints,
             base_revision=body.base_revision,
             root=ROOT,
         )
-    except RevisionConflict as exc:
-        raise _conflict(str(exc), "revision_conflict") from exc
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(422, {"errors": [str(exc)]}) from exc
+    )
 
 
 @app.post("/api/devices/{device_id}/refresh", response_model=DeviceSnapshot)
@@ -424,6 +442,44 @@ def phase_calibration(body: PhaseBody):
         ).to_dict(),
     )
     return job.public()
+
+
+@app.get("/api/tools/z-arbitrary-control/sources", response_model=list[ZArbitrarySourceItem])
+def z_arbitrary_sources():
+    return list_sources(ROOT)
+
+
+@app.get("/api/tools/z-arbitrary-control/preview/{run_name}", response_model=ZArbitraryPreview)
+def z_arbitrary_preview(run_name: str):
+    try:
+        return preview_source(ROOT, run_name)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/tools/z-arbitrary-control/state", response_model=ZArbitraryStatus)
+def z_arbitrary_state():
+    return z_arbitrary_service.status()
+
+
+@app.post("/api/tools/z-arbitrary-control/actions")
+def z_arbitrary_action(body: ZArbitraryActionBody):
+    request = body.model_dump(exclude={"settings"})
+    request["settings"] = ZArbitrarySettings(**body.settings.model_dump())
+    try:
+        # 入队前提供即时错误反馈；获得硬件锁后 execute 会再次完整预检。
+        z_arbitrary_service.preflight(**request)
+    except ControlRevisionConflict as exc:
+        raise _conflict(str(exc), "revision_conflict") from exc
+    except (ValueError, KeyError, OSError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return manager.create(
+        "z-arbitrary-control",
+        lambda current: z_arbitrary_service.execute(
+            **request, cancellation=current.cancellation,
+            progress=lambda event: manager.event(current, event),
+        ),
+    ).public()
 
 
 @app.post("/api/tools/keithley-waveform-convert")
@@ -703,6 +759,22 @@ async def job_events(job_id: str, request: Request):
     )
 
 
+def _is_existing_dir(path: Path) -> bool:
+    """目录存在性判断，并发删除时返回 False 而不是抛异常。"""
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
+def _is_existing_file(path: Path) -> bool:
+    """文件存在性判断，并发删除时返回 False 而不是抛异常。"""
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 @app.get("/api/runs")
 def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
     definitions = [
@@ -712,16 +784,34 @@ def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
     result = []
     for definition in definitions:
         base = ROOT / "data" / definition.data_type
-        if not base.exists():
+        try:
+            if not base.exists():
+                continue
+            candidates = [
+                item for item in base.iterdir()
+                if _is_existing_dir(item)
+            ]
+        except OSError:
+            # 数据基目录被并发清理时跳过，不让整个列表请求失败。
             continue
-        for path in (item for item in base.iterdir() if item.is_dir()):
-            results_dir = path / "results"
-            artifacts = [item.name for item in results_dir.iterdir() if item.is_file()] if results_dir.exists() else []
+        for path in candidates:
             try:
                 modified_at = path.stat().st_mtime
             except OSError:
-                # 运行目录被并发清理时跳过，不让整个列表请求失败。
-                modified_at = 0.0
+                # 运行目录被并发删除时跳过该目录，不让整个接口返回 500。
+                continue
+            results_dir = path / "results"
+            try:
+                artifacts = (
+                    [
+                        item.name for item in results_dir.iterdir()
+                        if _is_existing_file(item)
+                    ]
+                    if _is_existing_dir(results_dir)
+                    else []
+                )
+            except OSError:
+                artifacts = []
             result.append({
                 "id": path.name,
                 "experiment_id": definition.id,
@@ -752,9 +842,56 @@ def _run_dir(experiment_id: str, run_id: str) -> Path:
     return path
 
 
+@app.delete("/api/runs/{experiment_id}/{run_id}")
+def delete_run(experiment_id: str, run_id: str):
+    """选定运行目录的永久删除，与 GUI 采集/分析任务注册原子互斥。"""
+    definition = _experiment_or_404(experiment_id)
+    if (not run_id or run_id.endswith((".", " "))
+            or any(c in run_id for c in "/\\:")):
+        raise HTTPException(400, "运行 ID 必须是单个目录名")
+    with manager.jobs_lock:
+        # 采集任务结束前还可能自动分析或扫描同类目录，因此整类运行暂缓删除。
+        ids = {item.id for item in list_experiments() if item.data_type == definition.data_type}
+        if any(
+            item.status in {"queued", "running"} and (
+                item.kind in {f"experiment:{value}" for value in ids}
+                or item.kind in {f"analysis:{value}:{run_id}" for value in ids}
+            ) for item in manager.jobs.values()
+        ):
+            raise _conflict("该数据正在采集或分析，暂时不能删除", "run_busy")
+        data_root = (ROOT / "data").resolve()
+        base = data_root / definition.data_type
+        candidate = base / run_id
+        path = _run_dir(experiment_id, run_id)
+        if base.resolve().parent != data_root or path.parent != base.resolve():
+            raise HTTPException(400, "运行目录超出允许范围")
+        # Windows junction 与符号链接均不得作为删除目标或中间目录。
+        pending = [base, candidate]
+        while pending:
+            entry = pending.pop()
+            info = entry.lstat()
+            if entry.is_symlink() or getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                raise HTTPException(400, "含链接或联接点的运行目录不能删除")
+            if entry != base and entry.is_dir():
+                pending.extend(entry.iterdir())
+        try:
+            shutil.rmtree(path)
+        except OSError as exc:
+            raise HTTPException(409, f"删除失败，请刷新历史后重试: {exc}") from exc
+    return {"ok": True, "experiment_id": experiment_id, "run_id": run_id}
+
+
 @app.post("/api/runs/{run_id}/analyze")
 def analyze_run(run_id: str, body: AnalysisBody):
+    with manager.jobs_lock:
+        return _create_analysis_job(run_id, body)
+
+
+def _create_analysis_job(run_id: str, body: AnalysisBody):
     definition = _experiment_or_404(body.experiment_id)
+    if any(manager.has_active_kind(f"experiment:{item.id}") for item in list_experiments()
+           if item.data_type == definition.data_type):
+        raise _conflict("同类数据仍在采集或自动分析，请稍后重新分析", "run_busy")
     run_dir = _run_dir(body.experiment_id, run_id)
     if not definition.analysis_runner:
         raise _conflict("该实验没有独立离线分析器", "no_analyzer")

@@ -429,6 +429,32 @@ def test_psd_uses_actual_rate_and_unit_conversion() -> None:
     assert amplitude_gamma_to_hz(0.02, 0.0) is None
 
 
+def test_absolute_dispersive_fit_starts_center_and_offset_at_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lab_workflows.experiment_modules.mx_y_rf_sensitivity.analysis_core as core
+
+    captured: dict[str, tuple[float, ...]] = {}
+
+    def capture_curve_fit(function, x, y, *, p0, bounds, maxfev):
+        captured["p0"] = tuple(float(value) for value in p0)
+        parameters = np.asarray(p0, dtype=float)
+        covariance = np.eye(4, dtype=float)
+        return parameters, covariance
+
+    monkeypatch.setattr(core, "curve_fit", capture_curve_fit)
+
+    fit_absolute_dispersive_response(
+        np.linspace(-0.1, 0.1, 21),
+        np.full(21, 0.01),
+        r_squared_min=None,
+        relative_gamma_uncertainty_max=None,
+        initial_center=0.0,
+    )
+
+    assert captured["p0"][2:] == pytest.approx((0.0, 0.0))
+
+
 def test_rejected_response_fit_can_continue_for_diagnostics(
     local_tmp_path: Path,
 ) -> None:

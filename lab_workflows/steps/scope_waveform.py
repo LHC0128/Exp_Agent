@@ -218,8 +218,9 @@ def temperature_gated_acquire(
 ) -> Any:
     """每次采集前关闭温控，并在任何退出路径恢复 5 V ON。"""
     check_cancelled()
-    set_temperature_switch(temp_switch, False, channel=temp_channel)
     try:
+        # 即使关闭动作本身或取消检查失败，也继续尝试恢复温控开关。
+        set_temperature_switch(temp_switch, False, channel=temp_channel)
         sleep(off_settle_s)
         return acquire()
     finally:
@@ -228,7 +229,8 @@ def temperature_gated_acquire(
             True,
             channel=temp_channel,
             settle_time=on_settle_s,
-            cancellation=cancellation,
+            # 恢复动作不能被取消信号中断；输出设置完成后再结束流程。
+            cancellation=None,
         )
 
 

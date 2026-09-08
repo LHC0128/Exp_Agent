@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 import numpy as np
 from gs200 import GS200Instrument
+from sds_acquisition import SDSAcquisition, SDSInstrument
 from lockin_amplifier import (
     DemodulatorConfig,
     HF2Instrument,
@@ -18,6 +19,7 @@ from lockin_amplifier import (
 from tec_controller import TECInstrument
 
 from ...common import find_project_root, load_mapping, validate_safety_limit
+from ...current_feedback import validate_current_power
 from ...devices import create_signal_generator
 from ...experiment_runtime import check_cancelled, load_runtime_params
 from ...steps import (
@@ -37,6 +39,13 @@ from ...steps import (
     wait_for_temperature_stable,
 )
 from ..mx_y_rf_sensitivity.acquisition import acquire_r, summarize_r
+from ...steps.scope_waveform import (
+    ScopeAutoRangeState,
+    ScopeCaptureSettings,
+    acquire_autoranged_waveform,
+    configure_fixed_rate_scope,
+    read_complete_scope_record,
+)
 from .models import MxZFieldCalibrationParams
 from .scan import (
     build_frequency_axis,
@@ -84,17 +93,50 @@ def _set_pump_gate_on(device: Any, channel: int, voltage_v: float) -> None:
     device.set_output(True, channel=channel)
 
 
+def _set_z_dc_bias(
+    device: Any,
+    channel: int,
+    voltage_v: float,
+    *,
+    output: bool,
+) -> float:
+    """设置 Z DC 命令值，并验证波形模式和输出开关状态。"""
+    target = float(validate_safety_limit("Z_magnetic_field", voltage_v))
+    try:
+        device.setup_dc(target, channel=channel)
+        device.set_output(output, channel=channel)
+        shape = str(device.get_shape(channel=channel)).strip().strip('"').upper()
+        output_on = bool(device.get_output(channel=channel))
+    except Exception:
+        try:
+            device.set_output(False, channel=channel)
+        except Exception:
+            pass
+        raise
+    if shape != "DC" or output_on is not bool(output):
+        device.set_output(False, channel=channel)
+        raise RuntimeError(
+            "Z DC 配置验证失败："
+            f"波形={shape!r}，输出={'ON' if output_on else 'OFF'}"
+        )
+    return target
+
+
 def _connect_devices(
     mapping: dict[str, dict[str, Any]],
     session: DeviceSession,
+    *,
+    include_main_field: bool = True,
+    include_scope: bool = False,
 ) -> tuple[dict[str, Any], dict[str, int]]:
     devices: dict[str, Any] = {}
     channels: dict[str, int] = {}
 
-    gs_cfg = mapping["main_magnetic_field"]
-    devices["gs200"] = session.connect(
-        "gs200", gs_cfg["resource"], lambda: GS200Instrument(gs_cfg["resource"])
-    )
+    if include_main_field:
+        gs_cfg = mapping["main_magnetic_field"]
+        devices["gs200"] = session.connect(
+            "gs200", gs_cfg["resource"], lambda: GS200Instrument(gs_cfg["resource"])
+        )
 
     z_cfg = mapping["Z_magnetic_field"]
     devices["z_field"] = session.connect(
@@ -163,6 +205,15 @@ def _connect_devices(
         lambda: TECInstrument(port=tec_cfg["resource"]),
         device_label="TEC103",
     )
+    if include_scope:
+        scope_cfg = mapping["scope_waveform"]
+        scope = session.connect(
+            "scope",
+            str(scope_cfg["resource"]),
+            lambda: SDSInstrument(str(scope_cfg["resource"])),
+        )
+        devices["scope"] = scope
+        devices["acquirer"] = session.bind("acquirer", SDSAcquisition(scope))
     return devices, channels
 
 
@@ -297,11 +348,14 @@ def _configure_outputs(
     initial_frequency_hz = initial_rf_frequency_hz(params)
 
     z_field = devices["z_field"]
-    validate_safety_limit("Z_magnetic_field", 0.0)
     z_field.set_burst_state(False, channel=channels["z_field"])
     z_field.set_mod_state(False, channel=channels["z_field"])
-    z_field.setup_dc(0.0, channel=channels["z_field"])
-    z_field.set_output(False, channel=channels["z_field"])
+    _set_z_dc_bias(
+        z_field,
+        channels["z_field"],
+        0.0,
+        output=False,
+    )
 
     xy_field = devices["xy_field"]
     validate_safety_limit("X_magnetic_field", 0.0)
@@ -517,6 +571,114 @@ def _acquire_valid_r_point(
     )
 
 
+def _configure_sense_scope(
+    params: Any,
+    devices: dict[str, Any],
+) -> tuple[Any, ScopeCaptureSettings, ScopeAutoRangeState, dict[str, Any]] | None:
+    """为电流耦合标定配置 SDS CH3 的自由触发采集。"""
+    if "scope" not in devices:
+        return None
+    settings = ScopeCaptureSettings(
+        sample_rate_sa_s=float(params.sense_scope_sample_rate_sa_s),
+        duration_s=float(params.sense_scope_duration_s),
+        pd_channel=int(params.sense_scope_channel),
+        trigger_mode="AUTO",
+        initial_scale_v_div=float(params.sense_scope_initial_scale_v_div),
+        offset_v=0.0,
+        vertical_divisions=int(params.sense_scope_vertical_divisions),
+        scale_min_v_div=float(params.sense_scope_scale_min_v_div),
+        scale_max_v_div=float(params.sense_scope_scale_max_v_div),
+        auto_range_low_fraction=float(params.sense_scope_auto_range_low_fraction),
+        auto_range_high_fraction=float(params.sense_scope_auto_range_high_fraction),
+        auto_offset_tolerance_fraction=float(
+            params.sense_scope_auto_offset_tolerance_fraction
+        ),
+        auto_range_max_attempts=int(params.sense_scope_auto_range_max_attempts),
+        welch_nperseg=64,
+        maximum_frequency_hz=1.0 / max(float(params.sense_scope_duration_s), 1e-6),
+        auto_offset_enabled=True,
+    )
+    config, snapshot = configure_fixed_rate_scope(
+        settings,
+        devices,
+        sleep=time.sleep,
+    )
+    auto_range = ScopeAutoRangeState(
+        scale_v_div=float(snapshot["actual_initial_scale_v_div"]),
+        offset_v=float(snapshot["actual_initial_offset_v"]),
+        # 直流信号被 offset 居中后只剩噪声，默认不跨工作点缩小量程。
+        allow_shrink=bool(
+            getattr(params, "sense_scope_auto_range_allow_shrink", False)
+        ),
+    )
+    return config, settings, auto_range, snapshot
+
+
+def _capture_sense_point(
+    params: Any,
+    devices: dict[str, Any],
+    scope_config: Any,
+    settings: ScopeCaptureSettings,
+    auto_range: ScopeAutoRangeState,
+) -> dict[str, Any]:
+    """采集一个 DC 工作点的采样电阻电压并换算平均电流。"""
+    waveform = acquire_autoranged_waveform(
+        settings,
+        scope_config,
+        devices["scope"],
+        auto_range,
+        capture=lambda: read_complete_scope_record(
+            settings,
+            devices,
+            scope_config,
+            check_cancelled=check_cancelled,
+            sleep=time.sleep,
+        ),
+        check_cancelled=check_cancelled,
+    )
+    time_s = np.asarray(waveform["time_s"], dtype=float).reshape(-1)
+    voltage_v = np.asarray(waveform["voltage_v"], dtype=float).reshape(-1)
+    if voltage_v.size < 4 or not np.all(np.isfinite(voltage_v)):
+        raise RuntimeError("SDS 采样电阻电压为空或包含非有限值")
+    current_a = voltage_v / float(params.sense_resistor_ohm)
+    display_edge_fraction = float(waveform["attempt_display_edge_fraction"][-1])
+    if display_edge_fraction >= 0.98:
+        attempt_scales = np.asarray(
+            waveform["attempt_scales_v_div"], dtype=float
+        ).tolist()
+        raise RuntimeError(
+            "SDS 采样电阻电压到达显示边界，无法排除饱和："
+            f"最后量程={float(waveform['scale_used_v_div']):.6g} V/div，"
+            f"offset={float(waveform['offset_used_v']):.6g} V，"
+            f"电压范围=[{float(np.min(voltage_v)):.6g}, "
+            f"{float(np.max(voltage_v)):.6g}] V，"
+            f"贴边比例={display_edge_fraction:.6g}，"
+            f"尝试量程={attempt_scales}"
+        )
+    if hasattr(params, "maximum_current_a"):
+        validate_current_power(
+            current_a,
+            float(params.sense_resistor_ohm),
+            float(params.sense_resistor_power_rating_w),
+            derating_fraction=float(params.sense_resistor_power_derating),
+            maximum_current_a=float(params.maximum_current_a),
+        )
+    return {
+        "time_s": time_s,
+        "sense_voltage_v": voltage_v,
+        "current_a": current_a,
+        "sense_voltage_mean_v": float(np.mean(voltage_v)),
+        "sense_voltage_std_v": float(np.std(voltage_v)),
+        "current_mean_a": float(np.mean(current_a)),
+        "current_std_a": float(np.std(current_a)),
+        "actual_rate_sa_s": float(1.0 / np.median(np.diff(time_s))),
+        "scale_used_v_div": float(waveform["scale_used_v_div"]),
+        "offset_used_v": float(waveform["offset_used_v"]),
+        "auto_range_attempt_count": int(waveform["attempt_count"]),
+        "display_edge_fraction": display_edge_fraction,
+    }
+
+
 def _acquire_scan(
     params: MxZFieldCalibrationParams,
     run_dir: Any,
@@ -524,13 +686,31 @@ def _acquire_scan(
     channels: dict[str, int],
     actual_rate: float,
     device_id: str,
+    sense_scope: tuple[
+        Any,
+        ScopeCaptureSettings,
+        ScopeAutoRangeState,
+        dict[str, Any],
+    ] | None = None,
 ) -> list[str]:
-    z_axis = build_z_axis(params)
+    forward_axis = build_z_axis(params)
+    if bool(getattr(params, "bidirectional_scan", False)):
+        z_axis = np.concatenate((forward_axis, forward_axis[-2::-1]))
+        scan_directions = np.asarray(
+            ["forward"] * forward_axis.size
+            + ["reverse"] * max(0, forward_axis.size - 1),
+            dtype="U8",
+        )
+    else:
+        z_axis = forward_axis
+        scan_directions = np.asarray(["forward"] * forward_axis.size, dtype="U8")
     z_field = devices["z_field"]
     rf = devices["xy_field"]
     hf2 = devices["hf2"]
     summary_files: list[str] = []
+    auxiliary_files: list[str] = []
     predicted_centers: list[float] = []
+    commanded_z_biases: list[float] = []
 
     for z_index, z_bias in enumerate(z_axis):
         check_cancelled()
@@ -541,12 +721,48 @@ def _acquire_scan(
             f"Z 偏置 {z_index + 1}/{len(z_axis)}: {z_bias:+.3f} V，"
             f"预测中心 {predicted:.3f} Hz"
         )
-        validate_safety_limit("Z_magnetic_field", float(z_bias))
-        z_field.setup_dc(float(z_bias), channel=channels["z_field"])
-        z_field.set_output(True, channel=channels["z_field"])
+        commanded_z_bias = _set_z_dc_bias(
+            z_field,
+            channels["z_field"],
+            float(z_bias),
+            output=True,
+        )
+        commanded_z_biases.append(commanded_z_bias)
+        current_settle_time_s = float(getattr(params, "current_settle_time_s", 0.0))
+        if current_settle_time_s > 0.0:
+            _sleep(current_settle_time_s)
 
         point_dir = run_dir.raw / f"z_{z_index:03d}"
         point_dir.mkdir()
+        sense_record: dict[str, Any] | None = None
+        if sense_scope is not None:
+            sense_config, sense_settings, sense_auto_range, _sense_snapshot = sense_scope
+            sense_record = _capture_sense_point(
+                params,
+                devices,
+                sense_config,
+                sense_settings,
+                sense_auto_range,
+            )
+            np.savez(
+                point_dir / "sense_current.npz",
+                time_s=sense_record["time_s"],
+                sense_voltage_v=sense_record["sense_voltage_v"],
+                current_a=sense_record["current_a"],
+                sense_voltage_mean_v=np.float64(sense_record["sense_voltage_mean_v"]),
+                sense_voltage_std_v=np.float64(sense_record["sense_voltage_std_v"]),
+                current_mean_a=np.float64(sense_record["current_mean_a"]),
+                current_std_a=np.float64(sense_record["current_std_a"]),
+                actual_rate_sa_s=np.float64(sense_record["actual_rate_sa_s"]),
+                scale_used_v_div=np.float64(sense_record["scale_used_v_div"]),
+                offset_used_v=np.float64(sense_record["offset_used_v"]),
+                auto_range_attempt_count=np.int64(
+                    sense_record["auto_range_attempt_count"]
+                ),
+                display_edge_fraction=np.float64(
+                    sense_record["display_edge_fraction"]
+                ),
+            )
         summaries: list[dict[str, float]] = []
         accepted_attempts: list[int] = []
         accepted_files: list[str] = []
@@ -576,6 +792,7 @@ def _acquire_scan(
                 metadata={
                     "z_index": np.int64(z_index),
                     "z_bias_v": np.float64(z_bias),
+                    "z_bias_commanded_v": np.float64(commanded_z_bias),
                     "predicted_center_hz": np.float64(predicted),
                     "frequency_index": np.int64(frequency_index),
                     "frequency_hz": np.float64(frequency),
@@ -594,50 +811,94 @@ def _acquire_scan(
             summary_path,
             z_index=np.int64(z_index),
             z_bias_v=np.float64(z_bias),
+            z_bias_commanded_v=np.float64(commanded_z_bias),
+            scan_direction=np.asarray(scan_directions[z_index]),
             predicted_center_hz=np.float64(predicted),
             frequency_hz=frequency_axis,
             r_mean_v=[item["r_mean_v"] for item in summaries],
             r_scalar_mean_v=[item["r_scalar_mean_v"] for item in summaries],
             r_std_v=[item["r_std_v"] for item in summaries],
+            sense_voltage_mean_v=np.float64(
+                sense_record["sense_voltage_mean_v"] if sense_record else np.nan
+            ),
+            sense_voltage_std_v=np.float64(
+                sense_record["sense_voltage_std_v"] if sense_record else np.nan
+            ),
+            current_mean_a=np.float64(
+                sense_record["current_mean_a"] if sense_record else np.nan
+            ),
+            current_std_a=np.float64(
+                sense_record["current_std_a"] if sense_record else np.nan
+            ),
+            sense_scale_used_v_div=np.float64(
+                sense_record["scale_used_v_div"] if sense_record else np.nan
+            ),
+            sense_offset_used_v=np.float64(
+                sense_record["offset_used_v"] if sense_record else np.nan
+            ),
+            sense_display_edge_fraction=np.float64(
+                sense_record["display_edge_fraction"] if sense_record else np.nan
+            ),
             accepted_attempt_index=accepted_attempts,
             accepted_file=np.asarray(accepted_files, dtype=str),
             actual_rate_sa_s=np.float64(actual_rate),
         )
         summary_files.append(str(summary_path.relative_to(run_dir.root)).replace("\\", "/"))
+        if sense_record is not None:
+            auxiliary_files.append(
+                str((point_dir / "sense_current.npz").relative_to(run_dir.root)).replace("\\", "/")
+            )
 
     rf.set_output(False, channel=channels["y_rf"])
     np.savez(
         run_dir.raw / "z_scan_index.npz",
         z_bias_v=z_axis,
+        z_bias_commanded_v=np.asarray(commanded_z_biases, dtype=float),
         predicted_center_hz=np.asarray(predicted_centers, dtype=float),
+        scan_direction=scan_directions,
         summary_file=np.asarray(summary_files, dtype=str),
     )
-    return ["raw/z_scan_index.npz", *summary_files]
+    return ["raw/z_scan_index.npz", *summary_files, *auxiliary_files]
 
 
-def run(params: MxZFieldCalibrationParams) -> Path:
+def run_calibration(
+    params: MxZFieldCalibrationParams,
+    *,
+    experiment_id: str = EXPERIMENT_ID,
+    data_type: str = DATA_TYPE,
+    completion_label: str = "Mx 高主场 Z 标定",
+    include_scope: bool = False,
+) -> Path:
     root = find_project_root()
     mapping = load_mapping(root)
     run_dir = create_run_directory(
-        DATA_TYPE,
+        data_type,
         params.run_tag,
         params.to_external(),
         schema_version=params.schema_version,
         project_root=root,
     )
     run_dir.update_config(
-        experiment_id=EXPERIMENT_ID,
-        data_type=DATA_TYPE,
+        experiment_id=experiment_id,
+        data_type=data_type,
         execution_mode=EXECUTION_MODE,
         geometry={
             "main_field": "Z",
             "pump": "Z",
             "probe": "X",
             "rf_field": "Y",
-            "z_dc_scan": "single_pass_negative_to_positive",
+            "z_dc_scan": (
+                "forward_then_reverse"
+                if bool(getattr(params, "bidirectional_scan", False))
+                else "single_pass_negative_to_positive"
+            ),
         },
         analysis_during_acquisition=False,
-        acquisition_signals=["R"],
+        acquisition_signals=(
+            ["R", "SDS CH3 low-side sense-resistor voltage"]
+            if include_scope
+            else ["R"]
+        ),
         r_point_quality={
             "criterion": "std(R) <= threshold",
             "std_threshold_v": params.r_bad_point_std_threshold_v,
@@ -659,7 +920,11 @@ def run(params: MxZFieldCalibrationParams) -> Path:
     try:
         check_cancelled()
         try:
-            devices, channels = _connect_devices(mapping, session)
+            devices, channels = _connect_devices(
+                mapping,
+                session,
+                include_scope=include_scope,
+            )
         except Exception:
             session.cleanup_connection_failure()
             raise
@@ -680,6 +945,17 @@ def run(params: MxZFieldCalibrationParams) -> Path:
             },
             clock_sources=clock_sources,
         )
+        sense_scope = _configure_sense_scope(params, devices) if include_scope else None
+        if sense_scope is not None:
+            run_dir.update_config(
+                sense_resistor={
+                    "resistance_ohm": float(params.sense_resistor_ohm),
+                    "tolerance_percent": float(params.sense_resistor_tolerance_percent),
+                    "power_rating_w": float(params.sense_resistor_power_rating_w),
+                    "scope_channel": int(params.sense_scope_channel),
+                },
+                sense_scope_configuration=sense_scope[3],
+            )
         data_files = _acquire_scan(
             params,
             run_dir,
@@ -687,6 +963,7 @@ def run(params: MxZFieldCalibrationParams) -> Path:
             channels,
             actual_rate,
             str(mapping["lockin_r"]["device_id"]),
+            sense_scope=sense_scope,
         )
         completion_status = "completed"
         run_dir.update_config(
@@ -694,7 +971,7 @@ def run(params: MxZFieldCalibrationParams) -> Path:
             failure_reason=None,
             data_files=data_files,
         )
-        print(f"Mx 高主场 Z 标定采集完成: {run_dir.root}")
+        print(f"{completion_label}采集完成: {run_dir.root}")
         return run_dir.root
     except Exception as exc:
         failure_reason = str(exc)
@@ -718,6 +995,11 @@ def run(params: MxZFieldCalibrationParams) -> Path:
                     "errors": list(shutdown_report.disconnect_errors),
                 },
             )
+
+
+def run(params: MxZFieldCalibrationParams) -> Path:
+    """执行原有 Mx Z 电压标定实验。"""
+    return run_calibration(params)
 
 
 def main() -> int:

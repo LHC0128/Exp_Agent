@@ -5,6 +5,7 @@ import { Field } from "../components/FormFields";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { PageHead } from "../components/PageHead";
+import { ZArbitraryControl } from "../components/ZArbitraryControl";
 import type { Job } from "../types/api";
 
 export function ToolsPage() {
@@ -61,6 +62,7 @@ export function ToolsPage() {
         </article>
       </div>
       <JobView job={job} onUpdate={setJob} />
+      <ZArbitraryControl />
     </>
   );
 }

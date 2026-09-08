@@ -67,6 +67,8 @@ def _params(**overrides) -> MxKeithley6221OptimalControlXYZBalanceParams:
 
 
 class _FakeDG:
+    """模拟使用 OFFSET 命令设置 DC 电平的 DG4162。"""
+
     def __init__(self) -> None:
         self.calls: list[tuple] = []
         self.shape = {1: "SINusoid", 2: "DC"}
@@ -112,6 +114,14 @@ class _FakeDG:
 
     def set_offset(self, value: float, *, channel: int) -> None:
         self.offset[channel] = value
+        self._record("offset", channel, value)
+
+    def get_dc_voltage(self, *, channel: int) -> float:
+        return self.offset[channel]
+
+    def set_dc_voltage(self, value: float, *, channel: int) -> None:
+        self.set_offset(value, channel=channel)
+        self._record("dc_voltage", channel, value)
 
     def get_phase_adjust(self, *, channel: int) -> float:
         return self.phase[channel]
@@ -182,7 +192,7 @@ class _FakeDG:
 
     def setup_dc(self, value: float, *, channel: int) -> None:
         self.shape[channel] = "DC"
-        self.offset[channel] = value
+        self.set_dc_voltage(value, channel=channel)
         self.output[channel] = True
         self._record("dc", channel, value)
 
@@ -306,6 +316,48 @@ def test_dg_channel_state_is_restored_after_dc_scan() -> None:
     assert dg.phase[1] == pytest.approx(20.0)
     assert dg.burst[1] is True
     assert dg.output[1] is True
+
+
+def test_dc_snapshot_uses_model_specific_dc_query() -> None:
+    dg = _FakeDG()
+    assert dg.get_dc_voltage(channel=2) == pytest.approx(-0.02)
+    state = _snapshot_dg_channel(dg, 2)
+    assert state.shape == "DC"
+    assert state.offset_v == pytest.approx(-0.02)
+    assert state.frequency_hz is None
+    assert state.amplitude_vpp is None
+    assert state.output_on is False
+
+
+def test_dc_restore_uses_model_specific_dc_setter() -> None:
+    dg = _FakeDG()
+    state = _snapshot_dg_channel(dg, 2)
+    assert state.offset_v == pytest.approx(-0.02)
+
+    # 扫描把通道改为别的 DC 电平。
+    controller = _XYZFieldController(
+        dg,
+        _FakeGS200(),
+        {"x_field": 1, "y_rf": 2},
+    )
+    controller.apply(0.0, 0.123, 0.0)
+    assert dg.get_dc_voltage(channel=2) == pytest.approx(0.123)
+
+    _restore_dg_channel(dg, 2, state)
+
+    # 恢复型号专用 DC 设置值和原输出状态。
+    assert dg.shape[2] == "DC"
+    assert dg.get_dc_voltage(channel=2) == pytest.approx(-0.02)
+    dc_writes = [
+        value
+        for name, channel, value in dg.calls
+        if name == "dc_voltage" and channel == 2
+    ]
+    assert dc_writes
+    assert any(value == pytest.approx(-0.02) for value in dc_writes)
+    # 输出状态是恢复序列的最后一步。
+    assert dg.calls[-1] == ("output", 2, False)
+    assert dg.output[2] is False
 
 
 def test_safe_shutdown_preserves_6221_and_trigger() -> None:

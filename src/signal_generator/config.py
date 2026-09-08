@@ -124,8 +124,9 @@ class SignalGeneratorConfig:
 
         # 波形形状与参数
         if self.shape == "DC":
+            # 统一通过型号驱动的 DC 专用设置路径下发电平。
             instrument.set_shape("DC", channel=ch)
-            instrument.set_offset(self.offset, channel=ch)
+            instrument.set_dc_voltage(self.offset, channel=ch)
         elif self.shape == "NOISe":
             instrument.apply_wave("NOISe", channel=ch,
                                   amp=self.amplitude, offset=self.offset)

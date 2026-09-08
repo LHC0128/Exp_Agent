@@ -72,6 +72,47 @@ Direct-AW 的无限 Burst 在 DG900 Pro 上不是独立模式。统一接口
 `set_burst_mode("INFinity")` 会写入 `BURSt:MODE TRIGgered` 和
 `BURSt:NCYCles INFinity`，外部触发后持续输出；工作流不得再覆盖固定循环数。
 
+## GUI Z 任意波控制
+
+“功能模块”页面提供独立的 **Z 任意波控制**，仪器控制中的 Z 面板提供快捷入口。
+来源为 `data/Z_AW_Closed_Loop_Waveform_Correction/<运行名>/results/corrected_control_waveform.npz`；
+不自动选择最新文件，不加载理论版本或 CSV。选择结果后即可离线预览一个周期的
+`time_s`–`voltage_v` 曲线，支持悬停读数、缩放和恢复全图，并显示实际电压范围。
+这张图是文件电压预览，不是示波器实测；不按 Burst 相位移动原始时间轴。
+
+文件中的 `voltage_v` 是闭环建议的实际输出电压。例如 `obbv5/6/7` 的文件幅度均为
+6 Vpp。GUI 默认使用文件 Vpp，但允许修改“输出幅度 (Vpp)”：应用时保持 `voltage_v`
+不变，重新计算 `normalized=(voltage_v-offset)/(Vpp/2)` 后上传；如果新 Vpp 太小导致
+归一化值超过 [-1,1]，应用会被拒绝并提示所需的最小 Vpp。界面还允许调整 Z 的 Burst
+起始相位，默认 0°；Z 固定使用外部下降沿、无限 Burst。
+仪器 Z 面板读到任意波时只展示参数并允许关闭 Z；完整配置在功能模块中完成。
+
+“联动时序信号2”默认关闭。启用后可编辑触发方波频率、Vpp、偏置和占空比，默认
+100 Hz、5 Vpp、2.5 V、50%，负载为 High-Z。占空比采用信号发生器共同支持的
+20%–80% 范围。触发方波频率独立于冻结波形的重复频率。
+时序信号2必须与 Z 位于同机不同通道，并接入 Z 信号发生器 Ext Trig；若分配给
+其他设备，应使用同一下降沿。软件无法确认实体接线及实际触发是否发生。
+
+- **仅加载，保持关闭**：先关闭涉及的输出，再配置触发、上传任意波及设置 Burst，完成后保持关闭。
+- **加载并启动**：配置完成后先开启 Z，再开启选定的共同触发；未联动时等待已有外部触发。
+- **停止**：按最近已应用的联动状态关闭 Z 及本次联动的时序信号2，不依赖当前预览文件或未提交表单。
+- 配置失败或执行取消时关闭本次涉及的输出；预检失败不写硬件。成功操作只释放连接，离开页面或停止 GUI 服务不会自动关闭输出。
+
+操作复用任务管理器的硬件互斥、进度和取消。后端在执行前重新校验文件 SHA-256、
+映射修订、点数能力和完整输出包络；非 Vpp 通道应先在仪器控制中切换单位并回读。
+最近应用记录与预览相互独立，展示来源、联动设置及操作时的两路回读结果；后续
+仪器操作可能改变输出。应用记录只保存在当前后端会话，重启或映射变化后来源未知，
+重新加载可建立记录；来源未知时仍能关闭当前映射的 Z 输出。
+
+共享实现位于 `lab_workflows/z_arbitrary_control.py`。Mx Z 原有触发和任意波配置函数
+通过兼容入口复用此实现，保持实验原有准备顺序和结束策略。GUI 不设置 GS200、
+激光、温控、HF2，也不执行灵敏度采集。
+
+接口位于 `/api/tools/z-arbitrary-control`：`GET /sources`、
+`GET /preview/{run_name}`、`GET /state` 和 `POST /actions`。
+动作包括 `configure`、`configure_and_start`、`stop`；应用携带来源及预览 SHA-256，
+所有动作携带设备库与映射修订号。停止忽略未提交的波形和触发表单参数。
+
 ## 调制示例
 
 ```python
@@ -111,19 +152,17 @@ dg.set_mod_type_state("AM", True)
 
 ## DG4162 DC 电平设置注意事项
 
-**已知仪器行为（DG4162 固件 00.01.14 实测）：DC 波形下
-`VOLTage:OFFSet` 写入会被静默忽略**——命令被接受、无 SCPI 错误，但寄存器
-不变、输出电压不改变。手册推荐的 `FUNC:DC + VOLT:OFFS` 在该固件上不生效，
-DC 电平实际由 `VOLTage:HIGH` / `VOLTage:LOW` 寄存器决定
-（电平 = (HIGH+LOW)/2，1 mV 分辨率），且写入受两条约束：
+DG4000 编程手册将 `VOLTage:LEVel:IMMediate:OFFSet` 定义为偏置电压的
+专用设置命令。2026-08-17 在 DG4162（固件 00.01.14）CH1 上以 SDS1204X HD
+CH3 外部测量 `0/1/2 V` 扫描时，`VOLT:OFFSet` 与旧代码使用的
+`APPLy:USER` 都产生线性响应，拟合 `R²` 分别为 `0.99837` 和 `0.99901`；
+HIGH/LOW 写法的 `R²` 仅为 `0.02014`，没有形成有效 DC 扫描。
 
-- 新 HIGH 不大于当前 LOW 时，HIGH 写入被忽略；
-- 新 LOW 不小于当前 HIGH 时，LOW 会被压到 HIGH-1 mV。
-
-因此 `DG4000Instrument.set_dc_voltage(v)` 采用「先 LOW=v-1 mV、后 HIGH=v+1 mV、
-再 LOW=v-1 mV」三步写入，三步后电平恰为 v。`setup_dc()` 与仪器控制页的
-DC 应用路径都通过该方法设置电平，非 DC 波形的偏置仍使用 `VOLT:OFFS`
-（实测有效）。回读仍用 `VOLT:OFFS?`，DC 下返回 (HIGH+LOW)/2。
+因此 `DG4000Instrument.set_dc_voltage(v)` 使用 `VOLTage:OFFSet`，
+`setup_dc()` 按「切换 DC 波形、设置 OFFSET、打开输出」执行。示波器测得的
+电压可以与命令值存在比例差异，这由后级链路决定；只要随命令值线性变化即可用于
+标定。DG4162 的 `VOLT:OFFSet?`、`APPLy?` 或 HIGH/LOW 查询都不能视为独立的
+物理输出测量，驱动返回的查询值仅表示仪器报告值。
 
 ## GUI 行为
 

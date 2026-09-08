@@ -9,6 +9,8 @@ import threading
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
+import yaml
+
 from ..common import (
     CancellationToken,
     ProgressCallback,
@@ -130,7 +132,10 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             for line in process.stdout:
                 message = line.rstrip()
                 if message:
-                    emit(progress, "running", message)
+                    if progress is None:
+                        print(message, flush=True)
+                    else:
+                        emit(progress, "running", message)
             return_code = process.wait()
         finally:
             cancel_path.unlink(missing_ok=True)
@@ -147,6 +152,30 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         created = [item for item in runs if item not in before]
         candidates = created or runs
         return max(candidates, key=lambda item: item.stat().st_mtime) if candidates else None
+
+    @staticmethod
+    def _write_analysis_status(
+        run_dir: Path,
+        *,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        """把自动分析状态写回运行配置，便于 GUI 和后续排查。"""
+        config_path = run_dir / "experiment_config.yaml"
+        if not config_path.is_file():
+            return
+        try:
+            with config_path.open(encoding="utf-8") as stream:
+                config = yaml.safe_load(stream) or {}
+            if not isinstance(config, dict):
+                return
+            config["analysis_status"] = status
+            config["analysis_error"] = error
+            with config_path.open("w", encoding="utf-8") as stream:
+                yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
+        except Exception:
+            # 分析状态是诊断信息，不能覆盖原始分析异常。
+            return
 
     def run(
         self,
@@ -168,13 +197,20 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             cancellation=cancellation,
         )
         run_dir = self._latest_run(before)
-        analysis_error = None
-        if self.analysis_module and run_dir:
+        if self.analysis_module:
+            if run_dir is None:
+                raise RuntimeError(
+                    f"自动分析失败：采集完成后未找到 {self.data_type} 运行目录"
+                )
             try:
-                self.analyze(run_dir, progress)
+                self.analyze(run_dir, progress, cancellation=cancellation)
+            except WorkflowCancelled:
+                raise
             except Exception as exc:
-                analysis_error = str(exc)
-                emit(progress, "analysis", f"自动分析失败: {exc}", 95, "warning")
+                emit(progress, "analysis", f"自动分析失败: {exc}", 95, "error")
+                raise RuntimeError(
+                    f"自动分析失败（运行目录: {run_dir}）：{exc}"
+                ) from exc
         artifacts = []
         if run_dir and (run_dir / "results").exists():
             artifacts = [str(path) for path in (run_dir / "results").iterdir() if path.is_file()]
@@ -182,18 +218,39 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             "experiment_id": self.id,
             "run_dir": str(run_dir) if run_dir else None,
             "artifacts": artifacts,
-            "analysis_error": analysis_error,
         }
 
     def analyze(
         self,
         run_dir: Path,
         progress: ProgressCallback | None,
+        *,
+        cancellation: CancellationToken | None = None,
     ) -> dict[str, Any]:
         if not self.analysis_module:
             raise RuntimeError("该实验没有离线分析器")
+        run_dir = Path(run_dir).resolve()
         emit(progress, "analysis", f"分析 {run_dir.name}", 90)
-        self._execute(self.analysis_module, run_dir=run_dir, progress=progress)
+        try:
+            if cancellation and cancellation.cancelled:
+                raise WorkflowCancelled("自动分析已取消，原始采集数据保留")
+            self._execute(self.analysis_module, run_dir=run_dir, progress=progress,
+                          cancellation=cancellation)
+        except WorkflowCancelled as exc:
+            self._write_analysis_status(run_dir, status="cancelled", error=str(exc))
+            raise
+        except Exception as exc:
+            self._write_analysis_status(
+                run_dir,
+                status="failed",
+                error=str(exc),
+            )
+            raise
+        self._write_analysis_status(
+            run_dir,
+            status="completed",
+            error=None,
+        )
         results = run_dir / "results"
         return {
             "run_dir": str(run_dir),

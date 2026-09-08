@@ -40,11 +40,17 @@ def evaluate_mx_y_rf_point(
     params: MxYRFParams,
     *,
     include_rejected_fit_diagnostics: bool = False,
+    ignore_relative_gamma_uncertainty: bool = False,
+    initial_center: float | None = None,
 ) -> dict[str, Any]:
     """评估一个完整的 Mx Y RF 灵敏度工作点，不写文件也不连接仪器。
 
     ``include_rejected_fit_diagnostics`` 只允许幅度等效线宽模式在响应拟合被
     质量门槛拒绝后继续计算诊断谱；该点仍保持无效，不参与最优值判断。
+    ``ignore_relative_gamma_uncertainty`` 用于需要保留线宽不确定度、但不以该
+    指标拒绝拟合的实验变体；其他拟合质量门槛仍然生效。
+    ``initial_center`` 用于实验变体指定幅度色散拟合的 V0 初始值；不指定时
+    保留 Mx Y 的历史初始化方式。
     """
     raw_dir = Path(raw_dir)
     amplitude_path = raw_dir / "amplitude_scan.npz"
@@ -63,11 +69,17 @@ def evaluate_mx_y_rf_point(
         | (r_std_v > params.r_bad_point_std_threshold_v)
     )
     fit_mask = ~bad_point_mask
+    relative_gamma_uncertainty_max = (
+        None
+        if ignore_relative_gamma_uncertainty
+        else params.fit_relative_gamma_uncertainty_max
+    )
     response_fit = fit_absolute_dispersive_response(
         amplitude_vpp[fit_mask],
         r_mean_v[fit_mask],
         r_squared_min=params.fit_r_squared_min,
-        relative_gamma_uncertainty_max=params.fit_relative_gamma_uncertainty_max,
+        relative_gamma_uncertainty_max=relative_gamma_uncertainty_max,
+        initial_center=initial_center,
     )
     response_result = {
         **response_fit.to_dict(),
@@ -164,7 +176,7 @@ def evaluate_mx_y_rf_point(
             frequency_scan_hz,
             frequency_response_v,
             r_squared_min=params.fit_r_squared_min,
-            relative_gamma_uncertainty_max=params.fit_relative_gamma_uncertainty_max,
+            relative_gamma_uncertainty_max=relative_gamma_uncertainty_max,
         )
         if not linewidth_fit.success:
             result["invalid_reasons"] = [

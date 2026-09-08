@@ -61,13 +61,13 @@ def test_defaults_schema_registry_and_grid() -> None:
     assert definition.required_devices[-1] == "DLC_PRO"
 
     fields = {item["name"]: item for item in definition.schema()["fields"]}
-    assert fields["PZT_VOLTAGE_START_V"]["default"] == 60.0
-    assert fields["PZT_VOLTAGE_STOP_V"]["default"] == 100.0
-    assert fields["PZT_VOLTAGE_POINTS"]["default"] == 9
+    assert fields["PZT_VOLTAGE_START_V"]["default"] == 20.0
+    assert fields["PZT_VOLTAGE_STOP_V"]["default"] == 120.0
+    assert fields["PZT_VOLTAGE_POINTS"]["default"] == 21
     assert fields["PZT_SETTLE_TIME_S"]["default"] == 1.0
-    assert fields["PROBE_POWER_START_V"]["default"] == 0.1
-    assert fields["PROBE_POWER_STOP_V"]["default"] == 0.5
-    assert fields["PROBE_POWER_POINTS"]["default"] == 7
+    assert fields["PROBE_POWER_START_V"]["default"] == 0.3
+    assert fields["PROBE_POWER_STOP_V"]["default"] == 0.3
+    assert fields["PROBE_POWER_POINTS"]["default"] == 1
     assert fields["PROBE_POWER_POINTS"]["minimum"] == 1
     assert "FIXED_PARAMS.temperature" not in fields
     assert "TEMPERATURE_TOLERANCE_C" not in fields
@@ -80,16 +80,16 @@ def test_defaults_schema_registry_and_grid() -> None:
     assert "FREQUENCY_START_HZ" not in fields
 
     pzt_axis, probe_axis = build_probe_detuning_axes(params)
-    np.testing.assert_allclose(pzt_axis, np.linspace(60.0, 100.0, 9))
+    np.testing.assert_allclose(pzt_axis, np.linspace(20.0, 120.0, 21))
     np.testing.assert_allclose(probe_axis, np.linspace(0.1, 0.5, 7))
     points = iter_probe_detuning_grid(params)
-    assert len(points) == 63
+    assert len(points) == 147
     assert [item.probe_index for item in points[:7]] == list(range(7))
     assert [item.probe_index for item in points[7:14]] == list(
         reversed(range(7))
     )
     assert points[0].key == "pzt_000_probe_000"
-    assert points[-1].key == "pzt_008_probe_006"
+    assert points[-1].key == "pzt_020_probe_006"
 
 
 def test_fixed_probe_single_point_pzt_scan() -> None:
@@ -353,8 +353,8 @@ def test_grid_sets_pzt_once_per_row_and_checkpoints_readback(
     assert summary["completed_point_count"] == expected_point_count
     assert waits == [1.0, 1.0]
     assert [call for call in controller.calls if call[0] == "pzt"] == [
-        ("pzt", 60.0),
-        ("pzt", 100.0),
+        ("pzt", 20.0),
+        ("pzt", 120.0),
     ]
     manifest = yaml.safe_load(
         (
@@ -621,6 +621,101 @@ def test_run_restores_probe_laser_on_all_exit_paths(
         "other_devices_preserved": True,
         "errors": [],
     }
+
+
+def test_run_pzt_restore_failure_fails_completion(
+    local_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """正常采集完成但 PZT 状态恢复失败：最终状态必须 failed 并抛出异常。"""
+    import lab_workflows.experiment_modules.mx_y_rf_probe_detuning_optimization.workflow as workflow
+
+    run_dir = _FakeRunDir(local_tmp_path / "pzt_fail")
+    controller = _FakeProbeLaserController()
+    monkeypatch.setattr(workflow, "find_project_root", lambda: local_tmp_path)
+    monkeypatch.setattr(
+        workflow,
+        "load_mapping",
+        lambda root: {
+            "lockin_r": {"device_id": "dev"},
+            "probe_laser": {},
+        },
+    )
+    monkeypatch.setattr(
+        workflow,
+        "create_run_directory",
+        lambda *args, **kwargs: run_dir,
+    )
+    monkeypatch.setattr(workflow, "check_cancelled", lambda: None)
+    monkeypatch.setattr(
+        workflow,
+        "connect_mx_y_rf_devices",
+        lambda *args, **kwargs: (
+            {"laser": object()},
+            {"pump_laser": 1, "probe_laser": 2},
+        ),
+    )
+    monkeypatch.setattr(
+        workflow,
+        "_connect_probe_laser_controller",
+        lambda *args: (controller, {}),
+    )
+    monkeypatch.setattr(
+        workflow,
+        "_snapshot_and_validate_probe_laser",
+        lambda *args: (
+            ProbeLaserState(80.0, 79.8, 34.0, True),
+            {},
+        ),
+    )
+    monkeypatch.setattr(workflow, "snapshot_mx_y_rf_state", lambda *args: {})
+    monkeypatch.setattr(
+        workflow,
+        "configure_mx_y_rf_outputs",
+        lambda *args, **kwargs: (1000.0, {}),
+    )
+    monkeypatch.setattr(
+        workflow,
+        "_prepare_probe_laser_scan",
+        lambda *args: None,
+    )
+    monkeypatch.setattr(
+        workflow,
+        "_acquire_grid",
+        lambda *args: {"completed_point_count": 1},
+    )
+    monkeypatch.setattr(
+        workflow,
+        "safe_shutdown",
+        lambda *args: SimpleNamespace(
+            errors=[],
+            disconnect_errors=[],
+            to_dict=lambda: {},
+        ),
+    )
+    monkeypatch.setattr(
+        workflow,
+        "_restore_probe_laser_state",
+        lambda instrument, state: {
+            "attempted": True,
+            "success": False,
+            "error": "PZT 写入超时",
+        },
+    )
+    monkeypatch.setattr(
+        workflow,
+        "restore_mx_y_rf_laser_powers",
+        lambda *args, **kwargs: None,
+    )
+    params = MxYRFProbeDetuningOptimizationParams()
+    with pytest.raises(RuntimeError, match="安全恢复失败"):
+        workflow.run(params)
+    last = run_dir.updates[-1]
+    assert last["completion_status"] == "failed"
+    assert "PZT 写入超时" in last["failure_reason"]
+    assert last["probe_laser_restore"]["success"] is False
+    assert last["probe_laser_restore"]["error"] == "PZT 写入超时"
+    assert any("PZT 写入超时" in item for item in last["probe_laser_restore"]["guard_errors"])
 
 
 def _synthetic_evaluation(value: float | None) -> dict:

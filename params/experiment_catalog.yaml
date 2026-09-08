@@ -10,12 +10,18 @@ tags:
   label: 标定
 - id: tag-15b058ba
   label: 其他
+- id: tag-2c49075e
+  label: 任意波校验
 assignments:
   mx-y-rf-sensitivity: calibration
   mx-y-rf-sensitivity-drift: calibration
   mx-z-optimal-control-rf-sensitivity: calibration
+  mx-z-optimal-control-xy-rf-sensitivity: calibration
+  mx-z-optimal-control-xy-noise-spectrum: calibration
   mx-z-optimal-control-xy-leakage-response: calibration
+  mx-z-optimal-control-xy-rf-phase-response: calibration
   mx-z-optimal-control-xyz-balance: calibration
+  mx-z-optimal-control-dg4000-bias-xyz-balance: calibration
   mx-y-rf-power-optimization: calibration
   mx-y-rf-probe-detuning-optimization: calibration
   mx-main-field-calibration: verification
@@ -50,16 +56,37 @@ assignments:
   dg-am-comp-transfer-check: tag-15b058ba
   temperature-switch-pid-cycle: tag-15b058ba
   mx-y-rf-frequency-response: calibration
+  mx-y-optimal-control-rf-frequency-response: optimization
+  z-aw-waveform-scope-check: tag-2c49075e
+  z-coil-inductance-frequency-response: tag-2c49075e
+  z-coil-current-frequency-response: tag-2c49075e
+  mx-z-current-coupling-calibration: verification
+  z-aw-current-waveform-scope-check: tag-2c49075e
+  z-aw-closed-loop-waveform-correction: tag-2c49075e
+  scope-capture: tag-15b058ba
 experiment_descriptions:
+  z-coil-inductance-frequency-response: Z 线圈固定幅度正弦扫频，比较理论设定与线圈端电压的幅值、相位和残差。
+  z-coil-current-frequency-response: 通过低端采样电阻测量 DG4000 到 Z 线圈实际电流的复数频率响应，为闭环预加重和逆滤波提供可靠带宽。
+  mx-z-current-coupling-calibration: 在 Mx 高主场工作点同步测量采样电阻电压和 Y RF 共振中心，标定实际线圈电流到控制耦合强度的关系。
+  z-aw-current-waveform-scope-check: 比较最优控制目标电流与采样电阻实测电流，报告固定延迟、形状、增益、频谱、重复性和饱和诊断。
+  z-aw-closed-loop-waveform-correction: 使用实际电流频响预加重和阻尼正则化逆滤波迭代 Z 任意波，保留每轮原始数据并冻结最佳
+    hold-out 校正波形。
   mx-y-rf-sensitivity-drift: 按固定时间间隔重复 Mx Y RF 灵敏度测量，每轮完成后立即分析并更新灵敏度与线宽趋势。
   mx-y-rf-sensitivity: Mx 构型下仅采集 Demod0 R，使用绝对值色散拟合斜率和零 RF 的 PSD_R 测量灵敏度，并支持两种线宽定义。
   mx-z-optimal-control-rf-sensitivity: 按配置启停 GS200 主场，以 X DC 和 Y RF 偏置平衡 XY 剩磁场，并叠加
     Z 向周期最优控制；校相幅度非零时同步采集 Demod0 R/X/Y 并以 180° 成对复差分校相后测量 RF 灵敏度，校相幅度为零时保持 Y DC 补偿、扫描
     Z 控制 Burst 相位并仅测量剩磁响应。
+  mx-z-optimal-control-xy-rf-sensitivity: 在 Z 周期最优控制下扫描 X/Y 补偿偏置，中心一次校相后逐点测量 RF 灵敏度并生成二维地图。
+  mx-z-optimal-control-xy-noise-spectrum: 在 Z 最优控制保持开启时扫描 X/Y DC 偏置，关闭 Y RF 交流并测量
+    Demod0 R 噪声谱，以指定频段 ASD 中位数寻找最低噪声点。
   mx-z-optimal-control-xy-leakage-response: 保持 Z 周期最优控制，二维扫描同形 X/Y 触发任意波的带符号幅度，采集
     Demod0 R 并保留实测网格最小点。
+  mx-z-optimal-control-xy-rf-phase-response: 保持 Z 周期最优控制，在 X/Y DC 平衡场网格上逐点扫描 Y RF
+    Burst 相位，采集 Demod0 R 并用非线性色散模型拟合等效响应参数（保留旧正弦拟合作为对照）。
   mx-z-optimal-control-xyz-balance: 保持 Z 周期最优控制，以 DG4000 DC 扫描 X/Y、GS200 电流扫描 Z，采集
     Demod0 R 并报告实测三维网格最小点；任一轴可用 START=STOP、POINTS=1 固定。
+  mx-z-optimal-control-dg4000-bias-xyz-balance: 保持 Z 周期最优控制，以同一 DG4000 Z 通道的额外 DC
+    offset 扫描 Z 偏置，并扫描 X/Y，采集 Demod0 X/Y/R。
   mx-y-rf-power-optimization: 在 Mx Y 向 RF 构型下二维扫描 Pump/Probe 光功率，逐点测量完整灵敏度并按平坦频段中位数寻找最优工作点。
   mx-y-rf-probe-detuning-optimization: 在 Mx Y 向 RF 构型下固定 Pump，扫描 Probe 光功率和 DLC pro
     PZT Scan Offset；Probe 轴可设为单点。实验不连接 TEC，但保留 Temp_Switch 采集门控。
@@ -89,11 +116,17 @@ experiment_descriptions:
   rf-sensitivity-constxy-frequency: AM调制的方测量频率响应。
   rf-sensitivity-direct-aw-frequency: 测量射频频率响应，dg_am 作为触发信号，使得 dg_comp 两路同相输出。
   xy-direct-aw-dc-calibration: DirectAW 加常数控制的方式，外加不同频率射频场，寻找频率响应的最大值的位置，来对 控制 进行标定。
+  z-aw-waveform-scope-check: 复用版本化 Z 最优控制波形和 Z 标定，使用 SDS CH3 测量小线圈实际电压、CH4 提供硬件触发，并离线报告允许固定时间差的波形相似度。
 experiment_titles:
+  z-coil-inductance-frequency-response: Z 线圈电感效应频率响应
   mx-y-rf-sensitivity: Mx Y 向 RF 场灵敏度
   mx-z-optimal-control-rf-sensitivity: Mx Z 最优控制 RF 灵敏度
+  mx-z-optimal-control-xy-rf-sensitivity: Mx Z 最优控制 XY 补偿偏置 RF 灵敏度
+  mx-z-optimal-control-xy-noise-spectrum: Mx Z 最优控制 XY 噪声谱
   mx-z-optimal-control-xy-leakage-response: Mx Z 最优控制 XY 泄露响应
+  mx-z-optimal-control-xy-rf-phase-response: Mx Z 最优控制 XY 平衡场 RF 相位响应
   mx-z-optimal-control-xyz-balance: Mx Z 最优控制 XYZ 平衡场
+  mx-z-optimal-control-dg4000-bias-xyz-balance: Mx Z 最优控制 DG4000 偏置 XYZ 平衡场
   mx-y-rf-power-optimization: Mx Y RF 光功率灵敏度优化
   mx-y-rf-probe-detuning-optimization: Mx Y RF Probe 光功率与失谐灵敏度优化
   mx-main-field-calibration: Mx 主磁场频率标定
@@ -114,7 +147,335 @@ experiment_titles:
   rf-sensitivity-constxy-frequency: RF 频率响应（ConstXY）
   rf-sensitivity-direct-aw-frequency: RF 频率响应（DirectAW）
   xy-direct-aw-dc-calibration: XY DirectAW DC 标定
+  z-aw-waveform-scope-check: Z 任意波线圈波形一致性验证
+  z-coil-current-frequency-response: Z 线圈实际电流频率响应
+  mx-z-current-coupling-calibration: Mx Z 实际电流-耦合强度标定
+  z-aw-current-waveform-scope-check: Z 任意波实际电流波形验证
+  z-aw-closed-loop-waveform-correction: Z 任意波实际电流闭环校正
 parameter_layouts:
+  mx-z-optimal-control-xy-noise-spectrum:
+    basic:
+    - RUN_TAG
+    - X_FIELD_START_V
+    - X_FIELD_STOP_V
+    - X_FIELD_POINTS
+    - Y_FIELD_START_V
+    - Y_FIELD_STOP_V
+    - Y_FIELD_POINTS
+    - NOISE_N_AVG
+    - NOISE_DURATION_S
+    - LOW_FREQ_SKIP_HZ
+    - NOISE_BAND_MAX_HZ
+    - CONTROL_WAVEFORM_SOURCE
+    - CORRECTED_CONTROL_SOURCE_RUN
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    advanced:
+    - NOISE_RATE_SA_S
+    - NOISE_TIME_CONSTANT_S
+    - NOISE_DEMOD_ORDER
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - CONTROL_VERSION
+    - CONTROL_RESULTS_ROOT
+    - Z_CALIBRATION_SOURCE_RUN
+    - CONTROL_SCALE
+    - Z_AW_OUTPUT_VPP
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - FIT_R_SQUARED_MIN
+    - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
+    - LINEAR_CHECK_GAMMA_FRACTION
+    - SLOPE_AGREEMENT_TOLERANCE
+  mx-z-optimal-control-xy-rf-sensitivity:
+    basic:
+    - RUN_TAG
+    - X_FIELD_START_V
+    - X_FIELD_STOP_V
+    - X_FIELD_POINTS
+    - Y_FIELD_START_V
+    - Y_FIELD_STOP_V
+    - Y_FIELD_POINTS
+    - Y_RF_FREQUENCY_HZ
+    - Y_RF_AMP_START_VPP
+    - Y_RF_AMP_STOP_VPP
+    - Y_RF_AMP_POINTS
+    - RESPONSE_SETTLE_TIME_S
+    - RESPONSE_DURATION_S
+    - Y_RF_NT_PER_VPP
+    - NOISE_N_AVG
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    - CONTROL_VERSION
+    - CONTROL_WAVEFORM_SOURCE
+    - CORRECTED_CONTROL_SOURCE_RUN
+    - Z_CALIBRATION_SOURCE_RUN
+    - CONTROL_SCALE
+    - Z_AW_OUTPUT_VPP
+    - PHASE_CAL_RF_AMPLITUDE_VPP
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - NOISE_DURATION_S
+    - NOISE_RATE_SA_S
+    - NOISE_TIME_CONSTANT_S
+    - NOISE_DEMOD_ORDER
+    - LOW_FREQ_SKIP_HZ
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - CONTROL_RESULTS_ROOT
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - PHASE_SCAN_START_DEG
+    - PHASE_SCAN_STOP_DEG
+    - PHASE_SCAN_STEP_DEG
+    - PHASE_FIT_R_SQUARED_MIN
+    - PHASE_FIT_AMPLITUDE_SIGMA_MIN
+    - PHASE_OUTLIER_SIGMA_THRESHOLD
+    - PHASE_OUTLIER_MAX_REACQUIRE_POINTS
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+    - FIT_R_SQUARED_MIN
+    - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
+    - LINEAR_CHECK_GAMMA_FRACTION
+    - SLOPE_AGREEMENT_TOLERANCE
+  mx-z-optimal-control-dg4000-bias-xyz-balance:
+    basic:
+    - RUN_TAG
+    - X_FIELD_START_V
+    - X_FIELD_STOP_V
+    - X_FIELD_POINTS
+    - Y_FIELD_START_V
+    - Y_FIELD_STOP_V
+    - Y_FIELD_POINTS
+    - Z_BIAS_START_V
+    - Z_BIAS_STOP_V
+    - Z_BIAS_POINTS
+    - DEMOD_FREQUENCY_HZ
+    - RESPONSE_SETTLE_TIME_S
+    - RESPONSE_DURATION_S
+    - TEMP_SWITCH_ON_LAG_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    - CONTROL_VERSION
+    - Z_CALIBRATION_SOURCE_RUN
+    - CONTROL_SCALE
+    - Z_AW_OUTPUT_VPP
+    - CONFIRM_GS200_DISCONNECTED
+    - CONTROL_WAVEFORM_SOURCE
+    - CORRECTED_CONTROL_SOURCE_RUN
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - CONTROL_RESULTS_ROOT
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+  z-aw-waveform-scope-check:
+    basic:
+    - RUN_TAG
+    - CONTROL_VERSION
+    - Z_CALIBRATION_SOURCE_RUN
+    - CONTROL_SCALE
+    - Z_AW_OUTPUT_VPP
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - SCOPE_CYCLES
+    - SCOPE_REPEATS
+    advanced:
+    - CONTROL_RESULTS_ROOT
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+  z-coil-current-frequency-response:
+    basic:
+    - RUN_TAG
+    - FREQUENCY_START_HZ
+    - FREQUENCY_STOP_HZ
+    - FREQUENCY_POINTS
+    - DRIVE_AMPLITUDE_VPP
+    - SCOPE_CYCLES
+    - SCOPE_REPEATS
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - SCOPE_SAMPLE_RATE_SA_S
+    - CONTROL_VERSION
+    - SENSE_RESISTOR_OHM
+    - SENSE_RESISTOR_POWER_RATING_W
+    - MAXIMUM_CURRENT_A
+    - SCOPE_SAMPLES_PER_CYCLE
+    advanced:
+    - DRIVE_OFFSET_V
+    - FREQUENCY_SETTLE_S
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+    - CONTROL_RESULTS_ROOT
+    - SENSE_RESISTOR_TOLERANCE_PERCENT
+    - SENSE_RESISTOR_POWER_DERATING
+    - SCOPE_MIN_SAMPLE_RATE_SA_S
+    - SCOPE_CAPTURE_GUARD_S
+  mx-z-current-coupling-calibration:
+    basic:
+    - RUN_TAG
+    - ZERO_BIAS_CENTER_FREQUENCY_HZ
+    - Z_INITIAL_HZ_PER_V
+    - Z_PREDICTION_POLARITY
+    - Z_BIAS_START_V
+    - Z_BIAS_STOP_V
+    - Z_BIAS_STEP_V
+    - FREQUENCY_HALF_WIDTH_HZ
+    - FREQUENCY_STEP_HZ
+    - Y_RF_AMPLITUDE_VPP
+    - TEMP_SWITCH_ON_LAG_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    - SENSE_RESISTOR_OHM
+    - SENSE_RESISTOR_POWER_RATING_W
+    - MAXIMUM_CURRENT_A
+    - SENSE_SCOPE_SAMPLE_RATE_SA_S
+    - SENSE_SCOPE_DURATION_S
+    - SENSE_SCOPE_INITIAL_SCALE_V_DIV
+    - BIDIRECTIONAL_SCAN
+    advanced:
+    - FREQUENCY_SETTLE_TIME_S
+    - FREQUENCY_DURATION_S
+    - TEMP_SWITCH_OFF_LEAD_S
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - LINEAR_R_SQUARED_MIN
+    - SENSE_RESISTOR_TOLERANCE_PERCENT
+    - SENSE_RESISTOR_POWER_DERATING
+    - SENSE_SCOPE_SCALE_MIN_V_DIV
+    - SENSE_SCOPE_SCALE_MAX_V_DIV
+    - SENSE_SCOPE_VERTICAL_DIVISIONS
+    - SENSE_SCOPE_AUTO_RANGE_LOW_FRACTION
+    - SENSE_SCOPE_AUTO_RANGE_HIGH_FRACTION
+    - SENSE_SCOPE_AUTO_OFFSET_TOLERANCE_FRACTION
+    - SENSE_SCOPE_AUTO_RANGE_MAX_ATTEMPTS
+    - SENSE_SCOPE_AUTO_RANGE_ALLOW_SHRINK
+    - CURRENT_SETTLE_TIME_S
+  z-aw-current-waveform-scope-check:
+    basic:
+    - RUN_TAG
+    - CONTROL_VERSION
+    - CONTROL_SCALE
+    - Z_AW_OUTPUT_VPP
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - SCOPE_CYCLES
+    - SCOPE_REPEATS
+    - CONTROL_WAVEFORM_SOURCE
+    - CORRECTED_CONTROL_SOURCE_RUN
+    - CURRENT_COUPLING_CALIBRATION_SOURCE_RUN
+    - SENSE_RESISTOR_OHM
+    - SENSE_RESISTOR_POWER_RATING_W
+    - MAXIMUM_CURRENT_A
+    advanced:
+    - CONTROL_RESULTS_ROOT
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+    - COMMAND_Z_CALIBRATION_SOURCE_RUN
+  z-aw-closed-loop-waveform-correction:
+    basic:
+    - RUN_TAG
+    - CONTROL_SOURCE_SET
+    - CONTROL_VERSION
+    - Z_CALIBRATION_SOURCE_RUN
+    - CONTROL_SCALE
+    - Z_AW_OUTPUT_VPP
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - SCOPE_CYCLES
+    - SCOPE_REPEATS
+    - CURRENT_COUPLING_CALIBRATION_SOURCE_RUN
+    - CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN
+    - MAX_ITERATIONS
+    - ITERATION_REPEATS
+    - TARGET_SHAPE_NRMSE
+    - SENSE_RESISTOR_OHM
+    - SENSE_RESISTOR_POWER_RATING_W
+    - MAXIMUM_CURRENT_A
+    - CORRECTION_METHOD
+    advanced:
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+    - HOLDOUT_REPEATS
+    - ITERATION_DAMPING
+    - INVERSE_REGULARIZATION
+    - MAXIMUM_ERROR_INCREASE_FRACTION
+    - SENSE_RESISTOR_POWER_DERATING
   mx-xy-residual-field-calibration:
     basic:
     - RUN_TAG
@@ -527,6 +888,23 @@ parameter_layouts:
     - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
     - LINEAR_CHECK_GAMMA_FRACTION
     - SLOPE_AGREEMENT_TOLERANCE
+  z-coil-inductance-frequency-response:
+    basic:
+    - RUN_TAG
+    - FREQUENCY_START_HZ
+    - FREQUENCY_STOP_HZ
+    - FREQUENCY_POINTS
+    - DRIVE_AMPLITUDE_VPP
+    - SCOPE_CYCLES
+    - SCOPE_REPEATS
+    - SCOPE_SAMPLE_RATE_SA_S
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    advanced:
+    - DRIVE_OFFSET_V
+    - FREQUENCY_SETTLE_S
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
   mx-y-rf-sensitivity-drift:
     basic:
     - RUN_TAG
@@ -594,6 +972,8 @@ parameter_layouts:
     - FIXED_PARAMS.Probe_laser_power
     - FIXED_PARAMS.temperature
     - CONTROL_VERSION
+    - CONTROL_WAVEFORM_SOURCE
+    - CORRECTED_CONTROL_SOURCE_RUN
     - Z_CALIBRATION_SOURCE_RUN
     - CONTROL_SCALE
     - Z_AW_OUTPUT_VPP
@@ -606,6 +986,8 @@ parameter_layouts:
     - FIXED_PARAMS.X_magnetic_field
     - FIXED_PARAMS.Y_magnetic_field
     - FIXED_PARAMS.main_magnetic_field
+    - NOISE_RF_ENABLED
+    - NOISE_RF_AMPLITUDE_VPP
     advanced:
     - R_BAD_POINT_STD_THRESHOLD_V
     - R_POINT_MAX_ATTEMPTS
@@ -748,6 +1130,59 @@ parameter_layouts:
     - TRIGGER_AMPLITUDE_VPP
     - TRIGGER_OFFSET_V
     - TRIGGER_DUTY_PERCENT
+  mx-z-optimal-control-xy-rf-phase-response:
+    basic:
+    - RUN_TAG
+    - X_FIELD_START_V
+    - X_FIELD_STOP_V
+    - X_FIELD_POINTS
+    - Y_FIELD_START_V
+    - Y_FIELD_STOP_V
+    - Y_FIELD_POINTS
+    - RESPONSE_SETTLE_TIME_S
+    - RESPONSE_DURATION_S
+    - TEMP_SWITCH_ON_LAG_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    - CONTROL_VERSION
+    - Z_CALIBRATION_SOURCE_RUN
+    - CONTROL_SCALE
+    - Z_AW_OUTPUT_VPP
+    - FIXED_PARAMS.main_magnetic_field
+    - Y_RF_FREQUENCY_HZ
+    - PHASE_CAL_RF_AMPLITUDE_VPP
+    - PHASE_SCAN_START_DEG
+    - PHASE_SCAN_STOP_DEG
+    - PHASE_SCAN_STEP_DEG
+    - CONTROL_WAVEFORM_SOURCE
+    - CORRECTED_CONTROL_SOURCE_RUN
+    advanced:
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - CONTROL_RESULTS_ROOT
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT
+    - PHASE_FIT_R_SQUARED_MIN
+    - PHASE_FIT_AMPLITUDE_SIGMA_MIN
+    - PHASE_OUTLIER_SIGMA_THRESHOLD
+    - PHASE_OUTLIER_MAX_REACQUIRE_POINTS
   mx-z-optimal-control-xyz-balance:
     basic:
     - RUN_TAG
@@ -1044,3 +1479,117 @@ parameter_layouts:
     - PUMP_GATE_VOLTAGE_V
     - FIT_R_SQUARED_MIN
     - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
+  rf-sensitivity-direct-aw-frequency:
+    basic:
+    - RUN_TAG
+    - Z_RF_FREQ_START
+    - Z_RF_FREQ_STOP
+    - Z_RF_FREQ_POINTS
+    - Z_RF_FREQ_LOG_SPACED
+    - Z_RF_AMPLITUDE
+    - FREQ_SETTLE_TIME
+    - ARB_WAVEFORM_FILE
+    - A_ENV_FREQ
+    - XY_TRIGGER_FREQ
+    - XY_TRIGGER_AMPLITUDE
+    - XY_TRIGGER_DUTY
+    - PUMP_MOD_FREQ
+    - PUMP_MOD_DUTY
+    - PUMP_MOD_AMPLITUDE
+    - DEMOD3_N_AVG
+    - ARB_WAVEFORM_SOURCE
+    - CORRECTED_CONTROL_SOURCE_RUN
+    advanced:
+    - ACQUISITION_MODE
+    - Z_RF_DRIVE_MODE
+    - PHASE_START
+    - PHASE_STOP
+    - PHASE_POINTS
+    - PHASE_SETTLE_TIME
+    - XY_CTRL_K_HZ_PER_V
+    - XY_CTRL_B_HZ
+    - XY_AW_OUTPUT_VPP
+    - XY_AW_OUTPUT_OFFSET
+    - XY_CTRL_PHASE
+    - XY_CTRL_QUAD
+    - ENABLE_XY_CTRL_PHASE_CAL
+    - XY_CTRL_PHASE_TOL_DEG
+    - XY_CTRL_PHASE_MAX_ITER
+    - XY_TRIGGER_OFFSET
+    - XY_TRIGGER_PHASE
+    - DEMOD0_IDX
+    - DEMOD0_OSC_IDX
+    - DEMOD0_SIGNAL_RANGE
+    - DEMOD0_ORDER
+    - DEMOD0_TC_CALIB
+    - DEMOD0_TC_MEAS
+    - DEMOD0_RATE
+    - DEMOD3_IDX
+    - DEMOD3_OSC_IDX
+    - DEMOD3_TC_PERIOD_FRACTION
+    - DEMOD3_ORDER
+    - DEMOD3_RATE
+    - CONFIGURE_AUXOUT2_TO_DEMOD0_Y
+    - AUXOUT_INDEX
+    - AUXOUT_SOURCE_DEMOD_IDX
+    - AUXOUT_SOURCE_SELECT
+    - AUXOUT_SCALE
+    - AUXOUT_OFFSET
+    - SIGIN2_INDEX
+    - SIGIN2_RANGE
+    - SIGIN2_AC_COUPLING
+    - SIGIN2_IMPEDANCE
+    - TEMP_SWITCH_OFF_LEAD
+    - TEMP_SWITCH_ON_LAG
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    - FIXED_PARAMS.Temp_Switch
+    - Z_RF_FREQ_OFFSET_HZ
+    - XY_CTRL_PHASE_MIN_R_V
+    - XY_CTRL_PHASE_MIN_R_RATIO
+  mx-y-optimal-control-rf-frequency-response:
+    basic:
+    - RUN_TAG
+    - FREQUENCY_START_HZ
+    - FREQUENCY_STOP_HZ
+    - FREQUENCY_POINTS
+    - FREQUENCY_RF_AMPLITUDE_VPP
+    - PHASE_SCAN_START_DEG
+    - PHASE_SCAN_STOP_DEG
+    - PHASE_SCAN_STEP_DEG
+    - CORRECTED_CONTROL_SOURCE_RUN
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    - FIXED_PARAMS.X_magnetic_field
+    - FIXED_PARAMS.Y_magnetic_field
+    - Z_AW_OUTPUT_VPP
+    advanced:
+    - FREQUENCY_SETTLE_TIME_S
+    - FREQUENCY_DURATION_S
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_BURST_PHASE_DEG
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
+    - TRIGGER_OFFSET_V
+    - TRIGGER_DUTY_PERCENT

@@ -1,0 +1,19 @@
+schema_version: 2
+parameters:
+  mode: time
+  sampling_rate_sa_s: 500000.0
+  duration_s: 1.0
+  channel: 1
+  trigger_channel: 1
+  trigger_mode: AUTO
+  trigger_slope: RISing
+  trigger_level_v: 0.0
+  vertical_scale_v_div: 1.0
+  vertical_offset_v: 0.0
+  disable_temperature_control: true
+  temperature_switch_off_settle_s: 0.1
+  temperature_switch_on_settle_s: 1.0
+  run_tag: scope
+  psd_window: hann
+  psd_nperseg: 10000
+  psd_detrend: constant

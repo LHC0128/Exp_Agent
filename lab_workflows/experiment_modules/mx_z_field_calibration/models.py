@@ -172,7 +172,7 @@ class MxZFieldCalibrationParams(ExperimentParams):
     pump_gate_voltage_v: float = parameter(default=5.0, external_name="PUMP_GATE_VOLTAGE_V", label="Pump RF 开关常开电平", unit="V", group="advanced", minimum=5.0, maximum=5.0, safety_key="Time_sequence")
     pump_laser_power_v: float = parameter(default=0.5, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", safety_key="Pump_laser_power")
     probe_laser_power_v: float = parameter(default=0.3, external_name="FIXED_PARAMS.Probe_laser_power", label="Probe 光功率", unit="V", group="basic", safety_key="Probe_laser_power")
-    main_magnetic_field_ma: float = parameter(default=9.3, external_name="FIXED_PARAMS.main_magnetic_field", label="Z 主磁场电流", unit="mA", group="basic", safety_key="main_magnetic_field")
+    main_magnetic_field_ma: float = parameter(default=0.0, external_name="FIXED_PARAMS.main_magnetic_field", label="Z 主磁场电流", unit="mA", group="basic", safety_key="main_magnetic_field")
     temperature_c: float = parameter(default=120.0, external_name="FIXED_PARAMS.temperature", label="气室温度", unit="°C", group="basic", safety_key="temperature")
 
     linear_r_squared_min: float = parameter(default=0.99, external_name="LINEAR_R_SQUARED_MIN", label="线性标定最低 R²", group="advanced", minimum=0.0, maximum=1.0)

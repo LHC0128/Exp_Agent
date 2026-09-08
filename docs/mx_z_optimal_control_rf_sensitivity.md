@@ -12,6 +12,8 @@ defaults:
   Y_RF_AMP_START_VPP: -0.1
   Y_RF_AMP_STOP_VPP: 0.1
   Y_RF_AMP_POINTS: 41
+  NOISE_RF_ENABLED: false
+  NOISE_RF_AMPLITUDE_VPP: 0.002
   PHASE_CAL_RF_AMPLITUDE_VPP: 0.01
   PHASE_OUTLIER_SIGMA_THRESHOLD: 6.0
   PHASE_OUTLIER_MAX_REACQUIRE_POINTS: 4
@@ -70,7 +72,7 @@ learned_notes:
 写入零电流并关闭输出，非零时写入设定电流并开启输出。实验同时在
 `Z_magnetic_field` 上施加周期最优控制；Y RF 由
 `rf_coil` 产生，HF2 Demod0 的振荡器频率始终等于固定 Y RF 频率。
-Y RF 校相同步采集 Demod0 R/X/Y；正式幅度响应、RF-off 噪声以及
+Y RF 校相同步采集 Demod0 R/X/Y；正式幅度响应、可选 RF 开关状态下的噪声以及
 `YRF=0` 的 Z 控制剩磁扫描仍采集 Demod0 R。
 
 XY 剩磁场补偿沿用 Mx 主磁场示波器噪声谱实验的固定参数键：
@@ -79,9 +81,15 @@ XY 剩磁场补偿沿用 Mx 主磁场示波器噪声谱实验的固定参数键�
 正弦/Burst 的 DC offset。程序在每次输出前分别校验 X DC、Y offset
 以及 Y 的完整电压包络 `offset ± Vpp/2`。
 
-参数 schema 为 v3。读取 v1/v2 历史配置时，如果缺少上述两个键，迁移
+参数 schema 为 v4。读取 v1/v2 历史配置时，如果缺少上述两个键，迁移
 逻辑会补为 X=`0 V`、Y=`0 V`，从而保持旧实验的横向场关闭行为；只有
 新版默认配置明确启用补偿值。
+
+`CONTROL_WAVEFORM_SOURCE=theory` 保持原有路径：读取理论波形并用
+`K_Z_Hz_per_V` 换算 DG 电压。选择 `corrected_run` 时，实验直接加载
+`data/Z_AW_Closed_Loop_Waveform_Correction/<CORRECTED_CONTROL_SOURCE_RUN>/results/corrected_control_waveform.npz`，
+使用其中冻结的归一化波形、周期、Vpp 和 offset，不再用旧 `Hz/V` 标定重新推导。
+本次运行会复制冻结文件，并保存电流耦合标定、实际电流频响和文件 SHA-256 快照。
 
 最优控制按 `CONTROL_VERSION=vN` 从以下结构读取：
 
@@ -183,9 +191,33 @@ Y RF/HF2 频率，只扫描带符号 Y RF 幅度。正幅度使用
 `0 Vpp` 正弦，下一个非零点完整恢复带偏置的外触发 Burst 正弦。每个幅度点都重新触发
 Y RF，Z 控制始终连续运行。
 
+R-only 幅度色散拟合的初始值固定为 `V0=0 Vpp`、`C=0 V`；拟合仍受扫描范围
+边界约束，避免把远端尾部最低点作为初始共振中心。
+
 色散、零点实测斜率、Welch PSD、幅度等效 HWHM、线宽校正和平坦频段
-检测复用 Mx Y RF 灵敏度分析。噪声采集使用 5 段、每段 1 s 的
-RF-off Demod0 R；Y RF 交流分量关闭，但 Y 补偿 DC 保持输出，Z 控制保持开启。
+检测复用 Mx Y RF 灵敏度分析。噪声采集的段数和每段时长分别由
+`NOISE_N_AVG`、`NOISE_DURATION_S` 设置，采集信号仍为 Demod0 R。
+
+GUI 基础参数提供“噪声测量时开启 RF”（`NOISE_RF_ENABLED`），默认关闭。
+关闭时 Y RF 交流分量关闭，Y 补偿 DC 保持输出；开启时使用独立的
+“噪声测量 RF 幅值”（`NOISE_RF_AMPLITUDE_VPP`），默认 `0.002 Vpp`。
+幅值按现有 RF 参数的峰峰值口径设置，允许范围为 `0–2 Vpp`，并校验
+`Y offset ± Vpp/2` 的完整输出包络。设置为零时仍使用纯 Y 补偿 DC。
+
+开启噪声 RF 时沿用 `Y_RF_FREQUENCY_HZ` 和正幅度对应的校准相位，每段采集前
+用 `set_amplitude()` 设置幅值并重新等待共同触发，再按
+`RESPONSE_SETTLE_TIME_S` 等待稳定；Z 控制保持连续运行。校相幅值为零的
+剩磁响应模式不进入噪声采集，新开关不会改变该模式。
+
+`experiment_config.yaml` 的 `noise_rf` 和每个 `raw/noise_*.npz` 保存实际采用的
+RF 交流开关、幅值、频率、Burst 相位、Y DC 偏置及通道输出状态；分析结果也
+携带 `noise_rf`。旧配置缺少新增参数时继续按 RF 交流关闭方式采集。
+
+Mx Z 的幅度色散拟合不再使用线宽相对不确定度门槛拒绝结果：拟合完成后直接
+继续绘图和后续灵敏度计算。`FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX` 仍保留在
+配置中用于结果追溯，但不参与 Mx Z 的有效性判断；实际线宽相对不确定度仍写入
+`results/analysis.yaml`、`results/analysis.json` 的 `response_fit`，并写入
+`results/response_fit.npz` 的 `fit_uncertainties`（线宽不确定度为第二个元素）。
 
 采集与分析入口分别为：
 
@@ -215,9 +247,14 @@ data/Mx_Z_Optimal_Control_RF_Sensitivity/<run>/
     phase_calibration.png
     analysis.yaml
     analysis.json
+    amplitude_response.png     # 幅度响应图；拟合失败时仅包含实测点
     full_analysis.png
-    full_analysis_zero_point.png
+    full_analysis_zero_point.png   # 零点局部斜率有效时生成
 ```
+
+如果幅度色散线形拟合未达到质量门槛，分析会保留失败状态并停止后续灵敏度计算，
+但仍输出 `amplitude_response.png`。该图只包含幅度扫描的实际 Demod R 测量点，
+并标出被质量筛选排除的点，不会绘制不合格的拟合曲线。
 
 剩磁响应模式只保存 `phase_scan.npz`、`phase_calibration.yaml`、
 `phase_calibration.png`、`analysis.yaml` 和 `analysis.json`，不会生成

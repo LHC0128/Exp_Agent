@@ -19,7 +19,12 @@ from lockin_amplifier import (
 )
 from tec_controller import TECInstrument
 
-from ...common import find_project_root, load_mapping, validate_safety_limit
+from ...common import (
+    WorkflowCancelled,
+    find_project_root,
+    load_mapping,
+    validate_safety_limit,
+)
 from ...devices import create_signal_generator
 from ...experiment_runtime import check_cancelled, load_runtime_params
 from ...steps import (
@@ -38,6 +43,7 @@ from ...steps import (
     synchronize_connected_clocks,
     wait_for_temperature_stable,
 )
+from ...steps.run_finish import finalize_run_safety
 from .acquisition import acquire_r, summarize_r
 from .analysis_core import fit_lorentzian_response
 from .models import MxYRFParams
@@ -823,6 +829,9 @@ def _acquire_noise(
     set_y_rf_off_state: Callable[[], None] | None = None,
     y_rf_dc_v: float = 0.0,
     y_rf_output_on: bool = False,
+    noise_metadata: dict[str, Any] | None = None,
+    noise_label: str = "零 Y RF 噪声",
+    settle_time_s: float = 0.0,
 ) -> float:
     rf = devices["xy_field"]
     hf2 = devices["hf2"]
@@ -847,14 +856,14 @@ def _acquire_noise(
         check_cancelled()
         checker = devices.get("_compliance_checker")
         if checker is not None:
-            checker(f"零 Y RF 噪声 {index + 1} 采集前")
-        print(f"零 Y RF 噪声 {index + 1}/{params.noise_n_avg}")
+            checker(f"{noise_label} {index + 1} 采集前")
+        print(f"{noise_label} {index + 1}/{params.noise_n_avg}")
         payload = _temperature_gated_acquire(
             params,
             devices,
             channels,
             set_y_rf=rf_off_setter,
-            settle_time_s=0.0,
+            settle_time_s=settle_time_s,
             acquire=lambda: acquire_r(
                 hf2,
                 device_id=device_id,
@@ -864,14 +873,17 @@ def _acquire_noise(
             ),
         )
         if checker is not None:
-            checker(f"零 Y RF 噪声 {index + 1} 采集后")
+            checker(f"{noise_label} {index + 1} 采集后")
+        metadata = {
+            "y_rf_dc_v": np.float64(y_rf_dc_v),
+            "y_rf_output_on": np.uint8(y_rf_output_on),
+        }
+        if noise_metadata:
+            metadata.update(noise_metadata)
         _save_point(
             run_dir.raw / f"noise_{index:03d}.npz",
             payload,
-            {
-                "y_rf_dc_v": np.float64(y_rf_dc_v),
-                "y_rf_output_on": np.uint8(y_rf_output_on),
-            },
+            metadata,
             float(actual_rate),
         )
     return float(actual_rate)
@@ -1057,25 +1069,45 @@ def run(params: MxYRFParams) -> Path:
         )
         print(f"Mx Y RF 灵敏度采集完成: {run_dir.root}")
         return run_dir.root
+    except WorkflowCancelled as exc:
+        failure_reason = str(exc)
+        completion_status = "cancelled"
+        if run_dir.config_path.exists():
+            run_dir.update_config(
+                completion_status=completion_status,
+                failure_reason=failure_reason,
+            )
+        raise
     except Exception as exc:
         failure_reason = str(exc)
         if run_dir.config_path.exists():
             run_dir.update_config(completion_status="failed", failure_reason=failure_reason)
         raise
     finally:
-        shutdown_report = safe_shutdown(devices, channels, params)
-        if shutdown_report.errors:
-            print("安全关闭警告: " + "；".join(shutdown_report.errors))
+        finish = finalize_run_safety(
+            shutdown=lambda: safe_shutdown(devices, channels, params),
+            completion_status=completion_status,
+            failure_reason=failure_reason,
+        )
+        if finish.cleanup_errors:
+            print("安全关闭失败: " + "；".join(finish.cleanup_errors))
         if run_dir.config_path.exists():
             run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                safety_shutdown=shutdown_report.to_dict(),
+                completion_status=finish.completion_status,
+                failure_reason=finish.failure_reason,
+                safety_shutdown=finish.shutdown_report.to_dict(),
                 device_disconnect={
-                    "tec_disconnected": not shutdown_report.disconnect_errors,
+                    "tec_disconnected": not finish.shutdown_report.disconnect_errors,
                     "other_devices_preserved": True,
-                    "errors": list(shutdown_report.disconnect_errors),
+                    "errors": list(finish.shutdown_report.disconnect_errors),
                 },
+            )
+        if (
+            finish.completion_status != "completed"
+            and not finish.original_exception_pending
+        ):
+            raise RuntimeError(
+                f"实验结束但安全恢复失败: {finish.failure_reason}"
             )
 
 

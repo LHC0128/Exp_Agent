@@ -10,6 +10,10 @@ import numpy as np
 import yaml
 
 from ...common import find_project_root, load_mapping, validate_safety_limit
+from ...current_feedback import (
+    CorrectedControlWaveform,
+    load_corrected_control_waveform,
+)
 from ...experiment_runtime import check_cancelled, load_runtime_params
 from ...steps import (
     DGChannelShutdown,
@@ -28,6 +32,7 @@ from ...steps import (
     create_run_directory,
     restore_main_field_state,
     run_safety_shutdown,
+    save_corrected_control_source_snapshot,
     save_optimal_control_source_snapshot,
     set_temperature_switch,
     snapshot_main_field_state,
@@ -66,6 +71,7 @@ from .sources import (
     TheoryControlSource,
     ZCalibrationSource,
     build_applied_control,
+    corrected_control_contract,
     load_theory_control,
     load_z_calibration,
 )
@@ -172,6 +178,28 @@ def _configure_y_rf_output(
     )
     device.set_burst_phase(0.0, channel=channel)
     device.set_output(False, channel=channel)
+
+
+def _corrected_control_contract(
+    corrected: CorrectedControlWaveform,
+) -> tuple[Any, AppliedControlWaveform]:
+    """兼容旧的模块内调用，实际逻辑由共享 source adapter 提供。"""
+    return corrected_control_contract(corrected)
+
+
+def _save_corrected_source_snapshot(
+    raw_dir: Path,
+    corrected: CorrectedControlWaveform,
+    theory: Any,
+    applied: AppliedControlWaveform,
+) -> list[str]:
+    """兼容旧的模块内调用，实际逻辑由共享 snapshot writer 提供。"""
+    return save_corrected_control_source_snapshot(
+        raw_dir,
+        corrected,
+        theory,
+        applied,
+    )
 
 
 def _validate_y_rf_envelope(offset_v: float, amplitude_vpp: float) -> None:
@@ -1012,6 +1040,66 @@ def _acquire_amplitude_scan(
     )
 
 
+def _acquire_control_noise(
+    params: MxZOptimalControlRFParams,
+    run_dir: Any,
+    devices: dict[str, Any],
+    channels: dict[str, int],
+    device_id: str,
+    selected_phase_deg: float,
+) -> float:
+    """在幅度扫描后，按配置采集带 RF 或纯 DC 补偿下的噪声。"""
+    amplitude_vpp = (
+        float(params.noise_rf_amplitude_vpp) if params.noise_rf_enabled else 0.0
+    )
+    if not np.isfinite(amplitude_vpp) or amplitude_vpp < 0.0:
+        raise ValueError("NOISE_RF_AMPLITUDE_VPP 必须是非负有限数值")
+    _validate_y_rf_envelope(params.y_rf_offset_v, amplitude_vpp)
+    rf_enabled = amplitude_vpp > 0.0
+    phase_deg = float(selected_phase_deg) % 360.0
+    # 幅度扫描的末点决定当前是否需要从纯 DC 恢复 Burst 正弦。
+    waveform_state = {
+        "mode": "dc" if params.y_rf_amp_stop_vpp == 0.0 else "burst_sine"
+    }
+    metadata = {
+        "y_rf_enabled": rf_enabled,
+        "y_rf_amplitude_vpp": amplitude_vpp,
+        "y_rf_frequency_hz": float(params.y_rf_frequency_hz),
+        "y_rf_burst_phase_deg": phase_deg,
+        "y_rf_dc_v": float(params.y_rf_offset_v),
+        "y_rf_output_on": bool(rf_enabled or params.y_rf_offset_v != 0.0),
+    }
+    run_dir.update_config(noise_rf=metadata)
+
+    def set_noise_rf() -> None:
+        _rearm_y_rf(
+            devices["xy_field"],
+            channels["y_rf"],
+            amplitude_vpp=amplitude_vpp,
+            phase_deg=phase_deg,
+            frequency_hz=params.y_rf_frequency_hz,
+            offset_v=params.y_rf_offset_v,
+            waveform_state=waveform_state,
+        )
+
+    return _acquire_noise(
+        params,
+        run_dir,
+        devices,
+        channels,
+        device_id,
+        set_y_rf_off_state=set_noise_rf,
+        y_rf_dc_v=params.y_rf_offset_v,
+        y_rf_output_on=metadata["y_rf_output_on"],
+        noise_metadata=metadata,
+        noise_label=(
+            f"Y RF 开启噪声（{amplitude_vpp:g} Vpp）"
+            if rf_enabled else "零 Y RF 噪声"
+        ),
+        settle_time_s=params.response_settle_time_s if rf_enabled else 0.0,
+    )
+
+
 def safe_shutdown(
     devices: dict[str, Any],
     channels: dict[str, int],
@@ -1107,18 +1195,27 @@ def run(params: MxZOptimalControlRFParams) -> Path:
         if residual_mode
         else "rf_sensitivity"
     )
-    theory = load_theory_control(
-        Path(params.control_results_root),
-        params.control_version,
-    )
-    calibration = load_z_calibration(root, params.z_calibration_source_run)
-    applied = build_applied_control(
-        theory,
-        calibration,
-        params.control_scale,
-        output_vpp=params.z_aw_output_vpp,
-        output_offset_v=params.z_aw_output_offset_v,
-    )
+    corrected: CorrectedControlWaveform | None = None
+    calibration: ZCalibrationSource | None = None
+    if params.control_waveform_source == "corrected_run":
+        corrected = load_corrected_control_waveform(
+            root,
+            params.corrected_control_source_run,
+        )
+        theory, applied = _corrected_control_contract(corrected)
+    else:
+        theory = load_theory_control(
+            Path(params.control_results_root),
+            params.control_version,
+        )
+        calibration = load_z_calibration(root, params.z_calibration_source_run)
+        applied = build_applied_control(
+            theory,
+            calibration,
+            params.control_scale,
+            output_vpp=params.z_aw_output_vpp,
+            output_offset_v=params.z_aw_output_offset_v,
+        )
     warnings: list[str] = []
     if not residual_mode and not np.isclose(
         params.y_rf_frequency_hz,
@@ -1140,11 +1237,10 @@ def run(params: MxZOptimalControlRFParams) -> Path:
         schema_version=params.schema_version,
         project_root=root,
     )
-    source_files = _save_source_snapshot(
-        run_dir.raw,
-        theory,
-        calibration,
-        applied,
+    source_files = (
+        _save_corrected_source_snapshot(run_dir.raw, corrected, theory, applied)
+        if corrected is not None
+        else _save_source_snapshot(run_dir.raw, theory, calibration, applied)
     )
     run_dir.update_config(
         experiment_id=EXPERIMENT_ID,
@@ -1180,23 +1276,39 @@ def run(params: MxZOptimalControlRFParams) -> Path:
             "y_rf_zero_behavior": "pure DC at Y compensation voltage",
         },
         control_source={
+            "mode": params.control_waveform_source,
             "version": theory.version,
             "waveform_sha256": theory.waveform_sha256,
             "parameter_sha256": theory.parameter_sha256,
             "repeat_frequency_hz": theory.repeat_frequency_hz,
             "theory_rf_frequency_hz": theory.theory_rf_frequency_hz,
-            "scale": params.control_scale,
+            "scale": params.control_scale if corrected is None else None,
             "burst_phase_deg": params.control_burst_phase_deg,
+            "corrected_run": corrected.run_name if corrected is not None else None,
         },
-        z_calibration={
-            "source_run": calibration.run_name,
-            "model": "f0_Hz = K_Z_Hz_per_V * Z_bias_V + f_0V_Hz",
-            "slope_hz_per_v": calibration.slope_hz_per_v,
-            "intercept_hz": calibration.intercept_hz,
-            "r_squared": calibration.r_squared,
-            "analysis_sha256": calibration.analysis_sha256,
-            "applied_formula": "V_Z(t) = CONTROL_SCALE * Omega_ctrl_Hz(t) / K_Z_Hz_per_V",
-        },
+        z_calibration=(
+            {
+                "source_run": calibration.run_name,
+                "model": "f0_Hz = K_Z_Hz_per_V * Z_bias_V + f_0V_Hz",
+                "slope_hz_per_v": calibration.slope_hz_per_v,
+                "intercept_hz": calibration.intercept_hz,
+                "r_squared": calibration.r_squared,
+                "analysis_sha256": calibration.analysis_sha256,
+                "applied_formula": "V_Z(t) = CONTROL_SCALE * Omega_ctrl_Hz(t) / K_Z_Hz_per_V",
+            }
+            if calibration is not None
+            else None
+        ),
+        current_feedback_calibrations=(
+            {
+                "current_coupling_run": corrected.coupling_calibration_run,
+                "current_coupling_sha256": corrected.coupling_calibration_sha256,
+                "frequency_response_run": corrected.frequency_response_run,
+                "frequency_response_sha256": corrected.frequency_response_sha256,
+            }
+            if corrected is not None
+            else None
+        ),
         applied_control={
             "minimum_v": applied.minimum_v,
             "maximum_v": applied.maximum_v,
@@ -1323,20 +1435,13 @@ def run(params: MxZOptimalControlRFParams) -> Path:
             device_id,
             selected_phase,
         )
-        actual_noise_rate = _acquire_noise(
+        actual_noise_rate = _acquire_control_noise(
             params,
             run_dir,
             devices,
             channels,
             device_id,
-            set_y_rf_off_state=lambda: configure_fixed_dc_field(
-                devices["xy_field"],
-                channels["y_rf"],
-                "Y_magnetic_field",
-                params.y_rf_offset_v,
-            ),
-            y_rf_dc_v=params.y_rf_offset_v,
-            y_rf_output_on=params.y_rf_offset_v != 0.0,
+            selected_phase,
         )
         completion_status = "completed"
         run_dir.update_config(

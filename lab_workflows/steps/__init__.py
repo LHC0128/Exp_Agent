@@ -46,6 +46,7 @@ from .mx_z_optimal_control import (
     configure_mx_z_optimal_control_workpoint,
     configure_optimal_control_trigger,
     configure_z_optimal_control_output,
+    save_corrected_control_source_snapshot,
     save_optimal_control_source_snapshot,
     validate_z_trigger_mapping,
 )
@@ -129,6 +130,7 @@ __all__ = [
     "phase_calibration_guard",
     "run_safety_shutdown",
     "save_optimal_control_source_snapshot",
+    "save_corrected_control_source_snapshot",
     "restore_main_field_state",
     "require_keithley_6221_current_range",
     "set_temperature_switch",

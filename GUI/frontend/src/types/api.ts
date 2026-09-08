@@ -528,3 +528,9 @@ export type RunsResponse = {
   limit: number;
   runs: RunSummary[];
 };
+
+// 任意波模块契约从后端 OpenAPI 生成，避免手写字段漂移。
+export type ZArbitrarySettings = import("./openapi").components["schemas"]["ZArbitrarySettingsBody"];
+export type ZArbitraryPreview = import("./openapi").components["schemas"]["ZArbitraryPreview"];
+export type ZArbitrarySourceItem = import("./openapi").components["schemas"]["ZArbitrarySourceItem"];
+export type ZArbitraryStatus = import("./openapi").components["schemas"]["ZArbitraryStatus"];

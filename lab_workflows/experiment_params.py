@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import fnmatch
 import types
 from dataclasses import MISSING, Field, asdict, field, fields
 from pathlib import Path
@@ -29,6 +30,7 @@ def parameter(
     options: tuple[tuple[Any, str], ...] | None = None,
     options_from_directory: str | None = None,
     options_pattern: str = "*",
+    options_include_directories: bool = False,
     read_only: bool = False,
 ) -> Field[Any]:
     """声明模型字段及其稳定外部名称和 GUI 元数据。"""
@@ -45,6 +47,7 @@ def parameter(
         "options": options,
         "options_from_directory": options_from_directory,
         "options_pattern": options_pattern,
+        "options_include_directories": options_include_directories,
         "read_only": read_only,
     }
     kwargs: dict[str, Any] = {"metadata": metadata}
@@ -251,10 +254,19 @@ class ExperimentParams:
         if directory != root and root not in directory.parents:
             raise ValueError(f"选项目录必须位于项目内: {source}")
         pattern = str(item.metadata.get("options_pattern", "*"))
+        candidates = (
+            [path for path in directory.iterdir() if fnmatch.fnmatch(path.name, pattern)]
+            if bool(item.metadata.get("options_include_directories", False))
+            else list(directory.glob(pattern))
+        )
         return [
             (path.name, path.name)
-            for path in sorted(directory.glob(pattern), key=lambda value: value.name.lower())
-            if path.is_file()
+            for path in sorted(candidates, key=lambda value: value.name.lower())
+            if path.is_file() or (
+                path.is_dir()
+                and bool(item.metadata.get("options_include_directories", False))
+                and (path / "results" / "corrected_control_waveform.npz").is_file()
+            )
         ] if directory.is_dir() else []
 
     def schema(self, project_root: Path | None = None) -> dict[str, Any]:

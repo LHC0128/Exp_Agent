@@ -215,6 +215,8 @@ def analyze(run_dir: Path) -> dict[str, Any]:
     result = analyze_rf_sensitivity(
         run_dir,
         params_type=MxZOptimalControlRFParams,
+        ignore_relative_gamma_uncertainty=True,
+        initial_center=0.0,
     )
     result.update(
         {
@@ -227,6 +229,7 @@ def analyze(run_dir: Path) -> dict[str, Any]:
             "selected_y_rf_phase_deg": float(
                 phase_payload["selected_y_rf_phase_deg"]
             ),
+            "noise_rf": config.get("noise_rf", {"y_rf_enabled": False}),
             "control_source": config.get("control_source", {}),
             "z_calibration": config.get("z_calibration", {}),
             "applied_control": config.get("applied_control", {}),

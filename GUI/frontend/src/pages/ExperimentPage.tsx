@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { api } from "../api";
+import { ScopeCapturePage } from "./ScopeCapturePage";
 import { Field, SelectField } from "../components/FormFields";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
@@ -26,6 +27,11 @@ import type {
 } from "../types/api";
 
 export function ExperimentPage() {
+  const { experimentId } = useParams();
+  return experimentId === "scope-capture" ? <ScopeCapturePage /> : <GenericExperimentPage />;
+}
+
+function GenericExperimentPage() {
   const { experimentId = "static-sensitivity" } = useParams();
   const layoutKey = `exp-agent:${experimentId}:parameter-layout`;
   const collapsedKey = `exp-agent:${experimentId}:advanced-collapsed`;

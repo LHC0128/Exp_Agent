@@ -15,13 +15,19 @@ from typing import Any, Callable
 import numpy as np
 from lockin_amplifier import OscillatorConfig, demod
 
-from ...common import find_project_root, load_mapping, validate_safety_limit
+from ...common import (
+    WorkflowCancelled,
+    find_project_root,
+    load_mapping,
+    validate_safety_limit,
+)
 from ...experiment_runtime import check_cancelled, load_runtime_params
 from ...steps import (
     DeviceSession,
     create_run_directory,
     set_temperature_switch,
 )
+from ...steps.run_finish import finalize_run_safety
 from ..mx_y_rf_sensitivity.acquisition import acquire_r, summarize_r
 from ..mx_y_rf_sensitivity.workflow import (
     RPointQualityError,
@@ -368,6 +374,15 @@ def run(params: MxYRFFrequencyResponseParams) -> Path:
         )
         print(f"Mx Y RF 频率响应采集完成: {run_dir.root}")
         return run_dir.root
+    except WorkflowCancelled as exc:
+        failure_reason = str(exc)
+        completion_status = "cancelled"
+        if run_dir.config_path.exists():
+            run_dir.update_config(
+                completion_status=completion_status,
+                failure_reason=failure_reason,
+            )
+        raise
     except Exception as exc:
         failure_reason = str(exc)
         if run_dir.config_path.exists():
@@ -377,19 +392,30 @@ def run(params: MxYRFFrequencyResponseParams) -> Path:
             )
         raise
     finally:
-        shutdown_report = safe_shutdown(devices, channels, params)
-        if shutdown_report.errors:
-            print("安全关闭警告: " + "；".join(shutdown_report.errors))
+        finish = finalize_run_safety(
+            shutdown=lambda: safe_shutdown(devices, channels, params),
+            completion_status=completion_status,
+            failure_reason=failure_reason,
+        )
+        if finish.cleanup_errors:
+            print("安全关闭失败: " + "；".join(finish.cleanup_errors))
         if run_dir.config_path.exists():
             run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                safety_shutdown=shutdown_report.to_dict(),
+                completion_status=finish.completion_status,
+                failure_reason=finish.failure_reason,
+                safety_shutdown=finish.shutdown_report.to_dict(),
                 device_disconnect={
-                    "tec_disconnected": not shutdown_report.disconnect_errors,
+                    "tec_disconnected": not finish.shutdown_report.disconnect_errors,
                     "other_devices_preserved": True,
-                    "errors": list(shutdown_report.disconnect_errors),
+                    "errors": list(finish.shutdown_report.disconnect_errors),
                 },
+            )
+        if (
+            finish.completion_status != "completed"
+            and not finish.original_exception_pending
+        ):
+            raise RuntimeError(
+                f"实验结束但安全恢复失败: {finish.failure_reason}"
             )
 
 
