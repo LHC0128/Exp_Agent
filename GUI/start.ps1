@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 # GUI 启动器：拉起 FastAPI 后端（8000，新窗口） + Vite dev server（5173，前台）。
 # Vite dev 模式提供 HMR，agent 改前端代码后浏览器秒级刷新，无需每次 npm run build。
@@ -21,10 +21,21 @@ if (-not (Test-Path (Join-Path $FrontendDir "node_modules"))) {
     throw "未找到 $FrontendDir\node_modules，请先在该目录运行 npm install"
 }
 
-# FastAPI 后端：开新窗口，日志在该窗口显示；Start-Process -PassThru 在 PowerShell 5.1 偶发返回 $null，
-# 这里不用 PassThru，靠独立窗口 + 进程名定位。
+# FastAPI 后端：开新窗口，日志在该窗口显示。
 Start-Process -FilePath $Python -ArgumentList "-m","backend" -WorkingDirectory $BackendCwd
 Write-Host "FastAPI 后端已启动到独立窗口  http://127.0.0.1:8000"
+
+# 等 8000 端口 LISTENING 后再启 Vite；避免浏览器打开 5173 时 /api 转发到还没绑定的 8000。
+$Deadline = (Get-Date).AddSeconds(20)
+$Ready = $false
+while ((Get-Date) -lt $Deadline) {
+    $Conn = Get-NetTCPConnection -State Listen -LocalPort 8000 -ErrorAction SilentlyContinue
+    if ($Conn) { $Ready = $true; break }
+    Start-Sleep -Milliseconds 500
+}
+if (-not $Ready) {
+    Write-Warning "20 秒内 8000 端口未 LISTENING。请检查后端窗口中的错误日志（可能 import 失败、端口被占等）。脚本继续启动 Vite，但首次 /api 请求会失败。"
+}
 
 Set-Location $FrontendDir
 Write-Host "Vite dev     http://127.0.0.1:5173"
