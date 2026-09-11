@@ -534,3 +534,4 @@ export type ZArbitrarySettings = import("./openapi").components["schemas"]["ZArb
 export type ZArbitraryPreview = import("./openapi").components["schemas"]["ZArbitraryPreview"];
 export type ZArbitrarySourceItem = import("./openapi").components["schemas"]["ZArbitrarySourceItem"];
 export type ZArbitraryStatus = import("./openapi").components["schemas"]["ZArbitraryStatus"];
+export type ZAWClosedLoopRunSummary = import("./openapi").components["schemas"]["ZAWClosedLoopRunSummary"];

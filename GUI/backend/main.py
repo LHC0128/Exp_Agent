@@ -9,6 +9,7 @@ import stat
 from pathlib import Path
 from typing import Any
 
+import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -126,6 +127,24 @@ class KeithleyWaveformConvertBody(BaseModel):
 
 class ExperimentBody(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class ZAWClosedLoopRunSummary(BaseModel):
+    """Z 任意波电流闭环实验单次运行摘要，供专属 GUI 历史 Tab 渲染。"""
+
+    run_id: str
+    timestamp: str
+    run_tag: str
+    target_reached: bool
+    completion_status: str
+    stop_reason: str
+    iteration_count: int
+    best_iteration: int | None
+    best_relative_rms_error: float | None
+    target_relative_rms: float | None
+    static_calibration: dict[str, Any] = Field(default_factory=dict)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    artifacts: dict[str, str] = Field(default_factory=dict)
 
 
 class ParameterLayoutBody(BaseModel):
@@ -680,7 +699,7 @@ def experiment_preflight(experiment_id: str, body: ExperimentBody):
 
 
 @app.post("/api/experiments/{experiment_id}/derive")
-def experiment_derive(experiment_id: str, body: ExperimentBody):
+def experiment_derive(experiment_id: str, body: ExperimentBody) -> dict[str, Any]:
     try:
         values = _experiment_or_404(experiment_id).derive(body.parameters)
     except HTTPException:
@@ -916,6 +935,102 @@ def artifact(experiment_id: str, run_id: str, name: str):
     if results not in path.parents or not path.is_file():
         raise HTTPException(404, "结果文件不存在")
     return FileResponse(path)
+
+
+ZAW_CLOSED_LOOP_ID = "z-aw-closed-loop-waveform-correction"
+
+
+def _validate_run_identifier(run_id: str) -> str:
+    """运行 ID 必须是单段目录名，避免路径穿越。"""
+    if not run_id or run_id.endswith((".", " ")) or any(c in run_id for c in "/\\:"):
+        raise HTTPException(400, "运行 ID 必须是单个目录名")
+    return run_id
+
+
+def _read_yaml(path: Path) -> dict[str, Any] | None:
+    """并发删除时容错读取 YAML；文件不存在或被截断返回 None。"""
+    try:
+        if not path.is_file():
+            return None
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return None
+    return loaded if isinstance(loaded, dict) else None
+
+
+def _build_zaw_closed_loop_summary(experiment_id: str, run_id: str) -> ZAWClosedLoopRunSummary:
+    _validate_run_identifier(run_id)
+    run_dir = _run_dir(experiment_id, run_id)
+    config = _read_yaml(run_dir / "experiment_config.yaml")
+    if not config:
+        raise HTTPException(404, "运行配置不存在")
+    summary_rows = _read_yaml(run_dir / "results" / "iteration_summary.yaml") or []
+    static_calibration = config.get("static_calibration")
+    if not isinstance(static_calibration, dict):
+        static_calibration = {}
+    parameters = config.get("parameters")
+    if not isinstance(parameters, dict):
+        parameters = {}
+    target_reached = bool(config.get("target_reached"))
+    target_relative_rms = config.get("parameters", {}).get("TARGET_RELATIVE_RMS") if isinstance(config.get("parameters"), dict) else None
+    best_iteration: int | None = None
+    best_relative_rms_error: float | None = None
+    for row in summary_rows:
+        if not isinstance(row, dict):
+            continue
+        candidate = row.get("relative_rms_error")
+        if not isinstance(candidate, (int, float)):
+            continue
+        iteration = row.get("iteration")
+        if not isinstance(iteration, int):
+            continue
+        if best_relative_rms_error is None or candidate < best_relative_rms_error:
+            best_relative_rms_error = float(candidate)
+            best_iteration = iteration
+    run_tag = parameters.get("RUN_TAG", "")
+    timestamp = config.get("timestamp", "")
+    if not isinstance(run_tag, str):
+        run_tag = str(run_tag)
+    if not isinstance(timestamp, str):
+        timestamp = str(timestamp)
+    target_relative_rms_value = float(target_relative_rms) if isinstance(target_relative_rms, (int, float)) else None
+    completion_status = config.get("completion_status", "unknown")
+    stop_reason = config.get("stop_reason", "")
+    if not isinstance(completion_status, str):
+        completion_status = str(completion_status)
+    if not isinstance(stop_reason, str):
+        stop_reason = str(stop_reason)
+    artifacts_dir = run_dir / "results"
+    artifact_names: list[str] = []
+    try:
+        if artifacts_dir.is_dir():
+            artifact_names = [item.name for item in artifacts_dir.iterdir() if _is_existing_file(item)]
+    except OSError:
+        artifact_names = []
+    artifacts = {name: f"/api/runs/{experiment_id}/{run_id}/artifacts/{name}" for name in artifact_names}
+    return ZAWClosedLoopRunSummary(
+        run_id=run_id,
+        timestamp=timestamp,
+        run_tag=run_tag,
+        target_reached=target_reached,
+        completion_status=completion_status,
+        stop_reason=stop_reason,
+        iteration_count=len([row for row in summary_rows if isinstance(row, dict)]),
+        best_iteration=best_iteration,
+        best_relative_rms_error=best_relative_rms_error,
+        target_relative_rms=target_relative_rms_value,
+        static_calibration=static_calibration,
+        parameters=parameters,
+        artifacts=artifacts,
+    )
+
+
+@app.get("/api/experiments/{experiment_id}/runs/{run_id}/summary", response_model=ZAWClosedLoopRunSummary)
+def experiment_run_summary(experiment_id: str, run_id: str):
+    """专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。"""
+    if experiment_id != ZAW_CLOSED_LOOP_ID:
+        raise HTTPException(404, "该实验未提供专属摘要端点")
+    return _build_zaw_closed_loop_summary(experiment_id, run_id)
 
 
 FRONTEND = ROOT / "GUI" / "frontend" / "dist"

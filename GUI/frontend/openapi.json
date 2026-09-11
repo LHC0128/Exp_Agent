@@ -1723,7 +1723,11 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Experiment Derive Api Experiments  Experiment Id  Derive Post"
+                }
               }
             }
           },
@@ -2111,6 +2115,55 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/runs/{run_id}/summary": {
+      "get": {
+        "summary": "Experiment Run Summary",
+        "description": "专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。",
+        "operationId": "experiment_run_summary_api_experiments__experiment_id__runs__run_id__summary_get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZAWClosedLoopRunSummary"
+                }
               }
             }
           },
@@ -5539,6 +5592,103 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ZAWClosedLoopRunSummary": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "run_tag": {
+            "type": "string",
+            "title": "Run Tag"
+          },
+          "target_reached": {
+            "type": "boolean",
+            "title": "Target Reached"
+          },
+          "completion_status": {
+            "type": "string",
+            "title": "Completion Status"
+          },
+          "stop_reason": {
+            "type": "string",
+            "title": "Stop Reason"
+          },
+          "iteration_count": {
+            "type": "integer",
+            "title": "Iteration Count"
+          },
+          "best_iteration": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Iteration"
+          },
+          "best_relative_rms_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Relative Rms Error"
+          },
+          "target_relative_rms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Relative Rms"
+          },
+          "static_calibration": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Static Calibration"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "artifacts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Artifacts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "timestamp",
+          "run_tag",
+          "target_reached",
+          "completion_status",
+          "stop_reason",
+          "iteration_count",
+          "best_iteration",
+          "best_relative_rms_error",
+          "target_relative_rms"
+        ],
+        "title": "ZAWClosedLoopRunSummary",
+        "description": "Z 任意波电流闭环实验单次运行摘要，供专属 GUI 历史 Tab 渲染。"
       },
       "ZArbitraryActionBody": {
         "properties": {

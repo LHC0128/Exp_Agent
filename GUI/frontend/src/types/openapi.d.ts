@@ -812,6 +812,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/runs/{run_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Experiment Run Summary
+         * @description 专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。
+         */
+        get: operations["experiment_run_summary_api_experiments__experiment_id__runs__run_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/{path}": {
         parameters: {
             query?: never;
@@ -1846,6 +1866,44 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * ZAWClosedLoopRunSummary
+         * @description Z 任意波电流闭环实验单次运行摘要，供专属 GUI 历史 Tab 渲染。
+         */
+        ZAWClosedLoopRunSummary: {
+            /** Run Id */
+            run_id: string;
+            /** Timestamp */
+            timestamp: string;
+            /** Run Tag */
+            run_tag: string;
+            /** Target Reached */
+            target_reached: boolean;
+            /** Completion Status */
+            completion_status: string;
+            /** Stop Reason */
+            stop_reason: string;
+            /** Iteration Count */
+            iteration_count: number;
+            /** Best Iteration */
+            best_iteration: number | null;
+            /** Best Relative Rms Error */
+            best_relative_rms_error: number | null;
+            /** Target Relative Rms */
+            target_relative_rms: number | null;
+            /** Static Calibration */
+            static_calibration?: {
+                [key: string]: unknown;
+            };
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /** Artifacts */
+            artifacts?: {
+                [key: string]: string;
+            };
         };
         /** ZArbitraryActionBody */
         ZArbitraryActionBody: {
@@ -3219,7 +3277,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -3501,6 +3561,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    experiment_run_summary_api_experiments__experiment_id__runs__run_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZAWClosedLoopRunSummary"];
                 };
             };
             /** @description Validation Error */

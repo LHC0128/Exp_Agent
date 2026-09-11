@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import { api } from "../api";
 import { ScopeCapturePage } from "./ScopeCapturePage";
+import { ZAWClosedLoopExperimentPage } from "./ZAWClosedLoopExperimentPage";
 import { Field, SelectField } from "../components/FormFields";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
@@ -28,7 +29,9 @@ import type {
 
 export function ExperimentPage() {
   const { experimentId } = useParams();
-  return experimentId === "scope-capture" ? <ScopeCapturePage /> : <GenericExperimentPage />;
+  if (experimentId === "scope-capture") return <ScopeCapturePage />;
+  if (experimentId === "z-aw-closed-loop-waveform-correction") return <ZAWClosedLoopExperimentPage />;
+  return <GenericExperimentPage />;
 }
 
 function GenericExperimentPage() {
