@@ -9,26 +9,36 @@
 agent_exp_env\Scripts\pip.exe install -r GUI\requirements.txt
 Set-Location GUI\frontend
 npm install
-npm run build
 ```
+
+`npm run build` 不再是必备步骤；`GUI\start.ps1` 会以 Vite dev 模式直接 serve 源码并提供 HMR。
+只有在准备发布或不便启动 Vite dev（例如纯命令行环境）时才需要 `npm run build`。
 
 ## 启动
 
 ```powershell
-Set-Location GUI
-..\agent_exp_env\Scripts\python.exe -m backend
+powershell -File GUI\start.ps1
 ```
 
-浏览器访问 `http://127.0.0.1:8000`。服务只监听本机地址。
+启动器会同时拉起两个进程：
 
-开发前端时，可分别运行后端和：
+- **FastAPI 后端** `http://127.0.0.1:8000`，仅负责 `/api/`
+- **Vite dev server** `http://127.0.0.1:5173`，serve 前端源码并把 `/api` 转发到 FastAPI
+
+在浏览器中打开 `http://127.0.0.1:5173`。修改前端源码后，Vite 会自动 HMR 推送变更到浏览器，
+不需要再 build。当前窗口按 Ctrl+C 时，脚本会自动关闭 FastAPI 后端。
+
+如需手动分别启动：
 
 ```powershell
+# 终端 1：FastAPI 后端
+Set-Location GUI
+..\agent_exp_env\Scripts\python.exe -m backend
+
+# 终端 2：Vite dev server
 Set-Location GUI\frontend
 npm run dev
 ```
-
-Vite 会把 `/api` 转发到本机 FastAPI。
 
 ## 前端结构
 
