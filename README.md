@@ -221,7 +221,7 @@ experiments ───┘
 | Z 线圈实际电流频率响应（低端采样电阻、复数 A/V 传递函数） | `experiments/Z_Coil_Current_Frequency_Response.py`、`experiments/Z_Coil_Current_Frequency_Response_plot.py` | `docs/z_coil_current_frequency_response.md` |
 | Mx Z 实际电流-耦合强度标定（正反向电流扫描） | `experiments/Mx_Z_Current_Coupling_Calibration.py`、`experiments/Mx_Z_Current_Coupling_Calibration_plot.py` | `docs/mx_z_current_coupling_calibration.md` |
 | Z 任意波实际电流波形验证 | `experiments/Z_AW_Current_Waveform_Scope_Check.py`、`experiments/Z_AW_Current_Waveform_Scope_Check_plot.py` | `docs/z_aw_current_waveform_scope_check.md` |
-| Z 任意波实际电流闭环校正（冻结最佳 hold-out 波形） | `experiments/Z_AW_Closed_Loop_Waveform_Correction.py`、`experiments/Z_AW_Closed_Loop_Waveform_Correction_plot.py` | `docs/z_aw_closed_loop_waveform_correction.md` |
+| Z 任意波实际电流闭环校正（静态斜率、平移对齐、误差零相位低通、理论电压 1.5 倍量程余量） | `experiments/Z_AW_Closed_Loop_Waveform_Correction.py`、`experiments/Z_AW_Closed_Loop_Waveform_Correction_plot.py` | `docs/z_aw_closed_loop_waveform_correction.md` |
 | Mx Y RF 光功率灵敏度优化（含逐点诊断图、tqdm ETA、拟合导数与零点实测斜率双排名） | `experiments/Mx_Y_RF_Power_Optimization.py`、`experiments/Mx_Y_RF_Power_Optimization_plot.py` | `docs/mx_y_rf_power_optimization.md` |
 | Mx Y RF Probe 光功率与 PZT 失谐灵敏度优化（支持固定 Probe 单点；不连接 TEC，保留温控开关门控） | `experiments/Mx_Y_RF_Probe_Detuning_Optimization.py`、`experiments/Mx_Y_RF_Probe_Detuning_Optimization_plot.py` | `docs/mx_y_rf_probe_detuning_optimization.md` |
 | Mx 主磁场频率标定 | `experiments/Mx_Main_Field_Calibration.py`、`experiments/Mx_Main_Field_Calibration_plot.py` | `docs/mx_main_field_calibration.md` |

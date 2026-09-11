@@ -757,14 +757,11 @@ def _apply_basic_waveform(instrument, device_type: str, channel: int,
     if shape:
         if is_dc:
             # DC 波形只有偏置电压有效。DG900 用 :APPLy:DC 一键配置；
-            # DG4000 用 VOLT:OFFS 专用命令（见 set_dc_voltage）。
+            # DG4000 在其他基础配置之后选择 DC 并使用 APPLy:USER。
             # 两者都不擅自打开输出，输出开关由调用方随后单独设置。
             dc_voltage = float(settings.get("offset") or 0.0)
             if device_type == "DG900":
                 instrument.setup_dc(dc_voltage, channel)
-            else:
-                instrument.set_shape("DC", channel)
-                instrument.set_dc_voltage(dc_voltage, channel)
         else:
             instrument.set_shape(str(shape), channel)
     if not is_dc:
@@ -791,7 +788,7 @@ def _apply_basic_waveform(instrument, device_type: str, channel: int,
     if device_type == "DG4000":
         waveform_specific.append(("pulse_delay", instrument.set_pulse_delay))
     for key, setter in waveform_specific:
-        if settings.get(key) is not None:
+        if not (is_dc and device_type == "DG4000") and settings.get(key) is not None:
             setter(float(settings[key]), channel)
     if settings.get("voltage_unit"):
         instrument.set_voltage_unit(settings["voltage_unit"], channel)
@@ -801,6 +798,9 @@ def _apply_basic_waveform(instrument, device_type: str, channel: int,
             "INF" if str(load).upper().startswith("INF") else float(load),
             channel,
         )
+    if is_dc and device_type == "DG4000":
+        instrument.set_shape("DC", channel)
+        instrument.set_dc_voltage(dc_voltage, channel)
 
 
 def _apply_modulation(instrument, device_type: str, channel: int,
@@ -916,7 +916,12 @@ def apply_generator_channel(
             if record.type == "DG900":
                 instrument.clear_status()
 
-            _apply_basic_waveform(instrument, record.type, channel_number, settings)
+            dg4000_dc = (
+                record.type == "DG4000"
+                and str(settings.get("shape")).upper() == "DC"
+            )
+            if not dg4000_dc:
+                _apply_basic_waveform(instrument, record.type, channel_number, settings)
 
             mod = dict(settings.get("mod") or {})
             burst = dict(settings.get("burst") or {})
@@ -968,6 +973,9 @@ def apply_generator_channel(
                         instrument.set_burst_state(False, channel_number)
                         instrument.set_mod_state(False, channel_number)
 
+            if dg4000_dc:
+                # DC 选择会关闭 Mod/Burst；电平设置后只操作输出开关。
+                _apply_basic_waveform(instrument, record.type, channel_number, settings)
             if "output" in settings:
                 instrument.set_output(bool(settings["output"]), channel_number)
 
@@ -1715,7 +1723,12 @@ def _apply_generator_connected(
 
     if record.type == "DG900":
         instrument.clear_status()
-    _apply_basic_waveform(instrument, record.type, channel, settings)
+    dg4000_dc = (
+        record.type == "DG4000"
+        and str(settings.get("shape")).upper() == "DC"
+    )
+    if not dg4000_dc:
+        _apply_basic_waveform(instrument, record.type, channel, settings)
     mod = dict(settings.get("mod") or {})
     burst = dict(settings.get("burst") or {})
     if mod.get("enabled") and burst.get("enabled"):
@@ -1760,6 +1773,9 @@ def _apply_generator_connected(
             else:
                 instrument.set_burst_state(False, channel)
                 instrument.set_mod_state(False, channel)
+    if dg4000_dc:
+        # 保持最终顺序为 FUNCtion DC、APPLy:USER、输出开关。
+        _apply_basic_waveform(instrument, record.type, channel, settings)
     if "output" in settings:
         instrument.set_output(bool(settings["output"]), channel)
     if record.type == "DG900":

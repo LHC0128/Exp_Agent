@@ -27,6 +27,9 @@ oldcode.ipynb
 
 # 本地运行时产物，不上传 GitHub
 tmp/
+.test_tmp/
+codex_test_tmp_*/
+codex_test_tmp_final_filter_*/
 params/.instrument_config.lock
 
 # 误展开的 Windows 系统缓存路径

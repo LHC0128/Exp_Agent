@@ -21,10 +21,7 @@ from lab_workflows.current_feedback import (
 )
 from lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction.workflow import (
     _applied_from_voltage,
-    _initial_preemphasis,
     _log_progress,
-    _predict_current_from_command,
-    _should_rollback,
     _trigger_relative_time,
 )
 from lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction.models import (
@@ -33,7 +30,7 @@ from lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction.model
 from lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction import (
     DEFINITION as ZAW_CLOSED_LOOP_DEFINITION,
 )
-from lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction.analysis import (
+from lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction.legacy_analysis import (
     _comparison_metrics,
 )
 from lab_workflows.experiment_modules.mx_z_optimal_control_rf_sensitivity.workflow import (
@@ -123,8 +120,6 @@ def test_corrected_waveform_loader_and_frequency_update(
     assert loaded.repeat_frequency_hz == pytest.approx(100.0)
     assert loaded.coupling_calibration_run == "cal_run"
     transfer = np.ones(loaded.time_s.size // 2 + 1, dtype=complex)
-    measured = _predict_current_from_command(loaded.voltage_v, transfer)
-    np.testing.assert_allclose(measured, loaded.voltage_v, atol=1e-12)
     updated = regularized_inverse_update(
         np.zeros(8),
         normalized,
@@ -143,48 +138,8 @@ def test_corrected_waveform_loader_and_frequency_update(
         )
 
 
-def test_relative_regularization_preserves_realistic_current_response_scale() -> None:
-    points = 10_000
-    phase = 2.0 * np.pi * np.arange(points, dtype=float) / points
-    target_current = (
-        -2.1029372325060596e-3 * np.cos(phase)
-        - 0.3484417579699668e-3 * np.cos(3.0 * phase)
-    )
-    transfer = np.zeros(points // 2 + 1, dtype=complex)
-    reliable = np.zeros(transfer.size, dtype=bool)
-    transfer[1] = 0.0009696666986530049 - 0.0005822364759753597j
-    transfer[3] = 0.0007712840090333471 - 0.00002286296710071181j
-    transfer[5] = 0.005877145006433388 + 0.0j
-    reliable[[1, 3, 5]] = True
-
-    absolute = relative_regularization_scale(transfer, reliable, 0.02)
-    command = _initial_preemphasis(
-        np.zeros(points),
-        target_current,
-        transfer,
-        reliable,
-        0.02,
-    )
-    predicted = _predict_current_from_command(command, transfer)
-
-    assert absolute == pytest.approx(1.1754290012866776e-4)
-    assert 1.5 < np.max(np.abs(command)) < 3.0
-    assert spectral_nrmse(target_current, predicted) < 0.03
 
 
-def test_closed_loop_schema_v1_regularization_migrates_to_relative_ratio() -> None:
-    params = ZAWClosedLoopWaveformCorrectionParams.from_external(
-        {"INVERSE_REGULARIZATION": 0.02},
-        schema_version=1,
-    )
-
-    assert params.schema_version == 3
-    assert params.inverse_regularization == pytest.approx(0.02)
-    field = {
-        item["name"]: item
-        for item in params.schema()["fields"]
-    }["INVERSE_REGULARIZATION"]
-    assert field["maximum"] == pytest.approx(1.0)
 
 
 def test_closed_loop_source_set_schema_and_fixed_roots() -> None:
@@ -266,10 +221,6 @@ def test_rf_sensitivity_corrected_contract_preserves_frozen_output() -> None:
     assert theory.repeat_frequency_hz == pytest.approx(100.0)
 
 
-def test_closed_loop_rolls_back_only_after_holdout_error_worsens() -> None:
-    assert not _should_rollback(0.2, 0.1, 1, 0.05)
-    assert not _should_rollback(0.104, 0.1, 2, 0.05)
-    assert _should_rollback(0.106, 0.1, 2, 0.05)
 
 
 def test_closed_loop_uses_ch4_falling_edge_for_ch3_relative_time() -> None:

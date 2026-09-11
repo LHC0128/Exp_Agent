@@ -40,6 +40,29 @@ def _periodic_reference(time_s: np.ndarray, frequency_hz: float) -> np.ndarray:
     )
 
 
+@pytest.mark.parametrize("attempts", [1, 2])
+def test_auto_range_metadata_matches_acquired_frame(monkeypatch, attempts):
+    from lab_workflows.experiment_modules.z_aw_waveform_scope_check import workflow
+    from lab_workflows.steps import ScopeAutoRangeState
+
+    params = ZAWWaveformScopeCheckParams(scope_auto_range_max_attempts=attempts)
+    state = ScopeAutoRangeState(scale_v_div=0.5, offset_v=0.0)
+    scope = MagicMock()
+    scope.get_channel_scale.return_value = 1.0
+    scope.get_channel_offset.return_value = 0.2
+    config = SimpleNamespace(channels=[SimpleNamespace(number=3, scale=0.5, offset=0.0)])
+    monkeypatch.setattr(workflow, "_capture_frame", lambda *args: dict(
+        time_s=np.arange(4) / 1000, measured_voltage_v=np.array([-0.9, 0, 0.9, 0])))
+    monkeypatch.setattr(workflow, "next_auto_range_scale", lambda *args: 1.0)
+    monkeypatch.setattr(workflow, "next_auto_offset", lambda *args: 0.2)
+    frame = workflow._capture_with_auto_range(params, {"scope": scope}, config, state)
+    assert frame["scale_used_v_div"] == (0.5 if attempts == 1 else 1.0)
+    assert frame["offset_used_v"] == (0.0 if attempts == 1 else 0.2)
+    assert frame["actual_rate_sa_s"] == pytest.approx(1000)
+    assert state.scale_v_div == 1.0
+    assert state.offset_v == 0.2
+
+
 def test_defaults_schema_and_scope_configuration() -> None:
     params = ZAWWaveformScopeCheckParams()
     fields = {item["name"]: item for item in params.schema()["fields"]}

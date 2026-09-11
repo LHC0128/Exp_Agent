@@ -298,8 +298,6 @@ def load_corrected_control_waveform(
             "offset_v",
             "coupling_calibration_run",
             "coupling_calibration_sha256",
-            "frequency_response_run",
-            "frequency_response_sha256",
         }
         missing = sorted(required.difference(data.files))
         if missing:
@@ -316,10 +314,12 @@ def load_corrected_control_waveform(
         coupling_sha256 = str(
             np.asarray(data["coupling_calibration_sha256"]).reshape(())
         )
-        response_run = str(np.asarray(data["frequency_response_run"]).reshape(()))
-        response_sha256 = str(
-            np.asarray(data["frequency_response_sha256"]).reshape(())
-        )
+        # 新静态闭环文件不依赖频响；旧格式仍严格读取历史来源字段。
+        if "format_version" in data.files and int(data["format_version"]) == 2:
+            response_run, response_sha256 = "", ""
+        else:
+            response_run = str(np.asarray(data["frequency_response_run"]).reshape(()))
+            response_sha256 = str(np.asarray(data["frequency_response_sha256"]).reshape(()))
     sizes = {array.size for array in (time_s, omega, target_current, normalized, voltage)}
     if len(sizes) != 1 or time_s.size < 2:
         raise ValueError("校正波形数组长度不一致或点数不足")

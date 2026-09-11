@@ -69,8 +69,7 @@ experiment_descriptions:
   z-coil-current-frequency-response: 通过低端采样电阻测量 DG4000 到 Z 线圈实际电流的复数频率响应，为闭环预加重和逆滤波提供可靠带宽。
   mx-z-current-coupling-calibration: 在 Mx 高主场工作点同步测量采样电阻电压和 Y RF 共振中心，标定实际线圈电流到控制耦合强度的关系。
   z-aw-current-waveform-scope-check: 比较最优控制目标电流与采样电阻实测电流，报告固定延迟、形状、增益、频谱、重复性和饱和诊断。
-  z-aw-closed-loop-waveform-correction: 使用实际电流频响预加重和阻尼正则化逆滤波迭代 Z 任意波，保留每轮原始数据并冻结最佳
-    hold-out 校正波形。
+  z-aw-closed-loop-waveform-correction: 静态斜率闭环：电流反馈平移对齐、误差零相位低通并累加电压；理论电压预留 1.5 倍量程，导出最佳实测轮次。
   mx-y-rf-sensitivity-drift: 按固定时间间隔重复 Mx Y RF 灵敏度测量，每轮完成后立即分析并更新灵敏度与线宽趋势。
   mx-y-rf-sensitivity: Mx 构型下仅采集 Demod0 R，使用绝对值色散拟合斜率和零 RF 的 PSD_R 测量灵敏度，并支持两种线宽定义。
   mx-z-optimal-control-rf-sensitivity: 按配置启停 GS200 主场，以 X DC 和 Y RF 偏置平衡 XY 剩磁场，并叠加
@@ -448,34 +447,27 @@ parameter_layouts:
   z-aw-closed-loop-waveform-correction:
     basic:
     - RUN_TAG
-    - CONTROL_SOURCE_SET
     - CONTROL_VERSION
-    - Z_CALIBRATION_SOURCE_RUN
     - CONTROL_SCALE
     - Z_AW_OUTPUT_VPP
     - TRIGGER_FREQUENCY_HZ
     - TRIGGER_AMPLITUDE_VPP
     - SCOPE_CYCLES
-    - SCOPE_REPEATS
+    - CONTROL_SOURCE_SET
     - CURRENT_COUPLING_CALIBRATION_SOURCE_RUN
-    - CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN
     - MAX_ITERATIONS
     - ITERATION_REPEATS
-    - TARGET_SHAPE_NRMSE
-    - SENSE_RESISTOR_OHM
-    - SENSE_RESISTOR_POWER_RATING_W
-    - MAXIMUM_CURRENT_A
-    - CORRECTION_METHOD
+    - ITERATION_DAMPING
+    - ERROR_CUTOFF_HZ
+    - TARGET_RELATIVE_RMS
+    - SCOPE_HEADROOM_FACTOR
     advanced:
     - Z_AW_OUTPUT_OFFSET
     - CONTROL_BURST_PHASE_DEG
     - TRIGGER_OFFSET_V
     - TRIGGER_DUTY_PERCENT
-    - HOLDOUT_REPEATS
-    - ITERATION_DAMPING
-    - INVERSE_REGULARIZATION
-    - MAXIMUM_ERROR_INCREASE_FRACTION
-    - SENSE_RESISTOR_POWER_DERATING
+    - REQUIRED_PASSES
+    - OUTPUT_SETTLE_S
   mx-xy-residual-field-calibration:
     basic:
     - RUN_TAG

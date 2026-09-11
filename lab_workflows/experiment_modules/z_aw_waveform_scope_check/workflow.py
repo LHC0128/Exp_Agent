@@ -192,7 +192,13 @@ def _wait_for_scope_trigger(scope: SDSInstrument, timeout_s: float) -> None:
     deadline = time.monotonic() + max(0.1, float(timeout_s))
     while time.monotonic() < deadline:
         check_cancelled()
-        status = str(scope.trigger_status()).strip().lower()
+        try:
+            status = str(scope.trigger_status()).strip().lower()
+        except Exception:
+            # 部分 SDS 固件对高频 STATus? 查询会返回 VISA 协议错误；
+            # 交由固定采集窗口和后续 C4 下降沿检测判断是否真的触发。
+            _sleep_cancellable(min(0.2, max(0.0, deadline - time.monotonic())))
+            return
         if status in {"trig'd", "triggered"}:
             return
         if status not in {"ready", "wait", "waiting", "armed", "run", "running"}:
@@ -207,7 +213,10 @@ def _wait_for_scope_stop(scope: SDSInstrument, timeout_s: float) -> None:
     deadline = time.monotonic() + max(0.1, float(timeout_s))
     while time.monotonic() < deadline:
         check_cancelled()
-        if str(scope.trigger_status()).strip().upper() in {"STOP", "STOPPED"}:
+        try:
+            if str(scope.trigger_status()).strip().upper() in {"STOP", "STOPPED"}:
+                return
+        except Exception:
             return
         time.sleep(0.05)
     raise TimeoutError(f"SDS 停止状态确认超时（>{timeout_s:.3g} s）")
@@ -242,9 +251,10 @@ def _capture_frame(
 
     for attempt in range(1, SCOPE_FRAME_RETRIES + 1):
         check_cancelled()
-        scope.trigger_run()
-        # RUN 后重写 SINGle，兼容当前 SDS 固件。
+        # 必须先设置单次触发模式，再进入 RUN；部分 SDS 固件在 RUN 后
+        # 重写触发模式会立刻回到 STOP，导致尚未等待 C4 下降沿就误报失败。
         scope.set_trigger_mode(SCOPE_TRIGGER_MODE)
+        scope.trigger_run()
         results: dict[int, Any] | None = None
         try:
             try:
@@ -378,6 +388,9 @@ def _capture_with_auto_range(
     for _attempt in range(params.scope_auto_range_max_attempts):
         check_cancelled()
         frame = _capture_frame(devices, config, params)
+        # 必须记录采集本帧时的设置，不能使用随后自动调整的新量程。
+        frame["scale_used_v_div"] = float(auto_range.scale_v_div)
+        frame["offset_used_v"] = float(auto_range.offset_v)
         voltage = frame["measured_voltage_v"]
         waveform_min = float(np.min(voltage))
         waveform_max = float(np.max(voltage))
@@ -423,8 +436,6 @@ def _capture_with_auto_range(
         raise RuntimeError("SDS C3 自动量程未获得有效波形")
     accepted.update(
         {
-            "scale_used_v_div": float(auto_range.scale_v_div),
-            "offset_used_v": float(auto_range.offset_v),
             "actual_rate_sa_s": 1.0
             / float(np.median(np.diff(accepted["time_s"]))),
         }

@@ -1,253 +1,222 @@
-"""Z 任意波闭环波形校正参数。"""
-
+"""Z 任意波静态斜率闭环参数；独立声明 GUI 字段。"""
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from pathlib import Path
+from dataclasses import dataclass
 
-import numpy as np
-
-from ...common import find_project_root
-from ...current_feedback import (
-    load_current_coupling_calibration,
-    load_current_frequency_response,
-    validate_sense_resistor,
-)
-from ...experiment_params import parameter
-from ..z_aw_waveform_scope_check.models import ZAWWaveformScopeCheckParams
+from ...common import find_project_root, validate_safety_limit
+from ...experiment_params import ExperimentParams, parameter
 from ..mx_z_optimal_control_rf_sensitivity.sources import (
-    CONTROL_SOURCE_SET_ROOTS,
-    resolve_control_results_root,
+    CONTROL_SOURCE_SET_ROOTS, load_theory_control, resolve_control_results_root,
 )
+from .static_feedback import prepare_feedback
 
 
 @dataclass(slots=True)
-class ZAWClosedLoopWaveformCorrectionParams(ZAWWaveformScopeCheckParams):
-    """用采样电阻反馈迭代更新 Z 任意波。"""
+class ZAWClosedLoopWaveformCorrectionParams(ExperimentParams):
+    """只执行静态电流误差迭代，不继承其他实验的标定依赖。"""
 
-    schema_version = 3
-
+    schema_version = 10
     run_tag: str = parameter(
         default="z_aw_closed_loop_waveform_correction",
         external_name="RUN_TAG",
         label="运行标签",
         group="basic",
     )
-    control_source_set: str = parameter(
-        default="oc_sens",
-        external_name="CONTROL_SOURCE_SET",
-        label="最优控制结果集",
+
+    control_version: str = parameter(
+        default="v6",
+        external_name="CONTROL_VERSION",
+        label="最优控制版本",
         group="basic",
-        options=tuple((name, name) for name in CONTROL_SOURCE_SET_ROOTS),
-        description="从固定理论结果集中选择任意波来源。",
-    )
-    correction_method: str = parameter(
-        default="time_domain",
-        external_name="CORRECTION_METHOD",
-        label="闭环校正方法",
-        group="basic",
-        options=(
-            ("frequency_domain", "频域逆滤波"),
-            ("time_domain", "时域误差迭代"),
-        ),
-        description="时域方法直接使用相位对齐后的 target-实测电流误差更新命令。",
-    )
-    control_results_root: str = parameter(
-        default=r"D:\Code\theory_agent\simulate\results\oc_sens",
-        external_name="CONTROL_RESULTS_ROOT",
-        label="最优控制结果根目录（兼容）",
-        group="advanced",
-        visible=False,
-    )
-    current_coupling_calibration_source_run: str = parameter(
-        default="",
-        external_name="CURRENT_COUPLING_CALIBRATION_SOURCE_RUN",
-        label="电流耦合标定来源",
-        group="basic",
-    )
-    current_frequency_response_source_run: str = parameter(
-        default="",
-        external_name="CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN",
-        label="电流频响标定来源",
-        group="basic",
-    )
-    max_iterations: int = parameter(
-        default=8,
-        external_name="MAX_ITERATIONS",
-        label="最大迭代轮数",
-        group="basic",
-        minimum=1,
-    )
-    iteration_repeats: int = parameter(
-        default=2,
-        external_name="ITERATION_REPEATS",
-        label="每轮重复采集次数",
-        group="basic",
-        minimum=1,
-    )
-    holdout_repeats: int = parameter(
-        default=1,
-        external_name="HOLDOUT_REPEATS",
-        label="每轮独立验证次数",
-        group="advanced",
-        minimum=1,
-    )
-    iteration_damping: float = parameter(
-        default=0.35,
-        external_name="ITERATION_DAMPING",
-        label="迭代阻尼",
-        group="advanced",
-        minimum=0.001,
-        maximum=1.0,
-    )
-    inverse_regularization: float = parameter(
-        default=0.02,
-        external_name="INVERSE_REGULARIZATION",
-        label="逆传递函数相对正则化",
-        group="advanced",
-        minimum=0.000001,
-        maximum=1.0,
-        description="相对于可靠频点最大 |H| 的无量纲比例；0.02 表示 2%。",
-    )
-    target_shape_nrmse: float = parameter(
-        default=0.03,
-        external_name="TARGET_SHAPE_NRMSE",
-        label="目标形状 NRMSE",
-        group="basic",
-        minimum=0.000001,
-    )
-    maximum_error_increase_fraction: float = parameter(
-        default=0.05,
-        external_name="MAXIMUM_ERROR_INCREASE_FRACTION",
-        label="允许误差恶化比例",
-        group="advanced",
-        minimum=0.0,
-        maximum=1.0,
-    )
-    sense_resistor_ohm: float = parameter(
-        default=0.0,
-        external_name="SENSE_RESISTOR_OHM",
-        label="采样电阻实测阻值",
-        unit="ohm",
-        group="basic",
-        minimum=0.0,
-    )
-    sense_resistor_power_rating_w: float = parameter(
-        default=0.0,
-        external_name="SENSE_RESISTOR_POWER_RATING_W",
-        label="采样电阻额定功率",
-        unit="W",
-        group="basic",
-        minimum=0.0,
-    )
-    sense_resistor_power_derating: float = parameter(
-        default=0.5,
-        external_name="SENSE_RESISTOR_POWER_DERATING",
-        label="采样电阻功率降额系数",
-        group="advanced",
-        minimum=0.01,
-        maximum=1.0,
-    )
-    maximum_current_a: float = parameter(
-        default=0.0,
-        external_name="MAXIMUM_CURRENT_A",
-        label="线圈峰值电流安全上限",
-        unit="A",
-        group="basic",
-        minimum=0.0,
+        description="按 vN 读取同版本的最优控制波形和理论参数。",
     )
 
+    control_scale: float = parameter(
+        default=1.0,
+        external_name="CONTROL_SCALE",
+        label="控制幅度比例",
+        group="basic",
+        minimum=0.000001,
+    )
+
+    z_aw_output_vpp: float = parameter(
+        default=10.0,
+        external_name="Z_AW_OUTPUT_VPP",
+        label="Z 控制 AW 输出幅度",
+        unit="Vpp",
+        group="basic",
+        minimum=0.001,
+    )
+
+    z_aw_output_offset_v: float = parameter(
+        default=0.0,
+        external_name="Z_AW_OUTPUT_OFFSET",
+        label="Z 控制 AW 输出偏置",
+        unit="V",
+        group="advanced",
+        visible=False,
+        description="闭环实验固定使用 0 V；保留旧键仅用于兼容历史配置。",
+    )
+
+    control_burst_phase_deg: float = parameter(
+        default=0.0,
+        external_name="CONTROL_BURST_PHASE_DEG",
+        label="Z 控制 Burst 相位",
+        unit="deg",
+        group="advanced",
+        minimum=0.0,
+        maximum=360.0,
+    )
+
+    trigger_frequency_hz: float = parameter(
+        default=100.0,
+        external_name="TRIGGER_FREQUENCY_HZ",
+        label="共同触发频率",
+        unit="Hz",
+        group="basic",
+        minimum=0.001,
+    )
+
+    trigger_amplitude_vpp: float = parameter(
+        default=10.0,
+        external_name="TRIGGER_AMPLITUDE_VPP",
+        label="共同触发幅度",
+        unit="Vpp",
+        group="basic",
+        minimum=0.001,
+        maximum=20.0,
+    )
+
+    trigger_offset_v: float = parameter(
+        default=2.5,
+        external_name="TRIGGER_OFFSET_V",
+        label="共同触发偏置",
+        unit="V",
+        group="advanced",
+        minimum=-10.0,
+        maximum=10.0,
+    )
+
+    trigger_duty_percent: float = parameter(
+        default=50.0,
+        external_name="TRIGGER_DUTY_PERCENT",
+        label="共同触发占空比",
+        unit="%",
+        group="advanced",
+        minimum=20.0,
+        maximum=80.0,
+    )
+
+    scope_cycles: int = parameter(
+        default=3,
+        external_name="SCOPE_CYCLES",
+        label="每次采集周期数",
+        group="basic",
+        minimum=2,
+    )
+
+    scope_measured_channel: int = parameter(
+        default=3,
+        external_name="SCOPE_MEASURED_CHANNEL",
+        label="线圈测量通道",
+        visible=False,
+        minimum=1,
+        maximum=4,
+    )
+
+    scope_trigger_channel: int = parameter(
+        default=4,
+        external_name="SCOPE_TRIGGER_CHANNEL",
+        label="触发参考通道",
+        visible=False,
+        minimum=1,
+        maximum=4,
+    )
+
+    scope_vertical_divisions: int = parameter(
+        default=8,
+        external_name="SCOPE_VERTICAL_DIVISIONS",
+        label="示波器垂直总格数",
+        visible=False,
+        minimum=1,
+    )
+
+    scope_trigger_level_v: float = parameter(
+        default=2.5,
+        external_name="SCOPE_TRIGGER_LEVEL_V",
+        label="示波器触发电平",
+        unit="V",
+        visible=False,
+    )
+
+    control_source_set: str = parameter(default="oc_sens", external_name="CONTROL_SOURCE_SET", label="理论结果集", group="basic", options=tuple((x, x) for x in CONTROL_SOURCE_SET_ROOTS))
+    current_coupling_calibration_source_run: str = parameter(default="0820_170037_mx_z_current_coupling_calibration", external_name="CURRENT_COUPLING_CALIBRATION_SOURCE_RUN", label="静态电流耦合标定", group="basic")
+    max_iterations: int = parameter(default=100, external_name="MAX_ITERATIONS", label="最大测量轮数（含初始轮）", minimum=1, group="basic")
+    iteration_repeats: int = parameter(default=5, external_name="ITERATION_REPEATS", label="每轮重复采集帧数", minimum=1, group="basic")
+    iteration_damping: float = parameter(default=0.1, external_name="ITERATION_DAMPING", label="更新系数 α", minimum=0.000001, maximum=1.0, group="basic")
+    error_cutoff_hz: float = parameter(default=40000.0, external_name="ERROR_CUTOFF_HZ", label="误差零相位低通截止频率", unit="Hz", minimum=0.000001, group="basic")
+    target_relative_rms: float = parameter(default=0.03, external_name="TARGET_RELATIVE_RMS", label="相对 RMS 误差阈值", minimum=0.000001, group="basic")
+    required_passes: int = parameter(default=3, external_name="REQUIRED_PASSES", label="连续达标轮数", minimum=1)
+    output_settle_s: float = parameter(default=0.1, external_name="OUTPUT_SETTLE_S", label="更新后稳定等待", unit="s", minimum=0.0)
+    scope_headroom_factor: float = parameter(default=1.5, external_name="SCOPE_HEADROOM_FACTOR", label="理论电压量程余量倍数", minimum=1.0, group="basic", description="理论采样电阻电压峰峰值乘以该倍数，向上选 1/2/5 档并居中；采集中只放大量程。")
+
     @classmethod
-    def migrate_external(
-        cls,
-        values: dict[str, object],
-        schema_version: int,
-    ) -> dict[str, object]:
-        """迁移旧根目录并保留历史正则化参数语义。"""
-        migrated = super(ZAWClosedLoopWaveformCorrectionParams, cls).migrate_external(
-            values,
-            schema_version,
+    def migrate_external(cls, values: dict[str, object], schema_version: int) -> dict[str, object]:
+        """只在配置入口处理已发布的旧键，新循环不保留旧算法分支。"""
+        migrated = super(ZAWClosedLoopWaveformCorrectionParams, cls).migrate_external(values, schema_version)
+        old_root = str(migrated.pop("CONTROL_RESULTS_ROOT", "")).replace("\\", "/").rstrip("/")
+        if "CONTROL_SOURCE_SET" not in migrated and old_root:
+            name = old_root.split("/")[-1]
+            if name not in CONTROL_SOURCE_SET_ROOTS:
+                raise ValueError("旧根目录不是受支持的固定结果集")
+            migrated["CONTROL_SOURCE_SET"] = name
+        if "TIME_DOMAIN_CUTOFF_HZ" in migrated:
+            cutoff = migrated.pop("TIME_DOMAIN_CUTOFF_HZ")
+            # 旧 0 表示不限带宽；新版本明确要求正截止频率，迁移为新默认。
+            migrated.setdefault("ERROR_CUTOFF_HZ", cutoff if float(cutoff) > 0 else 40000.0)
+        # 旧指标除以目标标准差；改为目标 RMS 后采用明确的新阈值默认。
+        migrated.pop("TARGET_SHAPE_NRMSE", None)
+        if "SCOPE_REPEATS" in migrated:
+            migrated.setdefault("ITERATION_REPEATS", migrated.pop("SCOPE_REPEATS"))
+        removed = (
+            "Z_CALIBRATION_SOURCE_RUN", "CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN",
+            "CORRECTION_METHOD", "TIME_DOMAIN_INITIALIZATION", "TIME_DOMAIN_LEARNING_OPERATOR",
+            "TIME_DOMAIN_PROJECT_VOLTAGE", "INITIAL_WAVEFORM_SOURCE_RUN", "HOLDOUT_REPEATS",
+            "INVERSE_REGULARIZATION", "TIME_DOMAIN_MAX_STEP_V", "TIME_DOMAIN_MIN_DAMPING",
+            "MAXIMUM_ERROR_INCREASE_FRACTION", "SENSE_RESISTOR_OHM", "MAXIMUM_CURRENT_A",
+            "SENSE_RESISTOR_POWER_RATING_W", "SENSE_RESISTOR_POWER_DERATING",
+            "CURRENT_PREDICTION_GAIN_MARGIN", "SCOPE_INITIAL_SCALE", "SCOPE_SCALE_MIN",
+            "SCOPE_SCALE_MAX", "SCOPE_AUTO_RANGE_LOW_FRACTION", "SCOPE_AUTO_RANGE_HIGH_FRACTION",
+            "SCOPE_AUTO_RANGE_MAX_ATTEMPTS",
         )
-        if schema_version < 2:
-            migrated.setdefault("INVERSE_REGULARIZATION", 0.02)
-        if schema_version < 3 and "CONTROL_SOURCE_SET" not in migrated:
-            raw_root = str(migrated.get("CONTROL_RESULTS_ROOT", "")).strip()
-            normalized = raw_root.replace("\\", "/").rstrip("/").split("/")[-1]
-            if not raw_root:
-                migrated["CONTROL_SOURCE_SET"] = "oc_sens"
-            elif normalized in CONTROL_SOURCE_SET_ROOTS:
-                migrated["CONTROL_SOURCE_SET"] = normalized
-            else:
-                raise ValueError(
-                    "旧 CONTROL_RESULTS_ROOT 不是受支持的固定结果集目录，"
-                    "请改用 CONTROL_SOURCE_SET=oc_sens 或 oc_broadband_v2"
-                )
+        for name in removed:
+            migrated.pop(name, None)
         return migrated
 
     @classmethod
     def derive_external(cls, values: dict[str, object]) -> dict[str, object]:
-        """按结果集选择加载理论周期，供 GUI 派生字段使用。"""
-        merged = dict(values)
+        """表单中仅派生理论周期，不连接仪器。"""
         try:
-            merged["CONTROL_RESULTS_ROOT"] = str(
-                resolve_control_results_root(str(merged.get("CONTROL_SOURCE_SET", "oc_sens")))
-            )
-        except ValueError:
+            theory = load_theory_control(resolve_control_results_root(str(values.get("CONTROL_SOURCE_SET", "oc_sens"))), str(values.get("CONTROL_VERSION", "v6")))
+        except (OSError, ValueError, KeyError):
             return {}
-        return super().derive_external(merged)
+        return {"CONTROL_REPEAT_FREQUENCY_HZ": theory.repeat_frequency_hz,
+                "SCOPE_DURATION_S": int(values.get("SCOPE_CYCLES", 3)) / theory.repeat_frequency_hz}
 
     def validate_model(self) -> list[str]:
-        errors: list[str] = []
-        if self.correction_method not in {"frequency_domain", "time_domain"}:
-            errors.append("CORRECTION_METHOD 必须是 frequency_domain 或 time_domain")
+        errors = []
+        if not self.run_tag.strip():
+            errors.append("RUN_TAG 不能为空")
+        if (self.scope_measured_channel, self.scope_trigger_channel) != (3, 4):
+            errors.append("采集固定为 CH3 电流反馈、CH4 触发")
+        low = self.trigger_offset_v - self.trigger_amplitude_vpp / 2
+        high = self.trigger_offset_v + self.trigger_amplitude_vpp / 2
+        if not low < self.scope_trigger_level_v < high:
+            errors.append("CH4 触发电平必须位于触发波形高低电平之间")
         try:
-            resolved_root = resolve_control_results_root(self.control_source_set)
-        except ValueError as exc:
+            validate_safety_limit("Time_sequence_2", low)
+            validate_safety_limit("Time_sequence_2", high)
+            prepare_feedback(find_project_root(), self)
+        except (OSError, KeyError, TypeError, ValueError) as exc:
             errors.append(str(exc))
-            resolved_root = Path(self.control_results_root)
-        effective = replace(self, control_results_root=str(resolved_root))
-        errors.extend(ZAWWaveformScopeCheckParams.validate_model(effective))
-        if self.scope_measured_channel != 3:
-            errors.append("SCOPE_MEASURED_CHANNEL 必须固定为 CH3 采样电阻电压")
-        if self.scope_trigger_channel != 4:
-            errors.append("SCOPE_TRIGGER_CHANNEL 必须固定为 CH4 共同触发")
-        if not self.current_coupling_calibration_source_run.strip():
-            errors.append("CURRENT_COUPLING_CALIBRATION_SOURCE_RUN 不能为空")
-        if not self.current_frequency_response_source_run.strip():
-            errors.append("CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN 不能为空")
-        try:
-            validate_sense_resistor(self.sense_resistor_ohm, self.sense_resistor_power_rating_w)
-        except ValueError as exc:
-            errors.append(str(exc))
-        if self.maximum_current_a <= 0.0:
-            errors.append("MAXIMUM_CURRENT_A 必须填写正安全上限")
-        root = find_project_root()
-        if self.current_coupling_calibration_source_run.strip():
-            try:
-                calibration = load_current_coupling_calibration(
-                    root, self.current_coupling_calibration_source_run
-                )
-                if not np.isclose(
-                    calibration.sense_resistor_ohm,
-                    self.sense_resistor_ohm,
-                    rtol=1e-6,
-                    atol=1e-12,
-                ):
-                    errors.append("采样电阻与电流耦合标定来源不一致")
-            except (OSError, TypeError, ValueError, KeyError) as exc:
-                errors.append(str(exc))
-        if self.current_frequency_response_source_run.strip():
-            try:
-                response = load_current_frequency_response(
-                    root, self.current_frequency_response_source_run
-                )
-                if not np.isclose(
-                    response.sense_resistor_ohm,
-                    self.sense_resistor_ohm,
-                    rtol=1e-6,
-                    atol=1e-12,
-                ):
-                    errors.append("采样电阻与实际电流频响来源不一致")
-            except (OSError, TypeError, ValueError, KeyError) as exc:
-                errors.append(str(exc))
         return errors

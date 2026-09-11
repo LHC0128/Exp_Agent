@@ -3,8 +3,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from lab_workflows.devices import ChannelRecord, DeviceRecord
+from signal_generator.instrument import DG4000Instrument
 from lab_workflows.instrument_control import (
     _apply_basic_waveform,
+    _apply_generator_connected,
     _read_generator_channel,
     _read_gs200_state,
     _validate_generator_output,
@@ -164,6 +166,58 @@ class InstrumentControlTests(unittest.TestCase):
         self.assertEqual(state["offset"], 0.35)
         instrument.get_dc_voltage.assert_called_once_with(1)
         instrument.get_offset.assert_not_called()
+
+    def test_dg4000_dc_gui_applies_level_after_advanced_settings(self):
+        """新旧 GUI 入口均在最终选择 DC 后写电平，不清零残留幅度。"""
+        record = DeviceRecord(
+            id="FAKE", type="DG4000", label="测试 Z",
+            resource="FAKE", short_resource="FAKE",
+            channels=[ChannelRecord(1, "Z_magnetic_field", "Z")],
+        )
+        for legacy in (False, True):
+            for output in (False, True, None):
+                with self.subTest(legacy=legacy, output=output):
+                    instrument = DG4000Instrument("FAKE")
+                    instrument._inst = MagicMock()
+                    transport = instrument._inst
+                    settings = {
+                        "shape": "DC", "offset": 0.3,
+                        "frequency": 1000.0, "amplitude": 5.0, "phase": 90.0,
+                        "square_duty": 50.0, "pulse_width": 0.001,
+                        "voltage_unit": "VPP", "load": "50",
+                        "mod": {"enabled": False}, "burst": {"enabled": False},
+                    }
+                    if output is not None:
+                        settings["output"] = output
+                    current = {"shape": "DC", "offset": 0.0,
+                               "amplitude": 5.0, "voltage_unit": "VPP"}
+                    with (
+                        patch("lab_workflows.instrument_control._read_generator_channel", return_value=current),
+                        patch("lab_workflows.instrument_control.find_device", return_value=record),
+                        patch("lab_workflows.instrument_control._connect", return_value=instrument),
+                        patch("lab_workflows.instrument_control.read_device", return_value={}),
+                    ):
+                        if legacy:
+                            apply_generator_channel("FAKE", 1, settings)
+                        else:
+                            _apply_generator_connected(
+                                {"mapping_key": "Z_magnetic_field"},
+                                record, instrument, settings,
+                            )
+                    expected = [
+                        ":SOURce1:BURSt:STATe OFF",
+                        ":SOURce1:MOD:STATe OFF",
+                        ":SOURce1:VOLTage:UNIT VPP",
+                        ":OUTPut1:LOAD 50.0",
+                        ":SOURce1:FUNCtion:SHAPe DC",
+                        ":SOURce1:APPLy:USER 0,0,3.000000e-01,0",
+                    ]
+                    if output is not None:
+                        expected.append(f":OUTPut1:STATe {'ON' if output else 'OFF'}")
+                    self.assertEqual(
+                        [item.args[0] for item in transport.write.call_args_list],
+                        expected,
+                    )
 
     def test_basic_waveform_dc_keeps_dg900_setup_dc_path(self):
         instrument = MagicMock()

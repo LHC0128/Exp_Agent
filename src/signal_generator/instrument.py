@@ -332,8 +332,14 @@ class DG4000Instrument:
 
     def set_dc_voltage(self, voltage: float,
                        channel: Optional[int] = None) -> None:
-        """使用 DG4000 专用 OFFSET 命令设置 DC 波形电平 (V)。"""
-        self.set_offset(float(voltage), channel=channel)
+        """设置已选中的 DC 波形电平 (V)，不改变输出开关。
+
+        调用前必须选择 DC。编程手册规定此时 APPLy:USER 只使用偏移
+        参数，丢弃频率、幅度和相位；无需清零之前波形的幅度。
+        """
+        self.write(
+            f":SOURce{self._ch(channel)}:APPLy:USER 0,0,{float(voltage):e},0"
+        )
 
     def get_low_level(self, channel: Optional[int] = None) -> float:
         """查询低电平电压 (V)."""
@@ -1019,7 +1025,7 @@ class DG4000Instrument:
 
     def setup_dc(self, voltage: float,
                  channel: Optional[int] = None) -> None:
-        """使用 OFFSET 命令配置 DC 电平并打开输出。"""
+        """选择 DC，通过 APPLy:USER 配置电平并打开输出。"""
         ch = self._ch(channel)
         self.set_shape("DC", channel=ch)
         self.set_dc_voltage(voltage, channel=ch)
