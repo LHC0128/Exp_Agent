@@ -22,7 +22,7 @@
       "id": "scan-params",
       "type": "backend",
       "label": "GUI 扫描参数",
-      "sublabel": "频率 100 Hz–10 kHz ×100 · 相位 0–350° / 10°",
+      "sublabel": "频率 / 相位轴与幅度、稳定、采样时长",
       "pos": [
         280,
         90
@@ -122,7 +122,7 @@
       "id": "pump-probe-chain",
       "type": "external",
       "label": "泵浦-探测光路",
-      "sublabel": "100 MHz 载波与门控 · 光功率 DC",
+      "sublabel": "泵浦载波与门控 · 光功率 DC",
       "pos": [
         830,
         245
@@ -202,7 +202,7 @@
       "id": "y-rf-scan",
       "type": "backend",
       "label": "频率 × 相位扫描循环",
-      "sublabel": "逐点重臂 Burst · 0.05 s 稳定 / 0.1 s 采样",
+      "sublabel": "逐点重臂 Burst · 稳定 / 采样时长随参数",
       "pos": [
         1090,
         555
@@ -222,7 +222,7 @@
       "id": "r-point-acquire",
       "type": "backend",
       "label": "有效点采集与判定",
-      "sublabel": "r_std 阈值重采 ≤3 次 · 单点 npz",
+      "sublabel": "r_std 超阈值自动重采 · 单点 npz",
       "pos": [
         700,
         555
@@ -282,7 +282,7 @@
       "id": "results",
       "type": "database",
       "label": "分析结果",
-      "sublabel": "median npz · 两图 · analysis.yaml",
+      "sublabel": "median npz · 图表 · analysis.yaml",
       "pos": [
         550,
         710
@@ -553,9 +553,9 @@
       "dot": "emerald",
       "title": "扫描设计",
       "items": [
-        "频率 100 Hz–10 kHz 共 100 点，Y RF Burst 相位 0–350°、步进 10°",
-        "Y RF 固定幅度 0.01 Vpp，输出前经 rf_coil 安全限值校验",
-        "每个扫描点 0.05 s 稳定后采样 0.1 s"
+        "频率轴与 Y RF Burst 相位轴由 GUI 参数生成，二维组合逐点执行",
+        "Y RF 幅度全程固定，输出前经 rf_coil 安全限值校验",
+        "每个扫描点先稳定后采样，时长由 GUI 参数决定"
       ]
     },
     {
@@ -571,7 +571,7 @@
       "dot": "rose",
       "title": "数据与判定",
       "items": [
-        "单点 r_std 超阈值自动重采，最多 3 次，全部尝试落盘",
+        "单点 r_std 超阈值自动重采，尝试次数由参数控制，全部尝试落盘",
         "按频率取全部有效相位的 R 中位数，得到最优控制频率响应",
         "对照阶段 Z 切恒定 DC（标定反解 + 安全限值），结束后恢复任意波并安全收尾"
       ]
