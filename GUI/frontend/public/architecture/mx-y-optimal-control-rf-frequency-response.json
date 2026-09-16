@@ -10,82 +10,102 @@
     "repository": {
       "url": "https://github.com/LHC0128/Exp_Agent.git",
       "provider": "github",
-      "revision": "94e8231adbee47f0198873b5474dc267ee894756"
+      "revision": "797dadb0d748753cd8def4bcf66943af47a3ff55"
     },
     "viewBox": [
       1360,
-      800
+      820
     ]
   },
   "components": [
     {
-      "id": "gui-page",
-      "type": "frontend",
-      "label": "实验专属 GUI",
-      "sublabel": "运行 / 历史 / 架构 Tab",
+      "id": "scan-params",
+      "type": "backend",
+      "label": "GUI 扫描参数",
+      "sublabel": "频率 100 Hz–10 kHz ×100 · 相位 0–350° / 10°",
+      "pos": [
+        280,
+        90
+      ],
+      "size": [
+        240,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/models.py",
+          "line": 27
+        }
+      ]
+    },
+    {
+      "id": "control-source",
+      "type": "backend",
+      "label": "Z 控制波形与对照计划",
+      "sublabel": "闭环校正运行 · 标定反解恒定 DC",
       "pos": [
         40,
-        120
+        90
       ],
       "size": [
-        170,
-        64
-      ],
-      "sources": [
-        {
-          "path": "GUI/frontend/src/pages/MxYOptimalControlFrequencyPage.tsx",
-          "line": 1
-        }
-      ]
-    },
-    {
-      "id": "typed-definition",
-      "type": "backend",
-      "label": "强类型实验定义",
-      "sublabel": "ExperimentDefinition",
-      "pos": [
-        255,
-        120
-      ],
-      "size": [
-        170,
-        64
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/definition.py",
-          "line": 1
-        }
-      ]
-    },
-    {
-      "id": "optimal-workflow",
-      "type": "backend",
-      "label": "最优控制采集工作流",
-      "sublabel": "workflow.py",
-      "pos": [
-        470,
-        120
-      ],
-      "size": [
-        170,
+        180,
         64
       ],
       "sources": [
         {
           "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
-          "line": 154
+          "line": 156
         }
       ]
     },
     {
-      "id": "common-devices",
+      "id": "main-gs200",
       "type": "external",
-      "label": "共同仪器配置",
-      "sublabel": "GS200 · DG900 · DG4000 · HF2",
+      "label": "GS200 Z 主磁场",
+      "sublabel": "Z 主磁场电流偏置 (mA)",
       "pos": [
-        685,
-        120
+        40,
+        245
+      ],
+      "size": [
+        175,
+        64
+      ],
+      "sources": [
+        {
+          "path": "params/mapping.yaml",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "id": "z-dg4000",
+      "type": "external",
+      "label": "DG4000 Z 场源",
+      "sublabel": "ch1 Z 任意波/恒定 DC · ch2 共同触发",
+      "pos": [
+        290,
+        245
+      ],
+      "size": [
+        200,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/steps/mx_z_optimal_control.py",
+          "line": 25
+        }
+      ]
+    },
+    {
+      "id": "xy-dg900",
+      "type": "external",
+      "label": "DG900 XY 场源",
+      "sublabel": "X DC · Y RF Burst 外部触发",
+      "pos": [
+        560,
+        245
       ],
       "size": [
         190,
@@ -93,22 +113,102 @@
       ],
       "sources": [
         {
+          "path": "lab_workflows/experiment_modules/mx_z_optimal_control_rf_sensitivity/workflow.py",
+          "line": 112
+        }
+      ]
+    },
+    {
+      "id": "pump-probe-chain",
+      "type": "external",
+      "label": "泵浦-探测光路",
+      "sublabel": "100 MHz 载波与门控 · 光功率 DC",
+      "pos": [
+        830,
+        245
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/steps/mx_z_optimal_control.py",
+          "line": 263
+        }
+      ]
+    },
+    {
+      "id": "temp-chain",
+      "type": "external",
+      "label": "温控链",
+      "sublabel": "TEC103 · 加热与温度开关",
+      "pos": [
+        1090,
+        245
+      ],
+      "size": [
+        175,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/steps/mx_z_optimal_control.py",
+          "line": 277
+        }
+      ]
+    },
+    {
+      "id": "atom-cell",
+      "type": "external",
+      "label": "铷原子气室",
+      "sublabel": "Bell-Bloom 磁力仪头",
+      "pos": [
+        560,
+        400
+      ],
+      "size": [
+        175,
+        64
+      ],
+      "sources": [
+        {
           "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
-          "line": 167
+          "line": 164
+        }
+      ]
+    },
+    {
+      "id": "hf2-demod",
+      "type": "external",
+      "label": "HF2 锁相检测",
+      "sublabel": "demod0 R · 振荡器跟随 Y RF",
+      "pos": [
+        940,
+        400
+      ],
+      "size": [
+        185,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
+          "line": 95
         }
       ]
     },
     {
       "id": "y-rf-scan",
       "type": "backend",
-      "label": "Y RF 频率与相位扫描",
-      "sublabel": "frequency × phase",
+      "label": "频率 × 相位扫描循环",
+      "sublabel": "逐点重臂 Burst · 0.05 s 稳定 / 0.1 s 采样",
       "pos": [
-        920,
-        120
+        1090,
+        555
       ],
       "size": [
-        170,
+        230,
         64
       ],
       "sources": [
@@ -119,16 +219,16 @@
       ]
     },
     {
-      "id": "demod-r-point",
+      "id": "r-point-acquire",
       "type": "backend",
-      "label": "Demod0 R 有效点采集",
-      "sublabel": "均值 / 标准差 / 重采",
+      "label": "有效点采集与判定",
+      "sublabel": "r_std 阈值重采 ≤3 次 · 单点 npz",
       "pos": [
-        1135,
-        120
+        700,
+        555
       ],
       "size": [
-        170,
+        185,
         64
       ],
       "sources": [
@@ -139,66 +239,22 @@
       ]
     },
     {
-      "id": "constant-branch",
-      "type": "backend",
-      "label": "可选常数 Z 对照",
-      "sublabel": "标定反解恒定 DC",
-      "pos": [
-        470,
-        310
-      ],
-      "size": [
-        170,
-        64
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/comparison.py",
-          "line": 1
-        }
-      ]
-    },
-    {
-      "id": "restore-safety",
-      "type": "security",
-      "label": "Z 波形恢复与安全收尾",
-      "sublabel": "validate_safety_limit",
-      "pos": [
-        685,
-        310
-      ],
-      "size": [
-        190,
-        64
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
-          "line": 186
-        },
-        {
-          "path": "lab_workflows/common.py",
-          "line": 41
-        }
-      ]
-    },
-    {
-      "id": "optimal-raw",
+      "id": "raw-data",
       "type": "database",
-      "label": "最优控制原始数据",
-      "sublabel": "optimal_control_phase_frequency_scan.npz",
+      "label": "原始数据",
+      "sublabel": "optimal / constant npz + 波形快照",
       "pos": [
-        1085,
-        480
+        40,
+        710
       ],
       "size": [
-        230,
+        205,
         64
       ],
       "sources": [
         {
           "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
-          "line": 104
+          "line": 27
         }
       ]
     },
@@ -206,19 +262,19 @@
       "id": "offline-analysis",
       "type": "backend",
       "label": "离线分析",
-      "sublabel": "analysis.py",
+      "sublabel": "相位中位数 · 热图 · 对照曲线",
       "pos": [
-        875,
-        480
+        310,
+        710
       ],
       "size": [
-        170,
+        175,
         64
       ],
       "sources": [
         {
           "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/analysis.py",
-          "line": 1
+          "line": 30
         }
       ]
     },
@@ -226,39 +282,19 @@
       "id": "results",
       "type": "database",
       "label": "分析结果",
-      "sublabel": "results/",
+      "sublabel": "median npz · 两图 · analysis.yaml",
       "pos": [
-        655,
-        480
+        550,
+        710
       ],
       "size": [
-        170,
+        205,
         64
       ],
       "sources": [
         {
           "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/analysis.py",
-          "line": 131
-        }
-      ]
-    },
-    {
-      "id": "constant-raw",
-      "type": "database",
-      "label": "常数控制原始数据",
-      "sublabel": "constant_control_frequency_scan.npz",
-      "pos": [
-        490,
-        660
-      ],
-      "size": [
-        225,
-        64
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
-          "line": 152
+          "line": 94
         }
       ]
     }
@@ -266,30 +302,38 @@
   "boundaries": [
     {
       "kind": "region",
-      "label": "实验 GUI 边界",
+      "label": "参数与控制来源",
       "wraps": [
-        "gui-page"
+        "scan-params",
+        "control-source"
       ]
     },
     {
       "kind": "region",
-      "label": "采集与设备边界",
+      "label": "仪器与物理链路",
       "wraps": [
-        "typed-definition",
-        "optimal-workflow",
-        "common-devices",
+        "main-gs200",
+        "z-dg4000",
+        "xy-dg900",
+        "pump-probe-chain",
+        "temp-chain",
+        "atom-cell",
+        "hf2-demod"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "扫描与采集",
+      "wraps": [
         "y-rf-scan",
-        "demod-r-point",
-        "constant-branch",
-        "restore-safety"
+        "r-point-acquire"
       ]
     },
     {
       "kind": "region",
-      "label": "数据与分析边界",
+      "label": "数据与分析",
       "wraps": [
-        "optimal-raw",
-        "constant-raw",
+        "raw-data",
         "offline-analysis",
         "results"
       ]
@@ -297,167 +341,239 @@
   ],
   "connections": [
     {
-      "id": "gui-to-definition",
-      "from": "gui-page",
-      "to": "typed-definition",
-      "label": "提交强类型参数",
-      "variant": "emphasis",
-      "labelAt": [
-        225,
-        198
-      ]
-    },
-    {
-      "id": "definition-to-workflow",
-      "from": "typed-definition",
-      "to": "optimal-workflow",
-      "label": "分发 typed_workflow",
-      "variant": "emphasis",
-      "labelAt": [
-        447,
-        198
-      ]
-    },
-    {
-      "id": "workflow-to-devices",
-      "from": "optimal-workflow",
-      "to": "common-devices",
-      "label": "连接并配置设备",
-      "variant": "emphasis",
-      "labelAt": [
-        740,
-        198
-      ]
-    },
-    {
-      "id": "devices-to-scan",
-      "from": "common-devices",
+      "id": "params-to-scan",
+      "from": "scan-params",
       "to": "y-rf-scan",
-      "label": "配置触发、RF 与 Demod",
+      "label": "生成频率/相位轴",
       "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "right",
+      "via": [
+        [
+          1335,
+          122
+        ],
+        [
+          1335,
+          587
+        ]
+      ],
       "labelAt": [
-        897,
-        198
+        900,
+        150
       ]
+    },
+    {
+      "id": "control-to-z",
+      "from": "control-source",
+      "to": "z-dg4000",
+      "label": "下发任意波/反解 DC",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "z-trigger-xy",
+      "from": "z-dg4000",
+      "to": "xy-dg900",
+      "label": "共同触发同步 Burst",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        520,
+        225
+      ]
+    },
+    {
+      "id": "main-to-cell",
+      "from": "main-gs200",
+      "to": "atom-cell",
+      "label": "Z 主磁场偏置",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        280,
+        412
+      ]
+    },
+    {
+      "id": "z-to-cell",
+      "from": "z-dg4000",
+      "to": "atom-cell",
+      "label": "Z 最优控制场",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        440,
+        412
+      ]
+    },
+    {
+      "id": "xy-to-cell",
+      "from": "xy-dg900",
+      "to": "atom-cell",
+      "label": "X DC + Y RF 驱动",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        590,
+        380
+      ]
+    },
+    {
+      "id": "pump-to-cell",
+      "from": "pump-probe-chain",
+      "to": "atom-cell",
+      "label": "泵浦调制与光功率",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        790,
+        412
+      ]
+    },
+    {
+      "id": "temp-to-cell",
+      "from": "temp-chain",
+      "to": "atom-cell",
+      "label": "温度稳定",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1090,
+        338
+      ]
+    },
+    {
+      "id": "cell-to-hf2",
+      "from": "atom-cell",
+      "to": "hf2-demod",
+      "label": "Probe 透射光电信号",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "scan-to-xy",
+      "from": "y-rf-scan",
+      "to": "xy-dg900",
+      "label": "逐点设频/相位/重臂",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "right",
+      "via": [
+        [
+          1348,
+          587
+        ],
+        [
+          1348,
+          200
+        ],
+        [
+          800,
+          200
+        ],
+        [
+          800,
+          277
+        ]
+      ],
+      "labelAt": [
+        1000,
+        228
+      ]
+    },
+    {
+      "id": "scan-to-hf2",
+      "from": "y-rf-scan",
+      "to": "hf2-demod",
+      "label": "振荡器跟随频率",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "hf2-to-point",
+      "from": "hf2-demod",
+      "to": "r-point-acquire",
+      "label": "demod0 R 时间序列",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
     },
     {
       "id": "scan-to-point",
       "from": "y-rf-scan",
-      "to": "demod-r-point",
-      "label": "逐频率逐相位采样",
+      "to": "r-point-acquire",
+      "label": "逐点采集",
       "variant": "emphasis",
-      "labelAt": [
-        1112,
-        198
-      ]
+      "fromSide": "left",
+      "toSide": "right"
     },
     {
       "id": "point-to-raw",
-      "from": "demod-r-point",
-      "to": "optimal-raw",
-      "label": "写入有效点与元数据",
+      "from": "r-point-acquire",
+      "to": "raw-data",
+      "label": "单点 npz + 汇总",
       "variant": "emphasis",
-      "labelAt": [
-        1240,
-        198
-      ],
       "fromSide": "bottom",
       "toSide": "top"
     },
     {
       "id": "raw-to-analysis",
-      "from": "optimal-raw",
+      "from": "raw-data",
       "to": "offline-analysis",
       "label": "只读 raw 数据",
       "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
       "labelAt": [
-        800,
-        600
+        277,
+        785
       ]
     },
     {
       "id": "analysis-to-results",
       "from": "offline-analysis",
       "to": "results",
-      "label": "输出分析文件和图表",
+      "label": "中位数/热图/对照曲线",
       "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
       "labelAt": [
-        740,
-        570
+        517,
+        785
       ]
-    },
-    {
-      "id": "workflow-to-comparison",
-      "from": "optimal-workflow",
-      "to": "constant-branch",
-      "label": "启用 COMPARISON_ENABLED 后执行",
-      "variant": "dashed",
-      "labelAt": [
-        555,
-        240
-      ]
-    },
-    {
-      "id": "comparison-to-constant-raw",
-      "from": "constant-branch",
-      "to": "constant-raw",
-      "label": "Z 恒定 DC，Y RF 相位 0°",
-      "variant": "dashed",
-      "fromSide": "bottom",
-      "toSide": "top"
-    },
-    {
-      "id": "constant-raw-to-analysis",
-      "from": "constant-raw",
-      "to": "offline-analysis",
-      "label": "合并频率响应对照",
-      "variant": "dashed"
-    },
-    {
-      "id": "comparison-to-restore",
-      "from": "constant-branch",
-      "to": "restore-safety",
-      "label": "恢复 Z 最优控制任意波",
-      "variant": "security",
-      "labelAt": [
-        715,
-        398
-      ]
-    },
-    {
-      "id": "workflow-to-restore",
-      "from": "optimal-workflow",
-      "to": "restore-safety",
-      "label": "异常或完成时安全收尾",
-      "variant": "security"
-    },
-    {
-      "id": "restore-to-analysis",
-      "from": "restore-safety",
-      "to": "offline-analysis",
-      "label": "收尾完成后允许分析",
-      "variant": "security",
-      "fromSide": "bottom",
-      "toSide": "top"
     }
   ],
   "cards": [
     {
       "dot": "emerald",
-      "title": "主实验链路",
+      "title": "扫描设计",
       "items": [
-        "GUI 参数经强类型定义进入采集工作流",
-        "Y RF 频率与 Burst 相位扫描产生 Demod0 R 原始数据",
-        "离线分析输出相位中位数曲线和相位-频率热图"
+        "频率 100 Hz–10 kHz 共 100 点，Y RF Burst 相位 0–350°、步进 10°",
+        "Y RF 固定幅度 0.01 Vpp，输出前经 rf_coil 安全限值校验",
+        "每个扫描点 0.05 s 稳定后采样 0.1 s"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "仪器互连",
+      "items": [
+        "DG4000 ch2 与 Z 波形同机输出共同触发，Y RF Burst 外部触发保持相位同步",
+        "六台仪器时钟同步到公共参考，不单独画扇出连线",
+        "HF2 demod 振荡器逐点跟随 Y RF 频率"
       ]
     },
     {
       "dot": "rose",
-      "title": "可选对照与安全",
+      "title": "数据与判定",
       "items": [
-        "常数对照必须在最优控制扫描完成后执行",
-        "常数 Z 电压由标定反解并通过安全限值校验",
-        "对照结束后恢复 Z 最优控制任意波再安全收尾"
+        "单点 r_std 超阈值自动重采，最多 3 次，全部尝试落盘",
+        "按频率取全部有效相位的 R 中位数，得到最优控制频率响应",
+        "对照阶段 Z 切恒定 DC（标定反解 + 安全限值），结束后恢复任意波并安全收尾"
       ]
     }
   ]
