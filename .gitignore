@@ -5,6 +5,7 @@ __pycache__/
 data/
 results/
 manuals/
+tests/
 *.egg-info/
 
 # 忽略 AI Agent 配置（本地使用，不上传 GitHub）
