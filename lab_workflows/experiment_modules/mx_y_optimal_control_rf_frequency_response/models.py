@@ -3,13 +3,16 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 import numpy as np
+from ...common import find_project_root
 from ...experiment_params import parameter
-from ..mx_z_optimal_control_rf_sensitivity.models import MxZOptimalControlRFParams
+from ..mx_z_control_params import MxZControlSourceSelectionParams
 
 @dataclass(slots=True)
-class MxYOptimalControlRFFrequencyResponseParams(MxZOptimalControlRFParams):
-    """固定 Y RF 幅度、逐频率观察 Burst 相位响应。"""
-    schema_version = 1
+class MxYOptimalControlRFFrequencyResponseParams(
+    MxZControlSourceSelectionParams
+):
+    """固定 Y RF 幅度，对比最优控制与常数 Z 控制的 RF 频率响应。"""
+    schema_version = 2
     noise_rf_enabled: bool = parameter(
         default=False, external_name="NOISE_RF_ENABLED",
         label="未使用噪声 RF 开关", visible=False,
@@ -32,6 +35,9 @@ class MxYOptimalControlRFFrequencyResponseParams(MxZOptimalControlRFParams):
     phase_scan_stop_deg: float = parameter(default=350.0, external_name="PHASE_SCAN_STOP_DEG", label="相位终点", unit="deg", group="basic", minimum=0.0, maximum=360.0)
     phase_scan_step_deg: float = parameter(default=10.0, external_name="PHASE_SCAN_STEP_DEG", label="相位步进", unit="deg", group="basic", minimum=0.001, maximum=360.0)
     corrected_control_source_run: str = parameter(default="obbv6", external_name="CORRECTED_CONTROL_SOURCE_RUN", label="闭环校正运行", group="basic")
+    comparison_enabled: bool = parameter(default=False, external_name="COMPARISON_ENABLED", label="启用常数 Z 控制对照", group="basic", description="启用后，最优控制扫描结束后把 Z 通道切为恒定 DC 并再扫描一次 Y RF 频率。")
+    constant_control_larmor_frequency_hz: float = parameter(default=0.0, external_name="CONSTANT_CONTROL_LARMOR_FREQUENCY_HZ", label="常数控制目标 Larmor 频率", unit="Hz", group="basic", minimum=0.0, active_when="COMPARISON_ENABLED", description="用来反解恒定 Z 电压的目标共振中心频率；关闭对照时不校验。")
+    constant_control_calibration_source_run: str = parameter(default="", external_name="CONSTANT_CONTROL_CALIBRATION_SOURCE_RUN", label="电流耦合标定运行", group="basic", options_from_directory="data/Mx_Z_Current_Coupling_Calibration", options_pattern="*", options_include_directories=True, options_require_analysis="results/analysis.yaml", options_require_experiment_id="mx-z-current-coupling-calibration", active_when="COMPARISON_ENABLED", description="只列出 experiment_id 正确且 success: true 的电流耦合标定运行。")
     control_waveform_source: str = parameter(default="corrected_run", external_name="CONTROL_WAVEFORM_SOURCE", label="控制波形来源", visible=False)
     y_rf_amp_start_vpp: float = parameter(default=-0.1, external_name="Y_RF_AMP_START_VPP", label="未使用幅度扫描起点", visible=False)
     y_rf_amp_stop_vpp: float = parameter(default=0.1, external_name="Y_RF_AMP_STOP_VPP", label="未使用幅度扫描终点", visible=False)
@@ -67,16 +73,25 @@ class MxYOptimalControlRFFrequencyResponseParams(MxZOptimalControlRFParams):
         if not self.run_tag.strip(): errors.append("RUN_TAG 不能为空")
         if self.frequency_start_hz >= self.frequency_stop_hz: errors.append("频率扫描起点必须小于终点")
         if self.phase_scan_start_deg >= self.phase_scan_stop_deg: errors.append("相位扫描起点必须小于终点")
-        else:
+        elif self.phase_scan_step_deg > 0:
             intervals = (self.phase_scan_stop_deg - self.phase_scan_start_deg) / self.phase_scan_step_deg
             if not math.isclose(intervals, round(intervals), abs_tol=1e-10): errors.append("相位扫描范围必须被步进整除")
-            elif round(intervals) + 1 < 8: errors.append("相位扫描至少需要 8 个点")
         if not self.corrected_control_source_run.strip(): errors.append("CORRECTED_CONTROL_SOURCE_RUN 不能为空")
-        try:
-            from ...common import validate_safety_limit
-            validate_safety_limit("rf_coil", self.frequency_rf_amplitude_vpp)
-            for key, value in (("X_magnetic_field", self.x_dc_field_v), ("Y_magnetic_field", self.y_rf_offset_v), ("main_magnetic_field", self.main_magnetic_field_ma), ("Pump_laser_power", self.pump_laser_power_v), ("Probe_laser_power", self.probe_laser_power_v), ("temperature", self.temperature_c)):
-                validate_safety_limit(key, value)
-        except ValueError as exc: errors.append(str(exc))
         if self.frequency_duration_s * self.response_rate_sa_s < 8: errors.append("频点采样数不足 8")
+        if self.comparison_enabled:
+            errors.extend(self._validate_comparison())
         return errors
+
+    def _validate_comparison(self) -> list[str]:
+        """启用对照时，反解恒定 Z 电压必须能通过标定校验与安全限值。"""
+        from .comparison import build_constant_control_plan
+
+        try:
+            build_constant_control_plan(
+                find_project_root(),
+                calibration_run=self.constant_control_calibration_source_run,
+                target_larmor_frequency_hz=self.constant_control_larmor_frequency_hz,
+            )
+        except (OSError, KeyError, TypeError, ValueError) as exc:
+            return [f"常数 Z 控制对照预检失败: {exc}"]
+        return []
