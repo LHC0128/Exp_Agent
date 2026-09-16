@@ -317,9 +317,11 @@ describe("MxYOptimalControlFrequencyPage", () => {
 
   it("ArrowLeft / ArrowRight 可以在三个 Tab 间循环切换", async () => {
     show();
-    const tablist = await screen.findByRole("tablist");
+    const tablist = await screen.findByRole("tablist", {
+      name: "Mx Y 最优控制频率响应实验视图",
+    });
     const runTab = screen.getByRole("tab", { name: "运行" });
-    fireEvent.focus(runTab);
+    runTab.focus();
     fireEvent.keyDown(tablist, { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "历史" })).toHaveAttribute("aria-selected", "true");
     fireEvent.keyDown(tablist, { key: "ArrowRight" });
@@ -328,7 +330,7 @@ describe("MxYOptimalControlFrequencyPage", () => {
     fireEvent.keyDown(tablist, { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
     // 运行 → 架构 反向回绕。
-    fireEvent.focus(runTab);
+    runTab.focus();
     fireEvent.keyDown(tablist, { key: "ArrowLeft" });
     expect(screen.getByRole("tab", { name: "架构" })).toHaveAttribute("aria-selected", "true");
     fireEvent.keyDown(tablist, { key: "ArrowLeft" });
