@@ -1,4 +1,4 @@
-"""新模式实验子进程的显式参数与取消检查。"""
+"""新模式实验子进程的显式参数、进度上报与取消检查。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,44 @@ from typing import Any
 
 from .common import WorkflowCancelled
 from .experiment_params import ExperimentParams
+
+# GUI 以 JSONL 行协议读取子进程进度；行前缀用于与普通 print 日志区分。
+PROGRESS_PROTOCOL_ENV = "LAB_PROGRESS_PROTOCOL"
+PROGRESS_PREFIX = "__LAB_PROGRESS__ "
+
+
+def format_eta(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    minutes, second = divmod(total, 60)
+    hours, minute = divmod(minutes, 60)
+    return f"{hours}:{minute:02d}:{second:02d}" if hours else f"{minutes:02d}:{second:02d}"
+
+
+def report_runtime_progress(
+    stage: str,
+    message: str,
+    percent: float | None = None,
+    *,
+    estimated_remaining_seconds: float | None = None,
+) -> None:
+    """向 GUI 子进程 stdout 上报一条结构化进度事件。
+
+    GUI 启动时通过 LAB_PROGRESS_PROTOCOL=jsonl 要求 JSONL 行协议；
+    直接命令行运行时输出带 ETA 的可读文本。
+    """
+    payload = {
+        "stage": stage,
+        "message": message,
+        "percent": percent,
+        "level": "info",
+        "data": {"estimated_remaining_seconds": estimated_remaining_seconds},
+    }
+    if os.environ.get(PROGRESS_PROTOCOL_ENV) == "jsonl":
+        print(PROGRESS_PREFIX + json.dumps(payload, ensure_ascii=False), flush=True)
+        return
+    eta = "" if estimated_remaining_seconds is None else f"（预计剩余 {format_eta(estimated_remaining_seconds)}）"
+    percent_text = "" if percent is None else f" {percent:.0f}%"
+    print(f"[{stage}]{percent_text} {message}{eta}", flush=True)
 
 
 def load_runtime_params(params_type: type[ExperimentParams]) -> ExperimentParams:

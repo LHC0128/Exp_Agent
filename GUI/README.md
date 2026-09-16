@@ -88,7 +88,13 @@ Keithley 6221 的 Hz 任意波 CSV/TXT 解析与标定换算逻辑位于
 ## 任务进度
 
 运行中的任务通过 `/api/jobs/{id}/events` SSE 增量推送进度；页面刷新恢复和任务结束后
-只读取一次完整 Job 快照。`GET /api/jobs` 只返回不含事件与结果的摘要。后端仅保留
+只读取一次完整 Job 快照。`GET /api/jobs` 只返回不含事件与结果的摘要。任务对象可携带
+`estimated_remaining_seconds`：typed workflow 子进程以 `__LAB_PROGRESS__ ` JSONL 行协议
+上报结构化进度，采集实验按已完成点的累计平均耗时动态估算剩余时间；普通日志事件不覆盖
+ETA，进入分析阶段或任务结束时显式清空。进度卡与全局任务横幅以 `MM:SS`（超过一小时为
+`H:MM:SS`）显示“预计剩余”。Mx Y 最优控制 RF 频率响应专属页把任务状态保存在页面层：
+切换“运行/历史”Tab 不丢失，重新进入页面时优先恢复本实验最新的活动任务，否则恢复最近
+一次已开始的任务。后端仅保留
 最近 100 个已完成、失败或取消的任务，运行中的任务不会被淘汰。实验原始数据和分析
 结果保存在 `data/`，不受内存任务淘汰影响。
 
@@ -140,3 +146,15 @@ from lab_workflows.steps import calibrate_demod_phase, DirectAWStrategy
 `params/experiment_catalog.yaml`；后续刷新页面、重启服务或换浏览器都会读取同一布局。
 GUI 后端以非热重载模式运行；更新后端代码后需要先停止旧进程并重新执行
 `GUI/start.ps1`，否则前端会提示后端尚未确认参数分类保存。
+
+“Z 任意波实际电流闭环校正”使用专用运行页（`/experiments/z-aw-closed-loop-waveform-correction`），
+参数分组行为与上面一致，但入口不同：
+
+- 默认分组由 `ZAWClosedLoopWaveformCorrectionParams` 的 `group` 与
+  `params/experiment_catalog.yaml` 中的 `z-aw-closed-loop-waveform-correction` 共同决定，
+  当前为 10 个基础参数、10 个高级参数；`CONTROL_SCALE`、`TRIGGER_FREQUENCY_HZ`、
+  `TRIGGER_AMPLITUDE_VPP`、`SCOPE_CYCLES`、`SCOPE_HEADROOM_FACTOR` 默认在高级参数。
+- 每个参数右上角的“移至高级 / 移至基础”只修改 `parameter_layout`，参数键和参数值都不变；
+  运行期间按钮禁用，避免界面状态与正在执行的快照冲突。
+- 移动后页面提示“布局有未保存修改”，点击“保存参数与布局”才把完整的参数值与分类写入磁盘；
+  保存成功后前端回读 schema 校验磁盘布局与页面一致，不一致会提示刷新页面。

@@ -78,26 +78,62 @@ def configure_z_optimal_control_output(params: Any, device: Any, channel: int,
                                        theory: Any, applied: Any,
                                        *, output: bool = True) -> None:
     """共享的外部下降沿无限 Burst 配置，默认保持既有实验输出行为。"""
+    configure_aw_external_burst(
+        device, channel, applied, theory.repeat_frequency_hz,
+        burst_phase_deg=params.control_burst_phase_deg, output=output,
+    )
+
+
+def configure_aw_external_burst(device: Any, channel: int, applied: Any,
+                                frequency_hz: float, *,
+                                burst_phase_deg: float,
+                                output: bool = True) -> None:
+    """上传任意波并配置外部下降沿无限 Burst；闭环和频响标定共用。"""
     from .steps.arbitrary import ArbitraryWaveformSpec, upload_arbitrary
 
     for value in (applied.minimum_v, applied.maximum_v,
                   applied.output_minimum_v, applied.output_maximum_v):
         validate_safety_limit("Z_magnetic_field", value)
     upload_arbitrary(device, ArbitraryWaveformSpec(
-        values=applied.normalized, frequency=theory.repeat_frequency_hz,
+        values=applied.normalized, frequency=float(frequency_hz),
         amplitude=applied.amplitude_vpp, offset=applied.offset_v,
         phase=0.0, channel=channel, output=False,
     ))
     # DG4162 的 APPLy:USER 参数可能被忽略，上传后必须显式重写。
-    device.set_frequency(theory.repeat_frequency_hz, channel=channel)
+    device.set_frequency(float(frequency_hz), channel=channel)
     device.set_amplitude(applied.amplitude_vpp, channel=channel)
     device.set_offset(applied.offset_v, channel=channel)
     device.set_burst_state(True, channel=channel)
     device.set_burst_mode("INFinity", channel=channel)
     device.set_burst_trigger_source("EXTernal", channel=channel)
     device.set_burst_trigger_slope(OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE, channel=channel)
-    device.set_burst_phase(params.control_burst_phase_deg % 360.0, channel=channel)
+    device.set_burst_phase(float(burst_phase_deg) % 360.0, channel=channel)
     device.set_output(bool(output), channel=channel)
+
+
+def verify_aw_output_settings(device: Any, channel: int, applied: Any,
+                              frequency_hz: float) -> dict[str, Any]:
+    """按 50 Ω/Vpp 数值基准回读校验 AW 输出设置，返回实际回读快照。"""
+    actual = {
+        "amplitude_vpp": float(device.get_amplitude(channel=channel)),
+        "offset_v": float(device.get_offset(channel=channel)),
+        "frequency_hz": float(device.get_frequency(channel=channel)),
+        "voltage_unit": str(device.get_voltage_unit(channel=channel)).strip().upper(),
+        "load_ohm": float(device.get_output_load(channel=channel)),
+        "command_voltage_reference": "50_ohm",
+    }
+    load_is_50_ohm = math.isclose(actual["load_ohm"], 50.0, rel_tol=1e-5, abs_tol=1e-6)
+    expected = {"amplitude_vpp": applied.amplitude_vpp, "offset_v": applied.offset_v,
+                "frequency_hz": float(frequency_hz)}
+    problems = [f"{key}: 请求 {value:.9g}，回读 {actual[key]:.9g}"
+                for key, value in expected.items()
+                if not math.isclose(actual[key], value, rel_tol=1e-5, abs_tol=1e-6)]
+    if actual["voltage_unit"] != "VPP" or not load_is_50_ohm:
+        problems.append(f"幅度基准不一致：{actual}")
+    device.raise_for_errors()
+    if problems:
+        raise RuntimeError("Z 输出设置回读不一致：" + "；".join(problems))
+    return actual
 
 
 def start_outputs(device: Any, z_channel: int, trigger_channel: int | None) -> None:
@@ -256,7 +292,7 @@ class ZArbitraryControlService:
             for value in (float(np.min(waveform.voltage_v)), float(np.max(waveform.voltage_v)),
                           waveform.offset_v):
                 validate_safety_limit("Z_magnetic_field", value)
-            from .experiment_modules.mx_z_optimal_control_rf_sensitivity.sources import corrected_control_contract
+            from .control_sources import corrected_control_contract
             _, applied = corrected_control_contract(waveform)
             _reproject_amplitude(waveform, applied, settings.output_amplitude_vpp)
         return {"contexts": contexts, "waveform": waveform, "settings": settings,
@@ -287,7 +323,7 @@ class ZArbitraryControlService:
                 if link:
                     configure_optimal_control_trigger(settings, instrument, trigger_channel, output=False)
                 cancellation.raise_if_cancelled()
-                from .experiment_modules.mx_z_optimal_control_rf_sensitivity.sources import corrected_control_contract
+                from .control_sources import corrected_control_contract
                 theory, applied = corrected_control_contract(waveform)
                 applied = _reproject_amplitude(waveform, applied, settings.output_amplitude_vpp)
                 configure_z_optimal_control_output(settings, instrument, z_channel, theory, applied, output=False)

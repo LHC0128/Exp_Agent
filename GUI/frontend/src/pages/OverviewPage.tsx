@@ -1,11 +1,34 @@
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
 
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
 import type { Device } from "../types/api";
 
 type Health = { status: string; hardware_busy: boolean };
+
+/** 实验系统四阶段流程带：参数配置 → 仪器采集 → 原始数据 → 离线分析。 */
+const PIPELINE_STAGES = [
+  { index: "01", label: "参数配置", detail: "GUI 提交强类型参数" },
+  { index: "02", label: "仪器采集", detail: "驱动层执行扫描" },
+  { index: "03", label: "原始数据", detail: "raw/ 落盘原始记录" },
+  { index: "04", label: "离线分析", detail: "results/ 产出图表" },
+];
+
+/** 架构图中的两类语义连线，先在图外说明，减少读图成本。 */
+const DIAGRAM_SEMANTICS = [
+  {
+    key: "safety",
+    title: "安全边界",
+    detail: "safety_limits.yaml 在输出前校验仪器量值。",
+  },
+  {
+    key: "compat",
+    title: "兼容路径",
+    detail: "LegacyScriptAdapter 只读接入 experiments/ 旧脚本。",
+  },
+];
+
+const ARCHITECTURE_URL = "/architecture/system-architecture.html";
 
 export function OverviewPage() {
   const [health, setHealth] = useState<Health>();
@@ -51,12 +74,45 @@ export function OverviewPage() {
           <small>设备库中的仪器</small>
         </div>
       </section>
-      <section className="section">
-        <div className="section-title"><div><small>QUICK START</small><h2>常用入口</h2></div></div>
-        <div className="quick-grid">
-          <NavLink to="/instruments"><b>01</b><h3>读取仪器状态</h3><p>从物理面板同步信号源与示波器参数。</p></NavLink>
-          <NavLink to="/tools"><b>02</b><h3>系统准备</h3><p>同步参考时钟并执行 Demod0 安全校相。</p></NavLink>
-          <NavLink to="/experiments"><b>03</b><h3>进入实验中心</h3><p>选择测量、标定、优化或硬件验证流程。</p></NavLink>
+      <section className="section architecture-workbench">
+        <div className="architecture-workbench-head">
+          <div>
+            <small>SYSTEM ARCHITECTURE</small>
+            <h2>实验系统架构</h2>
+            <p>从参数配置到结果产出的完整链路，含公共 lab_workflows 边界与 experiments/ 脚本边界。</p>
+          </div>
+          <a className="architecture-open" href={ARCHITECTURE_URL} target="_blank" rel="noreferrer">
+            在新页面打开
+          </a>
+        </div>
+        <div className="architecture-body">
+          <ol className="architecture-pipeline" aria-label="实验流程四阶段">
+            {PIPELINE_STAGES.map((stage) => (
+              <li key={stage.index} className="architecture-stage">
+                <b>{stage.index}</b>
+                <strong>{stage.label}</strong>
+                <small>{stage.detail}</small>
+              </li>
+            ))}
+          </ol>
+          <ul className="architecture-semantics" aria-label="架构图语义标识">
+            {DIAGRAM_SEMANTICS.map((item) => (
+              <li key={item.key} className={`architecture-semantic architecture-semantic-${item.key}`}>
+                <span className="architecture-semantic-line" aria-hidden="true" />
+                <strong>{item.title}</strong>
+                <small>{item.detail}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="architecture-frame">
+          <iframe
+            src={ARCHITECTURE_URL}
+            title="实验系统架构交互图"
+            loading="lazy"
+            sandbox="allow-scripts allow-same-origin allow-downloads allow-popups"
+            allow="clipboard-write"
+          />
         </div>
       </section>
     </>

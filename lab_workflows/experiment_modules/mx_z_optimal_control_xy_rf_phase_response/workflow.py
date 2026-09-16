@@ -33,7 +33,7 @@ from ..mx_keithley_6221_optimal_control_rf_sensitivity.phase import (
     fit_dispersion_phase_scan,
 )
 from ..mx_z_optimal_control_rf_sensitivity.phase import fit_phase_scan
-from ..mx_z_optimal_control_rf_sensitivity.sources import (
+from ...control_sources import (
     AppliedControlWaveform,
     TheoryControlSource,
     ZCalibrationSource,
@@ -724,7 +724,7 @@ def run(params: MxZOptimalControlXYRFPhaseResponseParams) -> Path:
         project_root=root,
     )
     source_files = (
-        save_corrected_control_source_snapshot(run_dir.raw, corrected, theory, applied)
+        save_corrected_control_source_snapshot(run_dir.raw, corrected, applied)
         if corrected is not None
         else save_optimal_control_source_snapshot(run_dir.raw, theory, calibration, applied)
     )

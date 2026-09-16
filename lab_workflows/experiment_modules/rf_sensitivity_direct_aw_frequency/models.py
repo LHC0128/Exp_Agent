@@ -31,7 +31,7 @@ class RFDirectAWFrequencyParams(ExperimentParams):
     phase_settle_time: float = parameter(default=0.1, external_name="PHASE_SETTLE_TIME", label="相位稳定等待", unit="s", group="advanced", minimum=0)
     arb_waveform_source: Literal["csv", "corrected_run"] = parameter(default="corrected_run", external_name="ARB_WAVEFORM_SOURCE", label="任意波来源", group="basic", options=(("csv", "实验 CSV 波形"), ("corrected_run", "闭环冻结波形")))
     arb_waveform_file: str = parameter(default="optimal_control_waveform.csv", external_name="ARB_WAVEFORM_FILE", label="任意波波形文件", group="basic", options_from_directory="experiments", options_pattern="*.csv")
-    corrected_control_source_run: str = parameter(default="obbv5", external_name="CORRECTED_CONTROL_SOURCE_RUN", label="闭环校正运行", group="basic", options_from_directory="data/Z_AW_Closed_Loop_Waveform_Correction", options_pattern="*", options_include_directories=True, description="任意波来源为闭环冻结波形时选择闭环实验结果。")
+    corrected_control_source_run: str = parameter(default="obbv5", external_name="CORRECTED_CONTROL_SOURCE_RUN", label="闭环校正运行", group="basic", options_from_directory="data/Z_AW_Closed_Loop_Waveform_Correction", options_pattern="*", options_include_directories=True, options_require_relative_file="results/corrected_control_waveform.npz", description="任意波来源为闭环冻结波形时选择闭环实验结果。")
     a_env_freq: float = parameter(default=250.0, external_name="A_ENV_FREQ", label="包络重复频率", unit="Hz", group="basic", minimum=0.001)
     xy_ctrl_k_hz_per_v: float = parameter(default=15076.0, external_name="XY_CTRL_K_HZ_PER_V", label="DirectAW 标定斜率 K", unit="Hz/V", group="advanced", minimum=0.001)
     xy_ctrl_b_hz: float = parameter(default=-218.0, external_name="XY_CTRL_B_HZ", label="DirectAW 标定截距 B", unit="Hz", group="advanced")

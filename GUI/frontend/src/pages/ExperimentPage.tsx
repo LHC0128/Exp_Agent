@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import { api } from "../api";
 import { ScopeCapturePage } from "./ScopeCapturePage";
 import { ZAWClosedLoopExperimentPage } from "./ZAWClosedLoopExperimentPage";
+import { MxYOptimalControlFrequencyPage } from "./MxYOptimalControlFrequencyPage";
 import { Field, SelectField } from "../components/FormFields";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
@@ -31,6 +32,7 @@ export function ExperimentPage() {
   const { experimentId } = useParams();
   if (experimentId === "scope-capture") return <ScopeCapturePage />;
   if (experimentId === "z-aw-closed-loop-waveform-correction") return <ZAWClosedLoopExperimentPage />;
+  if (experimentId === "mx-y-optimal-control-rf-frequency-response") return <MxYOptimalControlFrequencyPage />;
   return <GenericExperimentPage />;
 }
 

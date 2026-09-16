@@ -48,7 +48,7 @@ DEFINITION = ExperimentDefinition(
         "剩磁响应模式在所有退出路径把 Z 控制 Burst 相位恢复为 CONTROL_BURST_PHASE_DEG。",
         "所有结束路径关闭归零共同触发、Y RF 与 X 场，并恢复温控为 5 V DC + Output ON。",
         "Pump/Probe、Pump 载波/门控和 HF2 设置保留；正常结束只断开 TEC。",
-        "控制 CSV 换算后的完整 Z 电压范围、X DC 和 Y RF 的 offset±Vpp/2 包络均在输出前执行安全校验。",
+        "闭环冻结波形的完整 Z 电压范围、X DC 和 Y RF 的 offset±Vpp/2 包络均在输出前执行安全校验。",
     ),
     schema_version=MxZOptimalControlRFParams.schema_version,
     schema_provider=ADAPTER.schema,

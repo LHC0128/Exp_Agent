@@ -16,6 +16,7 @@ export type JobSummary = {
   status: JobStatus;
   stage: string;
   percent: number | null;
+  estimated_remaining_seconds?: number | null;
   message: string;
   created_at: string;
   started_at?: string | null;

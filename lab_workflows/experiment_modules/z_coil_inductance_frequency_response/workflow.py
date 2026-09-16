@@ -58,7 +58,14 @@ SCOPE_TRIGGER_COVERAGE_CYCLES = 2.0
 
 
 def build_frequency_axis(params: ZCoilInductanceFrequencyResponseParams) -> np.ndarray:
-    """构造线性频率轴，并在工作流外也提供可测试的确定性接口。"""
+    """构造频率轴，并在工作流外也提供可测试的确定性接口。
+
+    声明 ``frequency_axis()`` 的实验自行决定刻度（例如电流频响实验的对数轴）；
+    未声明的实验保持原有线性刻度，历史行为不变。
+    """
+    builder = getattr(params, "frequency_axis", None)
+    if callable(builder):
+        return np.asarray(builder(), dtype=float)
     return np.linspace(
         params.frequency_start_hz,
         params.frequency_stop_hz,
@@ -118,6 +125,12 @@ def _connect_devices(
     return devices, channels
 
 
+def _reference_channel(params: ZCoilInductanceFrequencyResponseParams) -> int | None:
+    """返回可选的驱动参考通道；未声明的实验保持既有双通道采集。"""
+    value = int(getattr(params, "scope_reference_channel", 0) or 0)
+    return value if value > 0 else None
+
+
 def _scope_config(
     params: ZCoilInductanceFrequencyResponseParams,
     frequency_hz: float,
@@ -125,28 +138,50 @@ def _scope_config(
     measured_scale_v_div: float,
     measured_offset_v: float,
 ) -> tuple[AcquisitionConfig, dict[str, Any]]:
-    """构造当前频率的双通道 SDS 单次触发采集配置。"""
+    """构造当前频率的 SDS 单次触发采集配置，按需启用驱动参考通道。"""
     period_s = 1.0 / float(frequency_hz)
-    waveform_duration_s = float(params.scope_cycles) * period_s
+    settle_cycles = int(getattr(params, "response_settle_cycles", 0))
+    margin_cycles = int(getattr(params, "capture_margin_cycles", 0))
+    # 声明丢弃周期的实验（相干启动后存在 L/R 瞬态）需要把丢弃窗口计入记录时长；
+    # 未声明的历史实验保持原有时长。
+    waveform_duration_s = (
+        settle_cycles + int(params.scope_cycles) + margin_cycles
+    ) * period_s
     trigger_duration_s = (
         SCOPE_TRIGGER_COVERAGE_CYCLES / float(params.trigger_frequency_hz)
     )
     duration_s = max(waveform_duration_s, trigger_duration_s)
+    centered_capture = bool(getattr(params, "scope_centered_capture", False))
+    if centered_capture:
+        # SDS 的 timebase_delay=0 把触发点放在记录窗中央，触发后的可用窗口
+        # 只有总时长的一半，因此必须先按所需触发后窗口翻倍。
+        duration_s *= 2.0
     sample_rate_sa_s = _sample_rate_for_frequency(params, frequency_hz)
-    channels = [
-        ChannelConfig(
-            number=channel,
-            enabled=channel
-            in {params.scope_measured_channel, params.scope_trigger_channel},
-            scale=measured_scale_v_div if channel == params.scope_measured_channel else 1.0,
+    reference_channel = _reference_channel(params)
+    reference_scale_v_div = float(
+        getattr(params, "scope_reference_scale_v_div", 1.0))
+    channels = []
+    for channel in range(1, 5):
+        enabled = channel in {
+            params.scope_measured_channel, params.scope_trigger_channel,
+        } or channel == reference_channel
+        if channel == params.scope_measured_channel:
+            scale, offset = measured_scale_v_div, measured_offset_v
+        elif channel == reference_channel:
+            # 驱动参考通道的幅度由设定值决定，使用固定量程，不参与自动量程。
+            scale, offset = reference_scale_v_div, -float(params.drive_offset_v)
+        else:
             # SDS offset 与显示波形中心符号相反；触发方波显示为 0--5 V。
-            offset=measured_offset_v if channel == params.scope_measured_channel else -2.5,
+            scale, offset = 1.0, -2.5
+        channels.append(ChannelConfig(
+            number=channel,
+            enabled=enabled,
+            scale=scale,
+            offset=offset,
             coupling=SCOPE_COUPLING,
             impedance=SCOPE_IMPEDANCE,
             probe=SCOPE_PROBE,
-        )
-        for channel in range(1, 5)
-    ]
+        ))
     config = AcquisitionConfig(
         sampling_rate=sample_rate_sa_s,
         sampling_time=duration_s,
@@ -166,12 +201,18 @@ def _scope_config(
         "requested_sample_rate_sa_s": sample_rate_sa_s,
         "maximum_sample_rate_sa_s": float(params.scope_sample_rate_sa_s),
         "requested_duration_s": duration_s,
+        "requested_after_trigger_s": max(waveform_duration_s, trigger_duration_s),
         "requested_waveform_duration_s": waveform_duration_s,
         "requested_trigger_coverage_s": trigger_duration_s,
         "trigger_coverage_cycles": SCOPE_TRIGGER_COVERAGE_CYCLES,
+        "centered_capture": centered_capture,
+        "response_settle_cycles": settle_cycles,
+        "capture_margin_cycles": margin_cycles,
         "requested_points": config.total_points,
         "period_s": period_s,
         "cycles": int(params.scope_cycles),
+        "reference_channel": reference_channel,
+        "reference_scale_v_div": reference_scale_v_div,
         "frequency_hz": float(frequency_hz),
         "measured_channel": int(params.scope_measured_channel),
         "trigger_channel": int(params.scope_trigger_channel),
@@ -276,6 +317,13 @@ def _capture_frame(
     acquirer: SDSAcquisition = devices["acquirer"]
     last_problem = "未开始采集"
     soft_reset_performed = False
+    capture_channels = [
+        params.scope_measured_channel,
+        params.scope_trigger_channel,
+    ]
+    reference_channel = _reference_channel(params)
+    if reference_channel is not None and reference_channel not in capture_channels:
+        capture_channels.append(reference_channel)
 
     for attempt in range(1, SCOPE_FRAME_RETRIES + 1):
         check_cancelled()
@@ -301,10 +349,7 @@ def _capture_frame(
                     config.horizontal_divisions,
                     trim_points=0,
                 )
-                for channel in (
-                    params.scope_measured_channel,
-                    params.scope_trigger_channel,
-                )
+                for channel in capture_channels
             }
         finally:
             try:
@@ -348,7 +393,7 @@ def _capture_frame(
                     "请检查 CH4 接线/量程，或确认共同触发输出正在运行"
                 )
             if trigger_edge_detected:
-                return {
+                frame = {
                     "time_s": measured_time,
                     "measured_voltage_v": measured_voltage,
                     "trigger_time_s": trigger_time,
@@ -356,6 +401,20 @@ def _capture_frame(
                     "measured_preamble": measured.preamble_dict,
                     "trigger_preamble": trigger.preamble_dict,
                 }
+                if reference_channel is None:
+                    return frame
+                reference = results[reference_channel]
+                reference_voltage = np.asarray(
+                    reference.voltage, dtype=float).reshape(-1)
+                if (
+                    reference_voltage.size != measured_voltage.size
+                    or not np.all(np.isfinite(reference_voltage))
+                ):
+                    last_problem = "SDS 驱动参考通道数据无效"
+                else:
+                    frame["reference_voltage_v"] = reference_voltage
+                    frame["reference_preamble"] = reference.preamble_dict
+                    return frame
 
         if attempt >= SCOPE_FRAME_RETRIES:
             break
@@ -500,32 +559,38 @@ def _save_capture(
         params.drive_amplitude_vpp,
         params.drive_offset_v,
     )
-    np.savez(
-        run_dir.root / relative,
-        time_s=np.asarray(frame["time_s"], dtype=float),
-        measured_voltage_v=np.asarray(frame["measured_voltage_v"], dtype=float),
-        trigger_time_s=np.asarray(frame["trigger_time_s"], dtype=float),
-        trigger_voltage_v=np.asarray(frame["trigger_voltage_v"], dtype=float),
-        theory_time_s=theory_time_s,
-        theory_voltage_v=theory_voltage_v,
-        trigger_edge_time_s=np.float64(edge_time),
-        frequency_hz=np.float64(frequency_hz),
-        drive_amplitude_vpp=np.float64(params.drive_amplitude_vpp),
-        drive_offset_v=np.float64(params.drive_offset_v),
-        phase_deg=np.float64(0.0),
-        actual_rate_sa_s=np.float64(frame["actual_rate_sa_s"]),
-        scale_used_v_div=np.float64(frame["scale_used_v_div"]),
-        offset_used_v=np.float64(frame["offset_used_v"]),
-        scope_config_json=np.array(
+    payload = {
+        "time_s": np.asarray(frame["time_s"], dtype=float),
+        "measured_voltage_v": np.asarray(frame["measured_voltage_v"], dtype=float),
+        "trigger_time_s": np.asarray(frame["trigger_time_s"], dtype=float),
+        "trigger_voltage_v": np.asarray(frame["trigger_voltage_v"], dtype=float),
+        "theory_time_s": theory_time_s,
+        "theory_voltage_v": theory_voltage_v,
+        "trigger_edge_time_s": np.float64(edge_time),
+        "frequency_hz": np.float64(frequency_hz),
+        "drive_amplitude_vpp": np.float64(params.drive_amplitude_vpp),
+        "drive_offset_v": np.float64(params.drive_offset_v),
+        "phase_deg": np.float64(0.0),
+        "actual_rate_sa_s": np.float64(frame["actual_rate_sa_s"]),
+        "scale_used_v_div": np.float64(frame["scale_used_v_div"]),
+        "offset_used_v": np.float64(frame["offset_used_v"]),
+        "scope_config_json": np.array(
             json.dumps(scope_snapshot, ensure_ascii=False, sort_keys=True)
         ),
-        measured_preamble_json=np.array(
+        "measured_preamble_json": np.array(
             json.dumps(frame["measured_preamble"], ensure_ascii=False)
         ),
-        trigger_preamble_json=np.array(
+        "trigger_preamble_json": np.array(
             json.dumps(frame["trigger_preamble"], ensure_ascii=False)
         ),
-    )
+    }
+    if "reference_voltage_v" in frame:
+        payload["reference_voltage_v"] = np.asarray(
+            frame["reference_voltage_v"], dtype=float)
+        payload["reference_preamble_json"] = np.array(
+            json.dumps(frame["reference_preamble"], ensure_ascii=False)
+        )
+    np.savez(run_dir.root / relative, **payload)
     return relative
 
 
@@ -625,6 +690,7 @@ def run_frequency_response(
     completion_label: str = "Z 线圈电感效应频率响应",
     capture_validator: Callable[[dict[str, Any]], None] | None = None,
     capture_guard_s: float | None = None,
+    drive_metadata: dict[str, Any] | None = None,
 ) -> Path:
     """执行可复用的 Z 正弦扫频和 SDS 双通道采集。"""
     root = find_project_root()
@@ -681,6 +747,7 @@ def run_frequency_response(
                 "offset_v": float(params.drive_offset_v),
                 "phase_deg": 0.0,
                 "burst_trigger": "external falling edge",
+                **(drive_metadata or {}),
             },
             trigger={
                 "source": "Time_sequence_2",
@@ -715,6 +782,12 @@ def run_frequency_response(
             float(frequencies[0]),
             output=False,
         )
+        # 每次运行仅初始化一次：首频使用用户初始量程，后续频点直接
+        # 继承上一频点自动调整结束后的量程和偏置。
+        auto_range = ScopeAutoRangeState(
+            scale_v_div=params.scope_initial_scale_v_div,
+            offset_v=0.0,
+        )
 
         for frequency_index, frequency in enumerate(frequencies):
             check_cancelled()
@@ -732,8 +805,8 @@ def run_frequency_response(
             config, scope_snapshot = _scope_config(
                 params,
                 frequency,
-                measured_scale_v_div=params.scope_initial_scale_v_div,
-                measured_offset_v=0.0,
+                measured_scale_v_div=auto_range.scale_v_div,
+                measured_offset_v=auto_range.offset_v,
             )
             devices["acquirer"].apply_config(config)
             scope = devices["scope"]
@@ -762,10 +835,10 @@ def run_frequency_response(
                 scope_configuration_last=scope_snapshot,
                 actual_rates={"scope_sa_s": scope_snapshot["actual_sample_rate_sa_s"]},
             )
-            auto_range = ScopeAutoRangeState(
-                scale_v_div=scope_snapshot["actual_initial_scale_v_div"],
-                offset_v=scope_snapshot["actual_initial_offset_v"],
-            )
+            # 用仪器实际接受的档位覆盖请求值，后续频点和重复采集
+            # 都从同一状态继续。
+            auto_range.scale_v_div = scope_snapshot["actual_initial_scale_v_div"]
+            auto_range.offset_v = scope_snapshot["actual_initial_offset_v"]
             _sleep_cancellable(params.frequency_settle_s)
             if not bool(getattr(params, "coherent_rearm", False)):
                 trigger_device.set_output(True, channel=trigger_channel)

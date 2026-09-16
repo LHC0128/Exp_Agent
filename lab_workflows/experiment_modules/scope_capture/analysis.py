@@ -142,8 +142,6 @@ def analyze(run_dir: Path) -> dict:
     axes[1].plot(frequency, density, lw=0.8)
     format_axis(axes[1], xlabel="Frequency (Hz)", ylabel="PSD (V²/Hz)")
     save_figure(fig, results / "waveform_psd.png")
-    import matplotlib.pyplot as plt
-    plt.close(fig)
     check_cancelled()
     # 最后发布显示文件；历史列表只把完整分析视为可绘制。
     _json(results / "display.json", display)

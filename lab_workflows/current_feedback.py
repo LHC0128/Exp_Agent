@@ -50,6 +50,34 @@ class CorrectedControlWaveform:
     coupling_calibration_sha256: str
     frequency_response_run: str
     frequency_response_sha256: str
+    # v3 冻结文件新增；旧格式读取时保持 0。
+    error_cutoff_hz: float = 0.0
+    inverse_regularization: float = 0.0
+
+
+# 电流频响标定的数据契约：对数扫频正弦协议，闭环按目标周期网格插值取用。
+AW_CURRENT_RESPONSE_FORMAT_VERSION = 4
+AW_CURRENT_RESPONSE_PROTOCOL = "coherent_swept_sine_current_response"
+AW_CURRENT_RESPONSE_COMMAND_REFERENCE = "50_ohm"
+# 相位参考必须是与电流同一帧的实测驱动电压；否则相位含相干启动时延，无法插值。
+AW_CURRENT_RESPONSE_PHASE_REFERENCE = "measured_drive_voltage"
+
+
+@dataclass(frozen=True, slots=True)
+class AWCurrentResponse:
+    """对数扫频测得的实际电流复响应，含逐点可靠性掩码。
+
+    频响不再与任何目标 AW 网格绑定：闭环在可靠频点之间按目标波形的周期
+    网格插值取用，不跨不可靠点、不外推。
+    """
+
+    run_name: str
+    response_path: Path
+    frequency_hz: np.ndarray
+    transfer_a_per_v: np.ndarray
+    reliable: np.ndarray
+    sense_resistor_ohm: float
+    response_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +298,83 @@ def load_current_frequency_response(
     )
 
 
+def load_aw_frequency_response(project_root: Path, run_name: str) -> AWCurrentResponse:
+    """读取相干扫频测得的实际电流复响应。
+
+    只接受对数扫频正弦协议（``format_version=4``、实测驱动电压相位参考）的标定。
+    逐谐波 AW 网格协议（``format_version=3``）把标定与某一个目标波形强绑定，
+    闭环不再支持，需要按当前协议重新标定。
+    """
+    run_name = _validated_run_name(run_name, "CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN")
+    path = (
+        Path(project_root)
+        / "data"
+        / "Z_Coil_Current_Frequency_Response"
+        / run_name
+        / "results"
+        / "frequency_response.npz"
+    ).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"未找到电流频响结果: {path}")
+    with np.load(path, allow_pickle=False) as data:
+        required = {
+            "format_version", "output_protocol", "command_voltage_reference",
+            "phase_reference", "frequency_hz", "transfer_real_a_per_v",
+            "transfer_imag_a_per_v", "reliable", "sense_resistor_ohm",
+        }
+        missing = sorted(required.difference(data.files))
+        if missing:
+            raise ValueError(f"电流频响缺少字段: {', '.join(missing)}")
+        format_version = int(np.asarray(data["format_version"]).reshape(()))
+        if format_version != AW_CURRENT_RESPONSE_FORMAT_VERSION:
+            raise ValueError(
+                "电流频响不是对数扫频正弦协议 "
+                f"format_version={AW_CURRENT_RESPONSE_FORMAT_VERSION} 文件"
+                f"（读到 {format_version}），请按当前协议重新标定")
+        protocol = str(np.asarray(data["output_protocol"]).reshape(()))
+        if protocol != AW_CURRENT_RESPONSE_PROTOCOL:
+            raise ValueError(f"电流频响输出协议不匹配: {protocol}")
+        reference = str(np.asarray(data["command_voltage_reference"]).reshape(()))
+        if reference != AW_CURRENT_RESPONSE_COMMAND_REFERENCE:
+            raise ValueError(
+                "电流频响命令电压基准必须是 "
+                f"{AW_CURRENT_RESPONSE_COMMAND_REFERENCE}")
+        phase_reference = str(np.asarray(data["phase_reference"]).reshape(()))
+        if phase_reference != AW_CURRENT_RESPONSE_PHASE_REFERENCE:
+            raise ValueError(
+                "电流频响的相位参考不是实测驱动电压，相位含相干启动时延，"
+                "不能用于闭环插值")
+        frequency = np.asarray(data["frequency_hz"], dtype=float).reshape(-1)
+        real = np.asarray(data["transfer_real_a_per_v"], dtype=float).reshape(-1)
+        imag = np.asarray(data["transfer_imag_a_per_v"], dtype=float).reshape(-1)
+        reliable = np.asarray(data["reliable"], dtype=bool).reshape(-1)
+        resistance = float(np.asarray(data["sense_resistor_ohm"]).reshape(()))
+    count = frequency.size
+    if not (count == real.size == imag.size == reliable.size):
+        raise ValueError("电流频响数组长度不一致")
+    if count < 2:
+        raise ValueError("电流频响至少需要两个扫频点")
+    if not np.all(np.isfinite(frequency)) or np.any(frequency <= 0.0):
+        raise ValueError("电流频响频率必须为正有限值")
+    if np.any(np.diff(frequency) <= 0.0):
+        raise ValueError("电流频响频率必须严格递增")
+    if np.count_nonzero(reliable) < 2:
+        raise ValueError("电流频响可靠频点不足 2 个")
+    if not np.all(np.isfinite(real[reliable])) or not np.all(np.isfinite(imag[reliable])):
+        raise ValueError("电流频响可靠频点包含非有限值")
+    if not np.isfinite(resistance) or resistance <= 0.0:
+        raise ValueError("电流频响的采样电阻无效")
+    return AWCurrentResponse(
+        run_name=str(run_name),
+        response_path=path,
+        frequency_hz=frequency,
+        transfer_a_per_v=real + 1j * imag,
+        reliable=reliable,
+        sense_resistor_ohm=resistance,
+        response_sha256=sha256_file(path),
+    )
+
+
 def load_corrected_control_waveform(
     project_root: Path,
     run_name: str,
@@ -314,12 +419,43 @@ def load_corrected_control_waveform(
         coupling_sha256 = str(
             np.asarray(data["coupling_calibration_sha256"]).reshape(())
         )
-        # 新静态闭环文件不依赖频响；旧格式仍严格读取历史来源字段。
-        if "format_version" in data.files and int(data["format_version"]) == 2:
+        # 集中兼容各历史格式：v3 响应滤波闭环、v2 静态闭环、更早的频域闭环。
+        version = int(data["format_version"]) if "format_version" in data.files else 1
+        if version not in {1, 2, 3, 4}:
+            raise ValueError("不支持的冻结波形格式版本")
+        error_cutoff_hz, inverse_regularization = 0.0, 0.0
+        if version >= 2:
             response_run, response_sha256 = "", ""
         else:
             response_run = str(np.asarray(data["frequency_response_run"]).reshape(()))
             response_sha256 = str(np.asarray(data["frequency_response_sha256"]).reshape(()))
+        if version in {3, 4}:
+            response_run = str(np.asarray(data["frequency_response_run"]).reshape(()))
+            response_sha256 = str(np.asarray(data["frequency_response_sha256"]).reshape(()))
+            error_cutoff_hz = float(np.asarray(data["error_cutoff_hz"]).reshape(()))
+            inverse_regularization = float(
+                np.asarray(data["inverse_regularization"]).reshape(()))
+            method = str(data["correction_method"]) if "correction_method" in data.files else "response_filtered_feedback"
+            needs_response = version == 3 and method != "time_domain"
+            if (needs_response and not response_run) or not 0.0 < inverse_regularization <= 1.0:
+                raise ValueError("冻结波形 v3 的响应来源或正则化参数无效")
+            if not np.isfinite(error_cutoff_hz) or error_cutoff_hz <= 0:
+                raise ValueError("冻结波形学习频率无效")
+            if version == 4:
+                required_v4 = {"final_reload_validated", "phase_reference", "identification_protocol", "measured_current_a", "relative_rms_error"}
+                if not required_v4.issubset(data.files):
+                    raise ValueError("冻结波形 v4 缺少独立重载验证字段")
+                if (method != "harmonic_jacobian" or not bool(data["final_reload_validated"])
+                        or str(data["phase_reference"]) != "CH4_falling_edge"
+                        or str(data["identification_protocol"]) != "central_difference_harmonic_jacobian"):
+                    raise ValueError("冻结波形 v4 未通过固定 CH4 参考的独立重载验证")
+                measured = np.asarray(data["measured_current_a"], dtype=float)
+                if measured.shape != target_current.shape or not np.all(np.isfinite(measured)):
+                    raise ValueError("冻结波形 v4 实测数组无效")
+                target_rms = np.sqrt(np.mean(target_current ** 2))
+                score = np.sqrt(np.mean((target_current - measured) ** 2)) / max(target_rms, 1e-30)
+                if target_rms == 0 or not np.isclose(score, float(data["relative_rms_error"]), rtol=1e-7, atol=1e-10):
+                    raise ValueError("冻结波形 v4 实测波形与验收指标不一致")
     sizes = {array.size for array in (time_s, omega, target_current, normalized, voltage)}
     if len(sizes) != 1 or time_s.size < 2:
         raise ValueError("校正波形数组长度不一致或点数不足")
@@ -368,6 +504,8 @@ def load_corrected_control_waveform(
         coupling_calibration_sha256=coupling_sha256,
         frequency_response_run=response_run,
         frequency_response_sha256=response_sha256,
+        error_cutoff_hz=error_cutoff_hz,
+        inverse_regularization=inverse_regularization,
     )
 
 

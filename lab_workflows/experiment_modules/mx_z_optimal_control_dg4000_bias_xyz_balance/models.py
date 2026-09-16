@@ -11,7 +11,7 @@ from ...current_feedback import load_corrected_control_waveform
 from ..mx_z_optimal_control_xyz_balance.models import (
     MxZOptimalControlXYZBalanceParams,
 )
-from ..mx_z_optimal_control_rf_sensitivity.sources import (
+from ...control_sources import (
     build_applied_control,
     corrected_control_contract,
     load_theory_control,

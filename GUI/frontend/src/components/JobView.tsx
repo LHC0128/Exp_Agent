@@ -1,10 +1,15 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 import { api } from "../api";
+import { formatEta } from "../formatEta";
 import type { Job, JobEvent, JobStatus } from "../types/api";
 import { Status } from "./Status";
 
 type JobUpdate = Dispatch<SetStateAction<Job | undefined>>;
+
+/** 事件 data 中的 ETA 值：仅接受有限数值，显式 null 表示清空。 */
+const etaFromData = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
 
 function isJobEvent(value: unknown): value is JobEvent {
   if (!value || typeof value !== "object") return false;
@@ -123,12 +128,17 @@ export function JobView({ job, onUpdate }: { job?: Job; onUpdate: JobUpdate }) {
         // queued 事件期间后端状态仍是 queued，详情页、全局横幅与
         // SSE 必须保持一致；其余进度事件说明任务已真正开始运行。
         const nextStatus = payload.stage === "queued" ? "queued" : "running";
+        // 只有事件显式携带 ETA 键时才更新，普通日志事件不覆盖已有 ETA。
+        const eta = payload.data && "estimated_remaining_seconds" in payload.data
+          ? etaFromData(payload.data.estimated_remaining_seconds)
+          : current.estimated_remaining_seconds;
         return {
           ...current,
           status: nextStatus,
           stage: payload.stage,
           message: payload.message,
           percent: payload.percent ?? current.percent,
+          estimated_remaining_seconds: eta,
           events,
         };
       });
@@ -157,6 +167,12 @@ export function JobView({ job, onUpdate }: { job?: Job; onUpdate: JobUpdate }) {
         <span>{Math.round(job.percent || 0)}%</span>
       </div>
       <div className="progress"><i style={{ width: `${job.percent || 0}%` }} /></div>
+      {job.stage === "analysis" && ["queued", "running"].includes(job.status) && (
+        <p className="job-eta">分析中</p>
+      )}
+      {job.stage !== "analysis" && formatEta(job.estimated_remaining_seconds) && (
+        <p className="job-eta">预计剩余 {formatEta(job.estimated_remaining_seconds)}</p>
+      )}
       {job.status === "completed" && <ResultView job={job} />}
       {job.status === "failed" && job.error && <div className="alert error">{job.error}</div>}
       <div className="log">

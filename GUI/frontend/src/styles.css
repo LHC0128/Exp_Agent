@@ -140,6 +140,8 @@ main { grid-column: 2; padding: 38px 44px 64px; max-width: 1480px; width: 100%; 
 .global-job-item strong { color: #6b5410; white-space: nowrap; }
 .global-job-message { flex: 1; min-width: 0; color: #8a7440; font-size: 12px; overflow-wrap: anywhere; }
 .global-job-percent { color: #6b5410; font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
+.global-job-eta { color: #6b5410; font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
+.job-eta { margin: -6px 0 0; color: #647773; font-size: 12px; font-variant-numeric: tabular-nums; }
 .global-job-item .compact { min-height: 28px; padding: 5px 10px; font-size: 11px; }
 @media (max-width: 650px) { .global-job-item { flex-wrap: wrap; }.global-job-message { flex-basis: 100%; order: 3; } }
 .job-result-table-wrap { margin: 0 0 14px; overflow-x: auto; }

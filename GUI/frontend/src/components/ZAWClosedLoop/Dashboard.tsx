@@ -4,7 +4,9 @@ import { useJobActivity } from "../JobActivity";
 import { JobView } from "../JobView";
 import type {
   ExperimentDefinition,
+  ExperimentSchema,
   Job,
+  ParameterLayout,
   ParameterValues,
   SchemaField,
 } from "../../types/api";
@@ -12,11 +14,18 @@ import { ParameterForm } from "./ParameterForm";
 import { MetricsCards } from "./MetricsCards";
 import type { ZAWClosedLoopRunSummary } from "./types";
 import { CONVERGENCE_PNG, WAVEFORM_COMPARISON_PNG } from "./images";
+import { sameParameterLayout, validatedParameterLayout } from "../../pages/experimentHelpers";
 
 type DashboardProps = {
   experimentId: string;
   definition: ExperimentDefinition;
   fields: SchemaField[];
+  layout: ParameterLayout;
+  /** 页面布局与磁盘保存的布局不一致时为 true。 */
+  layoutDirty: boolean;
+  onLayoutChange: (next: ParameterLayout) => void;
+  /** 后端回读确认布局已落盘后，把页面布局同步为磁盘布局。 */
+  onLayoutSaved: (next: ParameterLayout) => void;
   values: ParameterValues;
   setValues: (next: ParameterValues) => void;
   prefill: ParameterValues | null;
@@ -28,6 +37,10 @@ export function Dashboard({
   experimentId,
   definition,
   fields,
+  layout,
+  layoutDirty,
+  onLayoutChange,
+  onLayoutSaved,
   values,
   setValues,
   prefill,
@@ -121,12 +134,24 @@ export function Dashboard({
   const saveDefaults = async () => {
     setError("");
     setSavingDefaults(true);
+    setDefaultsStatus(undefined);
     try {
-      const result = await api<{ ok: boolean; message: string }>(
+      const result = await api<{ ok: boolean; message: string; schema: ExperimentSchema }>(
         `/api/experiments/${experimentId}/defaults`,
-        { method: "PUT", body: JSON.stringify({ parameters: values }) },
+        { method: "PUT", body: JSON.stringify({ parameters: values, parameter_layout: layout }) },
       );
-      setDefaultsStatus(result);
+      // 保存成功后回读 schema，确认磁盘布局与页面一致后再清除未保存标记。
+      const persisted = result.schema?.parameter_layout_saved
+        ? validatedParameterLayout(result.schema.fields, result.schema.parameter_layout)
+        : undefined;
+      if (!persisted) {
+        throw new Error("后端未确认参数分类已保存，请确认 GUI 后端已重启后重试");
+      }
+      if (!sameParameterLayout(persisted, layout)) {
+        throw new Error("后端回传的参数分类与当前布局不一致，请刷新页面后重试");
+      }
+      onLayoutSaved(persisted);
+      setDefaultsStatus({ ok: true, message: result.message });
     } catch (reason) {
       setDefaultsStatus({ ok: false, message: String(reason) });
     } finally {
@@ -140,16 +165,21 @@ export function Dashboard({
         <div className="zaw-panel-head"><small>PARAMETERS</small><h2>实验参数</h2></div>
         <ParameterForm
           fields={fields}
+          layout={layout}
           values={values}
           onChange={handleFieldChange}
+          onLayoutChange={onLayoutChange}
           disabled={jobActive || starting}
         />
+        {layoutDirty && (
+          <p className="zaw-layout-dirty" role="status">布局有未保存修改</p>
+        )}
         <button
           className="zaw-secondary"
           disabled={savingDefaults || jobActive || !fields.length}
           onClick={() => void saveDefaults()}
         >
-          {savingDefaults ? "保存中…" : "存为默认参数"}
+          {savingDefaults ? "保存中…" : "保存参数与布局"}
         </button>
         {defaultsStatus && (
           <div className={`alert ${defaultsStatus.ok ? "success" : "error"}`}>{defaultsStatus.message}</div>

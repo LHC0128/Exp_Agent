@@ -11,34 +11,34 @@ import numpy as np
 import yaml
 
 from ...common import WorkflowCancelled, find_project_root, load_mapping
+from ...control_sources import (
+    AppliedControlWaveform,
+    TheoryControlSource,
+    ZCalibrationSource,
+    build_applied_control,
+    corrected_control_contract,
+    load_theory_control,
+    load_z_calibration,
+)
+from ...current_feedback import load_corrected_control_waveform
 from ...experiment_runtime import check_cancelled, load_runtime_params
 from ...steps import (
     DeviceSession,
     configure_fixed_dc_field,
     create_run_directory,
     restore_main_field_state,
+    save_corrected_control_source_snapshot,
+    save_optimal_control_source_snapshot,
     snapshot_main_field_state,
     validate_z_trigger_mapping,
 )
 from ..mx_z_field_calibration.workflow import _initial_state_snapshot
-from ..mx_z_optimal_control_rf_sensitivity.sources import (
-    AppliedControlWaveform,
-    TheoryControlSource,
-    ZCalibrationSource,
-    build_applied_control,
-    load_theory_control,
-    load_z_calibration,
-)
 from ..mx_z_optimal_control_rf_sensitivity.workflow import (
     _acquire_noise,
     _configure_common_outputs,
-    _corrected_control_contract,
-    _save_corrected_source_snapshot,
-    _save_source_snapshot,
     safe_shutdown,
     _connect_control_devices as _base_connect_control_devices,
 )
-from ...current_feedback import load_corrected_control_waveform
 from .models import MxZOptimalControlXYNoiseSpectrumParams
 
 
@@ -66,7 +66,7 @@ def _load_control_sources(
             root,
             params.corrected_control_source_run,
         )
-        theory, applied = _corrected_control_contract(corrected)
+        theory, applied = corrected_control_contract(corrected)
         return corrected, theory, None, applied
     theory = load_theory_control(Path(params.control_results_root), params.control_version)
     calibration = load_z_calibration(root, params.z_calibration_source_run)
@@ -277,9 +277,14 @@ def run(params: MxZOptimalControlXYNoiseSpectrumParams) -> Path:
         project_root=root,
     )
     source_files = (
-        _save_corrected_source_snapshot(run_dir.raw, corrected, theory, applied)
+        save_corrected_control_source_snapshot(run_dir.raw, corrected, applied)
         if corrected is not None
-        else _save_source_snapshot(run_dir.raw, theory, calibration, applied)
+        else save_optimal_control_source_snapshot(
+            run_dir.raw,
+            theory,
+            calibration,
+            applied,
+        )
     )
     x_axis = params.x_axis()
     y_axis = params.y_axis()

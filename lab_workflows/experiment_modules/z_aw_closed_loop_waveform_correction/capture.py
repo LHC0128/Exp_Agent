@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from ...experiment_runtime import check_cancelled
+from ...current_feedback import validate_current_power
 from ..z_aw_waveform_scope_check.workflow import (
     _wait_for_scope_trigger, _wait_for_scope_stop, _scope_record_duration_s,
     _sleep_cancellable, SCOPE_CAPTURE_GUARD_S, SCOPE_STOP_TIMEOUT_S,
@@ -21,32 +22,9 @@ def capture_frame(devices, config, params) -> dict:
     frame["scale_used_v_div"] = float(scope.get_channel_scale(3))
     frame["offset_used_v"] = float(scope.get_channel_offset(3))
     return frame
-    '''
-    scope, acquirer = devices["scope"], devices["acquirer"]
-    scale = float(scope.get_channel_scale(3))
-    offset = float(scope.get_channel_offset(3))
-    # 先配置单次触发，再进入 RUN。RUN 后改模式会使部分 SDS 固件回到 STOP。
-    scope.set_trigger_mode("SINGle")
-    scope.trigger_run()
-    _wait_for_scope_trigger(scope, config.acquire_delay)
-    _sleep_cancellable(_scope_record_duration_s(scope, config) + SCOPE_CAPTURE_GUARD_S)
-    check_cancelled()
-    scope.trigger_stop()
-    _wait_for_scope_stop(scope, SCOPE_STOP_TIMEOUT_S)
-    measured, trigger = [acquirer.acquire_channel(
-        channel, config.timebase_scale, config.horizontal_divisions, trim_points=0,
-    ) for channel in (3, 4)]
-    return {
-        "time_s": np.asarray(measured.time, dtype=float),
-        "measured_voltage_v": np.asarray(measured.voltage, dtype=float),
-        "trigger_time_s": np.asarray(trigger.time, dtype=float),
-        "trigger_voltage_v": np.asarray(trigger.voltage, dtype=float),
-        "scale_used_v_div": scale, "offset_used_v": offset,
-    }
-    '''
 
 
-def validate_frame(frame: dict, params) -> None:
+def validate_frame(frame: dict, params, *, check_range: bool = True) -> None:
     """只在原始帧入口检查时间、采样和本帧量程，不重复检查派生数组。"""
     for time_key, voltage_key in (("time_s", "measured_voltage_v"),
                                   ("trigger_time_s", "trigger_voltage_v")):
@@ -60,25 +38,30 @@ def validate_frame(frame: dict, params) -> None:
             raise ValueError("SDS 时间轴必须递增且等间隔")
     actual_rate = 1 / float(np.median(np.diff(frame["time_s"])))
     if params.error_cutoff_hz > actual_rate / 2:
-        raise ValueError("误差截止频率超过示波器实际采样奈奎斯特频率")
+        raise ValueError("最高学习频率超过示波器实际采样奈奎斯特频率")
     frame["actual_rate_sa_s"] = actual_rate
     scale, offset = frame["scale_used_v_div"], frame["offset_used_v"]
     if not np.isfinite(scale) or scale <= 0 or not np.isfinite(offset):
         raise ValueError("SDS 量程回读无效")
     half = scale * params.scope_vertical_divisions / 2
     voltage = frame["measured_voltage_v"]
-    if voltage.min() < -offset - half or voltage.max() > -offset + half:
+    if check_range and (voltage.min() < -offset - half or voltage.max() > -offset + half):
         raise ValueError("SDS CH3 电压超出本帧采集量程")
 
 
-def capture_with_headroom(devices, config, params, path: Path) -> dict:
+def capture_with_headroom(devices, config, params, path: Path, *, sense_resistor_ohm=None) -> dict:
     """实测偏离初始理论量程时放大并重采；每个尝试先保存原始帧。"""
     scope = devices["scope"]
     for attempt in range(3):
         check_cancelled()
         frame = capture_frame(devices, config, params)
         np.savez(path.with_name(f"{path.stem}_attempt_{attempt:02d}.npz"), **frame)
-        validate_frame(frame, params)
+        validate_frame(frame, params, check_range=False)
+        if sense_resistor_ohm is not None:
+            validate_current_power(frame["measured_voltage_v"] / sense_resistor_ohm,
+                                   sense_resistor_ohm, params.sense_resistor_power_rating_w,
+                                   derating_fraction=params.sense_resistor_power_derating,
+                                   maximum_current_a=params.maximum_current_a)
         scale, offset = scope_range(frame["measured_voltage_v"], params.scope_vertical_divisions,
                                     params.scope_headroom_factor)
         current_scale = frame["scale_used_v_div"]

@@ -9,7 +9,7 @@ import numpy as np
 
 from ...common import find_project_root, validate_safety_limit
 from ...experiment_params import ExperimentParams, parameter
-from ..mx_z_optimal_control_rf_sensitivity.sources import (
+from ...control_sources import (
     build_applied_control,
     load_theory_control,
     load_z_calibration,

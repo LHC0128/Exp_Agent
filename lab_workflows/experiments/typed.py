@@ -14,11 +14,13 @@ import yaml
 from ..common import (
     CancellationToken,
     ProgressCallback,
+    ProgressEvent,
     WorkflowCancelled,
     emit,
     find_project_root,
 )
 from ..experiment_params import ExperimentParams
+from ..experiment_runtime import PROGRESS_PREFIX, PROGRESS_PROTOCOL_ENV, format_eta
 
 
 ParamsT = TypeVar("ParamsT", bound=ExperimentParams)
@@ -102,6 +104,8 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             environment["LAB_TYPED_PARAMETERS"] = json.dumps(parameters, ensure_ascii=False)
         if run_dir is not None:
             environment["LAB_RUN_DIR"] = str(run_dir.resolve())
+        if progress is not None:
+            environment[PROGRESS_PROTOCOL_ENV] = "jsonl"
         command = [
             str(self.root / "agent_exp_env" / "Scripts" / "python.exe"),
             "-u",
@@ -131,11 +135,23 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         try:
             for line in process.stdout:
                 message = line.rstrip()
-                if message:
+                if not message:
+                    continue
+                if message.startswith(PROGRESS_PREFIX):
+                    event = self._decode_progress(message[len(PROGRESS_PREFIX):])
+                    if event is None:
+                        continue
                     if progress is None:
-                        print(message, flush=True)
+                        eta = event.data.get("estimated_remaining_seconds")
+                        print(f"[{event.stage}] {event.message}"
+                              + (f"（预计剩余 {format_eta(eta)}）" if isinstance(eta, (int, float)) else ""),
+                              flush=True)
                     else:
-                        emit(progress, "running", message)
+                        progress(event)
+                elif progress is None:
+                    print(message, flush=True)
+                else:
+                    emit(progress, "running", message)
             return_code = process.wait()
         finally:
             cancel_path.unlink(missing_ok=True)
@@ -143,6 +159,21 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             raise WorkflowCancelled("实验已在安全检查点停止")
         if return_code:
             raise RuntimeError(f"模块 {module} 异常结束，退出码 {return_code}")
+
+    @staticmethod
+    def _decode_progress(raw: str) -> ProgressEvent | None:
+        """解码子进程 JSONL 进度行；畸形行按普通日志处理返回 None。"""
+        try:
+            payload = json.loads(raw)
+            return ProgressEvent(
+                stage=str(payload["stage"]),
+                message=str(payload["message"]),
+                percent=payload["percent"] if payload.get("percent") is None else float(payload["percent"]),
+                level=str(payload.get("level", "info")),
+                data=dict(payload.get("data") or {}),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def _latest_run(self, before: set[Path]) -> Path | None:
         base = self.root / "data" / self.data_type
@@ -230,7 +261,8 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         if not self.analysis_module:
             raise RuntimeError("该实验没有离线分析器")
         run_dir = Path(run_dir).resolve()
-        emit(progress, "analysis", f"分析 {run_dir.name}", 90)
+        # 分析阶段不再提供 ETA，显式清空采集阶段留下的剩余时间。
+        emit(progress, "analysis", f"分析 {run_dir.name}", 90, estimated_remaining_seconds=None)
         try:
             if cancellation and cancellation.cancelled:
                 raise WorkflowCancelled("自动分析已取消，原始采集数据保留")

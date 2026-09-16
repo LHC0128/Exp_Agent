@@ -130,6 +130,17 @@ class ZCoilInductanceFrequencyResponseParams(ExperimentParams):
         minimum=1000.0,
         description="用于每个频率点的 SDS 波形采集",
     )
+    scope_initial_scale_v_div: float = parameter(
+        default=1.0,
+        external_name="SCOPE_INITIAL_SCALE",
+        label="CH3 初始垂直量程",
+        unit="V/div",
+        group="basic",
+        minimum=0.000001,
+        description=(
+            "仅用于本次运行开始；切频继承上一频点量程和偏置，采集中继续自动调整。"
+        ),
+    )
     scope_measured_channel: int = parameter(
         default=3,
         external_name="SCOPE_MEASURED_CHANNEL",
@@ -145,14 +156,6 @@ class ZCoilInductanceFrequencyResponseParams(ExperimentParams):
         visible=False,
         minimum=1,
         maximum=4,
-    )
-    scope_initial_scale_v_div: float = parameter(
-        default=1.0,
-        external_name="SCOPE_INITIAL_SCALE",
-        label="示波器初始量程",
-        unit="V/div",
-        visible=False,
-        minimum=0.000001,
     )
     scope_scale_min_v_div: float = parameter(
         default=0.01,

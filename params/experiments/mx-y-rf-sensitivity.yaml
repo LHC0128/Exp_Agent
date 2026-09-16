@@ -2,7 +2,7 @@ schema_version: 2
 parameters:
   RUN_TAG: mx_y_rf
   LINEWIDTH_MODE: amplitude_equivalent
-  Y_RF_FREQUENCY_HZ: 12000.0
+  Y_RF_FREQUENCY_HZ: 40000.0
   Y_RF_AMP_START_VPP: -0.1
   Y_RF_AMP_STOP_VPP: 0.1
   Y_RF_AMP_POINTS: 41
@@ -39,8 +39,8 @@ parameters:
   PUMP_CARRIER_AMPLITUDE_VPP: 0.18
   PUMP_GATE_VOLTAGE_V: 5.0
   FIXED_PARAMS.Pump_laser_power: 0.1
-  FIXED_PARAMS.Probe_laser_power: 0.05
-  FIXED_PARAMS.main_magnetic_field: 1.19
+  FIXED_PARAMS.Probe_laser_power: 0.1
+  FIXED_PARAMS.main_magnetic_field: 9.285
   FIXED_PARAMS.temperature: 130.0
   FIT_R_SQUARED_MIN: 0.5
   FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX: 0.5

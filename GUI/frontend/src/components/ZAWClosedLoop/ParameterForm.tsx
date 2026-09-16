@@ -1,11 +1,19 @@
-import { useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import { Field, SelectField } from "../FormFields";
-import type { SchemaField, ParameterValues } from "../../types/api";
+import type {
+  ParameterGroup,
+  ParameterLayout,
+  ParameterValues,
+  SchemaField,
+} from "../../types/api";
 
 type ParameterFormProps = {
   fields: SchemaField[];
+  layout: ParameterLayout;
   values: ParameterValues;
   onChange: (field: SchemaField, value: ParameterValues[string]) => void;
+  /** 参数在基础/高级之间移动后回传完整布局；只改分类，不改参数值。 */
+  onLayoutChange: (next: ParameterLayout) => void;
   disabled: boolean;
 };
 
@@ -27,8 +35,10 @@ const parseArray = (text: string): number[] | null => {
   return parsed;
 };
 
-export function ParameterForm({ fields, values, onChange, disabled }: ParameterFormProps) {
-  const [advancedOpen, setAdvancedOpen] = useState(true);
+const parameterGroups: ParameterGroup[] = ["basic", "advanced"];
+
+export function ParameterForm({ fields, layout, values, onChange, onLayoutChange, disabled }: ParameterFormProps) {
+  const [activeGroup, setActiveGroup] = useState<ParameterGroup>("basic");
   const [arrayDrafts, setArrayDrafts] = useState<Record<string, string>>({});
 
   const renderInput = (field: SchemaField) => {
@@ -116,34 +126,111 @@ export function ParameterForm({ fields, values, onChange, disabled }: ParameterF
     );
   };
 
-  const basic = fields.filter((field) => field.group !== "advanced");
-  const advanced = fields.filter((field) => field.group === "advanced");
+  const fieldsByName = useMemo(
+    () => new Map(fields.map((field) => [field.name, field])),
+    [fields],
+  );
+  const groupedFields = useMemo(() => ({
+    basic: layout.basic.flatMap((name) => {
+      const field = fieldsByName.get(name);
+      return field ? [field] : [];
+    }),
+    advanced: layout.advanced.flatMap((name) => {
+      const field = fieldsByName.get(name);
+      return field ? [field] : [];
+    }),
+  }), [fieldsByName, layout]);
+
+  /** 把参数移动到目标分组末尾；参数键与取值都不变，只更新 parameter_layout。 */
+  const moveField = (name: string, target: ParameterGroup) => {
+    const source: ParameterGroup = target === "basic" ? "advanced" : "basic";
+    if (!layout[source].includes(name)) return;
+    const next: ParameterLayout = {
+      basic: [...layout.basic],
+      advanced: [...layout.advanced],
+    };
+    next[source] = next[source].filter((item) => item !== name);
+    next[target] = [...next[target], name];
+    onLayoutChange(next);
+  };
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const current = parameterGroups.indexOf(activeGroup);
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? parameterGroups.length - 1
+        : (current + (event.key === "ArrowRight" ? 1 : -1) + parameterGroups.length)
+          % parameterGroups.length;
+    const next = parameterGroups[nextIndex];
+    setActiveGroup(next);
+    event.currentTarget.parentElement
+      ?.querySelector<HTMLButtonElement>(`#zaw-parameter-tab-${next}`)
+      ?.focus();
+  };
+
+  const activeFields = groupedFields[activeGroup];
 
   return (
     <div className="zaw-parameter-form">
-      <div className="zaw-parameter-section">
-        <div className="zaw-parameter-section-head"><h3>基础参数</h3><span>{basic.length}</span></div>
-        <div className="zaw-parameter-list">{basic.map((field) => renderInput(field))}</div>
+      <div className="zaw-parameter-tabs" role="tablist" aria-label="参数分组">
+        {parameterGroups.map((group) => {
+          const selected = activeGroup === group;
+          const label = group === "basic" ? "基础参数" : "高级参数";
+          return (
+            <button
+              key={group}
+              id={`zaw-parameter-tab-${group}`}
+              type="button"
+              role="tab"
+              aria-label={`${label}，${groupedFields[group].length} 项`}
+              aria-selected={selected}
+              aria-controls={`zaw-parameter-panel-${group}`}
+              tabIndex={selected ? 0 : -1}
+              className={selected ? "active" : ""}
+              onClick={() => setActiveGroup(group)}
+              onKeyDown={handleTabKeyDown}
+            >
+              <span>{label}</span>
+              <strong>{groupedFields[group].length}</strong>
+            </button>
+          );
+        })}
       </div>
-      {advanced.length > 0 && (
-        <div className={`zaw-parameter-section ${advancedOpen ? "" : "collapsed"}`}>
-          <div className="zaw-parameter-section-head">
-            <h3>高级参数</h3>
-            <div className="zaw-parameter-section-actions">
-              <span>{advanced.length}</span>
-              <button
-                className="zaw-icon-button"
-                aria-label={advancedOpen ? "收起高级参数" : "展开高级参数"}
-                aria-expanded={advancedOpen}
-                onClick={() => setAdvancedOpen((current) => !current)}
-              >
-                {advancedOpen ? "▾" : "▸"}
-              </button>
+      <div
+        id={`zaw-parameter-panel-${activeGroup}`}
+        role="tabpanel"
+        aria-labelledby={`zaw-parameter-tab-${activeGroup}`}
+        className="zaw-parameter-panel"
+      >
+        {activeFields.length > 0
+          ? (
+            <div className="zaw-parameter-list">
+              {activeFields.map((field) => {
+                const target: ParameterGroup = activeGroup === "basic" ? "advanced" : "basic";
+                const targetLabel = target === "basic" ? "基础" : "高级";
+                return (
+                  <div className="zaw-parameter-item" key={field.name}>
+                    <button
+                      type="button"
+                      className="zaw-parameter-move"
+                      aria-label={`${field.label} 移至${targetLabel}参数`}
+                      title={`移至${targetLabel}参数`}
+                      disabled={disabled}
+                      onClick={() => moveField(field.name, target)}
+                    >
+                      移至{targetLabel}
+                    </button>
+                    {renderInput(field)}
+                  </div>
+                );
+              })}
             </div>
-          </div>
-          {advancedOpen && <div className="zaw-parameter-list">{advanced.map((field) => renderInput(field))}</div>}
-        </div>
-      )}
+          )
+          : <p className="zaw-empty">当前分组暂无可编辑参数。</p>}
+      </div>
       {fields.length === 0 && <p className="zaw-empty">暂无可编辑参数</p>}
     </div>
   );

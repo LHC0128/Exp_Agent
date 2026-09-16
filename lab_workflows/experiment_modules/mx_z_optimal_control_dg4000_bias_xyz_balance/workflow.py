@@ -39,7 +39,7 @@ from ..mx_z_field_calibration.workflow import (
     _connect_devices,
     _initial_state_snapshot,
 )
-from ..mx_z_optimal_control_rf_sensitivity.sources import (
+from ...control_sources import (
     build_applied_control,
     corrected_control_contract,
     load_theory_control,
@@ -443,7 +443,7 @@ def run(params: MxZOptimalControlDG4000BiasXYZBalanceParams) -> Path:
     )
     source_files = (
         save_corrected_control_source_snapshot(
-            run_dir.raw, corrected, theory, applied
+            run_dir.raw, corrected, applied
         )
         if corrected is not None
         else save_optimal_control_source_snapshot(

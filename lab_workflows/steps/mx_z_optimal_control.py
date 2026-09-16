@@ -114,32 +114,31 @@ def save_optimal_control_source_snapshot(
 
 def save_corrected_control_source_snapshot(
     raw_dir: Path,
-    corrected: Any,
-    theory: Any,
+    control: Any,
     applied: Any,
 ) -> list[str]:
     """保存闭环冻结波形、来源标定信息和实际下发波形。"""
     waveform_copy = raw_dir / "source_corrected_control_waveform.npz"
-    shutil.copy2(corrected.waveform_path, waveform_copy)
+    shutil.copy2(control.waveform_path, waveform_copy)
     manifest = {
         "control_waveform_source": "corrected_run",
-        "corrected_run": corrected.run_name,
-        "waveform_sha256": corrected.waveform_sha256,
+        "corrected_run": control.run_name,
+        "waveform_sha256": control.waveform_sha256,
         "current_coupling_calibration": {
-            "source_run": corrected.coupling_calibration_run,
-            "analysis_sha256": corrected.coupling_calibration_sha256,
+            "source_run": control.coupling_calibration_run,
+            "analysis_sha256": control.coupling_calibration_sha256,
         },
         "current_frequency_response": {
-            "source_run": corrected.frequency_response_run,
-            "frequency_response_sha256": corrected.frequency_response_sha256,
+            "source_run": control.frequency_response_run,
+            "frequency_response_sha256": control.frequency_response_sha256,
         },
         "applied_control": {
-            "repeat_frequency_hz": theory.repeat_frequency_hz,
+            "repeat_frequency_hz": control.repeat_frequency_hz,
             "amplitude_vpp": applied.amplitude_vpp,
             "offset_v": applied.offset_v,
             "minimum_v": applied.minimum_v,
             "maximum_v": applied.maximum_v,
-            "points": int(theory.time_s.size),
+            "points": int(control.time_s.size),
         },
     }
     (raw_dir / "source_manifest.yaml").write_text(
@@ -148,11 +147,11 @@ def save_corrected_control_source_snapshot(
     )
     np.savez(
         raw_dir / "applied_control_waveform.npz",
-        time_s=theory.time_s,
-        omega_ctrl_hz=theory.omega_ctrl_hz,
+        time_s=control.time_s,
+        omega_ctrl_hz=control.omega_ctrl_hz,
         voltage_v=applied.voltage_v,
         normalized=applied.normalized,
-        repeat_frequency_hz=np.float64(theory.repeat_frequency_hz),
+        repeat_frequency_hz=np.float64(control.repeat_frequency_hz),
         amplitude_vpp=np.float64(applied.amplitude_vpp),
         offset_v=np.float64(applied.offset_v),
     )

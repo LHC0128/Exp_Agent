@@ -7,6 +7,14 @@ export function defaultParameterLayout(fields: SchemaField[]): ParameterLayout {
   };
 }
 
+/** 按分组和组内顺序比较两个参数布局是否一致。 */
+export function sameParameterLayout(left: ParameterLayout, right: ParameterLayout): boolean {
+  return left.basic.length === right.basic.length
+    && left.advanced.length === right.advanced.length
+    && left.basic.every((name, index) => name === right.basic[index])
+    && left.advanced.every((name, index) => name === right.advanced[index]);
+}
+
 export function validatedParameterLayout(fields: SchemaField[], value: unknown): ParameterLayout | undefined {
   if (!value || typeof value !== "object") return undefined;
   const candidate = value as Partial<ParameterLayout>;

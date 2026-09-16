@@ -1,19 +1,13 @@
-"""静态电流标定、周期对齐和误差低通；不连接仪器。"""
+"""静态电流拟合、周期对齐和理论量程；纯数值，不连接仪器。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-
 import numpy as np
 from scipy.optimize import minimize_scalar
 
-from ...common import validate_safety_limit
-from ...current_feedback import CurrentCouplingCalibration, load_current_coupling_calibration
-from ..mx_z_optimal_control_rf_sensitivity.sources import (
-    AppliedControlWaveform, TheoryControlSource, load_theory_control,
-    resolve_control_results_root,
-)
+from ...current_feedback import CurrentCouplingCalibration
+from ...control_sources import applied_from_voltage
 
 
 @dataclass(frozen=True)
@@ -25,18 +19,6 @@ class StaticFit:
     r_squared: float
     voltage_v: np.ndarray
     current_a: np.ndarray
-
-
-@dataclass(frozen=True)
-class PreparedFeedback:
-    """本次运行固定的目标、标定和初始命令。"""
-
-    theory: TheoryControlSource
-    calibration: CurrentCouplingCalibration
-    fit: StaticFit
-    target_current_a: np.ndarray
-    target_rms_a: float
-    initial: AppliedControlWaveform
 
 
 def scope_range(voltage: np.ndarray, divisions: int, headroom: float) -> tuple[float, float]:
@@ -71,58 +53,6 @@ def fit_static_current(calibration: CurrentCouplingCalibration) -> StaticFit:
     residual = current - (gain * voltage + intercept)
     r_squared = 1 - np.sum(residual ** 2) / np.sum((current - current.mean()) ** 2)
     return StaticFit(float(gain), float(intercept), float(r_squared), voltage, current)
-
-
-def applied_from_voltage(
-    voltage: np.ndarray, *, amplitude_vpp: float, offset_v: float,
-) -> AppliedControlWaveform:
-    """在命令产生处检查固定幅度范围，硬件写入安全检查由输出步骤负责。"""
-    if not np.all(np.isfinite(voltage)):
-        raise ValueError("命令电压包含非有限值")
-    lower, upper = offset_v - amplitude_vpp / 2, offset_v + amplitude_vpp / 2
-    minimum, maximum = float(voltage.min()), float(voltage.max())
-    if minimum < lower or maximum > upper:
-        raise ValueError(
-            f"命令电压 [{minimum:.9g}, {maximum:.9g}] V 超出 DG 范围 "
-            f"[{lower:.9g}, {upper:.9g}] V"
-        )
-    return AppliedControlWaveform(
-        voltage_v=voltage, normalized=(voltage - offset_v) / (amplitude_vpp / 2),
-        amplitude_vpp=amplitude_vpp, offset_v=offset_v,
-        minimum_v=minimum, maximum_v=maximum,
-        output_minimum_v=lower, output_maximum_v=upper,
-        max_abs_normalized=float(np.max(np.abs((voltage - offset_v) / (amplitude_vpp / 2)))),
-    )
-
-
-def prepare_feedback(root: Path, params) -> PreparedFeedback:
-    """无硬件预检和运行共用的数据准备入口，每次调用只加载一次来源。"""
-    theory = load_theory_control(resolve_control_results_root(params.control_source_set), params.control_version)
-    calibration = load_current_coupling_calibration(root, params.current_coupling_calibration_source_run)
-    fit = fit_static_current(calibration)
-    target = params.control_scale * theory.omega_ctrl_hz / calibration.slope_hz_per_a
-    target_rms = rms(target)
-    if target_rms == 0:
-        raise ValueError("全零目标无法定义相对 RMS 误差")
-    command_nyquist = 0.5 / float(np.median(np.diff(theory.time_s)))
-    if params.error_cutoff_hz > command_nyquist:
-        raise ValueError("误差低通截止频率超过命令网格奈奎斯特频率")
-    scope_range(target * calibration.sense_resistor_ohm, params.scope_vertical_divisions,
-                params.scope_headroom_factor)
-    for value in (-params.z_aw_output_vpp / 2, params.z_aw_output_vpp / 2):
-        validate_safety_limit("Z_magnetic_field", value)
-    initial = applied_from_voltage(
-        (target - fit.intercept_a) / fit.gain_a_per_v,
-        amplitude_vpp=params.z_aw_output_vpp, offset_v=0.0,
-    )
-    return PreparedFeedback(theory, calibration, fit, target, target_rms, initial)
-
-
-def periodic_lowpass(error: np.ndarray, dt: float, cutoff_hz: float) -> np.ndarray:
-    """周期零相位低通保留直流和截止频率处的离散频点。"""
-    frequencies = np.fft.rfftfreq(error.size, d=dt)
-    mask = (frequencies <= cutoff_hz) | np.isclose(frequencies, cutoff_hz, rtol=1e-12, atol=0)
-    return np.fft.irfft(np.fft.rfft(error) * mask, n=error.size)
 
 
 def average_complete_cycles(

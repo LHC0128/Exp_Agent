@@ -147,6 +147,21 @@ class ZAWClosedLoopRunSummary(BaseModel):
     artifacts: dict[str, str] = Field(default_factory=dict)
 
 
+class MxYOptimalControlFrequencyRunSummary(BaseModel):
+    """Mx Y 最优控制 RF 频率响应单次运行摘要，供专属 GUI 历史 Tab 渲染。"""
+
+    run_id: str
+    timestamp: str
+    run_tag: str
+    completion_status: str
+    comparison_enabled: bool
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    calibration: dict[str, Any] = Field(default_factory=dict)
+    optimal_response_metadata: dict[str, Any] = Field(default_factory=dict)
+    constant_response_metadata: dict[str, Any] = Field(default_factory=dict)
+    artifacts: dict[str, str] = Field(default_factory=dict)
+
+
 class ParameterLayoutBody(BaseModel):
     basic: list[str]
     advanced: list[str]
@@ -927,6 +942,15 @@ def _create_analysis_job(run_id: str, body: AnalysisBody):
     return job.public()
 
 
+MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID = "mx-y-optimal-control-rf-frequency-response"
+
+
+@app.get(f"/api/experiments/{MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}/runs")
+def mx_y_optimal_control_frequency_runs(limit: int = 50, offset: int = 0):
+    """新格式运行列表；旧格式运行不进入专属历史。"""
+    return _mx_y_optimal_control_frequency_runs(limit, offset)
+
+
 @app.get("/api/runs/{experiment_id}/{run_id}/artifacts/{name}")
 def artifact(experiment_id: str, run_id: str, name: str):
     run_dir = _run_dir(experiment_id, run_id)
@@ -1025,12 +1049,102 @@ def _build_zaw_closed_loop_summary(experiment_id: str, run_id: str) -> ZAWClosed
     )
 
 
+@app.get(
+    f"/api/experiments/{MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}/runs/{{run_id}}/summary",
+    response_model=MxYOptimalControlFrequencyRunSummary,
+)
+def mx_y_optimal_control_frequency_run_summary(run_id: str):
+    """Mx Y 最优控制 RF 频率响应专属摘要端点。"""
+    return _build_mx_y_optimal_control_frequency_summary(
+        MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID,
+        run_id,
+    )
+
+
 @app.get("/api/experiments/{experiment_id}/runs/{run_id}/summary", response_model=ZAWClosedLoopRunSummary)
 def experiment_run_summary(experiment_id: str, run_id: str):
-    """专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。"""
+    """Z 闭环专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。"""
     if experiment_id != ZAW_CLOSED_LOOP_ID:
         raise HTTPException(404, "该实验未提供专属摘要端点")
     return _build_zaw_closed_loop_summary(experiment_id, run_id)
+
+
+def _build_mx_y_optimal_control_frequency_summary(
+    experiment_id: str,
+    run_id: str,
+) -> MxYOptimalControlFrequencyRunSummary:
+    """只读取运行配置与已有分析结果，不重算采集数据。"""
+    _validate_run_identifier(run_id)
+    run_dir = _run_dir(experiment_id, run_id)
+    config = _read_yaml(run_dir / "experiment_config.yaml")
+    if not config:
+        raise HTTPException(404, "运行配置不存在")
+    analysis = _read_yaml(run_dir / "results" / "analysis.yaml") or {}
+    parameters = config.get("parameters")
+    if not isinstance(parameters, dict):
+        parameters = {}
+    comparison = config.get("comparison")
+    if not isinstance(comparison, dict):
+        comparison = {}
+    optimal = analysis.get("optimal_control")
+    constant = analysis.get("constant_control")
+    artifacts_dir = run_dir / "results"
+    artifacts: dict[str, str] = {}
+    try:
+        if artifacts_dir.is_dir():
+            artifacts = {
+                item.name: f"/api/runs/{experiment_id}/{run_id}/artifacts/{item.name}"
+                for item in artifacts_dir.iterdir()
+                if _is_existing_file(item) and item.suffix.lower() == ".png"
+            }
+    except OSError:
+        artifacts = {}
+    return MxYOptimalControlFrequencyRunSummary(
+        run_id=run_id,
+        timestamp=str(config.get("timestamp", "")),
+        run_tag=str(parameters.get("RUN_TAG", "")),
+        completion_status=str(config.get("completion_status", "unknown")),
+        comparison_enabled=bool(comparison.get("enabled")),
+        parameters=parameters,
+        calibration=comparison,
+        optimal_response_metadata=optimal if isinstance(optimal, dict) else {},
+        constant_response_metadata=constant if isinstance(constant, dict) else {},
+        artifacts=artifacts,
+    )
+
+
+def _mx_y_optimal_control_frequency_runs(page_size: int, offset: int) -> dict[str, Any]:
+    """只列出新格式运行：schema_version >= 2 且两个新数据文件齐备。"""
+    definition = _experiment_or_404(MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID)
+    base = (ROOT / "data" / definition.data_type).resolve()
+    runs: list[dict[str, Any]] = []
+    if base.is_dir():
+        for path in base.iterdir():
+            if not path.is_dir():
+                continue
+            config = _read_yaml(path / "experiment_config.yaml")
+            if not config or int(config.get("schema_version", 1) or 1) < 2:
+                continue
+            if not (path / "raw" / "optimal_control_phase_frequency_scan.npz").is_file():
+                continue
+            if not (path / "results" / "analysis.yaml").is_file():
+                continue
+            runs.append(
+                {
+                    "run_id": path.name,
+                    "timestamp": str(config.get("timestamp", "")),
+                    "run_tag": str(config.get("parameters", {}).get("RUN_TAG", "")),
+                    "completion_status": str(config.get("completion_status", "unknown")),
+                    "comparison_enabled": bool(config.get("comparison", {}).get("enabled")),
+                }
+            )
+    runs.sort(key=lambda item: item["run_id"], reverse=True)
+    return {
+        "total": len(runs),
+        "offset": offset,
+        "limit": page_size,
+        "runs": runs[offset:offset + page_size],
+    }
 
 
 FRONTEND = ROOT / "GUI" / "frontend" / "dist"

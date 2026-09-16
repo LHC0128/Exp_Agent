@@ -8,13 +8,13 @@ import numpy as np
 
 from ...common import validate_safety_limit
 from ...experiment_params import parameter
-from ..mx_z_optimal_control_rf_sensitivity.models import (
-    MxZOptimalControlRFParams,
-)
+from ..mx_z_control_params import MxZControlSourceSelectionParams
 
 
 @dataclass(slots=True)
-class MxZOptimalControlXYRFSensitivityParams(MxZOptimalControlRFParams):
+class MxZOptimalControlXYRFSensitivityParams(
+    MxZControlSourceSelectionParams
+):
     """固定一次 RF 校相，并在 XY DC 补偿网格上测量 RF 灵敏度。"""
 
     schema_version = 1
@@ -136,7 +136,7 @@ class MxZOptimalControlXYRFSensitivityParams(MxZOptimalControlRFParams):
         return []
 
     def validate_model(self) -> list[str]:
-        errors = MxZOptimalControlRFParams.validate_model(self)
+        errors = MxZControlSourceSelectionParams.validate_model(self)
         errors.extend(
             self._validate_axis(
                 "X 补偿偏置",

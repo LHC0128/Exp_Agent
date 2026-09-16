@@ -16,7 +16,7 @@ from ...current_feedback import (
     validate_sense_resistor,
 )
 from ...experiment_params import parameter
-from ..mx_z_optimal_control_rf_sensitivity.sources import load_theory_control
+from ...control_sources import load_theory_control
 from ..z_aw_waveform_scope_check.models import ZAWWaveformScopeCheckParams
 
 

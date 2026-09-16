@@ -45,7 +45,7 @@ class ScopeCaptureParams(ExperimentParams):
         group="basic",
     )
     disable_temperature_control: bool = parameter(
-        default=False,
+        default=True,
         external_name="disable_temperature_control",
         label="关闭温控采集",
         group="basic",

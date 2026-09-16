@@ -15,11 +15,8 @@ from ...current_feedback import (
     validate_current_power,
 )
 from ...experiment_runtime import load_runtime_params
-from ..mx_z_optimal_control_rf_sensitivity.sources import load_theory_control
-from ..mx_z_optimal_control_rf_sensitivity.workflow import (
-    _corrected_control_contract,
-    _save_corrected_source_snapshot,
-)
+from ...control_sources import corrected_control_contract, load_theory_control
+from ...steps import save_corrected_control_source_snapshot
 from ..z_aw_waveform_scope_check.workflow import run_scope_check
 from .models import ZAWCurrentWaveformScopeCheckParams
 
@@ -40,11 +37,10 @@ def run(params: ZAWCurrentWaveformScopeCheckParams) -> Path:
         corrected = load_corrected_control_waveform(
             find_project_root(), params.corrected_control_source_run
         )
-        theory_override, applied_override = _corrected_control_contract(corrected)
-        snapshot_writer = lambda raw_dir: _save_corrected_source_snapshot(
+        theory_override, applied_override = corrected_control_contract(corrected)
+        snapshot_writer = lambda raw_dir: save_corrected_control_source_snapshot(
             raw_dir,
             corrected,
-            theory_override,
             applied_override,
         )
         target_control_scale = 1.0

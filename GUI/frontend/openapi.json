@@ -1,4 +1,4 @@
-{
+﻿{
   "openapi": "3.1.0",
   "info": {
     "title": "Bell-Bloom 实验控制台",
@@ -2076,6 +2076,55 @@
         }
       }
     },
+    "/api/experiments/mx-y-optimal-control-rf-frequency-response/runs": {
+      "get": {
+        "summary": "Mx Y Optimal Control Frequency Runs",
+        "description": "新格式运行列表；旧格式运行不进入专属历史。",
+        "operationId": "mx_y_optimal_control_frequency_runs_api_experiments_mx_y_optimal_control_rf_frequency_response_runs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runs/{experiment_id}/{run_id}/artifacts/{name}": {
       "get": {
         "summary": "Artifact",
@@ -2131,10 +2180,50 @@
         }
       }
     },
+    "/api/experiments/mx-y-optimal-control-rf-frequency-response/runs/{run_id}/summary": {
+      "get": {
+        "summary": "Mx Y Optimal Control Frequency Run Summary",
+        "description": "Mx Y 最优控制 RF 频率响应专属摘要端点。",
+        "operationId": "mx_y_optimal_control_frequency_run_summary_api_experiments_mx_y_optimal_control_rf_frequency_response_runs__run_id__summary_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MxYOptimalControlFrequencyRunSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/experiments/{experiment_id}/runs/{run_id}/summary": {
       "get": {
         "summary": "Experiment Run Summary",
-        "description": "专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。",
+        "description": "Z 闭环专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。",
         "operationId": "experiment_run_summary_api_experiments__experiment_id__runs__run_id__summary_get",
         "parameters": [
           {
@@ -4904,6 +4993,67 @@
           "pwm_duty_deviation"
         ],
         "title": "ModulationSnapshot"
+      },
+      "MxYOptimalControlFrequencyRunSummary": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "run_tag": {
+            "type": "string",
+            "title": "Run Tag"
+          },
+          "completion_status": {
+            "type": "string",
+            "title": "Completion Status"
+          },
+          "comparison_enabled": {
+            "type": "boolean",
+            "title": "Comparison Enabled"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "calibration": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Calibration"
+          },
+          "optimal_response_metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Optimal Response Metadata"
+          },
+          "constant_response_metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Constant Response Metadata"
+          },
+          "artifacts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Artifacts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "timestamp",
+          "run_tag",
+          "completion_status",
+          "comparison_enabled"
+        ],
+        "title": "MxYOptimalControlFrequencyRunSummary",
+        "description": "Mx Y 最优控制 RF 频率响应单次运行摘要，供专属 GUI 历史 Tab 渲染。"
       },
       "ParameterLayoutBody": {
         "properties": {

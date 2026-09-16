@@ -31,9 +31,21 @@ def parameter(
     options_from_directory: str | None = None,
     options_pattern: str = "*",
     options_include_directories: bool = False,
+    options_require_relative_file: str | None = None,
+    options_require_analysis: str | None = None,
+    options_require_experiment_id: str | None = None,
+    active_when: str | None = None,
     read_only: bool = False,
 ) -> Field[Any]:
-    """声明模型字段及其稳定外部名称和 GUI 元数据。"""
+    """声明模型字段及其稳定外部名称和 GUI 元数据。
+
+    ``options_include_directories`` 为真时目录本身也可以成为选项，但必须通过
+    ``options_require_relative_file`` 或 ``options_require_analysis`` 声明资格条件，
+    避免把不完整的运行目录混入下拉框。
+
+    ``active_when`` 是另一个布尔字段的外部名；该字段为假时本字段不参与校验，
+    用于「只在一项功能启用时才有意义」的参数。
+    """
     metadata = {
         "external_name": external_name,
         "label": label,
@@ -48,6 +60,10 @@ def parameter(
         "options_from_directory": options_from_directory,
         "options_pattern": options_pattern,
         "options_include_directories": options_include_directories,
+        "options_require_relative_file": options_require_relative_file,
+        "options_require_analysis": options_require_analysis,
+        "options_require_experiment_id": options_require_experiment_id,
+        "active_when": active_when,
         "read_only": read_only,
     }
     kwargs: dict[str, Any] = {"metadata": metadata}
@@ -130,6 +146,30 @@ def schema_field_type(annotation: Any) -> str:
     if annotation is float:
         return "number"
     return "string"
+
+
+def _run_directory_qualifies(
+    directory: Path,
+    metadata: dict[str, Any],
+) -> bool:
+    """按声明的资格条件判断一个运行目录能否进入下拉选项。"""
+    required_file = metadata.get("options_require_relative_file")
+    if required_file and not (directory / str(required_file)).is_file():
+        return False
+    analysis = metadata.get("options_require_analysis")
+    if not analysis:
+        return True
+    path = directory / str(analysis)
+    if not path.is_file():
+        return False
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return False
+    expected_id = metadata.get("options_require_experiment_id")
+    if expected_id and payload.get("experiment_id") != expected_id:
+        return False
+    return payload.get("success") is True
 
 
 class ExperimentParams:
@@ -219,10 +259,17 @@ class ExperimentParams:
         root = project_root or find_project_root()
         errors: list[str] = []
         values = asdict(self)
+        by_external = {
+            str(item.metadata["external_name"]): values[item.name] for item in fields(self)
+        }
         for item in fields(self):
             value = values[item.name]
             metadata = item.metadata
             external = str(metadata["external_name"])
+            gate = metadata.get("active_when")
+            if gate and not by_external.get(str(gate)):
+                # 功能未启用时该字段不参与校验（对照关闭即属此类）。
+                continue
             minimum = metadata.get("minimum")
             maximum = metadata.get("maximum")
             if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -253,21 +300,27 @@ class ExperimentParams:
         directory = (root / str(source)).resolve()
         if directory != root and root not in directory.parents:
             raise ValueError(f"选项目录必须位于项目内: {source}")
+        if not directory.is_dir():
+            return []
         pattern = str(item.metadata.get("options_pattern", "*"))
+        include_directories = bool(
+            item.metadata.get("options_include_directories", False)
+        )
         candidates = (
             [path for path in directory.iterdir() if fnmatch.fnmatch(path.name, pattern)]
-            if bool(item.metadata.get("options_include_directories", False))
+            if include_directories
             else list(directory.glob(pattern))
         )
         return [
             (path.name, path.name)
             for path in sorted(candidates, key=lambda value: value.name.lower())
-            if path.is_file() or (
-                path.is_dir()
-                and bool(item.metadata.get("options_include_directories", False))
-                and (path / "results" / "corrected_control_waveform.npz").is_file()
+            if path.is_file()
+            or (
+                include_directories
+                and path.is_dir()
+                and _run_directory_qualifies(path, item.metadata)
             )
-        ] if directory.is_dir() else []
+        ]
 
     def schema(self, project_root: Path | None = None) -> dict[str, Any]:
         root = project_root or find_project_root()

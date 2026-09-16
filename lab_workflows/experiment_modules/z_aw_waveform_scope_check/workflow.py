@@ -34,7 +34,7 @@ from ...steps import (
     validate_z_trigger_mapping,
 )
 from ...steps.routed_signal_generator import connect_signal_generator_routes
-from ..mx_z_optimal_control_rf_sensitivity.sources import (
+from ...control_sources import (
     build_applied_control,
     load_theory_control,
     load_z_calibration,

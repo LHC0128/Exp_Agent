@@ -8,8 +8,14 @@ import { ZAW_CLOSED_LOOP_EXPERIMENT_ID } from "../components/ZAWClosedLoop/image
 import type {
   ExperimentDefinition,
   ExperimentSchema,
+  ParameterLayout,
   ParameterValues,
 } from "../types/api";
+import {
+  defaultParameterLayout,
+  sameParameterLayout,
+  validatedParameterLayout,
+} from "./experimentHelpers";
 import "../pages/zawClosedLoop.css";
 
 type Tab = "run" | "history";
@@ -18,6 +24,9 @@ export function ZAWClosedLoopExperimentPage() {
   const [tab, setTab] = useState<Tab>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition | undefined>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
+  // 页面统一维护可变的参数布局；savedLayout 是磁盘上最近一次确认的布局，用于标记未保存修改。
+  const [layout, setLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
+  const [savedLayout, setSavedLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
   const [values, setValues] = useState<ParameterValues>({});
   const [loadError, setLoadError] = useState("");
   const [prefill, setPrefill] = useState<ParameterValues | null>(null);
@@ -27,6 +36,8 @@ export function ZAWClosedLoopExperimentPage() {
     let disposed = false;
     setDefinition(undefined);
     setFields([]);
+    setLayout({ basic: [], advanced: [] });
+    setSavedLayout({ basic: [], advanced: [] });
     setValues({});
     setLoadError("");
     Promise.all([
@@ -37,6 +48,12 @@ export function ZAWClosedLoopExperimentPage() {
         if (disposed) return;
         setDefinition(def);
         setFields(schema.fields);
+        const persisted = schema.parameter_layout_saved
+          ? validatedParameterLayout(schema.fields, schema.parameter_layout)
+          : undefined;
+        const initialLayout = persisted ?? defaultParameterLayout(schema.fields);
+        setLayout(initialLayout);
+        setSavedLayout(initialLayout);
         const initial = Object.fromEntries(
           schema.fields.map((field) => [field.name, field.default]),
         ) as ParameterValues;
@@ -52,6 +69,9 @@ export function ZAWClosedLoopExperimentPage() {
     () => definition?.description ?? "读取实验定义与默认参数。",
     [definition],
   );
+
+  // 参数在基础/高级之间移动后布局与磁盘不一致时，提示用户手动保存。
+  const layoutDirty = fields.length > 0 && !sameParameterLayout(layout, savedLayout);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -101,6 +121,13 @@ export function ZAWClosedLoopExperimentPage() {
               experimentId={ZAW_CLOSED_LOOP_EXPERIMENT_ID}
               definition={definition}
               fields={fields}
+              layout={layout}
+              layoutDirty={layoutDirty}
+              onLayoutChange={setLayout}
+              onLayoutSaved={(persisted) => {
+                setLayout(persisted);
+                setSavedLayout(persisted);
+              }}
               values={values}
               setValues={setValues}
               prefill={prefill}

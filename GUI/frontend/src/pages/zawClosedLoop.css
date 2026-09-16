@@ -154,48 +154,132 @@
 .zaw-parameter-form {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
-.zaw-parameter-section {
+.zaw-parameter-tabs {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid #dce4e2;
+  border-radius: 10px;
+  background: #f3f7f6;
 }
 
-.zaw-parameter-section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #eef3f1;
-  padding-bottom: 6px;
-}
-
-.zaw-parameter-section-head h3 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: #1c3a37;
-  letter-spacing: 0.02em;
-}
-
-.zaw-parameter-section-head span {
-  font-size: 11px;
-  color: #74837f;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.zaw-parameter-section-actions {
+.zaw-parameter-tabs button {
+  flex: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #66817d;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.zaw-parameter-tabs button:hover {
+  background: #e7efed;
+  color: #1c3a37;
+  transform: none;
+}
+
+.zaw-parameter-tabs button.active {
+  border-color: #d2e1de;
+  background: #ffffff;
+  color: #185d57;
+  box-shadow: 0 2px 8px #173d3614;
+}
+
+.zaw-parameter-tabs button:focus-visible {
+  outline: 2px solid #4e8c83;
+  outline-offset: 2px;
+}
+
+.zaw-parameter-tabs strong {
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #dce9e6;
+  color: #315f59;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.zaw-parameter-tabs button.active strong {
+  background: #cfe3df;
+  color: #185d57;
+}
+
+.zaw-parameter-panel {
+  min-height: 96px;
 }
 
 .zaw-parameter-list {
   display: grid;
   grid-template-columns: 1fr;
   gap: 12px;
+}
+
+.zaw-parameter-item {
+  position: relative;
+  min-width: 0;
+}
+
+.zaw-parameter-item > label > span {
+  padding-right: 92px;
+}
+
+.zaw-parameter-move {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 3px 9px;
+  border: 1px solid #cfdedb;
+  border-radius: 999px;
+  background: #f4f8f7;
+  color: #2f6a63;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.zaw-parameter-move:hover:not(:disabled) {
+  border-color: #b7d2cd;
+  background: #e3efec;
+  color: #185d57;
+  transform: none;
+}
+
+.zaw-parameter-move:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.zaw-parameter-move:focus-visible {
+  outline: 2px solid #4e8c83;
+  outline-offset: 2px;
+}
+
+.zaw-layout-dirty {
+  margin: 0;
+  padding: 8px 11px;
+  border: 1px solid #e6d6ae;
+  border-radius: 7px;
+  background: #fdf6e3;
+  color: #8a6a1f;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .zaw-parameter-list label {

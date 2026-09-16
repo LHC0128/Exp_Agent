@@ -10,10 +10,8 @@ import numpy as np
 import yaml
 
 from ...common import find_project_root, load_mapping, validate_safety_limit
-from ...current_feedback import (
-    CorrectedControlWaveform,
-    load_corrected_control_waveform,
-)
+from ...control_sources import applied_control_from_corrected
+from ...current_feedback import load_corrected_control_waveform
 from ...experiment_runtime import check_cancelled, load_runtime_params
 from ...steps import (
     DGChannelShutdown,
@@ -25,16 +23,11 @@ from ...steps import (
     ShutdownAction,
     TemperatureSwitchRestore,
     configure_fixed_dc_field,
-    configure_main_field,
     configure_mx_z_optimal_control_workpoint,
-    configure_optimal_control_trigger,
-    configure_z_optimal_control_output,
     create_run_directory,
     restore_main_field_state,
     run_safety_shutdown,
     save_corrected_control_source_snapshot,
-    save_optimal_control_source_snapshot,
-    set_temperature_switch,
     snapshot_main_field_state,
     validate_z_trigger_mapping,
     wait_for_temperature_stable,
@@ -66,15 +59,6 @@ from .phase import (
     paired_phase_order,
 )
 from .phase_plot import plot_phase_calibration
-from .sources import (
-    AppliedControlWaveform,
-    TheoryControlSource,
-    ZCalibrationSource,
-    build_applied_control,
-    corrected_control_contract,
-    load_theory_control,
-    load_z_calibration,
-)
 
 
 EXPERIMENT_ID = "mx-z-optimal-control-rf-sensitivity"
@@ -96,52 +80,6 @@ def _connect_control_devices(
     devices, channels = _connect_devices(mapping, session)
     channels["trigger"] = validate_z_trigger_mapping(mapping)
     return devices, channels
-
-
-def _save_source_snapshot(
-    raw_dir: Path,
-    theory: TheoryControlSource,
-    calibration: ZCalibrationSource,
-    applied: AppliedControlWaveform,
-) -> list[str]:
-    """复制外部输入并保存实际下发波形。"""
-    return save_optimal_control_source_snapshot(
-        raw_dir,
-        theory,
-        calibration,
-        applied,
-    )
-
-
-def _configure_trigger(
-    params: MxZOptimalControlRFParams,
-    device: Any,
-    channel: int,
-    *,
-    output: bool,
-) -> None:
-    configure_optimal_control_trigger(
-        params,
-        device,
-        channel,
-        output=output,
-    )
-
-
-def _configure_control_output(
-    params: MxZOptimalControlRFParams,
-    device: Any,
-    channel: int,
-    theory: TheoryControlSource,
-    applied: AppliedControlWaveform,
-) -> None:
-    configure_z_optimal_control_output(
-        params,
-        device,
-        channel,
-        theory,
-        applied,
-    )
 
 
 def _configure_y_rf_output(
@@ -178,28 +116,6 @@ def _configure_y_rf_output(
     )
     device.set_burst_phase(0.0, channel=channel)
     device.set_output(False, channel=channel)
-
-
-def _corrected_control_contract(
-    corrected: CorrectedControlWaveform,
-) -> tuple[Any, AppliedControlWaveform]:
-    """兼容旧的模块内调用，实际逻辑由共享 source adapter 提供。"""
-    return corrected_control_contract(corrected)
-
-
-def _save_corrected_source_snapshot(
-    raw_dir: Path,
-    corrected: CorrectedControlWaveform,
-    theory: Any,
-    applied: AppliedControlWaveform,
-) -> list[str]:
-    """兼容旧的模块内调用，实际逻辑由共享 snapshot writer 提供。"""
-    return save_corrected_control_source_snapshot(
-        raw_dir,
-        corrected,
-        theory,
-        applied,
-    )
 
 
 def _validate_y_rf_envelope(offset_v: float, amplitude_vpp: float) -> None:
@@ -317,24 +233,19 @@ def _rearm_control(
     }
 
 
-def _configure_main_field(
-    params: MxZOptimalControlRFParams,
-    gs200: Any,
-    main_field_mapping: dict[str, Any],
-) -> None:
-    """按配置设置 GS200；零电流保持输出关闭。"""
-    configure_main_field(params, gs200, main_field_mapping)
-
-
 def _configure_common_outputs(
     params: MxZOptimalControlRFParams,
     devices: dict[str, Any],
     channels: dict[str, int],
     mapping: dict[str, dict[str, Any]],
-    theory: TheoryControlSource,
-    applied: AppliedControlWaveform,
+    control_source: Any,
+    applied: Any,
 ) -> tuple[float, float | None, dict[str, dict[str, str]], dict[str, Any]]:
-    """配置可选 GS200 主场的 Mx 工作点并启动连续 Z 控制。"""
+    """配置可选 GS200 主场的 Mx 工作点并启动连续 Z 控制。
+
+    ``control_source`` 只需提供 ``repeat_frequency_hz``，本实验传入
+    闭环冻结波形，仍支持理论来源的实验传入 ``TheoryControlSource``。
+    """
     def configure_xy_outputs() -> None:
         xy_field = devices["xy_field"]
         configure_fixed_dc_field(
@@ -350,7 +261,7 @@ def _configure_common_outputs(
         devices,
         channels,
         mapping,
-        theory,
+        control_source,
         applied,
         demod_frequency_hz=params.y_rf_frequency_hz,
         cancellation=_RuntimeCancellation(),
@@ -1195,37 +1106,21 @@ def run(params: MxZOptimalControlRFParams) -> Path:
         if residual_mode
         else "rf_sensitivity"
     )
-    corrected: CorrectedControlWaveform | None = None
-    calibration: ZCalibrationSource | None = None
-    if params.control_waveform_source == "corrected_run":
-        corrected = load_corrected_control_waveform(
-            root,
-            params.corrected_control_source_run,
-        )
-        theory, applied = _corrected_control_contract(corrected)
-    else:
-        theory = load_theory_control(
-            Path(params.control_results_root),
-            params.control_version,
-        )
-        calibration = load_z_calibration(root, params.z_calibration_source_run)
-        applied = build_applied_control(
-            theory,
-            calibration,
-            params.control_scale,
-            output_vpp=params.z_aw_output_vpp,
-            output_offset_v=params.z_aw_output_offset_v,
-        )
+    control = load_corrected_control_waveform(
+        root,
+        params.corrected_control_source_run,
+    )
+    applied = applied_control_from_corrected(control)
     warnings: list[str] = []
     if not residual_mode and not np.isclose(
         params.y_rf_frequency_hz,
-        theory.theory_rf_frequency_hz,
+        control.repeat_frequency_hz,
         rtol=1e-9,
         atol=1e-9,
     ):
         warnings.append(
-            "Y RF/HF2 频率与理论控制频率不同；共同触发只固定采集起始相位，"
-            "采集期间相对相位按频差演化"
+            "Y RF/HF2 频率与冻结控制波形重复频率不同；"
+            "共同触发只固定采集起始相位，采集期间相对相位按频差演化"
         )
     for warning in warnings:
         print(f"[WARN] {warning}")
@@ -1237,10 +1132,10 @@ def run(params: MxZOptimalControlRFParams) -> Path:
         schema_version=params.schema_version,
         project_root=root,
     )
-    source_files = (
-        _save_corrected_source_snapshot(run_dir.raw, corrected, theory, applied)
-        if corrected is not None
-        else _save_source_snapshot(run_dir.raw, theory, calibration, applied)
+    source_files = save_corrected_control_source_snapshot(
+        run_dir.raw,
+        control,
+        applied,
     )
     run_dir.update_config(
         experiment_id=EXPERIMENT_ID,
@@ -1276,39 +1171,18 @@ def run(params: MxZOptimalControlRFParams) -> Path:
             "y_rf_zero_behavior": "pure DC at Y compensation voltage",
         },
         control_source={
-            "mode": params.control_waveform_source,
-            "version": theory.version,
-            "waveform_sha256": theory.waveform_sha256,
-            "parameter_sha256": theory.parameter_sha256,
-            "repeat_frequency_hz": theory.repeat_frequency_hz,
-            "theory_rf_frequency_hz": theory.theory_rf_frequency_hz,
-            "scale": params.control_scale if corrected is None else None,
+            "mode": "corrected_run",
+            "corrected_run": control.run_name,
+            "waveform_sha256": control.waveform_sha256,
+            "repeat_frequency_hz": control.repeat_frequency_hz,
             "burst_phase_deg": params.control_burst_phase_deg,
-            "corrected_run": corrected.run_name if corrected is not None else None,
         },
-        z_calibration=(
-            {
-                "source_run": calibration.run_name,
-                "model": "f0_Hz = K_Z_Hz_per_V * Z_bias_V + f_0V_Hz",
-                "slope_hz_per_v": calibration.slope_hz_per_v,
-                "intercept_hz": calibration.intercept_hz,
-                "r_squared": calibration.r_squared,
-                "analysis_sha256": calibration.analysis_sha256,
-                "applied_formula": "V_Z(t) = CONTROL_SCALE * Omega_ctrl_Hz(t) / K_Z_Hz_per_V",
-            }
-            if calibration is not None
-            else None
-        ),
-        current_feedback_calibrations=(
-            {
-                "current_coupling_run": corrected.coupling_calibration_run,
-                "current_coupling_sha256": corrected.coupling_calibration_sha256,
-                "frequency_response_run": corrected.frequency_response_run,
-                "frequency_response_sha256": corrected.frequency_response_sha256,
-            }
-            if corrected is not None
-            else None
-        ),
+        current_feedback_calibrations={
+            "current_coupling_run": control.coupling_calibration_run,
+            "current_coupling_sha256": control.coupling_calibration_sha256,
+            "frequency_response_run": control.frequency_response_run,
+            "frequency_response_sha256": control.frequency_response_sha256,
+        },
         applied_control={
             "minimum_v": applied.minimum_v,
             "maximum_v": applied.maximum_v,
@@ -1317,7 +1191,7 @@ def run(params: MxZOptimalControlRFParams) -> Path:
             "output_minimum_v": applied.output_minimum_v,
             "output_maximum_v": applied.output_maximum_v,
             "max_abs_normalized": applied.max_abs_normalized,
-            "points": int(theory.time_s.size),
+            "points": int(control.time_s.size),
         },
         trigger={
             "source": "Time_sequence_2",
@@ -1376,7 +1250,7 @@ def run(params: MxZOptimalControlRFParams) -> Path:
             devices,
             channels,
             mapping,
-            theory,
+            control,
             applied,
         )
         run_dir.update_config(

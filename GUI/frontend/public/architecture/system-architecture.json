@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "实验系统架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "GUI/frontend/public/architecture/system-architecture.html",
+    "repository": {
+      "url": "https://github.com/LHC0128/Exp_Agent.git",
+      "provider": "github",
+      "revision": "68ae7d1eaf6bdfb8da2821c5494b20a70434a7be"
+    },
+    "viewBox": [1380, 640],
+    "views": [
+      { "id": "main-path", "label": "主采集路径", "focus": ["gui-config", "registry", "typed-workflow", "instrument-drivers", "raw-data", "offline-analysis", "results"], "note": "强类型模式从参数配置到结果产出的完整链路。" },
+      { "id": "safety-mapping", "label": "安全与映射", "focus": ["mapping-yaml", "safety-limits", "instrument-drivers"], "note": "物理量经 mapping.yaml 解析到设备端点，输出前由 safety_limits.yaml 校验。" },
+      { "id": "mode-boundary", "label": "新旧模式边界", "focus": ["registry", "legacy-adapter", "experiment-scripts", "offline-analysis"], "note": "注册表同时分发强类型工作流与旧脚本适配器，experiments/ 脚本边界隔离。" }
+    ]
+  },
+  "layout": { "mode": "grid", "origin": [0, 0] },
+  "components": [
+    { "id": "gui-config", "type": "frontend", "label": "GUI 参数配置", "sublabel": "实验中心表单", "pos": [30, 60], "size": [150, 64], "sources": [{ "path": "GUI/frontend/src/pages/ExperimentPage.tsx", "line": 1 }] },
+    { "id": "registry", "type": "backend", "label": "统一实验注册表", "sublabel": "lab_workflows.experiments", "pos": [240, 60], "size": [150, 64], "sources": [{ "path": "lab_workflows/experiments/registry.py", "line": 1 }] },
+    { "id": "typed-workflow", "type": "backend", "label": "typed_workflow", "sublabel": "强类型参数模型", "pos": [450, 60], "size": [150, 64], "sources": [{ "path": "lab_workflows/experiments/typed.py", "line": 1 }] },
+    { "id": "instrument-drivers", "type": "backend", "label": "仪器驱动与采集", "sublabel": "src/ 设备控制", "pos": [660, 60], "size": [150, 64], "sources": [{ "path": "src/signal_generator/instrument.py", "line": 1 }] },
+    { "id": "raw-data", "type": "database", "label": "raw/", "sublabel": "实验原始数据", "pos": [870, 60], "size": [150, 64], "sources": [{ "path": "params/experiments/mx-y-rf-sensitivity.yaml", "line": 1 }] },
+    { "id": "offline-analysis", "type": "backend", "label": "离线分析", "sublabel": "分析模块", "pos": [1150, 60], "size": [150, 64], "sources": [{ "path": "lab_workflows/experiment_modules/scope_capture/analysis.py", "line": 1 }] },
+    { "id": "experiment-catalog", "type": "database", "label": "experiment_catalog", "sublabel": "归类与参数布局", "pos": [30, 250], "size": [150, 64], "sources": [{ "path": "lab_workflows/experiments/catalog.py", "line": 1 }] },
+    { "id": "legacy-adapter", "type": "backend", "label": "LegacyScriptAdapter", "sublabel": "旧脚本兼容适配", "pos": [240, 250], "size": [150, 64], "sources": [{ "path": "lab_workflows/experiments/legacy.py", "line": 1 }] },
+    { "id": "experiment-scripts", "type": "backend", "label": "experiments/*.py", "sublabel": "旧模式脚本", "pos": [240, 420], "size": [150, 64], "sources": [{ "path": "experiments/Mx_Y_RF_Sensitivity.py", "line": 1 }] },
+    { "id": "mapping-yaml", "type": "database", "label": "params/mapping.yaml", "sublabel": "物理量 ↔ 仪器通道", "pos": [390, 560], "size": [180, 64], "sources": [{ "path": "params/mapping.yaml" }] },
+    { "id": "safety-limits", "type": "security", "label": "params/safety_limits.yaml", "sublabel": "输出安全限值", "pos": [620, 560], "size": [180, 64], "sources": [{ "path": "params/safety_limits.yaml" }] },
+    { "id": "results", "type": "database", "label": "results/", "sublabel": "图表与结果", "pos": [1150, 420], "size": [150, 64], "sources": [{ "path": "lab_workflows/plotting/__init__.py", "line": 1 }] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "公共 lab_workflows 边界", "wraps": ["registry", "typed-workflow", "legacy-adapter", "offline-analysis"], "pad": 22 },
+    { "kind": "region", "label": "实验脚本 experiments/ 边界", "wraps": ["experiment-scripts"], "pad": 14 }
+  ],
+  "connections": [
+    { "from": "gui-config", "to": "registry", "variant": "emphasis" },
+    { "from": "registry", "to": "typed-workflow", "variant": "emphasis" },
+    { "from": "typed-workflow", "to": "instrument-drivers", "variant": "emphasis" },
+    { "from": "instrument-drivers", "to": "raw-data", "variant": "emphasis" },
+    { "from": "raw-data", "to": "offline-analysis", "variant": "emphasis" },
+    { "from": "offline-analysis", "to": "results", "variant": "emphasis" },
+    { "from": "experiment-catalog", "to": "gui-config", "label": "分类与布局", "variant": "dashed", "via": [[105, 250], [105, 150], [105, 124]] },
+    { "from": "registry", "to": "legacy-adapter", "label": "旧脚本模式", "variant": "dashed", "via": [[315, 124], [315, 250]] },
+    { "from": "legacy-adapter", "to": "experiment-scripts", "label": "读取常量", "variant": "dashed", "via": [[315, 314], [315, 420]] },
+    { "from": "experiment-scripts", "to": "instrument-drivers", "variant": "default", "via": [[640, 452], [640, 92]] },
+    { "from": "mapping-yaml", "to": "instrument-drivers", "label": "物理量解析", "variant": "default", "labelAt": [600, 300], "via": [[570, 300], [820, 300], [820, 92]] },
+    { "from": "safety-limits", "to": "instrument-drivers", "label": "输出校验", "variant": "security", "via": [[800, 500], [850, 500], [850, 92]] }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "主采集路径", "items": ["GUI 提交强类型参数，注册表按执行模式分发", "采集数据落盘 raw/，离线分析只读原始数据", "结果统一写入 results/，便于复现与追溯"] },
+    { "dot": "rose", "title": "安全与兼容", "items": ["所有输出量写入仪器前先经 validate_safety_limit 校验", "旧脚本由 LegacyScriptAdapter 只读接入，不改写源码"] }
+  ]
+}

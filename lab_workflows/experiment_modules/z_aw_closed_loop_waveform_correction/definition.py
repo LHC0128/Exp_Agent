@@ -19,7 +19,7 @@ DEFINITION = ExperimentDefinition(
     category="optimization",
     family="hardware-chain",
     variant="iterative-current-feedback",
-    description="由静态电流标定初始化命令，采集并平移对齐后低通电流误差，按静态斜率累加电压修正。",
+    description="由静态标定初始化命令，以 CH3 实际电流时域反馈逐轮更新；可选 AW 频响预加重。",
     data_type="Z_AW_Closed_Loop_Waveform_Correction",
     required_devices=("DG4000", "SDS"),
     required_mapping_keys=("Z_magnetic_field", "Time_sequence_2", "scope_waveform"),
@@ -31,6 +31,7 @@ DEFINITION = ExperimentDefinition(
     ),
     safety_notes=(
         "理论采样电阻电压乘 1.5 倍余量选择 CH3 档位；每轮检查 DG 电压及 CH3 量程。",
+        "时域模式只需 CH3 电流和 CH4 触发；频响预加重模式才要求有效频响来源。",
         "误差增大仍继续；连续达标、轮数上限、电压越界、取消或硬件失败时停止。",
         "Z 输出沿用当前 50 Ω/Vpp 数值基准，回读一致后开启；最终只导出已实测命令。",
     ),

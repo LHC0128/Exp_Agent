@@ -8,13 +8,13 @@ import numpy as np
 
 from ...common import validate_safety_limit
 from ...experiment_params import parameter
-from ..mx_z_optimal_control_rf_sensitivity.models import (
-    MxZOptimalControlRFParams,
-)
+from ..mx_z_control_params import MxZControlSourceSelectionParams
 
 
 @dataclass(slots=True)
-class MxZOptimalControlXYNoiseSpectrumParams(MxZOptimalControlRFParams):
+class MxZOptimalControlXYNoiseSpectrumParams(
+    MxZControlSourceSelectionParams
+):
     """在 Z 周期最优控制下扫描 XY DC 偏置并测量 R 噪声谱。"""
 
     schema_version = 1
@@ -90,7 +90,7 @@ class MxZOptimalControlXYNoiseSpectrumParams(MxZOptimalControlRFParams):
         return []
 
     def validate_model(self) -> list[str]:
-        errors = MxZOptimalControlRFParams.validate_model(self)
+        errors = MxZControlSourceSelectionParams.validate_model(self)
         errors.extend(self._validate_axis("X 偏置", self.x_field_start_v, self.x_field_stop_v, self.x_field_points))
         errors.extend(self._validate_axis("Y 偏置", self.y_field_start_v, self.y_field_stop_v, self.y_field_points))
         if not self.low_freq_skip_hz < self.noise_band_max_hz:

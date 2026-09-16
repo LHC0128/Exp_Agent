@@ -82,6 +82,7 @@ def _load_capture(path: Path) -> dict[str, Any]:
             "actual_rate_sa_s",
             "scale_used_v_div",
             "offset_used_v",
+            "reference_voltage_v",
         ):
             if key in data.files:
                 result[key] = np.asarray(data[key], dtype=float).copy()

@@ -11,7 +11,7 @@ import yaml
 
 from ...experiment_runtime import runtime_run_dir
 from ...plotting import set_plot_style
-from ..mx_y_rf_sensitivity.analysis import analyze as analyze_rf_sensitivity
+from ..mx_y_rf_sensitivity.analysis import _load_params, analyze_core
 from .models import MxZOptimalControlRFParams
 from .phase_plot import plot_phase_calibration
 
@@ -161,7 +161,6 @@ def _analyze_residual_control_phase_scan(
         },
         "phase_response": phase_payload,
         "control_source": config.get("control_source", {}),
-        "z_calibration": config.get("z_calibration", {}),
         "applied_control": config.get("applied_control", {}),
         "trigger": config.get("trigger", {}),
         "warnings": warnings,
@@ -173,10 +172,11 @@ def _analyze_residual_control_phase_scan(
 def analyze(run_dir: Path) -> dict[str, Any]:
     """复用 Mx Y RF 分析并追加控制与校相结果。"""
     run_dir = Path(run_dir).resolve()
+    # 旧 schema 在创建或覆盖任何结果之前拒绝，已有文件保持不变。
+    params, config = _load_params(run_dir, MxZOptimalControlRFParams)
     raw_dir = run_dir / "raw"
     results_dir = run_dir / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
-    config = _load_yaml(run_dir / "experiment_config.yaml")
     phase_payload = _load_yaml(results_dir / "phase_calibration.yaml")
     set_plot_style("paper")
     phase_plot = plot_phase_calibration(
@@ -212,9 +212,10 @@ def analyze(run_dir: Path) -> dict[str, Any]:
     if phase_payload.get("success") is not True:
         raise RuntimeError("在线 Y RF 相位校准未成功，拒绝正式灵敏度分析")
 
-    result = analyze_rf_sensitivity(
+    result = analyze_core(
         run_dir,
-        params_type=MxZOptimalControlRFParams,
+        params,
+        config,
         ignore_relative_gamma_uncertainty=True,
         initial_center=0.0,
     )
@@ -231,7 +232,6 @@ def analyze(run_dir: Path) -> dict[str, Any]:
             ),
             "noise_rf": config.get("noise_rf", {"y_rf_enabled": False}),
             "control_source": config.get("control_source", {}),
-            "z_calibration": config.get("z_calibration", {}),
             "applied_control": config.get("applied_control", {}),
             "trigger": config.get("trigger", {}),
         }

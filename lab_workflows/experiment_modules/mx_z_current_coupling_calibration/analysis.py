@@ -14,9 +14,9 @@ from ..mx_z_field_calibration.analysis import (
     _analyze_curve,
     _builtin,
     _load_scan_index,
+    _plot_frequency_responses,
     _weighted_linear_fit,
 )
-from ..mx_y_rf_sensitivity.analysis_core import fit_lorentzian_response
 from .models import MxZCurrentCouplingCalibrationParams
 
 
@@ -72,7 +72,14 @@ def _plot_calibration(results_dir: Path, curves: list[dict[str, Any]], fit: dict
     sigma = np.asarray([curve["fit"]["center_uncertainty_hz"] for curve in curves], dtype=float)
     accepted = np.asarray([curve["fit"]["success"] for curve in curves], dtype=bool)
     figure, axis = new_figure()
-    axis.errorbar(current[accepted], centers[accepted], yerr=sigma[accepted], fmt="o", capsize=2, label="Accepted centers")
+    if np.any(accepted):
+        axis.errorbar(current[accepted], centers[accepted], yerr=sigma[accepted], fmt="o", capsize=2, label="Accepted centers")
+    excluded = ~accepted & np.isfinite(current) & np.isfinite(centers)
+    if np.any(excluded):
+        axis.plot(current[excluded], centers[excluded], "x", label="Excluded centers")
+    if not np.any(accepted):
+        axis.text(0.5, 0.95, "No accepted resonance centers", transform=axis.transAxes,
+                  ha="center", va="top")
     if fit["success"]:
         grid = np.linspace(float(np.min(current)), float(np.max(current)), 400)
         axis.plot(
@@ -83,7 +90,8 @@ def _plot_calibration(results_dir: Path, curves: list[dict[str, Any]], fit: dict
         )
     format_axis(axis, xlabel="Measured coil current (A)", ylabel="Resonance center (Hz)")
     axis.grid(True, alpha=0.25)
-    axis.legend(loc="best")
+    if axis.get_legend_handles_labels()[0]:
+        axis.legend(loc="best")
     filename = "current_coupling_calibration.png"
     save_figure(figure, results_dir / filename)
     return filename
@@ -146,6 +154,7 @@ def analyze(run_dir: Path) -> dict[str, Any]:
     results_dir = run_dir / "results"
     results_dir.mkdir(exist_ok=True)
     plot = _plot_calibration(results_dir, curves, linear_current)
+    response_plot = _plot_frequency_responses(results_dir, curves)
     payload = _builtin(
         {
             "success": bool(success),
@@ -177,19 +186,22 @@ def analyze(run_dir: Path) -> dict[str, Any]:
                 "sense_scope_duration_s": params.sense_scope_duration_s,
             },
             "rejection_reasons": reasons,
+            "accepted_curve_count": int(np.count_nonzero(accepted)),
+            "total_curve_count": len(curves),
             "curves": [
                 {
                     "current_a": curve["current_a"],
                     "current_std_a": curve["current_std_a"],
                     "sense_voltage_v": curve["sense_voltage_v"],
                     "z_bias_v": curve["z_bias_v"],
+                    "summary_file": curve["summary_file"],
                     "scan_direction": curve["scan_direction"],
                     "display_edge_fraction": curve["display_edge_fraction"],
                     "fit": curve["fit"],
                 }
                 for curve in curves
             ],
-            "files": [plot, "calibration_results.npz"],
+            "files": [plot, response_plot, "calibration_results.npz"],
         }
     )
     (results_dir / "analysis.yaml").write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -206,6 +218,19 @@ def analyze(run_dir: Path) -> dict[str, Any]:
         f_0_at_zero_current_hz=np.float64(linear_current["intercept_hz"]),
         linear_r_squared=np.float64(linear_current["r_squared"]),
     )
+    print(
+        f"Mx Z 电流标定分析完成: success={success}, "
+        f"有效频扫={np.count_nonzero(accepted)}/{len(curves)}, "
+        f"K={linear_current['slope_hz_per_v']:.6g} Hz/A"
+    )
+    if reasons:
+        print("标定质量警告: " + "；".join(reasons))
+    for curve in curves:
+        if not curve["fit"]["success"]:
+            print(
+                f"排除 {curve['summary_file']} ({curve['scan_direction']}): "
+                + "；".join(curve["fit"]["rejection_reasons"])
+            )
     return payload
 
 
@@ -214,3 +239,7 @@ def main() -> int:
 
     analyze(runtime_run_dir())
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

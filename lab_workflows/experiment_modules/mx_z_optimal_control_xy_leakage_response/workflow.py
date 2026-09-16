@@ -40,7 +40,7 @@ from ..mx_z_field_calibration.workflow import (
     _connect_devices,
     _initial_state_snapshot,
 )
-from ..mx_z_optimal_control_rf_sensitivity.sources import (
+from ...control_sources import (
     AppliedControlWaveform,
     TheoryControlSource,
     build_applied_control,

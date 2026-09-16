@@ -5,6 +5,7 @@ import {
   defaultParameterLayout,
   loadLocalParameterLayout,
   parseArrayValue,
+  sameParameterLayout,
   validatedParameterLayout,
 } from "./experimentHelpers";
 
@@ -52,6 +53,26 @@ describe("validatedParameterLayout", () => {
 
   it("拒绝非对象输入", () => {
     expect(validatedParameterLayout(fields, "bad")).toBeUndefined();
+  });
+});
+
+describe("sameParameterLayout", () => {
+  it("分组和组内顺序都一致时为 true", () => {
+    expect(sameParameterLayout(
+      { basic: ["a", "c"], advanced: ["b"] },
+      { basic: ["a", "c"], advanced: ["b"] },
+    )).toBe(true);
+  });
+
+  it("参数换组或换序后为 false", () => {
+    expect(sameParameterLayout(
+      { basic: ["a", "c"], advanced: ["b"] },
+      { basic: ["a"], advanced: ["c", "b"] },
+    )).toBe(false);
+    expect(sameParameterLayout(
+      { basic: ["a", "c"], advanced: ["b"] },
+      { basic: ["c", "a"], advanced: ["b"] },
+    )).toBe(false);
   });
 });
 

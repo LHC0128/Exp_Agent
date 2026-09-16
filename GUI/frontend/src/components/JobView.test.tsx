@@ -1,4 +1,4 @@
-import { act, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { JobView } from "./JobView";
@@ -132,6 +132,65 @@ describe("JobView 排队任务状态", () => {
     expect(vi.mocked(api)).toHaveBeenCalledWith("/api/jobs/job-1");
     expect(current()?.status).toBe("completed");
     expect(source.closed).toBe(true);
+  });
+
+  it("SSE 进度事件更新 ETA，普通日志事件不覆盖", async () => {
+    const { current, source } = renderJobView(makeJob({ status: "running" }));
+    await act(async () => {
+      source.onmessage?.({
+        data: JSON.stringify(
+          makeEvent({
+            index: 1,
+            stage: "optimal_control_scan",
+            message: "第 1 点；总进度 1/10",
+            percent: 9,
+            data: { estimated_remaining_seconds: 600 },
+          }),
+        ),
+      });
+    });
+    expect(current()?.estimated_remaining_seconds).toBe(600);
+    await act(async () => {
+      source.onmessage?.({
+        data: JSON.stringify(
+          makeEvent({ index: 2, stage: "running", message: "普通日志", percent: 9 }),
+        ),
+      });
+    });
+    expect(current()?.estimated_remaining_seconds).toBe(600);
+    await act(async () => {
+      source.onmessage?.({
+        data: JSON.stringify(
+          makeEvent({
+            index: 3,
+            stage: "analysis",
+            message: "分析 run",
+            percent: 90,
+            data: { estimated_remaining_seconds: null },
+          }),
+        ),
+      });
+    });
+    expect(current()?.estimated_remaining_seconds).toBeNull();
+  });
+
+  it("进度卡显示格式化 ETA，分析阶段显示分析中", async () => {
+    const running = renderJobView(
+      makeJob({
+        status: "running",
+        stage: "optimal_control_scan",
+        percent: 45,
+        estimated_remaining_seconds: 3725,
+      }),
+    );
+    expect(running.current() && document.body.textContent).toContain("预计剩余 1:02:05");
+    cleanup();
+    const analysing = renderJobView(
+      makeJob({ status: "running", stage: "analysis", percent: 90 }),
+    );
+    expect(document.body.textContent).toContain("分析中");
+    expect(document.body.textContent).not.toContain("预计剩余");
+    cleanup();
   });
 
   it("排队取消后 SSE 收到 cancelled 终态", async () => {

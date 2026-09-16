@@ -37,6 +37,7 @@ class Job:
     status: str = "queued"
     stage: str = "queued"
     percent: float | None = 0
+    estimated_remaining_seconds: float | None = None
     message: str = "等待执行"
     created_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     started_at: str | None = None
@@ -54,6 +55,7 @@ class Job:
             "status": self.status,
             "stage": self.stage,
             "percent": self.percent,
+            "estimated_remaining_seconds": self.estimated_remaining_seconds,
             "message": self.message,
             "created_at": self.created_at,
             "started_at": self.started_at,
@@ -71,6 +73,7 @@ class Job:
             "status": self.status,
             "stage": self.stage,
             "percent": self.percent,
+            "estimated_remaining_seconds": self.estimated_remaining_seconds,
             "message": self.message,
             "created_at": self.created_at,
             "started_at": self.started_at,
@@ -227,6 +230,8 @@ class JobManager:
             if percent is not None:
                 job.percent = percent
             job.finished_at = datetime.now().isoformat(timespec="seconds")
+            # 终态不再有剩余时间。
+            job.estimated_remaining_seconds = None
             self._finished_sequence += 1
             job.finished_order = self._finished_sequence
             self._prune_terminal_locked()
@@ -256,6 +261,9 @@ class JobManager:
             job.message = event.message
             if event.percent is not None:
                 job.percent = event.percent
+            if "estimated_remaining_seconds" in event.data:
+                # 事件显式携带（含 None）时更新；普通日志事件不覆盖已有 ETA。
+                job.estimated_remaining_seconds = event.data["estimated_remaining_seconds"]
 
     def get(self, job_id: str) -> Job:
         with self.jobs_lock:

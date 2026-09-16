@@ -344,10 +344,28 @@ def analyze(
     initial_center: float | None = None,
 ) -> dict[str, Any]:
     run_dir = Path(run_dir).resolve()
+    params, config = _load_params(run_dir, params_type)
+    return analyze_core(
+        run_dir,
+        params,
+        config,
+        ignore_relative_gamma_uncertainty=ignore_relative_gamma_uncertainty,
+        initial_center=initial_center,
+    )
+
+
+def analyze_core(
+    run_dir: Path,
+    params: MxYRFParams,
+    config: dict[str, Any],
+    *,
+    ignore_relative_gamma_uncertainty: bool,
+    initial_center: float | None,
+) -> dict[str, Any]:
+    """执行 RF 灵敏度分析核心；参数和配置由调用方读取并校验。"""
     raw_dir = run_dir / "raw"
     results_dir = run_dir / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
-    params, config = _load_params(run_dir, params_type)
 
     evaluation = evaluate_mx_y_rf_point(
         raw_dir,

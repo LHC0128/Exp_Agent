@@ -795,6 +795,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/mx-y-optimal-control-rf-frequency-response/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mx Y Optimal Control Frequency Runs
+         * @description 新格式运行列表；旧格式运行不进入专属历史。
+         */
+        get: operations["mx_y_optimal_control_frequency_runs_api_experiments_mx_y_optimal_control_rf_frequency_response_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{experiment_id}/{run_id}/artifacts/{name}": {
         parameters: {
             query?: never;
@@ -812,6 +832,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/mx-y-optimal-control-rf-frequency-response/runs/{run_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mx Y Optimal Control Frequency Run Summary
+         * @description Mx Y 最优控制 RF 频率响应专属摘要端点。
+         */
+        get: operations["mx_y_optimal_control_frequency_run_summary_api_experiments_mx_y_optimal_control_rf_frequency_response_runs__run_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}/runs/{run_id}/summary": {
         parameters: {
             query?: never;
@@ -821,7 +861,7 @@ export interface paths {
         };
         /**
          * Experiment Run Summary
-         * @description 专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。
+         * @description Z 闭环专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。
          */
         get: operations["experiment_run_summary_api_experiments__experiment_id__runs__run_id__summary_get"];
         put?: never;
@@ -1634,6 +1674,42 @@ export interface components {
             fsk_polarity: string | null;
             /** Pwm Duty Deviation */
             pwm_duty_deviation: number | null;
+        };
+        /**
+         * MxYOptimalControlFrequencyRunSummary
+         * @description Mx Y 最优控制 RF 频率响应单次运行摘要，供专属 GUI 历史 Tab 渲染。
+         */
+        MxYOptimalControlFrequencyRunSummary: {
+            /** Run Id */
+            run_id: string;
+            /** Timestamp */
+            timestamp: string;
+            /** Run Tag */
+            run_tag: string;
+            /** Completion Status */
+            completion_status: string;
+            /** Comparison Enabled */
+            comparison_enabled: boolean;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /** Calibration */
+            calibration?: {
+                [key: string]: unknown;
+            };
+            /** Optimal Response Metadata */
+            optimal_response_metadata?: {
+                [key: string]: unknown;
+            };
+            /** Constant Response Metadata */
+            constant_response_metadata?: {
+                [key: string]: unknown;
+            };
+            /** Artifacts */
+            artifacts?: {
+                [key: string]: string;
+            };
         };
         /** ParameterLayoutBody */
         ParameterLayoutBody: {
@@ -3541,6 +3617,38 @@ export interface operations {
             };
         };
     };
+    mx_y_optimal_control_frequency_runs_api_experiments_mx_y_optimal_control_rf_frequency_response_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     artifact_api_runs__experiment_id___run_id__artifacts__name__get: {
         parameters: {
             query?: never;
@@ -3561,6 +3669,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mx_y_optimal_control_frequency_run_summary_api_experiments_mx_y_optimal_control_rf_frequency_response_runs__run_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MxYOptimalControlFrequencyRunSummary"];
                 };
             };
             /** @description Validation Error */

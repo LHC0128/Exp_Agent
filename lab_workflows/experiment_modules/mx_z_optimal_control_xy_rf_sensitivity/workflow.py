@@ -11,40 +11,34 @@ import numpy as np
 import yaml
 
 from ...common import WorkflowCancelled, find_project_root, load_mapping
+from ...control_sources import (
+    AppliedControlWaveform,
+    TheoryControlSource,
+    ZCalibrationSource,
+    build_applied_control,
+    corrected_control_contract,
+    load_theory_control,
+    load_z_calibration,
+)
+from ...current_feedback import load_corrected_control_waveform
 from ...experiment_runtime import check_cancelled, load_runtime_params
 from ...steps import (
     DeviceSession,
     configure_fixed_dc_field,
     create_run_directory,
     restore_main_field_state,
+    save_corrected_control_source_snapshot,
+    save_optimal_control_source_snapshot,
     snapshot_main_field_state,
     validate_z_trigger_mapping,
-    wait_for_temperature_stable,
 )
-from ..mx_z_field_calibration.workflow import (
-    _connect_devices,
-    _initial_state_snapshot,
-)
-from ..mx_z_optimal_control_rf_sensitivity.models import (
-    MxZOptimalControlRFParams,
-)
-from ..mx_z_optimal_control_rf_sensitivity.sources import (
-    AppliedControlWaveform,
-    TheoryControlSource,
-    ZCalibrationSource,
-    build_applied_control,
-    load_theory_control,
-    load_z_calibration,
-)
+from ..mx_z_field_calibration.workflow import _initial_state_snapshot
 from ..mx_z_optimal_control_rf_sensitivity.workflow import (
     _acquire_amplitude_scan,
     _acquire_noise,
     _acquire_phase_scan,
     _configure_common_outputs,
-    _corrected_control_contract,
     _restore_y_rf_burst_sine,
-    _save_corrected_source_snapshot,
-    _save_source_snapshot,
     safe_shutdown,
 )
 from ..mx_z_optimal_control_rf_sensitivity.workflow import (
@@ -55,7 +49,6 @@ from ..mx_y_rf_sensitivity.workflow import (
     _configure_response_demodulator,
     _temperature_gated_acquire,
 )
-from ...current_feedback import load_corrected_control_waveform
 from .models import MxZOptimalControlXYRFSensitivityParams
 
 
@@ -88,7 +81,7 @@ def _load_control_sources(
             root,
             params.corrected_control_source_run,
         )
-        theory, applied = _corrected_control_contract(corrected)
+        theory, applied = corrected_control_contract(corrected)
         return corrected, theory, None, applied
     theory = load_theory_control(
         Path(params.control_results_root),
@@ -398,9 +391,14 @@ def run(params: MxZOptimalControlXYRFSensitivityParams) -> Path:
         project_root=root,
     )
     source_files = (
-        _save_corrected_source_snapshot(run_dir.raw, corrected, theory, applied)
+        save_corrected_control_source_snapshot(run_dir.raw, corrected, applied)
         if corrected is not None
-        else _save_source_snapshot(run_dir.raw, theory, calibration, applied)
+        else save_optimal_control_source_snapshot(
+            run_dir.raw,
+            theory,
+            calibration,
+            applied,
+        )
     )
     run_dir.update_config(
         experiment_id=EXPERIMENT_ID,

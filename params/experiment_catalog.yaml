@@ -12,10 +12,12 @@ tags:
   label: 其他
 - id: tag-2c49075e
   label: 任意波校验
+- id: star
+  label: star
 assignments:
   mx-y-rf-sensitivity: calibration
   mx-y-rf-sensitivity-drift: calibration
-  mx-z-optimal-control-rf-sensitivity: calibration
+  mx-z-optimal-control-rf-sensitivity: star
   mx-z-optimal-control-xy-rf-sensitivity: calibration
   mx-z-optimal-control-xy-noise-spectrum: calibration
   mx-z-optimal-control-xy-leakage-response: calibration
@@ -56,18 +58,26 @@ assignments:
   dg-am-comp-transfer-check: tag-15b058ba
   temperature-switch-pid-cycle: tag-15b058ba
   mx-y-rf-frequency-response: calibration
-  mx-y-optimal-control-rf-frequency-response: optimization
+  mx-y-optimal-control-rf-frequency-response: star
   z-aw-waveform-scope-check: tag-2c49075e
   z-coil-inductance-frequency-response: tag-2c49075e
   z-coil-current-frequency-response: tag-2c49075e
-  mx-z-current-coupling-calibration: verification
+  mx-z-current-coupling-calibration: star
   z-aw-current-waveform-scope-check: tag-2c49075e
-  z-aw-closed-loop-waveform-correction: tag-2c49075e
-  scope-capture: tag-15b058ba
+  z-aw-closed-loop-waveform-correction: star
+  scope-capture: star
 experiment_descriptions:
   z-coil-inductance-frequency-response: Z 线圈固定幅度正弦扫频，比较理论设定与线圈端电压的幅值、相位和残差。
-  z-coil-current-frequency-response: 通过低端采样电阻测量 DG4000 到 Z 线圈实际电流的复数频率响应，为闭环预加重和逆滤波提供可靠带宽。
-  mx-z-current-coupling-calibration: 在 Mx 高主场工作点同步测量采样电阻电压和 Y RF 共振中心，标定实际线圈电流到控制耦合强度的关系。
+  z-coil-current-frequency-response: 沿对数频率轴相干扫描低端采样电阻上的实际电流复响应，以同帧实测驱动电压作相位参考，为闭环逆滤波提供带可靠覆盖掩码的频响曲线。
+  mx-z-current-coupling-calibration: '目的：旧标定只给出命令电压斜率 K_Z_Hz_per_V，本实验用 Z 线圈低端串联采样电阻重建实际电流，标定电流耦合系数
+    K_Z_Hz_per_A，供 Z 闭环控制使用。
+
+
+    方法：嵌套扫描。外层 DG4000 输出 Z DC 偏置；每个 Z 点稳定后 SDS CH3 采集采样电阻电压（自动量程），除以阻值得实际电流；内层以预测中心做
+    Y RF 局部扫频（±4 kHz、步进 100 Hz），HF2 逐频点采集解调 R。
+
+
+    分析：洛伦兹拟合得共振中心，对实际电流加权线性拟合，输出 K_Z_Hz_per_A、零电流中心、线性度、磁滞与重复性。'
   z-aw-current-waveform-scope-check: 比较最优控制目标电流与采样电阻实测电流，报告固定延迟、形状、增益、频谱、重复性和饱和诊断。
   z-aw-closed-loop-waveform-correction: 静态斜率闭环：电流反馈平移对齐、误差零相位低通并累加电压；理论电压预留 1.5 倍量程，导出最佳实测轮次。
   mx-y-rf-sensitivity-drift: 按固定时间间隔重复 Mx Y RF 灵敏度测量，每轮完成后立即分析并更新灵敏度与线宽趋势。
@@ -116,6 +126,8 @@ experiment_descriptions:
   rf-sensitivity-direct-aw-frequency: 测量射频频率响应，dg_am 作为触发信号，使得 dg_comp 两路同相输出。
   xy-direct-aw-dc-calibration: DirectAW 加常数控制的方式，外加不同频率射频场，寻找频率响应的最大值的位置，来对 控制 进行标定。
   z-aw-waveform-scope-check: 复用版本化 Z 最优控制波形和 Z 标定，使用 SDS CH3 测量小线圈实际电压、CH4 提供硬件触发，并离线报告允许固定时间差的波形相似度。
+  mx-y-optimal-control-rf-frequency-response: Z 向闭环最优控制下，逐频率扫描 Y RF Burst 相位并保存 Demod0
+    R 观察数据。
 experiment_titles:
   z-coil-inductance-frequency-response: Z 线圈电感效应频率响应
   mx-y-rf-sensitivity: Mx Y 向 RF 场灵敏度
@@ -151,6 +163,7 @@ experiment_titles:
   mx-z-current-coupling-calibration: Mx Z 实际电流-耦合强度标定
   z-aw-current-waveform-scope-check: Z 任意波实际电流波形验证
   z-aw-closed-loop-waveform-correction: Z 任意波实际电流闭环校正
+  mx-y-optimal-control-rf-frequency-response: Mx Y 最优控制 RF 频率响应
 parameter_layouts:
   mx-z-optimal-control-xy-noise-spectrum:
     basic:
@@ -344,6 +357,7 @@ parameter_layouts:
     - RUN_TAG
     - FREQUENCY_START_HZ
     - FREQUENCY_STOP_HZ
+    - FREQUENCY_POINTS_PER_DECADE
     - FREQUENCY_POINTS
     - DRIVE_AMPLITUDE_VPP
     - SCOPE_CYCLES
@@ -351,21 +365,23 @@ parameter_layouts:
     - TRIGGER_FREQUENCY_HZ
     - TRIGGER_AMPLITUDE_VPP
     - SCOPE_SAMPLE_RATE_SA_S
-    - CONTROL_VERSION
+    - SCOPE_INITIAL_SCALE
     - SENSE_RESISTOR_OHM
     - SENSE_RESISTOR_POWER_RATING_W
     - MAXIMUM_CURRENT_A
-    - SCOPE_SAMPLES_PER_CYCLE
     advanced:
     - DRIVE_OFFSET_V
     - FREQUENCY_SETTLE_S
     - TRIGGER_OFFSET_V
     - TRIGGER_DUTY_PERCENT
-    - CONTROL_RESULTS_ROOT
     - SENSE_RESISTOR_TOLERANCE_PERCENT
     - SENSE_RESISTOR_POWER_DERATING
     - SCOPE_MIN_SAMPLE_RATE_SA_S
+    - SCOPE_SAMPLES_PER_CYCLE
     - SCOPE_CAPTURE_GUARD_S
+    - SCOPE_REFERENCE_CHANNEL
+    - SCOPE_REFERENCE_SCALE
+    - RESPONSE_SETTLE_CYCLES
   mx-z-current-coupling-calibration:
     basic:
     - RUN_TAG
@@ -378,14 +394,7 @@ parameter_layouts:
     - FREQUENCY_HALF_WIDTH_HZ
     - FREQUENCY_STEP_HZ
     - Y_RF_AMPLITUDE_VPP
-    - TEMP_SWITCH_ON_LAG_S
-    - FIXED_PARAMS.Pump_laser_power
-    - FIXED_PARAMS.Probe_laser_power
-    - FIXED_PARAMS.main_magnetic_field
-    - FIXED_PARAMS.temperature
     - SENSE_RESISTOR_OHM
-    - SENSE_RESISTOR_POWER_RATING_W
-    - MAXIMUM_CURRENT_A
     - SENSE_SCOPE_SAMPLE_RATE_SA_S
     - SENSE_SCOPE_DURATION_S
     - SENSE_SCOPE_INITIAL_SCALE_V_DIV
@@ -421,6 +430,13 @@ parameter_layouts:
     - SENSE_SCOPE_AUTO_RANGE_MAX_ATTEMPTS
     - SENSE_SCOPE_AUTO_RANGE_ALLOW_SHRINK
     - CURRENT_SETTLE_TIME_S
+    - TEMP_SWITCH_ON_LAG_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    - SENSE_RESISTOR_POWER_RATING_W
+    - MAXIMUM_CURRENT_A
   z-aw-current-waveform-scope-check:
     basic:
     - RUN_TAG
@@ -448,11 +464,6 @@ parameter_layouts:
     basic:
     - RUN_TAG
     - CONTROL_VERSION
-    - CONTROL_SCALE
-    - Z_AW_OUTPUT_VPP
-    - TRIGGER_FREQUENCY_HZ
-    - TRIGGER_AMPLITUDE_VPP
-    - SCOPE_CYCLES
     - CONTROL_SOURCE_SET
     - CURRENT_COUPLING_CALIBRATION_SOURCE_RUN
     - MAX_ITERATIONS
@@ -460,14 +471,38 @@ parameter_layouts:
     - ITERATION_DAMPING
     - ERROR_CUTOFF_HZ
     - TARGET_RELATIVE_RMS
-    - SCOPE_HEADROOM_FACTOR
+    - Z_AW_OUTPUT_VPP
+    - CORRECTION_METHOD
+    - CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN
+    - INVERSE_REGULARIZATION
+    - HOLDOUT_REPEATS
+    - FINAL_VALIDATION_REPEATS
     advanced:
-    - Z_AW_OUTPUT_OFFSET
+    - CONTROL_SCALE
     - CONTROL_BURST_PHASE_DEG
+    - TRIGGER_FREQUENCY_HZ
+    - TRIGGER_AMPLITUDE_VPP
     - TRIGGER_OFFSET_V
     - TRIGGER_DUTY_PERCENT
+    - SCOPE_CYCLES
     - REQUIRED_PASSES
     - OUTPUT_SETTLE_S
+    - SCOPE_HEADROOM_FACTOR
+    - MAXIMUM_STEP_V
+    - MAXIMUM_BACKTRACKS
+    - MAXIMUM_CURRENT_A
+    - SENSE_RESISTOR_POWER_RATING_W
+    - SENSE_RESISTOR_POWER_DERATING
+    - HARMONIC_AMPLITUDE_FRACTION
+    - MAXIMUM_HARMONICS
+    - IDENTIFICATION_STEP_V
+    - IDENTIFICATION_MAXIMUM_STEP_V
+    - IDENTIFICATION_REPEATS
+    - IDENTIFICATION_MIN_SNR
+    - REPEATABILITY_RELATIVE_RMS
+    - HARMONIC_REPEATABILITY_FRACTION
+    - MINIMUM_IMPROVEMENT
+    - REIDENTIFY_INTERVAL
   mx-xy-residual-field-calibration:
     basic:
     - RUN_TAG
@@ -890,6 +925,7 @@ parameter_layouts:
     - SCOPE_CYCLES
     - SCOPE_REPEATS
     - SCOPE_SAMPLE_RATE_SA_S
+    - SCOPE_INITIAL_SCALE
     - TRIGGER_FREQUENCY_HZ
     - TRIGGER_AMPLITUDE_VPP
     advanced:
@@ -963,12 +999,7 @@ parameter_layouts:
     - FIXED_PARAMS.Pump_laser_power
     - FIXED_PARAMS.Probe_laser_power
     - FIXED_PARAMS.temperature
-    - CONTROL_VERSION
-    - CONTROL_WAVEFORM_SOURCE
     - CORRECTED_CONTROL_SOURCE_RUN
-    - Z_CALIBRATION_SOURCE_RUN
-    - CONTROL_SCALE
-    - Z_AW_OUTPUT_VPP
     - PHASE_CAL_RF_AMPLITUDE_VPP
     - TEMP_SWITCH_OFF_LEAD_S
     - TEMP_SWITCH_ON_LAG_S
@@ -1004,8 +1035,6 @@ parameter_layouts:
     - FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX
     - LINEAR_CHECK_GAMMA_FRACTION
     - SLOPE_AGREEMENT_TOLERANCE
-    - CONTROL_RESULTS_ROOT
-    - Z_AW_OUTPUT_OFFSET
     - CONTROL_BURST_PHASE_DEG
     - PHASE_FIT_R_SQUARED_MIN
     - PHASE_FIT_AMPLITUDE_SIGMA_MIN
@@ -1554,11 +1583,9 @@ parameter_layouts:
     - CORRECTED_CONTROL_SOURCE_RUN
     - FIXED_PARAMS.Pump_laser_power
     - FIXED_PARAMS.Probe_laser_power
-    - FIXED_PARAMS.main_magnetic_field
-    - FIXED_PARAMS.temperature
-    - FIXED_PARAMS.X_magnetic_field
-    - FIXED_PARAMS.Y_magnetic_field
-    - Z_AW_OUTPUT_VPP
+    - COMPARISON_ENABLED
+    - CONSTANT_CONTROL_LARMOR_FREQUENCY_HZ
+    - CONSTANT_CONTROL_CALIBRATION_SOURCE_RUN
     advanced:
     - FREQUENCY_SETTLE_TIME_S
     - FREQUENCY_DURATION_S
@@ -1585,3 +1612,8 @@ parameter_layouts:
     - TRIGGER_AMPLITUDE_VPP
     - TRIGGER_OFFSET_V
     - TRIGGER_DUTY_PERCENT
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.X_magnetic_field
+    - FIXED_PARAMS.Y_magnetic_field
+    - Z_AW_OUTPUT_VPP
+    - FIXED_PARAMS.temperature

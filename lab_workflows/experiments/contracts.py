@@ -16,6 +16,19 @@ from .requirements import (
 )
 
 
+# Z 控制与触发必须同机且固定为 DG4000 的实验；生产预检与测试共同引用。
+DG4000_ONLY_EXPERIMENT_IDS = frozenset({
+    "z-aw-waveform-scope-check",
+    "z-coil-inductance-frequency-response",
+    "z-aw-current-waveform-scope-check",
+    "z-aw-closed-loop-waveform-correction",
+    "z-coil-current-frequency-response",
+    "mx-z-optimal-control-dg4000-bias-xyz-balance",
+    "mx-z-optimal-control-xy-rf-phase-response",
+    "mx-z-optimal-control-xy-rf-sensitivity",
+    "mx-z-optimal-control-xy-noise-spectrum",
+})
+
 SchemaProvider = Callable[[], dict[str, Any]]
 DefaultsSaver = Callable[[dict[str, Any]], None]
 PreflightRunner = Callable[[dict[str, Any]], list[str]]
@@ -100,17 +113,7 @@ class ExperimentDefinition:
                 errors.append(
                     f"{key} 当前设备缺少无限 Burst 能力 supports_infinite_burst"
                 )
-        if self.id in {
-            "z-aw-waveform-scope-check",
-            "z-coil-inductance-frequency-response",
-            "z-aw-current-waveform-scope-check",
-            "z-aw-closed-loop-waveform-correction",
-            "z-coil-current-frequency-response",
-            "mx-z-optimal-control-dg4000-bias-xyz-balance",
-            "mx-z-optimal-control-xy-rf-phase-response",
-            "mx-z-optimal-control-xy-rf-sensitivity",
-            "mx-z-optimal-control-xy-noise-spectrum",
-        }:
+        if self.id in DG4000_ONLY_EXPERIMENT_IDS:
             z_config = mapping.get("Z_magnetic_field", {})
             trigger_config = mapping.get("Time_sequence_2", {})
             z_device = str(

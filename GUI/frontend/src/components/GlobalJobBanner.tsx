@@ -1,4 +1,5 @@
 import { api } from "../api";
+import { formatEta } from "../formatEta";
 import type { JobSummary } from "../types/api";
 import { useJobActivity } from "./JobActivity";
 import { Status } from "./Status";
@@ -29,6 +30,9 @@ export function GlobalJobBanner() {
           <strong>{kindLabel(job.kind)}</strong>
           <span className="global-job-message">{job.message}</span>
           <span className="global-job-percent">{Math.round(job.percent || 0)}%</span>
+          {formatEta(job.estimated_remaining_seconds) && (
+            <span className="global-job-eta">预计剩余 {formatEta(job.estimated_remaining_seconds)}</span>
+          )}
           <button className="secondary compact" onClick={() => cancel(job)}>取消</button>
         </div>
       ))}

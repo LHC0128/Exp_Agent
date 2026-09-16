@@ -1,4 +1,4 @@
-"""最优控制波形与 Z 标定结果的只读解析。"""
+"""最优控制波形与 Z 标定结果的公共只读解析。"""
 
 from __future__ import annotations
 
@@ -6,13 +6,14 @@ import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import yaml
 
-from ...common import validate_safety_limit
+from .common import validate_safety_limit
+from .current_feedback import CorrectedControlWaveform
 
 
 _VERSION_PATTERN = re.compile(r"^v[1-9]\d*$")
@@ -66,6 +67,29 @@ class AppliedControlWaveform:
     output_minimum_v: float
     output_maximum_v: float
     max_abs_normalized: float
+
+
+def applied_from_voltage(
+    voltage_v: np.ndarray, *, amplitude_vpp: float, offset_v: float,
+) -> AppliedControlWaveform:
+    """在命令产生处检查固定幅度范围，硬件写入安全检查由输出步骤负责。"""
+    voltage = np.asarray(voltage_v, dtype=float)
+    if not np.all(np.isfinite(voltage)):
+        raise ValueError("命令电压包含非有限值")
+    lower, upper = offset_v - amplitude_vpp / 2, offset_v + amplitude_vpp / 2
+    minimum, maximum = float(voltage.min()), float(voltage.max())
+    if minimum < lower or maximum > upper:
+        raise ValueError(
+            f"命令电压 [{minimum:.9g}, {maximum:.9g}] V 超出 DG 范围 "
+            f"[{lower:.9g}, {upper:.9g}] V"
+        )
+    return AppliedControlWaveform(
+        voltage_v=voltage, normalized=(voltage - offset_v) / (amplitude_vpp / 2),
+        amplitude_vpp=amplitude_vpp, offset_v=offset_v,
+        minimum_v=minimum, maximum_v=maximum,
+        output_minimum_v=lower, output_maximum_v=upper,
+        max_abs_normalized=float(np.max(np.abs((voltage - offset_v) / (amplitude_vpp / 2)))),
+    )
 
 
 def resolve_control_results_root(source_set: str) -> Path:
@@ -289,26 +313,46 @@ def build_applied_control(
     )
 
 
+def applied_control_from_corrected(
+    control: CorrectedControlWaveform,
+) -> AppliedControlWaveform:
+    """把闭环冻结波形整定为 DG 任意波输出参数。
+
+    只整理设备接口需要的字段；数组长度、有限值、归一化范围和
+    电压一致性由 ``load_corrected_control_waveform`` 保证，
+    Z 电压安全限值由调用方在输出前校验。
+    """
+    half_range = control.amplitude_vpp / 2.0
+    return AppliedControlWaveform(
+        voltage_v=np.asarray(control.voltage_v, dtype=float),
+        normalized=np.asarray(control.normalized, dtype=float),
+        amplitude_vpp=control.amplitude_vpp,
+        offset_v=control.offset_v,
+        minimum_v=float(np.min(control.voltage_v)),
+        maximum_v=float(np.max(control.voltage_v)),
+        output_minimum_v=control.offset_v - half_range,
+        output_maximum_v=control.offset_v + half_range,
+        max_abs_normalized=float(np.max(np.abs(control.normalized))),
+    )
+
+
 def corrected_control_contract(
-    corrected: Any,
+    corrected: CorrectedControlWaveform,
 ) -> tuple[Any, AppliedControlWaveform]:
-    """把闭环冻结波形适配为 DG 任意波配置契约。"""
-    half_range = float(corrected.amplitude_vpp) / 2.0
-    output_minimum = float(corrected.offset_v) - half_range
-    output_maximum = float(corrected.offset_v) + half_range
-    voltage = np.asarray(corrected.voltage_v, dtype=float)
-    normalized = np.asarray(corrected.normalized, dtype=float)
-    if voltage.size == 0 or normalized.size != voltage.size:
-        raise ValueError("校正波形电压和归一化数组长度无效")
+    """把闭环冻结波形适配为理论来源同形的 DG 任意波配置契约。
+
+    供仍支持理论/闭环双来源的实验统一两条路径；闭环波形输出
+    直接下发的实验应使用 ``applied_control_from_corrected``。
+    """
+    applied = applied_control_from_corrected(corrected)
     for value in (
-        float(np.min(voltage)),
-        float(np.max(voltage)),
-        output_minimum,
-        output_maximum,
+        applied.minimum_v,
+        applied.maximum_v,
+        applied.output_minimum_v,
+        applied.output_maximum_v,
     ):
         validate_safety_limit("Z_magnetic_field", value)
-    max_abs_normalized = float(np.max(np.abs(normalized)))
-    if max_abs_normalized > 1.0 + 1e-9:
+    if applied.max_abs_normalized > 1.0 + 1e-9:
         raise ValueError("校正波形归一化值超出 [-1, 1]")
     theory_contract = SimpleNamespace(
         version=f"corrected:{corrected.run_name}",
@@ -318,16 +362,5 @@ def corrected_control_contract(
         theory_rf_frequency_hz=float(corrected.repeat_frequency_hz),
         waveform_sha256=corrected.waveform_sha256,
         parameter_sha256="",
-    )
-    applied = AppliedControlWaveform(
-        voltage_v=voltage,
-        normalized=normalized,
-        amplitude_vpp=float(corrected.amplitude_vpp),
-        offset_v=float(corrected.offset_v),
-        minimum_v=float(np.min(voltage)),
-        maximum_v=float(np.max(voltage)),
-        output_minimum_v=output_minimum,
-        output_maximum_v=output_maximum,
-        max_abs_normalized=max_abs_normalized,
     )
     return theory_contract, applied
