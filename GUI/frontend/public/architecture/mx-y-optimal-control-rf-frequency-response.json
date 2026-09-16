@@ -1,0 +1,464 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Mx Y 最优控制 RF 频率响应实验架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "output": "GUI/frontend/public/architecture/mx-y-optimal-control-rf-frequency-response.html",
+    "repository": {
+      "url": "https://github.com/LHC0128/Exp_Agent.git",
+      "provider": "github",
+      "revision": "94e8231adbee47f0198873b5474dc267ee894756"
+    },
+    "viewBox": [
+      1360,
+      800
+    ]
+  },
+  "components": [
+    {
+      "id": "gui-page",
+      "type": "frontend",
+      "label": "实验专属 GUI",
+      "sublabel": "运行 / 历史 / 架构 Tab",
+      "pos": [
+        40,
+        120
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "GUI/frontend/src/pages/MxYOptimalControlFrequencyPage.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "typed-definition",
+      "type": "backend",
+      "label": "强类型实验定义",
+      "sublabel": "ExperimentDefinition",
+      "pos": [
+        255,
+        120
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/definition.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "optimal-workflow",
+      "type": "backend",
+      "label": "最优控制采集工作流",
+      "sublabel": "workflow.py",
+      "pos": [
+        470,
+        120
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
+          "line": 154
+        }
+      ]
+    },
+    {
+      "id": "common-devices",
+      "type": "external",
+      "label": "共同仪器配置",
+      "sublabel": "GS200 · DG900 · DG4000 · HF2",
+      "pos": [
+        685,
+        120
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
+          "line": 167
+        }
+      ]
+    },
+    {
+      "id": "y-rf-scan",
+      "type": "backend",
+      "label": "Y RF 频率与相位扫描",
+      "sublabel": "frequency × phase",
+      "pos": [
+        920,
+        120
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "id": "demod-r-point",
+      "type": "backend",
+      "label": "Demod0 R 有效点采集",
+      "sublabel": "均值 / 标准差 / 重采",
+      "pos": [
+        1135,
+        120
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_rf_sensitivity/workflow.py",
+          "line": 563
+        }
+      ]
+    },
+    {
+      "id": "constant-branch",
+      "type": "backend",
+      "label": "可选常数 Z 对照",
+      "sublabel": "标定反解恒定 DC",
+      "pos": [
+        470,
+        310
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/comparison.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "restore-safety",
+      "type": "security",
+      "label": "Z 波形恢复与安全收尾",
+      "sublabel": "validate_safety_limit",
+      "pos": [
+        685,
+        310
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
+          "line": 186
+        },
+        {
+          "path": "lab_workflows/common.py",
+          "line": 41
+        }
+      ]
+    },
+    {
+      "id": "optimal-raw",
+      "type": "database",
+      "label": "最优控制原始数据",
+      "sublabel": "optimal_control_phase_frequency_scan.npz",
+      "pos": [
+        1085,
+        480
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
+          "line": 104
+        }
+      ]
+    },
+    {
+      "id": "offline-analysis",
+      "type": "backend",
+      "label": "离线分析",
+      "sublabel": "analysis.py",
+      "pos": [
+        875,
+        480
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/analysis.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "results",
+      "type": "database",
+      "label": "分析结果",
+      "sublabel": "results/",
+      "pos": [
+        655,
+        480
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/analysis.py",
+          "line": 131
+        }
+      ]
+    },
+    {
+      "id": "constant-raw",
+      "type": "database",
+      "label": "常数控制原始数据",
+      "sublabel": "constant_control_frequency_scan.npz",
+      "pos": [
+        490,
+        660
+      ],
+      "size": [
+        225,
+        64
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/workflow.py",
+          "line": 152
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "实验 GUI 边界",
+      "wraps": [
+        "gui-page"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "采集与设备边界",
+      "wraps": [
+        "typed-definition",
+        "optimal-workflow",
+        "common-devices",
+        "y-rf-scan",
+        "demod-r-point",
+        "constant-branch",
+        "restore-safety"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "数据与分析边界",
+      "wraps": [
+        "optimal-raw",
+        "constant-raw",
+        "offline-analysis",
+        "results"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "gui-to-definition",
+      "from": "gui-page",
+      "to": "typed-definition",
+      "label": "提交强类型参数",
+      "variant": "emphasis",
+      "labelAt": [
+        225,
+        198
+      ]
+    },
+    {
+      "id": "definition-to-workflow",
+      "from": "typed-definition",
+      "to": "optimal-workflow",
+      "label": "分发 typed_workflow",
+      "variant": "emphasis",
+      "labelAt": [
+        447,
+        198
+      ]
+    },
+    {
+      "id": "workflow-to-devices",
+      "from": "optimal-workflow",
+      "to": "common-devices",
+      "label": "连接并配置设备",
+      "variant": "emphasis",
+      "labelAt": [
+        740,
+        198
+      ]
+    },
+    {
+      "id": "devices-to-scan",
+      "from": "common-devices",
+      "to": "y-rf-scan",
+      "label": "配置触发、RF 与 Demod",
+      "variant": "emphasis",
+      "labelAt": [
+        897,
+        198
+      ]
+    },
+    {
+      "id": "scan-to-point",
+      "from": "y-rf-scan",
+      "to": "demod-r-point",
+      "label": "逐频率逐相位采样",
+      "variant": "emphasis",
+      "labelAt": [
+        1112,
+        198
+      ]
+    },
+    {
+      "id": "point-to-raw",
+      "from": "demod-r-point",
+      "to": "optimal-raw",
+      "label": "写入有效点与元数据",
+      "variant": "emphasis",
+      "labelAt": [
+        1240,
+        198
+      ],
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "raw-to-analysis",
+      "from": "optimal-raw",
+      "to": "offline-analysis",
+      "label": "只读 raw 数据",
+      "variant": "emphasis",
+      "labelAt": [
+        800,
+        600
+      ]
+    },
+    {
+      "id": "analysis-to-results",
+      "from": "offline-analysis",
+      "to": "results",
+      "label": "输出分析文件和图表",
+      "variant": "emphasis",
+      "labelAt": [
+        740,
+        570
+      ]
+    },
+    {
+      "id": "workflow-to-comparison",
+      "from": "optimal-workflow",
+      "to": "constant-branch",
+      "label": "启用 COMPARISON_ENABLED 后执行",
+      "variant": "dashed",
+      "labelAt": [
+        555,
+        240
+      ]
+    },
+    {
+      "id": "comparison-to-constant-raw",
+      "from": "constant-branch",
+      "to": "constant-raw",
+      "label": "Z 恒定 DC，Y RF 相位 0°",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "constant-raw-to-analysis",
+      "from": "constant-raw",
+      "to": "offline-analysis",
+      "label": "合并频率响应对照",
+      "variant": "dashed"
+    },
+    {
+      "id": "comparison-to-restore",
+      "from": "constant-branch",
+      "to": "restore-safety",
+      "label": "恢复 Z 最优控制任意波",
+      "variant": "security",
+      "labelAt": [
+        715,
+        398
+      ]
+    },
+    {
+      "id": "workflow-to-restore",
+      "from": "optimal-workflow",
+      "to": "restore-safety",
+      "label": "异常或完成时安全收尾",
+      "variant": "security"
+    },
+    {
+      "id": "restore-to-analysis",
+      "from": "restore-safety",
+      "to": "offline-analysis",
+      "label": "收尾完成后允许分析",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "主实验链路",
+      "items": [
+        "GUI 参数经强类型定义进入采集工作流",
+        "Y RF 频率与 Burst 相位扫描产生 Demod0 R 原始数据",
+        "离线分析输出相位中位数曲线和相位-频率热图"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "可选对照与安全",
+      "items": [
+        "常数对照必须在最优控制扫描完成后执行",
+        "常数 Z 电压由标定反解并通过安全限值校验",
+        "对照结束后恢复 Z 最优控制任意波再安全收尾"
+      ]
+    }
+  ]
+}
