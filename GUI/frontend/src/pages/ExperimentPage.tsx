@@ -5,6 +5,7 @@ import { api } from "../api";
 import { ScopeCapturePage } from "./ScopeCapturePage";
 import { ZAWClosedLoopExperimentPage } from "./ZAWClosedLoopExperimentPage";
 import { MxYOptimalControlFrequencyPage } from "./MxYOptimalControlFrequencyPage";
+import { StaticSensitivityPage } from "./StaticSensitivityPage";
 import { Field, SelectField } from "../components/FormFields";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
@@ -33,10 +34,11 @@ export function ExperimentPage() {
   if (experimentId === "scope-capture") return <ScopeCapturePage />;
   if (experimentId === "z-aw-closed-loop-waveform-correction") return <ZAWClosedLoopExperimentPage />;
   if (experimentId === "mx-y-optimal-control-rf-frequency-response") return <MxYOptimalControlFrequencyPage />;
+  if (experimentId === "static-sensitivity") return <StaticSensitivityPage />;
   return <GenericExperimentPage />;
 }
 
-function GenericExperimentPage() {
+export function GenericExperimentPage() {
   const { experimentId = "static-sensitivity" } = useParams();
   const layoutKey = `exp-agent:${experimentId}:parameter-layout`;
   const collapsedKey = `exp-agent:${experimentId}:advanced-collapsed`;

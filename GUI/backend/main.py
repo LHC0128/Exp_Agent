@@ -162,6 +162,18 @@ class MxYOptimalControlFrequencyRunSummary(BaseModel):
     artifacts: dict[str, str] = Field(default_factory=dict)
 
 
+class StaticSensitivityRunSummary(BaseModel):
+    """静磁场灵敏度 typed 运行摘要。"""
+
+    run_id: str
+    timestamp: str
+    run_tag: str
+    completion_status: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    analysis: dict[str, Any] = Field(default_factory=dict)
+    artifacts: dict[str, str] = Field(default_factory=dict)
+
+
 class ParameterLayoutBody(BaseModel):
     basic: list[str]
     advanced: list[str]
@@ -1145,6 +1157,67 @@ def _mx_y_optimal_control_frequency_runs(page_size: int, offset: int) -> dict[st
         "limit": page_size,
         "runs": runs[offset:offset + page_size],
     }
+
+
+STATIC_SENSITIVITY_ID = "static-sensitivity"
+
+
+def _static_sensitivity_runs(limit: int, offset: int) -> dict[str, Any]:
+    definition = _experiment_or_404(STATIC_SENSITIVITY_ID)
+    base = (ROOT / "data" / definition.data_type).resolve()
+    runs: list[dict[str, Any]] = []
+    if base.is_dir():
+        for path in base.iterdir():
+            if not path.is_dir():
+                continue
+            config = _read_yaml(path / "experiment_config.yaml")
+            if config.get("experiment_id") != STATIC_SENSITIVITY_ID:
+                continue
+            runs.append({
+                "run_id": path.name,
+                "timestamp": str(config.get("timestamp", "")),
+                "run_tag": str(config.get("run_tag", "")),
+                "completion_status": str(config.get("completion_status", "completed")),
+            })
+    runs.sort(key=lambda item: item["run_id"], reverse=True)
+    return {"total": len(runs), "offset": offset, "limit": limit, "runs": runs[offset:offset + limit]}
+
+
+def _build_static_sensitivity_summary(run_id: str) -> StaticSensitivityRunSummary:
+    run_dir = _run_dir(STATIC_SENSITIVITY_ID, run_id)
+    config = _read_yaml(run_dir / "experiment_config.yaml")
+    if config.get("experiment_id") != STATIC_SENSITIVITY_ID:
+        raise HTTPException(404, "该目录不是 typed 静磁场灵敏度运行")
+    analysis = _read_yaml(run_dir / "results" / "analysis.yaml") or {}
+    results_dir = run_dir / "results"
+    artifacts = {
+        item.name: f"/api/runs/{STATIC_SENSITIVITY_ID}/{run_id}/artifacts/{item.name}"
+        for item in results_dir.iterdir()
+        if item.is_file()
+    } if results_dir.is_dir() else {}
+    parameters = config.get("parameters")
+    return StaticSensitivityRunSummary(
+        run_id=run_id,
+        timestamp=str(config.get("timestamp", "")),
+        run_tag=str(config.get("run_tag", "")),
+        completion_status=str(config.get("completion_status", "completed")),
+        parameters=parameters if isinstance(parameters, dict) else {},
+        analysis=analysis,
+        artifacts=artifacts,
+    )
+
+
+@app.get(f"/api/experiments/{STATIC_SENSITIVITY_ID}/runs")
+def static_sensitivity_runs(limit: int = 50, offset: int = 0):
+    return _static_sensitivity_runs(max(1, min(limit, 200)), max(0, offset))
+
+
+@app.get(
+    f"/api/experiments/{STATIC_SENSITIVITY_ID}/runs/{{run_id}}/summary",
+    response_model=StaticSensitivityRunSummary,
+)
+def static_sensitivity_run_summary(run_id: str):
+    return _build_static_sensitivity_summary(run_id)
 
 
 FRONTEND = ROOT / "GUI" / "frontend" / "dist"

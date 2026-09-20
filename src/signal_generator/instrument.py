@@ -26,6 +26,7 @@ ModType = Literal[
 
 SweepSpacing = Literal["LINear", "LOGarithmic"]
 BurstMode = Literal["TRIGgered", "GATed", "INFinity"]
+PulseTransition = float | Literal["MINimum", "MAXimum"]
 VoltageUnit = Literal["VPP", "VRMS", "DBM"]
 OutputPolarity = Literal["NORMal", "INVerted"]
 SyncPolarity = Literal["POSitive", "NEGative"]
@@ -854,17 +855,19 @@ class DG4000Instrument:
             f":SOURce{self._ch(channel)}:PULSe:DELay?"
         )
 
-    def set_pulse_leading(self, seconds: float,
+    def set_pulse_leading(self, seconds: PulseTransition,
                           channel: Optional[int] = None) -> None:
-        """设置脉冲上升沿时间 (s)."""
+        """设置脉冲上升沿时间 (s)，也可使用设备关键字 MINimum/MAXimum。"""
+        value = seconds if isinstance(seconds, str) else f"{seconds:e}"
         self.write(
-            f":SOURce{self._ch(channel)}:PULSe:TRANsition:LEADing {seconds:e}")
+            f":SOURce{self._ch(channel)}:PULSe:TRANsition:LEADing {value}")
 
-    def set_pulse_trailing(self, seconds: float,
+    def set_pulse_trailing(self, seconds: PulseTransition,
                            channel: Optional[int] = None) -> None:
-        """设置脉冲下降沿时间 (s)."""
+        """设置脉冲下降沿时间 (s)，也可使用设备关键字 MINimum/MAXimum。"""
+        value = seconds if isinstance(seconds, str) else f"{seconds:e}"
         self.write(
-            f":SOURce{self._ch(channel)}:PULSe:TRANsition:TRAiling {seconds:e}")
+            f":SOURce{self._ch(channel)}:PULSe:TRANsition:TRAiling {value}")
 
     def set_pulse_hold(self, hold: str,
                        channel: Optional[int] = None) -> None:

@@ -476,10 +476,18 @@ print(f"运行目录: {run_dir}")
 #   - 各频率下的 100MHz 载波品质一致
 # =====================================================
 
-# ---- 1) DG4000 CH1: 100MHz 连续正弦波 ----
+# ---- 1) DG4000 CH1: 100MHz 正弦波 + 外部门控 Burst ----
+dg_mod.set_burst_state(False, channel=1)
+dg_mod.set_mod_state(False, channel=1)
 dg_mod.setup_sine(freq=100e6, amplitude=PUMP_MOD_AMPLITUDE,
                   offset=0.0, phase=0.0, channel=1)
-print(f"  100MHz, 幅度 {PUMP_MOD_AMPLITUDE*1000:.0f} mVpp → RF 开关 IN")
+dg_mod.set_output(False, channel=1)
+dg_mod.set_burst_mode("GATed", channel=1)
+dg_mod.set_burst_trigger_source("EXTernal", channel=1)
+dg_mod.set_burst_phase(0.0, channel=1)
+dg_mod.set_burst_state(True, channel=1)
+dg_mod.set_output(True, channel=1)
+print(f"  100MHz, 幅度 {PUMP_MOD_AMPLITUDE*1000:.0f} mVpp, GATed/EXTernal → AOM")
 
 # ---- 2) DG4000 CH2: 脉冲门控信号 ----
 #    频率 = PUMP_MOD_FREQ (90 kHz), 脉宽 = duty% × 周期
@@ -488,8 +496,10 @@ print(f"\nCH2: 配置 {PUMP_MOD_FREQ/1e3:.0f} kHz 脉冲门控...")
 print(f"  脉宽: {pulse_width*1e6:.2f} μs ({PUMP_MOD_DUTY}% duty)")
 dg_mod.setup_pulse(freq=PUMP_MOD_FREQ, amplitude=RF_GATE_AMPLITUDE,
                    offset=RF_GATE_OFFSET, width=pulse_width, channel=2)
+dg_mod.set_pulse_leading("MINimum", channel=2)
+dg_mod.set_pulse_trailing("MINimum", channel=2)
 print(f"  {PUMP_MOD_FREQ/1e3:.0f} kHz, {RF_GATE_AMPLITUDE:.1f} Vpp, "
-      f"offset {RF_GATE_OFFSET:.1f}V → RF 开关 CTRL")
+      f"offset {RF_GATE_OFFSET:.1f}V, MINimum edges → DG4000 外部门控")
 
 print("\n✅ RF 开关方案配置完成")
 
@@ -706,7 +716,10 @@ with open(run_dir / "params.yaml", "w", encoding="utf-8") as f:
 
 instrument_snapshot = instrument_config_snapshot(project_root)
 experiment_config = {
+    "experiment_id": "static-sensitivity",
     "experiment_type": EXPERIMENT_TYPE,
+    "execution_mode": "typed_workflow",
+    "schema_version": 1,
     "run_tag": RUN_TAG,
     "timestamp": timestamp,
     "parameters": _shared_params.to_dict(),

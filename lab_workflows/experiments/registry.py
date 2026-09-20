@@ -112,10 +112,8 @@ from ..experiment_modules.t2_calibration.definition import (
 from ..experiment_modules.xy_direct_aw_dc_calibration.definition import (
     DEFINITION as XY_DIRECT_AW_DC_DEFINITION,
 )
-from ..static_sensitivity import (
-    StaticSensitivityParams,
-    preflight_static_sensitivity,
-    run_static_sensitivity,
+from ..experiment_modules.static_sensitivity.definition import (
+    DEFINITION as STATIC_SENSITIVITY_DEFINITION,
 )
 from .contracts import ExperimentDefinition
 from .legacy import LegacyScriptAdapter
@@ -170,55 +168,9 @@ def _legacy(
     )
 
 
-def _static_schema() -> dict[str, Any]:
-    return StaticSensitivityParams.schema(StaticSensitivityParams.from_yaml())
-
-
-def _save_static(values: dict[str, Any]) -> None:
-    params = StaticSensitivityParams.from_dict(values)
-    errors = preflight_static_sensitivity(params)
-    if errors:
-        raise ValueError("；".join(errors))
-    params.to_yaml()
-
-
-def _preflight_static(values: dict[str, Any]) -> list[str]:
-    return preflight_static_sensitivity(StaticSensitivityParams.from_dict(values))
-
-
-def _run_static(
-    values: dict[str, Any],
-    progress: ProgressCallback | None,
-    cancellation: CancellationToken | None,
-) -> dict[str, Any]:
-    return run_static_sensitivity(
-        StaticSensitivityParams.from_dict(values), progress, cancellation
-    )
-
-
 _DEFINITIONS = [
     SCOPE_CAPTURE_DEFINITION,
-    ExperimentDefinition(
-        id="static-sensitivity",
-        title="静磁场灵敏度",
-        category="measurement",
-        family="static-field",
-        variant="standard",
-        description="采集色散曲线和噪声并计算静磁场灵敏度。",
-        data_type="Static_Magnetic_Field_Sensitivity",
-        required_devices=_DEVICES["optical"],
-        execution_mode="typed_workflow",
-        acquisition_program="experiments/Static_Magnetic_Field_Sensitivity.py",
-        analysis_program=None,
-        wiring_notes=("确认 Pump、Probe、Z 场和 HF2 输入按 mapping.yaml 连接。",),
-        safety_notes=("Z 场和光功率在写入前按安全限值校验。",),
-        schema_provider=_static_schema,
-        defaults_saver=_save_static,
-        preflight_runner=_preflight_static,
-        experiment_runner=_run_static,
-        analysis_runner=None,
-        auto_analyze=False,
-    ),
+    STATIC_SENSITIVITY_DEFINITION,
     MX_Y_RF_SENSITIVITY_DEFINITION,
     MX_Y_RF_FREQUENCY_RESPONSE_DEFINITION,
     MX_Y_OPTIMAL_CONTROL_RF_FREQUENCY_RESPONSE_DEFINITION,
