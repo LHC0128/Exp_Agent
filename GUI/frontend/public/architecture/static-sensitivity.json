@@ -10,7 +10,7 @@
     "repository": {
       "url": "https://github.com/LHC0128/Exp_Agent.git",
       "link_mode": "web",
-      "revision": "f935c2243f5a23c80076336c77557be81d011354"
+      "revision": "ef031ffdd2b2d919215ee2ef3d0877e5fb7de843"
     },
     "views": [
       { "id": "control", "label": "参数与控制", "focus": ["gui", "workflow", "mapping"], "note": "参数表单通过 typed workflow 进入统一设备映射。" },
@@ -30,7 +30,7 @@
     { "id": "z_sweep", "type": "external", "label": "Z 扫场 DG4000", "sublabel": "CH1 RAMP + CH2 SYNC", "pos": [520, 330], "size": [180, 70], "sources": [{ "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 284 }] },
     { "id": "hf2", "type": "external", "label": "HF2 Demod0 / DAQ", "sublabel": "sample.y + SYNC trigger", "pos": [760, 330], "size": [180, 70], "sources": [{ "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 346 }] },
     { "id": "raw", "type": "database", "label": "Raw Run Directory", "sublabel": "raw/scan_data.npz + noise", "pos": [980, 500], "size": [180, 70], "sources": [{ "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 684 }] },
-    { "id": "analysis", "type": "backend", "label": "Offline Analysis", "sublabel": "sensitivity + paper plots", "pos": [1190, 500], "size": [180, 70], "sources": [{ "path": "lab_workflows/experiment_modules/static_sensitivity/analysis.py", "line": 14 }] },
+    { "id": "analysis", "type": "backend", "label": "Offline Analysis", "sublabel": "sensitivity + paper plots", "pos": [1190, 500], "size": [180, 70], "sources": [{ "path": "lab_workflows/experiment_modules/static_sensitivity/analysis.py", "line": 37 }] },
     { "id": "history", "type": "frontend", "label": "Results / History GUI", "sublabel": "summary + artifacts", "pos": [1190, 650], "size": [180, 70], "sources": [{ "path": "GUI/backend/main.py", "line": 1211 }, { "path": "GUI/frontend/src/pages/StaticSensitivityPage.tsx", "line": 53 }] }
   ],
   "connections": [
