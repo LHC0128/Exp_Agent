@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "静磁场灵敏度采集架构",
+    "locale": "zh-CN",
+    "output": "static-sensitivity.html",
+    "quality_profile": "showcase",
+    "viewBox": [1380, 780],
+    "repository": {
+      "url": "https://github.com/LHC0128/Exp_Agent.git",
+      "link_mode": "web",
+      "revision": "f935c2243f5a23c80076336c77557be81d011354"
+    },
+    "views": [
+      { "id": "control", "label": "参数与控制", "focus": ["gui", "workflow", "mapping"], "note": "参数表单通过 typed workflow 进入统一设备映射。" },
+      { "id": "hardware", "label": "仪器互连", "focus": ["pump_ch1", "pump_ch2", "gate_input", "aom_cell", "gs200", "z_sweep", "hf2"], "note": "重点查看外部门控、AOM 物理链路和 Z 扫场触发。" },
+      { "id": "data", "label": "数据与判定", "focus": ["hf2", "raw", "analysis", "history"], "note": "原始采集目录进入离线分析并回到历史页面。" }
+    ]
+  },
+  "components": [
+    { "id": "gui", "type": "frontend", "label": "GUI 参数与任务控制", "sublabel": "运行 / 历史 / 架构", "pos": [40, 90], "size": [180, 70], "sources": [{ "path": "GUI/frontend/src/pages/StaticSensitivityPage.tsx", "line": 20 }] },
+    { "id": "workflow", "type": "backend", "label": "Static Sensitivity Workflow", "sublabel": "typed adapter + hardware steps", "pos": [280, 90], "size": [200, 70], "sources": [{ "path": "lab_workflows/experiment_modules/static_sensitivity/definition.py", "line": 9 }, { "path": "lab_workflows/experiment_modules/static_sensitivity/workflow.py", "line": 18 }] },
+    { "id": "mapping", "type": "backend", "label": "Mapping / Session / Sync", "sublabel": "mapping.yaml · DeviceSession", "pos": [520, 90], "size": [180, 70], "sources": [{ "path": "params/mapping.yaml", "line": 8 }, { "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 268 }] },
+    { "id": "pump_ch1", "type": "external", "label": "Pump DG4000 CH1", "sublabel": "100 MHz Gated Burst", "tag": "AOM carrier", "pos": [760, 30], "size": [180, 70], "sources": [{ "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 480 }] },
+    { "id": "pump_ch2", "type": "external", "label": "Pump DG4000 CH2", "sublabel": "0–5 V high-active pulse", "tag": "MINimum edges", "pos": [760, 150], "size": [180, 70], "sources": [{ "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 493 }, { "path": "src/signal_generator/instrument.py", "line": 858 }] },
+    { "id": "gate_input", "type": "security", "label": "DG4000 external gate input", "sublabel": "CH2 controls CH1 Gated Burst", "pos": [980, 180], "size": [180, 70], "sources": [{ "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 485 }] },
+    { "id": "aom_cell", "type": "external", "label": "AOM 与铷原子气室", "sublabel": "Pump / Probe / magnetic response", "pos": [1180, 250], "size": [190, 70], "sources": [{ "path": "params/mapping.yaml", "line": 83 }] },
+    { "id": "gs200", "type": "external", "label": "GS200 主磁场", "sublabel": "main magnetic field current", "pos": [280, 330], "size": [180, 70], "sources": [{ "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 274 }] },
+    { "id": "z_sweep", "type": "external", "label": "Z 扫场 DG4000", "sublabel": "CH1 RAMP + CH2 SYNC", "pos": [520, 330], "size": [180, 70], "sources": [{ "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 284 }] },
+    { "id": "hf2", "type": "external", "label": "HF2 Demod0 / DAQ", "sublabel": "sample.y + SYNC trigger", "pos": [760, 330], "size": [180, 70], "sources": [{ "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 346 }] },
+    { "id": "raw", "type": "database", "label": "Raw Run Directory", "sublabel": "raw/scan_data.npz + noise", "pos": [980, 500], "size": [180, 70], "sources": [{ "path": "experiments/Static_Magnetic_Field_Sensitivity.py", "line": 684 }] },
+    { "id": "analysis", "type": "backend", "label": "Offline Analysis", "sublabel": "sensitivity + paper plots", "pos": [1190, 500], "size": [180, 70], "sources": [{ "path": "lab_workflows/experiment_modules/static_sensitivity/analysis.py", "line": 14 }] },
+    { "id": "history", "type": "frontend", "label": "Results / History GUI", "sublabel": "summary + artifacts", "pos": [1190, 650], "size": [180, 70], "sources": [{ "path": "GUI/backend/main.py", "line": 1211 }, { "path": "GUI/frontend/src/pages/StaticSensitivityPage.tsx", "line": 53 }] }
+  ],
+  "connections": [
+    { "id": "gui-workflow", "from": "gui", "to": "workflow", "variant": "emphasis" },
+    { "id": "workflow-mapping", "from": "workflow", "to": "mapping", "variant": "dashed" },
+    { "id": "pump2-gate", "from": "pump_ch2", "to": "gate_input", "variant": "security" },
+    { "id": "gate-pump1", "from": "gate_input", "to": "pump_ch1", "variant": "security" },
+    { "id": "pump1-cell", "from": "pump_ch1", "to": "aom_cell", "variant": "emphasis", "fromSide": "top", "toSide": "top", "via": [[850, 10], [1275, 10], [1275, 230]] },
+    { "id": "z-hf2", "from": "z_sweep", "to": "hf2", "variant": "security" },
+    { "id": "cell-hf2", "from": "aom_cell", "to": "hf2", "variant": "emphasis" },
+    { "id": "hf2-raw", "from": "hf2", "to": "raw", "variant": "emphasis" },
+    { "id": "raw-analysis", "from": "raw", "to": "analysis", "variant": "emphasis" },
+    { "id": "analysis-history", "from": "analysis", "to": "history", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "扫描设计", "items": ["Z 扫场下降段用于色散拟合", "HF2 Demod0 以实际采样率采集同步数据", "噪声按 GS200 电流量程分别保存并比较"] },
+    { "dot": "rose", "title": "仪器互连", "items": ["CH2 0–5 V 高有效脉冲接外部门控输入", "CH1 Gated Burst 只在门控有效时驱动 AOM", "Z 扫场 SYNC 直接作为 HF2 DAQ 触发"] },
+    { "dot": "emerald", "title": "数据与判定", "items": ["raw/ 保存 scan_data 与 noise_range_scan", "离线分析写入 analysis.yaml、灵敏度结果和 paper 图", "历史页面只列 typed workflow 运行目录"] }
+  ]
+}
