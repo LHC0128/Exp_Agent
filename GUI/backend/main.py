@@ -1171,7 +1171,7 @@ def _static_sensitivity_runs(limit: int, offset: int) -> dict[str, Any]:
             if not path.is_dir():
                 continue
             config = _read_yaml(path / "experiment_config.yaml")
-            if config.get("experiment_id") != STATIC_SENSITIVITY_ID:
+            if not config or config.get("experiment_id") != STATIC_SENSITIVITY_ID:
                 continue
             runs.append({
                 "run_id": path.name,
