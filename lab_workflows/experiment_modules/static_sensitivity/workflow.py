@@ -19,7 +19,9 @@ def run(params: StaticSensitivityParams) -> None:
     root = Path(__file__).resolve().parents[3]
     environment = os.environ.copy()
     environment["LAB_STATIC_CONFIG"] = json.dumps(params.to_legacy(), ensure_ascii=False)
+    environment["LAB_STATIC_ACQUISITION_ONLY"] = "1"
     old_config = os.environ.get("LAB_STATIC_CONFIG")
+    old_acquisition_only = os.environ.get("LAB_STATIC_ACQUISITION_ONLY")
     os.environ.update(environment)
     try:
         runpy.run_path(str(root / "experiments" / "Static_Magnetic_Field_Sensitivity.py"), run_name="__main__")
@@ -28,6 +30,10 @@ def run(params: StaticSensitivityParams) -> None:
             os.environ.pop("LAB_STATIC_CONFIG", None)
         else:
             os.environ["LAB_STATIC_CONFIG"] = old_config
+        if old_acquisition_only is None:
+            os.environ.pop("LAB_STATIC_ACQUISITION_ONLY", None)
+        else:
+            os.environ["LAB_STATIC_ACQUISITION_ONLY"] = old_acquisition_only
 
 
 def main() -> int:

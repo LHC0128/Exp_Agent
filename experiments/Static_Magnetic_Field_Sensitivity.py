@@ -998,6 +998,13 @@ raw_file_size = len(GS200_CURRENT_RANGES) * NOISE_N_AVG * int(fs_noise * NOISE_D
 print(f"  原始数据已保存: {noise_root_dir}/ (共 {raw_file_size:.1f} MB)")
 print(f"  量程汇总已保存: {raw_dir / 'noise_range_scan.npz'}")
 
+if os.environ.get("LAB_STATIC_ACQUISITION_ONLY"):
+    tec = devices.get("tec")
+    if tec and hasattr(tec, "disconnect"):
+        tec.disconnect()
+    print("typed workflow 采集阶段完成，离线分析交由 analysis.py")
+    raise SystemExit(0)
+
 # %% Cell 11
 # ===== 灵敏度分析: Y 色散拟合 + PSD + 合并绘图 =====
 from sensitivity_analysis import (
