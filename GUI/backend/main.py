@@ -1073,12 +1073,10 @@ def mx_y_optimal_control_frequency_run_summary(run_id: str):
     )
 
 
-@app.get("/api/experiments/{experiment_id}/runs/{run_id}/summary", response_model=ZAWClosedLoopRunSummary)
-def experiment_run_summary(experiment_id: str, run_id: str):
+@app.get(f"/api/experiments/{ZAW_CLOSED_LOOP_ID}/runs/{{run_id}}/summary", response_model=ZAWClosedLoopRunSummary)
+def experiment_run_summary(run_id: str):
     """Z 闭环专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。"""
-    if experiment_id != ZAW_CLOSED_LOOP_ID:
-        raise HTTPException(404, "该实验未提供专属摘要端点")
-    return _build_zaw_closed_loop_summary(experiment_id, run_id)
+    return _build_zaw_closed_loop_summary(ZAW_CLOSED_LOOP_ID, run_id)
 
 
 def _build_mx_y_optimal_control_frequency_summary(
