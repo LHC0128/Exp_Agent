@@ -1,0 +1,26 @@
+{
+  "provider_task_id": "444449932923171",
+  "submitted_model": "MiniMax-H3",
+  "output_file_path": "D:\\Code\\exp_agent\\videos\\444449932923171.mp4",
+  "submitted_at_ms": 1790061370157,
+  "last_query_at_ms": 1790061610663,
+  "next_query_due_at_ms": null,
+  "polling_cron_task_id": "9db207ca-ad55-492d-8de3-f4f086194992",
+  "polling_cron_name": "video-result-444449932923171",
+  "terminal_status": "succeeded",
+  "delivered_at_ms": 1790061610663,
+  "submitted_request": {
+    "duration": 5,
+    "ratio": "3:4",
+    "resolution": "768P",
+    "reference_type": "first_frame",
+    "input_image_source": "D:\\Code\\exp_agent\\prepared-media\\bell-bloom-setup-3x4.png",
+    "input_image_dimensions": "983x1311"
+  },
+  "delivery": {
+    "file_size_bytes": 613528,
+    "provider_video_url": "https://algeng-video-infer.oss-cn-shanghai.aliyuncs.com/inference_output%2Frollout%2F2026-09-22%2F47714a01-2225-4ada-a8b6-3ff9ad3f9c9c%2Foutput_aigc.mp4",
+    "mp4_signature": "ftyp",
+    "validated": true
+  }
+}

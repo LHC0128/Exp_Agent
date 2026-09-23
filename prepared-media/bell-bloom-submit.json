@@ -1,0 +1,12 @@
+{
+  "model": "MiniMax-H3",
+  "duration": 5,
+  "ratio": "3:4",
+  "resolution": "768P",
+  "reference_type": "first_frame",
+  "input_image": {
+    "url": "https://matrix-internal-cn.oss-cn-shanghai.aliyuncs.com/user_file_upload_tmp%2F2026-09-22%2F2fd92371-3d1d-4e8d-aa2d-6511b47f1212.png?x-oss-credential=LTAI5tKjcNxbSxktvpFqdYgH%2F20260922%2Fcn-shanghai%2Foss%2Faliyun_v4_request&x-oss-date=20260922T071524Z&x-oss-expires=3600&x-oss-signature=5d2df963581c2ef9dd64d9c9c7434fe3d8ca00cf0a793d55acb1ced25c35c6a3&x-oss-signature-version=OSS4-HMAC-SHA256",
+    "mime_type": "image/png"
+  },
+  "prompt": "I2VA:\nFor the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\nintegrated_multimodal_description: [Shot 1] Cinematic close-up of a sophisticated laboratory photo-optical assembly centered on a transparent 87Rb vapor cell wrapped in copper RF coils, all surrounded by a magnetic shield. A red pump laser beam enters from the left and a purple probe beam crosses through the cell at an angle. Cool laboratory lighting with soft reflections on the polished bench. The camera executes a slow, smooth push-in toward the central cell with a slight orbital drift, while the red and purple laser beams intensify and pulse in a rhythmic pattern. Faint magnetic field lines shimmer and glow around the coil windings. Light particles drift gently inside the cell, suggesting atomic spin dynamics. On the lower-left, the laptop screen animates an LED signal display with a sweeping resonance curve that breathes with the pulse. On the right, the half-wave plate, polarizing beam splitter, and balanced photodetector catch highlights as the probe beam exits. The scene ends on a tight framing of the glowing rubidium cell with all beams and coils active, framed against deep black cinematic letterbox bars above and below.\n\noverall_soundscape: Steady low-frequency hum of laboratory electronics and laser power supplies. Soft rhythmic electric pulses synchronized with the RF coils. Subtle ticking from the balanced photodetector and signal subtractor. Quiet, focused, precise scientific atmosphere.\n\nnon_diegetic_music: Cinematic ambient electronic score with deep synthesizers, slow pulsing arpeggios, and rising tension. Inspired by documentary science themes, building a sense of wonder and precision. Slow tempo, swelling subtly toward the end."
+}
