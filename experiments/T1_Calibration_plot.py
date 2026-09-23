@@ -18,8 +18,10 @@ if str(project_root) not in sys.path:
 import numpy as np
 import yaml
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 from scipy.optimize import curve_fit
 
 print("导入完成（离线分析模式，无需仪器）")
@@ -59,10 +61,6 @@ def exp_decay(t, A, T1, C):
 
 # %% Cell 4
 # ========== 加载数据 ==========
-plt.rcParams.update({
-    "figure.dpi": 120, "font.size": 11,
-    "axes.labelsize": 12, "axes.titlesize": 13,
-})
 
 if DO_POWER_SCAN:
     loaded = np.load(POWER_SCAN_PATH)
@@ -72,15 +70,15 @@ if DO_POWER_SCAN:
     print(f"加载 {len(probe_powers)} 个功率点的 T₁ 数据")
 
     # ---- 图1: T₁ vs P_probe ----
-    fig1, ax1 = plt.subplots(figsize=(7, 4.5))
+    fig1, ax1 = new_figure(kind="standard", height_mm=65)
     ax1.errorbar(probe_powers, np.array(T1_values) * 1e3,
                  yerr=np.array(T1_errs) * 1e3, fmt="o-", capsize=3)
-    ax1.set_xlabel("Probe Power (V)")
+    ax1.set_xlabel("Probe control voltage (V)")
     ax1.set_ylabel("$T_1$ (ms)")
     ax1.set_title("$T_1$ vs Probe Power")
-    ax1.grid(True, alpha=0.3)
-    fig1.tight_layout()
-    fig1.savefig(results_dir / "T1_vs_probe_power.png")
+    ax1.grid(False)
+    fig1.set_layout_engine("constrained")
+    save_figure(fig1, results_dir / "T1_vs_probe_power.png", close=False)
     print(f"图表已保存: {results_dir / 'T1_vs_probe_power.png'}")
 
     # ---- 图2: T₁⁻¹ vs P_probe 线性拟合 ----
@@ -96,19 +94,19 @@ if DO_POWER_SCAN:
         alpha = coeffs[0]
         T1_0 = 1.0 / T1_0_inv if T1_0_inv > 0 else np.inf
 
-        fig2, ax2 = plt.subplots(figsize=(7, 4.5))
+        fig2, ax2 = new_figure(kind="standard", height_mm=65)
         ax2.errorbar(p_valid, inv_T1, yerr=inv_T1_err, fmt="o", capsize=3, label="Data")
         p_fit = np.linspace(p_valid.min(), p_valid.max(), 50)
         ax2.plot(p_fit, poly(p_fit), "r--",
                  label=f"Fit: $T_{{1,0}}^{{-1}}$={T1_0_inv:.2f} s$^{{-1}}$, "
                        f"$\\alpha$={alpha:.3f}")
-        ax2.set_xlabel("Probe Power (V)")
+        ax2.set_xlabel("Probe control voltage (V)")
         ax2.set_ylabel("$T_1^{-1}$ (s$^{-1}$)")
         ax2.set_title("$T_1^{-1}$ vs Probe Power")
         ax2.legend()
-        ax2.grid(True, alpha=0.3)
-        fig2.tight_layout()
-        fig2.savefig(results_dir / "inv_T1_vs_probe_power.png")
+        ax2.grid(False)
+        fig2.set_layout_engine("constrained")
+        save_figure(fig2, results_dir / "inv_T1_vs_probe_power.png", close=False)
         print(f"图表已保存: {results_dir / 'inv_T1_vs_probe_power.png'}")
 
         fit_result = {
@@ -139,9 +137,9 @@ if DO_POWER_SCAN:
         mask = t_full >= 0
         t_decay = t_full[mask]
 
-        n_cols = min(5, n_pts)
+        n_cols = min(3, n_pts)
         n_rows = int(np.ceil(n_pts / n_cols))
-        fig3, axes3 = plt.subplots(n_rows, n_cols, figsize=(3.5 * n_cols, 3 * n_rows))
+        fig3, axes3 = new_figure(nrows=n_rows, ncols=n_cols, kind="wide", height_mm=max(65, 55 * (n_rows)))
         if n_pts == 1:
             axes3 = np.array([axes3])
         axes3 = axes3.flatten()
@@ -155,19 +153,19 @@ if DO_POWER_SCAN:
                 v_fit = exp_decay(t_decay, *popt_stack[idx])
                 ax.plot(t_decay * 1e3, v_fit, "r--", linewidth=1.0)
                 T1_i = abs(popt_stack[idx][1]) * 1e3
-                ax.text(0.97, 0.92, f"T₁={T1_i:.1f}ms", transform=ax.transAxes,
-                        ha="right", va="top", fontsize=9, color="red")
+                ax.text(0.97, 0.92, f"$T_1$ = {T1_i:.1f} ms", transform=ax.transAxes,
+                        ha="right", va="top", fontsize=8, color="red")
             ax.set_title(f"Probe = {powers[idx]:.3f} V")
             ax.set_xlabel("Time (ms)")
             ax.set_ylabel("V_diff (V)")
-            ax.grid(True, alpha=0.3)
+            ax.grid(False)
 
         for idx in range(n_pts, len(axes3)):
             axes3[idx].set_visible(False)
 
-        fig3.suptitle("T₁ Decay Curves — All Probe Powers", fontsize=14, y=1.01)
-        fig3.tight_layout()
-        fig3.savefig(results_dir / "T1_all_decay_curves.png", dpi=150, bbox_inches="tight")
+        fig3.suptitle("$T_1$ decay curves — all probe settings", fontsize=8)
+        fig3.set_layout_engine("constrained")
+        save_figure(fig3, results_dir / "T1_all_decay_curves.png", close=False)
         print(f"图表已保存: {results_dir / 'T1_all_decay_curves.png'}")
     else:
         print("⚠ 未找到 power_scan_waveforms.npz，无法绘制衰减曲线（需新版采集程序）")
@@ -187,7 +185,7 @@ else:
 
     # ---- 图1: PDB 衰减 + 拟合 ----
     t_fit_plot = t_axis[t_axis >= 0]
-    fig1, ax1 = plt.subplots(figsize=(9, 5))
+    fig1, ax1 = new_figure(kind="standard", height_mm=65)
     ax1.plot(t_axis * 1e3, vdiff, linewidth=0.5, label="PDB $V_{\\rm diff}$")
     if not np.isnan(T1):
         ax1.plot(t_fit_plot * 1e3, exp_decay(t_fit_plot, *popt), "r--", linewidth=1.5,
@@ -197,22 +195,22 @@ else:
     ax1.set_ylabel("PDB Signal $V_{\\rm diff}$ (V)")
     ax1.set_title("PDB Differential Signal Decay & $T_1$ Fit")
     ax1.legend()
-    ax1.grid(True, alpha=0.3)
-    fig1.tight_layout()
-    fig1.savefig(results_dir / "PDB_T1_decay.png")
+    ax1.grid(False)
+    fig1.set_layout_engine("constrained")
+    save_figure(fig1, results_dir / "PDB_T1_decay.png", close=False)
     print(f"图表已保存: {results_dir / 'PDB_T1_decay.png'}")
 
     # ---- 图2: 拟合残差 ----
     if not np.isnan(T1):
-        fig2, ax2 = plt.subplots(figsize=(9, 3))
+        fig2, ax2 = new_figure(kind="standard", height_mm=65)
         residual = vdiff[t_axis >= 0] - exp_decay(t_fit_plot, *popt)
         ax2.plot(t_fit_plot * 1e3, residual * 1e3, linewidth=0.5)
         ax2.set_xlabel("Time (ms)")
         ax2.set_ylabel("Residual (mV)")
         ax2.set_title("Fit Residual ($t \\geq 0$)")
-        ax2.grid(True, alpha=0.3)
-        fig2.tight_layout()
-        fig2.savefig(results_dir / "T1_fit_residual.png")
+        ax2.grid(False)
+        fig2.set_layout_engine("constrained")
+        save_figure(fig2, results_dir / "T1_fit_residual.png", close=False)
         print(f"图表已保存: {results_dir / 'T1_fit_residual.png'}")
 
     print(f"\nT₁ = {T1*1e3:.2f} ± {T1_err*1e3:.2f} ms")

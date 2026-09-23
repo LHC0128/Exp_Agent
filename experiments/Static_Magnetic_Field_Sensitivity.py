@@ -32,6 +32,8 @@ import yaml
 import time
 from datetime import datetime
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 
 # 设备库
 from gs200 import GS200Instrument
@@ -169,6 +171,8 @@ HF2_DEMOD_IDX = _shared_params.hf2_demod_idx
 HF2_OSC_FREQ = PUMP_MOD_FREQ
 HF2_DEMOD_ORDER = _shared_params.hf2_demod_order
 HF2_SIGNAL_RANGE = _shared_params.hf2_signal_range
+HF2_AC_COUPLING = _shared_params.hf2_ac_coupling
+HF2_50_OHM = _shared_params.hf2_50_ohm
 HF2_DEMOD_RATE = _shared_params.hf2_demod_rate
 HF2_DEMOD_TC = _shared_params.hf2_demod_tc
 HF2_NOISE_RATE = _shared_params.hf2_noise_rate
@@ -522,12 +526,16 @@ dg_sweep.set_output(False, channel=1)
 sig_in_cfg = SignalInputConfig(
     input_index=0,
     range=HF2_SIGNAL_RANGE,
-    ac_coupling=True,
+    ac_coupling=HF2_AC_COUPLING,
     diff=False,
-    impedance=50,
+    impedance=50 if HF2_50_OHM else 10_000,
 )
 demod.configure_signal_input(hfi, sig_in_cfg)
-print(f"信号输入已配置: {HF2_SIGNAL_RANGE} V range, AC coupled")
+print(
+    f"信号输入已配置: {HF2_SIGNAL_RANGE} V range, "
+    f"{'AC' if HF2_AC_COUPLING else 'DC'} coupled, "
+    f"{'50 Ω' if HF2_50_OHM else '高阻'}"
+)
 
 # 配置振荡器 (90 kHz, 匹配 Pump 调制频率)
 osc_cfg = OscillatorConfig(
@@ -704,6 +712,7 @@ snapshot = {
     "ramp_low": RAMP_LOW, "ramp_high": RAMP_HIGH,
     "daq_duration": DAQ_DURATION,
     "hf2_demod_tc": HF2_DEMOD_TC, "hf2_demod_rate": HF2_DEMOD_RATE,
+    "hf2_ac_coupling": HF2_AC_COUPLING, "hf2_50_ohm": HF2_50_OHM,
     "pump_mod_freq": PUMP_MOD_FREQ,
     "pump_mod_amplitude": PUMP_MOD_AMPLITUDE,
     "pump_mod_duty": PUMP_MOD_DUTY,
@@ -1158,7 +1167,7 @@ write_run_record(
 V_all = recorded_data["Z_voltage"][fall_mask]
 B_all = V_all * Z_V_TO_FT
 
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 8), height_ratios=[1.2, 1])
+fig, (ax1, ax2) = new_figure(nrows=2, ncols=1, kind="wide", height_mm=110, height_ratios=[1.2, 1])
 
 ax1.plot(B_all, recorded_data["sample.x"][fall_mask], "-", lw=0.8, label="X")
 ax1.plot(B_all, recorded_data["sample.y"][fall_mask], "-", lw=0.8, label="Y")
@@ -1172,7 +1181,7 @@ title1 = "Dispersion curve (falling edge)"
 if not fit_result.is_valid:
     title1 += " [INVALID]"
 ax1.set_title(title1); ax1.legend(fontsize=8)
-ax1.grid(True, alpha=0.3)
+ax1.grid(False)
 
 colors = plt.cm.tab10(np.linspace(0, 1, max(len(sensitivity_by_range), 1)))
 for idx, sens_i in enumerate(sensitivity_by_range):
@@ -1203,13 +1212,13 @@ ax2.set_xlabel("Frequency (Hz)"); ax2.set_ylabel("Sensitivity (fT/√Hz)")
 title2 = "Sensitivity spectrum (flat region median)"
 if not fit_result.is_valid:
     title2 += " [INVALID]"
-ax2.set_title(title2); ax2.grid(True, alpha=0.3, which="both")
+ax2.set_title(title2); ax2.grid(False)
 ax2.set_xlim(0.5, max(fit_result.f_larmor_Hz * 2, 1000))
 ax2.set_ylim(5e1, 5e6)
 ax2.set_yscale("log")
 
-plt.tight_layout()
-fig.savefig(results_dir / "full_analysiswithoutpump.png", dpi=150, bbox_inches="tight")
+plt.gcf().set_layout_engine("constrained")
+save_figure(fig, results_dir / "full_analysiswithoutpump.png", close=False)
 if not os.environ.get("LAB_STATIC_CONFIG"):
     plt.show()
 else:

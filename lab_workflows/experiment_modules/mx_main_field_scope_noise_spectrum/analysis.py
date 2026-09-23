@@ -201,8 +201,7 @@ def _plot_psd_matrix(
         shading="auto",
         cmap="inferno",
         vmin=float(color_min),
-        vmax=float(color_max),
-    )
+        vmax=float(color_max), rasterized=True)
     diagonal_min = max(float(frequency_axis_hz[0]), display_start_hz)
     diagonal_max = min(float(frequency_axis_hz[-1]), float(control_frequency_hz[-1]))
     axis.plot(
@@ -508,12 +507,11 @@ def _plot_global_2d_residual(
     image = axis.pcolormesh(
         fit.frequency_hz / 1000.0,
         fit.control_frequency_hz / 1000.0,
-        np.clip(fractional, -0.5, 0.5),
+        np.ma.masked_invalid(fractional),
         shading="auto",
         cmap="coolwarm",
         vmin=-0.5,
-        vmax=0.5,
-    )
+        vmax=0.5, rasterized=True)
     diagonal_min = max(float(fit.frequency_hz[0]), float(fit.control_frequency_hz[0]))
     diagonal_max = min(float(fit.frequency_hz[-1]), float(fit.control_frequency_hz[-1]))
     axis.plot(
@@ -530,7 +528,7 @@ def _plot_global_2d_residual(
         ylabel="Control frequency (kHz)",
     )
     style_legend(axis)
-    figure.colorbar(image, ax=axis, label="Fractional residual")
+    figure.colorbar(image, ax=axis, label="Fractional residual", extend="both")
     save_figure(figure, results_dir / filename)
     return filename
 

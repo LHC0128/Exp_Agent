@@ -167,13 +167,7 @@ def _plot_linear_fit(
     z_axis = np.asarray(data["z_field_ma"], dtype=float)
     r_mean = np.asarray(data["r_mean_v"], dtype=float)
     layer = per_layer[work_z_index]
-    fig, axes = new_figure(
-        figsize=(9.0, 7.0),
-        nrows=2,
-        ncols=2,
-        squeeze=False,
-        constrained_layout=True,
-    )
+    fig, axes = new_figure(nrows=2, ncols=2, squeeze=False, constrained_layout=True, width_mm=177.8, height_mm=130)
     # 左上：X 切片
     ax = axes[0][0]
     y_cut = float(layer["slice_x_at_y_v"])
@@ -615,8 +609,7 @@ def _plot_xy_planes(
             shading="flat",
             cmap="viridis",
             vmin=vmin,
-            vmax=vmax,
-        )
+            vmax=vmax, rasterized=True)
         if z_index == best_z_index:
             axis.plot(
                 float(x_axis[best_x_index]),
@@ -634,7 +627,7 @@ def _plot_xy_planes(
         )
         axis.set_title(
             f"Z current = {z_axis[z_index]:+.6g} mA",
-            fontsize=8.5,
+            fontsize=8,
         )
     for axis in axes.flat[z_axis.size :]:
         axis.set_visible(False)

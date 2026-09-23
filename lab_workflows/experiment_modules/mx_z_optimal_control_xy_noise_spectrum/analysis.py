@@ -153,7 +153,7 @@ def _plot_heatmap(
 ) -> str:
     set_plot_style("paper")
     figure, axis = new_figure(kind="square")
-    image = axis.pcolormesh(x_axis, y_axis, matrix.T, shading="auto", cmap="viridis")
+    image = axis.pcolormesh(x_axis, y_axis, matrix.T, shading="auto", cmap="viridis", rasterized=True)
     axis.plot(best["x_field_v"], best["y_field_v"], "x", color=COLOR_TRAD, ms=8, mew=1.8, label="Minimum")
     format_axis(axis, xlabel="X DC bias (V)", ylabel="Y DC bias (V)")
     axis.set_title("R ASD median in selected band")

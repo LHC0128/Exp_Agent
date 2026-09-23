@@ -46,8 +46,10 @@ import json
 from scipy import optimize as scipy_optimize
 
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 from scipy import signal as scipy_signal
 
 print("库导入完成")
@@ -1347,14 +1349,13 @@ else:
 # ============================================================
 # 绘图
 # ============================================================
-plt.rcParams.update({"figure.dpi": 120, "font.size": 11, "axes.labelsize": 12})
 
 Z_RF_AMPLITUDE = (config.get("freq_sweep", {})
                   .get("Z_RF_AMPLITUDE_Vpp", 0.01))
 
 # ---- 图 1: daq_fft_y 幅频特性 ----
 if acquisition_mode in ("daq_fft_y", "both") and len(freqs_daq) > 0:
-    fig1, ax1 = plt.subplots(figsize=(10, 5.5))
+    fig1, ax1 = new_figure(kind="wide", height_mm=65)
 
     # suspicious 点单独标记
     susp_mask = is_susp_daq
@@ -1402,11 +1403,10 @@ if acquisition_mode in ("daq_fft_y", "both") and len(freqs_daq) > 0:
     title += ")"
     ax1.set_title(title)
     ax1.legend(fontsize=8, loc="best")
-    ax1.grid(True, alpha=0.3, which="both")
+    ax1.grid(False)
 
-    plt.tight_layout()
-    fig1.savefig(results_dir / "frequency_response.png",
-                 dpi=150, bbox_inches="tight")
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig1, results_dir / "frequency_response.png", close=False)
     print(f"图已保存: {results_dir / 'frequency_response.png'}")
     plt.show()
 else:
@@ -1423,7 +1423,7 @@ if have_daq or have_dR or have_li:
         m = np.nanmax(a) if np.any(np.isfinite(a)) else 0
         return a / m if m > 0 else a
 
-    fig2, ax2 = plt.subplots(figsize=(10, 5.5))
+    fig2, ax2 = new_figure(kind="wide", height_mm=65)
     n_curves = 0
     if have_daq:
         nonsusp = (~is_susp_daq if is_susp_daq is not None
@@ -1521,11 +1521,10 @@ if have_daq or have_dR or have_li:
         title_main += "\n(fits: dispersive+Lorentzian Bloch steady-state model)"
     ax2.set_title(title_main)
     ax2.legend(fontsize=7, loc="best")
-    ax2.grid(True, alpha=0.3)
+    ax2.grid(False)
 
-    plt.tight_layout()
-    fig2.savefig(results_dir / "frequency_response_comparison.png",
-                 dpi=150, bbox_inches="tight")
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig2, results_dir / "frequency_response_comparison.png", close=False)
     print(f"图已保存: {results_dir / 'frequency_response_comparison.png'}")
     plt.show()
 else:
@@ -1533,7 +1532,7 @@ else:
 
 # ---- 图 2b: 三组响应绝对幅值 (log scale) ----
 if have_daq or have_dR or have_li:
-    fig2b, ax2b = plt.subplots(figsize=(10, 5.5))
+    fig2b, ax2b = new_figure(kind="wide", height_mm=65)
     if have_daq:
         ax2b.semilogy(freqs_daq, amps_corr, "o-", color="C0",
                       lw=1.0, ms=4, label="direct FFT")
@@ -1551,10 +1550,9 @@ if have_daq or have_dR or have_li:
     ax2b.set_ylabel("Amplitude (V, log scale)")
     ax2b.set_title("ConstXY Frequency Response — Absolute Amplitude Comparison")
     ax2b.legend(fontsize=8, loc="best")
-    ax2b.grid(True, alpha=0.3, which="both")
-    plt.tight_layout()
-    fig2b.savefig(results_dir / "frequency_response_absolute.png",
-                  dpi=150, bbox_inches="tight")
+    ax2b.grid(False)
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig2b, results_dir / "frequency_response_absolute.png", close=False)
     print(f"图已保存: {results_dir / 'frequency_response_absolute.png'}")
     plt.show()
 else:
@@ -1593,9 +1591,7 @@ if have_dR:
                            fit_pick, kind_pick, "C3"))
 
 if panels_lt:
-    fig_lf, axes_lf = plt.subplots(
-        len(panels_lt), 2, figsize=(11, 3.2 * len(panels_lt)),
-        gridspec_kw={"width_ratios": [3, 1]}, squeeze=False)
+    fig_lf, axes_lf = new_figure(nrows=len(panels_lt), ncols=2, kind="wide", height_mm=max(65, 55 * (len(panels_lt))), gridspec_kw={"width_ratios": [3, 1]}, squeeze=False)
     for ax_row, (tag, freqs, resp, susp, fit, kind, color) in zip(
             axes_lf, panels_lt):
         ax_fit, ax_res = ax_row
@@ -1646,7 +1642,7 @@ if panels_lt:
         ax_fit.set_title(f"{tag} — {kind}-Lorentzian fit "
                          f"(residual std={fit['residual_std']:.2e})")
         ax_fit.legend(fontsize=7, loc="best")
-        ax_fit.grid(True, alpha=0.3)
+        ax_fit.grid(False)
 
         # 残差
         if kind == "double":
@@ -1666,12 +1662,11 @@ if panels_lt:
                        alpha=0.6)
         ax_res.plot(f_v, residual, "o", color=color, ms=3)
         ax_res.set_ylabel("residual")
-        ax_res.grid(True, alpha=0.3)
+        ax_res.grid(False)
         ax_res.set_xlabel("Frequency (Hz)")
 
-    plt.tight_layout()
-    fig_lf.savefig(results_dir / "frequency_response_fits.png",
-                   dpi=150, bbox_inches="tight")
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig_lf, results_dir / "frequency_response_fits.png", close=False)
     print(f"图已保存: {results_dir / 'frequency_response_fits.png'}")
     plt.show()
 else:
@@ -1680,7 +1675,7 @@ else:
 # ---- 图 2c: direct FFT / offline lock-in 比值 ----
 if len(ratio_fft_li) > 0 and len(common_freqs) > 0:
     valid = np.isfinite(ratio_fft_li) & (ratio_fft_li > 0)
-    fig2c, ax2c = plt.subplots(figsize=(10, 4.5))
+    fig2c, ax2c = new_figure(kind="wide", height_mm=65)
     ax2c.axhline(1.0, color="black", lw=0.8)
     if stat_fft_li is not None:
         ax2c.axhline(stat_fft_li["median"], color="C0", ls="--", lw=0.8,
@@ -1691,10 +1686,9 @@ if len(ratio_fft_li) > 0 and len(common_freqs) > 0:
     ax2c.set_ylabel("FFT amplitude / lock-in amplitude")
     ax2c.set_title("ConstXY: Direct FFT vs Offline Lock-in — Amplitude Ratio")
     ax2c.legend(fontsize=8, loc="best")
-    ax2c.grid(True, alpha=0.3)
-    plt.tight_layout()
-    fig2c.savefig(results_dir / "fft_vs_offline_lockin_ratio.png",
-                  dpi=150, bbox_inches="tight")
+    ax2c.grid(False)
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig2c, results_dir / "fft_vs_offline_lockin_ratio.png", close=False)
     print(f"图已保存: {results_dir / 'fft_vs_offline_lockin_ratio.png'}")
     plt.show()
 else:
@@ -1703,7 +1697,7 @@ else:
 # ---- 图 2d: hardware demod_r / offline lock-in 比值 ----
 if len(ratio_hw_li) > 0 and len(common_hw) > 0:
     valid = np.isfinite(ratio_hw_li) & (ratio_hw_li > 0)
-    fig2d, ax2d = plt.subplots(figsize=(10, 4.5))
+    fig2d, ax2d = new_figure(kind="wide", height_mm=65)
     ax2d.axhline(1.0, color="black", lw=0.8)
     if stat_hw_li is not None:
         ax2d.axhline(stat_hw_li["median"], color="C3", ls="--", lw=0.8,
@@ -1714,10 +1708,9 @@ if len(ratio_hw_li) > 0 and len(common_hw) > 0:
     ax2d.set_ylabel("hardware demod_r / lock-in amplitude")
     ax2d.set_title("ConstXY: Hardware Demod R vs Offline Lock-in — Amplitude Ratio")
     ax2d.legend(fontsize=8, loc="best")
-    ax2d.grid(True, alpha=0.3)
-    plt.tight_layout()
-    fig2d.savefig(results_dir / "hardware_vs_offline_lockin_ratio.png",
-                  dpi=150, bbox_inches="tight")
+    ax2d.grid(False)
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig2d, results_dir / "hardware_vs_offline_lockin_ratio.png", close=False)
     print(f"图已保存: {results_dir / 'hardware_vs_offline_lockin_ratio.png'}")
     plt.show()
 else:
@@ -1726,8 +1719,7 @@ else:
 # ---- 图 2e: offline lock-in 相位 ----
 if len(freqs_li) > 0 and np.any(li_valid):
     valid = li_valid & np.isfinite(li_phase_deg)
-    fig2e, (ax2e1, ax2e2) = plt.subplots(2, 1, figsize=(10, 6.0),
-                                           sharex=True)
+    fig2e, (ax2e1, ax2e2) = new_figure(nrows=2, ncols=1, kind="wide", height_mm=110, sharex=True)
     ax2e1.plot(freqs_li[valid], li_r[valid], "^-", color="C2",
                lw=1.0, ms=4, label="offline lock-in R")
     if np.isfinite(baseline_amp):
@@ -1736,7 +1728,7 @@ if len(freqs_li) > 0 and np.any(li_valid):
     ax2e1.set_ylabel("R (V)")
     ax2e1.set_title("ConstXY: Offline Lock-in — Magnitude & Phase vs Drive Frequency")
     ax2e1.legend(fontsize=8, loc="best")
-    ax2e1.grid(True, alpha=0.3)
+    ax2e1.grid(False)
     ax2e1.set_yscale("log")
 
     ax2e2.plot(freqs_li[valid], li_phase_deg[valid], "^-", color="C2",
@@ -1748,11 +1740,10 @@ if len(freqs_li) > 0 and np.any(li_valid):
     ax2e2.set_xlabel("Z RF field drive frequency (Hz)")
     ax2e2.set_ylabel("Phase (deg)")
     ax2e2.legend(fontsize=8, loc="best")
-    ax2e2.grid(True, alpha=0.3)
+    ax2e2.grid(False)
 
-    plt.tight_layout()
-    fig2e.savefig(results_dir / "offline_lockin_phase.png",
-                  dpi=150, bbox_inches="tight")
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig2e, results_dir / "offline_lockin_phase.png", close=False)
     print(f"图已保存: {results_dir / 'offline_lockin_phase.png'}")
     plt.show()
 else:
@@ -1760,7 +1751,7 @@ else:
 
 # ---- 图 2f: hardware vector vs scalar ----
 if have_dR and len(R_vec) > 0 and len(R_scalar) > 0:
-    fig2f, ax2f = plt.subplots(figsize=(10, 4.5))
+    fig2f, ax2f = new_figure(kind="wide", height_mm=65)
     ax2f.semilogy(freqs_dR, R_vec, "s-", color="C3",
                   lw=1.2, ms=4, label="R_vec = sqrt(<X>² + <Y>²)")
     ax2f.semilogy(freqs_dR, R_scalar, "o-", color="C4",
@@ -1769,10 +1760,9 @@ if have_dR and len(R_vec) > 0 and len(R_scalar) > 0:
     ax2f.set_ylabel("Hardware Demod R (V, log scale)")
     ax2f.set_title("ConstXY: Hardware Demod — Vector Mean vs Scalar Mean")
     ax2f.legend(fontsize=8, loc="best")
-    ax2f.grid(True, alpha=0.3, which="both")
-    plt.tight_layout()
-    fig2f.savefig(results_dir / "hardware_vector_vs_scalar.png",
-                  dpi=150, bbox_inches="tight")
+    ax2f.grid(False)
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig2f, results_dir / "hardware_vector_vs_scalar.png", close=False)
     print(f"图已保存: {results_dir / 'hardware_vector_vs_scalar.png'}")
     plt.show()
 else:
@@ -1782,7 +1772,7 @@ else:
 if have_dR and len(R_vec) > 0 and len(R_scalar) > 0:
     ratio_sv = R_scalar / R_vec
     valid = (R_vec > 0) & np.isfinite(ratio_sv)
-    fig2g, ax2g = plt.subplots(figsize=(10, 4.5))
+    fig2g, ax2g = new_figure(kind="wide", height_mm=65)
     ax2g.axhline(1.0, color="black", lw=0.8)
     median_sv = float(np.median(ratio_sv[valid]))
     ax2g.axhline(median_sv, color="C3", ls="--", lw=0.8,
@@ -1794,10 +1784,9 @@ if have_dR and len(R_vec) > 0 and len(R_scalar) > 0:
     ax2g.set_title("ConstXY: Hardware Demod — Scalar / Vector Ratio "
                    "(positive bias of mean|R|)")
     ax2g.legend(fontsize=8, loc="best")
-    ax2g.grid(True, alpha=0.3)
-    plt.tight_layout()
-    fig2g.savefig(results_dir / "hardware_scalar_over_vector_ratio.png",
-                  dpi=150, bbox_inches="tight")
+    ax2g.grid(False)
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig2g, results_dir / "hardware_scalar_over_vector_ratio.png", close=False)
     print(f"图已保存: {results_dir / 'hardware_scalar_over_vector_ratio.png'}")
     plt.show()
 else:
@@ -1805,17 +1794,16 @@ else:
 
 # ---- 图 2h: hardware vector phase ----
 if have_dR and len(phase_vec_deg) > 0:
-    fig2h, ax2h = plt.subplots(figsize=(10, 4.5))
+    fig2h, ax2h = new_figure(kind="wide", height_mm=65)
     ax2h.plot(freqs_dR, phase_vec_deg, "s-", color="C3",
               lw=1.0, ms=4, label="hardware vector phase")
     ax2h.set_xlabel("Z RF field drive frequency (Hz)")
     ax2h.set_ylabel("Phase (deg)")
     ax2h.set_title("ConstXY: Hardware Demod R — Vector Phase vs Drive Frequency")
     ax2h.legend(fontsize=8, loc="best")
-    ax2h.grid(True, alpha=0.3)
-    plt.tight_layout()
-    fig2h.savefig(results_dir / "hardware_phase_vector.png",
-                  dpi=150, bbox_inches="tight")
+    ax2h.grid(False)
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig2h, results_dir / "hardware_phase_vector.png", close=False)
     print(f"图已保存: {results_dir / 'hardware_phase_vector.png'}")
     plt.show()
 else:
@@ -1824,7 +1812,7 @@ else:
 # ---- 图 3: 诊断图 — picked_freq 与 drive_freq 的偏差 ----
 if (acquisition_mode in ("daq_fft_y", "both")
         and len(freqs_daq) > 0 and len(freq_errors) > 0):
-    fig3, ax3 = plt.subplots(figsize=(10, 4.5))
+    fig3, ax3 = new_figure(kind="wide", height_mm=65)
     nonsusp = ~is_susp_daq if is_susp_daq is not None else np.ones_like(freqs_daq, dtype=bool)
     ax3.axhline(0, color="black", lw=0.6)
     ax3.axhline(MAX_PICK_FREQ_ERROR_HZ, color="C3", ls=":", lw=0.7,
@@ -1841,10 +1829,9 @@ if (acquisition_mode in ("daq_fft_y", "both")
     ax3.set_ylabel("picked_freq - drive_freq (Hz)")
     ax3.set_title("ConstXY: daq_fft_y — Picked Frequency Error Diagnostic")
     ax3.legend(fontsize=8, loc="best")
-    ax3.grid(True, alpha=0.3)
-    plt.tight_layout()
-    fig3.savefig(results_dir / "daq_picked_frequency_error.png",
-                 dpi=150, bbox_inches="tight")
+    ax3.grid(False)
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig3, results_dir / "daq_picked_frequency_error.png", close=False)
     print(f"图已保存: {results_dir / 'daq_picked_frequency_error.png'}")
     plt.show()
 else:
@@ -1863,9 +1850,7 @@ elif signal_pts:
     example_freqs = [p["freq_Hz"] for p in signal_pts]
 
 if acquisition_mode in ("daq_fft_y", "both") and example_freqs:
-    fig4, axes = plt.subplots(len(example_freqs), 1,
-                              figsize=(10, 2.4 * len(example_freqs)),
-                              sharex=False)
+    fig4, axes = new_figure(nrows=len(example_freqs), ncols=1, kind="wide", height_mm=max(65, 55 * (len(example_freqs))), sharex=False)
     if len(example_freqs) == 1:
         axes = [axes]
 
@@ -1899,12 +1884,11 @@ if acquisition_mode in ("daq_fft_y", "both") and example_freqs:
         ax.set_title(f"ConstXY Spectrum @ drive = {ef:.1f} Hz "
                      f"(df={df_s:.2f} Hz)")
         ax.legend(fontsize=7, loc="upper right")
-        ax.grid(True, alpha=0.3, which="both")
+        ax.grid(False)
     axes[-1].set_xlabel("Frequency (Hz)")
 
-    plt.tight_layout()
-    fig4.savefig(results_dir / "response_spectrum_examples.png",
-                 dpi=150, bbox_inches="tight")
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig4, results_dir / "response_spectrum_examples.png", close=False)
     print(f"图已保存: {results_dir / 'response_spectrum_examples.png'}")
     plt.show()
 else:

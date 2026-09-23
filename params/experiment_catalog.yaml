@@ -14,7 +14,10 @@ tags:
   label: 任意波校验
 - id: star
   label: star
+- id: tag-7e1da2cb
+  label: 噪声谱测量
 assignments:
+  bell-bloom-z-field-calibration: verification
   mx-y-rf-sensitivity: calibration
   mx-y-rf-sensitivity-drift: calibration
   mx-z-optimal-control-rf-sensitivity: star
@@ -35,7 +38,8 @@ assignments:
   mx-z-field-calibration: verification
   mx-z-noise-spectrum: calibration
   mx-xy-residual-field-calibration: verification
-  noise-spectrum-xy: calibration
+  noise-spectrum-xy: tag-7e1da2cb
+  noise-spectrum-xy-known-noise: tag-7e1da2cb
   noise-spectrum-xy-v2: calibration
   photon-shot-noise: verification
   projection-noise: verification
@@ -66,6 +70,7 @@ assignments:
   z-aw-current-waveform-scope-check: tag-2c49075e
   z-aw-closed-loop-waveform-correction: star
   scope-capture: star
+  static-sensitivity: star
 experiment_descriptions:
   z-coil-inductance-frequency-response: Z 线圈固定幅度正弦扫频，比较理论设定与线圈端电压的幅值、相位和残差。
   z-coil-current-frequency-response: 沿对数频率轴相干扫描低端采样电阻上的实际电流复响应，以同帧实测驱动电压作相位参考，为闭环逆滤波提供带可靠覆盖掩码的频响曲线。
@@ -116,7 +121,10 @@ experiment_descriptions:
     PSD 分离 S_beta 与 N_S1。
   mx-xy-residual-field-calibration: 在扫描主场下直接读取 SDS CH1 平衡探测器直流均值，二维扫描 X/Y DC 补偿场并用
     Bloch 曲面拟合剩磁平衡点。
-  noise-spectrum-xy: 测量 XY 控制条件下的噪声谱，dg_am 作为触发信号，使得 dg_comp 两路同相输出。
+  noise-spectrum-xy: BellBloom中，dg_comp 两路使用正弦模式产生正交 XY 控制并测量噪声谱，Time_sequence_2 CH2
+    方波经三通同步触发两路 Burst；每点关闭两路输出后调幅，按已校准的 Burst 相位重新开启并等待共用外触发，Pump 和共用触发源在扫描期间保持连续运行；设置每点采集时长和频率格间距，自动计算
+    Welch 段长；离线跟踪移动峰并验收标定，屏蔽固定窄线，以非负局部拟合和留出验证提取有效频段，不插值外推失败点；测量时温度开关 Output OFF，恢复等待时间可在高级参数中设置；结束时保留
+    Pump 载波与时序门控输出。
   noise-spectrum-xy-v2: 测量 XY 控制条件下的噪声谱，dg_am 作为调制信号。
   photon-shot-noise: 测量光子散粒噪声随 Probe 光功率的变化，测量锁相放大器 XY 的噪声谱本底。
   projection-noise: 采集 GS200 输出打开时的 SDS CH1 PD 原始噪声谱，可选测量输出关闭对照组，并在主场标定预测中心附近自由拟合洛伦兹自旋噪声峰。
@@ -149,7 +157,7 @@ experiment_titles:
   mx-z-field-calibration: Mx 高主场 Z 磁场频率标定
   mx-z-noise-spectrum: Mx Z 直流控制噪声谱
   mx-xy-residual-field-calibration: Mx XY 剩磁二维校准
-  noise-spectrum-xy: XY 控制测量噪声谱 （DirectAW）
+  noise-spectrum-xy: XY 控制测量噪声谱（正弦）
   noise-spectrum-xy-v2: XY 控制噪声谱 （AM）
   photon-shot-noise: 光子散粒噪声
   projection-noise: 原子自旋投影噪声
@@ -787,8 +795,7 @@ parameter_layouts:
     - pump_mod_freq
     - pump_mod_duty
     - noise_n_avg
-    - noise_duration
-    - gs200_current_ranges
+    - z_v_to_nt
     advanced:
     - temp_switch
     - time_sequence
@@ -799,6 +806,8 @@ parameter_layouts:
     - hf2_demod_idx
     - hf2_demod_order
     - hf2_signal_range
+    - hf2_ac_coupling
+    - hf2_50_ohm
     - hf2_demod_rate
     - hf2_demod_tc
     - hf2_noise_rate
@@ -809,13 +818,14 @@ parameter_layouts:
     - max_temp_wait_s
     - gs200_range_headroom
     - gs200_range_settle_time
-    - z_v_to_nt
     - daq_trigger_channel
     - daq_trigger_level
     - daq_trigger_slope
     - y_magnetic_field
     - x_magnetic_field
     - pump_mod_amplitude
+    - gs200_current_ranges
+    - noise_duration
   noise-spectrum-xy:
     basic:
     - RUN_TAG
@@ -825,16 +835,17 @@ parameter_layouts:
     - XY_CTRL_FREQ
     - PUMP_MOD_DUTY
     - HF2_DAQ_DURATION
+    - ANALYSIS_BIN_WIDTH_HZ
     - TARGET_NOISE_FREQ_START_HZ
     - TARGET_NOISE_FREQ_STOP_HZ
     - TARGET_NOISE_FREQ_POINTS
-    - XY_AW_OUTPUT_VPP
-    - XY_AW_OUTPUT_OFFSET_V
     - XY_CTRL_K_HZ_PER_V
     - XY_CTRL_B_HZ
     - FIXED_PARAMS.Pump_laser_power
     - FIXED_PARAMS.Probe_laser_power
+    - TEMP_SWITCH_ON_SETTLE_S
     advanced:
+    - HF2_DAQ_RATE
     - XY_SETTLE_TIME
     - RF_GATE_OFFSET
     - XY_CTRL_PHASE
@@ -845,10 +856,11 @@ parameter_layouts:
     - HF2_SIGNAL_RANGE
     - HF2_DEMOD_ORDER
     - HF2_DEMOD_TC
-    - HF2_DEMOD_RATE
     - HF2_DAQ_TC
-    - HF2_DAQ_RATE
-    - HF2_NPERSEG
+    - ANALYSIS_FREQUENCY_MIN_HZ
+    - ANALYSIS_FREQUENCY_MAX_HZ
+    - ANALYSIS_FIT_HALF_WIDTH_HZ
+    - ANALYSIS_BACKGROUND_HALF_WIDTH_HZ
     - FIXED_PARAMS.temperature
     - FIXED_PARAMS.Temp_Switch
     - XY_CALIB_ENVELOPE_V
@@ -858,14 +870,12 @@ parameter_layouts:
     - XY_PHASE_CAL_MIN_R_RATIO
     - XY_CALIBRATION_MIN_ENVELOPE_V
     - XY_CALIBRATION_MAX_ENVELOPE_V
-    - XY_AW_REPEAT_FREQ_HZ
-    - XY_AW_POINTS
-    - XY_TRIGGER_REARM_GUARD_S
     - PUMP_MOD_AMPLITUDE
     - RF_GATE_AMPLITUDE
     - XY_TRIGGER_FREQ
     - XY_TRIGGER_AMPLITUDE
     - XY_TRIGGER_DUTY
+    - HF2_DEMOD_RATE
   mx-y-rf-sensitivity:
     basic:
     - RUN_TAG
@@ -1617,3 +1627,102 @@ parameter_layouts:
     - FIXED_PARAMS.Y_magnetic_field
     - Z_AW_OUTPUT_VPP
     - FIXED_PARAMS.temperature
+  bell-bloom-z-field-calibration:
+    basic:
+    - RUN_TAG
+    - Z_BIAS_START_V
+    - Z_BIAS_STOP_V
+    - Z_BIAS_STEP_V
+    - ZERO_BIAS_CENTER_FREQUENCY_HZ
+    - Z_INITIAL_HZ_PER_V
+    - FREQUENCY_HALF_WIDTH_HZ
+    - FREQUENCY_STEP_HZ
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    advanced:
+    - FREQUENCY_SETTLE_TIME_S
+    - FREQUENCY_DURATION_S
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - TEMPERATURE_TOLERANCE_C
+    - TEMPERATURE_STABLE_READS
+    - TEMPERATURE_POLL_INTERVAL_S
+    - TEMPERATURE_TIMEOUT_S
+    - LINEAR_R_SQUARED_MIN
+    - PUMP_MOD_DUTY
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - FIXED_PARAMS.temperature
+  noise-spectrum-xy-known-noise:
+    basic:
+    - RUN_TAG
+    - TARGET_NOISE_FREQ_START_HZ
+    - TARGET_NOISE_FREQ_STOP_HZ
+    - TARGET_NOISE_FREQ_POINTS
+    - XY_SETTLE_TIME
+    - HF2_DAQ_DURATION
+    - ANALYSIS_BIN_WIDTH_HZ
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    - FIXED_PARAMS.main_magnetic_field
+    - NOISE_BAND_STARTS_HZ
+    - NOISE_BAND_STOPS_HZ
+    - NOISE_BAND_PSDS_V2_PER_HZ
+    - NOISE_REPEAT_FREQ_HZ
+    - NOISE_AMPLITUDE_VPP
+    - XY_CTRL_K_HZ_PER_V
+    - XY_CTRL_B_HZ
+    - Z_CALIBRATION_SOURCE_RUN
+    - XY_CTRL_FREQ
+    - PUMP_MOD_DUTY
+    - PUMP_MOD_FREQ
+    - HF2_OSC_FREQ
+    advanced:
+    - TEMP_SWITCH_ON_SETTLE_S
+    - RF_GATE_AMPLITUDE
+    - RF_GATE_OFFSET
+    - XY_CTRL_PHASE
+    - XY_CTRL_QUAD
+    - XY_CALIB_ENVELOPE_V
+    - XY_PHASE_CAL_TOL_DEG
+    - XY_PHASE_CAL_MAX_ITER
+    - XY_PHASE_CAL_MIN_R_V
+    - XY_PHASE_CAL_MIN_R_RATIO
+    - XY_CALIBRATION_MIN_ENVELOPE_V
+    - XY_CALIBRATION_MAX_ENVELOPE_V
+    - XY_TRIGGER_FREQ
+    - XY_TRIGGER_AMPLITUDE
+    - XY_TRIGGER_OFFSET
+    - XY_TRIGGER_DUTY
+    - XY_TRIGGER_PHASE
+    - HF2_DEMOD_IDX
+    - HF2_SIGNAL_RANGE
+    - HF2_DEMOD_ORDER
+    - HF2_DEMOD_TC
+    - HF2_DEMOD_RATE
+    - HF2_DAQ_TC
+    - HF2_DAQ_RATE
+    - ANALYSIS_FREQUENCY_MIN_HZ
+    - ANALYSIS_FREQUENCY_MAX_HZ
+    - ANALYSIS_FIT_HALF_WIDTH_HZ
+    - FIXED_PARAMS.Temp_Switch
+    - NOISE_SEED
+    - Z_INJECTION_SETTLE_S
+    - Z_TF_SOURCE_RUN
+    - DISPERSION_SPAN_V
+    - DISPERSION_STEPS
+    - DISPERSION_STEP_SETTLE_S
+    - DISPERSION_SAMPLES_PER_STEP
+    - RATIO_PASS_LOW
+    - RATIO_PASS_HIGH
+    - PUMP_MOD_AMPLITUDE
+    - DISPERSION_FIT_SKIP_START
+    - DISPERSION_FIT_SKIP_END
+    - DISPERSION_TEMP_SWITCH_INTERVAL_POINTS

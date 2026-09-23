@@ -1,4 +1,4 @@
-"""XY DirectAW 噪声谱离线分析薄入口。"""
+"""XY 正弦控制噪声谱离线分析薄入口。"""
 
 import argparse
 from pathlib import Path

@@ -530,7 +530,7 @@ def _plot_map(
         bound = float(np.max(np.abs(matrix)))
         if bound > 0.0:
             kwargs.update(cmap="coolwarm", vmin=-bound, vmax=bound)
-    image = axis.pcolormesh(x_axis, y_axis, matrix.T, **kwargs)
+    image = axis.pcolormesh(x_axis, y_axis, matrix.T, **kwargs, rasterized=True)
     if best_xy is not None:
         axis.plot(
             best_xy[0],
@@ -543,7 +543,7 @@ def _plot_map(
     format_axis(axis, xlabel="X field voltage (V)", ylabel="Y field voltage (V)")
     axis.set_title(title)
     fig.colorbar(image, ax=axis, label=colorbar_label)
-    save_figure(fig, results_dir / filename, bbox_inches="tight")
+    save_figure(fig, results_dir / filename)
     return filename
 
 
@@ -627,11 +627,7 @@ def _plot_bloch_2d_fit(
     x_grid, y_grid = np.meshgrid(x_axis, y_axis, indexing="ij")
     color_min = float(min(np.min(measured_matrix), np.min(fitted_matrix)))
     color_max = float(max(np.max(measured_matrix), np.max(fitted_matrix)))
-    fig, axes_grid = new_figure(
-        figsize=(8.8, 4.0),
-        ncols=2,
-        subplot_kw={"projection": "3d"},
-    )
+    fig, axes_grid = new_figure(ncols=2, subplot_kw={"projection": "3d"}, width_mm=177.8, height_mm=70)
     axes = np.asarray(axes_grid).reshape(-1)
     surfaces = []
     for axis, matrix, title in zip(
@@ -654,7 +650,7 @@ def _plot_bloch_2d_fit(
         )
         axis.set_xlabel("X field voltage (V)", fontsize=7.0, labelpad=2.0)
         axis.set_ylabel("Y field voltage (V)", fontsize=7.0, labelpad=2.0)
-        axis.set_title(title, fontsize=9.0, pad=5.0)
+        axis.set_title(title, fontsize=8, pad=5.0)
         axis.tick_params(axis="both", which="major", labelsize=6.5, pad=0.5)
         axis.view_init(elev=26.0, azim=-135.0)
         axis.set_box_aspect((1.1, 1.0, 0.72))
@@ -684,7 +680,7 @@ def _plot_bloch_2d_fit(
     colorbar.ax.tick_params(labelsize=6.5)
     colorbar.set_label("Corrected PD mean (V)", fontsize=7.0)
     filename = "bloch_2d_fit.png"
-    save_figure(fig, results_dir / filename, bbox_inches="tight")
+    save_figure(fig, results_dir / filename)
     return filename
 
 
@@ -727,7 +723,7 @@ def _plot_dispersive_fit_metrics(
     fig.subplots_adjust(wspace=0.35, hspace=0.45)
     style_legend(axes[-1], fontsize=7.0)
     filename = "dispersive_fit_metrics.png"
-    save_figure(fig, results_dir / filename, bbox_inches="tight")
+    save_figure(fig, results_dir / filename)
     return filename
 
 
@@ -783,7 +779,7 @@ def _plot_best_dispersive_fit(
     axis.set_title(f"Best Y Dispersive Fit at X = {best_x_v:.6g} V")
     style_legend(axis, loc="lower right", fontsize=7.0)
     filename = "best_y_dispersive_fit.png"
-    save_figure(fig, results_dir / filename, bbox_inches="tight")
+    save_figure(fig, results_dir / filename)
     return filename
 
 
@@ -1069,13 +1065,13 @@ def analyze(run_dir: Path) -> dict[str, Any]:
     axis.plot(elapsed_time_s, fitted_drift_v, color=COLOR_OPTIMAL, label="Fitted linear drift")
     axis.axhline(0.0, color="0.5", linestyle="--", linewidth=0.8)
     format_axis(axis, xlabel="Time from scan midpoint (s)", ylabel="Fitted drift (V)")
-    axis.set_title("Fitted Acquisition Drift", fontsize=9.0)
+    axis.set_title("Fitted Acquisition Drift", fontsize=8)
     axis.xaxis.label.set_size(8.0)
     axis.yaxis.label.set_size(8.0)
     axis.tick_params(axis="both", which="major", labelsize=7.0)
     style_legend(axis, fontsize=7.0)
     drift_plot = "fitted_time_drift.png"
-    save_figure(fig, results_dir / drift_plot, bbox_inches="tight")
+    save_figure(fig, results_dir / drift_plot)
     plot_files.append(drift_plot)
 
     quality_warnings: list[str] = []

@@ -340,20 +340,15 @@ def _plot_nonlinear_maps(
     y_axis = np.asarray(data["y_field_v"], dtype=float)
     accepted = np.asarray(fit["fit_accepted"], dtype=bool)
     fields = (
-        ("selected_phase_deg", "Selected RF phase (deg)", "viridis"),
+        ("selected_phase_deg", "Selected RF phase (deg)", "twilight"),
         ("residual_amplitude_vpp", "Residual RF amplitude (Vpp)", "plasma"),
         ("resonance_amplitude_vpp", "Resonance amplitude (Vpp)", "cividis"),
         ("width_vpp", "Dispersion width (Vpp)", "magma"),
         ("r_squared", "Nonlinear fit R squared", "inferno"),
         ("fit_accepted", "Nonlinear fit accepted", "gray"),
     )
-    fig, axes = new_figure(
-        figsize=(13.0, 8.0),
-        nrows=2,
-        ncols=3,
-        constrained_layout=True,
-    )
-    axes = np.asarray(axes, dtype=object).reshape(2, 3)
+    fig, axes = new_figure(nrows=3, ncols=2, constrained_layout=True, width_mm=177.8, height_mm=165)
+    axes = np.asarray(axes, dtype=object).reshape(3, 2)
     for axis, (key, label, cmap) in zip(axes.flat, fields):
         if key == "fit_accepted":
             values = accepted.astype(float)
@@ -371,8 +366,9 @@ def _plot_nonlinear_maps(
             y_axis,
             values.T,
             shading="auto",
-            cmap=cmap,
-        )
+            cmap=cmap, rasterized=True,
+            vmin=0 if key in {"selected_phase_deg", "fit_accepted"} else None,
+            vmax=360 if key == "selected_phase_deg" else (1 if key == "fit_accepted" else None))
         format_axis(
             axis,
             xlabel="X field setting (V)",
@@ -391,28 +387,25 @@ def _plot_maps(results_dir: Path, data: dict[str, np.ndarray]) -> str:
     y_axis = np.asarray(data["y_field_v"], dtype=float)
     accepted = np.asarray(data["fit_accepted"], dtype=bool)
     fields = (
-        ("selected_phase_deg", "Selected RF phase (deg)", "viridis"),
+        ("selected_phase_deg", "Selected RF phase (deg)", "twilight"),
         ("amplitude_v", "Primary amplitude (V)", "plasma"),
         ("baseline_v", "Primary baseline (V)", "viridis"),
         ("r_squared", "Primary fit R squared", "magma"),
         ("fit_accepted", "Fit accepted", "gray"),
     )
-    fig, axes = new_figure(
-        figsize=(13.0, 8.0),
-        nrows=2,
-        ncols=3,
-        constrained_layout=True,
-    )
-    axes = np.asarray(axes, dtype=object).reshape(2, 3)
+    fig, axes = new_figure(nrows=3, ncols=2, constrained_layout=True, width_mm=177.8, height_mm=165)
+    axes = np.asarray(axes, dtype=object).reshape(3, 2)
     for axis, (key, label, cmap) in zip(axes.flat, fields):
         values = accepted.astype(float) if key == "fit_accepted" else np.asarray(data[key], dtype=float)
         if key != "fit_accepted":
             values = np.where(accepted, values, np.nan)
-        mesh = axis.pcolormesh(x_axis, y_axis, values.T, shading="auto", cmap=cmap)
+        mesh = axis.pcolormesh(x_axis, y_axis, values.T, shading="auto", cmap=cmap, rasterized=True,
+            vmin=0 if key in {"selected_phase_deg", "fit_accepted"} else None,
+            vmax=360 if key == "selected_phase_deg" else (1 if key == "fit_accepted" else None))
         format_axis(axis, xlabel="X field setting (V)", ylabel="Y field / RF offset (V)")
         axis.set_title(label)
         fig.colorbar(mesh, ax=axis, shrink=0.9)
-    axes[1, 2].axis("off")
+    axes[2, 1].axis("off")
     filename = "xy_rf_phase_response_maps.png"
     save_figure(fig, results_dir / filename)
     return filename
@@ -434,15 +427,11 @@ def _plot_phase_curves(results_dir: Path, data: dict[str, np.ndarray]) -> str:
     r_mean = np.asarray(data["r_mean_v"], dtype=float)[..., phase_order]
     accepted = np.asarray(data["fit_accepted"], dtype=bool)
 
-    fig, axes = new_figure(
-        figsize=(12.0, 9.0),
-        nrows=3,
-        ncols=4,
-        sharex=True,
-        sharey=True,
-        constrained_layout=False,
-    )
-    axes = np.asarray(axes, dtype=object).reshape(3, 4)
+    columns = min(3, x_axis.size)
+    rows = int(np.ceil(x_axis.size / columns))
+    fig, axes = new_figure(nrows=rows, ncols=columns, sharex=True, sharey=True,
+                           squeeze=False, constrained_layout=False, width_mm=177.8,
+                           height_mm=max(75, 55 * rows))
     y_min = float(np.nanmin(r_mean))
     y_max = float(np.nanmax(r_mean))
     y_padding = max(0.06 * (y_max - y_min), 0.01)
@@ -456,7 +445,7 @@ def _plot_phase_curves(results_dir: Path, data: dict[str, np.ndarray]) -> str:
     norm = colors.Normalize(vmin=y_low, vmax=y_high)
 
     for panel, x_index in enumerate(range(x_axis.size)):
-        row, column = divmod(panel, 4)
+        row, column = divmod(panel, columns)
         axis = axes[row, column]
         for y_index, y_value in enumerate(y_axis):
             axis.plot(
@@ -472,15 +461,15 @@ def _plot_phase_curves(results_dir: Path, data: dict[str, np.ndarray]) -> str:
         rejected_count = int(np.count_nonzero(~accepted[x_index]))
         title = f"X = {x_axis[x_index]:+.2f} V"
         if rejected_count:
-            title += f" (rejected: {rejected_count})"
+            title += f"\nRejected: {rejected_count}"
         axis.set_title(title)
         axis.set_xlim(0.0, 360.0)
         axis.set_ylim(y_min, y_max)
-        axis.set_xticks(np.arange(0.0, 361.0, 60.0))
+        axis.set_xticks(np.arange(0.0, 361.0, 120.0))
         axis.grid(True, alpha=0.22, linewidth=0.5)
         format_axis(
             axis,
-            xlabel="RF phase (deg)" if row == 2 else "",
+            xlabel="RF phase (deg)" if row == rows - 1 else "",
             ylabel="Demod0 R (V)" if column == 0 else "",
         )
 

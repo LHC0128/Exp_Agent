@@ -31,8 +31,10 @@ import numpy as np
 import yaml
 import json
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 from scipy.optimize import curve_fit
 from scipy.signal import hilbert
 
@@ -412,10 +414,6 @@ for idx, fpath in enumerate(shot_files):
 
 # %% Cell 6
 # ========== 汇总 + 绘图 ==========
-plt.rcParams.update({
-    "figure.dpi": 120, "font.size": 11,
-    "axes.labelsize": 12, "axes.titlesize": 13,
-})
 
 valid_mask = np.array([np.isfinite(r["R_pump_eff_per_s"]) for r in results])
 pumps = np.array([r["pump_high_v"] for r in results])
@@ -431,19 +429,6 @@ Gamma_dark_arr = np.array([(r["Gamma_dark_per_s"] if np.isfinite(r["Gamma_dark_p
 import matplotlib.ticker as tck
 
 # --- global rcParams ---
-plt.rcParams.update({
-    "figure.dpi": 150, "savefig.dpi": 300,
-    "font.size": 10, "axes.labelsize": 11, "axes.titlesize": 12,
-    "legend.fontsize": 8, "xtick.labelsize": 8, "ytick.labelsize": 8,
-    "axes.linewidth": 0.8, "xtick.major.width": 0.6, "ytick.major.width": 0.6,
-    "xtick.minor.width": 0.4, "ytick.minor.width": 0.4,
-    "xtick.direction": "in", "ytick.direction": "in",
-    "xtick.major.size": 3.5, "ytick.major.size": 3.5,
-    "xtick.minor.size": 2.0, "ytick.minor.size": 2.0,
-    "lines.linewidth": 1.2, "lines.markersize": 5,
-    "grid.alpha": 0.25, "grid.linestyle": ":",
-    "figure.facecolor": "white", "savefig.bbox": "tight",
-})
 
 # Colorblind-friendly palette (Wong 2011, Nature Methods)
 CB_BLUE   = "#0072B2"
@@ -454,11 +439,9 @@ CB_PURPLE = "#CC79A7"
 CB_GRAY   = "#999999"
 
 
-def save_figure(fig, base_name):
-    """Save PNG (300 dpi) + PDF to results_dir."""
-    for fmt in ["png", "pdf"]:
-        path = results_dir / f"{base_name}.{fmt}"
-        fig.savefig(path, dpi=300, bbox_inches="tight")
+def save_result_figure(fig, base_name):
+    """按公共规范保存 PNG 与 PDF，保留交互式窗口。"""
+    save_figure(fig, results_dir / base_name, close=False)
     print(f"  已保存: {base_name}.png/.pdf")
 
 
@@ -509,7 +492,7 @@ for rv in REPRESENT_V:
 if len(repr_indices) < 2:
     repr_indices = [0, len(results)//2, -1]
 
-fig1, axes1 = plt.subplots(1, 3, figsize=(15, 4.2), sharey=True)
+fig1, axes1 = new_figure(nrows=1, ncols=3, kind="wide", height_mm=65, sharey=True)
 DS = max(1, len(results[0]["signal"]) // 5000)
 
 for ax, idx in zip(axes1, repr_indices):
@@ -527,34 +510,34 @@ for ax, idx in zip(axes1, repr_indices):
     ax.axvline(0, color=CB_ORANGE, ls=":", lw=0.6)
     ax.axvline(r["t_burst_end_s"] * 1000, color=CB_ORANGE, ls=":", lw=0.6)
     r2_str = f"$R^2={r['r2_build']:.2f}$" if np.isfinite(r["r2_build"]) else ""
-    ax.set_title(f"Pump {r['pump_high_v']:.2f} V  |  {r2_str}", fontsize=10)
+    ax.set_title(f"Pump {r['pump_high_v']:.2f} V  |  {r2_str}", fontsize=8)
     ax.set_xlabel("Time (ms)")
     ax.set_xlim(-5, 35)
     ax.xaxis.set_minor_locator(tck.AutoMinorLocator(2))
     ax.yaxis.set_minor_locator(tck.AutoMinorLocator(2))
-    ax.grid(True, alpha=0.2, lw=0.3)
+    ax.grid(False)
 
 axes1[0].set_ylabel("Signal / Envelope (mV)")
 handles, labels = axes1[0].get_legend_handles_labels()
 axes1[0].legend(handles, labels, fontsize=7, loc="upper right", framealpha=0.8)
 
 fig1.suptitle(f"Bell-Bloom transient fits (representative powers)   [{COND_TEXT}]",
-              fontsize=11, y=1.02)
-fig1.tight_layout()
-save_figure(fig1, "transient_fit_examples_pub")
+              fontsize=8)
+fig1.set_layout_engine("constrained")
+save_result_figure(fig1, "transient_fit_examples_pub")
 plt.show()
 
 
 # ================================================================
 # Fig 2: R_pump vs Pump Power (with error bars)
 # ================================================================
-fig2, ax2 = plt.subplots(figsize=(7, 4.5))
+fig2, ax2 = new_figure(kind="wide", height_mm=65)
 if hq.sum() > 0:
     ax2.errorbar(pumps[hq], R_eff[hq], yerr=e_R[hq],
                  fmt="o", color=CB_BLUE, capsize=3, capthick=0.8, markersize=7, zorder=5,
                  label="$R^2 \\geq 0.7$")
 if low_quality.sum() > 0:
-    ax2.errorbar(pumps[low_quality], np.maximum(R_eff[low_quality], 0),
+    ax2.errorbar(pumps[low_quality], R_eff[low_quality],
                  yerr=e_R[low_quality],
                  fmt="o", mfc="none", mec=CB_GRAY, color=CB_GRAY,
                  capsize=3, capthick=0.8, markersize=7, alpha=0.55,
@@ -569,20 +552,20 @@ if hq.sum() >= 3:
 ax2.axhline(0, color="k", lw=0.6)
 ax2.set_xlabel("Pump high voltage (V)")
 ax2.set_ylabel("$R_{\\rm pump}$ (s$^{-1}$)")
-ax2.set_title(f"$R_{{\\rm pump}}$ vs Pump Power  [{COND_TEXT}]", fontsize=11)
+ax2.set_title(f"$R_{{\\rm pump}}$ vs Pump Power  [{COND_TEXT}]", fontsize=8)
 ax2.xaxis.set_minor_locator(tck.AutoMinorLocator(2))
 ax2.yaxis.set_minor_locator(tck.AutoMinorLocator(2))
-ax2.grid(True, alpha=0.2, lw=0.3)
+ax2.grid(False)
 ax2.legend(fontsize=8, framealpha=0.8)
-fig2.tight_layout()
-save_figure(fig2, "rpump_eff_vs_pump_power_pub")
+fig2.set_layout_engine("constrained")
+save_result_figure(fig2, "rpump_eff_vs_pump_power_pub")
 plt.show()
 
 
 # ================================================================
 # Fig 3: Gamma rates vs Pump Power
 # ================================================================
-fig3, ax3 = plt.subplots(figsize=(7, 4.5))
+fig3, ax3 = new_figure(kind="wide", height_mm=65)
 ax3.errorbar(pumps, GBB * 1e-3, yerr=e_GBB * 1e-3,
              fmt="o-", color=CB_RED, capsize=3, capthick=0.8, lw=1.2,
              label="$\\Gamma_{\\rm BB}=1/\\tau_{\\rm BB}$")
@@ -591,13 +574,13 @@ ax3.errorbar(pumps, GD * 1e-3, yerr=e_GD * 1e-3,
              label="$\\Gamma_{\\rm dark}=1/\\tau_{\\rm dark}$")
 ax3.set_xlabel("Pump high voltage (V)")
 ax3.set_ylabel("Rate ($10^3$ s$^{-1}$)")
-ax3.set_title("$\\Gamma_{\\rm BB},\\;\\Gamma_{\\rm dark}$ vs Pump Power  " + f"[{COND_TEXT}]", fontsize=11)
+ax3.set_title("$\\Gamma_{\\rm BB},\\;\\Gamma_{\\rm dark}$ vs Pump Power  " + f"[{COND_TEXT}]", fontsize=8)
 ax3.xaxis.set_minor_locator(tck.AutoMinorLocator(2))
 ax3.yaxis.set_minor_locator(tck.AutoMinorLocator(2))
-ax3.grid(True, alpha=0.2, lw=0.3)
-ax3.legend(fontsize=9, framealpha=0.8)
-fig3.tight_layout()
-save_figure(fig3, "gamma_rates_vs_pump_power_pub")
+ax3.grid(False)
+ax3.legend(fontsize=8, framealpha=0.8)
+fig3.set_layout_engine("constrained")
+save_result_figure(fig3, "gamma_rates_vs_pump_power_pub")
 plt.show()
 
 
@@ -611,8 +594,7 @@ zoom_mask = (t_ms_full >= -3) & (t_ms_full <= r["t_burst_end_s"] * 1000 + 8)
 t_zoom = t_ms_full[zoom_mask]
 ds_zoom = max(1, len(t_zoom) // 8000)
 
-fig4, (ax4t, ax4b) = plt.subplots(2, 1, figsize=(10, 5.5), sharex=True,
-                                   gridspec_kw={"height_ratios": [3, 1]})
+fig4, (ax4t, ax4b) = new_figure(nrows=2, ncols=1, kind="wide", height_mm=110, sharex=True, gridspec_kw={"height_ratios": [3, 1]})
 ax4t.plot(t_zoom[::ds_zoom], r["signal"][zoom_mask][::ds_zoom] * 1e3,
           color=CB_GRAY, lw=0.2, alpha=0.25, label="Raw (90 kHz)")
 ax4t.plot(t_zoom[::ds_zoom], r["envelope"][zoom_mask][::ds_zoom] * 1e3,
@@ -627,13 +609,13 @@ ax4t.axvspan(0, r["t_burst_end_s"] * 1000, color=CB_ORANGE, alpha=0.07)
 ax4t.axvline(0, color=CB_ORANGE, ls=":", lw=0.8)
 ax4t.axvline(r["t_burst_end_s"] * 1000, color=CB_ORANGE, ls=":", lw=0.8)
 ax4t.set_ylabel("Signal / Envelope (mV)")
-ax4t.grid(True, alpha=0.2, lw=0.3)
+ax4t.grid(False)
 ax4t.legend(fontsize=7, loc="upper right", framealpha=0.8)
 tb_s = r["tau_BB_s"] * 1e3 if r["tau_BB_s"] is not None else 0
 td_s = r["tau_dark_s"] * 1e3 if r["tau_dark_s"] is not None else 0
 ax4t.set_title(f"Zoom: Pump {r['pump_high_v']:.2f} V  |  "
                + "$\\tau_{\\rm BB}$" + f"={tb_s:.2f} ms,  "
-               + "$\\tau_{\\rm dark}$" + f"={td_s:.2f} ms", fontsize=10)
+               + "$\\tau_{\\rm dark}$" + f"={td_s:.2f} ms", fontsize=8)
 
 ax4b.axhline(0, color="k", lw=0.5)
 if r["fit_success_build"]:
@@ -644,13 +626,13 @@ if r["fit_success_decay"]:
               color=CB_GREEN, lw=0.5, alpha=0.8, label="Decay resid.")
 ax4b.set_xlabel("Time (ms)")
 ax4b.set_ylabel("Residual (mV)")
-ax4b.grid(True, alpha=0.2, lw=0.3)
+ax4b.grid(False)
 ax4b.legend(fontsize=7, loc="upper right", framealpha=0.8)
 for _ax in [ax4t, ax4b]:
     _ax.xaxis.set_minor_locator(tck.AutoMinorLocator(2))
     _ax.yaxis.set_minor_locator(tck.AutoMinorLocator(2))
-fig4.tight_layout()
-save_figure(fig4, "transient_fit_zoom_pub")
+fig4.set_layout_engine("constrained")
+save_result_figure(fig4, "transient_fit_zoom_pub")
 plt.show()
 
 
@@ -676,9 +658,8 @@ for i, r in enumerate(results):
     else:
         rms_vals.append(np.nan)
 
-fig5, (ax5h, ax5r) = plt.subplots(2, 1, figsize=(10, 5.5),
-                                   gridspec_kw={"height_ratios": [3, 1]})
-vlim = float(np.nanmax(np.abs(res_matrix))) * 0.8
+fig5, (ax5h, ax5r) = new_figure(nrows=2, ncols=1, kind="wide", height_mm=110, gridspec_kw={"height_ratios": [3, 1]})
+vlim = max(float(np.nanmax(np.abs(res_matrix))), np.finfo(float).eps)
 im = ax5h.pcolormesh(t_hm, pumps, res_matrix, cmap="RdBu_r",
                       vmin=-vlim, vmax=vlim, shading="auto", rasterized=True)
 cb = fig5.colorbar(im, ax=ax5h, label="Residual (mV)")
@@ -686,17 +667,17 @@ ax5h.axvline(0, color="k", lw=0.5, ls="--")
 t_end_ms = float(results[0]["t_burst_end_s"]) * 1000
 ax5h.axvline(t_end_ms, color=CB_ORANGE, lw=0.8, ls=":")
 ax5h.set_ylabel("Pump high voltage (V)")
-ax5h.set_title(f"Fit residuals heatmap  [{COND_TEXT}]", fontsize=11)
+ax5h.set_title(f"Fit residuals heatmap  [{COND_TEXT}]", fontsize=8)
 
 ax5r.plot(pumps, rms_vals, "o-", color=CB_PURPLE, lw=1.2, label="RMS build-up resid.")
 ax5r.set_xlabel("Pump high voltage (V)")
 ax5r.set_ylabel("RMS res. (mV)")
-ax5r.grid(True, alpha=0.2, lw=0.3)
+ax5r.grid(False)
 ax5r.legend(fontsize=8)
 for _ax in [ax5h, ax5r]:
     _ax.xaxis.set_minor_locator(tck.AutoMinorLocator(2))
-fig5.tight_layout()
-save_figure(fig5, "residuals_diagnostics_pub")
+fig5.set_layout_engine("constrained")
+save_result_figure(fig5, "residuals_diagnostics_pub")
 plt.show()
 
 

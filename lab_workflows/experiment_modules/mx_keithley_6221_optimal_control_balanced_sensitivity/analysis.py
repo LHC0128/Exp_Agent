@@ -58,13 +58,7 @@ def _plot_pipeline_summary(
     """汇总图：左侧平衡零点随 z 漂移，右侧 RF 幅度扫描与色散拟合。"""
     import numpy as np
 
-    fig, axes = new_figure(
-        figsize=(9.0, 3.6),
-        nrows=1,
-        ncols=2,
-        squeeze=False,
-        constrained_layout=True,
-    )
+    fig, axes = new_figure(nrows=1, ncols=2, squeeze=False, constrained_layout=True, width_mm=177.8, height_mm=70)
     ax_left = axes[0][0]
     ax_right = axes[0][1]
     if balance_result is not None:

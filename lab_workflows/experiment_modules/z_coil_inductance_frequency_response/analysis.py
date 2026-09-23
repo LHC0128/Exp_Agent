@@ -354,12 +354,7 @@ def _plot_waveforms(results_dir: Path, captures: list[dict[str, Any]]) -> str:
     selected_frequencies = _select_waveform_frequencies(np.asarray(frequencies))
     ncols = 3
     nrows = int(math.ceil(len(selected_frequencies) / ncols))
-    fig, axes = new_figure(
-        figsize=(10.0, max(6.0, 2.5 * nrows)),
-        nrows=nrows,
-        ncols=ncols,
-        constrained_layout=True,
-    )
+    fig, axes = new_figure(nrows=nrows, ncols=ncols, constrained_layout=True, width_mm=177.8, height_mm=max(70, 65 * (nrows)))
     axes = np.asarray(axes, dtype=object).reshape(-1)
     for panel_index, (axis, frequency) in enumerate(zip(axes, selected_frequencies)):
         item = next(item for item in captures if np.isclose(item["frequency_hz"], frequency))

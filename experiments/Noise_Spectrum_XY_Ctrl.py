@@ -1,4 +1,4 @@
-"""XY DirectAW 噪声谱薄命令行入口。"""
+"""XY 正弦控制噪声谱薄命令行入口。"""
 
 from lab_workflows.experiment_modules.noise_spectrum_xy import ADAPTER
 

@@ -6,6 +6,9 @@ import { ScopeCapturePage } from "./ScopeCapturePage";
 import { ZAWClosedLoopExperimentPage } from "./ZAWClosedLoopExperimentPage";
 import { MxYOptimalControlFrequencyPage } from "./MxYOptimalControlFrequencyPage";
 import { StaticSensitivityPage } from "./StaticSensitivityPage";
+import { BellBloomZCalibrationPage } from "./BellBloomZCalibrationPage";
+import { NoiseSpectrumXYPage } from "./NoiseSpectrumXYPage";
+import { NoiseSpectrumXYKnownNoisePage } from "./NoiseSpectrumXYKnownNoisePage";
 import { Field, SelectField } from "../components/FormFields";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
@@ -35,6 +38,9 @@ export function ExperimentPage() {
   if (experimentId === "z-aw-closed-loop-waveform-correction") return <ZAWClosedLoopExperimentPage />;
   if (experimentId === "mx-y-optimal-control-rf-frequency-response") return <MxYOptimalControlFrequencyPage />;
   if (experimentId === "static-sensitivity") return <StaticSensitivityPage />;
+  if (experimentId === "bell-bloom-z-field-calibration") return <BellBloomZCalibrationPage />;
+  if (experimentId === "noise-spectrum-xy") return <NoiseSpectrumXYPage />;
+  if (experimentId === "noise-spectrum-xy-known-noise") return <NoiseSpectrumXYKnownNoisePage />;
   return <GenericExperimentPage />;
 }
 

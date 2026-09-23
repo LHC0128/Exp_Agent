@@ -209,9 +209,11 @@ def _fit_plane(x_axis: np.ndarray, y_axis: np.ndarray, sx: np.ndarray, sy: np.nd
 
 def _save_plot(path: Path, data: dict[str, Any], plane_results: list[dict[str, Any]]) -> None:
     import matplotlib.pyplot as plt
+    from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+    set_plot_style("paper")
 
     z_axis = data["z_axis"]
-    fig, axes = plt.subplots(2, 2, figsize=(10, 7), constrained_layout=True)
+    fig, axes = new_figure(nrows=2, ncols=2, kind="wide", height_mm=110, constrained_layout=True)
     centers = np.asarray([item["balance_xy_v"] for item in plane_results])
     minima = np.asarray([item["model_min_local_3x3_median_r_v"] for item in plane_results])
     axes[0, 0].plot(z_axis[: len(centers)], centers[:, 0] * 1e3, "o-", label="Fitted X center")
@@ -228,7 +230,7 @@ def _save_plot(path: Path, data: dict[str, Any], plane_results: list[dict[str, A
         axes[1, panel_index].set_title(f"Z={z_axis[iz]:+.3f} V residual")
         axes[1, panel_index].set(xlabel="X field (V)", ylabel="Y field (V)")
         fig.colorbar(im, ax=axes[1, panel_index], label="Complex residual (mV)")
-    fig.savefig(path, dpi=180)
+    save_figure(fig, path, close=False)
     plt.close(fig)
 
 

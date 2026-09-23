@@ -41,6 +41,8 @@ class StaticSensitivityParams(ExperimentParams):
     hf2_demod_idx: int = parameter(default=0, external_name="hf2_demod_idx", label="HF2 Demod", group="advanced", minimum=0)
     hf2_demod_order: int = parameter(default=4, external_name="hf2_demod_order", label="HF2 阶数", group="advanced", minimum=1)
     hf2_signal_range: float = parameter(default=2.0, external_name="hf2_signal_range", label="HF2 输入量程", unit="V", group="advanced", minimum=0)
+    hf2_ac_coupling: bool = parameter(default=True, external_name="hf2_ac_coupling", label="HF2 输入 AC 耦合", group="advanced", description="开启为 AC 耦合，关闭为 DC 耦合。")
+    hf2_50_ohm: bool = parameter(default=True, external_name="hf2_50_ohm", label="HF2 输入 50 Ω", group="advanced", description="开启 50 Ω 输入终端；关闭时使用高阻输入。")
     hf2_demod_rate: float = parameter(default=1000.0, external_name="hf2_demod_rate", label="色散采样率", unit="Sa/s", group="advanced", minimum=1)
     hf2_demod_tc: float = parameter(default=0.001, external_name="hf2_demod_tc", label="色散时间常数", unit="s", group="advanced", minimum=0)
     hf2_noise_rate: float = parameter(default=50000.0, external_name="hf2_noise_rate", label="噪声采样率", unit="Sa/s", group="advanced", minimum=1)

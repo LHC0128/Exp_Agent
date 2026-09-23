@@ -88,8 +88,7 @@ def _plot_heatmap(
         outer_axis,
         masked,
         shading="nearest",
-        cmap="viridis",
-    )
+        cmap="viridis", rasterized=True)
     colorbar = fig.colorbar(image, ax=ax)
     colorbar.set_label(colorbar_label)
     format_axis(ax, xlabel=inner_label, ylabel=outer_label)

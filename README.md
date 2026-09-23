@@ -140,6 +140,12 @@ experiments ───┘
 
 以后修改实验步骤，应修改共享工作流；新模式的 `experiments/*.py` 只保留命令行调用。
 新增或修改实验时使用仓库级 `expcodegen` Skill，并运行其中的验证器。
+后续修改改变实验行为时，同步更新 `docs/` 中的实验介绍、相关正文和 GUI 简介；新增正式实验默认配套
+「运行 / 历史」双 Tab GUI，模板见 `.agents/skills/expcodegen/references/gui-two-tab-template.md`。
+测试完成后清理本次临时测试脚本，保留正式回归测试。
+实验说明只链接 GUI 实际保存的默认参数文件，不重复记录可变默认值；历史运行参数以
+各自的 `experiment_config.yaml` 为准。新增实验使用 Skill 验证器的 `--delivery` 模式，
+检查文档关联并执行前端路由和历史接口测试。
 
 正式实验有两种明确执行模式：
 
@@ -231,11 +237,13 @@ experiments ───┘
 | Mx 主磁场控制噪声谱 | `experiments/Mx_Main_Field_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Noise_Spectrum_plot.py` | `docs/mx_main_field_noise_spectrum.md` |
 | Mx 主磁场示波器噪声谱（固定 X/Y DC 补偿，可选 AC/DC 耦合） | `experiments/Mx_Main_Field_Scope_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Scope_Noise_Spectrum_plot.py` | `docs/mx_main_field_scope_noise_spectrum.md` |
 | Mx 高主场 Z 磁场频率标定 | `experiments/Mx_Z_Field_Calibration.py`、`experiments/Mx_Z_Field_Calibration_plot.py` | `docs/mx_z_field_calibration.md` |
+| Bell Bloom Z 磁场频率标定（运行 / 历史双 Tab） | `experiments/Bell_Bloom_Z_Field_Calibration.py`、`experiments/Bell_Bloom_Z_Field_Calibration_plot.py` | `docs/bell_bloom_z_field_calibration.md` |
 | Mx Z 直流控制噪声谱 | `experiments/Mx_Z_Noise_Spectrum.py`、`experiments/Mx_Z_Noise_Spectrum_plot.py` | `docs/mx_z_noise_spectrum.md` |
 | Mx XY 剩磁二维校准（SDS） | `experiments/Mx_XY_Residual_Field_Calibration.py`、`experiments/Mx_XY_Residual_Field_Calibration_plot.py` | `docs/mx_xy_residual_field_calibration.md` |
 | T1 / T2 标定 | `experiments/T1_Calibration.py`、`experiments/T2_Calibration.py` | `docs/T1_calibration.md`、`docs/T2_relaxation.md` |
 | X/Y 补偿与通道验证 | `experiments/XY_Compensation_Calibration.ipynb`、`experiments/XY_Channel_Calibration.ipynb`、`experiments/XY_AM_Transfer.ipynb`、`experiments/XY_MOD_ZeroOffset.ipynb`、`experiments/XY_Output_Verification.ipynb` | `docs/XY_Compensation_Calibration.md`、`docs/z_field_calibration.md` |
-| XY 控制噪声谱测量 | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
+| XY 控制噪声谱测量（运行 / 历史双 Tab；按格间距自动分段、只读平均段数与耗时预览；移动峰标定验收、局部约束拟合与质量掩码） | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
+| XY 控制测量已知可控噪声谱（运行 / 历史双 Tab；Z 小线圈注入分段平顶谱伪噪声，相邻点交替 on/off 顺序、两态等待并逐段保存；内置色散线形拟合与 K_Z×频响真值链，独立标定频带、全控制轴分离与远端背景验收、有符号差谱及带内/带外统计） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
 | Demod3 R 噪声谱测量 | `experiments/Noise_Spectrum_XY_Demod3_R.py`、`experiments/Noise_Spectrum_XY_Demod3_R_plot.py` | `docs/noise_spectrum_xy_demod3_r.md` |
 | MORS 相关 | `experiments/MORS_feasibility_test.ipynb`、`experiments/MORS_feasibility_test_v2.ipynb`、`experiments/MORS_polarization_pulsed.ipynb` | `docs/MORS_polarization.md` |
 | RF 场灵敏度 Notebook | `experiments/RF_Field_Sensitivity.ipynb`、`experiments/RF_Field_Sensitivity_AW.ipynb` | `docs/rf_field_measurement.md`、`docs/rf_field_measurement_2.md` |
@@ -266,8 +274,16 @@ data/<实验类型>/MMDD_HHMM_tag/
 分析脚本应尽量只依赖本地数据，不依赖在线仪器状态。
 
 所有新增或重构的 Python 实验图默认使用 `lab_workflows.plotting` 的 `paper` 配置；
-制作 A0 海报面板时显式选择 `a0_poster`。尺寸、配色、导出和科研表达约定见
-`docs/plotting_style.md`。
+制作 A0 海报面板时显式选择 `a0_poster`。支持毫米图幅以及 `nature` / `aps` 投稿
+排版起点；公共保存接口默认输出同名 PDF＋PNG。尺寸、配色、导出与科研表达约定见
+[科研绘图规范](docs/plotting_style.md)。运行
+`agent_exp_env\Scripts\python.exe -m examples.publication_plot_gallery`
+可在 `results/publication_plot_gallery/` 生成四类可复现模拟样图、源数据与图注。
+
+现有 Python 分析及独立绘图入口已统一接入公共绘图接口；历史 Notebook 仅盘点，
+未修改。迁移范围、真实数据验证和待审定的统计问题见
+[绘图检查报告](docs/plotting_audit_20260920.md)；旧脚本的输入与运行方式见
+[历史分析绘图入口](docs/legacy_analysis_plotting.md)。
 
 ## 配置管理
 

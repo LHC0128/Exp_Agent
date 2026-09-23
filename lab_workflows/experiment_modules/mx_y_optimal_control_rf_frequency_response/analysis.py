@@ -41,7 +41,7 @@ def _phase_median(frequency_hz: np.ndarray, r_mean_v: np.ndarray) -> tuple[np.nd
 def _plot_heatmap(path: Path, phase_deg, frequency_hz, r_mean_v) -> None:
     set_plot_style("paper")
     figure, axis = new_figure(kind="wide")
-    image = axis.pcolormesh(phase_deg, frequency_hz, np.ma.masked_invalid(r_mean_v), shading="nearest", cmap="viridis")
+    image = axis.pcolormesh(phase_deg, frequency_hz, np.ma.masked_invalid(r_mean_v), shading="nearest", cmap="viridis", rasterized=True)
     format_axis(axis, xlabel="Y RF burst phase (deg)", ylabel="Y RF frequency (Hz)")
     figure.colorbar(image, ax=axis, label="Demod0 R (V)")
     save_figure(figure, path)

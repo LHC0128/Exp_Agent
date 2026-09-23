@@ -24,6 +24,8 @@ if str(project_root) not in sys.path:
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 import numpy as np
 from scipy import signal as scipy_signal
 import yaml
@@ -916,7 +918,7 @@ def write_local_summary(results, decision):
 def plot_local_summary(results, decision):
     """绘制本轮优化汇总图."""
     BATCH_DIR.mkdir(parents=True, exist_ok=True)
-    fig, axes = plt.subplots(3, 1, figsize=(8, 10), sharey=False)
+    fig, axes = new_figure(nrows=3, ncols=1, kind="wide", height_mm=165, sharey=False)
 
     for ax, seq in zip(axes, OPTIMIZE_SEQUENCE):
         parameter = seq["parameter"]
@@ -943,11 +945,11 @@ def plot_local_summary(results, decision):
         ax.set_xlabel(parameter)
         ax.set_ylabel("Sensitivity (fT/sqrtHz)")
         ax.set_title(f"Sensitivity vs {parameter}")
-        ax.grid(True, alpha=0.3)
+        ax.grid(False)
         ax.legend(fontsize=8)
 
-    plt.tight_layout()
-    fig.savefig(LOCAL_SUMMARY_PNG, dpi=150, bbox_inches="tight")
+    plt.gcf().set_layout_engine("constrained")
+    save_figure(fig, LOCAL_SUMMARY_PNG, close=False)
     plt.close(fig)
 
 

@@ -16,12 +16,13 @@ if str(project_root) not in sys.path:
 import numpy as np
 import yaml
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 from scipy import signal as scipy_signal
 from scipy.optimize import curve_fit
 
-plt.rcParams.update({"figure.dpi": 120, "font.size": 11, "axes.labelsize": 12})
 
 EXPERIMENT_TYPE = "Noise_Spectrum_XY_Ctrl"
 USE_LATEST = True
@@ -269,7 +270,7 @@ np.savez(results_dir / "calibration.npz",
 print(f"标定结果已保存: {results_dir / 'calibration.npz'}")
 
 # ---- 标定图（1×2：散点拟合 + PSD伪彩图纵轴为Ω_Ctrl） ----
-fig_cal, axes_cal = plt.subplots(1, 2, figsize=(14, 5))
+fig_cal, axes_cal = new_figure(nrows=1, ncols=2, kind="wide", height_mm=65)
 
 # 图 a: 散点 + 拟合
 ax = axes_cal[0]
@@ -279,8 +280,8 @@ ax.plot(amplitudes_used, omega_ctrl / 1000, "r-", linewidth=2,
 ax.set_xlabel("Control Amplitude (V)")
 ax.set_ylabel("$\\Omega_{\\mathrm{Ctrl}}$ (kHz)")
 ax.set_title(f"Column-wise Peak Finding (k={k:.0f}, b={b:.0f})")
-ax.legend(fontsize=9)
-ax.grid(True, alpha=0.3)
+ax.legend(fontsize=8)
+ax.grid(False)
 
 # 图 b: 原始 PSD log（纵轴映射为 Ω_Ctrl，x轴聚焦至脊线区域）
 ax = axes_cal[1]
@@ -297,14 +298,14 @@ ax.set_ylabel("$\\Omega_{\\mathrm{Ctrl}}$ (Hz)")
 ax.set_title("Raw PSD (log10) with Calibrated Ridge")
 ax.legend(fontsize=8)
 
-fig_cal.tight_layout()
-fig_cal.savefig(results_dir / "calibration.png", dpi=150)
+fig_cal.set_layout_engine("constrained")
+save_figure(fig_cal, results_dir / "calibration.png", close=False)
 print(f"标定图已保存: {results_dir / 'calibration.png'}")
 
 # %% Cell 20
 # 诊断：查看特定频率列沿幅度轴的 PSD 曲线
 test_freqs = [6500, 10000, 15000,24000]  # Hz
-fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+fig, axes = new_figure(nrows=2, ncols=2, kind="wide", height_mm=110)
 for ax, f_idx in zip(axes.flatten(), [np.argmin(np.abs(freq_axis - f)) for f in test_freqs]):
     ax.plot(amplitudes_used, psd_matrix[:, f_idx], 'o-', ms=3)
     ax.axvline(amplitudes_used[np.argmax(psd_matrix[:, f_idx])],
@@ -312,10 +313,10 @@ for ax, f_idx in zip(axes.flatten(), [np.argmin(np.abs(freq_axis - f)) for f in 
     ax.set_xlabel('Control Amplitude (V)')
     ax.set_ylabel(f'PSD @ {freq_axis[f_idx]:.0f} Hz')
     ax.legend()
-    ax.grid(True, alpha=0.3)
+    ax.grid(False)
 
-fig.tight_layout()
-fig.savefig(results_dir / "psd_column_diagnostics.png", dpi=150, bbox_inches="tight")
+fig.set_layout_engine("constrained")
+save_figure(fig, results_dir / "psd_column_diagnostics.png", close=False)
 print('PSD 频率列诊断图已保存:', results_dir / 'psd_column_diagnostics.png')
 
 # %% Cell 21
@@ -466,7 +467,7 @@ print(f"  freq_axis: {freq_axis[0]:.0f} - {freq_axis[-1]:.0f} Hz")
 # ===== 绘制结果图 =====
 
 # ---- 图 1: PSD 二维伪彩图（纵轴映射为 Ω_Ctrl，聚焦脊线区域） ----
-fig1, ax1 = plt.subplots(figsize=(10, 6))
+fig1, ax1 = new_figure(kind="wide", height_mm=65)
 psd_log = np.log10(np.maximum(psd_matrix, 1e-20))
 # 百分位截断：裁剪颜色范围，排除极大噪声峰干扰，凸显脊背
 vmin_pct, vmax_pct = 5, 95
@@ -487,27 +488,27 @@ ax1.set_xlabel("Frequency (Hz)")
 ax1.set_ylabel("$\\Omega_{\\mathrm{Ctrl}}$ (Hz)")
 ax1.set_title("PSD $S_{S_1}(\\omega, \\Omega_\\mathrm{Ctrl})$ (zoomed to ridge region)")
 cb1 = fig1.colorbar(im, ax=ax1, label="$\\log_{10}$ PSD (V²/Hz)")
-fig1.tight_layout()
-fig1.savefig(results_dir / "noise_spectrum_2d.png", dpi=150)
+fig1.set_layout_engine("constrained")
+save_figure(fig1, results_dir / "noise_spectrum_2d.png", close=False)
 print(f"PSD 伪彩图已保存")
 
 # ---- 图 2: 提取的噪声谱 ----
-fig2, (ax2a, ax2b) = plt.subplots(1, 2, figsize=(14, 5))
+fig2, (ax2a, ax2b) = new_figure(nrows=1, ncols=2, kind="wide", height_mm=65)
 
 ax2a.loglog(freq_axis, S_beta, "b-", linewidth=1.5)
 ax2a.set_xlabel("Frequency (Hz)")
 ax2a.set_ylabel("$S_\\beta(\\omega)$ (V²/Hz)")
 ax2a.set_title("Controllable Noise Spectrum $S_\\beta(\\omega)$")
-ax2a.grid(True, alpha=0.3)
+ax2a.grid(False)
 
 ax2b.loglog(freq_axis, N_S1, "r-", linewidth=1.5)
 ax2b.set_xlabel("Frequency (Hz)")
 ax2b.set_ylabel("$N_{S_1}(\\omega)$ (V²/Hz)")
 ax2b.set_title("Uncontrollable Noise $N_{S_1}(\\omega)$")
-ax2b.grid(True, alpha=0.3)
+ax2b.grid(False)
 
-fig2.tight_layout()
-fig2.savefig(results_dir / "noise_spectra_extracted.png", dpi=150)
+fig2.set_layout_engine("constrained")
+save_figure(fig2, results_dir / "noise_spectra_extracted.png", close=False)
 print(f"提取的噪声谱已保存")
 
 plt.show()
@@ -613,7 +614,7 @@ for p in peaks_neg:
 detected_features.sort(key=lambda x: x["height"], reverse=True)
 
 # ---- 绘制诊断图 ----
-fig_diag, axes_diag = plt.subplots(2, 2, figsize=(14, 10))
+fig_diag, axes_diag = new_figure(nrows=2, ncols=2, kind="wide", height_mm=110)
 
 # (a) 正斜率积分
 ax0 = axes_diag[0, 0]
@@ -621,13 +622,13 @@ ax0.plot(slope_candidates, integration_score, 'k-', linewidth=1)
 for feat in detected_features[:5]:
     if feat["type"] != "positive": continue
     ax0.axvline(feat["slope"], color='r', linestyle='--', alpha=0.5)
-    ax0.text(feat["slope"], feat["height"]*1.1, f's={feat["slope"]:.2f}', fontsize=9, ha='center')
+    ax0.text(feat["slope"], feat["height"]*1.1, f's={feat["slope"]:.2f}', fontsize=8, ha='center')
 ax0.axvline(1.0, color='c', linestyle='-', alpha=0.7, label='s=1 (Main ridge)')
 ax0.set_xlabel("Slope s (ω = s · Ω_Ctrl)")
 ax0.set_ylabel("Integrated intensity")
 ax0.set_title("(a) Positive slope analysis")
 ax0.legend(fontsize=8)
-ax0.grid(True, alpha=0.3)
+ax0.grid(False)
 
 # (b) 负斜率积分
 ax1 = axes_diag[0, 1]
@@ -635,11 +636,11 @@ ax1.plot(s_neg_candidates, best_scores_neg, 'k-', linewidth=1)
 for feat in detected_features[:5]:
     if feat["type"] != "negative": continue
     ax1.axvline(feat["slope"], color='r', linestyle='--', alpha=0.5)
-    ax1.text(feat["slope"], feat["height"]*1.1, f's={feat["slope"]:.2f}', fontsize=9, ha='center')
+    ax1.text(feat["slope"], feat["height"]*1.1, f's={feat["slope"]:.2f}', fontsize=8, ha='center')
 ax1.set_xlabel("Slope s_neg (ω = s_neg·Ω_Ctrl + offset)")
 ax1.set_ylabel("Best offset-integrated intensity")
 ax1.set_title("(b) Negative slope analysis")
-ax1.grid(True, alpha=0.3)
+ax1.grid(False)
 
 # (c) PSD 原图 + 标注检测到的特征
 ax2 = axes_diag[1, 0]
@@ -707,8 +708,8 @@ ax3.set_ylabel("Ω_Ctrl (Hz)")
 ax3.set_title("(d) Negative-slope features on PSD")
 ax3.legend(fontsize=6, loc='upper left')
 
-fig_diag.tight_layout()
-fig_diag.savefig(results_dir / "diagonal_analysis.png", dpi=150)
+fig_diag.set_layout_engine("constrained")
+save_figure(fig_diag, results_dir / "diagonal_analysis.png", close=False)
 plt.show()
 
 # ---- 打印结果解读 ----

@@ -13,6 +13,7 @@ from scipy.optimize import least_squares, minimize
 
 from ...experiment_runtime import runtime_run_dir
 from ...plotting import (
+    COLOR_TRAD,
     PAPER_WIDE,
     format_axis,
     new_figure,
@@ -440,8 +441,7 @@ def _plot_planes(
             shading="flat",
             cmap="viridis",
             vmin=float(np.min(r_mean)),
-            vmax=float(np.max(r_mean)),
-        )
+            vmax=float(np.max(r_mean)), rasterized=True)
         if z_index == best_index[0]:
             axis.plot(
                 x_axis[best_index[1]],
@@ -468,7 +468,7 @@ def _plot_planes(
                     markeredgewidth=1.1,
                 )
         format_axis(axis, xlabel="X field setting (V)", ylabel="Y field setting (V)")
-        axis.set_title(f"Z bias = {z_axis[z_index]:+.6g} V", fontsize=8.5)
+        axis.set_title(f"Z bias = {z_axis[z_index]:+.6g} V", fontsize=8)
     for axis in axes.flat[z_axis.size :]:
         axis.set_visible(False)
     assert mesh is not None
@@ -490,25 +490,23 @@ def _plot_components(
     y_axis = np.asarray(data["y_field_v"], dtype=float)
     z_axis = np.asarray(data["z_bias_v"], dtype=float)
     z_index, x_index, y_index = best_index
-    fig, axes = new_figure(
-        figsize=(9.0, 6.0),
-        nrows=2,
-        ncols=2,
-        squeeze=False,
-        constrained_layout=True,
-    )
+    fig, axes = new_figure(nrows=2, ncols=2, squeeze=False, constrained_layout=True, width_mm=177.8, height_mm=130)
     for axis, key, title in (
         (axes[0][0], "r_mean_v", "Mean R"),
         (axes[0][1], "x_mean_v", "Mean X"),
         (axes[1][0], "y_mean_v", "Mean Y"),
     ):
         values = np.asarray(data[key], dtype=float)[z_index].T
+        bound = max(float(np.nanmax(np.abs(values))), np.finfo(float).eps)
         mesh = axis.pcolormesh(
             _axis_edges(x_axis),
             _axis_edges(y_axis),
             values,
             shading="flat",
-            cmap="coolwarm",
+            cmap="viridis" if key == "r_mean_v" else "coolwarm",
+            vmin=0.0 if key == "r_mean_v" else -bound,
+            vmax=bound,
+            rasterized=True,
         )
         axis.plot(x_axis[x_index], y_axis[y_index], "kx", markersize=6)
         if fitted_center_v is not None:
@@ -553,26 +551,26 @@ def _plot_bloch_fit(
     r_squared = np.asarray(
         [item["r_squared_complex"] for item in plane_results], dtype=float
     )
-    fig, axes = new_figure(
-        figsize=(10.0, 6.8),
-        nrows=2,
-        ncols=2,
-        squeeze=False,
-        constrained_layout=True,
-    )
+    fig, axes = new_figure(nrows=2, ncols=2, squeeze=False, constrained_layout=True, width_mm=177.8, height_mm=130)
     axes[0][0].plot(z_values, centers[:, 0] * 1e3, "o-", label="Fitted X center")
     axes[0][0].plot(z_values, centers[:, 1] * 1e3, "s-", label="Fitted Y center")
     format_axis(axes[0][0], xlabel="Z bias (V)", ylabel="XY center (mV)")
     axes[0][0].legend(fontsize=8)
     axes[0][1].plot(z_values, local_r * 1e3, "o-", label="Local R")
-    axes[0][1].plot(z_values, r_squared, "s-", label="Complex R2")
-    format_axis(axes[0][1], xlabel="Z bias (V)", ylabel="Fit metric")
-    axes[0][1].legend(fontsize=8)
+    quality_axis = axes[0][1].twinx()
+    quality_axis.plot(z_values, r_squared, "s--", color=COLOR_TRAD, label="Complex R²")
+    format_axis(axes[0][1], xlabel="Z bias (V)", ylabel="Local R (mV)")
+    quality_axis.set_ylabel("Complex R² (dimensionless)")
+    axes[0][1].legend(loc="upper left", fontsize=8)
+    quality_axis.legend(loc="lower right", fontsize=8)
     if plane_results:
+        residual_max = max(float(np.nanmax(item["residual_matrix_v"])) * 1e3 for item in (plane_results[0], plane_results[-1]))
+        residual_max = max(residual_max, np.finfo(float).eps)
         for panel_index, item in enumerate((plane_results[0], plane_results[-1])):
             residual = np.asarray(item["residual_matrix_v"], dtype=float)
             image = axes[1][panel_index].imshow(
                 residual.T * 1e3,
+                cmap="magma", vmin=0.0, vmax=residual_max,
                 origin="lower",
                 aspect="auto",
                 extent=[

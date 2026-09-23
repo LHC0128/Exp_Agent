@@ -147,8 +147,7 @@ def _plot_psd_matrix(
         detuning_hz / 1000.0,
         log_psd,
         shading="auto",
-        cmap="inferno",
-    )
+        cmap="inferno", rasterized=True)
     diagonal_max = min(float(frequency_axis_hz[-1]), float(detuning_hz[-1]))
     axis.plot(
         [0.0, diagonal_max / 1000.0],

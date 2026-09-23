@@ -17,8 +17,10 @@ if str(project_root) not in sys.path:
 import numpy as np
 import yaml
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 from scipy.optimize import curve_fit
 from scipy import signal as scipy_signal
 from tqdm import tqdm
@@ -97,46 +99,44 @@ alpha_y, beta_y = popt_y; perr_y = np.sqrt(np.diag(pcov_y))
 
 bx_asd = np.sqrt(max(beta_x,0)); by_asd = np.sqrt(max(beta_y,0))
 snr = 10*np.log10(alpha_x*probe_powers[-1]/beta_x) if beta_x>0 else None
-print(f"a_x={alpha_x:.3e}/V, b_x={beta_x:.3e} V2/Hz, elec={bx_asd:.3e} V/rtHz")
+print(f"a_x={alpha_x:.3e}/V, b_x={beta_x:.3e} V2/Hz, elec={bx_asd:.3e} V/√Hz")
 print(f"a_y={alpha_y:.3e}/V, b_y={beta_y:.3e} V2/Hz, SNR={snr:.1f}dB" if snr else "")
 
 # %% Cell 5
-plt.rcParams.update({"font.size":9,"axes.titlesize":10,"axes.labelsize":9,
-                      "xtick.labelsize":8,"ytick.labelsize":8,"legend.fontsize":8})
 pf = np.linspace(probe_powers[0], probe_powers[-1], 100)
 
 # ---- 图1: ASD X 标定 ----
-fig1, ax1 = plt.subplots(figsize=(7, 5))
+fig1, ax1 = new_figure(kind="standard", height_mm=65)
 ax1.errorbar(probe_powers, mean_asd_x, yerr=std_asd_x, fmt="o", capsize=4,
-             color="C0", label="ASD X")
+             color="C0", label="Mean ± SD (X)")
 ax1.plot(pf, np.sqrt(np.maximum(alpha_x * pf + beta_x, 0)), "--", color="C0",
-         alpha=0.7, label=f"Fit: sqrt({alpha_x:.2e}*P + {beta_x:.2e})")
+         alpha=0.7, label="Shot-noise fit")
 ax1.axhline(bx_asd, color="gray", ls=":", alpha=0.5,
-            label=f"Elec. noise = {bx_asd:.2e} V/rtHz")
+            label=f"Elec. noise = {bx_asd:.2e} V/√Hz")
 ax1.legend()
-ax1.set_xlabel("Probe Laser Power (V)")
-ax1.set_ylabel("ASD Noise Floor (V/rtHz)")
+ax1.set_xlabel("Probe control voltage (V)")
+ax1.set_ylabel("ASD Noise Floor (V/√Hz)")
 ax1.set_title("Shot Noise Calibration — X Channel")
-ax1.grid(True, alpha=0.3)
-fig1.tight_layout()
-fig1.savefig(results_dir / "shot_noise_x.png", dpi=150, bbox_inches="tight")
+ax1.grid(False)
+fig1.set_layout_engine("constrained")
+save_figure(fig1, results_dir / "shot_noise_x.png", close=False)
 print(f"图表已保存: {results_dir / 'shot_noise_x.png'}")
 
 # ---- 图2: ASD Y 标定 ----
-fig2, ax2 = plt.subplots(figsize=(7, 5))
+fig2, ax2 = new_figure(kind="standard", height_mm=65)
 ax2.errorbar(probe_powers, mean_asd_y, yerr=std_asd_y, fmt="s", capsize=4,
-             color="C1", label="ASD Y")
+             color="C1", label="Mean ± SD (Y)")
 ax2.plot(pf, np.sqrt(np.maximum(alpha_y * pf + beta_y, 0)), "--", color="C1",
-         alpha=0.7, label=f"Fit: sqrt({alpha_y:.2e}*P + {beta_y:.2e})")
+         alpha=0.7, label="Shot-noise fit")
 ax2.axhline(by_asd, color="gray", ls=":", alpha=0.5,
-            label=f"Elec. noise = {by_asd:.2e} V/rtHz")
+            label=f"Elec. noise = {by_asd:.2e} V/√Hz")
 ax2.legend()
-ax2.set_xlabel("Probe Laser Power (V)")
-ax2.set_ylabel("ASD Noise Floor (V/rtHz)")
+ax2.set_xlabel("Probe control voltage (V)")
+ax2.set_ylabel("ASD Noise Floor (V/√Hz)")
 ax2.set_title("Shot Noise Calibration — Y Channel")
-ax2.grid(True, alpha=0.3)
-fig2.tight_layout()
-fig2.savefig(results_dir / "shot_noise_y.png", dpi=150, bbox_inches="tight")
+ax2.grid(False)
+fig2.set_layout_engine("constrained")
+save_figure(fig2, results_dir / "shot_noise_y.png", close=False)
 print(f"图表已保存: {results_dir / 'shot_noise_y.png'}")
 
 # ---- 图3: ASD vs RMS 诊断 ----
@@ -148,30 +148,30 @@ all_rms = np.array(all_rms, dtype=float)
 mr = np.nanmean(all_rms, axis=1)
 sr = np.nanstd(all_rms, axis=1)
 
-fig3, ax3 = plt.subplots(figsize=(7, 5))
+fig3, ax3 = new_figure(kind="standard", height_mm=65)
 ax3.errorbar(probe_powers, mean_asd_x, yerr=std_asd_x, fmt="o-", capsize=3,
-             color="C0", label="ASD X (V/rtHz)", markersize=5)
-ax3.set_xlabel("Probe Laser Power (V)")
-ax3.set_ylabel("ASD Noise Floor (V/rtHz)", color="C0")
+             color="C0", label="ASD X (V/√Hz)", markersize=5)
+ax3.set_xlabel("Probe control voltage (V)")
+ax3.set_ylabel("ASD Noise Floor (V/√Hz)", color="C0")
 ax3.tick_params(axis="y", labelcolor="C0")
 ax3r = ax3.twinx()
 ax3r.errorbar(probe_powers, mr, yerr=sr, fmt="s--", capsize=3,
               color="C2", label="RMS X (V)", markersize=5)
-ax3r.set_ylabel("Time-domain RMS (V)", color="C2")
+ax3r.set_ylabel("AC RMS (V)", color="C2")
 ax3r.tick_params(axis="y", labelcolor="C2")
 h1, l1 = ax3.get_legend_handles_labels()
 h2, l2 = ax3r.get_legend_handles_labels()
 ax3.legend(h1 + h2, l1 + l2, loc="upper left")
-ax3.set_title("ASD vs RMS — LIA Display Diagnostic")
-ax3.grid(True, alpha=0.3)
-fig3.tight_layout()
-fig3.savefig(results_dir / "asd_vs_rms.png", dpi=150, bbox_inches="tight")
+ax3.set_title("ASD and AC RMS")
+ax3.grid(False)
+fig3.set_layout_engine("constrained")
+save_figure(fig3, results_dir / "asd_vs_rms.png", close=False)
 print(f"图表已保存: {results_dir / 'asd_vs_rms.png'}")
 
 # ---- 图4: PSD 白噪声检验 ----
 sel_idx = [0, n_powers // 2, -1]
 sel_colors = ["#2166ac", "#f4a582", "#b2182b"]
-fig4, ax4 = plt.subplots(figsize=(7, 5))
+fig4, ax4 = new_figure(kind="standard", height_mm=65)
 for idx, c in zip(sel_idx, sel_colors):
     fm = (freqs_saved > 0) & (freqs_saved <= FLAT_FREQ_LIMIT)
     ax4.plot(freqs_saved[fm], psd_xm[idx][fm], color=c, alpha=0.8, lw=0.8,
@@ -182,11 +182,11 @@ ax4.axvline(FLAT_FREQ_LIMIT, color="green", alpha=0.5, ls="--",
             label=f"Flat limit ({FLAT_FREQ_LIMIT:.0f} Hz)")
 ax4.legend()
 ax4.set_xlabel("Frequency (Hz)")
-ax4.set_ylabel("PSD (V^2/Hz)")
+ax4.set_ylabel("PSD (V²/Hz)")
 ax4.set_title("X-Channel PSD — White Noise Check")
-ax4.grid(True, alpha=0.3)
-fig4.tight_layout()
-fig4.savefig(results_dir / "psd_white_noise_check.png", dpi=150, bbox_inches="tight")
+ax4.grid(False)
+fig4.set_layout_engine("constrained")
+save_figure(fig4, results_dir / "psd_white_noise_check.png", close=False)
 print(f"图表已保存: {results_dir / 'psd_white_noise_check.png'}")
 
 plt.show()

@@ -26,11 +26,11 @@ COLOR_BROWN = "#8C564B"
 
 
 # 两套尺寸均表示最终排版尺寸，单位为英寸。
-PlotProfile = Literal["paper", "a0_poster"]
+PlotProfile = Literal["paper", "nature", "aps", "a0_poster"]
 FigureKind = Literal["standard", "wide", "square"]
 DEFAULT_PROFILE: PlotProfile = "paper"
 
-PAPER_FIG_HEIGHT = 1.7
+PAPER_FIG_HEIGHT = 2.5
 PAPER_STANDARD = (3.4, PAPER_FIG_HEIGHT)
 PAPER_WIDE = (7.0, 3.2)
 PAPER_SQUARE = (3.3, 3.3)
@@ -57,6 +57,9 @@ PAPER_RCPARAMS: dict[str, Any] = {
     "font.family": "sans-serif",
     "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
     "font.size": 8,
+    "figure.facecolor": "white",
+    "axes.facecolor": "white",
+    "savefig.facecolor": "white",
     "axes.titlesize": 8,
     "axes.labelsize": 8,
     "xtick.labelsize": 8,
@@ -68,7 +71,11 @@ PAPER_RCPARAMS: dict[str, Any] = {
     "savefig.pad_inches": 0.08,
     "savefig.format": "pdf",
     "axes.linewidth": 0.8,
-    "axes.grid": True,
+    "axes.grid": False,
+    "axes.prop_cycle": mpl.cycler(color=[
+        COLOR_OPTIMAL, COLOR_TRAD, COLOR_GREEN, COLOR_PURPLE,
+        COLOR_ORANGE, COLOR_CYAN, COLOR_GRAY,
+    ]),
     "grid.alpha": 0.25,
     "grid.linestyle": "--",
     "grid.linewidth": 0.5,
@@ -85,13 +92,13 @@ PAPER_RCPARAMS: dict[str, Any] = {
     "xtick.minor.visible": True,
     "ytick.minor.visible": True,
     "lines.linewidth": 1.3,
-    "lines.markersize": 4.5,
+    "lines.markersize": 3.5,
     "lines.markeredgewidth": 0.8,
     "legend.frameon": False,
     "pdf.fonttype": 42,
     "ps.fonttype": 42,
     "mathtext.fontset": "dejavusans",
-    "mathtext.default": "regular",
+    "mathtext.default": "it",
     "axes.formatter.use_mathtext": True,
     "axes.unicode_minus": True,
     "figure.constrained_layout.use": True,
@@ -124,6 +131,15 @@ A0_POSTER_RCPARAMS: dict[str, Any] = {
 
 PROFILE_RCPARAMS: dict[PlotProfile, dict[str, Any]] = {
     "paper": PAPER_RCPARAMS,
+    # 投稿起点，不代替具体期刊、稿件类型和最终缩放检查。
+    "nature": {**PAPER_RCPARAMS, **dict.fromkeys((
+        "font.size", "axes.titlesize", "axes.labelsize",
+        "xtick.labelsize", "ytick.labelsize", "legend.fontsize",
+    ), 7)},
+    "aps": {**PAPER_RCPARAMS, **dict.fromkeys((
+        "font.size", "axes.titlesize", "axes.labelsize",
+        "xtick.labelsize", "ytick.labelsize", "legend.fontsize",
+    ), 9)},
     "a0_poster": A0_POSTER_RCPARAMS,
 }
 
@@ -141,6 +157,8 @@ def figure_size(
     kind: FigureKind = "standard",
     *,
     profile: PlotProfile = DEFAULT_PROFILE,
+    width_mm: float | None = None,
+    height_mm: float | None = None,
 ) -> tuple[float, float]:
     """返回指定配置的最终排版尺寸。"""
     _validate_profile(profile)
@@ -156,9 +174,22 @@ def figure_size(
             "square": A0_POSTER_SQUARE,
         },
     }
-    if kind not in sizes[profile]:
+    base_profile = "paper" if profile in {"nature", "aps"} else profile
+    if kind not in sizes[base_profile]:
         raise ValueError(f"未知图尺寸类型: {kind}")
-    return sizes[profile][kind]
+    width, height = sizes[base_profile][kind]
+    if profile in {"nature", "aps"}:
+        columns = {"nature": (89.0, 183.0), "aps": (86.0, 178.0)}
+        new_width = columns[profile][kind == "wide"] / 25.4
+        height *= new_width / width
+        width = new_width
+    if width_mm is not None:
+        width = float(width_mm) / 25.4
+    if height_mm is not None:
+        height = float(height_mm) / 25.4
+    if not all(np.isfinite(value) and value > 0 for value in (width, height)):
+        raise ValueError("图幅宽高必须是有限正数")
+    return width, height
 
 
 def set_plot_style(profile: PlotProfile = DEFAULT_PROFILE) -> None:
@@ -210,13 +241,20 @@ def new_figure(
     *,
     profile: PlotProfile = DEFAULT_PROFILE,
     kind: FigureKind = "standard",
+    width_mm: float | None = None,
+    height_mm: float | None = None,
     **kwargs: Any,
 ) -> tuple[Any, Any]:
     """用统一尺寸创建 Figure 和 Axes。"""
     import matplotlib.pyplot as plt
 
+    if figsize is not None and (width_mm is not None or height_mm is not None):
+        raise ValueError("figsize 与毫米图幅不能同时指定")
     if figsize is None:
-        figsize = figure_size(kind, profile=profile)
+        figsize = figure_size(kind, profile=profile, width_mm=width_mm, height_mm=height_mm)
+        if height_mm is None and profile != "a0_poster" and nrows > 1:
+            # 多行诊断图为每行保留文字、图例和坐标空间；显式尺寸仍由调用方决定。
+            figsize = (figsize[0], max(figsize[1], 2.2 * nrows))
     return plt.subplots(nrows, ncols, figsize=figsize, **kwargs)
 
 
@@ -226,16 +264,28 @@ def save_figure(
     *,
     dpi: int = 300,
     close: bool = True,
+    paired: bool = True,
     **kwargs: Any,
 ) -> Path:
-    """保存图到显式路径；未给扩展名时按统一标准保存 PDF。"""
+    """PNG/PDF 默认成对保存，返回原请求路径；其他格式保持单文件行为。
+
+    默认保持画布尺寸，不受外部 savefig.bbox 设置影响。显式 tight 仅用于诊断图。
+    paired=False 可只保存请求格式。两次保存均成功后才关闭图像。
+    """
     import matplotlib.pyplot as plt
 
     output_path = Path(path)
     if not output_path.suffix:
         output_path = output_path.with_suffix(".pdf")
+    paths = [output_path]
+    if paired and output_path.suffix.lower() in {".png", ".pdf"}:
+        if "format" in kwargs:
+            raise ValueError("成对导出由扩展名决定格式，请移除 format 或设置 paired=False")
+        paths.append(output_path.with_suffix(".pdf" if output_path.suffix.lower() == ".png" else ".png"))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=dpi, **kwargs)
+    with mpl.rc_context({"savefig.bbox": None}):
+        for destination in paths:
+            fig.savefig(destination, dpi=dpi, **kwargs)
     if close:
         plt.close(fig)
     return output_path

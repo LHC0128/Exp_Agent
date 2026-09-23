@@ -18,12 +18,13 @@ import json
 import numpy as np
 import yaml
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 from scipy import signal as scipy_signal
 from scipy.optimize import curve_fit
 
-plt.rcParams.update({"figure.dpi": 120, "font.size": 11, "axes.labelsize": 12})
 
 EXPERIMENT_TYPE = "RF_Field_Sensitivity_AW"
 USE_LATEST = True
@@ -328,7 +329,7 @@ print(
 )
 
 # %% Cell 8
-fig1, ax1 = plt.subplots(figsize=(8, 5))
+fig1, ax1 = new_figure(kind="wide", height_mm=65)
 ax1.plot(amplitudes_nT, x3_v, "o", ms=4, label="Demod3 X")
 if len(fit_result["fit_x_nT"]) > 0:
     ax1.plot(fit_result["fit_x_nT"], fit_result["fit_y_V"], "k--", lw=1.5, label="Dispersive fit")
@@ -336,24 +337,24 @@ ax1.axvline(fit_result["optimum_nT"], color="0.5", ls=":", lw=1, label="Optimum"
 ax1.set_xlabel("Z RF Field (nT)")
 ax1.set_ylabel("Demod 3 X (V)")
 ax1.set_title("RF Field Response")
-ax1.grid(True, alpha=0.3)
+ax1.grid(False)
 ax1.legend(fontsize=8)
-fig1.tight_layout()
-fig1.savefig(results_dir / "response_curve.png", dpi=150, bbox_inches="tight")
+fig1.set_layout_engine("constrained")
+save_figure(fig1, results_dir / "response_curve.png", close=False)
 
-fig2, ax2 = plt.subplots(figsize=(8, 5))
+fig2, ax2 = new_figure(kind="wide", height_mm=65)
 for i, psd in enumerate(psd_matrix[: min(5, len(psd_matrix))]):
     ax2.loglog(freq_axis, psd, color="0.7", lw=0.7, alpha=0.6, label="Single PSD" if i == 0 else None)
 ax2.loglog(freq_axis, psd_avg, "C0", lw=1.5, label="Average PSD")
 ax2.set_xlabel("Frequency (Hz)")
 ax2.set_ylabel("PSD (V^2/Hz)")
 ax2.set_title("Demod 3 Noise PSD")
-ax2.grid(True, alpha=0.3, which="both")
+ax2.grid(False)
 ax2.legend(fontsize=8)
-fig2.tight_layout()
-fig2.savefig(results_dir / "noise_psd.png", dpi=150, bbox_inches="tight")
+fig2.set_layout_engine("constrained")
+save_figure(fig2, results_dir / "noise_psd.png", close=False)
 
-fig3, ax3 = plt.subplots(figsize=(8, 5))
+fig3, ax3 = new_figure(kind="wide", height_mm=65)
 ax3.loglog(freq_axis, sensitivity_fT_per_sqrtHz, "C3", lw=1.2, label="Sensitivity")
 if np.any(flat_mask):
     ax3.loglog(freq_axis[flat_mask], sensitivity_fT_per_sqrtHz[flat_mask], "C2", lw=1.8, label="Flat region")
@@ -362,19 +363,19 @@ if np.isfinite(flat_median):
 ax3.set_xlabel("Frequency (Hz)")
 ax3.set_ylabel("Sensitivity (fT/sqrt(Hz))")
 ax3.set_title("RF Field Sensitivity")
-ax3.grid(True, alpha=0.3, which="both")
+ax3.grid(False)
 ax3.legend(fontsize=8)
-fig3.tight_layout()
-fig3.savefig(results_dir / "sensitivity.png", dpi=150, bbox_inches="tight")
+fig3.set_layout_engine("constrained")
+save_figure(fig3, results_dir / "sensitivity.png", close=False)
 
-fig4, (ax4a, ax4b) = plt.subplots(2, 1, figsize=(9, 8), sharex=False)
+fig4, (ax4a, ax4b) = new_figure(nrows=2, ncols=1, kind="wide", height_mm=110, sharex=False)
 ax4a.plot(amplitudes_nT, x3_v, "o", ms=4, label="Demod3 X")
 if len(fit_result["fit_x_nT"]) > 0:
     ax4a.plot(fit_result["fit_x_nT"], fit_result["fit_y_V"], "k--", lw=1.4, label="Dispersive fit")
 ax4a.set_xlabel("Z RF Field (nT)")
 ax4a.set_ylabel("Demod 3 X (V)")
 ax4a.set_title("Response Fit")
-ax4a.grid(True, alpha=0.3)
+ax4a.grid(False)
 ax4a.legend(fontsize=8)
 
 ax4b.loglog(freq_axis, sensitivity_fT_per_sqrtHz, "C3", lw=1.2)
@@ -385,10 +386,10 @@ if np.isfinite(flat_median):
 ax4b.set_xlabel("Frequency (Hz)")
 ax4b.set_ylabel("Sensitivity (fT/sqrt(Hz))")
 ax4b.set_title("Sensitivity Spectrum")
-ax4b.grid(True, alpha=0.3, which="both")
+ax4b.grid(False)
 
-fig4.tight_layout()
-fig4.savefig(results_dir / "full_analysis.png", dpi=150, bbox_inches="tight")
+fig4.set_layout_engine("constrained")
+save_figure(fig4, results_dir / "full_analysis.png", close=False)
 
 plt.show()
 print(f"所有分析结果已保存至: {results_dir}")

@@ -1218,6 +1218,173 @@ def static_sensitivity_run_summary(run_id: str):
     return _build_static_sensitivity_summary(run_id)
 
 
+NOISE_SPECTRUM_XY_ID = "noise-spectrum-xy"
+
+
+@app.get(f"/api/experiments/{NOISE_SPECTRUM_XY_ID}/runs")
+def noise_spectrum_xy_runs(limit: int = 50, offset: int = 0):
+    base = ROOT / "data" / _experiment_or_404(NOISE_SPECTRUM_XY_ID).data_type
+    items = []
+    for path in base.glob("*/experiment_config.yaml"):
+        config = _read_yaml(path)
+        if not config or config.get("experiment_id") != NOISE_SPECTRUM_XY_ID:
+            continue
+        parameters = config.get("parameters", {})
+        items.append({
+            "run_id": path.parent.name,
+            "timestamp": str(config.get("timestamp", path.parent.name)),
+            "run_tag": str(parameters.get("RUN_TAG", "")),
+            "completion_status": str(config.get("completion_status", "completed")),
+        })
+    items.sort(key=lambda item: item["run_id"], reverse=True)
+    limit, offset = max(1, min(limit, 200)), max(0, offset)
+    return {"total": len(items), "limit": limit, "offset": offset, "runs": items[offset:offset + limit]}
+
+
+@app.get(f"/api/experiments/{NOISE_SPECTRUM_XY_ID}/runs/{{run_id}}/summary")
+def noise_spectrum_xy_summary(run_id: str):
+    directory = _run_dir(NOISE_SPECTRUM_XY_ID, run_id)
+    config = _read_yaml(directory / "experiment_config.yaml")
+    if not config or config.get("experiment_id") != NOISE_SPECTRUM_XY_ID:
+        raise HTTPException(404, "不是 XY 控制噪声谱运行")
+    parameters = config.get("parameters")
+    if not isinstance(parameters, dict):
+        raise HTTPException(409, "运行配置缺少参数快照")
+    results = directory / "results"
+    artifacts = {
+        path.name: f"/api/runs/{NOISE_SPECTRUM_XY_ID}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
+        for path in results.glob("*") if path.is_file()
+    }
+    analysis_status = config.get("analysis_status")
+    quality = {}
+    quality_path = results / "analysis_summary.json"
+    if quality_path.is_file():
+        try:
+            quality = json.loads(quality_path.read_text(encoding="utf-8"))
+            if not isinstance(quality, dict):
+                raise ValueError("分析摘要必须是对象")
+        except (OSError, ValueError):
+            quality = {"status": "failed", "error": "分析摘要不可读，请重新分析"}
+        analysis_status = quality.get("status", "failed")
+    if not analysis_status:
+        analysis_status = "completed" if "noise_spectra.npz" in artifacts else "not_started"
+    return {
+        "run_id": run_id,
+        "timestamp": str(config.get("timestamp", run_id)),
+        "run_tag": str(parameters.get("RUN_TAG", "")),
+        "completion_status": str(config.get("completion_status", "completed")),
+        "analysis_status": str(analysis_status),
+        "analysis_error": str(quality.get("error", "") if quality else config.get("analysis_error", "")),
+        "analysis_quality": quality,
+        "parameters": parameters,
+        "artifacts": artifacts,
+    }
+
+
+NOISE_SPECTRUM_XY_KNOWN_NOISE_ID = "noise-spectrum-xy-known-noise"
+
+
+@app.get(f"/api/experiments/{NOISE_SPECTRUM_XY_KNOWN_NOISE_ID}/runs")
+def noise_spectrum_xy_known_noise_runs(limit: int = 50, offset: int = 0):
+    base = ROOT / "data" / _experiment_or_404(NOISE_SPECTRUM_XY_KNOWN_NOISE_ID).data_type
+    items = []
+    for path in base.glob("*/experiment_config.yaml"):
+        config = _read_yaml(path)
+        if not config or config.get("experiment_id") != NOISE_SPECTRUM_XY_KNOWN_NOISE_ID:
+            continue
+        parameters = config.get("parameters", {})
+        items.append({
+            "run_id": path.parent.name,
+            "timestamp": str(config.get("timestamp", path.parent.name)),
+            "run_tag": str(parameters.get("RUN_TAG", "")),
+            "completion_status": str(config.get("completion_status", "completed")),
+        })
+    items.sort(key=lambda item: item["run_id"], reverse=True)
+    limit, offset = max(1, min(limit, 200)), max(0, offset)
+    return {"total": len(items), "limit": limit, "offset": offset, "runs": items[offset:offset + limit]}
+
+
+@app.get(f"/api/experiments/{NOISE_SPECTRUM_XY_KNOWN_NOISE_ID}/runs/{{run_id}}/summary")
+def noise_spectrum_xy_known_noise_summary(run_id: str):
+    directory = _run_dir(NOISE_SPECTRUM_XY_KNOWN_NOISE_ID, run_id)
+    config = _read_yaml(directory / "experiment_config.yaml")
+    if not config or config.get("experiment_id") != NOISE_SPECTRUM_XY_KNOWN_NOISE_ID:
+        raise HTTPException(404, "不是 XY 控制已知噪声注入运行")
+    parameters = config.get("parameters")
+    if not isinstance(parameters, dict):
+        raise HTTPException(409, "运行配置缺少参数快照")
+    results = directory / "results"
+    artifacts = {
+        path.name: f"/api/runs/{NOISE_SPECTRUM_XY_KNOWN_NOISE_ID}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
+        for path in results.glob("*") if path.is_file()
+    }
+    analysis_status = config.get("analysis_status")
+    quality = {}
+    quality_path = results / "analysis_summary.json"
+    if quality_path.is_file():
+        try:
+            quality = json.loads(quality_path.read_text(encoding="utf-8"))
+            if not isinstance(quality, dict):
+                raise ValueError("分析摘要必须是对象")
+        except (OSError, ValueError):
+            quality = {"status": "failed", "error": "分析摘要不可读，请重新分析"}
+        analysis_status = quality.get("status", "failed")
+    if not analysis_status:
+        analysis_status = "completed" if "noise_spectra.npz" in artifacts else "not_started"
+    return {
+        "run_id": run_id,
+        "timestamp": str(config.get("timestamp", run_id)),
+        "run_tag": str(parameters.get("RUN_TAG", "")),
+        "completion_status": str(config.get("completion_status", "completed")),
+        "analysis_status": str(analysis_status),
+        "analysis_error": str(quality.get("error", "") if quality else config.get("analysis_error", "")),
+        "analysis_quality": quality,
+        "parameters": parameters,
+        "artifacts": artifacts,
+    }
+
+
+BELL_BLOOM_Z_ID = "bell-bloom-z-field-calibration"
+
+
+@app.get(f"/api/experiments/{BELL_BLOOM_Z_ID}/runs")
+def bell_bloom_z_runs(limit: int = 50, offset: int = 0):
+    base = ROOT / "data" / _experiment_or_404(BELL_BLOOM_Z_ID).data_type
+    items = []
+    for path in base.glob("*/experiment_config.yaml"):
+        config = _read_yaml(path) or {}
+        if config.get("experiment_id") == BELL_BLOOM_Z_ID and {"started_at", "run_tag", "completion_status"} <= config.keys():
+            items.append({"run_id": path.parent.name, "timestamp": config["started_at"],
+                          "run_tag": config["run_tag"], "completion_status": config["completion_status"]})
+    items.sort(key=lambda item: item["timestamp"], reverse=True)
+    limit, offset = max(1, min(limit, 200)), max(0, offset)
+    return {"total": len(items), "limit": limit, "offset": offset, "runs": items[offset:offset + limit]}
+
+
+@app.get(f"/api/experiments/{BELL_BLOOM_Z_ID}/runs/{{run_id}}/summary")
+def bell_bloom_z_summary(run_id: str):
+    directory = _run_dir(BELL_BLOOM_Z_ID, run_id)
+    config = _read_yaml(directory / "experiment_config.yaml") or {}
+    if config.get("experiment_id") != BELL_BLOOM_Z_ID:
+        raise HTTPException(404, "不是 Bell Bloom Z 标定运行")
+    if not {"started_at", "run_tag", "completion_status", "parameters"} <= config.keys():
+        raise HTTPException(409, "运行配置正在更新，请刷新后重试")
+    analysis_path = directory / "results" / "analysis.yaml"
+    analysis = _read_yaml(analysis_path) if analysis_path.is_file() else None
+    # 拟合失败产生的 NaN 在 API 边界转换为 null，保留磁盘诊断原值。
+    analysis = json.loads(json.dumps(analysis), parse_constant=lambda _: None)
+    return {
+        "run_id": run_id, "timestamp": config["started_at"], "run_tag": config["run_tag"],
+        "completion_status": config["completion_status"], "parameters": config["parameters"],
+        "analysis_status": config.get("analysis_status", "not_started"),
+        "failure_reason": config.get("failure_reason", ""),
+        "analysis_error": config.get("analysis_error", ""),
+        "safety_shutdown": config.get("safety_shutdown", {}), "analysis": analysis,
+        "artifacts": {path.name: f"/api/runs/{BELL_BLOOM_Z_ID}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
+                      for path in (directory / "results").glob("*") if path.is_file()},
+    }
+
+
 FRONTEND = ROOT / "GUI" / "frontend" / "dist"
 if FRONTEND.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND / "assets"), name="assets")

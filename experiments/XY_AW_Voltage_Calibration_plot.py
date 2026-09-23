@@ -1,4 +1,4 @@
-﻿# %% [markdown] Cell 0
+# %% [markdown] Cell 0
 # # XY AW offset 电压标定 — 数据分析与可视化
 #
 # **无需连接任何仪器**，仅读取本地 `data/XY_AW_Voltage_Calibration/<run>/`
@@ -55,8 +55,10 @@ from scipy import optimize as scipy_optimize
 from scipy import signal as scipy_signal
 
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 
 print("导入完成（离线分析模式，无需仪器）")
 
@@ -974,16 +976,10 @@ if A_ENV_K_LEGACY is not None and A_ENV_B_LEGACY is not None:
 # ============================================================
 # 绘图
 # ============================================================
-plt.rcParams.update({
-    "figure.dpi": 120, "savefig.dpi": 150,
-    "font.size": 11, "axes.labelsize": 12, "axes.titlesize": 12,
-    "legend.fontsize": 9, "xtick.labelsize": 10, "ytick.labelsize": 10,
-    "axes.linewidth": 0.8, "lines.linewidth": 1.2, "lines.markersize": 5,
-})
 
 # ---- 图 1: xy_aw_calibration_curve.png ----
 # f_peak vs XY_AW_OFFSET_VOLTAGE, 含线性拟合
-fig1, ax1 = plt.subplots(figsize=(8, 5.5))
+fig1, ax1 = new_figure(kind="wide", height_mm=65)
 
 # 主结果：lock-in fit_center（推荐主结果，按 docs/xy_dc_voltage_calibration.md）
 if lin_fit_li.get("success"):
@@ -1023,15 +1019,14 @@ ax1.set_xlabel("XY AW offset voltage (V)")
 ax1.set_ylabel("f_peak (Hz)")
 ax1.set_title("XY AW offset voltage calibration — f_peak vs XY_AW_OFFSET_VOLTAGE")
 ax1.legend(fontsize=8, loc="best")
-ax1.grid(True, alpha=0.3)
-plt.tight_layout()
-fig1.savefig(results_dir / "xy_aw_calibration_curve.png",
-             dpi=150, bbox_inches="tight")
+ax1.grid(False)
+plt.gcf().set_layout_engine("constrained")
+save_figure(fig1, results_dir / "xy_aw_calibration_curve.png", close=False)
 plt.show()
 print(f"已保存: xy_aw_calibration_curve.png")
 
 # ---- 图 2: xy_aw_calibration_residual.png ----
-fig2, ax2 = plt.subplots(figsize=(8, 4.5))
+fig2, ax2 = new_figure(kind="wide", height_mm=65)
 plotted_any = False
 for label, fit, color, marker in [
         ("offline lock-in", lin_fit_li, "C0", "o"),
@@ -1048,10 +1043,9 @@ ax2.set_ylabel("Residual (Hz)")
 ax2.set_title("XY AW offset voltage calibration — Linear fit residual")
 if plotted_any:
     ax2.legend(fontsize=8, loc="best")
-ax2.grid(True, alpha=0.3)
-plt.tight_layout()
-fig2.savefig(results_dir / "xy_aw_calibration_residual.png",
-             dpi=150, bbox_inches="tight")
+ax2.grid(False)
+plt.gcf().set_layout_engine("constrained")
+save_figure(fig2, results_dir / "xy_aw_calibration_residual.png", close=False)
 plt.show()
 print(f"已保存: xy_aw_calibration_residual.png")
 
@@ -1065,9 +1059,7 @@ if len(xy_dc_sorted) >= 3:
 else:
     example_v_list = list(xy_dc_sorted)
 
-fig3, axes3 = plt.subplots(len(example_v_list), 1,
-                           figsize=(9, 2.6 * len(example_v_list)),
-                           sharex=False)
+fig3, axes3 = new_figure(nrows=len(example_v_list), ncols=1, kind="wide", height_mm=max(65, 55 * (len(example_v_list))), sharex=False)
 if len(example_v_list) == 1:
     axes3 = [axes3]
 
@@ -1143,14 +1135,13 @@ for ax, v in zip(axes3, example_v_list):
     ax.set_ylabel("Response (V)")
     ax.set_title(f"XY_DC = {v:.4f} V")
     ax.legend(fontsize=7, loc="upper right")
-    ax.grid(True, alpha=0.3, which="both")
+    ax.grid(False)
 
 axes3[-1].set_xlabel("Z RF drive frequency (Hz)")
 fig3.suptitle("Frequency response examples — offline lock-in vs FFT vs HW",
-              y=1.01, fontsize=12)
-plt.tight_layout()
-fig3.savefig(results_dir / "frequency_response_examples.png",
-             dpi=150, bbox_inches="tight")
+              fontsize=8)
+plt.gcf().set_layout_engine("constrained")
+save_figure(fig3, results_dir / "frequency_response_examples.png", close=False)
 plt.show()
 print(f"已保存: frequency_response_examples.png")
 
@@ -1158,7 +1149,7 @@ print(f"已保存: frequency_response_examples.png")
 # 同时画出 lock-in / FFT /(HW) 的 double / single / max_bin 共 6-9 条曲线，
 # 并用粗黑线 + 黑色描边突出 lock-in primary（即 f_peak_lockin_primary_Hz，
 # 优先级 double > single > max_bin）。
-fig4, ax4 = plt.subplots(figsize=(9.5, 6))
+fig4, ax4 = new_figure(kind="wide", height_mm=65)
 
 # 先画所有非 primary 曲线 (linestyle 区分: "-"=double, "--"=single, ":"=max_bin)
 def _plot_one(y_arr, color, marker, ls, lw, ms, alpha, label):
@@ -1215,10 +1206,9 @@ ax4.set_ylabel("Peak frequency (Hz)")
 ax4.set_title(f"Method peak comparison — double / single / max_bin / primary "
               f"({PEAK_STRATEGY})")
 ax4.legend(fontsize=7, loc="best", ncol=2)
-ax4.grid(True, alpha=0.3)
-plt.tight_layout()
-fig4.savefig(results_dir / "method_peak_comparison.png",
-             dpi=150, bbox_inches="tight")
+ax4.grid(False)
+plt.gcf().set_layout_engine("constrained")
+save_figure(fig4, results_dir / "method_peak_comparison.png", close=False)
 plt.show()
 print(f"已保存: method_peak_comparison.png")
 

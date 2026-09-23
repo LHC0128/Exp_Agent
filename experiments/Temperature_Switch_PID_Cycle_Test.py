@@ -30,6 +30,8 @@ if str(project_root) not in sys.path:
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 import numpy as np
 import yaml
 
@@ -312,7 +314,7 @@ completed = False
 
 if LIVE_PLOT:
     plt.ion()
-    fig, (ax_temp, ax_err) = plt.subplots(2, 1, figsize=(9, 6), sharex=True)
+    fig, (ax_temp, ax_err) = new_figure(nrows=2, ncols=1, kind="wide", height_mm=110, sharex=True)
     ax_temp_step = ax_temp.twinx()
 else:
     fig = None
@@ -385,7 +387,7 @@ try:
             ax_temp_step.set_yticklabels(["OFF", "ON"])
             ax_temp.set_ylabel("Temperature (C)")
             ax_temp.set_title("Temperature response")
-            ax_temp.grid(True, alpha=0.3)
+            ax_temp.grid(False)
             ax_temp.legend(loc="upper left")
 
             ax_err.plot(t_arr, err_arr, lw=1.1, color="tab:red", label="Error")
@@ -393,7 +395,7 @@ try:
             ax_err.set_xlabel("Time (s)")
             ax_err.set_ylabel("Error (C)")
             ax_err.set_title("Temperature error")
-            ax_err.grid(True, alpha=0.3)
+            ax_err.grid(False)
             ax_err.legend(loc="upper left")
             plt.pause(0.001)
 

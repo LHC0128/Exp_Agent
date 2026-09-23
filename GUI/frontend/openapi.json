@@ -1,4 +1,4 @@
-﻿{
+{
   "openapi": "3.1.0",
   "info": {
     "title": "Bell-Bloom 实验控制台",
@@ -2220,21 +2220,12 @@
         }
       }
     },
-    "/api/experiments/{experiment_id}/runs/{run_id}/summary": {
+    "/api/experiments/z-aw-closed-loop-waveform-correction/runs/{run_id}/summary": {
       "get": {
         "summary": "Experiment Run Summary",
         "description": "Z 闭环专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。",
-        "operationId": "experiment_run_summary_api_experiments__experiment_id__runs__run_id__summary_get",
+        "operationId": "experiment_run_summary_api_experiments_z_aw_closed_loop_waveform_correction_runs__run_id__summary_get",
         "parameters": [
-          {
-            "name": "experiment_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Experiment Id"
-            }
-          },
           {
             "name": "run_id",
             "in": "path",
@@ -2253,6 +2244,178 @@
                 "schema": {
                   "$ref": "#/components/schemas/ZAWClosedLoopRunSummary"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/static-sensitivity/runs": {
+      "get": {
+        "summary": "Static Sensitivity Runs",
+        "operationId": "static_sensitivity_runs_api_experiments_static_sensitivity_runs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/static-sensitivity/runs/{run_id}/summary": {
+      "get": {
+        "summary": "Static Sensitivity Run Summary",
+        "operationId": "static_sensitivity_run_summary_api_experiments_static_sensitivity_runs__run_id__summary_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaticSensitivityRunSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/bell-bloom-z-field-calibration/runs": {
+      "get": {
+        "summary": "Bell Bloom Z Runs",
+        "operationId": "bell_bloom_z_runs_api_experiments_bell_bloom_z_field_calibration_runs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/bell-bloom-z-field-calibration/runs/{run_id}/summary": {
+      "get": {
+        "summary": "Bell Bloom Z Summary",
+        "operationId": "bell_bloom_z_summary_api_experiments_bell_bloom_z_field_calibration_runs__run_id__summary_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -5573,6 +5736,52 @@
           "level"
         ],
         "title": "ScopeTriggerSnapshot"
+      },
+      "StaticSensitivityRunSummary": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "run_tag": {
+            "type": "string",
+            "title": "Run Tag"
+          },
+          "completion_status": {
+            "type": "string",
+            "title": "Completion Status"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "analysis": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Analysis"
+          },
+          "artifacts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Artifacts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "timestamp",
+          "run_tag",
+          "completion_status"
+        ],
+        "title": "StaticSensitivityRunSummary",
+        "description": "静磁场灵敏度 typed 运行摘要。"
       },
       "TagAssignmentBody": {
         "properties": {

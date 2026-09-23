@@ -37,24 +37,23 @@ from lab_workflows.experiment_runtime import (
 )
 from lab_workflows.experiment_modules.noise_spectrum_xy.models import (
     NoiseSpectrumXYParams,
+    welch_settings,
 )
 from lab_workflows.steps import (
-    ArbitraryWaveformSpec,
     DGChannelShutdown,
-    DirectAWPhaseCalibrationConfig,
+    DirectAWPhaseCalibrationConfig as XYPhaseCalibrationConfig,
     DeviceSession,
     DisconnectTarget,
     STANDARD_PRESERVED_OUTPUTS,
     PhaseCalibrationConfig,
     TemperatureSwitchRestore,
     calibrate_demod_phase,
-    calibrate_direct_aw_phase,
+    calibrate_direct_aw_phase as calibrate_xy_phase,
     configure_temperature_control,
     connect_signal_generator_routes,
     run_safety_shutdown,
     set_temperature_switch,
     synchronize_connected_clocks,
-    upload_arbitrary,
 )
 from tec_controller import TECInstrument
 from lockin_amplifier import (
@@ -87,6 +86,7 @@ TARGET_NOISE_FREQ_START_HZ = 0.0
 TARGET_NOISE_FREQ_STOP_HZ = 50000.0
 TARGET_NOISE_FREQ_POINTS = 500
 XY_SETTLE_TIME = 0.5       # 每点等待稳定时间 (s)
+TEMP_SWITCH_ON_SETTLE_S = 2.0  # 恢复温控后等待时间 (s)
 
 # ---- Pump 调制参数 ----
 PUMP_MOD_FREQ = 10e3       # Pump 调制频率 (Hz)
@@ -99,7 +99,7 @@ RF_GATE_OFFSET = 2.5       # 脉冲门控偏置 (V)
 # Bell-Bloom 原理: 原子以 Larmor 频率绕 B0 进动，XY 控制场须沿原子极化方向施加
 #   XY_CTRL_PHASE:  XY 整体相对 Pump 调制信号的相位延迟 (deg)，需实验校准
 #   XY_CTRL_QUAD:   X 与 Y 之间的正交相位差 (deg)，初始值 90°，后续由校准修正
-#   XY_CALIB_ENVELOPE_V: DirectAW 整体相位校准时的恒定包络电压
+#   XY_CALIB_ENVELOPE_V: 正弦载波整体相位校准时的恒定峰值电压
 XY_CTRL_FREQ = PUMP_MOD_FREQ    # X/Y 交流控制频率 (Hz)，等于 Larmor 频率
 XY_CTRL_PHASE = 90         # XY 控制场相对 Pump 调制信号的相位延迟 (deg)
 XY_CTRL_QUAD = 90          # X 与 Y 之间的正交相位差 (deg)
@@ -109,24 +109,17 @@ XY_PHASE_CAL_MAX_ITER = 10
 XY_PHASE_CAL_MIN_R_V = 1e-12
 XY_PHASE_CAL_MIN_R_RATIO = 0.1
 
-# 手动填写 DirectAW 标定：Omega_ctrl = K * |V_env| + B。
-# 当前默认值来自 0713 标定；完成 8 Vpp 重标定后必须同步更新 K/B 和有效电压范围。
+# 手动填写正弦峰值标定：Omega_ctrl = K * |V_peak| + B。
 XY_CTRL_K_HZ_PER_V = 15075.784562638912
 XY_CTRL_B_HZ = -218.47506313463893
 XY_CALIBRATION_MIN_ENVELOPE_V = 0.0
 XY_CALIBRATION_MAX_ENVELOPE_V = 4.0
 
-# DirectAW 固定输出参数。扫描过程中只改变上传数组，不改变 Vpp/Offset。
-XY_AW_OUTPUT_VPP = 8.0
-XY_AW_OUTPUT_OFFSET_V = 0.0
-XY_AW_REPEAT_FREQ_HZ = 500.0
-XY_AW_POINTS = 10000
-
-XY_TRIGGER_FREQ = 100.0    # dg_am 固定基准方波频率 (Hz)
-XY_TRIGGER_AMPLITUDE = 5.0 # dg_am 方波触发幅度 (Vpp)
-XY_TRIGGER_OFFSET = 2.5    # dg_am 方波触发偏置 (V)
-XY_TRIGGER_DUTY = 50.0     # dg_am 方波触发占空比 (%)
-XY_TRIGGER_PHASE = 0.0     # dg_am 方波基准相位 (deg)，校准过程中保持不变
+XY_TRIGGER_FREQ = 100.0    # Time_sequence_2 固定基准方波频率 (Hz)
+XY_TRIGGER_AMPLITUDE = 5.0 # Time_sequence_2 方波触发幅度 (Vpp)
+XY_TRIGGER_OFFSET = 2.5    # Time_sequence_2 方波触发偏置 (V)
+XY_TRIGGER_DUTY = 50.0     # Time_sequence_2 方波触发占空比 (%)
+XY_TRIGGER_PHASE = 0.0     # Time_sequence_2 方波基准相位 (deg)
 
 # ---- HF2 解调配置（相位校准用） ----
 HF2_DEMOD_IDX = 0          # 解调器索引
@@ -140,7 +133,6 @@ HF2_DEMOD_RATE = 100000    # 解调输出数据速率 (Sa/s)
 HF2_DAQ_DURATION = 1.0     # DAQ 采集时长 (s)
 HF2_DAQ_TC = 7.85e-07      # 解调时间常数 (s) —— 噪声采集时使用，更高的带宽保证频谱平坦
 HF2_DAQ_RATE = 100000      # 解调输出数据速率 (Sa/s)，与 DEMOD_RATE 一致
-HF2_NPERSEG = 10000        # Welch PSD 每段点数
 
 # ---- 固定参数 ----
 FIXED_PARAMS = {
@@ -174,109 +166,24 @@ def validate_safety_limit(name, value):
     return value
 
 
-def validate_target_scan_parameters():
-    """校验目标频率、手动标定和固定 DirectAW 参数。"""
-    if TARGET_NOISE_FREQ_POINTS < 2:
-        raise ValueError("TARGET_NOISE_FREQ_POINTS 必须至少为 2")
-    if TARGET_NOISE_FREQ_START_HZ < 0:
-        raise ValueError("目标噪声谱起始频率不能为负")
-    if TARGET_NOISE_FREQ_START_HZ >= TARGET_NOISE_FREQ_STOP_HZ:
-        raise ValueError("目标噪声谱起始频率必须小于终止频率")
-    if XY_CTRL_K_HZ_PER_V <= 0:
-        raise ValueError("XY_CTRL_K_HZ_PER_V 必须大于 0")
-    if (
-        XY_CALIBRATION_MIN_ENVELOPE_V < 0
-        or XY_CALIBRATION_MIN_ENVELOPE_V >= XY_CALIBRATION_MAX_ENVELOPE_V
-    ):
-        raise ValueError("DirectAW 标定有效电压范围无效")
-    if XY_AW_OUTPUT_VPP <= 0:
-        raise ValueError("XY_AW_OUTPUT_VPP 必须大于 0")
-    if XY_AW_REPEAT_FREQ_HZ <= 0:
-        raise ValueError("XY_AW_REPEAT_FREQ_HZ 必须大于 0")
-    if XY_TRIGGER_FREQ <= 0:
-        raise ValueError("XY_TRIGGER_FREQ 必须大于 0")
-    if not 2 <= XY_AW_POINTS <= 16384:
-        raise ValueError("XY_AW_POINTS 必须位于 2~16384")
-    if not (
-        XY_CALIBRATION_MIN_ENVELOPE_V
-        <= XY_CALIB_ENVELOPE_V
-        <= XY_CALIBRATION_MAX_ENVELOPE_V
-    ):
-        raise ValueError(
-            f"校相包络 XY_CALIB_ENVELOPE_V={XY_CALIB_ENVELOPE_V:.6f} V "
-            "超出 DirectAW 标定有效电压范围"
-        )
-    output_low = XY_AW_OUTPUT_OFFSET_V - XY_AW_OUTPUT_VPP / 2.0
-    output_high = XY_AW_OUTPUT_OFFSET_V + XY_AW_OUTPUT_VPP / 2.0
-    if (
-        -XY_CALIB_ENVELOPE_V < output_low - 1e-12
-        or XY_CALIB_ENVELOPE_V > output_high + 1e-12
-    ):
-        raise ValueError(
-            f"校相包络 XY_CALIB_ENVELOPE_V={XY_CALIB_ENVELOPE_V:.6f} V "
-            f"超出固定 AW 可表达范围 [{output_low:.6f}, {output_high:.6f}] V"
-        )
-
-
 def build_target_scan_axes():
-    """由目标 Omega_ctrl 轴反算 DirectAW 恒定包络电压轴。"""
-    validate_target_scan_parameters()
+    """由目标 Omega_ctrl 轴反算正弦峰值电压轴。"""
     target_freq_hz = np.linspace(
         TARGET_NOISE_FREQ_START_HZ,
         TARGET_NOISE_FREQ_STOP_HZ,
         TARGET_NOISE_FREQ_POINTS,
     )
     envelope_v = (target_freq_hz - XY_CTRL_B_HZ) / XY_CTRL_K_HZ_PER_V
-    if np.any(envelope_v < 0):
-        raise ValueError(
-            "目标频率反算得到负的 |V_env|；请修改目标频率范围或标定 B"
-        )
-    envelope_min = float(np.min(envelope_v))
     envelope_max = float(np.max(envelope_v))
-    if (
-        envelope_min < XY_CALIBRATION_MIN_ENVELOPE_V - 1e-12
-        or envelope_max > XY_CALIBRATION_MAX_ENVELOPE_V + 1e-12
-    ):
-        raise ValueError(
-            f"目标频率范围反算得到 V_env=[{envelope_min:.6f}, "
-            f"{envelope_max:.6f}] V，超出 DirectAW 标定有效范围 "
-            f"[{XY_CALIBRATION_MIN_ENVELOPE_V:.6f}, "
-            f"{XY_CALIBRATION_MAX_ENVELOPE_V:.6f}] V；"
-            "请修改目标噪声谱频率范围或更新标定参数"
-        )
-
-    half_output = XY_AW_OUTPUT_VPP / 2.0
-    output_low = XY_AW_OUTPUT_OFFSET_V - half_output
-    output_high = XY_AW_OUTPUT_OFFSET_V + half_output
-    if -envelope_max < output_low - 1e-12 or envelope_max > output_high + 1e-12:
-        raise ValueError(
-            f"最大 V_env={envelope_max:.6f} V 超出固定 AW "
-            f"{XY_AW_OUTPUT_VPP:.6f} Vpp / {XY_AW_OUTPUT_OFFSET_V:.6f} V "
-            f"可表达范围 [{output_low:.6f}, {output_high:.6f}] V；"
-            "请修改目标噪声谱频率范围或固定 AW 参数"
-        )
 
     for key in ("X_magnetic_field", "Y_magnetic_field"):
-        validate_safety_limit(key, output_low)
-        validate_safety_limit(key, output_high)
         validate_safety_limit(key, -envelope_max)
         validate_safety_limit(key, envelope_max)
 
-    carrier_cycles = XY_CTRL_FREQ / XY_AW_REPEAT_FREQ_HZ
-    trigger_ratio = XY_AW_REPEAT_FREQ_HZ / XY_TRIGGER_FREQ
-    if not np.isclose(carrier_cycles, round(carrier_cycles)):
-        raise ValueError("单个 AW 周期必须包含整数个 X/Y 载波周期")
-    if not np.isclose(trigger_ratio, round(trigger_ratio)):
-        raise ValueError("AW 重复频率必须是外部触发频率的整数倍")
-    return target_freq_hz, envelope_v, output_low, output_high
+    return target_freq_hz, envelope_v
 
 
-(
-    TARGET_NOISE_FREQ_LIST_HZ,
-    XY_ENVELOPE_VOLTAGE_LIST_V,
-    XY_AW_OUTPUT_LOW_V,
-    XY_AW_OUTPUT_HIGH_V,
-) = build_target_scan_axes()
+TARGET_NOISE_FREQ_LIST_HZ, XY_ENVELOPE_VOLTAGE_LIST_V = build_target_scan_axes()
 
 print("安全校验函数已定义")
 
@@ -311,26 +218,7 @@ try:
     # Y 通道: 通过同一设备 CH2 控制
     devices["dg_comp"] = dg_comp
 
-    # ---- DG4000: dg_comp 外触发方波基准 (dg_am CH1/CH2 同相) ----
-    dg_am_cfg = MAPPING["X_magnetic_field_AM"]
-    dg_am, _ = connect_signal_generator_routes(
-        session,
-        "dg_am",
-        {
-            "x_am": ("X_magnetic_field_AM", dg_am_cfg),
-            "y_am": ("Y_magnetic_field_AM", MAPPING["Y_magnetic_field_AM"]),
-        },
-        logical_channels={"x_am": 1, "y_am": 2},
-    )
-    print(f"dg_am 已连接: {dg_am.idn()}")
-    for ch in (1, 2):
-        dg_am.set_burst_state(False, channel=ch)
-        dg_am.set_mod_state(False, channel=ch)
-        dg_am.setup_dc(0.0, channel=ch)
-        dg_am.set_output(False, channel=ch)
-    devices["dg_am"] = dg_am
-
-    # ---- DG4000: Z 磁场扫描（本实验用不到，仅连接并关闭输出）----
+    # ---- DG4000: Z 磁场关闭；Time_sequence_2 为 dg_comp 共用外触发 ----
     dg_sweep_cfg = MAPPING["Z_magnetic_field"]
     dg_sweep, _ = connect_signal_generator_routes(
         session,
@@ -418,7 +306,6 @@ try:
         MAPPING,
         {
             "dg_comp": "X_magnetic_field",
-            "dg_am": "X_magnetic_field_AM",
             "dg_sweep": "Z_magnetic_field",
             "dg_mod": "Pump_modulation",
             "dg_temp": "Temp_Switch",
@@ -440,19 +327,29 @@ tec = devices["tec"]
 gs = devices["gs200"]
 dg_laser = devices["dg_laser"]
 dg_comp = devices["dg_comp"]
-dg_am = devices["dg_am"]
 dg_sweep = devices["dg_sweep"]
 dg_mod = devices["dg_mod"]
 dg_temp = devices["dg_temp"]
 
 
-def set_temp_switch(enabled):
-    return set_temperature_switch(
+def set_temp_switch(enabled, *, wait=False):
+    """本实验测量时关闭物理输出；恢复开启电平后可等待温控恢复。"""
+    channel = int(dg_temp_cfg["channel"])
+    if not enabled:
+        validate_safety_limit("Temp_Switch", 0.0)
+        dg_temp.set_output(False, channel=channel)
+        return
+    set_temperature_switch(
         dg_temp,
-        enabled,
-        channel=int(dg_temp_cfg["channel"]),
+        True,
+        channel=channel,
         on_voltage=FIXED_PARAMS["Temp_Switch"],
     )
+    if wait:
+        deadline = time.monotonic() + TEMP_SWITCH_ON_SETTLE_S
+        while (remaining := deadline - time.monotonic()) > 0:
+            check_cancelled()
+            time.sleep(min(0.1, remaining))
 
 
 # ---- 1. Pump 光功率 ----
@@ -534,6 +431,8 @@ config = {
         "target_noise_frequency_Hz": TARGET_NOISE_FREQ_LIST_HZ.tolist(),
         "xy_envelope_voltage_V": XY_ENVELOPE_VOLTAGE_LIST_V.tolist(),
         "XY_SETTLE_TIME_s": XY_SETTLE_TIME,
+        "TEMP_SWITCH_ON_SETTLE_S": TEMP_SWITCH_ON_SETTLE_S,
+        "temperature_switch_off_mode": "output_off",
     },
     "xy_ctrl": {
         "XY_CTRL_FREQ_Hz": XY_CTRL_FREQ,
@@ -550,20 +449,23 @@ config = {
             XY_CALIBRATION_MIN_ENVELOPE_V,
             XY_CALIBRATION_MAX_ENVELOPE_V,
         ],
-        "XY_AW_OUTPUT_VPP": XY_AW_OUTPUT_VPP,
-        "XY_AW_OUTPUT_OFFSET_V": XY_AW_OUTPUT_OFFSET_V,
-        "XY_AW_OUTPUT_RANGE_V": [XY_AW_OUTPUT_LOW_V, XY_AW_OUTPUT_HIGH_V],
-        "XY_AW_REPEAT_FREQ_HZ": XY_AW_REPEAT_FREQ_HZ,
-        "XY_AW_POINTS": XY_AW_POINTS,
+        "waveform_mode": "burst_sine",
+        "sine_offset_V": 0.0,
+        "amplitude_semantics": "2 * envelope peak voltage (Vpp)",
         "XY_TRIGGER_FREQ_Hz": XY_TRIGGER_FREQ,
         "XY_TRIGGER_AMPLITUDE_Vpp": XY_TRIGGER_AMPLITUDE,
         "XY_TRIGGER_OFFSET_V": XY_TRIGGER_OFFSET,
         "XY_TRIGGER_DUTY_pct": XY_TRIGGER_DUTY,
         "XY_TRIGGER_PHASE_deg": XY_TRIGGER_PHASE,
-        "trigger_source": "dg_am CH1/CH2 fixed-phase 100 Hz square -> dg_comp Ext Trig",
+        "trigger_source": (
+            f"Time_sequence_2 CH2 {XY_TRIGGER_FREQ:g} Hz square -> "
+            "splitter -> dg_comp CH1/CH2 Ext Trig"
+        ),
         "trigger_policy": (
-            "dg_am outputs ON and phase init once -> "
-            "dg_comp CH1/CH2 upload -> burst ON -> outputs ON"
+            "Time_sequence_2 CH2 output ON and phase init once -> "
+            "each scan point: XY outputs OFF -> set_amplitude -> "
+            "calibrated burst phases -> outputs ON awaiting shared external trigger; "
+            "zero peak keeps XY outputs OFF"
         ),
     },
     "fixed_params": FIXED_PARAMS,
@@ -583,7 +485,6 @@ config = {
         "DAQ_duration_s": HF2_DAQ_DURATION,
         "DAQ_TC_s": HF2_DAQ_TC,
         "DAQ_rate_Sa_s": HF2_DAQ_RATE,
-        "nperseg": HF2_NPERSEG,
     },
 }
 config_path = run_dir / "experiment_config.yaml"
@@ -607,54 +508,46 @@ dg_mod.setup_pulse(freq=PUMP_MOD_FREQ, amplitude=RF_GATE_AMPLITUDE,
                    offset=RF_GATE_OFFSET, width=pulse_width, channel=2)
 print(f"  {PUMP_MOD_FREQ/1e3:.0f} kHz → RF 开关 CTRL")
 
-# 启用 Pump 调制输出；dg_comp 外触发改由 dg_am CH1/CH2 同相 100 Hz 方波提供。
+# 启用 Pump 调制输出；dg_comp 外触发由 Time_sequence_2 CH2 经三通提供。
 dg_mod.set_output(True, channel=1)
 dg_mod.set_output(True, channel=2)
 dg_mod.set_sync_state(False, channel=2)
 print("  dg_mod 输出: CH1(100MHz) ON, CH2(脉冲) ON")
 print("  dg_mod CH2 SYNC 未作为 dg_comp 触发源")
 
-XY_TRIGGER_CHANNELS = (1, 2)
-
 def validate_trigger_square_levels():
-    """检查 dg_am 两路方波触发电平是否在 AM 安全范围内。"""
+    """检查 Time_sequence_2 方波触发电平。"""
     half_amp = XY_TRIGGER_AMPLITUDE / 2.0
     low_level = XY_TRIGGER_OFFSET - half_amp
     high_level = XY_TRIGGER_OFFSET + half_amp
-    validate_safety_limit("X_magnetic_field_AM", low_level)
-    validate_safety_limit("X_magnetic_field_AM", high_level)
-    validate_safety_limit("Y_magnetic_field_AM", low_level)
-    validate_safety_limit("Y_magnetic_field_AM", high_level)
+    validate_safety_limit("Time_sequence_2", low_level)
+    validate_safety_limit("Time_sequence_2", high_level)
 
 
-def configure_dg_am_reference_trigger():
-    """设置 dg_am CH1/CH2 为 100 Hz 同相固定方波基准；校准过程中不再改变。"""
+def configure_sequence_2_trigger():
+    """设置 Time_sequence_2 CH2 为三通共用的固定方波触发源。"""
     validate_trigger_square_levels()
     trigger_phase = XY_TRIGGER_PHASE % 360
-    for ch in XY_TRIGGER_CHANNELS:
-        dg_am.set_burst_state(False, channel=ch)
-        dg_am.set_mod_state(False, channel=ch)
-        dg_am.setup_square(
-            freq=XY_TRIGGER_FREQ,
-            amplitude=XY_TRIGGER_AMPLITUDE,
-            offset=XY_TRIGGER_OFFSET,
-            dcycle=XY_TRIGGER_DUTY,
-            phase=trigger_phase,
-            channel=ch,
-        )
-        dg_am.set_output(True, channel=ch)
-
-    # 使用 DG4000 相位初始化功能，让两路方波使用同一个相位基准。
-    for ch in XY_TRIGGER_CHANNELS:
-        dg_am.phase_init(channel=ch)
+    dg_sweep.set_burst_state(False, channel=2)
+    dg_sweep.set_mod_state(False, channel=2)
+    dg_sweep.setup_square(
+        freq=XY_TRIGGER_FREQ,
+        amplitude=XY_TRIGGER_AMPLITUDE,
+        offset=XY_TRIGGER_OFFSET,
+        dcycle=XY_TRIGGER_DUTY,
+        phase=trigger_phase,
+        channel=2,
+    )
+    dg_sweep.set_output(True, channel=2)
+    dg_sweep.phase_init(channel=2)
 
     print(
-        f"  dg_am CH1/CH2: fixed SQUARE {XY_TRIGGER_FREQ} Hz, "
-        f"phase={trigger_phase:.2f}°, outputs ON -> dg_comp Ext Trig reference"
+        f"  Time_sequence_2 CH2: fixed SQUARE {XY_TRIGGER_FREQ} Hz, "
+        f"phase={trigger_phase:.2f}°, output ON -> splitter -> dg_comp CH1/CH2 Ext Trig"
     )
 
 
-configure_dg_am_reference_trigger()
+configure_sequence_2_trigger()
 
 print("\n✅ RF 开关方案配置完成")
 
@@ -713,124 +606,106 @@ time.sleep(0.5)
 
 # 恢复温控
 print("恢复温度开关...")
-set_temp_switch(True)
-time.sleep(0.5)
+set_temp_switch(True, wait=True)
 
 # %% Cell 11
-# ---- X/Y 控制信号配置（Burst 模式，dg_am 外触发同步）----
+# ---- X/Y 控制信号配置（Burst 模式，Time_sequence_2 外触发同步）----
 # Bell-Bloom 磁力仪物理原理:
 #   原子以 Larmor 频率绕主磁场 B0 进动，Pump 光脉冲与之同步。
 #   X/Y 控制磁场必须沿原子极化方向施加，因此:
 #     1. X 和 Y 相差 90° 相位（正交控制，沿极化方向旋转）
 #     2. XY 整体需相位延迟 XY_CTRL_PHASE 与 Pump 调制对齐
 # 同步机制:
-#   dg_am CH1/CH2 同相 100 Hz 方波 -> dg_comp Ext Trig（需硬件连接）
-#   dg_am 两路方波保持 100 Hz 同相常开，作为 dg_comp 外触发相位基准。
-print("配置 X/Y 交流控制信号（Burst 模式，dg_am 固定基准外触发）...")
+#   Time_sequence_2 CH2 的 100 Hz 方波经三通 -> dg_comp CH1/CH2 Ext Trig。
+#   触发方波保持常开，作为两路正弦 Burst 的共用相位基准。
+print("配置 X/Y 交流控制信号（Burst 模式，Time_sequence_2 共用外触发）...")
 
 
-def build_aw_params(waveform_v):
-    """把物理电压波形转换为固定 Vpp/Offset 下的归一化任意波。"""
-    waveform_v = np.asarray(waveform_v, dtype=float)
-    half_range = XY_AW_OUTPUT_VPP / 2.0
-    normalized = (waveform_v - XY_AW_OUTPUT_OFFSET_V) / half_range
-    max_abs = float(np.max(np.abs(normalized)))
-    if max_abs > 1.0 + 1e-9:
-        raise ValueError(
-            f"DirectAW 物理电压 [{np.min(waveform_v):+.6f}, "
-            f"{np.max(waveform_v):+.6f}] V 超出固定输出范围 "
-            f"[{XY_AW_OUTPUT_LOW_V:+.6f}, {XY_AW_OUTPUT_HIGH_V:+.6f}] V"
+def validate_sine_peak(peak_v):
+    """校验正弦波的正负峰值。"""
+    peak_v = abs(float(peak_v))
+    for key in ("X_magnetic_field", "Y_magnetic_field"):
+        validate_safety_limit(key, -peak_v)
+        validate_safety_limit(key, peak_v)
+    return peak_v
+
+
+def set_xy_sine_phase(phase_deg, outputs_on=True):
+    """用 OFF→相位→ON 使两路重新等待同一外触发沿。"""
+    phases = (
+        (1, float(phase_deg) % 360.0),
+        (2, (float(phase_deg) + XY_CTRL_QUAD) % 360.0),
+    )
+    for channel, _ in phases:
+        dg_comp.set_output(False, channel=channel)
+    for channel, phase in phases:
+        dg_comp.set_burst_phase(phase, channel=channel)
+    for channel, _ in phases:
+        dg_comp.set_output(bool(outputs_on), channel=channel)
+
+
+def configure_xy_sine(peak_v, phase_deg, outputs_on=False):
+    """一次配置 X/Y 正弦模式与外触发无限 Burst。"""
+    peak_v = validate_sine_peak(peak_v)
+    if peak_v == 0.0:
+        raise ValueError("初始正弦峰值必须大于 0")
+    for channel in (1, 2):
+        dg_comp.set_output(False, channel=channel)
+        dg_comp.set_burst_state(False, channel=channel)
+        dg_comp.set_mod_state(False, channel=channel)
+        dg_comp.setup_sine(
+            freq=XY_CTRL_FREQ,
+            amplitude=2.0 * peak_v,
+            offset=0.0,
+            phase=0.0,
+            channel=channel,
         )
-    return {
-        "waveform_V": waveform_v,
-        "normalized": np.clip(normalized, -1.0, 1.0),
-        "max_abs_normalized": max_abs,
-    }
+        dg_comp.set_output(False, channel=channel)
+        dg_comp.set_burst_state(True, channel=channel)
+        dg_comp.set_burst_mode("INFinity", channel=channel)
+        dg_comp.set_burst_trigger_source("EXTernal", channel=channel)
+        dg_comp.set_burst_trigger_slope("POSitive", channel=channel)
+    set_xy_sine_phase(phase_deg, outputs_on=outputs_on)
 
 
-def build_direct_aw(envelope_v, phase_deg):
-    """生成恒定包络的 X/Y 正交 DirectAW。"""
-    time_s = np.arange(XY_AW_POINTS, dtype=float) / (
-        XY_AW_POINTS * XY_AW_REPEAT_FREQ_HZ
-    )
-    carrier_phase = (
-        2.0 * np.pi * XY_CTRL_FREQ * time_s
-        + math.radians(float(phase_deg))
-    )
-    quad_rad = math.radians(float(XY_CTRL_QUAD))
-    x_aw = build_aw_params(float(envelope_v) * np.cos(carrier_phase))
-    y_aw = build_aw_params(
-        float(envelope_v) * np.cos(carrier_phase + quad_rad)
-    )
-    return time_s, x_aw, y_aw
+def set_xy_sine_peak(peak_v):
+    """关断两路后调幅，再按已校准相位重新等待共用外触发。"""
+    peak_v = validate_sine_peak(peak_v)
+    for channel in (1, 2):
+        dg_comp.set_output(False, channel=channel)
+    if peak_v == 0.0:
+        return
+    for channel in (1, 2):
+        dg_comp.set_amplitude(2.0 * peak_v, channel=channel)
+    # 调幅可能改变实际响应相位；复用校相的重触发顺序，不重配正弦/Burst。
+    set_xy_sine_phase(XY_CTRL_PHASE, outputs_on=True)
 
 
-def upload_direct_aw(envelope_v, phase_deg, outputs_on=True):
-    """保持 dg_am 连续运行，重传两路 DirectAW 后打开 Burst 和输出。"""
-    time_s, x_aw, y_aw = build_direct_aw(envelope_v, phase_deg)
-    for key, aw in (
-        ("X_magnetic_field", x_aw),
-        ("Y_magnetic_field", y_aw),
-    ):
-        validate_safety_limit(key, float(np.min(aw["waveform_V"])))
-        validate_safety_limit(key, float(np.max(aw["waveform_V"])))
-
-    for ch, aw in ((1, x_aw), (2, y_aw)):
-        dg_comp.set_output(False, channel=ch)
-        upload_arbitrary(
-            dg_comp,
-            ArbitraryWaveformSpec(
-                values=aw["normalized"].copy(),
-                frequency=XY_AW_REPEAT_FREQ_HZ,
-                amplitude=XY_AW_OUTPUT_VPP,
-                offset=XY_AW_OUTPUT_OFFSET_V,
-                phase=0.0,
-                channel=ch,
-                output=False,
-            ),
-        )
-
-    for ch in (1, 2):
-        dg_comp.set_burst_state(True, channel=ch)
-        dg_comp.set_burst_mode("INFinity", channel=ch)
-        dg_comp.set_burst_trigger_source("EXTernal", channel=ch)
-        dg_comp.set_burst_trigger_slope("POSitive", channel=ch)
-        dg_comp.set_burst_phase(0.0, channel=ch)
-        dg_comp.set_output(bool(outputs_on), channel=ch)
-    return time_s, x_aw, y_aw
-
-
-upload_direct_aw(XY_CALIB_ENVELOPE_V, XY_CTRL_PHASE, outputs_on=False)
+configure_xy_sine(XY_CALIB_ENVELOPE_V, XY_CTRL_PHASE, outputs_on=False)
+print(f"  正弦载波: {XY_CTRL_FREQ:.3f} Hz, offset=0 V")
 print(
-    f"  DirectAW 固定输出: {XY_AW_OUTPUT_VPP:.3f} Vpp, "
-    f"offset={XY_AW_OUTPUT_OFFSET_V:.3f} V"
-)
-print(
-    f"  校相包络: {XY_CALIB_ENVELOPE_V:.3f} V, "
+    f"  校相峰值: {XY_CALIB_ENVELOPE_V:.3f} V "
+    f"({2.0 * XY_CALIB_ENVELOPE_V:.3f} Vpp), "
     f"X/Y 正交相位差={XY_CTRL_QUAD:.2f}°"
 )
-print("  X/Y 输出 OFF (等待 DirectAW 整体相位校准)")
-print("硬件同步要求: dg_am CH1/CH2 同相 100 Hz 固定方波 -> dg_comp Ext Trig 需物理连接")
+print("  X/Y 输出 OFF (等待正弦 Burst 整体相位校准)")
+print("硬件同步要求: Time_sequence_2 CH2 的 100 Hz 固定方波经三通 -> dg_comp CH1/CH2 Ext Trig")
 print(
-    f"相位关系: dg_am trigger={XY_TRIGGER_PHASE:.2f}° @ "
-    f"{XY_TRIGGER_FREQ:.1f} Hz, DirectAW phase={XY_CTRL_PHASE:.2f}°"
+    f"相位关系: Time_sequence_2 trigger={XY_TRIGGER_PHASE:.2f}° @ "
+    f"{XY_TRIGGER_FREQ:.1f} Hz, sine burst phase={XY_CTRL_PHASE:.2f}°"
 )
 
 # %% Cell 12
 # ============================================================
-# XY_CTRL_PHASE 校准：保持 dg_am 基准不变，迭代 dg_comp Burst 触发相位
+# XY_CTRL_PHASE 校准：保持 Time_sequence_2 基准不变，迭代正弦 Burst 相位
 # ============================================================
 print("=" * 60)
-print("校准 XY_CTRL_PHASE（dg_am 固定基准 + dg_comp Burst 相位迭代）")
+print("校准 XY_CTRL_PHASE（Time_sequence_2 固定基准 + 正弦 Burst 相位迭代）")
 print("=" * 60)
 
 try:
     def apply_noise_phase_and_measure(phase_deg):
-        upload_direct_aw(
-            XY_CALIB_ENVELOPE_V,
-            phase_deg,
-            outputs_on=True,
-        )
+        set_xy_sine_phase(phase_deg, outputs_on=True)
         set_temp_switch(False)
         try:
             time.sleep(1.0)
@@ -843,13 +718,12 @@ try:
             )
             return sample_data
         finally:
-            set_temp_switch(True)
-            time.sleep(1.0)
+            set_temp_switch(True, wait=True)
 
-    direct_aw_phase_result = calibrate_direct_aw_phase(
+    phase_result = calibrate_xy_phase(
         XY_CTRL_PHASE,
         apply_noise_phase_and_measure,
-        DirectAWPhaseCalibrationConfig(
+        XYPhaseCalibrationConfig(
             tolerance_deg=XY_PHASE_CAL_TOL_DEG,
             max_measurements=XY_PHASE_CAL_MAX_ITER,
             minimum_r_v=XY_PHASE_CAL_MIN_R_V,
@@ -857,17 +731,13 @@ try:
         ),
         cancellation_check=check_cancelled,
     )
-    XY_CTRL_PHASE = direct_aw_phase_result.final_phase_deg
-    if not direct_aw_phase_result.converged:
+    XY_CTRL_PHASE = phase_result.final_phase_deg
+    if not phase_result.converged:
         print(f"\n达到最大测量次数 {XY_PHASE_CAL_MAX_ITER}，校准未收敛")
 
 finally:
     set_temp_switch(True)
-    upload_direct_aw(
-        XY_CALIB_ENVELOPE_V,
-        XY_CTRL_PHASE,
-        outputs_on=True,
-    )
+    set_xy_sine_phase(XY_CTRL_PHASE, outputs_on=True)
     print("\n温度开关: ON (已恢复)")
 
 print("\n✅ XY_CTRL_PHASE 校准完成")
@@ -882,14 +752,17 @@ config_saved["xy_ctrl"]["XY_CTRL_PHASE_deg"] = float(XY_CTRL_PHASE)
 config_saved["xy_ctrl"]["XY_CTRL_QUAD_deg"] = float(XY_CTRL_QUAD)
 config_saved["xy_ctrl"]["Y_CTRL_PHASE_deg"] = float((XY_CTRL_PHASE + XY_CTRL_QUAD) % 360)
 config_saved["xy_ctrl"]["phase_cal_tolerance_deg"] = float(XY_PHASE_CAL_TOL_DEG)
-config_saved["xy_ctrl"]["phase_cal_success"] = bool(direct_aw_phase_result.converged)
-config_saved["xy_ctrl"]["phase_cal_best_r_V"] = float(direct_aw_phase_result.best_r_v)
+config_saved["xy_ctrl"]["phase_cal_success"] = bool(phase_result.converged)
+config_saved["xy_ctrl"]["phase_cal_best_r_V"] = float(phase_result.best_r_v)
 config_saved["xy_ctrl"]["phase_cal_history"] = [
-    item.to_dict() for item in direct_aw_phase_result.history
+    item.to_dict() for item in phase_result.history
 ]
 config_saved["xy_ctrl"]["trigger_square_freq_Hz"] = float(XY_TRIGGER_FREQ)
 config_saved["xy_ctrl"]["trigger_square_phase_deg"] = float(XY_TRIGGER_PHASE)
-config_saved["xy_ctrl"]["trigger_source"] = "dg_am CH1/CH2 fixed-phase 100 Hz square -> dg_comp Ext Trig"
+config_saved["xy_ctrl"]["trigger_source"] = (
+    f"Time_sequence_2 CH2 {XY_TRIGGER_FREQ:g} Hz square -> "
+    "splitter -> dg_comp CH1/CH2 Ext Trig"
+)
 with open(config_path, "w", encoding="utf-8") as f:
     yaml.safe_dump(config_saved, f, allow_unicode=True, sort_keys=False)
 print("最终 X/Y Burst 相位已写入 experiment_config.yaml")
@@ -910,9 +783,9 @@ print(
 )
 print(f"DAQ 采集: 时长 {HF2_DAQ_DURATION}s, TC={HF2_DAQ_TC*1e6:.2f}μs, rate={HF2_DAQ_RATE:.0f} Sa/s")
 total_est = TARGET_NOISE_FREQ_POINTS * (
-    XY_SETTLE_TIME + HF2_DAQ_DURATION + 2.0
+    XY_SETTLE_TIME + HF2_DAQ_DURATION + TEMP_SWITCH_ON_SETTLE_S + 0.3
 )
-print(f"预计耗时: {total_est:.0f}s ≈ {total_est/3600:.1f}h")
+print(f"预计扫描采集与等待耗时: {total_est:.0f}s ≈ {total_est/3600:.1f}h（不含初始化、校相、通信及分析）")
 print()
 
 np.savez(
@@ -948,21 +821,25 @@ def safe_scan_outputs_off():
     """声明本实验需要关闭和保留的输出，交给共享安全步骤执行。"""
     return run_safety_shutdown(
         dg_channels=(
-            DGChannelShutdown(dg_comp, 1, "X_magnetic_field", "X DirectAW"),
-            DGChannelShutdown(dg_comp, 2, "Y_magnetic_field", "Y DirectAW"),
-            DGChannelShutdown(dg_am, 1, "X_magnetic_field_AM", "X 触发"),
-            DGChannelShutdown(dg_am, 2, "Y_magnetic_field_AM", "Y 触发"),
+            DGChannelShutdown(dg_comp, 1, "X_magnetic_field", "X 正弦控制"),
+            DGChannelShutdown(dg_comp, 2, "Y_magnetic_field", "Y 正弦控制"),
             DGChannelShutdown(dg_sweep, 1, "Z_magnetic_field", "Z 场"),
-            DGChannelShutdown(dg_sweep, 2, "Time_sequence_2", "时序通道 2"),
-            DGChannelShutdown(dg_mod, 2, "Time_sequence", "Pump 门控"),
+            DGChannelShutdown(dg_sweep, 2, "Time_sequence_2", "X/Y 共用触发"),
         ),
         temperature_switch=TemperatureSwitchRestore(dg_temp, 2),
         disconnect_targets=(DisconnectTarget("TEC", devices.get("tec")),),
-        preserved_outputs=STANDARD_PRESERVED_OUTPUTS,
+        preserved_outputs=(*STANDARD_PRESERVED_OUTPUTS, "Time_sequence"),
     )
 
 
 try:
+    # 在安全恢复保护内校验硬件实际采样率，并保存派生段长，不作为可调参数。
+    actual_welch = welch_settings(float(actual_rate_daq), HF2_DAQ_DURATION,
+                                  PARAMS.analysis_bin_width_hz)
+    config_saved["hf2_daq"].update(actual_rate_Sa_s=float(actual_rate_daq), **actual_welch)
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(config_saved, f, allow_unicode=True, sort_keys=False)
+    print(f"Welch 实际分段: {actual_welch}")
     for i, (target_freq_hz, envelope_v) in enumerate(
         zip(
             TARGET_NOISE_FREQ_LIST_HZ,
@@ -975,7 +852,7 @@ try:
             f"Omega={target_freq_hz/1e3:.2f}kHz, V={envelope_v:.3f}"
         )
 
-        upload_direct_aw(envelope_v, XY_CTRL_PHASE, outputs_on=True)
+        set_xy_sine_peak(envelope_v)
         time.sleep(0.3)
 
         # 关闭温度开关（消除温控磁场干扰）
@@ -1026,8 +903,7 @@ try:
         np.save(raw_dir / f"waveform_C{i:04d}.npy", waveform)
 
         # 恢复温度开关
-        set_temp_switch(True)
-        time.sleep(2)
+        set_temp_switch(True, wait=True)
 
         pbar.update(1)
 
@@ -1042,7 +918,7 @@ finally:
     if shutdown_report.errors:
         print("安全关闭警告: " + "；".join(shutdown_report.errors))
     else:
-        print("安全关闭完成，温度开关已恢复 ON")
+        print("安全关闭完成，温度开关已恢复 ON；Pump 载波和时序门控保持输出")
 
 elapsed_total = time.time() - t_start
 print(

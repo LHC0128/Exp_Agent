@@ -19,19 +19,19 @@
 
 ## 后续修改入口
 
-- 修改静磁场默认参数：`params/static_sensitivity.yaml`。
+- 修改正式实验默认参数：先核对注册定义的 `defaults_saver`；当前强类型实验保存到 `params/experiments/<实验ID>.yaml`，静磁场为 `params/experiments/static-sensitivity.yaml`。文档只链接来源，不复制默认值。
 - 修改实验流程：先定位 `lab_workflows/experiments/registry.py` 中的稳定实验 ID，再修改对应共享工作流；保留 `experiments/` 脚本为薄入口。
-- 修改静磁场流程：`lab_workflows/static_sensitivity/`；静磁场也必须通过统一实验注册表调用。
+- 修改静磁场流程：`lab_workflows/experiment_modules/static_sensitivity/`；静磁场也必须通过统一实验注册表调用。
 - 修改设备时钟目标：`params/clock_sources.yaml`。
 - 修改时钟算法：`lab_workflows/clock_sync.py`。
-- 新增实验：使用仓库 `expcodegen` Skill，增加共享参数模型、工作流和分析器，再注册统一实验定义；不新增专用 API 或专用导航。
+- 新增实验：使用仓库 `expcodegen` Skill，增加共享参数模型、工作流和分析器，再注册统一实验定义；默认在实验中心路由下提供运行/历史双 Tab。优先复用通用 API，历史摘要确有需要时补齐最小接口，不另建专用导航。
 - 新增普通实验参数：为 dataclass 字段补充 UI metadata，前端动态表单会自动呈现。
 - 修改实验中心标签：通过 `params/experiment_catalog.yaml` 或标签管理 API；不得通过重命名标签改变实验稳定 ID、`data_type` 或历史目录。
 
 ## 验证
 
 - Python：运行 `agent_exp_env\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"`。
-- Skill：运行 `agent_exp_env\Scripts\python.exe .agents\skills\expcodegen\scripts\validate_experiment.py --root .`。
+- Skill：基础检查运行 `agent_exp_env\Scripts\python.exe .agents\skills\expcodegen\scripts\validate_experiment.py --root .`；新增实验还必须按 Skill 的 `references/delivery-validation.md` 执行 `--delivery` 文档、路由和历史接口验证。
 - 语法：对修改的实验入口运行 `python -m py_compile`。
 - 前端：在 `gui/frontend/` 运行 `npm run build` 与 `npm test`（Vitest + Testing Library）。
 - API 类型：后端 schema 变更后运行 `python -m backend.openapi_dump > frontend/openapi.json`，再在 `gui/frontend/` 运行 `npm run generate:api`，并检查 `src/types/openapi.d.ts` 变更。

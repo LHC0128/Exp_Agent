@@ -198,7 +198,7 @@ print(f"图已保存: {results_dir / 'freq_response_phase.png'}")
 fig3, ax3 = new_figure(kind="square")
 phase_ext = np.concatenate([phases - 360, phases, phases + 360])
 r_ext = np.tile(r_matrix, (1, 3))
-im = ax3.pcolormesh(phase_ext, freqs, r_ext, cmap="viridis", shading="auto")
+im = ax3.pcolormesh(phase_ext, freqs, r_ext, cmap="viridis", shading="auto", rasterized=True)
 if len(phases) == 1:
     ax3.set_xlim(float(phases[0]) - 1.0, float(phases[0]) + 1.0)
 else:

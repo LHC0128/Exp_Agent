@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
-import { MxYOptimalControlFrequencyPage } from "./MxYOptimalControlFrequencyPage";
+import { ExperimentPage } from "./ExperimentPage";
 
 vi.mock("../api", () => ({ api: vi.fn() }));
 const activity = vi.hoisted(() => ({ hardwareBusy: false, activeJobs: [] }));
@@ -256,7 +256,9 @@ afterEach(() => {
 const show = () =>
   render(
     <MemoryRouter initialEntries={["/experiments/mx-y-optimal-control-rf-frequency-response"]}>
-      <MxYOptimalControlFrequencyPage />
+      <Routes>
+        <Route path="/experiments/:experimentId" element={<ExperimentPage />} />
+      </Routes>
     </MemoryRouter>,
   );
 

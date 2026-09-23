@@ -23,6 +23,8 @@ from datetime import datetime
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 import numpy as np
 import yaml
 
@@ -470,7 +472,7 @@ def save_expected_waveform_plots(
         ),
     )
 
-    fig1, ax1 = plt.subplots(figsize=(10, 5.5))
+    fig1, ax1 = new_figure(kind="wide", height_mm=65)
     ax1.plot(t_ms, expected["dg_am_ch1_V"], lw=1.0, label="dg_am CH1")
     ax1.plot(t_ms, expected["dg_am_ch2_V"], lw=1.0, label="dg_am CH2")
     ax1.axhspan(-AM_INPUT_FULL_SCALE_V, AM_INPUT_FULL_SCALE_V, color="C2", alpha=0.12,
@@ -481,34 +483,32 @@ def save_expected_waveform_plots(
     ax1.set_xlabel("Time (ms)")
     ax1.set_ylabel("Voltage (V)")
     ax1.set_title("Expected dg_am AW Envelope")
-    ax1.grid(True, alpha=0.3)
-    ax1.legend(fontsize=9)
-    fig1.tight_layout()
-    fig1.savefig(results_dir / "expected_dg_am_envelope.png",
-                 dpi=150, bbox_inches="tight")
+    ax1.grid(False)
+    ax1.legend(fontsize=8)
+    fig1.set_layout_engine("constrained")
+    save_figure(fig1, results_dir / "expected_dg_am_envelope.png", close=False)
     plt.close(fig1)
 
-    fig2, (ax2a, ax2b) = plt.subplots(2, 1, figsize=(10, 6.5), sharex=True)
+    fig2, (ax2a, ax2b) = new_figure(nrows=2, ncols=1, kind="wide", height_mm=110, sharex=True)
     ax2a.plot(t_ms, expected["dg_comp_ch1_est_V"], lw=0.55, label="dg_comp CH1 estimate")
     ax2a.plot(t_ms, expected["dg_comp_ch2_est_V"], lw=0.55, label="dg_comp CH2 estimate")
     ax2a.set_ylabel("Voltage (V)")
     ax2a.set_title("Estimated AM-Modulated Carrier (Full Window)")
-    ax2a.grid(True, alpha=0.3)
-    ax2a.legend(fontsize=9)
+    ax2a.grid(False)
+    ax2a.legend(fontsize=8)
     ax2b.plot(t_ms, expected["am_gain_ch1"], lw=1.0, label="CH1 signed AM gain")
     ax2b.plot(t_ms, expected["am_gain_ch2"], lw=1.0, label="CH2 signed AM gain")
     ax2b.axhline(0.0, color="black", lw=0.7, alpha=0.6)
     ax2b.set_xlabel("Time (ms)")
     ax2b.set_ylabel("Signed gain")
-    ax2b.grid(True, alpha=0.3)
-    ax2b.legend(fontsize=9)
-    fig2.tight_layout()
-    fig2.savefig(results_dir / "expected_dg_comp_modulated_full.png",
-                 dpi=150, bbox_inches="tight")
+    ax2b.grid(False)
+    ax2b.legend(fontsize=8)
+    fig2.set_layout_engine("constrained")
+    save_figure(fig2, results_dir / "expected_dg_comp_modulated_full.png", close=False)
     plt.close(fig2)
 
     zoom_mask = expected["time_s"] <= min(2.0e-4, expected["time_s"][-1])
-    fig3, ax3 = plt.subplots(figsize=(10, 5.5))
+    fig3, ax3 = new_figure(kind="wide", height_mm=65)
     ax3.plot(t_ms[zoom_mask], expected["dg_comp_ch1_est_V"][zoom_mask],
              lw=1.0, label="dg_comp CH1 estimate")
     ax3.plot(t_ms[zoom_mask], expected["dg_comp_ch2_est_V"][zoom_mask],
@@ -516,11 +516,10 @@ def save_expected_waveform_plots(
     ax3.set_xlabel("Time (ms)")
     ax3.set_ylabel("Voltage (V)")
     ax3.set_title("Estimated AM-Modulated Carrier (Zoom)")
-    ax3.grid(True, alpha=0.3)
-    ax3.legend(fontsize=9)
-    fig3.tight_layout()
-    fig3.savefig(results_dir / "expected_dg_comp_modulated_zoom.png",
-                 dpi=150, bbox_inches="tight")
+    ax3.grid(False)
+    ax3.legend(fontsize=8)
+    fig3.set_layout_engine("constrained")
+    save_figure(fig3, results_dir / "expected_dg_comp_modulated_zoom.png", close=False)
     plt.close(fig3)
 
     print("预期波形已保存:")
@@ -611,24 +610,23 @@ def expected_trace_for_scope_channel(expected, target, scope_channel):
 
 def plot_scope_results(results, results_dir, target, expected=None):
     """保存示波器采集波形预览图，并在有预期波形时叠加对比。"""
-    fig, ax = plt.subplots(figsize=(10, 5.5))
+    fig, ax = new_figure(kind="wide", height_mm=65)
     for r in results:
         t_scope = r.time - r.time[0] if SCOPE_COMPARE_ALIGN_TO_FIRST_SAMPLE else r.time
         ax.plot(t_scope * 1e3, r.voltage, lw=0.8, label=f"Scope C{r.channel}")
     ax.set_xlabel("Time (ms)")
     ax.set_ylabel("Voltage (V)")
     ax.set_title(f"Scope Capture: {target}")
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=9)
-    fig.tight_layout()
+    ax.grid(False)
+    ax.legend(fontsize=8)
+    fig.set_layout_engine("constrained")
     path = results_dir / f"scope_capture_{target}.png"
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    save_figure(fig, path, close=False)
     plt.close(fig)
     print(f"示波器预览图已保存: {path}")
     compare_path = None
     if expected is not None:
-        fig_cmp, axes = plt.subplots(len(results), 1, figsize=(10, 3.8 * len(results)),
-                                     sharex=True, squeeze=False)
+        fig_cmp, axes = new_figure(nrows=len(results), ncols=1, kind="wide", height_mm=max(65, 55 * (len(results))), sharex=True, squeeze=False)
         axes = axes[:, 0]
         for ax_i, r in zip(axes, results):
             t_scope = r.time - r.time[0] if SCOPE_COMPARE_ALIGN_TO_FIRST_SAMPLE else r.time
@@ -640,14 +638,14 @@ def plot_scope_results(results, results_dir, target, expected=None):
                 ax_i.plot(t_exp * 1e3, v_exp, lw=0.9, ls="--", alpha=0.85, label=label)
 
             ax_i.set_ylabel("Voltage (V)")
-            ax_i.grid(True, alpha=0.3)
-            ax_i.legend(fontsize=9)
+            ax_i.grid(False)
+            ax_i.legend(fontsize=8)
 
         axes[-1].set_xlabel("Time (ms)")
         fig_cmp.suptitle(f"Scope vs Expected: {target}")
-        fig_cmp.tight_layout()
+        fig_cmp.set_layout_engine("constrained")
         compare_path = results_dir / f"scope_vs_expected_{target}.png"
-        fig_cmp.savefig(compare_path, dpi=150, bbox_inches="tight")
+        save_figure(fig_cmp, compare_path, close=False)
         plt.close(fig_cmp)
         print(f"示波器与预期对比图已保存: {compare_path}")
 
@@ -715,8 +713,7 @@ def plot_scope_envelope_vs_am(results, results_dir, target, expected):
     if target != "dg_comp" or expected is None:
         return None, []
 
-    fig, axes = plt.subplots(len(results), 2, figsize=(12, 3.6 * len(results)),
-                             squeeze=False)
+    fig, axes = new_figure(nrows=len(results), ncols=2, kind="wide", height_mm=max(65, 55 * (len(results))), squeeze=False)
     metrics = []
 
     for row, r in enumerate(results):
@@ -741,7 +738,7 @@ def plot_scope_envelope_vs_am(results, results_dir, target, expected):
         ax0.set_title(f"{exp['label']} Envelope")
         ax0.set_xlabel("Time (ms)")
         ax0.set_ylabel("Voltage (V)")
-        ax0.grid(True, alpha=0.3)
+        ax0.grid(False)
         ax0.legend(fontsize=8)
 
         meas_norm = measured_env_aligned / max(np.percentile(measured_env_aligned, 95), 1e-12)
@@ -755,7 +752,7 @@ def plot_scope_envelope_vs_am(results, results_dir, target, expected):
         ax1.set_title(f"{exp['label']} Shape Corr = {corr:.3f}")
         ax1.set_xlabel("Time (ms)")
         ax1.set_ylabel("Normalized amplitude")
-        ax1.grid(True, alpha=0.3)
+        ax1.grid(False)
         ax1.legend(fontsize=8)
 
         metrics.append({
@@ -770,9 +767,9 @@ def plot_scope_envelope_vs_am(results, results_dir, target, expected):
         })
 
     fig.suptitle("Scope Carrier Envelope vs Expected Envelope")
-    fig.tight_layout()
+    fig.set_layout_engine("constrained")
     path = results_dir / f"scope_envelope_vs_am_{target}.png"
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    save_figure(fig, path, close=False)
     plt.close(fig)
     print(f"示波器包络与预期包络对比图已保存: {path}")
     return path, metrics
@@ -783,8 +780,7 @@ def plot_signed_phase_check(results, results_dir, target, expected):
     if target != "dg_comp" or expected is None:
         return None, []
 
-    fig, axes = plt.subplots(len(results), 3, figsize=(15, 3.6 * len(results)),
-                             squeeze=False)
+    fig, axes = new_figure(nrows=len(results), ncols=3, kind="wide", height_mm=max(65, 55 * (len(results))), squeeze=False)
     metrics = []
 
     for row, r in enumerate(results):
@@ -831,7 +827,7 @@ def plot_signed_phase_check(results, results_dir, target, expected):
         ax0.set_title(f"{exp_signed['label']} Signed Amplitude")
         ax0.set_xlabel("Time (ms)")
         ax0.set_ylabel("Normalized signed amp.")
-        ax0.grid(True, alpha=0.3)
+        ax0.grid(False)
         ax0.legend(fontsize=8)
 
         ax1.scatter(am_voltage[valid], signed_amp_norm[valid], s=4, alpha=0.35)
@@ -840,7 +836,7 @@ def plot_signed_phase_check(results, results_dir, target, expected):
         ax1.set_title(f"Corr = {signed_corr:.3f}")
         ax1.set_xlabel("Expected dg_am (V)")
         ax1.set_ylabel("Scope signed demod. norm.")
-        ax1.grid(True, alpha=0.3)
+        ax1.grid(False)
 
         ax2.scatter(t_scope[pos] * 1e3, phase_rel[pos], s=4, alpha=0.35,
                     label=f"AM > 0 mean {pos_phase_mean:.1f} deg")
@@ -853,7 +849,7 @@ def plot_signed_phase_check(results, results_dir, target, expected):
         ax2.set_title(f"Phase Flip = {phase_flip_deg:.1f} deg")
         ax2.set_xlabel("Time (ms)")
         ax2.set_ylabel("Relative phase (deg)")
-        ax2.grid(True, alpha=0.3)
+        ax2.grid(False)
         ax2.legend(fontsize=8)
 
         metrics.append({
@@ -872,9 +868,9 @@ def plot_signed_phase_check(results, results_dir, target, expected):
         })
 
     fig.suptitle("Signed AM Phase Check")
-    fig.tight_layout()
+    fig.set_layout_engine("constrained")
     path = results_dir / f"scope_signed_phase_check_{target}.png"
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    save_figure(fig, path, close=False)
     plt.close(fig)
     print(f"带符号 AM 相位检查图已保存: {path}")
     return path, metrics

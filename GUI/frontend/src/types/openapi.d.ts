@@ -852,7 +852,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/experiments/{experiment_id}/runs/{run_id}/summary": {
+    "/api/experiments/z-aw-closed-loop-waveform-correction/runs/{run_id}/summary": {
         parameters: {
             query?: never;
             header?: never;
@@ -863,7 +863,75 @@ export interface paths {
          * Experiment Run Summary
          * @description Z 闭环专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。
          */
-        get: operations["experiment_run_summary_api_experiments__experiment_id__runs__run_id__summary_get"];
+        get: operations["experiment_run_summary_api_experiments_z_aw_closed_loop_waveform_correction_runs__run_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/static-sensitivity/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Static Sensitivity Runs */
+        get: operations["static_sensitivity_runs_api_experiments_static_sensitivity_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/static-sensitivity/runs/{run_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Static Sensitivity Run Summary */
+        get: operations["static_sensitivity_run_summary_api_experiments_static_sensitivity_runs__run_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/bell-bloom-z-field-calibration/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bell Bloom Z Runs */
+        get: operations["bell_bloom_z_runs_api_experiments_bell_bloom_z_field_calibration_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/bell-bloom-z-field-calibration/runs/{run_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bell Bloom Z Summary */
+        get: operations["bell_bloom_z_summary_api_experiments_bell_bloom_z_field_calibration_runs__run_id__summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1878,6 +1946,32 @@ export interface components {
             slope: string;
             /** Level */
             level: number;
+        };
+        /**
+         * StaticSensitivityRunSummary
+         * @description 静磁场灵敏度 typed 运行摘要。
+         */
+        StaticSensitivityRunSummary: {
+            /** Run Id */
+            run_id: string;
+            /** Timestamp */
+            timestamp: string;
+            /** Run Tag */
+            run_tag: string;
+            /** Completion Status */
+            completion_status: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /** Analysis */
+            analysis?: {
+                [key: string]: unknown;
+            };
+            /** Artifacts */
+            artifacts?: {
+                [key: string]: string;
+            };
         };
         /** TagAssignmentBody */
         TagAssignmentBody: {
@@ -3713,12 +3807,11 @@ export interface operations {
             };
         };
     };
-    experiment_run_summary_api_experiments__experiment_id__runs__run_id__summary_get: {
+    experiment_run_summary_api_experiments_z_aw_closed_loop_waveform_correction_runs__run_id__summary_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                experiment_id: string;
                 run_id: string;
             };
             cookie?: never;
@@ -3732,6 +3825,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ZAWClosedLoopRunSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    static_sensitivity_runs_api_experiments_static_sensitivity_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    static_sensitivity_run_summary_api_experiments_static_sensitivity_runs__run_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaticSensitivityRunSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bell_bloom_z_runs_api_experiments_bell_bloom_z_field_calibration_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bell_bloom_z_summary_api_experiments_bell_bloom_z_field_calibration_runs__run_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

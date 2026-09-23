@@ -1,4 +1,4 @@
-﻿# %% [markdown] Cell 0
+# %% [markdown] Cell 0
 # # AW 常数 Omega_ctrl 标定 sanity check — 离线分析
 #
 # 无需连接任何仪器。读取 `AW_ConstOmega_Calibration_Check.py` 保存的 raw 数据，
@@ -18,8 +18,10 @@ import csv
 import json
 
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 import numpy as np
 import yaml
 
@@ -173,10 +175,9 @@ print(f"模式: {modes}")
 print(f"Omega_const: {omega_values}")
 
 # %% Cell 5
-plt.rcParams.update({"figure.dpi": 120, "font.size": 11, "axes.labelsize": 12})
 
 n_rows = max(1, len(omega_values))
-fig1, axes = plt.subplots(n_rows, 1, figsize=(9.0, max(3.2, 2.4 * n_rows)), sharex=False)
+fig1, axes = new_figure(nrows=n_rows, ncols=1, kind="wide", height_mm=max(65, 55 * (n_rows)), sharex=False)
 if n_rows == 1:
     axes = [axes]
 
@@ -192,16 +193,16 @@ for ax, omega in zip(axes, omega_values):
     ax.set_title(f"Omega_const = {omega:.1f} Hz")
     ax.set_xlabel("Z RF Frequency (Hz)")
     ax.set_ylabel("Demod 3 R (V)")
-    ax.grid(True, alpha=0.3)
+    ax.grid(False)
     ax.legend(fontsize=8)
 
-fig1.tight_layout()
+fig1.set_layout_engine("constrained")
 response_path = results_dir / "const_aw_response_curves.png"
-fig1.savefig(response_path, dpi=150, bbox_inches="tight")
+save_figure(fig1, response_path, close=False)
 print(f"响应曲线已保存: {response_path}")
 plt.show()
 
-fig2, ax2 = plt.subplots(figsize=(8.8, 5.2))
+fig2, ax2 = new_figure(kind="wide", height_mm=65)
 for mode in modes:
     rows = [r for r in traces if r["mode"] == mode]
     rows = sorted(rows, key=lambda r: r["omega_const_Hz"])
@@ -219,11 +220,11 @@ ax2.axhline(-100.0, color="0.5", lw=0.8, ls="--", alpha=0.6)
 ax2.set_xlabel("Omega_const (Hz)")
 ax2.set_ylabel("Peak Frequency - Omega_const (Hz)")
 ax2.set_title("Constant AW Omega Calibration Residual")
-ax2.grid(True, alpha=0.3)
-ax2.legend(fontsize=9)
-fig2.tight_layout()
+ax2.grid(False)
+ax2.legend(fontsize=8)
+fig2.set_layout_engine("constrained")
 residual_path = results_dir / "const_aw_residuals.png"
-fig2.savefig(residual_path, dpi=150, bbox_inches="tight")
+save_figure(fig2, residual_path, close=False)
 print(f"残差图已保存: {residual_path}")
 plt.show()
 

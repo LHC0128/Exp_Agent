@@ -58,6 +58,8 @@ class StaticSensitivityParams:
     hf2_demod_idx: int = field(default=0, metadata=ui("HF2 Demod", group="advanced", minimum=0))
     hf2_demod_order: int = field(default=4, metadata=ui("HF2 阶数", group="advanced", minimum=1))
     hf2_signal_range: float = field(default=2.0, metadata=ui("HF2 输入量程", "V", "advanced", minimum=0))
+    hf2_ac_coupling: bool = field(default=True, metadata=ui("HF2 输入 AC 耦合", group="advanced", description="开启为 AC 耦合，关闭为 DC 耦合。"))
+    hf2_50_ohm: bool = field(default=True, metadata=ui("HF2 输入 50 Ω", group="advanced", description="开启 50 Ω 输入终端；关闭时使用高阻输入。"))
     hf2_demod_rate: float = field(default=1000.0, metadata=ui("色散采样率", "Sa/s", "advanced", minimum=1))
     hf2_demod_tc: float = field(default=0.001, metadata=ui("色散时间常数", "s", "advanced", minimum=0))
     hf2_noise_rate: float = field(default=50000.0, metadata=ui("噪声采样率", "Sa/s", "advanced", minimum=1))

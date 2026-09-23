@@ -116,8 +116,7 @@ def _plot_response(
         y_axis,
         r_mean.T,
         shading="auto",
-        cmap="viridis",
-    )
+        cmap="viridis", rasterized=True)
     axes[0].plot(
         x_best,
         y_best,
@@ -141,8 +140,7 @@ def _plot_response(
         y_axis,
         r_std.T,
         shading="auto",
-        cmap="magma",
-    )
+        cmap="magma", rasterized=True)
     format_axis(
         axes[1],
         xlabel="X control signed amplitude (Vpp)",

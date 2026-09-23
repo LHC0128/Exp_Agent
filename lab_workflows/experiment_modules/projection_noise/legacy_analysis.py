@@ -13,6 +13,7 @@ from scipy import signal as scipy_signal
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
 
 
 def _builtin(value: Any) -> Any:
@@ -96,21 +97,22 @@ def analyze_legacy(run_dir: Path) -> dict[str, Any]:
     fmin = float(psd_params.get("integ_fmin", 0.5))
     fmax = min(float(psd_params.get("integ_fmax", frequency[-1])), frequency[-1])
     mask = (frequency >= fmin) & (frequency <= fmax)
-    fig, axes = plt.subplots(2, 1, figsize=(9, 8), sharex=True)
-    axes[0].semilogy(frequency[mask], off_x_psd[mask], label="Field-offset background")
+    set_plot_style("paper")
+    fig, axes = new_figure(nrows=2, kind="wide", height_mm=110, sharex=True)
+    axes[0].semilogy(frequency[mask], off_x_psd[mask], linestyle="--", label="Field-offset background")
     axes[0].semilogy(frequency[mask], on_x_psd[mask], label="Thermal state")
     axes[0].set_ylabel("PSD (V²/Hz)")
     axes[0].set_title("Legacy HF2 Projection-Noise PSD")
     axes[0].legend()
-    axes[0].grid(True, alpha=0.3)
+    axes[0].grid(False)
     axes[1].plot(frequency[mask], delta_x[mask])
     axes[1].axhline(0.0, color="k", lw=0.8)
     axes[1].set_xlabel("Baseband frequency (Hz)")
     axes[1].set_ylabel("PSD difference (V²/Hz)")
-    axes[1].grid(True, alpha=0.3)
-    fig.tight_layout()
+    axes[1].grid(False)
+    fig.set_layout_engine("constrained")
     figure_name = "legacy_projection_noise_psd.png"
-    fig.savefig(results_dir / figure_name, dpi=160, bbox_inches="tight")
+    save_figure(fig, results_dir / figure_name, close=False)
     plt.close(fig)
 
     payload = {

@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, plot_style_context
 import numpy as np
 import yaml
 
@@ -88,14 +89,8 @@ def compare_frequency_response_amplitude(
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / output_name
 
-    with plt.rc_context(
-        {
-            "figure.dpi": 120,
-            "font.size": 11,
-            "axes.labelsize": 12,
-        }
-    ):
-        fig, ax = plt.subplots(figsize=(11, 6.2))
+    with plot_style_context("paper"):
+        fig, ax = new_figure(kind="wide", height_mm=65)
         for series in series_list:
             ax.plot(
                 series.frequency_hz,
@@ -110,9 +105,9 @@ def compare_frequency_response_amplitude(
         ax.set_ylabel("Demod 3 response (V)")
         ax.set_title("RF Field Frequency Response Comparison - Median Amplitude")
         ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
-        fig.tight_layout()
-        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        ax.grid(False)
+        fig.set_layout_engine("constrained")
+        save_figure(fig, output_path, close=False)
 
         if show_figure:
             plt.show()

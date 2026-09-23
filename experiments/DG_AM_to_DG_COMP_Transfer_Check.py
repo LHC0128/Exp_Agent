@@ -23,6 +23,8 @@ from datetime import datetime
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 import numpy as np
 import yaml
 
@@ -216,7 +218,7 @@ def waveform_metrics(result):
 def plot_live_summary(summary, results_dir):
     """保存在线快速传递曲线图。"""
     am = summary["am_dc_values_V"]
-    fig, axes = plt.subplots(2, 1, figsize=(8.5, 7.0), sharex=True)
+    fig, axes = new_figure(nrows=2, ncols=1, kind="wide", height_mm=110, sharex=True)
 
     axes[0].plot(am, summary["ch_x_lockin_amp_V"], "o-", label=f"Scope C{SCOPE_CHANNEL_X} / X")
     axes[0].plot(am, summary["ch_y_lockin_amp_V"], "o-", label=f"Scope C{SCOPE_CHANNEL_Y} / Y")
@@ -225,8 +227,8 @@ def plot_live_summary(summary, results_dir):
     axes[0].axvline(-NOMINAL_AM_FULL_SCALE_V, color="black", ls="--", lw=0.8)
     axes[0].set_ylabel("Demodulated peak amplitude (V)")
     axes[0].set_title("dg_comp Output Amplitude vs dg_am DC")
-    axes[0].grid(True, alpha=0.3)
-    axes[0].legend(fontsize=9)
+    axes[0].grid(False)
+    axes[0].legend(fontsize=8)
 
     axes[1].plot(am, summary["ch_x_peak_amp_V"], "o-", label=f"Scope C{SCOPE_CHANNEL_X} / X peak")
     axes[1].plot(am, summary["ch_y_peak_amp_V"], "o-", label=f"Scope C{SCOPE_CHANNEL_Y} / Y peak")
@@ -234,12 +236,12 @@ def plot_live_summary(summary, results_dir):
     axes[1].axvline(-NOMINAL_AM_FULL_SCALE_V, color="black", ls="--", lw=0.8)
     axes[1].set_xlabel("dg_am DC voltage (V)")
     axes[1].set_ylabel("Half peak-to-peak amplitude (V)")
-    axes[1].grid(True, alpha=0.3)
-    axes[1].legend(fontsize=9)
+    axes[1].grid(False)
+    axes[1].legend(fontsize=8)
 
-    fig.tight_layout()
+    fig.set_layout_engine("constrained")
     path = results_dir / "transfer_curve_live.png"
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    save_figure(fig, path, close=False)
     plt.close(fig)
     print(f"快速传递曲线已保存: {path}")
     return path

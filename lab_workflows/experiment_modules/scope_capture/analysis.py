@@ -137,7 +137,7 @@ def analyze(run_dir: Path) -> dict:
         note = (f"{vertical['vertical_scale_v_div']:.4g} V/div | Offset: {vertical['vertical_offset_v']:.4g} V\n"
                 f"Range: {range_min:.4g} to {range_max:.4g} V" + (" | OVERRANGE" if vertical["overrange"] else ""))
         axes[0].text(0.99, 0.98, note, transform=axes[0].transAxes, ha="right", va="top",
-                     fontsize=9, color="red" if vertical["overrange"] else "0.35")
+                     fontsize=8, color="red" if vertical["overrange"] else "0.35")
     format_axis(axes[0], xlabel="Time (s)", ylabel="Voltage (V)")
     axes[1].plot(frequency, density, lw=0.8)
     format_axis(axes[1], xlabel="Frequency (Hz)", ylabel="PSD (V²/Hz)")

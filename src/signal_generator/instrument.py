@@ -2,6 +2,7 @@ import time
 import logging
 from typing import Optional, Literal, overload
 
+import numpy as np
 import pyvisa
 from pyvisa.resources import MessageBasedResource
 
@@ -1047,6 +1048,7 @@ class DG4000Instrument:
 
     MAX_ARB_POINTS = 16384
     MAX_ARB_POINTS_TOTAL = 512 * 1024
+    ARB_DAC_MAX = 0x3FFF
 
     def send_arbitrary_waveform(self, values, channel: Optional[int] = None):
         """发送自定义波形到易失性存储器（ASCII 格式）.
@@ -1068,14 +1070,14 @@ class DG4000Instrument:
             raise ValueError(
                 f"点数需在 2 ~ {self.MAX_ARB_POINTS} 之间，实际为 {n}")
 
-        # 裁剪到 [-1, 1] 并转为 5 位小数
+        # DG4162 的浮点 DATA 命令在长波表时容易超过通信输入缓冲区。
+        # 使用旧实机验证过的十进制 DAC 路径；仪器手册允许 0..3FFF。
         clipped = [max(-1.0, min(1.0, float(v))) for v in pts]
-        rounded = [round(v, 5) for v in clipped]
-
-        # 先设点数，再发 ASCII 数据
+        dac = np.rint((np.asarray(clipped) + 1.0) * (self.ARB_DAC_MAX / 2.0))
+        payload = ",".join(str(int(value)) for value in dac)
         self.write(f":SOURce{ch}:TRACe:DATA:POINts VOLATILE,{n}")
-        val_str = ",".join(f"{v:.5f}" for v in rounded)
-        self.write(f":SOURce{ch}:TRACe:DATA:DATA VOLATILE,{val_str}")
+        self.write(f":SOURce{ch}:TRACe:DATA:DAC VOLATILE,{payload}")
+        self.wait_for_operation_complete()
 
     def setup_arbitrary(self, y_values, freq: float = 1000.0,
                         amplitude: float = 5.0, offset: float = 0.0,
@@ -1084,14 +1086,14 @@ class DG4000Instrument:
                         output: bool = True) -> None:
         """一键配置自定义波形输出.
 
-        按照用户已验证的工作流程：
-        1. 退出 DC（切到 SINusoid）→ APPLy:USER 设置参数
+        按照 DG4000 的实际工作流程：
+        1. 若当前为 DC，应用 SINusoid 退出 DC
         2. 上传波形数据到 VOLATILE 存储区
-        3. 按需打开输出
+        3. 用 APPLy:CUSTom 选择易失性任意波并设置参数
+        4. 按需打开输出
 
-        关键：APPLy:USER 在 USER/非DC 状态下正常工作，
-        仅在 DC 状态下会被特殊处理（忽略 freq/amp/phase）。
-        因此先切到 SINusoid 退出 DC 态。
+        DG4162 从 DC 直接发送 APPLy:USER 时会保留 DC 状态；
+        CUSTom 才能可靠选择刚上传的 VOLATILE 波形。
 
         参数
         ----------
@@ -1112,16 +1114,19 @@ class DG4000Instrument:
         """
         ch = self._ch(channel)
 
-        # Step 1: 退出 DC（切到 SINusoid 确保 APPLy:USER 不被特殊处理）
+        # Step 1: 无条件先退出 DC；这是 DG4162 的实机稳定顺序。
         self.set_shape("SINusoid", channel=ch)
         time.sleep(0.05)
 
-        # Step 2: APPLy:USER 设置参数并切换到 USER 模式
-        self.write(
-            f":SOURce{ch}:APPLy:USER {freq:e},{amplitude:e},{offset:e},{phase:e}")
-
-        # Step 3: 上传波形数据到 VOLATILE
+        # Step 2: 上传波形数据到 VOLATILE
         self.send_arbitrary_waveform(y_values, channel=ch)
+
+        # DATA:DAC 已切到易失波形；最后显式选择 USER，再写播放参数。
+        self.set_shape("USER", channel=ch)
+        self.set_frequency(float(freq), channel=ch)
+        self.set_amplitude(float(amplitude), channel=ch)
+        self.set_offset(float(offset), channel=ch)
+        self.set_phase_adjust(float(phase), channel=ch)
 
         # Step 4: 按需打开输出
         if output:

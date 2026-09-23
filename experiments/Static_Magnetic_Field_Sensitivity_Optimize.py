@@ -36,6 +36,8 @@ import yaml
 import time
 from datetime import datetime
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 from scipy import signal as scipy_signal
 
 from gs200 import GS200Instrument
@@ -777,9 +779,7 @@ else:
         param_groups.setdefault(pn, []).append(r)
 
     n_params = len(param_groups)
-    fig, axes = plt.subplots(n_params, 2, figsize=(14, 3.5 * n_params))
-    if n_params == 1:
-        axes = axes.reshape(1, -1)
+    fig, axes = new_figure(nrows=2 * n_params, ncols=2, kind="wide", height_mm=110 * n_params, squeeze=False)
 
     for row, (param_name, subset) in enumerate(param_groups.items()):
         # 排序
@@ -797,48 +797,42 @@ else:
         valid_flags = [r["success"] for r in subset_sorted]
 
         # 左图: 灵敏度
-        ax = axes[row, 0]
-        colors = ["green" if v else "red" for v in valid_flags]
-        ax.scatter(vals, sens_vals, c=colors, s=40, zorder=5)
-        # 只连接有效点
+        ax = axes[2 * row, 0]
         valid_mask = np.array(valid_flags)
+        for selected, marker, color, label in (
+            (valid_mask, "o", "C0", "Valid"),
+            (~valid_mask, "x", "C1", "Rejected"),
+        ):
+            ax.scatter(np.asarray(vals)[selected], np.asarray(sens_vals)[selected],
+                       marker=marker, color=color, s=18, zorder=5, label=label)
+        # 只连接有效点
         if np.sum(valid_mask) > 1:
             vv = np.array(vals)[valid_mask]
             ss = np.array(sens_vals)[valid_mask]
             sort_idx = np.argsort(vv)
-            ax.plot(vv[sort_idx], ss[sort_idx], "g--", lw=1, alpha=0.6)
+            ax.plot(vv[sort_idx], ss[sort_idx], "--", color="C0", lw=1, alpha=0.6)
         ax.set_xlabel(param_name)
         ax.set_ylabel("Sensitivity (fT/√Hz)")
         ax.set_title(f"Sensitivity vs {param_name}")
-        ax.grid(True, alpha=0.3)
-        ax.legend(["Valid", "Rejected"], loc="upper left", fontsize=7,
-                  markerscale=0.6).set_visible(any(not v for v in valid_flags))
+        ax.grid(False)
+        ax.legend(loc="best", fontsize=7)
 
-        # 右图: 线宽 (双Y轴共享斜率)
-        ax2 = axes[row, 1]
-        ax2_r2 = ax2.twinx()
+        # 各物理量独立纵轴，避免将不同单位画在同一数值尺度上。
+        for axis, values, label, marker in (
+            (axes[2 * row, 1], gamma_vals, "HWHM (nT)", "o"),
+            (axes[2 * row + 1, 0], slope_vals, "Slope (V/fT)", "s"),
+            (axes[2 * row + 1, 1], r2_vals, "R² (dimensionless)", "^"),
+        ):
+            axis.plot(vals, values, marker=marker, color="C0", linewidth=1)
+            axis.set_xlabel(param_name)
+            axis.set_ylabel(label)
 
-        ax2.plot(vals, gamma_vals, "b-o", lw=1, markersize=5, label="HWHM (nT)")
-        ax2.plot(vals, slope_vals, "r-s", lw=1, markersize=5, label="Slope (V/fT)")
-        ax2_r2.plot(vals, r2_vals, "k^", lw=1, markersize=5, alpha=0.5,
-                    label="R²")
-
-        ax2.set_xlabel(param_name)
-        ax2.set_ylabel("HWHM (nT) / Slope (V/fT)")
-        ax2_r2.set_ylabel("R²", color="gray")
-        ax2.set_title(f"Linewidth & Slope vs {param_name}")
-        ax2.grid(True, alpha=0.3)
-
-        lines1, labels1 = ax2.get_legend_handles_labels()
-        lines2, labels2 = ax2_r2.get_legend_handles_labels()
-        ax2.legend(lines1 + lines2, labels1 + labels2, fontsize=7, loc="best")
-
-    plt.tight_layout()
+    plt.gcf().set_layout_engine("constrained")
 
     # 保存到第一个扫描维度的目录
     first_dir = all_results[0]["run_dir"]
     summary_fig_path = first_dir.parent / "optimization_summary.png"
-    fig.savefig(summary_fig_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, summary_fig_path, close=False)
     print(f"汇总图已保存: {summary_fig_path}")
 
     # %% Cell 10

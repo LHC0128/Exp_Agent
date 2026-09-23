@@ -15,12 +15,13 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 import numpy as np
 import yaml
 
-plt.rcParams.update({"figure.dpi": 120, "font.size": 11, "axes.labelsize": 12})
 print("库导入完成")
 
 # %% Cell 2
@@ -112,7 +113,7 @@ for key, value in analysis.items():
         print(f"{key}: {value}")
 
 # %% Cell 6
-fig, axes = plt.subplots(3, 1, figsize=(10, 9), sharex=False)
+fig, axes = new_figure(nrows=3, ncols=1, kind="wide", height_mm=165, sharex=False)
 ax_temp, ax_error, ax_phase = axes
 
 ax_temp.plot(time_s, temperature_C, lw=1.0, label="Temperature")
@@ -124,7 +125,7 @@ ax_temp_state.set_yticks([0, 1])
 ax_temp_state.set_yticklabels(["OFF", "ON"])
 ax_temp.set_ylabel("Temperature (C)")
 ax_temp.set_title("Temperature vs time")
-ax_temp.grid(True, alpha=0.3)
+ax_temp.grid(False)
 ax_temp.legend(loc="upper left")
 
 ax_error.plot(time_s, error_C, lw=1.0, color="tab:red", label="Error")
@@ -132,7 +133,7 @@ ax_error.axhline(0.0, color="gray", ls="--", lw=1.0)
 ax_error.set_xlabel("Time (s)")
 ax_error.set_ylabel("Error (C)")
 ax_error.set_title("Temperature error vs time")
-ax_error.grid(True, alpha=0.3)
+ax_error.grid(False)
 ax_error.legend(loc="upper left")
 
 if np.isfinite(cycle_period_s) and cycle_period_s > 0:
@@ -165,10 +166,10 @@ else:
 ax_phase.set_xlabel("Cycle phase (s)")
 ax_phase.set_ylabel("Error (C)")
 ax_phase.set_title("Cycle-averaged temperature error")
-ax_phase.grid(True, alpha=0.3)
+ax_phase.grid(False)
 ax_phase.legend(loc="best", fontsize=8)
 
-plt.tight_layout()
-fig.savefig(results_dir / "temperature_cycle_analysis.png", dpi=150, bbox_inches="tight")
+plt.gcf().set_layout_engine("constrained")
+save_figure(fig, results_dir / "temperature_cycle_analysis.png", close=False)
 plt.show()
 print(f"图表已保存: {results_dir / 'temperature_cycle_analysis.png'}")

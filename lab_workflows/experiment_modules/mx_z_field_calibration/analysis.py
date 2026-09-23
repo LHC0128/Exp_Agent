@@ -109,6 +109,11 @@ def _analyze_curve(
     run_dir: Path,
     entry: dict[str, Any],
 ) -> dict[str, Any]:
+    return analyze_curve(run_dir, entry)
+
+
+def analyze_curve(run_dir: Path, entry: dict[str, Any]) -> dict[str, Any]:
+    """共用的 Z 电压频扫拟合；不依赖实验硬件参数。"""
     path = run_dir / str(entry["summary_file"])
     if not path.exists():
         raise FileNotFoundError(f"缺少频率扫描汇总: {path}")
@@ -217,7 +222,8 @@ def _weighted_linear_fit(
 
 
 def _plot_frequency_responses(
-    results_dir: Path, curves: list[dict[str, Any]]
+    results_dir: Path, curves: list[dict[str, Any]],
+    frequency_label: str = "Y RF frequency (kHz)",
 ) -> str:
     columns = 2
     rows = int(np.ceil(len(curves) / columns))
@@ -253,7 +259,7 @@ def _plot_frequency_responses(
         )
         format_axis(
             axis,
-            xlabel="Y RF frequency (kHz)",
+            xlabel=frequency_label,
             ylabel="Demod R (V)",
         )
         style_legend(axis)
@@ -331,14 +337,24 @@ def _plot_calibration(
 
 
 def analyze(run_dir: Path) -> dict[str, Any]:
+    params, config = _load_params(Path(run_dir))
+    return analyze_calibration(run_dir, config, params.linear_r_squared_min)
+
+
+def analyze_calibration(
+    run_dir: Path, config: dict[str, Any], linear_r_squared_min: float,
+    *, frequency_label: str = "Y RF frequency (kHz)",
+) -> dict[str, Any]:
+    """Mx 与 Bell Bloom 共用的离线中心拟合、线性标定及结果导出。"""
     set_plot_style("paper")
     run_dir = Path(run_dir).resolve()
     raw_dir = run_dir / "raw"
     results_dir = run_dir / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
-    params, config = _load_params(run_dir)
     entries = _load_scan_index(raw_dir)
-    curves = [_analyze_curve(params, run_dir, entry) for entry in entries]
+    if not entries:
+        raise ValueError("没有已完成的 Z 频率扫描")
+    curves = [analyze_curve(run_dir, entry) for entry in entries]
 
     accepted = np.asarray([curve["fit"]["success"] for curve in curves], dtype=bool)
     z_values = np.asarray([curve["z_bias_v"] for curve in curves], dtype=float)
@@ -350,13 +366,13 @@ def analyze(run_dir: Path) -> dict[str, Any]:
         z_values[accepted], centers[accepted], center_uncertainties[accepted]
     )
     calibration_reasons = list(linear["rejection_reasons"])
-    if not np.isfinite(linear["r_squared"]) or linear["r_squared"] < params.linear_r_squared_min:
+    if not np.isfinite(linear["r_squared"]) or linear["r_squared"] < linear_r_squared_min:
         calibration_reasons.append(
-            f"线性 R^2={linear['r_squared']:.6g} < {params.linear_r_squared_min:.6g}"
+            f"线性 R^2={linear['r_squared']:.6g} < {linear_r_squared_min:.6g}"
         )
     calibration_success = linear["success"] and not calibration_reasons
 
-    response_plot = _plot_frequency_responses(results_dir, curves)
+    response_plot = _plot_frequency_responses(results_dir, curves, frequency_label)
     calibration_plot, residual_plot = _plot_calibration(results_dir, curves, linear)
 
     curve_payload = []
@@ -410,7 +426,7 @@ def analyze(run_dir: Path) -> dict[str, Any]:
         calibration_success=np.uint8(calibration_success),
     )
     print(
-        f"Mx Z 标定分析完成: success={calibration_success}, "
+        f"Z 标定分析完成: success={calibration_success}, "
         f"K={linear['slope_hz_per_v']:.6g} Hz/V, "
         f"f0={linear['intercept_hz']:.6g} Hz"
     )

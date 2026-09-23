@@ -49,22 +49,24 @@ def _quick_plot(results, output_dir: str) -> None:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+        set_plot_style("paper")
     except ImportError:
         logger.warning("matplotlib 未安装，跳过绘图")
         return
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = new_figure(kind="wide", height_mm=65)
     for r in results:
         ax.plot(r.time * 1e3, r.voltage, label=f"CH{r.channel}", lw=0.8)
     ax.set_xlabel("Time (ms)")
     ax.set_ylabel("Voltage (V)")
     ax.legend()
-    ax.grid(True, alpha=0.3)
+    ax.grid(False)
 
     out_dir = Path(output_dir) if Path(output_dir).is_dir() else Path(output_dir).parent
     out_dir.mkdir(parents=True, exist_ok=True)
     plot_path = out_dir / "acquisition_preview.png"
-    fig.savefig(str(plot_path), dpi=150, bbox_inches="tight")
+    save_figure(fig, str(plot_path), close=False)
     plt.close(fig)
     logger.info("预览图已保存: %s", plot_path)
 

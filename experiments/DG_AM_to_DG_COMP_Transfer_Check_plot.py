@@ -19,10 +19,11 @@ import json
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from lab_workflows.plotting import new_figure, save_figure, set_plot_style
+set_plot_style("paper")
 import numpy as np
 import yaml
 
-plt.rcParams.update({"figure.dpi": 120, "font.size": 11, "axes.labelsize": 12})
 
 # %% Cell 2
 # ========== 工具函数 ==========
@@ -198,7 +199,7 @@ print(json.dumps(analysis, ensure_ascii=False, indent=2))
 
 # %% Cell 6
 # ========== 绘图 ==========
-fig, axes = plt.subplots(3, 1, figsize=(9.0, 10.0), sharex=True)
+fig, axes = new_figure(nrows=3, ncols=1, kind="wide", height_mm=165, sharex=True)
 
 axes[0].plot(am_v, ch_x, "o-", label="X / C2 demod.")
 axes[0].plot(am_v, ch_y, "o-", label="Y / C3 demod.")
@@ -207,8 +208,8 @@ axes[0].axvline(NOMINAL_AM_FULL_SCALE_V, color="black", ls="--", lw=0.8,
 axes[0].axvline(-NOMINAL_AM_FULL_SCALE_V, color="black", ls="--", lw=0.8)
 axes[0].set_ylabel("Output peak amp. (V)")
 axes[0].set_title("dg_comp Output vs dg_am DC")
-axes[0].grid(True, alpha=0.3)
-axes[0].legend(fontsize=9)
+axes[0].grid(False)
+axes[0].legend(fontsize=8)
 
 axes[1].plot(am_v, ch_x_corr, "o-", label="X baseline-subtracted")
 axes[1].plot(am_v, ch_y_corr, "o-", label="Y baseline-subtracted")
@@ -220,8 +221,8 @@ for ana, color in [(ch_x_analysis, "C0"), (ch_y_analysis, "C1")]:
     if np.isfinite(ana["negative_boundary_95_abs_V"]):
         axes[1].axvline(-ana["negative_boundary_95_abs_V"], color=color, ls=":", lw=1.0)
 axes[1].set_ylabel("Baseline-subtracted amp. (V)")
-axes[1].grid(True, alpha=0.3)
-axes[1].legend(fontsize=9)
+axes[1].grid(False)
+axes[1].legend(fontsize=8)
 
 eps = 1e-12
 axes[2].plot(np.abs(am_v), ch_x_corr / max(np.max(ch_x_corr), eps), "o", label="X")
@@ -230,12 +231,12 @@ axes[2].axvline(NOMINAL_AM_FULL_SCALE_V, color="black", ls="--", lw=0.8)
 axes[2].set_xlabel("|dg_am DC voltage| (V)")
 axes[2].set_ylabel("Normalized amp.")
 axes[2].set_title("Amplitude Saturation vs |AM Input|")
-axes[2].grid(True, alpha=0.3)
-axes[2].legend(fontsize=9)
+axes[2].grid(False)
+axes[2].legend(fontsize=8)
 
-fig.tight_layout()
+fig.set_layout_engine("constrained")
 fig_path = results_dir / "transfer_curve_analysis.png"
-fig.savefig(fig_path, dpi=150, bbox_inches="tight")
+save_figure(fig, fig_path, close=False)
 plt.close(fig)
 print(f"传递曲线图已保存: {fig_path}")
 
