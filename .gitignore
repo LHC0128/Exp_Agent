@@ -14,9 +14,14 @@ tests/
 AGENTS.md
 CLAUDE.md
 !GUI/AGENTS.md
+.codegraph/
+.zcode/
+.codex/
+.mcp.json
 GUI/frontend/node_modules/
 GUI/frontend/dist/
 GUI/frontend/*.tsbuildinfo
+slidev/node_modules/
 
 ~/
 
