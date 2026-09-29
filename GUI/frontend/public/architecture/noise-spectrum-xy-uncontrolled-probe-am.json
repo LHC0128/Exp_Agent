@@ -1,0 +1,409 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "XY 控制已知不可控 Probe AM 噪声谱实验架构",
+    "locale": "zh-CN",
+    "output": "noise-spectrum-xy-uncontrolled-probe-am.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "injection-path",
+        "label": "注入与探测主路径",
+        "focus": [
+          "probe_src",
+          "vapor_cell",
+          "hf2",
+          "raw_data"
+        ],
+        "note": "外部 AM 周期噪声调制 Probe 光,差分采集由 HF2 记录。"
+      },
+      {
+        "id": "hardware",
+        "label": "仪器互连与同步",
+        "focus": [
+          "probe_src",
+          "xy_ctrl",
+          "z_trig",
+          "gs200",
+          "temp",
+          "pump_optics",
+          "vapor_cell"
+        ],
+        "note": "共用方波触发、10 MHz 参考时钟与温控测量窗口。"
+      },
+      {
+        "id": "data",
+        "label": "数据与分析",
+        "focus": [
+          "hf2",
+          "raw_data",
+          "analysis"
+        ],
+        "note": "两态波形落盘后离线差分,输出有符号背景与受控响应。"
+      }
+    ],
+    "repository": {
+      "url": "https://github.com/LHC0128/Exp_Agent.git",
+      "link_mode": "web",
+      "revision": "b7c863f2058d8aeb3d38512b04f9d065b67026d2"
+    }
+  },
+  "components": [
+    {
+      "id": "wf_ctrl",
+      "type": "backend",
+      "label": "参数与成对扫描采集",
+      "sublabel": "强类型参数 · AM/Z 波形生成 · 交替两态",
+      "pos": [
+        190,
+        378
+      ],
+      "size": [
+        260,
+        88
+      ],
+      "tag": "NoiseSpectrumXYProbeAMParams",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "Probe AM 分支与逐点扫描"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_probe_am/models.py",
+          "label": "强类型参数模型"
+        }
+      ]
+    },
+    {
+      "id": "probe_src",
+      "type": "external",
+      "label": "Probe AOM 信号源 DG4000",
+      "sublabel": "CH1 载波 · CH2 外部 AM",
+      "pos": [
+        24,
+        128
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "tag": "Probe_AOM_Carrier / Probe_AOM_AM",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "载波与外部 AM 配置"
+        }
+      ]
+    },
+    {
+      "id": "xy_ctrl",
+      "type": "external",
+      "label": "X/Y 控制 DG4000",
+      "sublabel": "CH1/CH2 正弦 · 外触发 Burst",
+      "pos": [
+        220,
+        14
+      ],
+      "size": [
+        190,
+        88
+      ]
+    },
+    {
+      "id": "z_trig",
+      "type": "external",
+      "label": "Z / 触发 DG4000",
+      "sublabel": "CH1 Z 线圈（可选注入）· CH2 时序方波",
+      "pos": [
+        860,
+        14
+      ],
+      "size": [
+        190,
+        88
+      ]
+    },
+    {
+      "id": "pump_optics",
+      "type": "external",
+      "label": "Pump 调制与光功率",
+      "sublabel": "RF 门控 · 光功率",
+      "pos": [
+        400,
+        258
+      ],
+      "size": [
+        140,
+        80
+      ]
+    },
+    {
+      "id": "gs200",
+      "type": "external",
+      "label": "GS200 主磁场源",
+      "sublabel": "恒流驱动 B0 · 共振中心",
+      "pos": [
+        550,
+        258
+      ],
+      "size": [
+        140,
+        80
+      ]
+    },
+    {
+      "id": "temp",
+      "type": "external",
+      "label": "TEC103 + 温控开关",
+      "sublabel": "恒温 · 测量窗口断开",
+      "pos": [
+        710,
+        258
+      ],
+      "size": [
+        120,
+        80
+      ]
+    },
+    {
+      "id": "vapor_cell",
+      "type": "external",
+      "label": "铷原子气室",
+      "sublabel": "Bell-Bloom 磁力计 · Probe AOM 幅度调制",
+      "pos": [
+        430,
+        128
+      ],
+      "size": [
+        380,
+        88
+      ]
+    },
+    {
+      "id": "hf2",
+      "type": "external",
+      "label": "HF2 锁相放大器",
+      "sublabel": "Demod0 解调 + DAQ 采集 sample.y",
+      "pos": [
+        920,
+        128
+      ],
+      "size": [
+        170,
+        88
+      ]
+    },
+    {
+      "id": "raw_data",
+      "type": "database",
+      "label": "raw/ 原始数据",
+      "sublabel": "off/on 波形 · AM/Z 波形 · 配置与 timing",
+      "pos": [
+        490,
+        378
+      ],
+      "size": [
+        220,
+        88
+      ]
+    },
+    {
+      "id": "analysis",
+      "type": "backend",
+      "label": "离线差分分析",
+      "sublabel": "两态 PSD · 全轴拟合 · 有符号差谱",
+      "pos": [
+        810,
+        378
+      ],
+      "size": [
+        220,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_probe_am/analysis.py",
+          "label": "两态谱与差分验收"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "c-wf-probe",
+      "from": "wf_ctrl",
+      "to": "probe_src",
+      "label": "上传与两态切换",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "bottom",
+      "via": [
+        [
+          149,
+          422
+        ],
+        [
+          149,
+          232
+        ]
+      ]
+    },
+    {
+      "id": "c-wf-hf2",
+      "from": "wf_ctrl",
+      "to": "hf2",
+      "label": "DAQ 逐段采集",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "via": [
+        [
+          320,
+          358
+        ],
+        [
+          1005,
+          358
+        ],
+        [
+          1005,
+          232
+        ]
+      ],
+      "labelDy": 14
+    },
+    {
+      "id": "c-wf-raw",
+      "from": "wf_ctrl",
+      "to": "raw_data",
+      "label": "逐段落盘",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight",
+      "labelAt": [
+        470,
+        492
+      ]
+    },
+    {
+      "id": "c-probe-atom",
+      "from": "probe_src",
+      "to": "vapor_cell",
+      "label": "外部 AM 调制 Probe 光",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        400,
+        230
+      ]
+    },
+    {
+      "id": "c-xy-atom",
+      "from": "xy_ctrl",
+      "to": "vapor_cell",
+      "label": "X/Y 交流控制场",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [
+        [
+          315,
+          114
+        ],
+        [
+          620,
+          114
+        ]
+      ]
+    },
+    {
+      "id": "c-gs-atom",
+      "from": "gs200",
+      "to": "vapor_cell",
+      "label": "主磁场 B0",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDx": 40,
+      "labelDy": 8
+    },
+    {
+      "id": "c-pump-atom",
+      "from": "pump_optics",
+      "to": "vapor_cell",
+      "label": "Pump 调制与功率",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": 16
+    },
+    {
+      "id": "c-temp-atom",
+      "from": "temp",
+      "to": "vapor_cell",
+      "label": "温控窗口断开",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": 24
+    },
+    {
+      "id": "c-atom-hf2",
+      "from": "vapor_cell",
+      "to": "hf2",
+      "label": "光电探测",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "c-raw-an",
+      "from": "raw_data",
+      "to": "analysis",
+      "label": "离线差分分析",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "c-z-xy",
+      "from": "z_trig",
+      "to": "xy_ctrl",
+      "label": "共用方波外触发",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Probe AM 两态配对",
+      "items": [
+        "工作流逐点反算 X/Y 包络幅度并重触发 Burst",
+        "每个控制点在同一温控窗口内采集 AM 噪声 OFF 与 ON 两态",
+        "相邻点交替先后顺序：偶数点 OFF→ON，奇数点 ON→OFF",
+        "每态等待稳定后由 HF2 DAQ 连续采集固定时长并立即落盘"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "仪器互连与同步",
+      "items": [
+        "Time_sequence_2 CH2 固定方波经三通触发 X/Y 控制 DG4000",
+        "10 MHz 参考时钟覆盖全部信号源与 HF2（含 Probe AOM 源）",
+        "预检强校验：载波与 AM 同机，Z 线圈与时序触发同机",
+        "可选：向 Z 线圈持续注入已知可控噪声，主扫描全程状态不变"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "测量口径与判据",
+      "items": [
+        "输出为 HF2 锁相测量端噪声谱，不换算为绝对 Probe 光功率",
+        "无 K_Z 真值链与色散扫描；可选 Z 注入仅作背景压力测试",
+        "背景 N_S1 与受控响应 S_beta 独立验收，差谱保留正负号"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,258 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "XY 控制已知不可控 Probe AM 噪声谱采集流程",
+    "locale": "zh-CN",
+    "output": "noise-spectrum-xy-uncontrolled-probe-am.acquisition.html",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "setup",
+      "label": "准备与校准"
+    },
+    {
+      "id": "scan",
+      "label": "主扫描"
+    },
+    {
+      "id": "data",
+      "label": "数据落盘"
+    },
+    {
+      "id": "safety",
+      "label": "收尾",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-init",
+      "label": "初始化与波形上传",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "p-calib",
+      "label": "稳定与两级校准",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-scan",
+      "label": "逐点两态差分扫描",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "mainPath": [
+    "n-init",
+    "n-wave",
+    "n-fixed",
+    "n-cal",
+    "n-zarm",
+    "n-point",
+    "n-pair",
+    "n-eta",
+    "n-safe"
+  ],
+  "semanticChecks": {
+    "allowedRoots": [
+      "n-init"
+    ],
+    "allowedTerminals": [
+      "n-safe",
+      "n-raw"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "n-init",
+      "lane": "setup",
+      "col": 0,
+      "type": "backend",
+      "label": "加载参数·连接设备",
+      "width": 120
+    },
+    {
+      "id": "n-wave",
+      "lane": "setup",
+      "col": 1,
+      "type": "backend",
+      "label": "上传AM任意波",
+      "width": 120
+    },
+    {
+      "id": "n-fixed",
+      "lane": "setup",
+      "col": 2,
+      "type": "backend",
+      "label": "直流工作点稳定",
+      "width": 120
+    },
+    {
+      "id": "n-cal",
+      "lane": "setup",
+      "col": 3,
+      "type": "backend",
+      "label": "两级相位校准",
+      "width": 120
+    },
+    {
+      "id": "n-zarm",
+      "lane": "scan",
+      "col": 3,
+      "type": "external",
+      "label": "按选项开启注入",
+      "width": 120
+    },
+    {
+      "id": "n-point",
+      "lane": "scan",
+      "col": 4,
+      "type": "backend",
+      "label": "调幅并关温控窗",
+      "width": 120
+    },
+    {
+      "id": "n-pair",
+      "lane": "data",
+      "col": 4,
+      "type": "database",
+      "label": "两态交替采集落盘",
+      "width": 120
+    },
+    {
+      "id": "n-eta",
+      "lane": "scan",
+      "col": 5,
+      "type": "backend",
+      "label": "进度与耗时上报",
+      "width": 120
+    },
+    {
+      "id": "n-raw",
+      "lane": "data",
+      "col": 5,
+      "type": "database",
+      "label": "raw/ 波形与配置",
+      "width": 145
+    },
+    {
+      "id": "n-safe",
+      "lane": "safety",
+      "col": 5,
+      "type": "backend",
+      "label": "共享安全收尾",
+      "width": 120
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-init-wave",
+      "from": "n-init",
+      "to": "n-wave",
+      "role": "main"
+    },
+    {
+      "id": "e-wave-fixed",
+      "from": "n-wave",
+      "to": "n-fixed",
+      "label": "输出待命",
+      "role": "main"
+    },
+    {
+      "id": "e-fixed-cal",
+      "from": "n-fixed",
+      "to": "n-cal",
+      "role": "main"
+    },
+    {
+      "id": "e-cal-zarm",
+      "from": "n-cal",
+      "to": "n-zarm",
+      "label": "校准完成后",
+      "role": "main"
+    },
+    {
+      "id": "e-zarm-point",
+      "from": "n-zarm",
+      "to": "n-point",
+      "label": "状态全程不变",
+      "role": "main"
+    },
+    {
+      "id": "e-point-pair",
+      "from": "n-point",
+      "to": "n-pair",
+      "label": "OFF→ON / ON→OFF",
+      "role": "main"
+    },
+    {
+      "id": "e-pair-eta",
+      "from": "n-pair",
+      "to": "n-eta",
+      "role": "main"
+    },
+    {
+      "id": "e-eta-point",
+      "from": "n-eta",
+      "to": "n-point",
+      "label": "下一控制点",
+      "role": "branch"
+    },
+    {
+      "id": "e-pair-raw",
+      "from": "n-pair",
+      "to": "n-raw",
+      "label": "波形 + timing 逐段落盘",
+      "role": "branch"
+    },
+    {
+      "id": "e-point-safe",
+      "from": "n-point",
+      "to": "n-safe",
+      "label": "取消或异常",
+      "role": "error"
+    },
+    {
+      "id": "e-eta-safe",
+      "from": "n-eta",
+      "to": "n-safe",
+      "label": "扫描完成",
+      "role": "main"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "两态配对细节",
+      "items": [
+        "相邻点交替先后：偶数点 OFF→ON，奇数点 ON→OFF",
+        "每态切换后等待稳定再采集，段结束立即写 raw/",
+        "第二段失败时保留第一段；无效波形离线剔除该数据对"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "同步与测量窗口",
+      "items": [
+        "Time_sequence_2 CH2 固定方波经三通触发 X/Y Burst",
+        "每个控制点在温控关闭窗口内完成两态，结束后恢复温控",
+        "DAQ 使用更短时间常数与更高采样率的采集解调参数"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "可选 Z 可控噪声",
+      "items": [
+        "启用时额外上传 Z 任意波并在校相后开启",
+        "主扫描全程不切换 Z 状态，仅两态配对切换 Probe AM",
+        "收尾强制关闭 Z 通道并纳入安全限值校验",
+        "收尾关闭 AM、载波与 Z 通道并恢复温控"
+      ]
+    }
+  ]
+}

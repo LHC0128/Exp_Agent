@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "XY 控制已知不可控 Probe AM 噪声谱 · 离线分析数据流",
+    "locale": "zh-CN",
+    "output": "noise-spectrum-xy-uncontrolled-probe-am.dataflow.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1150,
+      520
+    ]
+  },
+  "stages": [
+    {
+      "label": "raw/ 采集产物"
+    },
+    {
+      "label": "谱估计"
+    },
+    {
+      "label": "拟合与差分"
+    },
+    {
+      "label": "验收与产物"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "raw-wf",
+      "type": "database",
+      "label": "AM 任意波 npy",
+      "stage": 0,
+      "row": 0,
+      "width": 110
+    },
+    {
+      "id": "raw-pair",
+      "type": "database",
+      "label": "off/on 波形对",
+      "stage": 0,
+      "row": 1,
+      "width": 110
+    },
+    {
+      "id": "raw-cfg",
+      "type": "database",
+      "label": "运行配置与轴",
+      "stage": 0,
+      "row": 2,
+      "width": 110
+    },
+    {
+      "id": "welch",
+      "type": "backend",
+      "label": "Welch 两态 PSD",
+      "stage": 1,
+      "row": 1,
+      "width": 110
+    },
+    {
+      "id": "ridge",
+      "type": "backend",
+      "label": "脊线与控制轴",
+      "stage": 2,
+      "row": 0,
+      "width": 110
+    },
+    {
+      "id": "fit",
+      "type": "backend",
+      "label": "全轴拟合与验收",
+      "stage": 2,
+      "row": 1,
+      "width": 110
+    },
+    {
+      "id": "out-fig",
+      "type": "database",
+      "label": "图 · CSV · 摘要",
+      "stage": 3,
+      "row": 0,
+      "width": 110
+    },
+    {
+      "id": "out-ns1",
+      "type": "database",
+      "label": "背景 N_S1 差谱",
+      "stage": 3,
+      "row": 1,
+      "width": 110
+    },
+    {
+      "id": "out-sb",
+      "type": "database",
+      "label": "受控响应差谱",
+      "stage": 3,
+      "row": 2,
+      "width": 110
+    }
+  ],
+  "flows": [
+    {
+      "id": "f-pair-welch",
+      "from": "raw-pair",
+      "to": "welch",
+      "label": "off/on 波形",
+      "route": "straight"
+    },
+    {
+      "id": "f-cfg-welch",
+      "from": "raw-cfg",
+      "to": "welch",
+      "label": "采样率与参数"
+    },
+    {
+      "id": "f-welch-ridge",
+      "from": "welch",
+      "to": "ridge",
+      "label": "OFF 谱带内峰"
+    },
+    {
+      "id": "f-welch-fit",
+      "from": "welch",
+      "to": "fit",
+      "label": "两态带内谱",
+      "route": "straight",
+      "labelAt": [
+        465,
+        230
+      ]
+    },
+    {
+      "id": "f-ridge-fit",
+      "from": "ridge",
+      "to": "fit",
+      "label": "控制轴 ω_ctrl",
+      "labelDy": 24
+    },
+    {
+      "id": "f-wf-fig",
+      "from": "raw-wf",
+      "to": "out-fig",
+      "label": "实际任意波 PSD",
+      "route": "top-channel"
+    },
+    {
+      "id": "f-fit-fig",
+      "from": "fit",
+      "to": "out-fig",
+      "label": "脊线·线形·差谱图"
+    },
+    {
+      "id": "f-fit-ns1",
+      "from": "fit",
+      "to": "out-ns1",
+      "label": "ΔN_S1 保留符号",
+      "labelAt": [
+        723,
+        316
+      ]
+    },
+    {
+      "id": "f-fit-sb",
+      "from": "fit",
+      "to": "out-sb",
+      "label": "ΔS_beta 受控响应",
+      "labelAt": [
+        585,
+        335
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "质量判据",
+      "items": [
+        "ON/OFF 成对有效控制点不足 20 个时拒绝分析",
+        "移动峰不可辨识时按运行参数 K/B 推算并标记质量未通过",
+        "峰拟合未通过时仍可由两侧稳定远端平台独立提取背景"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "差分口径",
+      "items": [
+        "ΔN_S1 = ON − OFF，差谱保留正负号不裁零",
+        "背景有效掩码取两态背景掩码的交集",
+        "拟合拒绝点保留 NaN 并记录原因，不做插值"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "单位口径",
+      "items": [
+        "输出为 HF2 锁相测量端噪声谱 PSD",
+        "不换算为绝对 Probe 光功率谱",
+        "Probe AM 无独立幅度标定，不生成真值链比较"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "XY 控制已知不可控 Probe AM 噪声谱 · 单控制点时序",
+    "locale": "zh-CN",
+    "output": "noise-spectrum-xy-uncontrolled-probe-am.timing.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1400,
+      640
+    ],
+    "column_fit": "spread"
+  },
+  "participants": [
+    {
+      "id": "wf",
+      "type": "backend",
+      "label": "采集工作流"
+    },
+    {
+      "id": "xy",
+      "type": "external",
+      "label": "X/Y 控制"
+    },
+    {
+      "id": "am",
+      "type": "external",
+      "label": "Probe AM 通道"
+    },
+    {
+      "id": "temp",
+      "type": "external",
+      "label": "温控开关"
+    },
+    {
+      "id": "hf2",
+      "type": "external",
+      "label": "HF2 · DAQ"
+    },
+    {
+      "id": "raw",
+      "type": "database",
+      "label": "raw/ 目录"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 240,
+      "label": "重触发与准备"
+    },
+    {
+      "from": 248,
+      "to": 344,
+      "label": "AM OFF 段"
+    },
+    {
+      "from": 352,
+      "to": 448,
+      "label": "AM ON 段"
+    },
+    {
+      "from": 456,
+      "to": 560,
+      "label": "恢复与循环"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m-amp",
+      "from": "wf",
+      "to": "xy",
+      "y": 170,
+      "label": "设置本点包络幅度 · 重新等触发"
+    },
+    {
+      "id": "m-tempoff",
+      "from": "wf",
+      "to": "temp",
+      "y": 205,
+      "label": "关闭温控开关 · 等待稳定"
+    },
+    {
+      "id": "m-amoff",
+      "from": "wf",
+      "to": "am",
+      "y": 268,
+      "label": "AM 噪声输出 OFF"
+    },
+    {
+      "id": "m-daq1",
+      "from": "wf",
+      "to": "hf2",
+      "y": 300,
+      "label": "DAQ 连续采集固定时长",
+      "note": "切换后先等待稳定",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-save1",
+      "from": "wf",
+      "to": "raw",
+      "y": 330,
+      "label": "保存 off 波形 + timing",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-amon",
+      "from": "wf",
+      "to": "am",
+      "y": 372,
+      "label": "AM 噪声输出 ON"
+    },
+    {
+      "id": "m-daq2",
+      "from": "wf",
+      "to": "hf2",
+      "y": 404,
+      "label": "DAQ 连续采集固定时长",
+      "note": "切换后先等待稳定",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-save2",
+      "from": "wf",
+      "to": "raw",
+      "y": 434,
+      "label": "保存 on 波形 + timing",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-tempon",
+      "from": "wf",
+      "to": "temp",
+      "y": 472,
+      "label": "恢复温控开关并等待"
+    },
+    {
+      "id": "m-eta",
+      "from": "wf",
+      "to": "xy",
+      "y": 512,
+      "label": "下一控制点包络幅度",
+      "variant": "dashed"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "wf",
+      "from": 165,
+      "to": 520
+    },
+    {
+      "participant": "xy",
+      "from": 165,
+      "to": 182
+    },
+    {
+      "participant": "temp",
+      "from": 200,
+      "to": 216
+    },
+    {
+      "participant": "am",
+      "from": 262,
+      "to": 338
+    },
+    {
+      "participant": "hf2",
+      "from": 294,
+      "to": 312
+    },
+    {
+      "participant": "raw",
+      "from": 324,
+      "to": 340
+    },
+    {
+      "participant": "am",
+      "from": 366,
+      "to": 442
+    },
+    {
+      "participant": "hf2",
+      "from": 398,
+      "to": 416
+    },
+    {
+      "participant": "raw",
+      "from": 428,
+      "to": 444
+    },
+    {
+      "participant": "temp",
+      "from": 466,
+      "to": 482
+    },
+    {
+      "participant": "xy",
+      "from": 506,
+      "to": 522
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "两态交替顺序",
+      "items": [
+        "偶数控制点 OFF→ON，奇数控制点 ON→OFF",
+        "每态切换后等待稳定再开始 DAQ 采集",
+        "同一温控关闭窗口内完成两态，窗口结束后恢复温控"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "落盘约定",
+      "items": [
+        "每段采集结束立即写 raw/，不缓存到扫描末尾",
+        "timing 按主机时间记录每段边界、样本数与有效性",
+        "无效波形保留原文件，由离线分析剔除该数据对"
+      ]
+    }
+  ]
+}
