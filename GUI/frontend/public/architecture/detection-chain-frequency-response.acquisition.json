@@ -1,0 +1,232 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "探测链路频率响应标定 · 采集执行流程",
+    "locale": "zh-CN",
+    "output": "detection-chain-frequency-response.acquisition.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "setup",
+        "label": "校验连接与固定工作点",
+        "focus": [
+          "connect",
+          "fixed",
+          "chain"
+        ],
+        "note": "安全限值校验、仪器连接、时钟同步与 HF2/AOM 配置。"
+      },
+      {
+        "id": "gated-sweep",
+        "label": "温控门控逐频采集",
+        "focus": [
+          "freq",
+          "tempdaq",
+          "savewelch"
+        ],
+        "note": "每个频率点在温控断开窗口内完成采集、落盘与谱峰提取。"
+      },
+      {
+        "id": "finish",
+        "label": "汇总与安全恢复",
+        "focus": [
+          "summary",
+          "shutdown"
+        ],
+        "note": "响应数组与摘要落盘;正常与异常路径都执行安全关闭。"
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "prep",
+      "label": "准备"
+    },
+    {
+      "id": "gated",
+      "label": "频率扫描与温控门控"
+    },
+    {
+      "id": "process",
+      "label": "逐点处理与汇总"
+    },
+    {
+      "id": "recovery",
+      "label": "安全恢复"
+    }
+  ],
+  "phases": [
+    {
+      "id": "init",
+      "label": "初始化",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "sweep",
+      "label": "逐频点门控采集",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "finish",
+      "label": "完成与恢复",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "connect",
+    "fixed",
+    "chain",
+    "freq",
+    "tempdaq",
+    "savewelch",
+    "summary",
+    "shutdown"
+  ],
+  "nodes": [
+    {
+      "id": "connect",
+      "lane": "prep",
+      "col": 0,
+      "type": "backend",
+      "label": "校验并连接仪器",
+      "sublabel": "安全限值 · EXT 时钟",
+      "width": 132
+    },
+    {
+      "id": "fixed",
+      "lane": "prep",
+      "col": 1,
+      "type": "backend",
+      "label": "设置固定工作点",
+      "sublabel": "光功率 · 温控 ON · 设温",
+      "width": 132
+    },
+    {
+      "id": "chain",
+      "lane": "prep",
+      "col": 2,
+      "type": "backend",
+      "label": "配置 HF2 与 AOM",
+      "sublabel": "DC 耦合 · 采样率预检",
+      "width": 132
+    },
+    {
+      "id": "freq",
+      "lane": "gated",
+      "col": 3,
+      "type": "backend",
+      "label": "设置当前 AM 频率",
+      "sublabel": "首点配置 · 后续只改频率",
+      "width": 132
+    },
+    {
+      "id": "tempdaq",
+      "lane": "gated",
+      "col": 4,
+      "type": "external",
+      "label": "温控断开窗口内采集",
+      "sublabel": "0 V → DAQ 采 Y → 5 V 恢复",
+      "width": 132
+    },
+    {
+      "id": "savewelch",
+      "lane": "process",
+      "col": 4,
+      "type": "database",
+      "label": "落盘并提取谱峰",
+      "sublabel": "波形 npy · Welch 峰值",
+      "width": 132
+    },
+    {
+      "id": "summary",
+      "lane": "process",
+      "col": 5,
+      "type": "database",
+      "label": "汇总频率响应",
+      "sublabel": "frequency_response.npz",
+      "width": 132
+    },
+    {
+      "id": "shutdown",
+      "lane": "recovery",
+      "col": 5,
+      "type": "external",
+      "label": "安全关闭",
+      "sublabel": "AOM 归零 · 温控恢复",
+      "width": 132
+    }
+  ],
+  "edges": [
+    {
+      "from": "connect",
+      "to": "fixed",
+      "label": "连接成功"
+    },
+    {
+      "from": "fixed",
+      "to": "chain"
+    },
+    {
+      "from": "chain",
+      "to": "freq",
+      "label": "进入扫描循环"
+    },
+    {
+      "from": "freq",
+      "to": "tempdaq"
+    },
+    {
+      "from": "tempdaq",
+      "to": "savewelch",
+      "label": "立即落盘"
+    },
+    {
+      "from": "savewelch",
+      "to": "freq",
+      "label": "下一频率点",
+      "role": "return"
+    },
+    {
+      "from": "savewelch",
+      "to": "summary",
+      "label": "全部点完成"
+    },
+    {
+      "from": "summary",
+      "to": "shutdown",
+      "label": "完成后关闭"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "温控门控窗口",
+      "items": [
+        "0 V 断温控采集，finally 恢复 5 V",
+        "恢复不可被取消信号中断"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "谱峰与零基带",
+      "items": [
+        "基带 ±2 kHz 谱峰；零基带记 NaN",
+        "汇总 frequency_response.npz"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "失败即终止",
+      "items": [
+        "波形不足或预检失败即终止",
+        "取消/异常同样执行安全关闭"
+      ]
+    }
+  ]
+}

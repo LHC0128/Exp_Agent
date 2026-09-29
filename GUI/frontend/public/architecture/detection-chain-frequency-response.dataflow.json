@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "探测链路频率响应标定 · 数据与分析",
+    "locale": "zh-CN",
+    "output": "detection-chain-frequency-response.dataflow.html",
+    "viewBox": [
+      1000,
+      520
+    ],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "raw-path",
+        "label": "采集与落盘",
+        "focus": [
+          "hf2_y",
+          "welch",
+          "waveform_npy",
+          "freq_resp_npz"
+        ],
+        "note": "逐点波形与谱峰数组在采集阶段写定。"
+      },
+      {
+        "id": "analysis",
+        "label": "归一化与产物",
+        "focus": [
+          "freq_resp_npz",
+          "config_yaml",
+          "analysis",
+          "png",
+          "analysis_npz"
+        ],
+        "note": "排除零基带点后以两侧最近有效点归一化。"
+      }
+    ]
+  },
+  "stages": [
+    {
+      "label": "采集与谱峰提取"
+    },
+    {
+      "label": "raw/ 落盘"
+    },
+    {
+      "label": "离线分析"
+    },
+    {
+      "label": "results/ 产物"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "hf2_y",
+      "type": "backend",
+      "label": "HF2 DAQ 采集",
+      "sublabel": "sample.y 波形",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "welch",
+      "type": "backend",
+      "label": "Welch PSD 谱峰",
+      "sublabel": "基带 ±2 kHz 窗口",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "waveform_npy",
+      "type": "database",
+      "label": "waveform_XXXX.npy",
+      "sublabel": "逐点 Y 波形",
+      "stage": 1,
+      "row": 0,
+      "width": 150
+    },
+    {
+      "id": "freq_resp_npz",
+      "type": "database",
+      "label": "frequency_response.npz",
+      "sublabel": "频率 · 峰值 · 峰频 · 采样率",
+      "stage": 1,
+      "row": 2,
+      "width": 150
+    },
+    {
+      "id": "config_yaml",
+      "type": "database",
+      "label": "experiment_config.yaml",
+      "sublabel": "参数快照 · HF2 设置",
+      "stage": 1,
+      "row": 1,
+      "width": 150
+    },
+    {
+      "id": "analysis",
+      "type": "backend",
+      "label": "离线分析",
+      "sublabel": "零基带排除 · 两侧最近点归一化",
+      "tag": "analyze",
+      "stage": 2,
+      "row": 2,
+      "width": 150
+    },
+    {
+      "id": "png",
+      "type": "database",
+      "label": "frequency_response.png",
+      "sublabel": "归一化响应四子图",
+      "stage": 3,
+      "row": 1,
+      "width": 150
+    },
+    {
+      "id": "analysis_npz",
+      "type": "database",
+      "label": "analysis_results.npz",
+      "sublabel": "归一化幅值 · 排除标记",
+      "stage": 3,
+      "row": 2,
+      "width": 150
+    }
+  ],
+  "flows": [
+    {
+      "id": "y-wave",
+      "from": "hf2_y",
+      "to": "waveform_npy",
+      "label": "逐点保存",
+      "variant": "emphasis"
+    },
+    {
+      "id": "y-welch",
+      "from": "hf2_y",
+      "to": "welch",
+      "label": "fs = HF2 实际采样率",
+      "route": "straight",
+      "labelAt": [
+        100,
+        200
+      ]
+    },
+    {
+      "id": "welch-npz",
+      "from": "welch",
+      "to": "freq_resp_npz",
+      "label": "峰值 ASD · 零基带 NaN",
+      "variant": "emphasis"
+    },
+    {
+      "id": "npz-analysis",
+      "from": "freq_resp_npz",
+      "to": "analysis",
+      "label": "载入数据",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelAt": [
+        422,
+        428
+      ]
+    },
+    {
+      "id": "config-analysis",
+      "from": "config_yaml",
+      "to": "analysis",
+      "label": "HF2 参考频率 → 零基带判据",
+      "variant": "dashed",
+      "labelAt": [
+        423,
+        314
+      ]
+    },
+    {
+      "id": "analysis-png",
+      "from": "analysis",
+      "to": "png",
+      "label": "四子图曲线",
+      "variant": "emphasis",
+      "labelAt": [
+        645,
+        320
+      ]
+    },
+    {
+      "id": "analysis-npz",
+      "from": "analysis",
+      "to": "analysis_npz",
+      "label": "数值结果",
+      "route": "straight",
+      "labelAt": [
+        645,
+        430
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "零基带排除",
+      "items": [
+        "AM 频率等于 HF2 参考频率的点为直流，谱峰记 NaN",
+        "分析时同样排除，并以参考频率两侧最近有效点的平均作归一化基准",
+        "历史运行按同一规则重新分析，raw/ 原始数据不改写"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "分析产物",
+      "items": [
+        "四子图：AM 频率响应 · 绝对 ASD · 基带表示 · 相对变化",
+        "npz 保存归一化幅值、零基带排除标记与归一化参考频率",
+        "边带下降指标（±15 / ±25 kHz 基带）在控制台输出用于对照噪声谱"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "运行记录",
+      "items": [
+        "results_summary.yaml 与 experiment_config.yaml 在采集阶段写定",
+        "重新分析只读 raw/ 数据并重写 results/，不依赖仪器连接",
+        "TEC103 连接状态与温控来源保存在单次运行配置中"
+      ]
+    }
+  ]
+}

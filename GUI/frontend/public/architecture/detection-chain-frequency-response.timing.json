@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "探测链路频率响应标定 · 单频点采集时序",
+    "locale": "zh-CN",
+    "output": "detection-chain-frequency-response.timing.html",
+    "viewBox": [
+      1080,
+      500
+    ],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "gated-window",
+        "label": "温控门控窗口",
+        "focus": [
+          "ctrl",
+          "dg_temp",
+          "hf2"
+        ],
+        "note": "温控断开 → DAQ 采集 → 恢复温控的每点硬时序。"
+      },
+      {
+        "id": "loop",
+        "label": "频率点循环",
+        "focus": [
+          "ctrl",
+          "dg_am"
+        ],
+        "note": "首点完整配置,后续点只改频率后重复同一窗口。"
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "ctrl",
+      "type": "backend",
+      "label": "采集工作流",
+      "sublabel": "逐频点循环"
+    },
+    {
+      "id": "dg_am",
+      "type": "external",
+      "label": "DG4000 CH2",
+      "sublabel": "AM 调制源"
+    },
+    {
+      "id": "dg_temp",
+      "type": "external",
+      "label": "DG900 CH2",
+      "sublabel": "温控开关"
+    },
+    {
+      "id": "hf2",
+      "type": "external",
+      "label": "HF2",
+      "sublabel": "Demod0 · DAQ"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 182,
+      "label": "频率设置"
+    },
+    {
+      "from": 188,
+      "to": 312,
+      "label": "温控门控窗口"
+    },
+    {
+      "from": 318,
+      "to": 344,
+      "label": "谱峰提取与逐点落盘"
+    },
+    {
+      "from": 348,
+      "to": 362,
+      "label": "循环下一频率"
+    }
+  ],
+  "messages": [
+    {
+      "id": "set-freq",
+      "from": "ctrl",
+      "to": "dg_am",
+      "y": 160,
+      "label": "设置当前 AM 频率",
+      "note": "首点 setup_sine 完整配置，后续点仅改频率"
+    },
+    {
+      "id": "temp-off",
+      "from": "ctrl",
+      "to": "dg_temp",
+      "y": 196,
+      "label": "温控开关 0 V DC",
+      "note": "物理输出保持 ON · 随后等待温控关闭 + AM 稳定"
+    },
+    {
+      "id": "daq-acquire",
+      "from": "ctrl",
+      "to": "hf2",
+      "y": 232,
+      "label": "DAQ 采集 sample.y",
+      "variant": "emphasis",
+      "note": "时长 hf2_daq_duration_s · 超时保护 max(5, 时长+3) s"
+    },
+    {
+      "id": "daq-return",
+      "from": "hf2",
+      "to": "ctrl",
+      "y": 264,
+      "label": "返回 Y 波形",
+      "variant": "return"
+    },
+    {
+      "id": "temp-on",
+      "from": "ctrl",
+      "to": "dg_temp",
+      "y": 300,
+      "label": "恢复温控 5 V DC",
+      "variant": "emphasis",
+      "note": "finally 中执行，不可被取消信号中断"
+    },
+    {
+      "id": "next-freq",
+      "from": "ctrl",
+      "to": "dg_am",
+      "y": 352,
+      "label": "下一频率点 · 循环",
+      "variant": "dashed"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "ctrl",
+      "from": 156,
+      "to": 360,
+      "type": "backend"
+    },
+    {
+      "participant": "dg_am",
+      "from": 158,
+      "to": 174,
+      "type": "external"
+    },
+    {
+      "participant": "dg_temp",
+      "from": 192,
+      "to": 308,
+      "type": "external"
+    },
+    {
+      "participant": "hf2",
+      "from": 228,
+      "to": 270,
+      "type": "external"
+    },
+    {
+      "participant": "dg_am",
+      "from": 348,
+      "to": 360,
+      "type": "external"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "门控硬约束",
+      "items": [
+        "无论 Pump 光功率取值，每个频率点都在温控断开窗口内采集",
+        "0 V → 采集 → 5 V 的顺序每点重复，恢复动作不可被取消中断",
+        "关闭后等待 = 温控关闭引导时间 + AM 频率稳定时间"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "首点与后续点",
+      "items": [
+        "首个频率点用完整正弦配置设定频率与幅度",
+        "后续点只更新频率，不重绘波形配置",
+        "数据不足或采集超时直接终止实验，无自动重试"
+      ]
+    }
+  ]
+}

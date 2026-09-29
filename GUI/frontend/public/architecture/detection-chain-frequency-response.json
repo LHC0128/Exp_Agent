@@ -1,0 +1,533 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "探测链路频率响应标定总架构",
+    "locale": "zh-CN",
+    "output": "detection-chain-frequency-response.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/LHC0128/Exp_Agent.git",
+      "link_mode": "web",
+      "revision": "5bfbeb0b5c3bdb8b8b2a90b449dc00a5032f8575"
+    },
+    "views": [
+      {
+        "id": "drive-path",
+        "label": "驱动与探测主路径",
+        "focus": [
+          "dg_aom",
+          "aom",
+          "cell",
+          "bpd",
+          "hf2"
+        ],
+        "note": "Probe AOM 幅度调制扫频,透射光经 BPD 差分进入 HF2 解调。"
+      },
+      {
+        "id": "control",
+        "label": "软件控制与温控门控",
+        "focus": [
+          "wfc",
+          "dg_aom",
+          "dg_laser",
+          "dg_temp",
+          "tec"
+        ],
+        "note": "强类型工作流统一控制仪器,每点采集期间断开温控。"
+      },
+      {
+        "id": "data",
+        "label": "数据与分析",
+        "focus": [
+          "wfc",
+          "raw",
+          "analysis",
+          "results"
+        ],
+        "note": "逐点波形与谱峰落盘,离线归一化输出响应曲线。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "wfc",
+      "type": "backend",
+      "label": "采集工作流",
+      "sublabel": "强类型参数 · 逐频扫描 · 温控门控",
+      "tag": "typed_workflow",
+      "pos": [
+        560,
+        24
+      ],
+      "size": [
+        280,
+        92
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/detection_chain_frequency_response/workflow.py",
+          "label": "run 主流程"
+        }
+      ]
+    },
+    {
+      "id": "dg_aom",
+      "type": "external",
+      "label": "DG4000 信号发生器",
+      "sublabel": "CH1 100 MHz 载波 · CH2 AM 调制",
+      "tag": "Probe_AOM_Carrier",
+      "pos": [
+        130,
+        192
+      ],
+      "size": [
+        220,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/detection_chain_frequency_response/workflow.py",
+          "label": "probe_aom 通道连接与配置"
+        },
+        {
+          "path": "params/mapping.yaml",
+          "label": "Probe_AOM_Carrier / Probe_AOM_AM"
+        }
+      ]
+    },
+    {
+      "id": "dg_laser",
+      "type": "external",
+      "label": "DG900 光功率",
+      "sublabel": "CH1 Pump · CH2 Probe",
+      "tag": "Pump_laser_power",
+      "pos": [
+        400,
+        192
+      ],
+      "size": [
+        170,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/detection_chain_frequency_response/workflow.py",
+          "label": "laser 通道连接与直流设置"
+        },
+        {
+          "path": "params/mapping.yaml",
+          "label": "Pump_laser_power / Probe_laser_power"
+        }
+      ]
+    },
+    {
+      "id": "dg_temp",
+      "type": "external",
+      "label": "DG900 温控开关",
+      "sublabel": "CH2 直流 0/5 V · 输出常 ON",
+      "tag": "Temp_Switch",
+      "pos": [
+        620,
+        192
+      ],
+      "size": [
+        170,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/steps/temperature.py",
+          "label": "set_temperature_switch"
+        }
+      ]
+    },
+    {
+      "id": "tec",
+      "type": "external",
+      "label": "TEC103 温控器",
+      "sublabel": "可选连接 · 设温等稳定",
+      "tag": "temperature",
+      "pos": [
+        840,
+        192
+      ],
+      "size": [
+        140,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/detection_chain_frequency_response/workflow.py",
+          "label": "connect_optional TEC103"
+        },
+        {
+          "path": "lab_workflows/steps/temperature.py",
+          "label": "configure_temperature_control"
+        }
+      ]
+    },
+    {
+      "id": "hf2",
+      "type": "external",
+      "label": "HF2 锁相放大器",
+      "sublabel": "Demod0 解调 · DAQ 采集 sample.y",
+      "tag": "lockin_r",
+      "pos": [
+        1060,
+        192
+      ],
+      "size": [
+        230,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/detection_chain_frequency_response/workflow.py",
+          "label": "HF2 连接 · 输入与解调配置"
+        },
+        {
+          "path": "params/mapping.yaml",
+          "label": "lockin_r → hf2_dev18246"
+        }
+      ]
+    },
+    {
+      "id": "aom",
+      "type": "external",
+      "label": "Probe 光 AOM",
+      "sublabel": "射频载波 + 外部 AM",
+      "pos": [
+        130,
+        396
+      ],
+      "size": [
+        180,
+        88
+      ],
+      "sources": [
+        {
+          "path": "docs/detection_chain_frequency_response.md",
+          "label": "接线与准备"
+        }
+      ]
+    },
+    {
+      "id": "cell",
+      "type": "external",
+      "label": "铷原子气室",
+      "sublabel": "Bell-Bloom 磁力计 · Pump/Probe 光",
+      "pos": [
+        430,
+        396
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "sources": [
+        {
+          "path": "params/mapping.yaml",
+          "label": "物理量映射"
+        }
+      ]
+    },
+    {
+      "id": "bpd",
+      "type": "external",
+      "label": "平衡探测器 BPD",
+      "sublabel": "透射光差分探测",
+      "pos": [
+        830,
+        396
+      ],
+      "size": [
+        170,
+        88
+      ],
+      "sources": [
+        {
+          "path": "docs/detection_chain_frequency_response.md",
+          "label": "BPD + HF2 联合响应"
+        }
+      ]
+    },
+    {
+      "id": "raw",
+      "type": "database",
+      "label": "raw/ 原始数据",
+      "sublabel": "逐点波形 npy · frequency_response.npz",
+      "pos": [
+        130,
+        620
+      ],
+      "size": [
+        230,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/detection_chain_frequency_response/workflow.py",
+          "label": "np.save / np.savez"
+        }
+      ]
+    },
+    {
+      "id": "analysis",
+      "type": "backend",
+      "label": "离线分析",
+      "sublabel": "零基带排除 · 归一化 · 响应指标",
+      "pos": [
+        450,
+        620
+      ],
+      "size": [
+        230,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/detection_chain_frequency_response/analysis.py",
+          "label": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "results",
+      "type": "database",
+      "label": "results/ 结果",
+      "sublabel": "响应曲线图 · 分析 npz",
+      "pos": [
+        760,
+        620
+      ],
+      "size": [
+        230,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/detection_chain_frequency_response/analysis.py",
+          "label": "save_figure / np.savez"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "wfc-dg-aom",
+      "from": "wfc",
+      "to": "dg_aom",
+      "label": "配置载波与 AM 扫频",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        300,
+        158
+      ]
+    },
+    {
+      "id": "wfc-dg-laser",
+      "from": "wfc",
+      "to": "dg_laser",
+      "label": "设置 Pump/Probe 光功率",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        485,
+        168
+      ]
+    },
+    {
+      "id": "wfc-dg-temp",
+      "from": "wfc",
+      "to": "dg_temp",
+      "label": "每点开关温控",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        760,
+        178
+      ]
+    },
+    {
+      "id": "wfc-tec",
+      "from": "wfc",
+      "to": "tec",
+      "label": "设温并等待（可选）",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        880,
+        170
+      ]
+    },
+    {
+      "id": "wfc-hf2",
+      "from": "wfc",
+      "to": "hf2",
+      "label": "配置解调 · DAQ 采集",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1130,
+        150
+      ]
+    },
+    {
+      "id": "wfc-raw",
+      "from": "wfc",
+      "to": "raw",
+      "label": "逐点波形与响应落盘",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          64,
+          70
+        ],
+        [
+          64,
+          664
+        ]
+      ]
+    },
+    {
+      "id": "dg-aom-aom",
+      "from": "dg_aom",
+      "to": "aom",
+      "label": "100 MHz 载波 + 外部 AM",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        260,
+        338
+      ]
+    },
+    {
+      "id": "dg-laser-cell",
+      "from": "dg_laser",
+      "to": "cell",
+      "label": "Pump/Probe 光功率",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "dg-temp-cell",
+      "from": "dg_temp",
+      "to": "cell",
+      "label": "测量窗口断开温控",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "tec-cell",
+      "from": "tec",
+      "to": "cell",
+      "label": "恒温（可选）",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        780,
+        336
+      ]
+    },
+    {
+      "id": "aom-cell",
+      "from": "aom",
+      "to": "cell",
+      "label": "Probe AM 扫频",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "cell-bpd",
+      "from": "cell",
+      "to": "bpd",
+      "label": "透射 Probe 光",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "bpd-hf2",
+      "from": "bpd",
+      "to": "hf2",
+      "label": "差分信号 → 输入 0",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "via": [
+        [
+          915,
+          326
+        ],
+        [
+          1175,
+          326
+        ]
+      ]
+    },
+    {
+      "id": "raw-analysis",
+      "from": "raw",
+      "to": "analysis",
+      "label": "frequency_response.npz",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        405,
+        726
+      ]
+    },
+    {
+      "id": "analysis-results",
+      "from": "analysis",
+      "to": "results",
+      "label": "响应曲线 · 分析结果",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        720,
+        726
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "扫描与解调",
+      "items": [
+        "AM 频率逐点扫描（默认 50–130 kHz · 41 点），固定调制幅度；谱峰落在基带 |f_AM − f_ref|",
+        "HF2 输入 0 关闭 AC 耦合、单端 50 Ω，解调与采样设置对照 XY 正弦控制噪声谱"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "温控门控",
+      "items": [
+        "每点采集期间温控开关输出 0 V，采集后在 finally 中恢复 5 V，不可被取消中断",
+        "TEC103 可连接时设温并等待稳定；串口被外部软件占用时由外部软件维持温度"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "安全与恢复",
+      "items": [
+        "输出前校验 safety_limits.yaml；已连接设备参考时钟统一外部参考，严格模式不一致即终止",
+        "结束或取消后 AOM 两通道归零关输出、温控恢复 5 V ON、断开 TEC"
+      ]
+    }
+  ]
+}
