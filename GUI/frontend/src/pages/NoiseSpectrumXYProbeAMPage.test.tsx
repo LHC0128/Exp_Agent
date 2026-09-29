@@ -69,7 +69,7 @@ afterEach(cleanup);
 it("通过真实实验路由显示运行/历史，保留参数并从历史填回", async () => {
   renderPage();
   const tabs = screen.getByRole("tablist", { name: "XY Probe AM 噪声实验视图" });
-  expect(within(tabs).getAllByRole("tab")).toHaveLength(2);
+  expect(within(tabs).getAllByRole("tab")).toHaveLength(3);
   const runTab = screen.getByRole("tabpanel", { name: "运行" });
   const tag = await within(runTab).findByRole("textbox", { name: "运行标签" });
   fireEvent.change(tag, { target: { value: "unsaved-probe" } });
@@ -90,6 +90,22 @@ it("通过真实实验路由显示运行/历史，保留参数并从历史填回
   fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
   expect(screen.getByRole("textbox", { name: "运行标签" })).toHaveValue("history-probe");
   expect(screen.getByRole("button", { name: "Z 可控噪声：不注入" })).toHaveAttribute("aria-pressed", "false");
+});
+
+it("架构 Tab 加载 Probe AM 实验专属的架构图与子图", async () => {
+  renderPage();
+  fireEvent.click(await screen.findByRole("tab", { name: "架构" }));
+  const panel = screen.getByRole("tabpanel", { name: "架构" });
+  expect(await within(panel).findByTitle("XY 已知不可控 Probe AM 噪声谱实验架构图")).toHaveAttribute(
+    "src", "/architecture/noise-spectrum-xy-uncontrolled-probe-am.html");
+  expect(within(panel).getByRole("link", { name: "在新页面打开" })).toHaveAttribute(
+    "href", "/architecture/noise-spectrum-xy-uncontrolled-probe-am.html");
+  fireEvent.click(within(panel).getByRole("tab", { name: "单点时序" }));
+  expect(within(panel).getByTitle("XY 已知不可控 Probe AM 噪声谱实验单控制点时序图")).toHaveAttribute(
+    "src", "/architecture/noise-spectrum-xy-uncontrolled-probe-am.timing.html");
+  fireEvent.click(within(panel).getByRole("tab", { name: "数据分析" }));
+  expect(within(panel).getByTitle("XY 已知不可控 Probe AM 噪声谱实验离线分析与差谱图")).toHaveAttribute(
+    "src", "/architecture/noise-spectrum-xy-uncontrolled-probe-am.dataflow.html");
 });
 
 it("预检失败时不会启动采集", async () => {

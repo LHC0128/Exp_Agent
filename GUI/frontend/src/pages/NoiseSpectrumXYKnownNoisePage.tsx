@@ -380,7 +380,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
   const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     event.preventDefault();
-    const order = probeAm ? (["run", "history"] as const) : (["run", "history", "architecture"] as const);
+    const order = ["run", "history", "architecture"] as const;
     const index = order.indexOf(tab as typeof order[number]);
     const next = order[(index + (event.key === "ArrowRight" ? 1 : order.length - 1)) % order.length];
     setTab(next);
@@ -396,7 +396,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
       />
       {error && <div className="alert error" role="alert">{error}</div>}
       <div className="zaw-tab-strip" role="tablist" aria-label={probeAm ? "XY Probe AM 噪声实验视图" : "XY 已知噪声注入实验视图"} onKeyDown={tabKey}>
-        {(probeAm ? (["run", "history"] as const) : (["run", "history", "architecture"] as const)).map((item) => (
+        {(["run", "history", "architecture"] as const).map((item) => (
           <button
             key={item}
             id={`${prefix}-tab-${item}`}
@@ -561,9 +561,9 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
         </div>
       </div>
 
-      {!probeAm && tab === "architecture" && (
+      {tab === "architecture" && (
         <div id={`${prefix}-panel-architecture`} role="tabpanel" aria-labelledby={`${prefix}-tab-architecture`}>
-          <ArchitectureView />
+          <ArchitectureView probeAm={probeAm} />
         </div>
       )}
       <JobView job={analysisJob} onUpdate={setAnalysisJob} />
@@ -572,29 +572,55 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
 }
 
 // “架构”Tab：内嵌本实验的 Archify 采集流程架构图，总览与三张子图按需加载。
-const ARCHITECTURE_BASE = "/architecture/noise-spectrum-xy-known-noise";
 const ARCHITECTURE_DIAGRAMS = [
-  { id: "overview", file: "", tabLabel: "总览", title: "XY 已知可控噪声谱实验采集架构图" },
-  { id: "acquisition", file: ".acquisition", tabLabel: "采集流程", title: "XY 已知可控噪声谱实验采集执行流程图" },
-  { id: "timing", file: ".timing", tabLabel: "单点时序", title: "XY 已知可控噪声谱实验单控制点时序图" },
-  { id: "dataflow", file: ".dataflow", tabLabel: "数据分析", title: "XY 已知可控噪声谱实验离线分析与真值链图" },
+  { id: "overview", file: "", tabLabel: "总览", title: "实验采集架构图" },
+  { id: "acquisition", file: ".acquisition", tabLabel: "采集流程", title: "实验采集执行流程图" },
+  { id: "timing", file: ".timing", tabLabel: "单点时序", title: "实验单控制点时序图" },
+  { id: "dataflow", file: ".dataflow", tabLabel: "数据分析", title: "实验离线分析与差谱图" },
 ] as const;
 
-function ArchitectureView() {
+const architectureBase = (probeAm: boolean) =>
+  probeAm
+    ? "/architecture/noise-spectrum-xy-uncontrolled-probe-am"
+    : "/architecture/noise-spectrum-xy-known-noise";
+
+const architectureTitles = (probeAm: boolean) =>
+  probeAm
+    ? {
+        overview: "XY 已知不可控 Probe AM 噪声谱实验架构图",
+        acquisition: "XY 已知不可控 Probe AM 噪声谱实验采集执行流程图",
+        timing: "XY 已知不可控 Probe AM 噪声谱实验单控制点时序图",
+        dataflow: "XY 已知不可控 Probe AM 噪声谱实验离线分析与差谱图",
+        intro:
+          "总览：外部 AM 周期噪声经 Probe AOM 调制 Probe 光，X/Y 正弦控制场逐点调幅重触发，" +
+          "同一温控窗口内交替采集 AM OFF/ON 两态（可选持续注入 Z 可控噪声）；子图分别展开采集执行流程、" +
+          "单控制点多仪器时序与离线两态差分分析的数据流判据。",
+      }
+    : {
+        overview: "XY 已知可控噪声谱实验采集架构图",
+        acquisition: "XY 已知可控噪声谱实验采集执行流程图",
+        timing: "XY 已知可控噪声谱实验单控制点时序图",
+        dataflow: "XY 已知可控噪声谱实验离线分析与真值链图",
+        intro:
+          "总览：在 Z 小线圈注入分段平顶谱已知伪噪声，X/Y 正弦控制场逐点调幅重触发，" +
+          "同一温控窗口内交替采集注入 OFF/ON 两态；子图分别展开采集执行流程、单控制点" +
+          "多仪器时序与离线差分分析的真值链判据。",
+      };
+
+function ArchitectureView({ probeAm }: { probeAm: boolean }) {
   const [diagram, setDiagram] = useState<(typeof ARCHITECTURE_DIAGRAMS)[number]>(ARCHITECTURE_DIAGRAMS[0]);
+  const base = architectureBase(probeAm);
+  const titles = architectureTitles(probeAm);
+  const heading = titles[diagram.id];
   return (
     <section className="mx-arch">
       <div className="mx-arch-head">
         <div>
           <small>EXPERIMENT ARCHITECTURE</small>
           <h2>采集流程架构</h2>
-          <p>
-            总览：在 Z 小线圈注入分段平顶谱已知伪噪声，X/Y 正弦控制场逐点调幅重触发，
-            同一温控窗口内交替采集注入 OFF/ON 两态；子图分别展开采集执行流程、单控制点
-            多仪器时序与离线差分分析的真值链判据。
-          </p>
+          <p>{titles.intro}</p>
         </div>
-        <a className="architecture-open" href={`${ARCHITECTURE_BASE}${diagram.file}.html`} target="_blank" rel="noreferrer">
+        <a className="architecture-open" href={`${base}${diagram.file}.html`} target="_blank" rel="noreferrer">
           在新页面打开
         </a>
       </div>
@@ -615,8 +641,8 @@ function ArchitectureView() {
       <div className="architecture-frame">
         <iframe
           key={diagram.id}
-          src={`${ARCHITECTURE_BASE}${diagram.file}.html`}
-          title={diagram.title}
+          src={`${base}${diagram.file}.html`}
+          title={heading}
           loading="lazy"
           sandbox="allow-scripts allow-same-origin allow-downloads allow-popups"
           allow="clipboard-write"
