@@ -103,6 +103,20 @@ safety_limits:
     output_off_on_error: true
     description: "Y方向磁场 AM 包络输出，允许负电压；当前 AW 示波器检查范围约 -2.32 到 1.37 V"
 
+  Probe_AOM_Carrier:
+    min: 0.0
+    max: 0.05
+    ramp_rate: null
+    output_off_on_error: true
+    description: "Probe 光路 AOM 的载波设置幅度，限制为 50 mVpp"
+
+  Probe_AOM_AM:
+    min: -2.5
+    max: 2.5
+    ramp_rate: null
+    output_off_on_error: true
+    description: "DG4000 外部 AM 输入端安全范围，峰值电压限制为 ±2.5 V"
+
   X_magnetic_field:
     min: -10.0
     max: 10.0

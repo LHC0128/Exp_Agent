@@ -21,8 +21,8 @@ import {
 } from "./experimentHelpers";
 import "./zawClosedLoop.css";
 
-const ID = "noise-spectrum-xy-known-noise";
-const BASE = `/api/experiments/${ID}`;
+const KNOWN_NOISE_ID = "noise-spectrum-xy-known-noise";
+const PROBE_AM_ID = "noise-spectrum-xy-uncontrolled-probe-am";
 const PAGE_SIZE = 50;
 const terminal = (job: Job | undefined) => Boolean(
   job && ["completed", "failed", "cancelled"].includes(job.status),
@@ -42,7 +42,7 @@ type RunSummary = RunItem & {
   artifacts: Record<string, string>;
   analysis_quality?: {
     psd?: { actual_rate_sa_s: number; nperseg: number; bin_width_hz: number; paired_points?: number };
-    calibration?: { k: number; b: number; support_points: number; residual_std_hz: number };
+    calibration?: { k: number; b: number; support_points: number; residual_std_hz?: number; source?: string };
     comparison?: {
       valid_points: number; total_points: number; median_ratio: number | null;
       criteria_pass: boolean; negative_differential_points?: number;
@@ -54,6 +54,15 @@ type RunSummary = RunItem & {
     };
     truth_chain?: { K_Z_Hz_per_V: number; dispersion_slope_v_per_hz: number };
     warnings?: string[];
+    fit_quality?: {
+      valid_background_bins: number; total_bins: number;
+      negative_delta_bins: number; positive_delta_bins: number;
+      valid_controlled_bins?: number;
+      negative_controlled_delta_bins?: number;
+      positive_controlled_delta_bins?: number;
+      background_method_on?: Record<string, number>;
+      background_method_off?: Record<string, number>;
+    };
   };
 };
 type WaveformPreview = {
@@ -67,7 +76,12 @@ type WaveformPreview = {
   nyquist_hz?: number;
   design_peak_v?: number;
   aligned_amplitude_vpp?: number;
+  aligned_amplitude_safe?: boolean;
   realized_psd_scale?: number;
+  z_aligned_amplitude_vpp?: number;
+  z_aligned_amplitude_safe?: boolean;
+  z_realized_psd_scale?: number;
+  actual_waveform_peak_v?: number;
   waveform_rms_v?: number;
   equivalent_noise_hz_per_rt_hz?: number;
   z_calibration_k_hz_per_v?: number;
@@ -92,7 +106,8 @@ const figureLabels: Record<string, string> = {
   "noise_spectrum_2d.png": "平均 PSD 二维谱",
   "noise_spectra_extracted.png": "差分响应系数",
   "lorentzian_line_shapes.png": "若干频率列的洛伦兹线形与拟合",
-  "controlled_uncontrolled_comparison.png": "磁响应与可辨识背景的注入前后对比",
+  "controlled_uncontrolled_comparison.png": "受控响应与不可控背景的注入前后对比",
+  "signed_spectral_difference.png": "受控响应与不可控背景的基线和有符号差谱（双 Y 轴）",
   "measured_vs_truth.png": "测得谱与真值谱对比",
   "dispersion_scan.png": "色散线形与线形拟合",
 };
@@ -106,12 +121,12 @@ const downloadable = [
   "analysis_summary.json",
   "fit_diagnostics.npz",
 ];
-const summaryUrl = (runId: string) => `${BASE}/runs/${encodeURIComponent(runId)}/summary`;
+const summaryUrl = (base: string, runId: string) => `${base}/runs/${encodeURIComponent(runId)}/summary`;
 const status = (value: string) => statusLabels[value] ?? value;
 const format = (value: number | null | undefined, digits = 3) =>
   value == null || !Number.isFinite(value) ? "—" : value.toFixed(digits);
 
-function Result({ value }: { value: RunSummary }) {
+function Result({ value, probeAm }: { value: RunSummary; probeAm: boolean }) {
   const figures = Object.entries(figureLabels).filter(([name]) => value.artifacts[name]);
   const files = downloadable.filter((name) => value.artifacts[name]);
   const comparison = value.analysis_quality?.comparison;
@@ -119,6 +134,7 @@ function Result({ value }: { value: RunSummary }) {
     <div className="zaw-latest">
       <p>{value.run_id} · {value.timestamp}</p>
       <p>采集：{status(value.completion_status)} · 分析：{status(value.analysis_status)}</p>
+      {probeAm && <p>Z 已知可控噪声：{value.parameters.INJECT_CONTROLLED_NOISE ? "持续注入" : "未注入"}</p>}
       {value.analysis_error && <div className="alert error">{value.analysis_error}</div>}
       {comparison && <>
         <p>
@@ -142,14 +158,27 @@ function Result({ value }: { value: RunSummary }) {
           <p>阈值区间：[{format(comparison.pass_low)}, {format(comparison.pass_high)}]。</p>
         )}
       </>}
+      {probeAm && value.analysis_quality?.fit_quality && <p>
+        ΔN_S1 有效频点 {value.analysis_quality.fit_quality.valid_background_bins} / {value.analysis_quality.fit_quality.total_bins}；
+        负差 {value.analysis_quality.fit_quality.negative_delta_bins} 点保留，正差 {value.analysis_quality.fit_quality.positive_delta_bins} 点。
+        {value.analysis_quality.fit_quality.valid_controlled_bins !== undefined && <>受控响应 ΔS_beta 有效频点 {value.analysis_quality.fit_quality.valid_controlled_bins}；
+          负差 {value.analysis_quality.fit_quality.negative_controlled_delta_bins} 点，正差 {value.analysis_quality.fit_quality.positive_controlled_delta_bins} 点。</>}
+        N_S1 为锁相测量端 PSD，S_beta 为拟合受控响应系数；均未标定为 Probe 光功率谱。
+        {value.analysis_quality.fit_quality.background_method_on && <>
+          不可控背景独立验收；远端平台补充 ON {value.analysis_quality.fit_quality.background_method_on.off_resonance_plateau ?? 0} 点、
+          OFF {value.analysis_quality.fit_quality.background_method_off?.off_resonance_plateau ?? 0} 点，可控响应只展示各态通过的部分。
+        </>}
+      </p>}
       {value.analysis_quality?.truth_chain && <p>
         真值链 K_Z = {format(value.analysis_quality.truth_chain.K_Z_Hz_per_V, 1)} Hz/V；
         色散斜率 = {format(value.analysis_quality.truth_chain.dispersion_slope_v_per_hz, 6)} V/Hz。
       </p>}
-      {value.analysis_quality?.calibration && <p>
-        移动峰标定 K = {format(value.analysis_quality.calibration.k, 1)} Hz/V；
-        支持 {value.analysis_quality.calibration.support_points} 个控制点。
-      </p>}
+      {value.analysis_quality?.calibration && (value.analysis_quality.calibration.source === "configured_K_B"
+        ? <p>暂定控制轴 K = {format(value.analysis_quality.calibration.k, 1)} Hz/V，B = {format(value.analysis_quality.calibration.b, 1)} Hz；峰位来自运行参数，仅供暂时分析。</p>
+        : <p>
+          移动峰标定 K = {format(value.analysis_quality.calibration.k, 1)} Hz/V；
+          支持 {value.analysis_quality.calibration.support_points} 个控制点。
+        </p>)}
       {value.analysis_quality?.warnings?.map((warning) => <p key={warning}>{warning}</p>)}
       {!figures.length && <p className="zaw-empty">本次运行暂无结果图。</p>}
       {figures.map(([name, label], index) => (
@@ -166,7 +195,17 @@ function Result({ value }: { value: RunSummary }) {
 }
 
 export function NoiseSpectrumXYKnownNoisePage() {
-  const [tab, setTab] = useState<"run" | "history">("run");
+  return <NoiseSpectrumXYInjectionPage experimentId={KNOWN_NOISE_ID} probeAm={false} />;
+}
+
+export function NoiseSpectrumXYProbeAMPage() {
+  return <NoiseSpectrumXYInjectionPage experimentId={PROBE_AM_ID} probeAm />;
+}
+
+function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimentId: string; probeAm: boolean }) {
+  const BASE = `/api/experiments/${ID}`;
+  const prefix = probeAm ? "probe-am-noise" : "known-noise";
+  const [tab, setTab] = useState<"run" | "history" | "architecture">("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -249,7 +288,7 @@ export function NoiseSpectrumXYKnownNoisePage() {
     let disposed = false;
     void api<RunList>(`${BASE}/runs?limit=1&offset=0`).then(async (data) => {
       const latestRun = data.runs[0];
-      const summary = latestRun ? await api<RunSummary>(summaryUrl(latestRun.run_id)) : undefined;
+      const summary = latestRun ? await api<RunSummary>(summaryUrl(BASE, latestRun.run_id)) : undefined;
       if (!disposed) setLatest(summary);
     }).catch((reason) => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
@@ -259,7 +298,7 @@ export function NoiseSpectrumXYKnownNoisePage() {
     if (!selectedId) return;
     let disposed = false;
     setSelected(undefined);
-    void api<RunSummary>(summaryUrl(selectedId))
+    void api<RunSummary>(summaryUrl(BASE, selectedId))
       .then((data) => { if (!disposed) setSelected(data); })
       .catch((reason) => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
@@ -331,6 +370,9 @@ export function NoiseSpectrumXYKnownNoisePage() {
         .filter((field) => Object.hasOwn(parameters, field.name))
         .map((field) => [field.name, parameters[field.name]]),
     );
+    if (probeAm && !Object.hasOwn(parameters, "INJECT_CONTROLLED_NOISE")) {
+      compatible.INJECT_CONTROLLED_NOISE = false;
+    }
     setValues((current) => ({ ...current, ...compatible }));
     setTab("run");
   };
@@ -338,42 +380,51 @@ export function NoiseSpectrumXYKnownNoisePage() {
   const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     event.preventDefault();
-    const next = tab === "run" ? "history" : "run";
+    const order = probeAm ? (["run", "history"] as const) : (["run", "history", "architecture"] as const);
+    const index = order.indexOf(tab as typeof order[number]);
+    const next = order[(index + (event.key === "ArrowRight" ? 1 : order.length - 1)) % order.length];
     setTab(next);
-    event.currentTarget.querySelector<HTMLButtonElement>(`#known-noise-tab-${next}`)?.focus();
+    event.currentTarget.querySelector<HTMLButtonElement>(`#${prefix}-tab-${next}`)?.focus();
   };
 
   return (
     <>
       <PageHead
-        eyebrow="VERIFICATION · KNOWN INJECTION"
-        title={definition?.title ?? "XY 控制测量已知可控噪声谱"}
+        eyebrow={probeAm ? "MEASUREMENT · PROBE AM NOISE" : "VERIFICATION · KNOWN INJECTION"}
+        title={definition?.title ?? (probeAm ? "XY 控制测量已知不可控 Probe AM 噪声谱" : "XY 控制测量已知可控噪声谱")}
         description={definition?.description ?? "读取实验定义与运行记录。"}
       />
       {error && <div className="alert error" role="alert">{error}</div>}
-      <div className="zaw-tab-strip" role="tablist" aria-label="XY 已知噪声注入实验视图" onKeyDown={tabKey}>
-        {(["run", "history"] as const).map((item) => (
+      <div className="zaw-tab-strip" role="tablist" aria-label={probeAm ? "XY Probe AM 噪声实验视图" : "XY 已知噪声注入实验视图"} onKeyDown={tabKey}>
+        {(probeAm ? (["run", "history"] as const) : (["run", "history", "architecture"] as const)).map((item) => (
           <button
             key={item}
-            id={`known-noise-tab-${item}`}
+            id={`${prefix}-tab-${item}`}
             role="tab"
             aria-selected={tab === item}
-            aria-controls={`known-noise-panel-${item}`}
+            aria-controls={`${prefix}-panel-${item}`}
             tabIndex={tab === item ? 0 : -1}
             className={tab === item ? "active" : ""}
             onClick={() => setTab(item)}
           >
-            {item === "run" ? "运行" : "历史"}
+            {item === "run" ? "运行" : item === "history" ? "历史" : "架构"}
           </button>
         ))}
       </div>
 
-      <div id="known-noise-panel-run" role="tabpanel" aria-labelledby="known-noise-tab-run" hidden={tab !== "run"}>
-        <div className="zaw-dashboard">
+      <div id={`${prefix}-panel-run`} role="tabpanel" aria-labelledby={`${prefix}-tab-run`} hidden={tab !== "run"}>
+        <div className={probeAm ? "noise-injection-dashboard" : "zaw-dashboard"}>
           <section className="zaw-panel zaw-panel-params">
             <div className="zaw-panel-head"><small>PARAMETERS</small><h2>实验参数</h2></div>
+            {probeAm && <button
+              type="button"
+              className="secondary"
+              aria-pressed={Boolean(values.INJECT_CONTROLLED_NOISE)}
+              disabled={jobActive || starting || !fields.length}
+              onClick={() => setValues((current) => ({ ...current, INJECT_CONTROLLED_NOISE: !current.INJECT_CONTROLLED_NOISE }))}
+            >Z 可控噪声：{values.INJECT_CONTROLLED_NOISE ? "注入" : "不注入"}</button>}
             <ParameterForm
-              fields={fields}
+              fields={probeAm ? fields.filter((field) => field.name !== "INJECT_CONTROLLED_NOISE") : fields}
               values={values}
               layout={layout}
               onChange={(field, value) => setValues((current) => ({ ...current, [field.name]: value }))}
@@ -393,16 +444,38 @@ export function NoiseSpectrumXYKnownNoisePage() {
                   <button
                     className="secondary"
                     disabled={jobActive || starting || preview?.aligned_amplitude_vpp === undefined
+                      || (probeAm && !preview.aligned_amplitude_safe)
                       || Math.abs((Number(values.NOISE_AMPLITUDE_VPP) || 0)
                         - (preview.aligned_amplitude_vpp ?? Number.NaN)) < 1e-6}
                     onClick={() => setValues((current) => ({
                       ...current,
                       NOISE_AMPLITUDE_VPP: preview.aligned_amplitude_vpp ?? current.NOISE_AMPLITUDE_VPP,
                     }))}
-                  >对齐注入幅度</button>
+                  >{probeAm ? "对齐 Probe AM 幅度" : "对齐注入幅度"}</button>
+                  {probeAm && preview?.aligned_amplitude_vpp !== undefined && !preview.aligned_amplitude_safe
+                    && <span role="status"> 对齐幅度超出 Probe AOM AM 安全限值，请手动选择安全幅度。</span>}
                 </p>
-                <p>等效频率噪声（带内中位）{format(preview?.equivalent_noise_hz_per_rt_hz)} Hz/√Hz
+                {!probeAm && <p>等效频率噪声（带内中位）{format(preview?.equivalent_noise_hz_per_rt_hz)} Hz/√Hz
                   （K_Z = {format(preview?.z_calibration_k_hz_per_v, 1)} Hz/V）。</p>
+                }
+                {probeAm && <p>AM 输入峰值 ±{format((Number(values.NOISE_AMPLITUDE_VPP) || 0) / 2)} V；设计谱为参考值，分析同时保存实际任意波 Welch PSD。</p>}
+                {probeAm && <p>Z 可控噪声{values.INJECT_CONTROLLED_NOISE ? "将持续注入" : "本次不注入"}；
+                  开启时电压谱 = 设计谱 × {format(preview?.z_realized_psd_scale)}；
+                  达到设计谱密度需设幅度 {format(preview?.z_aligned_amplitude_vpp)} Vpp。
+                  <button
+                    className="secondary"
+                    disabled={jobActive || starting || preview?.z_aligned_amplitude_vpp === undefined
+                      || !preview.z_aligned_amplitude_safe
+                      || Math.abs((Number(values.Z_NOISE_AMPLITUDE_VPP) || 0)
+                        - (preview.z_aligned_amplitude_vpp ?? Number.NaN)) < 1e-6}
+                    onClick={() => setValues((current) => ({
+                      ...current,
+                      Z_NOISE_AMPLITUDE_VPP: preview.z_aligned_amplitude_vpp ?? current.Z_NOISE_AMPLITUDE_VPP,
+                    }))}
+                  >对齐 Z 噪声幅度</button>
+                  {preview?.z_aligned_amplitude_vpp !== undefined && !preview.z_aligned_amplitude_safe
+                    && <span role="status"> 对齐幅度超出 Z 通道安全限值，请手动选择安全幅度。</span>}
+                </p>}
                 <p>Welch：每段点数 {preview?.nperseg ?? "—"}；每点平均段数 {preview?.segments_per_point ?? "—"}；
                   格间距 {format(preview?.bin_width_hz)} Hz。</p>
                 <p>扫描采集与等待约 {format(preview?.scan_seconds, 1)} 秒（每点两段，相邻点交替 OFF→ON / ON→OFF，两态均等待稳定）。</p>
@@ -417,7 +490,7 @@ export function NoiseSpectrumXYKnownNoisePage() {
                   </div>
                 </> : null}
                 {preview?.spectrum_frequency_hz?.length && preview.target_psd_v2_per_hz?.length && preview.calculated_psd_v2_per_hz?.length ? <>
-                  <h4>目标谱与波形计算谱</h4>
+                  <h4>{probeAm ? "设计谱参考与波形计算谱" : "目标谱与波形计算谱"}</h4>
                   <div className="known-noise-chart">
                     <ScopePlot
                       mode="frequency"
@@ -441,6 +514,7 @@ export function NoiseSpectrumXYKnownNoisePage() {
             {notice && <p role="status">{notice}</p>}
           </section>
 
+          <div className="noise-injection-side">
           <section className="zaw-panel zaw-panel-control">
             <div className="zaw-panel-head"><small>CONTROL</small><h2>控制与状态</h2></div>
             <div className="zaw-control-buttons">
@@ -457,12 +531,13 @@ export function NoiseSpectrumXYKnownNoisePage() {
 
           <section className="zaw-panel zaw-panel-result">
             <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
-            {latest ? <><Result value={latest} /><button onClick={() => { setSelectedId(latest.run_id); setTab("history"); }}>查看本次详情</button></> : <p>暂无运行记录。</p>}
+            {latest ? <><Result value={latest} probeAm={probeAm} /><button onClick={() => { setSelectedId(latest.run_id); setTab("history"); }}>查看本次详情</button></> : <p>暂无运行记录。</p>}
           </section>
+          </div>
         </div>
       </div>
 
-      <div id="known-noise-panel-history" role="tabpanel" aria-labelledby="known-noise-tab-history" hidden={tab !== "history"}>
+      <div id={`${prefix}-panel-history`} role="tabpanel" aria-labelledby={`${prefix}-tab-history`} hidden={tab !== "history"}>
         <div className="zaw-history">
           <section className="zaw-run-list">
             <h2>历史运行（{list.total}）</h2>
@@ -479,13 +554,74 @@ export function NoiseSpectrumXYKnownNoisePage() {
                 <button disabled={jobActive || starting} onClick={() => fillBack(selected.parameters)}>填回参数</button>
                 <button disabled={starting || jobActive || analysisActive || selected.completion_status === "running"} onClick={() => void reanalyze(selected.run_id)}>重新分析</button>
               </div>
-              <Result value={selected} />
+              <Result value={selected} probeAm={probeAm} />
               <details><summary>本次参数</summary><table><tbody>{Object.entries(selected.parameters).map(([key, value]) => <tr key={key}><th>{fields.find((field) => field.name === key)?.label ?? key}</th><td>{String(value)}</td></tr>)}</tbody></table></details>
             </> : <p>{selectedId ? "正在读取运行详情…" : "暂无运行记录。"}</p>}
           </section>
         </div>
       </div>
+
+      {!probeAm && tab === "architecture" && (
+        <div id={`${prefix}-panel-architecture`} role="tabpanel" aria-labelledby={`${prefix}-tab-architecture`}>
+          <ArchitectureView />
+        </div>
+      )}
       <JobView job={analysisJob} onUpdate={setAnalysisJob} />
     </>
+  );
+}
+
+// “架构”Tab：内嵌本实验的 Archify 采集流程架构图，总览与三张子图按需加载。
+const ARCHITECTURE_BASE = "/architecture/noise-spectrum-xy-known-noise";
+const ARCHITECTURE_DIAGRAMS = [
+  { id: "overview", file: "", tabLabel: "总览", title: "XY 已知可控噪声谱实验采集架构图" },
+  { id: "acquisition", file: ".acquisition", tabLabel: "采集流程", title: "XY 已知可控噪声谱实验采集执行流程图" },
+  { id: "timing", file: ".timing", tabLabel: "单点时序", title: "XY 已知可控噪声谱实验单控制点时序图" },
+  { id: "dataflow", file: ".dataflow", tabLabel: "数据分析", title: "XY 已知可控噪声谱实验离线分析与真值链图" },
+] as const;
+
+function ArchitectureView() {
+  const [diagram, setDiagram] = useState<(typeof ARCHITECTURE_DIAGRAMS)[number]>(ARCHITECTURE_DIAGRAMS[0]);
+  return (
+    <section className="mx-arch">
+      <div className="mx-arch-head">
+        <div>
+          <small>EXPERIMENT ARCHITECTURE</small>
+          <h2>采集流程架构</h2>
+          <p>
+            总览：在 Z 小线圈注入分段平顶谱已知伪噪声，X/Y 正弦控制场逐点调幅重触发，
+            同一温控窗口内交替采集注入 OFF/ON 两态；子图分别展开采集执行流程、单控制点
+            多仪器时序与离线差分分析的真值链判据。
+          </p>
+        </div>
+        <a className="architecture-open" href={`${ARCHITECTURE_BASE}${diagram.file}.html`} target="_blank" rel="noreferrer">
+          在新页面打开
+        </a>
+      </div>
+      <div className="mx-arch-diagrams" role="tablist" aria-label="架构图选择">
+        {ARCHITECTURE_DIAGRAMS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={diagram.id === item.id}
+            className={diagram.id === item.id ? "active" : ""}
+            onClick={() => setDiagram(item)}
+          >
+            {item.tabLabel}
+          </button>
+        ))}
+      </div>
+      <div className="architecture-frame">
+        <iframe
+          key={diagram.id}
+          src={`${ARCHITECTURE_BASE}${diagram.file}.html`}
+          title={diagram.title}
+          loading="lazy"
+          sandbox="allow-scripts allow-same-origin allow-downloads allow-popups"
+          allow="clipboard-write"
+        />
+      </div>
+    </section>
   );
 }

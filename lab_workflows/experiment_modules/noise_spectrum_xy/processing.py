@@ -1,4 +1,4 @@
-"""XY 噪声谱：移动脊线定位、标定验收和有约束的局部噪声分离。"""
+"""XY 噪声谱：移动脊线定位、标定验收及峰与背景的独立噪声分离。"""
 from __future__ import annotations
 
 import numpy as np
@@ -9,6 +9,31 @@ from scipy.signal import find_peaks
 from ...analysis.noise_spectrum_separation import lorentzian_vs_control
 from ...experiment_runtime import check_cancelled
 from .calibration import fit_robust_linear_calibration
+
+SEPARATION_METHOD = "full_control_range_with_independent_background"
+
+
+def _background_plateau(control, values, frequency, half_width_hz):
+    """独立验证共振两侧的远端平台，不要求峰参数可辨识。"""
+    sides = [values[control < frequency-half_width_hz],
+             values[control > frequency+half_width_hz]]
+    count = sum(side.size for side in sides)
+    if min(side.size for side in sides) < 8:
+        return np.nan, count, np.nan, np.nan, "insufficient_background_sides"
+    # 各侧按控制轴分成近、远两块，避免两侧平均值相近却仍含衰减尾部。
+    blocks = [block for side in sides for block in np.array_split(side, 2)]
+    levels = np.array([np.median(block) for block in blocks])
+    baseline = float(np.median(np.concatenate(sides)))
+    spread = float(np.ptp(levels) / baseline)
+    errors = []
+    for i, block in enumerate(blocks):
+        training = np.concatenate([other for j, other in enumerate(blocks) if i != j])
+        prediction = np.median(training)
+        errors.append(np.median(abs(block-prediction)/prediction))
+    holdout = float(max(errors))
+    reason = ("nonflat_background_tails" if spread > .2 else
+              "unstable_background_holdout" if holdout > .4 else "accepted")
+    return baseline, count, holdout, spread, reason
 
 
 def fixed_spurs(matrix, frequency):
@@ -111,7 +136,7 @@ def locate_ridge(matrix, frequency, voltage):
 
 def fit_local_spectra(matrix, frequency, control, spur_mask, half_width_hz, support_range,
                       *, full_range=False):
-    """正值模型与留出验证；全范围模式独立验收峰参数和背景可辨识性。"""
+    """正值模型与留出验证；全范围模式允许远端平台独立恢复背景。"""
     matrix, frequency, control = (np.asarray(value, float) for value in (matrix, frequency, control))
     spur_mask = np.asarray(spur_mask, bool)
     if (matrix.shape != (control.size, frequency.size) or frequency.size < 2
@@ -255,11 +280,31 @@ def fit_local_spectra(matrix, frequency, control, spur_mask, half_width_hz, supp
             valid[j], background_valid[j] = False, False
             background_reasons[j] = "numerical_failure"
             reasons[j] = "numerical_failure"
+    background = parameters[:, 2].copy()
+    background_method = np.where(background_valid, "lorentzian_fit", "rejected").astype("U32")
+    plateau_spread = np.full(n, np.nan)
+    if full_range:
+        selected = (control >= support_range[0]) & (control <= support_range[1])
+        for j in np.flatnonzero(~background_valid):
+            if j % 50 == 0:
+                check_cancelled()
+            if spur_mask[j] or not support_range[0] <= frequency[j] <= support_range[1]:
+                background_reasons[j] = "fixed_spur" if spur_mask[j] else "outside_ridge_support"
+                continue
+            level, count, error, spread, reason = _background_plateau(
+                control[selected], matrix[selected, j], frequency[j], half_width_hz)
+            plateau_spread[j] = spread
+            tail_counts[j], tail_score[j] = count, error
+            background_reasons[j] = reason
+            if reason == "accepted":
+                background[j], background_valid[j] = level, True
+                background_method[j] = "off_resonance_plateau"
     return dict(popt=parameters, perr=uncertainties, fit_mask=valid,
                 background_fit_mask=background_valid, background_rejection_reason=background_reasons,
+                background_method=background_method, background_plateau_relative_spread=plateau_spread,
                 background_anchor_points=tail_counts, tail_holdout_relative_error=tail_score,
                 interpolated_mask=np.zeros(n, bool), rejection_reason=reasons,
                 median_relative_residual=residual_score, holdout_relative_error=cv_score,
                 model_matrix=model,
                 S_beta=np.where(valid, parameters[:,1], np.nan),
-                N_S1=np.where(background_valid, parameters[:,2], np.nan))
+                N_S1=np.where(background_valid, background, np.nan))

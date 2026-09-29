@@ -29,13 +29,13 @@ from ...plotting import (
     style_legend,
 )
 from ..noise_spectrum_xy.models import welch_settings
-from ..noise_spectrum_xy.processing import fit_local_spectra, locate_ridge
+from ..noise_spectrum_xy.processing import SEPARATION_METHOD, fit_local_spectra, locate_ridge
 from ...analysis.noise_spectrum_separation import lorentzian_vs_control
 from .dispersion import resolve_dispersion
-from .generation import calculate_noise_preview, load_z_calibration, load_z_coil_transfer
+from .generation import calculate_noise_preview, load_z_calibration
 from .models import NoiseSpectrumXYKnownNoiseParams
 
-ANALYSIS_VERSION = "known-noise-full-range-v3"
+ANALYSIS_VERSION = "known-noise-independent-background-v5"
 
 
 def calibration_band(frequency, options, saved):
@@ -157,8 +157,9 @@ def plot_two_dimensional(results, matrix, frequency, voltage, ridge, name, title
         lo, hi = np.percentile(log_data.compressed(), [5, 98]) if log_data.count() else (None, None)
         mesh = ax.pcolormesh(frequency/1000, voltage, log_data, shading="auto",
                              cmap="inferno", vmin=lo, vmax=hi, rasterized=True)
+    ridge_label = "Provisional peak positions from K/B" if ridge.get("provisional") else "Calibrated ridge"
     ax.plot((ridge["k"]*voltage+ridge["b"])/1000, voltage, "--", color=COLOR_CYAN, lw=1.1,
-            label="Calibrated ridge")
+            label=ridge_label)
     ax.set_xlim(frequency[0]/1000, frequency[-1]/1000)
     format_axis(ax, xlabel="Frequency (kHz)", ylabel="Sine peak voltage (V)")
     ax.set_title(title)
@@ -177,13 +178,13 @@ def plot_two_dimensional(results, matrix, frequency, voltage, ridge, name, title
 def plot_differential_response(results, frequency, a_diff, good):
     """只画参数层差分响应系数；ON/OFF 总谱归入可控/不可控对比图。"""
     fig, ax = new_figure(kind="wide", height_mm=65)
-    ax.plot(frequency[good]/1000, a_diff[good], ".", ms=2.5, color=COLOR_OPTIMAL,
-                label="A(ON) - A(OFF)")
-    finite = np.abs(a_diff[good & np.isfinite(a_diff)])
-    ax.set_yscale("symlog", linthresh=max(float(np.percentile(finite, 10)), 1e-30) if finite.size else 1e-30)
-    ax.axhline(0, color=COLOR_GRAY, lw=.6)
-    format_axis(ax, xlabel="Frequency (kHz)", ylabel="Differential response coefficient A (V²·Hz)")
-    ax.set_title("Differential response coefficient")
+    magnitude = np.abs(np.asarray(a_diff, float))
+    visible = np.asarray(good, bool) & np.isfinite(magnitude) & (magnitude > 0)
+    ax.plot(frequency[visible]/1000, magnitude[visible], ".", ms=2.5, color=COLOR_OPTIMAL,
+            label="|A(ON) - A(OFF)|")
+    ax.set_yscale("log")
+    format_axis(ax, xlabel="Frequency (kHz)", ylabel="|Differential response coefficient A| (V²·Hz)")
+    ax.set_title("Absolute differential response coefficient")
     ax.grid(True, which="major", alpha=0.22)
     style_legend(ax, loc="best")
     save_plot(fig, results/"noise_spectra_extracted.png")
@@ -200,7 +201,7 @@ def select_line_shape_columns(frequency, selectable, count):
 
 def plot_line_shapes(results, frequency, control, psd_on, psd_off, popt_on, popt_off,
                      reasons_on, reasons_off, columns, half_width_hz, k_hz_per_v,
-                     intercept_hz):
+                     intercept_hz, *, background_on=None, background_off=None):
     """若干分析频率下 PSD 随控制场幅值的洛伦兹线形，并叠加拟合曲线与验收结论。
 
     展示完整控制轴及远端尾部；灰色区域仅标记峰定位窗口。
@@ -222,21 +223,29 @@ def plot_line_shapes(results, frequency, control, psd_on, psd_off, popt_on, popt
         ax.semilogy(axis, psd_off[window, j], "s", ms=2.5, color=COLOR_GRAY,
                     label="Injection OFF")
         p_on = popt_on[j]
-        ax.semilogy(axis, lorentzian_vs_control(axis, p_on[0], p_on[1], p_on[2], p_on[3],
+        if reasons_on[j] == "accepted":
+            ax.semilogy(axis, lorentzian_vs_control(axis, p_on[0], p_on[1], p_on[2], p_on[3],
                                                 frequency[j]),
                     "-", color=COLOR_OPTIMAL, lw=1.0, label="ON fit")
-        if np.isfinite(popt_off[j]).all():
+        if reasons_off[j] == "accepted" and np.isfinite(popt_off[j]).all():
             p_off = popt_off[j]
             ax.semilogy(axis, lorentzian_vs_control(axis, p_off[0], p_off[1], p_off[2],
                                                     p_off[3], frequency[j]),
                         "--", color=COLOR_GRAY, lw=1.0, label="OFF fit")
+        for background, color, label in ((background_on, COLOR_OPTIMAL, "ON background"),
+                                          (background_off, COLOR_GRAY, "OFF background")):
+            if background is not None and np.isfinite(background[j]):
+                ax.axhline(background[j], color=color, ls=":", lw=1, label=label)
         ax.axvline(frequency[j], color="k", ls=":", lw=0.8)
         format_axis(ax, xlabel="Control frequency (Hz)", ylabel=r"PSD (V$^2$/Hz)")
         ax.set_title(f"f = {frequency[j]/1000:.2f} kHz", fontsize=8)
         # 验收结论放在图内，避免与顶轴标签抢空间。
-        ax.text(0.03, 0.04,
-                f"ON  {reasons_on[j]}\nOFF {reasons_off[j]}\n"
-                f"$\\gamma$ = {p_on[0]:.0f} Hz",
+        annotations = [f"{state} peak: {'accepted' if reason == 'accepted' else 'unresolved'}"
+                       for state, reason in (("ON", reasons_on[j]), ("OFF", reasons_off[j]))]
+        for state, background in (("ON", background_on), ("OFF", background_off)):
+            if background is not None:
+                annotations.append(f"{state} background: {'resolved' if np.isfinite(background[j]) else 'unresolved'}")
+        ax.text(0.03, 0.04, "\n".join(annotations),
                 transform=ax.transAxes, va="bottom", ha="left", fontsize=6,
                 bbox={"boxstyle": "round,pad=0.25", "facecolor": "white",
                       "alpha": 0.85, "edgecolor": "0.75"})
@@ -257,28 +266,30 @@ def plot_line_shapes(results, frequency, control, psd_on, psd_off, popt_on, popt
 
 def plot_controlled_uncontrolled(results, frequency, controlled_on, controlled_off,
                                  s_truth, uncontrolled_on, uncontrolled_off,
-                                 controlled_mask, uncontrolled_mask):
-    """同一全范围模型分出的磁响应与背景；背景需额外通过远端可辨识性验收。"""
+                                 controlled_mask, uncontrolled_mask,
+                                 controlled_ylabel=r"$S_\beta$ (Hz$^2$/Hz)"):
+    """两态各自显示验收通过的谱；只有差谱和定量比值需要共同有效掩码。"""
     x_khz = np.asarray(frequency, float)/1000
     controlled_mask = np.asarray(controlled_mask, bool)
     uncontrolled_mask = np.asarray(uncontrolled_mask, bool)
     fig, axes = new_figure(kind="wide", height_mm=65, ncols=2, constrained_layout=True)
-    axes[0].semilogy(x_khz[controlled_mask], controlled_off[controlled_mask], ".",
+    axes[0].semilogy(x_khz, controlled_off, ".",
                    ms=2.5, color=COLOR_GRAY,
                    label="Injection OFF")
-    axes[0].semilogy(x_khz[controlled_mask], controlled_on[controlled_mask], ".",
+    axes[0].semilogy(x_khz, controlled_on, ".",
                    ms=2.5, color=COLOR_OPTIMAL, label="Injection ON")
-    truth = np.asarray(s_truth, float)
-    truth_valid = controlled_mask & (truth > 0)
-    axes[0].semilogy(x_khz[truth_valid], truth[truth_valid], "-", lw=1.1, color=COLOR_TRAD,
-                   label="Injection truth")
-    format_axis(axes[0], xlabel="Frequency (kHz)", ylabel=r"$S_\beta$ (Hz$^2$/Hz)")
+    if s_truth is not None:
+        truth = np.asarray(s_truth, float)
+        truth_valid = controlled_mask & (truth > 0)
+        axes[0].semilogy(x_khz[truth_valid], truth[truth_valid], "-", lw=1.1, color=COLOR_TRAD,
+                       label="Injection truth")
+    format_axis(axes[0], xlabel="Frequency (kHz)", ylabel=controlled_ylabel)
     axes[0].set_title("Controlled noise: injection OFF vs ON")
     axes[0].grid(True, which="major", alpha=0.22)
     style_legend(axes[0], loc="lower left")
-    axes[1].semilogy(x_khz[uncontrolled_mask], uncontrolled_off[uncontrolled_mask], ".",
+    axes[1].semilogy(x_khz, uncontrolled_off, ".",
                      ms=2.5, color=COLOR_GRAY, label="Injection OFF")
-    axes[1].semilogy(x_khz[uncontrolled_mask], uncontrolled_on[uncontrolled_mask], ".",
+    axes[1].semilogy(x_khz, uncontrolled_on, ".",
                      ms=2.5, color=COLOR_GREEN, label="Injection ON")
     format_axis(axes[1], xlabel="Frequency (kHz)", ylabel=r"$N_{S_1}$ (V$^2$/Hz)")
     axes[1].set_title("Resolved background: injection OFF vs ON")
@@ -293,12 +304,16 @@ def plot_comparison(results, frequency, s_meas, s_truth, criteria_mask, good, pa
     f = np.asarray(frequency, float)/1000
     good = np.asarray(good, bool)
     criteria_mask = np.asarray(criteria_mask, bool)
-    axes[0].plot(f[good], s_truth[good], color=COLOR_TRAD, lw=1.1,
-                   label="Truth (K_Z x |H| chain)")
-    axes[0].plot(f[good], s_meas[good], ".", ms=2, color=COLOR_OPTIMAL,
-                   label="Measured (dispersion gain)")
-    axes[0].set_yscale("symlog", linthresh=max(float(np.median(s_truth[criteria_mask]))*.01, 1e-30))
-    format_axis(axes[0], xlabel="Frequency (kHz)", ylabel=r"$S_\beta$ (Hz$^2$/Hz)")
+    measured_magnitude = np.abs(np.asarray(s_meas, float))
+    visible = good & np.isfinite(measured_magnitude) & (measured_magnitude > 0)
+    truth = np.asarray(s_truth, float)
+    truth_visible = good & np.isfinite(truth) & (truth > 0)
+    axes[0].plot(f[truth_visible], truth[truth_visible], color=COLOR_TRAD, lw=1.1,
+                   label="Truth (K_Z chain)")
+    axes[0].plot(f[visible], measured_magnitude[visible], ".", ms=2, color=COLOR_OPTIMAL,
+                   label=r"Measured $|S_\beta|$ (dispersion gain)")
+    axes[0].set_yscale("log")
+    format_axis(axes[0], xlabel="Frequency (kHz)", ylabel=r"$|S_\beta|$ (Hz$^2$/Hz)")
     axes[0].set_title("Measured vs truth spectrum")
     axes[0].grid(True, which="major", alpha=0.22)
     style_legend(axes[0], loc="lower left")
@@ -478,9 +493,9 @@ def analyze(run_dir: Path):
         plot_two_dimensional(results, average[rows][:, band], f, v, ridge,
                              "noise_spectrum_2d.png", "Average ON/OFF PSD",
                              r"$\log_{10}$ PSD (V$^2$/Hz)")
-        plot_two_dimensional(results, differential[rows][:, band], f, v, ridge,
-                             "differential_psd.png", "Differential PSD (ON - OFF)",
-                             r"Differential PSD (V$^2$/Hz)", diverging=True)
+        plot_two_dimensional(results, np.abs(differential[rows][:, band]), f, v, ridge,
+                             "differential_psd.png", "Absolute differential PSD (ON - OFF)",
+                             r"$\log_{10}|\mathrm{PSD}_{on}-\mathrm{PSD}_{off}|$ (V$^2$/Hz)")
         summary["calibration"] = {key: float(ridge[key]) for key in ("k", "b", "residual_std_hz", "coverage")}
         summary["calibration"]["support_points"] = int(len(ridge["V_cal"]))
         summary["calibration"]["search_frequency_hz"] = [float(frequency[cal_band][0]), float(frequency[cal_band][-1])]
@@ -494,7 +509,7 @@ def analyze(run_dir: Path):
         fit_off = fit_local_spectra(data_off, f, ridge["omega_ctrl"], fit_spur,
                                     options["fit_half_width_hz"], (support.min(), support.max()),
                                     full_range=True)
-        # 同一模型给出全部参数；背景有独立可辨识性掩码，不强制 ON/OFF 相等。
+        # 共享分析核心分别验收峰和背景；峰失败时允许独立的远端平台估计。
         background_good = fit_on["background_fit_mask"] & fit_off["background_fit_mask"]
         good = fit_on["fit_mask"] & fit_off["fit_mask"]
         a_diff = fit_on["S_beta"] - fit_off["S_beta"]
@@ -503,7 +518,9 @@ def analyze(run_dir: Path):
             on=_reason_counts(fit_on["rejection_reason"]),
             off=_reason_counts(fit_off["rejection_reason"]),
             fit_half_width_hz=float(options["fit_half_width_hz"]),
-            method="full_control_range",
+            method=SEPARATION_METHOD,
+            background_method_on=_reason_counts(fit_on["background_method"]),
+            background_method_off=_reason_counts(fit_off["background_method"]),
             background_on=_reason_counts(fit_on["background_rejection_reason"]),
             background_off=_reason_counts(fit_off["background_rejection_reason"]),
             background_both_accepted=int(background_good.sum()),
@@ -517,6 +534,7 @@ def analyze(run_dir: Path):
             fit_on["rejection_reason"], fit_off["rejection_reason"],
             select_line_shape_columns(f, fit_on["rejection_reason"] != "outside_ridge_support", 8),
             options["fit_half_width_hz"], ridge["k"], ridge["b"],
+            background_on=fit_on["N_S1"], background_off=fit_off["N_S1"],
         )
         # 增益换算：静态极限连接 A/(gamma^2*sigma^2) 把 V^2 Hz 响应系数换算到 Hz^2/Hz。
         s_meas = a_diff / (gamma**2 * slope_v_per_hz**2)
@@ -538,10 +556,14 @@ def analyze(run_dir: Path):
                  tail_holdout_off=fit_off["tail_holdout_relative_error"],
                  background_anchor_points_on=fit_on["background_anchor_points"],
                  background_anchor_points_off=fit_off["background_anchor_points"],
+                 background_method_on=fit_on["background_method"],
+                 background_method_off=fit_off["background_method"],
+                 background_plateau_relative_spread_on=fit_on["background_plateau_relative_spread"],
+                 background_plateau_relative_spread_off=fit_off["background_plateau_relative_spread"],
                  freq_axis=f, param_names=["gamma", "Amp", "D", "dw"])
         plot_differential_response(results, f, a_diff, good)
 
-        # 真值链：波形数值 PSD × (K_Z × H_norm)^2。
+        # 本次实验线圈频响修正不适用；真值仅使用波形数值 PSD × K_Z²。
         project_root = find_project_root()
         waveform_path = (run_dir / str(known.get("waveform_file", "raw/known_noise_waveform.npy"))).resolve()
         if run_dir.resolve() not in waveform_path.parents:
@@ -559,19 +581,18 @@ def analyze(run_dir: Path):
         usable = wf_freq > 0
         wf_freq, wf_psd = wf_freq[usable], wf_psd[usable]
         calibration = load_z_calibration(project_root, str(truth_cfg["z_calibration_run"]))
-        transfer = load_z_coil_transfer(project_root, str(truth_cfg["z_tf_run"]))
-        gain_chain = (calibration.k_hz_per_v * transfer.normalized_gain(wf_freq))**2
+        gain_chain = calibration.k_hz_per_v**2
         s_truth_lines = wf_psd * gain_chain
         s_truth = np.exp(np.interp(np.log(f), np.log(wf_freq), np.log(s_truth_lines)))
         summary["truth_chain"] = dict(
             z_calibration_run=calibration.source_run,
             K_Z_Hz_per_V=calibration.k_hz_per_v,
             K_Z_uncertainty_Hz_per_V=calibration.uncertainty_hz_per_v,
-            z_tf_run=transfer.source_run,
-            tf_reference_hz=transfer.reference_hz,
+            coil_frequency_response_applied=False,
+            coil_frequency_response_note="按实验约定忽略线圈频率响应。",
             dispersion_slope_v_per_hz=slope_v_per_hz,
             gain_formula="S_meas = (A_on - A_off) / (gamma_on^2 * sigma^2); "
-                         "S_truth = PSD(waveform*Vpp/2) * (K_Z*|H|/|H_ref|)^2",
+                         "S_truth = PSD(waveform*Vpp/2) * K_Z^2",
         )
 
         ratio = np.full(f.size, np.nan)
@@ -613,7 +634,7 @@ def analyze(run_dir: Path):
             summary["warnings"].append("注入带内不足一半频点能独立约束背景；磁响应尾部可能仍高于本底，不能判定不可控噪声是否变化。")
         if coverage < .5:
             summary["warnings"].append("注入带内有效覆盖不足 50%，不以少数通过点宣布谱验证通过。")
-        summary["warnings"].append("全范围拟合不强制两态背景相等；背景需要远端锚点和整块尾部留出验证。参数误差为局部模型近似，不包括漂移和增益系统误差。")
+        summary["warnings"].append("共享分析核心独立验收峰与背景，不强制两态背景相等；模型背景不可辨识时检验两侧远端平台。popt/perr 仅描述洛伦兹拟合，平台背景以 N_S1 和 background_method 为准。")
         plot_controlled_uncontrolled(results, f, controlled_on, controlled_off, s_truth,
                                      uncontrolled_on, uncontrolled_off, good, background_good)
         np.savez(results/"noise_spectra.npz",
@@ -626,6 +647,8 @@ def analyze(run_dir: Path):
                  background_fit_mask=background_good,
                  background_fit_mask_on=fit_on["background_fit_mask"],
                  background_fit_mask_off=fit_off["background_fit_mask"],
+                 background_method_on=fit_on["background_method"],
+                 background_method_off=fit_off["background_method"],
                  fit_mask=good,
                  negative_differential_mask=negative,
                  quantitative_valid_mask=good,
@@ -695,7 +718,7 @@ def analyze(run_dir: Path):
         )
         summary["warnings"].append(
             "谱内 NaN 为未通过拟合/背景可辨识性验收；有效负差保留，禁止外推填补；"
-            "truth 谱含线圈频响形状，带外与杂散保护带不可比。"
+            "真值谱未应用线圈频率响应；带外与杂散保护带不可比。"
         )
         summary["status"] = "completed" if good.any() else "quality_failed"
         if not good.any():

@@ -1,10 +1,10 @@
 schema_version: 1
 parameters:
   run_tag: sens
-  pump_laser_power: 0.15
-  probe_laser_power: 0.15
+  pump_laser_power: 0.4
+  probe_laser_power: 0.2
   temperature: 100.0
-  main_magnetic_field: 9.28
+  main_magnetic_field: 8.25
   x_magnetic_field: 0.0
   y_magnetic_field: 0.0
   ramp_low: -0.2
@@ -12,7 +12,7 @@ parameters:
   ramp_freq: 1.0
   ramp_symmetry: 20.0
   daq_duration: 1.0
-  pump_mod_freq: 90000.0
+  pump_mod_freq: 80000.0
   pump_mod_amplitude: 0.18
   pump_mod_duty: 5.0
   noise_n_avg: 5

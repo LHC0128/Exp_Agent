@@ -22,9 +22,10 @@ DEFINITION = ExperimentDefinition(
     description=(
         "在 Z 小线圈注入分段平顶谱的已知周期伪噪声（16384 点任意波连续播放），"
         "相邻控制点交替注入开/关顺序，两态稳定等待并逐段保存；以单一参数模型配置采集，脊线按扫描频带重标定后用完整有效控制轴做洛伦兹分离，保留有符号参数差；"
-        "背景自由拟合并通过远端可辨识性和留出验证，分别报告注入带内/带外的背景变化；"
+        "与正弦噪声谱、Probe AM 实验共用全控制轴分析，背景独立验收，峰不可辨识时检验两侧远端平台，分别报告注入带内/带外的背景变化；"
+        "有符号差值保留用于定量判据，差分幅值图以绝对值展示；"
         "内置 z 偏置色散扫描对整条线形拟合零交叉点斜率给出增益换算，测得谱换算到 Hz²/Hz 后与"
-        "K_Z×线圈频响推算的注入真值逐 bin 比较，带内中位比值作为绝对定量判据。"
+        "仅经 K_Z 换算、不应用线圈频响的注入真值逐 bin 比较，带内中位比值作为定量判据。"
     ),
     data_type="Noise_Spectrum_XY_Ctrl_Known_Noise",
     required_devices=("GS200", "DG900", "DG4000", "HF2"),
@@ -33,7 +34,7 @@ DEFINITION = ExperimentDefinition(
     acquisition_program="experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py",
     analysis_program="experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py",
     wiring_notes=(
-        "运行前人工确认 Z 链路当前接线与 K_Z 标定/频响测量时一致（重点：闭环校正时期串入的 10 kHz 高通是否仍在）。",
+        "运行前人工确认 Z 链路的电压定义与 K_Z 标定一致。",
         "Time_sequence_2 CH2 经三通连接 dg_comp CH1/CH2 Ext Trig；Z 噪声由 Z_magnetic_field CH1 连续播放，不参与 Burst。",
     ),
     safety_notes=(

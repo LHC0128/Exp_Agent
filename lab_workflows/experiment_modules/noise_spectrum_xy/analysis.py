@@ -29,9 +29,9 @@ from ..mx_main_field_scope_noise_spectrum.global_analysis import (
     fit_global_noise_separation, project_global_noise_separation,
 )
 from .models import NoiseSpectrumXYParams, welch_settings
-from .processing import locate_ridge, fit_local_spectra
+from .processing import SEPARATION_METHOD, locate_ridge, fit_local_spectra
 
-ANALYSIS_VERSION = "xy-ridge-local-v3"
+ANALYSIS_VERSION = "xy-independent-background-v5"
 
 
 def write_json(path, payload):
@@ -142,7 +142,7 @@ def plot_fit(results, matrix, frequency, control, fit):
     x_khz = np.asarray(frequency, float) / 1000
     good = np.asarray(fit["fit_mask"], bool)
     controlled, controlled_valid = _interpolate_for_plot(x_khz, fit["S_beta"], good)
-    background, background_valid = _interpolate_for_plot(x_khz, fit["N_S1"], good)
+    background, background_valid = _interpolate_for_plot(x_khz, fit["N_S1"], fit["background_fit_mask"])
     fig, ax_control = new_figure(kind="wide", height_mm=65)
     ax_background = ax_control.twinx()
     control_color, background_color = COLOR_OPTIMAL, COLOR_TRAD
@@ -189,6 +189,21 @@ def plot_fit(results, matrix, frequency, control, fit):
     save_plot(fig,results/"fit_quality.png")
 
 
+def plot_background_diagnostic(results, frequency, fit):
+    """区分背景来自完整洛伦兹模型还是独立验收的远端平台。"""
+    fig, ax = new_figure(kind="wide", height_mm=65)
+    for method, label, marker, color in (
+        ("lorentzian_fit", "Lorentzian background", ".", COLOR_TRAD),
+        ("off_resonance_plateau", "Independent off-resonance background", "s", COLOR_OPTIMAL),
+    ):
+        mask = fit["background_fit_mask"] & (fit["background_method"] == method)
+        ax.semilogy(frequency[mask] / 1000, fit["N_S1"][mask], marker,
+                    ms=3, color=color, label=label)
+    format_axis(ax, xlabel="Frequency (kHz)", ylabel="Background PSD N_S1 (V²/Hz)")
+    style_legend(ax, loc="best")
+    save_plot(fig, results / "background_identifiability.png")
+
+
 def analyze(run_dir: Path):
     run_dir = Path(run_dir).resolve()
     config = yaml.safe_load((run_dir/"experiment_config.yaml").read_text(encoding="utf-8"))
@@ -232,25 +247,57 @@ def analyze(run_dir: Path):
         support = ridge["k"]*ridge["V_cal"]+ridge["b"]
         summary["calibration"]["support_frequency_hz"] = [float(support.min()),float(support.max())]
         print("移动峰标定:",summary["calibration"],flush=True)
-        fit = fit_local_spectra(data,f,ridge["omega_ctrl"],ridge["spur_mask"],
-                                options["fit_half_width_hz"],(support.min(),support.max()))
+        fit = fit_local_spectra(
+            data, f, ridge["omega_ctrl"], ridge["spur_mask"],
+            options["fit_half_width_hz"], (support.min(), support.max()), full_range=True,
+        )
+        # 保留历史 full_range_* 输出键；三种实验现在统一以共享全轴分析为主结果。
+        full_range_fit = fit
         good = fit["fit_mask"]
         np.savez(results/"popt_fit.npz",**{k: val for k,val in fit.items() if k not in ("model_matrix","S_beta","N_S1")},
+                 **{f"full_range_{k}": val for k, val in full_range_fit.items()
+                    if k not in ("model_matrix", "S_beta", "N_S1")},
                  freq_axis=f,param_names=["gamma","Amp","D","dw"])
         np.savez(results/"noise_spectra.npz",S_beta=fit["S_beta"],N_S1=fit["N_S1"],freq_axis=f,
                  amplitudes=v,omega_ctrl=ridge["omega_ctrl"],fit_mask=good,quantitative_valid_mask=good,
                  interpolated_mask=fit["interpolated_mask"],rejection_reason=fit["rejection_reason"],
+                 background_fit_mask=fit["background_fit_mask"],
+                 background_rejection_reason=fit["background_rejection_reason"],
+                 background_method=fit["background_method"],
+                 S_beta_full_range=full_range_fit["S_beta"],
+                 N_S1_full_range=full_range_fit["N_S1"],
+                 fit_mask_full_range=full_range_fit["fit_mask"],
+                 background_fit_mask_full_range=full_range_fit["background_fit_mask"],
+                 background_rejection_reason_full_range=full_range_fit["background_rejection_reason"],
+                 tail_holdout_relative_error_full_range=full_range_fit["tail_holdout_relative_error"],
                  coefficient_semantics="A = C*S_beta; uncalibrated response coefficient, V^2 Hz")
-        np.savetxt(results/"noise_spectra.csv",np.column_stack((f,fit["S_beta"],fit["N_S1"],good.astype(int))),
-                   delimiter=",",header="frequency_Hz,response_coefficient_A_V2_Hz,N_S1_V2_per_Hz,valid",comments="")
+        np.savetxt(results/"noise_spectra.csv",np.column_stack((f,fit["S_beta"],fit["N_S1"],good.astype(int),fit["background_fit_mask"].astype(int))),
+                   delimiter=",",header="frequency_Hz,response_coefficient_A_V2_Hz,N_S1_V2_per_Hz,valid,background_valid",comments="")
         np.savez(results/"fit_diagnostics.npz",frequency_hz=f,control_hz=ridge["omega_ctrl"],
                  measured=data,model=fit["model_matrix"],spur_mask=ridge["spur_mask"])
         plot_fit(results,data,f,ridge["omega_ctrl"],fit)
+        plot_background_diagnostic(results, f, fit)
         reasons,counts=np.unique(fit["rejection_reason"],return_counts=True)
-        summary["fit"] = dict(valid_points=int(good.sum()),total_points=len(f),
+        background_reasons, background_counts = np.unique(
+            full_range_fit["background_rejection_reason"], return_counts=True
+        )
+        summary["fit"] = dict(method=SEPARATION_METHOD, valid_points=int(good.sum()),total_points=len(f),
+                              background_valid_points=int(fit["background_fit_mask"].sum()),
                               rejection_counts=dict(zip(reasons.tolist(),counts.tolist())),
                               valid_frequency_extent_hz=[float(f[good].min()),float(f[good].max())] if good.any() else None,
                               median_holdout_error=float(np.median(fit["holdout_relative_error"][good])) if good.any() else None)
+        full_range_good = full_range_fit["fit_mask"]
+        full_range_background_good = full_range_fit["background_fit_mask"]
+        tail_errors = full_range_fit["tail_holdout_relative_error"][full_range_background_good]
+        summary["background_diagnostic"] = dict(
+            method=SEPARATION_METHOD,
+            peak_fit_points=int(full_range_good.sum()),
+            background_valid_points=int(full_range_background_good.sum()),
+            total_points=len(f),
+            background_rejection_counts=dict(zip(background_reasons.tolist(), background_counts.tolist())),
+            median_tail_holdout_error=float(np.median(tail_errors)) if tail_errors.size else None,
+            note="N_S1 按独立背景掩码输出；popt/perr 仅描述洛伦兹模型，背景来源见 background_method",
+        )
         # Mx 二维共同线宽模型作为对照，不能覆盖局部质量掩码或填充失败点。
         core = (~ridge["spur_mask"]) & (f>=support.min()+options["fit_half_width_hz"]) & (f<=support.max()-options["fit_half_width_hz"])
         indices = np.flatnonzero(core)
@@ -270,9 +317,10 @@ def analyze(run_dir: Path):
                 median_relative_residual=float(np.median(comparison.median_absolute_fractional_residual)),
                 note="条件交叉验证仅检验谱系数；共同线宽与背景由全数据估计，不作为独立定量验收")
         summary["warnings"].append("S_beta 历史键保存的是未去除增益因子的响应系数 A，非绝对磁噪声；谱内 NaN 为未通过质量验收，禁止外推填补。")
-        summary["status"] = "completed" if good.any() else "quality_failed"
-        if not good.any():
-            summary["error"] = "没有频率点通过局部拟合质量验收"
+        summary["warnings"].append("三个 XY 噪声实验共用全控制轴分离；可控响应与背景独立验收，峰失败时允许通过两侧平台一致性和分块留出验证提取 N_S1。")
+        summary["status"] = "completed" if good.any() or fit["background_fit_mask"].any() else "quality_failed"
+        if summary["status"] == "quality_failed":
+            summary["error"] = "没有频率点通过峰或背景质量验收"
         print("分析完成:",summary["fit"],flush=True)
     except WorkflowCancelled as exc:
         summary.update(status="cancelled",error=str(exc))

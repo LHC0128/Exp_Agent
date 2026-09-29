@@ -196,3 +196,6 @@ main { grid-column: 2; padding: 38px 44px 64px; max-width: 1480px; width: 100%; 
 .mx-arch-head h2 { margin: 4px 0 6px; }
 .mx-arch-head p { margin: 0; max-width: 620px; color: #6a797b; font-size: 13px; line-height: 1.6; }
 @media (max-width: 650px) { .mx-arch-head { align-items: stretch; flex-direction: column; } }
+.mx-arch-diagrams { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.mx-arch-diagrams button { border: 1px solid #c7d2d3; background: #fff; color: #33474a; border-radius: 999px; padding: 5px 16px; font-size: 13px; cursor: pointer; }
+.mx-arch-diagrams button.active { background: #147d74; border-color: #147d74; color: #fff; }

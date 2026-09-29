@@ -20,7 +20,6 @@ from ..noise_spectrum_xy.models import (
 # 与 DG4000 任意波点数上限一致；采样率 = NOISE_POINTS * NOISE_REPEAT_FREQ_HZ。
 NOISE_POINTS = 16384
 DEFAULT_Z_CALIBRATION_RUN = "0920_183423_bb_z_cal"
-DEFAULT_Z_TF_RUN = "0820_083722_z_coil_current_frequency_response"
 
 
 def noise_waveform_settings(repeat_freq_hz: float) -> dict[str, float]:
@@ -52,7 +51,6 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
     # ---- 注入开关切换与真值链来源 ----
     z_injection_settle_s: float = parameter(default=0.2, external_name="Z_INJECTION_SETTLE_S", label="注入两态切换等待", unit="s", group="advanced", minimum=0, description="每段采集前设置注入 ON 或 OFF 后均等待；相邻控制点交替两态顺序。")
     z_calibration_source_run: str = parameter(default=DEFAULT_Z_CALIBRATION_RUN, external_name="Z_CALIBRATION_SOURCE_RUN", label="K_Z 标定运行", group="advanced", options_from_directory="data/Bell_Bloom_Z_Field_Calibration", options_pattern="*", options_include_directories=True, options_require_analysis="results/analysis.yaml", options_require_experiment_id="bell-bloom-z-field-calibration", description="真值链只取该运行的斜率 K_Z（Hz/V）；共振中心由主磁场决定，不使用 f_0V。")
-    z_tf_source_run: str = parameter(default=DEFAULT_Z_TF_RUN, external_name="Z_TF_SOURCE_RUN", label="Z 线圈频响运行", group="advanced", options_from_directory="data/Z_Coil_Current_Frequency_Response", options_pattern="*", options_include_directories=True, options_require_relative_file="results/frequency_response.npz", description="高频修正 |H(f)|/|H(f_ref)|，f_ref 取该运行最低可靠频点；K_Z 为直流标定。")
 
     # ---- 内置色散斜率扫描（增益换算） ----
     dispersion_span_v: float = parameter(default=0.17, external_name="DISPERSION_SPAN_V", label="色散扫描半宽", unit="V", group="advanced", minimum=0.001, safety_key="Z_magnetic_field", description="z 偏置步进扫描 ±该电压，覆盖共振色散中心段；默认约 ±2 kHz（按 K_Z 换算）。")
@@ -64,17 +62,18 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
     dispersion_temp_switch_interval_points: int = parameter(default=5, external_name="DISPERSION_TEMP_SWITCH_INTERVAL_POINTS", label="色散温控恢复间隔点数", group="advanced", minimum=0, description="每测完该数量的色散点后打开温度开关一次（按 TEMP_SWITCH_ON_SETTLE_S 等待后重新关闭），避免长时间关闭温控导致温度漂移；0 表示整段保持关闭。")
 
     # ---- 定量判据 ----
-    analysis_fit_half_width_hz: float = parameter(default=3000.0, external_name="ANALYSIS_FIT_HALF_WIDTH_HZ", label="峰定位半窗口", unit="Hz", group="advanced", minimum=1, description="用于峰两侧点数、线宽/频移边界及峰区残差验收；实际拟合使用脊线支持内的全部控制点，远端用于约束背景。")
+    analysis_fit_half_width_hz: float = parameter(default=3000.0, external_name="ANALYSIS_FIT_HALF_WIDTH_HZ", label="峰定位半窗口", unit="Hz", group="advanced", minimum=1, description="三类 XY 噪声实验共用全控制轴分析；此值约束峰区和参数边界，并定义独立背景平台需避开的共振区。")
     analysis_frequency_max_hz: float = parameter(default=50000.0, external_name="ANALYSIS_FREQUENCY_MAX_HZ", label="分析输出频带上限", unit="Hz", group="advanced", minimum=1, description="控制输出谱的频带；脊线搜索同时覆盖保存的扫描目标终点，不用手动 K/B 替代实测标定。")
     ratio_pass_low: float = parameter(default=0.5, external_name="RATIO_PASS_LOW", label="判据比值下限", group="advanced", minimum=0.001, description="带内中位 S_meas/S_truth 低于该值判为不通过。")
     ratio_pass_high: float = parameter(default=2.0, external_name="RATIO_PASS_HIGH", label="判据比值上限", group="advanced", minimum=0.001, description="带内中位 S_meas/S_truth 高于该值判为不通过。")
 
     @classmethod
     def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
-        # 删除已废弃字段；旧快照仍能加载，但新表单和运行不再保存它。
+        # 丢弃已移除的旧参数；历史 GUI 配置仍可加载，新表单和运行不再保存。
         # slots dataclass 子类不能用零参 super()（类被重建），须显式绑定父类。
         migrated = _ParentParams.migrate_external(values, 1 if schema_version < 1 else schema_version)
         migrated.pop("ANALYSIS_BACKGROUND_HALF_WIDTH_HZ", None)
+        migrated.pop("Z_TF_SOURCE_RUN", None)
         return migrated
 
     def noise_bands(self) -> list[tuple[float, float, float]]:

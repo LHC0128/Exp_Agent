@@ -1,0 +1,550 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "XY 正弦控制噪声谱采集架构",
+    "locale": "zh-CN",
+    "output": "noise-spectrum-xy.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/LHC0128/Exp_Agent.git",
+      "link_mode": "web",
+      "revision": "d1435f6deab94a2b462c07d46e75efede6af12e6"
+    },
+    "views": [
+      {
+        "id": "scan",
+        "label": "参数与扫描",
+        "focus": [
+          "scan_params",
+          "dg_comp",
+          "acquisition",
+          "hf2"
+        ],
+        "note": "目标频率轴反算正弦峰值,逐点调幅重触发并采集噪声波形。"
+      },
+      {
+        "id": "hardware",
+        "label": "仪器互连",
+        "focus": [
+          "dg_sweep",
+          "dg_comp",
+          "dg_mod",
+          "gs200",
+          "tec",
+          "vapor_cell"
+        ],
+        "note": "共用方波触发、Pump 射频门控、磁场、光功率与温控链路。"
+      },
+      {
+        "id": "data",
+        "label": "校准与分析",
+        "focus": [
+          "phase_calibration",
+          "hf2",
+          "raw_data",
+          "analysis"
+        ],
+        "note": "两级相位校准与离线脊线重标定、噪声分离。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "scan_params",
+      "type": "backend",
+      "label": "强类型参数模型",
+      "sublabel": "反算扫描轴 · 自动 Welch 分段",
+      "tag": "NoiseSpectrumXYParams",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/models.py",
+          "line": 13,
+          "label": "welch_settings"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/models.py",
+          "line": 131,
+          "label": "包络反算校验"
+        }
+      ],
+      "pos": [
+        40,
+        20
+      ],
+      "size": [
+        220,
+        96
+      ]
+    },
+    {
+      "id": "dg_comp",
+      "type": "external",
+      "label": "X/Y 控制 DG4000",
+      "sublabel": "CH1/CH2 正弦载波,外触发无限 Burst",
+      "tag": "dg_comp",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 207,
+          "label": "连接"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 647,
+          "label": "configure_xy_sine"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 671,
+          "label": "set_xy_sine_peak"
+        }
+      ],
+      "pos": [
+        360,
+        176
+      ],
+      "size": [
+        220,
+        88
+      ]
+    },
+    {
+      "id": "vapor_cell",
+      "type": "external",
+      "label": "铷原子气室",
+      "sublabel": "主磁场下 Larmor 进动 · Pump/Probe 光",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 613,
+          "label": "同步机制注释"
+        }
+      ],
+      "pos": [
+        700,
+        192
+      ],
+      "size": [
+        240,
+        96
+      ]
+    },
+    {
+      "id": "hf2",
+      "type": "external",
+      "label": "HF2 锁相放大器",
+      "sublabel": "Demod0 解调 + DAQ 采集 sample.y",
+      "tag": "lockin_r",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 290,
+          "label": "连接"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 877,
+          "label": "DAQConfig"
+        }
+      ],
+      "pos": [
+        1140,
+        192
+      ],
+      "size": [
+        200,
+        96
+      ]
+    },
+    {
+      "id": "dg_sweep",
+      "type": "external",
+      "label": "触发 DG4000",
+      "sublabel": "Z 场关闭 · CH2 方波触发源",
+      "tag": "Time_sequence_2",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 222,
+          "label": "连接"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 527,
+          "label": "configure_sequence_2_trigger"
+        }
+      ],
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        210,
+        88
+      ]
+    },
+    {
+      "id": "dg_mod",
+      "type": "external",
+      "label": "Pump 调制 DG4000",
+      "sublabel": "100 MHz 载波 + 门控",
+      "tag": "dg_mod",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 240,
+          "label": "连接"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 500,
+          "label": "载波与门控配置"
+        }
+      ],
+      "pos": [
+        630,
+        330
+      ],
+      "size": [
+        170,
+        88
+      ]
+    },
+    {
+      "id": "gs200",
+      "type": "external",
+      "label": "GS200 主磁场源",
+      "sublabel": "恒流输出驱动 B0 线圈",
+      "tag": "main_magnetic_field",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 196,
+          "label": "连接与限流"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 373,
+          "label": "set_current"
+        }
+      ],
+      "pos": [
+        340,
+        330
+      ],
+      "size": [
+        200,
+        88
+      ]
+    },
+    {
+      "id": "tec",
+      "type": "external",
+      "label": "TEC103 + 温度开关",
+      "sublabel": "气室恒温 · 测量时断开",
+      "tag": "Temp_Switch",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 265,
+          "label": "TEC 连接"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 335,
+          "label": "set_temp_switch"
+        }
+      ],
+      "pos": [
+        830,
+        330
+      ],
+      "size": [
+        190,
+        88
+      ]
+    },
+    {
+      "id": "phase_calibration",
+      "type": "backend",
+      "label": "两级相位校准",
+      "sublabel": "Demod0 校相 + XY 相位迭代",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 589,
+          "label": "calibrate_demod_phase"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 723,
+          "label": "calibrate_xy_phase"
+        }
+      ],
+      "pos": [
+        360,
+        20
+      ],
+      "size": [
+        220,
+        96
+      ]
+    },
+    {
+      "id": "acquisition",
+      "type": "backend",
+      "label": "逐点扫描采集",
+      "sublabel": "调幅重触发 · 温控开关 · DAQ 采集",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 843,
+          "label": "扫描循环"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 889,
+          "label": "acquire_data"
+        }
+      ],
+      "pos": [
+        700,
+        454
+      ],
+      "size": [
+        240,
+        88
+      ]
+    },
+    {
+      "id": "raw_data",
+      "type": "database",
+      "label": "raw/ 原始数据",
+      "sublabel": "扫描轴 + 逐点波形 (.npz/.npy)",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 791,
+          "label": "扫描轴保存"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py",
+          "line": 903,
+          "label": "波形保存"
+        }
+      ],
+      "pos": [
+        700,
+        566
+      ],
+      "size": [
+        240,
+        88
+      ]
+    },
+    {
+      "id": "analysis",
+      "type": "backend",
+      "label": "离线噪声分析",
+      "sublabel": "PSD 脊线标定 · 噪声分离",
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/analysis.py",
+          "line": 192,
+          "label": "analyze"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/processing.py",
+          "line": 25,
+          "label": "locate_ridge"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy/processing.py",
+          "line": 112,
+          "label": "fit_local_spectra"
+        }
+      ],
+      "pos": [
+        1140,
+        566
+      ],
+      "size": [
+        200,
+        88
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "params-xy",
+      "from": "scan_params",
+      "to": "dg_comp",
+      "label": "V_env 扫描轴",
+      "variant": "dashed"
+    },
+    {
+      "id": "trigger-xy",
+      "from": "dg_sweep",
+      "to": "dg_comp",
+      "label": "方波经三通 → 两路 Ext Trig",
+      "variant": "security",
+      "labelAt": [
+        230,
+        250
+      ]
+    },
+    {
+      "id": "xy-cell",
+      "from": "dg_comp",
+      "to": "vapor_cell",
+      "label": "X/Y 正交控制场"
+    },
+    {
+      "id": "b0-cell",
+      "from": "gs200",
+      "to": "vapor_cell",
+      "label": "主磁场 B0",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "pump-cell",
+      "from": "dg_mod",
+      "to": "vapor_cell",
+      "label": "门控 Pump 光",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "tec-cell",
+      "from": "tec",
+      "to": "vapor_cell",
+      "label": "恒温 / 温控开关",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "cell-hf2",
+      "from": "vapor_cell",
+      "to": "hf2",
+      "label": "PD 信号",
+      "variant": "emphasis",
+      "labelDx": -60
+    },
+    {
+      "id": "hf2-phasecal",
+      "from": "hf2",
+      "to": "phase_calibration",
+      "label": "theta / R 读数",
+      "variant": "emphasis"
+    },
+    {
+      "id": "phasecal-xy",
+      "from": "phase_calibration",
+      "to": "dg_comp",
+      "label": "写入 Burst 相位",
+      "variant": "dashed",
+      "labelDy": 40
+    },
+    {
+      "id": "acq-xy",
+      "from": "acquisition",
+      "to": "dg_comp",
+      "label": "调幅重触发",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "bottom",
+      "via": [
+        [
+          295,
+          498
+        ],
+        [
+          295,
+          300
+        ],
+        [
+          470,
+          300
+        ]
+      ],
+      "labelAt": [
+        430,
+        512
+      ]
+    },
+    {
+      "id": "acq-temp",
+      "from": "acquisition",
+      "to": "tec",
+      "label": "Output OFF / ON",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelAt": [
+        850,
+        436
+      ]
+    },
+    {
+      "id": "acq-hf2",
+      "from": "acquisition",
+      "to": "hf2",
+      "label": "DAQ 采集",
+      "variant": "emphasis",
+      "labelAt": [
+        1060,
+        470
+      ]
+    },
+    {
+      "id": "acq-raw",
+      "from": "acquisition",
+      "to": "raw_data",
+      "label": "保存波形",
+      "variant": "emphasis",
+      "labelAt": [
+        820,
+        554
+      ]
+    },
+    {
+      "id": "raw-analysis",
+      "from": "raw_data",
+      "to": "analysis",
+      "label": "Welch / 拟合",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "扫描与校准流程",
+      "items": [
+        "目标 Ωctrl 轴按 Ω = K·|V| + B 反算正弦峰值,预检校验标定范围与 X/Y 安全限值",
+        "温控关闭时先做 Demod0 校相,再以共享步骤迭代校准 XY Burst 相位,直到相位偏移收敛",
+        "每点:X/Y OFF → set_amplitude 调幅 → 按校准相位重开并等待共用外触发 → 温控 OFF → DAQ 采集 → 恢复温控"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "仪器互连",
+      "items": [
+        "Time_sequence_2 CH2 固定方波经三通同时接 dg_comp CH1/CH2 Ext Trig,校相与扫描期间保持常开",
+        "Pump 调制 DG4000:CH1 100 MHz 载波 + CH2 脉冲门控,经 RF 开关调制 Pump 光",
+        "DG900 双通道 DC 设定 Pump/Probe 光功率;GS200 恒流驱动主磁场;连接的仪器统一 10 MHz 参考时钟"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "数据与质量",
+      "items": [
+        "raw/ 保存 control_scan_axes.npz 与每点 waveform_C####.npy;DAQ 失败点存 NaN 并继续,不重试",
+        "离线分析重新计算 Welch PSD,从移动脊线重标定 K/B,不沿用采集预设值",
+        "局部拟合输出 S_beta 与 N_S1 及质量掩码;未通过验收的点保留 NaN,不插值外推"
+      ]
+    }
+  ]
+}

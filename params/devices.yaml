@@ -127,7 +127,7 @@ devices:
     instrument: tec_controller
     model: TEC103
     label: Cell 温控器
-    resource: COM3
+    resource: COM13
     reference_clock: null
     connection: {}
     capabilities:
@@ -175,3 +175,18 @@ devices:
       channels:
       - 1
       - 2
+  dg4e261300744:
+    instrument: signal_generator
+    model: DG4000
+    label: Probe AOM 外部 AM 噪声信号源
+    resource: USB0::0x1AB1::0x0641::DG4E261300744::INSTR
+    reference_clock: EXT
+    connection: {}
+    capabilities:
+      channels:
+      - 1
+      - 2
+      min_arb_points: 2
+      max_arb_points: 16384
+      supports_arbitrary: true
+      supports_infinite_burst: true

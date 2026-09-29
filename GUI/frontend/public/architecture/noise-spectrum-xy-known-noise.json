@@ -1,0 +1,525 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "XY 控制已知可控噪声谱采集架构",
+    "locale": "zh-CN",
+    "output": "noise-spectrum-xy-known-noise.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/LHC0128/Exp_Agent.git",
+      "link_mode": "web",
+      "revision": "d1435f6deab94a2b462c07d46e75efede6af12e6"
+    },
+    "views": [
+      {
+        "id": "injection-path",
+        "label": "注入与探测主路径",
+        "focus": [
+          "dg_sweep",
+          "vapor_cell",
+          "hf2",
+          "acq"
+        ],
+        "note": "已知谱伪噪声经 Z 线圈连续注入,差分采集由 HF2 记录。"
+      },
+      {
+        "id": "hardware",
+        "label": "仪器互连与同步",
+        "focus": [
+          "dg_sweep",
+          "dg_comp",
+          "pump_optics",
+          "gs200",
+          "temp",
+          "vapor_cell"
+        ],
+        "note": "共用方波触发、10 MHz 参考时钟与温控门控。"
+      },
+      {
+        "id": "truth",
+        "label": "真值链与数据",
+        "focus": [
+          "acq",
+          "kz_cal",
+          "calibration",
+          "raw_data",
+          "analysis"
+        ],
+        "note": "波形数值 PSD × K_Z² 为注入真值,离线差分分析输出定量判据。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "dg_sweep",
+      "type": "external",
+      "label": "注入 / 触发 DG4000",
+      "sublabel": "CH1 Z 任意波连续 · CH2 共用方波",
+      "tag": "Z_magnetic_field",
+      "pos": [
+        900,
+        14
+      ],
+      "size": [
+        220,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "dg_sweep 连接与任意波上传"
+        }
+      ]
+    },
+    {
+      "id": "calibration",
+      "type": "backend",
+      "label": "校准与色散标定",
+      "sublabel": "两级校相 · 色散线形零交叉斜率",
+      "pos": [
+        300,
+        14
+      ],
+      "size": [
+        180,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "两级相位校准"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "measure_dispersion_slope"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/dispersion.py",
+          "label": "fit_dispersion_curve"
+        }
+      ]
+    },
+    {
+      "id": "dg_comp",
+      "type": "external",
+      "label": "X/Y 控制 DG4000",
+      "sublabel": "CH1/CH2 正弦 · 外触发 Burst",
+      "tag": "dg_comp",
+      "pos": [
+        24,
+        130
+      ],
+      "size": [
+        190,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "configure_xy_sine / set_xy_sine_peak"
+        }
+      ]
+    },
+    {
+      "id": "vapor_cell",
+      "type": "external",
+      "label": "铷原子气室",
+      "sublabel": "Bell-Bloom 磁力计 · Pump/Probe 光",
+      "pos": [
+        600,
+        130
+      ],
+      "size": [
+        440,
+        88
+      ],
+      "sources": [
+        {
+          "path": "params/mapping.yaml",
+          "label": "物理量映射"
+        }
+      ]
+    },
+    {
+      "id": "hf2",
+      "type": "external",
+      "label": "HF2 锁相放大器",
+      "sublabel": "Demod0 解调 + DAQ 采集 sample.y",
+      "tag": "lockin_r",
+      "pos": [
+        1140,
+        130
+      ],
+      "size": [
+        210,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "HF2 连接 · DAQConfig"
+        }
+      ]
+    },
+    {
+      "id": "pump_optics",
+      "type": "external",
+      "label": "Pump 调制与光功率",
+      "sublabel": "门控 · Pump/Probe 光功率",
+      "tag": "Pump_modulation",
+      "pos": [
+        610,
+        260
+      ],
+      "size": [
+        140,
+        80
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "Pump 调制配置"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "Pump/Probe 光功率"
+        }
+      ]
+    },
+    {
+      "id": "gs200",
+      "type": "external",
+      "label": "GS200 主磁场源",
+      "sublabel": "恒流驱动 B0 · 共振中心",
+      "tag": "main_magnetic_field",
+      "pos": [
+        760,
+        260
+      ],
+      "size": [
+        140,
+        80
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "GS200 连接与设流"
+        }
+      ]
+    },
+    {
+      "id": "temp",
+      "type": "external",
+      "label": "TEC103 + 温控开关",
+      "sublabel": "恒温 · 测量窗口断开",
+      "tag": "Temp_Switch",
+      "pos": [
+        910,
+        260
+      ],
+      "size": [
+        130,
+        80
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "set_temp_switch"
+        }
+      ]
+    },
+    {
+      "id": "kz_cal",
+      "type": "database",
+      "label": "K_Z 标定运行",
+      "sublabel": "Bell-Bloom Z 场标定 · Hz/V",
+      "tag": "truth chain",
+      "pos": [
+        1140,
+        460
+      ],
+      "size": [
+        210,
+        78
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/generation.py",
+          "label": "load_z_calibration"
+        }
+      ]
+    },
+    {
+      "id": "raw_data",
+      "type": "database",
+      "label": "raw/ 原始数据",
+      "sublabel": "off/on 波形 · 色散 · 配置与 timing",
+      "pos": [
+        680,
+        570
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "np.save / experiment_config.yaml"
+        }
+      ]
+    },
+    {
+      "id": "analysis",
+      "type": "backend",
+      "label": "离线差分分析",
+      "sublabel": "脊线重标定 · 参数层差分 · 真值判据",
+      "pos": [
+        1140,
+        570
+      ],
+      "size": [
+        210,
+        88
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/analysis.py",
+          "label": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "acq",
+      "type": "backend",
+      "label": "参数与成对扫描采集",
+      "sublabel": "强类型参数 · 波形生成 · 交替两态",
+      "pos": [
+        680,
+        390
+      ],
+      "size": [
+        250,
+        96
+      ],
+      "sources": [
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/models.py",
+          "label": "NoiseSpectrumXYKnownNoiseParams"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/generation.py",
+          "label": "generate_known_noise_waveform"
+        },
+        {
+          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
+          "label": "主扫描循环 / acquire_pair"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "cal-xy",
+      "from": "calibration",
+      "to": "dg_comp",
+      "label": "校准相位",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [
+        [
+          390,
+          116
+        ],
+        [
+          119,
+          116
+        ]
+      ]
+    },
+    {
+      "id": "injection-cell",
+      "from": "dg_sweep",
+      "to": "vapor_cell",
+      "label": "Z 线圈注入已知谱噪声",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1120,
+        116
+      ]
+    },
+    {
+      "id": "xy-cell",
+      "from": "dg_comp",
+      "to": "vapor_cell",
+      "label": "X/Y 控制场",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "temp-cell",
+      "from": "temp",
+      "to": "vapor_cell",
+      "label": "温控 · 测量窗口断开",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": 24
+    },
+    {
+      "id": "pump-cell",
+      "from": "pump_optics",
+      "to": "vapor_cell",
+      "label": "Pump 光调制与功率",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": 16
+    },
+    {
+      "id": "b0-cell",
+      "from": "gs200",
+      "to": "vapor_cell",
+      "label": "主磁场 B0",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDx": 40,
+      "labelDy": 8
+    },
+    {
+      "id": "cell-hf2",
+      "from": "vapor_cell",
+      "to": "hf2",
+      "label": "PD 探测信号",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "acq-xy",
+      "from": "acq",
+      "to": "dg_comp",
+      "label": "逐点调幅 · 重触发",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "bottom",
+      "via": [
+        [
+          119,
+          438
+        ],
+        [
+          119,
+          218
+        ]
+      ]
+    },
+    {
+      "id": "acq-inj",
+      "from": "acq",
+      "to": "dg_sweep",
+      "label": "上传任意波 · 注入 OFF/ON 交替",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "right",
+      "via": [
+        [
+          1430,
+          438
+        ],
+        [
+          1430,
+          58
+        ]
+      ],
+      "labelDx": 20
+    },
+    {
+      "id": "acq-hf2",
+      "from": "acq",
+      "to": "hf2",
+      "label": "DAQ 逐段采集",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "via": [
+        [
+          805,
+          380
+        ],
+        [
+          1245,
+          380
+        ],
+        [
+          1245,
+          218
+        ]
+      ],
+      "labelDy": 14
+    },
+    {
+      "id": "acq-raw",
+      "from": "acq",
+      "to": "raw_data",
+      "label": "逐段落盘 · 运行配置",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 40
+    },
+    {
+      "id": "raw-analysis",
+      "from": "raw_data",
+      "to": "analysis",
+      "label": "Welch · 差分拟合",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "kz-analysis",
+      "from": "kz_cal",
+      "to": "analysis",
+      "label": "K_Z² 真值换算",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1245,
+        552
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "注入与差分扫描",
+      "items": [
+        "16384 点分段平顶谱伪噪声以固定 seed 生成,重复频率参数化,谱线间隔 = 重复频率",
+        "目标频率轴按 Ω = K·V + B 反算正弦峰值,逐点 OFF→调幅→校准相位→ON 等共用外触发",
+        "相邻控制点交替 OFF→ON / ON→OFF,同一温控开关关闭窗口内完成两态,每态等待后立即落盘"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "仪器互连",
+      "items": [
+        "Time_sequence_2 CH2 固定方波经三通接 dg_comp CH1/CH2 Ext Trig,扫描期间常开",
+        "Z 注入连续播放不参与 Burst;色散扫描阶段临时切 DC,扫完重传任意波并回读校验",
+        "GS200 恒流决定共振中心;DG900 设定 Pump/Probe 光功率;连接仪器统一 10 MHz 参考时钟"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "真值与判据",
+      "items": [
+        "注入真值 = 实际波形数值 Welch PSD × K_Z²,不应用线圈频响;被测侧增益由色散线形零交叉斜率换算",
+        "离线分析重标定移动脊线、全轴洛伦兹拟合后在参数层差分,背景独立验收",
+        "判据只在注入带内评估:有效覆盖 ≥ 50% 且中位比值落在阈值区间;completed 不等于通过"
+      ]
+    }
+  ]
+}

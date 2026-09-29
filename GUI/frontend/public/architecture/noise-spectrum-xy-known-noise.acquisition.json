@@ -1,0 +1,286 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "XY 已知噪声注入 · 采集执行流程",
+    "locale": "zh-CN",
+    "output": "noise-spectrum-xy-known-noise.acquisition.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "prepare",
+        "label": "准备与校准",
+        "focus": [
+          "n-init",
+          "n-fixed",
+          "n-phasecal",
+          "n-disp"
+        ],
+        "note": "波形生成上传、两级校相与色散增益基准。"
+      },
+      {
+        "id": "scan",
+        "label": "逐点差分扫描",
+        "focus": [
+          "n-point",
+          "n-pair"
+        ],
+        "note": "单个控制点的完整时序与两态成对采集。"
+      },
+      {
+        "id": "safety",
+        "label": "失败与收尾",
+        "focus": [
+          "n-safe"
+        ],
+        "note": "取消、异常与 try/finally 安全收尾路径。"
+      }
+    ],
+    "viewBox": [
+      1460,
+      652
+    ]
+  },
+  "lanes": [
+    {
+      "id": "setup",
+      "label": "准备与校准"
+    },
+    {
+      "id": "scan",
+      "label": "主扫描"
+    },
+    {
+      "id": "data",
+      "label": "数据落盘"
+    },
+    {
+      "id": "safety",
+      "label": "收尾",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-init",
+      "label": "初始化",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "p-calib",
+      "label": "校准与色散标定",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-scan",
+      "label": "逐点差分扫描与收尾",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "mainPath": [
+    "n-init",
+    "n-fixed",
+    "n-phasecal",
+    "n-disp",
+    "n-point",
+    "n-pair"
+  ],
+  "semanticChecks": {
+    "allowedRoots": [
+      "n-init"
+    ],
+    "allowedTerminals": [
+      "n-safe",
+      "n-raw"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "n-init",
+      "lane": "setup",
+      "col": 0,
+      "type": "backend",
+      "label": "加载参数·连接设备",
+      "width": 120
+    },
+    {
+      "id": "n-fixed",
+      "lane": "setup",
+      "col": 1,
+      "type": "backend",
+      "label": "工作点·上传任意波",
+      "width": 120
+    },
+    {
+      "id": "n-phasecal",
+      "lane": "setup",
+      "col": 2,
+      "type": "backend",
+      "label": "两级相位校准",
+      "width": 120
+    },
+    {
+      "id": "n-disp",
+      "lane": "setup",
+      "col": 3,
+      "type": "backend",
+      "label": "色散斜率扫描",
+      "width": 120
+    },
+    {
+      "id": "n-point",
+      "lane": "scan",
+      "col": 4,
+      "type": "backend",
+      "label": "逐控制点工作点",
+      "width": 120
+    },
+    {
+      "id": "n-pair",
+      "lane": "scan",
+      "col": 5,
+      "type": "backend",
+      "label": "两态成对采集",
+      "width": 120
+    },
+    {
+      "id": "n-safe",
+      "lane": "safety",
+      "col": 5,
+      "type": "security",
+      "label": "安全收尾",
+      "width": 120
+    },
+    {
+      "id": "n-raw",
+      "lane": "data",
+      "col": 5,
+      "type": "database",
+      "label": "raw/ 逐段波形落盘",
+      "width": 145
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-init-fixed",
+      "from": "n-init",
+      "to": "n-fixed",
+      "label": "配置就绪",
+      "role": "main"
+    },
+    {
+      "id": "e-fixed-cal",
+      "from": "n-fixed",
+      "to": "n-phasecal",
+      "label": "任意波待命",
+      "role": "main"
+    },
+    {
+      "id": "e-cal-disp",
+      "from": "n-phasecal",
+      "to": "n-disp",
+      "label": "相位收敛",
+      "role": "main"
+    },
+    {
+      "id": "e-disp-point",
+      "from": "n-disp",
+      "to": "n-point",
+      "label": "增益基准就绪",
+      "role": "main"
+    },
+    {
+      "id": "e-point-pair",
+      "from": "n-point",
+      "to": "n-pair",
+      "label": "共用外触发同步",
+      "role": "main"
+    },
+    {
+      "id": "e-pair-point",
+      "from": "n-pair",
+      "to": "n-point",
+      "label": "下一控制点 · 交替顺序",
+      "role": "return"
+    },
+    {
+      "id": "e-pair-safe",
+      "from": "n-pair",
+      "to": "n-safe",
+      "label": "扫描完成 · finally",
+      "role": "main"
+    },
+    {
+      "id": "e-init-safe",
+      "from": "n-init",
+      "to": "n-safe",
+      "label": "连接失败 · 取消",
+      "role": "error"
+    },
+    {
+      "id": "e-point-safe",
+      "from": "n-point",
+      "to": "n-safe",
+      "label": "检查点取消 · 异常",
+      "role": "error",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "via": [
+        [
+          766.8,
+          420
+        ],
+        [
+          1300,
+          420
+        ],
+        [
+          1300,
+          491
+        ]
+      ]
+    },
+    {
+      "id": "e-pair-raw",
+      "from": "n-pair",
+      "to": "n-raw",
+      "label": "逐段立即落盘",
+      "role": "main",
+      "fromSide": "right",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "每点时序",
+      "items": [
+        "逐点调幅后按校准相位等待共用外触发",
+        "同温控窗口内注入 OFF/ON 两态各等待采集",
+        "相邻点交替顺序,每段立即落盘记 timing"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "同步与互斥",
+      "items": [
+        "方波常开经三通触发 Burst;统一 10 MHz 时钟",
+        "Z 注入连续播放;DC 切换后必须重传任意波",
+        "色散扫描每数点回插温控;扫完恢复注入"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "失败与收尾",
+      "items": [
+        "波形无效仅警告保留,离线排除不重试",
+        "校相未收敛告警继续;取消触发安全收尾",
+        "finally 收尾:关控制场与注入,仅断 TEC"
+      ]
+    }
+  ]
+}

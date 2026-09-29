@@ -23,6 +23,8 @@ import numpy as np
 import yaml
 import time
 import math
+import os
+import atexit
 from datetime import datetime
 
 # 设备库
@@ -38,7 +40,6 @@ from lab_workflows.experiment_runtime import (
 from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.generation import (
     generate_known_noise_waveform,
     load_z_calibration,
-    load_z_coil_transfer,
 )
 from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.dispersion import (
     fit_dispersion_curve,
@@ -46,6 +47,9 @@ from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.dispersion i
 from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.models import (
     NOISE_POINTS,
     NoiseSpectrumXYKnownNoiseParams,
+)
+from lab_workflows.experiment_modules.noise_spectrum_xy_probe_am.models import (
+    NoiseSpectrumXYProbeAMParams,
 )
 from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.acquisition import (
     acquire_pair,
@@ -77,8 +81,18 @@ from lockin_amplifier import (
 )
 
 # ========== 实验参数 ==========
-EXPERIMENT_TYPE = "Noise_Spectrum_XY_Ctrl_Known_Noise"
-PURPOSE = "known_noise_verification"
+EXPERIMENT_ID = os.environ.get("LAB_EXPERIMENT_ID", "noise-spectrum-xy-known-noise")
+IS_PROBE_AM = EXPERIMENT_ID == "noise-spectrum-xy-uncontrolled-probe-am"
+PARAMS = load_runtime_params(
+    NoiseSpectrumXYProbeAMParams if IS_PROBE_AM else NoiseSpectrumXYKnownNoiseParams
+)
+apply_runtime_params(globals(), PARAMS)
+EXPERIMENT_TYPE = (
+    "Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM" if IS_PROBE_AM
+    else "Noise_Spectrum_XY_Ctrl_Known_Noise"
+)
+PURPOSE = "probe_am_uncontrolled_noise" if IS_PROBE_AM else "known_noise_verification"
+PAIR_SETTLE_S = INJECTION_SETTLE_S if IS_PROBE_AM else Z_INJECTION_SETTLE_S
 
 print("所有库导入成功")
 
@@ -91,19 +105,22 @@ with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f
     LIMITS = yaml.safe_load(f)["safety_limits"]
 
 # 强类型模型是唯一 GUI/默认配置入口；大写名称仅作为工作流局部兼容别名。
-PARAMS = load_runtime_params(NoiseSpectrumXYKnownNoiseParams)
-apply_runtime_params(globals(), PARAMS)
-
 print("配置已加载")
 
 # %% Cell 4.5
-# ---- 生成已知噪声波形（纯计算，无硬件）并加载真值链标定 ----
+# ---- 生成已知噪声波形（纯计算，无硬件）并加载 K_Z 标定 ----
 NOISE_BANDS = list(zip(NOISE_BAND_STARTS_HZ, NOISE_BAND_STOPS_HZ,
                        NOISE_BAND_PSDS_V2_PER_HZ, strict=True))
 NOISE_WAVEFORM = generate_known_noise_waveform(
     repeat_freq_hz=NOISE_REPEAT_FREQ_HZ, bands=NOISE_BANDS, seed=NOISE_SEED)
-Z_CALIBRATION = load_z_calibration(project_root, Z_CALIBRATION_SOURCE_RUN)
-Z_TRANSFER = load_z_coil_transfer(project_root, Z_TF_SOURCE_RUN)
+if IS_PROBE_AM and INJECT_CONTROLLED_NOISE:
+    Z_NOISE_BANDS = list(zip(Z_NOISE_BAND_STARTS_HZ, Z_NOISE_BAND_STOPS_HZ,
+                             Z_NOISE_BAND_PSDS_V2_PER_HZ, strict=True))
+    Z_NOISE_WAVEFORM = generate_known_noise_waveform(
+        repeat_freq_hz=Z_NOISE_REPEAT_FREQ_HZ,
+        bands=Z_NOISE_BANDS, seed=Z_NOISE_SEED)
+if not IS_PROBE_AM:
+    Z_CALIBRATION = load_z_calibration(project_root, Z_CALIBRATION_SOURCE_RUN)
 NOISE_REALIZED_SCALE = (NOISE_AMPLITUDE_VPP / 2.0 / NOISE_WAVEFORM.design_peak_v) ** 2
 print(
     f"噪声波形: {NOISE_POINTS} 点 @ {NOISE_WAVEFORM.sample_rate_sa_s:.0f} Sa/s "
@@ -113,8 +130,11 @@ print(
     f"设计峰值 {NOISE_WAVEFORM.design_peak_v:.4f} V, RMS {NOISE_WAVEFORM.rms_v:.4f} V; "
     f"实际注入谱 = 设计谱 × {NOISE_REALIZED_SCALE:.4g}"
 )
-print(f"真值链: K_Z = {Z_CALIBRATION.k_hz_per_v:.2f} Hz/V ({Z_CALIBRATION.source_run}), "
-      f"频响归一化参考 {Z_TRANSFER.reference_hz:g} Hz ({Z_TRANSFER.source_run})")
+if IS_PROBE_AM:
+    print("Probe AOM AM 噪声以测量端 N_S1 报告，不进行绝对光功率换算")
+else:
+    print(f"真值换算: K_Z = {Z_CALIBRATION.k_hz_per_v:.2f} Hz/V ({Z_CALIBRATION.source_run}); "
+          "不应用线圈频响")
 
 # %% Cell 5
 # 安全边界检查函数
@@ -151,9 +171,16 @@ def build_target_scan_axes():
 
 def validate_noise_output_levels():
     """噪声注入输出极值与色散偏置全部先过安全限值。"""
-    for value in (NOISE_AMPLITUDE_VPP / 2.0, -NOISE_AMPLITUDE_VPP / 2.0,
-                  DISPERSION_SPAN_V, -DISPERSION_SPAN_V):
-        validate_safety_limit("Z_magnetic_field", value)
+    mapping_key = "Probe_AOM_AM" if IS_PROBE_AM else "Z_magnetic_field"
+    values = (NOISE_AMPLITUDE_VPP / 2.0, -NOISE_AMPLITUDE_VPP / 2.0)
+    if not IS_PROBE_AM:
+        values += (DISPERSION_SPAN_V, -DISPERSION_SPAN_V)
+    for value in values:
+        validate_safety_limit(mapping_key, value)
+    if IS_PROBE_AM and INJECT_CONTROLLED_NOISE:
+        for value in (Z_NOISE_AMPLITUDE_VPP, Z_NOISE_AMPLITUDE_VPP / 2,
+                      -Z_NOISE_AMPLITUDE_VPP / 2):
+            validate_safety_limit("Z_magnetic_field", value)
 
 
 validate_noise_output_levels()
@@ -191,23 +218,31 @@ try:
     print(f"补偿场 DG4000 已连接: {dg_comp.idn()}")
     devices["dg_comp"] = dg_comp
 
-    # ---- DG4000: Z 噪声注入（CH1 任意波）；Time_sequence_2 共用外触发 ----
+    # ---- DG4000: Z 噪声与 Time_sequence_2 共用外触发；Probe AM 使用独立信号源 ----
+    sequence_cfg = MAPPING["Time_sequence_2"]
     dg_sweep_cfg = MAPPING["Z_magnetic_field"]
     dg_sweep, _ = connect_signal_generator_routes(
-        session,
-        "dg_sweep",
-        {
-            "z": ("Z_magnetic_field", dg_sweep_cfg),
-            "sequence_2": ("Time_sequence_2", MAPPING["Time_sequence_2"]),
-        },
+        session, "dg_sweep",
+        {"z": ("Z_magnetic_field", dg_sweep_cfg),
+         "sequence_2": ("Time_sequence_2", sequence_cfg)},
         logical_channels={"z": 1, "sequence_2": 2},
     )
-    print(f"Z 场 DG4000 已连接: {dg_sweep.idn()}")
-    # 高阻负载只在设备初始化时设置一次；任意波重传不再改写负载。
+    if IS_PROBE_AM:
+        dg_probe_cfg = MAPPING["Probe_AOM_Carrier"]
+        dg_probe_noise_cfg = MAPPING["Probe_AOM_AM"]
+        dg_probe_am, _ = connect_signal_generator_routes(
+            session, "dg_probe_am",
+            {"carrier": ("Probe_AOM_Carrier", dg_probe_cfg),
+             "noise": ("Probe_AOM_AM", dg_probe_noise_cfg)},
+            logical_channels={"carrier": 1, "noise": 2},
+        )
+        devices["dg_probe_am"] = dg_probe_am
     z_channel = int(dg_sweep_cfg["channel"])
     dg_sweep.set_output(False, channel=z_channel)
-    dg_sweep.set_output_load("INFinity", channel=z_channel)
+    dg_sweep.set_output_load("INF", channel=z_channel)
     dg_sweep.set_voltage_unit("VPP", channel=z_channel)
+    print(f"XY 外触发 DG4000 已连接: {dg_sweep.idn()}")
+    # Z 场和外触发映射同机；Probe AM 走独立 DG4000。
     devices["dg_sweep"] = dg_sweep
 
     # ---- DG4000: Pump 调制 ----
@@ -275,17 +310,20 @@ try:
     print(f"HF2 已连接: {hfi.idn}")
     devices["hf2"] = hfi
 
+    clock_routes = {
+        "dg_comp": "X_magnetic_field",
+        "dg_sweep": "Z_magnetic_field",
+        "dg_mod": "Pump_modulation",
+        "dg_temp": "Temp_Switch",
+        "dg_laser": "Pump_laser_power",
+        "hf2": "lockin_r",
+    }
+    if IS_PROBE_AM:
+        clock_routes["dg_probe_am"] = "Probe_AOM_Carrier"
     clock_sources = synchronize_connected_clocks(
         devices,
         MAPPING,
-        {
-            "dg_comp": "X_magnetic_field",
-            "dg_sweep": "Z_magnetic_field",
-            "dg_mod": "Pump_modulation",
-            "dg_temp": "Temp_Switch",
-            "dg_laser": "Pump_laser_power",
-            "hf2": "lockin_r",
-        },
+        clock_routes,
     )
 
 except Exception as e:
@@ -364,38 +402,44 @@ temp_now = temperature_status.actual_temperature_c
 if temp_now is not None:
     print(f"温度已稳定: {temp_now:.2f} °C")
 
-# ---- 6. Z 噪声波形上传（输出 OFF 待命；扫描全程不再更新） ----
-def upload_noise_waveform():
-    """按 Z 闭环流程上传伪噪声并校验 INFINITY/VPP 基准；不改变输出状态。"""
-    z_channel = int(dg_sweep_cfg["channel"])
-    upload_arbitrary(dg_sweep, ArbitraryWaveformSpec(
-        values=NOISE_WAVEFORM.normalized,
-        frequency=float(NOISE_REPEAT_FREQ_HZ),
-        amplitude=float(NOISE_AMPLITUDE_VPP),
+# ---- 6. 任意波上传（输出 OFF 待命；扫描全程不再更新） ----
+def upload_noise_waveform(*, generator=None, channel=None, waveform=None,
+                          repeat_freq_hz=None, amplitude_vpp=None):
+    """上传噪声波形并回读幅度、频率、点数和负载。"""
+    generator = generator if generator is not None else (dg_probe_am if IS_PROBE_AM else dg_sweep)
+    channel = int(channel if channel is not None else
+                  (dg_probe_noise_cfg["channel"] if IS_PROBE_AM else dg_sweep_cfg["channel"]))
+    waveform = waveform if waveform is not None else NOISE_WAVEFORM
+    repeat_freq_hz = float(repeat_freq_hz if repeat_freq_hz is not None else NOISE_REPEAT_FREQ_HZ)
+    amplitude_vpp = float(amplitude_vpp if amplitude_vpp is not None else NOISE_AMPLITUDE_VPP)
+    upload_arbitrary(generator, ArbitraryWaveformSpec(
+        values=waveform.normalized,
+        frequency=repeat_freq_hz,
+        amplitude=amplitude_vpp,
         offset=0.0,
         phase=0.0,
-        channel=z_channel,
+        channel=channel,
         output=False,
     ))
     # [经验] DG4162 上传后必须显式重写参数并回读；DC 恢复路径由驱动选择 CUSTom。
-    dg_sweep.set_frequency(float(NOISE_REPEAT_FREQ_HZ), channel=z_channel)
-    dg_sweep.set_amplitude(float(NOISE_AMPLITUDE_VPP), channel=z_channel)
-    dg_sweep.set_offset(0.0, channel=z_channel)
-    dg_sweep.wait_for_operation_complete()
+    generator.set_frequency(repeat_freq_hz, channel=channel)
+    generator.set_amplitude(amplitude_vpp, channel=channel)
+    generator.set_offset(0.0, channel=channel)
+    generator.wait_for_operation_complete()
     actual = {
-        "shape": str(dg_sweep.get_shape(channel=z_channel)).strip().upper(),
-        "points": int(dg_sweep.get_arb_points(channel=z_channel)),
-        "amplitude_vpp": float(dg_sweep.get_amplitude(channel=z_channel)),
-        "offset_v": float(dg_sweep.get_offset(channel=z_channel)),
-        "frequency_hz": float(dg_sweep.get_frequency(channel=z_channel)),
-        "voltage_unit": str(dg_sweep.get_voltage_unit(channel=z_channel)).strip().upper(),
-        "load": str(dg_sweep.get_output_load(channel=z_channel)).strip().upper(),
+        "shape": str(generator.get_shape(channel=channel)).strip().upper(),
+        "points": int(generator.get_arb_points(channel=channel)),
+        "amplitude_vpp": float(generator.get_amplitude(channel=channel)),
+        "offset_v": float(generator.get_offset(channel=channel)),
+        "frequency_hz": float(generator.get_frequency(channel=channel)),
+        "voltage_unit": str(generator.get_voltage_unit(channel=channel)).strip().upper(),
+        "load": str(generator.get_output_load(channel=channel)).strip().upper(),
     }
     expected = {
         "points": NOISE_POINTS,
-        "amplitude_vpp": float(NOISE_AMPLITUDE_VPP),
+        "amplitude_vpp": amplitude_vpp,
         "offset_v": 0.0,
-        "frequency_hz": float(NOISE_REPEAT_FREQ_HZ),
+        "frequency_hz": repeat_freq_hz,
         "voltage_unit": "VPP",
         "load": "INFINITY",
     }
@@ -410,17 +454,48 @@ def upload_noise_waveform():
     ]
     if actual["shape"] not in {"USER", "CUSTOM"}:
         problems.insert(0, f"shape: 请求 USER/CUSTOM，回读 {actual['shape']}")
-    dg_sweep.raise_for_errors()
+    generator.raise_for_errors()
     if problems:
-        raise RuntimeError("Z 噪声输出设置回读不一致：" + "；".join(problems))
+        raise RuntimeError("噪声任意波设置回读不一致：" + "；".join(problems))
     return actual
 
 
+if IS_PROBE_AM:
+    carrier_channel = int(dg_probe_cfg["channel"])
+    noise_channel = int(dg_probe_noise_cfg["channel"])
+    validate_safety_limit("Probe_AOM_Carrier", PROBE_AOM_CARRIER_VPP)
+    dg_probe_am.set_output(False, channel=carrier_channel)
+    dg_probe_am.setup_sine(freq=PROBE_AOM_CARRIER_FREQ_HZ,
+                           amplitude=PROBE_AOM_CARRIER_VPP,
+                           offset=0.0, phase=0.0, channel=carrier_channel)
+    dg_probe_am.set_output_load(50, channel=carrier_channel)
+    dg_probe_am.set_mod_type("AM", channel=carrier_channel)
+    dg_probe_am.set_mod_am_source("EXT", channel=carrier_channel)
+    dg_probe_am.set_mod_am_depth(PROBE_AOM_AM_DEPTH_PERCENT, channel=carrier_channel)
+    dg_probe_am.set_mod_state(True, channel=carrier_channel)
+    dg_probe_am.set_output_load("INF", channel=noise_channel)
+    dg_probe_am.set_voltage_unit("VPP", channel=noise_channel)
+
+    def probe_am_shutdown_fallback():
+        run_safety_shutdown(dg_channels=(
+            DGChannelShutdown(dg_probe_am, noise_channel, "Probe_AOM_AM", "Probe AOM AM 噪声"),
+            DGChannelShutdown(dg_probe_am, carrier_channel, "Probe_AOM_Carrier", "Probe AOM 载波"),
+            DGChannelShutdown(dg_sweep, z_channel, "Z_magnetic_field", "Z 可控噪声"),
+            DGChannelShutdown(dg_comp, 1, "X_magnetic_field", "X 正弦控制"),
+            DGChannelShutdown(dg_comp, 2, "Y_magnetic_field", "Y 正弦控制"),
+            DGChannelShutdown(dg_sweep, 2, "Time_sequence_2", "X/Y 共用触发"),
+        ), temperature_switch=TemperatureSwitchRestore(dg_temp, 2))
+
+    atexit.register(probe_am_shutdown_fallback)
+
 upload_noise_waveform()
-print(
-    f"Z 噪声任意波已上传: {NOISE_REPEAT_FREQ_HZ:g} Hz × {NOISE_POINTS} 点, "
-    f"{NOISE_AMPLITUDE_VPP:g} Vpp, 输出 OFF 待命"
-)
+print(f"噪声任意波已上传: {NOISE_REPEAT_FREQ_HZ:g} Hz × {NOISE_POINTS} 点, "
+      f"{NOISE_AMPLITUDE_VPP:g} Vpp, 输出 OFF 待命")
+if IS_PROBE_AM and INJECT_CONTROLLED_NOISE:
+    upload_noise_waveform(
+        generator=dg_sweep, channel=z_channel, waveform=Z_NOISE_WAVEFORM,
+        repeat_freq_hz=Z_NOISE_REPEAT_FREQ_HZ, amplitude_vpp=Z_NOISE_AMPLITUDE_VPP)
+    print("Z 已知可控噪声任意波已上传，输出 OFF 待命")
 
 # ---- 创建运行目录 ----
 timestamp = datetime.now().strftime("%m%d_%H%M")
@@ -430,12 +505,71 @@ run_dir.mkdir(parents=True, exist_ok=True)
 (results_dir := run_dir / "results").mkdir(exist_ok=True)
 print(f"运行目录: {run_dir}")
 
-np.save(raw_dir / "known_noise_waveform.npy", NOISE_WAVEFORM.normalized)
+waveform_filename = "probe_am_noise_waveform.npy" if IS_PROBE_AM else "known_noise_waveform.npy"
+np.save(raw_dir / waveform_filename, NOISE_WAVEFORM.normalized)
+if IS_PROBE_AM and INJECT_CONTROLLED_NOISE:
+    np.save(raw_dir / "controlled_z_noise_waveform.npy", Z_NOISE_WAVEFORM.normalized)
 
 # ---- 保存实验配置到运行目录 ----
 instrument_snapshot = instrument_config_snapshot(project_root)
-config = {
-    "experiment_id": "noise-spectrum-xy-known-noise",
+if IS_PROBE_AM:
+    config = {
+        "experiment_id": EXPERIMENT_ID, "schema_version": PARAMS.schema_version,
+        "execution_mode": "typed_workflow", "clock_sources": clock_sources,
+        "parameters": PARAMS.to_external(), "experiment_type": EXPERIMENT_TYPE,
+        "purpose": PURPOSE, "timestamp": timestamp,
+        "device_library_revision": instrument_snapshot["device_library_revision"],
+        "physical_mapping_revision": instrument_snapshot["physical_mapping_revision"],
+        "device_library_snapshot": instrument_snapshot["device_library"],
+        "physical_mapping_snapshot": instrument_snapshot["physical_mappings"],
+        "mapping_snapshot": instrument_snapshot["resolved_mapping"],
+        "scan_params": {
+            "TARGET_NOISE_FREQ_START_HZ": TARGET_NOISE_FREQ_START_HZ,
+            "TARGET_NOISE_FREQ_STOP_HZ": TARGET_NOISE_FREQ_STOP_HZ,
+            "TARGET_NOISE_FREQ_POINTS": TARGET_NOISE_FREQ_POINTS,
+            "xy_envelope_voltage_V": XY_ENVELOPE_VOLTAGE_LIST_V.tolist(),
+            "XY_SETTLE_TIME_s": XY_SETTLE_TIME,
+            "TEMP_SWITCH_ON_SETTLE_S": TEMP_SWITCH_ON_SETTLE_S,
+        },
+        "probe_am_noise": {
+            "waveform_file": f"raw/{waveform_filename}", "points": NOISE_POINTS,
+            "repeat_frequency_hz": float(NOISE_REPEAT_FREQ_HZ),
+            "sample_rate_sa_s": float(NOISE_WAVEFORM.sample_rate_sa_s),
+            "amplitude_vpp": float(NOISE_AMPLITUDE_VPP), "seed": int(NOISE_SEED),
+            "design_peak_v": float(NOISE_WAVEFORM.design_peak_v),
+            "rms_v": float(NOISE_WAVEFORM.rms_v),
+            "bands": [{"start_hz": float(start), "stop_hz": float(stop),
+                       "design_psd_v2_per_hz": float(psd)} for start, stop, psd in NOISE_BANDS],
+            "carrier_frequency_hz": float(PROBE_AOM_CARRIER_FREQ_HZ),
+            "carrier_amplitude_vpp": float(PROBE_AOM_CARRIER_VPP),
+            "carrier_load_ohm": 50, "am_depth_percent": float(PROBE_AOM_AM_DEPTH_PERCENT),
+            "actual_waveform_psd_source": "Welch PSD computed from scaled saved waveform",
+            "measurement_units": "HF2 demodulator PSD; not calibrated to optical power",
+        },
+        "controlled_z_noise": {
+            "enabled": bool(INJECT_CONTROLLED_NOISE),
+            **({
+                "waveform_file": "raw/controlled_z_noise_waveform.npy",
+                "points": NOISE_POINTS,
+                "repeat_frequency_hz": float(Z_NOISE_REPEAT_FREQ_HZ),
+                "sample_rate_sa_s": float(Z_NOISE_WAVEFORM.sample_rate_sa_s),
+                "amplitude_vpp": float(Z_NOISE_AMPLITUDE_VPP),
+                "seed": int(Z_NOISE_SEED),
+                "design_peak_v": float(Z_NOISE_WAVEFORM.design_peak_v),
+                "bands": [{"start_hz": float(start), "stop_hz": float(stop),
+                           "design_psd_v2_per_hz": float(psd)}
+                          for start, stop, psd in Z_NOISE_BANDS],
+            } if INJECT_CONTROLLED_NOISE else {}),
+        },
+        "xy_ctrl": {"XY_CTRL_FREQ_Hz": XY_CTRL_FREQ,
+                    "XY_CTRL_PHASE_deg": XY_CTRL_PHASE, "XY_CTRL_QUAD_deg": XY_CTRL_QUAD},
+        "fixed_params": FIXED_PARAMS,
+        "hf2_daq": {"DAQ_duration_s": HF2_DAQ_DURATION, "DAQ_TC_s": HF2_DAQ_TC,
+                    "DAQ_rate_Sa_s": HF2_DAQ_RATE},
+    }
+else:
+    config = {
+    "experiment_id": EXPERIMENT_ID,
     "schema_version": PARAMS.schema_version,
     "execution_mode": "typed_workflow",
     "clock_sources": clock_sources,
@@ -481,15 +615,14 @@ config = {
         "rms_v": float(NOISE_WAVEFORM.rms_v),
         "realized_psd_scale": float(NOISE_REALIZED_SCALE),
         "playback": "continuous_no_burst",
-        "wiring_confirmation": "运行前人工确认 Z 链路与 K_Z 标定/频响测量时接线一致（含 10 kHz 高通在/不在）",
+        "wiring_confirmation": "运行前人工确认 Z 链路与 K_Z 标定的电压定义一致",
     },
     "truth_chain": {
         "z_calibration_run": Z_CALIBRATION.source_run,
         "K_Z_Hz_per_V": float(Z_CALIBRATION.k_hz_per_v),
         "K_Z_uncertainty_Hz_per_V": float(Z_CALIBRATION.uncertainty_hz_per_v),
-        "z_tf_run": Z_TRANSFER.source_run,
-        "tf_reference_hz": float(Z_TRANSFER.reference_hz),
-        "note": "真值谱从 raw/known_noise_waveform.npy 数值 PSD × (K_Z × H_norm)² 计算",
+        "coil_frequency_response_applied": False,
+        "note": "真值谱从 raw/known_noise_waveform.npy 数值 PSD × K_Z² 计算",
     },
     "xy_ctrl": {
         "XY_CTRL_FREQ_Hz": XY_CTRL_FREQ,
@@ -636,6 +769,9 @@ demod_cfg = DemodulatorConfig(
 actual_rate = demod.configure_demodulator(hfi, demod_cfg)
 print(f"解调器 {HF2_DEMOD_IDX} 已配置: rate={actual_rate:.0f} Sa/s, TC={HF2_DEMOD_TC*1000:.3f} ms")
 
+if IS_PROBE_AM:
+    dg_probe_am.set_output(True, channel=int(dg_probe_cfg["channel"]))
+
 print("正在进行相位校准...")
 demod0_phase_result = calibrate_demod_phase(
     hfi,
@@ -774,8 +910,17 @@ finally:
 
 print("\n✅ XY_CTRL_PHASE 校准完成")
 print(f"  XY_CTRL_PHASE = {XY_CTRL_PHASE:.2f}°")
-dg_sweep.set_output(True, channel=int(dg_sweep_cfg["channel"]))
-print("Z 已知噪声输出: ON（后续仅在色散 DC 校准时临时关闭）")
+if IS_PROBE_AM:
+    probe_carrier_channel = int(dg_probe_cfg["channel"])
+    probe_noise_channel = int(dg_probe_noise_cfg["channel"])
+    dg_probe_am.set_output(True, channel=probe_carrier_channel)
+    dg_probe_am.set_output(False, channel=probe_noise_channel)
+    pair_generator, pair_channel = dg_probe_am, probe_noise_channel
+    print("Probe AOM 载波和外部 AM 已启用，噪声输出 OFF")
+else:
+    dg_sweep.set_output(True, channel=int(dg_sweep_cfg["channel"]))
+    pair_generator, pair_channel = dg_sweep, int(dg_sweep_cfg["channel"])
+    print("Z 已知噪声输出: ON（后续仅在色散 DC 校准时临时关闭）")
 
 with open(config_path, encoding="utf-8") as f:
     config_saved = yaml.safe_load(f)
@@ -798,111 +943,112 @@ print("最终 X/Y Burst 相位已写入 experiment_config.yaml")
 # 与静磁场灵敏度实验同条件：X/Y 控制场关、纯 DC 偏置。
 # 线形起止两端各按参数剔除点数；长时间关闭温控时按间隔点数回插温控恢复。
 # ============================================================
-print("=" * 60)
-print("色散斜率扫描（增益换算基准，色散线形拟合）")
-print("=" * 60)
+if not IS_PROBE_AM:
+    print("=" * 60)
+    print("色散斜率扫描（增益换算基准，色散线形拟合）")
+    print("=" * 60)
 
-report_runtime_progress("dispersion", "扫描 z 偏置色散线形", None,
-                        estimated_remaining_seconds=None)
+    report_runtime_progress("dispersion", "扫描 z 偏置色散线形", None,
+                            estimated_remaining_seconds=None)
 
-def measure_dispersion_slope():
-    """z DC 步进扫描并对整条色散线形拟合；返回原始数据与拟合结果。"""
-    z_channel = int(dg_sweep_cfg["channel"])
-    offsets = np.linspace(-abs(DISPERSION_SPAN_V), abs(DISPERSION_SPAN_V),
-                          DISPERSION_STEPS)
-    y_means = np.full(offsets.size, np.nan)
-    # Z 通道退出任意波改 DC：色散扫描是纯静态偏置，与噪声注入互斥。
-    dg_sweep.set_output(False, channel=z_channel)
-    dg_sweep.setup_dc(0.0, channel=z_channel)
-    dg_comp.set_output(False, channel=1)
-    dg_comp.set_output(False, channel=2)
-    interval = int(DISPERSION_TEMP_SWITCH_INTERVAL_POINTS)
-    try:
-        for index, offset_v in enumerate(offsets):
-            check_cancelled()
-            # 每组重启温控关闭窗口，避免整段扫描期间温度持续漂移。
-            if index == 0 or (interval > 0 and index % interval == 0):
-                set_temp_switch(False)
-                time.sleep(XY_SETTLE_TIME)
-            validate_safety_limit("Z_magnetic_field", float(offset_v))
-            dg_sweep.setup_dc(float(offset_v), channel=z_channel)
-            dg_sweep.set_output(True, channel=z_channel)
-            time.sleep(DISPERSION_STEP_SETTLE_S)
-            samples = []
-            for _ in range(DISPERSION_SAMPLES_PER_STEP):
-                samples.append(demod.read_demod_sample(hfi, demod_idx=HF2_DEMOD_IDX)["y"])
-                time.sleep(0.05)
-            y_means[index] = float(np.median(samples))
-            dg_sweep.set_output(False, channel=z_channel)
-            if interval > 0 and (index + 1) % interval == 0 and index + 1 < offsets.size:
-                # 回插温控：打开温度开关按 TEMP_SWITCH_ON_SETTLE_S 等待后再关闭。
-                set_temp_switch(True, wait=True)
-        dg_sweep.setup_dc(0.0, channel=z_channel)
-        fit = fit_dispersion_curve(
-            offsets, y_means,
-            skip_start_points=int(DISPERSION_FIT_SKIP_START),
-            skip_end_points=int(DISPERSION_FIT_SKIP_END),
-            k_z_hz_per_v=float(Z_CALIBRATION.k_hz_per_v),
-        )
-        return {"offsets_v": offsets, "y_mean": y_means, **fit}
-    finally:
-        dg_sweep.setup_dc(0.0, channel=z_channel)
+    def measure_dispersion_slope():
+        """z DC 步进扫描并对整条色散线形拟合；返回原始数据与拟合结果。"""
+        z_channel = int(dg_sweep_cfg["channel"])
+        offsets = np.linspace(-abs(DISPERSION_SPAN_V), abs(DISPERSION_SPAN_V),
+                              DISPERSION_STEPS)
+        y_means = np.full(offsets.size, np.nan)
+        # Z 通道退出任意波改 DC：色散扫描是纯静态偏置，与噪声注入互斥。
         dg_sweep.set_output(False, channel=z_channel)
-        set_temp_switch(True, wait=True)
-        # 恢复 XY 等待共用外触发，并重新上传噪声任意波（DC 切换已退出 USER）。
-        set_xy_sine_phase(XY_CTRL_PHASE, outputs_on=True)
-        upload_noise_waveform()
-        dg_sweep.set_output(True, channel=z_channel)
+        dg_sweep.setup_dc(0.0, channel=z_channel)
+        dg_comp.set_output(False, channel=1)
+        dg_comp.set_output(False, channel=2)
+        interval = int(DISPERSION_TEMP_SWITCH_INTERVAL_POINTS)
+        try:
+            for index, offset_v in enumerate(offsets):
+                check_cancelled()
+                # 每组重启温控关闭窗口，避免整段扫描期间温度持续漂移。
+                if index == 0 or (interval > 0 and index % interval == 0):
+                    set_temp_switch(False)
+                    time.sleep(XY_SETTLE_TIME)
+                validate_safety_limit("Z_magnetic_field", float(offset_v))
+                dg_sweep.setup_dc(float(offset_v), channel=z_channel)
+                dg_sweep.set_output(True, channel=z_channel)
+                time.sleep(DISPERSION_STEP_SETTLE_S)
+                samples = []
+                for _ in range(DISPERSION_SAMPLES_PER_STEP):
+                    samples.append(demod.read_demod_sample(hfi, demod_idx=HF2_DEMOD_IDX)["y"])
+                    time.sleep(0.05)
+                y_means[index] = float(np.median(samples))
+                dg_sweep.set_output(False, channel=z_channel)
+                if interval > 0 and (index + 1) % interval == 0 and index + 1 < offsets.size:
+                    # 回插温控：打开温度开关按 TEMP_SWITCH_ON_SETTLE_S 等待后再关闭。
+                    set_temp_switch(True, wait=True)
+            dg_sweep.setup_dc(0.0, channel=z_channel)
+            fit = fit_dispersion_curve(
+                offsets, y_means,
+                skip_start_points=int(DISPERSION_FIT_SKIP_START),
+                skip_end_points=int(DISPERSION_FIT_SKIP_END),
+                k_z_hz_per_v=float(Z_CALIBRATION.k_hz_per_v),
+            )
+            return {"offsets_v": offsets, "y_mean": y_means, **fit}
+        finally:
+            dg_sweep.setup_dc(0.0, channel=z_channel)
+            dg_sweep.set_output(False, channel=z_channel)
+            set_temp_switch(True, wait=True)
+            # 恢复 XY 等待共用外触发，并重新上传噪声任意波（DC 切换已退出 USER）。
+            set_xy_sine_phase(XY_CTRL_PHASE, outputs_on=True)
+            upload_noise_waveform()
+            dg_sweep.set_output(True, channel=z_channel)
 
 
-DISPERSION = measure_dispersion_slope()
+    DISPERSION = measure_dispersion_slope()
 
-np.savez(raw_dir / "dispersion_scan.npz",
-         offsets_v=DISPERSION["offsets_v"], y_mean=DISPERSION["y_mean"],
-         fit_mask=DISPERSION["fit_mask"], popt=DISPERSION["popt"],
-         n_points=DISPERSION["n_points"],
-         slope_v_per_v=DISPERSION["slope_v_per_v"],
-         slope_v_per_hz=DISPERSION["slope_v_per_hz"],
-         gamma_v=DISPERSION["gamma_v"],
-         gamma_hz=DISPERSION["gamma_hz"],
-         center_v=DISPERSION["center_v"],
-         center_hz=DISPERSION["center_hz"],
-         r_squared=DISPERSION["r_squared"],
-         rmse_v=DISPERSION["rmse_v"],
-         fit_valid=DISPERSION["is_valid"],
-         k_z_hz_per_v=Z_CALIBRATION.k_hz_per_v)
-config_saved["dispersion"] = {
-    "span_v": float(DISPERSION_SPAN_V),
-    "steps": int(DISPERSION_STEPS),
-    "samples_per_step": int(DISPERSION_SAMPLES_PER_STEP),
-    "condition": "xy_control_off_dc_bias",
-    "method": "dispersion_line_fit",
-    "fit_skip_start_points": int(DISPERSION_FIT_SKIP_START),
-    "fit_skip_end_points": int(DISPERSION_FIT_SKIP_END),
-    "fit_points": int(DISPERSION["n_points"]),
-    "temp_switch_interval_points": int(DISPERSION_TEMP_SWITCH_INTERVAL_POINTS),
-    "slope_v_per_v": DISPERSION["slope_v_per_v"],
-    "slope_v_per_hz": DISPERSION["slope_v_per_hz"],
-    "gamma_v": DISPERSION["gamma_v"],
-    "gamma_hz": DISPERSION["gamma_hz"],
-    "center_v": DISPERSION["center_v"],
-    "center_hz": DISPERSION["center_hz"],
-    "r_squared": DISPERSION["r_squared"],
-    "rmse_v": DISPERSION["rmse_v"],
-    "fit_valid": DISPERSION["is_valid"],
-    "fit_rejection_reasons": DISPERSION["rejection_reasons"],
-    "k_z_hz_per_v": float(Z_CALIBRATION.k_hz_per_v),
-}
-with open(config_path, "w", encoding="utf-8") as f:
-    yaml.safe_dump(config_saved, f, allow_unicode=True, sort_keys=False)
-print(
-    f"色散线形拟合: dY/dV = {DISPERSION['slope_v_per_v']:.6g} V/V = "
-    f"{DISPERSION['slope_v_per_hz']:.6g} V/Hz；"
-    f"R²={DISPERSION['r_squared']:.4f}, RMSE={DISPERSION['rmse_v']:.3g} V, "
-    f"参与拟合 {DISPERSION['n_points']} 点"
-)
-if not DISPERSION["is_valid"]:
-    print("警告: 色散线形拟合质量未通过 —", "；".join(DISPERSION["rejection_reasons"]))
+    np.savez(raw_dir / "dispersion_scan.npz",
+             offsets_v=DISPERSION["offsets_v"], y_mean=DISPERSION["y_mean"],
+             fit_mask=DISPERSION["fit_mask"], popt=DISPERSION["popt"],
+             n_points=DISPERSION["n_points"],
+             slope_v_per_v=DISPERSION["slope_v_per_v"],
+             slope_v_per_hz=DISPERSION["slope_v_per_hz"],
+             gamma_v=DISPERSION["gamma_v"],
+             gamma_hz=DISPERSION["gamma_hz"],
+             center_v=DISPERSION["center_v"],
+             center_hz=DISPERSION["center_hz"],
+             r_squared=DISPERSION["r_squared"],
+             rmse_v=DISPERSION["rmse_v"],
+             fit_valid=DISPERSION["is_valid"],
+             k_z_hz_per_v=Z_CALIBRATION.k_hz_per_v)
+    config_saved["dispersion"] = {
+        "span_v": float(DISPERSION_SPAN_V),
+        "steps": int(DISPERSION_STEPS),
+        "samples_per_step": int(DISPERSION_SAMPLES_PER_STEP),
+        "condition": "xy_control_off_dc_bias",
+        "method": "dispersion_line_fit",
+        "fit_skip_start_points": int(DISPERSION_FIT_SKIP_START),
+        "fit_skip_end_points": int(DISPERSION_FIT_SKIP_END),
+        "fit_points": int(DISPERSION["n_points"]),
+        "temp_switch_interval_points": int(DISPERSION_TEMP_SWITCH_INTERVAL_POINTS),
+        "slope_v_per_v": DISPERSION["slope_v_per_v"],
+        "slope_v_per_hz": DISPERSION["slope_v_per_hz"],
+        "gamma_v": DISPERSION["gamma_v"],
+        "gamma_hz": DISPERSION["gamma_hz"],
+        "center_v": DISPERSION["center_v"],
+        "center_hz": DISPERSION["center_hz"],
+        "r_squared": DISPERSION["r_squared"],
+        "rmse_v": DISPERSION["rmse_v"],
+        "fit_valid": DISPERSION["is_valid"],
+        "fit_rejection_reasons": DISPERSION["rejection_reasons"],
+        "k_z_hz_per_v": float(Z_CALIBRATION.k_hz_per_v),
+    }
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(config_saved, f, allow_unicode=True, sort_keys=False)
+    print(
+        f"色散线形拟合: dY/dV = {DISPERSION['slope_v_per_v']:.6g} V/V = "
+        f"{DISPERSION['slope_v_per_hz']:.6g} V/Hz；"
+        f"R²={DISPERSION['r_squared']:.4f}, RMSE={DISPERSION['rmse_v']:.3g} V, "
+        f"参与拟合 {DISPERSION['n_points']} 点"
+    )
+    if not DISPERSION["is_valid"]:
+        print("警告: 色散线形拟合质量未通过 —", "；".join(DISPERSION["rejection_reasons"]))
 
 # %% Cell 15
 # ===== 逐点扫描 + 每点注入关/开差分采集 =====
@@ -920,7 +1066,7 @@ print(
 )
 print(f"DAQ 采集: 时长 {HF2_DAQ_DURATION}s ×2 (off/on), TC={HF2_DAQ_TC*1e6:.2f}μs, rate={HF2_DAQ_RATE:.0f} Sa/s")
 total_est = TARGET_NOISE_FREQ_POINTS * (
-    XY_SETTLE_TIME + 2 * HF2_DAQ_DURATION + 2 * Z_INJECTION_SETTLE_S
+    XY_SETTLE_TIME + 2 * HF2_DAQ_DURATION + 2 * PAIR_SETTLE_S
     + TEMP_SWITCH_ON_SETTLE_S + 0.3
 )
 print(f"预计扫描采集与等待耗时: {total_est:.0f}s ≈ {total_est/3600:.1f}h（不含初始化、校相、色散扫描、通信及分析）")
@@ -949,17 +1095,26 @@ time.sleep(0.2)
 
 t_start = time.time()
 
-z_channel = int(dg_sweep_cfg["channel"])
 per_point_seconds = []
 
 
 def safe_scan_outputs_off():
     """声明本实验需要关闭和保留的输出，交给共享安全步骤执行。"""
+    if IS_PROBE_AM:
+        dg_probe_am.set_output(False, channel=probe_noise_channel)
+        dg_probe_am.set_mod_state(False, channel=probe_carrier_channel)
+        noise_shutdown = (
+            DGChannelShutdown(dg_probe_am, probe_noise_channel, "Probe_AOM_AM", "Probe AOM AM 噪声"),
+            DGChannelShutdown(dg_probe_am, probe_carrier_channel, "Probe_AOM_Carrier", "Probe AOM 载波"),
+            DGChannelShutdown(dg_sweep, z_channel, "Z_magnetic_field", "Z 可控噪声"),
+        )
+    else:
+        noise_shutdown = (DGChannelShutdown(dg_sweep, pair_channel, "Z_magnetic_field", "Z 噪声注入"),)
     return run_safety_shutdown(
         dg_channels=(
             DGChannelShutdown(dg_comp, 1, "X_magnetic_field", "X 正弦控制"),
             DGChannelShutdown(dg_comp, 2, "Y_magnetic_field", "Y 正弦控制"),
-            DGChannelShutdown(dg_sweep, 1, "Z_magnetic_field", "Z 噪声注入"),
+            *noise_shutdown,
             DGChannelShutdown(dg_sweep, 2, "Time_sequence_2", "X/Y 共用触发"),
         ),
         temperature_switch=TemperatureSwitchRestore(dg_temp, 2),
@@ -975,10 +1130,18 @@ try:
     config_saved["hf2_daq"].update(actual_rate_Sa_s=float(actual_rate_daq), **actual_welch)
     config_saved["paired_acquisition"] = dict(
         order="alternating_off_on_on_off", first_point="off_on",
-        settle_each_state_s=Z_INJECTION_SETTLE_S, timing_file="raw/pair_timing.jsonl")
+        settle_each_state_s=PAIR_SETTLE_S, timing_file="raw/pair_timing.jsonl")
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(config_saved, f, allow_unicode=True, sort_keys=False)
     print(f"Welch 实际分段: {actual_welch}")
+
+    if IS_PROBE_AM:
+        dg_sweep.set_output(bool(INJECT_CONTROLLED_NOISE), channel=z_channel)
+        if bool(dg_sweep.get_output(channel=z_channel)) != bool(INJECT_CONTROLLED_NOISE):
+            raise RuntimeError("Z 可控噪声输出状态回读与请求不一致")
+        if INJECT_CONTROLLED_NOISE:
+            wait_for_settle(Z_NOISE_SETTLE_S)
+        print(f"Z 已知可控噪声: {'持续注入' if INJECT_CONTROLLED_NOISE else '保持关闭'}")
 
     def acquire_point_waveform():
         daq_cfg = DAQConfig(
@@ -1012,8 +1175,8 @@ try:
         # 关闭温度开关（消除温控磁场干扰），同一窗口内完成 off/on 差分。
         set_temp_switch(False)
         wait_for_settle(XY_SETTLE_TIME)
-        acquire_pair(i, raw_dir, dg_sweep, z_channel, acquire_point_waveform,
-                     Z_INJECTION_SETTLE_S)
+        acquire_pair(i, raw_dir, pair_generator, pair_channel, acquire_point_waveform,
+                     PAIR_SETTLE_S)
 
         set_temp_switch(True, wait=True)
 
@@ -1022,6 +1185,8 @@ try:
         remaining = float(np.mean(per_point_seconds) * (TARGET_NOISE_FREQ_POINTS - i - 1))
         report_runtime_progress(
             "scan",
+            f"控制点 {i + 1}/{TARGET_NOISE_FREQ_POINTS} 完成（Probe AM on/off 差分，目标 {target_freq_hz/1e3:.2f} kHz，{envelope_v:.3f} V）"
+            if IS_PROBE_AM else
             f"控制点 {i + 1}/{TARGET_NOISE_FREQ_POINTS} 完成（on/off 差分，目标 {target_freq_hz/1e3:.2f} kHz，{envelope_v:.3f} V）",
             100.0 * (i + 1) / TARGET_NOISE_FREQ_POINTS,
             estimated_remaining_seconds=remaining,
@@ -1034,6 +1199,8 @@ except Exception as e:
 
 finally:
     shutdown_report = safe_scan_outputs_off()
+    if IS_PROBE_AM:
+        atexit.unregister(probe_am_shutdown_fallback)
     if shutdown_report.errors:
         print("安全关闭警告: " + "；".join(shutdown_report.errors))
     else:
@@ -1051,8 +1218,9 @@ with open(config_path, encoding="utf-8") as f:
 config_saved["hf2_daq"]["actual_rate_Sa_s"] = float(actual_rate_daq)
 config_saved["data_files"] = [
     "raw/control_scan_axes.npz",
-    "raw/known_noise_waveform.npy",
-    "raw/dispersion_scan.npz",
+    f"raw/{waveform_filename}",
+    *(["raw/controlled_z_noise_waveform.npy"] if IS_PROBE_AM and INJECT_CONTROLLED_NOISE else []),
+    *([] if IS_PROBE_AM else ["raw/dispersion_scan.npz"]),
     "raw/pair_timing.jsonl",
     *[
         name

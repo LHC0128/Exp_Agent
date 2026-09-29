@@ -91,7 +91,7 @@ it("明确显示质量验收失败与有效点数，不把执行完成视作全�
 
 it("从真实路由进入双 Tab，切换保留参数并按当前 schema 填回历史参数", async () => {
   renderPage();
-  expect(within(screen.getByRole("tablist", { name: "XY 正弦控制噪声谱实验视图" })).getAllByRole("tab")).toHaveLength(2);
+  expect(within(screen.getByRole("tablist", { name: "XY 正弦控制噪声谱实验视图" })).getAllByRole("tab")).toHaveLength(3);
   expect(await within(screen.getByRole("tabpanel", { name: "运行" })).findByAltText("提取的可控与不可控噪声谱")).toHaveAttribute("src", "/noise.png?v=1");
   fireEvent.change(screen.getByLabelText("运行标签"), { target: { value: "edited" } });
   fireEvent.change(screen.getByLabelText("目标频率扫描点数"), { target: { value: "123" } });
@@ -103,6 +103,26 @@ it("从真实路由进入双 Tab，切换保留参数并按当前 schema 填回�
   fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
   expect(screen.getByLabelText("运行标签")).toHaveValue("history-tag");
   expect(screen.getByLabelText("目标频率扫描点数")).toHaveValue(123);
+});
+
+it("架构 Tab 内嵌架构图 iframe，可在新页面打开，方向键在三个视图间循环", async () => {
+  renderPage();
+  const tablist = screen.getByRole("tablist", { name: "XY 正弦控制噪声谱实验视图" });
+  fireEvent.click(within(tablist).getByRole("tab", { name: "架构" }));
+  const panel = screen.getByRole("tabpanel", { name: "架构" });
+  const frame = within(panel).getByTitle("XY 正弦控制噪声谱实验采集流程架构图");
+  expect(frame).toHaveAttribute("src", "/architecture/noise-spectrum-xy.html");
+  expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-downloads allow-popups");
+  expect(within(panel).getByRole("link", { name: "在新页面打开" })).toHaveAttribute("href", "/architecture/noise-spectrum-xy.html");
+
+  const runTab = within(tablist).getByRole("tab", { name: "运行" });
+  runTab.focus();
+  fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+  const archTab = within(tablist).getByRole("tab", { name: "架构" });
+  expect(archTab).toHaveFocus();
+  expect(archTab).toHaveAttribute("aria-selected", "true");
+  fireEvent.keyDown(tablist, { key: "ArrowRight" });
+  expect(within(tablist).getByRole("tab", { name: "运行" })).toHaveFocus();
 });
 
 it("预检失败不启动采集，历史重新分析完成后刷新实际结果图", async () => {

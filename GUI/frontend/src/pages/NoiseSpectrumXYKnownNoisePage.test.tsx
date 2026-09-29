@@ -101,7 +101,7 @@ it("结果区展示判据通过与中位比值，历史详情可用", async () =
 
 it("从真实路由进入双 Tab，预检失败不启动采集", async () => {
   renderPage();
-  expect(within(screen.getByRole("tablist", { name: "XY 已知噪声注入实验视图" })).getAllByRole("tab")).toHaveLength(2);
+  expect(within(screen.getByRole("tablist", { name: "XY 已知噪声注入实验视图" })).getAllByRole("tab")).toHaveLength(3);
   await waitFor(() => expect(screen.getByRole("button", { name: "预检并运行实验" })).toBeEnabled());
   const normal = mockApi.getMockImplementation()!;
   mockApi.mockImplementation(async (url, options) => {
@@ -127,4 +127,29 @@ it("背景不可辨识时显示空值并保留有符号差分统计", async () =
   expect(within(panel).getByText(/非正差分 3 个已保留/)).toBeVisible();
   expect(within(panel).getByText(/带内背景 ON\/OFF 中位比值：—；\s*可辨识 0 \/ 100 点/)).toBeVisible();
   expect(within(panel).getByText(/带外背景 ON\/OFF 中位比值：1.020/)).toBeVisible();
+});
+
+it("架构 Tab 内嵌总览与子图切换，可在新页面打开", async () => {
+  renderPage();
+  const tablist = screen.getByRole("tablist", { name: "XY 已知噪声注入实验视图" });
+  fireEvent.click(within(tablist).getByRole("tab", { name: "架构" }));
+  const panel = screen.getByRole("tabpanel", { name: "架构" });
+  const frame = within(panel).getByTitle("XY 已知可控噪声谱实验采集架构图");
+  expect(frame).toHaveAttribute("src", "/architecture/noise-spectrum-xy-known-noise.html");
+  expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-downloads allow-popups");
+  expect(within(panel).getByRole("link", { name: "在新页面打开" })).toHaveAttribute("href", "/architecture/noise-spectrum-xy-known-noise.html");
+  fireEvent.click(within(panel).getByRole("tab", { name: "单点时序" }));
+  expect(within(panel).getByTitle("XY 已知可控噪声谱实验单控制点时序图")).toHaveAttribute("src", "/architecture/noise-spectrum-xy-known-noise.timing.html");
+  fireEvent.click(within(panel).getByRole("tab", { name: "数据分析" }));
+  expect(within(panel).getByTitle("XY 已知可控噪声谱实验离线分析与真值链图")).toHaveAttribute("src", "/architecture/noise-spectrum-xy-known-noise.dataflow.html");
+  // 键盘导航在三个 Tab 间循环，运行左移回绕到架构。
+  fireEvent.click(within(tablist).getByRole("tab", { name: "运行" }));
+  const runTab = within(tablist).getByRole("tab", { name: "运行" });
+  runTab.focus();
+  fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+  const archTab = within(tablist).getByRole("tab", { name: "架构" });
+  expect(archTab).toHaveFocus();
+  expect(archTab).toHaveAttribute("aria-selected", "true");
+  fireEvent.keyDown(tablist, { key: "ArrowRight" });
+  expect(within(tablist).getByRole("tab", { name: "运行" })).toHaveFocus();
 });

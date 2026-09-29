@@ -161,9 +161,9 @@ class ZCoilCurrentFrequencyResponseParams(ZCoilInductanceFrequencyResponseParams
         description="SDS 把触发点放在记录窗中央，因此记录时长必须取所需触发后窗口的两倍。",
     )
     scope_reference_channel: int = parameter(
-        default=1,
+        default=0,
         external_name="SCOPE_REFERENCE_CHANNEL",
-        label="驱动参考通道",
+        label="驱动参考通道（可选）",
         group="advanced",
         minimum=0,
         maximum=4,

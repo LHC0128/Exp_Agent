@@ -40,6 +40,7 @@ assignments:
   mx-xy-residual-field-calibration: verification
   noise-spectrum-xy: tag-7e1da2cb
   noise-spectrum-xy-known-noise: tag-7e1da2cb
+  noise-spectrum-xy-uncontrolled-probe-am: tag-7e1da2cb
   noise-spectrum-xy-v2: calibration
   photon-shot-noise: verification
   projection-noise: verification
@@ -71,9 +72,10 @@ assignments:
   z-aw-closed-loop-waveform-correction: star
   scope-capture: star
   static-sensitivity: star
+  detection-chain-frequency-response: tag-7e1da2cb
 experiment_descriptions:
   z-coil-inductance-frequency-response: Z 线圈固定幅度正弦扫频，比较理论设定与线圈端电压的幅值、相位和残差。
-  z-coil-current-frequency-response: 沿对数频率轴相干扫描低端采样电阻上的实际电流复响应，以同帧实测驱动电压作相位参考，为闭环逆滤波提供带可靠覆盖掩码的频响曲线。
+  z-coil-current-frequency-response: 沿对数频率轴测量低端采样电阻上的实际电流频率响应；可不接示波器 CH1，此时按 DG 设定幅值归一且相位不用于闭环标定。
   mx-z-current-coupling-calibration: '目的：旧标定只给出命令电压斜率 K_Z_Hz_per_V，本实验用 Z 线圈低端串联采样电阻重建实际电流，标定电流耦合系数
     K_Z_Hz_per_A，供 Z 闭环控制使用。
 
@@ -123,8 +125,13 @@ experiment_descriptions:
     Bloch 曲面拟合剩磁平衡点。
   noise-spectrum-xy: BellBloom中，dg_comp 两路使用正弦模式产生正交 XY 控制并测量噪声谱，Time_sequence_2 CH2
     方波经三通同步触发两路 Burst；每点关闭两路输出后调幅，按已校准的 Burst 相位重新开启并等待共用外触发，Pump 和共用触发源在扫描期间保持连续运行；设置每点采集时长和频率格间距，自动计算
-    Welch 段长；离线跟踪移动峰并验收标定，屏蔽固定窄线，以非负局部拟合和留出验证提取有效频段，不插值外推失败点；测量时温度开关 Output OFF，恢复等待时间可在高级参数中设置；结束时保留
-    Pump 载波与时序门控输出。
+    Welch 段长；与已知可控噪声、Probe AM 实验共用全控制轴分析，独立验收可控响应与不可控背景；峰不可辨识时由通过两侧一致性及分块留出验证的远端平台提取背景，不插值外推失败点；测量时温度开关
+    Output OFF，恢复等待时间可在高级参数中设置；结束时保留 Pump 载波与时序门控输出。
+  noise-spectrum-xy-uncontrolled-probe-am: Probe 光路 AOM 由专用 DG4000 CH1 输出载波，CH2 任意波接同机背板外部
+    AM 输入；XY 控制点逐点交替采集 Probe AM 噪声 OFF/ON，可选在两态期间持续向 Z 线圈注入独立配置的已知可控噪声，以检验较强可控背景下差谱能否提取。与正弦噪声谱、已知可控噪声实验共用全控制轴分析，优先独立提取不可控背景
+    N_S1；峰不可辨识时检验两侧远端平台，受控响应 S_beta 仅展示各态通过的部分，保留两者的有符号差谱；生成注入前后对比、双 Y 轴差谱/基线图、平均
+    PSD 二维谱和若干频率列的洛伦兹拟合图。自动移动峰标定不足时，按配置 K/B 推算峰位输出暂定二维 PSD 图，并保留质量未通过标记。结果是 HF2 锁相测量端噪声谱，不换算为绝对
+    Probe 光功率谱。
   noise-spectrum-xy-v2: 测量 XY 控制条件下的噪声谱，dg_am 作为调制信号。
   photon-shot-noise: 测量光子散粒噪声随 Probe 光功率的变化，测量锁相放大器 XY 的噪声谱本底。
   projection-noise: 采集 GS200 输出打开时的 SDS CH1 PD 原始噪声谱，可选测量输出关闭对照组，并在主场标定预测中心附近自由拟合洛伦兹自旋噪声峰。
@@ -1715,7 +1722,6 @@ parameter_layouts:
     - FIXED_PARAMS.Temp_Switch
     - NOISE_SEED
     - Z_INJECTION_SETTLE_S
-    - Z_TF_SOURCE_RUN
     - DISPERSION_SPAN_V
     - DISPERSION_STEPS
     - DISPERSION_STEP_SETTLE_S
@@ -1726,3 +1732,94 @@ parameter_layouts:
     - DISPERSION_FIT_SKIP_START
     - DISPERSION_FIT_SKIP_END
     - DISPERSION_TEMP_SWITCH_INTERVAL_POINTS
+  noise-spectrum-xy-uncontrolled-probe-am:
+    basic:
+    - RUN_TAG
+    - TARGET_NOISE_FREQ_START_HZ
+    - TARGET_NOISE_FREQ_STOP_HZ
+    - TARGET_NOISE_FREQ_POINTS
+    - XY_SETTLE_TIME
+    - HF2_DAQ_DURATION
+    - ANALYSIS_BIN_WIDTH_HZ
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    - FIXED_PARAMS.main_magnetic_field
+    - NOISE_BAND_STARTS_HZ
+    - NOISE_BAND_STOPS_HZ
+    - NOISE_BAND_PSDS_V2_PER_HZ
+    - NOISE_REPEAT_FREQ_HZ
+    - NOISE_AMPLITUDE_VPP
+    - XY_CTRL_FREQ
+    - PUMP_MOD_FREQ
+    - HF2_OSC_FREQ
+    - XY_CTRL_K_HZ_PER_V
+    - XY_CTRL_B_HZ
+    - ANALYSIS_FREQUENCY_MIN_HZ
+    - ANALYSIS_FREQUENCY_MAX_HZ
+    - INJECT_CONTROLLED_NOISE
+    - Z_NOISE_BAND_STARTS_HZ
+    - Z_NOISE_BAND_STOPS_HZ
+    - Z_NOISE_BAND_PSDS_V2_PER_HZ
+    - Z_NOISE_REPEAT_FREQ_HZ
+    - Z_NOISE_AMPLITUDE_VPP
+    advanced:
+    - TEMP_SWITCH_ON_SETTLE_S
+    - RF_GATE_AMPLITUDE
+    - RF_GATE_OFFSET
+    - XY_CTRL_PHASE
+    - XY_CTRL_QUAD
+    - XY_CALIB_ENVELOPE_V
+    - XY_PHASE_CAL_TOL_DEG
+    - XY_PHASE_CAL_MAX_ITER
+    - XY_PHASE_CAL_MIN_R_V
+    - XY_PHASE_CAL_MIN_R_RATIO
+    - XY_CALIBRATION_MIN_ENVELOPE_V
+    - XY_CALIBRATION_MAX_ENVELOPE_V
+    - XY_TRIGGER_FREQ
+    - XY_TRIGGER_AMPLITUDE
+    - XY_TRIGGER_OFFSET
+    - XY_TRIGGER_DUTY
+    - XY_TRIGGER_PHASE
+    - HF2_DEMOD_IDX
+    - HF2_SIGNAL_RANGE
+    - HF2_DEMOD_ORDER
+    - HF2_DEMOD_TC
+    - HF2_DAQ_TC
+    - HF2_DAQ_RATE
+    - ANALYSIS_FIT_HALF_WIDTH_HZ
+    - FIXED_PARAMS.Temp_Switch
+    - NOISE_SEED
+    - INJECTION_SETTLE_S
+    - PUMP_MOD_AMPLITUDE
+    - HF2_DEMOD_RATE
+    - Z_NOISE_SEED
+    - Z_NOISE_SETTLE_S
+    - PROBE_AOM_CARRIER_FREQ_HZ
+    - PROBE_AOM_CARRIER_VPP
+    - PROBE_AOM_AM_DEPTH_PERCENT
+    - PUMP_MOD_DUTY
+  detection-chain-frequency-response:
+    basic:
+    - RUN_TAG
+    - AM_FREQ_START_HZ
+    - AM_FREQ_STOP_HZ
+    - AM_FREQ_POINTS
+    - AM_SETTLE_TIME_S
+    - PROBE_AOM_AM_AMPLITUDE_VPP
+    - HF2_OSC_FREQ_HZ
+    - HF2_DAQ_DURATION_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    advanced:
+    - PROBE_AOM_CARRIER_FREQ_HZ
+    - PROBE_AOM_CARRIER_AMPLITUDE_VPP
+    - TEMP_SWITCH_OFF_LEAD_S
+    - TEMP_SWITCH_ON_LAG_S
+    - HF2_DEMOD_IDX
+    - HF2_SIGNAL_RANGE_V
+    - HF2_DEMOD_ORDER
+    - HF2_DAQ_TC_S
+    - HF2_DAQ_RATE_SA_S
+    - PSD_NPERSEG

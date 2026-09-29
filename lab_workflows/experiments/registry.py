@@ -13,6 +13,9 @@ from ..experiment_modules.noise_spectrum_xy.definition import (
 from ..experiment_modules.noise_spectrum_xy_known_noise.definition import (
     DEFINITION as NOISE_SPECTRUM_XY_KNOWN_NOISE_DEFINITION,
 )
+from ..experiment_modules.noise_spectrum_xy_probe_am.definition import (
+    DEFINITION as NOISE_SPECTRUM_XY_PROBE_AM_DEFINITION,
+)
 from ..experiment_modules.noise_spectrum_xy_demod3_r.definition import (
     DEFINITION as NOISE_SPECTRUM_XY_DEMOD3_R_DEFINITION,
 )
@@ -120,6 +123,9 @@ from ..experiment_modules.static_sensitivity.definition import (
 )
 from .contracts import ExperimentDefinition
 from ..experiment_modules.bell_bloom_z_field_calibration.definition import DEFINITION as BELL_BLOOM_Z_FIELD_CALIBRATION_DEFINITION
+from ..experiment_modules.detection_chain_frequency_response.definition import (
+    DEFINITION as DETECTION_CHAIN_FREQUENCY_RESPONSE_DEFINITION,
+)
 from .legacy import LegacyScriptAdapter
 
 
@@ -174,6 +180,7 @@ def _legacy(
 
 _DEFINITIONS = [
     BELL_BLOOM_Z_FIELD_CALIBRATION_DEFINITION,
+    DETECTION_CHAIN_FREQUENCY_RESPONSE_DEFINITION,
     SCOPE_CAPTURE_DEFINITION,
     STATIC_SENSITIVITY_DEFINITION,
     MX_Y_RF_SENSITIVITY_DEFINITION,
@@ -207,6 +214,7 @@ _DEFINITIONS = [
     MX_XY_RESIDUAL_FIELD_CALIBRATION_DEFINITION,
     NOISE_SPECTRUM_XY_DEFINITION,
     NOISE_SPECTRUM_XY_KNOWN_NOISE_DEFINITION,
+    NOISE_SPECTRUM_XY_PROBE_AM_DEFINITION,
     NOISE_SPECTRUM_XY_DEMOD3_R_DEFINITION,
     _legacy("noise-spectrum-xy-v2", "XY 控制噪声谱 v2", "measurement", "noise", "v2", "Noise_Spectrum_XY_Ctrl_v2.py", "Noise_Spectrum_XY_Ctrl_v2_plot.py", "第二版 XY 控制噪声谱流程。", _DEVICES["xy"]),
     _legacy("photon-shot-noise", "光子散粒噪声", "measurement", "fundamental-noise", "photon", "Photon_shot_noise.py", "Photon_shot_noise_plot.py", "测量光子散粒噪声随实验参数的变化。"),

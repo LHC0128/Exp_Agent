@@ -45,6 +45,10 @@ NOISE_SPECTRUM_XY = (
     "Probe_laser_power", "Pump_modulation", "Time_sequence",
     "Temp_Switch", "temperature", "lockin_r",
 )
+PROBE_AM_NOISE_SPECTRUM_XY = (
+    *NOISE_SPECTRUM_XY,
+    "Probe_AOM_Carrier", "Probe_AOM_AM",
+)
 OPTIMAL_CONTROL = (*FULL_HF2, "Time_sequence_2")
 DG4000_BIAS_OPTIMAL_CONTROL = tuple(
     key for key in OPTIMAL_CONTROL if key != "main_magnetic_field"
@@ -112,6 +116,7 @@ TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "mx-z-optimal-control-dg4000-bias-xyz-balance": DG4000_BIAS_OPTIMAL_CONTROL,
     "noise-spectrum-xy": NOISE_SPECTRUM_XY,
     "noise-spectrum-xy-known-noise": NOISE_SPECTRUM_XY,
+    "noise-spectrum-xy-uncontrolled-probe-am": PROBE_AM_NOISE_SPECTRUM_XY,
     "noise-spectrum-xy-demod3-r": DIRECT_AW,
     "projection-noise": SCOPE,
     "rf-sensitivity-direct-aw-frequency": DIRECT_AW,
@@ -130,6 +135,7 @@ ARBITRARY_MAPPING_KEYS: dict[str, tuple[str, ...]] = {
     )
 }
 ARBITRARY_MAPPING_KEYS["noise-spectrum-xy-known-noise"] = ("Z_magnetic_field",)
+ARBITRARY_MAPPING_KEYS["noise-spectrum-xy-uncontrolled-probe-am"] = ("Probe_AOM_AM", "Z_magnetic_field")
 ARBITRARY_MAPPING_KEYS["z-aw-waveform-scope-check"] = ("Z_magnetic_field",)
 ARBITRARY_MAPPING_KEYS["z-aw-current-waveform-scope-check"] = ("Z_magnetic_field",)
 ARBITRARY_MAPPING_KEYS["z-aw-closed-loop-waveform-correction"] = ("Z_magnetic_field",)

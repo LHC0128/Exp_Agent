@@ -67,7 +67,7 @@ class NoiseSpectrumXYParams(ExperimentParams):
     analysis_bin_width_hz: float = parameter(default=12.0, external_name="ANALYSIS_BIN_WIDTH_HZ", label="频率格间距", unit="Hz", group="basic", minimum=0.1, description="唯一分段设置：按实际采样率自动计算每段点数，实际格间距不大于此值。不改变采样率；越细可用于平均的段数越少。")
     analysis_frequency_min_hz: float = parameter(default=300.0, external_name="ANALYSIS_FREQUENCY_MIN_HZ", label="分析频带下限", unit="Hz", group="advanced", minimum=0)
     analysis_frequency_max_hz: float = parameter(default=50000.0, external_name="ANALYSIS_FREQUENCY_MAX_HZ", label="分析频带上限", unit="Hz", group="advanced", minimum=1, description="移动脊线搜索与分离频带；不使用采集 K/B 强制定位。")
-    analysis_fit_half_width_hz: float = parameter(default=3000.0, external_name="ANALYSIS_FIT_HALF_WIDTH_HZ", label="局部拟合半窗口", unit="Hz", group="advanced", minimum=1)
+    analysis_fit_half_width_hz: float = parameter(default=3000.0, external_name="ANALYSIS_FIT_HALF_WIDTH_HZ", label="峰定位半窗口", unit="Hz", group="advanced", minimum=1, description="三类 XY 噪声实验共用全控制轴分析；此值约束峰区和参数边界，并定义独立背景平台需避开的共振区。")
     pump_laser_power: float = parameter(default=0.1, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", safety_key="Pump_laser_power")
     probe_laser_power: float = parameter(default=0.1, external_name="FIXED_PARAMS.Probe_laser_power", label="Probe 光功率", unit="V", group="basic", safety_key="Probe_laser_power")
     temperature: float = parameter(default=100.0, external_name="FIXED_PARAMS.temperature", label="气室温度", unit="°C", group="basic", safety_key="temperature")

@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "XY 已知噪声注入 · 离线分析与真值链",
+    "locale": "zh-CN",
+    "output": "noise-spectrum-xy-known-noise.dataflow.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1400,
+      560
+    ],
+    "views": [
+      {
+        "id": "separation",
+        "label": "谱分离与差分",
+        "focus": [
+          "raw-pair",
+          "welch",
+          "fit",
+          "diff"
+        ],
+        "note": "从波形对到参数层差分的完整链路。"
+      },
+      {
+        "id": "truth",
+        "label": "真值与判据",
+        "focus": [
+          "raw-wf",
+          "raw-disp",
+          "truth",
+          "gain",
+          "criteria"
+        ],
+        "note": "波形数值 PSD × K_Z² 与色散重拟合增益。"
+      },
+      {
+        "id": "products",
+        "label": "判据与产物",
+        "focus": [
+          "criteria",
+          "gain"
+        ],
+        "note": "带内覆盖与中位比值判据,结果产物清单。"
+      }
+    ]
+  },
+  "stages": [
+    {
+      "label": "raw/ 采集产物"
+    },
+    {
+      "label": "谱估计"
+    },
+    {
+      "label": "拟合与差分"
+    },
+    {
+      "label": "换算、真值与判据"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "raw-wf",
+      "type": "database",
+      "label": "归一化任意波",
+      "stage": 0,
+      "row": 0,
+      "width": 110,
+      "height": 56
+    },
+    {
+      "id": "raw-pair",
+      "type": "database",
+      "label": "off/on 波形对",
+      "stage": 0,
+      "row": 1,
+      "width": 110,
+      "height": 56
+    },
+    {
+      "id": "raw-disp",
+      "type": "database",
+      "label": "色散扫描数据",
+      "stage": 0,
+      "row": 2,
+      "width": 110,
+      "height": 56
+    },
+    {
+      "id": "welch",
+      "type": "backend",
+      "label": "Welch 与脊线标定",
+      "stage": 1,
+      "row": 1,
+      "width": 110,
+      "height": 56
+    },
+    {
+      "id": "fit",
+      "type": "backend",
+      "label": "全轴洛伦兹拟合",
+      "stage": 2,
+      "row": 0,
+      "width": 110,
+      "height": 56
+    },
+    {
+      "id": "diff",
+      "type": "backend",
+      "label": "参数层差分",
+      "stage": 2,
+      "row": 1,
+      "width": 110,
+      "height": 56
+    },
+    {
+      "id": "truth",
+      "type": "backend",
+      "label": "注入真值谱",
+      "stage": 3,
+      "row": 0,
+      "width": 110,
+      "height": 56
+    },
+    {
+      "id": "criteria",
+      "type": "backend",
+      "label": "定量判据与产物",
+      "stage": 3,
+      "row": 1,
+      "width": 110,
+      "height": 56
+    },
+    {
+      "id": "gain",
+      "type": "backend",
+      "label": "被测侧增益换算",
+      "stage": 3,
+      "row": 2,
+      "width": 110,
+      "height": 56
+    }
+  ],
+  "flows": [
+    {
+      "id": "f-pair-welch",
+      "from": "raw-pair",
+      "to": "welch",
+      "label": "off/on 波形"
+    },
+    {
+      "id": "f-welch-fit",
+      "from": "welch",
+      "to": "fit",
+      "label": "ON/OFF PSD · 脊线"
+    },
+    {
+      "id": "f-fit-diff",
+      "from": "fit",
+      "to": "diff",
+      "label": "A_on · A_off · γ",
+      "labelAt": [
+        530,
+        198
+      ]
+    },
+    {
+      "id": "f-disp-gain",
+      "from": "raw-disp",
+      "to": "gain",
+      "label": "色散重拟合 σ",
+      "route": "bottom-channel"
+    },
+    {
+      "id": "f-diff-gain",
+      "from": "diff",
+      "to": "gain",
+      "label": "A_diff"
+    },
+    {
+      "id": "f-wf-truth",
+      "from": "raw-wf",
+      "to": "truth",
+      "label": "数值 PSD",
+      "route": "top-channel"
+    },
+    {
+      "id": "f-gain-crit",
+      "from": "gain",
+      "to": "criteria",
+      "label": "S_meas",
+      "via": [
+        [
+          1030,
+          384
+        ],
+        [
+          1030,
+          270
+        ]
+      ],
+      "fromSide": "right",
+      "toSide": "right"
+    },
+    {
+      "id": "f-truth-crit",
+      "from": "truth",
+      "to": "criteria",
+      "label": "S_truth",
+      "labelAt": [
+        745,
+        198
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "分离策略",
+      "items": [
+        "参数层差分,不做差矩阵对数拟合",
+        "全控制轴拟合,背景独立验收",
+        "脊线用 OFF 谱定位,注入带限"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "真值链",
+      "items": [
+        "真值 = 波形数值 PSD × K_Z²",
+        "K_Z 取 Bell-Bloom 标定,不补频响",
+        "带外真值趋零,不进比值统计"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "统计口径",
+      "items": [
+        "有符号差保留,NaN 为未通过验收",
+        "带内覆盖 ≥50% 且中位比值达标",
+        "completed 不等于判据通过"
+      ]
+    }
+  ]
+}

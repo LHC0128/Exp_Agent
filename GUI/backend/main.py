@@ -1282,15 +1282,25 @@ def noise_spectrum_xy_summary(run_id: str):
 
 
 NOISE_SPECTRUM_XY_KNOWN_NOISE_ID = "noise-spectrum-xy-known-noise"
+NOISE_SPECTRUM_XY_PROBE_AM_ID = "noise-spectrum-xy-uncontrolled-probe-am"
 
 
 @app.get(f"/api/experiments/{NOISE_SPECTRUM_XY_KNOWN_NOISE_ID}/runs")
 def noise_spectrum_xy_known_noise_runs(limit: int = 50, offset: int = 0):
-    base = ROOT / "data" / _experiment_or_404(NOISE_SPECTRUM_XY_KNOWN_NOISE_ID).data_type
+    return _noise_spectrum_injection_runs(NOISE_SPECTRUM_XY_KNOWN_NOISE_ID, limit, offset)
+
+
+@app.get(f"/api/experiments/{NOISE_SPECTRUM_XY_PROBE_AM_ID}/runs")
+def noise_spectrum_xy_probe_am_runs(limit: int = 50, offset: int = 0):
+    return _noise_spectrum_injection_runs(NOISE_SPECTRUM_XY_PROBE_AM_ID, limit, offset)
+
+
+def _noise_spectrum_injection_runs(experiment_id: str, limit: int, offset: int):
+    base = ROOT / "data" / _experiment_or_404(experiment_id).data_type
     items = []
     for path in base.glob("*/experiment_config.yaml"):
         config = _read_yaml(path)
-        if not config or config.get("experiment_id") != NOISE_SPECTRUM_XY_KNOWN_NOISE_ID:
+        if not config or config.get("experiment_id") != experiment_id:
             continue
         parameters = config.get("parameters", {})
         items.append({
@@ -1306,16 +1316,25 @@ def noise_spectrum_xy_known_noise_runs(limit: int = 50, offset: int = 0):
 
 @app.get(f"/api/experiments/{NOISE_SPECTRUM_XY_KNOWN_NOISE_ID}/runs/{{run_id}}/summary")
 def noise_spectrum_xy_known_noise_summary(run_id: str):
-    directory = _run_dir(NOISE_SPECTRUM_XY_KNOWN_NOISE_ID, run_id)
+    return _noise_spectrum_injection_summary(NOISE_SPECTRUM_XY_KNOWN_NOISE_ID, run_id)
+
+
+@app.get(f"/api/experiments/{NOISE_SPECTRUM_XY_PROBE_AM_ID}/runs/{{run_id}}/summary")
+def noise_spectrum_xy_probe_am_summary(run_id: str):
+    return _noise_spectrum_injection_summary(NOISE_SPECTRUM_XY_PROBE_AM_ID, run_id)
+
+
+def _noise_spectrum_injection_summary(experiment_id: str, run_id: str):
+    directory = _run_dir(experiment_id, run_id)
     config = _read_yaml(directory / "experiment_config.yaml")
-    if not config or config.get("experiment_id") != NOISE_SPECTRUM_XY_KNOWN_NOISE_ID:
-        raise HTTPException(404, "不是 XY 控制已知噪声注入运行")
+    if not config or config.get("experiment_id") != experiment_id:
+        raise HTTPException(404, "运行目录与 XY 噪声实验 ID 不匹配")
     parameters = config.get("parameters")
     if not isinstance(parameters, dict):
         raise HTTPException(409, "运行配置缺少参数快照")
     results = directory / "results"
     artifacts = {
-        path.name: f"/api/runs/{NOISE_SPECTRUM_XY_KNOWN_NOISE_ID}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
+        path.name: f"/api/runs/{experiment_id}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
         for path in results.glob("*") if path.is_file()
     }
     analysis_status = config.get("analysis_status")
@@ -1382,6 +1401,52 @@ def bell_bloom_z_summary(run_id: str):
         "safety_shutdown": config.get("safety_shutdown", {}), "analysis": analysis,
         "artifacts": {path.name: f"/api/runs/{BELL_BLOOM_Z_ID}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
                       for path in (directory / "results").glob("*") if path.is_file()},
+    }
+
+
+DETECTION_CHAIN_FREQUENCY_ID = "detection-chain-frequency-response"
+
+
+@app.get(f"/api/experiments/{DETECTION_CHAIN_FREQUENCY_ID}/runs")
+def detection_chain_frequency_runs(limit: int = 50, offset: int = 0):
+    base = ROOT / "data" / _experiment_or_404(DETECTION_CHAIN_FREQUENCY_ID).data_type
+    items = []
+    for path in base.glob("*/experiment_config.yaml"):
+        config = _read_yaml(path)
+        if not config or config.get("experiment_id") != DETECTION_CHAIN_FREQUENCY_ID:
+            continue
+        items.append({
+            "run_id": path.parent.name,
+            "timestamp": str(config.get("started_at", "")),
+            "run_tag": str(config.get("run_tag", "")),
+            "completion_status": str(config.get("completion_status", "unknown")),
+        })
+    items.sort(key=lambda item: item["timestamp"], reverse=True)
+    limit, offset = max(1, min(limit, 200)), max(0, offset)
+    return {"total": len(items), "limit": limit, "offset": offset, "runs": items[offset:offset + limit]}
+
+
+@app.get(f"/api/experiments/{DETECTION_CHAIN_FREQUENCY_ID}/runs/{{run_id}}/summary")
+def detection_chain_frequency_summary(run_id: str):
+    directory = _run_dir(DETECTION_CHAIN_FREQUENCY_ID, run_id)
+    config = _read_yaml(directory / "experiment_config.yaml") or {}
+    if config.get("experiment_id") != DETECTION_CHAIN_FREQUENCY_ID:
+        raise HTTPException(404, "不是探测链路频率响应标定运行")
+    results = directory / "results"
+    return {
+        "run_id": run_id,
+        "timestamp": str(config.get("started_at", "")),
+        "run_tag": str(config.get("run_tag", "")),
+        "completion_status": str(config.get("completion_status", "unknown")),
+        "parameters": config.get("parameters") if isinstance(config.get("parameters"), dict) else {},
+        "analysis_status": config.get("analysis_status", "not_started"),
+        "failure_reason": config.get("failure_reason") or "",
+        "analysis_error": config.get("analysis_error") or "",
+        "temperature_control": config.get("temperature_control") if isinstance(config.get("temperature_control"), dict) else None,
+        "artifacts": {
+            path.name: f"/api/runs/{DETECTION_CHAIN_FREQUENCY_ID}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
+            for path in results.glob("*") if path.is_file()
+        },
     }
 
 

@@ -8,7 +8,8 @@ import { MxYOptimalControlFrequencyPage } from "./MxYOptimalControlFrequencyPage
 import { StaticSensitivityPage } from "./StaticSensitivityPage";
 import { BellBloomZCalibrationPage } from "./BellBloomZCalibrationPage";
 import { NoiseSpectrumXYPage } from "./NoiseSpectrumXYPage";
-import { NoiseSpectrumXYKnownNoisePage } from "./NoiseSpectrumXYKnownNoisePage";
+import { NoiseSpectrumXYKnownNoisePage, NoiseSpectrumXYProbeAMPage } from "./NoiseSpectrumXYKnownNoisePage";
+import { DetectionChainFrequencyResponsePage } from "./DetectionChainFrequencyResponsePage";
 import { Field, SelectField } from "../components/FormFields";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
@@ -41,6 +42,8 @@ export function ExperimentPage() {
   if (experimentId === "bell-bloom-z-field-calibration") return <BellBloomZCalibrationPage />;
   if (experimentId === "noise-spectrum-xy") return <NoiseSpectrumXYPage />;
   if (experimentId === "noise-spectrum-xy-known-noise") return <NoiseSpectrumXYKnownNoisePage />;
+  if (experimentId === "noise-spectrum-xy-uncontrolled-probe-am") return <NoiseSpectrumXYProbeAMPage />;
+  if (experimentId === "detection-chain-frequency-response") return <DetectionChainFrequencyResponsePage />;
   return <GenericExperimentPage />;
 }
 

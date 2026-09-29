@@ -26,8 +26,9 @@ COMMAND_VOLTAGE_REFERENCE = "50_ohm"
 # 驱动参考取自同一帧的实测电压时，分母是实测相量；缺少参考通道时退化为设定值。
 PHASE_REFERENCE_MEASURED = AW_CURRENT_RESPONSE_PHASE_REFERENCE
 PHASE_REFERENCE_COMMANDED = "commanded_amplitude"
-# 沿用既有质量基准：无饱和、正弦拟合相关性下限、重复相位标准差上限。
-FIT_CORRELATION_MIN = 0.98
+# 幅值拟合门槛按本次数据放宽；驱动参考保持严格，避免把噪声当相位基准。
+FIT_CORRELATION_MIN = 0.95
+DRIVE_REFERENCE_CORRELATION_MIN = 0.98
 PHASE_STD_MAX_DEG = 15.0
 
 
@@ -118,15 +119,18 @@ def _fit_swept_capture(capture: dict[str, Any], config: dict[str, Any]) -> dict[
             time_relative_s[selected], reference_voltage[selected], frequency,
             drive_amplitude_vpp, drive_offset_v,
         )
-        drive_phasor = _phasor(reference_fit)
         drive_amplitude_measured_v = float(reference_fit["amplitude_v"])
-        phase_reference = PHASE_REFERENCE_MEASURED
-    else:
-        drive_phasor = 0.5 * drive_amplitude_vpp + 0.0j
-        phase_reference = PHASE_REFERENCE_COMMANDED
-    if abs(drive_phasor) <= 0.0:
+    commanded_drive_phasor = 0.5 * drive_amplitude_vpp + 0.0j
+    if abs(commanded_drive_phasor) <= 0.0:
         raise ValueError(f"{frequency:.6g} Hz 的驱动参考幅度为零，无法归一化")
-    transfer = _phasor(current_fit) / drive_phasor
+    current_phasor = _phasor(current_fit)
+    measured_transfer = (
+        current_phasor / _phasor(reference_fit)
+        if reference_fit is not None
+        and reference_fit["amplitude_v"] > 0.0
+        and reference_fit["correlation"] >= DRIVE_REFERENCE_CORRELATION_MIN
+        else complex(float("nan"), float("nan"))
+    )
     saturation = _saturation_diagnostic(
         measured_voltage,
         scale_v_div=_as_scalar(capture, "scale_used_v_div", np.nan),
@@ -134,8 +138,8 @@ def _fit_swept_capture(capture: dict[str, Any], config: dict[str, Any]) -> dict[
     )
     return {
         "frequency_hz": frequency,
-        "transfer": complex(transfer),
-        "phase_reference": phase_reference,
+        "transfer": current_phasor / commanded_drive_phasor,
+        "measured_transfer": complex(measured_transfer),
         "drive_amplitude_measured_v": drive_amplitude_measured_v,
         "drive_fit_correlation": (
             float(reference_fit["correlation"]) if reference_fit is not None
@@ -161,6 +165,8 @@ def _aggregate_points(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         saturation = any(bool(r["saturation_detected"]) for r in frames)
         correlation = float(np.mean([r["fit_correlation"] for r in frames]))
         phase_std = float(_circular_std_deg(phases_deg))
+        measured_reference = frames[0]["phase_reference"] == PHASE_REFERENCE_MEASURED
+        phase_reliable = bool(measured_reference and phase_std < PHASE_STD_MAX_DEG)
         mean_transfer = complex(np.mean(transfers))
         reliable = bool(
             not saturation
@@ -168,7 +174,7 @@ def _aggregate_points(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             and np.all(np.abs(transfers) > 0.0)
             and np.isfinite(correlation)
             and correlation > FIT_CORRELATION_MIN
-            and phase_std < PHASE_STD_MAX_DEG
+            and (not measured_reference or phase_reliable)
         )
         points.append({
             "frequency_hz": float(frequency),
@@ -177,6 +183,7 @@ def _aggregate_points(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "transfer_magnitude_a_per_v": abs(mean_transfer),
             "transfer_phase_deg": float(np.rad2deg(np.angle(mean_transfer))),
             "reliable": reliable,
+            "phase_reliable": phase_reliable,
             "frame_count": len(frames),
             "saturation_detected": saturation,
             "fit_correlation_mean": correlation,
@@ -190,7 +197,7 @@ def _aggregate_points(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _plot_transfer(results_dir: Path, frequency_hz: np.ndarray, transfer: np.ndarray,
-                   reliable: np.ndarray) -> str:
+                   reliable: np.ndarray, phase_reliable: np.ndarray) -> str:
     set_plot_style("paper")
     fig, axes = new_figure(nrows=2, ncols=1, kind="wide", constrained_layout=True)
     axes[0].plot(frequency_hz[reliable], np.abs(transfer[reliable]), "o-", ms=3, lw=1.0,
@@ -201,10 +208,12 @@ def _plot_transfer(results_dir: Path, frequency_hz: np.ndarray, transfer: np.nda
     format_axis(axes[0], xlabel="Drive frequency (Hz)", ylabel="|I/V| (A/V)")
     axes[0].grid(True, alpha=0.25, which="both")
     axes[0].legend(loc="best")
-    axes[1].plot(frequency_hz[reliable], np.rad2deg(np.angle(transfer[reliable])), "o-",
-                 ms=3, lw=1.0, label="Reliable point")
-    axes[1].plot(frequency_hz[~reliable], np.rad2deg(np.angle(transfer[~reliable])), "x",
-                 ms=5, label="Excluded point")
+    axes[1].plot(frequency_hz[phase_reliable],
+                 np.rad2deg(np.angle(transfer[phase_reliable])), "o-",
+                 ms=3, lw=1.0, label="Reliable phase")
+    axes[1].plot(frequency_hz[~phase_reliable],
+                 np.rad2deg(np.angle(transfer[~phase_reliable])), "x",
+                 ms=5, label="Phase reference unavailable")
     axes[1].set_xscale("log")
     format_axis(axes[1], xlabel="Drive frequency (Hz)", ylabel="Phase (deg)")
     axes[1].grid(True, alpha=0.25, which="both")
@@ -217,16 +226,29 @@ def _plot_transfer(results_dir: Path, frequency_hz: np.ndarray, transfer: np.nda
 def _analyze_swept_captures(run_dir: Path, config: dict[str, Any],
                             records: list[dict[str, Any]]) -> dict[str, Any]:
     """对数扫频分析：逐频率汇总重复帧，保留可靠性掩码与可靠覆盖区间。"""
-    phase_references = {str(r["phase_reference"]) for r in records}
-    if len(phase_references) != 1:
-        raise ValueError("同一运行内混用了不同的相位参考方式")
-    phase_reference = phase_references.pop()
+    # 一次运行统一使用一种相位基准；稀疏的高相关噪声不能混入命令参考数据。
+    use_measured_reference = bool(records) and all(
+        np.isfinite(r["drive_fit_correlation"])
+        and r["drive_fit_correlation"] >= DRIVE_REFERENCE_CORRELATION_MIN
+        for r in records
+    )
+    phase_reference = (
+        PHASE_REFERENCE_MEASURED if use_measured_reference
+        else PHASE_REFERENCE_COMMANDED
+    )
+    for record in records:
+        if use_measured_reference:
+            record["transfer"] = record.pop("measured_transfer")
+        else:
+            record.pop("measured_transfer")
+        record["phase_reference"] = phase_reference
     point_results = _aggregate_points(records)
     frequency_hz = np.asarray([p["frequency_hz"] for p in point_results], dtype=float)
     transfer = np.asarray(
         [p["transfer_real_a_per_v"] + 1j * p["transfer_imag_a_per_v"]
          for p in point_results], dtype=complex)
     reliable = np.asarray([p["reliable"] for p in point_results], dtype=bool)
+    phase_reliable = np.asarray([p["phase_reliable"] for p in point_results], dtype=bool)
     if not np.any(reliable):
         raise ValueError("扫频没有产生任何可靠频点，请检查驱动幅度、接线与重复次数")
     reliable_frequency = frequency_hz[reliable]
@@ -241,6 +263,7 @@ def _analyze_swept_captures(run_dir: Path, config: dict[str, Any],
         transfer_real_a_per_v=transfer.real,
         transfer_imag_a_per_v=transfer.imag,
         reliable=reliable,
+        phase_reliable=phase_reliable,
         frame_count=np.asarray([p["frame_count"] for p in point_results], dtype=int),
         fit_correlation_mean=np.asarray(
             [p["fit_correlation_mean"] for p in point_results], dtype=float),
@@ -252,7 +275,8 @@ def _analyze_swept_captures(run_dir: Path, config: dict[str, Any],
         reliable_frequency_min_hz=np.float64(float(np.min(reliable_frequency))),
         reliable_frequency_max_hz=np.float64(float(np.max(reliable_frequency))),
     )
-    plot_transfer = _plot_transfer(results_dir, frequency_hz, transfer, reliable)
+    plot_transfer = _plot_transfer(
+        results_dir, frequency_hz, transfer, reliable, phase_reliable)
     excluded = frequency_hz[~reliable]
     return {
         "experiment_id": EXPERIMENT_ID,
@@ -265,6 +289,7 @@ def _analyze_swept_captures(run_dir: Path, config: dict[str, Any],
         "phase_reference": phase_reference,
         "sense_resistor_ohm": float(config["SENSE_RESISTOR_OHM"]),
         "reliable_point_count": int(np.count_nonzero(reliable)),
+        "phase_reliable_point_count": int(np.count_nonzero(phase_reliable)),
         "reliable_band_hz": {
             "minimum": float(np.min(reliable_frequency)),
             "maximum": float(np.max(reliable_frequency)),

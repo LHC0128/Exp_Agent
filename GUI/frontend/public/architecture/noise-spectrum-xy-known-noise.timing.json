@@ -1,0 +1,294 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "XY 已知噪声注入 · 单控制点时序",
+    "locale": "zh-CN",
+    "output": "noise-spectrum-xy-known-noise.timing.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1650,
+      700
+    ],
+    "views": [
+      {
+        "id": "rearm",
+        "label": "重触发与准备",
+        "focus": [
+          "wf",
+          "xy",
+          "temp"
+        ],
+        "note": "共用外触发重同步与温控窗口开启。"
+      },
+      {
+        "id": "pair",
+        "label": "两态成对采集",
+        "focus": [
+          "wf",
+          "zinj",
+          "hf2",
+          "raw"
+        ],
+        "note": "注入 OFF/ON 两态各自的等待、DAQ 与落盘。"
+      },
+      {
+        "id": "recover",
+        "label": "恢复与循环",
+        "focus": [
+          "wf",
+          "temp",
+          "xy"
+        ],
+        "note": "温控恢复与相邻控制点的顺序交替。"
+      }
+    ],
+    "column_fit": "spread"
+  },
+  "participants": [
+    {
+      "id": "wf",
+      "type": "backend",
+      "label": "采集工作流"
+    },
+    {
+      "id": "xy",
+      "type": "external",
+      "label": "X/Y 控制"
+    },
+    {
+      "id": "zinj",
+      "type": "external",
+      "label": "Z 注入"
+    },
+    {
+      "id": "temp",
+      "type": "external",
+      "label": "温控开关"
+    },
+    {
+      "id": "hf2",
+      "type": "external",
+      "label": "HF2 · DAQ"
+    },
+    {
+      "id": "raw",
+      "type": "database",
+      "label": "raw/ 目录"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 246,
+      "label": "重触发与准备"
+    },
+    {
+      "from": 254,
+      "to": 366,
+      "label": "注入 OFF 段"
+    },
+    {
+      "from": 374,
+      "to": 452,
+      "label": "注入 ON 段"
+    },
+    {
+      "from": 460,
+      "to": 600,
+      "label": "恢复与循环"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m-trigger",
+      "from": "zinj",
+      "to": "xy",
+      "y": 160,
+      "label": "CH2 方波经三通 · 共用外触发常开",
+      "variant": "security"
+    },
+    {
+      "id": "m-am",
+      "from": "wf",
+      "to": "xy",
+      "y": 192,
+      "label": "X/Y 输出 OFF → 调幅 2·V_env",
+      "variant": "dashed"
+    },
+    {
+      "id": "m-phase",
+      "from": "wf",
+      "to": "xy",
+      "y": 224,
+      "label": "写入校准相位 → ON 等待触发",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-tempoff",
+      "from": "wf",
+      "to": "temp",
+      "y": 256,
+      "label": "温控开关 OFF",
+      "note": "消除温控磁场干扰,等待 XY_SETTLE_TIME"
+    },
+    {
+      "id": "m-injoff",
+      "from": "wf",
+      "to": "zinj",
+      "y": 288,
+      "label": "注入 OFF(首点顺序,相邻点交替)",
+      "note": "等待 Z_INJECTION_SETTLE_S"
+    },
+    {
+      "id": "m-daq1",
+      "from": "wf",
+      "to": "hf2",
+      "y": 320,
+      "label": "DAQ 采集 sample.y · 1 s",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-wave1",
+      "from": "hf2",
+      "to": "wf",
+      "y": 352,
+      "label": "y(t) 波形",
+      "variant": "return"
+    },
+    {
+      "id": "m-save1",
+      "from": "wf",
+      "to": "raw",
+      "y": 384,
+      "label": "waveform_C####_off.npy + timing"
+    },
+    {
+      "id": "m-injon",
+      "from": "wf",
+      "to": "zinj",
+      "y": 416,
+      "label": "注入 ON(第二态)",
+      "note": "等待 Z_INJECTION_SETTLE_S"
+    },
+    {
+      "id": "m-daq2",
+      "from": "wf",
+      "to": "hf2",
+      "y": 448,
+      "label": "DAQ 采集 sample.y · 1 s",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-wave2",
+      "from": "hf2",
+      "to": "wf",
+      "y": 480,
+      "label": "y(t) 波形",
+      "variant": "return"
+    },
+    {
+      "id": "m-save2",
+      "from": "wf",
+      "to": "raw",
+      "y": 512,
+      "label": "waveform_C####_on.npy + timing"
+    },
+    {
+      "id": "m-tempon",
+      "from": "wf",
+      "to": "temp",
+      "y": 544,
+      "label": "温控开关 ON · 等待恢复"
+    },
+    {
+      "id": "m-next",
+      "from": "wf",
+      "to": "xy",
+      "y": 576,
+      "label": "下一控制点:交替 OFF→ON / ON→OFF",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "wf",
+      "from": 186,
+      "to": 585
+    },
+    {
+      "participant": "xy",
+      "from": 160,
+      "to": 585
+    },
+    {
+      "participant": "zinj",
+      "from": 264,
+      "to": 300
+    },
+    {
+      "participant": "temp",
+      "from": 238,
+      "to": 250
+    },
+    {
+      "participant": "hf2",
+      "from": 290,
+      "to": 322
+    },
+    {
+      "participant": "raw",
+      "from": 342,
+      "to": 354
+    },
+    {
+      "participant": "zinj",
+      "from": 368,
+      "to": 404
+    },
+    {
+      "participant": "hf2",
+      "from": 394,
+      "to": 426
+    },
+    {
+      "participant": "raw",
+      "from": 446,
+      "to": 458
+    },
+    {
+      "participant": "temp",
+      "from": 472,
+      "to": 484
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "两态差分",
+      "items": [
+        "同温控窗口内完成 OFF/ON 两态",
+        "相邻控制点交替先后抑制时序偏置",
+        "每段立即落盘,第二段失败保留第一段"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "同步基线",
+      "items": [
+        "外触发方波常开,重开后等同一触发沿",
+        "时序记录为主机时间,非仪器触发时间",
+        "DAQ 失败保留原波形并告警,不重试"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "有效性",
+      "items": [
+        "非有限/平直波形告警保留,离线排除",
+        "timing 文件记录点号状态与主机时间",
+        "温控恢复按设定等待后进入下一点"
+      ]
+    }
+  ]
+}

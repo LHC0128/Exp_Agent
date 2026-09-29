@@ -42,7 +42,7 @@ type RunSummary = RunItem & {
   analysis_quality?: {
     psd?: { actual_rate_sa_s: number; nperseg: number; bin_width_hz: number; segments_per_point_range?: number[] | null };
     calibration?: { k: number; b: number; support_points: number; residual_std_hz: number };
-    fit?: { valid_points: number; total_points: number; valid_frequency_extent_hz: number[] | null };
+    fit?: { valid_points: number; background_valid_points?: number; total_points: number; valid_frequency_extent_hz: number[] | null };
     warnings?: string[];
   };
 };
@@ -70,6 +70,7 @@ const figureLabels: Record<string, string> = {
   "diagonal_analysis.png": "PSD 斜线特征诊断",
   "psd_column_diagnostics.png": "PSD 逐列拟合诊断",
   "fit_quality.png": "拟合残差、留出误差与线宽",
+  "background_identifiability.png": "不可控背景的模型拟合与远端平台来源",
 };
 const downloadable = [
   "noise_spectra.npz",
@@ -105,6 +106,7 @@ function Result({ value }: { value: RunSummary }) {
       </p>}
       {value.analysis_quality?.fit && <p>
         通过质量验收 {value.analysis_quality.fit.valid_points} / {value.analysis_quality.fit.total_points} 个频率点；
+        {value.analysis_quality.fit.background_valid_points !== undefined && <>不可控背景独立有效 {value.analysis_quality.fit.background_valid_points} 点；</>}
         无效点保留为空，不插值或外推。
       </p>}
       {value.analysis_quality?.warnings?.map((warning) => <p key={warning}>{warning}</p>)}
@@ -123,7 +125,7 @@ function Result({ value }: { value: RunSummary }) {
 }
 
 export function NoiseSpectrumXYPage() {
-  const [tab, setTab] = useState<"run" | "history">("run");
+  const [tab, setTab] = useState<"run" | "history" | "architecture">("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -298,9 +300,15 @@ export function NoiseSpectrumXYPage() {
   const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     event.preventDefault();
-    const next = tab === "run" ? "history" : "run";
-    setTab(next);
-    event.currentTarget.querySelector<HTMLButtonElement>(`#noise-xy-tab-${next}`)?.focus();
+    const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const index = tabs.findIndex((item) => document.activeElement === item);
+    if (index === -1) return;
+    const next = event.key === 'ArrowRight'
+      ? (index + 1) % tabs.length
+      : (index - 1 + tabs.length) % tabs.length;
+    const target = tabs[next];
+    setTab((target?.dataset.tab as typeof tab) ?? "run");
+    target?.focus();
   };
 
   return (
@@ -312,18 +320,19 @@ export function NoiseSpectrumXYPage() {
       />
       {error && <div className="alert error" role="alert">{error}</div>}
       <div className="zaw-tab-strip" role="tablist" aria-label="XY 正弦控制噪声谱实验视图" onKeyDown={tabKey}>
-        {(["run", "history"] as const).map((item) => (
+        {(["run", "history", "architecture"] as const).map((item) => (
           <button
             key={item}
             id={`noise-xy-tab-${item}`}
             role="tab"
+            data-tab={item}
             aria-selected={tab === item}
             aria-controls={`noise-xy-panel-${item}`}
             tabIndex={tab === item ? 0 : -1}
             className={tab === item ? "active" : ""}
             onClick={() => setTab(item)}
           >
-            {item === "run" ? "运行" : "历史"}
+            {item === "run" ? "运行" : item === "history" ? "历史" : "架构"}
           </button>
         ))}
       </div>
@@ -402,7 +411,44 @@ export function NoiseSpectrumXYPage() {
           </section>
         </div>
       </div>
+      <div id="noise-xy-panel-architecture" role="tabpanel" aria-labelledby="noise-xy-tab-architecture" hidden={tab !== "architecture"}>
+        <ArchitectureView />
+      </div>
       <JobView job={analysisJob} onUpdate={setAnalysisJob} />
     </>
+  );
+}
+
+// “架构”Tab：内嵌本实验的 Archify 采集流程架构图。
+const ARCHITECTURE_URL = "/architecture/noise-spectrum-xy.html";
+
+function ArchitectureView() {
+  return (
+    <section className="mx-arch">
+      <div className="mx-arch-head">
+        <div>
+          <small>EXPERIMENT ARCHITECTURE</small>
+          <h2>采集流程架构</h2>
+          <p>
+            强类型参数按 K/B 反算正弦峰值扫描轴；X/Y 控制 DG4000 以共用外触发
+            Burst 输出正交控制场，每点调幅后按校准相位重新触发，断开温控后由
+            HF2 DAQ 采集噪声波形；离线分析经 Welch PSD、移动脊线重标定与局部
+            拟合分离可控响应与背景噪声谱。
+          </p>
+        </div>
+        <a className="architecture-open" href={ARCHITECTURE_URL} target="_blank" rel="noreferrer">
+          在新页面打开
+        </a>
+      </div>
+      <div className="architecture-frame">
+        <iframe
+          src={ARCHITECTURE_URL}
+          title="XY 正弦控制噪声谱实验采集流程架构图"
+          loading="lazy"
+          sandbox="allow-scripts allow-same-origin allow-downloads allow-popups"
+          allow="clipboard-write"
+        />
+      </div>
+    </section>
   );
 }
