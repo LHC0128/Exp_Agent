@@ -57,7 +57,7 @@ function Result({ value }: { value: Summary }) {
 }
 
 export function DetectionChainFrequencyResponsePage() {
-  const [tab, setTab] = useState<"run" | "history">("run");
+  const [tab, setTab] = useState<"run" | "history" | "architecture">("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -189,9 +189,11 @@ export function DetectionChainFrequencyResponsePage() {
   };
 
   const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
     event.preventDefault();
-    const next = tab === "run" ? "history" : "run";
+    const order = ["run", "history", "architecture"] as const;
+    const index = order.indexOf(tab as typeof order[number]);
+    const next = order[(index + (event.key === "ArrowRight" ? 1 : order.length - 1)) % order.length];
     setTab(next);
     event.currentTarget.querySelector<HTMLButtonElement>(`#dc-tab-${next}`)?.focus();
   };
@@ -200,7 +202,7 @@ export function DetectionChainFrequencyResponsePage() {
     <PageHead eyebrow="CALIBRATION · FREQUENCY" title={definition?.title ?? "探测链路频率响应标定"} description={definition?.description ?? "读取参数与运行记录。"} />
     {error && <div className="alert error" role="alert">{error}</div>}
     <div className="zaw-tab-strip" role="tablist" aria-label="探测链路频率响应标定视图" onKeyDown={tabKey}>
-      {(["run", "history"] as const).map(item => <button key={item} id={`dc-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`dc-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : "历史"}</button>)}
+      {(["run", "history", "architecture"] as const).map(item => <button key={item} id={`dc-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`dc-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : item === "history" ? "历史" : "架构"}</button>)}
     </div>
     <div id="dc-panel-run" role="tabpanel" aria-labelledby="dc-tab-run" hidden={tab !== "run"}>
       <div className="zaw-dashboard">
@@ -245,6 +247,66 @@ export function DetectionChainFrequencyResponsePage() {
         </section>
       </div>
     </div>
+    {tab === "architecture" && (
+      <div id="dc-panel-architecture" role="tabpanel" aria-labelledby="dc-tab-architecture">
+        <ArchitectureView />
+      </div>
+    )}
     <JobView job={analysisJob} onUpdate={setAnalysisJob} />
   </>;
+}
+
+// “架构”Tab：内嵌本实验的 Archify 架构图，总览与三张子图按需加载。
+const ARCHITECTURE_BASE = "/architecture/detection-chain-frequency-response";
+const ARCHITECTURE_DIAGRAMS = [
+  { id: "overview", file: "", tabLabel: "总览", title: "探测链路频率响应标定实验总架构图" },
+  { id: "acquisition", file: ".acquisition", tabLabel: "采集流程", title: "探测链路频率响应标定实验采集执行流程图" },
+  { id: "timing", file: ".timing", tabLabel: "单点时序", title: "探测链路频率响应标定实验单频点采集时序图" },
+  { id: "dataflow", file: ".dataflow", tabLabel: "数据分析", title: "探测链路频率响应标定实验数据与分析图" },
+] as const;
+
+function ArchitectureView() {
+  const [diagram, setDiagram] = useState<(typeof ARCHITECTURE_DIAGRAMS)[number]>(ARCHITECTURE_DIAGRAMS[0]);
+  return (
+    <section className="mx-arch">
+      <div className="mx-arch-head">
+        <div>
+          <small>EXPERIMENT ARCHITECTURE</small>
+          <h2>实验架构</h2>
+          <p>
+            总览：Probe 光 AOM 幅度调制扫频经铷原子气室与平衡探测器进入 HF2 解调，
+            逐频点在温控断开窗口内采集 Demod0 Y 波形并提取基带谱峰；子图分别展开
+            采集执行流程、单频点多仪器时序与离线归一化分析链路。
+          </p>
+        </div>
+        <a className="architecture-open" href={`${ARCHITECTURE_BASE}${diagram.file}.html`} target="_blank" rel="noreferrer">
+          在新页面打开
+        </a>
+      </div>
+      <div className="mx-arch-diagrams" role="tablist" aria-label="架构图选择">
+        {ARCHITECTURE_DIAGRAMS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={diagram.id === item.id}
+            className={diagram.id === item.id ? "active" : ""}
+            onClick={() => setDiagram(item)}
+          >
+            {item.tabLabel}
+          </button>
+        ))}
+      </div>
+      <div className="architecture-frame">
+        <iframe
+          key={diagram.id}
+          src={`${ARCHITECTURE_BASE}${diagram.file}.html`}
+          title={diagram.title}
+          loading="lazy"
+          sandbox="allow-scripts allow-same-origin allow-downloads allow-popups"
+          allow="clipboard-write"
+        />
+      </div>
+    </section>
+  );
 }
