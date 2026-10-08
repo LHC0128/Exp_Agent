@@ -46,3 +46,8 @@ GUI/frontend/public/architecture/*.visual-check.*
 
 # 误展开的 Windows 系统缓存路径
 %SystemDrive%/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+
+# pi 本地配置（不上传 GitHub）
+.pi/
