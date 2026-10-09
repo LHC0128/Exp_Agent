@@ -537,6 +537,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Experiment Archive */
+        put: operations["update_experiment_archive_api_experiments__experiment_id__archive_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}/tag": {
         parameters: {
             query?: never;
@@ -906,6 +923,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/noise-spectrum-xy/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Noise Spectrum Xy Runs */
+        get: operations["noise_spectrum_xy_runs_api_experiments_noise_spectrum_xy_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy/runs/{run_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Noise Spectrum Xy Summary */
+        get: operations["noise_spectrum_xy_summary_api_experiments_noise_spectrum_xy_runs__run_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy-known-noise/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Noise Spectrum Xy Known Noise Runs */
+        get: operations["noise_spectrum_xy_known_noise_runs_api_experiments_noise_spectrum_xy_known_noise_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy-uncontrolled-probe-am/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Noise Spectrum Xy Probe Am Runs */
+        get: operations["noise_spectrum_xy_probe_am_runs_api_experiments_noise_spectrum_xy_uncontrolled_probe_am_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy-known-noise/runs/{run_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Noise Spectrum Xy Known Noise Summary */
+        get: operations["noise_spectrum_xy_known_noise_summary_api_experiments_noise_spectrum_xy_known_noise_runs__run_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy-uncontrolled-probe-am/runs/{run_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Noise Spectrum Xy Probe Am Summary */
+        get: operations["noise_spectrum_xy_probe_am_summary_api_experiments_noise_spectrum_xy_uncontrolled_probe_am_runs__run_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/bell-bloom-z-field-calibration/runs": {
         parameters: {
             query?: never;
@@ -932,6 +1051,40 @@ export interface paths {
         };
         /** Bell Bloom Z Summary */
         get: operations["bell_bloom_z_summary_api_experiments_bell_bloom_z_field_calibration_runs__run_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/detection-chain-frequency-response/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detection Chain Frequency Runs */
+        get: operations["detection_chain_frequency_runs_api_experiments_detection_chain_frequency_response_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/detection-chain-frequency-response/runs/{run_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detection Chain Frequency Summary */
+        get: operations["detection_chain_frequency_summary_api_experiments_detection_chain_frequency_response_runs__run_id__summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1244,6 +1397,14 @@ export interface components {
             type: "DG4000" | "DG900" | "GS200" | "6221" | "DLC_PRO" | "SDS";
             /** Channels */
             channels: components["schemas"]["DeviceChannel"][];
+        };
+        /**
+         * ExperimentArchiveBody
+         * @description 归档只影响目录展示，布尔值不允许字符串或数字代替。
+         */
+        ExperimentArchiveBody: {
+            /** Archived */
+            archived: boolean;
         };
         /** ExperimentBody */
         ExperimentBody: {
@@ -3220,6 +3381,41 @@ export interface operations {
             };
         };
     };
+    update_experiment_archive_api_experiments__experiment_id__archive_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentArchiveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_experiment_assignment_api_experiments__experiment_id__tag_put: {
         parameters: {
             query?: never;
@@ -3901,6 +4097,195 @@ export interface operations {
             };
         };
     };
+    noise_spectrum_xy_runs_api_experiments_noise_spectrum_xy_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    noise_spectrum_xy_summary_api_experiments_noise_spectrum_xy_runs__run_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    noise_spectrum_xy_known_noise_runs_api_experiments_noise_spectrum_xy_known_noise_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    noise_spectrum_xy_probe_am_runs_api_experiments_noise_spectrum_xy_uncontrolled_probe_am_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    noise_spectrum_xy_known_noise_summary_api_experiments_noise_spectrum_xy_known_noise_runs__run_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    noise_spectrum_xy_probe_am_summary_api_experiments_noise_spectrum_xy_uncontrolled_probe_am_runs__run_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     bell_bloom_z_runs_api_experiments_bell_bloom_z_field_calibration_runs_get: {
         parameters: {
             query?: {
@@ -3934,6 +4319,69 @@ export interface operations {
         };
     };
     bell_bloom_z_summary_api_experiments_bell_bloom_z_field_calibration_runs__run_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detection_chain_frequency_runs_api_experiments_detection_chain_frequency_response_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detection_chain_frequency_summary_api_experiments_detection_chain_frequency_response_runs__run_id__summary_get: {
         parameters: {
             query?: never;
             header?: never;

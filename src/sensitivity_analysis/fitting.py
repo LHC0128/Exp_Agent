@@ -76,6 +76,9 @@ def _initial_guess(V, Y):
     else:
         gamma_guess = 0.1 * (np.max(V) - np.min(V))
     V_mid = float(np.mean(V))
+    # 对称轴的浮点均值可能约为 1e-18，LM 相对差分会把中心列锁成零；精确零初值使用正常差分步长。
+    if abs(V_mid) <= np.finfo(float).eps * max(float(np.max(np.abs(V))), np.finfo(float).tiny):
+        V_mid = 0.0
     return [y_range, gamma_guess, V_mid, 0.0]
 
 

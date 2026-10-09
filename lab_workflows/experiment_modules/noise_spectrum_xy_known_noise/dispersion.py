@@ -14,8 +14,6 @@ from sensitivity_analysis.fitting import fit_dispersive
 
 # 四参数色散拟合再留出两端自由度，点数下限与其余色散拟合实验保持一致。
 MIN_DISPERSION_FIT_POINTS = 7
-# 仅当运行配置与原始数据都缺少 K_Z 时才使用的回退（与运行默认值一致）。
-DEFAULT_K_Z_HZ_PER_V = 11703.677827729214
 
 
 def fit_dispersion_curve(
@@ -82,36 +80,27 @@ def fit_dispersion_curve(
 
 
 def resolve_dispersion(run_dir, config: dict[str, Any]) -> dict[str, Any]:
-    """离线重新拟合色散斜率；原始数据缺失时回退到采集记录的斜率。
-
-    与 ``noise_spectrum_xy`` 的脊线重标定同理：增益换算基准由原始数据重算，
-    采集阶段写入的斜率只作为对照。剔除点数取运行配置的
-    ``DISPERSION_FIT_SKIP_START`` / ``DISPERSION_FIT_SKIP_END``（历史运行缺省为 0）。
-    """
+    """仅用版本 3 的完整色散点值重拟合；采集记录的斜率只作为对照。"""
     recorded = dict(config.get("dispersion") or {})
     raw_file = run_dir / "raw" / "dispersion_scan.npz"
-    if not raw_file.is_file():
-        return _recorded_fallback(recorded, "缺少 raw/dispersion_scan.npz")
     with np.load(raw_file, allow_pickle=False) as data:
-        if not {"offsets_v", "y_mean"} <= set(data.files):
-            return _recorded_fallback(recorded, "原始色散数据缺少 offsets_v/y_mean")
+        if data["schema_version"].shape != () or data["schema_version"].item() != 3:
+            raise ValueError("色散原始文件必须为版本 3")
         offsets = np.asarray(data["offsets_v"], float)
-        y_mean = np.asarray(data["y_mean"], float)
-        k_z = float(data["k_z_hz_per_v"]) if "k_z_hz_per_v" in data.files else float("nan")
-    if not np.isfinite(k_z) or k_z <= 0:
-        k_z = float(recorded.get("k_z_hz_per_v", DEFAULT_K_Z_HZ_PER_V))
+        y_mean = np.asarray(data["y_median"], float)
+        completed = np.asarray(data["completed_mask"], bool)
+        if completed.shape != offsets.shape or not completed.all():
+            raise ValueError("色散扫描未全部完成，不能用于已知噪声增益换算")
+        k_z = float(data["k_z_hz_per_v"])
     params = config.get("parameters") or {}
-    skip_start = int(params.get("DISPERSION_FIT_SKIP_START", 0))
-    skip_end = int(params.get("DISPERSION_FIT_SKIP_END", 0))
-    try:
-        fit = fit_dispersion_curve(
-            offsets, y_mean,
-            skip_start_points=skip_start,
-            skip_end_points=skip_end,
-            k_z_hz_per_v=k_z,
-        )
-    except ValueError as exc:
-        return _recorded_fallback(recorded, f"原始色散数据重拟合失败: {exc}")
+    skip_start = int(params["DISPERSION_FIT_SKIP_START"])
+    skip_end = int(params["DISPERSION_FIT_SKIP_END"])
+    fit = fit_dispersion_curve(
+        offsets, y_mean,
+        skip_start_points=skip_start,
+        skip_end_points=skip_end,
+        k_z_hz_per_v=k_z,
+    )
     result = dict(fit, source="raw_refit", method="dispersion_line_fit", k_z_hz_per_v=k_z,
                   offsets_v=offsets, y_mean=y_mean,
                   skip_start_points=skip_start, skip_end_points=skip_end)
@@ -120,28 +109,3 @@ def resolve_dispersion(run_dir, config: dict[str, Any]) -> dict[str, Any]:
         result["recorded_slope_v_per_hz"] = float(recorded_slope)
         result["recorded_relative_difference"] = abs(fit["slope_v_per_hz"] - recorded_slope) / recorded_slope
     return result
-
-
-def _recorded_fallback(recorded: dict[str, Any], reason: str) -> dict[str, Any]:
-    """回退到采集记录的斜率；只用于原始数据缺失或不可用的历史目录。"""
-    slope_v_per_hz = recorded.get("slope_v_per_hz")
-    if not isinstance(slope_v_per_hz, (int, float)) or not np.isfinite(slope_v_per_hz) or slope_v_per_hz == 0:
-        raise ValueError(f"无法确定色散斜率: {reason}")
-    return {
-        "source": "config",
-        "method": str(recorded.get("method", "center_linear_fit")),
-        "fallback_reason": reason,
-        "slope_v_per_v": recorded.get("slope_v_per_v"),
-        "slope_v_per_hz": float(slope_v_per_hz),
-        "k_z_hz_per_v": recorded.get("k_z_hz_per_v"),
-        "fit_mask": None,
-        "popt": None,
-        "n_points": recorded.get("fit_points"),
-        "r_squared": recorded.get("r_squared"),
-        "rmse_v": recorded.get("rmse_v"),
-        "is_valid": recorded.get("fit_valid"),
-        "rejection_reasons": list(recorded.get("fit_rejection_reasons") or []),
-        "offsets_v": None,
-        "y_mean": None,
-        "intercept_v": recorded.get("intercept_v"),
-    }

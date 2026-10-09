@@ -22,6 +22,8 @@ const fields = [
   { name: "NOISE_BAND_STARTS_HZ", label: "噪声段起点", type: "array", default: [300], group: "basic", unit: "Hz" },
   { name: "NOISE_BAND_STOPS_HZ", label: "噪声段终点", type: "array", default: [30000], group: "basic", unit: "Hz" },
   { name: "NOISE_BAND_PSDS_V2_PER_HZ", label: "噪声段设计谱密度", type: "array", default: [1e-6], group: "basic", unit: "V²/Hz" },
+  { name: "HF2_DEMOD_RATE", label: "色散采样率", type: "number", default: 200000, group: "advanced", unit: "Sa/s", description: "用于 HF2 校相与色散连续采集" },
+  { name: "DISPERSION_DURATION_S", label: "色散每点采集时间", type: "number", default: 0.1, group: "advanced", unit: "s" },
 ];
 let summary: any;
 
@@ -45,7 +47,7 @@ beforeEach(() => {
   mockApi.mockReset();
   mockApi.mockImplementation(async (url: string, options?: RequestInit) => {
     if (url === BASE) return { title: "XY 控制测量已知可控噪声谱", description: "已知噪声验证", wiring_notes: ["确认 Z 链路接线"] };
-    if (url === `${BASE}/schema`) return { fields, parameter_layout_saved: true, parameter_layout: { basic: fields.map((field) => field.name), advanced: [] } };
+    if (url === `${BASE}/schema`) return { schema_version: 2, fields, parameter_layout_saved: true, parameter_layout: { basic: fields.filter((field) => field.group === "basic").map((field) => field.name), advanced: ["HF2_DEMOD_RATE", "DISPERSION_DURATION_S"] } };
     if (url === "/api/jobs") return [];
     if (url.startsWith(`${BASE}/runs?`)) return { runs: [summary], total: 1 };
     if (url.endsWith("/summary")) return summary;
@@ -67,6 +69,26 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+it("高级参数相邻显示色散速率和时长，保存和运行都传递新参数", async () => {
+  renderPage();
+  await screen.findByLabelText("运行标签");
+  fireEvent.click(screen.getByRole("tab", { name: /高级参数/ }));
+  expect(screen.getByLabelText("色散采样率 (Sa/s)")).toHaveValue(200000);
+  expect(screen.getByText("用于 HF2 校相与色散连续采集")).toBeVisible();
+  fireEvent.change(screen.getByLabelText("色散每点采集时间 (s)"), { target: { value: "0.2" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
+  await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url === `${BASE}/defaults`)).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
+  await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs` && options?.method === "POST")).toBe(true));
+  for (const [url, options] of mockApi.mock.calls.filter(([url, options]) => url === `${BASE}/defaults` || (url === `${BASE}/runs` && options?.method === "POST"))) {
+    const body = JSON.parse(String(options?.body));
+    expect(body.parameters.HF2_DEMOD_RATE).toBe(200000);
+    expect(body.parameters.DISPERSION_DURATION_S).toBe(0.2);
+    expect(body.parameters).not.toHaveProperty("DISPERSION_SAMPLES_PER_STEP");
+    if (url.endsWith("defaults")) expect(body.parameter_layout.advanced).toEqual(["HF2_DEMOD_RATE", "DISPERSION_DURATION_S"]);
+  }
+});
 
 it("显示波形预算预览与真值链 K_Z，谱段数组按逗号分隔编辑", async () => {
   renderPage();

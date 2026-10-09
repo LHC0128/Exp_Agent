@@ -42,16 +42,21 @@ def calibrate_demod_phase(
     *,
     cancellation: CancellationToken | None = None,
     progress: ProgressCallback | None = None,
+    settle_wait: Callable[[float], None] | None = None,
 ) -> PhaseCalibrationResult:
     """仅校准指定 Demod；设备连接和干扰源处理由调用方负责。"""
     base = hf2.demod_path(config.demod_idx)
     before = demod.read_demod_sample(hf2, config.demod_idx)
+    if not all(math.isfinite(float(before[key])) for key in ("x", "y", "r", "theta")):
+        raise ValueError(f"Demod{config.demod_idx} 校相初始读数包含非有限值")
     after = before
     for attempt in range(1, config.max_attempts + 1):
         if cancellation:
             cancellation.raise_if_cancelled()
-        time.sleep(max(0.0, config.settle_time))
+        (settle_wait or time.sleep)(max(0.0, config.settle_time))
         sample = demod.read_demod_sample(hf2, config.demod_idx)
+        if not all(math.isfinite(float(sample[key])) for key in ("x", "y", "r", "theta")):
+            raise ValueError(f"Demod{config.demod_idx} 校相读数包含非有限值")
         theta_deg = math.degrees(float(sample["theta"]))
         if float(sample["r"]) < config.minimum_r:
             raise RuntimeError(
@@ -63,16 +68,18 @@ def calibrate_demod_phase(
             f"Demod{config.demod_idx} 校相 {attempt}/{config.max_attempts}: {theta_deg:.4f}°",
         )
         after = sample
+        current = float(hf2.get_double(f"{base}/phaseshift"))
+        if not math.isfinite(current):
+            raise ValueError(f"Demod{config.demod_idx} 校相相位回读非有限")
         if abs(theta_deg) < config.tolerance_deg:
             return PhaseCalibrationResult(
                 config.demod_idx,
                 before,
                 after,
-                float(hf2.get_double(f"{base}/phaseshift")),
+                current,
                 attempt,
                 True,
             )
-        current = float(hf2.get_double(f"{base}/phaseshift"))
         hf2.set_double(f"{base}/phaseshift", current + theta_deg)
         hf2.sync()
     raise RuntimeError(

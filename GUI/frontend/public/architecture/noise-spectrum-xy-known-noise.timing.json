@@ -145,7 +145,7 @@
       "from": "wf",
       "to": "hf2",
       "y": 320,
-      "label": "DAQ 采集 sample.y · 1 s",
+      "label": "DAQ 采集 sample.y · 参数时长",
       "variant": "emphasis"
     },
     {
@@ -176,7 +176,7 @@
       "from": "wf",
       "to": "hf2",
       "y": 448,
-      "label": "DAQ 采集 sample.y · 1 s",
+      "label": "DAQ 采集 sample.y · 参数时长",
       "variant": "emphasis"
     },
     {
@@ -283,11 +283,12 @@
     },
     {
       "dot": "emerald",
-      "title": "有效性",
+      "title": "工作区版本，源码未冻结",
       "items": [
         "非有限/平直波形告警保留,离线排除",
         "timing 文件记录点号状态与主机时间",
-        "温控恢复按设定等待后进入下一点"
+        "温控恢复按设定等待后进入下一点",
+        "色散连续 DAQ 正常完成后进入此主扫描"
       ]
     }
   ]

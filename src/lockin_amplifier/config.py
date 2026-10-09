@@ -197,7 +197,7 @@ class DAQConfig:
     grid_rows : int
         行数 (每次触发的记录数)
     grid_mode : int
-        网格模式: 1=最近邻, 2=线性插值
+        网格模式: 1=最近邻, 2=线性插值, 4=原采样网格
     signal_paths : list
         订阅的信号路径后缀列表
         (例如 ['sample.r', 'sample.x', 'sample.y', 'sample.theta'])
@@ -218,6 +218,8 @@ class DAQConfig:
     ])
     extra_paths: List[str] = field(default_factory=list)
     """额外订阅的完整节点路径列表（非解调器信号），如 ['/dev18246/auxins/0/sample.AuxIn0']"""
+    record_flags: int = 0
+    """记录标志；0 保持默认检测行为，4 在检测到丢样时抛出异常。"""
 
     @classmethod
     def from_yaml(cls, path: str) -> "DAQConfig":

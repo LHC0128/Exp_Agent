@@ -24,13 +24,14 @@ DEFINITION = ExperimentDefinition(
         "相邻控制点交替注入开/关顺序，两态稳定等待并逐段保存；以单一参数模型配置采集，脊线按扫描频带重标定后用完整有效控制轴做洛伦兹分离，保留有符号参数差；"
         "与正弦噪声谱、Probe AM 实验共用全控制轴分析，背景独立验收，峰不可辨识时检验两侧远端平台，分别报告注入带内/带外的背景变化；"
         "有符号差值保留用于定量判据，差分幅值图以绝对值展示；"
-        "内置 z 偏置色散扫描对整条线形拟合零交叉点斜率给出增益换算，测得谱换算到 Hz²/Hz 后与"
+        "内置 z 偏置色散扫描按采样率和每点采集时间连续记录 X/Y/R 波形并取中位数，对整条线形拟合零交叉点斜率给出增益换算，测得谱换算到 Hz²/Hz 后与"
         "仅经 K_Z 换算、不应用线圈频响的注入真值逐 bin 比较，带内中位比值作为定量判据。"
     ),
     data_type="Noise_Spectrum_XY_Ctrl_Known_Noise",
     required_devices=("GS200", "DG900", "DG4000", "HF2"),
     required_mapping_keys=NOISE_SPECTRUM_XY,
     execution_mode="typed_workflow",
+    schema_version=NoiseSpectrumXYKnownNoiseParams.schema_version,
     acquisition_program="experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py",
     analysis_program="experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py",
     wiring_notes=(

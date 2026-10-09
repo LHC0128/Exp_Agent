@@ -29,14 +29,26 @@ experiments/
   *_plot.py               # 分析与绘图脚本
   control_waveform*.csv   # 任意波 / 控制包络
 
-examples/                 # 设备最小示例
-docs/                     # 模块文档、实验文档、手册摘录
-params/                   # YAML 配置（映射与安全限值）
+examples/                 # 设备 Notebook 与无硬件科研绘图示例
+docs/                     # 模块文档、实验文档、迁移清单与手册
+  old/                    # 历史归档，不作为当前入口
+params/                   # 设备库、物理量映射与安全限值
+  devices.yaml            # 设备 ID、型号、资源与参考时钟
+  mapping.yaml            # 物理量与设备端点绑定
+  safety_limits.yaml      # 输出量安全上下限
+  experiment_catalog.yaml # GUI 分类、归档状态、名称、简介与参数布局
   experiments/            # 正式实验的版本化默认参数
 lab_workflows/            # GUI 与命令行共用的实验契约、参数模型和安全步骤
+  analysis/               # 跨实验共享的离线分析
   experiment_modules/     # 新模式实验的模型、采集工作流与离线分析器
+  experiments/            # 注册表、执行契约与新旧适配器
   plotting/               # 论文图（默认）与 A0 海报共享绘图规范
+  steps/                  # 设备会话、输出策略、校相、温控与安全收尾
 GUI/                      # 本地 Web 实验控制台
+  backend/                # FastAPI API、任务队列与 SSE
+  frontend/               # React + TypeScript + Vite
+  start.ps1               # 后端与前端开发服务启动器
+start_gui.bat             # Windows 双击启动前后端并打开浏览器
 data/                     # 原始实验数据
 results/                  # 结果图表
 总结/                     # 阶段性总结
@@ -81,33 +93,53 @@ TOPTICA DLC pro Probe 激光、DG4000、DG900 Pro、SDS 示波器等仪器，并
 
 ### 首次安装
 
-在仓库根目录 `D:\Code\exp_agent` 打开 PowerShell，安装后端和前端依赖：
+先完成下文的[环境准备](#环境准备)。前端需要 Node.js / npm，当前 Vite 要求
+Node.js `^20.19.0 || >=22.12.0`；升级依赖后以锁文件中的 `engines` 为准。
+在仓库根目录 `D:\Code\exp_agent` 打开 PowerShell，安装 GUI 依赖：
 
 ```powershell
-agent_exp_env\Scripts\pip.exe install -r GUI\requirements.txt
+.\agent_exp_env\Scripts\python.exe -m pip install -r GUI\requirements.txt
 Set-Location GUI\frontend
-npm install
-npm run build
+npm ci
 Set-Location ..\..
 ```
 
+开发模式直接使用前端源码，支持 HMR，无需先运行 `npm run build`。
+
 ### 启动 GUI
 
-在仓库根目录运行：
+完成首次安装后，在文件资源管理器中双击仓库根目录的 **`start_gui.bat`**，
+即可启动前后端，并在 Vite 就绪后自动打开默认浏览器。
+脚本按自身位置定位仓库，不依赖当前工作目录；执行策略仅对启动的 PowerShell 进程生效，
+不会修改系统设置，也不会自动安装依赖。
+
+也可以在仓库根目录运行（默认不自动打开浏览器；附加 `-OpenBrowser` 可开启）：
 
 ```powershell
 .\GUI\start.ps1
 ```
 
-启动成功后，浏览器访问 [http://127.0.0.1:8000](http://127.0.0.1:8000)。
-服务只监听本机地址，启动 GUI 的 PowerShell 窗口需要保持打开。
+启动成功后，浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)。
+Vite 在当前窗口运行，将 `/api` 请求代理到独立窗口中的 FastAPI 后端
+[http://127.0.0.1:8000](http://127.0.0.1:8000)。两个服务只监听本机地址。
+按 Ctrl+C 只结束当前 Vite 进程；后端需要在自己的窗口停止或关闭。
+关闭浏览器不会停止服务。停止服务前应先通过 GUI 正常停止实验或功能模块，
+服务退出不等于仪器安全收尾。
 
-如果 PowerShell 不允许运行脚本，可改用：
+启动器会检查 Python、npm、前端依赖以及 8000 / 5173 端口；缺失依赖或端口占用时
+报错退出，不会杀进程或自动换端口。后端 20 秒内未监听时不再启动前端。
+双击启动失败时窗口会保留错误并等待按键；已启动的后端仍需单独停止。
+
+如果需要单独启动后端，在另一个终端执行：
 
 ```powershell
 Set-Location D:\Code\exp_agent\GUI
 ..\agent_exp_env\Scripts\python.exe -m backend
 ```
+
+前端开发服务的独立启动方式见 [GUI 开发说明](GUI/README.md#启动)。若只运行后端，
+需先在 `GUI/frontend/` 执行 `npm run build`，才能在 8000 端口访问构建后的页面；
+更新前端源码后需要重新构建。
 
 ### 基本操作
 
@@ -117,16 +149,21 @@ Set-Location D:\Code\exp_agent\GUI
 4. 信号发生器常用波形参数直接显示，波形细节、负载、单位、调制和 Burst 位于折叠的高级区；`rf_coil` 作为历史别名不单独显示，统一由“Y方向磁场”面板控制。
 5. 点击“应用并回读”；写入前会检查当前 mapping key 的 `params/safety_limits.yaml`，写入后以实际回读值更新页面。非 Vpp 状态仅允许回读、关闭输出或切换为 Vpp。
 6. 在“功能模块 → Z 任意波控制”选择闭环冻结结果，离线查看 V–t 图，再选择“仅加载，保持关闭”或“加载并启动”。可联动时序信号2并编辑触发参数；Z 面板提供快捷入口。详见 [任意波控制说明](docs/signal_generator.md#gui-z-任意波控制)。
-7. 实验结束后，在启动 GUI 的 PowerShell 窗口按 `Ctrl+C` 停止服务；服务停止不会自动关闭已启动的任意波，请先按需要执行模块的“停止”。
+7. 实验结束后，先按需要执行模块的“停止”，再分别停止 Vite 与后端。仅停止服务不会自动关闭已启动的任意波。
 
-“实验中心”统一展示 59 个正式 Python 采集入口，并提供动态参数、默认值保存、
+“实验中心”默认展示[注册表](lab_workflows/experiments/registry.py)中的未归档正式实验，提供动态参数、默认值保存、
 无副作用预检、运行日志、安全停止和离线重新分析。每张实验卡片同时显示对应的
 采集程序和独立分析程序；没有独立分析脚本时会明确标注。`*.ipynb` 不进入实验中心，
 `*_plot.py` 只作为对应实验的分析器。卡片还会明确显示“新模式”或“旧模式”；完整
-迁移状态见 `docs/experiment_migration_status.md`。
+清单与执行模式见[实验迁移状态](docs/experiment_migration_status.md)。
 
-同一时间只能有一个进程占用 8000 端口。如果提示端口已被占用，应先停止旧的 GUI
-进程，再重新运行启动命令。更详细的开发说明见 `GUI/README.md`。
+在“管理分类与实验信息”中可逐项归档或恢复；归档实验仅在“已归档”入口显示，
+保留原分类、配置链接、运行与历史功能，不删除数据或停止活动任务。状态保存到
+`params/experiment_catalog.yaml`，重启或换浏览器仍有效。目录加载通过单请求复用设备映射、
+其他页面和图表按需加载来减少等待，归档本身不作为提速依据。
+
+启动器会核对 8000 和 5173 端口；重复双击或遇到冲突时，确认占用进程并停止对应旧服务，再重新启动。
+更详细的开发说明见 [GUI/README.md](GUI/README.md)。
 
 ## 实验组织方式
 
@@ -155,8 +192,8 @@ experiments ───┘
 - `legacy_script`：过渡期兼容模式，仍从旧脚本常量生成参数并通过隔离适配器执行。
   它不会被当作新实验模板。
 
-当前共有 37 个新模式实验和 18 个旧模式实验。GUI 参数表单只展示新模式模型显式
-声明的字段，不会因为工作流中新增一个全大写运行时常量而意外增加表单项目。
+各实验的执行模式以注册表为准。GUI 参数表单只展示新模式模型显式声明且
+`visible=True` 的字段，不会因为工作流中新增一个全大写运行时常量而增加表单项目。
 
 `t2-calibration` 已迁移为强类型光学 FID 工作流：保持 `T2_Calibration` 数据目录与
 历史 NPZ 字段不变，正常完成、异常、取消和 Ctrl+C 都会把温度开关恢复为 5 V ON，
@@ -205,13 +242,18 @@ experiments ───┘
 - `Z_AW_Waveform_Scope_Check.py` / `Z_AW_Waveform_Scope_Check_plot.py`
 - `Z_Coil_Inductance_Frequency_Response.py` / `Z_Coil_Inductance_Frequency_Response_plot.py`
 
-## 当前实验清单
+## 主要实验入口
+
+下表包含常用正式实验与交互式 Notebook；完整正式实验清单见
+[实验迁移状态](docs/experiment_migration_status.md)。
 
 | 方向 | 主要入口 | 相关文档 |
 |---|---|---|
+| 示波器采集（运行 / 历史双 Tab） | `experiments/Scope_Capture.py`、`experiments/Scope_Capture_plot.py` | `docs/scope_capture.md` |
+| Mx Y RF 灵敏度长飘（按总时间和间隔重复测量） | `experiments/Mx_Y_RF_Sensitivity_Drift.py`、`experiments/Mx_Y_RF_Sensitivity_Drift_plot.py` | `docs/mx_y_rf_sensitivity_drift.md` |
 | 光散粒噪声 | `experiments/Photon_shot_noise.py` | `docs/Photon_shot_noise.md` |
 | 原子自旋投影噪声（SDS） | `experiments/Projection_noise.py`、`experiments/Projection_noise_plot.py` | `docs/Projection_noise.md` |
-| 静磁场灵敏度 | `experiments/Static_Magnetic_Field_Sensitivity.py`、`experiments/Static_Magnetic_Field_Sensitivity_Optimize.py` | `docs/static_mag_sens_v2.md` |
+| 静磁场灵敏度（Z 直流逐点色散、采样率与时长控制的连续 X/Y/R 波形中位数、分组温控；采集/分析分离，不兼容旧格式重分析） | `experiments/Static_Magnetic_Field_Sensitivity.py`、`experiments/Static_Magnetic_Field_Sensitivity_plot.py`；独立旧优化入口 `experiments/Static_Magnetic_Field_Sensitivity_Optimize.py` 不改采集 | `docs/static_mag_sens_v2.md` |
 | Mx Y 向 RF 场灵敏度 | `experiments/Mx_Y_RF_Sensitivity.py`、`experiments/Mx_Y_RF_Sensitivity_plot.py` | `docs/mx_y_rf_sensitivity.md` |
 | Mx Y 向 RF 频率响应（模式1扫频方式；幅度可嵌套扫描，统一布洛赫线形拟合覆盖 Lorentzian 与 Rabi 劈裂双峰） | `experiments/Mx_Y_RF_Frequency_Response.py`、`experiments/Mx_Y_RF_Frequency_Response_plot.py` | `docs/mx_y_rf_frequency_response.md` |
 | Mx Y 最优控制 RF 频率响应（最优控制相位中位数曲线；可选常数 Z 控制对照，恒定电压由电流耦合标定反解并允许范围外推；专属 GUI 含运行/历史 Tab） | `experiments/Mx_Y_Optimal_Control_RF_Frequency_Response.py`、`experiments/Mx_Y_Optimal_Control_RF_Frequency_Response_plot.py` | `docs/mx_y_optimal_control_rf_frequency_response.md` |
@@ -234,6 +276,7 @@ experiments ───┘
 | Mx Keithley 6221 主磁场频率标定 | `experiments/Mx_Keithley_6221_Main_Field_Calibration.py`、`experiments/Mx_Keithley_6221_Main_Field_Calibration_plot.py` | `docs/mx_keithley_6221_main_field_calibration.md` |
 | Mx Keithley 6221 最优控制 RF 灵敏度 | `experiments/Mx_Keithley_6221_Optimal_Control_RF_Sensitivity.py`、`experiments/Mx_Keithley_6221_Optimal_Control_RF_Sensitivity_plot.py` | `docs/mx_keithley_6221_optimal_control_rf_sensitivity.md` |
 | Mx Keithley 6221 最优控制 XYZ 平衡场（6221 外部触发最优控制 + X/Y DG4000 DC + Z GS200 三维扫描，以实测 Demod0 R 最小点为结果） | `experiments/Mx_Keithley_6221_Optimal_Control_XYZ_Balance.py`、`experiments/Mx_Keithley_6221_Optimal_Control_XYZ_Balance_plot.py` | `docs/mx_keithley_6221_optimal_control_xyz_balance.md` |
+| Mx Keithley 6221 最优控制平衡-灵敏度一体化 | `experiments/Mx_Keithley_6221_Optimal_Control_Balanced_Sensitivity.py`、`experiments/Mx_Keithley_6221_Optimal_Control_Balanced_Sensitivity_plot.py` | `docs/mx_keithley_6221_optimal_control_balanced_sensitivity.md` |
 | Mx 主磁场控制噪声谱 | `experiments/Mx_Main_Field_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Noise_Spectrum_plot.py` | `docs/mx_main_field_noise_spectrum.md` |
 | Mx 主磁场示波器噪声谱（固定 X/Y DC 补偿，可选 AC/DC 耦合） | `experiments/Mx_Main_Field_Scope_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Scope_Noise_Spectrum_plot.py` | `docs/mx_main_field_scope_noise_spectrum.md` |
 | Mx 高主场 Z 磁场频率标定 | `experiments/Mx_Z_Field_Calibration.py`、`experiments/Mx_Z_Field_Calibration_plot.py` | `docs/mx_z_field_calibration.md` |
@@ -244,7 +287,7 @@ experiments ───┘
 | T1 / T2 标定 | `experiments/T1_Calibration.py`、`experiments/T2_Calibration.py` | `docs/T1_calibration.md`、`docs/T2_relaxation.md` |
 | X/Y 补偿与通道验证 | `experiments/XY_Compensation_Calibration.ipynb`、`experiments/XY_Channel_Calibration.ipynb`、`experiments/XY_AM_Transfer.ipynb`、`experiments/XY_MOD_ZeroOffset.ipynb`、`experiments/XY_Output_Verification.ipynb` | `docs/XY_Compensation_Calibration.md`、`docs/z_field_calibration.md` |
 | XY 控制噪声谱测量（运行 / 历史双 Tab；按格间距自动分段、只读平均段数与耗时预览；移动峰标定验收、三实验共享全轴分离与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
-| XY 控制测量已知可控噪声谱（运行 / 历史双 Tab；Z 小线圈注入分段平顶谱伪噪声，相邻点交替 on/off 顺序、两态等待并逐段保存；内置色散线形拟合与不含线圈频响的 K_Z 真值链，共享全控制轴分离、独立背景验收、有符号差谱及带内/带外统计） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
+| XY 控制测量已知可控噪声谱（运行 / 历史 / 架构；Z 小线圈注入分段平顶谱伪噪声，相邻点交替 on/off 顺序、两态等待并逐段保存；色散连续 X/Y/R 波形中位数与线形拟合、不含线圈频响的 K_Z 真值链，共享全控制轴分离与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
 | XY 控制测量已知不可控 Probe AM 噪声谱（运行 / 历史双 Tab；Probe AOM 外部 AM 的 ON/OFF 成对采集，可选全程叠加独立配置的 Z 已知可控噪声；共享全轴分析提取锁相端 N_S1 与有符号差分） | `experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM.py`、`experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM_plot.py` | `docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md` |
 | Demod3 R 噪声谱测量 | `experiments/Noise_Spectrum_XY_Demod3_R.py`、`experiments/Noise_Spectrum_XY_Demod3_R_plot.py` | `docs/noise_spectrum_xy_demod3_r.md` |
 | MORS 相关 | `experiments/MORS_feasibility_test.ipynb`、`experiments/MORS_feasibility_test_v2.ipynb`、`experiments/MORS_polarization_pulsed.ipynb` | `docs/MORS_polarization.md` |
@@ -296,6 +339,7 @@ data/<实验类型>/MMDD_HHMM_tag/
 | `params/devices.yaml` | 稳定设备 ID、型号、资源、连接参数、能力和参考时钟 |
 | `params/mapping.yaml` | 物理量到 `device_id` 和类型化端点的绑定，以及共享/同机约束 |
 | `params/safety_limits.yaml` | 输出量安全上下限 |
+| `params/experiment_catalog.yaml` | GUI 标签、归档状态、实验名称、简介与参数分组布局 |
 | `params/clock_sources.yaml` | 旧入口的参考时钟兼容回退，不是新模式配置源 |
 | `params/experiments/<experiment-id>.yaml` | 正式实验的版本化默认参数，使用稳定外部键 |
 
@@ -339,19 +383,41 @@ T2 额外保持 RF 门控 CH2 Output ON，并只关闭该通道的 Burst。
 - 本地包名：`exp-agent`
 - 虚拟环境：`agent_exp_env\`
 
-常用命令：
+在仓库根目录运行以下命令；已有虚拟环境直接复用：
 
 ```powershell
-agent_exp_env\Scripts\Activate.ps1
-agent_exp_env\Scripts\pip install -e .
-agent_exp_env\Scripts\pip install pyvisa pyvisa-py pyserial zhinst numpy scipy matplotlib pyyaml jupyter
+if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
+    python -m venv agent_exp_env
+}
+.\agent_exp_env\Scripts\python.exe -m pip install -e .
+.\agent_exp_env\Scripts\python.exe -m pip install pyvisa pyvisa-py pyserial zhinst numpy scipy matplotlib pyyaml jupyter
+.\agent_exp_env\Scripts\python.exe -m pip check
 ```
 
-如果只想同步当前环境，也可以使用：
+`pip install -e .` 安装 `src/` 下的驱动和根目录的 `lab_workflows`，同时按
+`pyproject.toml` 安装 TOPTICA SDK 与进度条。仪器通信、分析和 GUI 依赖仍需分别安装。
+根目录 `requirements.txt` 是历史环境快照，不替代上述分组安装说明。
+
+需要导出当前环境时：
 
 ```powershell
-agent_exp_env\Scripts\pip freeze > requirements.txt
+.\agent_exp_env\Scripts\python.exe -m pip freeze > requirements.txt
 ```
+
+保存前将本项目的可编辑安装条目规范为 `-e .`，移除机器路径和带凭据的地址。
+
+## 开发验证
+
+实验注册、离线分析入口和 Skill 资源的基础检查：
+
+```powershell
+.\agent_exp_env\Scripts\python.exe .agents\skills\expcodegen\scripts\validate_experiment.py --root .
+```
+
+前端变更在 `GUI/frontend/` 运行 `npm run build` 和 `npm test`；API schema 变更后，
+按 [GUI 开发说明](GUI/README.md#前端结构)重新生成类型。Python 变更运行受影响的
+现有无硬件测试，命令示例见 [GUI/AGENTS.md](GUI/AGENTS.md#验证)。当前检出没有根目录
+`tests/`，不要直接执行依赖该目录的测试发现命令。
 
 ## 编码约定
 
@@ -368,17 +434,24 @@ agent_exp_env\Scripts\pip freeze > requirements.txt
 
 - `AGENTS.md`
 - `CLAUDE.md`
+- `GUI/AGENTS.md`
 - `.agents/skills/expcodegen/SKILL.md`
 - `.claude/skills/expcodegen/SKILL.md`
+- `.agents/skills/arcgen/SKILL.md`
+- `.claude/skills/arcgen/SKILL.md`
+- `.agents/skills/archify/SKILL.md`
+- `.claude/skills/archify/SKILL.md`
 
 这些说明会要求 Agent 在生成或修改实验代码时读取：
 
+- `params/devices.yaml`
 - `params/mapping.yaml`
 - `params/safety_limits.yaml`
 - `docs/*.md`
 
 从而尽量保证实验脚本、文档和安全约束保持一致。
 
-### Mx Y RF 灵敏度长飘
-
-`experiments/Mx_Y_RF_Sensitivity_Drift.py` 按可配置的总时间和间隔重复 Mx Y RF 灵敏度测量，自动计算轮数并在每轮完成后更新趋势结果；离线重建入口为 `experiments/Mx_Y_RF_Sensitivity_Drift_plot.py`。
+生成实验架构图时使用 `arcgen` 调研真实实现，并由 `archify` 完成图规格、校验和交付。
+`.gitignore` 当前忽略根目录 `AGENTS.md`、`CLAUDE.md`、`.agents/` 和 `.claude/`；
+本检出的 `.git/info/exclude` 还忽略 `docs/`。这些本地文件需要单独检查，普通
+`git diff` 不会显示它们的修改。`GUI/AGENTS.md` 是显式保留的例外。

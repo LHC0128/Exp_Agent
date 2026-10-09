@@ -5,9 +5,9 @@ from __future__ import annotations
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
-from ..common import find_project_root, load_yaml
+from ..common import WorkflowCancelled, find_project_root, load_yaml
 
 
 @dataclass(slots=True)
@@ -95,6 +95,7 @@ def synchronize_clock_device(
     *,
     profile: Mapping[str, str],
     settle_s: float = 0.2,
+    settle_wait: Callable[[float], None] | None = None,
 ) -> ClockSyncRecord:
     """设置一台已连接设备的时钟源，并立即回读验证。"""
     device_id = clock_device_id(config)
@@ -113,18 +114,20 @@ def synchronize_clock_device(
                 "EXTernal" if target == "EXT" else "INTernal"
             )
             if settle_s > 0:
-                time.sleep(settle_s)
+                (settle_wait or time.sleep)(settle_s)
             actual = normalize_clock_source(instrument.get_ref_clock_source())
         elif kind == "lockin_amplifier":
             before = "EXT" if instrument.get_extclk() else "INT"
             instrument.set_extclk(target == "EXT")
             if settle_s > 0:
-                time.sleep(settle_s)
+                (settle_wait or time.sleep)(settle_s)
             actual = "EXT" if instrument.get_extclk() else "INT"
         else:
             raise ValueError(f"设备 {device_id} 不支持参考时钟同步: {kind or '未知类型'}")
         ok = actual == target
         error = "" if ok else f"期望 {target}，实际 {actual}"
+    except WorkflowCancelled:
+        raise
     except Exception as exc:
         ok = False
         error = str(exc)
@@ -148,6 +151,7 @@ def synchronize_connected_clocks(
     profile: Mapping[str, str] | None = None,
     settle_s: float = 0.2,
     strict: bool = True,
+    settle_wait: Callable[[float], None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """统一同步工作流中已连接的时钟设备。
 
@@ -186,6 +190,7 @@ def synchronize_connected_clocks(
                 mapping[physical_mapping_key],
                 profile=targets,
                 settle_s=settle_s,
+                settle_wait=settle_wait,
             )
             result_name = (
                 semantic_name

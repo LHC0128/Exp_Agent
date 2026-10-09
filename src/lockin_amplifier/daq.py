@@ -5,7 +5,8 @@
 
 import time
 import logging
-from typing import List, Optional
+import sys
+from typing import Callable, List, Optional
 import numpy as np
 
 from .instrument import HF2Instrument
@@ -46,6 +47,9 @@ class DAQCollector:
         self._mod.set("dataAcquisitionModule/device", config.device)
         self._mod.set("dataAcquisitionModule/type", config.trigger_type)
         self._mod.set("dataAcquisitionModule/duration", config.duration)
+        self._mod.set("dataAcquisitionModule/count", 1)
+        self._mod.set("dataAcquisitionModule/endless", 0)
+        self._mod.set("dataAcquisitionModule/flags", config.record_flags)
 
         # 触发设置（trigger_type=1 时有效）
         if config.trigger_type == 1:
@@ -130,7 +134,7 @@ class DAQCollector:
         return bool(self._mod.finished())
 
     def wait(self, target: float = 1.0, poll_interval: float = 0.1,
-             timeout: float = 0.0) -> None:
+             timeout: float = 0.0, *, cancellation_check: Callable[[], None] | None = None) -> None:
         """等待采集达到指定进度.
 
         参数
@@ -144,11 +148,12 @@ class DAQCollector:
         """
         if self._mod is None:
             return
-        elapsed = 0.0
+        started = time.monotonic()
         while np.asarray(self._mod.progress()).item() < target:
+            if cancellation_check:
+                cancellation_check()
             time.sleep(poll_interval)
-            elapsed += poll_interval
-            if timeout > 0 and elapsed >= timeout:
+            if timeout > 0 and time.monotonic() - started >= timeout:
                 prog = np.asarray(self._mod.progress()).item()
                 logger.warning(
                     "DAQ 采集超时 (timeout=%.1f s, progress=%.1f%%)",
@@ -179,16 +184,19 @@ class DAQCollector:
         data = self._mod.read(flat)
         return data
 
-    def close(self) -> None:
-        """清理 DAQ 模块."""
+    def close(self, *, strict: bool = False) -> None:
+        """清理 DAQ 模块；严格模式不把清理失败当作成功。"""
         if self._mod is not None:
             try:
                 self._mod.clear()
-            except Exception:
-                pass
-            self._mod = None
-            self._subscribed_paths = []
-            logger.debug("DAQ 模块已清理")
+                logger.debug("DAQ 模块已清理")
+            except Exception as exc:
+                logger.warning("DAQ 模块清理失败: %s", exc)
+                if strict:
+                    raise
+            finally:
+                self._mod = None
+                self._subscribed_paths = []
 
 
 def acquire_data(
@@ -197,6 +205,9 @@ def acquire_data(
     demod_idx: int = 0,
     actual_rate: Optional[float] = None,
     timeout: float = 30.0,
+    *,
+    cancellation_check: Callable[[], None] | None = None,
+    strict_cleanup: bool = False,
 ) -> List[DAQResult]:
     """一键采集：配置、执行并读取 DAQ 数据.
 
@@ -214,6 +225,11 @@ def acquire_data(
         实际采样率 (Sa/s)，用于计算时间轴。不传则从 daq_cfg 读取。
     timeout : float
         采集超时时间 (s)
+    cancellation_check : callable, optional
+        等待期间调用的协作式取消检查；抛出异常后仍清理 DAQ 模块。
+        默认不启用，保持其他实验的采集行为。
+    strict_cleanup : bool
+        为 True 时清理失败使采集失败；已有采集异常仍优先保留。
 
     返回
     -------
@@ -230,7 +246,7 @@ def acquire_data(
         for extra_path in config.extra_paths:
             collector.subscribe_raw(extra_path)
         collector.execute()
-        collector.wait(1.0, timeout=timeout)
+        collector.wait(1.0, timeout=timeout, cancellation_check=cancellation_check)
         raw = collector.read()
         logger.info("数据采集完成，共 %d 个信号路径", len(raw))
 
@@ -270,4 +286,9 @@ def acquire_data(
 
         return results
     finally:
-        collector.close()
+        original_error = sys.exc_info()[1]
+        try:
+            collector.close(strict=strict_cleanup)
+        except Exception:
+            if original_error is None:
+                raise

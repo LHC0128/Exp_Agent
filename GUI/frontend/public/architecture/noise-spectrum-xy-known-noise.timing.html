@@ -5237,11 +5237,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="176" y="306" class="t-dim" font-size="7">等待 Z_INJECTION_SETTLE_S</text>
         </g>
 
-        <g data-edge-from="wf" data-edge-to="hf2" data-edge-label="DAQ 采集 sample.y · 1 s" data-edge-key="5" data-edge-id="m-daq1">
+        <g data-edge-from="wf" data-edge-to="hf2" data-edge-label="DAQ 采集 sample.y · 参数时长" data-edge-key="5" data-edge-id="m-daq1">
           <path data-composition-edge-from="wf" data-composition-edge-to="hf2" data-composition-edge-id="m-daq1" data-composition-points="164,320;1236.4,320" d="M 164 320 L 1236.4 320" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="634.4000000000001" y="300" width="131.60000000000002" height="16" rx="3" class="c-mask"/>
-          <text x="700.2" y="310" class="t-backend" font-size="9" text-anchor="middle">DAQ 采集 sample.y · 1 s</text>
+          <rect x="621.4000000000001" y="300" width="157.6" height="16" rx="3" class="c-mask"/>
+          <text x="700.2" y="310" class="t-backend" font-size="9" text-anchor="middle">DAQ 采集 sample.y · 参数时长</text>
         </g>
         </g>
 
@@ -5270,11 +5270,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="176" y="434" class="t-dim" font-size="7">等待 Z_INJECTION_SETTLE_S</text>
         </g>
 
-        <g data-edge-from="wf" data-edge-to="hf2" data-edge-label="DAQ 采集 sample.y · 1 s" data-edge-key="9" data-edge-id="m-daq2">
+        <g data-edge-from="wf" data-edge-to="hf2" data-edge-label="DAQ 采集 sample.y · 参数时长" data-edge-key="9" data-edge-id="m-daq2">
           <path data-composition-edge-from="wf" data-composition-edge-to="hf2" data-composition-edge-id="m-daq2" data-composition-points="164,448;1236.4,448" d="M 164 448 L 1236.4 448" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="634.4000000000001" y="428" width="131.60000000000002" height="16" rx="3" class="c-mask"/>
-          <text x="700.2" y="438" class="t-backend" font-size="9" text-anchor="middle">DAQ 采集 sample.y · 1 s</text>
+          <rect x="621.4000000000001" y="428" width="157.6" height="16" rx="3" class="c-mask"/>
+          <text x="700.2" y="438" class="t-backend" font-size="9" text-anchor="middle">DAQ 采集 sample.y · 参数时长</text>
         </g>
         </g>
 
@@ -5631,12 +5631,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
       <div class="card">
         <div class="card-header">
           <div class="card-dot emerald"></div>
-          <h3>有效性</h3>
+          <h3>工作区版本，源码未冻结</h3>
         </div>
         <ul>
           <li>&bull; 非有限/平直波形告警保留,离线排除</li>
           <li>&bull; timing 文件记录点号状态与主机时间</li>
           <li>&bull; 温控恢复按设定等待后进入下一点</li>
+          <li>&bull; 色散连续 DAQ 正常完成后进入此主扫描</li>
         </ul>
       </div>
     </div>

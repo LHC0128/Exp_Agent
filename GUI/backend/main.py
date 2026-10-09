@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from lab_workflows.clock_sync import synchronize_clocks
-from lab_workflows.common import find_project_root
+from lab_workflows.common import find_project_root, load_mapping
 from lab_workflows.devices import discover_devices
 from lab_workflows.instrument_control import (
     ControlRevisionConflict,
@@ -57,6 +57,7 @@ from lab_workflows.experiments.catalog import (
     assign_tag,
     public_catalog,
     rename_tag,
+    set_experiment_archived,
     set_experiment_description,
     set_experiment_metadata,
     set_parameter_layout,
@@ -82,6 +83,7 @@ from .schemas import (
     CurrentSourceSettingsBody,
     DeviceSnapshot,
     DeviceSummary,
+    ExperimentArchiveBody,
     GeneratorChannelSettingsBody,
     LaserEmissionSettingsBody,
     LaserSettingsBody,
@@ -572,12 +574,18 @@ def _experiment_schema(definition) -> dict[str, Any]:
     )
 
 
-def _experiment_public(definition, catalog: dict[str, Any] | None = None):
+def _experiment_public(
+    definition,
+    catalog: dict[str, Any] | None = None,
+    *,
+    required_devices: list[str] | None = None,
+):
     current = catalog or public_catalog(_default_categories())
     tag_id = current["assignments"].get(definition.id, definition.category)
     labels = {item["id"]: item["label"] for item in current["tags"]}
     return {
-        **definition.public(),
+        **definition.public(required_devices=required_devices),
+        "archived": definition.id in current["archived_experiments"],
         "category": tag_id,
         "category_label": labels.get(tag_id, tag_id),
         "title": current["experiment_titles"].get(
@@ -616,13 +624,42 @@ def update_experiment_tag(tag_id: str, body: TagBody):
 
 @app.get("/api/experiments")
 def experiments():
-    catalog = public_catalog(_default_categories())
-    return [_experiment_public(definition, catalog) for definition in list_experiments()]
+    definitions = list_experiments()
+    catalog = public_catalog({item.id: item.category for item in definitions})
+    try:
+        mapping = load_mapping() if any(item.required_mapping_keys for item in definitions) else {}
+    except Exception:
+        mapping = None
+    return [
+        _experiment_public(
+            definition,
+            catalog,
+            required_devices=(
+                definition._public_required_devices(mapping)
+                if mapping is not None else list(definition.required_devices)
+            ),
+        )
+        for definition in definitions
+    ]
 
 
 @app.get("/api/experiments/{experiment_id}")
 def experiment(experiment_id: str):
     return _experiment_public(_experiment_or_404(experiment_id))
+
+
+@app.put("/api/experiments/{experiment_id}/archive")
+def update_experiment_archive(experiment_id: str, body: ExperimentArchiveBody):
+    definition = _experiment_or_404(experiment_id)
+    try:
+        set_experiment_archived(experiment_id, body.archived, _default_categories())
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(500, f"保存归档状态失败：{exc}") from exc
+    return {"ok": True, "experiment": _experiment_public(definition)}
 
 
 @app.put("/api/experiments/{experiment_id}/tag")
@@ -858,13 +895,17 @@ def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
                 )
             except OSError:
                 artifacts = []
+            can_analyze = definition.analysis_runner is not None
+            if definition.id == STATIC_SENSITIVITY_ID:
+                config = _read_yaml(path / "experiment_config.yaml")
+                can_analyze = can_analyze and config.get("schema_version") == 3 and config.get("acquisition_method") == "dc_step"
             result.append({
                 "id": path.name,
                 "experiment_id": definition.id,
                 "experiment_title": definition.title,
                 "path": str(path),
                 "artifacts": artifacts,
-                "can_analyze": definition.analysis_runner is not None,
+                "can_analyze": can_analyze,
                 "modified_at": modified_at,
             })
     result.sort(key=lambda item: item["modified_at"], reverse=True)
@@ -939,6 +980,10 @@ def _create_analysis_job(run_id: str, body: AnalysisBody):
            if item.data_type == definition.data_type):
         raise _conflict("同类数据仍在采集或自动分析，请稍后重新分析", "run_busy")
     run_dir = _run_dir(body.experiment_id, run_id)
+    if definition.id == STATIC_SENSITIVITY_ID:
+        config = _read_yaml(run_dir / "experiment_config.yaml")
+        if config.get("schema_version") != 3 or config.get("acquisition_method") != "dc_step":
+            raise HTTPException(400, "旧格式静磁场运行仅可查看已有结果，不支持重新分析")
     if not definition.analysis_runner:
         raise _conflict("该实验没有独立离线分析器", "no_analyzer")
     kind = f"analysis:{definition.id}:{run_id}"
@@ -1169,8 +1214,9 @@ def _static_sensitivity_runs(limit: int, offset: int) -> dict[str, Any]:
             if not path.is_dir():
                 continue
             config = _read_yaml(path / "experiment_config.yaml")
-            if not config or config.get("experiment_id") != STATIC_SENSITIVITY_ID:
+            if not config or config.get("experiment_id", STATIC_SENSITIVITY_ID) != STATIC_SENSITIVITY_ID:
                 continue
+            config.setdefault("completion_status", "unknown")
             runs.append({
                 "run_id": path.name,
                 "timestamp": str(config.get("timestamp", "")),
@@ -1184,16 +1230,21 @@ def _static_sensitivity_runs(limit: int, offset: int) -> dict[str, Any]:
 def _build_static_sensitivity_summary(run_id: str) -> StaticSensitivityRunSummary:
     run_dir = _run_dir(STATIC_SENSITIVITY_ID, run_id)
     config = _read_yaml(run_dir / "experiment_config.yaml")
-    if config.get("experiment_id") != STATIC_SENSITIVITY_ID:
-        raise HTTPException(404, "该目录不是 typed 静磁场灵敏度运行")
-    analysis = _read_yaml(run_dir / "results" / "analysis.yaml") or {}
+    if not config or config.get("experiment_id", STATIC_SENSITIVITY_ID) != STATIC_SENSITIVITY_ID:
+        raise HTTPException(404, "该目录不是静磁场灵敏度运行")
+    config.setdefault("completion_status", "unknown")
+    analysis = _read_yaml(run_dir / "results" / "analysis.yaml") or _read_yaml(run_dir / "results" / "analysis.json") or {}
+    # 只在内存中归一化历史结果键，不迁移或改写旧文件。
+    for target, legacy in (("fit_valid", "fit_is_valid"), ("sensitivity_flat_fT_per_sqrt_Hz", "sens_flat_fT_per_sqrt_Hz"), ("fit_rejection_reasons", "rejection_reasons")):
+        if target not in analysis and legacy in analysis:
+            analysis[target] = analysis[legacy]
     results_dir = run_dir / "results"
     artifacts = {
         item.name: f"/api/runs/{STATIC_SENSITIVITY_ID}/{run_id}/artifacts/{item.name}"
         for item in results_dir.iterdir()
         if item.is_file()
     } if results_dir.is_dir() else {}
-    parameters = config.get("parameters")
+    parameters = config.get("parameters") or config.get("params")
     return StaticSensitivityRunSummary(
         run_id=run_id,
         timestamp=str(config.get("timestamp", "")),

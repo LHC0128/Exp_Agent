@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from threading import RLock
 from typing import Any
 from uuid import uuid4
 
@@ -20,6 +21,8 @@ DEFAULT_TAGS = (
 )
 
 PARAMETER_GROUPS = ("basic", "advanced")
+# ponytail: 单进程目录锁；多后端进程同时编辑时升级为文件锁。
+_CATALOG_LOCK = RLock()
 
 
 def catalog_path() -> Path:
@@ -30,7 +33,15 @@ def _normalize(
     payload: dict[str, Any] | None,
     default_categories: dict[str, str],
 ) -> dict[str, Any]:
+    if payload is not None and not isinstance(payload, dict):
+        raise ValueError("实验目录配置必须是映射")
     payload = payload or {}
+    raw_archived = payload.get("archived_experiments", [])
+    if not isinstance(raw_archived, list) or any(
+        not isinstance(item, str) for item in raw_archived
+    ):
+        raise ValueError("archived_experiments 必须是实验 ID 字符串列表")
+    archived_ids = set(raw_archived)
     raw_tags = payload.get("tags") or list(DEFAULT_TAGS)
     tags: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -71,7 +82,11 @@ def _normalize(
         if experiment_id in default_categories and isinstance(layout, dict)
     }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
+        "archived_experiments": [
+            experiment_id for experiment_id in default_categories
+            if experiment_id in archived_ids
+        ],
         "tags": tags,
         "assignments": assignments,
         "experiment_descriptions": experiment_descriptions,
@@ -176,31 +191,34 @@ def set_parameter_layout(
     if experiment_id not in default_categories:
         raise KeyError(f"未知实验: {experiment_id}")
     normalized = validate_parameter_layout(layout, fields)
-    catalog = load_catalog(default_categories)
-    catalog["parameter_layouts"][experiment_id] = normalized
-    save_catalog(catalog, default_categories)
+    with _CATALOG_LOCK:
+        catalog = load_catalog(default_categories)
+        catalog["parameter_layouts"][experiment_id] = normalized
+        save_catalog(catalog, default_categories)
 
 
 def load_catalog(default_categories: dict[str, str]) -> dict[str, Any]:
-    path = catalog_path()
-    payload = None
-    if path.exists():
-        with path.open(encoding="utf-8") as stream:
-            payload = yaml.safe_load(stream)
-    return _normalize(payload, default_categories)
+    with _CATALOG_LOCK:
+        path = catalog_path()
+        payload = None
+        if path.exists():
+            with path.open(encoding="utf-8") as stream:
+                payload = yaml.safe_load(stream)
+        return _normalize(payload, default_categories)
 
 
 def save_catalog(catalog: dict[str, Any], default_categories: dict[str, str]) -> None:
-    normalized = _normalize(catalog, default_categories)
-    path = catalog_path()
-    temporary = path.with_suffix(".yaml.tmp")
-    content = yaml.safe_dump(normalized, allow_unicode=True, sort_keys=False)
-    try:
-        temporary.write_text(content, encoding="utf-8")
-        temporary.replace(path)
-    except PermissionError:
-        temporary.unlink(missing_ok=True)
-        path.write_text(content, encoding="utf-8")
+    with _CATALOG_LOCK:
+        normalized = _normalize(catalog, default_categories)
+        path = catalog_path()
+        temporary = path.with_suffix(".yaml.tmp")
+        content = yaml.safe_dump(normalized, allow_unicode=True, sort_keys=False)
+        try:
+            temporary.write_text(content, encoding="utf-8")
+            temporary.replace(path)
+        finally:
+            # 替换失败直接报错，不通过非原子覆盖冒险损坏旧配置。
+            temporary.unlink(missing_ok=True)
 
 
 def public_catalog(default_categories: dict[str, str]) -> dict[str, Any]:
@@ -221,18 +239,19 @@ def add_tag(
         raise ValueError("标签名称不能为空")
     if len(label) > 30:
         raise ValueError("标签名称不能超过 30 个字符")
-    catalog = load_catalog(default_categories)
-    if any(item["label"].casefold() == label.casefold() for item in catalog["tags"]):
-        raise ValueError("标签名称已经存在")
-    slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
-    tag_id = slug or f"tag-{uuid4().hex[:8]}"
-    existing = {item["id"] for item in catalog["tags"]}
-    if tag_id in existing:
-        tag_id = f"{tag_id}-{uuid4().hex[:6]}"
-    tag = {"id": tag_id, "label": label}
-    catalog["tags"].append(tag)
-    save_catalog(catalog, default_categories)
-    return tag
+    with _CATALOG_LOCK:
+        catalog = load_catalog(default_categories)
+        if any(item["label"].casefold() == label.casefold() for item in catalog["tags"]):
+            raise ValueError("标签名称已经存在")
+        slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+        tag_id = slug or f"tag-{uuid4().hex[:8]}"
+        existing = {item["id"] for item in catalog["tags"]}
+        if tag_id in existing:
+            tag_id = f"{tag_id}-{uuid4().hex[:6]}"
+        tag = {"id": tag_id, "label": label}
+        catalog["tags"].append(tag)
+        save_catalog(catalog, default_categories)
+        return tag
 
 
 def rename_tag(
@@ -245,15 +264,16 @@ def rename_tag(
         raise ValueError("标签名称不能为空")
     if len(label) > 30:
         raise ValueError("标签名称不能超过 30 个字符")
-    catalog = load_catalog(default_categories)
-    if any(item["id"] != tag_id and item["label"].casefold() == label.casefold() for item in catalog["tags"]):
-        raise ValueError("标签名称已经存在")
-    for tag in catalog["tags"]:
-        if tag["id"] == tag_id:
-            tag["label"] = label
-            save_catalog(catalog, default_categories)
-            return tag
-    raise KeyError(f"未知标签: {tag_id}")
+    with _CATALOG_LOCK:
+        catalog = load_catalog(default_categories)
+        if any(item["id"] != tag_id and item["label"].casefold() == label.casefold() for item in catalog["tags"]):
+            raise ValueError("标签名称已经存在")
+        for tag in catalog["tags"]:
+            if tag["id"] == tag_id:
+                tag["label"] = label
+                save_catalog(catalog, default_categories)
+                return tag
+        raise KeyError(f"未知标签: {tag_id}")
 
 
 def assign_tag(
@@ -263,11 +283,37 @@ def assign_tag(
 ) -> None:
     if experiment_id not in default_categories:
         raise KeyError(f"未知实验: {experiment_id}")
-    catalog = load_catalog(default_categories)
-    if tag_id not in {item["id"] for item in catalog["tags"]}:
-        raise KeyError(f"未知标签: {tag_id}")
-    catalog["assignments"][experiment_id] = tag_id
-    save_catalog(catalog, default_categories)
+    with _CATALOG_LOCK:
+        catalog = load_catalog(default_categories)
+        if tag_id not in {item["id"] for item in catalog["tags"]}:
+            raise KeyError(f"未知标签: {tag_id}")
+        catalog["assignments"][experiment_id] = tag_id
+        save_catalog(catalog, default_categories)
+
+
+def set_experiment_archived(
+    experiment_id: str,
+    archived: bool,
+    default_categories: dict[str, str],
+) -> None:
+    """只改变目录可见性，保留实验分类与运行能力。"""
+    if experiment_id not in default_categories:
+        raise KeyError(f"未知实验: {experiment_id}")
+    if not isinstance(archived, bool):
+        raise ValueError("archived 必须是布尔值")
+    with _CATALOG_LOCK:
+        catalog = load_catalog(default_categories)
+        ids = set(catalog["archived_experiments"])
+        if (experiment_id in ids) == archived:
+            return
+        if archived:
+            ids.add(experiment_id)
+        else:
+            ids.discard(experiment_id)
+        catalog["archived_experiments"] = [
+            item for item in default_categories if item in ids
+        ]
+        save_catalog(catalog, default_categories)
 
 
 def set_experiment_description(
@@ -281,9 +327,10 @@ def set_experiment_description(
     description = description.strip()
     if len(description) > 500:
         raise ValueError("实验介绍不能超过 500 个字符")
-    catalog = load_catalog(default_categories)
-    catalog["experiment_descriptions"][experiment_id] = description
-    save_catalog(catalog, default_categories)
+    with _CATALOG_LOCK:
+        catalog = load_catalog(default_categories)
+        catalog["experiment_descriptions"][experiment_id] = description
+        save_catalog(catalog, default_categories)
 
 
 def set_experiment_metadata(
@@ -303,7 +350,8 @@ def set_experiment_metadata(
         raise ValueError("实验名称不能超过 80 个字符")
     if len(description) > 500:
         raise ValueError("实验介绍不能超过 500 个字符")
-    catalog = load_catalog(default_categories)
-    catalog["experiment_titles"][experiment_id] = title
-    catalog["experiment_descriptions"][experiment_id] = description
-    save_catalog(catalog, default_categories)
+    with _CATALOG_LOCK:
+        catalog = load_catalog(default_categories)
+        catalog["experiment_titles"][experiment_id] = title
+        catalog["experiment_descriptions"][experiment_id] = description
+        save_catalog(catalog, default_categories)

@@ -488,6 +488,7 @@ export type ExperimentSchema = {
 };
 export type ExperimentDefinition = {
   id: string;
+  archived: boolean;
   title: string;
   category: string;
   category_label: string;
@@ -507,6 +508,7 @@ export type ExperimentDefinition = {
 export type ExperimentTag = { id: string; label: string };
 export type ExperimentCatalogConfig = {
   schema_version: number;
+  archived_experiments: string[];
   tags: ExperimentTag[];
   assignments: Record<string, string>;
   experiment_descriptions: Record<string, string>;

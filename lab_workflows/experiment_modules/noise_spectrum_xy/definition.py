@@ -31,7 +31,7 @@ DEFINITION = ExperimentDefinition(
     safety_notes=(
         "目标频率必须能由当前 K/B 标定和 X/Y 电压安全限值表达。",
         "校相和采集时关闭温度开关物理输出，测量后恢复开启电平与 Output ON；最终收尾恢复为 5 V DC + ON。",
-        "扫描收尾关闭 X/Y、Z 和共用外触发，保留 Pump 载波及 Time_sequence 时序门控输出。",
+        "连接并同步时钟成功后，初始化、校相及扫描均由统一收尾保护：关闭 X/Y、Z 和共用外触发，保留 Pump 载波及 Time_sequence 时序门控输出。",
     ),
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,

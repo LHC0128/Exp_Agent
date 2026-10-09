@@ -41,9 +41,6 @@ from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.generation i
     generate_known_noise_waveform,
     load_z_calibration,
 )
-from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.dispersion import (
-    fit_dispersion_curve,
-)
 from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.models import (
     NOISE_POINTS,
     NoiseSpectrumXYKnownNoiseParams,
@@ -52,6 +49,7 @@ from lab_workflows.experiment_modules.noise_spectrum_xy_probe_am.models import (
     NoiseSpectrumXYProbeAMParams,
 )
 from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.acquisition import (
+    acquire_dispersion_scan,
     acquire_pair,
     wait_for_settle,
 )
@@ -951,96 +949,63 @@ if not IS_PROBE_AM:
     report_runtime_progress("dispersion", "扫描 z 偏置色散线形", None,
                             estimated_remaining_seconds=None)
 
-    def measure_dispersion_slope():
-        """z DC 步进扫描并对整条色散线形拟合；返回原始数据与拟合结果。"""
-        z_channel = int(dg_sweep_cfg["channel"])
-        offsets = np.linspace(-abs(DISPERSION_SPAN_V), abs(DISPERSION_SPAN_V),
-                              DISPERSION_STEPS)
-        y_means = np.full(offsets.size, np.nan)
-        # Z 通道退出任意波改 DC：色散扫描是纯静态偏置，与噪声注入互斥。
-        dg_sweep.set_output(False, channel=z_channel)
-        dg_sweep.setup_dc(0.0, channel=z_channel)
+    try:
         dg_comp.set_output(False, channel=1)
         dg_comp.set_output(False, channel=2)
-        interval = int(DISPERSION_TEMP_SWITCH_INTERVAL_POINTS)
-        try:
-            for index, offset_v in enumerate(offsets):
-                check_cancelled()
-                # 每组重启温控关闭窗口，避免整段扫描期间温度持续漂移。
-                if index == 0 or (interval > 0 and index % interval == 0):
-                    set_temp_switch(False)
-                    time.sleep(XY_SETTLE_TIME)
-                validate_safety_limit("Z_magnetic_field", float(offset_v))
-                dg_sweep.setup_dc(float(offset_v), channel=z_channel)
-                dg_sweep.set_output(True, channel=z_channel)
-                time.sleep(DISPERSION_STEP_SETTLE_S)
-                samples = []
-                for _ in range(DISPERSION_SAMPLES_PER_STEP):
-                    samples.append(demod.read_demod_sample(hfi, demod_idx=HF2_DEMOD_IDX)["y"])
-                    time.sleep(0.05)
-                y_means[index] = float(np.median(samples))
-                dg_sweep.set_output(False, channel=z_channel)
-                if interval > 0 and (index + 1) % interval == 0 and index + 1 < offsets.size:
-                    # 回插温控：打开温度开关按 TEMP_SWITCH_ON_SETTLE_S 等待后再关闭。
-                    set_temp_switch(True, wait=True)
-            dg_sweep.setup_dc(0.0, channel=z_channel)
-            fit = fit_dispersion_curve(
-                offsets, y_means,
-                skip_start_points=int(DISPERSION_FIT_SKIP_START),
-                skip_end_points=int(DISPERSION_FIT_SKIP_END),
-                k_z_hz_per_v=float(Z_CALIBRATION.k_hz_per_v),
-            )
-            return {"offsets_v": offsets, "y_mean": y_means, **fit}
-        finally:
-            dg_sweep.setup_dc(0.0, channel=z_channel)
-            dg_sweep.set_output(False, channel=z_channel)
-            set_temp_switch(True, wait=True)
-            # 恢复 XY 等待共用外触发，并重新上传噪声任意波（DC 切换已退出 USER）。
-            set_xy_sine_phase(XY_CTRL_PHASE, outputs_on=True)
-            upload_noise_waveform()
-            dg_sweep.set_output(True, channel=z_channel)
-
-
-    DISPERSION = measure_dispersion_slope()
-
-    np.savez(raw_dir / "dispersion_scan.npz",
-             offsets_v=DISPERSION["offsets_v"], y_mean=DISPERSION["y_mean"],
-             fit_mask=DISPERSION["fit_mask"], popt=DISPERSION["popt"],
-             n_points=DISPERSION["n_points"],
-             slope_v_per_v=DISPERSION["slope_v_per_v"],
-             slope_v_per_hz=DISPERSION["slope_v_per_hz"],
-             gamma_v=DISPERSION["gamma_v"],
-             gamma_hz=DISPERSION["gamma_hz"],
-             center_v=DISPERSION["center_v"],
-             center_hz=DISPERSION["center_hz"],
-             r_squared=DISPERSION["r_squared"],
-             rmse_v=DISPERSION["rmse_v"],
-             fit_valid=DISPERSION["is_valid"],
-             k_z_hz_per_v=Z_CALIBRATION.k_hz_per_v)
-    config_saved["dispersion"] = {
-        "span_v": float(DISPERSION_SPAN_V),
-        "steps": int(DISPERSION_STEPS),
-        "samples_per_step": int(DISPERSION_SAMPLES_PER_STEP),
-        "condition": "xy_control_off_dc_bias",
-        "method": "dispersion_line_fit",
-        "fit_skip_start_points": int(DISPERSION_FIT_SKIP_START),
-        "fit_skip_end_points": int(DISPERSION_FIT_SKIP_END),
-        "fit_points": int(DISPERSION["n_points"]),
-        "temp_switch_interval_points": int(DISPERSION_TEMP_SWITCH_INTERVAL_POINTS),
-        "slope_v_per_v": DISPERSION["slope_v_per_v"],
-        "slope_v_per_hz": DISPERSION["slope_v_per_hz"],
-        "gamma_v": DISPERSION["gamma_v"],
-        "gamma_hz": DISPERSION["gamma_hz"],
-        "center_v": DISPERSION["center_v"],
-        "center_hz": DISPERSION["center_hz"],
-        "r_squared": DISPERSION["r_squared"],
-        "rmse_v": DISPERSION["rmse_v"],
-        "fit_valid": DISPERSION["is_valid"],
-        "fit_rejection_reasons": DISPERSION["rejection_reasons"],
-        "k_z_hz_per_v": float(Z_CALIBRATION.k_hz_per_v),
-    }
-    with open(config_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(config_saved, f, allow_unicode=True, sort_keys=False)
+        DISPERSION = acquire_dispersion_scan(
+            PARAMS, z=dg_sweep, z_channel=z_channel, temp=dg_temp,
+            temp_channel=int(dg_temp_cfg["channel"]), hf2=hfi, raw_dir=raw_dir,
+            k_z_hz_per_v=float(Z_CALIBRATION.k_hz_per_v),
+        )
+        config_saved["dispersion"] = {
+            "span_v": float(DISPERSION_SPAN_V),
+            "steps": int(DISPERSION_STEPS),
+            "requested_rate_sa_s": float(HF2_DEMOD_RATE),
+            "actual_rate_sa_s": DISPERSION["actual_rate_sa_s"].tolist(),
+            "requested_duration_s": float(DISPERSION_DURATION_S),
+            "actual_duration_s": DISPERSION["actual_duration_s"].tolist(),
+            "sample_counts": DISPERSION["sample_counts"].tolist(),
+            "acquisition_method": "hf2_daq_exact",
+            "raw_schema_version": 3,
+            "condition": "xy_control_off_dc_bias",
+            "method": "dispersion_line_fit",
+            "fit_skip_start_points": int(DISPERSION_FIT_SKIP_START),
+            "fit_skip_end_points": int(DISPERSION_FIT_SKIP_END),
+            "fit_points": int(DISPERSION["n_points"]),
+            "temp_switch_interval_points": int(DISPERSION_TEMP_SWITCH_INTERVAL_POINTS),
+            "slope_v_per_v": DISPERSION["slope_v_per_v"],
+            "slope_v_per_hz": DISPERSION["slope_v_per_hz"],
+            "gamma_v": DISPERSION["gamma_v"],
+            "gamma_hz": DISPERSION["gamma_hz"],
+            "center_v": DISPERSION["center_v"],
+            "center_hz": DISPERSION["center_hz"],
+            "r_squared": DISPERSION["r_squared"],
+            "rmse_v": DISPERSION["rmse_v"],
+            "fit_valid": DISPERSION["is_valid"],
+            "fit_rejection_reasons": DISPERSION["rejection_reasons"],
+            "k_z_hz_per_v": float(Z_CALIBRATION.k_hz_per_v),
+        }
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(config_saved, f, allow_unicode=True, sort_keys=False)
+        # 只有色散正常完成才恢复任意波和 XY 共用触发状态。
+        set_xy_sine_phase(XY_CTRL_PHASE, outputs_on=True)
+        upload_noise_waveform()
+        dg_sweep.set_output(True, channel=z_channel)
+    except BaseException:
+        report = run_safety_shutdown(
+            dg_channels=(
+                DGChannelShutdown(dg_comp, 1, "X_magnetic_field", "X 正弦控制"),
+                DGChannelShutdown(dg_comp, 2, "Y_magnetic_field", "Y 正弦控制"),
+                DGChannelShutdown(dg_sweep, z_channel, "Z_magnetic_field", "Z 噪声注入"),
+                DGChannelShutdown(dg_sweep, 2, "Time_sequence_2", "X/Y 共用触发"),
+            ),
+            temperature_switch=TemperatureSwitchRestore(dg_temp, int(dg_temp_cfg["channel"])),
+            disconnect_targets=(DisconnectTarget("TEC", devices.get("tec")),),
+            preserved_outputs=(*STANDARD_PRESERVED_OUTPUTS, "Time_sequence"),
+        )
+        if report.errors:
+            print("色散故障安全恢复失败：" + "；".join(report.errors), flush=True)
+        raise
     print(
         f"色散线形拟合: dY/dV = {DISPERSION['slope_v_per_v']:.6g} V/V = "
         f"{DISPERSION['slope_v_per_hz']:.6g} V/Hz；"

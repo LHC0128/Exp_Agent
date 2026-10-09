@@ -6,11 +6,6 @@
     "locale": "zh-CN",
     "output": "noise-spectrum-xy-known-noise.html",
     "quality_profile": "showcase",
-    "repository": {
-      "url": "https://github.com/LHC0128/Exp_Agent.git",
-      "link_mode": "web",
-      "revision": "d1435f6deab94a2b462c07d46e75efede6af12e6"
-    },
     "views": [
       {
         "id": "injection-path",
@@ -64,19 +59,13 @@
       "size": [
         220,
         88
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "dg_sweep 连接与任意波上传"
-        }
       ]
     },
     {
       "id": "calibration",
       "type": "backend",
       "label": "校准与色散标定",
-      "sublabel": "两级校相 · 色散线形零交叉斜率",
+      "sublabel": "连续 DAQ · 中位数 · 零交叉斜率",
       "pos": [
         300,
         14
@@ -84,20 +73,6 @@
       "size": [
         180,
         88
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "两级相位校准"
-        },
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "measure_dispersion_slope"
-        },
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/dispersion.py",
-          "label": "fit_dispersion_curve"
-        }
       ]
     },
     {
@@ -113,12 +88,6 @@
       "size": [
         190,
         88
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "configure_xy_sine / set_xy_sine_peak"
-        }
       ]
     },
     {
@@ -133,12 +102,6 @@
       "size": [
         440,
         88
-      ],
-      "sources": [
-        {
-          "path": "params/mapping.yaml",
-          "label": "物理量映射"
-        }
       ]
     },
     {
@@ -154,12 +117,6 @@
       "size": [
         210,
         88
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "HF2 连接 · DAQConfig"
-        }
       ]
     },
     {
@@ -175,16 +132,6 @@
       "size": [
         140,
         80
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "Pump 调制配置"
-        },
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "Pump/Probe 光功率"
-        }
       ]
     },
     {
@@ -200,12 +147,6 @@
       "size": [
         140,
         80
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "GS200 连接与设流"
-        }
       ]
     },
     {
@@ -221,12 +162,6 @@
       "size": [
         130,
         80
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "set_temp_switch"
-        }
       ]
     },
     {
@@ -242,19 +177,13 @@
       "size": [
         210,
         78
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/generation.py",
-          "label": "load_z_calibration"
-        }
       ]
     },
     {
       "id": "raw_data",
       "type": "database",
       "label": "raw/ 原始数据",
-      "sublabel": "off/on 波形 · 色散 · 配置与 timing",
+      "sublabel": "off/on · 色散完整波形 · 配置",
       "pos": [
         680,
         570
@@ -262,12 +191,6 @@
       "size": [
         250,
         88
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "np.save / experiment_config.yaml"
-        }
       ]
     },
     {
@@ -282,12 +205,6 @@
       "size": [
         210,
         88
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/analysis.py",
-          "label": "analyze"
-        }
       ]
     },
     {
@@ -302,20 +219,6 @@
       "size": [
         250,
         96
-      ],
-      "sources": [
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/models.py",
-          "label": "NoiseSpectrumXYKnownNoiseParams"
-        },
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/generation.py",
-          "label": "generate_known_noise_waveform"
-        },
-        {
-          "path": "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/workflow.py",
-          "label": "主扫描循环 / acquire_pair"
-        }
       ]
     }
   ],
@@ -427,15 +330,18 @@
       "toSide": "right",
       "via": [
         [
-          1430,
+          1374,
           438
         ],
         [
-          1430,
+          1374,
           58
         ]
       ],
-      "labelDx": 20
+      "labelAt": [
+        1260,
+        48
+      ]
     },
     {
       "id": "acq-hf2",
@@ -508,13 +414,13 @@
       "title": "仪器互连",
       "items": [
         "Time_sequence_2 CH2 固定方波经三通接 dg_comp CH1/CH2 Ext Trig,扫描期间常开",
-        "Z 注入连续播放不参与 Burst;色散扫描阶段临时切 DC,扫完重传任意波并回读校验",
-        "GS200 恒流决定共振中心;DG900 设定 Pump/Probe 光功率;连接仪器统一 10 MHz 参考时钟"
+        "Z 连续播放;色散 DC 正常完成后重传任意波并回读",
+        "每点 DAQ 保存格式 3 点值、完成掩码与完整波形"
       ]
     },
     {
       "dot": "emerald",
-      "title": "真值与判据",
+      "title": "工作区版本，源码未冻结",
       "items": [
         "注入真值 = 实际波形数值 Welch PSD × K_Z²,不应用线圈频响;被测侧增益由色散线形零交叉斜率换算",
         "离线分析重标定移动脊线、全轴洛伦兹拟合后在参数层差分,背景独立验收",

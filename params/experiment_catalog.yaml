@@ -1,4 +1,8 @@
-schema_version: 2
+schema_version: 3
+archived_experiments:
+- mx-keithley-6221-optimal-control-rf-sensitivity
+- mx-keithley-6221-optimal-control-xyz-balance
+- noise-spectrum-xy-v2
 tags:
 - id: measurement
   label: 静磁场
@@ -44,7 +48,7 @@ assignments:
   noise-spectrum-xy-v2: calibration
   photon-shot-noise: verification
   projection-noise: verification
-  rf-sensitivity-aw: calibration
+  rf-sensitivity-aw: star
   rf-sensitivity-aw-frequency: optimization
   rf-sensitivity-direct-aw-frequency: optimization
   rf-sensitivity-constxy-frequency: optimization
@@ -795,9 +799,7 @@ parameter_layouts:
     - temperature
     - ramp_low
     - ramp_high
-    - ramp_freq
-    - ramp_symmetry
-    - daq_duration
+    - dispersion_steps
     - main_magnetic_field
     - pump_mod_freq
     - pump_mod_duty
@@ -805,8 +807,14 @@ parameter_layouts:
     - z_v_to_nt
     advanced:
     - temp_switch
-    - time_sequence
-    - time_sequence_2
+    - dispersion_step_settle_s
+    - hf2_demod_rate
+    - dispersion_duration_s
+    - dispersion_temp_switch_interval_points
+    - dispersion_temp_switch_on_settle_s
+    - dispersion_temp_switch_off_settle_s
+    - dispersion_fit_skip_start
+    - dispersion_fit_skip_end
     - rf_gate_amplitude
     - rf_gate_offset
     - rf_gate_delay
@@ -815,7 +823,6 @@ parameter_layouts:
     - hf2_signal_range
     - hf2_ac_coupling
     - hf2_50_ohm
-    - hf2_demod_rate
     - hf2_demod_tc
     - hf2_noise_rate
     - hf2_noise_tc
@@ -825,9 +832,6 @@ parameter_layouts:
     - max_temp_wait_s
     - gs200_range_headroom
     - gs200_range_settle_time
-    - daq_trigger_channel
-    - daq_trigger_level
-    - daq_trigger_slope
     - y_magnetic_field
     - x_magnetic_field
     - pump_mod_amplitude
@@ -867,7 +871,6 @@ parameter_layouts:
     - ANALYSIS_FREQUENCY_MIN_HZ
     - ANALYSIS_FREQUENCY_MAX_HZ
     - ANALYSIS_FIT_HALF_WIDTH_HZ
-    - ANALYSIS_BACKGROUND_HALF_WIDTH_HZ
     - FIXED_PARAMS.temperature
     - FIXED_PARAMS.Temp_Switch
     - XY_CALIB_ENVELOPE_V
@@ -1713,7 +1716,6 @@ parameter_layouts:
     - HF2_SIGNAL_RANGE
     - HF2_DEMOD_ORDER
     - HF2_DEMOD_TC
-    - HF2_DEMOD_RATE
     - HF2_DAQ_TC
     - HF2_DAQ_RATE
     - ANALYSIS_FREQUENCY_MIN_HZ
@@ -1725,7 +1727,8 @@ parameter_layouts:
     - DISPERSION_SPAN_V
     - DISPERSION_STEPS
     - DISPERSION_STEP_SETTLE_S
-    - DISPERSION_SAMPLES_PER_STEP
+    - HF2_DEMOD_RATE
+    - DISPERSION_DURATION_S
     - RATIO_PASS_LOW
     - RATIO_PASS_HIGH
     - PUMP_MOD_AMPLITUDE

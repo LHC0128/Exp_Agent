@@ -158,15 +158,18 @@ class ExperimentDefinition:
                 errors.append("Z_magnetic_field 与 Time_sequence_2 必须使用不同 DG 通道")
         return errors
 
-    def _public_required_devices(self) -> list[str]:
+    def _public_required_devices(
+        self, mapping: dict[str, dict[str, Any]] | None = None,
+    ) -> list[str]:
         if not self.required_mapping_keys:
             return list(self.required_devices)
-        from ..common import load_mapping
+        if mapping is None:
+            from ..common import load_mapping
 
-        try:
-            mapping = load_mapping()
-        except Exception:
-            return list(self.required_devices)
+            try:
+                mapping = load_mapping()
+            except Exception:
+                return list(self.required_devices)
         result: list[str] = []
         seen: set[str] = set()
         for key in self.required_mapping_keys:
@@ -182,7 +185,7 @@ class ExperimentDefinition:
             result.append(f"{label} ({model})" if model else label)
         return result
 
-    def public(self) -> dict[str, Any]:
+    def public(self, *, required_devices: list[str] | None = None) -> dict[str, Any]:
         return {
             "id": self.id,
             "title": self.title,
@@ -191,7 +194,10 @@ class ExperimentDefinition:
             "variant": self.variant,
             "description": self.description,
             "data_type": self.data_type,
-            "required_devices": self._public_required_devices(),
+            "required_devices": (
+                self._public_required_devices()
+                if required_devices is None else required_devices
+            ),
             "required_mapping_keys": list(self.required_mapping_keys),
             "execution_mode": self.execution_mode,
             "acquisition_program": self.acquisition_program,

@@ -1421,6 +1421,53 @@
         }
       }
     },
+    "/api/experiments/{experiment_id}/archive": {
+      "put": {
+        "summary": "Update Experiment Archive",
+        "operationId": "update_experiment_archive_api_experiments__experiment_id__archive_put",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentArchiveBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/experiments/{experiment_id}/tag": {
       "put": {
         "summary": "Update Experiment Assignment",
@@ -2347,6 +2394,261 @@
         }
       }
     },
+    "/api/experiments/noise-spectrum-xy/runs": {
+      "get": {
+        "summary": "Noise Spectrum Xy Runs",
+        "operationId": "noise_spectrum_xy_runs_api_experiments_noise_spectrum_xy_runs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/noise-spectrum-xy/runs/{run_id}/summary": {
+      "get": {
+        "summary": "Noise Spectrum Xy Summary",
+        "operationId": "noise_spectrum_xy_summary_api_experiments_noise_spectrum_xy_runs__run_id__summary_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/noise-spectrum-xy-known-noise/runs": {
+      "get": {
+        "summary": "Noise Spectrum Xy Known Noise Runs",
+        "operationId": "noise_spectrum_xy_known_noise_runs_api_experiments_noise_spectrum_xy_known_noise_runs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/noise-spectrum-xy-uncontrolled-probe-am/runs": {
+      "get": {
+        "summary": "Noise Spectrum Xy Probe Am Runs",
+        "operationId": "noise_spectrum_xy_probe_am_runs_api_experiments_noise_spectrum_xy_uncontrolled_probe_am_runs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/noise-spectrum-xy-known-noise/runs/{run_id}/summary": {
+      "get": {
+        "summary": "Noise Spectrum Xy Known Noise Summary",
+        "operationId": "noise_spectrum_xy_known_noise_summary_api_experiments_noise_spectrum_xy_known_noise_runs__run_id__summary_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/noise-spectrum-xy-uncontrolled-probe-am/runs/{run_id}/summary": {
+      "get": {
+        "summary": "Noise Spectrum Xy Probe Am Summary",
+        "operationId": "noise_spectrum_xy_probe_am_summary_api_experiments_noise_spectrum_xy_uncontrolled_probe_am_runs__run_id__summary_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/experiments/bell-bloom-z-field-calibration/runs": {
       "get": {
         "summary": "Bell Bloom Z Runs",
@@ -2399,6 +2701,91 @@
       "get": {
         "summary": "Bell Bloom Z Summary",
         "operationId": "bell_bloom_z_summary_api_experiments_bell_bloom_z_field_calibration_runs__run_id__summary_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/detection-chain-frequency-response/runs": {
+      "get": {
+        "summary": "Detection Chain Frequency Runs",
+        "operationId": "detection_chain_frequency_runs_api_experiments_detection_chain_frequency_response_runs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/detection-chain-frequency-response/runs/{run_id}/summary": {
+      "get": {
+        "summary": "Detection Chain Frequency Summary",
+        "operationId": "detection_chain_frequency_summary_api_experiments_detection_chain_frequency_response_runs__run_id__summary_get",
         "parameters": [
           {
             "name": "run_id",
@@ -3479,6 +3866,21 @@
           "channels"
         ],
         "title": "DeviceSummary"
+      },
+      "ExperimentArchiveBody": {
+        "properties": {
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "archived"
+        ],
+        "title": "ExperimentArchiveBody",
+        "description": "归档只影响目录展示，布尔值不允许字符串或数字代替。"
       },
       "ExperimentBody": {
         "properties": {

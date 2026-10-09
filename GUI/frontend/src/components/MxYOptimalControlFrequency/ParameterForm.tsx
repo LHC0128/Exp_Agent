@@ -246,6 +246,7 @@ export function ParameterForm({
                       移至{targetLabel}
                     </button>
                     {renderInput(field)}
+                    {field.description && <small>{field.description}</small>}
                   </div>
                 );
               })}

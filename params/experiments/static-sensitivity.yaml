@@ -1,25 +1,28 @@
-schema_version: 1
+schema_version: 3
 parameters:
   run_tag: sens
-  pump_laser_power: 0.4
-  probe_laser_power: 0.2
-  temperature: 100.0
-  main_magnetic_field: 8.25
+  pump_laser_power: 0.3
+  probe_laser_power: 0.1
+  temperature: 90.0
+  main_magnetic_field: 9.265
   x_magnetic_field: 0.0
   y_magnetic_field: 0.0
-  ramp_low: -0.2
-  ramp_high: 0.2
-  ramp_freq: 1.0
-  ramp_symmetry: 20.0
-  daq_duration: 1.0
-  pump_mod_freq: 80000.0
+  ramp_low: -0.06
+  ramp_high: 0.06
+  dispersion_steps: 41
+  dispersion_step_settle_s: 0.1
+  dispersion_duration_s: 0.1
+  dispersion_temp_switch_interval_points: 5
+  dispersion_temp_switch_on_settle_s: 5.0
+  dispersion_temp_switch_off_settle_s: 0.5
+  dispersion_fit_skip_start: 0
+  dispersion_fit_skip_end: 0
+  pump_mod_freq: 90000.0
   pump_mod_amplitude: 0.18
   pump_mod_duty: 5.0
   noise_n_avg: 5
   noise_duration: 1.0
   temp_switch: 5.0
-  time_sequence: 10.0
-  time_sequence_2: 0.0
   rf_gate_amplitude: 5.0
   rf_gate_offset: 2.5
   rf_gate_delay: 0.0
@@ -41,6 +44,3 @@ parameters:
   gs200_range_headroom: 1.2
   gs200_range_settle_time: 10.0
   z_v_to_nt: 1950.0
-  daq_trigger_channel: 0
-  daq_trigger_level: 1.0
-  daq_trigger_slope: 0

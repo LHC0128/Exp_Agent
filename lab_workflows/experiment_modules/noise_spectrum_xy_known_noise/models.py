@@ -10,6 +10,7 @@ import numpy as np
 
 from ...common import find_project_root
 from ...experiment_params import parameter
+from ...steps.dispersion import dispersion_sample_count
 from .dispersion import MIN_DISPERSION_FIT_POINTS
 from ..noise_spectrum_xy.models import (
     NoiseSpectrumXYParams,
@@ -35,7 +36,7 @@ def noise_waveform_settings(repeat_freq_hz: float) -> dict[str, float]:
 
 @dataclass(slots=True)
 class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
-    schema_version: ClassVar[int] = 1
+    schema_version: ClassVar[int] = 2
 
     run_tag: str = parameter(default="known_noise", external_name="RUN_TAG", label="运行标签", group="basic")
     target_noise_freq_stop_hz: float = parameter(default=30000.0, external_name="TARGET_NOISE_FREQ_STOP_HZ", label="目标噪声频率终点", unit="Hz", group="basic", minimum=0)
@@ -56,7 +57,8 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
     dispersion_span_v: float = parameter(default=0.17, external_name="DISPERSION_SPAN_V", label="色散扫描半宽", unit="V", group="advanced", minimum=0.001, safety_key="Z_magnetic_field", description="z 偏置步进扫描 ±该电压，覆盖共振色散中心段；默认约 ±2 kHz（按 K_Z 换算）。")
     dispersion_steps: int = parameter(default=21, external_name="DISPERSION_STEPS", label="色散扫描点数", group="advanced", minimum=5)
     dispersion_step_settle_s: float = parameter(default=0.2, external_name="DISPERSION_STEP_SETTLE_S", label="色散每步等待", unit="s", group="advanced", minimum=0)
-    dispersion_samples_per_step: int = parameter(default=10, external_name="DISPERSION_SAMPLES_PER_STEP", label="色散每步采样数", group="advanced", minimum=1)
+    dispersion_duration_s: float = parameter(default=0.1, external_name="DISPERSION_DURATION_S", label="色散每点采集时间", unit="s", group="advanced", minimum=0, description="每步稳定等待后连续采集；记录时间按 HF2 实际速率向上取整到整数样本。")
+    hf2_demod_rate: float = parameter(default=100000.0, external_name="HF2_DEMOD_RATE", label="色散采样率", unit="Sa/s", group="advanced", minimum=1, description="用于 HF2 校相与色散连续采集；主噪声采集独立使用 HF2_DAQ_RATE。")
     dispersion_fit_skip_start: int = parameter(default=0, external_name="DISPERSION_FIT_SKIP_START", label="色散拟合起始剔除点数", group="advanced", minimum=0, description="从色散线形起始端剔除的点数；与终止剔除点数共同界定参与线形拟合的幅度点范围，两端剔除后至少保留 7 点。")
     dispersion_fit_skip_end: int = parameter(default=0, external_name="DISPERSION_FIT_SKIP_END", label="色散拟合终止剔除点数", group="advanced", minimum=0, description="从色散线形终止端剔除的点数；与起始剔除点数共同界定参与线形拟合的幅度点范围。")
     dispersion_temp_switch_interval_points: int = parameter(default=5, external_name="DISPERSION_TEMP_SWITCH_INTERVAL_POINTS", label="色散温控恢复间隔点数", group="advanced", minimum=0, description="每测完该数量的色散点后打开温度开关一次（按 TEMP_SWITCH_ON_SETTLE_S 等待后重新关闭），避免长时间关闭温控导致温度漂移；0 表示整段保持关闭。")
@@ -112,6 +114,10 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
 
     def validate_model(self) -> list[str]:
         errors = _ParentParams.validate_model(self)
+        try:
+            dispersion_sample_count(self.hf2_demod_rate, self.dispersion_duration_s)
+        except ValueError as exc:
+            errors.append(str(exc))
         lengths = {len(self.noise_band_starts_hz), len(self.noise_band_stops_hz),
                    len(self.noise_band_psds_v2_per_hz)}
         if len(lengths) != 1:

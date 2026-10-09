@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool, model_validator
 
 
 class StrictModel(BaseModel):
     """拒绝未知字段，避免仪器设置键拼写错误被静默忽略。"""
 
     model_config = ConfigDict(extra="forbid")
+
+
+class ExperimentArchiveBody(StrictModel):
+    """归档只影响目录展示，布尔值不允许字符串或数字代替。"""
+
+    archived: StrictBool
 
 
 class DeviceChannel(StrictModel):

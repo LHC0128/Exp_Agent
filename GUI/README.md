@@ -5,10 +5,14 @@
 
 ## 安装
 
+先按[仓库环境说明](../README.md#环境准备)安装本地包、仪器与分析依赖。
+前端需要 Node.js / npm，当前 Vite 要求 Node.js `^20.19.0 || >=22.12.0`，
+依赖版本由 `frontend/package-lock.json` 锁定。
+
 ```powershell
-agent_exp_env\Scripts\pip.exe install -r GUI\requirements.txt
+.\agent_exp_env\Scripts\python.exe -m pip install -r GUI\requirements.txt
 Set-Location GUI\frontend
-npm install
+npm ci
 ```
 
 `npm run build` 不再是必备步骤；`GUI\start.ps1` 会以 Vite dev 模式直接 serve 源码并提供 HMR。
@@ -16,17 +20,46 @@ npm install
 
 ## 启动
 
+完成安装后，在文件资源管理器中双击仓库根目录的 **`start_gui.bat`**。
+它会启动前后端，并在 Vite 就绪后自动打开默认浏览器，无需手动输入地址。
+入口使用自身目录定位仓库，支持从其他工作目录运行；PowerShell 执行策略仅对该进程生效，
+不修改系统设置，不自动安装依赖。
+
+也可从仓库根目录用命令行启动；默认不自动打开浏览器，附加 `-OpenBrowser` 可开启：
+
 ```powershell
-powershell -File GUI\start.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File GUI\start.ps1
+# 自动打开浏览器
+powershell -NoProfile -ExecutionPolicy Bypass -File GUI\start.ps1 -OpenBrowser
 ```
 
 启动器会同时拉起两个进程：
 
-- **FastAPI 后端** `http://127.0.0.1:8000`，仅负责 `/api/`
+- **FastAPI 后端** `http://127.0.0.1:8000`，提供 `/api/`；存在 `frontend/dist/` 时也提供构建后的页面
 - **Vite dev server** `http://127.0.0.1:5173`，serve 前端源码并把 `/api` 转发到 FastAPI
 
-在浏览器中打开 `http://127.0.0.1:5173`。修改前端源码后，Vite 会自动 HMR 推送变更到浏览器，
-不需要再 build。当前窗口按 Ctrl+C 时，脚本会自动关闭 FastAPI 后端。
+页面地址为 `http://127.0.0.1:5173`。修改前端源码后，Vite 会自动 HMR 推送变更到浏览器，
+不需要再 build。启动器在独立窗口运行后端，当前窗口按 Ctrl+C 只停止 Vite；
+后端需要在自己的窗口停止或关闭。关闭浏览器不会停止服务。后端没有启用热重载，
+修改 Python 代码后需要重启。停止服务前先在 GUI 正常停止实验或功能模块，
+服务退出不等于仪器安全收尾。
+
+启动器检查虚拟环境 Python、`node_modules`、`npm.cmd` 和 8000 / 5173 端口。
+缺失依赖或端口占用时直接报错，不会自动安装、结束已有进程或改用其他端口。
+后端 20 秒内未监听时取消前端启动；前端失败时返回非零退出码。
+双击失败后窗口保留错误并等待按键，已启动的后端需手动停止。
+重复双击会提示端口占用，请先停止旧服务。
+
+启动脚本语法检查（在仓库根目录运行，不启动服务）：
+
+```powershell
+$tokens = $null
+$parseErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $PWD 'GUI\start.ps1'), [ref]$tokens, [ref]$parseErrors
+) | Out-Null
+if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+```
 
 如需手动分别启动：
 
@@ -39,6 +72,9 @@ Set-Location GUI
 Set-Location GUI\frontend
 npm run dev
 ```
+
+只运行后端时，先在 `GUI/frontend/` 执行 `npm run build`，再访问
+`http://127.0.0.1:8000`；此方式需要重新构建才能显示前端源码更新。
 
 ## 前端结构
 
@@ -117,18 +153,23 @@ from lab_workflows.experiments import get_experiment, list_experiments
 from lab_workflows.steps import calibrate_demod_phase, DirectAWStrategy
 ```
 
-静磁场默认参数位于 `params/static_sensitivity.yaml`，时钟目标位于
-`params/clock_sources.yaml`。脚本与网页均读取同一配置。
+静磁场默认参数统一位于 `params/experiments/static-sensitivity.yaml`，正式实现为
+`lab_workflows/experiment_modules/static_sensitivity/`；旧 `params/static_sensitivity.yaml` 仅留档。
+色散采用 Z 直流逐点扫描、多次 X/Y/R 读数中位数和分组温控固定等待，不再使用 RAMP/SYNC。
+温控测量时物理 OFF，恢复 5 V DC + ON；噪声保持 Z 输出关闭。
+运行/历史/架构 Tab 保留，新格式支持填回与重新分析，旧 RAMP 历史仅查看已有结果。
+时钟目标来自 `params/devices.yaml`，`params/clock_sources.yaml` 仅为其他旧入口回退。
+详细参数、原始数据及安全策略见[静磁场实验说明](../docs/static_mag_sens_v2.md)。
 
 ## 实验中心
 
-- `/experiments` 展示注册表中的 27 个正式 `.py` 采集入口。
+- `/experiments` 默认展示 `lab_workflows/experiments/registry.py` 中未归档的正式实验；“已归档”入口查看其余实验，注册表本身不变。
 - `*_plot.py` 挂在对应实验下作为离线分析器，不显示为独立实验。
 - `.ipynb`、快速优化脚本和时钟同步工具不进入实验目录。
 - 新实验先实现 `lab_workflows` 契约，再注册到 `lab_workflows/experiments/registry.py`。
 - 卡片中的“新模式”对应 `typed_workflow`：表单字段来自显式强类型参数模型，
   不扫描工作流中的全大写变量；“旧模式”对应 `legacy_script` 兼容适配器。
-- 当前 19 个实验为新模式、18 个实验为旧模式；逐个维护旧脚本时应迁移成
+- 完整清单与执行模式见[实验迁移状态](../docs/experiment_migration_status.md)；逐个维护旧脚本时应迁移成
   `lab_workflows/experiment_modules/` 中的模型、工作流、分析器和薄入口。
 - 参数模型内部使用 `snake_case`，通过 `external_name` 保持 GUI/YAML 的历史大写键兼容。
 - T2 标定表单来自 `T2CalibrationParams` 的显式字段；固定接线通道、TTL 电平、
@@ -137,9 +178,28 @@ from lab_workflows.steps import calibrate_demod_phase, DirectAWStrategy
   自动扫描 `experiments/` 目录中的 `*.csv` 文件，并以下拉菜单供选择。
 
 实验中心标签可在页面右上角“管理分类与实验信息”中新增或重命名。进入编辑模式后，
-每张实验卡片都可以修改该实验自己的显示名称和简要介绍。卡片底部的“标签”选择框用于调整归类。标签、实验归属、显示名称和介绍保存在
+每张实验卡片都可以修改显示名称、介绍和所属分类，或点击“归档／恢复”。
+“全部”、普通分类和普通搜索只显示未归档实验；“已归档”入口提供独立的查看、搜索和恢复。
+归档保留原分类，恢复后回到原分类和“全部”，不删除脚本、原始数据或分析结果。
+归档实验的配置链接、预检、运行、历史和重新分析仍可使用，也不会取消正在运行的任务。
+
+标签、实验归属、显示名称、介绍、归档 ID 列表与参数布局保存在
 `params/experiment_catalog.yaml`，只影响 GUI 组织方式，不改变实验稳定 ID、
-运行目录或采集逻辑。
+运行目录或采集逻辑。归档状态在重启或换浏览器后保持，同一后端的其他浏览器刷新或重新进入后生效。
+旧版本目录配置缺省为无归档，读取不会改写文件，下一次有变更的目录保存使用版本 3。
+目录写入在同一后端进程内串行执行；原子替换失败时报错并保留旧文件，不以直接覆盖兜底。
+
+目录接口在每次请求内复用一份设备映射，不跨请求缓存；实验中心以外的页面及图表按需加载，
+因此这些页面首次打开可能短暂显示加载提示。目录加载失败可原地重试，导航和全局任务状态不受影响。
+归档用于整理目录，不以减少卡片数代替性能验证。`GET /api/experiments` 仍返回全部实验，
+响应中的 `archived` 表示归档状态；`PUT /api/experiments/{experiment_id}/archive` 接受严格布尔值
+`{"archived": true}` 或 `{"archived": false}`，不改变实验运行权限。
+
+目录无硬件回归可在仓库根目录运行：
+
+```powershell
+.\agent_exp_env\Scripts\python.exe -m unittest GUI.backend.test_experiment_catalog
+```
 
 实验配置页可把参数在“基础参数”和“高级参数”之间移动，并调整组内顺序。
 点击“存为默认参数”时，当前参数值、分类和顺序会一并保存到
