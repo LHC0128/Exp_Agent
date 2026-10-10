@@ -74,32 +74,7 @@ def safe_shutdown(
 ) -> SafetyShutdownReport:
     """按参考工作流恢复安全状态，保持主磁场和 Pump/Probe 输出。"""
     dg_channels: list[DGChannelShutdown] = []
-    rf_switch = devices.get("rf_switch")
     extra_actions: list[ShutdownAction] = []
-    if rf_switch is not None:
-        gate_channel = channels.get("rf_gate")
-        if gate_channel is not None:
-            gate_low = params.rf_gate_offset - params.rf_gate_amplitude / 2
-            gate_high = params.rf_gate_offset + params.rf_gate_amplitude / 2
-            extra_actions.extend((
-                ShutdownAction(
-                    "关闭 RF 门控 Burst 失败",
-                    lambda: (
-                        validate_safety_limit("Time_sequence", gate_low),
-                        validate_safety_limit("Time_sequence", gate_high),
-                        rf_switch.set_burst_state(False, channel=gate_channel),
-                    ),
-                ),
-                ShutdownAction(
-                    "保持 RF 门控输出开启失败",
-                    lambda: (
-                        validate_safety_limit("Time_sequence", gate_low),
-                        validate_safety_limit("Time_sequence", gate_high),
-                        rf_switch.set_output(True, channel=gate_channel),
-                    ),
-                ),
-            ))
-
     for key, safety_key in (
         ("x_field", "X_magnetic_field"),
         ("y_field", "Y_magnetic_field"),

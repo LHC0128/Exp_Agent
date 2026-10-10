@@ -384,7 +384,7 @@ def safe_shutdown(
     channels: dict[str, int],
     params: MxZOptimalControlXYLeakageParams,
 ) -> SafetyShutdownReport:
-    """保留 Z/X/Y 当前输出，仅关闭归零共同触发并恢复温控。"""
+    """保留 Z/X/Y 和共同触发当前状态，并恢复温控。"""
     dg_channels: list[DGChannelShutdown] = []
     if devices.get("z_field") is not None and "trigger" in channels:
         dg_channels.append(

@@ -537,7 +537,7 @@ def safe_shutdown(
     devices: dict[str, Any],
     channels: dict[str, int],
 ) -> Any:
-    """停止示波器并关闭 Z/共同触发两个通道。"""
+    """停止示波器，关闭 Z 并保持共同触发当前状态。"""
     scope = devices.get("scope")
     z_control = devices.get("z_control")
     dg_channels = []

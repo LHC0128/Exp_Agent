@@ -45,7 +45,7 @@ DEFINITION = ExperimentDefinition(
         "6221 任意波完整包络必须被所选固定电流档位覆盖；Compliance 固定 15 V，每个采集点前后检查。",
         "平衡阶段 X/Y 与 GS200 在零设定点也保持 Output ON，避免跨零切换输出状态。",
         "正常、取消和异常结束均恢复运行前 X/Y 波形及输出状态与 GS200 完整状态，"
-        "关断 6221（ABORT + 输出关 + 归零）并归零关闭共同触发。",
+        "关断 6221（ABORT + 输出关 + 归零），共同触发保持当前状态。",
         "温控恢复为 5 V DC + Output ON；Pump/Probe、Pump 载波/门控和 HF2 设置保持。",
     ),
     schema_version=MxKeithley6221OptimalControlBalancedSensitivityParams.schema_version,

@@ -346,7 +346,7 @@
       "items": [
         "依据当前 workflow / acquisition / analysis",
         "格式 3：色散点值与完整波形分开保存",
-        "完整拟合 / z_v_to_nt；旧格式仅查看"
+        "全部有效点拟合 / z_v_to_nt；旧格式仅查看"
       ]
     }
   ]

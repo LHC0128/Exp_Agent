@@ -768,14 +768,8 @@ try:
         })
 
 finally:
-    # [安全] 异常时关闭 burst, DG4000 CH2 回到 idle DC
-    try:
-        dg_rf.set_burst_state(False, channel=2)
-        dg_rf.set_output(False, channel=2)
-        dg_rf.set_sync_state(False, channel=2)
-        print(f"\n[安全] Burst OFF, Pump DC 保持 {FIXED_PUMP_POWER_VOLTAGE}V, probe 不变")
-    except Exception as e:
-        print(f"[安全] 恢复失败: {e}")
+    # [安全] 按实验约定保留 DG4000 CH2 时序门控状态，不在结束时修改。
+    print("\n[安全] 保留 Time_sequence 输出、Burst 与同步状态")
 
 # ---- 保存汇总数据 (供 plot 脚本读取) ----
 np.savez(

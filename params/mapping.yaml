@@ -26,7 +26,7 @@ mapping:
       kind: channel
       index: 2
     label: 时序信号2
-    description: 暂时没有用到，预留的时序信号输出通道，暂时为0VDC输出
+    description: 共同外触发时序通道；RF DirectAW 实验中主输出分路触发 X、Y、Z，连续方波的频率手动配置
   Pump_laser_power:
     instrument: signal_generator
     device_id: dg9q280100002

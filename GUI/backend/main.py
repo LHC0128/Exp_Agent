@@ -51,6 +51,16 @@ from lab_workflows.keithley_arb import (
     parse_calibration_text,
 )
 from lab_workflows.experiments import get_experiment, list_experiments
+from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.run_format import (
+    COMPARISON_FILES as RF_DIRECT_AW_COMPARISON_FILES,
+    COMPARISON_JOB_KIND as RF_DIRECT_AW_COMPARISON_KIND,
+    EXPERIMENT_ID as RF_DIRECT_AW_ID,
+    analysis_block_reason as rf_direct_aw_analysis_block_reason,
+    comparison_block_reason as rf_direct_aw_comparison_block_reason,
+    is_new_run as is_rf_direct_aw_run,
+    normalize_comparison_runs,
+)
+from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.definition import comparison_runner as rf_direct_aw_comparison_runner
 from lab_workflows.experiments.catalog import (
     add_tag,
     apply_parameter_layout,
@@ -84,6 +94,9 @@ from .schemas import (
     DeviceSnapshot,
     DeviceSummary,
     ExperimentArchiveBody,
+    RFDirectAWCompareBody,
+    RFDirectAWRunsResponse,
+    RFDirectAWRunSummary,
     GeneratorChannelSettingsBody,
     LaserEmissionSettingsBody,
     LaserSettingsBody,
@@ -896,6 +909,11 @@ def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
             except OSError:
                 artifacts = []
             can_analyze = definition.analysis_runner is not None
+            if definition.id == RF_DIRECT_AW_ID:
+                config = _read_yaml(path / "experiment_config.yaml")
+                if not is_rf_direct_aw_run(config):
+                    continue
+                can_analyze = can_analyze and not rf_direct_aw_analysis_block_reason(config)
             if definition.id == STATIC_SENSITIVITY_ID:
                 config = _read_yaml(path / "experiment_config.yaml")
                 can_analyze = can_analyze and config.get("schema_version") == 3 and config.get("acquisition_method") == "dc_step"
@@ -943,9 +961,10 @@ def delete_run(experiment_id: str, run_id: str):
             item.status in {"queued", "running"} and (
                 item.kind in {f"experiment:{value}" for value in ids}
                 or item.kind in {f"analysis:{value}:{run_id}" for value in ids}
+                or (RF_DIRECT_AW_ID in ids and item.kind == RF_DIRECT_AW_COMPARISON_KIND)
             ) for item in manager.jobs.values()
         ):
-            raise _conflict("该数据正在采集或分析，暂时不能删除", "run_busy")
+            raise _conflict("该数据正在采集、分析或对比，暂时不能删除", "run_busy")
         data_root = (ROOT / "data").resolve()
         base = data_root / definition.data_type
         candidate = base / run_id
@@ -976,10 +995,17 @@ def analyze_run(run_id: str, body: AnalysisBody):
 
 def _create_analysis_job(run_id: str, body: AnalysisBody):
     definition = _experiment_or_404(body.experiment_id)
+    if definition.id == RF_DIRECT_AW_ID and manager.has_active_kind(RF_DIRECT_AW_COMPARISON_KIND):
+        raise _conflict("对比任务正在读取结果，请稍后重新分析", "run_busy")
     if any(manager.has_active_kind(f"experiment:{item.id}") for item in list_experiments()
            if item.data_type == definition.data_type):
         raise _conflict("同类数据仍在采集或自动分析，请稍后重新分析", "run_busy")
     run_dir = _run_dir(body.experiment_id, run_id)
+    if definition.id == RF_DIRECT_AW_ID:
+        _validate_run_identifier(run_id)
+        reason = rf_direct_aw_analysis_block_reason(_read_yaml(run_dir / "experiment_config.yaml"))
+        if reason:
+            raise HTTPException(400, reason)
     if definition.id == STATIC_SENSITIVITY_ID:
         config = _read_yaml(run_dir / "experiment_config.yaml")
         if config.get("schema_version") != 3 or config.get("acquisition_method") != "dc_step":
@@ -1012,6 +1038,8 @@ def mx_y_optimal_control_frequency_runs(limit: int = 50, offset: int = 0):
 def artifact(experiment_id: str, run_id: str, name: str):
     run_dir = _run_dir(experiment_id, run_id)
     results = (run_dir / "results").resolve()
+    if run_dir not in results.parents:
+        raise HTTPException(404, "结果目录必须位于运行目录内")
     path = (results / name).resolve()
     if results not in path.parents or not path.is_file():
         raise HTTPException(404, "结果文件不存在")
@@ -1499,6 +1527,119 @@ def detection_chain_frequency_summary(run_id: str):
             for path in results.glob("*") if path.is_file()
         },
     }
+
+
+def _rf_direct_aw_run_item(run_id: str, config: dict, directory: Path) -> dict:
+    reason = rf_direct_aw_comparison_block_reason(directory, config)
+    return {
+        "run_id": run_id,
+        "timestamp": str(config.get("started_at", config.get("timestamp", ""))),
+        "run_tag": str(config.get("run_tag", "")),
+        "completion_status": str(config.get("completion_status", "unknown")),
+        "phase_calibration_status": str(config.get("phase_calibration_status", "not_started")),
+        "analysis_status": str(config.get("analysis_status", "not_started")),
+        "can_compare": not reason,
+        "comparison_block_reason": reason,
+    }
+
+
+@app.get(f"/api/experiments/{RF_DIRECT_AW_ID}/runs", response_model=RFDirectAWRunsResponse)
+def rf_direct_aw_runs(limit: int = 50, offset: int = 0):
+    base = (ROOT / "data" / _experiment_or_404(RF_DIRECT_AW_ID).data_type).resolve()
+    items = []
+    for path in base.glob("*/experiment_config.yaml"):
+        directory = path.parent.resolve()
+        if directory.parent != base:
+            continue
+        config = _read_yaml(path)
+        if is_rf_direct_aw_run(config):
+            items.append(_rf_direct_aw_run_item(path.parent.name, config, directory))
+    items.sort(key=lambda item: item["timestamp"], reverse=True)
+    limit, offset = max(1, min(limit, 200)), max(0, offset)
+    return {"runs": items[offset:offset + limit], "total": len(items), "limit": limit, "offset": offset}
+
+
+@app.get(f"/api/experiments/{RF_DIRECT_AW_ID}/runs/{{run_id}}/summary", response_model=RFDirectAWRunSummary)
+def rf_direct_aw_summary(run_id: str):
+    _validate_run_identifier(run_id)
+    directory = _run_dir(RF_DIRECT_AW_ID, run_id)
+    config = _read_yaml(directory / "experiment_config.yaml")
+    if not is_rf_direct_aw_run(config):
+        raise HTTPException(404, "不是 RF 灵敏度 DirectAW 新格式运行")
+    reason = rf_direct_aw_analysis_block_reason(config)
+    results = directory / "results"
+    safe_results = directory in results.resolve().parents
+    return {
+        **_rf_direct_aw_run_item(run_id, config, directory),
+        "parameters": config["parameters"], "can_analyze": not reason,
+        "analysis_block_reason": reason,
+        "failure_reason": config.get("failure_reason") or "",
+        "analysis_error": config.get("analysis_error") or "",
+        "analysis": _read_yaml(results / "analysis.yaml") if not reason and safe_results else None,
+        "xy_phase_calibration": config.get("xy_phase_calibration", {}),
+        "safety_shutdown": config.get("safety_shutdown", {}),
+        "actual_rates": config.get("actual_rates", {}),
+        "hf2_response_snapshot": config.get("hf2_response_snapshot", {}),
+        "hf2_noise_snapshot": config.get("hf2_noise_snapshot", {}),
+        "temperature_control": config.get("temperature_control"),
+        "artifacts": {
+            path.name: f"/api/runs/{RF_DIRECT_AW_ID}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
+            for path in results.glob("*") if path.is_file() and not reason and safe_results and results.resolve() in path.resolve().parents
+        },
+    }
+
+
+def _rf_direct_aw_comparison_dir(comparison_id: str) -> Path:
+    if len(comparison_id) != 32 or any(c not in "0123456789abcdef" for c in comparison_id):
+        raise HTTPException(400, "对比 ID 无效")
+    base = (ROOT / "results" / RF_DIRECT_AW_ID / "comparisons").resolve()
+    directory = (base / comparison_id).resolve()
+    if ROOT.resolve() not in base.parents or directory.parent != base:
+        raise HTTPException(400, "对比目录超出允许范围")
+    return directory
+
+
+@app.post(f"/api/experiments/{RF_DIRECT_AW_ID}/compare")
+def rf_direct_aw_compare(body: RFDirectAWCompareBody):
+    try:
+        entries = normalize_comparison_runs([item.model_dump() for item in body.runs])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    with manager.jobs_lock:
+        if manager.has_active_kind(RF_DIRECT_AW_COMPARISON_KIND):
+            raise _conflict("对比任务正在执行", "comparison_running")
+        for item in entries:
+            _validate_run_identifier(item["run_id"])
+            directory = _run_dir(RF_DIRECT_AW_ID, item["run_id"])
+            reason = rf_direct_aw_comparison_block_reason(directory, _read_yaml(directory / "experiment_config.yaml"))
+            if reason:
+                raise HTTPException(400, f"{item['run_id']}：{reason}")
+            if manager.has_active_kind(f"analysis:{RF_DIRECT_AW_ID}:{item['run_id']}"):
+                raise _conflict("所选运行正在重新分析，请稍后对比", "run_busy")
+            item["run_dir"] = str(directory)
+
+        def execute(current: Job):
+            output = _rf_direct_aw_comparison_dir(current.id)
+            result = rf_direct_aw_comparison_runner(entries, output,
+                progress=lambda event: manager.event(current, event), cancellation=current.cancellation)
+            return {**result, "comparison_id": current.id, "run_dir": str(output), "artifacts": {
+                name: f"/api/experiments/{RF_DIRECT_AW_ID}/comparisons/{current.id}/artifacts/{name}"
+                for name in RF_DIRECT_AW_COMPARISON_FILES
+            }}
+
+        return manager.create(RF_DIRECT_AW_COMPARISON_KIND, execute, hardware_required=False).public()
+
+
+@app.get(f"/api/experiments/{RF_DIRECT_AW_ID}/comparisons/{{comparison_id}}/artifacts/{{name}}")
+def rf_direct_aw_comparison_artifact(comparison_id: str, name: str):
+    directory = _rf_direct_aw_comparison_dir(comparison_id)
+    manifest = directory / "comparison.json"
+    if name not in RF_DIRECT_AW_COMPARISON_FILES or not manifest.is_file() or manifest.resolve().parent != directory:
+        raise HTTPException(404, "对比结果尚未完整生成")
+    path = (directory / name).resolve()
+    if path.parent != directory or not path.is_file():
+        raise HTTPException(404, "对比文件不存在")
+    return FileResponse(path)
 
 
 FRONTEND = ROOT / "GUI" / "frontend" / "dist"

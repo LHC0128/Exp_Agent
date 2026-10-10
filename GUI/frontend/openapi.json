@@ -2819,6 +2819,177 @@
         }
       }
     },
+    "/api/experiments/rf-sensitivity-aw/runs": {
+      "get": {
+        "summary": "Rf Direct Aw Runs",
+        "operationId": "rf_direct_aw_runs_api_experiments_rf_sensitivity_aw_runs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RFDirectAWRunsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/rf-sensitivity-aw/runs/{run_id}/summary": {
+      "get": {
+        "summary": "Rf Direct Aw Summary",
+        "operationId": "rf_direct_aw_summary_api_experiments_rf_sensitivity_aw_runs__run_id__summary_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RFDirectAWRunSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/rf-sensitivity-aw/compare": {
+      "post": {
+        "summary": "Rf Direct Aw Compare",
+        "operationId": "rf_direct_aw_compare_api_experiments_rf_sensitivity_aw_compare_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RFDirectAWCompareBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/rf-sensitivity-aw/comparisons/{comparison_id}/artifacts/{name}": {
+      "get": {
+        "summary": "Rf Direct Aw Comparison Artifact",
+        "operationId": "rf_direct_aw_comparison_artifact_api_experiments_rf_sensitivity_aw_comparisons__comparison_id__artifacts__name__get",
+        "parameters": [
+          {
+            "name": "comparison_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Comparison Id"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/{path}": {
       "get": {
         "summary": "Frontend",
@@ -5700,6 +5871,279 @@
           "constraints"
         ],
         "title": "PhysicalMappingsBody"
+      },
+      "RFDirectAWCompareBody": {
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RFDirectAWComparisonRun"
+            },
+            "type": "array",
+            "minItems": 2,
+            "title": "Runs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "runs"
+        ],
+        "title": "RFDirectAWCompareBody"
+      },
+      "RFDirectAWComparisonRun": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "legend": {
+            "type": "string",
+            "title": "Legend",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "RFDirectAWComparisonRun"
+      },
+      "RFDirectAWRunItem": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "run_tag": {
+            "type": "string",
+            "title": "Run Tag"
+          },
+          "completion_status": {
+            "type": "string",
+            "title": "Completion Status"
+          },
+          "phase_calibration_status": {
+            "type": "string",
+            "title": "Phase Calibration Status"
+          },
+          "analysis_status": {
+            "type": "string",
+            "title": "Analysis Status"
+          },
+          "can_compare": {
+            "type": "boolean",
+            "title": "Can Compare"
+          },
+          "comparison_block_reason": {
+            "type": "string",
+            "title": "Comparison Block Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "timestamp",
+          "run_tag",
+          "completion_status",
+          "phase_calibration_status",
+          "analysis_status",
+          "can_compare",
+          "comparison_block_reason"
+        ],
+        "title": "RFDirectAWRunItem"
+      },
+      "RFDirectAWRunSummary": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "run_tag": {
+            "type": "string",
+            "title": "Run Tag"
+          },
+          "completion_status": {
+            "type": "string",
+            "title": "Completion Status"
+          },
+          "phase_calibration_status": {
+            "type": "string",
+            "title": "Phase Calibration Status"
+          },
+          "analysis_status": {
+            "type": "string",
+            "title": "Analysis Status"
+          },
+          "can_compare": {
+            "type": "boolean",
+            "title": "Can Compare"
+          },
+          "comparison_block_reason": {
+            "type": "string",
+            "title": "Comparison Block Reason"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Parameters"
+          },
+          "can_analyze": {
+            "type": "boolean",
+            "title": "Can Analyze"
+          },
+          "analysis_block_reason": {
+            "type": "string",
+            "title": "Analysis Block Reason"
+          },
+          "failure_reason": {
+            "type": "string",
+            "title": "Failure Reason"
+          },
+          "analysis_error": {
+            "type": "string",
+            "title": "Analysis Error"
+          },
+          "analysis": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis"
+          },
+          "xy_phase_calibration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Xy Phase Calibration"
+          },
+          "safety_shutdown": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Safety Shutdown"
+          },
+          "actual_rates": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Actual Rates"
+          },
+          "hf2_response_snapshot": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Hf2 Response Snapshot"
+          },
+          "hf2_noise_snapshot": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Hf2 Noise Snapshot"
+          },
+          "temperature_control": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature Control"
+          },
+          "artifacts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Artifacts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "timestamp",
+          "run_tag",
+          "completion_status",
+          "phase_calibration_status",
+          "analysis_status",
+          "can_compare",
+          "comparison_block_reason",
+          "parameters",
+          "can_analyze",
+          "analysis_block_reason",
+          "failure_reason",
+          "analysis_error",
+          "analysis",
+          "xy_phase_calibration",
+          "safety_shutdown",
+          "actual_rates",
+          "hf2_response_snapshot",
+          "hf2_noise_snapshot",
+          "temperature_control",
+          "artifacts"
+        ],
+        "title": "RFDirectAWRunSummary"
+      },
+      "RFDirectAWRunsResponse": {
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RFDirectAWRunItem"
+            },
+            "type": "array",
+            "title": "Runs"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "runs",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "RFDirectAWRunsResponse"
       },
       "ReadbackError": {
         "properties": {

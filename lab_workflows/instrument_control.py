@@ -18,6 +18,7 @@ from .devices import (
     LASER_DRIVERS,
     SIGNAL_GENERATOR_DRIVERS,
     find_device,
+    signal_generator_load_policy,
 )
 from .instrument_config import (
     DeviceDefinition,
@@ -35,7 +36,10 @@ class ControlRevisionConflict(RuntimeError):
 
 def _connect(record: DeviceRecord):
     if record.type in SIGNAL_GENERATOR_DRIVERS:
-        instrument = SIGNAL_GENERATOR_DRIVERS[record.type](record.resource)
+        instrument = SIGNAL_GENERATOR_DRIVERS[record.type](
+            record.resource,
+            load_policy=signal_generator_load_policy(record.resource),
+        )
     elif record.type in CURRENT_SOURCE_DRIVERS:
         instrument = CURRENT_SOURCE_DRIVERS[record.type](record.resource)
     elif record.type in LASER_DRIVERS:

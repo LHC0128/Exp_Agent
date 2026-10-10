@@ -7,6 +7,7 @@ import { Status } from "./Status";
 function kindLabel(kind: string): string {
   if (kind.startsWith("experiment:")) return "实验运行";
   if (kind.startsWith("analysis:")) return "离线分析";
+  if (kind.startsWith("comparison:")) return "对比分析";
   if (kind === "clock-sync") return "时钟同步";
   if (kind === "phase-calibration") return "相位校准";
   return kind;

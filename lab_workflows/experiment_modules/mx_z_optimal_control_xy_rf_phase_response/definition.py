@@ -41,7 +41,7 @@ DEFINITION = ExperimentDefinition(
     safety_notes=(
         "X/Y 网格端点、Y offset 加 RF 振幅后的完整包络及 Z 波形均在输出前执行安全校验。",
         "Z 最优控制在扫描期间持续运行；正常、取消和异常结束均保留其波形和 Output 状态。",
-        "共同触发、X 场和 Y RF 在结束路径归零关闭，GS200 恢复运行前状态。",
+        "共同触发保持当前状态，X 场和 Y RF 在结束路径归零关闭，GS200 恢复运行前状态。",
         "温控恢复为 5 V DC + Output ON，Pump/Probe、Pump 载波/门控和 HF2 设置保持。",
     ),
     schema_version=MxZOptimalControlXYRFPhaseResponseParams.schema_version,

@@ -4,7 +4,7 @@ parameters:
   pump_laser_power: 0.3
   probe_laser_power: 0.1
   temperature: 90.0
-  main_magnetic_field: 9.265
+  main_magnetic_field: 9.28
   x_magnetic_field: 0.0
   y_magnetic_field: 0.0
   ramp_low: -0.06
@@ -15,8 +15,6 @@ parameters:
   dispersion_temp_switch_interval_points: 5
   dispersion_temp_switch_on_settle_s: 5.0
   dispersion_temp_switch_off_settle_s: 0.5
-  dispersion_fit_skip_start: 0
-  dispersion_fit_skip_end: 0
   pump_mod_freq: 90000.0
   pump_mod_amplitude: 0.18
   pump_mod_duty: 5.0

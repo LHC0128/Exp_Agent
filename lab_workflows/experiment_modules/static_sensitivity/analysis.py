@@ -103,14 +103,9 @@ def analyze(run_dir: str | Path) -> dict[str, Any]:
     for key in ("completed_mask", "x_median", "y_median", "r_median"):
         if scan[key].shape != offsets.shape:
             raise ValueError(f"色散 {key} 长度与电压轴不一致")
-    skip_start = values.get("dispersion_fit_skip_start", 0)
-    skip_end = values.get("dispersion_fit_skip_end", 0)
-    if any(type(value) is not int or value < 0 for value in (skip_start, skip_end)):
-        raise ValueError("色散剔除点数必须为非负整数")
-    included = (np.arange(offsets.size) >= skip_start) & (np.arange(offsets.size) < offsets.size - skip_end)
-    fit_mask = scan["completed_mask"].astype(bool) & included & np.isfinite(scan["y_median"])
+    fit_mask = scan["completed_mask"] & np.isfinite(scan["y_median"])
     if np.count_nonzero(fit_mask) < 7:
-        error = "色散有效点剔除两端后不足 7 点，不能拟合"
+        error = "色散有效点不足 7 点，不能拟合"
         np.savez(results / "dispersion_fit.npz", offsets_v=offsets, fit_mask=fit_mask,
                  popt=np.full(4, np.nan), fit_valid=False, rejection_reasons=np.asarray([error]))
         _save_summary(results, {"success": False, "experiment_id": "static-sensitivity", "fit_valid": False,
@@ -154,8 +149,6 @@ def analyze(run_dir: str | Path) -> dict[str, Any]:
         axis_scan.plot(field, scan["x_median"], ".-", label="X median")
         axis_scan.plot(field, scan["y_median"], ".-", label="Y median")
         axis_scan.plot(field, scan["r_median"], ".-", label="R median")
-        excluded = scan["completed_mask"].astype(bool) & ~fit_mask
-        axis_scan.plot(field[excluded], scan["y_median"][excluded], "kx", label="Excluded")
         axis_scan.plot(fit_voltage_axis * z_v_to_ft, fit_signal, "k--", label=f"DisFit (R²={fit_result.r_squared:.3f})")
         axis_scan.axvline(fit_result.B0_fT, color="gray", linestyle=":", alpha=0.5)
         axis_scan.text(

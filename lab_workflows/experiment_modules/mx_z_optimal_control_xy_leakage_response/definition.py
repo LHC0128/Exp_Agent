@@ -42,7 +42,7 @@ DEFINITION = ExperimentDefinition(
         "所有 Z/X/Y/触发输出在写入前执行安全限值校验。",
         "正常结束保留 Z 和实测最小 R 网格点的 X/Y 任意波，不额外复测组合状态。",
         "取消或异常时保留当时 Z/X/Y 状态；这些输出可能在失败后继续开启。",
-        "所有结束路径关闭归零 Time_sequence_2，恢复温控为 5 V DC + Output ON，并恢复 GS200 运行前完整状态。",
+        "所有结束路径保持 Time_sequence_2 当前状态，恢复温控为 5 V DC + Output ON，并恢复 GS200 运行前完整状态。",
         "Pump/Probe、Pump 载波/门控和 HF2 设置保持，正常结束只断开 TEC。",
     ),
     schema_version=MxZOptimalControlXYLeakageParams.schema_version,

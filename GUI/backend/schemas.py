@@ -19,6 +19,49 @@ class ExperimentArchiveBody(StrictModel):
     archived: StrictBool
 
 
+class RFDirectAWRunItem(StrictModel):
+    run_id: str
+    timestamp: str
+    run_tag: str
+    completion_status: str
+    phase_calibration_status: str
+    analysis_status: str
+    can_compare: bool
+    comparison_block_reason: str
+
+
+class RFDirectAWComparisonRun(StrictModel):
+    run_id: str
+    legend: str = ""
+
+
+class RFDirectAWCompareBody(StrictModel):
+    runs: list[RFDirectAWComparisonRun] = Field(min_length=2)
+
+
+class RFDirectAWRunsResponse(StrictModel):
+    runs: list[RFDirectAWRunItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class RFDirectAWRunSummary(RFDirectAWRunItem):
+    parameters: dict[str, JsonValue]
+    can_analyze: bool
+    analysis_block_reason: str
+    failure_reason: str
+    analysis_error: str
+    analysis: dict[str, JsonValue] | None
+    xy_phase_calibration: dict[str, JsonValue]
+    safety_shutdown: dict[str, JsonValue]
+    actual_rates: dict[str, JsonValue]
+    hf2_response_snapshot: dict[str, JsonValue]
+    hf2_noise_snapshot: dict[str, JsonValue]
+    temperature_control: dict[str, JsonValue] | None
+    artifacts: dict[str, str]
+
+
 class DeviceChannel(StrictModel):
     number: int
     label: str

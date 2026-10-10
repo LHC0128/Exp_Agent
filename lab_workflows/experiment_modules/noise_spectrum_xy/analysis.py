@@ -31,7 +31,7 @@ from ..mx_main_field_scope_noise_spectrum.global_analysis import (
 from .models import NoiseSpectrumXYParams, welch_settings
 from .processing import SEPARATION_METHOD, locate_ridge, fit_local_spectra
 
-ANALYSIS_VERSION = "xy-independent-background-v5"
+ANALYSIS_VERSION = "xy-independent-background-v7"
 
 
 def write_json(path, payload):
@@ -190,13 +190,14 @@ def plot_fit(results, matrix, frequency, control, fit):
 
 
 def plot_background_diagnostic(results, frequency, fit):
-    """区分背景来自完整洛伦兹模型还是独立验收的远端平台。"""
+    """区分模型背景与独立远端平台，不额外标记低频边界点。"""
     fig, ax = new_figure(kind="wide", height_mm=65)
-    for method, label, marker, color in (
-        ("lorentzian_fit", "Lorentzian background", ".", COLOR_TRAD),
-        ("off_resonance_plateau", "Independent off-resonance background", "s", COLOR_OPTIMAL),
+    for methods, label, marker, color in (
+        (("lorentzian_fit", "edge_fixed_shape"), "Lorentzian background", ".", COLOR_TRAD),
+        (("off_resonance_plateau", "off_resonance_edge_plateau"),
+         "Independent off-resonance background", "s", COLOR_OPTIMAL),
     ):
-        mask = fit["background_fit_mask"] & (fit["background_method"] == method)
+        mask = fit["background_fit_mask"] & np.isin(fit["background_method"], methods)
         ax.semilogy(frequency[mask] / 1000, fit["N_S1"][mask], marker,
                     ms=3, color=color, label=label)
     format_axis(ax, xlabel="Frequency (kHz)", ylabel="Background PSD N_S1 (V²/Hz)")
@@ -235,7 +236,9 @@ def analyze(run_dir: Path):
         summary["psd"] = psd_info
         np.savez(results/"psd_matrix.npz",psd_matrix=matrix,freq_axis=frequency,amplitudes=voltage,
                  actual_rate=psd_info["actual_rate_sa_s"],nperseg=psd_info["nperseg"],valid_rows=rows)
-        band = (frequency>=options["frequency_min_hz"]) & (frequency<=options["frequency_max_hz"])
+        # 完整 Welch 矩阵保留 DC；分离、导出和结果图只使用正频率。
+        band = ((frequency > 0) & (frequency >= options["frequency_min_hz"])
+                & (frequency <= options["frequency_max_hz"]))
         f, v, data = frequency[band], voltage[rows],matrix[rows][:,band]
         print(f"Welch: {len(rows)}/{len(voltage)} 点, nperseg={psd_info['nperseg']}, df={psd_info['bin_width_hz']:.3f} Hz",flush=True)
         ridge = locate_ridge(data,f,v)
@@ -249,7 +252,8 @@ def analyze(run_dir: Path):
         print("移动峰标定:",summary["calibration"],flush=True)
         fit = fit_local_spectra(
             data, f, ridge["omega_ctrl"], ridge["spur_mask"],
-            options["fit_half_width_hz"], (support.min(), support.max()), full_range=True,
+            options["fit_half_width_hz"], (support.min(), support.max()),
+            full_range=True, allow_boundary_fits=True,
         )
         # 保留历史 full_range_* 输出键；三种实验现在统一以共享全轴分析为主结果。
         full_range_fit = fit
@@ -264,6 +268,7 @@ def analyze(run_dir: Path):
                  background_fit_mask=fit["background_fit_mask"],
                  background_rejection_reason=fit["background_rejection_reason"],
                  background_method=fit["background_method"],
+                 fit_mode=fit["fit_mode"], edge_fit_mask=fit["edge_fit_mask"],
                  S_beta_full_range=full_range_fit["S_beta"],
                  N_S1_full_range=full_range_fit["N_S1"],
                  fit_mask_full_range=full_range_fit["fit_mask"],
@@ -271,8 +276,10 @@ def analyze(run_dir: Path):
                  background_rejection_reason_full_range=full_range_fit["background_rejection_reason"],
                  tail_holdout_relative_error_full_range=full_range_fit["tail_holdout_relative_error"],
                  coefficient_semantics="A = C*S_beta; uncalibrated response coefficient, V^2 Hz")
-        np.savetxt(results/"noise_spectra.csv",np.column_stack((f,fit["S_beta"],fit["N_S1"],good.astype(int),fit["background_fit_mask"].astype(int))),
-                   delimiter=",",header="frequency_Hz,response_coefficient_A_V2_Hz,N_S1_V2_per_Hz,valid,background_valid",comments="")
+        np.savetxt(results/"noise_spectra.csv",np.column_stack((
+            f, fit["S_beta"], fit["N_S1"], good.astype(int),
+            fit["background_fit_mask"].astype(int), fit["edge_fit_mask"].astype(int),
+        )), delimiter=",", header="frequency_Hz,S_beta_controllable_V2_per_Hz,N_S1_uncontrollable_V2_per_Hz,valid,background_valid,edge_fixed_shape", comments="")
         np.savez(results/"fit_diagnostics.npz",frequency_hz=f,control_hz=ridge["omega_ctrl"],
                  measured=data,model=fit["model_matrix"],spur_mask=ridge["spur_mask"])
         plot_fit(results,data,f,ridge["omega_ctrl"],fit)
@@ -283,6 +290,11 @@ def analyze(run_dir: Path):
         )
         summary["fit"] = dict(method=SEPARATION_METHOD, valid_points=int(good.sum()),total_points=len(f),
                               background_valid_points=int(fit["background_fit_mask"].sum()),
+                              edge_fixed_shape_points=int(fit["edge_fit_mask"].sum()),
+                              edge_frequency_extent_hz=(
+                                  [float(f[fit["edge_fit_mask"]].min()), float(f[fit["edge_fit_mask"]].max())]
+                                  if fit["edge_fit_mask"].any() else None
+                              ),
                               rejection_counts=dict(zip(reasons.tolist(),counts.tolist())),
                               valid_frequency_extent_hz=[float(f[good].min()),float(f[good].max())] if good.any() else None,
                               median_holdout_error=float(np.median(fit["holdout_relative_error"][good])) if good.any() else None)
@@ -317,6 +329,8 @@ def analyze(run_dir: Path):
                 median_relative_residual=float(np.median(comparison.median_absolute_fractional_residual)),
                 note="条件交叉验证仅检验谱系数；共同线宽与背景由全数据估计，不作为独立定量验收")
         summary["warnings"].append("S_beta 历史键保存的是未去除增益因子的响应系数 A，非绝对磁噪声；谱内 NaN 为未通过质量验收，禁止外推填补。")
+        summary["warnings"].append("低频边界点使用扫描内部已验收线宽/偏移的固定形状拟合；edge_fixed_shape 点不是四参数独立线宽拟合，详见 fit_mode。")
+        summary["warnings"].append("0 Hz 是去均值 Hann-Welch 的 DC bin，已从分离谱、CSV 和结果图排除；完整 psd_matrix.npz 仍保留该频点。")
         summary["warnings"].append("三个 XY 噪声实验共用全控制轴分离；可控响应与背景独立验收，峰失败时允许通过两侧平台一致性和分块留出验证提取 N_S1。")
         summary["status"] = "completed" if good.any() or fit["background_fit_mask"].any() else "quality_failed"
         if summary["status"] == "quality_failed":

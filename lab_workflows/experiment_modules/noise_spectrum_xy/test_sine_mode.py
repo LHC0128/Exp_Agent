@@ -106,12 +106,14 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
 
     def assert_shutdown(self, hw):
         hw.shutdown.assert_called_once()
-        for name in ("dg_comp", "dg_sweep"):
-            device = hw.devices[name]
-            for channel in (1, 2):
-                self.assertEqual([entry for entry in device.set_output.call_args_list
-                                  if entry.kwargs["channel"] == channel][-1], call(False, channel=channel))
-                device.setup_dc.assert_any_call(0.0, channel=channel)
+        for channel in (1, 2):
+            device = hw.devices["dg_comp"]
+            self.assertEqual([entry for entry in device.set_output.call_args_list
+                              if entry.kwargs["channel"] == channel][-1], call(False, channel=channel))
+            device.setup_dc.assert_any_call(0.0, channel=channel)
+        self.assertEqual([entry for entry in hw.devices["dg_sweep"].set_output.call_args_list
+                          if entry.kwargs["channel"] == 1][-1], call(False, channel=1))
+        hw.devices["dg_sweep"].setup_dc.assert_any_call(0.0, channel=1)
         self.assertEqual(hw.devices["dg_temp"].setup_dc.call_args, call(5.0, channel=2))
         self.assertEqual(hw.devices["dg_temp"].set_output.call_args, call(True, channel=2))
         hw.devices["tec"].disconnect.assert_called_once()
@@ -173,7 +175,7 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
                                      self.limits, restore_wait=True)
             clock.sleep.assert_not_called()
 
-    def test_shutdown_preserves_pump_gate_and_closes_xy_trigger(self):
+    def test_shutdown_preserves_pump_gate_and_common_trigger(self):
         devices = {name: Mock() for name in ("dg_comp", "dg_sweep", "dg_mod", "dg_temp", "tec")}
         report = workflow.safe_scan_outputs_off(devices)
         self.assertTrue(report.completed, report.errors)
@@ -183,7 +185,8 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
         devices["dg_temp"].set_output.assert_called_once_with(True, channel=2)
         for channel in (1, 2):
             devices["dg_comp"].set_output.assert_any_call(False, channel=channel)
-            devices["dg_sweep"].set_output.assert_any_call(False, channel=channel)
+        devices["dg_sweep"].set_output.assert_called_once_with(False, channel=1)
+        self.assertIn("Time_sequence_2", report.preserved_outputs)
 
     def test_minimal_scan_preserves_phases_rates_files_and_shutdown_order(self):
         params = scan_params()

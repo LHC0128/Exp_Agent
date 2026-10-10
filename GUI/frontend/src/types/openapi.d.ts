@@ -1093,6 +1093,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/rf-sensitivity-aw/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rf Direct Aw Runs */
+        get: operations["rf_direct_aw_runs_api_experiments_rf_sensitivity_aw_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/rf-sensitivity-aw/runs/{run_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rf Direct Aw Summary */
+        get: operations["rf_direct_aw_summary_api_experiments_rf_sensitivity_aw_runs__run_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/rf-sensitivity-aw/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rf Direct Aw Compare */
+        post: operations["rf_direct_aw_compare_api_experiments_rf_sensitivity_aw_compare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/rf-sensitivity-aw/comparisons/{comparison_id}/artifacts/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rf Direct Aw Comparison Artifact */
+        get: operations["rf_direct_aw_comparison_artifact_api_experiments_rf_sensitivity_aw_comparisons__comparison_id__artifacts__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/{path}": {
         parameters: {
             query?: never;
@@ -1981,6 +2049,114 @@ export interface components {
                     [key: string]: string[];
                 };
             };
+        };
+        /** RFDirectAWCompareBody */
+        RFDirectAWCompareBody: {
+            /** Runs */
+            runs: components["schemas"]["RFDirectAWComparisonRun"][];
+        };
+        /** RFDirectAWComparisonRun */
+        RFDirectAWComparisonRun: {
+            /** Run Id */
+            run_id: string;
+            /**
+             * Legend
+             * @default
+             */
+            legend: string;
+        };
+        /** RFDirectAWRunItem */
+        RFDirectAWRunItem: {
+            /** Run Id */
+            run_id: string;
+            /** Timestamp */
+            timestamp: string;
+            /** Run Tag */
+            run_tag: string;
+            /** Completion Status */
+            completion_status: string;
+            /** Phase Calibration Status */
+            phase_calibration_status: string;
+            /** Analysis Status */
+            analysis_status: string;
+            /** Can Compare */
+            can_compare: boolean;
+            /** Comparison Block Reason */
+            comparison_block_reason: string;
+        };
+        /** RFDirectAWRunSummary */
+        RFDirectAWRunSummary: {
+            /** Run Id */
+            run_id: string;
+            /** Timestamp */
+            timestamp: string;
+            /** Run Tag */
+            run_tag: string;
+            /** Completion Status */
+            completion_status: string;
+            /** Phase Calibration Status */
+            phase_calibration_status: string;
+            /** Analysis Status */
+            analysis_status: string;
+            /** Can Compare */
+            can_compare: boolean;
+            /** Comparison Block Reason */
+            comparison_block_reason: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Can Analyze */
+            can_analyze: boolean;
+            /** Analysis Block Reason */
+            analysis_block_reason: string;
+            /** Failure Reason */
+            failure_reason: string;
+            /** Analysis Error */
+            analysis_error: string;
+            /** Analysis */
+            analysis: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Xy Phase Calibration */
+            xy_phase_calibration: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Safety Shutdown */
+            safety_shutdown: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Actual Rates */
+            actual_rates: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Hf2 Response Snapshot */
+            hf2_response_snapshot: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Hf2 Noise Snapshot */
+            hf2_noise_snapshot: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Temperature Control */
+            temperature_control: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Artifacts */
+            artifacts: {
+                [key: string]: string;
+            };
+        };
+        /** RFDirectAWRunsResponse */
+        RFDirectAWRunsResponse: {
+            /** Runs */
+            runs: components["schemas"]["RFDirectAWRunItem"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** ReadbackError */
         ReadbackError: {
@@ -4387,6 +4563,134 @@ export interface operations {
             header?: never;
             path: {
                 run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rf_direct_aw_runs_api_experiments_rf_sensitivity_aw_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RFDirectAWRunsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rf_direct_aw_summary_api_experiments_rf_sensitivity_aw_runs__run_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RFDirectAWRunSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rf_direct_aw_compare_api_experiments_rf_sensitivity_aw_compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RFDirectAWCompareBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rf_direct_aw_comparison_artifact_api_experiments_rf_sensitivity_aw_comparisons__comparison_id__artifacts__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comparison_id: string;
+                name: string;
             };
             cookie?: never;
         };

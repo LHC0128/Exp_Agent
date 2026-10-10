@@ -342,7 +342,7 @@ def safe_shutdown(
     channels: dict[str, int],
     params: MxZOptimalControlDG4000BiasXYZBalanceParams,
 ) -> SafetyShutdownReport:
-    """关闭共同触发、恢复温控，同时暂时保持 Z 控制供状态恢复。"""
+    """保持共同触发，恢复温控，同时暂时保持 Z 控制供状态恢复。"""
     dg_channels: list[DGChannelShutdown] = []
     if devices.get("z_field") is not None and "trigger" in channels:
         dg_channels.append(

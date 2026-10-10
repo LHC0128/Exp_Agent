@@ -35,7 +35,7 @@ DEFINITION = ExperimentDefinition(
     safety_notes=(
         "每个 X/Y 输出值和 Z 控制波形在下发前通过安全校验。",
         "每个点的温控按 0 V 关闭、采集后恢复 5 V；取消和异常路径执行统一安全停机。",
-        "正常、取消和异常结束关闭归零共同触发及 X/Y 场，保持 Z 最优控制输出。",
+        "正常、取消和异常结束保持共同触发当前状态，关闭归零 X/Y 场，保持 Z 最优控制输出。",
         "结果坐标单位为信号发生器电压 V，不输出未经标定的 nT 结果。",
     ),
     schema_version=MxZOptimalControlXYNoiseSpectrumParams.schema_version,

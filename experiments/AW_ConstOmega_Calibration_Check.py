@@ -406,7 +406,8 @@ def restore_experiment_outputs(devices):
         dev = devices.get(name)
         if dev is None:
             continue
-        for ch in (1, 2):
+        channels_to_close = (1,) if name == "dg_sweep" else (1, 2)
+        for ch in channels_to_close:
             try:
                 if hasattr(dev, "set_burst_state"):
                     dev.set_burst_state(False, channel=ch)

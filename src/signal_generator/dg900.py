@@ -16,7 +16,7 @@ VISA resource 中含有 "DG9" 标识符（DG4000 系列为 "DG4E"）。
 """
 
 import logging
-from typing import Optional
+from typing import Mapping, Optional
 
 import pyvisa
 from pyvisa.resources import MessageBasedResource
@@ -69,10 +69,12 @@ class DG900Instrument:
     }
 
     def __init__(self, resource_string: str, timeout: int = DEFAULT_TIMEOUT,
-                 channel: int = 1):
+                 channel: int = 1,
+                 load_policy: Mapping[int, float | str] | None = None):
         self.resource_string = resource_string
         self.timeout = timeout
         self.channel = channel
+        self._load_policy = dict(load_policy or {})
         self._rm: Optional[pyvisa.ResourceManager] = None
         self._inst: Optional[MessageBasedResource] = None
         self._selected_mod_types: dict[int, str] = {}
@@ -95,11 +97,13 @@ class DG900Instrument:
     # ------------------------------------------------------------------
 
     def connect(self) -> None:
-        """打开 PyVISA 资源."""
+        """打开 PyVISA 资源。"""
         self._rm = pyvisa.ResourceManager()
         self._inst = self._rm.open_resource(self.resource_string)
         self._inst.timeout = self.timeout
         idn = self.idn()
+        for channel, load in self._load_policy.items():
+            self.set_output_load(load, channel=channel)
         logger.info("已连接 DG900: %s", idn)
 
     def disconnect(self) -> None:

@@ -36,7 +36,7 @@ DEFINITION = ExperimentDefinition(
     ),
     safety_notes=(
         "Z 驱动和共同触发写入前执行 safety limit 校验。",
-        "正常、取消和异常结束均停止 SDS，并将 Z CH1 与触发 CH2 归零后关闭输出。",
+        "正常、取消和异常结束均停止 SDS，并将 Z CH1 归零后关闭输出；触发 CH2 保持当前状态。",
         "该实验观察端电压频率响应，不从单一端电压测量反演唯一电感值。",
     ),
     schema_version=ZCoilInductanceFrequencyResponseParams.schema_version,

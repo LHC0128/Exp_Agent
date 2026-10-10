@@ -1402,15 +1402,15 @@ finally:
     except Exception as e:
         print(f"  温度开关恢复失败: {e}")
 
-    # 2) dg_sweep: burst OFF → DC 0V → output OFF
-    for ch in [1, 2]:
+    # 2) dg_sweep CH1: burst OFF → DC 0V → output OFF；CH2 时序保持原状态
+    for ch in [1]:
         try:
             dg_sweep.set_burst_state(False, channel=ch)
             dg_sweep.setup_dc(0.0, channel=ch)
             dg_sweep.set_output(False, channel=ch)
         except Exception as e:
             print(f"  dg_sweep CH{ch} 关闭失败: {e}")
-    print("  Z 射频场: 已关闭 (DC 0V, burst OFF, output OFF)")
+    print("  Z 射频场: 已关闭 (DC 0V, burst OFF, output OFF)；Time_sequence_2 保持")
 
     # 3) dg_am: burst OFF → DC 0V → output OFF
     for ch in [1, 2]:
@@ -1443,7 +1443,8 @@ for name in ["dg_am", "dg_sweep", "dg_comp"]:
         dev = devices.get(name)
         if dev is None:
             continue
-        for ch in [1, 2]:
+        channels_to_close = [1] if name == "dg_sweep" else [1, 2]
+        for ch in channels_to_close:
             try:
                 if hasattr(dev, "set_burst_state"):
                     dev.set_burst_state(False, channel=ch)

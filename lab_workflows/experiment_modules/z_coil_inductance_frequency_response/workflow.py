@@ -640,7 +640,7 @@ def _configure_sine(
 
 
 def safe_shutdown(devices: dict[str, Any], channels: dict[str, int]) -> Any:
-    """停止 SDS，并关闭 Z 与共同触发两个 DG 通道。"""
+    """停止 SDS，关闭 Z 并保持共同触发当前状态。"""
     scope = devices.get("scope")
     z_control = devices.get("z_control")
     dg_channels = []

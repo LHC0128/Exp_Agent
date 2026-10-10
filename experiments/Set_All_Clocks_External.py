@@ -1,8 +1,10 @@
 # %% [markdown] Cell 0
 # # 设备时钟源批量同步
 #
-# 具体设备目标值由 `params/clock_sources.yaml` 管理；本脚本与 GUI 共用
+# 具体设备目标值默认由 `params/devices.yaml` 的 `reference_clock` 管理；
+# `params/clock_sources.yaml` 保留为兼容入口。本脚本与 GUI 共用
 # `lab_workflows.clock_sync`，避免两套实现发生偏差。
+# 运行前，将同一外置 10 MHz 参考源接入各 DG4000、DG900 和 HF2，包含 Pump 调制信号源。
 
 # %% Cell 1
 from pathlib import Path

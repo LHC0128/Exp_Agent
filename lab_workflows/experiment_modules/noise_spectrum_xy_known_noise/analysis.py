@@ -334,19 +334,15 @@ def plot_comparison(results, frequency, s_meas, s_truth, criteria_mask, good, pa
     save_plot(fig, results/"measured_vs_truth.png")
 
 
-def plot_dispersion(results, offsets, y_means, curve=None, fit_mask=None,
+def plot_dispersion(results, offsets, y_means, curve=None,
                     slope=None, intercept=None, r_squared=None):
     """画色散线形与拟合结果；旧运行目录只有中心段线性拟合结果时退化绘制。"""
     fig, ax = new_figure(kind="wide", height_mm=65)
     ax.plot(offsets*1000, y_means, "o", ms=3.5, color=COLOR_GRAY, label="Demod Y vs Z bias")
     if curve is not None:
-        used = np.ones(offsets.size, bool) if fit_mask is None else np.asarray(fit_mask, bool)
-        axis = np.linspace(offsets[used].min(), offsets[used].max(), 200)
+        axis = np.linspace(offsets.min(), offsets.max(), 200)
         ax.plot(axis*1000, curve(axis), "-", color=COLOR_OPTIMAL, lw=1.3,
                 label="Dispersion line fit")
-        if not used.all():
-            ax.plot(offsets[~used]*1000, y_means[~used], "x", ms=4, color=COLOR_TRAD,
-                    label="Excluded edge points")
         if slope is not None and r_squared is not None and np.isfinite(r_squared):
             ax.text(0.03, 0.95,
                     f"dY/dV = {slope:.4g} V/V\nR² = {r_squared:.4f}",
@@ -672,7 +668,6 @@ def analyze(run_dir: Path):
             for key in ("source", "method", "k_z_hz_per_v", "slope_v_per_hz",
                         "slope_v_per_v", "gamma_v", "gamma_hz", "center_v", "center_hz",
                         "r_squared", "rmse_v", "n_points", "is_valid",
-                        "skip_start_points", "skip_end_points",
                         "recorded_slope_v_per_hz", "recorded_relative_difference",
                         "fallback_reason")
             if key in dispersion_fit
@@ -681,12 +676,11 @@ def analyze(run_dir: Path):
             summary["dispersion"]["rejection_reasons"] = dispersion_fit["rejection_reasons"]
         offsets = dispersion_fit.get("offsets_v")
         if offsets is not None:
-            # 有原始数据：画出离线重拟合的色散线形与被剔除端点。
+            # 用全部有效色散点画出离线重拟合的线形。
             popt = np.asarray(dispersion_fit["popt"], float)
             plot_dispersion(
                 results, offsets, np.asarray(dispersion_fit["y_mean"], float),
                 curve=lambda axis, popt=popt: _dispersive(axis, *popt),
-                fit_mask=np.asarray(dispersion_fit["fit_mask"], bool),
                 slope=float(dispersion_fit["slope_v_per_v"]),
                 r_squared=float(dispersion_fit["r_squared"]),
             )

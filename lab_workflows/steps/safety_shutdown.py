@@ -17,6 +17,7 @@ STANDARD_PRESERVED_OUTPUTS = (
     "Pump_modulation",
     "HF2_configuration",
 )
+PRESERVED_TIMING_OUTPUTS = ("Time_sequence", "Time_sequence_2")
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,10 +160,16 @@ def run_safety_shutdown(
     disconnect_targets: Iterable[DisconnectTarget] = (),
     preserved_outputs: Iterable[str] = STANDARD_PRESERVED_OUTPUTS,
 ) -> SafetyShutdownReport:
-    """执行统一安全关闭；具体通道与保留输出由各工作流显式声明。"""
+    """执行统一安全关闭；时序输出按全局策略保留，其余通道显式关闭。"""
     action_errors: list[str] = []
-    for spec in dg_channels:
-        if spec.device is not None:
+    specs = tuple(dg_channels)
+    preserved = tuple(dict.fromkeys(
+        (*preserved_outputs,
+         *PRESERVED_TIMING_OUTPUTS,
+         *(spec.safety_key for spec in specs if spec.safety_key in PRESERVED_TIMING_OUTPUTS))
+    ))
+    for spec in specs:
+        if spec.device is not None and spec.safety_key not in PRESERVED_TIMING_OUTPUTS:
             _shutdown_dg_channel(action_errors, spec)
     for action in extra_actions:
         _attempt(action_errors, action.label, action.action)
@@ -181,5 +188,5 @@ def run_safety_shutdown(
     return SafetyShutdownReport(
         action_errors=tuple(action_errors),
         disconnect_errors=disconnect_errors,
-        preserved_outputs=tuple(preserved_outputs),
+        preserved_outputs=preserved,
     )

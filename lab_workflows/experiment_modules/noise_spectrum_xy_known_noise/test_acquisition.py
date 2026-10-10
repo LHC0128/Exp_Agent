@@ -20,8 +20,7 @@ from .dispersion import resolve_dispersion
 
 class KnownNoiseDispersionTests(unittest.TestCase):
     def params(self, **overrides):
-        return replace(ADAPTER.defaults(), dispersion_steps=11, hf2_demod_rate=30,
-                       dispersion_fit_skip_start=1, dispersion_fit_skip_end=1, **overrides)
+        return replace(ADAPTER.defaults(), dispersion_steps=11, hf2_demod_rate=30, **overrides)
 
     def collect(self, params, hf2, root, z, temp):
         return acquisition.acquire_dispersion_scan(params, z=z, z_channel=1, temp=temp,
@@ -38,9 +37,11 @@ class KnownNoiseDispersionTests(unittest.TestCase):
         names = {field["name"] for field in schema["fields"]}
         self.assertIn("DISPERSION_DURATION_S", names)
         self.assertNotIn("DISPERSION_SAMPLES_PER_STEP", names)
+        self.assertFalse(names & {"DISPERSION_FIT_SKIP_START", "DISPERSION_FIT_SKIP_END"})
         advanced = schema["parameter_layout"]["advanced"]
+        self.assertFalse(set(advanced) & {"DISPERSION_FIT_SKIP_START", "DISPERSION_FIT_SKIP_END"})
         self.assertEqual(advanced[advanced.index("HF2_DEMOD_RATE") + 1], "DISPERSION_DURATION_S")
-        for overrides in (dict(dispersion_duration_s=0), dict(dispersion_duration_s=float("nan")),
+        for overrides in (dict(dispersion_steps=6), dict(dispersion_duration_s=0), dict(dispersion_duration_s=float("nan")),
                           dict(hf2_demod_rate=float("inf")), dict(hf2_demod_rate=1, dispersion_duration_s=0.1)):
             with self.subTest(overrides=overrides):
                 self.assertTrue(replace(saved, **overrides).validate())
@@ -63,6 +64,8 @@ class KnownNoiseDispersionTests(unittest.TestCase):
                 with patch.object(acquisition, "wait_for_settle"):
                     data = self.collect(params, FakeHF2(raw_factory=dispersed), raw, z, temp)
                 self.assertTrue(data["completed_mask"].all())
+                self.assertEqual(data["n_points"], params.dispersion_steps)
+                self.assertTrue(data["fit_mask"].all())
                 self.assertAlmostEqual(data["center_v"], 0.007, places=7)
                 self.assertEqual(len(list((raw / "dispersion_steps").glob("point_*.npz"))), 11)
                 self.assertFalse(z.output)
@@ -72,6 +75,8 @@ class KnownNoiseDispersionTests(unittest.TestCase):
                 self.assertEqual(sum(event[:2] == ("output", False) for event in temp.events), groups)
                 result = resolve_dispersion(root, {"parameters": params.to_external(), "dispersion": {}})
                 self.assertEqual(result["source"], "raw_refit")
+                self.assertEqual(result["n_points"], params.dispersion_steps)
+                self.assertTrue(result["fit_mask"].all())
                 self.assertAlmostEqual(result["slope_v_per_hz"], data["slope_v_per_hz"])
                 with np.load(raw / "dispersion_scan.npz") as saved:
                     self.assertEqual(saved["schema_version"], 3)
@@ -131,8 +136,7 @@ class KnownNoiseDispersionTests(unittest.TestCase):
                              and item.func.id == "acquire_dispersion_scan" for item in ast.walk(ast.Module(body=node.body, type_ignores=[]))))
         code = compile(ast.Module(body=[block], type_ignores=[]), str(path), "exec")
         offsets = np.linspace(-0.2, 0.2, 11)
-        result = acquisition.fit_dispersion_curve(offsets, offsets / (offsets**2 + 0.1**2),
-                                                  skip_start_points=0, skip_end_points=0, k_z_hz_per_v=1)
+        result = acquisition.fit_dispersion_curve(offsets, offsets / (offsets**2 + 0.1**2), k_z_hz_per_v=1)
         result.update(actual_rate_sa_s=np.array([30]), actual_duration_s=np.array([0.1]), sample_counts=np.array([3]))
         for stage, error in (("scan", None), ("scan", WorkflowCancelled("取消色散")),
                              ("scan", TimeoutError("色散超时")), ("save", OSError("配置保存失败"))):

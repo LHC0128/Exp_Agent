@@ -76,6 +76,8 @@ it("高级参数相邻显示色散速率和时长，保存和运行都传递新�
   fireEvent.click(screen.getByRole("tab", { name: /高级参数/ }));
   expect(screen.getByLabelText("色散采样率 (Sa/s)")).toHaveValue(200000);
   expect(screen.getByText("用于 HF2 校相与色散连续采集")).toBeVisible();
+  expect(screen.queryByLabelText("色散拟合起始剔除点数")).toBeNull();
+  expect(screen.queryByLabelText("色散拟合终止剔除点数")).toBeNull();
   fireEvent.change(screen.getByLabelText("色散每点采集时间 (s)"), { target: { value: "0.2" } });
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url === `${BASE}/defaults`)).toBe(true));
@@ -86,6 +88,8 @@ it("高级参数相邻显示色散速率和时长，保存和运行都传递新�
     expect(body.parameters.HF2_DEMOD_RATE).toBe(200000);
     expect(body.parameters.DISPERSION_DURATION_S).toBe(0.2);
     expect(body.parameters).not.toHaveProperty("DISPERSION_SAMPLES_PER_STEP");
+    expect(body.parameters).not.toHaveProperty("DISPERSION_FIT_SKIP_START");
+    expect(body.parameters).not.toHaveProperty("DISPERSION_FIT_SKIP_END");
     if (url.endsWith("defaults")) expect(body.parameter_layout.advanced).toEqual(["HF2_DEMOD_RATE", "DISPERSION_DURATION_S"]);
   }
 });

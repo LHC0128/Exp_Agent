@@ -237,7 +237,6 @@ try:
         devices["dg_probe_am"] = dg_probe_am
     z_channel = int(dg_sweep_cfg["channel"])
     dg_sweep.set_output(False, channel=z_channel)
-    dg_sweep.set_output_load("INF", channel=z_channel)
     dg_sweep.set_voltage_unit("VPP", channel=z_channel)
     print(f"XY 外触发 DG4000 已连接: {dg_sweep.idn()}")
     # Z 场和外触发映射同机；Probe AM 走独立 DG4000。
@@ -466,12 +465,10 @@ if IS_PROBE_AM:
     dg_probe_am.setup_sine(freq=PROBE_AOM_CARRIER_FREQ_HZ,
                            amplitude=PROBE_AOM_CARRIER_VPP,
                            offset=0.0, phase=0.0, channel=carrier_channel)
-    dg_probe_am.set_output_load(50, channel=carrier_channel)
     dg_probe_am.set_mod_type("AM", channel=carrier_channel)
     dg_probe_am.set_mod_am_source("EXT", channel=carrier_channel)
     dg_probe_am.set_mod_am_depth(PROBE_AOM_AM_DEPTH_PERCENT, channel=carrier_channel)
     dg_probe_am.set_mod_state(True, channel=carrier_channel)
-    dg_probe_am.set_output_load("INF", channel=noise_channel)
     dg_probe_am.set_voltage_unit("VPP", channel=noise_channel)
 
     def probe_am_shutdown_fallback():
@@ -939,7 +936,7 @@ print("最终 X/Y Burst 相位已写入 experiment_config.yaml")
 # ============================================================
 # 内置色散斜率扫描：z DC 偏置步进过共振点，对整条色散线形拟合零交叉点斜率
 # 与静磁场灵敏度实验同条件：X/Y 控制场关、纯 DC 偏置。
-# 线形起止两端各按参数剔除点数；长时间关闭温控时按间隔点数回插温控恢复。
+# 全部有效色散点参与拟合；长时间关闭温控时按间隔点数回插温控恢复。
 # ============================================================
 if not IS_PROBE_AM:
     print("=" * 60)
@@ -969,8 +966,6 @@ if not IS_PROBE_AM:
             "raw_schema_version": 3,
             "condition": "xy_control_off_dc_bias",
             "method": "dispersion_line_fit",
-            "fit_skip_start_points": int(DISPERSION_FIT_SKIP_START),
-            "fit_skip_end_points": int(DISPERSION_FIT_SKIP_END),
             "fit_points": int(DISPERSION["n_points"]),
             "temp_switch_interval_points": int(DISPERSION_TEMP_SWITCH_INTERVAL_POINTS),
             "slope_v_per_v": DISPERSION["slope_v_per_v"],

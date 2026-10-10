@@ -69,7 +69,6 @@ def configure_optimal_control_trigger(params: Any, device: Any, channel: int,
                         amplitude=params.trigger_amplitude_vpp,
                         offset=params.trigger_offset_v,
                         dcycle=params.trigger_duty_percent, phase=0.0, channel=channel)
-    device.set_output_load("INFinity", channel=channel)
     device.phase_init(channel=channel)
     device.set_output(bool(output), channel=channel)
 

@@ -104,8 +104,7 @@ def acquire_dispersion_scan(params, *, z, z_channel, temp, temp_channel, hf2,
                 set_temperature_switch(temp, True, channel=temp_channel, on_voltage=params.temp_switch)
                 wait_for_settle(params.temp_switch_on_settle_s)
         fit = fit_dispersion_curve(
-            offsets, data["y_median"], skip_start_points=params.dispersion_fit_skip_start,
-            skip_end_points=params.dispersion_fit_skip_end, k_z_hz_per_v=k_z_hz_per_v,
+            offsets, data["y_median"], k_z_hz_per_v=k_z_hz_per_v,
         )
         data.update(fit, fit_valid=fit["is_valid"])
         save_scan(path, data)

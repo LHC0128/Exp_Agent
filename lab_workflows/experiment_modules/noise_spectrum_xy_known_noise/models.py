@@ -55,12 +55,10 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
 
     # ---- 内置色散斜率扫描（增益换算） ----
     dispersion_span_v: float = parameter(default=0.17, external_name="DISPERSION_SPAN_V", label="色散扫描半宽", unit="V", group="advanced", minimum=0.001, safety_key="Z_magnetic_field", description="z 偏置步进扫描 ±该电压，覆盖共振色散中心段；默认约 ±2 kHz（按 K_Z 换算）。")
-    dispersion_steps: int = parameter(default=21, external_name="DISPERSION_STEPS", label="色散扫描点数", group="advanced", minimum=5)
+    dispersion_steps: int = parameter(default=21, external_name="DISPERSION_STEPS", label="色散扫描点数", group="advanced", minimum=MIN_DISPERSION_FIT_POINTS)
     dispersion_step_settle_s: float = parameter(default=0.2, external_name="DISPERSION_STEP_SETTLE_S", label="色散每步等待", unit="s", group="advanced", minimum=0)
     dispersion_duration_s: float = parameter(default=0.1, external_name="DISPERSION_DURATION_S", label="色散每点采集时间", unit="s", group="advanced", minimum=0, description="每步稳定等待后连续采集；记录时间按 HF2 实际速率向上取整到整数样本。")
     hf2_demod_rate: float = parameter(default=100000.0, external_name="HF2_DEMOD_RATE", label="色散采样率", unit="Sa/s", group="advanced", minimum=1, description="用于 HF2 校相与色散连续采集；主噪声采集独立使用 HF2_DAQ_RATE。")
-    dispersion_fit_skip_start: int = parameter(default=0, external_name="DISPERSION_FIT_SKIP_START", label="色散拟合起始剔除点数", group="advanced", minimum=0, description="从色散线形起始端剔除的点数；与终止剔除点数共同界定参与线形拟合的幅度点范围，两端剔除后至少保留 7 点。")
-    dispersion_fit_skip_end: int = parameter(default=0, external_name="DISPERSION_FIT_SKIP_END", label="色散拟合终止剔除点数", group="advanced", minimum=0, description="从色散线形终止端剔除的点数；与起始剔除点数共同界定参与线形拟合的幅度点范围。")
     dispersion_temp_switch_interval_points: int = parameter(default=5, external_name="DISPERSION_TEMP_SWITCH_INTERVAL_POINTS", label="色散温控恢复间隔点数", group="advanced", minimum=0, description="每测完该数量的色散点后打开温度开关一次（按 TEMP_SWITCH_ON_SETTLE_S 等待后重新关闭），避免长时间关闭温控导致温度漂移；0 表示整段保持关闭。")
 
     # ---- 定量判据 ----
@@ -164,11 +162,6 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
             errors.append(str(exc))
         if self.ratio_pass_low >= self.ratio_pass_high:
             errors.append("RATIO_PASS_LOW 必须小于 RATIO_PASS_HIGH")
-        if self.dispersion_steps - self.dispersion_fit_skip_start - self.dispersion_fit_skip_end < MIN_DISPERSION_FIT_POINTS:
-            errors.append(
-                "DISPERSION_FIT_SKIP_START / DISPERSION_FIT_SKIP_END 剔除后参与拟合的色散点不足 "
-                f"{MIN_DISPERSION_FIT_POINTS} 个"
-            )
         return errors
 
 

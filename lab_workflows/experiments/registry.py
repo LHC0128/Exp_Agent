@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from ..common import CancellationToken, ProgressCallback
+from ..experiment_modules.rf_sensitivity_direct_aw.definition import (
+    DEFINITION as RF_SENSITIVITY_DIRECT_AW_DEFINITION,
+)
 from ..experiment_modules.scope_capture.definition import DEFINITION as SCOPE_CAPTURE_DEFINITION
 from ..experiment_modules.noise_spectrum_xy.definition import (
     DEFINITION as NOISE_SPECTRUM_XY_DEFINITION,
@@ -219,7 +222,7 @@ _DEFINITIONS = [
     _legacy("noise-spectrum-xy-v2", "XY 控制噪声谱 v2", "measurement", "noise", "v2", "Noise_Spectrum_XY_Ctrl_v2.py", "Noise_Spectrum_XY_Ctrl_v2_plot.py", "第二版 XY 控制噪声谱流程。", _DEVICES["xy"]),
     _legacy("photon-shot-noise", "光子散粒噪声", "measurement", "fundamental-noise", "photon", "Photon_shot_noise.py", "Photon_shot_noise_plot.py", "测量光子散粒噪声随实验参数的变化。"),
     PROJECTION_NOISE_DEFINITION,
-    _legacy("rf-sensitivity-aw", "RF 灵敏度（任意波）", "measurement", "rf-sensitivity", "external-am", "RF_Field_Sensitivity_AW.py", "RF_Field_Sensitivity_AW_plot.py", "使用任意波与外部 AM 方案测量 RF 灵敏度。", _DEVICES["xy"]),
+    RF_SENSITIVITY_DIRECT_AW_DEFINITION,
     _legacy("rf-sensitivity-aw-frequency", "RF 灵敏度频率扫描（外部 AM）", "measurement", "rf-sensitivity", "external-am", "RF_Field_Sensitivity_AW_FreqSweep.py", "RF_Field_Sensitivity_AW_FreqSweep_plot.py", "扫描 RF 频率的外部 AM 硬件方案。", _DEVICES["xy"]),
     RF_DIRECT_AW_FREQUENCY_DEFINITION,
     _legacy("rf-sensitivity-constxy-frequency", "RF 灵敏度频率扫描（ConstXY）", "measurement", "rf-sensitivity", "const-xy", "RF_Field_Sensitivity_ConstXY_FreqSweep.py", "RF_Field_Sensitivity_ConstXY_FreqSweep_plot.py", "固定 XY 控制下扫描 RF 频率。", _DEVICES["xy"]),

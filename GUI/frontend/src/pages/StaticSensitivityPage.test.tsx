@@ -45,6 +45,8 @@ it("新参数可以保存，切换视图不丢失，直流历史可以填回", a
   fireEvent.change(screen.getByLabelText("色散每点采集时间 (s)"), { target: { value: "0.2" } });
   expect(screen.getByLabelText("色散采样率 (Sa/s)")).toHaveValue(1000);
   expect(screen.getByText("用于 HF2 校相与色散连续采集")).toBeVisible();
+  expect(screen.queryByLabelText("色散拟合起始剔除点数")).toBeNull();
+  expect(screen.queryByLabelText("色散拟合终止剔除点数")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
   expect(await screen.findByText("已保存")).toBeVisible();
   const request = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
@@ -54,6 +56,8 @@ it("新参数可以保存，切换视图不丢失，直流历史可以填回", a
   expect(body.parameters.hf2_demod_rate).toBe(1000);
   expect(body.parameters).not.toHaveProperty("dispersion_samples_per_step");
   expect(body.parameters).not.toHaveProperty("dispersion_sample_interval_s");
+  expect(body.parameters).not.toHaveProperty("dispersion_fit_skip_start");
+  expect(body.parameters).not.toHaveProperty("dispersion_fit_skip_end");
   expect(body.parameter_layout.advanced.slice(-2)).toEqual(["hf2_demod_rate", "dispersion_duration_s"]);
   expect(body.parameter_layout.basic).toEqual(["run_tag", "dispersion_steps"]);
   fireEvent.click(tab("历史"));

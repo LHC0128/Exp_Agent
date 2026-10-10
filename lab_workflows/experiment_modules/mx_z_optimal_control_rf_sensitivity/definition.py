@@ -46,7 +46,7 @@ DEFINITION = ExperimentDefinition(
         "正常、取消和异常结束后完整恢复 GS200 运行前源模式、电流、量程、限流和输出状态。",
         "正常、取消和异常结束时保持 Z_magnetic_field 的最优控制波形及 Output 状态不变，不归零也不关闭。",
         "剩磁响应模式在所有退出路径把 Z 控制 Burst 相位恢复为 CONTROL_BURST_PHASE_DEG。",
-        "所有结束路径关闭归零共同触发、Y RF 与 X 场，并恢复温控为 5 V DC + Output ON。",
+        "所有结束路径保持共同触发当前状态，关闭归零 Y RF 与 X 场，并恢复温控为 5 V DC + Output ON。",
         "Pump/Probe、Pump 载波/门控和 HF2 设置保留；正常结束只断开 TEC。",
         "闭环冻结波形的完整 Z 电压范围、X DC 和 Y RF 的 offset±Vpp/2 包络均在输出前执行安全校验。",
     ),

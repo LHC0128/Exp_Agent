@@ -760,7 +760,13 @@ def run(params: NoiseSpectrumXYParams, *, project_root: Path | None = None) -> P
         t_start = time.time()
 
         # try/finally 确保异常时恢复温度开关
-        pbar = tqdm(total=params.target_noise_freq_points, desc="Scanning", unit="pt")
+        # mininterval 大于单点耗时即可让 set_postfix 和 update 触发合并到一次 display。
+        pbar = tqdm(
+            total=params.target_noise_freq_points,
+            desc="Scanning",
+            unit="pt",
+            mininterval=5.0,
+        )
         # 在安全恢复保护内校验硬件实际采样率，并保存派生段长，不作为可调参数。
         actual_welch = welch_settings(float(actual_rate_daq), params.hf2_daq_duration,
                                       params.analysis_bin_width_hz)
@@ -776,9 +782,6 @@ def run(params: NoiseSpectrumXYParams, *, project_root: Path | None = None) -> P
             )
         ):
             check_cancelled()
-            pbar.set_postfix_str(
-                f"Omega={target_freq_hz/1e3:.2f}kHz, V={envelope_v:.3f}"
-            )
 
             set_xy_sine_peak(dg_comp, envelope_v, xy_phase, params.xy_ctrl_quad, limits)
             wait(0.3)
@@ -789,19 +792,15 @@ def run(params: NoiseSpectrumXYParams, *, project_root: Path | None = None) -> P
             # 等待系统稳定
             wait(params.xy_settle_time)
 
-            # 读取当前温度
+            # 读取当前温度；失败不回刷进度，留到循环末 update 前一次性刷新
+            temp_str = ""
             try:
                 temp_now = tec.get_temperature(channel=1)
-                pbar.set_postfix_str(
-                    f"Omega={target_freq_hz/1e3:.2f}kHz, "
-                    f"V={envelope_v:.3f}, T={temp_now:.1f}°C"
-                )
+                temp_str = f", T={temp_now:.1f}°C"
             except WorkflowCancelled:
                 raise
             except Exception:
-                pbar.set_postfix_str(
-                    f"Omega={target_freq_hz/1e3:.2f}kHz, V={envelope_v:.3f}"
-                )
+                pass
 
             # 配置 HF2 DAQ 采集（每点独立配置）
             daq_cfg = DAQConfig(
@@ -838,6 +837,9 @@ def run(params: NoiseSpectrumXYParams, *, project_root: Path | None = None) -> P
             # 恢复温度开关
             set_temp_switch(dg_temp, True, params, limits, restore_wait=True)
 
+            pbar.set_postfix_str(
+                f"Omega={target_freq_hz/1e3:.2f}kHz, V={envelope_v:.3f}{temp_str}"
+            )
             pbar.update(1)
     except BaseException as exc:
         failure = exc

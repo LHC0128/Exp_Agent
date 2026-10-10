@@ -98,7 +98,7 @@ devices:
     model: DG4000
     label: Pump 调制信号源
     resource: USB0::0x1AB1::0x0641::DG4E222800868::INSTR
-    reference_clock: INT
+    reference_clock: EXT
     connection: {}
     capabilities:
       channels:

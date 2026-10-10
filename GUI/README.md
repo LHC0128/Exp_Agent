@@ -161,6 +161,22 @@ from lab_workflows.steps import calibrate_demod_phase, DirectAWStrategy
 时钟目标来自 `params/devices.yaml`，`params/clock_sources.yaml` 仅为其他旧入口回退。
 详细参数、原始数据及安全策略见[静磁场实验说明](../docs/static_mag_sens_v2.md)。
 
+### 参考时钟同步
+
+当前 DG4000、DG900 和 HF2 统一接入同一外置 10 MHz 参考源，目标均为 `EXT`，
+包含 Pump 调制信号源 `DG4E222800868`；其载波与门控共用设备参考时钟。
+先完成外置源接线并开启参考信号，再在“功能模块 → 参考时钟同步”点击“开始同步”，
+核对每台设备设置和回读均成功。旧 Python 实验运行前需先执行该准备步骤。
+也可在仓库根目录执行同一共享流程：
+
+```powershell
+.\agent_exp_env\Scripts\python.exe experiments\Set_All_Clocks_External.py
+```
+
+同步入口默认读取设备库，旧配置文件保留兼容用途；程序不连接或配置外置源。
+`EXT` 回读表示参考源选择生效，实际接线和锁定状态需在仪器上确认，
+详见[参考时钟说明](../docs/instrument_mapping.md#统一外置参考时钟)。
+
 ## 实验中心
 
 - `/experiments` 默认展示 `lab_workflows/experiments/registry.py` 中未归档的正式实验；“已归档”入口查看其余实验，注册表本身不变。

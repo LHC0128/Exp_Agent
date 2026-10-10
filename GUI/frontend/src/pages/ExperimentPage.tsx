@@ -10,6 +10,7 @@ import { BellBloomZCalibrationPage } from "./BellBloomZCalibrationPage";
 import { NoiseSpectrumXYPage } from "./NoiseSpectrumXYPage";
 import { NoiseSpectrumXYKnownNoisePage, NoiseSpectrumXYProbeAMPage } from "./NoiseSpectrumXYKnownNoisePage";
 import { DetectionChainFrequencyResponsePage } from "./DetectionChainFrequencyResponsePage";
+import { RFSensitivityDirectAWPage } from "./RFSensitivityDirectAWPage";
 import { Field, SelectField } from "../components/FormFields";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
@@ -44,6 +45,7 @@ export function ExperimentPage() {
   if (experimentId === "noise-spectrum-xy-known-noise") return <NoiseSpectrumXYKnownNoisePage />;
   if (experimentId === "noise-spectrum-xy-uncontrolled-probe-am") return <NoiseSpectrumXYProbeAMPage />;
   if (experimentId === "detection-chain-frequency-response") return <DetectionChainFrequencyResponsePage />;
+  if (experimentId === "rf-sensitivity-aw") return <RFSensitivityDirectAWPage />;
   return <GenericExperimentPage />;
 }
 

@@ -45,6 +45,7 @@ NOISE_SPECTRUM_XY = (
     "Probe_laser_power", "Pump_modulation", "Time_sequence",
     "Temp_Switch", "temperature", "lockin_r",
 )
+RF_SENSITIVITY_DIRECT_AW = NOISE_SPECTRUM_XY
 PROBE_AM_NOISE_SPECTRUM_XY = (
     *NOISE_SPECTRUM_XY,
     "Probe_AOM_Carrier", "Probe_AOM_AM",
@@ -120,6 +121,7 @@ TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "noise-spectrum-xy-demod3-r": DIRECT_AW,
     "projection-noise": SCOPE,
     "rf-sensitivity-direct-aw-frequency": DIRECT_AW,
+    "rf-sensitivity-aw": RF_SENSITIVITY_DIRECT_AW,
     "t2-calibration": T2,
     "xy-direct-aw-dc-calibration": DIRECT_AW,
 }
@@ -131,6 +133,7 @@ ARBITRARY_MAPPING_KEYS: dict[str, tuple[str, ...]] = {
         "noise-spectrum-xy",
         "noise-spectrum-xy-demod3-r",
         "rf-sensitivity-direct-aw-frequency",
+        "rf-sensitivity-aw",
         "xy-direct-aw-dc-calibration",
     )
 }
@@ -160,6 +163,7 @@ INFINITE_BURST_MAPPING_KEYS: dict[str, tuple[str, ...]] = {
     experiment_id: ARBITRARY_MAPPING_KEYS[experiment_id]
     for experiment_id in ARBITRARY_MAPPING_KEYS
 }
+INFINITE_BURST_MAPPING_KEYS["rf-sensitivity-aw"] = ("X_magnetic_field", "Y_magnetic_field", "Z_magnetic_field")
 INFINITE_BURST_MAPPING_KEYS["z-aw-waveform-scope-check"] = ("Z_magnetic_field",)
 INFINITE_BURST_MAPPING_KEYS["z-coil-inductance-frequency-response"] = ("Z_magnetic_field",)
 INFINITE_BURST_MAPPING_KEYS["z-aw-current-waveform-scope-check"] = ("Z_magnetic_field",)

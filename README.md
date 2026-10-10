@@ -195,6 +195,19 @@ experiments ───┘
 各实验的执行模式以注册表为准。GUI 参数表单只展示新模式模型显式声明且
 `visible=True` 的字段，不会因为工作流中新增一个全大写运行时常量而增加表单项目。
 
+`rf-sensitivity-aw` 已迁移为 schema version 2 的 DirectAW 工作流，保留
+`RF_Field_Sensitivity_AW` 数据目录与原脚本入口。XYZ 共用时序信号2主输出触发，
+HF2 使用 Demod0 Y → AuxOut2 → Signal Input2 → Demod3 回环，以 X 响应斜率和
+X 噪声 PSD 计算灵敏度，并用响应色散拟合得到的等效 HWHM 补偿洛伦兹频响。
+GUI 提供运行 / 历史双 Tab，历史只接纳新格式；完整分析结果支持跨页多选、
+自定义英文图例、X 响应与灵敏度双面板叠加及 PNG/PDF 下载。对比区的灵敏度面板
+只显示主谱，拟合失败的数值斜率回退结果会提示未校正。校相失败
+或采集未完成时只展示诊断。最优控制波形从
+`D:\Code\theory_agent\simulate\results\oc_sens` 的 `vN/waveforms/optimal_control_waveform.csv`
+选择，运行前须明确选择有效版本。默认值见
+[参数文件](params/experiments/rf-sensitivity-aw.yaml)，接线、收尾及分析见
+[实验说明](docs/rf_field_measurement.md)。
+
 `t2-calibration` 已迁移为强类型光学 FID 工作流：保持 `T2_Calibration` 数据目录与
 历史 NPZ 字段不变，正常完成、异常、取消和 Ctrl+C 都会把温度开关恢复为 5 V ON，
 保持主磁场、Pump/Probe 光功率、Pump 调制、RF 门控输出和全部 HF2 设置；RF 门控仅
@@ -218,6 +231,7 @@ experiments ───┘
 - `Projection_noise.py` / `Projection_noise_plot.py`
 - `T1_Calibration.py` / `T1_Calibration_plot.py`
 - `T2_Calibration.py` / `T2_Calibration_plot.py`
+- `RF_Field_Sensitivity_AW.py` / `RF_Field_Sensitivity_AW_plot.py`
 - `RF_Field_Sensitivity_AW_FreqSweep.py` / `RF_Field_Sensitivity_AW_FreqSweep_plot.py`
 - `RF_Field_Sensitivity_ConstXY_FreqSweep.py` / `RF_Field_Sensitivity_ConstXY_FreqSweep_plot.py`
 - `XY_DC_Voltage_Calibration.py` / `XY_DC_Voltage_Calibration_plot.py`
@@ -253,7 +267,7 @@ experiments ───┘
 | Mx Y RF 灵敏度长飘（按总时间和间隔重复测量） | `experiments/Mx_Y_RF_Sensitivity_Drift.py`、`experiments/Mx_Y_RF_Sensitivity_Drift_plot.py` | `docs/mx_y_rf_sensitivity_drift.md` |
 | 光散粒噪声 | `experiments/Photon_shot_noise.py` | `docs/Photon_shot_noise.md` |
 | 原子自旋投影噪声（SDS） | `experiments/Projection_noise.py`、`experiments/Projection_noise_plot.py` | `docs/Projection_noise.md` |
-| 静磁场灵敏度（Z 直流逐点色散、采样率与时长控制的连续 X/Y/R 波形中位数、分组温控；采集/分析分离，不兼容旧格式重分析） | `experiments/Static_Magnetic_Field_Sensitivity.py`、`experiments/Static_Magnetic_Field_Sensitivity_plot.py`；独立旧优化入口 `experiments/Static_Magnetic_Field_Sensitivity_Optimize.py` 不改采集 | `docs/static_mag_sens_v2.md` |
+| 静磁场灵敏度（Z 直流逐点色散、采样率与时长控制的连续 X/Y/R 波形中位数、全部有效点拟合、分组温控；采集/分析分离，不兼容旧格式重分析） | `experiments/Static_Magnetic_Field_Sensitivity.py`、`experiments/Static_Magnetic_Field_Sensitivity_plot.py`；独立旧优化入口 `experiments/Static_Magnetic_Field_Sensitivity_Optimize.py` 不改采集 | `docs/static_mag_sens_v2.md` |
 | Mx Y 向 RF 场灵敏度 | `experiments/Mx_Y_RF_Sensitivity.py`、`experiments/Mx_Y_RF_Sensitivity_plot.py` | `docs/mx_y_rf_sensitivity.md` |
 | Mx Y 向 RF 频率响应（模式1扫频方式；幅度可嵌套扫描，统一布洛赫线形拟合覆盖 Lorentzian 与 Rabi 劈裂双峰） | `experiments/Mx_Y_RF_Frequency_Response.py`、`experiments/Mx_Y_RF_Frequency_Response_plot.py` | `docs/mx_y_rf_frequency_response.md` |
 | Mx Y 最优控制 RF 频率响应（最优控制相位中位数曲线；可选常数 Z 控制对照，恒定电压由电流耦合标定反解并允许范围外推；专属 GUI 含运行/历史 Tab） | `experiments/Mx_Y_Optimal_Control_RF_Frequency_Response.py`、`experiments/Mx_Y_Optimal_Control_RF_Frequency_Response_plot.py` | `docs/mx_y_optimal_control_rf_frequency_response.md` |
@@ -287,11 +301,12 @@ experiments ───┘
 | T1 / T2 标定 | `experiments/T1_Calibration.py`、`experiments/T2_Calibration.py` | `docs/T1_calibration.md`、`docs/T2_relaxation.md` |
 | X/Y 补偿与通道验证 | `experiments/XY_Compensation_Calibration.ipynb`、`experiments/XY_Channel_Calibration.ipynb`、`experiments/XY_AM_Transfer.ipynb`、`experiments/XY_MOD_ZeroOffset.ipynb`、`experiments/XY_Output_Verification.ipynb` | `docs/XY_Compensation_Calibration.md`、`docs/z_field_calibration.md` |
 | XY 控制噪声谱测量（运行 / 历史双 Tab；按格间距自动分段、只读平均段数与耗时预览；移动峰标定验收、三实验共享全轴分离与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
-| XY 控制测量已知可控噪声谱（运行 / 历史 / 架构；Z 小线圈注入分段平顶谱伪噪声，相邻点交替 on/off 顺序、两态等待并逐段保存；色散连续 X/Y/R 波形中位数与线形拟合、不含线圈频响的 K_Z 真值链，共享全控制轴分离与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
+| XY 控制测量已知可控噪声谱（运行 / 历史 / 架构；Z 小线圈注入分段平顶谱伪噪声，相邻点交替 on/off 顺序、两态等待并逐段保存；色散连续 X/Y/R 波形中位数与全部有效点线形拟合、不含线圈频响的 K_Z 真值链，共享全控制轴分离与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
 | XY 控制测量已知不可控 Probe AM 噪声谱（运行 / 历史双 Tab；Probe AOM 外部 AM 的 ON/OFF 成对采集，可选全程叠加独立配置的 Z 已知可控噪声；共享全轴分析提取锁相端 N_S1 与有符号差分） | `experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM.py`、`experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM_plot.py` | `docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md` |
 | Demod3 R 噪声谱测量 | `experiments/Noise_Spectrum_XY_Demod3_R.py`、`experiments/Noise_Spectrum_XY_Demod3_R_plot.py` | `docs/noise_spectrum_xy_demod3_r.md` |
 | MORS 相关 | `experiments/MORS_feasibility_test.ipynb`、`experiments/MORS_feasibility_test_v2.ipynb`、`experiments/MORS_polarization_pulsed.ipynb` | `docs/MORS_polarization.md` |
-| RF 场灵敏度 Notebook | `experiments/RF_Field_Sensitivity.ipynb`、`experiments/RF_Field_Sensitivity_AW.ipynb` | `docs/rf_field_measurement.md`、`docs/rf_field_measurement_2.md` |
+| RF 场灵敏度（DirectAW，新模式运行 / 历史） | `experiments/RF_Field_Sensitivity_AW.py`、`experiments/RF_Field_Sensitivity_AW_plot.py` | `docs/rf_field_measurement.md` |
+| RF 场历史 Notebook（未迁移） | `experiments/RF_Field_Sensitivity.ipynb`、`experiments/RF_Field_Sensitivity_AW.ipynb` | 历史实验入口；当前 Python 流程见 `docs/rf_field_measurement.md` |
 | RF 场频率响应（AW 包络） | `experiments/RF_Field_Sensitivity_AW_FreqSweep.py`、`experiments/RF_Field_Sensitivity_AW_FreqSweep_plot.py` | `docs/rf_field_measurement_2.md` |
 | RF 场频率响应（DirectAW） | `experiments/RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py`、`experiments/RF_Field_Sensitivity_AW_FreqSweep_plot.py`、`experiments/RF_Field_Sensitivity_AW_FreqSweep_compare.py` | `docs/rf_field_measurement_2.md` |
 | RF 场频率响应（XY 恒定场） | `experiments/RF_Field_Sensitivity_ConstXY_FreqSweep.py`、`experiments/RF_Field_Sensitivity_ConstXY_FreqSweep_plot.py` | 暂无独立文档，可参考 `docs/rf_field_measurement_2.md` |
@@ -369,6 +384,12 @@ mapping:
 新模式硬件工作流在设备连接完成后统一调用
 `lab_workflows.steps.synchronize_connected_clocks()`，按 `params/devices.yaml`
 设置已连接的 DG4000、DG900 和 HF2，并通过回读严格验证；任何设备不一致都会在实验正式输出配置前终止实验。
+
+当前系统的 DG4000、DG900 和 HF2 统一使用同一外置 10 MHz 参考源，设备库中的
+`reference_clock` 均为 `EXT`，包含 Pump 调制信号源 `DG4E222800868`。
+Pump 载波与门控共用该设备的参考时钟。运行前接通外置参考；旧 Python 实验先通过
+GUI“功能模块 → 参考时钟同步”或 [统一同步脚本](experiments/Set_All_Clocks_External.py)
+完成同步并确认全部成功。接线和锁定确认见 [参考时钟说明](docs/instrument_mapping.md#统一外置参考时钟)。
 
 所有实验在设置输出量前都应调用 `validate_safety_limit()`。
 正式硬件工作流统一通过 `lab_workflows/steps/safety_shutdown.py` 声明安全收尾策略：

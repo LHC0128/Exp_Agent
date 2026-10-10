@@ -38,7 +38,7 @@ DEFINITION = ExperimentDefinition(
         "X/Y/GS200 和最优控制输出均在写入前执行安全限值校验。",
         "扫描期间 X/Y 与 GS200 在零设定点也保持 Output ON，避免跨零切换输出状态。",
         "正常、取消和异常结束均恢复运行前 X/Y 波形及输出状态和 GS200 完整状态。",
-        "所有结束路径关闭归零 Time_sequence_2，并保留 Z 最优控制波形和 Output ON。",
+        "所有结束路径保持 Time_sequence_2 当前状态，并保留 Z 最优控制波形和 Output ON。",
         "温控恢复为 5 V DC + Output ON；Pump/Probe、Pump 载波/门控和 HF2 设置保持。",
     ),
     schema_version=MxZOptimalControlXYZBalanceParams.schema_version,

@@ -44,7 +44,7 @@ safety_limits:
     max: 10.0
     ramp_rate: null
     output_off_on_error: false
-    description: "预留时序信号，10V 方波"
+    description: "共同外触发时序通道，输出电平限制为 -10 到 10 V"
 
   Pump_laser_power:
     min: 0.0

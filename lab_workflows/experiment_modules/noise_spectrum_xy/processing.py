@@ -13,17 +13,19 @@ from .calibration import fit_robust_linear_calibration
 SEPARATION_METHOD = "full_control_range_with_independent_background"
 
 
-def _background_plateau(control, values, frequency, half_width_hz):
-    """独立验证共振两侧的远端平台，不要求峰参数可辨识。"""
+def _background_plateau(control, values, frequency, half_width_hz, *, allow_one_sided=False):
+    """独立验证远端平台；控制频率落在扫描边界时允许单侧尾部。"""
     sides = [values[control < frequency-half_width_hz],
              values[control > frequency+half_width_hz]]
-    count = sum(side.size for side in sides)
-    if min(side.size for side in sides) < 8:
+    nonempty = [side for side in sides if side.size]
+    count = sum(side.size for side in nonempty)
+    if (not nonempty or min(side.size for side in nonempty) < 8
+            or (len(nonempty) == 1 and not allow_one_sided)):
         return np.nan, count, np.nan, np.nan, "insufficient_background_sides"
-    # 各侧按控制轴分成近、远两块，避免两侧平均值相近却仍含衰减尾部。
-    blocks = [block for side in sides for block in np.array_split(side, 2)]
+    # 各侧按控制轴分成近、远两块；单侧时仍要求远端平台内部稳定。
+    blocks = [block for side in nonempty for block in np.array_split(side, 2)]
     levels = np.array([np.median(block) for block in blocks])
-    baseline = float(np.median(np.concatenate(sides)))
+    baseline = float(np.median(np.concatenate(nonempty)))
     spread = float(np.ptp(levels) / baseline)
     errors = []
     for i, block in enumerate(blocks):
@@ -31,8 +33,10 @@ def _background_plateau(control, values, frequency, half_width_hz):
         prediction = np.median(training)
         errors.append(np.median(abs(block-prediction)/prediction))
     holdout = float(max(errors))
+    edge = len(nonempty) == 1
     reason = ("nonflat_background_tails" if spread > .2 else
-              "unstable_background_holdout" if holdout > .4 else "accepted")
+              "unstable_background_holdout" if holdout > .4 else
+              "accepted_one_sided_edge" if edge else "accepted")
     return baseline, count, holdout, spread, reason
 
 
@@ -135,8 +139,8 @@ def locate_ridge(matrix, frequency, voltage):
 
 
 def fit_local_spectra(matrix, frequency, control, spur_mask, half_width_hz, support_range,
-                      *, full_range=False):
-    """正值模型与留出验证；全范围模式允许远端平台独立恢复背景。"""
+                      *, full_range=False, allow_boundary_fits=False):
+    """正值模型与留出验证；可选地恢复低频边界固定形状与单侧背景。"""
     matrix, frequency, control = (np.asarray(value, float) for value in (matrix, frequency, control))
     spur_mask = np.asarray(spur_mask, bool)
     if (matrix.shape != (control.size, frequency.size) or frequency.size < 2
@@ -158,6 +162,8 @@ def fit_local_spectra(matrix, frequency, control, spur_mask, half_width_hz, supp
     reasons = np.full(n, "outside_ridge_support", dtype="U48")
     residual_score, cv_score = np.full(n, np.nan), np.full(n, np.nan)
     model = np.full_like(matrix, np.nan)
+    fit_mode = np.full(n, "rejected", dtype="U32")
+    edge_indices = []
     step = float(np.median(np.diff(control)))
     gamma_min = max(0.5*step, float(np.median(np.diff(frequency))))
     if half_width_hz <= 4 * gamma_min:
@@ -169,6 +175,9 @@ def fit_local_spectra(matrix, frequency, control, spur_mask, half_width_hz, supp
             reasons[j] = "fixed_spur"
             continue
         margin = 0 if full_range else half_width_hz
+        if full_range and allow_boundary_fits and frequency[0] <= f < support_range[0]:
+            edge_indices.append(j)
+            continue
         if not support_range[0] + margin <= f <= support_range[1] - margin:
             continue
         selected = ((control >= support_range[0]) & (control <= support_range[1])
@@ -257,6 +266,7 @@ def fit_local_spectra(matrix, frequency, control, spur_mask, half_width_hz, supp
                 reasons[j] = "large_parameter_uncertainty"
                 continue
             valid[j], reasons[j] = True, "accepted"
+            fit_mode[j] = "four_parameter"
             background_valid[j], background_reasons[j] = True, "accepted"
             if full_range:
                 # 尾部至少有 8 点由底座主导；强磁尾巴尚未下降到本底时只报告峰参数。
@@ -280,31 +290,188 @@ def fit_local_spectra(matrix, frequency, control, spur_mask, half_width_hz, supp
             valid[j], background_valid[j] = False, False
             background_reasons[j] = "numerical_failure"
             reasons[j] = "numerical_failure"
+    # 脊线首端没有左侧控制点时，四参数拟合无法独立确定线宽和峰位。
+    # 低频边界改用扫描内部已验收频点的线宽/偏移作固定形状，只拟合响应幅度和背景，
+    # 并单独记录模式；这不是把脊线支持范围外的数据外推。
+    if full_range and allow_boundary_fits and edge_indices:
+        reference_indices = np.flatnonzero(
+            valid
+            & (frequency >= support_range[0])
+            & np.isfinite(parameters[:, 0])
+            & np.isfinite(parameters[:, 3])
+        )
+        if reference_indices.size >= 12:
+            reference_indices = reference_indices[: min(40, reference_indices.size)]
+            gamma_ref = float(np.median(parameters[reference_indices, 0]))
+            offset_ref = float(np.median(parameters[reference_indices, 3]))
+            gamma_ref_uncertainty = max(
+                step,
+                1.4826
+                * float(np.median(abs(parameters[reference_indices, 0] - gamma_ref))),
+            )
+            offset_ref_uncertainty = max(
+                step,
+                1.4826
+                * float(np.median(abs(parameters[reference_indices, 3] - offset_ref))),
+            )
+            for j in edge_indices:
+                f = frequency[j]
+                if j % 50 == 0:
+                    check_cancelled()
+                x, raw_y = control, matrix[:, j]
+                scale = float(np.median(raw_y))
+                y = raw_y / scale
+                peak_region = abs(x - f) <= half_width_hz
+                if peak_region.sum() < 12:
+                    reasons[j] = "insufficient_edge_points"
+                    background_reasons[j] = "insufficient_edge_points"
+                    continue
+
+                def evaluate_edge(p, axis):
+                    height, baseline = np.exp(p)
+                    return lorentzian_vs_control(
+                        axis,
+                        gamma_ref,
+                        height * 4 * gamma_ref**2,
+                        baseline,
+                        offset_ref,
+                        f,
+                    )
+
+                def solve_edge(xx, yy, start):
+                    return least_squares(
+                        lambda p: np.log(evaluate_edge(p, xx)) - np.log(yy),
+                        start,
+                        bounds=([-30.0, -30.0], [30.0, 10.0]),
+                        x_scale="jac",
+                        loss="soft_l1",
+                        f_scale=0.2,
+                        max_nfev=250,
+                    )
+
+                start = np.log([
+                    max(np.max(y) - np.median(y), 0.1),
+                    max(np.median(y), 0.01),
+                ])
+                try:
+                    fit = solve_edge(x, y, start)
+                    p = fit.x
+                    prediction = evaluate_edge(p, x)
+                    residual_score[j] = np.median(abs(y - prediction) / prediction)
+                    height, baseline = np.exp(p)
+                    amplitude = height * 4 * gamma_ref**2 * scale
+                    background_level = baseline * scale
+                    parameters[j] = [gamma_ref, amplitude, background_level, offset_ref]
+                    fit_mode[j] = "edge_fixed_shape"
+                    model[:, j] = prediction * scale
+
+                    errors, amplitudes, backgrounds = [], [], []
+                    for parity in (0, 1):
+                        train = np.arange(len(x)) % 2 == parity
+                        held = solve_edge(x[train], y[train], p)
+                        pred = evaluate_edge(held.x, x[~train])
+                        errors.append(
+                            np.median(abs(y[~train] - pred) / pred)
+                            if held.success
+                            else np.inf
+                        )
+                        held_height, held_baseline = np.exp(held.x)
+                        amplitudes.append(held_height * 4 * gamma_ref**2)
+                        backgrounds.append(held_baseline)
+                    cv_score[j] = max(errors)
+                    amplitude_change = abs(amplitudes[0] - amplitudes[1]) / max(
+                        height * 4 * gamma_ref**2, 1e-30
+                    )
+                    if (
+                        not fit.success
+                        or max(residual_score[j], cv_score[j]) > 0.25
+                        or amplitude_change > 0.6
+                    ):
+                        reasons[j] = "edge_shape_unstable"
+                        background_reasons[j] = "edge_shape_unstable"
+                        continue
+
+                    covariance = np.linalg.pinv(fit.jac.T @ fit.jac)
+                    covariance *= np.sum(fit.fun**2) / max(1, len(x) - 2)
+                    parameter_errors = np.sqrt(
+                        np.maximum(np.diag(covariance), 0.0)
+                    )
+                    uncertainties[j] = [
+                        gamma_ref_uncertainty,
+                        amplitude * parameter_errors[0],
+                        background_level * parameter_errors[1],
+                        offset_ref_uncertainty,
+                    ]
+                    if uncertainties[j, 1] > 0.5 * amplitude:
+                        reasons[j] = "edge_large_parameter_uncertainty"
+                        background_reasons[j] = "edge_large_parameter_uncertainty"
+                        continue
+
+                    valid[j], reasons[j] = True, "accepted_edge_fixed_shape"
+                    background_valid[j], background_reasons[j] = True, "accepted"
+                    tail = prediction - baseline <= baseline
+                    tail_counts[j] = int(tail.sum())
+                    if tail_counts[j] < 8:
+                        background_valid[j] = False
+                        background_reasons[j] = "no_background_anchor"
+                    elif uncertainties[j, 2] > 0.5 * background_level:
+                        background_valid[j] = False
+                        background_reasons[j] = "background_unresolved"
+                    else:
+                        ordered = np.argsort(abs(x - f))
+                        held_out = np.zeros(len(x), bool)
+                        held_out[ordered[-max(8, len(x) // 5) :]] = True
+                        held = solve_edge(x[~held_out], y[~held_out], p)
+                        pred = evaluate_edge(held.x, x[held_out])
+                        tail_score[j] = (
+                            np.median(abs(y[held_out] - pred) / pred)
+                            if held.success
+                            else np.inf
+                        )
+                        if tail_score[j] > 0.4:
+                            background_valid[j] = False
+                            background_reasons[j] = "unstable_tail_holdout"
+                except (ValueError, FloatingPointError, np.linalg.LinAlgError):
+                    valid[j], background_valid[j] = False, False
+                    reasons[j] = "edge_numerical_failure"
+                    background_reasons[j] = "edge_numerical_failure"
+
     background = parameters[:, 2].copy()
     background_method = np.where(background_valid, "lorentzian_fit", "rejected").astype("U32")
+    background_method[background_valid & (fit_mode == "edge_fixed_shape")] = "edge_fixed_shape"
     plateau_spread = np.full(n, np.nan)
     if full_range:
-        selected = (control >= support_range[0]) & (control <= support_range[1])
+        support_control = (control >= support_range[0]) & (control <= support_range[1])
         for j in np.flatnonzero(~background_valid):
             if j % 50 == 0:
                 check_cancelled()
-            if spur_mask[j] or not support_range[0] <= frequency[j] <= support_range[1]:
+            f = frequency[j]
+            edge_frequency = allow_boundary_fits and frequency[0] <= f < support_range[0]
+            in_domain = edge_frequency or support_range[0] <= f <= support_range[1]
+            if spur_mask[j] or not in_domain:
                 background_reasons[j] = "fixed_spur" if spur_mask[j] else "outside_ridge_support"
                 continue
+            control_mask = np.ones(control.size, bool) if edge_frequency else support_control
             level, count, error, spread, reason = _background_plateau(
-                control[selected], matrix[selected, j], frequency[j], half_width_hz)
+                control[control_mask], matrix[control_mask, j], f, half_width_hz,
+                allow_one_sided=allow_boundary_fits)
             plateau_spread[j] = spread
             tail_counts[j], tail_score[j] = count, error
             background_reasons[j] = reason
-            if reason == "accepted":
+            if reason in ("accepted", "accepted_one_sided_edge"):
                 background[j], background_valid[j] = level, True
-                background_method[j] = "off_resonance_plateau"
+                background_method[j] = (
+                    "off_resonance_edge_plateau"
+                    if edge_frequency or reason == "accepted_one_sided_edge"
+                    else "off_resonance_plateau"
+                )
     return dict(popt=parameters, perr=uncertainties, fit_mask=valid,
                 background_fit_mask=background_valid, background_rejection_reason=background_reasons,
                 background_method=background_method, background_plateau_relative_spread=plateau_spread,
                 background_anchor_points=tail_counts, tail_holdout_relative_error=tail_score,
                 interpolated_mask=np.zeros(n, bool), rejection_reason=reasons,
                 median_relative_residual=residual_score, holdout_relative_error=cv_score,
+                fit_mode=fit_mode, edge_fit_mask=(fit_mode == "edge_fixed_shape") & valid,
                 model_matrix=model,
                 S_beta=np.where(valid, parameters[:,1], np.nan),
                 N_S1=np.where(background_valid, background, np.nan))

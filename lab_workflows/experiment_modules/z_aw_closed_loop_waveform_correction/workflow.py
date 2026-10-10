@@ -253,7 +253,6 @@ def run(params: ZAWClosedLoopWaveformCorrectionParams) -> Path:
             np.savez(path / "command.npz", time_s=theory.time_s, voltage_v=voltage)
             device = devices["z_control"]
             device.set_output(False, channel=channels["trigger"])
-            device.set_output_load("INFinity", channel=channels["trigger"])
             device.set_voltage_unit("VPP", channel=channels["trigger"])
             configure_optimal_control_trigger(params, device, channels["trigger"], output=False)
             readback = configure_verified_output(params, device, channels["z_field"], theory, candidate)
@@ -275,7 +274,6 @@ def run(params: ZAWClosedLoopWaveformCorrectionParams) -> Path:
             np.savez(iteration_dir / "command.npz", time_s=theory.time_s, voltage_v=applied.voltage_v)
             device = devices["z_control"]
             device.set_output(False, channel=channels["trigger"])
-            device.set_output_load("INFinity", channel=channels["trigger"])
             device.set_voltage_unit("VPP", channel=channels["trigger"])
             configure_optimal_control_trigger(params, device, channels["trigger"], output=False)
             readback = configure_verified_output(params, device, channels["z_field"], theory, applied)

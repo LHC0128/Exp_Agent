@@ -129,7 +129,7 @@ experiment_descriptions:
     Bloch 曲面拟合剩磁平衡点。
   noise-spectrum-xy: BellBloom中，dg_comp 两路使用正弦模式产生正交 XY 控制并测量噪声谱，Time_sequence_2 CH2
     方波经三通同步触发两路 Burst；每点关闭两路输出后调幅，按已校准的 Burst 相位重新开启并等待共用外触发，Pump 和共用触发源在扫描期间保持连续运行；设置每点采集时长和频率格间距，自动计算
-    Welch 段长；与已知可控噪声、Probe AM 实验共用全控制轴分析，独立验收可控响应与不可控背景；峰不可辨识时由通过两侧一致性及分块留出验证的远端平台提取背景，不插值外推失败点；测量时温度开关
+    Welch 段长；与已知可控噪声、Probe AM 实验共用全控制轴分析，独立验收可控响应与不可控背景；分离谱排除 0 Hz，低频扫描边界使用固定线宽/偏移的边界模型，方法记录保留但图中不额外标记，峰不可辨识时由通过两侧一致性及分块留出验证的远端平台提取背景，不插值外推失败点；测量时温度开关
     Output OFF，恢复等待时间可在高级参数中设置；结束时保留 Pump 载波与时序门控输出。
   noise-spectrum-xy-uncontrolled-probe-am: Probe 光路 AOM 由专用 DG4000 CH1 输出载波，CH2 任意波接同机背板外部
     AM 输入；XY 控制点逐点交替采集 Probe AM 噪声 OFF/ON，可选在两态期间持续向 Z 线圈注入独立配置的已知可控噪声，以检验较强可控背景下差谱能否提取。与正弦噪声谱、已知可控噪声实验共用全控制轴分析，优先独立提取不可控背景
@@ -139,7 +139,9 @@ experiment_descriptions:
   noise-spectrum-xy-v2: 测量 XY 控制条件下的噪声谱，dg_am 作为调制信号。
   photon-shot-noise: 测量光子散粒噪声随 Probe 光功率的变化，测量锁相放大器 XY 的噪声谱本底。
   projection-noise: 采集 GS200 输出打开时的 SDS CH1 PD 原始噪声谱，可选测量输出关闭对照组，并在主场标定预测中心附近自由拟合洛伦兹自旋噪声峰。
-  rf-sensitivity-aw: 测量射频灵敏度，dg_am 作为触发信号，使得 dg_comp 两路同相输出。
+  rf-sensitivity-aw: XY 直接任意波控制下测量 RF 灵敏度，最优控制波形从 theory_agent 的 oc_sens 版本目录选择，XYZ
+    共用时序信号2主输出触发。HF2 经 Demod0 Y → AuxOut2 → Signal Input2 → Demod3 回环，初始化含四级相位校准（Bell-Bloom、控制载波-Pump、扫描
+    Z RF 触发相位、Demod3），以 Demod3 X 响应斜率和 X 噪声 PSD 计算灵敏度，并用响应色散拟合得到的等效 HWHM 补偿洛伦兹频响；校相失败时停止并保存诊断。历史支持多次 X 响应与灵敏度谱对比、自定义英文图例及 PNG/PDF 导出。
   rf-sensitivity-aw-frequency: 测量射频频率响应，dg_am 作为调制信号。
   rf-sensitivity-constxy-frequency: AM调制的方测量频率响应。
   rf-sensitivity-direct-aw-frequency: 测量射频频率响应，dg_am 作为触发信号，使得 dg_comp 两路同相输出。
@@ -813,8 +815,6 @@ parameter_layouts:
     - dispersion_temp_switch_interval_points
     - dispersion_temp_switch_on_settle_s
     - dispersion_temp_switch_off_settle_s
-    - dispersion_fit_skip_start
-    - dispersion_fit_skip_end
     - rf_gate_amplitude
     - rf_gate_offset
     - rf_gate_delay
@@ -1732,8 +1732,6 @@ parameter_layouts:
     - RATIO_PASS_LOW
     - RATIO_PASS_HIGH
     - PUMP_MOD_AMPLITUDE
-    - DISPERSION_FIT_SKIP_START
-    - DISPERSION_FIT_SKIP_END
     - DISPERSION_TEMP_SWITCH_INTERVAL_POINTS
   noise-spectrum-xy-uncontrolled-probe-am:
     basic:
@@ -1826,3 +1824,75 @@ parameter_layouts:
     - HF2_DAQ_TC_S
     - HF2_DAQ_RATE_SA_S
     - PSD_NPERSEG
+  rf-sensitivity-aw:
+    basic:
+    - RUN_TAG
+    - RF_AMP_START
+    - RF_AMP_STOP
+    - RF_AMP_POINTS
+    - NOISE_N_AVG
+    - NOISE_DURATION
+    - TEMP_SWITCH_ON_LAG_S
+    - ARB_WAVEFORM_FILE
+    - AW_REPEAT_FREQ
+    - XY_TRIGGER_FREQ
+    - Z_RF_FREQ
+    - Z_V_TO_NT
+    - PUMP_MOD_FREQ
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.main_magnetic_field
+    - FIXED_PARAMS.temperature
+    - XY_AW_OUTPUT_VPP
+    - XY_CTRL_K_HZ_PER_V
+    - XY_CTRL_B_HZ
+    advanced:
+    - RF_SETTLE_TIME
+    - RESPONSE_N_AVG
+    - RESPONSE_AVG_INTERVAL
+    - NOISE_RATE
+    - NOISE_NPERSEG
+    - XY_AW_OUTPUT_OFFSET
+    - XY_CTRL_PHASE
+    - XY_CTRL_QUAD
+    - XY_CTRL_PHASE_TOL_DEG
+    - XY_CTRL_PHASE_MAX_ITER
+    - XY_CTRL_PHASE_MIN_R_V
+    - XY_CTRL_PHASE_MIN_R_RATIO
+    - XY_PHASE_SETTLE_TIME
+    - XY_TRIGGER_AMPLITUDE
+    - XY_TRIGGER_OFFSET
+    - XY_TRIGGER_DUTY
+    - XY_TRIGGER_PHASE
+    - Z_RF_AMPLITUDE_INIT
+    - Z_BURST_PHASE_INIT
+    - Z_PHASE_SCAN_START_DEG
+    - Z_PHASE_SCAN_STOP_DEG
+    - Z_PHASE_SCAN_STEP_DEG
+    - Z_PHASE_SCAN_DURATION_S
+    - PUMP_MOD_DUTY
+    - PUMP_MOD_AMPLITUDE
+    - RF_GATE_AMPLITUDE
+    - RF_GATE_OFFSET
+    - DEMOD0_IDX
+    - DEMOD0_OSC_IDX
+    - DEMOD0_SIGNAL_RANGE
+    - DEMOD0_ORDER
+    - DEMOD0_TC_CALIB
+    - DEMOD0_TC_MEAS
+    - DEMOD0_RATE
+    - DEMOD3_IDX
+    - DEMOD3_OSC_IDX
+    - DEMOD3_ADC_SELECT
+    - DEMOD3_ORDER
+    - DEMOD3_TC
+    - DEMOD3_RATE
+    - DEMOD3_NOISE_TC
+    - DEMOD3_NOISE_ORDER
+    - LOOPBACK_AUX_SCALE
+    - LOOPBACK_AUX_OFFSET_V
+    - LOOPBACK_INPUT_RANGE_V
+    - LOOPBACK_INPUT_AC
+    - LOOPBACK_INPUT_IMPEDANCE_OHM
+    - LOOPBACK_INPUT_DIFF
+    - FIXED_PARAMS.Temp_Switch

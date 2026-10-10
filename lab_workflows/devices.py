@@ -18,6 +18,8 @@ SIGNAL_GENERATOR_DRIVERS = {
     "DG4000": DG4000Instrument,
     "DG900": DG900Instrument,
 }
+_SIGNAL_GENERATOR_50_OHM_KEYS = frozenset({"Probe_AOM_Carrier", "Pump_modulation"})
+_SIGNAL_GENERATOR_CHANNELS = (1, 2)
 
 CURRENT_SOURCE_DRIVERS = {
     "GS200": GS200Instrument,
@@ -57,6 +59,22 @@ def _resolve_signal_generator_config(config: Any) -> Mapping[str, Any]:
     return matches[0]
 
 
+def signal_generator_load_policy(resource: str) -> dict[int, float | str]:
+    """返回统一负载策略：AOM 载波 50 Ω，其余通道高阻。"""
+    policy: dict[int, float | str] = {
+        channel: "INF" for channel in _SIGNAL_GENERATOR_CHANNELS
+    }
+    for mapping_key, config in load_mapping().items():
+        if config.get("instrument") != "signal_generator":
+            continue
+        if str(config.get("resource", "")) != str(resource):
+            continue
+        channel = int(config["channel"])
+        if mapping_key in _SIGNAL_GENERATOR_50_OHM_KEYS:
+            policy[channel] = 50.0
+    return policy
+
+
 def create_signal_generator(
     config: Any,
     *,
@@ -71,7 +89,11 @@ def create_signal_generator(
     if selected_channel is None:
         raise ValueError('Signal generator mapping is missing the channel field')
     driver = SIGNAL_GENERATOR_DRIVERS[model]
-    return driver(str(resource), channel=int(selected_channel))
+    return driver(
+        str(resource),
+        channel=int(selected_channel),
+        load_policy=signal_generator_load_policy(str(resource)),
+    )
 
 
 def create_dlc_pro(config: Mapping[str, Any]) -> DLCProInstrument:

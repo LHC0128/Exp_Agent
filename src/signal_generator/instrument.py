@@ -1,6 +1,6 @@
 import time
 import logging
-from typing import Optional, Literal, overload
+from typing import Mapping, Optional, Literal, overload
 
 import numpy as np
 import pyvisa
@@ -49,10 +49,12 @@ class DG4000Instrument:
     """
 
     def __init__(self, resource_string: str, timeout: int = DEFAULT_TIMEOUT,
-                 channel: int = 1):
+                 channel: int = 1,
+                 load_policy: Mapping[int, float | str] | None = None):
         self.resource_string = resource_string
         self.timeout = timeout
         self.channel = channel      # 实例默认通道
+        self._load_policy = dict(load_policy or {})
         self._rm: Optional[pyvisa.ResourceManager] = None
         self._inst: Optional[MessageBasedResource] = None
 
@@ -69,6 +71,8 @@ class DG4000Instrument:
         self._inst = self._rm.open_resource(self.resource_string)
         self._inst.timeout = self.timeout
         idn = self.idn()
+        for channel, load in self._load_policy.items():
+            self.set_output_load(load, channel=channel)
         logger.info("已连接: %s", idn)
 
     def disconnect(self) -> None:
@@ -396,7 +400,7 @@ class DG4000Instrument:
         """查询指定通道输出状态."""
         return self.query(f":OUTPut{self._ch(channel)}:STATe?") == "ON"
 
-    def set_output_load(self, ohms: float,
+    def set_output_load(self, ohms: float | str,
                         channel: Optional[int] = None) -> None:
         """设置输出负载阻抗 (Ω), INFinity 表示高阻."""
         ch = self._ch(channel)

@@ -31,8 +31,6 @@ class StaticSensitivityParams(ExperimentParams):
     dispersion_temp_switch_interval_points: int = parameter(default=5, external_name="dispersion_temp_switch_interval_points", label="色散温控恢复间隔点数", minimum=0, description="每组完成后恢复温控并固定等待；0 表示只在扫描结束恢复。")
     dispersion_temp_switch_on_settle_s: float = parameter(default=3.0, external_name="dispersion_temp_switch_on_settle_s", label="色散温控恢复等待", unit="s", minimum=0)
     dispersion_temp_switch_off_settle_s: float = parameter(default=1.0, external_name="dispersion_temp_switch_off_settle_s", label="色散关闭温控后等待", unit="s", minimum=0)
-    dispersion_fit_skip_start: int = parameter(default=0, external_name="dispersion_fit_skip_start", label="色散拟合起始剔除点数", minimum=0)
-    dispersion_fit_skip_end: int = parameter(default=0, external_name="dispersion_fit_skip_end", label="色散拟合终止剔除点数", minimum=0, description="两端剔除后至少保留 7 个有效电压点。")
     pump_mod_freq: float = parameter(default=90000.0, external_name="pump_mod_freq", label="Pump 调制频率", unit="Hz", group="basic", minimum=1)
     pump_mod_amplitude: float = parameter(default=0.18, external_name="pump_mod_amplitude", label="Pump 载波幅度", unit="Vpp", group="basic", minimum=0, maximum=0.18, safety_key="Pump_modulation")
     pump_mod_duty: float = parameter(default=5.0, external_name="pump_mod_duty", label="Pump 占空比", unit="%", group="basic", minimum=1, maximum=50, safety_key="PUMP_MOD_DUTY")
@@ -72,7 +70,7 @@ class StaticSensitivityParams(ExperimentParams):
                 errors.append(f"{name} 必须为有限数值")
         if self.dispersion_start_v >= self.dispersion_stop_v:
             errors.append("色散扫描起点必须小于终点")
-        for name in ("dispersion_steps", "dispersion_temp_switch_interval_points", "dispersion_fit_skip_start", "dispersion_fit_skip_end"):
+        for name in ("dispersion_steps", "dispersion_temp_switch_interval_points"):
             if type(getattr(self, name)) is not int:
                 errors.append(f"{name} 必须为整数")
         try:
@@ -81,8 +79,6 @@ class StaticSensitivityParams(ExperimentParams):
             errors.append(str(exc))
         if self.hf2_demod_idx not in range(6):
             errors.append("HF2 解调器索引必须在 0 到 5 之间")
-        if self.dispersion_steps - self.dispersion_fit_skip_start - self.dispersion_fit_skip_end < 7:
-            errors.append("色散两端剔除后至少需要 7 点")
         if self.temp_switch != 5.0:
             errors.append("温控恢复电平必须为 5 V")
         if self.z_v_to_nt <= 0:

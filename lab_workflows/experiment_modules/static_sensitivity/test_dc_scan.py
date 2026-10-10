@@ -83,10 +83,11 @@ class DCScanTests(unittest.TestCase):
         self.assertIn("dispersion_steps", fields)
         self.assertIn("dispersion_duration_s", fields)
         self.assertFalse(fields & {"dispersion_samples_per_step", "dispersion_sample_interval_s"})
+        self.assertFalse(fields & {"dispersion_fit_skip_start", "dispersion_fit_skip_end"})
         self.assertFalse(fields & {"ramp_freq", "ramp_symmetry", "daq_duration", "daq_trigger_channel", "time_sequence"})
         for overrides in (dict(dispersion_steps=6), dict(dispersion_step_settle_s=-1),
                           dict(dispersion_start_v=11), dict(dispersion_stop_v=-1),
-                          dict(dispersion_duration_s=0), dict(dispersion_fit_skip_start=35),
+                          dict(dispersion_duration_s=0),
                           dict(dispersion_duration_s=float("nan")), dict(hf2_demod_rate=float("inf")),
                           dict(hf2_demod_rate=1, dispersion_duration_s=0.1), dict(temp_switch=0), dict(hf2_demod_idx=6),
                           dict(run_tag="../越界"), dict(gs200_current_ranges=[0.01, 0.01]),
@@ -260,7 +261,7 @@ class DCScanTests(unittest.TestCase):
         from ..noise_spectrum_xy_known_noise.dispersion import fit_dispersion_curve
         offsets = np.linspace(-0.2, 0.2, 81)
         y = analysis._dispersive(offsets, 0.0003, 0.025, 0.007, 0.001)
-        fit = fit_dispersion_curve(offsets, y, skip_start_points=0, skip_end_points=0, k_z_hz_per_v=11703.6778)
+        fit = fit_dispersion_curve(offsets, y, k_z_hz_per_v=11703.6778)
         self.assertAlmostEqual(fit["center_v"], 0.007, places=7)
         self.assertAlmostEqual(fit["slope_v_per_hz"], 0.0003 / 0.025**2 / 11703.6778, places=10)
 
@@ -391,19 +392,16 @@ class DCScanTests(unittest.TestCase):
                 self.assertEqual(summary["fit_valid"], completed >= 7)
                 self.assertTrue((root / "results" / "dispersion_fit.npz").is_file())
 
-    def test_skip_endpoints_partial_and_old_ramp_rejection(self):
+    def test_all_valid_points_and_old_ramp_rejection(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             make_run(root)
             path = root / "experiment_config.yaml"
             config = yaml.safe_load(path.read_text(encoding="utf-8"))
-            config["parameters"].update(dispersion_fit_skip_start=2, dispersion_fit_skip_end=3)
-            path.write_text(yaml.safe_dump(config), encoding="utf-8")
             summary = analysis.analyze(root)
-            self.assertEqual(summary["fit_points"], 76)
+            self.assertEqual(summary["fit_points"], 81)
             with np.load(root / "results" / "dispersion_fit.npz") as data:
-                self.assertFalse(data["fit_mask"][:2].any())
-                self.assertFalse(data["fit_mask"][-3:].any())
+                self.assertTrue(data["fit_mask"].all())
             config["schema_version"] = 1
             config.pop("acquisition_method")
             path.write_text(yaml.safe_dump(config), encoding="utf-8")

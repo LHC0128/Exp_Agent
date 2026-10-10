@@ -47,7 +47,7 @@ export function ToolsPage() {
       <div className="tool-grid">
         <article>
           <small>REFERENCE CLOCK</small><h2>参考时钟同步</h2>
-          <p>按共享时钟配置逐台设置并回读信号发生器与 HF2。</p>
+          <p>先将同一外置 10 MHz 参考源接入各信号发生器与 HF2，包含 Pump 调制信号源；再按设备库配置设置并回读参考时钟。</p>
           <button disabled={blocked} onClick={startClock}>{blocked ? "其他硬件任务运行中" : "开始同步"}</button>
         </article>
         <article>

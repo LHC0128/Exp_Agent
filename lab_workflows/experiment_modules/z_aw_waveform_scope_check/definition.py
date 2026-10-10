@@ -33,7 +33,7 @@ DEFINITION = ExperimentDefinition(
     ),
     safety_notes=(
         "只控制 Z 任意波、共同触发和 SDS，不启动 GS200、激光、TEC 或 HF2。",
-        "正常、取消和异常结束均将 Z CH1 与 Time_sequence_2 CH2 设置为 DC 0 V、Output OFF。",
+        "正常、取消和异常结束将 Z CH1 设置为 DC 0 V、Output OFF，Time_sequence_2 CH2 保持当前状态。",
         "波形、触发电平和输出范围在写入前执行安全校验。",
     ),
     schema_version=ZAWWaveformScopeCheckParams.schema_version,
