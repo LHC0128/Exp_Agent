@@ -20,10 +20,10 @@ DEFINITION = ExperimentDefinition(
     family="z-field-calibration",
     variant="mx-keithley-6221",
     description=(
-        "Keithley 6221 独占 Z 主线圈并按可配置电流轴扫描，以 Y RF 共振中心标定自由斜率和截距。"
+        'Keithley 6221 独占 Z 主线圈并按可配置电流轴扫描，以 Y RF 共振中心标定自由斜率和截距。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
     ),
     data_type="Mx_Keithley_6221_Main_Field_Calibration",
-    required_devices=("Keithley 6221", "GS200", "DG900", "DG4000", "HF2"),
+    required_devices=("Keithley 6221", "GS200", "DG900", "DG4000", "锁相放大器"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Keithley_6221_Main_Field_Calibration.py",
     analysis_program="experiments/Mx_Keithley_6221_Main_Field_Calibration_plot.py",

@@ -124,7 +124,7 @@ class DetectionChainFrequencyResponseParams(ExperimentParams):
     hf2_demod_idx: int = parameter(
         default=0,
         external_name="HF2_DEMOD_IDX",
-        label="HF2 Demod 索引",
+        label="锁相放大器 Demod 索引",
         group="advanced",
         minimum=0,
         description="与 XY 控制噪声谱实验一致，使用 Demod0 的 Y 信号"
@@ -133,7 +133,7 @@ class DetectionChainFrequencyResponseParams(ExperimentParams):
     hf2_osc_freq_hz: float = parameter(
         default=90000.0,
         external_name="HF2_OSC_FREQ_HZ",
-        label="HF2 解调参考频率",
+        label="锁相放大器 解调参考频率",
         unit="Hz",
         group="basic",
         minimum=1000.0,
@@ -143,7 +143,7 @@ class DetectionChainFrequencyResponseParams(ExperimentParams):
     hf2_signal_range_v: float = parameter(
         default=2.0,
         external_name="HF2_SIGNAL_RANGE_V",
-        label="HF2 输入量程",
+        label="锁相放大器 输入量程",
         unit="V",
         group="advanced",
         minimum=0.01
@@ -152,7 +152,7 @@ class DetectionChainFrequencyResponseParams(ExperimentParams):
     hf2_demod_order: int = parameter(
         default=8,
         external_name="HF2_DEMOD_ORDER",
-        label="HF2 Demod 滤波器阶数",
+        label="锁相放大器 Demod 滤波器阶数",
         group="advanced",
         minimum=1,
         maximum=8
@@ -191,7 +191,7 @@ class DetectionChainFrequencyResponseParams(ExperimentParams):
     hf2_daq_tc_s: float = parameter(
         default=7.85e-7,
         external_name="HF2_DAQ_TC_S",
-        label="HF2 采集解调时间常数",
+        label="锁相放大器 采集解调时间常数",
         unit="s",
         group="advanced",
         minimum=1e-7,

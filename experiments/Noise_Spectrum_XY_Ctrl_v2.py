@@ -9,6 +9,8 @@
 # 启用后图表支持鼠标拖拽平移、滚轮缩放、框选放大
 # 如遇到显示问题，可尝试 %matplotlib inline 切换回静态模式
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
 import sys
 # 自动定位项目根目录（以 params/ 目录为标记）
@@ -51,6 +53,7 @@ print("所有库导入成功")
 # %% Cell 4
 # 加载物理量→仪器映射
 MAPPING = load_mapping(project_root)
+require_lockin_compatibility('noise-spectrum-xy-v2', globals(), mapping=MAPPING)
 
 # 加载安全限值
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
@@ -217,12 +220,7 @@ try:
 
     # ---- HF2: 锁相放大器 ----
     hf2_cfg = MAPPING["lockin_r"]
-    hfi = HF2Instrument(
-        host=hf2_cfg.get("host", "127.0.0.1"),
-        port=hf2_cfg.get("port", 8005),
-        api_level=1,
-        device_id=hf2_cfg["device_id"],
-    )
+    hfi = create_lockin(hf2_cfg)
     hfi.connect()
     print(f"HF2 已连接: {hfi.idn}")
     hfi.set_extclk(True)

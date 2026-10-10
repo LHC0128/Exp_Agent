@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.devices import create_lockin
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -42,12 +43,7 @@ def calibrate_demod0_safely(
     hf_cfg = mapping["lockin_r"]
     z = create_signal_generator(z_cfg)
     temp = create_signal_generator(temp_cfg)
-    hf2 = HF2Instrument(
-        host=hf_cfg.get("host", "127.0.0.1"),
-        port=hf_cfg.get("port", 8005),
-        api_level=1,
-        device_id=hf_cfg["device_id"],
-    )
+    hf2 = create_lockin(hf_cfg)
     session = DeviceSession()
     restore_errors: list[str] = []
     shared_result = None

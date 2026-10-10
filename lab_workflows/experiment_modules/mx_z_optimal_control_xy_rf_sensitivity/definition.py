@@ -22,11 +22,10 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-z-optimal-control-xy-bias-grid",
     description=(
-        "在 Z 周期最优控制下扫描 X/Y 补偿偏置，先在网格中心完成一次 RF 校相，"
-        "再逐点测量 RF 灵敏度并报告最佳补偿点。"
+        '在 Z 周期最优控制下扫描 X/Y 补偿偏置，先在网格中心完成一次 RF 校相，再逐点测量 RF 灵敏度并报告最佳补偿点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
     ),
     data_type="Mx_Z_Optimal_Control_XY_RF_Sensitivity",
-    required_devices=("GS200", "DG900", "DG4000", "HF2"),
+    required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     required_mapping_keys=OPTIMAL_CONTROL,
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Z_Optimal_Control_XY_RF_Sensitivity.py",
@@ -36,13 +35,13 @@ DEFINITION = ExperimentDefinition(
         "X_magnetic_field 输出 X DC 补偿；Y_magnetic_field 与 rf_coil 共用通道，Y 网格值作为 RF DC offset。",
         "Time_sequence_2 需分配到 Z 控制和 Y RF DG4000 的 Ext Trig，两路 Burst 使用下降沿。",
         "RF 相位只在 XY 扫描中心校准一次，实体触发线缆需运行前人工核对。",
-        "HF2 Demod0 按固定 Y RF 频率采集；幅度扫描和噪声均按每个 XY 点分别保存。",
+        "锁相放大器 Demod0 按固定 Y RF 频率采集；幅度扫描和噪声均按每个 XY 点分别保存。",
     ),
     safety_notes=(
         "所有 X/Y offset、Y RF 完整包络、Z 控制波形和触发电平在输出前执行安全校验。",
         "R 点质量失败按配置重试；耗尽后标记该 XY 点无效并继续，其余设备错误立即终止。",
         "正常、取消和异常结束均保持共同触发当前状态，关闭归零 X 场和 Y RF，保持 Z 最优控制输出。",
-        "GS200 恢复运行前完整状态，温控恢复为 5 V DC + Output ON，Pump/Probe、Pump 调制和 HF2 设置保留。",
+        "GS200 恢复运行前完整状态，温控恢复为 5 V DC + Output ON，Pump/Probe、Pump 调制和 锁相放大器 设置保留。",
         "分析得到的最佳 XY 补偿点只写入结果，不自动切换硬件。",
     ),
     schema_version=MxZOptimalControlXYRFSensitivityParams.schema_version,

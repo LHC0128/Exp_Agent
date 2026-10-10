@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -148,12 +150,7 @@ def _connect_devices(
     devices["hf2"] = session.connect(
         "hf2",
         f"hf2://{hcfg.get('host', '127.0.0.1')}/{hcfg['device_id']}",
-        lambda: HF2Instrument(
-            host=hcfg.get("host", "127.0.0.1"),
-            port=int(hcfg.get("port", 8005)),
-            api_level=1,
-            device_id=hcfg["device_id"],
-        ),
+        lambda: create_lockin(hcfg),
     )
     tcfg = mapping["temperature"]
     devices["tec"] = session.connect_optional(
@@ -470,6 +467,7 @@ def safe_shutdown(
 
 def run(params: MxKeithley6221OptimalControlXYZBalanceParams) -> Path:
     """执行 6221 外部触发最优控制下的 XYZ DC 三维网格扫描。"""
+    require_lockin_compatibility('mx-keithley-6221-optimal-control-xyz-balance', params.to_external())
     root = find_project_root()
     if not params.confirm_gs200_connected:
         raise ValueError("必须确认 GS200 已接入 Z 主磁场线圈（6221 接 Z 小磁场线圈）")

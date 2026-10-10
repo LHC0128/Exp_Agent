@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import shutil
 from dataclasses import replace
 from pathlib import Path
@@ -120,7 +122,7 @@ def _connect_devices(
     devices["temp_switch"] = session.connect("temp_switch", tcfg["resource"], lambda: create_signal_generator(tcfg))
     channels["temp_switch"] = int(tcfg["channel"])
     hcfg = mapping["lockin_r"]
-    devices["hf2"] = session.connect("hf2", f"hf2://{hcfg.get('host', '127.0.0.1')}/{hcfg['device_id']}", lambda: HF2Instrument(host=hcfg.get("host", "127.0.0.1"), port=int(hcfg.get("port", 8005)), api_level=1, device_id=hcfg["device_id"]))
+    devices["hf2"] = session.connect("hf2", f"hf2://{hcfg.get('host', '127.0.0.1')}/{hcfg['device_id']}", lambda: create_lockin(hcfg))
     tcfg = mapping["temperature"]
     devices["tec"] = session.connect_optional("tec", tcfg["resource"], lambda: TECInstrument(port=tcfg["resource"]), device_label="TEC103")
     return devices, channels
@@ -537,6 +539,7 @@ def _source_snapshot(
 
 
 def run(params: MxKeithley6221OptimalControlRFParams) -> Path:
+    require_lockin_compatibility('mx-keithley-6221-optimal-control-rf-sensitivity', params.to_external())
     root = find_project_root()
     if not params.confirm_gs200_connected:
         raise ValueError("必须确认 GS200 已接入 Z 主磁场线圈（6221 接 Z 小磁场线圈）")

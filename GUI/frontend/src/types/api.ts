@@ -170,6 +170,7 @@ export type DeviceConfig = {
 export type DeviceLibraryDocument = {
   schema_version: number;
   revision: string;
+  network_resources: string[];
   devices: Record<string, DeviceConfig>;
 };
 export type PhysicalMappingConfig = {
@@ -190,8 +191,18 @@ export type PhysicalMappingsDocument = {
   mapping: Record<string, PhysicalMappingConfig>;
   constraints: MappingConstraints;
 };
+export type DeviceLibrarySaveResult = DeviceLibraryDocument & {
+  physical_mappings: PhysicalMappingsDocument;
+};
 export type VisaDiscovery = {
-  devices: Array<{ resource: string; idn: string; instrument: string; model: string }>;
+  devices: Array<{
+    resource: string | null;
+    idn: string;
+    instrument: string;
+    model: string;
+    serial_number?: string;
+    connection?: Record<string, unknown>;
+  }>;
   errors: Array<{ resource: string; message: string }>;
 };
 
@@ -426,7 +437,7 @@ export type TecSnapshot = Omit<Device, "type" | "channels"> & {
 };
 
 export type Hf2Snapshot = Omit<Device, "type" | "channels"> & {
-  type: "HF2";
+  type: "HF2" | "MFLI";
   demod_idx: number;
   x: number;
   y: number;
@@ -439,6 +450,28 @@ export type Hf2Snapshot = Omit<Device, "type" | "channels"> & {
   order: number;
   harmonic: number;
   phase_shift: number;
+  oscillator: number;
+  shared_demodulators: number[];
+  input_select: number;
+  capabilities: {
+    demodulators: number; oscillators: number; voltage_inputs: number;
+    signal_outputs: number; aux_outputs: number; max_frequency_hz: number;
+    scope_channels: number; scope_max_samples: number; scope_max_rate: number;
+    options: string[];
+  };
+  signal_outputs: LockinSignalOutput[];
+  aux_outputs: LockinAuxOutput[];
+};
+
+export type LockinSignalOutput = {
+  index: number; enabled: boolean; range_v: number; offset_v: number;
+  amplitudes_peak_v: number[]; mixer_enabled: boolean[];
+  load: string; differential: boolean; safety_key: string; writable: boolean;
+};
+export type LockinAuxOutput = {
+  index: number; demod_index: number; output_select: number;
+  scale: number; offset_v: number; value_v: number;
+  safety_key: string; writable: boolean; hardware_limits: boolean;
 };
 
 export type DeviceSnapshot =

@@ -43,6 +43,9 @@
 # - **安全关闭**: 仅断开 TEC，其余设备保持连接
 
 # %% Cell 1
+from lab_workflows.devices import create_lockin
+from lockin_amplifier import AuxOutConfig, auxout
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
 import sys
 # 自动定位项目根目录（以 params/ 目录为标记）
@@ -81,6 +84,7 @@ print("所有库导入成功")
 # %% Cell 2
 # ========== 加载配置 ==========
 MAPPING = load_mapping(project_root)
+require_lockin_compatibility('rf-sensitivity-aw-frequency', globals(), mapping=MAPPING)
 
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
@@ -342,12 +346,7 @@ try:
 
     # ---- HF2: 锁相放大器 ----
     hf2_cfg = MAPPING["lockin_r"]
-    hfi = HF2Instrument(
-        host=hf2_cfg.get("host", "127.0.0.1"),
-        port=hf2_cfg.get("port", 8005),
-        api_level=1,
-        device_id=hf2_cfg["device_id"],
-    )
+    hfi = create_lockin(hf2_cfg)
     hfi.connect()
     print(f"HF2 已连接: {hfi.idn}")
     hfi.set_extclk(True)
@@ -646,13 +645,10 @@ print(f"信号输入 {SIGIN2_INDEX} (Signal Input 2, 物理回环接收端): "
 # ---- 1f. 配置 Aux Out 2 → Demod 0 Y (物理回环发送端) ----
 if CONFIGURE_AUXOUT2_TO_DEMOD0_Y:
     auxout_path = hfi.aux_out_path(AUXOUT_INDEX)
-    # HF2 LabOne: outputselect = demod_index * 4 + signal_type
-    #   signal_type: 0=X, 1=Y, 2=R, 3=Theta
-    auxout_outputselect = AUXOUT_SOURCE_DEMOD_IDX * 4 + AUXOUT_SOURCE_SELECT
-    hfi.set_int(f"{auxout_path}/outputselect", auxout_outputselect)
-    hfi.set_double(f"{auxout_path}/scale", AUXOUT_SCALE)
-    hfi.set_double(f"{auxout_path}/offset", AUXOUT_OFFSET)
-    hfi.sync()
+    auxout.configure_aux_output(hfi, AuxOutConfig(
+        aux_index=AUXOUT_INDEX, demod_index=AUXOUT_SOURCE_DEMOD_IDX,
+        output_select=AUXOUT_SOURCE_SELECT, scale=AUXOUT_SCALE, offset=AUXOUT_OFFSET,
+    ))
     sig_type_str = {0: "X", 1: "Y", 2: "R", 3: "Theta"}[AUXOUT_SOURCE_SELECT]
     print(f"Aux Out {AUXOUT_INDEX+1} (auxouts/{AUXOUT_INDEX}): "
           f"Demod{AUXOUT_SOURCE_DEMOD_IDX} {sig_type_str}, "
@@ -662,8 +658,8 @@ if CONFIGURE_AUXOUT2_TO_DEMOD0_Y:
     auxout_actual_outputselect = hfi.get_int(f"{auxout_path}/outputselect")
     auxout_actual_scale = hfi.get_double(f"{auxout_path}/scale")
     auxout_actual_offset = hfi.get_double(f"{auxout_path}/offset")
-    auxout_actual_demod = auxout_actual_outputselect // 4
-    auxout_actual_sig = auxout_actual_outputselect % 4
+    auxout_actual_demod = hfi.get_int(f"{auxout_path}/demodselect")
+    auxout_actual_sig = auxout_actual_outputselect
     auxout_actual_sig_str = {0: "X", 1: "Y", 2: "R", 3: "Theta"}[auxout_actual_sig]
     print(f"  读回: outputselect={auxout_actual_outputselect} "
           f"(Demod{auxout_actual_demod} {auxout_actual_sig_str}), "

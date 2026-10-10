@@ -36,6 +36,8 @@
 # **扫描**：PUMP_POWER 列表中每个 DC 电压 → 一次 shot → npz
 
 # %% Cell 1
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
 import sys
 # 自动定位项目根目录（以 params/ 目录为标记）
@@ -70,6 +72,7 @@ print("所有库导入成功")
 # %% Cell 2
 # ========== 加载配置文件 ==========
 MAPPING = load_mapping(project_root)
+require_lockin_compatibility('bb-power-scan-burst', globals(), mapping=MAPPING)
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
 
@@ -279,10 +282,7 @@ try:
     if USE_HF2_MONITOR:
         from lockin_amplifier import HF2Instrument, demod, SignalInputConfig, DemodulatorConfig
         lia_cfg = MAPPING.get("lockin_r") or MAPPING.get("lockin_xy")
-        hfi = HF2Instrument(
-            host=lia_cfg["host"], port=lia_cfg["port"],
-            api_level=1, device_id=lia_cfg["device_id"],
-        )
+        hfi = create_lockin(lia_cfg)
         hfi.connect()
         hfi.set_extclk(True)
         print(f"HF2 已连接: {lia_cfg['device_id']}")

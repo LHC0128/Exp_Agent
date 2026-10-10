@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import math
 import os
 import time
@@ -51,8 +53,7 @@ def connect_devices(session: DeviceSession, mapping):
     config = mapping["lockin_r"]
     devices["hf2"] = session.connect(
         "hf2", f"hf2://{config.get('host', '127.0.0.1')}/{config['device_id']}",
-        lambda: HF2Instrument(host=config.get("host", "127.0.0.1"), port=config.get("port", 8005),
-                              api_level=1, device_id=config["device_id"]),
+        lambda: create_lockin(config),
     )
     config = mapping["temperature"]
     devices["tec"] = session.connect_optional(
@@ -238,6 +239,7 @@ def safe_shutdown(params, devices, channels, restore_phase):
 
 
 def run(params: StaticSensitivityParams) -> Path:
+    require_lockin_compatibility('static-sensitivity', params.to_external())
     if any(key in os.environ for key in ("LAB_STATIC_CONFIG", "LAB_STATIC_ACQUISITION_ONLY")):
         raise ValueError("旧 LAB_STATIC_* 桥接已移除，请清除这些环境变量，使用 params/experiments/static-sensitivity.yaml")
     errors = params.validate()

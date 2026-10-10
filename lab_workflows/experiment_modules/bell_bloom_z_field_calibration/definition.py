@@ -25,7 +25,7 @@ def validate_hardware(mapping):
         if mapping[key]["model"] != "DG4000":
             raise ValueError(f"{key} 需要已确认的 DG4000 硬件方案")
     if mapping["lockin_r"]["demod_idx"] != 0:
-        raise ValueError("本实验只使用 HF2 Demod0，请将 lockin_r 映射到 Demod0")
+        raise ValueError("本实验只使用锁相放大器 Demod0，请将 lockin_r 映射到 Demod0")
 
 
 def preflight(values):
@@ -40,15 +40,15 @@ def preflight(values):
 DEFINITION = ExperimentDefinition(
     id=EXPERIMENT_ID, title="Bell Bloom Z 磁场频率标定",
     category="calibration", family="z-field-calibration", variant="bell-bloom-gated",
-    description="扫描 Z DC 与 Pump 调制/解调频率，拟合 R 共振中心并标定带符号的 Hz/V。",
-    data_type=DATA_TYPE, required_devices=("GS200", "DG4000", "HF2"),
+    description="扫描 Z DC 与 Pump 调制/解调频率，拟合 R 共振中心并标定带符号的 Hz/V。锁相设备在设备库中全系统统一选择；启动前检查完整扫频窗口是否兼容。",
+    data_type=DATA_TYPE, required_devices=("GS200", "DG4000", "锁相放大器"),
     required_mapping_keys=MAPPING_KEYS, execution_mode="typed_workflow",
     acquisition_program="experiments/Bell_Bloom_Z_Field_Calibration.py",
     analysis_program="experiments/Bell_Bloom_Z_Field_Calibration_plot.py",
     wiring_notes=("Pump 100 MHz 载波采用 Gated/External Burst，CH2 的 0–5 V 脉冲接外部门控输入。",
-                  "Z DC 由映射指定的 DG4000 通道控制；HF2 Demod0 同步解调并只采集 R，X/Y 输出关闭。"),
+                  "Z DC 由映射指定的 DG4000 通道控制；锁相放大器 Demod0 同步解调并只采集 R，X/Y 输出关闭。"),
     safety_notes=("每频点关闭温控采集后恢复 5 V ON；TEC 不可用时由外部软件控温。",
-                  "结束时 Z 归零关闭，Pump 脉冲和 HF2 恢复零偏参考频率，保留主场及光功率。"),
+                  "结束时 Z 归零关闭，Pump 脉冲和锁相放大器恢复零偏参考频率，保留主场及光功率。"),
     schema_version=1, schema_provider=ADAPTER.schema, defaults_saver=ADAPTER.save_defaults,
     preflight_runner=preflight, experiment_runner=ADAPTER.run,
     analysis_runner=ADAPTER.analyze, auto_analyze=True,

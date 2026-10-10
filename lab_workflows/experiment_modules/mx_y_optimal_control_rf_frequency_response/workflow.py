@@ -1,5 +1,6 @@
 """Mx Y 最优控制 RF 频率响应采集工作流（含可选常数 Z 控制对照）。"""
 from __future__ import annotations
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
@@ -152,6 +153,7 @@ def _scan_constant_control(params, run_dir, devices, channels, actual_rate, devi
     np.savez(run_dir.raw / "constant_control_frequency_scan.npz", frequency_hz=frequencies, phase_deg=np.full(frequencies.size, CONSTANT_CONTROL_PHASE_DEG), **row, accepted_attempt_index=attempts, accepted_file=files, actual_rate_sa_s=np.float64(actual_rate), r_std_threshold_v=np.float64(params.r_bad_point_std_threshold_v), constant_z_voltage_v=np.float64(plan.target_voltage_v), constant_z_extrapolated=np.uint8(plan.extrapolated))
 
 def run(params: MxYOptimalControlRFFrequencyResponseParams) -> Path:
+    require_lockin_compatibility('mx-y-optimal-control-rf-frequency-response', params.to_external())
     root = find_project_root(); mapping = load_mapping(root)
     corrected = load_corrected_control_waveform(root, params.corrected_control_source_run)
     applied = applied_control_from_corrected(corrected)

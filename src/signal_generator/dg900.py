@@ -15,11 +15,17 @@ VISA resource 中含有 "DG9" 标识符（DG4000 系列为 "DG4E"）。
     dg.disconnect()
 """
 
+import csv
 import logging
+import math
 from typing import Mapping, Optional
 
+import numpy as np
 import pyvisa
 from pyvisa.resources import MessageBasedResource
+
+from signal_generator import _visa
+from signal_generator.types import BurstMode, ModType, OutputPolarity, VoltageUnit, WaveShape, normalize_output_load
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +39,9 @@ class DG900Instrument:
     MIN_ARB_POINTS = 32
     MAX_ARB_POINTS = 16 * 1024 * 1024
     MAX_ARB_CHUNK_BYTES = 20_000
+    DEFAULT_ARB_POINTS = 16_384
+    MIN_SAMPLE_RATE = 1e-6
+    MAX_SAMPLE_RATE = 312.5e6
 
     _SHAPE_NAMES = {
         "SIN": "SINusoid",
@@ -78,6 +87,12 @@ class DG900Instrument:
         self._rm: Optional[pyvisa.ResourceManager] = None
         self._inst: Optional[MessageBasedResource] = None
         self._selected_mod_types: dict[int, str] = {}
+        self._arb_file_points: dict[str, int] = {}
+
+    @property
+    def load_policy(self) -> dict[int, float | str]:
+        """连接时待应用的通道负载策略。"""
+        return dict(self._load_policy)
 
     # ------------------------------------------------------------------
     # 内部工具
@@ -101,9 +116,13 @@ class DG900Instrument:
         self._rm = pyvisa.ResourceManager()
         self._inst = self._rm.open_resource(self.resource_string)
         self._inst.timeout = self.timeout
-        idn = self.idn()
-        for channel, load in self._load_policy.items():
-            self.set_output_load(load, channel=channel)
+        try:
+            idn = self.idn()
+            for channel, load in self._load_policy.items():
+                self.set_output_load(load, channel=channel)
+        except Exception:
+            self.disconnect()
+            raise
         logger.info("已连接 DG900: %s", idn)
 
     def disconnect(self) -> None:
@@ -115,10 +134,7 @@ class DG900Instrument:
                 pass
             self._inst = None
         if self._rm:
-            try:
-                self._rm.close()
-            except Exception:
-                pass
+            # pyvisa-py 的后端是进程级单例，rm.close() 会摧毁其他设备的会话
             self._rm = None
 
     def __enter__(self) -> "DG900Instrument":
@@ -213,26 +229,43 @@ class DG900Instrument:
             "phase": number(fields[4]),
         }
 
-    def apply_wave(self, shape: str, frequency: Optional[float] = None,
-                   amplitude: Optional[float] = None,
-                   offset: Optional[float] = None,
-                   phase: Optional[float] = None,
-                   channel: Optional[int] = None) -> None:
-        """使用 APPLy 命令一次设置基础波形参数。"""
+    def apply_wave(self, shape, channel=None, **kwargs):
+        """使用 DG4000 的 freq/amp/offset/phase 参数配置波形。"""
+        unknown = kwargs.keys() - {"freq", "amp", "offset", "phase", "delay"}
+        if unknown:
+            raise TypeError(f"未知 APPLy 参数 {sorted(unknown)}；旧 frequency/amplitude 请迁移为 freq/amp")
+        if kwargs.get("delay") is not None:
+            raise ValueError("DG912 Pro APPLy 不支持 DG4000 的脉冲延时参数 delay")
+        if shape == "PULSe" and kwargs.get("phase") is not None:
+            raise ValueError("共同 APPLy 脉冲接口不包含相位，请单独调用 set_phase_adjust()")
         ch = self._ch(channel)
-        values = (frequency, amplitude, offset, phase)
-        params = ["DEF" if value is None else str(value) for value in values]
-        self.write(f":SOURce{ch}:APPLy:{shape} {','.join(params)}")
+        native_shape = {"CUSTom": "ARBitrary", "USER": "ARBitrary"}.get(shape, shape)
+        if native_shape not in {"SINusoid", "SQUare", "RAMP", "PULSe", "NOISe", "DC", "ARBitrary"}:
+            raise ValueError(f"DG912 Pro 不支持此 APPLy 波形: {shape}")
+        params: list[str] = []
+        if shape == "NOISe":
+            if kwargs.get("amp") is not None:
+                params = ["DEF", str(kwargs["amp"])]
+                if kwargs.get("offset") is not None:
+                    params.append(str(kwargs["offset"]))
+        else:
+            for name in ("freq", "amp", "offset", "phase"):
+                if kwargs.get(name) is None:
+                    break
+                params.append(str(kwargs[name]))
+        suffix = f" {','.join(params)}" if params else ""
+        self.write(f":SOURce{ch}:APPLy:{native_shape}{suffix}")
 
-    def set_shape(self, shape: str, channel: Optional[int] = None) -> None:
-        self.write(f":SOURce{self._ch(channel)}:FUNCtion {shape}")
+    def set_shape(self, shape: WaveShape, channel: Optional[int] = None) -> None:
+        native_shape = {"CUSTom": "ARBitrary", "USER": "ARBitrary"}.get(shape, shape)
+        self.write(f":SOURce{self._ch(channel)}:FUNCtion {native_shape}")
 
     def get_shape(self, channel: Optional[int] = None) -> str:
         return self.get_wave_parameters(channel)["shape"]
 
-    def set_frequency(self, frequency: float,
+    def set_frequency(self, freq: float,
                       channel: Optional[int] = None) -> None:
-        self.write(f":SOURce{self._ch(channel)}:FREQuency {frequency:e}")
+        self.write(f":SOURce{self._ch(channel)}:FREQuency {freq:e}")
 
     def get_frequency(self, channel: Optional[int] = None) -> float:
         return self.query_float(f":SOURce{self._ch(channel)}:FREQuency?")
@@ -258,10 +291,10 @@ class DG900Instrument:
     def get_phase(self, channel: Optional[int] = None) -> float:
         return self.query_float(f":SOURce{self._ch(channel)}:PHASe?")
 
-    def set_phase_adjust(self, phase: float,
+    def set_phase_adjust(self, angle: float,
                          channel: Optional[int] = None) -> None:
         """兼容 DG4000 的相位方法名。"""
-        self.set_phase(phase, channel)
+        self.set_phase(angle, channel)
 
     def get_phase_adjust(self, channel: Optional[int] = None) -> float:
         return self.get_phase(channel)
@@ -292,9 +325,9 @@ class DG900Instrument:
             f":SOURce{self._ch(channel)}:FUNCtion:RAMP:SYMMetry?"
         )
 
-    def set_pulse_width(self, seconds: float,
+    def set_pulse_width(self, width: float,
                         channel: Optional[int] = None) -> None:
-        self.write(f":SOURce{self._ch(channel)}:FUNCtion:PULSe:WIDTh {seconds:e}")
+        self.write(f":SOURce{self._ch(channel)}:FUNCtion:PULSe:WIDTh {width:e}")
 
     def get_pulse_width(self, channel: Optional[int] = None) -> float:
         return self.query_float(
@@ -365,7 +398,7 @@ class DG900Instrument:
                 return mod_type
         return None
 
-    def set_mod_type(self, mod_type: str,
+    def set_mod_type(self, mod_type: ModType,
                      channel: Optional[int] = None) -> None:
         """选择兼容接口后续 ``set_mod_state`` 使用的调制类型。"""
         if mod_type not in self.MOD_TYPES:
@@ -426,56 +459,57 @@ class DG900Instrument:
     def get_mod_am_depth(self, channel: Optional[int] = None) -> float:
         return self._get_mod_float("AM", "DEPTh", channel)
 
-    def set_mod_fm_deviation(self, value: float,
+    def set_mod_fm_deviation(self, deviation: float,
                              channel: Optional[int] = None) -> None:
-        self._set_mod_value("FM", "DEViation", value, channel)
+        self._set_mod_value("FM", "DEViation", deviation, channel)
 
     def get_mod_fm_deviation(self, channel: Optional[int] = None) -> float:
         return self._get_mod_float("FM", "DEViation", channel)
 
-    def set_mod_pm_deviation(self, value: float,
+    def set_mod_pm_deviation(self, deviation: float,
                              channel: Optional[int] = None) -> None:
-        self._set_mod_value("PM", "DEViation", value, channel)
+        self._set_mod_value("PM", "DEViation", deviation, channel)
 
     def get_mod_pm_deviation(self, channel: Optional[int] = None) -> float:
         return self._get_mod_float("PM", "DEViation", channel)
 
-    def set_mod_fsk_frequency(self, value: float,
+    def set_mod_fsk_frequency(self, freq: float,
                               channel: Optional[int] = None) -> None:
-        self._set_mod_value("FSKey", "FREQuency", value, channel)
+        self._set_mod_value("FSKey", "FREQuency", freq, channel)
 
     def get_mod_fsk_frequency(self, channel: Optional[int] = None) -> float:
         return self._get_mod_float("FSKey", "FREQuency", channel)
 
-    def set_mod_fsk_rate(self, value: float,
+    def set_mod_fsk_rate(self, rate: float,
                          channel: Optional[int] = None) -> None:
-        self._set_mod_value("FSKey", "INTernal:RATE", value, channel)
+        self._set_mod_value("FSKey", "INTernal:RATE", rate, channel)
 
     def get_mod_fsk_rate(self, channel: Optional[int] = None) -> float:
         return self._get_mod_float("FSKey", "INTernal:RATE", channel)
 
-    def set_mod_fsk_polarity(self, value: str,
+    def set_mod_fsk_polarity(self, polarity: OutputPolarity,
                              channel: Optional[int] = None) -> None:
-        self._set_mod_value("FSKey", "POLarity", value, channel)
+        self._set_mod_value("FSKey", "POLarity", polarity, channel)
 
     def get_mod_fsk_polarity(self, channel: Optional[int] = None) -> str:
         return self._get_mod_text("FSKey", "POLarity", channel)
 
-    def set_mod_pwm_deviation_dcycle(self, value: float,
+    def set_mod_pwm_deviation_dcycle(self, percent: float,
                                      channel: Optional[int] = None) -> None:
-        self._set_mod_value("PWM", "DEViation:DCYCle", value, channel)
+        self._set_mod_value("PWM", "DEViation:DCYCle", percent, channel)
 
     def get_mod_pwm_deviation_dcycle(self,
                                      channel: Optional[int] = None) -> float:
         return self._get_mod_float("PWM", "DEViation:DCYCle", channel)
 
-    def set_mod_source(self, mod_type: str, source: str,
+    def set_mod_source(self, source: str,
                        channel: Optional[int] = None) -> None:
+        ch = self._ch(channel)
+        mod_type = self._selected_mod_types.get(ch) or self.get_mod_type(ch)
         self._set_mod_value(mod_type, "SOURce", source, channel)
 
-    def get_mod_source(self, mod_type: str,
-                       channel: Optional[int] = None) -> str:
-        return self._get_mod_text(mod_type, "SOURce", channel)
+    def get_mod_source(self, channel: Optional[int] = None) -> str:
+        return self._get_mod_text(self.get_mod_type(channel), "SOURce", channel)
 
     def set_mod_internal_frequency(self, mod_type: str, value: float,
                                    channel: Optional[int] = None) -> None:
@@ -509,7 +543,7 @@ class DG900Instrument:
     def get_burst_state(self, channel: Optional[int] = None) -> bool:
         return self.query_bool(f":SOURce{self._ch(channel)}:BURSt:STATe?")
 
-    def set_burst_mode(self, mode: str,
+    def set_burst_mode(self, mode: BurstMode,
                        channel: Optional[int] = None) -> None:
         ch = self._ch(channel)
         if str(mode).upper().startswith("INF"):
@@ -531,18 +565,18 @@ class DG900Instrument:
                 pass
         return mode
 
-    def set_burst_ncycles(self, cycles,
+    def set_burst_ncycles(self, n,
                           channel: Optional[int] = None) -> None:
-        self.write(f":SOURce{self._ch(channel)}:BURSt:NCYCles {cycles}")
+        self.write(f":SOURce{self._ch(channel)}:BURSt:NCYCles {n}")
 
     def get_burst_ncycles(self, channel: Optional[int] = None):
         value = self.query(f":SOURce{self._ch(channel)}:BURSt:NCYCles?")
         numeric = None if value.strip().upper().startswith("INF") else float(value)
         return "INFinity" if numeric is None or numeric >= 9e37 else int(numeric)
 
-    def set_burst_phase(self, phase: float,
+    def set_burst_phase(self, angle: float,
                         channel: Optional[int] = None) -> None:
-        self.write(f":SOURce{self._ch(channel)}:BURSt:PHASe {phase}")
+        self.write(f":SOURce{self._ch(channel)}:BURSt:PHASe {angle}")
 
     def get_burst_phase(self, channel: Optional[int] = None) -> float:
         return self.query_float(f":SOURce{self._ch(channel)}:BURSt:PHASe?")
@@ -602,17 +636,24 @@ class DG900Instrument:
         value = self.query(f":OUTPut{ch}:STATe?").strip().upper()
         return value in {"1", "ON"}
 
-    def set_output_load(self, ohms,
+    def set_output_load(self, ohms: float | str,
                         channel: Optional[int] = None) -> None:
-        value = "INFinity" if str(ohms).upper() in {"INF", "INFINITY"} else ohms
+        """设置负载并回读验证；高阻使用 INF，避免长参数拼写差异。"""
+        value = normalize_output_load(ohms)
+        expected = None if value == "INF" else float(value)
         self.write(f":OUTPut{self._ch(channel)}:LOAD {value}")
+        actual = float(self.get_output_load(channel))
+        matches = actual >= 9e37 if expected is None else math.isclose(actual, expected, rel_tol=1e-6)
+        if not matches:
+            target = "High-Z" if expected is None else f"{expected:g} Ω"
+            raise RuntimeError(
+                f"DG900 CH{self._ch(channel)} 负载设置失败：期望 {target}，实际 {actual:g} Ω"
+            )
 
     def get_output_load(self, channel: Optional[int] = None) -> str:
-        return self._expand_value(
-            self.query(f":OUTPut{self._ch(channel)}:LOAD?")
-        )
+        return self.query(f":OUTPut{self._ch(channel)}:LOAD?")
 
-    def set_voltage_unit(self, unit: str,
+    def set_voltage_unit(self, unit: VoltageUnit,
                          channel: Optional[int] = None) -> None:
         normalized = str(unit).upper()
         if normalized not in {"VPP", "VRMS", "DBM"}:
@@ -633,7 +674,7 @@ class DG900Instrument:
     def get_sync_state(self, channel: Optional[int] = None) -> bool:
         return self.query_bool(f":OUTPut{self._ch(channel)}:SYNC?")
 
-    def set_ref_clock_source(self, source: str = "EXTernal") -> None:
+    def set_ref_clock_source(self, source: str) -> None:
         """设置参考时钟源 (INTernal / EXTernal)."""
         self.write(f":SYSTem:ROSCillator:SOURce {source}")
 
@@ -649,7 +690,7 @@ class DG900Instrument:
                    offset: float = 0.0, phase: float = 0.0,
                    channel: Optional[int] = None) -> None:
         ch = self._ch(channel)
-        self.apply_wave("SINusoid", freq, amplitude, offset, phase, ch)
+        self.apply_wave("SINusoid", channel=ch, freq=freq, amp=amplitude, offset=offset, phase=phase)
         self.set_output(True, ch)
 
     def setup_square(self, freq: float, amplitude: float,
@@ -657,7 +698,7 @@ class DG900Instrument:
                      phase: float = 0.0,
                      channel: Optional[int] = None) -> None:
         ch = self._ch(channel)
-        self.apply_wave("SQUare", freq, amplitude, offset, phase, ch)
+        self.apply_wave("SQUare", channel=ch, freq=freq, amp=amplitude, offset=offset, phase=phase)
         self.set_square_dcycle(dcycle, ch)
         self.set_output(True, ch)
 
@@ -666,7 +707,7 @@ class DG900Instrument:
                    phase: float = 0.0,
                    channel: Optional[int] = None) -> None:
         ch = self._ch(channel)
-        self.apply_wave("RAMP", freq, amplitude, offset, phase, ch)
+        self.apply_wave("RAMP", channel=ch, freq=freq, amp=amplitude, offset=offset, phase=phase)
         self.set_ramp_symmetry(symmetry, ch)
         self.set_output(True, ch)
 
@@ -674,7 +715,7 @@ class DG900Instrument:
                     offset: float = 0.0, width: Optional[float] = None,
                     channel: Optional[int] = None) -> None:
         ch = self._ch(channel)
-        self.apply_wave("PULSe", freq, amplitude, offset, None, ch)
+        self.apply_wave("PULSe", channel=ch, freq=freq, amp=amplitude, offset=offset)
         if width is not None:
             self.set_pulse_width(width, ch)
         self.set_output(True, ch)
@@ -682,19 +723,19 @@ class DG900Instrument:
     def setup_noise(self, amplitude: float, offset: float = 0.0,
                     channel: Optional[int] = None) -> None:
         ch = self._ch(channel)
-        self.apply_wave("NOISe", None, amplitude, offset, None, ch)
+        self.apply_wave("NOISe", channel=ch, amp=amplitude, offset=offset)
         self.set_output(True, ch)
 
     @staticmethod
-    def _arb_codes(values) -> list[int]:
-        codes = []
-        for raw in values:
-            value = max(-1.0, min(1.0, float(raw)))
-            scale = 32767 if value >= 0 else 32768
-            codes.append(int(round(value * scale)))
-        return codes
+    def _arb_codes(values) -> np.ndarray:
+        if np.iscomplexobj(values):
+            raise ValueError("任意波数据必须是实数")
+        values = np.asarray(values, dtype=np.float64)
+        if values.ndim != 1 or not np.isfinite(values).all() or np.any(np.abs(values) > 1):
+            raise ValueError("任意波数据必须是一维、有限且位于 [-1, 1]，不会裁剪或重采样")
+        return np.rint(values * np.where(values >= 0, 32767, 32768)).astype(np.int16)
 
-    def _arb_chunks(self, codes: list[int]) -> list[str]:
+    def _arb_chunks(self, codes: np.ndarray) -> list[str]:
         chunks: list[str] = []
         current: list[str] = []
         size = 0
@@ -752,7 +793,7 @@ class DG900Instrument:
             if not output:
                 self.set_output(False, ch)
             self.send_arbitrary_waveform(y_values, ch)
-            self.apply_wave("ARBitrary", freq, amplitude, offset, phase, ch)
+            self.apply_wave("ARBitrary", channel=ch, freq=freq, amp=amplitude, offset=offset, phase=phase)
             if output:
                 self.set_output(True, ch)
         except Exception:
@@ -766,3 +807,185 @@ class DG900Instrument:
     def all_off(self) -> None:
         for channel in (1, 2):
             self.set_output(False, channel)
+
+    def set_counter(self, enable=True):
+        """打开或关闭频率计。"""
+        self.write(f":COUNter:STATe {'ON' if enable else 'OFF'}")
+
+    def get_counter_measure(self):
+        """返回频率计的原始测量字符串。"""
+        self._ensure_connected()
+        return self._inst.query(":COUNter:MEASure?")
+
+    def get_screenshot(self, format="BMP", save_path=None, timeout_ms=15000):
+        """完整读取 BMP/PNG 图片，保存后仍返回图片字节。"""
+        return _visa.get_screenshot(self, format, save_path, timeout_ms, supports_png=True)
+
+    def recover_connection(self, drain_reads=3):
+        """清理通信队列并返回身份，不复位仪器。"""
+        return _visa.recover_connection(self, drain_reads)
+
+    def recover_connection_with_reset(self, wait_seconds=8.0):
+        """显式复位仪器并返回身份，会恢复仪器默认设置。"""
+        if wait_seconds is None:
+            raise ValueError("wait_seconds 必须是有限的非负数")
+        self._selected_mod_types.clear()
+        return _visa.recover_connection(self, 3, wait_seconds=wait_seconds)
+
+    @classmethod
+    def reset_stuck_resource(cls, resource_string, wait_seconds=8.0):
+        """无需预先连接即可显式复位资源，操作后关闭临时连接。"""
+        device = cls(resource_string)
+        try:
+            return device.recover_connection_with_reset(wait_seconds)
+        finally:
+            device.disconnect()
+
+    def set_mod_am_dssc(self, state, channel=None):
+        """设置 AM 载波抑制，不改变调制开关。"""
+        self._set_mod_value("AM", "DSSC", "ON" if state else "OFF", channel)
+
+    @staticmethod
+    def _file_path(path: str) -> str:
+        """统一内部路径，防止别名绕过覆盖检查。"""
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("仪器文件路径不能为空")
+        path = path.strip().replace("/", "\\")
+        if any(ord(char) < 32 or char in '\";' for char in path):
+            raise ValueError("仪器文件路径包含无效字符")
+        if ":" not in path:
+            path = "INT:\\" + path
+        drive, relative = path.split(":", 1)
+        if drive.upper() not in {"INT", "USB"} or not relative.startswith("\\") or ":" in relative:
+            raise ValueError("路径必须位于 INT:\\ 或 USB:\\")
+        parts: list[str] = []
+        for part in relative.split("\\"):
+            if part in {"", "."}:
+                continue
+            if part == "..":
+                if not parts:
+                    raise ValueError("路径不能越过存储器根目录")
+                parts.pop()
+            else:
+                parts.append(part)
+        normalized = drive.upper() + ":\\" + "\\".join(parts)
+        if len(normalized) > 200:
+            raise ValueError("仪器文件路径不能超过 200 个字符")
+        return normalized
+
+    def list_files(self, path="INT:\\"):
+        """返回 name、attribute 和 size_bytes；字节大小不能用于推算点数。"""
+        path = self._file_path(path)
+        response = self.query(f':MMEMory:CATalog:ALL? "{path}"')
+        try:
+            fields = next(csv.reader([response], skipinitialspace=True, strict=True))
+        except csv.Error as exc:
+            raise ValueError(f"目录返回格式无效: {response!r}") from exc
+        if len(fields) < 2:
+            raise ValueError(f"目录返回格式无效: {response!r}")
+        try:
+            if min(int(fields[0]), int(fields[1])) < 0:
+                raise ValueError
+            result = []
+            for entry in fields[2:]:
+                name, attribute, size = entry.rsplit(",", 2)
+                size_bytes = int(size)
+                if not name or size_bytes < 0:
+                    raise ValueError
+                result.append({"name": name, "attribute": attribute, "size_bytes": size_bytes})
+        except ValueError as exc:
+            raise ValueError(f"目录返回格式无效: {response!r}") from exc
+        self.raise_for_errors()
+        return result
+
+    def delete_file(self, file_path):
+        """删除仪器文件并使本实例对应点数记录失效。"""
+        file_path = self._file_path(file_path)
+        self._arb_file_points.pop(file_path.casefold(), None)
+        self.write(f':MMEMory:DELete "{file_path}"')
+        self.wait_for_operation_complete()
+        self.raise_for_errors()
+
+    def upload_arb_wave(self, file_path, data, advanced=False, *, overwrite=False):
+        """严格上传 .arb 文件，全部确认成功后返回并记录准确点数。"""
+        file_path = self._file_path(file_path)
+        if not file_path.lower().endswith(".arb"):
+            raise ValueError("上传文件名必须以 .arb 结尾")
+        codes = self._arb_codes(data)
+        count = len(codes)
+        if advanced:
+            if not self.MIN_ARB_POINTS <= count <= self.MAX_ARB_POINTS:
+                raise ValueError(f"高级任意波点数必须在 {self.MIN_ARB_POINTS}～{self.MAX_ARB_POINTS} 之间")
+        elif count != self.DEFAULT_ARB_POINTS:
+            raise ValueError(f"普通任意波必须恰好 {self.DEFAULT_ARB_POINTS} 点")
+        folder, name = file_path.rsplit("\\", 1)
+        existing = self.list_files(folder + "\\")
+        if not overwrite and any(item["name"].casefold() == name.casefold() for item in existing):
+            raise FileExistsError(f"仪器文件已存在: {file_path}；覆盖需显式设置 overwrite=True")
+        chunks = self._arb_chunks(codes)
+        self._ensure_connected()
+        instrument = self._inst
+        old_timeout = instrument.timeout
+        old_read, old_write = instrument.read_termination, instrument.write_termination
+        key = file_path.casefold()
+        self._arb_file_points.pop(key, None)
+        try:
+            instrument.timeout = max(self.timeout, 60_000)
+            instrument.read_termination = instrument.write_termination = "\n"
+            self.clear_status()
+            for index, chunk in enumerate(chunks):
+                flag = "END" if index == len(chunks) - 1 else "HEADer" if index == 0 else "CONTinue"
+                self.write(f':MMEMory:TRACe:ARB:DATA:DAC "{file_path}",{flag},{chunk}')
+                self.wait_for_operation_complete()
+                self.raise_for_errors()
+        finally:
+            instrument.timeout = old_timeout
+            instrument.read_termination, instrument.write_termination = old_read, old_write
+        self._arb_file_points[key] = count
+        return count
+
+    def get_arb_wave_points(self, file_path):
+        """仅返回本实例成功上传的点数；未知文件由 config_arb_wave(points=...) 指定。"""
+        file_path = self._file_path(file_path)
+        try:
+            return self._arb_file_points[file_path.casefold()]
+        except KeyError as exc:
+            raise KeyError(f"没有 {file_path} 的成功上传记录，请显式提供 points") from exc
+
+    def config_arb_wave(self, channel, file_path, freq=None, sample_rate=None,
+                        vpp=1.0, offset=0.0, phase=0.0, *, points=None):
+        """配置已存文件，16384 点且指定 freq 时用普通模式，其余用高级模式。"""
+        if isinstance(channel, bool) or not isinstance(channel, (int, np.integer)) or channel not in (1, 2):
+            raise ValueError("DG912 Pro 通道只能是 1 或 2")
+        if (freq is None) == (sample_rate is None):
+            raise ValueError("freq 和 sample_rate 必须且只能提供一个")
+        file_path = self._file_path(file_path)
+        if not file_path.lower().endswith((".arb", ".csv")):
+            raise ValueError("此接口支持 .arb/.csv，.txt 加载需要未提供的分隔符和数据类型参数")
+        points = self.get_arb_wave_points(file_path) if points is None else points
+        if isinstance(points, bool) or not isinstance(points, (int, np.integer)) or not self.MIN_ARB_POINTS <= points <= self.MAX_ARB_POINTS:
+            raise ValueError(f"points 必须是 {self.MIN_ARB_POINTS}～{self.MAX_ARB_POINTS} 之间的整数")
+        if not all(math.isfinite(value) for value in (vpp, offset, phase)) or vpp <= 0:
+            raise ValueError("幅度必须为有限正数，偏置和相位必须有限")
+        if freq is not None and (not math.isfinite(freq) or freq <= 0):
+            raise ValueError("freq 必须为有限正数")
+        advanced = sample_rate is not None or points != self.DEFAULT_ARB_POINTS
+        if advanced:
+            sample_rate = points * freq if sample_rate is None else sample_rate
+            if not math.isfinite(sample_rate) or not self.MIN_SAMPLE_RATE <= sample_rate <= self.MAX_SAMPLE_RATE:
+                raise ValueError(f"高级采样率需在 {self.MIN_SAMPLE_RATE}～{self.MAX_SAMPLE_RATE} Sa/s，不会自动降频")
+        prefix = f":SOURce{channel}"
+        self.clear_status()
+        self.write(f"{prefix}:FUNCtion:SEQuence:ARB:STATe {int(advanced)}")
+        if advanced:
+            self.write(f'{prefix}:FUNCtion:SEQuence:ARB:LOAD "{file_path}"')
+            self.write(f"{prefix}:FUNCtion:SEQuence:ARB:SRATe {sample_rate}")
+        else:
+            self.set_shape("CUSTom", channel)
+            self.write(f':MMEMory:LOAD:DATA {channel},"{file_path}"')
+            self.set_frequency(freq, channel)
+        self.set_amplitude(vpp, channel)
+        self.set_offset(offset, channel)
+        self.set_phase_adjust(phase, channel)
+        self.wait_for_operation_complete()
+        self.raise_for_errors()

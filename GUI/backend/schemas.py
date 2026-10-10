@@ -277,7 +277,7 @@ class TecDeviceSnapshot(DeviceBase):
 
 
 class Hf2DeviceSnapshot(DeviceBase):
-    type: Literal["HF2"]
+    type: Literal["HF2", "MFLI"]
     demod_idx: int
     x: float
     y: float
@@ -290,6 +290,12 @@ class Hf2DeviceSnapshot(DeviceBase):
     order: int
     harmonic: int
     phase_shift: float
+    oscillator: int
+    shared_demodulators: list[int]
+    input_select: int
+    capabilities: dict[str, JsonValue]
+    signal_outputs: list[dict[str, JsonValue]]
+    aux_outputs: list[dict[str, JsonValue]]
 
 
 DeviceSnapshot = Annotated[
@@ -530,6 +536,77 @@ class ControlTargetCatalog(StrictModel):
 class ControlRevisionBody(StrictModel):
     device_library_revision: str
     physical_mapping_revision: str
+
+
+class LockinSelectionBody(ControlRevisionBody):
+    device_id: str
+
+
+class LockinDemodSettings(StrictModel):
+    phase_deg: float | None = Field(default=None, allow_inf_nan=False)
+    frequency_hz: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    rate: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    time_constant: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    order: int | None = Field(default=None, ge=1, le=8)
+    harmonic: int | None = Field(default=None, ge=1)
+    enabled: bool | None = None
+
+
+class LockinSignalOutputSettings(StrictModel):
+    index: int = Field(ge=0, le=1)
+    amplitude_index: int = Field(default=0, ge=0, le=5)
+    amplitude_peak_v: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    offset_v: float | None = Field(default=None, allow_inf_nan=False)
+    mixer_enabled: bool | None = None
+    enabled: bool | None = None
+
+
+class LockinAuxOutputSettings(StrictModel):
+    index: int = Field(ge=0, le=3)
+    demod_index: int = Field(ge=0, le=5)
+    output_select: int = Field(ge=0, le=3)
+    scale: float = Field(allow_inf_nan=False)
+    offset_v: float = Field(allow_inf_nan=False)
+
+
+class LockinSettings(StrictModel):
+    demod: LockinDemodSettings | None = None
+    signal_output: LockinSignalOutputSettings | None = None
+    aux_output: LockinAuxOutputSettings | None = None
+
+    @model_validator(mode="after")
+    def require_one_setting(self):
+        groups = [self.demod, self.signal_output, self.aux_output]
+        if sum(group is not None for group in groups) != 1:
+            raise ValueError("一次请求只设置解调器、Signal Output 或 Aux Output 中的一类")
+        group = next(group for group in groups if group is not None)
+        values = group.model_dump(exclude_unset=True)
+        if not values or all(value is None for value in values.values()):
+            raise ValueError("至少提供一个有效设置")
+        if any(value is None for value in values.values()):
+            raise ValueError("设置值不能为 null")
+        if self.signal_output is not None and not set(values).intersection({"amplitude_peak_v", "offset_v", "mixer_enabled", "enabled"}):
+            raise ValueError("Signal Output 至少提供一个控制量")
+        return self
+
+
+class ControlLockinBody(ControlRevisionBody):
+    settings: LockinSettings
+
+
+class LockinCaptureSettings(StrictModel):
+    mode: Literal["demod", "scope"]
+    duration: float = Field(default=1.0, gt=0, le=60, allow_inf_nan=False)
+    points: int = Field(default=1000, ge=2, le=1_000_000)
+    sources: list[Literal["voltage0", "voltage1", "aux_input0", "aux_input1"]] = Field(default_factory=lambda: ["voltage0"], min_length=1, max_length=2)
+    sample_rate_hz: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    length: int = Field(default=2048, ge=16, le=5_000_000)
+    records: int = Field(default=1, ge=1, le=10)
+    timeout: float = Field(default=30, gt=0, le=120, allow_inf_nan=False)
+
+
+class ControlLockinCaptureBody(ControlRevisionBody):
+    settings: LockinCaptureSettings
 
 
 class ControlGeneratorBody(ControlRevisionBody):

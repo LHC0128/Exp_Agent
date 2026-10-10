@@ -24,6 +24,8 @@
 - 修改静磁场流程：`lab_workflows/experiment_modules/static_sensitivity/`；静磁场也必须通过统一实验注册表调用。
 - 修改设备时钟目标：新模式使用 `params/devices.yaml`；`params/clock_sources.yaml` 仅用于旧入口兼容。
 - 修改时钟算法：`lab_workflows/clock_sync.py`。
+- 独立参考时钟同步先全部写入再统一回读，不改输出负载；“输出负载初始化”单独调用 `initialize_output_loads()`，两项工具都复用全局硬件队列。
+- 修改仪器驱动先看 `src/signal_generator/README.md` 或 `src/lockin_amplifier/README.md`；设备切换复用 `components/instruments/mappingDevices.ts` 的同机与共享通道联动，不在页面复制规则。
 - 新增实验：使用仓库 `expcodegen` Skill，增加共享参数模型、工作流和分析器，再注册统一实验定义；默认在实验中心路由下提供运行/历史双 Tab。优先复用通用 API，历史摘要确有需要时补齐最小接口，不另建专用导航。
 - 新增普通实验参数：为 dataclass 字段补充 UI metadata，前端动态表单会自动呈现。
 - 修改实验中心标签：通过 `params/experiment_catalog.yaml` 或标签管理 API；不得通过重命名标签改变实验稳定 ID、`data_type` 或历史目录。
@@ -34,7 +36,7 @@
 - 当前检出没有根目录 `tests/`，该目录也被 `.gitignore` 忽略；有本地测试时先核对文件和使用的测试工具，不要直接运行依赖该目录的发现命令。
 - Skill：基础检查运行 `agent_exp_env\Scripts\python.exe .agents\skills\expcodegen\scripts\validate_experiment.py --root .`；新增实验还必须按 Skill 的 `references/delivery-validation.md` 执行 `--delivery` 文档、路由和历史接口验证。
 - 语法：对修改的实验入口运行 `python -m py_compile`。
-- 前端：在 `GUI/frontend/` 运行 `npm run build` 与 `npm test`（Vitest + Testing Library）。
+- 前端：在 `GUI/frontend/` 运行 `node node_modules/typescript/bin/tsc --noEmit`、`npm run build` 与 `npm test`（Vitest + Testing Library）。
 - API 类型：后端 schema 变更后在 `GUI/` 运行 `..\agent_exp_env\Scripts\python.exe -m backend.openapi_dump > frontend/openapi.json`，再在 `GUI/frontend/` 运行 `npm run generate:api`，并检查 `GUI/frontend/src/types/openapi.d.ts` 变更。
 - 未连接硬件时，至少完成所有无硬件测试和生产构建。
 - 仅修改文档时核对路径、入口、启动命令与根目录协作说明，不需要执行仪器采集或新增测试脚本。

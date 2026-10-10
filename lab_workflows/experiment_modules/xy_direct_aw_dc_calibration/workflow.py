@@ -16,6 +16,8 @@
 # 数据目录：`data/XY_DirectAW_DC_Calibration/<MMDD_HHMM_direct_aw_dc_cal>/`
 
 # %% Cell 1
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
 import sys
 
@@ -79,6 +81,7 @@ print("实验库导入完成")
 # %% Cell 2
 # ========== 配置与安全限值 ==========
 MAPPING = load_mapping(project_root)
+require_lockin_compatibility('xy-direct-aw-dc-calibration', globals(), mapping=MAPPING)
 MAX_ARB_POINTS = signal_generator_max_arb_points(MAPPING["X_magnetic_field"])
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
@@ -374,12 +377,7 @@ try:
     hfi = session.connect(
         "hf2",
         f"hf2://{hf2_cfg.get('host', '127.0.0.1')}/{hf2_cfg['device_id']}",
-        lambda: HF2Instrument(
-            host=hf2_cfg.get("host", "127.0.0.1"),
-            port=hf2_cfg.get("port", 8005),
-            api_level=1,
-            device_id=hf2_cfg["device_id"],
-        ),
+        lambda: create_lockin(hf2_cfg),
     )
     devices["hf2"] = hfi
     clock_verification = synchronize_connected_clocks(

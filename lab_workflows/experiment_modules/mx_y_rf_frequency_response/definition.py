@@ -20,18 +20,16 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-y-frequency",
     description=(
-        "在 Mx 工作点用模式 1 的固定幅度扫频方式测量 Y RF 频率响应曲线；"
-        "RF 幅度可作为嵌套扫描轴，分析端用统一布洛赫稳态线形拟合，覆盖"
-        "弱驱动 Lorentzian 与强驱动 Rabi 劈裂双峰。"
+        '在 Mx 工作点用模式 1 的固定幅度扫频方式测量 Y RF 频率响应曲线；RF 幅度可作为嵌套扫描轴，分析端用统一布洛赫稳态线形拟合，覆盖弱驱动 Lorentzian 与强驱动 Rabi 劈裂双峰。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
     ),
     data_type="Mx_Y_RF_Frequency_Response",
-    required_devices=("GS200", "DG900", "DG4000", "HF2"),
+    required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Y_RF_Frequency_Response.py",
     analysis_program="experiments/Mx_Y_RF_Frequency_Response_plot.py",
     wiring_notes=(
         "接线与工作点和 mx-y-rf-sensitivity 相同：主场/Pump 沿 Z，Probe 沿 X；rf_coil CH2 产生 Y 向 RF 场，X_magnetic_field CH1 保持关闭。",
-        "HF2 Demod0 使用 Input 1，振荡器跟随 Y RF 频率直接解调；DAQ 只订阅 R。",
+        "锁相放大器 Demod0 使用 Input 1，振荡器跟随 Y RF 频率直接解调；DAQ 只订阅 R。",
         "时钟按 devices.yaml 中各设备的 reference_clock 设置，并在输出前回读验证。",
     ),
     safety_notes=(

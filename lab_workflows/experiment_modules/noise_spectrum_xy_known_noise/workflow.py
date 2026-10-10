@@ -8,6 +8,8 @@
 
 # %% Cell 3
 # ========== 交互式绘图模式 ==========
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import matplotlib
 matplotlib.use("TkAgg")
 from pathlib import Path
@@ -97,6 +99,7 @@ print("所有库导入成功")
 # %% Cell 4
 # 加载物理量→仪器映射
 MAPPING = load_mapping(project_root)
+require_lockin_compatibility('noise-spectrum-xy-known-noise', globals(), mapping=MAPPING)
 
 # 加载安全限值
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
@@ -297,12 +300,7 @@ try:
     hfi = session.connect(
         "hf2",
         f"hf2://{hf2_cfg.get('host', '127.0.0.1')}/{hf2_cfg['device_id']}",
-        lambda: HF2Instrument(
-            host=hf2_cfg.get("host", "127.0.0.1"),
-            port=hf2_cfg.get("port", 8005),
-            api_level=1,
-            device_id=hf2_cfg["device_id"],
-        ),
+        lambda: create_lockin(hf2_cfg),
     )
     print(f"HF2 已连接: {hfi.idn}")
     devices["hf2"] = hfi

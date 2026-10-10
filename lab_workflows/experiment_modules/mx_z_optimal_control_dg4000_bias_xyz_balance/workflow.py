@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -409,6 +410,7 @@ def safe_shutdown(
 
 def run(params: MxZOptimalControlDG4000BiasXYZBalanceParams) -> Path:
     """执行 DG4000 Z 偏置下的 XYZ 网格扫描。"""
+    require_lockin_compatibility('mx-z-optimal-control-dg4000-bias-xyz-balance', params.to_external())
     root = find_project_root()
     model_errors = params.validate(root)
     if model_errors:

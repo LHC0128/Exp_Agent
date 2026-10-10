@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -315,6 +316,7 @@ def safe_shutdown(
 
 def run(params: MxZOptimalControlXYZBalanceParams) -> Path:
     """执行固定 Z 最优控制下的 XYZ DC 三维网格扫描。"""
+    require_lockin_compatibility('mx-z-optimal-control-xyz-balance', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     theory = load_theory_control(

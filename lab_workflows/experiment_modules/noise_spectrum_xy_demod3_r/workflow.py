@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import math
 import time
 from pathlib import Path
@@ -115,6 +117,7 @@ def run() -> Path:
     project_root = find_project_root()
     params = load_runtime_params(NoiseSpectrumXYDemod3RParams)
     mapping = load_mapping(project_root)
+    require_lockin_compatibility('noise-spectrum-xy-demod3-r', {**globals(), **locals()}, mapping=mapping)
     limits = load_safety_limits(project_root)
     control_axis, envelope_axis, demod3_axis = build_scan_axes(params)
     estimated_s = estimate_scan_duration_s(params)
@@ -193,12 +196,7 @@ def run() -> Path:
         hfi = session.connect(
             "hf2",
             hf2_resource,
-            lambda: HF2Instrument(
-                host=hf2_cfg.get("host", "127.0.0.1"),
-                port=hf2_cfg.get("port", 8005),
-                api_level=1,
-                device_id=hf2_cfg["device_id"],
-            ),
+            lambda: create_lockin(hf2_cfg),
         )
         clock_sources = synchronize_connected_clocks(
             {

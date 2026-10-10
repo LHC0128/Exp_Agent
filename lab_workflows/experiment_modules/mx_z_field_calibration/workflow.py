@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -190,12 +192,7 @@ def _connect_devices(
     devices["hf2"] = session.connect(
         "hf2",
         f"hf2://{hf_cfg.get('host', '127.0.0.1')}/{hf_cfg['device_id']}",
-        lambda: HF2Instrument(
-            host=hf_cfg.get("host", "127.0.0.1"),
-            port=int(hf_cfg.get("port", 8005)),
-            api_level=1,
-            device_id=hf_cfg["device_id"],
-        ),
+        lambda: create_lockin(hf_cfg),
     )
 
     tec_cfg = mapping["temperature"]
@@ -999,6 +996,7 @@ def run_calibration(
 
 def run(params: MxZFieldCalibrationParams) -> Path:
     """执行原有 Mx Z 电压标定实验。"""
+    require_lockin_compatibility('mx-z-field-calibration', params.to_external())
     return run_calibration(params)
 
 

@@ -88,7 +88,7 @@ def acquire_dispersion(params: StaticSensitivityParams, z, z_channel: int, temp,
             data["point_finished_unix_s"][index] = time.time()
             z.set_output(False, channel=z_channel)
             save_scan(path, data)
-            if index + 1 == offsets.size or (interval > 0 and (index + 1) % interval == 0):
+            if interval > 0 and (index + 1) % interval == 0:
                 set_temp_switch(temp, temp_channel, True)
                 wait_for_settle(params.dispersion_temp_switch_on_settle_s)
             report_runtime_progress(

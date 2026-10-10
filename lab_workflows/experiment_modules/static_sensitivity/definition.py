@@ -20,9 +20,9 @@ DEFINITION = ExperimentDefinition(
     category="measurement",
     family="static-field",
     variant="dispersion-noise",
-    description="Z 直流逐点扫描，稳定后按采样率和每点采集时间连续记录 X/Y/R 波形并取中位数，分组恢复温控；采集 Z 输出关闭时的多量程 Y 噪声，离线使用全部有效色散点拟合线形并计算静磁场灵敏度。",
+    description='Z 直流逐点扫描，稳定后按采样率和每点采集时间连续记录 X/Y/R 波形并取中位数，分组恢复温控；采集 Z 输出关闭时的多量程 Y 噪声，离线使用全部有效色散点拟合线形并计算静磁场灵敏度。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。',
     data_type="Static_Magnetic_Field_Sensitivity",
-    required_devices=("GS200", "DG900", "DG4000", "TEC103", "HF2"),
+    required_devices=("GS200", "DG900", "DG4000", "TEC103", "锁相放大器"),
     required_mapping_keys=STATIC_SENSITIVITY,
     execution_mode="typed_workflow",
     acquisition_program="experiments/Static_Magnetic_Field_Sensitivity.py",
@@ -30,7 +30,7 @@ DEFINITION = ExperimentDefinition(
     wiring_notes=(
         "Pump DG4000 CH1 为 100 MHz Gated Burst，外部门控输入接同机 CH2 脉冲。",
         "CH2 为 0–5 V 高有效门控脉冲，直接控制 CH1 载波是否送入 AOM。",
-        "Z 通道纯 DC 逐点扫描；HF2 DAQ 连续单帧采集解调 X/Y，不需要 SYNC/AUX 触发接线。",
+        "Z 通道纯 DC 逐点扫描；锁相放大器 DAQ 连续单帧采集解调 X/Y，不需要 SYNC/AUX 触发接线。",
         "时序 2 保持当前状态；固定 X/Y DC 补偿按参数保持，不施加 XY 交流控制。"
     ),
     safety_notes=(

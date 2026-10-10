@@ -31,6 +31,8 @@
 .discovery-list h3 { margin: 0 0 8px; }
 .discovery-list > div { justify-content: space-between; padding: 8px 0; }
 .discovery-list span, .discovery-list small { display: block; min-width: 0; overflow-wrap: anywhere; }
+.discovery-status { color: #175e59; margin-top: 4px; }
+.discovery-errors { overflow-wrap: anywhere; padding: 8px 0; }
 @media (max-width: 900px) { .mapping-row { grid-template-columns: 1fr 1fr; }.mapping-header { display: none; }.device-config-grid { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .instrument-tabs { gap: 2px; overflow-x: auto; }.instrument-tabs button { flex: 0 0 auto; padding: 0 10px; }.config-toolbar { width: 100%; align-items: flex-start; flex-direction: column; }.config-toolbar > div:last-child { width: 100%; justify-content: flex-start; }.mapping-table { width: 100%; min-width: 0; }.mapping-row, .device-config { width: 100%; min-width: 0; grid-template-columns: minmax(0, 1fr); }.constraint-row { align-items: stretch; flex-wrap: wrap; }.constraint-row strong { width: 100%; }.constraint-row input { min-width: 0; flex: 1 1 180px; }.device-config .panel-head { grid-column: auto; } }
 * { box-sizing: border-box; }
@@ -199,3 +201,11 @@ main { grid-column: 2; padding: 38px 44px 64px; max-width: 1480px; width: 100%; 
 .mx-arch-diagrams { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .mx-arch-diagrams button { border: 1px solid #c7d2d3; background: #fff; color: #33474a; border-radius: 999px; padding: 5px 16px; font-size: 13px; cursor: pointer; }
 .mx-arch-diagrams button.active { background: #147d74; border-color: #147d74; color: #fff; }
+.lockin-selection { padding: 12px; border: 1px solid #dbe4e2; border-radius: 8px; background: #f5f8f7; }
+.lockin-selection p { margin: 8px 0 0; }
+.lockin-editor { display: grid; gap: 12px; min-width: 0; }
+.lockin-editor .panel { padding: 14px; }
+.lockin-output { padding: 12px 0; border-top: 1px solid #e8edec; }
+.lockin-output h4 { margin: 0 0 10px; }
+.has-snapshot.kind-hf2 { grid-column: span 2; }
+@media (max-width: 650px) { .has-snapshot.kind-hf2 { grid-column: auto; } }

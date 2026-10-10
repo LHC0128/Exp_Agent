@@ -19,15 +19,15 @@ DEFINITION = ExperimentDefinition(
     category="measurement",
     family="noise",
     variant="mx-main-field",
-    description="固定 HF2 为 90 kHz，按实测标定降低 GS200 主场电流，并从 Demod0 R 的 PSD 分离 S_beta 与 N_S1。",
+    description='固定锁相放大器解调频率为 90 kHz，按实测标定降低 GS200 主场电流，并从 Demod0 R 的 PSD 分离 S_beta 与 N_S1。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。',
     data_type="Mx_Main_Field_Noise_Spectrum",
-    required_devices=("GS200", "DG900", "DG4000", "HF2"),
+    required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Main_Field_Noise_Spectrum.py",
     analysis_program="experiments/Mx_Main_Field_Noise_Spectrum_plot.py",
     wiring_notes=(
         "主场与 Pump 光沿 Z、Probe 光沿 X；GS200 单向降电流，Z/X/Y 场保持归零关闭。",
-        "HF2 Demod0 使用 Input 1，振荡器固定在 90 kHz，只采集 R。",
+        "锁相放大器 Demod0 使用 Input 1，振荡器固定在 90 kHz，只采集 R。",
     ),
     safety_notes=(
         "每个 GS200 电流点必须同时通过 -10–10 mA 全局安全限值和 3–10 mA 实测标定范围校验。",

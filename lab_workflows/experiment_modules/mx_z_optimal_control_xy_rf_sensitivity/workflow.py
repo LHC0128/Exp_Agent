@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -358,6 +359,7 @@ def _acquire_grid(
 
 def run(params: MxZOptimalControlXYRFSensitivityParams) -> Path:
     """执行中心一次校相和 XY 补偿偏置网格灵敏度采集。"""
+    require_lockin_compatibility('mx-z-optimal-control-xy-rf-sensitivity', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     corrected, theory, calibration, applied = _load_control_sources(params, root)

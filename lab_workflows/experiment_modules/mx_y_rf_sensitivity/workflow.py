@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -297,12 +299,7 @@ def _connect_devices(
     devices["hf2"] = session.connect(
         "hf2",
         f"hf2://{hf_cfg.get('host', '127.0.0.1')}/{hf_cfg['device_id']}",
-        lambda: HF2Instrument(
-            host=hf_cfg.get("host", "127.0.0.1"),
-            port=int(hf_cfg.get("port", 8005)),
-            api_level=1,
-            device_id=hf_cfg["device_id"],
-        ),
+        lambda: create_lockin(hf_cfg),
     )
 
     if connect_tec:
@@ -1004,6 +1001,7 @@ def restore_mx_y_rf_laser_powers(
 
 
 def run(params: MxYRFParams) -> Path:
+    require_lockin_compatibility('mx-y-rf-sensitivity', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     run_dir = create_run_directory(DATA_TYPE, params.run_tag, params.to_external(), schema_version=params.schema_version, project_root=root)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -455,6 +456,7 @@ def safe_shutdown(
 
 def run(params: MxZOptimalControlXYLeakageParams) -> Path:
     """执行固定 Z 最优控制下的 XY 同形任意波二维扫描。"""
+    require_lockin_compatibility('mx-z-optimal-control-xy-leakage-response', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     theory = load_theory_control(

@@ -436,7 +436,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
               <h3>噪声波形与分段预览（只读）</h3>
               {preview?.error ? <p className="alert error">{preview.error}</p> : <>
                 <p>波形：采样率 {format(preview?.sample_rate_sa_s, 0)} Sa/s；谱线间隔 {format(preview?.line_spacing_hz, 1)} Hz；
-                  Nyquist {format(preview?.nyquist_hz / 1000, 1)} kHz。</p>
+                  Nyquist {format((preview?.nyquist_hz ?? Number.NaN) / 1000, 1)} kHz。</p>
                 <p>设计峰值 {format(preview?.design_peak_v)} V；实际注入谱 = 设计谱 × {format(preview?.realized_psd_scale)}；
                   波形 RMS {format(preview?.waveform_rms_v)} V。</p>
                 <p>
@@ -449,7 +449,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
                         - (preview.aligned_amplitude_vpp ?? Number.NaN)) < 1e-6}
                     onClick={() => setValues((current) => ({
                       ...current,
-                      NOISE_AMPLITUDE_VPP: preview.aligned_amplitude_vpp ?? current.NOISE_AMPLITUDE_VPP,
+                      NOISE_AMPLITUDE_VPP: preview?.aligned_amplitude_vpp ?? current.NOISE_AMPLITUDE_VPP,
                     }))}
                   >{probeAm ? "对齐 Probe AM 幅度" : "对齐注入幅度"}</button>
                   {probeAm && preview?.aligned_amplitude_vpp !== undefined && !preview.aligned_amplitude_safe
@@ -470,7 +470,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
                         - (preview.z_aligned_amplitude_vpp ?? Number.NaN)) < 1e-6}
                     onClick={() => setValues((current) => ({
                       ...current,
-                      Z_NOISE_AMPLITUDE_VPP: preview.z_aligned_amplitude_vpp ?? current.Z_NOISE_AMPLITUDE_VPP,
+                      Z_NOISE_AMPLITUDE_VPP: preview?.z_aligned_amplitude_vpp ?? current.Z_NOISE_AMPLITUDE_VPP,
                     }))}
                   >对齐 Z 噪声幅度</button>
                   {preview?.z_aligned_amplitude_vpp !== undefined && !preview.z_aligned_amplitude_safe

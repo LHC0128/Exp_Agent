@@ -1,5 +1,7 @@
 """Bell Bloom Z DC × Pump 门控频率扫描，仅采集 R。"""
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from datetime import datetime
 from pathlib import Path
 import math
@@ -53,8 +55,7 @@ def connect_devices(session, mapping):
     config = mapping["lockin_r"]
     devices["hf2"] = session.connect(
         "hf2", f"hf2://{config['device_id']}",
-        lambda: HF2Instrument(host=config.get("host", "127.0.0.1"), port=config.get("port", 8005),
-                              api_level=1, device_id=config["device_id"]),
+        lambda: create_lockin(config),
     )
     config = mapping["temperature"]
     devices["tec"] = session.connect_optional("tec", config["resource"], lambda: TECInstrument(port=config["resource"]), device_label="TEC103")
@@ -238,6 +239,7 @@ def safe_shutdown(params, devices, channels):
 
 
 def run(params: BellBloomZFieldCalibrationParams) -> Path:
+    require_lockin_compatibility('bell-bloom-z-field-calibration', params.to_external())
     mapping = load_mapping()
     validate_hardware(mapping)
     directory = create_run_directory(DATA_TYPE, params.run_tag, params.to_external(), schema_version=params.schema_version)

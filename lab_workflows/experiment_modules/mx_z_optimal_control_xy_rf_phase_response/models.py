@@ -70,7 +70,7 @@ class MxZOptimalControlXYRFPhaseResponseParams(
     y_rf_frequency_hz: float = parameter(
         default=12000.0,
         external_name="Y_RF_FREQUENCY_HZ",
-        label="Y RF / HF2 固定频率",
+        label="Y RF / 锁相放大器 固定频率",
         unit="Hz",
         group="basic",
         minimum=0.001,

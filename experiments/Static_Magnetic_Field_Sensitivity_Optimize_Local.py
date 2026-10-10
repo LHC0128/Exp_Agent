@@ -8,6 +8,8 @@
 # 基准参数，再只改变一个目标参数，随后重新校准 HF2 相位并执行完整测量。
 
 # %% Cell 1
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
 import csv
 import math
@@ -49,6 +51,7 @@ print("库导入完成")
 
 # %% Cell 2
 MAPPING = load_mapping(project_root)
+require_lockin_compatibility('static-sensitivity-optimize-local', globals(), mapping=MAPPING)
 
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
@@ -308,12 +311,7 @@ try:
     devices["tec"] = tec
 
     hf2_cfg = MAPPING["lockin_r"]
-    hfi = HF2Instrument(
-        host=hf2_cfg.get("host", "127.0.0.1"),
-        port=hf2_cfg.get("port", 8005),
-        api_level=1,
-        device_id=hf2_cfg["device_id"],
-    )
+    hfi = create_lockin(hf2_cfg)
     hfi.connect()
     hfi.set_extclk(True)
     devices["hf2"] = hfi

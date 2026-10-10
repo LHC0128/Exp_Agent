@@ -8,6 +8,7 @@ R → 温控开 → 等待”的顺序执行，std(R) 超过阈值时保存后�
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -298,6 +299,7 @@ def _acquire_frequency_response(
 
 
 def run(params: MxYRFFrequencyResponseParams) -> Path:
+    require_lockin_compatibility('mx-y-rf-frequency-response', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     run_dir = create_run_directory(

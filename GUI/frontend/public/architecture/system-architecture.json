@@ -23,7 +23,7 @@
     { "id": "gui-config", "type": "frontend", "label": "GUI 参数配置", "sublabel": "实验中心表单", "pos": [30, 60], "size": [150, 64], "sources": [{ "path": "GUI/frontend/src/pages/ExperimentPage.tsx", "line": 1 }] },
     { "id": "registry", "type": "backend", "label": "统一实验注册表", "sublabel": "lab_workflows.experiments", "pos": [240, 60], "size": [150, 64], "sources": [{ "path": "lab_workflows/experiments/registry.py", "line": 1 }] },
     { "id": "typed-workflow", "type": "backend", "label": "typed_workflow", "sublabel": "强类型参数模型", "pos": [450, 60], "size": [150, 64], "sources": [{ "path": "lab_workflows/experiments/typed.py", "line": 1 }] },
-    { "id": "instrument-drivers", "type": "backend", "label": "仪器驱动与采集", "sublabel": "src/ 设备控制", "pos": [660, 60], "size": [150, 64], "sources": [{ "path": "src/signal_generator/instrument.py", "line": 1 }] },
+    { "id": "instrument-drivers", "type": "backend", "label": "仪器驱动与采集", "sublabel": "src/ 设备控制", "pos": [660, 60], "size": [150, 64], "sources": [{ "path": "src/signal_generator/dg4000.py", "line": 1 }] },
     { "id": "raw-data", "type": "database", "label": "raw/", "sublabel": "实验原始数据", "pos": [870, 60], "size": [150, 64], "sources": [{ "path": "params/experiments/mx-y-rf-sensitivity.yaml", "line": 1 }] },
     { "id": "offline-analysis", "type": "backend", "label": "离线分析", "sublabel": "分析模块", "pos": [1150, 60], "size": [150, 64], "sources": [{ "path": "lab_workflows/experiment_modules/scope_capture/analysis.py", "line": 1 }] },
     { "id": "experiment-catalog", "type": "database", "label": "experiment_catalog", "sublabel": "归类与参数布局", "pos": [30, 250], "size": [150, 64], "sources": [{ "path": "lab_workflows/experiments/catalog.py", "line": 1 }] },

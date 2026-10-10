@@ -5,11 +5,13 @@
 
 import time
 import logging
+import math
+from dataclasses import replace
 import sys
 from typing import Callable, List, Optional
 import numpy as np
 
-from .instrument import HF2Instrument
+from .base import LockinInstrument
 from .config import DAQConfig, DAQResult
 
 logger = logging.getLogger(__name__)
@@ -22,11 +24,11 @@ class DAQCollector:
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
         已连接的仪器实例
     """
 
-    def __init__(self, instr: HF2Instrument):
+    def __init__(self, instr: LockinInstrument):
         self._instr = instr
         self._mod = None
         self._subscribed_paths: list[str] = []
@@ -40,7 +42,13 @@ class DAQCollector:
             DAQ 采集配置
         """
         self.close()
-
+        if config.device and config.device.lower() != self._instr.device_id:
+            raise ValueError("DAQ 设备 ID 与当前锁相放大器不一致")
+        config = replace(config, device=self._instr.device_id)
+        if not math.isfinite(config.duration) or config.duration <= 0 or config.grid_cols < 1 or config.grid_rows < 1:
+            raise ValueError("DAQ 时长和网格尺寸必须大于零")
+        if not math.isfinite(config.trigger_delay) or not math.isfinite(config.trigger_level):
+            raise ValueError("DAQ 触发延迟和电平必须为有限值")
         self._mod = self._instr.daq.dataAcquisitionModule()
 
         # 基础设置
@@ -54,14 +62,15 @@ class DAQCollector:
         # 触发设置（trigger_type=1 时有效）
         if config.trigger_type == 1:
             # triggernode: 使用辅助输入通道作为触发源
-            trigger_node = f"/{config.device}/auxins/{config.trigger_channel}/sample.AuxIn{config.trigger_channel}"
+            if config.trigger_channel not in (0, 1):
+                raise ValueError("Aux Input 触发通道必须为 0 或 1")
+            trigger_node = f"/{config.device}/auxins/0/sample.AuxIn{config.trigger_channel}"
             self._mod.set("dataAcquisitionModule/triggernode", trigger_node)
             self._mod.set("dataAcquisitionModule/level", config.trigger_level)
             self._mod.set("dataAcquisitionModule/hysteresis", 0.5)
             edge_str = "falling" if config.trigger_slope == 1 else "rising"
             self._mod.set("dataAcquisitionModule/edge", edge_str)
-            if config.trigger_delay > 0:
-                self._mod.set("dataAcquisitionModule/trigger/delay", config.trigger_delay)
+            self._mod.set("dataAcquisitionModule/delay", config.trigger_delay)
             logger.info(
                 "DAQ 触发配置: triggernode=%s, level=%.3f V, edge=%s, delay=%.3f s",
                 trigger_node, config.trigger_level, edge_str, config.trigger_delay,
@@ -200,7 +209,7 @@ class DAQCollector:
 
 
 def acquire_data(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     config: Optional[DAQConfig] = None,
     demod_idx: int = 0,
     actual_rate: Optional[float] = None,
@@ -215,7 +224,7 @@ def acquire_data(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
         已连接的仪器实例
     config : DAQConfig, optional
         DAQ 采集配置
@@ -238,6 +247,7 @@ def acquire_data(
     """
     if config is None:
         config = DAQConfig()
+    config = replace(config, device=config.device or instr.device_id)
 
     collector = DAQCollector(instr)
     try:
@@ -256,32 +266,54 @@ def acquire_data(
             )
 
         results = []
+        origin = None
+        for raw_value in raw.values():
+            bursts = raw_value if isinstance(raw_value, list) else [raw_value]
+            for burst in bursts:
+                if isinstance(burst, dict) and "timestamp" in burst:
+                    stamps = np.asarray(burst["timestamp"]).ravel()
+                    if stamps.size:
+                        first = int(stamps[0])
+                        origin = first if origin is None else min(origin, first)
+        clockbase = instr.clockbase if origin is not None else None
         for path, raw_value in raw.items():
             # 过滤掉 DAQ 模块参数节点，保留信号数据
             if "sample." not in path and "sample" not in path:
                 continue
             signal_name = path.split("/")[-1]
 
-            # 提取数据数组: 兼容 [{value:...}, ...] 或 {value:...} 或 直接数组
-            if isinstance(raw_value, list) and len(raw_value) > 0:
-                if isinstance(raw_value[0], dict) and "value" in raw_value[0]:
-                    data_arr = np.array(raw_value[0]["value"])
+            bursts = raw_value if isinstance(raw_value, list) else [raw_value]
+            arrays, times, boundaries, cursor = [], [], [], 0
+            time_source = "module_timestamp"
+            for burst in bursts:
+                values = np.atleast_2d(np.asarray(burst["value"] if isinstance(burst, dict) else burst))
+                stamps = np.asarray(burst.get("timestamp", [])) if isinstance(burst, dict) else np.array([])
+                if stamps.size:
+                    stamps = np.broadcast_to(stamps, values.shape)
+                    # 先做整数差，避免大时间戳转换 float 后损失精度或无符号回绕。
+                    axis = np.array([int(tick) - origin for tick in stamps.ravel()], dtype=float).reshape(values.shape) / clockbase
                 else:
-                    data_arr = np.array(raw_value[0])
-            elif isinstance(raw_value, dict) and "value" in raw_value:
-                data_arr = np.array(raw_value["value"])
-            else:
-                data_arr = np.array(raw_value)
-
-            data_arr = data_arr.flatten()
-            time_arr = np.arange(len(data_arr)) / actual_rate  # s
+                    step = 1 / actual_rate if config.grid_mode == 4 else config.duration / config.grid_cols
+                    axis = np.broadcast_to(np.arange(values.shape[-1]) * step, values.shape)
+                    time_source = "synthetic_rate" if config.grid_mode == 4 else "synthetic_grid"
+                for row, axis_row in zip(values, axis):
+                    arrays.append(row.ravel())
+                    times.append(axis_row.ravel())
+                    boundaries.append((cursor, cursor + row.size))
+                    cursor += row.size
+            data_arr = np.concatenate(arrays) if arrays else np.array([])
+            time_arr = np.concatenate(times) if times else np.array([])
 
             results.append(DAQResult(
                 signal_name=signal_name,
                 demod_index=demod_idx,
                 values=data_arr,
                 time=time_arr,
-                config_snapshot=config.to_dict(),
+                config_snapshot={**config.to_dict(), "actual_rate": actual_rate,
+                                 "time_source": time_source, "timestamp_origin": origin,
+                                 "clockbase": clockbase, "model": getattr(instr, "model", "HF2"),
+                                 "capabilities": instr.capabilities if isinstance(instr, LockinInstrument) else {}},
+                record_slices=boundaries,
             ))
 
         return results

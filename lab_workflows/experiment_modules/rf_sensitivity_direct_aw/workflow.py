@@ -4,6 +4,8 @@
 # %% 导入与可取消等待
 from __future__ import annotations
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -60,7 +62,7 @@ def connect_devices(mapping: dict) -> dict:
         })
         gs_config, hf_config, tec_config = (mapping[key] for key in ("main_magnetic_field", "lockin_r", "temperature"))
         gs = session.connect("gs200", gs_config["resource"], lambda: GS200Instrument(gs_config["resource"]))
-        hf2 = session.connect("hf2", f"hf2://{hf_config['host']}:{hf_config['port']}/{hf_config['device_id']}", lambda: HF2Instrument(host=hf_config["host"], port=hf_config["port"], api_level=1, device_id=hf_config["device_id"]))
+        hf2 = session.connect("hf2", f"hf2://{hf_config['host']}:{hf_config['port']}/{hf_config['device_id']}", lambda: create_lockin(hf_config))
         tec = session.connect_optional("tec", tec_config["resource"], lambda: TECInstrument(tec_config["resource"]), device_label="TEC")
         return {"signals": signals, "channels": channels, "gs200": gs, "hf2": hf2, "tec": tec, "optional_connection_errors": session.optional_connection_errors()}
     except BaseException:
@@ -136,6 +138,7 @@ def arm_z(signals, channel: int, params: RFSensitivityDirectAWParams, amplitude:
 
 # %% 正式采集
 def run(params: RFSensitivityDirectAWParams) -> Path:
+    require_lockin_compatibility('rf-sensitivity-aw', params.to_external())
     root = find_project_root()
     errors = params.validate(root)
     if errors:

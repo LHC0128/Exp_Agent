@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "../../api";
 import { useJobActivity } from "../JobActivity";
 import { JobView } from "../JobView";
@@ -34,7 +34,7 @@ type DashboardProps = {
   setValues: (next: ParameterValues) => void;
   /** 页面级任务状态：切换 Tab 或重新进入页面后仍保留。 */
   job: Job | undefined;
-  setJob: (next: Job | undefined) => void;
+  setJob: Dispatch<SetStateAction<Job | undefined>>;
   prefill: ParameterValues | null;
   clearPrefill: () => void;
 };

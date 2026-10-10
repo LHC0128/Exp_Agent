@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -712,6 +713,7 @@ def safe_shutdown(
 
 def run(params: MxZOptimalControlXYRFPhaseResponseParams) -> Path:
     """执行 XY 网格上的 RF 相位响应采集。"""
+    require_lockin_compatibility('mx-z-optimal-control-xy-rf-phase-response', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     corrected, theory, calibration, applied = _load_control_sources(params, root)

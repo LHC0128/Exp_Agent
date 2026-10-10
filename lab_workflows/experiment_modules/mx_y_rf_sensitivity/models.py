@@ -52,9 +52,9 @@ class MxYRFParams(ExperimentParams):
     noise_demod_order: int = parameter(default=4, external_name="NOISE_DEMOD_ORDER", label="噪声解调阶数", group="advanced", minimum=1)
     low_freq_skip_hz: float = parameter(default=3.0, external_name="LOW_FREQ_SKIP_HZ", label="平坦段搜索最低频率", unit="Hz", group="advanced", minimum=0)
 
-    demod_idx: int = parameter(default=0, external_name="DEMOD_IDX", label="HF2 Demod 索引", group="advanced", minimum=0)
-    demod_osc_idx: int = parameter(default=0, external_name="DEMOD_OSC_IDX", label="HF2 振荡器索引", group="advanced", minimum=0)
-    hf2_signal_range_v: float = parameter(default=2.0, external_name="HF2_SIGNAL_RANGE_V", label="HF2 Input1 量程", unit="V", group="advanced", minimum=0.001)
+    demod_idx: int = parameter(default=0, external_name="DEMOD_IDX", label="锁相放大器 Demod 索引", group="advanced", minimum=0)
+    demod_osc_idx: int = parameter(default=0, external_name="DEMOD_OSC_IDX", label="锁相放大器 振荡器索引", group="advanced", minimum=0)
+    hf2_signal_range_v: float = parameter(default=2.0, external_name="HF2_SIGNAL_RANGE_V", label="锁相放大器 Input1 量程", unit="V", group="advanced", minimum=0.001)
     response_rate_sa_s: float = parameter(default=1000.0, external_name="RESPONSE_RATE_SA_S", label="响应请求采样率", unit="Sa/s", group="advanced", minimum=1)
     response_time_constant_s: float = parameter(default=0.001, external_name="RESPONSE_TIME_CONSTANT_S", label="响应时间常数", unit="s", group="advanced", minimum=0)
     response_demod_order: int = parameter(default=4, external_name="RESPONSE_DEMOD_ORDER", label="响应解调阶数", group="advanced", minimum=1)

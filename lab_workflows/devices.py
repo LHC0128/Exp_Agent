@@ -12,13 +12,33 @@ from toptica_laser import DLCProInstrument
 
 from .common import load_mapping
 from .instrument_config import load_device_definitions
+from lockin_amplifier import HF2Instrument, MFLIInstrument
+
+
+def create_lockin(config: Mapping[str, Any]):
+    """按已解析映射创建锁相放大器，不连接硬件。"""
+    if config.get("instrument") != "lockin_amplifier":
+        raise ValueError("配置不是 lockin_amplifier 映射")
+    model = str(config.get("model", "")).upper()
+    drivers = {"HF2": HF2Instrument, "MFLI": MFLIInstrument}
+    if model not in drivers:
+        raise ValueError(f"不支持的锁相放大器型号: {model}")
+    if not config.get("device_id"):
+        raise ValueError("锁相放大器配置缺少 device_id")
+    return drivers[model](
+        host=str(config.get("host", "127.0.0.1")),
+        port=int(config.get("port", 8005 if model == "HF2" else 8004)),
+        api_level=1 if model == "HF2" else 6,
+        device_id=str(config["device_id"]),
+        interface=str(config.get("interface", "PCIe" if model == "HF2" else "1GbE")),
+    )
 
 
 SIGNAL_GENERATOR_DRIVERS = {
     "DG4000": DG4000Instrument,
     "DG900": DG900Instrument,
 }
-_SIGNAL_GENERATOR_50_OHM_KEYS = frozenset({"Probe_AOM_Carrier", "Pump_modulation"})
+_SIGNAL_GENERATOR_50_OHM_KEYS = frozenset({"Pump_modulation"})
 _SIGNAL_GENERATOR_CHANNELS = (1, 2)
 
 CURRENT_SOURCE_DRIVERS = {
@@ -45,9 +65,12 @@ def signal_generator_model(config: Mapping[str, Any]) -> str:
 def _resolve_signal_generator_config(config: Any) -> Mapping[str, Any]:
     if not isinstance(config, str):
         return config
+    mapping = load_mapping()
+    if config in mapping:
+        return mapping[config]
     matches = [
         item
-        for item in load_mapping().values()
+        for item in mapping.values()
         if item.get('instrument') == 'signal_generator'
         and item.get('resource') == config
     ]
@@ -56,21 +79,41 @@ def _resolve_signal_generator_config(config: Any) -> Mapping[str, Any]:
     models = {signal_generator_model(item) for item in matches}
     if len(models) != 1:
         raise ValueError(f'Conflicting models for resource: {config}')
-    return matches[0]
+    return {key: value for key, value in matches[0].items() if key != "mapping_key"}
 
 
-def signal_generator_load_policy(resource: str) -> dict[int, float | str]:
-    """返回统一负载策略：AOM 载波 50 Ω，其余通道高阻。"""
+def signal_generator_load_policy(resource: str, mapping_key: str | None = None) -> dict[int, float | str]:
+    """按本次物理量及联动组设置负载，避免其他实验的复用角色覆盖负载。"""
+    from .instrument_config import load_mapping_document
+
     policy: dict[int, float | str] = {
         channel: "INF" for channel in _SIGNAL_GENERATOR_CHANNELS
     }
-    for mapping_key, config in load_mapping().items():
+    active_keys = None
+    if mapping_key:
+        active_keys = {mapping_key}
+        constraints = load_mapping_document()["constraints"]
+        groups = [*constraints["colocation_groups"].values(), *constraints["shared_channel_groups"].values()]
+        while True:
+            linked = active_keys.union(*(set(group) for group in groups if active_keys.intersection(group)))
+            if linked == active_keys:
+                break
+            active_keys = linked
+    mappings = load_mapping()
+    active_channels = {
+        int(config["channel"]) for key, config in mappings.items()
+        if active_keys is not None and key in active_keys and config.get("instrument") == "signal_generator"
+        and str(config.get("resource", "")) == str(resource)
+    }
+    for key, config in mappings.items():
         if config.get("instrument") != "signal_generator":
             continue
         if str(config.get("resource", "")) != str(resource):
             continue
         channel = int(config["channel"])
-        if mapping_key in _SIGNAL_GENERATOR_50_OHM_KEYS:
+        if key in _SIGNAL_GENERATOR_50_OHM_KEYS and (
+            active_keys is None or key in active_keys or channel not in active_channels
+        ):
             policy[channel] = 50.0
     return policy
 
@@ -79,6 +122,7 @@ def create_signal_generator(
     config: Any,
     *,
     channel: int | None = None,
+    apply_load_policy: bool = True,
 ) -> Any:
     config = _resolve_signal_generator_config(config)
     model = signal_generator_model(config)
@@ -92,7 +136,8 @@ def create_signal_generator(
     return driver(
         str(resource),
         channel=int(selected_channel),
-        load_policy=signal_generator_load_policy(str(resource)),
+        load_policy=(signal_generator_load_policy(str(resource), config.get("mapping_key"))
+                     if apply_load_policy else {}),
     )
 
 

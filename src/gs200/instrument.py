@@ -52,10 +52,7 @@ class GS200Instrument:
                 pass
             self._inst = None
         if self._rm:
-            try:
-                self._rm.close()
-            except Exception:
-                pass
+            # pyvisa-py 的后端是进程级单例，rm.close() 会摧毁其他设备的会话
             self._rm = None
 
     @property

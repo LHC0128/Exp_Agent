@@ -39,6 +39,15 @@ type ClockItem = {
   error?: unknown;
 };
 
+type LoadItem = {
+  label?: unknown;
+  device_type?: unknown;
+  device_id?: unknown;
+  policy?: unknown;
+  ok?: unknown;
+  error?: unknown;
+};
+
 function isClockSyncResult(value: unknown): value is ClockItem[] {
   return Array.isArray(value) && value.every((item) => (
     item && typeof item === "object" && "label" in item && "ok" in item
@@ -69,6 +78,47 @@ function ClockSyncTable({ items }: { items: ClockItem[] }) {
   );
 }
 
+function isLoadInitResult(value: unknown): value is LoadItem[] {
+  return Array.isArray(value) && value.every((item) => (
+    item && typeof item === "object" && "label" in item && "policy" in item
+  ));
+}
+
+const LOAD_NAMES: Record<string, string> = { INF: "高阻" };
+
+function formatLoad(value: unknown): string {
+  const text = String(value ?? "");
+  if (LOAD_NAMES[text]) return LOAD_NAMES[text];
+  const num = Number(text);
+  return Number.isFinite(num) ? `${num} Ω` : text;
+}
+
+function LoadInitTable({ items }: { items: LoadItem[] }) {
+  return (
+    <div className="job-result-table-wrap">
+      <table className="job-result-table">
+        <thead>
+          <tr><th>设备</th><th>类型</th><th>CH1</th><th>CH2</th><th>结果</th></tr>
+        </thead>
+        <tbody>
+          {items.map((item, index) => {
+            const policy = (item.policy ?? {}) as Record<string, unknown>;
+            return (
+              <tr key={index} className={item.ok ? "" : "row-failed"}>
+                <td>{String(item.label ?? item.device_id ?? "")}</td>
+                <td>{String(item.device_type ?? "")}</td>
+                <td>{formatLoad(policy["1"])}</td>
+                <td>{formatLoad(policy["2"])}</td>
+                <td>{item.ok ? "成功" : `失败${item.error ? `：${item.error}` : ""}`}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ResultView({ job }: { job: Job }) {
   const result = job.result;
   if (result === undefined || result === null) return null;
@@ -79,7 +129,8 @@ function ResultView({ job }: { job: Job }) {
         <div className="alert success job-result">结果已保存：{runDir}</div>
       )}
       {job.kind === "clock-sync" && isClockSyncResult(result) && <ClockSyncTable items={result} />}
-      {job.kind !== "clock-sync" && runDir === undefined && (
+      {job.kind === "load-init" && isLoadInitResult(result) && <LoadInitTable items={result} />}
+      {job.kind !== "clock-sync" && job.kind !== "load-init" && runDir === undefined && (
         <details className="job-result-details">
           <summary>查看结果</summary>
           <pre>{JSON.stringify(result, null, 2)}</pre>

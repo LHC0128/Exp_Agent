@@ -7,6 +7,7 @@ Y RF 相位校准 → 带符号幅度扫描 → 零 Y RF 噪声采集。
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
 from typing import Any
 
@@ -204,6 +205,7 @@ def _best_workpoint(fit: dict[str, Any], fallback: MxKeithley6221OptimalControlB
 
 
 def run(params: MxKeithley6221OptimalControlBalancedSensitivityParams) -> Path:
+    require_lockin_compatibility('mx-keithley-6221-optimal-control-balanced-sensitivity', params.to_external())
     root = find_project_root()
     if not params.confirm_gs200_connected:
         raise ValueError("必须确认 GS200 已接入 Z 主磁场线圈（6221 接 Z 小磁场线圈）")

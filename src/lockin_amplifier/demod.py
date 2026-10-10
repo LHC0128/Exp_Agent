@@ -1,10 +1,10 @@
 """解调器相关操作模块.
 
 涵盖四个硬件模块的配置：
-  - 信号输入模块 (sigins)    — 2 个，索引 0~1
-  - 振荡器模块 (oscs)        — 2 个，索引 0~1
-  - 解调器模块 (demods)      — 6 个，索引 0~5
-  - 信号输出模块 (sigouts)   — 2 个，索引 0~1
+  - 信号输入模块 (sigins)    — 按所选型号校验
+  - 振荡器模块 (oscs)        — 按所选型号和选件校验
+  - 解调器模块 (demods)      — 按所选型号和选件校验
+  - 信号输出模块 (sigouts)   — 按所选型号校验
 
 以及单个参数的独立设置函数。
 """
@@ -14,7 +14,7 @@ import time
 import logging
 from typing import Optional
 
-from .instrument import HF2Instrument
+from .base import LockinInstrument, _driver_class
 from .config import (
     SignalInputConfig,
     OscillatorConfig,
@@ -30,14 +30,14 @@ logger = logging.getLogger(__name__)
 
 
 def configure_signal_input(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     config: SignalInputConfig,
 ) -> None:
     """配置信号输入模块.
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
         已连接的仪器实例
     config : SignalInputConfig
         信号输入配置
@@ -58,7 +58,7 @@ def configure_signal_input(
 
 
 def set_input_range(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     range_v: float,
     input_idx: int = 0,
 ) -> None:
@@ -66,7 +66,7 @@ def set_input_range(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     range_v : float
         量程 (V)
     input_idx : int
@@ -83,7 +83,7 @@ def set_input_range(
 
 
 def configure_oscillator(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     config: OscillatorConfig,
 ) -> None:
     """配置振荡器模块.
@@ -93,10 +93,14 @@ def configure_oscillator(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     config : OscillatorConfig
     """
     path = instr.osc_path(config.osc_index)
+    if config.source != "manual":
+        raise ValueError("振荡器手动配置只支持 manual；外部解调参考需单独配置 PLL/ExtRef")
+    if isinstance(instr, LockinInstrument):
+        instr.validate_frequency(config.frequency)
     instr.set_double(f"{path}/freq", config.frequency)
     instr.sync()
     logger.info(
@@ -106,7 +110,7 @@ def configure_oscillator(
 
 
 def set_reference_frequency(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     freq: float,
     osc_idx: int = 0,
 ) -> None:
@@ -114,12 +118,14 @@ def set_reference_frequency(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     freq : float
         频率 (Hz)
     osc_idx : int
-        振荡器索引 (0 或 1)
+        振荡器索引（按设备能力校验）
     """
+    if isinstance(instr, LockinInstrument):
+        instr.validate_frequency(freq)
     instr.set_double(f"{instr.osc_path(osc_idx)}/freq", freq)
     instr.sync()
     logger.info("参考频率已设置为 %.4f Hz (osc %d)", freq, osc_idx)
@@ -131,16 +137,16 @@ def set_reference_frequency(
 
 
 def configure_demodulator(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     config: DemodulatorConfig,
 ) -> float:
     """批量配置解调器参数.
 
-    返回设置生效后的实际采样率（可能与请求值不同，因 HF2 仅支持特定速率）。
+    返回设置生效后的实际采样率（可能与请求值不同，设备仅支持离散速率）。
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     config : DemodulatorConfig
 
     返回
@@ -149,10 +155,21 @@ def configure_demodulator(
         实际采样率 (Sa/s)
     """
     base = instr.demod_path(config.demod_index)
+    instr.osc_path(config.osc_select)
+    source = config.input_source or f"voltage{config.input_channel}"
+    sources = _driver_class(getattr(instr, "model", "HF2")).demod_input_sources
+    if source not in sources:
+        raise ValueError(f"{getattr(instr, 'model', 'HF2')} 不支持解调输入 {source}；不会替换接线")
+    if not isinstance(config.order, int) or not 1 <= config.order <= 8 or not isinstance(config.harmonic, int) or config.harmonic < 1:
+        raise ValueError("滤波阶数必须为 1–8，谐波必须为正整数")
+    if not all(math.isfinite(value) for value in (config.rate, config.time_constant, config.phase)):
+        raise ValueError("解调器参数必须为有限值")
+    if config.rate <= 0 or config.time_constant <= 0:
+        raise ValueError("采样率和时间常数必须大于零")
 
     instr.set_int(f"{base}/enable", 1 if config.enable else 0)
     instr.set_double(f"{base}/rate", config.rate)
-    instr.set_int(f"{base}/adcselect", config.input_channel)
+    instr.set_int(f"{base}/adcselect", sources[source])
     instr.set_int(f"{base}/oscselect", config.osc_select)
     instr.set_int(f"{base}/harmonic", config.harmonic)
     instr.set_double(f"{base}/timeconstant", config.time_constant)
@@ -173,7 +190,7 @@ def configure_demodulator(
 
 
 def set_demod_enable(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     demod_idx: int,
     enable: bool,
 ) -> None:
@@ -181,7 +198,7 @@ def set_demod_enable(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     demod_idx : int
         解调器索引 (0-7)
     enable : bool
@@ -192,7 +209,7 @@ def set_demod_enable(
 
 
 def set_demod_rate(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     demod_idx: int,
     rate: float,
 ) -> None:
@@ -200,18 +217,20 @@ def set_demod_rate(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     demod_idx : int
     rate : float
         Sa/s
     """
+    if not math.isfinite(rate) or rate <= 0:
+        raise ValueError("解调器采样率必须为有限正数")
     instr.set_double(f"{instr.demod_path(demod_idx)}/rate", rate)
     instr.sync()
     logger.info("解调器 %d rate=%.1f Sa/s", demod_idx, rate)
 
 
 def set_demod_time_constant(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     demod_idx: int,
     tc: float,
 ) -> None:
@@ -219,18 +238,20 @@ def set_demod_time_constant(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     demod_idx : int
     tc : float
         时间常数 (s)
     """
+    if not math.isfinite(tc) or tc <= 0:
+        raise ValueError("解调器时间常数必须为有限正数")
     instr.set_double(f"{instr.demod_path(demod_idx)}/timeconstant", tc)
     instr.sync()
     logger.info("解调器 %d 时间常数=%.2e s", demod_idx, tc)
 
 
 def set_demod_order(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     demod_idx: int,
     order: int,
 ) -> None:
@@ -238,17 +259,19 @@ def set_demod_order(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     demod_idx : int
     order : int
     """
+    if not isinstance(order, int) or not 1 <= order <= 8:
+        raise ValueError("滤波阶数必须为 1–8 的整数")
     instr.set_int(f"{instr.demod_path(demod_idx)}/order", order)
     instr.sync()
     logger.info("解调器 %d 滤波器阶数=%d", demod_idx, order)
 
 
 def set_demod_harmonic(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     demod_idx: int,
     harmonic: int,
 ) -> None:
@@ -256,18 +279,20 @@ def set_demod_harmonic(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     demod_idx : int
     harmonic : int
         1=基波
     """
+    if not isinstance(harmonic, int) or harmonic < 1:
+        raise ValueError("解调谐波必须为正整数")
     instr.set_int(f"{instr.demod_path(demod_idx)}/harmonic", harmonic)
     instr.sync()
     logger.info("解调器 %d 谐波=%d", demod_idx, harmonic)
 
 
 def set_demod_phase(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     demod_idx: int,
     phase_deg: float,
 ) -> None:
@@ -275,18 +300,20 @@ def set_demod_phase(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     demod_idx : int
     phase_deg : float
         相位 (度)
     """
+    if not math.isfinite(phase_deg):
+        raise ValueError("解调相移必须为有限角度")
     instr.set_double(f"{instr.demod_path(demod_idx)}/phaseshift", phase_deg)
     instr.sync()
     logger.info("解调器 %d 相位偏移=%.2f deg", demod_idx, phase_deg)
 
 
 def read_demod_sample(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     demod_idx: int = 0,
 ) -> dict:
     """读取当前解调样本.
@@ -295,7 +322,7 @@ def read_demod_sample(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     demod_idx : int
         解调器索引 (0-7)
 
@@ -309,7 +336,7 @@ def read_demod_sample(
     result = {}
     for key in ("x", "y", "frequency", "phase", "timestamp"):
         values = sample.get(key, [])
-        value = values[-1] if values else 0.0
+        value = values[-1] if len(values) else 0.0
         if hasattr(value, "item"):
             value = value.item()
         result[key] = value
@@ -324,7 +351,7 @@ def read_demod_sample(
 
 
 def auto_calibrate_phase(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     demod_idx: int = 0,
     tolerance_deg: float = 0.05,
     max_attempts: int = 10,
@@ -337,7 +364,7 @@ def auto_calibrate_phase(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     demod_idx : int
     tolerance_deg : float
     max_attempts : int
@@ -397,19 +424,20 @@ def auto_calibrate_phase(
 
 
 def configure_signal_output(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     config: SignalOutputConfig,
 ) -> None:
     """配置信号输出模块.
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     config : SignalOutputConfig
     """
     path = instr.sig_out_path(config.output_index)
     instr.set_double(f"{path}/range", config.range)
-    instr.set_double(f"{path}/offset", config.offset)
+    instr.sync()
+    set_output_offset(instr, config.output_index, config.offset)
     instr.set_int(f"{path}/add", 1 if config.add else 0)
     instr.set_int(f"{path}/on", 1 if config.enable else 0)
     instr.sync()
@@ -421,7 +449,7 @@ def configure_signal_output(
 
 
 def set_output_enable(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     output_idx: int,
     enable: bool,
 ) -> None:
@@ -429,7 +457,7 @@ def set_output_enable(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     output_idx : int
         输出通道索引 (0 或 1)
     enable : bool
@@ -440,7 +468,7 @@ def set_output_enable(
 
 
 def set_output_range(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     output_idx: int,
     range_v: float,
 ) -> None:
@@ -448,7 +476,7 @@ def set_output_range(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
     output_idx : int
     range_v : float
         量程 (V)
@@ -456,3 +484,53 @@ def set_output_range(
     instr.set_double(f"{instr.sig_out_path(output_idx)}/range", range_v)
     instr.sync()
     logger.info("信号输出 %d 量程=%.3f V", output_idx, range_v)
+
+
+def _output_voltage_factor(instr, output_idx: int, output_range: float | None = None) -> float:
+    return _driver_class(getattr(instr, "model", "HF2"))._output_voltage_factor(instr, output_idx, output_range)
+
+
+def set_output_amplitude(instr, output_idx: int, amplitude_peak_v: float,
+                         amplitude_idx: int = 0) -> float:
+    """设置单个混频分量的峰值电压；HF2 内部换算为实际量程比例。"""
+    if not math.isfinite(amplitude_peak_v) or amplitude_peak_v < 0:
+        raise ValueError("输出峰值幅度必须是非负有限电压")
+    instr.demod_path(amplitude_idx)
+    path = instr.sig_out_path(output_idx)
+    factor = _output_voltage_factor(instr, output_idx)
+    instr.set_double(f"{path}/amplitudes/{amplitude_idx}", amplitude_peak_v / factor)
+    instr.sync()
+    return instr.get_double(f"{path}/amplitudes/{amplitude_idx}") * factor
+
+
+def set_output_offset(instr, output_idx: int, offset_v: float) -> float:
+    """设置直流偏置，统一使用 V。"""
+    if not math.isfinite(offset_v):
+        raise ValueError("输出偏置必须为有限电压")
+    path = instr.sig_out_path(output_idx)
+    factor = _output_voltage_factor(instr, output_idx)
+    instr.set_double(f"{path}/offset", offset_v / factor)
+    instr.sync()
+    return instr.get_double(f"{path}/offset") * factor
+
+
+def set_demod_frequency(instr, demod_idx: int, frequency_hz: float, *, harmonic: int | None = None) -> dict:
+    """按实际谐波设置共享振荡器，回报受影响的解调器。"""
+    base = instr.demod_path(demod_idx)
+    osc = instr.get_int(f"{base}/oscselect")
+    current_harmonic = instr.get_int(f"{base}/harmonic")
+    harmonic = current_harmonic if harmonic is None else harmonic
+    if not isinstance(harmonic, int) or harmonic < 1:
+        raise ValueError("当前解调谐波无效")
+    for branch in ("extrefs", "plls", "mods"):
+        for node in instr.daq.listNodes(f"/{instr.device_id}/{branch}/*/enable", 0):
+            if instr.get_int(node):
+                raise ValueError("设备启用了外部解调参考/PLL/MOD，不能按普通振荡器公式改频")
+    instr.validate_frequency(frequency_hz)
+    affected = [idx for idx in range(instr.capabilities["demodulators"])
+                if instr.get_int(f"{instr.demod_path(idx)}/oscselect") == osc]
+    if harmonic != current_harmonic:
+        set_demod_harmonic(instr, demod_idx, harmonic)
+    set_reference_frequency(instr, frequency_hz / harmonic, osc)
+    return {"oscillator": osc, "affected_demodulators": affected,
+            "frequency_hz": instr.get_double(f"{instr.osc_path(osc)}/freq") * harmonic}

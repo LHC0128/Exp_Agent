@@ -20,11 +20,10 @@ DEFINITION = ExperimentDefinition(
     family="field-balance",
     variant="mx-z-optimal-control-dg4000-bias",
     description=(
-        "保持 Z 周期最优控制，以同一台 DG4000 的 Z 通道 offset 扫描额外偏置，"
-        "并扫描 X/Y 直流补偿场，记录 HF2 Demod0 X/Y/R。"
+        '保持 Z 周期最优控制，以同一台 DG4000 的 Z 通道 offset 扫描额外偏置，并扫描 X/Y 直流补偿场，记录 锁相放大器 Demod0 X/Y/R。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
     ),
     data_type="Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance",
-    required_devices=("DG900", "DG4000", "HF2"),
+    required_devices=("DG900", "DG4000", "锁相放大器"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance.py",
     analysis_program="experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance_plot.py",
@@ -32,7 +31,7 @@ DEFINITION = ExperimentDefinition(
         "GS200 必须与该 Z 线圈物理断开；DG4000 Z_magnetic_field 同时输出最优控制波形和额外 DC offset。",
         "Time_sequence_2 接同一 DG4000 的 Ext Trig，并使用下降沿启动 Z 控制 Burst。",
         "X_magnetic_field 与 Y_magnetic_field 继续使用 DG4000 DC 输出。",
-        "HF2 Demod0 采集同步 X/Y/R；软件不能确认实体触发 BNC 接线。",
+        "锁相放大器 Demod0 采集同步 X/Y/R；软件不能确认实体触发 BNC 接线。",
     ),
     safety_notes=(
         "运行前必须将 CONFIRM_GS200_DISCONNECTED 设为 true。",

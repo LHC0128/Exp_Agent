@@ -24,6 +24,10 @@ type GeneratorEditorProps = {
 type ChannelTab = "wave" | "mod" | "burst";
 type NestedSettings = { mod: ModulationSnapshot; burst: BurstSnapshot };
 
+function editableLoad(value: GeneratorChannelSnapshot["load"]) {
+  return Number(value) >= 9e37 ? "INF" : value;
+}
+
 export function GeneratorEditor({ snapshot, route, onSaved, onError }: GeneratorEditorProps) {
   const [channels, setChannels] = useState<GeneratorChannelSnapshot[]>(snapshot.channels);
   const [saving, setSaving] = useState<number>();
@@ -83,7 +87,7 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
       offset: channel.offset,
       phase: channel.phase,
       voltage_unit: channel.voltage_unit,
-      load: channel.load,
+      load: editableLoad(channel.load),
       square_duty: channel.square_duty,
       ramp_symmetry: channel.ramp_symmetry,
       pulse_width: channel.pulse_width,
@@ -196,7 +200,7 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
                 <SelectField label="电压单位" value={channel.voltage_unit} disabled={disabled} onChange={(value) => update(index, "voltage_unit", value)}>
                   <option value="VPP">Vpp</option><option value="VRMS">Vrms</option><option value="DBM">dBm</option>
                 </SelectField>
-                <Field label="负载 (Ω / INF)" value={channel.load} type="text" disabled={disabled} onChange={(value) => update(index, "load", value)} />
+                <Field label="负载 (Ω / INF)" value={editableLoad(channel.load)} type="text" disabled={disabled} onChange={(value) => update(index, "load", value)} />
                 {channel.shape.startsWith("SQU") && <Field label="占空比 (%)" value={channel.square_duty} disabled={disabled} onChange={(value) => update(index, "square_duty", value)} />}
                 {channel.shape.startsWith("RAMP") && <Field label="对称度 (%)" value={channel.ramp_symmetry} disabled={disabled} onChange={(value) => update(index, "ramp_symmetry", value)} />}
                 {channel.shape.startsWith("PUL") && (

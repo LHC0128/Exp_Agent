@@ -235,6 +235,10 @@ class LegacyScriptAdapter:
             resolved = dict(defaults)
             resolved.update(values)
             errors.extend(self.preflight_validator(resolved))
+        from ..lockin_compatibility import lockin_preflight
+        resolved = dict(defaults)
+        resolved.update(values)
+        errors.extend(lockin_preflight(self.id, resolved, self.root))
         return errors
 
     @staticmethod

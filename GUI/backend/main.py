@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from lab_workflows.clock_sync import synchronize_clocks
+from lab_workflows.clock_sync import initialize_output_loads, synchronize_clocks
 from lab_workflows.common import find_project_root, load_mapping
 from lab_workflows.devices import discover_devices
 from lab_workflows.instrument_control import (
@@ -27,6 +27,8 @@ from lab_workflows.instrument_control import (
     apply_control_target_laser,
     apply_control_target_scope,
     apply_control_target_tec,
+    apply_control_target_lockin,
+    capture_control_target_lockin,
     apply_current_source,
     apply_generator_channel,
     apply_laser_emission,
@@ -44,6 +46,7 @@ from lab_workflows.instrument_config import (
     public_physical_mappings,
     save_device_library,
     save_physical_mappings,
+    select_lockin_device,
 )
 from lab_workflows.keithley_arb import (
     convert_frequency_source,
@@ -90,6 +93,9 @@ from .schemas import (
     ControlTargetBulkResponse,
     ControlTargetResponse,
     ControlTecBody,
+    ControlLockinBody,
+    ControlLockinCaptureBody,
+    LockinSelectionBody,
     CurrentSourceSettingsBody,
     DeviceSnapshot,
     DeviceSummary,
@@ -222,6 +228,9 @@ class ExperimentMetadataBody(BaseModel):
 class DeviceLibraryBody(BaseModel):
     base_revision: str
     devices: dict[str, dict[str, Any]]
+    network_resources: list[str] | None = None
+    mapping: dict[str, dict[str, Any]] | None = None
+    physical_mapping_revision: str | None = None
 
 
 class PhysicalMappingsBody(BaseModel):
@@ -352,6 +361,34 @@ def device_library():
     return public_device_library(ROOT)
 
 
+@app.put("/api/lockin-selection")
+def update_lockin_selection(body: LockinSelectionBody):
+    return _with_configuration_lock(lambda: select_lockin_device(
+        body.device_id, device_library_revision=body.device_library_revision,
+        physical_mapping_revision=body.physical_mapping_revision, root=ROOT,
+    ))
+
+
+@app.put("/api/control-targets/{mapping_key}/lockin", response_model=ControlTargetResponse)
+def update_control_lockin(mapping_key: str, body: ControlLockinBody):
+    return _with_short_hardware_lock(lambda: apply_control_target_lockin(
+        mapping_key, body.device_library_revision, body.physical_mapping_revision,
+        body.settings.model_dump(exclude_unset=True),
+    ))
+
+
+@app.post("/api/control-targets/{mapping_key}/lockin-capture")
+def acquire_control_lockin(mapping_key: str, body: ControlLockinCaptureBody):
+    def runner(job: Job):
+        job.cancellation.raise_if_cancelled()
+        return capture_control_target_lockin(
+            mapping_key, body.device_library_revision, body.physical_mapping_revision,
+            body.settings.model_dump(exclude_none=True),
+            cancellation_check=job.cancellation.raise_if_cancelled,
+        )
+    return manager.create("lockin-capture", runner).public()
+
+
 def _with_configuration_lock(action):
     """设备库/物理映射写入：检查与写入在硬件锁内原子完成。
 
@@ -377,6 +414,9 @@ def update_device_library(body: DeviceLibraryBody):
         lambda: save_device_library(
             body.devices,
             base_revision=body.base_revision,
+            network_resources=body.network_resources,
+            mapping=body.mapping,
+            physical_mapping_revision=body.physical_mapping_revision,
             root=ROOT,
         )
     )
@@ -384,7 +424,7 @@ def update_device_library(body: DeviceLibraryBody):
 
 @app.post("/api/device-library/discover-visa")
 def discover_device_library():
-    return _with_short_hardware_lock(discover_visa_devices)
+    return _with_short_hardware_lock(lambda: discover_visa_devices(ROOT))
 
 
 @app.get("/api/physical-mappings")
@@ -486,6 +526,18 @@ def sync_clocks():
         lambda current: [
             result.to_dict()
             for result in synchronize_clocks(progress=lambda event: manager.event(current, event))
+        ],
+    )
+    return job.public()
+
+
+@app.post("/api/tools/output-loads")
+def init_output_loads():
+    job = manager.create(
+        "load-init",
+        lambda current: [
+            result.to_dict()
+            for result in initialize_output_loads(progress=lambda event: manager.event(current, event))
         ],
     )
     return job.public()

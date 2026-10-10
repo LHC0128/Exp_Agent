@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -95,6 +96,7 @@ def _refresh_safely(parent_root: Path) -> None:
 
 
 def run(params: MxYRFDriftParams) -> Path:
+    require_lockin_compatibility('mx-y-rf-sensitivity-drift', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     parent = create_run_directory(

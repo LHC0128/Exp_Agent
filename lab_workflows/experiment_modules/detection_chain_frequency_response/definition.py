@@ -33,9 +33,9 @@ DEFINITION = ExperimentDefinition(
     category="calibration",
     family="frequency",
     variant="baseline",
-    description="对照 XY 正弦控制噪声谱的 HF2 解调和采样设置，但关闭输入 AC 耦合；扫描 Probe AOM AM 频率并采集 Demod0 Y 谱峰，零基带点不参与响应及归一化。无论 Pump 光功率多少，每点采集期间都关闭温控并恢复，以检查不可控噪声下降来源。TEC103 不可连接时由外部软件维持温度。",
+    description='对照 XY 正弦控制噪声谱的 锁相放大器 解调和采样设置，但关闭输入 AC 耦合；扫描 Probe AOM AM 频率并采集 Demod0 Y 谱峰，零基带点不参与响应及归一化。无论 Pump 光功率多少，每点采集期间都关闭温控并恢复，以检查不可控噪声下降来源。TEC103 不可连接时由外部软件维持温度。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。',
     data_type="Detection_Chain_Frequency_Response",
-    required_devices=("DG4000", "DG900", "HF2"),
+    required_devices=("DG4000", "DG900", "锁相放大器"),
     required_mapping_keys=(
         "Probe_AOM_Carrier",
         "Probe_AOM_AM",
@@ -50,13 +50,13 @@ DEFINITION = ExperimentDefinition(
     analysis_program="experiments/Detection_Chain_Frequency_Response_plot.py",
     wiring_notes=(
         "Probe_AOM_Carrier (CH1) 启用外部 AM，AM 输入连接 Probe_AOM_AM (CH2) 通过背板。",
-        "HF2 信号输入 0 接 BPD 信号，采集前关闭 AC 耦合，使用单端、50 Ω；Demod0 Y 用于采集。",
+        "锁相放大器 信号输入 0 接 BPD 信号，采集前关闭 AC 耦合，使用单端、50 Ω；Demod0 Y 用于采集。",
         "程序通过 DG900 设置 Pump/Probe 光功率；TEC103 可连接时设置并等待稳定，否则跳过设温和温度检测。",
         "Temp_Switch 映射设备每点输出 0 V DC 关闭温控，采集后恢复 5 V DC，与 Pump 光功率无关。",
     ),
     safety_notes=(
         "Probe AOM 载波幅度受 safety_limits.yaml 限制。",
-        "AM 调制频率范围应覆盖关注的基带噪声频率（通过 ±HF2 解调频率映射）。",
+        "AM 调制频率范围应覆盖关注的基带噪声频率（通过 ±锁相放大器 解调频率映射）。",
         "实验结束后关闭 Probe AOM 载波和 AM 输出。",
         "取消或异常也恢复 Temp_Switch 为 5 V DC，物理输出保持 ON。",
     ),

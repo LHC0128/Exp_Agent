@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from dataclasses import asdict, dataclass
 import io
 from pathlib import Path
@@ -429,6 +430,7 @@ def _acquire_grid(
 
 
 def run(params: MxYRFProbeDetuningOptimizationParams) -> Path:
+    require_lockin_compatibility('mx-y-rf-probe-detuning-optimization', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     run_dir = create_run_directory(

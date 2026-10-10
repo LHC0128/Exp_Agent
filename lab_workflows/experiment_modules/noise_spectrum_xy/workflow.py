@@ -5,6 +5,8 @@
 # %% 导入
 from __future__ import annotations
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -188,12 +190,7 @@ def connect_devices(mapping):
         hfi = session.connect(
             "hf2",
             f"hf2://{hf2_cfg.get('host', '127.0.0.1')}/{hf2_cfg['device_id']}",
-            lambda: HF2Instrument(
-                host=hf2_cfg.get("host", "127.0.0.1"),
-                port=hf2_cfg.get("port", 8005),
-                api_level=1,
-                device_id=hf2_cfg["device_id"],
-            ),
+            lambda: create_lockin(hf2_cfg),
         )
         print(f"HF2 已连接: {hfi.idn}")
         devices["hf2"] = hfi
@@ -659,6 +656,7 @@ def safe_scan_outputs_off(devices):
 # %% 运行入口
 def run(params: NoiseSpectrumXYParams, *, project_root: Path | None = None) -> Path:
     """执行采集，成功后返回运行目录；导入模块不会运行实验。"""
+    require_lockin_compatibility('noise-spectrum-xy', params.to_external())
     project_root = Path(project_root).resolve() if project_root is not None else find_project_root(Path(__file__).parent)
     # 直接调用也经过既有类型/有限值校验，且后续状态不写回调用方模型。
     params = NoiseSpectrumXYParams.from_external(params.to_external())

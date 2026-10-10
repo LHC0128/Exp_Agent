@@ -74,7 +74,12 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
 
     def preflight(self, values: dict[str, Any]) -> list[str]:
         try:
-            return self._resolved(values).validate(self.root)
+            from ..lockin_compatibility import lockin_preflight
+            from ..instrument_config import validate_mapping_usage
+            from .requirements import TYPED_MAPPING_REQUIREMENTS
+            validate_mapping_usage(TYPED_MAPPING_REQUIREMENTS.get(self.id, ()), self.root)
+            params = self._resolved(values)
+            return params.validate(self.root) + lockin_preflight(self.id, params.to_external(), self.root)
         except (TypeError, ValueError) as exc:
             return [str(exc)]
 
@@ -215,7 +220,7 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         cancellation: CancellationToken | None,
     ) -> dict[str, Any]:
         params = self._resolved(values)
-        errors = params.validate(self.root)
+        errors = self.preflight(params.to_external())
         if errors:
             raise ValueError("；".join(errors))
         base = self.root / "data" / self.data_type
@@ -292,7 +297,7 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
 
     def run_cli(self) -> int:
         params = self.defaults()
-        errors = params.validate(self.root)
+        errors = self.preflight(params.to_external())
         if errors:
             raise ValueError("；".join(errors))
         self._execute(self.acquisition_module, parameters=params.to_external())

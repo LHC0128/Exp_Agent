@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "../api";
 import { useJobActivity } from "./JobActivity";
 import { JobView } from "./JobView";
@@ -7,7 +7,7 @@ import { ParameterForm } from "./MxYOptimalControlFrequency/ParameterForm";
 import { sameParameterLayout, validatedParameterLayout } from "../pages/experimentHelpers";
 
 type StaticRunSummary = { run_id: string; timestamp: string; run_tag: string; completion_status: string; analysis: Record<string, unknown>; artifacts: Record<string, string> };
-type Props = { experimentId: string; definition: ExperimentDefinition; fields: SchemaField[]; layout: ParameterLayout; layoutDirty: boolean; onLayoutChange: (next: ParameterLayout) => void; onLayoutSaved: (next: ParameterLayout) => void; values: ParameterValues; setValues: (next: ParameterValues) => void; job: Job | undefined; setJob: (next: Job | undefined) => void; prefill: ParameterValues | null; clearPrefill: () => void };
+type Props = { experimentId: string; definition: ExperimentDefinition; fields: SchemaField[]; layout: ParameterLayout; layoutDirty: boolean; onLayoutChange: (next: ParameterLayout) => void; onLayoutSaved: (next: ParameterLayout) => void; values: ParameterValues; setValues: (next: ParameterValues) => void; job: Job | undefined; setJob: Dispatch<SetStateAction<Job | undefined>>; prefill: ParameterValues | null; clearPrefill: () => void };
 
 export function StaticSensitivityDashboard({ experimentId, definition, fields, layout, layoutDirty, onLayoutChange, onLayoutSaved, values, setValues, job, setJob, prefill, clearPrefill }: Props) {
   const { hardwareBusy, activeJobs } = useJobActivity();

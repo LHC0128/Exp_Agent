@@ -19,15 +19,15 @@ DEFINITION = ExperimentDefinition(
     category="calibration",
     family="z-field-calibration",
     variant="mx-gs200",
-    description="在 Mx 构型下扫描 GS200 主场电流，以 Y RF 共振中心标定 Hz/mA 和 nT/mA。",
+    description='在 Mx 构型下扫描 GS200 主场电流，以 Y RF 共振中心标定 Hz/mA 和 nT/mA。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。',
     data_type="Mx_Main_Field_Calibration",
-    required_devices=("GS200", "DG900", "DG4000", "HF2"),
+    required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Main_Field_Calibration.py",
     analysis_program="experiments/Mx_Main_Field_Calibration_plot.py",
     wiring_notes=(
         "主场和 Pump 光沿 Z、Probe 光沿 X；GS200 提供扫描主场，Z_magnetic_field CH1 保持 0 V OFF。",
-        "rf_coil CH2 提供 Y 向 RF，HF2 Demod0 逐频点直接解调 R。",
+        "rf_coil CH2 提供 Y 向 RF，锁相放大器 Demod0 逐频点直接解调 R。",
     ),
     safety_notes=(
         "每个频点关闭温控并统一等待一次；完成后恢复温控 5 V ON。",

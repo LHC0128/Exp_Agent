@@ -113,7 +113,7 @@ def rig(tmp_path, monkeypatch, control_source):
         instance.generators[resource] = FakeSignal(resource, instance)
     monkeypatch.setattr(routed_signal_generator, "create_signal_generator", lambda config: instance.generators[config["resource"]])
     monkeypatch.setattr(workflow, "GS200Instrument", lambda resource: Mock())
-    monkeypatch.setattr(workflow, "HF2Instrument", lambda **kwargs: FakeHF2(instance, **kwargs))
+    monkeypatch.setattr(workflow, "create_lockin", lambda config: FakeHF2(instance, device_id=config["device_id"]))
     monkeypatch.setattr(workflow, "TECInstrument", lambda resource: Mock())
     monkeypatch.setattr(workflow, "configure_temperature_control", lambda *args, **kwargs: SimpleNamespace(to_dict=lambda: {"control_source": "tec103"}))
     monkeypatch.setattr(workflow, "create_run_directory", lambda data_type, tag, parameters, **kwargs: create_run_directory(data_type, tag, parameters, schema_version=2, project_root=tmp_path))

@@ -13,7 +13,7 @@ mapping:
     description: 磁力仪中 Z 主磁场线圈控制，单位mA，通过电流控制磁场强度，范围-10到10mA；与 6221 小磁场线圈独立
   Z_magnetic_field:
     instrument: signal_generator
-    device_id: dg4e242401288
+    device_id: dg4e261300744
     endpoint:
       kind: channel
       index: 1
@@ -21,7 +21,7 @@ mapping:
     description: 输出的大小对应着Z方向磁场强度，一般为任意波或三角波，范围0-10 V
   Time_sequence_2:
     instrument: signal_generator
-    device_id: dg4e242401288
+    device_id: dg4e261300744
     endpoint:
       kind: channel
       index: 2
@@ -89,7 +89,7 @@ mapping:
     description: CH2 任意波连接同机背板外部 AM 输入；输出仅作为调制信号
   X_magnetic_field:
     instrument: signal_generator
-    device_id: dg4e234902522
+    device_id: dg4e261300664
     endpoint:
       kind: channel
       index: 1
@@ -97,7 +97,7 @@ mapping:
     description: 输出大小对应着X方向磁场，一般为任意波，范围-10到10 V
   Y_magnetic_field:
     instrument: signal_generator
-    device_id: dg4e234902522
+    device_id: dg4e261300664
     endpoint:
       kind: channel
       index: 2
@@ -105,7 +105,7 @@ mapping:
     description: 输出大小对应着Y方向磁场，一般为任意波，范围-10到10 V
   rf_coil:
     instrument: signal_generator
-    device_id: dg4e234902522
+    device_id: dg4e261300664
     endpoint:
       kind: channel
       index: 2
@@ -129,7 +129,7 @@ mapping:
     description: 脉冲方波门控 Pump 调制 RF 信号
   Heat_Control:
     instrument: signal_generator
-    device_id: dg9q271200104
+    device_id: dg9q275000734
     endpoint:
       kind: channel
       index: 1
@@ -137,7 +137,7 @@ mapping:
     description: 加热信号，可在 GUI 中读取和设置；写入受 safety_limits.yaml 限制
   Temp_Switch:
     instrument: signal_generator
-    device_id: dg9q271200104
+    device_id: dg9q275000734
     endpoint:
       kind: channel
       index: 2
@@ -197,6 +197,9 @@ constraints:
     pump_rf:
     - Pump_modulation
     - Time_sequence
+    temperature_control:
+    - Heat_Control
+    - Temp_Switch
     hf2_demods:
     - lockin_r
     - lockin_xy

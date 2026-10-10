@@ -26,15 +26,14 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-y-probe-power-pzt-grid",
     description=(
-        "在 Mx Y 向 RF 构型下扫描 Probe 光功率和 DLC pro PZT "
-        "Scan Offset；Probe 轴也可设为单点，以固定光功率只扫描 PZT。"
+        '在 Mx Y 向 RF 构型下扫描 Probe 光功率和 DLC pro PZT Scan Offset；Probe 轴也可设为单点，以固定光功率只扫描 PZT。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
     ),
     data_type="Mx_Y_RF_Probe_Detuning_Optimization",
     required_devices=(
         "GS200",
         "DG900",
         "DG4000",
-        "HF2",
+        "锁相放大器",
         "DLC_PRO",
     ),
     execution_mode="typed_workflow",
@@ -48,7 +47,7 @@ DEFINITION = ExperimentDefinition(
         "接线与 Mx Y 向 RF 场灵敏度实验相同，DLC pro Laser 1 "
         "Scan Offset 作为 Probe 失谐代理轴。",
         "DG900 CH1 固定 Pump 光功率；CH2 可扫描 Probe 光功率，"
-        "也可用单点 Probe 轴保持固定；HF2 Demod0 仅采集 R。",
+        "也可用单点 Probe 轴保持固定；锁相放大器 Demod0 仅采集 R。",
         "该实验不连接 TEC103；Temp_Switch 仍由独立 DG900 通道控制。",
     ),
     safety_notes=(

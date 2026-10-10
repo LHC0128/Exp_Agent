@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import io
 from pathlib import Path
 import sys
@@ -192,6 +193,7 @@ def _acquire_grid(
 
 
 def run(params: MxYRFPowerOptimizationParams) -> Path:
+    require_lockin_compatibility('mx-y-rf-power-optimization', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     run_dir = create_run_directory(

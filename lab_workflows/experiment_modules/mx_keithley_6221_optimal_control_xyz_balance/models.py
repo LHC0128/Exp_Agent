@@ -105,7 +105,7 @@ class MxKeithley6221OptimalControlXYZBalanceParams(ExperimentParams):
     demod_frequency_hz: float = parameter(
         default=12000.0,
         external_name="DEMOD_FREQUENCY_HZ",
-        label="HF2 Demod0 频率",
+        label="锁相放大器 Demod0 频率",
         unit="Hz",
         group="basic",
         minimum=0.001,
@@ -149,21 +149,21 @@ class MxKeithley6221OptimalControlXYZBalanceParams(ExperimentParams):
     demod_idx: int = parameter(
         default=0,
         external_name="DEMOD_IDX",
-        label="HF2 解调器索引",
+        label="锁相放大器 解调器索引",
         visible=False,
         minimum=0,
     )
     demod_osc_idx: int = parameter(
         default=0,
         external_name="DEMOD_OSC_IDX",
-        label="HF2 振荡器索引",
+        label="锁相放大器 振荡器索引",
         visible=False,
         minimum=0,
     )
     hf2_signal_range_v: float = parameter(
         default=2.0,
         external_name="HF2_SIGNAL_RANGE_V",
-        label="HF2 输入量程",
+        label="锁相放大器 输入量程",
         unit="V",
         group="advanced",
         minimum=0.001,

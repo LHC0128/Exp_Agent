@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -414,6 +415,7 @@ def _acquire_scan(
 
 def run(params: MxZNoiseSpectrumParams) -> Path:
     """执行 500 点 Z DC 噪声谱采集。"""
+    require_lockin_compatibility('mx-z-noise-spectrum', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     axes = build_scan_axes(params)

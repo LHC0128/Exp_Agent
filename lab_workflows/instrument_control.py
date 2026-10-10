@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from lockin_amplifier import HF2Instrument, demod
+from .devices import create_lockin
+from .lockin_control import read_outputs, apply_settings as apply_lockin_settings, capture as capture_lockin
 from sds_acquisition import SDSInstrument
 from tec_controller import TECInstrument
 
@@ -38,7 +40,7 @@ def _connect(record: DeviceRecord):
     if record.type in SIGNAL_GENERATOR_DRIVERS:
         instrument = SIGNAL_GENERATOR_DRIVERS[record.type](
             record.resource,
-            load_policy=signal_generator_load_policy(record.resource),
+            load_policy=signal_generator_load_policy(record.resource, record.options.get("mapping_key")),
         )
     elif record.type in CURRENT_SOURCE_DRIVERS:
         instrument = CURRENT_SOURCE_DRIVERS[record.type](record.resource)
@@ -60,13 +62,8 @@ def _connect(record: DeviceRecord):
             baudrate=int(record.options.get("baudrate", 38400)),
             timeout=float(record.options.get("timeout", 0.5)),
         )
-    elif record.type == "HF2":
-        instrument = HF2Instrument(
-            host=str(record.options.get("host", "127.0.0.1")),
-            port=int(record.options.get("port", 8005)),
-            device_id=str(record.options.get("device_id", record.id)),
-            interface=str(record.options.get("interface", "PCIe")),
-        )
+    elif record.type in {"HF2", "MFLI"}:
+        instrument = create_lockin({"instrument": "lockin_amplifier", "model": record.type, **record.options})
     else:
         raise ValueError(f"不支持的设备类型: {record.type}")
     instrument.connect()
@@ -177,7 +174,7 @@ def _read_modulation(instrument, device_type: str, channel: int,
         state["source"] = _optional_query(
             errors,
             "mod.source",
-            lambda: instrument.get_mod_source(mod_type, channel),
+            lambda: instrument.get_mod_source(channel),
         )
         if state["source"] != "EXTernal":
             state["internal_frequency"] = _optional_query(
@@ -825,7 +822,8 @@ def _apply_modulation(instrument, device_type: str, channel: int,
         }
         source_setters[mod_type](source, channel)
     else:
-        instrument.set_mod_source(mod_type, source, channel)
+        instrument.set_mod_type(mod_type, channel)
+        instrument.set_mod_source(source, channel)
 
     values = {
         "AM": ("am_depth", instrument.set_mod_am_depth),
@@ -1412,7 +1410,7 @@ _CONTROL_TYPES = {
     "toptica_dlc_pro": ("laser", None),
     "sds_acquisition": ("scope", None),
     "tec_controller": ("tec", None),
-    "lockin_amplifier": ("hf2", True),
+    "lockin_amplifier": ("hf2", False),
 }
 
 
@@ -1508,7 +1506,7 @@ def _target_record(
         "toptica_dlc_pro": "DLC_PRO",
         "sds_acquisition": "SDS",
         "tec_controller": "TEC103",
-        "lockin_amplifier": "HF2",
+        "lockin_amplifier": device.model.upper(),
     }
     options = {"device_id": device.device_id, **device.connection}
     mapping = load_mapping_document()["mapping"][target["mapping_key"]]
@@ -1593,18 +1591,24 @@ def _read_hf2_state(record: DeviceRecord, instrument, demod_idx: int) -> dict[st
     sample = demod.read_demod_sample(instrument, demod_idx)
     base = instrument.demod_path(demod_idx)
     return {
-        "type": "HF2", "id": record.id, "label": record.label,
+        "type": record.type, "id": record.id, "label": record.label,
         "resource": record.resource, "short_resource": record.short_resource,
         "options": record.options, "demod_idx": demod_idx,
         "x": float(sample["x"]), "y": float(sample["y"]),
-        "r": float(sample["r"]), "phase": float(sample["phase"]),
-        "frequency": float(sample["frequency"]),
+        "r": float(sample["r"]), "phase": math.degrees(float(sample["theta"])),
+        "frequency": float(instrument.get_double(f"{base}/freq")),
         "enabled": bool(instrument.get_int(f"{base}/enable")),
         "sample_rate": float(instrument.get_double(f"{base}/rate")),
         "time_constant": float(instrument.get_double(f"{base}/timeconstant")),
         "order": int(instrument.get_int(f"{base}/order")),
         "harmonic": int(instrument.get_int(f"{base}/harmonic")),
         "phase_shift": float(instrument.get_double(f"{base}/phaseshift")),
+        "oscillator": instrument.get_int(f"{base}/oscselect"),
+        "shared_demodulators": [idx for idx in range(instrument.capabilities["demodulators"])
+                                 if instrument.get_int(f"{instrument.demod_path(idx)}/oscselect") == instrument.get_int(f"{base}/oscselect")],
+        "capabilities": instrument.capabilities,
+        "input_select": instrument.get_int(f"{base}/adcselect"),
+        **read_outputs(instrument, record.id, demod_idx),
     }
 
 
@@ -1661,6 +1665,41 @@ def read_control_target(
         "target": target, "snapshot": snapshot,
         "read_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def apply_control_target_lockin(mapping_key: str, device_library_revision: str,
+                                physical_mapping_revision: str, settings: dict) -> dict[str, Any]:
+    target, device, endpoint = _resolve_control_target(mapping_key, device_library_revision, physical_mapping_revision)
+    if device.instrument != "lockin_amplifier" or endpoint is None or endpoint.kind != "demod":
+        raise ValueError("控制目标不是锁相放大器解调端点")
+    record = _target_record(target, device, endpoint)
+    instrument = _connect(record)
+    try:
+        apply_lockin_settings(instrument, device.device_id, endpoint.index, settings)
+        try:
+            snapshot = _read_hf2_state(record, instrument, endpoint.index)
+        except Exception as exc:
+            if "signal_output" in settings:
+                try:
+                    demod.set_output_enable(instrument, settings["signal_output"]["index"], False)
+                except Exception as cleanup:
+                    raise RuntimeError(f"{exc}；Signal Output 关闭失败，状态未知: {cleanup}") from exc
+            raise
+        return _control_response(target, snapshot)
+    finally:
+        instrument.disconnect()
+
+
+def capture_control_target_lockin(mapping_key: str, device_library_revision: str,
+                                  physical_mapping_revision: str, settings: dict, *, cancellation_check=None) -> dict:
+    target, device, endpoint = _resolve_control_target(mapping_key, device_library_revision, physical_mapping_revision)
+    if device.instrument != "lockin_amplifier" or endpoint is None or endpoint.kind != "demod":
+        raise ValueError("采集目标不是锁相放大器解调端点")
+    instrument = _connect(_target_record(target, device, endpoint))
+    try:
+        return capture_lockin(instrument, device.device_id, endpoint.index, settings, cancellation_check=cancellation_check)
+    finally:
+        instrument.disconnect()
 
 
 def read_control_targets(

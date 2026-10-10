@@ -492,6 +492,138 @@
         }
       }
     },
+    "/api/lockin-selection": {
+      "put": {
+        "summary": "Update Lockin Selection",
+        "operationId": "update_lockin_selection_api_lockin_selection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockinSelectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets/{mapping_key}/lockin": {
+      "put": {
+        "summary": "Update Control Lockin",
+        "operationId": "update_control_lockin_api_control_targets__mapping_key__lockin_put",
+        "parameters": [
+          {
+            "name": "mapping_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mapping Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlLockinBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlTargetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/control-targets/{mapping_key}/lockin-capture": {
+      "post": {
+        "summary": "Acquire Control Lockin",
+        "operationId": "acquire_control_lockin_api_control_targets__mapping_key__lockin_capture_post",
+        "parameters": [
+          {
+            "name": "mapping_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mapping Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlLockinCaptureBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/device-library/discover-visa": {
       "post": {
         "summary": "Discover Device Library",
@@ -612,7 +744,8 @@
                       "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
                       "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
                       "TEC103": "#/components/schemas/TecDeviceSnapshot",
-                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot",
+                      "MFLI": "#/components/schemas/Hf2DeviceSnapshot"
                     }
                   },
                   "title": "Response Refresh Device Api Devices  Device Id  Refresh Post"
@@ -706,7 +839,8 @@
                       "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
                       "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
                       "TEC103": "#/components/schemas/TecDeviceSnapshot",
-                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot",
+                      "MFLI": "#/components/schemas/Hf2DeviceSnapshot"
                     }
                   },
                   "title": "Response Update Channel Api Devices  Device Id  Channels  Channel  Put"
@@ -791,7 +925,8 @@
                       "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
                       "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
                       "TEC103": "#/components/schemas/TecDeviceSnapshot",
-                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot",
+                      "MFLI": "#/components/schemas/Hf2DeviceSnapshot"
                     }
                   },
                   "title": "Response Update Scope Api Devices  Device Id  Scope Put"
@@ -876,7 +1011,8 @@
                       "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
                       "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
                       "TEC103": "#/components/schemas/TecDeviceSnapshot",
-                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot",
+                      "MFLI": "#/components/schemas/Hf2DeviceSnapshot"
                     }
                   },
                   "title": "Response Update Current Source Api Devices  Device Id  Current Source Put"
@@ -961,7 +1097,8 @@
                       "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
                       "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
                       "TEC103": "#/components/schemas/TecDeviceSnapshot",
-                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot",
+                      "MFLI": "#/components/schemas/Hf2DeviceSnapshot"
                     }
                   },
                   "title": "Response Update Laser Api Devices  Device Id  Laser Put"
@@ -1046,7 +1183,8 @@
                       "6221": "#/components/schemas/Keithley6221DeviceSnapshot",
                       "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
                       "TEC103": "#/components/schemas/TecDeviceSnapshot",
-                      "HF2": "#/components/schemas/Hf2DeviceSnapshot"
+                      "HF2": "#/components/schemas/Hf2DeviceSnapshot",
+                      "MFLI": "#/components/schemas/Hf2DeviceSnapshot"
                     }
                   },
                   "title": "Response Update Laser Emission Api Devices  Device Id  Emission Put"
@@ -1071,6 +1209,22 @@
       "post": {
         "summary": "Sync Clocks",
         "operationId": "sync_clocks_api_clocks_sync_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tools/output-loads": {
+      "post": {
+        "summary": "Init Output Loads",
+        "operationId": "init_output_loads_api_tools_output_loads_post",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3364,6 +3518,52 @@
         ],
         "title": "ControlLaserBody"
       },
+      "ControlLockinBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/LockinSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "settings"
+        ],
+        "title": "ControlLockinBody"
+      },
+      "ControlLockinCaptureBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/LockinCaptureSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "settings"
+        ],
+        "title": "ControlLockinCaptureBody"
+      },
       "ControlRevisionBody": {
         "properties": {
           "device_library_revision": {
@@ -3535,6 +3735,7 @@
                     "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
                     "GS200": "#/components/schemas/CurrentSourceDeviceSnapshot",
                     "HF2": "#/components/schemas/Hf2DeviceSnapshot",
+                    "MFLI": "#/components/schemas/Hf2DeviceSnapshot",
                     "SDS": "#/components/schemas/ScopeDeviceSnapshot",
                     "TEC103": "#/components/schemas/TecDeviceSnapshot"
                   }
@@ -3659,6 +3860,7 @@
                 "DLC_PRO": "#/components/schemas/LaserDeviceSnapshot",
                 "GS200": "#/components/schemas/CurrentSourceDeviceSnapshot",
                 "HF2": "#/components/schemas/Hf2DeviceSnapshot",
+                "MFLI": "#/components/schemas/Hf2DeviceSnapshot",
                 "SDS": "#/components/schemas/ScopeDeviceSnapshot",
                 "TEC103": "#/components/schemas/TecDeviceSnapshot"
               }
@@ -3972,6 +4174,46 @@
             },
             "type": "object",
             "title": "Devices"
+          },
+          "network_resources": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Network Resources"
+          },
+          "mapping": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping"
+          },
+          "physical_mapping_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Physical Mapping Revision"
           }
         },
         "type": "object",
@@ -4611,7 +4853,10 @@
           },
           "type": {
             "type": "string",
-            "const": "HF2",
+            "enum": [
+              "HF2",
+              "MFLI"
+            ],
             "title": "Type"
           },
           "demod_idx": {
@@ -4661,6 +4906,48 @@
           "phase_shift": {
             "type": "number",
             "title": "Phase Shift"
+          },
+          "oscillator": {
+            "type": "integer",
+            "title": "Oscillator"
+          },
+          "shared_demodulators": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Shared Demodulators"
+          },
+          "input_select": {
+            "type": "integer",
+            "title": "Input Select"
+          },
+          "capabilities": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Capabilities"
+          },
+          "signal_outputs": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Signal Outputs"
+          },
+          "aux_outputs": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Aux Outputs"
           }
         },
         "additionalProperties": false,
@@ -4682,7 +4969,13 @@
           "time_constant",
           "order",
           "harmonic",
-          "phase_shift"
+          "phase_shift",
+          "oscillator",
+          "shared_demodulators",
+          "input_select",
+          "capabilities",
+          "signal_outputs",
+          "aux_outputs"
         ],
         "title": "Hf2DeviceSnapshot"
       },
@@ -5430,6 +5723,345 @@
           "settings"
         ],
         "title": "LaserSettingsBody"
+      },
+      "LockinAuxOutputSettings": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Index"
+          },
+          "demod_index": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Demod Index"
+          },
+          "output_select": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Output Select"
+          },
+          "scale": {
+            "type": "number",
+            "title": "Scale"
+          },
+          "offset_v": {
+            "type": "number",
+            "title": "Offset V"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "index",
+          "demod_index",
+          "output_select",
+          "scale",
+          "offset_v"
+        ],
+        "title": "LockinAuxOutputSettings"
+      },
+      "LockinCaptureSettings": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "demod",
+              "scope"
+            ],
+            "title": "Mode"
+          },
+          "duration": {
+            "type": "number",
+            "maximum": 60.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Duration",
+            "default": 1.0
+          },
+          "points": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 2.0,
+            "title": "Points",
+            "default": 1000
+          },
+          "sources": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "voltage0",
+                "voltage1",
+                "aux_input0",
+                "aux_input1"
+              ]
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Sources"
+          },
+          "sample_rate_hz": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate Hz"
+          },
+          "length": {
+            "type": "integer",
+            "maximum": 5000000.0,
+            "minimum": 16.0,
+            "title": "Length",
+            "default": 2048
+          },
+          "records": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Records",
+            "default": 1
+          },
+          "timeout": {
+            "type": "number",
+            "maximum": 120.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Timeout",
+            "default": 30
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "LockinCaptureSettings"
+      },
+      "LockinDemodSettings": {
+        "properties": {
+          "phase_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Deg"
+          },
+          "frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency Hz"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "time_constant": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Constant"
+          },
+          "order": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order"
+          },
+          "harmonic": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harmonic"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LockinDemodSettings"
+      },
+      "LockinSelectionBody": {
+        "properties": {
+          "device_library_revision": {
+            "type": "string",
+            "title": "Device Library Revision"
+          },
+          "physical_mapping_revision": {
+            "type": "string",
+            "title": "Physical Mapping Revision"
+          },
+          "device_id": {
+            "type": "string",
+            "title": "Device Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_library_revision",
+          "physical_mapping_revision",
+          "device_id"
+        ],
+        "title": "LockinSelectionBody"
+      },
+      "LockinSettings": {
+        "properties": {
+          "demod": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LockinDemodSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signal_output": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LockinSignalOutputSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "aux_output": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LockinAuxOutputSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LockinSettings"
+      },
+      "LockinSignalOutputSettings": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Index"
+          },
+          "amplitude_index": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Amplitude Index",
+            "default": 0
+          },
+          "amplitude_peak_v": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amplitude Peak V"
+          },
+          "offset_v": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset V"
+          },
+          "mixer_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mixer Enabled"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "index"
+        ],
+        "title": "LockinSignalOutputSettings"
       },
       "ModulationSettings": {
         "properties": {

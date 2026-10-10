@@ -20,17 +20,16 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-y-pump-probe-grid",
     description=(
-        "在 Mx Y 向 RF 构型下二维扫描 Pump/Probe 光功率，"
-        "逐点测量完整灵敏度并寻找最优工作点。"
+        '在 Mx Y 向 RF 构型下二维扫描 Pump/Probe 光功率，逐点测量完整灵敏度并寻找最优工作点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
     ),
     data_type="Mx_Y_RF_Power_Optimization",
-    required_devices=("GS200", "DG900", "DG4000", "HF2"),
+    required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Y_RF_Power_Optimization.py",
     analysis_program="experiments/Mx_Y_RF_Power_Optimization_plot.py",
     wiring_notes=(
         "接线与 Mx Y 向 RF 场灵敏度实验相同：主场/Pump 沿 Z、Probe 沿 X、RF 场沿 Y。",
-        "DG900 CH1/CH2 分别扫描 Pump/Probe DC 光功率，HF2 Demod0 仅采集 R。",
+        "DG900 CH1/CH2 分别扫描 Pump/Probe DC 光功率，锁相放大器 Demod0 仅采集 R。",
     ),
     safety_notes=(
         "所有功率写入前按 0–1 V 安全限值校验；质量坏点标记无效后继续，设备错误立即停止。",

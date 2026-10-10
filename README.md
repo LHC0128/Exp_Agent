@@ -2,6 +2,15 @@
 
 面向 Bell-Bloom 磁力仪实验的自动化仓库，覆盖仪器控制、参数扫描、原始数据采集、离线分析与绘图。仓库同时保留交互式 Notebook 和可重复运行的 Python 脚本，适合实验调试、批量采集和后处理复现。
 
+## 近期更新（2026 年 10 月）
+
+- GUI 支持通过根目录 `start_gui.bat` 双击启动；静磁场色散采用逐点 DC 扫描、重复读数中位数和分组温控等待，RF DirectAW 提供运行 / 历史与离线叠加分析。
+- [锁相驱动](src/lockin_amplifier/README.md)拆分为 HF2、MFLI 独立型号模块，共用通信、解调和采集接口；GUI 支持统一设备选择、Signal / Aux 输出及内置 Scope，实验预检检查型号能力与频率范围。
+- [信号发生器驱动](src/signal_generator/README.md)拆分为 DG4000、DG900 Pro 独立实现，保留旧导入入口；共同接口覆盖波形、调制、Burst、计数器和截图，Pro 额外支持内置任意波文件。
+- 设备库统一管理 USB / 网络 / LabOne 发现与扫描候选地址，设备选择按同机和共享通道约束联动；配置先编辑草稿，再整批保存，同次实验的独立物理量占用同一通道时拒绝启动。
+- “参考时钟同步”先写入全部设备，再统一回读；“输出负载初始化”单独设置 Pump 调制 50 Ω、其余高阻。高阻回读标记统一显示和提交为 `INF`，两项工具分别报告每台设备结果。
+- 根目录 [AGENTS.md](AGENTS.md) 和 [CLAUDE.md](CLAUDE.md) 随项目同步，维护入口和无硬件验证命令同步更新。
+
 ## 坐标系
 
 | 轴 | 物理量 | 说明 |
@@ -16,7 +25,7 @@
 src/
   gs200/                  # GS200 控制
   keithley_6221/          # Keithley 6221 电流源与内部波形控制
-  lockin_amplifier/       # HF2 控制与 DAQ 接口
+  lockin_amplifier/       # HF2 / MFLI 控制、DAQ 与内置 Scope
   sds_acquisition/        # SDS 示波器采集
   sensitivity_analysis/   # 灵敏度拟合、汇总与分析
   signal_generator/       # DG4000 / DG900 控制
@@ -34,6 +43,7 @@ docs/                     # 模块文档、实验文档、迁移清单与手册
   old/                    # 历史归档，不作为当前入口
 params/                   # 设备库、物理量映射与安全限值
   devices.yaml            # 设备 ID、型号、资源与参考时钟
+  instrument_discovery.yaml # 旧网络扫描候选兼容入口
   mapping.yaml            # 物理量与设备端点绑定
   safety_limits.yaml      # 输出量安全上下限
   experiment_catalog.yaml # GUI 分类、归档状态、名称、简介与参数布局
@@ -59,8 +69,8 @@ results/                  # 结果图表
 | 模块 | 设备 / 能力 | 说明 |
 |---|---|---|
 | `sds_acquisition` | SDS 系列示波器 | 波形采集、保存、CLI 支持 |
-| `signal_generator` | DG4000 / DG900 | 正弦、Burst、AM、任意波等控制 |
-| `lockin_amplifier` | Zurich Instruments HF2 | Demod、DAQ、AuxOut 配置 |
+| `signal_generator` | DG4000 / DG900 Pro | 共同波形、Burst、AM、计数器与截图；Pro 内置任意波文件 |
+| `lockin_amplifier` | Zurich Instruments HF2 / MFLI | 统一解调、Signal / Aux 输出、DAQ 与内置 Scope |
 | `gs200` | Yokogawa GS200 | 主磁场电流源控制 |
 | `keithley_6221` | Keithley 6221 | 精密直流、内部波形与易失性任意波控制 |
 | `tec_controller` | TEC103 | 温控器串口控制 |
@@ -76,7 +86,9 @@ results/                  # 结果图表
 
 - `docs/sds_acquisition.md`
 - `docs/signal_generator.md`
+- [信号发生器源码阅读指南](src/signal_generator/README.md)
 - `docs/lockin_amplifier.md`
+- [锁相放大器源码阅读指南](src/lockin_amplifier/README.md)
 - `docs/gs200.md`
 - `docs/keithley_6221.md`
 - `docs/tec_controller.md`
@@ -88,7 +100,7 @@ results/                  # 结果图表
 历史叠加、独立显示/隐藏、颜色和选定历史删除，详见 [示波器采集](docs/scope_capture.md)。
 
 GUI 是运行在实验电脑本机的 Web 控制台，可用于读取和设置 GS200、Keithley 6221 电流源、
-TOPTICA DLC pro Probe 激光、DG4000、DG900 Pro、SDS 示波器等仪器，并运行仓库中
+TOPTICA DLC pro Probe 激光、DG4000、DG900 Pro、HF2 / MFLI、SDS 示波器等仪器，并运行仓库中
 已接入的实验流程。
 
 ### 首次安装
@@ -143,10 +155,10 @@ Set-Location D:\Code\exp_agent\GUI
 
 ### 基本操作
 
-1. 进入“仪器控制”的“物理量映射”标签，选择每个物理量使用的设备和端点，整批保存。
-2. 在“设备库”中维护型号、Resource、连接参数、能力和参考时钟；VISA 扫描只执行资源枚举与 `*IDN?` 查询。
+1. 进入“仪器控制”的“物理量映射”标签，统一选择 USB/IP 设备；设备切换联动同机组及共享通道组并保留通道，目标通道不足时拒绝切换，整批保存。
+2. 在“设备库”中维护型号、Resource、连接参数、能力、参考时钟和网络扫描地址（`devices.yaml` 顶层 `network_resources`）；先保存候选地址，再扫描确认型号与序列号并逐台入库。VISA 扫描只执行资源枚举与 `*IDN?` 查询。信号源用途卡片内的 Resource 下拉选择实际仪器，并联动同机/共享通道组、保留通道；单张“锁相放大器”卡片统一选择 HF2 或 MFLI。两类选择均为草稿，点击“保存设备库”后与设备配置一起生效；硬件任务期间可编辑草稿，结束后才可保存。信号源通道允许在不同实验中复用，同一次实验独立使用的物理量占用同一通道时预检拒绝启动。
 3. “设备控制”以多列网格展示全部物理量，可逐项“读取”，也可点击“连接并读取全部”；页面打开时不会自动连接硬件。
-4. 信号发生器常用波形参数直接显示，波形细节、负载、单位、调制和 Burst 位于折叠的高级区；`rf_coil` 作为历史别名不单独显示，统一由“Y方向磁场”面板控制。
+4. 信号发生器常用波形参数直接显示，波形细节、负载、单位、调制和 Burst 位于折叠的高级区；高阻回读 `9.9E+37` 在负载框显示并提交为 `INF`。`rf_coil` 作为历史别名不单独显示，统一由“Y方向磁场”面板控制。
 5. 点击“应用并回读”；写入前会检查当前 mapping key 的 `params/safety_limits.yaml`，写入后以实际回读值更新页面。非 Vpp 状态仅允许回读、关闭输出或切换为 Vpp。
 6. 在“功能模块 → Z 任意波控制”选择闭环冻结结果，离线查看 V–t 图，再选择“仅加载，保持关闭”或“加载并启动”。可联动时序信号2并编辑触发参数；Z 面板提供快捷入口。详见 [任意波控制说明](docs/signal_generator.md#gui-z-任意波控制)。
 7. 实验结束后，先按需要执行模块的“停止”，再分别停止 Vite 与后端。仅停止服务不会自动关闭已启动的任意波。
@@ -164,6 +176,8 @@ Set-Location D:\Code\exp_agent\GUI
 
 启动器会核对 8000 和 5173 端口；重复双击或遇到冲突时，确认占用进程并停止对应旧服务，再重新启动。
 更详细的开发说明见 [GUI/README.md](GUI/README.md)。
+
+锁相设备采用相同的 Python Core API 函数入口，支持相位、频率、输出设置、解调 X/Y/R 和内置 Scope 采集。MFLI 已配置为 `dev30661`、`192.168.124.109:8004`、外部参考，启用选件后的频率上限为 5 MHz。双主电压回采实验选择 MFLI 时禁止启动；尚未确认安全电压范围的锁相输出写入保持禁用。接口、硬件差异与实机验收见 [锁相模块说明](docs/lockin_amplifier.md)，受限实验清单见 [锁相实验兼容性](docs/legacy_lockin_experiments.md)。
 
 ## 实验组织方式
 
@@ -295,7 +309,7 @@ GUI 提供运行 / 历史双 Tab，历史只接纳新格式；完整分析结果
 | Mx 主磁场示波器噪声谱（固定 X/Y DC 补偿，可选 AC/DC 耦合） | `experiments/Mx_Main_Field_Scope_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Scope_Noise_Spectrum_plot.py` | `docs/mx_main_field_scope_noise_spectrum.md` |
 | Mx 高主场 Z 磁场频率标定 | `experiments/Mx_Z_Field_Calibration.py`、`experiments/Mx_Z_Field_Calibration_plot.py` | `docs/mx_z_field_calibration.md` |
 | Bell Bloom Z 磁场频率标定（运行 / 历史双 Tab） | `experiments/Bell_Bloom_Z_Field_Calibration.py`、`experiments/Bell_Bloom_Z_Field_Calibration_plot.py` | `docs/bell_bloom_z_field_calibration.md` |
-| 探测链路频率响应标定（运行 / 历史双 Tab；HF2 关闭输入 AC 耦合、其余解调设置对照 XY 正弦控制噪声谱；每点关闭并恢复温控；采集 Demod0 Y，排除零基带点） | `experiments/Detection_Chain_Frequency_Response.py`、`experiments/Detection_Chain_Frequency_Response_plot.py` | `docs/detection_chain_frequency_response.md` |
+| 探测链路频率响应标定（运行 / 历史双 Tab；锁相放大器关闭输入 AC 耦合、其余解调设置对照 XY 正弦控制噪声谱；每点关闭并恢复温控；采集 Demod0 Y，排除零基带点） | `experiments/Detection_Chain_Frequency_Response.py`、`experiments/Detection_Chain_Frequency_Response_plot.py` | `docs/detection_chain_frequency_response.md` |
 | Mx Z 直流控制噪声谱 | `experiments/Mx_Z_Noise_Spectrum.py`、`experiments/Mx_Z_Noise_Spectrum_plot.py` | `docs/mx_z_noise_spectrum.md` |
 | Mx XY 剩磁二维校准（SDS） | `experiments/Mx_XY_Residual_Field_Calibration.py`、`experiments/Mx_XY_Residual_Field_Calibration_plot.py` | `docs/mx_xy_residual_field_calibration.md` |
 | T1 / T2 标定 | `experiments/T1_Calibration.py`、`experiments/T2_Calibration.py` | `docs/T1_calibration.md`、`docs/T2_relaxation.md` |
@@ -352,6 +366,8 @@ data/<实验类型>/MMDD_HHMM_tag/
 | 文件 | 用途 |
 |---|---|
 | `params/devices.yaml` | 稳定设备 ID、型号、资源、连接参数、能力和参考时钟 |
+| `params/devices.yaml` 顶层 `network_resources` | 网络扫描候选；显式空列表清空候选，已入库设备仍参与扫描 |
+| `params/instrument_discovery.yaml` | 仅在设备库缺少 `network_resources` 时读取的旧扫描配置 |
 | `params/mapping.yaml` | 物理量到 `device_id` 和类型化端点的绑定，以及共享/同机约束 |
 | `params/safety_limits.yaml` | 输出量安全上下限 |
 | `params/experiment_catalog.yaml` | GUI 标签、归档状态、实验名称、简介与参数分组布局 |
@@ -376,26 +392,32 @@ mapping:
 ```
 
 正式 Python 实验统一调用 `lab_workflows.devices.create_signal_generator()`，
-由解析后的设备库定义选择 DG4000 或 DG900 Pro 驱动。更换信号发生器时，在 GUI
-修改设备与端点绑定即可；新模式不硬编码驱动型号。同一 resource 自动复用连接，
+可直接传入 `"Z_magnetic_field"` 等物理量键，也兼容配置字典及原 resource 调用，
+由当前设备库绑定选择 DG4000 或 DG900 Pro 驱动。更换信号发生器时，在 GUI
+整组修改绑定即可；连接失败不自动换设备。新模式不硬编码驱动型号。同一 resource 自动复用连接，
 不同 resource 的配对物理量由通道路由代理分别转发。详细规则见
 `docs/instrument_mapping.md`。
 
 新模式硬件工作流在设备连接完成后统一调用
 `lab_workflows.steps.synchronize_connected_clocks()`，按 `params/devices.yaml`
-设置已连接的 DG4000、DG900 和 HF2，并通过回读严格验证；任何设备不一致都会在实验正式输出配置前终止实验。
+设置已连接的 DG4000、DG900 和所选 HF2 / MFLI，并通过回读严格验证；任何设备不一致都会在实验正式输出配置前终止实验。
 
-当前系统的 DG4000、DG900 和 HF2 统一使用同一外置 10 MHz 参考源，设备库中的
+当前系统的 DG4000、DG900 和 HF2 / MFLI 统一使用同一外置 10 MHz 参考源，设备库中的
 `reference_clock` 均为 `EXT`，包含 Pump 调制信号源 `DG4E222800868`。
 Pump 载波与门控共用该设备的参考时钟。运行前接通外置参考；旧 Python 实验先通过
 GUI“功能模块 → 参考时钟同步”或 [统一同步脚本](experiments/Set_All_Clocks_External.py)
 完成同步并确认全部成功。接线和锁定确认见 [参考时钟说明](docs/instrument_mapping.md#统一外置参考时钟)。
+GUI 和脚本的批量同步先向全部设备写入目标参考源，再统一回读校验，不改动输出负载。
+负载使用独立的“功能模块 → 输出负载初始化”：Pump 调制通道为 50 Ω，
+其余通道（包括 Probe AOM 载波、加热、温度开关）为高阻，写入后验证回读。
+正式实验通过设备工厂连接信号源时仍应用对应物理量的负载策略；同一通道跨实验复用时，
+负载以本次物理量及其联动组为准。更改负载后需核对幅度和偏置回读。
 
 所有实验在设置输出量前都应调用 `validate_safety_limit()`。
 正式硬件工作流统一通过 `lab_workflows/steps/safety_shutdown.py` 声明安全收尾策略：
 需要关闭的 DG 通道会依次关闭 Burst/同步/调制、归零为 0 V DC 并关闭输出，随后恢复
 温度开关为 5 V ON 并只断开 TEC 通信。默认只保留主磁场、Pump/Probe 光功率、Pump
-调制输出和全部 HF2 设置；温控硬件保持运行，其他可控输出全部关闭。实验特定例外必须显式声明；
+调制输出和所选锁相放大器的全部设置；温控硬件保持运行，其他可控输出全部关闭。实验特定例外必须显式声明；
 T2 额外保持 RF 门控 CH2 Output ON，并只关闭该通道的 Burst。
 
 ## 环境准备
@@ -435,7 +457,15 @@ if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
 .\agent_exp_env\Scripts\python.exe .agents\skills\expcodegen\scripts\validate_experiment.py --root .
 ```
 
-前端变更在 `GUI/frontend/` 运行 `npm run build` 和 `npm test`；API schema 变更后，
+仪器驱动、映射、时钟和锁相 API 的无硬件回归：
+
+```powershell
+.\agent_exp_env\Scripts\python.exe -m unittest signal_generator.test_interfaces lab_workflows.test_instrument_config lab_workflows.test_output_policies lab_workflows.test_clock_sync lab_workflows.test_lockin GUI.backend.test_instrument_discovery GUI.backend.test_lockin_api
+.\agent_exp_env\Scripts\python.exe -m unittest lab_workflows.experiment_modules.noise_spectrum_xy.test_sine_mode lab_workflows.experiment_modules.rf_sensitivity_direct_aw.test_workflow lab_workflows.experiment_modules.static_sensitivity.test_dc_scan
+```
+
+前端变更在 `GUI/frontend/` 运行 `node node_modules/typescript/bin/tsc --noEmit`、
+`npm run build` 和 `npm test`；API schema 变更后，
 按 [GUI 开发说明](GUI/README.md#前端结构)重新生成类型。Python 变更运行受影响的
 现有无硬件测试，命令示例见 [GUI/AGENTS.md](GUI/AGENTS.md#验证)。当前检出没有根目录
 `tests/`，不要直接执行依赖该目录的测试发现命令。
@@ -473,6 +503,7 @@ if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
 从而尽量保证实验脚本、文档和安全约束保持一致。
 
 生成实验架构图时使用 `arcgen` 调研真实实现，并由 `archify` 完成图规格、校验和交付。
-`.gitignore` 当前忽略根目录 `AGENTS.md`、`CLAUDE.md`、`.agents/` 和 `.claude/`；
-本检出的 `.git/info/exclude` 还忽略 `docs/`。这些本地文件需要单独检查，普通
-`git diff` 不会显示它们的修改。`GUI/AGENTS.md` 是显式保留的例外。
+根目录 `AGENTS.md`、`CLAUDE.md` 与 `GUI/AGENTS.md` 纳入版本管理并同步到 GitHub；
+`.agents/`、`.claude/` 等本地 Skill 与配置继续忽略。本检出的 `.git/info/exclude`
+还忽略 `docs/` 中未跟踪的文件，已跟踪文档仍正常提交。被忽略的本地文件需单独检查，
+普通 `git diff` 不会显示其变化。

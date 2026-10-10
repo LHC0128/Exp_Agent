@@ -27,6 +27,7 @@ export function ToolsPage() {
     }
   };
   const startClock = () => void start(() => api<Job>("/api/clocks/sync", { method: "POST" }));
+  const startLoads = () => void start(() => api<Job>("/api/tools/output-loads", { method: "POST" }));
   const startPhase = () => void start(() => api<Job>("/api/tools/demod0-phase-calibration", {
     method: "POST",
     body: JSON.stringify({
@@ -47,8 +48,13 @@ export function ToolsPage() {
       <div className="tool-grid">
         <article>
           <small>REFERENCE CLOCK</small><h2>参考时钟同步</h2>
-          <p>先将同一外置 10 MHz 参考源接入各信号发生器与 HF2，包含 Pump 调制信号源；再按设备库配置设置并回读参考时钟。</p>
+          <p>先将同一外置 10 MHz 参考源接入各信号发生器与所选锁相放大器，再按设备库配置设置参考时钟；全部写入后统一回读校验，不改动输出负载。</p>
           <button disabled={blocked} onClick={startClock}>{blocked ? "其他硬件任务运行中" : "开始同步"}</button>
+        </article>
+        <article>
+          <small>OUTPUT LOAD</small><h2>输出负载初始化</h2>
+          <p>按映射用途设置各信号源通道负载（Pump 调制 50 Ω，其余高阻）并回读验证；不改动参考时钟。</p>
+          <button disabled={blocked} onClick={startLoads}>{blocked ? "其他硬件任务运行中" : "初始化负载"}</button>
         </article>
         <article>
           <small>DEMODULATOR 0</small><h2>相位自动校准</h2>

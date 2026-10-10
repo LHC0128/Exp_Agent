@@ -103,7 +103,7 @@ class DCScanTests(unittest.TestCase):
                 self.assertEqual(updated.to_external()[key], saved.to_external()[key])
 
     def test_median_axis_groups_and_no_sync_trigger(self):
-        for interval, groups in ((5, 3), (0, 1)):
+        for interval, group_starts, recovers in ((5, 3, 2), (0, 1, 0)):
             with self.subTest(interval=interval), tempfile.TemporaryDirectory() as tmp:
                 z, temp = FakeGenerator(), FakeGenerator()
                 params = StaticSensitivityParams(dispersion_start_v=-0.1, dispersion_stop_v=0.2,
@@ -121,8 +121,8 @@ class DCScanTests(unittest.TestCase):
                     self.assertTrue(np.isfinite(data["point_finished_unix_s"]).all())
                 with np.load(path.parent / "dispersion_steps" / "point_0000.npz") as point:
                     np.testing.assert_equal(point["y_samples"], [1, 100, 2])
-                self.assertEqual(sum(event[:2] == ("output", False) for event in temp.events), groups)
-                self.assertEqual(sum(call.args == (params.dispersion_temp_switch_on_settle_s,) for call in wait.call_args_list), groups)
+                self.assertEqual(sum(event[:2] == ("output", False) for event in temp.events), group_starts)
+                self.assertEqual(sum(call.args == (params.dispersion_temp_switch_on_settle_s,) for call in wait.call_args_list), recovers)
                 self.assertEqual(len(hf2.modules), 11)
                 self.assertTrue(all(module.subscribed[0] == "/devtest/demods/2/sample.x" for module in hf2.modules))
                 self.assertEqual(z.voltage, 0)
@@ -214,6 +214,9 @@ class DCScanTests(unittest.TestCase):
     def test_daq_cancel_closes_module_and_default_unchanged(self):
         module = Mock()
         instr = Mock()
+        instr.device_id = "dev"
+        instr.model = "HF2"
+        instr.demod_path.side_effect = lambda idx: f"/dev/demods/{idx}"
         instr.daq.dataAcquisitionModule.return_value = module
         module.progress.return_value = [0]
         with self.assertRaises(WorkflowCancelled):

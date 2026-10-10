@@ -209,6 +209,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lockin-selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Lockin Selection */
+        put: operations["update_lockin_selection_api_lockin_selection_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control-targets/{mapping_key}/lockin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Control Lockin */
+        put: operations["update_control_lockin_api_control_targets__mapping_key__lockin_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control-targets/{mapping_key}/lockin-capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acquire Control Lockin */
+        post: operations["acquire_control_lockin_api_control_targets__mapping_key__lockin_capture_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/device-library/discover-visa": {
         parameters: {
             query?: never;
@@ -357,6 +408,23 @@ export interface paths {
         put?: never;
         /** Sync Clocks */
         post: operations["sync_clocks_api_clocks_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tools/output-loads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Init Output Loads */
+        post: operations["init_output_loads_api_tools_output_loads_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1267,6 +1335,22 @@ export interface components {
             physical_mapping_revision: string;
             settings: components["schemas"]["LaserSettings"];
         };
+        /** ControlLockinBody */
+        ControlLockinBody: {
+            /** Device Library Revision */
+            device_library_revision: string;
+            /** Physical Mapping Revision */
+            physical_mapping_revision: string;
+            settings: components["schemas"]["LockinSettings"];
+        };
+        /** ControlLockinCaptureBody */
+        ControlLockinCaptureBody: {
+            /** Device Library Revision */
+            device_library_revision: string;
+            /** Physical Mapping Revision */
+            physical_mapping_revision: string;
+            settings: components["schemas"]["LockinCaptureSettings"];
+        };
         /** ControlRevisionBody */
         ControlRevisionBody: {
             /** Device Library Revision */
@@ -1443,6 +1527,16 @@ export interface components {
                     [key: string]: unknown;
                 };
             };
+            /** Network Resources */
+            network_resources?: string[] | null;
+            /** Mapping */
+            mapping?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            } | null;
+            /** Physical Mapping Revision */
+            physical_mapping_revision?: string | null;
         };
         /** DeviceSummary */
         DeviceSummary: {
@@ -1628,7 +1722,7 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            type: "HF2";
+            type: "HF2" | "MFLI";
             /** Demod Idx */
             demod_idx: number;
             /** X */
@@ -1653,6 +1747,24 @@ export interface components {
             harmonic: number;
             /** Phase Shift */
             phase_shift: number;
+            /** Oscillator */
+            oscillator: number;
+            /** Shared Demodulators */
+            shared_demodulators: number[];
+            /** Input Select */
+            input_select: number;
+            /** Capabilities */
+            capabilities: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Signal Outputs */
+            signal_outputs: {
+                [key: string]: components["schemas"]["JsonValue"];
+            }[];
+            /** Aux Outputs */
+            aux_outputs: {
+                [key: string]: components["schemas"]["JsonValue"];
+            }[];
         };
         JsonValue: unknown;
         /** Keithley6221DeviceSnapshot */
@@ -1917,6 +2029,106 @@ export interface components {
         /** LaserSettingsBody */
         LaserSettingsBody: {
             settings: components["schemas"]["LaserSettings"];
+        };
+        /** LockinAuxOutputSettings */
+        LockinAuxOutputSettings: {
+            /** Index */
+            index: number;
+            /** Demod Index */
+            demod_index: number;
+            /** Output Select */
+            output_select: number;
+            /** Scale */
+            scale: number;
+            /** Offset V */
+            offset_v: number;
+        };
+        /** LockinCaptureSettings */
+        LockinCaptureSettings: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "demod" | "scope";
+            /**
+             * Duration
+             * @default 1
+             */
+            duration: number;
+            /**
+             * Points
+             * @default 1000
+             */
+            points: number;
+            /** Sources */
+            sources?: ("voltage0" | "voltage1" | "aux_input0" | "aux_input1")[];
+            /** Sample Rate Hz */
+            sample_rate_hz?: number | null;
+            /**
+             * Length
+             * @default 2048
+             */
+            length: number;
+            /**
+             * Records
+             * @default 1
+             */
+            records: number;
+            /**
+             * Timeout
+             * @default 30
+             */
+            timeout: number;
+        };
+        /** LockinDemodSettings */
+        LockinDemodSettings: {
+            /** Phase Deg */
+            phase_deg?: number | null;
+            /** Frequency Hz */
+            frequency_hz?: number | null;
+            /** Rate */
+            rate?: number | null;
+            /** Time Constant */
+            time_constant?: number | null;
+            /** Order */
+            order?: number | null;
+            /** Harmonic */
+            harmonic?: number | null;
+            /** Enabled */
+            enabled?: boolean | null;
+        };
+        /** LockinSelectionBody */
+        LockinSelectionBody: {
+            /** Device Library Revision */
+            device_library_revision: string;
+            /** Physical Mapping Revision */
+            physical_mapping_revision: string;
+            /** Device Id */
+            device_id: string;
+        };
+        /** LockinSettings */
+        LockinSettings: {
+            demod?: components["schemas"]["LockinDemodSettings"] | null;
+            signal_output?: components["schemas"]["LockinSignalOutputSettings"] | null;
+            aux_output?: components["schemas"]["LockinAuxOutputSettings"] | null;
+        };
+        /** LockinSignalOutputSettings */
+        LockinSignalOutputSettings: {
+            /** Index */
+            index: number;
+            /**
+             * Amplitude Index
+             * @default 0
+             */
+            amplitude_index: number;
+            /** Amplitude Peak V */
+            amplitude_peak_v?: number | null;
+            /** Offset V */
+            offset_v?: number | null;
+            /** Mixer Enabled */
+            mixer_enabled?: boolean | null;
+            /** Enabled */
+            enabled?: boolean | null;
         };
         /** ModulationSettings */
         ModulationSettings: {
@@ -2948,6 +3160,109 @@ export interface operations {
             };
         };
     };
+    update_lockin_selection_api_lockin_selection_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LockinSelectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_control_lockin_api_control_targets__mapping_key__lockin_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mapping_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlLockinBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlTargetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acquire_control_lockin_api_control_targets__mapping_key__lockin_capture_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mapping_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlLockinCaptureBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     discover_device_library_api_device_library_discover_visa_post: {
         parameters: {
             query?: never;
@@ -3229,6 +3544,26 @@ export interface operations {
         };
     };
     sync_clocks_api_clocks_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    init_output_loads_api_tools_output_loads_post: {
         parameters: {
             query?: never;
             header?: never;

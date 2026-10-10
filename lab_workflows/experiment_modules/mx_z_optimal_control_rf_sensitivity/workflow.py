@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
@@ -1098,6 +1099,7 @@ def safe_shutdown(
 
 def run(params: MxZOptimalControlRFParams) -> Path:
     """执行 Z 最优控制开启状态下的 RF 灵敏度测量。"""
+    require_lockin_compatibility('mx-z-optimal-control-rf-sensitivity', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     residual_mode = params.phase_cal_rf_amplitude_vpp == 0.0

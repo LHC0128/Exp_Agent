@@ -1,12 +1,13 @@
 """辅助输出配置模块.
 
-配置 HF2 的辅助输出接口，将解调信号输出到物理接口。
+配置锁相放大器的辅助输出接口，将解调信号输出到物理接口。
 """
 
 import logging
+import math
 from typing import Optional
 
-from .instrument import HF2Instrument
+from .base import LockinInstrument
 from .config import AuxOutConfig
 
 logger = logging.getLogger(__name__)
@@ -21,26 +22,27 @@ OUTPUT_SELECT_MAP = {
 
 
 def configure_aux_output(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     config: AuxOutConfig,
 ) -> None:
     """配置辅助输出.
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
         已连接的仪器实例
     config : AuxOutConfig
         辅助输出配置
     """
     aux_path = instr.aux_out_path(config.aux_index)
 
-    # 计算 outputselect 值:
-    #   对于解调器 m: outputselect = m * 4 + signal_type
-    #   signal_type: 0=X, 1=Y, 2=R, 3=Theta
-    output_select = config.demod_index * 4 + config.output_select
-
-    instr.set_int(f"{aux_path}/outputselect", output_select)
+    instr.demod_path(config.demod_index)
+    if config.output_select not in (0, 1, 2, 3):
+        raise ValueError("Aux Output 信号必须为 X/Y/R/Theta（0/1/2/3）")
+    if not all(math.isfinite(value) for value in (config.scale, config.offset)):
+        raise ValueError("Aux Output 缩放和偏置必须为有限值")
+    instr.set_int(f"{aux_path}/demodselect", config.demod_index)
+    instr.set_int(f"{aux_path}/outputselect", config.output_select)
     instr.set_double(f"{aux_path}/scale", config.scale)
     instr.set_double(f"{aux_path}/offset", config.offset)
     instr.sync()
@@ -53,7 +55,7 @@ def configure_aux_output(
 
 
 def set_aux_output_scale(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     scale: float,
     aux_idx: int = 0,
 ) -> None:
@@ -61,7 +63,7 @@ def set_aux_output_scale(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
         已连接的仪器实例
     scale : float
         缩放系数
@@ -74,7 +76,7 @@ def set_aux_output_scale(
 
 
 def set_aux_output_offset(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     offset: float,
     aux_idx: int = 0,
 ) -> None:
@@ -82,7 +84,7 @@ def set_aux_output_offset(
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
         已连接的仪器实例
     offset : float
         偏置电压 (V)
@@ -95,14 +97,14 @@ def set_aux_output_offset(
 
 
 def read_aux_output_value(
-    instr: HF2Instrument,
+    instr: LockinInstrument,
     aux_idx: int = 0,
 ) -> float:
     """读取辅助输出当前电压值.
 
     参数
     ----------
-    instr : HF2Instrument
+    instr : LockinInstrument
         已连接的仪器实例
     aux_idx : int
         辅助输出索引

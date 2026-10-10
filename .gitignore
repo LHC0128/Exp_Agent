@@ -8,11 +8,13 @@ manuals/
 tests/
 *.egg-info/
 
-# 忽略 AI Agent 配置（本地使用，不上传 GitHub）
+# 本地 AI Skill 与配置；根目录和 GUI 协作说明随项目同步
 .claude/
 .agents/
 AGENTS.md
 CLAUDE.md
+!/AGENTS.md
+!/CLAUDE.md
 !GUI/AGENTS.md
 .codegraph/
 .zcode/

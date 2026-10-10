@@ -8,7 +8,7 @@ class SignalGeneratorConfig:
     """单台信号发生器配置.
 
     包含 VISA 资源地址和通道参数，支持 YAML 序列化。
-    适用于 DG4000 系列函数/任意波形发生器。
+    支持 DG4000 与 DG912 Pro 的共同功能；型号缺失的可选功能会报错。
 
     参数
     ----------
@@ -110,14 +110,24 @@ class SignalGeneratorConfig:
     # ---- 便捷方法 ----
 
     def apply_to(self, instrument) -> None:
-        """将配置应用到 DG4000Instrument 实例.
+        """将配置应用到信号发生器实例。
 
         Parameters
         ----------
-        instrument : DG4000Instrument
-            已连接的仪器实例。其绑定的 channel 会被覆盖为 config.channel。
+        instrument : DG4000Instrument | DG900Instrument
+            已连接的仪器实例。所有设置显式使用 config.channel。
         """
         ch = self.channel
+        if self.sweep_enabled and not hasattr(instrument, "set_sweep_state"):
+            raise ValueError("此型号驱动尚未提供共享配置中的扫频接口")
+        if not hasattr(instrument, "set_output_polarity") and not self.polarity.upper().startswith("NORM"):
+            raise ValueError("此型号驱动不支持输出反相")
+        if self.shape == "PULSe":
+            for name in ("pulse_leading", "pulse_trailing"):
+                if getattr(self, name) is not None and not hasattr(instrument, f"set_{name}"):
+                    raise ValueError(f"此型号驱动尚未提供 {name} 接口")
+        if not hasattr(instrument, "set_harmonic_type") and self.shape == "HARMonic":
+            raise ValueError("此型号驱动尚未提供共享配置中的谐波接口")
 
         # 若配置中有资源且与仪器不同，切换连接 (忽略)
         # 直接应用参数
@@ -164,7 +174,8 @@ class SignalGeneratorConfig:
         # 输出控制
         instrument.set_output(self.output_enabled, channel=ch)
         instrument.set_output_load(self.load, channel=ch)
-        instrument.set_output_polarity(self.polarity, channel=ch)
+        if hasattr(instrument, "set_output_polarity"):
+            instrument.set_output_polarity(self.polarity, channel=ch)
         if instrument.get_output(ch) != self.output_enabled:
             instrument.set_output(self.output_enabled, channel=ch)
 
@@ -173,22 +184,22 @@ class SignalGeneratorConfig:
             instrument.set_mod_type(self.mod_type, channel=ch)
             if self.mod_type == "AM":
                 instrument.set_mod_am_depth(self.mod_am_depth, channel=ch)
-                instrument.set_mod_am_internal_freq(
-                    self.mod_internal_freq, channel=ch)
             elif self.mod_type == "FM":
                 instrument.set_mod_fm_deviation(
                     self.mod_fm_deviation, channel=ch)
-                instrument.set_mod_fm_internal_freq(
-                    self.mod_internal_freq, channel=ch)
             elif self.mod_type == "PM":
                 instrument.set_mod_pm_deviation(
                     self.mod_pm_deviation, channel=ch)
-                instrument.set_mod_pm_internal_freq(
-                    self.mod_internal_freq, channel=ch)
             elif self.mod_type == "FSKey":
                 instrument.set_mod_fsk_frequency(
                     self.mod_fsk_frequency, channel=ch)
                 instrument.set_mod_fsk_rate(self.mod_fsk_rate, channel=ch)
+            if self.mod_type in {"AM", "FM", "PM"}:
+                setter = getattr(instrument, f"set_mod_{self.mod_type.lower()}_internal_freq", None)
+                if setter:
+                    setter(self.mod_internal_freq, channel=ch)
+                else:
+                    instrument.set_mod_internal_frequency(self.mod_type, self.mod_internal_freq, channel=ch)
             instrument.set_mod_state(True, channel=ch)
 
         # 扫描 (互斥)
@@ -207,7 +218,7 @@ class SignalGeneratorConfig:
             instrument.set_burst_state(True, channel=ch)
 
         # 谐波
-        if self.harmonic_type:
+        if self.harmonic_type and hasattr(instrument, "set_harmonic_type"):
             instrument.set_harmonic_type(self.harmonic_type, channel=ch)
             instrument.set_harmonic_order(self.harmonic_order, channel=ch)
             if self.harmonic_amplitude:
@@ -256,7 +267,7 @@ class MultiGeneratorSetup:
         Parameters
         ----------
         instrument_map : dict
-            映射 {resource: DG4000Instrument}，用于匹配 config.resource。
+            映射 {resource_string: 信号发生器实例}，用于匹配 config.resource。
         """
         for cfg in self.configs:
             inst = instrument_map.get(cfg.resource)

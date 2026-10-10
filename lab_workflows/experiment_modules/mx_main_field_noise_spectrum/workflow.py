@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -464,6 +465,7 @@ def _acquire_scan(
 
 def run(params: MxMainFieldNoiseSpectrumParams) -> Path:
     """执行 500 点 GS200 主场控制噪声谱采集。"""
+    require_lockin_compatibility('mx-main-field-noise-spectrum', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
     axes = build_scan_axes(params)

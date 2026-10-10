@@ -1,0 +1,12 @@
+# 仅作为旧配置迁移来源；devices.yaml 有 network_resources 时不再读取本文件。
+# 网络扫描仅查询这些地址的身份信息，不自动加入设备库。
+# 原始 TCP Socket 设备可改写为 TCPIP0::地址::端口::SOCKET。
+network_resources:
+  - TCPIP0::192.168.124.21::INSTR
+  - TCPIP0::192.168.124.32::INSTR
+  - TCPIP0::192.168.124.31::INSTR
+  - TCPIP0::192.168.124.33::INSTR
+  - TCPIP0::192.168.124.35::INSTR
+  - TCPIP0::192.168.124.34::INSTR
+  - TCPIP0::192.168.124.41::INSTR
+  - TCPIP0::192.168.124.109::INSTR

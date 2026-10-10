@@ -53,8 +53,9 @@ def load_clock_profile(path: Path | None = None) -> dict[str, str]:
         if device.instrument == "lockin_amplifier":
             device_id = str(device.connection.get("device_id", "")).strip()
         elif device.resource:
-            fields = device.resource.split("::")
-            device_id = fields[3] if len(fields) > 3 else device.device_id
+            device_id = clock_device_id(
+                {"resource": device.resource, "device_library_id": device.device_id}
+            )
         else:
             device_id = device.device_id
         if device_id:
@@ -73,7 +74,7 @@ def load_clock_profile(path: Path | None = None) -> dict[str, str]:
 
 
 def clock_device_id(config: Mapping[str, Any]) -> str:
-    """从 mapping 条目中取得 ``clock_sources.yaml`` 使用的设备 ID。"""
+    """USB 沿用序列号，其他信号源使用设备库 ID，锁相使用连接 ID。"""
     if config.get("instrument") == "lockin_amplifier":
         device_id = config.get("device_id")
         if not device_id:
@@ -83,10 +84,15 @@ def clock_device_id(config: Mapping[str, Any]) -> str:
     resource = config.get("resource")
     if not resource:
         raise ValueError("信号源 mapping 缺少 resource")
-    fields = str(resource).split("::")
-    if len(fields) <= 3:
-        raise ValueError(f"无法从 resource 提取设备 ID: {resource}")
-    return fields[3]
+    if str(resource).upper().startswith("USB"):
+        fields = str(resource).split("::")
+        if len(fields) > 3 and fields[3]:
+            return fields[3]
+        raise ValueError(f"无法从 USB resource 提取设备 ID: {resource}")
+    device_id = config.get("device_library_id") or config.get("device_id")
+    if not device_id:
+        raise ValueError(f"信号源 mapping 缺少设备库 ID: {resource}")
+    return str(device_id)
 
 
 def synchronize_clock_device(
@@ -102,7 +108,7 @@ def synchronize_clock_device(
     target = normalize_clock_source(profile.get(device_id, profile["__default__"]))
     kind = str(config.get("instrument", ""))
     device_type = (
-        "HF2"
+        str(config.get("model", "HF2"))
         if kind == "lockin_amplifier"
         else str(config.get("model", "signal_generator"))
     )
@@ -198,6 +204,8 @@ def synchronize_connected_clocks(
                 else f"{semantic_name}:{physical_mapping_key}"
             )
             results[result_name] = record.to_dict()
+            if mapping[physical_mapping_key].get("instrument") == "lockin_amplifier" and isinstance(getattr(physical_device, "capabilities", None), dict):
+                results[result_name]["capabilities"] = physical_device.capabilities
             if record.ok:
                 print(
                     f"  {result_name} ({record.device_id}) 时钟源: "

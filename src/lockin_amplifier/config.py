@@ -49,16 +49,16 @@ class SignalInputConfig:
 class OscillatorConfig:
     """振荡器模块配置.
 
-    HF2 有 2 个振荡器模块 (oscs/0, oscs/1)。
+    HF2 多频接口有 6 个振荡器；MFLI 由 MF-MD 选件决定可用数量。
 
     参数
     ----------
     osc_index : int
-        振荡器索引 (0 或 1)
+        振荡器索引（按所选设备能力校验）
     frequency : float
         参考频率 (Hz)，仅在 manual 模式下有效
     source : str
-        参考源模式: "manual" 手动设频, "external" 外参考自动识别
+        本接口支持 "manual"；外部解调参考需另行配置 PLL/ExtRef
     """
 
     osc_index: int = 0
@@ -95,7 +95,7 @@ class DemodulatorConfig:
     rate : float
         输出数据速率 (Sa/s)
     input_channel : int
-        输入信号来源 (ADCSELECT)，选择 sigins 的索引
+        主电压输入索引；其他输入来源用 input_source 明确指定
     osc_select : int
         参考信号来源，选择振荡器索引
     harmonic : int
@@ -117,6 +117,10 @@ class DemodulatorConfig:
     time_constant: float = 0.001
     order: int = 4
     phase: float = 0.0
+    input_source: str | None = None
+    """明确输入物理含义：voltage0/voltage1/current0/aux_input0/aux_input1。
+    未指定时 input_channel 只表示主电压输入索引，不能在 MFLI 上把 1 当电流输入。
+    """
 
     @classmethod
     def from_yaml(cls, path: str) -> "DemodulatorConfig":
@@ -183,7 +187,7 @@ class DAQConfig:
     trigger_type : int
         触发模式: 0=连续, 1=边沿触发
     trigger_channel : int
-        触发输入通道 (HF2 DIO 通道, 0-7), trigger_type=1 时有效
+        Aux Input 通道（0/1），trigger_type=1 时有效
     trigger_level : float
         触发电平 (V), trigger_type=1 时有效
     trigger_slope : int
@@ -203,7 +207,7 @@ class DAQConfig:
         (例如 ['sample.r', 'sample.x', 'sample.y', 'sample.theta'])
     """
 
-    device: str = "dev2006"
+    device: str = ""
     trigger_type: int = 0
     trigger_channel: int = 0
     trigger_level: float = 1.5
@@ -258,6 +262,7 @@ class AuxOutConfig:
     scale: float = 1.0
     offset: float = 0.0
     demod_index: int = 0
+    aux_index: int = 0
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -285,3 +290,5 @@ class DAQResult:
     values: np.ndarray = field(default_factory=lambda: np.array([]))
     time: np.ndarray = field(default_factory=lambda: np.array([]))
     config_snapshot: Dict[str, Any] = field(default_factory=dict)
+    record_slices: list[tuple[int, int]] = field(default_factory=list)
+    """每行/每次触发在展平数组中的边界，防止将独立记录误当连续时序。"""

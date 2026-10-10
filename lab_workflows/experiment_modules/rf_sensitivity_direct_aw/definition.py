@@ -38,7 +38,7 @@ def comparison_runner(runs: list[dict], output_dir: Path, progress: ProgressCall
 DEFINITION = ExperimentDefinition(
     id=EXPERIMENT_ID, title="RF 灵敏度（DirectAW）", category="measurement",
     family="rf-sensitivity", variant="direct-aw",
-    description="XY 直接任意波控制下扫描有符号 Z RF 幅度，最优控制波形从 theory_agent 的 oc_sens 版本目录选择；以 Demod3 X 响应斜率和 X 噪声 PSD 测量 RF 灵敏度，并用响应色散拟合得到的等效 HWHM 进行洛伦兹频响补偿。XYZ 共用时序信号2主输出触发，HF2 经 Demod0 Y → AuxOut2 → Signal Input2 → Demod3 回环；初始化含四级相位校准：Bell-Bloom（Demod0）、控制载波-Pump（XY DirectAW）、控制 AM 调制-RF 场（扫描 Z RF 触发相位）与 Demod3，校相失败时停止并保存诊断。历史支持多次 X 响应与灵敏度谱对比、自定义英文图例及 PNG/PDF 导出。",
+    description='XY 直接任意波控制下扫描有符号 Z RF 幅度，最优控制波形从 theory_agent 的 oc_sens 版本目录选择；以 Demod3 X 响应斜率和 X 噪声 PSD 测量 RF 灵敏度，并用响应色散拟合得到的等效 HWHM 进行洛伦兹频响补偿。XYZ 共用时序信号2主输出触发，HF2 经 Demod0 Y → AuxOut2 → Signal Input2 → Demod3 回环；初始化含四级相位校准：Bell-Bloom（Demod0）、控制载波-Pump（XY DirectAW）、控制 AM 调制-RF 场（扫描 Z RF 触发相位）与 Demod3，校相失败时停止并保存诊断。历史支持多次 X 响应与灵敏度谱对比、自定义英文图例及 PNG/PDF 导出。 当前双主电压回采接线只支持 HF2，选择 MFLI 时预检禁止启动。',
     data_type=DATA_TYPE, execution_mode="typed_workflow", schema_version=2,
     required_devices=("GS200", "DG900", "DG4000", "HF2"),
     required_mapping_keys=RF_SENSITIVITY_DIRECT_AW,

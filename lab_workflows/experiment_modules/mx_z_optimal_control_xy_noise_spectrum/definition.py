@@ -20,9 +20,9 @@ DEFINITION = ExperimentDefinition(
     category="measurement",
     family="noise",
     variant="mx-z-optimal-control-xy-bias",
-    description="在 Z 周期最优控制下扫描 X/Y DC 偏置，关闭 Y RF 交流分量，测量 Demod0 R 噪声谱并按指定频段中位数寻找最低噪声点。",
+    description='在 Z 周期最优控制下扫描 X/Y DC 偏置，关闭 Y RF 交流分量，测量 Demod0 R 噪声谱并按指定频段中位数寻找最低噪声点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。',
     data_type="Mx_Z_Optimal_Control_XY_Noise_Spectrum",
-    required_devices=("GS200", "DG900", "DG4000", "HF2"),
+    required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     required_mapping_keys=OPTIMAL_CONTROL,
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Z_Optimal_Control_XY_Noise_Spectrum.py",
@@ -30,7 +30,7 @@ DEFINITION = ExperimentDefinition(
     wiring_notes=(
         "Z_magnetic_field DG4000 CH1 输出周期最优控制；Time_sequence_2 CH2 为共同触发。",
         "X_magnetic_field 输出 X DC 偏置；Y_magnetic_field 与 rf_coil 共用通道并输出 Y DC 偏置。",
-        "噪声采集时 Y RF Burst 和调制关闭，Y DC 偏置保留；HF2 Demod0 只采集 R。",
+        "噪声采集时 Y RF Burst 和调制关闭，Y DC 偏置保留；锁相放大器 Demod0 只采集 R。",
     ),
     safety_notes=(
         "每个 X/Y 输出值和 Z 控制波形在下发前通过安全校验。",

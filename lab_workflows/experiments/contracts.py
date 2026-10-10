@@ -75,9 +75,11 @@ class ExperimentDefinition:
         if self.execution_mode != "typed_workflow":
             return []
         from ..common import load_mapping
+        from ..instrument_config import validate_mapping_usage
 
         try:
             mapping = load_mapping()
+            validate_mapping_usage(self.required_mapping_keys)
         except Exception as exc:
             return [f"设备映射配置无效: {exc}"]
         missing = [key for key in self.required_mapping_keys if key not in mapping]
@@ -242,7 +244,7 @@ class ExperimentDefinition:
     ) -> dict[str, Any]:
         if not self.experiment_runner:
             raise RuntimeError(f"实验 {self.id} 尚未接入运行工作流")
-        mapping_errors = self._mapping_errors()
+        mapping_errors = self.preflight(values)
         if mapping_errors:
             raise ValueError("；".join(mapping_errors))
         return self.experiment_runner(values, progress, cancellation)

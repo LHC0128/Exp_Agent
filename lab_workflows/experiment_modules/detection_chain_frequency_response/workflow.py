@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from lab_workflows.devices import create_lockin
+from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
 from pathlib import Path
 
@@ -38,6 +40,7 @@ def _wait(seconds: float) -> None:
 
 def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | None = None) -> Path:
     """连接映射设备，采集 HF2 Y 波形及频率响应。"""
+    require_lockin_compatibility('detection-chain-frequency-response', params.to_external())
     root = project_root or find_project_root()
     errors = params.validate(root)
     if errors:
@@ -101,11 +104,7 @@ def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | N
         hf2 = session.connect(
             "hf2",
             f"hf2://{hf2_cfg['device_id']}@{hf2_cfg.get('host', '127.0.0.1')}:{hf2_cfg.get('port', 8005)}",
-            lambda: HF2Instrument(
-                host=hf2_cfg.get("host", "127.0.0.1"),
-                port=hf2_cfg.get("port", 8005),
-                api_level=1, device_id=hf2_cfg["device_id"],
-            ),
+            lambda: create_lockin(hf2_cfg),
         )
         clock_devices = {"probe_aom": aom, "laser": laser, "hf2": hf2}
         clock_keys = {"probe_aom": "Probe_AOM_Carrier", "laser": "Pump_laser_power", "hf2": "lockin_r"}

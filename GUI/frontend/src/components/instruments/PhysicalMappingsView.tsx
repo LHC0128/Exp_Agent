@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../../api";
+import { deviceOptionLabel, endpointLabel, linkedMappingKeys, switchMappingDevice } from "./mappingDevices";
 import type {
   DeviceLibraryDocument,
   MappingConstraints,
@@ -14,12 +15,6 @@ function endpointKind(instrument: string) {
   if (instrument === "lockin_amplifier") return "demod" as const;
   if (instrument === "toptica_dlc_pro") return "laser_channel" as const;
   return "channel" as const;
-}
-
-function endpointLabel(kind: string, index: number) {
-  if (kind === "demod") return `Demod ${index}`;
-  if (kind === "laser_channel") return `Laser ${index}`;
-  return `CH${index}`;
 }
 
 export function PhysicalMappingsView() {
@@ -54,6 +49,13 @@ export function PhysicalMappingsView() {
     next.mapping[key] = { ...next.mapping[key], ...update };
     setDocument(next);
   };
+  const switchDevice = (key: string, deviceId: string) => {
+    if (!document || !library) return;
+    try {
+      setDocument(switchMappingDevice(document, library.devices, linkedMappingKeys(document, key), deviceId));
+      setError("");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+  };
   const updateGroup = (kind: keyof MappingConstraints, name: string, value: string) => {
     if (!document) return;
     const next = clone(document);
@@ -82,7 +84,7 @@ export function PhysicalMappingsView() {
     const device = library.devices[newDeviceId];
     if (!device) { setError("请选择设备"); return; }
     const endpointIndex = Number(newEndpointIndex);
-    const endpoint = Number.isFinite(endpointIndex) && endpointIndex > 0
+    const endpoint = newEndpointIndex !== "" && Number.isFinite(endpointIndex) && endpointIndex >= 0
       ? { kind: endpointKind(newInstrument), index: endpointIndex }
       : undefined;
     const next = clone(document);
@@ -100,7 +102,6 @@ export function PhysicalMappingsView() {
   const save = async () => {
     if (!document || !library) return;
     const mappingKeys = new Set(Object.keys(document.mapping));
-    const deviceIds = new Set(Object.keys(library.devices));
     for (const member of Object.values(document.constraints.shared_channel_groups).flat()) {
       if (!mappingKeys.has(member)) {
         setError(`共享通道组成员“${member}”不是已存在的物理量键`);
@@ -108,8 +109,8 @@ export function PhysicalMappingsView() {
       }
     }
     for (const member of Object.values(document.constraints.colocation_groups).flat()) {
-      if (!deviceIds.has(member)) {
-        setError(`同机组成员“${member}”不是已存在的设备 ID`);
+      if (!mappingKeys.has(member)) {
+        setError(`同机组成员“${member}”不是已存在的物理量键`);
         return;
       }
     }
@@ -139,6 +140,7 @@ export function PhysicalMappingsView() {
         <div><button className="secondary" onClick={() => void load()}>重新加载</button><button onClick={() => void save()} disabled={saving}>{saving ? "正在保存…" : "保存全部映射"}</button></div>
       </div>
       {error && <div className="alert error">{error}</div>}
+      <p className="muted">USB 与网络设备统一选择；切换设备会联动同机组和共享通道组，保留通道号，保存全部映射后生效。信号源通道可在不同实验中复用，同一次实验独立使用的物理量不能占用同一通道。</p>
       <section className="mapping-add">
         <div className="section-head"><h3>新增物理量</h3></div>
         <div className="mapping-add-form">
@@ -148,7 +150,7 @@ export function PhysicalMappingsView() {
             <option value="gs200">Yokogawa GS200</option>
             <option value="keithley_6221">Keithley 6221</option>
             <option value="sds_acquisition">示波器</option>
-            <option value="lockin_amplifier">HF2</option>
+            <option value="lockin_amplifier">锁相放大器（HF2 / MFLI）</option>
             <option value="tec_controller">TEC</option>
             <option value="toptica_dlc_pro">DLC pro</option>
           </select></label>
@@ -156,7 +158,7 @@ export function PhysicalMappingsView() {
             <option value="">选择设备</option>
             {Object.entries(library.devices)
               .filter(([, device]) => device.instrument === newInstrument)
-              .map(([id, device]) => <option key={id} value={id}>{device.label} · {device.model}</option>)}
+              .map(([id, device]) => <option key={id} value={id}>{deviceOptionLabel(device)}</option>)}
           </select></label>
           <label><span>端点（可选）</span><select value={newEndpointIndex} onChange={(event) => setNewEndpointIndex(event.target.value)}>
             <option value="">设备级</option>
@@ -177,21 +179,11 @@ export function PhysicalMappingsView() {
           return (
             <div className="mapping-row" key={key}>
               <div><strong>{config.label || key}</strong><small>{key}</small></div>
-              <select value={config.device_id} onChange={(event) => {
-                const deviceId = event.target.value;
-                const device = library.devices[deviceId];
-                const available = (device.capabilities.channels as number[] | undefined) || [];
-                const endpoint = config.endpoint && available.includes(config.endpoint.index)
-                  ? config.endpoint
-                  : available.length
-                    ? { kind: endpointKind(config.instrument), index: available[0] }
-                    : undefined;
-                updateMapping(key, { device_id: deviceId, endpoint });
-              }}>
-                {candidates.map(([id, device]) => <option value={id} key={id}>{device.label} · {device.model}</option>)}
+              <select aria-label={`${key} 设备`} value={config.device_id} disabled={config.instrument === "lockin_amplifier"} title={config.instrument === "lockin_amplifier" ? "在设备库的锁相放大器卡片中统一切换" : undefined} onChange={event => switchDevice(key, event.target.value)}>
+                {candidates.map(([id, device]) => <option value={id} key={id}>{deviceOptionLabel(device)}</option>)}
               </select>
               {config.endpoint ? (
-                <select value={config.endpoint.index} onChange={(event) => updateMapping(key, { endpoint: { ...config.endpoint!, index: Number(event.target.value) } })}>
+                <select aria-label={`${key} 端点`} value={config.endpoint.index} onChange={(event) => updateMapping(key, { endpoint: { ...config.endpoint!, index: Number(event.target.value) } })}>
                   {channels.map((channel) => <option value={channel} key={channel}>{endpointLabel(config.endpoint!.kind, channel)}</option>)}
                 </select>
               ) : <span className="muted">无端点</span>}

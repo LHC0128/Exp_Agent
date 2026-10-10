@@ -64,6 +64,13 @@ class OutputPolicyTests(unittest.TestCase):
             signal_generator_load_policy(z_resource),
             {1: "INF", 2: "INF"},
         )
+        probe_resource = mapping["Probe_AOM_Carrier"]["resource"]
+        for mapping_key in (None, "Probe_AOM_Carrier"):
+            with self.subTest(mapping_key=mapping_key):
+                self.assertEqual(
+                    signal_generator_load_policy(probe_resource, mapping_key),
+                    {1: "INF", 2: "INF"},
+                )
 
     def test_timing_channels_are_not_touched_by_shutdown(self) -> None:
         timing = _FakeGenerator()
@@ -80,6 +87,16 @@ class OutputPolicyTests(unittest.TestCase):
             [("burst", 1), ("mod", 1), ("dc", 1), ("output", 1)],
         )
         self.assertIn("Time_sequence_2", report.preserved_outputs)
+
+    def test_role_policy_keeps_other_nonoverlapping_carrier_channel_load(self) -> None:
+        resource = "TCPIP0::192.0.2.33::INSTR"
+        mapping = {key: {"instrument": "signal_generator", "resource": resource, "channel": channel}
+                   for key, channel in (("Z_magnetic_field", 1), ("Pump_modulation", 2))}
+        with patch.object(devices, "load_mapping", return_value=mapping), \
+             patch("lab_workflows.instrument_config.load_mapping_document", return_value={"constraints": {
+                 "colocation_groups": {}, "shared_channel_groups": {}}}):
+            self.assertEqual(signal_generator_load_policy(resource, "Z_magnetic_field"), {1: "INF", 2: 50.0})
+            self.assertEqual(signal_generator_load_policy(resource, "Pump_modulation"), {1: "INF", 2: 50.0})
 
 
 if __name__ == "__main__":

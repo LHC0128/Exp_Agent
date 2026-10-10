@@ -66,7 +66,7 @@ def fake_hardware(root):
         stack.enter_context(redirect_stdout(StringIO()))
         for name, target in (("gs200", "gs200.GS200Instrument"),
                              ("tec", "tec_controller.TECInstrument"),
-                             ("hf2", "lockin_amplifier.HF2Instrument")):
+                             ("hf2", "lab_workflows.devices.create_lockin")):
             factory = stack.enter_context(patch(target, return_value=devices[name]))
             stack.enter_context(patch.object(workflow, target.rsplit(".", 1)[1], factory))
         stack.enter_context(patch.object(routed_signal_generator, "create_signal_generator",

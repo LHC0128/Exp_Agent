@@ -11,7 +11,7 @@ from typing import Any, Mapping
 
 import yaml
 
-from .common import find_project_root
+from .common import WorkflowCancelled, find_project_root
 
 
 class RevisionConflict(ValueError):
@@ -123,13 +123,16 @@ def _revision(payload: Mapping[str, Any]) -> str:
     return sha256(content).hexdigest()
 
 
-def _atomic_write(path: Path, payload: Mapping[str, Any]) -> None:
+def _atomic_write(path: Path, payload: Mapping[str, Any] | bytes) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
-    content = yaml.safe_dump(
+    content = payload if isinstance(payload, bytes) else yaml.safe_dump(
         dict(payload), allow_unicode=True, sort_keys=False
-    )
-    temporary.write_text(content, encoding="utf-8")
-    temporary.replace(path)
+    ).encode("utf-8")
+    try:
+        temporary.write_bytes(content)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 @contextmanager
@@ -160,12 +163,39 @@ def _process_config_lock(root: Path | None = None):
             unlock()
 
 
+def _normalize_network_resources(resources: Any) -> list[str]:
+    """校验扫描候选并合并 VISA 别名，保留首个地址的写法。"""
+    import pyvisa.rname
+
+    if not isinstance(resources, list) or len(resources) > 64:
+        raise ValueError("网络扫描目标必须是最多 64 个 TCPIP VISA 资源")
+    result: list[str] = []
+    seen: set[str] = set()
+    for resource in resources:
+        if not isinstance(resource, str):
+            raise ValueError("网络扫描目标必须是 TCPIP VISA 资源字符串")
+        resource = resource.strip()
+        if not resource.upper().startswith("TCPIP") or not resource.upper().endswith(("::INSTR", "::SOCKET")):
+            raise ValueError(f"无效的网络扫描目标: {resource}")
+        try:
+            canonical = str(pyvisa.rname.ResourceName.from_string(resource)).upper()
+        except ValueError as exc:
+            raise ValueError(f"无效的网络扫描目标: {resource}") from exc
+        if canonical not in seen:
+            seen.add(canonical)
+            result.append(resource)
+    return result
+
+
 def _normalize_device_document(payload: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise ValueError("devices.yaml 必须是映射")
     devices = payload.get("devices") or {}
     if not isinstance(devices, Mapping):
         raise ValueError("devices.yaml 的 devices 必须是映射")
     normalized: dict[str, Any] = {
         "schema_version": _DEVICE_SCHEMA_VERSION,
+        "network_resources": _normalize_network_resources(payload.get("network_resources", [])),
         "devices": {},
     }
     resources: dict[str, str] = {}
@@ -178,6 +208,11 @@ def _normalize_device_document(payload: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError(f"设备 {device_id} 缺少 instrument/model/label")
         if device.reference_clock not in {None, "INT", "EXT"}:
             raise ValueError(f"设备 {device_id} 的 reference_clock 只能为 INT/EXT")
+        if device.instrument == "lockin_amplifier":
+            if device.model.upper() not in {"HF2", "MFLI"}:
+                raise ValueError("锁相放大器型号只支持 HF2/MFLI")
+            if not str(device.connection.get("device_id", "")).lower().startswith("dev"):
+                raise ValueError("锁相放大器必须填写真实 dev 设备 ID")
         if device.resource:
             previous = resources.get(device.resource)
             if previous and previous != device_id:
@@ -191,9 +226,16 @@ def _normalize_device_document(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 def load_device_document(root: Path | None = None) -> dict[str, Any]:
     path = device_library_path(root)
-    if not path.exists():
-        return {"schema_version": _DEVICE_SCHEMA_VERSION, "devices": {}}
-    return _normalize_device_document(_load_yaml(path))
+    payload = _load_yaml(path) if path.exists() else {}
+    if not isinstance(payload, Mapping):
+        raise ValueError("devices.yaml 必须是映射")
+    if "network_resources" not in payload:
+        legacy_path = _root(root) / "params" / "instrument_discovery.yaml"
+        legacy = _load_yaml(legacy_path) if legacy_path.exists() else {}
+        if not isinstance(legacy, Mapping):
+            raise ValueError("旧网络扫描配置必须是映射")
+        payload = {**payload, "network_resources": legacy.get("network_resources", [])}
+    return _normalize_device_document(payload)
 
 
 def load_device_definitions(root: Path | None = None) -> dict[str, DeviceDefinition]:
@@ -278,12 +320,19 @@ def _device_channels(device: DeviceDefinition) -> set[int] | None:
 def _validate_configuration(
     devices_document: Mapping[str, Any],
     mappings_document: Mapping[str, Any],
+    *,
+    active_mapping_keys: set[str] | None = None,
 ) -> None:
     devices = {
         key: DeviceDefinition.from_item(key, value)
         for key, value in devices_document["devices"].items()
     }
     mappings = mappings_document["mapping"]
+    lockin_ids = {config.get("device_id") for config in mappings.values()
+                  if config.get("device_id") in devices
+                  and devices[config["device_id"]].instrument == "lockin_amplifier"}
+    if len(lockin_ids) > 1:
+        raise ValueError("全系统锁相放大器映射必须使用同一台设备")
     constraints = mappings_document["constraints"]
     shared_membership: dict[str, str] = {}
 
@@ -324,6 +373,11 @@ def _validate_configuration(
             raise ValueError(
                 f"映射 {key} 的端点 {endpoint.index} 超出设备 {device_id} 能力"
             )
+        # 信号源允许跨实验复用；运行预检只比较本次实际需要的物理量。
+        if device.instrument == "signal_generator" and (
+            active_mapping_keys is None or key not in active_mapping_keys
+        ):
+            continue
         marker = (device_id, endpoint.kind, endpoint.index)
         previous = endpoints.get(marker)
         if previous:
@@ -389,6 +443,7 @@ def resolve_mapping(root: Path | None = None) -> dict[str, dict[str, Any]]:
             **connection,
             **config,
             "device_library_id": device_library_id,
+            "mapping_key": key,
             "device_id": connection_device_id,
             "reference_clock": device.reference_clock,
             "capabilities": dict(device.capabilities),
@@ -411,6 +466,9 @@ def save_device_library(
     devices: Mapping[str, Any],
     *,
     base_revision: str,
+    network_resources: list[str] | None = None,
+    mapping: Mapping[str, Any] | None = None,
+    physical_mapping_revision: str | None = None,
     root: Path | None = None,
 ) -> dict[str, Any]:
     with _CONFIG_LOCK, _process_config_lock(root):
@@ -418,12 +476,40 @@ def save_device_library(
         if base_revision != _revision(current):
             raise RevisionConflict("设备库已被其他操作修改，请刷新后重试")
         proposed = _normalize_device_document(
-            {"schema_version": _DEVICE_SCHEMA_VERSION, "devices": devices}
+            {"schema_version": _DEVICE_SCHEMA_VERSION, "devices": devices,
+             "network_resources": current["network_resources"] if network_resources is None else network_resources}
         )
         mappings = load_mapping_document(root)
+        if mapping is not None:
+            if physical_mapping_revision is None:
+                raise ValueError("保存设备选择必须提供物理量映射修订号")
+            if physical_mapping_revision != _revision(mappings):
+                raise RevisionConflict("物理量映射已被其他操作修改，请刷新后重试")
+            mappings = _normalize_mapping_document({**mappings, "mapping": mapping})
         _validate_configuration(proposed, mappings)
-        _atomic_write(device_library_path(root), proposed)
-        return public_device_library(root)
+        library_path = device_library_path(root)
+        original = library_path.read_bytes() if library_path.exists() else None
+        _atomic_write(library_path, proposed)
+        if mapping is not None:
+            try:
+                _atomic_write(physical_mapping_path(root), mappings)
+            except Exception:
+                # 映射写入失败时恢复原始字节，避免设备库部分保存及格式丢失。
+                if original is None:
+                    library_path.unlink(missing_ok=True)
+                else:
+                    _atomic_write(library_path, original)
+                raise
+        result = public_device_library(root)
+        if mapping is not None:
+            result["physical_mappings"] = public_physical_mappings(root)
+        return result
+
+
+def validate_mapping_usage(mapping_keys: tuple[str, ...], root: Path | None = None) -> None:
+    """连接前拒绝本次实验独立物理量之间的信号源通道冲突。"""
+    _validate_configuration(load_device_document(root), load_mapping_document(root),
+                            active_mapping_keys=set(mapping_keys))
 
 
 def save_physical_mappings(
@@ -461,21 +547,71 @@ def instrument_config_snapshot(root: Path | None = None) -> dict[str, Any]:
     }
 
 
-def discover_visa_devices() -> dict[str, Any]:
-    """只通过资源枚举和 ``*IDN?`` 发现 VISA 设备，不修改设备状态。"""
-    import pyvisa
+def select_lockin_device(device_id: str, *, device_library_revision: str,
+                         physical_mapping_revision: str, root: Path | None = None) -> dict[str, Any]:
+    """一次原子更新全部锁相映射，保留每个物理量的解调器索引。"""
+    with _CONFIG_LOCK, _process_config_lock(root):
+        devices = load_device_document(root)
+        mappings = load_mapping_document(root)
+        if device_library_revision != _revision(devices) or physical_mapping_revision != _revision(mappings):
+            raise RevisionConflict("设备库或映射已改变，请刷新后再选择锁相放大器")
+        device = devices["devices"].get(device_id)
+        if not device or device["instrument"] != "lockin_amplifier":
+            raise ValueError("请选择设备库中的锁相放大器")
+        for config in mappings["mapping"].values():
+            existing = devices["devices"].get(config.get("device_id"), {})
+            if existing.get("instrument") == "lockin_amplifier":
+                config["device_id"] = device_id
+        _validate_configuration(devices, mappings)
+        _atomic_write(physical_mapping_path(root), mappings)
+        return public_physical_mappings(root)
 
-    manager = pyvisa.ResourceManager()
+
+def discover_visa_devices(root: Path | None = None) -> dict[str, Any]:
+    """枚举 VISA、网络资源与锁相设备身份和实际接口，不改变设置或设备库。"""
+    from .experiment_runtime import check_cancelled
+
+    library = load_device_definitions(root)
+    configured = load_device_document(root)["network_resources"]
+    resources = [
+        device.resource for device in library.values()
+        if device.resource and device.resource.upper().startswith(("USB", "TCPIP", "GPIB"))
+    ] + configured
     discovered: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    manager = None
     try:
-        resources = manager.list_resources()
-        for resource in resources:
+        import pyvisa
+
+        manager = pyvisa.ResourceManager()
+        try:
+            resources += list(manager.list_resources("?*"))
+        except Exception as exc:
+            errors.append({"resource": "VISA", "message": str(exc)})
+        seen_resources: set[str] = set()
+        for resource in dict.fromkeys(resources):
+            check_cancelled()
+            if not resource.upper().startswith(("USB", "TCPIP", "GPIB")) or not resource.upper().endswith(("::INSTR", "::SOCKET")):
+                continue
             instrument = None
             try:
-                instrument = manager.open_resource(resource)
+                # VISA 会补齐 USB 接口号和 TCPIP 的 inst0，别名只查询一次。
+                canonical = str(pyvisa.rname.ResourceName.from_string(resource)).upper()
+                if canonical in seen_resources:
+                    continue
+                seen_resources.add(canonical)
+                instrument = manager.open_resource(resource, open_timeout=2000)
                 instrument.timeout = 2000
+                if resource.upper().endswith("::SOCKET"):
+                    instrument.read_termination = "\n"
+                    instrument.write_termination = "\n"
                 idn = str(instrument.query("*IDN?")).strip()
+                if not idn:
+                    raise ValueError("设备未返回身份信息")
+                fields = idn.split(",")
+                serial_number = fields[2].strip() if len(fields) > 2 else ""
+                if serial_number.upper() in {"0", "N/A", "NA", "UNKNOWN", "NONE"}:
+                    serial_number = ""
                 upper = idn.upper()
                 kind = model = "unknown"
                 if "RIGOL" in upper and ("DG8" in upper or "DG9" in upper):
@@ -494,13 +630,78 @@ def discover_visa_devices() -> dict[str, Any]:
                         "idn": idn,
                         "instrument": kind,
                         "model": model,
+                        "serial_number": serial_number,
                     }
                 )
             except Exception as exc:
                 errors.append({"resource": str(resource), "message": str(exc)})
             finally:
                 if instrument is not None:
-                    instrument.close()
+                    try:
+                        instrument.close()
+                    except Exception as exc:
+                        errors.append({"resource": str(resource), "message": f"关闭扫描连接失败: {exc}"})
+    except WorkflowCancelled:
+        raise
+    except Exception as exc:
+        errors.append({"resource": "VISA", "message": str(exc)})
     finally:
-        manager.close()
+        if manager is not None:
+            try:
+                manager.close()
+            except Exception as exc:
+                errors.append({"resource": "VISA", "message": f"关闭资源管理器失败: {exc}"})
+
+    servers = {
+        (str(device.connection.get("host") or "127.0.0.1"),
+         int(device.connection.get("port") or (8004 if device.model.upper() == "MFLI" else 8005)),
+         6 if device.model.upper() == "MFLI" else 1)
+        for device in library.values() if device.instrument == "lockin_amplifier"
+    } or {("127.0.0.1", 8005, 1)}
+    for host, port, api_level in sorted(servers):
+        check_cancelled()
+        server = None
+        address = f"LabOne {host}:{port}"
+        try:
+            import json
+            from zhinst.core import ziDAQServer
+
+            server = ziDAQServer(host, port, api_level)
+            device_info = {
+                str(key).lower(): value
+                for key, value in json.loads(server.getString("/zi/devices")).items()
+            }
+            for node in server.listNodes("/", 0):
+                device_id = str(node).strip("/").lower()
+                if not device_id.startswith("dev"):
+                    continue
+                check_cancelled()
+                try:
+                    model = str(server.getString(f"/{device_id}/features/devtype"))
+                    if not model.upper().startswith(("HF2", "MFLI")):
+                        continue
+                    interface = str(device_info.get(device_id, {}).get("INTERFACE") or "").strip()
+                    if not interface:
+                        raise ValueError("数据服务器未报告设备连接接口")
+                    discovered.append({
+                        "resource": None,
+                        "idn": f"Zurich Instruments,{model},{device_id}",
+                        "instrument": "lockin_amplifier",
+                        "model": "HF2" if model.upper().startswith("HF2") else "MFLI",
+                        "serial_number": device_id,
+                        "connection": {"device_id": device_id, "host": host, "port": port,
+                                       "interface": interface},
+                    })
+                except Exception as exc:
+                    errors.append({"resource": f"{address}/{device_id}", "message": str(exc)})
+        except WorkflowCancelled:
+            raise
+        except Exception as exc:
+            errors.append({"resource": address, "message": str(exc)})
+        finally:
+            if server is not None:
+                try:
+                    server.disconnect()
+                except Exception as exc:
+                    errors.append({"resource": address, "message": f"关闭扫描连接失败: {exc}"})
     return {"devices": discovered, "errors": errors}

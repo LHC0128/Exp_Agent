@@ -18,7 +18,7 @@ class MxMainFieldNoiseSpectrumParams(ExperimentParams):
     control_frequency_start_hz: float = parameter(default=0.0, external_name="CONTROL_FREQUENCY_START_HZ", label="控制频率起点", unit="Hz", group="basic", minimum=0.0)
     control_frequency_stop_hz: float = parameter(default=50000.0, external_name="CONTROL_FREQUENCY_STOP_HZ", label="控制频率终点", unit="Hz", group="basic", minimum=0.0)
     control_frequency_points: int = parameter(default=500, external_name="CONTROL_FREQUENCY_POINTS", label="控制频率点数", group="basic", minimum=10)
-    hf2_reference_frequency_hz: float = parameter(default=90000.0, external_name="HF2_REFERENCE_FREQUENCY_HZ", label="HF2 固定参考频率", unit="Hz", group="basic", minimum=0.001)
+    hf2_reference_frequency_hz: float = parameter(default=90000.0, external_name="HF2_REFERENCE_FREQUENCY_HZ", label="锁相放大器 固定参考频率", unit="Hz", group="basic", minimum=0.001)
     main_field_calibration_hz_per_ma: float = parameter(default=9671.91741380711, external_name="MAIN_FIELD_CALIBRATION_HZ_PER_MA", label="主场标定斜率", unit="Hz/mA", group="basic", minimum=0.001)
     main_field_calibration_intercept_hz: float = parameter(default=196.65637261343872, external_name="MAIN_FIELD_CALIBRATION_INTERCEPT_HZ", label="主场标定截距", unit="Hz", group="basic")
     main_field_calibration_source_run: str = parameter(default="0720_124208_mx_main_field_cal", external_name="MAIN_FIELD_CALIBRATION_SOURCE_RUN", label="主场标定来源运行", group="advanced")
@@ -26,14 +26,14 @@ class MxMainFieldNoiseSpectrumParams(ExperimentParams):
     main_field_calibration_max_ma: float = parameter(default=10.0, external_name="MAIN_FIELD_CALIBRATION_MAX_MA", label="标定有效电流上限", unit="mA", group="advanced", safety_key="main_magnetic_field")
 
     acquisition_duration_s: float = parameter(default=1.0, external_name="ACQUISITION_DURATION_S", label="每点采集时长", unit="s", group="basic", minimum=0.001)
-    requested_rate_sa_s: float = parameter(default=100000.0, external_name="REQUESTED_RATE_SA_S", label="HF2 请求采样率", unit="Sa/s", group="basic", minimum=1.0)
+    requested_rate_sa_s: float = parameter(default=100000.0, external_name="REQUESTED_RATE_SA_S", label="锁相放大器 请求采样率", unit="Sa/s", group="basic", minimum=1.0)
     welch_nperseg: int = parameter(default=10000, external_name="WELCH_NPERSEG", label="Welch 每段点数", group="advanced", minimum=8)
     temp_switch_off_settle_s: float = parameter(default=0.3, external_name="TEMP_SWITCH_OFF_SETTLE_S", label="温控关闭后统一等待", unit="s", group="basic", minimum=0.0)
     temp_switch_on_settle_s: float = parameter(default=1.0, external_name="TEMP_SWITCH_ON_SETTLE_S", label="温控恢复后等待", unit="s", group="basic", minimum=0.0)
 
-    demod_idx: int = parameter(default=0, external_name="DEMOD_IDX", label="HF2 Demod 索引", group="advanced", minimum=0)
-    demod_osc_idx: int = parameter(default=0, external_name="DEMOD_OSC_IDX", label="HF2 振荡器索引", group="advanced", minimum=0)
-    hf2_signal_range_v: float = parameter(default=2.0, external_name="HF2_SIGNAL_RANGE_V", label="HF2 Input1 量程", unit="V", group="advanced", minimum=0.001)
+    demod_idx: int = parameter(default=0, external_name="DEMOD_IDX", label="锁相放大器 Demod 索引", group="advanced", minimum=0)
+    demod_osc_idx: int = parameter(default=0, external_name="DEMOD_OSC_IDX", label="锁相放大器 振荡器索引", group="advanced", minimum=0)
+    hf2_signal_range_v: float = parameter(default=2.0, external_name="HF2_SIGNAL_RANGE_V", label="锁相放大器 Input1 量程", unit="V", group="advanced", minimum=0.001)
     demod_time_constant_s: float = parameter(default=1.0e-6, external_name="DEMOD_TIME_CONSTANT_S", label="噪声解调时间常数", unit="s", group="advanced", minimum=0.0)
     demod_order: int = parameter(default=4, external_name="DEMOD_ORDER", label="噪声解调阶数", group="advanced", minimum=1)
 

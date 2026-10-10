@@ -30,7 +30,13 @@ function DeviceControlView() {
   };
   const handleResponse = (value: ControlTargetResponse) => {
     const key = value.target.mapping_key;
-    setSnapshots((current) => ({ ...current, [key]: value.snapshot }));
+    setSnapshots((current) => {
+      const next = { ...current };
+      if (value.snapshot.type === "HF2" || value.snapshot.type === "MFLI") {
+        catalog?.targets.filter(target => target.device_id === value.target.device_id).forEach(target => delete next[target.mapping_key]);
+      }
+      return { ...next, [key]: value.snapshot };
+    });
     setReadAt((current) => ({ ...current, [key]: value.read_at }));
     setTargetErrors((current) => ({ ...current, [key]: "" }));
   };
@@ -95,8 +101,9 @@ function DeviceControlView() {
     if (snapshot.type === "GS200" || snapshot.type === "6221") return <CurrentSourceEditor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
     if (snapshot.type === "DLC_PRO") return <LaserEditor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
     if (snapshot.type === "TEC103") return <TecEditor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
-    if (snapshot.type === "HF2") return <Hf2Editor snapshot={snapshot} />;
-    return <GeneratorEditor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
+    if (snapshot.type === "HF2" || snapshot.type === "MFLI") return <Hf2Editor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
+    if (snapshot.type === "DG4000" || snapshot.type === "DG900") return <GeneratorEditor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
+    return null;
   };
   return (
     <>
@@ -133,7 +140,7 @@ export function InstrumentsPage() {
         <button className={view === "library" ? "active" : ""} onClick={() => setView("library")}>设备库</button>
         <button className={view === "control" ? "active" : ""} onClick={() => setView("control")}>设备控制</button>
       </div>
-      {view === "mapping" ? <PhysicalMappingsView /> : view === "library" ? <DeviceLibraryView /> : <DeviceControlView />}
+      <div>{view === "mapping" ? <PhysicalMappingsView /> : view === "library" ? <DeviceLibraryView /> : <DeviceControlView />}</div>
     </>
   );
 }
