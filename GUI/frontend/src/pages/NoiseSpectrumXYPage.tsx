@@ -3,6 +3,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { api } from "../api";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
+import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
 import { ParameterForm } from "../components/MxYOptimalControlFrequency/ParameterForm";
 import { PageHead } from "../components/PageHead";
 import type {
@@ -64,7 +65,7 @@ const statusLabels: Record<string, string> = {
 };
 const figureLabels: Record<string, string> = {
   "calibration.png": "PSD 脊线与正弦峰值标定",
-  "noise_spectrum_2d.png": "控制频率与噪声频率二维谱",
+  "noise_spectrum_2d.png": "二维噪声谱（未标定时纵轴为扫描电压）",
   "noise_spectrum_lines.png": "典型控制点噪声谱",
   "noise_spectra_extracted.png": "提取的可控与不可控噪声谱",
   "diagonal_analysis.png": "PSD 斜线特征诊断",
@@ -118,7 +119,7 @@ function Result({ value }: { value: RunSummary }) {
         </figure>
       ))}
       {files.length > 0 && (
-        <p>{files.map((name) => <a key={name} href={value.artifacts[name]} download style={{ marginRight: 12 }}>{name}</a>)}</p>
+        <p className="xy-artifact-links">{files.map((name) => <a key={name} href={value.artifacts[name]} download>{name}</a>)}</p>
       )}
     </div>
   );
@@ -133,6 +134,7 @@ export function NoiseSpectrumXYPage() {
   const [savedLayout, setSavedLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
   const [job, setJob] = useState<Job>();
   const [analysisJob, setAnalysisJob] = useState<Job>();
+  const [session, setSession] = useState<XYSession>();
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -148,6 +150,8 @@ export function NoiseSpectrumXYPage() {
   const { hardwareBusy } = useJobActivity();
   const jobActive = Boolean(job && !terminal(job));
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
+  const sessionActive = Boolean(session && session.status !== "closed");
+  const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
 
   useEffect(() => {
     if (!fields.length) return;
@@ -338,7 +342,7 @@ export function NoiseSpectrumXYPage() {
       </div>
 
       <div id="noise-xy-panel-run" role="tabpanel" aria-labelledby="noise-xy-tab-run" hidden={tab !== "run"}>
-        <div className="zaw-dashboard">
+        <div className="zaw-dashboard xy-page-dashboard">
           <section className="zaw-panel zaw-panel-params">
             <div className="zaw-panel-head"><small>PARAMETERS</small><h2>实验参数</h2></div>
             <ParameterForm
@@ -348,7 +352,7 @@ export function NoiseSpectrumXYPage() {
               onChange={(field, value) => setValues((current) => ({ ...current, [field.name]: value }))}
               onLayoutChange={setLayout}
               onMoveNotice={setNotice}
-              disabled={jobActive || starting}
+              disabled={parametersBusy || starting}
             />
             <div aria-label="Welch 分段预览" aria-live="polite">
               <h3>Welch 分段预览（只读）</h3>
@@ -361,7 +365,7 @@ export function NoiseSpectrumXYPage() {
               <p>预览基于请求采样率；实际值以分析结果为准。耗时含每点稳定及恢复温控等待，不含初始化、校相、通信和分析。</p>
             </div>
             {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
-            <button disabled={saving || jobActive || !fields.length} onClick={() => void save()}>
+            <button disabled={saving || parametersBusy || !fields.length} onClick={() => void save()}>
               {saving ? "保存中…" : "保存参数与布局"}
             </button>
             {notice && <p role="status">{notice}</p>}
@@ -370,7 +374,7 @@ export function NoiseSpectrumXYPage() {
           <section className="zaw-panel zaw-panel-control">
             <div className="zaw-panel-head"><small>CONTROL</small><h2>控制与状态</h2></div>
             <div className="zaw-control-buttons">
-              <button disabled={starting || jobActive || !fields.length} onClick={() => void check(false)}>仅预检</button>
+              <button disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
               <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>
                 {starting ? "处理中…" : "预检并运行实验"}
               </button>
@@ -381,11 +385,15 @@ export function NoiseSpectrumXYPage() {
             <JobView job={job} onUpdate={setJob} />
           </section>
 
-          <section className="zaw-panel zaw-panel-result">
-            <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
-            {latest ? <><Result value={latest} /><button onClick={() => { setSelectedId(latest.run_id); setTab("history"); }}>查看本次详情</button></> : <p>暂无运行记录。</p>}
-          </section>
         </div>
+        <WorkflowPanel enabled={fields.length > 0} values={values} setValues={setValues}
+          session={session} setSession={setSession} job={job} setJob={setJob}
+          analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
+          runs={list.runs} setError={setError} onRefresh={setRefresh} />
+        <section className="zaw-panel zaw-panel-result">
+          <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
+          {latest ? <><Result value={latest} /><button onClick={() => { setSelectedId(latest.run_id); setTab("history"); }}>查看本次详情</button></> : <p>暂无运行记录。</p>}
+        </section>
       </div>
 
       <div id="noise-xy-panel-history" role="tabpanel" aria-labelledby="noise-xy-tab-history" hidden={tab !== "history"}>

@@ -40,8 +40,6 @@ class NoiseSpectrumXYDemod3RParams(ExperimentParams):
     xy_ctrl_b_hz: float = parameter(default=-162.38, external_name="XY_CTRL_B_HZ", label="DirectAW 标定截距 B", unit="Hz", group="advanced")
     xy_calibration_min_envelope_v: float = parameter(default=0.0, external_name="XY_CALIBRATION_MIN_ENVELOPE_V", label="标定有效最小包络", unit="V", group="advanced", minimum=0)
     xy_calibration_max_envelope_v: float = parameter(default=4.0, external_name="XY_CALIBRATION_MAX_ENVELOPE_V", label="标定有效最大包络", unit="V", group="advanced", minimum=0)
-    xy_aw_output_vpp: float = parameter(default=8.0, external_name="XY_AW_OUTPUT_VPP", label="固定 AW 输出幅度", unit="Vpp", group="basic", minimum=0.001)
-    xy_aw_output_offset_v: float = parameter(default=0.0, external_name="XY_AW_OUTPUT_OFFSET_V", label="固定 AW 输出偏置", unit="V", group="basic")
     xy_aw_repeat_freq_hz: float = parameter(default=500.0, external_name="XY_AW_REPEAT_FREQ_HZ", label="AW 重复频率", unit="Hz", group="advanced", minimum=0.001)
     xy_aw_points: int = parameter(default=10000, external_name="XY_AW_POINTS", label="AW 波形点数", group="advanced", minimum=2, maximum=16384)
     xy_trigger_freq: float = parameter(default=100.0, external_name="XY_TRIGGER_FREQ", label="XY 外触发频率", unit="Hz", group="advanced", minimum=0.001)
@@ -85,6 +83,14 @@ class NoiseSpectrumXYDemod3RParams(ExperimentParams):
     temp_switch: float = parameter(default=5.0, external_name="FIXED_PARAMS.Temp_Switch", label="温控开关电平", unit="V", group="advanced", safety_key="Temp_Switch")
     main_magnetic_field: float = parameter(default=1.03, external_name="FIXED_PARAMS.main_magnetic_field", label="主磁场电流", unit="mA", group="basic", safety_key="main_magnetic_field")
 
+    @classmethod
+    def migrate_external(cls, values, schema_version: int):
+        """AW 满量程已改为逐包络自动选择，剥离旧固定幅度/偏置键。"""
+        migrated = super(NoiseSpectrumXYDemod3RParams, cls).migrate_external(values, schema_version)
+        for key in ("XY_AW_OUTPUT_VPP", "XY_AW_OUTPUT_OFFSET_V"):
+            migrated.pop(key, None)
+        return migrated
+
     def validate_model(self) -> list[str]:
         errors: list[str] = []
         if not self.run_tag.strip():
@@ -110,11 +116,16 @@ class NoiseSpectrumXYDemod3RParams(ExperimentParams):
             errors.append(
                 f"控制频率反算得到 V_env=[{envelope_min:.6f}, {envelope_max:.6f}] V，超出标定有效范围"
             )
-        output_low = self.xy_aw_output_offset_v - self.xy_aw_output_vpp / 2
-        output_high = self.xy_aw_output_offset_v + self.xy_aw_output_vpp / 2
-        required = max(envelope_max, self.xy_calib_envelope_v)
-        if -required < output_low or required > output_high:
-            errors.append(f"DirectAW 包络超出固定 AW 可表达范围 [{output_low}, {output_high}] V")
+        nonzero_envelopes = [abs(value) for value in envelope if value != 0.0]
+        if nonzero_envelopes and min(nonzero_envelopes) < 0.0005:
+            errors.append("扫描轴端点存在非零但过小的包络点，无法可靠生成任意波")
+        for value in (envelope_min, envelope_max):
+            try:
+                validate_safety_limit("X_magnetic_field", float(value))
+            except ValueError as exc:
+                errors.append(str(exc))
+        if 0.0 < self.xy_calib_envelope_v < 0.0005:
+            errors.append("DirectAW 校相包络过小，无法可靠生成任意波")
         if not self.xy_calibration_min_envelope_v <= self.xy_calib_envelope_v <= self.xy_calibration_max_envelope_v:
             errors.append("DirectAW 校相包络超出标定有效范围")
         if not math.isclose(self.xy_ctrl_freq, self.pump_mod_freq, rel_tol=0, abs_tol=1e-9):

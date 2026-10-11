@@ -4,6 +4,177 @@
  */
 
 export interface paths {
+    "/api/experiments/noise-spectrum-xy/workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workflow Definition */
+        get: operations["workflow_definition_api_experiments_noise_spectrum_xy_workflow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy/workflow/diagram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Diagram */
+        get: operations["diagram_api_experiments_noise_spectrum_xy_workflow_diagram_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy/sessions/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Active */
+        get: operations["active_api_experiments_noise_spectrum_xy_sessions_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create */
+        post: operations["create_api_experiments_noise_spectrum_xy_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get */
+        get: operations["get_api_experiments_noise_spectrum_xy_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy/sessions/{session_id}/parameters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Parameters */
+        patch: operations["parameters_api_experiments_noise_spectrum_xy_sessions__session_id__parameters_patch"];
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy/sessions/{session_id}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Steps */
+        post: operations["steps_api_experiments_noise_spectrum_xy_sessions__session_id__steps_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy/sessions/{session_id}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish */
+        post: operations["finish_api_experiments_noise_spectrum_xy_sessions__session_id__finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy/runs/{run_id}/analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Analysis State */
+        get: operations["analysis_state_api_experiments_noise_spectrum_xy_runs__run_id__analysis_get"];
+        put?: never;
+        /** Analyze */
+        post: operations["analyze_api_experiments_noise_spectrum_xy_runs__run_id__analysis_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/noise-spectrum-xy/runs/{run_id}/files/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run File */
+        get: operations["run_file_api_experiments_noise_spectrum_xy_runs__run_id__files__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -2586,6 +2757,170 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** XYAnalysisBody */
+        XYAnalysisBody: {
+            /** Revision */
+            revision: number;
+            /** Step Ids */
+            step_ids: string[];
+            /** Analysis Parameters */
+            analysis_parameters?: {
+                [key: string]: unknown;
+            };
+        };
+        /** XYAnalysisState */
+        XYAnalysisState: {
+            /** Run Id */
+            run_id: string;
+            /** Revision */
+            revision: number;
+            /** Options */
+            options: {
+                [key: string]: number;
+            };
+            /** Steps */
+            steps: {
+                [key: string]: components["schemas"]["XYStageState"];
+            };
+            /** Fingerprint */
+            fingerprint: {
+                [key: string]: unknown;
+            };
+            /** Summary */
+            summary: {
+                [key: string]: unknown;
+            };
+        };
+        /** XYCreateBody */
+        XYCreateBody: {
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+        };
+        /** XYFlow */
+        XYFlow: {
+            /** Acquisition */
+            acquisition: components["schemas"]["XYStage"][];
+            /** Analysis */
+            analysis: components["schemas"]["XYStage"][];
+            /** Diagram Url */
+            diagram_url: string;
+        };
+        /** XYParametersBody */
+        XYParametersBody: {
+            /** Revision */
+            revision: number;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+        };
+        /** XYRevisionBody */
+        XYRevisionBody: {
+            /** Revision */
+            revision: number;
+        };
+        /** XYSession */
+        XYSession: {
+            /** Session Id */
+            session_id: string;
+            /** Job Id */
+            job_id: string;
+            /** Revision */
+            revision: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "starting" | "waiting" | "running" | "closed";
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /** Steps */
+            steps: {
+                [key: string]: components["schemas"]["XYStageState"];
+            };
+            /** Current Step */
+            current_step?: string | null;
+            /** Run Id */
+            run_id?: string | null;
+            /** Outputs */
+            outputs?: {
+                [key: string]: string;
+            };
+            /**
+             * Output Source
+             * @default 最近成功模块的写入结果；未经额外回读
+             */
+            output_source: string;
+            /**
+             * Demod Mode
+             * @default unknown
+             */
+            demod_mode: string;
+            /** Xy Phase Calibration */
+            xy_phase_calibration?: {
+                [key: string]: unknown;
+            } | null;
+            /** Safety Shutdown */
+            safety_shutdown?: {
+                [key: string]: unknown;
+            } | null;
+            /** Clock Sources */
+            clock_sources?: {
+                [key: string]: unknown;
+            };
+            /** Demod Phase Deg */
+            demod_phase_deg?: number | null;
+            /** Daq Settings */
+            daq_settings?: {
+                [key: string]: unknown;
+            } | null;
+            /** Pending Request */
+            pending_request?: string | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** XYStage */
+        XYStage: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Group */
+            group: string;
+            /** Dependencies */
+            dependencies: string[];
+            /** Parameters */
+            parameters: string[];
+            /** Artifacts */
+            artifacts: string[];
+        };
+        /** XYStageState */
+        XYStageState: {
+            /** Status */
+            status: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Files */
+            files?: {
+                [key: string]: number[] | null;
+            };
+            /** Artifacts */
+            artifacts?: string[];
+        };
+        /** XYStepsBody */
+        XYStepsBody: {
+            /** Revision */
+            revision: number;
+            /** Step Ids */
+            step_ids: string[];
+        };
         /**
          * ZAWClosedLoopRunSummary
          * @description Z 任意波电流闭环实验单次运行摘要，供专属 GUI 历史 Tab 渲染。
@@ -2769,6 +3104,333 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    workflow_definition_api_experiments_noise_spectrum_xy_workflow_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XYFlow"];
+                };
+            };
+        };
+    };
+    diagram_api_experiments_noise_spectrum_xy_workflow_diagram_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    active_api_experiments_noise_spectrum_xy_sessions_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XYSession"] | null;
+                };
+            };
+        };
+    };
+    create_api_experiments_noise_spectrum_xy_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["XYCreateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XYSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_api_experiments_noise_spectrum_xy_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XYSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parameters_api_experiments_noise_spectrum_xy_sessions__session_id__parameters_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["XYParametersBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XYSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    steps_api_experiments_noise_spectrum_xy_sessions__session_id__steps_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["XYStepsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XYSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_api_experiments_noise_spectrum_xy_sessions__session_id__finish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["XYRevisionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XYSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analysis_state_api_experiments_noise_spectrum_xy_runs__run_id__analysis_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XYAnalysisState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_api_experiments_noise_spectrum_xy_runs__run_id__analysis_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["XYAnalysisBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_file_api_experiments_noise_spectrum_xy_runs__run_id__files__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_api_health_get: {
         parameters: {
             query?: never;

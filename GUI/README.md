@@ -21,7 +21,7 @@ npm ci
 ## 启动
 
 完成安装后，在文件资源管理器中双击仓库根目录的 **`start_gui.bat`**。
-它会启动前后端，并在 Vite 就绪后自动打开默认浏览器，无需手动输入地址。
+它会配置 Tailscale 私人 HTTPS 入口、启动前后端，并在 Vite 就绪后自动打开默认浏览器。
 入口使用自身目录定位仓库，支持从其他工作目录运行；PowerShell 执行策略仅对该进程生效，
 不修改系统设置，不自动安装依赖。
 
@@ -31,6 +31,8 @@ npm ci
 powershell -NoProfile -ExecutionPolicy Bypass -File GUI\start.ps1
 # 自动打开浏览器
 powershell -NoProfile -ExecutionPolicy Bypass -File GUI\start.ps1 -OpenBrowser
+# 仅启动本机服务，不查询或修改 Tailscale
+powershell -NoProfile -ExecutionPolicy Bypass -File GUI\start.ps1 -LocalOnly -OpenBrowser
 ```
 
 启动器会同时拉起两个进程：
@@ -46,6 +48,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File GUI\start.ps1 -OpenBrowser
 
 启动器检查虚拟环境 Python、`node_modules`、`npm.cmd` 和 8000 / 5173 端口。
 缺失依赖或端口占用时直接报错，不会自动安装、结束已有进程或改用其他端口。
+默认还检查 Tailscale 安装与登录状态、读取当前设备的域名并配置私人 Serve；
+Serve 配置失败或回读不匹配时不启动前后端；同一 HTTPS 入口已有其他路径、443 转发或公网 Funnel 配置时会报错并保留原配置。
 后端 20 秒内未监听时取消前端启动；前端失败时返回非零退出码。
 双击失败后窗口保留错误并等待按键，已启动的后端需手动停止。
 重复双击会提示端口占用，请先停止旧服务。
@@ -59,6 +63,13 @@ $parseErrors = $null
     (Join-Path $PWD 'GUI\start.ps1'), [ref]$tokens, [ref]$parseErrors
 ) | Out-Null
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+```
+
+启动器的无硬件回归覆盖域名白名单、重复配置、本机模式、端口冲突、Tailscale 失败、
+转发冲突、私人 HTTPS 回读以及前端退出码；所有外部命令都使用替身：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File GUI\test_start.ps1
 ```
 
 如需手动分别启动：
@@ -75,6 +86,45 @@ npm run dev
 
 只运行后端时，先在 `GUI/frontend/` 执行 `npm run build`，再访问
 `http://127.0.0.1:8000`；此方式需要重新构建才能显示前端源码更新。
+
+### 笔记本浏览器访问
+
+实验电脑和笔记本均需安装 Tailscale 并加入同一个私人网络。默认一键启动从
+`tailscale status --json` 读取实验电脑的域名，通过
+`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` 放行该域名，并后台开启 HTTPS Serve。
+前端就绪后，在笔记本自己的浏览器打开启动窗口显示的 `https://<本机的 Tailscale 域名>`。
+两个服务仍监听 `127.0.0.1`，网页和 `/api` 共用入口；局域网和外网使用同一个地址。
+笔记本需保持 Tailscale 连接，实验电脑需保持 GUI 服务运行。
+
+**Serve 配置在实验电脑的 PowerShell 中执行**，由 Tailscale 客户端保存。
+首次若需要启用 HTTPS，命令会显示设置链接，在 Tailscale 官网账户页面完成一次设置；
+需要账户有相应权限。若本机命令提示访问被拒绝，在管理员 PowerShell 中重试。
+账户设置流程见 [Tailscale Serve 官方说明](https://tailscale.com/docs/features/tailscale-serve)。
+
+需要手动配置或核查时，在实验电脑执行：
+
+```powershell
+tailscale status
+tailscale serve --bg --https=443 --set-path=/ http://127.0.0.1:5173
+tailscale serve status
+# 停止该 HTTPS 根路径的转发，保留其他路径
+tailscale serve --https=443 --set-path=/ off
+```
+
+手动启动 Vite 时也需设置域名白名单；从 `GUI/frontend/` 执行：
+
+```powershell
+$tailscaleInfo = tailscale status --json | ConvertFrom-Json
+$env:__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS = $tailscaleInfo.Self.DNSName.TrimEnd('.')
+npm run dev -- --strictPort
+```
+
+已运行的前端也可从 `GUI/frontend/.env` 读取同名变量（逗号分隔域名），修改后由 Vite 自动重载。
+该本机配置不纳入 Git；默认一键启动仍以实时读取的 Tailscale 域名为准。
+
+Serve 在后台保存配置，退出 GUI 或重启电脑不会自动清除转发，但网页仍依赖前后端服务运行。
+启动器只设置私人 Serve，不启用公网 Funnel；GUI 没有独立登录，应限制私人网络的访问权限。
+`-LocalOnly` 不修改已有 Serve 配置，如需停止已有远程入口，先执行上面的 `off` 命令。
 
 ## 前端结构
 
@@ -106,6 +156,8 @@ npm test
 `params/devices.yaml` 顶层 `network_resources` 中的指定网络目标，以及已配置 LabOne 数据服务器中的设备。
 扫描只读取身份信息，显示序列号、连接地址、入库状态和失败原因。
 同一设备的 USB 与网口连接按型号及序列号识别；加入新设备后需要保存设备库。
+后端读取和保存 DG4000/DG900 时，会补全缺失的任意波与无限 Burst 能力字段，
+保存后写入设备库；显式禁用的能力和自定义通道、点数限制保持原值，未知型号不自动补全。
 在设备库的“网络扫描地址”按行编辑 VISA 资源并先保存，再主动扫描；清空列表会停止扫描
 候选地址，已入库仪器仍参与扫描。`.31/.32/.33/.34` 已预置为 `192.168.124.*` 扫描候选，
 确认型号与序列号后每台独立加入。旧扫描文件仅在新字段缺失时用于兼容迁移。
@@ -267,3 +319,27 @@ GUI 后端以非热重载模式运行；更新后端代码后需要先停止旧�
   运行期间按钮禁用，避免界面状态与正在执行的快照冲突。
 - 移动后页面提示“布局有未保存修改”，点击“保存参数与布局”才把完整的参数值与分类写入磁盘；
   保存成功后前端回读 schema 校验磁盘布局与页面一致，不一致会提示刷新页面。
+
+## XY 正弦噪声谱分步运行
+
+`/experiments/noise-spectrum-xy` 的运行 Tab 保留参数布局和 Welch 预览，并展示两列交互流程图。
+采集 A01～A13 顺序依赖，A14 随时结束空闲会话；分析 B01～B05 绑定具体运行目录。
+勾选模块及尚未完成的前置，再点击“运行所选 / 重跑”；空闲改参后先“应用参数到会话”。
+XY 校相未收敛禁止 DAQ/扫描，允许重试；A13 恢复后重扫必须重新 A11 准备。
+每轮扫描创建新目录，旧 raw/config 保留；分阶段重算仅归档受影响产物。
+
+等待下一步时设备连接、输出状态和全局硬件锁保持，任务仍运行；检查后点击“结束会话”。
+执行中使用任务“安全停止”。正常结束补做必要的解调器恢复；异常、取消、父进程通信断开自动收尾。
+刷新恢复仍存活的会话；后端重启不读取历史完成记录恢复硬件。原连续运行入口仍自动收尾并分析。
+运行页可下载实验包内可编辑 Excalidraw 原图；历史结果与架构 Tab 保留。
+
+本实验接口前缀 `/api/experiments/noise-spectrum-xy`：
+
+- `GET /workflow`、`GET /workflow/diagram`：共用模块清单及原图。
+- `POST /sessions`、`GET /sessions/active`、`GET /sessions/{id}`：创建、刷新和查询会话。
+- `PATCH /sessions/{id}/parameters`、`POST /sessions/{id}/steps`、`POST /sessions/{id}/finish`：携带修订号的串行命令；拒绝过期/重复/执行冲突。
+- `GET /runs/{run_id}/analysis`、`POST /runs/{run_id}/analysis`：阶段记录、显式阶段及分析参数；与旧重新分析共享目录互斥。
+
+通过现有 JSONL 和 SSE 推送会话/阶段快照；旧运行没有阶段记录时从 B01 开始。
+无硬件回归：`agent_exp_env\Scripts\python.exe -m unittest lab_workflows.experiment_modules.noise_spectrum_xy.test_sine_mode lab_workflows.experiment_modules.noise_spectrum_xy.test_stages lab_workflows.experiment_modules.noise_spectrum_xy.test_analysis_stages GUI.backend.test_noise_spectrum_xy`。
+实验步骤、安全策略和数据说明见 [实验文档](../docs/noise_spectrum_xy_ctrl.md)。

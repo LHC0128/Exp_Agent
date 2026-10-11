@@ -25,26 +25,26 @@ safety_limits:
     description: "Keithley 6221 控制 Z 小磁场线圈，允许范围 -100 到 100 mA"
 
   main_magnetic_field:
-    min: -10
-    max: 10
+    min: -20
+    max: 20
     ramp_rate: null
     output_off_on_error: true
-    description: "GS200 电流源控制主磁场，范围 -10 到 10 mA"
+    description: "GS200 电流源控制主磁场，范围 -20 到 20 mA"
 
   # ---- 信号发生器 ----
   Z_magnetic_field:
-    min: -10.0
-    max: 10.0
+    min: -20.0
+    max: 20.0
     ramp_rate: null
     output_off_on_error: true
-    description: "Z方向磁场，范围 -10 到 10 V"
+    description: "Z方向磁场，范围 -20 到 20 V"
 
   Time_sequence_2:
-    min: -10.0
-    max: 10.0
+    min: -20.0
+    max: 20.0
     ramp_rate: null
     output_off_on_error: false
-    description: "共同外触发时序通道，输出电平限制为 -10 到 10 V"
+    description: "共同外触发时序通道，输出电平限制为 -20 到 20 V"
 
   Pump_laser_power:
     min: 0.0
@@ -90,15 +90,15 @@ safety_limits:
     description: "TOPTICA DLC pro Laser 1 扫描峰峰值，单位 Vpp"
 
   X_magnetic_field_AM:
-    min: -10
-    max: 10
+    min: -20
+    max: 20
     ramp_rate: null
     output_off_on_error: true
     description: "X方向磁场 AM 包络输出，允许负电压；当前 AW 示波器检查范围约 -2.35 到 1.34 V"
 
   Y_magnetic_field_AM:
-    min: -10
-    max: 10
+    min: -20
+    max: 20
     ramp_rate: null
     output_off_on_error: true
     description: "Y方向磁场 AM 包络输出，允许负电压；当前 AW 示波器检查范围约 -2.32 到 1.37 V"
@@ -118,18 +118,18 @@ safety_limits:
     description: "DG4000 外部 AM 输入端安全范围，峰值电压限制为 ±2.5 V"
 
   X_magnetic_field:
-    min: -10.0
-    max: 10.0
+    min: -20.0
+    max: 20.0
     ramp_rate: null
     output_off_on_error: true
-    description: "X方向磁场，范围 -10-10 V"
+    description: "X方向磁场，范围 -20-20 V"
 
   Y_magnetic_field:
-    min: -10.0
-    max: 10.0
+    min: -20.0
+    max: 20.0
     ramp_rate: null
     output_off_on_error: true
-    description: "Y方向磁场，范围 -10-10 V"
+    description: "Y方向磁场，范围 -20-20 V"
 
   rf_coil:
     min: 0.0

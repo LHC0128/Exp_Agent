@@ -361,7 +361,6 @@ def test_parameter_waveform_and_mapping_preflight(control_source):
     assert "必须一致" in "；".join(replace(params, z_trigger_freq=200).validate())
     assert "正整数倍" in "；".join(replace(params, xy_trigger_freq=300, z_trigger_freq=300).validate())
     assert "固定为 1" in "；".join(replace(params, demod3_adc_select=2).validate())
-    assert "输出范围" in "；".join(replace(params, xy_aw_output_vpp=0.01).validate())
     assert "安全拦截" in "；".join(replace(params, xy_trigger_amplitude=50, z_trigger_amplitude=50).validate())
     assert "整除" in "；".join(replace(params, z_phase_scan_step_deg=25).validate())
     assert "360° 周期" in "；".join(replace(params, z_phase_scan_stop_deg=320).validate())
@@ -381,6 +380,14 @@ def test_resampling_and_quadrature_match_old_rules(control_source):
     waveforms = synthesize_xy(params, envelope, 0)
     angle = 2 * np.pi * params.pump_mod_freq * envelope["time_s"]
     assert np.allclose(waveforms["y_waveform_V"], -envelope["envelope_V"] * np.sin(angle), atol=1e-12)
+    peak = float(abs(envelope["envelope_V"]).max())
+    assert waveforms["xy_aw_vpp"] == pytest.approx(2.0 * peak)
+    assert waveforms["xy_aw_output_offset_v"] == 0.0
+    assert float(np.max(np.abs(waveforms["x_normalized"]))) <= 1.0 + 1e-12
+    assert float(np.max(np.abs(waveforms["y_normalized"]))) <= 1.0 + 1e-12
+    tiny = dict(envelope, envelope_V=envelope["envelope_V"] * 0.0)
+    with pytest.raises(ValueError, match="低于仪器最小幅度"):
+        synthesize_xy(params, tiny, 0)
     with pytest.raises(ValueError, match="整数倍"):
         load_envelope(replace(params, pump_mod_freq=9000), 16384)
     with pytest.raises(ValueError, match="限制"):

@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
+from ...common import validate_safety_limit
 from ...experiment_params import ExperimentParams, parameter
 
 
@@ -18,8 +19,6 @@ class XYDirectAWDCCalibrationParams(ExperimentParams):
     z_rf_freq_start_hz: float = parameter(default=500.0, external_name="Z_RF_FREQ_START_Hz", label="Z 射频扫描起始频率", unit="Hz", group="basic", minimum=0)
     z_rf_freq_stop_hz: float = parameter(default=35000.0, external_name="Z_RF_FREQ_STOP_Hz", label="Z 射频扫描终止频率", unit="Hz", group="basic", minimum=0)
     z_rf_freq_step_hz: float = parameter(default=500.0, external_name="Z_RF_FREQ_STEP_Hz", label="Z 射频扫描步进", unit="Hz", group="basic", minimum=0.001)
-    xy_aw_output_vpp: float = parameter(default=4.0, external_name="XY_AW_OUTPUT_VPP", label="固定 AW 输出幅度", unit="Vpp", group="basic", minimum=0.001)
-    xy_aw_output_offset_v: float = parameter(default=0.0, external_name="XY_AW_OUTPUT_OFFSET_V", label="固定 AW 输出偏置", unit="V", group="advanced")
     xy_aw_points: int = parameter(default=10000, external_name="XY_AW_POINTS", label="AW 波形点数", group="advanced", minimum=2)
     xy_trigger_offset_v: float = parameter(default=2.5, external_name="XY_TRIGGER_OFFSET_V", label="外触发偏置", unit="V", group="advanced")
     enable_xy_phase_cal: bool = parameter(default=True, external_name="ENABLE_XY_PHASE_CAL", label="启用 XY 相位校准", group="basic")
@@ -69,6 +68,14 @@ class XYDirectAWDCCalibrationParams(ExperimentParams):
     temperature: float = parameter(default=100.0, external_name="FIXED_PARAMS.temperature", label="气室温度", unit="°C", group="basic", safety_key="temperature")
     temp_switch: float = parameter(default=5.0, external_name="FIXED_PARAMS.Temp_Switch", label="温控开关电平", unit="V", group="advanced", safety_key="Temp_Switch")
 
+    @classmethod
+    def migrate_external(cls, values, schema_version: int):
+        """AW 满量程已改为逐包络自动选择，剥离旧固定幅度/偏置键。"""
+        migrated = super(XYDirectAWDCCalibrationParams, cls).migrate_external(values, schema_version)
+        for key in ("XY_AW_OUTPUT_VPP", "XY_AW_OUTPUT_OFFSET_V"):
+            migrated.pop(key, None)
+        return migrated
+
     def validate_model(self) -> list[str]:
         errors: list[str] = []
         if not self.run_tag.strip():
@@ -77,14 +84,15 @@ class XYDirectAWDCCalibrationParams(ExperimentParams):
             errors.append("DirectAW 扫描起始电压必须小于终止电压")
         if self.z_rf_freq_start_hz >= self.z_rf_freq_stop_hz:
             errors.append("Z 射频扫描起始频率必须小于终止频率")
-        aw_low = self.xy_aw_output_offset_v - self.xy_aw_output_vpp / 2
-        aw_high = self.xy_aw_output_offset_v + self.xy_aw_output_vpp / 2
-        if self.xy_env_voltage_start_v < aw_low or self.xy_env_voltage_stop_v > aw_high:
-            errors.append(
-                f"DirectAW 扫描范围超出固定 AW 可表达范围 [{aw_low}, {aw_high}] V"
-            )
-        if abs(self.xy_phase_cal_envelope_v) > max(abs(aw_low), abs(aw_high)):
-            errors.append("相位校准包络超出固定 AW 可表达范围")
+        for value in (self.xy_env_voltage_start_v, self.xy_env_voltage_stop_v):
+            try:
+                validate_safety_limit("X_magnetic_field", float(value))
+            except ValueError as exc:
+                errors.append(str(exc))
+            if value != 0.0 and abs(value) < 0.0005:
+                errors.append("DirectAW 扫描端点存在非零但过小的包络电压，无法可靠生成任意波")
+        if self.xy_phase_cal_envelope_v != 0.0 and abs(self.xy_phase_cal_envelope_v) < 0.0005:
+            errors.append("相位校准包络过小，无法可靠生成任意波")
         span = self.z_rf_freq_stop_hz - self.z_rf_freq_start_hz
         if not math.isclose(span / self.z_rf_freq_step_hz, round(span / self.z_rf_freq_step_hz), abs_tol=1e-9):
             errors.append("Z 射频扫描范围必须包含整数个步进")

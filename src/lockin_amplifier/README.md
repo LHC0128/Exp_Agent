@@ -112,4 +112,4 @@ Scope 来源与设置恢复、取消和安全拦截。修改的 Python 文件还
 - [完整模块说明、采集示例与实机验收](../../docs/lockin_amplifier.md)
 - [设备库与物理量映射规则](../../docs/instrument_mapping.md)
 - [旧模式锁相实验与兼容性](../../docs/legacy_lockin_experiments.md)
-- [历史 HF2 Notebook 示例](../../examples/lockin_amplifier_demo.ipynb)
+- [HF2 / MFLI Notebook 示例](../../examples/lockin_amplifier_demo.ipynb)

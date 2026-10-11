@@ -164,8 +164,9 @@ ARB_WAVEFORM_FILE = "control_waveformAW.csv"  # Ω_ctrl(t) 波形 CSV，时间�
 A_ENV_FREQ = 500.0                 # Ω_ctrl(t) 包络重复频率 (Hz)
 XY_CTRL_K_HZ_PER_V = 7508.36       # Ω_ctrl = K * V + B
 XY_CTRL_B_HZ = -58.77
-XY_AW_OUTPUT_VPP = 4.0             # dg_comp 固定输出 Vpp，物理范围为 offset ± Vpp/2
-XY_AW_OUTPUT_OFFSET = 0.0
+# AW 满量程自动跟随包络峰值（2 × max|envelope_v|，offset 恒 0）；
+# XY_AW_AUTO_FLOOR_VPP 为 DG 任意波幅度的仪器下限。
+XY_AW_AUTO_FLOOR_VPP = 0.001
 XY_CTRL_PHASE = 0.0
 XY_CTRL_QUAD = 90.0
 
@@ -581,8 +582,8 @@ config = {
         "A_ENV_FREQ_Hz": A_ENV_FREQ,
         "XY_CTRL_K_Hz_per_V": XY_CTRL_K_HZ_PER_V,
         "XY_CTRL_B_Hz": XY_CTRL_B_HZ,
-        "XY_AW_OUTPUT_VPP": XY_AW_OUTPUT_VPP,
-        "XY_AW_OUTPUT_OFFSET_V": XY_AW_OUTPUT_OFFSET,
+        "XY_AW_OUTPUT_VPP_auto": None,  # 首次上传后回填实际自动满量程
+        "XY_AW_OUTPUT_OFFSET_V": 0.0,
         "XY_CTRL_PHASE_initial_deg": XY_CTRL_PHASE,
         "XY_CTRL_QUAD_deg": XY_CTRL_QUAD,
         "PUMP_MOD_FREQ_Hz": PUMP_MOD_FREQ,
@@ -893,36 +894,33 @@ def wrap_deg(angle_deg):
     return (float(angle_deg) + 180.0) % 360.0 - 180.0
 
 
-def build_aw_params(v_waveform):
-    """按固定 Vpp/offset 把物理电压波形转换为 DG arbitrary 参数。"""
+def build_aw_params(v_waveform, vpp):
+    """按自动满量程把物理电压波形转换为 DG arbitrary 参数。
+
+    vpp 由调用方按包络峰值统一计算（2 × max|envelope_v|，X/Y 共用、
+    与校相相位无关），offset 恒为 0。
+    """
     v_waveform = np.asarray(v_waveform, dtype=float)
     v_min = float(np.min(v_waveform))
     v_max = float(np.max(v_waveform))
-    vpp = float(XY_AW_OUTPUT_VPP)
-    offset = float(XY_AW_OUTPUT_OFFSET)
-    half_range = 0.5 * vpp
-    if half_range <= 0:
-        raise ValueError("XY_AW_OUTPUT_VPP 必须大于 0")
-
-    normalized = (v_waveform - offset) / half_range
-    max_abs_normalized = float(np.max(np.abs(normalized)))
-    if max_abs_normalized > 1.0 + 1e-9:
+    half_range = 0.5 * float(vpp)
+    if half_range < XY_AW_AUTO_FLOOR_VPP / 2.0:
         raise ValueError(
-            f"X/Y AW 目标物理电压 [{v_min:+.6f}, {v_max:+.6f}] V "
-            f"超出固定输出范围 [{offset - half_range:+.6f}, {offset + half_range:+.6f}] V；"
-            "请增大 XY_AW_OUTPUT_VPP 或降低 Omega_ctrl"
+            f"自动 AW 满量程 {vpp:.6f} Vpp 低于仪器最小幅度 {XY_AW_AUTO_FLOOR_VPP} Vpp；"
+            "请更换控制包络或检查 XY 标定"
         )
 
+    normalized = v_waveform / half_range
     return {
         "waveform_V": v_waveform,
-        "normalized": np.clip(normalized, -1.0, 1.0),
+        "normalized": normalized,
         "vpp": float(vpp),
-        "offset": float(offset),
+        "offset": 0.0,
         "min": v_min,
         "max": v_max,
-        "output_min": float(offset - half_range),
-        "output_max": float(offset + half_range),
-        "max_abs_normalized": max_abs_normalized,
+        "output_min": -half_range,
+        "output_max": half_range,
+        "max_abs_normalized": float(np.max(np.abs(normalized))),
     }
 
 
@@ -993,15 +991,16 @@ def load_control_envelope():
 
 
 def synthesize_xy_waveforms(phase_deg):
-    """按固定 90 deg 正交关系生成 X/Y 直接任意波。"""
+    """按固定 90 deg 正交关系生成 X/Y 直接任意波，满量程自动跟随包络峰值。"""
     aw = load_control_envelope()
     phase_rad = math.radians(float(phase_deg))
     quad_rad = math.radians(XY_CTRL_QUAD)
     carrier_phase = 2.0 * np.pi * PUMP_MOD_FREQ * aw["time_s"] + phase_rad
     x_wave = aw["envelope_v"] * np.cos(carrier_phase)
     y_wave = aw["envelope_v"] * np.cos(carrier_phase + quad_rad)
-    x_aw = build_aw_params(x_wave)
-    y_aw = build_aw_params(y_wave)
+    auto_vpp = 2.0 * float(np.max(np.abs(aw["envelope_v"])))
+    x_aw = build_aw_params(x_wave, auto_vpp)
+    y_aw = build_aw_params(y_wave, auto_vpp)
     return aw, x_aw, y_aw
 
 
@@ -1145,6 +1144,9 @@ def apply_phase_and_measure(phase_deg):
 
 configure_dg_am_reference_trigger()
 aw, x_aw, y_aw = upload_xy_aw(XY_CTRL_PHASE, outputs_on=False)
+config["xy_direct_aw"]["XY_AW_OUTPUT_VPP_auto"] = float(x_aw["vpp"])
+with open(config_path, "w", encoding="utf-8") as f:
+    yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
 save_xy_aw_waveforms(raw_dir / "xy_aw_waveforms_initial.npz", aw, x_aw, y_aw, XY_CTRL_PHASE)
 
 phase_history = []

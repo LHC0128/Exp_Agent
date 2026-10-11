@@ -121,7 +121,7 @@ Set-Location ..\..
 ### 启动 GUI
 
 完成首次安装后，在文件资源管理器中双击仓库根目录的 **`start_gui.bat`**，
-即可启动前后端，并在 Vite 就绪后自动打开默认浏览器。
+即可配置 Tailscale 私人 HTTPS 入口、启动前后端，并在 Vite 就绪后自动打开默认浏览器。
 脚本按自身位置定位仓库，不依赖当前工作目录；执行策略仅对启动的 PowerShell 进程生效，
 不会修改系统设置，也不会自动安装依赖。
 
@@ -134,13 +134,23 @@ Set-Location ..\..
 启动成功后，浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)。
 Vite 在当前窗口运行，将 `/api` 请求代理到独立窗口中的 FastAPI 后端
 [http://127.0.0.1:8000](http://127.0.0.1:8000)。两个服务只监听本机地址。
+启动器自动读取当前 Tailscale 域名、放行 Vite 的对应域名，并使用 Serve 将私人 HTTPS 请求
+转发到 5173。笔记本安装 Tailscale 并加入同一网络后，打开启动窗口显示的
+`https://<本机的 Tailscale 域名>` 即可访问，局域网和外网使用同一个地址。
+首次启用 HTTPS 时，按 Tailscale 命令显示的链接在账户页面完成一次设置；这一步完成后
+后续双击会自动复用配置。具体设置与手动命令见 [GUI 远程访问说明](GUI/README.md#笔记本浏览器访问)。
 按 Ctrl+C 只结束当前 Vite 进程；后端需要在自己的窗口停止或关闭。
 关闭浏览器不会停止服务。停止服务前应先通过 GUI 正常停止实验或功能模块，
 服务退出不等于仪器安全收尾。
 
-启动器会检查 Python、npm、前端依赖以及 8000 / 5173 端口；缺失依赖或端口占用时
+启动器会检查 Python、npm、前端依赖、Tailscale 登录状态以及 8000 / 5173 端口；缺失依赖或端口占用时
 报错退出，不会杀进程或自动换端口。后端 20 秒内未监听时不再启动前端。
 双击启动失败时窗口会保留错误并等待按键；已启动的后端仍需单独停止。
+同一 HTTPS 入口已有其他路径、443 转发或公网 Funnel 配置时也会报错，保留原配置。仅本机运行、无需 Tailscale 时使用：
+
+```powershell
+.\GUI\start.ps1 -LocalOnly -OpenBrowser
+```
 
 如果需要单独启动后端，在另一个终端执行：
 
@@ -193,6 +203,9 @@ experiments ───┘
 新增或修改实验时使用仓库级 `expcodegen` Skill，并运行其中的验证器。
 后续修改改变实验行为时，同步更新 `docs/` 中的实验介绍、相关正文和 GUI 简介；新增正式实验默认配套
 「运行 / 历史」双 Tab GUI，模板见 `.agents/skills/expcodegen/references/gui-two-tab-template.md`。
+代码始终按准备、采集、分析等职责模块化，入口负责编排。新建或整体重构 GUI 时先询问是否
+构建可勾选、带依赖的交互流程图；选择需要时按 Skill 的 `gui-workflow-template.md` 实现
+分步会话、状态、重跑和安全结束，不需要时仍保留模块化代码及运行/历史界面。
 测试完成后清理本次临时测试脚本，保留正式回归测试。
 实验说明只链接 GUI 实际保存的默认参数文件，不重复记录可变默认值；历史运行参数以
 各自的 `experiment_config.yaml` 为准。新增实验使用 Skill 验证器的 `--delivery` 模式，
@@ -314,7 +327,7 @@ GUI 提供运行 / 历史双 Tab，历史只接纳新格式；完整分析结果
 | Mx XY 剩磁二维校准（SDS） | `experiments/Mx_XY_Residual_Field_Calibration.py`、`experiments/Mx_XY_Residual_Field_Calibration_plot.py` | `docs/mx_xy_residual_field_calibration.md` |
 | T1 / T2 标定 | `experiments/T1_Calibration.py`、`experiments/T2_Calibration.py` | `docs/T1_calibration.md`、`docs/T2_relaxation.md` |
 | X/Y 补偿与通道验证 | `experiments/XY_Compensation_Calibration.ipynb`、`experiments/XY_Channel_Calibration.ipynb`、`experiments/XY_AM_Transfer.ipynb`、`experiments/XY_MOD_ZeroOffset.ipynb`、`experiments/XY_Output_Verification.ipynb` | `docs/XY_Compensation_Calibration.md`、`docs/z_field_calibration.md` |
-| XY 控制噪声谱测量（运行 / 历史双 Tab；按格间距自动分段、只读平均段数与耗时预览；移动峰标定验收、三实验共享全轴分离与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
+| XY 控制噪声谱测量（运行 / 历史 / 架构；原图五组交互流程，14 个采集模块与 5 个分析模块；显式前置、校相门槛、保留输出的硬件会话、空闲改参、独立目录重跑与手动结束；按格间距自动分段、只读平均段数与耗时预览；移动峰标定验收、三实验共享全轴分离与独立背景验收；标定或拟合失败仍保留二维 PSD） | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
 | XY 控制测量已知可控噪声谱（运行 / 历史 / 架构；Z 小线圈注入分段平顶谱伪噪声，相邻点交替 on/off 顺序、两态等待并逐段保存；色散连续 X/Y/R 波形中位数与全部有效点线形拟合、不含线圈频响的 K_Z 真值链，共享全控制轴分离与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
 | XY 控制测量已知不可控 Probe AM 噪声谱（运行 / 历史双 Tab；Probe AOM 外部 AM 的 ON/OFF 成对采集，可选全程叠加独立配置的 Z 已知可控噪声；共享全轴分析提取锁相端 N_S1 与有符号差分） | `experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM.py`、`experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM_plot.py` | `docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md` |
 | Demod3 R 噪声谱测量 | `experiments/Noise_Spectrum_XY_Demod3_R.py`、`experiments/Noise_Spectrum_XY_Demod3_R_plot.py` | `docs/noise_spectrum_xy_demod3_r.md` |

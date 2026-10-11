@@ -31,7 +31,7 @@ from ..mx_main_field_scope_noise_spectrum.global_analysis import (
 from .models import NoiseSpectrumXYParams, welch_settings
 from .processing import SEPARATION_METHOD, locate_ridge, fit_local_spectra
 
-ANALYSIS_VERSION = "xy-independent-background-v7"
+ANALYSIS_VERSION = "xy-independent-background-v8"
 
 
 def write_json(path, payload):
@@ -111,6 +111,29 @@ def _interpolate_for_plot(x, y, valid):
     return plotted, valid
 
 
+def plot_noise_spectrum_2d(results, matrix, frequency, control_axis, *, calibrated=False):
+    """先按扫描电压保存实测谱；只有标定通过才改用控制频率轴。"""
+    data = np.ma.log10(np.ma.masked_less_equal(np.ma.masked_invalid(matrix), 0))
+    if not frequency.size or not data.count():
+        raise ValueError("所选分析频带没有有效 PSD，无法生成二维噪声谱")
+    lo, hi = np.percentile(data.compressed(), [5, 98])
+    axis = control_axis / 1000 if calibrated else control_axis
+    fig, ax = new_figure(kind="wide", height_mm=65)
+    mesh = ax.pcolormesh(frequency / 1000, axis, data, shading="auto",
+                         cmap="inferno", vmin=lo, vmax=hi, rasterized=True)
+    if calibrated:
+        ax.plot(frequency / 1000, frequency / 1000, "--", color=COLOR_CYAN,
+                lw=1.1, label=r"Reference: $f = \Omega_{\mathrm{Ctrl}}$")
+        style_legend(ax, loc="upper left")
+    else:
+        ax.set_title("Measured PSD (uncalibrated control axis)")
+    format_axis(ax, xlabel="Frequency (kHz)", ylabel=(
+        "Calibrated control frequency (kHz)" if calibrated else "Sine peak voltage (V)"))
+    ax.set_ylim(axis[0], axis[-1])
+    fig.colorbar(mesh, ax=ax).set_label(r"$\log_{10}$ PSD (V$^2$/Hz)")
+    save_plot(fig, results / "noise_spectrum_2d.png")
+
+
 def plot_ridge(results, matrix, frequency, voltage, ridge):
     fig, axes = new_figure(kind="wide", height_mm=65, ncols=2)
     for ax, data in zip(axes, [np.log10(matrix), ridge["contrast"]]):
@@ -125,17 +148,7 @@ def plot_ridge(results, matrix, frequency, voltage, ridge):
                     label="Accepted peaks")
     style_legend(axes[1], loc="upper left")
     save_plot(fig, results/"calibration.png")
-    fig, ax = new_figure(kind="wide", height_mm=65)
-    data = np.log10(matrix)
-    ax.pcolormesh(frequency / 1000, ridge["omega_ctrl"] / 1000, data, shading="auto",
-                  cmap="inferno", vmin=np.percentile(data, 5),
-                  vmax=np.percentile(data, 98), rasterized=True)
-    ax.plot(frequency / 1000, frequency / 1000, "--", color=COLOR_CYAN,
-            lw=1.1, label=r"Reference: $f = \Omega_{\mathrm{Ctrl}}$")
-    format_axis(ax, xlabel="Frequency (kHz)", ylabel="Calibrated control frequency (kHz)")
-    ax.set_ylim(ridge["omega_ctrl"][0] / 1000, ridge["omega_ctrl"][-1] / 1000)
-    style_legend(ax, loc="upper left")
-    save_plot(fig, results/"noise_spectrum_2d.png")
+    plot_noise_spectrum_2d(results, matrix, frequency, ridge["omega_ctrl"], calibrated=True)
 
 
 def plot_fit(results, matrix, frequency, control, fit):
@@ -205,33 +218,178 @@ def plot_background_diagnostic(results, frequency, fit):
     save_plot(fig, results / "background_identifiability.png")
 
 
-def analyze(run_dir: Path):
-    run_dir = Path(run_dir).resolve()
-    config = yaml.safe_load((run_dir/"experiment_config.yaml").read_text(encoding="utf-8"))
-    defaults = NoiseSpectrumXYParams()
-    saved = config.get("parameters",{})
-    options = {key: float(saved.get("ANALYSIS_"+key.upper(),getattr(defaults,"analysis_"+key)))
-               for key in ("bin_width_hz","frequency_min_hz","frequency_max_hz","fit_half_width_hz")}
-    if any(not np.isfinite(v) or v < 0 for v in options.values()) or options["bin_width_hz"] == 0 or options["fit_half_width_hz"] == 0 or options["frequency_min_hz"] >= options["frequency_max_hz"]:
-        raise ValueError("分析参数范围无效")
-    results = run_dir/"results"
-    results.mkdir(exist_ok=True)
-    # 只归档当前 results 顶层产物；原始数据、配置和已有诊断子目录不移动。
-    existing = [p for p in results.iterdir() if p.is_file()]
-    backup = None
-    if existing:
-        backup = results/("before_"+datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
-        backup.mkdir()
-        for path in existing:
-            shutil.move(str(path),str(backup/path.name))
-    summary = dict(analysis_version=ANALYSIS_VERSION, status="running", options=options,
-                   plotting=dict(profile="paper", figure_kind="wide",
-                                  standard_height_mm=65, diagnostic_height_mm=110,
-                                  paired_exports=True, dpi=300),
-                   backup_directory=backup.name if backup else None, warnings=[])
-    write_json(results/"analysis_summary.json",summary)
-    set_plot_style("paper")
-    try:
+class AnalysisWorkflow:
+    """持久化五个分析阶段；前置产物必须属于同一输入和参数修订。"""
+
+    def __init__(self, run_dir, analysis_parameters=None, *, use_saved_options=True):
+        import hashlib
+        from .stages import ANALYSIS, initial_states, invalidate
+        from .state_io import read_state
+        self.run_dir = Path(run_dir).resolve()
+        self.results = self.run_dir / "results"
+        self.state_path = self.run_dir / "analysis_state.json"
+        self.config = yaml.safe_load((self.run_dir / "experiment_config.yaml").read_text(encoding="utf-8"))
+        if self.config.get("completion_status") == "running":
+            raise ValueError("本轮扫描仍在写入数据，请等待扫描结束")
+        defaults = NoiseSpectrumXYParams()
+        saved = self.config.get("parameters", {})
+        self.options = {key: float(saved.get("ANALYSIS_" + key.upper(), getattr(defaults, "analysis_" + key)))
+            for key in ("bin_width_hz", "frequency_min_hz", "frequency_max_hz", "fit_half_width_hz")}
+        previous = read_state(self.state_path) or {}
+        if use_saved_options:
+            self.options.update(previous.get("options", {}))
+        self.states = previous.get("steps") or initial_states(ANALYSIS)
+        self.revision = previous.get("revision", 0)
+        self.summary = previous.get("summary") or {}
+        raw = [{"name": path.name, "bytes": path.stat().st_size, "mtime_ns": path.stat().st_mtime_ns}
+            for path in sorted((self.run_dir / "raw").glob("*")) if path.is_file()]
+        # 适配器会写分析状态；它不是采集输入，不能让刚完成的阶段立即失效。
+        acquisition_config = {key: value for key, value in self.config.items() if key not in ("analysis_status", "analysis_error")}
+        self.fingerprint = dict(config_sha256=hashlib.sha256(json.dumps(acquisition_config,
+            sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest(),
+            raw_files=raw, analysis_version=ANALYSIS_VERSION)
+        if previous and previous.get("fingerprint") != self.fingerprint:
+            invalidate(ANALYSIS, self.states, "B01")
+            self.revision += 1
+        for stage in ANALYSIS:
+            record = self.states[stage.id]
+            if record["status"] == "running":
+                invalidate(ANALYSIS, self.states, stage.id)
+                self.revision += 1
+                break
+            if record["status"] == "completed" and any(self._file_signature(self.results / name) != signature
+                    for name, signature in record.get("files", {}).items()):
+                invalidate(ANALYSIS, self.states, stage.id)
+                self.revision += 1
+                break
+        if analysis_parameters:
+            changed = set()
+            for name, value in analysis_parameters.items():
+                key = name.removeprefix("ANALYSIS_").lower()
+                if name != "ANALYSIS_" + key.upper() or key not in self.options:
+                    raise ValueError("不是分析参数：" + name)
+                value = float(value)
+                if value != self.options[key]:
+                    changed.add(name)
+                    self.options[key] = value
+            for stage in ANALYSIS:
+                if changed.intersection(stage.parameters):
+                    invalidate(ANALYSIS, self.states, stage.id)
+                    break
+        values = list(self.options.values())
+        if any(not np.isfinite(value) or value < 0 for value in values) or self.options["bin_width_hz"] == 0 or self.options["fit_half_width_hz"] == 0 or self.options["frequency_min_hz"] >= self.options["frequency_max_hz"]:
+            raise ValueError("分析参数范围无效")
+
+    @staticmethod
+    def _file_signature(path):
+        return [path.stat().st_size, path.stat().st_mtime_ns] if path.is_file() else None
+
+    def snapshot(self):
+        return dict(run_id=self.run_dir.name, revision=self.revision, options=self.options,
+            steps=self.states, fingerprint=self.fingerprint, summary=self.summary)
+
+    def persist(self):
+        from .state_io import write_state
+        from ...experiment_runtime import report_runtime_progress
+        write_state(self.state_path, self.snapshot())
+        if self.states["B01"]["status"] != "running":
+            write_json(self.results / "analysis_summary.json", self.summary)
+        report_runtime_progress("analysis", f"分析状态：{self.summary.get('status', 'not_started')}",
+            data={"analysis_workflow": self.snapshot()})
+
+    def _archive_from(self, item):
+        from .stages import ANALYSIS
+        index = next(i for i, stage in enumerate(ANALYSIS) if stage.id == item)
+        names = {name for stage in ANALYSIS[index:] for name in stage.artifacts}
+        if item == "B03" and (self.results / "calibration.npz").exists():
+            names.update(("noise_spectrum_2d.png", "noise_spectrum_2d.pdf"))
+        files = [path for path in self.results.glob("*") if path.is_file() and path.name in names]
+        if files:
+            summary_path = self.results / "analysis_summary.json"
+            if summary_path.is_file():
+                files.append(summary_path)
+            backup = self.results / ("before_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+            backup.mkdir()
+            for path in files:
+                shutil.move(str(path), str(backup / path.name))
+            self.summary["backup_directory"] = backup.name
+
+    def _data(self):
+        with np.load(self.results / "psd_matrix.npz", allow_pickle=False) as cached:
+            matrix, frequency, voltage, rows = (cached[key] for key in ("psd_matrix", "freq_axis", "amplitudes", "valid_rows"))
+        band = (frequency > 0) & (frequency >= self.options["frequency_min_hz"]) & (frequency <= self.options["frequency_max_hz"])
+        return matrix, frequency, voltage, rows, band, frequency[band], voltage[rows], matrix[rows][:, band]
+
+    def _ridge(self):
+        with np.load(self.results / "calibration.npz", allow_pickle=False) as cached:
+            return dict(cached)
+
+    def execute(self, selected, expected_revision=None):
+        from .stages import ANALYSIS, invalidate, validate_selection
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("分析状态已改变，请刷新后重试")
+        selected = validate_selection(ANALYSIS, self.states, selected)
+        self.results.mkdir(exist_ok=True)
+        self.revision += 1
+        set_plot_style("paper")
+        for item in selected:
+            check_cancelled()
+            invalidate(ANALYSIS, self.states, item)
+            summary_keys = {"B02": ("psd", "noise_spectrum_2d"), "B03": ("calibration",),
+                "B04": ("fit", "background_diagnostic"), "B05": ("global_comparison",)}
+            stage_index = next(i for i, stage in enumerate(ANALYSIS) if stage.id == item)
+            for stage in ANALYSIS[stage_index:]:
+                for key in summary_keys.get(stage.id, ()):
+                    self.summary.pop(key, None)
+            if item != "B01":
+                self._archive_from(item)
+            self.states[item] = {"status": "running", "error": ""}
+            self.summary.update(status="running", options=self.options)
+            self.summary.pop("error", None)
+            self.persist()
+            try:
+                getattr(self, "step_" + item)()
+                self.states[item] = {"status": "completed", "error": "",
+                    "files": {name: self._file_signature(self.results / name)
+                        for stage in ANALYSIS if stage.id == item for name in stage.artifacts if name.endswith(".npz")}}
+                if item != "B05":
+                    self.summary["status"] = "partial"
+            except BaseException as exc:
+                cancelled = isinstance(exc, (WorkflowCancelled, KeyboardInterrupt))
+                status = "cancelled" if cancelled else "quality_failed" if isinstance(exc, ValueError) else "failed"
+                self.states[item] = {"status": status, "error": str(exc)}
+                self.summary.update(status=status, error=str(exc))
+                raise
+            finally:
+                try:
+                    self.persist()
+                except Exception:
+                    if self.states[item]["status"] == "completed":
+                        raise
+        return self.summary
+
+    def step_B01(self):
+        run_dir, results, config, options, summary = self.run_dir, self.results, self.config, self.options, self.summary
+        results = run_dir/"results"
+        results.mkdir(exist_ok=True)
+        # 只归档当前 results 顶层产物；原始数据、配置和已有诊断子目录不移动。
+        existing = [p for p in results.iterdir() if p.is_file()]
+        backup = None
+        if existing:
+            backup = results/("before_"+datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+            backup.mkdir()
+            for path in existing:
+                shutil.move(str(path),str(backup/path.name))
+        self.summary = summary = dict(analysis_version=ANALYSIS_VERSION, status="running", options=options,
+                       plotting=dict(profile="paper", figure_kind="wide",
+                                      standard_height_mm=65, diagnostic_height_mm=110,
+                                      paired_exports=True, dpi=300),
+                       backup_directory=backup.name if backup else None, warnings=[])
+        self.summary = summary
+        set_plot_style("paper")
+
+    def step_B02(self):
+        run_dir, results, config, options, summary = self.run_dir, self.results, self.config, self.options, self.summary
         matrix, frequency, voltage, rows, psd_info = compute_psd(run_dir,config,options)
         summary["psd"] = psd_info
         np.savez(results/"psd_matrix.npz",psd_matrix=matrix,freq_axis=frequency,amplitudes=voltage,
@@ -241,15 +399,31 @@ def analyze(run_dir: Path):
                 & (frequency <= options["frequency_max_hz"]))
         f, v, data = frequency[band], voltage[rows],matrix[rows][:,band]
         print(f"Welch: {len(rows)}/{len(voltage)} 点, nperseg={psd_info['nperseg']}, df={psd_info['bin_width_hz']:.3f} Hz",flush=True)
+        # 标定或分离失败也保留原始二维谱；无效扫描行留空，不插值。
+        plot_noise_spectrum_2d(results, matrix[:, band], f, voltage)
+        summary["noise_spectrum_2d"] = dict(control_axis="sine_peak_voltage_v", calibrated=False)
+
+    def step_B03(self):
+        run_dir, results, config, options, summary = self.run_dir, self.results, self.config, self.options, self.summary
+        matrix, frequency, voltage, rows, band, f, v, data = self._data()
+        plot_noise_spectrum_2d(results, matrix[:, band], f, voltage)
+        summary["noise_spectrum_2d"] = dict(control_axis="sine_peak_voltage_v", calibrated=False)
         ridge = locate_ridge(data,f,v)
         np.savez(results/"calibration.npz",**ridge,amplitudes=v,freq_axis=f)
         plot_ridge(results,data,f,v,ridge)
+        summary["noise_spectrum_2d"] = dict(control_axis="calibrated_control_frequency_khz", calibrated=True)
         summary["calibration"] = {key: float(ridge[key]) for key in ("k","b","residual_std_hz","coverage")}
         summary["calibration"]["support_points"] = len(ridge["V_cal"])
         summary["calibration"]["half_slopes"] = ridge["half_slopes"].tolist()
         support = ridge["k"]*ridge["V_cal"]+ridge["b"]
         summary["calibration"]["support_frequency_hz"] = [float(support.min()),float(support.max())]
         print("移动峰标定:",summary["calibration"],flush=True)
+
+    def step_B04(self):
+        run_dir, results, config, options, summary = self.run_dir, self.results, self.config, self.options, self.summary
+        _, _, _, _, _, f, v, data = self._data()
+        ridge = self._ridge()
+        support = ridge["k"] * ridge["V_cal"] + ridge["b"]
         fit = fit_local_spectra(
             data, f, ridge["omega_ctrl"], ridge["spur_mask"],
             options["fit_half_width_hz"], (support.min(), support.max()),
@@ -310,6 +484,16 @@ def analyze(run_dir: Path):
             median_tail_holdout_error=float(np.median(tail_errors)) if tail_errors.size else None,
             note="N_S1 按独立背景掩码输出；popt/perr 仅描述洛伦兹模型，背景来源见 background_method",
         )
+
+    def step_B05(self):
+        run_dir, results, config, options, summary = self.run_dir, self.results, self.config, self.options, self.summary
+        _, _, _, _, _, f, v, data = self._data()
+        ridge = self._ridge()
+        support = ridge["k"] * ridge["V_cal"] + ridge["b"]
+        with np.load(results / "noise_spectra.npz", allow_pickle=False) as cached:
+            fit = dict(cached)
+        good = fit["fit_mask"]
+        summary["global_comparison"] = {"status": "skipped", "reason": "可用对照频点不足 40"}
         # Mx 二维共同线宽模型作为对照，不能覆盖局部质量掩码或填充失败点。
         core = (~ridge["spur_mask"]) & (f>=support.min()+options["fit_half_width_hz"]) & (f<=support.max()-options["fit_half_width_hz"])
         indices = np.flatnonzero(core)
@@ -332,24 +516,26 @@ def analyze(run_dir: Path):
         summary["warnings"].append("低频边界点使用扫描内部已验收线宽/偏移的固定形状拟合；edge_fixed_shape 点不是四参数独立线宽拟合，详见 fit_mode。")
         summary["warnings"].append("0 Hz 是去均值 Hann-Welch 的 DC bin，已从分离谱、CSV 和结果图排除；完整 psd_matrix.npz 仍保留该频点。")
         summary["warnings"].append("三个 XY 噪声实验共用全控制轴分离；可控响应与背景独立验收，峰失败时允许通过两侧平台一致性和分块留出验证提取 N_S1。")
+        summary["warnings"] = list(dict.fromkeys(summary["warnings"]))
         summary["status"] = "completed" if good.any() or fit["background_fit_mask"].any() else "quality_failed"
         if summary["status"] == "quality_failed":
             summary["error"] = "没有频率点通过峰或背景质量验收"
         print("分析完成:",summary["fit"],flush=True)
-    except WorkflowCancelled as exc:
-        summary.update(status="cancelled",error=str(exc))
-        raise
-    except Exception as exc:
-        summary.update(status="quality_failed" if isinstance(exc,ValueError) else "failed",error=str(exc))
-        raise
-    finally:
-        write_json(results/"analysis_summary.json",summary)
-    return summary
+
+
+def analyze(run_dir: Path, *, step_ids=None, analysis_parameters=None, expected_revision=None):
+    """完整分析和分阶段分析复用相同五个步骤。"""
+    from .stages import ANALYSIS
+    ctx = AnalysisWorkflow(run_dir, analysis_parameters, use_saved_options=step_ids is not None)
+    return ctx.execute(step_ids or [stage.id for stage in ANALYSIS], expected_revision)
 
 
 def main():
-    summary=analyze(runtime_run_dir())
-    return 0 if summary["status"] == "completed" else 2
+    import os
+    command = json.loads(os.environ.get("LAB_TYPED_PARAMETERS", "{}"))
+    summary = analyze(runtime_run_dir(), step_ids=command.get("step_ids"),
+        analysis_parameters=command.get("analysis_parameters"), expected_revision=command.get("revision"))
+    return 0 if summary["status"] in ("completed", "partial") else 2
 
 
 if __name__ == "__main__":

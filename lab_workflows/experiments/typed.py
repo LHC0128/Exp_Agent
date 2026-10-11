@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import threading
+from queue import Empty, Queue
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
@@ -91,6 +92,7 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         run_dir: Path | None = None,
         progress: ProgressCallback | None = None,
         cancellation: CancellationToken | None = None,
+        commands: Queue | None = None,
     ) -> None:
         job_dir = self.root / "data" / ".gui_jobs"
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -123,6 +125,7 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             env=environment,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            stdin=subprocess.PIPE if commands is not None else None,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -136,6 +139,25 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
 
         watcher = threading.Thread(target=watch_cancel, daemon=True)
         watcher.start()
+
+        def send_commands() -> None:
+            try:
+                while process.poll() is None:
+                    try:
+                        payload = commands.get(timeout=0.1)
+                    except Empty:
+                        continue
+                    if payload is None:
+                        break
+                    process.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                    process.stdin.flush()
+            except (BrokenPipeError, OSError, ValueError):
+                cancel_path.touch(exist_ok=True)
+            finally:
+                process.stdin.close()
+
+        if commands is not None:
+            threading.Thread(target=send_commands, daemon=True).start()
         assert process.stdout is not None
         try:
             for line in process.stdout:
@@ -159,6 +181,13 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
                     emit(progress, "running", message)
             return_code = process.wait()
         finally:
+            # 回调或父通信失败时，先让子进程收尾，再允许调用者释放硬件锁。
+            if process.poll() is None:
+                cancel_path.touch(exist_ok=True)
+                if commands is not None:
+                    commands.put(None)
+                process.wait()
+            process.stdout.close()
             cancel_path.unlink(missing_ok=True)
         if cancellation and cancellation.cancelled:
             raise WorkflowCancelled("实验已在安全检查点停止")

@@ -7,8 +7,8 @@ parameters:
   main_magnetic_field: 9.28
   x_magnetic_field: 0.0
   y_magnetic_field: 0.0
-  ramp_low: -0.2
-  ramp_high: 0.2
+  ramp_low: -0.1
+  ramp_high: 0.1
   dispersion_steps: 41
   dispersion_step_settle_s: 0.1
   dispersion_duration_s: 0.1

@@ -130,10 +130,6 @@ experiment_descriptions:
     的二维 PSD 分离 S_beta 与 N_S1。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。
   mx-xy-residual-field-calibration: 在扫描主场下直接读取 SDS CH1 平衡探测器直流均值，二维扫描 X/Y DC 补偿场并用
     Bloch 曲面拟合剩磁平衡点。
-  noise-spectrum-xy: BellBloom中，dg_comp 两路使用正弦模式产生正交 XY 控制并测量噪声谱，Time_sequence_2 CH2
-    方波经三通同步触发两路 Burst；每点关闭两路输出后调幅，按已校准的 Burst 相位重新开启并等待共用外触发，Pump 和共用触发源在扫描期间保持连续运行；设置每点采集时长和频率格间距，自动计算
-    Welch 段长；与已知可控噪声、Probe AM 实验共用全控制轴分析，独立验收可控响应与不可控背景；分离谱排除 0 Hz，低频扫描边界使用固定线宽/偏移的边界模型，方法记录保留但图中不额外标记，峰不可辨识时由通过两侧一致性及分块留出验证的远端平台提取背景，不插值外推失败点；测量时温度开关
-    Output OFF，恢复等待时间可在高级参数中设置；结束时保留 Pump 载波与时序门控输出。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。
   noise-spectrum-xy-uncontrolled-probe-am: Probe 光路 AOM 由专用 DG4000 CH1 输出载波，CH2 任意波接同机背板外部
     AM 输入；XY 控制点逐点交替采集 Probe AM 噪声 OFF/ON，可选在两态期间持续向 Z 线圈注入独立配置的已知可控噪声，以检验较强可控背景下差谱能否提取。与正弦噪声谱、已知可控噪声实验共用全控制轴分析，优先独立提取不可控背景
     N_S1；峰不可辨识时检验两侧远端平台，受控响应 S_beta 仅展示各态通过的部分，保留两者的有符号差谱；生成注入前后对比、双 Y 轴差谱/基线图、平均
@@ -738,8 +734,6 @@ parameter_layouts:
     - XY_ENV_VOLTAGE_START_V
     - XY_ENV_VOLTAGE_STOP_V
     - XY_ENV_VOLTAGE_POINTS
-    - XY_AW_OUTPUT_VPP
-    - XY_AW_OUTPUT_OFFSET_V
     - Z_RF_FREQ_START_Hz
     - Z_RF_FREQ_STOP_Hz
     - Z_RF_FREQ_STEP_Hz
@@ -861,12 +855,12 @@ parameter_layouts:
     - FIXED_PARAMS.Pump_laser_power
     - FIXED_PARAMS.Probe_laser_power
     - TEMP_SWITCH_ON_SETTLE_S
+    - XY_CTRL_PHASE
+    - XY_CTRL_QUAD
     advanced:
     - HF2_DAQ_RATE
     - XY_SETTLE_TIME
     - RF_GATE_OFFSET
-    - XY_CTRL_PHASE
-    - XY_CTRL_QUAD
     - XY_TRIGGER_OFFSET
     - XY_TRIGGER_PHASE
     - HF2_DEMOD_IDX
@@ -1555,8 +1549,6 @@ parameter_layouts:
     - PHASE_SETTLE_TIME
     - XY_CTRL_K_HZ_PER_V
     - XY_CTRL_B_HZ
-    - XY_AW_OUTPUT_VPP
-    - XY_AW_OUTPUT_OFFSET
     - XY_CTRL_PHASE
     - XY_CTRL_QUAD
     - ENABLE_XY_CTRL_PHASE_CAL
@@ -1849,18 +1841,17 @@ parameter_layouts:
     - FIXED_PARAMS.Probe_laser_power
     - FIXED_PARAMS.main_magnetic_field
     - FIXED_PARAMS.temperature
-    - XY_AW_OUTPUT_VPP
     - XY_CTRL_K_HZ_PER_V
     - XY_CTRL_B_HZ
+    - XY_CTRL_QUAD
+    - Z_RF_AMPLITUDE_INIT
     advanced:
     - RF_SETTLE_TIME
     - RESPONSE_N_AVG
     - RESPONSE_AVG_INTERVAL
     - NOISE_RATE
     - NOISE_NPERSEG
-    - XY_AW_OUTPUT_OFFSET
     - XY_CTRL_PHASE
-    - XY_CTRL_QUAD
     - XY_CTRL_PHASE_TOL_DEG
     - XY_CTRL_PHASE_MAX_ITER
     - XY_CTRL_PHASE_MIN_R_V
@@ -1870,7 +1861,6 @@ parameter_layouts:
     - XY_TRIGGER_OFFSET
     - XY_TRIGGER_DUTY
     - XY_TRIGGER_PHASE
-    - Z_RF_AMPLITUDE_INIT
     - Z_BURST_PHASE_INIT
     - Z_PHASE_SCAN_START_DEG
     - Z_PHASE_SCAN_STOP_DEG

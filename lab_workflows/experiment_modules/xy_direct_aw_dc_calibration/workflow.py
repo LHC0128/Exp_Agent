@@ -119,8 +119,7 @@ if XY_ENV_VOLTAGE_LIST_V is None:
     )
 else:
     XY_ENV_VOLTAGE_LIST_V = np.array(XY_ENV_VOLTAGE_LIST_V, dtype=float)
-XY_AW_OUTPUT_VPP = 4.0
-XY_AW_OUTPUT_OFFSET_V = 0.0
+# AW 满量程自动跟随包络峰值（2 × |V_env|，offset 恒 0），不再使用固定满量程。
 XY_AW_REPEAT_FREQ_Hz = 500.0
 XY_AW_POINTS = 10000
 XY_CARRIER_FREQ_Hz = 10000.0
@@ -239,16 +238,13 @@ validate_safety_limit("Time_sequence", 5.0)
 validate_safety_limit("Z_magnetic_field", Z_RF_AMPLITUDE_Vpp)
 validate_safety_limit("rf_coil", 0.0)
 
-aw_low = XY_AW_OUTPUT_OFFSET_V - XY_AW_OUTPUT_VPP / 2.0
-aw_high = XY_AW_OUTPUT_OFFSET_V + XY_AW_OUTPUT_VPP / 2.0
 for key in ("X_magnetic_field", "Y_magnetic_field"):
-    validate_safety_limit(key, aw_low)
-    validate_safety_limit(key, aw_high)
-if np.min(XY_ENV_VOLTAGE_LIST_V) < aw_low or np.max(XY_ENV_VOLTAGE_LIST_V) > aw_high:
+    validate_safety_limit(key, float(np.min(XY_ENV_VOLTAGE_LIST_V)))
+    validate_safety_limit(key, float(np.max(XY_ENV_VOLTAGE_LIST_V)))
+_nonzero_env = np.abs(XY_ENV_VOLTAGE_LIST_V[XY_ENV_VOLTAGE_LIST_V != 0.0])
+if _nonzero_env.size and float(_nonzero_env.min()) < 0.0005:
     raise ValueError(
-        f"包络扫描范围 [{np.min(XY_ENV_VOLTAGE_LIST_V)}, "
-        f"{np.max(XY_ENV_VOLTAGE_LIST_V)}] V 超出固定 AW 输出范围 "
-        f"[{aw_low}, {aw_high}] V"
+        "包络扫描存在非零但过小的点，自动 AW 幅度将低于仪器最小 0.001 Vpp"
     )
 carrier_cycles = XY_CARRIER_FREQ_Hz / XY_AW_REPEAT_FREQ_Hz
 if not np.isclose(carrier_cycles, round(carrier_cycles)):
@@ -260,7 +256,7 @@ if XY_AW_POINTS > MAX_ARB_POINTS:
     raise ValueError("XY_AW_POINTS 超出当前信号源单波形点数上限")
 
 print(f"DirectAW 包络扫描: {XY_ENV_VOLTAGE_LIST_V.tolist()} V")
-print(f"固定输出: {XY_AW_OUTPUT_VPP:.1f} Vpp, offset={XY_AW_OUTPUT_OFFSET_V:.1f} V")
+print("AW 满量程自动跟随包络峰值（2 × |V_env|），offset = 0")
 print(
     f"Z 频率扫描: {Z_RF_FREQ_LIST_Hz[0]:.0f} ~ "
     f"{Z_RF_FREQ_LIST_Hz[-1]:.0f} Hz, step={Z_RF_FREQ_STEP_Hz:.0f} Hz"
@@ -401,12 +397,18 @@ print(f"设备连接完成，共 {len(devices)} 个设备对象")
 
 # %% Cell 4
 # ========== DirectAW 与数据工具函数 ==========
+AW_AMPLITUDE_FLOOR_VPP = 0.001  # DG 任意波幅度仪器下限；零包络点用该幅度上传全零波形并保持输出 OFF。
+
+
 def wrap_deg(angle_deg):
     return (float(angle_deg) + 180.0) % 360.0 - 180.0
 
 
 def build_direct_aw(envelope_v, phase_deg):
-    """生成恒定包络的 X/Y 正交 DirectAW 波形。"""
+    """生成恒定包络的 X/Y 正交 DirectAW 波形，满量程自动跟随包络峰值。
+
+    vpp = 2 × |envelope_v|，offset 恒为 0；零包络点返回全零波形和下限幅度。
+    """
     envelope_v = float(envelope_v)
     phase_rad = math.radians(float(phase_deg))
     quad_rad = math.radians(XY_CTRL_QUAD_deg)
@@ -416,22 +418,29 @@ def build_direct_aw(envelope_v, phase_deg):
     carrier_phase = 2.0 * np.pi * XY_CARRIER_FREQ_Hz * t_s + phase_rad
     x_v = envelope_v * np.cos(carrier_phase)
     y_v = envelope_v * np.cos(carrier_phase + quad_rad)
-    half_range = XY_AW_OUTPUT_VPP / 2.0
-    x_norm = (x_v - XY_AW_OUTPUT_OFFSET_V) / half_range
-    y_norm = (y_v - XY_AW_OUTPUT_OFFSET_V) / half_range
-    max_abs_norm = max(float(np.max(np.abs(x_norm))), float(np.max(np.abs(y_norm))))
-    if max_abs_norm > 1.0 + 1e-9:
+    vpp = 2.0 * abs(envelope_v)
+    if vpp == 0.0:
+        x_norm = np.zeros_like(x_v)
+        y_norm = np.zeros_like(y_v)
+        vpp = AW_AMPLITUDE_FLOOR_VPP
+    elif vpp < AW_AMPLITUDE_FLOOR_VPP:
         raise ValueError(
-            f"envelope={envelope_v} V 生成的归一化波形峰值 {max_abs_norm:.6f} 超出 1"
+            f"envelope={envelope_v:.6f} V 过小，自动 AW 幅度 {vpp:.6f} Vpp "
+            f"低于仪器最小幅度 {AW_AMPLITUDE_FLOOR_VPP} Vpp"
         )
+    else:
+        x_norm = x_v / (vpp / 2.0)
+        y_norm = y_v / (vpp / 2.0)
     return {
         "time_s": t_s,
         "envelope_V": envelope_v,
         "phase_deg": float(phase_deg),
+        "aw_vpp": float(vpp),
+        "aw_offset": 0.0,
         "x_waveform_V": x_v,
         "y_waveform_V": y_v,
-        "x_normalized": np.clip(x_norm, -1.0, 1.0),
-        "y_normalized": np.clip(y_norm, -1.0, 1.0),
+        "x_normalized": x_norm,
+        "y_normalized": y_norm,
     }
 
 
@@ -459,8 +468,12 @@ def configure_trigger_source():
 
 
 def upload_direct_aw(envelope_v, phase_deg, output=True):
-    """保持 dg_trigger 连续运行，重传两路 AW 后依次打开 Burst 和输出。"""
+    """保持 dg_trigger 连续运行，重传两路 AW 后依次打开 Burst 和输出。
+
+    满量程自动跟随包络峰值；零包络点保持输出 OFF。
+    """
     wave = build_direct_aw(envelope_v, phase_deg)
+    nonzero = float(envelope_v) != 0.0
 
     for ch in (1, 2):
         dg_comp.set_burst_state(False, channel=ch)
@@ -470,8 +483,8 @@ def upload_direct_aw(envelope_v, phase_deg, output=True):
         dg_comp.setup_arbitrary(
             values.copy(),
             freq=XY_AW_REPEAT_FREQ_Hz,
-            amplitude=XY_AW_OUTPUT_VPP,
-            offset=XY_AW_OUTPUT_OFFSET_V,
+            amplitude=wave["aw_vpp"],
+            offset=0.0,
             phase=0.0,
             channel=ch,
             output=False,
@@ -483,7 +496,7 @@ def upload_direct_aw(envelope_v, phase_deg, output=True):
         dg_comp.set_burst_trigger_source("EXTernal", channel=ch)
         dg_comp.set_burst_trigger_slope("POSitive", channel=ch)
         dg_comp.set_burst_phase(0.0, channel=ch)
-        dg_comp.set_output(bool(output), channel=ch)
+        dg_comp.set_output(bool(output) and nonzero, channel=ch)
     return wave
 
 
@@ -497,8 +510,8 @@ def save_waveform_snapshot(path, wave):
         y_waveform_V=wave["y_waveform_V"],
         x_normalized=wave["x_normalized"],
         y_normalized=wave["y_normalized"],
-        fixed_output_vpp_V=np.float64(XY_AW_OUTPUT_VPP),
-        fixed_output_offset_V=np.float64(XY_AW_OUTPUT_OFFSET_V),
+        aw_vpp_V=np.float64(wave["aw_vpp"]),
+        aw_offset_V=np.float64(wave["aw_offset"]),
         repeat_freq_Hz=np.float64(XY_AW_REPEAT_FREQ_Hz),
         carrier_freq_Hz=np.float64(XY_CARRIER_FREQ_Hz),
         quadrature_deg=np.float64(XY_CTRL_QUAD_deg),
@@ -740,14 +753,14 @@ config = {
     "run_tag": RUN_TAG,
     "timestamp": timestamp,
     "purpose": (
-        "使用 DirectAW 固定 4 Vpp/0 V offset 输出，标定恒定包络电压与实际响应峰位的映射"
+        "使用 DirectAW 自动满量程（2 × |V_env|，offset = 0）输出，标定恒定包络电压与实际响应峰位的映射"
     ),
     "acquisition_mode": ACQUISITION_MODE,
     "xy_direct_aw_scan": {
         "XY_ENV_VOLTAGE_LIST_V": XY_ENV_VOLTAGE_LIST_V.tolist(),
-        "fixed_output_vpp_V": XY_AW_OUTPUT_VPP,
-        "fixed_output_offset_V": XY_AW_OUTPUT_OFFSET_V,
-        "output_range_V": [aw_low, aw_high],
+        "aw_vpp_mode": "auto_per_envelope",
+        "aw_vpp_formula": "2 * |V_env| per scan point",
+        "aw_offset_V": 0.0,
         "repeat_freq_Hz": XY_AW_REPEAT_FREQ_Hz,
         "waveform_points": XY_AW_POINTS,
         "carrier_freq_Hz": XY_CARRIER_FREQ_Hz,

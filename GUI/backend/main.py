@@ -82,6 +82,7 @@ from lab_workflows.z_arbitrary_control import (
 )
 
 from .jobs import Job, manager
+from .noise_spectrum_xy import XYSessionService, create_router as xy_router
 from .schemas import (
     ControlCurrentSourceBody,
     ControlEmissionBody,
@@ -114,7 +115,18 @@ from .schemas import (
 )
 
 
-app = FastAPI(title="Bell-Bloom 实验控制台", version="0.1.0")
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(application):
+    try:
+        yield
+    finally:
+        await asyncio.to_thread(xy_sessions.shutdown)
+
+
+app = FastAPI(title="Bell-Bloom 实验控制台", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -123,6 +135,8 @@ app.add_middleware(
 )
 ROOT = find_project_root()
 z_arbitrary_service = ZArbitraryControlService(ROOT)
+xy_sessions = XYSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(xy_sessions))
 
 
 @app.middleware("http")
@@ -1053,6 +1067,8 @@ def _create_analysis_job(run_id: str, body: AnalysisBody):
            if item.data_type == definition.data_type):
         raise _conflict("同类数据仍在采集或自动分析，请稍后重新分析", "run_busy")
     run_dir = _run_dir(body.experiment_id, run_id)
+    if definition.id == "noise-spectrum-xy":
+        xy_sessions.run_directory(run_id)
     if definition.id == RF_DIRECT_AW_ID:
         _validate_run_identifier(run_id)
         reason = rf_direct_aw_analysis_block_reason(_read_yaml(run_dir / "experiment_config.yaml"))

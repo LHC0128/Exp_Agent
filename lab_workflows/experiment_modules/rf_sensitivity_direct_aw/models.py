@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import Field, dataclass
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 import math
 import re
 
@@ -34,8 +34,7 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     aw_repeat_freq: float = parameter(default=2000.0, external_name="AW_REPEAT_FREQ", label="AW 重复频率", unit="Hz", group="basic", minimum=1e-6)
     xy_ctrl_k_hz_per_v: float = parameter(default=7508.36, external_name="XY_CTRL_K_HZ_PER_V", label="XY 标定 K", unit="Hz/V")
     xy_ctrl_b_hz: float = parameter(default=-58.77, external_name="XY_CTRL_B_HZ", label="XY 标定 B", unit="Hz")
-    xy_aw_output_vpp: float = parameter(default=4.0, external_name="XY_AW_OUTPUT_VPP", label="XY AW 输出幅度", unit="Vpp", minimum=1e-9)
-    xy_aw_output_offset: float = parameter(default=0.0, external_name="XY_AW_OUTPUT_OFFSET", label="XY AW 偏置", unit="V")
+
     xy_ctrl_phase: float = parameter(default=0.0, external_name="XY_CTRL_PHASE", label="XY 初始相位", unit="°")
     xy_ctrl_quad: float = parameter(default=90.0, external_name="XY_CTRL_QUAD", label="XY 正交相差", unit="°")
     xy_ctrl_phase_tol_deg: float = parameter(default=1.0, external_name="XY_CTRL_PHASE_TOL_DEG", label="XY 校相容差", unit="°", minimum=1e-9)
@@ -147,6 +146,14 @@ class RFSensitivityDirectAWParams(ExperimentParams):
                     errors.append(str(exc))
         return errors
 
+    @classmethod
+    def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
+        """AW 满量程已改为随包络峰值自动选择，剥离旧固定幅度/偏置键。"""
+        migrated = super(RFSensitivityDirectAWParams, cls).migrate_external(values, schema_version)
+        for key in ("XY_AW_OUTPUT_VPP", "XY_AW_OUTPUT_OFFSET"):
+            migrated.pop(key, None)
+        return migrated
+
     def validate(self, project_root: Path | None = None) -> list[str]:
         root = project_root or find_project_root()
         errors = super(RFSensitivityDirectAWParams, self).validate(root)
@@ -157,10 +164,7 @@ class RFSensitivityDirectAWParams(ExperimentParams):
             mapping = load_mapping(root)
             max_points = min(signal_generator_max_arb_points(mapping[key]) for key in ("X_magnetic_field", "Y_magnetic_field"))
             envelope = load_envelope(self, max_points)
-            # 覆盖校相可能使用的任意相位，避免低估输出范围。
-            peak = float(abs(envelope["envelope_V"]).max())
-            if peak + abs(self.xy_aw_output_offset) > self.xy_aw_output_vpp / 2 + 1e-12:
-                raise ValueError("控制包络超出固定 XY AW 输出范围，不能静默裁剪")
+            # 满量程自动跟随包络峰值；下限与安全限值检查均在 synthesize_xy 内完成。
             synthesize_xy(self, envelope, self.xy_ctrl_phase)
         except (OSError, KeyError, TypeError, ValueError) as exc:
             errors.append(str(exc))

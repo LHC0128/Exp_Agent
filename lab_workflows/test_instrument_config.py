@@ -49,6 +49,47 @@ class InstrumentConfigTests(unittest.TestCase):
     def write(self, name, payload):
         (self.root / "params" / name).write_text(yaml.safe_dump(payload, allow_unicode=True), encoding="utf-8")
 
+    def test_generator_capabilities_are_filled_on_read_and_save_without_hardware(self):
+        path = self.root / "params" / "devices.yaml"
+        original = path.read_bytes()
+        with patch("pyvisa.ResourceManager") as manager:
+            library = public_device_library(self.root)
+            self.assertEqual(path.read_bytes(), original)
+            saved = save_device_library(self.device_configs, base_revision=library["revision"], root=self.root)
+            persisted = yaml.safe_load(path.read_text(encoding="utf-8"))
+            for device_id, config in self.device_configs.items():
+                expected = {**config["capabilities"], "supports_arbitrary": True, "supports_infinite_burst": True}
+                self.assertEqual(library["devices"][device_id]["capabilities"], expected)
+                self.assertEqual(saved["devices"][device_id]["capabilities"], expected)
+                self.assertEqual(persisted["devices"][device_id]["capabilities"], expected)
+            self.assertEqual(resolve_mapping(self.root)["Z_magnetic_field"]["capabilities"],
+                             saved["devices"]["usb_source"]["capabilities"])
+            self.assertEqual(public_device_library(self.root)["revision"], saved["revision"])
+            manager.assert_not_called()
+
+    def test_explicit_disabled_generator_capabilities_and_limits_are_preserved(self):
+        configs = deepcopy(self.device_configs)
+        for device_id, flag in (("usb_source", "supports_arbitrary"), ("lan_source", "supports_infinite_burst")):
+            configs[device_id]["capabilities"].update({flag: False, "max_arb_points": 128})
+        self.write("devices.yaml", {"devices": configs})
+        library = public_device_library(self.root)
+        saved = save_device_library(configs, base_revision=library["revision"], root=self.root)
+        for device_id in ("usb_source", "lan_source"):
+            expected = {"supports_arbitrary": True, "supports_infinite_burst": True,
+                        **configs[device_id]["capabilities"]}
+            self.assertEqual(library["devices"][device_id]["capabilities"], expected)
+            self.assertEqual(saved["devices"][device_id]["capabilities"], expected)
+
+    def test_unknown_models_and_other_instruments_do_not_gain_generator_capabilities(self):
+        for instrument, model in (("signal_generator", "UNKNOWN"), ("gs200", "DG4000")):
+            with self.subTest(instrument=instrument, model=model):
+                configs = deepcopy(self.device_configs)
+                configs["lan_source"].update(instrument=instrument, model=model)
+                self.write("devices.yaml", {"devices": configs})
+                library = public_device_library(self.root)
+                saved = save_device_library(configs, base_revision=library["revision"], root=self.root)
+                self.assertEqual(saved["devices"]["lan_source"]["capabilities"], {"channels": [1, 2]})
+
     def test_legacy_targets_migrate_and_old_save_call_preserves_them(self):
         self.write("instrument_discovery.yaml", {"network_resources": [LAN, LAN.replace("::INSTR", "::inst0::INSTR")]})
         library = public_device_library(self.root)

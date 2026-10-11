@@ -10,6 +10,9 @@ from ...common import validate_safety_limit
 from ...control_sources import resolve_control_results_root
 from .models import RFSensitivityDirectAWParams
 
+# DG 任意波幅度的仪器下限；自动满量程低于该值时拒绝上传，避免静默失真。
+AW_AMPLITUDE_FLOOR_VPP = 0.001
+
 
 def load_envelope(params: RFSensitivityDirectAWParams, max_points: int) -> dict:
     if not params.arb_waveform_file:
@@ -65,17 +68,28 @@ def load_envelope(params: RFSensitivityDirectAWParams, max_points: int) -> dict:
 
 
 def synthesize_xy(params: RFSensitivityDirectAWParams, envelope: dict, phase_deg: float) -> dict:
+    """按包络峰值自动选择 AW 满量程，offset 恒为 0。
+
+    vpp = 2 × max|envelope_V|（与校相相位无关，X/Y 共用同一满量程）。
+    """
     angle = 2 * np.pi * params.pump_mod_freq * envelope["time_s"] + math.radians(phase_deg)
-    result = dict(envelope, xy_ctrl_phase_deg=float(phase_deg), xy_ctrl_quad_deg=params.xy_ctrl_quad)
+    peak_v = float(abs(envelope["envelope_V"]).max())
+    vpp = 2.0 * peak_v
+    if vpp < AW_AMPLITUDE_FLOOR_VPP:
+        raise ValueError(
+            f"控制包络峰值 {peak_v:.6f} V 过小，自动 AW 幅度 {vpp:.6f} Vpp "
+            f"低于仪器最小幅度 {AW_AMPLITUDE_FLOOR_VPP} Vpp"
+        )
+    result = dict(envelope, xy_aw_vpp=float(vpp), xy_aw_output_offset_v=0.0, xy_ctrl_phase_deg=float(phase_deg), xy_ctrl_quad_deg=params.xy_ctrl_quad)
     for axis, phase in (("x", 0.0), ("y", math.radians(params.xy_ctrl_quad))):
         wave = envelope["envelope_V"] * np.cos(angle + phase)
-        normalized = (wave - params.xy_aw_output_offset) / (params.xy_aw_output_vpp / 2)
-        if not np.all(np.isfinite(normalized)) or np.max(np.abs(normalized)) > 1 + 1e-12:
-            raise ValueError("控制包络超出固定 XY AW 输出范围，不能静默裁剪")
-        for value in (float(wave.min()), float(wave.max()), params.xy_aw_output_offset - params.xy_aw_output_vpp / 2, params.xy_aw_output_offset + params.xy_aw_output_vpp / 2):
+        normalized = wave / peak_v
+        if not np.all(np.isfinite(normalized)):
+            raise ValueError(f"{axis.upper()} AW 归一化波形包含非有限值")
+        for value in (float(wave.min()), float(wave.max()), -peak_v, peak_v):
             validate_safety_limit(f"{axis.upper()}_magnetic_field", value)
         result[f"{axis}_waveform_V"] = wave
         result[f"{axis}_normalized"] = normalized
-        result[f"{axis}_vpp"] = params.xy_aw_output_vpp
-        result[f"{axis}_offset"] = params.xy_aw_output_offset
+        result[f"{axis}_vpp"] = float(vpp)
+        result[f"{axis}_offset"] = 0.0
     return result

@@ -28,6 +28,7 @@ def report_runtime_progress(
     percent: float | None = None,
     *,
     estimated_remaining_seconds: float | None = None,
+    data: dict[str, Any] | None = None,
 ) -> None:
     """向 GUI 子进程 stdout 上报一条结构化进度事件。
 
@@ -39,7 +40,7 @@ def report_runtime_progress(
         "message": message,
         "percent": percent,
         "level": "info",
-        "data": {"estimated_remaining_seconds": estimated_remaining_seconds},
+        "data": {**(data or {}), "estimated_remaining_seconds": estimated_remaining_seconds},
     }
     if os.environ.get(PROGRESS_PROTOCOL_ENV) == "jsonl":
         print(PROGRESS_PREFIX + json.dumps(payload, ensure_ascii=False), flush=True)

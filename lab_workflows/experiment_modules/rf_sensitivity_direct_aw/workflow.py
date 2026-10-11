@@ -31,7 +31,7 @@ from ...steps import (
 from .models import RFSensitivityDirectAWParams
 from .phase_plot import plot_z_phase_scan
 from .run_format import DATA_TYPE, EXPERIMENT_ID, SIGNAL_CHAIN
-from .waveform import load_envelope, synthesize_xy
+from .waveform import AW_AMPLITUDE_FLOOR_VPP, load_envelope, synthesize_xy
 
 
 class _RuntimeCancellation(CancellationToken):
@@ -98,12 +98,13 @@ def hf2_snapshot(hf2: HF2Instrument) -> dict:
 
 def upload_xy(signals, channels: dict, params: RFSensitivityDirectAWParams, envelope: dict, phase: float) -> dict:
     waveforms = synthesize_xy(params, envelope, phase)
+    vpp = waveforms["xy_aw_vpp"]
     for axis in ("x", "y"):
         check_cancelled()
         channel = channels[axis]
-        validate_levels(f"{axis.upper()}_magnetic_field", params.xy_aw_output_vpp, params.xy_aw_output_offset)
+        validate_levels(f"{axis.upper()}_magnetic_field", vpp, 0.0)
         signals.set_output(False, channel=channel)
-        upload_arbitrary(signals, ArbitraryWaveformSpec(waveforms[f"{axis}_normalized"], envelope["repeat_freq_Hz"], params.xy_aw_output_vpp, params.xy_aw_output_offset, channel=channel))
+        upload_arbitrary(signals, ArbitraryWaveformSpec(waveforms[f"{axis}_normalized"], envelope["repeat_freq_Hz"], vpp, 0.0, channel=channel))
         signals.set_burst_mode("INFinity", channel=channel)
         signals.set_burst_ncycles(50000, channel=channel)
         signals.set_burst_trigger_source("EXTernal", channel=channel)
@@ -227,6 +228,13 @@ def run(params: RFSensitivityDirectAWParams) -> Path:
         set_temperature_switch(signals, True, channel=channels["temp"])
         wait(params.temp_switch_on_lag_s)
         initial_waveforms = synthesize_xy(params, envelope, params.xy_ctrl_phase)
+        state["xy_aw_output"] = {
+            "mode": "auto_envelope_peak",
+            "vpp_V": float(initial_waveforms["xy_aw_vpp"]),
+            "offset_V": 0.0,
+            "amplitude_floor_vpp": AW_AMPLITUDE_FLOOR_VPP,
+        }
+        directory.update_config(**state)
         np.savez(directory.raw / "xy_aw_waveforms_initial.npz", **initial_waveforms)
         state["data_files"].append("raw/xy_aw_waveforms_initial.npz")
         report_runtime_progress("phase", "XY DirectAW 校相", 10)

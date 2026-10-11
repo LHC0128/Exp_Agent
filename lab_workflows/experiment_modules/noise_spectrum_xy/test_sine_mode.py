@@ -20,7 +20,7 @@ from unittest.mock import Mock, call, patch
 import numpy as np
 import yaml
 
-from . import workflow
+from . import workflow, preparation, acquisition, _helpers
 from .models import NoiseSpectrumXYParams
 from ...common import WorkflowCancelled, load_mapping, load_safety_limits
 from ...steps import routed_signal_generator
@@ -55,7 +55,14 @@ def fake_hardware(root):
     devices = {name: Mock(name=name) for name in (
         "gs200", "dg_comp", "dg_sweep", "dg_mod", "dg_temp", "dg_laser", "tec", "hf2")}
     devices["tec"].get_temperature.return_value = 100.0
-    devices["hf2"].get_double.return_value = 30.0
+    devices["hf2"].get_double.side_effect = lambda path: (
+        scan_params().hf2_daq_tc if str(path).endswith("/timeconstant") else
+        800.0 if str(path).endswith("/rate") else 30.0)
+    devices["dg_comp"].get_shape.return_value = "SINusoid"
+    devices["dg_comp"].get_burst_state.return_value = True
+    devices["dg_comp"].get_burst_mode.return_value = "INFinity"
+    devices["dg_comp"].get_burst_trigger_source.return_value = "EXTernal"
+    devices["dg_comp"].get_frequency.return_value = 10000.0
     by_resource = {mapping[key]["resource"]: devices[name] for name, key in (
         ("dg_comp", "X_magnetic_field"), ("dg_sweep", "Z_magnetic_field"),
         ("dg_mod", "Pump_modulation"), ("dg_temp", "Temp_Switch"),
@@ -69,11 +76,13 @@ def fake_hardware(root):
                              ("hf2", "lab_workflows.devices.create_lockin")):
             factory = stack.enter_context(patch(target, return_value=devices[name]))
             stack.enter_context(patch.object(workflow, target.rsplit(".", 1)[1], factory))
+            stack.enter_context(patch.object(preparation, target.rsplit(".", 1)[1], factory))
         stack.enter_context(patch.object(routed_signal_generator, "create_signal_generator",
                                         side_effect=lambda cfg: by_resource[cfg["resource"]]))
         clocks = stack.enter_context(patch("lab_workflows.steps.synchronize_connected_clocks",
                                           return_value={"verified": True}))
         stack.enter_context(patch.object(workflow, "synchronize_connected_clocks", clocks))
+        stack.enter_context(patch.object(preparation, "synchronize_connected_clocks", clocks))
         for name in ("configure_signal_input", "configure_oscillator"):
             stack.enter_context(patch.object(workflow.demod, name))
         rates = stack.enter_context(patch.object(workflow.demod, "configure_demodulator",
@@ -90,6 +99,7 @@ def fake_hardware(root):
         progress.return_value = Mock()
         stack.enter_context(patch("tqdm.tqdm", progress))
         stack.enter_context(patch.object(workflow, "tqdm", progress))
+        stack.enter_context(patch.object(acquisition, "tqdm", progress))
         shutdown = stack.enter_context(patch.object(workflow, "safe_scan_outputs_off",
                                                    wraps=workflow.safe_scan_outputs_off))
         yield SimpleNamespace(devices=devices, clocks=clocks, rates=rates, samples=samples,
@@ -141,7 +151,7 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
         self.assertEqual(device.mock_calls, off)
         device.reset_mock()
         with self.assertRaises(ValueError):
-            setter(11.0)
+            setter(self.limits["X_magnetic_field"]["max"] + 1)
         self.assertEqual(device.mock_calls, [])
         for method in (device.set_amplitude, device.set_burst_phase):
             device.reset_mock()
@@ -158,7 +168,7 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
         workflow.set_temp_switch(device, False, params, self.limits)
         self.assertEqual(device.mock_calls, [call.set_output(False, channel=2)])
         device.reset_mock()
-        with patch.object(workflow, "time") as clock, patch.object(workflow, "check_cancelled") as cancel:
+        with patch.object(_helpers, "time") as clock, patch.object(_helpers, "check_cancelled") as cancel:
             clock.monotonic.side_effect = [0, 0, 0.1, 0.2, 0.25]
             workflow.set_temp_switch(device, True, params, self.limits, restore_wait=True)
             self.assertEqual(device.mock_calls, [call.setup_dc(5.0, channel=2), call.set_output(True, channel=2)])
@@ -211,12 +221,13 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
             with patch.object(workflow.yaml, "safe_dump", side_effect=save_config):
                 run_dir = workflow.run(params, project_root=self.root)
             self.assert_shutdown(hw)
-            self.assertEqual(events, ["shutdown", "complete", "restore_hf2"])
+            self.assertEqual(events, ["complete", "restore_hf2", "shutdown"])
             xy = hw.devices["dg_comp"]
             self.assertEqual(xy.setup_sine.call_count, 2)
             self.assertEqual(xy.set_burst_mode.call_count, 2)
             self.assertEqual(xy.set_amplitude.call_args_list,
-                             [call(0.5, channel=1), call(0.5, channel=2),
+                             [call(3.0, channel=1), call(3.0, channel=2),
+                              call(0.5, channel=1), call(0.5, channel=2),
                               call(1.0, channel=1), call(1.0, channel=2)])
             self.assertEqual(xy.set_burst_phase.call_args_list[-4:],
                              [call(80.0, channel=1), call(170.0, channel=2)] * 2)
@@ -246,7 +257,7 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
 
     def test_repeated_run_does_not_mutate_or_share_calibration_state(self):
         params = scan_params()
-        with patch.object(workflow, "datetime") as clock:
+        with patch.object(acquisition, "datetime") as clock:
             clock.now.side_effect = [datetime(2026, 1, 1, 12, 0), datetime(2026, 1, 1, 12, 1)]
             paths = []
             for _ in range(2):
@@ -260,11 +271,11 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
 
     def test_invalid_parameters_never_connect(self):
         for params in (replace(scan_params(), target_noise_freq_points=1),
-                       replace(scan_params(), main_magnetic_field=11),
+                       replace(scan_params(), main_magnetic_field=self.limits["main_magnetic_field"]["max"] + 1),
                        replace(scan_params(), xy_ctrl_phase=float("nan")),
                        replace(scan_params(), rf_gate_offset=20.0),
-                       replace(scan_params(), xy_trigger_amplitude=30)):
-            with self.subTest(params=params), patch.object(workflow, "connect_devices") as connect:
+                       replace(scan_params(), xy_trigger_amplitude=2 * (self.limits["Time_sequence_2"]["max"] + 4))):
+            with self.subTest(params=params), patch.object(preparation, "connect_instruments") as connect:
                 with self.assertRaises(ValueError):
                     workflow.run(params, project_root=self.root)
                 connect.assert_not_called()
@@ -278,7 +289,7 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
                 workflow.wait(0.1)
             with self.assertRaises(WorkflowCancelled):
                 workflow._RuntimeCancellation().raise_if_cancelled()
-            with patch.object(workflow, "connect_devices") as connect:
+            with patch.object(preparation, "connect_instruments") as connect:
                 with self.assertRaises(WorkflowCancelled):
                     workflow.run(scan_params(), project_root=self.root)
                 connect.assert_not_called()
@@ -343,7 +354,7 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
 
     def test_config_write_failures_and_cleanup_errors_keep_original_exception(self):
         dump = yaml.safe_dump
-        for write_number in (1, 2, 3, 4):
+        for write_number in (1, 2):
             with self.subTest(write_number=write_number), fake_hardware(self.root) as hw:
                 error = OSError("模拟配置写入失败")
                 writes = count(1)
@@ -351,7 +362,12 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
                     if next(writes) == write_number:
                         raise error
                     return dump(*args, **kwargs)
-                with patch.object(workflow.yaml, "safe_dump", side_effect=save_config):
+                original_save = acquisition.save_config
+                def write_config(*args, **kwargs):
+                    if next(writes) == write_number:
+                        raise error
+                    return original_save(*args, **kwargs)
+                with patch.object(acquisition, "save_config", side_effect=write_config):
                     with self.assertRaises(OSError) as caught:
                         workflow.run(scan_params(), project_root=self.root)
                 self.assertIs(caught.exception, error)

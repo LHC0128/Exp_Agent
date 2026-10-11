@@ -27,6 +27,7 @@
 - 独立参考时钟同步先全部写入再统一回读，不改输出负载；“输出负载初始化”单独调用 `initialize_output_loads()`，两项工具都复用全局硬件队列。
 - 修改仪器驱动先看 `src/signal_generator/README.md` 或 `src/lockin_amplifier/README.md`；设备切换复用 `components/instruments/mappingDevices.ts` 的同机与共享通道联动，不在页面复制规则。
 - 新增实验：使用仓库 `expcodegen` Skill，增加共享参数模型、工作流和分析器，再注册统一实验定义；默认在实验中心路由下提供运行/历史双 Tab。优先复用通用 API，历史摘要确有需要时补齐最小接口，不另建专用导航。
+- 实验代码始终按职责拆分；新建或整体重构 GUI 时询问是否构建可勾选、带依赖的交互流程图，已有明确选择不重复问。需要时按 Skill 的流程图模块完成会话/API/GUI，不需要时保留运行/历史界面，不自动迁移其他实验。
 - 新增普通实验参数：为 dataclass 字段补充 UI metadata，前端动态表单会自动呈现。
 - 修改实验中心标签：通过 `params/experiment_catalog.yaml` 或标签管理 API；不得通过重命名标签改变实验稳定 ID、`data_type` 或历史目录。
 

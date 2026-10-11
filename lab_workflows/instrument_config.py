@@ -208,6 +208,9 @@ def _normalize_device_document(payload: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError(f"设备 {device_id} 缺少 instrument/model/label")
         if device.reference_clock not in {None, "INT", "EXT"}:
             raise ValueError(f"设备 {device_id} 的 reference_clock 只能为 INT/EXT")
+        if device.instrument == "signal_generator" and device.model.upper() in {"DG4000", "DG900"}:
+            device.capabilities.setdefault("supports_arbitrary", True)
+            device.capabilities.setdefault("supports_infinite_burst", True)
         if device.instrument == "lockin_amplifier":
             if device.model.upper() not in {"HF2", "MFLI"}:
                 raise ValueError("锁相放大器型号只支持 HF2/MFLI")

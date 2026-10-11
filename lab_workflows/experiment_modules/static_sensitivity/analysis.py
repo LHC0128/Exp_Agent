@@ -171,7 +171,11 @@ def analyze(run_dir: str | Path) -> dict[str, Any]:
         axis_sensitivity.axhline(best.sens_flat, color="darkgreen", linestyle="--", alpha=0.7, label=f"Best = {best.sens_flat:.0f} fT/√Hz")
         axis_sensitivity.axvline(fit_result.f_larmor_Hz, color="red", linestyle=":", alpha=0.5, label=f"HWHM = {fit_result.f_larmor_Hz:.0f} Hz")
         axis_sensitivity.set(xlabel="Frequency (Hz)", ylabel="Sensitivity (fT/√Hz)", title="Sensitivity spectrum (flat region median)")
-        axis_sensitivity.set_xlim(0.5, max(fit_result.f_larmor_Hz * 2, 1000)); axis_sensitivity.set_yscale("log"); axis_sensitivity.grid(True, alpha=0.3, which="both"); axis_sensitivity.legend(fontsize=8)
+        axis_sensitivity.set_xlim(0.5, max(fit_result.f_larmor_Hz * 2, 1000)); axis_sensitivity.set_xscale("log"); axis_sensitivity.set_yscale("log")
+        # 纵轴只覆盖平坦段附近，裁掉 1/f 噟声与共振发散，避免平坦段被压扁
+        visible = (freq >= 0.5) & (freq <= max(fit_result.f_larmor_Hz * 2, 1000))
+        curves = np.concatenate([np.asarray(item.sens_corrected)[visible] for item in sensitivity] + [best.sens_raw[visible]])
+        axis_sensitivity.set_ylim(0.8 * float(np.nanmin(curves)), 20 * best.sens_flat); axis_sensitivity.grid(True, alpha=0.3, which="both"); axis_sensitivity.legend(fontsize=8)
         save_figure(figure, results / "full_analysiswithoutpump.png")
     timestamp = str(config.get("timestamp", run_dir.name)); run_tag = str(config.get("run_tag", "sens"))
     params = {"Pump_laser_power": _value(values, "pump_laser_power", 0.0), "Probe_laser_power": _value(values, "probe_laser_power", 0.0), "X_magnetic_field": _value(values, "x_magnetic_field", 0.0), "Y_magnetic_field": _value(values, "y_magnetic_field", 0.0), "main_magnetic_field": _value(values, "main_magnetic_field", 0.0), "temperature": _value(values, "temperature", 0.0), "PUMP_MOD_DUTY": _value(values, "pump_mod_duty", 0.0), "PUMP_MOD_AMPLITUDE": _value(values, "pump_mod_amplitude", 0.0), "GS200_current_range_A": float(range_set[best_index]), "GS200_current_range_actual_A": float(range_actual[best_index])}

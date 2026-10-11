@@ -85,31 +85,40 @@ def _save_raw_matrix(
     )
 
 
+AW_AMPLITUDE_FLOOR_VPP = 0.001  # DG 任意波幅度仪器下限；零包络点用该幅度上传全零波形并保持输出 OFF。
+
+
 def _build_waveforms(
     params: NoiseSpectrumXYDemod3RParams,
     envelope_v: float,
     phase_deg: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    """生成固定 Vpp/Offset 下的 X/Y 归一化 DirectAW 数组。"""
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """按包络峰值自动选择满量程，生成 X/Y 归一化 DirectAW 数组。
+
+    返回 (x_norm, y_norm, vpp)；vpp = 2 × |envelope_v|，offset 恒为 0。
+    零包络点返回全零波形和下限幅度，由调用方保持输出 OFF。
+    """
+    envelope_v = float(envelope_v)
     time_s = np.arange(params.xy_aw_points, dtype=float) / (
         params.xy_aw_points * params.xy_aw_repeat_freq_hz
     )
     phase = 2.0 * np.pi * params.xy_ctrl_freq * time_s + math.radians(phase_deg)
-    x_v = float(envelope_v) * np.cos(phase)
-    y_v = float(envelope_v) * np.cos(phase + math.radians(params.xy_ctrl_quad))
-    half_range = params.xy_aw_output_vpp / 2.0
-    output_low = params.xy_aw_output_offset_v - half_range
-    output_high = params.xy_aw_output_offset_v + half_range
+    x_v = envelope_v * np.cos(phase)
+    y_v = envelope_v * np.cos(phase + math.radians(params.xy_ctrl_quad))
     for key, values in (("X_magnetic_field", x_v), ("Y_magnetic_field", y_v)):
         validate_safety_limit(key, float(np.min(values)))
         validate_safety_limit(key, float(np.max(values)))
-        if np.min(values) < output_low - 1e-9 or np.max(values) > output_high + 1e-9:
-            raise ValueError(
-                f"{key} 波形超出固定 AW 可表达范围 [{output_low:.6f}, {output_high:.6f}] V"
-            )
-    x_norm = np.clip((x_v - params.xy_aw_output_offset_v) / half_range, -1.0, 1.0)
-    y_norm = np.clip((y_v - params.xy_aw_output_offset_v) / half_range, -1.0, 1.0)
-    return x_norm, y_norm
+    vpp = 2.0 * abs(envelope_v)
+    if vpp == 0.0:
+        return np.zeros_like(x_v), np.zeros_like(y_v), AW_AMPLITUDE_FLOOR_VPP
+    if vpp < AW_AMPLITUDE_FLOOR_VPP:
+        raise ValueError(
+            f"包络 {envelope_v:.6f} V 过小，自动 AW 幅度 {vpp:.6f} Vpp "
+            f"低于仪器最小幅度 {AW_AMPLITUDE_FLOOR_VPP} Vpp"
+        )
+    x_norm = x_v / (vpp / 2.0)
+    y_norm = y_v / (vpp / 2.0)
+    return x_norm, y_norm, vpp
 
 
 def run() -> Path:
@@ -285,6 +294,13 @@ def run() -> Path:
             execution_mode="typed_workflow",
             purpose=PURPOSE,
             clock_sources=clock_sources,
+            xy_aw_output={
+                "mode": "auto_per_envelope",
+                "vpp_formula": "2 * |V_env| per scan point",
+                "offset_V": 0.0,
+                "amplitude_floor_vpp": AW_AMPLITUDE_FLOOR_VPP,
+                "zero_envelope_policy": "upload zero waveform at floor amplitude, keep outputs OFF",
+            },
             scan={
                 "control_frequency_Hz": control_axis.tolist(),
                 "xy_envelope_voltage_V": envelope_axis.tolist(),
@@ -398,8 +414,10 @@ def run() -> Path:
         hfi.set_double(f"{auxout_path}/offset", params.auxout_offset_v)
         hfi.sync()
 
-        def upload_direct_aw(envelope_v: float, phase_deg: float, outputs_on: bool = True) -> None:
-            x_values, y_values = _build_waveforms(params, envelope_v, phase_deg)
+        def upload_direct_aw(envelope_v: float, phase_deg: float, outputs_on: bool = True) -> float:
+            """重传自动满量程 AW；零包络点保持输出 OFF。返回本次实际 Vpp。"""
+            x_values, y_values, vpp = _build_waveforms(params, envelope_v, phase_deg)
+            nonzero = abs(float(envelope_v)) > 0.0
             for channel, values in ((1, x_values), (2, y_values)):
                 dg_comp.set_output(False, channel=channel)
                 upload_arbitrary(
@@ -407,8 +425,8 @@ def run() -> Path:
                     ArbitraryWaveformSpec(
                         values=values,
                         frequency=params.xy_aw_repeat_freq_hz,
-                        amplitude=params.xy_aw_output_vpp,
-                        offset=params.xy_aw_output_offset_v,
+                        amplitude=vpp,
+                        offset=0.0,
                         phase=0.0,
                         channel=channel,
                         output=False,
@@ -420,7 +438,8 @@ def run() -> Path:
                 dg_comp.set_burst_trigger_source("EXTernal", channel=channel)
                 dg_comp.set_burst_trigger_slope("POSitive", channel=channel)
                 dg_comp.set_burst_phase(0.0, channel=channel)
-                dg_comp.set_output(bool(outputs_on), channel=channel)
+                dg_comp.set_output(bool(outputs_on) and nonzero, channel=channel)
+            return vpp
 
         # DirectAW 自动校相；没有额外相位扫描。
         def apply_phase_and_measure(phase_deg: float):

@@ -118,8 +118,12 @@ class NoiseSpectrumXYParams(ExperimentParams):
 
     def validate_model(self) -> list[str]:
         errors: list[str] = []
+        if self.hf2_demod_idx != 0:
+            errors.append("本实验校相与 DAQ 共用 Demod0，HF2_DEMOD_IDX 必须为 0")
         if not self.run_tag.strip():
             errors.append("RUN_TAG 不能为空")
+        if any(char in self.run_tag for char in '/\\<>:"|?*\x00'):
+            errors.append("RUN_TAG 不能包含路径分隔符或文件名保留字符")
         if self.target_noise_freq_start_hz >= self.target_noise_freq_stop_hz:
             errors.append("目标噪声谱范围必须满足起点 < 终点")
         if self.xy_calibration_min_envelope_v >= self.xy_calibration_max_envelope_v:

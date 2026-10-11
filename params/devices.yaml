@@ -224,6 +224,8 @@ devices:
       channels:
       - 1
       - 2
+      supports_arbitrary: true
+      supports_infinite_burst: true
   dg9q275000733:
     instrument: signal_generator
     model: DG900

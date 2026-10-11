@@ -35,8 +35,6 @@ class RFDirectAWFrequencyParams(ExperimentParams):
     a_env_freq: float = parameter(default=250.0, external_name="A_ENV_FREQ", label="包络重复频率", unit="Hz", group="basic", minimum=0.001)
     xy_ctrl_k_hz_per_v: float = parameter(default=15076.0, external_name="XY_CTRL_K_HZ_PER_V", label="DirectAW 标定斜率 K", unit="Hz/V", group="advanced", minimum=0.001)
     xy_ctrl_b_hz: float = parameter(default=-218.0, external_name="XY_CTRL_B_HZ", label="DirectAW 标定截距 B", unit="Hz", group="advanced")
-    xy_aw_output_vpp: float = parameter(default=4.0, external_name="XY_AW_OUTPUT_VPP", label="固定 AW 输出幅度", unit="Vpp", group="basic", minimum=0.001)
-    xy_aw_output_offset: float = parameter(default=0.0, external_name="XY_AW_OUTPUT_OFFSET", label="固定 AW 输出偏置", unit="V", group="advanced")
     xy_ctrl_phase: float = parameter(default=0.0, external_name="XY_CTRL_PHASE", label="XY 整体相位", unit="deg", group="advanced")
     xy_ctrl_quad: float = parameter(default=90.0, external_name="XY_CTRL_QUAD", label="XY 正交相位差", unit="deg", group="advanced")
     enable_xy_ctrl_phase_cal: bool = parameter(default=True, external_name="ENABLE_XY_CTRL_PHASE_CAL", label="启用 XY 相位校准", group="basic")
@@ -82,6 +80,14 @@ class RFDirectAWFrequencyParams(ExperimentParams):
     main_magnetic_field: float = parameter(default=1.03, external_name="FIXED_PARAMS.main_magnetic_field", label="主磁场电流", unit="mA", group="basic", safety_key="main_magnetic_field")
     temperature: float = parameter(default=100.0, external_name="FIXED_PARAMS.temperature", label="气室温度", unit="°C", group="basic", safety_key="temperature")
     temp_switch: float = parameter(default=5.0, external_name="FIXED_PARAMS.Temp_Switch", label="温控开关电平", unit="V", group="advanced", safety_key="Temp_Switch")
+
+    @classmethod
+    def migrate_external(cls, values, schema_version: int):
+        """AW 满量程已改为随包络峰值自动选择，剥离旧固定幅度/偏置键。"""
+        migrated = super(RFDirectAWFrequencyParams, cls).migrate_external(values, schema_version)
+        for key in ("XY_AW_OUTPUT_VPP", "XY_AW_OUTPUT_OFFSET"):
+            migrated.pop(key, None)
+        return migrated
 
     def validate_model(self) -> list[str]:
         errors: list[str] = []
