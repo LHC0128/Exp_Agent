@@ -15,7 +15,7 @@ parameters:
   ARB_WAVEFORM_FILE: v9/waveforms/optimal_control_waveform.csv
   AW_REPEAT_FREQ: 3000.0
   XY_CTRL_K_HZ_PER_V: 1374.4
-  XY_CTRL_B_HZ: 0.0
+  XY_CTRL_B_HZ: -30.0
   XY_CTRL_PHASE: 0.0
   XY_CTRL_QUAD: -90.0
   XY_CTRL_PHASE_TOL_DEG: 1.0
