@@ -1,0 +1,311 @@
+{
+  "acquisition": [
+    {
+      "id": "A01",
+      "title": "启动预检",
+      "group": "启动准备",
+      "dependencies": [],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A02",
+      "title": "设备连接",
+      "group": "启动准备",
+      "dependencies": [
+        "A01"
+      ],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A03",
+      "title": "参考时钟同步",
+      "group": "启动准备",
+      "dependencies": [
+        "A02"
+      ],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A04",
+      "title": "初始输出设置",
+      "group": "初始条件",
+      "dependencies": [
+        "A03"
+      ],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A05",
+      "title": "温度稳定",
+      "group": "初始条件",
+      "dependencies": [
+        "A04"
+      ],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A06",
+      "title": "Pump 载波与门控",
+      "group": "激励与触发",
+      "dependencies": [
+        "A05"
+      ],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A07",
+      "title": "XYZ 共同触发",
+      "group": "激励与触发",
+      "dependencies": [
+        "A06"
+      ],
+      "parameters": [
+        "XY_TRIGGER_FREQ"
+      ],
+      "artifacts": [],
+      "display_parameters": [
+        "XY_TRIGGER_FREQ"
+      ]
+    },
+    {
+      "id": "A08",
+      "title": "Bell-Bloom / Demod0 校相",
+      "group": "基础相位校准",
+      "dependencies": [
+        "A07"
+      ],
+      "parameters": [
+        "TEMP_SWITCH_ON_LAG_S"
+      ],
+      "artifacts": [],
+      "display_parameters": [
+        "TEMP_SWITCH_ON_LAG_S"
+      ]
+    },
+    {
+      "id": "A09",
+      "title": "XY DirectAW 上传与迭代校相",
+      "group": "基础相位校准",
+      "dependencies": [
+        "A08"
+      ],
+      "parameters": [],
+      "artifacts": [
+        "raw/xy_aw_waveforms_initial.npz",
+        "raw/xy_aw_waveforms.npz"
+      ],
+      "display_parameters": [
+        "TEMP_SWITCH_ON_LAG_S"
+      ]
+    },
+    {
+      "id": "A10",
+      "title": "HF2 回环与 R 响应频率准备",
+      "group": "R 响应标定",
+      "dependencies": [
+        "A09"
+      ],
+      "parameters": [
+        "Z_RF_FREQ"
+      ],
+      "artifacts": [],
+      "display_parameters": [
+        "Z_RF_FREQ"
+      ]
+    },
+    {
+      "id": "A13",
+      "title": "有符号 Z RF 幅度扫描（Demod3 R）",
+      "group": "R 响应标定",
+      "dependencies": [
+        "A10"
+      ],
+      "parameters": [
+        "RUN_TAG"
+      ],
+      "artifacts": [
+        "raw/response_data.npz",
+        "experiment_config.yaml"
+      ],
+      "display_parameters": [
+        "RUN_TAG",
+        "TEMP_SWITCH_ON_LAG_S"
+      ]
+    },
+    {
+      "id": "A12",
+      "title": "切换频率与 Demod3 校相",
+      "group": "校相与 X 噪声",
+      "dependencies": [
+        "A13"
+      ],
+      "parameters": [
+        "Z_RF_NOISE_FREQ"
+      ],
+      "artifacts": [],
+      "display_parameters": [
+        "Z_RF_NOISE_FREQ",
+        "TEMP_SWITCH_ON_LAG_S"
+      ]
+    },
+    {
+      "id": "A14",
+      "title": "零 RF 工作点 X 噪声采集",
+      "group": "校相与 X 噪声",
+      "dependencies": [
+        "A12"
+      ],
+      "parameters": [],
+      "artifacts": [
+        "raw/noise_D3_*.npz"
+      ],
+      "display_parameters": [
+        "TEMP_SWITCH_ON_LAG_S"
+      ]
+    },
+    {
+      "id": "A15",
+      "title": "响应恢复与本轮安全收尾",
+      "group": "收尾与会话",
+      "dependencies": [
+        "A14"
+      ],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A16",
+      "title": "安全收尾 / 结束会话",
+      "group": "收尾与会话",
+      "dependencies": [],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    }
+  ],
+  "analysis": [
+    {
+      "id": "B01",
+      "title": "加载配置与校验原始数据",
+      "group": "独立离线分析",
+      "dependencies": [],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "B02",
+      "title": "R 绝对色散标定与中心斜率",
+      "group": "独立离线分析",
+      "dependencies": [
+        "B01"
+      ],
+      "parameters": [],
+      "artifacts": [
+        "response_fit.npz"
+      ],
+      "display_parameters": []
+    },
+    {
+      "id": "B03",
+      "title": "Welch X 噪声 PSD",
+      "group": "独立离线分析",
+      "dependencies": [
+        "B02"
+      ],
+      "parameters": [
+        "NOISE_NPERSEG"
+      ],
+      "artifacts": [
+        "psd_avg.npz"
+      ],
+      "display_parameters": [
+        "NOISE_NPERSEG"
+      ]
+    },
+    {
+      "id": "B04",
+      "title": "RF 灵敏度、频响补偿与结果图",
+      "group": "独立离线分析",
+      "dependencies": [
+        "B03"
+      ],
+      "parameters": [],
+      "artifacts": [
+        "sensitivity.npz",
+        "analysis.yaml",
+        "analysis.json",
+        "response_curve.png",
+        "response_curve.pdf",
+        "noise_psd.png",
+        "noise_psd.pdf",
+        "sensitivity.png",
+        "sensitivity.pdf",
+        "full_analysis.png",
+        "full_analysis.pdf"
+      ],
+      "display_parameters": []
+    }
+  ],
+  "parameter_impacts": {
+    "acquisition": {
+      "XY_TRIGGER_FREQ": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "TEMP_SWITCH_ON_LAG_S": [
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "Z_RF_FREQ": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "RUN_TAG": [
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "Z_RF_NOISE_FREQ": [
+        "A12",
+        "A14",
+        "A15"
+      ]
+    },
+    "analysis": {
+      "NOISE_NPERSEG": [
+        "B03",
+        "B04"
+      ]
+    }
+  },
+  "diagram_url": "/api/experiments/rf-sensitivity-aw-r/workflow/diagram"
+}

@@ -79,6 +79,7 @@
 # - 全局 `raw/frequency_index.json`：所有电压点的总索引（便于 plot 读取）
 
 # %% Cell 1
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -239,7 +240,7 @@ AUXOUT_OFFSET = 0.0
 SIGIN2_INDEX = 1                  # 0 = Signal Input 1, 1 = Signal Input 2
 SIGIN2_RANGE_V = 1.0
 SIGIN2_AC_COUPLING = False        # 关键：DC 耦合
-SIGIN2_IMPEDANCE_OHM = 50
+SIGIN2_IMPEDANCE_OHM = 1_000_000
 
 # Demod 3 的 adcselect 必须指 SIGIN2_INDEX (=1)，不要用 2
 DEMOD3_ADC_SELECT = SIGIN2_INDEX
@@ -462,6 +463,7 @@ try:
     hfi.set_extclk(True)
     print(f"  -> HF2 时钟源: 外部")
     devices["hf2"] = hfi
+    initialize_lockin_inputs(hfi)
 
     # ---- SDS 示波器（可选监测）----
     scope_cfg = MAPPING.get("scope_waveform", {})
@@ -911,9 +913,7 @@ print(f"  温度开关 (dg_temp CH2): OFF")
 sig_in_cfg = SignalInputConfig(
     input_index=0,
     range=HF2_DEMOD0_SIGNAL_RANGE_V,
-    ac_coupling=True,
     diff=False,
-    impedance=50,
 )
 demod.configure_signal_input(hfi, sig_in_cfg)
 print(f"信号输入 0: range={HF2_DEMOD0_SIGNAL_RANGE_V} V, AC 耦合")
@@ -955,9 +955,7 @@ print(f"Demod 0 (校相): rate={actual_rate_d0:.0f} Sa/s, "
 sig_in2_cfg = SignalInputConfig(
     input_index=SIGIN2_INDEX,
     range=SIGIN2_RANGE_V,
-    ac_coupling=SIGIN2_AC_COUPLING,
     diff=False,
-    impedance=SIGIN2_IMPEDANCE_OHM,
 )
 demod.configure_signal_input(hfi, sig_in2_cfg)
 print(f"信号输入 {SIGIN2_INDEX} (Signal Input 2): "

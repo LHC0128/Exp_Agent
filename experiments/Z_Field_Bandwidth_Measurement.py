@@ -33,6 +33,7 @@
 #   按仓库规范允许使用 `setup_sine`，不要混用 `set_amplitude`
 
 # %% Cell 1
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -147,8 +148,8 @@ AUXOUT_SCALE = 1.0
 AUXOUT_OFFSET = 0.0
 SIGIN2_INDEX = 1                # 0=Signal In 1, 1=Signal In 2 (HF2 后面板)
 SIGIN2_RANGE = 1.0
-SIGIN2_AC_COUPLING = False      # 默认 DC 耦合（与 SigIn 0 的 AC 耦合不同）
-SIGIN2_IMPEDANCE = 50
+SIGIN2_AC_COUPLING = False      # 统一使用 DC 耦合
+SIGIN2_IMPEDANCE = 1_000_000
 # Demod 3 的输入选择 Signal Input 2（adcselect = SIGIN2_INDEX）
 DEMOD_R_ADC_SELECT = SIGIN2_INDEX
 
@@ -265,6 +266,7 @@ try:
     hfi.set_extclk(True)
     print(f"  -> HF2 时钟源: 外部")
     devices["hf2"] = hfi
+    initialize_lockin_inputs(hfi)
 
 except Exception as e:
     print(f"设备连接失败: {e}")
@@ -387,9 +389,7 @@ time.sleep(0.5)
 sig_in_cfg = SignalInputConfig(
     input_index=0,
     range=HF2_DEMOD0_SIGNAL_RANGE,
-    ac_coupling=True,
     diff=False,
-    impedance=50,
 )
 demod.configure_signal_input(hfi, sig_in_cfg)
 print(f"信号输入 0: range={HF2_DEMOD0_SIGNAL_RANGE} V, AC 耦合")
@@ -449,9 +449,7 @@ print(f"Demod {DEMOD_R_IDX} (射频场, 初值): rate={actual_rate_dR:.0f} Sa/s,
 sig_in2_cfg = SignalInputConfig(
     input_index=SIGIN2_INDEX,
     range=SIGIN2_RANGE,
-    ac_coupling=SIGIN2_AC_COUPLING,
     diff=False,
-    impedance=SIGIN2_IMPEDANCE,
 )
 demod.configure_signal_input(hfi, sig_in2_cfg)
 print(f"信号输入 {SIGIN2_INDEX} (Signal Input 2): "

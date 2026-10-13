@@ -55,6 +55,8 @@ def fake_hardware(root):
     devices = {name: Mock(name=name) for name in (
         "gs200", "dg_comp", "dg_sweep", "dg_mod", "dg_temp", "dg_laser", "tec", "hf2")}
     devices["tec"].get_temperature.return_value = 100.0
+    devices["hf2"].capabilities = {"voltage_inputs": 2}
+    devices["hf2"].sig_in_path.side_effect = lambda index: f"/dev18246/sigins/{index}"
     devices["hf2"].get_double.side_effect = lambda path: (
         scan_params().hf2_daq_tc if str(path).endswith("/timeconstant") else
         800.0 if str(path).endswith("/rate") else 30.0)

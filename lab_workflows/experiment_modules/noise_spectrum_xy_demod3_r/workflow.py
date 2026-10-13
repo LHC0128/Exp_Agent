@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import math
@@ -207,6 +208,7 @@ def run() -> Path:
             hf2_resource,
             lambda: create_lockin(hf2_cfg),
         )
+        initialize_lockin_inputs(hfi)
         clock_sources = synchronize_connected_clocks(
             {
                 "dg_comp": dg_comp,
@@ -362,9 +364,7 @@ def run() -> Path:
             SignalInputConfig(
                 input_index=0,
                 range=params.demod0_signal_range_v,
-                ac_coupling=True,
                 diff=False,
-                impedance=50,
             ),
         )
         demod.configure_oscillator(
@@ -402,9 +402,7 @@ def run() -> Path:
             SignalInputConfig(
                 input_index=params.sigin2_index,
                 range=params.sigin2_range_v,
-                ac_coupling=params.sigin2_ac_coupling,
                 diff=False,
-                impedance=params.sigin2_impedance_ohm,
             ),
         )
         auxout_path = hfi.aux_out_path(params.auxout_index)

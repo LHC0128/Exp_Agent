@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lockin_amplifier import SignalInputConfig
 from dataclasses import Field, dataclass
 from pathlib import Path
 from typing import Any, ClassVar
@@ -17,15 +18,17 @@ from ...experiment_params import ExperimentParams, parameter
 @dataclass(slots=True)
 class RFSensitivityDirectAWParams(ExperimentParams):
     schema_version: ClassVar[int] = 2
+    require_rf_integer_cycles: ClassVar[bool] = True
+    scan_rf_phase: ClassVar[bool] = True
 
     run_tag: str = parameter(default="rf_sens_aw", external_name="RUN_TAG", label="运行标签", group="basic")
     rf_amp_start: float = parameter(default=-0.2, external_name="RF_AMP_START", label="RF 起始幅度", unit="Vpp", group="basic", safety_key="Z_magnetic_field")
     rf_amp_stop: float = parameter(default=0.2, external_name="RF_AMP_STOP", label="RF 终止幅度", unit="Vpp", group="basic", safety_key="Z_magnetic_field")
     rf_amp_points: int = parameter(default=81, external_name="RF_AMP_POINTS", label="RF 扫描点数", group="basic", minimum=2)
-    rf_settle_time: float = parameter(default=0.3, external_name="RF_SETTLE_TIME", label="RF 稳定等待", unit="s", minimum=0)
-    response_n_avg: int = parameter(default=5, external_name="RESPONSE_N_AVG", label="每点响应平均次数", minimum=1)
-    response_avg_interval: float = parameter(default=0.2, external_name="RESPONSE_AVG_INTERVAL", label="响应读取间隔", unit="s", minimum=0)
-    temp_switch_on_lag_s: float = parameter(default=0.5, external_name="TEMP_SWITCH_ON_LAG_S", label="温控恢复后等待", unit="s", group="basic", minimum=0, description="每次恢复温控（Temp_Switch 置 5 V）后到下一步骤的等待时间，适用于校相、RF 相位扫描、响应和噪声的全部恢复点。")
+    temp_group_size: int = parameter(default=5, external_name="TEMP_GROUP_SIZE", label="温控分组点数", group="basic", minimum=1, description="RF 相位/幅度扫描中每关闭一次温控连续采集的扫描点数；组间恢复温控并按温控恢复后等待。")
+    rf_step_settle_s: float = parameter(default=0.3, external_name="RF_STEP_SETTLE_S", label="RF 换点稳定等待", unit="s", group="basic", minimum=0, description="RF 相位/幅度扫描中每次重新设置 Z RF 相位或幅度（重臂）后的等待。")
+    temp_off_settle_s: float = parameter(default=0.5, external_name="TEMP_OFF_SETTLE_S", label="温控关闭后稳定等待", unit="s", group="basic", minimum=0, description="每次关闭温控后的等待，等温控影响减小；XY 校相每轮重载波形后同样等待该时长。")
+    temp_switch_on_lag_s: float = parameter(default=0.5, external_name="TEMP_SWITCH_ON_LAG_S", label="温控恢复后等待", unit="s", group="basic", minimum=0, description="每个温控分组（末组不足分组点数也适用）或其他校相/采集阶段恢复温控后，等待的时间。")
     noise_n_avg: int = parameter(default=10, external_name="NOISE_N_AVG", label="噪声采集次数", group="basic", minimum=1)
     noise_duration: float = parameter(default=1.0, external_name="NOISE_DURATION", label="每次噪声时长", unit="s", group="basic", minimum=1e-6)
     noise_rate: float = parameter(default=100000, external_name="NOISE_RATE", label="请求噪声采样率", unit="Sa/s", minimum=1)
@@ -41,7 +44,6 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     xy_ctrl_phase_max_iter: int = parameter(default=8, external_name="XY_CTRL_PHASE_MAX_ITER", label="XY 最大相位更新次数", minimum=0)
     xy_ctrl_phase_min_r_v: float = parameter(default=1e-12, external_name="XY_CTRL_PHASE_MIN_R_V", label="XY 校相最低 R", unit="V", minimum=1e-15)
     xy_ctrl_phase_min_r_ratio: float = parameter(default=0.1, external_name="XY_CTRL_PHASE_MIN_R_RATIO", label="XY 最低 R / 最佳 R", minimum=0, maximum=1)
-    xy_phase_settle_time: float = parameter(default=0.8, external_name="XY_PHASE_SETTLE_TIME", label="XY 校相稳定等待", unit="s", minimum=0)
 
     # GUI 只呈现 XY 键；提交时把共同参数同步到隐藏的 Z 键。
     xy_trigger_freq: float = parameter(default=100.0, external_name="XY_TRIGGER_FREQ", label="XYZ 共同触发频率", unit="Hz", group="basic", minimum=1e-6)
@@ -61,7 +63,7 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     z_phase_scan_start_deg: float = parameter(default=0.0, external_name="Z_PHASE_SCAN_START_DEG", label="RF 校相起始相位", unit="°", minimum=0.0, maximum=360.0)
     z_phase_scan_stop_deg: float = parameter(default=340.0, external_name="Z_PHASE_SCAN_STOP_DEG", label="RF 校相终止相位", unit="°", minimum=0.0, maximum=360.0)
     z_phase_scan_step_deg: float = parameter(default=20.0, external_name="Z_PHASE_SCAN_STEP_DEG", label="RF 校相相位步进", unit="°", minimum=0.001, maximum=360.0)
-    z_phase_scan_duration_s: float = parameter(default=0.2, external_name="Z_PHASE_SCAN_DURATION_S", label="RF 校相每点采样时长", unit="s", minimum=1e-6)
+    scan_point_duration_s: float = parameter(default=0.2, external_name="SCAN_POINT_DURATION_S", label="每点采样时长", unit="s", group="basic", minimum=1e-6, description="RF 相位扫描与幅度扫描每个扫描点的 DAQ 采样时长。")
     pump_mod_freq: float = parameter(default=10000.0, external_name="PUMP_MOD_FREQ", label="Pump / Larmor 频率", unit="Hz", group="basic", minimum=1e-6)
     pump_mod_duty: float = parameter(default=5.0, external_name="PUMP_MOD_DUTY", label="Pump 门控占空比", unit="%", safety_key="PUMP_MOD_DUTY")
     pump_mod_amplitude: float = parameter(default=0.18, external_name="PUMP_MOD_AMPLITUDE", label="Pump 载波幅度", unit="Vpp", minimum=0, safety_key="Pump_modulation")
@@ -85,14 +87,20 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     loopback_aux_scale: float = parameter(default=2.2044316004030406, external_name="LOOPBACK_AUX_SCALE", label="AuxOut2 回环增益")
     loopback_aux_offset_v: float = parameter(default=0.0, external_name="LOOPBACK_AUX_OFFSET_V", label="AuxOut2 回环偏置", unit="V", minimum=-10, maximum=10)
     loopback_input_range_v: float = parameter(default=1.8160198402606689, external_name="LOOPBACK_INPUT_RANGE_V", label="Input2 回环量程", unit="V", minimum=1e-6)
-    loopback_input_ac: bool = parameter(default=False, external_name="LOOPBACK_INPUT_AC", label="Input2 AC 耦合（关闭为 DC）")
-    loopback_input_impedance_ohm: int = parameter(default=1000000, external_name="LOOPBACK_INPUT_IMPEDANCE_OHM", label="Input2 阻抗", unit="Ω", options=((1000000, "1 MΩ"), (50, "50 Ω")))
+    loopback_input_ac: bool = parameter(default=False, external_name="LOOPBACK_INPUT_AC", label="Input2 AC 耦合（关闭为 DC）", visible=False)
+    loopback_input_impedance_ohm: int = parameter(default=1000000, external_name="LOOPBACK_INPUT_IMPEDANCE_OHM", label="Input2 阻抗", unit="Ω", options=((1000000, "1 MΩ"), (50, "50 Ω")), visible=False)
     loopback_input_diff: bool = parameter(default=False, external_name="LOOPBACK_INPUT_DIFF", label="Input2 差分（关闭为单端）")
     pump_laser_power: float = parameter(default=0.5, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", safety_key="Pump_laser_power")
     probe_laser_power: float = parameter(default=0.3, external_name="FIXED_PARAMS.Probe_laser_power", label="Probe 光功率", unit="V", group="basic", safety_key="Probe_laser_power")
     main_magnetic_field: float = parameter(default=1.03, external_name="FIXED_PARAMS.main_magnetic_field", label="主磁场电流", unit="mA", group="basic", safety_key="main_magnetic_field")
     temperature: float = parameter(default=100.0, external_name="FIXED_PARAMS.temperature", label="Cell 温度", unit="°C", group="basic", safety_key="temperature")
     temp_switch: float = parameter(default=5.0, external_name="FIXED_PARAMS.Temp_Switch", label="温控开启电平", unit="V", read_only=True, safety_key="Temp_Switch")
+
+    def __post_init__(self):
+        # 历史参数键仍可读取，输入模式统一使用公共关闭设置。
+        defaults = SignalInputConfig()
+        self.loopback_input_ac = defaults.ac_coupling
+        self.loopback_input_impedance_ohm = defaults.impedance
 
     @staticmethod
     def _options(item: Field, root: Path) -> list[tuple]:
@@ -121,14 +129,19 @@ class RFSensitivityDirectAWParams(ExperimentParams):
             if getattr(self, f"xy_trigger_{suffix}") != getattr(self, f"z_trigger_{suffix}"):
                 errors.append(f"共同触发的 XY_TRIGGER_{suffix.upper()} 与 Z_TRIGGER_{suffix.upper()} 必须一致")
         if self.xy_trigger_freq > 0:
-            for key, value in (("AW_REPEAT_FREQ", self.aw_repeat_freq), ("Z_RF_FREQ", self.z_rf_freq)):
+            frequencies = [("AW_REPEAT_FREQ", self.aw_repeat_freq)]
+            if self.require_rf_integer_cycles:
+                frequencies.append(("Z_RF_FREQ", self.z_rf_freq))
+            for key, value in frequencies:
                 cycles = value / self.xy_trigger_freq
                 if not math.isfinite(cycles) or cycles < 1 or abs(cycles - round(cycles)) > 1e-6:
                     errors.append(f"{key} 必须是共同触发频率的正整数倍")
         for key, actual, fixed in (("DEMOD0_IDX", self.demod0_idx, 0), ("DEMOD0_OSC_IDX", self.demod0_osc_idx, 0), ("DEMOD3_IDX", self.demod3_idx, 3), ("DEMOD3_OSC_IDX", self.demod3_osc_idx, 1), ("DEMOD3_ADC_SELECT", self.demod3_adc_select, 1), ("FIXED_PARAMS.Temp_Switch", self.temp_switch, 5)):
             if actual != fixed:
                 errors.append(f"{key} 固定为 {fixed}")
-        if self.z_phase_scan_start_deg >= self.z_phase_scan_stop_deg:
+        if not self.scan_rf_phase:
+            pass
+        elif self.z_phase_scan_start_deg >= self.z_phase_scan_stop_deg:
             errors.append("Z_PHASE_SCAN_START_DEG 必须小于 Z_PHASE_SCAN_STOP_DEG")
         else:
             intervals = (self.z_phase_scan_stop_deg - self.z_phase_scan_start_deg) / self.z_phase_scan_step_deg
@@ -148,10 +161,13 @@ class RFSensitivityDirectAWParams(ExperimentParams):
 
     @classmethod
     def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
-        """AW 满量程已改为随包络峰值自动选择，剥离旧固定幅度/偏置键。"""
+        """AW 满量程自动选择；响应采集改为定长 DAQ，剥离/迁移旧稳定等待与平均键。"""
         migrated = super(RFSensitivityDirectAWParams, cls).migrate_external(values, schema_version)
-        for key in ("XY_AW_OUTPUT_VPP", "XY_AW_OUTPUT_OFFSET"):
+        for key in ("XY_AW_OUTPUT_VPP", "XY_AW_OUTPUT_OFFSET", "RESPONSE_N_AVG", "RESPONSE_AVG_INTERVAL"):
             migrated.pop(key, None)
+        for old, new in (("RF_SETTLE_TIME", "RF_STEP_SETTLE_S"), ("XY_PHASE_SETTLE_TIME", "TEMP_OFF_SETTLE_S"), ("Z_PHASE_SCAN_DURATION_S", "SCAN_POINT_DURATION_S")):
+            if old in migrated:
+                migrated[new] = migrated.pop(old)
         return migrated
 
     def validate(self, project_root: Path | None = None) -> list[str]:

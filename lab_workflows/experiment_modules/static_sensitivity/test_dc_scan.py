@@ -19,9 +19,10 @@ from ...common import WorkflowCancelled
 from ...steps.run_directory import RunDirectory
 from ...steps.dispersion import acquire_dispersion_point
 from ...steps.test_dispersion import FakeHF2
-from . import acquisition, analysis, workflow
+from . import acquisition, analysis, analysis_steps, workflow, preparation, excitation, phase
 from .definition import ADAPTER
 from .models import StaticSensitivityParams
+from .test_support import fake_rig
 
 
 class FakeGenerator:
@@ -56,7 +57,7 @@ def make_run(root):
     raw.mkdir()
     offsets = np.linspace(-0.2, 0.2, 81)
     popt = (0.0003, 0.025, 0.007, 0.001)
-    y = analysis._dispersive(offsets, *popt)
+    y = analysis_steps._dispersive(offsets, *popt)
     acquisition.save_scan(raw / "dispersion_scan.npz", dict(
         schema_version=np.array(3), offsets_v=offsets, x_median=np.ones_like(y), y_median=y,
         r_median=np.hypot(1, y), completed_mask=np.ones(y.size, bool),
@@ -263,69 +264,49 @@ class DCScanTests(unittest.TestCase):
     def test_shared_reference_fit_does_not_freeze_center(self):
         from ..noise_spectrum_xy_known_noise.dispersion import fit_dispersion_curve
         offsets = np.linspace(-0.2, 0.2, 81)
-        y = analysis._dispersive(offsets, 0.0003, 0.025, 0.007, 0.001)
+        y = analysis_steps._dispersive(offsets, 0.0003, 0.025, 0.007, 0.001)
         fit = fit_dispersion_curve(offsets, y, k_z_hz_per_v=11703.6778)
         self.assertAlmostEqual(fit["center_v"], 0.007, places=7)
         self.assertAlmostEqual(fit["slope_v_per_hz"], 0.0003 / 0.025**2 / 11703.6778, places=10)
 
     def test_full_workflow_uses_selected_demod_and_preserves_settings(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "raw").mkdir()
-            (root / "results").mkdir()
-            directory = RunDirectory(root, root / "raw", root / "results", root / "experiment_config.yaml")
-            params = StaticSensitivityParams(dispersion_start_v=-0.1, dispersion_stop_v=0.1,
-                                             dispersion_steps=7, noise_n_avg=1,
-                                             hf2_demod_idx=2, x_magnetic_field=0.1, y_magnetic_field=-0.2)
-            directory.update_config(schema_version=3, parameters=params.to_external())
-            devices = {name: Mock() for name in (*workflow.DG_ROUTES, "hf2", "gs200", "tec")}
-            devices["dg_sweep"], devices["dg_temp"] = FakeGenerator(), FakeGenerator()
-            devices["hf2"].get_double.return_value = 1000.0
-            devices["hf2"].get_int.return_value = 1
-            devices["gs200"].get_current_range.return_value = 0.01
-            devices["gs200"].get_current.return_value = params.main_magnetic_field / 1000
-            channels = {key: i + 1 for keys in workflow.DG_ROUTES.values() for i, key in enumerate(keys)}
-            phase = SimpleNamespace(phase_shift_deg=17.0, to_dict=lambda: {"demod_idx": 2, "phase_shift_deg": 17.0})
-            waveform = SimpleNamespace(signal_name="sample.y", values=np.arange(1000, dtype=float))
-            def point(_hf2, **options):
-                return acquire_dispersion_point(FakeHF2(rate=1000), **options)
-            with patch.object(workflow, "create_run_directory", return_value=directory), patch.object(workflow, "connect_devices", return_value=(devices, channels)), patch.object(workflow, "synchronize_connected_clocks", return_value={}), patch.object(workflow, "configure_temperature_control", return_value=SimpleNamespace(to_dict=lambda: {})), patch.object(workflow, "calibrate_demod_phase", return_value=phase) as calibrate, patch.object(workflow, "wait_for_settle"), patch.object(acquisition, "wait_for_settle"), patch.object(workflow.demod, "configure_demodulator", return_value=1000) as configure, patch.object(workflow.demod, "configure_signal_input"), patch.object(workflow.demod, "configure_oscillator"), patch.object(acquisition, "acquire_dispersion_point", side_effect=point) as read, patch.object(workflow.daq, "acquire_data", return_value=[waveform]) as collect:
-                self.assertEqual(workflow.run(params), root)
+        params = StaticSensitivityParams(dispersion_steps=7, noise_n_avg=1, hf2_demod_idx=2,
+                                         x_magnetic_field=0.1, y_magnetic_field=-0.2)
+        with tempfile.TemporaryDirectory() as tmp, fake_rig(Path(tmp), params) as rig:
+            with patch.object(phase, "calibrate_demod_phase", return_value=SimpleNamespace(
+                    phase_shift_deg=17., to_dict=lambda: {"demod_idx": 2, "phase_shift_deg": 17.})) as calibrate:
+                directory = workflow.run(params)
             self.assertEqual(calibrate.call_args.args[1].demod_idx, 2)
-            self.assertTrue(all(call.args[1].demod_index == 2 for call in configure.call_args_list))
-            self.assertEqual(configure.call_args_list[-1].args[1].phase, 17.0)
-            self.assertTrue(all(call.kwargs["demod_idx"] == 2 for call in read.call_args_list))
-            self.assertEqual(collect.call_args.kwargs["demod_idx"], 2)
-            self.assertFalse(devices["dg_sweep"].output)
-            self.assertEqual(devices["dg_temp"].voltage, 5)
-            devices["dg_comp"].setup_dc.assert_any_call(0.1, channel=1)
-            devices["dg_comp"].setup_dc.assert_any_call(-0.2, channel=2)
-            config = yaml.safe_load(directory.config_path.read_text(encoding="utf-8"))
+            self.assertEqual(rig.hf2.get_double(rig.hf2.demod_path(2) + "/phaseshift"), 17.)
+            config = yaml.safe_load((directory / "experiment_config.yaml").read_text(encoding="utf-8"))
             self.assertEqual(config["completion_status"], "completed")
             self.assertEqual(config["noise_z_condition"], "zero_dc_output_off")
-            self.assertEqual(config["actual_rates"]["hf2_noise_rate_Sa_s"], 1000)
+            self.assertEqual(config["actual_rates"]["hf2_noise_rate_Sa_s"], params.hf2_noise_rate * 0.9)
             self.assertEqual(config["temperature_switch_off_mode"], "output_off")
+            for key, voltage in (("X_magnetic_field", 0.1), ("Y_magnetic_field", -0.2)):
+                target = rig.mapping[key]
+                self.assertEqual(rig.generators[target["resource"]].dc[target["channel"]], voltage)
+            timing = rig.mapping["Time_sequence_2"]
+            self.assertFalse(any(resource == timing["resource"] and channel == timing["channel"]
+                                 for resource, _, channel, _ in rig.events))
 
     def test_cleanup_failure_keeps_original_exception(self):
         for original in (None, ValueError("原始异常")):
-            with self.subTest(original=original), tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
-                (root / "raw").mkdir()
-                (root / "results").mkdir()
-                directory = RunDirectory(root, root / "raw", root / "results", root / "experiment_config.yaml")
-                report = SimpleNamespace(errors=("安全恢复失败",), to_dict=lambda: {"completed": False})
-                with patch.object(workflow, "create_run_directory", return_value=directory), patch.object(workflow, "configure_outputs", return_value=(0, 1000)), patch.object(workflow, "acquire_dispersion"), patch.object(workflow, "acquire_noise", side_effect=original), patch.object(workflow, "safe_shutdown", return_value=report):
-                    # 噪声与收尾同时失败时，原始采集异常优先。
-                    devices = {"dg_sweep": Mock(), "dg_temp": Mock(), "hf2": Mock()}
-                    with patch.object(workflow, "connect_devices", return_value=(devices, {"Z_magnetic_field": 1, "Temp_Switch": 2})):
-                        with self.assertRaisesRegex(ValueError if original else RuntimeError, "原始异常" if original else "安全结束失败"):
-                            workflow.run(StaticSensitivityParams())
-                self.assertEqual(yaml.safe_load(directory.config_path.read_text(encoding="utf-8"))["completion_status"], "failed")
+            with self.subTest(original=original), tempfile.TemporaryDirectory() as tmp, fake_rig(Path(tmp)) as rig:
+                rig.shutdown_error = True
+                with patch.object(acquisition, "acquire_noise", side_effect=original):
+                    with self.assertRaisesRegex(ValueError if original else RuntimeError,
+                                                "原始异常" if original else "安全结束失败"):
+                        workflow.run(rig.params)
+                config_path = next((Path(tmp) / "data" / workflow.DATA_TYPE).glob("*/experiment_config.yaml"))
+                config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+                self.assertEqual(config["completion_status"], "failed")
+                self.assertFalse(config["safety_shutdown"]["completed"])
 
     def test_api_schema_and_preflight_have_no_hardware_effect(self):
         from fastapi.testclient import TestClient
         from GUI.backend.main import app
-        with TestClient(app) as client, patch.object(workflow, "connect_devices", side_effect=AssertionError("不得连接")):
+        with TestClient(app) as client, patch.object(preparation, "connect_devices", side_effect=AssertionError("不得连接")):
             public = client.get("/api/experiments/static-sensitivity").json()
             self.assertIn("直流", public["description"])
             schema = client.get("/api/experiments/static-sensitivity/schema").json()
@@ -368,7 +349,7 @@ class DCScanTests(unittest.TestCase):
             self.assertTrue(can_analyze["test_dc"])
 
     def test_legacy_config_is_not_silently_ignored(self):
-        with patch.dict(os.environ, {"LAB_STATIC_CONFIG": "params/static_sensitivity.yaml"}), patch.object(workflow, "connect_devices") as connect:
+        with patch.dict(os.environ, {"LAB_STATIC_CONFIG": "params/static_sensitivity.yaml"}), patch.object(preparation, "connect_devices") as connect:
             with self.assertRaisesRegex(ValueError, "桥接已移除"):
                 workflow.run(StaticSensitivityParams())
             connect.assert_not_called()
@@ -387,7 +368,7 @@ class DCScanTests(unittest.TestCase):
                 data["y_median"][completed:] = np.nan
                 acquisition.save_scan(path, data)
                 invalid_noise = SimpleNamespace(sens_flat=float("nan"))
-                with patch.object(analysis, "compute_sensitivity", return_value=invalid_noise), self.assertRaises(ValueError):
+                with patch.object(analysis_steps, "compute_sensitivity", return_value=invalid_noise), self.assertRaises(ValueError):
                     analysis.analyze(root)
                 summary = json.loads((root / "results" / "analysis.json").read_text(encoding="utf-8"))
                 self.assertFalse(summary["success"])
@@ -417,7 +398,7 @@ class DCScanTests(unittest.TestCase):
             make_run(root)
             failure = SimpleNamespace(popt=np.array([0, 0, 0, 0]), is_valid=False,
                                       rejection_reasons=["拟合失败"], slope_V_per_fT=0, f_larmor_Hz=0)
-            with patch.object(analysis, "fit_dispersive", return_value=failure):
+            with patch.object(analysis_steps, "fit_dispersive", return_value=failure):
                 with self.assertRaisesRegex(ValueError, "不能计算灵敏度"):
                     analysis.analyze(root)
             summary = json.loads((root / "results" / "analysis.json").read_text(encoding="utf-8"))
@@ -426,27 +407,19 @@ class DCScanTests(unittest.TestCase):
             self.assertTrue((root / "results" / "dispersion_fit.npz").is_file())
 
     def test_workflow_noise_failure_cleanup_and_import_safe(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "raw").mkdir()
-            (root / "results").mkdir()
-            directory = RunDirectory(root, root / "raw", root / "results", root / "experiment_config.yaml")
-            params = StaticSensitivityParams(dispersion_steps=7, noise_n_avg=2)
-            devices = {name: Mock() for name in (*workflow.DG_ROUTES, "hf2", "gs200", "tec")}
-            devices["gs200"].get_current_range.return_value = 0.01
-            devices["gs200"].get_current.return_value = params.main_magnetic_field / 1000
-            channels = {key: i + 1 for keys in workflow.DG_ROUTES.values() for i, key in enumerate(keys)}
-            waveform = SimpleNamespace(signal_name="sample.y", values=np.arange(100, dtype=float))
-            for fault in (WorkflowCancelled("噪声取消"), RuntimeError("噪声故障")):
-                with patch.object(workflow, "create_run_directory", return_value=directory), patch.object(workflow, "connect_devices", return_value=(devices, channels)), patch.object(workflow, "configure_outputs", return_value=(5, 1000)), patch.object(workflow, "acquire_dispersion"), patch.object(workflow, "hf2_snapshot", return_value={}), patch.object(workflow, "wait_for_settle"), patch.object(workflow.demod, "configure_demodulator", return_value=1000), patch.object(workflow.daq, "acquire_data", side_effect=[[waveform], fault]):
+        for fault in (WorkflowCancelled("噪声取消"), RuntimeError("噪声故障")):
+            with tempfile.TemporaryDirectory() as tmp, fake_rig(Path(tmp), StaticSensitivityParams(dispersion_steps=7, noise_n_avg=2)) as rig:
+                waveform = SimpleNamespace(signal_name="sample.y", values=np.arange(100, dtype=float))
+                with patch.object(daq, "acquire_data", side_effect=[[waveform], fault]):
                     with self.assertRaises(type(fault)):
-                        workflow.run(params)
-                config = yaml.safe_load(directory.config_path.read_text(encoding="utf-8"))
+                        workflow.run(rig.params)
+                directory = next((Path(tmp) / "data" / workflow.DATA_TYPE).iterdir())
+                config = yaml.safe_load((directory / "experiment_config.yaml").read_text(encoding="utf-8"))
                 self.assertEqual(config["completion_status"], "cancelled" if isinstance(fault, WorkflowCancelled) else "failed")
                 self.assertTrue(config["safety_shutdown"]["completed"])
                 self.assertIn("X_magnetic_field", config["safety_shutdown"]["preserved_outputs"])
-                self.assertTrue((root / "raw" / "noise_raw" / "gs200_range_10mA" / "noise_0000.npy").is_file())
-            devices["tec"].disconnect.assert_called()
+                self.assertTrue((directory / "raw/noise_raw/gs200_range_10mA/noise_0000.npy").is_file())
+                rig.tec.disconnect.assert_called()
         process = subprocess.run([sys.executable, "-c", "from unittest.mock import patch; from lockin_amplifier import HF2Instrument;\nwith patch.object(HF2Instrument, 'connect', side_effect=AssertionError('不得连接')):\n import lab_workflows.experiment_modules.static_sensitivity.workflow\n import experiments.Static_Magnetic_Field_Sensitivity"], capture_output=True, timeout=30)
         self.assertEqual(process.returncode, 0, process.stderr)
 

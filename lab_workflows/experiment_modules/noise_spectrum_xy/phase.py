@@ -22,7 +22,7 @@ def calibrate_hf2_phase(hfi, dg_comp, dg_temp, params: NoiseSpectrumXYParams, li
     # 配置信号输入
     sig_in_cfg = SignalInputConfig(
         input_index=0, range=params.hf2_signal_range,
-        ac_coupling=True, diff=False, impedance=50,
+        diff=False,
     )
     demod.configure_signal_input(hfi, sig_in_cfg)
     print(f"信号输入已配置: {params.hf2_signal_range} V range, AC coupled")

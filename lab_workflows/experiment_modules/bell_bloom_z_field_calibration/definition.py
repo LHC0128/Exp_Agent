@@ -40,7 +40,7 @@ def preflight(values):
 DEFINITION = ExperimentDefinition(
     id=EXPERIMENT_ID, title="Bell Bloom Z 磁场频率标定",
     category="calibration", family="z-field-calibration", variant="bell-bloom-gated",
-    description="扫描 Z DC 与 Pump 调制/解调频率，拟合 R 共振中心并标定带符号的 Hz/V。锁相设备在设备库中全系统统一选择；启动前检查完整扫频窗口是否兼容。",
+    description="扫描 Z DC 与 Pump 调制/解调频率，拟合 R 共振中心并标定带符号的 Hz/V。锁相设备在设备库中全系统统一选择；启动前检查完整扫频窗口是否兼容。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。",
     data_type=DATA_TYPE, required_devices=("GS200", "DG4000", "锁相放大器"),
     required_mapping_keys=MAPPING_KEYS, execution_mode="typed_workflow",
     acquisition_program="experiments/Bell_Bloom_Z_Field_Calibration.py",

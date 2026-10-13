@@ -12,7 +12,7 @@ DEFAULT_TIMEOUT = 10000  # ms
 class GS200Instrument:
     """Yokogawa GS200 直流电压/电流源 PyVISA 封装.
 
-    GS200 支持 USB-TMC、Ethernet (VXI-11)、GP-IB 以及 RS-232 接口。
+    GS200 支持 USB-TMC、Ethernet (VXI-11 / 7655 Socket)、GP-IB 以及 RS-232 接口。
     本类通过 PyVISA 与设备通信，使用标准 SCPI 命令。
 
     参数
@@ -21,6 +21,7 @@ class GS200Instrument:
         VISA 资源字符串，例如:
         - "USB0::0x0B21::0x0039::XXXXXXXX::INSTR" (USB)
         - "TCPIP0::192.168.1.10::inst0::INSTR" (Ethernet)
+        - "TCPIP0::192.168.1.10::7655::SOCKET" (Ethernet Socket)
         - "GPIB0::1::INSTR" (GP-IB)
         - "ASRL3::INSTR" (RS-232 串口 COM3)
     timeout : int
@@ -39,9 +40,17 @@ class GS200Instrument:
 
     def connect(self) -> None:
         self._rm = pyvisa.ResourceManager()
-        self._inst = self._rm.open_resource(self.resource_string)
-        self._inst.timeout = self.timeout
-        idn = self.idn()
+        try:
+            self._inst = self._rm.open_resource(self.resource_string)
+            self._inst.timeout = self.timeout
+            if self.resource_string.upper().endswith("::SOCKET"):
+                # 流式 Socket 没有 EOI，使用 LF 判断回读消息结束。
+                self._inst.read_termination = "\n"
+                self._inst.write_termination = "\n"
+            idn = self.idn()
+        except Exception:
+            self.disconnect()
+            raise
         logger.info("已连接: %s", idn)
 
     def disconnect(self) -> None:

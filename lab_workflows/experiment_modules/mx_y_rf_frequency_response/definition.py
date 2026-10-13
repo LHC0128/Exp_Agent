@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-y-frequency",
     description=(
-        '在 Mx 工作点用模式 1 的固定幅度扫频方式测量 Y RF 频率响应曲线；RF 幅度可作为嵌套扫描轴，分析端用统一布洛赫稳态线形拟合，覆盖弱驱动 Lorentzian 与强驱动 Rabi 劈裂双峰。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
+        '在 Mx 工作点用模式 1 的固定幅度扫频方式测量 Y RF 频率响应曲线；RF 幅度可作为嵌套扫描轴，分析端用统一布洛赫稳态线形拟合，覆盖弱驱动 Lorentzian 与强驱动 Rabi 劈裂双峰。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
     ),
     data_type="Mx_Y_RF_Frequency_Response",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

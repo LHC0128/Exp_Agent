@@ -256,15 +256,23 @@ describe("全系统锁相放大器选择", () => {
   });
 });
 
-describe("信号源 Resource 选择", () => {
+describe("信号源与主磁场 Resource 选择", () => {
   const library: DeviceLibraryDocument = { ...LIBRARY, devices: { ...LIBRARY.devices,
     lan: { ...LIBRARY.devices.source, model: "DG4000", label: "网络信号源", resource: "TCPIP0::192.168.124.33::INSTR",
       connection: { serial_number: "DG4E261300744" } },
     narrow: { ...LIBRARY.devices.source, label: "单通道", resource: "TCPIP0::192.0.2.32::INSTR", capabilities: { channels: [1] } },
     mfli: { ...LIBRARY.devices.hf2, model: "MFLI", connection: { device_id: "dev30661", host: "192.0.2.40", port: 8004 },
       capabilities: { channels: [0, 1, 2, 3] } },
+    gs_usb: { instrument: "gs200", model: "GS200", label: "USB 主磁场电流源",
+      resource: "USB0::0x0B21::0x0039::90Z631552::INSTR", reference_clock: null, connection: {}, capabilities: {} },
+    gs_lan: { instrument: "gs200", model: "GS200", label: "网络主磁场电流源",
+      resource: "TCPIP0::192.168.124.41::INSTR", reference_clock: null, connection: {}, capabilities: {} },
+    keithley: { instrument: "keithley_6221", model: "6221", label: "小磁场电流源",
+      resource: "TCPIP0::192.0.2.22::1394::SOCKET", reference_clock: null, connection: {}, capabilities: {} },
   } };
   const mapping: PhysicalMappingsDocument = { ...MAPPINGS, mapping: {
+    main_magnetic_field: { instrument: "gs200", device_id: "gs_usb", label: "GS200 Z 主磁场", source_function: "CURRent" },
+    keithley_6221_main_field: { instrument: "keithley_6221", device_id: "keithley", label: "Z 小磁场" },
     z: { instrument: "signal_generator", device_id: "source", label: "Z 场", endpoint: { kind: "channel", index: 1 } },
     sequence: { instrument: "signal_generator", device_id: "source", label: "时序", endpoint: { kind: "channel", index: 2 } },
     alias: { instrument: "signal_generator", device_id: "source", label: "时序别名", endpoint: { kind: "channel", index: 2 } },
@@ -289,6 +297,29 @@ describe("信号源 Resource 选择", () => {
       throw new Error(`未预期的接口: ${url}`);
     });
   };
+
+  it("主磁场只列出 GS200，保留原绑定直到保存，并可重新加载所选网络设备", async () => {
+    mockResources();
+    const view = render(<DeviceLibraryView />);
+    const selection = await screen.findByLabelText("main_magnetic_field Resource");
+    expect(selection).toHaveValue("gs_usb");
+    expect(within(selection).getAllByRole("option").map(option => (option as HTMLOptionElement).value)).toEqual(["gs_usb", "gs_lan"]);
+    expect(selection).toHaveTextContent("TCPIP0::192.168.124.41::INSTR");
+    expect(selection).toHaveTextContent("90Z631552");
+    expect(screen.getAllByRole("heading", { name: "GS200 Z 主磁场" })).toHaveLength(1);
+    fireEvent.change(selection, { target: { value: "gs_lan" } });
+    expect(selection).toHaveValue("gs_lan");
+    expect(mockApi.mock.calls.some(([, options]) => options?.method === "PUT")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "保存设备库" }));
+    await waitFor(() => expect(screen.queryByText(/有未保存更改/)).not.toBeInTheDocument());
+    const [, options] = mockApi.mock.calls.find(([, value]) => value?.method === "PUT")!;
+    expect(JSON.parse(String(options?.body))).toMatchObject({ base_revision: "saved-revision",
+      physical_mapping_revision: "mapping-revision", devices: library.devices, mapping: {
+        ...mapping.mapping, main_magnetic_field: { ...mapping.mapping.main_magnetic_field, device_id: "gs_lan" },
+      } });
+    view.unmount(); render(<DeviceLibraryView />);
+    expect(await screen.findByLabelText("main_magnetic_field Resource")).toHaveValue("gs_lan");
+  });
 
   it("Resource 下拉显示真实设备，联动组保留通道，与锁相同批保存并可重新加载", async () => {
     mockResources();
@@ -350,7 +381,7 @@ describe("信号源 Resource 选择", () => {
     expect(mockApi.mock.calls.some(([, options]) => options?.method === "PUT")).toBe(false);
   });
 
-  it("保存失败保留 Resource 和锁相草稿", async () => {
+  it("保存失败保留信号源、主磁场和锁相草稿", async () => {
     mockResources();
     const handler = mockApi.getMockImplementation()!;
     mockApi.mockImplementation(async (url, options) => {
@@ -359,10 +390,12 @@ describe("信号源 Resource 选择", () => {
     });
     render(<DeviceLibraryView />);
     fireEvent.change(await screen.findByLabelText("z Resource"), { target: { value: "lan" } });
+    fireEvent.change(screen.getByLabelText("main_magnetic_field Resource"), { target: { value: "gs_lan" } });
     fireEvent.change(screen.getByLabelText("当前锁相放大器（全系统）"), { target: { value: "mfli" } });
     fireEvent.click(screen.getByRole("button", { name: "保存设备库" }));
     expect(await screen.findByText("Error: 修订冲突")).toBeInTheDocument();
     expect(screen.getByLabelText("z Resource")).toHaveValue("lan");
+    expect(screen.getByLabelText("main_magnetic_field Resource")).toHaveValue("gs_lan");
     expect(screen.getByLabelText("当前锁相放大器（全系统）")).toHaveValue("mfli");
     expect(screen.getByText(/修订 saved-revi/)).toBeInTheDocument();
   });

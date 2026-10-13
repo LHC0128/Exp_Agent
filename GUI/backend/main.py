@@ -8,11 +8,12 @@ import shutil
 import stat
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -64,6 +65,10 @@ from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.run_format import
     normalize_comparison_runs,
 )
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.definition import comparison_runner as rf_direct_aw_comparison_runner
+from lab_workflows.experiment_modules.rf_sensitivity_direct_aw import run_format as rf_aw_format
+from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_r import run_format as rf_aw_r_format
+from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_r.definition import comparison_runner as rf_direct_aw_r_comparison_runner
+RF_RUN_FORMATS = {rf_aw_format.EXPERIMENT_ID: rf_aw_format, rf_aw_r_format.EXPERIMENT_ID: rf_aw_r_format}
 from lab_workflows.experiments.catalog import (
     add_tag,
     apply_parameter_layout,
@@ -81,8 +86,11 @@ from lab_workflows.z_arbitrary_control import (
     ZArbitraryControlService, ZArbitrarySettings, list_sources, preview_source,
 )
 
-from .jobs import Job, manager
+from .jobs import Job, RestartInProgressError, manager
 from .noise_spectrum_xy import XYSessionService, create_router as xy_router
+from .rf_sensitivity_direct_aw import RFSessionService, create_router as rf_workflow_router
+from .rf_sensitivity_direct_aw_r import RFRSessionService
+from .static_sensitivity import StaticSessionService
 from .schemas import (
     ControlCurrentSourceBody,
     ControlEmissionBody,
@@ -123,7 +131,14 @@ async def lifespan(application):
     try:
         yield
     finally:
+        xy_sessions.close_communication()
+        rf_sessions.close_communication()
+        rf_r_sessions.close_communication()
+        static_sessions.close_communication()
         await asyncio.to_thread(xy_sessions.shutdown)
+        await asyncio.to_thread(rf_sessions.shutdown)
+        await asyncio.to_thread(rf_r_sessions.shutdown)
+        await asyncio.to_thread(static_sessions.shutdown)
 
 
 app = FastAPI(title="Bell-Bloom 实验控制台", version="0.1.0", lifespan=lifespan)
@@ -133,10 +148,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RestartInProgressError)
+async def handle_restart_in_progress(request: Request, exc: RestartInProgressError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": str(exc)},
+        headers={"X-Error-Code": "restarting"},
+    )
+
+
 ROOT = find_project_root()
+INSTANCE_ID = uuid4().hex
 z_arbitrary_service = ZArbitraryControlService(ROOT)
 xy_sessions = XYSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(xy_sessions))
+rf_sessions = RFSessionService(lambda: ROOT, manager)
+app.include_router(rf_workflow_router(rf_sessions))
+rf_r_sessions = RFRSessionService(lambda: ROOT, manager)
+app.include_router(rf_workflow_router(rf_r_sessions))
+static_sessions = StaticSessionService(lambda: ROOT, manager)
+app.include_router(rf_workflow_router(static_sessions))
 
 
 @app.middleware("http")
@@ -253,6 +286,17 @@ class PhysicalMappingsBody(BaseModel):
     constraints: dict[str, dict[str, list[str]]]
 
 
+class HealthResponse(BaseModel):
+    status: str
+    instance_id: str
+    hardware_busy: bool
+    queued_hardware_jobs: int
+
+
+class RestartResponse(BaseModel):
+    status: str
+
+
 def _job_or_404(job_id: str) -> Job:
     try:
         return manager.get(job_id)
@@ -282,13 +326,30 @@ def _with_short_hardware_lock(action):
         manager.hardware_lock.release()
 
 
-@app.get("/api/health")
+@app.get("/api/health", response_model=HealthResponse)
 def health():
     return {
         "status": "ok",
+        "instance_id": INSTANCE_ID,
         "hardware_busy": manager.hardware_lock.locked(),
         "queued_hardware_jobs": manager.queued_hardware_count(),
     }
+
+
+@app.post("/api/restart", response_model=RestartResponse, status_code=202)
+def restart_backend(request: Request):
+    server = getattr(request.app.state, "uvicorn_server", None)
+    if server is None or not hasattr(server, "should_exit"):
+        raise HTTPException(
+            503,
+            "当前后端不是由 GUI 启动入口运行，无法一键重启",
+            headers={"X-Error-Code": "restart_unavailable"},
+        )
+    if not manager.begin_restart():
+        raise _conflict("存在未结束的任务或硬件操作，完成后才能重启后端", "restart_busy")
+    request.app.state.restart_requested = True
+    server.should_exit = True
+    return RestartResponse(status="restarting")
 
 
 @app.get("/api/devices", response_model=list[DeviceSummary])
@@ -975,11 +1036,12 @@ def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
             except OSError:
                 artifacts = []
             can_analyze = definition.analysis_runner is not None
-            if definition.id == RF_DIRECT_AW_ID:
+            if definition.id in RF_RUN_FORMATS:
+                identity = RF_RUN_FORMATS[definition.id]
                 config = _read_yaml(path / "experiment_config.yaml")
-                if not is_rf_direct_aw_run(config):
+                if not identity.is_new_run(config):
                     continue
-                can_analyze = can_analyze and not rf_direct_aw_analysis_block_reason(config)
+                can_analyze = can_analyze and not identity.analysis_block_reason(config)
             if definition.id == STATIC_SENSITIVITY_ID:
                 config = _read_yaml(path / "experiment_config.yaml")
                 can_analyze = can_analyze and config.get("schema_version") == 3 and config.get("acquisition_method") == "dc_step"
@@ -1026,8 +1088,9 @@ def delete_run(experiment_id: str, run_id: str):
         if any(
             item.status in {"queued", "running"} and (
                 item.kind in {f"experiment:{value}" for value in ids}
+                or item.kind in {f"session:{value}" for value in ids}
                 or item.kind in {f"analysis:{value}:{run_id}" for value in ids}
-                or (RF_DIRECT_AW_ID in ids and item.kind == RF_DIRECT_AW_COMPARISON_KIND)
+                or item.kind in {RF_RUN_FORMATS[value].COMPARISON_JOB_KIND for value in ids if value in RF_RUN_FORMATS}
             ) for item in manager.jobs.values()
         ):
             raise _conflict("该数据正在采集、分析或对比，暂时不能删除", "run_busy")
@@ -1061,7 +1124,7 @@ def analyze_run(run_id: str, body: AnalysisBody):
 
 def _create_analysis_job(run_id: str, body: AnalysisBody):
     definition = _experiment_or_404(body.experiment_id)
-    if definition.id == RF_DIRECT_AW_ID and manager.has_active_kind(RF_DIRECT_AW_COMPARISON_KIND):
+    if definition.id in RF_RUN_FORMATS and manager.has_active_kind(RF_RUN_FORMATS[definition.id].COMPARISON_JOB_KIND):
         raise _conflict("对比任务正在读取结果，请稍后重新分析", "run_busy")
     if any(manager.has_active_kind(f"experiment:{item.id}") for item in list_experiments()
            if item.data_type == definition.data_type):
@@ -1069,15 +1132,16 @@ def _create_analysis_job(run_id: str, body: AnalysisBody):
     run_dir = _run_dir(body.experiment_id, run_id)
     if definition.id == "noise-spectrum-xy":
         xy_sessions.run_directory(run_id)
-    if definition.id == RF_DIRECT_AW_ID:
+    if definition.id in RF_RUN_FORMATS:
         _validate_run_identifier(run_id)
-        reason = rf_direct_aw_analysis_block_reason(_read_yaml(run_dir / "experiment_config.yaml"))
+        reason = RF_RUN_FORMATS[definition.id].analysis_block_reason(_read_yaml(run_dir / "experiment_config.yaml"))
         if reason:
             raise HTTPException(400, reason)
     if definition.id == STATIC_SENSITIVITY_ID:
         config = _read_yaml(run_dir / "experiment_config.yaml")
         if config.get("schema_version") != 3 or config.get("acquisition_method") != "dc_step":
             raise HTTPException(400, "旧格式静磁场运行仅可查看已有结果，不支持重新分析")
+        static_sessions.run_directory(run_id)
     if not definition.analysis_runner:
         raise _conflict("该实验没有独立离线分析器", "no_analyzer")
     kind = f"analysis:{definition.id}:{run_id}"
@@ -1597,8 +1661,8 @@ def detection_chain_frequency_summary(run_id: str):
     }
 
 
-def _rf_direct_aw_run_item(run_id: str, config: dict, directory: Path) -> dict:
-    reason = rf_direct_aw_comparison_block_reason(directory, config)
+def _rf_direct_aw_run_item(run_id: str, config: dict, directory: Path, *, identity=rf_aw_format) -> dict:
+    reason = identity.comparison_block_reason(directory, config)
     return {
         "run_id": run_id,
         "timestamp": str(config.get("started_at", config.get("timestamp", ""))),
@@ -1613,15 +1677,25 @@ def _rf_direct_aw_run_item(run_id: str, config: dict, directory: Path) -> dict:
 
 @app.get(f"/api/experiments/{RF_DIRECT_AW_ID}/runs", response_model=RFDirectAWRunsResponse)
 def rf_direct_aw_runs(limit: int = 50, offset: int = 0):
-    base = (ROOT / "data" / _experiment_or_404(RF_DIRECT_AW_ID).data_type).resolve()
+    return _rf_aw_runs(RF_DIRECT_AW_ID, limit, offset)
+
+
+@app.get("/api/experiments/rf-sensitivity-aw-r/runs", response_model=RFDirectAWRunsResponse)
+def rf_direct_aw_r_runs(limit: int = 50, offset: int = 0):
+    return _rf_aw_runs(rf_aw_r_format.EXPERIMENT_ID, limit, offset)
+
+
+def _rf_aw_runs(experiment_id, limit, offset):
+    identity = RF_RUN_FORMATS[experiment_id]
+    base = (ROOT / "data" / _experiment_or_404(experiment_id).data_type).resolve()
     items = []
     for path in base.glob("*/experiment_config.yaml"):
         directory = path.parent.resolve()
         if directory.parent != base:
             continue
         config = _read_yaml(path)
-        if is_rf_direct_aw_run(config):
-            items.append(_rf_direct_aw_run_item(path.parent.name, config, directory))
+        if identity.is_new_run(config):
+            items.append(_rf_direct_aw_run_item(path.parent.name, config, directory, identity=identity))
     items.sort(key=lambda item: item["timestamp"], reverse=True)
     limit, offset = max(1, min(limit, 200)), max(0, offset)
     return {"runs": items[offset:offset + limit], "total": len(items), "limit": limit, "offset": offset}
@@ -1629,16 +1703,26 @@ def rf_direct_aw_runs(limit: int = 50, offset: int = 0):
 
 @app.get(f"/api/experiments/{RF_DIRECT_AW_ID}/runs/{{run_id}}/summary", response_model=RFDirectAWRunSummary)
 def rf_direct_aw_summary(run_id: str):
+    return _rf_aw_summary(RF_DIRECT_AW_ID, run_id)
+
+
+@app.get("/api/experiments/rf-sensitivity-aw-r/runs/{run_id}/summary", response_model=RFDirectAWRunSummary)
+def rf_direct_aw_r_summary(run_id: str):
+    return _rf_aw_summary(rf_aw_r_format.EXPERIMENT_ID, run_id)
+
+
+def _rf_aw_summary(experiment_id, run_id):
+    identity = RF_RUN_FORMATS[experiment_id]
     _validate_run_identifier(run_id)
-    directory = _run_dir(RF_DIRECT_AW_ID, run_id)
+    directory = _run_dir(experiment_id, run_id)
     config = _read_yaml(directory / "experiment_config.yaml")
-    if not is_rf_direct_aw_run(config):
+    if not identity.is_new_run(config):
         raise HTTPException(404, "不是 RF 灵敏度 DirectAW 新格式运行")
-    reason = rf_direct_aw_analysis_block_reason(config)
+    reason = identity.analysis_block_reason(config)
     results = directory / "results"
     safe_results = directory in results.resolve().parents
     return {
-        **_rf_direct_aw_run_item(run_id, config, directory),
+        **_rf_direct_aw_run_item(run_id, config, directory, identity=identity),
         "parameters": config["parameters"], "can_analyze": not reason,
         "analysis_block_reason": reason,
         "failure_reason": config.get("failure_reason") or "",
@@ -1649,18 +1733,21 @@ def rf_direct_aw_summary(run_id: str):
         "actual_rates": config.get("actual_rates", {}),
         "hf2_response_snapshot": config.get("hf2_response_snapshot", {}),
         "hf2_noise_snapshot": config.get("hf2_noise_snapshot", {}),
+        "hf2_calibration_snapshot": config.get("hf2_calibration_snapshot", {}),
+        "stage_frequencies": config.get("stage_frequencies", {}),
+        "response_component": identity.RESPONSE_COMPONENT, "noise_component": "X",
         "temperature_control": config.get("temperature_control"),
         "artifacts": {
-            path.name: f"/api/runs/{RF_DIRECT_AW_ID}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
+            path.name: f"/api/runs/{experiment_id}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
             for path in results.glob("*") if path.is_file() and not reason and safe_results and results.resolve() in path.resolve().parents
         },
     }
 
 
-def _rf_direct_aw_comparison_dir(comparison_id: str) -> Path:
+def _rf_direct_aw_comparison_dir(comparison_id: str, *, experiment_id=RF_DIRECT_AW_ID) -> Path:
     if len(comparison_id) != 32 or any(c not in "0123456789abcdef" for c in comparison_id):
         raise HTTPException(400, "对比 ID 无效")
-    base = (ROOT / "results" / RF_DIRECT_AW_ID / "comparisons").resolve()
+    base = (ROOT / "results" / experiment_id / "comparisons").resolve()
     directory = (base / comparison_id).resolve()
     if ROOT.resolve() not in base.parents or directory.parent != base:
         raise HTTPException(400, "对比目录超出允许范围")
@@ -1669,38 +1756,58 @@ def _rf_direct_aw_comparison_dir(comparison_id: str) -> Path:
 
 @app.post(f"/api/experiments/{RF_DIRECT_AW_ID}/compare")
 def rf_direct_aw_compare(body: RFDirectAWCompareBody):
+    return _rf_aw_compare(RF_DIRECT_AW_ID, body)
+
+
+@app.post("/api/experiments/rf-sensitivity-aw-r/compare")
+def rf_direct_aw_r_compare(body: RFDirectAWCompareBody):
+    return _rf_aw_compare(rf_aw_r_format.EXPERIMENT_ID, body)
+
+
+def _rf_aw_compare(experiment_id, body):
+    identity = RF_RUN_FORMATS[experiment_id]
     try:
         entries = normalize_comparison_runs([item.model_dump() for item in body.runs])
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     with manager.jobs_lock:
-        if manager.has_active_kind(RF_DIRECT_AW_COMPARISON_KIND):
+        if manager.has_active_kind(identity.COMPARISON_JOB_KIND):
             raise _conflict("对比任务正在执行", "comparison_running")
         for item in entries:
             _validate_run_identifier(item["run_id"])
-            directory = _run_dir(RF_DIRECT_AW_ID, item["run_id"])
-            reason = rf_direct_aw_comparison_block_reason(directory, _read_yaml(directory / "experiment_config.yaml"))
+            directory = _run_dir(experiment_id, item["run_id"])
+            reason = identity.comparison_block_reason(directory, _read_yaml(directory / "experiment_config.yaml"))
             if reason:
                 raise HTTPException(400, f"{item['run_id']}：{reason}")
-            if manager.has_active_kind(f"analysis:{RF_DIRECT_AW_ID}:{item['run_id']}"):
+            if manager.has_active_kind(f"analysis:{experiment_id}:{item['run_id']}"):
                 raise _conflict("所选运行正在重新分析，请稍后对比", "run_busy")
             item["run_dir"] = str(directory)
 
         def execute(current: Job):
-            output = _rf_direct_aw_comparison_dir(current.id)
-            result = rf_direct_aw_comparison_runner(entries, output,
+            output = _rf_direct_aw_comparison_dir(current.id, experiment_id=experiment_id)
+            runner = rf_direct_aw_comparison_runner if experiment_id == RF_DIRECT_AW_ID else rf_direct_aw_r_comparison_runner
+            result = runner(entries, output,
                 progress=lambda event: manager.event(current, event), cancellation=current.cancellation)
             return {**result, "comparison_id": current.id, "run_dir": str(output), "artifacts": {
-                name: f"/api/experiments/{RF_DIRECT_AW_ID}/comparisons/{current.id}/artifacts/{name}"
-                for name in RF_DIRECT_AW_COMPARISON_FILES
+                name: f"/api/experiments/{experiment_id}/comparisons/{current.id}/artifacts/{name}"
+                for name in identity.COMPARISON_FILES
             }}
 
-        return manager.create(RF_DIRECT_AW_COMPARISON_KIND, execute, hardware_required=False).public()
+        return manager.create(identity.COMPARISON_JOB_KIND, execute, hardware_required=False).public()
 
 
 @app.get(f"/api/experiments/{RF_DIRECT_AW_ID}/comparisons/{{comparison_id}}/artifacts/{{name}}")
 def rf_direct_aw_comparison_artifact(comparison_id: str, name: str):
-    directory = _rf_direct_aw_comparison_dir(comparison_id)
+    return _rf_aw_comparison_artifact(RF_DIRECT_AW_ID, comparison_id, name)
+
+
+@app.get("/api/experiments/rf-sensitivity-aw-r/comparisons/{comparison_id}/artifacts/{name}")
+def rf_direct_aw_r_comparison_artifact(comparison_id: str, name: str):
+    return _rf_aw_comparison_artifact(rf_aw_r_format.EXPERIMENT_ID, comparison_id, name)
+
+
+def _rf_aw_comparison_artifact(experiment_id, comparison_id, name):
+    directory = _rf_direct_aw_comparison_dir(comparison_id, experiment_id=experiment_id)
     manifest = directory / "comparison.json"
     if name not in RF_DIRECT_AW_COMPARISON_FILES or not manifest.is_file() or manifest.resolve().parent != directory:
         raise HTTPException(404, "对比结果尚未完整生成")

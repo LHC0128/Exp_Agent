@@ -32,6 +32,7 @@
 # %% Cell 1
 # ========== 交互式绘图模式 ==========
 
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -180,6 +181,7 @@ try:
     hfi.set_extclk(True)
     print(f"  -> HF2 时钟源: 外部")
     devices["hf2"] = hfi
+    initialize_lockin_inputs(hfi)
 
 except Exception as e:
     print(f"设备连接失败: {e}")

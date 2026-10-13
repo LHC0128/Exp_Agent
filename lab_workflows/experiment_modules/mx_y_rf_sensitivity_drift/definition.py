@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-y-drift",
     description=(
-        '按固定时间间隔重复 Mx Y RF 灵敏度测量，每轮结束立即分析并更新灵敏度、幅度等效线宽和拟合质量趋势。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
+        '按固定时间间隔重复 Mx Y RF 灵敏度测量，每轮结束立即分析并更新灵敏度、幅度等效线宽和拟合质量趋势。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
     ),
     data_type="Mx_Y_RF_Sensitivity_Drift",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

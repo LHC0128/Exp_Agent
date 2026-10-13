@@ -9,7 +9,7 @@ from lab_workflows.experiment_runtime import runtime_run_dir
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="离线分析版本 2 的直流色散，旧 RAMP 仅能查看已有结果。")
+    parser = argparse.ArgumentParser(description="离线分析版本 3 的直流色散，旧 RAMP 仅能查看已有结果。")
     parser.add_argument("run_dir", nargs="?", type=Path, help="运行目录；省略时必须设置 LAB_RUN_DIR")
     args = parser.parse_args()
     run_dir = args.run_dir if args.run_dir is not None else runtime_run_dir()

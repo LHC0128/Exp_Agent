@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import math
 from pathlib import Path
 
 import numpy as np
@@ -12,8 +13,6 @@ from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import DGChannelShutdown, TemperatureSwitchRestore, run_safety_shutdown, set_temperature_switch
 from ...steps.dispersion import acquire_dispersion_point, save_scan
 from .models import StaticSensitivityParams
-
-
 class RuntimeCancellation:
     """沿用现有实验的取消文件到公共步骤接入方式。"""
 
@@ -88,7 +87,7 @@ def acquire_dispersion(params: StaticSensitivityParams, z, z_channel: int, temp,
             data["point_finished_unix_s"][index] = time.time()
             z.set_output(False, channel=z_channel)
             save_scan(path, data)
-            if interval > 0 and (index + 1) % interval == 0:
+            if interval > 0 and (index + 1) % interval == 0 and index + 1 < offsets.size:
                 set_temp_switch(temp, temp_channel, True)
                 wait_for_settle(params.dispersion_temp_switch_on_settle_s)
             report_runtime_progress(
@@ -112,3 +111,79 @@ def acquire_dispersion(params: StaticSensitivityParams, z, z_channel: int, temp,
             print("色散安全恢复失败：" + "；".join(report.errors), flush=True)
             if not failed:
                 raise RuntimeError("色散安全恢复失败：" + "；".join(report.errors))
+
+
+def prepare_noise(ctx):
+    from lockin_amplifier import demod
+    from ...steps import configure_fixed_dc_field
+    from .phase import demod_config, hf2_snapshot
+    import math
+
+    hf2, params = ctx.devices["hf2"], ctx.params
+    rate = float(demod.configure_demodulator(hf2, demod_config(params, ctx.calibrated_phase, noise=True)))
+    if not math.isfinite(rate) or rate <= 0 or int(rate * params.noise_duration) < 2:
+        raise ValueError("HF2 实际噪声采样率无效或采集样本不足")
+    ctx.noise_rate = rate
+    ctx.demod_mode = "noise"
+    ctx.state["actual_rates"]["hf2_noise_rate_Sa_s"] = rate
+    ctx.state["hf2_noise_configuration"] = hf2_snapshot(hf2, params.hf2_demod_idx)
+    ctx.state["gs200_range_measurements"] = []
+    wait_for_settle(0.3)
+    configure_fixed_dc_field(ctx.devices["dg_sweep"], ctx.channels["Z_magnetic_field"], "Z_magnetic_field", 0.0)
+    wait_for_settle(0.5)
+
+
+def acquire_noise(ctx):
+    """多量程逐段采集原始 Y；不在采集期间计算 PSD。"""
+    from lockin_amplifier import DAQConfig, daq
+
+    params, devices, channels, mapping, directory = ctx.params, ctx.devices, ctx.channels, ctx.mapping, ctx.directory
+    hf2 = devices["hf2"]
+    rate = ctx.noise_rate
+    measurements = []
+    ctx.state["gs200_range_measurements"] = measurements
+    total = len(params.gs200_current_ranges) * params.noise_n_avg
+    started = time.monotonic()
+    completed = 0
+    for current_range in params.gs200_current_ranges:
+        check_cancelled()
+        gs = devices["gs200"]
+        gs.set_current_range(current_range)
+        wait_for_settle(params.gs200_range_settle_time)
+        actual_range, actual_current = float(gs.get_current_range()), float(gs.get_current())
+        if not math.isfinite(actual_range) or not math.isfinite(actual_current) or not math.isclose(actual_range, current_range, rel_tol=1e-6):
+            raise RuntimeError("GS200 实际量程与请求值不一致或回读无效")
+        name = f"gs200_range_{current_range * 1000:g}mA"
+        noise_dir = directory.raw / "noise_raw" / name
+        noise_dir.mkdir(parents=True, exist_ok=True)
+        measurement = dict(directory=name, current_range_set_A=current_range,
+                           current_range_actual_A=actual_range, current_setpoint_actual_A=actual_current,
+                           samples_saved=0)
+        measurements.append(measurement)
+        ctx.save()
+        for index in range(params.noise_n_avg):
+            check_cancelled()
+            set_temp_switch(devices["dg_temp"], channels["Temp_Switch"], False)
+            wait_for_settle(0.5)
+            config = DAQConfig(device=mapping["lockin_r"]["device_id"], trigger_type=0,
+                              duration=params.noise_duration, grid_cols=int(rate * params.noise_duration),
+                              grid_rows=1, grid_mode=2, signal_paths=["sample.y"])
+            acquired = daq.acquire_data(hf2, config=config, demod_idx=params.hf2_demod_idx,
+                                       actual_rate=rate, timeout=params.noise_duration + 5,
+                                       cancellation_check=check_cancelled, strict_cleanup=True)
+            waveform = next((np.asarray(item.values) for item in acquired if item.signal_name == "sample.y"), None)
+            if waveform is None:
+                raise ValueError("HF2 DAQ 未返回 sample.y")
+            np.save(noise_dir / f"noise_{index:04d}.npy", waveform)
+            measurement["samples_saved"] += 1
+            ctx.save()
+            if waveform.ndim != 1 or waveform.size < 2 or not np.isfinite(waveform).all():
+                raise ValueError("噪声波形维度、样本数或有限性无效；原始波形已保留")
+            # 故障时复用外层统一收尾，不用局部恢复异常覆盖 DAQ 原始故障。
+            set_temp_switch(devices["dg_temp"], channels["Temp_Switch"], True)
+            wait_for_settle(2.0)
+            completed += 1
+            report_runtime_progress(
+                "noise", f"噪声 {name}，{index + 1}/{params.noise_n_avg}", 40 + 60 * completed / total,
+                estimated_remaining_seconds=(time.monotonic() - started) / completed * (total - completed),
+            )

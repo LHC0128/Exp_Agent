@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
@@ -106,6 +107,7 @@ def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | N
             f"hf2://{hf2_cfg['device_id']}@{hf2_cfg.get('host', '127.0.0.1')}:{hf2_cfg.get('port', 8005)}",
             lambda: create_lockin(hf2_cfg),
         )
+        initialize_lockin_inputs(hf2)
         clock_devices = {"probe_aom": aom, "laser": laser, "hf2": hf2}
         clock_keys = {"probe_aom": "Probe_AOM_Carrier", "laser": "Pump_laser_power", "hf2": "lockin_r"}
         clock_devices["temp_switch"] = temp_switch
@@ -142,7 +144,7 @@ def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | N
         demod.configure_signal_input(
             hf2, SignalInputConfig(
                 input_index=0, range=params.hf2_signal_range_v,
-                ac_coupling=False, diff=False, impedance=50,
+                diff=False,
             ),
         )
         demod.configure_oscillator(
@@ -175,7 +177,7 @@ def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | N
                 "input_range_v": params.hf2_signal_range_v,
                 "input_ac_coupling": False,
                 "input_differential": False,
-                "input_impedance_ohm": 50,
+                "input_impedance_ohm": 1_000_000,
                 "input_channel": 0,
                 "oscillator_index": 0,
                 "oscillator_source": "manual",

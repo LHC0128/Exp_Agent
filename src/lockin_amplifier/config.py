@@ -22,14 +22,14 @@ class SignalInputConfig:
     diff : bool
         True=差分输入, False=单端输入
     impedance : int
-        输入阻抗 (50 或 10e3 Ω)
+        输入阻抗（50 Ω 或高阻；默认关闭 50 Ω 终端）
     """
 
     input_index: int = 0
     range: float = 1.0
-    ac_coupling: bool = True
+    ac_coupling: bool = False
     diff: bool = False
-    impedance: int = 50
+    impedance: int = 1_000_000
 
     @classmethod
     def from_yaml(cls, path: str) -> "SignalInputConfig":

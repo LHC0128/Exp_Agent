@@ -188,6 +188,14 @@ safety_limits:
     output_off_on_error: true
     description: "铷原子 Cell 温度，范围 20-130 °C，升温速率限制 1°C/s"
 
+  # ---- 锁相辅助输出（已确认允许 ±10 V） ----
+  hf2_dev18246_aux_output_1:
+    min: -10.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "HF2 AuxOut2，Demod0 Y 回环至 Signal Input2，安全电压范围 ±10 V"
+
   # ---- 锁相 & 示波器（只读，无输出限值） ----
   lockin_r:
     min: null

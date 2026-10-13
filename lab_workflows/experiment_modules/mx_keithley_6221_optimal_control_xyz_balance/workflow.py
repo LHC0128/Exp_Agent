@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from dataclasses import asdict
@@ -152,6 +153,7 @@ def _connect_devices(
         f"hf2://{hcfg.get('host', '127.0.0.1')}/{hcfg['device_id']}",
         lambda: create_lockin(hcfg),
     )
+    initialize_lockin_inputs(devices["hf2"])
     tcfg = mapping["temperature"]
     devices["tec"] = session.connect_optional(
         "tec",

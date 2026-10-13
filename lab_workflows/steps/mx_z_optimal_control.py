@@ -297,9 +297,7 @@ def configure_mx_z_optimal_control_workpoint(
         SignalInputConfig(
             input_index=0,
             range=params.hf2_signal_range_v,
-            ac_coupling=True,
             diff=False,
-            impedance=50,
         ),
     )
     demod.configure_oscillator(

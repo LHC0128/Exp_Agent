@@ -16,6 +16,7 @@
 # 数据目录：`data/XY_DirectAW_DC_Calibration/<MMDD_HHMM_direct_aw_dc_cal>/`
 
 # %% Cell 1
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -193,7 +194,7 @@ AUXOUT_OFFSET_V = 0.0
 SIGIN2_INDEX = 1
 SIGIN2_RANGE_V = 1.0
 SIGIN2_AC_COUPLING = False
-SIGIN2_IMPEDANCE_OHM = 50
+SIGIN2_IMPEDANCE_OHM = 1_000_000
 
 # ---- 温控与固定参数，沿用 DirectAW 频响实验 ----
 TEMP_SWITCH_OFF_LEAD_s = 0.1
@@ -375,6 +376,7 @@ try:
         f"hf2://{hf2_cfg.get('host', '127.0.0.1')}/{hf2_cfg['device_id']}",
         lambda: create_lockin(hf2_cfg),
     )
+    initialize_lockin_inputs(hfi)
     devices["hf2"] = hfi
     clock_verification = synchronize_connected_clocks(
         devices,
@@ -592,9 +594,7 @@ time.sleep(0.5)
 sig0_cfg = SignalInputConfig(
     input_index=0,
     range=DEMOD0_SIGNAL_RANGE_V,
-    ac_coupling=True,
     diff=False,
-    impedance=50,
 )
 demod.configure_signal_input(hfi, sig0_cfg)
 demod.configure_oscillator(
@@ -619,9 +619,7 @@ actual_rate_d0_cal = demod.configure_demodulator(
 sig1_cfg = SignalInputConfig(
     input_index=SIGIN2_INDEX,
     range=SIGIN2_RANGE_V,
-    ac_coupling=SIGIN2_AC_COUPLING,
     diff=False,
-    impedance=SIGIN2_IMPEDANCE_OHM,
 )
 demod.configure_signal_input(hfi, sig1_cfg)
 

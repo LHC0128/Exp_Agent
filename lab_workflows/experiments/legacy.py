@@ -28,6 +28,11 @@ _EXCLUDED_CONSTANTS = {
     "MAPPING", "LIMITS", "PROJECT_ROOT", "EXPERIMENT_TYPE", "PURPOSE",
     "DATA_DIR", "USE_LATEST", "QUALITY_THRESHOLDS",
 }
+_LOCKIN_INPUT_DEFAULTS = {
+    "SIGIN2_AC_COUPLING": False,
+    "SIGIN2_IMPEDANCE": 1_000_000,
+    "SIGIN2_IMPEDANCE_OHM": 1_000_000,
+}
 _BASIC_HINTS = (
     "POWER", "TEMPERATURE", "MAGNETIC", "FIELD", "FREQ", "AMPLITUDE",
     "DUTY", "DURATION", "SCAN", "RAMP", "RUN_TAG", "N_AVG",
@@ -155,6 +160,7 @@ class LegacyScriptAdapter:
             with self.defaults_path.open(encoding="utf-8") as stream:
                 saved = yaml.safe_load(stream) or {}
             values.update(saved.get("parameters", saved))
+        values.update({key: value for key, value in _LOCKIN_INPUT_DEFAULTS.items() if key in values})
         return values
 
     def schema(self) -> dict[str, Any]:
@@ -165,7 +171,7 @@ class LegacyScriptAdapter:
             safety_key = name.removeprefix("FIXED_PARAMS.")
             rule = limits.get(safety_key, {})
             metadata = self.field_metadata.get(name, {})
-            if metadata.get("hidden"):
+            if metadata.get("hidden") or name in _LOCKIN_INPUT_DEFAULTS:
                 continue
             field = {
                 "name": name,
@@ -244,6 +250,7 @@ class LegacyScriptAdapter:
     @staticmethod
     def _nested_overrides(values: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
         result = {key: value for key, value in values.items() if "." not in key}
+        result.update({key: value for key, value in _LOCKIN_INPUT_DEFAULTS.items() if key in defaults})
         fixed = {
             key.split(".", 1)[1]: value
             for key, value in defaults.items()

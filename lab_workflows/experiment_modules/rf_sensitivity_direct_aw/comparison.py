@@ -12,7 +12,8 @@ import yaml
 from lab_workflows.experiment_runtime import check_cancelled, report_runtime_progress
 from lab_workflows.plotting import new_figure, plot_style_context, save_figure
 
-from .run_format import COMPARISON_FILES, comparison_block_reason, normalize_comparison_runs
+from . import run_format
+from .run_format import COMPARISON_FILES, normalize_comparison_runs
 
 
 def _curve(data, axis_name: str, value_name: str) -> tuple[np.ndarray, np.ndarray]:
@@ -23,13 +24,13 @@ def _curve(data, axis_name: str, value_name: str) -> tuple[np.ndarray, np.ndarra
     return axis, values
 
 
-def _load_result(item: dict) -> dict:
+def _load_result(item: dict, *, identity=run_format) -> dict:
     directory = Path(item["run_dir"]).resolve()
     config_path = directory / "experiment_config.yaml"
     if directory not in config_path.resolve().parents:
         raise ValueError("运行配置超出允许范围")
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    reason = comparison_block_reason(directory, config)
+    reason = identity.comparison_block_reason(directory, config)
     if reason:
         raise ValueError(reason)
     results = directory / "results"
@@ -42,7 +43,7 @@ def _load_result(item: dict) -> dict:
         saved_success = data["success"]
         if saved_success.shape != () or saved_success.dtype.kind != "b" or bool(saved_success.item()) != fit_success:
             raise ValueError("响应拟合数组与分析摘要不一致")
-        field, response = _curve(data, "amplitudes_nT", "demod3_x_V")
+        field, response = _curve(data, "amplitudes_nT", f"demod3_{identity.RESPONSE_COMPONENT.lower()}_V")
         fit_field, fit_response = _curve(data, "fit_x_nT", "fit_y_V") if fit_success else (None, None)
     with np.load(results / "sensitivity.npz", allow_pickle=False) as data:
         name = "sensitivity_corrected_fT_per_sqrtHz" if corrected else "sensitivity_raw_fT_per_sqrtHz"
@@ -52,19 +53,24 @@ def _load_result(item: dict) -> dict:
         positive = (frequency > 0) & (sensitivity > 0)
         if not positive.any():
             raise ValueError("灵敏度谱没有可用于对数坐标的正值")
+        # 旧结果可能缺少标量键；缺失时按 NaN 处理，仅退化为对比图轴范围不收紧
+        scalars = {key: float(data[key]) if key in data.files and data[key].shape == () else float("nan")
+                   for key in ("f_larmor_Hz", "flat_fmax_Hz", "flat_median_fT_per_sqrtHz")}
     return {**item, "run_dir": str(directory), "field": field, "response": response,
             "fit_field": fit_field, "fit_response": fit_response, "frequency": frequency,
-            "sensitivity": sensitivity, "positive": positive, "fit_success": fit_success, "corrected": corrected}
+            "sensitivity": sensitivity, "positive": positive, "fit_success": fit_success, "corrected": corrected,
+            "f_larmor_hz": scalars["f_larmor_Hz"], "flat_fmax_hz": scalars["flat_fmax_Hz"],
+            "flat_median": scalars["flat_median_fT_per_sqrtHz"]}
 
 
-def compare_runs(runs: list[dict], output_dir: Path) -> dict:
+def compare_runs(runs: list[dict], output_dir: Path, *, identity=run_format) -> dict:
     entries = normalize_comparison_runs(runs)
     loaded = []
     for index, item in enumerate(entries):
         check_cancelled()
         report_runtime_progress("analysis", f"读取对比结果：{item['run_id']}", 60 * index / len(entries))
         try:
-            loaded.append(_load_result(item))
+            loaded.append(_load_result(item, identity=identity))
         except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
             raise ValueError(f"{item['run_id']}：{exc}") from exc
     output = Path(output_dir).resolve()
@@ -76,7 +82,8 @@ def compare_runs(runs: list[dict], output_dir: Path) -> dict:
             warnings.append(f"{item['run_id']}：色散拟合失败，使用数值斜率；灵敏度谱未作洛伦兹校正。")
         elif not item["corrected"]:
             warnings.append(f"{item['run_id']}：灵敏度谱未作洛伦兹校正。")
-    result = {"runs": [{key: item[key] for key in ("run_id", "legend", "run_dir", "fit_success", "corrected")} for item in loaded],
+    result = {"experiment_id": identity.EXPERIMENT_ID, "response_component": identity.RESPONSE_COMPONENT, "noise_component": "X",
+              "runs": [{key: item[key] for key in ("run_id", "legend", "run_dir", "fit_success", "corrected")} for item in loaded],
               "warnings": warnings}
     check_cancelled()
     output.mkdir(parents=True, exist_ok=False)
@@ -94,8 +101,27 @@ def compare_runs(runs: list[dict], output_dir: Path) -> dict:
                     axes[0].plot(item["fit_field"], item["fit_response"], "--", color=color)
                 mask = item["positive"]
                 axes[1].loglog(item["frequency"][mask], item["sensitivity"][mask], color=color, label=item["legend"])
-            axes[0].set(xlabel="RF field (nT)", ylabel="Demod3 X (V)")
+            axes[0].set(xlabel="RF field (nT)", ylabel=f"Demod3 {identity.RESPONSE_COMPONENT} (V)", title=f"{identity.RESPONSE_COMPONENT} calibration / X noise")
             axes[1].set(xlabel="Frequency (Hz)", ylabel="Sensitivity (fT/√Hz)")
+            # 轴范围与单次运行灵敏度谱一致：横轴由已校正运行的 max(2×HWHM, 平坦段上限, 1000 Hz) 决定
+            corrected_items = [entry for entry in loaded if entry["corrected"]]
+            if corrected_items:
+                x_max = max(max(2.0 * entry["f_larmor_hz"] if math.isfinite(entry["f_larmor_hz"]) else 0.0,
+                                entry["flat_fmax_hz"] if math.isfinite(entry["flat_fmax_hz"]) else 0.0,
+                                1000.0)
+                            for entry in corrected_items)
+            else:
+                x_max = max(float(entry["frequency"][-1]) for entry in loaded)
+            axes[1].set_xlim(0.5, x_max)
+            # 纵轴只覆盖平坦段附近，裁掉 1/f 噪声与共振发散，避免平坦段被压扁；只调坐标，不动数据
+            visible_minima = []
+            for entry in loaded:
+                visible = (entry["frequency"] >= 0.5) & (entry["frequency"] <= x_max)
+                visible_minima.append(float(np.min(entry["sensitivity"][visible])) if visible.any() else float("nan"))
+            medians = [entry["flat_median"] for entry in loaded if math.isfinite(entry["flat_median"])]
+            lower = min(visible_minima) if visible_minima else float("nan")
+            if math.isfinite(lower) and lower > 0 and medians:
+                axes[1].set_ylim(0.8 * lower, 20.0 * max(medians))
             handles, labels = axes[0].get_legend_handles_labels()
             figure.legend(handles, labels, loc="outside lower center", ncols=2)
             report_runtime_progress("analysis", "保存 RF 灵敏度对比 PNG/PDF", 80)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import shutil
@@ -123,6 +124,7 @@ def _connect_devices(
     channels["temp_switch"] = int(tcfg["channel"])
     hcfg = mapping["lockin_r"]
     devices["hf2"] = session.connect("hf2", f"hf2://{hcfg.get('host', '127.0.0.1')}/{hcfg['device_id']}", lambda: create_lockin(hcfg))
+    initialize_lockin_inputs(devices["hf2"])
     tcfg = mapping["temperature"]
     devices["tec"] = session.connect_optional("tec", tcfg["resource"], lambda: TECInstrument(port=tcfg["resource"]), device_label="TEC103")
     return devices, channels
@@ -164,7 +166,7 @@ def _install_compliance_checker(devices: dict[str, Any]) -> None:
 def _configure_hf2(params: MxKeithley6221OptimalControlRFParams, devices: dict[str, Any], frequency_hz: float) -> tuple[float, dict[str, Any]]:
     """配置 HF2 Demod0，保持原 RF 灵敏度采集的解调设置。"""
     hf2 = devices["hf2"]
-    demod.configure_signal_input(hf2, SignalInputConfig(input_index=0, range=params.hf2_signal_range_v, ac_coupling=True, diff=False, impedance=50))
+    demod.configure_signal_input(hf2, SignalInputConfig(input_index=0, range=params.hf2_signal_range_v, diff=False))
     demod.configure_oscillator(hf2, OscillatorConfig(osc_index=params.demod_osc_idx, frequency=frequency_hz))
     phase_shift_deg = float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift"))
     actual_rate = float(demod.configure_demodulator(hf2, DemodulatorConfig(demod_index=params.demod_idx, enable=True, rate=params.response_rate_sa_s, input_channel=0, osc_select=params.demod_osc_idx, harmonic=1, time_constant=params.response_time_constant_s, order=params.response_demod_order, phase=phase_shift_deg)))

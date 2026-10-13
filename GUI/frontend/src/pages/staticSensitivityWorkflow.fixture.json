@@ -1,0 +1,622 @@
+{
+  "acquisition": [
+    {
+      "id": "A01",
+      "title": "启动预检",
+      "group": "启动准备",
+      "dependencies": [],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A02",
+      "title": "设备连接与输入初始化",
+      "group": "启动准备",
+      "dependencies": [
+        "A01"
+      ],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A03",
+      "title": "参考时钟同步",
+      "group": "启动准备",
+      "dependencies": [
+        "A02"
+      ],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A04",
+      "title": "初始磁场、光功率与温控",
+      "group": "初始条件",
+      "dependencies": [
+        "A03"
+      ],
+      "parameters": [
+        "pump_laser_power",
+        "probe_laser_power",
+        "main_magnetic_field",
+        "x_magnetic_field",
+        "y_magnetic_field",
+        "temp_switch",
+        "temperature"
+      ],
+      "artifacts": [],
+      "display_parameters": [
+        "pump_laser_power",
+        "probe_laser_power",
+        "main_magnetic_field",
+        "x_magnetic_field",
+        "y_magnetic_field",
+        "temp_switch",
+        "temperature"
+      ]
+    },
+    {
+      "id": "A05",
+      "title": "温度稳定",
+      "group": "初始条件",
+      "dependencies": [
+        "A04"
+      ],
+      "parameters": [
+        "temp_tolerance_c",
+        "temp_stable_reads",
+        "temp_poll_interval_s",
+        "max_temp_wait_s"
+      ],
+      "artifacts": [],
+      "display_parameters": [
+        "temp_tolerance_c",
+        "temp_stable_reads",
+        "temp_poll_interval_s",
+        "max_temp_wait_s"
+      ]
+    },
+    {
+      "id": "A06",
+      "title": "Pump 载波与脉冲门控",
+      "group": "激励与校相",
+      "dependencies": [
+        "A05"
+      ],
+      "parameters": [
+        "pump_mod_freq",
+        "pump_mod_amplitude",
+        "pump_mod_duty",
+        "rf_gate_amplitude",
+        "rf_gate_offset",
+        "rf_gate_delay"
+      ],
+      "artifacts": [],
+      "display_parameters": [
+        "pump_mod_freq",
+        "pump_mod_amplitude",
+        "pump_mod_duty",
+        "rf_gate_amplitude",
+        "rf_gate_offset",
+        "rf_gate_delay"
+      ]
+    },
+    {
+      "id": "A07",
+      "title": "锁相色散配置",
+      "group": "激励与校相",
+      "dependencies": [
+        "A06"
+      ],
+      "parameters": [
+        "hf2_demod_idx",
+        "hf2_demod_order",
+        "hf2_signal_range",
+        "hf2_demod_rate",
+        "hf2_demod_tc"
+      ],
+      "artifacts": [],
+      "display_parameters": [
+        "hf2_demod_idx",
+        "hf2_demod_order",
+        "hf2_signal_range",
+        "hf2_demod_rate",
+        "hf2_demod_tc"
+      ]
+    },
+    {
+      "id": "A08",
+      "title": "Bell-Bloom 校相",
+      "group": "激励与校相",
+      "dependencies": [
+        "A07"
+      ],
+      "parameters": [
+        "dispersion_temp_switch_off_settle_s",
+        "dispersion_temp_switch_on_settle_s"
+      ],
+      "artifacts": [],
+      "display_parameters": [
+        "dispersion_temp_switch_off_settle_s",
+        "dispersion_temp_switch_on_settle_s"
+      ]
+    },
+    {
+      "id": "A09",
+      "title": "Z 直流逐点色散扫描",
+      "group": "采集与结束",
+      "dependencies": [
+        "A08"
+      ],
+      "parameters": [
+        "run_tag",
+        "ramp_low",
+        "ramp_high",
+        "dispersion_steps",
+        "dispersion_step_settle_s",
+        "dispersion_duration_s",
+        "dispersion_temp_switch_interval_points"
+      ],
+      "artifacts": [
+        "raw/dispersion_scan.npz",
+        "raw/dispersion_steps/point_*.npz"
+      ],
+      "display_parameters": [
+        "run_tag",
+        "ramp_low",
+        "ramp_high",
+        "dispersion_steps",
+        "hf2_demod_rate",
+        "dispersion_duration_s",
+        "dispersion_step_settle_s",
+        "dispersion_temp_switch_interval_points",
+        "dispersion_temp_switch_off_settle_s",
+        "dispersion_temp_switch_on_settle_s"
+      ]
+    },
+    {
+      "id": "A10",
+      "title": "噪声模式准备",
+      "group": "采集与结束",
+      "dependencies": [
+        "A09"
+      ],
+      "parameters": [
+        "hf2_noise_rate",
+        "hf2_noise_tc",
+        "noise_duration"
+      ],
+      "artifacts": [],
+      "display_parameters": [
+        "hf2_noise_rate",
+        "hf2_noise_tc",
+        "noise_duration"
+      ]
+    },
+    {
+      "id": "A11",
+      "title": "GS200 多量程 Y 噪声采集",
+      "group": "采集与结束",
+      "dependencies": [
+        "A10"
+      ],
+      "parameters": [
+        "noise_n_avg",
+        "gs200_current_ranges",
+        "gs200_range_headroom",
+        "gs200_range_settle_time"
+      ],
+      "artifacts": [
+        "raw/noise_raw/gs200_range_*/noise_*.npy"
+      ],
+      "display_parameters": [
+        "noise_n_avg",
+        "noise_duration",
+        "gs200_current_ranges",
+        "gs200_range_headroom",
+        "gs200_range_settle_time"
+      ]
+    },
+    {
+      "id": "A12",
+      "title": "恢复色散配置并结束本轮",
+      "group": "采集与结束",
+      "dependencies": [
+        "A11"
+      ],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "A13",
+      "title": "安全结束会话",
+      "group": "采集与结束",
+      "dependencies": [],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    }
+  ],
+  "analysis": [
+    {
+      "id": "B01",
+      "title": "加载与校验原始数据",
+      "group": "独立离线分析",
+      "dependencies": [],
+      "parameters": [],
+      "artifacts": [],
+      "display_parameters": []
+    },
+    {
+      "id": "B02",
+      "title": "色散拟合、增益与线宽",
+      "group": "独立离线分析",
+      "dependencies": [
+        "B01"
+      ],
+      "parameters": [
+        "z_v_to_nt"
+      ],
+      "artifacts": [
+        "dispersion_fit.npz"
+      ],
+      "display_parameters": [
+        "z_v_to_nt"
+      ]
+    },
+    {
+      "id": "B03",
+      "title": "各量程 Welch PSD 与平均",
+      "group": "独立离线分析",
+      "dependencies": [
+        "B01"
+      ],
+      "parameters": [
+        "noise_duration"
+      ],
+      "artifacts": [
+        "noise_psd.npz"
+      ],
+      "display_parameters": [
+        "noise_duration"
+      ]
+    },
+    {
+      "id": "B04",
+      "title": "灵敏度、量程比较与结果图",
+      "group": "独立离线分析",
+      "dependencies": [
+        "B02",
+        "B03"
+      ],
+      "parameters": [],
+      "artifacts": [
+        "gs200_current_range_sensitivity.npz",
+        "gs200_current_range_summary.yaml",
+        "full_analysiswithoutpump.png",
+        "full_analysiswithoutpump.pdf",
+        "analysis.yaml",
+        "analysis.json",
+        "run_summary.csv"
+      ],
+      "display_parameters": []
+    }
+  ],
+  "parameter_impacts": {
+    "acquisition": {
+      "pump_laser_power": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "probe_laser_power": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "main_magnetic_field": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "x_magnetic_field": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "y_magnetic_field": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "temp_switch": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "temperature": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "temp_tolerance_c": [
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "temp_stable_reads": [
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "temp_poll_interval_s": [
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "max_temp_wait_s": [
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "pump_mod_freq": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "pump_mod_amplitude": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "pump_mod_duty": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "rf_gate_amplitude": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "rf_gate_offset": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "rf_gate_delay": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "hf2_demod_idx": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "hf2_demod_order": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "hf2_signal_range": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "hf2_demod_rate": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "hf2_demod_tc": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "dispersion_temp_switch_off_settle_s": [
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "dispersion_temp_switch_on_settle_s": [
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "run_tag": [
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "ramp_low": [
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "ramp_high": [
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "dispersion_steps": [
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "dispersion_step_settle_s": [
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "dispersion_duration_s": [
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "dispersion_temp_switch_interval_points": [
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "hf2_noise_rate": [
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "hf2_noise_tc": [
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "noise_duration": [
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "noise_n_avg": [
+        "A11",
+        "A12"
+      ],
+      "gs200_current_ranges": [
+        "A11",
+        "A12"
+      ],
+      "gs200_range_headroom": [
+        "A11",
+        "A12"
+      ],
+      "gs200_range_settle_time": [
+        "A11",
+        "A12"
+      ]
+    },
+    "analysis": {
+      "z_v_to_nt": [
+        "B02",
+        "B04"
+      ],
+      "noise_duration": [
+        "B03",
+        "B04"
+      ]
+    }
+  },
+  "diagram_url": "/api/experiments/static-sensitivity/workflow/diagram"
+}

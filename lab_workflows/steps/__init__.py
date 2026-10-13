@@ -85,6 +85,8 @@ from .temperature import (
     wait_for_temperature_stable,
 )
 
+from .lockin import initialize_lockin_inputs
+
 __all__ = [
     "AWScaleStrategy",
     "ArbitraryWaveformSpec",
@@ -125,6 +127,7 @@ __all__ = [
     "configure_z_optimal_control_output",
     "connect_signal_generator_routes",
     "create_run_directory",
+    "initialize_lockin_inputs",
     "disconnect_device_mapping",
     "disconnect_devices",
     "phase_calibration_guard",

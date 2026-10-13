@@ -62,6 +62,7 @@
 # - 频率扫描按规范允许 `setup_sine()`，不要混用 `set_amplitude()`。
 
 # %% Cell 1
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -199,7 +200,7 @@ SIGIN2_INDEX = 1                  # 0 = Signal Input 1, 1 = Signal Input 2
 SIGIN2_RANGE = 1.0                # 信号输入量程 (V)
 SIGIN2_AC_COUPLING = False        # 关键：必须 DC coupling，
                                   #      AC coupling 会压低低频响应并畸变硬件曲线
-SIGIN2_IMPEDANCE = 50             # 输入阻抗 (Ω)
+SIGIN2_IMPEDANCE = 1_000_000             # 输入阻抗 (Ω)
 
 # Demod 3 的 adcselect 必须指 SIGIN2_INDEX = 1（Signal Input 2），不是 2
 DEMOD3_ADC_SELECT = SIGIN2_INDEX
@@ -358,6 +359,7 @@ try:
     hfi.set_extclk(True)
     print(f"  -> HF2 时钟源: 外部")
     devices["hf2"] = hfi
+    initialize_lockin_inputs(hfi)
 
     # ---- SDS 示波器（可选监测）----
     scope_cfg = MAPPING.get("scope_waveform", {})
@@ -664,9 +666,7 @@ time.sleep(0.3)
 sig_in_cfg = SignalInputConfig(
     input_index=0,
     range=HF2_DEMOD0_SIGNAL_RANGE,
-    ac_coupling=True,
     diff=False,
-    impedance=50,
 )
 demod.configure_signal_input(hfi, sig_in_cfg)
 print(f"信号输入 0: range={HF2_DEMOD0_SIGNAL_RANGE} V, AC 耦合")
@@ -708,9 +708,7 @@ print(f"Demod 0 (校相): rate={actual_rate_d0:.0f} Sa/s, "
 sig_in2_cfg = SignalInputConfig(
     input_index=SIGIN2_INDEX,
     range=SIGIN2_RANGE,
-    ac_coupling=SIGIN2_AC_COUPLING,
     diff=False,
-    impedance=SIGIN2_IMPEDANCE,
 )
 demod.configure_signal_input(hfi, sig_in2_cfg)
 print(f"信号输入 {SIGIN2_INDEX} (Signal Input 2, 物理回环接收端): "

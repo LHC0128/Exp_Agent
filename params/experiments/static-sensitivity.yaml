@@ -41,4 +41,4 @@ parameters:
   - 0.01
   gs200_range_headroom: 1.2
   gs200_range_settle_time: 10.0
-  z_v_to_nt: 767.57
+  z_v_to_nt: 1950.0

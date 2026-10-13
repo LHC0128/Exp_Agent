@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lockin_amplifier import SignalInputConfig
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -71,8 +72,8 @@ class RFDirectAWFrequencyParams(ExperimentParams):
     auxout_offset: float = parameter(default=0.0, external_name="AUXOUT_OFFSET", label="AuxOut 偏置", unit="V", group="advanced")
     sigin2_index: int = parameter(default=1, external_name="SIGIN2_INDEX", label="Signal Input 2 索引", group="advanced", minimum=0)
     sigin2_range: float = parameter(default=1.0, external_name="SIGIN2_RANGE", label="Signal Input 2 量程", unit="V", group="advanced", minimum=0.001)
-    sigin2_ac_coupling: bool = parameter(default=False, external_name="SIGIN2_AC_COUPLING", label="Signal Input 2 AC 耦合", group="advanced")
-    sigin2_impedance: int = parameter(default=50, external_name="SIGIN2_IMPEDANCE", label="Signal Input 2 阻抗", unit="Ω", group="advanced", options=((50, "50 Ω"), (1000000, "1 MΩ")))
+    sigin2_ac_coupling: bool = parameter(default=False, external_name="SIGIN2_AC_COUPLING", label="Signal Input 2 AC 耦合", group="advanced", visible=False)
+    sigin2_impedance: int = parameter(default=1000000, external_name="SIGIN2_IMPEDANCE", label="Signal Input 2 阻抗", unit="Ω", group="advanced", options=((50, "50 Ω"), (1000000, "1 MΩ")), visible=False)
     temp_switch_off_lead: float = parameter(default=0.1, external_name="TEMP_SWITCH_OFF_LEAD", label="温控关闭前置等待", unit="s", group="advanced", minimum=0)
     temp_switch_on_lag: float = parameter(default=1.0, external_name="TEMP_SWITCH_ON_LAG", label="温控恢复等待", unit="s", group="advanced", minimum=0)
     pump_laser_power: float = parameter(default=0.5, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", safety_key="Pump_laser_power")
@@ -80,6 +81,12 @@ class RFDirectAWFrequencyParams(ExperimentParams):
     main_magnetic_field: float = parameter(default=1.03, external_name="FIXED_PARAMS.main_magnetic_field", label="主磁场电流", unit="mA", group="basic", safety_key="main_magnetic_field")
     temperature: float = parameter(default=100.0, external_name="FIXED_PARAMS.temperature", label="气室温度", unit="°C", group="basic", safety_key="temperature")
     temp_switch: float = parameter(default=5.0, external_name="FIXED_PARAMS.Temp_Switch", label="温控开关电平", unit="V", group="advanced", safety_key="Temp_Switch")
+
+    def __post_init__(self):
+        # 历史参数键仍可读取，输入模式统一使用公共关闭设置。
+        defaults = SignalInputConfig()
+        self.sigin2_ac_coupling = defaults.ac_coupling
+        self.sigin2_impedance = defaults.impedance
 
     @classmethod
     def migrate_external(cls, values, schema_version: int):

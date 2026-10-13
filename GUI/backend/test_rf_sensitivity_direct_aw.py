@@ -13,6 +13,7 @@ from lab_workflows import control_sources
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.models import RFSensitivityDirectAWParams
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.definition import ADAPTER
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.run_format import DATA_TYPE, EXPERIMENT_ID
+from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.test_workflow import rig, control_source
 
 BASE = f"/api/experiments/{EXPERIMENT_ID}"
 
@@ -206,6 +207,15 @@ def test_comparison_guards_reanalysis_deletion_and_duplicate_jobs(client, tmp_pa
     assert client.post(f"{BASE}/compare", json={"runs": [{"run_id": "first"}, {"run_id": "second"}]}).status_code == 409
 
 
+def test_active_session_guards_run_deletion(client, tmp_path, monkeypatch):
+    directory = create_run(tmp_path)
+    monkeypatch.setattr(main.manager, "jobs", {"session": SimpleNamespace(
+        kind=f"session:{EXPERIMENT_ID}", status="running")})
+    response = client.delete(f"/api/runs/{EXPERIMENT_ID}/{directory.name}")
+    assert response.status_code == 409
+    assert directory.is_dir()
+
+
 def test_downloads_require_complete_manifest_and_safe_names(client, tmp_path):
     identifier = "a" * 32
     directory = main._rf_direct_aw_comparison_dir(identifier)
@@ -242,3 +252,122 @@ def test_real_comparison_job_downloads_without_changing_sources(client, tmp_path
     assert client.get(result["artifacts"]["full_analysis_comparison.png"]).content.startswith(b"\x89PNG")
     assert client.get(result["artifacts"]["full_analysis_comparison.pdf"]).content.startswith(b"%PDF")
     assert snapshot(tmp_path / "data") == before
+
+
+@pytest.fixture
+def workflow_client(rig, monkeypatch):
+    from fastapi import FastAPI
+    from .jobs import JobManager
+    from .rf_sensitivity_direct_aw import RFSessionService, create_router
+    manager = JobManager()
+    service = RFSessionService(lambda: rig.tmp_path, manager)
+    app = FastAPI()
+    app.include_router(create_router(service))
+    original = ADAPTER._execute
+    monkeypatch.setattr(ADAPTER, "_execute", lambda module, **kwargs: original(
+        "lab_workflows.experiment_modules.rf_sensitivity_direct_aw.test_stages"
+        if module.endswith(".session") else module, **kwargs))
+    monkeypatch.setenv("RF_TEST_ROOT", str(rig.tmp_path))
+    client = TestClient(app)
+    yield client, service, manager
+    service.close_communication()
+    for job in manager.jobs.values():
+        job.cancellation.cancel()
+    service.shutdown()
+    client.close()
+
+
+def wait_for(predicate):
+    import time
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.02)
+    raise AssertionError("假仪器子进程没有及时完成")
+
+
+def create_session(client, service, rig):
+    response = client.post(f"{BASE}/sessions", json={"parameters": rig.params.to_external()})
+    assert response.status_code == 200, response.text
+    session_id = response.json()["session_id"]
+    wait_for(lambda: service.get(session_id)["status"] in ("waiting", "closed"))
+    assert service.get(session_id)["status"] == "waiting", service.manager.get(response.json()["job_id"]).error
+    return session_id
+
+
+def test_workflow_manifest_diagram_and_strict_requests(workflow_client, rig):
+    client, service, manager = workflow_client
+    flow = client.get(f"{BASE}/workflow").json()
+    assert len(flow["acquisition"]) == 16 and len(flow["analysis"]) == 4
+    assert flow["acquisition"][-1]["dependencies"] == []
+    assert flow["parameter_impacts"]["analysis"]["NOISE_NPERSEG"] == ["B03", "B04"]
+    # 下载使用真实仓库中的可编辑源图，临时根目录只负责硬件和数据隔离。
+    from lab_workflows.common import find_project_root
+    source = find_project_root() / service.diagram_file
+    target = rig.tmp_path / service.diagram_file
+    target.parent.mkdir(parents=True)
+    target.write_bytes(source.read_bytes())
+    diagram = client.get(flow["diagram_url"])
+    assert diagram.status_code == 200 and diagram.json()["type"] == "excalidraw"
+    assert not manager.jobs
+    session_id = create_session(client, service, rig)
+    path = f"{BASE}/sessions/{session_id}/steps"
+    assert client.post(path, json={"revision": 0, "step_ids": ["A13"]}).status_code == 422
+    assert client.post(path, json={"revision": "0", "step_ids": ["A01"]}).status_code == 422
+    assert client.post(path, json={"revision": 0, "step_ids": ["A01"], "extra": 1}).status_code == 422
+    assert client.post(path, json={"revision": 9, "step_ids": ["A01"]}).headers["X-Error-Code"] == "revision_conflict"
+    assert client.get(f"{BASE}/sessions/active").json()["session_id"] == session_id
+    client.post(f"{BASE}/sessions/{session_id}/finish", json={"revision": 0})
+    wait_for(lambda: service.get(session_id)["status"] == "closed")
+
+
+def test_real_session_holds_hardware_lock_seals_run_and_analyzes_independently(workflow_client, rig):
+    client, service, manager = workflow_client
+    session_id = create_session(client, service, rig)
+    probe = manager.create("hardware-probe", lambda job: {"ok": True})
+    assert probe.status == "queued"
+    path = f"{BASE}/sessions/{session_id}"
+    response = client.post(path + "/steps", json={"revision": 0, "step_ids": [f"A{i:02d}" for i in range(1, 16)]})
+    assert response.status_code == 200
+    # 提交完成前拒绝第二条命令；完成后旧修订也不能复用。
+    assert client.post(path + "/steps", json={"revision": 0, "step_ids": ["A01"]}).status_code == 409
+    wait_for(lambda: service.get(session_id)["steps"]["A15"]["status"] == "completed" or service.get(session_id)["status"] == "closed")
+    snapshot = service.get(session_id)
+    assert snapshot["status"] == "waiting", snapshot
+    assert snapshot["outputs"]["X"] == "OFF"
+    assert probe.status == "queued"
+    run_id = snapshot["run_id"]
+    state = client.get(f"{BASE}/runs/{run_id}/analysis")
+    assert state.status_code == 200, state.text
+    response = client.post(f"{BASE}/runs/{run_id}/analysis", json={"revision": state.json()["revision"], "step_ids": ["B01"]})
+    assert response.status_code == 200, response.text
+    job = manager.get(response.json()["id"])
+    wait_for(lambda: job.status in ("completed", "failed"))
+    assert job.status == "completed", job.error
+    assert probe.status == "queued"
+    client.post(path + "/finish", json={"revision": snapshot["revision"]})
+    wait_for(lambda: service.get(session_id)["status"] == "closed" and probe.status == "completed")
+    assert service.active() is None
+    from .rf_sensitivity_direct_aw import RFSessionService
+    assert RFSessionService(lambda: rig.tmp_path, manager).active() is None
+
+
+def test_eof_and_cancel_both_finish_with_safety_report(workflow_client, rig):
+    client, service, manager = workflow_client
+    session_id = create_session(client, service, rig)
+    client.post(f"{BASE}/sessions/{session_id}/steps", json={"revision": 0, "step_ids": [f"A{i:02d}" for i in range(1, 11)]})
+    wait_for(lambda: service.get(session_id)["steps"]["A10"]["status"] == "completed" or service.get(session_id)["status"] == "closed")
+    assert service.get(session_id)["status"] == "waiting"
+    run_id = service.get(session_id)["run_id"]
+    waveform = client.get(f"{BASE}/runs/{run_id}/files/raw/xy_aw_waveforms.npz")
+    assert waveform.status_code == 200
+    assert client.get(f"{BASE}/runs/{run_id}/analysis").status_code == 409
+    assert client.get(f"{BASE}/runs/{run_id}/files/..%5Coutside").status_code == 404
+    service.close_communication()
+    wait_for(lambda: service.get(session_id)["status"] == "closed")
+    assert service.get(session_id)["safety_shutdown"]["completed"] is True
+    second = create_session(client, service, rig)
+    manager.get(service.get(second)["job_id"]).cancellation.cancel()
+    wait_for(lambda: service.get(second)["status"] == "closed")
+    assert service.active() is None

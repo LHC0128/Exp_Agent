@@ -43,6 +43,7 @@
 # - **安全关闭**: 仅断开 TEC，其余设备保持连接
 
 # %% Cell 1
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lockin_amplifier import AuxOutConfig, auxout
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
@@ -229,7 +230,7 @@ AUXOUT_OFFSET = 0.0               # 输出电压偏置 (V)
 SIGIN2_INDEX = 1                  # 0 = Signal Input 1, 1 = Signal Input 2
 SIGIN2_RANGE = 1.0                # 信号输入量程 (V)
 SIGIN2_AC_COUPLING = False        # 关键：必须 DC coupling
-SIGIN2_IMPEDANCE = 50             # 输入阻抗 (Ω)
+SIGIN2_IMPEDANCE = 1_000_000             # 输入阻抗 (Ω)
 
 # Demod 3 的 adcselect 必须指 SIGIN2_INDEX = 1（Signal Input 2），不是 2
 DEMOD3_ADC_SELECT = SIGIN2_INDEX
@@ -419,6 +420,7 @@ try:
         f"hf2://{hf2_cfg.get('host', '127.0.0.1')}/{hf2_cfg['device_id']}",
         lambda: create_lockin(hf2_cfg),
     )
+    initialize_lockin_inputs(hfi)
     print(f"HF2 已连接: {hfi.idn}")
     devices["hf2"] = hfi
 
@@ -688,9 +690,7 @@ time.sleep(0.5)
 sig_cfg = SignalInputConfig(
     input_index=0,
     range=DEMOD0_SIGNAL_RANGE,
-    ac_coupling=True,
     diff=False,
-    impedance=50,
 )
 demod.configure_signal_input(hfi, sig_cfg)
 print(f"信号输入 0: range={DEMOD0_SIGNAL_RANGE} V, AC 耦合")
@@ -722,9 +722,7 @@ print(f"Demod 0: TC={DEMOD0_TC_CALIB:.0e} s (校相), rate={actual_rate_d0:.0f} 
 sig_in2_cfg = SignalInputConfig(
     input_index=SIGIN2_INDEX,
     range=SIGIN2_RANGE,
-    ac_coupling=SIGIN2_AC_COUPLING,
     diff=False,
-    impedance=SIGIN2_IMPEDANCE,
 )
 demod.configure_signal_input(hfi, sig_in2_cfg)
 print(f"信号输入 {SIGIN2_INDEX} (Signal Input 2, 物理回环接收端): "

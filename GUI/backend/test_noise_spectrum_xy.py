@@ -64,6 +64,53 @@ class XYSessionAPITest(unittest.TestCase):
         self.wait(lambda: self.service.get(value["session_id"])["status"] == "waiting")
         return value["session_id"]
 
+    def test_workflow_exposes_display_bindings_and_parameter_impacts_without_jobs(self):
+        response = self.client.get(f"{BASE}/workflow")
+        self.assertEqual(response.status_code, 200, response.text)
+        flow = response.json()
+        self.assertEqual([stage["id"] for stage in flow["acquisition"]
+                          if "TEMP_SWITCH_ON_SETTLE_S" in stage["display_parameters"]], ["A08", "A10", "A12"])
+        self.assertEqual(flow["parameter_impacts"]["acquisition"]["TEMP_SWITCH_ON_SETTLE_S"],
+                         [f"A{i:02d}" for i in range(8, 14)])
+        self.assertEqual(flow["parameter_impacts"]["analysis"]["ANALYSIS_BIN_WIDTH_HZ"], ["B02", "B03", "B04", "B05"])
+        self.assertFalse(self.manager.jobs)
+
+    def test_history_uses_run_snapshot_missing_results_and_reanalysis_without_hardware(self):
+        from . import main
+
+        run = self.root / "data/Noise_Spectrum_XY_Ctrl/0101_1200_history"
+        run.mkdir(parents=True)
+        config_path = run / "experiment_config.yaml"
+        parameters = {"RUN_TAG": "saved-history", "ANALYSIS_BIN_WIDTH_HZ": 75.0}
+        config_path.write_text(yaml.safe_dump(dict(experiment_id="noise-spectrum-xy",
+            completion_status="completed", parameters=parameters)), encoding="utf-8")
+        client = TestClient(main.app)
+        self.addCleanup(client.close)
+        with patch.object(main, "ROOT", self.root), patch.object(main, "manager", self.manager), \
+                patch.object(main, "xy_sessions", self.service):
+            listing = client.get(f"{BASE}/runs?limit=50&offset=0").json()
+            self.assertEqual(listing["total"], 1)
+            self.assertEqual(listing["runs"][0]["run_tag"], "saved-history")
+            summary = client.get(f"{BASE}/runs/{run.name}/summary").json()
+            self.assertEqual(summary["parameters"], parameters)
+            self.assertEqual(summary["artifacts"], {})
+            self.assertEqual(summary["analysis_status"], "not_started")
+            self.assertEqual(client.get(f"{BASE}/runs/missing/summary").status_code, 404)
+            self.assertFalse(self.manager.jobs)
+            (run / "results").mkdir()
+            (run / "results/noise_spectrum_2d.png").write_bytes(b"fake png")
+            summary = client.get(f"{BASE}/runs/{run.name}/summary").json()
+            self.assertEqual(set(summary["artifacts"]), {"noise_spectrum_2d.png"})
+            with patch.object(ADAPTER, "_execute", return_value=None) as execute:
+                response = client.post(f"/api/runs/{run.name}/analyze", json={"experiment_id": "noise-spectrum-xy"})
+                self.assertEqual(response.status_code, 200, response.text)
+                self.wait(lambda: self.manager.get(response.json()["id"]).status == "completed")
+                execute.assert_called_once()
+            self.assertEqual(yaml.safe_load(config_path.read_text(encoding="utf-8"))["parameters"], parameters)
+            self.assertEqual(client.get(f"{BASE}/runs/{run.name}/summary").json()["analysis_status"], "completed")
+            config_path.write_text(yaml.safe_dump(dict(experiment_id="noise-spectrum-xy")), encoding="utf-8")
+            self.assertEqual(client.get(f"{BASE}/runs/{run.name}/summary").status_code, 409)
+
     def test_definition_refresh_conflicts_and_waiting_holds_global_lock(self):
         flow = self.client.get(f"{BASE}/workflow").json()
         self.assertEqual([stage["id"] for stage in flow["acquisition"]], [f"A{i:02d}" for i in range(1, 15)])

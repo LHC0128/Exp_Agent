@@ -9,6 +9,7 @@
 # 启用后图表支持鼠标拖拽平移、滚轮缩放、框选放大
 # 如遇到显示问题，可尝试 %matplotlib inline 切换回静态模式
 
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -226,6 +227,7 @@ try:
     hfi.set_extclk(True)
     print(f"  -> HF2 时钟源: 外部")
     devices["hf2"] = hfi
+    initialize_lockin_inputs(hfi)
 
     # ---- SDS 示波器（监测 X/Y AM 调制输出）----
     scope_cfg = MAPPING.get("scope_waveform", {})
@@ -394,7 +396,7 @@ dg_comp.set_output(False, channel=2)
 # 配置信号输入
 sig_in_cfg = SignalInputConfig(
     input_index=0, range=HF2_SIGNAL_RANGE,
-    ac_coupling=True, diff=False, impedance=50,
+    diff=False,
 )
 demod.configure_signal_input(hfi, sig_in_cfg)
 print(f"信号输入已配置: {HF2_SIGNAL_RANGE} V range, AC coupled")

@@ -264,9 +264,7 @@ def _configure_outputs(
         SignalInputConfig(
             input_index=0,
             range=params.hf2_signal_range_v,
-            ac_coupling=True,
             diff=False,
-            impedance=50,
         ),
     )
     demod.configure_oscillator(
@@ -307,9 +305,9 @@ def _configure_outputs(
         "signal_input": {
             "input_index": 0,
             "range_v": params.hf2_signal_range_v,
-            "ac_coupling": True,
+            "ac_coupling": False,
             "differential": False,
-            "impedance_ohm": 50,
+            "impedance_ohm": 1_000_000,
         },
     }
     temperature_text = (

@@ -6,23 +6,25 @@ import re
 EXPERIMENT_ID = "rf-sensitivity-aw"
 DATA_TYPE = "RF_Field_Sensitivity_AW"
 SIGNAL_CHAIN = "Demod0 Y -> AuxOut2 -> Signal Input2 -> Demod3 X"
+RESPONSE_COMPONENT = "X"
+ACQUISITION_METHOD = "direct_aw_x"
 COMPARISON_JOB_KIND = f"comparison:{EXPERIMENT_ID}"
 COMPARISON_FILES = ("full_analysis_comparison.png", "full_analysis_comparison.pdf")
 
 
-def is_new_run(config: object) -> bool:
+def is_new_run(config: object, *, experiment_id=EXPERIMENT_ID, acquisition_method=ACQUISITION_METHOD) -> bool:
     return (
         isinstance(config, dict)
-        and config.get("experiment_id") == EXPERIMENT_ID
+        and config.get("experiment_id") == experiment_id
         and config.get("schema_version") == 2
         and config.get("execution_mode") == "typed_workflow"
-        and config.get("acquisition_method") == "direct_aw_x"
+        and config.get("acquisition_method") == acquisition_method
         and isinstance(config.get("parameters"), dict)
     )
 
 
-def analysis_block_reason(config: object) -> str:
-    if not is_new_run(config):
+def analysis_block_reason(config: object, *, experiment_id=EXPERIMENT_ID, acquisition_method=ACQUISITION_METHOD) -> str:
+    if not is_new_run(config, experiment_id=experiment_id, acquisition_method=acquisition_method):
         return "仅支持 schema version 2 的 DirectAW 新格式运行，旧数据不支持分析"
     if config.get("completion_status") != "completed":
         return "采集尚未完整完成，仅可查看诊断"
@@ -32,8 +34,8 @@ def analysis_block_reason(config: object) -> str:
     return ""
 
 
-def comparison_block_reason(run_dir: Path, config: object) -> str:
-    reason = analysis_block_reason(config)
+def comparison_block_reason(run_dir: Path, config: object, *, experiment_id=EXPERIMENT_ID, acquisition_method=ACQUISITION_METHOD) -> str:
+    reason = analysis_block_reason(config, experiment_id=experiment_id, acquisition_method=acquisition_method)
     if reason:
         return reason
     if config.get("analysis_status") != "completed":

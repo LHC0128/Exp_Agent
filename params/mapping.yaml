@@ -73,7 +73,7 @@ mapping:
     description: 输出大小对应着Y方向磁场 AM，用作外部 AM 输入
   Probe_AOM_Carrier:
     instrument: signal_generator
-    device_id: dg4e261300744
+    device_id: dg4e242401288
     endpoint:
       kind: channel
       index: 1
@@ -81,7 +81,7 @@ mapping:
     description: Probe 光路 AOM 的 100 MHz 射频载波，由 CH1 输出并启用外部 AM
   Probe_AOM_AM:
     instrument: signal_generator
-    device_id: dg4e261300744
+    device_id: dg4e242401288
     endpoint:
       kind: channel
       index: 2

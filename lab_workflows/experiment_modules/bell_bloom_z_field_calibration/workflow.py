@@ -1,5 +1,6 @@
 """Bell Bloom Z DC × Pump 门控频率扫描，仅采集 R。"""
 
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from datetime import datetime
@@ -57,6 +58,7 @@ def connect_devices(session, mapping):
         "hf2", f"hf2://{config['device_id']}",
         lambda: create_lockin(config),
     )
+    initialize_lockin_inputs(devices["hf2"])
     config = mapping["temperature"]
     devices["tec"] = session.connect_optional("tec", config["resource"], lambda: TECInstrument(port=config["resource"]), device_label="TEC103")
     return devices
@@ -122,7 +124,7 @@ def configure_outputs(params, devices, channels, mapping, directory):
     carrier.set_output(True, channel=carrier_channel)
 
     hf2 = devices["hf2"]
-    demod.configure_signal_input(hf2, SignalInputConfig(input_index=0, range=params.hf2_signal_range_v, ac_coupling=True, diff=False, impedance=50))
+    demod.configure_signal_input(hf2, SignalInputConfig(input_index=0, range=params.hf2_signal_range_v, diff=False))
     set_demod_frequency(hf2, initial_frequency)
     phase = hf2.get_double(f"{hf2.demod_path(0)}/phaseshift")
     actual_rate = demod.configure_demodulator(hf2, DemodulatorConfig(

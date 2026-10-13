@@ -8,6 +8,7 @@
 
 # %% Cell 3
 # ========== 交互式绘图模式 ==========
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import matplotlib
@@ -302,6 +303,7 @@ try:
         f"hf2://{hf2_cfg.get('host', '127.0.0.1')}/{hf2_cfg['device_id']}",
         lambda: create_lockin(hf2_cfg),
     )
+    initialize_lockin_inputs(hfi)
     print(f"HF2 已连接: {hfi.idn}")
     devices["hf2"] = hfi
 
@@ -743,7 +745,7 @@ dg_comp.set_output(False, channel=2)
 
 sig_in_cfg = SignalInputConfig(
     input_index=0, range=HF2_SIGNAL_RANGE,
-    ac_coupling=True, diff=False, impedance=50,
+    diff=False,
 )
 demod.configure_signal_input(hfi, sig_in_cfg)
 print(f"信号输入已配置: {HF2_SIGNAL_RANGE} V range, AC coupled")

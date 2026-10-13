@@ -1,234 +1,153 @@
-# %% [markdown]
-# # RF 灵敏度：Demod3 X 色散斜率与 X 噪声 PSD
-
-from __future__ import annotations
-
+"""DirectAW 分阶段离线分析；完整分析与流程图共用算法和产物。"""
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
+import hashlib
 import json
 import math
-
-import numpy as np
+import os
 import yaml
-from scipy.optimize import curve_fit
-from scipy.signal import welch
 
-from sensitivity_analysis import compute_sensitivity
-from sensitivity_analysis.fitting import LARMOR_PER_NT
-
-from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
 from ...common import WorkflowCancelled
-from ...plotting import new_figure, plot_style_context, save_figure
-from .run_format import DATA_TYPE, EXPERIMENT_ID, SIGNAL_CHAIN, analysis_block_reason
+from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
+from ..noise_spectrum_xy.state_io import read_state, write_state
+from . import analysis_steps
+from .analysis_steps import dispersive, fit_response_curve
+from . import run_format
+from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
+
+ANALYSIS_VERSION = "direct-aw-x-stages-v1"
 
 
-def dispersive(x, amplitude, gamma, x0, offset):
-    return amplitude * (x - x0) / ((x - x0) ** 2 + gamma ** 2) + offset
+class AnalysisWorkflow:
+    stages = ANALYSIS
+    identity = run_format
+    analysis_version = ANALYSIS_VERSION
 
+    def __init__(self, run_dir, analysis_parameters=None):
+        self.run_dir = Path(run_dir).resolve()
+        self.results = self.run_dir / "results"
+        self.state_path = self.run_dir / "analysis_state.json"
+        self.config_path = self.run_dir / "experiment_config.yaml"
+        self.config = yaml.safe_load(self.config_path.read_text(encoding="utf-8"))
+        if reason := self.identity.analysis_block_reason(self.config):
+            raise ValueError(reason)
+        previous = read_state(self.state_path) or {}
+        self.options = {"noise_nperseg": self.config["parameters"]["NOISE_NPERSEG"]}
+        self.options.update(previous.get("options", {}))
+        self.states = deepcopy(previous.get("steps") or initial_states(self.stages))
+        self.revision = previous.get("revision", 0)
+        self.summary = deepcopy(previous.get("summary", {}))
+        config = {key: value for key, value in self.config.items() if key not in ("analysis_status", "analysis_error")}
+        self.fingerprint = dict(config_sha256=hashlib.sha256(json.dumps(config, sort_keys=True,
+            ensure_ascii=False).encode()).hexdigest(), analysis_version=self.analysis_version,
+            raw_files={path.name: self._file_signature(path) for path in sorted((self.run_dir / "raw").glob("*")) if path.is_file()})
+        if previous and previous.get("fingerprint") != self.fingerprint:
+            invalidate(self.stages, self.states, "B01")
+            self.revision += 1
+        for stage in self.stages:
+            record = self.states[stage.id]
+            if record["status"] == "running" or (record["status"] == "completed" and any(
+                    self._file_signature(self.results / name) != signature for name, signature in record.get("files", {}).items())):
+                invalidate(self.stages, self.states, stage.id)
+                self.revision += 1
+                break
+        if analysis_parameters:
+            if analysis_parameters.keys() - {"NOISE_NPERSEG"}:
+                raise ValueError("仅支持分析参数 NOISE_NPERSEG")
+            value = analysis_parameters.get("NOISE_NPERSEG", self.options["noise_nperseg"])
+            if value != self.options["noise_nperseg"]:
+                self.options["noise_nperseg"] = value
+                invalidate(self.stages, self.states, "B03")
+        value = self.options["noise_nperseg"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 2 or int(value) != value:
+            raise ValueError("Welch 段长必须是至少 2 的整数")
+        self.options["noise_nperseg"] = int(value)
 
-def fit_response_curve(x: np.ndarray, y: np.ndarray) -> dict:
-    """保持原 X 色散模型；失败时保留数值斜率与回退原因。"""
-    failure_reason = "响应点数不足 5，使用数值斜率"
-    if len(x) >= 5:
-        gamma = float(np.ptp(x)) / 4
-        try:
-            popt, covariance = curve_fit(dispersive, x, y, p0=[float(np.ptp(y)) * gamma, gamma, 0.0, float(np.median(y))], maxfev=20000)
-            slope = abs(float(popt[0])) / float(popt[1]) ** 2
-            if not math.isfinite(slope) or slope <= 0:
-                raise ValueError("色散拟合斜率无效")
-            residuals = y - dispersive(x, *popt)
-            total = float(np.sum((y - float(np.mean(y))) ** 2))
-            r_squared = 1.0 - float(np.sum(residuals**2)) / total if total > 0 else float("nan")
-            fit_x = np.linspace(float(x.min()), float(x.max()), 400)
-            return {"success": True, "method": "dispersive_curve_fit", "failure_reason": "", "r_squared": r_squared, "popt": popt, "perr": np.sqrt(np.diag(covariance)), "slope_V_per_nT": slope, "optimum_nT": float(popt[2]), "fit_x_nT": fit_x, "fit_y_V": dispersive(fit_x, *popt)}
-        except (RuntimeError, ValueError, FloatingPointError, ZeroDivisionError) as exc:
-            failure_reason = str(exc)
-    gradient = np.gradient(y, x)
-    index = int(np.argmax(np.abs(gradient)))
-    return {"success": False, "method": "numeric_gradient", "failure_reason": failure_reason, "r_squared": float("nan"), "popt": np.full(4, np.nan), "perr": np.full(4, np.nan), "slope_V_per_nT": float(abs(gradient[index])), "optimum_nT": float(x[index]), "fit_x_nT": np.array([]), "fit_y_V": np.array([])}
+    @staticmethod
+    def _file_signature(path):
+        return [path.stat().st_size, path.stat().st_mtime_ns] if path.is_file() else None
 
+    def snapshot(self):
+        return dict(run_id=self.run_dir.name, revision=self.revision, options=dict(self.options),
+                    steps=deepcopy(self.states), fingerprint=self.fingerprint, summary=deepcopy(self.summary))
 
-def _plain(value):
-    if isinstance(value, dict):
-        return {key: _plain(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, np.ndarray)):
-        return [_plain(item) for item in value]
-    if isinstance(value, np.generic):
-        return _plain(value.item())
-    if isinstance(value, float) and not math.isfinite(value):
-        return None
-    return value
+    def persist(self):
+        write_state(self.state_path, self.snapshot())
+        config = yaml.safe_load(self.config_path.read_text(encoding="utf-8"))
+        config.update(analysis_status=self.summary.get("status", "not_started"), analysis_error=self.summary.get("error"))
+        self.config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        report_runtime_progress("analysis", f"分析状态：{config['analysis_status']}", data={"analysis_workflow": self.snapshot()})
 
+    def _archive_from(self, item):
+        names = {name for stage in invalidated_stages(self.stages, item) for name in stage.artifacts}
+        files = [self.results / name for name in names if (self.results / name).is_file()]
+        if files:
+            backup = self.results / ("before_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+            backup.mkdir()
+            for path in files:
+                path.replace(backup / path.name)
 
-# %% 离线分析
-def analyze(run_dir: Path) -> dict:
-    directory = Path(run_dir).resolve()
-    config_path = directory / "experiment_config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    reason = analysis_block_reason(config)
-    if reason:
-        raise ValueError(reason)
-    config["analysis_status"], config["analysis_error"] = "running", None
-    config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    try:
-        result = _analyze_new_run(directory, config)
-    except BaseException as exc:
-        config["analysis_status"] = "cancelled" if isinstance(exc, WorkflowCancelled) else "failed"
-        config["analysis_error"] = str(exc)
-        config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        raise
-    config["analysis_status"], config["analysis_error"] = "completed", None
-    config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    return result
-
-
-def _analyze_new_run(directory: Path, config: dict) -> dict:
-    parameters = config["parameters"]
-    expected_points = int(parameters["RF_AMP_POINTS"])
-    expected_noise = int(parameters["NOISE_N_AVG"])
-    nperseg_config = int(parameters["NOISE_NPERSEG"])
-    if expected_points < 2 or expected_noise < 1 or nperseg_config < 2:
-        raise ValueError("运行参数中的响应点数、噪声次数或 Welch 段长无效")
-    check_cancelled()
-    with np.load(directory / "raw" / "response_data.npz", allow_pickle=False) as data:
-        response = {key: np.asarray(data[key], dtype=float) for key in ("amplitudes_V", "amplitudes_nT", "demod3_x_V", "demod3_y_V", "demod3_r_V")}
-        z_v_to_nt = float(data["z_v_to_nT"])
-    if any(value.shape != (expected_points,) or not np.all(np.isfinite(value)) for value in response.values()):
-        raise ValueError("响应原始数据不完整或含非有限值")
-    field, x = response["amplitudes_nT"], response["demod3_x_V"]
-    if np.any(np.diff(field) <= 0) or not math.isfinite(z_v_to_nt) or z_v_to_nt <= 0 or not np.allclose(field, response["amplitudes_V"] * z_v_to_nt):
-        raise ValueError("响应磁场轴或电压到磁场标定无效")
-    fit = fit_response_curve(field, x)
-    slope_nt = fit["slope_V_per_nT"]
-    slope_ft = slope_nt / 1_000_000
-    if not math.isfinite(slope_ft) or slope_ft <= 1e-30:
-        raise ValueError("X 响应斜率过小或无效，无法计算灵敏度")
-
-    noise_files = sorted((directory / "raw").glob("noise_D3_*.npz"))
-    if [path.name for path in noise_files] != [f"noise_D3_{index:04d}.npz" for index in range(expected_noise)]:
-        raise ValueError("噪声原始记录不完整")
-    spectra, rates = [], []
-    frequency = None
-    for path in noise_files:
-        check_cancelled()
-        with np.load(path, allow_pickle=False) as data:
-            waveform = np.asarray(data["noise_x_V"], dtype=float)
-            rate = float(data["actual_rate_Sa_s"])
-            if str(data["signal_path"]) != "sample.x" or int(data["demod_idx"]) != 3:
-                raise ValueError("噪声记录必须来自 Demod3 X")
-        if waveform.ndim != 1 or len(waveform) < 2 or not np.all(np.isfinite(waveform)) or not math.isfinite(rate) or rate <= 0:
-            raise ValueError(f"无效噪声记录：{path.name}")
-        segment = min(nperseg_config, len(waveform))
-        f, psd = welch(waveform - waveform.mean(), fs=rate, nperseg=segment, noverlap=segment // 2, scaling="density")
-        if frequency is None:
-            frequency = f
-        elif len(f) != len(frequency) or not np.allclose(f, frequency):
-            psd = np.interp(frequency, f, psd)
-        spectra.append(psd)
-        rates.append(rate)
-    matrix = np.asarray(spectra)
-    average = matrix.mean(axis=0)
-    hwhm_nT = None
-    hwhm_hz = None
-    # ponytail: 用幅度域色散 gamma 作为等效频域 HWHM；需要真实扫频线宽时接入独立频响标定。
-    if fit["success"]:
-        fitted_gamma_nT = abs(float(np.asarray(fit["popt"], dtype=float)[1]))
-        if math.isfinite(fitted_gamma_nT) and fitted_gamma_nT > 0:
-            hwhm_nT = fitted_gamma_nT
-            hwhm_hz = fitted_gamma_nT * LARMOR_PER_NT
-    sensitivity_result = compute_sensitivity(
-        average,
-        frequency,
-        slope_V_per_fT=slope_ft,
-        f_larmor_Hz=hwhm_hz or 0.0,
-        f_skip_low=3.0,
-        flat_frac=1.0,
-    )
-    sensitivity_raw = sensitivity_result.sens_raw
-    sensitivity_corrected = sensitivity_result.sens_corrected
-    sensitivity = sensitivity_corrected
-    flat_mask = sensitivity_result.flat_mask & np.isfinite(sensitivity)
-    median = float(np.median(sensitivity[flat_mask])) if flat_mask.any() else float("nan")
-    raw_median = float(np.median(sensitivity_raw[flat_mask])) if flat_mask.any() else float("nan")
-    flat_min, flat_max = (float(frequency[flat_mask].min()), float(frequency[flat_mask].max())) if flat_mask.any() else (float("nan"), float("nan"))
-    actual_rate = float(np.median(rates))
-    analysis = _plain({
-        "experiment_id": EXPERIMENT_ID, "experiment_type": DATA_TYPE, "schema_version": 2,
-        "data_dir": str(directory), "signal_chain": SIGNAL_CHAIN, "response_component": "X", "noise_component": "X",
-        "response_fit": {key: value for key, value in fit.items() if not key.startswith("fit_")} | {"slope_V_per_fT": slope_ft, "z_v_to_nT": z_v_to_nt, "gamma_nT": hwhm_nT, "f_larmor_Hz": hwhm_hz},
-        "frequency_response_correction": {
-            "applied": hwhm_hz is not None,
-            "model": "sqrt(1 + (f / f_larmor_Hz)^2)",
-            "source": "Demod3 X 对 Z RF 场色散拟合的 gamma",
-            "gamma_nT": hwhm_nT,
-            "hwhm_Hz": hwhm_hz,
-        },
-        "noise_psd": {"n_avg": len(spectra), "actual_rate_Sa_s": actual_rate, "actual_rates_Sa_s": rates, "nperseg": nperseg_config, "freq_min_Hz": float(frequency[0]), "freq_max_Hz": float(frequency[-1])},
-        "sensitivity": {"best_median_fT_per_sqrtHz": median, "flat_median_fT_per_sqrtHz": median, "raw_flat_median_fT_per_sqrtHz": raw_median, "flat_fmin_Hz": flat_min, "flat_fmax_Hz": flat_max, "report_fmin_Hz": 3.0, "report_fmax_Hz": flat_max, "correction_applied": hwhm_hz is not None},
-    })
-    # 全部输入和计算验证完成后才创建或写入结果，旧格式不产生任何结果文件。
-    check_cancelled()
-    output = directory / "results"
-    output.mkdir(exist_ok=True)
-    report_runtime_progress("analysis", "保存 X 斜率、PSD 与灵敏度结果", 95)
-    np.savez(output / "response_fit.npz", **{key: value for key, value in fit.items() if key != "failure_reason"}, slope_V_per_fT=slope_ft, gamma_nT=np.nan if hwhm_nT is None else hwhm_nT, f_larmor_Hz=np.nan if hwhm_hz is None else hwhm_hz, **response)
-    np.savez(output / "psd_avg.npz", freq_Hz=frequency, psd_avg_V2_per_Hz=average, psd_matrix_V2_per_Hz=matrix, n_avg=len(spectra), actual_rate_Sa_s=actual_rate)
-    np.savez(output / "sensitivity.npz", freq_Hz=frequency, sensitivity_fT_per_sqrtHz=sensitivity, sensitivity_raw_fT_per_sqrtHz=sensitivity_raw, sensitivity_corrected_fT_per_sqrtHz=sensitivity_corrected, correction_factor=sensitivity_result.correction_factor, psd_avg_V2_per_Hz=average, slope_V_per_nT=slope_nt, slope_V_per_fT=slope_ft, gamma_nT=np.nan if hwhm_nT is None else hwhm_nT, f_larmor_Hz=np.nan if hwhm_hz is None else hwhm_hz, best_median_fT_per_sqrtHz=median, flat_median_fT_per_sqrtHz=median, raw_flat_median_fT_per_sqrtHz=raw_median, flat_fmin_Hz=flat_min, flat_fmax_Hz=flat_max, flat_mask=flat_mask.astype(np.uint8))
-    (output / "analysis.yaml").write_text(yaml.safe_dump(analysis, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    (output / "analysis.json").write_text(json.dumps(analysis, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
-
-    def response_plot(axis):
-        axis.plot(field, response["demod3_y_V"], ".", color="gray", alpha=0.5, ms=4, label="Demod3 Y")
-        axis.plot(field, response["demod3_r_V"], ".", color="gray", alpha=0.8, ms=4, label="Demod3 R")
-        axis.plot(field, x, "o", ms=3, label="Demod3 X (response)")
-        if fit["success"]:
-            axis.plot(fit["fit_x_nT"], fit["fit_y_V"], "k--", label=f"Dispersive fit (R²={fit['r_squared']:.3f})")
-            axis.axvline(fit["optimum_nT"], color="gray", linestyle=":", alpha=0.5)
-            annotation = f"dX/dB = {slope_nt:.3e} V/nT\nDispersive HWHM = {float(fit['popt'][1]):.3g} nT"
-            if hwhm_hz is not None:
-                annotation += f" ({hwhm_hz:.3g} Hz)"
-        else:
-            annotation = f"dX/dB ≈ {slope_nt:.3e} V/nT (numeric)"
-        axis.text(0.02, 0.96, annotation, transform=axis.transAxes, va="top", ha="left", fontsize=8, bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8, "edgecolor": "0.7"})
-        axis.set(xlabel="RF field (nT)", ylabel="Demod3 (V)", title="RF dispersion response" + ("" if fit["success"] else " [fit failed]"))
-        axis.grid(True, alpha=0.3)
-        axis.legend(fontsize=8)
-
-    def sensitivity_plot(axis):
-        positive = frequency > 0
-        axis.loglog(frequency[positive], sensitivity[positive], label="Lorentzian-corrected sensitivity")
-        axis.loglog(frequency[positive], sensitivity_raw[positive], color="gray", linewidth=0.7, alpha=0.5, label="Raw sensitivity")
-        if flat_mask.any():
-            axis.plot(frequency[flat_mask], sensitivity[flat_mask], color="darkgreen", lw=1.6, label=f"Flat band {flat_min:.0f}–{flat_max:.0f} Hz")
-        if math.isfinite(median):
-            axis.axhline(median, color="darkgreen", linestyle="--", alpha=0.7, label=f"Median = {median:.3g} fT/√Hz")
-        if hwhm_hz is not None:
-            axis.axvline(hwhm_hz, color="tab:orange", linestyle=":", alpha=0.7, label=f"HWHM = {hwhm_hz:.0f} Hz")
-        axis.set(xlabel="Frequency (Hz)", ylabel="Sensitivity (fT/√Hz)", title="Sensitivity spectrum (Lorentzian corrected)")
-        axis.set_xlim(0.5, max(1000.0, 2.0 * (hwhm_hz or 0.0), float(frequency[-1])))
-        axis.grid(True, alpha=0.3, which="both")
-        axis.legend(fontsize=8)
-
-    with plot_style_context("paper"):
-        for name, draw in (("response_curve.png", response_plot), ("sensitivity.png", sensitivity_plot)):
+    def execute(self, selected, expected_revision=None):
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("分析状态已改变，请刷新后重试")
+        selected = validate_selection(self.stages, self.states, selected)
+        self.revision += 1
+        for item in selected:
             check_cancelled()
-            figure, axis = new_figure(layout="constrained")
-            draw(axis)
-            save_figure(figure, output / name)
-        figure, axis = new_figure(layout="constrained")
-        axis.loglog(frequency[frequency > 0], average[frequency > 0])
-        axis.set(xlabel="Frequency (Hz)", ylabel="X noise PSD (V²/Hz)")
-        save_figure(figure, output / "noise_psd.png")
-        check_cancelled()
-        figure, axes = new_figure(nrows=2, height_ratios=(1.2, 1), width_mm=177.8, height_mm=130, layout="constrained")
-        response_plot(axes[0])
-        sensitivity_plot(axes[1])
-        save_figure(figure, output / "full_analysis.png")
-    report_runtime_progress("analysis", "离线分析完成", 100)
-    return analysis
+            invalidate(self.stages, self.states, item)
+            self._archive_from(item)
+            self.states[item] = {"status": "running", "error": ""}
+            summary_keys = {"B02": ("response_fit",), "B03": ("noise_psd",),
+                            "B04": ("sensitivity", "frequency_response_correction")}
+            for stage in invalidated_stages(self.stages, item):
+                for key in summary_keys.get(stage.id, ()):
+                    self.summary.pop(key, None)
+            self.summary.update(status="running", options=dict(self.options))
+            self.summary.pop("error", None)
+            self.persist()
+            try:
+                nperseg = self.options["noise_nperseg"]
+                if item == "B01":
+                    analysis_steps.load_inputs(self.run_dir, self.config)
+                else:
+                    self.results.mkdir(exist_ok=True)
+                    if item == "B02":
+                        self.summary["response_fit"] = analysis_steps.response_fit(self.run_dir, self.config, component=self.identity.RESPONSE_COMPONENT)
+                    elif item == "B03":
+                        self.summary["noise_psd"] = analysis_steps.noise_psd(self.run_dir, self.config, nperseg)
+                    elif item == "B04":
+                        self.summary.update(analysis_steps.sensitivity_and_plots(self.run_dir, self.config, nperseg, identity=self.identity))
+                stage = next(stage for stage in self.stages if stage.id == item)
+                self.states[item] = {"status": "completed", "error": "", "artifacts": list(stage.artifacts),
+                    "files": {name: self._file_signature(self.results / name) for name in stage.artifacts}}
+                self.summary["status"] = "completed" if item == "B04" else "partial"
+            except BaseException as exc:
+                status = "cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else "quality_failed" if isinstance(exc, ValueError) else "failed"
+                self.states[item] = {"status": status, "error": str(exc)}
+                self.summary.update(status=status, error=str(exc))
+                raise
+            finally:
+                try:
+                    self.persist()
+                except Exception:
+                    if self.states[item]["status"] == "completed":
+                        raise
+        return self.summary
 
 
-def main() -> None:
-    analyze(runtime_run_dir())
+def analyze(run_dir: Path, *, workflow_type=AnalysisWorkflow) -> dict:
+    ctx = workflow_type(run_dir)
+    return ctx.execute([stage.id for stage in ctx.stages])
+
+
+def main(*, workflow_type=AnalysisWorkflow):
+    payload = json.loads(os.environ.get("LAB_TYPED_PARAMETERS", "{}"))
+    if payload.get("step_ids"):
+        ctx = workflow_type(runtime_run_dir(), payload.get("analysis_parameters"))
+        ctx.execute(payload["step_ids"], payload.get("revision"))
+    else:
+        analyze(runtime_run_dir(), workflow_type=workflow_type)
 
 
 if __name__ == "__main__":

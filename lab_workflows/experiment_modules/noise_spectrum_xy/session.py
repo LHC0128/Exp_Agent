@@ -15,7 +15,7 @@ from .stages import ACQUISITION, validate_selection
 from .workflow import Workflow
 
 
-def serve(ctx, stream):
+def serve(ctx, stream, *, stages=ACQUISITION, validate=validate_selection, finish_id="A14"):
     commands = Queue()
     disconnected = Event()
 
@@ -53,8 +53,8 @@ def serve(ctx, stream):
                     raise ValueError("会话修订已改变，请刷新后重试")
                 action = command["action"]
                 if action == "steps":
-                    validate_selection(ACQUISITION, ctx.states, command["step_ids"])
-                    if command["step_ids"] != ["A14"]:
+                    validate(stages, ctx.states, command["step_ids"])
+                    if command["step_ids"] != [finish_id]:
                         ctx.recheck()
                 elif action == "parameters":
                     ctx.update_parameters(command["parameters"])

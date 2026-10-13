@@ -10,7 +10,7 @@ from .common import load_mapping
 
 
 DUAL_VOLTAGE_EXPERIMENTS = frozenset({
-    "rf-sensitivity-aw", "rf-sensitivity-direct-aw-frequency",
+    "rf-sensitivity-aw", "rf-sensitivity-aw-r", "rf-sensitivity-direct-aw-frequency",
     "noise-spectrum-xy-demod3-r", "xy-direct-aw-dc-calibration",
     "rf-sensitivity-aw-frequency", "rf-sensitivity-constxy-frequency",
     "xy-aw-voltage-calibration", "xy-dc-voltage-calibration", "z-field-bandwidth",
@@ -21,7 +21,7 @@ FREQUENCY_KEYS = frozenset({
     "HF2_OSC_FREQ", "HF2_OSC_FREQ_HZ", "HF2_REFERENCE_FREQUENCY_HZ",
     "PUMP_MOD_FREQ", "PUMP_MOD_FREQ_HZ", "DEMOD0_OSC_FREQ",
     "HF2_DEMOD0_OSC_FREQ", "HF2_DEMOD0_OSC_FREQ_HZ", "DEMOD0_OSC_FREQ_HZ",
-    "Z_RF_FREQ", "Z_RF_FREQ_HZ", "Z_RF_FREQS_HZ", "RF_FREQS_HZ",
+    "Z_RF_FREQ", "Z_RF_NOISE_FREQ", "Z_RF_FREQ_HZ", "Z_RF_FREQS_HZ", "RF_FREQS_HZ",
     "RF_FREQUENCIES_HZ", "Y_RF_FREQUENCY_HZ", "MAIN_FIELD_REFERENCE_FREQUENCY_HZ",
     "ZERO_BIAS_REFERENCE_FREQUENCY_HZ", "ZERO_BIAS_CENTER_FREQUENCY_HZ",
     "FREQUENCY_START_HZ", "FREQUENCY_STOP_HZ", "RF_FREQUENCY_START_HZ", "RF_FREQUENCY_STOP_HZ",

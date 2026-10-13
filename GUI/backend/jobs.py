@@ -17,6 +17,10 @@ TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 DEFAULT_MAX_TERMINAL_JOBS = 100
 
 
+class RestartInProgressError(RuntimeError):
+    """后端已进入重启阶段，拒绝创建新的任务。"""
+
+
 def _json_safe(value: Any) -> Any:
     """将任务结果中的 NumPy 等第三方标量转换为 JSON 原生类型。"""
     if isinstance(value, dict):
@@ -92,6 +96,8 @@ class JobManager:
         self._hardware_condition = Condition()
         self.max_terminal_jobs = max_terminal_jobs
         self._finished_sequence = 0
+        self._lifecycle_lock = Lock()
+        self._restart_pending = False
 
     def create(
         self,
@@ -100,15 +106,32 @@ class JobManager:
         *,
         hardware_required: bool = True,
     ) -> Job:
-        job = Job(id=uuid4().hex, kind=kind)
-        with self.jobs_lock:
-            self.jobs[job.id] = job
-        Thread(
-            target=self._run,
-            args=(job, runner, hardware_required),
-            daemon=True,
-        ).start()
-        return job
+        with self._lifecycle_lock:
+            if self._restart_pending:
+                raise RestartInProgressError("后端正在重启，暂不能创建新任务")
+            job = Job(id=uuid4().hex, kind=kind)
+            with self.jobs_lock:
+                self.jobs[job.id] = job
+            Thread(
+                target=self._run,
+                args=(job, runner, hardware_required),
+                daemon=True,
+            ).start()
+            return job
+
+    def begin_restart(self) -> bool:
+        """在没有任务或硬件操作时原子地锁定重启阶段。"""
+        with self._lifecycle_lock:
+            if self._restart_pending:
+                return False
+            with self._hardware_condition:
+                if self.hardware_lock.locked() or self._hardware_queue:
+                    return False
+                with self.jobs_lock:
+                    if any(job.status in {"queued", "running"} for job in self.jobs.values()):
+                        return False
+                    self._restart_pending = True
+                    return True
 
     def _run(
         self,
@@ -199,14 +222,17 @@ class JobManager:
         hardware_busy 冲突；成功时保证不会同时持有锁并返回 False。
         """
         deadline = time.monotonic() + max(0.0, float(timeout))
-        with self._hardware_condition:
-            while True:
-                if not self._hardware_queue:
-                    return self.hardware_lock.acquire(blocking=False)
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    return False
-                self._hardware_condition.wait(timeout=min(0.25, remaining))
+        with self._lifecycle_lock:
+            if self._restart_pending:
+                return False
+            with self._hardware_condition:
+                while True:
+                    if not self._hardware_queue:
+                        return self.hardware_lock.acquire(blocking=False)
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return False
+                    self._hardware_condition.wait(timeout=min(0.25, remaining))
 
     def _finish(
         self,

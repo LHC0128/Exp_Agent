@@ -86,6 +86,10 @@ print(instr.model, instr.device_id)
 
 ## 安全与工作流边界
 
+正式实验连接后调用 `lab_workflows.steps.initialize_lockin_inputs()`，关闭当前型号全部主电压输入
+的 AC 耦合和 50 Ω 终端，保留量程与差分设置。`SignalInputConfig` 默认使用 DC 耦合和高阻；
+后续实验配置复用默认值，旧参数键保留兼容并归一到关闭值，GUI 不再提供开启选项。
+
 底层 setter 负责节点操作、参数校验和单位转换。正式输出设置由
 [lockin_control.py](../../lab_workflows/lockin_control.py) 复用实验安全限值检查；
 型号特有的 Aux 安全策略也保留在该层。连接后的参考时钟同步和安全收尾复用

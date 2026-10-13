@@ -35,7 +35,7 @@ parameters:
   SIGIN2_INDEX: 1
   SIGIN2_RANGE_V: 1.0
   SIGIN2_AC_COUPLING: false
-  SIGIN2_IMPEDANCE_OHM: 50
+  SIGIN2_IMPEDANCE_OHM: 1000000
   FIXED_PARAMS.Pump_laser_power: 0.5
   FIXED_PARAMS.Probe_laser_power: 0.3
   FIXED_PARAMS.main_magnetic_field: 1.03

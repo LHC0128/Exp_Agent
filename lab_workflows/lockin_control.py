@@ -12,13 +12,13 @@ from .common import WorkflowCancelled, load_safety_limits, validate_safety_limit
 from .steps.run_directory import create_run_directory
 
 
-def output_rule(device_id: str, kind: str, index: int) -> tuple[str, dict]:
+def output_rule(device_id: str, kind: str, index: int, *, project_root=None) -> tuple[str, dict]:
     key = f"{device_id}_{kind}_{index}"
-    return key, dict(load_safety_limits().get(key) or {})
+    return key, dict(load_safety_limits(project_root).get(key) or {})
 
 
-def _bounded_rule(device_id: str, kind: str, index: int) -> tuple[str, dict]:
-    key, rule = output_rule(device_id, kind, index)
+def _bounded_rule(device_id: str, kind: str, index: int, *, project_root=None) -> tuple[str, dict]:
+    key, rule = output_rule(device_id, kind, index, project_root=project_root)
     if any(rule.get(name) is None for name in ("min", "max")):
         raise PermissionError(f"尚未确认安全电压范围：{key}；该输出写入已禁用")
     if not all(math.isfinite(float(rule[name])) for name in ("min", "max")) or rule["min"] >= rule["max"]:
@@ -57,7 +57,7 @@ def read_outputs(instr, device_id: str, demod_idx: int) -> dict:
     return {"signal_outputs": signal_outputs, "aux_outputs": auxiliary_outputs}
 
 
-def apply_settings(instr, device_id: str, demod_idx: int, settings: dict) -> None:
+def apply_settings(instr, device_id: str, demod_idx: int, settings: dict, *, project_root=None) -> None:
     """一次请求处理一类设置；主输出失败后关闭本通道。"""
     if "demod" in settings:
         config = settings["demod"]
@@ -79,7 +79,7 @@ def apply_settings(instr, device_id: str, demod_idx: int, settings: dict) -> Non
         if config.get("enabled") is False and set(config) <= {"index", "enabled"}:
             demod.set_output_enable(instr, index, False)
             return
-        key, rule = _bounded_rule(device_id, "signal_output", index)
+        key, rule = _bounded_rule(device_id, "signal_output", index, project_root=project_root)
         if instr.get_int(f"{path}/add"):
             raise ValueError("Signal Output 正在叠加外部输入，无法检查总电压；请先在 LabOne 核对叠加模式")
         count = instr.capabilities["demodulators"]
@@ -118,7 +118,7 @@ def apply_settings(instr, device_id: str, demod_idx: int, settings: dict) -> Non
     path = instr.aux_out_path(index)
     source_demod = config["demod_index"]
     instr.demod_path(source_demod)
-    key, rule = _bounded_rule(device_id, "aux_output", index)
+    key, rule = _bounded_rule(device_id, "aux_output", index, project_root=project_root)
     validate_safety_limit(key, config["offset_v"], {key: rule})
     if instr.model == "HF2":
         adc = instr.get_int(f"{instr.demod_path(source_demod)}/adcselect")

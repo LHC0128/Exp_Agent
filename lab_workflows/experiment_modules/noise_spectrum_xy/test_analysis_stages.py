@@ -13,7 +13,7 @@ import yaml
 
 from ...analysis.noise_spectrum_separation import lorentzian_vs_control
 from . import analysis
-from .stages import ANALYSIS
+from .stages import ANALYSIS, definition
 
 
 class AnalysisStagesTest(unittest.TestCase):
@@ -62,6 +62,17 @@ class AnalysisStagesTest(unittest.TestCase):
                 self.assertEqual(first.files, second.files)
                 for key in first.files:
                     np.testing.assert_array_equal(first[key], second[key])
+
+    def test_parameter_impact_preview_matches_saved_analysis_invalidation(self):
+        run = self.directory("preview")
+        analysis.analyze(run)
+        original = (run / "experiment_config.yaml").read_bytes()
+        impacts = definition()["parameter_impacts"]["analysis"]
+        for name, value in (("ANALYSIS_FREQUENCY_MAX_HZ", 950.0), ("ANALYSIS_FIT_HALF_WIDTH_HZ", 350.0)):
+            with self.subTest(parameter=name):
+                ctx = analysis.AnalysisWorkflow(run, {name: value})
+                self.assertEqual([key for key, state in ctx.states.items() if state["status"] == "stale"], impacts[name])
+                self.assertEqual((run / "experiment_config.yaml").read_bytes(), original)
 
     def test_recompute_archives_only_affected_products_and_input_drift_rejects_reuse(self):
         run = self.directory("reuse")

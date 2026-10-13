@@ -8,6 +8,7 @@
 # 基准参数，再只改变一个目标参数，随后重新校准 HF2 相位并执行完整测量。
 
 # %% Cell 1
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -315,6 +316,7 @@ try:
     hfi.connect()
     hfi.set_extclk(True)
     devices["hf2"] = hfi
+    initialize_lockin_inputs(hfi)
 
 except Exception as e:
     print(f"设备连接失败: {e}")
@@ -478,9 +480,7 @@ def calibrate_phase(devs):
     sig_in_cfg = SignalInputConfig(
         input_index=0,
         range=HF2_SIGNAL_RANGE,
-        ac_coupling=True,
         diff=False,
-        impedance=50,
     )
     demod.configure_signal_input(hfi, sig_in_cfg)
 

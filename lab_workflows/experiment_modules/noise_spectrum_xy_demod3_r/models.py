@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lockin_amplifier import SignalInputConfig
 import math
 from dataclasses import dataclass
 
@@ -70,8 +71,8 @@ class NoiseSpectrumXYDemod3RParams(ExperimentParams):
     auxout_offset_v: float = parameter(default=0.0, external_name="AUXOUT_OFFSET_V", label="AuxOut 偏置", unit="V", group="advanced")
     sigin2_index: int = parameter(default=1, external_name="SIGIN2_INDEX", label="Signal Input 2 索引", group="advanced", minimum=0)
     sigin2_range_v: float = parameter(default=1.0, external_name="SIGIN2_RANGE_V", label="Signal Input 2 量程", unit="V", group="advanced", minimum=0.001)
-    sigin2_ac_coupling: bool = parameter(default=False, external_name="SIGIN2_AC_COUPLING", label="Signal Input 2 AC 耦合", group="advanced")
-    sigin2_impedance_ohm: int = parameter(default=50, external_name="SIGIN2_IMPEDANCE_OHM", label="Signal Input 2 阻抗", unit="Ω", group="advanced", minimum=1)
+    sigin2_ac_coupling: bool = parameter(default=False, external_name="SIGIN2_AC_COUPLING", label="Signal Input 2 AC 耦合", group="advanced", visible=False)
+    sigin2_impedance_ohm: int = parameter(default=1000000, external_name="SIGIN2_IMPEDANCE_OHM", label="Signal Input 2 阻抗", unit="Ω", group="advanced", minimum=1, visible=False)
 
     temperature_tolerance_c: float = parameter(default=1.0, external_name="TEMPERATURE_TOLERANCE_C", label="温度稳定容差", unit="°C", group="advanced", minimum=0)
     temperature_stable_reads: int = parameter(default=1, external_name="TEMPERATURE_STABLE_READS", label="温度连续稳定读数", group="advanced", minimum=1)
@@ -82,6 +83,12 @@ class NoiseSpectrumXYDemod3RParams(ExperimentParams):
     temperature: float = parameter(default=100.0, external_name="FIXED_PARAMS.temperature", label="气室温度", unit="°C", group="basic", safety_key="temperature")
     temp_switch: float = parameter(default=5.0, external_name="FIXED_PARAMS.Temp_Switch", label="温控开关电平", unit="V", group="advanced", safety_key="Temp_Switch")
     main_magnetic_field: float = parameter(default=1.03, external_name="FIXED_PARAMS.main_magnetic_field", label="主磁场电流", unit="mA", group="basic", safety_key="main_magnetic_field")
+
+    def __post_init__(self):
+        # 历史参数键仍可读取，输入模式统一使用公共关闭设置。
+        defaults = SignalInputConfig()
+        self.sigin2_ac_coupling = defaults.ac_coupling
+        self.sigin2_impedance_ohm = defaults.impedance
 
     @classmethod
     def migrate_external(cls, values, schema_version: int):

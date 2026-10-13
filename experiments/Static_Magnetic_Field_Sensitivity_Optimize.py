@@ -23,6 +23,7 @@
 # 在汇总中会标记 `fit_is_valid=False`，但仍会记录供排查。
 
 # %% Cell 1
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -247,6 +248,7 @@ try:
     print(f"HF2 已连接: {hfi.idn}")
     hfi.set_extclk(True)
     devices["hf2"] = hfi
+    initialize_lockin_inputs(hfi)
 
 except Exception as e:
     print(f"设备连接失败: {e}")
@@ -381,7 +383,7 @@ def calibrate_phase(hfi, dg_temp, dg_sweep):
 
     sig_in_cfg = SignalInputConfig(
         input_index=0, range=HF2_SIGNAL_RANGE,
-        ac_coupling=True, diff=False, impedance=50,
+        diff=False,
     )
     demod.configure_signal_input(hfi, sig_in_cfg)
 

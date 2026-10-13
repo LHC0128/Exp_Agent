@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="rf-phase-response",
     variant="mx-z-optimal-control-xy-balance",
     description=(
-        '保持 Z 周期最优控制，在 X/Y DC 平衡场网格上逐点扫描 Y RF Burst 相位，采集 Demod0 R 并拟合绝对值正弦相位响应。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
+        '保持 Z 周期最优控制，在 X/Y DC 平衡场网格上逐点扫描 Y RF Burst 相位，采集 Demod0 R 并拟合绝对值正弦相位响应。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
     ),
     data_type="Mx_Z_Optimal_Control_XY_RF_Phase_Response",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

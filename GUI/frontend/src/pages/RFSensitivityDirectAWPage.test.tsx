@@ -18,14 +18,136 @@ let comparisonRuns: any[];
 let preflightOk: boolean;
 let pageTotal: number;
 let sources: MockEventSource[];
+let activeSession: any;
+let sessionJob: any;
+let stepResult: any;
+let parameterResult: any;
+let parameterApplyError: boolean;
 const fields = [
   { name: "RUN_TAG", label: "运行标签", type: "string", default: "rf_sens_aw", group: "basic" },
   { name: "ARB_WAVEFORM_FILE", label: "最优控制波形版本", type: "string", default: "", group: "basic", options: [{ value: "", label: "请选择最优控制版本" }, ...["v1", "v8"].map(version => ({ value: `${version}/waveforms/optimal_control_waveform.csv`, label: version }))] },
   ...["FREQ", "AMPLITUDE", "OFFSET", "DUTY", "PHASE"].map((suffix, index) => ({ name: `XY_TRIGGER_${suffix}`, label: `共同触发${suffix}`, type: "number", default: [100, 5, 2.5, 50, 0][index], group: "basic" })),
   { name: "DEMOD3_ADC_SELECT", label: "Demod3 输入", type: "integer", default: 1, group: "advanced", read_only: true },
   { name: "LOOPBACK_AUX_SCALE", label: "回环增益", type: "number", default: 2.2044, group: "advanced" },
+  { name: "TEMP_SWITCH_ON_LAG_S", label: "恢复温控后等待", type: "number", default: 0.5, group: "basic" },
+  { name: "NOISE_NPERSEG", label: "Welch 段长", type: "integer", default: 2000, group: "basic" },
 ];
+const flow = {
+  acquisition: [
+    {"id": "A01", "title": "启动预检", "group": "启动准备", "dependencies": [], "parameters": [], "artifacts": [], "display_parameters": []},
+    {"id": "A02", "title": "设备连接", "group": "启动准备", "dependencies": ["A01"], "parameters": [], "artifacts": [], "display_parameters": []},
+    {"id": "A03", "title": "参考时钟同步", "group": "启动准备", "dependencies": ["A02"], "parameters": [], "artifacts": [], "display_parameters": []},
+    {"id": "A04", "title": "初始输出设置", "group": "初始条件", "dependencies": ["A03"], "parameters": ["FIXED_PARAMS.Pump_laser_power", "FIXED_PARAMS.Probe_laser_power", "FIXED_PARAMS.main_magnetic_field", "FIXED_PARAMS.Temp_Switch"], "artifacts": [], "display_parameters": ["FIXED_PARAMS.Pump_laser_power", "FIXED_PARAMS.Probe_laser_power", "FIXED_PARAMS.main_magnetic_field", "FIXED_PARAMS.Temp_Switch"]},
+    {"id": "A05", "title": "温度稳定", "group": "初始条件", "dependencies": ["A04"], "parameters": ["FIXED_PARAMS.temperature"], "artifacts": [], "display_parameters": ["FIXED_PARAMS.temperature"]},
+    {"id": "A06", "title": "Pump 载波与门控", "group": "激励与触发", "dependencies": ["A05"], "parameters": ["PUMP_MOD_FREQ", "PUMP_MOD_AMPLITUDE", "PUMP_MOD_DUTY", "RF_GATE_AMPLITUDE", "RF_GATE_OFFSET"], "artifacts": [], "display_parameters": ["PUMP_MOD_FREQ", "PUMP_MOD_AMPLITUDE", "PUMP_MOD_DUTY", "RF_GATE_AMPLITUDE", "RF_GATE_OFFSET"]},
+    {"id": "A07", "title": "XYZ 共同触发", "group": "激励与触发", "dependencies": ["A06"], "parameters": ["XY_TRIGGER_FREQ", "XY_TRIGGER_AMPLITUDE", "XY_TRIGGER_OFFSET", "XY_TRIGGER_DUTY", "XY_TRIGGER_PHASE", "Z_TRIGGER_FREQ", "Z_TRIGGER_AMPLITUDE", "Z_TRIGGER_OFFSET", "Z_TRIGGER_DUTY", "Z_TRIGGER_PHASE"], "artifacts": [], "display_parameters": ["XY_TRIGGER_FREQ", "XY_TRIGGER_AMPLITUDE", "XY_TRIGGER_OFFSET", "XY_TRIGGER_DUTY", "XY_TRIGGER_PHASE"]},
+    {"id": "A08", "title": "Bell-Bloom / Demod0 校相", "group": "四级相位校准", "dependencies": ["A07"], "parameters": ["DEMOD0_IDX", "DEMOD0_OSC_IDX", "DEMOD0_SIGNAL_RANGE", "DEMOD0_ORDER", "DEMOD0_TC_CALIB", "DEMOD0_RATE", "TEMP_OFF_SETTLE_S", "TEMP_SWITCH_ON_LAG_S"], "artifacts": [], "display_parameters": ["DEMOD0_IDX", "DEMOD0_OSC_IDX", "DEMOD0_SIGNAL_RANGE", "DEMOD0_ORDER", "DEMOD0_TC_CALIB", "DEMOD0_RATE", "TEMP_OFF_SETTLE_S", "TEMP_SWITCH_ON_LAG_S"]},
+    {"id": "A09", "title": "XY DirectAW 上传与迭代校相", "group": "四级相位校准", "dependencies": ["A08"], "parameters": ["ARB_WAVEFORM_FILE", "AW_REPEAT_FREQ", "XY_CTRL_K_HZ_PER_V", "XY_CTRL_B_HZ", "XY_CTRL_PHASE", "XY_CTRL_QUAD", "XY_CTRL_PHASE_TOL_DEG", "XY_CTRL_PHASE_MAX_ITER", "XY_CTRL_PHASE_MIN_R_V", "XY_CTRL_PHASE_MIN_R_RATIO"], "artifacts": ["raw/xy_aw_waveforms_initial.npz", "raw/xy_aw_waveforms.npz"], "display_parameters": ["ARB_WAVEFORM_FILE", "AW_REPEAT_FREQ", "XY_CTRL_K_HZ_PER_V", "XY_CTRL_B_HZ", "XY_CTRL_PHASE", "XY_CTRL_QUAD", "XY_CTRL_PHASE_TOL_DEG", "XY_CTRL_PHASE_MAX_ITER", "XY_CTRL_PHASE_MIN_R_V", "XY_CTRL_PHASE_MIN_R_RATIO", "TEMP_OFF_SETTLE_S", "TEMP_SWITCH_ON_LAG_S"]},
+    {"id": "A10", "title": "HF2 回环与 Z RF 响应准备", "group": "四级相位校准", "dependencies": ["A09"], "parameters": ["DEMOD0_TC_MEAS", "DEMOD3_IDX", "DEMOD3_OSC_IDX", "DEMOD3_ADC_SELECT", "DEMOD3_ORDER", "DEMOD3_TC", "DEMOD3_RATE", "LOOPBACK_AUX_SCALE", "LOOPBACK_AUX_OFFSET_V", "LOOPBACK_INPUT_RANGE_V", "LOOPBACK_INPUT_DIFF", "Z_RF_FREQ", "Z_RF_AMPLITUDE_INIT", "Z_BURST_PHASE_INIT"], "artifacts": [], "display_parameters": ["DEMOD0_TC_MEAS", "DEMOD3_IDX", "DEMOD3_OSC_IDX", "DEMOD3_ADC_SELECT", "DEMOD3_ORDER", "DEMOD3_TC", "DEMOD3_RATE", "LOOPBACK_AUX_SCALE", "LOOPBACK_AUX_OFFSET_V", "LOOPBACK_INPUT_RANGE_V", "LOOPBACK_INPUT_DIFF", "Z_RF_FREQ", "Z_RF_AMPLITUDE_INIT", "Z_BURST_PHASE_INIT"]},
+    {"id": "A11", "title": "控制 AM 与 Z RF 触发相位扫描", "group": "四级相位校准", "dependencies": ["A10"], "parameters": ["Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG", "TEMP_GROUP_SIZE", "RF_STEP_SETTLE_S", "SCAN_POINT_DURATION_S"], "artifacts": ["raw/z_phase_scan.npz", "results/z_phase_scan.png", "results/z_phase_scan.pdf"], "display_parameters": ["Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG", "Z_RF_AMPLITUDE_INIT", "TEMP_OFF_SETTLE_S", "TEMP_SWITCH_ON_LAG_S", "TEMP_GROUP_SIZE", "RF_STEP_SETTLE_S", "SCAN_POINT_DURATION_S"]},
+    {"id": "A12", "title": "Demod3 校相", "group": "四级相位校准", "dependencies": ["A11"], "parameters": [], "artifacts": [], "display_parameters": ["Z_RF_AMPLITUDE_INIT", "TEMP_OFF_SETTLE_S", "TEMP_SWITCH_ON_LAG_S"]},
+    {"id": "A13", "title": "有符号 Z RF 幅度扫描", "group": "采集与结束", "dependencies": ["A12"], "parameters": ["RUN_TAG", "RF_AMP_START", "RF_AMP_STOP", "RF_AMP_POINTS", "Z_V_TO_NT"], "artifacts": ["raw/response_data.npz", "experiment_config.yaml"], "display_parameters": ["RUN_TAG", "RF_AMP_START", "RF_AMP_STOP", "RF_AMP_POINTS", "Z_V_TO_NT", "TEMP_OFF_SETTLE_S", "TEMP_SWITCH_ON_LAG_S", "TEMP_GROUP_SIZE", "RF_STEP_SETTLE_S", "SCAN_POINT_DURATION_S"]},
+    {"id": "A14", "title": "零 RF 工作点 X 噪声采集", "group": "采集与结束", "dependencies": ["A13"], "parameters": ["NOISE_N_AVG", "NOISE_DURATION", "NOISE_RATE", "DEMOD3_NOISE_TC", "DEMOD3_NOISE_ORDER"], "artifacts": ["raw/noise_D3_*.npz"], "display_parameters": ["NOISE_N_AVG", "NOISE_DURATION", "NOISE_RATE", "DEMOD3_NOISE_TC", "DEMOD3_NOISE_ORDER", "TEMP_OFF_SETTLE_S", "TEMP_SWITCH_ON_LAG_S"]},
+    {"id": "A15", "title": "响应恢复与本轮安全收尾", "group": "采集与结束", "dependencies": ["A14"], "parameters": [], "artifacts": [], "display_parameters": []},
+    {"id": "A16", "title": "安全收尾 / 结束会话", "group": "采集与结束", "dependencies": [], "parameters": [], "artifacts": [], "display_parameters": []},
+  ],
+  analysis: [
+    {"id": "B01", "title": "加载配置与校验原始数据", "group": "独立离线分析", "dependencies": [], "parameters": [], "artifacts": [], "display_parameters": []},
+    {"id": "B02", "title": "X 色散响应与斜率", "group": "独立离线分析", "dependencies": ["B01"], "parameters": [], "artifacts": ["response_fit.npz"], "display_parameters": []},
+    {"id": "B03", "title": "Welch X 噪声 PSD", "group": "独立离线分析", "dependencies": ["B02"], "parameters": ["NOISE_NPERSEG"], "artifacts": ["psd_avg.npz"], "display_parameters": ["NOISE_NPERSEG"]},
+    {"id": "B04", "title": "RF 灵敏度、频响补偿与结果图", "group": "独立离线分析", "dependencies": ["B03"], "parameters": [], "artifacts": ["sensitivity.npz", "analysis.yaml", "analysis.json", "response_curve.png", "response_curve.pdf", "noise_psd.png", "noise_psd.pdf", "sensitivity.png", "sensitivity.pdf", "full_analysis.png", "full_analysis.pdf"], "display_parameters": []},
+  ],
+  parameter_impacts: {
+    acquisition: {
+      "FIXED_PARAMS.Pump_laser_power": ["A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "FIXED_PARAMS.Probe_laser_power": ["A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "FIXED_PARAMS.main_magnetic_field": ["A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "FIXED_PARAMS.Temp_Switch": ["A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "FIXED_PARAMS.temperature": ["A05", "A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "PUMP_MOD_FREQ": ["A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "PUMP_MOD_AMPLITUDE": ["A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "PUMP_MOD_DUTY": ["A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "RF_GATE_AMPLITUDE": ["A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "RF_GATE_OFFSET": ["A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_TRIGGER_FREQ": ["A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_TRIGGER_AMPLITUDE": ["A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_TRIGGER_OFFSET": ["A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_TRIGGER_DUTY": ["A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_TRIGGER_PHASE": ["A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "Z_TRIGGER_FREQ": ["A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "Z_TRIGGER_AMPLITUDE": ["A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "Z_TRIGGER_OFFSET": ["A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "Z_TRIGGER_DUTY": ["A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "Z_TRIGGER_PHASE": ["A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD0_IDX": ["A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD0_OSC_IDX": ["A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD0_SIGNAL_RANGE": ["A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD0_ORDER": ["A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD0_TC_CALIB": ["A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD0_RATE": ["A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "TEMP_OFF_SETTLE_S": ["A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "TEMP_SWITCH_ON_LAG_S": ["A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "ARB_WAVEFORM_FILE": ["A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "AW_REPEAT_FREQ": ["A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_CTRL_K_HZ_PER_V": ["A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_CTRL_B_HZ": ["A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_CTRL_PHASE": ["A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_CTRL_QUAD": ["A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_CTRL_PHASE_TOL_DEG": ["A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_CTRL_PHASE_MAX_ITER": ["A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_CTRL_PHASE_MIN_R_V": ["A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "XY_CTRL_PHASE_MIN_R_RATIO": ["A09", "A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD0_TC_MEAS": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD3_IDX": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD3_OSC_IDX": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD3_ADC_SELECT": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD3_ORDER": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD3_TC": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "DEMOD3_RATE": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "LOOPBACK_AUX_SCALE": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "LOOPBACK_AUX_OFFSET_V": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "LOOPBACK_INPUT_RANGE_V": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "LOOPBACK_INPUT_DIFF": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "Z_RF_FREQ": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "Z_RF_AMPLITUDE_INIT": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "Z_BURST_PHASE_INIT": ["A10", "A11", "A12", "A13", "A14", "A15"],
+      "Z_PHASE_SCAN_START_DEG": ["A11", "A12", "A13", "A14", "A15"],
+      "Z_PHASE_SCAN_STOP_DEG": ["A11", "A12", "A13", "A14", "A15"],
+      "Z_PHASE_SCAN_STEP_DEG": ["A11", "A12", "A13", "A14", "A15"],
+      "TEMP_GROUP_SIZE": ["A11", "A12", "A13", "A14", "A15"],
+      "RF_STEP_SETTLE_S": ["A11", "A12", "A13", "A14", "A15"],
+      "SCAN_POINT_DURATION_S": ["A11", "A12", "A13", "A14", "A15"],
+      "RUN_TAG": ["A13", "A14", "A15"],
+      "RF_AMP_START": ["A13", "A14", "A15"],
+      "RF_AMP_STOP": ["A13", "A14", "A15"],
+      "RF_AMP_POINTS": ["A13", "A14", "A15"],
+      "Z_V_TO_NT": ["A13", "A14", "A15"],
+      "NOISE_N_AVG": ["A14", "A15"],
+      "NOISE_DURATION": ["A14", "A15"],
+      "NOISE_RATE": ["A14", "A15"],
+      "DEMOD3_NOISE_TC": ["A14", "A15"],
+      "DEMOD3_NOISE_ORDER": ["A14", "A15"],
+    },
+    analysis: {
+      "NOISE_NPERSEG": ["B03", "B04"],
+    },
+  },
+  diagram_url: "/api/experiments/rf-sensitivity-aw/workflow/diagram"
+};
 const layout = { basic: fields.filter(field => field.group === "basic").map(field => field.name), advanced: ["DEMOD3_ADC_SELECT", "LOOPBACK_AUX_SCALE"] };
+
+function makeSession() {
+  const parameters: Record<string, any> = Object.fromEntries(fields.map(field => [field.name, field.default]));
+  for (const suffix of ["FREQ", "AMPLITUDE", "OFFSET", "DUTY", "PHASE"]) parameters[`Z_TRIGGER_${suffix}`] = parameters[`XY_TRIGGER_${suffix}`];
+  return { session_id: "rf-session", job_id: "session-job", revision: 0, status: "waiting", pending_request: null,
+    parameters, steps: Object.fromEntries(flow.acquisition.map(stage => [stage.id, { status: "pending", error: "" }])),
+    outputs: {}, current_step: null, run_id: null };
+}
+
+function analysisState(runId: string) {
+  return { run_id: runId, revision: 4, options: { noise_nperseg: runId === "1009_latest" ? 800 : 600 },
+    steps: Object.fromEntries(flow.analysis.map(stage => [stage.id, { status: "completed", error: "" }])) };
+}
 
 class MockEventSource {
   onmessage: ((event: { data: string }) => void) | null = null;
@@ -34,7 +156,12 @@ class MockEventSource {
   close() {}
 }
 
-const renderPage = () => render(<MemoryRouter initialEntries={[`/experiments/${ID}`]}><Routes><Route path="/experiments/:experimentId" element={<ExperimentPage />} /></Routes></MemoryRouter>);
+const renderPage = async () => { const view = render(<MemoryRouter initialEntries={[`/experiments/${ID}`]}><Routes><Route path="/experiments/:experimentId" element={<ExperimentPage />} /></Routes></MemoryRouter>);
+  await screen.findByRole("button", { name: "创建分步会话" });
+  await waitFor(() => expect(document.querySelectorAll(".xy-node-parameters").length).toBeGreaterThan(0));
+  document.querySelectorAll<HTMLDetailsElement>(".xy-node-parameters").forEach(node => { node.open = true; });
+  return view;
+};
 
 beforeEach(() => {
   sources = [];
@@ -42,6 +169,10 @@ beforeEach(() => {
   jobs = [];
   pageTotal = 1;
   preflightOk = true;
+  activeSession = null;
+  stepResult = parameterResult = undefined;
+  parameterApplyError = false;
+  sessionJob = { id: "session-job", kind: `session:${ID}`, status: "running", events: [], message: "等待下一步" };
   analysisJob = { id: "analysis", kind: `analysis:${ID}:1009_latest`, status: "running", stage: "analysis", message: "正在分析", events: [] };
   comparisonJob = { id: "comparison", kind: `comparison:${ID}`, status: "running", stage: "analysis", message: "生成对比", events: [] };
   comparisonRuns = [];
@@ -53,6 +184,30 @@ beforeEach(() => {
   mockApi.mockReset();
   mockApi.mockImplementation(async (url: string, options?: RequestInit): Promise<any> => {
     if (url === BASE) return { title: "RF 灵敏度（DirectAW）", description: "XYZ 共用时序信号2主输出触发", wiring_notes: [] };
+    if (url === `${BASE}/workflow`) return flow;
+    if (url === `${BASE}/sessions/active`) return activeSession;
+    if (url === `${BASE}/sessions` && options?.method === "POST") {
+      activeSession = { ...makeSession(), parameters: JSON.parse(String(options.body)).parameters };
+      return activeSession;
+    }
+    if (url === `${BASE}/sessions/rf-session/steps`) {
+      const ids = JSON.parse(String(options?.body)).step_ids;
+      if (ids.length === 1 && ids[0] === "A13") throw new Error("缺少前置：A12 Demod3 校相");
+      activeSession = stepResult ?? activeSession;
+      return activeSession;
+    }
+    if (url === `${BASE}/sessions/rf-session/parameters`) {
+      if (parameterApplyError) throw new Error("参数校验失败");
+      activeSession = parameterResult ?? { ...activeSession, revision: activeSession.revision + 1,
+        parameters: JSON.parse(String(options?.body)).parameters };
+      return activeSession;
+    }
+    if (url === `${BASE}/sessions/rf-session/finish`) {
+      activeSession = { ...activeSession, status: "closed" };
+      return activeSession;
+    }
+    if (url === `${BASE}/sessions/rf-session`) return activeSession;
+    if (url === "/api/jobs/session-job") return sessionJob;
     if (url === `${BASE}/schema`) return { schema_version: 2, fields, parameter_layout: layout };
     if (url === "/api/jobs") return jobs;
     if (url === "/api/jobs/acquisition") return { id: "acquisition", kind: `experiment:${ID}`, status: "running", message: "响应扫描", estimated_remaining_seconds: 120, events: [] };
@@ -66,6 +221,7 @@ beforeEach(() => {
     if (url === "/api/jobs/acquisition/cancel") return { id: "acquisition", kind: `experiment:${ID}`, status: "cancelled", events: [] };
     if (url.startsWith(`${BASE}/runs?`)) return { runs: pageTotal ? [{ ...summary, run_id: url.endsWith("offset=50") ? "1008_older" : summary.run_id }] : [], total: pageTotal, limit: 50, offset: url.endsWith("offset=50") ? 50 : 0 };
     if (url.endsWith("/summary")) return summary;
+    if (url.endsWith("/analysis")) return options?.method === "POST" ? analysisJob : analysisState(url.split("/").at(-2)!);
     if (url === `${BASE}/preflight`) {
       const chosen = JSON.parse(String(options?.body)).parameters.ARB_WAVEFORM_FILE;
       return { ok: preflightOk && Boolean(chosen), errors: !preflightOk ? ["共同触发参数不一致"] : chosen ? [] : ["请选择 oc_sens 中的最优控制波形版本"] };
@@ -79,11 +235,11 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it("从实验路由进入双 Tab，切换保留参数，历史填回不启动采集", async () => {
-  renderPage();
+  await renderPage();
   const tabs = screen.getByRole("tablist", { name: "RF 灵敏度（DirectAW）视图" });
   expect(within(tabs).getAllByRole("tab")).toHaveLength(2);
   expect(await within(screen.getByRole("tabpanel", { name: "运行" })).findByAltText("X 响应与 RF 灵敏度")).toHaveAttribute("src", "/plot.png?v=1");
-  expect(screen.getByText(/已作洛伦兹校正/)).toBeVisible();
+  expect(within(screen.getByRole("tabpanel", { name: "运行" })).getByText(/已作洛伦兹校正/)).toBeVisible();
   fireEvent.change(screen.getByLabelText("运行标签"), { target: { value: "edited" } });
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "填回参数" })).toBeEnabled());
@@ -99,7 +255,7 @@ it("从实验路由进入双 Tab，切换保留参数，历史填回不启动采
 });
 
 it("保存参数与分组布局，并把共同触发同步到两套旧键", async () => {
-  renderPage();
+  await renderPage();
   await screen.findByLabelText("运行标签");
   fireEvent.change(screen.getByLabelText("共同触发FREQ"), { target: { value: "200" } });
   fireEvent.change(screen.getByLabelText("最优控制波形版本"), { target: { value: "v8/waveforms/optimal_control_waveform.csv" } });
@@ -111,7 +267,7 @@ it("保存参数与分组布局，并把共同触发同步到两套旧键", asyn
   for (const suffix of ["FREQ", "AMPLITUDE", "OFFSET", "DUTY", "PHASE"]) expect(body.parameters[`XY_TRIGGER_${suffix}`]).toEqual(body.parameters[`Z_TRIGGER_${suffix}`]);
   expect(body.parameters.ARB_WAVEFORM_FILE).toBe("v8/waveforms/optimal_control_waveform.csv");
   expect(body.parameter_layout.advanced).toContain("RUN_TAG");
-  fireEvent.click(screen.getByRole("tab", { name: /^高级参数/ }));
+  document.querySelectorAll<HTMLDetailsElement>(".xy-node-parameters details").forEach(node => { node.open = true; });
   expect(screen.getByLabelText("Demod3 输入")).toBeDisabled();
   expect(screen.getByLabelText("回环增益")).toBeEnabled();
 });
@@ -119,7 +275,7 @@ it("保存参数与分组布局，并把共同触发同步到两套旧键", asyn
 it("预检失败不启动，空历史仍可浏览", async () => {
   preflightOk = false;
   pageTotal = 0;
-  renderPage();
+  await renderPage();
   await waitFor(() => expect(screen.getByRole("button", { name: "预检并运行实验" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
   expect(await screen.findByText("共同触发参数不一致")).toBeVisible();
@@ -130,7 +286,7 @@ it("预检失败不启动，空历史仍可浏览", async () => {
 
 it("恢复活动采集任务，显示 ETA 并使用真实 JobView 取消接口", async () => {
   jobs = [{ id: "acquisition", kind: `experiment:${ID}`, status: "running" }];
-  renderPage();
+  await renderPage();
   const cancel = await screen.findByRole("button", { name: "安全停止" });
   expect(screen.getByText(/预计剩余/)).toBeVisible();
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
@@ -141,7 +297,7 @@ it("恢复活动采集任务，显示 ETA 并使用真实 JobView 取消接口",
 });
 
 it("成功预检后提交运行，并同步两套触发参数", async () => {
-  renderPage();
+  await renderPage();
   await screen.findByLabelText("运行标签");
   fireEvent.change(screen.getByLabelText("共同触发FREQ"), { target: { value: "200" } });
   fireEvent.change(screen.getByLabelText("最优控制波形版本"), { target: { value: "v8/waveforms/optimal_control_waveform.csv" } });
@@ -157,7 +313,7 @@ it("成功预检后提交运行，并同步两套触发参数", async () => {
 });
 
 it("最优控制版本默认留空，未选择时预检阻止启动，选择后切换 Tab 保留", async () => {
-  renderPage();
+  await renderPage();
   const select = await screen.findByLabelText("最优控制波形版本");
   expect(select).toHaveValue("");
   expect(within(select).getByRole("option", { name: "v8" })).toBeVisible();
@@ -172,7 +328,7 @@ it("最优控制版本默认留空，未选择时预检阻止启动，选择后�
 
 it("校相失败只显示诊断，并禁止重新分析", async () => {
   summary = { ...summary, completion_status: "failed", phase_calibration_status: "failed", can_analyze: false, failure_reason: "XY 校相信号低于门槛", analysis_block_reason: "采集尚未完整完成，仅可查看诊断", artifacts: {}, analysis: null };
-  renderPage();
+  await renderPage();
   expect(await within(screen.getByRole("tabpanel", { name: "运行" })).findByText("XY 校相信号低于门槛")).toBeVisible();
   expect(screen.queryByAltText("X 响应与 RF 灵敏度")).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
@@ -180,7 +336,7 @@ it("校相失败只显示诊断，并禁止重新分析", async () => {
 });
 
 it("重新分析完成后刷新所选记录与图片", async () => {
-  renderPage();
+  await renderPage();
   await screen.findByLabelText("运行标签");
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   fireEvent.click(await screen.findByRole("button", { name: "重新分析" }));
@@ -193,7 +349,7 @@ it("重新分析完成后刷新所选记录与图片", async () => {
 
 it("历史列表支持分页", async () => {
   pageTotal = 51;
-  renderPage();
+  await renderPage();
   await screen.findByLabelText("运行标签");
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   fireEvent.click(await screen.findByRole("button", { name: "下一页" }));
@@ -203,7 +359,7 @@ it("历史列表支持分页", async () => {
 
 async function selectTwoRuns() {
   pageTotal = 51;
-  renderPage();
+  await renderPage();
   await screen.findByLabelText("运行标签");
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: "选择 1009_latest 进行对比" }));
@@ -243,7 +399,7 @@ it("跨页勾选、图例和 Tab 切换保留顺序，生成后下载，编辑�
 
 it("不可对比的运行显示原因且禁用选择，图例校验在提交前生效", async () => {
   summary = { ...summary, can_compare: false, comparison_block_reason: "分析尚未完成，请先重新分析" };
-  renderPage();
+  await renderPage();
   await screen.findByLabelText("运行标签");
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   expect(await screen.findByRole("checkbox", { name: "选择 1009_latest 进行对比" })).toBeDisabled();
@@ -276,7 +432,7 @@ it("提交失败保留选择与图例，并显示错误", async () => {
 
 it("恢复正在执行的对比任务，完成后恢复图例和预览", async () => {
   jobs = [{ id: "comparison", kind: `comparison:${ID}`, status: "running" }];
-  renderPage();
+  await renderPage();
   await screen.findByLabelText("运行标签");
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   await screen.findByRole("button", { name: "取消任务" });
@@ -288,4 +444,113 @@ it("恢复正在执行的对比任务，完成后恢复图例和预览", async (
   expect(await screen.findByAltText("X 响应与 RF 灵敏度对比")).toHaveAttribute("src", "/recovered.png");
   expect(screen.getByLabelText("图例：1009_latest")).toHaveValue("Recovered A");
   expect(screen.getByLabelText("图例：1008_older")).toHaveValue("Recovered B");
+});
+
+it("RF 节点按显式选择提交，缺前置保留选择，质量失败可结束会话", async () => {
+  await renderPage();
+  fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
+  const panel = within(screen.getByRole("region", { name: "交互实验流程图" }));
+  fireEvent.click(panel.getByLabelText("A13 有符号 Z RF 幅度扫描"));
+  await waitFor(() => expect(panel.getByRole("button", { name: "运行所选 / 重跑" })).toBeEnabled());
+  fireEvent.click(panel.getByRole("button", { name: "运行所选 / 重跑" }));
+  expect(await screen.findByText("Error: 缺少前置：A12 Demod3 校相")).toBeVisible();
+  expect(panel.getByLabelText("A12 Demod3 校相")).not.toBeChecked();
+  const path = `${BASE}/sessions/rf-session/steps`;
+  expect(JSON.parse(String(mockApi.mock.calls.find(([url]) => url === path)![1]?.body))).toEqual({ revision: 0, step_ids: ["A13"] });
+  stepResult = { ...activeSession, revision: 1, steps: { ...activeSession.steps,
+    A09: { status: "quality_failed", error: "XY 校相 R 低于门槛" } } };
+  fireEvent.click(panel.getByRole("button", { name: "选择全部采集步骤" }));
+  expect(panel.getByLabelText("A16 安全收尾 / 结束会话")).not.toBeChecked();
+  fireEvent.click(panel.getByRole("button", { name: "运行所选 / 重跑" }));
+  expect(await panel.findByText("质量未通过")).toBeVisible();
+  expect(panel.getByText("XY 校相 R 低于门槛")).toBeVisible();
+  const all = mockApi.mock.calls.filter(([url]) => url === path).at(-1)!;
+  expect(JSON.parse(String(all[1]?.body)).step_ids).toEqual(flow.acquisition.slice(0, -1).map(stage => stage.id));
+  expect(panel.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
+  fireEvent.click(panel.getByRole("button", { name: "结束会话" }));
+  await waitFor(() => expect(mockApi).toHaveBeenCalledWith(`${BASE}/sessions/rf-session/finish`, {
+    method: "POST", body: JSON.stringify({ revision: 1 })
+  }));
+});
+
+it("恢复 RF 会话优先于旧任务，共享参数和分类同步，草稿应用携带修订", async () => {
+  activeSession = { ...makeSession(), revision: 7 };
+  activeSession.parameters.RUN_TAG = "session-tag";
+  for (const id of Object.keys(activeSession.steps).filter(id => id !== "A16")) activeSession.steps[id].status = "completed";
+  jobs = [{ id: "acquisition", kind: `experiment:${ID}`, status: "completed", started_at: "yesterday" },
+    { id: "session-job", kind: `session:${ID}`, status: "running" }];
+  await renderPage();
+  await waitFor(() => expect(screen.getByLabelText("运行标签")).toHaveValue("session-tag"));
+  expect(mockApi.mock.calls.some(([url]) => url === "/api/jobs/acquisition")).toBe(false);
+  expect(screen.getByText(/分步等待期间保持输出状态/)).toBeVisible();
+  fireEvent.click(screen.getByLabelText("A13 有符号 Z RF 幅度扫描"));
+  fireEvent.change(screen.getByLabelText("共同触发FREQ"), { target: { value: "150" } });
+  expect(screen.getByRole("button", { name: "运行所选 / 重跑" })).toBeDisabled();
+  expect(screen.getByText(/预计需重跑的已完成步骤：A07/)).toBeVisible();
+  fireEvent.change(screen.getByLabelText("共同触发FREQ"), { target: { value: "100" } });
+  expect(screen.queryByText(/预计需重跑的已完成步骤：/)).toBeNull();
+  fireEvent.change(screen.getByLabelText("共同触发FREQ"), { target: { value: "150" } });
+  const waits = screen.getAllByLabelText("恢复温控后等待");
+  expect(waits.length).toBeGreaterThan(1);
+  fireEvent.change(waits[0], { target: { value: "0.8" } });
+  waits.forEach(input => expect(input).toHaveValue(0.8));
+  fireEvent.click(screen.getAllByRole("button", { name: "恢复温控后等待 移至高级参数" })[0]);
+  document.querySelectorAll<HTMLDetailsElement>(".xy-node-parameters details").forEach(node => { node.open = true; });
+  expect(screen.getAllByRole("button", { name: "恢复温控后等待 移至基础参数" })).toHaveLength(waits.length);
+  parameterApplyError = true;
+  fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
+  expect(await screen.findByText("Error: 参数校验失败")).toBeVisible();
+  expect(screen.getByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeVisible();
+  parameterApplyError = false;
+  parameterResult = { ...activeSession, revision: 8, parameters: { ...activeSession.parameters,
+    XY_TRIGGER_FREQ: 150, Z_TRIGGER_FREQ: 150, TEMP_SWITCH_ON_LAG_S: 0.8 },
+    steps: Object.fromEntries(Object.entries(activeSession.steps).map(([id, state]) => [id,
+      id >= "A07" && id <= "A15" ? { status: "stale", error: "" } : state])) };
+  fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
+  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeNull());
+  expect(screen.getAllByText("需重跑")).toHaveLength(9);
+  const request = mockApi.mock.calls.filter(([url]) => url.endsWith("rf-session/parameters")).at(-1)!;
+  expect(JSON.parse(String(request[1]?.body))).toMatchObject({ revision: 7,
+    parameters: { XY_TRIGGER_FREQ: 150, Z_TRIGGER_FREQ: 150, TEMP_SWITCH_ON_LAG_S: 0.8 } });
+  fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
+  await screen.findByText("参数与布局已保存");
+  const saved = JSON.parse(String(mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)![1]?.body));
+  expect(saved.parameter_layout.advanced).toContain("TEMP_SWITCH_ON_LAG_S");
+  expect(saved.parameters.TEMP_SWITCH_ON_LAG_S).toBe(0.8);
+});
+
+it("历史分析草稿按目录隔离，保存默认值只保存下一次设置，RF 分析使用原键", async () => {
+  pageTotal = 51;
+  activeSession = makeSession();
+  await renderPage();
+  const object = screen.getByLabelText("分析操作对象");
+  const nperseg = () => screen.getByLabelText("Welch 段长");
+  expect(nperseg()).toHaveValue(2000);
+  fireEvent.change(object, { target: { value: "1009_latest" } });
+  await waitFor(() => expect(nperseg()).toHaveValue(800));
+  fireEvent.change(nperseg(), { target: { value: "512" } });
+  expect(screen.getByText(/预计需重算的已完成步骤：B03/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
+  await screen.findByText("参数与布局已保存");
+  const saved = JSON.parse(String(mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)![1]?.body));
+  expect(saved.parameters.NOISE_NPERSEG).toBe(2000);
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  await screen.findByRole("button", { name: /1008_older/ });
+  fireEvent.click(screen.getByRole("tab", { name: "运行" }));
+  fireEvent.change(object, { target: { value: "1008_older" } });
+  await waitFor(() => expect(nperseg()).toHaveValue(600));
+  fireEvent.change(nperseg(), { target: { value: "256" } });
+  fireEvent.change(object, { target: { value: "" } });
+  await waitFor(() => expect(nperseg()).toHaveValue(2000));
+  fireEvent.change(object, { target: { value: "1009_latest" } });
+  await waitFor(() => expect(nperseg()).toHaveValue(512));
+  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) =>
+    url === `${BASE}/runs/1009_latest/analysis` && options?.method === "POST")).toBe(true));
+  const request = mockApi.mock.calls.find(([url, options]) => url === `${BASE}/runs/1009_latest/analysis` && options?.method === "POST")!;
+  expect(JSON.parse(String(request[1]?.body))).toEqual({ revision: 4,
+    step_ids: ["B01", "B02", "B03", "B04"], analysis_parameters: { NOISE_NPERSEG: 512 } });
+  expect(screen.getByRole("button", { name: "结束会话" })).toBeEnabled();
 });

@@ -19,7 +19,7 @@ DEFINITION = ExperimentDefinition(
     family="sensitivity",
     variant="mx-keithley-6221-optimal-control-balanced",
     description=(
-        '保持 Keithley 6221 外部触发 Z 最优控制，先做 XYZ 平衡粗扫（可选细扫）并由逐层复线性模拟合定位工作点，随即用拟合工作点配置 X/Y/GS200 并直接完成 Y RF 相位校准、带符号幅度扫描与零 Y RF 噪声采集，最小化平衡与灵敏度测量之间的剩磁漂移失配。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
+        '保持 Keithley 6221 外部触发 Z 最优控制，先做 XYZ 平衡粗扫（可选细扫）并由逐层复线性模拟合定位工作点，随即用拟合工作点配置 X/Y/GS200 并直接完成 Y RF 相位校准、带符号幅度扫描与零 Y RF 噪声采集，最小化平衡与灵敏度测量之间的剩磁漂移失配。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
     ),
     data_type="Mx_Keithley_6221_Optimal_Control_Balanced_Sensitivity",
     required_devices=("Keithley 6221", "GS200", "DG900", "DG4000", "锁相放大器"),

@@ -135,7 +135,7 @@ export function DeviceLibraryView() {
   const cards: { key: string; id: string; title: string; mappingKeys: string[] }[] = [];
   const groupedKeys = new Set<string>();
   for (const [key, binding] of Object.entries(mappings?.mapping || {})) {
-    if (binding.instrument !== "signal_generator" || groupedKeys.has(key) || !mappings) continue;
+    if (!["signal_generator", "gs200"].includes(binding.instrument) || groupedKeys.has(key) || !mappings) continue;
     const keys = linkedMappingKeys(mappings, key);
     keys.forEach(member => groupedKeys.add(member));
     cards.push({ key: `mapping:${key}`, id: binding.device_id,
@@ -150,7 +150,7 @@ export function DeviceLibraryView() {
     <div className="config-view">
       <div className="config-toolbar"><div><h2>设备库</h2><p>修订 {document.revision.slice(0, 10)}{dirty && " · 有未保存更改"}</p></div><div><button className="secondary" onClick={() => add()} disabled={busy}>新增设备</button><button className="secondary" onClick={() => void scan()} disabled={busy || hardwareBusy || networkDirty} title={networkDirty ? "请先保存网络扫描地址" : undefined}>{busy ? "处理中…" : "扫描 USB / 网络 / 锁相放大器"}</button><button onClick={() => void save()} disabled={busy || hardwareBusy || !mappings}>保存设备库</button></div></div>
       {error && <div className="alert error">{error}</div>}
-      <p className="muted">信号源 Resource 和锁相放大器选择均在点击“保存设备库”后生效。信号源可在不同实验中共用通道；启动实验前核对接线。</p>
+      <p className="muted">信号源、主磁场电流源和锁相放大器的设备选择均在点击“保存设备库”后生效。信号源可在不同实验中共用通道；启动实验前核对接线。</p>
       <section className="device-config">
         <label className="device-config-wide">网络扫描地址（每行一个 VISA 资源）<textarea rows={8} value={networkText} disabled={busy}
           placeholder="TCPIP0::192.168.124.31::INSTR" onChange={event => setNetworkText(event.target.value)} /></label>
@@ -187,7 +187,7 @@ export function DeviceLibraryView() {
             {card.mappingKeys.length > 0 && <div className="device-config-wide">
               <label>Resource<select aria-label={`${card.mappingKeys[0]} Resource`} value={id} disabled={busy || !mappings}
                 onChange={event => selectDevice(card.mappingKeys, event.target.value)}>
-                {Object.entries(document.devices).filter(([, entry]) => entry.instrument === "signal_generator")
+                {Object.entries(document.devices).filter(([, entry]) => entry.instrument === mappings!.mapping[card.mappingKeys[0]].instrument)
                   .map(([deviceId, entry]) => <option key={deviceId} value={deviceId}>{deviceOptionLabel(entry)}</option>)}
               </select></label>
               <p className="muted">{card.mappingKeys.map(key => {

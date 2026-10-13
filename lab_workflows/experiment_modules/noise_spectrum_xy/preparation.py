@@ -1,4 +1,5 @@
 """预检、连接、时钟、固定输出与温度准备。"""
+from lab_workflows.steps import initialize_lockin_inputs
 import numpy as np
 from gs200 import GS200Instrument
 from tec_controller import TECInstrument
@@ -131,6 +132,7 @@ def connect_instruments(mapping):
             f"hf2://{hf2_cfg.get('host', '127.0.0.1')}/{hf2_cfg['device_id']}",
             lambda: create_lockin(hf2_cfg),
         )
+        initialize_lockin_inputs(hfi)
         print(f"HF2 已连接: {hfi.idn}")
         devices["hf2"] = hfi
 

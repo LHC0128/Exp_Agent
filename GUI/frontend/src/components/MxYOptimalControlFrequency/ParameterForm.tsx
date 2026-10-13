@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowLeftRight } from "lucide-react";
 import { Field, SelectField } from "../FormFields";
 import type {
@@ -22,6 +22,8 @@ type ParameterFormProps = {
   /** 参数移动成功后的提示，例如「已移至基础参数」。 */
   onMoveNotice: (message: string) => void;
   disabled: boolean;
+  presentation?: "tabs" | "workflow";
+  renderParameterNote?: (field: SchemaField) => ReactNode;
 };
 
 const numberToText = (value: unknown): string => {
@@ -52,6 +54,8 @@ export function ParameterForm({
   onLayoutChange,
   onMoveNotice,
   disabled,
+  presentation = "tabs",
+  renderParameterNote,
 }: ParameterFormProps) {
   const [activeGroup, setActiveGroup] = useState<ParameterGroup>("basic");
   const [arrayDrafts, setArrayDrafts] = useState<Record<string, string>>({});
@@ -189,8 +193,36 @@ export function ParameterForm({
       ?.focus();
   };
 
-  const activeNames = visibleNames(activeGroup);
   const groupLabel = (group: ParameterGroup) => (group === "basic" ? "基础参数" : "高级参数");
+
+  const renderGroup = (group: ParameterGroup) => (
+    visibleNames(group).length > 0
+      ? <div className="zaw-parameter-list">{visibleNames(group).map((name) => {
+        const field = fieldsByName.get(name)!;
+        const target: ParameterGroup = group === "basic" ? "advanced" : "basic";
+        const targetLabel = target === "basic" ? "基础" : "高级";
+        return <div className="zaw-parameter-item" key={field.name}>
+          <button type="button" className="zaw-parameter-move"
+            aria-label={`${field.label} 移至${targetLabel}参数`} title={`移至${targetLabel}参数`}
+            disabled={disabled} onClick={() => moveField(field.name, target)}>
+            <ArrowLeftRight size={12} aria-hidden="true" />移至{targetLabel}
+          </button>
+          {renderInput(field)}
+          {field.description && <small>{field.description}</small>}
+          {renderParameterNote?.(field)}
+        </div>;
+      })}</div>
+      : <p className="zaw-empty">当前分组暂无可编辑参数。</p>
+  );
+
+  if (presentation === "workflow") return <div className="zaw-parameter-form">
+    <h4>基础参数（{visibleNames("basic").length}）</h4>
+    {renderGroup("basic")}
+    {visibleNames("advanced").length > 0 && <details className="zaw-parameter-advanced">
+      <summary>高级参数（{visibleNames("advanced").length}）</summary>
+      {renderGroup("advanced")}
+    </details>}
+  </div>;
 
   return (
     <div className="zaw-parameter-form">
@@ -224,35 +256,7 @@ export function ParameterForm({
         aria-labelledby={`mxy-parameter-tab-${activeGroup}`}
         className="zaw-parameter-panel"
       >
-        {activeNames.length > 0
-          ? (
-            <div className="zaw-parameter-list">
-              {activeNames.map((name) => {
-                const field = fieldsByName.get(name);
-                if (!field) return null;
-                const target: ParameterGroup = activeGroup === "basic" ? "advanced" : "basic";
-                const targetLabel = target === "basic" ? "基础" : "高级";
-                return (
-                  <div className="zaw-parameter-item" key={field.name}>
-                    <button
-                      type="button"
-                      className="zaw-parameter-move"
-                      aria-label={`${field.label} 移至${targetLabel}参数`}
-                      title={`移至${targetLabel}参数`}
-                      disabled={disabled}
-                      onClick={() => moveField(field.name, target)}
-                    >
-                      <ArrowLeftRight size={12} aria-hidden="true" />
-                      移至{targetLabel}
-                    </button>
-                    {renderInput(field)}
-                    {field.description && <small>{field.description}</small>}
-                  </div>
-                );
-              })}
-            </div>
-          )
-          : <p className="zaw-empty">当前分组暂无可编辑参数。</p>}
+        {renderGroup(activeGroup)}
       </div>
       {fields.length === 0 && <p className="zaw-empty">暂无可编辑参数</p>}
     </div>

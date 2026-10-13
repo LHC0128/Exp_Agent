@@ -1,0 +1,139 @@
+---
+title: Mx Z 最优控制 XY 平衡场 RF 相位响应
+type: Mx_Z_Optimal_Control_XY_RF_Phase_Response
+execution_mode: typed_workflow
+scan_mode: nested_scan
+mapping_keys:
+  main_magnetic_field:
+    role: fixed_main_field
+  Z_magnetic_field:
+    role: optimal_control_preserved_on_exit
+  Time_sequence_2:
+    role: common_trigger
+  X_magnetic_field:
+    role: x_dc_scan
+  Y_magnetic_field:
+    role: y_dc_scan_and_rf_offset
+  rf_coil:
+    role: rf_burst_on_y_channel
+  Pump_laser_power:
+    role: fixed
+  Probe_laser_power:
+    role: fixed
+  Pump_modulation:
+    role: fixed
+  Time_sequence:
+    role: fixed
+  Temp_Switch:
+    role: point_gate
+  lockin_r:
+    role: demod0_r_detection
+required_devices:
+  - GS200
+  - DG900
+  - DG4000
+  - 锁相放大器
+learned_notes:
+  - X 外层、Y 蛇形网格按规范轴保存，Y 扫描值直接作为 rf_coil DC offset。
+  - 每个 XY 点扫描 0–340°、20° 步进的 18 个 RF Burst 相位点。
+  - Z 最优控制只在实验开始时启动并持续运行，Y RF 每个相位点使用 OFF→ON 重新等待共同触发。
+  - 拟合失败点保留原始曲线并在参数地图中标记为无效，不自动选择最佳平衡点。
+experiment_id: mx-z-optimal-control-xy-rf-phase-response
+defaults_file: params/experiments/mx-z-optimal-control-xy-rf-phase-response.yaml
+---
+
+# Mx Z 最优控制 XY 平衡场 RF 相位响应
+
+当前默认参数：[参数文件](../params/experiments/mx-z-optimal-control-xy-rf-phase-response.yaml)。GUI「保存为默认」会更新该文件；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
+
+锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，GUI 不再提供开启选项。
+
+## 锁相设备与启动检查
+
+本实验使用设备库中全系统选择的 HF2 或 MFLI；切换入口为「仪器控制 → 设备库 → 锁相放大器」。主探测信号接所选设备的主电压输入，保留原解调器索引。启动前检查频率与通道能力；MFLI 连接后回读实际选件，EXT 时钟须核对 10 MHz 接线和锁定。历史 `HF2_*` 参数与 `hf2_configuration` 键继续兼容，代表本次实际选择的设备。具体差异、数据速率和安全范围见 [锁相接口说明](lockin_amplifier.md)。
+
+## 目标与构型
+
+稳定实验 ID 为 `mx-z-optimal-control-xy-rf-phase-response`。实验沿用
+`Mx Z 最优控制 RF 灵敏度`的 Z 周期最优控制、共同触发、温控和 锁相放大器 工作点，
+但将 X/Y DC 补偿值改为二维网格，并在每个网格点上扫描 Y RF Burst 的触发相位。
+
+X 由 `X_magnetic_field` 通道输出 DC；Y 与 `rf_coil` 共用物理通道，Y 网格值作为
+RF 正弦的 DC offset。Y RF 使用固定频率和固定幅度，只有 Burst phase 在相位扫描中改变。
+`Time_sequence_2` 的下降沿同时启动 Z 控制和 Y RF Burst，实体分配线需要运行前人工确认。
+
+## 扫描与采集
+
+X/Y 扫描范围与点数读取参数文件。采集顺序为 X 外层、Y 蛇形。
+每个 XY 点执行 18 个相位点 `0°、20°、…、340°`，实际顺序为相差 180° 的相位成对排列。
+
+每个相位点先关闭温控并重新 arm Y RF，等待稳定后采集 Demod0 R；R 标准差超过门槛时保存
+该次尝试并重采，最多执行配置的次数。每个 XY 点完成首轮相位扫描后，使用 R 相位曲线的
+一阶谐波稳健残差（MAD）识别偏离较大的跨相位点；异常点不超过
+`PHASE_OUTLIER_MAX_REACQUIRE_POINTS` 时逐点重新 arm RF 并重采一次，重采结果替换进入拟合，
+原始文件、重采文件、重采前后残差和掩码均写入 `xy_rf_phase_response_scan.npz`。
+异常点超过上限时不自动重采，但会保留检测报告。每个 XY 点完成后用仓库现有
+`fit_phase_scan()` 拟合：
+
+```text
+abs(C + A*sin(phi-phi0))
+```
+
+同时保存 `C + A*abs(sin(phi-phi0))` 诊断拟合。拟合不通过的 XY 点不会中止网格采集。
+重采后仍被检测为异常的相位点（包括超过重采上限而未重采的情况）会写入拒绝原因，
+该 XY 点在汇总地图中标记为无效，但其全部原始曲线和拟合参数仍会保留。
+
+采集时的跨相位重测和该 XY 点的正式接受判定均使用同一套非线性色散模型；
+重测判定使用模型残差的稳健 MAD，最终判定额外检查 R²、协方差和响应信噪比。
+旧的绝对值正弦拟合只作为兼容诊断保存，不再决定是否重测或接受该点。
+
+离线分析阶段对保存的 Demod0 R 曲线重新使用非线性色散模型：
+
+```text
+B_eff(phi) = sqrt(A_rf^2 + C_res^2
+                  + 2 A_rf C_res cos(phi - phi_res))
+R(phi) = |scale (B_eff - B0) / ((B_eff - B0)^2 + width^2)|
+```
+
+其中 `A_rf` 取运行配置中的实际 RF 相位扫描幅度，`scale`、`B0`、`width`、
+`C_res` 和 `phi_res` 在每个 XY 点独立拟合。该拟合只使用 Demod0 R；不需要
+`kx`、`ky` 或 RF 转换系数的预先标定，X/Y 电压只作为网格坐标。该结果是
+响应空间中的等效参数，不能单独用来唯一反推出物理的 `kx`、`ky` 或 RF 标定。
+分析器保留采集时的绝对值正弦结果作为兼容对照，同时输出
+`xy_rf_phase_response_nonlinear_maps.png` 和非线性参数地图。R²、响应峰谷差与
+中位点噪声门槛仍按运行配置执行；门槛失败的点保留拟合参数和拒绝原因。
+
+## 数据与分析
+
+结果图统一通过 `lab_workflows.plotting` 的 `paper` 配置导出同名 PNG（300 dpi）和 PDF；原 PNG 文件名继续用于历史预览。默认固定画布，英文标注，图幅和导出约定见[科研绘图规范](plotting_style.md)。重新分析生成新图，原始数据和数值结果字段保持原有契约。
+
+两组参数地图采用三行两列布局；相位图使用周期色图 `twilight`，范围固定为 0–360°，接受标记范围固定为 0–1。逐 X 相位曲线最多三列，随 X 点数动态增加行数，保留所有 Y 曲线及拒绝标记，超过 12 个 X 点也不会遗漏或越界。完整曲线概览用于诊断，投稿主图需另选面板。
+
+```text
+data/Mx_Z_Optimal_Control_XY_RF_Phase_Response/<run>/
+  experiment_config.yaml
+  raw/
+    source_optimal_control_waveform.csv
+    source_optimal_control_params.csv
+    source_z_calibration_analysis.yaml
+    source_manifest.yaml
+    applied_control_waveform.npz
+    grid_X###_Y###_phase_###_attempt_##.npz
+    xy_rf_phase_response_scan.npz
+  results/
+    xy_rf_phase_response_maps.png
+    xy_rf_phase_response_curves.png
+    xy_rf_phase_response_nonlinear_maps.png
+    analysis.yaml
+    analysis.json
+```
+
+分析器只读取运行目录，输出非线性模型的 selected phase、residual RF amplitude、resonance
+amplitude、width、R²、RMSE 和拟合有效性二维地图，并列出全部拟合失败点；旧正弦模型结果
+作为兼容对照保留。不自动选择最佳 XY 点，也不执行 RF 幅度灵敏度或噪声分析。
+
+## 安全结束状态
+
+正常、取消和异常路径均保留 `Time_sequence_2` 当前状态，关闭归零 X 场和 Y RF，恢复 GS200 运行前状态，
+并将温控恢复为 `5 V DC + Output ON`。Z 最优控制波形和 Output 保持，Pump/Probe、Pump 载波/门控
+和 锁相放大器 设置保留。

@@ -1,5 +1,8 @@
 .xy-workflow { margin: 24px 0; padding: 24px; border: 1px solid var(--border, #d6dfe7); border-radius: 12px; background: var(--panel, #fff); }
 .xy-workflow-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.xy-workflow-controls { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border, #d6dfe7); }
+.xy-workflow-preview { margin: 16px 0; padding-left: 12px; border-left: 2px solid var(--border, #d6dfe7); }
+.xy-workflow-controls p { overflow-wrap: anywhere; }
 .xy-flow-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .xy-flow-columns > section { min-width: 0; }
 .xy-flow-columns select { display: block; width: 100%; margin-top: 8px; }
@@ -10,9 +13,11 @@
 .xy-flow-group ol { list-style: none; margin: 0; padding: 0; }
 .xy-flow-node { position: relative; margin-bottom: 24px; padding: 12px; border: 1px solid #cad7e2; border-left: 4px solid #8b9fad; border-radius: 8px; background: #f7fafc; }
 .xy-flow-node::after { content: "↓"; position: absolute; bottom: -25px; left: 50%; color: #66808f; }
+.xy-flow-node[data-connect-next="false"]::after { content: none; }
+.xy-flow-node a { overflow-wrap: anywhere; }
 .xy-flow-node:last-child { margin-bottom: 0; }
 .xy-flow-group:last-child .xy-flow-node:last-child::after { content: none; }
-.xy-flow-node label { display: flex; gap: 10px; align-items: baseline; cursor: pointer; }
+.xy-flow-node .xy-step-select { display: flex; gap: 10px; align-items: baseline; cursor: pointer; }
 .xy-flow-node input[type="checkbox"] { width: auto; accent-color: #087b9c; }
 .xy-flow-node small { display: block; margin-top: 6px; color: #4f6472; }
 .xy-flow-node.completed { border-left-color: #16886c; }
@@ -21,9 +26,17 @@
 .xy-flow-node.stale { border-left-color: #a07312; }
 .xy-step-status { display: inline-block; margin: 6px 0 0 24px; font-size: 12px; }
 .xy-step-error, .xy-missing { color: #a42c24; margin: 6px 0; }
-.xy-analysis-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
-.xy-analysis-options label { font-size: 13px; }
+.xy-node-parameters { margin: 10px 0; }
+.xy-node-parameters summary { cursor: pointer; overflow-wrap: anywhere; line-height: 1.6; }
+.xy-node-parameters .zaw-parameter-form { margin-top: 12px; }
+.xy-node-parameters .zaw-parameter-item { min-width: 0; }
+.xy-node-parameters .zaw-parameter-item label { display: grid; gap: 6px; }
+.xy-node-parameters input:not([type="checkbox"]) { width: 100%; min-width: 0; box-sizing: border-box; }
+.xy-node-parameters h4 { margin: 12px 0; }
+.xy-node-parameters .zaw-parameter-advanced { margin-top: 14px; }
+.xy-flow-node small { overflow-wrap: anywhere; }
+.xy-flow-node .xy-shared-note { color: var(--accent, #087b9c); }
+.xy-flow-node .xy-draft-note, .xy-draft-note { color: #80580d; font-size: 13px; }
+.xy-flow-node.draft-affected { border-right: 3px dashed #a07312; }
 .xy-artifact-links { display: flex; flex-wrap: wrap; gap: 8px 12px; }
-.xy-page-dashboard.zaw-dashboard { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); }
 @media (max-width: 900px) { .xy-flow-columns { grid-template-columns: 1fr; } .xy-workflow { padding: 12px; } .xy-workflow-head { flex-wrap: wrap; } }
-@media (max-width: 820px) { .xy-page-dashboard.zaw-dashboard { grid-template-columns: minmax(0, 1fr); } }

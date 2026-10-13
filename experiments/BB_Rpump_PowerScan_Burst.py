@@ -36,6 +36,7 @@
 # **扫描**：PUMP_POWER 列表中每个 DC 电压 → 一次 shot → npz
 
 # %% Cell 1
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -287,6 +288,7 @@ try:
         hfi.set_extclk(True)
         print(f"HF2 已连接: {lia_cfg['device_id']}")
         devices["hfi"] = hfi
+        initialize_lockin_inputs(hfi)
 
 except Exception as e:
     print(f"设备连接失败: {e}")

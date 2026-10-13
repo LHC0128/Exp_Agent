@@ -12,6 +12,7 @@
 # - 温度开关用 DG900 CH2 的 0 V / 5 V DC 切换，不使用 output OFF 模式。
 
 # %% Cell 1
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -518,6 +519,7 @@ try:
     hfi.connect()
     hfi.set_extclk(True)
     devices["hf2"] = hfi
+    initialize_lockin_inputs(hfi)
     print(f"HF2 已连接: {hfi.idn}")
 
     restore_experiment_outputs(devices)

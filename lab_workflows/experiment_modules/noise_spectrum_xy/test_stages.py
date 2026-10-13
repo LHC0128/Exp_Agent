@@ -16,7 +16,7 @@ from unittest.mock import patch
 from . import workflow
 from .models import NoiseSpectrumXYParams
 from .session import serve
-from .stages import ACQUISITION, validate_selection
+from .stages import ACQUISITION, definition, validate_selection
 from .test_sine_mode import copy_config, fake_hardware, scan_params
 
 
@@ -29,6 +29,34 @@ class StageTest(unittest.TestCase):
 
     def prepare(self, ctx):
         ctx.execute([stage.id for stage in ACQUISITION[:11]])
+
+    def test_display_parameters_cover_schema_and_share_only_business_inputs(self):
+        flow = definition()
+        visible = {name for stages in (flow["acquisition"], flow["analysis"])
+                   for stage in stages for name in stage["display_parameters"]}
+        self.assertEqual(visible, set(NoiseSpectrumXYParams().to_external()))
+        users = lambda name: [stage["id"] for stage in flow["acquisition"]
+                              if name in stage["display_parameters"]]
+        self.assertEqual(users("TEMP_SWITCH_ON_SETTLE_S"), ["A08", "A10", "A12"])
+        self.assertEqual(users("FIXED_PARAMS.main_magnetic_field"), ["A04"])
+        self.assertEqual(users("FIXED_PARAMS.temperature"), ["A05"])
+        self.assertEqual(users("TARGET_NOISE_FREQ_POINTS"), ["A12"])
+        self.assertEqual(users("HF2_DAQ_DURATION"), ["A11", "A12"])
+        self.assertEqual(flow["acquisition"][0]["display_parameters"], [])
+
+    def test_parameter_impact_preview_matches_actual_updates_without_connecting(self):
+        ctx = workflow.Workflow(scan_params(), project_root=self.root)
+        impacts = definition()["parameter_impacts"]["acquisition"]
+        for changes in ({"TEMP_SWITCH_ON_SETTLE_S": 3.0},
+                        {"FIXED_PARAMS.temperature": 99.0},
+                        {"RUN_TAG": "preview", "HF2_DAQ_DURATION": 2.0}):
+            with self.subTest(changes=changes):
+                ctx.states = {stage.id: {"status": "completed", "error": ""} for stage in ACQUISITION}
+                expected = {stage_id for name in changes for stage_id in impacts[name]}
+                ctx.update_parameters(changes)
+                self.assertEqual({key for key, state in ctx.states.items() if state["status"] == "stale"}, expected)
+                self.assertFalse(ctx.devices)
+                self.assertNotIn("A14", expected)
 
     def test_explicit_prerequisites_sorted_selection_and_preflight_preserves_hardware(self):
         with fake_hardware(self.root) as hw:

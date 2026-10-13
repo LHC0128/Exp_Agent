@@ -58,6 +58,10 @@ class RFDirectAWRunSummary(RFDirectAWRunItem):
     actual_rates: dict[str, JsonValue]
     hf2_response_snapshot: dict[str, JsonValue]
     hf2_noise_snapshot: dict[str, JsonValue]
+    hf2_calibration_snapshot: dict[str, JsonValue] = Field(default_factory=dict)
+    stage_frequencies: dict[str, JsonValue] = Field(default_factory=dict)
+    response_component: str = "X"
+    noise_component: str = "X"
     temperature_control: dict[str, JsonValue] | None
     artifacts: dict[str, str]
 

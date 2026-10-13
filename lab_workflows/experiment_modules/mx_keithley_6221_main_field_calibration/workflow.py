@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
@@ -145,6 +146,7 @@ def _connect_devices(
         f"hf2://{hf_cfg.get('host', '127.0.0.1')}/{hf_cfg['device_id']}",
         lambda: create_lockin(hf_cfg),
     )
+    initialize_lockin_inputs(devices["hf2"])
 
     tec_cfg = mapping["temperature"]
     devices["tec"] = session.connect_optional(
@@ -380,7 +382,7 @@ def _configure_outputs(
     actual_temperature = temperature_status.actual_temperature_c
 
     hf2 = devices["hf2"]
-    demod.configure_signal_input(hf2, SignalInputConfig(input_index=0, range=params.hf2_signal_range_v, ac_coupling=True, diff=False, impedance=50))
+    demod.configure_signal_input(hf2, SignalInputConfig(input_index=0, range=params.hf2_signal_range_v, diff=False))
     demod.configure_oscillator(hf2, OscillatorConfig(osc_index=params.demod_osc_idx, frequency=initial_frequency_hz))
     actual_rate = demod.configure_demodulator(
         hf2,

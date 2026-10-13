@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lockin_amplifier import SignalInputConfig
 import math
 from dataclasses import asdict, dataclass
 
@@ -44,8 +45,8 @@ class StaticSensitivityParams(ExperimentParams):
     hf2_demod_idx: int = parameter(default=0, external_name="hf2_demod_idx", label="锁相放大器 Demod", group="advanced", minimum=0)
     hf2_demod_order: int = parameter(default=4, external_name="hf2_demod_order", label="锁相放大器 阶数", group="advanced", minimum=1)
     hf2_signal_range: float = parameter(default=2.0, external_name="hf2_signal_range", label="锁相放大器 输入量程", unit="V", group="advanced", minimum=0)
-    hf2_ac_coupling: bool = parameter(default=True, external_name="hf2_ac_coupling", label="锁相放大器 输入 AC 耦合", group="advanced", description="开启为 AC 耦合，关闭为 DC 耦合。")
-    hf2_50_ohm: bool = parameter(default=True, external_name="hf2_50_ohm", label="锁相放大器 输入 50 Ω", group="advanced", description="开启 50 Ω 输入终端；关闭时使用高阻输入。")
+    hf2_ac_coupling: bool = parameter(default=False, external_name="hf2_ac_coupling", label="锁相放大器 输入 AC 耦合", group="advanced", description="兼容旧配置；所有正式实验统一关闭 AC 耦合与 50 Ω 终端。", visible=False)
+    hf2_50_ohm: bool = parameter(default=False, external_name="hf2_50_ohm", label="锁相放大器 输入 50 Ω", group="advanced", description="兼容旧配置；所有正式实验统一关闭 AC 耦合与 50 Ω 终端。", visible=False)
     hf2_demod_rate: float = parameter(default=1000.0, external_name="hf2_demod_rate", label="色散采样率", unit="Sa/s", group="advanced", minimum=1, description="用于 HF2 校相与色散连续采集；样本数和记录时长以实际回读速率为准。")
     hf2_demod_tc: float = parameter(default=0.001, external_name="hf2_demod_tc", label="色散时间常数", unit="s", group="advanced", minimum=0)
     hf2_noise_rate: float = parameter(default=50000.0, external_name="hf2_noise_rate", label="噪声采样率", unit="Sa/s", group="advanced", minimum=1)
@@ -58,6 +59,12 @@ class StaticSensitivityParams(ExperimentParams):
     gs200_range_headroom: float = parameter(default=1.2, external_name="gs200_range_headroom", label="GS200 量程余量", group="advanced", minimum=1)
     gs200_range_settle_time: float = parameter(default=1.0, external_name="gs200_range_settle_time", label="GS200 换挡等待", unit="s", group="advanced", minimum=0)
     z_v_to_nt: float = parameter(default=3517.0, external_name="z_v_to_nt", label="Z 场换算系数", unit="nT/V", group="advanced", minimum=0)
+
+    def __post_init__(self):
+        # 历史参数键仍可读取，输入模式统一使用公共关闭设置。
+        defaults = SignalInputConfig()
+        self.hf2_ac_coupling = defaults.ac_coupling
+        self.hf2_50_ohm = defaults.impedance == 50
 
     def validate_model(self) -> list[str]:
         errors: list[str] = []

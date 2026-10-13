@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-z-optimal-control",
     description=(
-        '按配置启停 GS200 主场，并叠加 Z 向周期最优控制；以 X DC 和 Y RF 偏置平衡 XY 剩磁场；校相幅度非零时测量 RF 灵敏度，校相幅度为零时保持 Y DC 补偿并扫描 Z 控制相位。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
+        '按配置启停 GS200 主场，并叠加 Z 向周期最优控制；以 X DC 和 Y RF 偏置平衡 XY 剩磁场；校相幅度非零时测量 RF 灵敏度，校相幅度为零时保持 Y DC 补偿并扫描 Z 控制相位。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
     ),
     data_type="Mx_Z_Optimal_Control_RF_Sensitivity",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

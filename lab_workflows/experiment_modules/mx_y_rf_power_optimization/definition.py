@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-y-pump-probe-grid",
     description=(
-        '在 Mx Y 向 RF 构型下二维扫描 Pump/Probe 光功率，逐点测量完整灵敏度并寻找最优工作点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
+        '在 Mx Y 向 RF 构型下二维扫描 Pump/Probe 光功率，逐点测量完整灵敏度并寻找最优工作点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
     ),
     data_type="Mx_Y_RF_Power_Optimization",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

@@ -4,7 +4,6 @@ import { api } from "../api";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
-import { ParameterForm } from "../components/MxYOptimalControlFrequency/ParameterForm";
 import { PageHead } from "../components/PageHead";
 import type {
   ExperimentDefinition,
@@ -342,19 +341,27 @@ export function NoiseSpectrumXYPage() {
       </div>
 
       <div id="noise-xy-panel-run" role="tabpanel" aria-labelledby="noise-xy-tab-run" hidden={tab !== "run"}>
-        <div className="zaw-dashboard xy-page-dashboard">
-          <section className="zaw-panel zaw-panel-params">
-            <div className="zaw-panel-head"><small>PARAMETERS</small><h2>实验参数</h2></div>
-            <ParameterForm
-              fields={fields}
-              values={values}
-              layout={layout}
-              onChange={(field, value) => setValues((current) => ({ ...current, [field.name]: value }))}
-              onLayoutChange={setLayout}
-              onMoveNotice={setNotice}
-              disabled={parametersBusy || starting}
-            />
-            <div aria-label="Welch 分段预览" aria-live="polite">
+        <WorkflowPanel enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout}
+          setNotice={setNotice} parametersDisabled={parametersBusy || starting} values={values} setValues={setValues}
+          session={session} setSession={setSession} job={job} setJob={setJob}
+          analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
+          runs={list.runs} setError={setError} onRefresh={setRefresh}>
+          <div className="xy-workflow-controls">
+            <div className="xy-flow-actions">
+              <button disabled={saving || starting || parametersBusy || !fields.length} onClick={() => void save()}>
+                {saving ? "保存中…" : "保存参数与布局"}
+              </button>
+              <button className="secondary" disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
+              <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>
+                {starting ? "处理中…" : "预检并运行实验"}
+              </button>
+            </div>
+            <p>在下方流程节点编辑参数。此处保存下一次实验的全部参数和统一的基础／高级分类，不保存历史分析覆盖值。</p>
+            {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
+            {notice && <p role="status">{notice}</p>}
+            {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflight.ok ? "参数预检通过" : preflight.errors.join("；")}</div>}
+            {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
+            <div className="xy-workflow-preview" aria-label="Welch 分段预览" aria-live="polite">
               <h3>Welch 分段预览（只读）</h3>
               {welchPreview?.error ? <p className="alert error">{welchPreview.error}</p> : <>
                 <p>预计每段点数：{welchPreview?.nperseg ?? "—"}；
@@ -364,32 +371,10 @@ export function NoiseSpectrumXYPage() {
               </>}
               <p>预览基于请求采样率；实际值以分析结果为准。耗时含每点稳定及恢复温控等待，不含初始化、校相、通信和分析。</p>
             </div>
-            {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
-            <button disabled={saving || parametersBusy || !fields.length} onClick={() => void save()}>
-              {saving ? "保存中…" : "保存参数与布局"}
-            </button>
-            {notice && <p role="status">{notice}</p>}
-          </section>
-
-          <section className="zaw-panel zaw-panel-control">
-            <div className="zaw-panel-head"><small>CONTROL</small><h2>控制与状态</h2></div>
-            <div className="zaw-control-buttons">
-              <button disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
-              <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>
-                {starting ? "处理中…" : "预检并运行实验"}
-              </button>
-            </div>
-            {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflight.ok ? "参数预检通过" : preflight.errors.join("；")}</div>}
-            {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
             {definition?.wiring_notes.map((note) => <p key={note}>{note}</p>)}
             <JobView job={job} onUpdate={setJob} />
-          </section>
-
-        </div>
-        <WorkflowPanel enabled={fields.length > 0} values={values} setValues={setValues}
-          session={session} setSession={setSession} job={job} setJob={setJob}
-          analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
-          runs={list.runs} setError={setError} onRefresh={setRefresh} />
+          </div>
+        </WorkflowPanel>
         <section className="zaw-panel zaw-panel-result">
           <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
           {latest ? <><Result value={latest} /><button onClick={() => { setSelectedId(latest.run_id); setTab("history"); }}>查看本次详情</button></> : <p>暂无运行记录。</p>}

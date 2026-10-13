@@ -16,7 +16,7 @@ from lab_workflows.common import WorkflowCancelled, find_project_root, load_mapp
 from lab_workflows.experiments import get_experiment
 from lab_workflows.steps import create_run_directory
 from lab_workflows.steps import routed_signal_generator
-from . import workflow
+from . import workflow, preparation, excitation, phase, acquisition, _helpers
 from .models import RFSensitivityDirectAWParams
 from .waveform import load_envelope, synthesize_xy
 
@@ -25,6 +25,7 @@ class FakeSignal:
     def __init__(self, resource, rig):
         self.resource, self.rig = resource, rig
         self.output, self.burst, self.sync, self.amplitude, self.phase, self.dc = ({}, {}, {}, {}, {}, {})
+        self.shape, self.frequency, self.mod, self.burst_mode, self.trigger_source = ({}, {}, {}, {}, {})
         self.clock = "INT"
 
     def connect(self):
@@ -43,11 +44,21 @@ class FakeSignal:
         def command(*args, channel=1, **kwargs):
             value = args[0] if args else kwargs.copy()
             self.rig.events.append((self.resource, name, channel, value))
-            if name in ("set_output", "set_burst_state", "set_sync_state", "set_amplitude", "set_burst_phase"):
-                getattr(self, {"set_output": "output", "set_burst_state": "burst", "set_sync_state": "sync", "set_amplitude": "amplitude", "set_burst_phase": "phase"}[name])[channel] = value
+            attributes = {"output": "output", "burst_state": "burst", "sync_state": "sync",
+                          "amplitude": "amplitude", "burst_phase": "phase", "shape": "shape",
+                          "frequency": "frequency", "mod_state": "mod", "burst_mode": "burst_mode",
+                          "burst_trigger_source": "trigger_source"}
+            if name.startswith("get_") and name[4:] in attributes:
+                return getattr(self, attributes[name[4:]]).get(channel)
+            if name.startswith("set_") and name[4:] in attributes:
+                getattr(self, attributes[name[4:]])[channel] = value
             if name == "setup_dc":
                 self.dc[channel] = float(value)
-            if name == "setup_sine":
+                self.shape[channel] = "DC"
+            if name in ("setup_sine", "setup_square", "setup_pulse", "setup_arbitrary"):
+                self.shape[channel] = {"setup_sine": "SIN", "setup_square": "SQU",
+                                       "setup_pulse": "PULS", "setup_arbitrary": "ARB"}[name]
+                self.frequency[channel] = kwargs["freq"]
                 self.amplitude[channel] = kwargs["amplitude"]
             if self.rig.shutdown_error and name == "setup_dc" and self.rig.in_shutdown:
                 raise RuntimeError("模拟安全归零失败")
@@ -58,6 +69,8 @@ class FakeHF2(HF2Instrument):
     def __init__(self, rig, **kwargs):
         super().__init__(**kwargs)
         self.rig, self.nodes = rig, {}
+        self.nodes.update({f"{self.sig_in_path(index)}/{mode}": 1
+                           for index in (0, 1) for mode in ("ac", "imp50")})
 
     def connect(self):
         self.rig.events.append(("hf2", "connect", None, None))
@@ -69,6 +82,8 @@ class FakeHF2(HF2Instrument):
         pass
 
     def set_int(self, path, value):
+        if "/sigins/" in path and path.endswith(("/ac", "/imp50")):
+            self.rig.events.append(("hf2", "input_mode", path, value))
         self.nodes[path] = value
 
     def set_double(self, path, value):
@@ -98,7 +113,7 @@ class FakeHF2(HF2Instrument):
 def control_source(tmp_path, monkeypatch):
     directory = tmp_path / "oc_sens"
     waveform = directory / "v1/waveforms/optimal_control_waveform.csv"
-    waveform.parent.mkdir(parents=True)
+    waveform.parent.mkdir(parents=True, exist_ok=True)
     waveform.write_bytes((find_project_root() / "experiments/control_waveform.csv").read_bytes())
     monkeypatch.setitem(control_sources.CONTROL_SOURCE_SET_ROOTS, "oc_sens", directory)
     return replace(RFSensitivityDirectAWParams(), arb_waveform_file="v1/waveforms/optimal_control_waveform.csv")
@@ -108,25 +123,31 @@ def control_source(tmp_path, monkeypatch):
 def rig(tmp_path, monkeypatch, control_source):
     root = find_project_root()
     mapping = load_mapping(root)
-    instance = SimpleNamespace(mapping=mapping, events=[], generators={}, xy_angle=0.0, xy_r=1.0, in_daq=False, in_shutdown=False, daq_error=None, shutdown_error=False, restore_error=False, cancel=False, z_phi0=37.0, z_scan_baseline=0.5, z_scan_amplitude=0.2, z_scan_phases=[])
+    instance = SimpleNamespace(mapping=mapping, events=[], generators={}, xy_angle=0.0, xy_r=1.0, in_daq=False, in_shutdown=False, daq_error=None, shutdown_error=False, restore_error=False, cancel=False, z_phi0=37.0, z_scan_baseline=0.5, z_scan_amplitude=5.0, z_scan_phases=[])
     for resource in {config.get("resource") for config in mapping.values() if config["instrument"] == "signal_generator"}:
         instance.generators[resource] = FakeSignal(resource, instance)
     monkeypatch.setattr(routed_signal_generator, "create_signal_generator", lambda config: instance.generators[config["resource"]])
-    monkeypatch.setattr(workflow, "GS200Instrument", lambda resource: Mock())
-    monkeypatch.setattr(workflow, "create_lockin", lambda config: FakeHF2(instance, device_id=config["device_id"]))
-    monkeypatch.setattr(workflow, "TECInstrument", lambda resource: Mock())
-    monkeypatch.setattr(workflow, "configure_temperature_control", lambda *args, **kwargs: SimpleNamespace(to_dict=lambda: {"control_source": "tec103"}))
+    monkeypatch.setattr(preparation, "GS200Instrument", lambda resource: Mock())
+    monkeypatch.setattr(preparation, "create_lockin", lambda config: FakeHF2(instance, device_id=config["device_id"]))
+    monkeypatch.setattr(preparation, "TECInstrument", lambda resource: Mock())
+    monkeypatch.setattr(preparation, "configure_temperature_control", lambda *args, **kwargs: SimpleNamespace(to_dict=lambda: {"control_source": "tec103"}))
     monkeypatch.setattr(workflow, "create_run_directory", lambda data_type, tag, parameters, **kwargs: create_run_directory(data_type, tag, parameters, schema_version=2, project_root=tmp_path))
     # 目录快照仍读取真实配置文件，不连接硬件。
-    (tmp_path / "params").mkdir()
+    (tmp_path / "params").mkdir(exist_ok=True)
     for name in ("mapping.yaml", "devices.yaml", "safety_limits.yaml"):
         (tmp_path / "params" / name).write_bytes((root / "params" / name).read_bytes())
+    monkeypatch.setattr(workflow, "find_project_root", lambda: tmp_path)
 
+    runtime_check = _helpers.check_cancelled
     def check():
+        runtime_check()
         if instance.cancel:
             raise WorkflowCancelled("模拟取消")
     monkeypatch.setattr(workflow, "check_cancelled", check)
-    monkeypatch.setattr(workflow, "wait", lambda seconds: check())
+    for module in (workflow, preparation, excitation, phase, acquisition, _helpers):
+        monkeypatch.setattr(module, "wait", lambda seconds: check())
+    for module in (excitation, phase, acquisition, _helpers):
+        monkeypatch.setattr(module, "check_cancelled", check)
     def report(stage, *args, **kwargs):
         if stage == "shutdown":
             instance.in_shutdown = True
@@ -134,12 +155,15 @@ def rig(tmp_path, monkeypatch, control_source):
     def acquire(hf2, config, **kwargs):
         instance.in_daq = True
         if config.signal_paths != ["sample.x"]:
-            # RF 相位扫描：按 Z 通道当前 Burst 相位返回已知成对响应模型。
+            # 相位/幅度扫描：按 Z 通道当前幅度与 Burst 相位返回已知响应模型（相位 180° 表示负号）。
             z_config = instance.mapping["Z_magnetic_field"]
             z_device = instance.generators[z_config["resource"]]
-            phase = float(z_device.phase.get(z_config["channel"], 0.0))
-            instance.z_scan_phases.append(phase)
-            response = complex(instance.z_scan_baseline) + instance.z_scan_amplitude * np.exp(1j * math.radians(phase - instance.z_phi0))
+            channel = z_config["channel"]
+            phase = float(z_device.phase.get(channel, 0.0))
+            amplitude = float(z_device.amplitude.get(channel, 0.0)) if z_device.output.get(channel, False) else 0.0
+            if amplitude == instance.params.z_rf_amplitude_init:
+                instance.z_scan_phases.append(phase)
+            response = complex(instance.z_scan_baseline) + instance.z_scan_amplitude * amplitude * np.exp(1j * math.radians(phase - instance.z_phi0))
             columns = max(8, config.grid_cols)
             time = np.arange(columns) / kwargs["actual_rate"]
             kwargs["cancellation_check"]()
@@ -151,10 +175,10 @@ def rig(tmp_path, monkeypatch, control_source):
             raise instance.daq_error
         kwargs["cancellation_check"]()
         return [DAQResult(signal_name="sample.x", demod_index=3, values=np.arange(100, dtype=float), time=np.arange(100) / 90000)]
-    monkeypatch.setattr(workflow.daq, "acquire_data", acquire)
+    monkeypatch.setattr(acquisition.daq, "acquire_data", acquire)
     instance.acquire = acquire
     instance.tmp_path = tmp_path
-    instance.params = replace(control_source, rf_amp_points=3, response_n_avg=1, noise_n_avg=1, z_burst_phase_init=17.0)
+    instance.params = replace(control_source, rf_amp_points=3, noise_n_avg=1, z_burst_phase_init=17.0)
     return instance
 
 
@@ -198,10 +222,43 @@ def test_complete_run_preserves_trigger_and_signed_phase(rig):
         assert data["z_rf_amplitude_vpp"] == pytest.approx(rig.params.z_rf_amplitude_init)
     # 扫描按 φ、φ+180° 成对顺序 arm，且只依赖 set_burst_phase/set_amplitude 重臂。
     assert rig.z_scan_phases == pytest.approx([phase for start in range(0, 180, 20) for phase in (start, start + 180)])
+    z = rig.mapping["Z_magnetic_field"]
+    z_phase_indices = [
+        index for index, event in enumerate(rig.events)
+        if event[:3] == (z["resource"], "set_burst_phase", z["channel"])
+    ]
+    scan_phase_indices = z_phase_indices[1:1 + len(rig.z_scan_phases)]
+    temp = rig.mapping["Temp_Switch"]
+    temp_switch_events = [
+        event[3] for index, event in enumerate(rig.events)
+        if scan_phase_indices[0] < index < scan_phase_indices[-1]
+        and event[:3] == (temp["resource"], "setup_dc", temp["channel"])
+    ]
+    # 18 个点按五点分组：前三组之间先恢复温控，再关闭后继续下一组。
+    assert temp_switch_events == [5.0, 0.0] * 3
+    after_scan_events = [
+        event[3] for index, event in enumerate(rig.events)
+        if scan_phase_indices[-1] < index < z_phase_indices[1 + len(rig.z_scan_phases)]
+        and event[:3] == (temp["resource"], "setup_dc", temp["channel"])
+    ]
+    assert after_scan_events == [5.0]
+    # 幅度扫描与相位扫描节奏一致：3 点为一组（分组点数 5），组前关温控、组末恢复；噪声逐条开关。
+    demod3_calib_end = z_phase_indices[1 + len(rig.z_scan_phases)]
+    response_stage_events = [
+        event[3] for index, event in enumerate(rig.events)
+        if index > demod3_calib_end and event[:3] == (temp["resource"], "setup_dc", temp["channel"])
+    ]
+    assert response_stage_events == [0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 5.0]
     assert config["hf2_response_snapshot"]["/dev18246/demods/3/adcselect"] == 1
     assert config["hf2_response_snapshot"]["/dev18246/auxouts/1/demodselect"] == 0
     assert config["hf2_response_snapshot"]["/dev18246/auxouts/1/outputselect"] == 1
     assert config["hf2_noise_snapshot"]["/dev18246/sigins/1/range"] == rig.params.loopback_input_range_v
+    for snapshot in ("hf2_response_snapshot", "hf2_noise_snapshot", "hf2_final_snapshot"):
+        for index in (0, 1):
+            for mode in ("ac", "imp50"):
+                assert config[snapshot][f"/dev18246/sigins/{index}/{mode}"] == 0
+    input_events = [event for event in rig.events if event[1] == "input_mode"]
+    assert len(input_events) >= 4 and all(event[3] == 0 for event in input_events)
     assert config["hf2_final_snapshot"]["/dev18246/demods/3/timeconstant"] == rig.params.demod3_tc
     trigger = rig.mapping["Time_sequence_2"]
     events = [(index, event) for index, event in enumerate(rig.events) if event[:3] == (trigger["resource"], "set_output", trigger["channel"])]
@@ -225,6 +282,13 @@ def test_complete_run_preserves_trigger_and_signed_phase(rig):
         assert data["demod3_x_V"][0] < 0 < data["demod3_x_V"][-1]
         assert data["z_v_to_nT"] == pytest.approx(rig.params.z_v_to_nt)
         assert data["amplitudes_nT"].tolist() == pytest.approx((np.asarray(data["amplitudes_V"]) * rig.params.z_v_to_nt).tolist())
+        # 幅度扫描改为定长 DAQ：保存逐点时序、均值/标准差、采样时长与实际采样率。
+        assert data["demod3_x_series_V"].ndim == 2 and data["demod3_x_series_V"].shape[0] == 3
+        assert data["demod3_x_std_V"].shape == (3,) and np.all(data["demod3_x_std_V"] == 0.0)
+        assert data["duration_s"] == pytest.approx(rig.params.scan_point_duration_s)
+        assert data["actual_rate_Sa_s"] == pytest.approx(config["actual_rates"]["demod3_response_Sa_s"])
+        assert config["response_acquisition"]["mode"] == "daq_duration"
+        assert config["response_acquisition"]["temperature_group_size"] == rig.params.temp_group_size
     with np.load(directory / "raw/noise_D3_0000.npz") as data:
         assert data["actual_rate_Sa_s"] == 90000
     assert_shutdown(rig)
@@ -232,6 +296,24 @@ def test_complete_run_preserves_trigger_and_signed_phase(rig):
         channel_config = rig.mapping[key]
         assert rig.generators[channel_config["resource"]].output[channel_config["channel"]] is True
     assert config["safety_shutdown"]["preserved_outputs"] == ["main_magnetic_field", "Pump_laser_power", "Probe_laser_power", "Pump_modulation", "HF2_configuration", "Time_sequence_2", "Time_sequence"]
+
+
+def test_amplitude_scan_groups_temperature(rig):
+    params = replace(rig.params, rf_amp_points=7, temp_group_size=3)
+    directory = workflow.run(params)
+    config, _ = saved_config(rig)
+    assert config["completion_status"] == "completed"
+    assert config["response_points_completed"] == 7
+    assert config["response_acquisition"]["temperature_group_size"] == 3
+    with np.load(directory / "raw/response_data.npz") as data:
+        assert len(data["amplitudes_V"]) == 7
+        assert data["z_burst_phase_deg"].tolist() == pytest.approx([217.0] * 3 + [37.0] * 4)
+    # 幅度阶段温控事件：Demod3 校相前关闭、校相后恢复→入组关闭；每 3 点恢复/再关闭，末组恢复后进入噪声逐条开关，收尾再恢复。
+    z = rig.mapping["Z_magnetic_field"]
+    temp = rig.mapping["Temp_Switch"]
+    z_phase_events = [index for index, event in enumerate(rig.events) if event[:3] == (z["resource"], "set_burst_phase", z["channel"])]
+    stage_events = [event[3] for index, event in enumerate(rig.events) if index > z_phase_events[1 + 18] and event[:3] == (temp["resource"], "setup_dc", temp["channel"])]
+    assert stage_events == [0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 5.0]
 
 
 @pytest.mark.parametrize("failure", ["low_r", "nonconverged", "nonfinite"])
@@ -312,7 +394,7 @@ def test_rf_phase_scan_fit_failure_stops_run(rig):
 
 
 def test_cancel_in_rf_phase_scan_keeps_completed_points(rig, monkeypatch):
-    original = workflow.daq.acquire_data
+    original = acquisition.daq.acquire_data
     calls = {"count": 0}
 
     def acquire(hf2, config, **kwargs):
@@ -322,7 +404,7 @@ def test_cancel_in_rf_phase_scan_keeps_completed_points(rig, monkeypatch):
                 raise WorkflowCancelled("模拟扫描取消")
         return original(hf2, config, **kwargs)
 
-    monkeypatch.setattr(workflow.daq, "acquire_data", acquire)
+    monkeypatch.setattr(acquisition.daq, "acquire_data", acquire)
     with pytest.raises(WorkflowCancelled):
         workflow.run(rig.params)
     config, directory = saved_config(rig)
@@ -370,6 +452,14 @@ def test_parameter_waveform_and_mapping_preflight(control_source):
     assert schema["schema_version"] == 2
     assert not any(field["name"].startswith("Z_TRIGGER_") for field in schema["fields"])
     assert definition.preflight(params.to_external()) == []
+    # 旧外部键自动迁移：稳定等待/采样时长改名，响应平均键剥离。
+    legacy = RFSensitivityDirectAWParams.from_external({
+        "RF_SETTLE_TIME": 0.12, "XY_PHASE_SETTLE_TIME": 0.6, "Z_PHASE_SCAN_DURATION_S": 0.3,
+        "RESPONSE_N_AVG": 5, "RESPONSE_AVG_INTERVAL": 0.2, **params.to_external()})
+    assert legacy.rf_step_settle_s == 0.12
+    assert legacy.temp_off_settle_s == 0.6
+    assert legacy.scan_point_duration_s == 0.3
+    assert legacy.temp_group_size == 5
 
 
 def test_resampling_and_quadrature_match_old_rules(control_source):

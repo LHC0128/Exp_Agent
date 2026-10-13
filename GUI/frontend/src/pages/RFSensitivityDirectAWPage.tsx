@@ -3,15 +3,13 @@ import { api } from "../api";
 import { PageHead } from "../components/PageHead";
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
-import { ParameterForm } from "../components/MxYOptimalControlFrequency/ParameterForm";
+import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
 import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import type { components } from "../types/openapi";
 import "./zawClosedLoop.css";
 import "./rfDirectAW.css";
 
-const ID = "rf-sensitivity-aw";
-const BASE = `/api/experiments/${ID}`;
 const terminal = (job: Job | undefined) => Boolean(job && ["completed", "failed", "cancelled"].includes(job.status));
 type RunList = components["schemas"]["RFDirectAWRunsResponse"];
 type Summary = components["schemas"]["RFDirectAWRunSummary"];
@@ -28,17 +26,20 @@ function commonTriggerParameters(values: ParameterValues): ParameterValues {
   return next;
 }
 
-const summaryUrl = (runId: string) => `${BASE}/runs/${encodeURIComponent(runId)}/summary`;
 const statusLabels: Record<string, string> = {
   completed: "完成",
   failed: "失败",
   cancelled: "已取消",
   running: "运行中",
-  not_started: "未分析"
+  not_started: "未分析",
+  acquired: "已采集，待安全收尾",
+  partial: "部分分析完成"
 };
 const status = (value: string) => statusLabels[value] ?? value;
 
 function Result({ value }: { value: Summary }) {
+  const component = value.response_component ?? "X";
+  const caption = component === "R" ? "R 标定 / X 噪声与 RF 灵敏度" : "X 响应与 RF 灵敏度";
   const fit = value.analysis?.response_fit as { method?: string; success?: boolean; slope_V_per_nT?: number; failure_reason?: string } | undefined;
   const sensitivity = value.analysis?.sensitivity as { flat_median_fT_per_sqrtHz?: number | null; flat_fmin_Hz?: number | null; flat_fmax_Hz?: number | null } | undefined;
   const correction = value.analysis?.frequency_response_correction as { applied?: boolean; hwhm_Hz?: number | null } | undefined;
@@ -52,23 +53,32 @@ function Result({ value }: { value: Summary }) {
     {value.failure_reason && <div className="alert error">{value.failure_reason}</div>}
     {value.analysis_error && <div className="alert error">{value.analysis_error}</div>}
     {!value.can_analyze && <p>{value.analysis_block_reason}</p>}
-    {fit && <p>X 斜率：{fit.slope_V_per_nT?.toPrecision(5)} V/nT · {fit.success ? "色散拟合" : "数值斜率回退"}{fit.failure_reason && `（${fit.failure_reason}）`}</p>}
+    {component === "R" && <p>R 标定 / X 噪声 · 响应 {String(value.parameters.Z_RF_FREQ)} Hz · 校相/噪声 {String(value.parameters.Z_RF_NOISE_FREQ)} Hz</p>}
+    {fit && <p>{component === "R" ? "R 标定底层中心斜率" : "X 斜率"}：{fit.slope_V_per_nT?.toPrecision(5)} V/nT · {fit.success ? component === "R" ? "绝对色散拟合" : "色散拟合" : "数值斜率估算回退"}{fit.failure_reason && `（${fit.failure_reason}）`}</p>}
     {typeof sensitivity?.flat_median_fT_per_sqrtHz === "number" && <p>灵敏度中位数：{sensitivity.flat_median_fT_per_sqrtHz.toPrecision(5)} fT/√Hz（{correctionText}）</p>}
-    {value.artifacts["full_analysis.png"] ? <figure className="zaw-figure"><figcaption>X 响应与 RF 灵敏度</figcaption><img src={value.artifacts["full_analysis.png"]} alt="X 响应与 RF 灵敏度" /></figure> : <p className="zaw-empty">本次运行暂无结果图。</p>}
+    {component === "R" && <p className="alert">换算假定响应与噪声频率的增益一致；增益一致性和等效线宽补偿待实测验证。</p>}
+    {value.artifacts["full_analysis.png"] ? <figure className="zaw-figure"><figcaption>{caption}</figcaption><img src={value.artifacts["full_analysis.png"]} alt={caption} /></figure> : <p className="zaw-empty">本次运行暂无结果图。</p>}
     <details><summary>全部结果图</summary>{["response_curve.png", "noise_psd.png", "sensitivity.png"].filter(name => value.artifacts[name]).map(name => <figure className="zaw-figure" key={name}><figcaption>{name}</figcaption><img src={value.artifacts[name]} alt={name} /></figure>)}</details>
     <p>{Object.entries(value.artifacts).filter(([name]) => /\.(npz|json|yaml|pdf)$/.test(name)).map(([name, url]) => <a key={name} href={url} download style={{ marginRight: 12 }}>{name}</a>)}</p>
     <details><summary>校相与安全收尾诊断</summary><pre>{JSON.stringify({ xy_phase_calibration: value.xy_phase_calibration, safety_shutdown: value.safety_shutdown }, null, 2)}</pre></details>
-    <details><summary>实际采样率与 HF2 回读</summary><pre>{JSON.stringify({ actual_rates: value.actual_rates, response: value.hf2_response_snapshot, noise: value.hf2_noise_snapshot }, null, 2)}</pre></details>
+    <details><summary>实际采样率与 HF2 回读</summary><pre>{JSON.stringify({ actual_rates: value.actual_rates, stage_frequencies: value.stage_frequencies, response: value.hf2_response_snapshot, calibration: value.hf2_calibration_snapshot, noise: value.hf2_noise_snapshot }, null, 2)}</pre></details>
   </div>;
 }
 
-export function RFSensitivityDirectAWPage() {
+export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }: { experimentId?: "rf-sensitivity-aw" | "rf-sensitivity-aw-r" }) {
+  const ID = experimentId;
+  const BASE = `/api/experiments/${ID}`;
+  const isR = ID === "rf-sensitivity-aw-r";
+  const title = isR ? "RF 灵敏度（DirectAW R）" : "RF 灵敏度（DirectAW）";
+  const responseLabel = isR ? "R 标定 / X 噪声" : "X 响应";
+  const summaryUrl = (runId: string) => `${BASE}/runs/${encodeURIComponent(runId)}/summary`;
   const [tab, setTab] = useState<"run" | "history">("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
   const [layout, setLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
   const [savedLayout, setSavedLayout] = useState(layout);
+  const [session, setSession] = useState<XYSession>();
   const [job, setJob] = useState<Job>();
   const [analysisJob, setAnalysisJob] = useState<Job>();
   const [comparisonJob, setComparisonJob] = useState<Job>();
@@ -89,6 +99,8 @@ export function RFSensitivityDirectAWPage() {
   const jobActive = Boolean(job && !terminal(job));
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
   const comparisonActive = Boolean(comparisonJob && !terminal(comparisonJob));
+  const sessionBusy = Boolean(session && session.status !== "closed" && (session.status !== "waiting" || session.pending_request));
+  const parametersBusy = jobActive && (!session || session.status === "closed") || sessionBusy;
   const comparisonBusy = comparisonActive || comparisonStarting;
   const comparisonResult = comparisonJob?.status === "completed" ? comparisonJob.result as ComparisonResult | undefined : undefined;
   const comparisonDirty = Boolean(comparisonResult && JSON.stringify(comparisonSelection(comparisonRuns)) !== JSON.stringify(comparisonSelection(comparisonResult.runs)));
@@ -121,7 +133,8 @@ export function RFSensitivityDirectAWPage() {
         const recovered = await api<Job>(`/api/jobs/${activeAnalysis.id}`);
         if (!disposed) setAnalysisJob(recovered);
       }
-      const active = jobs.find(item => item.kind === `experiment:${ID}` && ["queued", "running"].includes(item.status))
+      const active = jobs.find(item => item.kind === `session:${ID}` && ["queued", "running"].includes(item.status))
+        ?? jobs.find(item => item.kind === `experiment:${ID}` && ["queued", "running"].includes(item.status))
         ?? jobs.find(item => item.kind === `experiment:${ID}` && item.started_at);
       if (active) {
         const recovered = await api<Job>(`/api/jobs/${active.id}`);
@@ -129,7 +142,7 @@ export function RFSensitivityDirectAWPage() {
       }
     }).catch(reason => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
-  }, []);
+  }, [BASE, ID]);
 
   useEffect(() => {
     if (comparisonJob?.status !== "completed") return;
@@ -250,35 +263,43 @@ export function RFSensitivityDirectAWPage() {
   };
 
   return <>
-    <PageHead eyebrow="MEASUREMENT · RF" title={definition?.title ?? "RF 灵敏度（DirectAW）"} description={definition?.description ?? "读取参数与运行记录。"} />
+    <PageHead eyebrow="MEASUREMENT · RF" title={definition?.title ?? title} description={definition?.description ?? "读取参数与运行记录。"} />
     {error && <div className="alert error" role="alert">{error}</div>}
-    <div className="zaw-tab-strip" role="tablist" aria-label="RF 灵敏度（DirectAW）视图" onKeyDown={tabKey}>
+    <div className="zaw-tab-strip" role="tablist" aria-label={`${title}视图`} onKeyDown={tabKey}>
       {(["run", "history"] as const).map(item => <button key={item} id={`rf-aw-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`rf-aw-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : "历史"}</button>)}
     </div>
     <div id="rf-aw-panel-run" role="tabpanel" aria-labelledby="rf-aw-tab-run" hidden={tab !== "run"}>
-      <div className="zaw-dashboard">
-        <section className="zaw-panel zaw-panel-params">
-          <div className="zaw-panel-head"><small>PARAMETERS</small><h2>实验参数</h2></div>
-          <ParameterForm fields={fields} values={values} layout={layout} onChange={(field, value) => setValues(old => commonTriggerParameters({ ...old, [field.name]: value }))} onLayoutChange={setLayout} onMoveNotice={setNotice} disabled={jobActive || starting || saving} />
-          {!sameParameterLayout(layout, savedLayout) && <p className="zaw-layout-dirty">布局有未保存修改</p>}
-          <button className="zaw-secondary" disabled={saving || starting || jobActive || !fields.length} onClick={() => void save()}>{saving ? "保存中…" : "保存参数与布局"}</button>
+      <WorkflowPanel experimentId={ID} finishStepId="A16" runStepId="A15" analysisParameterPrefix=""
+        normalizeParameters={commonTriggerParameters} enabled={fields.length > 0}
+        fields={fields} layout={layout} setLayout={setLayout} setNotice={setNotice}
+        parametersDisabled={parametersBusy || starting || saving || comparisonBusy}
+        values={values} setValues={setValues} session={session} setSession={setSession}
+        job={job} setJob={setJob} analysisJob={analysisJob} setAnalysisJob={setAnalysisJob}
+        hardwareBusy={hardwareBusy} runs={list.runs.filter(item => item.completion_status === "completed")}
+        setError={setError} onRefresh={setRefresh}>
+        <div className="xy-workflow-controls">
+          <div className="xy-flow-actions">
+            <button disabled={saving || starting || parametersBusy || !fields.length} onClick={() => void save()}>{saving ? "保存中…" : "保存参数与布局"}</button>
+            <button className="secondary" disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
+            <button disabled={starting || jobActive || hardwareBusy || analysisActive || comparisonBusy || !fields.length} onClick={() => void check(true)}>{starting ? "正在启动…" : "预检并运行实验"}</button>
+          </div>
+          <p>在流程节点编辑参数。保存下一次实验参数与统一分类，历史目录的分析覆盖值独立保留。</p>
+          {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
           {notice && <p role="status">{notice}</p>}
-        </section>
-        <section className="zaw-panel zaw-panel-control">
-          <div className="zaw-panel-head"><small>CONTROL</small><h2>控制与状态</h2></div>
-          <div className="zaw-control-buttons">
-            <button className="zaw-secondary" disabled={starting || jobActive || !fields.length} onClick={() => void check(false)}>仅预检</button>
-            <button className="zaw-primary" disabled={starting || jobActive || hardwareBusy || !fields.length} onClick={() => void check(true)}>{jobActive ? "实验运行中" : starting ? "正在启动…" : "预检并运行实验"}</button>
+          <div className="xy-workflow-preview" aria-label="RF 采集预览">
+            <h3>RF 采集预览（只读）</h3>
+            <p>响应范围 {String(values.RF_AMP_START ?? "—")} → {String(values.RF_AMP_STOP ?? "—")} Vpp，共 {String(values.RF_AMP_POINTS ?? "—")} 点，每点 {String(values.SCAN_POINT_DURATION_S ?? "—")} s。</p>
+            <p>零 RF 噪声：{String(values.NOISE_N_AVG ?? "—")} 条 × {String(values.NOISE_DURATION ?? "—")} s；采样率以 HF2 实际回读为准。</p>
           </div>
           {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
           {definition?.wiring_notes.map(note => <p key={note}>{note}</p>)}
           <JobView job={job} onUpdate={setJob} />
-        </section>
+        </div>
+      </WorkflowPanel>
         <section className="zaw-panel zaw-panel-result">
           <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
           {latest ? <><Result value={latest} /><button className="zaw-secondary" onClick={() => { setSelectedId(latest.run_id); setHistoryView("single"); setTab("history"); }}>查看本次详情</button></> : <p className="zaw-empty">暂无运行记录。</p>}
         </section>
-      </div>
     </div>
     <div id="rf-aw-panel-history" role="tabpanel" aria-labelledby="rf-aw-tab-history" hidden={tab !== "history"}>
       <div className="zaw-history">
@@ -311,7 +332,7 @@ export function RFSensitivityDirectAWPage() {
           </> : <p className="zaw-empty">{selectedId ? "正在读取运行详情…" : "请选择一条运行记录。"}</p>}</div>
           <div hidden={historyView !== "comparison"} className="rf-aw-comparison">
             <h3>对比分析</h3>
-            <p>从左侧勾选至少两次运行，支持跨页选择。上图为 X 响应与拟合，下图为灵敏度主谱。</p>
+            <p>从左侧勾选至少两次运行，支持跨页选择。上图为{responseLabel}与拟合，下图为灵敏度主谱。</p>
             <p>每次运行填写一个英文图例，两面板使用同色；留空时使用运行 ID。</p>
             {comparisonRuns.map(item => <div className="rf-aw-legend" key={item.run_id}>
               <label><span>{item.run_id}</span><input aria-label={`图例：${item.run_id}`} placeholder={item.run_id} value={item.legend ?? ""} disabled={comparisonBusy} aria-invalid={invalidLegend(item.legend)} onChange={event => {
@@ -327,7 +348,7 @@ export function RFSensitivityDirectAWPage() {
             {comparisonDirty && <p className="alert" role="status">选择或图例已修改，请重新生成对比。</p>}
             {comparisonResult && !comparisonDirty && <>
               {comparisonResult.warnings.map((warning, index) => <p className="alert" key={index}>{warning}</p>)}
-              <figure className="zaw-figure"><figcaption>X 响应与 RF 灵敏度对比</figcaption><img src={comparisonResult.artifacts["full_analysis_comparison.png"]} alt="X 响应与 RF 灵敏度对比" /></figure>
+              <figure className="zaw-figure"><figcaption>{responseLabel}与 RF 灵敏度对比</figcaption><img src={comparisonResult.artifacts["full_analysis_comparison.png"]} alt={`${responseLabel}与 RF 灵敏度对比`} /></figure>
               <p className="rf-aw-downloads">{["png", "pdf"].map(extension => <a key={extension} href={comparisonResult.artifacts[`full_analysis_comparison.${extension}`]} download>下载 {extension.toUpperCase()}</a>)}</p>
             </>}
           </div>

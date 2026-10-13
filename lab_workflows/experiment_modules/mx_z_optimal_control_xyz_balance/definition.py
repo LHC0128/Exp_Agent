@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="field-balance",
     variant="mx-z-optimal-control-xyz-dc",
     description=(
-        '保持 Z 周期最优控制，以 DG4000 DC 扫描 X/Y、GS200 电流扫描 Z，记录 锁相放大器 Demod0 R 并报告实测三维网格最小点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。'
+        '保持 Z 周期最优控制，以 DG4000 DC 扫描 X/Y、GS200 电流扫描 Z，记录 锁相放大器 Demod0 R 并报告实测三维网格最小点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
     ),
     data_type="Mx_Z_Optimal_Control_XYZ_Balance",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
