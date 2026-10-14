@@ -294,7 +294,7 @@ it("手动 K_Z 经预检、保存与完整运行提交，并随历史参数填�
 
 it("从真实路由进入双 Tab，预检失败不启动采集", async () => {
   renderPage();
-  expect(within(screen.getByRole("tablist", { name: "XY 已知噪声注入实验视图" })).getAllByRole("tab")).toHaveLength(3);
+  expect(within(screen.getByRole("tablist", { name: "XY 已知噪声注入实验视图" })).getAllByRole("tab")).toHaveLength(2);
   await waitFor(() => expect(screen.getByRole("button", { name: "完整运行" })).toBeEnabled());
   const normal = mockApi.getMockImplementation()!;
   mockApi.mockImplementation(async (url, options) => {
@@ -322,27 +322,22 @@ it("背景不可辨识时显示空值并保留有符号差分统计", async () =
   expect(within(panel).getByText(/带外背景 ON\/OFF 中位比值：1.020/)).toBeVisible();
 });
 
-it("架构 Tab 内嵌总览与子图切换，可在新页面打开", async () => {
+it("仅保留运行与历史，交互流程图保留且两个主 Tab 支持双向循环", async () => {
   renderPage();
-  const tablist = screen.getByRole("tablist", { name: "XY 已知噪声注入实验视图" });
-  fireEvent.click(within(tablist).getByRole("tab", { name: "架构" }));
-  const panel = screen.getByRole("tabpanel", { name: "架构" });
-  const frame = within(panel).getByTitle("XY 已知可控噪声谱实验采集架构图");
-  expect(frame).toHaveAttribute("src", "/architecture/noise-spectrum-xy-known-noise.html");
-  expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-downloads allow-popups");
-  expect(within(panel).getByRole("link", { name: "在新页面打开" })).toHaveAttribute("href", "/architecture/noise-spectrum-xy-known-noise.html");
-  fireEvent.click(within(panel).getByRole("tab", { name: "单点时序" }));
-  expect(within(panel).getByTitle("XY 已知可控噪声谱实验单控制点时序图")).toHaveAttribute("src", "/architecture/noise-spectrum-xy-known-noise.timing.html");
-  fireEvent.click(within(panel).getByRole("tab", { name: "数据分析" }));
-  expect(within(panel).getByTitle("XY 已知可控噪声谱实验离线分析与真值链图")).toHaveAttribute("src", "/architecture/noise-spectrum-xy-known-noise.dataflow.html");
-  // 键盘导航在三个 Tab 间循环，运行左移回绕到架构。
-  fireEvent.click(within(tablist).getByRole("tab", { name: "运行" }));
+  const tablist = await screen.findByRole("tablist", { name: "XY 已知噪声注入实验视图" });
+  expect(within(tablist).getAllByRole("tab")).toHaveLength(2);
+  expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
+  expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();
+  expect(await screen.findByRole("region", { name: "交互实验流程图" })).toBeVisible();
   const runTab = within(tablist).getByRole("tab", { name: "运行" });
+  const historyTab = within(tablist).getByRole("tab", { name: "历史" });
   runTab.focus();
-  fireEvent.keyDown(tablist, { key: "ArrowLeft" });
-  const archTab = within(tablist).getByRole("tab", { name: "架构" });
-  expect(archTab).toHaveFocus();
-  expect(archTab).toHaveAttribute("aria-selected", "true");
-  fireEvent.keyDown(tablist, { key: "ArrowRight" });
-  expect(within(tablist).getByRole("tab", { name: "运行" })).toHaveFocus();
+  for (const key of ["ArrowLeft", "ArrowRight"]) {
+    fireEvent.keyDown(tablist, { key });
+    expect(historyTab).toHaveFocus();
+    expect(historyTab).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(tablist, { key });
+    expect(runTab).toHaveFocus();
+    expect(runTab).toHaveAttribute("aria-selected", "true");
+  }
 });

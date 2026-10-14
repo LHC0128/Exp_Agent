@@ -113,10 +113,10 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); mockApi.mockReset(); });
 
-it("按真实路由显示三 Tab，节点内编辑保留并从历史填回，预检失败不启动", async () => {
+it("按真实路由显示双 Tab，节点内编辑保留并从历史填回，预检失败不启动", async () => {
   renderPage();
   const tabs = screen.getByRole("tablist", { name: "探测链路频率响应标定视图" });
-  expect(within(tabs).getAllByRole("tab")).toHaveLength(3);
+  expect(within(tabs).getAllByRole("tab")).toHaveLength(2);
   const parameters = await openParameters("A07");
   fireEvent.change(parameters.getByLabelText("运行标签"), { target: { value: "edited" } });
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
@@ -167,26 +167,22 @@ it("分阶段分析绑定历史目录，独立于等待中的硬件会话", asyn
   expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({ revision: 0, step_ids: ["B01", "B02", "B03"], analysis_parameters: {} });
 });
 
-it("架构 Tab 内嵌总览与子图切换，可在新页面打开", async () => {
+it("仅保留运行与历史，交互流程图保留且两个主 Tab 支持双向循环", async () => {
   renderPage();
   const tablist = await screen.findByRole("tablist", { name: "探测链路频率响应标定视图" });
-  fireEvent.click(within(tablist).getByRole("tab", { name: "架构" }));
-  const panel = screen.getByRole("tabpanel", { name: "架构" });
-  const frame = within(panel).getByTitle("探测链路频率响应标定实验总架构图");
-  expect(frame).toHaveAttribute("src", "/architecture/detection-chain-frequency-response.html");
-  expect(within(panel).getByRole("link", { name: "在新页面打开" })).toHaveAttribute("href", "/architecture/detection-chain-frequency-response.html");
-  fireEvent.click(within(panel).getByRole("tab", { name: "采集流程" }));
-  expect(within(panel).getByTitle("探测链路频率响应标定实验采集执行流程图")).toHaveAttribute("src", "/architecture/detection-chain-frequency-response.acquisition.html");
-  fireEvent.click(within(panel).getByRole("tab", { name: "单点时序" }));
-  expect(within(panel).getByTitle("探测链路频率响应标定实验单频点采集时序图")).toHaveAttribute("src", "/architecture/detection-chain-frequency-response.timing.html");
-  fireEvent.click(within(panel).getByRole("tab", { name: "数据分析" }));
-  expect(within(panel).getByTitle("探测链路频率响应标定实验数据与分析图")).toHaveAttribute("src", "/architecture/detection-chain-frequency-response.dataflow.html");
-  // 键盘导航在三个 Tab 间循环：外层切回“运行”后左移回绕到架构，再右移回运行。
+  expect(within(tablist).getAllByRole("tab")).toHaveLength(2);
+  expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
+  expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();
+  expect(await screen.findByRole("region", { name: "交互实验流程图" })).toBeVisible();
   const runTab = within(tablist).getByRole("tab", { name: "运行" });
-  fireEvent.click(runTab);
+  const historyTab = within(tablist).getByRole("tab", { name: "历史" });
   runTab.focus();
-  fireEvent.keyDown(tablist, { key: "ArrowLeft" });
-  expect(within(tablist).getByRole("tab", { name: "架构" })).toHaveFocus();
-  fireEvent.keyDown(tablist, { key: "ArrowRight" });
-  expect(runTab).toHaveFocus();
+  for (const key of ["ArrowLeft", "ArrowRight"]) {
+    fireEvent.keyDown(tablist, { key });
+    expect(historyTab).toHaveFocus();
+    expect(historyTab).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(tablist, { key });
+    expect(runTab).toHaveFocus();
+    expect(runTab).toHaveAttribute("aria-selected", "true");
+  }
 });

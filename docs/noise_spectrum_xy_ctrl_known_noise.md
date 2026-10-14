@@ -184,7 +184,7 @@ $$S_\text{truth}(\omega) = S_v(\omega)\cdot K_Z^2$$
 
 ## GUI 使用与交互流程
 
-真实路由为 `/experiments/noise-spectrum-xy-known-noise`，保留「运行 / 历史 / 架构」Tab。
+真实路由为 `/experiments/noise-spectrum-xy-known-noise`，保留「运行 / 历史」两个主 Tab。
 运行页复用 `WorkflowPanel`，桌面为采集与分析两列，窄屏改为单列。
 保存参数与布局、波形与 Welch 预览、仅预检、完整运行、取消及任务日志位于流程容器顶部。
 预览不连接仪器；「对齐注入幅度」将幅度设为设计波形峰峰值，绝对真值始终使用实际幅度。
@@ -255,7 +255,7 @@ B05 可在 B01 后独立运行，不要求先做 PSD。来源变化只使 B05/B0
 OFF 脊线搜索覆盖保存的扫描目标终点，并受实际 Nyquist 限制；最终谱只输出指定分析频带。
 目标范围不替代实测 K/B、不放宽门槛或外推支持区间。旧背景半窗口键加载时忽略。
 
-架构 Tab 提供总览、采集、单点时序和数据分析子图；
+架构总览与采集、单点时序、数据分析静态子图已从 GUI 撤下并归档；运行页继续提供
 [可编辑 Excalidraw 原图](../lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/XY%20已知可控噪声谱.excalidraw)
 由 `/api/experiments/noise-spectrum-xy-known-noise/workflow/diagram` 下载。
 
@@ -313,9 +313,9 @@ B03/B04 还输出二维谱、差分热图、线形拟合及分离响应系数图
 无来源运行可下载 PSD、脊线和谱分离结果，不生成伪增益或伪真值比较。
 离线分析只读取保存的采集旁文件；实际采样率不一致时拒绝合并 PSD，旧数据继续使用本轮配置中的实际速率。
 
-架构图反映当前工作区草稿，源码未提交冻结，不绑定旧 commit；
-总览已同步手动 K_Z 输入，当前[图规格](../GUI/frontend/public/architecture/noise-spectrum-xy-known-noise.json)
-与[HTML 产物](../GUI/frontend/public/architecture/noise-spectrum-xy-known-noise.html)保持一致。
+历史架构图记录撤下时的工作区草稿，源码未提交冻结，不绑定旧 commit；
+原[图规格](old/architecture/noise-spectrum-xy-known-noise.json)
+与[HTML 产物](old/architecture/noise-spectrum-xy-known-noise.html)保持原样，GUI 不再加载它们。
 整套子图的历史 SHA-256 与浏览器/感知复核见[历史交付验证记录](xy_known_noise_workflow_validation.json)。
 
 ### 共享全范围分离与独立背景验收

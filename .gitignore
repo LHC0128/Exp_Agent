@@ -42,8 +42,8 @@ params/.instrument_config.lock
 .tmp-*.html
 noise_spectra_median_method.npz
 
-# 架构图质检截图与中间渲染产物（正式 .html/.json 正常提交）
-GUI/frontend/public/architecture/*.visual-check.*
+# 归档架构图质检截图与中间渲染产物（正式 .html/.json 正常提交）
+docs/old/architecture/*.visual-check.*
 
 # 误展开的 Windows 系统缓存路径
 %SystemDrive%/

@@ -104,6 +104,8 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 ## 专属 GUI
 
+原架构 Tab 已从 GUI 撤下，原图保留在[历史归档](old/architecture/mx-y-optimal-control-rf-frequency-response.html)。
+
 实验 ID `mx-y-optimal-control-rf-frequency-response` 在 `ExperimentPage.tsx` 中路由到专属页面，
 提供「运行 / 历史」两个 Tab。运行 Tab 含基础/高级参数分组、参数在两组间移动、预检并运行、
 保存参数与布局以及最新结果预览；历史 Tab 提供运行列表、摘要、标定信息、结果图、填回参数与

@@ -3,7 +3,6 @@ import { api } from "../api";
 import { PageHead } from "../components/PageHead";
 import { Dashboard } from "../components/MxYOptimalControlFrequency/Dashboard";
 import { HistoryView } from "../components/MxYOptimalControlFrequency/HistoryView";
-import { ArchitectureView } from "../components/MxYOptimalControlFrequency/ArchitectureView";
 import { MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID } from "../components/MxYOptimalControlFrequency/images";
 import type {
   ExperimentDefinition,
@@ -20,7 +19,7 @@ import {
 } from "./experimentHelpers";
 import "../pages/zawClosedLoop.css";
 
-type Tab = "run" | "history" | "architecture";
+type Tab = "run" | "history";
 
 export function MxYOptimalControlFrequencyPage() {
   const [tab, setTab] = useState<Tab>("run");
@@ -142,15 +141,6 @@ export function MxYOptimalControlFrequencyPage() {
             >
               历史
             </button>
-            <button
-              role="tab"
-              data-tab="architecture"
-              aria-selected={tab === "architecture"}
-              className={tab === "architecture" ? "active" : ""}
-              onClick={() => setTab("architecture")}
-            >
-              架构
-            </button>
           </div>
           {tab === "run" && (
             <Dashboard
@@ -182,7 +172,6 @@ export function MxYOptimalControlFrequencyPage() {
               onJumpToRun={() => setTab("run")}
             />
           )}
-          {tab === "architecture" && <ArchitectureView />}
         </>
       )}
       {definition && !fields.length && !loadError && (

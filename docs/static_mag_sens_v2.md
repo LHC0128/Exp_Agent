@@ -165,7 +165,7 @@ data/Static_Magnetic_Field_Sensitivity/<时间戳>_<tag>/
 
 ## GUI 与旧数据边界
 
-保留“运行 / 历史 / 架构”三个 Tab。运行页是采集、分析两列交互流程图，顶部集中保存参数与布局、预检、完整运行、取消、任务状态和日志；结果预览放在流程之后。全部可见参数在节点内编辑，基础名称常显，高级参数折叠，允许同时展开多个节点。初始化条件仅在设置节点展示；校相与色散共用温控开关等待，修改值和基础／高级分类会同步到两处。切换主 Tab 保留节点选择、参数与各目录的分析草稿。
+保留“运行 / 历史”两个主 Tab。运行页是采集、分析两列交互流程图，顶部集中保存参数与布局、预检、完整运行、取消、任务状态和日志；结果预览放在流程之后。全部可见参数在节点内编辑，基础名称常显，高级参数折叠，允许同时展开多个节点。初始化条件仅在设置节点展示；校相与色散共用温控开关等待，修改值和基础／高级分类会同步到两处。切换主 Tab 保留节点选择、参数与各目录的分析草稿。
 
 | 节点 | 步骤 | 前置 |
 |---|---|---|
@@ -194,11 +194,11 @@ data/Static_Magnetic_Field_Sensitivity/<时间戳>_<tag>/
 
 分析列可操作“下一次实验（自动分析设置）”或具体运行目录。下一次实验与采集共享同键设置；具体历史目录仅支持独立覆盖有限正数 `z_v_to_nt`，执行所选分析时生效，存入该目录的 `analysis_state.json`。修改只使 B02、B04 失效，B03 保持有效；不修改采集参数快照、默认参数或下一次实验草稿。历史节点只展示这一后端支持的覆盖字段；即使正在编辑历史分析，顶部保存默认值仍只保存下一次实验参数和统一布局。
 
-分阶段记录包含配置、实际输入文件及产物指纹；原始文件、快照或产物改变后不能复用过期前置。重算归档受影响结果到 `results/before_<时间>/`，不移动仍有效的前置。正在写入的目录拒绝分析；分阶段分析和历史“重新分析”共用目录互斥。已有版本 3 数据无阶段记录时从 B01 重建，更早格式继续仅查看已有结果。可编辑原图为[静磁场灵敏度.excalidraw](../lab_workflows/experiment_modules/static_sensitivity/静磁场灵敏度.excalidraw)，运行页提供下载；已有架构展示保留。
+分阶段记录包含配置、实际输入文件及产物指纹；原始文件、快照或产物改变后不能复用过期前置。重算归档受影响结果到 `results/before_<时间>/`，不移动仍有效的前置。正在写入的目录拒绝分析；分阶段分析和历史“重新分析”共用目录互斥。已有版本 3 数据无阶段记录时从 B01 重建，更早格式继续仅查看已有结果。可编辑原图为[静磁场灵敏度.excalidraw](../lab_workflows/experiment_modules/static_sensitivity/静磁场灵敏度.excalidraw)，运行页提供下载；静态架构展示已撤下并归档。
 
 旧格式运行目录不迁移、不改原始文件；现有历史查看功能保留已有参数、图和结果，但旧格式不能填回或用新分析器重新分析。本次不增加旧配置或历史运行转换。没有运行状态的历史显示 `unknown`，不推定为完成；重新分析 API 在排队前拒绝旧格式。旧 `params/static_sensitivity.yaml` 仅留档，不再读取；旧独立参数/启动层已移除，`LAB_STATIC_*` 环境变量与旧命令行参数会明确报错。
 
-架构 Tab 使用现有单张总览，展示 DC 点采集、中位数、完整波形落盘、分组温控和无 Z→锁相放大器 SYNC 触发的链路。总览中的 DAQ 采集步骤现复用公共选择器，高速 MFLI 请求改用单段 Scope；每个 DC 点独立保存，不拼接为连续波形。图明确标注工作区版本、源码未冻结，不提供错误的旧 commit 链接。
+原架构 Tab 已撤下，[单张总览](old/architecture/static-sensitivity.html)作为历史图保留，记录撤下时的 DC 点采集、中位数、完整波形落盘、分组温控和无 Z→锁相放大器 SYNC 触发链路。归档图中的 DAQ 采集步骤复用公共选择器，高速 MFLI 使用单段 Scope，每个 DC 点独立保存；这些标记仅描述撤下时的工作区版本，源码未冻结，不用于保证后续实现一致。
 
 独立的 `Static_Magnetic_Field_Sensitivity_Optimize.py` 和 `_Optimize_Local.py` 不在此次采集替换范围。全局优化原有 2×2 汇总面板继续分别展示灵敏度、HWHM、斜率和 R²，以颜色及圆点/叉号区分有效和拒绝点；不混合单位、不补零。它们同样受共享色散拟合的零初值数值修正影响，但采集和选择逻辑不变。
 
@@ -231,10 +231,12 @@ data/Static_Magnetic_Field_Sensitivity/<时间戳>_<tag>/
 .\agent_exp_env\Scripts\python.exe -m pytest lab_workflows/experiment_modules/static_sensitivity/test_stages.py lab_workflows/experiment_modules/static_sensitivity/test_analysis_stages.py GUI/backend/test_static_sensitivity.py
 ```
 
-## 架构图交付记录
+## 架构图交付记录（历史归档）
+
+2026-10-14 从 GUI 撤下原图，以下为既有交付记录；归档保持原文件与验收附件的内容不变。
 
 - 实验：`static-sensitivity`；类型：`architecture`；仅更新单张总览，无子图。
-- Canonical artifact：[`static-sensitivity.html`](../GUI/frontend/public/architecture/static-sensitivity.html) 与同名 JSON；工作区版本，源码未冻结，无 pinned revision，不提供固定源码链接，不自动提交。
+- Canonical artifact：[`static-sensitivity.html`](old/architecture/static-sensitivity.html) 与同名 JSON；工作区版本，源码未冻结，无 pinned revision，不提供固定源码链接，不自动提交。
 - `validate` / `deliver`：showcase 9/9，0 error，0 warning；浏览器 `visual-check`：passed，覆盖四个桌面视口（1440×900、1600×1000、1920×1080、2048×1320）。
 - 感知复核：passed，实际检查两端视口的明暗截图；主路径清晰，无交叉、遮挡或裁剪，大桌面纵向布局平衡。本轮感知修正轮次：0。
 - Specification SHA-256：`38185ea7e2b79adc36f1d5007dacac36f3dd7ebb890ae86a02386564c0adaa21`，7810 bytes。

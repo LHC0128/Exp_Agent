@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
@@ -283,60 +283,30 @@ describe("MxYOptimalControlFrequencyPage", () => {
     expect(await screen.findByLabelText("运行标签")).toBeInTheDocument();
   });
 
-  it("页面显示三个 Tab：运行、历史、架构，默认运行", async () => {
+  it("页面仅显示运行、历史两个主 Tab，默认运行且不再加载架构图", async () => {
     show();
-    expect(await screen.findByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
+    const tablist = await screen.findByRole("tablist", { name: "Mx Y 最优控制频率响应实验视图" });
+    expect(within(tablist).getAllByRole("tab")).toHaveLength(2);
+    expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "历史" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "架构" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
     expect(screen.queryByTitle("Mx Y 最优控制频率响应实验采集流程架构图")).not.toBeInTheDocument();
   });
 
-  it("点击架构 Tab 后显示 iframe，src 与新页面打开链接一致，且有中文无障碍标题", async () => {
+  it("ArrowLeft / ArrowRight 在运行、历史两个主 Tab 间循环切换", async () => {
     show();
-    fireEvent.click(await screen.findByRole("tab", { name: "架构" }));
-    const iframe = await screen.findByTitle("Mx Y 最优控制频率响应实验采集流程架构图");
-    expect(iframe).toHaveAttribute(
-      "src",
-      "/architecture/mx-y-optimal-control-rf-frequency-response.html",
-    );
-    const link = screen.getByRole("link", { name: "在新页面打开" });
-    expect(link).toHaveAttribute(
-      "href",
-      "/architecture/mx-y-optimal-control-rf-frequency-response.html",
-    );
-  });
-
-  it("架构 Tab 不触发额外后端实验运行请求", async () => {
-    show();
-    await screen.findByRole("tab", { name: "运行" });
-    const definitionCallsBefore = definitionCalls;
-    const runListCallsBefore = runListCalls;
-    fireEvent.click(screen.getByRole("tab", { name: "架构" }));
-    expect(await screen.findByTitle("Mx Y 最优控制频率响应实验采集流程架构图")).toBeInTheDocument();
-    expect(definitionCalls).toBe(definitionCallsBefore);
-    expect(runListCalls).toBe(runListCallsBefore);
-  });
-
-  it("ArrowLeft / ArrowRight 可以在三个 Tab 间循环切换", async () => {
-    show();
-    const tablist = await screen.findByRole("tablist", {
-      name: "Mx Y 最优控制频率响应实验视图",
-    });
-    const runTab = screen.getByRole("tab", { name: "运行" });
+    const tablist = await screen.findByRole("tablist", { name: "Mx Y 最优控制频率响应实验视图" });
+    const runTab = within(tablist).getByRole("tab", { name: "运行" });
+    const historyTab = within(tablist).getByRole("tab", { name: "历史" });
     runTab.focus();
-    fireEvent.keyDown(tablist, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "历史" })).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(tablist, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "架构" })).toHaveAttribute("aria-selected", "true");
-    // 架构 → 运行 循环回绕。
-    fireEvent.keyDown(tablist, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
-    // 运行 → 架构 反向回绕。
-    runTab.focus();
-    fireEvent.keyDown(tablist, { key: "ArrowLeft" });
-    expect(screen.getByRole("tab", { name: "架构" })).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(tablist, { key: "ArrowLeft" });
-    expect(screen.getByRole("tab", { name: "历史" })).toHaveAttribute("aria-selected", "true");
+    for (const key of ["ArrowRight", "ArrowLeft"]) {
+      fireEvent.keyDown(tablist, { key });
+      expect(historyTab).toHaveFocus();
+      expect(historyTab).toHaveAttribute("aria-selected", "true");
+      fireEvent.keyDown(tablist, { key });
+      expect(runTab).toHaveFocus();
+      expect(runTab).toHaveAttribute("aria-selected", "true");
+    }
   });
 
   it("对照关闭时隐藏 Larmor 频率与标定下拉框，且保留其取值", async () => {

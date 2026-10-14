@@ -127,7 +127,7 @@ function Result({ value }: { value: RunSummary }) {
 }
 
 export function NoiseSpectrumXYPage() {
-  const [tab, setTab] = useState<"run" | "history" | "architecture">("run");
+  const [tab, setTab] = useState<"run" | "history">("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -321,7 +321,7 @@ export function NoiseSpectrumXYPage() {
       />
       {error && <div className="alert error" role="alert">{error}</div>}
       <div className="zaw-tab-strip" role="tablist" aria-label="XY 正弦控制噪声谱实验视图" onKeyDown={tabKey}>
-        {(["run", "history", "architecture"] as const).map((item) => (
+        {(["run", "history"] as const).map((item) => (
           <button
             key={item}
             id={`noise-xy-tab-${item}`}
@@ -333,7 +333,7 @@ export function NoiseSpectrumXYPage() {
             className={tab === item ? "active" : ""}
             onClick={() => setTab(item)}
           >
-            {item === "run" ? "运行" : item === "history" ? "历史" : "架构"}
+            {item === "run" ? "运行" : "历史"}
           </button>
         ))}
       </div>
@@ -402,44 +402,7 @@ export function NoiseSpectrumXYPage() {
           </section>
         </div>
       </div>
-      <div id="noise-xy-panel-architecture" role="tabpanel" aria-labelledby="noise-xy-tab-architecture" hidden={tab !== "architecture"}>
-        <ArchitectureView />
-      </div>
       <JobView job={analysisJob} onUpdate={setAnalysisJob} />
     </>
-  );
-}
-
-// “架构”Tab：内嵌本实验的 Archify 采集流程架构图。
-const ARCHITECTURE_URL = "/architecture/noise-spectrum-xy.html";
-
-function ArchitectureView() {
-  return (
-    <section className="mx-arch">
-      <div className="mx-arch-head">
-        <div>
-          <small>EXPERIMENT ARCHITECTURE</small>
-          <h2>采集流程架构</h2>
-          <p>
-            强类型参数按 K/B 反算正弦峰值扫描轴；X/Y 控制 DG4000 以共用外触发
-            Burst 输出正交控制场，每点调幅后按校准相位重新触发，断开温控后由
-            HF2 DAQ 采集噪声波形；离线分析经 Welch PSD、移动脊线重标定与局部
-            拟合分离可控响应与背景噪声谱。
-          </p>
-        </div>
-        <a className="architecture-open" href={ARCHITECTURE_URL} target="_blank" rel="noreferrer">
-          在新页面打开
-        </a>
-      </div>
-      <div className="architecture-frame">
-        <iframe
-          src={ARCHITECTURE_URL}
-          title="XY 正弦控制噪声谱实验采集流程架构图"
-          loading="lazy"
-          sandbox="allow-scripts allow-same-origin allow-downloads allow-popups"
-          allow="clipboard-write"
-        />
-      </div>
-    </section>
   );
 }

@@ -108,30 +108,12 @@ describe("总览页", () => {
     expect(await screen.findByText("存在未结束的任务")).toBeInTheDocument();
   });
 
-  it("架构工作台包含四阶段流程带与语义标识", async () => {
+  it("保留系统状态并撤下实验系统架构及打开链接", async () => {
     render(<OverviewPage />);
-    for (const stage of ["参数配置", "仪器采集", "原始数据", "离线分析"]) {
-      expect(screen.getByText(stage)).toBeInTheDocument();
-    }
-    expect(screen.getByText("安全边界")).toBeInTheDocument();
-    expect(screen.getByText("兼容路径")).toBeInTheDocument();
-  });
-
-  it("以 iframe 隔离架构图并提供无障碍标题", async () => {
-    render(<OverviewPage />);
-    const frame = screen.getByTitle("实验系统架构交互图");
-    expect(frame.tagName).toBe("IFRAME");
-    expect(frame).toHaveAttribute("src", "/architecture/system-architecture.html");
-    expect(frame).toHaveAttribute("loading", "lazy");
-    expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-downloads allow-popups");
-    expect(frame).toHaveAttribute("allow", "clipboard-write");
-  });
-
-  it("提供在新页面打开架构图的独立链接", async () => {
-    render(<OverviewPage />);
-    const link = screen.getByRole("link", { name: "在新页面打开" });
-    expect(link).toHaveAttribute("href", "/architecture/system-architecture.html");
-    expect(link).toHaveAttribute("target", "_blank");
+    expect(await screen.findByText("系统已就绪")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "实验系统架构" })).not.toBeInTheDocument();
+    expect(screen.queryByTitle("实验系统架构交互图")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "在新页面打开" })).not.toBeInTheDocument();
   });
 
   it("移除旧的常用入口且不新增实验或仪器接口请求", async () => {

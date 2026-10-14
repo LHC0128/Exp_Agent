@@ -171,7 +171,7 @@ it("Probe AOM 载波参数在专属节点编辑，改 Z 注入后预览受影响
   expect(noise.getByLabelText("Z 噪声输出幅度 (Vpp)")).toHaveValue(0.02);
 });
 
-it("历史填回参数与质量未通过信息，架构 Tab 加载专属图", async () => {
+it("历史填回参数与质量未通过信息，保留交互流程图", async () => {
   renderPage();
   const runTab = screen.getByRole("tabpanel", { name: "运行" });
   await within(runTab).findByText(/移动峰自动标定未通过/);
@@ -188,9 +188,23 @@ it("历史填回参数与质量未通过信息，架构 Tab 加载专属图", as
   fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
   const restored = await openParameters("A12");
   expect(restored.getByLabelText("注入 Z 已知可控噪声")).toHaveValue("true");
-  fireEvent.click(screen.getByRole("tab", { name: "架构" }));
-  const arch = screen.getByRole("tabpanel", { name: "架构" });
-  expect(within(arch).getByTitle("XY 已知不可控 Probe AM 噪声谱实验架构图")).toHaveAttribute("src", "/architecture/noise-spectrum-xy-uncontrolled-probe-am.html");
+  const tablist = screen.getByRole("tablist", { name: "XY Probe AM 噪声实验视图" });
+  expect(within(tablist).getAllByRole("tab")).toHaveLength(2);
+  expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
+  expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();
+  const runButton = within(tablist).getByRole("tab", { name: "运行" });
+  const historyButton = within(tablist).getByRole("tab", { name: "历史" });
+  runButton.focus();
+  for (const key of ["ArrowLeft", "ArrowRight"]) {
+    fireEvent.keyDown(tablist, { key });
+    expect(historyButton).toHaveFocus();
+    expect(historyButton).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(tablist, { key });
+    expect(runButton).toHaveFocus();
+    expect(runButton).toHaveAttribute("aria-selected", "true");
+  }
+  expect(screen.getByRole("region", { name: "交互实验流程图" })).toBeVisible();
+  expect(restored.getByLabelText("注入 Z 已知可控噪声")).toHaveValue("true");
 });
 
 it("完整运行携带会话参数；预检失败不启动采集", async () => {
