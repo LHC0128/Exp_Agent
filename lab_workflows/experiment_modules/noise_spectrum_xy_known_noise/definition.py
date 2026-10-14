@@ -4,8 +4,33 @@ from ...experiments.contracts import ExperimentDefinition
 from ...experiments.requirements import NOISE_SPECTRUM_XY
 from ...experiments.typed import TypedWorkflowAdapter
 from .models import NoiseSpectrumXYKnownNoiseParams
+from .calibration_source import source_choices
+from .preparation import preflight
+import json
 
-ADAPTER = TypedWorkflowAdapter(
+
+class KnownNoiseAdapter(TypedWorkflowAdapter):
+    def schema(self):
+        schema = super().schema()
+        for field in schema["fields"]:
+            if field["name"] == "ANALYSIS_DISPERSION_SOURCE_RUN":
+                field["options"] = [dict(value="", label="待选择标定曲线"), *source_choices(self.root)]
+        return schema
+
+    def preflight(self, values):
+        try:
+            preflight(self._resolved(values), self.root)
+            return []
+        except (OSError, KeyError, TypeError, ValueError) as exc:
+            return [str(exc)]
+
+    def analyze(self, run_dir, progress, *, cancellation=None):
+        result = super().analyze(run_dir, progress, cancellation=cancellation)
+        summary = json.loads((run_dir / "results/analysis_summary.json").read_text(encoding="utf-8"))
+        self._write_analysis_status(run_dir, status=summary["status"], error=summary.get("error"))
+        return result | {"analysis_status": summary["status"]}
+
+ADAPTER = KnownNoiseAdapter(
     "noise-spectrum-xy-known-noise",
     "Noise_Spectrum_XY_Ctrl_Known_Noise",
     NoiseSpectrumXYKnownNoiseParams,
@@ -20,7 +45,7 @@ DEFINITION = ExperimentDefinition(
     family="noise",
     variant="known-injection",
     description=(
-        '在 Z 小线圈注入分段平顶谱的已知周期伪噪声（16384 点任意波连续播放），相邻控制点交替注入开/关顺序，两态稳定等待并逐段保存；以单一参数模型配置采集，脊线按扫描频带重标定后用完整有效控制轴做洛伦兹分离，保留有符号参数差；与正弦噪声谱、Probe AM 实验共用全控制轴分析，背景独立验收，峰不可辨识时检验两侧远端平台，分别报告注入带内/带外的背景变化；有符号差值保留用于定量判据，差分幅值图以绝对值展示；内置 z 偏置色散扫描按采样率和每点采集时间连续记录 X/Y/R 波形并取中位数，使用全部有效色散点拟合零交叉点斜率给出增益换算，测得谱换算到 Hz²/Hz 后与仅经 K_Z 换算、不应用线圈频响的注入真值逐 bin 比较，带内中位比值作为定量判据。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
+        '在 Z 小线圈注入已知周期伪噪声，运行页以采集、分析两列节点编辑参数并按依赖执行；相邻控制点交替 ON/OFF 顺序，同一温控窗口配对并逐段保存。分析完成全控制轴谱分离后，选择静磁场 v3 直流逐点历史曲线拟合检测增益，与实际波形 PSD × 本轮 K_Z² 的真值比较；未选曲线时保留 B01～B04 并等待标定。历史目录保留独立分析草稿，保存默认值只影响下一次实验与统一布局。分步等待保持连接、输出和硬件锁；校相质量未通过禁止扫描。锁相输入采用高阻、DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
     ),
     data_type="Noise_Spectrum_XY_Ctrl_Known_Noise",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
@@ -34,9 +59,9 @@ DEFINITION = ExperimentDefinition(
         "Time_sequence_2 CH2 经三通连接 dg_comp CH1/CH2 Ext Trig；Z 噪声由 Z_magnetic_field CH1 连续播放，不参与 Burst。",
     ),
     safety_notes=(
-        "噪声波形输出极值、色散偏置步和 X/Y 包络全部先过 validate_safety_limit 再下发。",
-        "每点在同一温控窗口内采集两态，相邻点交替先后顺序，每态等待稳定；色散扫描每若干点回插温控恢复；"
-        "扫描收尾关闭 X/Y 和 Z 噪声，保留外触发、Pump 载波与时序门控。",
+        "噪声波形输出极值和 X/Y 包络全部先过 validate_safety_limit 再下发，并检查任意波实际回读。",
+        "每点在同一温控窗口内采集两态，相邻点交替先后顺序，每态等待稳定；"
+        "正常结束、异常、取消和通信结束关闭 X/Y、Z 与共用触发，温控恢复 5 V DC + ON；保留主场、光功率和 Pump 门控。",
     ),
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,

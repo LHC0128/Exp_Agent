@@ -36,7 +36,7 @@ def calibrate_hf2_phase(hfi, dg_comp, dg_temp, params: NoiseSpectrumXYParams, li
 
     # 配置解调器
     demod_cfg = DemodulatorConfig(
-        demod_index=0, enable=True, rate=params.hf2_demod_rate,
+        demod_index=params.hf2_demod_idx, enable=True, rate=params.hf2_demod_rate,
         input_channel=0, osc_select=0, harmonic=1,
         time_constant=params.hf2_demod_tc, order=params.hf2_demod_order, phase=0.0,
     )

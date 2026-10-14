@@ -6,7 +6,7 @@ import math
 import numpy as np
 import yaml
 from tqdm import tqdm
-from lockin_amplifier import DAQConfig, DemodulatorConfig, daq, demod
+from lockin_amplifier import DAQConfig, DemodulatorConfig, daq, demod, result_rate, acquisition_metadata, save_acquisition_metadata, acquisition_module, nearest_scope_rate
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from .models import welch_settings
@@ -16,7 +16,7 @@ from .preparation import build_run_config, EXPERIMENT_TYPE
 
 
 def restore_demod(devices, params, calibrated_phase):
-    cfg = DemodulatorConfig(demod_index=0, enable=True, rate=params.hf2_demod_rate,
+    cfg = DemodulatorConfig(demod_index=params.hf2_demod_idx, enable=True, rate=params.hf2_demod_rate,
         input_channel=0, osc_select=0, harmonic=1, time_constant=params.hf2_demod_tc,
         order=params.hf2_demod_order, phase=calibrated_phase)
     demod.configure_demodulator(devices["hf2"], cfg)
@@ -24,20 +24,24 @@ def restore_demod(devices, params, calibrated_phase):
 
 
 def prepare_daq(devices, params, calibrated_phase):
-    cfg = DemodulatorConfig(demod_index=0, enable=True, rate=params.hf2_daq_rate,
+    cfg = DemodulatorConfig(demod_index=params.hf2_demod_idx, enable=True, rate=params.hf2_daq_rate,
         input_channel=0, osc_select=0, harmonic=1, time_constant=params.hf2_daq_tc,
         order=params.hf2_demod_order, phase=calibrated_phase)
-    rate = float(demod.configure_demodulator(devices["hf2"], cfg))
-    settings = welch_settings(rate, params.hf2_daq_duration, params.analysis_bin_width_hz)
+    rate = float(demod.configure_demodulator(devices["hf2"], cfg, for_acquisition=True))
+    expected_rate = nearest_scope_rate(params.hf2_daq_rate) if acquisition_module(
+        devices["hf2"].model, params.hf2_daq_rate, getattr(devices["hf2"], "acquisition_mode", "auto")) == "scope" else rate
+    settings = welch_settings(expected_rate, params.hf2_daq_duration, params.analysis_bin_width_hz)
     wait(0.2)
     return rate, int(rate * params.hf2_daq_duration), settings
 
 
 def verify_daq_mode(ctx):
     hfi = ctx.devices["hf2"]
-    base = hfi.demod_path(0)
+    base = hfi.demod_path(ctx.params.hf2_demod_idx)
     expected = {"rate": ctx.daq_settings[0], "timeconstant": ctx.params.hf2_daq_tc,
         "phaseshift": ctx.calibrated_phase}
+    if acquisition_module(hfi.model, ctx.params.hf2_daq_rate, getattr(hfi, "acquisition_mode", "auto")) == "scope":
+        expected.pop("rate")  # Scope 后恢复的是原通信速率，内部滤波仍需核对。
     for field, value in expected.items():
         if not math.isclose(float(hfi.get_double(f"{base}/{field}")), value, rel_tol=1e-6, abs_tol=1e-9):
             raise RuntimeError("解调器实际模式已改变，请结束会话并重新准备")
@@ -131,10 +135,15 @@ def acquire_scan(ctx):
             # 采集解调时域信号
             try:
                 results = daq.acquire_data(
-                    hfi, daq_cfg, demod_idx=0,
-                    actual_rate=actual_rate_daq, timeout=params.hf2_daq_duration + 10.0,
+                    hfi, daq_cfg, demod_idx=params.hf2_demod_idx,
+                    actual_rate=actual_rate_daq, requested_rate=params.hf2_daq_rate, timeout=params.hf2_daq_duration + 10.0,
+                    cancellation_check=check_cancelled, strict_cleanup=True,
                 )
                 waveform = results[0].values
+                capture_rate = result_rate(results, actual_rate_daq)
+                settings = welch_settings(capture_rate, len(waveform) / capture_rate, params.analysis_bin_width_hz)
+                config_saved["hf2_daq"].update(acquisition_metadata(results), actual_rate_Sa_s=capture_rate, **settings)
+                save_acquisition_metadata(raw_dir / f"waveform_C{i:04d}.npy", results)
             except WorkflowCancelled:
                 raise
             except Exception as e:

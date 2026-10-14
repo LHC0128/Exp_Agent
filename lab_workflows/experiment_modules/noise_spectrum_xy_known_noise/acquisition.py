@@ -1,6 +1,7 @@
 """本实验成对采集步骤；接收已连接设备，导入不访问硬件。"""
 import json
 import time
+from datetime import datetime
 
 import numpy as np
 
@@ -9,6 +10,96 @@ from ...common import validate_safety_limit
 from ...steps import DGChannelShutdown, TemperatureSwitchRestore, run_safety_shutdown, set_temperature_switch
 from ...steps.dispersion import acquire_dispersion_point, save_scan
 from .dispersion import fit_dispersion_curve
+from ..noise_spectrum_xy.acquisition import prepare_daq, restore_demod, verify_daq_mode, save_config
+from ..noise_spectrum_xy.preparation import build_run_config
+from ..noise_spectrum_xy.phase import set_xy_sine_peak
+from ..noise_spectrum_xy._helpers import set_temp_switch
+from ...common import WorkflowCancelled
+from ...experiment_runtime import report_runtime_progress
+from lockin_amplifier import DAQConfig, daq, result_rate, acquisition_metadata, save_acquisition_metadata
+
+DATA_TYPE = "Noise_Spectrum_XY_Ctrl_Known_Noise"
+
+
+def acquire_scan(ctx):
+    """每次扫描独立目录；一对波形在同一温控窗口内立即保存。"""
+    params = ctx.params
+    targets, envelopes = ctx.axes
+    rate, cols, settings = ctx.daq_settings
+    timestamp = datetime.now().strftime("%m%d_%H%M")
+    base = ctx.root / "data" / DATA_TYPE
+    base.mkdir(parents=True, exist_ok=True)
+    suffix = 0
+    while True:
+        run_dir = base / (f"{timestamp}_{params.run_tag}" + (f"_{suffix:02d}" if suffix else ""))
+        try:
+            run_dir.mkdir()
+            break
+        except FileExistsError:
+            suffix += 1
+    ctx.run_dir = run_dir
+    raw = run_dir / "raw"
+    raw.mkdir()
+    (run_dir / "results").mkdir()
+    config = build_run_config(params, ctx.root, ctx.clock_sources, timestamp, targets, envelopes)
+    waveform, calibration = ctx.noise_waveform, ctx.z_calibration
+    config.update(experiment_id="noise-spectrum-xy-known-noise", experiment_type=DATA_TYPE,
+                  purpose="known_noise_verification", completion_status="running", workflow_session_id=ctx.session_id)
+    config["xy_ctrl"].update(XY_CTRL_PHASE_deg=float(ctx.xy_result.final_phase_deg),
+        Y_CTRL_PHASE_deg=float((ctx.xy_result.final_phase_deg + params.xy_ctrl_quad) % 360),
+        phase_cal_success=True, phase_cal_history=[item.to_dict() for item in ctx.xy_result.history])
+    config["hf2_daq"].update(actual_rate_Sa_s=rate, **settings)
+    config["known_noise"] = dict(waveform_file="raw/known_noise_waveform.npy", points=len(waveform.normalized),
+        repeat_frequency_hz=params.noise_repeat_freq_hz, sample_rate_sa_s=waveform.sample_rate_sa_s,
+        line_spacing_hz=waveform.line_spacing_hz, amplitude_vpp=params.noise_amplitude_vpp, offset_v=0.0,
+        seed=params.noise_seed, design_peak_v=waveform.design_peak_v, rms_v=waveform.rms_v,
+        realized_psd_scale=(params.noise_amplitude_vpp / 2 / waveform.design_peak_v)**2,
+        bands=[dict(start_hz=start, stop_hz=stop, design_psd_v2_per_hz=psd) for start, stop, psd in params.noise_bands()],
+        playback="continuous_no_burst", readback=ctx.noise_readback)
+    config["truth_chain"] = dict(z_calibration_run=calibration.source_run, K_Z_Hz_per_V=calibration.k_hz_per_v,
+        K_Z_uncertainty_Hz_per_V=calibration.uncertainty_hz_per_v, coil_frequency_response_applied=False)
+    config["paired_acquisition"] = dict(order="alternating_off_on_on_off", first_point="off_on",
+        settle_s=params.z_injection_settle_s, temperature_policy="one_off_window_per_pair")
+    path = run_dir / "experiment_config.yaml"
+    failure = None
+    started = time.monotonic()
+    try:
+        save_config(path, config)
+        np.save(raw / "known_noise_waveform.npy", waveform.normalized)
+        np.savez(raw / "control_scan_axes.npz", target_noise_frequency_Hz=targets, xy_envelope_voltage_V=envelopes,
+                 calibration_K_Hz_per_V=params.xy_ctrl_k_hz_per_v, calibration_B_Hz=params.xy_ctrl_b_hz)
+        for index, envelope in enumerate(envelopes):
+            check_cancelled()
+            set_xy_sine_peak(ctx.devices["dg_comp"], envelope, ctx.xy_result.final_phase_deg, params.xy_ctrl_quad, ctx.limits)
+            wait_for_settle(0.3)
+            set_temp_switch(ctx.devices["dg_temp"], False, params, ctx.limits)
+            wait_for_settle(params.xy_settle_time)
+            cfg = DAQConfig(device=ctx.mapping["lockin_r"]["device_id"], trigger_type=0,
+                duration=params.hf2_daq_duration, grid_cols=cols, grid_rows=1, grid_mode=2, signal_paths=["sample.y"])
+            def acquire():
+                results = daq.acquire_data(ctx.devices["hf2"], cfg, demod_idx=params.hf2_demod_idx,
+                    actual_rate=rate, requested_rate=params.hf2_daq_rate, timeout=params.hf2_daq_duration + 10,
+                    cancellation_check=check_cancelled, strict_cleanup=True)
+                config["hf2_daq"].update(acquisition_metadata(results))
+                return results
+            acquire_pair(index, raw, ctx.devices["dg_sweep"], 1, acquire, params.z_injection_settle_s)
+            set_temp_switch(ctx.devices["dg_temp"], True, params, ctx.limits, restore_wait=True)
+            report_runtime_progress("A13", f"配对扫描 {index+1}/{len(envelopes)}", 100*(index+1)/len(envelopes),
+                estimated_remaining_seconds=(time.monotonic()-started)/(index+1)*(len(envelopes)-index-1))
+        config["completion_status"] = "completed"
+    except BaseException as exc:
+        failure = exc
+        config.update(completion_status="cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else "failed",
+                      failure_reason=str(exc))
+        raise
+    finally:
+        config["data_files"] = [str(file.relative_to(run_dir)).replace("\\", "/") for file in sorted(raw.rglob("*")) if file.is_file()]
+        try:
+            save_config(path, config)
+        except Exception:
+            if failure is None:
+                raise
+    return run_dir
 
 
 def wait_for_settle(seconds):
@@ -31,10 +122,16 @@ def acquire_pair(index, raw_dir, generator, channel, acquire, settle_s):
         generator.set_output(enabled, channel=channel)
         wait_for_settle(settle_s)
         started = time.time()
-        waveform = acquire()
+        acquired = acquire()
+        if isinstance(acquired, list):
+            waveform = acquired[0].values
+        else:
+            waveform = acquired
         finished = time.time()
         name = f"waveform_C{index:04d}_{state}.npy"
         np.save(raw_dir / name, waveform)
+        if isinstance(acquired, list):
+            save_acquisition_metadata(raw_dir / name, acquired)
         waveform = np.asarray(waveform)
         nonfinite = int((~np.isfinite(waveform)).sum())
         valid = bool(waveform.ndim == 1 and waveform.size >= 2 and nonfinite == 0

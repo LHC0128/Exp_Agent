@@ -29,13 +29,23 @@ from .state_io import write_state
 class Workflow:
     """一个子进程持有一个设备会话；阶段状态不等同于历史数据。"""
 
+    acquisition_stages = ACQUISITION
+    finish_id = "A14"
+    preflight = staticmethod(preparation.preflight)
+    invalidate = staticmethod(invalidate)
+    validate_selection = staticmethod(validate_selection)
+    always_shutdown = False
+
+    def shutdown_outputs(self):
+        return safe_scan_outputs_off(self.devices)
+
     def __init__(self, params, *, project_root=None, session_id=None):
         self.root = Path(project_root).resolve() if project_root else find_project_root(Path(__file__).parent)
-        self.params, self.mapping, self.limits, self.axes = preparation.preflight(params, self.root)
+        self.params, self.mapping, self.limits, self.axes = self.preflight(params, self.root)
         self.config_revision = self._configuration_revision()
         self.session_id = session_id or uuid4().hex
         self.revision = 0
-        self.states = initial_states(ACQUISITION)
+        self.states = initial_states(self.acquisition_stages)
         self.devices = {}
         self.connection = None
         self.clock_sources = {}
@@ -83,7 +93,7 @@ class Workflow:
             raise ValueError("会话已经结束，请新建会话")
         if self._configuration_revision() != self.config_revision:
             raise RuntimeError("设备库、映射或安全限值已改变，请结束会话后重新连接")
-        self.params, self.mapping, self.limits, self.axes = preparation.preflight(self.params, self.root)
+        self.params, self.mapping, self.limits, self.axes = self.preflight(self.params, self.root)
 
     def update_parameters(self, values):
         self.recheck()
@@ -91,32 +101,31 @@ class Workflow:
         unknown = set(values) - set(self.params.to_external())
         if unknown:
             raise ValueError("未知参数：" + "、".join(sorted(unknown)))
-        new, mapping, limits, axes = preparation.preflight(NoiseSpectrumXYParams.from_external(merged), self.root)
+        new, mapping, limits, axes = self.preflight(type(self.params).from_external(merged), self.root)
         changed = {key for key, value in new.to_external().items() if value != self.params.to_external()[key]}
-        for stage in ACQUISITION:
+        for stage in self.acquisition_stages:
             if changed.intersection(stage.parameters):
-                invalidate(ACQUISITION, self.states, stage.id)
-                break
+                self.invalidate(self.acquisition_stages, self.states, stage.id)
         self.params, self.mapping, self.limits, self.axes = new, mapping, limits, axes
         self.revision += 1
         self.publish("参数已更新，受影响模块需要重新执行")
 
     def execute(self, selected):
-        selected = validate_selection(ACQUISITION, self.states, selected)
-        if selected != ["A14"]:
+        selected = self.validate_selection(self.acquisition_stages, self.states, selected)
+        if selected != [self.finish_id]:
             self.recheck()
         self.revision += 1
         for item in selected:
-            if item == "A14":
+            if item == self.finish_id:
                 self.finish()
                 break
             check_cancelled()
             if item != "A01":
-                invalidate(ACQUISITION, self.states, item)
+                self.invalidate(self.acquisition_stages, self.states, item)
             self.current_step = item
             self.states[item] = {"status": "running", "error": ""}
             try:
-                self.publish(next(stage.title for stage in ACQUISITION if stage.id == item))
+                self.publish(next(stage.title for stage in self.acquisition_stages if stage.id == item))
                 self._execute_step(item)
                 if self.states[item]["status"] == "running":
                     self.states[item]["status"] = "completed"
@@ -215,8 +224,8 @@ class Workflow:
             except Exception as exc:
                 errors.append(str(exc))
         try:
-            if self.devices and (not self.clock_failed or self.outputs_started):
-                report = safe_scan_outputs_off(self.devices)
+            if self.devices and (not self.clock_failed or self.outputs_started or self.always_shutdown):
+                report = self.shutdown_outputs()
                 self.shutdown = report.to_dict()
                 errors.extend(report.errors)
                 if report.completed:
@@ -231,7 +240,7 @@ class Workflow:
             self.closed = True
             self.current_step = None
             self.revision += 1
-            self.states["A14"] = {"status": "failed" if errors else "completed", "error": "；".join(errors)}
+            self.states[self.finish_id] = {"status": "failed" if errors else "completed", "error": "；".join(errors)}
             try:
                 self.publish("会话已结束" + ("；" + "；".join(errors) if errors else ""))
             except Exception:

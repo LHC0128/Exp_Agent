@@ -3,7 +3,7 @@
 import ast
 import tempfile
 import unittest
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, mock_open, patch
@@ -20,7 +20,10 @@ from .dispersion import resolve_dispersion
 
 class KnownNoiseDispersionTests(unittest.TestCase):
     def params(self, **overrides):
-        return replace(ADAPTER.defaults(), dispersion_steps=11, hf2_demod_rate=30, **overrides)
+        values = asdict(ADAPTER.defaults()) | dict(dispersion_steps=11, hf2_demod_rate=30,
+            dispersion_span_v=.2, dispersion_duration_s=.1, dispersion_step_settle_s=.1,
+            dispersion_temp_switch_interval_points=5)
+        return SimpleNamespace(**(values | overrides))
 
     def collect(self, params, hf2, root, z, temp):
         return acquisition.acquire_dispersion_scan(params, z=z, z_channel=1, temp=temp,
@@ -29,22 +32,20 @@ class KnownNoiseDispersionTests(unittest.TestCase):
 
     def test_parameter_contract_and_layout(self):
         from GUI.backend import main
+        from .models import NoiseSpectrumXYKnownNoiseParams
         saved = ADAPTER.defaults()
-        self.assertEqual(saved.schema_version, 2)
+        self.assertEqual(saved.schema_version, 3)
         self.assertEqual(saved.hf2_demod_rate, 200000)
-        self.assertEqual(saved.dispersion_duration_s, 0.1)
         schema = main._experiment_schema(main._experiment_or_404("noise-spectrum-xy-known-noise"))
         names = {field["name"] for field in schema["fields"]}
-        self.assertIn("DISPERSION_DURATION_S", names)
-        self.assertNotIn("DISPERSION_SAMPLES_PER_STEP", names)
-        self.assertFalse(names & {"DISPERSION_FIT_SKIP_START", "DISPERSION_FIT_SKIP_END"})
-        advanced = schema["parameter_layout"]["advanced"]
-        self.assertFalse(set(advanced) & {"DISPERSION_FIT_SKIP_START", "DISPERSION_FIT_SKIP_END"})
-        self.assertEqual(advanced[advanced.index("HF2_DEMOD_RATE") + 1], "DISPERSION_DURATION_S")
-        for overrides in (dict(dispersion_steps=6), dict(dispersion_duration_s=0), dict(dispersion_duration_s=float("nan")),
-                          dict(hf2_demod_rate=float("inf")), dict(hf2_demod_rate=1, dispersion_duration_s=0.1)):
-            with self.subTest(overrides=overrides):
-                self.assertTrue(replace(saved, **overrides).validate())
+        self.assertIn("ANALYSIS_DISPERSION_SOURCE_RUN", names)
+        self.assertFalse(any(name.startswith("DISPERSION_") for name in names))
+        self.assertEqual(saved.analysis_dispersion_source_run, "")
+        old = saved.to_external() | {"DISPERSION_STEPS": 41, "DISPERSION_DURATION_S": .1}
+        migrated = NoiseSpectrumXYKnownNoiseParams.from_external(old)
+        self.assertNotIn("DISPERSION_STEPS", migrated.to_external())
+        # 来源选择仅在分析时验证，不能妨碍下一次采集参数保存和预检。
+        self.assertFalse(replace(saved, analysis_dispersion_source_run="尚未选择").validate())
 
     def test_complete_scan_and_offline_refit(self):
         span = self.params().dispersion_span_v
@@ -73,7 +74,7 @@ class KnownNoiseDispersionTests(unittest.TestCase):
                 self.assertTrue(temp.output)
                 self.assertEqual(temp.voltage, 5)
                 self.assertEqual(sum(event[:2] == ("output", False) for event in temp.events), groups)
-                result = resolve_dispersion(root, {"parameters": params.to_external(), "dispersion": {}})
+                result = resolve_dispersion(root, {"dispersion": {}})
                 self.assertEqual(result["source"], "raw_refit")
                 self.assertEqual(result["n_points"], params.dispersion_steps)
                 self.assertTrue(result["fit_mask"].all())
@@ -127,47 +128,13 @@ class KnownNoiseDispersionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "未全部完成"):
                 resolve_dispersion(root, {})
 
-    def test_workflow_restores_arbitrary_wave_only_after_success(self):
-        # 模块顶层连接仪器；只执行实际色散 try 块来检验恢复时序。
-        path = Path(__file__).with_name("workflow.py")
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        block = next(node for node in ast.walk(tree) if isinstance(node, ast.Try)
-                     and any(isinstance(item, ast.Call) and isinstance(item.func, ast.Name)
-                             and item.func.id == "acquire_dispersion_scan" for item in ast.walk(ast.Module(body=node.body, type_ignores=[]))))
-        code = compile(ast.Module(body=[block], type_ignores=[]), str(path), "exec")
-        offsets = np.linspace(-0.2, 0.2, 11)
-        result = acquisition.fit_dispersion_curve(offsets, offsets / (offsets**2 + 0.1**2), k_z_hz_per_v=1)
-        result.update(actual_rate_sa_s=np.array([30]), actual_duration_s=np.array([0.1]), sample_counts=np.array([3]))
-        for stage, error in (("scan", None), ("scan", WorkflowCancelled("取消色散")),
-                             ("scan", TimeoutError("色散超时")), ("save", OSError("配置保存失败"))):
-            with self.subTest(stage=stage, error=error), patch("builtins.open", mock_open()) as writer:
-                scan = Mock(return_value=result, side_effect=error if stage == "scan" else None)
-                if stage == "save":
-                    writer.side_effect = error
-                restore, upload, shutdown = Mock(), Mock(), Mock(return_value=SimpleNamespace(errors=()))
-                z, xy = Mock(), Mock()
-                namespace = dict(acquire_dispersion_scan=scan, PARAMS=self.params(), dg_comp=xy,
-                                 dg_sweep=z, z_channel=1, dg_temp=Mock(), dg_temp_cfg={"channel": 2},
-                                 hfi=Mock(), raw_dir=Path("unused"), Z_CALIBRATION=SimpleNamespace(k_hz_per_v=1),
-                                 set_xy_sine_phase=restore, XY_CTRL_PHASE=0, upload_noise_waveform=upload,
-                                 run_safety_shutdown=shutdown, DGChannelShutdown=acquisition.DGChannelShutdown,
-                                 TemperatureSwitchRestore=acquisition.TemperatureSwitchRestore,
-                                 DisconnectTarget=lambda *args: args, devices={}, STANDARD_PRESERVED_OUTPUTS=(),
-                                 config_saved={}, config_path=Path("unused"), yaml=Mock())
-                namespace.update(namespace["PARAMS"].to_external())
-                if error:
-                    with self.assertRaises(type(error)):
-                        exec(code, namespace)
-                    restore.assert_not_called()
-                    upload.assert_not_called()
-                    z.set_output.assert_not_called()
-                    shutdown.assert_called_once()
-                else:
-                    exec(code, namespace)
-                    restore.assert_called_once_with(namespace["XY_CTRL_PHASE"], outputs_on=True)
-                    upload.assert_called_once()
-                    z.set_output.assert_called_once_with(True, channel=1)
-                    shutdown.assert_not_called()
+    def test_new_workflow_has_no_internal_dispersion_or_import_side_effect(self):
+        from . import workflow
+        tree = ast.parse(Path(workflow.__file__).read_text(encoding="utf-8"))
+        self.assertFalse(any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                            and node.func.id == "acquire_dispersion_scan" for node in ast.walk(tree)))
+        self.assertTrue(callable(workflow.Workflow))
+
 
 
 if __name__ == "__main__":

@@ -85,10 +85,11 @@ class XYAnalysisBody(XYStepsBody):
 class XYAnalysisState(StrictModel):
     run_id: str
     revision: int
-    options: dict[str, float]
+    options: dict[str, float | str]
     steps: dict[str, XYStageState]
     fingerprint: dict[str, Any]
     summary: dict[str, Any]
+    source_signature: dict[str, Any] | None = None
 
 
 class WorkflowSessionService:
@@ -231,7 +232,7 @@ class WorkflowSessionService:
             path = self.run_directory(run_id)
             if self.manager.has_active_kind(f"analysis:{self.adapter.id}:{run_id}"):
                 if snapshot := read_state(path / "analysis_state.json"):
-                    return snapshot
+                    return {**snapshot, "run_id": path.name}
             return self.analysis_workflow(path).snapshot()
         except (ValueError, OSError) as exc:
             raise HTTPException(422, str(exc)) from exc

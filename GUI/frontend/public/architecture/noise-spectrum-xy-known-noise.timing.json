@@ -69,7 +69,7 @@
     {
       "id": "hf2",
       "type": "external",
-      "label": "HF2 · DAQ"
+      "label": "HF2/MFLI · DAQ"
     },
     {
       "id": "raw",
@@ -85,16 +85,16 @@
     },
     {
       "from": 254,
-      "to": 366,
+      "to": 398,
       "label": "注入 OFF 段"
     },
     {
-      "from": 374,
-      "to": 452,
+      "from": 406,
+      "to": 526,
       "label": "注入 ON 段"
     },
     {
-      "from": 460,
+      "from": 534,
       "to": 600,
       "label": "恢复与循环"
     }
@@ -228,38 +228,38 @@
     },
     {
       "participant": "temp",
-      "from": 238,
-      "to": 250
+      "from": 250,
+      "to": 270
     },
     {
       "participant": "hf2",
-      "from": 290,
-      "to": 322
+      "from": 314,
+      "to": 356
     },
     {
       "participant": "raw",
-      "from": 342,
-      "to": 354
+      "from": 378,
+      "to": 398
     },
     {
       "participant": "zinj",
-      "from": 368,
-      "to": 404
+      "from": 410,
+      "to": 430
     },
     {
       "participant": "hf2",
-      "from": 394,
-      "to": 426
+      "from": 442,
+      "to": 484
     },
     {
       "participant": "raw",
-      "from": 446,
-      "to": 458
+      "from": 506,
+      "to": 526
     },
     {
       "participant": "temp",
-      "from": 472,
-      "to": 484
+      "from": 538,
+      "to": 558
     }
   ],
   "cards": [
@@ -278,7 +278,7 @@
       "items": [
         "外触发方波常开,重开后等同一触发沿",
         "时序记录为主机时间,非仪器触发时间",
-        "DAQ 失败保留原波形并告警,不重试"
+        "DAQ 失败保留已保存段,不自动重试"
       ]
     },
     {
@@ -288,7 +288,7 @@
         "非有限/平直波形告警保留,离线排除",
         "timing 文件记录点号状态与主机时间",
         "温控恢复按设定等待后进入下一点",
-        "色散连续 DAQ 正常完成后进入此主扫描"
+        "A11 任意波回读、A12 DAQ 准备通过后扫描"
       ]
     }
   ]

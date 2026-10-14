@@ -52,6 +52,10 @@ def compute_psd(run_dir, config, options):
     if not np.isfinite(voltage).all() or np.any(np.diff(voltage) <= 0):
         raise ValueError("控制电压轴必须有限且严格递增")
     legacy = int(config.get("schema_version", 1)) < 3
+    from sensitivity_analysis.acquisition import load_acquisition_rate
+    files = sorted((run_dir / "raw").glob("waveform_C*.npy"))
+    if files:
+        rate = load_acquisition_rate(files[0], rate)
     settings = welch_settings(rate, float(daq["DAQ_duration_s"]), options["bin_width_hz"],
                               minimum_segment=int(daq["nperseg"]) if legacy else 2)
     nperseg = settings["nperseg"]
@@ -65,6 +69,8 @@ def compute_psd(run_dir, config, options):
             invalid_rows.append({"index": i, "reason": "missing_waveform"})
             continue
         wave = np.load(path, allow_pickle=False)
+        if not np.isclose(load_acquisition_rate(path, rate), rate, rtol=1e-6):
+            raise ValueError("同次扫描的实际采样率不一致，无法合并 PSD 频率轴")
         raw_files.append({"name": path.name, "bytes": path.stat().st_size,
                           "mtime_ns": path.stat().st_mtime_ns, "samples": int(wave.size)})
         if wave.ndim != 1 or wave.size < nperseg or not np.isfinite(wave).all() or np.std(wave) == 0:

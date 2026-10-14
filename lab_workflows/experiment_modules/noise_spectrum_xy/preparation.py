@@ -32,7 +32,7 @@ def build_target_scan_axes(params: NoiseSpectrumXYParams, limits):
     return target_freq_hz, envelope_v
 
 
-def connect_instruments(mapping):
+def connect_instruments(mapping, *, on_failure=None):
     """按既有路由连接设备；失败释放已建立的连接。"""
     devices = {}
     session = DeviceSession()
@@ -138,6 +138,11 @@ def connect_instruments(mapping):
 
     except BaseException as e:
         print(f"设备连接失败: {e}")
+        if on_failure is not None:
+            try:
+                on_failure(session)
+            except Exception as cleanup_error:
+                print(f"连接安全收尾警告: {cleanup_error}")
         try:
             session.cleanup_connection_failure()
         except Exception as cleanup_error:

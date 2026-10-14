@@ -14,9 +14,10 @@ const identityParameters = (values: ParameterValues) => values;
 const stateLabels: Record<string, string> = {
   pending: "未运行", stale: "需重跑", running: "执行中", completed: "已完成",
   failed: "失败", quality_failed: "质量未通过", cancelled: "已取消",
+  waiting_calibration: "待选择标定曲线",
 };
 
-const externalOptions = (options: Record<string, number>, prefix: string, keys?: Record<string, string>): ParameterValues => Object.fromEntries(
+const externalOptions = (options: Record<string, number | string>, prefix: string, keys?: Record<string, string>): ParameterValues => Object.fromEntries(
   Object.entries(options).map(([name, value]) => [keys?.[name] ?? `${prefix}${name.toUpperCase()}`, value]),
 );
 const changedNames = (values: ParameterValues, applied: ParameterValues) => Object.keys(values).filter(
@@ -82,10 +83,12 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
   values, setValues, session, setSession, job, setJob,
   analysisJob, setAnalysisJob, hardwareBusy, runs, setError, onRefresh, children,
   experimentId = "noise-spectrum-xy", finishStepId = "A14", runStepId = "A12",
-  analysisParameterPrefix = "ANALYSIS_", analysisParameterKeys, normalizeParameters = identityParameters }: {
+  analysisParameterPrefix = "ANALYSIS_", analysisParameterKeys, normalizeParameters = identityParameters,
+  runDirectoryChange }: {
   experimentId?: string; finishStepId?: string; runStepId?: string; analysisParameterPrefix?: string;
   analysisParameterKeys?: Record<string, string>;
   normalizeParameters?: (values: ParameterValues) => ParameterValues;
+  runDirectoryChange?: { from: string; to: string | null };
   enabled: boolean; values: ParameterValues; setValues: Dispatch<SetStateAction<ParameterValues>>;
   fields: SchemaField[]; layout: ParameterLayout; setLayout: Dispatch<SetStateAction<ParameterLayout>>;
   setNotice: Dispatch<SetStateAction<string>>; parametersDisabled: boolean;
@@ -162,6 +165,20 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
       onRefresh((current) => current + 1);
     }
   }, [job, session?.session_id, setSession, setError, onRefresh]);
+
+  useEffect(() => {
+    if (!runDirectoryChange) return;
+    const { from, to } = runDirectoryChange;
+    setAnalysisDrafts(current => {
+      const next = { ...current };
+      delete next[from];
+      if (to && current[from]) next[to] = current[from];
+      return next;
+    });
+    setRunId(current => current === from ? to ?? "" : current);
+    setAnalysis(current => current?.run_id === from ? undefined : current);
+    if (!to && runId === from) setSelectedB([]);
+  }, [runDirectoryChange]);
 
   useEffect(() => {
     if (!runId) { setAnalysis(undefined); return; }
@@ -254,7 +271,7 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
           <option value="">下一次实验（自动分析设置）</option>{runChoices.map((id) => <option key={id} value={id}>{id}</option>)}
         </select></label>
         <p>{runId ? `正在编辑 ${runId} 的分析覆盖值，不改变下一次实验设置。`
-          : "正在编辑下一次实验的自动分析设置；保存默认值也保存这些参数。完整运行自动执行全部分析步骤。"}</p>
+          : "正在编辑下一次实验的自动分析设置；保存默认值也保存这些参数。完整运行使用这些设置自动分析。"}</p>
         {runId && analysisChanged.length > 0 && <p role="status">分析参数草稿尚未应用，执行分析时生效。预计需重算的已完成步骤：{flow?.analysis
           .filter((stage) => analysisImpacts.includes(stage.id) && analysis?.steps[stage.id]?.status === "completed")
           .map((stage) => `${stage.id} ${stage.title}`).join("、") || "暂无"}。</p>}
@@ -264,6 +281,8 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
         </div>
         <p>独立分析绑定所选目录，与硬件会话分开执行；旧数据缺少阶段记录时从 B01 开始。</p>
         {runId && !analysis && <p role="status">正在读取该目录的分析设置…</p>}
+        {analysis?.summary?.status === "waiting_calibration" && <p role="status">谱分离已完成，待选择标定曲线后执行增益标定与真值比较。</p>}
+        {Boolean(analysis?.summary?.dispersion) && <details><summary>标定来源、条件差异与拟合质量</summary><pre>{JSON.stringify(analysis?.summary?.dispersion, null, 2)}</pre></details>}
         {flow && (!runId || analysis) && <Nodes experimentId={experimentId} stages={flow.analysis} states={runId ? analysis?.steps : undefined}
           selected={runId ? selectedB : []} onSelect={setSelectedB} disabled={!runId || analyzing || sending}
           runId={runId} editor={analysisEditor} sharingStages={runId ? flow.analysis : sharingStages}

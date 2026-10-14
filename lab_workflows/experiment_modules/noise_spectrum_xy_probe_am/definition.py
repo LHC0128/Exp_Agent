@@ -10,7 +10,7 @@ EXPERIMENT_ID = "noise-spectrum-xy-uncontrolled-probe-am"
 DATA_TYPE = "Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM"
 ADAPTER = TypedWorkflowAdapter(
     EXPERIMENT_ID, DATA_TYPE, NoiseSpectrumXYProbeAMParams,
-    "lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.workflow",
+    "lab_workflows.experiment_modules.noise_spectrum_xy_probe_am.workflow",
     "lab_workflows.experiment_modules.noise_spectrum_xy_probe_am.analysis",
 )
 
@@ -21,7 +21,15 @@ DEFINITION = ExperimentDefinition(
     family="noise",
     variant="probe-am-noise",
     description=(
-        '以 Probe 光路 AOM 的 DG4000 外部 AM 输入叠加周期伪随机噪声，逐个 XY 控制点交替采集 AM 噪声关闭/开启状态；可选在两态采集期间持续向 Z 线圈注入已知可控噪声。Z 注入用于检验较强可控噪声背景下能否继续提取 Probe AM 差谱。与正弦噪声谱、已知可控噪声实验共用全控制轴分析，优先独立提取背景 N_S1 和有符号差分 ΔN_S1 = ON − OFF；峰不可辨识时检验两侧远端平台，可控响应仅展示各态通过验收的部分。自动移动峰标定不足时按配置 K/B 输出暂定 PSD 图并标记质量未通过。结果为 锁相放大器测量端噪声谱，不换算为绝对 Probe 光功率谱。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
+        '以 Probe 光路 AOM 的 DG4000 外部 AM 输入叠加周期伪随机噪声，运行页以采集、分析两列节点编辑参数并按依赖执行；'
+        '每个 XY 控制点在同一温控窗口内交替采集 AM 噪声关闭/开启状态；可选在两态采集期间持续向 Z 线圈注入已知可控噪声，'
+        '检验较强可控噪声背景下能否继续提取 Probe AM 差谱。与正弦噪声谱、已知可控噪声实验共用全控制轴分析，'
+        '优先独立提取背景 N_S1 和有符号差分 ΔN_S1 = ON − OFF；峰不可辨识时检验两侧远端平台，'
+        '受控响应仅展示各态通过验收的部分；自动移动峰标定不足时按配置 K/B 输出暂定 PSD 图并标记质量未通过。'
+        '结果为锁相测量端噪声谱，不换算为绝对 Probe 光功率谱；历史目录保留独立分析草稿，保存默认值只影响下一次实验；'
+        '分步等待保持连接、输出和硬件锁，校相质量未通过禁止扫描。'
+        '锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性；'
+        '锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
     ),
     data_type=DATA_TYPE,
     required_devices=("GS200", "DG900", "DG4000", "HF2"),

@@ -89,7 +89,7 @@ class StageTest(unittest.TestCase):
 
     def test_parameters_invalidation_mode_restore_and_unique_scan_directories(self):
         with fake_hardware(self.root) as hw:
-            hw.rates.side_effect = lambda hfi, config: 800.0 if config.time_constant == scan_params().hf2_daq_tc else 1200.0
+            hw.rates.side_effect = lambda hfi, config, **kwargs: 800.0 if config.time_constant == scan_params().hf2_daq_tc else 1200.0
             ctx = workflow.Workflow(scan_params(), project_root=self.root)
             self.prepare(ctx)
             ctx.execute(["A12", "A13"])
@@ -180,7 +180,7 @@ def fake_session_main():
     session_id = payload.pop("session_id")
     params = NoiseSpectrumXYParams.from_external(payload)
     with fake_hardware(root) as hw, redirect_stdout(sys.__stdout__):
-        hw.rates.side_effect = lambda hfi, config: 800.0 if config.time_constant == params.hf2_daq_tc else 1200.0
+        hw.rates.side_effect = lambda hfi, config, **kwargs: 800.0 if config.time_constant == params.hf2_daq_tc else 1200.0
         serve(workflow.Workflow(params, project_root=root, session_id=session_id), sys.stdin)
 
 

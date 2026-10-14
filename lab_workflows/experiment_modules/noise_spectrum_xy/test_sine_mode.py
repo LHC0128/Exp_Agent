@@ -55,6 +55,8 @@ def fake_hardware(root):
     devices = {name: Mock(name=name) for name in (
         "gs200", "dg_comp", "dg_sweep", "dg_mod", "dg_temp", "dg_laser", "tec", "hf2")}
     devices["tec"].get_temperature.return_value = 100.0
+    devices["hf2"].model = "HF2"
+    devices["hf2"].acquisition_mode = "auto"
     devices["hf2"].capabilities = {"voltage_inputs": 2}
     devices["hf2"].sig_in_path.side_effect = lambda index: f"/dev18246/sigins/{index}"
     devices["hf2"].get_double.side_effect = lambda path: (
@@ -215,7 +217,7 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
                 if "data_files" in config:
                     events.append("complete")
                 return dump(config, *args, **kwargs)
-            def configure(hfi, cfg):
+            def configure(hfi, cfg, **kwargs):
                 if cfg.phase == 30.0 and cfg.time_constant == params.hf2_demod_tc:
                     events.append("restore_hf2")
                 return 800.0

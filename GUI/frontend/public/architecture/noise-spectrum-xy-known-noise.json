@@ -39,7 +39,8 @@
           "kz_cal",
           "calibration",
           "raw_data",
-          "analysis"
+          "analysis",
+          "static_curve"
         ],
         "note": "波形数值 PSD × K_Z² 为注入真值,离线差分分析输出定量判据。"
       }
@@ -64,8 +65,8 @@
     {
       "id": "calibration",
       "type": "backend",
-      "label": "校准与色散标定",
-      "sublabel": "连续 DAQ · 中位数 · 零交叉斜率",
+      "label": "两级相位校准",
+      "sublabel": "Demod 校相 · XY 迭代质量门控",
       "pos": [
         300,
         14
@@ -107,8 +108,8 @@
     {
       "id": "hf2",
       "type": "external",
-      "label": "HF2 锁相放大器",
-      "sublabel": "Demod0 解调 + DAQ 采集 sample.y",
+      "label": "HF2 / MFLI 锁相",
+      "sublabel": "所选解调器 Y · DAQ 连续采集",
       "tag": "lockin_r",
       "pos": [
         1140,
@@ -183,7 +184,7 @@
       "id": "raw_data",
       "type": "database",
       "label": "raw/ 原始数据",
-      "sublabel": "off/on · 色散完整波形 · 配置",
+      "sublabel": "off/on · 任意波 · 配对时间 · 配置",
       "pos": [
         680,
         570
@@ -219,6 +220,20 @@
       "size": [
         250,
         96
+      ]
+    },
+    {
+      "id": "static_curve",
+      "type": "database",
+      "label": "静磁场 v3 历史曲线",
+      "sublabel": "原始电压轴 · Y 中位值 · 只读",
+      "pos": [
+        300,
+        500
+      ],
+      "size": [
+        270,
+        88
       ]
     }
   ],
@@ -397,6 +412,25 @@
         1245,
         552
       ]
+    },
+    {
+      "id": "static-analysis",
+      "from": "static_curve",
+      "to": "analysis",
+      "label": "拟合增益 dY/dV ÷ K_Z",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          435,
+          715
+        ],
+        [
+          1245,
+          715
+        ]
+      ]
     }
   ],
   "cards": [
@@ -413,18 +447,18 @@
       "dot": "rose",
       "title": "仪器互连",
       "items": [
-        "Time_sequence_2 CH2 固定方波经三通接 dg_comp CH1/CH2 Ext Trig,扫描期间常开",
-        "Z 连续播放;色散 DC 正常完成后重传任意波并回读",
-        "每点 DAQ 保存格式 3 点值、完成掩码与完整波形"
+        "共用方波经三通触发 XY Burst，扫描期间保持",
+        "Z 连续任意波；A11 上传并回读，采集阶段不测色散",
+        "ON/OFF 波形每段保存，重扫使用新目录"
       ]
     },
     {
       "dot": "emerald",
       "title": "工作区版本，源码未冻结",
       "items": [
-        "注入真值 = 实际波形数值 Welch PSD × K_Z²,不应用线圈频响;被测侧增益由色散线形零交叉斜率换算",
-        "离线分析重标定移动脊线、全轴洛伦兹拟合后在参数层差分,背景独立验收",
-        "判据只在注入带内评估:有效覆盖 ≥ 50% 且中位比值落在阈值区间;completed 不等于通过"
+        "真值 = 波形 PSD × 本轮 K_Z²；增益取静磁场 v3 曲线",
+        "未选曲线先完成 B01–B04，来源变化仅重算 B05/B06",
+        "关闭 X/Y、Z 和共用触发，温控恢复；保留主场与光功率"
       ]
     }
   ]

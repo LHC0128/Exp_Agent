@@ -1,10 +1,11 @@
+import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState, type KeyboardEvent } from "react";
 
 import { api } from "../api";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { ScopePlot } from "../components/ScopePlot";
-import { ParameterForm } from "../components/MxYOptimalControlFrequency/ParameterForm";
+import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
 import { PageHead } from "../components/PageHead";
 import type {
   ExperimentDefinition,
@@ -24,6 +25,7 @@ import "./zawClosedLoop.css";
 const KNOWN_NOISE_ID = "noise-spectrum-xy-known-noise";
 const PROBE_AM_ID = "noise-spectrum-xy-uncontrolled-probe-am";
 const PAGE_SIZE = 50;
+const ANALYSIS_KEYS = { ratio_pass_low: "RATIO_PASS_LOW", ratio_pass_high: "RATIO_PASS_HIGH" };
 const terminal = (job: Job | undefined) => Boolean(
   job && ["completed", "failed", "cancelled"].includes(job.status),
 );
@@ -41,6 +43,8 @@ type RunSummary = RunItem & {
   parameters: ParameterValues;
   artifacts: Record<string, string>;
   analysis_quality?: {
+    dispersion?: Record<string, unknown>;
+    status?: string;
     psd?: { actual_rate_sa_s: number; nperseg: number; bin_width_hz: number; paired_points?: number };
     calibration?: { k: number; b: number; support_points: number; residual_std_hz?: number; source?: string };
     comparison?: {
@@ -93,6 +97,7 @@ type WaveformPreview = {
 };
 
 const statusLabels: Record<string, string> = {
+  waiting_calibration: "待选择标定曲线",
   completed: "完成",
   failed: "失败",
   cancelled: "已取消",
@@ -117,6 +122,9 @@ const downloadable = [
   "noise_spectra.csv",
   "calibration.npz",
   "popt_fit.npz",
+  "separated_spectra.npz",
+  "dispersion_source.npz",
+  "dispersion_source.json",
   "psd_matrices.npz",
   "analysis_summary.json",
   "fit_diagnostics.npz",
@@ -135,6 +143,7 @@ function Result({ value, probeAm }: { value: RunSummary; probeAm: boolean }) {
       <p>{value.run_id} · {value.timestamp}</p>
       <p>采集：{status(value.completion_status)} · 分析：{status(value.analysis_status)}</p>
       {probeAm && <p>Z 已知可控噪声：{value.parameters.INJECT_CONTROLLED_NOISE ? "持续注入" : "未注入"}</p>}
+      {value.analysis_quality?.dispersion && <details><summary>标定来源与条件差异</summary><pre>{JSON.stringify(value.analysis_quality.dispersion, null, 2)}</pre></details>}
       {value.analysis_error && <div className="alert error">{value.analysis_error}</div>}
       {comparison && <>
         <p>
@@ -211,13 +220,14 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
   const [values, setValues] = useState<ParameterValues>({});
   const [layout, setLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
   const [savedLayout, setSavedLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
+  const [session, setSession] = useState<XYSession>();
   const [job, setJob] = useState<Job>();
   const [analysisJob, setAnalysisJob] = useState<Job>();
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [preflight, setPreflight] = useState<{ ok: boolean; errors: string[] }>();
+  const [preflight, setPreflight] = useState<PreflightResult>();
   const [preview, setPreview] = useState<WaveformPreview>();
   const [latest, setLatest] = useState<RunSummary>();
   const [list, setList] = useState<RunList>({ runs: [], total: 0 });
@@ -227,6 +237,8 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
   const [refresh, setRefresh] = useState(0);
   const { hardwareBusy } = useJobActivity();
   const jobActive = Boolean(job && !terminal(job));
+  const sessionActive = Boolean(session && session.status !== "closed");
+  const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
 
   useEffect(() => {
@@ -308,7 +320,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
     setStarting(true);
     setError("");
     try {
-      const result = await api<{ ok: boolean; errors: string[] }>(`${BASE}/preflight`, {
+      const result = await api<PreflightResult>(`${BASE}/preflight`, {
         method: "POST",
         body: JSON.stringify({ parameters: values }),
       });
@@ -387,51 +399,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
     event.currentTarget.querySelector<HTMLButtonElement>(`#${prefix}-tab-${next}`)?.focus();
   };
 
-  return (
-    <>
-      <PageHead
-        eyebrow={probeAm ? "MEASUREMENT · PROBE AM NOISE" : "VERIFICATION · KNOWN INJECTION"}
-        title={definition?.title ?? (probeAm ? "XY 控制测量已知不可控 Probe AM 噪声谱" : "XY 控制测量已知可控噪声谱")}
-        description={definition?.description ?? "读取实验定义与运行记录。"}
-      />
-      {error && <div className="alert error" role="alert">{error}</div>}
-      <div className="zaw-tab-strip" role="tablist" aria-label={probeAm ? "XY Probe AM 噪声实验视图" : "XY 已知噪声注入实验视图"} onKeyDown={tabKey}>
-        {(["run", "history", "architecture"] as const).map((item) => (
-          <button
-            key={item}
-            id={`${prefix}-tab-${item}`}
-            role="tab"
-            aria-selected={tab === item}
-            aria-controls={`${prefix}-panel-${item}`}
-            tabIndex={tab === item ? 0 : -1}
-            className={tab === item ? "active" : ""}
-            onClick={() => setTab(item)}
-          >
-            {item === "run" ? "运行" : item === "history" ? "历史" : "架构"}
-          </button>
-        ))}
-      </div>
-
-      <div id={`${prefix}-panel-run`} role="tabpanel" aria-labelledby={`${prefix}-tab-run`} hidden={tab !== "run"}>
-        <div className={probeAm ? "noise-injection-dashboard" : "zaw-dashboard"}>
-          <section className="zaw-panel zaw-panel-params">
-            <div className="zaw-panel-head"><small>PARAMETERS</small><h2>实验参数</h2></div>
-            {probeAm && <button
-              type="button"
-              className="secondary"
-              aria-pressed={Boolean(values.INJECT_CONTROLLED_NOISE)}
-              disabled={jobActive || starting || !fields.length}
-              onClick={() => setValues((current) => ({ ...current, INJECT_CONTROLLED_NOISE: !current.INJECT_CONTROLLED_NOISE }))}
-            >Z 可控噪声：{values.INJECT_CONTROLLED_NOISE ? "注入" : "不注入"}</button>}
-            <ParameterForm
-              fields={probeAm ? fields.filter((field) => field.name !== "INJECT_CONTROLLED_NOISE") : fields}
-              values={values}
-              layout={layout}
-              onChange={(field, value) => setValues((current) => ({ ...current, [field.name]: value }))}
-              onLayoutChange={setLayout}
-              onMoveNotice={setNotice}
-              disabled={jobActive || starting}
-            />
+  const previewContent = (
             <div aria-label="噪声波形与分段预览" aria-live="polite">
               <h3>噪声波形与分段预览（只读）</h3>
               {preview?.error ? <p className="alert error">{preview.error}</p> : <>
@@ -443,7 +411,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
                   达到设计谱密度需设注入幅度 {format(preview?.aligned_amplitude_vpp)} Vpp。
                   <button
                     className="secondary"
-                    disabled={jobActive || starting || preview?.aligned_amplitude_vpp === undefined
+                    disabled={parametersBusy || starting || preview?.aligned_amplitude_vpp === undefined
                       || (probeAm && !preview.aligned_amplitude_safe)
                       || Math.abs((Number(values.NOISE_AMPLITUDE_VPP) || 0)
                         - (preview.aligned_amplitude_vpp ?? Number.NaN)) < 1e-6}
@@ -464,7 +432,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
                   达到设计谱密度需设幅度 {format(preview?.z_aligned_amplitude_vpp)} Vpp。
                   <button
                     className="secondary"
-                    disabled={jobActive || starting || preview?.z_aligned_amplitude_vpp === undefined
+                    disabled={parametersBusy || starting || preview?.z_aligned_amplitude_vpp === undefined
                       || !preview.z_aligned_amplitude_safe
                       || Math.abs((Number(values.Z_NOISE_AMPLITUDE_VPP) || 0)
                         - (preview.z_aligned_amplitude_vpp ?? Number.NaN)) < 1e-6}
@@ -507,34 +475,77 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
               </>}
               <p>预览基于请求采样率与设计谱；实际值以分析结果为准。三个谱段数组必须等长，逗号分隔。</p>
             </div>
+  );
+  const saveContent = <>
             {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
-            <button disabled={saving || jobActive || !fields.length} onClick={() => void save()}>
+            <button disabled={saving || parametersBusy || !fields.length} onClick={() => void save()}>
               {saving ? "保存中…" : "保存参数与布局"}
             </button>
             {notice && <p role="status">{notice}</p>}
-          </section>
-
-          <div className="noise-injection-side">
-          <section className="zaw-panel zaw-panel-control">
-            <div className="zaw-panel-head"><small>CONTROL</small><h2>控制与状态</h2></div>
+  </>;
+  const controlContent = <>
             <div className="zaw-control-buttons">
               <button disabled={starting || jobActive || !fields.length} onClick={() => void check(false)}>仅预检</button>
               <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>
-                {starting ? "处理中…" : "预检并运行实验"}
+                {starting ? "处理中…" : probeAm ? "预检并运行实验" : "完整运行"}
               </button>
             </div>
-            {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflight.ok ? "参数预检通过" : preflight.errors.join("；")}</div>}
+            {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}
             {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
             {definition?.wiring_notes.map((note) => <p key={note}>{note}</p>)}
             <JobView job={job} onUpdate={setJob} />
-          </section>
-
+  </>;
+  const latestContent = (
           <section className="zaw-panel zaw-panel-result">
             <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
             {latest ? <><Result value={latest} probeAm={probeAm} /><button onClick={() => { setSelectedId(latest.run_id); setTab("history"); }}>查看本次详情</button></> : <p>暂无运行记录。</p>}
           </section>
+  );
+
+  return (
+    <>
+      <PageHead
+        eyebrow={probeAm ? "MEASUREMENT · PROBE AM NOISE" : "VERIFICATION · KNOWN INJECTION"}
+        title={definition?.title ?? (probeAm ? "XY 控制测量已知不可控 Probe AM 噪声谱" : "XY 控制测量已知可控噪声谱")}
+        description={definition?.description ?? "读取实验定义与运行记录。"}
+      />
+      {error && <div className="alert error" role="alert">{error}</div>}
+      <div className="zaw-tab-strip" role="tablist" aria-label={probeAm ? "XY Probe AM 噪声实验视图" : "XY 已知噪声注入实验视图"} onKeyDown={tabKey}>
+        {(["run", "history", "architecture"] as const).map((item) => (
+          <button
+            key={item}
+            id={`${prefix}-tab-${item}`}
+            role="tab"
+            aria-selected={tab === item}
+            aria-controls={`${prefix}-panel-${item}`}
+            tabIndex={tab === item ? 0 : -1}
+            className={tab === item ? "active" : ""}
+            onClick={() => setTab(item)}
+          >
+            {item === "run" ? "运行" : item === "history" ? "历史" : "架构"}
+          </button>
+        ))}
+      </div>
+
+      <div id={`${prefix}-panel-run`} role="tabpanel" aria-labelledby={`${prefix}-tab-run`} hidden={tab !== "run"}>
+        <WorkflowPanel experimentId={ID} finishStepId={probeAm ? "A16" : "A15"} runStepId={probeAm ? "A14" : "A13"}
+          analysisParameterKeys={probeAm ? undefined : ANALYSIS_KEYS}
+          enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout}
+          setNotice={setNotice} parametersDisabled={parametersBusy || starting} values={values} setValues={setValues}
+          session={session} setSession={setSession} job={job} setJob={setJob}
+          analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
+          runs={list.runs} setError={setError} onRefresh={setRefresh}>
+          <div className="xy-workflow-controls">
+            {saveContent}
+            <p>在节点内编辑参数。保存只影响下一次实验和统一布局；历史分析覆盖值独立保存。</p>
+            {controlContent}
+            <details className="xy-workflow-preview"><summary>{probeAm ? "AM 噪声波形、可选 Z 注入与 Welch 预览" : "波形、注入真值与 Welch 预览"}</summary>{previewContent}</details>
+            <p>{probeAm
+              ? "完整运行自动执行采集、收尾与 B01～B04；移动峰不足时按运行参数 K/B 输出暂定控制轴并标记质量未通过。"
+              : "未选标定曲线时完整运行完成采集、收尾及 B01～B04；选择静磁场 v3 曲线后继续 B05、B06。"}</p>
           </div>
-        </div>
+        </WorkflowPanel>
+        {latestContent}
       </div>
 
       <div id={`${prefix}-panel-history`} role="tabpanel" aria-labelledby={`${prefix}-tab-history`} hidden={tab !== "history"}>
@@ -551,7 +562,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
           <section className="zaw-run-details">
             {selected ? <>
               <div className="zaw-run-details-actions">
-                <button disabled={jobActive || starting} onClick={() => fillBack(selected.parameters)}>填回参数</button>
+                <button disabled={parametersBusy || starting} onClick={() => fillBack(selected.parameters)}>填回参数</button>
                 <button disabled={starting || jobActive || analysisActive || selected.completion_status === "running"} onClick={() => void reanalyze(selected.run_id)}>重新分析</button>
               </div>
               <Result value={selected} probeAm={probeAm} />

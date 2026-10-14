@@ -27,12 +27,12 @@
         "label": "真值与判据",
         "focus": [
           "raw-wf",
-          "raw-disp",
+          "static-source",
           "truth",
           "gain",
           "criteria"
         ],
-        "note": "波形数值 PSD × K_Z² 与色散重拟合增益。"
+        "note": "实际波形 PSD × 本轮 K_Z²；静磁场 v3 曲线拟合检测增益。"
       },
       {
         "id": "products",
@@ -47,7 +47,7 @@
   },
   "stages": [
     {
-      "label": "raw/ 采集产物"
+      "label": "本轮数据与历史曲线"
     },
     {
       "label": "谱估计"
@@ -79,9 +79,9 @@
       "height": 56
     },
     {
-      "id": "raw-disp",
+      "id": "static-source",
       "type": "database",
-      "label": "色散中位点值",
+      "label": "静磁场 v3 曲线",
       "stage": 0,
       "row": 2,
       "width": 110,
@@ -167,9 +167,9 @@
     },
     {
       "id": "f-disp-gain",
-      "from": "raw-disp",
+      "from": "static-source",
       "to": "gain",
-      "label": "色散重拟合 σ",
+      "label": "dY/dV ÷ K_Z",
       "route": "bottom-channel"
     },
     {
@@ -219,27 +219,27 @@
       "dot": "cyan",
       "title": "分离策略",
       "items": [
-        "参数层差分,不做差矩阵对数拟合",
-        "全控制轴拟合,背景独立验收",
-        "色散全部有效点重拟合；完整波形逐点保存"
+        "ON/OFF 全控制轴拟合后参数层差分",
+        "峰与背景分别验收，保留有符号差",
+        "B01–B04 完成后可等待标定曲线"
       ]
     },
     {
       "dot": "amber",
       "title": "真值链",
       "items": [
-        "真值 = 波形数值 PSD × K_Z²",
-        "K_Z 取 Bell-Bloom 标定,不补频响",
-        "带外真值趋零,不进比值统计"
+        "只读静磁场 v3 原始电压轴与 Y 中位值",
+        "检测增益 = |dY/dV| ÷ 本轮 K_Z",
+        "真值 = 波形 PSD × K_Z²，不补频响"
       ]
     },
     {
       "dot": "emerald",
-      "title": "工作区版本，源码未冻结",
+      "title": "来源与重算",
       "items": [
-        "有符号差保留,NaN 为未通过验收",
-        "带内覆盖 ≥50% 且中位比值达标",
-        "completed 不等于判据通过"
+        "条件差异允许，保存拟合与文件指纹",
+        "来源变化仅重算 B05、B06",
+        "工作区草稿；判据通过另行展示"
       ]
     }
   ]

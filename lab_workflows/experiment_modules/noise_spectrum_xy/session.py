@@ -78,6 +78,8 @@ def serve(ctx, stream, *, stages=ACQUISITION, validate=validate_selection, finis
         failure = exc
         raise
     finally:
+        if failure is None and disconnected.is_set():
+            failure = WorkflowCancelled("父进程通信结束")
         ctx.finish(failure)
 
 

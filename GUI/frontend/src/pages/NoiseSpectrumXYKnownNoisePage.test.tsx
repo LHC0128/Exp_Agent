@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../api";
 import { ExperimentPage } from "./ExperimentPage";
+import flow from "./knownNoiseWorkflow.fixture.json";
 
 vi.mock("../api", () => ({ api: vi.fn() }));
 vi.mock("../components/JobActivity", () => ({ useJobActivity: () => ({ hardwareBusy: false }) }));
@@ -22,10 +23,30 @@ const fields = [
   { name: "NOISE_BAND_STARTS_HZ", label: "噪声段起点", type: "array", default: [300], group: "basic", unit: "Hz" },
   { name: "NOISE_BAND_STOPS_HZ", label: "噪声段终点", type: "array", default: [30000], group: "basic", unit: "Hz" },
   { name: "NOISE_BAND_PSDS_V2_PER_HZ", label: "噪声段设计谱密度", type: "array", default: [1e-6], group: "basic", unit: "V²/Hz" },
-  { name: "HF2_DEMOD_RATE", label: "色散采样率", type: "number", default: 200000, group: "advanced", unit: "Sa/s", description: "用于 HF2 校相与色散连续采集" },
-  { name: "DISPERSION_DURATION_S", label: "色散每点采集时间", type: "number", default: 0.1, group: "advanced", unit: "s" },
+  { name: "HF2_DEMOD_RATE", label: "校相采样率", type: "number", default: 200000, group: "advanced", unit: "Sa/s", description: "用于 HF2 校相" },
+  { name: "TEMP_SWITCH_ON_SETTLE_S", label: "恢复温控等待时间", type: "number", default: 2, group: "basic", unit: "s" },
+  { name: "ANALYSIS_BIN_WIDTH_HZ", label: "频率格间距", type: "number", default: 50, group: "basic", unit: "Hz" },
+  { name: "ANALYSIS_DISPERSION_SOURCE_RUN", label: "静磁场标定曲线", type: "string", default: "", group: "basic", unit: "", options: [
+    { value: "", label: "待选择标定曲线" }, { value: "static-v3", label: "静磁场 v3 · 90 °C" }, { value: "other-v3", label: "静磁场 v3 · 100 °C" },
+  ] },
 ];
 let summary: any;
+let activeSession: any;
+let extraRuns: any[];
+let defaults: Record<string, any>;
+let parameterLayout: { basic: string[]; advanced: string[] };
+const makeSession = () => ({ session_id: "known-session", job_id: "known-session-job", revision: 0,
+  status: "waiting", parameters: { ...defaults },
+  steps: Object.fromEntries(flow.acquisition.map(stage => [stage.id, { status: "pending", error: "" }])),
+  outputs: { X: "ON", Y: "ON", Z: "OFF", 温控: "ON", 共用触发: "ON" }, pending_request: null });
+
+const openParameters = async (id: string) => {
+  const stage = [...flow.acquisition, ...flow.analysis].find(item => item.id === id)!;
+  const region = await screen.findByLabelText(`${id} ${stage.title} 参数`);
+  const details = region.closest("details")!;
+  if (!details.open) fireEvent.click(details.querySelector("summary")!);
+  return within(region);
+};
 
 const renderPage = () => render(
   <MemoryRouter initialEntries={["/experiments/noise-spectrum-xy-known-noise"]}>
@@ -34,6 +55,10 @@ const renderPage = () => render(
 );
 
 beforeEach(() => {
+  activeSession = null;
+  extraRuns = [];
+  defaults = Object.fromEntries(fields.map(field => [field.name, field.default]));
+  parameterLayout = { basic: fields.filter(field => field.group === "basic").map(field => field.name), advanced: ["HF2_DEMOD_RATE"] };
   summary = {
     run_id: "0922_1000_known_noise",
     timestamp: "0922_1000",
@@ -47,9 +72,35 @@ beforeEach(() => {
   mockApi.mockReset();
   mockApi.mockImplementation(async (url: string, options?: RequestInit) => {
     if (url === BASE) return { title: "XY 控制测量已知可控噪声谱", description: "已知噪声验证", wiring_notes: ["确认 Z 链路接线"] };
-    if (url === `${BASE}/schema`) return { schema_version: 2, fields, parameter_layout_saved: true, parameter_layout: { basic: fields.filter((field) => field.group === "basic").map((field) => field.name), advanced: ["HF2_DEMOD_RATE", "DISPERSION_DURATION_S"] } };
+    if (url === `${BASE}/schema`) return { schema_version: 3, fields: fields.map(field => ({ ...field, default: defaults[field.name] })), parameter_layout_saved: true, parameter_layout: parameterLayout };
     if (url === "/api/jobs") return [];
-    if (url.startsWith(`${BASE}/runs?`)) return { runs: [summary], total: 1 };
+    if (url === `${BASE}/workflow`) return flow;
+    if (url === `${BASE}/sessions/active`) return activeSession;
+    if (url === "/api/jobs/known-session-job") return { id: "known-session-job", kind: "session:noise-spectrum-xy-known-noise", status: "running", events: [] };
+    if (url === `${BASE}/sessions` && options?.method === "POST") return activeSession = makeSession();
+    if (url === `${BASE}/sessions/known-session/parameters`) {
+      const parameters = JSON.parse(String(options?.body)).parameters;
+      const impacts = flow.parameter_impacts.acquisition as Record<string, string[]>;
+      const impacted = new Set(Object.keys(parameters).filter(name => JSON.stringify(parameters[name]) !== JSON.stringify(activeSession.parameters[name])).flatMap(name => impacts[name] ?? []));
+      return activeSession = { ...activeSession, revision: activeSession.revision + 1, parameters,
+        steps: Object.fromEntries(Object.entries(activeSession.steps).map(([id, state]: [string, any]) => [id,
+          impacted.has(id) && state.status !== "pending" ? { status: "stale", error: "" } : state])) };
+    }
+    if (url === `${BASE}/sessions/known-session/steps`) {
+      const body = JSON.parse(String(options?.body));
+      const missing = flow.acquisition.filter(stage => body.step_ids.includes(stage.id)).flatMap(stage =>
+        stage.dependencies.filter(id => !body.step_ids.includes(id) && activeSession.steps[id].status !== "completed"));
+      if (missing.length) throw new Error("缺少前置：" + missing.join("、"));
+      return activeSession = { ...activeSession, revision: activeSession.revision + 1,
+        steps: { ...activeSession.steps, ...Object.fromEntries(body.step_ids.map((id: string) => [id, { status: "completed", error: "" }])) } };
+    }
+    if (url === `${BASE}/sessions/known-session/finish`) return activeSession = { ...activeSession, status: "closed", revision: activeSession.revision + 1 };
+    if (url.endsWith("/analysis") && options?.method === "POST") return { id: "analysis", status: "running", events: [] };
+    if (url.endsWith("/analysis")) return { run_id: decodeURIComponent(url.split("/").at(-2)!), revision: 3,
+      options: { bin_width_hz: 50, dispersion_source_run: "", ratio_pass_low: .5, ratio_pass_high: 2 },
+      steps: Object.fromEntries(flow.analysis.map(stage => [stage.id, { status: stage.id < "B05" ? "completed" : "waiting_calibration", error: "" }])),
+      summary: { status: "waiting_calibration" }, fingerprint: {} };
+    if (url.startsWith(`${BASE}/runs?`)) return { runs: [summary, ...extraRuns], total: 1 + extraRuns.length };
     if (url.endsWith("/summary")) return summary;
     if (url === `${BASE}/preflight`) return { ok: true, errors: [] };
     if (url === `${BASE}/derive`) {
@@ -61,7 +112,11 @@ beforeEach(() => {
         nperseg: 9000, segments_per_point: 22, bin_width_hz: 50, scan_seconds: 3000,
       } };
     }
-    if (url === `${BASE}/defaults`) return { message: "参数与布局已保存", schema: { fields, parameter_layout_saved: true, parameter_layout: JSON.parse(String(options?.body)).parameter_layout } };
+    if (url === `${BASE}/defaults`) {
+      const body = JSON.parse(String(options?.body));
+      defaults = body.parameters; parameterLayout = body.parameter_layout;
+      return { message: "参数与布局已保存", schema: { fields, parameter_layout_saved: true, parameter_layout: parameterLayout } };
+    }
     if (url === `${BASE}/runs` && options?.method === "POST") return { id: "acquisition", kind: "experiment:noise-spectrum-xy-known-noise", status: "running", events: [] };
     if (url.endsWith("/analyze")) return { id: "analysis", status: "running", events: [] };
     throw new Error(`未模拟 ${url}`);
@@ -70,32 +125,118 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-it("高级参数相邻显示色散速率和时长，保存和运行都传递新参数", async () => {
+it("读取真实节点定义，依赖拒绝保留显式选择并提供原图下载", async () => {
   renderPage();
-  await screen.findByLabelText("运行标签");
-  fireEvent.click(screen.getByRole("tab", { name: /高级参数/ }));
-  expect(screen.getByLabelText("色散采样率 (Sa/s)")).toHaveValue(200000);
-  expect(screen.getByText("用于 HF2 校相与色散连续采集")).toBeVisible();
-  expect(screen.queryByLabelText("色散拟合起始剔除点数")).toBeNull();
-  expect(screen.queryByLabelText("色散拟合终止剔除点数")).toBeNull();
-  fireEvent.change(screen.getByLabelText("色散每点采集时间 (s)"), { target: { value: "0.2" } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
+  await waitFor(() => expect(screen.getByLabelText("A13 ON/OFF 配对扫描")).toBeEnabled());
+  fireEvent.click(screen.getByLabelText("A13 ON/OFF 配对扫描"));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  expect(await screen.findByText("Error: 缺少前置：A12")).toBeVisible();
+  expect(screen.getByLabelText("A12 DAQ 准备")).not.toBeChecked();
+  expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
+  fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
+  expect(await screen.findByText(/已结束会话的执行记录/)).toBeVisible();
+});
+
+it("刷新恢复会话，空闲改参先应用并携带修订，再显式重跑", async () => {
+  activeSession = { ...makeSession(), revision: 7, parameters: { ...defaults, RUN_TAG: "existing" },
+    steps: Object.fromEntries(flow.acquisition.map(stage => [stage.id, { status: stage.id === "A15" ? "pending" : "completed", error: "" }])) };
+  renderPage();
+  const scan = await openParameters("A13");
+  await waitFor(() => expect(scan.getByLabelText("运行标签")).toHaveValue("existing"));
+  fireEvent.click(screen.getByLabelText("A13 ON/OFF 配对扫描"));
+  const run = screen.getByRole("button", { name: "运行所选 / 重跑" });
+  await waitFor(() => expect(run).toBeEnabled());
+  fireEvent.change(scan.getByLabelText("运行标签"), { target: { value: "next-scan" } });
+  expect(run).toBeDisabled();
+  expect(screen.getByText(/^预计需重跑的已完成步骤/)).toHaveTextContent("A13 ON/OFF 配对扫描");
+  fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
+  await waitFor(() => expect(run).toBeEnabled());
+  const update = mockApi.mock.calls.find(([url]) => url.endsWith("known-session/parameters"))!;
+  const body = JSON.parse(String(update[1]?.body));
+  expect(body.revision).toBe(7);
+  expect(Object.keys(body.parameters).filter(name => JSON.stringify(body.parameters[name]) !== JSON.stringify(defaults[name]))).toEqual(["RUN_TAG"]);
+  expect(activeSession.steps.A12.status).toBe("completed");
+  expect(activeSession.steps.A13.status).toBe("stale");
+  fireEvent.click(run);
+  await waitFor(() => expect(activeSession.steps.A13.status).toBe("completed"));
+  const request = mockApi.mock.calls.find(([url]) => url.endsWith("known-session/steps"))!;
+  expect(JSON.parse(String(request[1]?.body))).toEqual({ revision: 8, step_ids: ["A13"] });
+});
+
+it("恢复温控参数在三个业务节点同步，分类与保存后刷新同步", async () => {
+  const page = renderPage();
+  const demod = await openParameters("A08"), phase = await openParameters("A10"), scan = await openParameters("A13");
+  fireEvent.change(phase.getByLabelText("恢复温控等待时间 (s)"), { target: { value: "3" } });
+  for (const node of [demod, phase, scan]) expect(node.getByLabelText("恢复温控等待时间 (s)")).toHaveValue(3);
+  fireEvent.click(phase.getByRole("button", { name: "恢复温控等待时间 移至高级参数" }));
+  for (const node of [demod, phase, scan]) expect(node.getByLabelText("恢复温控等待时间 (s)")).not.toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
-  await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url === `${BASE}/defaults`)).toBe(true));
-  fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
+  await screen.findByText("参数与布局已保存");
+  expect(parameterLayout.advanced).toContain("TEMP_SWITCH_ON_SETTLE_S");
+  page.unmount(); renderPage();
+  const recovered = await openParameters("A10");
+  fireEvent.click(recovered.getByText("高级参数（1）"));
+  expect(recovered.getByLabelText("恢复温控等待时间 (s)")).toHaveValue(3);
+});
+
+it("未选来源显示等待，历史目录与下一次实验分别保留分析草稿", async () => {
+  extraRuns = [{ ...summary, run_id: "other-known-run" }];
+  renderPage();
+  const next = await openParameters("B05");
+  fireEvent.change(next.getByLabelText("静磁场标定曲线"), { target: { value: "static-v3" } });
+  fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: summary.run_id } });
+  expect(await screen.findByText(/谱分离已完成，待选择标定曲线后执行/)).toBeVisible();
+  const first = await openParameters("B05");
+  expect(first.getByLabelText("静磁场标定曲线")).toHaveValue("");
+  fireEvent.change(first.getByLabelText("静磁场标定曲线"), { target: { value: "other-v3" } });
+  fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: "other-known-run" } });
+  const second = await openParameters("B05");
+  fireEvent.change(second.getByLabelText("静磁场标定曲线"), { target: { value: "static-v3" } });
+  fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: summary.run_id } });
+  const restored = await openParameters("B05");
+  expect(restored.getByLabelText("静磁场标定曲线")).toHaveValue("other-v3");
+  fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
+  await screen.findByText("参数与布局已保存");
+  expect(defaults.ANALYSIS_DISPERSION_SOURCE_RUN).toBe("static-v3");
+  fireEvent.click(screen.getByLabelText("B05 选择静磁场曲线并拟合检测增益"));
+  fireEvent.click(screen.getByLabelText("B06 增益换算、注入真值比较与汇总"));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url.endsWith("/analysis") && options?.method === "POST")).toBe(true));
+  const request = mockApi.mock.calls.find(([url, options]) => url.endsWith("/analysis") && options?.method === "POST")!;
+  const body = JSON.parse(String(request[1]?.body));
+  expect(body.step_ids).toEqual(["B05", "B06"]);
+  expect(body.revision).toBe(3);
+  expect(body.analysis_parameters.ANALYSIS_DISPERSION_SOURCE_RUN).toBe("other-v3");
+  expect(body.analysis_parameters).not.toHaveProperty("DISPERSION_DURATION_S");
+});
+
+it("节点内调整校相参数并保存，完整运行不携带旧色散采集参数", async () => {
+  renderPage();
+  const node = await openParameters("A08");
+  fireEvent.click(node.getByText("高级参数（1）"));
+  fireEvent.change(node.getByLabelText("校相采样率 (Sa/s)"), { target: { value: "150000" } });
+  expect(screen.queryByLabelText("色散每点采集时间 (s)")).toBeNull();
+  const workflow = within(screen.getByRole("region", { name: "交互实验流程图" }));
+  fireEvent.click(workflow.getByRole("button", { name: "保存参数与布局" }));
+  await screen.findByText("参数与布局已保存");
+  fireEvent.click(workflow.getByRole("button", { name: "完整运行" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs` && options?.method === "POST")).toBe(true));
   for (const [url, options] of mockApi.mock.calls.filter(([url, options]) => url === `${BASE}/defaults` || (url === `${BASE}/runs` && options?.method === "POST"))) {
     const body = JSON.parse(String(options?.body));
-    expect(body.parameters.HF2_DEMOD_RATE).toBe(200000);
-    expect(body.parameters.DISPERSION_DURATION_S).toBe(0.2);
-    expect(body.parameters).not.toHaveProperty("DISPERSION_SAMPLES_PER_STEP");
-    expect(body.parameters).not.toHaveProperty("DISPERSION_FIT_SKIP_START");
-    expect(body.parameters).not.toHaveProperty("DISPERSION_FIT_SKIP_END");
-    if (url.endsWith("defaults")) expect(body.parameter_layout.advanced).toEqual(["HF2_DEMOD_RATE", "DISPERSION_DURATION_S"]);
+    expect(body.parameters.HF2_DEMOD_RATE).toBe(150000);
+    expect(body.parameters.ANALYSIS_DISPERSION_SOURCE_RUN).toBe("");
+    expect(body.parameters).not.toHaveProperty("DISPERSION_DURATION_S");
+    if (url.endsWith("defaults")) expect(body.parameter_layout.advanced).toEqual(["HF2_DEMOD_RATE"]);
   }
 });
 
 it("显示波形预算预览与真值链 K_Z，谱段数组按逗号分隔编辑", async () => {
   renderPage();
+  const preview = await screen.findByText("波形、注入真值与 Welch 预览");
+  fireEvent.click(preview);
+  await openParameters("A11");
   expect(await screen.findByText((content) => content.includes("波形：采样率 65536 Sa/s"))).toBeVisible();
   expect(await screen.findByText((content) => content.includes("等效频率噪声（带内中位）6.950 Hz/√Hz"))).toBeVisible();
   expect(await screen.findByText((content) => content.includes("达到设计谱密度需设注入幅度 1.680 Vpp"))).toBeVisible();
@@ -119,6 +260,7 @@ it("结果区展示判据通过与中位比值，历史详情可用", async () =
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "填回参数" })).toBeEnabled());
   fireEvent.click(screen.getByRole("tab", { name: "运行" }));
+  await openParameters("A13");
   expect(screen.getByLabelText("运行标签")).toHaveValue("known_noise");
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
@@ -128,13 +270,13 @@ it("结果区展示判据通过与中位比值，历史详情可用", async () =
 it("从真实路由进入双 Tab，预检失败不启动采集", async () => {
   renderPage();
   expect(within(screen.getByRole("tablist", { name: "XY 已知噪声注入实验视图" })).getAllByRole("tab")).toHaveLength(3);
-  await waitFor(() => expect(screen.getByRole("button", { name: "预检并运行实验" })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "完整运行" })).toBeEnabled());
   const normal = mockApi.getMockImplementation()!;
   mockApi.mockImplementation(async (url, options) => {
     if (url === `${BASE}/preflight`) return { ok: false, errors: ["噪声段超出 Nyquist"] };
     return normal(url, options);
   });
-  fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
+  fireEvent.click(screen.getByRole("button", { name: "完整运行" }));
   expect(await screen.findByText("噪声段超出 Nyquist")).toBeVisible();
   expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs` && options?.method === "POST")).toBe(false);
 });

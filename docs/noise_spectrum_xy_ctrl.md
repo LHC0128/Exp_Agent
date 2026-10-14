@@ -77,6 +77,12 @@ defaults_file: params/experiments/noise-spectrum-xy.yaml
 
 # X/Y 交流控制噪声谱测量
 
+## 锁相采集方式与实际速率
+
+XY 噪声使用 `HF2_DAQ_RATE` 请求率、`HF2_DAQ_DURATION` 时长和 `HF2_DEMOD_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
+
+时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](lockin_amplifier.md#解调时序的模块选择)。
+
 当前默认参数：[参数文件](../params/experiments/noise-spectrum-xy.yaml)。GUI「保存参数与布局」会更新该文件，并保存统一分类偏好；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
 
 本实验已迁移到强类型新模式。显式参数模型、采集工作流和离线分析器位于

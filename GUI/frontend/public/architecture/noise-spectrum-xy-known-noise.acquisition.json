@@ -14,9 +14,9 @@
           "n-init",
           "n-fixed",
           "n-phasecal",
-          "n-disp"
+          "n-noise"
         ],
-        "note": "波形生成上传、两级校相与每个 DC 点的连续色散采集；正常完成才恢复注入。"
+        "note": "A01–A10 设备准备与两级校相通过后，A11 上传噪声、A12 准备 DAQ。"
       },
       {
         "id": "scan",
@@ -69,7 +69,7 @@
     },
     {
       "id": "p-calib",
-      "label": "校准与色散标定",
+      "label": "校相与噪声准备",
       "fromCol": 2,
       "toCol": 3,
       "variant": "emphasis"
@@ -85,7 +85,7 @@
     "n-init",
     "n-fixed",
     "n-phasecal",
-    "n-disp",
+    "n-noise",
     "n-point",
     "n-pair"
   ],
@@ -112,7 +112,7 @@
       "lane": "setup",
       "col": 1,
       "type": "backend",
-      "label": "工作点·上传任意波",
+      "label": "工作点与触发",
       "width": 120
     },
     {
@@ -124,11 +124,11 @@
       "width": 120
     },
     {
-      "id": "n-disp",
+      "id": "n-noise",
       "lane": "setup",
       "col": 3,
       "type": "backend",
-      "label": "连续色散 DAQ",
+      "label": "任意波与 DAQ",
       "width": 120
     },
     {
@@ -176,21 +176,21 @@
       "id": "e-fixed-cal",
       "from": "n-fixed",
       "to": "n-phasecal",
-      "label": "任意波待命",
+      "label": "初始输出就绪",
       "role": "main"
     },
     {
       "id": "e-cal-disp",
       "from": "n-phasecal",
-      "to": "n-disp",
+      "to": "n-noise",
       "label": "相位收敛",
       "role": "main"
     },
     {
       "id": "e-disp-point",
-      "from": "n-disp",
+      "from": "n-noise",
       "to": "n-point",
-      "label": "增益基准就绪",
+      "label": "任意波与 DAQ 回读通过",
       "role": "main"
     },
     {
@@ -211,7 +211,7 @@
       "id": "e-pair-safe",
       "from": "n-pair",
       "to": "n-safe",
-      "label": "扫描完成 · finally",
+      "label": "完整运行 / 结束会话",
       "role": "main"
     },
     {
@@ -231,7 +231,7 @@
       "toSide": "right",
       "via": [
         [
-          766.8,
+          776.4,
           420
         ],
         [
@@ -268,18 +268,18 @@
       "dot": "rose",
       "title": "同步与互斥",
       "items": [
-        "方波常开经三通触发 Burst;统一 10 MHz 时钟",
-        "Z 注入连续播放;DC 切换后必须重传任意波",
-        "色散 DAQ 中位数全点拟合;成功后恢复注入"
+        "共用方波触发 XY Burst，参考时钟严格回读",
+        "A11 上传 Z 任意波；扫描前只回读模式",
+        "分步等待保留输出和硬件锁，刷新可恢复"
       ]
     },
     {
       "dot": "emerald",
       "title": "工作区版本，源码未冻结",
       "items": [
-        "色散故障立即终止，保存可读波形并清理 DAQ",
-        "校相未收敛告警继续;取消触发安全收尾",
-        "finally 收尾:关控制场与注入,仅断 TEC"
+        "校相质量未通过禁止扫描，允许调整后重试",
+        "关 X/Y、Z 和共用触发，温控 5 V DC + ON",
+        "A15 无前置结束；每次重扫创建新目录"
       ]
     }
   ]

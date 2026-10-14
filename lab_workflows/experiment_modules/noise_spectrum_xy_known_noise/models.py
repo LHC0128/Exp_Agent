@@ -10,8 +10,6 @@ import numpy as np
 
 from ...common import find_project_root
 from ...experiment_params import parameter
-from ...steps.dispersion import dispersion_sample_count
-from .dispersion import MIN_DISPERSION_FIT_POINTS
 from ..noise_spectrum_xy.models import (
     NoiseSpectrumXYParams,
     NoiseSpectrumXYParams as _ParentParams,
@@ -36,7 +34,7 @@ def noise_waveform_settings(repeat_freq_hz: float) -> dict[str, float]:
 
 @dataclass(slots=True)
 class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
-    schema_version: ClassVar[int] = 2
+    schema_version: ClassVar[int] = 3
 
     run_tag: str = parameter(default="known_noise", external_name="RUN_TAG", label="运行标签", group="basic")
     target_noise_freq_stop_hz: float = parameter(default=30000.0, external_name="TARGET_NOISE_FREQ_STOP_HZ", label="目标噪声频率终点", unit="Hz", group="basic", minimum=0)
@@ -53,13 +51,8 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
     z_injection_settle_s: float = parameter(default=0.2, external_name="Z_INJECTION_SETTLE_S", label="注入两态切换等待", unit="s", group="advanced", minimum=0, description="每段采集前设置注入 ON 或 OFF 后均等待；相邻控制点交替两态顺序。")
     z_calibration_source_run: str = parameter(default=DEFAULT_Z_CALIBRATION_RUN, external_name="Z_CALIBRATION_SOURCE_RUN", label="K_Z 标定运行", group="advanced", options_from_directory="data/Bell_Bloom_Z_Field_Calibration", options_pattern="*", options_include_directories=True, options_require_analysis="results/analysis.yaml", options_require_experiment_id="bell-bloom-z-field-calibration", description="真值链只取该运行的斜率 K_Z（Hz/V）；共振中心由主磁场决定，不使用 f_0V。")
 
-    # ---- 内置色散斜率扫描（增益换算） ----
-    dispersion_span_v: float = parameter(default=0.17, external_name="DISPERSION_SPAN_V", label="色散扫描半宽", unit="V", group="advanced", minimum=0.001, safety_key="Z_magnetic_field", description="z 偏置步进扫描 ±该电压，覆盖共振色散中心段；默认约 ±2 kHz（按 K_Z 换算）。")
-    dispersion_steps: int = parameter(default=21, external_name="DISPERSION_STEPS", label="色散扫描点数", group="advanced", minimum=MIN_DISPERSION_FIT_POINTS)
-    dispersion_step_settle_s: float = parameter(default=0.2, external_name="DISPERSION_STEP_SETTLE_S", label="色散每步等待", unit="s", group="advanced", minimum=0)
-    dispersion_duration_s: float = parameter(default=0.1, external_name="DISPERSION_DURATION_S", label="色散每点采集时间", unit="s", group="advanced", minimum=0, description="每步稳定等待后连续采集；记录时间按 HF2 实际速率向上取整到整数样本。")
-    hf2_demod_rate: float = parameter(default=100000.0, external_name="HF2_DEMOD_RATE", label="色散采样率", unit="Sa/s", group="advanced", minimum=1, description="用于 HF2 校相与色散连续采集；主噪声采集独立使用 HF2_DAQ_RATE。")
-    dispersion_temp_switch_interval_points: int = parameter(default=5, external_name="DISPERSION_TEMP_SWITCH_INTERVAL_POINTS", label="色散温控恢复间隔点数", group="advanced", minimum=0, description="每测完该数量的色散点后打开温度开关一次（按 TEMP_SWITCH_ON_SETTLE_S 等待后重新关闭），避免长时间关闭温控导致温度漂移；0 表示整段保持关闭。")
+    analysis_dispersion_source_run: str = parameter(default="", external_name="ANALYSIS_DISPERSION_SOURCE_RUN", label="静磁场标定曲线", group="advanced", description="仅在分析时验证；留空时完成谱分离并等待选择 v3 直流逐点静磁场曲线。")
+    hf2_demod_rate: float = parameter(default=100000.0, external_name="HF2_DEMOD_RATE", label="校相采样率", unit="Sa/s", group="advanced", minimum=1)
 
     # ---- 定量判据 ----
     analysis_fit_half_width_hz: float = parameter(default=3000.0, external_name="ANALYSIS_FIT_HALF_WIDTH_HZ", label="峰定位半窗口", unit="Hz", group="advanced", minimum=1, description="三类 XY 噪声实验共用全控制轴分析；此值约束峰区和参数边界，并定义独立背景平台需避开的共振区。")
@@ -74,6 +67,8 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
         migrated = _ParentParams.migrate_external(values, 1 if schema_version < 1 else schema_version)
         migrated.pop("ANALYSIS_BACKGROUND_HALF_WIDTH_HZ", None)
         migrated.pop("Z_TF_SOURCE_RUN", None)
+        for key in ("DISPERSION_SPAN_V", "DISPERSION_STEPS", "DISPERSION_STEP_SETTLE_S", "DISPERSION_DURATION_S", "DISPERSION_TEMP_SWITCH_INTERVAL_POINTS"):
+            migrated.pop(key, None)
         return migrated
 
     def noise_bands(self) -> list[tuple[float, float, float]]:
@@ -112,10 +107,6 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
 
     def validate_model(self) -> list[str]:
         errors = _ParentParams.validate_model(self)
-        try:
-            dispersion_sample_count(self.hf2_demod_rate, self.dispersion_duration_s)
-        except ValueError as exc:
-            errors.append(str(exc))
         lengths = {len(self.noise_band_starts_hz), len(self.noise_band_stops_hz),
                    len(self.noise_band_psds_v2_per_hz)}
         if len(lengths) != 1:

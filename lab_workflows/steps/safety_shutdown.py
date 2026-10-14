@@ -159,17 +159,19 @@ def run_safety_shutdown(
     extra_actions: Iterable[ShutdownAction] = (),
     disconnect_targets: Iterable[DisconnectTarget] = (),
     preserved_outputs: Iterable[str] = STANDARD_PRESERVED_OUTPUTS,
+    shutdown_timing_outputs: Iterable[str] = (),
 ) -> SafetyShutdownReport:
-    """执行统一安全关闭；时序输出按全局策略保留，其余通道显式关闭。"""
+    """默认保留时序输出；实验可显式声明需关闭的时序通道。"""
     action_errors: list[str] = []
     specs = tuple(dg_channels)
+    timing_to_close = frozenset(shutdown_timing_outputs)
+    timing_to_preserve = set(PRESERVED_TIMING_OUTPUTS) - timing_to_close
     preserved = tuple(dict.fromkeys(
-        (*preserved_outputs,
-         *PRESERVED_TIMING_OUTPUTS,
-         *(spec.safety_key for spec in specs if spec.safety_key in PRESERVED_TIMING_OUTPUTS))
+        key for key in (*preserved_outputs, *PRESERVED_TIMING_OUTPUTS)
+        if key not in timing_to_close
     ))
     for spec in specs:
-        if spec.device is not None and spec.safety_key not in PRESERVED_TIMING_OUTPUTS:
+        if spec.device is not None and spec.safety_key not in timing_to_preserve:
             _shutdown_dg_channel(action_errors, spec)
     for action in extra_actions:
         _attempt(action_errors, action.label, action.action)
