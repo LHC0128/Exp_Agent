@@ -50,6 +50,7 @@ class DeviceDefinition:
     reference_clock: str | None = None
     connection: dict[str, Any] = field(default_factory=dict)
     capabilities: dict[str, Any] = field(default_factory=dict)
+    acquisition_mode: str = "auto"
 
     @classmethod
     def from_item(cls, device_id: str, payload: Mapping[str, Any]) -> DeviceDefinition:
@@ -70,11 +71,14 @@ class DeviceDefinition:
             ),
             connection=dict(payload.get("connection") or {}),
             capabilities=dict(payload.get("capabilities") or {}),
+            acquisition_mode=str(payload.get("acquisition_mode", "auto")),
         )
 
     def to_config(self) -> dict[str, Any]:
         result = asdict(self)
         result.pop("device_id")
+        if self.instrument != "lockin_amplifier":
+            result.pop("acquisition_mode")
         return result
 
 
@@ -212,6 +216,8 @@ def _normalize_device_document(payload: Mapping[str, Any]) -> dict[str, Any]:
             device.capabilities.setdefault("supports_arbitrary", True)
             device.capabilities.setdefault("supports_infinite_burst", True)
         if device.instrument == "lockin_amplifier":
+            if device.acquisition_mode not in {"auto", "daq", "scope"}:
+                raise ValueError(f"设备 {device_id} 的 acquisition_mode 必须为 auto/daq/scope")
             if device.model.upper() not in {"HF2", "MFLI"}:
                 raise ValueError("锁相放大器型号只支持 HF2/MFLI")
             if not str(device.connection.get("device_id", "")).lower().startswith("dev"):
@@ -450,6 +456,7 @@ def resolve_mapping(root: Path | None = None) -> dict[str, dict[str, Any]]:
             "device_id": connection_device_id,
             "reference_clock": device.reference_clock,
             "capabilities": dict(device.capabilities),
+            **({"acquisition_mode": device.acquisition_mode} if device.instrument == "lockin_amplifier" else {}),
             **_endpoint_fields(endpoint),
         }
     return result

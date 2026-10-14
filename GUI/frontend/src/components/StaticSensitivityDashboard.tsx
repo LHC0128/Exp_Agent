@@ -1,3 +1,4 @@
+import { preflightMessage, type PreflightResult } from "../pages/experimentHelpers";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "../api";
 import { useJobActivity } from "./JobActivity";
@@ -19,7 +20,7 @@ export function StaticSensitivityDashboard({ experimentId, definition, fields, l
   const [notice, setNotice] = useState("");
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [preflight, setPreflight] = useState<{ ok: boolean; errors: string[] }>();
+  const [preflight, setPreflight] = useState<PreflightResult>();
   const [status, setStatus] = useState<{ ok: boolean; message: string }>();
   const [error, setError] = useState("");
   const live = Boolean(session && session.status !== "closed");
@@ -50,13 +51,13 @@ export function StaticSensitivityDashboard({ experimentId, definition, fields, l
   }, [experimentId]);
   const check = async () => {
     setError("");
-    try { setPreflight(await api<{ ok: boolean; errors: string[] }>(`/api/experiments/${experimentId}/preflight`, { method: "POST", body: JSON.stringify({ parameters: values }) })); }
+    try { setPreflight(await api<PreflightResult>(`/api/experiments/${experimentId}/preflight`, { method: "POST", body: JSON.stringify({ parameters: values }) })); }
     catch (reason) { setError(String(reason)); }
   };
   const run = async () => {
     setError(""); setPreflight(undefined); setStarting(true);
     try {
-      const result = await api<{ ok: boolean; errors: string[] }>(`/api/experiments/${experimentId}/preflight`, { method: "POST", body: JSON.stringify({ parameters: values }) });
+      const result = await api<PreflightResult>(`/api/experiments/${experimentId}/preflight`, { method: "POST", body: JSON.stringify({ parameters: values }) });
       setPreflight(result);
       if (result.ok) setJob(await api<Job>(`/api/experiments/${experimentId}/runs`, { method: "POST", body: JSON.stringify({ parameters: values }) }));
     } catch (reason) { setError(String(reason)); }
@@ -87,7 +88,7 @@ export function StaticSensitivityDashboard({ experimentId, definition, fields, l
         {layoutDirty && <p className="zaw-layout-dirty" role="status">布局有未保存修改</p>}
         {notice && <p role="status">{notice}</p>}
         {status && <div className={`alert ${status.ok ? "success" : "error"}`}>{status.message}</div>}
-        {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflight.ok ? "参数预检通过，可以启动实验。" : preflight.errors.join("；")}</div>}
+        {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过，可以启动实验。")}</div>}
         {blocked && !jobActive && <div className="alert">其他硬件任务正在运行，等待其完成后才能启动本实验。</div>}
         {error && <div className="alert error">{error}</div>}
         <p>执行模式：{definition.execution_mode} · 所需设备：{definition.required_devices.join(" · ")}</p>

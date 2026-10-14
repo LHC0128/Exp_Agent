@@ -61,12 +61,19 @@ class LockinInstrument:
         api_level: int = 1,
         device_id: str = "dev18246",
         interface: str = "PCIe",
+        acquisition_mode: str = "auto",
     ):
         self.host = host
         self.port = port
         self.api_level = api_level
         self.device_id = device_id.lower()
         self.interface = interface
+        from .acquisition import ACQUISITION_MODES
+        if acquisition_mode not in ACQUISITION_MODES:
+            raise ValueError("acquisition_mode 必须为 auto、daq 或 scope")
+        self.acquisition_mode = acquisition_mode
+        self._acquisition_stream_settings = None
+        self.acquisition_requests = ()
 
         self._daq: Optional[_zi.ziDAQServer] = None
         self.capabilities = lockin_capabilities(self.model)
@@ -96,6 +103,13 @@ class LockinInstrument:
             options = re.split(r"[,;\s]+", server.getString(f"/{self.device_id}/features/options"))
             self.capabilities = lockin_capabilities(self.model, [item for item in options if item])
             self._daq = server
+            from .acquisition import select_acquisition
+            for request in self.acquisition_requests:
+                plan = select_acquisition(self.model, self.capabilities, request.config(),
+                                          request.requested_rate, request.demod_index, self.acquisition_mode)
+                logger.info("采集预检 %s: %s，请求 %.6g Sa/s，预计 %.6g Sa/s", request.stage,
+                            plan.module.upper(), plan.requested_rate, plan.estimated_rate)
+                print(f"采集预检 {request.stage}: {plan.module.upper()}，请求 {plan.requested_rate:g} Sa/s，预计 {plan.estimated_rate:g} Sa/s", flush=True)
             logger.info("已连接设备 %s (接口: %s)", self.device_id, self.interface)
         except Exception:
             try:
@@ -112,6 +126,13 @@ class LockinInstrument:
     def disconnect(self) -> None:
         """断开设备连接和数据服务器连接."""
         if self._daq is not None:
+            from .acquisition import restore_demod_streams
+            restore_error = None
+            try:
+                restore_demod_streams(self)
+            except Exception as exc:
+                logger.exception("断开前解调数据流恢复失败")
+                restore_error = exc
             server, self._daq = self._daq, None
             try:
                 server.disconnectDevice(self.device_id)
@@ -122,6 +143,8 @@ class LockinInstrument:
             except Exception:
                 logger.warning("数据服务器断开未成功", exc_info=True)
             logger.info("已断开连接")
+            if restore_error is not None:
+                raise restore_error
 
     @property
     def connected(self) -> bool:
@@ -138,7 +161,12 @@ class LockinInstrument:
         return self
 
     def __exit__(self, *args) -> None:
-        self.disconnect()
+        try:
+            self.disconnect()
+        except Exception:
+            if args[1] is None:
+                raise
+            logger.exception("异常退出后的锁相连接清理失败")
 
     # ------------------------------------------------------------------
     # 节点路径辅助

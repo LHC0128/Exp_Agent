@@ -217,8 +217,9 @@ def acquire_data(
     *,
     cancellation_check: Callable[[], None] | None = None,
     strict_cleanup: bool = False,
+    requested_rate: Optional[float] = None,
 ) -> List[DAQResult]:
-    """一键采集：配置、执行并读取 DAQ 数据.
+    """一键采集解调时序：按设备全局模式和请求速率选择 DAQ / Scope.
 
     返回结构化的 DAQResult 列表，格式与 sds_acquisition.AcquisitionResult 对齐。
 
@@ -231,7 +232,9 @@ def acquire_data(
     demod_idx : int
         解调器索引
     actual_rate : float, optional
-        实际采样率 (Sa/s)，用于计算时间轴。不传则从 daq_cfg 读取。
+        解调通信回读率 (Sa/s)。最终波形速率由返回时间轴决定。
+    requested_rate : float, optional
+        当次请求速率，用于模块选择；旧调用未传时使用解调通信回读率。
     timeout : float
         采集超时时间 (s)
     cancellation_check : callable, optional
@@ -248,6 +251,32 @@ def acquire_data(
     if config is None:
         config = DAQConfig()
     config = replace(config, device=config.device or instr.device_id)
+    from .acquisition import select_acquisition, acquire_demod_scope, restore_demod_streams
+    from .base import lockin_capabilities
+    model = getattr(instr, "model", "HF2")
+    capabilities = getattr(instr, "capabilities", None) or lockin_capabilities(model)
+    try:
+        stream_rate = actual_rate or instr.get_double(f"{instr.demod_path(demod_idx)}/rate")
+        # 旧调用方没有请求值时继续使用已有速率；正式实验均显式传入。
+        requested_rate = stream_rate if requested_rate is None else requested_rate
+        if cancellation_check:
+            cancellation_check()
+        if config.device != instr.device_id:
+            raise ValueError("采集设备 ID 必须与当前锁相连接一致")
+        plan = select_acquisition(model, capabilities, config, requested_rate, demod_idx,
+                                  getattr(instr, "acquisition_mode", "auto"))
+    except BaseException:
+        try:
+            restore_demod_streams(instr)
+        except Exception:
+            logger.exception("采集准备失败后的数据流恢复失败")
+        raise
+    logger.info("%s 解调采集: %s，请求 %.6g Sa/s，预计 %.6g Sa/s", model,
+                plan.module.upper(), requested_rate, plan.estimated_rate)
+    if plan.module == "scope":
+        return acquire_demod_scope(instr, config, plan, demod_idx, timeout, cancellation_check)
+
+    restore_demod_streams(instr)
 
     collector = DAQCollector(instr)
     try:
@@ -258,6 +287,8 @@ def acquire_data(
         collector.execute()
         collector.wait(1.0, timeout=timeout, cancellation_check=cancellation_check)
         raw = collector.read()
+        if cancellation_check:
+            cancellation_check()
         logger.info("数据采集完成，共 %d 个信号路径", len(raw))
 
         if actual_rate is None or actual_rate <= 0:
@@ -286,7 +317,13 @@ def acquire_data(
             arrays, times, boundaries, cursor = [], [], [], 0
             time_source = "module_timestamp"
             for burst in bursts:
+                # DAQ chunk 的 0x1 是完成标记，只有 0x4 表示丢样；与 Scope flags 不同。
+                flags = burst.get("header", {}).get("flags", burst.get("flags", 0)) if isinstance(burst, dict) else 0
+                if np.any(np.asarray(flags, dtype=int) & 4):
+                    raise RuntimeError(f"DAQ {signal_name} 丢样或传输异常")
                 values = np.atleast_2d(np.asarray(burst["value"] if isinstance(burst, dict) else burst))
+                if not values.size or not np.isfinite(values).all():
+                    raise RuntimeError(f"DAQ {signal_name} 返回空波形或非有限值")
                 stamps = np.asarray(burst.get("timestamp", [])) if isinstance(burst, dict) else np.array([])
                 if stamps.size:
                     stamps = np.broadcast_to(stamps, values.shape)
@@ -303,19 +340,36 @@ def acquire_data(
                     cursor += row.size
             data_arr = np.concatenate(arrays) if arrays else np.array([])
             time_arr = np.concatenate(times) if times else np.array([])
+            steps = np.concatenate([np.diff(axis) for axis in times if axis.size > 1]) if any(axis.size > 1 for axis in times) else np.array([])
+            if steps.size and (not np.isfinite(steps).all() or (steps <= 0).any()):
+                raise RuntimeError("DAQ 返回无效时间轴或丢样")
+            capture_rate = 1 / float(np.median(steps)) if steps.size else (
+                actual_rate if config.grid_mode == 4 else config.grid_cols / config.duration)
+            tolerance = max(1.5 / clockbase if clockbase else 0, 1e-5 / capture_rate)
+            if steps.size and not np.allclose(steps, 1 / capture_rate, rtol=0, atol=tolerance):
+                raise RuntimeError("DAQ 时间轴不连续，存在丢样")
+            unit = "rad" if signal_name == "sample.theta" else (
+                "Hz" if signal_name == "sample.frequency" else
+                "A" if model == "MFLI" and instr.get_int(f"{instr.demod_path(demod_idx)}/adcselect") == 1 else "V")
 
             results.append(DAQResult(
                 signal_name=signal_name,
                 demod_index=demod_idx,
                 values=data_arr,
                 time=time_arr,
-                config_snapshot={**config.to_dict(), "actual_rate": actual_rate,
+                config_snapshot={**config.to_dict(), "actual_rate": capture_rate,
+                                 "acquisition_module": "daq", "requested_rate": requested_rate,
+                                 "demod_stream_rate": actual_rate,
+                                 "actual_duration": data_arr.size / capture_rate,
+                                 "unit": unit,
                                  "time_source": time_source, "timestamp_origin": origin,
                                  "clockbase": clockbase, "model": getattr(instr, "model", "HF2"),
                                  "capabilities": instr.capabilities if isinstance(instr, LockinInstrument) else {}},
                 record_slices=boundaries,
             ))
 
+        if results:
+            print(f"DAQ 解调采集：请求 {requested_rate:g} Sa/s，实际 {results[0].config_snapshot['actual_rate']:g} Sa/s", flush=True)
         return results
     finally:
         original_error = sys.exc_info()[1]

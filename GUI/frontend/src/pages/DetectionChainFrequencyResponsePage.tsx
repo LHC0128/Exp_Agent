@@ -1,3 +1,4 @@
+import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
@@ -137,7 +138,7 @@ export function DetectionChainFrequencyResponsePage() {
     setStarting(true);
     setError("");
     try {
-      const result = await api<{ ok: boolean; errors: string[] }>(`${BASE}/preflight`, {
+      const result = await api<PreflightResult>(`${BASE}/preflight`, {
         method: "POST",
         body: JSON.stringify({ parameters: values })
       });
@@ -151,7 +152,7 @@ export function DetectionChainFrequencyResponsePage() {
           body: JSON.stringify({ parameters: values })
         }));
       } else {
-        setNotice("预检通过");
+        setNotice(preflightMessage(result, "预检通过"));
       }
     } catch (reason) {
       setError(String(reason));

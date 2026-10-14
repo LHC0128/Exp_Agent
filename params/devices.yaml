@@ -6,7 +6,6 @@ network_resources:
 - TCPIP0::192.168.124.34::INSTR
 - TCPIP0::192.168.124.35::INSTR
 - TCPIP0::192.168.124.41::7655::SOCKET
-- TCPIP0::192.168.124.109::INSTR
 devices:
   keithley_6221_4503331:
     instrument: keithley_6221
@@ -168,17 +167,18 @@ devices:
       - 3
       - 4
       - 5
+    acquisition_mode: auto
   mfli_dev30661:
     instrument: lockin_amplifier
     model: MFLI
-    label: MFLI 锁相放大器
+    label: MFLI 锁相放大器（USB RNDIS / 1GbE）
     resource: null
     reference_clock: EXT
     connection:
       device_id: dev30661
-      host: 192.168.124.109
+      host: 127.0.0.1
       port: 8004
-      interface: PCIe
+      interface: 1GbE
     capabilities:
       channels:
       - 0
@@ -193,6 +193,7 @@ devices:
       max_frequency_hz: 5000000
       voltage_inputs: 1
       aux_input_feedback_verified: false
+    acquisition_mode: auto
   sds_sdsev82x900704:
     instrument: sds_acquisition
     model: SDS

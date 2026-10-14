@@ -5,9 +5,17 @@ import {
   defaultParameterLayout,
   loadLocalParameterLayout,
   parseArrayValue,
+  preflightMessage,
   sameParameterLayout,
   validatedParameterLayout,
 } from "./experimentHelpers";
+
+it("预检显示模块及请求/预计速率，并兼容旧接口", () => {
+  expect(preflightMessage({ ok: true, errors: [], acquisition: [{ stage: "噪声", acquisition_module: "scope", requested_rate_Sa_s: 200000, estimated_rate_Sa_s: 234375 }] }, "预检通过"))
+    .toContain("噪声：SCOPE，请求 200 kSa/s，预计 234.375 kSa/s");
+  expect(preflightMessage({ ok: true, errors: [] }, "预检通过")).toBe("预检通过");
+  expect(preflightMessage({ ok: false, errors: ["缺少 MF-DIG"] }, "预检通过")).toBe("缺少 MF-DIG");
+});
 
 function field(name: string, group: string): SchemaField {
   return {

@@ -200,7 +200,11 @@ export function DeviceLibraryView() {
                 {!selectedLockin && <option value="">尚未选择</option>}
                 {lockins.map(([deviceId, entry]) => <option key={deviceId} value={deviceId}>{entry.model} · {String(entry.connection.device_id || deviceId)}</option>)}
               </select></label>
-              <p className="muted">保存设备库后用于全部实验；启动前检查输入通道和频率是否兼容。{hardwareBusy && "硬件任务结束后才可保存。"}</p>
+              <label>解调采集方式<select aria-label="解调采集方式" value={device.acquisition_mode || "auto"} disabled={busy || hardwareBusy}
+                onChange={event => update(id, { acquisition_mode: event.target.value as DeviceConfig["acquisition_mode"] })}>
+                <option value="auto">自动</option><option value="daq">DAQ</option><option value="scope">Scope</option>
+              </select></label>
+              <p className="muted">自动模式：HF2 使用 DAQ；MFLI 请求速率 ≤70 kSa/s 使用 DAQ，超过时使用 Scope 最近档位。保存后对新会话生效，运行会话保持启动设置。Scope 需要 MF-DIG，超出能力或记录内存时启动前报错。{hardwareBusy && "硬件任务结束后才可保存。"}</p>
             </div>}
             <label>标签<input value={device.label} disabled={busy} onChange={(event) => update(id, { label: event.target.value })} /></label>
             <label>设备类型<select value={device.instrument} disabled={busy} onChange={(event) => update(id, { instrument: event.target.value })}><option value="signal_generator">信号发生器</option><option value="gs200">Yokogawa GS200</option><option value="keithley_6221">Keithley 6221</option><option value="sds_acquisition">示波器</option><option value="lockin_amplifier">锁相放大器</option><option value="tec_controller">TEC</option><option value="toptica_dlc_pro">DLC pro</option></select></label>
@@ -209,7 +213,7 @@ export function DeviceLibraryView() {
             {serialNumber(device) && <label>{device.instrument === "lockin_amplifier" ? "设备 ID / 序列号" : "序列号"}<input value={serialNumber(device)} readOnly /></label>}
             {device.instrument === "lockin_amplifier" && <>
               <label>数据服务器地址<input value={`${device.connection.host || "127.0.0.1"}:${device.connection.port || (device.model === "MFLI" ? 8004 : 8005)}`} readOnly /></label>
-              <p className="device-config-wide muted">{device.model === "MFLI" ? "MFLI 通过网口连接，此处显示 LabOne 数据服务器地址。" : "HF2 通过 USB 接入数据服务器，此处显示服务器地址。"}</p>
+              <p className="device-config-wide muted">{device.model === "MFLI" ? "MFLI 支持 USB RNDIS 或网口连接；此处显示 LabOne 数据服务器地址。USB RNDIS 在 LabOne 中也可能显示为 1GbE。" : "HF2 通过 USB 接入数据服务器，此处显示服务器地址。"}</p>
             </>}
             <label>参考时钟<select value={device.reference_clock || ""} disabled={busy} onChange={(event) => update(id, { reference_clock: (event.target.value || null) as DeviceConfig["reference_clock"] })}><option value="">不适用</option><option value="INT">INT</option><option value="EXT">EXT</option></select></label>
             <label className="device-config-wide">通道号列表（逗号分隔）<input value={((device.capabilities.channels as number[] | undefined) || []).join(", ")} disabled={busy} onChange={(event) => update(id, {

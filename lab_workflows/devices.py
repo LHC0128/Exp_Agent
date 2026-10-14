@@ -15,7 +15,7 @@ from .instrument_config import load_device_definitions
 from lockin_amplifier import HF2Instrument, MFLIInstrument
 
 
-def create_lockin(config: Mapping[str, Any]):
+def create_lockin(config: Mapping[str, Any], *, acquisition_requests=()):
     """按已解析映射创建锁相放大器，不连接硬件。"""
     if config.get("instrument") != "lockin_amplifier":
         raise ValueError("配置不是 lockin_amplifier 映射")
@@ -25,13 +25,18 @@ def create_lockin(config: Mapping[str, Any]):
         raise ValueError(f"不支持的锁相放大器型号: {model}")
     if not config.get("device_id"):
         raise ValueError("锁相放大器配置缺少 device_id")
-    return drivers[model](
+    instrument = drivers[model](
         host=str(config.get("host", "127.0.0.1")),
         port=int(config.get("port", 8005 if model == "HF2" else 8004)),
         api_level=1 if model == "HF2" else 6,
         device_id=str(config["device_id"]),
         interface=str(config.get("interface", "PCIe" if model == "HF2" else "1GbE")),
+        acquisition_mode=str(config.get("acquisition_mode", "auto")),
     )
+    from lockin_amplifier import AcquisitionRequest
+    instrument.acquisition_requests = tuple(acquisition_requests) or tuple(
+        AcquisitionRequest(**request) for request in config.get("_acquisition_requests", ()))
+    return instrument
 
 
 SIGNAL_GENERATOR_DRIVERS = {

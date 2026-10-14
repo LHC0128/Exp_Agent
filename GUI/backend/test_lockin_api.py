@@ -13,6 +13,26 @@ from lab_workflows.common import CancellationToken
 
 
 class LockinApiTests(unittest.TestCase):
+    def test_preflight_shows_scope_rate_without_connecting(self):
+        definition = SimpleNamespace(preflight=lambda values: [])
+        values = {"HF2_DAQ_RATE": 200000, "HF2_DAQ_DURATION": 0.1, "HF2_DEMOD_IDX": 0}
+        mapping = {"lockin_r": {"model": "MFLI", "acquisition_mode": "auto", "capabilities": {"options": ["DIG"]}}}
+        with patch.object(main, "_experiment_or_404", return_value=definition), patch.object(main, "load_mapping", return_value=mapping):
+            result = main.experiment_preflight("noise-spectrum-xy", main.ExperimentBody(parameters=values))
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["acquisition"][0]["acquisition_module"], "scope")
+        self.assertEqual(result["acquisition"][0]["estimated_rate_Sa_s"], 234375)
+
+    def test_partial_preflight_shows_all_default_stages(self):
+        definition = SimpleNamespace(preflight=lambda values: [])
+        mapping = {"lockin_r": {"model": "MFLI", "capabilities": {"options": ["DIG", "MD"]}}}
+        with patch.object(main, "_experiment_or_404", return_value=definition), patch.object(main, "load_mapping", return_value=mapping):
+            result = main.experiment_preflight("rf-sensitivity-aw", main.ExperimentBody(parameters={"NOISE_RATE": 200000}))
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(result["acquisition"]), 2)
+        self.assertEqual(result["acquisition"][1]["acquisition_module"], "scope")
+        self.assertEqual(result["acquisition"][1]["estimated_rate_Sa_s"], 234375)
+
     def test_selection_busy_does_not_write(self):
         body = LockinSelectionBody(device_id="mfli", device_library_revision="library", physical_mapping_revision="mapping")
         with patch.object(main.manager, "try_acquire_short_hardware", return_value=False), patch.object(main, "select_lockin_device") as select:

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import numpy as np
-from lockin_amplifier import DAQConfig, daq
+from lockin_amplifier import DAQConfig, daq, lockin_capabilities
 
 from ..common import WorkflowCancelled
 from . import dispersion
@@ -25,6 +25,9 @@ class FakeHF2:
     """仅模拟本次共享步骤实际使用的接口，不导入或连接仪器。"""
 
     device_id = "devtest"
+    model = "HF2"
+    capabilities = lockin_capabilities("HF2")
+    acquisition_mode = "auto"
     clockbase = 30000.0
 
     def __init__(self, rate=30.0, raw_factory=None, fault=None, fault_at=0):
@@ -126,9 +129,11 @@ class DispersionTests(unittest.TestCase):
                     block["timestamp"][0, 2] += np.uint64(1000)
             elif kind == "frames":
                 raw["/devtest/demods/2/sample.y"].append(y)
+            elif kind == "dataloss":
+                y["header"] = {"flags": np.array([4])}
             return raw
 
-        for kind in ("missing", "length", "nonfinite", "unaligned", "duplicate", "gap", "frames"):
+        for kind in ("missing", "length", "nonfinite", "unaligned", "duplicate", "gap", "frames", "dataloss"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
                 path = Path(tmp) / "point.npz"
                 hf2 = FakeHF2(raw_factory=lambda index, raw: invalid(kind, raw))
@@ -142,6 +147,15 @@ class DispersionTests(unittest.TestCase):
                     if kind == "nonfinite":
                         self.assertTrue(np.isnan(saved["y_samples"][1]))
                         np.testing.assert_allclose(saved["time_s"], np.arange(3) / 30)
+
+    def test_daq_finished_flag_remains_valid(self):
+        def finished(index, raw):
+            for blocks in raw.values():
+                blocks[0]["header"] = {"flags": np.array([1 | 8 | 16])}
+            return raw
+        with tempfile.TemporaryDirectory() as tmp:
+            point = self.collect(FakeHF2(raw_factory=finished), Path(tmp) / "point.npz")
+            self.assertTrue(point["completed"])
 
     def test_wait_cancellation_saves_partial_and_cleans_module(self):
         hf2 = FakeHF2()

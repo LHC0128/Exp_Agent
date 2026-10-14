@@ -16,6 +16,13 @@
 - `connection`：非 VISA 连接参数，例如 HF2 / MFLI device ID、数据服务器地址和接口、DLC pro 端口。
 - `capabilities`：通道范围、任意波点数和无限 Burst 等能力。
 - `reference_clock`：`INT`、`EXT` 或不适用。
+- `acquisition_mode`：锁相解调时序全局模式 `auto`、`daq`、`scope`；缺字段按 `auto`。
+
+锁相卡片的“自动／DAQ／Scope”随设备库草稿整批保存，沿用设备库/映射修订检查；
+硬件任务活动或排队时不能修改采集模式或保存设备库。映射解析将模式传给 `create_lockin()`，
+新会话固定该设置，已有会话保持启动快照。自动模式下 HF2 使用 DAQ，MFLI 按当次请求率
+以 70 kSa/s 为界选择 DAQ/Scope。能力与单段内存不足时预检拒绝，不改接线或回退；
+详情见 [解调采集规则](lockin_amplifier.md#解调时序的模块选择)。
 
 设备库读取和保存时，对已支持的 DG4000/DG900 补全缺失的
 `supports_arbitrary`、`supports_infinite_burst` 为 `true`，适用于 GUI 扫描入库、
@@ -143,7 +150,7 @@ HF2 与 MFLI 合并显示为单张“锁相放大器”卡片，全系统选择�
 保留各绑定的 `demod` 索引。信号源、主磁场 GS200 和锁相选择均在点击“保存设备库”后与设备配置一起
 生效；页面提示未保存更改，失败保留草稿。硬件活动/排队时允许编辑草稿，禁止保存。
 逐行映射不再提供另一处锁相设备选择。
-卡片显示当前设备的 `connection.device_id` 和数据服务器 `host:port`。`connection.interface` 指数据服务器访问测量单元的接口；当前 MFLI 内置服务器 `192.168.124.109:8004` 报告 `PCIe`，电脑通过网口访问该服务器。独立 PC 上的服务器可报告 `1GbE` 或 `USB`，扫描使用 `/zi/devices` 中的实际 `INTERFACE`，不按设备型号推断。
+卡片显示当前设备的 `connection.device_id` 和数据服务器 `host:port`，MFLI 说明同时覆盖 USB RNDIS 与网口。当前 `dev30661` 使用电脑本地服务器 `127.0.0.1:8004`，服务器经 USB RNDIS 地址 `192.168.150.246` 访问仪器，实际报告的 `connection.interface` 为 `1GbE`；设备库标签标明 USB RNDIS，标签本身不选择物理链路。访问仪器内置服务器时，接口才为内部 `PCIe`。扫描使用 `/zi/devices` 中的实际 `INTERFACE`，不按型号或接线名称推断；不要仅为更改显示而将当前接口改成 `USB`。两线同时连接时固定 USB 的服务器启动参数见 [锁相连接说明](lockin_amplifier.md#同时连接-usb-与网线)。
 
 配置接口为：
 

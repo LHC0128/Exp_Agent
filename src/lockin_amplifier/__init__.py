@@ -16,6 +16,9 @@ from . import demod
 from . import daq
 from . import auxout
 from .scope import ScopeConfig, ScopeResult, acquire_scope
+from .acquisition import (AcquisitionRequest, AcquisitionPlan, select_acquisition,
+                          acquisition_module, nearest_scope_rate, result_rate, acquisition_metadata,
+                          save_acquisition_metadata, load_acquisition_rate)
 
 __all__ = [
     "HF2Instrument",
@@ -25,6 +28,9 @@ __all__ = [
     "ScopeConfig",
     "ScopeResult",
     "acquire_scope",
+    "AcquisitionRequest", "AcquisitionPlan", "select_acquisition", "acquisition_module",
+    "nearest_scope_rate", "result_rate", "acquisition_metadata",
+    "save_acquisition_metadata", "load_acquisition_rate",
     "SignalInputConfig",
     "OscillatorConfig",
     "DemodulatorConfig",

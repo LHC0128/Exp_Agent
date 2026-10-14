@@ -59,6 +59,20 @@ async function scan() {
 const row = (idn: string) => within(screen.getByText(idn).closest("div")!);
 
 describe("设备库身份与扫描状态", () => {
+  it("旧锁相默认自动，可保存 Scope，并在硬件忙时禁止修改", async () => {
+    const rendered = render(<DeviceLibraryView />);
+    const selector = await screen.findByLabelText("解调采集方式");
+    expect(selector).toHaveValue("auto");
+    fireEvent.change(selector, { target: { value: "scope" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存设备库" }));
+    await waitFor(() => expect(mockApi.mock.calls.some(([, value]) => value?.method === "PUT")).toBe(true));
+    const [, options] = mockApi.mock.calls.find(([, value]) => value?.method === "PUT")!;
+    expect(JSON.parse(String(options?.body))).toMatchObject({ base_revision: "saved-revision", devices: { hf2: { acquisition_mode: "scope" } } });
+    vi.mocked(useJobActivity).mockReturnValue({ hardwareBusy: true, activeJobs: [] });
+    rendered.rerender(<DeviceLibraryView />);
+    expect(selector).toBeDisabled();
+  });
+
   it("网络扫描地址与设备库同批保存，空列表也明确保存", async () => {
     render(<DeviceLibraryView />);
     const input = await screen.findByLabelText("网络扫描地址（每行一个 VISA 资源）");

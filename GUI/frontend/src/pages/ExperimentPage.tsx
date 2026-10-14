@@ -1,3 +1,4 @@
+import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
@@ -60,7 +61,7 @@ export function GenericExperimentPage() {
   const [advancedCollapsed, setAdvancedCollapsed] = useState(() => window.localStorage.getItem(collapsedKey) !== "false");
   const [dragging, setDragging] = useState<string>();
   const [dropTarget, setDropTarget] = useState<string>();
-  const [preflight, setPreflight] = useState<{ ok: boolean; errors: string[] }>();
+  const [preflight, setPreflight] = useState<PreflightResult>();
   const [defaultsStatus, setDefaultsStatus] = useState<{ ok: boolean; message: string }>();
   const [schemaError, setSchemaError] = useState("");
   const [arrayDrafts, setArrayDrafts] = useState<Record<string, string>>({});
@@ -169,7 +170,7 @@ export function GenericExperimentPage() {
   const check = async () => {
     setActionError("");
     try {
-      setPreflight(await api<{ ok: boolean; errors: string[] }>(`/api/experiments/${experimentId}/preflight`, {
+      setPreflight(await api<PreflightResult>(`/api/experiments/${experimentId}/preflight`, {
         method: "POST",
         body: JSON.stringify({ parameters: values }),
       }));
@@ -203,7 +204,7 @@ export function GenericExperimentPage() {
     setStarting(true);
     setActionError("");
     try {
-      const result = await api<{ ok: boolean; errors: string[] }>(`/api/experiments/${experimentId}/preflight`, {
+      const result = await api<PreflightResult>(`/api/experiments/${experimentId}/preflight`, {
         method: "POST",
         body: JSON.stringify({ parameters: values }),
       });
@@ -371,7 +372,7 @@ export function GenericExperimentPage() {
           <button disabled={starting || jobActive || !fields.length || blockedByOthers} onClick={run}>{jobActive ? "实验运行中" : starting ? "正在启动…" : "预检并运行实验"}</button>
         </div>
         {defaultsStatus && <div className={`alert ${defaultsStatus.ok ? "success" : "error"}`}>{defaultsStatus.message}</div>}
-        {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflight.ok ? "参数预检通过，可以启动实验。" : preflight.errors.join("；")}</div>}
+        {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过，可以启动实验。")}</div>}
         {actionError && <div className="alert error">{actionError}</div>}
       </section>
       <JobView job={job} onUpdate={setJob} />

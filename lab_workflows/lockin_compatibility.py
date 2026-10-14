@@ -53,7 +53,29 @@ def lockin_preflight(experiment_id: str, values: dict[str, Any], root: Path | No
     except ValueError as exc:
         return [str(exc)]
     errors = []
-    if experiment_id in DUAL_VOLTAGE_EXPERIMENTS and caps["voltage_inputs"] < 2:
+    from .lockin_acquisition import experiment_acquisition_requests, acquisition_preflight
+    try:
+        acquisition_preflight(config, experiment_acquisition_requests(experiment_id, values))
+    except (ValueError, TypeError) as exc:
+        errors.append(str(exc))
+    rf_direct_aw = experiment_id in {"rf-sensitivity-aw", "rf-sensitivity-aw-r"}
+    if rf_direct_aw:
+        if caps["demodulators"] < 2 or caps["oscillators"] < 2:
+            errors.append(f"{model} 缺少独立 RF 解调器或振荡器；MFLI 需要 MF-MD 选件")
+        route = values.get("RF_INPUT_ROUTE", "physical")
+        output = values.get("RF_AUX_OUTPUT_IDX", 1)
+        source = values.get("RF_PHYSICAL_INPUT_SOURCE", "voltage1")
+        if route not in {"physical", "internal"}:
+            errors.append("RF 输入线路必须为 physical 或 internal")
+        if isinstance(output, bool) or not isinstance(output, int) or not 0 <= output < caps["aux_outputs"]:
+            errors.append("RF 辅助输出通道必须为 AuxOut1–4（索引 0–3）")
+        if route == "internal" and model != "MFLI":
+            errors.append("HF2 不支持内部 AuxOut 回采，请选择物理连接")
+        if route == "physical" and source not in ({"voltage1", "aux_input0", "aux_input1"} if model == "HF2" else {"aux_input0", "aux_input1"}):
+            errors.append(f"{model} 不支持所选 RF 物理输入 {source}，请明确选择辅助输入通道；不会自动更换接线")
+        if values.get("DEMOD3_IDX", 3) == values.get("DEMOD0_IDX", 0):
+            errors.append("RF 解调器不能占用主解调器 0")
+    if experiment_id in DUAL_VOLTAGE_EXPERIMENTS and not rf_direct_aw and caps["voltage_inputs"] < 2:
         errors.append(f"{experiment_id} 需要两路独立主电压输入：{model} 只有一路。Aux Input 回采尚未验证，当前禁止启动。")
     for name, value in values.items():
         key = name.upper()
@@ -110,3 +132,10 @@ def require_lockin_compatibility(experiment_id: str, values: dict[str, Any], *, 
     errors = lockin_preflight(experiment_id, values, mapping=mapping)
     if errors:
         raise ValueError("；".join(errors))
+    if mapping is not None:
+        from dataclasses import asdict
+        from .lockin_acquisition import experiment_acquisition_requests
+        requests = [asdict(request) for request in experiment_acquisition_requests(experiment_id, values)]
+        for config in mapping.values():
+            if config.get("instrument") == "lockin_amplifier":
+                config["_acquisition_requests"] = requests

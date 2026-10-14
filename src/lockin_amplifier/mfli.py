@@ -7,17 +7,24 @@ class MFLIInstrument(LockinInstrument):
     """MFLI：通过网口或 USB 使用 Python Core API Level 6。"""
 
     model = "MFLI"
-    demod_input_sources = {"voltage0": 0, "current0": 1, "aux_input0": 8, "aux_input1": 9}
+    demod_input_sources = {
+        "voltage0": 0, "current0": 1, "aux_input0": 8, "aux_input1": 9,
+        "aux_output0": 4, "aux_output1": 5, "aux_output2": 6, "aux_output3": 7,
+    }
     scope_input_sources = {"voltage0": 0, "aux_input0": 8, "aux_input1": 9}
+    scope_input_sources.update({f"demod{index}_{signal}": offset + index
+                               for signal, offset in (("x", 16), ("y", 32), ("r", 48), ("theta", 64))
+                               for index in range(4)})
     scope_fixed_length = None
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8004,
-                 api_level: int = 6, device_id: str = "", interface: str = "1GbE"):
+                 api_level: int = 6, device_id: str = "", interface: str = "1GbE",
+                 acquisition_mode: str = "auto"):
         if not device_id:
             raise ValueError("MFLI 必须指定真实设备 ID")
         if api_level != 6:
             raise ValueError("MFLI 接入使用 API Level 6")
-        super().__init__(host, port, api_level, device_id, interface)
+        super().__init__(host, port, api_level, device_id, interface, acquisition_mode)
 
     @staticmethod
     def _capabilities(options: list[str] | None = None) -> dict:
@@ -41,7 +48,7 @@ class MFLIInstrument(LockinInstrument):
 
     def _scope_settings(self, config, divider: int) -> dict:
         settings = {"time": divider, "channel": (1 << len(config.sources)) - 1,
-                    "length": config.length, "single": 0, "trigenable": 0}
+                    "length": config.length, "single": 1 if config.records == 1 else 0, "trigenable": 0}
         if self.capabilities["scope_channels"] > 1:
             settings["segments/enable"] = 0
         for channel, source in enumerate(config.sources):

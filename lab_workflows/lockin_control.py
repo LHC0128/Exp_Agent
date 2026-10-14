@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from lockin_amplifier import AuxOutConfig, DAQConfig, ScopeConfig, auxout, demod, acquire_scope
+from lockin_amplifier import AuxOutConfig, DAQConfig, ScopeConfig, auxout, demod, acquire_scope, acquisition_module
 from lockin_amplifier.daq import acquire_data
 from .common import WorkflowCancelled, load_safety_limits, validate_safety_limit
 from .steps.run_directory import create_run_directory
@@ -169,12 +169,13 @@ def capture(instr, device_id: str, demod_idx: int, settings: dict, *, cancellati
         else:
             duration, points = settings.get("duration", 1.0), settings.get("points", 1000)
             base = instr.demod_path(demod_idx)
-            if not instr.get_int(f"{base}/enable"):
+            rate = settings.get("requested_rate", points / duration)
+            if acquisition_module(instr.model, rate, instr.acquisition_mode) == "daq" and not instr.get_int(f"{base}/enable"):
                 raise ValueError("请先启用当前解调器的数据传输")
             results = acquire_data(instr, DAQConfig(device=instr.device_id, duration=duration, grid_cols=points,
                                                    signal_paths=["sample.x", "sample.y", "sample.r"], record_flags=4),
                                    demod_idx, timeout=settings.get("timeout", 30), cancellation_check=cancellation_check,
-                                   strict_cleanup=True)
+                                   requested_rate=rate, strict_cleanup=True)
         arrays, traces, metadata = {}, [], []
         for idx, result in enumerate(results):
             if not len(result.values):

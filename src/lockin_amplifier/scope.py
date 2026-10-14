@@ -33,8 +33,10 @@ class ScopeResult:
 
 def acquire_scope(instr, config: ScopeConfig | None = None, timeout: float = 30.0,
                   *, cancellation_check: Callable[[], None] | None = None) -> list[ScopeResult]:
-    """采集原始电压波形；各记录保持独立，不拼成连续波形，不改输入量程。"""
+    """采集内置 Scope 波形；各记录独立，沿用现有量程。"""
     config = config or ScopeConfig()
+    if cancellation_check:
+        cancellation_check()
     caps = instr.capabilities
     driver = _driver_class(instr.model)
     sources = driver.scope_input_sources
@@ -42,6 +44,11 @@ def acquire_scope(instr, config: ScopeConfig | None = None, timeout: float = 30.
         raise ValueError(f"{instr.model} Scope 最多同时记录 {caps['scope_channels']} 路")
     if any(source not in sources for source in config.sources):
         raise ValueError(f"{instr.model} Scope 不支持所选电压来源 {config.sources}")
+    for source in config.sources:
+        if source.startswith("demod"):
+            if not any(option.upper().removeprefix("MF-") == "DIG" for option in caps.get("options", [])):
+                raise ValueError("MFLI 解调信号 Scope 采集需要 MF-DIG 选件")
+            instr.validate_index("demodulators", int(source.split("_", 1)[0][5:]))
     if not isinstance(config.records, int) or not 1 <= config.records <= 100:
         raise ValueError("Scope 记录数必须在 1–100 内")
     if driver.scope_fixed_length is not None and config.length != driver.scope_fixed_length:
@@ -65,6 +72,15 @@ def acquire_scope(instr, config: ScopeConfig | None = None, timeout: float = 30.
         for key, value in settings.items():
             instr.set_int(f"{base}/{key}", value)
         instr.sync()
+        ranges = {}
+        for channel, source in enumerate(config.sources):
+            if source.startswith("demod"):
+                lower = instr.get_double(f"{base}/channels/{channel}/limitlower")
+                upper = instr.get_double(f"{base}/channels/{channel}/limitupper")
+                if not math.isfinite(lower) or not math.isfinite(upper) or lower >= upper:
+                    raise ValueError(f"Scope 通道 {channel} 上下限无效，请在 LabOne 配置量程")
+                ranges[source] = {"limitlower": lower, "limitupper": upper,
+                                  "bwlimit": instr.get_int(f"{base}/channels/{channel}/bwlimit")}
         module = instr.daq.scopeModule()
         module.set("mode", 1)
         module.set("historylength", config.records)
@@ -85,6 +101,8 @@ def acquire_scope(instr, config: ScopeConfig | None = None, timeout: float = 30.
         instr.set_int(f"{base}/enable", 0)
         module.finish()
         raw = module.read(True).get(f"{base}/wave", [])
+        if cancellation_check:
+            cancellation_check()
         if len(raw) != config.records:
             raise RuntimeError("Scope 返回记录数不完整")
         results = []
@@ -112,7 +130,19 @@ def acquire_scope(instr, config: ScopeConfig | None = None, timeout: float = 30.
                         "clockbase": instr.clockbase, "flags": int(record.get("flags", 0)),
                         "time_source": "scope_trigger_timestamp" if has_trigger_time else "scope_dt"}
             for source, wave in zip(config.sources, waves):
-                results.append(ScopeResult(source, wave, axis.copy(), record_idx, snapshot))
+                channel_snapshot = dict(snapshot)
+                if source in ranges:
+                    limits = ranges[source]
+                    margin = (limits["limitupper"] - limits["limitlower"]) / 65536
+                    clipped = bool(np.any(wave <= limits["limitlower"] + margin) or
+                                   np.any(wave >= limits["limitupper"] - margin))
+                    channel_snapshot.update(limits, clipped=clipped)
+                    demod_index = int(source.split("_", 1)[0][5:])
+                    channel_snapshot["unit"] = ("native_phase" if source.endswith("_theta") else
+                                                "A" if instr.get_int(f"{instr.demod_path(demod_index)}/adcselect") == 1 else "V")
+                    if clipped:
+                        raise RuntimeError(f"Scope 通道 {source} 检测到削顶；请检查 LabOne 现有上下限")
+                results.append(ScopeResult(source, wave, axis.copy(), record_idx, channel_snapshot))
         return results
     finally:
         original_error = sys.exc_info()[1]

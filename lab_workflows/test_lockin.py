@@ -270,8 +270,11 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(instr.get_int(f"{base}/enable"), 1)
         instr.daq.module.reset_mock()
         instr.daq.module.progress.return_value = [0]
+        cancel = Mock(side_effect=[None, WorkflowCancelled("Scope取消")])
         with self.assertRaises(WorkflowCancelled):
-            acquire_scope(instr, ScopeConfig(length=16), cancellation_check=lambda: (_ for _ in ()).throw(WorkflowCancelled()))
+            acquire_scope(instr, ScopeConfig(length=16), cancellation_check=cancel)
+        self.assertEqual(cancel.call_count, 2)
+        instr.daq.module.execute.assert_called_once()
         self.assertEqual(instr.get_int(f"{base}/enable"), 1)
         instr.daq.module.clear.assert_called_once()
 

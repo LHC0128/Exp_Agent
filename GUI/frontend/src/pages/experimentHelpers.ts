@@ -62,3 +62,16 @@ export function parseArrayValue(
   if (numbers.some((item) => !Number.isFinite(item))) return null;
   return { value: numbers };
 }
+
+export type PreflightResult = {
+  ok: boolean;
+  errors: string[];
+  acquisition?: { stage: string; acquisition_module: string; requested_rate_Sa_s: number; estimated_rate_Sa_s: number }[];
+};
+
+export function preflightMessage(result: PreflightResult, success: string): string {
+  if (!result.ok) return result.errors.join("；");
+  const stages = (result.acquisition ?? []).map(stage =>
+    `${stage.stage}：${stage.acquisition_module.toUpperCase()}，请求 ${stage.requested_rate_Sa_s / 1000} kSa/s，预计 ${stage.estimated_rate_Sa_s / 1000} kSa/s`);
+  return [success, ...stages].join("；");
+}

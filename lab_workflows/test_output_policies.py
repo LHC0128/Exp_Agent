@@ -88,6 +88,17 @@ class OutputPolicyTests(unittest.TestCase):
         )
         self.assertIn("Time_sequence_2", report.preserved_outputs)
 
+    def test_explicit_timing_shutdown_overrides_preservation(self) -> None:
+        timing = _FakeGenerator()
+        report = run_safety_shutdown(
+            dg_channels=(DGChannelShutdown(timing, 2, "Time_sequence_2", "共同触发"),),
+            preserved_outputs=("Time_sequence_2",),
+            shutdown_timing_outputs=("Time_sequence_2",),
+        )
+        self.assertEqual(timing.calls, [("burst", 2), ("mod", 2), ("dc", 2), ("output", 2)])
+        self.assertNotIn("Time_sequence_2", report.preserved_outputs)
+        self.assertIn("Time_sequence", report.preserved_outputs)
+
     def test_role_policy_keeps_other_nonoverlapping_carrier_channel_load(self) -> None:
         resource = "TCPIP0::192.0.2.33::INSTR"
         mapping = {key: {"instrument": "signal_generator", "resource": resource, "channel": channel}

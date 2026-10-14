@@ -123,7 +123,7 @@ export function Hf2Editor({ snapshot, route, onSaved, onError }: Props) {
         <Field label="独立记录数" value={records} min={1} max={10} disabled={disabled} onChange={setRecords} />
       </>}
     </div>
-      <p>{mode === "demod" ? "DAQ 网格插值后的时序，时间轴优先使用模块时间戳，实际解调速率以回读为准。" : "Scope 记录通道数与独立物理输入数不同；MFLI 只有一路主电压输入。"}</p>
+      <p>{mode === "demod" ? "本次请求速率为网格点数 ÷ 采集时长；按设备库模式选择 DAQ / Scope。Scope 按最近档位调整实际点数，保存真实时间轴及最终采集速率。" : "Scope 记录通道数与独立物理输入数不同；MFLI 只有一路主电压输入。"}</p>
       <button disabled={disabled} onClick={() => void acquire()}>开始采集</button>
       <JobView job={job} onUpdate={setJob} />
       {result?.run_dir && <p>完整数据已保存：{result.run_dir}</p>}

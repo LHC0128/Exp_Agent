@@ -139,6 +139,7 @@ def set_reference_frequency(
 def configure_demodulator(
     instr: LockinInstrument,
     config: DemodulatorConfig,
+    *, for_acquisition: bool = False,
 ) -> float:
     """批量配置解调器参数.
 
@@ -167,17 +168,34 @@ def configure_demodulator(
     if config.rate <= 0 or config.time_constant <= 0:
         raise ValueError("采样率和时间常数必须大于零")
 
-    instr.set_int(f"{base}/enable", 1 if config.enable else 0)
-    instr.set_double(f"{base}/rate", config.rate)
-    instr.set_int(f"{base}/adcselect", sources[source])
-    instr.set_int(f"{base}/oscselect", config.osc_select)
-    instr.set_int(f"{base}/harmonic", config.harmonic)
-    instr.set_double(f"{base}/timeconstant", config.time_constant)
-    instr.set_int(f"{base}/order", config.order)
-    instr.set_double(f"{base}/phaseshift", config.phase)
-    instr.sync()
-    # 读回实际采样率
-    actual_rate = instr.get_double(f"{base}/rate")
+    from .acquisition import acquisition_module, pause_demod_streams, restore_demod_streams
+    mode = getattr(instr, "acquisition_mode", "auto")
+    model = getattr(instr, "model", "HF2")
+    selected = acquisition_module(model, config.rate, mode) if for_acquisition else "daq"
+    if selected == "scope":
+        pause_demod_streams(instr)
+    else:
+        restore_demod_streams(instr)
+    # 先关闭传输再设置速率，避免启用旧高速流造成瞬时拥塞。
+    try:
+        instr.set_int(f"{base}/enable", 0)
+        instr.set_double(f"{base}/rate", config.rate)
+        instr.set_int(f"{base}/adcselect", sources[source])
+        instr.set_int(f"{base}/oscselect", config.osc_select)
+        instr.set_int(f"{base}/harmonic", config.harmonic)
+        instr.set_double(f"{base}/timeconstant", config.time_constant)
+        instr.set_int(f"{base}/order", config.order)
+        instr.set_double(f"{base}/phaseshift", config.phase)
+        instr.set_int(f"{base}/enable", int(config.enable and selected == "daq"))
+        instr.sync()
+        # 保持旧返回值：这是通信速率，最终采集速率由 DAQResult 给出。
+        actual_rate = instr.get_double(f"{base}/rate")
+    except BaseException:
+        try:
+            restore_demod_streams(instr)
+        except Exception:
+            logger.exception("配置失败后的解调数据流恢复失败")
+        raise
     logger.info(
         "解调器 %d 已配置: rate=%.1f → %.1f Sa/s, input_ch=%d, osc=%d, "
         "harmonic=%d, tau=%.2e s, order=%d, phase=%.2f deg",

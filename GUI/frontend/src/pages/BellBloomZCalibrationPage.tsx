@@ -1,3 +1,4 @@
+import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
@@ -69,7 +70,7 @@ export function BellBloomZCalibrationPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [preflight, setPreflight] = useState<{ ok: boolean; errors: string[] }>();
+  const [preflight, setPreflight] = useState<PreflightResult>();
   const [latest, setLatest] = useState<Summary>();
   const [list, setList] = useState<RunList>({ runs: [], total: 0 });
   const [selectedId, setSelectedId] = useState("");
@@ -120,7 +121,7 @@ export function BellBloomZCalibrationPage() {
   const check = async (start: boolean) => {
     setStarting(true); setError("");
     try {
-      const result = await api<{ ok: boolean; errors: string[] }>(`${BASE}/preflight`, { method: "POST", body: JSON.stringify({ parameters: values }) });
+      const result = await api<PreflightResult>(`${BASE}/preflight`, { method: "POST", body: JSON.stringify({ parameters: values }) });
       setPreflight(result);
       if (start && result.ok) setJob(await api<Job>(`${BASE}/runs`, { method: "POST", body: JSON.stringify({ parameters: values }) }));
     } catch (reason) { setError(String(reason)); } finally { setStarting(false); }
@@ -162,7 +163,7 @@ export function BellBloomZCalibrationPage() {
         </section>
         <section className="zaw-panel zaw-panel-control"><h2>控制与状态</h2>
           <div className="zaw-control-buttons"><button disabled={starting || jobActive || !fields.length} onClick={() => void check(false)}>仅预检</button><button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>{starting ? "处理中…" : "预检并运行实验"}</button></div>
-          {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflight.ok ? "参数预检通过" : preflight.errors.join("；")}</div>}
+          {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}
           {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
           {definition?.wiring_notes.map(note => <p key={note}>{note}</p>)}
           <JobView job={job} onUpdate={setJob} />

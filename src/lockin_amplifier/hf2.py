@@ -7,13 +7,14 @@ class HF2Instrument(LockinInstrument):
     """HF2：保留原构造参数和 API Level 1。"""
 
     model = "HF2"
-    demod_input_sources = {"voltage0": 0, "voltage1": 1}
+    demod_input_sources = {"voltage0": 0, "voltage1": 1, "aux_input0": 2, "aux_input1": 3}
     scope_input_sources = {"voltage0": 0, "voltage1": 1}
     scope_fixed_length = 2048
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8005,
-                 api_level: int = 1, device_id: str = "dev18246", interface: str = "PCIe"):
-        super().__init__(host, port, api_level, device_id, interface)
+                 api_level: int = 1, device_id: str = "dev18246", interface: str = "PCIe",
+                 acquisition_mode: str = "auto"):
+        super().__init__(host, port, api_level, device_id, interface, acquisition_mode)
 
     @staticmethod
     def _capabilities(options: list[str] | None = None) -> dict:

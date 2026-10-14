@@ -1,3 +1,4 @@
+import { preflightMessage, type PreflightResult } from "../../pages/experimentHelpers";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "../../api";
 import { useJobActivity } from "../JobActivity";
@@ -57,7 +58,7 @@ export function Dashboard({
   const { hardwareBusy, activeJobs } = useJobActivity();
   const [starting, setStarting] = useState(false);
   const [savingDefaults, setSavingDefaults] = useState(false);
-  const [preflight, setPreflight] = useState<{ ok: boolean; errors: string[] } | undefined>();
+  const [preflight, setPreflight] = useState<PreflightResult | undefined>();
   const [defaultsStatus, setDefaultsStatus] = useState<{ ok: boolean; message: string } | undefined>();
   const [moveNotice, setMoveNotice] = useState("");
   const [error, setError] = useState("");
@@ -84,7 +85,7 @@ export function Dashboard({
   const runPreflight = async () => {
     setError("");
     try {
-      const result = await api<{ ok: boolean; errors: string[] }>(
+      const result = await api<PreflightResult>(
         `/api/experiments/${experimentId}/preflight`,
         { method: "POST", body: JSON.stringify({ parameters: values }) },
       );
@@ -100,7 +101,7 @@ export function Dashboard({
     setStarting(true);
     try {
       // 提交当前全部参数；后端只在启用对照时校验对照专属字段。
-      const result = await api<{ ok: boolean; errors: string[] }>(
+      const result = await api<PreflightResult>(
         `/api/experiments/${experimentId}/preflight`,
         { method: "POST", body: JSON.stringify({ parameters: values }) },
       );
@@ -190,7 +191,7 @@ export function Dashboard({
         </div>
         {preflight && (
           <div className={`alert ${preflight.ok ? "success" : "error"}`}>
-            {preflight.ok ? "参数预检通过，可以启动实验。" : preflight.errors.join("；")}
+            {preflightMessage(preflight, "参数预检通过，可以启动实验。")}
           </div>
         )}
         {blockedByOthers && !jobActive && (

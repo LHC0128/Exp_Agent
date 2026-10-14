@@ -24,6 +24,21 @@ USB = "USB0::0x1AB1::0x0641::DG4E123::INSTR"
 
 
 class InstrumentConfigTests(unittest.TestCase):
+    def test_lockin_mode_roundtrip_default_and_session_snapshot(self):
+        configs = deepcopy(self.device_configs)
+        configs["lockin"] = {"instrument": "lockin_amplifier", "model": "MFLI", "label": "锁相",
+            "connection": {"device_id": "dev30661"}, "capabilities": {"options": ["DIG"]}}
+        self.write("devices.yaml", {"devices": configs})
+        library = public_device_library(self.root)
+        self.assertEqual(library["devices"]["lockin"]["acquisition_mode"], "auto")
+        library["devices"]["lockin"]["acquisition_mode"] = "scope"
+        save_device_library(library["devices"], base_revision=library["revision"], root=self.root)
+        self.assertEqual(load_device_document(self.root)["devices"]["lockin"]["acquisition_mode"], "scope")
+        library = public_device_library(self.root)
+        library["devices"]["lockin"]["acquisition_mode"] = "invalid"
+        with self.assertRaisesRegex(ValueError, "acquisition_mode"):
+            save_device_library(library["devices"], base_revision=library["revision"], root=self.root)
+        self.assertEqual(load_device_document(self.root)["devices"]["lockin"]["acquisition_mode"], "scope")
     def setUp(self):
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

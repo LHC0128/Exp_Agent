@@ -1,3 +1,4 @@
+import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState, type KeyboardEvent } from "react";
 
 import { api } from "../api";
@@ -138,7 +139,7 @@ export function NoiseSpectrumXYPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [preflight, setPreflight] = useState<{ ok: boolean; errors: string[] }>();
+  const [preflight, setPreflight] = useState<PreflightResult>();
   const [welchPreview, setWelchPreview] = useState<WelchPreview>();
   const [latest, setLatest] = useState<RunSummary>();
   const [list, setList] = useState<RunList>({ runs: [], total: 0 });
@@ -231,7 +232,7 @@ export function NoiseSpectrumXYPage() {
     setStarting(true);
     setError("");
     try {
-      const result = await api<{ ok: boolean; errors: string[] }>(`${BASE}/preflight`, {
+      const result = await api<PreflightResult>(`${BASE}/preflight`, {
         method: "POST",
         body: JSON.stringify({ parameters: values }),
       });
@@ -359,7 +360,7 @@ export function NoiseSpectrumXYPage() {
             <p>在下方流程节点编辑参数。此处保存下一次实验的全部参数和统一的基础／高级分类，不保存历史分析覆盖值。</p>
             {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
             {notice && <p role="status">{notice}</p>}
-            {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflight.ok ? "参数预检通过" : preflight.errors.join("；")}</div>}
+            {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}
             {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
             <div className="xy-workflow-preview" aria-label="Welch 分段预览" aria-live="polite">
               <h3>Welch 分段预览（只读）</h3>

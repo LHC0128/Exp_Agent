@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
-from lockin_amplifier import DAQConfig
+from lockin_amplifier import DAQConfig, daq, select_acquisition, lockin_capabilities, acquisition_metadata
 from lockin_amplifier.daq import DAQCollector
 
 
@@ -48,6 +48,9 @@ def _read_waveforms(raw: dict, base: str, data: dict) -> None:
             continue
         values, timestamps = [], []
         for block in blocks:
+            flags = block.get("header", {}).get("flags", block.get("flags", 0))
+            if np.any(np.asarray(flags, dtype=int) & 4):
+                errors.append(f"DAQ sample.{key} 丢样或传输异常")
             value = np.asarray(block.get("value", []), dtype=float)
             ticks = np.asarray(block.get("timestamp", []))
             values.append(value.reshape(-1))
@@ -83,6 +86,16 @@ def acquire_dispersion_point(hf2, *, demod_idx: int, duration_s: float,
     config = DAQConfig(device=hf2.device_id, trigger_type=0, duration=count / rate,
                        grid_cols=count, grid_rows=1, grid_mode=4,
                        signal_paths=["sample.x", "sample.y"], record_flags=4)
+    model = getattr(hf2, "model", "HF2")
+    caps = getattr(hf2, "capabilities", None) or lockin_capabilities(model)
+    plan = select_acquisition(model, caps, config, requested_rate, demod_idx,
+                              getattr(hf2, "acquisition_mode", "auto"))
+    stream_rate = rate
+    if plan.module == "scope":
+        config.duration = duration_s
+        plan = select_acquisition(model, caps, config, requested_rate, demod_idx,
+                                  getattr(hf2, "acquisition_mode", "auto"))
+        rate, count = plan.estimated_rate, plan.length
     data = {
         "schema_version": np.array(3), "offset_v": np.array(offset_v),
         "demod_idx": np.array(demod_idx), "requested_rate_sa_s": np.array(requested_rate),
@@ -93,28 +106,45 @@ def acquire_dispersion_point(hf2, *, demod_idx: int, duration_s: float,
         "trigger_type": np.array(0), "grid_rows": np.array(1), "frame_count": np.array(1),
         "started_unix_s": np.array(time.time()),
         "time_s": np.empty(0), "timestamp_ticks": np.empty(0, dtype=np.uint64),
+        "acquisition_module": np.array(plan.module), "demod_stream_rate_Sa_s": np.array(stream_rate),
+        "time_source": np.array("module_timestamp" if plan.module == "daq" else "scope_timestamp"),
         **{f"{key}_samples": np.empty(0) for key in ("x", "y", "r")},
         **{f"{key}_timestamp_ticks": np.empty(0, dtype=np.uint64) for key in ("x", "y")},
     }
-    collector = DAQCollector(hf2)
+    collector = DAQCollector(hf2) if plan.module == "daq" else None
     error = None
     raw = None
     try:
         cancellation_check()
         hf2.sync()
-        collector.configure(config)
-        collector.subscribe(config.signal_paths, demod_idx)
-        collector.execute()
-        collector.wait(timeout=count / rate + 5, cancellation_check=cancellation_check)
-        cancellation_check()
-        raw = collector.read()
-        _read_waveforms(raw, base, data)
+        if collector is not None:
+            collector.configure(config)
+            collector.subscribe(config.signal_paths, demod_idx)
+            collector.execute()
+            collector.wait(timeout=count / rate + 5, cancellation_check=cancellation_check)
+            cancellation_check()
+            raw = collector.read()
+            _read_waveforms(raw, base, data)
+        else:
+            results = daq.acquire_data(hf2, config, demod_idx, stream_rate, duration_s + 5,
+                                       requested_rate=requested_rate, cancellation_check=cancellation_check,
+                                       strict_cleanup=True)
+            by_name = {result.signal_name: result for result in results}
+            for key in ("x", "y"):
+                data[f"{key}_samples"] = by_name[f"sample.{key}"].values
+            data["r_samples"] = np.hypot(data["x_samples"], data["y_samples"])
+            data["time_s"] = results[0].time
+            data["sample_count"] = np.array(data["y_samples"].size)
+            data.update(acquisition_metadata(results))
+            rate = results[0].config_snapshot["actual_rate"]
+            data["actual_rate_sa_s"] = np.array(rate)
+            data["actual_duration_s"] = np.array(count / rate)
         for key in ("x", "y", "r"):
             values = data[f"{key}_samples"]
             if values.size != count or not np.isfinite(values).all():
                 raise ValueError(f"色散 {key} 样本数错误或包含非有限值")
         ticks = data["x_timestamp_ticks"]
-        if (ticks.size != count or ticks.dtype.kind not in "ui"
+        if collector is not None and (ticks.size != count or ticks.dtype.kind not in "ui"
                 or not np.array_equal(ticks, data["y_timestamp_ticks"])
                 or np.any(ticks[1:] <= ticks[:-1])):
             raise ValueError("色散 X/Y 时间戳缺失、未对齐或非递增")
@@ -124,14 +154,15 @@ def acquire_dispersion_point(hf2, *, demod_idx: int, duration_s: float,
             data[f"{key}_median"] = np.array(np.median(data[f"{key}_samples"]))
     except BaseException as exc:
         error = exc
-        if raw is None:
+        if raw is None and collector is not None:
             try:
                 _read_waveforms(collector.read(), base, data)
             except Exception as read_error:
                 print(f"色散故障点读取未完成：{read_error}", flush=True)
     finally:
         try:
-            collector.close(strict=True)
+            if collector is not None:
+                collector.close(strict=True)
         except Exception as close_error:
             if error is None:
                 error = close_error

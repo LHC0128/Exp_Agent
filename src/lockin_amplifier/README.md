@@ -13,13 +13,30 @@
 | [instrument.py](instrument.py) | 旧导入入口，重新导出两款驱动、公共基类和能力查询函数 |
 | [config.py](config.py) | 输入、振荡器、解调器、输出、Aux 和 DAQ 的配置与结果数据类 |
 | [demod.py](demod.py) | 公共配置与单参数操作、校相和物理电压转换入口 |
-| [daq.py](daq.py) | DAQ 配置、触发、等待与取消、记录边界、时间轴和模块清理 |
+| [acquisition.py](acquisition.py) | 解调时序的模块选择、最近 Scope 档位、离线能力校验、停流恢复与采集元数据 |
+| [daq.py](daq.py) | 兼容 `acquire_data()` 统一采集入口；专用 DAQCollector 的配置、触发、等待、时间轴和模块清理 |
 | [auxout.py](auxout.py) | Aux Output 的解调器路由、信号选择、缩放与偏置 |
 | [scope.py](scope.py) | Scope 参数校验、采集、时间轴、数据完整性检查，以及异常或取消后的设置恢复 |
 | [__init__.py](__init__.py) | 包级公共导出 |
 
 阅读某款设备时先从对应的 `hf2.py` 或 `mfli.py` 开始，再看 `base.py` 的公共通信。
-排查采集问题时查看 `daq.py` 或 `scope.py`；它们将输入映射、节点单位和 Scope 设置委托给型号驱动。
+排查解调采集问题时先查看 `acquisition.py` 的选择与校验，再查看 `daq.py` 或 `scope.py`；输入映射、节点单位和 Scope 设置由型号驱动提供。
+
+## 解调时序的自动选择
+
+设备库每台锁相的 `acquisition_mode` 为 `auto`、`daq` 或 `scope`，缺字段按 `auto`。
+HF2 自动模式使用 DAQ；MFLI 按当次**请求**速率选择：≤70 kSa/s 使用 DAQ，>70 kSa/s 使用 Scope。
+显式模式优先；HF2 解调 Scope、缺 MF-DIG、触发、多行、额外订阅或超单次内存均报错。
+Scope 选绝对距离最近的硬件档位，等距选高档，200 kSa/s 请求对应 234.375 kSa/s。
+
+`configure_demodulator(..., for_acquisition=True)` 在 Scope 准备阶段暂停主机解调流，保留内部滤波及信号链；
+`daq.acquire_data(..., actual_rate=stream_rate, requested_rate=request_rate)` 返回原 `DAQResult` 格式。
+分析用 `result_rate(results)` 的最终速率和结果时间轴，不能用通信回读率替代。
+单解调器、无触发、单段定长采集支持 X/Y/R/相位；三个以上分量同步采 X/Y 后派生 R/相位。
+相位统一由 X/Y 的 `atan2` 返回弧度。正常、异常、超时、取消及断开前恢复相关设置。
+量程沿用 LabOne 当前上下限，保存量程并检查削顶，不试采或自动改量程。
+NPZ 保存采集快照；原 `.npy` 文件通过同名 `_acquisition.npz` 旁文件保存实际率与真实时间轴。
+完整规则、约束、字段和实机验收边界见 [公共说明](../../docs/lockin_amplifier.md#解调时序的模块选择)。
 
 ## 导入与创建
 
@@ -48,11 +65,22 @@ print(hf2.model, mfli.model, hf2.connected, mfli.connected)
 | HF2 | `127.0.0.1:8005` | `1` | `PCIe` | 旧默认值为 `dev18246`，使用时应核对实际设备 |
 | MFLI | `127.0.0.1:8004` | `6` | `1GbE` | 必须显式提供；API Level 必须为 `6` |
 
-`interface` 表示数据服务器到仪器测量单元的连接。访问 MFLI 内置的数据服务器时，
-即使电脑通过网线访问仪器，接口仍为内部 `PCIe`；当前 `dev30661` 的
-`192.168.124.109:8004` 配置显式使用 `PCIe`。独立 PC 上的数据服务器可以使用
-其报告的 `1GbE` 或 `USB`。接口以 `/zi/devices` 的 `INTERFACE` 为准，
-设备库扫描直接读取该值；直接构造驱动时按实际服务器显式传入接口。
+HF2 使用独立的 `ziServer.exe`，MFLI 使用 `ziDataServer.exe`；两种设备都需使用时分别启动，
+启用 MFLI 服务器不能代替启动 HF2 服务器。
+
+`interface` 表示数据服务器到仪器测量单元的连接。当前 `dev30661` 使用电脑本地
+数据服务器 `127.0.0.1:8004`，服务器通过 USB RNDIS 地址 `192.168.150.246` 连接仪器，
+实际报告的接口为 `1GbE`，因此设备库保留 `interface: 1GbE`。这里的 `1GbE` 不代表使用
+物理网线，也不能仅为更改显示而改成 `USB`；设备库标签记录当前物理连接，标签本身不选择链路。
+访问仪器内置的数据服务器时，`host` 才填写仪器 IP，接口为内部 `PCIe`。
+接口以服务器实际报告为准；扫描使用 `/zi/devices`，连接后可查
+`/dev30661/system/activeinterface`，并核对本地服务器实际连接的 IP 和网卡。
+
+MFLI 的 USB 连接由 Windows RNDIS 驱动提供虚拟网卡。USB 和网线同时接入时，
+仅配置本地 `host: 127.0.0.1` 与 `interface: 1GbE` 不能固定物理链路；
+可在本地 Data Server 启动时使用 `--device-ip=192.168.150.246`，限制发现为 USB 地址。
+USB 地址变化时更新此启动参数，本地服务器地址仍为 `127.0.0.1:8004`。
+具体启停步骤和限制见 [公共连接说明](../../docs/lockin_amplifier.md#同时连接-usb-与网线)。
 
 正式实验按当前物理量映射创建实例：
 
@@ -75,6 +103,8 @@ print(instr.model, instr.device_id)
   未连接时 MFLI 实例使用基础能力，连接后的实际能力以设备回读为准。
 - **输入来源**：具体驱动声明 `demod_input_sources` 和 `scope_input_sources`。
   MFLI 的第二个主电压输入会被拒绝，电流或 Aux 输入需要显式选择，不能自动替换接线。
+  HF2 解调输入支持 `aux_input0/1`；MFLI 另支持 `aux_output0..3` 内部值。
+  DirectAW 两个变体显式选择回采线路和辅助通道，输出启动前检查真实选件；其余双主电压实验保持原限制。
 - **输出单位**：公共 setter 使用峰值电压和偏置电压；HF2 的底层节点按当前量程比例换算，
   MFLI 直接使用 V。写入、回读和上层安全检查复用同一换算入口。
 - **Scope**：各驱动提供记录长度要求、节点配置和模块缩放参数。
