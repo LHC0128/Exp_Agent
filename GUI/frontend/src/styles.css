@@ -209,3 +209,15 @@ main { grid-column: 2; padding: 38px 44px 64px; max-width: 1480px; width: 100%; 
 .lockin-output h4 { margin: 0 0 10px; }
 .has-snapshot.kind-hf2 { grid-column: span 2; }
 @media (max-width: 650px) { .has-snapshot.kind-hf2 { grid-column: auto; } }
+
+/* 检查更新页 */
+.updates-grid article { min-height: 0; }
+.updates-actions { display: flex; gap: 10px; margin-top: auto; padding-top: 14px; }
+.updates-git p { margin: 6px 0; color: #516864; font-size: 13px; max-width: 450px; }
+.updates-skills { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.updates-skills li { border: 1px solid #e3e9e7; border-radius: 8px; padding: 10px 12px; }
+.updates-skills strong { display: inline-block; margin-right: 8px; }
+.updates-skills small { color: #7d8f8b; }
+.updates-skills p { margin: 6px 0 0; color: #71807e; font-size: 12px; line-height: 1.5; }
+.updates-toolchain { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.updates-toolchain li { display: flex; justify-content: space-between; border-bottom: 1px dashed #e3e9e7; padding: 4px 0; font-size: 13px; }

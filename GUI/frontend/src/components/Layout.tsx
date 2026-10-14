@@ -11,6 +11,7 @@ const ExperimentPage = lazy(() => import("../pages/ExperimentPage").then((module
 const InstrumentsPage = lazy(() => import("../pages/InstrumentsPage").then((module) => ({ default: module.InstrumentsPage })));
 const OverviewPage = lazy(() => import("../pages/OverviewPage").then((module) => ({ default: module.OverviewPage })));
 const RunsPage = lazy(() => import("../pages/RunsPage").then((module) => ({ default: module.RunsPage })));
+const UpdatesPage = lazy(() => import("../pages/UpdatesPage").then((module) => ({ default: module.UpdatesPage })));
 const ToolsPage = lazy(() => import("../pages/ToolsPage").then((module) => ({ default: module.ToolsPage })));
 
 const nav = [
@@ -19,6 +20,7 @@ const nav = [
   ["/tools", "功能模块", "◇"],
   ["/experiments", "实验中心", "∿"],
   ["/runs", "历史数据", "≡"],
+  ["/updates", "检查更新", "⟳"],
 ] as const;
 
 class PageLoadBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -67,6 +69,7 @@ export function Layout() {
                 <Route path="/experiments/:experimentId" element={<ExperimentPage />} />
                 <Route path="/experiment" element={<Navigate to="/experiments/static-sensitivity" replace />} />
                 <Route path="/runs" element={<RunsPage />} />
+                <Route path="/updates" element={<UpdatesPage />} />
               </Routes>
             </Suspense>
           </PageLoadBoundary>
