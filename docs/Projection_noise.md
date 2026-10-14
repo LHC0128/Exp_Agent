@@ -43,6 +43,13 @@ defaults_file: params/experiments/projection-noise.yaml
 
 # 原子自旋投影噪声示波器测量
 
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
+
 当前默认参数：[参数文件](../params/experiments/projection-noise.yaml)。GUI「保存为默认」会更新该文件；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
 
 ## 实验入口
@@ -86,7 +93,7 @@ GUI 和默认 YAML 中的 `MEASURE_FIELD_OFF_CONTROL` 决定是否采集关闭�
 每一次示波器尝试都执行完整门控，不是每个阶段只切换一次：
 
 1. 将 `Temp_Switch` 设置为 `0 V DC + Output ON`。
-2. 按 `TEMP_SWITCH_OFF_SETTLE_S` 等待。
+2. 按 `SYSTEM_SETTLE_S` 等待。
 3. SDS 按 `SCOPE_DURATION` 采集完整波形；整个采集期间保持 `0 V DC + Output ON`。
 4. 在 `finally` 中恢复 `5 V DC + Output ON`，即使采集失败或收到取消请求也执行恢复。
 5. 恢复后按 `TEMP_SWITCH_ON_SETTLE_S` 等待，再开始下一帧或下一次自动量程尝试。

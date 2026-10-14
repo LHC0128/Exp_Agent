@@ -148,7 +148,7 @@ def test_real_session_holds_lock_refreshes_applies_and_ends(workflow_client):
     probe=manager.create("probe",lambda job:"done")
     assert probe.status=="queued"
     assert client.post(path+"/steps",json={"revision":0,"step_ids":["A09"]}).status_code==422
-    state=submit_steps(client,service,identifier,[f"A{i:02d}" for i in range(1,9)])
+    state=submit_steps(client,service,identifier,[f"A{i:02d}" for i in range(1,9) if i != 5])
     assert client.get(path).json()["steps"]["A08"]["status"]=="completed"
     assert client.patch(path+"/parameters",json={"revision":0,"parameters":{"noise_n_avg":2}}).status_code==409
     response=client.patch(path+"/parameters",json={"revision":state["revision"],"parameters":{"dispersion_temp_switch_on_settle_s":.8}})
@@ -179,7 +179,7 @@ def test_real_session_holds_lock_refreshes_applies_and_ends(workflow_client):
 def test_eof_cancel_and_backend_shutdown_safely_restore(workflow_client,action):
     client,service,manager,rig=workflow_client
     identifier=create_session(client,service,rig)
-    state=submit_steps(client,service,identifier,[f"A{i:02d}" for i in range(1,11)])
+    state=submit_steps(client,service,identifier,[f"A{i:02d}" for i in range(1,11) if i != 5])
     assert state["demod_mode"]=="noise"
     run_id=state["run_id"]
     assert client.get(BASE+f"/runs/{run_id}/analysis").status_code==409
@@ -203,7 +203,7 @@ def test_stop_during_daq_restores_before_releasing_lock(workflow_client,monkeypa
     client,service,manager,rig=workflow_client
     monkeypatch.setenv("STATIC_TEST_BLOCK_NOISE","1")
     identifier=create_session(client,service,rig)
-    state=submit_steps(client,service,identifier,[f"A{i:02d}" for i in range(1,11)])
+    state=submit_steps(client,service,identifier,[f"A{i:02d}" for i in range(1,11) if i != 5])
     probe=manager.create("probe",lambda job:"done")
     assert probe.status=="queued"
     response=client.post(BASE+f"/sessions/{identifier}/steps",json={"revision":state["revision"],"step_ids":["A11"]})

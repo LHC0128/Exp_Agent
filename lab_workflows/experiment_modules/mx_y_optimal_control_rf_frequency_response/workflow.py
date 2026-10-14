@@ -94,7 +94,7 @@ def _scan_optimal_control(params, run_dir, devices, channels, actual_rate, devic
                 rf.set_frequency(float(frequency), channel=channel)
                 _rearm_y_rf(rf, channel, amplitude_vpp=params.frequency_rf_amplitude_vpp, phase_deg=float(phase), offset_v=params.y_rf_offset_v)
                 demod.configure_oscillator(hf2, OscillatorConfig(osc_index=params.demod_osc_idx, frequency=float(frequency)))
-            summary, attempt, filename = _acquire_valid_r_point(params, run_dir, devices, channels, file_stem=f"optimal_frequency_{fi:04d}_phase_{pi:03d}", metadata=_point_metadata(frequency, phase, params.frequency_rf_amplitude_vpp), set_y_rf=set_point, settle_time_s=params.frequency_settle_time_s, duration_s=params.frequency_duration_s, actual_rate=actual_rate, device_id=device_id)
+            summary, attempt, filename = _acquire_valid_r_point(params, run_dir, devices, channels, file_stem=f"optimal_frequency_{fi:04d}_phase_{pi:03d}", metadata=_point_metadata(frequency, phase, params.frequency_rf_amplitude_vpp), set_y_rf=set_point, settle_time_s=params.system_settle_s, duration_s=params.frequency_duration_s, actual_rate=actual_rate, device_id=device_id)
             for key in arrays:
                 arrays[key][fi, pi] = summary[key]
             attempts[fi, pi] = attempt; files[fi, pi] = filename
@@ -142,7 +142,7 @@ def _scan_constant_control(params, run_dir, devices, channels, actual_rate, devi
             rf.set_frequency(float(frequency), channel=channel)
             _rearm_y_rf(rf, channel, amplitude_vpp=params.frequency_rf_amplitude_vpp, phase_deg=CONSTANT_CONTROL_PHASE_DEG, offset_v=params.y_rf_offset_v)
             demod.configure_oscillator(hf2, OscillatorConfig(osc_index=params.demod_osc_idx, frequency=float(frequency)))
-        summary, attempt, filename = _acquire_valid_r_point(params, run_dir, devices, channels, file_stem=f"constant_frequency_{fi:04d}", metadata=_point_metadata(frequency, CONSTANT_CONTROL_PHASE_DEG, params.frequency_rf_amplitude_vpp), set_y_rf=set_point, settle_time_s=params.frequency_settle_time_s, duration_s=params.frequency_duration_s, actual_rate=actual_rate, device_id=device_id)
+        summary, attempt, filename = _acquire_valid_r_point(params, run_dir, devices, channels, file_stem=f"constant_frequency_{fi:04d}", metadata=_point_metadata(frequency, CONSTANT_CONTROL_PHASE_DEG, params.frequency_rf_amplitude_vpp), set_y_rf=set_point, settle_time_s=params.system_settle_s, duration_s=params.frequency_duration_s, actual_rate=actual_rate, device_id=device_id)
         for key in row:
             row[key][fi] = summary[key]
         attempts[fi] = attempt; files[fi] = filename

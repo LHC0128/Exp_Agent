@@ -511,6 +511,7 @@ export type SchemaField = {
   maximum?: number;
   description?: string;
   read_only?: boolean;
+  legacy_defaults?: Record<string, number>;
   options?: SchemaOption[];
 };
 export type ParameterGroup = "basic" | "advanced";

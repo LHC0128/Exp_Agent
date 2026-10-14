@@ -54,7 +54,7 @@
     },
     {
       "id": "A05",
-      "title": "温度稳定",
+      "title": "目标温度设置",
       "group": "初始条件",
       "dependencies": [
         "A04"
@@ -146,6 +146,7 @@
         "HF2_DEMOD_ORDER",
         "HF2_DEMOD_TC",
         "HF2_DEMOD_RATE",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_SETTLE_S"
       ],
       "artifacts": [],
@@ -156,6 +157,7 @@
         "HF2_DEMOD_ORDER",
         "HF2_DEMOD_TC",
         "HF2_DEMOD_RATE",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_SETTLE_S"
       ]
     },
@@ -202,6 +204,7 @@
         "XY_PHASE_CAL_MAX_ITER",
         "XY_PHASE_CAL_MIN_R_V",
         "XY_PHASE_CAL_MIN_R_RATIO",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_SETTLE_S"
       ]
     },
@@ -280,10 +283,8 @@
         "A13"
       ],
       "parameters": [
-        "XY_SETTLE_TIME",
-        "RUN_TAG",
-        "INJECTION_SETTLE_S",
-        "Z_NOISE_SETTLE_S"
+        "SYSTEM_SETTLE_S",
+        "RUN_TAG"
       ],
       "artifacts": [
         "experiment_config.yaml",
@@ -304,10 +305,8 @@
         "XY_CALIBRATION_MAX_ENVELOPE_V",
         "HF2_DAQ_DURATION",
         "XY_CTRL_QUAD",
-        "XY_SETTLE_TIME",
-        "TEMP_SWITCH_ON_SETTLE_S",
-        "INJECTION_SETTLE_S",
-        "Z_NOISE_SETTLE_S"
+        "SYSTEM_SETTLE_S",
+        "TEMP_SWITCH_ON_SETTLE_S"
       ]
     },
     {
@@ -679,6 +678,15 @@
         "A14",
         "A15"
       ],
+      "SYSTEM_SETTLE_S": [
+        "A09",
+        "A10",
+        "A11",
+        "A12",
+        "A13",
+        "A14",
+        "A15"
+      ],
       "TEMP_SWITCH_ON_SETTLE_S": [
         "A09",
         "A10",
@@ -881,19 +889,7 @@
         "A14",
         "A15"
       ],
-      "XY_SETTLE_TIME": [
-        "A14",
-        "A15"
-      ],
       "RUN_TAG": [
-        "A14",
-        "A15"
-      ],
-      "INJECTION_SETTLE_S": [
-        "A14",
-        "A15"
-      ],
-      "Z_NOISE_SETTLE_S": [
         "A14",
         "A15"
       ]

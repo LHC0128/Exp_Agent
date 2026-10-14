@@ -200,35 +200,9 @@ def _restore_xy_response_acquisition_state(
     channels: dict[str, int],
     selected_phase_deg: float,
 ) -> float:
-    """恢复当前 XY 点的带偏置外触发 Burst 和 HF2 响应配置。
-
-    Mx Y 的恢复步骤会关闭 Burst 并清零 offset，只适用于连续正弦实验；
-    XY 网格的 Mx Z 扫描必须在进入幅度循环前显式恢复 Burst 状态。
-    """
-    initial_amplitude = max(
-        abs(float(params.y_rf_amp_start_vpp)),
-        abs(float(params.y_rf_amp_stop_vpp)),
-        1e-6,
-    )
-    actual_rate = _temperature_gated_acquire(
-        params,
-        devices,
-        channels,
-        set_y_rf=lambda: _restore_y_rf_burst_sine(
-            devices["xy_field"],
-            channels["y_rf"],
-            frequency_hz=params.y_rf_frequency_hz,
-            amplitude_vpp=initial_amplitude,
-            offset_v=params.y_rf_offset_v,
-            phase_deg=float(selected_phase_deg),
-        ),
-        settle_time_s=0.0,
-        acquire=lambda: _configure_response_demodulator(
-            params,
-            devices["hf2"],
-        ),
-    )
-    return float(actual_rate)
+    """在温控开启时完成响应采集配置。"""
+    _restore_y_rf_burst_sine(devices['xy_field'], channels['y_rf'], frequency_hz=params.y_rf_frequency_hz, amplitude_vpp=initial_amplitude, offset_v=params.y_rf_offset_v, phase_deg=float(selected_phase_deg))
+    return float(_configure_response_demodulator(params, devices['hf2']))
 
 
 def _acquire_point(

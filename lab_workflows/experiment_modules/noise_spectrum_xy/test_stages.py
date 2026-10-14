@@ -78,7 +78,7 @@ class StageTest(unittest.TestCase):
             hw.samples.side_effect = [dict(r=0.0, x=0.0, y=0.0, theta=0.0)] * 2
             ctx.execute(["A10", "A11", "A12"])
             self.assertEqual(ctx.states["A10"]["status"], "quality_failed")
-            self.assertIsNone(ctx.run_dir)
+            self.assertTrue((ctx.run_dir / "experiment_config.yaml").is_file())
             with self.assertRaisesRegex(ValueError, "A10 XY 迭代校相"):
                 ctx.execute(["A11", "A12"])
             hw.samples.side_effect = [dict(r=1.0, x=1.0, y=0.0, theta=0.0)]

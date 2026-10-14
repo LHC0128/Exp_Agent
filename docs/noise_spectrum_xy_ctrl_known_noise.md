@@ -2,8 +2,8 @@
 title: X/Y 交流控制测量已知可控噪声谱
 type: Noise_Spectrum_XY_Ctrl_Known_Noise
 execution_mode: typed_workflow
-description: 在 Z 小线圈注入已知周期伪噪声，运行页以采集、分析两列节点编辑参数并按依赖执行；相邻控制点交替 ON/OFF 顺序，同一温控窗口配对并逐段保存。分析完成全控制轴谱分离后，选择静磁场
-  v3 直流逐点历史曲线拟合检测增益，与实际波形 PSD × 本轮 K_Z² 的真值比较；未选曲线时保留 B01～B04 并等待标定。历史目录保留独立分析草稿，保存默认值只影响下一次实验与统一布局。分步等待保持连接、输出和硬件锁；校相质量未通过禁止扫描。锁相输入采用高阻、DC
+description: 在 Z 小线圈注入已知周期伪噪声，K_Z 由 A11 手动输入（Hz/V），预览与采集不依赖 Z 标定结果目录。运行页以采集、分析两列节点编辑参数并按依赖执行；相邻控制点交替 ON/OFF 顺序，同一温控窗口配对并逐段保存。分析完成全控制轴谱分离后，选择静磁场
+  v3 直流逐点历史曲线拟合检测增益，与实际波形 PSD × 本轮保存的手动 K_Z² 真值比较；未选曲线时保留 B01～B04 并等待标定。历史目录保留独立分析草稿，保存默认值只影响下一次实验与统一布局。分步等待保持连接、输出和硬件锁；校相质量未通过禁止扫描。锁相输入采用高阻、DC
   耦合。
 keywords:
 - noise spectrum
@@ -14,7 +14,7 @@ keywords:
 - dispersion line fit
 - truth chain
 - 锁相放大器 DAQ
-version: 3
+version: 4
 paper_ref: paper/optimal_control.tex
 scan_mode: point_by_point
 mapping_keys:
@@ -76,6 +76,13 @@ required_devices:
 
 # X/Y 交流控制测量已知可控噪声谱
 
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
+
 ## 锁相采集方式与实际速率
 
 XY 噪声使用 `HF2_DAQ_RATE` 请求率、`HF2_DAQ_DURATION` 时长和 `HF2_DEMOD_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
@@ -104,7 +111,7 @@ XY 噪声使用 `HF2_DAQ_RATE` 请求率、`HF2_DAQ_DURATION` 时长和 `HF2_DEM
 | 注入 | Z 通道连续播放 16384 点分段平顶谱伪噪声（固定 seed，重复频率参数化） |
 | 差分 | 同一温控窗口内采两态，相邻点交替 OFF→ON / ON→OFF，两态均等待；洛伦兹拟合参数层做 A_on − A_off |
 | 被测侧增益 | 分析阶段选择静磁场灵敏度 v3 直流逐点历史曲线，拟合零交叉斜率 dY/dV，再除以本轮 K_Z 得 σ（V/Hz） |
-| 注入侧真值 | 实际波形数值 PSD × K_Z²；K_Z 取 Bell Bloom Z 场标定运行，不应用线圈频率响应 |
+| 注入侧真值 | 实际波形数值 PSD × K_Z²；K_Z 手动输入并保存为本轮快照，不应用线圈频率响应 |
 | 判据 | 注入谱段内有效覆盖至少 50%，且有符号中位比值 S_meas/S_truth ∈ [RATIO_PASS_LOW, RATIO_PASS_HIGH]；阈值见运行配置，带外点不参与 |
 | 对照 | 注入开关两态下的可控噪声 S_β 与不可控噪声 N_S1 分别对比（含本底可控噪声与真值注入谱） |
 
@@ -139,7 +146,7 @@ B05 使用来源 `raw/dispersion_scan.npz` 的原始 `offsets_v` 与 `y_median`�
 $$Y(v)=C+A(v-v_0)/((v-v_0)^2+w^2),\qquad
 \sigma=\frac{|\mathrm{d}Y/\mathrm{d}V|_{v_0}}{K_Z}=\frac{|A|/w^2}{K_Z}.$$
 
-这里的 K_Z 来自本轮 Bell-Bloom 标定快照，不采用来源运行的磁场换算斜率。
+这里的 K_Z 来自本轮保存的手动标定快照，不采用静磁场来源运行的磁场换算斜率。
 拟合至少需要 7 个有效点；R²、线宽相对不确定度及斜率门槛与静磁场实验一致。
 无效来源直接拒绝 B05，已完成 PSD 和谱分离仍可保留。
 
@@ -161,7 +168,12 @@ $$S_\beta(\omega)=\frac{A_\mathrm{on}(\omega)-A_\mathrm{off}(\omega)}
 $$S_\text{truth}(\omega) = S_v(\omega)\cdot K_Z^2$$
 
 - $S_v$：从 `raw/known_noise_waveform.npy` 数值 Welch PSD 计算（非理论平顶谱，含随机相位实现的实际谱）；
-- $K_Z$：`Z_CALIBRATION_SOURCE_RUN` 指定的 Bell Bloom Z 场标定运行斜率（Hz/V），f_0V 不使用；
+- $K_Z$：`Z_CALIBRATION_K_HZ_PER_V` 手动输入的标定斜率（Hz/V），必须为有限正数，f_0V 不使用。
+
+新运行在 `parameters.Z_CALIBRATION_K_HZ_PER_V` 与 `truth_chain.K_Z_Hz_per_V` 保存本轮数值，
+并记录 `truth_chain.z_calibration_source: manual`。未提供标定不确定度，保存为未知，不将其解释为零误差。
+预检、预览和采集不再读取 Z 标定结果目录；旧参数键 `Z_CALIBRATION_SOURCE_RUN` 仅保留加载兼容且不再显示或参与新运行计算。
+离线分析优先使用运行自己的 K_Z 快照，不受当前默认值改变影响；旧运行缺少快照时，仍可读取其记录的旧标定来源。
 
 ### 波形生成
 
@@ -176,6 +188,8 @@ $$S_\text{truth}(\omega) = S_v(\omega)\cdot K_Z^2$$
 运行页复用 `WorkflowPanel`，桌面为采集与分析两列，窄屏改为单列。
 保存参数与布局、波形与 Welch 预览、仅预检、完整运行、取消及任务日志位于流程容器顶部。
 预览不连接仪器；「对齐注入幅度」将幅度设为设计波形峰峰值，绝对真值始终使用实际幅度。
+在 A11「生成与上传 Z 噪声任意波」的基础参数中编辑「K_Z 手动标定（Hz/V）」；
+修改后预览使用新值，存活会话应用参数会使 A11～A14 失效，需要显式重跑。
 
 基础参数名称常显，展开节点编辑，高级参数单独折叠；多个节点可同时展开。
 同键共享过程参数及基础/高级分类同步，例如恢复温控等待时间同时出现在校相与配对扫描节点。
@@ -186,6 +200,7 @@ $$S_\text{truth}(\omega) = S_v(\omega)\cdot K_Z^2$$
 具体目录保留独立分析草稿，切换目录或主 Tab 后仍保留；执行分析时应用该目录覆盖值。
 「保存参数与布局」只保存下一次实验参数和统一分类，不保存正在编辑的历史覆盖值。
 历史填回只更新下一次实验草稿，不自动保存或启动。谱段数组以逗号分隔编辑，三组须等长。
+旧历史参数没有手动 K_Z 键时，填回将此字段设为 0，需人工输入有效标定后才能启动；旧运行自身的离线分析仍使用原快照。
 
 ### 采集节点
 
@@ -195,13 +210,13 @@ $$S_\text{truth}(\omega) = S_v(\omega)\cdot K_Z^2$$
 | A02 | 设备连接 | A01 |
 | A03 | 参考时钟同步并严格回读 | A02 |
 | A04 | 初始输出设置 | A03 |
-| A05 | 温度稳定 | A04 |
+| A05 | 目标温度设置 | A04 |
 | A06 | Pump 配置 | A05 |
 | A07 | 共用触发配置 | A06 |
 | A08 | Demod 配置与校相 | A07 |
 | A09 | XY 正弦与 Burst 初始化 | A08 |
 | A10 | XY 迭代校相与质量门槛 | A09 |
-| A11 | 生成、上传 Z 任意波，安全检查与回读 | A10 |
+| A11 | 使用手动 K_Z，生成、上传 Z 任意波，安全检查与回读 | A10 |
 | A12 | DAQ 准备 | A11 |
 | A13 | ON/OFF 配对扫描 | A12 |
 | A14 | 恢复校相解调器设置 | A13 |
@@ -213,9 +228,9 @@ A13 只回读 XY、Z 与 DAQ 设置，拒绝实际模式漂移，不重传任意
 DAQ、校相与恢复均使用本轮 `HF2_DEMOD_IDX`；高阻、DC 耦合初始化保持不变。
 
 每个控制点按 OFF→调幅→校准相位→ON 等共用外触发，关闭温度开关后完成两态。
-相邻点交替 OFF→ON / ON→OFF；每态均等待 `Z_INJECTION_SETTLE_S`，每段立即保存波形和主机时间。
+相邻点交替 OFF→ON / ON→OFF；每态均等待 `SYSTEM_SETTLE_S`，每态缓存波形和主机时间，整对恢复温控后保存。
 每点后恢复温控并等待，扫描、稳定等待和采集提供取消检查。
-异常保留已保存段；重扫创建新目录，原始目录不覆盖。
+异常先尝试恢复温控，再尽力保存已采段；重扫创建新目录，原始目录不覆盖。
 A14 后再次扫描必须重新执行 A12。等待下一步保持连接、输出与全局硬件锁，刷新恢复活会话；
 后台重启不从完成记录恢复硬件。空闲时 A15/结束会话，执行中使用取消；通信结束自动安全收尾。
 
@@ -254,7 +269,7 @@ Time_sequence_2 CH2 → 三通 → X/Y 信号源 Ext Trig
 ```
 
 仪器型号、resource、通道和参考时钟以当前 `params/devices.yaml`、`params/mapping.yaml` 为准。
-人工确认 Z 电压定义与 Bell-Bloom K_Z 链路一致，软件不能核验物理接线或实际线圈负载。
+人工确认 Z 电压定义与手动输入 K_Z 的标定链路一致，软件不能核验物理接线或实际线圈负载。
 信号源高阻使用 `INF`，回读查询标记通过 `normalize_output_load()` 归一化。
 准备、激励、配对扫描分别位于 `preparation.py`、`excitation.py`、`acquisition.py`；
 `workflow.py`/`session.py` 编排完整运行和同一分步业务，`analysis.py` 管理阶段与持久化，
@@ -267,7 +282,7 @@ Time_sequence_2 CH2 → 三通 → X/Y 信号源 Ext Trig
 
 ```text
 data/Noise_Spectrum_XY_Ctrl_Known_Noise/MMDD_HHMM_tag/
-  experiment_config.yaml           # schema 3；known_noise / truth_chain 本轮 K_Z 快照
+  experiment_config.yaml           # schema 4；known_noise / truth_chain 本轮手动 K_Z 快照
   acquisition_state.json           # 会话执行记录
   analysis_state.json              # 分析覆盖值、修订、指纹与阶段状态
   raw/
@@ -299,8 +314,9 @@ B03/B04 还输出二维谱、差分热图、线形拟合及分离响应系数图
 离线分析只读取保存的采集旁文件；实际采样率不一致时拒绝合并 PSD，旧数据继续使用本轮配置中的实际速率。
 
 架构图反映当前工作区草稿，源码未提交冻结，不绑定旧 commit；
-图规格、产物 SHA-256 与浏览器/感知复核见
-[交付验证记录](xy_known_noise_workflow_validation.json)。
+总览已同步手动 K_Z 输入，当前[图规格](../GUI/frontend/public/architecture/noise-spectrum-xy-known-noise.json)
+与[HTML 产物](../GUI/frontend/public/architecture/noise-spectrum-xy-known-noise.html)保持一致。
+整套子图的历史 SHA-256 与浏览器/感知复核见[历史交付验证记录](xy_known_noise_workflow_validation.json)。
 
 ### 共享全范围分离与独立背景验收
 
@@ -385,6 +401,7 @@ v3 已将脊线标定频带与输出谱频带分开，避免宽控制扫描被�
 假仪器回归覆盖依赖、校相门槛、配对保存、新目录、参数失效、时钟故障、异常与取消收尾；
 真实子进程会话/API 覆盖硬件锁、修订、刷新、结束及 EOF。
 分析回归覆盖整次/分步一致、等待标定、无效来源拒绝、来源切换和历史兼容；
+手动 K_Z 回归覆盖无标定目录预检/预览、有限正数校验、采集快照、默认值独立性及旧来源回退；
 页面从真实路由验证节点、共享参数、布局、历史草稿隔离，并回归正弦和 Probe AM。
 
 ```powershell

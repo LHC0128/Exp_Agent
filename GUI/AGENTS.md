@@ -31,6 +31,10 @@
 - 新增普通实验参数：为 dataclass 字段补充 UI metadata，前端动态表单会自动呈现。
 - 修改实验中心标签：通过 `params/experiment_catalog.yaml` 或标签管理 API；不得通过重命名标签改变实验稳定 ID、`data_type` 或历史目录。
 
+## 采集参数与流程
+
+普通采集只展示一个 SYSTEM_SETTLE_S，并同步节点编辑归属与失效范围。TEC 仅下发 UI 目标温度，删除温度判稳节点/参数；已有目标设定节点保留设温职责。初始配置先保存，采集数据在恢复温控后保存。旧配置、历史填回及参数布局按模型迁移规则处理。
+
 ## 验证
 
 - Python：运行受影响的现有无硬件测试。当前可用示例：`agent_exp_env\Scripts\python.exe -m unittest lab_workflows.experiment_modules.noise_spectrum_xy.test_sine_mode`。

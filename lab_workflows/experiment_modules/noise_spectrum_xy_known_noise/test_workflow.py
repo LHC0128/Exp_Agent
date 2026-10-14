@@ -13,19 +13,15 @@ from ...common import WorkflowCancelled
 from ..noise_spectrum_xy.test_sine_mode import copy_config, fake_hardware, scan_params as sine_params
 from ..noise_spectrum_xy.session import serve
 from .models import NoiseSpectrumXYKnownNoiseParams
-from . import stages, workflow, excitation, acquisition
+from . import stages, workflow, excitation, acquisition, generation
 
 
 def copy_known_config(root):
     copy_config(root)
-    path = root / "data/Bell_Bloom_Z_Field_Calibration/0920_183423_bb_z_cal/results"
-    path.mkdir(parents=True)
-    (path / "analysis.yaml").write_text(yaml.safe_dump(dict(experiment_id="bell-bloom-z-field-calibration",
-        success=True, K_Z_Hz_per_V=11703.6778, linear_fit=dict(uncertainties=[1.0]))), encoding="utf-8")
 
 
 def scan_params():
-    return NoiseSpectrumXYKnownNoiseParams.from_external(sine_params().to_external())
+    return NoiseSpectrumXYKnownNoiseParams.from_external(sine_params().to_external() | {"Z_CALIBRATION_K_HZ_PER_V": 11703.6778})
 
 
 @contextmanager
@@ -50,9 +46,24 @@ class KnownWorkflowTests(unittest.TestCase):
         self.root = Path(temp.name)
         copy_known_config(self.root)
 
+    def test_manual_kz_preflight_and_preview_do_not_read_calibration_results(self):
+        self.assertFalse((self.root / "data/Bell_Bloom_Z_Field_Calibration").exists())
+        params = scan_params()
+        with patch.object(generation, "load_z_calibration", side_effect=AssertionError("不应读取标定运行")):
+            workflow.preflight(params, self.root)
+            preview = params.derive_external(params.to_external())
+            doubled = params.derive_external(params.to_external() | {"Z_CALIBRATION_K_HZ_PER_V": 2 * params.z_calibration_k_hz_per_v})
+        self.assertNotIn("error", preview)
+        self.assertEqual(preview["z_calibration_k_hz_per_v"], params.z_calibration_k_hz_per_v)
+        self.assertAlmostEqual(doubled["equivalent_noise_hz_per_rt_hz"], 2 * preview["equivalent_noise_hz_per_rt_hz"])
+        for value in (0, -1, float("nan"), float("inf"), True, "5373.638"):
+            with self.subTest(value=value), self.assertRaises((TypeError, ValueError)):
+                invalid = NoiseSpectrumXYKnownNoiseParams.from_external(params.to_external() | {"Z_CALIBRATION_K_HZ_PER_V": value})
+                workflow.preflight(invalid, self.root)
+
     def test_manifest_dag_and_quality_gate(self):
         shown = {name for key in ("acquisition", "analysis") for stage in stages.definition()[key] for name in stage["display_parameters"]}
-        self.assertEqual(shown, set(scan_params().to_external()))
+        self.assertEqual(shown, set(scan_params().to_external(include_hidden=False)))
         self.assertEqual(stages.parameter_impacts(stages.ANALYSIS)["ANALYSIS_DISPERSION_SOURCE_RUN"], ["B05", "B06"])
         with rig(self.root) as hw:
             ctx = workflow.Workflow(scan_params(), project_root=self.root)
@@ -63,7 +74,7 @@ class KnownWorkflowTests(unittest.TestCase):
             hw.samples.side_effect = [dict(r=0.0, x=0.0, y=0.0, theta=0.0)]*20
             ctx.execute(["A10", "A11", "A12", "A13"])
             self.assertEqual(ctx.states["A10"]["status"], "quality_failed")
-            self.assertIsNone(ctx.run_dir)
+            self.assertTrue((ctx.run_dir / "experiment_config.yaml").is_file())
             with self.assertRaisesRegex(ValueError, "A10"):
                 ctx.execute(["A11"])
             ctx.execute(["A15"])
@@ -75,6 +86,11 @@ class KnownWorkflowTests(unittest.TestCase):
             ctx = workflow.Workflow(scan_params(), project_root=self.root)
             ctx.execute([s.id for s in stages.ACQUISITION[:13]])
             first = ctx.run_dir
+            config = yaml.safe_load((first / "experiment_config.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(config["schema_version"], NoiseSpectrumXYKnownNoiseParams.schema_version)
+            self.assertEqual(config["truth_chain"]["z_calibration_source"], "manual")
+            self.assertEqual(config["truth_chain"]["z_calibration_run"], "")
+            self.assertEqual(config["truth_chain"]["K_Z_Hz_per_V"], scan_params().z_calibration_k_hz_per_v)
             raw_before = (first / "raw/waveform_C0000_off.npy").read_bytes()
             timing = [json.loads(line) for line in (first / "raw/pair_timing.jsonl").read_text().splitlines()]
             self.assertEqual([item["state"] for item in timing], ["off", "on", "on", "off", "off", "on"])
@@ -87,9 +103,13 @@ class KnownWorkflowTests(unittest.TestCase):
             self.assertEqual((first / "raw/waveform_C0000_off.npy").read_bytes(), raw_before)
             ctx.update_parameters({"ANALYSIS_DISPERSION_SOURCE_RUN": "以后选择"})
             self.assertEqual(ctx.states["A13"]["status"], "completed")
-            ctx.update_parameters({"NOISE_SEED": 2})
+            ctx.update_parameters({"Z_CALIBRATION_K_HZ_PER_V": 12000.0})
             self.assertEqual(ctx.states["A10"]["status"], "completed")
             self.assertEqual(ctx.states["A11"]["status"], "stale")
+            ctx.execute(["A11", "A12", "A13"])
+            config = yaml.safe_load((ctx.run_dir / "experiment_config.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(config["truth_chain"]["K_Z_Hz_per_V"], 12000.0)
+            self.assertEqual((first / "raw/waveform_C0000_off.npy").read_bytes(), raw_before)
             ctx.finish()
             for channel in (1, 2):
                 hw.devices["dg_sweep"].set_output.assert_any_call(False, channel=channel)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import ClassVar, Any
 
 import numpy as np
 
@@ -17,8 +17,11 @@ from ..mx_z_control_params import CommonMxZControlParams
 class MxZOptimalControlRFParams(CommonMxZControlParams):
     """配置可选 GS200 主场，并叠加 Z 周期控制测量 Y RF 灵敏度。"""
 
-    schema_version = 5
+    schema_version = 6
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.1, 'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     corrected_control_source_run: str = parameter(
         default="osens20k",
         external_name="CORRECTED_CONTROL_SOURCE_RUN",
@@ -32,7 +35,7 @@ class MxZOptimalControlRFParams(CommonMxZControlParams):
         cls,
         values: dict[str, Any],
         *,
-        schema_version: int = 5,
+        schema_version: int = 6,
         strict: bool = True,
     ) -> "MxZOptimalControlRFParams":
         # GUI 和运行子进程传递无版本的参数字典，默认解释为当前版本；
@@ -49,13 +52,13 @@ class MxZOptimalControlRFParams(CommonMxZControlParams):
         values: dict[str, Any],
         schema_version: int,
     ) -> dict[str, Any]:
-        """本实验只接受 v5 配置，不迁移旧理论或旧闭环配置。
+        """本实验兼容 v5 的稳定等待迁移，不接纳更早的理论或闭环配置。
 
         遗留的来源参数不在这里删除，未知参数由 ``from_external``
         统一拒绝。
         """
-        if schema_version != 5:
-            raise ValueError("本实验仅支持 schema v5，请按当前参数重新配置")
+        if schema_version not in (5, cls.schema_version):
+            raise ValueError("本实验仅支持 schema v5/v6，请按当前参数重新配置")
         return dict(values)
 
     def validate_model(self) -> list[str]:

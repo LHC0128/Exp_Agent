@@ -1,4 +1,20 @@
-import type { ParameterLayout, ParameterValue, SchemaField } from "../types/api";
+import type { ParameterLayout, ParameterValue, ParameterValues, SchemaField } from "../types/api";
+
+/** 按后端声明迁移旧等待，再按当前可见字段填回；历史文件保持原样。 */
+export function historyParameterValues(fields: SchemaField[], values: ParameterValues): ParameterValues {
+  const migrated = { ...values };
+  const aliases = fields.find(field => field.name === "SYSTEM_SETTLE_S")?.legacy_defaults ?? {};
+  if (!("SYSTEM_SETTLE_S" in migrated) && Object.keys(aliases).some(name => name in migrated)) {
+    const durations = Object.entries(aliases).map(([name, fallback]) => name in migrated ? migrated[name] : fallback);
+    if (durations.every(value => typeof value === "number" && Number.isFinite(value) && value >= 0)) {
+      migrated.SYSTEM_SETTLE_S = Math.max(...durations as number[]);
+    } else {
+      // 非法历史值留空，由表单和预检拦截，避免偷偷使用当前默认等待。
+      migrated.SYSTEM_SETTLE_S = null;
+    }
+  }
+  return Object.fromEntries(fields.filter(field => field.name in migrated).map(field => [field.name, migrated[field.name]]));
+}
 
 export function defaultParameterLayout(fields: SchemaField[]): ParameterLayout {
   return {

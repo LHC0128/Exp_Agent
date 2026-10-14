@@ -23,6 +23,7 @@ class AnalysisWorkflow:
     stages = ANALYSIS
     identity = run_format
     analysis_version = ANALYSIS_VERSION
+    steps_module = analysis_steps
 
     def __init__(self, run_dir, analysis_parameters=None):
         self.run_dir = Path(run_dir).resolve()
@@ -41,7 +42,7 @@ class AnalysisWorkflow:
         config = {key: value for key, value in self.config.items() if key not in ("analysis_status", "analysis_error")}
         self.fingerprint = dict(config_sha256=hashlib.sha256(json.dumps(config, sort_keys=True,
             ensure_ascii=False).encode()).hexdigest(), analysis_version=self.analysis_version,
-            raw_files={path.name: self._file_signature(path) for path in sorted((self.run_dir / "raw").glob("*")) if path.is_file()})
+            raw_files=self.input_fingerprint())
         if previous and previous.get("fingerprint") != self.fingerprint:
             invalidate(self.stages, self.states, "B01")
             self.revision += 1
@@ -67,6 +68,9 @@ class AnalysisWorkflow:
     @staticmethod
     def _file_signature(path):
         return [path.stat().st_size, path.stat().st_mtime_ns] if path.is_file() else None
+
+    def input_fingerprint(self):
+        return {path.name: self._file_signature(path) for path in sorted((self.run_dir / "raw").glob("*")) if path.is_file()}
 
     def snapshot(self):
         return dict(run_id=self.run_dir.name, revision=self.revision, options=dict(self.options),
@@ -109,15 +113,15 @@ class AnalysisWorkflow:
             try:
                 nperseg = self.options["noise_nperseg"]
                 if item == "B01":
-                    analysis_steps.load_inputs(self.run_dir, self.config)
+                    self.steps_module.load_inputs(self.run_dir, self.config)
                 else:
                     self.results.mkdir(exist_ok=True)
                     if item == "B02":
-                        self.summary["response_fit"] = analysis_steps.response_fit(self.run_dir, self.config, component=self.identity.RESPONSE_COMPONENT)
+                        self.summary["response_fit"] = self.steps_module.response_fit(self.run_dir, self.config, component=self.identity.RESPONSE_COMPONENT)
                     elif item == "B03":
-                        self.summary["noise_psd"] = analysis_steps.noise_psd(self.run_dir, self.config, nperseg)
+                        self.summary["noise_psd"] = self.steps_module.noise_psd(self.run_dir, self.config, nperseg)
                     elif item == "B04":
-                        self.summary.update(analysis_steps.sensitivity_and_plots(self.run_dir, self.config, nperseg, identity=self.identity))
+                        self.summary.update(self.steps_module.sensitivity_and_plots(self.run_dir, self.config, nperseg, identity=self.identity))
                 stage = next(stage for stage in self.stages if stage.id == item)
                 self.states[item] = {"status": "completed", "error": "", "artifacts": list(stage.artifacts),
                     "files": {name: self._file_signature(self.results / name) for name in stage.artifacts}}

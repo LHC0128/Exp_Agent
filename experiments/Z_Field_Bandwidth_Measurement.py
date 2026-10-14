@@ -46,6 +46,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import numpy as np
+from lab_workflows.steps import acquisition_window
 import yaml
 import time
 import math
@@ -93,6 +94,7 @@ def validate_safety_limit(name, value):
 
 
 # ========== 实验标识 ==========
+SYSTEM_SETTLE_S = 0.5  # 配置与温控门控共同稳定的采集前等待（秒）
 EXPERIMENT_TYPE = "Z_Field_Bandwidth_Measurement"
 RUN_TAG = "z_bw"
 
@@ -107,8 +109,6 @@ Z_FREQ_LIST = np.linspace(Z_FREQ_START, Z_FREQ_STOP, Z_FREQ_POINTS)
 
 # ========== 每频点采集参数 ==========
 POINT_DURATION = 1.0            # 每个频点采集时长 (s)
-FREQ_SETTLE_TIME = 0.5          # 切换频率后等待稳定时间 (s)
-TEMP_SWITCH_OFF_LEAD = 0.1      # 采集前关温度开关后等待磁场残余消失 (s)
 TEMP_SWITCH_ON_LAG = 1.0        # 采集后开温度开关后等待系统稳定 (s)
 
 # ========== 采集模式 ==========
@@ -136,7 +136,6 @@ DEMOD_R_TC_PER_PERIOD = 0.05    # TC = 周期 × 该系数（确保 < 周期/2π
 DEMOD_R_ORDER = 8
 DEMOD_R_N_AVG = 50              # demod_r 模式下每频点平均次数
 DEMOD_R_AVG_INTERVAL = 0.01     # demod_r 模式下读取间隔 (s)
-DEMOD_R_READ_SETTLE_TIME = 0.2  # 切换频率后等待 Demod 3 稳定的时间 (s)
 
 # ========== HF2 物理链路: AuxOut2 → SigIn2 → Demod3 ==========
 # 链路: Demod0 sample.y -> Aux Output 2 -> 物理线 -> Signal Input 2 -> Demod 3
@@ -330,7 +329,7 @@ print(f"主磁场: {FIXED_PARAMS['main_magnetic_field']} mA")
 # ---- 5. 温度控制（等待稳定 ±1°C）----
 validate_safety_limit("temperature", FIXED_PARAMS["temperature"])
 configure_temperature_control(
-    tec, FIXED_PARAMS["temperature"], tolerance_c=1.0, stable_reads=1
+    tec, FIXED_PARAMS["temperature"],
 )
 
 # ---- 6. 温度开关 (ON) ----
@@ -385,8 +384,6 @@ print("=" * 60)
 
 # ---- 关闭温控（避免温控磁场干扰锁相读数）----
 print("关闭温度开关 (校相期间)...")
-dg_temp.set_output(False, channel=2)
-time.sleep(0.5)
 
 # ---- 配置信号输入 0 ----
 sig_in_cfg = SignalInputConfig(
@@ -511,18 +508,18 @@ print(f"读回 Demod {DEMOD_R_IDX}: "
 # %% Cell 5b
 # ---- 自动校相 (Demod 0) ----
 print("正在进行 Demod 0 相位校准...")
-calibrated_phase = demod.auto_calibrate_phase(
-    hfi, demod_idx=HF2_DEMOD0_IDX,
-    tolerance_deg=1.0, max_attempts=5, settle_time=0.2,
-)
-print(f"Demod 0 校准完成: phaseshift = {calibrated_phase:.2f}°")
+with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+    calibrated_phase = demod.auto_calibrate_phase(
+        hfi, demod_idx=HF2_DEMOD0_IDX,
+        tolerance_deg=1.0, max_attempts=5, settle_time=SYSTEM_SETTLE_S,
+    )
+    print(f"Demod 0 校准完成: phaseshift = {calibrated_phase:.2f}°")
 
-# ---- 验证 ----
-sample = demod.read_demod_sample(hfi, demod_idx=HF2_DEMOD0_IDX)
-print(f"  校准后样本: R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
+    # ---- 验证 ----
+    sample = demod.read_demod_sample(hfi, demod_idx=HF2_DEMOD0_IDX)
+    print(f"  校准后样本: R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
 
-# ---- 恢复温控 ----
-dg_temp.set_output(True, channel=2)
+    # ---- 恢复温控 ----
 print("温度开关已恢复")
 # %% Cell 5c
 # ---- 切换 Demod 0 至测量 TC（短 TC 保留高带宽）----
@@ -551,7 +548,7 @@ config = {
         "Z_FREQ_POINTS": Z_FREQ_POINTS,
         "freq_list_Hz": Z_FREQ_LIST.tolist(),
         "Z_DRIVE_AMPLITUDE_Vpp": Z_DRIVE_AMPLITUDE,
-        "FREQ_SETTLE_TIME_s": FREQ_SETTLE_TIME,
+        "FREQ_SETTLE_TIME_s": SYSTEM_SETTLE_S,
         "POINT_DURATION_s": POINT_DURATION,
         "is_baseline_handling": (
             "f == 0 时 Z 场 DC 0V + output OFF，"
@@ -585,7 +582,7 @@ config = {
         "order_actual": int(demod_r_actual_order),
         "n_avg": DEMOD_R_N_AVG,
         "avg_interval_s": DEMOD_R_AVG_INTERVAL,
-        "read_settle_time_s": DEMOD_R_READ_SETTLE_TIME,
+        "read_settle_time_s": SYSTEM_SETTLE_S,
     },
     "hf2_signal_input_2": {
         "input_index": SIGIN2_INDEX,
@@ -672,7 +669,7 @@ try:
                                 offset=0.0, phase=0.0, channel=1)
             dg_sweep.set_output(True, channel=1)
             # 等待频率切换稳定
-            time.sleep(FREQ_SETTLE_TIME)
+            time.sleep(SYSTEM_SETTLE_S)
 
         # ---- 2. (demod_r 模式) 更新 Osc 1 和 Demod 3 跟随 Z 驱动频率 ----
         if ACQUISITION_MODE in ("demod_r", "both") and not is_baseline:
@@ -692,11 +689,7 @@ try:
             demod.configure_demodulator(hfi, demod_r_cfg)
 
         # ---- 3. 关闭温度开关（消除温控磁场对锁相读数的干扰）----
-        dg_temp.set_output(False, channel=2)
-        time.sleep(TEMP_SWITCH_OFF_LEAD)
-
-        # ---- 4. 采集 HF2 数据 ----
-        try:
+        with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
             if ACQUISITION_MODE in ("daq_fft_y", "both"):
                 # DAQ 采集 sample.y (Demod 0)
                 daq_cfg = DAQConfig(
@@ -729,7 +722,7 @@ try:
 
             if ACQUISITION_MODE in ("demod_r", "both") and not is_baseline:
                 # 等待 Demod 3 稳定（窄带 TC 收敛）
-                time.sleep(DEMOD_R_READ_SETTLE_TIME)
+                time.sleep(SYSTEM_SETTLE_S)
                 # 多次读取 Demod 3 X/Y/R/theta
                 x_list = []
                 y_list = []
@@ -769,11 +762,7 @@ try:
                 record["demod_r_phase_vector_rad"] = phase_vec_rad
                 record["demod_r_phase_vector_deg"] = phase_vec_deg
                 record["demod_r_theta_values_deg"] = np.degrees(theta_arr)
-
-        finally:
-            # 无论采集是否成功，都恢复温度开关
-            dg_temp.set_output(True, channel=2)
-            time.sleep(TEMP_SWITCH_ON_LAG)
+        time.sleep(TEMP_SWITCH_ON_LAG)
 
         # ---- 5. 保存当前频点 ----
         fname = f"freq_{fi:04d}_{freq:.3f}Hz"

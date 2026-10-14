@@ -50,6 +50,13 @@ learned_notes:
 
 # 静磁场灵敏度测量
 
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
+
 ## 锁相采集方式与实际速率
 
 色散使用 `hf2_demod_rate` 请求率、`dispersion_duration_s` 时长和 `hf2_demod_idx` 解调器；静磁噪声使用 `hf2_noise_rate` 请求率、`noise_duration` 时长和 `hf2_demod_idx` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
@@ -84,12 +91,12 @@ learned_notes:
 ### 直流色散扫描
 
 1. 从扫描起点到终点生成包含端点的等间距电压轴。
-2. 每组开始关闭温控物理输出，等待 `dispersion_temp_switch_off_settle_s`。
-3. 每个电压点先做安全校验，设置 Z 纯 DC 并开启输出，等待 `dispersion_step_settle_s`。
+2. 每组开始关闭温控物理输出，等待 `SYSTEM_SETTLE_S`。
+3. 每个电压点先做安全校验，设置 Z 纯 DC 并开启输出，等待 `SYSTEM_SETTLE_S`。
 4. 锁相放大器 回读实际采样率 `f_actual`，按 `N=ceil(f_actual×dispersion_duration_s)` 计算样本数，至少 2 个。DAQ 使用连续、单帧、Exact（grid mode 4）模式，同时订阅同一解调器 X/Y，逐样本计算 `R=hypot(X,Y)`；X/Y/R 分别取中位数作为点值。Exact 的记录时长为 `N/f_actual`，相关定义见 [LabOne 官方说明](https://docs.zhinst.com/labone_api_user_manual/modules/daq/index.html)。
 5. 完整波形与时间信息先原子保存到 `raw/dispersion_steps/point_<序号>.npz`，关闭 Z 输出，再原子更新 `dispersion_scan.npz` 的点值与完成掩码。
-6. 每完成 `dispersion_temp_switch_interval_points` 点，恢复温控并按 `dispersion_temp_switch_on_settle_s` 固定等待。组间不重新运行 TEC 温稳判据；最后一点后不额外恢复等待，温控由安全收尾恢复；间隔点数为 0 时整段扫描保持温控关闭。
-7. 扫描结束 Z 归零关闭，温控由安全收尾恢复，不额外等待。缺失信号、长度错误、非有限值、时间戳不连续、丢样或超时终止扫描；保存已完成点及故障点能够读出的波形。DAQ 开启丢样报错，等待期间检查取消，超时为实际记录时长加 5 秒。取消或异常均清理 DAQ 并安全收尾，不自动重采或插值。
+6. 每完成 `dispersion_temp_switch_interval_points` 点，恢复温控并按 `dispersion_temp_switch_on_settle_s` 固定等待。组间不重新运行 TEC 温稳判据；最后一点后不额外恢复等待，先恢复温控并保存本组数据，再进入安全收尾；间隔点数为 0 时整段扫描保持温控关闭。
+7. 扫描结束 Z 归零关闭，先恢复温控并保存本组数据，再进入安全收尾，不额外等待。缺失信号、长度错误、非有限值、时间戳不连续、丢样或超时终止扫描；保存已完成点及故障点能够读出的波形。DAQ 开启丢样报错，等待期间检查取消，超时为实际记录时长加 5 秒。取消或异常均清理 DAQ 并安全收尾，不自动重采或插值。
 
 ### 多量程噪声采集
 
@@ -105,12 +112,12 @@ DAQ 等待支持协作式取消，退出时清理 DAQ 模块。采集工作流�
 |---|---|
 | `ramp_low` / `ramp_high` | DC 起止电压，V；起点小于终点，两端均满足 Z 安全范围 |
 | `dispersion_steps` | 扫描点数，整数，至少 7 |
-| `dispersion_step_settle_s` | 每点设置 Z 后的稳定等待，非负秒数 |
+| `SYSTEM_SETTLE_S` | 每点设置 Z 后的稳定等待，非负秒数 |
 | `hf2_demod_rate` | 色散与校相共用的请求采样率，有限正数，Sa/s；模块按请求值选择，分析使用波形最终实际速率 |
 | `dispersion_duration_s` | 每点连续采集时间，有限正数，s；向上取整后至少 2 个样本 |
 | `dispersion_temp_switch_interval_points` | 分组点数，非负整数；0 表示整段扫描保持温控关闭，仅在收尾恢复 |
 | `dispersion_temp_switch_on_settle_s` | 每组后及校相后恢复温控等待，非负秒数；不作用于色散扫描结束后 |
-| `dispersion_temp_switch_off_settle_s` | 每组及校相前关闭温控等待，非负秒数 |
+| `SYSTEM_SETTLE_S` | 每组及校相前关闭温控等待，非负秒数 |
 | `z_v_to_nt` | Z 电压到磁场换算，有限正数，nT/V |
 | `hf2_demod_idx` | 校相、色散、噪声及恢复一致使用的解调器索引 |
 | `hf2_ac_coupling` / `hf2_50_ohm` | 历史兼容键，统一固定为关闭；使用 DC 耦合、高阻，GUI 隐藏 |
@@ -166,8 +173,7 @@ data/Static_Magnetic_Field_Sensitivity/<时间戳>_<tag>/
 | A02 | 设备连接与输入初始化 | A01 |
 | A03 | 参考时钟同步 | A02 |
 | A04 | 初始磁场、光功率与温控设置 | A03 |
-| A05 | 温度稳定 | A04 |
-| A06 | Pump 载波与脉冲门控 | A05 |
+| A06 | Pump 载波与脉冲门控 | A04 |
 | A07 | 锁相色散配置 | A06 |
 | A08 | Bell-Bloom 校相 | A07 |
 | A09 | Z 直流逐点色散扫描 | A08 |

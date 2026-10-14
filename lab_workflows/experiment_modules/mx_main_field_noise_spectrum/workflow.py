@@ -1,6 +1,7 @@
 """Mx 主磁场控制噪声谱采集工作流。"""
 
 from __future__ import annotations
+from ...steps.acquisition_window import acquisition_window
 
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
@@ -249,12 +250,6 @@ def _configure_outputs(
         devices.get("tec"),
         params.temperature_c,
         channel=1,
-        tolerance_c=params.temperature_tolerance_c,
-        stable_reads=params.temperature_stable_reads,
-        poll_interval_s=params.temperature_poll_interval_s,
-        timeout_s=params.temperature_timeout_s,
-        cancellation=_RuntimeCancellation(),
-        stability_waiter=wait_for_temperature_stable,
     )
     actual_temperature = temperature_status.actual_temperature_c
 
@@ -329,21 +324,14 @@ def _temperature_gated_acquire(
     *,
     acquire: Callable[[], dict[str, np.ndarray]],
 ) -> dict[str, np.ndarray]:
-    """关闭温控后采集，并在恢复温控后完成规定等待。"""
+    """配置后关温控、统一等待、读入内存，任何退出路径先恢复温控。"""
     check_cancelled()
-    set_temperature_switch(
-        devices["temp_switch"], False, channel=channels["temp_switch"]
-    )
-    try:
-        _sleep(params.temp_switch_off_settle_s)
+    def set_enabled(enabled):
+        set_temperature_switch(devices["temp_switch"], enabled, channel=channels["temp_switch"])
+        if enabled:
+            _uncancellable_sleep(params.temp_switch_on_settle_s)
+    with acquisition_window(set_enabled, _sleep, params.system_settle_s):
         return acquire()
-    finally:
-        set_temperature_switch(
-            devices["temp_switch"],
-            True,
-            channel=channels["temp_switch"],
-            settle_time=params.temp_switch_on_settle_s,
-        )
 
 
 def _save_point(
@@ -454,7 +442,7 @@ def _acquire_scan(
             signed_detuning_hz=float(signed),
             resonance_frequency_hz=float(resonance),
             main_field_current_ma=float(current_ma),
-            temp_switch_off_settle_s=params.temp_switch_off_settle_s,
+            temp_switch_off_settle_s=params.system_settle_s,
             temp_switch_on_settle_s=params.temp_switch_on_settle_s,
         )
         files.append(relative)
@@ -512,13 +500,13 @@ def run(params: MxMainFieldNoiseSpectrumParams) -> Path:
             "scope": "every_main_field_point",
             "off_voltage_v": 0.0,
             "on_voltage_v": 5.0,
-            "off_settle_s": params.temp_switch_off_settle_s,
+            "off_settle_s": params.system_settle_s,
             "post_acquisition_wait_s": params.temp_switch_on_settle_s,
         },
         averaging={"records_per_main_field_point": 1, "enabled": False},
         estimated_scan_duration_s=params.control_frequency_points
         * (
-            params.temp_switch_off_settle_s
+            params.system_settle_s
             + params.acquisition_duration_s
             + params.temp_switch_on_settle_s
         ),
@@ -559,9 +547,9 @@ def run(params: MxMainFieldNoiseSpectrumParams) -> Path:
             temperature_control={
                 "target_temperature_c": params.temperature_c,
                 "actual_temperature_c": actual_temperature,
-                "controlled_by_experiment": actual_temperature is not None,
+                "controlled_by_experiment": devices.get("tec") is not None,
                 "control_source": (
-                    "tec103" if actual_temperature is not None else "external_software"
+                    "tec103" if devices.get("tec") is not None else "external_software"
                 ),
             },
             clock_sources=clock_sources,

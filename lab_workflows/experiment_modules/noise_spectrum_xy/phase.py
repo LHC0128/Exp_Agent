@@ -1,4 +1,5 @@
 """Demod0 和 XY 正弦整体相位步骤。"""
+from ...steps.acquisition_window import acquisition_window
 import math
 from functools import partial
 from lockin_amplifier import SignalInputConfig, OscillatorConfig, DemodulatorConfig, demod
@@ -12,7 +13,6 @@ def calibrate_hf2_phase(hfi, dg_comp, dg_temp, params: NoiseSpectrumXYParams, li
     """关闭温控和 XY，完成 HF2 校相后恢复温控。"""
     # ---- HF2 解调器相位校准（设置 XY 磁场前执行） ----
     print("\n关闭温度开关（相位校准前，消除温控磁场干扰）...")
-    set_temp_switch(dg_temp, False, params, limits)
 
     # 确认 X/Y 补偿磁场处于关闭状态（尚未配置）
     print("确认 X/Y 补偿磁场关闭...")
@@ -43,30 +43,33 @@ def calibrate_hf2_phase(hfi, dg_comp, dg_temp, params: NoiseSpectrumXYParams, li
     actual_rate = demod.configure_demodulator(hfi, demod_cfg)
     print(f"解调器 0 已配置: rate={actual_rate:.0f} Sa/s, TC={params.hf2_demod_tc*1000:.3f} ms")
 
-    # 自动相位校准
-    print("正在进行相位校准...")
-    demod0_phase_result = calibrate_demod_phase(
-        hfi,
-        PhaseCalibrationConfig(
-            demod_idx=params.hf2_demod_idx,
-            tolerance_deg=1.0,
-            max_attempts=5,
-            settle_time=0.2,
-        ),
-        cancellation=_RuntimeCancellation(),
-    )
-    calibrated_phase = demod0_phase_result.phase_shift_deg
-    print(f"相位校准完成: {calibrated_phase:.2f}°")
+    with acquisition_window(
+        lambda enabled: set_temp_switch(dg_temp, enabled, params, limits, restore_wait=enabled),
+        wait, params.system_settle_s,
+    ):
 
-    # 读一组样本验证
-    sample = demod0_phase_result.after_sample
-    print(f"校准后样本: R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
+        # 自动相位校准
+        print("正在进行相位校准...")
+        demod0_phase_result = calibrate_demod_phase(
+            hfi,
+            PhaseCalibrationConfig(
+                demod_idx=params.hf2_demod_idx,
+                tolerance_deg=1.0,
+                max_attempts=5,
+                settle_time=params.system_settle_s,
+            ),
+            cancellation=_RuntimeCancellation(),
+        )
+        calibrated_phase = demod0_phase_result.phase_shift_deg
+        print(f"相位校准完成: {calibrated_phase:.2f}°")
 
-    wait(0.5)
+        # 读一组样本验证
+        sample = demod0_phase_result.after_sample
+        print(f"校准后样本: R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
 
-    # 恢复温控
-    print("恢复温度开关...")
-    set_temp_switch(dg_temp, True, params, limits, restore_wait=True)
+
+        # 恢复温控
+        print("恢复温度开关...")
     return calibrated_phase
 
 
@@ -144,14 +147,14 @@ def set_xy_sine_peak(dg_comp, peak_v, phase_deg, quad_deg, limits):
 def measure_xy_phase(phase_deg, *, hfi, dg_comp, dg_temp, params: NoiseSpectrumXYParams, limits):
     """测量一次正弦响应相位；成功后恢复温控并等待。"""
     set_xy_sine_phase(dg_comp, phase_deg, params.xy_ctrl_quad, outputs_on=True)
-    set_temp_switch(dg_temp, False, params, limits)
-    wait(1.0)
-    sample_data = demod.read_demod_sample(hfi, demod_idx=params.hf2_demod_idx)
-    phase_offset = float(math.degrees(sample_data["theta"]))
-    print(f"  phase={phase_deg:.2f}°, theta={phase_offset:+.2f}°")
-    print(f"  样本: R={sample_data['r']:.6f}, X={sample_data['x']:.6f}, Y={sample_data['y']:.6f}")
-    # 失败直接交给 run 的统一收尾，避免恢复等待覆盖原异常。
-    set_temp_switch(dg_temp, True, params, limits, restore_wait=True)
+    with acquisition_window(
+        lambda enabled: set_temp_switch(dg_temp, enabled, params, limits, restore_wait=enabled),
+        wait, params.system_settle_s,
+    ):
+        sample_data = demod.read_demod_sample(hfi, demod_idx=params.hf2_demod_idx)
+        phase_offset = float(math.degrees(sample_data["theta"]))
+        print(f"  phase={phase_deg:.2f}°, theta={phase_offset:+.2f}°")
+        print(f"  样本: R={sample_data['r']:.6f}, X={sample_data['x']:.6f}, Y={sample_data['y']:.6f}")
     return sample_data
 
 

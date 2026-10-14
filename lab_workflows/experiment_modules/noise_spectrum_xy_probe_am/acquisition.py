@@ -1,6 +1,7 @@
 """Probe AM 成对采集；接收已连接设备，导入不访问硬件。"""
 import time
 from datetime import datetime
+from ...steps.acquisition_window import DeferredAcquisitionWrites, acquisition_window
 
 import numpy as np
 from lockin_amplifier import DAQConfig, acquisition_metadata, daq
@@ -8,7 +9,7 @@ from lockin_amplifier import DAQConfig, acquisition_metadata, daq
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ..noise_spectrum_xy._helpers import set_temp_switch
-from ..noise_spectrum_xy.acquisition import save_config
+from ..noise_spectrum_xy.acquisition import save_config, initialize_run_directory
 from ..noise_spectrum_xy.phase import set_xy_sine_peak
 from ..noise_spectrum_xy.preparation import build_run_config
 from ..noise_spectrum_xy_known_noise.acquisition import acquire_pair, wait_for_settle
@@ -19,25 +20,13 @@ EXPERIMENT_ID = "noise-spectrum-xy-uncontrolled-probe-am"
 
 
 def acquire_scan(ctx):
-    """每次扫描独立目录；一对波形在同一温控窗口内立即保存。"""
+    """每次扫描独立目录；一对波形先缓存，恢复温控后保存。"""
     params, mapping = ctx.params, ctx.mapping
     targets, envelopes = ctx.axes
     rate, cols, settings = ctx.daq_settings
-    timestamp = datetime.now().strftime("%m%d_%H%M")
-    base = ctx.root / "data" / DATA_TYPE
-    base.mkdir(parents=True, exist_ok=True)
-    suffix = 0
-    while True:
-        run_dir = base / (f"{timestamp}_{params.run_tag}" + (f"_{suffix:02d}" if suffix else ""))
-        try:
-            run_dir.mkdir()
-            break
-        except FileExistsError:
-            suffix += 1
-    ctx.run_dir = run_dir
+    run_dir = initialize_run_directory(ctx, DATA_TYPE, for_scan=True)
+    timestamp = run_dir.name[:9]
     raw = run_dir / "raw"
-    raw.mkdir()
-    (run_dir / "results").mkdir()
     config = build_run_config(params, ctx.root, ctx.clock_sources, timestamp, targets, envelopes)
     waveform, controlled = ctx.noise_waveform, ctx.z_waveform
     config.update(experiment_id=EXPERIMENT_ID, experiment_type=DATA_TYPE,
@@ -69,7 +58,7 @@ def acquire_scan(ctx):
                     for start, stop, psd in params.z_noise_bands()],
              readback=ctx.z_readback) if controlled is not None else {}))
     config["paired_acquisition"] = dict(order="alternating_off_on_on_off", first_point="off_on",
-        settle_each_state_s=params.injection_settle_s, timing_file="raw/pair_timing.jsonl",
+        settle_each_state_s=params.system_settle_s, timing_file="raw/pair_timing.jsonl",
         z_injection="continuous_during_scan" if controlled is not None else "disabled",
         temperature_policy="one_off_window_per_pair")
     path = run_dir / "experiment_config.yaml"
@@ -90,7 +79,7 @@ def acquire_scan(ctx):
         if bool(z.get_output(channel=z_channel)) != (controlled is not None):
             raise RuntimeError("Z 可控噪声输出状态回读与请求不一致")
         if controlled is not None:
-            wait_for_settle(params.z_noise_settle_s)
+            wait_for_settle(params.system_settle_s)
         probe_channel = int(mapping["Probe_AOM_AM"]["channel"])
         cfg = DAQConfig(device=mapping["lockin_r"]["device_id"], trigger_type=0,
             duration=params.hf2_daq_duration, grid_cols=cols, grid_rows=1, grid_mode=2,
@@ -108,12 +97,14 @@ def acquire_scan(ctx):
             check_cancelled()
             set_xy_sine_peak(ctx.devices["dg_comp"], envelope, ctx.xy_result.final_phase_deg,
                              params.xy_ctrl_quad, ctx.limits)
-            wait_for_settle(0.3)
-            set_temp_switch(ctx.devices["dg_temp"], False, params, ctx.limits)
-            wait_for_settle(params.xy_settle_time)
-            acquire_pair(index, raw, ctx.devices["dg_probe_am"], probe_channel, acquire,
-                         params.injection_settle_s)
-            set_temp_switch(ctx.devices["dg_temp"], True, params, ctx.limits, restore_wait=True)
+            ctx.devices["dg_probe_am"].set_output(bool(index % 2), channel=probe_channel)
+            with DeferredAcquisitionWrites() as pending:
+                with acquisition_window(
+                    lambda enabled: set_temp_switch(ctx.devices["dg_temp"], enabled, params, ctx.limits, restore_wait=enabled),
+                    wait_for_settle, params.system_settle_s,
+                ):
+                    acquire_pair(index, raw, ctx.devices["dg_probe_am"], probe_channel, acquire,
+                                 params.system_settle_s, pending=pending, first_prepared=True)
             report_runtime_progress("A14", f"配对扫描 {index + 1}/{len(envelopes)}",
                 100 * (index + 1) / len(envelopes),
                 estimated_remaining_seconds=(time.monotonic() - started) / (index + 1) * (len(envelopes) - index - 1))

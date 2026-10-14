@@ -1,6 +1,7 @@
 """Mx 构型 Y 向 RF 场灵敏度采集工作流。"""
 
 from __future__ import annotations
+from ...steps.acquisition_window import acquisition_window
 
 from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
@@ -11,6 +12,7 @@ from types import SimpleNamespace
 from typing import Any, Callable
 
 import numpy as np
+from ...steps.acquisition_window import DeferredAcquisitionWrites
 import yaml
 from gs200 import GS200Instrument
 from lockin_amplifier import (
@@ -189,23 +191,9 @@ def _restore_response_acquisition_state(
     devices: dict[str, Any],
     channels: dict[str, int],
 ) -> float:
-    """在每次幅度扫描前同时恢复 Y RF 正弦波与 HF2 响应配置。"""
-    actual_rate = _temperature_gated_acquire(
-        params,
-        devices,
-        channels,
-        set_y_rf=lambda: _configure_y_rf_sine_source(
-            params,
-            devices["xy_field"],
-            channels["y_rf"],
-        ),
-        settle_time_s=0.0,
-        acquire=lambda: _configure_response_demodulator(
-            params,
-            devices["hf2"],
-        ),
-    )
-    return float(actual_rate)
+    """在温控开启时完成响应采集配置。"""
+    _configure_y_rf_sine_source(params, devices['xy_field'], channels['y_rf'])
+    return float(_configure_response_demodulator(params, devices['hf2']))
 
 
 def _configure_reference_clocks(
@@ -407,12 +395,6 @@ def _configure_temperature_control(
         devices.get("tec"),
         params.temperature_c,
         channel=1,
-        tolerance_c=params.temperature_tolerance_c,
-        stable_reads=params.temperature_stable_reads,
-        poll_interval_s=params.temperature_poll_interval_s,
-        timeout_s=params.temperature_timeout_s,
-        cancellation=_RuntimeCancellation(),
-        stability_waiter=wait_for_temperature_stable,
     )
     return status.actual_temperature_c
 
@@ -440,18 +422,7 @@ def _configure_outputs(
     xy_field.setup_dc(0.0, channel=channels["x_field"])
     xy_field.set_output(False, channel=channels["x_field"])
     validate_safety_limit("rf_coil", 0.0)
-    _temperature_gated_acquire(
-        params,
-        devices,
-        channels,
-        set_y_rf=lambda: _configure_y_rf_sine_source(
-            params,
-            xy_field,
-            channels["y_rf"],
-        ),
-        settle_time_s=0.0,
-        acquire=lambda: None,
-    )
+    _configure_y_rf_sine_source(params, xy_field, channels['y_rf'])
 
     laser = devices["laser"]
     validate_safety_limit("Pump_laser_power", params.pump_laser_power_v)
@@ -546,17 +517,15 @@ def _temperature_gated_acquire(
     settle_time_s: float,
     acquire: Callable[[], Any],
 ) -> Any:
-    """按“设置 Y RF→温控关→等待→采集→温控开→等待”执行。"""
+    """配置后关温控、统一等待、读入内存，任何退出路径先恢复温控。"""
     check_cancelled()
     set_y_rf()
-    set_temperature_switch(devices["temp_switch"], False, channel=channels["temp_switch"])
-    try:
-        _sleep(params.temp_switch_off_lead_s)
-        _sleep(settle_time_s)
+    def set_enabled(enabled):
+        set_temperature_switch(devices["temp_switch"], enabled, channel=channels["temp_switch"])
+        if enabled:
+            _uncancellable_sleep(params.temp_switch_on_lag_s)
+    with acquisition_window(set_enabled, _sleep, params.system_settle_s):
         return acquire()
-    finally:
-        set_temperature_switch(devices["temp_switch"], True, channel=channels["temp_switch"])
-        _uncancellable_sleep(params.temp_switch_on_lag_s)
 
 
 def _acquire_valid_r_point(
@@ -579,20 +548,43 @@ def _acquire_valid_r_point(
         checker = devices.get("_compliance_checker")
         if checker is not None:
             checker(f"{file_stem} 采集前")
-        payload = _temperature_gated_acquire(
-            params,
-            devices,
-            channels,
-            set_y_rf=set_y_rf,
-            settle_time_s=settle_time_s,
-            acquire=lambda: acquire_r(
-                hf2,
-                device_id=device_id,
-                demod_idx=params.demod_idx,
-                actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
-                duration_s=duration_s,
-            ),
-        )
+        with DeferredAcquisitionWrites() as pending:
+            def acquire_and_buffer():
+                payload = acquire_r(
+                        hf2,
+                        device_id=device_id,
+                        demod_idx=params.demod_idx,
+                        actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
+                        duration_s=duration_s,
+                    )
+                summary = summarize_r(payload)
+                accepted = (
+                    summary["r_std_v"]
+                    <= params.r_bad_point_std_threshold_v
+                )
+                filename = f"{file_stem}_attempt_{attempt:02d}.npz"
+                pending.add(_save_point,
+                    run_dir.raw / filename,
+                    payload,
+                    {
+                        **metadata,
+                        "attempt_index": np.int64(attempt),
+                        "quality_accepted": np.uint8(accepted),
+                        "r_std_threshold_v": np.float64(
+                            params.r_bad_point_std_threshold_v
+                        ),
+                    },
+                    actual_rate,
+                )
+                return payload
+            payload = _temperature_gated_acquire(
+                params,
+                devices,
+                channels,
+                set_y_rf=set_y_rf,
+                settle_time_s=settle_time_s,
+                acquire=acquire_and_buffer,
+            )
         summary = summarize_r(payload)
         if checker is not None:
             checker(f"{file_stem} 采集后")
@@ -601,19 +593,6 @@ def _acquire_valid_r_point(
             <= params.r_bad_point_std_threshold_v
         )
         filename = f"{file_stem}_attempt_{attempt:02d}.npz"
-        _save_point(
-            run_dir.raw / filename,
-            payload,
-            {
-                **metadata,
-                "attempt_index": np.int64(attempt),
-                "quality_accepted": np.uint8(accepted),
-                "r_std_threshold_v": np.float64(
-                    params.r_bad_point_std_threshold_v
-                ),
-            },
-            actual_rate,
-        )
         print(
             f"  R 质量 {attempt + 1}/{params.r_point_max_attempts}: "
             f"std={summary['r_std_v']:.6g} V, "
@@ -678,7 +657,7 @@ def _acquire_frequency_scan(
                 ),
             },
             set_y_rf=set_frequency_point,
-            settle_time_s=params.frequency_settle_time_s,
+            settle_time_s=params.system_settle_s,
             duration_s=params.frequency_duration_s,
             actual_rate=actual_rate,
             device_id=device_id,
@@ -760,7 +739,7 @@ def _acquire_amplitude_scan(
                 channels["y_rf"],
                 float(amplitude),
             ),
-            settle_time_s=params.response_settle_time_s,
+            settle_time_s=params.system_settle_s,
             duration_s=params.response_duration_s,
             actual_rate=actual_rate,
             device_id=device_id,
@@ -805,17 +784,7 @@ def _set_y_rf_zero_off_with_temperature_sequence(
     if devices.get("temp_switch") is None or "temp_switch" not in channels:
         _set_y_rf_zero_off(devices["xy_field"], channels["y_rf"])
         return
-    _temperature_gated_acquire(
-        params,
-        devices,
-        channels,
-        set_y_rf=lambda: _set_y_rf_zero_off(
-            devices["xy_field"],
-            channels["y_rf"],
-        ),
-        settle_time_s=0.0,
-        acquire=lambda: {},
-    )
+    _set_y_rf_zero_off(devices['xy_field'], channels['y_rf'])
 
 
 def _acquire_noise(
@@ -857,20 +826,36 @@ def _acquire_noise(
         if checker is not None:
             checker(f"{noise_label} {index + 1} 采集前")
         print(f"{noise_label} {index + 1}/{params.noise_n_avg}")
-        payload = _temperature_gated_acquire(
-            params,
-            devices,
-            channels,
-            set_y_rf=rf_off_setter,
-            settle_time_s=settle_time_s,
-            acquire=lambda: acquire_r(
-                hf2,
-                device_id=device_id,
-                demod_idx=params.demod_idx,
-                actual_rate_sa_s=float(actual_rate), requested_rate_sa_s=params.noise_rate_sa_s,
-                duration_s=params.noise_duration_s,
-            ),
-        )
+        with DeferredAcquisitionWrites() as pending:
+            def acquire_and_buffer():
+                payload = acquire_r(
+                        hf2,
+                        device_id=device_id,
+                        demod_idx=params.demod_idx,
+                        actual_rate_sa_s=float(actual_rate), requested_rate_sa_s=params.noise_rate_sa_s,
+                        duration_s=params.noise_duration_s,
+                    )
+                metadata = {
+                    "y_rf_dc_v": np.float64(y_rf_dc_v),
+                    "y_rf_output_on": np.uint8(y_rf_output_on),
+                }
+                if noise_metadata:
+                    metadata.update(noise_metadata)
+                pending.add(_save_point,
+                    run_dir.raw / f"noise_{index:03d}.npz",
+                    payload,
+                    metadata,
+                    float(actual_rate),
+                )
+                return payload
+            payload = _temperature_gated_acquire(
+                params,
+                devices,
+                channels,
+                set_y_rf=rf_off_setter,
+                settle_time_s=settle_time_s,
+                acquire=acquire_and_buffer,
+            )
         if checker is not None:
             checker(f"{noise_label} {index + 1} 采集后")
         metadata = {
@@ -879,12 +864,6 @@ def _acquire_noise(
         }
         if noise_metadata:
             metadata.update(noise_metadata)
-        _save_point(
-            run_dir.raw / f"noise_{index:03d}.npz",
-            payload,
-            metadata,
-            float(actual_rate),
-        )
     return float(payload.get("actual_rate_Sa_s", actual_rate))
 
 

@@ -4,7 +4,7 @@ from signal_generator.types import normalize_output_load
 from ...common import validate_safety_limit
 from ...steps import ArbitraryWaveformSpec, upload_arbitrary
 from ...experiment_runtime import check_cancelled
-from .generation import generate_known_noise_waveform, load_z_calibration
+from .generation import generate_known_noise_waveform, ZFrequencyCalibration
 
 
 def validate_noise_levels(amplitude_vpp, limits):
@@ -54,7 +54,7 @@ def prepare_noise(ctx):
     params = ctx.params
     waveform = generate_known_noise_waveform(repeat_freq_hz=params.noise_repeat_freq_hz,
                                               bands=params.noise_bands(), seed=params.noise_seed)
-    calibration = load_z_calibration(ctx.root, params.z_calibration_source_run)
+    calibration = ZFrequencyCalibration(params.z_calibration_k_hz_per_v)
     actual = upload_noise_waveform(ctx.devices["dg_sweep"], waveform, params, ctx.limits)
     ctx.noise_waveform, ctx.z_calibration, ctx.noise_readback = waveform, calibration, actual
     ctx.outputs["Z"] = "OFF"

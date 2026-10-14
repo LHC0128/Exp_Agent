@@ -229,7 +229,7 @@ def _acquire_phase_scan(
             "discarded_dummy": np.uint8(True),
         },
         set_y_rf=set_dummy_phase,
-        settle_time_s=params.response_settle_time_s,
+        settle_time_s=params.system_settle_s,
         duration_s=params.response_duration_s,
         actual_rate=actual_rate,
         device_id=device_id,
@@ -270,7 +270,7 @@ def _acquire_phase_scan(
             file_stem=f"phase_{index:04d}",
             metadata=metadata,
             set_y_rf=set_phase,
-            settle_time_s=params.response_settle_time_s,
+            settle_time_s=params.system_settle_s,
             duration_s=params.response_duration_s,
             actual_rate=actual_rate,
             device_id=device_id,
@@ -603,7 +603,7 @@ def run(params: MxKeithley6221OptimalControlRFParams) -> Path:
         pump.setup_sine(params.pump_carrier_frequency_hz, params.pump_carrier_amplitude_vpp, offset=0.0, phase=0.0, channel=channels["pump_carrier"]); pump.set_output(True, channel=channels["pump_carrier"])
         _set_pump_gate_on(pump, channels["pump_gate"], params.pump_gate_voltage_v)
         set_temperature_switch(devices["temp_switch"], True, channel=channels["temp_switch"])
-        configure_temperature_control(devices.get("tec"), params.temperature_c, channel=1, tolerance_c=params.temperature_tolerance_c, stable_reads=params.temperature_stable_reads, poll_interval_s=params.temperature_poll_interval_s, timeout_s=params.temperature_timeout_s, cancellation=_Cancellation(), stability_waiter=wait_for_temperature_stable)
+        configure_temperature_control(devices.get("tec"), params.temperature_c, channel=1,      )
         clocks = _configure_clocks(devices, mapping)
         configured_inactive = _configure_6221(
             devices["keithley"],

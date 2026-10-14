@@ -38,20 +38,34 @@
       "dependencies": [
         "A03"
       ],
-      "parameters": [],
+      "parameters": [
+        "FIXED_PARAMS.Pump_laser_power",
+        "FIXED_PARAMS.Probe_laser_power",
+        "FIXED_PARAMS.main_magnetic_field",
+        "FIXED_PARAMS.Temp_Switch"
+      ],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [
+        "FIXED_PARAMS.Pump_laser_power",
+        "FIXED_PARAMS.Probe_laser_power",
+        "FIXED_PARAMS.main_magnetic_field",
+        "FIXED_PARAMS.Temp_Switch"
+      ]
     },
     {
       "id": "A05",
-      "title": "温度稳定",
+      "title": "目标温度设置",
       "group": "初始条件",
       "dependencies": [
         "A04"
       ],
-      "parameters": [],
+      "parameters": [
+        "FIXED_PARAMS.temperature"
+      ],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [
+        "FIXED_PARAMS.temperature"
+      ]
     },
     {
       "id": "A06",
@@ -60,9 +74,21 @@
       "dependencies": [
         "A05"
       ],
-      "parameters": [],
+      "parameters": [
+        "PUMP_MOD_FREQ",
+        "PUMP_MOD_AMPLITUDE",
+        "PUMP_MOD_DUTY",
+        "RF_GATE_AMPLITUDE",
+        "RF_GATE_OFFSET"
+      ],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [
+        "PUMP_MOD_FREQ",
+        "PUMP_MOD_AMPLITUDE",
+        "PUMP_MOD_DUTY",
+        "RF_GATE_AMPLITUDE",
+        "RF_GATE_OFFSET"
+      ]
     },
     {
       "id": "A07",
@@ -72,11 +98,24 @@
         "A06"
       ],
       "parameters": [
-        "XY_TRIGGER_FREQ"
+        "XY_TRIGGER_FREQ",
+        "XY_TRIGGER_AMPLITUDE",
+        "XY_TRIGGER_OFFSET",
+        "XY_TRIGGER_DUTY",
+        "XY_TRIGGER_PHASE",
+        "Z_TRIGGER_FREQ",
+        "Z_TRIGGER_AMPLITUDE",
+        "Z_TRIGGER_OFFSET",
+        "Z_TRIGGER_DUTY",
+        "Z_TRIGGER_PHASE"
       ],
       "artifacts": [],
       "display_parameters": [
-        "XY_TRIGGER_FREQ"
+        "XY_TRIGGER_FREQ",
+        "XY_TRIGGER_AMPLITUDE",
+        "XY_TRIGGER_OFFSET",
+        "XY_TRIGGER_DUTY",
+        "XY_TRIGGER_PHASE"
       ]
     },
     {
@@ -87,10 +126,24 @@
         "A07"
       ],
       "parameters": [
+        "DEMOD0_IDX",
+        "DEMOD0_OSC_IDX",
+        "DEMOD0_SIGNAL_RANGE",
+        "DEMOD0_ORDER",
+        "DEMOD0_TC_CALIB",
+        "DEMOD0_RATE",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_LAG_S"
       ],
       "artifacts": [],
       "display_parameters": [
+        "DEMOD0_IDX",
+        "DEMOD0_OSC_IDX",
+        "DEMOD0_SIGNAL_RANGE",
+        "DEMOD0_ORDER",
+        "DEMOD0_TC_CALIB",
+        "DEMOD0_RATE",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_LAG_S"
       ]
     },
@@ -101,12 +154,34 @@
       "dependencies": [
         "A08"
       ],
-      "parameters": [],
+      "parameters": [
+        "ARB_WAVEFORM_FILE",
+        "AW_REPEAT_FREQ",
+        "XY_CTRL_K_HZ_PER_V",
+        "XY_CTRL_B_HZ",
+        "XY_CTRL_PHASE",
+        "XY_CTRL_QUAD",
+        "XY_CTRL_PHASE_TOL_DEG",
+        "XY_CTRL_PHASE_MAX_ITER",
+        "XY_CTRL_PHASE_MIN_R_V",
+        "XY_CTRL_PHASE_MIN_R_RATIO"
+      ],
       "artifacts": [
         "raw/xy_aw_waveforms_initial.npz",
         "raw/xy_aw_waveforms.npz"
       ],
       "display_parameters": [
+        "ARB_WAVEFORM_FILE",
+        "AW_REPEAT_FREQ",
+        "XY_CTRL_K_HZ_PER_V",
+        "XY_CTRL_B_HZ",
+        "XY_CTRL_PHASE",
+        "XY_CTRL_QUAD",
+        "XY_CTRL_PHASE_TOL_DEG",
+        "XY_CTRL_PHASE_MAX_ITER",
+        "XY_CTRL_PHASE_MIN_R_V",
+        "XY_CTRL_PHASE_MIN_R_RATIO",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_LAG_S"
       ]
     },
@@ -118,16 +193,38 @@
         "A09"
       ],
       "parameters": [
-        "Z_RF_FREQ",
+        "DEMOD0_TC_MEAS",
         "DEMOD3_IDX",
+        "DEMOD3_OSC_IDX",
+        "DEMOD3_ORDER",
+        "DEMOD3_TC",
+        "DEMOD3_RATE",
+        "LOOPBACK_AUX_SCALE",
+        "LOOPBACK_AUX_OFFSET_V",
+        "LOOPBACK_INPUT_RANGE_V",
+        "LOOPBACK_INPUT_DIFF",
+        "Z_RF_FREQ",
+        "Z_RF_AMPLITUDE_INIT",
+        "Z_BURST_PHASE_INIT",
         "RF_INPUT_ROUTE",
         "RF_AUX_OUTPUT_IDX",
         "RF_PHYSICAL_INPUT_SOURCE"
       ],
       "artifacts": [],
       "display_parameters": [
-        "Z_RF_FREQ",
+        "DEMOD0_TC_MEAS",
         "DEMOD3_IDX",
+        "DEMOD3_OSC_IDX",
+        "DEMOD3_ORDER",
+        "DEMOD3_TC",
+        "DEMOD3_RATE",
+        "LOOPBACK_AUX_SCALE",
+        "LOOPBACK_AUX_OFFSET_V",
+        "LOOPBACK_INPUT_RANGE_V",
+        "LOOPBACK_INPUT_DIFF",
+        "Z_RF_FREQ",
+        "Z_RF_AMPLITUDE_INIT",
+        "Z_BURST_PHASE_INIT",
         "RF_INPUT_ROUTE",
         "RF_AUX_OUTPUT_IDX",
         "RF_PHYSICAL_INPUT_SOURCE"
@@ -141,7 +238,14 @@
         "A10"
       ],
       "parameters": [
-        "RUN_TAG"
+        "RUN_TAG",
+        "RF_AMP_START",
+        "RF_AMP_STOP",
+        "RF_AMP_POINTS",
+        "Z_V_TO_NT",
+        "TEMP_GROUP_SIZE",
+        "SYSTEM_SETTLE_S",
+        "SCAN_POINT_DURATION_S"
       ],
       "artifacts": [
         "raw/response_data.npz",
@@ -149,7 +253,14 @@
       ],
       "display_parameters": [
         "RUN_TAG",
-        "TEMP_SWITCH_ON_LAG_S"
+        "RF_AMP_START",
+        "RF_AMP_STOP",
+        "RF_AMP_POINTS",
+        "Z_V_TO_NT",
+        "SYSTEM_SETTLE_S",
+        "TEMP_SWITCH_ON_LAG_S",
+        "TEMP_GROUP_SIZE",
+        "SCAN_POINT_DURATION_S"
       ]
     },
     {
@@ -165,6 +276,8 @@
       "artifacts": [],
       "display_parameters": [
         "Z_RF_NOISE_FREQ",
+        "Z_RF_AMPLITUDE_INIT",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_LAG_S"
       ]
     },
@@ -175,11 +288,23 @@
       "dependencies": [
         "A12"
       ],
-      "parameters": [],
+      "parameters": [
+        "NOISE_N_AVG",
+        "NOISE_DURATION",
+        "NOISE_RATE",
+        "DEMOD3_NOISE_TC",
+        "DEMOD3_NOISE_ORDER"
+      ],
       "artifacts": [
         "raw/noise_D3_*.npz"
       ],
       "display_parameters": [
+        "NOISE_N_AVG",
+        "NOISE_DURATION",
+        "NOISE_RATE",
+        "DEMOD3_NOISE_TC",
+        "DEMOD3_NOISE_ORDER",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_LAG_S"
       ]
     },
@@ -256,6 +381,8 @@
         "sensitivity.npz",
         "analysis.yaml",
         "analysis.json",
+        "bandwidth_fit.png",
+        "bandwidth_fit.pdf",
         "response_curve.png",
         "response_curve.pdf",
         "noise_psd.png",
@@ -270,8 +397,280 @@
   ],
   "parameter_impacts": {
     "acquisition": {
+      "FIXED_PARAMS.Pump_laser_power": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "FIXED_PARAMS.Probe_laser_power": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "FIXED_PARAMS.main_magnetic_field": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "FIXED_PARAMS.Temp_Switch": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "FIXED_PARAMS.temperature": [
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "PUMP_MOD_FREQ": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "PUMP_MOD_AMPLITUDE": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "PUMP_MOD_DUTY": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "RF_GATE_AMPLITUDE": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "RF_GATE_OFFSET": [
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
       "XY_TRIGGER_FREQ": [
         "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_TRIGGER_AMPLITUDE": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_TRIGGER_OFFSET": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_TRIGGER_DUTY": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_TRIGGER_PHASE": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "Z_TRIGGER_FREQ": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "Z_TRIGGER_AMPLITUDE": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "Z_TRIGGER_OFFSET": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "Z_TRIGGER_DUTY": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "Z_TRIGGER_PHASE": [
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD0_IDX": [
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD0_OSC_IDX": [
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD0_SIGNAL_RANGE": [
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD0_ORDER": [
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD0_TC_CALIB": [
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD0_RATE": [
+        "A08",
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "SYSTEM_SETTLE_S": [
         "A08",
         "A09",
         "A10",
@@ -289,6 +688,156 @@
         "A14",
         "A15"
       ],
+      "ARB_WAVEFORM_FILE": [
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "AW_REPEAT_FREQ": [
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_CTRL_K_HZ_PER_V": [
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_CTRL_B_HZ": [
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_CTRL_PHASE": [
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_CTRL_QUAD": [
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_CTRL_PHASE_TOL_DEG": [
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_CTRL_PHASE_MAX_ITER": [
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_CTRL_PHASE_MIN_R_V": [
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "XY_CTRL_PHASE_MIN_R_RATIO": [
+        "A09",
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD0_TC_MEAS": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD3_IDX": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD3_OSC_IDX": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD3_ORDER": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD3_TC": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD3_RATE": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "LOOPBACK_AUX_SCALE": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "LOOPBACK_AUX_OFFSET_V": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "LOOPBACK_INPUT_RANGE_V": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "LOOPBACK_INPUT_DIFF": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
       "Z_RF_FREQ": [
         "A10",
         "A13",
@@ -296,18 +845,14 @@
         "A14",
         "A15"
       ],
-      "RUN_TAG": [
+      "Z_RF_AMPLITUDE_INIT": [
+        "A10",
         "A13",
         "A12",
         "A14",
         "A15"
       ],
-      "Z_RF_NOISE_FREQ": [
-        "A12",
-        "A14",
-        "A15"
-      ],
-      "DEMOD3_IDX": [
+      "Z_BURST_PHASE_INIT": [
         "A10",
         "A13",
         "A12",
@@ -332,6 +877,73 @@
         "A10",
         "A13",
         "A12",
+        "A14",
+        "A15"
+      ],
+      "RUN_TAG": [
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "RF_AMP_START": [
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "RF_AMP_STOP": [
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "RF_AMP_POINTS": [
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "Z_V_TO_NT": [
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "TEMP_GROUP_SIZE": [
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "SCAN_POINT_DURATION_S": [
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "Z_RF_NOISE_FREQ": [
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "NOISE_N_AVG": [
+        "A14",
+        "A15"
+      ],
+      "NOISE_DURATION": [
+        "A14",
+        "A15"
+      ],
+      "NOISE_RATE": [
+        "A14",
+        "A15"
+      ],
+      "DEMOD3_NOISE_TC": [
+        "A14",
+        "A15"
+      ],
+      "DEMOD3_NOISE_ORDER": [
         "A14",
         "A15"
       ]

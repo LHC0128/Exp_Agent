@@ -66,6 +66,14 @@ export function ParameterForm({
     const value = values[field.name] ?? field.default;
     const label = field.unit ? `${field.label} (${field.unit})` : field.label;
     const isDisabled = disabled || Boolean(field.read_only);
+    if (field.type === "array" && field.options?.length) {
+      return <label key={field.name}><span>{label}</span>
+        <select multiple value={Array.isArray(value) ? value.map(String) : []} disabled={isDisabled}
+          onChange={event => onChange(field, Array.from(event.currentTarget.selectedOptions, option => option.value))}>
+          {field.options.map(option => <option key={String(option.value)} value={String(option.value)}>{option.label}</option>)}
+        </select>
+      </label>;
+    }
     if (field.options && field.options.length > 0) {
       const stringValue = typeof value === "string" || typeof value === "number" ? String(value) : "";
       return (

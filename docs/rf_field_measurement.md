@@ -5,7 +5,7 @@ description: XY 直接任意波控制下测量 RF 灵敏度，采用可勾选、
 experiment_id: rf-sensitivity-aw
 defaults_file: params/experiments/rf-sensitivity-aw.yaml
 version: 9
-schema_version: 2
+schema_version: 3
 scan_mode: point_by_point
 mapping_keys:
   X_magnetic_field: {role: fixed}
@@ -35,6 +35,13 @@ learned_notes:
 
 # RF 灵敏度（DirectAW）
 
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
+
 ## 锁相采集方式与实际速率
 
 RF 相位/响应/带宽使用 `DEMOD3_RATE` 请求率、`SCAN_POINT_DURATION_S` 时长和 `DEMOD3_IDX` 解调器；RF 噪声使用 `NOISE_RATE` 请求率、`NOISE_DURATION` 时长和 `DEMOD3_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
@@ -63,7 +70,7 @@ RF 相位/响应/带宽使用 `DEMOD3_RATE` 请求率、`SCAN_POINT_DURATION_S` 
 历史页面支持星标、星标筛选、目录重命名和确认后永久删除本次数据，也可勾选多次完整分析的运行，将保存的 X 响应和灵敏度主谱叠加到双面板图中，
 自定义英文图例并导出 PNG/PDF。对比过程只读历史结果，拟合回退会明确提示。
 
-当前正式入口为 `rf-sensitivity-aw`（`typed_workflow`、schema version 2），
+当前正式入口为 `rf-sensitivity-aw`（`typed_workflow`、schema version 3），
 数据类型和原 Python 文件名保留。Notebook 是历史实验入口，本次没有迁移。
 可编辑流程图源文件见 [RF 灵敏度（DirectAW）.excalidraw](../lab_workflows/experiment_modules/rf_sensitivity_direct_aw/RF%20灵敏度（DirectAW）.excalidraw)，运行页提供下载。
 当前页面没有架构 Tab。
@@ -133,7 +140,7 @@ GUI「保存参数与布局」实际写入上述 YAML 和实验目录配置中�
 
 A10 内编辑 `RF_INPUT_ROUTE`、`RF_AUX_OUTPUT_IDX`、`RF_PHYSICAL_INPUT_SOURCE` 和 `DEMOD3_IDX`；修改并应用后使 A10 及后继失效，须显式重跑，重跑另建运行目录。内部线路的物理输入项不生效。缺少新线路键的旧参数按 HF2 AuxOut2 → Signal Input2 解释；历史填回保留该接线，使用 MFLI 时需明确改选辅助输入，否则预检拒绝。
 
-稳定实验 ID、schema 2、`DEMOD3_*` 参数键、`demod3_*` 数据键和 `noise_D3_*` 文件名保留。新采集文件的 `demod_idx` 保存真实 RF 索引，分析按运行快照 `DEMOD3_IDX` 核对，旧快照缺该键时按 3。配置与历史摘要保存真实 `signal_chain`，不从当前默认值重建历史接线。
+稳定实验 ID、原始数据格式和 schema 2 历史兼容、`DEMOD3_*` 参数键、`demod3_*` 数据键和 `noise_D3_*` 文件名保留。新采集文件的 `demod_idx` 保存真实 RF 索引，分析按运行快照 `DEMOD3_IDX` 核对，旧快照缺该键时按 3。配置与历史摘要保存真实 `signal_chain`，不从当前默认值重建历史接线。
 
 ## 参数含义与预检
 
@@ -149,8 +156,8 @@ A10 内编辑 `RF_INPUT_ROUTE`、`RF_AUX_OUTPUT_IDX`、`RF_PHYSICAL_INPUT_SOURCE
 | `LINEWIDTH_MODE` | 线宽模式：`frequency_sweep` 在 A14 后执行 A13B，以 R 均值的洛伦兹拟合线宽回补；`dispersive_equivalent` 沿用色散拟合等效 HWHM，完整运行不包含 A13B；当前值见默认参数文件 |
 | `BW_FREQ_START` / `BW_FREQ_STOP` / `BW_FREQ_POINTS` | 带宽扫频窗口 Hz 与点数（至少 5）；窗口必须完整包含 `Z_RF_FREQ`，起点与终点须为共同触发频率的正整数倍；步进由 `(BW_FREQ_STOP - BW_FREQ_START) / (BW_FREQ_POINTS - 1)` 确定，无共同触发频率整数倍限制 |
 | `TEMP_GROUP_SIZE` | 温控分组点数：相位/幅度扫描与带宽扫频中每关闭一次温控连续采集的扫描点数，组间恢复温控 |
-| `RF_STEP_SETTLE_S` | RF 换点稳定等待，s：每次重新设置 Z RF 相位、幅度或频率（重臂）后等待（原键 `RF_SETTLE_TIME`，加载时自动迁移） |
-| `TEMP_OFF_SETTLE_S` | 温控关闭后稳定等待，s：每次关闭温控后等待温控影响减小，XY 校相每轮重载波形后同样等待（原键 `XY_PHASE_SETTLE_TIME`，加载时自动迁移；旧键 `RESPONSE_N_AVG` / `RESPONSE_AVG_INTERVAL` 已删除并自动剥离） |
+| `SYSTEM_SETTLE_S` | RF 换点稳定等待，s：每次重新设置 Z RF 相位、幅度或频率（重臂）后等待（原键 `RF_SETTLE_TIME`，加载时自动迁移） |
+| `SYSTEM_SETTLE_S` | 温控关闭后稳定等待，s：每次关闭温控后等待温控影响减小，XY 校相每轮重载波形后同样等待（原键 `XY_PHASE_SETTLE_TIME`，加载时自动迁移；旧键 `RESPONSE_N_AVG` / `RESPONSE_AVG_INTERVAL` 已删除并自动剥离） |
 | `TEMP_SWITCH_ON_LAG_S` | 每个温控分组（末组不足分组点数也适用）或其他阶段恢复温控（置 5 V）后的等待，s |
 | `NOISE_N_AVG` / `NOISE_DURATION` / `NOISE_RATE` / `NOISE_NPERSEG` | 噪声记录数、s、请求 Sa/s 和 Welch 段长；计算 PSD 使用实际采样率 |
 | `ARB_WAVEFORM_FILE` / `AW_REPEAT_FREQ` | oc_sens 下的 `vN/waveforms/optimal_control_waveform.csv`；时间列为秒，AW 重复频率为 Hz；运行前必须选择版本 |
@@ -196,7 +203,7 @@ Y 为 `A(t) cos(2π f_Pump t + phase + quad)`；正交相差 90° 时 Y 是负 s
 | A02 | 设备连接与同资源复用 | A01 |
 | A03 | 参考时钟同步与严格回读 | A02 |
 | A04 | 初始输出设置 | A03 |
-| A05 | 温度稳定 | A04 |
+| A05 | 目标温度设置 | A04 |
 | A06 | Pump 载波与门控 | A05 |
 | A07 | XYZ 共同触发 | A06 |
 | A08 | Bell-Bloom / Demod0 校相 | A07 |
@@ -222,15 +229,15 @@ Y 为 `A(t) cos(2π f_Pump t + phase + quad)`；正交相差 90° 时 Y 是负 s
    XY 控制相位；每次保存诊断和实际波形。未收敛、低 R 或非有限读数立即停止后续测量。
    分步模式标为「质量未通过」、恢复温控，允许同连接重试；完整运行抛出原错误并自动安全收尾。
 4. 配置所选 RF 输入线路和响应滤波，开启 Z 校相幅度，按 φ、φ+180° 成对顺序扫描 Z RF Burst
-   相位；每点重臂后按 `RF_STEP_SETTLE_S` 等待，再以统一采集模块按每点采样时长采集 RF 解调器 R/X/Y 并逐点保存。
+   相位；每点重臂后按 `SYSTEM_SETTLE_S` 等待，再以统一采集模块按每点采样时长采集 RF 解调器 R/X/Y 并逐点保存。
    每完成一个温控分组（末组不足分组点数也算一组）
-   将温控恢复为 5 V 并按 `TEMP_SWITCH_ON_LAG_S` 等待，下一组开始前再置 0 V 并按 `TEMP_OFF_SETTLE_S` 等待后继续，避免温度持续下降。
+   将温控恢复为 5 V 并按 `TEMP_SWITCH_ON_LAG_S` 等待，下一组开始前再置 0 V 并按 `SYSTEM_SETTLE_S` 等待后继续，避免温度持续下降。
    扫描完成后用正交拟合（不设 R²/显著性门槛）选定最优 RF 触发相位，设为正 RF 相位基准并绘制
    `results/z_phase_scan.png`；拟合数值异常即停止。随后以共享步骤在该相位上校准
    RF 解调器，保存实际节点。
 5. 扫描 Z RF 幅度：与相位扫描节奏一致，按温控分组关闭温控、组间恢复。每点只用 `set_amplitude()`
    调幅，负 RF 将 Burst 相位加 180°（相对选定相位），零 RF 关闭输出/Burst；重臂后按
-   `RF_STEP_SETTLE_S` 等待，再以统一采集模块按每点采样时长采集 RF 解调器 R/X/Y，逐点保存均值、标准差与时序，
+   `SYSTEM_SETTLE_S` 等待，再以统一采集模块按每点采样时长采集 RF 解调器 R/X/Y，逐点保存均值、标准差与时序，
    相位取均值复矢量的角度。
 6. A14 在 Z RF 关闭后切换 RF 解调器到噪声滤波，按噪声请求率选择模块；DAQ 按通信回读率配置网格，Scope 按最近硬件档位记录，逐次保存最终速率和真实时间轴
    `sample.x` 并保存，每次记录后恢复温控。
@@ -366,7 +373,7 @@ X 响应使用原色散模型：
 扫频测线宽模式在本实验内提供真实频率域线宽，不替代独立
 `rf-sensitivity-direct-aw-frequency` 扫频实验的频率响应表征。
 
-分析器只接受完整采集且校相通过的 schema v2 新格式，先校验输入再写结果。旧格式、
+分析器只接受完整采集且校相通过的 schema v2/v3 新格式，先校验输入再写结果。旧格式、
 缺失响应点或噪声记录会明确拒绝；旧目录不会删除或改写，本次不兼容其数据内容。
 离线分析不读取仪器、不依赖当前波形 CSV 或当前默认参数。
 

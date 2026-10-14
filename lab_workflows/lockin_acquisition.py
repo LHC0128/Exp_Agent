@@ -20,6 +20,7 @@ _RESPONSE = (("响应", "RESPONSE_RATE_SA_S", "RESPONSE_DURATION_S", "DEMOD_IDX"
 ACQUISITION_STAGES = {
     "rf-sensitivity-aw": _DIRECT,
     "rf-sensitivity-aw-r": _DIRECT,
+    "rf-sensitivity-aw-known-noise": _DIRECT,
     "noise-spectrum-xy": _XY,
     "noise-spectrum-xy-v2": _XY,
     "noise-spectrum-xy-uncontrolled-probe-am": _XY,

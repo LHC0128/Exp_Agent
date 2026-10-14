@@ -17,17 +17,18 @@ from ...experiment_params import ExperimentParams, parameter
 
 @dataclass(slots=True)
 class RFSensitivityDirectAWParams(ExperimentParams):
-    schema_version: ClassVar[int] = 2
+    schema_version: ClassVar[int] = 3
     require_rf_integer_cycles: ClassVar[bool] = True
     scan_rf_phase: ClassVar[bool] = True
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RF_STEP_SETTLE_S': 0.3, 'TEMP_OFF_SETTLE_S': 0.5}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    system_settle_s: float = parameter(default=0.5, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="rf_sens_aw", external_name="RUN_TAG", label="运行标签", group="basic")
     rf_amp_start: float = parameter(default=-0.2, external_name="RF_AMP_START", label="RF 起始幅度", unit="Vpp", group="basic", safety_key="Z_magnetic_field")
     rf_amp_stop: float = parameter(default=0.2, external_name="RF_AMP_STOP", label="RF 终止幅度", unit="Vpp", group="basic", safety_key="Z_magnetic_field")
     rf_amp_points: int = parameter(default=81, external_name="RF_AMP_POINTS", label="RF 扫描点数", group="basic", minimum=2)
     temp_group_size: int = parameter(default=5, external_name="TEMP_GROUP_SIZE", label="温控分组点数", group="basic", minimum=1, description="RF 相位/幅度扫描与带宽扫频中每关闭一次温控连续采集的扫描点数；组间恢复温控并按温控恢复后等待。")
-    rf_step_settle_s: float = parameter(default=0.3, external_name="RF_STEP_SETTLE_S", label="RF 换点稳定等待", unit="s", group="basic", minimum=0, description="RF 相位/幅度扫描与带宽扫频中每次重新设置 Z RF 相位、幅度或频率（重臂）后的等待。")
-    temp_off_settle_s: float = parameter(default=0.5, external_name="TEMP_OFF_SETTLE_S", label="温控关闭后稳定等待", unit="s", group="basic", minimum=0, description="每次关闭温控后的等待，等温控影响减小；XY 校相每轮重载波形后同样等待该时长。")
     temp_switch_on_lag_s: float = parameter(default=0.5, external_name="TEMP_SWITCH_ON_LAG_S", label="温控恢复后等待", unit="s", group="basic", minimum=0, description="每个温控分组（末组不足分组点数也适用）或其他校相/采集阶段恢复温控后，等待的时间。")
     noise_n_avg: int = parameter(default=10, external_name="NOISE_N_AVG", label="噪声采集次数", group="basic", minimum=1)
     noise_duration: float = parameter(default=1.0, external_name="NOISE_DURATION", label="每次噪声时长", unit="s", group="basic", minimum=1e-6)

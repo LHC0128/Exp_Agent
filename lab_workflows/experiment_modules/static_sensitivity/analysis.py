@@ -18,8 +18,8 @@ ANALYSIS_VERSION = "static-dc-stages-v1"
 
 
 def analysis_block_reason(config):
-    if not isinstance(config, dict) or config.get("schema_version") != 3 or config.get("acquisition_method") != "dc_step":
-        return "仅支持版本 3 的连续逐点色散；旧格式目录仅可查看已有结果"
+    if not isinstance(config, dict) or config.get("schema_version") not in (3, 4) or config.get("acquisition_method") != "dc_step":
+        return "仅支持版本 3、4 的连续逐点色散；旧格式目录仅可查看已有结果"
     if config.get("experiment_id") not in (None, "static-sensitivity"):
         return "运行目录与静磁场实验不匹配"
     if config.get("completion_status") == "running":

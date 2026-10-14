@@ -112,13 +112,13 @@ def configure_temperature_control(
     progress: ProgressCallback | None = None,
     stability_waiter: Callable[..., float] | None = None,
 ) -> TemperatureControlStatus:
-    """配置 TEC；设备不可用时交由外部温控软件并继续实验。"""
+    """只下发目标温度；旧判稳关键字保留兼容，不启停 TEC 或等待温稳。"""
     validate_safety_limit("temperature", float(target_c))
     if tec is None:
         _report_temperature_warning(
             progress,
             (
-                "TEC 未连接，已跳过目标温度设置和稳定等待；"
+                "TEC 未连接，已跳过目标温度设置；"
                 f"请确认外部温控软件维持 {target_c:.2f} °C。"
             ),
         )
@@ -130,22 +130,9 @@ def configure_temperature_control(
         )
 
     tec.set_target_temperature(float(target_c), channel=channel)
-    tec.set_enable(True, channel=channel)
-    waiter = stability_waiter or wait_for_temperature_stable
-    actual = waiter(
-        tec,
-        float(target_c),
-        channel=channel,
-        tolerance_c=tolerance_c,
-        stable_reads=stable_reads,
-        poll_interval_s=poll_interval_s,
-        timeout_s=timeout_s,
-        cancellation=cancellation,
-        progress=progress,
-    )
     return TemperatureControlStatus(
         target_temperature_c=float(target_c),
-        actual_temperature_c=float(actual),
+        actual_temperature_c=None,
         controlled_by_experiment=True,
         control_source="tec103",
     )

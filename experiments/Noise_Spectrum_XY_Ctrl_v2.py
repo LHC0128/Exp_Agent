@@ -10,6 +10,7 @@
 # 如遇到显示问题，可尝试 %matplotlib inline 切换回静态模式
 
 from lab_workflows.steps import initialize_lockin_inputs
+from lab_workflows.steps.acquisition_window import DeferredAcquisitionWrites, acquisition_window
 from lab_workflows.devices import create_lockin
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 from pathlib import Path
@@ -22,6 +23,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import numpy as np
+from lab_workflows.steps import acquisition_window
 import yaml
 import time
 import json
@@ -46,6 +48,7 @@ from lockin_amplifier import (
 
 # 数据分析库
 # ========== 实验参数 ==========
+SYSTEM_SETTLE_S = 0.5  # 配置与温控门控共同稳定的采集前等待（秒）
 EXPERIMENT_TYPE = "Noise_Spectrum_XY_Ctrl"
 PURPOSE = "noise_spectroscopy"
 
@@ -69,7 +72,6 @@ PURPOSE = "noise_spectroscopy"
 AM_DC_START = 0.0          # AM DC 控制电压扫描起始 (V)
 AM_DC_STOP = 2.5         # AM DC 控制电压扫描终止 (V)，MOD Input 满量程
 AM_DC_POINTS = 251         # 扫描点数
-AM_DC_SETTLE_TIME = 0.5    # 每点等待稳定时间 (s)
 
 # ---- Pump 调制参数 ----
 PUMP_MOD_FREQ = 10e3       # Pump 调制频率 (Hz)
@@ -281,7 +283,7 @@ print(f"温度开关: ON ({FIXED_PARAMS['Temp_Switch']} V)")
 # ---- 5. 温度控制 ----
 validate_safety_limit("temperature", FIXED_PARAMS["temperature"])
 configure_temperature_control(
-    tec, FIXED_PARAMS["temperature"], tolerance_c=1.0, stable_reads=1
+    tec, FIXED_PARAMS["temperature"],
 )
 
 # ---- 6. Z 磁场关闭 ----
@@ -319,7 +321,7 @@ config = {
         "AM_DC_START_V": AM_DC_START,
         "AM_DC_STOP_V": AM_DC_STOP,
         "AM_DC_POINTS": AM_DC_POINTS,
-        "AM_DC_SETTLE_TIME_s": AM_DC_SETTLE_TIME,
+        "AM_DC_SETTLE_TIME_s": SYSTEM_SETTLE_S,
     },
     "xy_carrier_am": {
         "XY_CARRIER_FREQ_Hz": XY_CARRIER_FREQ,
@@ -387,7 +389,6 @@ print("\n✅ RF 开关方案配置完成")
 # 参考: Static_Magnetic_Field_Sensitivity.ipynb 相位校准流程
 # 校准时 XYZ 磁场均处于关闭状态，仅主磁场 B0 保持稳定
 print("\n关闭温度开关（相位校准前，消除温控磁场干扰）...")
-dg_temp.set_output(False, channel=2)
 
 # 确认 X/Y 补偿磁场处于关闭状态（尚未配置）
 print("确认 X/Y 补偿磁场关闭...")
@@ -420,20 +421,20 @@ print(f"解调器 0 已配置: rate={actual_rate:.0f} Sa/s, TC={HF2_DEMOD_TC*100
 
 # 自动相位校准
 print("正在进行相位校准...")
-calibrated_phase = demod.auto_calibrate_phase(
-    hfi, demod_idx=0, tolerance_deg=1.0, max_attempts=5, settle_time=0.2
-)
-print(f"相位校准完成: {calibrated_phase:.2f}°")
+with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+    calibrated_phase = demod.auto_calibrate_phase(
+        hfi, demod_idx=0, tolerance_deg=1.0, max_attempts=5, settle_time=SYSTEM_SETTLE_S
+    )
+    print(f"相位校准完成: {calibrated_phase:.2f}°")
 
-# 读一组样本验证
-sample = demod.read_demod_sample(hfi, demod_idx=0)
-print(f"校准后样本: R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
+    # 读一组样本验证
+    sample = demod.read_demod_sample(hfi, demod_idx=0)
+    print(f"校准后样本: R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
 
-time.sleep(2)
+    time.sleep(2)
 
-# 恢复温控
-print("恢复温度开关...")
-dg_temp.set_output(True, channel=2)
+    # 恢复温控
+    print("恢复温度开关...")
 time.sleep(0.5)
 
 # %% Cell 11
@@ -512,55 +513,53 @@ dg_am.setup_dc(CALIB_DC_VOLTAGE + MOD_OFFSET_Y, channel=2)
 time.sleep(0.3)
 print(f"AM DC 电压: {CALIB_DC_VOLTAGE}V + 偏置(X={MOD_OFFSET_X:.3f}V, Y={MOD_OFFSET_Y:.3f}V) (50% 载波幅度，用于校相)")
 
-# 关闭温控（消除温控线圈磁场对校相的干扰）
-dg_temp.set_output(False, channel=2)
-print("温度开关: OFF")
-
-# ---- 校准 CH1 相位 ----
-# 暂时关闭 CH2（dg_comp CH2 输出 + dg_am CH2），只开 CH1 读 HF2 相位
-print("\n校准 CH1 相位...")
 dg_comp.set_output(False, channel=2)
 dg_am.set_output(False, channel=2)
 dg_comp.set_output(True, channel=1)
-time.sleep(0.5)
+# 关闭温控（消除温控线圈磁场对校相的干扰）
+with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+    print("温度开关: OFF")
 
-for iteration in range(5):
-    sample = demod.read_demod_sample(hfi, demod_idx=0)
-    phase_offset = math.degrees(sample["theta"])  # atan2(y,x)，解调矢量角度
-    print(f"  CH1 迭代 {iteration+1}: theta = {phase_offset:.2f}°")
-    if abs(phase_offset) < 0.1:
-        print(f"  CH1 相位已收敛 (<0.1°)")
-        break
-    X_CARRIER_PHASE = (X_CARRIER_PHASE - phase_offset) % 360
-    dg_comp.set_phase_adjust(X_CARRIER_PHASE, channel=1)
-    time.sleep(0.5)
+    # ---- 校准 CH1 相位 ----
+    # 暂时关闭 CH2（dg_comp CH2 输出 + dg_am CH2），只开 CH1 读 HF2 相位
+    print("\n校准 CH1 相位...")
 
-print(f"\n  CH1 最终载波相位 = {X_CARRIER_PHASE:.2f}°")
+    for iteration in range(5):
+        sample = demod.read_demod_sample(hfi, demod_idx=0)
+        phase_offset = math.degrees(sample["theta"])  # atan2(y,x)，解调矢量角度
+        print(f"  CH1 迭代 {iteration+1}: theta = {phase_offset:.2f}°")
+        if abs(phase_offset) < 0.1:
+            print(f"  CH1 相位已收敛 (<0.1°)")
+            break
+        X_CARRIER_PHASE = (X_CARRIER_PHASE - phase_offset) % 360
+        dg_comp.set_phase_adjust(X_CARRIER_PHASE, channel=1)
+        time.sleep(SYSTEM_SETTLE_S)
 
-# ---- 在 CH1 相位已校准的基础上，开启 CH2 并修正其单独相位 ----
-# CH2 独立校相，使用参数 Y_CARRIER_PHASE 作为起始值
-print("\n校准 CH2 相位...")
-dg_comp.set_output(True, channel=2)
-dg_am.set_output(True, channel=2)
-dg_comp.set_phase_adjust(Y_CARRIER_PHASE, channel=2)
-time.sleep(0.3)
+    print(f"\n  CH1 最终载波相位 = {X_CARRIER_PHASE:.2f}°")
 
-for iteration in range(15):
-    sample = demod.read_demod_sample(hfi, demod_idx=0)
-    phase_offset = math.degrees(sample["theta"])
-    print(f"  CH2 迭代 {iteration+1}: theta = {phase_offset:.2f}°")
-    if abs(phase_offset) < 0.1:
-        print(f"  CH2 相位已收敛 (<0.1°)")
-        break
-    Y_CARRIER_PHASE = (Y_CARRIER_PHASE - phase_offset) % 360
+    # ---- 在 CH1 相位已校准的基础上，开启 CH2 并修正其单独相位 ----
+    # CH2 独立校相，使用参数 Y_CARRIER_PHASE 作为起始值
+    print("\n校准 CH2 相位...")
+    dg_comp.set_output(True, channel=2)
+    dg_am.set_output(True, channel=2)
     dg_comp.set_phase_adjust(Y_CARRIER_PHASE, channel=2)
-    time.sleep(0.5)
+    time.sleep(SYSTEM_SETTLE_S)
 
-print(f"\n  CH2 最终载波相位 = {Y_CARRIER_PHASE:.2f}°")
-print(f"  实际相位差 = {(Y_CARRIER_PHASE - X_CARRIER_PHASE) % 360:.2f}°")
+    for iteration in range(15):
+        sample = demod.read_demod_sample(hfi, demod_idx=0)
+        phase_offset = math.degrees(sample["theta"])
+        print(f"  CH2 迭代 {iteration+1}: theta = {phase_offset:.2f}°")
+        if abs(phase_offset) < 0.1:
+            print(f"  CH2 相位已收敛 (<0.1°)")
+            break
+        Y_CARRIER_PHASE = (Y_CARRIER_PHASE - phase_offset) % 360
+        dg_comp.set_phase_adjust(Y_CARRIER_PHASE, channel=2)
+        time.sleep(SYSTEM_SETTLE_S)
 
-# 恢复温控
-dg_temp.set_output(True, channel=2)
+    print(f"\n  CH2 最终载波相位 = {Y_CARRIER_PHASE:.2f}°")
+    print(f"  实际相位差 = {(Y_CARRIER_PHASE - X_CARRIER_PHASE) % 360:.2f}°")
+
+    # 恢复温控
 print("\n温度开关: ON (已恢复)")
 
 print(f"\n✅ 分通道校相完成")
@@ -582,7 +581,7 @@ print(f"DC 电压扫描: {AM_DC_START} V → {AM_DC_STOP} V, {AM_DC_POINTS} 点"
 print(f"  → Out = Carrier × (V_DC / 1.3V), Ω_Ctrl ∝ V_DC")
 print(f"MOD 偏置补偿: X={MOD_OFFSET_X:.3f}V, Y={MOD_OFFSET_Y:.3f}V (独立!)")
 print(f"DAQ 采集: 时长 {HF2_DAQ_DURATION}s, TC={HF2_DAQ_TC*1e6:.2f}μs, rate={HF2_DAQ_RATE:.0f} Sa/s")
-total_est = AM_DC_POINTS * (AM_DC_SETTLE_TIME + HF2_DAQ_DURATION + 2.0)
+total_est = AM_DC_POINTS * (SYSTEM_SETTLE_S + HF2_DAQ_DURATION + 2.0)
 print(f"预计耗时: {total_est:.0f}s ≈ {total_est/3600:.1f}h")
 print()
 
@@ -616,45 +615,38 @@ try:
         dg_am.setup_dc(actual_dc_x, channel=1)
         dg_am.setup_dc(actual_dc_y, channel=2)
         # 关闭温度开关（消除温控磁场干扰）
-        dg_temp.set_output(False, channel=2)
+        with DeferredAcquisitionWrites(restore=lambda: dg_temp.set_output(True, channel=2)) as pending:
+            dg_temp.set_output(False, channel=2)
 
-        # 读取当前温度
-        try:
-            temp_now = tec.get_temperature(channel=1)
-            pbar.set_postfix_str(f"V_DC={dc_v:.4f}V, T={temp_now:.1f}°C")
-        except:
-            pbar.set_postfix_str(f"V_DC={dc_v:.4f}V")
-
-        # 配置 HF2 DAQ 采集（每点独立配置）
-        daq_cfg = DAQConfig(
-            device=MAPPING["lockin_r"]["device_id"],
-            trigger_type=0,                  # 连续模式
-            duration=HF2_DAQ_DURATION,
-            grid_cols=grid_cols,
-            grid_rows=1,
-            grid_mode=2,
-            signal_paths=["sample.y"],       # 采集 Y 信号
-        )
-        # 等待系统稳定
-        time.sleep(0.1)
-        # 采集解调时域信号
-        try:
-            results = daq.acquire_data(
-                hfi, daq_cfg, demod_idx=0,
-                actual_rate=actual_rate_daq, cancellation_check=check_cancelled, requested_rate=HF2_DAQ_RATE, timeout=HF2_DAQ_DURATION + 10.0,
+            # 配置 HF2 DAQ 采集（每点独立配置）
+            daq_cfg = DAQConfig(
+                device=MAPPING["lockin_r"]["device_id"],
+                trigger_type=0,                  # 连续模式
+                duration=HF2_DAQ_DURATION,
+                grid_cols=grid_cols,
+                grid_rows=1,
+                grid_mode=2,
+                signal_paths=["sample.y"],       # 采集 Y 信号
             )
-            actual_rate_daq = result_rate(results, actual_rate_daq)
-            waveform = results[0].values
-        except Exception as e:
-            tqdm.write(f"  [{i:4d}/{AM_DC_POINTS}] V_DC={dc_v:.4f}V: DAQ 采集失败: {e}")
-            waveform = np.array([np.nan])
+            # 等待系统稳定
+            time.sleep(SYSTEM_SETTLE_S)
+            # 采集解调时域信号
+            try:
+                results = daq.acquire_data(
+                    hfi, daq_cfg, demod_idx=0,
+                    actual_rate=actual_rate_daq, cancellation_check=check_cancelled, requested_rate=HF2_DAQ_RATE, timeout=HF2_DAQ_DURATION + 10.0,
+                )
+                actual_rate_daq = result_rate(results, actual_rate_daq)
+                waveform = results[0].values
+            except Exception as e:
+                tqdm.write(f"  [{i:4d}/{AM_DC_POINTS}] V_DC={dc_v:.4f}V: DAQ 采集失败: {e}")
+                waveform = np.array([np.nan])
 
-        # 保存原始波形（.npy 二进制格式）
-        np.save(raw_dir / f"waveform_C{i:04d}.npy", waveform)
-        save_acquisition_metadata(raw_dir / f"waveform_C{i:04d}.npy", results)
+            # 保存原始波形（.npy 二进制格式）
+            pending.add(np.save, raw_dir / f"waveform_C{i:04d}.npy", waveform)
+            pending.add(save_acquisition_metadata, raw_dir / f"waveform_C{i:04d}.npy", results)
 
-        # 恢复温度开关
-        dg_temp.set_output(True, channel=2)
+            # 恢复温度开关
         time.sleep(3)
 
         pbar.update(1)

@@ -19,10 +19,9 @@ ACQUISITION = (
     Stage("A12", "生成与上传 AM 噪声任意波", "噪声激励", ("A11",), (*AM_NOISE, *Z_NOISE)),
     replace(SINE_STAGES[10], id="A13", dependencies=("A12",)),
     replace(SINE_STAGES[11], id="A14", title="AM 噪声 ON/OFF 配对扫描", dependencies=("A13",),
-            parameters=(*SINE_STAGES[11].parameters, "INJECTION_SETTLE_S", "Z_NOISE_SETTLE_S"),
             artifacts=("experiment_config.yaml", "raw/control_scan_axes.npz", "raw/probe_am_noise_waveform.npy",
                        "raw/controlled_z_noise_waveform.npy", "raw/pair_timing.jsonl", "raw/waveform_C*_{off,on}.npy"),
-            display_parameters=(*SINE_STAGES[11].display_parameters, "INJECTION_SETTLE_S", "Z_NOISE_SETTLE_S")),
+            display_parameters=SINE_STAGES[11].display_parameters),
     replace(SINE_STAGES[12], id="A15", dependencies=("A14",)),
     Stage(FINISH_ID, "安全收尾 / 结束会话", "扫描与结束", ()),
 )

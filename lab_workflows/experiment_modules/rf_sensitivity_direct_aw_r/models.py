@@ -10,6 +10,10 @@ class RFSensitivityDirectAWRParams(RFSensitivityDirectAWParams):
     require_rf_integer_cycles: ClassVar[bool] = False
     scan_rf_phase: ClassVar[bool] = False
 
+    schema_version: ClassVar[int] = 3
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RF_STEP_SETTLE_S': 0.3, 'TEMP_OFF_SETTLE_S': 0.5}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    system_settle_s: float = parameter(default=0.5, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="rf_sens_aw_r", external_name="RUN_TAG", label="运行标签", group="basic")
     z_rf_freq: float = parameter(default=3020.0, external_name="Z_RF_FREQ", label="R 响应扫描频率", unit="Hz", group="basic", minimum=1e-6)
     z_rf_noise_freq: float = parameter(default=3000.0, external_name="Z_RF_NOISE_FREQ", label="RF 解调器校相 / X 噪声频率", unit="Hz", group="basic", minimum=1e-6)

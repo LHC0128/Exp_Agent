@@ -17,9 +17,12 @@ class DetectionChainFrequencyResponseParams(ExperimentParams):
     用于标定 BPD + HF2 联合频率响应。
     """
     
-    schema_version: ClassVar[int] = 1
+    schema_version: ClassVar[int] = 2
     
     # 基础参数
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'AM_SETTLE_TIME_S': 1.0, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    system_settle_s: float = parameter(default=1.0, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(
         default="freq_resp",
         external_name="RUN_TAG",
@@ -56,25 +59,7 @@ class DetectionChainFrequencyResponseParams(ExperimentParams):
         description="扫描频率点数，推荐 2-3 kHz 步进"
     )
     
-    am_settle_time_s: float = parameter(
-        default=1.0,
-        external_name="AM_SETTLE_TIME_S",
-        label="每点稳定等待",
-        unit="s",
-        group="basic",
-        minimum=0.1,
-        description="改变 AM 频率后的稳定等待时间"
-    )
 
-    temp_switch_off_lead_s: float = parameter(
-        default=0.1,
-        external_name="TEMP_SWITCH_OFF_LEAD_S",
-        label="温控关闭后等待",
-        unit="s",
-        group="advanced",
-        minimum=0.0,
-        description="每点关闭温控后的等待时间；随后继续等待 AM 频率稳定"
-    )
 
     temp_switch_on_lag_s: float = parameter(
         default=1.0,

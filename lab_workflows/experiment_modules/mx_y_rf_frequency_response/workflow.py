@@ -7,6 +7,7 @@ R → 温控开 → 等待”的顺序执行，std(R) 超过阈值时保存后�
 """
 
 from __future__ import annotations
+from ...steps.acquisition_window import acquisition_window
 
 from lab_workflows.lockin_compatibility import require_lockin_compatibility
 import time
@@ -110,25 +111,15 @@ def _temperature_gated_acquire(
     settle_time_s: float,
     acquire: Callable[[], Any],
 ) -> Any:
-    """按“设置 Y RF→温控关→等待→采集→温控开→等待”执行。"""
+    """配置后关温控、统一等待、读入内存，任何退出路径先恢复温控。"""
     check_cancelled()
     set_y_rf()
-    set_temperature_switch(
-        devices["temp_switch"],
-        False,
-        channel=channels["temp_switch"],
-    )
-    try:
-        _sleep(params.temp_switch_off_lead_s)
-        _sleep(settle_time_s)
+    def set_enabled(enabled):
+        set_temperature_switch(devices["temp_switch"], enabled, channel=channels["temp_switch"])
+        if enabled:
+            _uncancellable_sleep(params.temp_switch_on_lag_s)
+    with acquisition_window(set_enabled, _sleep, params.system_settle_s):
         return acquire()
-    finally:
-        set_temperature_switch(
-            devices["temp_switch"],
-            True,
-            channel=channels["temp_switch"],
-        )
-        _uncancellable_sleep(params.temp_switch_on_lag_s)
 
 
 def _save_point(
@@ -271,7 +262,7 @@ def _acquire_frequency_response(
                         float(amplitude),
                     )
                 ),
-                settle_time_s=params.frequency_settle_time_s,
+                settle_time_s=params.system_settle_s,
                 duration_s=params.frequency_duration_s,
                 actual_rate=actual_rate,
                 device_id=device_id,

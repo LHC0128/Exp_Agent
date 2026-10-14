@@ -1,6 +1,7 @@
 """Mx Z 最优控制 XY 补偿偏置 RF 灵敏度参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 from dataclasses import dataclass
 
@@ -17,8 +18,11 @@ class MxZOptimalControlXYRFSensitivityParams(
 ):
     """固定一次 RF 校相，并在 XY DC 补偿网格上测量 RF 灵敏度。"""
 
-    schema_version = 1
+    schema_version = 2
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.1, 'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     noise_rf_enabled: bool = parameter(
         default=False, external_name="NOISE_RF_ENABLED",
         label="未使用噪声 RF 开关", visible=False,

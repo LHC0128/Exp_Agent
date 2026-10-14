@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from ...common import validate_safety_limit
 from ...experiment_params import ExperimentParams, parameter
@@ -17,8 +17,11 @@ LinewidthMode = Literal["frequency_sweep", "amplitude_equivalent"]
 class MxYRFParams(ExperimentParams):
     """主场/Pump 沿 Z、Probe 沿 X、待测 RF 沿 Y。"""
 
-    schema_version = 2
+    schema_version = 3
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.3, 'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.3, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="mx_y_rf", external_name="RUN_TAG", label="运行标签", group="basic")
     linewidth_mode: LinewidthMode = parameter(
         default="amplitude_equivalent",
@@ -31,7 +34,6 @@ class MxYRFParams(ExperimentParams):
     y_rf_amp_start_vpp: float = parameter(default=-0.2, external_name="Y_RF_AMP_START_VPP", label="Y RF 起始带符号幅度", unit="Vpp", group="basic", minimum=-2.0, maximum=2.0)
     y_rf_amp_stop_vpp: float = parameter(default=0.2, external_name="Y_RF_AMP_STOP_VPP", label="Y RF 终止带符号幅度", unit="Vpp", group="basic", minimum=-2.0, maximum=2.0)
     y_rf_amp_points: int = parameter(default=81, external_name="Y_RF_AMP_POINTS", label="Y RF 幅度点数", group="basic", minimum=5)
-    response_settle_time_s: float = parameter(default=0.3, external_name="RESPONSE_SETTLE_TIME_S", label="幅度点稳定时间", unit="s", group="basic", minimum=0)
     response_duration_s: float = parameter(default=0.2, external_name="RESPONSE_DURATION_S", label="幅度点采样时间", unit="s", group="basic", minimum=0.001)
     y_rf_nt_per_vpp: float = parameter(default=0.0, external_name="Y_RF_NT_PER_VPP", label="Y RF 线圈标定系数", unit="nT/Vpp", group="basic", minimum=0)
 
@@ -42,7 +44,6 @@ class MxYRFParams(ExperimentParams):
     frequency_stop_hz: float = parameter(default=12000.0, external_name="FREQUENCY_STOP_HZ", label="模式1扫频终点", unit="Hz", group="basic", minimum=0.001)
     frequency_points: int = parameter(default=201, external_name="FREQUENCY_POINTS", label="模式1扫频点数", group="basic", minimum=5)
     frequency_rf_amplitude_vpp: float = parameter(default=0.01, external_name="FREQUENCY_RF_AMPLITUDE_VPP", label="模式1扫频 RF 幅度", unit="Vpp", group="basic", minimum=0, maximum=2.0, safety_key="rf_coil")
-    frequency_settle_time_s: float = parameter(default=0.05, external_name="FREQUENCY_SETTLE_TIME_S", label="模式1频点稳定时间", unit="s", group="advanced", minimum=0)
     frequency_duration_s: float = parameter(default=0.1, external_name="FREQUENCY_DURATION_S", label="模式1频点采样时间", unit="s", group="advanced", minimum=0.001)
 
     noise_n_avg: int = parameter(default=10, external_name="NOISE_N_AVG", label="噪声平均次数", group="basic", minimum=1)
@@ -59,12 +60,7 @@ class MxYRFParams(ExperimentParams):
     response_time_constant_s: float = parameter(default=0.001, external_name="RESPONSE_TIME_CONSTANT_S", label="响应时间常数", unit="s", group="advanced", minimum=0)
     response_demod_order: int = parameter(default=4, external_name="RESPONSE_DEMOD_ORDER", label="响应解调阶数", group="advanced", minimum=1)
 
-    temp_switch_off_lead_s: float = parameter(default=0.1, external_name="TEMP_SWITCH_OFF_LEAD_S", label="温控关闭后等待", unit="s", group="advanced", minimum=0)
     temp_switch_on_lag_s: float = parameter(default=1.0, external_name="TEMP_SWITCH_ON_LAG_S", label="温控恢复后等待", unit="s", group="advanced", minimum=0)
-    temperature_tolerance_c: float = parameter(default=1.0, external_name="TEMPERATURE_TOLERANCE_C", label="温度稳定容差", unit="°C", group="advanced", minimum=0)
-    temperature_stable_reads: int = parameter(default=1, external_name="TEMPERATURE_STABLE_READS", label="温度连续稳定读数", group="advanced", minimum=1)
-    temperature_poll_interval_s: float = parameter(default=5.0, external_name="TEMPERATURE_POLL_INTERVAL_S", label="温度轮询间隔", unit="s", group="advanced", minimum=0.1)
-    temperature_timeout_s: float = parameter(default=1200.0, external_name="TEMPERATURE_TIMEOUT_S", label="温度稳定超时", unit="s", group="advanced", minimum=1)
 
     pump_carrier_frequency_hz: float = parameter(default=100e6, external_name="PUMP_CARRIER_FREQUENCY_HZ", label="Pump AOM 载波频率", unit="Hz", group="advanced", minimum=1)
     pump_carrier_amplitude_vpp: float = parameter(default=0.18, external_name="PUMP_CARRIER_AMPLITUDE_VPP", label="Pump AOM 载波幅度", unit="Vpp", group="advanced", minimum=0, maximum=0.18, safety_key="Pump_modulation")

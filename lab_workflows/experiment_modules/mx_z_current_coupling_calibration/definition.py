@@ -19,7 +19,7 @@ DEFINITION = ExperimentDefinition(
     category="calibration",
     family="z-field-calibration",
     variant="mx-current-sense",
-    description='以采样电阻电压重建实际线圈电流，并标定其对应的 Z 控制耦合强度。锁相设备在设备库中全系统统一选择；启动前检查完整扫频窗口是否兼容。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。',
+    description=('以采样电阻电压重建实际线圈电流，并标定其对应的 Z 控制耦合强度。锁相设备在设备库中全系统统一选择；启动前检查完整扫频窗口是否兼容。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
     data_type="Mx_Z_Current_Coupling_Calibration",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器", "SDS"),
     required_mapping_keys=(
@@ -41,7 +41,7 @@ DEFINITION = ExperimentDefinition(
         "实测阻值和额定功率未填写时预检失败。",
         "采样电阻电压仅用于实际电流重建，不把示波器地接到浮置高端。",
     ),
-    schema_version=MxZCurrentCouplingCalibrationParams.schema_version,
+    schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,
     preflight_runner=ADAPTER.preflight,

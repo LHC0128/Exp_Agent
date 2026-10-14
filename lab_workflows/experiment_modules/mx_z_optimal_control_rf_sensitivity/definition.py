@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-z-optimal-control",
     description=(
-        '按配置启停 GS200 主场，并叠加 Z 向周期最优控制；以 X DC 和 Y RF 偏置平衡 XY 剩磁场；校相幅度非零时测量 RF 灵敏度，校相幅度为零时保持 Y DC 补偿并扫描 Z 控制相位。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
+        ('按配置启停 GS200 主场，并叠加 Z 向周期最优控制；以 X DC 和 Y RF 偏置平衡 XY 剩磁场；校相幅度非零时测量 RF 灵敏度，校相幅度为零时保持 Y DC 补偿并扫描 Z 控制相位。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
     ),
     data_type="Mx_Z_Optimal_Control_RF_Sensitivity",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
@@ -48,7 +48,7 @@ DEFINITION = ExperimentDefinition(
         "Pump/Probe、Pump 载波/门控和 锁相放大器 设置保留；正常结束只断开 TEC。",
         "闭环冻结波形的完整 Z 电压范围、X DC 和 Y RF 的 offset±Vpp/2 包络均在输出前执行安全校验。",
     ),
-    schema_version=MxZOptimalControlRFParams.schema_version,
+    schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,
     preflight_runner=ADAPTER.preflight,

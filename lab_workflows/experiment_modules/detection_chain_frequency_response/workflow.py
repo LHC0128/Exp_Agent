@@ -1,319 +1,238 @@
-"""探测链路频率响应标定采集工作流。"""
+# %% [markdown]
+# # 探测链路频率响应标定：共享模块编排与分步会话
+# 导入只声明接口；硬件连接只发生在执行模块时。
 
-from __future__ import annotations
-
-from lab_workflows.steps import initialize_lockin_inputs
-from lab_workflows.devices import create_lockin
-from lab_workflows.lockin_compatibility import require_lockin_compatibility
-import time
+# %% 导入
 from pathlib import Path
+from uuid import uuid4
 
-import numpy as np
-import yaml
-from scipy import signal
-from lockin_amplifier import DAQConfig, DemodulatorConfig, HF2Instrument, OscillatorConfig, SignalInputConfig, daq, demod
-from tec_controller import TECInstrument
-
-from ...common import WorkflowCancelled, find_project_root, load_mapping, load_safety_limits, validate_safety_limit
+from ...common import find_project_root
 from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
+from ...instrument_config import instrument_config_snapshot
 from ...steps import (
-    DGChannelShutdown, DeviceSession, DisconnectTarget, TemperatureSwitchRestore,
-    configure_temperature_control, connect_signal_generator_routes,
-    create_run_directory, run_safety_shutdown, set_temperature_switch,
-    synchronize_connected_clocks, temperature_gated_acquire,
+    DGChannelShutdown,
+    DisconnectTarget,
+    TemperatureSwitchRestore,
+    run_safety_shutdown,
 )
 from .models import DetectionChainFrequencyResponseParams
-from lockin_amplifier import result_rate, acquisition_metadata, save_acquisition_metadata
+from . import preparation, acquisition
+from .stages import ACQUISITION, initial_states, invalidate, validate_selection
+from ..noise_spectrum_xy.state_io import write_state
 
 
-class _RuntimeCancellation:
-    """将 GUI 取消请求传给温度稳定等待。"""
+class Workflow:
+    """一个子进程持有一个设备会话；阶段状态不等同于历史数据。"""
 
-    def raise_if_cancelled(self) -> None:
-        check_cancelled()
+    acquisition_stages = ACQUISITION
+    finish_id = "A08"
+    preflight = staticmethod(preparation.preflight)
+    invalidate = staticmethod(invalidate)
+    validate_selection = staticmethod(validate_selection)
+    always_shutdown = False
 
+    def __init__(self, params, *, project_root=None, session_id=None):
+        self.root = Path(project_root).resolve() if project_root else find_project_root(Path(__file__).parent)
+        self.params, self.mapping, self.limits = self.preflight(params, self.root)
+        self.config_revision = self._configuration_revision()
+        self.session_id = session_id or uuid4().hex
+        self.revision = 0
+        self.states = initial_states(self.acquisition_stages)
+        self.devices = {}
+        self.channels = {}
+        self.connection = None
+        self.clock_sources = {}
+        self.temperature_control = None
+        self.tec_connection_error = None
+        self.hf2_configuration = None
+        self.actual_rate = None
+        self.run_dir = None
+        self.run_directory = None
+        self.current_step = None
+        self.closed = False
+        self.outputs = {key: "未知" for key in ("AOM 载波", "AOM AM", "温控", "Pump 光", "Probe 光")}
+        self.shutdown = None
+        self.clock_failed = False
+        self.outputs_started = False
 
-def _wait(seconds: float) -> None:
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        check_cancelled()
-        time.sleep(min(0.1, deadline - time.monotonic()))
+    def _configuration_revision(self):
+        snapshot = instrument_config_snapshot(self.root)
+        return (snapshot["device_library_revision"], snapshot["physical_mapping_revision"],
+                (self.root / "params/safety_limits.yaml").read_bytes())
 
+    def snapshot(self):
+        return dict(session_id=self.session_id, revision=self.revision,
+            status="closed" if self.closed else "running" if self.current_step else "waiting",
+            parameters=self.params.to_external(), steps=self.states, current_step=self.current_step,
+            run_id=self.run_dir.name if self.run_dir else None, outputs=self.outputs,
+            output_source="最近成功模块的写入结果；未经额外回读",
+            demod_mode="acquisition" if self.actual_rate else "unknown",
+            safety_shutdown=self.shutdown, clock_sources=self.clock_sources,
+            daq_settings=dict(actual_rate_sa_s=self.actual_rate) if self.actual_rate else None)
 
-def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | None = None) -> Path:
-    """连接映射设备，采集 HF2 Y 波形及频率响应。"""
-    root = project_root or find_project_root()
-    errors = params.validate(root)
-    if errors:
-        raise ValueError("；".join(errors))
-    mapping, limits = load_mapping(root), load_safety_limits(root)
-    require_lockin_compatibility('detection-chain-frequency-response', params.to_external(), mapping=mapping)
-    for key, value in (
-        ("Pump_laser_power", params.pump_laser_power_v),
-        ("Probe_laser_power", params.probe_laser_power_v),
-        ("temperature", params.temperature_c),
-        ("Probe_AOM_Carrier", params.probe_aom_carrier_amplitude_vpp),
-        ("Probe_AOM_AM", params.probe_aom_am_amplitude_vpp / 2),
-        ("Probe_AOM_AM", -params.probe_aom_am_amplitude_vpp / 2),
-    ):
-        validate_safety_limit(key, value, limits)
-    if params.hf2_demod_idx != int(mapping["lockin_r"]["demod_idx"]):
-        raise ValueError("HF2_DEMOD_IDX 与 lockin_r 映射不一致")
+    def publish(self, message="等待选择下一模块", level="info"):
+        snapshot = self.snapshot()
+        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        if self.run_dir:
+            write_state(self.run_dir / "acquisition_state.json", snapshot)
+        report_runtime_progress(self.current_step or "waiting", message,
+            data={"workflow_session": snapshot, "level": level})
 
-    directory = create_run_directory(
-        "Detection_Chain_Frequency_Response", params.run_tag, params.to_external(),
-        schema_version=params.schema_version, project_root=root,
-    )
-    directory.update_config(
-        experiment_id="detection-chain-frequency-response",
-        execution_mode="typed_workflow",
-        started_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
-        completion_status="running",
-    )
-    session = DeviceSession()
-    connected = False
-    aom = tec = temp_switch = None
-    channels: dict[str, int] = {}
-    status, failure = "failed", None
-    try:
-        report_runtime_progress("connect", "连接映射设备", 1)
-        check_cancelled()
-        tec_cfg = mapping["temperature"]
-        tec = session.connect_optional(
-            "tec", str(tec_cfg["resource"]),
-            lambda: TECInstrument(port=tec_cfg["resource"]),
-            device_label="TEC103",
-        )
-        aom, aom_channels = connect_signal_generator_routes(
-            session, "probe_aom", {
-                "carrier": ("Probe_AOM_Carrier", mapping["Probe_AOM_Carrier"]),
-                "am": ("Probe_AOM_AM", mapping["Probe_AOM_AM"]),
-            }, logical_channels={"carrier": 1, "am": 2},
-        )
-        laser, laser_channels = connect_signal_generator_routes(
-            session, "laser", {
-                "pump": ("Pump_laser_power", mapping["Pump_laser_power"]),
-                "probe": ("Probe_laser_power", mapping["Probe_laser_power"]),
-            }, logical_channels={"pump": 1, "probe": 2},
-        )
-        channels = {**aom_channels, **laser_channels}
-        temp_switch, temp_channels = connect_signal_generator_routes(
-            session, "temp_switch", {"temp": ("Temp_Switch", mapping["Temp_Switch"])},
-            logical_channels={"temp": 2},
-        )
-        channels["temp_switch"] = temp_channels["temp"]
-        hf2_cfg = mapping["lockin_r"]
-        hf2 = session.connect(
-            "hf2",
-            f"hf2://{hf2_cfg['device_id']}@{hf2_cfg.get('host', '127.0.0.1')}:{hf2_cfg.get('port', 8005)}",
-            lambda: create_lockin(hf2_cfg),
-        )
-        initialize_lockin_inputs(hf2)
-        clock_devices = {"probe_aom": aom, "laser": laser, "hf2": hf2}
-        clock_keys = {"probe_aom": "Probe_AOM_Carrier", "laser": "Pump_laser_power", "hf2": "lockin_r"}
-        clock_devices["temp_switch"] = temp_switch
-        clock_keys["temp_switch"] = "Temp_Switch"
-        clocks = synchronize_connected_clocks(clock_devices, mapping, clock_keys)
-        connected = True
-        directory.update_config(
-            clock_sources=clocks,
-            temperature_switch={
-                "gated_per_point": True,
-                "mapping_key": "Temp_Switch",
-                "off_lead_s": params.temp_switch_off_lead_s,
-                "on_lag_s": params.temp_switch_on_lag_s,
-            },
-        )
+    def recheck(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请结束会话后重新连接")
+        self.params, self.mapping, self.limits = self.preflight(self.params, self.root)
 
-        report_runtime_progress("setup", "设置 Pump/Probe 光功率并确认温控方式", 5)
-        check_cancelled()
-        laser.setup_dc(params.pump_laser_power_v, channel=channels["pump"])
-        laser.set_output(True, channel=channels["pump"])
-        laser.setup_dc(params.probe_laser_power_v, channel=channels["probe"])
-        laser.set_output(True, channel=channels["probe"])
-        set_temperature_switch(temp_switch, True, channel=channels["temp_switch"])
-        temp = configure_temperature_control(
-            tec, params.temperature_c, channel=int(tec_cfg["channel"]),
-            cancellation=_RuntimeCancellation(),
-        )
-        directory.update_config(
-            temperature_control=temp.to_dict(),
-            tec_connection_error=session.optional_connection_errors().get("tec"),
-        )
+    def update_parameters(self, values):
+        self.recheck()
+        merged = self.params.to_external() | values
+        unknown = set(values) - set(self.params.to_external())
+        if unknown:
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        new, mapping, limits = self.preflight(type(self.params).from_external(merged), self.root)
+        changed = {key for key, value in new.to_external().items() if value != self.params.to_external()[key]}
+        for stage in self.acquisition_stages:
+            if changed.intersection(stage.parameters):
+                self.invalidate(self.acquisition_stages, self.states, stage.id)
+        self.params, self.mapping, self.limits = new, mapping, limits
+        self.revision += 1
+        self.publish("参数已更新，受影响模块需要重新执行")
 
-        report_runtime_progress("setup", "配置 HF2 和 Probe AOM", 12)
-        demod.configure_signal_input(
-            hf2, SignalInputConfig(
-                input_index=0, range=params.hf2_signal_range_v,
-                diff=False,
-            ),
-        )
-        demod.configure_oscillator(
-            hf2, OscillatorConfig(osc_index=0, frequency=params.hf2_osc_freq_hz, source="manual"),
-        )
-        phase_shift_deg = float(hf2.get_double(f"{hf2.demod_path(params.hf2_demod_idx)}/phaseshift"))
-        actual_rate = demod.configure_demodulator(
-            hf2, DemodulatorConfig(
-                demod_index=params.hf2_demod_idx, enable=True,
-                rate=params.hf2_daq_rate_sa_s, input_channel=0,
-                osc_select=0, harmonic=1,
-                time_constant=params.hf2_daq_tc_s,
-                order=params.hf2_demod_order,
-                phase=phase_shift_deg,
-            ),
-         for_acquisition=True)
-        if actual_rate <= 0:
-            raise RuntimeError("HF2 返回无效采样率")
-        max_baseband = max(
-            abs(params.am_freq_start_hz - params.hf2_osc_freq_hz),
-            abs(params.am_freq_stop_hz - params.hf2_osc_freq_hz),
-        )
-        if max_baseband >= actual_rate / 2:
-            raise ValueError("HF2 实际采样率不足以覆盖扫描范围的基带频率")
-        directory.update_config(
-            actual_rates={"hf2_demod_sa_s": actual_rate},
-            hf2_configuration={
-                "demod_idx": params.hf2_demod_idx,
-                "osc_freq_hz": params.hf2_osc_freq_hz,
-                "input_range_v": params.hf2_signal_range_v,
-                "input_ac_coupling": False,
-                "input_differential": False,
-                "input_impedance_ohm": 1_000_000,
-                "input_channel": 0,
-                "oscillator_index": 0,
-                "oscillator_source": "manual",
-                "harmonic": 1,
-                "phase_shift_deg": phase_shift_deg,
-                "demod_order": params.hf2_demod_order,
-                "demod_time_constant_s": params.hf2_daq_tc_s,
-                "requested_rate_sa_s": params.hf2_daq_rate_sa_s,
-                "actual_rate_sa_s": actual_rate,
-            },
-        )
-        aom.set_output(False, channel=channels["carrier"])
-        aom.set_output(False, channel=channels["am"])
-        aom.setup_sine(
-            params.probe_aom_carrier_freq_hz, params.probe_aom_carrier_amplitude_vpp,
-            channel=channels["carrier"],
-        )
-        aom.set_mod_type("AM", channel=channels["carrier"])
-        aom.set_mod_am_source("EXT", channel=channels["carrier"])
-        aom.set_mod_state(True, channel=channels["carrier"])
-
-        freqs = np.linspace(params.am_freq_start_hz, params.am_freq_stop_hz, params.am_freq_points)
-        peaks, peak_freqs = np.full(freqs.size, np.nan), np.full(freqs.size, np.nan)
-        started = time.monotonic()
-        for index, freq in enumerate(freqs):
+    def execute(self, selected):
+        selected = self.validate_selection(self.acquisition_stages, self.states, selected)
+        if selected != [self.finish_id]:
+            self.recheck()
+        self.revision += 1
+        for item in selected:
+            if item == self.finish_id:
+                self.finish()
+                break
             check_cancelled()
-            report_runtime_progress("acquire", f"频率点 {index + 1}/{freqs.size}: {freq:g} Hz",
-                                    15 + 75 * index / freqs.size)
-            if index == 0:
-                aom.setup_sine(float(freq), params.probe_aom_am_amplitude_vpp,
-                               channel=channels["am"])
-            else:
-                aom.set_frequency(float(freq), channel=channels["am"])
-            config = DAQConfig(
-                device=hf2_cfg["device_id"], trigger_type=0,
-                duration=params.hf2_daq_duration_s,
-                grid_cols=max(8, int(round(actual_rate * params.hf2_daq_duration_s))),
-                grid_rows=1, grid_mode=2, signal_paths=["sample.y"],
-            )
-            def acquire_point():
-                return daq.acquire_data(
-                    hf2, config=config, demod_idx=params.hf2_demod_idx,
-                    actual_rate=actual_rate, cancellation_check=check_cancelled, requested_rate=params.hf2_daq_rate_sa_s,
-                    timeout=max(5.0, params.hf2_daq_duration_s + 3.0),
-                )
+            if item != "A01":
+                self.invalidate(self.acquisition_stages, self.states, item)
+            self.current_step = item
+            self.states[item] = {"status": "running", "error": ""}
+            try:
+                self.publish(next(stage.title for stage in self.acquisition_stages if stage.id == item))
+                self._execute_step(item)
+                if self.states[item]["status"] == "running":
+                    self.states[item]["status"] = "completed"
+            except BaseException as exc:
+                self.states[item] = {"status": "failed", "error": str(exc)}
+                self.outputs = {key: "未知" for key in self.outputs}
+                try:
+                    self.publish(str(exc), "error")
+                except Exception:
+                    pass
+                raise
+            finally:
+                self.current_step = None
+            self.publish(f"{item} {self.states[item]['status']}")
+            if self.states[item]["status"] != "completed":
+                break
+        return self.snapshot()
 
-            results = temperature_gated_acquire(
-                temp_switch=temp_switch, temp_channel=channels["temp_switch"],
-                off_settle_s=params.temp_switch_off_lead_s + params.am_settle_time_s,
-                on_settle_s=params.temp_switch_on_lag_s,
-                acquire=acquire_point, check_cancelled=check_cancelled,
-                sleep=_wait, set_temperature_switch=set_temperature_switch,
-                cancellation=_RuntimeCancellation(),
-            )
-            y = next((
-                np.asarray(item.values, dtype=float).reshape(-1)
-                for item in results
-                if str(item.signal_name).lower() == "y"
-                or str(item.signal_name).lower().endswith(".y")
-            ), None)
-            if y is None or y.size < 8:
-                raise RuntimeError(f"频率点 {index + 1} 未取得足够的 HF2 Y 数据")
-            np.save(directory.raw / f"waveform_{index:04d}.npy", y)
-            actual_rate = result_rate(results, actual_rate)
-            save_acquisition_metadata(directory.raw / f"waveform_{index:04d}.npy", results)
-            directory.update_config(acquisition=acquisition_metadata(results))
-            psd_freq, psd = signal.welch(
-                y, fs=actual_rate, nperseg=min(params.psd_nperseg, y.size),
-                scaling="density",
-            )
-            baseband = abs(float(freq) - params.hf2_osc_freq_hz)
-            window = np.abs(psd_freq - baseband) <= 2000
-            # 零基带信号是直流，Welch 默认去均值后无法用谱峰表示。
-            if baseband > 0 and np.any(window):
-                peak = np.flatnonzero(window)[int(np.argmax(psd[window]))]
-                peaks[index] = float(np.sqrt(psd[peak]))
-                peak_freqs[index] = float(psd_freq[peak])
-            remaining = (time.monotonic() - started) / (index + 1) * (freqs.size - index - 1)
-            report_runtime_progress(
-                "acquire", f"已完成 {index + 1}/{freqs.size} 个频率点",
-                15 + 75 * (index + 1) / freqs.size,
-                estimated_remaining_seconds=remaining,
-            )
+    def _execute_step(self, item):
+        if item == "A01":
+            self.recheck()
+        elif item == "A02":
+            if not self.devices:
+                self.devices, self.connection, self.channels = preparation.connect_instruments(self.mapping)
+        elif item == "A03":
+            self.clock_failed = False
+            try:
+                self.clock_sources = preparation.synchronize_devices(self.devices, self.mapping)
+            except BaseException:
+                self.clock_failed = True
+                raise
+        elif item == "A04":
+            self.outputs_started = True
+            self.temperature_control, self.tec_connection_error = preparation.configure_initial_outputs(
+                self.devices, self.channels, self.params, self.mapping, self.connection)
+            self.outputs.update({"温控": "ON", "Pump 光": "ON", "Probe 光": "ON"})
+        elif item == "A05":
+            self.actual_rate, self.hf2_configuration = acquisition.configure_hf2(self.devices, self.params)
+        elif item == "A06":
+            acquisition.configure_aom_carrier(self.devices, self.channels, self.params)
+            self.outputs.update({"AOM 载波": "AM·EXT", "AOM AM": "OFF"})
+        elif item == "A07":
+            if self.actual_rate is None:
+                raise ValueError("HF2 尚未配置，请先执行 A05 HF2 解调配置")
+            acquisition.acquire_scan(self)
+            self.states[item]["artifacts"] = [
+                "experiment_config.yaml", "raw/frequency_response.npz", "results/results_summary.yaml",
+                *[str(path.relative_to(self.run_dir)).replace("\\", "/")
+                    for path in sorted((self.run_dir / "raw").glob("waveform_*.npy"))]]
 
-        np.savez(
-            directory.raw / "frequency_response.npz",
-            am_frequencies_hz=freqs, peak_amplitudes=peaks,
-            peak_frequencies_hz=peak_freqs, actual_rate=actual_rate,
+    def shutdown_outputs(self):
+        aom = self.devices.get("aom")
+        return run_safety_shutdown(
+            dg_channels=(
+                DGChannelShutdown(aom, self.channels["carrier"], "Probe_AOM_Carrier", "Probe AOM 载波"),
+                DGChannelShutdown(aom, self.channels["am"], "Probe_AOM_AM", "Probe AOM AM"),
+            ) if aom is not None else (),
+            temperature_switch=TemperatureSwitchRestore(
+                self.devices["temp_switch"], self.channels["temp_switch"]),
+            disconnect_targets=(DisconnectTarget("TEC", self.devices["tec"]),),
         )
-        (directory.results / "results_summary.yaml").write_text(
-            yaml.safe_dump({
-                "am_frequencies_hz": freqs.tolist(),
-                "peak_amplitudes": peaks.tolist(),
-                "peak_frequencies_hz": peak_freqs.tolist(),
-                "actual_rate_sa_s": float(actual_rate),
-            }, allow_unicode=True),
-            encoding="utf-8",
-        )
-        directory.update_config(
-            data_files=[f"raw/waveform_{i:04d}.npy" for i in range(freqs.size)]
-            + ["raw/frequency_response.npz"],
-        )
-        status = "completed"
-        report_runtime_progress("complete", "采集完成", 100)
-    except WorkflowCancelled as exc:
-        status, failure = "cancelled", str(exc)
-        raise
-    except Exception as exc:
-        failure = str(exc)
+
+    def finish(self, failure=None):
+        if self.closed:
+            return
+        errors = []
+        try:
+            if self.devices and (not self.clock_failed or self.outputs_started or self.always_shutdown):
+                report = self.shutdown_outputs()
+                self.shutdown = report.to_dict()
+                errors.extend(report.errors)
+                if report.completed:
+                    # 温度开关恢复为 5 V ON；Pump/Probe 直流输出保持既有状态。
+                    self.outputs.update({"AOM 载波": "OFF", "AOM AM": "OFF", "温控": "ON"})
+                else:
+                    self.outputs.update({key: "未知" for key in self.outputs})
+            if self.devices and self.clock_failed:
+                self.connection.cleanup_connection_failure()
+        except Exception as exc:
+            errors.append(str(exc))
+        finally:
+            self.closed = True
+            self.current_step = None
+            self.revision += 1
+            if self.run_directory is not None:
+                try:
+                    self.run_directory.update_config(safety_shutdown=self.shutdown)
+                except OSError as exc:
+                    errors.append(f"写入安全收尾记录失败：{exc}")
+            self.states[self.finish_id] = {"status": "failed" if errors else "completed", "error": "；".join(errors)}
+            try:
+                self.publish("会话已结束" + ("；" + "；".join(errors) if errors else ""))
+            except Exception:
+                if failure is None:
+                    raise
+        if errors and failure is None:
+            raise RuntimeError("安全收尾未全部完成：" + "；".join(errors))
+
+
+# %% 运行入口
+def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | None = None) -> Path:
+    """完整采集和分步会话使用相同模块；直接调用会自动结束。"""
+    ctx = Workflow(params, project_root=project_root)
+    failure = None
+    try:
+        ctx.execute([stage.id for stage in ACQUISITION if stage.id != "A08"])
+        return ctx.run_dir
+    except BaseException as exc:
+        failure = exc
         raise
     finally:
-        if connected:
-            shutdown = run_safety_shutdown(
-                dg_channels=(
-                    DGChannelShutdown(aom, channels["carrier"], "Probe_AOM_Carrier", "Probe AOM 载波"),
-                    DGChannelShutdown(aom, channels["am"], "Probe_AOM_AM", "Probe AOM AM"),
-                ),
-                temperature_switch=TemperatureSwitchRestore(temp_switch, channels["temp_switch"]),
-                disconnect_targets=(DisconnectTarget("TEC", tec),),
-            )
-            directory.update_config(safety_shutdown=shutdown.to_dict())
-            if not shutdown.completed and status == "completed":
-                status, failure = "failed", "；".join(shutdown.errors)
-        else:
-            session.cleanup_connection_failure()
-        directory.update_config(completion_status=status, failure_reason=failure)
-    if status != "completed":
-        raise RuntimeError(failure or "安全关闭失败")
-    return directory.root
+        ctx.finish(failure)
 
 
-def main() -> int:
+def main():
     run(load_runtime_params(DetectionChainFrequencyResponseParams))
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

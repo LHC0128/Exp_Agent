@@ -142,7 +142,7 @@ def rig(tmp_path, monkeypatch, control_source):
     monkeypatch.setattr(preparation, "create_lockin", lambda config: FakeHF2(instance, device_id=config["device_id"]))
     monkeypatch.setattr(preparation, "TECInstrument", lambda resource: Mock())
     monkeypatch.setattr(preparation, "configure_temperature_control", lambda *args, **kwargs: SimpleNamespace(to_dict=lambda: {"control_source": "tec103"}))
-    monkeypatch.setattr(workflow, "create_run_directory", lambda data_type, tag, parameters, **kwargs: create_run_directory(data_type, tag, parameters, schema_version=2, project_root=tmp_path))
+    monkeypatch.setattr(workflow, "create_run_directory", lambda data_type, tag, parameters, **kwargs: create_run_directory(data_type, tag, parameters, schema_version=RFSensitivityDirectAWParams.schema_version, project_root=tmp_path))
     monkeypatch.setattr(workflow, "find_project_root", lambda: tmp_path)
 
     runtime_check = _helpers.check_cancelled
@@ -253,20 +253,20 @@ def test_complete_run_preserves_trigger_and_signed_phase(rig):
         and event[:3] == (temp["resource"], "setup_dc", temp["channel"])
     ]
     # 18 个点按五点分组：前三组之间先恢复温控，再关闭后继续下一组。
-    assert temp_switch_events == [5.0, 0.0] * 3
+    assert temp_switch_events == [0.0, *([5.0, 0.0] * 3)]
     after_scan_events = [
         event[3] for index, event in enumerate(rig.events)
         if scan_phase_indices[-1] < index < z_phase_indices[1 + len(rig.z_scan_phases)]
         and event[:3] == (temp["resource"], "setup_dc", temp["channel"])
     ]
-    assert after_scan_events == [5.0]
+    assert after_scan_events == [5.0, 5.0]
     # 幅度扫描与相位扫描节奏一致：3 点为一组（分组点数 5），组前关温控、组末恢复；噪声逐条开关。
     demod3_calib_end = z_phase_indices[1 + len(rig.z_scan_phases)]
     response_stage_events = [
         event[3] for index, event in enumerate(rig.events)
         if index > demod3_calib_end and event[:3] == (temp["resource"], "setup_dc", temp["channel"])
     ]
-    assert response_stage_events == [0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 5.0]
+    assert response_stage_events == [0.0, 5.0, 0.0, 5.0, 5.0, 0.0, 5.0, 5.0]
     assert config["hf2_response_snapshot"]["/dev18246/demods/3/adcselect"] == 3
     assert config["hf2_response_snapshot"]["/dev18246/auxouts/1/demodselect"] == 0
     assert config["hf2_response_snapshot"]["/dev18246/auxouts/1/outputselect"] == 1
@@ -429,10 +429,9 @@ def test_bandwidth_uses_phase_scan_temperature_groups(rig, monkeypatch):
                 for result in rig.acquire(hf2, config, **kwargs)]
     monkeypatch.setattr(acquisition.daq, "acquire_data", acquire)
     ctx.execute(["A13B"])
-    assert waits == [rig.params.temp_off_settle_s, *([rig.params.rf_step_settle_s] * 3),
-        rig.params.temp_switch_on_lag_s, rig.params.temp_off_settle_s, *([rig.params.rf_step_settle_s] * 3),
-        rig.params.temp_switch_on_lag_s, rig.params.temp_off_settle_s, rig.params.rf_step_settle_s,
-        rig.params.temp_switch_on_lag_s]
+    assert waits == [*([rig.params.system_settle_s] * 3), rig.params.temp_switch_on_lag_s,
+        *([rig.params.system_settle_s] * 3), rig.params.temp_switch_on_lag_s,
+        rig.params.system_settle_s, rig.params.temp_switch_on_lag_s]
     with np.load(ctx.directory.raw / "bandwidth_data.npz") as data:
         assert data["point_actual_rate_Sa_s"] == pytest.approx(point_rates)
         assert data["actual_rate_Sa_s"] == point_rates[-1]
@@ -496,7 +495,7 @@ def test_amplitude_scan_groups_temperature(rig):
     temp = rig.mapping["Temp_Switch"]
     z_phase_events = [index for index, event in enumerate(rig.events) if event[:3] == (z["resource"], "set_burst_phase", z["channel"])]
     stage_events = [event[3] for index, event in enumerate(rig.events) if index > z_phase_events[1 + 18] and event[:3] == (temp["resource"], "setup_dc", temp["channel"])]
-    assert stage_events == [0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 5.0]
+    assert stage_events == [0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 5.0, 0.0, 5.0, 5.0]
 
 
 @pytest.mark.parametrize("failure", ["low_r", "nonconverged", "nonfinite"])
@@ -635,7 +634,7 @@ def test_parameter_waveform_and_mapping_preflight(control_source, rig, monkeypat
     definition = get_experiment("rf-sensitivity-aw")
     assert "X_magnetic_field_AM" not in definition.required_mapping_keys
     schema = definition.schema()
-    assert schema["schema_version"] == 2
+    assert schema["schema_version"] == RFSensitivityDirectAWParams.schema_version
     assert not any(field["name"].startswith("Z_TRIGGER_") for field in schema["fields"])
     assert not any(field["name"] == "DEMOD3_ADC_SELECT" for field in schema["fields"])
     assert next(field for field in schema["fields"] if field["name"] == "DEMOD3_IDX")["read_only"] is False
@@ -647,9 +646,9 @@ def test_parameter_waveform_and_mapping_preflight(control_source, rig, monkeypat
     # 旧外部键自动迁移：稳定等待/采样时长改名，响应平均键剥离。
     legacy = RFSensitivityDirectAWParams.from_external({
         "RF_SETTLE_TIME": 0.12, "XY_PHASE_SETTLE_TIME": 0.6, "Z_PHASE_SCAN_DURATION_S": 0.3,
-        "RESPONSE_N_AVG": 5, "RESPONSE_AVG_INTERVAL": 0.2, **params.to_external()})
-    assert legacy.rf_step_settle_s == 0.12
-    assert legacy.temp_off_settle_s == 0.6
+        "RESPONSE_N_AVG": 5, "RESPONSE_AVG_INTERVAL": 0.2,
+        **{key: value for key, value in params.to_external().items() if key != "SYSTEM_SETTLE_S"}})
+    assert legacy.system_settle_s == 0.6
     assert legacy.scan_point_duration_s == 0.3
     assert legacy.temp_group_size == 5
 
@@ -735,3 +734,70 @@ def test_point_limit_error_lists_available_frequencies(control_source):
 def test_control_source_rejects_path_escape(control_source, source):
     with pytest.raises(ValueError, match="必须位于 oc_sens"):
         load_envelope(replace(control_source, arb_waveform_file=source), 16384)
+
+
+@pytest.mark.parametrize("stage,group_size", [("A11", 5), ("A13", 2), ("A13B", 3)])
+def test_real_group_config_settle_restore_and_slow_disk_order(rig, monkeypatch, stage, group_size):
+    """实际相位/幅度/带宽业务：组首配置在开启时，慢写盘不占关闭窗口。"""
+    rig.params = replace(rig.params, temp_group_size=group_size, linewidth_mode="frequency_sweep",
+                         z_rf_freq=3000.0, bw_freq_stop=3800.0, bw_freq_points=7)
+    ctx = workflow.Workflow(rig.params)
+    ids = [item.id for item in ACQUISITION]
+    ctx.execute(ids[:ids.index(stage)])
+    enabled, clock, windows, configured, captured = [True], [0.0], [], [], []
+    events = []
+    real_switch = _helpers.set_temperature_switch
+    def switch(device, value, **kwargs):
+        real_switch(device, value, **kwargs)
+        if not value:
+            windows.append([clock[0], None])
+        elif not enabled[0]:
+            windows[-1][1] = clock[0]
+        enabled[0] = value
+        events.append("on" if value else "off")
+    for module in (phase, acquisition, _helpers):
+        monkeypatch.setattr(module, "set_temperature_switch", switch)
+    def wait(seconds):
+        if not enabled[0]:
+            assert seconds == rig.params.system_settle_s
+            events.append("settle")
+        clock[0] += seconds
+    monkeypatch.setattr(phase, "wait", wait)
+    monkeypatch.setattr(acquisition, "wait", wait)
+    real_z = excitation.set_z_rf
+    def configure(*args, **kwargs):
+        if len(configured) % group_size == 0:
+            assert enabled[0], "分组首点必须在关闭前完成实际仪器配置"
+        configured.append(len(captured))
+        events.append("configure")
+        return real_z(*args, **kwargs)
+    monkeypatch.setattr(phase, "set_z_rf", configure)
+    monkeypatch.setattr(acquisition, "set_z_rf", configure)
+    real_acquire = rig.acquire
+    def acquire(*args, **kwargs):
+        assert not enabled[0] and events[-1] == "settle"
+        captured.append(clock[0])
+        events.append("acquire")
+        result = real_acquire(*args, **kwargs)
+        clock[0] += 1
+        return result
+    monkeypatch.setattr(acquisition.daq, "acquire_data", acquire)
+    real_save = np.savez
+    def save(*args, **kwargs):
+        assert enabled[0], "波形/快照不能在关闭窗口写盘"
+        events.append("save")
+        clock[0] += 30
+        return real_save(*args, **kwargs)
+    monkeypatch.setattr(np, "savez", save)
+    real_update = type(ctx.directory).update_config
+    def update(directory, **kwargs):
+        assert enabled[0], "采集元数据不能在关闭窗口写盘"
+        return real_update(directory, **kwargs)
+    monkeypatch.setattr(type(ctx.directory), "update_config", update)
+    ctx.execute([stage])
+    assert len(captured) == (18 if stage == "A11" else 3 if stage == "A13" else 7)
+    sizes = [min(group_size, len(captured) - start) for start in range(0, len(captured), group_size)]
+    assert [end - start for start, end in windows] == pytest.approx([
+        size * (rig.params.system_settle_s + 1) for size in sizes])
+    assert enabled[0] and "save" in events
+    ctx.finish()

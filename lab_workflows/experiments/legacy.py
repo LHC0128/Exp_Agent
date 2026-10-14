@@ -159,9 +159,21 @@ class LegacyScriptAdapter:
         if self.defaults_path.exists():
             with self.defaults_path.open(encoding="utf-8") as stream:
                 saved = yaml.safe_load(stream) or {}
-            values.update(saved.get("parameters", saved))
+            values.update(self._migrate_values(saved.get("parameters", saved)))
         values.update({key: value for key, value in _LOCKIN_INPUT_DEFAULTS.items() if key in values})
-        return values
+        return self._migrate_values(values)
+
+    def _migrate_values(self, values: dict[str, Any]) -> dict[str, Any]:
+        from ..acquisition_policy import LEGACY_SETTLE_DEFAULTS, migrate_system_settle
+        if self.id not in LEGACY_SETTLE_DEFAULTS:
+            return dict(values)
+        if self.id in ("static-sensitivity-optimize", "static-sensitivity-optimize-local") and "OPTIMIZE_SEQUENCE" in values:
+            from copy import deepcopy
+            values = deepcopy(values)
+            waits = [item.pop("stabilize_time") for item in values["OPTIMIZE_SEQUENCE"] if "stabilize_time" in item]
+            if waits and "SYSTEM_SETTLE_S" not in values:
+                values = migrate_system_settle({**values, "LEGACY_SCAN_WAIT": max(waits)}, {"LEGACY_SCAN_WAIT": 2.0})
+        return migrate_system_settle(values, LEGACY_SETTLE_DEFAULTS[self.id], ("MAX_TEMP_WAIT_S", "TEMP_TOLERANCE_C"))
 
     def schema(self) -> dict[str, Any]:
         values = self.defaults()
@@ -171,6 +183,9 @@ class LegacyScriptAdapter:
             safety_key = name.removeprefix("FIXED_PARAMS.")
             rule = limits.get(safety_key, {})
             metadata = self.field_metadata.get(name, {})
+            if name == "SYSTEM_SETTLE_S":
+                metadata = {**metadata, "label": "系统稳定时间", "unit": "s", "minimum": 0,
+                            "description": "配置和温控门控共同稳定的采集前等待", "group": "basic"}
             if metadata.get("hidden") or name in _LOCKIN_INPUT_DEFAULTS:
                 continue
             field = {
@@ -190,25 +205,33 @@ class LegacyScriptAdapter:
                 ),
             }
             options = self._field_options(metadata)
+            if name == "SYSTEM_SETTLE_S":
+                from ..acquisition_policy import LEGACY_SETTLE_DEFAULTS
+                field["legacy_defaults"] = dict(LEGACY_SETTLE_DEFAULTS[self.id])
             if options or "options" in metadata or "options_from_directory" in metadata:
                 field["options"] = options
             fields.append(field)
         return {"experiment": self.id, "fields": fields}
 
     def save_defaults(self, values: dict[str, Any]) -> None:
+        values = self._migrate_values(values)
         errors = self.preflight(values)
         if errors:
             raise ValueError("；".join(errors))
         self.defaults_path.parent.mkdir(parents=True, exist_ok=True)
         with self.defaults_path.open("w", encoding="utf-8") as stream:
             yaml.safe_dump(
-                {"schema_version": 1, "parameters": values},
+                {"schema_version": 2 if "SYSTEM_SETTLE_S" in values else 1, "parameters": values},
                 stream,
                 allow_unicode=True,
                 sort_keys=False,
             )
 
     def preflight(self, values: dict[str, Any]) -> list[str]:
+        try:
+            values = self._migrate_values(values)
+        except (TypeError, ValueError) as exc:
+            return [str(exc)]
         errors: list[str] = []
         defaults = self.defaults()
         unknown = sorted(set(values) - set(defaults))
@@ -342,6 +365,7 @@ class LegacyScriptAdapter:
         progress: ProgressCallback | None,
         cancellation: CancellationToken | None,
     ) -> dict[str, Any]:
+        values = self._migrate_values(values)
         errors = self.preflight(values)
         if errors:
             raise ValueError("；".join(errors))

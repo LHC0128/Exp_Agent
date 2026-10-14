@@ -71,7 +71,9 @@ class DispersionTests(unittest.TestCase):
         options = dict(demod_idx=2, duration_s=0.1, requested_rate=31.0, offset_v=0.02,
                        path=path, cancellation_check=lambda: None)
         options.update(overrides)
-        return dispersion.acquire_dispersion_point(hf2, **options)
+        from .acquisition_window import DeferredAcquisitionWrites
+        with DeferredAcquisitionWrites() as pending:
+            return dispersion.acquire_dispersion_point(hf2, **options, pending=pending)
 
     def test_actual_rate_ceil_medians_and_atomic_waveforms(self):
         with tempfile.TemporaryDirectory() as tmp:

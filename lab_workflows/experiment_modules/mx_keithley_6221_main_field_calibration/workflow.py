@@ -372,12 +372,6 @@ def _configure_outputs(
         devices.get("tec"),
         params.temperature_c,
         channel=1,
-        tolerance_c=params.temperature_tolerance_c,
-        stable_reads=params.temperature_stable_reads,
-        poll_interval_s=params.temperature_poll_interval_s,
-        timeout_s=params.temperature_timeout_s,
-        cancellation=_RuntimeCancellation(),
-        stability_waiter=wait_for_temperature_stable,
     )
     actual_temperature = temperature_status.actual_temperature_c
 

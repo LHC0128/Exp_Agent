@@ -1,3 +1,4 @@
+import { historyParameterValues } from "../../pages/experimentHelpers";
 import { preflightMessage, type PreflightResult } from "../../pages/experimentHelpers";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "../../api";
@@ -72,7 +73,7 @@ export function Dashboard({
   // 「填回参数」信号：来自历史 Tab，用户切回运行 Tab 时若有待应用参数，写回并清理。
   useEffect(() => {
     if (prefill) {
-      setValues({ ...values, ...prefill });
+      setValues({ ...values, ...historyParameterValues(fields, prefill) });
       clearPrefill();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

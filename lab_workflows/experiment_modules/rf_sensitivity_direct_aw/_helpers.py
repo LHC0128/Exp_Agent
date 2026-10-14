@@ -2,6 +2,9 @@
 from __future__ import annotations
 import math
 import time
+from contextlib import contextmanager
+from ...steps.acquisition_window import DeferredAcquisitionWrites
+from ...steps.temperature import set_temperature_switch
 from lockin_amplifier import LockinInstrument
 from ...common import CancellationToken, validate_safety_limit
 from ...experiment_runtime import check_cancelled
@@ -18,6 +21,20 @@ def wait(seconds: float) -> None:
     while (remaining := deadline - time.monotonic()) > 0:
         time.sleep(min(0.1, remaining))
         check_cancelled()
+
+
+@contextmanager
+def buffered_acquisition(ctx):
+    """当前 RF 采集组恢复温控后落盘，激励模块共用同一个缓存。"""
+    previous = getattr(ctx, "pending_writes", None)
+    restore = lambda: set_temperature_switch(ctx.devices["signals"], True,
+                                             channel=ctx.devices["channels"]["temp"])
+    with DeferredAcquisitionWrites(restore=restore) as pending:
+        ctx.pending_writes = pending
+        try:
+            yield pending
+        finally:
+            ctx.pending_writes = previous
 def validate_levels(key: str, amplitude: float, offset: float = 0.0) -> None:
     for value in (offset, offset - amplitude / 2, offset + amplitude / 2):
         validate_safety_limit(key, float(value))

@@ -87,7 +87,11 @@ from .temperature import (
 
 from .lockin import initialize_lockin_inputs
 
+from .acquisition_window import acquisition_window, DeferredAcquisitionWrites
+
 __all__ = [
+    "acquisition_window",
+    "DeferredAcquisitionWrites",
     "AWScaleStrategy",
     "ArbitraryWaveformSpec",
     "DeviceSession",

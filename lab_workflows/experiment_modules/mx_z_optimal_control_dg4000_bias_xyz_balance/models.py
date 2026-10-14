@@ -1,6 +1,7 @@
 """Mx Z 最优控制 DG4000 偏置 XYZ 平衡实验参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,8 +26,11 @@ class MxZOptimalControlDG4000BiasXYZBalanceParams(
 ):
     """固定 Z 周期最优控制并扫描 DG4000 额外 Z 偏置。"""
 
-    schema_version = 2
+    schema_version = 3
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.1, 'TEMP_SWITCH_OFF_LEAD_S': 0.0}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(
         default="mx_z_optimal_control_dg4000_bias_xyz_balance",
         external_name="RUN_TAG",

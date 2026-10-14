@@ -141,6 +141,32 @@ class KnownAnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "B01"):
             analysis.AnalysisWorkflow(run).execute(["B02"])
 
+    def test_manual_kz_snapshot_and_legacy_source_fallback(self):
+        manual = self.directory("manual", "source")
+        path = manual / "experiment_config.yaml"
+        config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        config["schema_version"] = 4
+        config["parameters"]["Z_CALIBRATION_K_HZ_PER_V"] = 9999.0
+        config["truth_chain"] = dict(z_calibration_source="manual", z_calibration_run="", K_Z_Hz_per_V=5373.638)
+        path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        with patch.object(analysis_steps, "load_z_calibration", side_effect=AssertionError("应使用本轮快照")):
+            result = analysis.analyze(manual)
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["truth_chain"]["K_Z_Hz_per_V"], 5373.638)
+        self.assertEqual(result["truth_chain"]["z_calibration_source"], "manual")
+        self.assertAlmostEqual(result["truth_chain"]["dispersion_slope_v_per_hz"], .001/.025**2/5373.638)
+
+        legacy = self.directory("legacy-source", "source")
+        path = legacy / "experiment_config.yaml"
+        config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        config["truth_chain"].pop("K_Z_Hz_per_V")
+        path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        source = self.root / "data/Bell_Bloom_Z_Field_Calibration/0920_183423_bb_z_cal/results"
+        source.mkdir(parents=True)
+        (source / "analysis.yaml").write_text(yaml.safe_dump(dict(experiment_id="bell-bloom-z-field-calibration",
+            success=True, K_Z_Hz_per_V=11703.6778)), encoding="utf-8")
+        self.assertEqual(analysis.analyze(legacy)["truth_chain"]["K_Z_Hz_per_V"], 11703.6778)
+
 
 if __name__ == "__main__":
     unittest.main()

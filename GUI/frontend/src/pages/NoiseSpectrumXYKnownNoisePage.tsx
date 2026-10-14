@@ -1,3 +1,4 @@
+import { historyParameterValues } from "./experimentHelpers";
 import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState, type KeyboardEvent } from "react";
 
@@ -377,13 +378,12 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
   };
 
   const fillBack = (parameters: ParameterValues) => {
-    const compatible = Object.fromEntries(
-      fields
-        .filter((field) => Object.hasOwn(parameters, field.name))
-        .map((field) => [field.name, parameters[field.name]]),
-    );
+    const compatible = historyParameterValues(fields, parameters);
     if (probeAm && !Object.hasOwn(parameters, "INJECT_CONTROLLED_NOISE")) {
       compatible.INJECT_CONTROLLED_NOISE = false;
+    }
+    if (!probeAm && !Object.hasOwn(parameters, "Z_CALIBRATION_K_HZ_PER_V")) {
+      compatible.Z_CALIBRATION_K_HZ_PER_V = 0;
     }
     setValues((current) => ({ ...current, ...compatible }));
     setTab("run");
@@ -424,7 +424,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
                     && <span role="status"> 对齐幅度超出 Probe AOM AM 安全限值，请手动选择安全幅度。</span>}
                 </p>
                 {!probeAm && <p>等效频率噪声（带内中位）{format(preview?.equivalent_noise_hz_per_rt_hz)} Hz/√Hz
-                  （K_Z = {format(preview?.z_calibration_k_hz_per_v, 1)} Hz/V）。</p>
+                  （手动 K_Z = {format(preview?.z_calibration_k_hz_per_v, 1)} Hz/V）。</p>
                 }
                 {probeAm && <p>AM 输入峰值 ±{format((Number(values.NOISE_AMPLITUDE_VPP) || 0) / 2)} V；设计谱为参考值，分析同时保存实际任意波 Welch PSD。</p>}
                 {probeAm && <p>Z 可控噪声{values.INJECT_CONTROLLED_NOISE ? "将持续注入" : "本次不注入"}；

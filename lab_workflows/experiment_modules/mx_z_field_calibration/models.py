@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from ...common import validate_safety_limit
 from ...experiment_params import ExperimentParams, parameter
@@ -21,8 +21,11 @@ PredictionPolarity = Literal[
 class MxZFieldCalibrationParams(ExperimentParams):
     """主场/Pump 沿 Z、Probe 沿 X，以 Y RF 共振频率标定 Z DC。"""
 
-    schema_version = 2
+    schema_version = 3
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(
         default="mx_z_cal",
         external_name="RUN_TAG",
@@ -107,14 +110,6 @@ class MxZFieldCalibrationParams(ExperimentParams):
         maximum=2.0,
         safety_key="rf_coil",
     )
-    frequency_settle_time_s: float = parameter(
-        default=0.05,
-        external_name="FREQUENCY_SETTLE_TIME_S",
-        label="频点稳定时间",
-        unit="s",
-        group="advanced",
-        minimum=0.0,
-    )
     frequency_duration_s: float = parameter(
         default=0.1,
         external_name="FREQUENCY_DURATION_S",
@@ -122,14 +117,6 @@ class MxZFieldCalibrationParams(ExperimentParams):
         unit="s",
         group="advanced",
         minimum=0.001,
-    )
-    temp_switch_off_lead_s: float = parameter(
-        default=0.1,
-        external_name="TEMP_SWITCH_OFF_LEAD_S",
-        label="温控关闭后等待",
-        unit="s",
-        group="advanced",
-        minimum=0.0,
     )
     temp_switch_on_lag_s: float = parameter(
         default=1.0,
@@ -162,10 +149,6 @@ class MxZFieldCalibrationParams(ExperimentParams):
     response_time_constant_s: float = parameter(default=0.001, external_name="RESPONSE_TIME_CONSTANT_S", label="响应时间常数", unit="s", group="advanced", minimum=0.0)
     response_demod_order: int = parameter(default=4, external_name="RESPONSE_DEMOD_ORDER", label="响应解调阶数", group="advanced", minimum=1)
 
-    temperature_tolerance_c: float = parameter(default=1.0, external_name="TEMPERATURE_TOLERANCE_C", label="初始温度稳定容差", unit="°C", group="advanced", minimum=0.0)
-    temperature_stable_reads: int = parameter(default=1, external_name="TEMPERATURE_STABLE_READS", label="初始温度连续稳定读数", group="advanced", minimum=1)
-    temperature_poll_interval_s: float = parameter(default=5.0, external_name="TEMPERATURE_POLL_INTERVAL_S", label="温度轮询间隔", unit="s", group="advanced", minimum=0.1)
-    temperature_timeout_s: float = parameter(default=1200.0, external_name="TEMPERATURE_TIMEOUT_S", label="温度稳定超时", unit="s", group="advanced", minimum=1.0)
 
     pump_carrier_frequency_hz: float = parameter(default=100e6, external_name="PUMP_CARRIER_FREQUENCY_HZ", label="Pump AOM 载波频率", unit="Hz", group="advanced", minimum=1.0)
     pump_carrier_amplitude_vpp: float = parameter(default=0.18, external_name="PUMP_CARRIER_AMPLITUDE_VPP", label="Pump AOM 载波幅度", unit="Vpp", group="advanced", minimum=0.0, maximum=0.18, safety_key="Pump_modulation")

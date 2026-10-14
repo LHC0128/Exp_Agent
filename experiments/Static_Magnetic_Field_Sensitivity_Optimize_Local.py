@@ -30,6 +30,7 @@ import matplotlib.pyplot as plt
 from lab_workflows.plotting import new_figure, save_figure, set_plot_style
 set_plot_style("paper")
 import numpy as np
+from lab_workflows.steps import acquisition_window, configure_temperature_control
 from scipy import signal as scipy_signal
 import yaml
 
@@ -58,6 +59,7 @@ MAPPING = load_mapping(project_root)
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
 
+SYSTEM_SETTLE_S = 2.0  # 配置与温控门控共同稳定的采集前等待（秒）
 EXPERIMENT_TYPE = "Static_Magnetic_Field_Sensitivity"
 RUN_TAG_PREFIX = "opt_local"
 
@@ -78,17 +80,14 @@ OPTIMIZE_SEQUENCE = [
     {
         "parameter": "Pump_laser_power",
         "values": [0.20, 0.25, 0.30, 0.35, 0.40],
-        "stabilize_time": 2.0,
     },
     {
         "parameter": "Probe_laser_power",
         "values": [0.05, 0.08, 0.10, 0.12, 0.15],
-        "stabilize_time": 2.0,
     },
     {
         "parameter": "PUMP_MOD_DUTY",
         "values": [3, 4, 5, 6, 8],
-        "stabilize_time": 2.0,
     },
 ]
 
@@ -116,8 +115,6 @@ HF2_NOISE_TC = 1e-6
 
 NOISE_N_AVG = 20
 NOISE_DURATION = 1.0
-TEMP_TOLERANCE_C = 1.0
-MAX_TEMP_WAIT_S = 600
 
 GS200_CURRENT_RANGE_A = 0.001
 GS200_RANGE_SETTLE_TIME = 1.0
@@ -247,6 +244,9 @@ def save_experiment_config(run_dir, run_tag, timestamp, params, actual_rates=Non
         "mapping_snapshot": MAPPING,
         "safety_limits_snapshot": LIMITS,
         "actual_rates": as_builtin(actual_rates or {}),
+        "initial_temperature_c": None,
+        "temperature_control": {"target_temperature_c": params["temperature"], "actual_temperature_c": None},
+        "SYSTEM_SETTLE_S": SYSTEM_SETTLE_S,
         "data_files": [],
     }
     with open(run_dir / "experiment_config.yaml", "w", encoding="utf-8") as f:
@@ -341,21 +341,6 @@ state = {
 }
 
 
-def wait_for_temperature_stable(tec, target_c):
-    """等待气室温度进入目标范围."""
-    validate_safety_limit("temperature", target_c)
-    start = time.time()
-    while True:
-        temp_now = tec.get_temperature(channel=1)
-        delta = abs(temp_now - target_c)
-        print(f"  温度: {temp_now:.2f} C, 目标: {target_c:.2f} C, 偏差: {delta:.2f} C")
-        if delta <= TEMP_TOLERANCE_C:
-            return temp_now
-        if time.time() - start > MAX_TEMP_WAIT_S:
-            raise TimeoutError(
-                f"温度在 {MAX_TEMP_WAIT_S}s 内未稳定到 ±{TEMP_TOLERANCE_C} C"
-            )
-        time.sleep(5)
 
 
 def setup_pump_modulation(dg_mod, duty_pct):
@@ -415,14 +400,8 @@ def apply_all_params(devs, params):
         print(f"  GS200 量程设置跳过: {e}")
     print(f"  主磁场: {params['main_magnetic_field']} mA")
 
-    if tec is not None:
-        tec.set_target_temperature(params["temperature"], channel=1)
-        tec.set_enable(True, channel=1)
-    else:
-        print(
-            f"[警告] 跳过 TEC 设温；请确认外部软件维持 "
-            f"{params['temperature']:.2f} °C。"
-        )
+    state["temperature_control"] = configure_temperature_control(
+        tec, params["temperature"], channel=1).to_dict()
 
     dg_temp.setup_dc(params["Temp_Switch"], channel=2)
     dg_temp.set_output(True, channel=2)
@@ -476,7 +455,6 @@ def calibrate_phase(devs):
     dg_sweep = devs["dg_sweep"]
 
     print("  相位校准: 关闭温度开关和 Z 场")
-    dg_temp.set_output(False, channel=2)
     dg_sweep.setup_dc(0.0, channel=1)
     dg_sweep.set_output(False, channel=1)
 
@@ -506,15 +484,15 @@ def calibrate_phase(devs):
         phase=0.0,
     )
     actual_rate = demod.configure_demodulator(hfi, demod_cfg)
-    phase = demod.auto_calibrate_phase(
-        hfi,
-        demod_idx=HF2_DEMOD_IDX,
-        tolerance_deg=1.0,
-        max_attempts=5,
-        settle_time=0.2,
-    )
-    sample = demod.read_demod_sample(hfi, demod_idx=HF2_DEMOD_IDX)
-    dg_temp.set_output(True, channel=2)
+    with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+        phase = demod.auto_calibrate_phase(
+            hfi,
+            demod_idx=HF2_DEMOD_IDX,
+            tolerance_deg=1.0,
+            max_attempts=5,
+            settle_time=SYSTEM_SETTLE_S,
+        )
+        sample = demod.read_demod_sample(hfi, demod_idx=HF2_DEMOD_IDX)
     time.sleep(0.5)
 
     state["phase"] = float(phase)
@@ -547,7 +525,7 @@ def acquire_dispersion(devs, raw_dir):
         time.sleep(0.5)
 
         dg_temp.set_output(False, channel=2)
-        time.sleep(1.0)
+        time.sleep(SYSTEM_SETTLE_S)
 
         aux_path = (
             f"/{MAPPING['lockin_r']['device_id']}/auxins/"
@@ -676,26 +654,24 @@ def acquire_noise(devs, raw_dir):
 
     try:
         for idx in iterator:
-            dg_temp.set_output(False, channel=2)
-            time.sleep(0.5)
-            noise_cfg = DAQConfig(
-                device=MAPPING["lockin_r"]["device_id"],
-                trigger_type=0,
-                duration=NOISE_DURATION,
-                grid_cols=int(fs_noise * NOISE_DURATION),
-                grid_rows=1,
-                grid_mode=2,
-                signal_paths=["sample.y"],
-            )
-            noise_results = daq.acquire_data(
-                hfi,
-                config=noise_cfg,
-                demod_idx=HF2_DEMOD_IDX,
-                actual_rate=fs_noise, cancellation_check=check_cancelled, requested_rate=HF2_NOISE_RATE,
-                timeout=NOISE_DURATION + 5.0,
-            )
-            fs_noise = result_rate(noise_results, fs_noise)
-            dg_temp.set_output(True, channel=2)
+            with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+                noise_cfg = DAQConfig(
+                    device=MAPPING["lockin_r"]["device_id"],
+                    trigger_type=0,
+                    duration=NOISE_DURATION,
+                    grid_cols=int(fs_noise * NOISE_DURATION),
+                    grid_rows=1,
+                    grid_mode=2,
+                    signal_paths=["sample.y"],
+                )
+                noise_results = daq.acquire_data(
+                    hfi,
+                    config=noise_cfg,
+                    demod_idx=HF2_DEMOD_IDX,
+                    actual_rate=fs_noise, cancellation_check=check_cancelled, requested_rate=HF2_NOISE_RATE,
+                    timeout=NOISE_DURATION + 5.0,
+                )
+                fs_noise = result_rate(noise_results, fs_noise)
             time.sleep(2)
             y = noise_results[0].values
             np.save(noise_root_dir / f"noise_{idx:04d}.npy", y)
@@ -806,12 +782,7 @@ def run_single_point(iteration, parameter, value):
         print(f"\n--- [{iteration:02d}] {parameter} = {value} ---")
         print("  恢复基准并应用扫描参数...")
         apply_all_params(devices, params)
-        time.sleep(2.0)
-        if devices.get("tec") is not None:
-            wait_for_temperature_stable(devices["tec"], params["temperature"])
-        else:
-            print("  TEC 未连接，跳过温度稳定等待")
-
+        update_experiment_config(run_dir, temperature_control=state["temperature_control"])
         print("  重新校准 HF2 相位...")
         calibrate_phase(devices)
 
@@ -1023,14 +994,13 @@ t_start = datetime.now()
 try:
     for seq in OPTIMIZE_SEQUENCE:
         parameter = seq["parameter"]
-        stabilize_time = seq.get("stabilize_time", 2.0)
+        stabilize_time = SYSTEM_SETTLE_S
         print(f"\n扫描参数: {parameter}, values={seq['values']}")
 
         for value in seq["values"]:
             iteration += 1
             result = run_single_point(iteration, parameter, value)
             all_results.append(result)
-            time.sleep(stabilize_time)
 
             valid_so_far = [
                 r for r in all_results

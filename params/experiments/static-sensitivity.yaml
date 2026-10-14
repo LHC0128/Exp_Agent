@@ -1,5 +1,6 @@
-schema_version: 3
+schema_version: 4
 parameters:
+  SYSTEM_SETTLE_S: 0.5
   run_tag: sens
   pump_laser_power: 0.3
   probe_laser_power: 0.1
@@ -10,11 +11,9 @@ parameters:
   ramp_low: -0.1
   ramp_high: 0.1
   dispersion_steps: 41
-  dispersion_step_settle_s: 0.1
   dispersion_duration_s: 0.1
   dispersion_temp_switch_interval_points: 5
   dispersion_temp_switch_on_settle_s: 6.0
-  dispersion_temp_switch_off_settle_s: 0.5
   pump_mod_freq: 90000.0
   pump_mod_amplitude: 0.18
   pump_mod_duty: 5.0
@@ -33,10 +32,6 @@ parameters:
   hf2_demod_tc: 0.001
   hf2_noise_rate: 50000.0
   hf2_noise_tc: 1.0e-06
-  temp_tolerance_c: 1.0
-  temp_stable_reads: 3
-  temp_poll_interval_s: 5.0
-  max_temp_wait_s: 1200.0
   gs200_current_ranges:
   - 0.01
   gs200_range_headroom: 1.2

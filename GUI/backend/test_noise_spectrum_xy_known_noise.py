@@ -140,3 +140,12 @@ class KnownNoiseAPITest(unittest.TestCase):
         self.assertEqual(self.client.post(BASE+"/runs/options/analysis", json={"revision": 0, "step_ids": ["B06"],
             "analysis_parameters": {"ANALYSIS_DISPERSION_SOURCE_RUN": "source"}}).status_code, 422)
         self.assertFalse(self.manager.jobs)
+
+    def test_invalid_manual_kz_rejects_session_before_scheduling_hardware(self):
+        for value in (0, -1, True, "5373.638"):
+            with self.subTest(value=value):
+                response = self.client.post(BASE+"/sessions", json={"parameters": scan_params().to_external()
+                    | {"Z_CALIBRATION_K_HZ_PER_V": value}})
+                self.assertEqual(response.status_code, 422, response.text)
+        self.assertFalse(self.manager.jobs)
+        self.assertFalse(self.manager.hardware_lock.locked())

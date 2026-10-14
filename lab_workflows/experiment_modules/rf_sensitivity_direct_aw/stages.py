@@ -14,8 +14,8 @@ class Stage:
 
 
 FINISH_ID = "A16"
-TEMP = ("TEMP_OFF_SETTLE_S", "TEMP_SWITCH_ON_LAG_S")
-SCAN = (*TEMP, "TEMP_GROUP_SIZE", "RF_STEP_SETTLE_S", "SCAN_POINT_DURATION_S")
+TEMP = ("SYSTEM_SETTLE_S", "TEMP_SWITCH_ON_LAG_S")
+SCAN = (*TEMP, "TEMP_GROUP_SIZE", "SCAN_POINT_DURATION_S")
 ACQUISITION = (
     Stage("A01", "启动预检", "启动准备", ()),
     Stage("A02", "设备连接", "启动准备", ("A01",)),
@@ -23,7 +23,7 @@ ACQUISITION = (
     Stage("A04", "初始输出设置", "初始条件", ("A03",),
           ("FIXED_PARAMS.Pump_laser_power", "FIXED_PARAMS.Probe_laser_power",
            "FIXED_PARAMS.main_magnetic_field", "FIXED_PARAMS.Temp_Switch")),
-    Stage("A05", "温度稳定", "初始条件", ("A04",), ("FIXED_PARAMS.temperature",)),
+    Stage("A05", "目标温度设置", "初始条件", ("A04",), ("FIXED_PARAMS.temperature",)),
     Stage("A06", "Pump 载波与门控", "激励与触发", ("A05",),
           ("PUMP_MOD_FREQ", "PUMP_MOD_AMPLITUDE", "PUMP_MOD_DUTY", "RF_GATE_AMPLITUDE", "RF_GATE_OFFSET")),
     Stage("A07", "XYZ 共同触发", "激励与触发", ("A06",),
@@ -49,7 +49,7 @@ ACQUISITION = (
            "RF_INPUT_ROUTE", "RF_AUX_OUTPUT_IDX", "RF_PHYSICAL_INPUT_SOURCE")),
     Stage("A11", "控制 AM 与 Z RF 触发相位扫描", "四级相位校准", ("A10",),
           ("Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG",
-           "TEMP_GROUP_SIZE", "RF_STEP_SETTLE_S", "SCAN_POINT_DURATION_S"),
+           "TEMP_GROUP_SIZE", "SYSTEM_SETTLE_S", "SCAN_POINT_DURATION_S"),
           ("raw/z_phase_scan.npz", "results/z_phase_scan.png", "results/z_phase_scan.pdf"),
           display_parameters=("Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG",
                               "Z_RF_AMPLITUDE_INIT", *SCAN)),

@@ -8,7 +8,6 @@ from typing import Any, ClassVar
 
 import numpy as np
 
-from ...common import find_project_root
 from ...experiment_params import parameter
 from ..noise_spectrum_xy.models import (
     NoiseSpectrumXYParams,
@@ -18,7 +17,6 @@ from ..noise_spectrum_xy.models import (
 
 # 与 DG4000 任意波点数上限一致；采样率 = NOISE_POINTS * NOISE_REPEAT_FREQ_HZ。
 NOISE_POINTS = 16384
-DEFAULT_Z_CALIBRATION_RUN = "0920_183423_bb_z_cal"
 
 
 def noise_waveform_settings(repeat_freq_hz: float) -> dict[str, float]:
@@ -34,8 +32,11 @@ def noise_waveform_settings(repeat_freq_hz: float) -> dict[str, float]:
 
 @dataclass(slots=True)
 class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
-    schema_version: ClassVar[int] = 3
+    schema_version: ClassVar[int] = 5
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'XY_SETTLE_TIME': 0.5, 'Z_INJECTION_SETTLE_S': 0.2}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    system_settle_s: float = parameter(default=0.5, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="known_noise", external_name="RUN_TAG", label="运行标签", group="basic")
     target_noise_freq_stop_hz: float = parameter(default=30000.0, external_name="TARGET_NOISE_FREQ_STOP_HZ", label="目标噪声频率终点", unit="Hz", group="basic", minimum=0)
 
@@ -47,9 +48,9 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
     noise_amplitude_vpp: float = parameter(default=1.0, external_name="NOISE_AMPLITUDE_VPP", label="噪声注入幅度", unit="Vpp", group="basic", minimum=0.0, safety_key="Z_magnetic_field")
     noise_seed: int = parameter(default=20260922, external_name="NOISE_SEED", label="噪声波形种子", group="advanced", minimum=0)
 
-    # ---- 注入开关切换与真值链来源 ----
-    z_injection_settle_s: float = parameter(default=0.2, external_name="Z_INJECTION_SETTLE_S", label="注入两态切换等待", unit="s", group="advanced", minimum=0, description="每段采集前设置注入 ON 或 OFF 后均等待；相邻控制点交替两态顺序。")
-    z_calibration_source_run: str = parameter(default=DEFAULT_Z_CALIBRATION_RUN, external_name="Z_CALIBRATION_SOURCE_RUN", label="K_Z 标定运行", group="advanced", options_from_directory="data/Bell_Bloom_Z_Field_Calibration", options_pattern="*", options_include_directories=True, options_require_analysis="results/analysis.yaml", options_require_experiment_id="bell-bloom-z-field-calibration", description="真值链只取该运行的斜率 K_Z（Hz/V）；共振中心由主磁场决定，不使用 f_0V。")
+    # ---- 注入开关切换与手动标定 ----
+    z_calibration_k_hz_per_v: float = parameter(default=5373.638, external_name="Z_CALIBRATION_K_HZ_PER_V", label="K_Z 手动标定", unit="Hz/V", group="basic", minimum=0, description="手动输入 Z 电压到频率偏移的标定斜率，必须为有限正数；预览、检测增益与真值链使用本轮保存值，不读取标定运行，不使用 f_0V。")
+    z_calibration_source_run: str = parameter(default="", external_name="Z_CALIBRATION_SOURCE_RUN", label="旧 K_Z 标定运行（未使用）", visible=False)
 
     analysis_dispersion_source_run: str = parameter(default="", external_name="ANALYSIS_DISPERSION_SOURCE_RUN", label="静磁场标定曲线", group="advanced", description="仅在分析时验证；留空时完成谱分离并等待选择 v3 直流逐点静磁场曲线。")
     hf2_demod_rate: float = parameter(default=100000.0, external_name="HF2_DEMOD_RATE", label="校相采样率", unit="Sa/s", group="advanced", minimum=1)
@@ -64,7 +65,7 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
     def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
         # 丢弃已移除的旧参数；历史 GUI 配置仍可加载，新表单和运行不再保存。
         # slots dataclass 子类不能用零参 super()（类被重建），须显式绑定父类。
-        migrated = _ParentParams.migrate_external(values, 1 if schema_version < 1 else schema_version)
+        migrated = super(NoiseSpectrumXYKnownNoiseParams, cls).migrate_external(values, max(1, schema_version))
         migrated.pop("ANALYSIS_BACKGROUND_HALF_WIDTH_HZ", None)
         migrated.pop("Z_TF_SOURCE_RUN", None)
         for key in ("DISPERSION_SPAN_V", "DISPERSION_STEPS", "DISPERSION_STEP_SETTLE_S", "DISPERSION_DURATION_S", "DISPERSION_TEMP_SWITCH_INTERVAL_POINTS"):
@@ -88,8 +89,8 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
                                    params.analysis_bin_width_hz)
             result.update(welch)
             result["scan_seconds"] = params.target_noise_freq_points * (
-                params.hf2_daq_duration * 2 + params.xy_settle_time
-                + params.temp_switch_on_settle_s + 2 * params.z_injection_settle_s + 0.3)
+                params.hf2_daq_duration * 2
+                + params.temp_switch_on_settle_s + 2 * params.system_settle_s + 0.3)
             result.update(noise_waveform_settings(params.noise_repeat_freq_hz))
             preview = _preview_injection(params)
             result["design_peak_v"] = preview["design_peak_v"]
@@ -107,6 +108,11 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
 
     def validate_model(self) -> list[str]:
         errors = _ParentParams.validate_model(self)
+        from .generation import ZFrequencyCalibration
+        try:
+            ZFrequencyCalibration(self.z_calibration_k_hz_per_v)
+        except ValueError as exc:
+            errors.append(str(exc))
         lengths = {len(self.noise_band_starts_hz), len(self.noise_band_stops_hz),
                    len(self.noise_band_psds_v2_per_hz)}
         if len(lengths) != 1:
@@ -158,13 +164,13 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
 
 def _preview_injection(params: NoiseSpectrumXYKnownNoiseParams) -> dict[str, Any]:
     """只读预览实际注入谱与等效频率噪声；不连接硬件。"""
-    from .generation import calculate_noise_preview, generate_known_noise_waveform, load_z_calibration
+    from .generation import calculate_noise_preview, generate_known_noise_waveform, ZFrequencyCalibration
     waveform = generate_known_noise_waveform(
         repeat_freq_hz=params.noise_repeat_freq_hz,
         bands=params.noise_bands(),
         seed=params.noise_seed)
     scale = (params.noise_amplitude_vpp / 2.0 / waveform.design_peak_v) ** 2
-    calibration = load_z_calibration(find_project_root(), params.z_calibration_source_run)
+    calibration = ZFrequencyCalibration(params.z_calibration_k_hz_per_v)
     equivalent = math.sqrt(waveform.band_median_psd() * scale) * calibration.k_hz_per_v
     calculated = calculate_noise_preview(
         waveform,

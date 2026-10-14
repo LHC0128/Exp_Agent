@@ -29,7 +29,7 @@ def iter_frequency_batches(point_count: int, batch_points: int) -> Iterator[rang
 def estimate_scan_duration_s(params: NoiseSpectrumXYDemod3RParams) -> float:
     """估计二维扫描时间，不包含升温、校相和通信开销。"""
     measurement = params.control_freq_points * params.demod3_freq_points * (
-        params.demod3_freq_settle_time_s + params.demod3_acquisition_duration_s
+        params.system_settle_s + params.demod3_acquisition_duration_s
     )
     recovery_batches = math.ceil(params.demod3_freq_points / params.temp_recovery_batch_points)
     recovery = params.control_freq_points * recovery_batches * params.temp_recovery_time_s

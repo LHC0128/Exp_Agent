@@ -67,8 +67,9 @@ from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.run_format import
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.definition import comparison_runner as rf_direct_aw_comparison_runner
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw import run_format as rf_aw_format
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_r import run_format as rf_aw_r_format
+from lab_workflows.experiment_modules.rf_sensitivity_aw_known_noise import run_format as rf_known_noise_format
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_r.definition import comparison_runner as rf_direct_aw_r_comparison_runner
-RF_RUN_FORMATS = {rf_aw_format.EXPERIMENT_ID: rf_aw_format, rf_aw_r_format.EXPERIMENT_ID: rf_aw_r_format}
+RF_RUN_FORMATS = {rf_aw_format.EXPERIMENT_ID: rf_aw_format, rf_aw_r_format.EXPERIMENT_ID: rf_aw_r_format, rf_known_noise_format.EXPERIMENT_ID: rf_known_noise_format}
 from lab_workflows.experiments.catalog import (
     add_tag,
     apply_parameter_layout,
@@ -91,10 +92,12 @@ from .run_management import checked_run_path, read_starred, rename_directory, sa
 from .noise_spectrum_xy import XYSessionService, create_router as xy_router
 from .updates import UpdatesService, create_router as updates_router
 from .rf_sensitivity_direct_aw import RFSessionService, create_router as rf_workflow_router
+from .rf_sensitivity_aw_known_noise import RFKnownNoiseSessionService
 from .noise_spectrum_xy_known_noise import KnownNoiseSessionService
 from .noise_spectrum_xy_probe_am import ProbeAMSessionService
 from .rf_sensitivity_direct_aw_r import RFRSessionService
 from .static_sensitivity import StaticSessionService
+from .detection_chain_frequency_response import DetectionChainFrequencyResponseSessionService
 from .schemas import (
     ControlCurrentSourceBody,
     ControlEmissionBody,
@@ -142,12 +145,16 @@ async def lifespan(application):
         known_noise_sessions.close_communication()
         rf_sessions.close_communication()
         rf_r_sessions.close_communication()
+        rf_known_noise_sessions.close_communication()
         static_sessions.close_communication()
+        detection_chain_sessions.close_communication()
         await asyncio.to_thread(xy_sessions.shutdown)
         await asyncio.to_thread(known_noise_sessions.shutdown)
         await asyncio.to_thread(rf_sessions.shutdown)
         await asyncio.to_thread(rf_r_sessions.shutdown)
+        await asyncio.to_thread(rf_known_noise_sessions.shutdown)
         await asyncio.to_thread(static_sessions.shutdown)
+        await asyncio.to_thread(detection_chain_sessions.shutdown)
 
 
 app = FastAPI(title="Bell-Bloom 实验控制台", version="0.1.0", lifespan=lifespan)
@@ -181,8 +188,12 @@ rf_sessions = RFSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(rf_sessions))
 rf_r_sessions = RFRSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(rf_r_sessions))
+rf_known_noise_sessions = RFKnownNoiseSessionService(lambda: ROOT, manager)
+app.include_router(rf_workflow_router(rf_known_noise_sessions))
 static_sessions = StaticSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(static_sessions))
+detection_chain_sessions = DetectionChainFrequencyResponseSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(detection_chain_sessions))
 updates_service = UpdatesService(lambda: ROOT, manager)
 app.include_router(updates_router(updates_service))
 
@@ -1070,7 +1081,7 @@ def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
                 can_analyze = can_analyze and not identity.analysis_block_reason(config)
             if definition.id == STATIC_SENSITIVITY_ID:
                 config = _read_yaml(path / "experiment_config.yaml")
-                can_analyze = can_analyze and config.get("schema_version") == 3 and config.get("acquisition_method") == "dc_step"
+                can_analyze = can_analyze and config.get("schema_version") in (3, 4) and config.get("acquisition_method") == "dc_step"
             result.append({
                 "id": path.name,
                 "experiment_id": definition.id,
@@ -1155,7 +1166,7 @@ def _create_analysis_job(run_id: str, body: AnalysisBody):
             raise HTTPException(400, reason)
     if definition.id == STATIC_SENSITIVITY_ID:
         config = _read_yaml(run_dir / "experiment_config.yaml")
-        if config.get("schema_version") != 3 or config.get("acquisition_method") != "dc_step":
+        if config.get("schema_version") not in (3, 4) or config.get("acquisition_method") != "dc_step":
             raise HTTPException(400, "旧格式静磁场运行仅可查看已有结果，不支持重新分析")
         static_sessions.run_directory(run_id)
     if not definition.analysis_runner:
@@ -1860,6 +1871,17 @@ def _rf_aw_comparison_artifact(experiment_id, comparison_id, name):
     if path.parent != directory or not path.is_file():
         raise HTTPException(404, "对比文件不存在")
     return FileResponse(path)
+
+
+
+@app.get("/api/experiments/rf-sensitivity-aw-known-noise/runs", response_model=RFDirectAWRunsResponse)
+def rf_known_noise_runs(limit: int = 50, offset: int = 0):
+    return _rf_aw_runs(rf_known_noise_format.EXPERIMENT_ID, limit, offset)
+
+
+@app.get("/api/experiments/rf-sensitivity-aw-known-noise/runs/{run_id}/summary", response_model=RFDirectAWRunSummary)
+def rf_known_noise_summary(run_id: str):
+    return _rf_aw_summary(rf_known_noise_format.EXPERIMENT_ID, run_id)
 
 
 FRONTEND = ROOT / "GUI" / "frontend" / "dist"

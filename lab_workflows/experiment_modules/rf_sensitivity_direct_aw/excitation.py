@@ -47,6 +47,24 @@ def arm_z(signals, channel: int, params: RFSensitivityDirectAWParams, amplitude:
         wait(1.5 / params.xy_trigger_freq)
     return phase
 
+
+def set_z_rf(ctx, amplitude: float, phase_base: float | None = None) -> float:
+    """复合 Z 激励自行求和归一化；普通 RF 保留原重臂行为。"""
+    if hasattr(ctx, "upload_z_rf"):
+        return ctx.upload_z_rf(amplitude, phase_base)
+    return arm_z(ctx.devices["signals"], ctx.devices["channels"]["z"], ctx.params, amplitude, phase_base)
+
+
+def prepare_z_rf(ctx):
+    signals, channels, params = ctx.devices["signals"], ctx.devices["channels"], ctx.params
+    if not hasattr(ctx, "upload_z_rf"):
+        validate_levels("Z_magnetic_field", params.z_rf_amplitude_init)
+        signals.setup_sine(freq=params.z_rf_freq, amplitude=params.z_rf_amplitude_init, offset=0.0, phase=0.0, channel=channels["z"])
+        signals.set_burst_mode("INFinity", channel=channels["z"])
+        signals.set_burst_trigger_source("EXTernal", channel=channels["z"])
+        signals.set_burst_trigger_slope("POSitive", channel=channels["z"])
+    set_z_rf(ctx, params.z_rf_amplitude_init)
+
 def configure_pump(ctx):
     params, devices, state, directory = ctx.params, ctx.devices, ctx.state, ctx.directory
     signals, channels, hf2 = (devices[key] for key in ("signals", "channels", "hf2"))

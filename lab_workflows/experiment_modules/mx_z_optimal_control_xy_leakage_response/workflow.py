@@ -358,7 +358,7 @@ def _acquire_grid(
             file_stem=f"grid_X{x_index:03d}_Y{y_index:03d}",
             metadata=metadata,
             set_y_rf=lambda x=x_vpp, y=y_vpp: controller.apply(x, y),
-            settle_time_s=params.response_settle_time_s,
+            settle_time_s=params.system_settle_s,
             duration_s=params.response_duration_s,
             actual_rate=actual_rate,
             device_id=device_id,

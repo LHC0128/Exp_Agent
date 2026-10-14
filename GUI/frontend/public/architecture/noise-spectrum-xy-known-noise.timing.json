@@ -80,23 +80,23 @@
   "segments": [
     {
       "from": 150,
-      "to": 246,
-      "label": "重触发与准备"
+      "to": 276,
+      "label": "重触发与首态准备"
     },
     {
-      "from": 254,
-      "to": 398,
+      "from": 284,
+      "to": 366,
       "label": "注入 OFF 段"
     },
     {
-      "from": 406,
-      "to": 526,
+      "from": 374,
+      "to": 462,
       "label": "注入 ON 段"
     },
     {
-      "from": 534,
+      "from": 470,
       "to": 600,
-      "label": "恢复与循环"
+      "label": "恢复、保存与循环"
     }
   ],
   "messages": [
@@ -125,20 +125,20 @@
       "variant": "emphasis"
     },
     {
-      "id": "m-tempoff",
-      "from": "wf",
-      "to": "temp",
-      "y": 256,
-      "label": "温控开关 OFF",
-      "note": "消除温控磁场干扰,等待 XY_SETTLE_TIME"
-    },
-    {
       "id": "m-injoff",
       "from": "wf",
       "to": "zinj",
-      "y": 288,
+      "y": 256,
       "label": "注入 OFF(首点顺序,相邻点交替)",
-      "note": "等待 Z_INJECTION_SETTLE_S"
+      "note": "组首状态在关闭温控前配置"
+    },
+    {
+      "id": "m-tempoff",
+      "from": "wf",
+      "to": "temp",
+      "y": 288,
+      "label": "温控开关 OFF",
+      "note": "等待 SYSTEM_SETTLE_S，配置与门控共同稳定"
     },
     {
       "id": "m-daq1",
@@ -157,25 +157,18 @@
       "variant": "return"
     },
     {
-      "id": "m-save1",
-      "from": "wf",
-      "to": "raw",
-      "y": 384,
-      "label": "waveform_C####_off.npy + timing"
-    },
-    {
       "id": "m-injon",
       "from": "wf",
       "to": "zinj",
-      "y": 416,
+      "y": 384,
       "label": "注入 ON(第二态)",
-      "note": "等待 Z_INJECTION_SETTLE_S"
+      "note": "等待 SYSTEM_SETTLE_S"
     },
     {
       "id": "m-daq2",
       "from": "wf",
       "to": "hf2",
-      "y": 448,
+      "y": 416,
       "label": "DAQ 采集 sample.y · 参数时长",
       "variant": "emphasis"
     },
@@ -183,23 +176,30 @@
       "id": "m-wave2",
       "from": "hf2",
       "to": "wf",
-      "y": 480,
+      "y": 448,
       "label": "y(t) 波形",
       "variant": "return"
-    },
-    {
-      "id": "m-save2",
-      "from": "wf",
-      "to": "raw",
-      "y": 512,
-      "label": "waveform_C####_on.npy + timing"
     },
     {
       "id": "m-tempon",
       "from": "wf",
       "to": "temp",
-      "y": 544,
+      "y": 480,
       "label": "温控开关 ON · 等待恢复"
+    },
+    {
+      "id": "m-save1",
+      "from": "wf",
+      "to": "raw",
+      "y": 512,
+      "label": "waveform_C####_off.npy + timing"
+    },
+    {
+      "id": "m-save2",
+      "from": "wf",
+      "to": "raw",
+      "y": 544,
+      "label": "waveform_C####_on.npy + timing"
     },
     {
       "id": "m-next",
@@ -223,13 +223,13 @@
     },
     {
       "participant": "zinj",
-      "from": 264,
-      "to": 300
+      "from": 250,
+      "to": 270
     },
     {
       "participant": "temp",
-      "from": 250,
-      "to": 270
+      "from": 282,
+      "to": 302
     },
     {
       "participant": "hf2",
@@ -238,28 +238,28 @@
     },
     {
       "participant": "raw",
-      "from": 378,
-      "to": 398
-    },
-    {
-      "participant": "zinj",
-      "from": 410,
-      "to": 430
-    },
-    {
-      "participant": "hf2",
-      "from": 442,
-      "to": 484
-    },
-    {
-      "participant": "raw",
       "from": 506,
       "to": 526
     },
     {
-      "participant": "temp",
+      "participant": "zinj",
+      "from": 378,
+      "to": 398
+    },
+    {
+      "participant": "hf2",
+      "from": 410,
+      "to": 452
+    },
+    {
+      "participant": "raw",
       "from": 538,
       "to": 558
+    },
+    {
+      "participant": "temp",
+      "from": 474,
+      "to": 494
     }
   ],
   "cards": [
@@ -269,7 +269,7 @@
       "items": [
         "同温控窗口内完成 OFF/ON 两态",
         "相邻控制点交替先后抑制时序偏置",
-        "每段立即落盘,第二段失败保留第一段"
+        "两态缓存，恢复后保存；失败保留已采段"
       ]
     },
     {
@@ -278,7 +278,7 @@
       "items": [
         "外触发方波常开,重开后等同一触发沿",
         "时序记录为主机时间,非仪器触发时间",
-        "DAQ 失败保留已保存段,不自动重试"
+        "DAQ 失败先恢复温控，再保存已采段"
       ]
     },
     {

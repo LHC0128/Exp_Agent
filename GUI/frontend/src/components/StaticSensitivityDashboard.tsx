@@ -1,3 +1,4 @@
+import { historyParameterValues } from "../pages/experimentHelpers";
 import { preflightMessage, type PreflightResult } from "../pages/experimentHelpers";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "../api";
@@ -30,7 +31,7 @@ export function StaticSensitivityDashboard({ experimentId, definition, fields, l
   const blocked = hardwareBusy || live || activeJobs.some((item) => item.kind === `experiment:${experimentId}` && ["queued", "running"].includes(item.status));
   useEffect(() => {
     if (!prefill) return;
-    setValues((current) => ({ ...current, ...prefill }));
+    setValues((current) => ({ ...current, ...historyParameterValues(fields, prefill) }));
     clearPrefill();
   }, [prefill]);
   useEffect(() => {

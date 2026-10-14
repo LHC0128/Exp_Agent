@@ -92,6 +92,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import numpy as np
+from lab_workflows.steps import acquisition_window
 import yaml
 import time
 import math
@@ -145,6 +146,7 @@ def validate_safety_limit(name, value):
 
 
 # ========== 实验标识 ==========
+SYSTEM_SETTLE_S = 0.5  # 配置与温控门控共同稳定的采集前等待（秒）
 EXPERIMENT_TYPE = "XY_AW_Voltage_Calibration"
 RUN_TAG = "xy_aw_cal"
 
@@ -185,7 +187,6 @@ ENABLE_XY_CARRIER_PHASE_CAL = True
 XY_PHASE_CAL_MAX_ITER_X = 5       # CH1 校相最大迭代次数
 XY_PHASE_CAL_MAX_ITER_Y = 15      # CH2 校相最大迭代次数
 XY_PHASE_CAL_TOL_DEG = 0.5        # |theta°| < tol 即视为收敛
-XY_PHASE_CAL_SETTLE_s = 0.5       # 每次 set_phase_adjust 后的等待时间
 XY_PHASE_CAL_AM_DC_V = float(PHASE_CAL_XY_DC_VOLTAGE_V)  # 校相时 dg_am AW offset 包络
 
 # ========== Z 射频场驱动参数（频率扫描变量）==========
@@ -204,9 +205,6 @@ Z_RF_FREQ_LIST = np.arange(
 
 # ========== 每频点采集参数 ==========
 POINT_DURATION_s = 1.0
-FREQ_SETTLE_TIME_s = 0.5
-XY_DC_SETTLE_TIME_s = 0.3         # 切换 XY DC 电压后等待稳定
-TEMP_SWITCH_OFF_LEAD_s = 0.1      # 采集前关温度开关后等待磁场残余消失 (s)
 TEMP_SWITCH_ON_LAG_s = 1.0        # 采集后开温度开关后等待系统稳定 (s)
 
 # ========== HF2 Demod 0 配置（主信号解调，参考 = Pump 调制频率）==========
@@ -228,7 +226,6 @@ DEMOD3_TC_PER_PERIOD_FRAC = 0.05
 DEMOD3_ORDER = 8
 DEMOD3_N_AVG = 50
 DEMOD3_AVG_INTERVAL_s = 0.01
-DEMOD3_READ_SETTLE_TIME_s = 0.2
 
 # ========== 物理回环链路参数 (Demod 0 Y → AuxOut2 → SigIn2 → Demod 3) ==========
 CONFIGURE_AUXOUT2_TO_DEMOD0_Y = True
@@ -709,7 +706,7 @@ def calibrate_xy_carrier_phase(dg_comp_inst, dg_am_inst, hfi_inst,
                                 initial_x_phase, initial_y_phase, am_dc_v,
                                 max_iter_x=5, max_iter_y=15,
                                 tol_deg=0.5, settle_s=0.5,
-                                demod0_calibrated_phase_deg=0.0):
+                                demod0_calibrated_phase_deg=0.0, temp_switch=None, temp_channel=2):
     """分通道迭代校准 X/Y 载波相位（移植自 RF_Field_Sensitivity.ipynb）。
 
     CH1 校相：仅开 CH1，迭代读 Demod 0 theta → set_phase_adjust(ch=1)
@@ -718,6 +715,9 @@ def calibrate_xy_carrier_phase(dg_comp_inst, dg_am_inst, hfi_inst,
     """
     import math as _math
 
+    from lab_workflows.steps import set_temperature_switch
+    if temp_switch is not None:
+        set_temperature_switch(temp_switch, True, channel=temp_channel)
     result = {
         "x_carrier_phase_calibrated_deg": float(initial_x_phase) % 360,
         "y_carrier_phase_calibrated_deg": float(initial_y_phase) % 360,
@@ -753,50 +753,56 @@ def calibrate_xy_carrier_phase(dg_comp_inst, dg_am_inst, hfi_inst,
     dg_am_inst.set_output(False, channel=2)
     dg_comp_inst.set_output(True, channel=1)
     dg_am_inst.set_output(True, channel=1)
-    time.sleep(settle_s)
-
-    for i in range(max_iter_x):
-        sample = demod.read_demod_sample(hfi_inst, demod_idx=HF2_DEMOD0_IDX)
-        theta_deg = _math.degrees(sample["theta"])
-        result["n_iter_x"] = i + 1
-        print(f"    CH1 迭代 {i+1}: theta = {theta_deg:.2f}°")
-        if abs(theta_deg) < tol_deg:
-            result["phase_cal_success_x"] = True
-            print(f"    CH1 相位已收敛 (< {tol_deg}°)")
-            break
-        x_phase = (x_phase - theta_deg) % 360
-        dg_comp_inst.set_phase_adjust(x_phase, channel=1)
+    try:
+        if temp_switch is not None:
+            set_temperature_switch(temp_switch, False, channel=temp_channel)
         time.sleep(settle_s)
 
-    result["x_carrier_phase_calibrated_deg"] = x_phase
-    print(f"    CH1 最终载波相位 = {x_phase:.2f}°")
+        for i in range(max_iter_x):
+            sample = demod.read_demod_sample(hfi_inst, demod_idx=HF2_DEMOD0_IDX)
+            theta_deg = _math.degrees(sample["theta"])
+            result["n_iter_x"] = i + 1
+            print(f"    CH1 迭代 {i+1}: theta = {theta_deg:.2f}°")
+            if abs(theta_deg) < tol_deg:
+                result["phase_cal_success_x"] = True
+                print(f"    CH1 相位已收敛 (< {tol_deg}°)")
+                break
+            x_phase = (x_phase - theta_deg) % 360
+            dg_comp_inst.set_phase_adjust(x_phase, channel=1)
+            time.sleep(settle_s)
 
-    # ---- CH2 校相 ----
-    print("\n  校准 CH2 相位 (CH1 + CH2 都开)...")
-    dg_comp_inst.set_output(True, channel=2)
-    dg_am_inst.set_output(True, channel=2)
-    dg_comp_inst.set_phase_adjust(y_phase, channel=2)
-    time.sleep(settle_s * 0.6)
+        result["x_carrier_phase_calibrated_deg"] = x_phase
+        print(f"    CH1 最终载波相位 = {x_phase:.2f}°")
 
-    for i in range(max_iter_y):
-        sample = demod.read_demod_sample(hfi_inst, demod_idx=HF2_DEMOD0_IDX)
-        theta_deg = _math.degrees(sample["theta"])
-        result["n_iter_y"] = i + 1
-        print(f"    CH2 迭代 {i+1}: theta = {theta_deg:.2f}°")
-        if abs(theta_deg) < tol_deg:
-            result["phase_cal_success_y"] = True
-            print(f"    CH2 相位已收敛 (< {tol_deg}°)")
-            break
-        y_phase = (y_phase - theta_deg) % 360
+        # ---- CH2 校相 ----
+        print("\n  校准 CH2 相位 (CH1 + CH2 都开)...")
+        dg_comp_inst.set_output(True, channel=2)
+        dg_am_inst.set_output(True, channel=2)
         dg_comp_inst.set_phase_adjust(y_phase, channel=2)
         time.sleep(settle_s)
 
-    result["y_carrier_phase_calibrated_deg"] = y_phase
-    result["xy_phase_diff_deg"] = (y_phase - x_phase) % 360
-    print(f"    CH2 最终载波相位 = {y_phase:.2f}°")
-    print(f"    实际相位差 = {result['xy_phase_diff_deg']:.2f}° "
-          f"(target {TARGET_XY_PHASE_DIFF_deg:.1f}°)")
-    return result
+        for i in range(max_iter_y):
+            sample = demod.read_demod_sample(hfi_inst, demod_idx=HF2_DEMOD0_IDX)
+            theta_deg = _math.degrees(sample["theta"])
+            result["n_iter_y"] = i + 1
+            print(f"    CH2 迭代 {i+1}: theta = {theta_deg:.2f}°")
+            if abs(theta_deg) < tol_deg:
+                result["phase_cal_success_y"] = True
+                print(f"    CH2 相位已收敛 (< {tol_deg}°)")
+                break
+            y_phase = (y_phase - theta_deg) % 360
+            dg_comp_inst.set_phase_adjust(y_phase, channel=2)
+            time.sleep(settle_s)
+
+        result["y_carrier_phase_calibrated_deg"] = y_phase
+        result["xy_phase_diff_deg"] = (y_phase - x_phase) % 360
+        print(f"    CH2 最终载波相位 = {y_phase:.2f}°")
+        print(f"    实际相位差 = {result['xy_phase_diff_deg']:.2f}° "
+              f"(target {TARGET_XY_PHASE_DIFF_deg:.1f}°)")
+        return result
+    finally:
+        if temp_switch is not None:
+            set_temperature_switch(temp_switch, True, channel=temp_channel)
 
 
 # ---- 0. 复位 Z 场通道的 burst/mod 状态 ----
@@ -825,7 +831,7 @@ print(f"主磁场: {FIXED_PARAMS['main_magnetic_field']} mA")
 # ---- 4. 温度控制（等待稳定 ±1°C）----
 validate_safety_limit("temperature", FIXED_PARAMS["temperature"])
 configure_temperature_control(
-    tec, FIXED_PARAMS["temperature"], tolerance_c=1.0, stable_reads=1
+    tec, FIXED_PARAMS["temperature"],
 )
 
 # ---- 5. 温度开关 (ON) ----
@@ -904,7 +910,6 @@ print("=" * 60)
 # 重新打开链路，进入扫描。
 print("校相前: 关闭 ConstXY 链路 (dg_comp + dg_am), 关闭 Z 场与温度开关...")
 shutdown_xy_chain(dg_comp, dg_am)
-dg_temp.set_output(False, channel=2)
 dg_sweep.set_output(False, channel=1)
 time.sleep(0.3)
 print(f"  X/Y 载波 (dg_comp CH1/CH2): OFF (校相基线)")
@@ -1013,74 +1018,71 @@ print(f"Demod {DEMOD3_IDX} (射频场, 初值): rate={actual_rate_d3:.0f} Sa/s, 
 
 # ---- 自动校相 (Demod 0) ----
 print("正在进行 Demod 0 相位校准...")
-calibrated_phase = demod.auto_calibrate_phase(
-    hfi, demod_idx=HF2_DEMOD0_IDX,
-    tolerance_deg=1.0, max_attempts=5, settle_time=0.2,
-)
-print(f"Demod 0 校准完成: phaseshift = {calibrated_phase:.2f}°")
-sample = demod.read_demod_sample(hfi, demod_idx=HF2_DEMOD0_IDX)
-print(f"  校准后样本: R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
-
-# ---- 重新打开 ConstXY 链路 + (可选) X/Y 载波相位校准 ----
-# 校相时为纯净基线，链路上 OFF；进入扫描前必须再打开。
-# 后续 Phase 2 每个 XY_DC 电压点只调用 set_xy_am_dc() 切换包络电压，
-# 不再触碰 dg_comp carrier。
-print("校相后: 重新打开 ConstXY 链路")
-validate_safety_limit("X_magnetic_field_AM", PHASE_CAL_XY_DC_VOLTAGE_V)
-validate_safety_limit("Y_magnetic_field_AM", PHASE_CAL_XY_DC_VOLTAGE_V)
-
-if ENABLE_XY_CARRIER_PHASE_CAL:
-    # 载波相位校准（移植自 RF_Field_Sensitivity.ipynb）
-    # calibrate_xy_carrier_phase() 内部会完成：
-    #   1. Demod 0 切回校相 TC
-    #   2. configure_xy_carrier_for_phase_cal (90 kHz AM EXT)
-    #   3. set_xy_phase_cal_am_dc (AM AW offset 包络)
-    #   4. 分通道迭代 set_phase_adjust → 读出最终 X/Y 相位
-    # 校准完成后 carrier 保持 ON，Demod 0 在下方再切到测量 TC。
-    print("启用载波相位校准 (ENABLE_XY_CARRIER_PHASE_CAL=True)")
-    dg_temp.set_output(False, channel=2)  # temp OFF (避免引入噪声)
-    time.sleep(0.3)
-
-    xy_cal_result = calibrate_xy_carrier_phase(
-        dg_comp_inst=dg_comp,
-        dg_am_inst=dg_am,
-        hfi_inst=hfi,
-        initial_x_phase=X_CARRIER_PHASE_INITIAL_deg,
-        initial_y_phase=Y_CARRIER_PHASE_INITIAL_deg,
-        am_dc_v=XY_PHASE_CAL_AM_DC_V,
-        max_iter_x=XY_PHASE_CAL_MAX_ITER_X,
-        max_iter_y=XY_PHASE_CAL_MAX_ITER_Y,
-        tol_deg=XY_PHASE_CAL_TOL_DEG,
-        settle_s=XY_PHASE_CAL_SETTLE_s,
-        demod0_calibrated_phase_deg=float(calibrated_phase),
+with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+    calibrated_phase = demod.auto_calibrate_phase(
+        hfi, demod_idx=HF2_DEMOD0_IDX,
+        tolerance_deg=1.0, max_attempts=5, settle_time=SYSTEM_SETTLE_S,
     )
+    print(f"Demod 0 校准完成: phaseshift = {calibrated_phase:.2f}°")
+    sample = demod.read_demod_sample(hfi, demod_idx=HF2_DEMOD0_IDX)
+    print(f"  校准后样本: R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
 
-    # 更新全局 X/Y 相位为校准结果
-    X_CARRIER_PHASE_deg = xy_cal_result["x_carrier_phase_calibrated_deg"]
-    Y_CARRIER_PHASE_deg = xy_cal_result["y_carrier_phase_calibrated_deg"]
+    # ---- 重新打开 ConstXY 链路 + (可选) X/Y 载波相位校准 ----
+    # 校相时为纯净基线，链路上 OFF；进入扫描前必须再打开。
+    # 后续 Phase 2 每个 XY_DC 电压点只调用 set_xy_am_dc() 切换包络电压，
+    # 不再触碰 dg_comp carrier。
+    print("校相后: 重新打开 ConstXY 链路")
+    validate_safety_limit("X_magnetic_field_AM", PHASE_CAL_XY_DC_VOLTAGE_V)
+    validate_safety_limit("Y_magnetic_field_AM", PHASE_CAL_XY_DC_VOLTAGE_V)
 
-    dg_temp.set_output(True, channel=2)  # temp 恢复
+    if ENABLE_XY_CARRIER_PHASE_CAL:
+        # 载波相位校准（移植自 RF_Field_Sensitivity.ipynb）
+        # calibrate_xy_carrier_phase() 内部会完成：
+        #   1. Demod 0 切回校相 TC
+        #   2. configure_xy_carrier_for_phase_cal (90 kHz AM EXT)
+        #   3. set_xy_phase_cal_am_dc (AM AW offset 包络)
+        #   4. 分通道迭代 set_phase_adjust → 读出最终 X/Y 相位
+        # 校准完成后 carrier 保持 ON，Demod 0 在下方再切到测量 TC。
+        print("启用载波相位校准 (ENABLE_XY_CARRIER_PHASE_CAL=True)")
+        with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+            xy_cal_result = calibrate_xy_carrier_phase(
+                dg_comp_inst=dg_comp,
+                dg_am_inst=dg_am,
+                hfi_inst=hfi,
+                initial_x_phase=X_CARRIER_PHASE_INITIAL_deg,
+                initial_y_phase=Y_CARRIER_PHASE_INITIAL_deg,
+                am_dc_v=XY_PHASE_CAL_AM_DC_V,
+                max_iter_x=XY_PHASE_CAL_MAX_ITER_X,
+                max_iter_y=XY_PHASE_CAL_MAX_ITER_Y,
+                tol_deg=XY_PHASE_CAL_TOL_DEG,
+                settle_s=SYSTEM_SETTLE_S,
+                demod0_calibrated_phase_deg=float(calibrated_phase),
+             temp_switch=dg_temp,)
 
-    print(f"\nX/Y 载波相位校准完成:")
-    print(f"  X_CARRIER_PHASE = {X_CARRIER_PHASE_deg:.2f}° (收敛={xy_cal_result['phase_cal_success_x']})")
-    print(f"  Y_CARRIER_PHASE = {Y_CARRIER_PHASE_deg:.2f}° (收敛={xy_cal_result['phase_cal_success_y']})")
-    print(f"  实际相位差 = {xy_cal_result['xy_phase_diff_deg']:.2f}° (target {TARGET_XY_PHASE_DIFF_deg:.1f}°)")
-else:
-    print("载波相位校准已禁用 (ENABLE_XY_CARRIER_PHASE_CAL=False), 使用固定相位")
-    configure_xy_carrier(dg_comp)
-    set_xy_am_dc(dg_am, PHASE_CAL_XY_DC_VOLTAGE_V, output=True)
-    xy_cal_result = {
-        "x_carrier_phase_calibrated_deg": float(X_CARRIER_PHASE_deg),
-        "y_carrier_phase_calibrated_deg": float(Y_CARRIER_PHASE_deg),
-        "xy_phase_diff_deg": (float(Y_CARRIER_PHASE_deg) - float(X_CARRIER_PHASE_deg)) % 360,
-        "phase_cal_success_x": False,
-        "phase_cal_success_y": False,
-        "n_iter_x": 0,
-        "n_iter_y": 0,
-    }
+            # 更新全局 X/Y 相位为校准结果
+            X_CARRIER_PHASE_deg = xy_cal_result["x_carrier_phase_calibrated_deg"]
+            Y_CARRIER_PHASE_deg = xy_cal_result["y_carrier_phase_calibrated_deg"]
 
-# ---- 恢复温控 (如果上面校准临时关了) ----
-dg_temp.set_output(True, channel=2)
+
+        print(f"\nX/Y 载波相位校准完成:")
+        print(f"  X_CARRIER_PHASE = {X_CARRIER_PHASE_deg:.2f}° (收敛={xy_cal_result['phase_cal_success_x']})")
+        print(f"  Y_CARRIER_PHASE = {Y_CARRIER_PHASE_deg:.2f}° (收敛={xy_cal_result['phase_cal_success_y']})")
+        print(f"  实际相位差 = {xy_cal_result['xy_phase_diff_deg']:.2f}° (target {TARGET_XY_PHASE_DIFF_deg:.1f}°)")
+    else:
+        print("载波相位校准已禁用 (ENABLE_XY_CARRIER_PHASE_CAL=False), 使用固定相位")
+        configure_xy_carrier(dg_comp)
+        set_xy_am_dc(dg_am, PHASE_CAL_XY_DC_VOLTAGE_V, output=True)
+        xy_cal_result = {
+            "x_carrier_phase_calibrated_deg": float(X_CARRIER_PHASE_deg),
+            "y_carrier_phase_calibrated_deg": float(Y_CARRIER_PHASE_deg),
+            "xy_phase_diff_deg": (float(Y_CARRIER_PHASE_deg) - float(X_CARRIER_PHASE_deg)) % 360,
+            "phase_cal_success_x": False,
+            "phase_cal_success_y": False,
+            "n_iter_x": 0,
+            "n_iter_y": 0,
+        }
+
+    # ---- 恢复温控 (如果上面校准临时关了) ----
 print("温度开关已恢复")
 
 # ---- 切换 Demod 0 至测量 TC ----
@@ -1155,8 +1157,8 @@ config = {
         "freq_list_Hz": Z_RF_FREQ_LIST.tolist(),
         "Z_RF_AMPLITUDE_Vpp": Z_RF_AMPLITUDE_Vpp,
         "POINT_DURATION_s": POINT_DURATION_s,
-        "FREQ_SETTLE_TIME_s": FREQ_SETTLE_TIME_s,
-        "XY_DC_SETTLE_TIME_s": XY_DC_SETTLE_TIME_s,
+        "FREQ_SETTLE_TIME_s": SYSTEM_SETTLE_S,
+        "SYSTEM_SETTLE_S": SYSTEM_SETTLE_S,
         "is_baseline_handling": (
             "未设置 0 Hz baseline 点；每个 XY_DC 下都做完整 Z 频率扫描。"
         ),
@@ -1188,7 +1190,7 @@ config = {
         "order_actual": int(demod_r_actual_order),
         "n_avg": DEMOD3_N_AVG,
         "avg_interval_s": DEMOD3_AVG_INTERVAL_s,
-        "read_settle_time_s": DEMOD3_READ_SETTLE_TIME_s,
+        "read_settle_time_s": SYSTEM_SETTLE_S,
     },
     "hf2_signal_input_2": {
         "input_index": SIGIN2_INDEX,
@@ -1346,7 +1348,7 @@ try:
 
         # ---- 切换 XY DC 电压（只改 dg_am AW offset 包络，carrier 保持 ON）----
         set_xy_am_dc(dg_am, float(xy_dc_v), output=True)
-        time.sleep(XY_DC_SETTLE_TIME_s)
+        time.sleep(SYSTEM_SETTLE_S)
         print(f"\n[XY AW offset] v_idx={v_idx:02d}, XY_DC_VOLTAGE={xy_dc_v:.4f} V "
               f"(旧 A_ENV 预测: f={(xy_dc_v * A_ENV_K_LEGACY + A_ENV_B_LEGACY):.1f} Hz), "
               f"carrier 保持 ON")
@@ -1381,7 +1383,7 @@ try:
             dg_sweep.set_burst_mode("INFinity", channel=1)
             dg_sweep.set_burst_trigger_source("EXTernal", channel=1)
             dg_sweep.set_output(True, channel=1)
-            time.sleep(FREQ_SETTLE_TIME_s)
+            time.sleep(SYSTEM_SETTLE_S)
 
             # ---- 2. (demod_r / both 模式) 同步 Osc 1 和 Demod 3 ----
             if ACQUISITION_MODE in ("demod_r", "both"):
@@ -1411,11 +1413,7 @@ try:
                 record["demod_r_adcselect_actual"] = int(point_adcselect)
 
             # ---- 3. 关温度开关（消除温控磁场干扰）----
-            dg_temp.set_output(False, channel=2)
-            time.sleep(TEMP_SWITCH_OFF_LEAD_s)
-
-            # ---- 4. 采集 HF2 数据 ----
-            try:
+            with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
                 if ACQUISITION_MODE in ("daq_fft_y", "both"):
                     daq_cfg = DAQConfig(
                         device=MAPPING["lockin_r"]["device_id"],
@@ -1448,7 +1446,6 @@ try:
                         record["actual_rate_Sa_s"] = float(actual_rate)
 
                 if ACQUISITION_MODE in ("demod_r", "both"):
-                    time.sleep(DEMOD3_READ_SETTLE_TIME_s)
                     x_list, y_list, r_list, theta_list = [], [], [], []
                     for _ in range(DEMOD3_N_AVG):
                         s = demod.read_demod_sample(hfi, demod_idx=DEMOD3_IDX)
@@ -1482,11 +1479,7 @@ try:
                     record["demod_r_phase_vector_rad"] = phase_vec_rad
                     record["demod_r_phase_vector_deg"] = phase_vec_deg
                     record["demod_r_theta_values_deg"] = np.degrees(theta_arr)
-
-            finally:
-                # 恢复温度开关
-                dg_temp.set_output(True, channel=2)
-                time.sleep(TEMP_SWITCH_ON_LAG_s)
+            time.sleep(TEMP_SWITCH_ON_LAG_s)
 
             # ---- 5. 保存当前频点 ----
             fname = f"zfreq_{z_idx:04d}_{z_freq:.3f}Hz.npz"

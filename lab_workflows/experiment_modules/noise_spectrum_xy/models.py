@@ -25,13 +25,15 @@ def welch_settings(rate: float, duration: float, bin_width: float, *, minimum_se
 
 @dataclass(slots=True)
 class NoiseSpectrumXYParams(ExperimentParams):
-    schema_version: ClassVar[int] = 3
+    schema_version: ClassVar[int] = 4
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'XY_SETTLE_TIME': 0.5}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    system_settle_s: float = parameter(default=0.5, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="noise", external_name="RUN_TAG", label="运行标签", group="basic")
     target_noise_freq_start_hz: float = parameter(default=0.0, external_name="TARGET_NOISE_FREQ_START_HZ", label="目标噪声频率起点", unit="Hz", group="basic", minimum=0)
     target_noise_freq_stop_hz: float = parameter(default=50000.0, external_name="TARGET_NOISE_FREQ_STOP_HZ", label="目标噪声频率终点", unit="Hz", group="basic", minimum=0)
     target_noise_freq_points: int = parameter(default=500, external_name="TARGET_NOISE_FREQ_POINTS", label="目标频率扫描点数", group="basic", minimum=2)
-    xy_settle_time: float = parameter(default=0.5, external_name="XY_SETTLE_TIME", label="每点稳定等待", unit="s", group="basic", minimum=0)
     temp_switch_on_settle_s: float = parameter(default=2.0, external_name="TEMP_SWITCH_ON_SETTLE_S", label="恢复温控等待时间", unit="s", group="advanced", minimum=0, description="校相测量和每点采集恢复温控后等待的时间；支持取消。")
     pump_mod_freq: float = parameter(default=10000.0, external_name="PUMP_MOD_FREQ", label="Pump 调制频率", unit="Hz", group="basic", minimum=0.001)
     pump_mod_amplitude: float = parameter(default=0.18, external_name="PUMP_MOD_AMPLITUDE", label="Pump 载波幅度", unit="Vpp", group="basic", safety_key="Pump_modulation")
@@ -111,7 +113,7 @@ class NoiseSpectrumXYParams(ExperimentParams):
             result = welch_settings(params.hf2_daq_rate, params.hf2_daq_duration,
                                     params.analysis_bin_width_hz)
             result["scan_seconds"] = params.target_noise_freq_points * (
-                params.hf2_daq_duration + params.xy_settle_time + params.temp_switch_on_settle_s + 0.3)
+                params.hf2_daq_duration + params.system_settle_s + params.temp_switch_on_settle_s + 0.3)
             return result
         except (TypeError, ValueError, OverflowError) as exc:
             return {"error": str(exc)}

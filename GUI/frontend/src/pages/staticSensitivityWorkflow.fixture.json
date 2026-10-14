@@ -59,32 +59,11 @@
       ]
     },
     {
-      "id": "A05",
-      "title": "温度稳定",
-      "group": "初始条件",
-      "dependencies": [
-        "A04"
-      ],
-      "parameters": [
-        "temp_tolerance_c",
-        "temp_stable_reads",
-        "temp_poll_interval_s",
-        "max_temp_wait_s"
-      ],
-      "artifacts": [],
-      "display_parameters": [
-        "temp_tolerance_c",
-        "temp_stable_reads",
-        "temp_poll_interval_s",
-        "max_temp_wait_s"
-      ]
-    },
-    {
       "id": "A06",
       "title": "Pump 载波与脉冲门控",
       "group": "激励与校相",
       "dependencies": [
-        "A05"
+        "A04"
       ],
       "parameters": [
         "pump_mod_freq",
@@ -135,12 +114,12 @@
         "A07"
       ],
       "parameters": [
-        "dispersion_temp_switch_off_settle_s",
+        "SYSTEM_SETTLE_S",
         "dispersion_temp_switch_on_settle_s"
       ],
       "artifacts": [],
       "display_parameters": [
-        "dispersion_temp_switch_off_settle_s",
+        "SYSTEM_SETTLE_S",
         "dispersion_temp_switch_on_settle_s"
       ]
     },
@@ -156,7 +135,7 @@
         "ramp_low",
         "ramp_high",
         "dispersion_steps",
-        "dispersion_step_settle_s",
+        "SYSTEM_SETTLE_S",
         "dispersion_duration_s",
         "dispersion_temp_switch_interval_points"
       ],
@@ -171,9 +150,8 @@
         "dispersion_steps",
         "hf2_demod_rate",
         "dispersion_duration_s",
-        "dispersion_step_settle_s",
         "dispersion_temp_switch_interval_points",
-        "dispersion_temp_switch_off_settle_s",
+        "SYSTEM_SETTLE_S",
         "dispersion_temp_switch_on_settle_s"
       ]
     },
@@ -217,7 +195,9 @@
         "noise_duration",
         "gs200_current_ranges",
         "gs200_range_headroom",
-        "gs200_range_settle_time"
+        "gs200_range_settle_time",
+        "SYSTEM_SETTLE_S",
+        "dispersion_temp_switch_on_settle_s"
       ]
     },
     {
@@ -310,7 +290,6 @@
     "acquisition": {
       "pump_laser_power": [
         "A04",
-        "A05",
         "A06",
         "A07",
         "A08",
@@ -321,7 +300,6 @@
       ],
       "probe_laser_power": [
         "A04",
-        "A05",
         "A06",
         "A07",
         "A08",
@@ -332,7 +310,6 @@
       ],
       "main_magnetic_field": [
         "A04",
-        "A05",
         "A06",
         "A07",
         "A08",
@@ -343,7 +320,6 @@
       ],
       "x_magnetic_field": [
         "A04",
-        "A05",
         "A06",
         "A07",
         "A08",
@@ -354,7 +330,6 @@
       ],
       "y_magnetic_field": [
         "A04",
-        "A05",
         "A06",
         "A07",
         "A08",
@@ -365,7 +340,6 @@
       ],
       "temp_switch": [
         "A04",
-        "A05",
         "A06",
         "A07",
         "A08",
@@ -376,47 +350,6 @@
       ],
       "temperature": [
         "A04",
-        "A05",
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12"
-      ],
-      "temp_tolerance_c": [
-        "A05",
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12"
-      ],
-      "temp_stable_reads": [
-        "A05",
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12"
-      ],
-      "temp_poll_interval_s": [
-        "A05",
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12"
-      ],
-      "max_temp_wait_s": [
-        "A05",
         "A06",
         "A07",
         "A08",
@@ -519,7 +452,7 @@
         "A11",
         "A12"
       ],
-      "dispersion_temp_switch_off_settle_s": [
+      "SYSTEM_SETTLE_S": [
         "A08",
         "A09",
         "A10",
@@ -552,12 +485,6 @@
         "A12"
       ],
       "dispersion_steps": [
-        "A09",
-        "A10",
-        "A11",
-        "A12"
-      ],
-      "dispersion_step_settle_s": [
         "A09",
         "A10",
         "A11",

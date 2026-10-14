@@ -19,7 +19,7 @@ DEFINITION = ExperimentDefinition(
     category="measurement",
     family="fundamental-noise",
     variant="scope-pd",
-    description="采集 GS200 输出打开时的 SDS PD 原始噪声谱，可选测量输出关闭对照组，并在主场标定预测中心附近自由拟合洛伦兹自旋噪声峰。",
+    description=("采集 GS200 输出打开时的 SDS PD 原始噪声谱，可选测量输出关闭对照组，并在主场标定预测中心附近自由拟合洛伦兹自旋噪声峰。" + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
     data_type="Projection_noise",
     required_devices=("GS200", "DG900", "DG4000", "SDS"),
     execution_mode="typed_workflow",
@@ -37,7 +37,7 @@ DEFINITION = ExperimentDefinition(
         "XY、Z 辅助场以及 Pump 载波/门控在初始化和结束时均关闭归零，"
         "避免继承上一实验的残余输出。",
     ),
-    schema_version=ProjectionNoiseParams.schema_version,
+    schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,
     preflight_runner=ADAPTER.preflight,

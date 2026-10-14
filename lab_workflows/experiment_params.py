@@ -207,6 +207,12 @@ class ExperimentParams:
         strict: bool = True,
     ) -> "ExperimentParams":
         migrated = cls.migrate_external(values, schema_version)
+        if hasattr(cls, "system_settle_legacy_defaults"):
+            from .acquisition_policy import migrate_system_settle
+            migrated = migrate_system_settle(
+                migrated, cls.system_settle_legacy_defaults,
+                getattr(cls, "removed_temperature_keys", ()),
+            )
         names = cls.external_names()
         unknown = sorted(set(migrated) - set(names))
         if strict and unknown:
@@ -266,6 +272,11 @@ class ExperimentParams:
             value = values[item.name]
             metadata = item.metadata
             external = str(metadata["external_name"])
+            if external == "SYSTEM_SETTLE_S" and (
+                isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or value < 0
+            ):
+                errors.append("SYSTEM_SETTLE_S 必须是有限非负秒数")
             gate = metadata.get("active_when")
             if gate and not by_external.get(str(gate)):
                 # 功能未启用时该字段不参与校验（对照关闭即属此类）。
@@ -284,7 +295,9 @@ class ExperimentParams:
                 except ValueError as exc:
                     errors.append(str(exc))
             options = self._options(item, root)
-            if options and value not in [entry[0] for entry in options]:
+            choices = [entry[0] for entry in options]
+            selected = value if isinstance(value, list) else [value]
+            if options and any(entry not in choices for entry in selected):
                 errors.append(f"{external} 必须是 {', '.join(str(entry[0]) for entry in options)}")
         errors.extend(self.validate_model())
         return errors
@@ -343,6 +356,8 @@ class ExperimentParams:
                 "description": str(metadata.get("description", "")),
                 "read_only": bool(metadata.get("read_only", False)),
             }
+            if entry["name"] == "SYSTEM_SETTLE_S":
+                entry["legacy_defaults"] = dict(getattr(self, "system_settle_legacy_defaults", {}))
             options = self._options(item, root)
             if options or metadata.get("options") is not None or metadata.get("options_from_directory"):
                 entry["options"] = [

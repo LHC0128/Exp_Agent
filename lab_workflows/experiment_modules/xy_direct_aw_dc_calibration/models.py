@@ -5,7 +5,7 @@ from __future__ import annotations
 from lockin_amplifier import SignalInputConfig
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from ...common import validate_safety_limit
 from ...experiment_params import ExperimentParams, parameter
@@ -13,6 +13,10 @@ from ...experiment_params import ExperimentParams, parameter
 
 @dataclass(slots=True)
 class XYDirectAWDCCalibrationParams(ExperimentParams):
+    schema_version: ClassVar[int] = 2
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    system_settle_s: float = parameter(default=1.0, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="direct_aw_dc_cal", external_name="RUN_TAG", label="运行标签", group="basic")
     xy_env_voltage_start_v: float = parameter(default=-4.0, external_name="XY_ENV_VOLTAGE_START_V", label="DirectAW 扫描起始值", unit="V", group="basic")
     xy_env_voltage_stop_v: float = parameter(default=4.0, external_name="XY_ENV_VOLTAGE_STOP_V", label="DirectAW 扫描终止值", unit="V", group="basic")

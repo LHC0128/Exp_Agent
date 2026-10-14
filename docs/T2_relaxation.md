@@ -2,7 +2,7 @@
 title: 横向弛豫时间 T₂ 标定（光学 FID 时域法 + MORS 频域法）
 type: T2_Calibration
 experiment_id: t2-calibration
-schema_version: 2
+schema_version: 3
 execution_mode: typed_workflow
 description: 两种独立方法标定横向弛豫时间 T₂。方法一：RF 开关门控 Pump AOM 产生 Ω_L 频率调制 Pump 光 Burst 激发横向自旋相干，关断后示波器采集 PD 阻尼振荡信号，拟合得 T₂。方法二：MORS 谱共振峰 Lorentzian 拟合得 FWHM，反推 T₂ = 2/Γ。Bell-Bloom 下可与 PSD 洛伦兹拟合结果交叉验证 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
 keywords: [T2, transverse relaxation, FID, free induction decay, optical FID, MORS, Lorentzian, FWHM, RF switch, AOM carrier, burst, damped oscillation fit, Bell-Bloom]
@@ -88,6 +88,13 @@ defaults_file: params/experiments/t2-calibration.yaml
 > **坐标系**：主磁场 $B$ 沿 **Z**，光沿 **X** 传播。
 
 # 横向弛豫时间 T₂ 标定
+
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
 
 当前默认参数：[参数文件](../params/experiments/t2-calibration.yaml)。GUI「保存为默认」会更新该文件；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
 

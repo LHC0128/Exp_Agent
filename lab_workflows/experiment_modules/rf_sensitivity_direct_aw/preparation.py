@@ -100,10 +100,10 @@ def configure_initial_outputs(ctx):
     set_temperature_switch(signals, True, channel=channels["temp"])
 
 
-def stabilize_temperature(ctx):
+def configure_temperature(ctx):
     ctx.state["temperature_control"] = configure_temperature_control(ctx.devices["tec"],
         ctx.params.temperature, channel=ctx.mapping["temperature"]["channel"],
-        cancellation=ctx.cancellation).to_dict()
+        ).to_dict()
     ctx.state["optional_connection_errors"] = ctx.devices["optional_connection_errors"]
 
 

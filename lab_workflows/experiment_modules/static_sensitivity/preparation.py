@@ -1,4 +1,4 @@
-"""静磁场预检、设备准备、温度稳定与安全恢复。"""
+"""静磁场预检、设备准备、温度设定与安全恢复。"""
 
 import os
 from datetime import datetime
@@ -96,24 +96,8 @@ def configure_initial_outputs(ctx):
     gs.set_output(True)
     set_temp_switch(devices["dg_temp"], channels["Temp_Switch"], True)
     channel = int(ctx.mapping["temperature"]["channel"])
-    if devices["tec"] is None:
-        ctx.state["temperature_control"] = configure_temperature_control(None, params.temperature, channel=channel).to_dict()
-    else:
-        validate_safety_limit("temperature", params.temperature)
-        devices["tec"].set_target_temperature(params.temperature, channel=channel)
-        devices["tec"].set_enable(True, channel=channel)
-
-
-def stabilize_temperature(ctx):
-    params = ctx.params
-    if ctx.devices["tec"] is None:
-        return
-    actual = wait_for_temperature_stable(
-        ctx.devices["tec"], params.temperature, channel=int(ctx.mapping["temperature"]["channel"]),
-        tolerance_c=params.temp_tolerance_c, stable_reads=params.temp_stable_reads,
-        poll_interval_s=params.temp_poll_interval_s, timeout_s=params.max_temp_wait_s,
-        cancellation=RuntimeCancellation())
-    ctx.state["temperature_control"] = TemperatureControlStatus(params.temperature, actual, True, "tec103").to_dict()
+    ctx.state["temperature_control"] = configure_temperature_control(
+        devices["tec"], params.temperature, channel=channel).to_dict()
 
 
 def safe_shutdown(params, devices, channels, restore_phase, *, disconnect_tec=True):

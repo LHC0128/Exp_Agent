@@ -26,7 +26,7 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-y-probe-power-pzt-grid",
     description=(
-        '在 Mx Y 向 RF 构型下扫描 Probe 光功率和 DLC pro PZT Scan Offset；Probe 轴也可设为单点，以固定光功率只扫描 PZT。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
+        ('在 Mx Y 向 RF 构型下扫描 Probe 光功率和 DLC pro PZT Scan Offset；Probe 轴也可设为单点，以固定光功率只扫描 PZT。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
     ),
     data_type="Mx_Y_RF_Probe_Detuning_Optimization",
     required_devices=(
@@ -58,7 +58,7 @@ DEFINITION = ExperimentDefinition(
         "正常、取消和异常均恢复进入实验前的 PZT/扫描状态，关闭归零 "
         "Z 辅助场和 X/Y 场，并恢复 Pump=0.5 V、Probe=0.3 V 基准输出。",
     ),
-    schema_version=MxYRFProbeDetuningOptimizationParams.schema_version,
+    schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,
     preflight_runner=ADAPTER.preflight,

@@ -250,12 +250,6 @@ def _configure_outputs(
         devices.get("tec"),
         params.temperature_c,
         channel=1,
-        tolerance_c=params.temperature_tolerance_c,
-        stable_reads=params.temperature_stable_reads,
-        poll_interval_s=params.temperature_poll_interval_s,
-        timeout_s=params.temperature_timeout_s,
-        cancellation=_RuntimeCancellation(),
-        stability_waiter=wait_for_temperature_stable,
     )
     actual_temperature = temperature_status.actual_temperature_c
 
@@ -279,7 +273,7 @@ def _temperature_gated_capture(
     return temperature_gated_acquire(
         temp_switch=devices["temp_switch"],
         temp_channel=channels["temp_switch"],
-        off_settle_s=params.temp_switch_off_settle_s,
+        off_settle_s=params.system_settle_s,
         on_settle_s=params.temp_switch_on_settle_s,
         acquire=lambda: read_complete_scope_record(
             settings,
@@ -541,7 +535,7 @@ def run(params: ProjectionNoiseParams) -> Path:
             "scope": "every_scope_attempt",
             "during_acquisition": "0 V DC + output ON",
             "between_frames": "5 V DC + output ON",
-            "off_settle_s": params.temp_switch_off_settle_s,
+            "off_settle_s": params.system_settle_s,
             "on_settle_s": params.temp_switch_on_settle_s,
         },
         analysis_during_acquisition=False,
@@ -580,9 +574,9 @@ def run(params: ProjectionNoiseParams) -> Path:
             temperature_control={
                 "target_temperature_c": params.temperature_c,
                 "actual_temperature_c": actual_temperature,
-                "controlled_by_experiment": actual_temperature is not None,
+                "controlled_by_experiment": devices.get("tec") is not None,
                 "control_source": (
-                    "tec103" if actual_temperature is not None else "external_software"
+                    "tec103" if devices.get("tec") is not None else "external_software"
                 ),
             },
             clock_sources=clock_sources,

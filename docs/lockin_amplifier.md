@@ -199,7 +199,7 @@ MFLI Aux 写入时设置硬件上下限、清除 Preoffset，并拒绝可能覆�
 
 ## 不等价实验与实机验收
 
-仍要求第二路主电压输入的实验仅允许 HF2。DirectAW 与 DirectAW R 已显式支持可选辅助通道：HF2 采用物理线路，MFLI 采用辅助输入物理线路或 AuxOut 内部线路，并在启动输出前检查真实 MF-MD 选件。两种线路的带宽、增益和相位响应仍待实机确认，`aux_input_feedback_verified` 不标记为已验证。其他双主电压实验继续拒绝 MFLI，不自动改变接线、回退设备或降低频率。受影响清单见 [旧模式锁相实验与兼容性](legacy_lockin_experiments.md)。
+仍要求第二路主电压输入的实验仅允许 HF2。DirectAW 系列（含 R 与已知噪声版本）已显式支持可选辅助通道：HF2 采用物理线路，MFLI 采用辅助输入物理线路或 AuxOut 内部线路，并在启动输出前检查真实 MF-MD 选件。两种线路的带宽、增益和相位响应仍待实机确认，`aux_input_feedback_verified` 不标记为已验证。其他双主电压实验继续拒绝 MFLI，不自动改变接线、回退设备或降低频率。受影响清单见 [旧模式锁相实验与兼容性](legacy_lockin_experiments.md)。
 
 离线预检检查常见锁相频率参数，以及 Bell Bloom Z、Mx 主场、Mx Z 和实际电流耦合标定的完整预测扫频窗口；底层 setter 继续校验每次实际改频。新增其他派生扫频流程时需补充对应窗口检查。没有锁相依赖的实验不会按 MFLI 频率上限限制其他仪器。
 

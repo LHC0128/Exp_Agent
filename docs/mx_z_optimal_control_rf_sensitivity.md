@@ -48,6 +48,13 @@ defaults_file: params/experiments/mx-z-optimal-control-rf-sensitivity.yaml
 
 # Mx Z 最优控制 RF 灵敏度
 
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
+
 ## 锁相采集方式与实际速率
 
 响应使用 `RESPONSE_RATE_SA_S` 请求率、`RESPONSE_DURATION_S` 时长和 `DEMOD_IDX` 解调器；噪声使用 `NOISE_RATE_SA_S` 请求率、`NOISE_DURATION_S` 时长和 `DEMOD_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
@@ -185,7 +192,7 @@ GUI 基础参数提供“噪声测量时开启 RF”（`NOISE_RF_ENABLED`），�
 
 开启噪声 RF 时沿用 `Y_RF_FREQUENCY_HZ` 和正幅度对应的校准相位，每段采集前
 用 `set_amplitude()` 设置幅值并重新等待共同触发，再按
-`RESPONSE_SETTLE_TIME_S` 等待稳定；Z 控制保持连续运行。校相幅值为零的
+`SYSTEM_SETTLE_S` 等待稳定；Z 控制保持连续运行。校相幅值为零的
 剩磁响应模式不进入噪声采集，新开关不会改变该模式。
 
 `experiment_config.yaml` 的 `noise_rf` 和每个 `raw/noise_*.npz` 保存实际采用的

@@ -15,6 +15,8 @@ from .safety import safe_scan_outputs_off
 
 
 class Workflow(SineWorkflow):
+    data_type = acquisition.DATA_TYPE
+    experiment_id = 'noise-spectrum-xy-uncontrolled-probe-am'
     acquisition_stages = stages.ACQUISITION
     finish_id = stages.FINISH_ID
     preflight = staticmethod(preflight)

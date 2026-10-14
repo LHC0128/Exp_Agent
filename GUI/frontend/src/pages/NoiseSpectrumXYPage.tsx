@@ -1,3 +1,4 @@
+import { historyParameterValues } from "./experimentHelpers";
 import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState, type KeyboardEvent } from "react";
 
@@ -289,11 +290,7 @@ export function NoiseSpectrumXYPage() {
   };
 
   const fillBack = (parameters: ParameterValues) => {
-    const compatible = Object.fromEntries(
-      fields
-        .filter((field) => Object.hasOwn(parameters, field.name))
-        .map((field) => [field.name, parameters[field.name]]),
-    );
+    const compatible = historyParameterValues(fields, parameters);
     setValues((current) => ({ ...current, ...compatible }));
     if (Object.hasOwn(parameters, "HF2_NPERSEG")) {
       setNotice("旧 Welch 每段点数不再填回；新采集仅按表单中的频率格间距自动分段。历史重新分析保留旧规则。");

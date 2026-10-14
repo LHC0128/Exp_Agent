@@ -20,8 +20,11 @@ from ..noise_spectrum_xy_known_noise.models import noise_waveform_settings
 
 @dataclass(slots=True)
 class NoiseSpectrumXYProbeAMParams(NoiseSpectrumXYParams):
-    schema_version: ClassVar[int] = 2
+    schema_version: ClassVar[int] = 3
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'XY_SETTLE_TIME': 0.5, 'INJECTION_SETTLE_S': 0.2, 'Z_NOISE_SETTLE_S': 0.2}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    system_settle_s: float = parameter(default=0.5, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="probe_am", external_name="RUN_TAG", label="运行标签", group="basic")
     noise_band_starts_hz: list[float] = parameter(default_factory=lambda: [10000.0], external_name="NOISE_BAND_STARTS_HZ", label="设计噪声谱段起点", unit="Hz", group="basic")
     noise_band_stops_hz: list[float] = parameter(default_factory=lambda: [20000.0], external_name="NOISE_BAND_STOPS_HZ", label="设计噪声谱段终点", unit="Hz", group="basic")
@@ -29,7 +32,6 @@ class NoiseSpectrumXYProbeAMParams(NoiseSpectrumXYParams):
     noise_repeat_freq_hz: float = parameter(default=10.0, external_name="NOISE_REPEAT_FREQ_HZ", label="噪声波形重复频率", unit="Hz", group="basic", minimum=0.001)
     noise_amplitude_vpp: float = parameter(default=2.0, external_name="NOISE_AMPLITUDE_VPP", label="AM 噪声输出幅度", unit="Vpp", group="basic", minimum=0.0, safety_key="Probe_AOM_AM")
     noise_seed: int = parameter(default=20260922, external_name="NOISE_SEED", label="固定随机种子", group="advanced", minimum=0)
-    injection_settle_s: float = parameter(default=0.2, external_name="INJECTION_SETTLE_S", label="AM 噪声切换等待", unit="s", group="advanced", minimum=0)
     carrier_frequency_hz: float = parameter(default=100e6, external_name="PROBE_AOM_CARRIER_FREQ_HZ", label="Probe AOM 载波频率", unit="Hz", group="basic", minimum=1)
     carrier_amplitude_vpp: float = parameter(default=0.05, external_name="PROBE_AOM_CARRIER_VPP", label="Probe AOM 载波幅度", unit="Vpp", group="basic", minimum=0.0, maximum=0.05, safety_key="Probe_AOM_Carrier")
     am_depth_percent: float = parameter(default=100.0, external_name="PROBE_AOM_AM_DEPTH_PERCENT", label="外部 AM 深度", unit="%", group="basic", minimum=0, maximum=120)
@@ -40,7 +42,6 @@ class NoiseSpectrumXYProbeAMParams(NoiseSpectrumXYParams):
     z_noise_repeat_freq_hz: float = parameter(default=10.0, external_name="Z_NOISE_REPEAT_FREQ_HZ", label="Z 噪声重复频率", unit="Hz", group="basic", minimum=0.001)
     z_noise_amplitude_vpp: float = parameter(default=0.003403262733487621, external_name="Z_NOISE_AMPLITUDE_VPP", label="Z 噪声输出幅度", unit="Vpp", group="basic", minimum=0.0, safety_key="Z_magnetic_field")
     z_noise_seed: int = parameter(default=20260922, external_name="Z_NOISE_SEED", label="Z 噪声随机种子", group="advanced", minimum=0)
-    z_noise_settle_s: float = parameter(default=0.2, external_name="Z_NOISE_SETTLE_S", label="Z 噪声开启等待", unit="s", group="advanced", minimum=0)
 
     def noise_bands(self) -> list[tuple[float, float, float]]:
         return list(zip(self.noise_band_starts_hz, self.noise_band_stops_hz,
@@ -85,8 +86,8 @@ class NoiseSpectrumXYProbeAMParams(NoiseSpectrumXYParams):
             return {
                 **rate, **welch,
                 "scan_seconds": params.target_noise_freq_points * (
-                    2 * params.hf2_daq_duration + params.xy_settle_time
-                    + params.temp_switch_on_settle_s + 2 * params.injection_settle_s + 0.3),
+                    2 * params.hf2_daq_duration
+                    + params.temp_switch_on_settle_s + 2 * params.system_settle_s + 0.3),
                 "design_peak_v": waveform.design_peak_v,
                 "aligned_amplitude_vpp": aligned_amplitude,
                 "aligned_amplitude_safe": aligned_amplitude_safe,

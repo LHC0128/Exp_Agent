@@ -1,12 +1,11 @@
-schema_version: 2
+schema_version: 3
 parameters:
+  SYSTEM_SETTLE_S: 0.1
   RUN_TAG: rf_sens_aw
   RF_AMP_START: -0.1
   RF_AMP_STOP: 0.1
   RF_AMP_POINTS: 26
   TEMP_GROUP_SIZE: 2
-  RF_STEP_SETTLE_S: 0.1
-  TEMP_OFF_SETTLE_S: 0.1
   TEMP_SWITCH_ON_LAG_S: 5.0
   NOISE_N_AVG: 40
   NOISE_DURATION: 1.0

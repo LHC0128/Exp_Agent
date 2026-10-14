@@ -2,15 +2,17 @@
 from dataclasses import replace
 import math
 import numpy as np
+from ...steps.acquisition_window import acquisition_window
 from lockin_amplifier import DAQConfig, DemodulatorConfig, OscillatorConfig, SignalInputConfig, daq, demod
 from ...common import validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import (set_temperature_switch, calibrate_demod_phase, calibrate_direct_aw_phase,
     PhaseCalibrationConfig, DirectAWPhaseCalibrationConfig)
-from ._helpers import hf2_snapshot, validate_levels, wait
+from ._helpers import hf2_snapshot, validate_levels, wait, buffered_acquisition
 from .excitation import upload_xy, arm_z
 from .waveform import synthesize_xy, AW_AMPLITUDE_FLOOR_VPP
 from .phase_plot import plot_z_phase_scan
+from .excitation import set_z_rf, prepare_z_rf
 
 
 class CalibrationQualityError(RuntimeError):
@@ -29,11 +31,9 @@ def calibrate_demod0(ctx):
     demod.configure_oscillator(hf2, OscillatorConfig(osc_index=0, frequency=params.pump_mod_freq))
     d0_config = DemodulatorConfig(demod_index=0, rate=params.demod0_rate, input_channel=0, osc_select=0, time_constant=params.demod0_tc_calib, order=params.demod0_order)
     state["actual_rates"]["demod0_calib_Sa_s"] = float(demod.configure_demodulator(hf2, d0_config))
-    set_temperature_switch(signals, False, channel=channels["temp"])
-    wait(params.temp_off_settle_s)
-    phase0 = calibrate_demod_phase(hf2, PhaseCalibrationConfig(demod_idx=0), settle_wait=wait, cancellation=cancellation)
-    state["calibration"]["demod0"] = phase0.to_dict()
-    set_temperature_switch(signals, True, channel=channels["temp"])
+    with acquisition_window(lambda enabled: set_temperature_switch(signals, enabled, channel=channels["temp"]), wait, params.system_settle_s):
+        phase0 = calibrate_demod_phase(hf2, PhaseCalibrationConfig(demod_idx=0, settle_time=params.system_settle_s), settle_wait=wait, cancellation=cancellation)
+        state["calibration"]["demod0"] = phase0.to_dict()
     wait(params.temp_switch_on_lag_s)
     ctx.d0_config, ctx.phase0 = d0_config, phase0
 
@@ -57,32 +57,35 @@ def calibrate_xy(ctx):
     np.savez(directory.raw / "xy_aw_waveforms_initial.npz", **initial_waveforms)
     state["data_files"].append("raw/xy_aw_waveforms_initial.npz")
     report_runtime_progress("phase", "XY DirectAW 校相", 10)
-    set_temperature_switch(signals, False, channel=channels["temp"])
-    wait(params.temp_off_settle_s)
+    prepared_waveforms = upload_xy(signals, channels, params, envelope, params.xy_ctrl_phase)
+    first_measurement = True
 
-    def apply_and_measure(phase: float) -> dict:
-        waveforms = upload_xy(signals, channels, params, envelope, phase)
-        np.savez(directory.raw / "xy_aw_waveforms.npz", **waveforms)
-        if "raw/xy_aw_waveforms.npz" not in state["data_files"]:
-            state["data_files"].append("raw/xy_aw_waveforms.npz")
-        wait(params.temp_off_settle_s)
-        sample = demod.read_demod_sample(hf2, 0)
-        diagnostics = state["xy_phase_calibration"]
-        finite = all(math.isfinite(float(sample[key])) for key in ("x", "y", "r", "theta"))
-        best_r = max([float(item["r"]) for item in diagnostics["history"]] + [float(sample["r"])]) if finite else 0.0
-        minimum = max(params.xy_ctrl_phase_min_r_v, best_r * params.xy_ctrl_phase_min_r_ratio)
-        diagnostics["history"].append({"phase_deg": float(phase), **{key: float(sample[key]) if math.isfinite(float(sample[key])) else None for key in ("x", "y", "r", "theta")}, "minimum_r_v": minimum})
-        directory.update_config(**state)
-        if not finite or sample["r"] < minimum:
-            raise CalibrationQualityError("XY 校相信号低于门槛或含非有限值，停止测量")
-        return sample
+    with buffered_acquisition(ctx) as pending:
+        set_temperature_switch(signals, False, channel=channels["temp"])
+        def apply_and_measure(phase: float) -> dict:
+            nonlocal first_measurement
+            waveforms = prepared_waveforms if first_measurement else upload_xy(signals, channels, params, envelope, phase)
+            first_measurement = False
+            pending.add(np.savez, directory.raw / "xy_aw_waveforms.npz", **waveforms)
+            if "raw/xy_aw_waveforms.npz" not in state["data_files"]:
+                state["data_files"].append("raw/xy_aw_waveforms.npz")
+            wait(params.system_settle_s)
+            sample = demod.read_demod_sample(hf2, 0)
+            diagnostics = state["xy_phase_calibration"]
+            finite = all(math.isfinite(float(sample[key])) for key in ("x", "y", "r", "theta"))
+            best_r = max([float(item["r"]) for item in diagnostics["history"]] + [float(sample["r"])]) if finite else 0.0
+            minimum = max(params.xy_ctrl_phase_min_r_v, best_r * params.xy_ctrl_phase_min_r_ratio)
+            diagnostics["history"].append({"phase_deg": float(phase), **{key: float(sample[key]) if math.isfinite(float(sample[key])) else None for key in ("x", "y", "r", "theta")}, "minimum_r_v": minimum})
+            pending.add(directory.update_config, **state)
+            if not finite or sample["r"] < minimum:
+                raise CalibrationQualityError("XY 校相信号低于门槛或含非有限值，停止测量")
+            return sample
 
-    xy_phase = calibrate_direct_aw_phase(params.xy_ctrl_phase, apply_and_measure, DirectAWPhaseCalibrationConfig(tolerance_deg=params.xy_ctrl_phase_tol_deg, max_measurements=params.xy_ctrl_phase_max_iter + 1, minimum_r_v=params.xy_ctrl_phase_min_r_v, minimum_r_ratio=params.xy_ctrl_phase_min_r_ratio), cancellation_check=check_cancelled)
-    state["xy_phase_calibration"] = xy_phase.to_dict()
-    directory.update_config(**state)
-    if not xy_phase.converged:
-        raise CalibrationQualityError("XY 校相未收敛，停止测量")
-    set_temperature_switch(signals, True, channel=channels["temp"])
+        xy_phase = calibrate_direct_aw_phase(params.xy_ctrl_phase, apply_and_measure, DirectAWPhaseCalibrationConfig(tolerance_deg=params.xy_ctrl_phase_tol_deg, max_measurements=params.xy_ctrl_phase_max_iter + 1, minimum_r_v=params.xy_ctrl_phase_min_r_v, minimum_r_ratio=params.xy_ctrl_phase_min_r_ratio), cancellation_check=check_cancelled)
+        state["xy_phase_calibration"] = xy_phase.to_dict()
+        pending.add(directory.update_config, **state)
+        if not xy_phase.converged:
+            raise CalibrationQualityError("XY 校相未收敛，停止测量")
     wait(params.temp_switch_on_lag_s)
     ctx.xy_phase = xy_phase
 
@@ -109,12 +112,7 @@ def configure_loopback(ctx):
     state["actual_rates"]["demod0_meas_Sa_s"] = float(demod.configure_demodulator(hf2, replace(d0_config, time_constant=params.demod0_tc_meas, phase=phase0.phase_shift_deg)))
     response_config = DemodulatorConfig(demod_index=params.demod3_idx, rate=params.demod3_rate, input_source=params.rf_input_source, osc_select=params.demod3_osc_idx, time_constant=params.demod3_tc, order=params.demod3_order)
     state["actual_rates"]["demod3_response_Sa_s"] = float(demod.configure_demodulator(hf2, response_config, for_acquisition=True))
-    validate_levels("Z_magnetic_field", params.z_rf_amplitude_init)
-    signals.setup_sine(freq=params.z_rf_freq, amplitude=params.z_rf_amplitude_init, offset=0.0, phase=0.0, channel=channels["z"])
-    signals.set_burst_mode("INFinity", channel=channels["z"])
-    signals.set_burst_trigger_source("EXTernal", channel=channels["z"])
-    signals.set_burst_trigger_slope("POSitive", channel=channels["z"])
-    arm_z(signals, channels["z"], params, params.z_rf_amplitude_init)
+    prepare_z_rf(ctx)
     ctx.response_config = response_config
 
 
@@ -132,41 +130,40 @@ def calibrate_rf(ctx):
     scan_r, scan_x, scan_y = [], [], []
     scan_arrays: dict = {}
     # 射频相位扫描按温控分组关闭温控，末组不足分组点数也在拟合前恢复。
-    set_temperature_switch(signals, False, channel=channels["temp"])
-    wait(params.temp_off_settle_s)
-    for index, scan_phase in enumerate(scan_order):
-        check_cancelled()
-        if index and index % params.temp_group_size == 0:
-            set_temperature_switch(signals, False, channel=channels["temp"])
-            wait(params.temp_off_settle_s)
-        arm_z(signals, channels["z"], params, params.z_rf_amplitude_init, phase_base=float(scan_phase))
-        wait(params.rf_step_settle_s)
-        results = daq.acquire_data(hf2, scan_config, demod_idx=params.demod3_idx, actual_rate=scan_rate, requested_rate=params.demod3_rate, timeout=params.scan_point_duration_s + 10, cancellation_check=check_cancelled, strict_cleanup=True)
-        from lockin_amplifier import result_rate, acquisition_metadata
-        by_name = {result.signal_name: np.asarray(result.values, dtype=float) for result in results}
-        if set(by_name) != {"sample.r", "sample.x", "sample.y"} or not all(np.all(np.isfinite(values)) for values in by_name.values()):
-            raise RuntimeError(f"RF 相位扫描第 {index + 1} 点 DAQ 未返回有效 R/X/Y 数据")
-        scan_r.append(by_name["sample.r"])
-        scan_x.append(by_name["sample.x"])
-        scan_y.append(by_name["sample.y"])
-        # 逐点落盘，取消或拟合失败也保留已测曲线。
-        r_matrix, x_matrix, y_matrix = (np.asarray(series) for series in (scan_r, scan_x, scan_y))
-        scan_arrays = {
-            "scanned_phase_deg": scan_order[: index + 1],
-            "r_mean_v": r_matrix.mean(axis=1), "x_mean_v": x_matrix.mean(axis=1), "y_mean_v": y_matrix.mean(axis=1),
-            "r_std_v": r_matrix.std(axis=1, ddof=1), "x_std_v": x_matrix.std(axis=1, ddof=1), "y_std_v": y_matrix.std(axis=1, ddof=1),
-            "r_series_V": r_matrix, "x_series_V": x_matrix, "y_series_V": y_matrix,
-            "z_rf_amplitude_vpp": params.z_rf_amplitude_init, "actual_rate_Sa_s": result_rate(results, scan_rate), "duration_s": params.scan_point_duration_s, "demod_idx": params.demod3_idx,
-            **acquisition_metadata(results), "time_s": results[0].time,
-        }
-        np.savez(directory.raw / "z_phase_scan.npz", **scan_arrays)
-        state["rf_phase_calibration"]["points_completed"] = index + 1
-        if "raw/z_phase_scan.npz" not in state["data_files"]:
-            state["data_files"].append("raw/z_phase_scan.npz")
-        directory.update_config(**state)
-        if (index + 1) % params.temp_group_size == 0 or index + 1 == len(scan_order):
-            set_temperature_switch(signals, True, channel=channels["temp"])
-            wait(params.temp_switch_on_lag_s)
+    with buffered_acquisition(ctx) as pending:
+        for index, scan_phase in enumerate(scan_order):
+            check_cancelled()
+            set_z_rf(ctx, params.z_rf_amplitude_init, phase_base=float(scan_phase))
+            if index % params.temp_group_size == 0:
+                set_temperature_switch(signals, False, channel=channels["temp"])
+            wait(params.system_settle_s)
+            results = daq.acquire_data(hf2, scan_config, demod_idx=params.demod3_idx, actual_rate=scan_rate, requested_rate=params.demod3_rate, timeout=params.scan_point_duration_s + 10, cancellation_check=check_cancelled, strict_cleanup=True)
+            from lockin_amplifier import result_rate, acquisition_metadata
+            by_name = {result.signal_name: np.asarray(result.values, dtype=float) for result in results}
+            if set(by_name) != {"sample.r", "sample.x", "sample.y"} or not all(np.all(np.isfinite(values)) for values in by_name.values()):
+                raise RuntimeError(f"RF 相位扫描第 {index + 1} 点 DAQ 未返回有效 R/X/Y 数据")
+            scan_r.append(by_name["sample.r"])
+            scan_x.append(by_name["sample.x"])
+            scan_y.append(by_name["sample.y"])
+            # 逐点落盘，取消或拟合失败也保留已测曲线。
+            r_matrix, x_matrix, y_matrix = (np.asarray(series) for series in (scan_r, scan_x, scan_y))
+            scan_arrays = {
+                "scanned_phase_deg": scan_order[: index + 1],
+                "r_mean_v": r_matrix.mean(axis=1), "x_mean_v": x_matrix.mean(axis=1), "y_mean_v": y_matrix.mean(axis=1),
+                "r_std_v": r_matrix.std(axis=1, ddof=1), "x_std_v": x_matrix.std(axis=1, ddof=1), "y_std_v": y_matrix.std(axis=1, ddof=1),
+                "r_series_V": r_matrix, "x_series_V": x_matrix, "y_series_V": y_matrix,
+                "z_rf_amplitude_vpp": params.z_rf_amplitude_init, "actual_rate_Sa_s": result_rate(results, scan_rate), "duration_s": params.scan_point_duration_s, "demod_idx": params.demod3_idx,
+                **acquisition_metadata(results), "time_s": results[0].time,
+            }
+            pending.add(np.savez, directory.raw / "z_phase_scan.npz", **scan_arrays)
+            state["rf_phase_calibration"]["points_completed"] = index + 1
+            if "raw/z_phase_scan.npz" not in state["data_files"]:
+                state["data_files"].append("raw/z_phase_scan.npz")
+            pending.add(directory.update_config, **state)
+            if (index + 1) % params.temp_group_size == 0 or index + 1 == len(scan_order):
+                set_temperature_switch(signals, True, channel=channels["temp"])
+                wait(params.temp_switch_on_lag_s)
+                pending.flush()
     try:
         # 不设 R²/显著性门槛，直接采用拟合选定的相位；仅数值异常视为失败。
         quadrature_fit, fit_arrays = fit_quadrature_phase_scan(scan_order, scan_arrays["x_mean_v"], scan_arrays["y_mean_v"], r_squared_min=0.0, amplitude_sigma_min=0.0)
@@ -198,18 +195,19 @@ def calibrate_demod3(ctx):
     signals, channels, hf2 = (devices[key] for key in ("signals", "channels", "hf2"))
     z_positive_phase, response_config, cancellation = ctx.z_positive_phase, ctx.response_config, ctx.cancellation
     report_runtime_progress("phase", f"校准 RF 解调器（索引 {params.demod3_idx}）", 20)
-    arm_z(signals, channels["z"], params, params.z_rf_amplitude_init, phase_base=z_positive_phase)
-    set_temperature_switch(signals, False, channel=channels["temp"])
-    wait(params.temp_off_settle_s)
-    phase3 = calibrate_demod_phase(hf2, PhaseCalibrationConfig(demod_idx=params.demod3_idx), settle_wait=wait, cancellation=cancellation)
-    response_config = replace(response_config, phase=phase3.phase_shift_deg)
-    state["calibration"]["demod3"] = phase3.to_dict()
-    state["phase_calibration_status"] = "completed"
-    snapshot_key = "hf2_calibration_snapshot" if ctx.identity.RESPONSE_COMPONENT == "R" else "hf2_response_snapshot"
-    state[snapshot_key] = hf2_snapshot(hf2, params)
-    directory.update_config(**state)
-    set_temperature_switch(signals, True, channel=channels["temp"])
+    set_z_rf(ctx, params.z_rf_amplitude_init, phase_base=z_positive_phase)
+    with buffered_acquisition(ctx) as pending:
+        set_temperature_switch(signals, False, channel=channels["temp"])
+        wait(params.system_settle_s)
+        phase3 = calibrate_demod_phase(hf2, PhaseCalibrationConfig(demod_idx=params.demod3_idx, settle_time=params.system_settle_s), settle_wait=wait, cancellation=cancellation)
+        response_config = replace(response_config, phase=phase3.phase_shift_deg)
+        state["calibration"]["demod3"] = phase3.to_dict()
+        state["phase_calibration_status"] = "completed"
+        snapshot_key = "hf2_calibration_snapshot" if ctx.identity.RESPONSE_COMPONENT == "R" else "hf2_response_snapshot"
+        state[snapshot_key] = hf2_snapshot(hf2, params)
+        pending.add(directory.update_config, **state)
     wait(params.temp_switch_on_lag_s)
+    directory.update_config(**state)
     ctx.response_config = response_config
 
 
@@ -219,6 +217,9 @@ def set_rf_frequency(ctx, frequency):
     signals.set_output(False, channel=channels["z"])
     signals.set_burst_state(False, channel=channels["z"])
     ctx.outputs["Z"] = "OFF"
-    signals.set_frequency(frequency, channel=channels["z"])
+    if hasattr(ctx, "z_rf_frequency_hz"):
+        ctx.z_rf_frequency_hz = float(frequency)
+    else:
+        signals.set_frequency(frequency, channel=channels["z"])
     demod.configure_oscillator(hf2, OscillatorConfig(osc_index=ctx.params.demod3_osc_idx, frequency=frequency))
 

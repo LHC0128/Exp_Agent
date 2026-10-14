@@ -1,6 +1,7 @@
 """静磁场灵敏度的强类型参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 from lockin_amplifier import SignalInputConfig
 import math
@@ -15,8 +16,11 @@ from ...steps.dispersion import dispersion_sample_count
 class StaticSensitivityParams(ExperimentParams):
     """保留静磁场实验现有配置键，同时提供 typed schema。"""
 
-    schema_version = 3
+    schema_version = 4
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'dispersion_step_settle_s': 0.1, 'dispersion_temp_switch_off_settle_s': 1.0}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('temp_tolerance_c', 'temp_stable_reads', 'temp_poll_interval_s', 'max_temp_wait_s')
+    system_settle_s: float = parameter(default=1.0, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="sens", external_name="run_tag", label="运行标签", group="basic")
     pump_laser_power: float = parameter(default=0.2, external_name="pump_laser_power", label="Pump 光功率", unit="V", group="basic", minimum=0, maximum=1, safety_key="Pump_laser_power")
     probe_laser_power: float = parameter(default=0.2, external_name="probe_laser_power", label="Probe 光功率", unit="V", group="basic", minimum=0, maximum=1, safety_key="Probe_laser_power")
@@ -27,11 +31,9 @@ class StaticSensitivityParams(ExperimentParams):
     dispersion_start_v: float = parameter(default=-0.4, external_name="ramp_low", label="色散扫描起点", unit="V", group="basic", minimum=-10, maximum=10, safety_key="Z_magnetic_field", description="直流逐点扫描起点；仅保留旧外部键名，不使用 RAMP。")
     dispersion_stop_v: float = parameter(default=0.4, external_name="ramp_high", label="色散扫描终点", unit="V", group="basic", minimum=-10, maximum=10, safety_key="Z_magnetic_field")
     dispersion_steps: int = parameter(default=41, external_name="dispersion_steps", label="色散扫描点数", group="basic", minimum=7)
-    dispersion_step_settle_s: float = parameter(default=0.1, external_name="dispersion_step_settle_s", label="色散每步稳定等待", unit="s", minimum=0)
     dispersion_duration_s: float = parameter(default=0.1, external_name="dispersion_duration_s", label="色散每点采集时间", unit="s", minimum=0, description="每步稳定等待后连续采集的时间；实际记录时间按 HF2 回读速率向上取整到整数样本。")
     dispersion_temp_switch_interval_points: int = parameter(default=5, external_name="dispersion_temp_switch_interval_points", label="色散温控恢复间隔点数", minimum=0, description="每组完成后恢复温控并固定等待；0 表示整段色散扫描保持温控关闭，仅在收尾恢复。")
     dispersion_temp_switch_on_settle_s: float = parameter(default=3.0, external_name="dispersion_temp_switch_on_settle_s", label="每组后温控恢复等待", unit="s", minimum=0, description="每组后及校相后恢复温控的固定等待；色散扫描结束后温控由安全收尾恢复，不使用本等待。")
-    dispersion_temp_switch_off_settle_s: float = parameter(default=1.0, external_name="dispersion_temp_switch_off_settle_s", label="色散关闭温控后等待", unit="s", minimum=0)
     pump_mod_freq: float = parameter(default=90000.0, external_name="pump_mod_freq", label="Pump 调制频率", unit="Hz", group="basic", minimum=1)
     pump_mod_amplitude: float = parameter(default=0.18, external_name="pump_mod_amplitude", label="Pump 载波幅度", unit="Vpp", group="basic", minimum=0, maximum=0.18, safety_key="Pump_modulation")
     pump_mod_duty: float = parameter(default=5.0, external_name="pump_mod_duty", label="Pump 占空比", unit="%", group="basic", minimum=1, maximum=50, safety_key="PUMP_MOD_DUTY")
@@ -51,10 +53,6 @@ class StaticSensitivityParams(ExperimentParams):
     hf2_demod_tc: float = parameter(default=0.001, external_name="hf2_demod_tc", label="色散时间常数", unit="s", group="advanced", minimum=0)
     hf2_noise_rate: float = parameter(default=50000.0, external_name="hf2_noise_rate", label="噪声采样率", unit="Sa/s", group="advanced", minimum=1)
     hf2_noise_tc: float = parameter(default=1e-6, external_name="hf2_noise_tc", label="噪声时间常数", unit="s", group="advanced", minimum=0)
-    temp_tolerance_c: float = parameter(default=1.0, external_name="temp_tolerance_c", label="温度容差", unit="°C", group="advanced", minimum=0)
-    temp_stable_reads: int = parameter(default=3, external_name="temp_stable_reads", label="稳定连续读数", group="advanced", minimum=1)
-    temp_poll_interval_s: float = parameter(default=5.0, external_name="temp_poll_interval_s", label="温度轮询间隔", unit="s", group="advanced", minimum=0.1)
-    max_temp_wait_s: float = parameter(default=1200.0, external_name="max_temp_wait_s", label="最长温稳等待", unit="s", group="advanced", minimum=1)
     gs200_current_ranges: list[float] = parameter(default_factory=lambda: [0.01], external_name="gs200_current_ranges", label="GS200 量程列表", unit="A", group="advanced")
     gs200_range_headroom: float = parameter(default=1.2, external_name="gs200_range_headroom", label="GS200 量程余量", group="advanced", minimum=1)
     gs200_range_settle_time: float = parameter(default=1.0, external_name="gs200_range_settle_time", label="GS200 换挡等待", unit="s", group="advanced", minimum=0)

@@ -437,7 +437,7 @@
       "id": "temp-to-cell",
       "from": "temp-chain",
       "to": "atom-cell",
-      "label": "温度稳定",
+      "label": "目标温度设置",
       "fromSide": "bottom",
       "toSide": "top",
       "labelAt": [

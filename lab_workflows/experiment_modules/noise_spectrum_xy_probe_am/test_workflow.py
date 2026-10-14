@@ -91,7 +91,7 @@ class ProbeAMWorkflowTests(unittest.TestCase):
             hw.samples.return_value = dict(r=0.0, x=0.0, y=0.0, theta=0.0)
             ctx.execute(["A11"])
             self.assertEqual(ctx.states["A11"]["status"], "quality_failed")
-            self.assertIsNone(ctx.run_dir)
+            self.assertTrue((ctx.run_dir / "experiment_config.yaml").is_file())
             with self.assertRaisesRegex(ValueError, "A11"):
                 ctx.execute(["A12"])
             ctx.execute(["A16"])

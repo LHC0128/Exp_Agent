@@ -45,13 +45,13 @@ DEFINITION = ExperimentDefinition(
     family="noise",
     variant="known-injection",
     description=(
-        '在 Z 小线圈注入已知周期伪噪声，运行页以采集、分析两列节点编辑参数并按依赖执行；相邻控制点交替 ON/OFF 顺序，同一温控窗口配对并逐段保存。分析完成全控制轴谱分离后，选择静磁场 v3 直流逐点历史曲线拟合检测增益，与实际波形 PSD × 本轮 K_Z² 的真值比较；未选曲线时保留 B01～B04 并等待标定。历史目录保留独立分析草稿，保存默认值只影响下一次实验与统一布局。分步等待保持连接、输出和硬件锁；校相质量未通过禁止扫描。锁相输入采用高阻、DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
+        ('在 Z 小线圈注入已知周期伪噪声，K_Z 由 A11 手动输入（Hz/V），预览与采集不依赖 Z 标定结果目录。运行页以采集、分析两列节点编辑参数并按依赖执行；相邻控制点交替 ON/OFF 顺序，同一温控窗口配对并逐段保存。分析完成全控制轴谱分离后，选择静磁场 v3 直流逐点历史曲线拟合检测增益，与实际波形 PSD × 本轮保存的手动 K_Z² 真值比较；未选曲线时保留 B01～B04 并等待标定。历史目录保留独立分析草稿，保存默认值只影响下一次实验与统一布局。分步等待保持连接、输出和硬件锁；校相质量未通过禁止扫描。锁相输入采用高阻、DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
     ),
     data_type="Noise_Spectrum_XY_Ctrl_Known_Noise",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     required_mapping_keys=NOISE_SPECTRUM_XY,
     execution_mode="typed_workflow",
-    schema_version=NoiseSpectrumXYKnownNoiseParams.schema_version,
+    schema_version=ADAPTER.params_type.schema_version,
     acquisition_program="experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py",
     analysis_program="experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py",
     wiring_notes=(

@@ -32,6 +32,7 @@ from datetime import datetime
 import matplotlib
 matplotlib.use("TkAgg")
 import numpy as np
+from lab_workflows.steps import acquisition_window
 import yaml
 from tqdm import tqdm
 
@@ -78,6 +79,7 @@ def validate_voltage_span(name, offset_v, vpp_v):
     return offset_v, vpp_v
 
 
+SYSTEM_SETTLE_S = 0.5  # 配置与温控门控共同稳定的采集前等待（秒）
 EXPERIMENT_TYPE = "AW_ConstOmega_Calibration_Check"
 RUN_TAG = "const_aw_omega_check"
 
@@ -115,16 +117,12 @@ XY_PHASE_CAL_DC_Y = 1.0
 XY_PHASE_CAL_MAX_ITER_X = 5
 XY_PHASE_CAL_MAX_ITER_Y = 15
 XY_PHASE_CAL_TOL_DEG = 0.5
-XY_PHASE_CAL_SETTLE_s = 0.5
 # Z RF 短扫。
 Z_RF_AMPLITUDE = 0.03
 Z_SCAN_HALF_WIDTH_Hz = 5000.0
 Z_SCAN_STEP_Hz = 500.0
 Z_SCAN_MIN_Hz = 500.0
 
-FREQ_SETTLE_TIME_s = 0.2
-AW_SETTLE_TIME_s = 0.5
-TEMP_SWITCH_OFF_LEAD_s = 0.1
 TEMP_SWITCH_ON_LAG_s = 0.4
 
 # HF2 Demod 0：主信号解调。
@@ -143,7 +141,6 @@ DEMOD3_TC_MIN_s = 0.01
 DEMOD3_TC_PERIOD_FRACTION = 0.05
 DEMOD3_ORDER = 8
 DEMOD3_RATE = 4800
-DEMOD3_READ_SETTLE_TIME_s = 0.2
 DEMOD3_N_AVG = 30
 DEMOD3_AVG_INTERVAL_s = 0.01
 DEMOD3_ADC_SELECT = 1
@@ -313,8 +310,11 @@ def calibrate_xy_carrier_phase(
     tol_deg=0.5,
     settle_s=0.5,
     calibrated_demod0_phase_deg=0.0,
-):
+ temp_switch=None, temp_channel=2,):
     """分通道迭代校准 X/Y carrier phase，返回与配置文件一致的结果字段。"""
+    from lab_workflows.steps import set_temperature_switch
+    if temp_switch is not None:
+        set_temperature_switch(temp_switch, True, channel=temp_channel)
     result = {
         "calibrated_phase_0_deg": float(calibrated_demod0_phase_deg),
         "X_CARRIER_PHASE_deg": float(initial_x_phase) % 360,
@@ -353,48 +353,54 @@ def calibrate_xy_carrier_phase(
     dg_am_inst.set_output(False, channel=2)
     dg_comp_inst.set_output(True, channel=1)
     dg_am_inst.set_output(True, channel=1)
-    time.sleep(settle_s)
-
-    for i in range(max_iter_x):
-        sample = demod.read_demod_sample(hfi_inst, demod_idx=DEMOD0_IDX)
-        theta_deg = math.degrees(sample["theta"])
-        result["n_iter_x"] = i + 1
-        print(f"    CH1 迭代 {i + 1}: theta = {theta_deg:.2f} deg")
-        if abs(theta_deg) < tol_deg:
-            result["phase_cal_success_x"] = True
-            print(f"    CH1 相位已收敛 (< {tol_deg} deg)")
-            break
-        x_phase = (x_phase - theta_deg) % 360
-        dg_comp_inst.set_phase_adjust(x_phase, channel=1)
+    try:
+        if temp_switch is not None:
+            set_temperature_switch(temp_switch, False, channel=temp_channel)
         time.sleep(settle_s)
 
-    result["X_CARRIER_PHASE_deg"] = float(x_phase)
-    print(f"    CH1 最终载波相位 = {x_phase:.2f} deg")
+        for i in range(max_iter_x):
+            sample = demod.read_demod_sample(hfi_inst, demod_idx=DEMOD0_IDX)
+            theta_deg = math.degrees(sample["theta"])
+            result["n_iter_x"] = i + 1
+            print(f"    CH1 迭代 {i + 1}: theta = {theta_deg:.2f} deg")
+            if abs(theta_deg) < tol_deg:
+                result["phase_cal_success_x"] = True
+                print(f"    CH1 相位已收敛 (< {tol_deg} deg)")
+                break
+            x_phase = (x_phase - theta_deg) % 360
+            dg_comp_inst.set_phase_adjust(x_phase, channel=1)
+            time.sleep(settle_s)
 
-    print("\n  校准 CH2 相位 (CH1 + CH2 都开)...")
-    dg_comp_inst.set_output(True, channel=2)
-    dg_am_inst.set_output(True, channel=2)
-    dg_comp_inst.set_phase_adjust(y_phase, channel=2)
-    time.sleep(settle_s * 0.6)
+        result["X_CARRIER_PHASE_deg"] = float(x_phase)
+        print(f"    CH1 最终载波相位 = {x_phase:.2f} deg")
 
-    for i in range(max_iter_y):
-        sample = demod.read_demod_sample(hfi_inst, demod_idx=DEMOD0_IDX)
-        theta_deg = math.degrees(sample["theta"])
-        result["n_iter_y"] = i + 1
-        print(f"    CH2 迭代 {i + 1}: theta = {theta_deg:.2f} deg")
-        if abs(theta_deg) < tol_deg:
-            result["phase_cal_success_y"] = True
-            print(f"    CH2 相位已收敛 (< {tol_deg} deg)")
-            break
-        y_phase = (y_phase - theta_deg) % 360
+        print("\n  校准 CH2 相位 (CH1 + CH2 都开)...")
+        dg_comp_inst.set_output(True, channel=2)
+        dg_am_inst.set_output(True, channel=2)
         dg_comp_inst.set_phase_adjust(y_phase, channel=2)
         time.sleep(settle_s)
 
-    result["Y_CARRIER_PHASE_deg"] = float(y_phase)
-    result["xy_phase_diff_deg"] = float((y_phase - x_phase) % 360)
-    print(f"    CH2 最终载波相位 = {y_phase:.2f} deg")
-    print(f"    实际相位差 = {result['xy_phase_diff_deg']:.2f} deg")
-    return result
+        for i in range(max_iter_y):
+            sample = demod.read_demod_sample(hfi_inst, demod_idx=DEMOD0_IDX)
+            theta_deg = math.degrees(sample["theta"])
+            result["n_iter_y"] = i + 1
+            print(f"    CH2 迭代 {i + 1}: theta = {theta_deg:.2f} deg")
+            if abs(theta_deg) < tol_deg:
+                result["phase_cal_success_y"] = True
+                print(f"    CH2 相位已收敛 (< {tol_deg} deg)")
+                break
+            y_phase = (y_phase - theta_deg) % 360
+            dg_comp_inst.set_phase_adjust(y_phase, channel=2)
+            time.sleep(settle_s)
+
+        result["Y_CARRIER_PHASE_deg"] = float(y_phase)
+        result["xy_phase_diff_deg"] = float((y_phase - x_phase) % 360)
+        print(f"    CH2 最终载波相位 = {y_phase:.2f} deg")
+        print(f"    实际相位差 = {result['xy_phase_diff_deg']:.2f} deg")
+        return result
+    finally:
+        if temp_switch is not None:
+            set_temperature_switch(temp_switch, True, channel=temp_channel)
 
 def restore_experiment_outputs(devices):
     """恢复本脚本负责的危险输出，但保持设备连接。"""
@@ -512,20 +518,20 @@ print(f"dg_comp 载波已配置: {XY_CARRIER_FREQ:.1f} Hz, X={X_CARRIER_PHASE:.1
 print(f"HF2 Demod 0 校相初始配置: actual_rate={actual_rate_d0_initial:.1f} Sa/s")
 
 print("\n正在进行 Demod 0 相位校准...")
-set_temp_switch(dg_temp, False)
-time.sleep(TEMP_SWITCH_OFF_LEAD_s)
 try:
-    time.sleep(0.5)
-    calibrated_phase_0 = demod.auto_calibrate_phase(
-        hfi,
-        demod_idx=DEMOD0_IDX,
-        tolerance_deg=1.0,
-        max_attempts=5,
-        settle_time=0.2,
-    )
-    sample = demod.read_demod_sample(hfi, demod_idx=DEMOD0_IDX)
-    print(f"Demod 0 校准完成: phaseshift = {calibrated_phase_0:.2f} deg")
-    print(f"  校准后样本: R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
+    with acquisition_window(lambda enabled: set_temp_switch(dg_temp, enabled), time.sleep, SYSTEM_SETTLE_S):
+        calibrated_phase_0 = demod.auto_calibrate_phase(
+            hfi,
+            demod_idx=DEMOD0_IDX,
+            tolerance_deg=1.0,
+            max_attempts=5,
+            settle_time=SYSTEM_SETTLE_S,
+        )
+        sample = demod.read_demod_sample(hfi, demod_idx=DEMOD0_IDX)
+        print(f"Demod 0 校准完成: phaseshift = {calibrated_phase_0:.2f} deg")
+        print(f"  校准后样本: R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
+
+    time.sleep(TEMP_SWITCH_ON_LAG_s)
 
     if ENABLE_XY_CARRIER_PHASE_CAL:
         print("\n" + "=" * 60)
@@ -542,9 +548,9 @@ try:
             max_iter_x=XY_PHASE_CAL_MAX_ITER_X,
             max_iter_y=XY_PHASE_CAL_MAX_ITER_Y,
             tol_deg=XY_PHASE_CAL_TOL_DEG,
-            settle_s=XY_PHASE_CAL_SETTLE_s,
+            settle_s=SYSTEM_SETTLE_S,
             calibrated_demod0_phase_deg=calibrated_phase_0,
-        )
+         temp_switch=dg_temp,)
         X_CARRIER_PHASE = float(phase_calibration["X_CARRIER_PHASE_deg"])
         Y_CARRIER_PHASE = float(phase_calibration["Y_CARRIER_PHASE_deg"])
     else:
@@ -564,9 +570,7 @@ try:
 except Exception:
     restore_experiment_outputs(devices)
     raise
-finally:
-    set_temp_switch(dg_temp, True)
-    time.sleep(TEMP_SWITCH_ON_LAG_s)
+time.sleep(TEMP_SWITCH_ON_LAG_s)
 
 # 校相后恢复最终 X/Y carrier phase；dg_am 会在正式扫描时切回 constant arbitrary waveform。
 try:
@@ -639,16 +643,16 @@ experiment_config = {
         "XY_PHASE_CAL_MAX_ITER_X": XY_PHASE_CAL_MAX_ITER_X,
         "XY_PHASE_CAL_MAX_ITER_Y": XY_PHASE_CAL_MAX_ITER_Y,
         "XY_PHASE_CAL_TOL_DEG": XY_PHASE_CAL_TOL_DEG,
-        "XY_PHASE_CAL_SETTLE_s": XY_PHASE_CAL_SETTLE_s,
+        "XY_PHASE_CAL_SETTLE_s": SYSTEM_SETTLE_S,
         "FINAL_X_CARRIER_PHASE_deg": float(X_CARRIER_PHASE),
         "FINAL_Y_CARRIER_PHASE_deg": float(Y_CARRIER_PHASE),
         "Z_RF_AMPLITUDE_Vpp": Z_RF_AMPLITUDE,
         "Z_SCAN_HALF_WIDTH_Hz": Z_SCAN_HALF_WIDTH_Hz,
         "Z_SCAN_STEP_Hz": Z_SCAN_STEP_Hz,
         "Z_SCAN_MIN_Hz": Z_SCAN_MIN_Hz,
-        "FREQ_SETTLE_TIME_s": FREQ_SETTLE_TIME_s,
-        "AW_SETTLE_TIME_s": AW_SETTLE_TIME_s,
-        "TEMP_SWITCH_OFF_LEAD_s": TEMP_SWITCH_OFF_LEAD_s,
+        "FREQ_SETTLE_TIME_s": SYSTEM_SETTLE_S,
+        "SYSTEM_SETTLE_S": SYSTEM_SETTLE_S,
+        "TEMP_SWITCH_OFF_LEAD_s": SYSTEM_SETTLE_S,
         "TEMP_SWITCH_ON_LAG_s": TEMP_SWITCH_ON_LAG_s,
         "DEMOD3_N_AVG": DEMOD3_N_AVG,
         "DEMOD3_AVG_INTERVAL_s": DEMOD3_AVG_INTERVAL_s,
@@ -683,7 +687,7 @@ try:
             vx = omega_to_am_voltage(omega_hz, mode, "x")
             vy = omega_to_am_voltage(omega_hz, mode, "y")
             configure_const_aw(dg_am, vx, vy)
-            time.sleep(AW_SETTLE_TIME_s)
+            time.sleep(SYSTEM_SETTLE_S)
 
             z_freqs = z_freq_list_for(omega_hz)
             x_means = []
@@ -696,7 +700,7 @@ try:
 
             for z_freq in z_freqs:
                 configure_z_rf(dg_sweep, float(z_freq))
-                time.sleep(FREQ_SETTLE_TIME_s)
+                time.sleep(SYSTEM_SETTLE_S)
 
                 demod.configure_oscillator(hfi, OscillatorConfig(DEMOD3_OSC_IDX, float(z_freq)))
                 tc = max(DEMOD3_TC_MIN_s, DEMOD3_TC_PERIOD_FRACTION / max(float(z_freq), 1.0))
@@ -715,10 +719,7 @@ try:
                     ),
                 )
 
-                set_temp_switch(dg_temp, False)
-                time.sleep(TEMP_SWITCH_OFF_LEAD_s)
-                try:
-                    time.sleep(DEMOD3_READ_SETTLE_TIME_s)
+                with acquisition_window(lambda enabled: set_temp_switch(dg_temp, enabled), time.sleep, SYSTEM_SETTLE_S):
                     xs, ys = [], []
                     for _ in range(DEMOD3_N_AVG):
                         sample = demod.read_demod_sample(hfi, DEMOD3_IDX)
@@ -728,9 +729,7 @@ try:
                     x_mean = float(np.mean(xs))
                     y_mean = float(np.mean(ys))
                     r_vec = float(math.hypot(x_mean, y_mean))
-                finally:
-                    set_temp_switch(dg_temp, True)
-                    time.sleep(TEMP_SWITCH_ON_LAG_s)
+                time.sleep(TEMP_SWITCH_ON_LAG_s)
 
                 x_means.append(x_mean)
                 y_means.append(y_mean)

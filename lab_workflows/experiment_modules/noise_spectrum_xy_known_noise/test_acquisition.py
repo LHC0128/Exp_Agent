@@ -21,7 +21,7 @@ from .dispersion import resolve_dispersion
 class KnownNoiseDispersionTests(unittest.TestCase):
     def params(self, **overrides):
         values = asdict(ADAPTER.defaults()) | dict(dispersion_steps=11, hf2_demod_rate=30,
-            dispersion_span_v=.2, dispersion_duration_s=.1, dispersion_step_settle_s=.1,
+            dispersion_span_v=.2, dispersion_duration_s=.1, system_settle_s=0.1,
             dispersion_temp_switch_interval_points=5)
         return SimpleNamespace(**(values | overrides))
 
@@ -34,11 +34,16 @@ class KnownNoiseDispersionTests(unittest.TestCase):
         from GUI.backend import main
         from .models import NoiseSpectrumXYKnownNoiseParams
         saved = ADAPTER.defaults()
-        self.assertEqual(saved.schema_version, 3)
+        self.assertEqual(saved.schema_version, type(saved).schema_version)
+        self.assertEqual(saved.z_calibration_k_hz_per_v, 5373.638)
         self.assertEqual(saved.hf2_demod_rate, 200000)
         schema = main._experiment_schema(main._experiment_or_404("noise-spectrum-xy-known-noise"))
         names = {field["name"] for field in schema["fields"]}
         self.assertIn("ANALYSIS_DISPERSION_SOURCE_RUN", names)
+        field = next(field for field in schema["fields"] if field["name"] == "Z_CALIBRATION_K_HZ_PER_V")
+        self.assertEqual((field["type"], field["unit"]), ("number", "Hz/V"))
+        self.assertNotIn("options", field)
+        self.assertNotIn("Z_CALIBRATION_SOURCE_RUN", names)
         self.assertFalse(any(name.startswith("DISPERSION_") for name in names))
         self.assertEqual(saved.analysis_dispersion_source_run, "")
         old = saved.to_external() | {"DISPERSION_STEPS": 41, "DISPERSION_DURATION_S": .1}

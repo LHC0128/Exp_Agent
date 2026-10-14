@@ -54,7 +54,7 @@
     },
     {
       "id": "A05",
-      "title": "温度稳定",
+      "title": "目标温度设置",
       "group": "初始条件",
       "dependencies": [
         "A04"
@@ -127,6 +127,7 @@
         "HF2_DEMOD_ORDER",
         "HF2_DEMOD_TC",
         "HF2_DEMOD_RATE",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_SETTLE_S"
       ],
       "artifacts": [],
@@ -137,6 +138,7 @@
         "HF2_DEMOD_ORDER",
         "HF2_DEMOD_TC",
         "HF2_DEMOD_RATE",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_SETTLE_S"
       ]
     },
@@ -183,6 +185,7 @@
         "XY_PHASE_CAL_MAX_ITER",
         "XY_PHASE_CAL_MIN_R_V",
         "XY_PHASE_CAL_MIN_R_RATIO",
+        "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_SETTLE_S"
       ]
     },
@@ -200,7 +203,7 @@
         "NOISE_REPEAT_FREQ_HZ",
         "NOISE_AMPLITUDE_VPP",
         "NOISE_SEED",
-        "Z_CALIBRATION_SOURCE_RUN"
+        "Z_CALIBRATION_K_HZ_PER_V"
       ],
       "artifacts": [],
       "display_parameters": [
@@ -210,7 +213,7 @@
         "NOISE_REPEAT_FREQ_HZ",
         "NOISE_AMPLITUDE_VPP",
         "NOISE_SEED",
-        "Z_CALIBRATION_SOURCE_RUN"
+        "Z_CALIBRATION_K_HZ_PER_V"
       ]
     },
     {
@@ -249,9 +252,8 @@
         "A12"
       ],
       "parameters": [
-        "XY_SETTLE_TIME",
-        "RUN_TAG",
-        "Z_INJECTION_SETTLE_S"
+        "SYSTEM_SETTLE_S",
+        "RUN_TAG"
       ],
       "artifacts": [
         "experiment_config.yaml",
@@ -271,9 +273,8 @@
         "XY_CALIBRATION_MAX_ENVELOPE_V",
         "HF2_DAQ_DURATION",
         "XY_CTRL_QUAD",
-        "XY_SETTLE_TIME",
-        "TEMP_SWITCH_ON_SETTLE_S",
-        "Z_INJECTION_SETTLE_S"
+        "SYSTEM_SETTLE_S",
+        "TEMP_SWITCH_ON_SETTLE_S"
       ]
     },
     {
@@ -644,6 +645,15 @@
         "A13",
         "A14"
       ],
+      "SYSTEM_SETTLE_S": [
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12",
+        "A13",
+        "A14"
+      ],
       "TEMP_SWITCH_ON_SETTLE_S": [
         "A08",
         "A09",
@@ -749,7 +759,7 @@
         "A13",
         "A14"
       ],
-      "Z_CALIBRATION_SOURCE_RUN": [
+      "Z_CALIBRATION_K_HZ_PER_V": [
         "A11",
         "A12",
         "A13",
@@ -810,15 +820,7 @@
         "A13",
         "A14"
       ],
-      "XY_SETTLE_TIME": [
-        "A13",
-        "A14"
-      ],
       "RUN_TAG": [
-        "A13",
-        "A14"
-      ],
-      "Z_INJECTION_SETTLE_S": [
         "A13",
         "A14"
       ]

@@ -45,6 +45,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import numpy as np
+from lab_workflows.steps import acquisition_window
 import yaml
 import time
 from datetime import datetime
@@ -72,6 +73,7 @@ from lab_workflows.experiment_runtime import check_cancelled
 import json
 
 # ========== 实验参数 ==========
+SYSTEM_SETTLE_S = 0.5  # 配置与温控门控共同稳定的采集前等待（秒）
 EXPERIMENT_TYPE = "Photon_shot_noise"
 PURPOSE = "shot_noise_calibration"
 
@@ -91,7 +93,6 @@ with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f
 PROBE_POWER_START = 0.0       # 探测光功率起始 (V)
 PROBE_POWER_STOP = 0.3        # 探测光功率终止 (V)
 PROBE_POWER_POINTS = 31        # 扫描点数
-PROBE_SETTLE_TIME = 0.5       # 每点设置后等待稳定时间 (s)
 
 # ========== 采集参数 ==========
 ACQ_DURATION = 1.0             # 每点 DAQ 采集时长 (s)
@@ -219,7 +220,7 @@ print(f"主磁场: {FIXED_PARAMS['SHOT_NOISE_FIELD_mA']} mA (偏置，远离正�
 # ---- 4. 温度控制 ----
 validate_safety_limit("temperature", FIXED_PARAMS["temperature"])
 configure_temperature_control(
-    tec, FIXED_PARAMS["temperature"], tolerance_c=1.0, stable_reads=1
+    tec, FIXED_PARAMS["temperature"],
 )
 
 # ---- 5. 温度开关 (ON) ----
@@ -259,7 +260,7 @@ config = {
         "start": PROBE_POWER_START,
         "stop": PROBE_POWER_STOP,
         "points": PROBE_POWER_POINTS,
-        "settle_time": PROBE_SETTLE_TIME,
+        "settle_time": SYSTEM_SETTLE_S,
     },
     "acquisition_params": {
         "duration": ACQ_DURATION,
@@ -315,41 +316,39 @@ try:
         validate_safety_limit("Probe_laser_power", pwr)
 
         dg_laser.setup_dc(pwr, channel=2)
-        time.sleep(PROBE_SETTLE_TIME)
+        time.sleep(SYSTEM_SETTLE_S)
 
         power_waveforms = []
 
         for rep in range(ACQ_REPEATS):
-            dg_temp.set_output(False, channel=2)
-            time.sleep(0.1)
-            daq_cfg = DAQConfig(
-                device=MAPPING["lockin_r"]["device_id"],
-                trigger_type=0,
-                duration=ACQ_DURATION,
-                grid_cols=grid_cols,
-                grid_rows=1,
-                grid_mode=2,
-                signal_paths=["sample.x", "sample.y"],
-            )
-
-            try:
-                results = daq.acquire_data(
-                    hfi, daq_cfg, demod_idx=HF2_DEMOD_IDX,
-                    actual_rate=actual_rate, cancellation_check=check_cancelled, requested_rate=HF2_DEMOD_RATE, timeout=ACQ_DURATION + 10.0,
+            with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+                daq_cfg = DAQConfig(
+                    device=MAPPING["lockin_r"]["device_id"],
+                    trigger_type=0,
+                    duration=ACQ_DURATION,
+                    grid_cols=grid_cols,
+                    grid_rows=1,
+                    grid_mode=2,
+                    signal_paths=["sample.x", "sample.y"],
                 )
-                actual_rate = result_rate(results, actual_rate)
-                x_data = results[0].values
-                y_data = results[1].values
-                time_axis = results[0].time
-                metadata = acquisition_metadata(results)
-            except Exception as e:
-                tqdm.write(f"  [P={pwr:.3f}V, rep={rep}] DAQ 采集失败: {e}")
-                x_data = np.full(grid_cols, np.nan)
-                y_data = np.full(grid_cols, np.nan)
-                time_axis = np.arange(grid_cols) / actual_rate
-                metadata = {}
 
-            dg_temp.set_output(True, channel=2)
+                try:
+                    results = daq.acquire_data(
+                        hfi, daq_cfg, demod_idx=HF2_DEMOD_IDX,
+                        actual_rate=actual_rate, cancellation_check=check_cancelled, requested_rate=HF2_DEMOD_RATE, timeout=ACQ_DURATION + 10.0,
+                    )
+                    actual_rate = result_rate(results, actual_rate)
+                    x_data = results[0].values
+                    y_data = results[1].values
+                    time_axis = results[0].time
+                    metadata = acquisition_metadata(results)
+                except Exception as e:
+                    tqdm.write(f"  [P={pwr:.3f}V, rep={rep}] DAQ 采集失败: {e}")
+                    x_data = np.full(grid_cols, np.nan)
+                    y_data = np.full(grid_cols, np.nan)
+                    time_axis = np.arange(grid_cols) / actual_rate
+                    metadata = {}
+
             time.sleep(2)
 
             power_waveforms.append({"x": x_data, "y": y_data, "time_s": time_axis, "metadata": metadata})

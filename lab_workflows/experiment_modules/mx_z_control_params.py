@@ -92,14 +92,6 @@ class CommonMxZControlParams(MxYRFParams):
         group="basic",
         minimum=5,
     )
-    response_settle_time_s: float = parameter(
-        default=0.1,
-        external_name="RESPONSE_SETTLE_TIME_S",
-        label="响应/校相点稳定时间",
-        unit="s",
-        group="basic",
-        minimum=0,
-    )
     response_duration_s: float = parameter(
         default=0.2,
         external_name="RESPONSE_DURATION_S",
@@ -202,12 +194,6 @@ class CommonMxZControlParams(MxYRFParams):
         label="未使用频扫幅度",
         visible=False,
         safety_key="rf_coil",
-    )
-    frequency_settle_time_s: float = parameter(
-        default=0.05,
-        external_name="FREQUENCY_SETTLE_TIME_S",
-        label="未使用频扫稳定时间",
-        visible=False,
     )
     frequency_duration_s: float = parameter(
         default=0.1,

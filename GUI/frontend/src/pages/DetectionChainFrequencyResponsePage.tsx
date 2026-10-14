@@ -1,10 +1,11 @@
+import { historyParameterValues } from "./experimentHelpers";
 import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
-import { ParameterForm } from "../components/MxYOptimalControlFrequency/ParameterForm";
+import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
 import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import "./zawClosedLoop.css";
@@ -24,12 +25,13 @@ type Summary = Run & {
 };
 
 const summaryUrl = (runId: string) => `${BASE}/runs/${encodeURIComponent(runId)}/summary`;
-const statusLabels: Record<string, string> = { 
-  completed: "完成", 
-  failed: "失败", 
-  cancelled: "已取消", 
-  running: "运行中", 
-  not_started: "未分析" 
+const statusLabels: Record<string, string> = {
+  completed: "完成",
+  failed: "失败",
+  cancelled: "已取消",
+  running: "运行中",
+  not_started: "未分析",
+  quality_failed: "质量验收未通过"
 };
 const status = (value: string) => statusLabels[value] ?? value;
 
@@ -42,7 +44,7 @@ function Result({ value }: { value: Summary }) {
     }
     {value.failure_reason && <div className="alert error">{value.failure_reason}</div>}
     {value.analysis_error && <div className="alert error">{value.analysis_error}</div>}
-    {value.artifacts["frequency_response.png"] && 
+    {value.artifacts["frequency_response.png"] &&
       <figure className="zaw-figure">
         <figcaption>探测链路频率响应</figcaption>
         <img src={value.artifacts["frequency_response.png"]} alt="频率响应曲线" />
@@ -50,7 +52,7 @@ function Result({ value }: { value: Summary }) {
     }
     {!value.artifacts["frequency_response.png"] && <p className="zaw-empty">本次运行暂无结果图。</p>}
     <p>
-      {["analysis_results.npz"].filter(name => value.artifacts[name]).map(name => 
+      {["analysis_results.npz"].filter(name => value.artifacts[name]).map(name =>
         <a key={name} href={value.artifacts[name]} download style={{ marginRight: 12 }}>{name}</a>
       )}
     </p>
@@ -66,10 +68,12 @@ export function DetectionChainFrequencyResponsePage() {
   const [savedLayout, setSavedLayout] = useState(layout);
   const [job, setJob] = useState<Job>();
   const [analysisJob, setAnalysisJob] = useState<Job>();
+  const [session, setSession] = useState<XYSession>();
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [preflight, setPreflight] = useState<PreflightResult>();
   const [latest, setLatest] = useState<Summary>();
   const [list, setList] = useState<RunList>({ runs: [], total: 0 });
   const [selectedId, setSelectedId] = useState("");
@@ -79,12 +83,14 @@ export function DetectionChainFrequencyResponsePage() {
   const { hardwareBusy } = useJobActivity();
   const jobActive = Boolean(job && !terminal(job));
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
+  const sessionActive = Boolean(session && session.status !== "closed");
+  const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
 
   useEffect(() => {
     let disposed = false;
     Promise.all([
-      api<ExperimentDefinition>(BASE), 
-      api<ExperimentSchema>(`${BASE}/schema`), 
+      api<ExperimentDefinition>(BASE),
+      api<ExperimentSchema>(`${BASE}/schema`),
       api<JobSummary[]>("/api/jobs")
     ]).then(async ([def, schema, jobs]) => {
       if (disposed) return;
@@ -146,6 +152,7 @@ export function DetectionChainFrequencyResponsePage() {
         setError(result.errors.join("；"));
         return;
       }
+      setPreflight(result);
       if (start) {
         setJob(await api<Job>(`${BASE}/runs`, {
           method: "POST",
@@ -182,11 +189,12 @@ export function DetectionChainFrequencyResponsePage() {
 
   const reanalyze = async (runId: string) => {
     setError("");
+    setStarting(true);
     try {
       setAnalysisJob(await api<Job>(`/api/runs/${encodeURIComponent(runId)}/analyze`, {
         method: "POST", body: JSON.stringify({ experiment_id: ID })
       }));
-    } catch (reason) { setError(String(reason)); }
+    } catch (reason) { setError(String(reason)); } finally { setStarting(false); }
   };
 
   const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -206,29 +214,35 @@ export function DetectionChainFrequencyResponsePage() {
       {(["run", "history", "architecture"] as const).map(item => <button key={item} id={`dc-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`dc-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : item === "history" ? "历史" : "架构"}</button>)}
     </div>
     <div id="dc-panel-run" role="tabpanel" aria-labelledby="dc-tab-run" hidden={tab !== "run"}>
-      <div className="zaw-dashboard">
-        <section className="zaw-panel zaw-panel-params">
-          <div className="zaw-panel-head"><small>PARAMETERS</small><h2>实验参数</h2></div>
-          <ParameterForm fields={fields} values={values} layout={layout} onChange={(field, value) => setValues(old => ({ ...old, [field.name]: value }))} onLayoutChange={setLayout} onMoveNotice={setNotice} disabled={jobActive || starting} />
-          {!sameParameterLayout(layout, savedLayout) && <p className="zaw-layout-dirty">布局有未保存修改</p>}
-          <button className="zaw-secondary" disabled={saving || jobActive || !fields.length} onClick={() => void save()}>{saving ? "保存中…" : "保存参数与布局"}</button>
-          {notice && <p role="status">{notice}</p>}
-        </section>
-        <section className="zaw-panel zaw-panel-control">
-          <div className="zaw-panel-head"><small>CONTROL</small><h2>控制与状态</h2></div>
-          <div className="zaw-control-buttons">
-            <button className="zaw-secondary" disabled={starting || jobActive || !fields.length} onClick={() => void check(false)}>仅预检</button>
-            <button className="zaw-primary" disabled={starting || jobActive || hardwareBusy || !fields.length} onClick={() => void check(true)}>{jobActive ? "实验运行中" : starting ? "正在启动…" : "预检并运行实验"}</button>
+      <WorkflowPanel enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout}
+        setNotice={setNotice} parametersDisabled={parametersBusy || starting} values={values} setValues={setValues}
+        session={session} setSession={setSession} job={job} setJob={setJob}
+        analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
+        runs={list.runs} setError={setError} onRefresh={setRefresh}
+        experimentId={ID} finishStepId="A08" runStepId="A07">
+        <div className="xy-workflow-controls">
+          <div className="xy-flow-actions">
+            <button disabled={saving || starting || parametersBusy || !fields.length} onClick={() => void save()}>
+              {saving ? "保存中…" : "保存参数与布局"}
+            </button>
+            <button className="secondary" disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
+            <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>
+              {starting ? "处理中…" : "预检并运行实验"}
+            </button>
           </div>
+          <p>在下方流程节点编辑参数。此处保存下一次实验的全部参数和统一的基础／高级分类，不保存历史分析覆盖值。</p>
+          {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
+          {notice && <p role="status">{notice}</p>}
+          {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}
           {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
           {definition?.wiring_notes.map(note => <p key={note}>{note}</p>)}
           <JobView job={job} onUpdate={setJob} />
-        </section>
-        <section className="zaw-panel zaw-panel-result">
-          <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
-          {latest ? <><Result value={latest} /><button className="zaw-secondary" onClick={() => { setSelectedId(latest.run_id); setTab("history"); }}>查看本次详情</button></> : <p className="zaw-empty">暂无运行记录。</p>}
-        </section>
-      </div>
+        </div>
+      </WorkflowPanel>
+      <section className="zaw-panel zaw-panel-result">
+        <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
+        {latest ? <><Result value={latest} /><button className="zaw-secondary" onClick={() => { setSelectedId(latest.run_id); setTab("history"); }}>查看本次详情</button></> : <p className="zaw-empty">暂无运行记录。</p>}
+      </section>
     </div>
     <div id="dc-panel-history" role="tabpanel" aria-labelledby="dc-tab-history" hidden={tab !== "history"}>
       <div className="zaw-history">
@@ -241,7 +255,7 @@ export function DetectionChainFrequencyResponsePage() {
         </section>
         <section className="zaw-run-details">
           {selected ? <>
-            <div className="zaw-run-details-actions"><button className="zaw-secondary" disabled={jobActive || starting} onClick={() => { setValues(current => ({ ...current, ...Object.fromEntries(Object.entries(selected.parameters).filter(([key]) => fields.some(field => field.name === key))) })); setTab("run"); }}>填回参数</button><button className="zaw-secondary" disabled={jobActive || analysisActive || selected.completion_status === "running"} onClick={() => void reanalyze(selected.run_id)}>重新分析</button></div>
+            <div className="zaw-run-details-actions"><button className="zaw-secondary" disabled={jobActive || starting} onClick={() => { setValues(current => ({ ...current, ...historyParameterValues(fields, selected.parameters as ParameterValues) })); setTab("run"); }}>填回参数</button><button className="zaw-secondary" disabled={jobActive || analysisActive || starting || selected.completion_status === "running"} onClick={() => void reanalyze(selected.run_id)}>重新分析</button></div>
             <Result value={selected} />
             <details className="zaw-parameter-table"><summary>本次参数</summary><table><tbody>{Object.entries(selected.parameters).map(([key, value]) => <tr key={key}><th>{fields.find(field => field.name === key)?.label ?? key}</th><td>{String(value)}</td></tr>)}</tbody></table></details>
           </> : <p className="zaw-empty">{selectedId ? "正在读取运行详情…" : "请选择一条运行记录。"}</p>}

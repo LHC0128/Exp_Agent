@@ -156,14 +156,19 @@ def generate_known_noise_waveform(
 
 @dataclass(frozen=True, slots=True)
 class ZFrequencyCalibration:
-    """Bell-Bloom Z 场频率标定的斜率；共振中心由主磁场决定，不进入真值链。"""
+    """Z 电压到频率偏移的斜率；手动输入不附带来源运行或不确定度。"""
 
     k_hz_per_v: float
-    uncertainty_hz_per_v: float
-    source_run: str
+    uncertainty_hz_per_v: float = float("nan")
+    source_run: str = ""
+
+    def __post_init__(self):
+        if isinstance(self.k_hz_per_v, bool) or not math.isfinite(self.k_hz_per_v) or self.k_hz_per_v <= 0:
+            raise ValueError("K_Z 手动标定必须为有限正数（Hz/V）")
 
 
 def load_z_calibration(root: Path, run_name: str) -> ZFrequencyCalibration:
+    """仅用于缺少 K_Z 数值快照的旧运行离线分析。"""
     path = (root / "data" / "Bell_Bloom_Z_Field_Calibration" / run_name
             / "results" / "analysis.yaml").resolve()
     source_root = (root / "data" / "Bell_Bloom_Z_Field_Calibration").resolve()

@@ -5,7 +5,7 @@ from __future__ import annotations
 from lockin_amplifier import SignalInputConfig
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 
@@ -16,6 +16,10 @@ from ...experiment_params import ExperimentParams, parameter
 
 @dataclass(slots=True)
 class RFDirectAWFrequencyParams(ExperimentParams):
+    schema_version: ClassVar[int] = 2
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'FREQ_SETTLE_TIME': 0.1, 'PHASE_SETTLE_TIME': 0.1, 'TEMP_SWITCH_OFF_LEAD': 0.1, 'XY_PHASE_SETTLE_s': 2.0}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    system_settle_s: float = parameter(default=2.0, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="freq_resp_direct_aw", external_name="RUN_TAG", label="运行标签", group="basic")
     acquisition_mode: Literal["yfft", "demod_rxy", "both"] = parameter(default="demod_rxy", external_name="ACQUISITION_MODE", label="采集模式", group="basic", options=(("yfft", "DAQ Y + FFT"), ("demod_rxy", "Demod 3 X/Y/R"), ("both", "两者同时采集")))
     z_rf_freq_start: float = parameter(default=0.0, external_name="Z_RF_FREQ_START", label="Z RF 起始频率", unit="Hz", group="basic", minimum=0)
@@ -25,11 +29,9 @@ class RFDirectAWFrequencyParams(ExperimentParams):
     z_rf_freq_offset_hz: float = parameter(default=50.0, external_name="Z_RF_FREQ_OFFSET_HZ", label="线性扫描频率偏移", unit="Hz", group="advanced", description="仅在线性扫描时加到每个频点；保留旧脚本的 +50 Hz 行为")
     z_rf_amplitude: float = parameter(default=0.05, external_name="Z_RF_AMPLITUDE", label="Z RF 固定幅度", unit="Vpp", group="basic", safety_key="Z_magnetic_field")
     z_rf_drive_mode: Literal["continuous_sine_no_burst"] = parameter(default="continuous_sine_no_burst", external_name="Z_RF_DRIVE_MODE", label="Z RF 驱动模式", group="advanced", options=(("continuous_sine_no_burst", "连续正弦（Burst OFF）"),))
-    freq_settle_time: float = parameter(default=0.1, external_name="FREQ_SETTLE_TIME", label="频率稳定等待", unit="s", group="basic", minimum=0)
     phase_start: float = parameter(default=0.0, external_name="PHASE_START", label="相位扫描起点", unit="deg", group="basic")
     phase_stop: float = parameter(default=360.0, external_name="PHASE_STOP", label="相位扫描终点", unit="deg", group="basic")
     phase_points: int = parameter(default=10, external_name="PHASE_POINTS", label="相位扫描点数", group="basic", minimum=1)
-    phase_settle_time: float = parameter(default=0.1, external_name="PHASE_SETTLE_TIME", label="相位稳定等待", unit="s", group="advanced", minimum=0)
     arb_waveform_source: Literal["csv", "corrected_run"] = parameter(default="corrected_run", external_name="ARB_WAVEFORM_SOURCE", label="任意波来源", group="basic", options=(("csv", "实验 CSV 波形"), ("corrected_run", "闭环冻结波形")))
     arb_waveform_file: str = parameter(default="optimal_control_waveform.csv", external_name="ARB_WAVEFORM_FILE", label="任意波波形文件", group="basic", options_from_directory="experiments", options_pattern="*.csv")
     corrected_control_source_run: str = parameter(default="obbv5", external_name="CORRECTED_CONTROL_SOURCE_RUN", label="闭环校正运行", group="basic", options_from_directory="data/Z_AW_Closed_Loop_Waveform_Correction", options_pattern="*", options_include_directories=True, options_require_relative_file="results/corrected_control_waveform.npz", description="任意波来源为闭环冻结波形时选择闭环实验结果。")
@@ -74,7 +76,6 @@ class RFDirectAWFrequencyParams(ExperimentParams):
     sigin2_range: float = parameter(default=1.0, external_name="SIGIN2_RANGE", label="Signal Input 2 量程", unit="V", group="advanced", minimum=0.001)
     sigin2_ac_coupling: bool = parameter(default=False, external_name="SIGIN2_AC_COUPLING", label="Signal Input 2 AC 耦合", group="advanced", visible=False)
     sigin2_impedance: int = parameter(default=1000000, external_name="SIGIN2_IMPEDANCE", label="Signal Input 2 阻抗", unit="Ω", group="advanced", options=((50, "50 Ω"), (1000000, "1 MΩ")), visible=False)
-    temp_switch_off_lead: float = parameter(default=0.1, external_name="TEMP_SWITCH_OFF_LEAD", label="温控关闭前置等待", unit="s", group="advanced", minimum=0)
     temp_switch_on_lag: float = parameter(default=1.0, external_name="TEMP_SWITCH_ON_LAG", label="温控恢复等待", unit="s", group="advanced", minimum=0)
     pump_laser_power: float = parameter(default=0.5, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", safety_key="Pump_laser_power")
     probe_laser_power: float = parameter(default=0.3, external_name="FIXED_PARAMS.Probe_laser_power", label="Probe 光功率", unit="V", group="basic", safety_key="Probe_laser_power")

@@ -4,7 +4,7 @@ type: experiment_type
 description: 在 DirectAW 准备与 XY 校相后先采集 RF 解调器 R 绝对色散响应，再独立改频执行 RF 解调器校相与零 RF X 噪声采集。运行/历史双 Tab 提供依赖流程图、节点参数编辑、分阶段离线分析和多次运行对比导出；线宽补偿固定色散等效，不提供扫频测线宽节点。 RF 解调器索引与辅助通道可选，HF2 支持物理回采，MFLI 支持物理或内部 AuxOut 回采。锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
 experiment_id: rf-sensitivity-aw-r
 defaults_file: params/experiments/rf-sensitivity-aw-r.yaml
-schema_version: 2
+schema_version: 3
 scan_mode: point_by_point
 mapping_keys:
   X_magnetic_field: {role: fixed}
@@ -28,6 +28,13 @@ learned_notes:
 ---
 
 # RF 灵敏度（DirectAW R）
+
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
 
 ## 锁相采集方式与实际速率
 
@@ -63,7 +70,7 @@ GUI 路由为 `/experiments/rf-sensitivity-aw-r`，提供“运行 / 历史”�
 | A02 | 复用物理资源连接设备 | A01 |
 | A03 | 按设备库同步并严格回读参考时钟 | A02 |
 | A04 | 初始输出；关闭 XY/Z，恢复温控为 5 V DC + ON | A03 |
-| A05 | 温度稳定；TEC 不可用时记录外部温控状态 | A04 |
+| A05 | 目标温度设置；TEC 不可用时记录外部温控状态 | A04 |
 | A06 | Pump 载波与门控 | A05 |
 | A07 | XYZ 共同触发及通道 SYNC | A06 |
 | A08 | Bell-Bloom / Demod0 校相 | A07 |
@@ -129,7 +136,7 @@ XYZ Ext Trig 共用 `Time_sequence_2` 主输出。RF 线路和索引与 DirectAW
 
 A10 内编辑 `RF_INPUT_ROUTE`、`RF_AUX_OUTPUT_IDX`、`RF_PHYSICAL_INPUT_SOURCE` 和 `DEMOD3_IDX`；修改并应用后使 A10 及后继失效，须显式重跑，重跑另建运行目录。内部线路的物理输入项不生效。缺少新线路键的旧参数按 HF2 AuxOut2 → Signal Input2 解释；历史填回保留该接线，使用 MFLI 时需明确改选辅助输入，否则预检拒绝。
 
-稳定实验 ID、schema 2、`DEMOD3_*` 参数键、`demod3_*` 数据键和 `noise_D3_*` 文件名保留。新采集文件的 `demod_idx` 保存真实 RF 索引，分析按运行快照 `DEMOD3_IDX` 核对，旧快照缺该键时按 3。配置与历史摘要保存真实 `signal_chain`，不从当前默认值重建历史接线。
+稳定实验 ID、原始数据格式和 schema 2 历史兼容、`DEMOD3_*` 参数键、`demod3_*` 数据键和 `noise_D3_*` 文件名保留。新采集文件的 `demod_idx` 保存真实 RF 索引，分析按运行快照 `DEMOD3_IDX` 核对，旧快照缺该键时按 3。配置与历史摘要保存真实 `signal_chain`，不从当前默认值重建历史接线。
 
 ## 数据结构
 

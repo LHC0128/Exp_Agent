@@ -6,6 +6,7 @@
 """
 
 from __future__ import annotations
+from typing import ClassVar
 
 import math
 from dataclasses import dataclass
@@ -18,8 +19,11 @@ from ..mx_y_rf_sensitivity.models import LinewidthMode, MxYRFParams
 class MxYRFFrequencyResponseParams(MxYRFParams):
     """复用 Mx Y RF 灵敏度工作点，测量频率响应曲线。"""
 
-    schema_version = 1
+    schema_version = 2
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.3, 'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.3, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(
         default="mx_y_rf_freq_resp",
         external_name="RUN_TAG",
@@ -99,14 +103,6 @@ class MxYRFFrequencyResponseParams(MxYRFParams):
         label="Y RF 幅度点数",
         visible=False,
         minimum=5,
-    )
-    response_settle_time_s: float = parameter(
-        default=0.3,
-        external_name="RESPONSE_SETTLE_TIME_S",
-        label="幅度点稳定时间",
-        unit="s",
-        visible=False,
-        minimum=0,
     )
     response_duration_s: float = parameter(
         default=0.2,

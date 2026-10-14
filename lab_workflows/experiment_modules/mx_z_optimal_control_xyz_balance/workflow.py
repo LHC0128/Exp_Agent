@@ -220,7 +220,7 @@ def _acquire_grid(
             ),
             metadata=metadata,
             set_y_rf=lambda x=x_v, y=y_v, z=z_ma: controller.apply(x, y, z),
-            settle_time_s=params.response_settle_time_s,
+            settle_time_s=params.system_settle_s,
             duration_s=params.response_duration_s,
             actual_rate=actual_rate,
             device_id=device_id,

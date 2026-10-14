@@ -37,7 +37,7 @@ def _preflight(values: dict[str, object]) -> list[str]:
 DEFINITION = ExperimentDefinition(
     id="scope-capture", title="示波器采集", category="measurement",
     family="scope", variant="single-channel",
-    description="单通道时域采集与软件 PSD，支持历史波形比较。",
+    description=("单通道时域采集与软件 PSD，支持历史波形比较。" + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
     data_type="Scope_Capture", required_devices=("SDS",),
     required_mapping_keys=("scope_waveform",), execution_mode="typed_workflow",
     acquisition_program="experiments/Scope_Capture.py",
@@ -50,7 +50,7 @@ DEFINITION = ExperimentDefinition(
         "结束时停止 SDS 采集并断开连接。",
         "关闭温控采集在正常、异常和取消路径均尝试恢复为 5V ON。",
     ),
-    schema_version=ScopeCaptureParams.schema_version,
+    schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema, defaults_saver=ADAPTER.save_defaults,
     preflight_runner=_preflight, experiment_runner=ADAPTER.run,
     analysis_runner=ADAPTER.analyze,

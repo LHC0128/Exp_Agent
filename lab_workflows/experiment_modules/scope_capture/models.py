@@ -1,3 +1,4 @@
+from typing import ClassVar
 """单通道示波器采集参数。"""
 
 from dataclasses import dataclass
@@ -9,8 +10,11 @@ from ...experiment_params import ExperimentParams, parameter
 
 @dataclass(slots=True)
 class ScopeCaptureParams(ExperimentParams):
-    schema_version = 2
+    schema_version = 3
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'temperature_switch_off_settle_s': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     mode: str = parameter(default="time", external_name="mode", label="模式",
                           group="basic", options=(("time", "时间"), ("frequency", "频域")))
     sampling_rate_sa_s: float = parameter(
@@ -50,14 +54,6 @@ class ScopeCaptureParams(ExperimentParams):
         label="关闭温控采集",
         group="basic",
         description="采集前关闭温度开关，波形读完后立即恢复为开启状态。",
-    )
-    temperature_switch_off_settle_s: float = parameter(
-        default=0.1,
-        external_name="temperature_switch_off_settle_s",
-        label="温控关闭后等待",
-        unit="s",
-        group="advanced",
-        minimum=0.0,
     )
     temperature_switch_on_settle_s: float = parameter(
         default=1.0,

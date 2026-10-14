@@ -46,7 +46,7 @@ export function ExperimentPage() {
   if (experimentId === "noise-spectrum-xy-known-noise") return <NoiseSpectrumXYKnownNoisePage />;
   if (experimentId === "noise-spectrum-xy-uncontrolled-probe-am") return <NoiseSpectrumXYProbeAMPage />;
   if (experimentId === "detection-chain-frequency-response") return <DetectionChainFrequencyResponsePage />;
-  if (experimentId === "rf-sensitivity-aw" || experimentId === "rf-sensitivity-aw-r") return <RFSensitivityDirectAWPage key={experimentId} experimentId={experimentId} />;
+  if (experimentId === "rf-sensitivity-aw" || experimentId === "rf-sensitivity-aw-r" || experimentId === "rf-sensitivity-aw-known-noise") return <RFSensitivityDirectAWPage key={experimentId} experimentId={experimentId} />;
   return <GenericExperimentPage />;
 }
 

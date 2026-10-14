@@ -1,5 +1,6 @@
-schema_version: 1
+schema_version: 2
 parameters:
+  SYSTEM_SETTLE_S: 2.0
   RUN_TAG: freq_resp_direct_aw
   ACQUISITION_MODE: demod_rxy
   Z_RF_FREQ_START: 0.0
@@ -9,11 +10,9 @@ parameters:
   Z_RF_FREQ_OFFSET_HZ: 50.0
   Z_RF_AMPLITUDE: 0.02
   Z_RF_DRIVE_MODE: continuous_sine_no_burst
-  FREQ_SETTLE_TIME: 0.1
   PHASE_START: 0.0
   PHASE_STOP: 360.0
   PHASE_POINTS: 10
-  PHASE_SETTLE_TIME: 0.1
   ARB_WAVEFORM_SOURCE: corrected_run
   ARB_WAVEFORM_FILE: optimal_control_waveform.csv
   CORRECTED_CONTROL_SOURCE_RUN: obbv6
@@ -58,7 +57,6 @@ parameters:
   SIGIN2_RANGE: 1.0
   SIGIN2_AC_COUPLING: false
   SIGIN2_IMPEDANCE: 1000000
-  TEMP_SWITCH_OFF_LEAD: 0.1
   TEMP_SWITCH_ON_LAG: 1.0
   FIXED_PARAMS.Pump_laser_power: 0.5
   FIXED_PARAMS.Probe_laser_power: 0.3

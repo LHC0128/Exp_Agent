@@ -215,23 +215,27 @@ def temperature_gated_acquire(
     sleep: Callable[[float], None],
     set_temperature_switch: Callable[..., None],
     cancellation: Any,
+    prepare: Callable[[], None] | None = None,
 ) -> Any:
-    """每次采集前关闭温控，并在任何退出路径恢复 5 V ON。"""
+    """配置完成后关闭温控；返回内存结果前恢复，文件保存由调用方执行。"""
+    from .acquisition_window import acquisition_window
+
     check_cancelled()
-    try:
-        # 即使关闭动作本身或取消检查失败，也继续尝试恢复温控开关。
-        set_temperature_switch(temp_switch, False, channel=temp_channel)
-        sleep(off_settle_s)
-        return acquire()
-    finally:
+    if prepare is not None:
+        prepare()
+
+    def set_enabled(enabled):
         set_temperature_switch(
             temp_switch,
-            True,
+            enabled,
             channel=temp_channel,
-            settle_time=on_settle_s,
+            settle_time=on_settle_s if enabled else 0.0,
             # 恢复动作不能被取消信号中断；输出设置完成后再结束流程。
             cancellation=None,
         )
+
+    with acquisition_window(set_enabled, sleep, off_settle_s):
+        return acquire()
 
 
 def read_complete_scope_record(

@@ -1,6 +1,7 @@
 """Mx Keithley 6221 主磁场频率标定参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 import math
 from dataclasses import dataclass
@@ -17,8 +18,11 @@ from ...steps.keithley_6221 import (
 class MxKeithley6221MainFieldCalibrationParams(ExperimentParams):
     """以 Keithley 6221 扫描 Z 主线圈并标定共振频率。"""
 
-    schema_version = 1
+    schema_version = 2
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(
         default="mx_6221_main_field_cal",
         external_name="RUN_TAG",
@@ -133,9 +137,7 @@ class MxKeithley6221MainFieldCalibrationParams(ExperimentParams):
         maximum=2.0,
         safety_key="rf_coil",
     )
-    frequency_settle_time_s: float = parameter(default=0.05, external_name="FREQUENCY_SETTLE_TIME_S", label="频点稳定时间", unit="s", group="advanced", minimum=0.0)
     frequency_duration_s: float = parameter(default=0.1, external_name="FREQUENCY_DURATION_S", label="频点采样时间", unit="s", group="basic", minimum=0.001)
-    temp_switch_off_lead_s: float = parameter(default=0.1, external_name="TEMP_SWITCH_OFF_LEAD_S", label="温控关闭后等待", unit="s", group="advanced", minimum=0.0)
     temp_switch_on_lag_s: float = parameter(default=1.0, external_name="TEMP_SWITCH_ON_LAG_S", label="每频点温控恢复等待", unit="s", group="basic", minimum=0.0)
     r_bad_point_std_threshold_v: float = parameter(default=0.01, external_name="R_BAD_POINT_STD_THRESHOLD_V", label="R 坏点标准差阈值", unit="V", group="advanced", minimum=0.0)
     r_point_max_attempts: int = parameter(default=3, external_name="R_POINT_MAX_ATTEMPTS", label="R 点最大采集次数", group="advanced", minimum=1)
@@ -147,10 +149,6 @@ class MxKeithley6221MainFieldCalibrationParams(ExperimentParams):
     response_time_constant_s: float = parameter(default=0.001, external_name="RESPONSE_TIME_CONSTANT_S", label="响应时间常数", unit="s", group="advanced", minimum=0.0)
     response_demod_order: int = parameter(default=4, external_name="RESPONSE_DEMOD_ORDER", label="响应解调阶数", group="advanced", minimum=1)
 
-    temperature_tolerance_c: float = parameter(default=1.0, external_name="TEMPERATURE_TOLERANCE_C", label="初始温度稳定容差", unit="°C", group="advanced", minimum=0.0)
-    temperature_stable_reads: int = parameter(default=1, external_name="TEMPERATURE_STABLE_READS", label="初始温度连续稳定读数", group="advanced", minimum=1)
-    temperature_poll_interval_s: float = parameter(default=5.0, external_name="TEMPERATURE_POLL_INTERVAL_S", label="温度轮询间隔", unit="s", group="advanced", minimum=0.1)
-    temperature_timeout_s: float = parameter(default=1200.0, external_name="TEMPERATURE_TIMEOUT_S", label="温度稳定超时", unit="s", group="advanced", minimum=1.0)
 
     pump_carrier_frequency_hz: float = parameter(default=100e6, external_name="PUMP_CARRIER_FREQUENCY_HZ", label="Pump AOM 载波频率", unit="Hz", group="advanced", minimum=1.0)
     pump_carrier_amplitude_vpp: float = parameter(default=0.18, external_name="PUMP_CARRIER_AMPLITUDE_VPP", label="Pump AOM 载波幅度", unit="Vpp", group="advanced", minimum=0.0, maximum=0.18, safety_key="Pump_modulation")

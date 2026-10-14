@@ -159,10 +159,13 @@ def test_daq_rejects_discontinuous_timestamps():
 
 def test_two_collector_paths_use_scope(tmp_path):
     from .steps.dispersion import acquire_dispersion_point
+    from .steps.acquisition_window import DeferredAcquisitionWrites
     from .experiment_modules.noise_spectrum_xy_demod3_r.acquisition import acquire_demod_r_mean
     instr, cfg, _, waves = scope_fixture(("sample.x", "sample.y"))
-    point = acquire_dispersion_point(instr, demod_idx=0, duration_s=cfg.duration,
-        requested_rate=200000, offset_v=0.0, path=tmp_path / "point.npz", cancellation_check=lambda: None)
+    with DeferredAcquisitionWrites() as pending:
+        point = acquire_dispersion_point(instr, demod_idx=0, duration_s=cfg.duration,
+            requested_rate=200000, offset_v=0.0, path=tmp_path / "point.npz", cancellation_check=lambda: None,
+            pending=pending)
     assert str(point["acquisition_module"]) == "scope"
     np.testing.assert_allclose(point["r_samples"], np.hypot(waves["sample.x"], waves["sample.y"]))
     assert not point["timestamp_ticks"].size
@@ -211,7 +214,7 @@ def test_mx_quality_summary_and_waveform_keep_scope_rate(tmp_path, module_name, 
     instr, cfg, _, _ = scope_fixture(signals)
     params = SimpleNamespace(demod_idx=0, response_rate_sa_s=200000,
         frequency_duration_s=cfg.duration, r_point_max_attempts=1, r_bad_point_std_threshold_v=1,
-        temp_switch_off_lead_s=0, temp_switch_on_lag_s=0, settle_time_s=0)
+        system_settle_s=max(0, 0), temp_switch_on_lag_s=0, )
     kwargs = dict(file_stem="point", metadata={}, actual_rate=50000, device_id=instr.device_id)
     if response:
         kwargs.update(set_y_rf=lambda: None, settle_time_s=0, duration_s=cfg.duration)
@@ -230,7 +233,7 @@ def test_mx_frequency_aggregate_keeps_scope_rate(tmp_path):
     from .experiment_modules.mx_y_rf_frequency_response import workflow
     instr, cfg, _, _ = scope_fixture(("sample.r",))
     params = SimpleNamespace(demod_idx=0, response_rate_sa_s=200000,
-        frequency_duration_s=cfg.duration, frequency_settle_time_s=0,
+        frequency_duration_s=cfg.duration, system_settle_s=0,
         r_point_max_attempts=1, r_bad_point_std_threshold_v=1)
     with patch.object(workflow, "build_rf_amplitude_axis", return_value=np.array([0.1])), \
          patch.object(workflow, "build_frequency_axis", return_value=np.array([3000, 4000])), \
@@ -245,7 +248,7 @@ def test_bell_bloom_point_summary_keeps_scope_rate(tmp_path):
     from .experiment_modules.bell_bloom_z_field_calibration import workflow
     instr, cfg, _, _ = scope_fixture(("sample.r",))
     params = SimpleNamespace(response_rate_sa_s=200000, frequency_duration_s=cfg.duration,
-        frequency_settle_time_s=0, temp_switch_off_lead_s=0, temp_switch_on_lag_s=0,
+        system_settle_s=max(0, 0),  temp_switch_on_lag_s=0,
         r_point_max_attempts=1, r_bad_point_std_threshold_v=1)
     with patch.object(workflow, "set_temperature_switch"), patch.object(workflow, "sleep"):
         summary, filename = workflow.acquire_point(params, {"hf2": instr, "Temp_Switch": Mock()},

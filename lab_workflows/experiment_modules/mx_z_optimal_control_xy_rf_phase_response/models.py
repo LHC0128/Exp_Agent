@@ -1,6 +1,7 @@
 """Mx Z 最优控制 XY 平衡场 RF 相位响应参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,9 +28,12 @@ class MxZOptimalControlXYRFPhaseResponseParams(
 ):
     """固定主场并叠加 Z 最优控制，扫描 X/Y DC 后测量 RF 相位响应。"""
 
-    schema_version = 1
+    schema_version = 2
 
     # XYZ 平衡父类中的 Z 扫描字段在本实验中只保留兼容性，不展示给 GUI。
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.1, 'TEMP_SWITCH_OFF_LEAD_S': 0.0}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     z_field_start_ma: float = parameter(
         default=0.0,
         external_name="Z_FIELD_START_MA",
@@ -84,14 +88,6 @@ class MxZOptimalControlXYRFPhaseResponseParams(
         minimum=0.001,
         maximum=2.0,
         safety_key="rf_coil",
-    )
-    response_settle_time_s: float = parameter(
-        default=0.1,
-        external_name="RESPONSE_SETTLE_TIME_S",
-        label="相位点稳定时间",
-        unit="s",
-        group="basic",
-        minimum=0.0,
     )
     response_duration_s: float = parameter(
         default=0.2,

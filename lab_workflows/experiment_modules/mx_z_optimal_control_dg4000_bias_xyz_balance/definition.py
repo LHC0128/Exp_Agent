@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="field-balance",
     variant="mx-z-optimal-control-dg4000-bias",
     description=(
-        '保持 Z 周期最优控制，以同一台 DG4000 的 Z 通道 offset 扫描额外偏置，并扫描 X/Y 直流补偿场，记录 锁相放大器 Demod0 X/Y/R。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
+        ('保持 Z 周期最优控制，以同一台 DG4000 的 Z 通道 offset 扫描额外偏置，并扫描 X/Y 直流补偿场，记录 锁相放大器 Demod0 X/Y/R。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
     ),
     data_type="Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance",
     required_devices=("DG900", "DG4000", "锁相放大器"),
@@ -41,7 +41,7 @@ DEFINITION = ExperimentDefinition(
         "结果主判据是 Demod X/Y 复数稳健拟合；Demod0 R 网格最小点只作诊断。",
         "当前拟合是稳态 Bloch 型二维响应面，不等价于周期最优控制的严格 Bloch/Floquet 解。",
     ),
-    schema_version=MxZOptimalControlDG4000BiasXYZBalanceParams.schema_version,
+    schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,
     preflight_runner=ADAPTER.preflight,

@@ -287,12 +287,6 @@ def _configure_outputs(
         devices.get("tec"),
         params.tec_temperature,
         channel=1,
-        tolerance_c=1.0,
-        stable_reads=1,
-        poll_interval_s=5.0,
-        timeout_s=1200.0,
-        cancellation=_RuntimeCancellation(),
-        stability_waiter=wait_for_temperature_stable,
     )
     actual_temperature = temperature_status.actual_temperature_c
 
@@ -434,7 +428,7 @@ def _acquire_fid(
             check_cancelled()
             try:
                 set_temperature_switch(temp_switch, False, channel=channels["temp_switch"])
-                _sleep(0.5)
+                _sleep(params.system_settle_s)
                 if not scope.wait_for_trigger(timeout=10.0):
                     print(f"第 {repeat + 1} 次触发超时，跳过")
                     break

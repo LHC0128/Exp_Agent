@@ -7,7 +7,6 @@ from ..noise_spectrum_xy.preparation import build_target_scan_axes
 from ..noise_spectrum_xy.phase import validate_sine_peak
 from ..noise_spectrum_xy.excitation import validate_pump_levels, validate_trigger_square_levels
 from .models import NoiseSpectrumXYKnownNoiseParams
-from .generation import load_z_calibration
 from .excitation import validate_noise_levels
 from ..noise_spectrum_xy.preparation import connect_instruments as connect_xy_instruments
 from .safety import safe_connection_outputs_off
@@ -26,7 +25,6 @@ def preflight(params, root):
     validate_trigger_square_levels(params, limits)
     validate_pump_levels(params, limits)
     validate_noise_levels(params.noise_amplitude_vpp, limits)
-    load_z_calibration(root, params.z_calibration_source_run)
     return params, mapping, limits, axes
 
 

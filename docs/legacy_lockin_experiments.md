@@ -1,5 +1,12 @@
 # 旧模式锁相实验与兼容性
 
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
+
 旧模式继续读取实际脚本常量及 GUI 保存的参数，不新增另一套默认值。锁相连接已改用 `create_lockin()`，所有实验使用设备库卡片的全系统选择。采集前的能力检查和原有输出收尾均保留。
 
 ## 解调时序的采集模块
@@ -40,7 +47,7 @@ GUI 隐藏开启选项；光子散粒噪声和可选 BB 监控也使用公共初
 
 ## 已接入的旧模式入口
 
-`rf-sensitivity-aw` 与 `rf-sensitivity-aw-r` 使用强类型工作流，已支持明确选择辅助输入物理线路或 MFLI 内部 AuxOut 线路，不属于上述限制清单。旧参数缺少线路键时仍解释为原 HF2 AuxOut2 → Signal Input2，不能直接在 MFLI 启动；实机增益与带宽仍需验证。详见 [DirectAW](rf_field_measurement.md) 与 [DirectAW R](rf_field_measurement_r.md)。
+`rf-sensitivity-aw`、`rf-sensitivity-aw-r` 与 `rf-sensitivity-aw-known-noise` 使用强类型工作流，已支持明确选择辅助输入物理线路或 MFLI 内部 AuxOut 线路，不属于上述限制清单。旧参数缺少线路键时仍解释为原 HF2 AuxOut2 → Signal Input2，不能直接在 MFLI 启动；实机增益与带宽仍需验证。详见 [DirectAW](rf_field_measurement.md) 与 [DirectAW R](rf_field_measurement_r.md)。
 
 以下清单按注册表和当前构造代码核对；简介与运行入口由原实验定义提供，分析器保持离线。
 

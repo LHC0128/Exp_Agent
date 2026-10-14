@@ -4,7 +4,7 @@
 
 ## 近期更新（2026 年 10 月）
 
-- [XY 已知可控噪声谱](docs/noise_spectrum_xy_ctrl_known_noise.md)提供采集/分析两列交互流程：节点编辑、依赖检查、分步会话和重跑；增益改用静磁场 v3 历史曲线，未选来源时完成谱分离并等待标定，保留原脚本和历史数据兼容。
+- [XY 已知可控噪声谱](docs/noise_spectrum_xy_ctrl_known_noise.md)提供采集/分析两列交互流程：节点编辑、依赖检查、分步会话和重跑；K_Z 手动输入（Hz/V）并保存为本轮快照，增益使用静磁场 v3 历史曲线，未选曲线时完成谱分离并等待标定，保留原脚本和历史数据兼容。
 - [XY 已知不可控 Probe AM 噪声谱](docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md)同样提供分步流程图：A08 专属载波节点、A12 双噪声上传、A14 配对扫描可选 Z 持续注入；分析 B01–B04 独立验收背景与可控响应，移动峰不足时按运行 K/B 输出暂定轴并标记质量未通过。
 - GUI 支持通过根目录 `start_gui.bat` 双击启动；静磁场与 RF DirectAW 提供可执行交互流程图。静磁场节点支持参数编辑、勾选与依赖检查、分步会话和独立阶段分析，保留逐点 DC 连续波形中位数与分组温控。
 - RF 灵敏度（DirectAW）历史 Tab 试点支持星标与筛选、保留时间前缀的目录重命名和确认后永久删除整次数据；已有对比导出保留为生成时的快照。
@@ -196,7 +196,7 @@ Set-Location D:\Code\exp_agent\GUI
 [GUI/README.md](GUI/README.md#检查更新)。
 更详细的开发说明见 [GUI/README.md](GUI/README.md)。
 
-锁相设备采用相同的 Python Core API 函数入口，支持相位、频率、输出设置、解调 X/Y/R 和内置 Scope 采集。MFLI 已配置为 `dev30661`，通过 USB RNDIS 地址 `192.168.150.246:8004` 访问内置服务器（内部接口 `PCIe`），使用外部参考，启用选件后的频率上限为 5 MHz。仍要求双主电压输入的实验选择 MFLI 时禁止启动；DirectAW 两个变体已显式支持辅助输入物理回采与 MFLI 内部 AuxOut 回采；尚未确认安全电压范围的锁相输出写入保持禁用。接口、硬件差异与实机验收见 [锁相模块说明](docs/lockin_amplifier.md)，受限实验清单见 [锁相实验兼容性](docs/legacy_lockin_experiments.md)。
+锁相设备采用相同的 Python Core API 函数入口，支持相位、频率、输出设置、解调 X/Y/R 和内置 Scope 采集。MFLI 已配置为 `dev30661`，通过 USB RNDIS 地址 `192.168.150.246:8004` 访问内置服务器（内部接口 `PCIe`），使用外部参考，启用选件后的频率上限为 5 MHz。仍要求双主电压输入的实验选择 MFLI 时禁止启动；DirectAW 系列已显式支持辅助输入物理回采与 MFLI 内部 AuxOut 回采；尚未确认安全电压范围的锁相输出写入保持禁用。接口、硬件差异与实机验收见 [锁相模块说明](docs/lockin_amplifier.md)，受限实验清单见 [锁相实验兼容性](docs/legacy_lockin_experiments.md)。
 
 ## 实验组织方式
 
@@ -259,6 +259,8 @@ R 标定使用绝对色散底层中心斜率，失败则以数值梯度估算并
 多次 R 标定 / X 噪声对比及 PNG/PDF 导出。两个实验的所选辅助输出均按逐设备、逐通道已确认的 ±10 V
 规则检查，缺范围或预计越界时禁止启动/写入；跨频率增益一致性和等效线宽仍待实测。
 详见 [实验说明](docs/rf_field_measurement_r.md) 与 [默认参数](params/experiments/rf-sensitivity-aw-r.yaml)。
+
+`rf-sensitivity-aw-known-noise` 在固定 Z 周期伪噪声 ON 下支持单选或多选同 RF 设计频率的控制版本。Z 噪声与 RF 逐点先求和再归一化，零 RF 保留注入；采用运行/历史双 Tab 与 DirectAW 分步流程图，逐版本独立校相、标定、采集和离线灵敏度谱分析。见[实验说明](docs/rf_field_measurement_known_noise.md)与[默认参数](params/experiments/rf-sensitivity-aw-known-noise.yaml)。
 
 `t2-calibration` 已迁移为强类型光学 FID 工作流：保持 `T2_Calibration` 数据目录与
 历史 NPZ 字段不变，正常完成、异常、取消和 Ctrl+C 都会把温度开关恢复为 5 V ON，
@@ -347,18 +349,19 @@ R 标定使用绝对色散底层中心斜率，失败则以数值梯度估算并
 | Mx 主磁场示波器噪声谱（固定 X/Y DC 补偿，可选 AC/DC 耦合） | `experiments/Mx_Main_Field_Scope_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Scope_Noise_Spectrum_plot.py` | `docs/mx_main_field_scope_noise_spectrum.md` |
 | Mx 高主场 Z 磁场频率标定 | `experiments/Mx_Z_Field_Calibration.py`、`experiments/Mx_Z_Field_Calibration_plot.py` | `docs/mx_z_field_calibration.md` |
 | Bell Bloom Z 磁场频率标定（运行 / 历史双 Tab） | `experiments/Bell_Bloom_Z_Field_Calibration.py`、`experiments/Bell_Bloom_Z_Field_Calibration_plot.py` | `docs/bell_bloom_z_field_calibration.md` |
-| 探测链路频率响应标定（运行 / 历史双 Tab；锁相放大器关闭输入 AC 耦合、其余解调设置对照 XY 正弦控制噪声谱；每点关闭并恢复温控；采集 Demod0 Y，排除零基带点） | `experiments/Detection_Chain_Frequency_Response.py`、`experiments/Detection_Chain_Frequency_Response_plot.py` | `docs/detection_chain_frequency_response.md` |
+| 探测链路频率响应标定（运行 / 历史 / 架构；运行页为可勾选、带依赖的交互流程图，8 个采集模块与 3 个分析模块，完整运行入口保留；锁相放大器关闭输入 AC 耦合、其余解调设置对照 XY 正弦控制噪声谱；每点关闭并恢复温控；采集 Demod0 Y，排除零基带点；分阶段分析绑定运行目录并按输入指纹失效） | `experiments/Detection_Chain_Frequency_Response.py`、`experiments/Detection_Chain_Frequency_Response_plot.py` | `docs/detection_chain_frequency_response.md` |
 | Mx Z 直流控制噪声谱 | `experiments/Mx_Z_Noise_Spectrum.py`、`experiments/Mx_Z_Noise_Spectrum_plot.py` | `docs/mx_z_noise_spectrum.md` |
 | Mx XY 剩磁二维校准（SDS） | `experiments/Mx_XY_Residual_Field_Calibration.py`、`experiments/Mx_XY_Residual_Field_Calibration_plot.py` | `docs/mx_xy_residual_field_calibration.md` |
 | T1 / T2 标定 | `experiments/T1_Calibration.py`、`experiments/T2_Calibration.py` | `docs/T1_calibration.md`、`docs/T2_relaxation.md` |
 | X/Y 补偿与通道验证 | `experiments/XY_Compensation_Calibration.ipynb`、`experiments/XY_Channel_Calibration.ipynb`、`experiments/XY_AM_Transfer.ipynb`、`experiments/XY_MOD_ZeroOffset.ipynb`、`experiments/XY_Output_Verification.ipynb` | `docs/XY_Compensation_Calibration.md`、`docs/z_field_calibration.md` |
 | XY 控制噪声谱测量（运行 / 历史 / 架构；原图五组交互流程，14 个采集模块与 5 个分析模块；保存、预览与运行操作融入流程图；节点编辑基础／高级参数、共享值与分类同步、草稿重跑预览；下一次实验与具体目录分析设置隔离；显式前置、校相门槛、保留输出的硬件会话、空闲改参、独立目录重跑与手动结束；按格间距自动分段、只读平均段数与耗时预览；移动峰标定验收、三实验共享全轴分离与独立背景验收；标定或拟合失败仍保留二维 PSD） | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
-| XY 控制测量已知可控噪声谱（运行 / 历史 / 架构；采集与分析两列依赖节点，Z 小线圈注入分段平顶谱伪噪声，相邻点交替 on/off 并逐段保存；分析选择静磁场 v3 历史曲线拟合检测增益，未选来源时完成谱分离并等待标定；保留不含线圈频响的 K_Z 真值链与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
+| XY 控制测量已知可控噪声谱（运行 / 历史 / 架构；采集与分析两列依赖节点，Z 小线圈注入分段平顶谱伪噪声，手动输入 K_Z 并保存本轮快照，相邻点交替 on/off 并逐段保存；分析选择静磁场 v3 历史曲线拟合检测增益，未选来源时完成谱分离并等待标定；保留不含线圈频响的真值链与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
 | XY 控制测量已知不可控 Probe AM 噪声谱（运行 / 历史 / 架构；采集与分析两列依赖节点，Probe AOM 外部 AM 的 ON/OFF 成对采集，可选全程叠加独立配置的 Z 已知可控噪声；A08 载波节点、A12 双噪声上传与 A14 配对扫描，分析 B01–B04 共享全轴分析提取锁相端 N_S1 与有符号差分，移动峰不足时输出暂定控制轴并保留质量标记） | `experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM.py`、`experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM_plot.py` | `docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md` |
 | Demod3 R 噪声谱测量 | `experiments/Noise_Spectrum_XY_Demod3_R.py`、`experiments/Noise_Spectrum_XY_Demod3_R_plot.py` | `docs/noise_spectrum_xy_demod3_r.md` |
 | MORS 相关 | `experiments/MORS_feasibility_test.ipynb`、`experiments/MORS_feasibility_test_v2.ipynb`、`experiments/MORS_polarization_pulsed.ipynb` | `docs/MORS_polarization.md` |
 | RF 场灵敏度（DirectAW，可执行流程图 / 历史） | `experiments/RF_Field_Sensitivity_AW.py`、`experiments/RF_Field_Sensitivity_AW_plot.py` | `docs/rf_field_measurement.md` |
 | RF 场灵敏度（DirectAW R，R 标定 / X 噪声） | `experiments/RF_Field_Sensitivity_AW_R.py`、`experiments/RF_Field_Sensitivity_AW_R_plot.py` | `docs/rf_field_measurement_r.md` |
+| 已知噪声下 RF 灵敏度（DirectAW，控制版本多选） | `experiments/RF_Field_Sensitivity_AW_Known_Noise.py`、`experiments/RF_Field_Sensitivity_AW_Known_Noise_plot.py` | `docs/rf_field_measurement_known_noise.md` |
 | RF 场历史 Notebook（未迁移） | `experiments/RF_Field_Sensitivity.ipynb`、`experiments/RF_Field_Sensitivity_AW.ipynb` | 历史实验入口；当前 Python 流程见 `docs/rf_field_measurement.md` |
 | RF 场频率响应（AW 包络） | `experiments/RF_Field_Sensitivity_AW_FreqSweep.py`、`experiments/RF_Field_Sensitivity_AW_FreqSweep_plot.py` | `docs/rf_field_measurement_2.md` |
 | RF 场频率响应（DirectAW） | `experiments/RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py`、`experiments/RF_Field_Sensitivity_AW_FreqSweep_plot.py`、`experiments/RF_Field_Sensitivity_AW_FreqSweep_compare.py` | `docs/rf_field_measurement_2.md` |
@@ -546,3 +549,5 @@ if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
 `.agents/`、`.claude/` 等本地 Skill 与配置继续忽略。本检出的 `.git/info/exclude`
 还忽略 `docs/` 中未跟踪的文件，已跟踪文档仍正常提交。被忽略的本地文件需单独检查，
 普通 `git diff` 不会显示其变化。
+
+普通气室实验的采集顺序、`SYSTEM_SETTLE_S` 兼容规则和 TEC 设温边界见[统一采集规范](docs/acquisition_timing.md)。

@@ -227,23 +227,18 @@ def configure_initial_outputs(devices, params: NoiseSpectrumXYParams, mapping, l
     print("Z 磁场: DC 0V, 输出 OFF (本实验不使用)")
 
 
-def stabilize_temperature(devices, params):
-    """单独等待气室温度稳定。"""
+def configure_temperature(devices, params):
+    """只下发 UI 目标温度；不启停 TEC，也不等待温度稳定。"""
     tec = devices["tec"]
     # ---- 5. 温度控制 ----
     temperature_status = configure_temperature_control(
         tec,
         params.temperature,
         channel=1,
-        tolerance_c=1.0,
-        stable_reads=1,
-        poll_interval_s=5.0,
-        timeout_s=1200.0,
-        cancellation=_RuntimeCancellation(),
     )
     temp_now = temperature_status.actual_temperature_c
     if temp_now is not None:
-        print(f"温度已稳定: {temp_now:.2f} °C")
+        print(f"TEC 温度读数: {temp_now:.2f} °C")
 
     return temperature_status
 
@@ -277,7 +272,7 @@ def build_run_config(params: NoiseSpectrumXYParams, project_root, clock_sources,
             "TARGET_NOISE_FREQ_POINTS": params.target_noise_freq_points,
             "target_noise_frequency_Hz": target_frequencies.tolist(),
             "xy_envelope_voltage_V": envelopes.tolist(),
-            "XY_SETTLE_TIME_s": params.xy_settle_time,
+            "XY_SETTLE_TIME_s": params.system_settle_s,
             "TEMP_SWITCH_ON_SETTLE_S": params.temp_switch_on_settle_s,
             "temperature_switch_off_mode": "output_off",
         },

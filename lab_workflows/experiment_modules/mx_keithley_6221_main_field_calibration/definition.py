@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="z-field-calibration",
     variant="mx-keithley-6221",
     description=(
-        'Keithley 6221 独占 Z 主线圈并按可配置电流轴扫描，以 Y RF 共振中心标定自由斜率和截距。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
+        ('Keithley 6221 独占 Z 主线圈并按可配置电流轴扫描，以 Y RF 共振中心标定自由斜率和截距。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
     ),
     data_type="Mx_Keithley_6221_Main_Field_Calibration",
     required_devices=("Keithley 6221", "GS200", "DG900", "DG4000", "锁相放大器"),
@@ -36,7 +36,7 @@ DEFINITION = ExperimentDefinition(
         "6221 使用实验参数选择的固定电流档位与 1 V Compliance；命中 Compliance 立即终止。",
         "正常、取消、异常和配置失败均将 6221 与 GS200 归零并关闭输出。",
     ),
-    schema_version=MxKeithley6221MainFieldCalibrationParams.schema_version,
+    schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,
     preflight_runner=ADAPTER.preflight,

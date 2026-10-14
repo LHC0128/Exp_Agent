@@ -1,6 +1,7 @@
 """静磁场直流色散采集；只接收已连接设备，导入无硬件副作用。"""
 
 from __future__ import annotations
+from ...steps.acquisition_window import acquisition_window, DeferredAcquisitionWrites
 
 import time
 import math
@@ -73,59 +74,60 @@ def _acquire_dispersion(params: StaticSensitivityParams, z, z_channel: int, temp
     }
     interval = params.dispersion_temp_switch_interval_points
     started = time.monotonic()
-    failed = False
-    try:
-        for index, offset in enumerate(offsets):
-            check_cancelled()
-            if index == 0 or (interval > 0 and index % interval == 0):
-                set_temp_switch(temp, temp_channel, False)
-                wait_for_settle(params.dispersion_temp_switch_off_settle_s)
-            data["point_started_unix_s"][index] = time.time()
-            validate_safety_limit("Z_magnetic_field", float(offset))
-            z.setup_dc(float(offset), channel=z_channel)
-            z.set_output(True, channel=z_channel)
-            wait_for_settle(params.dispersion_step_settle_s)
-            point = acquire_dispersion_point(
-                hf2, demod_idx=params.hf2_demod_idx, duration_s=params.dispersion_duration_s,
-                requested_rate=params.hf2_demod_rate, offset_v=float(offset),
-                path=path.parent / "dispersion_steps" / f"point_{index:04d}.npz",
-                cancellation_check=check_cancelled,
-            )
-            for key in ("x", "y", "r"):
-                data[f"{key}_median"][index] = point[f"{key}_median"]
-            data["sample_counts"][index] = point["sample_count"]
-            data["actual_rate_sa_s"][index] = point["actual_rate_sa_s"]
-            data["actual_duration_s"][index] = point["actual_duration_s"]
-            data["acquisition_module"] = point["acquisition_module"]
-            data["time_source"] = point["time_source"]
-            data["completed_mask"][index] = True
-            data["point_finished_unix_s"][index] = time.time()
-            z.set_output(False, channel=z_channel)
-            save_scan(path, data)
-            if interval > 0 and (index + 1) % interval == 0 and index + 1 < offsets.size:
-                set_temp_switch(temp, temp_channel, True)
-                wait_for_settle(params.dispersion_temp_switch_on_settle_s)
-            report_runtime_progress(
-                "dispersion", f"色散点 {index + 1}/{offsets.size}，Z={offset:+.6g} V",
-                40 * (index + 1) / offsets.size,
-                estimated_remaining_seconds=(time.monotonic() - started) / (index + 1) * (offsets.size - index - 1),
-            )
-    except BaseException:
-        failed = True
+    with DeferredAcquisitionWrites() as pending:
+        failed = False
         try:
-            save_scan(path, data)
-        except Exception as exc:
-            print(f"色散部分数据保存失败：{exc}", flush=True)
-        raise
-    finally:
-        report = run_safety_shutdown(
-            dg_channels=(DGChannelShutdown(z, z_channel, "Z_magnetic_field", "Z 直流偏置", disable_sync=True),),
-            temperature_switch=TemperatureSwitchRestore(temp, temp_channel),
-        )
-        if report.errors:
-            print("色散安全恢复失败：" + "；".join(report.errors), flush=True)
-            if not failed:
-                raise RuntimeError("色散安全恢复失败：" + "；".join(report.errors))
+            for index, offset in enumerate(offsets):
+                check_cancelled()
+                data["point_started_unix_s"][index] = time.time()
+                validate_safety_limit("Z_magnetic_field", float(offset))
+                z.setup_dc(float(offset), channel=z_channel)
+                z.set_output(True, channel=z_channel)
+                if index == 0 or (interval > 0 and index % interval == 0):
+                    set_temp_switch(temp, temp_channel, False)
+                wait_for_settle(params.system_settle_s)
+                point = acquire_dispersion_point(
+                    hf2, demod_idx=params.hf2_demod_idx, duration_s=params.dispersion_duration_s,
+                    requested_rate=params.hf2_demod_rate, offset_v=float(offset),
+                    path=path.parent / "dispersion_steps" / f"point_{index:04d}.npz",
+                    cancellation_check=check_cancelled, pending=pending,
+                )
+                for key in ("x", "y", "r"):
+                    data[f"{key}_median"][index] = point[f"{key}_median"]
+                data["sample_counts"][index] = point["sample_count"]
+                data["actual_rate_sa_s"][index] = point["actual_rate_sa_s"]
+                data["actual_duration_s"][index] = point["actual_duration_s"]
+                data["acquisition_module"] = point["acquisition_module"]
+                data["time_source"] = point["time_source"]
+                data["completed_mask"][index] = True
+                data["point_finished_unix_s"][index] = time.time()
+                z.set_output(False, channel=z_channel)
+                pending.add(save_scan, path, data)
+                if interval > 0 and (index + 1) % interval == 0 and index + 1 < offsets.size:
+                    set_temp_switch(temp, temp_channel, True)
+                    wait_for_settle(params.dispersion_temp_switch_on_settle_s)
+                    pending.flush()
+                report_runtime_progress(
+                    "dispersion", f"色散点 {index + 1}/{offsets.size}，Z={offset:+.6g} V",
+                    40 * (index + 1) / offsets.size,
+                    estimated_remaining_seconds=(time.monotonic() - started) / (index + 1) * (offsets.size - index - 1),
+                )
+        except BaseException:
+            failed = True
+            try:
+                pending.add(save_scan, path, data)
+            except Exception as exc:
+                print(f"色散部分数据保存失败：{exc}", flush=True)
+            raise
+        finally:
+            report = run_safety_shutdown(
+                dg_channels=(DGChannelShutdown(z, z_channel, "Z_magnetic_field", "Z 直流偏置", disable_sync=True),),
+                temperature_switch=TemperatureSwitchRestore(temp, temp_channel),
+            )
+            if report.errors:
+                print("色散安全恢复失败：" + "；".join(report.errors), flush=True)
+                if not failed:
+                    raise RuntimeError("色散安全恢复失败：" + "；".join(report.errors))
 
 
 def prepare_noise(ctx):
@@ -178,27 +180,28 @@ def acquire_noise(ctx):
         ctx.save()
         for index in range(params.noise_n_avg):
             check_cancelled()
-            set_temp_switch(devices["dg_temp"], channels["Temp_Switch"], False)
-            wait_for_settle(0.5)
             config = DAQConfig(device=mapping["lockin_r"]["device_id"], trigger_type=0,
                               duration=params.noise_duration, grid_cols=int(rate * params.noise_duration),
                               grid_rows=1, grid_mode=2, signal_paths=["sample.y"])
-            acquired = daq.acquire_data(hf2, config=config, demod_idx=params.hf2_demod_idx,
-                                       actual_rate=rate, requested_rate=params.hf2_noise_rate, timeout=params.noise_duration + 5,
-                                       cancellation_check=check_cancelled, strict_cleanup=True)
-            waveform = next((np.asarray(item.values) for item in acquired if item.signal_name == "sample.y"), None)
-            if waveform is None:
-                raise ValueError("HF2 DAQ 未返回 sample.y")
-            np.save(noise_dir / f"noise_{index:04d}.npy", waveform)
-            save_acquisition_metadata(noise_dir / f"noise_{index:04d}.npy", acquired)
-            ctx.state["actual_rates"]["hf2_noise_rate_Sa_s"] = result_rate(acquired, rate)
-            measurement["acquisition"] = acquisition_metadata(acquired)
-            measurement["samples_saved"] += 1
-            ctx.save()
-            if waveform.ndim != 1 or waveform.size < 2 or not np.isfinite(waveform).all():
-                raise ValueError("噪声波形维度、样本数或有限性无效；原始波形已保留")
-            # 故障时复用外层统一收尾，不用局部恢复异常覆盖 DAQ 原始故障。
-            set_temp_switch(devices["dg_temp"], channels["Temp_Switch"], True)
+            with DeferredAcquisitionWrites() as pending:
+                with acquisition_window(
+                    lambda enabled: set_temp_switch(devices["dg_temp"], channels["Temp_Switch"], enabled),
+                    wait_for_settle, params.system_settle_s,
+                ):
+                    acquired = daq.acquire_data(hf2, config=config, demod_idx=params.hf2_demod_idx,
+                                               actual_rate=rate, requested_rate=params.hf2_noise_rate, timeout=params.noise_duration + 5,
+                                               cancellation_check=check_cancelled, strict_cleanup=True)
+                    waveform = next((np.asarray(item.values) for item in acquired if item.signal_name == "sample.y"), None)
+                    if waveform is None:
+                        raise ValueError("HF2 DAQ 未返回 sample.y")
+                    pending.add(np.save, noise_dir / f"noise_{index:04d}.npy", waveform)
+                    pending.add(save_acquisition_metadata, noise_dir / f"noise_{index:04d}.npy", acquired)
+                    ctx.state["actual_rates"]["hf2_noise_rate_Sa_s"] = result_rate(acquired, rate)
+                    measurement["acquisition"] = acquisition_metadata(acquired)
+                    measurement["samples_saved"] += 1
+                    pending.add(ctx.save)
+                    if waveform.ndim != 1 or waveform.size < 2 or not np.isfinite(waveform).all():
+                        raise ValueError("噪声波形维度、样本数或有限性无效；原始波形已保留")
             wait_for_settle(2.0)
             completed += 1
             report_runtime_progress(

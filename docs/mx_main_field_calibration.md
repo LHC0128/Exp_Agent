@@ -39,6 +39,13 @@ defaults_file: params/experiments/mx-main-field-calibration.yaml
 
 # Mx 主磁场频率标定
 
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
+
 ## 锁相采集方式与实际速率
 
 扫频使用 `RESPONSE_RATE_SA_S` 请求率、`FREQUENCY_DURATION_S` 时长和 `DEMOD_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
@@ -81,7 +88,7 @@ f_\mathrm{pred}(I)=f_\mathrm{ref}+K_\mathrm{initial}(I-I_\mathrm{ref}).
 
 1. 设置 Y RF 频率和配置的幅度，并同步 锁相放大器 振荡器。
 2. 将温控开关设置为 0 V DC、Output ON。
-3. 只等待一次 `SETTLE_TIME_S`，同时覆盖温控关闭、RF 频点稳定以及每个电流点首频点的主场稳定。
+3. 只等待一次 `SYSTEM_SETTLE_S`，同时覆盖温控关闭、RF 频点稳定以及每个电流点首频点的主场稳定。
 4. 按 `FREQUENCY_DURATION_S` 采集 Demod0 R。
 5. 在 `finally` 中恢复温控为 5 V DC、Output ON，并按 `TEMP_SWITCH_ON_LAG_S` 等待。
 

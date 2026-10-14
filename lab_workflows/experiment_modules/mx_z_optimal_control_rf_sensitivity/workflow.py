@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from ...steps.acquisition_window import DeferredAcquisitionWrites
 import yaml
 
 from ...common import find_project_root, load_mapping, validate_safety_limit
@@ -317,20 +318,43 @@ def _acquire_valid_rxy_point(
         checker = devices.get("_compliance_checker")
         if checker is not None:
             checker(f"{file_stem} 采集前")
-        payload = _temperature_gated_acquire(
-            params,
-            devices,
-            channels,
-            set_y_rf=set_y_rf,
-            settle_time_s=settle_time_s,
-            acquire=lambda: acquire_rxy(
-                hf2,
-                device_id=device_id,
-                demod_idx=params.demod_idx,
-                actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
-                duration_s=duration_s,
-            ),
-        )
+        with DeferredAcquisitionWrites() as pending:
+            def acquire_and_buffer():
+                payload = acquire_rxy(
+                        hf2,
+                        device_id=device_id,
+                        demod_idx=params.demod_idx,
+                        actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
+                        duration_s=duration_s,
+                    )
+                summary = summarize_rxy(payload)
+                accepted = (
+                    summary["complex_std_v"]
+                    <= params.r_bad_point_std_threshold_v
+                )
+                filename = f"{file_stem}_attempt_{attempt:02d}.npz"
+                pending.add(_save_rxy_point,
+                    run_dir.raw / filename,
+                    payload,
+                    {
+                        **metadata,
+                        "attempt_index": np.int64(attempt),
+                        "quality_accepted": np.uint8(accepted),
+                        "complex_std_threshold_v": np.float64(
+                            params.r_bad_point_std_threshold_v
+                        ),
+                    },
+                    actual_rate,
+                )
+                return payload
+            payload = _temperature_gated_acquire(
+                params,
+                devices,
+                channels,
+                set_y_rf=set_y_rf,
+                settle_time_s=settle_time_s,
+                acquire=acquire_and_buffer,
+            )
         summary = summarize_rxy(payload)
         if checker is not None:
             checker(f"{file_stem} 采集后")
@@ -339,19 +363,6 @@ def _acquire_valid_rxy_point(
             <= params.r_bad_point_std_threshold_v
         )
         filename = f"{file_stem}_attempt_{attempt:02d}.npz"
-        _save_rxy_point(
-            run_dir.raw / filename,
-            payload,
-            {
-                **metadata,
-                "attempt_index": np.int64(attempt),
-                "quality_accepted": np.uint8(accepted),
-                "complex_std_threshold_v": np.float64(
-                    params.r_bad_point_std_threshold_v
-                ),
-            },
-            actual_rate,
-        )
         print(
             f"  X/Y 质量 {attempt + 1}/{params.r_point_max_attempts}: "
             f"complex_std={summary['complex_std_v']:.6g} V, "
@@ -460,7 +471,7 @@ def _reacquire_phase_outliers_once(
                 ),
             },
             set_y_rf=set_phase,
-            settle_time_s=params.response_settle_time_s,
+            settle_time_s=params.system_settle_s,
             duration_s=params.response_duration_s,
             actual_rate=actual_rate,
             device_id=device_id,
@@ -573,7 +584,7 @@ def _acquire_phase_scan(
                     "discarded_dummy": np.uint8(True),
                 },
                 set_y_rf=set_dummy_phase,
-                settle_time_s=params.response_settle_time_s,
+                settle_time_s=params.system_settle_s,
                 duration_s=params.response_duration_s,
                 actual_rate=actual_rate,
                 device_id=device_id,
@@ -649,7 +660,7 @@ def _acquire_phase_scan(
                 file_stem=f"phase_{index:04d}",
                 metadata=metadata,
                 set_y_rf=set_phase,
-                settle_time_s=params.response_settle_time_s,
+                settle_time_s=params.system_settle_s,
                 duration_s=params.response_duration_s,
                 actual_rate=actual_rate,
                 device_id=device_id,
@@ -918,7 +929,7 @@ def _acquire_amplitude_scan(
                 offset_v=params.y_rf_offset_v,
                 waveform_state=waveform_state,
             ),
-            settle_time_s=params.response_settle_time_s,
+            settle_time_s=params.system_settle_s,
             duration_s=params.response_duration_s,
             actual_rate=actual_rate,
             device_id=device_id,
@@ -1008,7 +1019,7 @@ def _acquire_control_noise(
             f"Y RF 开启噪声（{amplitude_vpp:g} Vpp）"
             if rf_enabled else "零 Y RF 噪声"
         ),
-        settle_time_s=params.response_settle_time_s if rf_enabled else 0.0,
+        settle_time_s=params.system_settle_s if rf_enabled else 0.0,
     )
 
 

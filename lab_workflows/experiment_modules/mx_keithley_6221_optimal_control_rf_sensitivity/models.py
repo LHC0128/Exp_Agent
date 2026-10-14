@@ -1,6 +1,7 @@
 """Mx Z 最优控制 RF 灵敏度实验参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,8 +26,11 @@ from .sources import (
 class MxKeithley6221OptimalControlRFParams(MxYRFParams):
     """6221 主场任意波控制下的 RF 灵敏度参数。"""
 
-    schema_version = 3
+    schema_version = 4
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.1, 'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(
         default="mx_6221_optimal_control_rf",
         external_name="RUN_TAG",
@@ -75,14 +79,6 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
         label="Y RF 幅度点数",
         group="basic",
         minimum=5,
-    )
-    response_settle_time_s: float = parameter(
-        default=0.1,
-        external_name="RESPONSE_SETTLE_TIME_S",
-        label="响应/校相点稳定时间",
-        unit="s",
-        group="basic",
-        minimum=0,
     )
     response_duration_s: float = parameter(
         default=0.2,
@@ -188,12 +184,6 @@ class MxKeithley6221OptimalControlRFParams(MxYRFParams):
         label="未使用频扫幅度",
         visible=False,
         safety_key="rf_coil",
-    )
-    frequency_settle_time_s: float = parameter(
-        default=0.05,
-        external_name="FREQUENCY_SETTLE_TIME_S",
-        label="未使用频扫稳定时间",
-        visible=False,
     )
     frequency_duration_s: float = parameter(
         default=0.1,

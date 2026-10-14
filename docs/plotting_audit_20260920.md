@@ -1,5 +1,6 @@
 # 数据分析绘图检查报告（2026-09-20）
 
+
 ## 范围与结果
 
 本轮覆盖 `experiments/`、`lab_workflows/experiment_modules/`、`lab_workflows/analysis/`

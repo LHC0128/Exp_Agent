@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { SchemaField } from "../types/api";
 import {
   defaultParameterLayout,
+  historyParameterValues,
   loadLocalParameterLayout,
   parseArrayValue,
   preflightMessage,
@@ -27,6 +28,18 @@ function field(name: string, group: string): SchemaField {
     default: 0,
   };
 }
+
+it("历史填回先取旧等待最大值，新键优先且不带回判稳字段", () => {
+  const fields = [{ ...field("SYSTEM_SETTLE_S", "basic"), legacy_defaults: { CONFIG_WAIT: 0.2, OFF_WAIT: 0.5 } }];
+  expect(historyParameterValues(fields, { CONFIG_WAIT: 0.7, OFF_WAIT: 0.3, TEMPERATURE_TIMEOUT_S: 100 }))
+    .toEqual({ SYSTEM_SETTLE_S: 0.7 });
+  expect(historyParameterValues(fields, { CONFIG_WAIT: 0.7 }))
+    .toEqual({ SYSTEM_SETTLE_S: 0.7 });
+  expect(historyParameterValues(fields, { SYSTEM_SETTLE_S: 0, OFF_WAIT: 10 }))
+    .toEqual({ SYSTEM_SETTLE_S: 0 });
+  expect(historyParameterValues(fields, { OFF_WAIT: -1 })).toEqual({ SYSTEM_SETTLE_S: null });
+  expect(historyParameterValues(fields, { OFF_WAIT: null })).toEqual({ SYSTEM_SETTLE_S: null });
+});
 
 describe("defaultParameterLayout", () => {
   it("按 field.group 拆分为基础与高级参数", () => {

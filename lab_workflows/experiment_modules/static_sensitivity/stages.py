@@ -16,7 +16,7 @@ class Stage:
 
 EXPERIMENT_ID = "static-sensitivity"
 FINISH_ID = "A13"
-TEMP = ("dispersion_temp_switch_off_settle_s", "dispersion_temp_switch_on_settle_s")
+TEMP = ("SYSTEM_SETTLE_S", "dispersion_temp_switch_on_settle_s")
 ACQUISITION = (
     Stage("A01", "启动预检", "启动准备", ()),
     Stage("A02", "设备连接与输入初始化", "启动准备", ("A01",)),
@@ -24,20 +24,18 @@ ACQUISITION = (
     Stage("A04", "初始磁场、光功率与温控", "初始条件", ("A03",),
           ("pump_laser_power", "probe_laser_power", "main_magnetic_field",
            "x_magnetic_field", "y_magnetic_field", "temp_switch", "temperature")),
-    Stage("A05", "温度稳定", "初始条件", ("A04",),
-          ("temp_tolerance_c", "temp_stable_reads", "temp_poll_interval_s", "max_temp_wait_s")),
-    Stage("A06", "Pump 载波与脉冲门控", "激励与校相", ("A05",),
+    Stage("A06", "Pump 载波与脉冲门控", "激励与校相", ("A04",),
           ("pump_mod_freq", "pump_mod_amplitude", "pump_mod_duty",
            "rf_gate_amplitude", "rf_gate_offset", "rf_gate_delay")),
     Stage("A07", "锁相色散配置", "激励与校相", ("A06",),
           ("hf2_demod_idx", "hf2_demod_order", "hf2_signal_range", "hf2_demod_rate", "hf2_demod_tc")),
     Stage("A08", "Bell-Bloom 校相", "激励与校相", ("A07",), TEMP),
     Stage("A09", "Z 直流逐点色散扫描", "采集与结束", ("A08",),
-          ("run_tag", "ramp_low", "ramp_high", "dispersion_steps", "dispersion_step_settle_s",
+          ("run_tag", "ramp_low", "ramp_high", "dispersion_steps", "SYSTEM_SETTLE_S",
            "dispersion_duration_s", "dispersion_temp_switch_interval_points"),
           ("raw/dispersion_scan.npz", "raw/dispersion_steps/point_*.npz"),
           display_parameters=("run_tag", "ramp_low", "ramp_high", "dispersion_steps",
-                              "hf2_demod_rate", "dispersion_duration_s", "dispersion_step_settle_s",
+                              "hf2_demod_rate", "dispersion_duration_s",
                               "dispersion_temp_switch_interval_points", *TEMP)),
     Stage("A10", "噪声模式准备", "采集与结束", ("A09",),
           ("hf2_noise_rate", "hf2_noise_tc", "noise_duration")),
@@ -45,7 +43,7 @@ ACQUISITION = (
           ("noise_n_avg", "gs200_current_ranges", "gs200_range_headroom", "gs200_range_settle_time"),
           ("raw/noise_raw/gs200_range_*/noise_*.npy",),
           display_parameters=("noise_n_avg", "noise_duration", "gs200_current_ranges",
-                              "gs200_range_headroom", "gs200_range_settle_time")),
+                              "gs200_range_headroom", "gs200_range_settle_time", *TEMP)),
     Stage("A12", "恢复色散配置并结束本轮", "采集与结束", ("A11",)),
     Stage(FINISH_ID, "安全结束会话", "采集与结束", ()),
 )

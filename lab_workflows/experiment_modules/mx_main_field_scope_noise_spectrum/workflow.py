@@ -432,12 +432,6 @@ def _configure_outputs(
         devices.get("tec"),
         params.temperature_c,
         channel=1,
-        tolerance_c=params.temperature_tolerance_c,
-        stable_reads=params.temperature_stable_reads,
-        poll_interval_s=params.temperature_poll_interval_s,
-        timeout_s=params.temperature_timeout_s,
-        cancellation=_RuntimeCancellation(),
-        stability_waiter=wait_for_temperature_stable,
     )
     return temperature_status.actual_temperature_c, clock_sources
 
@@ -463,7 +457,7 @@ def _temperature_gated_acquire(
     return temperature_gated_acquire(
         temp_switch=devices["temp_switch"],
         temp_channel=channels["temp_switch"],
-        off_settle_s=params.temp_switch_off_settle_s,
+        off_settle_s=params.system_settle_s,
         on_settle_s=params.temp_switch_on_settle_s,
         acquire=acquire,
         check_cancelled=check_cancelled,
@@ -682,7 +676,7 @@ def _save_point(
         attempt_display_edge_fraction=np.asarray(
             payload["attempt_display_edge_fraction"], dtype=float
         ),
-        temp_switch_off_settle_s=np.float64(params.temp_switch_off_settle_s),
+        temp_switch_off_settle_s=np.float64(params.system_settle_s),
         temp_switch_on_settle_s=np.float64(params.temp_switch_on_settle_s),
     )
 
@@ -821,12 +815,12 @@ def run(params: MxMainFieldScopeNoiseSpectrumParams) -> Path:
             "scope": "every_scope_attempt",
             "off_voltage_v": 0.0,
             "on_voltage_v": 5.0,
-            "off_settle_s": params.temp_switch_off_settle_s,
+            "off_settle_s": params.system_settle_s,
             "post_acquisition_wait_s": params.temp_switch_on_settle_s,
         },
         estimated_scan_duration_s=params.control_frequency_points
         * (
-            params.temp_switch_off_settle_s
+            params.system_settle_s
             + _scope_settings(params).capture_wait_s
             + params.temp_switch_on_settle_s
         ),
@@ -863,9 +857,9 @@ def run(params: MxMainFieldScopeNoiseSpectrumParams) -> Path:
             temperature_control={
                 "target_temperature_c": params.temperature_c,
                 "actual_temperature_c": actual_temperature,
-                "controlled_by_experiment": actual_temperature is not None,
+                "controlled_by_experiment": devices.get("tec") is not None,
                 "control_source": (
-                    "tec103" if actual_temperature is not None else "external_software"
+                    "tec103" if devices.get("tec") is not None else "external_software"
                 ),
             },
             clock_sources=clock_sources,

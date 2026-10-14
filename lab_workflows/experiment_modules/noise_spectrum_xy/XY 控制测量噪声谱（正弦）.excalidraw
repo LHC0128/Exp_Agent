@@ -416,7 +416,7 @@
       "y": 318,
       "width": 740,
       "height": 26,
-      "text": "② 初始输出 + 温度稳定",
+      "text": "② 初始输出 + 目标温度设置",
       "fontSize": 18,
       "fontFamily": 3,
       "textAlign": "center",
@@ -444,7 +444,7 @@
       "locked": false,
       "roundness": null,
       "id": "AYpPnEru9diaVTzUL1UGT",
-      "originalText": "② 初始输出 + 温度稳定"
+      "originalText": "② 初始输出 + 目标温度设置"
     },
     {
       "type": "rectangle",
@@ -627,7 +627,7 @@
       "y": 474,
       "width": 692,
       "height": 22,
-      "text": "A05 温度稳定：设置 TEC 目标温度，等待稳定并检查取消",
+      "text": "A05 目标温度设置：设置 TEC 目标温度，等待稳定并检查取消",
       "fontSize": 14,
       "fontFamily": 3,
       "textAlign": "center",
@@ -655,7 +655,7 @@
       "locked": false,
       "roundness": null,
       "id": "f-6CeHrHxhJBOzSxUWKm_",
-      "originalText": "A05 温度稳定：设置 TEC 目标温度，等待稳定并检查取消"
+      "originalText": "A05 目标温度设置：设置 TEC 目标温度，等待稳定并检查取消"
     },
     {
       "type": "rectangle",

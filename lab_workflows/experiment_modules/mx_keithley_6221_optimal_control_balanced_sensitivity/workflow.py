@@ -132,7 +132,7 @@ def _run_balance_scan(
                         "z_field_ma": np.float64(z),
                     },
                     set_y_rf=lambda: None,
-                    settle_time_s=params.response_settle_time_s,
+                    settle_time_s=params.system_settle_s,
                     duration_s=params.response_duration_s,
                     actual_rate=actual_rate,
                     device_id=device_id,
@@ -352,12 +352,6 @@ def run(params: MxKeithley6221OptimalControlBalancedSensitivityParams) -> Path:
             devices.get("tec"),
             params.temperature_c,
             channel=1,
-            tolerance_c=params.temperature_tolerance_c,
-            stable_reads=params.temperature_stable_reads,
-            poll_interval_s=params.temperature_poll_interval_s,
-            timeout_s=params.temperature_timeout_s,
-            cancellation=_Cancellation(),
-            stability_waiter=wait_for_temperature_stable,
         )
         clocks = _configure_clocks(devices, mapping)
         configured_inactive = _configure_6221(

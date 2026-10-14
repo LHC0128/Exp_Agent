@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import ClassVar, Any, Literal
 
 from ...common import find_project_root, validate_safety_limit
 from ...experiment_params import ExperimentParams, parameter
@@ -14,8 +14,11 @@ from .calibration import load_main_field_calibration
 class ProjectionNoiseParams(ExperimentParams):
     """GS200 打开阶段及可选关闭对照组的 PD 原始噪声谱采集参数。"""
 
-    schema_version = 5
+    schema_version = 6
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'TEMP_SWITCH_OFF_SETTLE_S': 0.3}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.3, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="scope_spin_noise", external_name="RUN_TAG", label="运行标签", group="basic")
     target_larmor_frequency_hz: float = parameter(default=90000.0, external_name="TARGET_LARMOR_FREQUENCY_HZ", label="目标 Larmor 频率", unit="Hz", group="basic", minimum=1.0)
     main_field_calibration_source_run: str = parameter(default="0720_124208_mx_main_field_cal", external_name="MAIN_FIELD_CALIBRATION_SOURCE_RUN", label="主场标定来源运行", group="basic")
@@ -47,12 +50,7 @@ class ProjectionNoiseParams(ExperimentParams):
     welch_nperseg: int = parameter(default=50000, external_name="WELCH_NPERSEG", label="Welch 每段点数", group="advanced", minimum=8)
     fit_half_width_hz: float = parameter(default=5000.0, external_name="FIT_HALF_WIDTH_HZ", label="拟合频带半宽", unit="Hz", group="basic", minimum=1.0)
 
-    temp_switch_off_settle_s: float = parameter(default=0.3, external_name="TEMP_SWITCH_OFF_SETTLE_S", label="温控关闭后等待", unit="s", group="basic", minimum=0.0)
     temp_switch_on_settle_s: float = parameter(default=1.0, external_name="TEMP_SWITCH_ON_SETTLE_S", label="温控恢复后等待", unit="s", group="basic", minimum=0.0)
-    temperature_tolerance_c: float = parameter(default=1.0, external_name="TEMPERATURE_TOLERANCE_C", label="初始温度稳定容差", unit="°C", group="advanced", minimum=0.0)
-    temperature_stable_reads: int = parameter(default=1, external_name="TEMPERATURE_STABLE_READS", label="初始温度连续稳定读数", group="advanced", minimum=1)
-    temperature_poll_interval_s: float = parameter(default=5.0, external_name="TEMPERATURE_POLL_INTERVAL_S", label="温度轮询间隔", unit="s", group="advanced", minimum=0.1)
-    temperature_timeout_s: float = parameter(default=1200.0, external_name="TEMPERATURE_TIMEOUT_S", label="温度稳定超时", unit="s", group="advanced", minimum=1.0)
 
     pump_laser_power_v: float = parameter(default=0.0, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", minimum=0.0, maximum=1.0, safety_key="Pump_laser_power")
     probe_laser_power_v: float = parameter(default=0.3, external_name="FIXED_PARAMS.Probe_laser_power", label="Probe 光功率", unit="V", group="basic", safety_key="Probe_laser_power")

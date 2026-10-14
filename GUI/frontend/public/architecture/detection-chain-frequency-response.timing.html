@@ -5198,7 +5198,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <rect x="374.6666666666667" y="176" width="90" height="16" rx="3" class="c-mask"/>
           <text x="419.6666666666667" y="186" class="t-backend" font-size="9" text-anchor="middle">温控开关 0 V DC</text>
         </g>
-        <text data-detail="fine" x="176" y="214" class="t-dim" font-size="7">物理输出保持 ON · 随后等待温控关闭 + AM 稳定</text>
+        <text data-detail="fine" x="176" y="214" class="t-dim" font-size="7">物理输出保持 ON · 等待 SYSTEM_SETTLE_S</text>
         </g>
 
         <g data-edge-from="ctrl" data-edge-to="hf2" data-edge-label="DAQ 采集 sample.y" data-edge-key="2" data-edge-id="daq-acquire">
@@ -5515,7 +5515,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <ul>
           <li>&bull; 无论 Pump 光功率取值，每个频率点都在温控断开窗口内采集</li>
           <li>&bull; 0 V → 采集 → 5 V 的顺序每点重复，恢复动作不可被取消中断</li>
-          <li>&bull; 关闭后等待 = 温控关闭引导时间 + AM 频率稳定时间</li>
+          <li>&bull; 关闭后仅等待 SYSTEM_SETTLE_S，覆盖配置与门控</li>
         </ul>
       </div>
 

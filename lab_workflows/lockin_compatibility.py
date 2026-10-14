@@ -58,7 +58,7 @@ def lockin_preflight(experiment_id: str, values: dict[str, Any], root: Path | No
         acquisition_preflight(config, experiment_acquisition_requests(experiment_id, values))
     except (ValueError, TypeError) as exc:
         errors.append(str(exc))
-    rf_direct_aw = experiment_id in {"rf-sensitivity-aw", "rf-sensitivity-aw-r"}
+    rf_direct_aw = experiment_id in {"rf-sensitivity-aw", "rf-sensitivity-aw-r", "rf-sensitivity-aw-known-noise"}
     if rf_direct_aw:
         if caps["demodulators"] < 2 or caps["oscillators"] < 2:
             errors.append(f"{model} 缺少独立 RF 解调器或振荡器；MFLI 需要 MF-MD 选件")

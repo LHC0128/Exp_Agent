@@ -34,6 +34,7 @@ import time
 from datetime import datetime
 
 import numpy as np
+from lab_workflows.steps import acquisition_window
 import yaml
 from tqdm import tqdm
 
@@ -126,7 +127,6 @@ XY_AW_POINTS = 10000
 XY_CARRIER_FREQ_Hz = 10000.0
 XY_CTRL_PHASE_INITIAL_deg = 0.0
 XY_CTRL_QUAD_deg = 90.0
-XY_ENV_SETTLE_TIME_s = 1.0
 
 # ---- DirectAW 外部触发 ----
 XY_TRIGGER_FREQ_Hz = 100.0
@@ -142,7 +142,6 @@ XY_PHASE_CAL_TOL_deg = 0.5
 XY_PHASE_CAL_MAX_ITER = 8
 XY_PHASE_CAL_MIN_R_V = 1e-12
 XY_PHASE_CAL_MIN_R_RATIO = 0.1
-XY_PHASE_CAL_SETTLE_s = 0.8
 
 # ---- Z 射频频率扫描 ----
 Z_RF_FREQ_START_Hz = 500.0
@@ -154,7 +153,6 @@ Z_RF_FREQ_LIST_Hz = np.arange(
     Z_RF_FREQ_STEP_Hz,
 )
 Z_RF_AMPLITUDE_Vpp = 0.01
-FREQ_SETTLE_TIME_s = 0.5
 
 # ---- 采集模式 ----
 # both: 同时保存 Demod 0 sample.y 时域数据和 Demod 3 硬件解调结果。
@@ -181,7 +179,6 @@ DEMOD3_ORDER = 8
 DEMOD3_RATE_Sa_s = 4800.0
 DEMOD3_TC_MIN_s = 0.01
 DEMOD3_TC_PERIOD_FRACTION = 0.05
-DEMOD3_READ_SETTLE_TIME_s = 0.2
 DEMOD3_N_AVG = 50
 DEMOD3_AVG_INTERVAL_s = 0.01
 
@@ -197,7 +194,6 @@ SIGIN2_AC_COUPLING = False
 SIGIN2_IMPEDANCE_OHM = 1_000_000
 
 # ---- 温控与固定参数，沿用 DirectAW 频响实验 ----
-TEMP_SWITCH_OFF_LEAD_s = 0.1
 TEMP_SWITCH_ON_LAG_s = 1.0
 FIXED_PARAMS = {
     "Pump_laser_power": 0.5,
@@ -560,10 +556,6 @@ temperature_status = configure_temperature_control(
     tec,
     FIXED_PARAMS["temperature"],
     channel=1,
-    tolerance_c=1.0,
-    stable_reads=1,
-    poll_interval_s=5.0,
-    timeout_s=1200.0,
 )
 
 for ch in (1, 2):
@@ -590,8 +582,6 @@ for ch in (1, 2):
     dg_comp.set_output(False, channel=ch)
     dg_trigger.set_output(False, channel=ch)
 dg_sweep.set_output(False, channel=1)
-dg_temp.set_output(False, channel=2)
-time.sleep(0.5)
 
 sig0_cfg = SignalInputConfig(
     input_index=0,
@@ -656,18 +646,18 @@ actual_rate_d3_initial = demod.configure_demodulator(
 )
 
 print("执行 Demod 0 自动校相...")
-demod0_phase_result = calibrate_demod_phase(
-    hfi,
-    PhaseCalibrationConfig(
-        demod_idx=DEMOD0_IDX,
-        tolerance_deg=1.0,
-        max_attempts=5,
-        settle_time=0.2,
-    ),
-)
-calibrated_phase_0_deg = demod0_phase_result.phase_shift_deg
+with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+    demod0_phase_result = calibrate_demod_phase(
+        hfi,
+        PhaseCalibrationConfig(
+            demod_idx=DEMOD0_IDX,
+            tolerance_deg=1.0,
+            max_attempts=5,
+            settle_time=SYSTEM_SETTLE_S,
+        ),
+    )
+    calibrated_phase_0_deg = demod0_phase_result.phase_shift_deg
 
-dg_temp.set_output(True, channel=2)
 time.sleep(1.0)
 
 # ---- DirectAW 整体相位校准 ----
@@ -675,12 +665,16 @@ configure_trigger_source()
 xy_phase_deg = float(XY_CTRL_PHASE_INITIAL_deg)
 phase_history = []
 if ENABLE_XY_PHASE_CAL:
-    dg_temp.set_output(False, channel=2)
-    time.sleep(TEMP_SWITCH_OFF_LEAD_s)
-    try:
+    upload_direct_aw(XY_PHASE_CAL_ENVELOPE_V, xy_phase_deg, output=True)
+    first_phase_measurement = True
+    with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
         def apply_xy_phase_and_measure(phase_deg):
-            upload_direct_aw(XY_PHASE_CAL_ENVELOPE_V, phase_deg, output=True)
-            time.sleep(XY_PHASE_CAL_SETTLE_s)
+            global first_phase_measurement
+            if first_phase_measurement:
+                first_phase_measurement = False
+            else:
+                upload_direct_aw(XY_PHASE_CAL_ENVELOPE_V, phase_deg, output=True)
+                time.sleep(SYSTEM_SETTLE_S)
             sample = demod.read_demod_sample(hfi, demod_idx=DEMOD0_IDX)
             theta_deg = wrap_deg(math.degrees(sample["theta"]))
             print(
@@ -713,9 +707,7 @@ if ENABLE_XY_PHASE_CAL:
             }
             for item in direct_aw_phase_result.history
         ]
-    finally:
-        dg_temp.set_output(True, channel=2)
-        time.sleep(1.0)
+    time.sleep(1.0)
 phase_cal_success = bool(
     direct_aw_phase_result.converged if ENABLE_XY_PHASE_CAL else False
 )
@@ -781,7 +773,7 @@ config = {
     "z_frequency_scan": {
         "freq_list_Hz": Z_RF_FREQ_LIST_Hz.tolist(),
         "amplitude_Vpp": Z_RF_AMPLITUDE_Vpp,
-        "settle_time_s": FREQ_SETTLE_TIME_s,
+        "settle_time_s": SYSTEM_SETTLE_S,
         "point_duration_s": POINT_DURATION_s,
     },
     "phase_calibration": {
@@ -833,7 +825,7 @@ try:
     ):
         check_cancelled()
         wave = upload_direct_aw(float(envelope_v), xy_phase_deg, output=True)
-        time.sleep(XY_ENV_SETTLE_TIME_s)
+        time.sleep(SYSTEM_SETTLE_S)
 
         sign_tag = "m" if envelope_v < 0 else "p"
         voltage_tag = f"env_v{v_idx:02d}_{sign_tag}{abs(envelope_v):.4f}V"
@@ -897,9 +889,8 @@ try:
                 point_tc = hfi.get_double(f"{demod3_path}/timeconstant")
                 point_adcselect = hfi.get_int(f"{demod3_path}/adcselect")
 
-            time.sleep(FREQ_SETTLE_TIME_s)
             dg_temp.set_output(False, channel=2)
-            time.sleep(TEMP_SWITCH_OFF_LEAD_s)
+            time.sleep(SYSTEM_SETTLE_S)
 
             point = {}
             try:
@@ -931,7 +922,6 @@ try:
                         point["time_s"] = np.asarray(daq_results[0].time, dtype=float)
 
                 if ACQUISITION_MODE in ("demod_rxy", "both"):
-                    time.sleep(DEMOD3_READ_SETTLE_TIME_s)
                     samples = []
                     for _ in range(DEMOD3_N_AVG):
                         samples.append(

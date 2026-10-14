@@ -234,6 +234,7 @@ def step_B06(ctx):
     s_truth_lines = wf_psd * gain_chain
     s_truth = np.exp(np.interp(np.log(f), np.log(wf_freq), np.log(s_truth_lines)))
     summary["truth_chain"] = dict(
+        z_calibration_source=truth_cfg.get("z_calibration_source", "calibration_run"),
         z_calibration_run=calibration.source_run,
         K_Z_Hz_per_V=calibration.k_hz_per_v,
         K_Z_uncertainty_Hz_per_V=calibration.uncertainty_hz_per_v,

@@ -1,6 +1,7 @@
 """Mx Y RF 灵敏度长飘参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 import math
 from dataclasses import dataclass
@@ -13,8 +14,11 @@ from ..mx_y_rf_sensitivity.models import LinewidthMode, MxYRFParams
 class MxYRFDriftParams(MxYRFParams):
     """复用 Mx Y RF 单轮测量参数并增加长飘调度参数。"""
 
-    schema_version = 1
+    schema_version = 2
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.3, 'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.3, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(
         default="mx_y_rf_drift",
         external_name="RUN_TAG",

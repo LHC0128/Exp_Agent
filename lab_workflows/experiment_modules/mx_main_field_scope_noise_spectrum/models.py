@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import ClassVar, Any, Literal
 
 from ...common import validate_safety_limit
 from ...experiment_params import ExperimentParams, parameter
@@ -13,8 +13,11 @@ from ...experiment_params import ExperimentParams, parameter
 class MxMainFieldScopeNoiseSpectrumParams(ExperimentParams):
     """扫描主场对应的 Larmor 频率并采集 PD 示波器原始波形。"""
 
-    schema_version = 7
+    schema_version = 8
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'TEMP_SWITCH_OFF_SETTLE_S': 0.3}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.3, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="mx_main_field_scope_noise", external_name="RUN_TAG", label="运行标签", group="basic")
     control_frequency_start_hz: float = parameter(default=0.0, external_name="CONTROL_FREQUENCY_START_HZ", label="控制频率起点", unit="Hz", group="basic", minimum=0.0)
     control_frequency_stop_hz: float = parameter(default=50000.0, external_name="CONTROL_FREQUENCY_STOP_HZ", label="控制频率终点", unit="Hz", group="basic", minimum=0.0)
@@ -52,12 +55,7 @@ class MxMainFieldScopeNoiseSpectrumParams(ExperimentParams):
     global_background_margin_hz: float = parameter(default=5000.0, external_name="GLOBAL_BACKGROUND_MARGIN_HZ", label="二维背景脊线排除半宽", unit="Hz", group="advanced", minimum=0.001)
     global_cv_folds: int = parameter(default=5, external_name="GLOBAL_CV_FOLDS", label="二维控制频率交叉验证折数", group="advanced", minimum=2)
 
-    temp_switch_off_settle_s: float = parameter(default=0.3, external_name="TEMP_SWITCH_OFF_SETTLE_S", label="温控关闭后统一等待", unit="s", group="basic", minimum=0.0)
     temp_switch_on_settle_s: float = parameter(default=1.0, external_name="TEMP_SWITCH_ON_SETTLE_S", label="温控恢复后等待", unit="s", group="basic", minimum=0.0)
-    temperature_tolerance_c: float = parameter(default=1.0, external_name="TEMPERATURE_TOLERANCE_C", label="初始温度稳定容差", unit="°C", group="advanced", minimum=0.0)
-    temperature_stable_reads: int = parameter(default=1, external_name="TEMPERATURE_STABLE_READS", label="初始温度连续稳定读数", group="advanced", minimum=1)
-    temperature_poll_interval_s: float = parameter(default=5.0, external_name="TEMPERATURE_POLL_INTERVAL_S", label="温度轮询间隔", unit="s", group="advanced", minimum=0.1)
-    temperature_timeout_s: float = parameter(default=1200.0, external_name="TEMPERATURE_TIMEOUT_S", label="温度稳定超时", unit="s", group="advanced", minimum=1.0)
 
     pump_carrier_frequency_hz: float = parameter(default=100e6, external_name="PUMP_CARRIER_FREQUENCY_HZ", label="Pump AOM 载波频率", unit="Hz", group="advanced", minimum=1.0)
     pump_carrier_amplitude_vpp: float = parameter(default=0.18, external_name="PUMP_CARRIER_AMPLITUDE_VPP", label="Pump AOM 载波幅度", unit="Vpp", group="advanced", minimum=0.0, maximum=0.18, safety_key="Pump_modulation")

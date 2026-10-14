@@ -35,6 +35,8 @@ class Workflow:
     invalidate = staticmethod(invalidate)
     validate_selection = staticmethod(validate_selection)
     always_shutdown = False
+    data_type = preparation.EXPERIMENT_TYPE
+    experiment_id = "noise-spectrum-xy"
 
     def shutdown_outputs(self):
         return safe_scan_outputs_off(self.devices)
@@ -158,11 +160,12 @@ class Workflow:
                 self.clock_failed = True
                 raise
         elif item == "A04":
+            acquisition.initialize_run_directory(self, self.data_type)
             self.outputs_started = True
             configure_initial_outputs(self.devices, self.params, self.mapping, self.limits)
             self.outputs.update(Z="OFF", 温控="ON", 共用触发="OFF")
         elif item == "A05":
-            preparation.stabilize_temperature(self.devices, self.params)
+            preparation.configure_temperature(self.devices, self.params)
         elif item == "A06":
             configure_pump(self.devices["dg_mod"], self.params, self.limits)
             self.outputs["Pump"] = "ON"
@@ -240,6 +243,14 @@ class Workflow:
             self.closed = True
             self.current_step = None
             self.revision += 1
+            if self.run_dir and not getattr(self, "scan_started", False):
+                try:
+                    path = self.run_dir / "experiment_config.yaml"
+                    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+                    config.update(completion_status="failed", failure_reason=str(failure or "本轮未开始扫描"))
+                    acquisition.save_config(path, config)
+                except Exception as exc:
+                    errors.append(f"初始配置收尾保存失败：{exc}")
             self.states[self.finish_id] = {"status": "failed" if errors else "completed", "error": "；".join(errors)}
             try:
                 self.publish("会话已结束" + ("；" + "；".join(errors) if errors else ""))

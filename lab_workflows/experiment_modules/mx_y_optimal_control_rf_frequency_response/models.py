@@ -1,5 +1,6 @@
 """Mx Y 最优控制 RF 频率响应参数。"""
 from __future__ import annotations
+from typing import ClassVar
 import math
 from dataclasses import dataclass
 import numpy as np
@@ -12,7 +13,10 @@ class MxYOptimalControlRFFrequencyResponseParams(
     MxZControlSourceSelectionParams
 ):
     """固定 Y RF 幅度，对比最优控制与常数 Z 控制的 RF 频率响应。"""
-    schema_version = 2
+    schema_version = 3
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.1, 'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     noise_rf_enabled: bool = parameter(
         default=False, external_name="NOISE_RF_ENABLED",
         label="未使用噪声 RF 开关", visible=False,
@@ -28,7 +32,6 @@ class MxYOptimalControlRFFrequencyResponseParams(
     frequency_stop_hz: float = parameter(default=10000.0, external_name="FREQUENCY_STOP_HZ", label="频率扫描终点", unit="Hz", group="basic", minimum=0.001)
     frequency_points: int = parameter(default=100, external_name="FREQUENCY_POINTS", label="频率点数", group="basic", minimum=2)
     frequency_rf_amplitude_vpp: float = parameter(default=0.01, external_name="FREQUENCY_RF_AMPLITUDE_VPP", label="Y RF 固定幅度", unit="Vpp", group="basic", minimum=0.0, maximum=2.0, safety_key="rf_coil")
-    frequency_settle_time_s: float = parameter(default=0.05, external_name="FREQUENCY_SETTLE_TIME_S", label="频点稳定时间", unit="s", group="advanced", minimum=0)
     frequency_duration_s: float = parameter(default=0.1, external_name="FREQUENCY_DURATION_S", label="频点采样时间", unit="s", group="advanced", minimum=0.001)
     phase_cal_rf_amplitude_vpp: float = parameter(default=0.01, external_name="PHASE_CAL_RF_AMPLITUDE_VPP", label="相位扫描 RF 幅度", unit="Vpp", visible=False, minimum=0.0, maximum=2.0, safety_key="rf_coil")
     phase_scan_start_deg: float = parameter(default=0.0, external_name="PHASE_SCAN_START_DEG", label="相位起点", unit="deg", group="basic", minimum=0.0, maximum=360.0)
@@ -42,7 +45,6 @@ class MxYOptimalControlRFFrequencyResponseParams(
     y_rf_amp_start_vpp: float = parameter(default=-0.1, external_name="Y_RF_AMP_START_VPP", label="未使用幅度扫描起点", visible=False)
     y_rf_amp_stop_vpp: float = parameter(default=0.1, external_name="Y_RF_AMP_STOP_VPP", label="未使用幅度扫描终点", visible=False)
     y_rf_amp_points: int = parameter(default=21, external_name="Y_RF_AMP_POINTS", label="未使用幅度扫描点数", visible=False)
-    response_settle_time_s: float = parameter(default=0.1, external_name="RESPONSE_SETTLE_TIME_S", label="未使用响应稳定时间", visible=False)
     response_duration_s: float = parameter(default=0.1, external_name="RESPONSE_DURATION_S", label="未使用响应采样时间", visible=False)
     y_rf_nt_per_vpp: float = parameter(default=0.0, external_name="Y_RF_NT_PER_VPP", label="未使用 RF 标定系数", visible=False)
     noise_n_avg: int = parameter(default=1, external_name="NOISE_N_AVG", label="未使用噪声次数", visible=False)

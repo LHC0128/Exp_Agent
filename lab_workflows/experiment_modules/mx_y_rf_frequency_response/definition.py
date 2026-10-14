@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-y-frequency",
     description=(
-        '在 Mx 工作点用模式 1 的固定幅度扫频方式测量 Y RF 频率响应曲线；RF 幅度可作为嵌套扫描轴，分析端用统一布洛赫稳态线形拟合，覆盖弱驱动 Lorentzian 与强驱动 Rabi 劈裂双峰。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
+        ('在 Mx 工作点用模式 1 的固定幅度扫频方式测量 Y RF 频率响应曲线；RF 幅度可作为嵌套扫描轴，分析端用统一布洛赫稳态线形拟合，覆盖弱驱动 Lorentzian 与强驱动 Rabi 劈裂双峰。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
     ),
     data_type="Mx_Y_RF_Frequency_Response",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
@@ -37,7 +37,7 @@ DEFINITION = ExperimentDefinition(
         "每个 (幅度, 频率) 点仅在 std(R)≤0.01V 时接受，最多重采3次，连续失败即停止。",
         "RF 幅度轴范围在写入前按 rf_coil 安全限值校验。",
     ),
-    schema_version=MxYRFFrequencyResponseParams.schema_version,
+    schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,
     preflight_runner=ADAPTER.preflight,

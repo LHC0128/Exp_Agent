@@ -1,5 +1,6 @@
-schema_version: 2
+schema_version: 3
 parameters:
+  SYSTEM_SETTLE_S: 0.5
   RUN_TAG: optical_FID
   PUMP_POWER: 0.5
   AOM_CARRIER_FREQ: 100000000.0

@@ -77,6 +77,13 @@ defaults_file: params/experiments/noise-spectrum-xy.yaml
 
 # X/Y 交流控制噪声谱测量
 
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
+
 ## 锁相采集方式与实际速率
 
 XY 噪声使用 `HF2_DAQ_RATE` 请求率、`HF2_DAQ_DURATION` 时长和 `HF2_DEMOD_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
@@ -302,14 +309,14 @@ background_method = data["background_method"]  # 模型底座、边界模型或�
 1. 校验正负峰值安全限值，关闭 X/Y 两路输出。
 2. 把峰值换算为 `2·V_peak Vpp`，通过 `set_amplitude()` 写入两路。
 3. 复用 `set_xy_sine_phase()`，写入校准后的 `XY_CTRL_PHASE` 和 `XY_CTRL_PHASE + XY_CTRL_QUAD`，再开启两路输出等待共用外触发。
-4. 保留原有调幅后固定等待及关闭温控后的 `XY_SETTLE_TIME`，随后采集。
+4. 保留原有调幅后固定等待及关闭温控后的 `SYSTEM_SETTLE_S`，随后采集。
 
 零幅值点保持两路 OFF，不发送零 Vpp 或重新开启。Pump 载波、Pump 门控和 `Time_sequence_2 CH2` 共用触发源在扫描期间始终保持运行。软件仍按现有等待时间采集，并未增加触发到达回读检测；须确保外触发接线正常。
 新运行的 `experiment_config.yaml` 中 `xy_ctrl.trigger_policy` 记录逐点调幅重触发策略，历史运行配置与数据不改写。GUI 无新增参数，相位仍沿用扫描前的校准结果。
 
 校相和采集关闭温控时直接把温度开关通道设置为 **Output OFF**。测量后通过
 `FIXED_PARAMS.Temp_Switch` 恢复开启电平并设置 Output ON，再等待 `TEMP_SWITCH_ON_SETTLE_S`。
-`XY_SETTLE_TIME` 仍表示正式采集前、关闭温控后的稳定时间。初始开启和最终安全收尾不额外等待恢复时长。
+`SYSTEM_SETTLE_S` 仍表示正式采集前、关闭温控后的稳定时间。初始开启和最终安全收尾不额外等待恢复时长。
 
 上述时序由 [采集工作流](../lab_workflows/experiment_modules/noise_spectrum_xy/workflow.py)
 的 `run()` 编排，设备、参数和安全限值显式传入各步骤。初始化、校相与扫描共用一次
@@ -359,7 +366,7 @@ A01～A13 按编号依赖前一模块，A14 无前置、随时可用于结束空
 | 启动准备 | A02 | 设备连接：按当前映射建立/复用设备会话 |
 | 启动准备 | A03 | 参考时钟同步：设置并严格回读，保存实际结果 |
 | 初始条件 | A04 | 初始输出：Pump/Probe DC、主磁场保护与输出、温度开关；关闭 Z 与尚未启动的共用触发 |
-| 初始条件 | A05 | 温度稳定：设置 TEC 目标，等待并检查取消；TEC 连接失败沿用可选策略 |
+| 初始条件 | A05 | 目标温度设置：仅下发 TEC 目标；TEC 连接失败沿用可选策略 |
 | 激励与触发 | A06 | Pump 配置：载波、脉冲门控及对应输出 |
 | 激励与触发 | A07 | 共用触发配置：Time_sequence_2 方波、开启输出并初始化相位 |
 | 相位校准 | A08 | Demod0 配置与校相：关闭 XY/温控，配置输入/振荡器/解调器，校相并恢复温控 |

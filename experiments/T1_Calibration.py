@@ -29,6 +29,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import numpy as np
+from lab_workflows.steps import acquisition_window, DeferredAcquisitionWrites
 import yaml
 import time
 from datetime import datetime
@@ -59,6 +60,7 @@ with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f
 # ============================================================
 # ========== 实验参数 ==========
 # ============================================================
+SYSTEM_SETTLE_S = 0.5  # 配置与温控门控共同稳定的采集前等待（秒）
 EXPERIMENT_TYPE = "T1_Calibration"
 RUN_TAG = "test"
 
@@ -277,21 +279,9 @@ dg_pump_dev.set_sync_state(True, channel=2)
 dg_pump_dev.set_output(True, channel=2)
 print(f"Pump CH1: 100MHz {PUMP_MOD_AMPLITUDE}Vpp | CH2: {PUMP_SWITCH_FREQ}Hz 方波 (phase=180°)")
 
-# 5. 温控稳定
-tec_dev = devices["tec"]
-validate_safety_limit("temperature", TEC_TEMPERATURE)
-tec_dev.set_target_temperature(TEC_TEMPERATURE, channel=1)
-tec_dev.set_enable(True, channel=1)
-temp_now = tec_dev.get_temperature(channel=1)
-print(f"温度设定: {TEC_TEMPERATURE}°C, 当前: {temp_now:.1f}°C")
-print("等待温度稳定...")
-while True:
-    time.sleep(5)
-    t = tec_dev.get_temperature(channel=1)
-    print(f"  当前温度: {t:.2f} °C")
-    if abs(t - TEC_TEMPERATURE) < 1.0:
-        print(f"温度已稳定: {t:.2f} °C")
-        break
+# 5. 只下发 UI 目标温度，串口不可用时保持外部软件模式。
+from lab_workflows.steps import configure_temperature_control
+temperature_status = configure_temperature_control(devices.get("tec"), TEC_TEMPERATURE)
 
 # %% Cell 6
 # ========== 示波器配置 ==========
@@ -346,7 +336,7 @@ def auto_scale_signal(waveform, current_scale):
     return new_scale, (new_scale != current_scale)
 
 
-def _acquire_ch1_single(scope_cfg):
+def _prepare_ch1_single(scope_cfg):
     """STOP → 配置 → RUN 的正确 SINGle 采集流程。"""
     inst = acq._inst
     inst.trigger_stop()
@@ -370,6 +360,11 @@ def _acquire_ch1_single(scope_cfg):
     inst.set_trigger_slope(trig.slope)
     inst.set_trigger_level(trig.level)
     time.sleep(0.05)
+
+
+def _acquire_ch1_single(scope_cfg):
+    """在已配置并稳定的示波器上启动和读取本次采集。"""
+    inst = acq._inst
     inst.trigger_run()
     acq.start_acquisition(scope_cfg)
     acq.stop_acquisition()
@@ -442,32 +437,37 @@ def measure_T1_single(probe_power):
         all_vdiff = []
         t_axis = None
 
+        dg_ts_dev = devices["dg_ts"]
+        def set_enabled(enabled):
+            value = 5.0 if enabled else 0.0
+            validate_safety_limit("Temp_Switch", value)
+            dg_ts_dev.setup_dc(value, channel=cfg_ts["channel"])
+
         for rep in range(ACQ_REPEATS):
-            dg_ts_dev = devices["dg_ts"]
-            dg_ts_dev.setup_dc(0.0, channel=cfg_ts["channel"])
-            time.sleep(PUMP_PREP_TIME + half_period)
-
-            # 自适应缩放: 最多重试 2 次
             for retry in range(3):
-                ch1_result = _acquire_ch1_single(scope_cfg_ref)
+                _prepare_ch1_single(scope_cfg_ref)
+                ch1_result = None
+                with DeferredAcquisitionWrites() as pending:
+                    try:
+                        with acquisition_window(set_enabled, time.sleep, SYSTEM_SETTLE_S):
+                            time.sleep(PUMP_PREP_TIME + half_period)
+                            ch1_result = _acquire_ch1_single(scope_cfg_ref)
+                        time.sleep(2.0)
+                    except BaseException:
+                        if ch1_result is not None or all_vdiff:
+                            pending.add(np.savez, run_dir / "raw" / f"recovery_t1_{time.time_ns()}.npz",
+                                time_s=ch1_result.time if ch1_result is not None else t_axis,
+                                signal_v=ch1_result.voltage if ch1_result is not None else np.array([]),
+                                completed_vdiff=np.asarray(all_vdiff), probe_power=probe_power)
+                        raise
                 waveform = ch1_result.voltage
-
                 new_scale, need_retry = auto_scale_signal(waveform, scale)
                 if need_retry and retry < 2:
                     scale = new_scale
-                    abs_max = np.max(np.abs(waveform))
-                    tqdm.write(f"  [{rep+1}/{ACQ_REPEATS}] 缩放 retry{retry+1}: "
-                               f"scale→{scale:.3f}V/div "
-                               f"(peak={abs_max*1e3:.1f}mV, "
-                               f"{abs_max/(scale*VERT_DIVS)*100:.0f}% 满格)")
                     scope.set_channel_scale(1, scale)
                     scope_cfg_ref.channels[0].scale = scale
-                    time.sleep(half_period + PUMP_PREP_TIME + 0.05)
                     continue
-                break  # 通过或已达最大重试
-
-            dg_ts_dev.setup_dc(5.0, channel=cfg_ts["channel"])
-            time.sleep(2)
+                break
 
             if t_axis is None:
                 t_axis = ch1_result.time
@@ -482,8 +482,8 @@ def measure_T1_single(probe_power):
         print(f"  成功采集 {len(all_vdiff)}/{ACQ_REPEATS} 帧，已平均, 最终档位={scale:.3f}V/div")
 
     finally:
-        dg_ts_dev.setup_dc(5.0, channel=cfg_ts["channel"])
-        print("  温控开关: ON (5V)")
+        # 每次尝试已由共享窗口恢复，避免二次清理覆盖原始异常。
+        print("  温控窗口已结束")
 
     # 拟合（带边界约束）
     T1, T1_err, popt, pcov = _fit_T1(t_axis, vdiff_avg)

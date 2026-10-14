@@ -1,6 +1,7 @@
 """Mx 高主场 Z 磁场频率标定采集工作流。"""
 
 from __future__ import annotations
+from ...steps.acquisition_window import acquisition_window
 
 from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
@@ -410,12 +411,6 @@ def _configure_outputs(
         devices.get("tec"),
         params.temperature_c,
         channel=1,
-        tolerance_c=params.temperature_tolerance_c,
-        stable_reads=params.temperature_stable_reads,
-        poll_interval_s=params.temperature_poll_interval_s,
-        timeout_s=params.temperature_timeout_s,
-        cancellation=_RuntimeCancellation(),
-        stability_waiter=wait_for_temperature_stable,
     )
     actual_temperature = temperature_status.actual_temperature_c
 
@@ -470,20 +465,14 @@ def _temperature_gated_acquire(
     *,
     acquire: Callable[[], dict[str, np.ndarray]],
 ) -> dict[str, np.ndarray]:
-    """每次频点采集均关闭温控，完成后恢复并固定等待。"""
+    """配置后关温控、统一等待、读入内存，任何退出路径先恢复温控。"""
     check_cancelled()
-    set_temperature_switch(
-        devices["temp_switch"], False, channel=channels["temp_switch"]
-    )
-    try:
-        _sleep(params.temp_switch_off_lead_s)
-        _sleep(params.frequency_settle_time_s)
+    def set_enabled(enabled):
+        set_temperature_switch(devices["temp_switch"], enabled, channel=channels["temp_switch"])
+        if enabled:
+            _uncancellable_sleep(params.temp_switch_on_lag_s)
+    with acquisition_window(set_enabled, _sleep, params.system_settle_s):
         return acquire()
-    finally:
-        set_temperature_switch(
-            devices["temp_switch"], True, channel=channels["temp_switch"]
-        )
-        _uncancellable_sleep(params.temp_switch_on_lag_s)
 
 
 def _save_point(
@@ -547,7 +536,7 @@ def _acquire_valid_r_point(
                 "temp_switch_off_voltage_v": np.float64(0.0),
                 "temp_switch_on_voltage_v": np.float64(5.0),
                 "temp_switch_off_lead_s": np.float64(
-                    params.temp_switch_off_lead_s
+                    params.system_settle_s
                 ),
                 "temp_switch_on_lag_s": np.float64(
                     params.temp_switch_on_lag_s
@@ -906,7 +895,7 @@ def run_calibration(
             "scope": "every_frequency_point",
             "off_voltage_v": 0.0,
             "on_voltage_v": 5.0,
-            "off_lead_s": params.temp_switch_off_lead_s,
+            "off_lead_s": params.system_settle_s,
             "on_lag_s": params.temp_switch_on_lag_s,
         },
     )
@@ -936,9 +925,9 @@ def run_calibration(
             temperature_control={
                 "target_temperature_c": params.temperature_c,
                 "actual_temperature_c": actual_temperature,
-                "controlled_by_experiment": actual_temperature is not None,
+                "controlled_by_experiment": devices.get("tec") is not None,
                 "control_source": (
-                    "tec103" if actual_temperature is not None else "external_software"
+                    "tec103" if devices.get("tec") is not None else "external_software"
                 ),
             },
             clock_sources=clock_sources,

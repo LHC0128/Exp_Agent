@@ -35,6 +35,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import numpy as np
+from lab_workflows.steps import acquisition_window, configure_temperature_control
 import yaml
 import time
 from datetime import datetime
@@ -68,6 +69,7 @@ MAPPING = load_mapping(project_root)
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
 
+SYSTEM_SETTLE_S = 2.0  # 配置与温控门控共同稳定的采集前等待（秒）
 EXPERIMENT_TYPE = "Static_Magnetic_Field_Sensitivity"
 
 # ========== 固定参数 (非扫描项) ==========
@@ -138,28 +140,24 @@ OPTIMIZE_SEQUENCE = [
     {
         "parameter": "Pump_laser_power",
         "values": [0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50],
-        "stabilize_time": 2.0,
         "recalibrate_phase": True,
     },
     # 示例 2: 微调主磁场 (改变工作点, 可能改善线形对称性)
     {
         "parameter": "main_magnetic_field",
         "values": [8.8, 9.0, 9.15, 9.3, 9.45, 9.6, 9.8],
-        "stabilize_time": 2.0,
         "recalibrate_phase": True,
     },
     # 示例 3: 扫描 Pump 调制占空比
     {
         "parameter": "PUMP_MOD_DUTY",
         "values": [2, 3, 5, 8, 10, 15, 20],
-        "stabilize_time": 2.0,
         "recalibrate_phase": False,
     },
     # 示例 4: 扫描 Probe 光功率
     {
         "parameter": "Probe_laser_power",
         "values": [0.10, 0.15, 0.20, 0.30, 0.40],
-        "stabilize_time": 2.0,
         "recalibrate_phase": True,
     },
     # 可按需添加/注释更多维度...
@@ -237,12 +235,14 @@ try:
     print(f"温控 DG912 Pro 已连接: {dg_temp.idn()}")
     devices["dg_temp"] = dg_temp
 
-    # TEC103: 温度控制器
-    # tec_cfg = MAPPING["temperature"]
-    # tec = TECInstrument(port=tec_cfg["resource"])
-    # tec.connect()
-    # print(f"TEC103 已连接")
-    # devices["tec"] = tec
+    # 串口被外部温控占用时保持可选连接策略。
+    tec = TECInstrument(port=MAPPING["temperature"]["resource"])
+    try:
+        tec.connect()
+    except Exception as exc:
+        print(f"[警告] TEC 连接失败，跳过设温：{exc}")
+        tec = None
+    devices["tec"] = tec
 
     # HF2: 锁相放大器
     hf2_cfg = MAPPING["lockin_r"]
@@ -292,8 +292,9 @@ def apply_parameters(devs, params_dict):
     if "main_magnetic_field" in params_dict:
         gs.set_current(params_dict["main_magnetic_field"] / 1000.0)
 
-    # if "temperature" in params_dict:
-    #     tec.set_target_temperature(params_dict["temperature"], channel=1)
+    if "temperature" in params_dict:
+        devs["temperature_control"] = configure_temperature_control(
+            devs.get("tec"), params_dict["temperature"], channel=1).to_dict()
 
     if "PUMP_MOD_DUTY" in params_dict:
         global PUMP_MOD_DUTY
@@ -326,9 +327,8 @@ def setup_fixed_params(devs):
     gs.set_output(True)
     print(f"主磁场: {FIXED_PARAMS['main_magnetic_field']} mA")
 
-    # tec.set_target_temperature(FIXED_PARAMS["temperature"], channel=1)
-    # tec.set_enable(True, channel=1)
-    # print(f"温度设定: {FIXED_PARAMS['temperature']} °C")
+    devs["temperature_control"] = configure_temperature_control(
+        devs.get("tec"), FIXED_PARAMS["temperature"], channel=1).to_dict()
 
     dg_temp.setup_dc(FIXED_PARAMS["Temp_Switch"], channel=2)
     print(f"温度开关: ON")
@@ -378,7 +378,6 @@ print("RF 开关方案配置完成\n")
 def calibrate_phase(hfi, dg_temp, dg_sweep):
     """执行 HF2 解调器 0 的相位校准, 返回 (calibrated_phase, actual_rate)."""
     print("  [校准] 关闭温控...")
-    dg_temp.set_output(False, channel=2)
 
     print("  [校准] 关闭 Z 磁场...")
     dg_sweep.setup_dc(0.0, channel=1)
@@ -400,16 +399,16 @@ def calibrate_phase(hfi, dg_temp, dg_sweep):
     )
     actual_rate = demod.configure_demodulator(hfi, demod_cfg)
 
-    phase = demod.auto_calibrate_phase(
-        hfi, demod_idx=0, tolerance_deg=1.0, max_attempts=5, settle_time=0.2,
-    )
-    print(f"  [校准] 相位={phase:.2f}°, rate={actual_rate:.0f} Sa/s")
+    with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+        phase = demod.auto_calibrate_phase(
+            hfi, demod_idx=0, tolerance_deg=1.0, max_attempts=5, settle_time=SYSTEM_SETTLE_S,
+        )
+        print(f"  [校准] 相位={phase:.2f}°, rate={actual_rate:.0f} Sa/s")
 
-    sample = demod.read_demod_sample(hfi, demod_idx=0)
-    print(f"  [校准] R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
+        sample = demod.read_demod_sample(hfi, demod_idx=0)
+        print(f"  [校准] R={sample['r']:.6f}, X={sample['x']:.6f}, Y={sample['y']:.6f}")
 
-    print("  [校准] 恢复温控...")
-    dg_temp.set_output(True, channel=2)
+        print("  [校准] 恢复温控...")
     time.sleep(0.5)
 
     return phase, actual_rate
@@ -432,30 +431,27 @@ def acquire_dispersion(devs, calibrated_phase, actual_rate, run_dir):
     dg_sweep.set_sync_state(True, channel=1)
     time.sleep(0.5)
 
-    dg_temp.set_output(False, channel=2)
-    time.sleep(1.0)
+    with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+        aux_path = f"/{MAPPING['lockin_r']['device_id']}/auxins/{DAQ_TRIGGER_CHANNEL}/sample.AuxIn{DAQ_TRIGGER_CHANNEL}"
+        daq_cfg = DAQConfig(
+            device=MAPPING["lockin_r"]["device_id"],
+            trigger_type=1, trigger_channel=DAQ_TRIGGER_CHANNEL,
+            trigger_level=DAQ_TRIGGER_LEVEL, trigger_slope=DAQ_TRIGGER_SLOPE,
+            trigger_delay=0.0, duration=DAQ_DURATION,
+            grid_cols=int(actual_rate * DAQ_DURATION),
+            grid_rows=1, grid_mode=2,
+            signal_paths=["sample.r", "sample.x", "sample.y"],
+            extra_paths=[aux_path],
+        )
 
-    aux_path = f"/{MAPPING['lockin_r']['device_id']}/auxins/{DAQ_TRIGGER_CHANNEL}/sample.AuxIn{DAQ_TRIGGER_CHANNEL}"
-    daq_cfg = DAQConfig(
-        device=MAPPING["lockin_r"]["device_id"],
-        trigger_type=1, trigger_channel=DAQ_TRIGGER_CHANNEL,
-        trigger_level=DAQ_TRIGGER_LEVEL, trigger_slope=DAQ_TRIGGER_SLOPE,
-        trigger_delay=0.0, duration=DAQ_DURATION,
-        grid_cols=int(actual_rate * DAQ_DURATION),
-        grid_rows=1, grid_mode=2,
-        signal_paths=["sample.r", "sample.x", "sample.y"],
-        extra_paths=[aux_path],
-    )
+        daq_results = daq.acquire_data(
+            hfi, config=daq_cfg, demod_idx=0,
+            actual_rate=actual_rate, cancellation_check=check_cancelled, requested_rate=HF2_DEMOD_RATE, timeout=DAQ_DURATION + 10.0,
+        )
+        actual_rate = result_rate(daq_results, actual_rate)
 
-    daq_results = daq.acquire_data(
-        hfi, config=daq_cfg, demod_idx=0,
-        actual_rate=actual_rate, cancellation_check=check_cancelled, requested_rate=HF2_DEMOD_RATE, timeout=DAQ_DURATION + 10.0,
-    )
-    actual_rate = result_rate(daq_results, actual_rate)
-
-    dg_sweep.set_output(False, channel=1)
-    dg_sweep.set_sync_state(False, channel=1)
-    dg_temp.set_output(True, channel=2)
+        dg_sweep.set_output(False, channel=1)
+        dg_sweep.set_sync_state(False, channel=1)
     time.sleep(2)
 
     # 解析 recorded_data
@@ -545,19 +541,18 @@ def acquire_noise(devs, recorded_data, calibrated_phase, run_dir):
         tqdm = lambda x, **kw: x
 
     for i in tqdm(range(NOISE_N_AVG), desc="  Noise acq"):
-        dg_temp.set_output(False, channel=2)
-        noise_cfg = DAQConfig(
-            device=MAPPING["lockin_r"]["device_id"],
-            trigger_type=0, duration=NOISE_DURATION,
-            grid_cols=int(fs_noise * NOISE_DURATION),
-            grid_rows=1, grid_mode=2, signal_paths=["sample.y"],
-        )
-        noise_results = daq.acquire_data(
-            hfi, config=noise_cfg, demod_idx=HF2_DEMOD_IDX,
-            actual_rate=fs_noise, cancellation_check=check_cancelled, requested_rate=HF2_NOISE_RATE, timeout=NOISE_DURATION + 5.0,
-        )
-        fs_noise = result_rate(noise_results, fs_noise)
-        dg_temp.set_output(True, channel=2)
+        with acquisition_window(lambda enabled: dg_temp.set_output(enabled, channel=2), time.sleep, SYSTEM_SETTLE_S):
+            noise_cfg = DAQConfig(
+                device=MAPPING["lockin_r"]["device_id"],
+                trigger_type=0, duration=NOISE_DURATION,
+                grid_cols=int(fs_noise * NOISE_DURATION),
+                grid_rows=1, grid_mode=2, signal_paths=["sample.y"],
+            )
+            noise_results = daq.acquire_data(
+                hfi, config=noise_cfg, demod_idx=HF2_DEMOD_IDX,
+                actual_rate=fs_noise, cancellation_check=check_cancelled, requested_rate=HF2_NOISE_RATE, timeout=NOISE_DURATION + 5.0,
+            )
+            fs_noise = result_rate(noise_results, fs_noise)
         time.sleep(2)
 
         y = noise_results[0].values
@@ -636,7 +631,7 @@ def run_single_measurement(devs, params_override, run_dir, calibrated_phase, act
         result["fit_result"] = fit_result
 
         # 3. 噪声采集
-        psd_avg, freq_arr, n_avg, freq_res, actual_rate_restored = \
+        psd_avg, freq_arr, n_avg, freq_res, actual_rate_restored =\
             acquire_noise(devs, recorded_data, calibrated_phase, run_dir)
 
         # 4. 灵敏度计算
@@ -681,10 +676,8 @@ print("=" * 60)
 setup_fixed_params(devices)
 time.sleep(1)
 
-# 初始相位校准
-calibrated_phase, actual_rate = calibrate_phase(
-    devices["hf2"], devices["dg_temp"], devices["dg_sweep"])
-time.sleep(1)
+# 首点目录和初始配置保存后再进行第一次校相。
+calibrated_phase, actual_rate = None, HF2_DEMOD_RATE
 
 t_start = datetime.now()
 print(f"\n优化扫描开始: {t_start.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -700,7 +693,7 @@ try:
     for seq_idx, seq_config in enumerate(OPTIMIZE_SEQUENCE):
         param_name = seq_config["parameter"]
         values = seq_config["values"]
-        stabilize = seq_config.get("stabilize_time", 2.0)
+        stabilize = SYSTEM_SETTLE_S
         recalibrate = seq_config.get("recalibrate_phase", True)
 
         print(f"\n{'=' * 60}")
@@ -722,10 +715,16 @@ try:
 
             # 应用参数
             apply_parameters(devices, {param_name: val})
-            time.sleep(stabilize)
+            with open(run_dir / "experiment_config.yaml", "w", encoding="utf-8") as stream:
+                yaml.safe_dump({"experiment_type": EXPERIMENT_TYPE,
+                    "schema_version": 2, "parameters": get_full_params({param_name: val}),
+                    "SYSTEM_SETTLE_S": SYSTEM_SETTLE_S,
+                    "initial_temperature_c": None,
+                    "temperature_control": devices.get("temperature_control", {})},
+                    stream, allow_unicode=True, sort_keys=False)
 
             # 可选重校准
-            if recalibrate:
+            if recalibrate or calibrated_phase is None:
                 print(f"  重校准相位...")
                 calibrated_phase, actual_rate = calibrate_phase(
                     devices["hf2"], devices["dg_temp"], devices["dg_sweep"])

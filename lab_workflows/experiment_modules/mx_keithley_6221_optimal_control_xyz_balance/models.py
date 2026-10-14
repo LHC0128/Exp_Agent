@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import ClassVar, Any
 
 import numpy as np
 
@@ -25,8 +25,11 @@ from ..mx_keithley_6221_optimal_control_rf_sensitivity.sources import (
 class MxKeithley6221OptimalControlXYZBalanceParams(ExperimentParams):
     """6221 外部触发最优控制下扫描 XYZ 直流补偿场。"""
 
-    schema_version = 1
+    schema_version = 2
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.1, 'TEMP_SWITCH_OFF_LEAD_S': 0.0}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(
         default="mx_6221_optimal_control_xyz_balance",
         external_name="RUN_TAG",
@@ -115,14 +118,6 @@ class MxKeithley6221OptimalControlXYZBalanceParams(ExperimentParams):
             "GUI 在版本变化时自动刷新该只读显示。"
         ),
     )
-    response_settle_time_s: float = parameter(
-        default=0.1,
-        external_name="RESPONSE_SETTLE_TIME_S",
-        label="设场及温控关闭后等待",
-        unit="s",
-        group="basic",
-        minimum=0.0,
-    )
     response_duration_s: float = parameter(
         default=0.2,
         external_name="RESPONSE_DURATION_S",
@@ -191,15 +186,6 @@ class MxKeithley6221OptimalControlXYZBalanceParams(ExperimentParams):
         group="advanced",
         minimum=1,
     )
-    temp_switch_off_lead_s: float = parameter(
-        default=0.0,
-        external_name="TEMP_SWITCH_OFF_LEAD_S",
-        label="温控关闭附加等待",
-        unit="s",
-        group="advanced",
-        minimum=0.0,
-        description="与 RESPONSE_SETTLE_TIME_S 相加；默认不重复等待。",
-    )
     temp_switch_on_lag_s: float = parameter(
         default=2.0,
         external_name="TEMP_SWITCH_ON_LAG_S",
@@ -207,37 +193,6 @@ class MxKeithley6221OptimalControlXYZBalanceParams(ExperimentParams):
         unit="s",
         group="basic",
         minimum=0.0,
-    )
-    temperature_tolerance_c: float = parameter(
-        default=1.0,
-        external_name="TEMPERATURE_TOLERANCE_C",
-        label="初始温度稳定容差",
-        unit="°C",
-        group="advanced",
-        minimum=0.0,
-    )
-    temperature_stable_reads: int = parameter(
-        default=1,
-        external_name="TEMPERATURE_STABLE_READS",
-        label="初始温度连续稳定读数",
-        group="advanced",
-        minimum=1,
-    )
-    temperature_poll_interval_s: float = parameter(
-        default=5.0,
-        external_name="TEMPERATURE_POLL_INTERVAL_S",
-        label="温度轮询间隔",
-        unit="s",
-        group="advanced",
-        minimum=0.1,
-    )
-    temperature_timeout_s: float = parameter(
-        default=1200.0,
-        external_name="TEMPERATURE_TIMEOUT_S",
-        label="温度稳定超时",
-        unit="s",
-        group="advanced",
-        minimum=1.0,
     )
     pump_carrier_frequency_hz: float = parameter(
         default=100000000.0,

@@ -20,6 +20,7 @@ const fields = [
   { name: "RUN_TAG", label: "运行标签", type: "string", default: "known_noise", group: "basic", unit: "" },
   { name: "NOISE_REPEAT_FREQ_HZ", label: "波形重复频率", type: "number", default: 4, group: "basic", unit: "Hz" },
   { name: "NOISE_AMPLITUDE_VPP", label: "噪声注入幅度", type: "number", default: 1, group: "basic", unit: "Vpp" },
+  { name: "Z_CALIBRATION_K_HZ_PER_V", label: "K_Z 手动标定", type: "number", default: 5373.638, group: "basic", unit: "Hz/V" },
   { name: "NOISE_BAND_STARTS_HZ", label: "噪声段起点", type: "array", default: [300], group: "basic", unit: "Hz" },
   { name: "NOISE_BAND_STOPS_HZ", label: "噪声段终点", type: "array", default: [30000], group: "basic", unit: "Hz" },
   { name: "NOISE_BAND_PSDS_V2_PER_HZ", label: "噪声段设计谱密度", type: "array", default: [1e-6], group: "basic", unit: "V²/Hz" },
@@ -72,7 +73,7 @@ beforeEach(() => {
   mockApi.mockReset();
   mockApi.mockImplementation(async (url: string, options?: RequestInit) => {
     if (url === BASE) return { title: "XY 控制测量已知可控噪声谱", description: "已知噪声验证", wiring_notes: ["确认 Z 链路接线"] };
-    if (url === `${BASE}/schema`) return { schema_version: 3, fields: fields.map(field => ({ ...field, default: defaults[field.name] })), parameter_layout_saved: true, parameter_layout: parameterLayout };
+    if (url === `${BASE}/schema`) return { schema_version: 4, fields: fields.map(field => ({ ...field, default: defaults[field.name] })), parameter_layout_saved: true, parameter_layout: parameterLayout };
     if (url === "/api/jobs") return [];
     if (url === `${BASE}/workflow`) return flow;
     if (url === `${BASE}/sessions/active`) return activeSession;
@@ -237,6 +238,8 @@ it("显示波形预算预览与真值链 K_Z，谱段数组按逗号分隔编辑
   const preview = await screen.findByText("波形、注入真值与 Welch 预览");
   fireEvent.click(preview);
   await openParameters("A11");
+  expect(screen.getByRole("spinbutton", { name: "K_Z 手动标定 (Hz/V)" })).toHaveValue(5373.638);
+  expect(screen.queryByLabelText("K_Z 标定运行")).toBeNull();
   expect(await screen.findByText((content) => content.includes("波形：采样率 65536 Sa/s"))).toBeVisible();
   expect(await screen.findByText((content) => content.includes("等效频率噪声（带内中位）6.950 Hz/√Hz"))).toBeVisible();
   expect(await screen.findByText((content) => content.includes("达到设计谱密度需设注入幅度 1.680 Vpp"))).toBeVisible();
@@ -265,6 +268,28 @@ it("结果区展示判据通过与中位比值，历史详情可用", async () =
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
   expect(screen.getByLabelText("运行标签")).toHaveValue("history-tag");
+  await openParameters("A11");
+  expect(screen.getByRole("spinbutton", { name: "K_Z 手动标定 (Hz/V)" })).toHaveValue(0);
+});
+
+it("手动 K_Z 经预检、保存与完整运行提交，并随历史参数填回", async () => {
+  summary.parameters.Z_CALIBRATION_K_HZ_PER_V = 6200;
+  renderPage();
+  const node = await openParameters("A11");
+  fireEvent.change(node.getByLabelText("K_Z 手动标定 (Hz/V)"), { target: { value: "5800" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
+  await screen.findByText("参数与布局已保存");
+  fireEvent.click(screen.getByRole("button", { name: "完整运行" }));
+  await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs` && options?.method === "POST")).toBe(true));
+  for (const [url, options] of mockApi.mock.calls.filter(([url]) => [`${BASE}/defaults`, `${BASE}/preflight`, `${BASE}/runs`].includes(url))) {
+    expect(JSON.parse(String(options?.body)).parameters.Z_CALIBRATION_K_HZ_PER_V).toBe(5800);
+  }
+  fireEvent.click(await screen.findByRole("button", { name: "完成测试任务" }));
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "填回参数" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
+  const restored = await openParameters("A11");
+  expect(restored.getByLabelText("K_Z 手动标定 (Hz/V)")).toHaveValue(6200);
 });
 
 it("从真实路由进入双 Tab，预检失败不启动采集", async () => {

@@ -306,7 +306,7 @@ def _acquire_grid(
                 y,
                 bias,
             ),
-            settle_time_s=params.response_settle_time_s,
+            settle_time_s=params.system_settle_s,
             duration_s=params.response_duration_s,
             actual_rate=actual_rate,
             device_id=device_id,

@@ -45,6 +45,13 @@ learned_notes:
 
 # XY 控制测量已知不可控 Probe AM 噪声谱
 
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
+
+
 ## 锁相采集方式与实际速率
 
 XY 噪声使用 `HF2_DAQ_RATE` 请求率、`HF2_DAQ_DURATION` 时长和 `HF2_DEMOD_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
@@ -84,7 +91,7 @@ Probe AM 注入频带相对 锁相放大器 解调频率的差频落入 Y 信号
 采集按模块清单（`stages.py`，A01–A16）分步执行，完整运行与分步会话调用同一套业务函数：
 
 1. A01 预检解析设备库和物理映射，确认 Probe AOM 载波与 AM 同机、Z 线圈与共用触发同机，并校验 AM 与所选 Z 波形的输出幅度。预览只计算波形与 PSD，不连接仪器。
-2. A02 连接实验设备（含 Probe AM 信号源）、A03 同步参考时钟并保存设备库/映射快照；A04–A07 设置初始输出、温度稳定、Pump 配置和共用触发。
+2. A02 连接实验设备（含 Probe AM 信号源）、A03 同步参考时钟并保存设备库/映射快照；A04–A07 设置初始输出、目标温度设置、Pump 配置和共用触发。
 3. A08 配置 Probe AOM 载波与外部 AM 并开启载波（校相与采集的信号来源），噪声输出保持关闭。
 4. A09–A11 完成 锁相放大器 与 XY 相位校准；校相未收敛时标记质量未通过并禁止后续采集。
 5. A12 生成并上传 AM 任意波，保存 Probe AM 归一化波形；启用 Z 注入时另存 Z 归一化波形并上传 Z 通道，输出均保持关闭。
@@ -129,13 +136,13 @@ Probe AM 注入频带相对 锁相放大器 解调频率的差频落入 Y 信号
 | `NOISE_AMPLITUDE_VPP` | CH2 输出幅度 | Vpp；正值，峰值须位于外部 AM 安全范围内 |
 | `PROBE_AOM_CARRIER_FREQ_HZ` / `PROBE_AOM_CARRIER_VPP` | CH1 载波频率与幅度 | Hz、Vpp；幅度为 0–0.05 Vpp，受安全限值约束 |
 | `PROBE_AOM_AM_DEPTH_PERCENT` | 外部 AM 深度 | %；0–120 |
-| `INJECTION_SETTLE_S` | 每态切换后的稳定等待 | s；非负 |
+| `SYSTEM_SETTLE_S` | 每态切换后的稳定等待 | s；非负 |
 | `NOISE_SEED` | 固定随机种子 | 非负整数 |
 | `INJECT_CONTROLLED_NOISE` | 是否在整段主扫描持续注入 Z 可控噪声 | 布尔值；同一 Probe AM ON/OFF 对内不切换 |
 | `Z_NOISE_BAND_STARTS_HZ` / `Z_NOISE_BAND_STOPS_HZ` | Z 已知噪声设计谱段边界 | Hz；启用时非空、数组等长且位于 Nyquist 内 |
 | `Z_NOISE_BAND_PSDS_V2_PER_HZ` | Z 已知噪声设计 PSD | V²/Hz；启用时与边界数组等长且为正 |
 | `Z_NOISE_REPEAT_FREQ_HZ` / `Z_NOISE_AMPLITUDE_VPP` | Z 任意波重复频率和输出幅度 | Hz / Vpp；启用时为正，幅度受 Z 安全限值约束 |
-| `Z_NOISE_SEED` / `Z_NOISE_SETTLE_S` | Z 波形种子和开启后等待 | 非负整数 / 非负秒数 |
+| `Z_NOISE_SEED` / `SYSTEM_SETTLE_S` | Z 波形种子和开启后等待 | 非负整数 / 非负秒数 |
 | `HF2_DAQ_DURATION` / `ANALYSIS_BIN_WIDTH_HZ` | 每态采集时长与 Welch 目标格间距 | s、Hz；正值 |
 
 ## 伪代码

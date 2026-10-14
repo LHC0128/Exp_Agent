@@ -1,6 +1,7 @@
 """Mx Y RF Probe 光功率与 PZT 失谐优化参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 from dataclasses import dataclass
 
@@ -13,8 +14,11 @@ from ..mx_y_rf_sensitivity.models import LinewidthMode, MxYRFParams
 class MxYRFProbeDetuningOptimizationParams(MxYRFParams):
     """固定 Pump，二维扫描 Probe 功率和 DLC pro PZT Scan Offset。"""
 
-    schema_version = 1
+    schema_version = 2
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.1, 'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(
         default="mx_y_rf_probe_detuning_opt",
         external_name="RUN_TAG",
@@ -41,14 +45,6 @@ class MxYRFProbeDetuningOptimizationParams(MxYRFParams):
         label="Y RF 幅度点数",
         group="basic",
         minimum=5,
-    )
-    response_settle_time_s: float = parameter(
-        default=0.1,
-        external_name="RESPONSE_SETTLE_TIME_S",
-        label="幅度点稳定时间",
-        unit="s",
-        group="basic",
-        minimum=0,
     )
     y_rf_nt_per_vpp: float = parameter(
         default=1517.79147,
@@ -98,14 +94,6 @@ class MxYRFProbeDetuningOptimizationParams(MxYRFParams):
         maximum=2.0,
         safety_key="rf_coil",
     )
-    frequency_settle_time_s: float = parameter(
-        default=0.05,
-        external_name="FREQUENCY_SETTLE_TIME_S",
-        label="未使用的模式1稳定时间",
-        unit="s",
-        visible=False,
-        minimum=0,
-    )
     frequency_duration_s: float = parameter(
         default=0.1,
         external_name="FREQUENCY_DURATION_S",
@@ -145,37 +133,6 @@ class MxYRFProbeDetuningOptimizationParams(MxYRFParams):
         unit="°C",
         visible=False,
         safety_key="temperature",
-    )
-    temperature_tolerance_c: float = parameter(
-        default=1.0,
-        external_name="TEMPERATURE_TOLERANCE_C",
-        label="未使用的温度稳定容差",
-        unit="°C",
-        visible=False,
-        minimum=0,
-    )
-    temperature_stable_reads: int = parameter(
-        default=1,
-        external_name="TEMPERATURE_STABLE_READS",
-        label="未使用的温度连续稳定读数",
-        visible=False,
-        minimum=1,
-    )
-    temperature_poll_interval_s: float = parameter(
-        default=5.0,
-        external_name="TEMPERATURE_POLL_INTERVAL_S",
-        label="未使用的温度轮询间隔",
-        unit="s",
-        visible=False,
-        minimum=0.1,
-    )
-    temperature_timeout_s: float = parameter(
-        default=1200.0,
-        external_name="TEMPERATURE_TIMEOUT_S",
-        label="未使用的温度稳定超时",
-        unit="s",
-        visible=False,
-        minimum=1,
     )
 
     probe_power_start_v: float = parameter(

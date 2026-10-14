@@ -1,5 +1,6 @@
-schema_version: 1
+schema_version: 2
 parameters:
+  SYSTEM_SETTLE_S: 1.0
   RUN_TAG: direct_aw_dc_cal
   XY_ENV_VOLTAGE_START_V: -4.0
   XY_ENV_VOLTAGE_STOP_V: 4.0

@@ -1,6 +1,7 @@
 """XY DirectAW + Demod3 R 二维噪声谱采集工作流。"""
 
 from __future__ import annotations
+from ...steps.acquisition_window import DeferredAcquisitionWrites, acquisition_window
 
 from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
@@ -10,6 +11,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from lab_workflows.steps import acquisition_window
 from tqdm import tqdm
 
 from gs200 import GS200Instrument
@@ -257,10 +259,6 @@ def run() -> Path:
             tec,
             params.temperature,
             channel=1,
-            tolerance_c=params.temperature_tolerance_c,
-            stable_reads=params.temperature_stable_reads,
-            poll_interval_s=params.temperature_poll_interval_s,
-            timeout_s=params.temperature_timeout_s,
         )
         run_dir.update_config(
             temperature_control=temperature_status.to_dict(),
@@ -356,7 +354,6 @@ def run() -> Path:
             dg_trigger.phase_init(channel=channel)
 
         # Demod0 配置与自动校相。
-        set_temp(False)
         for channel in (1, 2):
             dg_comp.set_output(False, channel=channel)
         demod.configure_signal_input(
@@ -385,16 +382,17 @@ def run() -> Path:
                 phase=0.0,
             ),
          for_acquisition=False)
-        demod0_phase = calibrate_demod_phase(
-            hfi,
-            PhaseCalibrationConfig(
-                demod_idx=params.demod0_idx,
-                tolerance_deg=1.0,
-                max_attempts=5,
-                settle_time=0.2,
-            ),
-        )
-        set_temp(True)
+        with acquisition_window(lambda enabled: set_temp(enabled), _interruptible_sleep, params.system_settle_s):
+            _interruptible_sleep(params.system_settle_s)
+            demod0_phase = calibrate_demod_phase(
+                hfi,
+                PhaseCalibrationConfig(
+                    demod_idx=params.demod0_idx,
+                    tolerance_deg=1.0,
+                    max_attempts=5,
+                    settle_time=params.system_settle_s,
+                ),
+            )
 
         # 物理回环：Demod0 Y -> AuxOut2 -> Signal Input 2 -> Demod3。
         demod.configure_signal_input(
@@ -442,13 +440,10 @@ def run() -> Path:
         # DirectAW 自动校相；没有额外相位扫描。
         def apply_phase_and_measure(phase_deg: float):
             upload_direct_aw(params.xy_calib_envelope_v, phase_deg, outputs_on=True)
-            set_temp(False)
-            try:
-                _interruptible_sleep(1.0)
-                return demod.read_demod_sample(hfi, demod_idx=params.demod0_idx)
-            finally:
-                set_temp(True)
-                time.sleep(1.0)
+            with acquisition_window(lambda enabled: set_temp(enabled), _interruptible_sleep, params.system_settle_s):
+                sample = demod.read_demod_sample(hfi, demod_idx=params.demod0_idx)
+            _interruptible_sleep(1.0)
+            return sample
 
         direct_aw_phase = calibrate_direct_aw_phase(
             params.xy_ctrl_phase,
@@ -523,71 +518,68 @@ def run() -> Path:
                     params.demod3_freq_points,
                     params.temp_recovery_batch_points,
                 ):
-                    set_temp(False)
-                    try:
-                        for demod_idx in batch:
-                            check_cancelled()
-                            frequency = float(demod3_axis[demod_idx])
-                            demod.configure_oscillator(
-                                hfi,
-                                OscillatorConfig(
-                                    osc_index=params.demod3_osc_idx,
-                                    frequency=frequency,
-                                ),
-                            )
-                            tc_s = max(
-                                params.demod3_tc_min_s,
-                                params.demod3_tc_period_fraction / frequency,
-                            )
-                            actual_rate_d3 = demod.configure_demodulator(
-                                hfi,
-                                DemodulatorConfig(
-                                    demod_index=params.demod3_idx,
-                                    enable=True,
-                                    rate=params.demod3_rate_sa_s,
-                                    input_channel=params.demod3_adc_select,
-                                    osc_select=params.demod3_osc_idx,
-                                    harmonic=1,
-                                    time_constant=tc_s,
-                                    order=params.demod3_order,
-                                    phase=0.0,
-                                ),
-                             for_acquisition=True)
-                            _interruptible_sleep(params.demod3_freq_settle_time_s)
-                            try:
-                                r_mean, acquisition_info = acquire_demod_r_mean(
-                                    r_collector,
-                                    demod3_r_path,
-                                    params.demod3_acquisition_duration_s, instr=hfi, config=r_config,
-                                    demod_idx=params.demod3_idx, requested_rate=params.demod3_rate_sa_s,
-                                    actual_rate=actual_rate_d3, cancellation_check=check_cancelled,
-                                    return_metadata=True,
+                    with DeferredAcquisitionWrites(restore=lambda: set_temp(True)) as pending:
+                        try:
+                            for demod_idx in batch:
+                                check_cancelled()
+                                frequency = float(demod3_axis[demod_idx])
+                                demod.configure_oscillator(
+                                    hfi,
+                                    OscillatorConfig(
+                                        osc_index=params.demod3_osc_idx,
+                                        frequency=frequency,
+                                    ),
                                 )
-                                run_directory.update_config(demod3_acquisition=acquisition_info)
-                            except Exception as exc:
-                                tqdm.write(
-                                    f"控制 {control_frequency:.1f} Hz / Demod3 {frequency:.1f} Hz 采集失败: {exc}"
+                                tc_s = max(
+                                    params.demod3_tc_min_s,
+                                    params.demod3_tc_period_fraction / frequency,
                                 )
-                                r_mean = float("nan")
-                            if not np.isfinite(r_mean):
-                                tqdm.write(
-                                    f"控制 {control_frequency:.1f} Hz / Demod3 {frequency:.1f} Hz 未得到有效 R"
+                                actual_rate_d3 = demod.configure_demodulator(
+                                    hfi,
+                                    DemodulatorConfig(
+                                        demod_index=params.demod3_idx,
+                                        enable=True,
+                                        rate=params.demod3_rate_sa_s,
+                                        input_channel=params.demod3_adc_select,
+                                        osc_select=params.demod3_osc_idx,
+                                        harmonic=1,
+                                        time_constant=tc_s,
+                                        order=params.demod3_order,
+                                        phase=0.0,
+                                    ),
+                                 for_acquisition=True)
+                                if demod_idx == batch[0]:
+                                    set_temp(False)
+                                _interruptible_sleep(params.system_settle_s)
+                                try:
+                                    r_mean, acquisition_info = acquire_demod_r_mean(
+                                        r_collector,
+                                        demod3_r_path,
+                                        params.demod3_acquisition_duration_s, instr=hfi, config=r_config,
+                                        demod_idx=params.demod3_idx, requested_rate=params.demod3_rate_sa_s,
+                                        actual_rate=actual_rate_d3, cancellation_check=check_cancelled,
+                                        return_metadata=True,
+                                    )
+                                    pending.add(run_directory.update_config, demod3_acquisition=acquisition_info)
+                                except Exception as exc:
+                                    tqdm.write(
+                                        f"控制 {control_frequency:.1f} Hz / Demod3 {frequency:.1f} Hz 采集失败: {exc}"
+                                    )
+                                    r_mean = float("nan")
+                                if not np.isfinite(r_mean):
+                                    tqdm.write(
+                                        f"控制 {control_frequency:.1f} Hz / Demod3 {frequency:.1f} Hz 未得到有效 R"
+                                    )
+                                r_mean_matrix[control_idx, demod_idx] = r_mean
+                                progress.set_postfix_str(
+                                    f"Ctrl={control_frequency/1000:.2f}kHz D3={frequency/1000:.2f}kHz"
                                 )
-                            r_mean_matrix[control_idx, demod_idx] = r_mean
-                            progress.set_postfix_str(
-                                f"Ctrl={control_frequency/1000:.2f}kHz D3={frequency/1000:.2f}kHz"
-                            )
-                            progress.update(1)
-                    finally:
-                        set_temp(True)
-                        time.sleep(params.temp_recovery_time_s)
-                        _save_raw_matrix(
-                            raw_matrix_path,
-                            r_mean_matrix,
-                            control_axis,
-                            envelope_axis,
-                            demod3_axis,
-                        )
+                                progress.update(1)
+                        finally:
+                            pending.add(_save_raw_matrix, raw_matrix_path, r_mean_matrix,
+                                        control_axis, envelope_axis, demod3_axis)
+                            set_temp(True)
+                            time.sleep(params.temp_recovery_time_s)
         finally:
             progress.close()
             r_collector.close()

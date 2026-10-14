@@ -79,14 +79,14 @@ class DCScanTests(unittest.TestCase):
     def test_parameters_and_saved_defaults(self):
         saved = ADAPTER.defaults()
         self.assertEqual(saved.validate(), [])
-        self.assertEqual(saved.schema_version, 3)
+        self.assertEqual(saved.schema_version, StaticSensitivityParams.schema_version)
         fields = {item["name"] for item in saved.schema()["fields"]}
         self.assertIn("dispersion_steps", fields)
         self.assertIn("dispersion_duration_s", fields)
         self.assertFalse(fields & {"dispersion_samples_per_step", "dispersion_sample_interval_s"})
         self.assertFalse(fields & {"dispersion_fit_skip_start", "dispersion_fit_skip_end"})
         self.assertFalse(fields & {"ramp_freq", "ramp_symmetry", "daq_duration", "daq_trigger_channel", "time_sequence"})
-        for overrides in (dict(dispersion_steps=6), dict(dispersion_step_settle_s=-1),
+        for overrides in (dict(dispersion_steps=6), dict(system_settle_s=-1,),
                           dict(dispersion_start_v=11), dict(dispersion_stop_v=-1),
                           dict(dispersion_duration_s=0),
                           dict(dispersion_duration_s=float("nan")), dict(hf2_demod_rate=float("inf")),
@@ -318,7 +318,7 @@ class DCScanTests(unittest.TestCase):
             public = client.get("/api/experiments/static-sensitivity").json()
             self.assertIn("直流", public["description"])
             schema = client.get("/api/experiments/static-sensitivity/schema").json()
-            self.assertEqual(schema["schema_version"], 3)
+            self.assertEqual(schema["schema_version"], StaticSensitivityParams.schema_version)
             self.assertIn("dispersion_steps", {field["name"] for field in schema["fields"]})
             preflight = client.post("/api/experiments/static-sensitivity/preflight", json={"parameters": {"dispersion_steps": 2}}).json()
             self.assertFalse(preflight["ok"])

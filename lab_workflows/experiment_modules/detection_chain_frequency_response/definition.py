@@ -33,7 +33,7 @@ DEFINITION = ExperimentDefinition(
     category="calibration",
     family="frequency",
     variant="baseline",
-    description='对照 XY 正弦控制噪声谱的 锁相放大器 解调和采样设置，但关闭输入 AC 耦合；扫描 Probe AOM AM 频率并采集 Demod0 Y 谱峰，零基带点不参与响应及归一化。无论 Pump 光功率多少，每点采集期间都关闭温控并恢复，以检查不可控噪声下降来源。TEC103 不可连接时由外部软件维持温度。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。',
+    description=('对照 XY 正弦控制噪声谱的 锁相放大器 解调和采样设置，但关闭输入 AC 耦合；扫描 Probe AOM AM 频率并采集 Demod0 Y 谱峰，零基带点不参与响应及归一化。无论 Pump 光功率多少，每点采集期间都关闭温控并恢复，以检查不可控噪声下降来源。TEC103 不可连接时由外部软件维持温度。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
     data_type="Detection_Chain_Frequency_Response",
     required_devices=("DG4000", "DG900", "锁相放大器"),
     required_mapping_keys=(
@@ -60,7 +60,7 @@ DEFINITION = ExperimentDefinition(
         "实验结束后关闭 Probe AOM 载波和 AM 输出。",
         "取消或异常也恢复 Temp_Switch 为 5 V DC，物理输出保持 ON。",
     ),
-    schema_provider=ADAPTER.schema,
+    schema_provider=ADAPTER.schema, schema_version=ADAPTER.params_type.schema_version,
     defaults_saver=ADAPTER.save_defaults,
     preflight_runner=preflight,
     derive_runner=ADAPTER.derive,

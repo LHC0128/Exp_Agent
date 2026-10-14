@@ -1,7 +1,7 @@
 # 正式实验迁移状态
 
-本清单于 2026-10-11 按 `lab_workflows/experiments/registry.py` 核对：共 60 个正式实验，
-其中 43 个为新模式、17 个为旧模式。后续新增或迁移实验时同步更新本表；运行时以注册表为准。
+本清单于 2026-10-14 按 `lab_workflows/experiments/registry.py` 核对：共 61 个正式实验，
+其中 44 个为新模式、17 个为旧模式。后续新增或迁移实验时同步更新本表；运行时以注册表为准。
 
 实验注册表用 `execution_mode` 区分两种执行方式：
 
@@ -58,6 +58,7 @@
 | `rf-sensitivity-direct-aw-frequency` | `lab_workflows/experiment_modules/rf_sensitivity_direct_aw_frequency/` | 新模式 |
 | `rf-sensitivity-aw` | `lab_workflows/experiment_modules/rf_sensitivity_direct_aw/` | schema v2，DirectAW；16 个采集 / 4 个分析节点的分步会话，XYZ 共用时序信号2主输出触发，历史仅接纳新格式 |
 | `rf-sensitivity-aw-r` | `lab_workflows/experiment_modules/rf_sensitivity_direct_aw_r/` | 新模式 |
+| `rf-sensitivity-aw-known-noise` | `lab_workflows/experiment_modules/rf_sensitivity_aw_known_noise/` | 新模式；固定噪声 ON、同频控制多选、逐点物理求和归一化，独立版本标定与分步采集/分析 |
 | `t2-calibration` | `lab_workflows/experiment_modules/t2_calibration/` | 新模式 |
 | `xy-direct-aw-dc-calibration` | `lab_workflows/experiment_modules/xy_direct_aw_dc_calibration/` | 新模式 |
 

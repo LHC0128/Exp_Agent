@@ -1,4 +1,5 @@
 """DAQ 准备、逐点采集和解调器恢复。"""
+from ...steps.acquisition_window import acquisition_window, DeferredAcquisitionWrites
 from datetime import datetime
 from pathlib import Path
 import time
@@ -31,7 +32,6 @@ def prepare_daq(devices, params, calibrated_phase):
     expected_rate = nearest_scope_rate(params.hf2_daq_rate) if acquisition_module(
         devices["hf2"].model, params.hf2_daq_rate, getattr(devices["hf2"], "acquisition_mode", "auto")) == "scope" else rate
     settings = welch_settings(expected_rate, params.hf2_daq_duration, params.analysis_bin_width_hz)
-    wait(0.2)
     return rate, int(rate * params.hf2_daq_duration), settings
 
 
@@ -53,28 +53,43 @@ def save_config(path, config):
     temporary.replace(path)
 
 
+def initialize_run_directory(ctx, data_type, *, for_scan=False):
+    """首次配置前保存初始快照；第一次扫描复用，后续重扫创建独立目录。"""
+    if ctx.run_dir is None or (for_scan and getattr(ctx, "scan_started", False)):
+        timestamp = datetime.now().strftime("%m%d_%H%M")
+        base = ctx.root / "data" / data_type
+        base.mkdir(parents=True, exist_ok=True)
+        suffix = 0
+        while True:
+            run_dir = base / (f"{timestamp}_{ctx.params.run_tag}" + (f"_{suffix:02d}" if suffix else ""))
+            try:
+                run_dir.mkdir()
+                break
+            except FileExistsError:
+                suffix += 1
+        (run_dir / "raw").mkdir()
+        (run_dir / "results").mkdir()
+        config = build_run_config(ctx.params, ctx.root, ctx.clock_sources, timestamp, *ctx.axes)
+        config.update(experiment_id=ctx.experiment_id, experiment_type=data_type,
+                      completion_status="initializing", initial_temperature_c=None,
+                      workflow_session_id=ctx.session_id)
+        save_config(run_dir / "experiment_config.yaml", config)
+        ctx.run_dir = run_dir
+        ctx.scan_started = False
+    if for_scan:
+        ctx.scan_started = True
+    return ctx.run_dir
+
+
 def acquire_scan(ctx):
     params, mapping, limits = ctx.params, ctx.mapping, ctx.limits
     hfi, tec, dg_comp, dg_temp = (ctx.devices[key] for key in ("hf2", "tec", "dg_comp", "dg_temp"))
     target_frequencies, envelopes = ctx.axes
     xy_phase = ctx.xy_result.final_phase_deg
     actual_rate_daq, grid_cols, settings = ctx.daq_settings
-    timestamp = datetime.now().strftime("%m%d_%H%M")
-    base = ctx.root / "data" / EXPERIMENT_TYPE
-    base.mkdir(parents=True, exist_ok=True)
-    name = f"{timestamp}_{params.run_tag}"
-    suffix = 0
-    while True:
-        run_dir = base / (name if suffix == 0 else f"{name}_{suffix:02d}")
-        try:
-            run_dir.mkdir()
-            break
-        except FileExistsError:
-            suffix += 1
-    ctx.run_dir = run_dir
+    run_dir = initialize_run_directory(ctx, EXPERIMENT_TYPE, for_scan=True)
+    timestamp = run_dir.name[:9]
     raw_dir = run_dir / "raw"
-    raw_dir.mkdir()
-    (run_dir / "results").mkdir()
     config_saved = build_run_config(params, ctx.root, ctx.clock_sources, timestamp, target_frequencies, envelopes)
     config_saved["completion_status"] = "running"
     config_saved["workflow_session_id"] = ctx.session_id
@@ -103,63 +118,33 @@ def acquire_scan(ctx):
             check_cancelled()
 
             set_xy_sine_peak(dg_comp, envelope_v, xy_phase, params.xy_ctrl_quad, limits)
-            wait(0.3)
-
-            # 关闭温度开关（消除温控磁场干扰）
-            set_temp_switch(dg_temp, False, params, limits)
-
-            # 等待系统稳定
-            wait(params.xy_settle_time)
-
-            # 读取当前温度；失败不回刷进度，留到循环末 update 前一次性刷新
             temp_str = ""
-            try:
-                temp_now = tec.get_temperature(channel=1)
-                temp_str = f", T={temp_now:.1f}°C"
-            except WorkflowCancelled:
-                raise
-            except Exception:
-                pass
-
-            # 配置 HF2 DAQ 采集（每点独立配置）
-            daq_cfg = DAQConfig(
-                device=mapping["lockin_r"]["device_id"],
-                trigger_type=0,                  # 连续模式
-                duration=params.hf2_daq_duration,
-                grid_cols=grid_cols,
-                grid_rows=1,
-                grid_mode=2,
-                signal_paths=["sample.y"],       # 采集幅值信号
-            )
-
-            # 采集解调时域信号
-            try:
-                results = daq.acquire_data(
-                    hfi, daq_cfg, demod_idx=params.hf2_demod_idx,
-                    actual_rate=actual_rate_daq, requested_rate=params.hf2_daq_rate, timeout=params.hf2_daq_duration + 10.0,
-                    cancellation_check=check_cancelled, strict_cleanup=True,
-                )
-                waveform = results[0].values
-                capture_rate = result_rate(results, actual_rate_daq)
-                settings = welch_settings(capture_rate, len(waveform) / capture_rate, params.analysis_bin_width_hz)
-                config_saved["hf2_daq"].update(acquisition_metadata(results), actual_rate_Sa_s=capture_rate, **settings)
-                save_acquisition_metadata(raw_dir / f"waveform_C{i:04d}.npy", results)
-            except WorkflowCancelled:
-                raise
-            except Exception as e:
-                tqdm.write(
-                    f"  [{i:4d}/{params.target_noise_freq_points}] "
-                    f"Omega={target_freq_hz:.3f}Hz, V_env={envelope_v:.6f}V: "
-                    f"DAQ 采集失败: {e}"
-                )
-                waveform = np.array([np.nan])
-
-            check_cancelled()
-            # 保存原始波形（.npy 二进制格式）
-            np.save(raw_dir / f"waveform_C{i:04d}.npy", waveform)
-
-            # 恢复温度开关
-            set_temp_switch(dg_temp, True, params, limits, restore_wait=True)
+            daq_cfg = DAQConfig(device=mapping["lockin_r"]["device_id"], trigger_type=0,
+                duration=params.hf2_daq_duration, grid_cols=grid_cols, grid_rows=1,
+                grid_mode=2, signal_paths=["sample.y"])
+            with DeferredAcquisitionWrites() as pending:
+                with acquisition_window(
+                    lambda enabled: set_temp_switch(dg_temp, enabled, params, limits, restore_wait=enabled),
+                    wait, params.system_settle_s,
+                ):
+                    try:
+                        results = daq.acquire_data(
+                            hfi, daq_cfg, demod_idx=params.hf2_demod_idx,
+                            actual_rate=actual_rate_daq, requested_rate=params.hf2_daq_rate,
+                            timeout=params.hf2_daq_duration + 10.0,
+                            cancellation_check=check_cancelled, strict_cleanup=True,
+                        )
+                        waveform = results[0].values
+                        capture_rate = result_rate(results, actual_rate_daq)
+                        settings = welch_settings(capture_rate, len(waveform) / capture_rate, params.analysis_bin_width_hz)
+                        config_saved["hf2_daq"].update(acquisition_metadata(results), actual_rate_Sa_s=capture_rate, **settings)
+                        pending.add(save_acquisition_metadata, raw_dir / f"waveform_C{i:04d}.npy", results)
+                    except WorkflowCancelled:
+                        raise
+                    except Exception as error:
+                        tqdm.write(f"点 {i}: DAQ 采集失败: {error}")
+                        waveform = np.array([np.nan])
+                    pending.add(np.save, raw_dir / f"waveform_C{i:04d}.npy", waveform)
 
             pbar.set_postfix_str(
                 f"Omega={target_freq_hz/1e3:.2f}kHz, V={envelope_v:.3f}{temp_str}"

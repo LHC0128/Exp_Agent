@@ -49,6 +49,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import numpy as np
+from lab_workflows.steps import acquisition_window, DeferredAcquisitionWrites
 import yaml
 import time
 from datetime import datetime
@@ -92,6 +93,7 @@ def validate_safety_limit(name, value):
 
 
 # ========== 实验标识 ==========
+SYSTEM_SETTLE_S = 0.1  # 配置与温控门控共同稳定的采集前等待（秒）
 EXPERIMENT_TYPE = "bb_rpump_power_scan_burst"
 RUN_TAG = "rpump_eff"
 
@@ -154,7 +156,6 @@ SCALE_MAX = 10.0                         # 最大 V/div
 TEMP_SWITCH_CHANNEL = MAPPING.get("Temp_Switch", {}).get("channel", None)
 TEMP_SWITCH_OFF_V = 0.0                  # 关闭温控时的 TTL 电平
 TEMP_SWITCH_ON_V = 5.0                   # 开启温控时的 TTL 电平
-TEMP_SWITCH_OFF_DELAY_S = 0.1            # 关闭温控后等磁场衰减
 TEMP_SWITCH_ON_DELAY_S = 2.0             # 恢复温控后等回路稳定
 
 # ========== 温度控制 ==========
@@ -223,7 +224,7 @@ try:
     # ---- DG4000: Pump 调制 (CH1 AOM 载波 + CH2 门控 Burst) ----
     pump_mod_cfg = MAPPING["Pump_modulation"]
     time_seq_cfg = MAPPING["Time_sequence"]
-    assert pump_mod_cfg["resource"] == time_seq_cfg["resource"], \
+    assert pump_mod_cfg["resource"] == time_seq_cfg["resource"],\
         "Pump_modulation/Time_sequence 不在同一台 DG4000"
     dg_rf = create_signal_generator(pump_mod_cfg["resource"])
     dg_rf.connect()
@@ -313,7 +314,7 @@ acquirer = devices["acquirer"]
 # ---- 1. 温度控制 (等待稳定 ±1°C) ----
 validate_safety_limit("temperature", TEC_TEMPERATURE)
 configure_temperature_control(
-    tec, TEC_TEMPERATURE, tolerance_c=1.0, stable_reads=1
+    tec, TEC_TEMPERATURE,
 )
 
 # ---- 2. 主磁场 ----
@@ -524,7 +525,7 @@ def acquire_single_shot(pump_power_v, current_scale, scope_cfg_ref):
     """执行单次 burst pump shot 采集。
 
     温控开关策略：
-      - 采集开始前: Temp_Switch = 0V, 等 0.3s 让温控磁场衰减, 避免干扰 Bell-Bloom 信号
+      - 采集开始前: Temp_Switch = 0V, 等 SYSTEM_SETTLE_S 让配置与门控共同稳定, 避免干扰 Bell-Bloom 信号
       - 采集结束后: Temp_Switch = 5V, 等 1.0s 让温控回路重新稳定 (异常退出也会恢复)
 
     Parameters
@@ -541,75 +542,75 @@ def acquire_single_shot(pump_power_v, current_scale, scope_cfg_ref):
     # 1. 设置 Pump 光功率 DC 电压 (DG900 CH1 `Pump_laser_power` 通道)
     validate_safety_limit("Pump_laser_power", pump_power_v)
     dg_laser.setup_dc(pump_power_v, channel=pump_cfg["channel"])
-    time.sleep(0.05)
 
-    # 1b. 关闭温度开关 (温控通断产生的磁场会干扰原子信号)
     dg_temp_sw_dev = devices.get("dg_temp_sw")
-    temp_switch_was_off = False
-    if dg_temp_sw_dev is not None and TEMP_SWITCH_CHANNEL is not None:
-        dg_temp_sw_dev.setup_dc(TEMP_SWITCH_OFF_V, channel=TEMP_SWITCH_CHANNEL)
-        time.sleep(TEMP_SWITCH_OFF_DELAY_S)
-        temp_switch_was_off = True
+    def set_enabled(enabled):
+        if dg_temp_sw_dev is not None and TEMP_SWITCH_CHANNEL is not None:
+            value = TEMP_SWITCH_ON_V if enabled else TEMP_SWITCH_OFF_V
+            validate_safety_limit("Temp_Switch", value)
+            dg_temp_sw_dev.setup_dc(value, channel=TEMP_SWITCH_CHANNEL)
 
-    try:
-        # 2. 防御性 re-arm: 确保示波器处于 ARMED 状态等触发.
-        #    上一次 shot 末尾的 trigger_run() 已经把它设为 ARMED,
-        #    但偶尔 SCPI 通信失败会留下 STOP 态, 此处加保险.
-        sds_inst.trigger_run()
-        time.sleep(0.05)
+    # 防御性 re-arm 属于仪器准备，在关闭温控前完成。
+    sds_inst.trigger_run()
+    time.sleep(0.05)
+    pd_result = None
+    with DeferredAcquisitionWrites() as pending:
+        try:
+            with acquisition_window(set_enabled, time.sleep, SYSTEM_SETTLE_S):
+                # 3. 等待 burst ready 时间 (避免上一次 burst 重叠)
+                time.sleep(BURST_BURST_PERIOD_S + 0.05)
 
-        # 3. 等待 burst ready 时间 (避免上一次 burst 重叠)
-        time.sleep(BURST_BURST_PERIOD_S + 0.05)
+                # 4. 等待触发 (SDS NORMal 模式, CH4 RISing → t=0)
+                if not sds_inst.wait_for_trigger(timeout=BURST_BURST_PERIOD_S + 5.0):
+                    print(f"    ⚠ Pump power={pump_power_v:.3f}V 触发超时")
 
-        # 4. 等待触发 (SDS NORMal 模式, CH4 RISing → t=0)
-        if not sds_inst.wait_for_trigger(timeout=BURST_BURST_PERIOD_S + 5.0):
-            print(f"    ⚠ Pump power={pump_power_v:.3f}V 触发超时")
+                time.sleep(scope_cfg_ref.acquire_delay)
+                # [关键] trigger_stop 冻结当前波形, 防止下一次 burst 触发覆盖
+                sds_inst.trigger_stop()
+                time.sleep(0.02)
 
-        time.sleep(scope_cfg_ref.acquire_delay)
-        # [关键] trigger_stop 冻结当前波形, 防止下一次 burst 触发覆盖
-        sds_inst.trigger_stop()
-        time.sleep(0.02)
+                # 5. 只读 CH1 (PD); CH4 仅作触发源, 不读数据
+                pd_result = acquirer.acquire_channel(
+                    SDS_PD_CHANNEL, scope_cfg_ref.timebase_scale,
+                    scope_cfg_ref.horizontal_divisions,
+                    trim_points=actual_pts,
+                )
 
-        # 5. 只读 CH1 (PD); CH4 仅作触发源, 不读数据
-        pd_result = acquirer.acquire_channel(
-            SDS_PD_CHANNEL, scope_cfg_ref.timebase_scale,
-            scope_cfg_ref.horizontal_divisions,
-            trim_points=actual_pts,
-        )
-
-        # 6. 准备下一次触发 (re-arm 给下一轮)
-        sds_inst.trigger_run()
-        time.sleep(0.05)
-
-        signal = pd_result.voltage
-        time_s = pd_result.time
-
-        # 7. 自适应档位 (PD 通道)
-        new_scale, changed = auto_scale_signal(signal, current_scale)
-        if changed:
-            sds_inst.set_channel_scale(SDS_PD_CHANNEL, new_scale)
-            scope_cfg_ref.channels[0].scale = new_scale
-            current_scale = new_scale
-
-        # 8. burst 起止时刻由配置确定:
-        #    - t_burst_start = 0.0: 由 SDS 触发源 C4 RISing 边沿 (= sync 上升沿)
-        #    - t_burst_end   = BURST_DURATION_S: DG4000 burst 设置确定
-        t_burst_start_s = 0.0
-        t_burst_end_s = float(BURST_DURATION_S)
-
-        return {
-            "time_s": time_s,
-            "signal_v": signal,
-            "pump_power_v": pump_power_v,
-            "scale_used": current_scale,
-            "t_burst_start_s": t_burst_start_s,
-            "t_burst_end_s": t_burst_end_s,
-        }
-    finally:
-        # [安全] 无论正常返回或异常, 都恢复温控开关为 ON
-        if temp_switch_was_off:
-            dg_temp_sw_dev.setup_dc(TEMP_SWITCH_ON_V, channel=TEMP_SWITCH_CHANNEL)
             time.sleep(TEMP_SWITCH_ON_DELAY_S)
+            # 6. 准备下一次触发 (re-arm 给下一轮)
+            sds_inst.trigger_run()
+            time.sleep(0.05)
+
+            signal = pd_result.voltage
+            time_s = pd_result.time
+
+            # 7. 自适应档位 (PD 通道)
+            new_scale, changed = auto_scale_signal(signal, current_scale)
+            if changed:
+                sds_inst.set_channel_scale(SDS_PD_CHANNEL, new_scale)
+                scope_cfg_ref.channels[0].scale = new_scale
+                current_scale = new_scale
+
+            # 8. burst 起止时刻由配置确定:
+            #    - t_burst_start = 0.0: 由 SDS 触发源 C4 RISing 边沿 (= sync 上升沿)
+            #    - t_burst_end   = BURST_DURATION_S: DG4000 burst 设置确定
+            t_burst_start_s = 0.0
+            t_burst_end_s = float(BURST_DURATION_S)
+
+            return {
+                "time_s": time_s,
+                "signal_v": signal,
+                "pump_power_v": pump_power_v,
+                "scale_used": current_scale,
+                "t_burst_start_s": t_burst_start_s,
+                "t_burst_end_s": t_burst_end_s,
+            }
+        except BaseException:
+            if pd_result is not None:
+                pending.add(np.savez, run_dir / "raw" / f"recovery_shot_{time.time_ns()}.npz",
+                    time_s=pd_result.time, signal_v=pd_result.voltage,
+                    scale_used=current_scale, pump_power_v=pump_power_v)
+            raise
 
 # %% Cell 5b
 # ============================================================

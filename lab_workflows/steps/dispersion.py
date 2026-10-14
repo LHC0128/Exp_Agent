@@ -74,8 +74,8 @@ def _read_waveforms(raw: dict, base: str, data: dict) -> None:
 
 def acquire_dispersion_point(hf2, *, demod_idx: int, duration_s: float,
                              requested_rate: float, offset_v: float, path: Path,
-                             cancellation_check: Callable[[], None]) -> dict:
-    """采集一个稳定后的 DC 点；异常时保存能够读取的波形并保留原始异常。"""
+                             cancellation_check: Callable[[], None], pending=None) -> dict:
+    """只读取 DC 点；故障样本交给当前组缓存，在温控恢复后保存。"""
     dispersion_sample_count(requested_rate, duration_s)
     base = hf2.demod_path(demod_idx)
     rate = float(hf2.get_double(f"{base}/rate"))
@@ -172,7 +172,8 @@ def acquire_dispersion_point(hf2, *, demod_idx: int, duration_s: float,
         data["error"] = np.array(str(error) if error is not None else "")
         data["finished_unix_s"] = np.array(time.time())
         try:
-            save_scan(path, data)
+            if pending is not None:
+                pending.add(save_scan, path, data)
         except Exception as save_error:
             if error is None:
                 error = save_error

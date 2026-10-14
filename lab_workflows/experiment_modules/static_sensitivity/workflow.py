@@ -105,7 +105,7 @@ class Workflow:
             tag = self.params.run_tag if not suffix else f"{self.params.run_tag}_{suffix:02d}"
             try:
                 self.directory = create_run_directory(DATA_TYPE, tag, self.params.to_external(),
-                    schema_version=3, project_root=self.root)
+                    schema_version=self.params.schema_version, project_root=self.root)
                 break
             except FileExistsError:
                 suffix += 1
@@ -200,8 +200,6 @@ class Workflow:
         elif item == "A04":
             preparation.configure_initial_outputs(self)
             self.outputs.update(Z="OFF", 温控="ON")
-        elif item == "A05":
-            preparation.stabilize_temperature(self)
         elif item == "A06":
             excitation.configure_pump(self)
             self.outputs["Pump"] = "ON"

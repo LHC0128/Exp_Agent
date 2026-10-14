@@ -1,4 +1,5 @@
 """静磁场锁相配置、实际回读与 Bell-Bloom 校相。"""
+from ...steps.acquisition_window import acquisition_window
 
 import math
 
@@ -67,14 +68,12 @@ def calibrate(ctx):
     from .acquisition import RuntimeCancellation, set_temp_switch, wait_for_settle
 
     temp, channel = ctx.devices["dg_temp"], ctx.channels["Temp_Switch"]
-    set_temp_switch(temp, channel, False)
-    wait_for_settle(ctx.params.dispersion_temp_switch_off_settle_s)
-    result = calibrate_demod_phase(
-        ctx.devices["hf2"], PhaseCalibrationConfig(demod_idx=ctx.params.hf2_demod_idx),
-        cancellation=RuntimeCancellation(), settle_wait=wait_for_settle)
-    ctx.calibrated_phase = result.phase_shift_deg
-    ctx.state["phase_calibration"] = result.to_dict()
-    ctx.state["hf2_configuration"] = hf2_snapshot(ctx.devices["hf2"], ctx.params.hf2_demod_idx)
-    # 局部恢复失败交给统一收尾，保留校相的原始异常。
-    set_temp_switch(temp, channel, True)
+    with acquisition_window(lambda enabled: set_temp_switch(temp, channel, enabled), wait_for_settle, ctx.params.system_settle_s):
+        result = calibrate_demod_phase(
+            ctx.devices["hf2"], PhaseCalibrationConfig(demod_idx=ctx.params.hf2_demod_idx, settle_time=ctx.params.system_settle_s),
+            cancellation=RuntimeCancellation(), settle_wait=wait_for_settle)
+        ctx.calibrated_phase = result.phase_shift_deg
+        ctx.state["phase_calibration"] = result.to_dict()
+        ctx.state["hf2_configuration"] = hf2_snapshot(ctx.devices["hf2"], ctx.params.hf2_demod_idx)
+        # 局部恢复失败交给统一收尾，保留校相的原始异常。
     wait_for_settle(ctx.params.dispersion_temp_switch_on_settle_s)

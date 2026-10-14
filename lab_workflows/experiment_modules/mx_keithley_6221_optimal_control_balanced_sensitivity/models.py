@@ -1,6 +1,7 @@
 """Mx Keithley 6221 最优控制 平衡-灵敏度一体化实验参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 from dataclasses import dataclass
 
@@ -25,8 +26,11 @@ class MxKeithley6221OptimalControlBalancedSensitivityParams(
     的回退补偿值；平衡成功后由 workflow 用拟合工作点覆盖。
     """
 
-    schema_version = 1
+    schema_version = 2
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.1, 'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     balance_coarse_x_start_v: float = parameter(
         default=-0.05,
         external_name="BALANCE_COARSE_X_START_V",

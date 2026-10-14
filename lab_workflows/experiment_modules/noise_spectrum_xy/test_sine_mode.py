@@ -43,7 +43,7 @@ def scan_params():
         xy_ctrl_k_hz_per_v=1000.0, xy_ctrl_b_hz=0.0,
         hf2_daq_rate=1000.0, hf2_daq_duration=0.2,
         analysis_bin_width_hz=50.0, analysis_frequency_min_hz=10.0,
-        analysis_frequency_max_hz=300.0, xy_settle_time=0.2,
+        analysis_frequency_max_hz=300.0, system_settle_s=0.2,
         temp_switch_on_settle_s=0.25,
     )
 
@@ -244,7 +244,7 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
             hw.rates.assert_called()
         config = yaml.safe_load((run_dir / "experiment_config.yaml").read_text(encoding="utf-8"))
         self.assertEqual(params.to_external(), original)
-        self.assertEqual(config["schema_version"], 3)
+        self.assertEqual(config["schema_version"], NoiseSpectrumXYParams.schema_version)
         self.assertEqual(config["parameters"], original)
         self.assertEqual(config["xy_ctrl"]["XY_CTRL_PHASE_deg"], 80.0)
         self.assertEqual(config["hf2_daq"]["actual_rate_Sa_s"], 800.0)

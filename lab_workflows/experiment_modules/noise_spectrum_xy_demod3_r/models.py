@@ -1,6 +1,7 @@
 """XY DirectAW Demod3 R 噪声谱强类型参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 from lockin_amplifier import SignalInputConfig
 import math
@@ -11,6 +12,10 @@ from ...experiment_params import ExperimentParams, parameter
 
 @dataclass(slots=True)
 class NoiseSpectrumXYDemod3RParams(ExperimentParams):
+    schema_version: ClassVar[int] = 2
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'DEMOD3_FREQ_SETTLE_TIME_S': 0.2}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.2, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="demod3_r", external_name="RUN_TAG", label="运行标签", group="basic")
     control_freq_start_hz: float = parameter(default=200.0, external_name="CONTROL_FREQ_START_HZ", label="控制频率起点", unit="Hz", group="basic", minimum=0)
     control_freq_stop_hz: float = parameter(default=20000.0, external_name="CONTROL_FREQ_STOP_HZ", label="控制频率终点", unit="Hz", group="basic", minimum=0)
@@ -18,7 +23,6 @@ class NoiseSpectrumXYDemod3RParams(ExperimentParams):
     demod3_freq_start_hz: float = parameter(default=200.0, external_name="DEMOD3_FREQ_START_HZ", label="Demod3 解调频率起点", unit="Hz", group="basic", minimum=0.001)
     demod3_freq_stop_hz: float = parameter(default=20000.0, external_name="DEMOD3_FREQ_STOP_HZ", label="Demod3 解调频率终点", unit="Hz", group="basic", minimum=0.001)
     demod3_freq_points: int = parameter(default=200, external_name="DEMOD3_FREQ_POINTS", label="Demod3 解调频率点数", group="basic", minimum=2)
-    demod3_freq_settle_time_s: float = parameter(default=0.2, external_name="DEMOD3_FREQ_SETTLE_TIME_S", label="Demod3 切频稳定时间", unit="s", group="basic", minimum=0)
     demod3_acquisition_duration_s: float = parameter(default=0.1, external_name="DEMOD3_ACQUISITION_DURATION_S", label="Demod3 连续采集时长", unit="s", group="basic", minimum=0.001)
     temp_recovery_batch_points: int = parameter(default=25, external_name="TEMP_RECOVERY_BATCH_POINTS", label="每批 Demod3 点数", group="basic", minimum=1)
     temp_recovery_time_s: float = parameter(default=2.0, external_name="TEMP_RECOVERY_TIME_S", label="每批温控恢复时间", unit="s", group="basic", minimum=0)
@@ -74,10 +78,6 @@ class NoiseSpectrumXYDemod3RParams(ExperimentParams):
     sigin2_ac_coupling: bool = parameter(default=False, external_name="SIGIN2_AC_COUPLING", label="Signal Input 2 AC 耦合", group="advanced", visible=False)
     sigin2_impedance_ohm: int = parameter(default=1000000, external_name="SIGIN2_IMPEDANCE_OHM", label="Signal Input 2 阻抗", unit="Ω", group="advanced", minimum=1, visible=False)
 
-    temperature_tolerance_c: float = parameter(default=1.0, external_name="TEMPERATURE_TOLERANCE_C", label="温度稳定容差", unit="°C", group="advanced", minimum=0)
-    temperature_stable_reads: int = parameter(default=1, external_name="TEMPERATURE_STABLE_READS", label="温度连续稳定读数", group="advanced", minimum=1)
-    temperature_poll_interval_s: float = parameter(default=5.0, external_name="TEMPERATURE_POLL_INTERVAL_S", label="温度轮询间隔", unit="s", group="advanced", minimum=0.1)
-    temperature_timeout_s: float = parameter(default=1200.0, external_name="TEMPERATURE_TIMEOUT_S", label="温度稳定超时", unit="s", group="advanced", minimum=1)
     pump_laser_power: float = parameter(default=0.1, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", safety_key="Pump_laser_power")
     probe_laser_power: float = parameter(default=0.1, external_name="FIXED_PARAMS.Probe_laser_power", label="Probe 光功率", unit="V", group="basic", safety_key="Probe_laser_power")
     temperature: float = parameter(default=100.0, external_name="FIXED_PARAMS.temperature", label="气室温度", unit="°C", group="basic", safety_key="temperature")

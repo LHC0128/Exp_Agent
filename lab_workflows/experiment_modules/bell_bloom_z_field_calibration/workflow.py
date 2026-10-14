@@ -1,4 +1,5 @@
 """Bell Bloom Z DC × Pump 门控频率扫描，仅采集 R。"""
+from ...steps.acquisition_window import acquisition_window, DeferredAcquisitionWrites
 
 from lab_workflows.steps import initialize_lockin_inputs
 from lab_workflows.devices import create_lockin
@@ -89,9 +90,6 @@ def configure_outputs(params, devices, channels, mapping, directory):
     set_temperature_switch(devices["Temp_Switch"], True, channel=channels["Temp_Switch"])
     temperature = configure_temperature_control(
         devices["tec"], params.temperature_c, channel=mapping["temperature"]["channel"],
-        tolerance_c=params.temperature_tolerance_c, stable_reads=params.temperature_stable_reads,
-        poll_interval_s=params.temperature_poll_interval_s, timeout_s=params.temperature_timeout_s,
-        cancellation=RuntimeCancellation(),
     )
     carrier, carrier_channel = devices["Pump_modulation"], channels["Pump_modulation"]
     gate, gate_channel = devices["Time_sequence"], channels["Time_sequence"]
@@ -155,22 +153,21 @@ def set_demod_frequency(hf2, frequency):
 def acquire_point(params, devices, channels, directory, metadata, actual_rate, device_id):
     for attempt in range(params.r_point_max_attempts):
         check_cancelled()
-        try:
-            set_temperature_switch(devices["Temp_Switch"], False, channel=channels["Temp_Switch"])
-            sleep(params.temp_switch_off_lead_s)
-            sleep(params.frequency_settle_time_s)
-            payload = acquire_r(devices["hf2"], device_id=device_id, demod_idx=0,
-                                actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s, duration_s=params.frequency_duration_s)
-            summary = summarize_r(payload)
-            accepted = summary["r_std_v"] <= params.r_bad_point_std_threshold_v
-            filename = f"frequency_{metadata['frequency_index']:04d}_attempt_{attempt:02d}.npz"
-            # 在恢复温控前落盘，恢复失败也不丢掉刚采集的数据。
-            np.savez(directory / filename, time_s=payload["time_s"], r_v=payload["r"],
-                     actual_rate_sa_s=payload.get("actual_rate_Sa_s", actual_rate), attempt_index=attempt,
-                     quality_accepted=accepted, **metadata, **summary, **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
-        finally:
-            set_temperature_switch(devices["Temp_Switch"], True, channel=channels["Temp_Switch"])
-            time.sleep(params.temp_switch_on_lag_s)
+        with DeferredAcquisitionWrites() as pending:
+            try:
+                set_temperature_switch(devices["Temp_Switch"], False, channel=channels["Temp_Switch"])
+                sleep(params.system_settle_s)
+                payload = acquire_r(devices["hf2"], device_id=device_id, demod_idx=0,
+                                    actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s, duration_s=params.frequency_duration_s)
+                summary = summarize_r(payload)
+                accepted = summary["r_std_v"] <= params.r_bad_point_std_threshold_v
+                filename = f"frequency_{metadata['frequency_index']:04d}_attempt_{attempt:02d}.npz"
+                pending.add(np.savez, directory / filename, time_s=payload["time_s"], r_v=payload["r"],
+                         actual_rate_sa_s=payload.get("actual_rate_Sa_s", actual_rate), attempt_index=attempt,
+                         quality_accepted=accepted, **metadata, **summary, **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
+            finally:
+                set_temperature_switch(devices["Temp_Switch"], True, channel=channels["Temp_Switch"])
+                time.sleep(params.temp_switch_on_lag_s)
         check_cancelled()
         if accepted:
             return {**summary, "actual_rate_sa_s": float(payload.get("actual_rate_Sa_s", actual_rate))}, filename

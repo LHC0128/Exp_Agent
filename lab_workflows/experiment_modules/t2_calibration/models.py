@@ -14,8 +14,11 @@ from ...experiment_params import ExperimentParams, parameter
 class T2CalibrationParams(ExperimentParams):
     """保持旧脚本外部键稳定的 T2 标定参数。"""
 
-    schema_version: ClassVar[int] = 2
+    schema_version: ClassVar[int] = 3
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    system_settle_s: float = parameter(default=0.5, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="optical_FID", external_name="RUN_TAG", label="运行标签", group="basic")
     pump_power: float = parameter(default=0.1, external_name="PUMP_POWER", label="Pump 光 DC 功率", unit="V", group="basic", safety_key="Pump_laser_power")
     aom_carrier_freq: float = parameter(default=100.0e6, external_name="AOM_CARRIER_FREQ", label="AOM 载波频率", unit="Hz", visible=False, minimum=1)

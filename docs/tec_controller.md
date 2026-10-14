@@ -120,6 +120,8 @@ with TECInstrument("COM13") as tec:
 
 ## 实验中的可选连接
 
+普通气室实验连接成功时，只调用 `set_target_temperature()` 下发 UI 目标温度，不调用 TEC 启停或温度判稳；快照中的未知实测温度为 `null`。`Temp_Switch` 采集门控仍独立执行，详见[统一采集规范](acquisition_timing.md)。
+
 正式实验会尝试连接 `params/mapping.yaml` 中配置的 TEC 串口（当前为 `COM13`）。若该串口
 已被 TEC 桌面温控软件占用，实验会输出警告并继续运行：
 

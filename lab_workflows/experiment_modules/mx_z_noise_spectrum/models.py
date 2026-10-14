@@ -1,6 +1,7 @@
 """Mx 构型 Z 直流控制噪声谱参数。"""
 
 from __future__ import annotations
+from typing import ClassVar
 
 from dataclasses import dataclass
 
@@ -12,8 +13,11 @@ from ...experiment_params import ExperimentParams, parameter
 class MxZNoiseSpectrumParams(ExperimentParams):
     """主场/Pump 沿 Z、Probe 沿 X，扫描 Z DC 并采集 Demod0 R。"""
 
-    schema_version = 1
+    schema_version = 2
 
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'TEMP_SWITCH_OFF_SETTLE_S': 0.3}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.3, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     run_tag: str = parameter(default="mx_z_noise", external_name="RUN_TAG", label="运行标签", group="basic")
     target_detuning_start_hz: float = parameter(default=0.0, external_name="TARGET_DETUNING_START_HZ", label="目标失谐起点", unit="Hz", group="basic", minimum=0.0)
     target_detuning_stop_hz: float = parameter(default=50000.0, external_name="TARGET_DETUNING_STOP_HZ", label="目标失谐终点", unit="Hz", group="basic", minimum=0.0)
@@ -26,7 +30,6 @@ class MxZNoiseSpectrumParams(ExperimentParams):
     acquisition_duration_s: float = parameter(default=1.0, external_name="ACQUISITION_DURATION_S", label="每点采集时长", unit="s", group="basic", minimum=0.001)
     requested_rate_sa_s: float = parameter(default=100000.0, external_name="REQUESTED_RATE_SA_S", label="锁相放大器 请求采样率", unit="Sa/s", group="basic", minimum=1.0)
     welch_nperseg: int = parameter(default=10000, external_name="WELCH_NPERSEG", label="Welch 每段点数", group="advanced", minimum=8)
-    temp_switch_off_settle_s: float = parameter(default=0.3, external_name="TEMP_SWITCH_OFF_SETTLE_S", label="温控关闭后统一等待", unit="s", group="basic", minimum=0.0)
     temp_switch_on_settle_s: float = parameter(default=1.0, external_name="TEMP_SWITCH_ON_SETTLE_S", label="温控恢复后等待", unit="s", group="basic", minimum=0.0)
 
     demod_idx: int = parameter(default=0, external_name="DEMOD_IDX", label="锁相放大器 Demod 索引", group="advanced", minimum=0)
@@ -35,10 +38,6 @@ class MxZNoiseSpectrumParams(ExperimentParams):
     demod_time_constant_s: float = parameter(default=1.0e-6, external_name="DEMOD_TIME_CONSTANT_S", label="噪声解调时间常数", unit="s", group="advanced", minimum=0.0)
     demod_order: int = parameter(default=4, external_name="DEMOD_ORDER", label="噪声解调阶数", group="advanced", minimum=1)
 
-    temperature_tolerance_c: float = parameter(default=1.0, external_name="TEMPERATURE_TOLERANCE_C", label="初始温度稳定容差", unit="°C", group="advanced", minimum=0.0)
-    temperature_stable_reads: int = parameter(default=1, external_name="TEMPERATURE_STABLE_READS", label="初始温度连续稳定读数", group="advanced", minimum=1)
-    temperature_poll_interval_s: float = parameter(default=5.0, external_name="TEMPERATURE_POLL_INTERVAL_S", label="温度轮询间隔", unit="s", group="advanced", minimum=0.1)
-    temperature_timeout_s: float = parameter(default=1200.0, external_name="TEMPERATURE_TIMEOUT_S", label="温度稳定超时", unit="s", group="advanced", minimum=1.0)
 
     pump_carrier_frequency_hz: float = parameter(default=100e6, external_name="PUMP_CARRIER_FREQUENCY_HZ", label="Pump AOM 载波频率", unit="Hz", group="advanced", minimum=1.0)
     pump_carrier_amplitude_vpp: float = parameter(default=0.18, external_name="PUMP_CARRIER_AMPLITUDE_VPP", label="Pump AOM 载波幅度", unit="Vpp", group="advanced", minimum=0.0, maximum=0.18, safety_key="Pump_modulation")

@@ -216,7 +216,7 @@ def run(params: ScopeCaptureParams, *, project_root: Path | None = None,
                     "channel": temp_channel,
                     "off_voltage_v": 0.0,
                     "on_voltage_v": 5.0,
-                    "off_settle_s": params.temperature_switch_off_settle_s,
+                    "off_settle_s": params.system_settle_s,
                     "on_settle_s": params.temperature_switch_on_settle_s,
                 }
             )
@@ -232,7 +232,7 @@ def run(params: ScopeCaptureParams, *, project_root: Path | None = None,
             result, t, v, rate = temperature_gated_acquire(
                 temp_switch=temp_switch,
                 temp_channel=temp_channel,
-                off_settle_s=params.temperature_switch_off_settle_s,
+                off_settle_s=params.system_settle_s,
                 on_settle_s=params.temperature_switch_on_settle_s,
                 acquire=acquire_waveform,
                 check_cancelled=check_cancelled,
