@@ -2,7 +2,63 @@
 
 面向 Bell-Bloom 磁力仪实验的自动化仓库，覆盖仪器控制、参数扫描、原始数据采集、离线分析与绘图。仓库同时保留交互式 Notebook 和可重复运行的 Python 脚本，适合实验调试、批量采集和后处理复现。
 
+## 初次安装
+
+适用于第一次从 GitHub 获取本仓库并部署到实验电脑的场景。建议用 `git clone`
+而不是下载 ZIP：导航“检查更新”页的 Git 仓库检测和实验验证器都依赖 Git 检出，
+ZIP 也能启动 GUI，但更新与自动验证功能不完整。
+
+- Python 要求：`>=3.10`；本地包名：`exp-agent`；虚拟环境：`agent_exp_env\`
+- GUI 前端另需 Node.js / npm，当前 Vite 要求 Node.js `^20.19.0 || >=22.12.0`，
+  升级依赖后以锁文件中的 `engines` 为准
+
+希望一条命令完成，或由 AI 编码代理代为安装时，直接运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File setup.ps1
+```
+
+脚本幂等、可重复运行，自动完成下述全部步骤，任一步失败即停止并报告，不自动降级；
+`-SkipFrontend` 可跳过前端依赖。让 AI 代理安装时，可让它运行本脚本并原样转述输出，
+不要在未告知的情况下改动依赖版本或跳过失败的步骤。
+
+手动逐步安装如下（与脚本等价）；在仓库根目录按顺序执行，已有虚拟环境时跳过创建直接复用：
+
+```powershell
+# 1. 虚拟环境、本地包与仪器通信/分析依赖
+if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
+    python -m venv agent_exp_env
+}
+.\agent_exp_env\Scripts\python.exe -m pip install -e .
+.\agent_exp_env\Scripts\python.exe -m pip install pyvisa pyvisa-py pyserial zhinst numpy scipy matplotlib pyyaml jupyter
+
+# 2. GUI 后端与前端依赖
+.\agent_exp_env\Scripts\python.exe -m pip install -r GUI\requirements.txt
+.\agent_exp_env\Scripts\python.exe -m pip check
+Set-Location GUI\frontend
+npm ci
+Set-Location ..\..
+```
+
+`pip install -e .` 安装 `src/` 下的驱动和根目录的 `lab_workflows`，同时按
+`pyproject.toml` 安装 TOPTICA SDK 与进度条；仪器通信、分析和 GUI 依赖需按上面分组安装。
+根目录 `requirements.txt` 是历史环境快照，不替代上述说明。
+
+安装完成后双击根目录 **`start_gui.bat`** 启动 GUI，详见
+[GUI 基础使用](#gui-基础使用)。没有连接实验仪器时 GUI 也能正常启动，可浏览界面与
+历史数据；运行正式实验前需先在 GUI 中完成设备库与物理量映射配置。
+
+需要导出当前环境时：
+
+```powershell
+.\agent_exp_env\Scripts\python.exe -m pip freeze > requirements.txt
+```
+
+保存前将本项目的可编辑安装条目规范为 `-e .`，移除机器路径和带凭据的地址。
+
 ## 近期更新（2026 年 10 月）
+
+- 新增 `setup.ps1` 一键安装脚本，README 顶部集中「初次安装」说明：幂等完成虚拟环境、本地包、仪器/分析与 GUI 前后端依赖，人类与 AI 编码代理均可直接运行；任一步失败即停止报告，不自动降级。
 
 - [XY 已知可控噪声谱](docs/noise_spectrum_xy_ctrl_known_noise.md)提供采集/分析两列交互流程：节点编辑、依赖检查、分步会话和重跑；K_Z 手动输入（Hz/V）并保存为本轮快照，增益使用静磁场 v3 历史曲线，未选曲线时完成谱分离并等待标定，保留原脚本和历史数据兼容。
 - [XY 已知不可控 Probe AM 噪声谱](docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md)同样提供分步流程图：A08 专属载波节点、A12 双噪声上传、A14 配对扫描可选 Z 持续注入；分析 B01–B04 独立验收背景与可控响应，移动峰不足时按运行 K/B 输出暂定轴并标记质量未通过。
@@ -99,104 +155,66 @@ results/                  # 结果图表
 
 ## GUI 基础使用
 
-示波器采集位于“实验中心 → 示波器采集”，支持通道/模式/边沿/电平触发设置、V/div 与垂直偏置、时域量程与超量程提示、单通道时间/频域显示、软件 Welch PSD、
-历史叠加、独立显示/隐藏、颜色和选定历史删除，详见 [示波器采集](docs/scope_capture.md)。
-
 GUI 是运行在实验电脑本机的 Web 控制台，可用于读取和设置 GS200、Keithley 6221 电流源、
 TOPTICA DLC pro Probe 激光、DG4000、DG900 Pro、HF2 / MFLI、SDS 示波器等仪器，并运行仓库中
-已接入的实验流程。
+已接入的实验流程。示波器采集位于“实验中心 → 示波器采集”，详见
+[示波器采集](docs/scope_capture.md)。
+
+实验页面仅保留「运行 / 历史」主 Tab；运行页的可执行交互流程图与可编辑原图下载继续使用。
+总览页和实验页的静态架构图已撤下，原 HTML/JSON 与验收附件见[架构图归档](docs/old/architecture/README.md)。
 
 ### 首次安装
 
-先完成下文的[环境准备](#环境准备)。前端需要 Node.js / npm，当前 Vite 要求
-Node.js `^20.19.0 || >=22.12.0`；升级依赖后以锁文件中的 `engines` 为准。
-在仓库根目录 `D:\Code\exp_agent` 打开 PowerShell，安装 GUI 依赖：
-
-```powershell
-.\agent_exp_env\Scripts\python.exe -m pip install -r GUI\requirements.txt
-Set-Location GUI\frontend
-npm ci
-Set-Location ..\..
-```
-
+按顶部[初次安装](#初次安装)完成虚拟环境、本地包与 GUI 前后端依赖。
 开发模式直接使用前端源码，支持 HMR，无需先运行 `npm run build`。
 
 ### 启动 GUI
 
-完成首次安装后，在文件资源管理器中双击仓库根目录的 **`start_gui.bat`**，
-即可配置 Tailscale 私人 HTTPS 入口、启动前后端，并在 Vite 就绪后自动打开默认浏览器。
-脚本按自身位置定位仓库，不依赖当前工作目录；执行策略仅对启动的 PowerShell 进程生效，
-不会修改系统设置，也不会自动安装依赖。
+完成首次安装后，双击仓库根目录的 **`start_gui.bat`**，即可配置 Tailscale 私人 HTTPS
+入口、启动前后端，并在 Vite 就绪后自动打开默认浏览器。也可在仓库根目录运行
+`.\GUI\start.ps1`（默认不自动打开浏览器，附加 `-OpenBrowser` 可开启；仅本机运行、
+无需 Tailscale 时加 `-LocalOnly`）。
 
-也可以在仓库根目录运行（默认不自动打开浏览器；附加 `-OpenBrowser` 可开启）：
+启动成功后，浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)；Vite 在当前窗口
+运行，将 `/api` 请求代理到独立窗口中的 FastAPI 后端
+[http://127.0.0.1:8000](http://127.0.0.1:8000)，两个服务只监听本机地址。笔记本安装
+Tailscale 并加入同一网络后，可用启动窗口显示的 `https://<本机的 Tailscale 域名>` 远程
+访问，局域网和外网使用同一地址；具体设置与手动命令见
+[GUI 远程访问说明](GUI/README.md#笔记本浏览器访问)。
 
-```powershell
-.\GUI\start.ps1
-```
-
-启动成功后，浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)。
-Vite 在当前窗口运行，将 `/api` 请求代理到独立窗口中的 FastAPI 后端
-[http://127.0.0.1:8000](http://127.0.0.1:8000)。两个服务只监听本机地址。
-启动器自动读取当前 Tailscale 域名、放行 Vite 的对应域名，并使用 Serve 将私人 HTTPS 请求
-转发到 5173。笔记本安装 Tailscale 并加入同一网络后，打开启动窗口显示的
-`https://<本机的 Tailscale 域名>` 即可访问，局域网和外网使用同一个地址。
-首次启用 HTTPS 时，按 Tailscale 命令显示的链接在账户页面完成一次设置；这一步完成后
-后续双击会自动复用配置。具体设置与手动命令见 [GUI 远程访问说明](GUI/README.md#笔记本浏览器访问)。
-按 Ctrl+C 只结束当前 Vite 进程；后端需要在自己的窗口停止或关闭。修改 Python 后端代码时，
-可在总览页点击“重启后端”；按钮仅在没有运行或排队任务时启用，Vite 和浏览器页面会保持运行，
-但后端内存中的任务状态会清空。停止服务前应先通过 GUI 正常停止实验或功能模块，
-服务退出不等于仪器安全收尾。
-
-启动器会检查 Python、npm、前端依赖、Tailscale 登录状态以及 8000 / 5173 端口；缺失依赖或端口占用时
-报错退出，不会杀进程或自动换端口。后端 20 秒内未监听时不再启动前端。
-双击启动失败时窗口会保留错误并等待按键；已启动的后端仍需单独停止。
-同一 HTTPS 入口已有其他路径、443 转发或公网 Funnel 配置时也会报错，保留原配置。仅本机运行、无需 Tailscale 时使用：
-
-```powershell
-.\GUI\start.ps1 -LocalOnly -OpenBrowser
-```
-
-如果需要单独启动后端，在另一个终端执行：
-
-```powershell
-Set-Location D:\Code\exp_agent\GUI
-..\agent_exp_env\Scripts\python.exe -m backend
-```
-
-前端开发服务的独立启动方式见 [GUI 开发说明](GUI/README.md#启动)。若只运行后端，
-需先在 `GUI/frontend/` 执行 `npm run build`，才能在 8000 端口访问构建后的页面；
-更新前端源码后需要重新构建。
+启动器检查 Python、npm、前端依赖、Tailscale 登录状态和 8000 / 5173 端口；缺失依赖或
+端口冲突时报错退出，不杀进程、不自动换端口、不自动安装依赖。按 Ctrl+C 只结束当前
+Vite 进程，后端需在自己的窗口停止或关闭；修改 Python 后端代码后可在总览页点击
+“重启后端”（仅在没有运行或排队任务时可用）。停止服务前应先通过 GUI 正常停止实验或
+功能模块，服务退出不等于仪器安全收尾。单独启动前后端、构建 dist 部署等更多细节见
+[GUI 开发说明](GUI/README.md#启动)。
 
 ### 基本操作
 
-1. 进入“仪器控制”的“物理量映射”标签，统一选择 USB/IP 设备；设备切换联动同机组及共享通道组并保留通道，目标通道不足时拒绝切换，整批保存。
-2. 在“设备库”中维护型号、Resource、连接参数、能力、参考时钟和网络扫描地址（`devices.yaml` 顶层 `network_resources`）；先保存候选地址，再扫描确认型号与序列号并逐台入库。VISA 扫描只执行资源枚举与 `*IDN?` 查询。信号源用途卡片内的 Resource 下拉选择实际仪器，并联动同机/共享通道组、保留通道；单张“锁相放大器”卡片统一选择 HF2 或 MFLI。两类选择均为草稿，点击“保存设备库”后与设备配置一起生效；硬件任务期间可编辑草稿，结束后才可保存。信号源通道允许在不同实验中复用，同一次实验独立使用的物理量占用同一通道时预检拒绝启动。
-3. “设备控制”以多列网格展示全部物理量，可逐项“读取”，也可点击“连接并读取全部”；页面打开时不会自动连接硬件。
-4. 信号发生器常用波形参数直接显示，波形细节、负载、单位、调制和 Burst 位于折叠的高级区；高阻回读 `9.9E+37` 在负载框显示并提交为 `INF`。`rf_coil` 作为历史别名不单独显示，统一由“Y方向磁场”面板控制。
-5. 点击“应用并回读”；写入前会检查当前 mapping key 的 `params/safety_limits.yaml`，写入后以实际回读值更新页面。非 Vpp 状态仅允许回读、关闭输出或切换为 Vpp。
-6. 在“功能模块 → Z 任意波控制”选择闭环冻结结果，离线查看 V–t 图，再选择“仅加载，保持关闭”或“加载并启动”。可联动时序信号2并编辑触发参数；Z 面板提供快捷入口。详见 [任意波控制说明](docs/signal_generator.md#gui-z-任意波控制)。
-7. 实验结束后，先按需要执行模块的“停止”，再分别停止 Vite 与后端。仅停止服务不会自动关闭已启动的任意波。
+仪器选择与日常操作（物理量映射、设备库维护、设备控制读写与安全限值检查、Z 任意波
+控制的加载与停止顺序）的完整步骤见 [GUI 使用说明](GUI/README.md#基本操作)。要点：
 
-“实验中心”默认展示[注册表](lab_workflows/experiments/registry.py)中的未归档正式实验，提供动态参数、默认值保存、
-无副作用预检、运行日志、安全停止和离线重新分析。每张实验卡片同时显示对应的
-采集程序和独立分析程序；没有独立分析脚本时会明确标注。`*.ipynb` 不进入实验中心，
-`*_plot.py` 只作为对应实验的分析器。卡片还会明确显示“新模式”或“旧模式”；完整
-清单与执行模式见[实验迁移状态](docs/experiment_migration_status.md)。
+- 设备选择在“物理量映射”与“设备库”中统一完成：切换联动同机/共享通道组并保留通道，
+  目标通道不足时拒绝；均为草稿，点击保存后整批生效。信号源通道允许跨实验复用，
+  同一次实验独立使用的物理量占用同一通道时预检拒绝启动。
+- 设备写入前会检查当前 mapping key 在 `params/safety_limits.yaml` 的上下限，写入后以
+  实际回读值更新页面。
+- 实验结束后先执行模块的“停止”，再分别停止 Vite 与后端；仅停止服务不会自动关闭
+  已启动的任意波。
 
-在“管理分类与实验信息”中可逐项归档或恢复；归档实验仅在“已归档”入口显示，
-保留原分类、配置链接、运行与历史功能，不删除数据或停止活动任务。状态保存到
-`params/experiment_catalog.yaml`，重启或换浏览器仍有效。目录加载通过单请求复用设备映射、
-其他页面和图表按需加载来减少等待，归档本身不作为提速依据。
+“实验中心”默认展示[注册表](lab_workflows/experiments/registry.py)中的未归档正式实验，提供动态参数、
+默认值保存、无副作用预检、运行日志、安全停止和离线重新分析。每张实验卡片显示对应的
+采集/分析程序和“新模式 / 旧模式”标记；`*.ipynb` 不进入实验中心，`*_plot.py` 只作为
+对应实验的分析器。实验可在“管理分类与实验信息”中逐项归档或恢复，状态保存在
+`params/experiment_catalog.yaml`；完整清单与执行模式见
+[实验迁移状态](docs/experiment_migration_status.md)。环境更新集中在导航“检查更新”页，
+详见 [GUI/README.md](GUI/README.md#检查更新)；更详细的开发说明见 [GUI/README.md](GUI/README.md)。
 
-启动器会核对 8000 和 5173 端口；重复双击或遇到冲突时，确认占用进程并停止对应旧服务，再重新启动。
-总览页的“重启后端”仅适用于由现有启动入口正常运行的后端；若新代码启动失败，需检查后端窗口并人工修复后重启。
-导航“检查更新”页集中检测 Git 仓库、全 venv Python 依赖、前端 npm、全局 CLI
-（codegraph 含其 MCP server、playwright cli、pi、mineru）、olcli 隔离环境、AI Skills
-清单与工具链版本，勾选后一键更新；更新任务不占用硬件队列，详见
-[GUI/README.md](GUI/README.md#检查更新)。
-更详细的开发说明见 [GUI/README.md](GUI/README.md)。
-
-锁相设备采用相同的 Python Core API 函数入口，支持相位、频率、输出设置、解调 X/Y/R 和内置 Scope 采集。MFLI 已配置为 `dev30661`，通过 USB RNDIS 地址 `192.168.150.246:8004` 访问内置服务器（内部接口 `PCIe`），使用外部参考，启用选件后的频率上限为 5 MHz。仍要求双主电压输入的实验选择 MFLI 时禁止启动；DirectAW 系列已显式支持辅助输入物理回采与 MFLI 内部 AuxOut 回采；尚未确认安全电压范围的锁相输出写入保持禁用。接口、硬件差异与实机验收见 [锁相模块说明](docs/lockin_amplifier.md)，受限实验清单见 [锁相实验兼容性](docs/legacy_lockin_experiments.md)。
+锁相设备采用统一的 Python Core API 函数入口，支持相位、频率、输出设置、解调 X/Y/R 和
+内置 Scope 采集。仍要求双主电压输入的实验选择 MFLI 时禁止启动；尚未确认安全电压范围的
+锁相输出写入保持禁用。接口、硬件差异与实机验收见
+[锁相模块说明](docs/lockin_amplifier.md)，受限实验清单见
+[锁相实验兼容性](docs/legacy_lockin_experiments.md)。
 
 ## 实验组织方式
 
@@ -219,6 +237,12 @@ experiments ───┘
 实验说明只链接 GUI 实际保存的默认参数文件，不重复记录可变默认值；历史运行参数以
 各自的 `experiment_config.yaml` 为准。新增实验使用 Skill 验证器的 `--delivery` 模式，
 检查文档关联并执行前端路由和历史接口测试。
+采集修改的回归通过 `ACQUISITION_CASES` 关联稳定实验 ID 和真实业务场景；已有实验也检查
+六步时序及故障覆盖。脚手架支持 `--acquisition-mode single|grouped|paired`，复用公共采集
+窗口与延迟保存。参数 schema 和原始格式独立版本化，具体约定见 Skill 的实验契约参考。
+`.agents/skills/expcodegen` 是维护源，使用其中的 `scripts/sync_skill.py` 同步 `.claude`；
+两套 Skill 保持本地忽略，共享验收逻辑与正式测试位于 `lab_workflows/experiment_validation.py`
+及 `lab_workflows/test_experiment_validation.py`。
 
 正式实验有两种明确执行模式：
 
@@ -235,37 +259,26 @@ experiments ───┘
 50 Ω 终端和 AC 耦合；后续配置保持高阻、DC 耦合。旧参数键保留兼容并归一到关闭值，GUI 隐藏开启选项。
 
 `rf-sensitivity-aw` 已迁移为 schema version 2 的 DirectAW 工作流，保留
-`RF_Field_Sensitivity_AW` 数据目录与原脚本入口。XYZ 共用时序信号2主输出触发，
-HF2/MFLI 使用 Demod0 Y → 所选 AuxOut → 所选物理输入或 MFLI 内部回采 → RF 解调器，
-GUI 可选 RF 解调器索引、AuxOut1–4 和 Aux Input1–2；HF2 保留 Signal Input2。以 X 响应斜率和
-X 噪声 PSD 计算灵敏度；线宽补偿可选：A14 零 RF X 噪声采集后，A13B 恢复相位扫描的响应滤波，
-以校相幅度同步扫描 Z RF 与解调频率，定长采集每点 R 时序，R 均值的洛伦兹拟合线宽
-回补频响，未启用时用响应色散拟合的等效 HWHM。
-GUI 提供运行 / 历史双 Tab，运行页有 17 个采集节点与 4 个分析节点，按依赖显式勾选执行，
-在节点内编辑参数并预览草稿的重跑范围；分步等待保持连接与硬件锁，A15 完成本轮安全收尾，
-A16 结束会话。历史只接纳新格式；完整分析结果支持跨页多选、
-自定义英文图例、X 响应与灵敏度双面板叠加及 PNG/PDF 下载。对比区的灵敏度面板
-只显示主谱，拟合失败的数值斜率回退结果会提示未校正。校相失败
-或采集未完成时只展示诊断。最优控制波形从
-`D:\Code\theory_agent\simulate\results\oc_sens` 的 `vN/waveforms/optimal_control_waveform.csv`
-选择，运行前须明确选择有效版本。默认值见
-[参数文件](params/experiments/rf-sensitivity-aw.yaml)，接线、收尾及分析见
+`RF_Field_Sensitivity_AW` 数据目录与原脚本入口。以 X 响应斜率和 X 噪声 PSD 计算灵敏度，
+线宽补偿可选；最优控制波形文件须在运行前明确选择有效版本。GUI 提供运行 / 历史双 Tab
+和可勾选、带依赖的分步流程图。默认值见
+[参数文件](params/experiments/rf-sensitivity-aw.yaml)，接线、分步流程、收尾及分析见
 [实验说明](docs/rf_field_measurement.md)。
 
-`rf-sensitivity-aw-r`（RF 灵敏度（DirectAW R））复用上述准备、采集及安全收尾，
-按 A10 → A13 → A12 → A14 顺序先采 RF 解调器 R，再独立改频校相并采零 RF X 噪声，跳过 A11。
-R 标定使用绝对色散底层中心斜率，失败则以数值梯度估算并关闭线宽补偿。
-新实验使用独立默认文件与 `RF_Field_Sensitivity_AW_R` 历史，提供运行 / 历史、交互流程图、
-多次 R 标定 / X 噪声对比及 PNG/PDF 导出。两个实验的所选辅助输出均按逐设备、逐通道已确认的 ±10 V
-规则检查，缺范围或预计越界时禁止启动/写入；跨频率增益一致性和等效线宽仍待实测。
-详见 [实验说明](docs/rf_field_measurement_r.md) 与 [默认参数](params/experiments/rf-sensitivity-aw-r.yaml)。
+`rf-sensitivity-aw-r`（RF 灵敏度（DirectAW R））复用上述准备、采集及安全收尾，先采
+RF 解调器 R 再独立改频校相；R 标定失败时以数值梯度估算并关闭线宽补偿。使用独立默认
+文件与 `RF_Field_Sensitivity_AW_R` 历史。两个 DirectAW 实验的所选辅助输出均按逐设备、
+逐通道已确认的 ±10 V 规则检查，缺范围或预计越界时禁止启动/写入。详见
+[实验说明](docs/rf_field_measurement_r.md) 与 [默认参数](params/experiments/rf-sensitivity-aw-r.yaml)。
 
-`rf-sensitivity-aw-known-noise` 在固定 Z 周期伪噪声 ON 下支持单选或多选同 RF 设计频率的控制版本。Z 噪声与 RF 逐点先求和再归一化，零 RF 保留注入；采用运行/历史双 Tab 与 DirectAW 分步流程图，逐版本独立校相、标定、采集和离线灵敏度谱分析。见[实验说明](docs/rf_field_measurement_known_noise.md)与[默认参数](params/experiments/rf-sensitivity-aw-known-noise.yaml)。
+`rf-sensitivity-aw-known-noise` 在固定 Z 周期伪噪声 ON 下支持单选或多选同 RF 设计频率的
+控制版本，逐版本独立校相、标定、采集和离线灵敏度谱分析。见
+[实验说明](docs/rf_field_measurement_known_noise.md)与
+[默认参数](params/experiments/rf-sensitivity-aw-known-noise.yaml)。
 
-`t2-calibration` 已迁移为强类型光学 FID 工作流：保持 `T2_Calibration` 数据目录与
-历史 NPZ 字段不变，正常完成、异常、取消和 Ctrl+C 都会把温度开关恢复为 5 V ON，
-保持主磁场、Pump/Probe 光功率、Pump 调制、RF 门控输出和全部 HF2 设置；RF 门控仅
-关闭 Burst，其他辅助输出归零关闭；正常结束只断开 TEC 通信，温控硬件继续运行。
+`t2-calibration` 已迁移为强类型光学 FID 工作流：保持 `T2_Calibration` 数据目录与历史
+NPZ 字段不变；正常完成、异常、取消和 Ctrl+C 都会把温度开关恢复为 5 V ON，保持主磁场、
+光功率、Pump 调制与 RF 门控输出，温控硬件继续运行。
 
 当前项目有两种实验入口：
 
@@ -279,36 +292,8 @@ R 标定使用绝对色散底层中心斜率，失败则以数值梯度估算并
 - `Experiment_Name.py`：负责连接仪器、执行扫描、保存 `data/<实验类型>/<时间戳>_<tag>/raw/`
 - `Experiment_Name_plot.py`：负责读取原始数据、分析、绘图、写入 `results/`
 
-这一组织方式目前已经用于多个实验，例如：
-
-- `Photon_shot_noise.py` / `Photon_shot_noise_plot.py`
-- `Projection_noise.py` / `Projection_noise_plot.py`
-- `T1_Calibration.py` / `T1_Calibration_plot.py`
-- `T2_Calibration.py` / `T2_Calibration_plot.py`
-- `RF_Field_Sensitivity_AW.py` / `RF_Field_Sensitivity_AW_plot.py`
-- `RF_Field_Sensitivity_AW_FreqSweep.py` / `RF_Field_Sensitivity_AW_FreqSweep_plot.py`
-- `RF_Field_Sensitivity_ConstXY_FreqSweep.py` / `RF_Field_Sensitivity_ConstXY_FreqSweep_plot.py`
-- `XY_DC_Voltage_Calibration.py` / `XY_DC_Voltage_Calibration_plot.py`
-- `XY_DirectAW_DC_Calibration.py` / `XY_DirectAW_DC_Calibration_plot.py`
-- `Noise_Spectrum_XY_Demod3_R.py` / `Noise_Spectrum_XY_Demod3_R_plot.py`
-- `Mx_Y_RF_Sensitivity.py` / `Mx_Y_RF_Sensitivity_plot.py`
-- `Mx_Z_Optimal_Control_RF_Sensitivity.py` / `Mx_Z_Optimal_Control_RF_Sensitivity_plot.py`
-- `Mx_Z_Optimal_Control_XY_Leakage_Response.py` / `Mx_Z_Optimal_Control_XY_Leakage_Response_plot.py`
-- `Mx_Z_Optimal_Control_XY_RF_Phase_Response.py` / `Mx_Z_Optimal_Control_XY_RF_Phase_Response_plot.py`
-- `Mx_Z_Optimal_Control_XYZ_Balance.py` / `Mx_Z_Optimal_Control_XYZ_Balance_plot.py`
-- `Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance.py` / `Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance_plot.py`
-- `Mx_Y_RF_Power_Optimization.py` / `Mx_Y_RF_Power_Optimization_plot.py`
-- `Mx_Y_RF_Probe_Detuning_Optimization.py` / `Mx_Y_RF_Probe_Detuning_Optimization_plot.py`
-- `Mx_Main_Field_Calibration.py` / `Mx_Main_Field_Calibration_plot.py`
-- `Mx_Keithley_6221_Main_Field_Calibration.py` / `Mx_Keithley_6221_Main_Field_Calibration_plot.py`
-- `Mx_Keithley_6221_Optimal_Control_RF_Sensitivity.py` / `Mx_Keithley_6221_Optimal_Control_RF_Sensitivity_plot.py`
-- `Mx_Main_Field_Noise_Spectrum.py` / `Mx_Main_Field_Noise_Spectrum_plot.py`
-- `Mx_Main_Field_Scope_Noise_Spectrum.py` / `Mx_Main_Field_Scope_Noise_Spectrum_plot.py`
-- `Mx_Z_Field_Calibration.py` / `Mx_Z_Field_Calibration_plot.py`
-- `Mx_Z_Noise_Spectrum.py` / `Mx_Z_Noise_Spectrum_plot.py`
-- `Mx_XY_Residual_Field_Calibration.py` / `Mx_XY_Residual_Field_Calibration_plot.py`
-- `Z_AW_Waveform_Scope_Check.py` / `Z_AW_Waveform_Scope_Check_plot.py`
-- `Z_Coil_Inductance_Frequency_Response.py` / `Z_Coil_Inductance_Frequency_Response_plot.py`
+已采用这一约定的脚本对见下文[主要实验入口](#主要实验入口)表格；
+完整清单与各实验执行模式以[实验迁移状态](docs/experiment_migration_status.md)为准。
 
 ## 主要实验入口
 
@@ -349,14 +334,14 @@ R 标定使用绝对色散底层中心斜率，失败则以数值梯度估算并
 | Mx 主磁场示波器噪声谱（固定 X/Y DC 补偿，可选 AC/DC 耦合） | `experiments/Mx_Main_Field_Scope_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Scope_Noise_Spectrum_plot.py` | `docs/mx_main_field_scope_noise_spectrum.md` |
 | Mx 高主场 Z 磁场频率标定 | `experiments/Mx_Z_Field_Calibration.py`、`experiments/Mx_Z_Field_Calibration_plot.py` | `docs/mx_z_field_calibration.md` |
 | Bell Bloom Z 磁场频率标定（运行 / 历史双 Tab） | `experiments/Bell_Bloom_Z_Field_Calibration.py`、`experiments/Bell_Bloom_Z_Field_Calibration_plot.py` | `docs/bell_bloom_z_field_calibration.md` |
-| 探测链路频率响应标定（运行 / 历史 / 架构；运行页为可勾选、带依赖的交互流程图，8 个采集模块与 3 个分析模块，完整运行入口保留；锁相放大器关闭输入 AC 耦合、其余解调设置对照 XY 正弦控制噪声谱；每点关闭并恢复温控；采集 Demod0 Y，排除零基带点；分阶段分析绑定运行目录并按输入指纹失效） | `experiments/Detection_Chain_Frequency_Response.py`、`experiments/Detection_Chain_Frequency_Response_plot.py` | `docs/detection_chain_frequency_response.md` |
+| 探测链路频率响应标定（运行 / 历史；运行页为可勾选、带依赖的交互流程图，8 个采集模块与 3 个分析模块，完整运行入口保留；锁相放大器关闭输入 AC 耦合、其余解调设置对照 XY 正弦控制噪声谱；每点关闭并恢复温控；采集 Demod0 Y，排除零基带点；分阶段分析绑定运行目录并按输入指纹失效） | `experiments/Detection_Chain_Frequency_Response.py`、`experiments/Detection_Chain_Frequency_Response_plot.py` | `docs/detection_chain_frequency_response.md` |
 | Mx Z 直流控制噪声谱 | `experiments/Mx_Z_Noise_Spectrum.py`、`experiments/Mx_Z_Noise_Spectrum_plot.py` | `docs/mx_z_noise_spectrum.md` |
 | Mx XY 剩磁二维校准（SDS） | `experiments/Mx_XY_Residual_Field_Calibration.py`、`experiments/Mx_XY_Residual_Field_Calibration_plot.py` | `docs/mx_xy_residual_field_calibration.md` |
 | T1 / T2 标定 | `experiments/T1_Calibration.py`、`experiments/T2_Calibration.py` | `docs/T1_calibration.md`、`docs/T2_relaxation.md` |
 | X/Y 补偿与通道验证 | `experiments/XY_Compensation_Calibration.ipynb`、`experiments/XY_Channel_Calibration.ipynb`、`experiments/XY_AM_Transfer.ipynb`、`experiments/XY_MOD_ZeroOffset.ipynb`、`experiments/XY_Output_Verification.ipynb` | `docs/XY_Compensation_Calibration.md`、`docs/z_field_calibration.md` |
-| XY 控制噪声谱测量（运行 / 历史 / 架构；原图五组交互流程，14 个采集模块与 5 个分析模块；保存、预览与运行操作融入流程图；节点编辑基础／高级参数、共享值与分类同步、草稿重跑预览；下一次实验与具体目录分析设置隔离；显式前置、校相门槛、保留输出的硬件会话、空闲改参、独立目录重跑与手动结束；按格间距自动分段、只读平均段数与耗时预览；移动峰标定验收、三实验共享全轴分离与独立背景验收；标定或拟合失败仍保留二维 PSD） | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
-| XY 控制测量已知可控噪声谱（运行 / 历史 / 架构；采集与分析两列依赖节点，Z 小线圈注入分段平顶谱伪噪声，手动输入 K_Z 并保存本轮快照，相邻点交替 on/off 并逐段保存；分析选择静磁场 v3 历史曲线拟合检测增益，未选来源时完成谱分离并等待标定；保留不含线圈频响的真值链与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
-| XY 控制测量已知不可控 Probe AM 噪声谱（运行 / 历史 / 架构；采集与分析两列依赖节点，Probe AOM 外部 AM 的 ON/OFF 成对采集，可选全程叠加独立配置的 Z 已知可控噪声；A08 载波节点、A12 双噪声上传与 A14 配对扫描，分析 B01–B04 共享全轴分析提取锁相端 N_S1 与有符号差分，移动峰不足时输出暂定控制轴并保留质量标记） | `experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM.py`、`experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM_plot.py` | `docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md` |
+| XY 控制噪声谱测量（运行 / 历史；原图五组交互流程，14 个采集模块与 5 个分析模块；保存、预览与运行操作融入流程图；节点编辑基础／高级参数、共享值与分类同步、草稿重跑预览；下一次实验与具体目录分析设置隔离；显式前置、校相门槛、保留输出的硬件会话、空闲改参、独立目录重跑与手动结束；按格间距自动分段、只读平均段数与耗时预览；移动峰标定验收、三实验共享全轴分离与独立背景验收；标定或拟合失败仍保留二维 PSD） | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
+| XY 控制测量已知可控噪声谱（运行 / 历史；采集与分析两列依赖节点，Z 小线圈注入分段平顶谱伪噪声，手动输入 K_Z 并保存本轮快照，相邻点交替 on/off 并逐段保存；分析选择静磁场 v3 历史曲线拟合检测增益，未选来源时完成谱分离并等待标定；保留不含线圈频响的真值链与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
+| XY 控制测量已知不可控 Probe AM 噪声谱（运行 / 历史；采集与分析两列依赖节点，Probe AOM 外部 AM 的 ON/OFF 成对采集，可选全程叠加独立配置的 Z 已知可控噪声；A08 载波节点、A12 双噪声上传与 A14 配对扫描，分析 B01–B04 共享全轴分析提取锁相端 N_S1 与有符号差分，移动峰不足时输出暂定控制轴并保留质量标记） | `experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM.py`、`experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM_plot.py` | `docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md` |
 | Demod3 R 噪声谱测量 | `experiments/Noise_Spectrum_XY_Demod3_R.py`、`experiments/Noise_Spectrum_XY_Demod3_R_plot.py` | `docs/noise_spectrum_xy_demod3_r.md` |
 | MORS 相关 | `experiments/MORS_feasibility_test.ipynb`、`experiments/MORS_feasibility_test_v2.ipynb`、`experiments/MORS_polarization_pulsed.ipynb` | `docs/MORS_polarization.md` |
 | RF 场灵敏度（DirectAW，可执行流程图 / 历史） | `experiments/RF_Field_Sensitivity_AW.py`、`experiments/RF_Field_Sensitivity_AW_plot.py` | `docs/rf_field_measurement.md` |
@@ -462,35 +447,6 @@ GUI 和脚本的批量同步先向全部设备写入目标参考源，再统一�
 调制输出和所选锁相放大器的全部设置；温控硬件保持运行，其他可控输出全部关闭。实验特定例外必须显式声明；
 T2 额外保持 RF 门控 CH2 Output ON，并只关闭该通道的 Burst。
 
-## 环境准备
-
-- Python 要求：`>=3.10`
-- 本地包名：`exp-agent`
-- 虚拟环境：`agent_exp_env\`
-
-在仓库根目录运行以下命令；已有虚拟环境直接复用：
-
-```powershell
-if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
-    python -m venv agent_exp_env
-}
-.\agent_exp_env\Scripts\python.exe -m pip install -e .
-.\agent_exp_env\Scripts\python.exe -m pip install pyvisa pyvisa-py pyserial zhinst numpy scipy matplotlib pyyaml jupyter
-.\agent_exp_env\Scripts\python.exe -m pip check
-```
-
-`pip install -e .` 安装 `src/` 下的驱动和根目录的 `lab_workflows`，同时按
-`pyproject.toml` 安装 TOPTICA SDK 与进度条。仪器通信、分析和 GUI 依赖仍需分别安装。
-根目录 `requirements.txt` 是历史环境快照，不替代上述分组安装说明。
-
-需要导出当前环境时：
-
-```powershell
-.\agent_exp_env\Scripts\python.exe -m pip freeze > requirements.txt
-```
-
-保存前将本项目的可编辑安装条目规范为 `-e .`，移除机器路径和带凭据的地址。
-
 ## 开发验证
 
 实验注册、离线分析入口和 Skill 资源的基础检查：
@@ -498,6 +454,20 @@ if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
 ```powershell
 .\agent_exp_env\Scripts\python.exe .agents\skills\expcodegen\scripts\validate_experiment.py --root .
 ```
+
+验证器默认读取 Git 工作区变更，追踪静态导入和已声明的动态源码，执行受影响的业务测试节点。
+修改采集业务时场景缺口会使验证失败；未修改实验的缺口保留在报告中。先查看计划与模型/流程
+元数据，或对照指定提交检查已提交改动：
+
+```powershell
+.\agent_exp_env\Scripts\python.exe .agents\skills\expcodegen\scripts\validate_experiment.py --root . --plan-only --report .cache/expcodegen/plan.json
+.\agent_exp_env\Scripts\python.exe .agents\skills\expcodegen\scripts\validate_experiment.py --root . --changed-since HEAD --report .cache/expcodegen/validation.json
+.\agent_exp_env\Scripts\python.exe .agents\skills\expcodegen\scripts\sync_skill.py --check
+```
+
+`--changed-file` 可重复指定明确变更；共享步骤的其他调用方不会因指定单个实验 ID 被排除。
+`--plan-only` 未执行测试，场景声明也不能代替对真实配置、采集和写盘路径的人工核对。
+动态调用及 GUI 关系的未映射文件仍需检查，自动验证不连接真实仪器。
 
 仪器驱动、映射、时钟和锁相 API 的无硬件回归：
 
@@ -544,7 +514,7 @@ if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
 
 从而尽量保证实验脚本、文档和安全约束保持一致。
 
-生成实验架构图时使用 `arcgen` 调研真实实现，并由 `archify` 完成图规格、校验和交付。
+用户明确要求独立实验架构图时，使用 `arcgen` 调研真实实现，并由 `archify` 完成图规格、校验和交付；不默认接入 GUI。
 `AGENTS.md`、`CLAUDE.md`、`GUI/AGENTS.md` 与 `.agents/`、`.claude/`、`.codex/`、
 `.vscode/` 等协作说明、Skill 与 Agent 配置一律只保留在本地，不上传 GitHub；仓库同步
 面向其他同学使用的 GUI 实验系统内容。本检出的 `.git/info/exclude` 还忽略 `docs/` 中
