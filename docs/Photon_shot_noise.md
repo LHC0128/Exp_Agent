@@ -25,7 +25,7 @@ required_devices:
     role: temp_switch
     mapping_key: Temp_Switch
     channels: [2]
-  - instrument: lockin_amplifier    # 锁相放大器（DAQ 采集 X/Y 时间序列）
+  - instrument: lockin_amplifier    # 锁相放大器（解调时序采集 X/Y 时间序列）
     role: detection
     demod_channels: 2
     has_daq: true
@@ -44,7 +44,7 @@ mapping_keys:
     description: "Pump 光功率，关闭（设为 0 或最小值），确保无极化"
   lockin_xy:
     role: detection
-    description: "锁相放大器 DAQ 采集解调后的 X、Y 时间序列。Welch PSD + 陷波积分得噪声功率，或直接洛伦兹拟合提取光噪声本底。X 为主通道"
+    description: "锁相放大器 解调时序采集解调后的 X、Y 时间序列。Welch PSD + 陷波积分得噪声功率，或直接洛伦兹拟合提取光噪声本底。X 为主通道"
   temperature:
     role: fixed
     description: "气室温度（TEC103 控制）"
@@ -76,6 +76,12 @@ parameters_source: experiments/Photon_shot_noise.py
 ---
 
 # 光散粒噪声标定
+
+## 锁相采集方式与实际速率
+
+光子噪声使用 `HF2_DEMOD_RATE` 请求率、`ACQ_DURATION` 时长和 `HF2_DEMOD_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
+
+时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](lockin_amplifier.md#解调时序的模块选择)。
 
 当前参数来源：[采集脚本参数区](../experiments/Photon_shot_noise.py)。GUI 保存目标为 `params/experiments/photon-shot-noise.yaml`；该文件尚未生成时按脚本参数回退，本文不复制默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
 

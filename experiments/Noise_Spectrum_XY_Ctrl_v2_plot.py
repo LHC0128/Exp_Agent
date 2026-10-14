@@ -97,6 +97,10 @@ print(f"  点数        = {XY_AMP_POINTS}")
 # DAQ 采集参数（Welch PSD 计算用）
 # 优先使用硬件实际采样率（experiment_config.yaml 中的 actual_rate_Sa_s），否则回退到配置值
 actual_rate_daq = cfg["hf2_daq"].get("actual_rate_Sa_s", cfg["hf2_daq"]["DAQ_rate_Sa_s"])
+from sensitivity_analysis.acquisition import load_acquisition_rate
+waveform_files = sorted(raw_dir.glob("waveform_C*.npy"))
+if waveform_files:
+    actual_rate_daq = load_acquisition_rate(waveform_files[0], actual_rate_daq)
 
 HF2_NPERSEG     = cfg["hf2_daq"]["nperseg"]
 HF2_DAQ_TC      = cfg["hf2_daq"]["DAQ_TC_s"]
@@ -108,6 +112,8 @@ print(f"  HF2_DAQ_TC    = {HF2_DAQ_TC*1e6:.2f} μs")
 
 # ---- 可选：如果之前已保存 PSD 矩阵，可直接加载 ----
 LOAD_EXISTING_PSD = True  # True=跳过 Welch 重算，False=从原始波形重新计算
+if list(raw_dir.glob("waveform_C*_acquisition.npz")):
+    LOAD_EXISTING_PSD = False  # 新采集元数据存在时，旧缓存不能决定频率轴。
 psd_matrix_path = results_dir / "psd_matrix.npz"
 calib_path = results_dir / "calibration.npz"
 
@@ -138,6 +144,8 @@ else:
             continue
 
         waveform = np.load(wf_path)
+        if not np.isclose(load_acquisition_rate(wf_path, actual_rate_daq), actual_rate_daq, rtol=1e-6):
+            raise ValueError("记录实际采样率不一致，不能合并 PSD 频率轴")
 
         if np.all(np.isnan(waveform)) or len(waveform) < HF2_NPERSEG:
             print(f"  ⚠️ 无效波形: {wf_path.name}, 跳过 PSD 计算")

@@ -67,6 +67,9 @@ from lockin_amplifier import (
 # 数据分析库
 from scipy.optimize import curve_fit
 from scipy import signal as scipy_signal
+from lockin_amplifier import result_rate, acquisition_metadata, save_acquisition_metadata, select_acquisition
+from lab_workflows.experiment_runtime import check_cancelled
+import json
 
 # ========== 实验参数 ==========
 EXPERIMENT_TYPE = "Photon_shot_noise"
@@ -79,7 +82,6 @@ print("所有库导入成功")
 
 # 加载物理量→仪器映射
 MAPPING = load_mapping(project_root)
-require_lockin_compatibility('photon-shot-noise', globals(), mapping=MAPPING)
 
 # 加载安全限值
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
@@ -134,6 +136,8 @@ print("配置加载完成")
 
 # %% Cell 3
 # ========== 连接设备 ==========
+
+require_lockin_compatibility('photon-shot-noise', globals(), mapping=MAPPING)
 
 devices = {}
 
@@ -232,7 +236,7 @@ demod_cfg = DemodulatorConfig(
     osc_select=0, harmonic=1,
     time_constant=HF2_DEMOD_TC, order=HF2_DEMOD_ORDER,
 )
-actual_rate = demod.configure_demodulator(hfi, demod_cfg)
+actual_rate = demod.configure_demodulator(hfi, demod_cfg, for_acquisition=True)
 print(f"HF2 解调器 {HF2_DEMOD_IDX} 已配置: Rate={HF2_DEMOD_RATE} Sa/s, TC={HF2_DEMOD_TC*1e6:.0f} μs")
 
 # ========== 创建运行目录 ==========
@@ -296,6 +300,11 @@ print(f"每点采集 {ACQ_REPEATS} 次 × {ACQ_DURATION} s")
 print("=" * 60)
 
 grid_cols = int(actual_rate * ACQ_DURATION)
+plan = select_acquisition(hfi.model, hfi.capabilities,
+    DAQConfig(duration=ACQ_DURATION, grid_cols=grid_cols, signal_paths=["sample.x", "sample.y"]),
+    HF2_DEMOD_RATE, HF2_DEMOD_IDX, hfi.acquisition_mode)
+if plan.module == "scope":
+    grid_cols = plan.length
 print(f"DAQ grid_cols: {grid_cols} (rate={actual_rate:.0f} Sa/s × {ACQ_DURATION} s)")
 
 t_start = time.time()
@@ -326,19 +335,24 @@ try:
             try:
                 results = daq.acquire_data(
                     hfi, daq_cfg, demod_idx=HF2_DEMOD_IDX,
-                    actual_rate=actual_rate, timeout=ACQ_DURATION + 10.0,
+                    actual_rate=actual_rate, cancellation_check=check_cancelled, requested_rate=HF2_DEMOD_RATE, timeout=ACQ_DURATION + 10.0,
                 )
+                actual_rate = result_rate(results, actual_rate)
                 x_data = results[0].values
                 y_data = results[1].values
+                time_axis = results[0].time
+                metadata = acquisition_metadata(results)
             except Exception as e:
                 tqdm.write(f"  [P={pwr:.3f}V, rep={rep}] DAQ 采集失败: {e}")
                 x_data = np.full(grid_cols, np.nan)
                 y_data = np.full(grid_cols, np.nan)
+                time_axis = np.arange(grid_cols) / actual_rate
+                metadata = {}
 
             dg_temp.set_output(True, channel=2)
             time.sleep(2)
 
-            power_waveforms.append({"x": x_data, "y": y_data})
+            power_waveforms.append({"x": x_data, "y": y_data, "time_s": time_axis, "metadata": metadata})
 
         # 保存原始波形（供后续 PSD 分析使用）
         np.savez(
@@ -347,7 +361,10 @@ try:
             probe_power_index=i,
             x_waveforms=np.array([w["x"] for w in power_waveforms]),
             y_waveforms=np.array([w["y"] for w in power_waveforms]),
+            time_s=np.array([w["time_s"] for w in power_waveforms]),
+            acquisition_metadata_json=np.array([json.dumps(w["metadata"], ensure_ascii=False) for w in power_waveforms]),
             actual_rate=actual_rate,
+            actual_rates_Sa_s=np.array([w["metadata"].get("actual_rate_Sa_s", actual_rate) for w in power_waveforms]),
         )
 
         # 快速方差估算（仅用于进度显示，不代表最终结果）

@@ -324,7 +324,7 @@ def configure_mx_z_optimal_control_workpoint(
                 order=params.response_demod_order,
                 phase=phase_shift_deg,
             ),
-        )
+         for_acquisition=True)
     )
 
     configure_z_optimal_control_output(

@@ -2,7 +2,7 @@
 
 import math
 
-from lockin_amplifier import DemodulatorConfig, OscillatorConfig, SignalInputConfig, demod
+from lockin_amplifier import DemodulatorConfig, OscillatorConfig, SignalInputConfig, demod, acquisition_module
 
 from ...steps import PhaseCalibrationConfig, calibrate_demod_phase
 from ...steps.dispersion import dispersion_sample_count
@@ -34,6 +34,12 @@ def require_mode(ctx, mode):
     key = "hf2_noise_configuration" if mode == "noise" else "hf2_configuration"
     expected = ctx.state.get(key)
     actual = hf2_snapshot(ctx.devices["hf2"], ctx.params.hf2_demod_idx)
+    rate = ctx.params.hf2_noise_rate if mode == "noise" else ctx.params.hf2_demod_rate
+    hf2 = ctx.devices["hf2"]
+    if expected and acquisition_module(hf2.model, rate, hf2.acquisition_mode) == "scope":
+        # Scope 正常恢复通信配置，不影响需严格核对的内部滤波、输入和相位。
+        expected = {**expected, "demod": {k: v for k, v in expected["demod"].items() if k not in {"rate", "enable"}}}
+        actual["demod"] = {k: v for k, v in actual["demod"].items() if k not in {"rate", "enable"}}
     if not expected or actual != expected:
         raise ValueError("锁相实际配置已改变，请重新执行锁相配置及后续准备步骤")
 

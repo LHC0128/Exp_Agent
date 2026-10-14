@@ -143,13 +143,13 @@ def _save_point(
         path,
         time_s=payload["time_s"],
         r_v=payload["r"],
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=payload.get("actual_rate_Sa_s", np.float64(actual_rate)),
         **{key: value for key, value in metadata.items()},
         **{
             key: np.float64(value) if isinstance(value, float) else value
             for key, value in summary.items()
         },
-    )
+     **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
     return summary
 
 
@@ -180,7 +180,7 @@ def _acquire_valid_r_point(
                 hf2,
                 device_id=device_id,
                 demod_idx=params.demod_idx,
-                actual_rate_sa_s=actual_rate,
+                actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
                 duration_s=duration_s,
             ),
         )
@@ -206,7 +206,7 @@ def _acquire_valid_r_point(
             f"{'接受' if accepted else '拒绝并重采'}"
         )
         if accepted:
-            return summary, attempt, filename
+            return {**summary, "actual_rate_sa_s": float(payload.get("actual_rate_Sa_s", actual_rate))}, attempt, filename
     raise RPointQualityError(
         f"{file_stem} 连续 {params.r_point_max_attempts} 次 "
         f"std(R) > {params.r_bad_point_std_threshold_v:.6g} V"
@@ -294,14 +294,14 @@ def _acquire_frequency_response(
         r_std_threshold_v=np.float64(
             params.r_bad_point_std_threshold_v
         ),
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=np.float64(summary.get("actual_rate_sa_s", actual_rate)),
     )
 
 
 def run(params: MxYRFFrequencyResponseParams) -> Path:
-    require_lockin_compatibility('mx-y-rf-frequency-response', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-y-rf-frequency-response', params.to_external(), mapping=mapping)
     run_dir = create_run_directory(
         DATA_TYPE,
         params.run_tag,

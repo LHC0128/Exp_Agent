@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="field-response",
     variant="mx-z-optimal-control-xy-direct-aw",
     description=(
-        '保持 Z 最优控制，二维扫描同形 X/Y 触发任意波的带符号幅度，记录 锁相放大器 Demod0 R 并报告实测网格最小点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
+        '保持 Z 最优控制，二维扫描同形 X/Y 触发任意波的带符号幅度，记录 锁相放大器 Demod0 R 并报告实测网格最小点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
     ),
     data_type="Mx_Z_Optimal_Control_XY_Leakage_Response",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

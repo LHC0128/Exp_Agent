@@ -102,7 +102,7 @@ def _scan_optimal_control(params, run_dir, devices, channels, actual_rate, devic
                 "optimal_control_scan",
                 f"最优控制扫描：频率 {fi + 1}/{frequencies.size}，相位 {pi + 1}/{phases.size}",
             )
-    np.savez(run_dir.raw / "optimal_control_phase_frequency_scan.npz", frequency_hz=frequencies, phase_deg=phases, **arrays, accepted_attempt_index=attempts, accepted_file=files, actual_rate_sa_s=np.float64(actual_rate), r_std_threshold_v=np.float64(params.r_bad_point_std_threshold_v))
+    np.savez(run_dir.raw / "optimal_control_phase_frequency_scan.npz", frequency_hz=frequencies, phase_deg=phases, **arrays, accepted_attempt_index=attempts, accepted_file=files, actual_rate_sa_s=np.float64(summary.get("actual_rate_sa_s", actual_rate)), r_std_threshold_v=np.float64(params.r_bad_point_std_threshold_v))
 
 def _configure_constant_control_z(params, devices, channels, plan: ConstantControlPlan) -> None:
     """把 Z 通道从最优控制任意波切为已验证的恒定 DC 输出。"""
@@ -150,11 +150,11 @@ def _scan_constant_control(params, run_dir, devices, channels, actual_rate, devi
             "constant_control_scan",
             f"常数控制对照：频率 {fi + 1}/{frequencies.size}",
         )
-    np.savez(run_dir.raw / "constant_control_frequency_scan.npz", frequency_hz=frequencies, phase_deg=np.full(frequencies.size, CONSTANT_CONTROL_PHASE_DEG), **row, accepted_attempt_index=attempts, accepted_file=files, actual_rate_sa_s=np.float64(actual_rate), r_std_threshold_v=np.float64(params.r_bad_point_std_threshold_v), constant_z_voltage_v=np.float64(plan.target_voltage_v), constant_z_extrapolated=np.uint8(plan.extrapolated))
+    np.savez(run_dir.raw / "constant_control_frequency_scan.npz", frequency_hz=frequencies, phase_deg=np.full(frequencies.size, CONSTANT_CONTROL_PHASE_DEG), **row, accepted_attempt_index=attempts, accepted_file=files, actual_rate_sa_s=np.float64(summary.get("actual_rate_sa_s", actual_rate)), r_std_threshold_v=np.float64(params.r_bad_point_std_threshold_v), constant_z_voltage_v=np.float64(plan.target_voltage_v), constant_z_extrapolated=np.uint8(plan.extrapolated))
 
 def run(params: MxYOptimalControlRFFrequencyResponseParams) -> Path:
-    require_lockin_compatibility('mx-y-optimal-control-rf-frequency-response', params.to_external())
     root = find_project_root(); mapping = load_mapping(root)
+    require_lockin_compatibility('mx-y-optimal-control-rf-frequency-response', params.to_external(), mapping=mapping)
     corrected = load_corrected_control_waveform(root, params.corrected_control_source_run)
     applied = applied_control_from_corrected(corrected)
     plan = (

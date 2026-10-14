@@ -287,13 +287,13 @@ def _save_rxy_point(
         r_v=payload["r"],
         x_v=payload["x"],
         y_v=payload["y"],
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=payload.get("actual_rate_Sa_s", np.float64(actual_rate)),
         **metadata,
         **{
             key: np.float64(value) if isinstance(value, float) else value
             for key, value in summary.items()
         },
-    )
+     **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
     return summary
 
 
@@ -327,7 +327,7 @@ def _acquire_valid_rxy_point(
                 hf2,
                 device_id=device_id,
                 demod_idx=params.demod_idx,
-                actual_rate_sa_s=actual_rate,
+                actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
                 duration_s=duration_s,
             ),
         )
@@ -358,7 +358,7 @@ def _acquire_valid_rxy_point(
             f"{'接受' if accepted else '拒绝并重采'}"
         )
         if accepted:
-            return summary, attempt, filename
+            return {**summary, "actual_rate_sa_s": float(payload.get("actual_rate_Sa_s", actual_rate))}, attempt, filename
     raise RPointQualityError(
         f"{file_stem} 连续 {params.r_point_max_attempts} 次 "
         f"复噪声超过 {params.r_bad_point_std_threshold_v:.6g} V"
@@ -717,7 +717,7 @@ def _acquire_phase_scan(
         ),
         "initial_accepted_file": np.asarray(initial_files),
         "cross_phase_reacquired": cross_phase_reacquired,
-        "actual_rate_sa_s": np.float64(actual_rate),
+        "actual_rate_sa_s": np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
         "x_dc_field_v": np.float64(params.x_dc_field_v),
         "y_rf_dc_offset_v": np.float64(params.y_rf_offset_v),
     }
@@ -948,7 +948,7 @@ def _acquire_amplitude_scan(
         accepted_attempt_index=attempts,
         accepted_file=files,
         selected_y_rf_phase_deg=np.float64(selected_phase_deg),
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
     )
 
 
@@ -1099,9 +1099,9 @@ def safe_shutdown(
 
 def run(params: MxZOptimalControlRFParams) -> Path:
     """执行 Z 最优控制开启状态下的 RF 灵敏度测量。"""
-    require_lockin_compatibility('mx-z-optimal-control-rf-sensitivity', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-z-optimal-control-rf-sensitivity', params.to_external(), mapping=mapping)
     residual_mode = params.phase_cal_rf_amplitude_vpp == 0.0
     measurement_mode = (
         "residual_control_phase_scan"

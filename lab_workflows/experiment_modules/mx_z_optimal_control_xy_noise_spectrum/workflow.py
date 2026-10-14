@@ -266,9 +266,9 @@ def _acquire_grid(
 
 def run(params: MxZOptimalControlXYNoiseSpectrumParams) -> Path:
     """执行 Z 控制开启下的 XY DC 偏置噪声网格采集。"""
-    require_lockin_compatibility('mx-z-optimal-control-xy-noise-spectrum', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-z-optimal-control-xy-noise-spectrum', params.to_external(), mapping=mapping)
     corrected, theory, calibration, applied = _load_control_sources(params, root)
     source_files = None
     run_dir = create_run_directory(

@@ -14,6 +14,7 @@ from sensitivity_analysis import compute_sensitivity, fit_dispersive, write_run_
 from sensitivity_analysis.fitting import _dispersive, DispersionFitResult
 from dataclasses import asdict, fields
 from ...experiment_runtime import check_cancelled
+from sensitivity_analysis.acquisition import load_acquisition_rate
 
 
 QUALITY_THRESHOLDS = {"r_squared_min": 0.85, "relative_gamma_uncertainty_max": 0.5, "residual_sign_change_ratio_min": 0.0}
@@ -49,8 +50,9 @@ def _load_noise(raw: Path, values: dict[str, Any], actual_rates: dict[str, Any],
                 signal = np.asarray(np.load(file, allow_pickle=False), dtype=float)
                 if signal.ndim != 1 or signal.size < 2 or not np.isfinite(signal).all():
                     raise ValueError(f"噪声原始数据无效: {file}")
-                segment = min(signal.size, max(2, int(fs * duration)))
-                freq_this, psd = welch(signal - np.mean(signal), fs=fs, nperseg=segment, scaling="density")
+                capture_rate = load_acquisition_rate(file, fs)
+                segment = min(signal.size, max(2, int(capture_rate * duration)))
+                freq_this, psd = welch(signal - np.mean(signal), fs=capture_rate, nperseg=segment, scaling="density")
                 if psd_sum is None:
                     psd_sum = psd
                     freq = freq_this

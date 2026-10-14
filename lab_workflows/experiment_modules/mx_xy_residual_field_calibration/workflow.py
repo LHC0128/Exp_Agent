@@ -343,9 +343,9 @@ def _acquire_all(
 
 
 def run(params: MxXYResidualFieldCalibrationParams) -> Path:
-    require_lockin_compatibility('mx-xy-residual-field-calibration', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-xy-residual-field-calibration', params.to_external(), mapping=mapping)
     run_dir = create_run_directory(
         DATA_TYPE,
         params.run_tag,

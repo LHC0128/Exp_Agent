@@ -397,7 +397,7 @@ def _configure_outputs(
             order=params.response_demod_order,
             phase=float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift")),
         ),
-    )
+     for_acquisition=True)
     return float(actual_rate), actual_temperature, clock_sources
 
 
@@ -482,7 +482,7 @@ def _acquire_scan(
                 r_std_v=[item["r_std_v"] for item in summaries],
                 accepted_attempt_index=accepted_attempts,
                 accepted_file=np.asarray(accepted_files, dtype=str),
-                actual_rate_sa_s=np.float64(actual_rate),
+                actual_rate_sa_s=np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
                 keithley_current_range_ma=np.float64(
                     params.keithley_current_range_ma
                 ),
@@ -507,12 +507,12 @@ def _acquire_scan(
 
 
 def run(params: MxKeithley6221MainFieldCalibrationParams) -> Path:
-    require_lockin_compatibility('mx-keithley-6221-main-field-calibration', params.to_external())
     root = find_project_root()
     errors = params.validate(root)
     if errors:
         raise ValueError("；".join(errors))
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-keithley-6221-main-field-calibration', params.to_external(), mapping=mapping)
     run_dir = create_run_directory(DATA_TYPE, params.run_tag, params.to_external(), schema_version=params.schema_version, project_root=root)
     run_dir.update_config(
         experiment_id=EXPERIMENT_ID,

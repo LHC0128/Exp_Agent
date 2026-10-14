@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 import yaml
-from lockin_amplifier import daq
+from lockin_amplifier import daq, lockin_capabilities
 
 from ...common import WorkflowCancelled
 from ...steps.run_directory import RunDirectory
@@ -217,11 +217,18 @@ class DCScanTests(unittest.TestCase):
         instr = Mock()
         instr.device_id = "dev"
         instr.model = "HF2"
+        instr.acquisition_mode = "auto"
+        instr.capabilities = lockin_capabilities("HF2")
+        instr._acquisition_stream_settings = None
+        instr.get_double.return_value = 100.0
         instr.demod_path.side_effect = lambda idx: f"/dev/demods/{idx}"
         instr.daq.dataAcquisitionModule.return_value = module
         module.progress.return_value = [0]
+        cancel = Mock(side_effect=[None, WorkflowCancelled("DAQ取消")])
         with self.assertRaises(WorkflowCancelled):
-            daq.acquire_data(instr, cancellation_check=lambda: (_ for _ in ()).throw(WorkflowCancelled("DAQ取消")))
+            daq.acquire_data(instr, cancellation_check=cancel)
+        self.assertEqual(cancel.call_count, 2)
+        module.execute.assert_called_once()
         module.clear.assert_called_once()
         module.reset_mock()
         module.progress.return_value = [1]
@@ -234,8 +241,9 @@ class DCScanTests(unittest.TestCase):
             daq.acquire_data(instr, actual_rate=100, strict_cleanup=True)
         # 清理失败不能覆盖原始取消；默认模式仍保留旧行为。
         module.progress.return_value = [0]
+        cancel = Mock(side_effect=[None, WorkflowCancelled("DAQ取消")])
         with self.assertRaises(WorkflowCancelled):
-            daq.acquire_data(instr, strict_cleanup=True, cancellation_check=lambda: (_ for _ in ()).throw(WorkflowCancelled("DAQ取消")))
+            daq.acquire_data(instr, strict_cleanup=True, cancellation_check=cancel)
         module.progress.return_value = [1]
         self.assertEqual(len(daq.acquire_data(instr, actual_rate=100)), 1)
 

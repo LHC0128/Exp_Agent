@@ -50,6 +50,12 @@ learned_notes:
 
 # 静磁场灵敏度测量
 
+## 锁相采集方式与实际速率
+
+色散使用 `hf2_demod_rate` 请求率、`dispersion_duration_s` 时长和 `hf2_demod_idx` 解调器；静磁噪声使用 `hf2_noise_rate` 请求率、`noise_duration` 时长和 `hf2_demod_idx` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
+
+时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](lockin_amplifier.md#解调时序的模块选择)。
+
 当前默认参数唯一来源为[版本化参数文件](../params/experiments/static-sensitivity.yaml)，GUI“保存参数与布局”更新该文件和本实验布局。单次运行以自己的 `experiment_config.yaml` 为准，不用当前默认值解释历史采集。
 
 正式实现位于 `lab_workflows/experiment_modules/static_sensitivity/`。采集入口为 `experiments/Static_Magnetic_Field_Sensitivity.py`，只保存原始数据；`experiments/Static_Magnetic_Field_Sensitivity_plot.py` 调用离线分析器。GUI 自动分析、历史重新分析和分阶段分析共用同一套科学算法。`workflow.py`、`session.py` 和 `analysis.py` 仅负责编排，设备准备、安全恢复、激励、校相、采集和分析算法分别位于 `preparation.py`、`excitation.py`、`phase.py`、`acquisition.py` 和 `analysis_steps.py`。`stages.py` 是执行顺序、依赖、参数展示和失效范围的唯一来源。
@@ -87,7 +93,7 @@ learned_notes:
 
 ### 多量程噪声采集
 
-噪声测量保持 **Z=0、输出 OFF**，不把拟合中心 V0 应用到 Z 通道。锁相放大器 切换到噪声速率和时间常数；按配置切换 GS200 电流量程、等待并记录实际量程/电流。每次短暂关闭温控、等待原有磁场消退时间，连续 DAQ 采集 Y，逐段保存，再恢复温控并按原有噪声节奏等待。
+噪声测量保持 **Z=0、输出 OFF**，不把拟合中心 V0 应用到 Z 通道。锁相放大器 切换到噪声速率和时间常数；按配置切换 GS200 电流量程、等待并记录实际量程/电流。每次短暂关闭温控、等待原有磁场消退时间，连续 解调时序采集 Y，逐段保存，再恢复温控并按原有噪声节奏等待。
 
 DAQ 等待支持协作式取消，退出时清理 DAQ 模块。采集工作流不计算 PSD；离线使用记录的实际采样率执行 Welch、等权平均和量程比较。
 
@@ -100,7 +106,7 @@ DAQ 等待支持协作式取消，退出时清理 DAQ 模块。采集工作流�
 | `ramp_low` / `ramp_high` | DC 起止电压，V；起点小于终点，两端均满足 Z 安全范围 |
 | `dispersion_steps` | 扫描点数，整数，至少 7 |
 | `dispersion_step_settle_s` | 每点设置 Z 后的稳定等待，非负秒数 |
-| `hf2_demod_rate` | 色散与校相共用的请求采样率，有限正数，Sa/s；采集使用实际回读速率 |
+| `hf2_demod_rate` | 色散与校相共用的请求采样率，有限正数，Sa/s；模块按请求值选择，分析使用波形最终实际速率 |
 | `dispersion_duration_s` | 每点连续采集时间，有限正数，s；向上取整后至少 2 个样本 |
 | `dispersion_temp_switch_interval_points` | 分组点数，非负整数；0 表示整段扫描保持温控关闭，仅在收尾恢复 |
 | `dispersion_temp_switch_on_settle_s` | 每组后及校相后恢复温控等待，非负秒数；不作用于色散扫描结束后 |
@@ -186,7 +192,7 @@ data/Static_Magnetic_Field_Sensitivity/<时间戳>_<tag>/
 
 旧格式运行目录不迁移、不改原始文件；现有历史查看功能保留已有参数、图和结果，但旧格式不能填回或用新分析器重新分析。本次不增加旧配置或历史运行转换。没有运行状态的历史显示 `unknown`，不推定为完成；重新分析 API 在排队前拒绝旧格式。旧 `params/static_sensitivity.yaml` 仅留档，不再读取；旧独立参数/启动层已移除，`LAB_STATIC_*` 环境变量与旧命令行参数会明确报错。
 
-架构 Tab 使用现有单张总览，展示 DC 点连续 DAQ、中位数、完整波形落盘、分组温控和无 Z→锁相放大器 SYNC 触发的链路。图明确标注工作区版本、源码未冻结，不提供错误的旧 commit 链接。
+架构 Tab 使用现有单张总览，展示 DC 点采集、中位数、完整波形落盘、分组温控和无 Z→锁相放大器 SYNC 触发的链路。总览中的 DAQ 采集步骤现复用公共选择器，高速 MFLI 请求改用单段 Scope；每个 DC 点独立保存，不拼接为连续波形。图明确标注工作区版本、源码未冻结，不提供错误的旧 commit 链接。
 
 独立的 `Static_Magnetic_Field_Sensitivity_Optimize.py` 和 `_Optimize_Local.py` 不在此次采集替换范围。全局优化原有 2×2 汇总面板继续分别展示灵敏度、HWHM、斜率和 R²，以颜色及圆点/叉号区分有效和拒绝点；不混合单位、不补零。它们同样受共享色散拟合的零初值数值修正影响，但采集和选择逻辑不变。
 

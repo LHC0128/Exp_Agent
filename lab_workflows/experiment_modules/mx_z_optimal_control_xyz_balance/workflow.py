@@ -160,7 +160,7 @@ def _save_scan_aggregate(
         accepted_attempt_index=accepted_attempt,
         acquisition_order=acquisition_order,
         accepted_file=accepted_file,
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=np.float64(records[0].get("actual_rate_sa_s", actual_rate)),
         best_z_index=np.int64(best["z_index"]),
         best_x_index=np.int64(best["x_index"]),
         best_y_index=np.int64(best["y_index"]),
@@ -316,9 +316,9 @@ def safe_shutdown(
 
 def run(params: MxZOptimalControlXYZBalanceParams) -> Path:
     """执行固定 Z 最优控制下的 XYZ DC 三维网格扫描。"""
-    require_lockin_compatibility('mx-z-optimal-control-xyz-balance', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-z-optimal-control-xyz-balance', params.to_external(), mapping=mapping)
     theory = load_theory_control(
         Path(params.control_results_root),
         params.control_version,

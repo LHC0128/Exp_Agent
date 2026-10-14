@@ -384,7 +384,7 @@ def run() -> Path:
                 order=params.demod0_order,
                 phase=0.0,
             ),
-        )
+         for_acquisition=False)
         demod0_phase = calibrate_demod_phase(
             hfi,
             PhaseCalibrationConfig(
@@ -484,25 +484,13 @@ def run() -> Path:
                 order=params.demod3_order,
                 phase=0.0,
             ),
-        )
+         for_acquisition=True)
         demod3_path = hfi.demod_path(params.demod3_idx)
         demod3_r_path = f"{demod3_path}/sample.r"
-        r_collector = daq.DAQCollector(hfi)
-        r_collector.configure(
-            DAQConfig(
-                device=hf2_cfg["device_id"],
-                trigger_type=0,
-                duration=params.demod3_acquisition_duration_s,
-                grid_cols=max(
-                    1,
-                    int(round(actual_rate_d3 * params.demod3_acquisition_duration_s)),
-                ),
-                grid_rows=1,
-                grid_mode=2,
-                signal_paths=["sample.r"],
-            )
-        )
-        r_collector.subscribe(["sample.r"], demod_idx=params.demod3_idx)
+        r_config = DAQConfig(device=hf2_cfg["device_id"], trigger_type=0,
+            duration=params.demod3_acquisition_duration_s,
+            grid_cols=max(1, int(round(actual_rate_d3 * params.demod3_acquisition_duration_s))),
+            grid_rows=1, grid_mode=2, signal_paths=["sample.r"])
         run_directory.update_config(
             actual_rates={
                 "demod0_calibration_Sa_s": float(actual_rate_d0),
@@ -564,14 +552,18 @@ def run() -> Path:
                                     order=params.demod3_order,
                                     phase=0.0,
                                 ),
-                            )
+                             for_acquisition=True)
                             _interruptible_sleep(params.demod3_freq_settle_time_s)
                             try:
-                                r_mean = acquire_demod_r_mean(
+                                r_mean, acquisition_info = acquire_demod_r_mean(
                                     r_collector,
                                     demod3_r_path,
-                                    params.demod3_acquisition_duration_s,
+                                    params.demod3_acquisition_duration_s, instr=hfi, config=r_config,
+                                    demod_idx=params.demod3_idx, requested_rate=params.demod3_rate_sa_s,
+                                    actual_rate=actual_rate_d3, cancellation_check=check_cancelled,
+                                    return_metadata=True,
                                 )
+                                run_directory.update_config(demod3_acquisition=acquisition_info)
                             except Exception as exc:
                                 tqdm.write(
                                     f"控制 {control_frequency:.1f} Hz / Demod3 {frequency:.1f} Hz 采集失败: {exc}"

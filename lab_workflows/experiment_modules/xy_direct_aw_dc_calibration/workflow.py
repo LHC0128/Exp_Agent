@@ -76,13 +76,13 @@ from lockin_amplifier import (
     demod,
     daq,
 )
+from lockin_amplifier import result_rate, acquisition_metadata, save_acquisition_metadata
 
 print("实验库导入完成")
 
 # %% Cell 2
 # ========== 配置与安全限值 ==========
 MAPPING = load_mapping(project_root)
-require_lockin_compatibility('xy-direct-aw-dc-calibration', globals(), mapping=MAPPING)
 MAX_ARB_POINTS = signal_generator_max_arb_points(MAPPING["X_magnetic_field"])
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
@@ -265,6 +265,8 @@ print(
 
 # %% Cell 3
 # ========== 设备连接 ==========
+require_lockin_compatibility('xy-direct-aw-dc-calibration', globals(), mapping=MAPPING)
+
 devices = {}
 session = DeviceSession()
 clock_verification = {}
@@ -731,7 +733,7 @@ actual_rate_d0_meas = demod.configure_demodulator(
         order=DEMOD0_ORDER,
         phase=calibrated_phase_0_deg,
     ),
-)
+ for_acquisition=True)
 
 # ---- 创建运行目录并保存配置 ----
 timestamp = datetime.now().strftime("%m%d_%H%M")
@@ -915,9 +917,11 @@ try:
                         hfi,
                         config=daq_cfg,
                         demod_idx=DEMOD0_IDX,
-                        actual_rate=actual_rate_d0_meas,
+                        actual_rate=actual_rate_d0_meas, cancellation_check=check_cancelled, requested_rate=DEMOD0_RATE_Sa_s,
                         timeout=POINT_DURATION_s + 5.0,
                     )
+                    actual_rate_d0_meas = result_rate(daq_results, actual_rate_d0_meas)
+                    record.update(acquisition_metadata(daq_results))
                     y_signal = next(
                         (res.values for res in daq_results if res.signal_name == "sample.y"),
                         None,

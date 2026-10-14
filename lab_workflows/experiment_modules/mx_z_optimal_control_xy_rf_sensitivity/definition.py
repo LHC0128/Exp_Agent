@@ -22,7 +22,7 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-z-optimal-control-xy-bias-grid",
     description=(
-        '在 Z 周期最优控制下扫描 X/Y 补偿偏置，先在网格中心完成一次 RF 校相，再逐点测量 RF 灵敏度并报告最佳补偿点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
+        '在 Z 周期最优控制下扫描 X/Y 补偿偏置，先在网格中心完成一次 RF 校相，再逐点测量 RF 灵敏度并报告最佳补偿点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
     ),
     data_type="Mx_Z_Optimal_Control_XY_RF_Sensitivity",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

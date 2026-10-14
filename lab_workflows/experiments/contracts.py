@@ -232,9 +232,17 @@ class ExperimentDefinition:
         return errors
 
     def derive(self, values: dict[str, Any]) -> dict[str, Any]:
-        if not self.derive_runner:
-            return {}
-        return self.derive_runner(values)
+        result = self.derive_runner(values) if self.derive_runner else {}
+        from ..lockin_acquisition import experiment_acquisition_requests, acquisition_preflight
+        from ..common import load_mapping
+        requests = experiment_acquisition_requests(self.id, values)
+        if requests:
+            try:
+                mapping = load_mapping()
+                result["lockin_acquisition"] = acquisition_preflight(mapping.get("lockin_r") or mapping["lockin_xy"], requests)
+            except (KeyError, ValueError) as exc:
+                result["lockin_acquisition_error"] = str(exc)
+        return result
 
     def run(
         self,

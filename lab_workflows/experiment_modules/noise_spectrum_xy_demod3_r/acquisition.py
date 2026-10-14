@@ -27,8 +27,18 @@ def extract_polled_values(payload: dict[str, Any], expected_path: str) -> np.nda
     return values[np.isfinite(values)]
 
 
-def acquire_demod_r_mean(collector: Any, expected_path: str, duration_s: float) -> float:
+def acquire_demod_r_mean(collector: Any, expected_path: str, duration_s: float, *, instr=None,
+                         config=None, demod_idx=0, requested_rate=None, actual_rate=None,
+                         cancellation_check=None, return_metadata=False) -> float:
     """连续采集 Demod R，在内存中求均值且不保留时序样本。"""
+    if instr is not None:
+        from lockin_amplifier import daq, acquisition_metadata
+        results = daq.acquire_data(instr, config, demod_idx, actual_rate,
+                                   max(2.0, duration_s + 1.0), requested_rate=requested_rate,
+                                   cancellation_check=cancellation_check, strict_cleanup=True)
+        values = next(item.values for item in results if item.signal_name == "sample.r")
+        mean = float(np.mean(values)) if values.size else float("nan")
+        return (mean, acquisition_metadata(results)) if return_metadata else mean
     collector.execute()
     collector.wait(
         1.0,

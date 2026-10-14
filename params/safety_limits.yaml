@@ -194,7 +194,50 @@ safety_limits:
     max: 10.0
     ramp_rate: null
     output_off_on_error: true
-    description: "HF2 AuxOut2，Demod0 Y 回环至 Signal Input2，安全电压范围 ±10 V"
+    description: "HF2 AuxOut2，RF 回采辅助输出，安全电压范围 ±10 V"
+
+  hf2_dev18246_aux_output_0:
+    min: -10.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "HF2 AuxOut1，安全电压范围 ±10 V"
+  hf2_dev18246_aux_output_2:
+    min: -10.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "HF2 AuxOut3，安全电压范围 ±10 V"
+  hf2_dev18246_aux_output_3:
+    min: -10.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "HF2 AuxOut4，安全电压范围 ±10 V"
+  mfli_dev30661_aux_output_0:
+    min: -10.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "MFLI AuxOut1，安全电压范围 ±10 V"
+  mfli_dev30661_aux_output_1:
+    min: -10.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "MFLI AuxOut2，安全电压范围 ±10 V"
+  mfli_dev30661_aux_output_2:
+    min: -10.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "MFLI AuxOut3，安全电压范围 ±10 V"
+  mfli_dev30661_aux_output_3:
+    min: -10.0
+    max: 10.0
+    ramp_rate: null
+    output_off_on_error: true
+    description: "MFLI AuxOut4，安全电压范围 ±10 V"
 
   # ---- 锁相 & 示波器（只读，无输出限值） ----
   lockin_r:

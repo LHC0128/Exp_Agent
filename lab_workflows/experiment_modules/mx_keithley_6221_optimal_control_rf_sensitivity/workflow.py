@@ -169,7 +169,7 @@ def _configure_hf2(params: MxKeithley6221OptimalControlRFParams, devices: dict[s
     demod.configure_signal_input(hf2, SignalInputConfig(input_index=0, range=params.hf2_signal_range_v, diff=False))
     demod.configure_oscillator(hf2, OscillatorConfig(osc_index=params.demod_osc_idx, frequency=frequency_hz))
     phase_shift_deg = float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift"))
-    actual_rate = float(demod.configure_demodulator(hf2, DemodulatorConfig(demod_index=params.demod_idx, enable=True, rate=params.response_rate_sa_s, input_channel=0, osc_select=params.demod_osc_idx, harmonic=1, time_constant=params.response_time_constant_s, order=params.response_demod_order, phase=phase_shift_deg)))
+    actual_rate = float(demod.configure_demodulator(hf2, DemodulatorConfig(demod_index=params.demod_idx, enable=True, rate=params.response_rate_sa_s, input_channel=0, osc_select=params.demod_osc_idx, harmonic=1, time_constant=params.response_time_constant_s, order=params.response_demod_order, phase=phase_shift_deg), for_acquisition=True))
     return actual_rate, {"demod_idx": params.demod_idx, "oscillator_idx": params.demod_osc_idx, "oscillator_frequency_hz": frequency_hz, "requested_response_rate_sa_s": params.response_rate_sa_s, "actual_response_rate_sa_s": actual_rate, "response_time_constant_s": params.response_time_constant_s, "response_order": params.response_demod_order, "phase_shift_deg": phase_shift_deg}
 
 
@@ -369,7 +369,7 @@ def _acquire_phase_scan(
         ),
         "initial_accepted_file": np.asarray(initial_files),
         "cross_phase_reacquired": cross_phase_reacquired,
-        "actual_rate_sa_s": np.float64(actual_rate),
+        "actual_rate_sa_s": np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
         "x_dc_field_v": np.float64(params.x_dc_field_v),
         "y_rf_dc_offset_v": np.float64(params.y_rf_offset_v),
     }
@@ -541,11 +541,11 @@ def _source_snapshot(
 
 
 def run(params: MxKeithley6221OptimalControlRFParams) -> Path:
-    require_lockin_compatibility('mx-keithley-6221-optimal-control-rf-sensitivity', params.to_external())
     root = find_project_root()
     if not params.confirm_gs200_connected:
         raise ValueError("必须确认 GS200 已接入 Z 主磁场线圈（6221 接 Z 小磁场线圈）")
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-keithley-6221-optimal-control-rf-sensitivity', params.to_external(), mapping=mapping)
     theory = load_theory_control(Path(params.control_results_root), params.control_version)
     calibration = load_keithley_calibration(root, params.keithley_calibration_source_run)
     applied = build_applied_current(theory, calibration, params.control_scale)

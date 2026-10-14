@@ -59,16 +59,20 @@ freqs_saved = None
 
 for i in tqdm(range(n_powers), desc="PSD/ASD"):
     wf = np.load(raw_dir / f"waveforms_P{i:03d}.npz")
+    rates = wf["actual_rates_Sa_s"] if "actual_rates_Sa_s" in wf else np.full(wf["x_waveforms"].shape[0], float(wf.get("actual_rate", actual_rate)))
     x_wf, y_wf = wf["x_waveforms"], wf["y_waveforms"]
     asd_xl, asd_yl, psd_xa, psd_ya = [], [], [], []
     for rep in range(x_wf.shape[0]):
+        rate = float(rates[rep])
         x, y = x_wf[rep], y_wf[rep]
         if np.all(np.isnan(x)):
             asd_xl.append(np.nan); asd_yl.append(np.nan); continue
         nperseg = min(PSD_NPERSEG, len(x)//2)
-        freqs, psd_x = scipy_signal.welch(x, fs=actual_rate, nperseg=nperseg, scaling="density", detrend="constant")
-        _, psd_y = scipy_signal.welch(y, fs=actual_rate, nperseg=nperseg, scaling="density", detrend="constant")
+        freqs, psd_x = scipy_signal.welch(x, fs=rate, nperseg=nperseg, scaling="density", detrend="constant")
+        _, psd_y = scipy_signal.welch(y, fs=rate, nperseg=nperseg, scaling="density", detrend="constant")
         if freqs_saved is None: freqs_saved = freqs
+        elif freqs_saved.shape != freqs.shape or not np.allclose(freqs_saved, freqs):
+            raise ValueError("记录实际采样率或长度不一致，不能合并 PSD")
         fm = (freqs > 0) & (freqs <= FLAT_FREQ_LIMIT)
         asd_xl.append(np.median(np.sqrt(np.maximum(psd_x[fm], 0))))
         asd_yl.append(np.median(np.sqrt(np.maximum(psd_y[fm], 0))))

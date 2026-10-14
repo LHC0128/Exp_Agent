@@ -23,6 +23,7 @@ from ...steps import (
     synchronize_connected_clocks, temperature_gated_acquire,
 )
 from .models import DetectionChainFrequencyResponseParams
+from lockin_amplifier import result_rate, acquisition_metadata, save_acquisition_metadata
 
 
 class _RuntimeCancellation:
@@ -41,12 +42,12 @@ def _wait(seconds: float) -> None:
 
 def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | None = None) -> Path:
     """连接映射设备，采集 HF2 Y 波形及频率响应。"""
-    require_lockin_compatibility('detection-chain-frequency-response', params.to_external())
     root = project_root or find_project_root()
     errors = params.validate(root)
     if errors:
         raise ValueError("；".join(errors))
     mapping, limits = load_mapping(root), load_safety_limits(root)
+    require_lockin_compatibility('detection-chain-frequency-response', params.to_external(), mapping=mapping)
     for key, value in (
         ("Pump_laser_power", params.pump_laser_power_v),
         ("Probe_laser_power", params.probe_laser_power_v),
@@ -160,7 +161,7 @@ def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | N
                 order=params.hf2_demod_order,
                 phase=phase_shift_deg,
             ),
-        )
+         for_acquisition=True)
         if actual_rate <= 0:
             raise RuntimeError("HF2 返回无效采样率")
         max_baseband = max(
@@ -220,7 +221,7 @@ def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | N
             def acquire_point():
                 return daq.acquire_data(
                     hf2, config=config, demod_idx=params.hf2_demod_idx,
-                    actual_rate=actual_rate,
+                    actual_rate=actual_rate, cancellation_check=check_cancelled, requested_rate=params.hf2_daq_rate_sa_s,
                     timeout=max(5.0, params.hf2_daq_duration_s + 3.0),
                 )
 
@@ -241,6 +242,9 @@ def run(params: DetectionChainFrequencyResponseParams, *, project_root: Path | N
             if y is None or y.size < 8:
                 raise RuntimeError(f"频率点 {index + 1} 未取得足够的 HF2 Y 数据")
             np.save(directory.raw / f"waveform_{index:04d}.npy", y)
+            actual_rate = result_rate(results, actual_rate)
+            save_acquisition_metadata(directory.raw / f"waveform_{index:04d}.npy", results)
+            directory.update_config(acquisition=acquisition_metadata(results))
             psd_freq, psd = signal.welch(
                 y, fs=actual_rate, nperseg=min(params.psd_nperseg, y.size),
                 scaling="density",

@@ -57,6 +57,12 @@ parameters_source: experiments/XY_DC_Voltage_Calibration.py
 
 # XY DC 电压标定方法
 
+## 锁相采集方式与实际速率
+
+XY 电压标定使用 `HF2_DEMOD0_RATE` 请求率、`POINT_DURATION_s` 时长和 `HF2_DEMOD0_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
+
+时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](lockin_amplifier.md#解调时序的模块选择)。
+
 当前参数来源：[采集脚本参数区](../experiments/XY_DC_Voltage_Calibration.py)。GUI 保存目标为 `params/experiments/xy-dc-voltage-calibration.yaml`；该文件尚未生成时按脚本参数回退，本文不复制默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
 
 锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，GUI 不再提供开启选项。

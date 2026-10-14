@@ -205,11 +205,11 @@ def _best_workpoint(fit: dict[str, Any], fallback: MxKeithley6221OptimalControlB
 
 
 def run(params: MxKeithley6221OptimalControlBalancedSensitivityParams) -> Path:
-    require_lockin_compatibility('mx-keithley-6221-optimal-control-balanced-sensitivity', params.to_external())
     root = find_project_root()
     if not params.confirm_gs200_connected:
         raise ValueError("必须确认 GS200 已接入 Z 主磁场线圈（6221 接 Z 小磁场线圈）")
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-keithley-6221-optimal-control-balanced-sensitivity', params.to_external(), mapping=mapping)
     theory = load_theory_control(
         Path(params.control_results_root), params.control_version
     )

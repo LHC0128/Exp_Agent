@@ -131,7 +131,7 @@ def configure_outputs(params, devices, channels, mapping, directory):
         demod_index=0, enable=True, rate=params.response_rate_sa_s, input_channel=0,
         osc_select=0, harmonic=1, time_constant=params.response_time_constant_s,
         order=params.response_demod_order, phase=phase,
-    ))
+    ), for_acquisition=True)
     if actual_rate * params.frequency_duration_s < 8:
         raise RuntimeError("HF2 实际采样率下每频点不足 8 个样本")
     snapshot = {
@@ -160,20 +160,20 @@ def acquire_point(params, devices, channels, directory, metadata, actual_rate, d
             sleep(params.temp_switch_off_lead_s)
             sleep(params.frequency_settle_time_s)
             payload = acquire_r(devices["hf2"], device_id=device_id, demod_idx=0,
-                                actual_rate_sa_s=actual_rate, duration_s=params.frequency_duration_s)
+                                actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s, duration_s=params.frequency_duration_s)
             summary = summarize_r(payload)
             accepted = summary["r_std_v"] <= params.r_bad_point_std_threshold_v
             filename = f"frequency_{metadata['frequency_index']:04d}_attempt_{attempt:02d}.npz"
             # 在恢复温控前落盘，恢复失败也不丢掉刚采集的数据。
             np.savez(directory / filename, time_s=payload["time_s"], r_v=payload["r"],
-                     actual_rate_sa_s=actual_rate, attempt_index=attempt,
-                     quality_accepted=accepted, **metadata, **summary)
+                     actual_rate_sa_s=payload.get("actual_rate_Sa_s", actual_rate), attempt_index=attempt,
+                     quality_accepted=accepted, **metadata, **summary, **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
         finally:
             set_temperature_switch(devices["Temp_Switch"], True, channel=channels["Temp_Switch"])
             time.sleep(params.temp_switch_on_lag_s)
         check_cancelled()
         if accepted:
-            return summary, filename
+            return {**summary, "actual_rate_sa_s": float(payload.get("actual_rate_Sa_s", actual_rate))}, filename
         print(f"R 标准差 {summary['r_std_v']:.6g} V 超限，第 {attempt + 1} 次采集被拒绝")
     raise RuntimeError(f"频点 {metadata['frequency_hz']} Hz 连续 {params.r_point_max_attempts} 次 R 标准差超限")
 
@@ -217,7 +217,7 @@ def acquire_scan(params, devices, channels, directory, actual_rate, device_id):
         summary_path = point_dir / "frequency_scan.npz"
         np.savez(summary_path, z_bias_v=z, z_bias_commanded_v=z, predicted_center_hz=params.predicted_center(z),
                  frequency_hz=frequencies, r_mean_v=means, r_std_v=stds,
-                 actual_rate_sa_s=actual_rate, accepted_file=np.asarray(accepted_files))
+                 actual_rate_sa_s=summary.get("actual_rate_sa_s", actual_rate), accepted_file=np.asarray(accepted_files))
         files.append(summary_path.relative_to(directory.root).as_posix())
         centers.append(params.predicted_center(z))
         finished_z.append(z)
@@ -241,8 +241,8 @@ def safe_shutdown(params, devices, channels):
 
 
 def run(params: BellBloomZFieldCalibrationParams) -> Path:
-    require_lockin_compatibility('bell-bloom-z-field-calibration', params.to_external())
     mapping = load_mapping()
+    require_lockin_compatibility('bell-bloom-z-field-calibration', params.to_external(), mapping=mapping)
     validate_hardware(mapping)
     directory = create_run_directory(DATA_TYPE, params.run_tag, params.to_external(), schema_version=params.schema_version)
     directory.update_config(experiment_id=EXPERIMENT_ID, execution_mode="typed_workflow",

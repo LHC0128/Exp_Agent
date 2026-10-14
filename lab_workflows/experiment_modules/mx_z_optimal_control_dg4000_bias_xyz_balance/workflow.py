@@ -217,7 +217,7 @@ def _save_scan_aggregate(
         accepted_attempt_index=accepted_attempt,
         acquisition_order=acquisition_order,
         accepted_file=accepted_file,
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=np.float64(records[0].get("actual_rate_sa_s", actual_rate)),
         z_control_waveform_mean_v=np.float64(
             float(np.mean(applied.voltage_v))
         ),
@@ -410,12 +410,12 @@ def safe_shutdown(
 
 def run(params: MxZOptimalControlDG4000BiasXYZBalanceParams) -> Path:
     """执行 DG4000 Z 偏置下的 XYZ 网格扫描。"""
-    require_lockin_compatibility('mx-z-optimal-control-dg4000-bias-xyz-balance', params.to_external())
     root = find_project_root()
     model_errors = params.validate(root)
     if model_errors:
         raise ValueError("；".join(model_errors))
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-z-optimal-control-dg4000-bias-xyz-balance', params.to_external(), mapping=mapping)
     calibration = load_z_calibration(root, params.z_calibration_source_run)
     corrected = None
     if params.control_waveform_source == "corrected_run":

@@ -54,7 +54,6 @@ print("所有库导入成功")
 # %% Cell 4
 # 加载物理量→仪器映射
 MAPPING = load_mapping(project_root)
-require_lockin_compatibility('noise-spectrum-xy-v2', globals(), mapping=MAPPING)
 
 # 加载安全限值
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
@@ -137,6 +136,8 @@ def validate_safety_limit(name, value):
 print("安全校验函数已定义")
 
 # %% Cell 6
+require_lockin_compatibility('noise-spectrum-xy-v2', globals(), mapping=MAPPING)
+
 devices = {}
 
 try:
@@ -501,6 +502,8 @@ print("分通道校相：X/Y 载波相位校准")
 print("=" * 60)
 
 import math  # noqa: F811
+from lockin_amplifier import result_rate, acquisition_metadata, save_acquisition_metadata
+from lab_workflows.experiment_runtime import check_cancelled
 
 # 设置 DC 电压至中间值（0.65V + 偏置补偿 = 50% 载波幅度），用于校相
 CALIB_DC_VOLTAGE = 0.5
@@ -592,7 +595,7 @@ daq_demod_cfg = DemodulatorConfig(
     time_constant=HF2_DAQ_TC, order=HF2_DEMOD_ORDER,
     phase=calibrated_phase,
 )
-actual_rate_daq = demod.configure_demodulator(hfi, daq_demod_cfg)
+actual_rate_daq = demod.configure_demodulator(hfi, daq_demod_cfg, for_acquisition=True)
 grid_cols = int(actual_rate_daq * HF2_DAQ_DURATION)
 time.sleep(0.2)
 
@@ -638,8 +641,9 @@ try:
         try:
             results = daq.acquire_data(
                 hfi, daq_cfg, demod_idx=0,
-                actual_rate=actual_rate_daq, timeout=HF2_DAQ_DURATION + 10.0,
+                actual_rate=actual_rate_daq, cancellation_check=check_cancelled, requested_rate=HF2_DAQ_RATE, timeout=HF2_DAQ_DURATION + 10.0,
             )
+            actual_rate_daq = result_rate(results, actual_rate_daq)
             waveform = results[0].values
         except Exception as e:
             tqdm.write(f"  [{i:4d}/{AM_DC_POINTS}] V_DC={dc_v:.4f}V: DAQ 采集失败: {e}")
@@ -647,6 +651,7 @@ try:
 
         # 保存原始波形（.npy 二进制格式）
         np.save(raw_dir / f"waveform_C{i:04d}.npy", waveform)
+        save_acquisition_metadata(raw_dir / f"waveform_C{i:04d}.npy", results)
 
         # 恢复温度开关
         dg_temp.set_output(True, channel=2)

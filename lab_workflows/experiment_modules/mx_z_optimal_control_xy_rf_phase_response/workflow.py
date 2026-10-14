@@ -536,7 +536,7 @@ def _save_grid_aggregate(
         cross_phase_initial_residual_v=cross_phase_initial_residual,
         cross_phase_final_residual_v=cross_phase_final_residual,
         acquisition_order=acquisition_order,
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=np.float64(records[0].get("actual_rate_sa_s", actual_rate)),
         fit_accepted=fit_accepted,
         fit_rejection_reason=fit_rejection,
         diagnostic_model=diagnostic_model,
@@ -651,6 +651,7 @@ def _acquire_phase_curve(
         "y_field_v": y_v,
         "r_mean_v": r_mean,
         "r_std_v": r_std,
+        "actual_rate_sa_s": summaries[0].get("actual_rate_sa_s", actual_rate),
         "accepted_attempt_index": np.asarray(attempts, dtype=int),
         "accepted_file": np.asarray(files),
         "initial_accepted_attempt_index": np.asarray(initial_attempts, dtype=int),
@@ -713,9 +714,9 @@ def safe_shutdown(
 
 def run(params: MxZOptimalControlXYRFPhaseResponseParams) -> Path:
     """执行 XY 网格上的 RF 相位响应采集。"""
-    require_lockin_compatibility('mx-z-optimal-control-xy-rf-phase-response', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-z-optimal-control-xy-rf-phase-response', params.to_external(), mapping=mapping)
     corrected, theory, calibration, applied = _load_control_sources(params, root)
     x_axis, y_axis, configured_phase, acquisition_phase = build_axes(params)
     run_dir = create_run_directory(

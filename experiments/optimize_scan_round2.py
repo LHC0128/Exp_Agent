@@ -5,14 +5,17 @@ from pathlib import Path
 from datetime import datetime
 from scipy import signal as scipy_signal
 from gs200 import GS200Instrument
-from lab_workflows.devices import create_signal_generator
+from lab_workflows.devices import create_signal_generator, create_lockin
 from lab_workflows.common import load_mapping
+from lab_workflows.lockin_acquisition import acquisition_preflight
 from lockin_amplifier import (
-    HF2Instrument, DAQConfig,
+    AcquisitionRequest, DAQConfig,
     SignalInputConfig, OscillatorConfig, DemodulatorConfig,
     demod, daq,
 )
 from sensitivity_analysis import fit_dispersive, compute_sensitivity, write_run_record
+from lockin_amplifier import result_rate, acquisition_metadata, save_acquisition_metadata
+from lab_workflows.experiment_runtime import check_cancelled
 
 MAPPING = load_mapping()
 with open("params/safety_limits.yaml", encoding="utf-8") as f:
@@ -31,6 +34,11 @@ EXPERIMENT_TYPE = "Static_Magnetic_Field_Sensitivity"
 Z_V_TO_NT, Z_V_TO_FT = 3517, 3517 * 1e6
 RAMP_LOW, RAMP_HIGH, RAMP_FREQ, RAMP_SYMMETRY, DAQ_DURATION = -0.5, 0.5, 1.0, 20, 1
 NOISE_N_AVG, NOISE_DURATION = 5, 1.0
+ACQUISITION_REQUESTS = (
+    AcquisitionRequest("触发色散", 1000, DAQ_DURATION, 0, ("sample.r", "sample.x", "sample.y"), trigger_type=1),
+    AcquisitionRequest("噪声", 50000, NOISE_DURATION, 0, ("sample.y",)),
+)
+acquisition_preflight(MAPPING["lockin_r"], ACQUISITION_REQUESTS)
 PUMP_MOD_FREQ, PUMP_MOD_AMPLITUDE = 90e3, 0.18
 RF_GATE_AMPLITUDE, RF_GATE_OFFSET = 5.0, 2.5
 
@@ -106,7 +114,7 @@ dg_mod.connect()
 dg_temp = create_signal_generator(MAPPING["Temp_Switch"]["resource"], channel=2)
 dg_temp.connect()
 
-hfi = HF2Instrument(host="127.0.0.1", port=8005, api_level=1, device_id="dev18246")
+hfi = create_lockin(MAPPING["lockin_r"], acquisition_requests=ACQUISITION_REQUESTS)
 hfi.connect(); hfi.set_extclk(True)
 print(f"  HF2: {hfi.idn}")
 
@@ -252,14 +260,15 @@ try:
                 signal_paths=["sample.r", "sample.x", "sample.y"], extra_paths=[aux_path],
             )
             daq_results = daq.acquire_data(hfi, config=daq_cfg, demod_idx=0,
-                                           actual_rate=actual_rate, timeout=DAQ_DURATION + 10)
+                                           actual_rate=actual_rate, cancellation_check=check_cancelled, requested_rate=1000.0, timeout=DAQ_DURATION + 10)
+            actual_rate = result_rate(daq_results, actual_rate)
 
             dg_sweep.set_output(False, channel=1); dg_sweep.set_sync_state(False, channel=1)
             dg_temp.set_output(True, channel=2); time.sleep(0.5)
 
             # Parse
             T_ramp = 1.0 / RAMP_FREQ; s_val = RAMP_SYMMETRY / 100
-            rd = {}
+            rd = acquisition_metadata(daq_results)
             for res in daq_results:
                 rd[res.signal_name] = res.values
                 rd[f"{res.signal_name}_time"] = res.time
@@ -289,7 +298,7 @@ try:
             noise_dcfg = DemodulatorConfig(demod_index=0, enable=True, rate=50000,
                                            input_channel=0, osc_select=0, harmonic=1,
                                            time_constant=1e-6, order=4, phase=phase)
-            actual_noise_rate = demod.configure_demodulator(hfi, noise_dcfg)
+            actual_noise_rate = demod.configure_demodulator(hfi, noise_dcfg, for_acquisition=True)
             time.sleep(0.3)
             dg_sweep.setup_dc(0, channel=1); dg_sweep.set_output(False, channel=1)
             time.sleep(0.5)
@@ -304,9 +313,12 @@ try:
                                  grid_cols=int(fs_noise * NOISE_DURATION),
                                  grid_rows=1, grid_mode=2, signal_paths=["sample.y"])
                 nres = daq.acquire_data(hfi, config=ncfg, demod_idx=0,
-                                        actual_rate=fs_noise, timeout=NOISE_DURATION + 5)
+                                        actual_rate=fs_noise, cancellation_check=check_cancelled, requested_rate=50000.0, timeout=NOISE_DURATION + 5)
+                fs_noise = result_rate(nres, fs_noise)
                 dg_temp.set_output(True, channel=2); time.sleep(5)
                 np.save(noise_dir / f"noise_{ni:04d}.npy", nres[0].values)
+                save_acquisition_metadata(noise_dir / f"noise_{ni:04d}.npy", nres)
+                noise_metadata = acquisition_metadata(nres)
                 del nres
 
             # PSD
@@ -321,7 +333,7 @@ try:
             psd_avg = psd_sum / NOISE_N_AVG
             freq_res = float(freq_arr[1] - freq_arr[0])
             np.savez(run_dir / "raw" / "noise_data.npz",
-                     psd_avg=psd_avg, freq=freq_arr, fs=fs_noise, n_avg=NOISE_N_AVG)
+                     psd_avg=psd_avg, freq=freq_arr, fs=fs_noise, n_avg=NOISE_N_AVG, **noise_metadata)
 
             restore_cfg = DemodulatorConfig(demod_index=0, enable=True, rate=1000,
                                             input_channel=0, osc_select=0, harmonic=1,

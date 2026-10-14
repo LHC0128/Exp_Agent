@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import math
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,8 @@ from ...common import validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import DGChannelShutdown, TemperatureSwitchRestore, run_safety_shutdown, set_temperature_switch
 from ...steps.dispersion import acquire_dispersion_point, save_scan
+from lockin_amplifier import DAQConfig, select_acquisition
+from lockin_amplifier.acquisition import suspended_demod_streams
 from .models import StaticSensitivityParams
 class RuntimeCancellation:
     """沿用现有实验的取消文件到公共步骤接入方式。"""
@@ -43,6 +46,16 @@ def set_temp_switch(device, channel: int, enabled: bool) -> None:
 
 def acquire_dispersion(params: StaticSensitivityParams, z, z_channel: int, temp,
                        temp_channel: int, hf2, path: Path) -> None:
+    """启动 Z 输出前检查模块，并在 Scope 整个扫描阶段暂停解调传输。"""
+    plan = select_acquisition(hf2.model, hf2.capabilities,
+        DAQConfig(duration=params.dispersion_duration_s, signal_paths=["sample.x", "sample.y"]),
+        params.hf2_demod_rate, params.hf2_demod_idx, hf2.acquisition_mode)
+    with suspended_demod_streams(hf2) if plan.module == "scope" else nullcontext():
+        _acquire_dispersion(params, z, z_channel, temp, temp_channel, hf2, path)
+
+
+def _acquire_dispersion(params: StaticSensitivityParams, z, z_channel: int, temp,
+                        temp_channel: int, hf2, path: Path) -> None:
     """纯 DC 正向扫描，逐点中位数；即使失败也保留已经读取的样本。"""
     offsets = np.linspace(params.dispersion_start_v, params.dispersion_stop_v, params.dispersion_steps)
     data = {
@@ -83,6 +96,8 @@ def acquire_dispersion(params: StaticSensitivityParams, z, z_channel: int, temp,
             data["sample_counts"][index] = point["sample_count"]
             data["actual_rate_sa_s"][index] = point["actual_rate_sa_s"]
             data["actual_duration_s"][index] = point["actual_duration_s"]
+            data["acquisition_module"] = point["acquisition_module"]
+            data["time_source"] = point["time_source"]
             data["completed_mask"][index] = True
             data["point_finished_unix_s"][index] = time.time()
             z.set_output(False, channel=z_channel)
@@ -120,7 +135,7 @@ def prepare_noise(ctx):
     import math
 
     hf2, params = ctx.devices["hf2"], ctx.params
-    rate = float(demod.configure_demodulator(hf2, demod_config(params, ctx.calibrated_phase, noise=True)))
+    rate = float(demod.configure_demodulator(hf2, demod_config(params, ctx.calibrated_phase, noise=True), for_acquisition=True))
     if not math.isfinite(rate) or rate <= 0 or int(rate * params.noise_duration) < 2:
         raise ValueError("HF2 实际噪声采样率无效或采集样本不足")
     ctx.noise_rate = rate
@@ -135,7 +150,7 @@ def prepare_noise(ctx):
 
 def acquire_noise(ctx):
     """多量程逐段采集原始 Y；不在采集期间计算 PSD。"""
-    from lockin_amplifier import DAQConfig, daq
+    from lockin_amplifier import DAQConfig, daq, result_rate, acquisition_metadata, save_acquisition_metadata
 
     params, devices, channels, mapping, directory = ctx.params, ctx.devices, ctx.channels, ctx.mapping, ctx.directory
     hf2 = devices["hf2"]
@@ -169,12 +184,15 @@ def acquire_noise(ctx):
                               duration=params.noise_duration, grid_cols=int(rate * params.noise_duration),
                               grid_rows=1, grid_mode=2, signal_paths=["sample.y"])
             acquired = daq.acquire_data(hf2, config=config, demod_idx=params.hf2_demod_idx,
-                                       actual_rate=rate, timeout=params.noise_duration + 5,
+                                       actual_rate=rate, requested_rate=params.hf2_noise_rate, timeout=params.noise_duration + 5,
                                        cancellation_check=check_cancelled, strict_cleanup=True)
             waveform = next((np.asarray(item.values) for item in acquired if item.signal_name == "sample.y"), None)
             if waveform is None:
                 raise ValueError("HF2 DAQ 未返回 sample.y")
             np.save(noise_dir / f"noise_{index:04d}.npy", waveform)
+            save_acquisition_metadata(noise_dir / f"noise_{index:04d}.npy", acquired)
+            ctx.state["actual_rates"]["hf2_noise_rate_Sa_s"] = result_rate(acquired, rate)
+            measurement["acquisition"] = acquisition_metadata(acquired)
             measurement["samples_saved"] += 1
             ctx.save()
             if waveform.ndim != 1 or waveform.size < 2 or not np.isfinite(waveform).all():

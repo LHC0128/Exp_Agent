@@ -47,12 +47,13 @@ from lockin_amplifier import (
     daq,
 )
 from sensitivity_analysis import fit_dispersive, compute_sensitivity, write_run_record
+from lockin_amplifier import result_rate, acquisition_metadata, save_acquisition_metadata
+from lab_workflows.experiment_runtime import check_cancelled
 
 print("库导入完成")
 
 # %% Cell 2
 MAPPING = load_mapping(project_root)
-require_lockin_compatibility('static-sensitivity-optimize-local', globals(), mapping=MAPPING)
 
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
@@ -265,6 +266,8 @@ def update_experiment_config(run_dir, **updates):
 print("工具函数已定义")
 
 # %% Cell 4
+require_lockin_compatibility('static-sensitivity-optimize-local', globals(), mapping=MAPPING)
+
 devices = {}
 
 try:
@@ -568,16 +571,17 @@ def acquire_dispersion(devs, raw_dir):
             hfi,
             config=daq_cfg,
             demod_idx=HF2_DEMOD_IDX,
-            actual_rate=state["actual_rate"],
+            actual_rate=state["actual_rate"], cancellation_check=check_cancelled, requested_rate=HF2_DEMOD_RATE,
             timeout=DAQ_DURATION + 10.0,
         )
+        state['actual_rate'] = result_rate(daq_results, state['actual_rate'])
 
     finally:
         dg_sweep.set_output(False, channel=1)
         dg_sweep.set_sync_state(False, channel=1)
         dg_temp.set_output(True, channel=2)
 
-    recorded_data = {}
+    recorded_data = acquisition_metadata(daq_results)
     for result in daq_results:
         if "auxin" in result.signal_name.lower():
             key = f"aux_{result.signal_name}"
@@ -653,7 +657,7 @@ def acquire_noise(devs, raw_dir):
         phase=state["phase"],
     )
     state["actual_rate_noise"] = float(
-        demod.configure_demodulator(hfi, noise_demod_cfg)
+        demod.configure_demodulator(hfi, noise_demod_cfg, for_acquisition=True)
     )
     time.sleep(0.3)
 
@@ -687,17 +691,21 @@ def acquire_noise(devs, raw_dir):
                 hfi,
                 config=noise_cfg,
                 demod_idx=HF2_DEMOD_IDX,
-                actual_rate=fs_noise,
+                actual_rate=fs_noise, cancellation_check=check_cancelled, requested_rate=HF2_NOISE_RATE,
                 timeout=NOISE_DURATION + 5.0,
             )
+            fs_noise = result_rate(noise_results, fs_noise)
             dg_temp.set_output(True, channel=2)
             time.sleep(2)
             y = noise_results[0].values
             np.save(noise_root_dir / f"noise_{idx:04d}.npy", y)
+            save_acquisition_metadata(noise_root_dir / f"noise_{idx:04d}.npy", noise_results)
+            noise_metadata = acquisition_metadata(noise_results)
             del y, noise_results
 
         psd_sum = None
         freq = None
+        nperseg = int(fs_noise * NOISE_DURATION)
         for idx in range(NOISE_N_AVG):
             y = np.load(noise_root_dir / f"noise_{idx:04d}.npy")
             freq_this, psd = scipy_signal.welch(
@@ -721,6 +729,7 @@ def acquire_noise(devs, raw_dir):
             freq=freq,
             fs=fs_noise,
             n_avg=NOISE_N_AVG,
+            **noise_metadata,
         )
         return psd_avg, freq, freq_resolution
 

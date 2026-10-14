@@ -56,13 +56,14 @@ from sensitivity_analysis import (
     fit_dispersive, compute_sensitivity, write_run_record,
     SummaryLogger,
 )
+from lockin_amplifier import result_rate, acquisition_metadata, save_acquisition_metadata
+from lab_workflows.experiment_runtime import check_cancelled
 
 print("所有库导入成功")
 
 # %% Cell 2
 # ========== 加载配置 ==========
 MAPPING = load_mapping(project_root)
-require_lockin_compatibility('static-sensitivity-optimize', globals(), mapping=MAPPING)
 
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
@@ -185,6 +186,8 @@ def validate_safety_limit(name, value):
     return value
 
 # ========== 连接所有设备 ==========
+require_lockin_compatibility('static-sensitivity-optimize', globals(), mapping=MAPPING)
+
 devices = {}
 
 try:
@@ -446,8 +449,9 @@ def acquire_dispersion(devs, calibrated_phase, actual_rate, run_dir):
 
     daq_results = daq.acquire_data(
         hfi, config=daq_cfg, demod_idx=0,
-        actual_rate=actual_rate, timeout=DAQ_DURATION + 10.0,
+        actual_rate=actual_rate, cancellation_check=check_cancelled, requested_rate=HF2_DEMOD_RATE, timeout=DAQ_DURATION + 10.0,
     )
+    actual_rate = result_rate(daq_results, actual_rate)
 
     dg_sweep.set_output(False, channel=1)
     dg_sweep.set_sync_state(False, channel=1)
@@ -456,7 +460,7 @@ def acquire_dispersion(devs, calibrated_phase, actual_rate, run_dir):
 
     # 解析 recorded_data
     T_ramp = 1.0 / RAMP_FREQ
-    recorded_data = {}
+    recorded_data = acquisition_metadata(daq_results)
     for result in daq_results:
         if "auxin" in result.signal_name.lower():
             recorded_data[f"aux_{result.signal_name}"] = result.values
@@ -523,7 +527,7 @@ def acquire_noise(devs, recorded_data, calibrated_phase, run_dir):
         time_constant=HF2_NOISE_TC, order=HF2_DEMOD_ORDER,
         phase=calibrated_phase,
     )
-    actual_rate_noise = demod.configure_demodulator(hfi, noise_demod_cfg)
+    actual_rate_noise = demod.configure_demodulator(hfi, noise_demod_cfg, for_acquisition=True)
     time.sleep(0.3)
 
     # 关闭 Z 磁场
@@ -550,13 +554,16 @@ def acquire_noise(devs, recorded_data, calibrated_phase, run_dir):
         )
         noise_results = daq.acquire_data(
             hfi, config=noise_cfg, demod_idx=HF2_DEMOD_IDX,
-            actual_rate=fs_noise, timeout=NOISE_DURATION + 5.0,
+            actual_rate=fs_noise, cancellation_check=check_cancelled, requested_rate=HF2_NOISE_RATE, timeout=NOISE_DURATION + 5.0,
         )
+        fs_noise = result_rate(noise_results, fs_noise)
         dg_temp.set_output(True, channel=2)
         time.sleep(2)
 
         y = noise_results[0].values
         np.save(noise_dir / f"noise_{i:04d}.npy", y)
+        save_acquisition_metadata(noise_dir / f"noise_{i:04d}.npy", noise_results)
+        noise_metadata = acquisition_metadata(noise_results)
         del y, noise_results
 
     # 累积 PSD
@@ -579,7 +586,7 @@ def acquire_noise(devs, recorded_data, calibrated_phase, run_dir):
     freq_resolution = float(freq[1] - freq[0])
 
     np.savez(run_dir / "raw" / "noise_data.npz",
-             psd_avg=psd_avg, freq=freq, fs=fs_noise, n_avg=NOISE_N_AVG)
+             psd_avg=psd_avg, freq=freq, fs=fs_noise, n_avg=NOISE_N_AVG, **noise_metadata)
 
     # 恢复解调器配置
     restore_cfg = DemodulatorConfig(

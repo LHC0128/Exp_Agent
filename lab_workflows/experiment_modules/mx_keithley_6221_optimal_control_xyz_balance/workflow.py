@@ -318,7 +318,7 @@ def _save_scan_aggregate(
         accepted_attempt_index=accepted_attempt,
         acquisition_order=acquisition_order,
         accepted_file=accepted_file,
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=np.float64(records[0].get("actual_rate_sa_s", actual_rate)),
         best_z_index=np.int64(best["z_index"]),
         best_x_index=np.int64(best["x_index"]),
         best_y_index=np.int64(best["y_index"]),
@@ -469,11 +469,11 @@ def safe_shutdown(
 
 def run(params: MxKeithley6221OptimalControlXYZBalanceParams) -> Path:
     """执行 6221 外部触发最优控制下的 XYZ DC 三维网格扫描。"""
-    require_lockin_compatibility('mx-keithley-6221-optimal-control-xyz-balance', params.to_external())
     root = find_project_root()
     if not params.confirm_gs200_connected:
         raise ValueError("必须确认 GS200 已接入 Z 主磁场线圈（6221 接 Z 小磁场线圈）")
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-keithley-6221-optimal-control-xyz-balance', params.to_external(), mapping=mapping)
     theory = load_theory_control(
         Path(params.control_results_root),
         params.control_version,

@@ -79,13 +79,14 @@ from lockin_amplifier import (
     SignalInputConfig, OscillatorConfig, DemodulatorConfig,
     demod, daq,
 )
+from lockin_amplifier import result_rate, acquisition_metadata, save_acquisition_metadata
+from lab_workflows.experiment_runtime import check_cancelled
 
 print("所有库导入成功")
 
 # %% Cell 2
 # ========== 加载配置 ==========
 MAPPING = load_mapping(project_root)
-require_lockin_compatibility('rf-sensitivity-aw-frequency', globals(), mapping=MAPPING)
 
 with open(project_root / "params" / "safety_limits.yaml", encoding="utf-8") as f:
     LIMITS = yaml.safe_load(f)["safety_limits"]
@@ -267,6 +268,8 @@ print("配置已加载")
 
 # %% Cell 3
 # ========== 连接设备 ==========
+require_lockin_compatibility('rf-sensitivity-aw-frequency', globals(), mapping=MAPPING)
+
 devices = {}
 
 try:
@@ -723,7 +726,7 @@ demod0_meas_cfg = DemodulatorConfig(
     order=DEMOD0_ORDER,
     phase=calibrated_phase_0,
 )
-actual_rate_d0_meas = demod.configure_demodulator(hfi, demod0_meas_cfg)
+actual_rate_d0_meas = demod.configure_demodulator(hfi, demod0_meas_cfg, for_acquisition=True)
 print(f"Demod 0 (测量): rate={actual_rate_d0_meas:.0f} Sa/s, "
       f"TC={DEMOD0_TC_MEAS*1e6:.0f} μs, phase={calibrated_phase_0:.2f}°")
 
@@ -1103,7 +1106,7 @@ demod0_meas_cfg = DemodulatorConfig(
     time_constant=DEMOD0_TC_MEAS, order=DEMOD0_ORDER,
     phase=calibrated_phase_0,
 )
-actual_rate_d0_meas = demod.configure_demodulator(hfi, demod0_meas_cfg)
+actual_rate_d0_meas = demod.configure_demodulator(hfi, demod0_meas_cfg, for_acquisition=True)
 print(f"\nDemod 0: TC={DEMOD0_TC_MEAS*1000:.1f} ms (数据采集), rate={actual_rate_d0_meas:.0f} Sa/s")
 
 # ---- 保存校准结果 ----
@@ -1237,9 +1240,11 @@ try:
                     daq_results = daq.acquire_data(
                         hfi, config=daq_cfg,
                         demod_idx=DEMOD0_IDX,
-                        actual_rate=actual_rate_d0_meas,
+                        actual_rate=actual_rate_d0_meas, cancellation_check=check_cancelled, requested_rate=DEMOD0_RATE,
                         timeout=POINT_DURATION_s + 5.0,
                     )
+                    actual_rate_d0_meas = result_rate(daq_results, actual_rate_d0_meas)
+                    record.update(acquisition_metadata(daq_results))
                     y_signal = next(
                         (r.values for r in daq_results if r.signal_name == "sample.y"),
                         None,

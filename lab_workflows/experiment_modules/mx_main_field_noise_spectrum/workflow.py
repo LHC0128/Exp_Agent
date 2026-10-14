@@ -291,7 +291,7 @@ def _configure_outputs(
                 order=params.demod_order,
                 phase=phase_shift_deg,
             ),
-        )
+         for_acquisition=True)
     )
     hf2_snapshot = {
         "demod_idx": params.demod_idx,
@@ -369,7 +369,7 @@ def _save_point(
         signed_detuning_hz=np.float64(signed_detuning_hz),
         resonance_frequency_hz=np.float64(resonance_frequency_hz),
         main_field_current_ma=np.float64(main_field_current_ma),
-        actual_rate_sa_s=np.float64(actual_rate_sa_s),
+        actual_rate_sa_s=payload.get("actual_rate_Sa_s", np.float64(actual_rate_sa_s)),
         temp_switch_off_voltage_v=np.float64(0.0),
         temp_switch_on_voltage_v=np.float64(5.0),
         temp_switch_off_settle_s=np.float64(temp_switch_off_settle_s),
@@ -377,7 +377,7 @@ def _save_point(
         r_mean_v=np.float64(summary["r_mean_v"]),
         r_std_v=np.float64(summary["r_std_v"]),
         n_samples=np.int64(summary["n_samples"]),
-    )
+     **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
 
 
 def _acquire_scan(
@@ -440,7 +440,7 @@ def _acquire_scan(
                 devices["hf2"],
                 device_id=device_id,
                 demod_idx=params.demod_idx,
-                actual_rate_sa_s=actual_rate_sa_s,
+                actual_rate_sa_s=actual_rate_sa_s, requested_rate_sa_s=params.requested_rate_sa_s,
                 duration_s=params.acquisition_duration_s,
             ),
         )
@@ -463,9 +463,9 @@ def _acquire_scan(
 
 def run(params: MxMainFieldNoiseSpectrumParams) -> Path:
     """执行 500 点 GS200 主场控制噪声谱采集。"""
-    require_lockin_compatibility('mx-main-field-noise-spectrum', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-main-field-noise-spectrum', params.to_external(), mapping=mapping)
     axes = build_scan_axes(params)
     run_dir = create_run_directory(
         DATA_TYPE,

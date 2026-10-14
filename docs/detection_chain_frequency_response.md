@@ -23,7 +23,7 @@ required_devices:
   - DG4000 (dg4e261300744): Probe AOM 载波与 AM 信号
   - DG900 (dg9q280100002): Pump/Probe 光功率
   - DG900 (dg9q271200104): 每点采集时控制温控开关
-  - HF2 / MFLI（按全系统选择）: 解调与 DAQ 采集
+  - HF2 / MFLI（按全系统选择）: 解调与 解调时序采集
 optional_devices:
   - TEC103 (tec103_com3): 可连接时设置并等待气室温度稳定
 learned_notes:
@@ -33,6 +33,12 @@ learned_notes:
 ---
 
 # 探测链路频率响应标定
+
+## 锁相采集方式与实际速率
+
+探测链路扫频使用 `HF2_DAQ_RATE_SA_S` 请求率、`HF2_DAQ_DURATION_S` 时长和 `HF2_DEMOD_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
+
+时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](lockin_amplifier.md#解调时序的模块选择)。
 
 锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，GUI 不再提供开启选项。
 
@@ -64,7 +70,7 @@ BPD 探测（频率响应 ~1 MHz 带宽）
     ↓
 锁相放大器 解调（90 kHz 参考）→ 基带信号（|AM_freq - 90kHz|）
     ↓
-DAQ 采集 + Welch PSD → 峰值幅度
+解调时序采集 + Welch PSD → 峰值幅度
 ```
 
 ### 频率映射
@@ -158,7 +164,7 @@ DAQ 采集 + Welch PSD → 峰值幅度
 5. **扫描 AM 频率**：对每个频率点
    - 设置 CH2 频率
    - 将温控开关置于 0 V DC，再等待温控关闭与 AM 频率稳定时间
-   - DAQ 采集 Y 信号波形
+   - 解调时序采集 Y 信号波形
    - 立即恢复温控开关至 5 V DC，等待恢复稳定时间；采集异常或取消也恢复
    - 计算 PSD，提取非零基带峰值；零基带点标记为无效
    - 保存原始波形
@@ -239,7 +245,7 @@ data/Detection_Chain_Frequency_Response/MMDD_HHMM_freq_resp/
 
 “历史”页列出本实验的运行记录，可分页、刷新并查看单次运行的参数快照、采集与分析状态以及已有结果图和分析文件。TEC103 未连接时显示外部温控提示，实际连接错误及温控来源保存在该次 `experiment_config.yaml`。“填回参数”只将当前表单认识的历史参数写回运行页，不保存默认值或启动采集；“重新分析”仅处理选中运行的原始数据。没有结果图时页面显示暂无结果图。默认参数仍以[默认配置文件](../params/experiments/detection-chain-frequency-response.yaml)为准，历史参数以该次运行的 `experiment_config.yaml` 为准。
 
-“架构”Tab 内嵌本实验的 Archify 架构图：总览（仪器接入、驱动与探测主路径、数据链）、采集流程（温控门控逐频扫描）、单点时序（0 V 断温控 → DAQ 采集 → 5 V 恢复的每点硬时序）与数据分析（零基带排除与归一化链路）四张子图按需加载，均可[在新页面打开](../GUI/frontend/public/architecture/detection-chain-frequency-response.html)。
+“架构”Tab 内嵌本实验的 Archify 架构图：总览（仪器接入、驱动与探测主路径、数据链）、采集流程（温控门控逐频扫描）、单点时序（0 V 断温控 → 解调时序采集 → 5 V 恢复的每点硬时序）与数据分析（零基带排除与归一化链路）四张子图按需加载，均可[在新页面打开](../GUI/frontend/public/architecture/detection-chain-frequency-response.html)。
 
 ### 采集数据
 
@@ -266,7 +272,7 @@ python experiments/Detection_Chain_Frequency_Response_plot.py data/Detection_Cha
 
 ## 相关实验
 
-- [XY 控制噪声谱](noise_spectrum_xy.md)：观测到的高频下降
+- [XY 控制噪声谱](noise_spectrum_xy_ctrl.md)：观测到的高频下降
 - [Noise_Spectrum_XY_Ctrl_v2](../experiments/Noise_Spectrum_XY_Ctrl_v2.py)：噪声谱 v2
 
 ## 参考文献

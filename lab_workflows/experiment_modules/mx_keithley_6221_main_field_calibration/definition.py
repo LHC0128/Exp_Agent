@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     family="z-field-calibration",
     variant="mx-keithley-6221",
     description=(
-        'Keithley 6221 独占 Z 主线圈并按可配置电流轴扫描，以 Y RF 共振中心标定自由斜率和截距。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。'
+        'Keithley 6221 独占 Z 主线圈并按可配置电流轴扫描，以 Y RF 共振中心标定自由斜率和截距。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。'
     ),
     data_type="Mx_Keithley_6221_Main_Field_Calibration",
     required_devices=("Keithley 6221", "GS200", "DG900", "DG4000", "锁相放大器"),

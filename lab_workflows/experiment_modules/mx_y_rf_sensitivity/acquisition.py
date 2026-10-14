@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from lockin_amplifier import DAQConfig, daq
+from lockin_amplifier import DAQConfig, daq, result_rate, acquisition_metadata
+from ...experiment_runtime import check_cancelled
 
 
 def normalize_r_daq_results(
@@ -21,15 +22,18 @@ def normalize_r_daq_results(
             break
     if r_values is None:
         raise RuntimeError("HF2 DAQ 缺少 R 通道")
-    r_values = r_values[np.isfinite(r_values)]
+    finite = np.isfinite(r_values)
+    axis = np.asarray(getattr(result, "time", []))
+    axis = axis if axis.size == r_values.size else np.arange(r_values.size) / result_rate(results, actual_rate_sa_s)
+    r_values = r_values[finite]
     if r_values.size < 8:
         raise RuntimeError(
             f"HF2 DAQ 的 R 有效样本不足 8: {r_values.size}"
         )
     return {
-        "time_s": np.arange(r_values.size, dtype=float)
-        / float(actual_rate_sa_s),
+        "time_s": axis[finite],
         "r": r_values,
+        **acquisition_metadata(results),
     }
 
 
@@ -40,6 +44,7 @@ def acquire_r(
     demod_idx: int,
     actual_rate_sa_s: float,
     duration_s: float,
+    requested_rate_sa_s: float | None = None,
 ) -> dict[str, np.ndarray]:
     """连续采集 Demod0 的 R，不订阅 X/Y。"""
     config = DAQConfig(
@@ -56,7 +61,10 @@ def acquire_r(
         config=config,
         demod_idx=demod_idx,
         actual_rate=actual_rate_sa_s,
+        requested_rate=requested_rate_sa_s,
         timeout=max(5.0, float(duration_s) + 3.0),
+        cancellation_check=check_cancelled,
+        strict_cleanup=True,
     )
     return normalize_r_daq_results(results, actual_rate_sa_s)
 
@@ -98,10 +106,11 @@ def normalize_rxy_daq_results(
         signal: values[:sample_count][finite]
         for signal, values in signals.items()
     }
-    normalized["time_s"] = (
-        np.arange(normalized["r"].size, dtype=float)
-        / float(actual_rate_sa_s)
-    )
+    axis = np.asarray(getattr(results[0], "time", []))
+    if axis.size < sample_count:
+        axis = np.arange(sample_count) / result_rate(results, actual_rate_sa_s)
+    normalized["time_s"] = axis[:sample_count][finite]
+    normalized.update(acquisition_metadata(results))
     return normalized
 
 
@@ -112,6 +121,7 @@ def acquire_rxy(
     demod_idx: int,
     actual_rate_sa_s: float,
     duration_s: float,
+    requested_rate_sa_s: float | None = None,
 ) -> dict[str, np.ndarray]:
     """连续同步采集 Demod0 的 R/X/Y。"""
     config = DAQConfig(
@@ -128,7 +138,10 @@ def acquire_rxy(
         config=config,
         demod_idx=demod_idx,
         actual_rate=actual_rate_sa_s,
+        requested_rate=requested_rate_sa_s,
         timeout=max(5.0, float(duration_s) + 3.0),
+        cancellation_check=check_cancelled,
+        strict_cleanup=True,
     )
     return normalize_rxy_daq_results(results, actual_rate_sa_s)
 

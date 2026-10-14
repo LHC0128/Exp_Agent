@@ -180,7 +180,7 @@ def _configure_response_demodulator(
                     )
                 ),
             ),
-        )
+         for_acquisition=True)
     )
 
 
@@ -530,10 +530,10 @@ def _save_point(path: Path, payload: dict[str, np.ndarray], metadata: dict[str, 
         path,
         time_s=payload["time_s"],
         r_v=payload["r"],
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=payload.get("actual_rate_Sa_s", np.float64(actual_rate)),
         **{key: value for key, value in metadata.items()},
         **{key: np.float64(value) if isinstance(value, float) else value for key, value in summary.items()},
-    )
+     **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
     return summary
 
 
@@ -589,7 +589,7 @@ def _acquire_valid_r_point(
                 hf2,
                 device_id=device_id,
                 demod_idx=params.demod_idx,
-                actual_rate_sa_s=actual_rate,
+                actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
                 duration_s=duration_s,
             ),
         )
@@ -620,7 +620,7 @@ def _acquire_valid_r_point(
             f"{'接受' if accepted else '拒绝并重采'}"
         )
         if accepted:
-            return summary, attempt, filename
+            return {**summary, "actual_rate_sa_s": float(payload.get("actual_rate_Sa_s", actual_rate))}, attempt, filename
     raise RPointQualityError(
         f"{file_stem} 连续 {params.r_point_max_attempts} 次 "
         f"std(R) > {params.r_bad_point_std_threshold_v:.6g} V"
@@ -695,7 +695,7 @@ def _acquire_frequency_scan(
         r_std_v=[item["r_std_v"] for item in summaries],
         accepted_attempt_index=accepted_attempts,
         accepted_file=accepted_files,
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
     )
     fit = fit_lorentzian_response(
         axis,
@@ -783,7 +783,7 @@ def _acquire_amplitude_scan(
         r_std_threshold_v=np.float64(
             params.r_bad_point_std_threshold_v
         ),
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
     )
     return actual_rate
 
@@ -847,7 +847,7 @@ def _acquire_noise(
             order=params.noise_demod_order,
             phase=float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift")),
         ),
-    )
+     for_acquisition=True)
     rf_off_setter = set_y_rf_off_state or (
         lambda: _set_y_rf_zero_off(rf, channels["y_rf"])
     )
@@ -867,7 +867,7 @@ def _acquire_noise(
                 hf2,
                 device_id=device_id,
                 demod_idx=params.demod_idx,
-                actual_rate_sa_s=float(actual_rate),
+                actual_rate_sa_s=float(actual_rate), requested_rate_sa_s=params.noise_rate_sa_s,
                 duration_s=params.noise_duration_s,
             ),
         )
@@ -885,7 +885,7 @@ def _acquire_noise(
             metadata,
             float(actual_rate),
         )
-    return float(actual_rate)
+    return float(payload.get("actual_rate_Sa_s", actual_rate))
 
 
 def connect_mx_y_rf_devices(
@@ -1003,9 +1003,9 @@ def restore_mx_y_rf_laser_powers(
 
 
 def run(params: MxYRFParams) -> Path:
-    require_lockin_compatibility('mx-y-rf-sensitivity', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-y-rf-sensitivity', params.to_external(), mapping=mapping)
     run_dir = create_run_directory(DATA_TYPE, params.run_tag, params.to_external(), schema_version=params.schema_version, project_root=root)
     run_dir.update_config(
         experiment_id=EXPERIMENT_ID,

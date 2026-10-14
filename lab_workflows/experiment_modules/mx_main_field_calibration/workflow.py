@@ -399,7 +399,7 @@ def _configure_outputs(
             order=params.response_demod_order,
             phase=float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift")),
         ),
-    )
+     for_acquisition=True)
     temperature_text = (
         f"{actual_temperature:.2f} °C"
         if actual_temperature is not None
@@ -441,13 +441,13 @@ def _save_point(
         path,
         time_s=payload["time_s"],
         r_v=payload["r"],
-        actual_rate_sa_s=np.float64(actual_rate),
+        actual_rate_sa_s=payload.get("actual_rate_Sa_s", np.float64(actual_rate)),
         **metadata,
         **{
             key: np.float64(value) if isinstance(value, float) else value
             for key, value in summary.items()
         },
-    )
+     **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
     return summary
 
 
@@ -471,7 +471,7 @@ def _acquire_valid_r_point(
                 devices["hf2"],
                 device_id=device_id,
                 demod_idx=params.demod_idx,
-                actual_rate_sa_s=actual_rate,
+                actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
                 duration_s=params.frequency_duration_s,
             ),
         )
@@ -499,7 +499,7 @@ def _acquire_valid_r_point(
             f"{'接受' if accepted else '拒绝并重采'}"
         )
         if accepted:
-            return summary, attempt, filename
+            return {**summary, "actual_rate_sa_s": float(payload.get("actual_rate_Sa_s", actual_rate))}, attempt, filename
     raise RuntimeError(
         f"{file_stem} 连续 {params.r_point_max_attempts} 次 "
         f"std(R) > {params.r_bad_point_std_threshold_v:.6g} V"
@@ -590,7 +590,7 @@ def _acquire_scan(
             r_std_v=[item["r_std_v"] for item in summaries],
             accepted_attempt_index=accepted_attempts,
             accepted_file=np.asarray(accepted_files, dtype=str),
-            actual_rate_sa_s=np.float64(actual_rate),
+            actual_rate_sa_s=np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
         )
         summary_files.append(
             str(summary_path.relative_to(run_dir.root)).replace("\\", "/")
@@ -607,9 +607,9 @@ def _acquire_scan(
 
 
 def run(params: MxMainFieldCalibrationParams) -> Path:
-    require_lockin_compatibility('mx-main-field-calibration', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-main-field-calibration', params.to_external(), mapping=mapping)
     run_dir = create_run_directory(
         DATA_TYPE,
         params.run_tag,

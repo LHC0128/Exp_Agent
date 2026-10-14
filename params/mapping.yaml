@@ -153,7 +153,7 @@ mapping:
     description: 铷原子Cell温度控制，单位摄氏度
   lockin_r:
     instrument: lockin_amplifier
-    device_id: hf2_dev18246
+    device_id: mfli_dev30661
     endpoint:
       kind: demod
       index: 0
@@ -161,7 +161,7 @@ mapping:
     description: HF2 解调器 0 幅度输出
   lockin_xy:
     instrument: lockin_amplifier
-    device_id: hf2_dev18246
+    device_id: mfli_dev30661
     endpoint:
       kind: demod
       index: 1

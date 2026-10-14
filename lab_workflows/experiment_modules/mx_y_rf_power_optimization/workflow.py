@@ -193,9 +193,9 @@ def _acquire_grid(
 
 
 def run(params: MxYRFPowerOptimizationParams) -> Path:
-    require_lockin_compatibility('mx-y-rf-power-optimization', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-y-rf-power-optimization', params.to_external(), mapping=mapping)
     run_dir = create_run_directory(
         DATA_TYPE,
         params.run_tag,

@@ -96,9 +96,9 @@ def _refresh_safely(parent_root: Path) -> None:
 
 
 def run(params: MxYRFDriftParams) -> Path:
-    require_lockin_compatibility('mx-y-rf-sensitivity-drift', params.to_external())
     root = find_project_root()
     mapping = load_mapping(root)
+    require_lockin_compatibility('mx-y-rf-sensitivity-drift', params.to_external(), mapping=mapping)
     parent = create_run_directory(
         DATA_TYPE,
         params.run_tag,
