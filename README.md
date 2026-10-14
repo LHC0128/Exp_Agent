@@ -12,7 +12,7 @@
 - [信号发生器驱动](src/signal_generator/README.md)拆分为 DG4000、DG900 Pro 独立实现，保留旧导入入口；共同接口覆盖波形、调制、Burst、计数器和截图，Pro 额外支持内置任意波文件。
 - 设备库统一管理 USB / 网络 / LabOne 发现与扫描候选地址，设备选择按同机和共享通道约束联动；配置先编辑草稿，再整批保存，同次实验的独立物理量占用同一通道时拒绝启动。
 - “参考时钟同步”先写入全部设备，再统一回读；“输出负载初始化”单独设置 Pump 调制 50 Ω、其余高阻。高阻回读标记统一显示和提交为 `INF`，两项工具分别报告每台设备结果。
-- 根目录 [AGENTS.md](AGENTS.md) 和 [CLAUDE.md](CLAUDE.md) 随项目同步，维护入口和无硬件验证命令同步更新。
+- AI 协作说明（`AGENTS.md`、`CLAUDE.md`、`GUI/AGENTS.md`）与 `.agents/`、`.claude/`、`.codex/`、`.vscode/` 等本地配置退出 GitHub 同步，仅本地维护；仓库继续同步 GUI 实验系统等面向使用者的内容。
 
 ## 坐标系
 
@@ -509,7 +509,7 @@ if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
 前端变更在 `GUI/frontend/` 运行 `node node_modules/typescript/bin/tsc --noEmit`、
 `npm run build` 和 `npm test`；API schema 变更后，
 按 [GUI 开发说明](GUI/README.md#前端结构)重新生成类型。Python 变更运行受影响的
-现有无硬件测试，命令示例见 [GUI/AGENTS.md](GUI/AGENTS.md#验证)。当前检出没有根目录
+现有无硬件测试，命令示例见本地 `GUI/AGENTS.md`。当前检出没有根目录
 `tests/`，不要直接执行依赖该目录的测试发现命令。
 
 ## 编码约定
@@ -523,7 +523,7 @@ if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
 
 ## AI 协作
 
-仓库已经为不同 Agent 准备了协作说明和实验代码生成 Skill：
+仓库已经为不同 Agent 准备了协作说明和实验代码生成 Skill（均为本地文件，不上传 GitHub）：
 
 - `AGENTS.md`
 - `CLAUDE.md`
@@ -545,9 +545,10 @@ if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
 从而尽量保证实验脚本、文档和安全约束保持一致。
 
 生成实验架构图时使用 `arcgen` 调研真实实现，并由 `archify` 完成图规格、校验和交付。
-根目录 `AGENTS.md`、`CLAUDE.md` 与 `GUI/AGENTS.md` 纳入版本管理并同步到 GitHub；
-`.agents/`、`.claude/` 等本地 Skill 与配置继续忽略。本检出的 `.git/info/exclude`
-还忽略 `docs/` 中未跟踪的文件，已跟踪文档仍正常提交。被忽略的本地文件需单独检查，
-普通 `git diff` 不会显示其变化。
+`AGENTS.md`、`CLAUDE.md`、`GUI/AGENTS.md` 与 `.agents/`、`.claude/`、`.codex/`、
+`.vscode/` 等协作说明、Skill 与 Agent 配置一律只保留在本地，不上传 GitHub；仓库同步
+面向其他同学使用的 GUI 实验系统内容。本检出的 `.git/info/exclude` 还忽略 `docs/` 中
+未跟踪的文件，已跟踪文档仍正常提交。被忽略的本地文件需单独检查，普通 `git diff`
+不会显示其变化。
 
 普通气室实验的采集顺序、`SYSTEM_SETTLE_S` 兼容规则和 TEC 设温边界见[统一采集规范](docs/acquisition_timing.md)。

@@ -8,18 +8,17 @@ manuals/
 tests/
 *.egg-info/
 
-# 本地 AI Skill 与配置；根目录和 GUI 协作说明随项目同步
+# 本地 AI 协作内容（说明、Skill、Agent 配置），均不上传 GitHub
 .claude/
 .agents/
 AGENTS.md
 CLAUDE.md
-!/AGENTS.md
-!/CLAUDE.md
-!GUI/AGENTS.md
+GUI/AGENTS.md
 .codegraph/
 .zcode/
 .zcodeignore
 .codex/
+.vscode/
 .mcp.json
 GUI/frontend/node_modules/
 GUI/frontend/dist/
