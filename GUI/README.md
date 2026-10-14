@@ -198,6 +198,26 @@ Keithley 6221 的 Hz 任意波 CSV/TXT 解析与标定换算逻辑位于
 `POST /api/tools/keithley-waveform-convert` 上传文件文本获得解析与换算结果；
 标定实验 ID 通过 `CALIBRATION_EXPERIMENT_IDS` 别名集合兼容历史文件。
 
+## 检查更新
+
+导航“检查更新”页（`/api/updates/*`）集中检测软件环境并执行更新，分区块独立加载：
+
+- **Git 仓库**：`git fetch` 后显示落后/领先提交数；仅在本地干净且可 fast-forward 时
+  执行 `git pull --ff-only`，否则给出拒绝原因。
+- **Python 依赖**：全 venv `pip list --outdated`，标注包来自哪个声明文件；
+  勾选后 `pip install -U`，任务末尾自动运行 `pip check`。
+- **前端依赖**：`GUI/frontend` 的 npm 过期包，勾选后安装 `@latest`。
+- **全局 CLI 工具**：全局 npm 白名单包（codegraph 含其 MCP server、playwright cli、
+  pi 本体、mineru）；更新 pi 后需重启 pi。
+- **olcli 隔离环境**：`~/.local/olcli-ustc` 前缀内的 olcli-ustc、codex、pnpm，
+  只用命令级 `npm_config_prefix`，不修改用户级 `.npmrc`。
+- **AI Skills**：列出 `.agents/skills` 与 `.claude/skills` 清单；本地无版本源，仅展示。
+- **工具链**：python / pip / node / npm / git 版本展示。
+
+更新任务以后台 Job 运行且不占用硬件互斥队列，可与实验并行；更新请求只接受
+最近一次检查结果中出现过的包名。更新 fastapi / uvicorn / pydantic 后需重启后端
+（总览页“重启后端”），更新前端依赖后需重启 Vite，dist 部署需重新 `npm run build`。
+
 ## 任务进度
 
 运行中的任务通过 `/api/jobs/{id}/events` SSE 增量推送进度；页面刷新恢复和任务结束后
@@ -353,6 +373,18 @@ XY 校相未收敛禁止 DAQ/扫描，允许重试；A13 恢复后重扫必须�
 更新流程接口后需重启后端；旧后端缺少展示关系或影响范围时，页面提示在任务结束后重启并禁用分步会话创建，仍恢复存活会话供查看任务与结束。
 
 通过现有 JSONL 和 SSE 推送会话/阶段快照；旧运行没有阶段记录时从 B01 开始。
+
+## XY 已知可控噪声谱分步运行
+
+`/experiments/noise-spectrum-xy-known-noise` 提供采集 A01～A15、分析 B01～B06 两列节点，保留历史和架构 Tab。
+节点内编辑共享参数，流程顶部保存参数与布局、预览、预检、完整运行、取消和日志。
+分步等待保持连接、输出与硬件锁，刷新恢复活会话；A15 无前置结束，关闭 X/Y、Z 和共用触发并恢复温控。
+
+分析阶段选择静磁场 v3 直流逐点历史曲线拟合增益，未选时完整运行完成 B01～B04 并显示待标定；
+B05 只依赖 B01，B06 依赖 B04/B05。来源变化只重算 B05/B06，条件差异允许并保存在本轮产物中。
+历史目录分别保留独立分析草稿，保存默认值仅保存下一次实验设置和统一布局。
+会话、阶段分析和原图下载接口沿用上述协议，前缀为 `/api/experiments/noise-spectrum-xy-known-noise`。
+具体步骤、原图和验证命令见[实验说明](../docs/noise_spectrum_xy_ctrl_known_noise.md)。Probe AM 保留原采集与页面行为。
 
 ## RF DirectAW 分步运行
 

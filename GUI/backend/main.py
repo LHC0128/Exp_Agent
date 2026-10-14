@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
-import stat
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from uuid import uuid4
 
 import yaml
@@ -87,8 +87,12 @@ from lab_workflows.z_arbitrary_control import (
 )
 
 from .jobs import Job, RestartInProgressError, manager
+from .run_management import checked_run_path, read_starred, rename_directory, save_starred, split_run_name
 from .noise_spectrum_xy import XYSessionService, create_router as xy_router
+from .updates import UpdatesService, create_router as updates_router
 from .rf_sensitivity_direct_aw import RFSessionService, create_router as rf_workflow_router
+from .noise_spectrum_xy_known_noise import KnownNoiseSessionService
+from .noise_spectrum_xy_probe_am import ProbeAMSessionService
 from .rf_sensitivity_direct_aw_r import RFRSessionService
 from .static_sensitivity import StaticSessionService
 from .schemas import (
@@ -110,6 +114,9 @@ from .schemas import (
     DeviceSummary,
     ExperimentArchiveBody,
     RFDirectAWCompareBody,
+    RFDirectAWRunItem,
+    RFDirectAWRunRenameBody,
+    RFDirectAWRunStarBody,
     RFDirectAWRunsResponse,
     RFDirectAWRunSummary,
     GeneratorChannelSettingsBody,
@@ -132,10 +139,12 @@ async def lifespan(application):
         yield
     finally:
         xy_sessions.close_communication()
+        known_noise_sessions.close_communication()
         rf_sessions.close_communication()
         rf_r_sessions.close_communication()
         static_sessions.close_communication()
         await asyncio.to_thread(xy_sessions.shutdown)
+        await asyncio.to_thread(known_noise_sessions.shutdown)
         await asyncio.to_thread(rf_sessions.shutdown)
         await asyncio.to_thread(rf_r_sessions.shutdown)
         await asyncio.to_thread(static_sessions.shutdown)
@@ -164,12 +173,18 @@ INSTANCE_ID = uuid4().hex
 z_arbitrary_service = ZArbitraryControlService(ROOT)
 xy_sessions = XYSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(xy_sessions))
+known_noise_sessions = KnownNoiseSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(known_noise_sessions))
+probe_am_sessions = ProbeAMSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(probe_am_sessions))
 rf_sessions = RFSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(rf_sessions))
 rf_r_sessions = RFRSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(rf_r_sessions))
 static_sessions = StaticSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(static_sessions))
+updates_service = UpdatesService(lambda: ROOT, manager)
+app.include_router(updates_router(updates_service))
 
 
 @app.middleware("http")
@@ -898,8 +913,19 @@ def save_experiment_defaults(experiment_id: str, body: ExperimentDefaultsBody):
 
 @app.post("/api/experiments/{experiment_id}/preflight")
 def experiment_preflight(experiment_id: str, body: ExperimentBody):
-    errors = _experiment_or_404(experiment_id).preflight(body.parameters)
-    return {"ok": not errors, "errors": errors}
+    definition = _experiment_or_404(experiment_id)
+    errors = definition.preflight(body.parameters)
+    from lab_workflows.lockin_acquisition import experiment_acquisition_requests, acquisition_preflight
+    acquisition = []
+    if not errors:
+        requests = experiment_acquisition_requests(experiment_id, body.parameters)
+        if requests:
+            try:
+                mapping = load_mapping()
+                acquisition = acquisition_preflight(mapping.get("lockin_r") or mapping["lockin_xy"], requests)
+            except (KeyError, TypeError, ValueError) as exc:
+                errors.append(str(exc))
+    return {"ok": not errors, "errors": errors, "acquisition": acquisition}
 
 
 @app.post("/api/experiments/{experiment_id}/derive")
@@ -1075,40 +1101,28 @@ def _run_dir(experiment_id: str, run_id: str) -> Path:
     return path
 
 
+def _assert_run_idle(definition, run_id: str):
+    # 采集和存活会话可能继续写入同类目录，与目录修改共用任务注册锁。
+    ids = {item.id for item in list_experiments() if item.data_type == definition.data_type}
+    if any(
+        item.status in {"queued", "running"} and (
+            item.kind in {f"experiment:{value}" for value in ids}
+            or item.kind in {f"session:{value}" for value in ids}
+            or item.kind in {f"analysis:{value}:{run_id}" for value in ids}
+            or item.kind in {RF_RUN_FORMATS[value].COMPARISON_JOB_KIND for value in ids if value in RF_RUN_FORMATS}
+        ) for item in manager.jobs.values()
+    ):
+        raise _conflict("该数据正在采集、分析或对比，暂时不能修改目录", "run_busy")
+
+
 @app.delete("/api/runs/{experiment_id}/{run_id}")
 def delete_run(experiment_id: str, run_id: str):
     """选定运行目录的永久删除，与 GUI 采集/分析任务注册原子互斥。"""
     definition = _experiment_or_404(experiment_id)
-    if (not run_id or run_id.endswith((".", " "))
-            or any(c in run_id for c in "/\\:")):
-        raise HTTPException(400, "运行 ID 必须是单个目录名")
+    _validate_run_identifier(run_id)
     with manager.jobs_lock:
-        # 采集任务结束前还可能自动分析或扫描同类目录，因此整类运行暂缓删除。
-        ids = {item.id for item in list_experiments() if item.data_type == definition.data_type}
-        if any(
-            item.status in {"queued", "running"} and (
-                item.kind in {f"experiment:{value}" for value in ids}
-                or item.kind in {f"session:{value}" for value in ids}
-                or item.kind in {f"analysis:{value}:{run_id}" for value in ids}
-                or item.kind in {RF_RUN_FORMATS[value].COMPARISON_JOB_KIND for value in ids if value in RF_RUN_FORMATS}
-            ) for item in manager.jobs.values()
-        ):
-            raise _conflict("该数据正在采集、分析或对比，暂时不能删除", "run_busy")
-        data_root = (ROOT / "data").resolve()
-        base = data_root / definition.data_type
-        candidate = base / run_id
-        path = _run_dir(experiment_id, run_id)
-        if base.resolve().parent != data_root or path.parent != base.resolve():
-            raise HTTPException(400, "运行目录超出允许范围")
-        # Windows junction 与符号链接均不得作为删除目标或中间目录。
-        pending = [base, candidate]
-        while pending:
-            entry = pending.pop()
-            info = entry.lstat()
-            if entry.is_symlink() or getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
-                raise HTTPException(400, "含链接或联接点的运行目录不能删除")
-            if entry != base and entry.is_dir():
-                pending.extend(entry.iterdir())
+        _assert_run_idle(definition, run_id)
+        path = checked_run_path(ROOT, definition.data_type, run_id, recursive=True)
         try:
             shutil.rmtree(path)
         except OSError as exc:
@@ -1132,6 +1146,8 @@ def _create_analysis_job(run_id: str, body: AnalysisBody):
     run_dir = _run_dir(body.experiment_id, run_id)
     if definition.id == "noise-spectrum-xy":
         xy_sessions.run_directory(run_id)
+    if definition.id == "noise-spectrum-xy-known-noise":
+        known_noise_sessions.run_directory(run_id)
     if definition.id in RF_RUN_FORMATS:
         _validate_run_identifier(run_id)
         reason = RF_RUN_FORMATS[definition.id].analysis_block_reason(_read_yaml(run_dir / "experiment_config.yaml"))
@@ -1665,6 +1681,8 @@ def _rf_direct_aw_run_item(run_id: str, config: dict, directory: Path, *, identi
     reason = identity.comparison_block_reason(directory, config)
     return {
         "run_id": run_id,
+        "name": split_run_name(run_id)[1],
+        "starred": read_starred(directory) if identity is rf_aw_format else False,
         "timestamp": str(config.get("started_at", config.get("timestamp", ""))),
         "run_tag": str(config.get("run_tag", "")),
         "completion_status": str(config.get("completion_status", "unknown")),
@@ -1676,8 +1694,8 @@ def _rf_direct_aw_run_item(run_id: str, config: dict, directory: Path, *, identi
 
 
 @app.get(f"/api/experiments/{RF_DIRECT_AW_ID}/runs", response_model=RFDirectAWRunsResponse)
-def rf_direct_aw_runs(limit: int = 50, offset: int = 0):
-    return _rf_aw_runs(RF_DIRECT_AW_ID, limit, offset)
+def rf_direct_aw_runs(limit: int = 50, offset: int = 0, starred_only: bool = False):
+    return _rf_aw_runs(RF_DIRECT_AW_ID, limit, offset, starred_only=starred_only)
 
 
 @app.get("/api/experiments/rf-sensitivity-aw-r/runs", response_model=RFDirectAWRunsResponse)
@@ -1685,7 +1703,7 @@ def rf_direct_aw_r_runs(limit: int = 50, offset: int = 0):
     return _rf_aw_runs(rf_aw_r_format.EXPERIMENT_ID, limit, offset)
 
 
-def _rf_aw_runs(experiment_id, limit, offset):
+def _rf_aw_runs(experiment_id, limit, offset, *, starred_only=False):
     identity = RF_RUN_FORMATS[experiment_id]
     base = (ROOT / "data" / _experiment_or_404(experiment_id).data_type).resolve()
     items = []
@@ -1695,10 +1713,37 @@ def _rf_aw_runs(experiment_id, limit, offset):
             continue
         config = _read_yaml(path)
         if identity.is_new_run(config):
-            items.append(_rf_direct_aw_run_item(path.parent.name, config, directory, identity=identity))
+            item = _rf_direct_aw_run_item(path.parent.name, config, directory, identity=identity)
+            if not starred_only or item["starred"]:
+                items.append(item)
     items.sort(key=lambda item: item["timestamp"], reverse=True)
     limit, offset = max(1, min(limit, 200)), max(0, offset)
     return {"runs": items[offset:offset + limit], "total": len(items), "limit": limit, "offset": offset}
+
+
+def _manageable_rf_run(run_id: str, *, recursive=False):
+    directory = checked_run_path(ROOT, rf_aw_format.DATA_TYPE, run_id, recursive=recursive)
+    config = _read_yaml(directory / "experiment_config.yaml")
+    if not is_rf_direct_aw_run(config):
+        raise HTTPException(404, "不是 RF 灵敏度 DirectAW 新格式运行")
+    return directory, config
+
+
+@app.post(f"/api/experiments/{RF_DIRECT_AW_ID}/runs/{{run_id}}/rename", response_model=RFDirectAWRunItem)
+def rename_rf_direct_aw_run(run_id: str, body: RFDirectAWRunRenameBody):
+    with manager.jobs_lock:
+        _assert_run_idle(_experiment_or_404(RF_DIRECT_AW_ID), run_id)
+        directory, config = _manageable_rf_run(run_id, recursive=True)
+        target = rename_directory(directory, body.name, config)
+        return _rf_direct_aw_run_item(target.name, config, target)
+
+
+@app.put(f"/api/experiments/{RF_DIRECT_AW_ID}/runs/{{run_id}}/star", response_model=RFDirectAWRunItem)
+def star_rf_direct_aw_run(run_id: str, body: RFDirectAWRunStarBody):
+    with manager.jobs_lock:
+        directory, config = _manageable_rf_run(run_id)
+        save_starred(directory, body.starred)
+        return _rf_direct_aw_run_item(run_id, config, directory)
 
 
 @app.get(f"/api/experiments/{RF_DIRECT_AW_ID}/runs/{{run_id}}/summary", response_model=RFDirectAWRunSummary)
@@ -1723,7 +1768,7 @@ def _rf_aw_summary(experiment_id, run_id):
     safe_results = directory in results.resolve().parents
     return {
         **_rf_direct_aw_run_item(run_id, config, directory, identity=identity),
-        "parameters": config["parameters"], "can_analyze": not reason,
+        "parameters": config["parameters"], "signal_chain": config.get("signal_chain", identity.SIGNAL_CHAIN), "can_analyze": not reason,
         "analysis_block_reason": reason,
         "failure_reason": config.get("failure_reason") or "",
         "analysis_error": config.get("analysis_error") or "",
@@ -1738,7 +1783,7 @@ def _rf_aw_summary(experiment_id, run_id):
         "response_component": identity.RESPONSE_COMPONENT, "noise_component": "X",
         "temperature_control": config.get("temperature_control"),
         "artifacts": {
-            path.name: f"/api/runs/{experiment_id}/{run_id}/artifacts/{path.name}?v={path.stat().st_mtime_ns}"
+            path.name: f"/api/runs/{experiment_id}/{quote(run_id, safe='')}/artifacts/{quote(path.name, safe='')}?v={path.stat().st_mtime_ns}"
             for path in results.glob("*") if path.is_file() and not reason and safe_results and results.resolve() in path.resolve().parents
         },
     }

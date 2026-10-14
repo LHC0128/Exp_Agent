@@ -4,8 +4,11 @@
 
 ## 近期更新（2026 年 10 月）
 
+- [XY 已知可控噪声谱](docs/noise_spectrum_xy_ctrl_known_noise.md)提供采集/分析两列交互流程：节点编辑、依赖检查、分步会话和重跑；增益改用静磁场 v3 历史曲线，未选来源时完成谱分离并等待标定，保留原脚本和历史数据兼容。
+- [XY 已知不可控 Probe AM 噪声谱](docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md)同样提供分步流程图：A08 专属载波节点、A12 双噪声上传、A14 配对扫描可选 Z 持续注入；分析 B01–B04 独立验收背景与可控响应，移动峰不足时按运行 K/B 输出暂定轴并标记质量未通过。
 - GUI 支持通过根目录 `start_gui.bat` 双击启动；静磁场与 RF DirectAW 提供可执行交互流程图。静磁场节点支持参数编辑、勾选与依赖检查、分步会话和独立阶段分析，保留逐点 DC 连续波形中位数与分组温控。
-- [锁相驱动](src/lockin_amplifier/README.md)拆分为 HF2、MFLI 独立型号模块，共用通信、解调和采集接口；GUI 支持统一设备选择、Signal / Aux 输出及内置 Scope，实验预检检查型号能力与频率范围。
+- RF 灵敏度（DirectAW）历史 Tab 试点支持星标与筛选、保留时间前缀的目录重命名和确认后永久删除整次数据；已有对比导出保留为生成时的快照。
+- [锁相驱动](src/lockin_amplifier/README.md)拆分为 HF2、MFLI 独立型号模块，共用通信、解调和采集接口；设备库统一设置自动／DAQ／Scope。自动模式下 MFLI 请求 >70 kSa/s 使用解调 Scope，HF2 使用 DAQ；预检检查选件与单段内存，分析使用最终实际率。
 - [信号发生器驱动](src/signal_generator/README.md)拆分为 DG4000、DG900 Pro 独立实现，保留旧导入入口；共同接口覆盖波形、调制、Burst、计数器和截图，Pro 额外支持内置任意波文件。
 - 设备库统一管理 USB / 网络 / LabOne 发现与扫描候选地址，设备选择按同机和共享通道约束联动；配置先编辑草稿，再整批保存，同次实验的独立物理量占用同一通道时拒绝启动。
 - “参考时钟同步”先写入全部设备，再统一回读；“输出负载初始化”单独设置 Pump 调制 50 Ω、其余高阻。高阻回读标记统一显示和提交为 `INF`，两项工具分别报告每台设备结果。
@@ -187,9 +190,13 @@ Set-Location D:\Code\exp_agent\GUI
 
 启动器会核对 8000 和 5173 端口；重复双击或遇到冲突时，确认占用进程并停止对应旧服务，再重新启动。
 总览页的“重启后端”仅适用于由现有启动入口正常运行的后端；若新代码启动失败，需检查后端窗口并人工修复后重启。
+导航“检查更新”页集中检测 Git 仓库、全 venv Python 依赖、前端 npm、全局 CLI
+（codegraph 含其 MCP server、playwright cli、pi、mineru）、olcli 隔离环境、AI Skills
+清单与工具链版本，勾选后一键更新；更新任务不占用硬件队列，详见
+[GUI/README.md](GUI/README.md#检查更新)。
 更详细的开发说明见 [GUI/README.md](GUI/README.md)。
 
-锁相设备采用相同的 Python Core API 函数入口，支持相位、频率、输出设置、解调 X/Y/R 和内置 Scope 采集。MFLI 已配置为 `dev30661`、`192.168.124.109:8004`、外部参考，启用选件后的频率上限为 5 MHz。双主电压回采实验选择 MFLI 时禁止启动；尚未确认安全电压范围的锁相输出写入保持禁用。接口、硬件差异与实机验收见 [锁相模块说明](docs/lockin_amplifier.md)，受限实验清单见 [锁相实验兼容性](docs/legacy_lockin_experiments.md)。
+锁相设备采用相同的 Python Core API 函数入口，支持相位、频率、输出设置、解调 X/Y/R 和内置 Scope 采集。MFLI 已配置为 `dev30661`，通过 USB RNDIS 地址 `192.168.150.246:8004` 访问内置服务器（内部接口 `PCIe`），使用外部参考，启用选件后的频率上限为 5 MHz。仍要求双主电压输入的实验选择 MFLI 时禁止启动；DirectAW 两个变体已显式支持辅助输入物理回采与 MFLI 内部 AuxOut 回采；尚未确认安全电压范围的锁相输出写入保持禁用。接口、硬件差异与实机验收见 [锁相模块说明](docs/lockin_amplifier.md)，受限实验清单见 [锁相实验兼容性](docs/legacy_lockin_experiments.md)。
 
 ## 实验组织方式
 
@@ -229,9 +236,12 @@ experiments ───┘
 
 `rf-sensitivity-aw` 已迁移为 schema version 2 的 DirectAW 工作流，保留
 `RF_Field_Sensitivity_AW` 数据目录与原脚本入口。XYZ 共用时序信号2主输出触发，
-HF2 使用 Demod0 Y → AuxOut2 → Signal Input2 → Demod3 回环，以 X 响应斜率和
-X 噪声 PSD 计算灵敏度，并用响应色散拟合得到的等效 HWHM 补偿洛伦兹频响。
-GUI 提供运行 / 历史双 Tab，运行页有 16 个采集节点与 4 个分析节点，按依赖显式勾选执行，
+HF2/MFLI 使用 Demod0 Y → 所选 AuxOut → 所选物理输入或 MFLI 内部回采 → RF 解调器，
+GUI 可选 RF 解调器索引、AuxOut1–4 和 Aux Input1–2；HF2 保留 Signal Input2。以 X 响应斜率和
+X 噪声 PSD 计算灵敏度；线宽补偿可选：A14 零 RF X 噪声采集后，A13B 恢复相位扫描的响应滤波，
+以校相幅度同步扫描 Z RF 与解调频率，定长采集每点 R 时序，R 均值的洛伦兹拟合线宽
+回补频响，未启用时用响应色散拟合的等效 HWHM。
+GUI 提供运行 / 历史双 Tab，运行页有 17 个采集节点与 4 个分析节点，按依赖显式勾选执行，
 在节点内编辑参数并预览草稿的重跑范围；分步等待保持连接与硬件锁，A15 完成本轮安全收尾，
 A16 结束会话。历史只接纳新格式；完整分析结果支持跨页多选、
 自定义英文图例、X 响应与灵敏度双面板叠加及 PNG/PDF 下载。对比区的灵敏度面板
@@ -243,10 +253,10 @@ A16 结束会话。历史只接纳新格式；完整分析结果支持跨页多�
 [实验说明](docs/rf_field_measurement.md)。
 
 `rf-sensitivity-aw-r`（RF 灵敏度（DirectAW R））复用上述准备、采集及安全收尾，
-按 A10 → A13 → A12 → A14 顺序先采 Demod3 R，再独立改频校相并采零 RF X 噪声，跳过 A11。
+按 A10 → A13 → A12 → A14 顺序先采 RF 解调器 R，再独立改频校相并采零 RF X 噪声，跳过 A11。
 R 标定使用绝对色散底层中心斜率，失败则以数值梯度估算并关闭线宽补偿。
 新实验使用独立默认文件与 `RF_Field_Sensitivity_AW_R` 历史，提供运行 / 历史、交互流程图、
-多次 R 标定 / X 噪声对比及 PNG/PDF 导出。两个实验的 AuxOut2 均按已确认的 ±10 V
+多次 R 标定 / X 噪声对比及 PNG/PDF 导出。两个实验的所选辅助输出均按逐设备、逐通道已确认的 ±10 V
 规则检查，缺范围或预计越界时禁止启动/写入；跨频率增益一致性和等效线宽仍待实测。
 详见 [实验说明](docs/rf_field_measurement_r.md) 与 [默认参数](params/experiments/rf-sensitivity-aw-r.yaml)。
 
@@ -343,8 +353,8 @@ R 标定使用绝对色散底层中心斜率，失败则以数值梯度估算并
 | T1 / T2 标定 | `experiments/T1_Calibration.py`、`experiments/T2_Calibration.py` | `docs/T1_calibration.md`、`docs/T2_relaxation.md` |
 | X/Y 补偿与通道验证 | `experiments/XY_Compensation_Calibration.ipynb`、`experiments/XY_Channel_Calibration.ipynb`、`experiments/XY_AM_Transfer.ipynb`、`experiments/XY_MOD_ZeroOffset.ipynb`、`experiments/XY_Output_Verification.ipynb` | `docs/XY_Compensation_Calibration.md`、`docs/z_field_calibration.md` |
 | XY 控制噪声谱测量（运行 / 历史 / 架构；原图五组交互流程，14 个采集模块与 5 个分析模块；保存、预览与运行操作融入流程图；节点编辑基础／高级参数、共享值与分类同步、草稿重跑预览；下一次实验与具体目录分析设置隔离；显式前置、校相门槛、保留输出的硬件会话、空闲改参、独立目录重跑与手动结束；按格间距自动分段、只读平均段数与耗时预览；移动峰标定验收、三实验共享全轴分离与独立背景验收；标定或拟合失败仍保留二维 PSD） | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | `docs/noise_spectrum_xy_ctrl.md` |
-| XY 控制测量已知可控噪声谱（运行 / 历史 / 架构；Z 小线圈注入分段平顶谱伪噪声，相邻点交替 on/off 顺序、两态等待并逐段保存；色散连续 X/Y/R 波形中位数与全部有效点线形拟合、不含线圈频响的 K_Z 真值链，共享全控制轴分离与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
-| XY 控制测量已知不可控 Probe AM 噪声谱（运行 / 历史双 Tab；Probe AOM 外部 AM 的 ON/OFF 成对采集，可选全程叠加独立配置的 Z 已知可控噪声；共享全轴分析提取锁相端 N_S1 与有符号差分） | `experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM.py`、`experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM_plot.py` | `docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md` |
+| XY 控制测量已知可控噪声谱（运行 / 历史 / 架构；采集与分析两列依赖节点，Z 小线圈注入分段平顶谱伪噪声，相邻点交替 on/off 并逐段保存；分析选择静磁场 v3 历史曲线拟合检测增益，未选来源时完成谱分离并等待标定；保留不含线圈频响的 K_Z 真值链与独立背景验收） | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | `docs/noise_spectrum_xy_ctrl_known_noise.md` |
+| XY 控制测量已知不可控 Probe AM 噪声谱（运行 / 历史 / 架构；采集与分析两列依赖节点，Probe AOM 外部 AM 的 ON/OFF 成对采集，可选全程叠加独立配置的 Z 已知可控噪声；A08 载波节点、A12 双噪声上传与 A14 配对扫描，分析 B01–B04 共享全轴分析提取锁相端 N_S1 与有符号差分，移动峰不足时输出暂定控制轴并保留质量标记） | `experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM.py`、`experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM_plot.py` | `docs/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md` |
 | Demod3 R 噪声谱测量 | `experiments/Noise_Spectrum_XY_Demod3_R.py`、`experiments/Noise_Spectrum_XY_Demod3_R_plot.py` | `docs/noise_spectrum_xy_demod3_r.md` |
 | MORS 相关 | `experiments/MORS_feasibility_test.ipynb`、`experiments/MORS_feasibility_test_v2.ipynb`、`experiments/MORS_polarization_pulsed.ipynb` | `docs/MORS_polarization.md` |
 | RF 场灵敏度（DirectAW，可执行流程图 / 历史） | `experiments/RF_Field_Sensitivity_AW.py`、`experiments/RF_Field_Sensitivity_AW_plot.py` | `docs/rf_field_measurement.md` |

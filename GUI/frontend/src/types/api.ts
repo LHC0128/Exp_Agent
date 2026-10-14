@@ -166,6 +166,7 @@ export type DeviceConfig = {
   reference_clock: "INT" | "EXT" | null;
   connection: Record<string, unknown>;
   capabilities: Record<string, unknown>;
+  acquisition_mode?: "auto" | "daq" | "scope";
 };
 export type DeviceLibraryDocument = {
   schema_version: number;
