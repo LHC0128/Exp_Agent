@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool, StrictStr, model_validator
 
 
 class StrictModel(BaseModel):
@@ -21,6 +21,8 @@ class ExperimentArchiveBody(StrictModel):
 
 class RFDirectAWRunItem(StrictModel):
     run_id: str
+    name: str = ""
+    starred: bool = False
     timestamp: str
     run_tag: str
     completion_status: str
@@ -28,6 +30,14 @@ class RFDirectAWRunItem(StrictModel):
     analysis_status: str
     can_compare: bool
     comparison_block_reason: str
+
+
+class RFDirectAWRunRenameBody(StrictModel):
+    name: StrictStr = Field(min_length=1, max_length=80)
+
+
+class RFDirectAWRunStarBody(StrictModel):
+    starred: StrictBool
 
 
 class RFDirectAWComparisonRun(StrictModel):
@@ -48,6 +58,7 @@ class RFDirectAWRunsResponse(StrictModel):
 
 class RFDirectAWRunSummary(RFDirectAWRunItem):
     parameters: dict[str, JsonValue]
+    signal_chain: str | None = None
     can_analyze: bool
     analysis_block_reason: str
     failure_reason: str

@@ -17,6 +17,10 @@ const fields = [
   { name: "XY_TRIGGER_FREQ", label: "共同触发频率", type: "number", default: 100, group: "basic" },
   { name: "TEMP_SWITCH_ON_LAG_S", label: "温控恢复等待", type: "number", default: 5, group: "basic" },
   { name: "NOISE_NPERSEG", label: "Welch 段长", type: "integer", default: 1000, group: "basic" },
+  { name: "DEMOD3_IDX", label: "RF 解调器索引", type: "integer", default: 3, group: "basic" },
+  { name: "RF_INPUT_ROUTE", label: "RF 输入线路", type: "string", default: "physical", group: "basic", options: [{ value: "physical", label: "物理连接" }, { value: "internal", label: "内部回采（仅 MFLI）" }] },
+  { name: "RF_AUX_OUTPUT_IDX", label: "RF 辅助输出通道", type: "integer", default: 1, group: "basic", options: [0, 1, 2, 3].map(value => ({ value, label: `AuxOut${value + 1}` })) },
+  { name: "RF_PHYSICAL_INPUT_SOURCE", label: "RF 物理输入通道", type: "string", default: "aux_input1", group: "basic", options: [{ value: "aux_input0", label: "Aux Input1" }, { value: "aux_input1", label: "Aux Input2" }] },
 ];
 const layout = { basic: fields.map(field => field.name), advanced: [] };
 const parameters = Object.fromEntries(fields.map(field => [field.name, field.default]));
@@ -76,6 +80,17 @@ async function renderPage() {
   document.querySelectorAll<HTMLDetailsElement>(".xy-node-parameters").forEach(node => { node.open = true; });
 }
 
+it("R 变体的可选 RF 索引和物理辅助通道贯穿默认参数", async () => {
+  await renderPage();
+  fireEvent.change(screen.getByLabelText("RF 解调器索引"), { target: { value: "1" } });
+  fireEvent.change(screen.getByLabelText("RF 辅助输出通道"), { target: { value: "0" } });
+  fireEvent.change(screen.getByLabelText("RF 物理输入通道"), { target: { value: "aux_input0" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
+  await screen.findByText("参数与布局已保存");
+  const body = JSON.parse(String(mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)![1]?.body));
+  expect(body.parameters).toMatchObject({ DEMOD3_IDX: 1, RF_INPUT_ROUTE: "physical", RF_AUX_OUTPUT_IDX: 0, RF_PHYSICAL_INPUT_SOURCE: "aux_input0" });
+});
+
 it("真实路由的双 Tab、R 标定、节点顺序、独立频率保存和历史填回", async () => {
   await renderPage();
   expect(within(screen.getByRole("tablist", { name: "RF 灵敏度（DirectAW R）视图" })).getAllByRole("tab")).toHaveLength(2);
@@ -91,6 +106,10 @@ it("真实路由的双 Tab、R 标定、节点顺序、独立频率保存和历�
   expect(JSON.parse(String(save[1]?.body)).parameters).toMatchObject({ Z_RF_FREQ: 3050, Z_RF_NOISE_FREQ: 3000 });
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   await screen.findByRole("button", { name: "填回参数" });
+  expect(screen.queryByRole("button", { name: "重命名" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "删除本次实验" })).toBeNull();
+  expect(screen.queryByLabelText("仅显示星标")).toBeNull();
+  expect(screen.queryByRole("button", { name: "星标 first" })).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "运行" }));
   expect(screen.getByLabelText("R 响应扫描频率")).toHaveValue(3050);
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));

@@ -112,22 +112,30 @@
     },
     {
       "id": "A10",
-      "title": "HF2 回环与 R 响应频率准备",
+      "title": "RF 输入线路与 R 响应频率准备",
       "group": "R 响应标定",
       "dependencies": [
         "A09"
       ],
       "parameters": [
-        "Z_RF_FREQ"
+        "Z_RF_FREQ",
+        "DEMOD3_IDX",
+        "RF_INPUT_ROUTE",
+        "RF_AUX_OUTPUT_IDX",
+        "RF_PHYSICAL_INPUT_SOURCE"
       ],
       "artifacts": [],
       "display_parameters": [
-        "Z_RF_FREQ"
+        "Z_RF_FREQ",
+        "DEMOD3_IDX",
+        "RF_INPUT_ROUTE",
+        "RF_AUX_OUTPUT_IDX",
+        "RF_PHYSICAL_INPUT_SOURCE"
       ]
     },
     {
       "id": "A13",
-      "title": "有符号 Z RF 幅度扫描（Demod3 R）",
+      "title": "有符号 Z RF 幅度扫描（RF 解调器 R）",
       "group": "R 响应标定",
       "dependencies": [
         "A10"
@@ -146,7 +154,7 @@
     },
     {
       "id": "A12",
-      "title": "切换频率与 Demod3 校相",
+      "title": "切换频率与 RF 解调器校相",
       "group": "校相与 X 噪声",
       "dependencies": [
         "A13"
@@ -295,6 +303,34 @@
         "A15"
       ],
       "Z_RF_NOISE_FREQ": [
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "DEMOD3_IDX": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "RF_INPUT_ROUTE": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "RF_AUX_OUTPUT_IDX": [
+        "A10",
+        "A13",
+        "A12",
+        "A14",
+        "A15"
+      ],
+      "RF_PHYSICAL_INPUT_SOURCE": [
+        "A10",
+        "A13",
         "A12",
         "A14",
         "A15"

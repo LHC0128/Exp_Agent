@@ -6,6 +6,13 @@
 }
 
 .rf-aw-run-row > input { margin-top: 18px; }
+.rf-aw-run-row.with-star { grid-template-columns: auto auto minmax(0, 1fr); }
+.rf-aw-star { margin-top: 8px; padding: 5px; background: transparent; color: var(--muted); font-size: 22px; }
+.rf-aw-star.starred { color: #b7791f; }
+.rf-aw-history-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+.rf-aw-history-tools label { display: flex; align-items: center; gap: 6px; }
+.rf-aw-rename input { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; }
+.rf-aw-rename p { color: var(--muted); font-size: 13px; }
 .rf-aw-unavailable { margin: 4px 0 0 26px; font-size: 12px; color: var(--muted); }
 .rf-aw-comparison { margin-top: 20px; }
 .rf-aw-legend { display: flex; align-items: end; gap: 10px; margin-bottom: 14px; }
