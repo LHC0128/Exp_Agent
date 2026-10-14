@@ -101,7 +101,7 @@ def test_staged_directory_rerun_and_parameter_invalidation(rrig):
     ctx.finish()
 
 
-def test_aw_constraint_hidden_phase_and_mfli_rejection(rrig):
+def test_aw_constraint_hidden_phase_and_mfli_routes(rrig):
     assert not rrig.params.validate_model()
     assert any("AW_REPEAT_FREQ" in error for error in replace(rrig.params, aw_repeat_freq=3020).validate_model())
     assert not any("Z_RF_FREQ" in error for error in rrig.params.validate_model())
@@ -110,8 +110,9 @@ def test_aw_constraint_hidden_phase_and_mfli_rejection(rrig):
     flow = definition()
     editable = {name for stage in (*flow["acquisition"], *flow["analysis"]) for name in stage["display_parameters"]}
     assert {field["name"] for field in fields} <= editable
-    mapping = dict(rrig.mapping) | {"lockin_r": {"model": "MFLI", "capabilities": {"options": ["MD"]}}}
-    assert any("两路独立主电压" in error for error in lockin_preflight(EXPERIMENT_ID, rrig.params.to_external(), mapping=mapping))
+    mapping = dict(rrig.mapping) | {"lockin_r": {"model": "MFLI", "capabilities": {"options": ["MD", "DIG"]}}}
+    assert not lockin_preflight(EXPERIMENT_ID, rrig.params.to_external(), mapping=mapping)
+    assert lockin_preflight(EXPERIMENT_ID, replace(rrig.params, rf_physical_input_source="voltage1").to_external(), mapping=mapping)
 
 
 def test_aux_safety_missing_or_exceeding_and_actual_readback(rrig):
@@ -155,7 +156,7 @@ def test_eof_safe_shutdown(rrig):
     ctx = workflow.Workflow(rrig.params)
     ctx.execute(through("A13"))
     serve(ctx, io.StringIO(""), stages=ACQUISITION, validate=workflow.shared.validate_selection, finish_id="A16")
-    assert ctx.closed and ctx.state["completion_status"] == "failed"
+    assert ctx.closed and ctx.state["completion_status"] == "cancelled"
     assert_shutdown(rrig)
 
 

@@ -123,24 +123,29 @@ class Workflow:
                         for stage in invalidated_stages(self.stages, item)}
             for key in ("calibration", "actual_rates", "clock_sync", "temperature_control", "optional_connection_errors",
                         "xy_aw_output", "hf2_response_snapshot", "response_output_snapshot", "response_acquisition",
-                        "stage_frequencies", "hf2_calibration_snapshot", "calibration_output_snapshot"):
+                        "stage_frequencies", "hf2_calibration_snapshot", "calibration_output_snapshot",
+                        "hf2_noise_snapshot", "noise_output_snapshot", "noise_acquisition",
+                        "hf2_bandwidth_snapshot", "bandwidth_output_snapshot", "bandwidth_acquisition"):
                 if key in inherited:
                     self.state[key] = inherited[key]
-            for stage_id, name in (("A13", "response"), ("A12", "calibration"), ("A14", "noise")):
+            for stage_id, name in (("A13", "response"), ("A12", "calibration"), ("A14", "noise"), ("A13B", "bandwidth")):
                 if stage_id in affected:
                     self.state.get("stage_frequencies", {}).pop(name, None)
                     self.state.pop(f"hf2_{name}_snapshot", None)
                     self.state.pop(f"{name}_output_snapshot", None)
-            for stage_id, key in (("A09", "xy_phase_calibration"), ("A11", "rf_phase_calibration"), ("A13", "response_points_completed")):
+                    self.state.pop(f"{name}_acquisition", None)
+            for stage_id, key in (("A09", "xy_phase_calibration"), ("A11", "rf_phase_calibration"), ("A13", "response_points_completed"), ("A14", "noise_records_completed"), ("A13B", "bandwidth_points_completed")):
                 if stage_id in self.states and stage_id not in affected and self.states[stage_id]["status"] == "completed":
                     self.state[key] = inherited[key]
                     stage = next(item for item in self.stages if item.id == stage_id)
                     for name in stage.artifacts:
-                        source = previous.root / name
-                        if source.is_file() and name.startswith(("raw/", "results/")):
-                            shutil.copy2(source, self.directory.root / name)
-                            if name.startswith("raw/"):
-                                self.state["data_files"].append(name)
+                        if name.startswith(("raw/", "results/")):
+                            for source in previous.root.glob(name):
+                                if source.is_file():
+                                    relative = source.relative_to(previous.root)
+                                    shutil.copy2(source, self.directory.root / relative)
+                                    if name.startswith("raw/"):
+                                        self.state["data_files"].append(relative.as_posix())
             if "A12" not in affected and self.states["A12"]["status"] == "completed":
                 self.state["phase_calibration_status"] = "completed"
             self.state["calibration_source_run_id"] = previous.root.name
@@ -161,9 +166,9 @@ class Workflow:
         if hardware and (self.directory is None or (
                 any(order.index("A04") <= order.index(item) <= order.index("A13") for item in hardware)
                 and self.state["response_points_completed"] > 0)
-                or (any(order.index(item) <= order.index("A14") for item in hardware) and self.run_parameters != self.params.to_external())
+                or (any(item != "A15" for item in hardware) and self.run_parameters != self.params.to_external())
                 or any(self.states[item]["status"] in ("completed", "quality_failed", "failed", "stale")
-                       for item in hardware if item in ("A09", "A11", "A14"))):
+                       for item in hardware if item in ("A09", "A11", "A13B", "A14"))):
             self._new_directory(selected)
         self.revision += 1
         self.quality_error = None
@@ -215,7 +220,7 @@ class Workflow:
             return
         elif item == "A02":
             if not self.devices:
-                self.devices = preparation.connect_devices(self.mapping)
+                self.devices = preparation.connect_devices(self.mapping, params=self.params, experiment_id=self.identity.EXPERIMENT_ID)
         elif item == "A03":
             try:
                 self.state["clock_sync"] = synchronize_connected_clocks(self.devices, self.mapping,
@@ -258,6 +263,14 @@ class Workflow:
             acquisition.record_response_settings(self)
             self.started = time.monotonic()
             acquisition.acquire_response(self)
+        elif item == "A13B":
+            if self.params.linewidth_mode != "frequency_sweep":
+                raise ValueError("线宽模式为色散等效，未启用带宽扫频；请先在 A13B 节点把 LINEWIDTH_MODE 切换为扫频测线宽")
+            if self.demod_mode != "response":
+                acquisition.restore_response(self)
+            self.state["hf2_bandwidth_snapshot"] = hf2_snapshot(self.devices["hf2"], self.params)
+            acquisition.record_stage_settings(self, "bandwidth")
+            acquisition.acquire_bandwidth(self)
         elif item == "A14":
             if self.identity.RESPONSE_COMPONENT == "X":
                 acquisition.record_response_settings(self)
@@ -272,7 +285,7 @@ class Workflow:
                 raise RuntimeError("安全收尾失败：" + "；".join(report.errors))
             self.outputs_safe = True
             self.outputs.update(X="OFF", Y="OFF", Z="OFF", 温控="ON")
-            self.state["hf2_final_snapshot"] = hf2_snapshot(self.devices["hf2"])
+            self.state["hf2_final_snapshot"] = hf2_snapshot(self.devices["hf2"], self.params)
             self.state.update(completion_status="completed", finished_at=datetime.now().isoformat())
             invalidate(self.stages, self.states, "A09")
         self.save()
@@ -311,7 +324,7 @@ class Workflow:
                 self.state["safety_shutdown"] = dict(completed=False, errors=list(errors))
             if not sealed:
                 try:
-                    self.state["hf2_final_snapshot"] = hf2_snapshot(self.devices["hf2"])
+                    self.state["hf2_final_snapshot"] = hf2_snapshot(self.devices["hf2"], self.params)
                 except Exception as exc:
                     self.state["hf2_snapshot_error"] = str(exc)
         if failure is not None and not sealed:
@@ -349,7 +362,9 @@ def run(params: RFSensitivityDirectAWParams, *, project_root=None, workflow_type
     ctx = workflow_type(params, project_root=project_root)
     failure = None
     try:
-        ctx.execute([stage.id for stage in ctx.stages if stage.id != FINISH_ID])
+        # 完整运行按线宽模式决定是否包含可选带宽扫频节点。
+        skip = () if ctx.params.linewidth_mode == "frequency_sweep" else ("A13B",)
+        ctx.execute([stage.id for stage in ctx.stages if stage.id != FINISH_ID and stage.id not in skip])
         if ctx.quality_error:
             raise ctx.quality_error
         return ctx.directory.root

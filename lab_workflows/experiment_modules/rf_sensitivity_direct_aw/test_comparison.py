@@ -79,6 +79,17 @@ def test_overlay_uses_saved_arrays_legends_and_real_exports(tmp_path, monkeypatc
     assert json.loads((output / "comparison.json").read_text(encoding="utf-8")) == result
 
 
+def test_chinese_run_names_use_english_default_legends(tmp_path, monkeypatch):
+    runs = [result_run(tmp_path / "1013_093027_最佳"), result_run(tmp_path / "常数")]
+    save = comparison.save_figure
+    def inspect(figure, path):
+        assert [text.get_text() for text in figure.legends[0].get_texts()] == ["Run 1013_093027", "Run 2"]
+        return save(figure, path)
+    monkeypatch.setattr(comparison, "save_figure", inspect)
+    result = comparison.compare_runs(runs, tmp_path / "comparison")
+    assert [item["legend"] for item in result["runs"]] == ["Run 1013_093027", "Run 2"]
+
+
 def test_numeric_fallback_uses_raw_spectrum_and_reports_warning(tmp_path, monkeypatch):
     runs = [result_run(tmp_path / "good"), result_run(tmp_path / "fallback", fitted=False)]
     save = comparison.save_figure

@@ -18,6 +18,7 @@ from lab_workflows.steps import create_run_directory
 from lab_workflows.steps import routed_signal_generator
 from . import workflow, preparation, excitation, phase, acquisition, _helpers
 from .models import RFSensitivityDirectAWParams
+from .stages import ACQUISITION
 from .waveform import load_envelope, synthesize_xy
 
 
@@ -70,7 +71,7 @@ class FakeHF2(HF2Instrument):
         super().__init__(**kwargs)
         self.rig, self.nodes = rig, {}
         self.nodes.update({f"{self.sig_in_path(index)}/{mode}": 1
-                           for index in (0, 1) for mode in ("ac", "imp50")})
+                           for index in range(self.capabilities["voltage_inputs"]) for mode in ("ac", "imp50")})
 
     def connect(self):
         self.rig.events.append(("hf2", "connect", None, None))
@@ -101,7 +102,7 @@ class FakeHF2(HF2Instrument):
         x_device = self.rig.generators[self.rig.mapping["X_magnetic_field"]["resource"]]
         xy_active = x_device.output.get(self.rig.mapping["X_magnetic_field"]["channel"], False)
         angle, radius = (self.rig.xy_angle, self.rig.xy_r) if "/demods/0/" in path and xy_active else (0.0, 1.0)
-        if "/demods/3/" in path:
+        if "/demods/0/" not in path:
             z_device = self.rig.generators[self.rig.mapping["Z_magnetic_field"]["resource"]]
             channel = self.rig.mapping["Z_magnetic_field"]["channel"]
             radius = z_device.amplitude.get(channel, 0) * 0.05 if z_device.output.get(channel) else 0.0
@@ -122,8 +123,18 @@ def control_source(tmp_path, monkeypatch):
 @pytest.fixture
 def rig(tmp_path, monkeypatch, control_source):
     root = find_project_root()
-    mapping = load_mapping(root)
-    instance = SimpleNamespace(mapping=mapping, events=[], generators={}, xy_angle=0.0, xy_r=1.0, in_daq=False, in_shutdown=False, daq_error=None, shutdown_error=False, restore_error=False, cancel=False, z_phi0=37.0, z_scan_baseline=0.5, z_scan_amplitude=5.0, z_scan_phases=[])
+    (tmp_path / "params").mkdir(exist_ok=True)
+    for name in ("mapping.yaml", "devices.yaml", "safety_limits.yaml"):
+        (tmp_path / "params" / name).write_bytes((root / "params" / name).read_bytes())
+    # 假仪器固定为 HF2，临时快照不依赖用户当前选择的锁相型号。
+    mapping_file = tmp_path / "params/mapping.yaml"
+    config = yaml.safe_load(mapping_file.read_text(encoding="utf-8"))
+    for key in ("lockin_r", "lockin_xy"):
+        config["mapping"][key]["device_id"] = "hf2_dev18246"
+    mapping_file.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    mapping = load_mapping(tmp_path)
+    instance = SimpleNamespace(mapping=mapping, events=[], generators={}, xy_angle=0.0, xy_r=1.0, in_daq=False, in_shutdown=False, daq_error=None, shutdown_error=False, restore_error=False, cancel=False, z_phi0=37.0, z_scan_baseline=0.5, z_scan_amplitude=5.0, z_scan_phases=[], bw_gamma=300.0)
+    instance.captures = []
     for resource in {config.get("resource") for config in mapping.values() if config["instrument"] == "signal_generator"}:
         instance.generators[resource] = FakeSignal(resource, instance)
     monkeypatch.setattr(routed_signal_generator, "create_signal_generator", lambda config: instance.generators[config["resource"]])
@@ -132,10 +143,6 @@ def rig(tmp_path, monkeypatch, control_source):
     monkeypatch.setattr(preparation, "TECInstrument", lambda resource: Mock())
     monkeypatch.setattr(preparation, "configure_temperature_control", lambda *args, **kwargs: SimpleNamespace(to_dict=lambda: {"control_source": "tec103"}))
     monkeypatch.setattr(workflow, "create_run_directory", lambda data_type, tag, parameters, **kwargs: create_run_directory(data_type, tag, parameters, schema_version=2, project_root=tmp_path))
-    # 目录快照仍读取真实配置文件，不连接硬件。
-    (tmp_path / "params").mkdir(exist_ok=True)
-    for name in ("mapping.yaml", "devices.yaml", "safety_limits.yaml"):
-        (tmp_path / "params" / name).write_bytes((root / "params" / name).read_bytes())
     monkeypatch.setattr(workflow, "find_project_root", lambda: tmp_path)
 
     runtime_check = _helpers.check_cancelled
@@ -154,6 +161,14 @@ def rig(tmp_path, monkeypatch, control_source):
     monkeypatch.setattr(workflow, "report_runtime_progress", report)
     def acquire(hf2, config, **kwargs):
         instance.in_daq = True
+        z_config = instance.mapping["Z_magnetic_field"]
+        z_device = instance.generators[z_config["resource"]]
+        base = hf2.demod_path(kwargs["demod_idx"])
+        instance.captures.append({"signals": tuple(config.signal_paths), "duration_s": config.duration,
+            "rate": kwargs["actual_rate"], "time_constant": hf2.get_double(base + "/timeconstant"),
+            "order": hf2.get_int(base + "/order"),
+            "rf_frequency": z_device.frequency[z_config["channel"]],
+            "demod_frequency": hf2.get_double(hf2.osc_path(hf2.get_int(base + "/oscselect")) + "/freq")})
         if config.signal_paths != ["sample.x"]:
             # 相位/幅度扫描：按 Z 通道当前幅度与 Burst 相位返回已知响应模型（相位 180° 表示负号）。
             z_config = instance.mapping["Z_magnetic_field"]
@@ -163,18 +178,21 @@ def rig(tmp_path, monkeypatch, control_source):
             amplitude = float(z_device.amplitude.get(channel, 0.0)) if z_device.output.get(channel, False) else 0.0
             if amplitude == instance.params.z_rf_amplitude_init:
                 instance.z_scan_phases.append(phase)
-            response = complex(instance.z_scan_baseline) + instance.z_scan_amplitude * amplitude * np.exp(1j * math.radians(phase - instance.z_phi0))
+            # 带宽扫频时响应随频率呈洛伦兹线形；中心频率（=当前 z_rf_freq）处因子为 1，不影响相位/幅度扫描断言。
+            frequency = float(z_device.frequency.get(channel, 0.0))
+            factor = instance.bw_gamma ** 2 / ((frequency - instance.params.z_rf_freq) ** 2 + instance.bw_gamma ** 2)
+            response = complex(instance.z_scan_baseline) + instance.z_scan_amplitude * amplitude * factor * np.exp(1j * math.radians(phase - instance.z_phi0))
             columns = max(8, config.grid_cols)
             time = np.arange(columns) / kwargs["actual_rate"]
             kwargs["cancellation_check"]()
-            return [DAQResult(signal_name=name, demod_index=3, values=np.full(columns, value), time=time) for name, value in (("sample.r", abs(response)), ("sample.x", response.real), ("sample.y", response.imag))]
+            return [DAQResult(signal_name=name, demod_index=kwargs["demod_idx"], values=np.full(columns, value), time=time) for name, value in (("sample.r", abs(response)), ("sample.x", response.real), ("sample.y", response.imag))]
         assert kwargs["actual_rate"] == 90000
         assert config.grid_cols == int(90000 * config.duration)
         assert kwargs["strict_cleanup"] is True
         if instance.daq_error:
             raise instance.daq_error
         kwargs["cancellation_check"]()
-        return [DAQResult(signal_name="sample.x", demod_index=3, values=np.arange(100, dtype=float), time=np.arange(100) / 90000)]
+        return [DAQResult(signal_name="sample.x", demod_index=kwargs["demod_idx"], values=np.arange(100, dtype=float), time=np.arange(100) / 90000)]
     monkeypatch.setattr(acquisition.daq, "acquire_data", acquire)
     instance.acquire = acquire
     instance.tmp_path = tmp_path
@@ -249,10 +267,10 @@ def test_complete_run_preserves_trigger_and_signed_phase(rig):
         if index > demod3_calib_end and event[:3] == (temp["resource"], "setup_dc", temp["channel"])
     ]
     assert response_stage_events == [0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 5.0]
-    assert config["hf2_response_snapshot"]["/dev18246/demods/3/adcselect"] == 1
+    assert config["hf2_response_snapshot"]["/dev18246/demods/3/adcselect"] == 3
     assert config["hf2_response_snapshot"]["/dev18246/auxouts/1/demodselect"] == 0
     assert config["hf2_response_snapshot"]["/dev18246/auxouts/1/outputselect"] == 1
-    assert config["hf2_noise_snapshot"]["/dev18246/sigins/1/range"] == rig.params.loopback_input_range_v
+    assert config["hf2_noise_snapshot"]["/dev18246/sigins/1/range"] == 0.0
     for snapshot in ("hf2_response_snapshot", "hf2_noise_snapshot", "hf2_final_snapshot"):
         for index in (0, 1):
             for mode in ("ac", "imp50"):
@@ -296,6 +314,171 @@ def test_complete_run_preserves_trigger_and_signed_phase(rig):
         channel_config = rig.mapping[key]
         assert rig.generators[channel_config["resource"]].output[channel_config["channel"]] is True
     assert config["safety_shutdown"]["preserved_outputs"] == ["main_magnetic_field", "Pump_laser_power", "Probe_laser_power", "Pump_modulation", "HF2_configuration", "Time_sequence_2", "Time_sequence"]
+
+
+def test_bandwidth_node_rejects_dispersive_mode(rig):
+    ctx = workflow.Workflow(rig.params)
+    for stage in ACQUISITION:
+        ctx.states[stage.id] = {"status": "completed", "error": ""}
+        if stage.id == "A14":
+            break
+    with pytest.raises(ValueError, match="线宽模式"):
+        ctx.execute(["A13B"])
+    assert ctx.states["A13B"]["status"] == "failed"
+    ctx.finish()
+
+
+@pytest.mark.parametrize("points", [21, 49])
+def test_bandwidth_sweep_measures_lorentzian_and_restores_frequency(rig, points):
+    rig.params = replace(rig.params, z_rf_freq=3000.0, linewidth_mode="frequency_sweep", bw_freq_points=points)
+    frequencies = np.linspace(2000, 4000, points)
+    directory = workflow.run(rig.params)
+    config, _ = saved_config(rig)
+    assert config["completion_status"] == "completed"
+    assert config["bandwidth_points_completed"] == points
+    assert config["bandwidth_acquisition"]["amplitude_vpp"] == pytest.approx(rig.params.z_rf_amplitude_init)
+    assert config["bandwidth_acquisition"]["frequency_start_Hz"] == pytest.approx(2000.0)
+    assert config["bandwidth_acquisition"]["response_component"] == "R"
+    noise_index = next(index for index, capture in enumerate(rig.captures) if capture["signals"] == ("sample.x",))
+    bandwidth_captures = rig.captures[noise_index + 1:]
+    assert len(bandwidth_captures) == rig.params.bw_freq_points
+    for capture, frequency in zip(bandwidth_captures, frequencies):
+        assert capture["rf_frequency"] == capture["demod_frequency"] == pytest.approx(frequency)
+        assert capture["duration_s"] == rig.params.scan_point_duration_s
+        for key in ("time_constant", "order", "rate"):
+            assert capture[key] == rig.captures[0][key]
+    base = f"/dev18246/demods/{rig.params.demod3_idx}"
+    assert config["hf2_bandwidth_snapshot"][base + "/timeconstant"] == rig.params.demod3_tc
+    assert config["hf2_noise_snapshot"][base + "/timeconstant"] == rig.params.demod3_noise_tc
+    with np.load(directory / "raw/bandwidth_data.npz") as data:
+        assert data["frequency_Hz"] == pytest.approx(frequencies)
+        assert data["z_rf_amplitude_vpp"] == pytest.approx(rig.params.z_rf_amplitude_init)
+        assert data["z_burst_phase_deg"] == pytest.approx(37.0)
+        assert data["z_rf_freq_Hz"] == pytest.approx(3000.0)
+        # 中心 3000 Hz 处 R 最大，并直接取每点 R 时序的均值。
+        r = np.asarray(data["demod3_r_V"], dtype=float)
+        center = points // 2
+        assert int(np.argmax(r)) == center and r[0] < r[center] and r[-1] < r[center]
+        assert r == pytest.approx(data["demod3_r_series_V"].mean(axis=1))
+        assert data["demod3_r_std_V"] == pytest.approx(data["demod3_r_series_V"].std(axis=1, ddof=1))
+        assert data["duration_s"] == rig.params.scan_point_duration_s
+        assert data["actual_rate_Sa_s"] == config["actual_rates"]["demod3_bandwidth_Sa_s"]
+    # 扫频后 Z 通道频率与实际设置逐点可追溯，且收尾恢复到 z_rf_freq。
+    z = rig.mapping["Z_magnetic_field"]
+    device = rig.generators[z["resource"]]
+    assert device.frequency[z["channel"]] == pytest.approx(3000.0)
+    swept = [event[3] for event in rig.events if event[:3] == (z["resource"], "set_frequency", z["channel"])]
+    assert swept == pytest.approx([*frequencies, 3000.0])
+    assert_shutdown(rig)
+
+
+def test_bandwidth_requires_completed_noise_before_hardware(rig):
+    ctx = workflow.Workflow(replace(rig.params, z_rf_freq=3000.0, linewidth_mode="frequency_sweep"))
+    for stage in ACQUISITION:
+        if stage.id == "A14":
+            break
+        ctx.states[stage.id]["status"] = "completed"
+    with pytest.raises(ValueError, match="A14 零 RF 工作点 X 噪声采集"):
+        ctx.execute(["A13B"])
+    assert not rig.events and not ctx.devices
+
+
+@pytest.mark.parametrize("change", ["rerun", "before_first", "after_first"])
+def test_bandwidth_new_directory_inherits_response_and_noise(rig, change):
+    rig.params = replace(rig.params, z_rf_freq=3000.0, linewidth_mode="frequency_sweep")
+    ctx = workflow.Workflow(rig.params)
+    ids = [stage.id for stage in ACQUISITION]
+    ctx.execute(ids[:ids.index("A14") + 1])
+    if change != "before_first":
+        ctx.execute(["A13B"])
+    previous = ctx.directory.root
+    original = {path.name: path.read_bytes() for path in (previous / "raw").iterdir() if path.is_file()}
+    noise_snapshot = dict(ctx.state["hf2_noise_snapshot"])
+    noise_frequencies = dict(ctx.state["stage_frequencies"]["noise"])
+    if change != "rerun":
+        ctx.update_parameters({"BW_FREQ_POINTS": 11})
+    ctx.execute(["A13B"])
+    assert ctx.directory.root != previous
+    assert all((previous / "raw" / name).read_bytes() == content for name, content in original.items())
+    for name in ("response_data.npz", "noise_D3_0000.npz"):
+        assert (ctx.directory.raw / name).read_bytes() == original[name]
+        assert "raw/" + name in ctx.state["data_files"]
+    assert ctx.state["noise_records_completed"] == rig.params.noise_n_avg
+    assert ctx.state["hf2_noise_snapshot"] == noise_snapshot
+    assert ctx.state["stage_frequencies"]["noise"] == noise_frequencies
+    saved = yaml.safe_load(ctx.directory.config_path.read_text(encoding="utf-8"))
+    assert saved["parameters"]["BW_FREQ_POINTS"] == (21 if change == "rerun" else 11)
+    ctx.execute(["A15"])
+    from .analysis import AnalysisWorkflow
+    AnalysisWorkflow(ctx.directory.root).execute(["B01"])
+    ctx.finish()
+
+
+def test_bandwidth_uses_phase_scan_temperature_groups(rig, monkeypatch):
+    rig.params = replace(rig.params, z_rf_freq=3000.0, linewidth_mode="frequency_sweep",
+                         bw_freq_stop=3800.0, bw_freq_points=7, temp_group_size=3)
+    ctx = workflow.Workflow(rig.params)
+    ids = [stage.id for stage in ACQUISITION]
+    ctx.execute(ids[:ids.index("A14") + 1])
+    waits = []
+    monkeypatch.setattr(acquisition, "wait", waits.append)
+    point_rates = np.arange(7, dtype=float) + 900.0
+    def acquire(hf2, config, **kwargs):
+        rate = point_rates[ctx.state["bandwidth_points_completed"]]
+        return [replace(result, config_snapshot={"actual_rate": rate}, time=np.arange(result.values.size) / rate)
+                for result in rig.acquire(hf2, config, **kwargs)]
+    monkeypatch.setattr(acquisition.daq, "acquire_data", acquire)
+    ctx.execute(["A13B"])
+    assert waits == [rig.params.temp_off_settle_s, *([rig.params.rf_step_settle_s] * 3),
+        rig.params.temp_switch_on_lag_s, rig.params.temp_off_settle_s, *([rig.params.rf_step_settle_s] * 3),
+        rig.params.temp_switch_on_lag_s, rig.params.temp_off_settle_s, rig.params.rf_step_settle_s,
+        rig.params.temp_switch_on_lag_s]
+    with np.load(ctx.directory.raw / "bandwidth_data.npz") as data:
+        assert data["point_actual_rate_Sa_s"] == pytest.approx(point_rates)
+        assert data["actual_rate_Sa_s"] == point_rates[-1]
+    ctx.finish()
+
+
+@pytest.mark.parametrize("cancel,restore_error", [(True, False), (False, False), (False, True)])
+def test_bandwidth_failure_keeps_data_and_restores_without_hiding_primary(rig, monkeypatch, cancel, restore_error):
+    rig.params = replace(rig.params, z_rf_freq=3000.0, linewidth_mode="frequency_sweep")
+    ctx = workflow.Workflow(rig.params)
+    ids = [stage.id for stage in ACQUISITION]
+    ctx.execute(ids[:ids.index("A14") + 1])
+    noise = (ctx.directory.raw / "noise_D3_0000.npz").read_bytes()
+    primary = WorkflowCancelled("模拟带宽取消") if cancel else RuntimeError("模拟带宽 DAQ 失败")
+    acquire = rig.acquire
+    def fail(hf2, config, **kwargs):
+        if ctx.state["bandwidth_points_completed"] == 1:
+            raise primary
+        return acquire(hf2, config, **kwargs)
+    monkeypatch.setattr(acquisition.daq, "acquire_data", fail)
+    if restore_error:
+        original = phase.set_rf_frequency
+        def restore(ctx, frequency):
+            if frequency == ctx.params.z_rf_freq:
+                raise RuntimeError("模拟扫频恢复失败")
+            original(ctx, frequency)
+        monkeypatch.setattr(phase, "set_rf_frequency", restore)
+    with pytest.raises(type(primary)) as error:
+        ctx.execute(["A13B"])
+    assert error.value is primary
+    z = rig.mapping["Z_magnetic_field"]
+    device = rig.generators[z["resource"]]
+    assert device.output[z["channel"]] is False
+    temp = rig.mapping["Temp_Switch"]
+    assert rig.generators[temp["resource"]].dc[temp["channel"]] == 5.0
+    if restore_error:
+        assert "模拟扫频恢复失败" in ctx.state["bandwidth_restore_errors"][0]
+    else:
+        assert device.frequency[z["channel"]] == rig.params.z_rf_freq
+        assert ctx.devices["hf2"].get_double(ctx.devices["hf2"].osc_path(rig.params.demod3_osc_idx) + "/freq") == rig.params.z_rf_freq
+    with np.load(ctx.directory.raw / "bandwidth_data.npz") as data:
+        assert data["frequency_Hz"].shape == (1,)
+    assert (ctx.directory.raw / "noise_D3_0000.npz").read_bytes() == noise
+    ctx.finish(primary)
+    assert ctx.state["failure_reason"] == str(primary)
+    assert_shutdown(rig)
 
 
 def test_amplitude_scan_groups_temperature(rig):
@@ -437,12 +620,15 @@ def test_wait_observes_cancel_file(tmp_path, monkeypatch):
         workflow.wait(10)
 
 
-def test_parameter_waveform_and_mapping_preflight(control_source):
+def test_parameter_waveform_and_mapping_preflight(control_source, rig, monkeypatch):
+    from .definition import ADAPTER
+    monkeypatch.setattr(ADAPTER, "root", rig.tmp_path)
     params = control_source
     assert not params.validate()
     assert "必须一致" in "；".join(replace(params, z_trigger_freq=200).validate())
     assert "正整数倍" in "；".join(replace(params, xy_trigger_freq=300, z_trigger_freq=300).validate())
-    assert "固定为 1" in "；".join(replace(params, demod3_adc_select=2).validate())
+    assert not replace(params, demod3_idx=2, demod3_adc_select=2).validate()
+    assert replace(params, demod3_idx=0).validate()
     assert "安全拦截" in "；".join(replace(params, xy_trigger_amplitude=50, z_trigger_amplitude=50).validate())
     assert "整除" in "；".join(replace(params, z_phase_scan_step_deg=25).validate())
     assert "360° 周期" in "；".join(replace(params, z_phase_scan_stop_deg=320).validate())
@@ -451,7 +637,13 @@ def test_parameter_waveform_and_mapping_preflight(control_source):
     schema = definition.schema()
     assert schema["schema_version"] == 2
     assert not any(field["name"].startswith("Z_TRIGGER_") for field in schema["fields"])
+    assert not any(field["name"] == "DEMOD3_ADC_SELECT" for field in schema["fields"])
+    assert next(field for field in schema["fields"] if field["name"] == "DEMOD3_IDX")["read_only"] is False
     assert definition.preflight(params.to_external()) == []
+    bandwidth_params = replace(params, linewidth_mode="frequency_sweep", z_rf_freq=3000.0, bw_freq_points=49)
+    assert definition.preflight(bandwidth_params.to_external()) == []
+    for key, value in (("BW_FREQ_START", 2001.0), ("BW_FREQ_STOP", 3999.0)):
+        assert f"{key} 必须是共同触发频率的正整数倍" in definition.preflight(bandwidth_params.to_external() | {key: value})
     # 旧外部键自动迁移：稳定等待/采样时长改名，响应平均键剥离。
     legacy = RFSensitivityDirectAWParams.from_external({
         "RF_SETTLE_TIME": 0.12, "XY_PHASE_SETTLE_TIME": 0.6, "Z_PHASE_SCAN_DURATION_S": 0.3,

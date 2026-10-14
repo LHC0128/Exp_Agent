@@ -2,7 +2,7 @@
 from __future__ import annotations
 import math
 import time
-from lockin_amplifier import HF2Instrument
+from lockin_amplifier import LockinInstrument
 from ...common import CancellationToken, validate_safety_limit
 from ...experiment_runtime import check_cancelled
 
@@ -23,22 +23,23 @@ def validate_levels(key: str, amplitude: float, offset: float = 0.0) -> None:
         validate_safety_limit(key, float(value))
 
 
-def hf2_snapshot(hf2: HF2Instrument) -> dict:
+def hf2_snapshot(hf2: LockinInstrument, params) -> dict:
     """保存实际节点，包含响应或噪声配置的实际采样率。"""
     snapshot = {}
-    for base, integers, doubles in (
+    nodes = [
         (hf2.demod_path(0), ("enable", "adcselect", "oscselect", "harmonic", "order"), ("rate", "timeconstant", "phaseshift")),
-        (hf2.demod_path(3), ("enable", "adcselect", "oscselect", "harmonic", "order"), ("rate", "timeconstant", "phaseshift")),
-        (hf2.sig_in_path(0), ("ac", "imp50", "diff"), ("range",)),
-        (hf2.sig_in_path(1), ("ac", "imp50", "diff"), ("range",)),
-        (hf2.aux_out_path(1), ("outputselect", "demodselect"), ("scale", "offset")),
-        (hf2.osc_path(0), (), ("freq",)), (hf2.osc_path(1), (), ("freq",)),
-    ):
+        (hf2.demod_path(params.demod3_idx), ("enable", "adcselect", "oscselect", "harmonic", "order"), ("rate", "timeconstant", "phaseshift")),
+        (hf2.aux_out_path(params.rf_aux_output_idx), ("outputselect", "demodselect"), ("scale", "offset")),
+        (hf2.osc_path(0), (), ("freq",)), (hf2.osc_path(params.demod3_osc_idx), (), ("freq",)),
+    ]
+    nodes.extend((hf2.sig_in_path(idx), ("ac", "imp50", "diff"), ("range",))
+                 for idx in range(hf2.capabilities["voltage_inputs"]))
+    for base, integers, doubles in nodes:
         for node in integers:
             snapshot[f"{base}/{node}"] = int(hf2.get_int(f"{base}/{node}"))
         for node in doubles:
             value = float(hf2.get_double(f"{base}/{node}"))
             if not math.isfinite(value):
-                raise RuntimeError(f"HF2 回读非有限：{base}/{node}")
+                raise RuntimeError(f"锁相回读非有限：{base}/{node}")
             snapshot[f"{base}/{node}"] = value
     return snapshot

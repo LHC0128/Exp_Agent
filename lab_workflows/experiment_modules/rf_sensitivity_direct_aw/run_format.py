@@ -59,7 +59,7 @@ def normalize_comparison_runs(runs: list[dict]) -> list[dict]:
         raise ValueError("至少选择两次运行进行对比")
     seen = set()
     normalized = []
-    for item in runs:
+    for index, item in enumerate(runs):
         run_id = item.get("run_id")
         if not isinstance(run_id, str) or not run_id or run_id in {".", ".."} or run_id.endswith((".", " ")) or any(c in run_id for c in "/\\:\x00"):
             raise ValueError("运行 ID 必须是单个目录名")
@@ -69,5 +69,9 @@ def normalize_comparison_runs(runs: list[dict]) -> list[dict]:
         legend = item.get("legend", "")
         if not isinstance(legend, str) or any(ord(c) < 32 or ord(c) == 127 for c in legend) or re.search(r"[\u3400-\u9fff\uf900-\ufaff]", legend):
             raise ValueError("图例须使用单行英文文字、数字或符号")
-        normalized.append({**item, "legend": legend.strip() or run_id})
+        default_legend = run_id
+        if re.search(r"[\u3400-\u9fff\uf900-\ufaff]", run_id):
+            prefix = re.match(r"^(\d{4}_\d{4}(?:\d{2})?)_", run_id)
+            default_legend = f"Run {prefix[1] if prefix else index + 1}"
+        normalized.append({**item, "legend": legend.strip() or default_legend})
     return normalized

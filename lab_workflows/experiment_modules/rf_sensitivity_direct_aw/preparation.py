@@ -1,5 +1,6 @@
 """无硬件预检、设备连接、初始条件和安全收尾。"""
 from lab_workflows.steps import initialize_lockin_inputs
+from lockin_amplifier import HF2Instrument, MFLIInstrument
 from datetime import datetime
 from . import run_format
 import math
@@ -19,6 +20,15 @@ from .waveform import load_envelope
 from .run_format import EXPERIMENT_ID
 
 
+def check_rf_aux_voltage(params, root, device_id, input_range):
+    if not math.isfinite(input_range) or input_range <= 0:
+        raise ValueError("Demod0 输入量程无效，无法检查 RF 辅助输出的电压边界")
+    key, rule = _bounded_rule(device_id, "aux_output", params.rf_aux_output_idx, project_root=root)
+    swing = abs(params.loopback_aux_scale) * math.sqrt(2) * input_range
+    for level in (params.loopback_aux_offset_v - swing, params.loopback_aux_offset_v + swing):
+        validate_safety_limit(key, level, {key: rule})
+
+
 def preflight(params, root, *, experiment_id=EXPERIMENT_ID):
     validate_mapping_usage(RF_SENSITIVITY_DIRECT_AW, root)
     mapping = load_mapping(root)
@@ -26,15 +36,15 @@ def preflight(params, root, *, experiment_id=EXPERIMENT_ID):
     errors = params.validate(root)
     if errors:
         raise ValueError("；".join(errors))
-    key, rule = _bounded_rule(mapping["lockin_r"]["device_library_id"], "aux_output", 1, project_root=root)
-    swing = abs(params.loopback_aux_scale) * math.sqrt(2) * params.demod0_signal_range
-    for level in (params.loopback_aux_offset_v - swing, params.loopback_aux_offset_v + swing):
-        validate_safety_limit(key, level, {key: rule})
+    model = mapping["lockin_r"].get("model", "HF2").upper()
+    driver = HF2Instrument if model == "HF2" else MFLIInstrument
+    params.demod3_adc_select = driver.demod_input_sources[params.rf_input_source]
+    check_rf_aux_voltage(params, root, mapping["lockin_r"]["device_library_id"], params.demod0_signal_range)
     envelope = load_envelope(params, min(signal_generator_max_arb_points(mapping[key])
         for key in ("X_magnetic_field", "Y_magnetic_field")))
     return params, mapping, envelope
 
-def connect_devices(mapping: dict) -> dict:
+def connect_devices(mapping: dict, *, params, experiment_id=EXPERIMENT_ID) -> dict:
     session = DeviceSession()
     try:
         signals, channels = connect_signal_generator_routes(session, "signals", {
@@ -49,6 +59,11 @@ def connect_devices(mapping: dict) -> dict:
         gs_config, hf_config, tec_config = (mapping[key] for key in ("main_magnetic_field", "lockin_r", "temperature"))
         gs = session.connect("gs200", gs_config["resource"], lambda: GS200Instrument(gs_config["resource"]))
         hf2 = session.connect("hf2", f"hf2://{hf_config['host']}:{hf_config['port']}/{hf_config['device_id']}", lambda: create_lockin(hf_config))
+        if hf2.model.upper() != hf_config.get("model", "HF2").upper():
+            raise ValueError("已连接锁相型号与设备库不一致，禁止启动输出")
+        # 设备库声明只用于无硬件预检，输出启动前必须检查已连接设备的真实选件。
+        actual_mapping = mapping | {"lockin_r": hf_config | {"model": hf2.model, "capabilities": hf2.capabilities}}
+        require_lockin_compatibility(experiment_id, params.to_external(), mapping=actual_mapping)
         initialize_lockin_inputs(hf2)
         tec = session.connect_optional("tec", tec_config["resource"], lambda: TECInstrument(tec_config["resource"]), device_label="TEC")
         return {"signals": signals, "channels": channels, "gs200": gs, "hf2": hf2, "tec": tec, "optional_connection_errors": session.optional_connection_errors()}
@@ -112,9 +127,10 @@ def initial_state(params, *, identity=run_format):
         "completion_status": "running", "analysis_status": "not_started",
         "phase_calibration_status": "not_started", "xy_phase_calibration": {"converged": False, "history": []},
         "rf_phase_calibration": {"points_completed": 0},
-        "signal_chain": identity.SIGNAL_CHAIN, "common_trigger": {"mapping_key": "Time_sequence_2", "output": "channel", "targets": ["X Ext Trig", "Y Ext Trig", "Z Ext Trig"], "frequency_Hz": params.xy_trigger_freq},
+        "signal_chain": params.signal_chain(identity.RESPONSE_COMPONENT), "common_trigger": {"mapping_key": "Time_sequence_2", "output": "channel", "targets": ["X Ext Trig", "Y Ext Trig", "Z Ext Trig"], "frequency_Hz": params.xy_trigger_freq},
         "calibration": {"z_positive_field_phase_deg": params.z_burst_phase_init % 360, "z_negative_field_phase_deg": (params.z_burst_phase_init + 180) % 360, "z_v_to_nT": params.z_v_to_nt},
         "actual_rates": {}, "data_files": [], "response_points_completed": 0, "noise_records_completed": 0,
+        "bandwidth_points_completed": 0,
     }
 
 

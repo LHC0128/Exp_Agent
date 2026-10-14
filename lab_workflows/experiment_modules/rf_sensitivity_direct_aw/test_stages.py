@@ -14,7 +14,9 @@ from .test_workflow import rig, control_source, assert_shutdown
 
 
 def through(last):
-    return [stage.id for stage in ACQUISITION if stage.id <= last]
+    # A13B 由 LINEWIDTH_MODE 决定是否执行，默认色散等效时分步全透不包括它。
+    ids = [stage.id for stage in ACQUISITION if stage.id != "A13B"]
+    return ids[:ids.index(last) + 1]
 
 
 def test_missing_prerequisites_and_preflight_preserve_state(rig):
@@ -183,6 +185,29 @@ def test_visible_parameters_and_source_diagram_match_manifest():
     text = source.read_text(encoding="utf-8")
     for stage in ACQUISITION + ANALYSIS:
         assert stage.id in text and stage.title in text
+    elements = {item["id"]: item for item in json.loads(text)["elements"]}
+    assert elements["A14"]["y"] < elements["A13B"]["y"] < elements["A15"]["y"]
+    assert elements["A13Btext"]["containerId"] == "A13B"
+    assert "前置：A14" in elements["A13Btext"]["text"]
+    arrow = elements["A14toA13B"]
+    assert arrow["startBinding"]["elementId"] == "A14" and arrow["endBinding"]["elementId"] == "A13B"
+
+
+def test_bandwidth_dependencies_and_parameter_impacts_follow_noise(rig):
+    from .stages import validate_selection
+    flow = definition()
+    ids = [stage["id"] for stage in flow["acquisition"]]
+    assert ids[ids.index("A13"):ids.index("A15") + 1] == ["A13", "A14", "A13B", "A15"]
+    assert flow["parameter_impacts"]["acquisition"]["NOISE_RATE"] == ["A14", "A13B", "A15"]
+    ctx = workflow.Workflow(rig.params)
+    for state in ctx.states.values():
+        state["status"] = "completed"
+    assert validate_selection(ACQUISITION, ctx.states, ["A13B", "A14"]) == ["A14", "A13B"]
+    ctx.update_parameters({"BW_FREQ_POINTS": 11})
+    assert ctx.states["A13B"]["status"] == "stale"
+    assert ctx.states["A14"]["status"] == "completed"
+    ctx.update_parameters({"NOISE_DURATION": 2.0})
+    assert ctx.states["A14"]["status"] == ctx.states["A13B"]["status"] == "stale"
 
 
 def test_session_finish_keeps_completed_run_and_analysis_cache(rig):

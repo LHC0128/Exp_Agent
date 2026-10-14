@@ -16,7 +16,7 @@ from .analysis_steps import dispersive, fit_response_curve
 from . import run_format
 from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
 
-ANALYSIS_VERSION = "direct-aw-x-stages-v1"
+ANALYSIS_VERSION = "direct-aw-x-stages-v2-r-bandwidth"
 
 
 class AnalysisWorkflow:
@@ -99,7 +99,7 @@ class AnalysisWorkflow:
             self._archive_from(item)
             self.states[item] = {"status": "running", "error": ""}
             summary_keys = {"B02": ("response_fit",), "B03": ("noise_psd",),
-                            "B04": ("sensitivity", "frequency_response_correction")}
+                            "B04": ("sensitivity", "frequency_response_correction", "bandwidth_fit")}
             for stage in invalidated_stages(self.stages, item):
                 for key in summary_keys.get(stage.id, ()):
                     self.summary.pop(key, None)

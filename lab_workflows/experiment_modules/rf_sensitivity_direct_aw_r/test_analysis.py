@@ -18,8 +18,8 @@ from .models import RFSensitivityDirectAWRParams
 from .run_format import EXPERIMENT_ID, DATA_TYPE
 
 
-def synthetic_run(directory):
-    config, slope = shared_synthetic_run(directory)
+def synthetic_run(directory, *, demod_idx=3):
+    config, slope = shared_synthetic_run(directory, demod_idx=demod_idx)
     config.update(experiment_id=EXPERIMENT_ID, experiment_type=DATA_TYPE, acquisition_method="direct_aw_r",
         response_component="R", noise_component="X",
         parameters=RFSensitivityDirectAWRParams.from_external(config["parameters"] | {
@@ -34,6 +34,16 @@ def synthetic_run(directory):
                 demod3_x_V=np.full(41, 0.5), demod3_y_V=np.full(41, -0.3), z_rf_freq_Hz=3020.0)
     np.savez(path, **data)
     return config, slope
+
+
+def test_non_three_rf_index_and_recorded_chain_survive_r_analysis(tmp_path):
+    config, slope = synthetic_run(tmp_path, demod_idx=1)
+    config["signal_chain"] = "Demod0 Y -> AuxOut1 -> Aux Input1 -> RF demodulator (index 1) R calibration / X noise"
+    (tmp_path / "experiment_config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+    result = analyze(tmp_path)
+    assert result["rf_demod_index"] == 1
+    assert result["signal_chain"] == config["signal_chain"]
+    assert result["response_fit"]["slope_V_per_nT"] == pytest.approx(slope, rel=1e-5)
 
 
 def test_absolute_fit_parameters_and_underlying_center_slope():

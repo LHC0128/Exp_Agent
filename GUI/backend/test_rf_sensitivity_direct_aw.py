@@ -82,6 +82,18 @@ def test_summary_reads_result_artifacts(client, tmp_path):
     assert client.get(url).content == b"test image"
 
 
+def test_summary_uses_recorded_rf_route_and_index(client, tmp_path):
+    chain = "Demod0 Y -> AuxOut4 -> internal -> RF demodulator (index 2) X"
+    params = replace(RFSensitivityDirectAWParams(), demod3_idx=2, rf_input_route="internal", rf_aux_output_idx=3).to_external()
+    directory = create_run(tmp_path, parameters=params, signal_chain=chain)
+    before = (directory / "experiment_config.yaml").read_bytes()
+    data = client.get(f"{BASE}/runs/{directory.name}/summary").json()
+    assert data["signal_chain"] == chain
+    assert data["parameters"]["DEMOD3_IDX"] == 2
+    assert data["parameters"]["RF_AUX_OUTPUT_IDX"] == 3
+    assert before == (directory / "experiment_config.yaml").read_bytes()
+
+
 @pytest.mark.parametrize("changes", [{"schema_version": 1}, {"completion_status": "running"}, {"completion_status": "cancelled"}, {"phase_calibration_status": "failed", "xy_phase_calibration": {"converged": False}}])
 def test_ineligible_runs_do_not_start_analysis(client, tmp_path, monkeypatch, changes):
     directory = create_run(tmp_path, **changes)
@@ -123,13 +135,14 @@ def test_gui_description_matches_signal_chain(client):
     assert response.status_code == 200
     data = response.json()
     assert "时序信号2" in data["description"]
-    assert "Demod3 X" in data["description"]
+    assert "RF 解调器 X" in data["description"]
     assert "dg_am" not in data["description"]
 
 
-def test_schema_lists_oc_sens_versions_without_choosing_a_default(client, tmp_path, monkeypatch):
+def test_schema_lists_oc_sens_versions_without_choosing_a_default(client, tmp_path, monkeypatch, rig):
     # 隔离用户通过 GUI 保存的默认版本，只验证空默认值时不会自动选择。
     monkeypatch.setattr(ADAPTER, "defaults", lambda: RFSensitivityDirectAWParams())
+    monkeypatch.setattr(ADAPTER, "root", rig.tmp_path)
     directory = tmp_path / "theory_agent/simulate/results/oc_sens"
     waveform = directory / "v8/waveforms/optimal_control_waveform.csv"
     waveform.parent.mkdir(parents=True)
@@ -299,7 +312,7 @@ def create_session(client, service, rig):
 def test_workflow_manifest_diagram_and_strict_requests(workflow_client, rig):
     client, service, manager = workflow_client
     flow = client.get(f"{BASE}/workflow").json()
-    assert len(flow["acquisition"]) == 16 and len(flow["analysis"]) == 4
+    assert len(flow["acquisition"]) == 17 and len(flow["analysis"]) == 4
     assert flow["acquisition"][-1]["dependencies"] == []
     assert flow["parameter_impacts"]["analysis"]["NOISE_NPERSEG"] == ["B03", "B04"]
     # 下载使用真实仓库中的可编辑源图，临时根目录只负责硬件和数据隔离。

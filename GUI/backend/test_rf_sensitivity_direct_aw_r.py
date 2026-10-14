@@ -176,6 +176,7 @@ def test_communication_close_and_backend_restart_do_not_restore_hardware(workflo
     service.close_communication()
     wait_for(lambda: service.get(sid)["status"] == "closed")
     config = yaml.safe_load((rrig.tmp_path / "data" / DATA_TYPE / run_id / "experiment_config.yaml").read_text(encoding="utf-8"))
-    assert config["safety_shutdown"]["completed"] and config["completion_status"] == "failed"
+    assert config["safety_shutdown"]["completed"] and config["completion_status"] == "cancelled"
+    assert not manager.get(response.json()["job_id"]).cancellation.cancelled
     replacement = RFRSessionService(lambda: rrig.tmp_path, JobManager())
     assert replacement.active() is None

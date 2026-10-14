@@ -91,18 +91,24 @@ def configure_loopback(ctx):
     params, devices, state, directory = ctx.params, ctx.devices, ctx.state, ctx.directory
     signals, channels, hf2 = (devices[key] for key in ("signals", "channels", "hf2"))
     d0_config, phase0 = ctx.d0_config, ctx.phase0
-    report_runtime_progress("phase", "配置 HF2 回环与 Demod3 响应滤波", 12)
-    demod.configure_signal_input(hf2, SignalInputConfig(input_index=1, range=params.loopback_input_range_v, diff=params.loopback_input_diff))
-    # HF2 分别使用 outputselect 和 demodselect，避免套用其他型号的合并枚举。
+    report_runtime_progress("phase", "配置 RF 输入线路与 RF 解调器响应滤波", 12)
+    if params.rf_input_source == "voltage1":
+        demod.configure_signal_input(hf2, SignalInputConfig(input_index=1, range=params.loopback_input_range_v, diff=params.loopback_input_diff))
+    from .preparation import check_rf_aux_voltage
+    source_input = hf2.get_int(f"{hf2.demod_path(0)}/adcselect")
+    if source_input not in range(hf2.capabilities["voltage_inputs"]):
+        raise ValueError("Demod0 来源不是主电压输入，无法检查 RF 辅助输出的电压边界")
+    check_rf_aux_voltage(params, ctx.root, ctx.mapping["lockin_r"]["device_library_id"],
+                         hf2.get_double(f"{hf2.sig_in_path(source_input)}/range"))
     from ...lockin_control import apply_settings
     apply_settings(hf2, ctx.mapping["lockin_r"]["device_library_id"], 0, {"aux_output": {
-        "index": 1, "demod_index": 0, "output_select": 1,
+        "index": params.rf_aux_output_idx, "demod_index": 0, "output_select": 1,
         "scale": params.loopback_aux_scale, "offset_v": params.loopback_aux_offset_v,
     }}, project_root=ctx.root)
-    demod.configure_oscillator(hf2, OscillatorConfig(osc_index=1, frequency=params.z_rf_freq))
+    demod.configure_oscillator(hf2, OscillatorConfig(osc_index=params.demod3_osc_idx, frequency=params.z_rf_freq))
     state["actual_rates"]["demod0_meas_Sa_s"] = float(demod.configure_demodulator(hf2, replace(d0_config, time_constant=params.demod0_tc_meas, phase=phase0.phase_shift_deg)))
-    response_config = DemodulatorConfig(demod_index=3, rate=params.demod3_rate, input_channel=1, osc_select=1, time_constant=params.demod3_tc, order=params.demod3_order)
-    state["actual_rates"]["demod3_response_Sa_s"] = float(demod.configure_demodulator(hf2, response_config))
+    response_config = DemodulatorConfig(demod_index=params.demod3_idx, rate=params.demod3_rate, input_source=params.rf_input_source, osc_select=params.demod3_osc_idx, time_constant=params.demod3_tc, order=params.demod3_order)
+    state["actual_rates"]["demod3_response_Sa_s"] = float(demod.configure_demodulator(hf2, response_config, for_acquisition=True))
     validate_levels("Z_magnetic_field", params.z_rf_amplitude_init)
     signals.setup_sine(freq=params.z_rf_freq, amplitude=params.z_rf_amplitude_init, offset=0.0, phase=0.0, channel=channels["z"])
     signals.set_burst_mode("INFinity", channel=channels["z"])
@@ -135,7 +141,8 @@ def calibrate_rf(ctx):
             wait(params.temp_off_settle_s)
         arm_z(signals, channels["z"], params, params.z_rf_amplitude_init, phase_base=float(scan_phase))
         wait(params.rf_step_settle_s)
-        results = daq.acquire_data(hf2, scan_config, demod_idx=3, actual_rate=scan_rate, timeout=params.scan_point_duration_s + 10, cancellation_check=check_cancelled, strict_cleanup=True)
+        results = daq.acquire_data(hf2, scan_config, demod_idx=params.demod3_idx, actual_rate=scan_rate, requested_rate=params.demod3_rate, timeout=params.scan_point_duration_s + 10, cancellation_check=check_cancelled, strict_cleanup=True)
+        from lockin_amplifier import result_rate, acquisition_metadata
         by_name = {result.signal_name: np.asarray(result.values, dtype=float) for result in results}
         if set(by_name) != {"sample.r", "sample.x", "sample.y"} or not all(np.all(np.isfinite(values)) for values in by_name.values()):
             raise RuntimeError(f"RF 相位扫描第 {index + 1} 点 DAQ 未返回有效 R/X/Y 数据")
@@ -149,7 +156,8 @@ def calibrate_rf(ctx):
             "r_mean_v": r_matrix.mean(axis=1), "x_mean_v": x_matrix.mean(axis=1), "y_mean_v": y_matrix.mean(axis=1),
             "r_std_v": r_matrix.std(axis=1, ddof=1), "x_std_v": x_matrix.std(axis=1, ddof=1), "y_std_v": y_matrix.std(axis=1, ddof=1),
             "r_series_V": r_matrix, "x_series_V": x_matrix, "y_series_V": y_matrix,
-            "z_rf_amplitude_vpp": params.z_rf_amplitude_init, "actual_rate_Sa_s": scan_rate, "duration_s": params.scan_point_duration_s,
+            "z_rf_amplitude_vpp": params.z_rf_amplitude_init, "actual_rate_Sa_s": result_rate(results, scan_rate), "duration_s": params.scan_point_duration_s, "demod_idx": params.demod3_idx,
+            **acquisition_metadata(results), "time_s": results[0].time,
         }
         np.savez(directory.raw / "z_phase_scan.npz", **scan_arrays)
         state["rf_phase_calibration"]["points_completed"] = index + 1
@@ -189,16 +197,16 @@ def calibrate_demod3(ctx):
     params, devices, state, directory = ctx.params, ctx.devices, ctx.state, ctx.directory
     signals, channels, hf2 = (devices[key] for key in ("signals", "channels", "hf2"))
     z_positive_phase, response_config, cancellation = ctx.z_positive_phase, ctx.response_config, ctx.cancellation
-    report_runtime_progress("phase", "校准 Demod3", 20)
+    report_runtime_progress("phase", f"校准 RF 解调器（索引 {params.demod3_idx}）", 20)
     arm_z(signals, channels["z"], params, params.z_rf_amplitude_init, phase_base=z_positive_phase)
     set_temperature_switch(signals, False, channel=channels["temp"])
     wait(params.temp_off_settle_s)
-    phase3 = calibrate_demod_phase(hf2, PhaseCalibrationConfig(demod_idx=3), settle_wait=wait, cancellation=cancellation)
+    phase3 = calibrate_demod_phase(hf2, PhaseCalibrationConfig(demod_idx=params.demod3_idx), settle_wait=wait, cancellation=cancellation)
     response_config = replace(response_config, phase=phase3.phase_shift_deg)
     state["calibration"]["demod3"] = phase3.to_dict()
     state["phase_calibration_status"] = "completed"
     snapshot_key = "hf2_calibration_snapshot" if ctx.identity.RESPONSE_COMPONENT == "R" else "hf2_response_snapshot"
-    state[snapshot_key] = hf2_snapshot(hf2)
+    state[snapshot_key] = hf2_snapshot(hf2, params)
     directory.update_config(**state)
     set_temperature_switch(signals, True, channel=channels["temp"])
     wait(params.temp_switch_on_lag_s)

@@ -60,7 +60,7 @@ def plot_z_phase_scan(raw_dir: Path, results_dir: Path, payload: dict[str, Any])
     ax_signal.errorbar(phase_sorted, r_mean_v[order], yerr=r_std_v[order], fmt="^", color=COLOR_GREEN, capsize=2, label="Demod R")
     ax_signal.errorbar(phase_sorted, x_mean_v[order], yerr=x_std_v[order], fmt="o", color=COLOR_OPTIMAL, capsize=2, label="Demod X")
     ax_signal.errorbar(phase_sorted, y_mean_v[order], yerr=y_std_v[order], fmt="s", color=COLOR_PURPLE, capsize=2, label="Demod Y")
-    format_axis(ax_signal, xlabel="Z RF burst phase (deg)", ylabel="Demod3 mean (V)")
+    format_axis(ax_signal, xlabel="Z RF burst phase (deg)", ylabel="RF demodulator mean (V)")
     ax_signal.set_xlim(0.0, 360.0)
     style_legend(ax_signal)
 

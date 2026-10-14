@@ -5,7 +5,7 @@ from __future__ import annotations
 from lockin_amplifier import SignalInputConfig
 from dataclasses import Field, dataclass
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 import math
 import re
 
@@ -25,8 +25,8 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     rf_amp_start: float = parameter(default=-0.2, external_name="RF_AMP_START", label="RF 起始幅度", unit="Vpp", group="basic", safety_key="Z_magnetic_field")
     rf_amp_stop: float = parameter(default=0.2, external_name="RF_AMP_STOP", label="RF 终止幅度", unit="Vpp", group="basic", safety_key="Z_magnetic_field")
     rf_amp_points: int = parameter(default=81, external_name="RF_AMP_POINTS", label="RF 扫描点数", group="basic", minimum=2)
-    temp_group_size: int = parameter(default=5, external_name="TEMP_GROUP_SIZE", label="温控分组点数", group="basic", minimum=1, description="RF 相位/幅度扫描中每关闭一次温控连续采集的扫描点数；组间恢复温控并按温控恢复后等待。")
-    rf_step_settle_s: float = parameter(default=0.3, external_name="RF_STEP_SETTLE_S", label="RF 换点稳定等待", unit="s", group="basic", minimum=0, description="RF 相位/幅度扫描中每次重新设置 Z RF 相位或幅度（重臂）后的等待。")
+    temp_group_size: int = parameter(default=5, external_name="TEMP_GROUP_SIZE", label="温控分组点数", group="basic", minimum=1, description="RF 相位/幅度扫描与带宽扫频中每关闭一次温控连续采集的扫描点数；组间恢复温控并按温控恢复后等待。")
+    rf_step_settle_s: float = parameter(default=0.3, external_name="RF_STEP_SETTLE_S", label="RF 换点稳定等待", unit="s", group="basic", minimum=0, description="RF 相位/幅度扫描与带宽扫频中每次重新设置 Z RF 相位、幅度或频率（重臂）后的等待。")
     temp_off_settle_s: float = parameter(default=0.5, external_name="TEMP_OFF_SETTLE_S", label="温控关闭后稳定等待", unit="s", group="basic", minimum=0, description="每次关闭温控后的等待，等温控影响减小；XY 校相每轮重载波形后同样等待该时长。")
     temp_switch_on_lag_s: float = parameter(default=0.5, external_name="TEMP_SWITCH_ON_LAG_S", label="温控恢复后等待", unit="s", group="basic", minimum=0, description="每个温控分组（末组不足分组点数也适用）或其他校相/采集阶段恢复温控后，等待的时间。")
     noise_n_avg: int = parameter(default=10, external_name="NOISE_N_AVG", label="噪声采集次数", group="basic", minimum=1)
@@ -63,7 +63,14 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     z_phase_scan_start_deg: float = parameter(default=0.0, external_name="Z_PHASE_SCAN_START_DEG", label="RF 校相起始相位", unit="°", minimum=0.0, maximum=360.0)
     z_phase_scan_stop_deg: float = parameter(default=340.0, external_name="Z_PHASE_SCAN_STOP_DEG", label="RF 校相终止相位", unit="°", minimum=0.0, maximum=360.0)
     z_phase_scan_step_deg: float = parameter(default=20.0, external_name="Z_PHASE_SCAN_STEP_DEG", label="RF 校相相位步进", unit="°", minimum=0.001, maximum=360.0)
-    scan_point_duration_s: float = parameter(default=0.2, external_name="SCAN_POINT_DURATION_S", label="每点采样时长", unit="s", group="basic", minimum=1e-6, description="RF 相位扫描与幅度扫描每个扫描点的 DAQ 采样时长。")
+    scan_point_duration_s: float = parameter(default=0.2, external_name="SCAN_POINT_DURATION_S", label="每点采样时长", unit="s", group="basic", minimum=1e-6, description="RF 相位扫描、幅度扫描与带宽扫频每个扫描点的 DAQ 采样时长；三段扫描共用 RF 解调器响应时间常数、阶数和采样率。")
+    linewidth_mode: Literal["frequency_sweep", "dispersive_equivalent"] = parameter(
+        default="dispersive_equivalent", external_name="LINEWIDTH_MODE", label="线宽模式", group="basic",
+        options=(("frequency_sweep", "扫频测线宽"), ("dispersive_equivalent", "色散等效线宽")),
+        description="扫频测线宽时在 A14 零 RF X 噪声采集后执行 A13B，以每点 R 均值做洛伦兹拟合并回补灵敏度谱；色散等效线宽沿用幅度扫描色散拟合的 gamma。")
+    bw_freq_start: float = parameter(default=2000.0, external_name="BW_FREQ_START", label="带宽扫频起点", unit="Hz", group="basic", minimum=1e-6, description="A13B 带宽扫频起始频率，须与终点共同包含 Z_RF_FREQ。")
+    bw_freq_stop: float = parameter(default=4000.0, external_name="BW_FREQ_STOP", label="带宽扫频终点", unit="Hz", group="basic", minimum=1e-6)
+    bw_freq_points: int = parameter(default=21, external_name="BW_FREQ_POINTS", label="带宽扫频点数", group="basic", minimum=5)
     pump_mod_freq: float = parameter(default=10000.0, external_name="PUMP_MOD_FREQ", label="Pump / Larmor 频率", unit="Hz", group="basic", minimum=1e-6)
     pump_mod_duty: float = parameter(default=5.0, external_name="PUMP_MOD_DUTY", label="Pump 门控占空比", unit="%", safety_key="PUMP_MOD_DUTY")
     pump_mod_amplitude: float = parameter(default=0.18, external_name="PUMP_MOD_AMPLITUDE", label="Pump 载波幅度", unit="Vpp", minimum=0, safety_key="Pump_modulation")
@@ -76,20 +83,23 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     demod0_tc_calib: float = parameter(default=0.001, external_name="DEMOD0_TC_CALIB", label="Demod0 校相时间常数", unit="s", minimum=1e-9)
     demod0_tc_meas: float = parameter(default=1e-6, external_name="DEMOD0_TC_MEAS", label="Demod0 测量时间常数", unit="s", minimum=1e-9)
     demod0_rate: float = parameter(default=100000, external_name="DEMOD0_RATE", label="Demod0 请求采样率", unit="Sa/s", minimum=1)
-    demod3_idx: int = parameter(default=3, external_name="DEMOD3_IDX", label="RF 解调器索引", read_only=True)
+    demod3_idx: int = parameter(default=3, external_name="DEMOD3_IDX", label="RF 解调器索引", minimum=1, maximum=5, description="从 0 开始计数；不能占用主解调器 0，可用上限按锁相型号和选件检查。")
     demod3_osc_idx: int = parameter(default=1, external_name="DEMOD3_OSC_IDX", label="RF 振荡器索引", read_only=True)
-    demod3_adc_select: int = parameter(default=1, external_name="DEMOD3_ADC_SELECT", label="Demod3 输入（Signal Input2）", read_only=True)
-    demod3_order: int = parameter(default=8, external_name="DEMOD3_ORDER", label="Demod3 响应阶数", minimum=1, maximum=8)
-    demod3_tc: float = parameter(default=0.009576194757015027, external_name="DEMOD3_TC", label="Demod3 响应时间常数", unit="s", minimum=1e-9)
-    demod3_rate: float = parameter(default=1000, external_name="DEMOD3_RATE", label="Demod3 响应请求采样率", unit="Sa/s", minimum=1)
-    demod3_noise_tc: float = parameter(default=1e-5, external_name="DEMOD3_NOISE_TC", label="Demod3 噪声时间常数", unit="s", minimum=1e-9)
-    demod3_noise_order: int = parameter(default=4, external_name="DEMOD3_NOISE_ORDER", label="Demod3 噪声阶数", minimum=1, maximum=8)
-    loopback_aux_scale: float = parameter(default=2.2044316004030406, external_name="LOOPBACK_AUX_SCALE", label="AuxOut2 回环增益")
-    loopback_aux_offset_v: float = parameter(default=0.0, external_name="LOOPBACK_AUX_OFFSET_V", label="AuxOut2 回环偏置", unit="V", minimum=-10, maximum=10)
-    loopback_input_range_v: float = parameter(default=1.8160198402606689, external_name="LOOPBACK_INPUT_RANGE_V", label="Input2 回环量程", unit="V", minimum=1e-6)
+    demod3_adc_select: int = parameter(default=1, external_name="DEMOD3_ADC_SELECT", label="RF 输入节点编码", visible=False, description="历史兼容键，由型号和 RF 输入线路派生。")
+    rf_input_route: str = parameter(default="physical", external_name="RF_INPUT_ROUTE", label="RF 输入线路", group="basic", options=(("physical", "物理连接"), ("internal", "内部回采（仅 MFLI）")))
+    rf_aux_output_idx: int = parameter(default=1, external_name="RF_AUX_OUTPUT_IDX", label="RF 辅助输出通道", group="basic", options=tuple((idx, f"AuxOut{idx + 1}") for idx in range(4)))
+    rf_physical_input_source: str = parameter(default="aux_input1", external_name="RF_PHYSICAL_INPUT_SOURCE", label="RF 物理输入通道", group="basic", options=(("aux_input0", "Aux Input1"), ("aux_input1", "Aux Input2"), ("voltage1", "Signal Input2（仅 HF2）")), description="仅物理线路生效；用 BNC 将所选 AuxOut 接到此输入。内部线路直接读取所选 AuxOut。")
+    demod3_order: int = parameter(default=8, external_name="DEMOD3_ORDER", label="RF 解调器响应阶数", minimum=1, maximum=8)
+    demod3_tc: float = parameter(default=0.009576194757015027, external_name="DEMOD3_TC", label="RF 解调器响应时间常数", unit="s", minimum=1e-9)
+    demod3_rate: float = parameter(default=1000, external_name="DEMOD3_RATE", label="RF 解调器响应请求采样率", unit="Sa/s", minimum=1)
+    demod3_noise_tc: float = parameter(default=1e-5, external_name="DEMOD3_NOISE_TC", label="RF 解调器噪声时间常数", unit="s", minimum=1e-9)
+    demod3_noise_order: int = parameter(default=4, external_name="DEMOD3_NOISE_ORDER", label="RF 解调器噪声阶数", minimum=1, maximum=8)
+    loopback_aux_scale: float = parameter(default=2.2044316004030406, external_name="LOOPBACK_AUX_SCALE", label="辅助输出回环增益")
+    loopback_aux_offset_v: float = parameter(default=0.0, external_name="LOOPBACK_AUX_OFFSET_V", label="辅助输出回环偏置", unit="V", minimum=-10, maximum=10)
+    loopback_input_range_v: float = parameter(default=1.8160198402606689, external_name="LOOPBACK_INPUT_RANGE_V", label="Signal Input2 回环量程", unit="V", minimum=1e-6, description="仅 HF2 物理线路选择 Signal Input2 时生效。")
     loopback_input_ac: bool = parameter(default=False, external_name="LOOPBACK_INPUT_AC", label="Input2 AC 耦合（关闭为 DC）", visible=False)
     loopback_input_impedance_ohm: int = parameter(default=1000000, external_name="LOOPBACK_INPUT_IMPEDANCE_OHM", label="Input2 阻抗", unit="Ω", options=((1000000, "1 MΩ"), (50, "50 Ω")), visible=False)
-    loopback_input_diff: bool = parameter(default=False, external_name="LOOPBACK_INPUT_DIFF", label="Input2 差分（关闭为单端）")
+    loopback_input_diff: bool = parameter(default=False, external_name="LOOPBACK_INPUT_DIFF", label="Signal Input2 差分（关闭为单端）", description="仅 HF2 物理线路选择 Signal Input2 时生效。")
     pump_laser_power: float = parameter(default=0.5, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", safety_key="Pump_laser_power")
     probe_laser_power: float = parameter(default=0.3, external_name="FIXED_PARAMS.Probe_laser_power", label="Probe 光功率", unit="V", group="basic", safety_key="Probe_laser_power")
     main_magnetic_field: float = parameter(default=1.03, external_name="FIXED_PARAMS.main_magnetic_field", label="主磁场电流", unit="mA", group="basic", safety_key="main_magnetic_field")
@@ -101,6 +111,17 @@ class RFSensitivityDirectAWParams(ExperimentParams):
         defaults = SignalInputConfig()
         self.loopback_input_ac = defaults.ac_coupling
         self.loopback_input_impedance_ohm = defaults.impedance
+
+    @property
+    def rf_input_source(self) -> str:
+        return f"aux_output{self.rf_aux_output_idx}" if self.rf_input_route == "internal" else self.rf_physical_input_source
+
+    def signal_chain(self, component: str = "X") -> str:
+        output = f"AuxOut{self.rf_aux_output_idx + 1}"
+        destination = "internal" if self.rf_input_route == "internal" else {
+            "voltage1": "Signal Input2", "aux_input0": "Aux Input1", "aux_input1": "Aux Input2",
+        }[self.rf_physical_input_source]
+        return f"Demod0 Y -> {output} -> {destination} -> RF demodulator (index {self.demod3_idx}) {component} calibration / X noise"
 
     @staticmethod
     def _options(item: Field, root: Path) -> list[tuple]:
@@ -136,7 +157,7 @@ class RFSensitivityDirectAWParams(ExperimentParams):
                 cycles = value / self.xy_trigger_freq
                 if not math.isfinite(cycles) or cycles < 1 or abs(cycles - round(cycles)) > 1e-6:
                     errors.append(f"{key} 必须是共同触发频率的正整数倍")
-        for key, actual, fixed in (("DEMOD0_IDX", self.demod0_idx, 0), ("DEMOD0_OSC_IDX", self.demod0_osc_idx, 0), ("DEMOD3_IDX", self.demod3_idx, 3), ("DEMOD3_OSC_IDX", self.demod3_osc_idx, 1), ("DEMOD3_ADC_SELECT", self.demod3_adc_select, 1), ("FIXED_PARAMS.Temp_Switch", self.temp_switch, 5)):
+        for key, actual, fixed in (("DEMOD0_IDX", self.demod0_idx, 0), ("DEMOD0_OSC_IDX", self.demod0_osc_idx, 0), ("DEMOD3_OSC_IDX", self.demod3_osc_idx, 1), ("FIXED_PARAMS.Temp_Switch", self.temp_switch, 5)):
             if actual != fixed:
                 errors.append(f"{key} 固定为 {fixed}")
         if not self.scan_rf_phase:
@@ -151,6 +172,16 @@ class RFSensitivityDirectAWParams(ExperimentParams):
                 points = int(round(intervals)) + 1
                 if points < 6 or points % 2 or not math.isclose(points * self.z_phase_scan_step_deg, 360.0):
                     errors.append("RF 相位扫描必须以至少 6 个偶数点恰好覆盖一个 360° 周期")
+        if self.linewidth_mode == "frequency_sweep":
+            if self.bw_freq_start >= self.bw_freq_stop:
+                errors.append("BW_FREQ_START 必须小于 BW_FREQ_STOP")
+            elif not self.bw_freq_start < self.z_rf_freq < self.bw_freq_stop:
+                errors.append("带宽扫频窗口必须完整包含 Z_RF_FREQ")
+            if self.xy_trigger_freq > 0 and self.require_rf_integer_cycles:
+                for key, value in (("BW_FREQ_START", self.bw_freq_start), ("BW_FREQ_STOP", self.bw_freq_stop)):
+                    cycles = value / self.xy_trigger_freq
+                    if not math.isfinite(cycles) or cycles < 1 or abs(cycles - round(cycles)) > 1e-6:
+                        errors.append(f"{key} 必须是共同触发频率的正整数倍")
         for key, amplitude, offset in (("Time_sequence_2", self.xy_trigger_amplitude, self.xy_trigger_offset), ("Time_sequence", self.rf_gate_amplitude, self.rf_gate_offset)):
             for level in (offset - amplitude / 2, offset + amplitude / 2):
                 try:
@@ -163,6 +194,9 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
         """AW 满量程自动选择；响应采集改为定长 DAQ，剥离/迁移旧稳定等待与平均键。"""
         migrated = super(RFSensitivityDirectAWParams, cls).migrate_external(values, schema_version)
+        if not any(key in migrated for key in ("RF_INPUT_ROUTE", "RF_AUX_OUTPUT_IDX", "RF_PHYSICAL_INPUT_SOURCE")):
+            # 旧参数保存的是 HF2 AuxOut2 到 Signal Input2，不能套用新默认接线。
+            migrated.update(RF_INPUT_ROUTE="physical", RF_AUX_OUTPUT_IDX=1, RF_PHYSICAL_INPUT_SOURCE="voltage1")
         for key in ("XY_AW_OUTPUT_VPP", "XY_AW_OUTPUT_OFFSET", "RESPONSE_N_AVG", "RESPONSE_AVG_INTERVAL"):
             migrated.pop(key, None)
         for old, new in (("RF_SETTLE_TIME", "RF_STEP_SETTLE_S"), ("XY_PHASE_SETTLE_TIME", "TEMP_OFF_SETTLE_S"), ("Z_PHASE_SCAN_DURATION_S", "SCAN_POINT_DURATION_S")):

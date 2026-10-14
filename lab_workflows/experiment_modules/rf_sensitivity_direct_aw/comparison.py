@@ -101,7 +101,7 @@ def compare_runs(runs: list[dict], output_dir: Path, *, identity=run_format) -> 
                     axes[0].plot(item["fit_field"], item["fit_response"], "--", color=color)
                 mask = item["positive"]
                 axes[1].loglog(item["frequency"][mask], item["sensitivity"][mask], color=color, label=item["legend"])
-            axes[0].set(xlabel="RF field (nT)", ylabel=f"Demod3 {identity.RESPONSE_COMPONENT} (V)", title=f"{identity.RESPONSE_COMPONENT} calibration / X noise")
+            axes[0].set(xlabel="RF field (nT)", ylabel=f"RF demodulator {identity.RESPONSE_COMPONENT} (V)", title=f"{identity.RESPONSE_COMPONENT} calibration / X noise")
             axes[1].set(xlabel="Frequency (Hz)", ylabel="Sensitivity (fT/√Hz)")
             # 轴范围与单次运行灵敏度谱一致：横轴由已校正运行的 max(2×HWHM, 平坦段上限, 1000 Hz) 决定
             corrected_items = [entry for entry in loaded if entry["corrected"]]

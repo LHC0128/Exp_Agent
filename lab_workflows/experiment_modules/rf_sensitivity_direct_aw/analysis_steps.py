@@ -1,5 +1,5 @@
 # %% [markdown]
-# # RF 灵敏度：Demod3 X 色散斜率与 X 噪声 PSD
+# # RF 灵敏度：RF 解调器 X 色散斜率与 X 噪声 PSD
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from sensitivity_analysis.fitting import LARMOR_PER_NT
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...plotting import new_figure, plot_style_context, save_figure
 from . import run_format
-from ..mx_y_rf_sensitivity.analysis_core import absolute_dispersive_response, fit_absolute_dispersive_response
+from ..mx_y_rf_sensitivity.analysis_core import absolute_dispersive_response, fit_absolute_dispersive_response, fit_lorentzian_response, lorentzian_response
 
 
 def dispersive(x, amplitude, gamma, x0, offset):
@@ -58,6 +58,36 @@ def fit_response_curve(x: np.ndarray, y: np.ndarray, *, component="X") -> dict:
     return {"success": False, "method": "numeric_gradient", "failure_reason": failure_reason, "r_squared": float("nan"), "popt": np.full(4, np.nan), "perr": np.full(4, np.nan), "slope_V_per_nT": float(abs(gradient[index])), "optimum_nT": float(x[index]), "fit_x_nT": np.array([]), "fit_y_V": np.array([])}
 
 
+def fit_bandwidth(directory, config):
+    """加载 A13B 每点 R 均值做洛伦兹拟合；色散等效模式返回 None。"""
+    if config["parameters"].get("LINEWIDTH_MODE", "dispersive_equivalent") != "frequency_sweep":
+        return None
+    path = directory / "raw" / "bandwidth_data.npz"
+    if not path.is_file():
+        raise ValueError("线宽模式为扫频测线宽，但缺少 raw/bandwidth_data.npz，请重跑 A13B 带宽扫频")
+    check_cancelled()
+    with np.load(path, allow_pickle=False) as data:
+        frequency = np.asarray(data["frequency_Hz"], dtype=float)
+        if "demod3_r_V" not in data:
+            raise ValueError("带宽扫频原始数据缺少 R 均值，请重跑 A13B 带宽扫频")
+        response = np.asarray(data["demod3_r_V"], dtype=float)
+        amplitude = float(data["z_rf_amplitude_vpp"])
+        if "demod_idx" in data and int(data["demod_idx"]) != int(config["parameters"].get("DEMOD3_IDX", 3)):
+            raise ValueError("带宽扫频记录的 RF 解调器索引与运行配置不一致")
+    if frequency.ndim != 1 or frequency.size < 5 or frequency.size != int(config["parameters"].get("BW_FREQ_POINTS", frequency.size)) \
+            or response.shape != frequency.shape or not np.all(np.isfinite(frequency)) \
+            or not np.all(np.isfinite(response)) or np.any(np.diff(frequency) <= 0) or not math.isfinite(amplitude) or amplitude <= 0:
+        raise ValueError("带宽扫频原始数据不完整或含非有限值")
+    result = fit_lorentzian_response(frequency, response)
+    if not result.success or not math.isfinite(result.gamma) or result.gamma <= 0:
+        raise ValueError("带宽扫频洛伦兹拟合质量不合格：" + "；".join(result.rejection_reasons))
+    fit_freq = np.linspace(float(frequency.min()), float(frequency.max()), 400)
+    return {"center_Hz": float(result.center), "hwhm_Hz": float(result.gamma), "amplitude_V": float(result.amplitude),
+            "offset_V": float(result.offset), "r_squared": float(result.r_squared), "gamma_uncertainty_Hz": float(result.uncertainties[1]),
+            "n_points": int(frequency.size), "frequency_min_Hz": float(frequency.min()), "frequency_max_Hz": float(frequency.max()),
+            "rf_amplitude_vpp": amplitude, "response_component": "R", "fit_freq_Hz": fit_freq, "fit_r_V": lorentzian_response(fit_freq, *result.parameters)}
+
+
 def _plain(value):
     if isinstance(value, dict):
         return {key: _plain(item) for key, item in value.items()}
@@ -79,6 +109,8 @@ def load_inputs(directory, config):
         raise ValueError("运行参数中的响应点数、噪声次数或 Welch 段长无效")
     check_cancelled()
     with np.load(directory / "raw" / "response_data.npz", allow_pickle=False) as data:
+        if "demod_idx" in data and int(data["demod_idx"]) != int(parameters.get("DEMOD3_IDX", 3)):
+            raise ValueError("响应记录的 RF 解调器索引与运行配置不一致")
         response = {key: np.asarray(data[key], dtype=float) for key in ("amplitudes_V", "amplitudes_nT", "demod3_x_V", "demod3_y_V", "demod3_r_V")}
         z_v_to_nt = float(data["z_v_to_nT"])
     if any(value.shape != (expected_points,) or not np.all(np.isfinite(value)) for value in response.values()):
@@ -114,8 +146,8 @@ def noise_psd(directory, config, nperseg_config):
         with np.load(path, allow_pickle=False) as data:
             waveform = np.asarray(data["noise_x_V"], dtype=float)
             rate = float(data["actual_rate_Sa_s"])
-            if str(data["signal_path"]) != "sample.x" or int(data["demod_idx"]) != 3:
-                raise ValueError("噪声记录必须来自 Demod3 X")
+            if str(data["signal_path"]) != "sample.x" or int(data["demod_idx"]) != int(config["parameters"].get("DEMOD3_IDX", 3)):
+                raise ValueError("噪声记录必须来自运行配置指定的 RF 解调器 X")
         if waveform.ndim != 1 or len(waveform) < 2 or not np.all(np.isfinite(waveform)) or not math.isfinite(rate) or rate <= 0:
             raise ValueError(f"无效噪声记录：{path.name}")
         segment = min(nperseg_config, len(waveform))
@@ -150,8 +182,11 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
     spectra = matrix
     hwhm_nT = None
     hwhm_hz = None
-    # shortcut: 用幅度域色散 gamma 作为等效频域 HWHM；需要真实扫频线宽时接入独立频响标定。
-    if fit["success"]:
+    bandwidth = fit_bandwidth(directory, config)
+    if bandwidth is not None:
+        hwhm_hz = bandwidth["hwhm_Hz"]
+    elif fit["success"]:
+        # 回退：未选择带宽扫频时，用幅度域色散 gamma 作为等效频域 HWHM。
         fitted_gamma_nT = abs(float(np.asarray(fit["popt"], dtype=float)[1]))
         if math.isfinite(fitted_gamma_nT) and fitted_gamma_nT > 0:
             hwhm_nT = fitted_gamma_nT
@@ -174,17 +209,21 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
     actual_rate = float(np.median(rates))
     analysis = _plain({
         "experiment_id": identity.EXPERIMENT_ID, "experiment_type": identity.DATA_TYPE, "schema_version": 2,
-        "data_dir": str(directory), "signal_chain": identity.SIGNAL_CHAIN, "response_component": component, "noise_component": "X",
+        "data_dir": str(directory), "signal_chain": config.get("signal_chain", identity.SIGNAL_CHAIN), "response_component": component, "noise_component": "X",
+        "rf_demod_index": int(config["parameters"].get("DEMOD3_IDX", 3)),
         "stage_frequencies": config.get("stage_frequencies", {}),
         "response_fit": {key: value for key, value in fit.items() if not key.startswith("fit_")} | {"slope_V_per_fT": slope_ft, "z_v_to_nT": z_v_to_nt, "gamma_nT": hwhm_nT, "f_larmor_Hz": hwhm_hz,
             "slope_estimated": not fit["success"], "slope_source": "underlying_dispersion_center" if component == "R" and fit["success"] else fit["method"]},
         "frequency_response_correction": {
             "applied": hwhm_hz is not None,
             "model": "sqrt(1 + (f / f_larmor_Hz)^2)",
-            "source": f"Demod3 {component} 对 Z RF 场色散拟合的 gamma",
+            "source": "bandwidth_lorentzian_fit" if bandwidth is not None else "dispersive_gamma",
+            "source_detail": (f"A13B R 均值带宽扫频洛伦兹拟合（中心 {bandwidth['center_Hz']:.6g} Hz）" if bandwidth is not None else f"RF 解调器 {component} 对 Z RF 场色散拟合的 gamma"),
             "gamma_nT": hwhm_nT,
             "hwhm_Hz": hwhm_hz,
         },
+        "bandwidth_fit": {"enabled": False, "reason": "LINEWIDTH_MODE 为色散等效线宽，未启用带宽扫频"} if bandwidth is None
+            else {"enabled": True, **{key: value for key, value in bandwidth.items() if not key.startswith("fit_")}},
         "noise_psd": {"n_avg": len(spectra), "actual_rate_Sa_s": actual_rate, "actual_rates_Sa_s": rates, "nperseg": nperseg_config, "freq_min_Hz": float(frequency[0]), "freq_max_Hz": float(frequency[-1])},
         "sensitivity": {"best_median_fT_per_sqrtHz": median, "flat_median_fT_per_sqrtHz": median, "raw_flat_median_fT_per_sqrtHz": raw_median, "flat_fmin_Hz": flat_min, "flat_fmax_Hz": flat_max, "report_fmin_Hz": 3.0, "report_fmax_Hz": flat_max, "correction_applied": hwhm_hz is not None},
     })
@@ -201,15 +240,15 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
     output = directory / "results"
     output.mkdir(exist_ok=True)
     report_runtime_progress("analysis", f"保存 {component} 标定 / X 噪声灵敏度结果", 95)
-    np.savez(output / "sensitivity.npz", freq_Hz=frequency, sensitivity_fT_per_sqrtHz=sensitivity, sensitivity_raw_fT_per_sqrtHz=sensitivity_raw, sensitivity_corrected_fT_per_sqrtHz=sensitivity_corrected, correction_factor=sensitivity_result.correction_factor, psd_avg_V2_per_Hz=average, slope_V_per_nT=slope_nt, slope_V_per_fT=slope_ft, gamma_nT=np.nan if hwhm_nT is None else hwhm_nT, f_larmor_Hz=np.nan if hwhm_hz is None else hwhm_hz, best_median_fT_per_sqrtHz=median, flat_median_fT_per_sqrtHz=median, raw_flat_median_fT_per_sqrtHz=raw_median, flat_fmin_Hz=flat_min, flat_fmax_Hz=flat_max, flat_mask=flat_mask.astype(np.uint8))
+    np.savez(output / "sensitivity.npz", freq_Hz=frequency, sensitivity_fT_per_sqrtHz=sensitivity, sensitivity_raw_fT_per_sqrtHz=sensitivity_raw, sensitivity_corrected_fT_per_sqrtHz=sensitivity_corrected, correction_factor=sensitivity_result.correction_factor, psd_avg_V2_per_Hz=average, slope_V_per_nT=slope_nt, slope_V_per_fT=slope_ft, gamma_nT=np.nan if hwhm_nT is None else hwhm_nT, f_larmor_Hz=np.nan if hwhm_hz is None else hwhm_hz, bandwidth_hwhm_Hz=np.nan if bandwidth is None else bandwidth["hwhm_Hz"], best_median_fT_per_sqrtHz=median, flat_median_fT_per_sqrtHz=median, raw_flat_median_fT_per_sqrtHz=raw_median, flat_fmin_Hz=flat_min, flat_fmax_Hz=flat_max, flat_mask=flat_mask.astype(np.uint8))
     (output / "analysis.yaml").write_text(yaml.safe_dump(analysis, allow_unicode=True, sort_keys=False), encoding="utf-8")
     (output / "analysis.json").write_text(json.dumps(analysis, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
 
     def response_plot(axis):
         for other in ("X", "Y", "R"):
             if other != component:
-                axis.plot(field, response[f"demod3_{other.lower()}_V"], ".", color="gray", alpha=0.5, ms=4, label=f"Demod3 {other}")
-        axis.plot(field, x, "o", ms=3, label=f"Demod3 {component} (calibration)")
+                axis.plot(field, response[f"demod3_{other.lower()}_V"], ".", color="gray", alpha=0.5, ms=4, label=f"RF demodulator {other}")
+        axis.plot(field, x, "o", ms=3, label=f"RF demodulator {component} (calibration)")
         if fit["success"]:
             fit_label = "Absolute dispersive fit" if component == "R" else "Dispersive fit"
             axis.plot(fit["fit_x_nT"], fit["fit_y_V"], "k--", label=f"{fit_label} (R²={fit['r_squared']:.3f})")
@@ -221,7 +260,7 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
         else:
             annotation = f"|d{component}/dB| ≈ {slope_nt:.3e} V/nT (numeric estimate)"
         axis.text(0.02, 0.96, annotation, transform=axis.transAxes, va="top", ha="left", fontsize=8, bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8, "edgecolor": "0.7"})
-        axis.set(xlabel="RF field (nT)", ylabel="Demod3 (V)", title=f"{component} calibration / X noise" + ("" if fit["success"] else " [estimated slope]"))
+        axis.set(xlabel="RF field (nT)", ylabel="RF demodulator (V)", title=f"{component} calibration / X noise" + ("" if fit["success"] else " [estimated slope]"))
         axis.grid(True, alpha=0.3)
         axis.legend(fontsize=8)
 
@@ -249,6 +288,17 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
         axis.grid(True, alpha=0.3, which="both")
         axis.legend(fontsize=8)
 
+    def bandwidth_plot(axis):
+        axis.plot(frequency_bw, response_bw, "o", ms=3, label="RF demodulator R (bandwidth sweep)")
+        axis.plot(bandwidth["fit_freq_Hz"], bandwidth["fit_r_V"], "k--", label=f"Lorentzian fit (R²={bandwidth['r_squared']:.3f})")
+        axis.axvline(bandwidth["center_Hz"], color="gray", linestyle=":", alpha=0.5)
+        annotation = (f"Center = {bandwidth['center_Hz']:.6g} Hz\nHWHM = {bandwidth['hwhm_Hz']:.6g} Hz\n"
+                      f"RF amplitude = {bandwidth['rf_amplitude_vpp']:.6g} Vpp")
+        axis.text(0.02, 0.96, annotation, transform=axis.transAxes, va="top", ha="left", fontsize=8, bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8, "edgecolor": "0.7"})
+        axis.set(xlabel="RF frequency (Hz)", ylabel="RF demodulator R (V)", title="R bandwidth Lorentzian fit")
+        axis.grid(True, alpha=0.3)
+        axis.legend(fontsize=8)
+
     with plot_style_context("paper"):
         for name, draw in (("response_curve.png", response_plot), ("sensitivity.png", sensitivity_plot)):
             check_cancelled()
@@ -264,6 +314,15 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
         response_plot(axes[0])
         sensitivity_plot(axes[1])
         save_figure(figure, output / "full_analysis.png")
+        if bandwidth is not None:
+            with np.load(directory / "raw" / "bandwidth_data.npz", allow_pickle=False) as data:
+                frequency_bw = np.asarray(data["frequency_Hz"], dtype=float)
+                response_bw = np.asarray(data["demod3_r_V"], dtype=float)
+            for extension in ("png", "pdf"):
+                check_cancelled()
+                figure, axis = new_figure(layout="constrained")
+                bandwidth_plot(axis)
+                save_figure(figure, output / f"bandwidth_fit.{extension}")
     report_runtime_progress("analysis", "离线分析完成", 100)
     return analysis
 
