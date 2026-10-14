@@ -169,7 +169,6 @@
         "NOISE_BAND_STOPS_HZ",
         "NOISE_BAND_PSDS_V2_PER_HZ",
         "NOISE_REPEAT_FREQ_HZ",
-        "NOISE_AMPLITUDE_VPP",
         "NOISE_SEED"
       ],
       "artifacts": [
@@ -193,7 +192,6 @@
         "NOISE_BAND_STOPS_HZ",
         "NOISE_BAND_PSDS_V2_PER_HZ",
         "NOISE_REPEAT_FREQ_HZ",
-        "NOISE_AMPLITUDE_VPP",
         "NOISE_SEED"
       ]
     },
@@ -447,7 +445,9 @@
         "analysis.yaml",
         "analysis.json",
         "full_analysis.png",
-        "full_analysis.pdf"
+        "full_analysis.pdf",
+        "z_phase_response_comparison.png",
+        "z_phase_response_comparison.pdf"
       ],
       "display_parameters": []
     }
@@ -932,16 +932,6 @@
         "A15"
       ],
       "NOISE_REPEAT_FREQ_HZ": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "NOISE_AMPLITUDE_VPP": [
         "A09",
         "A10",
         "A11",

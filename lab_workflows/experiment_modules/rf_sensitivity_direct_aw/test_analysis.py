@@ -236,7 +236,7 @@ def test_numeric_slope_fallback():
     assert result["failure_reason"]
 
 
-@pytest.mark.parametrize("change", [{"schema_version": 1}, {"completion_status": "failed"}, {"xy_phase_calibration": {"converged": False}}])
+@pytest.mark.parametrize("change", [{"schema_version": 1}, {"schema_version": 4}, {"schema_version": 5}, {"completion_status": "failed"}, {"xy_phase_calibration": {"converged": False}}])
 def test_old_or_failed_run_rejected_before_writing_results(tmp_path, change):
     config, _ = synthetic_run(tmp_path)
     config.update(change)

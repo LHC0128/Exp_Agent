@@ -18,6 +18,25 @@ from .steps.scope_waveform import temperature_gated_acquire
 from .steps.temperature import configure_temperature_control
 
 
+# 只关联确实执行实验业务的测试；共享 helper 测试不冒充所有实验的业务覆盖。
+ACQUISITION_CASES = {
+    "mx-y-rf-sensitivity": {"mode": "grouped", "cases": {
+        "restore_failure": ["AcquisitionOrderTest::test_mx_real_point_restore_failure_still_saves_payload"],
+        "partial_save": ["AcquisitionOrderTest::test_mx_real_point_restore_failure_still_saves_payload"],
+    }},
+    "bb-duty-scan-burst": {"mode": "single", "cases": {
+        "restore_failure": ["AcquisitionOrderTest::test_bb_shot_prepares_scope_before_off_and_keeps_frame_on_restore_failure"],
+        "acquire_failure": ["AcquisitionOrderTest::test_bb_shot_prepares_scope_before_off_and_keeps_frame_on_restore_failure"],
+        "partial_save": ["AcquisitionOrderTest::test_bb_shot_prepares_scope_before_off_and_keeps_frame_on_restore_failure"],
+    }},
+    "bb-power-scan-burst": {"mode": "single", "cases": {
+        "restore_failure": ["AcquisitionOrderTest::test_bb_shot_prepares_scope_before_off_and_keeps_frame_on_restore_failure"],
+        "acquire_failure": ["AcquisitionOrderTest::test_bb_shot_prepares_scope_before_off_and_keeps_frame_on_restore_failure"],
+        "partial_save": ["AcquisitionOrderTest::test_bb_shot_prepares_scope_before_off_and_keeps_frame_on_restore_failure"],
+    }},
+}
+
+
 def _legacy_function(filename, name, namespace):
     """只执行真实业务函数定义，跳过旧脚本顶层的全部硬件连接。"""
     path = Path(__file__).resolve().parents[1] / "experiments" / filename

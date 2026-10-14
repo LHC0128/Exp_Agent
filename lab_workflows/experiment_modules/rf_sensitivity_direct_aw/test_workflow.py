@@ -142,7 +142,7 @@ def rig(tmp_path, monkeypatch, control_source):
     monkeypatch.setattr(preparation, "create_lockin", lambda config: FakeHF2(instance, device_id=config["device_id"]))
     monkeypatch.setattr(preparation, "TECInstrument", lambda resource: Mock())
     monkeypatch.setattr(preparation, "configure_temperature_control", lambda *args, **kwargs: SimpleNamespace(to_dict=lambda: {"control_source": "tec103"}))
-    monkeypatch.setattr(workflow, "create_run_directory", lambda data_type, tag, parameters, **kwargs: create_run_directory(data_type, tag, parameters, schema_version=RFSensitivityDirectAWParams.schema_version, project_root=tmp_path))
+    monkeypatch.setattr(workflow, "create_run_directory", lambda data_type, tag, parameters, **kwargs: create_run_directory(data_type, tag, parameters, schema_version=kwargs["schema_version"], project_root=tmp_path))
     monkeypatch.setattr(workflow, "find_project_root", lambda: tmp_path)
 
     runtime_check = _helpers.check_cancelled
@@ -220,6 +220,24 @@ def assert_shutdown(rig):
     device = rig.generators[config["resource"]]
     assert device.dc[config["channel"]] == 5.0
     assert device.output[config["channel"]] is True
+
+
+ACQUISITION_CASES = {
+    "rf-sensitivity-aw": {
+        "mode": "grouped",
+        "cases": {
+            "order": ["test_real_group_config_settle_restore_and_slow_disk_order"],
+            "slow_disk": ["test_real_group_config_settle_restore_and_slow_disk_order"],
+            "group_change": ["test_real_group_config_settle_restore_and_slow_disk_order"],
+            "last_group": ["test_real_group_config_settle_restore_and_slow_disk_order"],
+            "cancel": ["test_bandwidth_failure_keeps_data_and_restores_without_hiding_primary"],
+            "acquire_failure": ["test_bandwidth_failure_keeps_data_and_restores_without_hiding_primary"],
+            "partial_save": ["test_group_restore_or_save_failure_keeps_completed_reads"],
+            "restore_failure": ["test_group_restore_or_save_failure_keeps_completed_reads"],
+            "save_failure": ["test_group_restore_or_save_failure_keeps_completed_reads"],
+        },
+    },
+}
 
 
 def test_complete_run_preserves_trigger_and_signed_phase(rig):
@@ -326,6 +344,56 @@ def test_bandwidth_node_rejects_dispersive_mode(rig):
         ctx.execute(["A13B"])
     assert ctx.states["A13B"]["status"] == "failed"
     ctx.finish()
+
+
+@pytest.mark.parametrize("fault", ["restore", "save"])
+def test_group_restore_or_save_failure_keeps_completed_reads(rig, monkeypatch, fault):
+    """真实幅度分组恢复/写盘失败时停止后继，恢复尝试先于文件保存。"""
+    rig.params = replace(rig.params, temp_group_size=2, rf_amp_points=3)
+    ctx = workflow.Workflow(rig.params)
+    ids = [stage.id for stage in ACQUISITION]
+    ctx.execute(ids[:ids.index("A13")])
+    attempted, captured, saved = [], [], []
+    real_switch, real_save, real_acquire = _helpers.set_temperature_switch, np.savez, rig.acquire
+    disk_failed = False
+
+    def switch(device, enabled, **kwargs):
+        real_switch(device, enabled, **kwargs)
+        attempted.append(enabled)
+        if enabled and fault == "restore":
+            raise OSError("模拟温控恢复故障")
+
+    def acquire(*args, **kwargs):
+        captured.append(1)
+        return real_acquire(*args, **kwargs)
+
+    def save(path, *args, **kwargs):
+        nonlocal disk_failed
+        assert attempted and attempted[-1] is True, "必须先尝试恢复温控"
+        if fault == "save" and not disk_failed:
+            disk_failed = True
+            raise OSError("模拟写盘故障")
+        result = real_save(path, *args, **kwargs)
+        saved.append(path)
+        return result
+
+    primary = None
+    try:
+        with monkeypatch.context() as scoped:
+            for module in (phase, acquisition, _helpers):
+                scoped.setattr(module, "set_temperature_switch", switch)
+            scoped.setattr(acquisition.daq, "acquire_data", acquire)
+            scoped.setattr(np, "savez", save)
+            with pytest.raises(OSError, match="模拟温控恢复故障|模拟写盘故障") as caught:
+                ctx.execute(["A13"])
+            primary = caught.value
+        assert len(captured) == 2, "恢复或写盘失败后不能继续下一组"
+        assert saved, "剩余待存样本仍须尽力保存"
+        for path in saved:
+            with np.load(path, allow_pickle=False) as data:
+                assert data.files
+    finally:
+        ctx.finish(primary)
 
 
 @pytest.mark.parametrize("points", [21, 49])
@@ -691,8 +759,8 @@ def test_control_versions_require_explicit_selection(control_source):
     defaults = RFSensitivityDirectAWParams()
     field = next(item for item in defaults.schema()["fields"] if item["name"] == "ARB_WAVEFORM_FILE")
     assert field["default"] == ""
-    assert [option["label"] for option in field["options"]] == ["请选择最优控制版本", "v1", "v2", "v10"]
-    assert [option["value"] for option in field["options"]][1:] == [f"{version}/waveforms/optimal_control_waveform.csv" for version in ("v1", "v2", "v10")]
+    assert [option["label"] for option in field["options"]] == ["请选择最优控制版本", "v1", "v2", "v10", "v_bad"]
+    assert [option["value"] for option in field["options"]][1:] == [f"{version}/waveforms/optimal_control_waveform.csv" for version in ("v1", "v2", "v10", "v_bad")]
     assert "请选择" in "；".join(defaults.validate())
     assert "ARB_WAVEFORM_FILE 必须是" in "；".join(replace(defaults, arb_waveform_file="control_waveform.csv").validate())
     with pytest.raises(ValueError, match="请选择"):

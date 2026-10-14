@@ -12,7 +12,7 @@ from ..rf_sensitivity_direct_aw.models import RFSensitivityDirectAWParams
 
 @dataclass(slots=True)
 class RFSensitivityKnownNoiseParams(RFSensitivityDirectAWParams):
-    schema_version: ClassVar[int] = 3
+    schema_version: ClassVar[int] = 4
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RF_STEP_SETTLE_S': 0.3, 'TEMP_OFF_SETTLE_S': 0.5}
     removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
     system_settle_s: float = parameter(default=0.5, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
@@ -21,10 +21,14 @@ class RFSensitivityKnownNoiseParams(RFSensitivityDirectAWParams):
     z_burst_phase_init: float = parameter(default=0.0, external_name="Z_BURST_PHASE_INIT", label="RF 正弦分量初始相位", unit="°", description="相位仅作用于 RF 分量，整体 Z 任意波 Burst 相位固定为 0°。")
     noise_band_starts_hz: list[float] = parameter(default_factory=lambda: [8000.0], external_name="NOISE_BAND_STARTS_HZ", label="噪声频带起点", unit="Hz", group="basic")
     noise_band_stops_hz: list[float] = parameter(default_factory=lambda: [10000.0], external_name="NOISE_BAND_STOPS_HZ", label="噪声频带终点", unit="Hz", group="basic")
-    noise_band_psds: list[float] = parameter(default_factory=lambda: [1e-11], external_name="NOISE_BAND_PSDS_V2_PER_HZ", label="噪声设计 PSD", unit="V²/Hz")
+    noise_band_psds: list[float] = parameter(default_factory=lambda: [1e-11], external_name="NOISE_BAND_PSDS_V2_PER_HZ", label="噪声设计 PSD", unit="V²/Hz", group="basic", description="设计电压谱密度；实际噪声幅度自动对齐设计 PSD（Vpp = 2×设计波形峰值），实际注入谱等于设计谱。")
     noise_repeat_freq_hz: float = parameter(default=10.0, external_name="NOISE_REPEAT_FREQ_HZ", label="噪声重复频率", unit="Hz", minimum=1e-6)
-    noise_amplitude_vpp: float = parameter(default=0.0034, external_name="NOISE_AMPLITUDE_VPP", label="实际噪声幅度", unit="Vpp", group="basic", minimum=0.001, description="固定噪声的满量程幅度；实际 PSD 按缩放后的波形计算，不将设计 PSD 当作实际注入谱。")
     noise_seed: int = parameter(default=20260922, external_name="NOISE_SEED", label="噪声随机种子", minimum=0)
+
+    @staticmethod
+    def _directory_sort_key(path):
+        # vN 按版本号升序，自定义命名的目录（如中文备注名）排在后面。
+        return (0, int(path.name[1:])) if re.fullmatch(r"v[1-9]\d*", path.name) else (1, path.name)
 
     @staticmethod
     def _options(item, root):
@@ -32,15 +36,22 @@ class RFSensitivityKnownNoiseParams(RFSensitivityDirectAWParams):
             return RFSensitivityDirectAWParams._options(item, root)
         base = resolve_control_results_root("oc_sens")
         choices = []
-        for directory in sorted(base.glob("v*"), key=lambda p: p.name):
-            if not re.fullmatch(r"v[1-9]\d*", directory.name):
-                continue
+        for directory in sorted((p for p in base.iterdir() if p.is_dir()), key=RFSensitivityKnownNoiseParams._directory_sort_key):
             try:
                 source = load_theory_control(base, directory.name)
                 choices.append((source.waveform_path.relative_to(base).as_posix(), f"{directory.name} · RF {source.theory_rf_frequency_hz:g} Hz"))
             except (OSError, ValueError):
                 continue
         return choices
+
+    @classmethod
+    def migrate_external(cls, values, schema_version):
+        # slots dataclass 子类不能用零参 super()，须显式绑定父类。
+        migrated = super(RFSensitivityKnownNoiseParams, cls).migrate_external(values, schema_version)
+        if schema_version < 4:
+            # v4 起实际噪声幅度自动对齐设计 PSD，忽略旧的手动幅度。
+            migrated.pop("NOISE_AMPLITUDE_VPP", None)
+        return migrated
 
     def validate_model(self):
         self.arb_waveform_file = self.control_waveform_files[0] if self.control_waveform_files else ""
@@ -67,7 +78,7 @@ class RFSensitivityKnownNoiseParams(RFSensitivityDirectAWParams):
             try:
                 path = (base / relative).resolve()
                 if base not in path.parents or path.name != "optimal_control_waveform.csv" or path.parent.name != "waveforms":
-                    raise ValueError("控制文件必须为 oc_sens/vN/waveforms/optimal_control_waveform.csv")
+                    raise ValueError("控制文件必须为 oc_sens/<版本>/waveforms/optimal_control_waveform.csv")
                 source = load_theory_control(base, path.parent.parent.name)
                 if not math.isclose(source.theory_rf_frequency_hz, self.z_rf_freq, rel_tol=1e-6):
                     raise ValueError(f"{source.version} 的设计 RF 频率 {source.theory_rf_frequency_hz:g} Hz 与本轮 {self.z_rf_freq:g} Hz 不一致")

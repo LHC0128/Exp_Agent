@@ -67,12 +67,22 @@ export function ParameterForm({
     const label = field.unit ? `${field.label} (${field.unit})` : field.label;
     const isDisabled = disabled || Boolean(field.read_only);
     if (field.type === "array" && field.options?.length) {
-      return <label key={field.name}><span>{label}</span>
-        <select multiple value={Array.isArray(value) ? value.map(String) : []} disabled={isDisabled}
-          onChange={event => onChange(field, Array.from(event.currentTarget.selectedOptions, option => option.value))}>
-          {field.options.map(option => <option key={String(option.value)} value={String(option.value)}>{option.label}</option>)}
-        </select>
-      </label>;
+      // 原生 multiple select 的选中反馈不明显且需 Ctrl 多选；
+      // 改用勾选列表，勾选状态即选中状态。
+      const selected = Array.isArray(value) ? value.map(String) : [];
+      return <fieldset className="zaw-multi-options" key={field.name}>
+        <legend>{label}</legend>
+        {field.options.map(option => {
+          const optionValue = String(option.value);
+          return <label key={optionValue} className="zaw-multi-option">
+            <input type="checkbox" checked={selected.includes(optionValue)} disabled={isDisabled}
+              onChange={event => onChange(field, event.target.checked
+                ? [...selected, optionValue]
+                : selected.filter(item => item !== optionValue))} />
+            <span>{option.label}</span>
+          </label>;
+        })}
+      </fieldset>;
     }
     if (field.options && field.options.length > 0) {
       const stringValue = typeof value === "string" || typeof value === "number" ? String(value) : "";

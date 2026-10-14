@@ -1777,13 +1777,34 @@ def _rf_aw_summary(experiment_id, run_id):
     reason = identity.analysis_block_reason(config)
     results = directory / "results"
     safe_results = directory in results.resolve().parents
+    analysis = _read_yaml(results / "analysis.yaml") if not reason and safe_results else None
+    artifacts = {
+        path.name: f"/api/runs/{experiment_id}/{quote(run_id, safe='')}/artifacts/{quote(path.name, safe='')}?v={path.stat().st_mtime_ns}"
+        for path in results.glob("*") if path.is_file() and not reason and safe_results and results.resolve() in path.resolve().parents
+    }
+    controls = (analysis or {}).get("controls", {})
+    if experiment_id == rf_known_noise_format.EXPERIMENT_ID and isinstance(controls, dict):
+        for version in controls:
+            if not isinstance(version, str) or "\x00" in version:
+                continue
+            try:
+                _validate_run_identifier(version)
+            except HTTPException:
+                continue
+            for name in ("full_analysis.png", "full_analysis.pdf"):
+                path = (directory / "controls" / version / "results" / name).resolve()
+                if directory not in path.parents or not path.is_file():
+                    continue
+                artifacts[f"controls/{version}/{name}"] = (
+                    f"/api/experiments/{experiment_id}/runs/{quote(run_id, safe='')}/controls/"
+                    f"{quote(version, safe='')}/artifacts/{name}?v={path.stat().st_mtime_ns}")
     return {
         **_rf_direct_aw_run_item(run_id, config, directory, identity=identity),
         "parameters": config["parameters"], "signal_chain": config.get("signal_chain", identity.SIGNAL_CHAIN), "can_analyze": not reason,
         "analysis_block_reason": reason,
         "failure_reason": config.get("failure_reason") or "",
         "analysis_error": config.get("analysis_error") or "",
-        "analysis": _read_yaml(results / "analysis.yaml") if not reason and safe_results else None,
+        "analysis": analysis,
         "xy_phase_calibration": config.get("xy_phase_calibration", {}),
         "safety_shutdown": config.get("safety_shutdown", {}),
         "actual_rates": config.get("actual_rates", {}),
@@ -1793,11 +1814,21 @@ def _rf_aw_summary(experiment_id, run_id):
         "stage_frequencies": config.get("stage_frequencies", {}),
         "response_component": identity.RESPONSE_COMPONENT, "noise_component": "X",
         "temperature_control": config.get("temperature_control"),
-        "artifacts": {
-            path.name: f"/api/runs/{experiment_id}/{quote(run_id, safe='')}/artifacts/{quote(path.name, safe='')}?v={path.stat().st_mtime_ns}"
-            for path in results.glob("*") if path.is_file() and not reason and safe_results and results.resolve() in path.resolve().parents
-        },
+        "artifacts": artifacts,
     }
+
+
+@app.get("/api/experiments/rf-sensitivity-aw-known-noise/runs/{run_id}/controls/{version}/artifacts/{name}")
+def rf_known_noise_control_artifact(run_id: str, version: str, name: str):
+    _validate_run_identifier(version)
+    experiment_id = rf_known_noise_format.EXPERIMENT_ID
+    if f"controls/{version}/{name}" not in _rf_aw_summary(experiment_id, run_id)["artifacts"]:
+        raise HTTPException(404, "控制版本结果文件不存在")
+    directory = _run_dir(experiment_id, run_id)
+    path = (directory / "controls" / version / "results" / name).resolve()
+    if directory not in path.parents or not path.is_file():
+        raise HTTPException(404, "控制版本结果必须位于运行目录内")
+    return FileResponse(path)
 
 
 def _rf_direct_aw_comparison_dir(comparison_id: str, *, experiment_id=RF_DIRECT_AW_ID) -> Path:

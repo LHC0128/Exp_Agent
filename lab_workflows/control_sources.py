@@ -125,9 +125,17 @@ def _parse_parameter_value(path: Path, key: str) -> str:
 
 
 def load_theory_control(control_root: Path, version: str) -> TheoryControlSource:
-    """读取一个 vN 控制版本并验证波形与理论参数一致。"""
-    if not _VERSION_PATTERN.fullmatch(version):
-        raise ValueError("CONTROL_VERSION 必须采用 v1、v2 等 vN 格式")
+    """读取一个控制版本并验证波形与理论参数一致。
+
+    目录名为 vN 时维持严格校验（参数文件存在且版本一致）；自定义命名的
+    目录（如中文备注名）不校验版本号一致性，缺少参数文件时 RF 频率取
+    波形时间轴的重复频率。
+    """
+    strict = bool(_VERSION_PATTERN.fullmatch(version))
+    if not strict and (
+        not version or version in (".", "..") or "/" in version or "\\" in version
+    ):
+        raise ValueError("CONTROL_VERSION 必须是 vN 或不含路径分隔符的单层目录名")
     root = Path(control_root).expanduser().resolve()
     version_dir = (root / version).resolve()
     if root not in version_dir.parents:
@@ -136,7 +144,7 @@ def load_theory_control(control_root: Path, version: str) -> TheoryControlSource
     parameter_path = version_dir / "parameters" / "optimal_control_params.csv"
     if not waveform_path.is_file():
         raise FileNotFoundError(f"未找到最优控制波形: {waveform_path}")
-    if not parameter_path.is_file():
+    if strict and not parameter_path.is_file():
         raise FileNotFoundError(f"未找到最优控制参数: {parameter_path}")
 
     first_line = waveform_path.read_text(encoding="utf-8").splitlines()[0].strip().lower()
@@ -173,26 +181,28 @@ def load_theory_control(control_root: Path, version: str) -> TheoryControlSource
         raise ValueError("控制波形时间轴必须等间隔")
     repeat_frequency_hz = 1.0 / (time_s.size * step_s)
 
-    try:
-        theory_version = _parse_parameter_value(parameter_path, "# Output version")
-    except ValueError:
-        if not broadband_result:
-            raise
-        # oc_broadband_v2 的参数文件没有版本标记，版本由目录名确定。
-        theory_version = version
-    if theory_version != version:
-        raise ValueError(
-            f"理论参数版本 {theory_version!r} 与目录版本 {version!r} 不一致"
-        )
-    try:
-        theory_rf_frequency_hz = float(
-            _parse_parameter_value(parameter_path, "f_rf_Hz")
-        )
-    except ValueError:
-        if not broadband_result:
-            raise
-        # 宽带结果用波形时间轴表达重复周期，参数文件不重复保存该字段。
-        theory_rf_frequency_hz = repeat_frequency_hz
+    # 自定义命名的目录可不带参数文件；vN 与宽带行为保持不变。
+    theory_version, theory_rf_frequency_hz = version, repeat_frequency_hz
+    if parameter_path.is_file():
+        try:
+            theory_version = _parse_parameter_value(parameter_path, "# Output version")
+        except ValueError:
+            if strict or not broadband_result:
+                raise
+            # oc_broadband_v2 的参数文件没有版本标记，版本由目录名确定。
+            theory_version = version
+        if strict and theory_version != version:
+            raise ValueError(
+                f"理论参数版本 {theory_version!r} 与目录版本 {version!r} 不一致"
+            )
+        try:
+            theory_rf_frequency_hz = float(
+                _parse_parameter_value(parameter_path, "f_rf_Hz")
+            )
+        except ValueError:
+            if strict or not broadband_result:
+                raise
+            # 宽带结果用波形时间轴表达重复周期，参数文件不重复保存该字段。
     if not np.isfinite(theory_rf_frequency_hz) or theory_rf_frequency_hz <= 0:
         raise ValueError("理论 f_rf_Hz 必须是正有限值")
     if not np.isclose(
@@ -214,7 +224,7 @@ def load_theory_control(control_root: Path, version: str) -> TheoryControlSource
         repeat_frequency_hz=repeat_frequency_hz,
         theory_rf_frequency_hz=theory_rf_frequency_hz,
         waveform_sha256=_sha256(waveform_path),
-        parameter_sha256=_sha256(parameter_path),
+        parameter_sha256=_sha256(parameter_path) if parameter_path.is_file() else "",
     )
 
 

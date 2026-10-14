@@ -71,8 +71,18 @@ function Result({ value }: { value: Summary }) {
     {typeof sensitivity?.flat_median_fT_per_sqrtHz === "number" && <p>灵敏度中位数：{sensitivity.flat_median_fT_per_sqrtHz.toPrecision(5)} fT/√Hz（{correctionText}）</p>}
     {component === "R" && <p className="alert">换算假定响应与噪声频率的增益一致；增益一致性和等效线宽补偿待实测验证。</p>}
     {value.artifacts["full_analysis.png"] ? <figure className="zaw-figure"><figcaption>{caption}</figcaption><img src={value.artifacts["full_analysis.png"]} alt={caption} /></figure> : <p className="zaw-empty">本次运行暂无结果图。</p>}
+    {value.artifacts["z_phase_response_comparison.png"] && <figure className="zaw-figure"><figcaption>各控制版本的 Z RF 相位响应</figcaption><img src={value.artifacts["z_phase_response_comparison.png"]} alt="各控制版本的 Z RF 相位响应" /></figure>}
+    {controls && Object.keys(controls).map(version => {
+      const image = value.artifacts[`controls/${version}/full_analysis.png`];
+      const pdf = value.artifacts[`controls/${version}/full_analysis.pdf`];
+      const label = `${version}：X/Y/R 响应与 RF 灵敏度`;
+      return image ? <figure className="zaw-figure" key={version}>
+        <figcaption>{label}{pdf && <> · <a href={pdf} download={`${version}_full_analysis.pdf`}>下载 {version} PDF</a></>}</figcaption>
+        <a href={image} download={`${version}_full_analysis.png`}><img src={image} alt={label} loading="lazy" /></a>
+      </figure> : null;
+    })}
     <details><summary>全部结果图</summary>{["response_curve.png", "noise_psd.png", "sensitivity.png"].filter(name => value.artifacts[name]).map(name => <figure className="zaw-figure" key={name}><figcaption>{name}</figcaption><img src={value.artifacts[name]} alt={name} /></figure>)}</details>
-    <p>{Object.entries(value.artifacts).filter(([name]) => /\.(npz|json|yaml|pdf)$/.test(name)).map(([name, url]) => <a key={name} href={url} download style={{ marginRight: 12 }}>{name}</a>)}</p>
+    <p>{Object.entries(value.artifacts).filter(([name]) => !name.startsWith("controls/") && /\.(npz|json|yaml|pdf)$/.test(name)).map(([name, url]) => <a key={name} href={url} download style={{ marginRight: 12 }}>{name}</a>)}</p>
     <details><summary>校相与安全收尾诊断</summary><pre>{JSON.stringify({ xy_phase_calibration: value.xy_phase_calibration, safety_shutdown: value.safety_shutdown }, null, 2)}</pre></details>
     <details><summary>实际采样率与锁相回读</summary><pre>{JSON.stringify({ actual_rates: value.actual_rates, stage_frequencies: value.stage_frequencies, response: value.hf2_response_snapshot, calibration: value.hf2_calibration_snapshot, noise: value.hf2_noise_snapshot }, null, 2)}</pre></details>
   </div>;
@@ -364,7 +374,7 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
             <h3>RF 采集预览（只读）</h3>
             <p>响应范围 {String(values.RF_AMP_START ?? "—")} → {String(values.RF_AMP_STOP ?? "—")} Vpp，共 {String(values.RF_AMP_POINTS ?? "—")} 点，每点 {String(values.SCAN_POINT_DURATION_S ?? "—")} s。</p>
             <p>零 RF 噪声：{String(values.NOISE_N_AVG ?? "—")} 条 × {String(values.NOISE_DURATION ?? "—")} s；采样率以锁相实际回读为准。</p>
-            {isKnownNoise && <p>注入噪声 ON：{String(values.NOISE_BAND_STARTS_HZ ?? "—")} → {String(values.NOISE_BAND_STOPS_HZ ?? "—")} Hz，固定 {String(values.NOISE_AMPLITUDE_VPP ?? "—")} Vpp；控制版本：{String(values.CONTROL_WAVEFORM_FILES ?? "—")}。零 RF 保留噪声。</p>}
+            {isKnownNoise && <p>注入噪声 ON：{String(values.NOISE_BAND_STARTS_HZ ?? "—")} → {String(values.NOISE_BAND_STOPS_HZ ?? "—")} Hz，实际噪声幅度自动对齐设计 PSD（V²/Hz）；控制版本：{String(values.CONTROL_WAVEFORM_FILES ?? "—")}。零 RF 保留噪声。</p>}
           </div>
           {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
           {definition?.wiring_notes.map(note => <p key={note}>{note}</p>)}

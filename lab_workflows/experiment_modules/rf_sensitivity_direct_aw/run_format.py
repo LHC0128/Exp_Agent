@@ -12,20 +12,24 @@ COMPARISON_JOB_KIND = f"comparison:{EXPERIMENT_ID}"
 COMPARISON_FILES = ("full_analysis_comparison.png", "full_analysis_comparison.pdf")
 
 
-def is_new_run(config: object, *, experiment_id=EXPERIMENT_ID, acquisition_method=ACQUISITION_METHOD) -> bool:
+def is_new_run(config: object, *, experiment_id=EXPERIMENT_ID, acquisition_method=ACQUISITION_METHOD,
+               schema_versions=(2, 3)) -> bool:
     return (
         isinstance(config, dict)
         and config.get("experiment_id") == experiment_id
-        and config.get("schema_version") in (2, 3)
+        and config.get("schema_version") in schema_versions
         and config.get("execution_mode") == "typed_workflow"
         and config.get("acquisition_method") == acquisition_method
         and isinstance(config.get("parameters"), dict)
     )
 
 
-def analysis_block_reason(config: object, *, experiment_id=EXPERIMENT_ID, acquisition_method=ACQUISITION_METHOD) -> str:
-    if not is_new_run(config, experiment_id=experiment_id, acquisition_method=acquisition_method):
-        return "仅支持版本 2、3 的 DirectAW 新格式运行，旧数据不支持分析"
+def analysis_block_reason(config: object, *, experiment_id=EXPERIMENT_ID, acquisition_method=ACQUISITION_METHOD,
+                          schema_versions=(2, 3)) -> str:
+    if not is_new_run(config, experiment_id=experiment_id, acquisition_method=acquisition_method,
+                      schema_versions=schema_versions):
+        versions = "、".join(map(str, schema_versions))
+        return f"仅支持版本 {versions} 的 DirectAW 新格式运行，旧数据不支持分析"
     if config.get("completion_status") != "completed":
         return "采集尚未完整完成，仅可查看诊断"
     xy_phase = config.get("xy_phase_calibration")

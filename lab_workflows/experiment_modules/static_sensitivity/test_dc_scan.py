@@ -75,6 +75,21 @@ def make_run(root):
     return popt
 
 
+ACQUISITION_CASES = {
+    "static-sensitivity": {
+        "mode": "grouped",
+        "cases": {
+            "group_change": ["DCScanTests::test_median_axis_groups_and_no_sync_trigger"],
+            "last_group": ["DCScanTests::test_median_axis_groups_and_no_sync_trigger"],
+            "cancel": ["DCScanTests::test_partial_read_and_cancel_preserve_data"],
+            "acquire_failure": ["DCScanTests::test_partial_read_and_cancel_preserve_data"],
+            "partial_save": ["DCScanTests::test_partial_read_and_cancel_preserve_data"],
+            "restore_failure": ["DCScanTests::test_cancel_during_wait_and_restoration_failure"],
+        },
+    },
+}
+
+
 class DCScanTests(unittest.TestCase):
     def test_parameters_and_saved_defaults(self):
         saved = ADAPTER.defaults()

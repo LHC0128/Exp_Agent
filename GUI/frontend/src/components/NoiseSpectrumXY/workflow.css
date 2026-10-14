@@ -34,6 +34,11 @@
 .xy-node-parameters input:not([type="checkbox"]) { width: 100%; min-width: 0; box-sizing: border-box; }
 .xy-node-parameters h4 { margin: 12px 0; }
 .xy-node-parameters .zaw-parameter-advanced { margin-top: 14px; }
+/* 数组多选参数：勾选列表代替原生 multiple select。 */
+.zaw-multi-options { margin: 0; padding: 8px 10px; border: 1px solid #cad7e2; border-radius: 8px; min-width: 0; }
+.zaw-multi-options legend { padding: 0 4px; font-weight: 600; }
+.zaw-multi-options .zaw-multi-option { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+.zaw-multi-options .zaw-multi-option span { overflow-wrap: anywhere; }
 .xy-flow-node small { overflow-wrap: anywhere; }
 .xy-flow-node .xy-shared-note { color: var(--accent, #087b9c); }
 .xy-flow-node .xy-draft-note, .xy-draft-note { color: #80580d; font-size: 13px; }

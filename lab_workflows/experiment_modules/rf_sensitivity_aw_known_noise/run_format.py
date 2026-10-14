@@ -9,8 +9,12 @@ RESPONSE_COMPONENT = "X"
 ACQUISITION_METHOD = "direct_aw_known_noise"
 COMPARISON_JOB_KIND = f"comparison:{EXPERIMENT_ID}"
 COMPARISON_FILES = ()
-is_new_run = partial(shared.is_new_run, experiment_id=EXPERIMENT_ID, acquisition_method=ACQUISITION_METHOD)
-analysis_block_reason = partial(shared.analysis_block_reason, experiment_id=EXPERIMENT_ID, acquisition_method=ACQUISITION_METHOD)
+# v4 取消手动噪声幅度参数，响应和噪声原始记录仍沿用既有格式。
+SUPPORTED_SCHEMA_VERSIONS = (2, 3, 4)
+is_new_run = partial(shared.is_new_run, experiment_id=EXPERIMENT_ID,
+    acquisition_method=ACQUISITION_METHOD, schema_versions=SUPPORTED_SCHEMA_VERSIONS)
+analysis_block_reason = partial(shared.analysis_block_reason, experiment_id=EXPERIMENT_ID,
+    acquisition_method=ACQUISITION_METHOD, schema_versions=SUPPORTED_SCHEMA_VERSIONS)
 
 
 def comparison_block_reason(directory, config):

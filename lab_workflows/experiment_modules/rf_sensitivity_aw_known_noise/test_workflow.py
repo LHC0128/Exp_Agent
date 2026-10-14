@@ -15,7 +15,7 @@ from lab_workflows import control_sources
 from lab_workflows.common import WorkflowCancelled
 from ..rf_sensitivity_direct_aw.test_workflow import rig, control_source, assert_shutdown
 from ..rf_sensitivity_direct_aw import acquisition as rf_acquisition
-from . import workflow, excitation, acquisition
+from . import workflow, excitation, acquisition, analysis_steps
 from .models import RFSensitivityKnownNoiseParams
 from .waveform import generate_noise, synthesize_z
 from .preparation import preflight
@@ -26,15 +26,19 @@ from .stages import ACQUISITION
 @pytest.fixture
 def known_rig(rig, monkeypatch):
     base = control_sources.resolve_control_results_root("oc_sens")
-    for version, peak in (("v1", 1000), ("v2", 1500)):
+    # 自定义控制：参数文件版本号与目录名不一致；常数控制：无参数目录。
+    for version, peak, parameters in (("v1", 1000, True), ("v2", 1500, True),
+                                      ("自定义控制", 1200, True), ("常数控制", 800, False)):
         path = base / version / "waveforms/optimal_control_waveform.csv"
         path.parent.mkdir(parents=True, exist_ok=True)
         time = np.arange(100) / 300000
         np.savetxt(path, np.column_stack((time, peak * np.cos(2 * np.pi * 3000 * time))),
             delimiter=",", header="time_s,Omega_ctrl_Hz")
+        if not parameters:
+            continue
         params = base / version / "parameters/optimal_control_params.csv"
         params.parent.mkdir(parents=True, exist_ok=True)
-        params.write_text(f"# Output version,{version}\nf_rf_Hz,3000\n", encoding="utf-8")
+        params.write_text(f"# Output version,{version if version.startswith('v') else 'v99'}\nf_rf_Hz,3000\n", encoding="utf-8")
     values = rig.params.to_external()
     values.update(CONTROL_WAVEFORM_FILES=["v1/waveforms/optimal_control_waveform.csv", "v2/waveforms/optimal_control_waveform.csv"],
         Z_RF_FREQ=3000, AW_REPEAT_FREQ=3000, PUMP_MOD_FREQ=90000, RF_AMP_START=-0.02, RF_AMP_STOP=0.02,
@@ -74,6 +78,9 @@ def known_rig(rig, monkeypatch):
 def test_sum_normalization_preserves_noise_and_rf_phase():
     params = RFSensitivityKnownNoiseParams()
     noise = generate_noise(params)
+    # 噪声幅度自动对齐设计 PSD：实际谱与设计谱一致。
+    assert math.isclose(noise["noise_vpp_V"], 2.0 * float(np.max(np.abs(noise["noise_V"]))))
+    np.testing.assert_allclose(noise["actual_psd_V2_per_Hz"], noise["design_psd_V2_per_Hz"])
     for amplitude in (-0.1, 0.0, 0.04):
         for phase in (0, 37, 180):
             wave = synthesize_z(noise, amplitude, 3000, phase)
@@ -84,6 +91,30 @@ def test_sum_normalization_preserves_noise_and_rf_phase():
                 np.testing.assert_array_equal(wave["voltage_V"], noise["noise_V"])
     with pytest.raises(ValueError, match="整数倍"):
         synthesize_z(noise, 0.01, 3001)
+
+
+def test_custom_named_control_versions(known_rig):
+    """自定义命名的控制目录（含中文、无参数文件）可列出、校验并通过预检。"""
+    schema = RFSensitivityKnownNoiseParams().schema()
+    field = next(item for item in schema["fields"] if item["name"] == "CONTROL_WAVEFORM_FILES")
+    offered = {option["value"] for option in field["options"]}
+    assert "自定义控制/waveforms/optimal_control_waveform.csv" in offered
+    assert "常数控制/waveforms/optimal_control_waveform.csv" in offered
+    values = known_rig.params.to_external() | {"CONTROL_WAVEFORM_FILES": [
+        "自定义控制/waveforms/optimal_control_waveform.csv",
+        "常数控制/waveforms/optimal_control_waveform.csv"]}
+    params = RFSensitivityKnownNoiseParams.from_external(values, schema_version=4)
+    assert params.validate(known_rig.tmp_path) == []
+    preflight(params, known_rig.tmp_path)
+    assert not known_rig.events
+
+
+def test_v3_config_migrates_manual_amplitude_away(known_rig):
+    values = known_rig.params.to_external() | {"NOISE_AMPLITUDE_VPP": 0.0034}
+    params = RFSensitivityKnownNoiseParams.from_external(values, schema_version=3)
+    assert not hasattr(params, "noise_amplitude_vpp")
+    with pytest.raises(ValueError, match="未知参数"):
+        RFSensitivityKnownNoiseParams.from_external(values, schema_version=4)
 
 
 def test_wrong_frequency_rejected_without_hardware(known_rig):
@@ -103,13 +134,22 @@ def test_output_readback_mismatch_stops_before_acquisition(known_rig):
 
 
 def test_two_controls_complete_and_analyze_without_sources(known_rig, monkeypatch):
+    figures = []
+    original = analysis_steps.save_figure
+    def capture(figure, path):
+        if path.name == "full_analysis.png":
+            figures.append(figure)
+        return original(figure, path)
+    monkeypatch.setattr(analysis_steps, "save_figure", capture)
     directory = workflow.run(known_rig.params, project_root=known_rig.tmp_path)
     config = yaml.safe_load((directory / "experiment_config.yaml").read_text(encoding="utf-8"))
+    assert config["schema_version"] == RFSensitivityKnownNoiseParams.schema_version
     assert config["completion_status"] == "completed"
     assert list(config["controls"]) == ["v1", "v2"]
     for version in ("v1", "v2"):
         child = directory / "controls" / version
         saved = yaml.safe_load((child / "experiment_config.yaml").read_text(encoding="utf-8"))
+        assert saved["schema_version"] == RFSensitivityKnownNoiseParams.schema_version
         assert saved["completion_status"] == "completed"
         assert saved["stage_frequencies"]["noise"]["rf_frequency_Hz"] == 3000
         assert saved["noise_output_snapshot"]["z"]["frequency_Hz"] == 10
@@ -123,7 +163,14 @@ def test_two_controls_complete_and_analyze_without_sources(known_rig, monkeypatc
     result = analyze(directory)
     assert result["status"] == "completed"
     assert list(result["controls"]) == ["v1", "v2"]
+    assert result["controls"]["v1"]["plot_label"] == "v1"
+    assert result["controls"]["v2"]["plot_label"] == "v2"
     assert (directory / "results/full_analysis.png").is_file()
+    assert len(figures[0].axes) == 2
+    assert figures[0].axes[1].get_ylabel() == "Sensitivity (fT/sqrt(Hz))"
+    assert all(axis.get_legend_handles_labels()[1] == ["v1", "v2"] for axis in figures[0].axes)
+    assert (directory / "results/z_phase_response_comparison.png").is_file()
+    assert (directory / "results/z_phase_response_comparison.pdf").is_file()
     ctx = AnalysisWorkflow(directory, {"NOISE_NPERSEG": 64})
     assert ctx.states["B02"]["status"] == "completed"
     assert ctx.states["B03"]["status"] == "stale"

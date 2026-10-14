@@ -9,7 +9,7 @@ from . import run_format, analysis_steps, stages
 class AnalysisWorkflow(shared.AnalysisWorkflow):
     stages = stages.ANALYSIS
     identity = run_format
-    analysis_version = "direct-aw-known-noise-v1"
+    analysis_version = "direct-aw-known-noise-v2-phase-comparison"
     steps_module = analysis_steps
 
     def persist(self):

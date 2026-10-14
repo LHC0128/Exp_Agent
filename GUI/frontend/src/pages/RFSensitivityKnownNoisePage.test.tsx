@@ -14,7 +14,6 @@ const files = ["v9/waveforms/optimal_control_waveform.csv", "v10/waveforms/optim
 const fields = [
   { name: "RUN_TAG", label: "运行标签", type: "string", default: "known", group: "basic" },
   { name: "CONTROL_WAVEFORM_FILES", label: "控制波形版本（可多选）", type: "array", default: [files[0]], group: "basic", options: files.map((value, index) => ({ value, label: `v${index + 9} · RF 3000 Hz` })) },
-  { name: "NOISE_AMPLITUDE_VPP", label: "实际噪声幅度", type: "number", default: 0.0034, group: "basic" },
   { name: "NOISE_NPERSEG", label: "Welch 段长", type: "integer", default: 128, group: "basic" },
 ];
 const parameters = Object.fromEntries(fields.map(field => [field.name, field.default]));
@@ -53,15 +52,17 @@ async function show() {
 
 it("真实路由保留多选与参数草稿，历史填回与预检失败不启动", async () => {
   await show();
-  const select = screen.getByLabelText("控制波形版本（可多选）") as HTMLSelectElement;
-  for (const option of select.options) option.selected = true;
-  fireEvent.change(select);
+  // 多选为勾选列表：勾选即选中，勾选状态即选中状态。
+  expect(screen.getByLabelText("v9 · RF 3000 Hz")).toBeChecked();
+  fireEvent.click(screen.getByLabelText("v10 · RF 3000 Hz"));
+  expect(screen.getByLabelText("v10 · RF 3000 Hz")).toBeChecked();
   fireEvent.change(screen.getByLabelText("运行标签"), { target: { value: "draft" } });
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   await screen.findByRole("button", { name: "history" });
   fireEvent.click(screen.getByRole("tab", { name: "运行" }));
   expect(screen.getByLabelText("运行标签")).toHaveValue("draft");
-  expect(Array.from(select.selectedOptions, option => option.value)).toEqual(files);
+  expect(screen.getByLabelText("v9 · RF 3000 Hz")).toBeChecked();
+  expect(screen.getByLabelText("v10 · RF 3000 Hz")).toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
   await screen.findByText("参数与布局已保存");
   const saved = JSON.parse(String(mockApi.mock.calls.find(([url]) => url.endsWith("/defaults"))![1]?.body));
@@ -82,4 +83,56 @@ it("分步会话提交所选节点与当前控制列表", async () => {
   fireEvent.click(screen.getByLabelText("A13 " + flow.acquisition.find(stage => stage.id === "A13")!.title));
   fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url.endsWith("/sessions/test/steps"))).toBe(true));
+});
+
+it("历史结果展示所有控制的 Z RF 相位响应并提供 PDF 下载", async () => {
+  const existing = mockApi.getMockImplementation()!;
+  mockApi.mockImplementation(async (url, options): Promise<any> => {
+    if (url.endsWith("/summary")) return { ...summary, artifacts: {
+      "full_analysis.png": "/results/full_analysis.png",
+      "z_phase_response_comparison.png": "/results/z_phase_response_comparison.png",
+      "z_phase_response_comparison.pdf": "/results/z_phase_response_comparison.pdf",
+    } };
+    return existing(url, options);
+  });
+  await show();
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(await screen.findByRole("button", { name: "history" }));
+  const image = await screen.findByRole("img", { name: "各控制版本的 Z RF 相位响应" });
+  expect(image).toHaveAttribute("src", "/results/z_phase_response_comparison.png");
+  expect(screen.getByRole("link", { name: "z_phase_response_comparison.pdf" })).toHaveAttribute("href", "/results/z_phase_response_comparison.pdf");
+});
+
+it("运行结果与历史按版本展示包含 X/Y/R 的完整分析图及 PNG/PDF 下载", async () => {
+  const versions = ["常数控制", "默认最优控制", "3倍噪声"];
+  const existing = mockApi.getMockImplementation()!;
+  const plots = Object.fromEntries(versions.flatMap(version => ["png", "pdf"].map(suffix => [
+    `controls/${version}/full_analysis.${suffix}`, `/control-results/${encodeURIComponent(version)}.${suffix}`,
+  ])));
+  mockApi.mockImplementation(async (url, options): Promise<any> => {
+    if (url.endsWith("/summary")) return { ...summary,
+      analysis: { controls: Object.fromEntries(versions.map(version => [version, {}])) }, artifacts: plots };
+    return existing(url, options);
+  });
+  await show();
+  for (const version of versions) {
+    const image = await screen.findByRole("img", { name: `${version}：X/Y/R 响应与 RF 灵敏度` });
+    expect(image.closest("a")).toHaveAttribute("href", `/control-results/${encodeURIComponent(version)}.png`);
+    expect(image.closest("a")).toHaveAttribute("download", `${version}_full_analysis.png`);
+  }
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(await screen.findByRole("button", { name: "history" }));
+  for (const version of versions) {
+    expect(await screen.findByRole("img", { name: `${version}：X/Y/R 响应与 RF 灵敏度` })).toHaveAttribute("src", `/control-results/${encodeURIComponent(version)}.png`);
+    expect(screen.getByRole("link", { name: `下载 ${version} PDF` })).toHaveAttribute("href", `/control-results/${encodeURIComponent(version)}.pdf`);
+    expect(screen.getByRole("link", { name: `下载 ${version} PDF` })).toHaveAttribute("download", `${version}_full_analysis.pdf`);
+  }
+});
+
+it("控制版本缺少完整图时不显示损坏的图片", async () => {
+  await show();
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(await screen.findByRole("button", { name: "history" }));
+  await screen.findByRole("columnheader", { name: "控制版本" });
+  expect(screen.queryByRole("img", { name: "v9：X/Y/R 响应与 RF 灵敏度" })).toBeNull();
 });

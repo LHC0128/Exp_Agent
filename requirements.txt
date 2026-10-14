@@ -6,7 +6,6 @@ cycler==0.12.1
 debugpy==1.8.20
 decorator==5.2.1
 executing==2.2.1
--e git+https://LHC0128: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@github.com/LHC0128/Exp_Agent.git@20a387bb8b3bb937f6de851d64716d3a08e10812#egg=exp_agent
 fonttools==4.62.1
 h5py==3.16.0
 ipykernel==7.2.0

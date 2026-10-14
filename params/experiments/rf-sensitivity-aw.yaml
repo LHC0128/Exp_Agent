@@ -1,6 +1,6 @@
 schema_version: 3
 parameters:
-  SYSTEM_SETTLE_S: 0.1
+  SYSTEM_SETTLE_S: 0.2
   RUN_TAG: rf_sens_aw
   RF_AMP_START: -0.1
   RF_AMP_STOP: 0.1
@@ -11,7 +11,7 @@ parameters:
   NOISE_DURATION: 1.0
   NOISE_RATE: 53000.0
   NOISE_NPERSEG: 50000
-  ARB_WAVEFORM_FILE: v9/waveforms/optimal_control_waveform.csv
+  ARB_WAVEFORM_FILE: 常数控制/waveforms/optimal_control_waveform.csv
   AW_REPEAT_FREQ: 3000.0
   XY_CTRL_K_HZ_PER_V: 1374.4
   XY_CTRL_B_HZ: 0.0

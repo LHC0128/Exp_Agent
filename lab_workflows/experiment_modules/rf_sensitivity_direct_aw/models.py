@@ -129,9 +129,10 @@ class RFSensitivityDirectAWParams(ExperimentParams):
         if item.name != "arb_waveform_file":
             return ExperimentParams._options(item, root)
         directory = resolve_control_results_root("oc_sens").resolve()
-        versions = [path for path in directory.glob("v*") if re.fullmatch(r"v[1-9]\d*", path.name) and path.is_dir()]
+        # vN 按版本号升序，自定义命名目录（如中文备注名）排在后面。
+        sort_key = lambda path: (0, int(path.name[1:])) if re.fullmatch(r"v[1-9]\d*", path.name) else (1, path.name)
         choices = [("", "请选择最优控制版本")]
-        for version in sorted(versions, key=lambda path: int(path.name[1:])):
+        for version in sorted((path for path in directory.iterdir() if path.is_dir()), key=sort_key):
             waveform = version / "waveforms" / "optimal_control_waveform.csv"
             if waveform.is_file() and directory in waveform.resolve().parents:
                 choices.append((waveform.relative_to(directory).as_posix(), version.name))

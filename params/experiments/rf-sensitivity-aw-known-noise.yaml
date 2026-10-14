@@ -1,4 +1,4 @@
-schema_version: 3
+schema_version: 4
 parameters:
   SYSTEM_SETTLE_S: 0.1
   RUN_TAG: rf_known_noise
@@ -11,7 +11,7 @@ parameters:
   NOISE_DURATION: 1.0
   NOISE_RATE: 53000.0
   NOISE_NPERSEG: 50000
-  ARB_WAVEFORM_FILE: v9/waveforms/optimal_control_waveform.csv
+  ARB_WAVEFORM_FILE: 常数控制/waveforms/optimal_control_waveform.csv
   AW_REPEAT_FREQ: 3000.0
   XY_CTRL_K_HZ_PER_V: 1374.4
   XY_CTRL_B_HZ: 0.0
@@ -39,7 +39,7 @@ parameters:
   Z_PHASE_SCAN_STOP_DEG: 340.0
   Z_PHASE_SCAN_STEP_DEG: 20.0
   SCAN_POINT_DURATION_S: 0.2
-  LINEWIDTH_MODE: frequency_sweep
+  LINEWIDTH_MODE: dispersive_equivalent
   BW_FREQ_START: 2500.0
   BW_FREQ_STOP: 3500.0
   BW_FREQ_POINTS: 101
@@ -78,13 +78,14 @@ parameters:
   FIXED_PARAMS.temperature: 90.0
   FIXED_PARAMS.Temp_Switch: 5.0
   CONTROL_WAVEFORM_FILES:
-  - v9/waveforms/optimal_control_waveform.csv
+  - 常数控制/waveforms/optimal_control_waveform.csv
+  - 默认最优控制/waveforms/optimal_control_waveform.csv
+  - 3倍噪声/waveforms/optimal_control_waveform.csv
   NOISE_BAND_STARTS_HZ:
   - 8000.0
   NOISE_BAND_STOPS_HZ:
   - 10000.0
   NOISE_BAND_PSDS_V2_PER_HZ:
-  - 1.0e-11
-  NOISE_REPEAT_FREQ_HZ: 10.0
-  NOISE_AMPLITUDE_VPP: 0.0034
+  - 5.0e-11
+  NOISE_REPEAT_FREQ_HZ: 5.0
   NOISE_SEED: 20260922

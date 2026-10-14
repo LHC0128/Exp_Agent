@@ -7,12 +7,13 @@ from ...experiment_runtime import check_cancelled
 from ...plotting import plot_style_context, new_figure, save_figure
 from ..rf_sensitivity_direct_aw import analysis_steps as shared
 from . import run_format
+from .phase_plot import control_legend, load_phase_scan, plot_phase_responses
 
 
 def control_inputs(directory, config):
     seen = set()
     for relative in config["parameters"]["CONTROL_WAVEFORM_FILES"]:
-        if not re.fullmatch(r"v[1-9]\d*/waveforms/optimal_control_waveform\.csv", relative):
+        if not re.fullmatch(r"[^/\\\\]+/waveforms/optimal_control_waveform\.csv", relative):
             raise ValueError("控制文件快照路径无效")
         version = relative.split("/")[0]
         if version in seen:
@@ -38,6 +39,7 @@ def load_inputs(directory, config):
     for _, child, child_config in control_inputs(directory, config):
         check_cancelled()
         shared.load_inputs(child, child_config)
+        load_phase_scan(child, child_config)
 
 
 def response_fit(directory, config, *, component="X"):
@@ -59,33 +61,33 @@ def noise_psd(directory, config, nperseg):
 
 
 def sensitivity_and_plots(directory, config, nperseg, *, identity=run_format):
-    analyses, curves, arrays = {}, {}, {}
+    analyses, curves, arrays, phase_scans = {}, {}, {}, {}
     for version, child, child_config in control_inputs(directory, config):
         check_cancelled()
         analyses[version] = shared.sensitivity_and_plots(child, child_config, nperseg, identity=identity)
         analyses[version]["control_metrics"] = child_config.get("control_metrics", {})
+        phase_scans[version] = load_phase_scan(child, child_config)
         with np.load(child / "results/sensitivity.npz", allow_pickle=False) as data:
             curves[version] = {name: data[name].copy() for name in ("freq_Hz", "sensitivity_fT_per_sqrtHz", "psd_avg_V2_per_Hz")}
             arrays.update({version + "__" + name: data[name] for name in data.files})
     output = directory / "results"
     np.savez(output / "sensitivity.npz", **arrays)
     with plot_style_context("paper"):
-        figure, axes = new_figure(nrows=1, ncols=3, width_mm=177.8, height_mm=65)
+        figure, axes = new_figure(nrows=1, ncols=2, width_mm=177.8, height_mm=65)
         for version, child, child_config in control_inputs(directory, config):
+            analyses[version]["plot_label"] = version
             with np.load(child / "results/response_fit.npz", allow_pickle=False) as data:
                 axes[0].plot(data["amplitudes_nT"], data["demod3_x_V"], ".-", label=version)
             data = curves[version]
             positive = data["freq_Hz"] > 0
-            axes[1].loglog(data["freq_Hz"][positive], data["psd_avg_V2_per_Hz"][positive], label=version)
-            axes[2].loglog(data["freq_Hz"][positive], data["sensitivity_fT_per_sqrtHz"][positive], label=version)
+            axes[1].loglog(data["freq_Hz"][positive], data["sensitivity_fT_per_sqrtHz"][positive], label=version)
         labels = (("RF field (nT)", "RF demodulator X (V)", "RF response"),
-            ("Baseband frequency (Hz)", "PSD (V^2/Hz)", "Noise ON"),
             ("Baseband frequency (Hz)", "Sensitivity (fT/sqrt(Hz))", "RF sensitivity"))
         for axis, (x, y, title) in zip(axes, labels):
             axis.set(xlabel=x, ylabel=y, title=title)
-            axis.legend()
+            control_legend(axis)
         save_figure(figure, output / "full_analysis.png")
-        save_figure(figure, output / "full_analysis.pdf")
+    plot_phase_responses(output, phase_scans)
     summary = {"experiment_id": identity.EXPERIMENT_ID, "controls": analyses,
         "noise_state": "ON", "frequency_axis": "rf_demodulator_baseband_Hz"}
     (output / "analysis.json").write_text(json.dumps(summary, ensure_ascii=False, allow_nan=False), encoding="utf-8")

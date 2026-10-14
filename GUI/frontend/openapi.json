@@ -6855,6 +6855,61 @@
         }
       }
     },
+    "/api/experiments/rf-sensitivity-aw-known-noise/runs/{run_id}/controls/{version}/artifacts/{name}": {
+      "get": {
+        "summary": "Rf Known Noise Control Artifact",
+        "operationId": "rf_known_noise_control_artifact_api_experiments_rf_sensitivity_aw_known_noise_runs__run_id__controls__version__artifacts__name__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/experiments/rf-sensitivity-aw/compare": {
       "post": {
         "summary": "Rf Direct Aw Compare",
