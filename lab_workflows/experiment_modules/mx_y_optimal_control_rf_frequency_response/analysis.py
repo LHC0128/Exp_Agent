@@ -1,138 +1,177 @@
-"""Mx Y 最优控制 RF 频率响应离线分析（相位中位数与常数控制对照）。"""
+"""相位中位数、可选常数对照与报告的完整/分步共用编排。"""
 from __future__ import annotations
+
+import hashlib
 import json
+import os
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
-import numpy as np
+
 import yaml
-from ...experiment_runtime import runtime_run_dir
-from ...plotting import new_figure, save_figure, set_plot_style, format_axis
 
-EXPERIMENT_ID = "mx-y-optimal-control-rf-frequency-response"
-OPTIMAL_CONTROL_NPZ = "optimal_control_phase_frequency_scan.npz"
-CONSTANT_CONTROL_NPZ = "constant_control_frequency_scan.npz"
+from ...common import WorkflowCancelled
+from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
+from ..noise_spectrum_xy.state_io import read_state, write_state
+from . import analysis_steps, run_format
+from .analysis_steps import (AnalysisQualityError, plain, _phase_median, _plot_heatmap,
+    _plot_comparison, _builtin, _load_config, OPTIMAL_CONTROL_NPZ, CONSTANT_CONTROL_NPZ)
+from .stages import ANALYSIS, ANALYSIS_KEYS, initial_states, invalidate, invalidated_stages, validate_selection
 
-def _builtin(value):
-    if isinstance(value, dict):
-        return {str(k): _builtin(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_builtin(v) for v in value]
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, np.generic):
-        return value.item()
-    return value
+ANALYSIS_VERSION = "mx-y-optimal-control-frequency-v1"
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
 
-def _load_config(run_dir: Path) -> dict:
-    path = run_dir / "experiment_config.yaml"
-    with path.open(encoding="utf-8") as stream:
-        return yaml.safe_load(stream) or {}
 
-def _phase_median(frequency_hz: np.ndarray, r_mean_v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """按频率取全部有效相位结果的中位数。"""
-    response = np.full(frequency_hz.size, np.nan)
-    counts = np.zeros(frequency_hz.size, dtype=int)
-    for index in range(frequency_hz.size):
-        finite = r_mean_v[index][np.isfinite(r_mean_v[index])]
-        counts[index] = finite.size
-        if finite.size:
-            response[index] = float(np.median(finite))
-    return response, counts
+class AnalysisWorkflow:
+    stages = ANALYSIS
 
-def _plot_heatmap(path: Path, phase_deg, frequency_hz, r_mean_v) -> None:
-    set_plot_style("paper")
-    figure, axis = new_figure(kind="wide")
-    image = axis.pcolormesh(phase_deg, frequency_hz, np.ma.masked_invalid(r_mean_v), shading="nearest", cmap="viridis", rasterized=True)
-    format_axis(axis, xlabel="Y RF burst phase (deg)", ylabel="Y RF frequency (Hz)")
-    figure.colorbar(image, ax=axis, label="Demod0 R (V)")
-    save_figure(figure, path)
+    def __init__(self, run_dir, analysis_parameters=None):
+        self.run_dir = Path(run_dir).resolve()
+        self.results = self.run_dir / "results"
+        self.state_path = self.run_dir / "analysis_state.json"
+        self.config_path = self.run_dir / "experiment_config.yaml"
+        self.config = analysis_steps._load_config(self.run_dir)
+        if reason := run_format.analysis_block_reason(self.config):
+            raise ValueError(reason)
+        previous = read_state(self.state_path) or {}
+        self.options = {}
+        self.states = deepcopy(previous.get("steps") or initial_states(self.stages))
+        self.revision = previous.get("revision", 0)
+        self.summary = deepcopy(previous.get("summary", {}))
+        self.fingerprint = self.input_fingerprint()
+        if previous and previous.get("fingerprint") != self.fingerprint:
+            invalidate(self.stages, self.states, "B01")
+            self.revision += 1
+        self.refresh_products()
+        if analysis_parameters:
+            raise ValueError("本实验没有可调分析覆盖参数")
 
-def _plot_comparison(path: Path, frequency_hz, optimal_v, constant_v) -> None:
-    set_plot_style("paper")
-    figure, axis = new_figure(kind="wide")
-    axis.plot(frequency_hz, optimal_v, "o-", markersize=3, label="Optimal control (phase median)")
-    axis.plot(frequency_hz, constant_v, "s-", markersize=3, label="Constant control (phase 0 deg)")
-    format_axis(axis, xlabel="Y RF frequency (Hz)", ylabel="Demod0 R (V)")
-    axis.legend(loc="best")
-    save_figure(figure, path)
+    @staticmethod
+    def _file_signature(path):
+        if not path.is_file():
+            return None
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        return [path.stat().st_size, digest.hexdigest()]
 
-def analyze(run_dir: str | Path) -> dict[str, object]:
-    """生成相位中位数、常数控制对照曲线与相位-频率诊断热图。"""
-    root = Path(run_dir); raw = root / "raw"; results = root / "results"; results.mkdir(parents=True, exist_ok=True)
-    config = _load_config(root)
-    with np.load(raw / OPTIMAL_CONTROL_NPZ, allow_pickle=True) as data:
-        frequency = np.asarray(data["frequency_hz"], dtype=float)
-        phase = np.asarray(data["phase_deg"], dtype=float)
-        r_mean_v = np.asarray(data["r_mean_v"], dtype=float)
-        r_std_v = np.asarray(data["r_std_v"], dtype=float)
-        attempts = np.asarray(data["accepted_attempt_index"], dtype=int)
-        files = np.asarray(data["accepted_file"], dtype=object)
+    def input_fingerprint(self):
+        config = {key: value for key, value in self.config.items()
+            if key not in ("analysis_status", "analysis_error")}
+        return dict(config_sha256=hashlib.sha256(json.dumps(config, sort_keys=True,
+            ensure_ascii=False, default=str).encode()).hexdigest(), analysis_version=ANALYSIS_VERSION,
+            raw_files={path.relative_to(self.run_dir).as_posix(): self._file_signature(path)
+                for path in sorted((self.run_dir / "raw").rglob("*")) if path.is_file()})
 
-    optimal_response, valid_phase_count = _phase_median(frequency, r_mean_v)
-    np.savez(results / "optimal_control_median_response.npz", frequency_hz=frequency, response_median_v=optimal_response, valid_phase_count=valid_phase_count)
-    _plot_heatmap(results / "r_phase_frequency.png", phase, frequency, r_mean_v)
+    def refresh_products(self):
+        for stage in self.stages:
+            record = self.states[stage.id]
+            if record["status"] == "running" or (record["status"] == "completed" and any(
+                    self._file_signature(self.results / name) != signature for name, signature in record.get("files", {}).items())):
+                invalidate(self.stages, self.states, stage.id)
+                self.revision += 1
+                break
 
-    comparison_enabled = bool(config.get("comparison", {}).get("enabled"))
-    constant_path = raw / CONSTANT_CONTROL_NPZ
-    constant_response = None
-    constant_frequency = None
-    constant_phase = None
-    constant_r_std = None
-    constant_attempts = None
-    constant_files = None
-    comparison_file = None
-    if comparison_enabled and constant_path.is_file():
-        with np.load(constant_path, allow_pickle=True) as data:
-            constant_frequency = np.asarray(data["frequency_hz"], dtype=float)
-            constant_phase = np.asarray(data["phase_deg"], dtype=float)
-            constant_response = np.asarray(data["r_mean_v"], dtype=float)
-            constant_r_std = np.asarray(data["r_std_v"], dtype=float)
-            constant_attempts = np.asarray(data["accepted_attempt_index"], dtype=int)
-            constant_files = np.asarray(data["accepted_file"], dtype=object)
-        _plot_comparison(results / "rf_frequency_response_comparison.png", frequency, optimal_response, constant_response)
-        comparison_file = "rf_frequency_response_comparison.png"
+    def snapshot(self):
+        return dict(run_id=self.run_dir.name, revision=self.revision, options=dict(self.options),
+            steps=deepcopy(self.states), fingerprint=self.fingerprint, summary=deepcopy(self.summary))
 
-    files_out = ["optimal_control_median_response.npz", "r_phase_frequency.png"]
-    if comparison_file:
-        files_out.append(comparison_file)
-    analysis = _builtin({
-        "success": True,
-        "experiment_id": EXPERIMENT_ID,
-        "run_dir": str(root),
-        "response_definitions": {
-            "optimal_control": "median of all finite Demod0 R over the phase axis at each RF frequency",
-            "constant_control": "single accepted Demod0 R at Y RF burst phase 0 deg",
-        },
-        "comparison_enabled": comparison_enabled,
-        "calibration": config.get("comparison"),
-        "frequency_hz": frequency.tolist(),
-        "phase_deg": phase.tolist(),
-        "shape": list(r_mean_v.shape),
-        "optimal_control": {
-            "response_median_v": optimal_response.tolist(),
-            "valid_phase_count": valid_phase_count.tolist(),
-            "valid_points": int(np.count_nonzero(np.isfinite(r_mean_v))),
-            "total_points": int(r_mean_v.size),
-            "quality": {"accepted_attempt_index": attempts.tolist(), "accepted_file": files.tolist(), "r_std_v": r_std_v.tolist()},
-        },
-        "constant_control": (
-            {
-                "phase_deg": constant_phase.tolist(),
-                "response_v": constant_response.tolist(),
-                "valid_points": int(np.count_nonzero(np.isfinite(constant_response))),
-                "total_points": int(constant_response.size),
-                "quality": {"accepted_attempt_index": constant_attempts.tolist(), "accepted_file": constant_files.tolist(), "r_std_v": constant_r_std.tolist()},
-            }
-            if constant_response is not None
-            else None
-        ),
-        "plot_profile": "paper",
-        "files": files_out,
-    })
-    (results / "analysis.yaml").write_text(yaml.safe_dump(analysis, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    (results / "analysis.json").write_text(json.dumps(analysis, ensure_ascii=False, indent=2), encoding="utf-8")
-    return analysis
+    def persist(self):
+        write_state(self.state_path, plain(self.snapshot()))
+        # 只更新分析状态，不把历史目录的分析覆盖值写入采集快照。
+        config = yaml.safe_load(self.config_path.read_text(encoding="utf-8"))
+        config.update(analysis_status=self.summary.get("status", "not_started"), analysis_error=self.summary.get("error"))
+        self.config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        report_runtime_progress("analysis", "离线分析状态已保存", data={"analysis_workflow": plain(self.snapshot())})
+
+    def _archive_from(self, item):
+        names = {name for stage in invalidated_stages(self.stages, item) for name in stage.artifacts}
+        files = [self.results / name for name in names if (self.results / name).is_file()]
+        if files:
+            backup = self.results / ("before_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+            backup.mkdir()
+            for path in files:
+                path.replace(backup / path.name)
+
+    def execute(self, selected, expected_revision=None):
+        self.config = analysis_steps._load_config(self.run_dir)
+        if reason := run_format.analysis_block_reason(self.config):
+            raise ValueError(reason)
+        fingerprint = self.input_fingerprint()
+        if fingerprint != self.fingerprint:
+            invalidate(self.stages, self.states, "B01")
+            self.fingerprint = fingerprint
+            self.revision += 1
+        self.refresh_products()
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("分析修订已改变，请刷新后重试")
+        selected = validate_selection(self.stages, self.states, selected)
+        self.revision += 1
+        for item in selected:
+            check_cancelled()
+            invalidate(self.stages, self.states, item)
+            self.states[item] = {"status": "running", "error": ""}
+            self.summary = {"status": "running", "options": dict(self.options)}
+            self.persist()
+            failure = None
+            try:
+                # 每次重算先验收当前输入，坏数据不能移动上次完整科学产物。
+                analysis_steps.load_inputs(self.run_dir, self.config)
+                self._archive_from(item)
+                if item == "B01":
+                    pass
+                elif item == "B02":
+                    self.summary.update(analysis_steps.evaluate(self.run_dir, self.config))
+                elif item == "B03":
+                    self.summary.update(analysis_steps.report(self.run_dir))
+                stage = next(stage for stage in self.stages if stage.id == item)
+                files = [name for name in stage.artifacts if (self.results / name).is_file()]
+                optional = {"rf_frequency_response_comparison.png", "rf_frequency_response_comparison.pdf"} if not self.config.get("comparison", {}).get("enabled") else set()
+                if missing := set(stage.artifacts) - set(files) - optional:
+                    raise RuntimeError("分析阶段缺少产物：" + "、".join(sorted(missing)))
+                self.states[item] = {"status": "completed", "error": "", "artifacts": files,
+                    "files": {name: self._file_signature(self.results / name) for name in files},
+                    "input_fingerprint": deepcopy(self.fingerprint), "parameters": dict(self.options),
+                    "parameter_fingerprint": hashlib.sha256(json.dumps(self.options, sort_keys=True).encode()).hexdigest(),
+                    "revision": self.revision}
+                self.summary["status"] = "completed" if item == "B03" else "partial"
+            except BaseException as exc:
+                failure = exc
+                status = "cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else (
+                    "quality_failed" if isinstance(exc, AnalysisQualityError) else "failed")
+                self.states[item] = {"status": status, "error": str(exc)}
+                stage = next(stage for stage in self.stages if stage.id == item)
+                files = [name for name in stage.artifacts if (self.results / name).is_file()]
+                self.states[item].update(artifacts=files,
+                    files={name: self._file_signature(self.results / name) for name in files},
+                    input_fingerprint=deepcopy(self.fingerprint), parameters={},
+                    parameter_fingerprint=hashlib.sha256(b"{}").hexdigest(), revision=self.revision)
+                self.summary.update(status=status, error=str(exc))
+                raise
+            finally:
+                try:
+                    self.persist()
+                except Exception:
+                    if failure is None:
+                        raise
+        return self.summary
+
+
+def analyze(run_dir):
+    ctx = AnalysisWorkflow(run_dir)
+    return ctx.execute([stage.id for stage in ctx.stages])
+
 
 def main() -> int:
-    analyze(runtime_run_dir()); return 0
+    payload = json.loads(os.environ.get("LAB_TYPED_PARAMETERS", "{}"))
+    if payload.get("step_ids"):
+        AnalysisWorkflow(runtime_run_dir(), payload.get("analysis_parameters")).execute(payload["step_ids"], payload.get("revision"))
+    else:
+        result = analyze(runtime_run_dir())
+        print(f"Mx Y 最优控制 RF 频率响应分析完成: {result.get('run_dir')}")
+    return 0
 
-if __name__ == "__main__": raise SystemExit(main())
+
+if __name__ == "__main__":
+    raise SystemExit(main())

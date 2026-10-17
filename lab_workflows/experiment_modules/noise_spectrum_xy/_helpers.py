@@ -22,20 +22,16 @@ def wait(seconds: float) -> None:
 
 
 def set_temp_switch(dg_temp, enabled, params: NoiseSpectrumXYParams, limits, *, restore_wait=False):
-    """本实验测量时关闭物理输出；恢复开启电平后可等待温控恢复。"""
+    """以 0 V/开启电平控制温控，物理输出始终 ON；恢复后可等待。"""
     channel = 2  # 路由设备使用逻辑通道，实际端点由映射解析。
-    if not enabled:
-        validate_safety_limit("Temp_Switch", 0.0, limits)
-        dg_temp.set_output(False, channel=channel)
-        return
-    validate_safety_limit("Temp_Switch", params.temp_switch, limits)
+    validate_safety_limit("Temp_Switch", params.temp_switch if enabled else 0.0, limits)
     set_temperature_switch(
         dg_temp,
-        True,
+        enabled,
         channel=channel,
         on_voltage=params.temp_switch,
     )
-    if restore_wait:
+    if enabled and restore_wait:
         wait(params.temp_switch_on_settle_s)
 
 

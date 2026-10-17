@@ -4,22 +4,14 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api";
 import { ExperimentPage } from "./ExperimentPage";
 import flow from "./staticSensitivityWorkflow.fixture.json";
+import schema from "./staticSensitivitySchema.fixture.json";
 
 vi.mock("../api", () => ({ api: vi.fn() }));
 vi.mock("../components/JobActivity", () => ({ useJobActivity: () => ({ hardwareBusy: false, activeJobs: [] }) }));
 const mockApi = vi.mocked(api);
 const ID = "static-sensitivity";
 const BASE = `/api/experiments/${ID}`;
-const fields = [
-  { name: "run_tag", label: "运行标签", type: "string", default: "sens", group: "basic" },
-  { name: "pump_laser_power", label: "Pump 光功率", type: "number", default: .2, group: "basic", unit: "V" },
-  { name: "dispersion_steps", label: "色散扫描点数", type: "integer", default: 41, group: "basic" },
-  { name: "dispersion_duration_s", label: "色散每点采集时间", type: "number", default: .1, group: "advanced", unit: "s" },
-  { name: "hf2_demod_rate", label: "色散采样率", type: "number", default: 1000, group: "advanced", unit: "Sa/s" },
-  { name: "dispersion_temp_switch_on_settle_s", label: "每组后温控恢复等待", type: "number", default: 3, group: "basic", unit: "s" },
-  { name: "noise_duration", label: "单次噪声时长", type: "number", default: 1, group: "basic", unit: "s" },
-  { name: "z_v_to_nt", label: "Z 场换算系数", type: "number", default: 3517, group: "advanced", unit: "nT/V" },
-];
+const fields = schema.fields;
 const defaults = () => Object.fromEntries(fields.map(field => [field.name, field.default]));
 let summary: any;
 let activeSession: any;
@@ -38,7 +30,7 @@ class MockEventSource {
   close() {}
 }
 const makeSession = (completed = false) => ({ session_id: "static-session", job_id: "session-job", revision: 3, status: "waiting",
-  parameters: defaults(), steps: Object.fromEntries(flow.acquisition.map(stage => [stage.id, { status: completed ? "completed" : "pending", error: "" }])),
+  parameters: defaults(), steps: Object.fromEntries(flow.acquisition.map(stage => [stage.id, { status: completed && stage.id !== "A13" ? ["A10", "A11"].includes(stage.id) ? "stale" : "completed" : "pending", error: "" }])),
   outputs: { Z: "OFF", 温控: "ON", "时序 2": "保持当前状态" }, run_id: "test_dc", demod_mode: "dispersion" });
 const tab = (name: string) => within(screen.getByRole("tablist", { name: "静磁场灵敏度实验视图" })).getByRole("tab", { name });
 const node = (id: string) => screen.getByRole("checkbox", { name: new RegExp(`^${id} `) }).closest("li")!;
@@ -63,7 +55,7 @@ beforeEach(() => {
   mockApi.mockImplementation(async (url: string, options?: RequestInit) => {
     const body = options?.body ? JSON.parse(String(options.body)) : {};
     if (url === BASE) return { title: "静磁场灵敏度", description: "直流逐点色散与交互流程图", execution_mode: "typed_workflow", required_devices: ["HF2"], acquisition_program: "experiments/Static_Magnetic_Field_Sensitivity.py" };
-    if (url === `${BASE}/schema`) return { schema_version: 3, fields, parameter_layout_saved: Boolean(savedLayout), parameter_layout: savedLayout };
+    if (url === `${BASE}/schema`) return { ...schema, parameter_layout_saved: Boolean(savedLayout), parameter_layout: savedLayout };
     if (url === "/api/jobs") return [];
     if (url === "/api/jobs/session-job") return sessionJob;
     if (url === "/api/jobs/analysis-job") return analysisJob;
@@ -87,7 +79,7 @@ beforeEach(() => {
         steps: Object.fromEntries(Object.entries(activeSession.steps).map(([key, value]: [string, any]) => [key, affected.has(key) ? { ...value, status: "stale" } : value])) };
       return activeSession;
     }
-    if (url.endsWith("/finish")) { activeSession = { ...activeSession, status: "closed", revision: activeSession.revision + 1, safety_shutdown: { completed: true } }; sessionJob.status = "completed"; return activeSession; }
+    if (url.endsWith("/finish")) { activeSession = { ...activeSession, status: "closed", revision: activeSession.revision + 1, steps: { ...activeSession.steps, A13: { status: "completed", error: "" } }, safety_shutdown: { completed: true } }; sessionJob.status = "completed"; return activeSession; }
     if (url.endsWith("/analysis")) {
       if (options?.method === "POST") return analysisJob;
       const id = url.split("/").at(-2)!;
@@ -141,8 +133,8 @@ it("共享温控参数同步编辑及分类，初始化条件只在设置节点�
   await renderPage();
   edit("A08", "每组后温控恢复等待 (s)", "0.8");
   expect(within(node("A09")).getByLabelText("每组后温控恢复等待 (s)")).toHaveValue(.8);
-  fireEvent.click(within(node("A09")).getByRole("button", { name: "每组后温控恢复等待 移至高级参数" }));
-  expect(within(node("A08")).getByRole("button", { name: "每组后温控恢复等待 移至基础参数" })).toBeInTheDocument();
+  fireEvent.click(within(node("A09")).getByRole("button", { name: "每组后温控恢复等待 移至基础参数" }));
+  expect(within(node("A08")).getByRole("button", { name: "每组后温控恢复等待 移至高级参数" })).toBeInTheDocument();
   expect(within(node("A04")).getByLabelText("Pump 光功率 (V)")).toBeInTheDocument();
   expect(within(node("A09")).queryByLabelText("Pump 光功率 (V)")).toBeNull();
 });
@@ -247,4 +239,28 @@ it("SSE 恢复阶段状态，执行中禁改参数和结束，取消入口在流
   expect(screen.getByRole("button", { name: "结束会话" })).toBeDisabled();
   expect(within(node("A09")).getByLabelText("色散扫描点数")).toBeDisabled();
   expect(screen.getByRole("region", { name: "交互实验流程图" })).toContainElement(screen.getByRole("button", { name: "取消任务" }));
+});
+
+it("真实 schema 可见参数都有节点入口，噪声只展示实际使用的等待且显示质量门槛", async () => {
+  await renderPage();
+  for (const field of fields) {
+    const label = field.unit ? `${field.label} (${field.unit})` : field.label;
+    expect(screen.getAllByLabelText(label, { exact: true }).length).toBeGreaterThan(0);
+  }
+  expect(within(node("A11")).getByLabelText("系统稳定时间 (s)")).toBeVisible();
+  expect(within(node("A11")).queryByLabelText("每组后温控恢复等待 (s)")).toBeNull();
+  expect(within(node("B02")).getByText(flow.analysis.find(stage => stage.id === "B02")!.quality_gates[0], { exact: false })).toBeVisible();
+});
+
+it("结束后编辑下一次实验保留已完成记录，不制造旧会话失效预览", async () => {
+  activeSession = makeSession(true);
+  await renderPage();
+  fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
+  await screen.findByText(/状态为已结束会话/);
+  expect(within(node("A13")).getByText("已完成")).toBeVisible();
+  edit("A09", "色散扫描点数", "61");
+  expect(within(node("A09")).getByLabelText("色散扫描点数")).toHaveValue(61);
+  expect(within(node("A09")).getByText("已完成")).toBeVisible();
+  expect(screen.queryByText(/应用草稿后预计需重跑/)).toBeNull();
+  expect(mockApi.mock.calls.some(([url]) => url.endsWith("/parameters"))).toBe(false);
 });

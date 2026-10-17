@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -18,6 +19,7 @@ from lockin_amplifier import daq, lockin_capabilities
 from ...common import WorkflowCancelled
 from ...steps.run_directory import RunDirectory
 from ...steps.dispersion import acquire_dispersion_point
+from ...steps import dispersion
 from ...steps.test_dispersion import FakeHF2
 from . import acquisition, analysis, analysis_steps, workflow, preparation, excitation, phase
 from .definition import ADAPTER
@@ -79,12 +81,16 @@ ACQUISITION_CASES = {
     "static-sensitivity": {
         "mode": "grouped",
         "cases": {
+            "order": ["DCScanTests::test_real_grouped_order_slow_disk_and_last_group", "DCScanTests::test_noise_order_real_writers_and_ui_temperature"],
+            "slow_disk": ["DCScanTests::test_real_grouped_order_slow_disk_and_last_group", "DCScanTests::test_noise_order_real_writers_and_ui_temperature"],
+            "save_failure": ["DCScanTests::test_write_failure_preserves_other_group_files"],
             "group_change": ["DCScanTests::test_median_axis_groups_and_no_sync_trigger"],
             "last_group": ["DCScanTests::test_median_axis_groups_and_no_sync_trigger"],
-            "cancel": ["DCScanTests::test_partial_read_and_cancel_preserve_data"],
-            "acquire_failure": ["DCScanTests::test_partial_read_and_cancel_preserve_data"],
-            "partial_save": ["DCScanTests::test_partial_read_and_cancel_preserve_data"],
-            "restore_failure": ["DCScanTests::test_cancel_during_wait_and_restoration_failure"],
+            "cancel": ["DCScanTests::test_partial_read_and_cancel_preserve_data", "DCScanTests::test_noise_failures_restore_before_partial_save"],
+            "acquire_failure": ["DCScanTests::test_partial_read_and_cancel_preserve_data", "DCScanTests::test_noise_failures_restore_before_partial_save"],
+            "partial_save": ["DCScanTests::test_partial_read_and_cancel_preserve_data", "DCScanTests::test_noise_failures_restore_before_partial_save"],
+            "restore_failure": ["DCScanTests::test_cancel_during_wait_and_restoration_failure", "DCScanTests::test_restore_and_save_failures_keep_original_read_error", "DCScanTests::test_noise_failures_restore_before_partial_save"],
+            "entrypoints": ["DCScanTests::test_full_workflow_uses_selected_demod_and_preserves_settings"],
         },
     },
 }
@@ -137,7 +143,8 @@ class DCScanTests(unittest.TestCase):
                     self.assertTrue(np.isfinite(data["point_finished_unix_s"]).all())
                 with np.load(path.parent / "dispersion_steps" / "point_0000.npz") as point:
                     np.testing.assert_equal(point["y_samples"], [1, 100, 2])
-                self.assertEqual(sum(event[:2] == ("output", False) for event in temp.events), group_starts)
+                self.assertEqual(sum(event[:2] == ("dc", 0.0) for event in temp.events), group_starts)
+                self.assertFalse(any(event[:2] == ("output", False) for event in temp.events))
                 self.assertEqual(sum(call.args == (params.dispersion_temp_switch_on_settle_s,) for call in wait.call_args_list), recovers)
                 self.assertEqual(len(hf2.modules), 11)
                 self.assertTrue(all(module.subscribed[0] == "/devtest/demods/2/sample.x" for module in hf2.modules))
@@ -172,6 +179,107 @@ class DCScanTests(unittest.TestCase):
                 self.assertTrue(temp.output)
                 self.assertEqual(temp.voltage, 5)
 
+    def test_real_grouped_order_slow_disk_and_last_group(self):
+        for delay in (0, 0.002):
+            with self.subTest(delay=delay), tempfile.TemporaryDirectory() as tmp:
+                events = []
+                z, temp = FakeGenerator(), FakeGenerator()
+                real_temp_dc, real_z_dc = temp.setup_dc, z.setup_dc
+                def temp_dc(voltage, channel=None):
+                    events.append(("gate", voltage))
+                    real_temp_dc(voltage, channel=channel)
+                def z_dc(voltage, channel=None):
+                    events.append(("configure", voltage))
+                    real_z_dc(voltage, channel=channel)
+                temp.setup_dc, z.setup_dc = temp_dc, z_dc
+                def raw_factory(index, raw):
+                    self.assertTrue(temp.output)
+                    self.assertEqual(temp.voltage, 0)
+                    self.assertTrue(z.output)
+                    events.append(("read", index))
+                    return raw
+                real_save = dispersion.save_scan
+                def save(path, data):
+                    self.assertEqual((temp.voltage, temp.output), (5, True))
+                    events.append(("write", path.name))
+                    time.sleep(delay)
+                    real_save(path, data)
+                    self.assertEqual((temp.voltage, temp.output), (5, True))
+                params = StaticSensitivityParams(dispersion_steps=7, dispersion_temp_switch_interval_points=3,
+                                                 hf2_demod_rate=30, system_settle_s=0.25)
+                path = Path(tmp) / "scan.npz"
+                with patch.object(acquisition, "wait_for_settle", side_effect=lambda seconds: events.append(("wait", seconds))), \
+                     patch.object(dispersion, "save_scan", side_effect=save), patch.object(acquisition, "save_scan", side_effect=save):
+                    acquisition.acquire_dispersion(params, z, 1, temp, 2, FakeHF2(raw_factory=raw_factory), path)
+                starts = [index for index, event in enumerate(events) if event == ("gate", 0)]
+                ends = [index for index, event in enumerate(events) if event == ("gate", 5)]
+                self.assertEqual(len(starts), 3)
+                self.assertEqual(len(ends), 3)
+                for group, (start, end) in enumerate(zip(starts, ends)):
+                    expected = list(range(group * 3, min(group * 3 + 3, 7)))
+                    self.assertEqual([event[1] for event in events[start:end] if event[0] == "read"], expected)
+                    self.assertFalse(any(event[0] == "write" for event in events[start:end]))
+                    self.assertEqual(events[start - 1][0], "configure")
+                    for index in range(start, end):
+                        if events[index][0] == "read":
+                            self.assertEqual(events[index - 1], ("wait", params.system_settle_s))
+                for index in range(7):
+                    with np.load(path.parent / "dispersion_steps" / f"point_{index:04d}.npz") as point:
+                        self.assertTrue(point["completed"])
+                with np.load(path) as scan:
+                    self.assertTrue(scan["completed_mask"].all())
+
+    def test_write_failure_preserves_other_group_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "scan.npz"
+            z, temp, reads = FakeGenerator(), FakeGenerator(), []
+            real_save = dispersion.save_scan
+            def save(target, data):
+                self.assertEqual((temp.voltage, temp.output), (5, True))
+                if target.name == "point_0001.npz":
+                    raise OSError("本组磁盘失败")
+                real_save(target, data)
+            def raw_factory(index, raw):
+                reads.append(index)
+                return raw
+            params = StaticSensitivityParams(dispersion_steps=7, dispersion_temp_switch_interval_points=3, hf2_demod_rate=30)
+            with patch.object(acquisition, "wait_for_settle"), patch.object(dispersion, "save_scan", side_effect=save), \
+                 patch.object(acquisition, "save_scan", side_effect=save), self.assertRaisesRegex(OSError, "本组磁盘失败"):
+                acquisition.acquire_dispersion(params, z, 1, temp, 2, FakeHF2(raw_factory=raw_factory), path)
+            self.assertEqual(reads, [0, 1, 2])
+            self.assertTrue((path.parent / "dispersion_steps/point_0000.npz").is_file())
+            self.assertTrue((path.parent / "dispersion_steps/point_0002.npz").is_file())
+            with np.load(path) as scan:
+                self.assertEqual(scan["completed_mask"].sum(), 3)
+            self.assertEqual((z.voltage, z.output, temp.voltage, temp.output), (0, False, 5, True))
+
+    def test_restore_and_save_failures_keep_original_read_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "scan.npz"
+            z, temp, attempts = FakeGenerator(), FakeGenerator(), []
+            real_temp_dc, real_save = temp.setup_dc, dispersion.save_scan
+            def temp_dc(voltage, channel=None):
+                if voltage == 5:
+                    attempts.append("restore")
+                    raise RuntimeError("温控恢复失败")
+                real_temp_dc(voltage, channel=channel)
+            temp.setup_dc = temp_dc
+            def save(target, data):
+                self.assertTrue(attempts)
+                if target.name == "point_0000.npz":
+                    raise OSError("部分磁盘失败")
+                real_save(target, data)
+            with patch.object(acquisition, "wait_for_settle"), patch.object(dispersion, "save_scan", side_effect=save), \
+                 patch.object(acquisition, "save_scan", side_effect=save), self.assertRaisesRegex(ValueError, "原始读数故障"):
+                acquisition.acquire_dispersion(StaticSensitivityParams(dispersion_steps=7, hf2_demod_rate=30),
+                    z, 1, temp, 2, FakeHF2(fault=ValueError("原始读数故障"), fault_at=1), path)
+            self.assertFalse(z.output)
+            with np.load(path) as scan:
+                self.assertEqual(scan["completed_mask"].sum(), 1)
+            with np.load(path.parent / "dispersion_steps/point_0001.npz") as point:
+                self.assertFalse(point["completed"])
+                self.assertIn("原始读数故障", str(point["error"]))
+
     def test_cancel_during_wait_and_restoration_failure(self):
         with patch.object(acquisition, "check_cancelled", side_effect=WorkflowCancelled("等待取消")):
             with self.assertRaises(WorkflowCancelled):
@@ -179,7 +287,7 @@ class DCScanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             z, temp = FakeGenerator(), FakeGenerator()
             def fail_recovery(device, channel, enabled):
-                acquisition.set_temperature_switch(device, True, channel=channel) if enabled else device.set_output(False, channel=channel)
+                acquisition.set_temperature_switch(device, enabled, channel=channel)
                 if enabled:
                     raise RuntimeError("分组恢复失败")
             with patch.object(acquisition, "wait_for_settle"), patch.object(acquisition, "set_temp_switch", side_effect=fail_recovery):
@@ -189,6 +297,108 @@ class DCScanTests(unittest.TestCase):
             self.assertTrue(temp.output)
             with np.load(Path(tmp) / "scan.npz") as data:
                 self.assertEqual(data["completed_mask"].sum(), 5)
+
+    def test_noise_order_real_writers_and_ui_temperature(self):
+        params = StaticSensitivityParams(dispersion_steps=7, noise_n_avg=2, noise_duration=0.1,
+                                         hf2_noise_rate=10000, gs200_current_ranges=[0.01, 0.1])
+        with tempfile.TemporaryDirectory() as tmp, fake_rig(Path(tmp), params) as rig:
+            ctx = workflow.Workflow(params)
+            from .stages import ACQUISITION
+            ctx.execute([stage.id for stage in ACQUISITION if stage.id <= "A10"])
+            target = rig.mapping["Temp_Switch"]
+            temp = rig.generators[target["resource"]]
+            channel, events = target["channel"], []
+            original_dc = temp.setup_dc
+            def gate(voltage, channel=1):
+                events.append(("gate", voltage))
+                original_dc(voltage, channel=channel)
+            temp.setup_dc = gate
+            original_read = daq.acquire_data.side_effect
+            def read(*args, **kwargs):
+                self.assertEqual((temp.dc[channel], temp.output[channel]), (0, True))
+                events.append(("read", None))
+                return original_read(*args, **kwargs)
+            original_save, original_metadata, original_update = np.save, np.savez, RunDirectory.update_config
+            def save(path, values):
+                self.assertEqual((temp.dc[channel], temp.output[channel]), (5, True))
+                events.append(("write", Path(path).name))
+                time.sleep(0.002)
+                original_save(path, values)
+            def metadata(path, **values):
+                self.assertEqual((temp.dc[channel], temp.output[channel]), (5, True))
+                events.append(("metadata", Path(path).name))
+                original_metadata(path, **values)
+            def update(directory, **values):
+                self.assertEqual((temp.dc[channel], temp.output[channel]), (5, True))
+                events.append(("config", None))
+                return original_update(directory, **values)
+            try:
+                with patch.object(daq, "acquire_data", side_effect=read), patch.object(np, "save", side_effect=save), \
+                     patch.object(np, "savez", side_effect=metadata), \
+                     patch.object(RunDirectory, "update_config", autospec=True, side_effect=update), \
+                     patch.object(acquisition, "wait_for_settle", side_effect=lambda seconds: events.append(("wait", seconds))):
+                    ctx.execute(["A11"])
+                self.assertEqual(sum(event[0] == "read" for event in events), 4)
+                for index, event in enumerate(events):
+                    if event[0] == "read":
+                        self.assertEqual(events[index - 2:index], [("gate", 0), ("wait", params.system_settle_s)])
+                        self.assertEqual(events[index + 1], ("gate", 5))
+                        self.assertEqual(events[index + 2][0], "write")
+                files = sorted(ctx.directory.raw.rglob("noise_*.npy"))
+                self.assertEqual(len(files), 4)
+                self.assertTrue(all(path.with_name(path.stem + "_acquisition.npz").is_file() for path in files))
+                self.assertTrue(all(np.isfinite(np.load(path)).all() for path in files))
+                rig.tec.set_target_temperature.assert_called_once_with(params.temperature, channel=int(rig.mapping["temperature"]["channel"]))
+                rig.tec.set_enable.assert_not_called()
+                rig.tec.get_temperature.assert_not_called()
+                self.assertEqual(ctx.state["temperature_control"]["target_temperature_c"], params.temperature)
+                self.assertIsNone(ctx.state["temperature_control"]["actual_temperature_c"])
+                self.assertEqual(ctx.state["temperature_control"]["control_source"], "tec103")
+            finally:
+                ctx.finish()
+
+    def test_noise_failures_restore_before_partial_save(self):
+        for fault in ("cancel", "acquire", "restore", "save"):
+            params = StaticSensitivityParams(dispersion_steps=7, noise_n_avg=3, noise_duration=0.1, hf2_noise_rate=10000)
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp, fake_rig(Path(tmp), params) as rig:
+                ctx = workflow.Workflow(params)
+                from .stages import ACQUISITION
+                ctx.execute([stage.id for stage in ACQUISITION if stage.id <= "A10"])
+                route = rig.mapping["Temp_Switch"]
+                temp, channel = rig.generators[route["resource"]], route["channel"]
+                original_read, original_save, original_dc = daq.acquire_data.side_effect, np.save, temp.setup_dc
+                reads, restores = [], []
+                def gate(voltage, channel=1):
+                    if voltage == 5:
+                        restores.append(len(reads))
+                        if fault == "restore" and len(reads) == 2:
+                            raise RuntimeError("噪声温控恢复失败")
+                    original_dc(voltage, channel=channel)
+                temp.setup_dc = gate
+                def read(*args, **kwargs):
+                    reads.append(len(reads))
+                    if len(reads) == 2 and fault in ("cancel", "acquire"):
+                        raise WorkflowCancelled("噪声取消") if fault == "cancel" else ValueError("噪声读数失败")
+                    return original_read(*args, **kwargs)
+                def save(path, values):
+                    self.assertEqual(restores[-1], len(reads))
+                    if fault != "restore":
+                        self.assertEqual((temp.dc[channel], temp.output[channel]), (5, True))
+                    if fault == "save" and Path(path).name == "noise_0001.npy":
+                        raise OSError("噪声写盘失败")
+                    original_save(path, values)
+                error = WorkflowCancelled if fault == "cancel" else ValueError if fault == "acquire" else RuntimeError if fault == "restore" else OSError
+                try:
+                    with patch.object(daq, "acquire_data", side_effect=read), patch.object(np, "save", side_effect=save), self.assertRaises(error):
+                        ctx.execute(["A11"])
+                    self.assertEqual(len(reads), 2)
+                    files = sorted(ctx.directory.raw.rglob("noise_*.npy"))
+                    self.assertEqual(len(files), 2 if fault == "restore" else 1)
+                    self.assertTrue(np.isfinite(np.load(files[0])).all())
+                    self.assertNotEqual(ctx.states["A11"]["status"], "completed")
+                finally:
+                    temp.setup_dc = original_dc
+                    ctx.finish()
 
     def test_clock_and_phase_settle_can_cancel_without_changing_default_wait(self):
         from ...steps import clock, phase
@@ -305,7 +515,7 @@ class DCScanTests(unittest.TestCase):
             self.assertEqual(config["completion_status"], "completed")
             self.assertEqual(config["noise_z_condition"], "zero_dc_output_off")
             self.assertEqual(config["actual_rates"]["hf2_noise_rate_Sa_s"], params.hf2_noise_rate * 0.9)
-            self.assertEqual(config["temperature_switch_off_mode"], "output_off")
+            self.assertEqual(config["temperature_switch_off_mode"], "zero_dc_output_on")
             for key, voltage in (("X_magnetic_field", 0.1), ("Y_magnetic_field", -0.2)):
                 target = rig.mapping[key]
                 self.assertEqual(rig.generators[target["resource"]].dc[target["channel"]], voltage)

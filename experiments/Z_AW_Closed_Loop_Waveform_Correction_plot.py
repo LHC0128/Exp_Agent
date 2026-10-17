@@ -6,4 +6,8 @@ from lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction impor
 
 # %% Cell 2
 if __name__ == "__main__":
-    raise SystemExit(ADAPTER.analyze_cli())
+    import argparse
+    from pathlib import Path
+    parser = argparse.ArgumentParser(description="离线分析明确指定的 Z 闭环运行目录")
+    parser.add_argument("run_dir", type=Path)
+    raise SystemExit(ADAPTER.analyze_cli(parser.parse_args().run_dir))

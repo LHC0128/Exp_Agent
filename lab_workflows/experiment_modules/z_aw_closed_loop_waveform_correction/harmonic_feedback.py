@@ -14,7 +14,8 @@ def select_harmonics(target, frequency_hz, params):
     if abs(float(np.mean(target))) > 1e-6 * rms(target):
         raise ValueError("高通谐波模式不能实现目标直流；请使用独立直流磁场路径，不能直接去均值")
     spectrum = np.abs(np.fft.rfft(target))
-    candidates = (frequency_hz > 0) & (frequency_hz <= params.error_cutoff_hz)
+    candidates = (frequency_hz > 0) & ((frequency_hz <= params.error_cutoff_hz) |
+        np.isclose(frequency_hz, params.error_cutoff_hz, rtol=1e-12, atol=0))
     candidates[-1] = False  # 不辨识奈奎斯特的退化正弦基。
     selected = np.flatnonzero(candidates & (spectrum >= spectrum[1:].max() * params.harmonic_amplitude_fraction))
     if not selected.size:

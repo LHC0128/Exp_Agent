@@ -54,7 +54,7 @@ class Workflow(SineWorkflow):
             self.outputs.update(X="ON" if self.axes[1][-1] else "OFF", Y="ON" if self.axes[1][-1] else "OFF",
                                 Z="ON" if len(self.axes[1]) % 2 else "OFF", 温控="ON")
         elif item == "A14":
-            acquisition.restore_demod(self.devices, self.params, self.calibrated_phase)
+            acquisition.restore_demod(self.devices, self.phase_parameters or self.params, self.calibrated_phase)
             self.demod_mode = "phase"
             self.states["A12"] = {"status": "stale", "error": "解调器已恢复；再次扫描需要 DAQ 准备"}
 

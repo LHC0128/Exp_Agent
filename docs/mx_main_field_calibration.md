@@ -23,13 +23,15 @@ mapping_keys:
     role: point_gate
   lockin_r:
     role: detection
+  temperature:
+    role: fixed
 required_devices:
   - GS200
   - DG900
   - DG4000
   - 锁相放大器
 learned_notes:
-  - TEC103 为可选控制设备；设备库映射串口被外部温控软件占用时跳过设温和稳定等待。
+  - TEC103 为可选控制设备；串口连接失败时告警跳过设温，本实验不执行温度判稳。
   - 扫描范围应不跨越总场零点，使用普通线性模型。
   - 设置主场电流后不单独等待；首个频点的温控关闭统一等待同时覆盖主场稳定。
   - 频率到磁场使用可配置的 GYROMAGNETIC_RATIO_HZ_PER_NT，取值见参数文件。
@@ -41,7 +43,7 @@ defaults_file: params/experiments/mx-main-field-calibration.yaml
 
 ## 采集时序与系统稳定
 
-实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+实际仪器配置完成后，将 `Temp_Switch` 设为 0 V DC 并保持 Output ON，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控为 5 V DC、Output ON 后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。本实验每个 Y RF 频点独立门控，每次重采重新稳定；首频点的稳定等待同时覆盖主场电流变更，不增加校相或噪声测量。
 
 TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
 
@@ -74,7 +76,7 @@ B(I)=\frac{f(I)}{\gamma}=K_B I+B_0.
 
 ## 扫描和采集
 
-GS200 电流轴由参数文件中的起点、终点、点数与扫描方向生成。
+GS200 电流轴由 `MAIN_FIELD_START_MA`、`MAIN_FIELD_STOP_MA` 与 `MAIN_FIELD_STEP_MA` 生成，单次递增扫描并包含两端；区间必须包含整数个步进。
 
 每个电流点的局部扫频预测中心为：
 
@@ -91,6 +93,7 @@ f_\mathrm{pred}(I)=f_\mathrm{ref}+K_\mathrm{initial}(I-I_\mathrm{ref}).
 3. 只等待一次 `SYSTEM_SETTLE_S`，同时覆盖温控关闭、RF 频点稳定以及每个电流点首频点的主场稳定。
 4. 按 `FREQUENCY_DURATION_S` 采集 Demod0 R。
 5. 在 `finally` 中恢复温控为 5 V DC、Output ON，并按 `TEMP_SWITCH_ON_LAG_S` 等待。
+6. 保存本次原始尝试。恢复温控失败时停止后继频点，仍尽力保存已经读入内存的数据；采集错误和收尾错误分别保留。
 
 若单次记录超过配置的标准差门槛，完整保存该尝试并按 `R_POINT_MAX_ATTEMPTS` 重采。采集阶段不执行共振拟合。
 
@@ -120,6 +123,39 @@ data/Mx_Main_Field_Calibration/<run>/
 
 采集与离线分析入口分别为 `experiments/Mx_Main_Field_Calibration.py` 和 `experiments/Mx_Main_Field_Calibration_plot.py`。
 
+## 模块与可执行流程
+
+`lab_workflows/experiment_modules/mx_main_field_calibration/` 中，`preparation.py` 负责预检、连接、时钟、固定条件与恢复，`excitation.py` 负责 Pump 激励和 Y RF/解调准备，`acquisition.py` 负责逐电流、逐频点采集与写盘。`workflow.py` 只编排完整运行及分步会话；两种入口调用同一业务。`analysis_steps.py` 保留原 Lorentzian 与加权线性算法，`analysis_plotting.py` 负责论文图，`analysis.py` 编排独立分析。
+
+| 节点 | 操作与前置 |
+| --- | --- |
+| A01 | 无硬件启动预检；参数、映射端点及锁相能力不通过时不连接 |
+| A02 | A01 后连接设备，回读 GS200 的完整运行前状态，保存本轮参数快照 |
+| A03 | A02 后统一写入并严格回读参考时钟 |
+| A04 | A03 后辅助场归零、设置 Pump/Probe 光功率与 GS200 限流 |
+| A05 | A04 后只下发 TEC UI 目标温度，连接失败告警跳过 |
+| A06 | A05 后设置 Pump 连续载波与常开门控 |
+| A07 | A06 后准备 Y RF 正弦及 R 解调，记录实际采样率 |
+| A08 | A07 后执行电流×局部扫频；每次尝试完整保存，标准差门槛用尽则停止后继 |
+| A09 | A08 后归零关闭辅助场与 RF，恢复 GS200 初态并封存本轮 |
+| A10 | 无前置的安全结束；结束会话并断开 TEC，其他连接按原策略保留 |
+
+A09 恢复 GS200 模式、量程和限流后，A04 及后继标记为需要重新准备。每轮重采创建新目录，保留之前的参数和 `raw/`，不会复用旧目录写入。等待下一步期间仍持有全局硬件锁并保持已写入输出；结束会话、取消、通信 EOF 和后台关闭都会执行安全收尾。恢复错误保存在会话与运行配置，不宣称安全完成。
+
+## GUI 运行与历史
+
+运行页保留「运行 / 历史」两个主 Tab。流程容器顶部提供保存参数与布局、派生预览、预检、完整运行、取消及任务状态；采集与独立分析按两列显示，窄屏自动单列。参数在实际设置或使用它的节点内按基础/高级分类编辑；共享的 Y RF 幅度及预测参考频率在 A07/A08 使用同一份值，光功率和 TEC 目标温度只在初始化节点编辑。
+
+空闲会话修改参数后显示未应用草稿及预计失效步骤，应用只更新参数和失效状态，必须显式选择重跑。还原草稿可清除失效预览；保存默认值同时保存统一分类偏好。刷新页面恢复存活会话，后台重启不从磁盘恢复硬件。可从流程容器下载实验包内的可编辑 [Excalidraw 原图](../lab_workflows/experiment_modules/mx_main_field_calibration/workflow.excalidraw)。
+
+独立分析依次为 B01 配置与原始频扫资格、B02 逐电流 Lorentzian 中心、B03 加权线性标定与磁场换算、B04 报告与结果图。B03 可覆盖 `GYROMAGNETIC_RATIO_HZ_PER_NT` 与 `LINEAR_R_SQUARED_MIN`，不改写采集参数；重算只归档受影响阶段及后继，仍使用的 B02 曲线输入保持原位。标定质量是否通过与分析是否完成分别记录，质量未通过也保存 NaN、排除原因和诊断图。
+
+分析对象默认是下一次实验的自动分析设置，也可选择已结束的具体运行目录。每个目录保存独立分析草稿与阶段状态，切换对象不会覆盖下一次实验参数；编辑历史目录时保存默认值，仍只保存下一次实验参数和分类。历史列表读取本实验目录中的参数快照与实际 `results/` 文件，支持查看、填回和重新分析；填回不会自动保存或启动。正在写入的目录拒绝分析。
+
+新增运行记录 `raw_format_version=1`，参数 `schema_version` 独立管理。原 ID、`data_type`、目录和结果文件名保留；已记录本实验 ID 或 `data_type` 的旧目录支持缺少原始格式标记，以及缺少总索引时从已完成 `current_*/frequency_scan.npz` 重建。未知身份与未知格式明确拒绝，不改写历史原始数据。
+
 ## 安全结束状态
 
 运行前记录 GS200 的源模式、电流设定、输出开关、量程和限流。正常、取消或异常结束后均恢复该状态；Z 辅助场、X 场与 Y RF 归零关闭，温控恢复为 5 V DC、Output ON。Pump/Probe 光功率、Pump 载波/门控和 锁相放大器 配置按标准策略保留，正常结束只断开 TEC。
+
+Pump 收尾沿用最近成功执行 A06 的载波与门控参数；应用参数但尚未重跑 A06 时，结束会话不会将新值写入仪器。实际重跑 A06 后才更新该保留基线；尚未执行 A06 时沿用会话初始参数的原有收尾策略。

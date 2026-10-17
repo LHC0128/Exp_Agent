@@ -166,11 +166,11 @@ class NoiseSpectrumXYSineTest(unittest.TestCase):
             self.assertNotIn(call(True, channel=2), device.set_output.call_args_list)
             method.side_effect = None
 
-    def test_temperature_output_off_restore_wait_and_cancel(self):
+    def test_temperature_dc_zero_output_on_restore_wait_and_cancel(self):
         device = Mock()
         params = scan_params()
         workflow.set_temp_switch(device, False, params, self.limits)
-        self.assertEqual(device.mock_calls, [call.set_output(False, channel=2)])
+        self.assertEqual(device.mock_calls, [call.setup_dc(0.0, channel=2), call.set_output(True, channel=2)])
         device.reset_mock()
         with patch.object(_helpers, "time") as clock, patch.object(_helpers, "check_cancelled") as cancel:
             clock.monotonic.side_effect = [0, 0, 0.1, 0.2, 0.25]

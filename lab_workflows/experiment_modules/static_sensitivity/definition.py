@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     category="measurement",
     family="static-field",
     variant="dispersion-noise",
-    description=('Z 直流逐点扫描，连续记录 X/Y/R 波形并取中位数，分组恢复温控；采集 Z 输出关闭时的多量程 Y 噪声，离线拟合与计算静磁场灵敏度。运行页提供采集、分析两列交互流程图：节点编辑参数、显式选择步骤与依赖检查，完整运行和分步会话共用业务代码；历史分析仅独立覆盖 z_v_to_nt。等待下一步持续占用硬件锁，执行中取消、空闲时安全结束；时序 2 始终保持当前状态。锁相设备按当前设备库预检，输入统一使用高阻与 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
+    description=('Z 直流逐点扫描，连续记录 X/Y/R 波形并取中位数，分组恢复温控；采集 Z 输出关闭时的多量程 Y 噪声，离线拟合与计算静磁场灵敏度。运行页提供采集、分析两列交互流程图：节点编辑参数、显式选择步骤与依赖检查，完整运行和分步会话共用业务代码；历史分析仅独立覆盖 z_v_to_nt。等待下一步持续占用硬件锁，执行中取消、空闲时安全结束；时序 2 始终保持当前状态。锁相设备按当前设备库预检，输入统一使用高阻与 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后以 0 V DC + ON 关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。节点显示实际质量门槛，失败阻断后继；噪声率旁文件参与分析指纹。'),
     data_type="Static_Magnetic_Field_Sensitivity",
     required_devices=("GS200", "DG900", "DG4000", "TEC103", "锁相放大器"),
     required_mapping_keys=STATIC_SENSITIVITY,
@@ -35,7 +35,7 @@ DEFINITION = ExperimentDefinition(
     ),
     safety_notes=(
         "Pump、光功率、主磁场、Z 偏置和温控输出均在写入前通过安全限值。",
-        "本实验测量期间温控物理输出 OFF（实验专属例外），分组固定等待恢复；结束为 5 V DC + ON。",
+        "测量期间温控设为 0 V DC + ON，分组固定等待恢复；结束为 5 V DC + ON。",
         "正常、取消或异常时归零关闭 Z，保持时序 2 当前状态并恢复色散解调配置；保留主场、光功率、Pump 门控和固定 X/Y 补偿。"
     ),
     schema_version=ADAPTER.params_type.schema_version,

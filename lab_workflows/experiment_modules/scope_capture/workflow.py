@@ -1,287 +1,248 @@
-"""SDS 单通道采集；不调用仪器 FFT，不控制其他实验设备。"""
+"""示波器采集的完整与分步共用编排；等待期间保持 SDS 连接与温控开关状态。"""
+
+# %% 导入
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Callable
-import json
-import time
+from uuid import uuid4
 
 import numpy as np
-from sds_acquisition import AcquisitionConfig, ChannelConfig, SDSAcquisition, SDSInstrument, TriggerConfig
+import yaml
+from sds_acquisition import SDSAcquisition, SDSInstrument
 
-from ...common import WorkflowCancelled, find_project_root, load_mapping
-from ...experiment_runtime import check_cancelled, load_runtime_params
+from ...common import WorkflowCancelled, find_project_root
+from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
+from ...instrument_config import instrument_config_snapshot
 from ...devices import create_signal_generator
-from ...steps import (
-    DeviceSession,
-    DisconnectTarget,
-    TemperatureSwitchRestore,
-    create_run_directory,
-    run_safety_shutdown,
-    set_temperature_switch,
-    temperature_gated_acquire,
-)
-from ...steps.safety_shutdown import ShutdownAction
-from .analysis import validate_waveform
+from ...steps import DeviceSession
+from ..noise_spectrum_xy.state_io import write_state
+from . import acquisition, preparation
 from .models import ScopeCaptureParams
+from .run_format import DATA_TYPE, EXPERIMENT_ID
+from .stages import ACQUISITION, initial_states, invalidate, validate_selection
 
-EXPERIMENT_ID = "scope-capture"
-DATA_TYPE = "Scope_Capture"
 EXECUTION_MODE = "typed_workflow"
-MAXIMUM_POINTS = 50_000_000
+# 兼容旧导入边界：历史脚本从 workflow 模块使用这些名称。
+MAXIMUM_POINTS = acquisition.MAXIMUM_POINTS
+sleep_cancellable = acquisition.sleep_cancellable
+configure = acquisition.configure
+capture = acquisition.capture
 
 
-def sleep_cancellable(seconds: float) -> None:
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        check_cancelled()
-        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+preflight = preparation.preflight
+
+class Workflow:
+    """保持同一硬件会话；采集重跑生成新目录，空闲等待仍占用硬件锁。"""
+
+    acquisition_stages = ACQUISITION
+    finish_id = "A05"
+    preflight = staticmethod(preflight)
+
+    def __init__(self, params: ScopeCaptureParams, *, project_root: Path | None = None,
+                 session_id: str | None = None, experiment_id: str = EXPERIMENT_ID,
+                 data_type: str = DATA_TYPE, instrument_factory: Callable | None = None,
+                 acquirer_factory: Callable | None = None):
+        self.root = project_root or find_project_root()
+        self.experiment_id, self.data_type = experiment_id, data_type
+        # 运行时解析默认工厂，测试可以整体替换模块级驱动构造。
+        self.instrument_factory = instrument_factory or SDSInstrument
+        self.acquirer_factory = acquirer_factory or SDSAcquisition
+        self.params, self.mapping, self.temp_mapping = self.preflight(params, self.root)
+        self.config_revision = self._configuration_revision()
+        self.session_id = session_id or uuid4().hex
+        self.revision = 0
+        self.states = initial_states(self.acquisition_stages)
+        self.connection = DeviceSession()
+        self.scope = None
+        self.acquirer = None
+        self.temp_switch = None
+        self.temp_channel = None
+        self.scope_config = None
+        self.scope_snapshot = None
+        self.run_dir = self.run_directory = self.current_step = None
+        self.closed = False
+        self.outputs = {"SDS": "未知", "温控开关": "未知"}
+        self.shutdown = None
+        self.clock_sources = {}
+
+    def _configuration_revision(self):
+        snapshot = instrument_config_snapshot(self.root)
+        return (snapshot["device_library_revision"], snapshot["physical_mapping_revision"],
+                (self.root / "params/safety_limits.yaml").read_bytes())
+
+    def snapshot(self):
+        return dict(session_id=self.session_id, revision=self.revision,
+            status="closed" if self.closed else "running" if self.current_step else "waiting",
+            parameters=self.params.to_external(), steps=self.states, current_step=self.current_step,
+            run_id=self.run_dir.name if self.run_dir else None, outputs=self.outputs,
+            output_source="最近成功模块的写入结果；SDS 配置另有实际回读",
+            demod_mode="scope" if self.scope_config is not None else "unknown",
+            safety_shutdown=self.shutdown, clock_sources=self.clock_sources,
+            daq_settings=self.scope_snapshot)
+
+    def publish(self, message="等待选择下一模块", level="info"):
+        snapshot = self.snapshot()
+        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        if self.run_dir:
+            write_state(self.run_dir / "acquisition_state.json", snapshot)
+        report_runtime_progress(self.current_step or "waiting", message,
+            data={"workflow_session": snapshot, "level": level})
+
+    def _check_configuration(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请结束会话后重新连接")
+
+    def recheck(self):
+        self._check_configuration()
+        self.params, self.mapping, self.temp_mapping = self.preflight(self.params, self.root)
+
+    def update_parameters(self, values):
+        self._check_configuration()
+        previous = self.params.to_external()
+        unknown = set(values) - set(previous)
+        if unknown:
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        params, mapping, temp_mapping = self.preflight(
+            type(self.params).from_external(previous | values), self.root)
+        changed = {key for key, value in params.to_external().items() if value != previous[key]}
+        for stage in self.acquisition_stages:
+            if changed.intersection(stage.parameters):
+                invalidate(self.acquisition_stages, self.states, stage.id)
+        self.params, self.mapping, self.temp_mapping = params, mapping, temp_mapping
+        self.revision += 1
+        self.publish("参数已应用；请显式重跑已失效的步骤")
+
+    def execute(self, selected):
+        selected = validate_selection(self.acquisition_stages, self.states, selected)
+        if selected != [self.finish_id]:
+            self.recheck()
+        self.revision += 1
+        for item in selected:
+            if item == self.finish_id:
+                self.finish()
+                break
+            check_cancelled()
+            if item != "A01":
+                invalidate(self.acquisition_stages, self.states, item)
+            self.current_step = item
+            self.states[item] = {"status": "running", "error": ""}
+            try:
+                self.publish(next(stage.title for stage in self.acquisition_stages if stage.id == item))
+                self._execute_step(item)
+                self.states[item]["status"] = "completed"
+            except BaseException as exc:
+                self.states[item] = {"status": "quality_failed" if isinstance(exc, ValueError) else
+                    "cancelled" if isinstance(exc, WorkflowCancelled) else "failed", "error": str(exc)}
+                if item == "A04" and self.run_directory is not None:
+                    # 分步会话可能不立即结束；失败目录不能停留在 running。
+                    try:
+                        self.run_directory.update_config(
+                            completion_status="cancelled" if isinstance(exc, WorkflowCancelled) else "failed",
+                            failure_reason=str(exc))
+                    except Exception:
+                        pass
+                try:
+                    self.publish(str(exc), "error")
+                except Exception:
+                    pass
+                raise
+            finally:
+                self.current_step = None
+            self.publish(f"{item} 已完成")
+        return self.snapshot()
+
+    def _execute_step(self, item):
+        if item == "A01":
+            self.recheck()
+        elif item == "A02":
+            preparation.connect(self, create_signal_generator)
+        elif item == "A03":
+            if self.scope is None or self.acquirer is None:
+                raise ValueError("请先连接 SDS")
+            check_cancelled()
+            self.scope_config, self.scope_snapshot = acquisition.configure(
+                self.scope, self.params, self.acquirer)
+            self.outputs["SDS"] = f"已配置：C{self.params.channel}，等待完整帧"
+        elif item == "A04":
+            if self.scope_config is None or self.scope_snapshot is None:
+                raise ValueError("请先完成 A03 示波器采集配置")
+            self._acquire_run()
+
+    def _acquire_run(self):
+        return acquisition.acquire_run(self)
+
+    def finish(self, failure=None):
+        if self.closed:
+            return
+        errors: list[str] = []
+        try:
+            if self.scope is not None or self.temp_switch is not None:
+                report = preparation.shutdown(self)
+                self.shutdown = report.to_dict()
+                errors.extend(report.errors)
+                if report.completed:
+                    self.outputs.update({"SDS": "STOP；已断开", "温控开关":
+                        "5 V ON；已断开" if self.temp_switch is not None else "未连接；未修改"})
+                else:
+                    self.outputs.update({key: "未知" for key in self.outputs})
+            elif self.connection is not None:
+                self.connection.cleanup_connection_failure()
+        except Exception as exc:
+            errors.append(str(exc))
+        finally:
+            self.closed, self.current_step = True, None
+            self.revision += 1
+            if self.run_directory is not None:
+                try:
+                    updates = dict(safety_shutdown=self.shutdown)
+                    config = yaml.safe_load(self.run_directory.config_path.read_text(encoding="utf-8")) or {}
+                    if errors or (failure is not None and config.get("completion_status") == "running"):
+                        status = "cancelled" if isinstance(failure, WorkflowCancelled) else "failed"
+                        updates.update(completion_status=status, failure_reason="；".join(
+                            ([str(failure)] if failure is not None else
+                             [str(config["failure_reason"])] if config.get("failure_reason") else []) + errors))
+                    self.run_directory.update_config(**updates)
+                except Exception as exc:
+                    errors.append(f"保存安全收尾记录失败：{exc}")
+            self.states[self.finish_id] = {"status": "failed" if errors else "completed",
+                                           "error": "；".join(errors)}
+            try:
+                self.publish("会话已结束" + ("；" + "；".join(errors) if errors else ""))
+            except Exception:
+                if failure is None:
+                    raise
+        if errors and failure is None:
+            raise RuntimeError("示波器结束清理失败：" + "；".join(errors))
 
 
-def configure(scope, params: ScopeCaptureParams, acquirer) -> tuple[AcquisitionConfig, dict]:
-    """设置采集/触发通道、垂直参数及触发条件。"""
-    channel = params.channel
-    inputs = {
-        "scale": float(params.vertical_scale_v_div),
-        "offset": float(params.vertical_offset_v),
-        "coupling": str(scope.get_channel_coupling(channel)),
-        "impedance": str(scope.get_channel_impedance(channel)),
-        "probe": float(scope.get_channel_probe(channel)),
-    }
-    channels = []
-    for number in range(1, 5):
-        if number == channel:
-            channels.append(ChannelConfig(number=number, **inputs))
-        elif number == params.trigger_channel:
-            channels.append(ChannelConfig(
-                number=number, scale=float(scope.get_channel_scale(number)),
-                offset=float(scope.get_channel_offset(number)),
-                coupling=str(scope.get_channel_coupling(number)),
-                impedance=str(scope.get_channel_impedance(number)),
-                probe=float(scope.get_channel_probe(number)),
-            ))
-        else:
-            channels.append(ChannelConfig(number=number, enabled=False))
-    config = AcquisitionConfig(
-        sampling_rate=params.sampling_rate_sa_s, sampling_time=params.duration_s,
-        memory_management="FSRate", acquire_type="NORMal", acquire_delay=params.duration_s,
-        channels=channels,
-        trigger=TriggerConfig(mode=params.trigger_mode, source=f"C{params.trigger_channel}",
-                              slope=params.trigger_slope, level=params.trigger_level_v),
-    )
-    acquirer.apply_config(config)
-    memory_mode = str(scope.get_memory_management())
-    rate = float(scope.get_sampling_rate())
-    points = int(scope.get_actual_points())
-    if memory_mode.upper() != "FSRATE" or not np.isfinite(rate) or rate <= 0:
-        raise RuntimeError("示波器未进入有效固定采样率模式")
-    if not 2 <= points <= MAXIMUM_POINTS:
-        raise RuntimeError(f"示波器实际点数 {points} 超出第一版范围 2--{MAXIMUM_POINTS}")
-    actual_scale = float(scope.get_channel_scale(channel))
-    actual_offset = float(scope.get_channel_offset(channel))
-    if not np.isfinite(actual_scale) or actual_scale <= 0 or not np.isfinite(actual_offset):
-        raise RuntimeError("示波器垂直档位或偏置读回值无效")
-    return config, {"requested": config.to_dict(), "input_settings": inputs,
-                    "acquisition_channel": channel,
-                    "actual_vertical_scale_v_div": actual_scale,
-                    "actual_vertical_offset_v": actual_offset,
-                    "vertical_divisions": 8,
-                    "capture_strategy": "auto_force_frame" if params.trigger_mode.upper() == "AUTO" else "edge_trigger",
-                    "actual_trigger": {
-                        "mode": str(scope.get_trigger_mode()),
-                        "source": str(scope.get_trigger_source()),
-                        "slope": str(scope.get_trigger_slope()),
-                        "level_v": float(scope.get_trigger_level()),
-                    },
-                    "readback_rate_sa_s": rate, "readback_points": points,
-                    "readback_timebase_s_div": float(scope.get_timebase_scale()),
-                    "memory_management": memory_mode, "memory_depth": str(scope.get_memory_depth())}
-
-
-def capture(scope, acquirer, config, snapshot, *, check=check_cancelled,
-            sleep=sleep_cancellable, monotonic=time.monotonic):
-    """按配置触发并只接受完整帧；空帧重试，不复位整台仪器。"""
-    last_problem = "未获得数据"
-    attempts = snapshot.setdefault("capture_attempts", [])
-    for attempt in range(3):
-        check()
-        diagnostic = {"attempt": attempt + 1, "trigger_mode": config.trigger.mode}
-        attempts.append(diagnostic)
-        scope.trigger_stop()
-        scope.trigger_run()
-        requested_mode = config.trigger.mode
-        scope.set_trigger_mode(requested_mode)
-        record_duration = max(config.sampling_time, snapshot["readback_points"] / snapshot["readback_rate_sa_s"])
-        deadline = monotonic() + record_duration + 2.5
-        if requested_mode.upper() in {"NORMAL", "SINGLE"}:
-            # 每次重新布防，SINGLE 完成会自动停止；NORMAL 需确认触发后等满记录窗口。
-            while True:
-                check()
-                status = str(scope.trigger_status()).upper().replace("'", "").strip()
-                if status in {"STOP", "STOPPED"} and requested_mode.upper() == "SINGLE":
-                    break
-                if status in {"TRIGD", "TRIGGERED"}:
-                    sleep(record_duration)
-                    break
-                if monotonic() >= deadline:
-                    raise TimeoutError("示波器等待触发超时")
-                sleep(0.05)
-        elif requested_mode.upper() == "AUTO":
-            # SDS1204X HD 在 AUTO 无有效边沿（尤其关闭温控时）可能不提交
-            # 深存储帧。FTRIG 是一次性完整帧采集动作，完成后自动回到 AUTO。
-            # 不能以固定 sleep 或 STOP 响应代替本次动作的完成确认。
-            scope.set_trigger_mode("FTRIG")
-            while str(scope.get_trigger_mode()).upper().strip() == "FTRIG":
-                check()
-                if monotonic() >= deadline:
-                    diagnostic["failure"] = "强制触发超时，未读取波形"
-                    raise TimeoutError("示波器 AUTO 完整帧强制触发未在记录窗口内完成，未读取旧帧")
-                sleep(0.05)
-            diagnostic["force_trigger_completed"] = True
-        sleep(0.2)
-        check()
-        scope.trigger_stop()
-        deadline = monotonic() + 2.0
-        while str(scope.trigger_status()).upper().strip() not in {"STOP", "STOPPED"}:
-            check()
-            if monotonic() >= deadline:
-                raise TimeoutError("示波器停止状态确认超时")
-            sleep(0.05)
-        result = acquirer.acquire_channel(snapshot["acquisition_channel"],
-                                         config.timebase_scale, config.horizontal_divisions, trim_points=0)
-        check()
-        expected = int(result.preamble_dict.get("point_num", 0))
-        diagnostic.update(exported_points=len(result.voltage), preamble_points=expected)
-        if expected < 2 or len(result.voltage) != expected:
-            last_problem = f"第 {attempt + 1} 次导出 {len(result.voltage)} 点，preamble 声明 {expected} 点"
-            diagnostic["failure"] = last_problem
-            print(last_problem, flush=True)
-            continue
-        t, v, rate = validate_waveform(result.time, result.voltage)
-        if t[-1] - t[0] < config.sampling_time - 2.0 / rate:
-            last_problem = "实际记录时长少于请求时长"
-            diagnostic["failure"] = last_problem
-            continue
-        return result, t, v, rate
-    raise RuntimeError("示波器连续三次未获得完整帧：" + last_problem)
-
-
+# %% 完整运行与历史兼容入口
 def run(params: ScopeCaptureParams, *, project_root: Path | None = None,
-        instrument_factory: Callable = SDSInstrument, acquirer_factory: Callable = SDSAcquisition) -> Path:
-    root = project_root or find_project_root()
-    errors = params.validate(root)
-    if errors:
-        raise ValueError("；".join(errors))
-    mappings = load_mapping(root)
-    mapping = mappings["scope_waveform"]
-    if mapping.get("instrument") != "sds_acquisition" or not mapping.get("resource"):
-        raise ValueError("scope_waveform 必须解析为 SDS 设备及有效 resource")
-    temp_mapping = mappings.get("Temp_Switch")
-    if params.disable_temperature_control and (
-        not temp_mapping
-        or temp_mapping.get("instrument") != "signal_generator"
-        or not temp_mapping.get("resource")
-        or temp_mapping.get("channel") is None
-    ):
-        raise ValueError("启用关闭温控采集时，Temp_Switch 必须解析为有效信号发生器通道")
-    directory = create_run_directory(DATA_TYPE, params.run_tag, params.to_external(),
-                                     schema_version=params.schema_version, project_root=root)
-    directory.update_config(experiment_id=EXPERIMENT_ID, execution_mode=EXECUTION_MODE,
-                            completion_status="running")
-    scope = instrument_factory(str(mapping["resource"]))
-    session = DeviceSession()
-    connected = False
-    temp_switch = None
-    temp_channel = None
-    status = "failed"
+        instrument_factory: Callable | None = None, acquirer_factory: Callable | None = None) -> Path:
+    """完整运行复用同一组分步业务步骤，结束后总是安全收尾。"""
+    ctx = Workflow(params, project_root=project_root,
+                   instrument_factory=instrument_factory, acquirer_factory=acquirer_factory)
     failure = None
-    snapshot = None
     try:
-        check_cancelled()
-        print("连接示波器", flush=True)
-        session.connect("scope", str(mapping["resource"]), lambda: scope)
-        connected = True
-        if params.disable_temperature_control:
-            assert temp_mapping is not None
-            temp_switch = session.connect(
-                "temp_switch",
-                str(temp_mapping["resource"]),
-                lambda: create_signal_generator(temp_mapping),
-            )
-            temp_channel = int(temp_mapping["channel"])
-            set_temperature_switch(temp_switch, True, channel=temp_channel)
-            directory.update_config(
-                temperature_switch={
-                    "enabled": True,
-                    "mapping_key": "Temp_Switch",
-                    "channel": temp_channel,
-                    "off_voltage_v": 0.0,
-                    "on_voltage_v": 5.0,
-                    "off_settle_s": params.system_settle_s,
-                    "on_settle_s": params.temperature_switch_on_settle_s,
-                }
-            )
-        acquirer = acquirer_factory(scope, check_cancelled=check_cancelled, maximum_points=MAXIMUM_POINTS)
-        config, snapshot = configure(scope, params, acquirer)
-        directory.update_config(scope_configuration=snapshot)
-        print(f"采集 C{params.channel}，请求 {params.duration_s:g} s；等待完整帧", flush=True)
-        def acquire_waveform():
-            return capture(scope, acquirer, config, snapshot)
-
-        if params.disable_temperature_control:
-            assert temp_switch is not None and temp_channel is not None
-            result, t, v, rate = temperature_gated_acquire(
-                temp_switch=temp_switch,
-                temp_channel=temp_channel,
-                off_settle_s=params.system_settle_s,
-                on_settle_s=params.temperature_switch_on_settle_s,
-                acquire=acquire_waveform,
-                check_cancelled=check_cancelled,
-                sleep=sleep_cancellable,
-                set_temperature_switch=set_temperature_switch,
-                cancellation=None,
-            )
-        else:
-            result, t, v, rate = acquire_waveform()
-        check_cancelled()
-        np.savez(directory.raw / "waveform.npz", time_s=t, voltage_v=v, raw_adc=result.raw_data,
-                 channel=params.channel, timestamp=result.timestamp, actual_rate_sa_s=rate,
-                 requested_rate_sa_s=params.sampling_rate_sa_s, requested_duration_s=params.duration_s,
-                 preamble_json=np.array(json.dumps(result.preamble_dict, ensure_ascii=False)),
-                 configuration_json=np.array(json.dumps(snapshot, ensure_ascii=False)))
-        directory.update_config(actual_rates={"scope": rate}, sample_count=int(v.size),
-                                actual_duration_s=float(t[-1] - t[0]), data_files=["raw/waveform.npz"])
-        status = "completed"
-        print(f"已保存 {v.size} 点，实际 {rate:.9g} Sa/s：{directory.root}", flush=True)
-        return directory.root
-    except WorkflowCancelled as exc:
-        status, failure = "cancelled", str(exc)
-        raise
-    except Exception as exc:
-        failure = str(exc)
+        ctx.execute([stage.id for stage in ctx.acquisition_stages if stage.id != ctx.finish_id])
+        return ctx.run_dir
+    except BaseException as exc:
+        failure = exc
         raise
     finally:
-        report = run_safety_shutdown(
-            extra_actions=(ShutdownAction("停止 SDS", scope.trigger_stop),) if connected else (),
-            temperature_switch=(
-                TemperatureSwitchRestore(temp_switch, int(temp_channel))
-                if temp_switch is not None and temp_channel is not None
-                else None
-            ),
-            disconnect_targets=(
-                DisconnectTarget("SDS", scope),
-                DisconnectTarget("温度开关", temp_switch),
-            ),
-        )
-        directory.update_config(completion_status="failed" if report.errors else status,
-                                failure_reason=failure, safety_shutdown=report.to_dict(),
-                                **({"scope_configuration": snapshot} if snapshot is not None else {}))
-        if report.errors and failure is None:
-            raise RuntimeError("示波器结束清理失败：" + "；".join(report.errors))
+        ctx.finish(failure)
+
+
+def main() -> int:
+    run(load_runtime_params(ScopeCaptureParams))
+    return 0
 
 
 if __name__ == "__main__":
     try:
-        run(load_runtime_params(ScopeCaptureParams))
+        main()
     except WorkflowCancelled as exc:
         print(str(exc))
         raise SystemExit(130)

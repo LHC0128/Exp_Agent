@@ -339,8 +339,11 @@ def scope_fixture(signals=("sample.x", "sample.y", "sample.r", "sample.theta")):
 def test_scope_quadrature_derivation_time_axis_and_metadata(tmp_path):
     instr, cfg, record, waves = scope_fixture()
     original = dict(instr.daq.nodes)
+    original_rate = instr.get_double(f"{instr.demod_path(0)}/rate")
     # 准备至稳定等待期间停流，滤波和内部信号链保留。
     stream_rate = demod.configure_demodulator(instr, DemodulatorConfig(rate=200000, time_constant=0.001), for_acquisition=True)
+    assert stream_rate == original_rate
+    assert not any(path.endswith("/rate") for path, _ in instr.daq.writes)
     assert all(instr.get_int(f"{instr.demod_path(i)}/enable") == 0 for i in range(4))
     results = daq.acquire_data(instr, cfg, actual_rate=stream_rate, requested_rate=200000)
     assert result_rate(results) == 234375
@@ -360,12 +363,44 @@ def test_scope_quadrature_derivation_time_axis_and_metadata(tmp_path):
     assert freq[np.argmax(psd)] == 234375 / 64
     metadata = acquisition_metadata(results)
     assert metadata["requested_rate_Sa_s"] == 200000
-    assert json.loads(metadata["acquisition_metadata_json"])["sample.x"]["demod_stream_rate"] == 200000
+    assert json.loads(metadata["acquisition_metadata_json"])["sample.x"]["demod_stream_rate"] == original_rate
     path = tmp_path / "waveform.npy"
     np.save(path, results[0].values)
     save_acquisition_metadata(path, results)
     assert load_acquisition_rate(path, 200000) == 234375
     assert load_acquisition_rate(tmp_path / "old.npy", 50000) == 50000
+
+
+@pytest.mark.parametrize("model,mode,requested_rate,module", [
+    ("HF2", "auto", 200000, "daq"), ("HF2", "auto", 450000, "daq"),
+    ("MFLI", "auto", 200000, "scope"), ("MFLI", "auto", 450000, "scope"),
+    ("MFLI", "daq", 200000, "daq"), ("MFLI", "scope", 50000, "scope"),
+])
+def test_xy_acquisition_rate_is_independent_of_phase_stream_rate(model, mode, requested_rate, module):
+    from .experiment_modules.noise_spectrum_xy import acquisition
+    from .experiment_modules.noise_spectrum_xy.models import NoiseSpectrumXYParams
+    instr = fake_instrument(model)
+    instr.acquisition_mode = mode
+    params = replace(NoiseSpectrumXYParams(), hf2_demod_rate=10000, hf2_daq_rate=requested_rate)
+    devices, base = {"hf2": instr}, instr.demod_path(0)
+    with patch.object(acquisition, "wait"):
+        acquisition.restore_demod(devices, params, 23.0)
+        instr.daq.writes.clear()
+        settings = acquisition.prepare_daq(devices, params, 23.0)
+        expected_stream = 10000 if module == "scope" else requested_rate
+        assert instr.get_double(f"{base}/rate") == expected_stream
+        assert instr.get_int(f"{base}/enable") == int(module == "daq")
+        rate_writes = [value for path, value in instr.daq.writes if path.endswith("/rate")]
+        assert rate_writes == ([] if module == "scope" else [requested_rate])
+        capture_rate = nearest_scope_rate(requested_rate) if module == "scope" else requested_rate
+        assert settings[0] == capture_rate
+        assert settings[1] == int(capture_rate * params.hf2_daq_duration)
+        assert settings[2]["nperseg"] == np.ceil(capture_rate / params.analysis_bin_width_hz)
+        ctx = SimpleNamespace(devices=devices, params=params, calibrated_phase=23.0, daq_settings=settings)
+        acquisition.verify_daq_mode(ctx)
+        acquisition.restore_demod(devices, params, 23.0)
+        assert instr.get_double(f"{base}/rate") == 10000
+        assert instr.get_int(f"{base}/enable") == 1
 
 
 @pytest.mark.parametrize("signal", ["sample.x", "sample.y", "sample.r", "sample.theta"])

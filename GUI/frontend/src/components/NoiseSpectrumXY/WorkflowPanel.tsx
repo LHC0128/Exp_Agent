@@ -40,6 +40,7 @@ function Nodes({ stages, states, selected, onSelect, disabled, runId, editor, sh
     <ol>{stages.filter((stage) => stage.group === group).map((stage) => {
       const state = states?.[stage.id];
       const artifacts = state?.artifacts?.length ? state.artifacts : stage.artifacts;
+      const showArtifacts = state?.status === "completed" || (state?.status === "quality_failed" && Boolean(state.artifacts?.length));
       const missing = stage.dependencies.filter((id) => states?.[id]?.status !== "completed" && !selected.includes(id));
       const nodeFields = editor.fields.filter((field) => stage.display_parameters.includes(field.name));
       const basicFields = editor.layout.basic.flatMap((name) => nodeFields.filter((field) => field.name === name));
@@ -53,6 +54,7 @@ function Nodes({ stages, states, selected, onSelect, disabled, runId, editor, sh
           <strong>{stage.id} {stage.title}</strong></label>
         <span className="xy-step-status">{stateLabels[state?.status ?? "pending"] ?? state?.status}</span>
         <small>前置：{stage.dependencies.map((id) => `${id} ${stages.find((item) => item.id === id)?.title ?? ""}`).join("、") || "无"}</small>
+        {stage.quality_gates?.map((gate) => <small key={gate}>质量门槛：{gate}</small>)}
         {missing.length > 0 && selected.includes(stage.id) && <p className="xy-missing">缺少前置：{missing.join("、")}</p>}
         {state?.error && <p className="xy-step-error">{state.error}</p>}
         {preview && <p className="xy-draft-note">应用草稿后预计需重跑；当前执行记录尚未改变。</p>}
@@ -67,7 +69,7 @@ function Nodes({ stages, states, selected, onSelect, disabled, runId, editor, sh
               </>} />
           </div>
         </details>}
-        {state?.status === "completed" && artifacts.length > 0 && <details><summary>产物</summary>
+        {showArtifacts && artifacts.length > 0 && <details><summary>产物</summary>
           {artifacts.map((name) => <div key={name}>{runId && !name.includes("*")
             ? <a href={stage.id.startsWith("A")
               ? `${BASE}/runs/${encodeURIComponent(runId)}/files/${name}`
@@ -250,7 +252,7 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
         <pre>{JSON.stringify({ clock_sources: session.clock_sources, demod_phase_deg: session.demod_phase_deg, daq_settings: session.daq_settings }, null, 2)}</pre>
       </details>}
     </div>}
-    <div className="xy-flow-columns">
+    <div className={`xy-flow-columns${flow?.analysis.length === 0 ? " xy-flow-acquisition-only" : ""}`}>
       <section><h2>采集流程</h2>
         <div className="xy-flow-actions">
           <button disabled={!enabled || !flow || sending || live || hardwareBusy} onClick={() => void create()}>创建分步会话</button>
@@ -266,7 +268,7 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
           runId={session?.run_id} editor={acquisitionEditor} sharingStages={sharingStages}
           changed={acquisitionChanged} appliedValues={session?.parameters as ParameterValues | undefined} impacts={acquisitionImpacts} />}
       </section>
-      <section><h2>分析流程</h2>
+      {flow?.analysis.length !== 0 && <section><h2>分析流程</h2>
         <label>分析操作对象<select value={runId} disabled={analyzing || sending} onChange={(event) => setRunId(event.target.value)}>
           <option value="">下一次实验（自动分析设置）</option>{runChoices.map((id) => <option key={id} value={id}>{id}</option>)}
         </select></label>
@@ -287,7 +289,8 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
           selected={runId ? selectedB : []} onSelect={setSelectedB} disabled={!runId || analyzing || sending}
           runId={runId} editor={analysisEditor} sharingStages={runId ? flow.analysis : sharingStages}
           changed={analysisChanged} appliedValues={runId ? appliedAnalysis : session?.parameters as ParameterValues | undefined} impacts={analysisImpacts} />}
-      </section>
+      </section>}
     </div>
+    {flow?.analysis.length === 0 && <p>本实验没有独立离线分析器，运行结果通过历史记录查看。</p>}
   </section>;
 }

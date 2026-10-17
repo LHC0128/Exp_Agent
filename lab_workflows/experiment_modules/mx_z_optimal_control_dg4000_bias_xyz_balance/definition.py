@@ -1,6 +1,7 @@
 """Mx Z DG4000 偏置 XYZ 平衡场实验定义。"""
 
 from ...experiments.contracts import ExperimentDefinition
+from ...experiments.requirements import DG4000_BIAS_OPTIMAL_CONTROL
 from ...experiments.typed import TypedWorkflowAdapter
 from .models import MxZOptimalControlDG4000BiasXYZBalanceParams
 
@@ -19,12 +20,11 @@ DEFINITION = ExperimentDefinition(
     category="calibration",
     family="field-balance",
     variant="mx-z-optimal-control-dg4000-bias",
-    description=(
-        ('保持 Z 周期最优控制，以同一台 DG4000 的 Z 通道 offset 扫描额外偏置，并扫描 X/Y 直流补偿场，记录 锁相放大器 Demod0 X/Y/R。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
-    ),
+    description="保持 Z 周期最优控制，以同一 DG4000 Z 通道 offset 和 X/Y DC 蛇形扫描，GS200 须物理断开且不连接。同步采集 Demod X/Y/R，以原 soft-L1 复数 Bloch 平面拟合及静态 K_Z 标定为主结果，实测 R 最小点仅作诊断。运行/历史双 Tab 提供 6 个采集与 3 个独立分析节点；顶部保存、预检和完整运行，节点内编辑参数，应用草稿后显式重跑。理论/闭环来源与独立 Z 标定冻结并核对内容，具体目录分析无额外覆盖值。锁相按设备库选择 HF2/MFLI 和 DAQ/Scope，输入高阻、DC 耦合，按最终实际率记录。配置后关闭温控、按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后写盘；TEC 只写 UI 目标。结束恢复运行前 Z、共同触发和 X/Y 通道状态，不自动施加拟合点。",
     data_type="Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance",
     required_devices=("DG900", "DG4000", "锁相放大器"),
     execution_mode="typed_workflow",
+    required_mapping_keys=DG4000_BIAS_OPTIMAL_CONTROL,
     acquisition_program="experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance.py",
     analysis_program="experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance_plot.py",
     wiring_notes=(
@@ -37,7 +37,8 @@ DEFINITION = ExperimentDefinition(
         "运行前必须将 CONFIRM_GS200_DISCONNECTED 设为 true。",
         "每个偏置点同时校验任意波实际最小/最大值和固定输出包络的安全限值。",
         "Z 偏置只调用 DG4000 set_offset，不覆盖任意波形。",
-        "正常、取消和异常结束均恢复运行前 Z、X、Y 通道完整状态。",
+        "正常、取消、异常、EOF 和会话结束均恢复运行前 Z、共同触发与 X/Y 的通道快照状态；恢复失败不能封存为完成。",
+        "R_BAD_POINT_STD_THRESHOLD_V 保留历史键，实际拒绝指标为 X/Y 复噪声标准差。",
         "结果主判据是 Demod X/Y 复数稳健拟合；Demod0 R 网格最小点只作诊断。",
         "当前拟合是稳态 Bloch 型二维响应面，不等价于周期最优控制的严格 Bloch/Floquet 解。",
     ),

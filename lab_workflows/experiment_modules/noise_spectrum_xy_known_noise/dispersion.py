@@ -71,21 +71,38 @@ def fit_dispersion_curve(
 
 
 def resolve_dispersion(run_dir, config: dict[str, Any]) -> dict[str, Any]:
-    """仅用版本 3 的完整色散点值重拟合；采集记录的斜率只作为对照。"""
+    """读取格式 3 中位值，或已核实的 schema 1 内置均值；原斜率只作对照。"""
     recorded = dict(config.get("dispersion") or {})
     raw_file = run_dir / "raw" / "dispersion_scan.npz"
     with np.load(raw_file, allow_pickle=False) as data:
-        if data["schema_version"].shape != () or data["schema_version"].item() != 3:
-            raise ValueError("色散原始文件必须为版本 3")
-        offsets = np.asarray(data["offsets_v"], float)
-        y_mean = np.asarray(data["y_median"], float)
-        completed = np.asarray(data["completed_mask"], bool)
-        if completed.shape != offsets.shape or not completed.all():
-            raise ValueError("色散扫描未全部完成，不能用于已知噪声增益换算")
+        legacy_mean = "schema_version" not in data
+        if legacy_mean:
+            if (config.get("experiment_id") != "noise-spectrum-xy-known-noise"
+                    or config.get("experiment_type") != "Noise_Spectrum_XY_Ctrl_Known_Noise"
+                    or type(config.get("schema_version")) is not int or config["schema_version"] != 1
+                    or "raw_format_version" in config or config.get("completion_status") == "running"):
+                raise ValueError("未标记色散只支持已验证的本实验 schema 1 内置均值格式")
+            offsets = np.asarray(data["offsets_v"], float)
+            y_mean = np.asarray(data["y_mean"], float)
+            expected = recorded.get("steps")
+            if (type(expected) is not int or offsets.ndim != 1 or y_mean.shape != offsets.shape
+                    or offsets.size != expected):
+                raise ValueError("旧色散点数与运行记录不一致，不能确认曲线完成")
+        else:
+            if data["schema_version"].shape != () or data["schema_version"].item() != 3:
+                raise ValueError("色散原始文件必须为版本 3")
+            offsets = np.asarray(data["offsets_v"], float)
+            y_mean = np.asarray(data["y_median"], float)
+            completed = np.asarray(data["completed_mask"], bool)
+            if completed.shape != offsets.shape or not completed.all():
+                raise ValueError("色散扫描未全部完成，不能用于已知噪声增益换算")
         k_z = float(data["k_z_hz_per_v"])
     fit = fit_dispersion_curve(offsets, y_mean, k_z_hz_per_v=k_z)
+    if legacy_mean and (not fit["is_valid"] or not np.isfinite(fit["popt"]).all()):
+        raise ValueError("旧内置色散拟合质量不通过：" + "；".join(fit["rejection_reasons"]))
     result = dict(fit, source="raw_refit", method="dispersion_line_fit", k_z_hz_per_v=k_z,
-                  offsets_v=offsets, y_mean=y_mean)
+                  offsets_v=offsets, y_mean=y_mean, source_statistic="mean" if legacy_mean else "median",
+                  completion_evidence="recorded_steps_and_finite_curve" if legacy_mean else "completed_mask")
     recorded_slope = recorded.get("slope_v_per_hz")
     if isinstance(recorded_slope, (int, float)) and np.isfinite(recorded_slope) and recorded_slope > 0:
         result["recorded_slope_v_per_hz"] = float(recorded_slope)

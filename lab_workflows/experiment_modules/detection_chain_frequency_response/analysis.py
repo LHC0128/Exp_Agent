@@ -18,9 +18,10 @@ from ...experiment_runtime import check_cancelled, runtime_run_dir
 from ...plotting import new_figure, save_figure, set_plot_style
 from ..noise_spectrum_xy.state_io import read_state, write_state
 from .models import DetectionChainFrequencyResponseParams
+from .run_format import load_frequency_response
 from .stages import ANALYSIS, initial_states, invalidate, validate_selection
 
-ANALYSIS_VERSION = "detection-chain-normalized-response-v1"
+ANALYSIS_VERSION = "detection-chain-normalized-response-v2"
 
 
 def write_json(path, payload):
@@ -35,6 +36,8 @@ class AnalysisWorkflow:
         self.results = self.run_dir / "results"
         self.state_path = self.run_dir / "analysis_state.json"
         self.config = yaml.safe_load((self.run_dir / "experiment_config.yaml").read_text(encoding="utf-8"))
+        if not isinstance(self.config, dict):
+            raise ValueError("运行配置必须为映射")
         if self.config.get("completion_status") == "running":
             raise ValueError("本轮扫描仍在写入数据，请等待扫描结束")
         self.params = DetectionChainFrequencyResponseParams.from_external(
@@ -62,8 +65,10 @@ class AnalysisWorkflow:
                 invalidate(ANALYSIS, self.states, stage.id)
                 self.revision += 1
                 break
-            if record["status"] == "completed" and any(self._file_signature(self.results / name) != signature
-                    for name, signature in record.get("files", {}).items()):
+            if record["status"] == "completed" and (
+                    set(record.get("files", {})) != set(stage.artifacts)
+                    or any(signature is None or self._file_signature(self.results / name) != signature
+                           for name, signature in record.get("files", {}).items())):
                 invalidate(ANALYSIS, self.states, stage.id)
                 self.revision += 1
                 break
@@ -123,10 +128,12 @@ class AnalysisWorkflow:
             self.persist()
             try:
                 getattr(self, "step_" + item)()
+                files = {name: self._file_signature(self.results / name)
+                         for stage in ANALYSIS if stage.id == item for name in stage.artifacts}
+                if any(signature is None for signature in files.values()):
+                    raise RuntimeError("分析产物未完整保存")
                 self.states[item] = {"status": "completed", "error": "",
-                    "files": {name: self._file_signature(self.results / name)
-                        for stage in ANALYSIS if stage.id == item for name in stage.artifacts
-                        if name.endswith(".npz")}}
+                    "files": files}
                 if item != "B03":
                     self.summary["status"] = "partial"
             except BaseException as exc:
@@ -144,7 +151,8 @@ class AnalysisWorkflow:
         return self.summary
 
     def step_B01(self):
-        """归档旧产物并初始化分析摘要。"""
+        """核对身份与原始格式，通过后归档旧产物并初始化分析摘要。"""
+        load_frequency_response(self.run_dir, self.config)
         self.results.mkdir(exist_ok=True)
         existing = [path for path in self.results.iterdir() if path.is_file()]
         backup = None
@@ -161,9 +169,7 @@ class AnalysisWorkflow:
 
     def step_B02(self):
         """排除零基带点，按两侧最近有效点归一化并计算边带下降斜率。"""
-        with np.load(self.run_dir / "raw" / "frequency_response.npz") as data:
-            am_freqs = data["am_frequencies_hz"]
-            peak_amps = data["peak_amplitudes"].astype(float)
+        am_freqs, peak_amps = load_frequency_response(self.run_dir, self.config)
         # 历史数据也排除零基带点：Welch 默认去均值，原有谱峰不是直流响应。
         zero_baseband = np.isclose(am_freqs, self.params.hf2_osc_freq_hz, rtol=0, atol=1e-9)
         peak_amps = np.where(zero_baseband, np.nan, peak_amps)

@@ -10,7 +10,7 @@ import numpy as np
 import yaml
 from sensitivity_analysis.fitting import _dispersive
 from ...analysis.noise_spectrum_separation import lorentzian_vs_control
-from . import analysis, analysis_steps, calibration_source
+from . import analysis, analysis_steps, calibration_source, dispersion
 from .stages import ANALYSIS
 from .test_workflow import copy_known_config
 
@@ -23,7 +23,7 @@ def static_source(root, name="source", *, completed=True, schema_version=3):
         parameters=dict(temperature=90, pump_laser_power=.3, probe_laser_power=.1, main_magnetic_field=9.28))
     (directory / "experiment_config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
     v = np.linspace(-.2, .2, 41)
-    np.savez(directory / "raw/dispersion_scan.npz", schema_version=schema_version, offsets_v=v,
+    np.savez(directory / "raw/dispersion_scan.npz", schema_version=3, offsets_v=v,
         completed_mask=np.full(v.size, completed, bool), x_median=np.zeros(v.size),
         y_median=_dispersive(v, .001, .025, .005, .001), r_median=np.ones(v.size),
         sample_counts=np.full(v.size, 100), actual_rate_sa_s=np.full(v.size, 1000), actual_duration_s=np.full(v.size, .1))
@@ -63,6 +63,8 @@ class KnownAnalysisTests(unittest.TestCase):
         np.save(directory / "raw/waveform_C0000_on.npy", np.arange(20.))
         np.save(directory / "raw/known_noise_waveform.npy", np.random.default_rng(7).normal(size=4096))
         config = dict(experiment_id="noise-spectrum-xy-known-noise", schema_version=3, completion_status="completed",
+            hf2_daq=dict(actual_rate_Sa_s=10000., DAQ_duration_s=1.),
+            scan_params=dict(xy_envelope_voltage_V=np.linspace(0., 2., 50).tolist()),
             parameters={"ANALYSIS_BIN_WIDTH_HZ": 50., "ANALYSIS_FREQUENCY_MIN_HZ": 50., "ANALYSIS_FREQUENCY_MAX_HZ": 1000.,
                 "ANALYSIS_FIT_HALF_WIDTH_HZ": 400., "ANALYSIS_DISPERSION_SOURCE_RUN": source, "FIXED_PARAMS.temperature": 100.},
             known_noise=dict(waveform_file="raw/known_noise_waveform.npy", amplitude_vpp=.01, sample_rate_sa_s=10000.,
@@ -166,6 +168,91 @@ class KnownAnalysisTests(unittest.TestCase):
         (source / "analysis.yaml").write_text(yaml.safe_dump(dict(experiment_id="bell-bloom-z-field-calibration",
             success=True, K_Z_Hz_per_V=11703.6778)), encoding="utf-8")
         self.assertEqual(analysis.analyze(legacy)["truth_chain"]["K_Z_Hz_per_V"], 11703.6778)
+
+    def test_same_size_and_mtime_drift_invalidates_raw_and_products(self):
+        import os
+        for kind in ("raw", "product", "source"):
+            with self.subTest(kind=kind):
+                run = self.directory("drift-" + kind, "source")
+                analysis.analyze(run)
+                path = {"raw": run / "raw/waveform_C0000_on.npy",
+                        "product": run / "results/separated_spectra.npz",
+                        "source": self.source / "raw/dispersion_scan.npz"}[kind]
+                before = path.stat()
+                content = bytearray(path.read_bytes())
+                content[-1] ^= 1
+                path.write_bytes(content)
+                os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+                ctx = analysis.AnalysisWorkflow(run)
+                expected = ("B05", "B06") if kind == "source" else ("B04", "B06") if kind == "product" else tuple(s.id for s in ANALYSIS)
+                self.assertEqual(tuple(key for key, state in ctx.states.items() if state["status"] == "stale"), expected)
+                if kind == "source":
+                    content[-1] ^= 1
+                    path.write_bytes(content)
+
+    def test_invalid_load_or_source_keeps_previous_scientific_products(self):
+        for item in ("B01", "B05"):
+            with self.subTest(item=item):
+                run = self.directory("preserve-" + item, "source")
+                analysis.analyze(run)
+                if item == "B01":
+                    path = run / "experiment_config.yaml"
+                    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+                    config.pop("truth_chain")
+                    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+                    options = None
+                else:
+                    options = {"ANALYSIS_DISPERSION_SOURCE_RUN": "missing"}
+                before = {path.name: path.read_bytes() for path in (run / "results").iterdir() if path.is_file()}
+                with self.assertRaises((ValueError, FileNotFoundError)):
+                    analysis.AnalysisWorkflow(run, options).execute([item])
+                self.assertEqual({path.name: path.read_bytes() for path in (run / "results").iterdir() if path.is_file()}, before)
+                self.assertFalse(list((run / "results").glob("before_*")))
+                saved = json.loads((run / "analysis_state.json").read_text(encoding="utf-8"))
+                self.assertEqual(saved["steps"][item]["status"], "quality_failed")
+
+    def test_verified_schema1_mean_curve_uses_original_fit_and_b05(self):
+        run = self.directory("legacy-mean")
+        path = run / "experiment_config.yaml"
+        config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        config.update(schema_version=1, experiment_type="Noise_Spectrum_XY_Ctrl_Known_Noise",
+                      dispersion=dict(steps=41, slope_v_per_hz=1.))
+        path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        with np.load(self.source / "raw/dispersion_scan.npz", allow_pickle=False) as values:
+            offsets, means = values["offsets_v"], values["y_median"]
+        np.savez(run / "raw/dispersion_scan.npz", offsets_v=offsets, y_mean=means, k_z_hz_per_v=11703.6778)
+        expected = dispersion.fit_dispersion_curve(offsets, means, k_z_hz_per_v=11703.6778)
+        ctx = analysis.AnalysisWorkflow(run)
+        ctx.execute(["B01", "B05"])
+        saved = json.loads((run / "results/dispersion_source.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["source_statistic"], "mean")
+        self.assertEqual(saved["completion_evidence"], "recorded_steps_and_finite_curve")
+        self.assertEqual(saved["slope_v_per_hz"], expected["slope_v_per_hz"])
+        self.assertNotIn("completed_mask", saved)
+        with np.load(run / "results/dispersion_source.npz", allow_pickle=False) as fitted:
+            np.testing.assert_array_equal(fitted["popt"], expected["popt"])
+            np.testing.assert_array_equal(fitted["y_mean"], means)
+
+    def test_legacy_mean_needs_verified_identity_count_and_finite_complete_curve(self):
+        run = self.directory("legacy-reject")
+        voltage = np.linspace(-.2, .2, 41)
+        mean = _dispersive(voltage, .001, .025, .005, .001)
+        path = run / "raw/dispersion_scan.npz"
+        np.savez(path, offsets_v=voltage, y_mean=mean, k_z_hz_per_v=11703.6778)
+        baseline = dict(experiment_id="noise-spectrum-xy-known-noise", experiment_type="Noise_Spectrum_XY_Ctrl_Known_Noise",
+                        schema_version=1, dispersion=dict(steps=41))
+        for change in ({"schema_version": 2}, {"schema_version": 99}, {"experiment_id": "noise-spectrum-xy"},
+                       {"experiment_type": "Other"}, {"raw_format_version": 99}, {"dispersion": {}},
+                       {"dispersion": {"steps": 40}}, {"completion_status": "running"}):
+            with self.subTest(change=change), self.assertRaises((ValueError, KeyError)):
+                dispersion.resolve_dispersion(run, baseline | change)
+        for values in (mean[:-1], np.full(41, np.nan), np.ones(41)):
+            np.savez(path, offsets_v=voltage, y_mean=values, k_z_hz_per_v=11703.6778)
+            with self.subTest(values=values.size), self.assertRaises(ValueError):
+                dispersion.resolve_dispersion(run, baseline)
+        np.savez(path, schema_version=99, offsets_v=voltage, y_mean=mean, k_z_hz_per_v=11703.6778)
+        with self.assertRaises(ValueError):
+            dispersion.resolve_dispersion(run, baseline)
 
 
 if __name__ == "__main__":

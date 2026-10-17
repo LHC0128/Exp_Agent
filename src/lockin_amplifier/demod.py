@@ -143,7 +143,8 @@ def configure_demodulator(
 ) -> float:
     """批量配置解调器参数.
 
-    返回设置生效后的实际采样率（可能与请求值不同，设备仅支持离散速率）。
+    返回实际主机传输率（设备可能按硬件档位取整）。for_acquisition=True 时
+    config.rate 同时用于选择采集模块；Scope 保留原传输率，采样率由 Scope 独立设置。
 
     参数
     ----------
@@ -153,7 +154,7 @@ def configure_demodulator(
     返回
     -------
     float
-        实际采样率 (Sa/s)
+        实际主机传输率 (Sa/s)
     """
     base = instr.demod_path(config.demod_index)
     instr.osc_path(config.osc_select)
@@ -179,7 +180,8 @@ def configure_demodulator(
     # 先关闭传输再设置速率，避免启用旧高速流造成瞬时拥塞。
     try:
         instr.set_int(f"{base}/enable", 0)
-        instr.set_double(f"{base}/rate", config.rate)
+        if selected == "daq":
+            instr.set_double(f"{base}/rate", config.rate)
         instr.set_int(f"{base}/adcselect", sources[source])
         instr.set_int(f"{base}/oscselect", config.osc_select)
         instr.set_int(f"{base}/harmonic", config.harmonic)
@@ -197,7 +199,7 @@ def configure_demodulator(
             logger.exception("配置失败后的解调数据流恢复失败")
         raise
     logger.info(
-        "解调器 %d 已配置: rate=%.1f → %.1f Sa/s, input_ch=%d, osc=%d, "
+        "解调器 %d 已配置: 请求率=%.1f Sa/s, 主机传输率=%.1f Sa/s, input_ch=%d, osc=%d, "
         "harmonic=%d, tau=%.2e s, order=%d, phase=%.2f deg",
         config.demod_index, config.rate, actual_rate,
         config.input_channel, config.osc_select,

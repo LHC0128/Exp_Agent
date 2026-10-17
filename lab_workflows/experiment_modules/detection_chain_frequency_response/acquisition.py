@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 import numpy as np
@@ -22,12 +23,16 @@ from scipy import signal
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import (
+    DeferredAcquisitionWrites,
+    acquisition_window,
     create_run_directory,
     set_temperature_switch,
-    temperature_gated_acquire,
 )
 
-from .preparation import EXPERIMENT_TYPE, _RuntimeCancellation, wait
+from .preparation import EXPERIMENT_TYPE, wait
+from .run_format import EXPERIMENT_ID, RAW_FORMAT_VERSION
+
+logger = logging.getLogger(__name__)
 
 
 def configure_hf2(devices, params):
@@ -55,7 +60,7 @@ def configure_hf2(devices, params):
         ),
         for_acquisition=True,
     )
-    if actual_rate <= 0:
+    if not np.isfinite(actual_rate) or actual_rate <= 0:
         raise RuntimeError("HF2 返回无效采样率")
     configuration = {
         "demod_idx": params.hf2_demod_idx,
@@ -119,7 +124,8 @@ def acquire_scan(ctx):
     ctx.run_dir = directory.root
     ctx.run_directory = directory
     directory.update_config(
-        experiment_id="detection-chain-frequency-response",
+        experiment_id=EXPERIMENT_ID,
+        raw_format_version=RAW_FORMAT_VERSION,
         execution_mode="typed_workflow",
         started_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
         completion_status="running",
@@ -140,6 +146,14 @@ def acquire_scan(ctx):
     freqs = np.linspace(params.am_freq_start_hz, params.am_freq_stop_hz, params.am_freq_points)
     peaks, peak_freqs = np.full(freqs.size, np.nan), np.full(freqs.size, np.nan)
     started = time.monotonic()
+
+    def set_enabled(enabled):
+        set_temperature_switch(
+            temp_switch, enabled, channel=ctx.channels["temp_switch"],
+            settle_time=params.temp_switch_on_lag_s if enabled else 0.0,
+            cancellation=None,
+        )
+
     try:
         for index, freq in enumerate(freqs):
             check_cancelled()
@@ -157,34 +171,28 @@ def acquire_scan(ctx):
                 grid_rows=1, grid_mode=2, signal_paths=["sample.y"],
             )
 
-            def acquire_point():
-                return daq.acquire_data(
-                    hf2, config=config, demod_idx=params.hf2_demod_idx,
-                    actual_rate=actual_rate, cancellation_check=check_cancelled,
-                    requested_rate=params.hf2_daq_rate_sa_s,
-                    timeout=max(5.0, params.hf2_daq_duration_s + 3.0),
-                )
-
-            results = temperature_gated_acquire(
-                temp_switch=temp_switch, temp_channel=ctx.channels["temp_switch"],
-                off_settle_s=params.system_settle_s,
-                on_settle_s=params.temp_switch_on_lag_s,
-                acquire=acquire_point, check_cancelled=check_cancelled,
-                sleep=wait, set_temperature_switch=set_temperature_switch,
-                cancellation=_RuntimeCancellation(),
-            )
-            y = next((
-                np.asarray(item.values, dtype=float).reshape(-1)
-                for item in results
-                if str(item.signal_name).lower() == "y"
-                or str(item.signal_name).lower().endswith(".y")
-            ), None)
-            if y is None or y.size < 8:
-                raise RuntimeError(f"频率点 {index + 1} 未取得足够的 HF2 Y 数据")
-            np.save(directory.raw / f"waveform_{index:04d}.npy", y)
+            waveform_path = directory.raw / f"waveform_{index:04d}.npy"
+            with DeferredAcquisitionWrites() as pending:
+                with acquisition_window(set_enabled, wait, params.system_settle_s):
+                    results = daq.acquire_data(
+                        hf2, config=config, demod_idx=params.hf2_demod_idx,
+                        actual_rate=actual_rate, cancellation_check=check_cancelled,
+                        requested_rate=params.hf2_daq_rate_sa_s,
+                        timeout=max(5.0, params.hf2_daq_duration_s + 3.0),
+                    )
+                    y = next((
+                        np.asarray(item.values, dtype=float).reshape(-1)
+                        for item in results
+                        if str(item.signal_name).lower() == "y"
+                        or str(item.signal_name).lower().endswith(".y")
+                    ), None)
+                    if y is not None:
+                        pending.add(np.save, waveform_path, y)
+                    pending.add(save_acquisition_metadata, waveform_path, results)
+                    pending.add(directory.update_config, acquisition=acquisition_metadata(results))
+                    if y is None or y.size < 8:
+                        raise RuntimeError(f"频率点 {index + 1} 未取得足够的 HF2 Y 数据")
             actual_rate = result_rate(results, actual_rate)
-            save_acquisition_metadata(directory.raw / f"waveform_{index:04d}.npy", results)
-            directory.update_config(acquisition=acquisition_metadata(results))
             psd_freq, psd = signal.welch(
                 y, fs=actual_rate, nperseg=min(params.psd_nperseg, y.size),
                 scaling="density",
@@ -225,5 +233,8 @@ def acquire_scan(ctx):
         report_runtime_progress("complete", "采集完成", 100)
     except BaseException as exc:
         status = "cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else "failed"
-        directory.update_config(completion_status=status, failure_reason=str(exc))
+        try:
+            directory.update_config(completion_status=status, failure_reason=str(exc))
+        except BaseException:
+            logger.exception("保存采集失败状态时出错；保留原始采集错误")
         raise

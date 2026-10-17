@@ -8,7 +8,7 @@ from ...common import validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import (set_temperature_switch, calibrate_demod_phase, calibrate_direct_aw_phase,
     PhaseCalibrationConfig, DirectAWPhaseCalibrationConfig)
-from ._helpers import hf2_snapshot, validate_levels, wait, buffered_acquisition
+from ._helpers import hf2_snapshot, validate_levels, wait, buffered_acquisition, save_npz
 from .excitation import upload_xy, arm_z
 from .waveform import synthesize_xy, AW_AMPLITUDE_FLOOR_VPP
 from .phase_plot import plot_z_phase_scan
@@ -54,7 +54,7 @@ def calibrate_xy(ctx):
         "amplitude_floor_vpp": AW_AMPLITUDE_FLOOR_VPP,
     }
     directory.update_config(**state)
-    np.savez(directory.raw / "xy_aw_waveforms_initial.npz", **initial_waveforms)
+    save_npz(directory.raw / "xy_aw_waveforms_initial.npz", **initial_waveforms)
     state["data_files"].append("raw/xy_aw_waveforms_initial.npz")
     report_runtime_progress("phase", "XY DirectAW 校相", 10)
     prepared_waveforms = upload_xy(signals, channels, params, envelope, params.xy_ctrl_phase)
@@ -66,7 +66,7 @@ def calibrate_xy(ctx):
             nonlocal first_measurement
             waveforms = prepared_waveforms if first_measurement else upload_xy(signals, channels, params, envelope, phase)
             first_measurement = False
-            pending.add(np.savez, directory.raw / "xy_aw_waveforms.npz", **waveforms)
+            pending.add(save_npz, directory.raw / "xy_aw_waveforms.npz", **waveforms)
             if "raw/xy_aw_waveforms.npz" not in state["data_files"]:
                 state["data_files"].append("raw/xy_aw_waveforms.npz")
             wait(params.system_settle_s)
@@ -155,7 +155,7 @@ def calibrate_rf(ctx):
                 "z_rf_amplitude_vpp": params.z_rf_amplitude_init, "actual_rate_Sa_s": result_rate(results, scan_rate), "duration_s": params.scan_point_duration_s, "demod_idx": params.demod3_idx,
                 **acquisition_metadata(results), "time_s": results[0].time,
             }
-            pending.add(np.savez, directory.raw / "z_phase_scan.npz", **scan_arrays)
+            pending.add(save_npz, directory.raw / "z_phase_scan.npz", **scan_arrays)
             state["rf_phase_calibration"]["points_completed"] = index + 1
             if "raw/z_phase_scan.npz" not in state["data_files"]:
                 state["data_files"].append("raw/z_phase_scan.npz")
@@ -184,7 +184,7 @@ def calibrate_rf(ctx):
     })
     state["calibration"]["z_positive_field_phase_deg"] = z_positive_phase
     state["calibration"]["z_negative_field_phase_deg"] = (z_positive_phase + 180) % 360
-    np.savez(directory.raw / "z_phase_scan.npz", **{**scan_arrays, **fit_arrays, "selected_phase_deg": z_positive_phase})
+    save_npz(directory.raw / "z_phase_scan.npz", **{**scan_arrays, **fit_arrays, "selected_phase_deg": z_positive_phase})
     state["z_phase_scan_plot"] = "results/" + plot_z_phase_scan(directory.raw, directory.results, {"quadrature_fit": quadrature_fit.to_dict(), "selected_phase_deg": z_positive_phase})
     directory.update_config(**state)
     ctx.z_positive_phase = z_positive_phase

@@ -230,6 +230,10 @@ class ZAWWaveformScopeCheckParams(ExperimentParams):
         errors: list[str] = []
         if not self.run_tag.strip():
             errors.append("RUN_TAG 不能为空")
+        if self.run_tag in {".", ".."} or any(char in self.run_tag for char in '/\\:\x00'):
+            errors.append("RUN_TAG 必须是单个目录标签，不能包含路径分隔符")
+        if self.scope_measured_channel != 3 or self.scope_trigger_channel != 4:
+            errors.append("本实验接线固定为 CH3 测量和 CH4 触发")
         if self.scope_measured_channel == self.scope_trigger_channel:
             errors.append("SCOPE_MEASURED_CHANNEL 与 SCOPE_TRIGGER_CHANNEL 必须不同")
         if self.scope_scale_min_v_div > self.scope_scale_max_v_div:

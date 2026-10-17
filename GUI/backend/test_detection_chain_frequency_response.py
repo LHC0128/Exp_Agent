@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import numpy as np
 import yaml
 
 from lab_workflows.experiment_modules.detection_chain_frequency_response.definition import ADAPTER
@@ -138,8 +139,13 @@ class DetectionChainSessionAPITest(unittest.TestCase):
         (run / "raw").mkdir(parents=True)
         (run / "experiment_config.yaml").write_text(yaml.safe_dump(dict(
             experiment_id="detection-chain-frequency-response",
+            experiment_type="Detection_Chain_Frequency_Response",
             completion_status="completed",
             parameters=scan_params().to_external())), encoding="utf-8")
+        np.savez(run / "raw/frequency_response.npz",
+                 am_frequencies_hz=[85000.0, 90000.0, 95000.0],
+                 peak_amplitudes=[1e-6, np.nan, 1e-6],
+                 peak_frequencies_hz=[5000.0, np.nan, 5000.0], actual_rate=12000.0)
         state = self.client.get(f"{BASE}/runs/{run.name}/analysis").json()
         self.assertEqual(state["steps"]["B01"]["status"], "pending")
         self.assertEqual(state["options"], {})
@@ -152,7 +158,9 @@ class DetectionChainSessionAPITest(unittest.TestCase):
         response = self.client.post(f"{BASE}/runs/{run.name}/analysis",
             json={"revision": 0, "step_ids": ["B01"]})
         self.assertEqual(response.status_code, 200, response.text)
-        self.wait(lambda: self.manager.get(response.json()["id"]).status == "completed")
+        self.wait(lambda: self.manager.get(response.json()["id"]).status in ("completed", "cancelled", "failed"))
+        self.assertEqual(self.manager.get(response.json()["id"]).status, "completed",
+                         self.manager.get(response.json()["id"]).error)
         refreshed = self.client.get(f"{BASE}/runs/{run.name}/analysis").json()
         self.assertEqual(refreshed["steps"]["B01"]["status"], "completed")
         self.assertEqual(refreshed["summary"]["status"], "partial")
@@ -184,6 +192,14 @@ class DetectionChainSessionAPITest(unittest.TestCase):
             (run / "results/frequency_response.png").write_bytes(b"fake png")
             summary = client.get(f"{BASE}/runs/{run.name}/summary").json()
             self.assertEqual(set(summary["artifacts"]), {"frequency_response.png"})
+            self.assertEqual(client.get(summary["artifacts"]["frequency_response.png"]).content, b"fake png")
+            self.assertEqual(client.get(f"{BASE}/runs/invalid%3Arun/summary").status_code, 404)
+            foreign = run.with_name("0101_1201_other")
+            foreign.mkdir()
+            (foreign / "experiment_config.yaml").write_text(yaml.safe_dump(dict(
+                experiment_id="static-sensitivity", parameters={"RUN_TAG": "foreign"})), encoding="utf-8")
+            self.assertEqual(client.get(f"{BASE}/runs/{foreign.name}/summary").status_code, 404)
+            self.assertEqual(client.get(f"{BASE}/runs?limit=50&offset=0").json()["total"], 1)
             with patch.object(ADAPTER, "_execute", return_value=None) as execute:
                 response = client.post(f"/api/runs/{run.name}/analyze",
                     json={"experiment_id": "detection-chain-frequency-response"})
@@ -191,6 +207,86 @@ class DetectionChainSessionAPITest(unittest.TestCase):
                 self.wait(lambda: self.manager.get(response.json()["id"]).status == "completed")
                 execute.assert_called_once()
             self.assertEqual(client.get(f"{BASE}/runs/{run.name}/summary").json()["analysis_status"], "completed")
+
+    def test_parameter_revision_requires_explicit_rerun_and_new_directory(self):
+        session_id = self.create()
+        self.assertEqual(self.client.post(f"{BASE}/sessions", json={"parameters": {}}).status_code, 409)
+        response = self.client.post(f"{BASE}/sessions/{session_id}/steps", json={
+            "revision": 0, "step_ids": [f"A{i:02d}" for i in range(1, 8)]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.wait(lambda: self.service.get(session_id).get("pending_request") is None)
+        original = self.service.get(session_id)
+        base = self.root / "data/Detection_Chain_Frequency_Response"
+        original_config = (base / original["run_id"] / "experiment_config.yaml").read_bytes()
+        response = self.client.patch(f"{BASE}/sessions/{session_id}/parameters", json={
+            "revision": original["revision"], "parameters": {"HF2_OSC_FREQ_HZ": 90500.0, "RUN_TAG": "rerun"}})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.wait(lambda: self.service.get(session_id).get("pending_request") is None)
+        changed = self.service.get(session_id)
+        self.assertEqual(changed["run_id"], original["run_id"])
+        self.assertEqual((base / original["run_id"] / "experiment_config.yaml").read_bytes(), original_config)
+        self.assertEqual([changed["steps"][f"A{i:02d}"]["status"] for i in range(5, 8)], ["stale"] * 3)
+        self.assertEqual(changed["steps"]["A04"]["status"], "completed")
+        refused = self.client.post(f"{BASE}/sessions/{session_id}/steps", json={
+            "revision": changed["revision"], "step_ids": ["A07"]})
+        self.assertEqual(refused.status_code, 422)
+        response = self.client.post(f"{BASE}/sessions/{session_id}/steps", json={
+            "revision": changed["revision"], "step_ids": ["A05", "A06", "A07"]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.wait(lambda: self.service.get(session_id).get("pending_request") is None)
+        rerun = self.service.get(session_id)
+        self.assertNotEqual(rerun["run_id"], original["run_id"])
+        self.assertEqual((base / original["run_id"] / "experiment_config.yaml").read_bytes(), original_config)
+        config = yaml.safe_load((base / rerun["run_id"] / "experiment_config.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(config["parameters"]["HF2_OSC_FREQ_HZ"], 90500.0)
+
+    def test_eof_cancel_shutdown_hold_lock_until_real_child_safety_snapshot(self):
+        for mode in ("eof", "cancel", "shutdown"):
+            with self.subTest(mode=mode):
+                session_id = self.create()
+                response = self.client.post(f"{BASE}/sessions/{session_id}/steps", json={
+                    "revision": 0, "step_ids": [f"A{i:02d}" for i in range(1, 7)]})
+                self.assertEqual(response.status_code, 200, response.text)
+                self.wait(lambda: self.service.get(session_id).get("pending_request") is None)
+                released = []
+                original_release = self.manager._release_hardware
+
+                def release():
+                    state = self.service.get(session_id)
+                    released.append((self.manager.hardware_lock.locked(), state))
+                    original_release()
+
+                job_id = self.service.get(session_id)["job_id"]
+                with patch.object(self.manager, "_release_hardware", side_effect=release):
+                    if mode == "cancel":
+                        self.manager.cancel(job_id)
+                    elif mode == "shutdown":
+                        self.service.shutdown()
+                    else:
+                        self.service.close_communication()
+                    self.wait(lambda: bool(released) and self.manager.get(job_id).status in
+                              ("completed", "cancelled", "failed"))
+                self.assertEqual(len(released), 1)
+                held, snapshot = released[0]
+                self.assertTrue(held)
+                self.assertEqual(snapshot["steps"]["A08"]["status"], "completed")
+                self.assertTrue(snapshot["safety_shutdown"]["completed"])
+                self.assertEqual(snapshot["outputs"]["温控"], "ON")
+                self.assertEqual(snapshot["outputs"]["AOM 载波"], "OFF")
+                self.assertEqual(snapshot["outputs"]["AOM AM"], "OFF")
+                self.assertFalse(self.manager.hardware_lock.locked())
+
+    def test_finish_has_no_prerequisite_and_diagram_is_editable(self):
+        session_id = self.create()
+        response = self.client.post(f"{BASE}/sessions/{session_id}/finish", json={"revision": 0})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.wait(lambda: self.service.get(session_id)["status"] == "closed")
+        self.assertEqual(self.service.get(session_id)["steps"]["A08"]["status"], "completed")
+        # 测试工程只复制设备配置；原图下载明确使用真实本实验包文件。
+        with patch.object(self.service, "root", lambda: Path(__file__).resolve().parents[2]):
+            diagram = self.client.get(f"{BASE}/workflow/diagram")
+        self.assertEqual(diagram.status_code, 200, diagram.text)
+        self.assertEqual(diagram.json()["type"], "excalidraw")
 
 
 if __name__ == "__main__":

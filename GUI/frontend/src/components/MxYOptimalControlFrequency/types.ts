@@ -9,6 +9,7 @@ export type MxYOptimalControlFrequencyRunSummary = {
   comparison_enabled: boolean;
   parameters: Record<string, unknown>;
   calibration: Record<string, unknown>;
+  control_source?: Record<string, unknown>;
   optimal_response_metadata: Record<string, unknown>;
   constant_response_metadata: Record<string, unknown>;
   /** 后端填好的绝对 artifact URL，键为图片文件名。 */

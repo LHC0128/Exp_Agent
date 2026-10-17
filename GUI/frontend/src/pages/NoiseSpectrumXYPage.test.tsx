@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../api";
 import { ExperimentPage } from "./ExperimentPage";
+import fixture from "./noiseSpectrumXY.fixture.json";
 
 vi.mock("../api", () => ({ api: vi.fn() }));
 vi.mock("../components/JobActivity", () => ({ useJobActivity: () => ({ hardwareBusy: false }) }));
@@ -15,63 +16,19 @@ vi.mock("../components/JobView", () => ({
 
 const mockApi = vi.mocked(api);
 const BASE = "/api/experiments/noise-spectrum-xy";
-const fields = [
-  { name: "RUN_TAG", label: "运行标签", type: "string", default: "noise", group: "basic", unit: "" },
-  { name: "TARGET_NOISE_FREQ_POINTS", label: "目标频率扫描点数", type: "integer", default: 500, group: "basic", unit: "" },
-  { name: "HF2_DAQ_DURATION", label: "每点采集时长", type: "number", default: 1, group: "basic", unit: "s" },
-  { name: "ANALYSIS_BIN_WIDTH_HZ", label: "频率格间距", type: "number", default: 12, group: "basic", unit: "Hz" },
-  { name: "TEMP_SWITCH_ON_SETTLE_S", label: "恢复温控等待时间", type: "number", default: 2, group: "basic", unit: "s" },
-  { name: "FIXED_PARAMS.main_magnetic_field", label: "主磁场电流", type: "number", default: 1, group: "basic", unit: "mA" },
-  { name: "HF2_DAQ_RATE", label: "DAQ 采样率", type: "number", default: 100000, group: "advanced", unit: "Sa/s" },
-  { name: "ANALYSIS_FREQUENCY_MIN_HZ", label: "分析频带下限", type: "number", default: 5, group: "advanced", unit: "Hz" },
-  { name: "ANALYSIS_FREQUENCY_MAX_HZ", label: "分析频带上限", type: "number", default: 50000, group: "advanced", unit: "Hz" },
-  { name: "ANALYSIS_FIT_HALF_WIDTH_HZ", label: "峰定位半窗口", type: "number", default: 3000, group: "advanced", unit: "Hz" },
-];
+const fields = fixture.schema.fields;
+const acquisition = fixture.flow.acquisition;
+const analysisStages = fixture.flow.analysis;
+const parameterImpacts = fixture.flow.parameter_impacts;
 let summary: any;
 let activeSession: any;
 let extraRuns: any[];
 let parameterLayout: { basic: string[]; advanced: string[] };
 let defaults: Record<string, any>;
-const displayA: Record<string, string[]> = {
-  A04: ["FIXED_PARAMS.main_magnetic_field"], A08: ["TEMP_SWITCH_ON_SETTLE_S"], A10: ["TEMP_SWITCH_ON_SETTLE_S"],
-  A11: ["HF2_DAQ_DURATION", "ANALYSIS_BIN_WIDTH_HZ", "HF2_DAQ_RATE"],
-  A12: ["RUN_TAG", "TARGET_NOISE_FREQ_POINTS", "HF2_DAQ_DURATION", "TEMP_SWITCH_ON_SETTLE_S"],
-};
-const displayB: Record<string, string[]> = {
-  B02: ["ANALYSIS_BIN_WIDTH_HZ", "ANALYSIS_FREQUENCY_MIN_HZ", "ANALYSIS_FREQUENCY_MAX_HZ"],
-  B03: ["ANALYSIS_FREQUENCY_MIN_HZ", "ANALYSIS_FREQUENCY_MAX_HZ"],
-  B04: ["ANALYSIS_FREQUENCY_MIN_HZ", "ANALYSIS_FREQUENCY_MAX_HZ", "ANALYSIS_FIT_HALF_WIDTH_HZ"],
-  B05: ["ANALYSIS_FREQUENCY_MIN_HZ", "ANALYSIS_FREQUENCY_MAX_HZ", "ANALYSIS_FIT_HALF_WIDTH_HZ"],
-};
-const parameterImpacts = {
-  acquisition: {
-    RUN_TAG: ["A12", "A13"], TEMP_SWITCH_ON_SETTLE_S: ["A08", "A09", "A10", "A11", "A12", "A13"],
-    HF2_DAQ_DURATION: ["A11", "A12", "A13"], ANALYSIS_BIN_WIDTH_HZ: ["A11", "A12", "A13"],
-    TARGET_NOISE_FREQ_POINTS: ["A11", "A12", "A13"],
-    "FIXED_PARAMS.main_magnetic_field": ["A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13"],
-  } as Record<string, string[]>,
-  analysis: {
-    ANALYSIS_BIN_WIDTH_HZ: ["B02", "B03", "B04", "B05"], ANALYSIS_FREQUENCY_MIN_HZ: ["B02", "B03", "B04", "B05"],
-    ANALYSIS_FREQUENCY_MAX_HZ: ["B02", "B03", "B04", "B05"], ANALYSIS_FIT_HALF_WIDTH_HZ: ["B04", "B05"],
-  },
-};
-const acquisition = [
-  ["A01", "启动预检", "启动准备"], ["A02", "设备连接", "启动准备"],
-  ["A03", "参考时钟同步", "启动准备"], ["A04", "初始输出设置", "初始条件"],
-  ["A05", "温度稳定", "初始条件"], ["A06", "Pump 配置", "激励与触发"],
-  ["A07", "共用触发配置", "激励与触发"], ["A08", "Demod0 配置与校相", "相位校准"],
-  ["A09", "XY 正弦与 Burst 初始化", "相位校准"], ["A10", "XY 迭代校相", "相位校准"],
-  ["A11", "DAQ 准备", "扫描与结束"], ["A12", "扫描采集", "扫描与结束"],
-  ["A13", "解调器恢复", "扫描与结束"], ["A14", "安全收尾 / 结束会话", "扫描与结束"],
-].map(([id, title, group], index, stages) => ({ id, title, group,
-  dependencies: index && id !== "A14" ? [stages[index - 1][0]] : [], parameters: [], display_parameters: displayA[id] ?? [], artifacts: [] }));
-const analysisStages = ["加载配置与准备分析", "计算 Welch PSD", "移动脊线重标定", "全控制轴拟合与背景验收", "Mx 对照与分析汇总"]
-  .map((title, index) => ({ id: `B0${index + 1}`, title, group: title, dependencies: index ? [`B0${index}`] : [],
-    parameters: [], display_parameters: displayB[`B0${index + 1}`] ?? [], artifacts: [] }));
 const makeSession = () => ({ session_id: "session-test", job_id: "session-job", revision: 0,
-  status: "waiting", parameters: Object.fromEntries(fields.map((field) => [field.name, field.default])),
+  status: "waiting", parameters: { ...defaults },
   steps: Object.fromEntries(acquisition.map((stage) => [stage.id, { status: "pending", error: "" }])),
-  outputs: { X: "ON", Y: "ON", 温控: "ON", 共用触发: "ON" }, pending_request: null });
+  outputs: { X: "未知", Y: "未知", 温控: "未知", 共用触发: "未知" }, pending_request: null });
 
 const renderPage = () => render(
   <MemoryRouter initialEntries={["/experiments/noise-spectrum-xy"]}>
@@ -93,6 +50,12 @@ beforeEach(() => {
   parameterLayout = { basic: fields.filter((field) => field.group === "basic").map((field) => field.name),
     advanced: fields.filter((field) => field.group === "advanced").map((field) => field.name) };
   defaults = Object.fromEntries(fields.map((field) => [field.name, field.default]));
+  // 模拟用户已保存的分类和分析范围，不改真实 schema 夹具。
+  parameterLayout.advanced = parameterLayout.advanced.filter((name) => name !== "TEMP_SWITCH_ON_SETTLE_S");
+  parameterLayout.basic.push("TEMP_SWITCH_ON_SETTLE_S");
+  defaults.TEMP_SWITCH_ON_SETTLE_S = 2;
+  defaults.ANALYSIS_BIN_WIDTH_HZ = 12;
+  defaults.ANALYSIS_FREQUENCY_MIN_HZ = 5;
   summary = {
     run_id: "0716_1132_noise",
     timestamp: "0716_1132",
@@ -116,7 +79,7 @@ beforeEach(() => {
     if (url === `${BASE}/sessions/session-test/parameters`) {
       const parameters = JSON.parse(String(options?.body)).parameters;
       const impacted = new Set(Object.keys(parameters).filter((name) => parameters[name] !== activeSession.parameters[name])
-        .flatMap((name) => parameterImpacts.acquisition[name] ?? []));
+        .flatMap((name) => (parameterImpacts.acquisition as Record<string, string[]>)[name] ?? []));
       activeSession = { ...activeSession, revision: activeSession.revision + 1, parameters,
         steps: Object.fromEntries(Object.entries(activeSession.steps).map(([id, state]: [string, any]) => [id,
           impacted.has(id) && state.status !== "pending" ? { status: "stale", error: "" } : state])) };
@@ -124,9 +87,16 @@ beforeEach(() => {
     }
     if (url === `${BASE}/sessions/session-test/steps`) {
       const body = JSON.parse(String(options?.body));
-      if (body.step_ids.includes("A03") && !body.step_ids.includes("A02") && activeSession.steps.A02.status !== "completed") throw new Error("缺少前置：A02 设备连接");
+      const available = new Set(Object.keys(activeSession.steps).filter((id) => activeSession.steps[id].status === "completed"));
+      for (const stage of acquisition.filter((item) => body.step_ids.includes(item.id))) {
+        const missing = stage.dependencies.filter((id) => !available.has(id));
+        if (missing.length) throw new Error(`缺少前置：${missing.map((id) => `${id} ${acquisition.find((item) => item.id === id)!.title}`).join("、")}`);
+        available.add(stage.id);
+      }
       activeSession = { ...activeSession, revision: activeSession.revision + 1,
         steps: { ...activeSession.steps, ...Object.fromEntries(body.step_ids.map((id: string) => [id, { status: "completed", error: "" }])) } };
+      if (body.step_ids.includes("A13")) activeSession.steps.A11 = { status: "stale", error: "再次扫描需要 DAQ 准备" };
+      if (body.step_ids.includes("A14")) activeSession.status = "closed";
       return activeSession;
     }
     if (url === `${BASE}/sessions/session-test/finish`) return activeSession = { ...activeSession, status: "closed", revision: activeSession.revision + 1 };
@@ -163,6 +133,7 @@ it("两列流程来自后端定义，缺少前置时拒绝且不自动补齐选�
   await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   const nodes = screen.getByRole("region", { name: "交互实验流程图" });
+  expect(within(nodes).getByText(`质量门槛：${acquisition.find((stage) => stage.id === "A10")!.quality_gates[0]}`)).toBeVisible();
   await waitFor(() => expect(within(nodes).getByLabelText("A03 参考时钟同步")).toBeEnabled());
   fireEvent.click(within(nodes).getByLabelText("A03 参考时钟同步"));
   await waitFor(() => expect(within(nodes).getByRole("button", { name: "运行所选 / 重跑" })).toBeEnabled());
@@ -315,16 +286,20 @@ it("旧后端缺少节点展示或影响范围时提示重启，仍恢复存活�
 
 it("初始化条件仅在配置节点出现，基础名称常显而高级编辑默认折叠", async () => {
   renderPage();
-  await screen.findByText("参数：主磁场电流 · 高级 0 项");
+  await screen.findByText(/参数：Pump 光功率.*主磁场电流/);
   expect(screen.getAllByLabelText("主磁场电流 (mA)")).toHaveLength(1);
   expect(screen.getByLabelText("主磁场电流 (mA)")).not.toBeVisible();
   const initial = await openParameters("A04");
   expect(initial.getByLabelText("主磁场电流 (mA)")).toBeVisible();
   const daq = await openParameters("A11");
   expect(daq.getByLabelText("每点采集时长 (s)")).toBeVisible();
-  expect(daq.getByLabelText("DAQ 采样率 (Sa/s)")).not.toBeVisible();
-  fireEvent.click(daq.getByText("高级参数（1）"));
-  expect(daq.getByLabelText("DAQ 采样率 (Sa/s)")).toBeVisible();
+  expect(daq.getByLabelText("噪声采集请求率（DAQ/Scope） (Sa/s)")).not.toBeVisible();
+  fireEvent.click(daq.getByText(/^高级参数（/));
+  const captureRate = daq.getByLabelText("噪声采集请求率（DAQ/Scope） (Sa/s)");
+  expect(captureRate).toBeVisible();
+  expect(captureRate).toHaveValue(450000);
+  const demod = await openParameters("A08");
+  expect(demod.getByLabelText("锁相传输率（校相/读数） (Sa/s)")).toHaveValue(10000);
 });
 
 it("共享值与基础高级分类同步，保存后刷新恢复统一偏好", async () => {
@@ -334,10 +309,10 @@ it("共享值与基础高级分类同步，保存后刷新恢复统一偏好", a
   const scan = await openParameters("A12");
   fireEvent.change(phase.getByLabelText("恢复温控等待时间 (s)"), { target: { value: "3" } });
   for (const node of [demod, phase, scan]) expect(node.getByLabelText("恢复温控等待时间 (s)")).toHaveValue(3);
-  expect(phase.getByText(/共用步骤：A08.*A12/)).toBeVisible();
+  for (const note of phase.getAllByText(/共用步骤：A08.*A12/)) expect(note).toBeVisible();
   fireEvent.click(phase.getByRole("button", { name: "恢复温控等待时间 移至高级参数" }));
   for (const node of [demod, phase, scan]) expect(node.getByLabelText("恢复温控等待时间 (s)")).not.toBeVisible();
-  fireEvent.click(phase.getByText("高级参数（1）"));
+  fireEvent.click(phase.getByText(/^高级参数（/));
   expect(phase.getByLabelText("恢复温控等待时间 (s)")).toBeVisible();
   fireEvent.click(within(screen.getByRole("region", { name: "交互实验流程图" })).getByRole("button", { name: "保存参数与布局" }));
   await screen.findByText("参数与布局已保存");
@@ -347,7 +322,7 @@ it("共享值与基础高级分类同步，保存后刷新恢复统一偏好", a
   renderPage();
   const recovered = await openParameters("A08");
   expect(recovered.getByLabelText("恢复温控等待时间 (s)")).not.toBeVisible();
-  fireEvent.click(recovered.getByText("高级参数（1）"));
+  fireEvent.click(recovered.getByText(/^高级参数（/));
   expect(recovered.getByLabelText("恢复温控等待时间 (s)")).toHaveValue(3);
 });
 
@@ -447,4 +422,62 @@ it("采集执行中锁定采集与新实验参数，历史分析仍可独立编�
   const history = await openParameters("B02");
   expect(history.getByLabelText("频率格间距 (Hz)")).toBeEnabled();
   expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled();
+});
+
+it("实际 schema 的 46 个可见字段均可从真实节点编辑并还原", async () => {
+  renderPage();
+  await screen.findByRole("button", { name: "创建分步会话" });
+  expect(fields).toHaveLength(46);
+  for (const field of fields) {
+    const stage = [...acquisition, ...analysisStages].find((item) => item.display_parameters.includes(field.name));
+    expect(stage, field.name).toBeDefined();
+    const region = await openParameters(stage!.id);
+    const label = field.label + (field.unit ? ` (${field.unit})` : "");
+    const input = region.getByLabelText(label);
+    const advanced = input.closest("details");
+    if (advanced && !advanced.open) fireEvent.click(advanced.querySelector("summary")!);
+    expect(input).toBeVisible();
+    expect(input).toBeEnabled();
+    const value = defaults[field.name];
+    const edited = typeof value === "number" ? value + (field.type === "integer" ? 1 : .01) : `${value}-edited`;
+    fireEvent.change(input, { target: { value: String(edited) } });
+    expect(input).toHaveValue(edited);
+    fireEvent.change(input, { target: { value: String(value) } });
+    expect(input).toHaveValue(value);
+  }
+}, 15000);
+
+it("校相质量失败仍保留诊断，DAQ 后继不能被勾选请求绕过", async () => {
+  activeSession = makeSession();
+  for (const stage of acquisition.slice(0, 9)) activeSession.steps[stage.id].status = "completed";
+  activeSession.steps.A10 = { status: "quality_failed", error: "XY 校相未收敛，禁止扫描" };
+  renderPage();
+  expect(await screen.findByText("XY 校相未收敛，禁止扫描")).toBeVisible();
+  fireEvent.click(screen.getByLabelText("A11 DAQ 准备"));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  expect(await screen.findByText("Error: 缺少前置：A10 XY 迭代校相")).toBeVisible();
+  expect(activeSession.steps.A11.status).toBe("pending");
+  expect(activeSession.steps.A10.status).toBe("quality_failed");
+});
+
+it("多参数应用失败保留草稿和原完成状态", async () => {
+  activeSession = makeSession();
+  for (const stage of acquisition.slice(0, 13)) activeSession.steps[stage.id].status = "completed";
+  const normal = mockApi.getMockImplementation()!;
+  mockApi.mockImplementation(async (url, options) => {
+    if (url.endsWith("session-test/parameters")) throw new Error("参数保存失败");
+    return normal(url, options);
+  });
+  renderPage();
+  const scan = await openParameters("A12");
+  fireEvent.change(scan.getByLabelText("恢复温控等待时间 (s)"), { target: { value: "3" } });
+  fireEvent.change(scan.getByLabelText("每点采集时长 (s)"), { target: { value: "2" } });
+  expect(screen.getAllByText("应用草稿后预计需重跑；当前执行记录尚未改变。")).toHaveLength(6);
+  fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
+  expect(await screen.findByText("Error: 参数保存失败")).toBeVisible();
+  expect(scan.getByLabelText("恢复温控等待时间 (s)")).toHaveValue(3);
+  expect(scan.getByLabelText("每点采集时长 (s)")).toHaveValue(2);
+  expect(activeSession.steps.A12.status).toBe("completed");
+  expect(activeSession.parameters.TEMP_SWITCH_ON_SETTLE_S).toBe(2);
+  expect(screen.getAllByText("应用草稿后预计需重跑；当前执行记录尚未改变。")).toHaveLength(6);
 });

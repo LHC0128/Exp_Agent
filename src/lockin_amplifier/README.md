@@ -30,6 +30,8 @@ HF2 自动模式使用 DAQ；MFLI 按当次**请求**速率选择：≤70 kSa/s 
 Scope 选绝对距离最近的硬件档位，等距选高档，200 kSa/s 请求对应 234.375 kSa/s。
 
 `configure_demodulator(..., for_acquisition=True)` 在 Scope 准备阶段暂停主机解调流，保留内部滤波及信号链；
+Scope 请求率不会写入 `/demods/n/rate`，返回值仍是保留的主机传输率。DAQ 路径继续写入请求率并回读，
+因此 HF2 的 DAQ 采集率不受校相传输率限制。
 `daq.acquire_data(..., actual_rate=stream_rate, requested_rate=request_rate)` 返回原 `DAQResult` 格式。
 分析用 `result_rate(results)` 的最终速率和结果时间轴，不能用通信回读率替代。
 单解调器、无触发、单段定长采集支持 X/Y/R/相位；三个以上分量同步采 X/Y 后派生 R/相位。

@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api } from "../api";
 import { ExperimentPage } from "./ExperimentPage";
+import fixture from "./DetectionChainFrequencyResponsePage.fixture.json";
 
 vi.mock("../api", () => ({ api: vi.fn() }));
 vi.mock("../components/JobActivity", () => ({ useJobActivity: () => ({ hardwareBusy: false }) }));
@@ -10,39 +11,11 @@ vi.mock("../components/JobView", () => ({ JobView: () => null }));
 const mockApi = vi.mocked(api);
 const base = "/api/experiments/detection-chain-frequency-response";
 
-const fields = [
-  { name: "RUN_TAG", label: "运行标签", type: "string", default: "freq_resp", group: "basic", unit: "" },
-  { name: "AM_FREQ_START_HZ", label: "AM 调制起始频率", type: "number", default: 50000, group: "basic", unit: "Hz" },
-  { name: "HF2_OSC_FREQ_HZ", label: "解调参考频率", type: "number", default: 90000, group: "basic", unit: "Hz" },
-  { name: "FIXED_PARAMS.Pump_laser_power", label: "Pump 光功率", type: "number", default: 0, group: "basic", unit: "V" },
-  { name: "PROBE_AOM_CARRIER_FREQ_HZ", label: "载波频率", type: "number", default: 100000000, group: "advanced", unit: "Hz" },
-];
-const displayA: Record<string, string[]> = {
-  A04: ["FIXED_PARAMS.Pump_laser_power"],
-  A05: ["HF2_OSC_FREQ_HZ"],
-  A06: ["PROBE_AOM_CARRIER_FREQ_HZ"],
-  A07: ["RUN_TAG", "AM_FREQ_START_HZ"],
-};
-const acquisition = [
-  ["A01", "启动预检", "启动准备"], ["A02", "设备连接", "启动准备"], ["A03", "参考时钟同步", "启动准备"],
-  ["A04", "初始输出与温控", "初始条件"], ["A05", "HF2 解调配置", "激励与解调"],
-  ["A06", "AOM 载波与外部 AM", "激励与解调"], ["A07", "频率扫描采集", "扫描与结束"],
-  ["A08", "安全收尾 / 结束会话", "扫描与结束"],
-].map(([id, title, group], index, stages) => ({ id, title, group,
-  dependencies: index && id !== "A08" ? [stages[index - 1][0]] : [], parameters: [],
-  display_parameters: displayA[id] ?? [], artifacts: [] }));
-const analysisStages = ["加载配置与准备分析", "归一化响应与斜率对照", "响应曲线绘图与汇总"]
-  .map((title, index) => ({ id: `B0${index + 1}`, title, group: title, dependencies: index ? [`B0${index}`] : [],
-    parameters: [], display_parameters: [], artifacts: [] }));
-const parameterImpacts = {
-  acquisition: {
-    RUN_TAG: ["A07"], AM_FREQ_START_HZ: ["A07"], HF2_OSC_FREQ_HZ: ["A05", "A06", "A07"],
-    "FIXED_PARAMS.Pump_laser_power": ["A04", "A05", "A06", "A07"],
-  } as Record<string, string[]>,
-  analysis: {},
-};
-const flow = { acquisition, analysis: analysisStages, parameter_impacts: parameterImpacts,
-  diagram_url: `${base}/workflow/diagram` };
+const fields = fixture.schema.fields;
+const acquisition = fixture.flow.acquisition;
+const analysisStages = fixture.flow.analysis;
+const parameterImpacts = fixture.flow.parameter_impacts;
+const flow = fixture.flow;
 let activeSession: any;
 const makeSession = () => ({ session_id: "session-test", job_id: "session-job", revision: 0,
   status: "waiting", parameters: Object.fromEntries(fields.map((field) => [field.name, field.default])),
@@ -51,6 +24,9 @@ const makeSession = () => ({ session_id: "session-test", job_id: "session-job", 
   pending_request: null });
 let summary: any;
 let preflightFailure: boolean;
+let applyFailure: boolean;
+let savedLayout: { basic: string[]; advanced: string[] };
+let savedValues: Record<string, number | string>;
 
 const renderPage = () => render(
   <MemoryRouter initialEntries={["/experiments/detection-chain-frequency-response"]}>
@@ -69,6 +45,12 @@ const openParameters = async (id: string) => {
 beforeEach(() => {
   activeSession = null;
   preflightFailure = false;
+  applyFailure = false;
+  savedLayout = {
+    basic: fields.filter((field) => field.group === "basic").map((field) => field.name),
+    advanced: fields.filter((field) => field.group === "advanced").map((field) => field.name),
+  };
+  savedValues = Object.fromEntries(fields.map(field => [field.name, field.default]));
   summary = {
     run_id: "0924_1200_freq_resp", timestamp: "2026-09-24T12:00:00", run_tag: "saved-tag",
     completion_status: "completed", analysis_status: "completed", failure_reason: "", analysis_error: "",
@@ -78,25 +60,47 @@ beforeEach(() => {
   mockApi.mockReset();
   mockApi.mockImplementation(async (url: string, options?: RequestInit) => {
     if (url === base) return { title: "探测链路频率响应标定", description: "探测链路标定", wiring_notes: [] };
-    if (url === `${base}/schema`) return { fields, parameter_layout: {
-      basic: fields.filter((field) => field.group === "basic").map((field) => field.name),
-      advanced: fields.filter((field) => field.group === "advanced").map((field) => field.name) } };
+    if (url === `${base}/schema`) return { ...fixture.schema,
+      fields: fields.map(field => ({ ...field, default: savedValues[field.name] })), parameter_layout: savedLayout };
+    if (url === `${base}/defaults` && options?.method === "PUT") {
+      const body = JSON.parse(String(options.body));
+      savedLayout = body.parameter_layout;
+      savedValues = body.parameters;
+      return { schema: { ...fixture.schema, fields: fields.map(field => ({ ...field,
+        default: body.parameters[field.name] })), parameter_layout: savedLayout } };
+    }
     if (url === "/api/jobs") return [];
     if (url === `${base}/workflow`) return flow;
     if (url === `${base}/sessions/active`) return activeSession;
     if (url === "/api/jobs/session-job") return { id: "session-job", status: "running", events: [] };
     if (url === `${base}/sessions` && options?.method === "POST") return activeSession = makeSession();
+    if (url === `${base}/sessions/session-test/parameters`) {
+      if (applyFailure) throw new Error("验收应用失败");
+      const body = JSON.parse(String(options?.body));
+      const changes = Object.keys(body.parameters).filter(key => body.parameters[key] !== activeSession.parameters[key]);
+      const impacts = parameterImpacts.acquisition as Record<string, string[]>;
+      const stale = new Set(changes.flatMap(key => impacts[key] ?? []));
+      activeSession = { ...activeSession, revision: activeSession.revision + 1, parameters: body.parameters,
+        steps: Object.fromEntries(Object.entries(activeSession.steps).map(([id, state]) => [id,
+          stale.has(id) ? { status: "stale", error: "" } : state])) };
+      return activeSession;
+    }
     if (url === `${base}/sessions/session-test/steps`) {
       const body = JSON.parse(String(options?.body));
-      if (body.step_ids.includes("A03") && !body.step_ids.includes("A02")
-          && activeSession.steps.A02.status !== "completed") throw new Error("缺少前置：A02 设备连接");
+      for (const stage of acquisition.filter(stage => body.step_ids.includes(stage.id))) {
+        const missing = stage.dependencies.filter(id => !body.step_ids.includes(id)
+          && activeSession.steps[id].status !== "completed");
+        if (missing.length) throw new Error(`缺少前置：${missing.map(id =>
+          `${id} ${acquisition.find(item => item.id === id)?.title}`).join("、")}`);
+      }
       activeSession = { ...activeSession, revision: activeSession.revision + 1,
         steps: { ...activeSession.steps, ...Object.fromEntries(body.step_ids.map((id: string) =>
           [id, { status: "completed", error: "" }])) } };
       return activeSession;
     }
     if (url === `${base}/sessions/session-test/finish`)
-      return activeSession = { ...activeSession, status: "closed", revision: activeSession.revision + 1 };
+      return activeSession = { ...activeSession, status: "closed", revision: activeSession.revision + 1,
+        steps: { ...activeSession.steps, A08: { status: "completed", error: "" } } };
     if (url.endsWith("/analysis") && options?.method === "POST") return { id: "analysis", status: "running", events: [] };
     if (url.endsWith("/analysis")) return { run_id: decodeURIComponent(url.split("/").at(-2)!), revision: 0,
       steps: Object.fromEntries(analysisStages.map((stage) => [stage.id, { status: "pending", error: "" }])),
@@ -185,4 +189,146 @@ it("仅保留运行与历史，交互流程图保留且两个主 Tab 支持双�
     expect(runTab).toHaveFocus();
     expect(runTab).toHaveAttribute("aria-selected", "true");
   }
+});
+
+it("真实schema全部可见参数均可节点编辑，初始化参数只出现一次且高级默认折叠", async () => {
+  renderPage();
+  const visited = new Set<string>();
+  for (const stage of acquisition.filter(item => item.display_parameters.length)) {
+    const parameters = await openParameters(stage.id);
+    const region = screen.getByLabelText(`${stage.id} ${stage.title} 参数`);
+    const advanced = region.querySelector<HTMLDetailsElement>(".zaw-parameter-advanced");
+    if (advanced) {
+      expect(advanced.open).toBe(false);
+      fireEvent.click(advanced.querySelector("summary")!);
+    }
+    for (const name of stage.display_parameters) {
+      const field = fields.find(item => item.name === name)!;
+      const label = field.unit ? `${field.label} (${field.unit})` : field.label;
+      expect(parameters.getByLabelText(label)).toBeEnabled();
+      visited.add(name);
+    }
+  }
+  expect([...visited].sort()).toEqual(fields.map(field => field.name).sort());
+  expect(screen.getAllByLabelText("气室温度 (°C)")).toHaveLength(1);
+  expect(screen.queryByLabelText(/旧版解调时间常数/)).not.toBeInTheDocument();
+  expect(document.querySelectorAll(".xy-node-parameters[open]")).toHaveLength(4);
+});
+
+it("多参数草稿预览等于真实失效映射，还原清除预览，应用失败保留草稿并可重试", async () => {
+  activeSession = makeSession();
+  for (const stage of acquisition.filter(item => item.id !== "A08"))
+    activeSession.steps[stage.id] = { status: "completed", error: "" };
+  renderPage();
+  await waitFor(() => expect(screen.getByText(/等待下一步/)).toBeVisible());
+  const a07 = await openParameters("A07");
+  const a05 = await openParameters("A05");
+  const reference = "锁相放大器 解调参考频率 (Hz)";
+  fireEvent.change(a07.getByLabelText("运行标签"), { target: { value: "draft" } });
+  fireEvent.change(a05.getByLabelText(reference), { target: { value: "91000" } });
+  expect(await screen.findByText(/参数草稿尚未应用/)).toBeVisible();
+  expect(document.querySelectorAll(".xy-flow-node.draft-affected")).toHaveLength(3);
+  expect(activeSession.steps.A05.status).toBe("completed");
+  fireEvent.change(a07.getByLabelText("运行标签"), { target: { value: fields.find(item => item.name === "RUN_TAG")!.default } });
+  fireEvent.change(a05.getByLabelText(reference), { target: { value: "90000" } });
+  await waitFor(() => expect(screen.queryByText(/参数草稿尚未应用/)).not.toBeInTheDocument());
+  expect(document.querySelectorAll(".xy-flow-node.draft-affected")).toHaveLength(0);
+  fireEvent.change(a07.getByLabelText("运行标签"), { target: { value: "retry" } });
+  applyFailure = true;
+  fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
+  expect(await screen.findByText("Error: 验收应用失败")).toBeVisible();
+  expect(a07.getByLabelText("运行标签")).toHaveValue("retry");
+  expect(activeSession.steps.A07.status).toBe("completed");
+  applyFailure = false;
+  fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
+  await waitFor(() => expect(screen.queryByText(/参数草稿尚未应用/)).not.toBeInTheDocument());
+  expect(activeSession.steps.A07.status).toBe("stale");
+  expect(activeSession.steps.A05.status).toBe("completed");
+  expect(mockApi.mock.calls.filter(([url]) => url.endsWith("session-test/steps"))).toHaveLength(0);
+});
+
+it("分类保存回读保留值，历史分析无覆盖参数且不会污染下一次默认值", async () => {
+  renderPage();
+  const parameters = await openParameters("A07");
+  fireEvent.change(parameters.getByLabelText("运行标签"), { target: { value: "next-default" } });
+  fireEvent.click(parameters.getByRole("button", { name: "运行标签 移至高级参数" }));
+  fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: summary.run_id } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
+  for (const stage of analysisStages) expect(screen.queryByLabelText(`${stage.id} ${stage.title} 参数`)).not.toBeInTheDocument();
+  const flowRegion = screen.getByRole("region", { name: "交互实验流程图" });
+  fireEvent.click(within(flowRegion).getByRole("button", { name: "保存参数与布局" }));
+  expect(await screen.findByText("参数与布局已保存")).toBeVisible();
+  expect(savedValues.RUN_TAG).toBe("next-default");
+  expect(summary.parameters.RUN_TAG).toBe("saved-tag");
+  expect(savedLayout.advanced).toContain("RUN_TAG");
+  expect(savedLayout.basic).not.toContain("RUN_TAG");
+  cleanup();
+  renderPage();
+  const loaded = await openParameters("A07");
+  const region = screen.getByLabelText("A07 频率扫描采集 参数");
+  fireEvent.click(region.querySelector(".zaw-parameter-advanced summary")!);
+  expect(loaded.getByLabelText("运行标签")).toHaveValue("next-default");
+  expect(loaded.getByRole("button", { name: "运行标签 移至基础参数" })).toBeVisible();
+});
+
+it("刷新恢复真实会话，结束后保留完成记录，新草稿不会污染旧执行状态", async () => {
+  activeSession = makeSession();
+  activeSession.parameters.RUN_TAG = "recovered";
+  activeSession.steps.A07 = { status: "completed", error: "" };
+  renderPage();
+  await waitFor(() => expect(screen.getByText(/会话 session-/)).toBeVisible());
+  expect((await openParameters("A07")).getByLabelText("运行标签")).toHaveValue("recovered");
+  fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
+  expect(await screen.findByText(/下方状态为已结束会话的执行记录/)).toBeVisible();
+  expect(screen.queryByText(/等待下一步/)).not.toBeInTheDocument();
+  expect(activeSession.steps.A08.status).toBe("completed");
+  fireEvent.change((await openParameters("A07")).getByLabelText("运行标签"), { target: { value: "next-run" } });
+  expect(screen.queryByText(/参数草稿尚未应用/)).not.toBeInTheDocument();
+  expect(document.querySelectorAll(".xy-flow-node.draft-affected")).toHaveLength(0);
+  expect(activeSession.parameters.RUN_TAG).toBe("recovered");
+});
+
+it("历史旧等待键填回由模型元数据归一，只影响下一次表单且不保存或启动", async () => {
+  summary.parameters = { RUN_TAG: "legacy", AM_SETTLE_TIME_S: 0.2, TEMP_SWITCH_OFF_LEAD_S: 2.5 };
+  renderPage();
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(await screen.findByRole("button", { name: "填回参数" }));
+  const parameters = await openParameters("A07");
+  expect(parameters.getByLabelText("运行标签")).toHaveValue("legacy");
+  expect(parameters.getByLabelText("系统稳定时间 (s)")).toHaveValue(2.5);
+  expect(mockApi.mock.calls.filter(([, init]) => init?.method)).toHaveLength(0);
+});
+
+it("真实执行中的会话禁用节点参数、保存和结束操作", async () => {
+  activeSession = { ...makeSession(), status: "running", current_step: "A07", pending_request: "request" };
+  activeSession.steps.A07 = { status: "running", error: "" };
+  renderPage();
+  const parameters = await openParameters("A07");
+  await waitFor(() => expect(parameters.getByLabelText("运行标签")).toBeDisabled());
+  expect(screen.getByRole("button", { name: "保存参数与布局" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "结束会话" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "应用参数到会话" })).toBeDisabled();
+});
+
+it("分析质量失败显示真实诊断，并拒绝单独执行缺少有效前置的绘图", async () => {
+  const original = mockApi.getMockImplementation()!;
+  mockApi.mockImplementation(async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/analysis")) {
+      if (options?.method === "POST") throw new Error("缺少前置：B02 归一化响应与斜率对照");
+      return { run_id: summary.run_id, revision: 2, options: {}, fingerprint: {},
+        summary: { status: "quality_failed", error: "无有效谱峰点，无法归一化" },
+        steps: { B01: { status: "completed", error: "" },
+          B02: { status: "quality_failed", error: "无有效谱峰点，无法归一化" },
+          B03: { status: "pending", error: "" } } };
+    }
+    return original(url, options);
+  });
+  renderPage();
+  fireEvent.change(await screen.findByLabelText("分析操作对象"), { target: { value: summary.run_id } });
+  expect(await screen.findByText("无有效谱峰点，无法归一化")).toBeVisible();
+  expect(screen.getByText("质量未通过")).toBeVisible();
+  fireEvent.click(screen.getByLabelText("B03 响应曲线绘图与汇总"));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  expect(await screen.findByText("Error: 缺少前置：B02 归一化响应与斜率对照")).toBeVisible();
+  expect(mockApi.mock.calls.filter(([url]) => url.endsWith("session-test/steps"))).toHaveLength(0);
 });

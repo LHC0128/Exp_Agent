@@ -1,157 +1,233 @@
-"""完整时域记录的离线校验、Welch PSD 和显示数据。"""
+"""完整时域记录的离线校验、Welch PSD 和显示数据；阶段化与分析入口共用职责函数。"""
 
+from __future__ import annotations
+
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
+import hashlib
 import json
+import os
+import shutil
 
 import numpy as np
-from scipy.signal import welch
 
 from ...common import WorkflowCancelled
-from ...experiment_runtime import check_cancelled, runtime_run_dir
-from ...plotting import format_axis, new_figure, save_figure, set_plot_style
+from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
+from ..noise_spectrum_xy.state_io import read_state, write_state
+from .run_format import EXPERIMENT_ID, analysis_block_reason
+from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
+
+from .analysis_steps import (validate_waveform, calculate_psd, envelope_indices, vertical_metadata,
+                             load_inputs, export_display, _json)
+
+ANALYSIS_VERSION = "scope-capture-psd-display-v1"
 
 
-def validate_waveform(time_s, voltage_v) -> tuple[np.ndarray, np.ndarray, float]:
-    t = np.asarray(time_s, dtype=float)
-    v = np.asarray(voltage_v, dtype=float)
-    if t.ndim != 1 or v.ndim != 1 or t.size != v.size or t.size < 2:
-        raise ValueError("时间轴与电压必须是一维、等长且至少两个点")
-    if not np.all(np.isfinite(t)) or not np.all(np.isfinite(v)):
-        raise ValueError("波形含非有限值")
-    steps = np.diff(t)
-    dt = float(np.median(steps))
-    if dt <= 0 or not np.allclose(steps, dt, rtol=1e-5, atol=abs(dt) * 1e-7):
-        raise ValueError("时间轴必须严格递增且等间隔，不能计算 PSD")
-    return t, v, 1.0 / dt
+class AnalysisWorkflow:
+    """每次分析绑定具体运行目录；不读取当前默认值或连接仪器。"""
 
+    stages = ANALYSIS
+    identity = analysis_block_reason
+    analysis_version = ANALYSIS_VERSION
 
-def calculate_psd(voltage_v: np.ndarray, sample_rate: float):
-    """单边功率谱密度；逐段去均值，固定周期 Hann 窗与半段重叠。"""
-    v = np.asarray(voltage_v, dtype=float)
-    if v.ndim != 1 or v.size < 2 or not np.all(np.isfinite(v)):
-        raise ValueError("PSD 输入须为至少两个有限电压样本")
-    if not np.isfinite(sample_rate) or sample_rate <= 0:
-        raise ValueError("PSD 实际采样率必须为正有限数")
-    nperseg = min(10000, v.size)
-    frequency, density = welch(
-        v, fs=sample_rate, window="hann", nperseg=nperseg,
-        noverlap=nperseg // 2, detrend="constant", scaling="density",
-        return_onesided=True,
-    )
-    return frequency, density, {
-        "method": "welch", "window": "hann", "detrend": "constant",
-        "nperseg": nperseg, "noverlap": nperseg // 2, "unit": "V²/Hz",
-        "sample_rate_sa_s": sample_rate, "frequency_resolution_hz": sample_rate / nperseg,
-    }
-
-
-def envelope_indices(values: np.ndarray, maximum: int = 6000) -> np.ndarray:
-    """每桶保留极小、极大值及两端，避免稀疏抽点漏掉窄脉冲。"""
-    if values.size <= maximum:
-        return np.arange(values.size)
-    indices = [0, values.size - 1]
-    edges = np.linspace(0, values.size, (maximum - 2) // 2 + 1, dtype=int)
-    for start, stop in zip(edges[:-1], edges[1:]):
-        bucket = values[start:stop]
-        indices.extend((int(start + np.argmin(bucket)), int(start + np.argmax(bucket))))
-    return np.unique(indices)
-
-
-def _json(path: Path, value) -> None:
-    temporary = path.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, allow_nan=False), encoding="utf-8")
-    temporary.replace(path)
-
-
-def vertical_metadata(snapshots: list[dict], voltage: np.ndarray) -> dict:
-    """优先使用实际读回，旧记录没有量程时保留未知状态。"""
-    for snapshot in snapshots:
-        inputs = snapshot.get("input_settings", {})
-        scale = snapshot.get("actual_vertical_scale_v_div", inputs.get("scale"))
-        offset = snapshot.get("actual_vertical_offset_v", inputs.get("offset"))
-        try:
-            scale, offset = float(scale), float(offset)
-            divisions = float(snapshot.get("vertical_divisions", 8))
-        except (TypeError, ValueError):
-            continue
-        if not all(np.isfinite(n) for n in (scale, offset, divisions)) or scale <= 0 or divisions <= 0:
-            continue
-        low, high = offset - scale * divisions / 2, offset + scale * divisions / 2
-        over = (voltage < low) | (voltage > high)
-        return {"vertical_scale_v_div": scale, "vertical_offset_v": offset,
-                "vertical_range_min_v": low, "vertical_range_max_v": high,
-                "overrange": bool(np.any(over)), "overrange_fraction": float(np.mean(over))}
-    return dict.fromkeys(("vertical_scale_v_div", "vertical_offset_v", "vertical_range_min_v",
-                          "vertical_range_max_v", "overrange", "overrange_fraction"))
-
-
-def analyze(run_dir: Path) -> dict:
-    check_cancelled()
-    run_dir = Path(run_dir).resolve()
-    with np.load(run_dir / "raw" / "waveform.npz", allow_pickle=False) as data:
-        t, v, rate = validate_waveform(data["time_s"], data["voltage_v"])
-        channel = int(data["channel"])
-        requested_rate = float(data["requested_rate_sa_s"])
-        requested_duration = float(data["requested_duration_s"])
-        raw_snapshot = {}
-        if "configuration_json" in data:
-            try:
-                raw_snapshot = json.loads(str(data["configuration_json"].item()))
-            except (ValueError, TypeError, json.JSONDecodeError):
-                raw_snapshot = {}
-    config_path = run_dir / "experiment_config.yaml"
-    config_data = {}
-    if config_path.exists():
+    def __init__(self, run_dir, analysis_parameters=None):
+        self.run_dir = Path(run_dir).resolve()
+        self.results = self.run_dir / "results"
+        self.state_path = self.run_dir / "analysis_state.json"
         import yaml
-        config_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    snapshots = [config_data.get("scope_configuration", {}), raw_snapshot]
-    vertical = vertical_metadata([s for s in snapshots if isinstance(s, dict)], v)
-    check_cancelled()
-    frequency, density, metadata = calculate_psd(v, rate)
-    check_cancelled()
-    results = run_dir / "results"
-    results.mkdir(exist_ok=True)
-    np.savez(results / "psd.npz", frequency_hz=frequency, psd_v2_hz=density)
-    _json(results / "psd.json", {**metadata, "frequency_hz": frequency.tolist(), "psd_v2_hz": density.tolist()})
-    indices = envelope_indices(v)
-    display = {
-        "schema_version": 2, "run_id": run_dir.name, "channel": channel,
-        "sample_count": int(v.size), "actual_rate_sa_s": rate,
-        "actual_duration_s": float(t[-1] - t[0]), "requested_rate_sa_s": requested_rate,
-        "requested_duration_s": requested_duration, "time_s": t[indices].tolist(),
-        "voltage_v": v[indices].tolist(), "display_decimated": indices.size < v.size,
-        **vertical,
-        "psd": metadata,
-    }
-    set_plot_style("paper")
-    check_cancelled()
-    fig, axes = new_figure(nrows=2, ncols=1, kind="wide", constrained_layout=True)
-    axes[0].plot(t[indices], v[indices], lw=0.8)
-    range_min, range_max = vertical["vertical_range_min_v"], vertical["vertical_range_max_v"]
-    if range_min is not None and range_max is not None:
-        axes[0].axhline(range_min, color="0.45", ls="--", lw=0.8)
-        axes[0].axhline(range_max, color="0.45", ls="--", lw=0.8)
-        shown_t, shown_v = t[indices], v[indices]
-        axes[0].fill_between(shown_t, range_max, np.maximum(shown_v, range_max), where=shown_v > range_max, interpolate=True, color="r", alpha=0.18)
-        axes[0].fill_between(shown_t, range_min, np.minimum(shown_v, range_min), where=shown_v < range_min, interpolate=True, color="r", alpha=0.18)
-        note = (f"{vertical['vertical_scale_v_div']:.4g} V/div | Offset: {vertical['vertical_offset_v']:.4g} V\n"
-                f"Range: {range_min:.4g} to {range_max:.4g} V" + (" | OVERRANGE" if vertical["overrange"] else ""))
-        axes[0].text(0.99, 0.98, note, transform=axes[0].transAxes, ha="right", va="top",
-                     fontsize=8, color="red" if vertical["overrange"] else "0.35")
-    format_axis(axes[0], xlabel="Time (s)", ylabel="Voltage (V)")
-    axes[1].plot(frequency, density, lw=0.8)
-    format_axis(axes[1], xlabel="Frequency (Hz)", ylabel="PSD (V²/Hz)")
-    save_figure(fig, results / "waveform_psd.png")
-    check_cancelled()
-    # 最后发布显示文件；历史列表只把完整分析视为可绘制。
-    _json(results / "display.json", display)
-    return {"run_dir": str(run_dir), "sample_count": int(v.size)}
+        config_path = self.run_dir / "experiment_config.yaml"
+        self.config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+        if reason := analysis_block_reason(self.config):
+            raise ValueError(reason)
+        if analysis_parameters:
+            raise ValueError("本实验没有分析覆盖参数：" + "、".join(sorted(analysis_parameters)))
+        self.options = {}
+        previous = read_state(self.state_path) or {}
+        self.states = initial_states(ANALYSIS) | deepcopy(previous.get("steps", {}))
+        self.revision = previous.get("revision", 0)
+        self.summary = deepcopy(previous.get("summary", {}))
+        self.fingerprint = self.input_fingerprint()
+        if previous and previous.get("fingerprint") != self.fingerprint:
+            invalidate(ANALYSIS, self.states, "B01")
+            self.revision += 1
+        for stage in ANALYSIS:
+            record = self.states[stage.id]
+            if record["status"] == "running" or (record["status"] == "completed" and any(
+                    self._file_signature(self.results / name) != record.get("files", {}).get(name)
+                    for name in stage.artifacts)):
+                invalidate(ANALYSIS, self.states, stage.id)
+                self.revision += 1
+                break
+        if self.states["B03"]["status"] != "completed":
+            self.summary["status"] = "stale" if previous else "not_started"
+
+    def input_fingerprint(self):
+        import yaml
+        config_path = self.run_dir / "experiment_config.yaml"
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+        if reason := analysis_block_reason(config):
+            raise ValueError(reason)
+        clean = {key: value for key, value in config.items()
+                 if key not in ("analysis_status", "analysis_error")}
+        return dict(analysis_version=ANALYSIS_VERSION,
+            config_sha256=hashlib.sha256(json.dumps(clean, sort_keys=True,
+                ensure_ascii=False, default=str).encode("utf-8")).hexdigest(),
+            raw_files={path.name: self._file_signature(path)
+                for path in sorted((self.run_dir / "raw").glob("*")) if path.is_file()})
+
+    @staticmethod
+    def _file_signature(path):
+        if not path.is_file():
+            return None
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        stat = path.stat()
+        return [stat.st_size, stat.st_mtime_ns, *digest.digest()]
+
+    def snapshot(self):
+        return dict(run_id=self.run_dir.name, revision=self.revision, options=self.options,
+                    steps=self.states, fingerprint=self.fingerprint, summary=self.summary)
+
+    def persist(self):
+        write_state(self.state_path, self.snapshot())
+        import yaml
+        config_path = self.run_dir / "experiment_config.yaml"
+        if config_path.exists():
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            config.update(analysis_status=self.summary.get("status", "not_started"),
+                          analysis_error=self.summary.get("error"))
+            config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        report_runtime_progress("analysis", f"示波器分析：{self.summary.get('status', 'not_started')}",
+                                data={"analysis_workflow": self.snapshot()})
+
+    def _archive_from(self, item):
+        names = {name for stage in invalidated_stages(ANALYSIS, item) for name in stage.artifacts}
+        paths = [self.results / name for name in names if (self.results / name).is_file()]
+        if not paths:
+            return
+        backup = self.results / ("before_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+        backup.mkdir()
+        for path in paths:
+            shutil.move(str(path), str(backup / path.name))
+        self.summary["backup_directory"] = backup.name
+
+    def execute(self, selected, expected_revision=None):
+        fingerprint = self.input_fingerprint()
+        if fingerprint != self.fingerprint:
+            self.fingerprint = fingerprint
+            invalidate(ANALYSIS, self.states, "B01")
+            self.revision += 1
+        for stage in ANALYSIS:
+            record = self.states[stage.id]
+            if record["status"] == "completed" and any(self._file_signature(self.results / name) !=
+                    record.get("files", {}).get(name) for name in stage.artifacts):
+                invalidate(ANALYSIS, self.states, stage.id)
+                self.revision += 1
+                break
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("分析修订已改变，请刷新后重试")
+        selected = validate_selection(ANALYSIS, self.states, selected)
+        # 归档旧结果之前校验当前 raw；损坏输入不能先移走仍可查看的科学结果。
+        try:
+            inputs = load_inputs(self.run_dir)
+        except BaseException as exc:
+            status = "cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else "quality_failed"
+            self.states["B01"] = {"status": status, "error": str(exc)}
+            self.summary.update(status=status, error=str(exc))
+            self.revision += 1
+            self.persist()
+            raise
+        self.results.mkdir(exist_ok=True)
+        self.revision += 1
+        psd = None
+        for item in selected:
+            check_cancelled()
+            self._archive_from(item)
+            invalidate(ANALYSIS, self.states, item)
+            self.states[item] = {"status": "running", "error": ""}
+            self.summary.update(status="running")
+            self.summary.pop("error", None)
+            self.persist()
+            try:
+                if item == "B01":
+                    inputs = load_inputs(self.run_dir)
+                    manifest = dict(run_id=self.run_dir.name, waveform="raw/waveform.npz",
+                        sample_count=int(inputs["voltage_v"].size),
+                        actual_rate_sa_s=inputs["actual_rate_sa_s"],
+                        requested_rate_sa_s=inputs["requested_rate_sa_s"],
+                        actual_duration_s=inputs["actual_duration_s"],
+                        vertical=inputs["vertical"], fingerprint=self.fingerprint)
+                    _json(self.results / "analysis_inputs.json", manifest)
+                    self.summary = dict(experiment_id=EXPERIMENT_ID, run_dir=str(self.run_dir),
+                        sample_count=manifest["sample_count"], status="partial")
+                elif item == "B02":
+                    if inputs is None:
+                        inputs = load_inputs(self.run_dir)
+                    frequency, density, metadata = calculate_psd(
+                        inputs["voltage_v"], inputs["actual_rate_sa_s"])
+                    np.savez(self.results / "psd.npz", frequency_hz=frequency, psd_v2_hz=density)
+                    _json(self.results / "psd.json", {**metadata, "frequency_hz": frequency.tolist(),
+                                                      "psd_v2_hz": density.tolist()})
+                    psd = (frequency, density, metadata)
+                    self.summary.update(status="partial", frequency_resolution_hz=metadata["frequency_resolution_hz"])
+                elif item == "B03":
+                    if inputs is None:
+                        inputs = load_inputs(self.run_dir)
+                    if psd is None:
+                        psd_path = self.results / "psd.npz"
+                        psd_json = json.loads((self.results / "psd.json").read_text(encoding="utf-8"))
+                        with np.load(psd_path, allow_pickle=False) as data:
+                            psd = (data["frequency_hz"], data["psd_v2_hz"],
+                                   {key: value for key, value in psd_json.items()
+                                    if key not in ("frequency_hz", "psd_v2_hz")})
+                    display = export_display(self.run_dir, inputs, *psd)
+                    self.summary.update(status="completed", sample_count=display["sample_count"],
+                                        overrange=display["overrange"])
+                    self.summary.pop("error", None)
+                stage = next(stage for stage in ANALYSIS if stage.id == item)
+                signatures = {name: self._file_signature(self.results / name) for name in stage.artifacts}
+                if any(value is None for value in signatures.values()):
+                    raise RuntimeError(f"{item} 缺少应当输出的分析产物")
+                self.states[item] = {"status": "completed", "error": "", "files": signatures}
+            except BaseException as exc:
+                status = ("cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else
+                          "quality_failed" if isinstance(exc, ValueError) else "failed")
+                self.states[item] = {"status": status, "error": str(exc)}
+                self.summary.update(status=status, error=str(exc))
+                raise
+            finally:
+                try:
+                    self.persist()
+                except Exception:
+                    if self.states[item]["status"] == "completed":
+                        raise
+        return self.summary
+
+
+def analyze(run_dir: Path, *, step_ids=None, analysis_parameters=None, expected_revision=None) -> dict:
+    """完整分析执行全部阶段；与分步模式共用同一实现。"""
+    ctx = AnalysisWorkflow(run_dir, analysis_parameters)
+    summary = ctx.execute(step_ids or [stage.id for stage in ANALYSIS], expected_revision)
+    return {"run_dir": str(Path(run_dir).resolve()), "sample_count": summary.get("sample_count", 0)}
+
+
+def main() -> int:
+    command = json.loads(os.environ.get("LAB_TYPED_PARAMETERS", "{}"))
+    if command.get("step_ids"):
+        AnalysisWorkflow(runtime_run_dir(), command.get("analysis_parameters")).execute(
+            command["step_ids"], command.get("revision"))
+    else:
+        result = analyze(runtime_run_dir())
+        print(f"分析完成：{result['sample_count']} 点，结果位于 {result['run_dir']}")
+    return 0
 
 
 if __name__ == "__main__":
     try:
-        result = analyze(runtime_run_dir())
-        print(f"分析完成：{result['sample_count']} 点，结果位于 {result['run_dir']}")
+        raise SystemExit(main())
     except WorkflowCancelled as exc:
         print(str(exc))
         raise SystemExit(130)

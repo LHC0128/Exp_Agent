@@ -16,15 +16,33 @@ from ...plotting import set_plot_style
 from ..noise_spectrum_xy.state_io import read_state, write_state
 from ..noise_spectrum_xy.acquisition import save_config
 from .models import NoiseSpectrumXYKnownNoiseParams
-from .analysis_core import ANALYSIS_VERSION, write_json, _json_safe
+from .analysis_core import ANALYSIS_VERSION, write_json, _json_safe, psd_input_config
 from . import stages, analysis_steps
-from .calibration_source import source_fingerprint
+from .calibration_source import source_fingerprint, file_fingerprint
 
 OPTION_KEYS = {"bin_width_hz": "ANALYSIS_BIN_WIDTH_HZ", "frequency_min_hz": "ANALYSIS_FREQUENCY_MIN_HZ",
     "frequency_max_hz": "ANALYSIS_FREQUENCY_MAX_HZ", "fit_half_width_hz": "ANALYSIS_FIT_HALF_WIDTH_HZ",
     "dispersion_source_run": "ANALYSIS_DISPERSION_SOURCE_RUN", "ratio_pass_low": "RATIO_PASS_LOW", "ratio_pass_high": "RATIO_PASS_HIGH"}
 SUMMARY_KEYS = {"B02": ("psd",), "B03": ("calibration",), "B04": ("fit_quality",),
                 "B05": ("dispersion",), "B06": ("comparison", "truth_chain")}
+
+
+def require_analysis_identity(config):
+    """完整和分步分析共用实验身份与运行中保护。"""
+    if not isinstance(config, dict) or config.get("experiment_id") != stages.EXPERIMENT_ID:
+        raise ValueError("运行目录不是 XY 已知可控噪声谱实验")
+    if config.get("completion_status") == "running":
+        raise ValueError("本轮扫描仍在写入数据，请等待扫描结束")
+
+
+def analysis_block_reason(config):
+    """通用历史与旧重分析共用身份和采集配置资格。"""
+    try:
+        require_analysis_identity(config)
+        psd_input_config(config)
+    except (ValueError, KeyError, TypeError, OverflowError) as exc:
+        return str(exc)
+    return None
 
 
 class AnalysisWorkflow:
@@ -34,10 +52,7 @@ class AnalysisWorkflow:
         self.results = self.run_dir / "results"
         self.state_path = self.run_dir / "analysis_state.json"
         self.config = yaml.safe_load((self.run_dir / "experiment_config.yaml").read_text(encoding="utf-8"))
-        if self.config.get("experiment_id") != stages.EXPERIMENT_ID:
-            raise ValueError("运行目录不是 XY 已知可控噪声谱实验")
-        if self.config.get("completion_status") == "running":
-            raise ValueError("本轮扫描仍在写入数据，请等待扫描结束")
+        require_analysis_identity(self.config)
         self.legacy_dispersion = bool(self.config.get("dispersion")) and int(self.config.get("schema_version", 1)) < 3
         defaults = NoiseSpectrumXYKnownNoiseParams().to_external()
         saved = self.config.get("parameters", {})
@@ -101,7 +116,7 @@ class AnalysisWorkflow:
 
     @staticmethod
     def _file_signature(path):
-        return [path.stat().st_size, path.stat().st_mtime_ns] if path.is_file() else None
+        return [path.stat().st_size, path.stat().st_mtime_ns, file_fingerprint(path)] if path.is_file() else None
 
     def _refresh_summary(self):
         for stage_id, keys in SUMMARY_KEYS.items():
@@ -128,10 +143,11 @@ class AnalysisWorkflow:
         return dict(run_id=self.run_dir.name, revision=self.revision, options=self.options, steps=self.states,
                     fingerprint=self.fingerprint, source_signature=self.source_signature, summary=_json_safe(self.summary))
 
-    def persist(self):
+    def persist(self, *, write_results=True):
         self._refresh_summary()
         write_state(self.state_path, self.snapshot())
-        write_json(self.results / "analysis_summary.json", self.summary)
+        if write_results:
+            write_json(self.results / "analysis_summary.json", self.summary)
         self.config["analysis_status"] = self.summary["status"]
         self.config["analysis_error"] = self.summary.get("error")
         save_config(self.run_dir / "experiment_config.yaml", self.config)
@@ -157,26 +173,37 @@ class AnalysisWorkflow:
         set_plot_style("paper")
         for item in selected:
             check_cancelled()
-            self._archive_from(item)
-            stages.invalidate(stages.ANALYSIS, self.states, item)
-            self.states[item] = {"status": "running", "error": ""}
-            self.summary.pop("error", None)
             failure = None
+            validated = False
             try:
+                # 输入资格先通过，才能归档或覆盖已有科学结果。
+                if item in ("B01", "B02"):
+                    analysis_steps.step_B01(self)
+                elif item == "B05":
+                    gain = analysis_steps.resolve_detection_gain(self)
+                validated = True
+                self._archive_from(item)
+                stages.invalidate(stages.ANALYSIS, self.states, item)
+                self.states[item] = {"status": "running", "error": ""}
+                self.summary.pop("error", None)
                 self.persist()
-                getattr(analysis_steps, "step_" + item)(self)
+                if item == "B05":
+                    analysis_steps.step_B05(self, gain)
+                elif item != "B01":
+                    getattr(analysis_steps, "step_" + item)(self)
                 stage = next(stage for stage in stages.ANALYSIS if stage.id == item)
                 self.states[item] = {"status": "completed", "error": "", "files": {
                     name: self._file_signature(self.results / name) for name in stage.artifacts}}
             except BaseException as exc:
                 failure = exc
+                stages.invalidate(stages.ANALYSIS, self.states, item)
                 status = "cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else "quality_failed" if isinstance(exc, ValueError) else "failed"
                 self.states[item] = {"status": status, "error": str(exc)}
                 self.summary["error"] = str(exc)
                 raise
             finally:
                 try:
-                    self.persist()
+                    self.persist(write_results=validated)
                 except Exception:
                     if failure is None:
                         raise

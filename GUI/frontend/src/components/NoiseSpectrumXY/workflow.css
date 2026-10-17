@@ -4,6 +4,7 @@
 .xy-workflow-preview { margin: 16px 0; padding-left: 12px; border-left: 2px solid var(--border, #d6dfe7); }
 .xy-workflow-controls p { overflow-wrap: anywhere; }
 .xy-flow-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.xy-flow-columns.xy-flow-acquisition-only { grid-template-columns: minmax(0, 1fr); }
 .xy-flow-columns > section { min-width: 0; }
 .xy-flow-columns select { display: block; width: 100%; margin-top: 8px; }
 .xy-workflow pre { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -44,4 +45,5 @@
 .xy-flow-node .xy-draft-note, .xy-draft-note { color: #80580d; font-size: 13px; }
 .xy-flow-node.draft-affected { border-right: 3px dashed #a07312; }
 .xy-artifact-links { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.xy-artifact-links a { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 900px) { .xy-flow-columns { grid-template-columns: 1fr; } .xy-workflow { padding: 12px; } .xy-workflow-head { flex-wrap: wrap; } }

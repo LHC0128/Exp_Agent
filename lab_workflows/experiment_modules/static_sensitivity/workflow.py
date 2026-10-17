@@ -164,7 +164,8 @@ class Workflow:
                 self.states[item] = {"status": "completed", "error": "", "artifacts": artifacts}
             except BaseException as exc:
                 failure = exc
-                self.states[item] = {"status": "failed", "error": str(exc)}
+                status = "cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else "quality_failed" if isinstance(exc, ValueError) else "failed"
+                self.states[item] = {"status": status, "error": str(exc)}
                 self.state["failure_reason"] = str(exc)
                 raise
             finally:

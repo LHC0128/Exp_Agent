@@ -131,6 +131,28 @@ class ProbeAMWorkflowTests(unittest.TestCase):
                 hw.devices["dg_probe_am"].set_mod_state.assert_any_call(False, channel=1)
                 hw.devices["dg_temp"].setup_dc.assert_any_call(5.0, channel=2)
 
+    def test_legacy_wait_migration_and_multi_parameter_impacts_match_gui(self):
+        old = scan_params().to_external()
+        old.pop("SYSTEM_SETTLE_S")
+        old.update(XY_SETTLE_TIME=.2, INJECTION_SETTLE_S=.8, Z_NOISE_SETTLE_S=.4)
+        migrated = NoiseSpectrumXYProbeAMParams.from_external(old, schema_version=2)
+        self.assertEqual(migrated.system_settle_s, .8)
+        self.assertFalse(set(("XY_SETTLE_TIME", "INJECTION_SETTLE_S", "Z_NOISE_SETTLE_S")) & migrated.to_external().keys())
+        self.assertEqual(NoiseSpectrumXYProbeAMParams.from_external(old | {"SYSTEM_SETTLE_S": .3}, schema_version=2).system_settle_s, .3)
+        fixture = json.loads((Path(__file__).parents[3] / "GUI/frontend/src/pages/probeAmWorkflow.fixture.json").read_text(encoding="utf-8"))
+        self.assertEqual(fixture, json.loads(json.dumps(stages.definition())))
+        with rig(self.root):
+            ctx = workflow.Workflow(scan_params(), project_root=self.root)
+            ctx.execute([stage.id for stage in stages.ACQUISITION[:15]])
+            before = json.loads(json.dumps(ctx.states))
+            ctx.execute(["A01"])
+            self.assertEqual(ctx.states, before)
+            ctx.update_parameters({"NOISE_AMPLITUDE_VPP": .5, "PROBE_AOM_CARRIER_VPP": .04})
+            self.assertEqual([name for name, state in ctx.states.items() if state["status"] == "stale"],
+                             ["A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15"])
+            self.assertEqual(ctx.states["A07"]["status"], "completed")
+            ctx.finish()
+
     def test_z_noise_readback_mismatch_rejected(self):
         with rig(self.root, inject=True) as hw:
             z = hw.devices["dg_sweep"]

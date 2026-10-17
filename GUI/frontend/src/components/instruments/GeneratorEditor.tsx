@@ -86,7 +86,7 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
       amplitude: channel.amplitude,
       offset: channel.offset,
       phase: channel.phase,
-      voltage_unit: channel.voltage_unit,
+      voltage_unit: channel.shape.toUpperCase() === "DC" ? "VPP" : channel.voltage_unit,
       load: editableLoad(channel.load),
       square_duty: channel.square_duty,
       ramp_symmetry: channel.ramp_symmetry,
@@ -101,13 +101,7 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
       // 冻结任意波由功能模块配置；此处只允许关闭，避免重写幅度和 Burst。
       settings = { output: false };
     }
-    if ((original.voltage_unit || "").toUpperCase() !== "VPP") {
-      if (original.output && !channel.output) settings = { output: false };
-      else {
-        setError("当前单位不是 Vpp。请先切换为 Vpp 并重新读取；当前仅允许关闭输出。");
-        return;
-      }
-    }
+    if (original.output && !channel.output) settings = { output: false };
     setSaving(channel.number);
     setError("");
     try {
@@ -150,9 +144,12 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
       {error && <div className="alert error">{error}</div>}
       {channels.map((channel, index) => {
         const tab = tabs[channel.number] || "wave";
-        const nonVpp = (channel.voltage_unit || "").toUpperCase() !== "VPP";
+        const unknownUnit = !["VPP", "VRMS", "DBM"].includes((snapshot.channels[index].voltage_unit || "").toUpperCase());
+        const isDc = channel.shape.toUpperCase() === "DC";
+        const rmsSupported = /^(SIN|SQU|RAMP)/i.test(channel.shape);
+        const highImpedance = !Number.isFinite(Number(channel.load)) || Number(channel.load) <= 0 || Number(channel.load) >= 9e37;
         const frozenArbitrary = route.mappingKey === "Z_magnetic_field" && ["USER", "ARBITRARY"].includes(channel.shape.toUpperCase());
-        const disabled = channel.read_only || nonVpp || frozenArbitrary;
+        const disabled = channel.read_only || unknownUnit || frozenArbitrary;
         const mod = channel.mod;
         const burst = channel.burst;
         const modType = mod.type || "AM";
@@ -164,7 +161,7 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
                 <input
                   type="checkbox"
                   checked={channel.output}
-                  disabled={channel.read_only || frozenArbitrary || (nonVpp && !channel.output)}
+                  disabled={channel.read_only || frozenArbitrary || (unknownUnit && !channel.output)}
                   onChange={(event) => update(index, "output", event.target.checked)}
                 />
                 <span />
@@ -172,21 +169,34 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
             </div>
             {channel.read_only && <div className="alert">该通道按仓库约定只读，以下参数仅展示设备回读值。</div>}
             {frozenArbitrary && <div className="alert">当前为任意波。预览、加载、相位及触发设置请使用 Z 任意波控制；此处保存只关闭 Z 输出。选择其他波形后可重新配置。</div>}
-            {nonVpp && <div className="alert error">当前单位为 {channel.voltage_unit || "未知"}。可以回读或关闭输出；其他写入前必须切换为 Vpp。 <button type="button" onClick={() => void switchToVpp()} disabled={saving !== undefined}>切换为 Vpp 并重新读取</button></div>}
+            {unknownUnit && <div className="alert error">当前幅度单位未知。可以回读或关闭输出；其他写入前请恢复为 Vpp。 <button type="button" onClick={() => void switchToVpp()} disabled={channel.read_only || saving !== undefined}>切换为 Vpp 并重新读取</button></div>}
             {channel.readback_errors.length > 0 && (
               <div className="alert error">
                 部分参数不可用：{channel.readback_errors.map((item) => item.field).join("、")}
               </div>
             )}
             <div className="form-grid generator-basic-grid">
-              <SelectField label="波形" value={channel.shape} disabled={channel.read_only || nonVpp} onChange={(value) => update(index, "shape", value)}>
+              <SelectField label="波形" value={channel.shape} disabled={channel.read_only || unknownUnit} onChange={(value) => {
+                update(index, "shape", value);
+                if (!/^(SIN|SQU|RAMP)/i.test(value)) update(index, "voltage_unit", "VPP");
+              }}>
                 {["USER", "ARBITRARY"].includes(channel.shape.toUpperCase()) && <option value={channel.shape}>Arbitrary</option>}
                 <option value="SINusoid">Sine</option><option value="SQUare">Square</option><option value="RAMP">Ramp</option><option value="PULSe">Pulse</option><option value="DC">DC</option>
               </SelectField>
-              {!channel.shape.startsWith("DC") && <><Field label="频率 (Hz)" value={channel.frequency} disabled={disabled} onChange={(value) => update(index, "frequency", value)} /><Field label="幅度 (Vpp)" value={channel.amplitude} disabled={disabled} onChange={(value) => update(index, "amplitude", value)} /></>}
-              <Field label="偏置 (V)" value={channel.offset} disabled={disabled} onChange={(value) => update(index, "offset", value)} />
-              {!channel.shape.startsWith("DC") && <Field label="相位 (deg)" value={channel.phase} disabled={disabled} onChange={(value) => update(index, "phase", value)} />}
+              {isDc
+                ? <Field label="偏置 (V)" value={channel.offset} disabled={disabled} onChange={(value) => update(index, "offset", value)} />
+                : <Field label="幅度" value={channel.amplitude} disabled={disabled} onChange={(value) => update(index, "amplitude", value)} />}
+              <SelectField label="单位" value={isDc ? "V" : channel.voltage_unit} disabled={disabled || isDc} onChange={(value) => update(index, "voltage_unit", value)}>
+                {isDc ? <option value="V">V</option> : <>
+                  <option value="VPP">Vpp</option><option value="VRMS" disabled={!rmsSupported}>Vrms</option><option value="DBM" disabled={!rmsSupported || highImpedance}>dBm</option>
+                </>}
+              </SelectField>
             </div>
+            {!isDc && <div className="form-grid generator-basic-grid generator-secondary-grid">
+              <Field label="频率 (Hz)" value={channel.frequency} disabled={disabled} onChange={(value) => update(index, "frequency", value)} />
+              <Field label="偏置 (V)" value={channel.offset} disabled={disabled} onChange={(value) => update(index, "offset", value)} />
+              <Field label="相位 (deg)" value={channel.phase} disabled={disabled} onChange={(value) => update(index, "phase", value)} />
+            </div>}
             <details className="generator-advanced">
               <summary>高级设置</summary>
             <div className="mode-tabs" role="tablist">
@@ -197,9 +207,6 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
 
             {tab === "wave" && (
               <div className="form-grid">
-                <SelectField label="电压单位" value={channel.voltage_unit} disabled={disabled} onChange={(value) => update(index, "voltage_unit", value)}>
-                  <option value="VPP">Vpp</option><option value="VRMS">Vrms</option><option value="DBM">dBm</option>
-                </SelectField>
                 <Field label="负载 (Ω / INF)" value={editableLoad(channel.load)} type="text" disabled={disabled} onChange={(value) => update(index, "load", value)} />
                 {channel.shape.startsWith("SQU") && <Field label="占空比 (%)" value={channel.square_duty} disabled={disabled} onChange={(value) => update(index, "square_duty", value)} />}
                 {channel.shape.startsWith("RAMP") && <Field label="对称度 (%)" value={channel.ramp_symmetry} disabled={disabled} onChange={(value) => update(index, "ramp_symmetry", value)} />}
@@ -282,7 +289,7 @@ export function GeneratorEditor({ snapshot, route, onSaved, onError }: Generator
             )}
             </details>
             <div className="panel-actions">
-              <button disabled={channel.read_only || saving === channel.number || (nonVpp && !(snapshot.channels[index].output && !channel.output))} onClick={() => save(index)}>
+              <button disabled={channel.read_only || saving !== undefined || (unknownUnit && !(snapshot.channels[index].output && !channel.output))} onClick={() => save(index)}>
                 {saving === channel.number ? "应用中…" : frozenArbitrary ? "关闭 Z 输出" : "应用并回读"}
               </button>
             </div>

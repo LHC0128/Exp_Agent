@@ -4,6 +4,7 @@ import math
 import time
 from contextlib import contextmanager
 from ...steps.acquisition_window import DeferredAcquisitionWrites
+from ...steps.dispersion import save_scan
 from ...steps.temperature import set_temperature_switch
 from lockin_amplifier import LockinInstrument
 from ...common import CancellationToken, validate_safety_limit
@@ -21,6 +22,11 @@ def wait(seconds: float) -> None:
     while (remaining := deadline - time.monotonic()) > 0:
         time.sleep(min(0.1, remaining))
         check_cancelled()
+
+
+def save_npz(path, **data):
+    """同名累积快照失败时保留上一份完整原始数据。"""
+    save_scan(path, data)
 
 
 @contextmanager

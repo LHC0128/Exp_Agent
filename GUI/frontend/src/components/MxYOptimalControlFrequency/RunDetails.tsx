@@ -128,6 +128,7 @@ export function RunDetails({ experimentId, run, fields, onFillBack, onJumpToRun 
       <p className="zaw-run-details-meta">
         完成状态：{summary.completion_status} · 常数控制对照：{summary.comparison_enabled ? "已启用" : "未启用"}
       </p>
+      {summary.control_source && <p>闭环冻结波形：{formatNumber(summary.control_source.run)} · 幅度 {formatNumber(summary.control_source.amplitude_vpp)} Vpp · 偏置 {formatNumber(summary.control_source.offset_v)} V</p>}
       {summary.comparison_enabled && (
         <details className="zaw-calibration">
           <summary>标定信息</summary>

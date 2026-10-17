@@ -1,0 +1,936 @@
+{
+  "schema": {
+    "schema_version": 2,
+    "fields": [
+      {
+        "name": "RUN_TAG",
+        "label": "运行标签",
+        "type": "string",
+        "default": "mx_z_optimal_control_xy_leakage",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "X_CONTROL_AMP_START_VPP",
+        "label": "X 控制幅度起点",
+        "type": "number",
+        "default": -0.02,
+        "unit": "Vpp",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "X_CONTROL_AMP_STOP_VPP",
+        "label": "X 控制幅度终点",
+        "type": "number",
+        "default": 0.02,
+        "unit": "Vpp",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "X_CONTROL_AMP_POINTS",
+        "label": "X 控制幅度点数",
+        "type": "integer",
+        "default": 21,
+        "unit": "",
+        "group": "basic",
+        "minimum": 3,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Y_CONTROL_AMP_START_VPP",
+        "label": "Y 控制幅度起点",
+        "type": "number",
+        "default": -0.02,
+        "unit": "Vpp",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Y_CONTROL_AMP_STOP_VPP",
+        "label": "Y 控制幅度终点",
+        "type": "number",
+        "default": 0.02,
+        "unit": "Vpp",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Y_CONTROL_AMP_POINTS",
+        "label": "Y 控制幅度点数",
+        "type": "integer",
+        "default": 21,
+        "unit": "",
+        "group": "basic",
+        "minimum": 3,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "DEMOD_FREQUENCY_HZ",
+        "label": "锁相放大器 Demod0 频率",
+        "type": "number",
+        "default": 30000.0,
+        "unit": "Hz",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SYSTEM_SETTLE_S",
+        "label": "系统稳定时间",
+        "type": "number",
+        "default": 0.1,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0,
+        "maximum": null,
+        "description": "配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。",
+        "read_only": false,
+        "legacy_defaults": {
+          "RESPONSE_SETTLE_TIME_S": 0.1,
+          "TEMP_SWITCH_OFF_LEAD_S": 0.1
+        }
+      },
+      {
+        "name": "RESPONSE_DURATION_S",
+        "label": "网格点采样时间",
+        "type": "number",
+        "default": 0.2,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TEMP_SWITCH_ON_LAG_S",
+        "label": "温控恢复后等待",
+        "type": "number",
+        "default": 2.0,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.Pump_laser_power",
+        "label": "Pump 光功率",
+        "type": "number",
+        "default": 0.1,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.Probe_laser_power",
+        "label": "Probe 光功率",
+        "type": "number",
+        "default": 0.1,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.main_magnetic_field",
+        "label": "GS200 主磁场电流",
+        "type": "number",
+        "default": 0.0,
+        "unit": "mA",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.temperature",
+        "label": "气室温度",
+        "type": "number",
+        "default": 120.0,
+        "unit": "°C",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_VERSION",
+        "label": "最优控制版本",
+        "type": "string",
+        "default": "v2",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_CALIBRATION_SOURCE_RUN",
+        "label": "Z 标定来源运行",
+        "type": "string",
+        "default": "0728_161259_mx_z_cal",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_SCALE",
+        "label": "Z 控制幅度比例",
+        "type": "number",
+        "default": 1.0,
+        "unit": "",
+        "group": "basic",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_AW_OUTPUT_VPP",
+        "label": "Z 控制固定 AW 输出幅度",
+        "type": "number",
+        "default": 6.0,
+        "unit": "Vpp",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "R_BAD_POINT_STD_THRESHOLD_V",
+        "label": "R 点标准差拒绝门槛",
+        "type": "number",
+        "default": 0.1,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "R_POINT_MAX_ATTEMPTS",
+        "label": "R 点最大采集次数",
+        "type": "integer",
+        "default": 3,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "HF2_SIGNAL_RANGE_V",
+        "label": "锁相放大器 输入量程",
+        "type": "number",
+        "default": 2.0,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "RESPONSE_RATE_SA_S",
+        "label": "R 请求采样率",
+        "type": "number",
+        "default": 1000.0,
+        "unit": "Sa/s",
+        "group": "advanced",
+        "minimum": 1.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "RESPONSE_TIME_CONSTANT_S",
+        "label": "R 解调时间常数",
+        "type": "number",
+        "default": 0.001,
+        "unit": "s",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "RESPONSE_DEMOD_ORDER",
+        "label": "R 解调滤波阶数",
+        "type": "integer",
+        "default": 4,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "PUMP_CARRIER_FREQUENCY_HZ",
+        "label": "Pump AOM 载波频率",
+        "type": "number",
+        "default": 100000000.0,
+        "unit": "Hz",
+        "group": "advanced",
+        "minimum": 1.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "PUMP_CARRIER_AMPLITUDE_VPP",
+        "label": "Pump AOM 载波幅度",
+        "type": "number",
+        "default": 0.18,
+        "unit": "Vpp",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": 0.18,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "PUMP_GATE_VOLTAGE_V",
+        "label": "Pump RF 开关常开电平",
+        "type": "number",
+        "default": 5.0,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 5.0,
+        "maximum": 5.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_RESULTS_ROOT",
+        "label": "最优控制结果根目录",
+        "type": "string",
+        "default": "D:\\Code\\theory_agent\\simulate\\results\\oc_sens",
+        "unit": "",
+        "group": "advanced",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_AW_OUTPUT_OFFSET",
+        "label": "Z 控制固定 AW 输出偏置",
+        "type": "number",
+        "default": 0.0,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_BURST_PHASE_DEG",
+        "label": "Z/XY 正幅度触发相位",
+        "type": "number",
+        "default": 0.0,
+        "unit": "deg",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": 360.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_FREQUENCY_HZ",
+        "label": "共同触发频率",
+        "type": "number",
+        "default": 100.0,
+        "unit": "Hz",
+        "group": "advanced",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_AMPLITUDE_VPP",
+        "label": "共同触发幅度",
+        "type": "number",
+        "default": 5.0,
+        "unit": "Vpp",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": 20.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_OFFSET_V",
+        "label": "共同触发偏置",
+        "type": "number",
+        "default": 2.5,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": -10.0,
+        "maximum": 10.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_DUTY_PERCENT",
+        "label": "共同触发占空比",
+        "type": "number",
+        "default": 50.0,
+        "unit": "%",
+        "group": "advanced",
+        "minimum": 0.1,
+        "maximum": 99.9,
+        "description": "",
+        "read_only": false
+      }
+    ],
+    "experiment": "mx-z-optimal-control-xy-leakage-response",
+    "parameter_layout": {
+      "basic": [
+        "RUN_TAG",
+        "X_CONTROL_AMP_START_VPP",
+        "X_CONTROL_AMP_STOP_VPP",
+        "X_CONTROL_AMP_POINTS",
+        "Y_CONTROL_AMP_START_VPP",
+        "Y_CONTROL_AMP_STOP_VPP",
+        "Y_CONTROL_AMP_POINTS",
+        "DEMOD_FREQUENCY_HZ",
+        "SYSTEM_SETTLE_S",
+        "RESPONSE_DURATION_S",
+        "TEMP_SWITCH_ON_LAG_S",
+        "FIXED_PARAMS.Pump_laser_power",
+        "FIXED_PARAMS.Probe_laser_power",
+        "FIXED_PARAMS.main_magnetic_field",
+        "FIXED_PARAMS.temperature",
+        "CONTROL_VERSION",
+        "Z_CALIBRATION_SOURCE_RUN",
+        "CONTROL_SCALE",
+        "Z_AW_OUTPUT_VPP"
+      ],
+      "advanced": [
+        "R_BAD_POINT_STD_THRESHOLD_V",
+        "R_POINT_MAX_ATTEMPTS",
+        "HF2_SIGNAL_RANGE_V",
+        "RESPONSE_RATE_SA_S",
+        "RESPONSE_TIME_CONSTANT_S",
+        "RESPONSE_DEMOD_ORDER",
+        "PUMP_CARRIER_FREQUENCY_HZ",
+        "PUMP_CARRIER_AMPLITUDE_VPP",
+        "PUMP_GATE_VOLTAGE_V",
+        "CONTROL_RESULTS_ROOT",
+        "Z_AW_OUTPUT_OFFSET",
+        "CONTROL_BURST_PHASE_DEG",
+        "TRIGGER_FREQUENCY_HZ",
+        "TRIGGER_AMPLITUDE_VPP",
+        "TRIGGER_OFFSET_V",
+        "TRIGGER_DUTY_PERCENT"
+      ]
+    },
+    "parameter_layout_saved": true
+  },
+  "workflow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "预检与理论控制来源冻结",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [
+          "CONTROL_RESULTS_ROOT",
+          "CONTROL_VERSION",
+          "Z_CALIBRATION_SOURCE_RUN",
+          "CONTROL_SCALE",
+          "Z_AW_OUTPUT_VPP",
+          "Z_AW_OUTPUT_OFFSET"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "CONTROL_RESULTS_ROOT",
+          "CONTROL_VERSION",
+          "Z_CALIBRATION_SOURCE_RUN",
+          "CONTROL_SCALE",
+          "Z_AW_OUTPUT_VPP",
+          "Z_AW_OUTPUT_OFFSET"
+        ],
+        "quality_gates": [
+          "参数、映射、锁相能力及电压包络有效；理论波形、参数与 Z 标定内容冻结"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "本轮目录、连接与初态",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [
+          "raw/source_manifest.yaml",
+          "raw/applied_control_waveform.npz"
+        ],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A03",
+        "title": "时钟、TEC 目标与 Mx 工作点",
+        "group": "初始条件",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "FIXED_PARAMS.main_magnetic_field",
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power",
+          "FIXED_PARAMS.temperature",
+          "PUMP_CARRIER_FREQUENCY_HZ",
+          "PUMP_CARRIER_AMPLITUDE_VPP",
+          "PUMP_GATE_VOLTAGE_V",
+          "CONTROL_BURST_PHASE_DEG",
+          "TRIGGER_FREQUENCY_HZ",
+          "TRIGGER_AMPLITUDE_VPP",
+          "TRIGGER_OFFSET_V",
+          "TRIGGER_DUTY_PERCENT",
+          "DEMOD_FREQUENCY_HZ",
+          "DEMOD_IDX",
+          "DEMOD_OSC_IDX",
+          "HF2_SIGNAL_RANGE_V",
+          "RESPONSE_RATE_SA_S",
+          "RESPONSE_TIME_CONSTANT_S",
+          "RESPONSE_DEMOD_ORDER"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "FIXED_PARAMS.main_magnetic_field",
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power",
+          "FIXED_PARAMS.temperature",
+          "PUMP_CARRIER_FREQUENCY_HZ",
+          "PUMP_CARRIER_AMPLITUDE_VPP",
+          "PUMP_GATE_VOLTAGE_V",
+          "CONTROL_BURST_PHASE_DEG",
+          "TRIGGER_FREQUENCY_HZ",
+          "TRIGGER_AMPLITUDE_VPP",
+          "TRIGGER_OFFSET_V",
+          "TRIGGER_DUTY_PERCENT",
+          "DEMOD_FREQUENCY_HZ",
+          "DEMOD_IDX",
+          "DEMOD_OSC_IDX",
+          "HF2_SIGNAL_RANGE_V",
+          "RESPONSE_RATE_SA_S",
+          "RESPONSE_TIME_CONSTANT_S",
+          "RESPONSE_DEMOD_ORDER"
+        ],
+        "quality_gates": [
+          "参考时钟严格回读；TEC 只写 UI 目标；XY 初始为零 DC 且关闭，Z 控制启动"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "蛇形 XY 同形任意波与 R 重试采集",
+        "group": "采集",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "X_CONTROL_AMP_START_VPP",
+          "X_CONTROL_AMP_STOP_VPP",
+          "X_CONTROL_AMP_POINTS",
+          "Y_CONTROL_AMP_START_VPP",
+          "Y_CONTROL_AMP_STOP_VPP",
+          "Y_CONTROL_AMP_POINTS",
+          "RESPONSE_DURATION_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "R_BAD_POINT_STD_THRESHOLD_V",
+          "R_POINT_MAX_ATTEMPTS"
+        ],
+        "artifacts": [
+          "raw/grid_*_attempt_*.npz",
+          "raw/xy_leakage_scan.npz"
+        ],
+        "display_parameters": [
+          "X_CONTROL_AMP_START_VPP",
+          "X_CONTROL_AMP_STOP_VPP",
+          "X_CONTROL_AMP_POINTS",
+          "Y_CONTROL_AMP_START_VPP",
+          "Y_CONTROL_AMP_STOP_VPP",
+          "Y_CONTROL_AMP_POINTS",
+          "RESPONSE_DURATION_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "R_BAD_POINT_STD_THRESHOLD_V",
+          "R_POINT_MAX_ATTEMPTS",
+          "CONTROL_BURST_PHASE_DEG"
+        ],
+        "quality_gates": [
+          "每次尝试先恢复温控再写盘；R 标准差通过，重试用尽阻断；读写或恢复错误保留已读数据并停止"
+        ]
+      },
+      {
+        "id": "A05",
+        "title": "施加实测网格最小点",
+        "group": "结束",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [
+          "CONTROL_BURST_PHASE_DEG"
+        ],
+        "quality_gates": [
+          "仅选择实测最小 R，平局取采集最早；共同触发启动后不额外复测 R"
+        ]
+      },
+      {
+        "id": "A06",
+        "title": "保持 Z/XY/触发并安全封存",
+        "group": "结束",
+        "dependencies": [
+          "A05"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "温控和 GS200 原态恢复成功；Z、XY 与共同触发保持当前状态"
+        ]
+      },
+      {
+        "id": "A12",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "运行身份、格式与完整网格资格",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "明确 raw1 或已验证 schema v1/v2 历史；矩阵、坐标、采集序号与实际采样率有效"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "实测最小点与 R 均值/标准差热图",
+        "group": "独立分析",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "evaluation.json",
+          "xy_leakage_response.png",
+          "xy_leakage_response.pdf"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "保留原最小值及最早采集规则；不连续拟合、不外推、不做绝对磁场标定"
+        ]
+      },
+      {
+        "id": "B03",
+        "title": "保存完整泄露响应汇总",
+        "group": "独立分析",
+        "dependencies": [
+          "B02"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "analysis.yaml",
+          "analysis.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "CONTROL_RESULTS_ROOT": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "CONTROL_VERSION": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "Z_CALIBRATION_SOURCE_RUN": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "CONTROL_SCALE": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "Z_AW_OUTPUT_VPP": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "Z_AW_OUTPUT_OFFSET": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "RUN_TAG": [
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "FIXED_PARAMS.main_magnetic_field": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "FIXED_PARAMS.Pump_laser_power": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "FIXED_PARAMS.Probe_laser_power": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "FIXED_PARAMS.temperature": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PUMP_CARRIER_FREQUENCY_HZ": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PUMP_CARRIER_AMPLITUDE_VPP": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PUMP_GATE_VOLTAGE_V": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "CONTROL_BURST_PHASE_DEG": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "TRIGGER_FREQUENCY_HZ": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "TRIGGER_AMPLITUDE_VPP": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "TRIGGER_OFFSET_V": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "TRIGGER_DUTY_PERCENT": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD_FREQUENCY_HZ": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD_IDX": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD_OSC_IDX": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "HF2_SIGNAL_RANGE_V": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "RESPONSE_RATE_SA_S": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "RESPONSE_TIME_CONSTANT_S": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "RESPONSE_DEMOD_ORDER": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "X_CONTROL_AMP_START_VPP": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "X_CONTROL_AMP_STOP_VPP": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "X_CONTROL_AMP_POINTS": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "Y_CONTROL_AMP_START_VPP": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "Y_CONTROL_AMP_STOP_VPP": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "Y_CONTROL_AMP_POINTS": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "RESPONSE_DURATION_S": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "TEMP_SWITCH_ON_LAG_S": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "R_BAD_POINT_STD_THRESHOLD_V": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "R_POINT_MAX_ATTEMPTS": [
+          "A04",
+          "A05",
+          "A06"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/mx-z-optimal-control-xy-leakage-response/workflow/diagram"
+  }
+}

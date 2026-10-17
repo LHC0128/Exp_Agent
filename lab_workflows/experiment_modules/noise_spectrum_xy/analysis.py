@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ from ..mx_main_field_scope_noise_spectrum.global_analysis import (
 )
 from .models import NoiseSpectrumXYParams, welch_settings
 from .processing import SEPARATION_METHOD, locate_ridge, fit_local_spectra
+from .run_format import require_supported_format, validate_analysis_inputs, voltage_axis
 
 ANALYSIS_VERSION = "xy-independent-background-v8"
 
@@ -44,13 +46,7 @@ def compute_psd(run_dir, config, options):
     rate = float(daq.get("actual_rate_Sa_s", float("nan")))
     if not np.isfinite(rate) or rate <= 0:
         raise ValueError("缺少有效的硬件实际采样率，不能从请求值猜测频率轴")
-    scan = config["scan_params"]
-    if "xy_envelope_voltage_V" in scan:
-        voltage = np.asarray(scan["xy_envelope_voltage_V"], float)
-    else:
-        voltage = np.linspace(scan["XY_AMP_START_V"], scan["XY_AMP_STOP_V"], scan["XY_AMP_POINTS"])
-    if not np.isfinite(voltage).all() or np.any(np.diff(voltage) <= 0):
-        raise ValueError("控制电压轴必须有限且严格递增")
+    voltage = voltage_axis(config)
     legacy = int(config.get("schema_version", 1)) < 3
     from sensitivity_analysis.acquisition import load_acquisition_rate
     files = sorted((run_dir / "raw").glob("waveform_C*.npy"))
@@ -228,13 +224,13 @@ class AnalysisWorkflow:
     """持久化五个分析阶段；前置产物必须属于同一输入和参数修订。"""
 
     def __init__(self, run_dir, analysis_parameters=None, *, use_saved_options=True):
-        import hashlib
         from .stages import ANALYSIS, initial_states, invalidate
         from .state_io import read_state
         self.run_dir = Path(run_dir).resolve()
         self.results = self.run_dir / "results"
         self.state_path = self.run_dir / "analysis_state.json"
         self.config = yaml.safe_load((self.run_dir / "experiment_config.yaml").read_text(encoding="utf-8"))
+        require_supported_format(self.config)
         if self.config.get("completion_status") == "running":
             raise ValueError("本轮扫描仍在写入数据，请等待扫描结束")
         defaults = NoiseSpectrumXYParams()
@@ -247,7 +243,7 @@ class AnalysisWorkflow:
         self.states = previous.get("steps") or initial_states(ANALYSIS)
         self.revision = previous.get("revision", 0)
         self.summary = previous.get("summary") or {}
-        raw = [{"name": path.name, "bytes": path.stat().st_size, "mtime_ns": path.stat().st_mtime_ns}
+        raw = [{"name": path.name, "signature": self._file_signature(path)}
             for path in sorted((self.run_dir / "raw").glob("*")) if path.is_file()]
         # 适配器会写分析状态；它不是采集输入，不能让刚完成的阶段立即失效。
         acquisition_config = {key: value for key, value in self.config.items() if key not in ("analysis_status", "analysis_error")}
@@ -274,6 +270,8 @@ class AnalysisWorkflow:
                 key = name.removeprefix("ANALYSIS_").lower()
                 if name != "ANALYSIS_" + key.upper() or key not in self.options:
                     raise ValueError("不是分析参数：" + name)
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError("分析参数必须为数值：" + name)
                 value = float(value)
                 if value != self.options[key]:
                     changed.add(name)
@@ -288,7 +286,14 @@ class AnalysisWorkflow:
 
     @staticmethod
     def _file_signature(path):
-        return [path.stat().st_size, path.stat().st_mtime_ns] if path.is_file() else None
+        if not path.is_file():
+            return None
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+        stat = path.stat()
+        return [stat.st_size, stat.st_mtime_ns, digest.hexdigest()]
 
     def snapshot(self):
         return dict(run_id=self.run_dir.name, revision=self.revision, options=self.options,
@@ -298,7 +303,7 @@ class AnalysisWorkflow:
         from .state_io import write_state
         from ...experiment_runtime import report_runtime_progress
         write_state(self.state_path, self.snapshot())
-        if self.states["B01"]["status"] != "running":
+        if self.states["B01"]["status"] == "completed":
             write_json(self.results / "analysis_summary.json", self.summary)
         report_runtime_progress("analysis", f"分析状态：{self.summary.get('status', 'not_started')}",
             data={"analysis_workflow": self.snapshot()})
@@ -376,6 +381,7 @@ class AnalysisWorkflow:
 
     def step_B01(self):
         run_dir, results, config, options, summary = self.run_dir, self.results, self.config, self.options, self.summary
+        validate_analysis_inputs(config)
         results = run_dir/"results"
         results.mkdir(exist_ok=True)
         # 只归档当前 results 顶层产物；原始数据、配置和已有诊断子目录不移动。

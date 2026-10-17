@@ -61,6 +61,7 @@ AW_CURRENT_RESPONSE_PROTOCOL = "coherent_swept_sine_current_response"
 AW_CURRENT_RESPONSE_COMMAND_REFERENCE = "50_ohm"
 # 相位参考必须是与电流同一帧的实测驱动电压；否则相位含相干启动时延，无法插值。
 AW_CURRENT_RESPONSE_PHASE_REFERENCE = "measured_drive_voltage"
+AW_CURRENT_RESPONSE_VALID_FRAME_COUNT_RULE = "exact_frequency_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,6 +303,7 @@ def load_aw_frequency_response(project_root: Path, run_name: str) -> AWCurrentRe
     """读取相干扫频测得的实际电流复响应。
 
     只接受对数扫频正弦协议（``format_version=4``、实测驱动电压相位参考）的标定。
+    闭环频点还须有至少两次有效重复及相位合格证据；旧结果缺证据时先重新分析原始数据。
     逐谐波 AW 网格协议（``format_version=3``）把标定与某一个目标波形强绑定，
     闭环不再支持，需要按当前协议重新标定。
     """
@@ -349,9 +351,29 @@ def load_aw_frequency_response(project_root: Path, run_name: str) -> AWCurrentRe
         imag = np.asarray(data["transfer_imag_a_per_v"], dtype=float).reshape(-1)
         reliable = np.asarray(data["reliable"], dtype=bool).reshape(-1)
         resistance = float(np.asarray(data["sense_resistor_ohm"]).reshape(()))
+        quality_fields = {"phase_reliable", "frame_count", "valid_frame_count", "valid_frame_count_rule"}
+        if missing_quality := sorted(quality_fields.difference(data.files)):
+            raise ValueError("电流频响缺少相位重复资格字段：" + ", ".join(missing_quality)
+                             + "；请对已有原始数据重新分析")
+        count_rule = np.asarray(data["valid_frame_count_rule"])
+        if (count_rule.shape != () or count_rule.dtype.kind != "U"
+                or count_rule.item() != AW_CURRENT_RESPONSE_VALID_FRAME_COUNT_RULE):
+            raise ValueError("电流频响有效重复计数规则不匹配；请对已有原始数据重新分析")
+        phase_reliable = np.asarray(data["phase_reliable"])
+        frame_count = np.asarray(data["frame_count"])
+        valid_frame_count = np.asarray(data["valid_frame_count"])
+        if (phase_reliable.dtype.kind != "b" or frame_count.dtype.kind not in "iu"
+                or valid_frame_count.dtype.kind not in "iu"):
+            raise ValueError("电流频响的相位资格必须为布尔数组，重复次数必须为整数数组")
+        phase_reliable = phase_reliable.reshape(-1)
+        frame_count, valid_frame_count = frame_count.reshape(-1), valid_frame_count.reshape(-1)
     count = frequency.size
-    if not (count == real.size == imag.size == reliable.size):
+    if not (count == real.size == imag.size == reliable.size == phase_reliable.size
+            == frame_count.size == valid_frame_count.size):
         raise ValueError("电流频响数组长度不一致")
+    if np.any(frame_count < 0) or np.any(valid_frame_count < 0) or np.any(valid_frame_count > frame_count):
+        raise ValueError("电流频响的有效重复次数必须在零与总重复次数之间")
+    reliable &= phase_reliable & (valid_frame_count >= 2)
     if count < 2:
         raise ValueError("电流频响至少需要两个扫频点")
     if not np.all(np.isfinite(frequency)) or np.any(frequency <= 0.0):
@@ -359,7 +381,7 @@ def load_aw_frequency_response(project_root: Path, run_name: str) -> AWCurrentRe
     if np.any(np.diff(frequency) <= 0.0):
         raise ValueError("电流频响频率必须严格递增")
     if np.count_nonzero(reliable) < 2:
-        raise ValueError("电流频响可靠频点不足 2 个")
+        raise ValueError("电流频响可靠频点不足 2 个：闭环要求相位合格且至少两次有效重复")
     if not np.all(np.isfinite(real[reliable])) or not np.all(np.isfinite(imag[reliable])):
         raise ValueError("电流频响可靠频点包含非有限值")
     if not np.isfinite(resistance) or resistance <= 0.0:

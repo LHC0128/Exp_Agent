@@ -22,7 +22,12 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-z-optimal-control-xy-bias-grid",
     description=(
-        ('在 Z 周期最优控制下扫描 X/Y 补偿偏置，先在网格中心完成一次 RF 校相，再逐点测量 RF 灵敏度并报告最佳补偿点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
+        "在 Z 周期最优控制下，中心一次 RF 正交校相后蛇形扫描 X/Y 补偿偏置，逐点测量灵敏度并报告最佳补偿点。"
+        "运行/历史双 Tab 提供节点参数与分步会话；保存、预检和完整运行位于流程顶部，共享参数同步，草稿应用后显式重跑。"
+        "分析绑定具体目录，无额外覆盖参数；保留原热图、逐点诊断及历史下载。"
+        "锁相设备统一选择并预检能力，使用高阻、DC 耦合和最终实际采样率。"
+        "配置后关闭温控并按 SYSTEM_SETTLE_S 稳定，恢复温控后保存；TEC 仅下发 UI 目标。"
+        "结束恢复 GS200 原态、关闭归零 X/Y，保持 Z 控制和共同触发；最佳点只写结果。"
     ),
     data_type="Mx_Z_Optimal_Control_XY_RF_Sensitivity",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

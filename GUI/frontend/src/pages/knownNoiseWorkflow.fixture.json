@@ -7,7 +7,10 @@
       "dependencies": [],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "参数、映射、独立通道与安全限值全部通过预检"
+      ]
     },
     {
       "id": "A02",
@@ -18,7 +21,8 @@
       ],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": []
     },
     {
       "id": "A03",
@@ -29,7 +33,10 @@
       ],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "全部已连接设备参考时钟严格回读一致"
+      ]
     },
     {
       "id": "A04",
@@ -50,7 +57,8 @@
         "FIXED_PARAMS.Probe_laser_power",
         "FIXED_PARAMS.main_magnetic_field",
         "FIXED_PARAMS.Temp_Switch"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A05",
@@ -65,7 +73,8 @@
       "artifacts": [],
       "display_parameters": [
         "FIXED_PARAMS.temperature"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A06",
@@ -88,7 +97,8 @@
         "PUMP_MOD_DUTY",
         "RF_GATE_AMPLITUDE",
         "RF_GATE_OFFSET"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A07",
@@ -111,7 +121,8 @@
         "XY_TRIGGER_OFFSET",
         "XY_TRIGGER_DUTY",
         "XY_TRIGGER_PHASE"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A08",
@@ -140,6 +151,9 @@
         "HF2_DEMOD_RATE",
         "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_SETTLE_S"
+      ],
+      "quality_gates": [
+        "Demod0 样本和相位回读有限，R 不低于 1e-12 V，5 次内相位残差小于 1°"
       ]
     },
     {
@@ -161,7 +175,8 @@
         "XY_CTRL_PHASE",
         "XY_CTRL_QUAD",
         "XY_CALIB_ENVELOPE_V"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A10",
@@ -187,6 +202,9 @@
         "XY_PHASE_CAL_MIN_R_RATIO",
         "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_SETTLE_S"
+      ],
+      "quality_gates": [
+        "迭代误差满足 XY_PHASE_CAL_TOL_DEG，R 幅值满足绝对值和比例门槛，且未超过最大迭代次数"
       ]
     },
     {
@@ -214,6 +232,9 @@
         "NOISE_AMPLITUDE_VPP",
         "NOISE_SEED",
         "Z_CALIBRATION_K_HZ_PER_V"
+      ],
+      "quality_gates": [
+        "本轮 K_Z 为有限正数，噪声电压安全；任意波形状、点数、频率、幅度、偏置、单位和负载严格回读一致"
       ]
     },
     {
@@ -242,6 +263,9 @@
         "HF2_DAQ_TC",
         "HF2_DAQ_RATE",
         "ANALYSIS_BIN_WIDTH_HZ"
+      ],
+      "quality_gates": [
+        "XY 校相已收敛，DAQ 实际采样率与 Welch 预算通过检查"
       ]
     },
     {
@@ -275,6 +299,9 @@
         "XY_CTRL_QUAD",
         "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_SETTLE_S"
+      ],
+      "quality_gates": [
+        "XY、Z 任意波与 DAQ 实际设置回读一致；无效波形保留并由离线分析排除该数据对"
       ]
     },
     {
@@ -286,7 +313,8 @@
       ],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": []
     },
     {
       "id": "A15",
@@ -295,7 +323,8 @@
       "dependencies": [],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": []
     }
   ],
   "analysis": [
@@ -306,7 +335,10 @@
       "dependencies": [],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "本实验身份、配置与逐段实际采样率、时长及 Welch 预算有效，两态频率轴与控制轴一致，known_noise/truth_chain 与本轮 K_Z 有效，存在原始波形；仍在采集时拒绝分析"
+      ]
     },
     {
       "id": "B02",
@@ -322,6 +354,7 @@
       ],
       "artifacts": [
         "psd_matrices.npz",
+        "known_noise_preview.npz",
         "known_noise_preview.png",
         "known_noise_preview.pdf"
       ],
@@ -329,6 +362,9 @@
         "ANALYSIS_BIN_WIDTH_HZ",
         "ANALYSIS_FREQUENCY_MIN_HZ",
         "ANALYSIS_FREQUENCY_MAX_HZ"
+      ],
+      "quality_gates": [
+        "归档前再次核对采样记录、两态频率轴与 Welch 预算；至少 20 个有效成对控制点"
       ]
     },
     {
@@ -349,6 +385,9 @@
       "display_parameters": [
         "ANALYSIS_FREQUENCY_MIN_HZ",
         "ANALYSIS_FREQUENCY_MAX_HZ"
+      ],
+      "quality_gates": [
+        "有效控制点及频率点至少各 20 个；移动峰支持不少于 max(20, 45% 控制点)，覆盖至少 60%，残差与两半斜率通过验收"
       ]
     },
     {
@@ -372,6 +411,9 @@
       ],
       "display_parameters": [
         "ANALYSIS_FIT_HALF_WIDTH_HZ"
+      ],
+      "quality_gates": [
+        "两态至少一个共同频点通过全控制轴峰拟合验收；失败仍保存诊断，背景另行独立验收"
       ]
     },
     {
@@ -392,6 +434,9 @@
       ],
       "display_parameters": [
         "ANALYSIS_DISPERSION_SOURCE_RUN"
+      ],
+      "quality_gates": [
+        "外部静磁场原始格式 3 曲线至少 7 点全部完成，有限采样记录、正斜率、R²≥0.85 及线宽相对不确定度≤0.5；旧内置均值仅按已验证 schema 1 身份、完整点数和原拟合质量规则兼容"
       ]
     },
     {
@@ -417,7 +462,8 @@
       "display_parameters": [
         "RATIO_PASS_LOW",
         "RATIO_PASS_HIGH"
-      ]
+      ],
+      "quality_gates": []
     }
   ],
   "parameter_impacts": {

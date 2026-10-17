@@ -13,7 +13,7 @@ from .response_filter import prepare_closed_loop
 
 @dataclass(slots=True)
 class ZAWClosedLoopWaveformCorrectionParams(ExperimentParams):
-    """响应逆滤波闭环：静态标定初始化，AW 频响构造周期滤波核。"""
+    """三种实际电流闭环方法，统一保留已发布参数键与历史迁移。"""
 
     schema_version = 13
     run_tag: str = parameter(
@@ -183,7 +183,8 @@ class ZAWClosedLoopWaveformCorrectionParams(ExperimentParams):
     identification_maximum_step_v: float = parameter(default=0.05, external_name="IDENTIFICATION_MAXIMUM_STEP_V", label="辨识最大扰动峰值", unit="V", minimum=0.000001, group="advanced")
     identification_repeats: int = parameter(default=3, external_name="IDENTIFICATION_REPEATS", label="每个扰动重复帧数", minimum=3, maximum=20, group="advanced")
     identification_min_snr: float = parameter(default=5.0, external_name="IDENTIFICATION_MIN_SNR", label="辨识差分最低信噪比", minimum=3.0, group="advanced")
-    repeatability_relative_rms: float = parameter(default=0.02, external_name="REPEATABILITY_RELATIVE_RMS", label="重载波形变化上限（相对目标 RMS）", minimum=0.000001, maximum=0.2, group="advanced")
+    repeatability_relative_rms: float = parameter(default=0.02, external_name="REPEATABILITY_RELATIVE_RMS", label="重载波形变化上限（相对目标 RMS）", minimum=0.000001, maximum=0.2, group="advanced", visible=False,
+        description="保留历史键和值；当前重复性判据使用 HARMONIC_REPEATABILITY_FRACTION。")
     harmonic_repeatability_fraction: float = parameter(default=0.05, external_name="HARMONIC_REPEATABILITY_FRACTION", label="重载谐波复系数变化上限", minimum=0.000001, maximum=0.5, group="advanced")
     minimum_improvement: float = parameter(default=0.0002, external_name="MINIMUM_IMPROVEMENT", label="最小误差改善（绝对比例）", minimum=0.0, group="advanced")
     reidentify_interval: int = parameter(default=3, external_name="REIDENTIFY_INTERVAL", label="重新辨识间隔轮数", minimum=1, group="advanced")

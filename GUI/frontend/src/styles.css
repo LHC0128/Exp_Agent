@@ -52,8 +52,9 @@ nav a b { font-size: 18px; width: 22px; text-align: center; }
 nav a.active, nav a:hover { color: #f5fbfa; background: #21413d; }
 .local-note { margin-top: auto; padding: 15px 10px 0; border-top: 1px solid #28423f; }
 .local-note p { color: #78918d; font-size: 11px; line-height: 1.5; }
-main { grid-column: 2; padding: 38px 44px 64px; max-width: 1480px; width: 100%; }
+main { grid-column: 2; padding: 38px 44px 64px; max-width: 1480px; width: 100%; min-width: 0; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
+.page-head > div { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .page-head p, .section-title small, article > small, .workspace-head small, .panel-head small { margin: 0 0 7px; color: #66817d; font-size: 10px; font-weight: 800; letter-spacing: .15em; }
 .page-head h1 { margin: 0 0 8px; font-size: clamp(28px, 3vw, 40px); letter-spacing: -.04em; }
 .page-head span { color: #6a797b; font-size: 14px; }
@@ -77,6 +78,8 @@ main { grid-column: 2; padding: 38px 44px 64px; max-width: 1480px; width: 100%; 
 .form-grid { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)); gap: 13px; }.form-grid label, .panel > label { display: grid; gap: 6px; color: #586966; font-size: 11px; font-weight: 650; }.form-grid input, .form-grid select, .panel > label input { width: 100%; border: 1px solid #d7dfdd; border-radius: 7px; padding: 10px 11px; color: #263a37; background: #fafbfb; outline: none; }.form-grid input:focus, .form-grid select:focus { border-color: #6a9d97; box-shadow: 0 0 0 3px #4e8c8314; }.panel-actions { display: flex; justify-content: flex-end; margin-top: 17px; }
 .form-grid input:disabled, .form-grid select:disabled { color: #74817f; background: #f0f3f2; }
 .generator-panel { min-width: 0; }
+.form-grid.generator-basic-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.generator-secondary-grid { margin-top: 8px; }
 .mode-tabs { display: inline-grid; grid-template-columns: repeat(3, minmax(92px, 1fr)); gap: 3px; padding: 3px; margin-bottom: 17px; border: 1px solid #dce4e2; border-radius: 7px; background: #eef2f1; }
 .mode-tabs button { min-height: 34px; padding: 7px 13px; border-radius: 5px; background: transparent; color: #5f716e; font-size: 12px; }
 .mode-tabs button:hover { background: #e2e9e7; color: #294a46; transform: none; }

@@ -1,134 +1,146 @@
-"""静态闭环离线分析；历史运行按旧快照分派到独立读取层。"""
-from pathlib import Path
+"""实际电流闭环的分步分析；复用内容指纹、归档和目录隔离。"""
 
-import numpy as np
+from copy import deepcopy
+from pathlib import Path
+import hashlib
+import json
+import os
 import yaml
 
-from ...plotting import format_axis, new_figure, save_figure, set_plot_style
+from ...common import WorkflowCancelled
+from ...experiment_runtime import check_cancelled, runtime_run_dir
+from ..noise_spectrum_xy.state_io import read_state
+from ..mx_z_optimal_control_xy_rf_sensitivity.analysis import AnalysisWorkflow as GridAnalysisWorkflow
+from . import analysis_steps, run_format
+from .stages import ANALYSIS, initial_states, invalidate, validate_selection
+
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
 
 
-def analyze(run_dir: Path) -> dict:
-    """直接绘制采集时保存的对齐反馈，不再次对齐或修改冻结命令。"""
-    run_dir = Path(run_dir).resolve()
-    config = yaml.safe_load((run_dir / "experiment_config.yaml").read_text(encoding="utf-8"))
-    method = config.get("correction_method")
-    if method in {"response_filtered_feedback", "time_domain", "harmonic_jacobian"}:
-        return _analyze_response_filtered(run_dir, config)
-    if method != "static_current_feedback":
-        from .legacy_analysis import analyze as analyze_legacy
-        return analyze_legacy(run_dir)
-    return _analyze_static(run_dir, config)
+class AnalysisWorkflow(GridAnalysisWorkflow):
+    stages = ANALYSIS
+
+    def __init__(self, run_dir, analysis_parameters=None):
+        self.run_dir = Path(run_dir).resolve()
+        self.results = self.run_dir / "results"
+        self.state_path = self.run_dir / "analysis_state.json"
+        self.config_path = self.run_dir / "experiment_config.yaml"
+        self.config = yaml.safe_load(self.config_path.read_text(encoding="utf-8"))
+        if reason := run_format.analysis_block_reason(self.config):
+            raise ValueError(reason)
+        if analysis_parameters:
+            raise ValueError("本实验没有可调分析覆盖参数")
+        previous = read_state(self.state_path) or {}
+        self.options = {}
+        self.states = deepcopy(previous.get("steps") or initial_states(self.stages))
+        self.revision = previous.get("revision", 0)
+        self.summary = deepcopy(previous.get("summary", {}))
+        self.fingerprint = self.input_fingerprint()
+        if previous and previous.get("fingerprint") != self.fingerprint:
+            invalidate(self.stages, self.states, "B01")
+            self.revision += 1
+        self.refresh_products()
+        if self.states["B02"]["status"] != "completed":
+            self.summary["status"] = "stale" if previous else "not_started"
+
+    def input_fingerprint(self):
+        self.config = yaml.safe_load(self.config_path.read_text(encoding="utf-8"))
+        if reason := run_format.analysis_block_reason(self.config):
+            raise ValueError(reason)
+        fingerprint = super().input_fingerprint() | {"analysis_version": "z-closed-loop-saved-v1"}
+        fingerprint["raw_files"].pop("results/phase_calibration.yaml", None)
+        for name in ("iteration_summary.yaml", "corrected_control_waveform.npz"):
+            fingerprint["raw_files"][f"results/{name}"] = self._file_signature(self.results / name)
+        return fingerprint
+
+    def product_files(self, stage):
+        names = stage.artifacts if stage.id == "B01" else (
+            "final_waveform_report.yaml", "convergence.png", "convergence.pdf",
+            "waveform_comparison.png", "waveform_comparison.pdf", "waveform_comparison.csv",
+            "amplitude_bandwidth_diagnosis.png", "amplitude_bandwidth_diagnosis.pdf", "diagnosis.md")
+        return [name for name in names if (self.results / name).is_file()]
+
+    def _archive_from(self, item):
+        # 轮次汇总、冻结 NPZ/CSV 和恢复溯源是既有输入，不能移走。
+        from datetime import datetime
+        affected = self.stages if item == "B01" else self.stages[1:]
+        files = {self.results / name for stage in affected for name in self.product_files(stage)}
+        if files:
+            backup = self.results / ("before_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+            backup.mkdir()
+            for path in sorted(files):
+                path.replace(backup / path.name)
+
+    def execute(self, selected, expected_revision=None):
+        self.config = yaml.safe_load(self.config_path.read_text(encoding="utf-8"))
+        if reason := run_format.analysis_block_reason(self.config):
+            raise ValueError(reason)
+        fingerprint = self.input_fingerprint()
+        if fingerprint != self.fingerprint:
+            invalidate(self.stages, self.states, "B01")
+            self.fingerprint = fingerprint
+            self.revision += 1
+        self.refresh_products()
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("分析修订已改变，请刷新后重试")
+        selected = validate_selection(self.stages, self.states, selected)
+        self.revision += 1
+        for item in selected:
+            check_cancelled()
+            invalidate(self.stages, self.states, item)
+            self.states[item] = {"status": "running", "error": ""}
+            self.summary = {"status": "running", "options": {}}
+            failure = None
+            try:
+                self.persist()
+                # 当前输入合格后才移动旧产物；坏数据不能搬走上次完整结果。
+                analysis_steps.load_inputs(self.run_dir)
+                if self.input_fingerprint() != self.fingerprint:
+                    raise ValueError("分析输入在执行中改变，请从 B01 重新执行")
+                self._archive_from(item)
+                if item == "B01":
+                    inputs = analysis_steps.load_inputs(self.run_dir)
+                    from ..noise_spectrum_xy.state_io import write_state
+                    write_state(self.results / "analysis_inputs.json", inputs)
+                    self.summary.update(inputs)
+                elif item == "B02":
+                    self.summary.update(analysis_steps.analyze(self.run_dir))
+                stage = next(stage for stage in self.stages if stage.id == item)
+                files = self.product_files(stage)
+                if missing := set(stage.artifacts) - set(files):
+                    raise RuntimeError("分析阶段缺少产物：" + "、".join(sorted(missing)))
+                self.states[item] = {"status": "completed", "error": "", "artifacts": files,
+                    "files": {name: self._file_signature(self.results / name) for name in files},
+                    "input_fingerprint": deepcopy(self.fingerprint), "parameters": {},
+                    "parameter_fingerprint": hashlib.sha256(b"{}").hexdigest(), "revision": self.revision}
+                self.summary["status"] = "completed" if item == "B02" else "partial"
+            except BaseException as exc:
+                failure = exc
+                status = ("cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else
+                          "quality_failed" if isinstance(exc, ValueError) else "failed")
+                self.states[item] = {"status": status, "error": str(exc)}
+                self.summary.update(status=status, error=str(exc))
+                raise
+            finally:
+                try:
+                    self.persist()
+                except Exception:
+                    if failure is None:
+                        raise
+        return self.summary
 
 
-def _learning_band_hz(config: dict) -> float | None:
-    """返回实际生效的学习频带上限；历史 schema v11 运行记录的是请求上限。"""
-    response = config.get("current_frequency_response", {})
-    value = response.get("effective_cutoff_hz")
-    if value is None:
-        return response.get("error_cutoff_hz") or config.get("parameters", {}).get("ERROR_CUTOFF_HZ")
-    return value
+def analyze(run_dir):
+    ctx = AnalysisWorkflow(run_dir)
+    return ctx.execute([stage.id for stage in ANALYSIS])
 
 
-def _analyze_response_filtered(run_dir: Path, config: dict) -> dict:
-    """响应滤波闭环：绘制带内／带外误差拆分与主要谐波诊断。"""
-    results = run_dir / "results"
-    summary = yaml.safe_load((results / "iteration_summary.yaml").read_text(encoding="utf-8"))
-    report = {"success": bool(summary), "target_reached": config["target_reached"],
-              "stop_reason": config["stop_reason"], "completion_status": config["completion_status"],
-              "iteration_count": len(summary), "metric": "RMS(target-measured)/RMS(target)",
-              "independent_validation": bool(config.get("final_reload_validated")) or any("holdout_relative_rms_error" in row for row in summary), "files": [],
-              "final_reload_validated": bool(config.get("final_reload_validated")),
-              "learning_band": _learning_band_hz(config),
-              "inverse_regularization": config.get("current_frequency_response", {}).get("inverse_regularization")}
-    if summary and (results / "corrected_control_waveform.npz").is_file():
-        with np.load(results / "corrected_control_waveform.npz", allow_pickle=False) as data:
-            time_s, target, measured, command = [data[key] for key in
-                ("time_s", "target_current_a", "measured_current_a", "voltage_v")]
-            best = int(data["best_iteration"])
-            score = float(data["relative_rms_error"])
-            measurement_path = str(data["measurement_path"]) if "measurement_path" in data.files else f"iteration_{best:03d}/feedback.npz"
-        report.update(best_iteration=best, best_relative_rms_error=score, final_command_measured=True,
-                      target_error_threshold=config["parameters"]["TARGET_RELATIVE_RMS"])
-        with np.load(run_dir / "raw" / measurement_path) as data:
-            band = np.asarray(data["learning_band"], dtype=bool)
-        target_rms = float(np.sqrt(np.mean(target ** 2)))
-        iterations = [item["iteration"] + 1 for item in summary]
-        set_plot_style("paper")
-        fig, axis = new_figure(kind="wide", constrained_layout=True)
-        axis.plot(iterations, [item["relative_rms_error"] for item in summary],
-                  "o-", label="Measured error")
-        axis.plot(iterations,
-                  [item["in_band_error_rms_a"] / target_rms for item in summary],
-                  "s--", label="In-band error")
-        axis.plot(iterations,
-                  [item["outside_band_error_rms_a"] / target_rms for item in summary],
-                  "^:", label="Out-of-band error")
-        axis.axhline(report["target_error_threshold"], ls="--", label="Threshold")
-        axis.scatter([best + 1], [score], marker="*", s=80, label="Exported iteration")
-        format_axis(axis, xlabel="Measurement round", ylabel="Relative RMS error")
-        axis.legend()
-        save_figure(fig, results / "convergence.png")
-        spectrum = np.fft.rfft(target - measured)
-        in_band = np.fft.irfft(spectrum * band, n=target.size)
-        outside = np.fft.irfft(spectrum * (~band), n=target.size)
-        fig, axes = new_figure(nrows=4, ncols=1, kind="wide", constrained_layout=True)
-        axes[0].plot(time_s * 1e6, target * 1e3, label="Target")
-        axes[0].plot(time_s * 1e6, measured * 1e3, label="Measured (CH4 reference)" if config.get("correction_method") == "harmonic_jacobian" else "Measured (aligned)")
-        axes[0].legend()
-        axes[1].plot(time_s * 1e6, (target - measured) * 1e3)
-        axes[2].plot(time_s * 1e6, in_band * 1e3, label="In-band error")
-        axes[2].plot(time_s * 1e6, outside * 1e3, label="Out-of-band error")
-        axes[2].legend()
-        axes[3].plot(time_s * 1e6, command)
-        for axis, label in zip(axes, ("Current (mA)", "Error (mA)", "Band error (mA)", "Command (V)")):
-            format_axis(axis, xlabel="Time (us)", ylabel=label)
-        save_figure(fig, results / "waveform_comparison.png")
-        report["files"] = ["convergence.png", "waveform_comparison.png",
-                           "corrected_control_waveform.npz", "corrected_control_waveform.csv"]
-    (results / "final_waveform_report.yaml").write_text(yaml.safe_dump(report, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    return report
-
-
-def _analyze_static(run_dir: Path, config: dict) -> dict:
-    results = run_dir / "results"
-    summary = yaml.safe_load((results / "iteration_summary.yaml").read_text(encoding="utf-8"))
-    report = {"success": bool(summary), "target_reached": config["target_reached"],
-              "stop_reason": config["stop_reason"], "completion_status": config["completion_status"],
-              "iteration_count": len(summary), "metric": "RMS(target-measured)/RMS(target)",
-              "independent_validation": False, "files": []}
-    if summary:
-        with np.load(results / "corrected_control_waveform.npz", allow_pickle=False) as data:
-            time_s, target, measured, command = [data[key] for key in
-                ("time_s", "target_current_a", "measured_current_a", "voltage_v")]
-            best = int(data["best_iteration"])
-            score = float(data["relative_rms_error"])
-        report.update(best_iteration=best, best_relative_rms_error=score, final_command_measured=True,
-                      target_error_threshold=config["parameters"]["TARGET_RELATIVE_RMS"])
-        set_plot_style("paper")
-        fig, axis = new_figure(kind="wide", constrained_layout=True)
-        axis.plot([x["iteration"] + 1 for x in summary], [x["relative_rms_error"] for x in summary], "o-", label="Measured error")
-        axis.axhline(report["target_error_threshold"], ls="--", label="Threshold")
-        axis.scatter([best + 1], [score], marker="*", s=80, label="Exported iteration")
-        format_axis(axis, xlabel="Measurement round", ylabel="Relative RMS error")
-        axis.legend()
-        save_figure(fig, results / "convergence.png")
-        fig, axes = new_figure(nrows=3, ncols=1, kind="wide", constrained_layout=True)
-        axes[0].plot(time_s * 1e6, target * 1e3, label="Target")
-        axes[0].plot(time_s * 1e6, measured * 1e3, label="Measured (aligned)")
-        axes[0].legend()
-        axes[1].plot(time_s * 1e6, (target - measured) * 1e3)
-        axes[2].plot(time_s * 1e6, command)
-        for axis, label in zip(axes, ("Current (mA)", "Error (mA)", "Command (V)")):
-            format_axis(axis, xlabel="Time (us)", ylabel=label)
-        save_figure(fig, results / "waveform_comparison.png")
-        report["files"] = ["convergence.png", "waveform_comparison.png", "corrected_control_waveform.npz", "corrected_control_waveform.csv"]
-    (results / "final_waveform_report.yaml").write_text(yaml.safe_dump(report, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    return report
-
-
-def main() -> int:
-    from ...experiment_runtime import runtime_run_dir
-    analyze(runtime_run_dir())
+def main():
+    payload = json.loads(os.environ.get("LAB_TYPED_PARAMETERS", "{}"))
+    if payload.get("step_ids"):
+        AnalysisWorkflow(runtime_run_dir(), payload.get("analysis_parameters")).execute(payload["step_ids"], payload.get("revision"))
+    else:
+        analyze(runtime_run_dir())
     return 0
 
 

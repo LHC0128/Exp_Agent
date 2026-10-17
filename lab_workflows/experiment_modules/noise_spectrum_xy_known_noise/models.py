@@ -52,7 +52,7 @@ class NoiseSpectrumXYKnownNoiseParams(NoiseSpectrumXYParams):
     z_calibration_k_hz_per_v: float = parameter(default=5373.638, external_name="Z_CALIBRATION_K_HZ_PER_V", label="K_Z 手动标定", unit="Hz/V", group="basic", minimum=0, description="手动输入 Z 电压到频率偏移的标定斜率，必须为有限正数；预览、检测增益与真值链使用本轮保存值，不读取标定运行，不使用 f_0V。")
     z_calibration_source_run: str = parameter(default="", external_name="Z_CALIBRATION_SOURCE_RUN", label="旧 K_Z 标定运行（未使用）", visible=False)
 
-    analysis_dispersion_source_run: str = parameter(default="", external_name="ANALYSIS_DISPERSION_SOURCE_RUN", label="静磁场标定曲线", group="advanced", description="仅在分析时验证；留空时完成谱分离并等待选择 v3 直流逐点静磁场曲线。")
+    analysis_dispersion_source_run: str = parameter(default="", external_name="ANALYSIS_DISPERSION_SOURCE_RUN", label="静磁场标定曲线", group="advanced", description="仅在分析时验证；留空时完成谱分离，等待选择符合格式与质量要求的静磁场直流逐点曲线。")
     hf2_demod_rate: float = parameter(default=100000.0, external_name="HF2_DEMOD_RATE", label="校相采样率", unit="Sa/s", group="advanced", minimum=1)
 
     # ---- 定量判据 ----

@@ -374,7 +374,8 @@ def test_group_restore_or_save_failure_keeps_completed_reads(rig, monkeypatch, f
             disk_failed = True
             raise OSError("模拟写盘故障")
         result = real_save(path, *args, **kwargs)
-        saved.append(path)
+        saved_path = Path(path.name if hasattr(path, "write") else path)
+        saved.append(saved_path.with_suffix("") if saved_path.suffix == ".tmp" else saved_path)
         return result
 
     primary = None

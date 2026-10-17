@@ -69,7 +69,26 @@ from lab_workflows.experiment_modules.rf_sensitivity_direct_aw import run_format
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_r import run_format as rf_aw_r_format
 from lab_workflows.experiment_modules.rf_sensitivity_aw_known_noise import run_format as rf_known_noise_format
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_r.definition import comparison_runner as rf_direct_aw_r_comparison_runner
+from lab_workflows.experiment_modules.static_sensitivity.analysis import analysis_block_reason as static_analysis_block_reason
+from lab_workflows.experiment_modules.static_sensitivity.run_format import format_block_reason as static_format_block_reason
+from lab_workflows.experiment_modules.noise_spectrum_xy import run_format as xy_format
+from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.analysis import analysis_block_reason as known_noise_analysis_block_reason
+from lab_workflows.experiment_modules.scope_capture import run_format as scope_capture_format
+from lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction import run_format as z_closed_loop_format
+from lab_workflows.experiment_modules.mx_y_rf_frequency_response import run_format as mx_y_rf_frequency_format
+from lab_workflows.experiment_modules.mx_y_optimal_control_rf_frequency_response import run_format as mx_y_optimal_frequency_format
+from lab_workflows.experiment_modules.mx_y_rf_sensitivity_drift import run_format as mx_y_rf_drift_format
+from lab_workflows.experiment_modules.mx_z_optimal_control_rf_sensitivity import run_format as mx_z_optimal_rf_format
+from lab_workflows.experiment_modules.mx_z_optimal_control_xy_rf_sensitivity import run_format as mx_z_optimal_xy_rf_format
+from lab_workflows.experiment_modules.mx_z_optimal_control_xy_noise_spectrum import run_format as mx_z_optimal_xy_noise_format
+from lab_workflows.experiment_modules.mx_z_optimal_control_xy_leakage_response import run_format as mx_z_optimal_xy_leakage_format
+from lab_workflows.experiment_modules.mx_z_optimal_control_xy_rf_phase_response import run_format as mx_z_optimal_xy_phase_format
+from lab_workflows.experiment_modules.mx_z_optimal_control_xyz_balance import run_format as mx_z_optimal_xyz_balance_format
+from lab_workflows.experiment_modules.mx_z_optimal_control_dg4000_bias_xyz_balance import run_format as mx_z_optimal_dg_bias_format
 RF_RUN_FORMATS = {rf_aw_format.EXPERIMENT_ID: rf_aw_format, rf_aw_r_format.EXPERIMENT_ID: rf_aw_r_format, rf_known_noise_format.EXPERIMENT_ID: rf_known_noise_format}
+WORKFLOW_RUN_FORMATS = {item.EXPERIMENT_ID: item for item in (
+    scope_capture_format, z_closed_loop_format, mx_y_rf_frequency_format, mx_y_optimal_frequency_format, mx_y_rf_drift_format, mx_z_optimal_rf_format, mx_z_optimal_xy_rf_format, mx_z_optimal_xy_noise_format, mx_z_optimal_xy_leakage_format, mx_z_optimal_xy_phase_format, mx_z_optimal_xyz_balance_format, mx_z_optimal_dg_bias_format,
+)}
 from lab_workflows.experiments.catalog import (
     add_tag,
     apply_parameter_layout,
@@ -98,6 +117,34 @@ from .noise_spectrum_xy_probe_am import ProbeAMSessionService
 from .rf_sensitivity_direct_aw_r import RFRSessionService
 from .static_sensitivity import StaticSessionService
 from .detection_chain_frequency_response import DetectionChainFrequencyResponseSessionService
+from .mx_y_rf_sensitivity import MxYRFSessionService
+from .scope_capture import ScopeCaptureSessionService
+from .mx_y_rf_frequency_response import MxYRFFrequencyResponseSessionService
+from .mx_y_optimal_control_rf_frequency_response import MxYOptimalControlFrequencySessionService
+from .mx_z_optimal_control_rf_sensitivity import MxZOptimalControlRFSessionService, create_router as mx_z_optimal_rf_router
+from .mx_z_optimal_control_xy_rf_sensitivity import MxZOptimalControlXYRFSessionService, create_router as mx_z_optimal_xy_rf_router
+from .mx_z_optimal_control_xy_noise_spectrum import MxZOptimalControlXYNoiseSessionService
+from .mx_z_optimal_control_xy_leakage_response import MxZOptimalControlXYLeakageSessionService
+from .mx_z_optimal_control_xy_rf_phase_response import MxZOptimalControlXYRFPhaseSessionService
+from .mx_z_optimal_control_xyz_balance import MxZOptimalControlXYZBalanceSessionService
+from .mx_z_optimal_control_dg4000_bias_xyz_balance import MxZOptimalControlDG4000BiasXYZBalanceSessionService
+from .mx_main_field_calibration import MxMainFieldCalibrationSessionService
+from .mx_z_field_calibration import MxZFieldCalibrationSessionService
+from .z_aw_waveform_scope_check import ZAWWaveformScopeCheckSessionService
+from .z_aw_current_waveform_scope_check import ZAWCurrentWaveformScopeCheckSessionService
+from .z_aw_closed_loop_waveform_correction import (ZAWClosedLoopSessionService,
+    ZAWClosedLoopRunSummary, create_router as z_closed_loop_router)
+from .z_coil_inductance_frequency_response import ZCoilInductanceFrequencyResponseSessionService
+from .z_coil_current_frequency_response import ZCoilCurrentFrequencyResponseSessionService
+from .bell_bloom_z_field_calibration import BellBloomZFieldCalibrationSessionService
+from .mx_z_current_coupling_calibration import (
+    MxZCurrentCouplingCalibrationSessionService,
+    create_router as mx_z_current_coupling_router,
+)
+from .mx_y_rf_sensitivity_drift import (
+    MxYRFDriftSessionService,
+    create_router as mx_y_rf_drift_router,
+)
 from .schemas import (
     ControlCurrentSourceBody,
     ControlEmissionBody,
@@ -141,20 +188,32 @@ async def lifespan(application):
     try:
         yield
     finally:
-        xy_sessions.close_communication()
-        known_noise_sessions.close_communication()
-        rf_sessions.close_communication()
-        rf_r_sessions.close_communication()
-        rf_known_noise_sessions.close_communication()
-        static_sessions.close_communication()
-        detection_chain_sessions.close_communication()
-        await asyncio.to_thread(xy_sessions.shutdown)
-        await asyncio.to_thread(known_noise_sessions.shutdown)
-        await asyncio.to_thread(rf_sessions.shutdown)
-        await asyncio.to_thread(rf_r_sessions.shutdown)
-        await asyncio.to_thread(rf_known_noise_sessions.shutdown)
-        await asyncio.to_thread(static_sessions.shutdown)
-        await asyncio.to_thread(detection_chain_sessions.shutdown)
+        services = _workflow_session_services()
+        for service in services:
+            service.close_communication()
+        for service in services:
+            await asyncio.to_thread(service.shutdown)
+
+
+def _workflow_session_services():
+    """集中列出已接线的会话，由回归检查后台收尾是否遗漏。"""
+    return (
+        xy_sessions, known_noise_sessions, probe_am_sessions, rf_sessions,
+        rf_r_sessions, rf_known_noise_sessions, static_sessions, detection_chain_sessions,
+        mx_y_rf_sessions, z_aw_scope_sessions, z_aw_current_scope_sessions, z_closed_loop_sessions,
+        mx_main_field_sessions,
+        z_coil_inductance_sessions,
+        mx_z_field_sessions,
+        z_coil_current_sessions,
+        bell_bloom_z_sessions,
+        mx_z_current_coupling_sessions,
+        scope_capture_sessions, mx_y_rf_frequency_response_sessions,
+        mx_y_optimal_control_frequency_sessions,
+        mx_y_rf_drift_sessions,
+        mx_z_optimal_rf_sessions, mx_z_optimal_xy_rf_sessions, mx_z_optimal_xy_noise_sessions,
+        mx_z_optimal_xy_leakage_sessions, mx_z_optimal_xy_phase_sessions, mx_z_optimal_xyz_balance_sessions,
+        mx_z_optimal_dg_bias_sessions,
+    )
 
 
 app = FastAPI(title="Bell-Bloom 实验控制台", version="0.1.0", lifespan=lifespan)
@@ -194,6 +253,48 @@ static_sessions = StaticSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(static_sessions))
 detection_chain_sessions = DetectionChainFrequencyResponseSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(detection_chain_sessions))
+mx_y_rf_sessions = MxYRFSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(mx_y_rf_sessions, include_history=True))
+z_aw_scope_sessions = ZAWWaveformScopeCheckSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(z_aw_scope_sessions, include_history=True))
+z_aw_current_scope_sessions = ZAWCurrentWaveformScopeCheckSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(z_aw_current_scope_sessions, include_history=True))
+z_closed_loop_sessions = ZAWClosedLoopSessionService(lambda: ROOT, manager)
+app.include_router(z_closed_loop_router(z_closed_loop_sessions))
+mx_main_field_sessions = MxMainFieldCalibrationSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(mx_main_field_sessions, include_history=True))
+z_coil_inductance_sessions = ZCoilInductanceFrequencyResponseSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(z_coil_inductance_sessions, include_history=True))
+mx_z_field_sessions = MxZFieldCalibrationSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(mx_z_field_sessions, include_history=True))
+z_coil_current_sessions = ZCoilCurrentFrequencyResponseSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(z_coil_current_sessions, include_history=True))
+bell_bloom_z_sessions = BellBloomZFieldCalibrationSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(bell_bloom_z_sessions))
+mx_z_current_coupling_sessions = MxZCurrentCouplingCalibrationSessionService(lambda: ROOT, manager)
+app.include_router(mx_z_current_coupling_router(mx_z_current_coupling_sessions, include_history=True))
+scope_capture_sessions = ScopeCaptureSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(scope_capture_sessions, include_history=True))
+mx_y_rf_frequency_response_sessions = MxYRFFrequencyResponseSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(mx_y_rf_frequency_response_sessions, include_history=True))
+mx_y_optimal_control_frequency_sessions = MxYOptimalControlFrequencySessionService(lambda: ROOT, manager)
+app.include_router(xy_router(mx_y_optimal_control_frequency_sessions))
+mx_z_optimal_rf_sessions = MxZOptimalControlRFSessionService(lambda: ROOT, manager)
+app.include_router(mx_z_optimal_rf_router(mx_z_optimal_rf_sessions))
+mx_z_optimal_xy_rf_sessions = MxZOptimalControlXYRFSessionService(lambda: ROOT, manager)
+app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_xy_rf_sessions))
+mx_z_optimal_xy_noise_sessions = MxZOptimalControlXYNoiseSessionService(lambda: ROOT, manager)
+app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_xy_noise_sessions))
+mx_z_optimal_xy_leakage_sessions = MxZOptimalControlXYLeakageSessionService(lambda: ROOT, manager)
+app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_xy_leakage_sessions))
+mx_z_optimal_xy_phase_sessions = MxZOptimalControlXYRFPhaseSessionService(lambda: ROOT, manager)
+app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_xy_phase_sessions))
+mx_z_optimal_xyz_balance_sessions = MxZOptimalControlXYZBalanceSessionService(lambda: ROOT, manager)
+app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_xyz_balance_sessions))
+mx_z_optimal_dg_bias_sessions = MxZOptimalControlDG4000BiasXYZBalanceSessionService(lambda: ROOT, manager)
+app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_dg_bias_sessions))
+mx_y_rf_drift_sessions = MxYRFDriftSessionService(lambda: ROOT, manager)
+app.include_router(mx_y_rf_drift_router(mx_y_rf_drift_sessions, include_history=True))
 updates_service = UpdatesService(lambda: ROOT, manager)
 app.include_router(updates_router(updates_service))
 
@@ -223,24 +324,6 @@ class ExperimentBody(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
-class ZAWClosedLoopRunSummary(BaseModel):
-    """Z 任意波电流闭环实验单次运行摘要，供专属 GUI 历史 Tab 渲染。"""
-
-    run_id: str
-    timestamp: str
-    run_tag: str
-    target_reached: bool
-    completion_status: str
-    stop_reason: str
-    iteration_count: int
-    best_iteration: int | None
-    best_relative_rms_error: float | None
-    target_relative_rms: float | None
-    static_calibration: dict[str, Any] = Field(default_factory=dict)
-    parameters: dict[str, Any] = Field(default_factory=dict)
-    artifacts: dict[str, str] = Field(default_factory=dict)
-
-
 class MxYOptimalControlFrequencyRunSummary(BaseModel):
     """Mx Y 最优控制 RF 频率响应单次运行摘要，供专属 GUI 历史 Tab 渲染。"""
 
@@ -251,6 +334,7 @@ class MxYOptimalControlFrequencyRunSummary(BaseModel):
     comparison_enabled: bool
     parameters: dict[str, Any] = Field(default_factory=dict)
     calibration: dict[str, Any] = Field(default_factory=dict)
+    control_source: dict[str, Any] = Field(default_factory=dict)
     optimal_response_metadata: dict[str, Any] = Field(default_factory=dict)
     constant_response_metadata: dict[str, Any] = Field(default_factory=dict)
     artifacts: dict[str, str] = Field(default_factory=dict)
@@ -1073,6 +1157,12 @@ def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
             except OSError:
                 artifacts = []
             can_analyze = definition.analysis_runner is not None
+            if definition.id in WORKFLOW_RUN_FORMATS:
+                identity = WORKFLOW_RUN_FORMATS[definition.id]
+                config = _read_yaml(path / "experiment_config.yaml")
+                if identity.format_block_reason(config):
+                    continue
+                can_analyze = can_analyze and not identity.analysis_block_reason(config)
             if definition.id in RF_RUN_FORMATS:
                 identity = RF_RUN_FORMATS[definition.id]
                 config = _read_yaml(path / "experiment_config.yaml")
@@ -1081,7 +1171,13 @@ def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
                 can_analyze = can_analyze and not identity.analysis_block_reason(config)
             if definition.id == STATIC_SENSITIVITY_ID:
                 config = _read_yaml(path / "experiment_config.yaml")
-                can_analyze = can_analyze and config.get("schema_version") in (3, 4) and config.get("acquisition_method") == "dc_step"
+                can_analyze = can_analyze and not static_analysis_block_reason(config)
+            if definition.id == xy_format.EXPERIMENT_ID:
+                config = _read_yaml(path / "experiment_config.yaml")
+                can_analyze = can_analyze and not xy_format.analysis_block_reason(config)
+            if definition.id == NOISE_SPECTRUM_XY_KNOWN_NOISE_ID:
+                config = _read_yaml(path / "experiment_config.yaml")
+                can_analyze = can_analyze and not known_noise_analysis_block_reason(config)
             result.append({
                 "id": path.name,
                 "experiment_id": definition.id,
@@ -1109,6 +1205,9 @@ def _run_dir(experiment_id: str, run_id: str) -> Path:
     path = (base / run_id).resolve()
     if base not in path.parents or not path.is_dir():
         raise HTTPException(404, "运行目录不存在")
+    if identity := WORKFLOW_RUN_FORMATS.get(definition.id):
+        if reason := identity.format_block_reason(_read_yaml(path / "experiment_config.yaml")):
+            raise HTTPException(422, reason)
     return path
 
 
@@ -1155,10 +1254,6 @@ def _create_analysis_job(run_id: str, body: AnalysisBody):
            if item.data_type == definition.data_type):
         raise _conflict("同类数据仍在采集或自动分析，请稍后重新分析", "run_busy")
     run_dir = _run_dir(body.experiment_id, run_id)
-    if definition.id == "noise-spectrum-xy":
-        xy_sessions.run_directory(run_id)
-    if definition.id == "noise-spectrum-xy-known-noise":
-        known_noise_sessions.run_directory(run_id)
     if definition.id in RF_RUN_FORMATS:
         _validate_run_identifier(run_id)
         reason = RF_RUN_FORMATS[definition.id].analysis_block_reason(_read_yaml(run_dir / "experiment_config.yaml"))
@@ -1166,9 +1261,21 @@ def _create_analysis_job(run_id: str, body: AnalysisBody):
             raise HTTPException(400, reason)
     if definition.id == STATIC_SENSITIVITY_ID:
         config = _read_yaml(run_dir / "experiment_config.yaml")
-        if config.get("schema_version") not in (3, 4) or config.get("acquisition_method") != "dc_step":
-            raise HTTPException(400, "旧格式静磁场运行仅可查看已有结果，不支持重新分析")
-        static_sessions.run_directory(run_id)
+        if reason := static_analysis_block_reason(config):
+            if config.get("completion_status") == "running" and not static_format_block_reason(config):
+                raise _conflict(reason, "run_busy")
+            raise HTTPException(400, reason)
+    for service in _workflow_session_services():
+        if service.adapter.id == definition.id:
+            service.run_directory(run_id)
+    if definition.id == xy_format.EXPERIMENT_ID:
+        reason = xy_format.analysis_block_reason(_read_yaml(run_dir / "experiment_config.yaml"))
+        if reason:
+            raise HTTPException(400, reason)
+    if definition.id == NOISE_SPECTRUM_XY_KNOWN_NOISE_ID:
+        reason = known_noise_analysis_block_reason(_read_yaml(run_dir / "experiment_config.yaml"))
+        if reason:
+            raise HTTPException(400, reason)
     if not definition.analysis_runner:
         raise _conflict("该实验没有独立离线分析器", "no_analyzer")
     kind = f"analysis:{definition.id}:{run_id}"
@@ -1220,7 +1327,7 @@ def _read_yaml(path: Path) -> dict[str, Any] | None:
     try:
         if not path.is_file():
             return None
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+        loaded = yaml.load(path.read_text(encoding="utf-8"), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
     except (OSError, yaml.YAMLError):
         return None
     return loaded if isinstance(loaded, dict) else None
@@ -1228,69 +1335,7 @@ def _read_yaml(path: Path) -> dict[str, Any] | None:
 
 def _build_zaw_closed_loop_summary(experiment_id: str, run_id: str) -> ZAWClosedLoopRunSummary:
     _validate_run_identifier(run_id)
-    run_dir = _run_dir(experiment_id, run_id)
-    config = _read_yaml(run_dir / "experiment_config.yaml")
-    if not config:
-        raise HTTPException(404, "运行配置不存在")
-    summary_rows = _read_yaml(run_dir / "results" / "iteration_summary.yaml") or []
-    static_calibration = config.get("static_calibration")
-    if not isinstance(static_calibration, dict):
-        static_calibration = {}
-    parameters = config.get("parameters")
-    if not isinstance(parameters, dict):
-        parameters = {}
-    target_reached = bool(config.get("target_reached"))
-    target_relative_rms = config.get("parameters", {}).get("TARGET_RELATIVE_RMS") if isinstance(config.get("parameters"), dict) else None
-    best_iteration: int | None = None
-    best_relative_rms_error: float | None = None
-    for row in summary_rows:
-        if not isinstance(row, dict):
-            continue
-        candidate = row.get("relative_rms_error")
-        if not isinstance(candidate, (int, float)):
-            continue
-        iteration = row.get("iteration")
-        if not isinstance(iteration, int):
-            continue
-        if best_relative_rms_error is None or candidate < best_relative_rms_error:
-            best_relative_rms_error = float(candidate)
-            best_iteration = iteration
-    run_tag = parameters.get("RUN_TAG", "")
-    timestamp = config.get("timestamp", "")
-    if not isinstance(run_tag, str):
-        run_tag = str(run_tag)
-    if not isinstance(timestamp, str):
-        timestamp = str(timestamp)
-    target_relative_rms_value = float(target_relative_rms) if isinstance(target_relative_rms, (int, float)) else None
-    completion_status = config.get("completion_status", "unknown")
-    stop_reason = config.get("stop_reason", "")
-    if not isinstance(completion_status, str):
-        completion_status = str(completion_status)
-    if not isinstance(stop_reason, str):
-        stop_reason = str(stop_reason)
-    artifacts_dir = run_dir / "results"
-    artifact_names: list[str] = []
-    try:
-        if artifacts_dir.is_dir():
-            artifact_names = [item.name for item in artifacts_dir.iterdir() if _is_existing_file(item)]
-    except OSError:
-        artifact_names = []
-    artifacts = {name: f"/api/runs/{experiment_id}/{run_id}/artifacts/{name}" for name in artifact_names}
-    return ZAWClosedLoopRunSummary(
-        run_id=run_id,
-        timestamp=timestamp,
-        run_tag=run_tag,
-        target_reached=target_reached,
-        completion_status=completion_status,
-        stop_reason=stop_reason,
-        iteration_count=len([row for row in summary_rows if isinstance(row, dict)]),
-        best_iteration=best_iteration,
-        best_relative_rms_error=best_relative_rms_error,
-        target_relative_rms=target_relative_rms_value,
-        static_calibration=static_calibration,
-        parameters=parameters,
-        artifacts=artifacts,
-    )
+    return ZAWClosedLoopRunSummary(**z_closed_loop_sessions.summary(run_id))
 
 
 @app.get(
@@ -1305,7 +1350,6 @@ def mx_y_optimal_control_frequency_run_summary(run_id: str):
     )
 
 
-@app.get(f"/api/experiments/{ZAW_CLOSED_LOOP_ID}/runs/{{run_id}}/summary", response_model=ZAWClosedLoopRunSummary)
 def experiment_run_summary(run_id: str):
     """Z 闭环专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。"""
     return _build_zaw_closed_loop_summary(ZAW_CLOSED_LOOP_ID, run_id)
@@ -1349,6 +1393,7 @@ def _build_mx_y_optimal_control_frequency_summary(
         comparison_enabled=bool(comparison.get("enabled")),
         parameters=parameters,
         calibration=comparison,
+        control_source=config.get("control_source") if isinstance(config.get("control_source"), dict) else {},
         optimal_response_metadata=optimal if isinstance(optimal, dict) else {},
         constant_response_metadata=constant if isinstance(constant, dict) else {},
         artifacts=artifacts,
@@ -1356,7 +1401,7 @@ def _build_mx_y_optimal_control_frequency_summary(
 
 
 def _mx_y_optimal_control_frequency_runs(page_size: int, offset: int) -> dict[str, Any]:
-    """只列出新格式运行：schema_version >= 2 且两个新数据文件齐备。"""
+    """按共用原始格式资格列出运行，尚未分析的分步采集同样可见。"""
     definition = _experiment_or_404(MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID)
     base = (ROOT / "data" / definition.data_type).resolve()
     runs: list[dict[str, Any]] = []
@@ -1365,19 +1410,16 @@ def _mx_y_optimal_control_frequency_runs(page_size: int, offset: int) -> dict[st
             if not path.is_dir():
                 continue
             config = _read_yaml(path / "experiment_config.yaml")
-            if not config or int(config.get("schema_version", 1) or 1) < 2:
+            if mx_y_optimal_frequency_format.format_block_reason(config):
                 continue
-            if not (path / "raw" / "optimal_control_phase_frequency_scan.npz").is_file():
-                continue
-            if not (path / "results" / "analysis.yaml").is_file():
-                continue
+            comparison = config.get("comparison")
             runs.append(
                 {
                     "run_id": path.name,
                     "timestamp": str(config.get("timestamp", "")),
                     "run_tag": str(config.get("parameters", {}).get("RUN_TAG", "")),
                     "completion_status": str(config.get("completion_status", "unknown")),
-                    "comparison_enabled": bool(config.get("comparison", {}).get("enabled")),
+                    "comparison_enabled": bool(comparison.get("enabled")) if isinstance(comparison, dict) else False,
                 }
             )
     runs.sort(key=lambda item: item["run_id"], reverse=True)

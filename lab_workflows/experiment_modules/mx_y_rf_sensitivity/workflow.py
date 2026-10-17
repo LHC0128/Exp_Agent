@@ -1,1100 +1,355 @@
-"""Mx 构型 Y 向 RF 场灵敏度采集工作流。"""
-
-from __future__ import annotations
-from ...steps.acquisition_window import acquisition_window
-
-from lab_workflows.steps import initialize_lockin_inputs
-from lab_workflows.devices import create_lockin
-from lab_workflows.lockin_compatibility import require_lockin_compatibility
-import time
+"""Mx Y RF 完整采集与串行分步会话共用的编排。"""
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, Callable
-
+from uuid import uuid4
+import shutil
 import numpy as np
-from ...steps.acquisition_window import DeferredAcquisitionWrites
-import yaml
-from gs200 import GS200Instrument
-from lockin_amplifier import (
-    DemodulatorConfig,
-    HF2Instrument,
-    OscillatorConfig,
-    SignalInputConfig,
-    demod,
-)
-from tec_controller import TECInstrument
 
-from ...common import (
-    WorkflowCancelled,
-    find_project_root,
-    load_mapping,
-    validate_safety_limit,
-)
-from ...devices import create_signal_generator
-from ...experiment_runtime import check_cancelled, load_runtime_params
-from ...steps import (
-    DGChannelShutdown,
-    DeviceSession,
-    DisconnectTarget,
-    STANDARD_PRESERVED_OUTPUTS,
-    SafetyShutdownReport,
-    ShutdownAction,
-    TemperatureSwitchRestore,
-    configure_temperature_control,
-    connect_signal_generator_routes,
-    create_run_directory,
-    run_safety_shutdown,
-    set_temperature_switch,
-    synchronize_connected_clocks,
-    wait_for_temperature_stable,
-)
-from ...steps.run_finish import finalize_run_safety
-from .acquisition import acquire_r, summarize_r
-from .analysis_core import fit_lorentzian_response
+from ...common import WorkflowCancelled, find_project_root
+from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
+from ...instrument_config import instrument_config_snapshot
+from ...steps import DeviceSession, create_run_directory, set_temperature_switch
+from ...steps.safety_shutdown import disconnect_device_mapping
+from ..noise_spectrum_xy.state_io import write_state
+from . import preparation, excitation, acquisition_steps, run_format
 from .models import MxYRFParams
-from .scan import build_amplitude_axis, build_frequency_axis, signed_amplitude_hardware
+from ._helpers import _sleep, _uncancellable_sleep, _RuntimeCancellation
+from .acquisition import acquire_r, summarize_r
+from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
 
+# 保留变体和原有回归使用的导出名，业务实现分别归属准备、激励和采集模块。
+from .preparation import (_connect_devices, _initial_state_snapshot, _configure_outputs,
+    _configure_reference_clocks, _configure_temperature_control, safe_shutdown)
+from .excitation import (_set_pump_gate_on, _configure_y_rf_sine_source, _configure_response_demodulator,
+    _restore_response_acquisition_state, _set_signed_rf, _set_y_rf_zero_off,
+    _set_y_rf_zero_off_with_temperature_sequence, restore_mx_y_rf_laser_powers)
+from .acquisition_steps import (RPointQualityError, _save_point, _acquire_frequency_scan,
+    _acquire_amplitude_scan, _acquire_noise, acquire_mx_y_rf_point)
 
-EXPERIMENT_ID = "mx-y-rf-sensitivity"
-DATA_TYPE = "Mx_Y_RF_Sensitivity"
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
+DATA_TYPE = run_format.DATA_TYPE
 EXECUTION_MODE = "typed_workflow"
 
 
-class RPointQualityError(RuntimeError):
-    """单个 R 点在限定次数内始终未通过质量门限。"""
+def _temperature_gated_acquire(*args, **kwargs):
+    kwargs.setdefault("switch", set_temperature_switch)
+    kwargs.setdefault("wait", _sleep)
+    return acquisition_steps._temperature_gated_acquire(*args, **kwargs)
 
 
-class _RuntimeCancellation:
-    @staticmethod
-    def raise_if_cancelled() -> None:
-        check_cancelled()
+def _acquire_valid_r_point(*args, **kwargs):
+    return acquisition_steps._acquire_valid_r_point(*args, **kwargs,
+        reader=acquire_r, switch=set_temperature_switch, wait=_sleep,
+        gated_acquire=_temperature_gated_acquire)
 
 
-def _sleep(seconds: float) -> None:
-    deadline = time.monotonic() + max(0.0, float(seconds))
-    while time.monotonic() < deadline:
-        check_cancelled()
-        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+connect_mx_y_rf_devices = _connect_devices
+snapshot_mx_y_rf_state = _initial_state_snapshot
+configure_mx_y_rf_outputs = _configure_outputs
 
 
-def _uncancellable_sleep(seconds: float) -> None:
-    time.sleep(max(0.0, float(seconds)))
+class Workflow:
+    """同一设备会话可重复采集，每轮原始数据与参数快照独立。"""
+    stages = ACQUISITION
 
+    def __init__(self, params, *, project_root=None, session_id=None):
+        self.root = Path(project_root).resolve() if project_root else find_project_root()
+        self.params, self.mapping = preparation.preflight(params, self.root)
+        # 收尾只使用已执行配置，首次配置前沿用会话初始基线。
+        self.pump_parameters = self.response_parameters = self.params
+        self.config_revision = self._configuration_revision()
+        self.session_id = session_id or uuid4().hex
+        self.revision = 0
+        self.states = initial_states(self.stages)
+        self.devices, self.channels = {}, {}
+        self.device_session = DeviceSession()
+        self.directory = None
+        self.run_parameters = None
+        self.current_step = None
+        self.closed = self.round_sealed = self.clock_failed = False
+        self.quality_error = None
+        self.demod_mode = "unknown"
+        self.state = self._initial_state()
+        self.outputs = {key: "未知" for key in ("X", "Y RF", "Z", "温控", "Pump")}
 
-def _identity(device: Any) -> str | None:
-    try:
-        value = device.idn() if callable(getattr(device, "idn", None)) else device.idn
-        return str(value)
-    except Exception:
-        return None
+    def _initial_state(self):
+        return dict(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, execution_mode=EXECUTION_MODE,
+            raw_format_version=run_format.RAW_FORMAT_VERSION, completion_status="running",
+            compatibility={"stable_data_type": DATA_TYPE, "schema_version": self.params.schema_version},
+            linewidth_mode=self.params.linewidth_mode, acquisition_signals=["R"],
+            phase_calibration_status="not_applicable", geometry={"main_field": "Z", "pump": "Z", "probe": "X", "rf_field": "Y", "x_field_output": "OFF"},
+            r_point_quality={"criterion": "std(R) <= threshold", "std_threshold_v": self.params.r_bad_point_std_threshold_v,
+                "max_attempts": self.params.r_point_max_attempts})
 
+    def _configuration_revision(self):
+        config = instrument_config_snapshot(self.root)
+        return (config["device_library_revision"], config["physical_mapping_revision"],
+            (self.root / "params/safety_limits.yaml").read_bytes())
 
-def _initial_state_snapshot(devices: dict[str, Any], channels: dict[str, int]) -> dict[str, Any]:
-    snapshot: dict[str, Any] = {
-        "identity_readback": {
-            name: identity
-            for name, device in devices.items()
-            if (identity := _identity(device)) is not None
-        }
-    }
-    outputs: dict[str, Any] = {}
-    for semantic, channel_name in (
-        ("z_field", "z_field"),
-        ("xy_field", "x_field"),
-        ("xy_field", "y_rf"),
-        ("laser", "pump_laser"),
-        ("laser", "probe_laser"),
-        ("pump_rf", "pump_carrier"),
-        ("pump_rf", "pump_gate"),
-        ("temp_switch", "temp_switch"),
-    ):
-        device = devices.get(semantic)
-        channel = channels.get(channel_name)
-        if device is None or channel is None:
-            continue
+    def recheck(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请结束会话后重新连接")
+        self.params, self.mapping = preparation.preflight(self.params, self.root)
+
+    def snapshot(self):
+        return dict(session_id=self.session_id, revision=self.revision,
+            status="closed" if self.closed else "running" if self.current_step else "waiting",
+            parameters=self.params.to_external(), steps=deepcopy(self.states), current_step=self.current_step,
+            run_id=self.directory.root.name if self.directory else None, outputs=dict(self.outputs),
+            output_source="最近成功模块的写入结果；初态来自回读，后续未额外回读",
+            demod_mode=self.demod_mode, safety_shutdown=self.state.get("safety_shutdown"),
+            clock_sources=self.state.get("clock_sources", {}),
+            daq_settings={"actual_response_rate_sa_s": self.state.get("actual_rates", {}).get("response_sa_s")})
+
+    def publish(self, message="等待选择下一模块"):
+        snapshot = self.snapshot()
+        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        if self.directory and not self.round_sealed:
+            write_state(self.directory.root / "acquisition_state.json", snapshot)
+        report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": snapshot})
+
+    def save(self):
+        if self.directory and not self.round_sealed:
+            self.directory.update_config(**self.state)
+
+    def update_parameters(self, values):
+        self.recheck()
+        old = self.params.to_external()
+        if unknown := values.keys() - old.keys():
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        params, mapping = preparation.preflight(MxYRFParams.from_external(old | values), self.root)
+        changed = {name for name, value in params.to_external().items() if value != old[name]}
+        for stage in self.stages:
+            if changed.intersection(stage.parameters):
+                invalidate(self.stages, self.states, stage.id)
+        self.params, self.mapping = params, mapping
+        self.revision += 1
+        self.publish("参数已应用；请显式重跑受影响模块")
+
+    def _new_directory(self, selected):
+        previous, inherited = self.directory, deepcopy(self.state)
+        if previous and not self.round_sealed:
+            self.state.update(completion_status="failed", failure_reason="本轮被重跑替代，保留已有数据")
+            self.save()
+        suffix = 0
+        while True:
+            try:
+                tag = self.params.run_tag if not suffix else f"{self.params.run_tag}_{suffix:02d}"
+                self.directory = create_run_directory(DATA_TYPE, tag, self.params.to_external(),
+                    schema_version=self.params.schema_version, project_root=self.root)
+                break
+            except FileExistsError:
+                suffix += 1
+        self.round_sealed = False
+        self.state = self._initial_state()
+        self.run_parameters = self.params.to_external()
+        if previous:
+            affected = {stage.id for item in selected if item != "A01"
+                for stage in invalidated_stages(self.stages, item)}
+            for key in ("clock_sources", "device_snapshot", "temperature_control", "actual_rates", "frequency_gate_fit"):
+                if key in inherited:
+                    self.state[key] = inherited[key]
+            for stage in self.stages:
+                if stage.id not in affected and self.states[stage.id]["status"] == "completed":
+                    for pattern in stage.artifacts:
+                        for source in previous.root.glob(pattern):
+                            if source.is_file():
+                                target = self.directory.root / source.relative_to(previous.root)
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(source, target)
+            self.state["source_run_id"] = previous.root.name
+        self.save()
+
+    def execute(self, selected):
+        selected = validate_selection(self.stages, self.states, selected)
+        if selected != [FINISH_ID]:
+            self.recheck()
+        if self.demod_mode == "noise" and set(selected).intersection(("A08", "A09")) and "A07" not in selected:
+            raise ValueError("当前为噪声模式，请显式选择 A07 重新准备响应解调")
+        hardware = [item for item in selected if item not in ("A01", FINISH_ID)]
+        if hardware and (self.directory is None or self.round_sealed
+                or self.run_parameters != self.params.to_external()
+                or any(self.states[item]["status"] != "pending" for item in hardware if item in ("A08", "A09", "A10"))):
+            self._new_directory(selected)
+        self.revision += 1
+        self.quality_error = None
+        for item in selected:
+            if item == FINISH_ID:
+                self.finish()
+                break
+            check_cancelled()
+            if item != "A01":
+                invalidate(self.stages, self.states, item)
+            self.current_step = item
+            self.states[item] = {"status": "running", "error": ""}
+            failure = None
+            try:
+                self.publish(next(stage.title for stage in self.stages if stage.id == item))
+                self._execute_step(item)
+                stage = next(stage for stage in self.stages if stage.id == item)
+                artifacts = [path.relative_to(self.directory.root).as_posix()
+                    for pattern in stage.artifacts for path in self.directory.root.glob(pattern)
+                    if path.is_file()] if self.directory else []
+                self.states[item] = {"status": "completed", "error": "", "artifacts": artifacts}
+            except BaseException as exc:
+                failure = exc
+                quality = isinstance(exc, acquisition_steps.RPointQualityError)
+                self.states[item] = {"status": "quality_failed" if quality else "failed", "error": str(exc)}
+                self.state["failure_reason"] = str(exc)
+                try:
+                    self.save()
+                except Exception as save_error:
+                    self.state["state_save_error"] = str(save_error)
+                if quality:
+                    self.quality_error = exc
+                    break
+                raise
+            finally:
+                self.current_step = None
+                try:
+                    self.publish(f"{item} {self.states[item]['status']}")
+                except Exception:
+                    if failure is None:
+                        raise
+        return self.snapshot()
+
+    def _execute_step(self, item):
+        params, devices, channels = self.params, self.devices, self.channels
+        if item == "A01":
+            self.recheck()
+        elif item == "A02":
+            if not devices:
+                try:
+                    self.devices, self.channels = preparation._connect_devices(self.mapping, self.device_session)
+                except BaseException:
+                    self.device_session.cleanup_connection_failure()
+                    raise
+            self.state["device_snapshot"] = preparation._initial_state_snapshot(self.devices, self.channels)
+        elif item == "A03":
+            try:
+                self.state["clock_sources"] = preparation._configure_reference_clocks(devices, self.mapping)
+                self.clock_failed = False
+            except BaseException:
+                self.clock_failed = True
+                raise
+        elif item == "A04":
+            preparation.configure_initial_outputs(params, devices, channels, self.mapping)
+            self.outputs.update(X="OFF", Z="OFF", **{"Y RF": "OFF", "温控": "ON"})
+        elif item == "A05":
+            status = preparation.configure_temperature_control(devices.get("tec"), params.temperature_c, channel=1)
+            self.state["temperature_control"] = status.to_dict()
+        elif item == "A06":
+            excitation.configure_pump(params, devices, channels)
+            self.pump_parameters = params
+            self.outputs["Pump"] = "ON"
+        elif item == "A07":
+            self.state.setdefault("actual_rates", {})["response_sa_s"] = excitation.configure_response(params, devices, channels)
+            self.response_parameters = params
+            self.demod_mode = "response"
+        elif item == "A08":
+            if params.linewidth_mode == "frequency_sweep":
+                self.state["frequency_gate_fit"] = acquisition_steps._acquire_frequency_scan(params, self.directory,
+                    devices, channels, self.state["actual_rates"]["response_sa_s"], str(self.mapping["lockin_r"]["device_id"]))
+            else:
+                self.state["frequency_gate_fit"] = None
+        elif item == "A09":
+            self.state["actual_rates"]["response_sa_s"] = acquisition_steps._acquire_amplitude_scan(params,
+                self.directory, devices, channels, self.state["actual_rates"]["response_sa_s"],
+                str(self.mapping["lockin_r"]["device_id"]))
+            self.response_parameters = params
+            self.demod_mode = "response"
+        elif item == "A10":
+            self.demod_mode = "noise"
+            self.state["actual_rates"]["noise_sa_s"] = acquisition_steps._acquire_noise(params,
+                self.directory, devices, channels, str(self.mapping["lockin_r"]["device_id"]))
+            self.outputs.update(**{"Y RF": "OFF", "温控": "ON"})
+        elif item == "A11":
+            self.state["actual_rates"]["response_sa_s"] = excitation._restore_response_acquisition_state(self.response_parameters, devices, channels)
+            self.demod_mode = "response"
+            report = preparation.safe_shutdown(devices, channels, self.pump_parameters, disconnect_tec=False)
+            self.state["safety_shutdown"] = report.to_dict()
+            if not report.completed:
+                raise RuntimeError("安全收尾失败：" + "；".join(report.errors))
+            self.outputs.update(X="OFF", Z="OFF", **{"Y RF": "OFF", "温控": "ON"})
+            self.state.update(completion_status="completed", failure_reason=None, finished_at=datetime.now().isoformat())
+            self.state["data_files"] = [path.relative_to(self.directory.root).as_posix() for path in sorted(self.directory.raw.glob("*.npz"))]
+            self.save()
+            self.round_sealed = True
+            # 本轮收尾关闭 Y RF；重新采集必须显式重新准备解调与激励。
+            invalidate(self.stages, self.states, "A07")
+        self.save()
+
+    def finish(self, failure=None):
+        if self.closed:
+            return
+        errors = []
+        if self.devices:
+            if self.demod_mode == "noise":
+                try:
+                    excitation._restore_response_acquisition_state(self.response_parameters, self.devices, self.channels)
+                    self.demod_mode = "response"
+                except Exception as exc:
+                    errors.append("响应模式恢复失败：" + str(exc))
+            try:
+                if self.round_sealed:
+                    errors.extend(disconnect_device_mapping({"tec": self.devices.get("tec")}))
+                else:
+                    report = preparation.safe_shutdown(self.devices, self.channels, self.pump_parameters)
+                    self.state["safety_shutdown"] = report.to_dict()
+                    errors.extend(report.errors)
+                if self.clock_failed:
+                    errors.extend(disconnect_device_mapping(self.devices))
+            except Exception as exc:
+                errors.append(str(exc))
+        if errors:
+            self.state["safety_shutdown"] = dict(self.state.get("safety_shutdown") or {}, completed=False, errors=errors)
+        if not self.round_sealed:
+            reason = str(failure) if failure else self.state.get("failure_reason") or "本轮采集未完整完成"
+            if errors:
+                reason += "；安全恢复失败：" + "；".join(errors)
+            self.state.update(completion_status="cancelled" if isinstance(failure, WorkflowCancelled) else "failed",
+                failure_reason=reason, finished_at=datetime.now().isoformat())
+            self.save()
+        elif errors:
+            # 已封存目录不改写采集参数；清理失败仍保留在会话快照并向调用者报告。
+            self.state["cleanup_errors"] = list(errors)
+        self.closed = True
+        self.current_step = None
+        self.revision += 1
+        self.states[FINISH_ID] = {"status": "failed" if errors else "completed", "error": "；".join(errors)}
+        self.outputs.update(X="OFF" if not errors else "未知", Z="OFF" if not errors else "未知",
+            **{"Y RF": "OFF" if not errors else "未知", "温控": "ON" if not errors else "未知"})
         try:
-            outputs[channel_name] = {"output_on": bool(device.get_output(channel=channel))}
-        except Exception as exc:
-            outputs[channel_name] = {"read_error": str(exc)}
-    snapshot["output_state_before_configuration"] = outputs
-    return snapshot
-
-
-def _set_pump_gate_on(device: Any, channel: int, voltage_v: float) -> None:
-    """保持通道既有阻抗，用通用 DC 接口保持 Pump 门控常开。"""
-    validate_safety_limit("Time_sequence", voltage_v)
-    device.set_burst_state(False, channel=channel)
-    device.set_mod_state(False, channel=channel)
-    device.setup_dc(voltage_v, channel=channel)
-    device.set_output(True, channel=channel)
-
-
-def _configure_y_rf_sine_source(
-    params: MxYRFParams,
-    rf: Any,
-    channel: int,
-) -> None:
-    """把 Y RF 通道恢复为幅度扫描所需的正弦波状态。"""
-    initial_amplitude = max(
-        params.frequency_rf_amplitude_vpp,
-        1e-6,
-    )
-    validate_safety_limit("rf_coil", initial_amplitude)
-    rf.set_burst_state(False, channel=channel)
-    rf.set_mod_state(False, channel=channel)
-    rf.setup_sine(
-        params.y_rf_frequency_hz,
-        initial_amplitude,
-        offset=0.0,
-        phase=0.0,
-        channel=channel,
-    )
-    rf.set_output(False, channel=channel)
-
-
-def _configure_response_demodulator(
-    params: MxYRFParams,
-    hf2: Any,
-) -> float:
-    """恢复幅度响应采集所需的 HF2 Demod0 配置并返回实际速率。"""
-    demod.configure_oscillator(
-        hf2,
-        OscillatorConfig(
-            osc_index=params.demod_osc_idx,
-            frequency=params.y_rf_frequency_hz,
-        ),
-    )
-    return float(
-        demod.configure_demodulator(
-            hf2,
-            DemodulatorConfig(
-                demod_index=params.demod_idx,
-                enable=True,
-                rate=params.response_rate_sa_s,
-                input_channel=0,
-                osc_select=params.demod_osc_idx,
-                harmonic=1,
-                time_constant=params.response_time_constant_s,
-                order=params.response_demod_order,
-                phase=float(
-                    hf2.get_double(
-                        f"{hf2.demod_path(params.demod_idx)}/phaseshift"
-                    )
-                ),
-            ),
-         for_acquisition=True)
-    )
-
-
-def _restore_response_acquisition_state(
-    params: MxYRFParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-) -> float:
-    """在温控开启时完成响应采集配置。"""
-    _configure_y_rf_sine_source(params, devices['xy_field'], channels['y_rf'])
-    return float(_configure_response_demodulator(params, devices['hf2']))
-
-
-def _configure_reference_clocks(
-    devices: dict[str, Any],
-    mapping: dict[str, dict[str, Any]],
-    *,
-    profile: dict[str, str] | None = None,
-) -> dict[str, dict[str, str]]:
-    """同步本工作流使用的全部信号源和 HF2，并强制回读验证。"""
-    records = synchronize_connected_clocks(
-        devices,
-        mapping,
-        {
-            "z_field": "Z_magnetic_field",
-            "xy_field": "rf_coil",
-            "laser": "Pump_laser_power",
-            "pump_rf": "Pump_modulation",
-            "temp_switch": "Temp_Switch",
-            "hf2": "lockin_r",
-        },
-        profile=profile,
-    )
-    return {
-        name: {"target": str(record["target"]), "actual": str(record["actual"])}
-        for name, record in records.items()
-    }
-
-
-def _connect_devices(
-    mapping: dict[str, dict[str, Any]],
-    session: DeviceSession,
-    *,
-    connect_tec: bool = True,
-) -> tuple[dict[str, Any], dict[str, int]]:
-    devices: dict[str, Any] = {}
-    channels: dict[str, int] = {}
-
-    gs_cfg = mapping["main_magnetic_field"]
-    devices["gs200"] = session.connect(
-        "gs200", gs_cfg["resource"], lambda: GS200Instrument(gs_cfg["resource"])
-    )
-
-    z_cfg = mapping["Z_magnetic_field"]
-    devices["z_field"] = session.connect(
-        "z_field", z_cfg["resource"], lambda: create_signal_generator(z_cfg)
-    )
-    channels["z_field"] = int(z_cfg["channel"])
-
-    x_cfg = mapping["X_magnetic_field"]
-    rf_cfg = mapping["rf_coil"]
-    devices["xy_field"], routed_channels = connect_signal_generator_routes(
-        session,
-        "xy_field",
-        {
-            "x_field": ("X_magnetic_field", x_cfg),
-            "y_rf": ("rf_coil", rf_cfg),
-        },
-    )
-    channels.update(routed_channels)
-
-    pump_cfg = mapping["Pump_laser_power"]
-    probe_cfg = mapping["Probe_laser_power"]
-    devices["laser"], routed_channels = connect_signal_generator_routes(
-        session,
-        "laser",
-        {
-            "pump_laser": ("Pump_laser_power", pump_cfg),
-            "probe_laser": ("Probe_laser_power", probe_cfg),
-        },
-    )
-    channels.update(routed_channels)
-
-    carrier_cfg = mapping["Pump_modulation"]
-    gate_cfg = mapping["Time_sequence"]
-    devices["pump_rf"], routed_channels = connect_signal_generator_routes(
-        session,
-        "pump_rf",
-        {
-            "pump_carrier": ("Pump_modulation", carrier_cfg),
-            "pump_gate": ("Time_sequence", gate_cfg),
-        },
-    )
-    channels.update(routed_channels)
-
-    temp_cfg = mapping["Temp_Switch"]
-    devices["temp_switch"] = session.connect(
-        "temp_switch", temp_cfg["resource"], lambda: create_signal_generator(temp_cfg)
-    )
-    channels["temp_switch"] = int(temp_cfg["channel"])
-
-    hf_cfg = mapping["lockin_r"]
-    devices["hf2"] = session.connect(
-        "hf2",
-        f"hf2://{hf_cfg.get('host', '127.0.0.1')}/{hf_cfg['device_id']}",
-        lambda: create_lockin(hf_cfg),
-    )
-    initialize_lockin_inputs(devices["hf2"])
-
-    if connect_tec:
-        tec_cfg = mapping["temperature"]
-        devices["tec"] = session.connect_optional(
-            "tec",
-            tec_cfg["resource"],
-            lambda: TECInstrument(port=tec_cfg["resource"]),
-            device_label="TEC103",
-        )
-    return devices, channels
-
-
-def safe_shutdown(
-    devices: dict[str, Any], channels: dict[str, int], params: MxYRFParams
-) -> SafetyShutdownReport:
-    """关闭 Z/XY 磁场并强制保持 Pump 连续常开。"""
-    dg_channels: list[DGChannelShutdown] = []
-    z_field = devices.get("z_field")
-    if z_field is not None and "z_field" in channels:
-        dg_channels.append(
-            DGChannelShutdown(
-                z_field,
-                channels["z_field"],
-                "Z_magnetic_field",
-                "Z 辅助场",
-            )
-        )
-    xy_field = devices.get("xy_field")
-    if xy_field is not None:
-        if "x_field" in channels:
-            dg_channels.append(DGChannelShutdown(xy_field, channels["x_field"], "X_magnetic_field", "X 磁场"))
-        if "y_rf" in channels:
-            dg_channels.append(DGChannelShutdown(xy_field, channels["y_rf"], "rf_coil", "Y RF 场"))
-
-    extra_actions: list[ShutdownAction] = []
-    pump_rf = devices.get("pump_rf")
-    if pump_rf is not None and "pump_gate" in channels:
-        gate_channel = channels["pump_gate"]
-
-        def keep_pump_gate_on() -> None:
-            _set_pump_gate_on(
-                pump_rf,
-                gate_channel,
-                params.pump_gate_voltage_v,
-            )
-
-        extra_actions.append(ShutdownAction("保持 Pump RF 开关 5V 常开失败", keep_pump_gate_on))
-    if pump_rf is not None and "pump_carrier" in channels:
-        carrier_channel = channels["pump_carrier"]
-
-        def keep_pump_carrier_on() -> None:
-            validate_safety_limit(
-                "Pump_modulation",
-                params.pump_carrier_amplitude_vpp,
-            )
-            pump_rf.setup_sine(
-                params.pump_carrier_frequency_hz,
-                params.pump_carrier_amplitude_vpp,
-                offset=0.0,
-                phase=0.0,
-                channel=carrier_channel,
-            )
-            pump_rf.set_output(True, channel=carrier_channel)
-
-        extra_actions.append(
-            ShutdownAction(
-                "保持 Pump 100MHz 载波开启失败",
-                keep_pump_carrier_on,
-            )
-        )
-
-    temperature_restore = None
-    if devices.get("temp_switch") is not None and "temp_switch" in channels:
-        temperature_restore = TemperatureSwitchRestore(devices["temp_switch"], channels["temp_switch"])
-    return run_safety_shutdown(
-        dg_channels=dg_channels,
-        temperature_switch=temperature_restore,
-        extra_actions=extra_actions,
-        disconnect_targets=(DisconnectTarget("TEC", devices.get("tec")),),
-        preserved_outputs=(*STANDARD_PRESERVED_OUTPUTS, "Time_sequence"),
-    )
-
-
-def _configure_temperature_control(
-    params: MxYRFParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    *,
-    control_tec: bool,
-) -> float | None:
-    """开启温控开关，并按实验选择是否连接和配置 TEC。"""
-    set_temperature_switch(
-        devices["temp_switch"],
-        True,
-        channel=channels["temp_switch"],
-    )
-    if not control_tec:
-        print("温控开关已开启；当前实验不连接 TEC，也不等待温度稳定")
-        return None
-
-    status = configure_temperature_control(
-        devices.get("tec"),
-        params.temperature_c,
-        channel=1,
-    )
-    return status.actual_temperature_c
-
-
-def _configure_outputs(
-    params: MxYRFParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    mapping: dict[str, dict[str, Any]],
-    *,
-    control_tec: bool = True,
-) -> tuple[float, dict[str, dict[str, str]]]:
-    clock_sources = _configure_reference_clocks(devices, mapping)
-    z_field = devices["z_field"]
-    validate_safety_limit("Z_magnetic_field", 0.0)
-    z_field.set_burst_state(False, channel=channels["z_field"])
-    z_field.set_mod_state(False, channel=channels["z_field"])
-    z_field.setup_dc(0.0, channel=channels["z_field"])
-    z_field.set_output(False, channel=channels["z_field"])
-
-    xy_field = devices["xy_field"]
-    validate_safety_limit("X_magnetic_field", 0.0)
-    xy_field.set_burst_state(False, channel=channels["x_field"])
-    xy_field.set_mod_state(False, channel=channels["x_field"])
-    xy_field.setup_dc(0.0, channel=channels["x_field"])
-    xy_field.set_output(False, channel=channels["x_field"])
-    validate_safety_limit("rf_coil", 0.0)
-    _configure_y_rf_sine_source(params, xy_field, channels['y_rf'])
-
-    laser = devices["laser"]
-    validate_safety_limit("Pump_laser_power", params.pump_laser_power_v)
-    laser.setup_dc(params.pump_laser_power_v, channel=channels["pump_laser"])
-    laser.set_output(True, channel=channels["pump_laser"])
-    validate_safety_limit("Probe_laser_power", params.probe_laser_power_v)
-    laser.setup_dc(params.probe_laser_power_v, channel=channels["probe_laser"])
-    laser.set_output(True, channel=channels["probe_laser"])
-
-    gs200 = devices["gs200"]
-    gs_cfg = mapping["main_magnetic_field"]
-    if gs_cfg.get("source_function"):
-        gs200.set_source_function(gs_cfg["source_function"])
-    gs200.set_current_limit(0.01)
-    validate_safety_limit("main_magnetic_field", params.main_magnetic_field_ma)
-    gs200.set_current(params.main_magnetic_field_ma / 1000.0)
-    gs200.set_output(True)
-
-    pump_rf = devices["pump_rf"]
-    validate_safety_limit("Pump_modulation", params.pump_carrier_amplitude_vpp)
-    pump_rf.setup_sine(
-        params.pump_carrier_frequency_hz,
-        params.pump_carrier_amplitude_vpp,
-        offset=0.0,
-        phase=0.0,
-        channel=channels["pump_carrier"],
-    )
-    pump_rf.set_output(True, channel=channels["pump_carrier"])
-    _set_pump_gate_on(
-        pump_rf,
-        channels["pump_gate"],
-        params.pump_gate_voltage_v,
-    )
-
-    actual_temperature = _configure_temperature_control(
-        params,
-        devices,
-        channels,
-        control_tec=control_tec,
-    )
-
-    hf2 = devices["hf2"]
-    demod.configure_signal_input(
-        hf2,
-        SignalInputConfig(input_index=0, range=params.hf2_signal_range_v, diff=False),
-    )
-    actual_rate = _configure_response_demodulator(params, hf2)
-    if actual_temperature is None:
-        print(
-            "Mx 工作点已配置，TEC 未连接，"
-            f"Demod0 实际速率 {actual_rate:.3f} Sa/s"
-        )
-    else:
-        print(
-            f"Mx 工作点已配置，温度 {actual_temperature:.2f} °C，"
-            f"Demod0 实际速率 {actual_rate:.3f} Sa/s"
-        )
-    return float(actual_rate), clock_sources
-
-
-def _set_signed_rf(device: Any, channel: int, signed_amplitude_vpp: float, *, output_zero: bool = False) -> dict[str, Any]:
-    amplitude, phase, output_on = signed_amplitude_hardware(signed_amplitude_vpp)
-    validate_safety_limit("rf_coil", amplitude)
-    if output_on:
-        device.set_phase_adjust(phase, channel=channel)
-        device.set_amplitude(amplitude, channel=channel)
-        device.set_output(True, channel=channel)
-    else:
-        device.set_output(bool(output_zero), channel=channel)
-    return {"hardware_amplitude_vpp": amplitude, "hardware_phase_deg": phase, "output_on": bool(output_on or output_zero)}
-
-
-def _save_point(path: Path, payload: dict[str, np.ndarray], metadata: dict[str, Any], actual_rate: float) -> dict[str, float]:
-    summary = summarize_r(payload)
-    np.savez(
-        path,
-        time_s=payload["time_s"],
-        r_v=payload["r"],
-        actual_rate_sa_s=payload.get("actual_rate_Sa_s", np.float64(actual_rate)),
-        **{key: value for key, value in metadata.items()},
-        **{key: np.float64(value) if isinstance(value, float) else value for key, value in summary.items()},
-     **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
-    return summary
-
-
-def _temperature_gated_acquire(
-    params: MxYRFParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    *,
-    set_y_rf: Callable[[], None],
-    settle_time_s: float,
-    acquire: Callable[[], Any],
-) -> Any:
-    """配置后关温控、统一等待、读入内存，任何退出路径先恢复温控。"""
-    check_cancelled()
-    set_y_rf()
-    def set_enabled(enabled):
-        set_temperature_switch(devices["temp_switch"], enabled, channel=channels["temp_switch"])
-        if enabled:
-            _uncancellable_sleep(params.temp_switch_on_lag_s)
-    with acquisition_window(set_enabled, _sleep, params.system_settle_s):
-        return acquire()
-
-
-def _acquire_valid_r_point(
-    params: MxYRFParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    *,
-    file_stem: str,
-    metadata: dict[str, Any],
-    set_y_rf: Callable[[], None],
-    settle_time_s: float,
-    duration_s: float,
-    actual_rate: float,
-    device_id: str,
-) -> tuple[dict[str, float], int, str]:
-    """采集一个 R 点；标准差超限时完整保存并重新采集。"""
-    hf2 = devices["hf2"]
-    for attempt in range(params.r_point_max_attempts):
-        checker = devices.get("_compliance_checker")
-        if checker is not None:
-            checker(f"{file_stem} 采集前")
-        with DeferredAcquisitionWrites() as pending:
-            def acquire_and_buffer():
-                payload = acquire_r(
-                        hf2,
-                        device_id=device_id,
-                        demod_idx=params.demod_idx,
-                        actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
-                        duration_s=duration_s,
-                    )
-                summary = summarize_r(payload)
-                accepted = (
-                    summary["r_std_v"]
-                    <= params.r_bad_point_std_threshold_v
-                )
-                filename = f"{file_stem}_attempt_{attempt:02d}.npz"
-                pending.add(_save_point,
-                    run_dir.raw / filename,
-                    payload,
-                    {
-                        **metadata,
-                        "attempt_index": np.int64(attempt),
-                        "quality_accepted": np.uint8(accepted),
-                        "r_std_threshold_v": np.float64(
-                            params.r_bad_point_std_threshold_v
-                        ),
-                    },
-                    actual_rate,
-                )
-                return payload
-            payload = _temperature_gated_acquire(
-                params,
-                devices,
-                channels,
-                set_y_rf=set_y_rf,
-                settle_time_s=settle_time_s,
-                acquire=acquire_and_buffer,
-            )
-        summary = summarize_r(payload)
-        if checker is not None:
-            checker(f"{file_stem} 采集后")
-        accepted = (
-            summary["r_std_v"]
-            <= params.r_bad_point_std_threshold_v
-        )
-        filename = f"{file_stem}_attempt_{attempt:02d}.npz"
-        print(
-            f"  R 质量 {attempt + 1}/{params.r_point_max_attempts}: "
-            f"std={summary['r_std_v']:.6g} V, "
-            f"{'接受' if accepted else '拒绝并重采'}"
-        )
-        if accepted:
-            return {**summary, "actual_rate_sa_s": float(payload.get("actual_rate_Sa_s", actual_rate))}, attempt, filename
-    raise RPointQualityError(
-        f"{file_stem} 连续 {params.r_point_max_attempts} 次 "
-        f"std(R) > {params.r_bad_point_std_threshold_v:.6g} V"
-    )
-
-
-def _acquire_frequency_scan(
-    params: MxYRFParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    actual_rate: float,
-    device_id: str,
-) -> dict[str, Any]:
-    axis = build_frequency_axis(params)
-    summaries: list[dict[str, float]] = []
-    accepted_attempts: list[int] = []
-    accepted_files: list[str] = []
-    rf = devices["xy_field"]
-    hf2 = devices["hf2"]
-    for index, frequency in enumerate(axis):
-        check_cancelled()
-        print(f"模式1频率点 {index + 1}/{len(axis)}: {frequency:.3f} Hz")
-
-        def set_frequency_point() -> None:
-            validate_safety_limit(
-                "rf_coil",
-                params.frequency_rf_amplitude_vpp,
-            )
-            rf.set_frequency(float(frequency), channel=channels["y_rf"])
-            rf.set_phase_adjust(0.0, channel=channels["y_rf"])
-            rf.set_amplitude(
-                params.frequency_rf_amplitude_vpp,
-                channel=channels["y_rf"],
-            )
-            rf.set_output(True, channel=channels["y_rf"])
-            demod.configure_oscillator(
-                hf2,
-                OscillatorConfig(
-                    osc_index=params.demod_osc_idx,
-                    frequency=float(frequency),
-                ),
-            )
-
-        summary, attempt, filename = _acquire_valid_r_point(
-            params,
-            run_dir,
-            devices,
-            channels,
-            file_stem=f"frequency_{index:04d}",
-            metadata={
-                "frequency_hz": np.float64(frequency),
-                "rf_amplitude_vpp": np.float64(
-                    params.frequency_rf_amplitude_vpp
-                ),
-            },
-            set_y_rf=set_frequency_point,
-            settle_time_s=params.system_settle_s,
-            duration_s=params.frequency_duration_s,
-            actual_rate=actual_rate,
-            device_id=device_id,
-        )
-        summaries.append(summary)
-        accepted_attempts.append(attempt)
-        accepted_files.append(filename)
-    r_values = np.asarray([item["r_scalar_mean_v"] for item in summaries])
-    np.savez(
-        run_dir.raw / "frequency_scan.npz",
-        frequency_hz=axis,
-        r_mean_v=r_values,
-        r_scalar_mean_v=r_values,
-        r_std_v=[item["r_std_v"] for item in summaries],
-        accepted_attempt_index=accepted_attempts,
-        accepted_file=accepted_files,
-        actual_rate_sa_s=np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
-    )
-    fit = fit_lorentzian_response(
-        axis,
-        r_values,
-        r_squared_min=params.fit_r_squared_min,
-        relative_gamma_uncertainty_max=params.fit_relative_gamma_uncertainty_max,
-    )
-    with (run_dir.results / "frequency_gate.yaml").open("w", encoding="utf-8") as stream:
-        yaml.safe_dump(fit.to_dict(), stream, allow_unicode=True, sort_keys=False)
-    if not fit.success:
-        raise RuntimeError("模式1 R-Lorentzian 拟合质量不合格: " + "；".join(fit.rejection_reasons))
-    return fit.to_dict()
-
-
-def _acquire_amplitude_scan(
-    params: MxYRFParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    expected_actual_rate: float,
-    device_id: str,
-) -> float:
-    axis = build_amplitude_axis(params)
-    summaries: list[dict[str, float]] = []
-    hardware_records: list[dict[str, Any]] = []
-    accepted_attempts: list[int] = []
-    accepted_files: list[str] = []
-    rf = devices["xy_field"]
-    actual_rate = _restore_response_acquisition_state(
-        params,
-        devices,
-        channels,
-    )
-    if not np.isclose(actual_rate, expected_actual_rate):
-        print(
-            "HF2 响应采样率回读已更新: "
-            f"{expected_actual_rate:.3f} -> {actual_rate:.3f} Sa/s"
-        )
-    for index, amplitude in enumerate(axis):
-        check_cancelled()
-        print(f"Y RF 幅度点 {index + 1}/{len(axis)}: {amplitude:+.6f} Vpp")
-        hardware_amplitude, hardware_phase, output_on = (
-            signed_amplitude_hardware(float(amplitude))
-        )
-        hardware = {
-            "hardware_amplitude_vpp": hardware_amplitude,
-            "hardware_phase_deg": hardware_phase,
-            "output_on": output_on,
-        }
-        summary, attempt, filename = _acquire_valid_r_point(
-            params,
-            run_dir,
-            devices,
-            channels,
-            file_stem=f"amplitude_{index:04d}",
-            metadata={
-                "signed_amplitude_vpp": np.float64(amplitude),
-                **hardware,
-            },
-            set_y_rf=lambda amplitude=amplitude: _set_signed_rf(
-                rf,
-                channels["y_rf"],
-                float(amplitude),
-            ),
-            settle_time_s=params.system_settle_s,
-            duration_s=params.response_duration_s,
-            actual_rate=actual_rate,
-            device_id=device_id,
-        )
-        summaries.append(summary)
-        hardware_records.append(hardware)
-        accepted_attempts.append(attempt)
-        accepted_files.append(filename)
-    np.savez(
-        run_dir.raw / "amplitude_scan.npz",
-        signed_amplitude_vpp=axis,
-        hardware_amplitude_vpp=[item["hardware_amplitude_vpp"] for item in hardware_records],
-        hardware_phase_deg=[item["hardware_phase_deg"] for item in hardware_records],
-        output_on=[item["output_on"] for item in hardware_records],
-        r_mean_v=[item["r_mean_v"] for item in summaries],
-        r_scalar_mean_v=[item["r_scalar_mean_v"] for item in summaries],
-        r_std_v=[item["r_std_v"] for item in summaries],
-        accepted_attempt_index=accepted_attempts,
-        accepted_file=accepted_files,
-        r_std_threshold_v=np.float64(
-            params.r_bad_point_std_threshold_v
-        ),
-        actual_rate_sa_s=np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
-    )
-    return actual_rate
-
-
-def _set_y_rf_zero_off(rf: Any, channel: int) -> None:
-    """噪声采集前将 Y RF 安全切换为 0 V DC 且关闭输出。"""
-    validate_safety_limit("rf_coil", 0.0)
-    rf.set_output(False, channel=channel)
-    rf.setup_dc(0.0, channel=channel)
-    rf.set_output(False, channel=channel)
-
-
-def _set_y_rf_zero_off_with_temperature_sequence(
-    params: MxYRFParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-) -> None:
-    """按标准温控时序把 Y RF 恢复为零输出。"""
-    if devices.get("temp_switch") is None or "temp_switch" not in channels:
-        _set_y_rf_zero_off(devices["xy_field"], channels["y_rf"])
-        return
-    _set_y_rf_zero_off(devices['xy_field'], channels['y_rf'])
-
-
-def _acquire_noise(
-    params: MxYRFParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    device_id: str,
-    *,
-    set_y_rf_off_state: Callable[[], None] | None = None,
-    y_rf_dc_v: float = 0.0,
-    y_rf_output_on: bool = False,
-    noise_metadata: dict[str, Any] | None = None,
-    noise_label: str = "零 Y RF 噪声",
-    settle_time_s: float = 0.0,
-) -> float:
-    rf = devices["xy_field"]
-    hf2 = devices["hf2"]
-    actual_rate = demod.configure_demodulator(
-        hf2,
-        DemodulatorConfig(
-            demod_index=params.demod_idx,
-            enable=True,
-            rate=params.noise_rate_sa_s,
-            input_channel=0,
-            osc_select=params.demod_osc_idx,
-            harmonic=1,
-            time_constant=params.noise_time_constant_s,
-            order=params.noise_demod_order,
-            phase=float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift")),
-        ),
-     for_acquisition=True)
-    rf_off_setter = set_y_rf_off_state or (
-        lambda: _set_y_rf_zero_off(rf, channels["y_rf"])
-    )
-    for index in range(params.noise_n_avg):
-        check_cancelled()
-        checker = devices.get("_compliance_checker")
-        if checker is not None:
-            checker(f"{noise_label} {index + 1} 采集前")
-        print(f"{noise_label} {index + 1}/{params.noise_n_avg}")
-        with DeferredAcquisitionWrites() as pending:
-            def acquire_and_buffer():
-                payload = acquire_r(
-                        hf2,
-                        device_id=device_id,
-                        demod_idx=params.demod_idx,
-                        actual_rate_sa_s=float(actual_rate), requested_rate_sa_s=params.noise_rate_sa_s,
-                        duration_s=params.noise_duration_s,
-                    )
-                metadata = {
-                    "y_rf_dc_v": np.float64(y_rf_dc_v),
-                    "y_rf_output_on": np.uint8(y_rf_output_on),
-                }
-                if noise_metadata:
-                    metadata.update(noise_metadata)
-                pending.add(_save_point,
-                    run_dir.raw / f"noise_{index:03d}.npz",
-                    payload,
-                    metadata,
-                    float(actual_rate),
-                )
-                return payload
-            payload = _temperature_gated_acquire(
-                params,
-                devices,
-                channels,
-                set_y_rf=rf_off_setter,
-                settle_time_s=settle_time_s,
-                acquire=acquire_and_buffer,
-            )
-        if checker is not None:
-            checker(f"{noise_label} {index + 1} 采集后")
-        metadata = {
-            "y_rf_dc_v": np.float64(y_rf_dc_v),
-            "y_rf_output_on": np.uint8(y_rf_output_on),
-        }
-        if noise_metadata:
-            metadata.update(noise_metadata)
-    return float(payload.get("actual_rate_Sa_s", actual_rate))
-
-
-def connect_mx_y_rf_devices(
-    mapping: dict[str, dict[str, Any]],
-    session: DeviceSession,
-    *,
-    connect_tec: bool = True,
-) -> tuple[dict[str, Any], dict[str, int]]:
-    """连接 Mx Y RF 构型使用的设备，并复用同物理资源。"""
-    return _connect_devices(
-        mapping,
-        session,
-        connect_tec=connect_tec,
-    )
-
-
-def snapshot_mx_y_rf_state(
-    devices: dict[str, Any],
-    channels: dict[str, int],
-) -> dict[str, Any]:
-    """保存配置前的设备身份和输出状态。"""
-    return _initial_state_snapshot(devices, channels)
-
-
-def configure_mx_y_rf_outputs(
-    params: MxYRFParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    mapping: dict[str, dict[str, Any]],
-    *,
-    control_tec: bool = True,
-) -> tuple[float, dict[str, dict[str, str]]]:
-    """配置参考 Mx Y RF 工作点。"""
-    return _configure_outputs(
-        params,
-        devices,
-        channels,
-        mapping,
-        control_tec=control_tec,
-    )
-
-
-def acquire_mx_y_rf_point(
-    params: MxYRFParams,
-    raw_dir: Path,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    actual_response_rate: float,
-    device_id: str,
-    *,
-    results_dir: Path | None = None,
-) -> dict[str, Any]:
-    """把一个完整工作点的原始数据写入指定目录。"""
-    raw_dir = Path(raw_dir)
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    target_results = Path(results_dir) if results_dir is not None else raw_dir
-    target_results.mkdir(parents=True, exist_ok=True)
-    point_run_dir = SimpleNamespace(raw=raw_dir, results=target_results)
-    frequency_fit = None
-    try:
-        if params.linewidth_mode == "frequency_sweep":
-            frequency_fit = _acquire_frequency_scan(
-                params,
-                point_run_dir,
-                devices,
-                channels,
-                actual_response_rate,
-                device_id,
-            )
-        actual_response_rate = _acquire_amplitude_scan(
-            params,
-            point_run_dir,
-            devices,
-            channels,
-            actual_response_rate,
-            device_id,
-        )
-        actual_noise_rate = _acquire_noise(
-            params,
-            point_run_dir,
-            devices,
-            channels,
-            device_id,
-        )
-    finally:
-        _set_y_rf_zero_off_with_temperature_sequence(
-            params,
-            devices,
-            channels,
-        )
-    return {
-        "actual_response_rate_sa_s": actual_response_rate,
-        "actual_noise_rate_sa_s": actual_noise_rate,
-        "frequency_gate_fit": frequency_fit,
-    }
-
-
-def restore_mx_y_rf_laser_powers(
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    *,
-    pump_power_v: float,
-    probe_power_v: float,
-) -> None:
-    """恢复 Pump/Probe DC 基准功率并保持两路输出开启。"""
-    laser = devices.get("laser")
-    if laser is None:
-        return
-    validate_safety_limit("Pump_laser_power", pump_power_v)
-    validate_safety_limit("Probe_laser_power", probe_power_v)
-    laser.setup_dc(pump_power_v, channel=channels["pump_laser"])
-    laser.set_output(True, channel=channels["pump_laser"])
-    laser.setup_dc(probe_power_v, channel=channels["probe_laser"])
-    laser.set_output(True, channel=channels["probe_laser"])
-
-
-def run(params: MxYRFParams) -> Path:
-    root = find_project_root()
-    mapping = load_mapping(root)
-    require_lockin_compatibility('mx-y-rf-sensitivity', params.to_external(), mapping=mapping)
-    run_dir = create_run_directory(DATA_TYPE, params.run_tag, params.to_external(), schema_version=params.schema_version, project_root=root)
-    run_dir.update_config(
-        experiment_id=EXPERIMENT_ID,
-        data_type=DATA_TYPE,
-        execution_mode=EXECUTION_MODE,
-        geometry={"main_field": "Z", "pump": "Z", "probe": "X", "rf_field": "Y", "x_field_output": "OFF"},
-        linewidth_mode=params.linewidth_mode,
-        compatibility={"stable_data_type": DATA_TYPE, "schema_version": params.schema_version},
-        acquisition_signals=["R"],
-        r_point_quality={
-            "criterion": "std(R) <= threshold",
-            "std_threshold_v": params.r_bad_point_std_threshold_v,
-            "max_attempts": params.r_point_max_attempts,
-        },
-    )
-    session = DeviceSession()
-    devices: dict[str, Any] = {}
-    channels: dict[str, int] = {}
-    completion_status = "failed"
-    failure_reason: str | None = None
-    try:
-        check_cancelled()
-        try:
-            devices, channels = _connect_devices(mapping, session)
+            self.publish("会话已结束")
+            report_runtime_progress("finished", "采集会话已结束", 100)
         except Exception:
-            session.cleanup_connection_failure()
-            raise
-        run_dir.update_config(device_snapshot=_initial_state_snapshot(devices, channels))
-        actual_response_rate, clock_sources = _configure_outputs(
-            params,
-            devices,
-            channels,
-            mapping,
-        )
-        run_dir.update_config(clock_sources=clock_sources)
-        device_id = str(mapping["lockin_r"]["device_id"])
-        point_result = acquire_mx_y_rf_point(
-            params,
-            run_dir.raw,
-            devices,
-            channels,
-            actual_response_rate,
-            device_id,
-            results_dir=run_dir.results,
-        )
-        frequency_fit = point_result["frequency_gate_fit"]
-        actual_response_rate = point_result[
-            "actual_response_rate_sa_s"
-        ]
-        actual_noise_rate = point_result["actual_noise_rate_sa_s"]
-        completion_status = "completed"
-        run_dir.update_config(
-            completion_status=completion_status,
-            actual_rates={"response_sa_s": actual_response_rate, "noise_sa_s": actual_noise_rate},
-            frequency_gate_fit=frequency_fit,
-            data_files=[
-                "raw/amplitude_scan.npz",
-                *( ["raw/frequency_scan.npz"] if params.linewidth_mode == "frequency_sweep" else [] ),
-                *[f"raw/noise_{index:03d}.npz" for index in range(params.noise_n_avg)],
-            ],
-        )
-        print(f"Mx Y RF 灵敏度采集完成: {run_dir.root}")
-        return run_dir.root
-    except WorkflowCancelled as exc:
-        failure_reason = str(exc)
-        completion_status = "cancelled"
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-            )
-        raise
-    except Exception as exc:
-        failure_reason = str(exc)
-        if run_dir.config_path.exists():
-            run_dir.update_config(completion_status="failed", failure_reason=failure_reason)
+            if failure is None and not errors:
+                raise
+        if errors and failure is None:
+            raise RuntimeError("安全收尾失败：" + "；".join(errors))
+
+
+def run(params: MxYRFParams, *, project_root=None, workflow_type=Workflow) -> Path:
+    ctx = workflow_type(params, project_root=project_root)
+    failure = None
+    try:
+        ctx.execute([stage.id for stage in ctx.stages if stage.id != FINISH_ID])
+        if ctx.quality_error:
+            raise ctx.quality_error
+        return ctx.directory.root
+    except BaseException as exc:
+        failure = exc
         raise
     finally:
-        finish = finalize_run_safety(
-            shutdown=lambda: safe_shutdown(devices, channels, params),
-            completion_status=completion_status,
-            failure_reason=failure_reason,
-        )
-        if finish.cleanup_errors:
-            print("安全关闭失败: " + "；".join(finish.cleanup_errors))
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status=finish.completion_status,
-                failure_reason=finish.failure_reason,
-                safety_shutdown=finish.shutdown_report.to_dict(),
-                device_disconnect={
-                    "tec_disconnected": not finish.shutdown_report.disconnect_errors,
-                    "other_devices_preserved": True,
-                    "errors": list(finish.shutdown_report.disconnect_errors),
-                },
-            )
-        if (
-            finish.completion_status != "completed"
-            and not finish.original_exception_pending
-        ):
-            raise RuntimeError(
-                f"实验结束但安全恢复失败: {finish.failure_reason}"
-            )
+        ctx.finish(failure)
 
 
-def main() -> int:
-    params = load_runtime_params(MxYRFParams)
-    run(params)
-    return 0
+def main():
+    run(load_runtime_params(MxYRFParams))
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

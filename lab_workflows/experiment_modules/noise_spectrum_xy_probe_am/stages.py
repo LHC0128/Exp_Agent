@@ -26,7 +26,8 @@ ACQUISITION = (
     Stage(FINISH_ID, "安全收尾 / 结束会话", "扫描与结束", ()),
 )
 ANALYSIS = (
-    Stage("B01", "加载配置与原始数据", "加载", ()),
+    Stage("B01", "加载配置与原始数据", "加载", (),
+          quality_gates=("实验身份、OFF/ON 配对、实际采样率和波形长度有效，采集已封存",)),
     Stage("B02", "ON/OFF Welch PSD", "两态谱", ("B01",),
           ("ANALYSIS_BIN_WIDTH_HZ", "ANALYSIS_FREQUENCY_MIN_HZ", "ANALYSIS_FREQUENCY_MAX_HZ"),
           ("psd_matrices.npz", "known_noise_preview.npz", "known_noise_preview.png", "known_noise_preview.pdf")),

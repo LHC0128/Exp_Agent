@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import yaml
 from lab_workflows.experiment_modules.noise_spectrum_xy_probe_am.definition import ADAPTER
 from lab_workflows.experiment_modules.noise_spectrum_xy_probe_am.test_workflow import copy_config, scan_params
+from lab_workflows.experiment_modules.noise_spectrum_xy_probe_am.test_analysis import synthetic_run
 from .jobs import JobManager
 from .noise_spectrum_xy_probe_am import ProbeAMSessionService
 from .workflow_sessions import create_router
@@ -99,6 +100,37 @@ class ProbeAMAPITest(unittest.TestCase):
                 self.assertEqual(self.service.get(session_id)["steps"]["A16"]["status"], "completed")
                 self.assertFalse(self.manager.hardware_lock.locked())
 
+    def test_child_rejects_replayed_and_stale_commands_and_shutdown_waits(self):
+        session_id = self.create()
+        job = self.manager.get(self.service.get(session_id)["job_id"])
+        queue = self.service.sessions[session_id]["queue"]
+        command = dict(request_id="probe-direct-command", revision=0, action="steps",
+                       step_ids=[f"A{i:02d}" for i in range(1, 15)])
+        queue.put(command)
+        def results(request_id):
+            return [event["data"]["command_result"] for event in job.events
+                    if event.get("data", {}).get("command_result", {}).get("request_id") == request_id]
+        self.wait(lambda: bool(results(command["request_id"])))
+        first = self.service.get(session_id)
+        self.assertEqual(first["steps"]["A14"]["status"], "completed")
+        self.assertIsNone(results(command["request_id"])[0]["error"])
+        queue.put(command)
+        self.wait(lambda: len(results(command["request_id"])) == 2)
+        self.assertIn("重复或无效的请求编号", results(command["request_id"])[1]["error"])
+        queue.put(command | {"request_id": "probe-expired-command"})
+        self.wait(lambda: bool(results("probe-expired-command")))
+        self.assertIn("会话修订已改变", results("probe-expired-command")[0]["error"])
+        unchanged = self.service.get(session_id)
+        self.assertEqual(unchanged["revision"], first["revision"])
+        self.assertEqual(unchanged["run_id"], first["run_id"])
+        self.assertTrue(self.manager.hardware_lock.locked())
+        self.service.shutdown()
+        self.assertEqual(self.service.get(session_id)["status"], "closed")
+        self.assertEqual(self.service.get(session_id)["steps"]["A16"]["status"], "completed")
+        self.assertEqual(self.service.get(session_id)["outputs"]["Probe AM"], "OFF")
+        self.assertNotIn(job.status, ("queued", "running"))
+        self.assertFalse(self.manager.hardware_lock.locked())
+
     def test_manifest_diagram_history_snapshot_and_reanalysis(self):
         flow = self.client.get(BASE + "/workflow").json()
         self.assertEqual(flow["acquisition"][-1]["dependencies"], [])
@@ -142,7 +174,47 @@ class ProbeAMAPITest(unittest.TestCase):
         self.assertEqual(response.json()["options"]["bin_width_hz"], 50.0)
         self.assertEqual(self.client.post(BASE + "/runs/options/analysis", json={"revision": 0, "step_ids": ["B04"],
             "analysis_parameters": {"ANALYSIS_FIT_HALF_WIDTH_HZ": 300.0}}).status_code, 422)
+        for parameters in ({"UNKNOWN": 1}, {"NOISE_AMPLITUDE_VPP": .5}, {"ANALYSIS_BIN_WIDTH_HZ": True}):
+            with self.subTest(parameters=parameters):
+                self.assertEqual(self.client.post(BASE + "/runs/options/analysis", json={"revision": 0,
+                    "step_ids": ["B01"], "analysis_parameters": parameters}).status_code, 422)
         self.assertFalse(self.manager.jobs)
+
+    def test_real_scientific_analysis_subprocess_and_shared_reanalysis_lock(self):
+        from . import main
+        directory = synthetic_run(self.root, "scientific")
+        state = self.client.get(BASE + "/runs/scientific/analysis").json()
+        self.assertEqual(state["steps"]["B01"]["status"], "pending")
+        with patch.object(main, "ROOT", self.root), patch.object(main, "manager", self.manager), \
+             patch.object(main, "probe_am_sessions", self.service), TestClient(main.app) as client:
+            response = self.client.post(BASE + "/runs/scientific/analysis", json={"revision": state["revision"],
+                "step_ids": ["B01", "B02", "B03", "B04"], "analysis_parameters": {}})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertFalse(self.manager.hardware_lock.locked())
+            duplicate = self.client.post(BASE + "/runs/scientific/analysis", json={"revision": state["revision"], "step_ids": ["B01"]})
+            self.assertEqual(duplicate.status_code, 409, duplicate.text)
+            self.assertEqual(client.post("/api/runs/scientific/analyze", json={"experiment_id": ADAPTER.id}).status_code, 409)
+            job = self.manager.get(response.json()["id"])
+            self.wait(lambda: job.status not in ("queued", "running"))
+            self.assertEqual(job.status, "completed", job.error)
+            completed = self.client.get(BASE + "/runs/scientific/analysis").json()
+            self.assertEqual(completed["summary"]["status"], "completed")
+            self.assertEqual(completed["summary"]["calibration"]["source"], "moving_peaks")
+            self.assertTrue((directory / "results/noise_spectra.npz").is_file())
+            self.assertTrue((directory / "results/signed_spectral_difference.png").read_bytes().startswith(b"\x89PNG"))
+            rerun = client.post("/api/runs/scientific/analyze", json={"experiment_id": ADAPTER.id})
+            self.assertEqual(rerun.status_code, 200, rerun.text)
+            self.assertEqual(self.client.post(BASE + "/runs/scientific/analysis", json={"revision": completed["revision"], "step_ids": ["B01"]}).status_code, 409)
+            self.assertEqual(client.post("/api/runs/scientific/analyze", json={"experiment_id": ADAPTER.id}).status_code, 409)
+            job = self.manager.get(rerun.json()["id"])
+            self.wait(lambda: job.status not in ("queued", "running"))
+            self.assertEqual(job.status, "completed", job.error)
+            self.assertEqual(client.get(BASE + "/runs/scientific/summary").json()["analysis_status"], "completed")
+        config = yaml.safe_load((directory / "experiment_config.yaml").read_text(encoding="utf-8"))
+        config["completion_status"] = "running"
+        (directory / "experiment_config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+        self.assertEqual(self.client.get(BASE + "/runs/scientific/analysis").status_code, 409)
+        self.assertEqual(self.client.post(BASE + "/runs/scientific/analysis", json={"revision": 0, "step_ids": ["B01"]}).status_code, 409)
 
 
 if __name__ == "__main__":

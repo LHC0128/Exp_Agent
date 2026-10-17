@@ -1,1402 +1,378 @@
-"""Mx Z 最优控制 RF 灵敏度采集工作流。"""
-
+"""完整运行与分步会话共用的 Mx Z 灵敏度编排，兼容既有共享导入。"""
 from __future__ import annotations
-
-from lab_workflows.lockin_compatibility import require_lockin_compatibility
-from dataclasses import asdict, replace
+from copy import deepcopy
+from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
-from typing import Any
-
-import numpy as np
-from ...steps.acquisition_window import DeferredAcquisitionWrites
+import shutil
+import hashlib
 import yaml
-
-from ...common import find_project_root, load_mapping, validate_safety_limit
-from ...control_sources import applied_control_from_corrected
-from ...current_feedback import load_corrected_control_waveform
-from ...experiment_runtime import check_cancelled, load_runtime_params
-from ...steps import (
-    DGChannelShutdown,
-    DeviceSession,
-    DisconnectTarget,
-    OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
-    STANDARD_PRESERVED_OUTPUTS,
-    SafetyShutdownReport,
-    ShutdownAction,
-    TemperatureSwitchRestore,
-    configure_fixed_dc_field,
-    configure_mx_z_optimal_control_workpoint,
-    create_run_directory,
-    restore_main_field_state,
-    run_safety_shutdown,
-    save_corrected_control_source_snapshot,
-    snapshot_main_field_state,
-    validate_z_trigger_mapping,
-    wait_for_temperature_stable,
-)
-from ..mx_y_rf_sensitivity.acquisition import (
-    acquire_r,
-    acquire_rxy,
-    summarize_r,
-    summarize_rxy,
-)
-from ..mx_y_rf_sensitivity.scan import build_amplitude_axis
-from ..mx_y_rf_sensitivity.workflow import (
-    RPointQualityError,
-    _acquire_noise,
-    _acquire_valid_r_point,
-    _set_pump_gate_on,
-    _temperature_gated_acquire,
-)
-from ..mx_z_field_calibration.workflow import (
-    _configure_reference_clocks,
-    _connect_devices,
-    _initial_state_snapshot,
-)
+from uuid import uuid4
+from ...common import WorkflowCancelled, find_project_root
+from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
+from ...instrument_config import instrument_config_snapshot
+from ...steps import (DeviceSession, create_run_directory, save_corrected_control_source_snapshot,
+    snapshot_main_field_state, restore_main_field_state, disconnect_device_mapping)
+from ..noise_spectrum_xy.state_io import write_state
+from ..mx_y_rf_sensitivity.acquisition import acquire_r, acquire_rxy, summarize_r, summarize_rxy
+from ..mx_y_rf_sensitivity.workflow import RPointQualityError, _acquire_noise, _acquire_valid_r_point, _temperature_gated_acquire
+from ..mx_y_rf_sensitivity.excitation import _configure_response_demodulator
 from .models import MxZOptimalControlRFParams
-from .phase import (
-    detect_complex_phase_outliers,
-    fit_phase_scan,
-    fit_quadrature_phase_scan,
-    paired_phase_order,
-)
-from .phase_plot import plot_phase_calibration
+from . import preparation, acquisition, run_format
+from .preparation import _connect_control_devices, _configure_common_outputs, safe_shutdown
+from .excitation import (_configure_y_rf_output, _validate_y_rf_envelope, _restore_y_rf_burst_sine,
+    _rearm_y_rf, _rearm_control)
+from .acquisition import _save_rxy_point, _rxy_summary_arrays, _reacquire_phase_outliers_once
+from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
 
-
-EXPERIMENT_ID = "mx-z-optimal-control-rf-sensitivity"
-DATA_TYPE = "Mx_Z_Optimal_Control_RF_Sensitivity"
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
+DATA_TYPE = run_format.DATA_TYPE
 EXECUTION_MODE = "typed_workflow"
 
 
-class _RuntimeCancellation:
-    @staticmethod
-    def raise_if_cancelled() -> None:
-        check_cancelled()
+def _acquire_valid_rxy_point(*args, **kwargs):
+    return acquisition._acquire_valid_rxy_point(*args, **kwargs, reader=acquire_rxy, gated_acquire=_temperature_gated_acquire)
 
 
-def _connect_control_devices(
-    mapping: dict[str, dict[str, Any]],
-    session: DeviceSession,
-) -> tuple[dict[str, Any], dict[str, int]]:
-    """连接 Mx 控制实验设备，并声明 Z 源同机触发通道。"""
-    devices, channels = _connect_devices(mapping, session)
-    channels["trigger"] = validate_z_trigger_mapping(mapping)
-    return devices, channels
+def _acquire_phase_scan(*args, **kwargs):
+    return acquisition._acquire_phase_scan(*args, **kwargs,
+        r_point_acquirer=_acquire_valid_r_point, rxy_point_acquirer=_acquire_valid_rxy_point)
 
 
-def _configure_y_rf_output(
-    params: MxZOptimalControlRFParams,
-    device: Any,
-    channel: int,
-) -> None:
-    amplitude_vpp = float(params.phase_cal_rf_amplitude_vpp)
-    _validate_y_rf_envelope(params.y_rf_offset_v, amplitude_vpp)
-    if amplitude_vpp == 0.0:
-        configure_fixed_dc_field(
-            device,
-            channel,
-            "Y_magnetic_field",
-            params.y_rf_offset_v,
-        )
-        return
-    device.set_output(False, channel=channel)
-    device.set_burst_state(False, channel=channel)
-    device.set_mod_state(False, channel=channel)
-    device.setup_sine(
-        params.y_rf_frequency_hz,
-        amplitude_vpp,
-        offset=params.y_rf_offset_v,
-        phase=0.0,
-        channel=channel,
-    )
-    device.set_burst_state(True, channel=channel)
-    device.set_burst_mode("INFinity", channel=channel)
-    device.set_burst_trigger_source("EXTernal", channel=channel)
-    device.set_burst_trigger_slope(
-        OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
-        channel=channel,
-    )
-    device.set_burst_phase(0.0, channel=channel)
-    device.set_output(False, channel=channel)
+def _acquire_amplitude_scan(*args, **kwargs):
+    return acquisition._acquire_amplitude_scan(*args, **kwargs, point_acquirer=_acquire_valid_r_point)
 
 
-def _validate_y_rf_envelope(offset_v: float, amplitude_vpp: float) -> None:
-    """校验 Y RF 幅度及叠加 DC 偏置后的完整输出包络。"""
-    amplitude = abs(float(amplitude_vpp))
-    offset = float(validate_safety_limit("Y_magnetic_field", float(offset_v)))
-    validate_safety_limit("rf_coil", amplitude)
-    validate_safety_limit("Y_magnetic_field", offset - amplitude / 2.0)
-    validate_safety_limit("Y_magnetic_field", offset + amplitude / 2.0)
+def _acquire_control_noise(*args, **kwargs):
+    return acquisition._acquire_control_noise(*args, **kwargs, noise_acquirer=_acquire_noise)
 
 
-def _restore_y_rf_burst_sine(
-    device: Any,
-    channel: int,
-    *,
-    frequency_hz: float,
-    amplitude_vpp: float,
-    offset_v: float,
-    phase_deg: float,
-) -> None:
-    """从纯 DC 零点恢复带偏置的外触发 Burst 正弦。"""
-    _validate_y_rf_envelope(offset_v, amplitude_vpp)
-    device.set_output(False, channel=channel)
-    device.set_burst_state(False, channel=channel)
-    device.set_mod_state(False, channel=channel)
-    device.setup_sine(
-        float(frequency_hz),
-        abs(float(amplitude_vpp)),
-        offset=float(offset_v),
-        phase=0.0,
-        channel=channel,
-    )
-    device.set_burst_state(True, channel=channel)
-    device.set_burst_mode("INFinity", channel=channel)
-    device.set_burst_trigger_source("EXTernal", channel=channel)
-    device.set_burst_trigger_slope(
-        OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
-        channel=channel,
-    )
-    device.set_burst_phase(float(phase_deg) % 360.0, channel=channel)
-    device.set_output(False, channel=channel)
+class Workflow:
+    stages = ACQUISITION
+
+    def __init__(self, params, *, project_root=None, session_id=None):
+        self.root = Path(project_root).resolve() if project_root else find_project_root()
+        self.params, self.mapping = preparation.preflight(params, self.root)
+        self.shutdown_parameters = self.params
+        self.corrected = self.applied = self.executed_source = self.main_field_state = None
+        self.response_parameters = self.params
+        self.demod_mode = "unknown"
+        self.selected_phase = None
+        self.config_revision = self._configuration_revision()
+        self.session_id = session_id or uuid4().hex
+        self.revision = 0
+        self.states = initial_states(self.stages)
+        self.devices, self.channels = {}, {}
+        self.device_session = DeviceSession()
+        self.directory = self.run_parameters = self.current_step = None
+        self.closed = self.round_sealed = False
+        self.quality_error = self.progress = None
+        self.state = self._initial_state()
+        self.outputs = {key: "未知" for key in ("X", "Y RF", "Z", "温控", "Pump", "共同触发")}
 
 
-def _rearm_y_rf(
-    device: Any,
-    channel: int,
-    *,
-    amplitude_vpp: float,
-    phase_deg: float,
-    frequency_hz: float | None = None,
-    offset_v: float = 0.0,
-    waveform_state: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    """设置 Y RF；零幅度切为纯 DC，非零点用 OFF→ON 等待触发。"""
-    amplitude = abs(float(amplitude_vpp))
-    phase = float(phase_deg) % 360.0
-    _validate_y_rf_envelope(offset_v, amplitude)
-    device.set_output(False, channel=channel)
-    if amplitude == 0.0:
-        configure_fixed_dc_field(
-            device,
-            channel,
-            "Y_magnetic_field",
-            offset_v,
-        )
-        if waveform_state is not None:
-            waveform_state["mode"] = "dc"
-        return {
-            "hardware_amplitude_vpp": 0.0,
-            "hardware_phase_deg": phase,
-            "dc_offset_v": float(offset_v),
-            "waveform_mode": "dc",
-            "output_on": bool(offset_v != 0.0),
-        }
-    if waveform_state is not None and waveform_state.get("mode") == "dc":
-        if frequency_hz is None:
-            raise ValueError("从 Y RF 纯 DC 恢复正弦时必须提供 frequency_hz")
-        _restore_y_rf_burst_sine(
-            device,
-            channel,
-            frequency_hz=frequency_hz,
-            amplitude_vpp=amplitude,
-            offset_v=offset_v,
-            phase_deg=phase,
-        )
-    else:
-        device.set_burst_phase(phase, channel=channel)
-        device.set_amplitude(amplitude, channel=channel)
-    device.set_output(True, channel=channel)
-    if waveform_state is not None:
-        waveform_state["mode"] = "burst_sine"
-    return {
-        "hardware_amplitude_vpp": amplitude,
-        "hardware_phase_deg": phase,
-        "dc_offset_v": float(offset_v),
-        "waveform_mode": "burst_sine",
-        "output_on": True,
-    }
+    def _initial_state(self):
+        return dict(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, execution_mode=EXECUTION_MODE,
+            raw_format_version=run_format.RAW_FORMAT_VERSION, completion_status="running")
 
 
-def _rearm_control(
-    device: Any,
-    channel: int,
-    *,
-    phase_deg: float,
-) -> dict[str, Any]:
-    """设置 Z 控制触发相位，并用 OFF→ON 重新等待外部触发。"""
-    phase = float(phase_deg) % 360.0
-    device.set_output(False, channel=channel)
-    device.set_burst_phase(phase, channel=channel)
-    device.set_output(True, channel=channel)
-    return {
-        "control_hardware_phase_deg": phase,
-        "control_output_on": True,
-    }
+    def _configuration_revision(self):
+        config = instrument_config_snapshot(self.root)
+        return (config["device_library_revision"], config["physical_mapping_revision"], (self.root / "params/safety_limits.yaml").read_bytes())
 
 
-def _configure_common_outputs(
-    params: MxZOptimalControlRFParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    mapping: dict[str, dict[str, Any]],
-    control_source: Any,
-    applied: Any,
-) -> tuple[float, float | None, dict[str, dict[str, str]], dict[str, Any]]:
-    """配置可选 GS200 主场的 Mx 工作点并启动连续 Z 控制。
-
-    ``control_source`` 只需提供 ``repeat_frequency_hz``，本实验传入
-    闭环冻结波形，仍支持理论来源的实验传入 ``TheoryControlSource``。
-    """
-    def configure_xy_outputs() -> None:
-        xy_field = devices["xy_field"]
-        configure_fixed_dc_field(
-            xy_field,
-            channels["x_field"],
-            "X_magnetic_field",
-            params.x_dc_field_v,
-        )
-        _configure_y_rf_output(params, xy_field, channels["y_rf"])
-
-    return configure_mx_z_optimal_control_workpoint(
-        params,
-        devices,
-        channels,
-        mapping,
-        control_source,
-        applied,
-        demod_frequency_hz=params.y_rf_frequency_hz,
-        cancellation=_RuntimeCancellation(),
-        xy_output_configurator=configure_xy_outputs,
-        reference_clock_configurator=_configure_reference_clocks,
-        pump_gate_setter=_set_pump_gate_on,
-        temperature_stability_waiter=wait_for_temperature_stable,
-    )
+    def recheck(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请安全结束会话后重新连接")
+        self.params, self.mapping = preparation.preflight(self.params, self.root)
+        if self.corrected is not None:
+            current, _ = preparation.load_source(self.params, self.root)
+            if current.run_name == self.corrected.run_name and current.waveform_sha256 != self.corrected.waveform_sha256:
+                invalidate(self.stages, self.states, "A01")
+                self.corrected = None
+                self.revision += 1
+                raise ValueError("闭环冻结文件已改变，请从A01重新预检来源")
 
 
-def _save_rxy_point(
-    path: Path,
-    payload: dict[str, np.ndarray],
-    metadata: dict[str, Any],
-    actual_rate: float,
-) -> dict[str, float]:
-    """保存单个正交校相点的同步 R/X/Y 及质量统计。"""
-    summary = summarize_rxy(payload)
-    np.savez(
-        path,
-        time_s=payload["time_s"],
-        r_v=payload["r"],
-        x_v=payload["x"],
-        y_v=payload["y"],
-        actual_rate_sa_s=payload.get("actual_rate_Sa_s", np.float64(actual_rate)),
-        **metadata,
-        **{
-            key: np.float64(value) if isinstance(value, float) else value
-            for key, value in summary.items()
-        },
-     **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
-    return summary
+    def snapshot(self):
+        return dict(session_id=self.session_id, revision=self.revision,
+            status="closed" if self.closed else "running" if self.current_step else "waiting",
+            parameters=self.params.to_external(), steps=deepcopy(self.states), current_step=self.current_step,
+            run_id=self.directory.root.name if self.directory else None, outputs=dict(self.outputs),
+            output_source="最近成功模块的写入结果；未经额外回读", demod_mode=self.demod_mode,
+            safety_shutdown=self.state.get("safety_shutdown"), clock_sources=self.state.get("clock_sources", {}),
+            daq_settings={"actual_response_rate_sa_s": self.state.get("actual_rates", {}).get("response_sa_s")})
 
 
-def _acquire_valid_rxy_point(
-    params: MxZOptimalControlRFParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    *,
-    file_stem: str,
-    metadata: dict[str, Any],
-    set_y_rf: Any,
-    settle_time_s: float,
-    duration_s: float,
-    actual_rate: float,
-    device_id: str,
-) -> tuple[dict[str, float], int, str]:
-    """采集一个 R/X/Y 点；复噪声超限时完整保存并重采。"""
-    hf2 = devices["hf2"]
-    for attempt in range(params.r_point_max_attempts):
-        checker = devices.get("_compliance_checker")
-        if checker is not None:
-            checker(f"{file_stem} 采集前")
-        with DeferredAcquisitionWrites() as pending:
-            def acquire_and_buffer():
-                payload = acquire_rxy(
-                        hf2,
-                        device_id=device_id,
-                        demod_idx=params.demod_idx,
-                        actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
-                        duration_s=duration_s,
-                    )
-                summary = summarize_rxy(payload)
-                accepted = (
-                    summary["complex_std_v"]
-                    <= params.r_bad_point_std_threshold_v
-                )
-                filename = f"{file_stem}_attempt_{attempt:02d}.npz"
-                pending.add(_save_rxy_point,
-                    run_dir.raw / filename,
-                    payload,
-                    {
-                        **metadata,
-                        "attempt_index": np.int64(attempt),
-                        "quality_accepted": np.uint8(accepted),
-                        "complex_std_threshold_v": np.float64(
-                            params.r_bad_point_std_threshold_v
-                        ),
-                    },
-                    actual_rate,
-                )
-                return payload
-            payload = _temperature_gated_acquire(
-                params,
-                devices,
-                channels,
-                set_y_rf=set_y_rf,
-                settle_time_s=settle_time_s,
-                acquire=acquire_and_buffer,
-            )
-        summary = summarize_rxy(payload)
-        if checker is not None:
-            checker(f"{file_stem} 采集后")
-        accepted = (
-            summary["complex_std_v"]
-            <= params.r_bad_point_std_threshold_v
-        )
-        filename = f"{file_stem}_attempt_{attempt:02d}.npz"
-        print(
-            f"  X/Y 质量 {attempt + 1}/{params.r_point_max_attempts}: "
-            f"complex_std={summary['complex_std_v']:.6g} V, "
-            f"{'接受' if accepted else '拒绝并重采'}"
-        )
-        if accepted:
-            return {**summary, "actual_rate_sa_s": float(payload.get("actual_rate_Sa_s", actual_rate))}, attempt, filename
-    raise RPointQualityError(
-        f"{file_stem} 连续 {params.r_point_max_attempts} 次 "
-        f"复噪声超过 {params.r_bad_point_std_threshold_v:.6g} V"
-    )
+    def publish(self, message="等待选择下一模块"):
+        value = self.snapshot()
+        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", value)
+        if self.directory and not self.round_sealed:
+            write_state(self.directory.root / "acquisition_state.json", value)
+        report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": value})
 
 
-def _rxy_summary_arrays(
-    summaries: list[dict[str, float]],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """提取跨相位检测所需的 X/Y 均值和复噪声。"""
-    return (
-        np.asarray([item["x_mean_v"] for item in summaries], dtype=float),
-        np.asarray([item["y_mean_v"] for item in summaries], dtype=float),
-        np.asarray(
-            [item["complex_std_v"] for item in summaries],
-            dtype=float,
-        ),
-    )
+    def save(self):
+        if self.directory and not self.round_sealed:
+            self.directory.update_config(**self.state)
 
 
-def _reacquire_phase_outliers_once(
-    params: MxZOptimalControlRFParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    axis: np.ndarray,
-    summaries: list[dict[str, float]],
-    attempts: list[int],
-    files: list[str],
-    *,
-    actual_rate: float,
-    device_id: str,
-) -> tuple[dict[str, Any], list[int], list[str], np.ndarray]:
-    """识别跨相位异常点，并对每个具体异常相位定点重采一次。"""
-    x_mean, y_mean, complex_std = _rxy_summary_arrays(summaries)
-    initial = detect_complex_phase_outliers(
-        axis,
-        x_mean,
-        y_mean,
-        complex_std,
-        sigma_threshold=params.phase_outlier_sigma_threshold,
-    )
-    initial_attempts = list(attempts)
-    initial_files = list(files)
-    reacquired = np.zeros(axis.size, dtype=bool)
-    replacement_files: list[str] = []
-    too_many = (
-        len(initial.outlier_indices)
-        > params.phase_outlier_max_reacquire_points
-    )
-    indices_to_reacquire = (
-        ()
-        if too_many
-        else initial.outlier_indices
-    )
-    rf = devices["xy_field"]
-    for index in indices_to_reacquire:
-        check_cancelled()
-        phase_deg = float(axis[index])
-        original_file = files[index]
-        print(
-            "跨相位异常点重采 "
-            f"{phase_deg:.3f} deg: residual="
-            f"{initial.residual_v[index]:.6g} V > "
-            f"{initial.threshold_v:.6g} V"
-        )
-
-        def set_phase(
-            phase_deg: float = phase_deg,
-        ) -> None:
-            _rearm_y_rf(
-                rf,
-                channels["y_rf"],
-                amplitude_vpp=params.phase_cal_rf_amplitude_vpp,
-                phase_deg=phase_deg,
-                offset_v=params.y_rf_offset_v,
-            )
-
-        summary, attempt, filename = _acquire_valid_rxy_point(
-            params,
-            run_dir,
-            devices,
-            channels,
-            file_stem=f"phase_{index:04d}_cross_retry",
-            metadata={
-                "scanned_phase_deg": np.float64(phase_deg),
-                "y_rf_burst_phase_deg": np.float64(phase_deg),
-                "y_rf_amplitude_vpp": np.float64(
-                    params.phase_cal_rf_amplitude_vpp
-                ),
-                "y_rf_output_on": np.uint8(True),
-                "cross_phase_reacquisition": np.uint8(True),
-                "replaced_file": np.asarray(original_file),
-                "initial_cross_phase_residual_v": np.float64(
-                    initial.residual_v[index]
-                ),
-                "cross_phase_threshold_v": np.float64(
-                    initial.threshold_v
-                ),
-            },
-            set_y_rf=set_phase,
-            settle_time_s=params.system_settle_s,
-            duration_s=params.response_duration_s,
-            actual_rate=actual_rate,
-            device_id=device_id,
-        )
-        summaries[index] = summary
-        attempts[index] = attempt
-        files[index] = filename
-        reacquired[index] = True
-        replacement_files.append(filename)
-
-    x_mean, y_mean, complex_std = _rxy_summary_arrays(summaries)
-    final = detect_complex_phase_outliers(
-        axis,
-        x_mean,
-        y_mean,
-        complex_std,
-        sigma_threshold=params.phase_outlier_sigma_threshold,
-    )
-    report = {
-        "enabled": True,
-        "passes": 1,
-        "max_reacquire_points": (
-            params.phase_outlier_max_reacquire_points
-        ),
-        "too_many_initial_outliers": too_many,
-        "initial_detection": initial.to_dict(),
-        "reacquired_indices": [
-            int(index) for index in np.flatnonzero(reacquired)
-        ],
-        "reacquired_phase_deg": [
-            float(axis[index]) for index in np.flatnonzero(reacquired)
-        ],
-        "original_files": [
-            initial_files[index] for index in np.flatnonzero(reacquired)
-        ],
-        "replacement_files": replacement_files,
-        "final_detection": final.to_dict(),
-    }
-    return report, initial_attempts, initial_files, reacquired
+    def update_parameters(self, values):
+        self.recheck()
+        old = self.params.to_external()
+        if unknown := values.keys() - old.keys():
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        params, mapping = preparation.preflight(MxZOptimalControlRFParams.from_external(old | values), self.root)
+        changed = {key for key, value in params.to_external().items() if value != old[key]}
+        for stage in self.stages:
+            if changed.intersection(stage.parameters):
+                invalidate(self.stages, self.states, stage.id)
+        self.params, self.mapping = params, mapping
+        self.revision += 1
+        self.publish("参数已应用；请显式重跑受影响模块")
 
 
-def _acquire_phase_scan(
-    params: MxZOptimalControlRFParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    actual_rate: float,
-    device_id: str,
-) -> tuple[float, dict[str, Any]]:
-    """按校相幅度选择 Y RF 校相或无 RF 交流的 Z 控制相位扫描。"""
-    residual_mode = params.phase_cal_rf_amplitude_vpp == 0.0
-    configured_axis = params.phase_axis_deg()
-    axis = (
-        configured_axis
-        if residual_mode
-        else paired_phase_order(configured_axis)
-    )
-    mode = (
-        "residual_control_phase_scan"
-        if residual_mode
-        else "y_rf_quadrature_phase_calibration"
-    )
-    phase_target = "control_burst" if residual_mode else "y_rf_burst"
-    summaries: list[dict[str, float]] = []
-    attempts: list[int] = []
-    files: list[str] = []
-    dummy_file: str | None = None
-    rf = devices["xy_field"]
-    control = devices.get("z_field")
-    if residual_mode:
-        if control is None:
-            raise KeyError("剩磁响应模式缺少 Z 控制设备")
-        configure_fixed_dc_field(
-            rf,
-            channels["y_rf"],
-            "Y_magnetic_field",
-            params.y_rf_offset_v,
-        )
-    try:
-        if not residual_mode:
-            dummy_phase = float(axis[0])
+    def _new_directory(self, selected):
+        previous, inherited = self.directory, deepcopy(self.state)
+        if previous and not self.round_sealed:
+            self.state.update(completion_status="failed", failure_reason="本轮被重跑替代，保留已采集数据")
+            self.save()
+        suffix = 0
+        while True:
+            try:
+                tag = self.params.run_tag if not suffix else f"{self.params.run_tag}_{suffix:02d}"
+                self.directory = create_run_directory(DATA_TYPE, tag, self.params.to_external(), schema_version=self.params.schema_version, project_root=self.root)
+                break
+            except FileExistsError:
+                suffix += 1
+        self.round_sealed = False
+        self.run_parameters = self.params.to_external()
+        self.state = self._initial_state()
+        affected = {stage.id for item in selected if item != "A01" for stage in invalidated_stages(self.stages, item)}
+        if previous:
+            self.state["source_run_id"] = previous.root.name
+            for key in ("actual_rates", "clock_sources", "hf2_configuration", "temperature_control", "device_snapshot", "phase_calibration", "residual_control_phase_scan", "selected_y_rf_phase_deg", "selected_control_phase_deg", "noise_rf"):
+                if key in inherited:
+                    self.state[key] = inherited[key]
+            for path in previous.raw.glob("*"):
+                owner = "A04" if path.name.startswith("phase") else "A05" if path.name.startswith("amplitude") else "A06" if path.name.startswith("noise") else None
+                if path.is_file() and (owner is None or (owner not in affected and self.states[owner]["status"] == "completed")):
+                    shutil.copy2(path, self.directory.raw / path.name)
+            if "A04" not in affected and self.states["A04"]["status"] == "completed":
+                for name in ("phase_calibration.yaml", "phase_calibration.png"):
+                    source = previous.results / name
+                    if source.is_file():
+                        shutil.copy2(source, self.directory.results / name)
+        if self.corrected is not None:
+            self.state.update(preparation.initial_config(self.params, self.corrected, self.applied))
+        self.state.update(raw_format_version=run_format.RAW_FORMAT_VERSION, completion_status="running")
+        self.save()
 
-            def set_dummy_phase() -> None:
-                _rearm_y_rf(
-                    rf,
-                    channels["y_rf"],
-                    amplitude_vpp=params.phase_cal_rf_amplitude_vpp,
-                    phase_deg=dummy_phase,
-                    offset_v=params.y_rf_offset_v,
-                )
-
-            print(
-                "Y RF 正交校相 dummy 点: "
-                f"phase={dummy_phase:.3f} deg（采集后丢弃）"
-            )
-            _, _, dummy_file = _acquire_valid_rxy_point(
-                params,
-                run_dir,
-                devices,
-                channels,
-                file_stem="phase_dummy",
-                metadata={
-                    "scanned_phase_deg": np.float64(dummy_phase),
-                    "y_rf_burst_phase_deg": np.float64(dummy_phase),
-                    "y_rf_amplitude_vpp": np.float64(
-                        params.phase_cal_rf_amplitude_vpp
-                    ),
-                    "y_rf_dc_offset_v": np.float64(params.y_rf_offset_v),
-                    "y_rf_output_on": np.uint8(True),
-                    "discarded_dummy": np.uint8(True),
-                },
-                set_y_rf=set_dummy_phase,
-                settle_time_s=params.system_settle_s,
-                duration_s=params.response_duration_s,
-                actual_rate=actual_rate,
-                device_id=device_id,
-            )
-
-        for index, phase_deg in enumerate(axis):
+    def execute(self, selected):
+        selected = validate_selection(self.stages, self.states, selected)
+        if selected != [FINISH_ID]:
+            self.recheck()
+        if self.demod_mode == "noise" and set(selected).intersection(("A04", "A05")) and "A03" not in selected:
+            raise ValueError("当前为噪声模式，请显式选择 A03 重新准备响应解调")
+        hardware = [item for item in selected if item not in ("A01", FINISH_ID)]
+        if hardware and (self.directory is None or self.round_sealed or self.run_parameters != self.params.to_external()
+                or any(item in ("A04", "A05", "A06") and self.states[item]["status"] != "pending" for item in hardware)):
+            self._new_directory(selected)
+        self.revision += 1
+        self.quality_error = None
+        for item in selected:
+            if item == FINISH_ID:
+                self.finish()
+                break
             check_cancelled()
-            target_label = (
-                "Z 控制剩磁响应"
-                if residual_mode
-                else "Y RF 正交校相"
-            )
-            print(
-                f"{target_label} {index + 1}/{axis.size}: "
-                f"phase={phase_deg:.3f} deg"
-            )
-            if residual_mode:
-                assert control is not None
-                metadata = {
-                    "scanned_phase_deg": np.float64(phase_deg),
-                    "control_burst_phase_deg": np.float64(phase_deg),
-                    "y_rf_amplitude_vpp": np.float64(0.0),
-                    "y_rf_dc_offset_v": np.float64(params.y_rf_offset_v),
-                    "y_rf_output_on": np.uint8(params.y_rf_offset_v != 0.0),
-                }
+            invalidate(self.stages, self.states, item)
+            self.current_step = item
+            self.states[item] = {"status": "running", "error": ""}
+            failure = None
+            try:
+                if item != "A01":
+                    self.recheck()
+                self.publish(next(stage.title for stage in self.stages if stage.id == item))
+                self._execute_step(item)
+                stage = next(stage for stage in self.stages if stage.id == item)
+                artifacts = [path.relative_to(self.directory.root).as_posix() for pattern in stage.artifacts
+                    for path in self.directory.root.glob(pattern) if path.is_file()] if self.directory else []
+                self.states[item] = {"status": "completed", "error": "", "artifacts": artifacts}
+            except BaseException as exc:
+                failure = exc
+                if notes := getattr(exc, "acquisition_cleanup_notes", None) or getattr(exc, "__notes__", None):
+                    self.state["acquisition_cleanup_notes"] = list(notes)
+                if item in ("A04", "A05", "A06"):
+                    self.outputs["Y RF"] = "未知（本模块未完成）"
+                self.states[item] = {"status": "quality_failed" if isinstance(exc, RPointQualityError) else "failed", "error": str(exc)}
+                self.state["failure_reason"] = str(exc)
+                try:
+                    self.save()
+                except Exception as error:
+                    self.state["state_save_error"] = str(error)
+                if isinstance(exc, RPointQualityError):
+                    self.quality_error = exc
+                    break
+                raise
+            finally:
+                self.current_step = None
+                try:
+                    self.publish(f"{item} {self.states[item]['status']}")
+                except Exception:
+                    if failure is None:
+                        raise
+        return self.snapshot()
 
-                def set_phase(
-                    phase_deg: float = float(phase_deg),
-                ) -> None:
-                    configure_fixed_dc_field(
-                        rf,
-                        channels["y_rf"],
-                        "Y_magnetic_field",
-                        params.y_rf_offset_v,
-                    )
-                    _rearm_control(
-                        control,
-                        channels["z_field"],
-                        phase_deg=phase_deg,
-                    )
+
+    def _execute_step(self, item):
+        params, devices, channels = self.params, self.devices, self.channels
+        residual = params.phase_cal_rf_amplitude_vpp == 0.0
+        if item == "A01":
+            self.corrected, self.applied = preparation.load_source(params, self.root)
+        elif item == "A02":
+            self.state.update(preparation.initial_config(params, self.corrected, self.applied))
+            if not devices:
+                try:
+                    self.devices, self.channels = _connect_control_devices(self.mapping, self.device_session)
+                except BaseException:
+                    self.device_session.cleanup_connection_failure()
+                    raise
+                self.main_field_state = snapshot_main_field_state(self.devices["gs200"])
+                self.state["device_snapshot"] = preparation._initial_state_snapshot(self.devices, self.channels)
+                self.state["device_snapshot"]["main_field_before_configuration"] = asdict(self.main_field_state)
+            save_corrected_control_source_snapshot(self.directory.raw, self.corrected, self.applied)
+            if hashlib.sha256((self.directory.raw / "source_corrected_control_waveform.npz").read_bytes()).hexdigest() != self.corrected.waveform_sha256:
+                raise ValueError("复制的闭环冻结文件与 A01 来源 SHA 不一致，拒绝配置输出")
+        elif item == "A03":
+            rate, temperature, clocks, snapshot = _configure_common_outputs(
+                params, devices, channels, self.mapping, self.corrected, self.applied)
+            # 只在工作点成功后更换恢复基线，失败的重跑不能采用尚未执行的草稿值。
+            self.shutdown_parameters = self.response_parameters = params
+            self.executed_source = (params, self.corrected, self.applied)
+            self.demod_mode = "response"
+            self.state.update(actual_rates={"response_sa_s": rate}, clock_sources=clocks,
+                hf2_configuration=snapshot, initial_temperature_c=temperature,
+                temperature_control={"target_temperature_c": params.temperature_c, "actual_temperature_c": temperature,
+                    "controlled_by_experiment": devices.get("tec") is not None,
+                    "control_source": "tec103" if devices.get("tec") is not None else "external_software"})
+            self.outputs.update(X="配置值", Z="最优控制ON", **{"Y RF": "等待触发", "温控": "ON", "Pump": "ON", "共同触发": "ON"})
+        elif item == "A04":
+            self.selected_phase, payload = _acquire_phase_scan(params, self.directory, devices, channels,
+                self.state["actual_rates"]["response_sa_s"], str(self.mapping["lockin_r"]["device_id"]))
+            if residual:
+                self.state.update(residual_control_phase_scan=payload,
+                    selected_control_phase_deg=payload.get("selected_control_phase_deg"),
+                    restored_control_phase_deg=params.control_burst_phase_deg,
+                    y_rf_output_during_scan="DC_BIAS_ON" if params.y_rf_offset_v != 0 else "DC_ZERO_OUTPUT_OFF")
             else:
-                metadata = {
-                    "scanned_phase_deg": np.float64(phase_deg),
-                    "y_rf_burst_phase_deg": np.float64(phase_deg),
-                    "y_rf_amplitude_vpp": np.float64(
-                        params.phase_cal_rf_amplitude_vpp
-                    ),
-                    "y_rf_dc_offset_v": np.float64(params.y_rf_offset_v),
-                    "y_rf_output_on": np.uint8(True),
-                }
+                self.state.update(phase_calibration=payload, selected_y_rf_phase_deg=self.selected_phase)
+        elif item == "A05" and not residual:
+            _acquire_amplitude_scan(params, self.directory, devices, channels,
+                self.state["actual_rates"]["response_sa_s"], str(self.mapping["lockin_r"]["device_id"]), self.selected_phase)
+        elif item == "A06" and not residual:
+            self.demod_mode = "noise"
+            self.state["actual_rates"]["noise_sa_s"] = _acquire_control_noise(params, self.directory, devices, channels,
+                str(self.mapping["lockin_r"]["device_id"]), self.selected_phase)
+            self.state["noise_rf"] = yaml.safe_load(self.directory.config_path.read_text(encoding="utf-8"))["noise_rf"]
+        elif item == "A07":
+            if errors := self._shutdown(disconnect_tec=False):
+                raise RuntimeError("安全收尾失败：" + "；".join(errors))
+            self.state.update(completion_status="completed", failure_reason=None, finished_at=datetime.now().isoformat(),
+                data_files=[path.relative_to(self.directory.root).as_posix() for path in sorted(self.directory.raw.glob("*")) if path.is_file()])
+            self.save()
+            self.round_sealed = True
+            invalidate(self.stages, self.states, "A03")
+        self.save()
 
-                def set_phase(
-                    phase_deg: float = float(phase_deg),
-                ) -> None:
-                    _rearm_y_rf(
-                        rf,
-                        channels["y_rf"],
-                        amplitude_vpp=params.phase_cal_rf_amplitude_vpp,
-                        phase_deg=phase_deg,
-                        offset_v=params.y_rf_offset_v,
-                    )
+    def _shutdown(self, *, disconnect_tec=True):
+        errors = []
+        if self.devices:
+            if self.executed_source and self.shutdown_parameters.phase_cal_rf_amplitude_vpp == 0.0:
+                try:
+                    _rearm_control(self.devices["z_field"], self.channels["z_field"],
+                        phase_deg=self.shutdown_parameters.control_burst_phase_deg)
+                except Exception as exc:
+                    errors.append("恢复 Z 控制相位失败：" + str(exc))
+            if self.demod_mode == "noise":
+                try:
+                    rate = _configure_response_demodulator(self.response_parameters, self.devices["hf2"])
+                    self.state.setdefault("actual_rates", {})["restored_response_sa_s"] = rate
+                    self.demod_mode = "response"
+                except Exception as exc:
+                    errors.append("恢复响应解调失败：" + str(exc))
+            try:
+                report = preparation.safe_shutdown(self.devices, self.channels, self.shutdown_parameters, disconnect_tec=disconnect_tec)
+                self.state["safety_shutdown"] = report.to_dict()
+                errors.extend(report.errors)
+            except Exception as exc:
+                errors.append(str(exc))
+            main_errors = []
+            if self.main_field_state is not None:
+                try:
+                    restore_main_field_state(self.devices["gs200"], self.main_field_state)
+                except Exception as exc:
+                    main_errors.append(str(exc))
+            self.state["main_field_restore"] = dict(attempted=self.main_field_state is not None, success=not main_errors, errors=main_errors)
+            errors.extend(main_errors)
+            self.outputs.update(X="OFF" if not errors else "未知", **{"Y RF": "OFF" if not errors else "未知",
+                "Z": "保持当前最优控制" if self.executed_source else "未知", "温控": "ON" if not errors else "未知",
+                "共同触发": "保持当前状态"})
+        if errors:
+            self.state["safety_shutdown"] = dict(self.state.get("safety_shutdown") or {}, completed=False, errors=errors)
+        return errors
 
-            acquire_point = (
-                _acquire_valid_r_point
-                if residual_mode
-                else _acquire_valid_rxy_point
-            )
-            summary, attempt, filename = acquire_point(
-                params,
-                run_dir,
-                devices,
-                channels,
-                file_stem=f"phase_{index:04d}",
-                metadata=metadata,
-                set_y_rf=set_phase,
-                settle_time_s=params.system_settle_s,
-                duration_s=params.response_duration_s,
-                actual_rate=actual_rate,
-                device_id=device_id,
-            )
-            summaries.append(summary)
-            attempts.append(attempt)
-            files.append(filename)
-    finally:
-        if residual_mode:
-            assert control is not None
-            configure_fixed_dc_field(
-                rf,
-                channels["y_rf"],
-                "Y_magnetic_field",
-                params.y_rf_offset_v,
-            )
-            _rearm_control(
-                control,
-                channels["z_field"],
-                phase_deg=params.control_burst_phase_deg,
-            )
-
-    cross_phase_report: dict[str, Any] | None = None
-    initial_attempts = list(attempts)
-    initial_files = list(files)
-    cross_phase_reacquired = np.zeros(axis.size, dtype=bool)
-    if not residual_mode:
-        (
-            cross_phase_report,
-            initial_attempts,
-            initial_files,
-            cross_phase_reacquired,
-        ) = _reacquire_phase_outliers_once(
-            params,
-            run_dir,
-            devices,
-            channels,
-            axis,
-            summaries,
-            attempts,
-            files,
-            actual_rate=actual_rate,
-            device_id=device_id,
-        )
-
-    r_mean = np.asarray(
-        [item["r_scalar_mean_v"] for item in summaries],
-        dtype=float,
-    )
-    r_std = np.asarray([item["r_std_v"] for item in summaries], dtype=float)
-    phase_arrays: dict[str, Any] = {
-        "scanned_phase_deg": axis,
-        (
-            "control_burst_phase_deg"
-            if residual_mode
-            else "y_rf_burst_phase_deg"
-        ): axis,
-        "r_mean_v": r_mean,
-        "r_std_v": r_std,
-        "accepted_attempt_index": np.asarray(attempts, dtype=int),
-        "accepted_file": np.asarray(files),
-        "initial_accepted_attempt_index": np.asarray(
-            initial_attempts,
-            dtype=int,
-        ),
-        "initial_accepted_file": np.asarray(initial_files),
-        "cross_phase_reacquired": cross_phase_reacquired,
-        "actual_rate_sa_s": np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
-        "x_dc_field_v": np.float64(params.x_dc_field_v),
-        "y_rf_dc_offset_v": np.float64(params.y_rf_offset_v),
-    }
-    if residual_mode:
-        primary, diagnostic = fit_phase_scan(
-            axis,
-            r_mean,
-            r_squared_min=params.phase_fit_r_squared_min,
-            amplitude_sigma_min=params.phase_fit_amplitude_sigma_min,
-        )
-        payload = {
-            "mode": mode,
-            "phase_target": phase_target,
-            "success": primary.success,
-            "scan_completed": True,
-            "fit_accepted": primary.success,
-            "selected_phase_deg": primary.selected_phase_deg,
-            "primary_fit": primary.to_dict(),
-            "diagnostic_fit": diagnostic.to_dict(),
-            "phase_scan": {
-                "start_deg": params.phase_scan_start_deg,
-                "stop_deg": params.phase_scan_stop_deg,
-                "step_deg": params.phase_scan_step_deg,
-                "points": int(axis.size),
-                "rf_amplitude_vpp": 0.0,
-                "rf_dc_offset_v": params.y_rf_offset_v,
-                "rf_output_on": params.y_rf_offset_v != 0.0,
-                "control_restored_phase_deg": (
-                    params.control_burst_phase_deg
-                ),
-                "point_value": "mean(R)",
-            },
-        }
-        payload["candidate_control_phase_deg"] = primary.selected_phase_deg
-        payload["selected_control_phase_deg"] = (
-            primary.selected_phase_deg if primary.success else None
-        )
-    else:
-        x_mean, y_mean, complex_std = _rxy_summary_arrays(summaries)
-        x_std = np.asarray(
-            [item["x_std_v"] for item in summaries],
-            dtype=float,
-        )
-        y_std = np.asarray(
-            [item["y_std_v"] for item in summaries],
-            dtype=float,
-        )
-        quadrature_fit, quadrature_arrays = fit_quadrature_phase_scan(
-            axis,
-            x_mean,
-            y_mean,
-            r_squared_min=params.phase_fit_r_squared_min,
-            amplitude_sigma_min=params.phase_fit_amplitude_sigma_min,
-        )
-        assert cross_phase_report is not None
-        final_outlier_phases = cross_phase_report["final_detection"][
-            "outlier_phase_deg"
-        ]
-        if final_outlier_phases:
-            reason = (
-                "单次重采后仍存在跨相位异常点: "
-                + ", ".join(
-                    f"{float(value):.6g}°"
-                    for value in final_outlier_phases
-                )
-            )
-            quadrature_fit = replace(
-                quadrature_fit,
-                success=False,
-                rejection_reasons=(
-                    *quadrature_fit.rejection_reasons,
-                    reason,
-                ),
-            )
-        phase_arrays.update(
-            {
-                "x_mean_v": x_mean,
-                "x_std_v": x_std,
-                "y_mean_v": y_mean,
-                "y_std_v": y_std,
-                "complex_std_v": complex_std,
-                "cross_phase_initial_residual_v": np.asarray(
-                    cross_phase_report["initial_detection"][
-                        "residual_v"
-                    ],
-                    dtype=float,
-                ),
-                "cross_phase_final_residual_v": np.asarray(
-                    cross_phase_report["final_detection"]["residual_v"],
-                    dtype=float,
-                ),
-                **quadrature_arrays,
-            }
-        )
-        payload = {
-            "mode": mode,
-            "phase_target": phase_target,
-            "success": quadrature_fit.success,
-            "scan_completed": True,
-            "fit_accepted": quadrature_fit.success,
-            "selected_phase_deg": quadrature_fit.selected_phase_deg,
-            "selected_y_rf_phase_deg": (
-                quadrature_fit.selected_phase_deg
-            ),
-            "quadrature_fit": quadrature_fit.to_dict(),
-            "cross_phase_reacquisition": cross_phase_report,
-            "phase_scan": {
-                "start_deg": params.phase_scan_start_deg,
-                "stop_deg": params.phase_scan_stop_deg,
-                "step_deg": params.phase_scan_step_deg,
-                "points": int(axis.size),
-                "pair_count": quadrature_fit.pair_count,
-                "rf_amplitude_vpp": params.phase_cal_rf_amplitude_vpp,
-                "rf_dc_offset_v": params.y_rf_offset_v,
-                "rf_output_on": True,
-                "control_restored_phase_deg": None,
-                "point_value": "mean(R/X/Y)",
-                "acquisition_order": "phi_then_phi_plus_180",
-                "discarded_dummy_file": dummy_file,
-            },
-        }
-    np.savez(run_dir.raw / "phase_scan.npz", **phase_arrays)
-    (run_dir.results / "phase_calibration.yaml").write_text(
-        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
-    plot_phase_calibration(run_dir.raw, run_dir.results, payload)
-    if not residual_mode and not quadrature_fit.success:
-        raise RuntimeError(
-            "Y RF 正交相位拟合不合格: "
-            + "；".join(quadrature_fit.rejection_reasons)
-        )
-    if residual_mode and not primary.success:
-        return float("nan"), payload
-    selected_phase = (
-        primary.selected_phase_deg
-        if residual_mode
-        else quadrature_fit.selected_phase_deg
-    )
-    return float(selected_phase), payload
-
-
-def _acquire_amplitude_scan(
-    params: MxZOptimalControlRFParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    actual_rate: float,
-    device_id: str,
-    selected_phase_deg: float,
-) -> None:
-    """在选定触发相位上扫描带符号 Y RF 幅度。"""
-    axis = build_amplitude_axis(params)
-    summaries: list[dict[str, float]] = []
-    hardware: list[dict[str, Any]] = []
-    attempts: list[int] = []
-    files: list[str] = []
-    rf = devices["xy_field"]
-    waveform_state = {"mode": "burst_sine"}
-    for index, signed_amplitude in enumerate(axis):
-        check_cancelled()
-        phase_deg = (
-            selected_phase_deg
-            if signed_amplitude >= 0
-            else (selected_phase_deg + 180.0) % 360.0
-        )
-        print(
-            f"Y RF 幅度 {index + 1}/{axis.size}: "
-            f"{signed_amplitude:+.6f} Vpp, phase={phase_deg:.3f} deg"
-        )
-        point_hardware = {
-            "hardware_amplitude_vpp": abs(float(signed_amplitude)),
-            "hardware_phase_deg": float(phase_deg),
-            "dc_offset_v": float(params.y_rf_offset_v),
-            "waveform_mode": (
-                "dc" if signed_amplitude == 0.0 else "burst_sine"
-            ),
-            "output_on": bool(
-                signed_amplitude != 0.0 or params.y_rf_offset_v != 0.0
-            ),
-        }
-        summary, attempt, filename = _acquire_valid_r_point(
-            params,
-            run_dir,
-            devices,
-            channels,
-            file_stem=f"amplitude_{index:04d}",
-            metadata={
-                "signed_amplitude_vpp": np.float64(signed_amplitude),
-                **point_hardware,
-            },
-            set_y_rf=lambda signed_amplitude=signed_amplitude, phase_deg=phase_deg: _rearm_y_rf(
-                rf,
-                channels["y_rf"],
-                amplitude_vpp=float(signed_amplitude),
-                phase_deg=float(phase_deg),
-                frequency_hz=params.y_rf_frequency_hz,
-                offset_v=params.y_rf_offset_v,
-                waveform_state=waveform_state,
-            ),
-            settle_time_s=params.system_settle_s,
-            duration_s=params.response_duration_s,
-            actual_rate=actual_rate,
-            device_id=device_id,
-        )
-        summaries.append(summary)
-        hardware.append(point_hardware)
-        attempts.append(attempt)
-        files.append(filename)
-    np.savez(
-        run_dir.raw / "amplitude_scan.npz",
-        signed_amplitude_vpp=axis,
-        hardware_amplitude_vpp=[
-            item["hardware_amplitude_vpp"] for item in hardware
-        ],
-        hardware_phase_deg=[
-            item["hardware_phase_deg"] for item in hardware
-        ],
-        output_on=[item["output_on"] for item in hardware],
-        waveform_mode=[item["waveform_mode"] for item in hardware],
-        y_rf_dc_offset_v=np.float64(params.y_rf_offset_v),
-        x_dc_field_v=np.float64(params.x_dc_field_v),
-        r_mean_v=[item["r_mean_v"] for item in summaries],
-        r_scalar_mean_v=[
-            item["r_scalar_mean_v"] for item in summaries
-        ],
-        r_std_v=[item["r_std_v"] for item in summaries],
-        accepted_attempt_index=attempts,
-        accepted_file=files,
-        selected_y_rf_phase_deg=np.float64(selected_phase_deg),
-        actual_rate_sa_s=np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
-    )
-
-
-def _acquire_control_noise(
-    params: MxZOptimalControlRFParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    device_id: str,
-    selected_phase_deg: float,
-) -> float:
-    """在幅度扫描后，按配置采集带 RF 或纯 DC 补偿下的噪声。"""
-    amplitude_vpp = (
-        float(params.noise_rf_amplitude_vpp) if params.noise_rf_enabled else 0.0
-    )
-    if not np.isfinite(amplitude_vpp) or amplitude_vpp < 0.0:
-        raise ValueError("NOISE_RF_AMPLITUDE_VPP 必须是非负有限数值")
-    _validate_y_rf_envelope(params.y_rf_offset_v, amplitude_vpp)
-    rf_enabled = amplitude_vpp > 0.0
-    phase_deg = float(selected_phase_deg) % 360.0
-    # 幅度扫描的末点决定当前是否需要从纯 DC 恢复 Burst 正弦。
-    waveform_state = {
-        "mode": "dc" if params.y_rf_amp_stop_vpp == 0.0 else "burst_sine"
-    }
-    metadata = {
-        "y_rf_enabled": rf_enabled,
-        "y_rf_amplitude_vpp": amplitude_vpp,
-        "y_rf_frequency_hz": float(params.y_rf_frequency_hz),
-        "y_rf_burst_phase_deg": phase_deg,
-        "y_rf_dc_v": float(params.y_rf_offset_v),
-        "y_rf_output_on": bool(rf_enabled or params.y_rf_offset_v != 0.0),
-    }
-    run_dir.update_config(noise_rf=metadata)
-
-    def set_noise_rf() -> None:
-        _rearm_y_rf(
-            devices["xy_field"],
-            channels["y_rf"],
-            amplitude_vpp=amplitude_vpp,
-            phase_deg=phase_deg,
-            frequency_hz=params.y_rf_frequency_hz,
-            offset_v=params.y_rf_offset_v,
-            waveform_state=waveform_state,
-        )
-
-    return _acquire_noise(
-        params,
-        run_dir,
-        devices,
-        channels,
-        device_id,
-        set_y_rf_off_state=set_noise_rf,
-        y_rf_dc_v=params.y_rf_offset_v,
-        y_rf_output_on=metadata["y_rf_output_on"],
-        noise_metadata=metadata,
-        noise_label=(
-            f"Y RF 开启噪声（{amplitude_vpp:g} Vpp）"
-            if rf_enabled else "零 Y RF 噪声"
-        ),
-        settle_time_s=params.system_settle_s if rf_enabled else 0.0,
-    )
-
-
-def safe_shutdown(
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    params: MxZOptimalControlRFParams,
-) -> SafetyShutdownReport:
-    """保持 Z 控制和共同触发，关闭归零横向场。"""
-    dg_channels: list[DGChannelShutdown] = []
-    if devices.get("z_field") is not None and "trigger" in channels:
-        dg_channels.append(
-            DGChannelShutdown(
-                devices["z_field"],
-                channels["trigger"],
-                "Time_sequence_2",
-                "共同触发",
-            )
-        )
-    if devices.get("xy_field") is not None:
-        for channel_name, safety_key, label in (
-            ("x_field", "X_magnetic_field", "X 磁场"),
-            ("y_rf", "rf_coil", "Y RF 场"),
-        ):
-            if channel_name in channels:
-                dg_channels.append(
-                    DGChannelShutdown(
-                        devices["xy_field"],
-                        channels[channel_name],
-                        safety_key,
-                        label,
-                    )
-                )
-
-    extra_actions: list[ShutdownAction] = []
-    pump_rf = devices.get("pump_rf")
-    if pump_rf is not None and "pump_gate" in channels:
-        extra_actions.append(
-            ShutdownAction(
-                "保持 Pump RF 开关 5V 常开失败",
-                lambda: _set_pump_gate_on(
-                    pump_rf,
-                    channels["pump_gate"],
-                    params.pump_gate_voltage_v,
-                ),
-            )
-        )
-    if pump_rf is not None and "pump_carrier" in channels:
-        def keep_pump_carrier_on() -> None:
-            validate_safety_limit(
-                "Pump_modulation",
-                params.pump_carrier_amplitude_vpp,
-            )
-            pump_rf.setup_sine(
-                params.pump_carrier_frequency_hz,
-                params.pump_carrier_amplitude_vpp,
-                offset=0.0,
-                phase=0.0,
-                channel=channels["pump_carrier"],
-            )
-            pump_rf.set_output(True, channel=channels["pump_carrier"])
-
-        extra_actions.append(
-            ShutdownAction(
-                "保持 Pump 100MHz 载波开启失败",
-                keep_pump_carrier_on,
-            )
-        )
-
-    temperature_restore = None
-    if devices.get("temp_switch") is not None and "temp_switch" in channels:
-        temperature_restore = TemperatureSwitchRestore(
-            devices["temp_switch"],
-            channels["temp_switch"],
-        )
-    return run_safety_shutdown(
-        dg_channels=dg_channels,
-        temperature_switch=temperature_restore,
-        extra_actions=extra_actions,
-        disconnect_targets=(DisconnectTarget("TEC", devices.get("tec")),),
-        preserved_outputs=(
-            *STANDARD_PRESERVED_OUTPUTS,
-            "Time_sequence",
-            "Z_magnetic_field",
-        ),
-    )
-
-
-def run(params: MxZOptimalControlRFParams) -> Path:
-    """执行 Z 最优控制开启状态下的 RF 灵敏度测量。"""
-    root = find_project_root()
-    mapping = load_mapping(root)
-    require_lockin_compatibility('mx-z-optimal-control-rf-sensitivity', params.to_external(), mapping=mapping)
-    residual_mode = params.phase_cal_rf_amplitude_vpp == 0.0
-    measurement_mode = (
-        "residual_control_phase_scan"
-        if residual_mode
-        else "rf_sensitivity"
-    )
-    control = load_corrected_control_waveform(
-        root,
-        params.corrected_control_source_run,
-    )
-    applied = applied_control_from_corrected(control)
-    warnings: list[str] = []
-    if not residual_mode and not np.isclose(
-        params.y_rf_frequency_hz,
-        control.repeat_frequency_hz,
-        rtol=1e-9,
-        atol=1e-9,
-    ):
-        warnings.append(
-            "Y RF/HF2 频率与冻结控制波形重复频率不同；"
-            "共同触发只固定采集起始相位，采集期间相对相位按频差演化"
-        )
-    for warning in warnings:
-        print(f"[WARN] {warning}")
-
-    run_dir = create_run_directory(
-        DATA_TYPE,
-        params.run_tag,
-        params.to_external(),
-        schema_version=params.schema_version,
-        project_root=root,
-    )
-    source_files = save_corrected_control_source_snapshot(
-        run_dir.raw,
-        control,
-        applied,
-    )
-    run_dir.update_config(
-        experiment_id=EXPERIMENT_ID,
-        data_type=DATA_TYPE,
-        execution_mode=EXECUTION_MODE,
-        measurement_mode=measurement_mode,
-        geometry={
-            "gs200_main_field": (
-                "zero_and_output_off_during_measurement"
-                if params.main_magnetic_field_ma == 0.0
-                else "configured_current_and_output_on_during_measurement"
-            ),
-            "gs200_main_field_current_ma": params.main_magnetic_field_ma,
-            "control_field": "Z arbitrary waveform",
-            "rf_field": (
-                "Y DC residual-field compensation only"
-                if residual_mode
-                else "Y triggered sine with DC residual-field compensation"
-            ),
-            "pump": "Z",
-            "probe": "X",
-            "x_field_output": (
-                "OFF" if params.x_dc_field_v == 0.0 else "fixed DC"
-            ),
-            "x_dc_field_v": params.x_dc_field_v,
-            "y_rf_dc_offset_v": params.y_rf_offset_v,
-        },
-        residual_field_compensation={
-            "x_source": "X_magnetic_field DC",
-            "x_voltage_v": params.x_dc_field_v,
-            "y_source": "rf_coil waveform DC offset",
-            "y_voltage_v": params.y_rf_offset_v,
-            "y_rf_zero_behavior": "pure DC at Y compensation voltage",
-        },
-        control_source={
-            "mode": "corrected_run",
-            "corrected_run": control.run_name,
-            "waveform_sha256": control.waveform_sha256,
-            "repeat_frequency_hz": control.repeat_frequency_hz,
-            "burst_phase_deg": params.control_burst_phase_deg,
-        },
-        current_feedback_calibrations={
-            "current_coupling_run": control.coupling_calibration_run,
-            "current_coupling_sha256": control.coupling_calibration_sha256,
-            "frequency_response_run": control.frequency_response_run,
-            "frequency_response_sha256": control.frequency_response_sha256,
-        },
-        applied_control={
-            "minimum_v": applied.minimum_v,
-            "maximum_v": applied.maximum_v,
-            "amplitude_vpp": applied.amplitude_vpp,
-            "offset_v": applied.offset_v,
-            "output_minimum_v": applied.output_minimum_v,
-            "output_maximum_v": applied.output_maximum_v,
-            "max_abs_normalized": applied.max_abs_normalized,
-            "points": int(control.time_s.size),
-        },
-        trigger={
-            "source": "Time_sequence_2",
-            "frequency_hz": params.trigger_frequency_hz,
-            "amplitude_vpp": params.trigger_amplitude_vpp,
-            "offset_v": params.trigger_offset_v,
-            "duty_percent": params.trigger_duty_percent,
-            "slope": OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE,
-            "wiring": (
-                "Time_sequence_2 CH2 to Z-control DG4000 Ext Trig; "
-                "Y-RF AC burst disabled while Y DC compensation remains applied"
-                if residual_mode
-                else "Time_sequence_2 CH2 split to Z-control and Y-RF DG4000 Ext Trig"
-            ),
-            "physical_wiring_verified_by_software": False,
-        },
-        warnings=warnings,
-        acquisition_signals=(
-            ["Demod0 R"]
-            if residual_mode
-            else [
-                "Demod0 R/X/Y during phase calibration",
-                "Demod0 R during amplitude/noise acquisition",
-            ]
-        ),
-        linewidth_mode="amplitude_equivalent",
-    )
-
-    session = DeviceSession()
-    devices: dict[str, Any] = {}
-    channels: dict[str, int] = {}
-    main_field_state = None
-    completion_status = "failed"
-    failure_reason: str | None = None
-    try:
-        check_cancelled()
+    def finish(self, failure=None):
+        if self.closed:
+            return
+        errors = list(disconnect_device_mapping({"tec": self.devices.get("tec")})) if self.round_sealed else self._shutdown()
+        if self.round_sealed and errors:
+            self.state["cleanup_errors"] = list(errors)
+        if not self.round_sealed:
+            self.state.update(completion_status="cancelled" if isinstance(failure, WorkflowCancelled) else "failed",
+                failure_reason=str(failure) if failure else self.state.get("failure_reason") or "本轮采集未完整完成",
+                finished_at=datetime.now().isoformat())
+            if errors:
+                self.state["failure_reason"] += "；安全恢复失败：" + "；".join(errors)
+            try:
+                self.save()
+            except Exception as exc:
+                self.state["state_save_error"] = str(exc)
+                if failure is None and not errors:
+                    errors.append(str(exc))
+        self.closed = True
+        self.current_step = None
+        self.revision += 1
+        self.states[FINISH_ID] = {"status": "failed" if errors else "completed", "error": "；".join(errors)}
         try:
-            devices, channels = _connect_control_devices(mapping, session)
+            self.publish("会话已安全结束")
+            report_runtime_progress("finished", "采集会话结束", 100)
         except Exception:
-            session.cleanup_connection_failure()
-            raise
-        main_field_state = snapshot_main_field_state(devices["gs200"])
-        snapshot = _initial_state_snapshot(devices, channels)
-        snapshot["main_field_before_configuration"] = asdict(
-            main_field_state
-        )
-        run_dir.update_config(device_snapshot=snapshot)
+            if failure is None and not errors:
+                raise
+        if errors and failure is None:
+            raise RuntimeError("安全收尾失败：" + "；".join(errors))
 
-        (
-            actual_response_rate,
-            actual_temperature,
-            clock_sources,
-            hf2_snapshot,
-        ) = _configure_common_outputs(
-            params,
-            devices,
-            channels,
-            mapping,
-            control,
-            applied,
-        )
-        run_dir.update_config(
-            clock_sources=clock_sources,
-            hf2_configuration=hf2_snapshot,
-            initial_temperature_c=actual_temperature,
-        )
-        device_id = str(mapping["lockin_r"]["device_id"])
-        selected_phase, phase_payload = _acquire_phase_scan(
-            params,
-            run_dir,
-            devices,
-            channels,
-            actual_response_rate,
-            device_id,
-        )
-        if residual_mode:
-            run_dir.update_config(
-                residual_control_phase_scan=phase_payload,
-                selected_control_phase_deg=(
-                    selected_phase if np.isfinite(selected_phase) else None
-                ),
-                restored_control_phase_deg=params.control_burst_phase_deg,
-                y_rf_output_during_scan=(
-                    "DC_BIAS_ON"
-                    if params.y_rf_offset_v != 0.0
-                    else "DC_ZERO_OUTPUT_OFF"
-                ),
-            )
-            completion_status = "completed"
-            run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=None,
-                actual_rates={"response_sa_s": actual_response_rate},
-                data_files=[
-                    *source_files,
-                    "raw/phase_scan.npz",
-                ],
-            )
-            print(
-                "Mx Z 最优控制剩磁响应相位扫描完成: "
-                f"{run_dir.root}"
-            )
-            return run_dir.root
 
-        run_dir.update_config(
-            phase_calibration=phase_payload,
-            selected_y_rf_phase_deg=selected_phase,
-        )
-        _acquire_amplitude_scan(
-            params,
-            run_dir,
-            devices,
-            channels,
-            actual_response_rate,
-            device_id,
-            selected_phase,
-        )
-        actual_noise_rate = _acquire_control_noise(
-            params,
-            run_dir,
-            devices,
-            channels,
-            device_id,
-            selected_phase,
-        )
-        completion_status = "completed"
-        run_dir.update_config(
-            completion_status=completion_status,
-            failure_reason=None,
-            actual_rates={
-                "response_sa_s": actual_response_rate,
-                "noise_sa_s": actual_noise_rate,
-            },
-            data_files=[
-                *source_files,
-                "raw/phase_scan.npz",
-                "raw/amplitude_scan.npz",
-                *[
-                    f"raw/noise_{index:03d}.npz"
-                    for index in range(params.noise_n_avg)
-                ],
-            ],
-        )
-        print(f"Mx Z 最优控制 RF 灵敏度采集完成: {run_dir.root}")
-        return run_dir.root
-    except Exception as exc:
-        failure_reason = str(exc)
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status="failed",
-                failure_reason=failure_reason,
-            )
+
+def run(params, *, project_root=None, workflow_type=Workflow):
+    ctx = workflow_type(params, project_root=project_root)
+    failure = None
+    try:
+        ctx.execute([stage.id for stage in ctx.stages if stage.id != FINISH_ID])
+        if ctx.quality_error:
+            raise ctx.quality_error
+        return ctx.directory.root
+    except BaseException as exc:
+        failure = exc
         raise
     finally:
-        shutdown_report = safe_shutdown(devices, channels, params)
-        main_field_restore_errors: list[str] = []
-        if main_field_state is not None and devices.get("gs200") is not None:
-            try:
-                restore_main_field_state(
-                    devices["gs200"],
-                    main_field_state,
-                )
-            except Exception as exc:
-                main_field_restore_errors.append(str(exc))
-        if shutdown_report.errors or main_field_restore_errors:
-            print(
-                "安全恢复警告: "
-                + "；".join(
-                    [*shutdown_report.errors, *main_field_restore_errors]
-                )
-            )
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                safety_shutdown=shutdown_report.to_dict(),
-                main_field_restore={
-                    "attempted": main_field_state is not None,
-                    "success": not main_field_restore_errors,
-                    "errors": main_field_restore_errors,
-                },
-                device_disconnect={
-                    "tec_disconnected": not shutdown_report.disconnect_errors,
-                    "other_devices_preserved": True,
-                    "errors": list(shutdown_report.disconnect_errors),
-                },
-            )
+        ctx.finish(failure)
 
 
-def main() -> int:
-    params = load_runtime_params(MxZOptimalControlRFParams)
-    run(params)
+def main():
+    run(load_runtime_params(MxZOptimalControlRFParams))
     return 0
 
 

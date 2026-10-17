@@ -1,330 +1,188 @@
-"""Mx Y RF 灵敏度长飘趋势分析。"""
-
+"""父运行的离线分阶段分析与采集中的即时趋势编排。"""
 from __future__ import annotations
 
-import csv
-import json
+from copy import deepcopy
 from datetime import datetime
+import json
+import os
 from pathlib import Path
-from typing import Any
-from zoneinfo import ZoneInfo
 
-from matplotlib.dates import AutoDateLocator, ConciseDateFormatter
-import numpy as np
 import yaml
 
-from ...experiment_runtime import runtime_run_dir
-from ...plotting import (
-    COLOR_GRAY,
-    COLOR_GREEN,
-    COLOR_OPTIMAL,
-    COLOR_ORANGE,
-    format_axis,
-    new_figure,
-    save_figure,
-    set_plot_style,
-    style_legend,
-)
+from ...common import WorkflowCancelled
+from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
+from ..noise_spectrum_xy.state_io import read_state, write_state
+from . import analysis_plotting, analysis_steps, run_format
+from .analysis_steps import FIELDNAMES, read_summary
+from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
+
+ANALYSIS_VERSION = "mx-y-rf-drift-summary-v1"
 
 
-FIELDNAMES = (
-    "cycle_index",
-    "scheduled_offset_s",
-    "actual_elapsed_s",
-    "actual_start_utc",
-    "start_lag_s",
-    "child_run_dir",
-    "status",
-    "valid",
-    "sensitivity_flat_median_ft_per_sqrt_hz",
-    "zero_point_sensitivity_flat_median_ft_per_sqrt_hz",
-    "linewidth_hwhm_hz",
-    "linewidth_kind",
-    "primary_slope_v_per_vpp",
-    "zero_point_slope_v_per_vpp",
-    "response_fit_r_squared",
-    "excluded_point_count",
-    "flat_band_low_hz",
-    "flat_band_high_hz",
-    "warnings",
-    "error",
-)
-
-LOCAL_TIMEZONE = ZoneInfo("Asia/Shanghai")
+def _diagnostics(inputs):
+    return {key: inputs[key] for key in ("cycle_count", "valid_cycle_count", "invalid_cycles")}
 
 
-def _builtin(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(k): _builtin(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_builtin(v) for v in value]
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, np.generic):
-        return value.item()
-    return value
-
-
-def _manifest(run_dir: Path) -> list[dict[str, Any]]:
-    path = Path(run_dir) / "raw" / "drift_manifest.yaml"
-    if not path.exists():
-        return []
-    with path.open(encoding="utf-8") as stream:
-        payload = yaml.safe_load(stream) or {}
-    return list(payload.get("records", []))
-
-
-def _metric(result: dict[str, Any], path: tuple[str, ...], default: Any = None) -> Any:
-    value: Any = result
-    for key in path:
-        if not isinstance(value, dict) or key not in value:
-            return default
-        value = value[key]
-    return value
-
-
-def _row(record: dict[str, Any], run_dir: Path) -> dict[str, Any]:
-    result = record.get("analysis") or {}
-    child = Path(record["child_run_dir"]) if record.get("child_run_dir") else None
-    if child and not child.is_absolute():
-        child = (run_dir / child).resolve()
-    if child and not result:
-        path = child / "results" / "analysis.json"
-        if path.exists():
-            try:
-                result = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                result = {}
-    flat_band = result.get("flat_band_hz") or [None, None]
-    fit_r2 = _metric(result, ("response_fit", "r_squared"))
-    row = {
-        "cycle_index": record.get("cycle_index"),
-        "scheduled_offset_s": record.get("scheduled_offset_s"),
-        "actual_elapsed_s": (
-            float(record.get("scheduled_offset_s") or 0.0)
-            + float(record.get("start_lag_s") or 0.0)
-        ),
-        "actual_start_utc": record.get("actual_start_utc"),
-        "start_lag_s": record.get("start_lag_s"),
-        "child_run_dir": str(child) if child else None,
-        "status": record.get("status"),
-        "valid": bool(
-            result
-            and result.get("success")
-            and _metric(result, ("flat_detection", "success"), False)
-            and _metric(result, ("linewidth", "hwhm_hz")) is not None
-        ),
-        "sensitivity_flat_median_ft_per_sqrt_hz": result.get(
-            "flat_median_ft_per_sqrt_hz"
-        ),
-        "zero_point_sensitivity_flat_median_ft_per_sqrt_hz": _metric(
-            result,
-            ("zero_point_method", "flat_median_ft_per_sqrt_hz"),
-        ),
-        "linewidth_hwhm_hz": _metric(result, ("linewidth", "hwhm_hz")),
-        "linewidth_kind": _metric(result, ("linewidth", "linewidth_kind")),
-        "primary_slope_v_per_vpp": result.get("primary_slope_v_per_vpp"),
-        "zero_point_slope_v_per_vpp": _metric(
-            result,
-            ("zero_point_method", "slope_v_per_vpp"),
-        ),
-        "response_fit_r_squared": fit_r2,
-        "excluded_point_count": _metric(result, ("response_fit", "excluded_point_count")),
-        "flat_band_low_hz": flat_band[0] if len(flat_band) > 0 else None,
-        "flat_band_high_hz": flat_band[1] if len(flat_band) > 1 else None,
-        "warnings": " | ".join(result.get("warnings", [])) if result else "",
-        "error": record.get("error"),
-    }
-    return {key: _builtin(row.get(key)) for key in FIELDNAMES}
-
-
-def _write_table(results_dir: Path, rows: list[dict[str, Any]]) -> None:
-    csv_path = results_dir / "drift_summary.csv"
-    temporary = csv_path.with_suffix(".csv.tmp")
-    with temporary.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(FIELDNAMES))
-        writer.writeheader()
-        writer.writerows(rows)
-    temporary.replace(csv_path)
-    json_path = results_dir / "drift_summary.json"
-    json_tmp = json_path.with_suffix(".json.tmp")
-    json_tmp.write_text(
-        json.dumps(rows, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    json_tmp.replace(json_path)
-
-
-def _plot_trend(
-    results_dir: Path,
-    rows: list[dict[str, Any]],
-    x: np.ndarray,
-    *,
-    xlabel: str,
-    filename: str,
-    clock_axis: bool = False,
-) -> str:
-    set_plot_style("paper")
-    valid = np.asarray([bool(row["valid"]) for row in rows], dtype=bool)
-
-    def values(key: str) -> np.ndarray:
-        return np.asarray(
-            [
-                float(row[key]) if row[key] is not None else np.nan
-                for row in rows
-            ]
-        )
-
-    sensitivity = values("sensitivity_flat_median_ft_per_sqrt_hz")
-    zero_point = values("zero_point_sensitivity_flat_median_ft_per_sqrt_hz")
-    linewidth = values("linewidth_hwhm_hz")
-    r_squared = values("response_fit_r_squared")
-    fig, axes = new_figure(
-        (6.4, 8.2),
-        3,
-        1,
-        height_ratios=[1.0, 1.0, 1.0],
-    )
-    ax = axes[0]
-    ax.plot(
-        x[valid],
-        sensitivity[valid],
-        "o-",
-        color=COLOR_OPTIMAL,
-        label="Sensitivity",
-    )
-    ax.plot(
-        x[valid],
-        zero_point[valid],
-        "s--",
-        color=COLOR_GREEN,
-        label="Zero-point sensitivity",
-    )
-    format_axis(ax, xlabel=xlabel, ylabel="Sensitivity (fT/√Hz)")
-    style_legend(ax)
-    ax = axes[1]
-    ax.plot(
-        x[valid],
-        linewidth[valid],
-        "o-",
-        color=COLOR_ORANGE,
-        label="Amplitude-equivalent HWHM",
-    )
-    format_axis(ax, xlabel=xlabel, ylabel="HWHM (Hz)")
-    style_legend(ax)
-    ax = axes[2]
-    ax.plot(
-        x[valid],
-        r_squared[valid],
-        "o-",
-        color=COLOR_GRAY,
-        label="Response fit R²",
-    )
-    if np.any(~valid):
-        ax.scatter(
-            x[~valid],
-            np.zeros(np.count_nonzero(~valid)),
-            marker="x",
-            color=COLOR_ORANGE,
-            label="Invalid cycle",
-        )
-    ax.set_ylim(0.0, 1.05)
-    format_axis(ax, xlabel=xlabel, ylabel="Fit quality (R²)")
-    style_legend(ax)
-    if clock_axis:
-        for axis in axes:
-            locator = AutoDateLocator(tz=LOCAL_TIMEZONE)
-            axis.xaxis.set_major_locator(locator)
-            axis.xaxis.set_major_formatter(
-                ConciseDateFormatter(locator, tz=LOCAL_TIMEZONE)
-            )
-        fig.autofmt_xdate(rotation=20, ha="right")
-    save_figure(fig, results_dir / filename)
-    return filename
-
-
-def _plot(results_dir: Path, rows: list[dict[str, Any]]) -> str:
-    x = np.asarray(
-        [float(row["actual_elapsed_s"] or 0.0) / 3600.0 for row in rows]
-    )
-    return _plot_trend(
-        results_dir,
-        rows,
-        x,
-        xlabel="Elapsed time (h)",
-        filename="drift_trend.png",
-    )
-
-
-def _parse_measurement_time(value: Any) -> datetime | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        timestamp = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=LOCAL_TIMEZONE)
-    return timestamp.astimezone(LOCAL_TIMEZONE)
-
-
-def _plot_clock_time(results_dir: Path, rows: list[dict[str, Any]]) -> str:
-    timed_rows: list[dict[str, Any]] = []
-    timestamps: list[datetime] = []
-    for row in rows:
-        timestamp = _parse_measurement_time(row.get("actual_start_utc"))
-        if timestamp is None:
-            continue
-        timed_rows.append(row)
-        timestamps.append(timestamp)
-    return _plot_trend(
-        results_dir,
-        timed_rows,
-        np.asarray(timestamps, dtype=object),
-        xlabel="Measurement time (Asia/Shanghai)",
-        filename="drift_trend_clock_time.png",
-        clock_axis=True,
-    )
-
-
-def refresh_trend(run_dir: Path) -> dict[str, Any]:
+def refresh_trend(run_dir: Path) -> dict:
+    """保留 A09 单路径接口；此在线入口允许未封存父运行。"""
     run_dir = Path(run_dir).resolve()
-    results_dir = run_dir / "results"
-    results_dir.mkdir(parents=True, exist_ok=True)
-    rows = [_row(record, run_dir) for record in _manifest(run_dir)]
-    _write_table(results_dir, rows)
-    plot = _plot(results_dir, rows)
-    clock_plot = _plot_clock_time(results_dir, rows)
-    payload = {
-        "success": True,
-        "run_dir": str(run_dir),
-        "cycle_count": len(rows),
-        "rows": rows,
-        "files": [
-            "drift_summary.csv",
-            "drift_summary.json",
-            plot,
-            clock_plot,
-        ],
-        "plot_profile": "paper",
-    }
-    (results_dir / "analysis.yaml").write_text(
-        yaml.safe_dump(_builtin(payload), allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
-    (results_dir / "analysis.json").write_text(
-        json.dumps(_builtin(payload), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    return payload
+    inputs = analysis_steps.load_inputs(run_dir, allow_running=True)
+    results = run_dir / "results"
+    results.mkdir(exist_ok=True)
+    analysis_steps.write_table(results, inputs["rows"])
+    return analysis_plotting.report(run_dir, inputs["rows"], _diagnostics(inputs), status="online")
 
 
-def analyze(run_dir: Path) -> dict[str, Any]:
-    return refresh_trend(run_dir)
+class AnalysisWorkflow:
+    """分析固定父目录；options 为空，完整与分步共用表格和绘图职责。"""
+
+    stages = ANALYSIS
+
+    def __init__(self, run_dir, analysis_parameters=None, *, project_root=None):
+        self.run_dir = Path(run_dir).resolve()
+        self.root = analysis_steps.project_directory(self.run_dir, project_root)
+        self.config_path = self.run_dir / "experiment_config.yaml"
+        self.results = self.run_dir / "results"
+        self.state_path = self.run_dir / "analysis_state.json"
+        self.config = analysis_steps.read_mapping(self.config_path)
+        if reason := run_format.analysis_block_reason(self.config):
+            raise ValueError(reason)
+        if analysis_parameters:
+            raise ValueError("父趋势分析没有覆盖参数：" + "、".join(sorted(analysis_parameters)))
+        self.options = {}
+        previous = read_state(self.state_path) or {}
+        self.states = initial_states(self.stages) | deepcopy(previous.get("steps", {}))
+        self.revision = previous.get("revision", 0)
+        self.summary = deepcopy(previous.get("summary", {}))
+        self.fingerprint = previous.get("fingerprint") or self.input_fingerprint()
+        self._refresh()
+
+    def input_fingerprint(self):
+        analysis_steps.project_directory(self.run_dir, self.root)
+        config = analysis_steps.read_mapping(self.config_path)
+        if reason := run_format.analysis_block_reason(config):
+            raise ValueError(reason)
+        return analysis_steps.input_fingerprint(self.run_dir, self.root, ANALYSIS_VERSION)
+
+    def _file_signature(self, path):
+        signature = analysis_steps.file_signature(analysis_steps.contained(path, self.run_dir))
+        return [signature] if signature is not None else None
+
+    def _refresh(self):
+        fingerprint = self.input_fingerprint()
+        if fingerprint != self.fingerprint:
+            self.fingerprint = fingerprint
+            invalidate(self.stages, self.states, "B01")
+            self.revision += 1
+        for stage in self.stages:
+            record = self.states[stage.id]
+            if record["status"] == "running" or (record["status"] == "completed" and any(
+                    self._file_signature(self.results / name) != record.get("files", {}).get(name)
+                    for name in stage.artifacts)):
+                invalidate(self.stages, self.states, stage.id)
+                self.revision += 1
+                break
+        if (any(record["status"] == "stale" for record in self.states.values()) and not any(
+                record["status"] in ("failed", "quality_failed", "cancelled") for record in self.states.values())):
+            self.summary.update(status="stale", success=False)
+        elif not self.summary:
+            self.summary.update(status="not_started", success=False)
+
+    def snapshot(self):
+        return dict(run_id=self.run_dir.name, revision=self.revision, options={},
+            steps=deepcopy(self.states), fingerprint=deepcopy(self.fingerprint), summary=deepcopy(self.summary))
+
+    def persist(self):
+        write_state(self.state_path, self.snapshot())
+        config = analysis_steps.read_mapping(self.config_path)
+        config.update(analysis_status=self.summary.get("status", "not_started"), analysis_error=self.summary.get("error"))
+        temporary = self.config_path.with_suffix(".yaml.tmp")
+        temporary.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        temporary.replace(self.config_path)
+        report_runtime_progress("analysis", "长飘父趋势分析状态已保存", data={"analysis_workflow": self.snapshot()})
+
+    def _archive_from(self, item):
+        names = {name for stage in invalidated_stages(self.stages, item) for name in stage.artifacts}
+        files = [self.results / name for name in sorted(names) if (self.results / name).is_file()]
+        if files:
+            backup = self.results / ("before_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+            backup.mkdir()
+            for path in files:
+                analysis_steps.contained(path, self.run_dir)
+                path.replace(backup / path.name)
+            self.summary["backup_directory"] = backup.name
+
+    def _failed(self, item, exc):
+        status = ("cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else
+            "quality_failed" if isinstance(exc, ValueError) else "failed")
+        invalidate(self.stages, self.states, item)
+        self.states[item] = dict(status=status, error=str(exc))
+        self.summary.update(status=status, success=False, error=str(exc))
+        try:
+            self.persist()
+        except Exception as save_error:
+            if hasattr(exc, "add_note"):
+                exc.add_note(f"分析诊断保存另失败：{save_error}")
+
+    def execute(self, selected, expected_revision=None):
+        self._refresh()
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("分析修订已改变，请刷新后重试")
+        selected = validate_selection(self.stages, self.states, selected)
+        # 所有读取资格在归档前验证；损坏引用不能先挪走仍可查看的旧结果。
+        try:
+            check_cancelled()
+            inputs = analysis_steps.load_inputs(self.run_dir, project_root=self.root)
+            if self.input_fingerprint() != self.fingerprint:
+                raise analysis_steps.AnalysisQualityError("分析输入在读取期间发生变化，请重新执行 B01")
+        except BaseException as exc:
+            self.revision += 1
+            self._failed("B01", exc)
+            raise
+        self.results.mkdir(exist_ok=True)
+        self.revision += 1
+        for item in selected:
+            try:
+                check_cancelled()
+                self._archive_from(item)
+                invalidate(self.stages, self.states, item)
+                self.states[item] = dict(status="running", error="")
+                self.summary.update(status="running", success=False)
+                self.summary.pop("error", None)
+                self.persist()
+                if item == "B01":
+                    analysis_steps.write_inputs(self.results, inputs, self.fingerprint)
+                    self.summary.update(experiment_id=run_format.EXPERIMENT_ID, run_dir=str(self.run_dir),
+                        **_diagnostics(inputs), status="partial")
+                elif item == "B02":
+                    analysis_steps.write_table(self.results, inputs["rows"])
+                    self.summary.update(**_diagnostics(inputs), status="partial")
+                elif item == "B03":
+                    self.summary.update(analysis_plotting.report(self.run_dir,
+                        analysis_steps.read_table(self.results), _diagnostics(inputs)))
+                stage = next(stage for stage in self.stages if stage.id == item)
+                signatures = {name: self._file_signature(self.results / name) for name in stage.artifacts}
+                if any(signature is None for signature in signatures.values()):
+                    raise RuntimeError(f"{item} 缺少应当生成的分析产物")
+                self.states[item] = dict(status="completed", error="", files=signatures,
+                    input_fingerprint=deepcopy(self.fingerprint), parameters={}, revision=self.revision)
+                self.persist()
+            except BaseException as exc:
+                self._failed(item, exc)
+                raise
+        return deepcopy(self.summary)
+
+
+def analyze(run_dir: Path, *, step_ids=None, analysis_parameters=None, expected_revision=None,
+        project_root=None) -> dict:
+    ctx = AnalysisWorkflow(run_dir, analysis_parameters, project_root=project_root)
+    return ctx.execute([stage.id for stage in ANALYSIS] if step_ids is None else step_ids, expected_revision)
 
 
 def main() -> int:
-    result = analyze(runtime_run_dir())
+    command = json.loads(os.environ.get("LAB_TYPED_PARAMETERS", "{}"))
+    result = analyze(runtime_run_dir(), step_ids=command.get("step_ids"),
+        analysis_parameters=command.get("analysis_parameters"), expected_revision=command.get("revision"))
     print(f"Mx Y RF 灵敏度长飘分析完成: {result['run_dir']}")
     return 0
 

@@ -155,6 +155,8 @@ def _acquire_grid(
                     device_id,
                 )
             except RPointQualityError as exc:
+                if getattr(exc, "safety_cleanup_errors", ()):
+                    raise
                 invalid += 1
                 record["status"] = "invalid_quality"
                 record["reason"] = str(exc)

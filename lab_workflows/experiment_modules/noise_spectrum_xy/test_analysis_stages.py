@@ -43,7 +43,11 @@ class AnalysisStagesTest(unittest.TestCase):
     def directory(self, name):
         directory = self.root / name
         (directory / "raw").mkdir(parents=True)
-        (directory / "experiment_config.yaml").write_text(yaml.safe_dump(dict(parameters={
+        (directory / "experiment_config.yaml").write_text(yaml.safe_dump(dict(
+            experiment_id="noise-spectrum-xy", experiment_type="Noise_Spectrum_XY_Ctrl",
+            schema_version=4, raw_format_version=1,
+            scan_params={"xy_envelope_voltage_V": [0.0, 2.0]},
+            hf2_daq={"actual_rate_Sa_s": 10000.0, "DAQ_duration_s": 1.0}, parameters={
             "ANALYSIS_BIN_WIDTH_HZ": 50.0, "ANALYSIS_FREQUENCY_MIN_HZ": 0.0,
             "ANALYSIS_FREQUENCY_MAX_HZ": 1000.0, "ANALYSIS_FIT_HALF_WIDTH_HZ": 400.0})), encoding="utf-8")
         return directory

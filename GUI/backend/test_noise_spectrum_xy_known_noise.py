@@ -1,10 +1,12 @@
 """从真实会话接口验证已知噪声；子进程使用假仪器。"""
+import json
 import os
 from pathlib import Path
 import shutil
 import tempfile
 import time
 import unittest
+from threading import Thread
 from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -110,7 +112,10 @@ class KnownNoiseAPITest(unittest.TestCase):
         run = self.root / "data/Noise_Spectrum_XY_Ctrl_Known_Noise/history"
         run.mkdir(parents=True)
         config_path = run / "experiment_config.yaml"
-        config_path.write_text(yaml.safe_dump(dict(experiment_id=ADAPTER.id, completion_status="completed", parameters={"RUN_TAG": "history-snapshot"})), encoding="utf-8")
+        config_path.write_text(yaml.safe_dump(dict(experiment_id=ADAPTER.id, completion_status="completed",
+            hf2_daq=dict(actual_rate_Sa_s=1000., DAQ_duration_s=1.),
+            scan_params=dict(xy_envelope_voltage_V=[0., 1.]),
+            parameters={"RUN_TAG": "history-snapshot"})), encoding="utf-8")
         with TestClient(main.app) as client, patch.object(main, "ROOT", self.root), patch.object(main, "manager", self.manager), patch.object(main, "known_noise_sessions", self.service):
             self.assertEqual(client.get(BASE+"/runs").json()["total"], 1)
             summary = client.get(BASE+"/runs/history/summary").json()
@@ -149,3 +154,93 @@ class KnownNoiseAPITest(unittest.TestCase):
                 self.assertEqual(response.status_code, 422, response.text)
         self.assertFalse(self.manager.jobs)
         self.assertFalse(self.manager.hardware_lock.locked())
+
+    def test_gui_fixtures_match_current_fields_and_stage_contract(self):
+        from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise import stages
+        from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.models import NoiseSpectrumXYKnownNoiseParams
+        directory = ADAPTER.root / "GUI/frontend/src/pages"
+        fixture = json.loads((directory / "knownNoiseSchema.fixture.json").read_text(encoding="utf-8"))
+        params = NoiseSpectrumXYKnownNoiseParams()
+        current = params.schema(self.root)
+        self.assertEqual(fixture["schema_version"], params.schema_version)
+        self.assertEqual(len(fixture["fields"]), 56)
+        for saved, actual in zip(fixture["fields"], current["fields"], strict=True):
+            self.assertEqual({key: value for key, value in saved.items() if key != "options"},
+                             {key: value for key, value in actual.items() if key != "options"})
+        self.assertEqual(json.loads((directory / "knownNoiseWorkflow.fixture.json").read_text(encoding="utf-8")),
+                         json.loads(json.dumps(stages.definition(), ensure_ascii=False)))
+
+    def test_real_child_rejects_replayed_request_and_stale_revision(self):
+        session_id = self.create()
+        response = self.client.post(BASE+f"/sessions/{session_id}/steps", json={"revision": 0,
+            "step_ids": [f"A{i:02d}" for i in range(1, 13)]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.wait(lambda: self.service.get(session_id).get("pending_request") is None)
+        state = self.service.get(session_id)
+        job = self.manager.get(state["job_id"])
+        queued = self.manager.create("protocol-lock-probe", lambda current: "done")
+        path = self.root / "data" / ADAPTER.data_type / state["run_id"] / "experiment_config.yaml"
+        before = path.read_bytes()
+        events, _ = self.manager.stream_state(job, 0)
+        request = [event["data"]["command_result"]["request_id"] for event in events
+                   if event.get("data", {}).get("command_result")][-1]
+        queue = self.service.sessions[session_id]["queue"]
+        for command, message in ((dict(request_id=request, revision=state["revision"], action="steps", step_ids=["A13"]), "重复"),
+                (dict(request_id="stale-known", revision=0, action="parameters", parameters={"RUN_TAG": "stale"}), "修订")):
+            start = len(job.events)
+            queue.put(command)
+            def rejected():
+                fresh, _ = self.manager.stream_state(job, start)
+                return any(message in (event.get("data", {}).get("command_result", {}).get("error") or "") for event in fresh)
+            self.wait(rejected)
+            self.assertEqual(self.service.get(session_id)["revision"], state["revision"])
+            self.assertEqual(self.service.get(session_id)["steps"]["A13"]["status"], "pending")
+            self.assertEqual(queued.status, "queued")
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self.client.post(BASE+f"/sessions/{session_id}/finish", json={"revision": state["revision"]}).status_code, 200)
+        self.wait(lambda: self.service.get(session_id)["status"] == "closed" and queued.status == "completed")
+
+    def test_stop_during_real_child_daq_keeps_lock_until_safety_shutdown(self):
+        for action in ("cancel", "eof", "shutdown"):
+            with self.subTest(action=action), patch.dict(os.environ, {"KNOWN_TEST_BLOCK_DAQ": "1", "KNOWN_TEST_BLOCK_SHUTDOWN": "1"}):
+                for name in ("daq_waiting", "shutdown_waiting", "release_shutdown"):
+                    (self.root / name).unlink(missing_ok=True)
+                session_id = self.create()
+                response = self.client.post(BASE+f"/sessions/{session_id}/steps", json={"revision": 0,
+                    "step_ids": [f"A{i:02d}" for i in range(1, 13)]})
+                self.assertEqual(response.status_code, 200, response.text)
+                self.wait(lambda: self.service.get(session_id).get("pending_request") is None)
+                state = self.service.get(session_id)
+                queued = self.manager.create("shutdown-lock-probe", lambda current: "done")
+                response = self.client.post(BASE+f"/sessions/{session_id}/steps", json={"revision": state["revision"], "step_ids": ["A13"]})
+                self.assertEqual(response.status_code, 200, response.text)
+                self.wait(lambda: (self.root / "daq_waiting").is_file())
+                revision = self.service.get(session_id)["revision"]
+                self.assertEqual(self.client.post(BASE+f"/sessions/{session_id}/steps", json={"revision": revision, "step_ids": ["A13"]}).status_code, 409)
+                self.assertEqual(self.client.patch(BASE+f"/sessions/{session_id}/parameters", json={"revision": revision, "parameters": {"RUN_TAG": "running"}}).status_code, 409)
+                closer = None
+                try:
+                    if action == "cancel":
+                        self.manager.cancel(state["job_id"])
+                    elif action == "eof":
+                        self.service.close_communication()
+                    else:
+                        closer = Thread(target=self.service.shutdown)
+                        closer.start()
+                    self.wait(lambda: (self.root / "shutdown_waiting").is_file())
+                    self.assertTrue(self.manager.hardware_lock.locked())
+                    self.assertEqual(queued.status, "queued")
+                    self.assertEqual(self.manager.get(state["job_id"]).status, "running")
+                finally:
+                    (self.root / "release_shutdown").touch()
+                    if closer:
+                        closer.join(timeout=20)
+                        self.assertFalse(closer.is_alive())
+                self.wait(lambda: self.service.get(session_id)["status"] == "closed" and queued.status == "completed")
+                closed = self.service.get(session_id)
+                self.assertIsNotNone(closed["safety_shutdown"], closed["steps"]["A15"])
+                self.assertTrue(closed["safety_shutdown"]["completed"])
+                self.assertEqual(closed["steps"]["A15"]["status"], "completed")
+                self.assertEqual(closed["outputs"]["共用触发"], "OFF")
+                config = yaml.safe_load((self.root / "data" / ADAPTER.data_type / closed["run_id"] / "experiment_config.yaml").read_text(encoding="utf-8"))
+                self.assertEqual(config["completion_status"], "cancelled")

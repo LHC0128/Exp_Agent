@@ -51,9 +51,9 @@ function Result({ value }: { value: Summary }) {
       </figure>
     }
     {!value.artifacts["frequency_response.png"] && <p className="zaw-empty">本次运行暂无结果图。</p>}
-    <p>
+    <p className="xy-artifact-links">
       {["analysis_results.npz"].filter(name => value.artifacts[name]).map(name =>
-        <a key={name} href={value.artifacts[name]} download style={{ marginRight: 12 }}>{name}</a>
+        <a key={name} href={value.artifacts[name]} download>{name}</a>
       )}
     </p>
   </div>;

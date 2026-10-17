@@ -1,850 +1,307 @@
-"""Mx 高主场 Z 磁场频率标定采集工作流。"""
-
-from __future__ import annotations
-from ...steps.acquisition_window import acquisition_window
-
-from lab_workflows.steps import initialize_lockin_inputs
-from lab_workflows.devices import create_lockin
-from lab_workflows.lockin_compatibility import require_lockin_compatibility
-import time
+"""Z 磁场频率标定完整和分步运行共用的编排。"""
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
-
-import numpy as np
-from gs200 import GS200Instrument
-from sds_acquisition import SDSAcquisition, SDSInstrument
-from lockin_amplifier import (
-    DemodulatorConfig,
-    HF2Instrument,
-    OscillatorConfig,
-    SignalInputConfig,
-    demod,
-)
-from tec_controller import TECInstrument
-
-from ...common import find_project_root, load_mapping, validate_safety_limit
-from ...current_feedback import validate_current_power
-from ...devices import create_signal_generator
-from ...experiment_runtime import check_cancelled, load_runtime_params
-from ...steps import (
-    DGChannelShutdown,
-    DeviceSession,
-    DisconnectTarget,
-    STANDARD_PRESERVED_OUTPUTS,
-    SafetyShutdownReport,
-    ShutdownAction,
-    TemperatureSwitchRestore,
-    configure_temperature_control,
-    connect_signal_generator_routes,
-    create_run_directory,
-    run_safety_shutdown,
-    set_temperature_switch,
-    synchronize_connected_clocks,
-    wait_for_temperature_stable,
-)
-from ..mx_y_rf_sensitivity.acquisition import acquire_r, summarize_r
-from ...steps.scope_waveform import (
-    ScopeAutoRangeState,
-    ScopeCaptureSettings,
-    acquire_autoranged_waveform,
-    configure_fixed_rate_scope,
-    read_complete_scope_record,
-)
+from uuid import uuid4
+import shutil
+from ...common import WorkflowCancelled, find_project_root
+from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
+from ...instrument_config import instrument_config_snapshot
+from ...steps import (DeviceSession, create_run_directory, disconnect_device_mapping, set_temperature_switch)
+from ..noise_spectrum_xy.state_io import write_state
+from . import acquisition, preparation, excitation, run_format
 from .models import MxZFieldCalibrationParams
-from .scan import (
-    build_frequency_axis,
-    build_z_axis,
-    initial_rf_frequency_hz,
-    predicted_center_hz,
-)
+from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
+# 旧导入继续可用，完整运行与分步运行共用下方业务编排。
+from ._helpers import _sleep, _uncancellable_sleep, _RuntimeCancellation
+from .preparation import (_identity, _connect_devices, _initial_state_snapshot,
+    _configure_reference_clocks, _configure_outputs, safe_shutdown)
+from .excitation import _set_pump_gate_on, _set_z_dc_bias
+from .acquisition import (_save_point, _acquire_scan, acquire_r, summarize_r,
+    _configure_sense_scope, _capture_sense_point)
+from .scan import build_frequency_axis, build_z_axis, initial_rf_frequency_hz, predicted_center_hz
+from ...common import load_mapping
+from ...lockin_compatibility import require_lockin_compatibility
 
-
-EXPERIMENT_ID = "mx-z-field-calibration"
-DATA_TYPE = "Mx_Z_Field_Calibration"
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
+DATA_TYPE = run_format.DATA_TYPE
 EXECUTION_MODE = "typed_workflow"
 
 
-class _RuntimeCancellation:
-    @staticmethod
-    def raise_if_cancelled() -> None:
-        check_cancelled()
+def _temperature_gated_acquire(*args, **kwargs):
+    return acquisition._temperature_gated_acquire(*args, **kwargs,
+        switch=set_temperature_switch, wait=_sleep, recovery_wait=_uncancellable_sleep)
 
 
-def _sleep(seconds: float) -> None:
-    deadline = time.monotonic() + max(0.0, float(seconds))
-    while time.monotonic() < deadline:
-        check_cancelled()
-        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+def _acquire_valid_r_point(*args, **kwargs):
+    return acquisition._acquire_valid_r_point(*args, **kwargs,
+        gated=_temperature_gated_acquire, reader=acquire_r)
 
 
-def _uncancellable_sleep(seconds: float) -> None:
-    time.sleep(max(0.0, float(seconds)))
+class Workflow:
+    """同一设备会话可重复采集，每轮原始数据与参数快照独立。"""
+    stages = ACQUISITION
 
+    def __init__(self, params, *, project_root=None, session_id=None):
+        self.root = Path(project_root).resolve() if project_root else find_project_root()
+        self.params, self.mapping = preparation.preflight(params, self.root)
+        self.pump_parameters = self.params
+        self.config_revision = self._configuration_revision()
+        self.session_id = session_id or uuid4().hex
+        self.revision = 0
+        self.states = initial_states(self.stages)
+        self.devices, self.channels = {}, {}
+        self.device_session = DeviceSession()
+        self.directory = None
+        self.run_parameters = None
+        self.current_step = None
+        self.closed = self.round_sealed = self.clock_failed = False
+        self.quality_error = None
+        self.demod_mode = "unknown"
+        self.state = self._initial_state()
+        self.outputs = {key: "未知" for key in ("GS200", "X", "Y RF", "Z", "温控", "Pump")}
 
-def _identity(device: Any) -> str | None:
-    try:
-        value = device.idn() if callable(getattr(device, "idn", None)) else device.idn
-        return str(value)
-    except Exception:
-        return None
+    def _initial_state(self):
+        return dict(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, execution_mode=EXECUTION_MODE,
+            raw_format_version=run_format.RAW_FORMAT_VERSION, completion_status="running",
+            geometry={"main_field": "Z", "pump": "Z", "probe": "X", "rf_field": "Y",
+                "z_dc_scan": "single_pass_negative_to_positive"},
+            analysis_during_acquisition=False, acquisition_signals=["R"],
+            r_point_quality={"criterion": "std(R) <= threshold", "std_threshold_v": self.params.r_bad_point_std_threshold_v,
+                "max_attempts": self.params.r_point_max_attempts},
+            temperature_gating={"scope": "every_frequency_point", "off_voltage_v": 0.0, "on_voltage_v": 5.0,
+                "combined_settle_time_s": self.params.system_settle_s, "on_lag_s": self.params.temp_switch_on_lag_s})
 
+    def _configuration_revision(self):
+        config = instrument_config_snapshot(self.root)
+        return (config["device_library_revision"], config["physical_mapping_revision"],
+            (self.root / "params/safety_limits.yaml").read_bytes())
 
-def _set_pump_gate_on(device: Any, channel: int, voltage_v: float) -> None:
-    validate_safety_limit("Time_sequence", voltage_v)
-    device.set_burst_state(False, channel=channel)
-    device.set_mod_state(False, channel=channel)
-    device.setup_dc(voltage_v, channel=channel)
-    device.set_output(True, channel=channel)
+    def recheck(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请结束会话后重新连接")
+        self.params, self.mapping = preparation.preflight(self.params, self.root)
 
+    def snapshot(self):
+        return dict(session_id=self.session_id, revision=self.revision,
+            status="closed" if self.closed else "running" if self.current_step else "waiting",
+            parameters=self.params.to_external(), steps=deepcopy(self.states), current_step=self.current_step,
+            run_id=self.directory.root.name if self.directory else None, outputs=dict(self.outputs),
+            output_source="最近成功模块的写入结果；初态来自回读，后续未额外回读",
+            demod_mode=self.demod_mode, safety_shutdown=self.state.get("safety_shutdown"),
+            clock_sources=self.state.get("clock_sources", {}),
+            daq_settings={"actual_response_rate_sa_s": self.state.get("actual_rates", {}).get("response_sa_s")})
 
-def _set_z_dc_bias(
-    device: Any,
-    channel: int,
-    voltage_v: float,
-    *,
-    output: bool,
-) -> float:
-    """设置 Z DC 命令值，并验证波形模式和输出开关状态。"""
-    target = float(validate_safety_limit("Z_magnetic_field", voltage_v))
-    try:
-        device.setup_dc(target, channel=channel)
-        device.set_output(output, channel=channel)
-        shape = str(device.get_shape(channel=channel)).strip().strip('"').upper()
-        output_on = bool(device.get_output(channel=channel))
-    except Exception:
-        try:
-            device.set_output(False, channel=channel)
-        except Exception:
-            pass
-        raise
-    if shape != "DC" or output_on is not bool(output):
-        device.set_output(False, channel=channel)
-        raise RuntimeError(
-            "Z DC 配置验证失败："
-            f"波形={shape!r}，输出={'ON' if output_on else 'OFF'}"
-        )
-    return target
+    def publish(self, message="等待选择下一模块"):
+        snapshot = self.snapshot()
+        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        if self.directory and not self.round_sealed:
+            write_state(self.directory.root / "acquisition_state.json", snapshot)
+        report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": snapshot})
 
+    def save(self):
+        if self.directory and not self.round_sealed:
+            self.directory.update_config(**self.state)
 
-def _connect_devices(
-    mapping: dict[str, dict[str, Any]],
-    session: DeviceSession,
-    *,
-    include_main_field: bool = True,
-    include_scope: bool = False,
-) -> tuple[dict[str, Any], dict[str, int]]:
-    devices: dict[str, Any] = {}
-    channels: dict[str, int] = {}
+    def update_parameters(self, values):
+        self.recheck()
+        old = self.params.to_external()
+        if unknown := values.keys() - old.keys():
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        params, mapping = preparation.preflight(MxZFieldCalibrationParams.from_external(old | values), self.root)
+        changed = {name for name, value in params.to_external().items() if value != old[name]}
+        for stage in self.stages:
+            if changed.intersection(stage.parameters):
+                invalidate(self.stages, self.states, stage.id)
+        self.params, self.mapping = params, mapping
+        self.revision += 1
+        self.publish("参数已应用；请显式重跑受影响模块")
 
-    if include_main_field:
-        gs_cfg = mapping["main_magnetic_field"]
-        devices["gs200"] = session.connect(
-            "gs200", gs_cfg["resource"], lambda: GS200Instrument(gs_cfg["resource"])
-        )
+    def _new_directory(self, selected):
+        previous, inherited = self.directory, deepcopy(self.state)
+        if previous and not self.round_sealed:
+            self.state.update(completion_status="failed", failure_reason="本轮被重跑替代，保留已有数据")
+            self.save()
+        suffix = 0
+        while True:
+            try:
+                tag = self.params.run_tag if not suffix else f"{self.params.run_tag}_{suffix:02d}"
+                self.directory = create_run_directory(DATA_TYPE, tag, self.params.to_external(),
+                    schema_version=self.params.schema_version, project_root=self.root)
+                break
+            except FileExistsError:
+                suffix += 1
+        self.round_sealed = False
+        self.state = self._initial_state()
+        self.run_parameters = self.params.to_external()
+        if previous:
+            affected = {stage.id for item in selected if item != "A01"
+                for stage in invalidated_stages(self.stages, item)}
+            for key in ("clock_sources", "device_snapshot", "temperature_control", "actual_rates"):
+                if key in inherited:
+                    self.state[key] = inherited[key]
+            for stage in self.stages:
+                if stage.id not in affected and self.states[stage.id]["status"] == "completed":
+                    for pattern in stage.artifacts:
+                        for source in previous.root.glob(pattern):
+                            if source.is_file():
+                                target = self.directory.root / source.relative_to(previous.root)
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(source, target)
+            self.state["source_run_id"] = previous.root.name
+        self.save()
 
-    z_cfg = mapping["Z_magnetic_field"]
-    devices["z_field"] = session.connect(
-        "z_field", z_cfg["resource"], lambda: create_signal_generator(z_cfg)
-    )
-    channels["z_field"] = int(z_cfg["channel"])
-
-    x_cfg = mapping["X_magnetic_field"]
-    rf_cfg = mapping["rf_coil"]
-    devices["xy_field"], routed_channels = connect_signal_generator_routes(
-        session,
-        "xy_field",
-        {
-            "x_field": ("X_magnetic_field", x_cfg),
-            "y_rf": ("rf_coil", rf_cfg),
-        },
-    )
-    channels.update(routed_channels)
-
-    pump_cfg = mapping["Pump_laser_power"]
-    probe_cfg = mapping["Probe_laser_power"]
-    devices["laser"], routed_channels = connect_signal_generator_routes(
-        session,
-        "laser",
-        {
-            "pump_laser": ("Pump_laser_power", pump_cfg),
-            "probe_laser": ("Probe_laser_power", probe_cfg),
-        },
-    )
-    channels.update(routed_channels)
-
-    carrier_cfg = mapping["Pump_modulation"]
-    gate_cfg = mapping["Time_sequence"]
-    devices["pump_rf"], routed_channels = connect_signal_generator_routes(
-        session,
-        "pump_rf",
-        {
-            "pump_carrier": ("Pump_modulation", carrier_cfg),
-            "pump_gate": ("Time_sequence", gate_cfg),
-        },
-    )
-    channels.update(routed_channels)
-
-    temp_cfg = mapping["Temp_Switch"]
-    devices["temp_switch"] = session.connect(
-        "temp_switch", temp_cfg["resource"], lambda: create_signal_generator(temp_cfg)
-    )
-    channels["temp_switch"] = int(temp_cfg["channel"])
-
-    hf_cfg = mapping["lockin_r"]
-    devices["hf2"] = session.connect(
-        "hf2",
-        f"hf2://{hf_cfg.get('host', '127.0.0.1')}/{hf_cfg['device_id']}",
-        lambda: create_lockin(hf_cfg),
-    )
-    initialize_lockin_inputs(devices["hf2"])
-
-    tec_cfg = mapping["temperature"]
-    devices["tec"] = session.connect_optional(
-        "tec",
-        tec_cfg["resource"],
-        lambda: TECInstrument(port=tec_cfg["resource"]),
-        device_label="TEC103",
-    )
-    if include_scope:
-        scope_cfg = mapping["scope_waveform"]
-        scope = session.connect(
-            "scope",
-            str(scope_cfg["resource"]),
-            lambda: SDSInstrument(str(scope_cfg["resource"])),
-        )
-        devices["scope"] = scope
-        devices["acquirer"] = session.bind("acquirer", SDSAcquisition(scope))
-    return devices, channels
-
-
-def _initial_state_snapshot(
-    devices: dict[str, Any], channels: dict[str, int]
-) -> dict[str, Any]:
-    snapshot: dict[str, Any] = {
-        "identity_readback": {
-            name: identity
-            for name, device in devices.items()
-            if (identity := _identity(device)) is not None
-        }
-    }
-    outputs: dict[str, Any] = {}
-    for semantic, channel_name in (
-        ("z_field", "z_field"),
-        ("xy_field", "x_field"),
-        ("xy_field", "y_rf"),
-        ("laser", "pump_laser"),
-        ("laser", "probe_laser"),
-        ("pump_rf", "pump_carrier"),
-        ("pump_rf", "pump_gate"),
-        ("temp_switch", "temp_switch"),
-    ):
-        device = devices.get(semantic)
-        channel = channels.get(channel_name)
-        if device is None or channel is None:
-            continue
-        try:
-            outputs[channel_name] = {"output_on": bool(device.get_output(channel=channel))}
-        except Exception as exc:
-            outputs[channel_name] = {"read_error": str(exc)}
-    snapshot["output_state_before_configuration"] = outputs
-    return snapshot
-
-
-def _configure_reference_clocks(
-    devices: dict[str, Any], mapping: dict[str, dict[str, Any]]
-) -> dict[str, dict[str, str]]:
-    records = synchronize_connected_clocks(
-        devices,
-        mapping,
-        {
-            "z_field": "Z_magnetic_field",
-            "xy_field": "rf_coil",
-            "laser": "Pump_laser_power",
-            "pump_rf": "Pump_modulation",
-            "temp_switch": "Temp_Switch",
-            "hf2": "lockin_r",
-        },
-    )
-    return {
-        name: {"target": str(record["target"]), "actual": str(record["actual"])}
-        for name, record in records.items()
-    }
-
-
-def safe_shutdown(
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    params: MxZFieldCalibrationParams,
-) -> SafetyShutdownReport:
-    dg_channels: list[DGChannelShutdown] = []
-    if devices.get("z_field") is not None and "z_field" in channels:
-        dg_channels.append(
-            DGChannelShutdown(
-                devices["z_field"], channels["z_field"], "Z_magnetic_field", "Z DC 偏置"
-            )
-        )
-    if devices.get("xy_field") is not None:
-        if "x_field" in channels:
-            dg_channels.append(
-                DGChannelShutdown(
-                    devices["xy_field"], channels["x_field"], "X_magnetic_field", "X 磁场"
-                )
-            )
-        if "y_rf" in channels:
-            dg_channels.append(
-                DGChannelShutdown(
-                    devices["xy_field"], channels["y_rf"], "rf_coil", "Y RF 场"
-                )
-            )
-
-    extra_actions: list[ShutdownAction] = []
-    pump_rf = devices.get("pump_rf")
-    if pump_rf is not None and "pump_gate" in channels:
-        extra_actions.append(
-            ShutdownAction(
-                "保持 Pump RF 开关 5V 常开失败",
-                lambda: _set_pump_gate_on(
-                    pump_rf, channels["pump_gate"], params.pump_gate_voltage_v
-                ),
-            )
-        )
-    if pump_rf is not None and "pump_carrier" in channels:
-        def keep_pump_carrier_on() -> None:
-            validate_safety_limit("Pump_modulation", params.pump_carrier_amplitude_vpp)
-            pump_rf.setup_sine(
-                params.pump_carrier_frequency_hz,
-                params.pump_carrier_amplitude_vpp,
-                offset=0.0,
-                phase=0.0,
-                channel=channels["pump_carrier"],
-            )
-            pump_rf.set_output(True, channel=channels["pump_carrier"])
-
-        extra_actions.append(
-            ShutdownAction("保持 Pump 100MHz 载波开启失败", keep_pump_carrier_on)
-        )
-
-    temperature_restore = None
-    if devices.get("temp_switch") is not None and "temp_switch" in channels:
-        temperature_restore = TemperatureSwitchRestore(
-            devices["temp_switch"], channels["temp_switch"]
-        )
-    return run_safety_shutdown(
-        dg_channels=dg_channels,
-        temperature_switch=temperature_restore,
-        extra_actions=extra_actions,
-        disconnect_targets=(DisconnectTarget("TEC", devices.get("tec")),),
-        preserved_outputs=(*STANDARD_PRESERVED_OUTPUTS, "Time_sequence"),
-    )
-
-
-def _configure_outputs(
-    params: MxZFieldCalibrationParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    mapping: dict[str, dict[str, Any]],
-) -> tuple[float, float | None, dict[str, dict[str, str]]]:
-    clock_sources = _configure_reference_clocks(devices, mapping)
-    initial_frequency_hz = initial_rf_frequency_hz(params)
-
-    z_field = devices["z_field"]
-    z_field.set_burst_state(False, channel=channels["z_field"])
-    z_field.set_mod_state(False, channel=channels["z_field"])
-    _set_z_dc_bias(
-        z_field,
-        channels["z_field"],
-        0.0,
-        output=False,
-    )
-
-    xy_field = devices["xy_field"]
-    validate_safety_limit("X_magnetic_field", 0.0)
-    xy_field.set_burst_state(False, channel=channels["x_field"])
-    xy_field.set_mod_state(False, channel=channels["x_field"])
-    xy_field.setup_dc(0.0, channel=channels["x_field"])
-    xy_field.set_output(False, channel=channels["x_field"])
-    validate_safety_limit("rf_coil", params.y_rf_amplitude_vpp)
-    xy_field.set_burst_state(False, channel=channels["y_rf"])
-    xy_field.set_mod_state(False, channel=channels["y_rf"])
-    xy_field.setup_sine(
-        initial_frequency_hz,
-        params.y_rf_amplitude_vpp,
-        offset=0.0,
-        phase=0.0,
-        channel=channels["y_rf"],
-    )
-    xy_field.set_output(False, channel=channels["y_rf"])
-
-    laser = devices["laser"]
-    validate_safety_limit("Pump_laser_power", params.pump_laser_power_v)
-    laser.setup_dc(params.pump_laser_power_v, channel=channels["pump_laser"])
-    laser.set_output(True, channel=channels["pump_laser"])
-    validate_safety_limit("Probe_laser_power", params.probe_laser_power_v)
-    laser.setup_dc(params.probe_laser_power_v, channel=channels["probe_laser"])
-    laser.set_output(True, channel=channels["probe_laser"])
-
-    gs200 = devices["gs200"]
-    gs_cfg = mapping["main_magnetic_field"]
-    if gs_cfg.get("source_function"):
-        gs200.set_source_function(gs_cfg["source_function"])
-    gs200.set_current_limit(0.01)
-    validate_safety_limit("main_magnetic_field", params.main_magnetic_field_ma)
-    gs200.set_current(params.main_magnetic_field_ma / 1000.0)
-    gs200.set_output(True)
-
-    pump_rf = devices["pump_rf"]
-    validate_safety_limit("Pump_modulation", params.pump_carrier_amplitude_vpp)
-    pump_rf.setup_sine(
-        params.pump_carrier_frequency_hz,
-        params.pump_carrier_amplitude_vpp,
-        offset=0.0,
-        phase=0.0,
-        channel=channels["pump_carrier"],
-    )
-    pump_rf.set_output(True, channel=channels["pump_carrier"])
-    _set_pump_gate_on(pump_rf, channels["pump_gate"], params.pump_gate_voltage_v)
-
-    set_temperature_switch(
-        devices["temp_switch"], True, channel=channels["temp_switch"]
-    )
-    temperature_status = configure_temperature_control(
-        devices.get("tec"),
-        params.temperature_c,
-        channel=1,
-    )
-    actual_temperature = temperature_status.actual_temperature_c
-
-    hf2 = devices["hf2"]
-    demod.configure_signal_input(
-        hf2,
-        SignalInputConfig(
-            input_index=0,
-            range=params.hf2_signal_range_v,
-            diff=False,
-        ),
-    )
-    demod.configure_oscillator(
-        hf2,
-        OscillatorConfig(
-            osc_index=params.demod_osc_idx,
-            frequency=initial_frequency_hz,
-        ),
-    )
-    actual_rate = demod.configure_demodulator(
-        hf2,
-        DemodulatorConfig(
-            demod_index=params.demod_idx,
-            enable=True,
-            rate=params.response_rate_sa_s,
-            input_channel=0,
-            osc_select=params.demod_osc_idx,
-            harmonic=1,
-            time_constant=params.response_time_constant_s,
-            order=params.response_demod_order,
-            phase=float(
-                hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift")
-            ),
-        ),
-     for_acquisition=True)
-    temperature_text = (
-        f"{actual_temperature:.2f} °C"
-        if actual_temperature is not None
-        else "由外部软件控制（未读取）"
-    )
-    print(
-        f"Mx Z 标定工作点已配置，温度 {temperature_text}，"
-        f"Demod0 实际速率 {float(actual_rate):.3f} Sa/s"
-    )
-    return float(actual_rate), actual_temperature, clock_sources
-
-
-def _temperature_gated_acquire(
-    params: MxZFieldCalibrationParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    *,
-    acquire: Callable[[], dict[str, np.ndarray]],
-) -> dict[str, np.ndarray]:
-    """配置后关温控、统一等待、读入内存，任何退出路径先恢复温控。"""
-    check_cancelled()
-    def set_enabled(enabled):
-        set_temperature_switch(devices["temp_switch"], enabled, channel=channels["temp_switch"])
-        if enabled:
-            _uncancellable_sleep(params.temp_switch_on_lag_s)
-    with acquisition_window(set_enabled, _sleep, params.system_settle_s):
-        return acquire()
-
-
-def _save_point(
-    path: Path,
-    payload: dict[str, np.ndarray],
-    metadata: dict[str, Any],
-    actual_rate: float,
-) -> dict[str, float]:
-    summary = summarize_r(payload)
-    np.savez(
-        path,
-        time_s=payload["time_s"],
-        r_v=payload["r"],
-        actual_rate_sa_s=payload.get("actual_rate_Sa_s", np.float64(actual_rate)),
-        **metadata,
-        **{
-            key: np.float64(value) if isinstance(value, float) else value
-            for key, value in summary.items()
-        },
-     **{key: value for key, value in payload.items() if key not in {"time_s", "r", "x", "y"}})
-    return summary
-
-
-def _acquire_valid_r_point(
-    params: MxZFieldCalibrationParams,
-    point_dir: Path,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    *,
-    file_stem: str,
-    metadata: dict[str, Any],
-    actual_rate: float,
-    device_id: str,
-) -> tuple[dict[str, float], int, str]:
-    for attempt in range(params.r_point_max_attempts):
-        payload = _temperature_gated_acquire(
-            params,
-            devices,
-            channels,
-            acquire=lambda: acquire_r(
-                devices["hf2"],
-                device_id=device_id,
-                demod_idx=params.demod_idx,
-                actual_rate_sa_s=actual_rate, requested_rate_sa_s=params.response_rate_sa_s,
-                duration_s=params.frequency_duration_s,
-            ),
-        )
-        summary = summarize_r(payload)
-        accepted = summary["r_std_v"] <= params.r_bad_point_std_threshold_v
-        filename = f"{file_stem}_attempt_{attempt:02d}.npz"
-        _save_point(
-            point_dir / filename,
-            payload,
-            {
-                **metadata,
-                "attempt_index": np.int64(attempt),
-                "quality_accepted": np.uint8(accepted),
-                "r_std_threshold_v": np.float64(
-                    params.r_bad_point_std_threshold_v
-                ),
-                "temp_switch_off_voltage_v": np.float64(0.0),
-                "temp_switch_on_voltage_v": np.float64(5.0),
-                "temp_switch_off_lead_s": np.float64(
-                    params.system_settle_s
-                ),
-                "temp_switch_on_lag_s": np.float64(
-                    params.temp_switch_on_lag_s
-                ),
-            },
-            actual_rate,
-        )
-        print(
-            f"  R 质量 {attempt + 1}/{params.r_point_max_attempts}: "
-            f"std={summary['r_std_v']:.6g} V，"
-            f"{'接受' if accepted else '拒绝并重采'}"
-        )
-        if accepted:
-            return {**summary, "actual_rate_sa_s": float(payload.get("actual_rate_Sa_s", actual_rate))}, attempt, filename
-    raise RuntimeError(
-        f"{file_stem} 连续 {params.r_point_max_attempts} 次 "
-        f"std(R) > {params.r_bad_point_std_threshold_v:.6g} V"
-    )
-
-
-def _configure_sense_scope(
-    params: Any,
-    devices: dict[str, Any],
-) -> tuple[Any, ScopeCaptureSettings, ScopeAutoRangeState, dict[str, Any]] | None:
-    """为电流耦合标定配置 SDS CH3 的自由触发采集。"""
-    if "scope" not in devices:
-        return None
-    settings = ScopeCaptureSettings(
-        sample_rate_sa_s=float(params.sense_scope_sample_rate_sa_s),
-        duration_s=float(params.sense_scope_duration_s),
-        pd_channel=int(params.sense_scope_channel),
-        trigger_mode="AUTO",
-        initial_scale_v_div=float(params.sense_scope_initial_scale_v_div),
-        offset_v=0.0,
-        vertical_divisions=int(params.sense_scope_vertical_divisions),
-        scale_min_v_div=float(params.sense_scope_scale_min_v_div),
-        scale_max_v_div=float(params.sense_scope_scale_max_v_div),
-        auto_range_low_fraction=float(params.sense_scope_auto_range_low_fraction),
-        auto_range_high_fraction=float(params.sense_scope_auto_range_high_fraction),
-        auto_offset_tolerance_fraction=float(
-            params.sense_scope_auto_offset_tolerance_fraction
-        ),
-        auto_range_max_attempts=int(params.sense_scope_auto_range_max_attempts),
-        welch_nperseg=64,
-        maximum_frequency_hz=1.0 / max(float(params.sense_scope_duration_s), 1e-6),
-        auto_offset_enabled=True,
-    )
-    config, snapshot = configure_fixed_rate_scope(
-        settings,
-        devices,
-        sleep=time.sleep,
-    )
-    auto_range = ScopeAutoRangeState(
-        scale_v_div=float(snapshot["actual_initial_scale_v_div"]),
-        offset_v=float(snapshot["actual_initial_offset_v"]),
-        # 直流信号被 offset 居中后只剩噪声，默认不跨工作点缩小量程。
-        allow_shrink=bool(
-            getattr(params, "sense_scope_auto_range_allow_shrink", False)
-        ),
-    )
-    return config, settings, auto_range, snapshot
-
-
-def _capture_sense_point(
-    params: Any,
-    devices: dict[str, Any],
-    scope_config: Any,
-    settings: ScopeCaptureSettings,
-    auto_range: ScopeAutoRangeState,
-) -> dict[str, Any]:
-    """采集一个 DC 工作点的采样电阻电压并换算平均电流。"""
-    waveform = acquire_autoranged_waveform(
-        settings,
-        scope_config,
-        devices["scope"],
-        auto_range,
-        capture=lambda: read_complete_scope_record(
-            settings,
-            devices,
-            scope_config,
-            check_cancelled=check_cancelled,
-            sleep=time.sleep,
-        ),
-        check_cancelled=check_cancelled,
-    )
-    time_s = np.asarray(waveform["time_s"], dtype=float).reshape(-1)
-    voltage_v = np.asarray(waveform["voltage_v"], dtype=float).reshape(-1)
-    if voltage_v.size < 4 or not np.all(np.isfinite(voltage_v)):
-        raise RuntimeError("SDS 采样电阻电压为空或包含非有限值")
-    current_a = voltage_v / float(params.sense_resistor_ohm)
-    display_edge_fraction = float(waveform["attempt_display_edge_fraction"][-1])
-    if display_edge_fraction >= 0.98:
-        attempt_scales = np.asarray(
-            waveform["attempt_scales_v_div"], dtype=float
-        ).tolist()
-        raise RuntimeError(
-            "SDS 采样电阻电压到达显示边界，无法排除饱和："
-            f"最后量程={float(waveform['scale_used_v_div']):.6g} V/div，"
-            f"offset={float(waveform['offset_used_v']):.6g} V，"
-            f"电压范围=[{float(np.min(voltage_v)):.6g}, "
-            f"{float(np.max(voltage_v)):.6g}] V，"
-            f"贴边比例={display_edge_fraction:.6g}，"
-            f"尝试量程={attempt_scales}"
-        )
-    if hasattr(params, "maximum_current_a"):
-        validate_current_power(
-            current_a,
-            float(params.sense_resistor_ohm),
-            float(params.sense_resistor_power_rating_w),
-            derating_fraction=float(params.sense_resistor_power_derating),
-            maximum_current_a=float(params.maximum_current_a),
-        )
-    return {
-        "time_s": time_s,
-        "sense_voltage_v": voltage_v,
-        "current_a": current_a,
-        "sense_voltage_mean_v": float(np.mean(voltage_v)),
-        "sense_voltage_std_v": float(np.std(voltage_v)),
-        "current_mean_a": float(np.mean(current_a)),
-        "current_std_a": float(np.std(current_a)),
-        "actual_rate_sa_s": float(1.0 / np.median(np.diff(time_s))),
-        "scale_used_v_div": float(waveform["scale_used_v_div"]),
-        "offset_used_v": float(waveform["offset_used_v"]),
-        "auto_range_attempt_count": int(waveform["attempt_count"]),
-        "display_edge_fraction": display_edge_fraction,
-    }
-
-
-def _acquire_scan(
-    params: MxZFieldCalibrationParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    actual_rate: float,
-    device_id: str,
-    sense_scope: tuple[
-        Any,
-        ScopeCaptureSettings,
-        ScopeAutoRangeState,
-        dict[str, Any],
-    ] | None = None,
-) -> list[str]:
-    forward_axis = build_z_axis(params)
-    if bool(getattr(params, "bidirectional_scan", False)):
-        z_axis = np.concatenate((forward_axis, forward_axis[-2::-1]))
-        scan_directions = np.asarray(
-            ["forward"] * forward_axis.size
-            + ["reverse"] * max(0, forward_axis.size - 1),
-            dtype="U8",
-        )
-    else:
-        z_axis = forward_axis
-        scan_directions = np.asarray(["forward"] * forward_axis.size, dtype="U8")
-    z_field = devices["z_field"]
-    rf = devices["xy_field"]
-    hf2 = devices["hf2"]
-    summary_files: list[str] = []
-    auxiliary_files: list[str] = []
-    predicted_centers: list[float] = []
-    commanded_z_biases: list[float] = []
-
-    for z_index, z_bias in enumerate(z_axis):
-        check_cancelled()
-        predicted = predicted_center_hz(params, float(z_bias))
-        frequency_axis = build_frequency_axis(params, float(z_bias))
-        predicted_centers.append(predicted)
-        print(
-            f"Z 偏置 {z_index + 1}/{len(z_axis)}: {z_bias:+.3f} V，"
-            f"预测中心 {predicted:.3f} Hz"
-        )
-        commanded_z_bias = _set_z_dc_bias(
-            z_field,
-            channels["z_field"],
-            float(z_bias),
-            output=True,
-        )
-        commanded_z_biases.append(commanded_z_bias)
-        current_settle_time_s = float(getattr(params, "current_settle_time_s", 0.0))
-        if current_settle_time_s > 0.0:
-            _sleep(current_settle_time_s)
-
-        point_dir = run_dir.raw / f"z_{z_index:03d}"
-        point_dir.mkdir()
-        sense_record: dict[str, Any] | None = None
-        if sense_scope is not None:
-            sense_config, sense_settings, sense_auto_range, _sense_snapshot = sense_scope
-            sense_record = _capture_sense_point(
-                params,
-                devices,
-                sense_config,
-                sense_settings,
-                sense_auto_range,
-            )
-            np.savez(
-                point_dir / "sense_current.npz",
-                time_s=sense_record["time_s"],
-                sense_voltage_v=sense_record["sense_voltage_v"],
-                current_a=sense_record["current_a"],
-                sense_voltage_mean_v=np.float64(sense_record["sense_voltage_mean_v"]),
-                sense_voltage_std_v=np.float64(sense_record["sense_voltage_std_v"]),
-                current_mean_a=np.float64(sense_record["current_mean_a"]),
-                current_std_a=np.float64(sense_record["current_std_a"]),
-                actual_rate_sa_s=np.float64(sense_record["actual_rate_sa_s"]),
-                scale_used_v_div=np.float64(sense_record["scale_used_v_div"]),
-                offset_used_v=np.float64(sense_record["offset_used_v"]),
-                auto_range_attempt_count=np.int64(
-                    sense_record["auto_range_attempt_count"]
-                ),
-                display_edge_fraction=np.float64(
-                    sense_record["display_edge_fraction"]
-                ),
-            )
-        summaries: list[dict[str, float]] = []
-        accepted_attempts: list[int] = []
-        accepted_files: list[str] = []
-        for frequency_index, frequency in enumerate(frequency_axis):
+    def execute(self, selected):
+        selected = validate_selection(self.stages, self.states, selected)
+        if selected != [FINISH_ID]:
+            self.recheck()
+        hardware = [item for item in selected if item not in ("A01", FINISH_ID)]
+        if hardware and (self.directory is None or self.round_sealed
+                or self.run_parameters != self.params.to_external()
+                or any(self.states[item]["status"] != "pending" for item in hardware if item == "A08")):
+            self._new_directory(selected)
+        self.revision += 1
+        self.quality_error = None
+        for item in selected:
+            if item == FINISH_ID:
+                self.finish()
+                break
             check_cancelled()
-            print(
-                f"  频率点 {frequency_index + 1}/{len(frequency_axis)}: "
-                f"{frequency:.3f} Hz"
-            )
-            validate_safety_limit("rf_coil", params.y_rf_amplitude_vpp)
-            rf.set_frequency(float(frequency), channel=channels["y_rf"])
-            rf.set_phase_adjust(0.0, channel=channels["y_rf"])
-            rf.set_amplitude(params.y_rf_amplitude_vpp, channel=channels["y_rf"])
-            rf.set_output(True, channel=channels["y_rf"])
-            demod.configure_oscillator(
-                hf2,
-                OscillatorConfig(
-                    osc_index=params.demod_osc_idx, frequency=float(frequency)
-                ),
-            )
-            summary, attempt, filename = _acquire_valid_r_point(
-                params,
-                point_dir,
-                devices,
-                channels,
-                file_stem=f"frequency_{frequency_index:04d}",
-                metadata={
-                    "z_index": np.int64(z_index),
-                    "z_bias_v": np.float64(z_bias),
-                    "z_bias_commanded_v": np.float64(commanded_z_bias),
-                    "predicted_center_hz": np.float64(predicted),
-                    "frequency_index": np.int64(frequency_index),
-                    "frequency_hz": np.float64(frequency),
-                    "rf_amplitude_vpp": np.float64(params.y_rf_amplitude_vpp),
-                },
-                actual_rate=actual_rate,
-                device_id=device_id,
-            )
-            summaries.append(summary)
-            accepted_attempts.append(attempt)
-            accepted_files.append(filename)
-        rf.set_output(False, channel=channels["y_rf"])
+            if item != "A01":
+                invalidate(self.stages, self.states, item)
+            self.current_step = item
+            self.states[item] = {"status": "running", "error": ""}
+            failure = None
+            try:
+                self.publish(next(stage.title for stage in self.stages if stage.id == item))
+                self._execute_step(item)
+                stage = next(stage for stage in self.stages if stage.id == item)
+                artifacts = [path.relative_to(self.directory.root).as_posix()
+                    for pattern in stage.artifacts for path in self.directory.root.glob(pattern)
+                    if path.is_file()] if self.directory else []
+                self.states[item] = {"status": "completed", "error": "", "artifacts": artifacts}
+            except BaseException as exc:
+                failure = exc
+                quality = isinstance(exc, acquisition.RPointQualityError)
+                self.states[item] = {"status": "quality_failed" if quality else "failed", "error": str(exc)}
+                self.state["failure_reason"] = str(exc)
+                try:
+                    self.save()
+                except Exception as save_error:
+                    self.state["state_save_error"] = str(save_error)
+                if quality:
+                    self.quality_error = exc
+                    raise
+                raise
+            finally:
+                self.current_step = None
+                try:
+                    self.publish(f"{item} {self.states[item]['status']}")
+                except Exception:
+                    if failure is None:
+                        raise
+        return self.snapshot()
 
-        summary_path = point_dir / "frequency_scan.npz"
-        np.savez(
-            summary_path,
-            z_index=np.int64(z_index),
-            z_bias_v=np.float64(z_bias),
-            z_bias_commanded_v=np.float64(commanded_z_bias),
-            scan_direction=np.asarray(scan_directions[z_index]),
-            predicted_center_hz=np.float64(predicted),
-            frequency_hz=frequency_axis,
-            r_mean_v=[item["r_mean_v"] for item in summaries],
-            r_scalar_mean_v=[item["r_scalar_mean_v"] for item in summaries],
-            r_std_v=[item["r_std_v"] for item in summaries],
-            sense_voltage_mean_v=np.float64(
-                sense_record["sense_voltage_mean_v"] if sense_record else np.nan
-            ),
-            sense_voltage_std_v=np.float64(
-                sense_record["sense_voltage_std_v"] if sense_record else np.nan
-            ),
-            current_mean_a=np.float64(
-                sense_record["current_mean_a"] if sense_record else np.nan
-            ),
-            current_std_a=np.float64(
-                sense_record["current_std_a"] if sense_record else np.nan
-            ),
-            sense_scale_used_v_div=np.float64(
-                sense_record["scale_used_v_div"] if sense_record else np.nan
-            ),
-            sense_offset_used_v=np.float64(
-                sense_record["offset_used_v"] if sense_record else np.nan
-            ),
-            sense_display_edge_fraction=np.float64(
-                sense_record["display_edge_fraction"] if sense_record else np.nan
-            ),
-            accepted_attempt_index=accepted_attempts,
-            accepted_file=np.asarray(accepted_files, dtype=str),
-            actual_rate_sa_s=np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
-        )
-        summary_files.append(str(summary_path.relative_to(run_dir.root)).replace("\\", "/"))
-        if sense_record is not None:
-            auxiliary_files.append(
-                str((point_dir / "sense_current.npz").relative_to(run_dir.root)).replace("\\", "/")
-            )
+    def _execute_step(self, item):
+        params, devices, channels = self.params, self.devices, self.channels
+        if item == "A01":
+            self.recheck()
+        elif item == "A02":
+            if not devices:
+                try:
+                    self.devices, self.channels = preparation._connect_devices(self.mapping, self.device_session)
+                except BaseException:
+                    self.device_session.cleanup_connection_failure()
+                    raise
+            self.state["device_snapshot"] = preparation._initial_state_snapshot(self.devices, self.channels)
+        elif item == "A03":
+            try:
+                self.state["clock_sources"] = preparation._configure_reference_clocks(devices, self.mapping)
+                self.clock_failed = False
+            except BaseException:
+                self.clock_failed = True
+                raise
+        elif item == "A04":
+            preparation.configure_initial_outputs(params, devices, channels, self.mapping)
+            self.outputs.update(GS200="设置主场电流", X="OFF", Z="OFF", **{"温控": "ON"})
+        elif item == "A05":
+            status = preparation.configure_temperature_control(devices.get("tec"), params.temperature_c, channel=1)
+            self.state.update(temperature_control=status.to_dict(), initial_temperature_c=status.actual_temperature_c)
+        elif item == "A06":
+            excitation.configure_pump(params, devices, channels)
+            self.pump_parameters = params
+            self.outputs["Pump"] = "ON"
+        elif item == "A07":
+            self.state["actual_rates"] = {"response_sa_s": excitation.configure_response(params, devices, channels)}
+            self.demod_mode = "response"
+            self.outputs["Y RF"] = "OFF"
+        elif item == "A08":
+            self.state["data_files"] = acquisition._acquire_scan(params, self.directory, devices, channels,
+                self.state["actual_rates"]["response_sa_s"], str(self.mapping["lockin_r"]["device_id"]))
+            self.outputs.update(Z="最近命令电压", **{"Y RF": "OFF", "温控": "ON"})
+        elif item == "A09":
+            report = preparation.safe_shutdown(devices, channels, self.pump_parameters, disconnect_tec=False)
+            self.state.update(safety_shutdown=report.to_dict())
+            if not report.completed:
+                raise RuntimeError("安全收尾失败：" + "；".join(report.errors))
+            self.outputs.update(GS200="保持本轮主场", X="OFF", Z="OFF", **{"Y RF": "OFF", "温控": "ON"})
+            self.state.update(completion_status="completed", failure_reason=None, finished_at=datetime.now().isoformat())
+            self.save()
+            self.round_sealed = True
+            # 收尾把 Y RF 切成零电压 DC，重采前显式恢复正弦与解调准备。
+            invalidate(self.stages, self.states, "A07")
+        self.save()
 
-    rf.set_output(False, channel=channels["y_rf"])
-    np.savez(
-        run_dir.raw / "z_scan_index.npz",
-        z_bias_v=z_axis,
-        z_bias_commanded_v=np.asarray(commanded_z_biases, dtype=float),
-        predicted_center_hz=np.asarray(predicted_centers, dtype=float),
-        scan_direction=scan_directions,
-        summary_file=np.asarray(summary_files, dtype=str),
-    )
-    return ["raw/z_scan_index.npz", *summary_files, *auxiliary_files]
+    def finish(self, failure=None):
+        if self.closed:
+            return
+        errors = []
+        if self.devices:
+            try:
+                if self.round_sealed:
+                    errors.extend(disconnect_device_mapping({"tec": self.devices.get("tec")}))
+                else:
+                    report = preparation.safe_shutdown(self.devices, self.channels, self.pump_parameters)
+                    self.state["safety_shutdown"] = report.to_dict()
+                    errors.extend(report.errors)
+                if self.clock_failed:
+                    errors.extend(disconnect_device_mapping(self.devices))
+            except Exception as exc:
+                errors.append(str(exc))
+        if errors:
+            self.state["safety_shutdown"] = dict(self.state.get("safety_shutdown") or {}, completed=False, errors=errors)
+        if not self.round_sealed:
+            reason = str(failure) if failure else self.state.get("failure_reason") or "本轮采集未完整完成"
+            if errors:
+                reason += "；安全恢复失败：" + "；".join(errors)
+            self.state.update(completion_status="cancelled" if isinstance(failure, WorkflowCancelled) else "failed",
+                failure_reason=reason, finished_at=datetime.now().isoformat())
+            try:
+                self.save()
+            except Exception as save_error:
+                self.state["state_save_error"] = str(save_error)
+                if failure is None and not errors:
+                    raise
+        elif errors:
+            # 已封存目录不改写采集参数；清理失败仍保留在会话快照并向调用者报告。
+            self.state["cleanup_errors"] = list(errors)
+        self.closed = True
+        self.current_step = None
+        self.revision += 1
+        self.states[FINISH_ID] = {"status": "failed" if errors else "completed", "error": "；".join(errors)}
+        if self.devices:
+            self.outputs.update(GS200="保持本轮主场" if not errors else "未知", X="OFF" if not errors else "未知", Z="OFF" if not errors else "未知",
+                **{"Y RF": "OFF" if not errors else "未知", "温控": "ON" if not errors else "未知"})
+        try:
+            self.publish("会话已结束")
+            report_runtime_progress("finished", "采集会话已结束", 100)
+        except Exception:
+            if failure is None and not errors:
+                raise
+        if errors and failure is None:
+            raise RuntimeError("安全收尾失败：" + "；".join(errors))
 
 
 def run_calibration(
@@ -855,6 +312,8 @@ def run_calibration(
     completion_label: str = "Mx 高主场 Z 标定",
     include_scope: bool = False,
 ) -> Path:
+    if experiment_id == EXPERIMENT_ID and data_type == DATA_TYPE and not include_scope:
+        return run(params)
     root = find_project_root()
     mapping = load_mapping(root)
     require_lockin_compatibility(experiment_id, params.to_external(), mapping=mapping)
@@ -984,18 +443,24 @@ def run_calibration(
             )
 
 
-def run(params: MxZFieldCalibrationParams) -> Path:
-    """执行原有 Mx Z 电压标定实验。"""
-    require_lockin_compatibility('mx-z-field-calibration', params.to_external())
-    return run_calibration(params)
+def run(params: MxZFieldCalibrationParams, *, project_root=None, workflow_type=Workflow) -> Path:
+    ctx = workflow_type(params, project_root=project_root)
+    failure = None
+    try:
+        ctx.execute([stage.id for stage in ctx.stages if stage.id != FINISH_ID])
+        if ctx.quality_error:
+            raise ctx.quality_error
+        return ctx.directory.root
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        ctx.finish(failure)
 
 
-def main() -> int:
-    params = load_runtime_params(MxZFieldCalibrationParams)
-    run(params)
-    return 0
+def main():
+    run(load_runtime_params(MxZFieldCalibrationParams))
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

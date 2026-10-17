@@ -11,15 +11,16 @@ class Stage:
     parameters: tuple[str, ...] = ()
     artifacts: tuple[str, ...] = ()
     display_parameters: tuple[str, ...] | None = None
+    quality_gates: tuple[str, ...] = ()
 
 
 FINISH_ID = "A16"
 TEMP = ("SYSTEM_SETTLE_S", "TEMP_SWITCH_ON_LAG_S")
 SCAN = (*TEMP, "TEMP_GROUP_SIZE", "SCAN_POINT_DURATION_S")
 ACQUISITION = (
-    Stage("A01", "启动预检", "启动准备", ()),
+    Stage("A01", "启动预检", "启动准备", (), quality_gates=("参数、控制波形、映射、独立通道与安全限值全部通过预检",)),
     Stage("A02", "设备连接", "启动准备", ("A01",)),
-    Stage("A03", "参考时钟同步", "启动准备", ("A02",)),
+    Stage("A03", "参考时钟同步", "启动准备", ("A02",), quality_gates=("全部已连接设备参考时钟严格回读一致",)),
     Stage("A04", "初始输出设置", "初始条件", ("A03",),
           ("FIXED_PARAMS.Pump_laser_power", "FIXED_PARAMS.Probe_laser_power",
            "FIXED_PARAMS.main_magnetic_field", "FIXED_PARAMS.Temp_Switch")),
@@ -40,7 +41,8 @@ ACQUISITION = (
           ("raw/xy_aw_waveforms_initial.npz", "raw/xy_aw_waveforms.npz"),
           display_parameters=("ARB_WAVEFORM_FILE", "AW_REPEAT_FREQ", "XY_CTRL_K_HZ_PER_V", "XY_CTRL_B_HZ",
            "XY_CTRL_PHASE", "XY_CTRL_QUAD", "XY_CTRL_PHASE_TOL_DEG", "XY_CTRL_PHASE_MAX_ITER",
-           "XY_CTRL_PHASE_MIN_R_V", "XY_CTRL_PHASE_MIN_R_RATIO", *TEMP)),
+           "XY_CTRL_PHASE_MIN_R_V", "XY_CTRL_PHASE_MIN_R_RATIO", *TEMP),
+          quality_gates=("XY 校相残差及 R 的绝对幅值、相对幅值满足当前参数门槛",)),
     Stage("A10", "RF 输入线路与 Z RF 响应准备", "四级相位校准", ("A09",),
           ("DEMOD0_TC_MEAS", "DEMOD3_IDX", "DEMOD3_OSC_IDX",
            "DEMOD3_ORDER", "DEMOD3_TC", "DEMOD3_RATE", "LOOPBACK_AUX_SCALE", "LOOPBACK_AUX_OFFSET_V",
@@ -72,7 +74,8 @@ ACQUISITION = (
     Stage(FINISH_ID, "安全收尾 / 结束会话", "采集与结束", ()),
 )
 ANALYSIS = (
-    Stage("B01", "加载配置与校验原始数据", "独立离线分析", ()),
+    Stage("B01", "加载配置与校验原始数据", "独立离线分析", (),
+          quality_gates=("实验身份、原始格式、响应及噪声数据资格有效，采集已封存",)),
     Stage("B02", "X 色散响应与斜率", "独立离线分析", ("B01",), artifacts=("response_fit.npz",)),
     Stage("B03", "Welch X 噪声 PSD", "独立离线分析", ("B02",), ("NOISE_NPERSEG",), ("psd_avg.npz",)),
     Stage("B04", "RF 灵敏度、频响补偿与结果图", "独立离线分析", ("B03",), artifacts=(

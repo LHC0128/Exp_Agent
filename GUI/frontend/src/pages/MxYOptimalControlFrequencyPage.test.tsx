@@ -1,525 +1,263 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
 import { ExperimentPage } from "./ExperimentPage";
+import fixture from "./MxYOptimalControlFrequencyPage.fixture.json";
 
 vi.mock("../api", () => ({ api: vi.fn() }));
-const activity = vi.hoisted(() => ({ hardwareBusy: false, activeJobs: [] }));
-vi.mock("../components/JobView", () => ({ JobView: () => null }));
-vi.mock("../components/JobActivity", () => ({ useJobActivity: () => activity }));
-
+vi.mock("../components/JobActivity", () => ({ useJobActivity: () => ({ hardwareBusy: false, activeJobs: [] }) }));
 const mockApi = vi.mocked(api);
+const ID = "mx-y-optimal-control-rf-frequency-response";
+const BASE = `/api/experiments/${ID}`;
 
-type Layout = { basic: string[]; advanced: string[] };
+const fields = fixture.schema.fields;
+const acquisition = fixture.flow.acquisition;
+const analysisStages = fixture.flow.analysis;
+const parameterImpacts = fixture.flow.parameter_impacts;
+const flow = fixture.flow;
+let activeSession: any;
+let summary: any;
+let preflightOk: boolean;
+let savedLayout: { basic: string[]; advanced: string[] };
+let savedValues: Record<string, number | string>;
+let rejectApply: boolean;
+let fullJob: any;
+let otherSummary: any;
+class TestEventSource {
+  static instances: TestEventSource[] = [];
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  close = vi.fn();
+  constructor(public url: string) { TestEventSource.instances.push(this); }
+}
+const diagnostics = {};
 
-const field = (overrides: Record<string, unknown> = {}) => ({
-  name: "FREQUENCY_POINTS",
-  label: "频率点数",
-  type: "integer",
-  group: "basic",
-  default: 100,
-  minimum: 1,
-  maximum: null,
-  unit: "",
-  visible: true,
-  read_only: false,
-  ...overrides,
-});
-
-const BASIC_FIELDS = [
-  field({ name: "RUN_TAG", label: "运行标签", type: "string", default: "mx_y_optimal_control_rf_freq_resp" }),
-  field({ name: "COMPARISON_ENABLED", label: "启用常数 Z 控制对照", type: "boolean", default: false }),
-  field({ name: "FREQUENCY_START_HZ", label: "频率扫描起点", type: "number", default: 100, unit: "Hz" }),
-  field(),
-  field({
-    name: "CONSTANT_CONTROL_LARMOR_FREQUENCY_HZ",
-    label: "常数控制目标 Larmor 频率",
-    type: "number",
-    default: 0,
-    unit: "Hz",
-  }),
-  field({
-    name: "CONSTANT_CONTROL_CALIBRATION_SOURCE_RUN",
-    label: "电流耦合标定运行",
-    type: "string",
-    default: "",
-    options: [
-      {
-        value: "0820_170037_mx_z_current_coupling_calibration",
-        label: "0820_170037_mx_z_current_coupling_calibration",
-      },
-    ],
-  }),
-];
-
-const ADVANCED_FIELDS = [
-  field({ name: "FREQUENCY_SETTLE_TIME_S", label: "频点稳定时间", type: "number", group: "advanced", default: 0.05, unit: "s" }),
-  field({ name: "R_POINT_MAX_ATTEMPTS", label: "最大尝试次数", type: "integer", group: "advanced", default: 3 }),
-];
-
-const ALL_FIELDS = [...BASIC_FIELDS, ...ADVANCED_FIELDS];
-
-const defaultLayout = (): Layout => ({
-  basic: BASIC_FIELDS.map((item) => item.name),
-  advanced: ADVANCED_FIELDS.map((item) => item.name),
-});
-
-const fieldsOf = (layout: Layout) => {
-  const byName = new Map(ALL_FIELDS.map((item) => [item.name, item]));
-  return [
-    ...layout.basic.map((name) => ({ ...byName.get(name), group: "basic" })),
-    ...layout.advanced.map((name) => ({ ...byName.get(name), group: "advanced" })),
-  ];
-};
-
-const definition = {
-  id: "mx-y-optimal-control-rf-frequency-response",
-  title: "Mx Y 最优控制 RF 频率响应",
-  category: "measurement",
-  category_label: "测量",
-  family: "rf-sensitivity",
-  variant: "mx-y-optimal-control-frequency",
-  description: "Z 向闭环最优控制下逐频率扫描 Y RF Burst 相位并取相位中位数。",
-  required_devices: ["GS200", "DG900", "DG4000", "HF2"],
-  required_mapping_keys: [],
-  execution_mode: "typed_workflow",
-  acquisition_program: "experiments/Mx_Y_Optimal_Control_RF_Frequency_Response.py",
-  analysis_program: "experiments/Mx_Y_Optimal_Control_RF_Frequency_Response_plot.py",
-  wiring_notes: [],
-  safety_notes: [],
-  supports_cancel: true,
-  can_analyze: true,
-};
-
-const runSummary = {
-  run_id: "0901_120000_mx_y_optimal_control_rf_freq_resp",
-  timestamp: "2026-09-01 12:00:00",
-  run_tag: "mx_y_optimal_control_rf_freq_resp",
-  completion_status: "completed",
-  comparison_enabled: true,
-  parameters: { FREQUENCY_POINTS: 100, COMPARISON_ENABLED: true },
-  calibration: {
-    enabled: true,
-    calibration_run: "0820_170037_mx_z_current_coupling_calibration",
-    calibration_analysis_sha256: "a".repeat(64),
-    target_larmor_frequency_hz: 800,
-    target_current_a: 2.6e-5,
-    target_voltage_v: -0.0005,
-    voltage_to_current_fit: { gain_a_per_v: 0.00575, intercept_a: 2.9e-5, point_count: 7 },
-    calibration_support: { voltage_min_v: 0.5, voltage_max_v: 2.0 },
-    extrapolated: true,
-  },
-  optimal_response_metadata: { valid_points: 350, total_points: 400 },
-  constant_response_metadata: { valid_points: 100, total_points: 100 },
-  artifacts: {
-    "rf_frequency_response_comparison.png":
-      "/api/runs/mx-y-optimal-control-rf-frequency-response/0901_120000_mx_y_optimal_control_rf_freq_resp/artifacts/rf_frequency_response_comparison.png",
-    "r_phase_frequency.png":
-      "/api/runs/mx-y-optimal-control-rf-frequency-response/0901_120000_mx_y_optimal_control_rf_freq_resp/artifacts/r_phase_frequency.png",
-  },
-};
-
-const runList = {
-  total: 1,
-  offset: 0,
-  limit: 50,
-  runs: [
-    {
-      run_id: "0901_120000_mx_y_optimal_control_rf_freq_resp",
-      timestamp: "2026-09-01 12:00:00",
-      run_tag: "mx_y_optimal_control_rf_freq_resp",
-      completion_status: "completed",
-      comparison_enabled: true,
-    },
-  ],
-};
-
-let definitionCalls = 0;
-let persistedLayout: Layout;
-let layoutSaved = true;
-let submittedDefaults: Array<{ parameters: Record<string, unknown>; parameter_layout: Layout }> = [];
-let submittedPreflight: Array<Record<string, unknown>> = [];
-let runListCalls = 0;
-let jobsSummaries: Array<Record<string, unknown>> = [];
-
-const KIND = "experiment:mx-y-optimal-control-rf-frequency-response";
-
-const jobSummary = (overrides: Record<string, unknown> = {}) => ({
-  id: "job-active",
-  kind: KIND,
-  status: "running",
-  stage: "optimal_control_scan",
-  percent: 45,
-  estimated_remaining_seconds: 125,
-  message: "最优控制扫描：频率 2/10，相位 3/36",
-  created_at: "2026-09-13T10:00:00",
-  started_at: "2026-09-13T10:00:01",
-  finished_at: null,
-  ...overrides,
-});
-
-const jobDetail = (overrides: Record<string, unknown> = {}) => ({
-  ...jobSummary(overrides),
-  result: null,
-  error: null,
-  events: [],
-  ...overrides,
+const makeSession = (through = 0) => ({
+  session_id: "freq-session", job_id: "freq-job", revision: 0, status: "waiting",
+  parameters: Object.fromEntries(fields.map((field) => [field.name, field.default])),
+  steps: Object.fromEntries(acquisition.map((stage, index) => [stage.id, { status: index < through ? "completed" : "pending", error: "" }])),
+  outputs: { "Y RF": through >= 4 ? "ON" : through >= 3 ? "OFF" : "未知", "X": through >= 3 ? "OFF" : "未知",
+    "Z": through >= 3 ? "OFF" : "未知", "温控": through >= 4 ? "ON" : "未知", "Pump": through >= 3 ? "ON" : "未知" },
+  pending_request: null, demod_mode: through >= 3 ? "response" : "unknown",
 });
 
 beforeEach(() => {
-  activity.hardwareBusy = false;
-  activity.activeJobs = [];
-  definitionCalls = 0;
-  persistedLayout = defaultLayout();
-  layoutSaved = true;
-  submittedDefaults = [];
-  submittedPreflight = [];
-  runListCalls = 0;
-  jobsSummaries = [];
-  mockApi.mockImplementation(async (url: string, init?: RequestInit) => {
-    if (url === "/api/jobs") {
-      return jobsSummaries as never;
+  activeSession = null;
+  preflightOk = true;
+  rejectApply = false; fullJob = undefined;
+  TestEventSource.instances = [];
+  vi.stubGlobal("EventSource", TestEventSource);
+  savedLayout = {
+    basic: fields.filter((field) => field.group === "basic").map((field) => field.name),
+    advanced: fields.filter((field) => field.group === "advanced").map((field) => field.name),
+  };
+  savedValues = Object.fromEntries(fields.map((field) => [field.name, field.default])) as never;
+  summary = {
+    run_id: "0817_1057_mx_y_rf_freq_resp", timestamp: "0817_1057", run_tag: "saved-tag",
+    completion_status: "completed", analysis_status: "completed", analysis_error: "",
+    parameters: { ...savedValues, RUN_TAG: "historical", FREQUENCY_POINTS: 201 },
+    artifacts: { "r_phase_frequency.png": "/heatmap.png", "rf_frequency_response_comparison.png": "/comparison.png" },
+    comparison_enabled: true, calibration: { extrapolated: true, target_voltage_v: 1.2, calibration_run: "coupling" },
+    optimal_response_metadata: { valid_points: 9 }, constant_response_metadata: { valid_points: 3 },
+    control_source: { run: "frozen", amplitude_vpp: .2, offset_v: 0 },
+  };
+  Object.assign(summary, { comparison_enabled: true, calibration: { extrapolated: true, target_voltage_v: 1.2, calibration_run: "coupling" }, optimal_response_metadata: { valid_points: 9 }, constant_response_metadata: { valid_points: 3 }, control_source: { run: "frozen", amplitude_vpp: .2, offset_v: 0 } });
+  otherSummary = { ...summary, run_id: "0817_1157_mx_y_rf_freq_resp", run_tag: "other-tag",
+    parameters: { ...savedValues, RUN_TAG: "other-history", FIT_R_SQUARED_MIN: 0.6 } };
+  mockApi.mockReset();
+  mockApi.mockImplementation(async (url: string, options?: RequestInit) => {
+    if (url === BASE) return { id: ID, title: "Mx Y 最优控制 RF 频率响应", description: "相位中位数", required_devices: ["HF2"], wiring_notes: [] } as never;
+    if (url === `${BASE}/schema`) return { ...fixture.schema, parameter_layout: savedLayout,
+      parameter_layout_saved: true, fields: fields.map((field) => ({ ...field, default: savedValues[field.name] })) } as never;
+    if (url === `${BASE}/derive`) return { values: { frequency_point_count: 201 } } as never;
+    if (url === `${BASE}/preflight`) return { ok: preflightOk, errors: preflightOk ? [] : ["预检失败"] } as never;
+    if (url === `${BASE}/defaults` && options?.method === "PUT") {
+      const body = JSON.parse(String(options.body));
+      savedLayout = body.parameter_layout;
+      savedValues = { ...savedValues, ...body.parameters };
+      return { message: "已保存", schema: { ...fixture.schema, parameter_layout: savedLayout,
+        parameter_layout_saved: true, fields: fields.map((field) => ({ ...field, default: savedValues[field.name] })) } } as never;
     }
-    if (/^\/api\/jobs\/[a-z0-9-]+$/.test(url)) {
-      const summary = jobsSummaries.find((item) => item.id === url.split("/").pop());
-      return jobDetail(summary ?? {}) as never;
+    if (url === "/api/jobs") return fullJob ? [fullJob] : [] as never;
+    if (url === "/api/jobs/freq-job") return { id: "freq-job", kind: `session:${ID}`, status: "running", events: [] } as never;
+    if (url === "/api/jobs/full-job") return fullJob as never;
+    if (url === "/api/jobs/analysis-job") return { id: "analysis-job", kind: `analysis:${ID}:${summary.run_id}`, status: "running", events: [] } as never;
+    if (String(url).endsWith("/cancel")) return { id: String(url).split("/").at(-2), status: "cancelled", events: [] } as never;
+    if (url === `${BASE}/runs` && options?.method === "POST") return fullJob = {
+      id: "full-job", kind: `experiment:${ID}`, status: "running", events: [], message: "开始采集" };
+    if (url === `${BASE}/workflow`) return flow as never;
+    if (url === `${BASE}/workflow/diagram`) return { type: "excalidraw" } as never;
+    if (url === `${BASE}/sessions/active`) return activeSession as never;
+    if (url === `${BASE}/sessions` && options?.method === "POST") return activeSession = makeSession();
+    if (url === `${BASE}/sessions/freq-session/steps`) {
+      const body = JSON.parse(String(options?.body));
+      if (body.step_ids.includes("A04") && activeSession.steps.A03.status !== "completed" && !body.step_ids.includes("A03")) {
+        throw new Error("缺少前置：A03");
+      }
+      const finishedRound = body.step_ids.includes("A06");
+      return activeSession = { ...activeSession, revision: activeSession.revision + 1,
+        demod_mode: body.step_ids.includes("A03") ? "response" : activeSession.demod_mode,
+        outputs: finishedRound ? { "Y RF": "OFF", X: "OFF", Z: "OFF", "温控": "ON", Pump: "ON" } : activeSession.outputs,
+        steps: { ...activeSession.steps, ...Object.fromEntries(body.step_ids.map((id: string) => [id,
+          { status: finishedRound && ["A03", "A04", "A05"].includes(id) ? "stale" : "completed", error: "" }])) } };
     }
-    if (url.endsWith("/mx-y-optimal-control-rf-frequency-response/schema")) {
-      return {
-        fields: fieldsOf(persistedLayout),
-        parameter_layout: persistedLayout,
-        parameter_layout_saved: layoutSaved,
-      } as never;
+    if (url === `${BASE}/sessions/freq-session/parameters`) {
+      const body = JSON.parse(String(options?.body));
+      if (rejectApply) throw new Error("模拟应用失败");
+      const changed = Object.keys(body.parameters).filter(key => body.parameters[key] !== activeSession.parameters[key]);
+      const impacts = parameterImpacts.acquisition as Record<string, string[]>;
+      const stale = new Set(changed.flatMap(key => impacts[key] ?? []));
+      return activeSession = { ...activeSession, parameters: body.parameters,
+        revision: activeSession.revision + 1, steps: Object.fromEntries(acquisition.map((stage) => [stage.id,
+          stale.has(stage.id) ? { status: activeSession.steps[stage.id].status === "pending" ? "pending" : "stale", error: "" }
+            : activeSession.steps[stage.id]])) };
     }
-    if (url === "/api/experiments/mx-y-optimal-control-rf-frequency-response") {
-      definitionCalls += 1;
-      return definition as never;
+    if (url === `${BASE}/sessions/freq-session/finish`) return activeSession = { ...activeSession,
+      revision: activeSession.revision + 1, status: "closed", steps: { ...activeSession.steps, A12: { status: "completed", error: "" } } };
+    if (url === `${BASE}/sessions/freq-session`) return activeSession as never;
+    if (String(url).startsWith(`${BASE}/runs?`)) return { runs: [summary, otherSummary], total: 2 } as never;
+    if (url === `${BASE}/runs/${summary.run_id}/summary`) return summary as never;
+    if (url === `${BASE}/runs/${otherSummary.run_id}/summary`) return otherSummary as never;
+    if (url === `${BASE}/runs/${summary.run_id}/analysis` && options?.method === "POST") {
+      return { id: "analysis-job", kind: `analysis:${ID}:${summary.run_id}`, status: "running", events: [] } as never;
     }
-    // 专属运行列表端点：不带 experiment_id 查询参数。
-    if (url.startsWith("/api/experiments/mx-y-optimal-control-rf-frequency-response/runs?")) {
-      runListCalls += 1;
-      expect(url).not.toContain("experiment_id=");
-      return runList as never;
-    }
-    if (url.endsWith("/summary")) {
-      return runSummary as never;
-    }
-    if (url.endsWith("/preflight")) {
-      submittedPreflight.push(
-        JSON.parse(String(init?.body)).parameters as Record<string, unknown>,
-      );
-      return { ok: true, errors: [] } as never;
-    }
-    if (url.endsWith("/defaults") && init?.method === "PUT") {
-      const payload = JSON.parse(String(init.body)) as {
-        parameters: Record<string, unknown>;
-        parameter_layout: Layout;
-      };
-      submittedDefaults.push(payload);
-      persistedLayout = {
-        basic: [...payload.parameter_layout.basic],
-        advanced: [...payload.parameter_layout.advanced],
-      };
-      layoutSaved = true;
-      return {
-        ok: true,
-        message: "当前参数及分类已保存为默认值",
-        schema: {
-          fields: fieldsOf(persistedLayout),
-          parameter_layout: persistedLayout,
-          parameter_layout_saved: true,
-        },
-      } as never;
-    }
-    if (url.endsWith("/runs") && init?.method === "POST") {
-      return {
-        id: "job1",
-        kind: "experiment:mx-y-optimal-control-rf-frequency-response",
-        status: "running",
-        events: [],
-        result: {
-          run_dir:
-            "data/Mx_Y_Optimal_Control_RF_Frequency_Response/0901_120000_mx_y_optimal_control_rf_freq_resp",
-        },
-      } as never;
-    }
-    return {} as never;
+    if (url === `${BASE}/runs/${summary.run_id}/analysis`) return { run_id: summary.run_id, revision: 3,
+      options: {},
+      steps: Object.fromEntries(analysisStages.map((stage) => [stage.id, { status: "completed", error: "" }])),
+      summary: { status: "completed", ...diagnostics }, fingerprint: {} } as never;
+    if (url === `${BASE}/runs/${otherSummary.run_id}/analysis`) return { run_id: otherSummary.run_id, revision: 1,
+      options: {},
+      steps: Object.fromEntries(analysisStages.map(stage => [stage.id, { status: "pending", error: "" }])),
+      summary: {}, fingerprint: {} } as never;
+    throw new Error(`未模拟接口 ${url}`);
   });
 });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
+const page = () => render(<MemoryRouter initialEntries={[`/experiments/${ID}`]}>
+  <Routes><Route path="/experiments/:experimentId" element={<ExperimentPage />} /></Routes>
+</MemoryRouter>);
+const editor = async (id: string) => {
+  const stage = [...acquisition, ...analysisStages].find((item) => item.id === id)!;
+  const region = await screen.findByRole("region", { name: `${id} ${stage.title} 参数`, hidden: true });
+  const details = region.closest("details")!;
+  if (!details.open) fireEvent.click(details.querySelector("summary")!);
+  return within(region);
+};
+const advanced = (node: Awaited<ReturnType<typeof editor>>) => {
+  const summary = node.queryByText(/^高级参数（/);
+  if (summary && !summary.closest("details")!.open) fireEvent.click(summary);
+};
+
+it("真实路由双Tab、全字段节点归属和质量门槛，保留专属图与冻结来源", async () => {
+  page();
+  await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
+  expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tab", { name: "历史" })).toBeInTheDocument();
+  for (const field of fields) expect(acquisition.some(stage => stage.display_parameters.includes(field.name))).toBe(true);
+  expect(screen.getByText(/质量门槛：每点至少8个有效样本/)).toBeVisible();
+  expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
+  expect(await screen.findByAltText("相位-频率热图")).toBeInTheDocument();
+  expect(screen.getByText(/闭环冻结波形：frozen/)).toBeInTheDocument();
 });
 
-const show = () =>
-  render(
-    <MemoryRouter initialEntries={["/experiments/mx-y-optimal-control-rf-frequency-response"]}>
-      <Routes>
-        <Route path="/experiments/:experimentId" element={<ExperimentPage />} />
-      </Routes>
-    </MemoryRouter>,
-  );
+it("创建与依赖拒绝、执行步骤和无前置安全结束", async () => {
+  page();
+  await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
+  await screen.findByText(/分步等待期间保持输出状态/);
+  fireEvent.click(screen.getByRole("checkbox", { name: "A04 最优控制频率×Burst相位扫描" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  await screen.findByText(/Error: 缺少前置：A03/);
+  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  await waitFor(() => expect(activeSession.revision).toBe(1));
+  fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
+  await waitFor(() => expect(activeSession.status).toBe("closed"));
+  expect(screen.getByText(/下方状态为已结束会话/)).toBeInTheDocument();
+});
 
-const openBasic = async () => {
-  const tab = await screen.findByRole("tab", { name: /^基础参数，/ });
-  fireEvent.click(tab);
-  return tab;
-};
+it("共享参数草稿同步与撤回，应用后失效且不执行，分类同步保存", async () => {
+  activeSession = makeSession(5);
+  page();
+  const optimal = await editor("A04");
+  const constant = await editor("A05");
+  const label = "系统稳定时间 (s)";
+  const original = savedValues.SYSTEM_SETTLE_S;
+  fireEvent.change(optimal.getByLabelText(label), { target: { value: ".7" } });
+  expect(constant.getByLabelText(label)).toHaveValue(.7);
+  expect(screen.getByText(/预计需重跑的已完成步骤：A04/)).toBeVisible();
+  fireEvent.change(constant.getByLabelText(label), { target: { value: String(original) } });
+  expect(screen.queryByText(/参数草稿尚未应用，请先/)).not.toBeInTheDocument();
+  fireEvent.change(optimal.getByLabelText(label), { target: { value: ".6" } });
+  rejectApply = true;
+  fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
+  await screen.findByText("Error: 模拟应用失败");
+  expect(optimal.getByLabelText(label)).toHaveValue(.6);
+  rejectApply = false;
+  fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
+  await waitFor(() => expect(activeSession.parameters.SYSTEM_SETTLE_S).toBe(.6));
+  expect(activeSession.steps.A04.status).toBe("stale");
+  expect(mockApi.mock.calls.some(([url]) => String(url).endsWith("/steps"))).toBe(false);
+  fireEvent.click(optimal.getByRole("button", { name: "系统稳定时间 移至高级参数" }));
+  advanced(constant);
+  expect(constant.getByLabelText(label)).toHaveValue(.6);
+  fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
+  await screen.findByText("已保存");
+  expect(savedLayout.advanced).toContain("SYSTEM_SETTLE_S");
+  expect(savedValues.SYSTEM_SETTLE_S).toBe(.6);
+});
 
-const toggleComparison = async (on: boolean) => {
-  const select = await screen.findByLabelText("启用常数 Z 控制对照");
-  fireEvent.change(select, { target: { value: on ? "true" : "false" } });
-};
+it("对照条件字段保值；历史独立分析无覆盖参数；原图与填回保持", async () => {
+  page();
+  const source = await editor("A01");
+  fireEvent.change(source.getByLabelText("启用常数 Z 控制对照"), { target: { value: "true" } });
+  fireEvent.change(source.getByLabelText("常数控制目标 Larmor 频率 (Hz)"), { target: { value: "1234" } });
+  fireEvent.change(source.getByLabelText("启用常数 Z 控制对照"), { target: { value: "false" } });
+  expect(source.queryByLabelText("常数控制目标 Larmor 频率 (Hz)")).not.toBeInTheDocument();
+  fireEvent.change(source.getByLabelText("启用常数 Z 控制对照"), { target: { value: "true" } });
+  expect(source.getByLabelText("常数控制目标 Larmor 频率 (Hz)")).toHaveValue(1234);
+  fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: summary.run_id } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url.endsWith("/analysis") && options?.method === "POST")).toBe(true));
+  const call = mockApi.mock.calls.find(([url, options]) => url.endsWith("/analysis") && options?.method === "POST")!;
+  expect(JSON.parse(String(call[1]?.body)).analysis_parameters).toEqual({});
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(await screen.findByRole("button", { name: new RegExp(summary.run_id) }));
+  expect(await screen.findByText(/目标电压超出标定支撑范围/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
+  const tag = await editor("A02");
+  expect(tag.getByLabelText("运行标签")).toHaveValue("historical");
+  expect(mockApi.mock.calls.some(([url]) => url === `${BASE}/defaults`)).toBe(false);
+});
 
-describe("MxYOptimalControlFrequencyPage", () => {
-  it("专属路由载入 schema 并渲染页面 Tab 与参数分组", async () => {
-    show();
-    await waitFor(() => expect(definitionCalls).toBeGreaterThan(0));
-    expect(await screen.findByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
-    expect(await screen.findByRole("tab", { name: /^基础参数，/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /^高级参数，/ })).toBeInTheDocument();
-    expect(await screen.findByLabelText("运行标签")).toBeInTheDocument();
-  });
+it("SSE质量失败状态跨Tab保留，刷新恢复与安全结束可用", async () => {
+  activeSession = makeSession(3);
+  page();
+  await screen.findByText(/分步等待期间保持输出状态/);
+  await waitFor(() => expect(TestEventSource.instances.some(source => source.url.includes("freq-job"))).toBe(true));
+  const stream = TestEventSource.instances.find(source => source.url.includes("freq-job"))!;
+  await act(async () => stream.onmessage?.({ data: JSON.stringify({ index: 1, timestamp: "2026-10-15", stage: "A04", message: "质量失败",
+    data: { workflow_session: { ...activeSession, revision: 1, steps: { ...activeSession.steps, A04: { status: "quality_failed", error: "重采用尽" } } } } }) }));
+  expect(await screen.findByText("重采用尽")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "结束会话" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(screen.getByRole("tab", { name: "运行" }));
+  expect(screen.getByText("重采用尽")).toBeInTheDocument();
+});
 
-  it("页面仅显示运行、历史两个主 Tab，默认运行且不再加载架构图", async () => {
-    show();
-    const tablist = await screen.findByRole("tablist", { name: "Mx Y 最优控制频率响应实验视图" });
-    expect(within(tablist).getAllByRole("tab")).toHaveLength(2);
-    expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "历史" })).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
-    expect(screen.queryByTitle("Mx Y 最优控制频率响应实验采集流程架构图")).not.toBeInTheDocument();
-  });
-
-  it("ArrowLeft / ArrowRight 在运行、历史两个主 Tab 间循环切换", async () => {
-    show();
-    const tablist = await screen.findByRole("tablist", { name: "Mx Y 最优控制频率响应实验视图" });
-    const runTab = within(tablist).getByRole("tab", { name: "运行" });
-    const historyTab = within(tablist).getByRole("tab", { name: "历史" });
-    runTab.focus();
-    for (const key of ["ArrowRight", "ArrowLeft"]) {
-      fireEvent.keyDown(tablist, { key });
-      expect(historyTab).toHaveFocus();
-      expect(historyTab).toHaveAttribute("aria-selected", "true");
-      fireEvent.keyDown(tablist, { key });
-      expect(runTab).toHaveFocus();
-      expect(runTab).toHaveAttribute("aria-selected", "true");
-    }
-  });
-
-  it("对照关闭时隐藏 Larmor 频率与标定下拉框，且保留其取值", async () => {
-    show();
-    await screen.findByLabelText("运行标签");
-    expect(screen.getByLabelText("启用常数 Z 控制对照")).toBeInTheDocument();
-    expect(screen.queryByLabelText("常数控制目标 Larmor 频率 (Hz)")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("电流耦合标定运行")).not.toBeInTheDocument();
-    // 基础参数 Tab 计数不含被隐藏的两个对照字段。
-    expect(screen.getByRole("tab", { name: /^基础参数，4 项$/ })).toBeInTheDocument();
-  });
-
-  it("对照开启时显示 Larmor 频率与标定下拉框，并可选择标定运行", async () => {
-    show();
-    await screen.findByLabelText("运行标签");
-    await toggleComparison(true);
-
-    const larmor = await screen.findByLabelText("常数控制目标 Larmor 频率 (Hz)");
-    fireEvent.change(larmor, { target: { value: "800" } });
-    expect(larmor).toHaveValue(800);
-
-    const calibration = screen.getByLabelText("电流耦合标定运行");
-    fireEvent.change(calibration, {
-      target: { value: "0820_170037_mx_z_current_coupling_calibration" },
-    });
-    expect(calibration).toHaveValue("0820_170037_mx_z_current_coupling_calibration");
-    expect(screen.getByRole("tab", { name: /^基础参数，6 项$/ })).toBeInTheDocument();
-  });
-
-  it("关闭对照后重新开启，之前填写的对照参数值不丢失", async () => {
-    show();
-    await screen.findByLabelText("运行标签");
-    await toggleComparison(true);
-    fireEvent.change(await screen.findByLabelText("常数控制目标 Larmor 频率 (Hz)"), {
-      target: { value: "1234" },
-    });
-    await toggleComparison(false);
-    await toggleComparison(true);
-    expect(screen.getByLabelText("常数控制目标 Larmor 频率 (Hz)")).toHaveValue(1234);
-  });
-
-  it("移动参数后视图停留在当前分组、参数值不变，且提示已移动", async () => {
-    show();
-    const frequencyPoints = await screen.findByLabelText("频率点数");
-    fireEvent.change(frequencyPoints, { target: { value: "256" } });
-    expect(frequencyPoints).toHaveValue(256);
-
-    fireEvent.click(screen.getByRole("button", { name: "频率点数 移至高级参数" }));
-
-    // 仍停留在基础参数，移出的字段从本组列表消失。
-    expect(await screen.findByText("已移至高级参数")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /^基础参数，/ })).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByLabelText("频率点数")).not.toBeInTheDocument();
-
-    // 切到高级参数可看到该字段，且原值不变。
-    fireEvent.click(screen.getByRole("tab", { name: /^高级参数，3 项$/ }));
-    expect(screen.getByLabelText("频率点数")).toHaveValue(256);
-  });
-
-  it("从高级参数移回基础参数时也停留在高级参数", async () => {
-    show();
-    await screen.findByLabelText("运行标签");
-    fireEvent.click(screen.getByRole("tab", { name: /^高级参数，/ }));
-    const settle = screen.getByLabelText("频点稳定时间 (s)");
-    fireEvent.change(settle, { target: { value: "0.25" } });
-
-    fireEvent.click(screen.getByRole("button", { name: "频点稳定时间 移至基础参数" }));
-
-    expect(await screen.findByText("已移至基础参数")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /^高级参数，/ })).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByLabelText("频点稳定时间 (s)")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("tab", { name: /^基础参数，/ }));
-    expect(screen.getByLabelText("频点稳定时间 (s)")).toHaveValue(0.25);
-  });
-
-  it("保存参数与布局后提交完整参数并回读清除未保存提示", async () => {
-    show();
-    await screen.findByLabelText("运行标签");
-    await toggleComparison(true);
-    fireEvent.change(await screen.findByLabelText("常数控制目标 Larmor 频率 (Hz)"), {
-      target: { value: "800" },
-    });
-
-    expect(screen.queryByText("布局有未保存修改")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "运行标签 移至高级参数" }));
-    expect(await screen.findByText("布局有未保存修改")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
-    await waitFor(() => expect(submittedDefaults).toHaveLength(1));
-    const payload = submittedDefaults[0];
-    expect(payload.parameter_layout.advanced).toContain("RUN_TAG");
-    // 隐藏的对照字段也随参数一起提交，取值不丢失。
-    expect(payload.parameters.CONSTANT_CONTROL_LARMOR_FREQUENCY_HZ).toBe(800);
-    await waitFor(() => expect(screen.queryByText("布局有未保存修改")).not.toBeInTheDocument());
-    expect(screen.getByText("当前参数及分类已保存为默认值")).toBeInTheDocument();
-  });
-
-  it("预检并运行时提交当前全部参数", async () => {
-    show();
-    await screen.findByLabelText("运行标签");
-    await toggleComparison(true);
-    fireEvent.change(await screen.findByLabelText("常数控制目标 Larmor 频率 (Hz)"), {
-      target: { value: "800" },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
-    await waitFor(() => expect(submittedPreflight.length).toBeGreaterThan(0));
-    const params = submittedPreflight[submittedPreflight.length - 1];
-    expect(params.COMPARISON_ENABLED).toBe(true);
-    expect(params.CONSTANT_CONTROL_LARMOR_FREQUENCY_HZ).toBe(800);
-    expect(await screen.findByRole("button", { name: "实验运行中" })).toBeInTheDocument();
-  });
-
-  it("运行中禁止移动参数", async () => {
-    show();
-    await screen.findByLabelText("运行标签");
-    fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "运行标签 移至高级参数" })).toBeDisabled(),
-    );
-  });
-
-  it("历史列表只请求专属端点，选中后展示摘要、图与外推警告，可填回参数", async () => {
-    show();
-    fireEvent.click(await screen.findByRole("tab", { name: "历史" }));
-    expect(runListCalls).toBeGreaterThan(0);
-
-    const runButton = await screen.findByRole("button", {
-      name: /0901_120000_mx_y_optimal_control_rf_freq_resp/,
-    });
-    fireEvent.click(runButton);
-
-    // 外推警告与标定信息。
-    expect(
-      await screen.findByText(/超出标定支撑范围|超出标定有效范围/),
-    ).toBeInTheDocument();
-    expect(screen.getByText("0820_170037_mx_z_current_coupling_calibration")).toBeInTheDocument();
-
-    // 两张图使用后端给出的 artifact URL。
-    const comparisonImage = screen.getByAltText("最优控制中位数 vs 常数控制对照");
-    expect(comparisonImage).toHaveAttribute(
-      "src",
-      runSummary.artifacts["rf_frequency_response_comparison.png"],
-    );
-    const heatmap = screen.getByAltText("相位-频率热图");
-    expect(heatmap).toHaveAttribute(
-      "src",
-      runSummary.artifacts["r_phase_frequency.png"],
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
-    expect(await screen.findByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByLabelText("频率点数")).toHaveValue(100);
-  });
-
-  it("Tab 切到历史再切回运行，参数保留", async () => {
-    show();
-    const frequencyPoints = await screen.findByLabelText("频率点数");
-    fireEvent.change(frequencyPoints, { target: { value: "77" } });
-    fireEvent.click(await screen.findByRole("tab", { name: "历史" }));
-    fireEvent.click(await screen.findByRole("tab", { name: "运行" }));
-    expect(screen.getByLabelText("频率点数")).toHaveValue(77);
-  });
-
-  it("挂载时恢复本实验的活动任务", async () => {
-    jobsSummaries = [
-      jobSummary({ id: "job-old", status: "completed", percent: 100, started_at: "2026-09-12T09:00:00" }),
-      jobSummary(),
-    ];
-    show();
-    expect(await screen.findByRole("button", { name: "实验运行中" })).toBeInTheDocument();
-    // 运行中禁止移动参数，说明恢复的任务驱动了控制区状态。
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "运行标签 移至高级参数" })).toBeDisabled(),
-    );
-  });
-
-  it("没有活动任务时恢复最近一次已开始的任务", async () => {
-    jobsSummaries = [
-      jobSummary({
-        id: "job-done",
-        status: "completed",
-        stage: "complete",
-        percent: 100,
-        estimated_remaining_seconds: null,
-        message: "任务完成",
-        finished_at: "2026-09-13T11:00:00",
-      }),
-      jobSummary({ id: "job-other", kind: "experiment:other-experiment" }),
-    ];
-    show();
-    await screen.findByRole("button", { name: "预检并运行实验" });
-    // 已完成任务不阻塞新运行，但最近一次结果通过恢复的 job 展示。
-    await screen.findByText("尚无运行结果，启动一次实验后这里会展示频率响应曲线与相位-频率热图。");
-  });
-
-  it("运行后切到历史再切回运行，任务状态不丢失", async () => {
-    show();
-    await screen.findByLabelText("运行标签");
-    fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
-    expect(await screen.findByRole("button", { name: "实验运行中" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "历史" }));
-    fireEvent.click(await screen.findByRole("tab", { name: "运行" }));
-    expect(await screen.findByRole("button", { name: "实验运行中" })).toBeInTheDocument();
-  });
-
-  it("未保存过布局时按模型默认分组渲染", async () => {
-    layoutSaved = false;
-    show();
-    await openBasic();
-    expect(screen.getByLabelText("运行标签")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: /^高级参数，/ }));
-    expect(screen.getByLabelText("频点稳定时间 (s)")).toHaveValue(0.05);
-  });
+it("预检失败不完整运行，切换Tab保留下一次实验草稿", async () => {
+  page();
+  const tag = await editor("A02");
+  fireEvent.change(tag.getByLabelText("运行标签"), { target: { value: "draft" } });
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(screen.getByRole("tab", { name: "运行" }));
+  expect(tag.getByLabelText("运行标签")).toHaveValue("draft");
+  preflightOk = false;
+  fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
+  await screen.findByText("预检失败");
+  expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs` && options?.method === "POST")).toBe(false);
 });

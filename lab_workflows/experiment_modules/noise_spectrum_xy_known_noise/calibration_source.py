@@ -1,4 +1,4 @@
-"""只读静磁场 v3 曲线；检测增益使用本轮 K_Z。"""
+"""只读静磁场原始格式 3 曲线；检测增益使用本轮 K_Z。"""
 import hashlib
 from pathlib import Path
 import math
@@ -6,6 +6,7 @@ import numpy as np
 import yaml
 from sensitivity_analysis.fitting import fit_dispersive
 from ..static_sensitivity.analysis_steps import load_scan, QUALITY_THRESHOLDS
+from ..static_sensitivity.run_format import format_block_reason
 
 SOURCE_TYPE = "Static_Magnetic_Field_Sensitivity"
 
@@ -34,8 +35,8 @@ def load_source(root, run_id, k_z_hz_per_v, target_config=None):
     config = yaml.safe_load((path / "experiment_config.yaml").read_text(encoding="utf-8")) or {}
     if config.get("experiment_id", "static-sensitivity") != "static-sensitivity" or config.get("experiment_type") != SOURCE_TYPE:
         raise ValueError("来源不是静磁场灵敏度实验")
-    if config.get("schema_version") != 3 or config.get("acquisition_method") != "dc_step":
-        raise ValueError("仅支持 v3 直流逐点静磁场色散曲线")
+    if reason := format_block_reason(config):
+        raise ValueError(reason)
     if config.get("completion_status") == "running":
         raise ValueError("来源仍在采集，请等待结束")
     scan = load_scan(path)

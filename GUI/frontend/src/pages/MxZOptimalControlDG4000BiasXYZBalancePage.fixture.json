@@ -1,0 +1,964 @@
+{
+  "schema": {
+    "schema_version": 3,
+    "fields": [
+      {
+        "name": "SYSTEM_SETTLE_S",
+        "label": "系统稳定时间",
+        "type": "number",
+        "default": 0.1,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0,
+        "maximum": null,
+        "description": "配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。",
+        "read_only": false,
+        "legacy_defaults": {
+          "RESPONSE_SETTLE_TIME_S": 0.1,
+          "TEMP_SWITCH_OFF_LEAD_S": 0
+        }
+      },
+      {
+        "name": "RUN_TAG",
+        "label": "运行标签",
+        "type": "string",
+        "default": "mx_z_optimal_control_dg4000_bias_xyz_balance",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "X_FIELD_START_V",
+        "label": "X DC 起点",
+        "type": "number",
+        "default": -0.05,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "X_FIELD_STOP_V",
+        "label": "X DC 终点",
+        "type": "number",
+        "default": 0.05,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "X_FIELD_POINTS",
+        "label": "X DC 点数",
+        "type": "integer",
+        "default": 11,
+        "unit": "",
+        "group": "basic",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Y_FIELD_START_V",
+        "label": "Y DC 起点",
+        "type": "number",
+        "default": -0.05,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Y_FIELD_STOP_V",
+        "label": "Y DC 终点",
+        "type": "number",
+        "default": 0.05,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Y_FIELD_POINTS",
+        "label": "Y DC 点数",
+        "type": "integer",
+        "default": 11,
+        "unit": "",
+        "group": "basic",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_BIAS_START_V",
+        "label": "DG4000 Z 偏置起点",
+        "type": "number",
+        "default": -0.02,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_BIAS_STOP_V",
+        "label": "DG4000 Z 偏置终点",
+        "type": "number",
+        "default": 0.02,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_BIAS_POINTS",
+        "label": "DG4000 Z 偏置点数",
+        "type": "integer",
+        "default": 5,
+        "unit": "",
+        "group": "basic",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "DEMOD_FREQUENCY_HZ",
+        "label": "锁相放大器 Demod0 频率",
+        "type": "number",
+        "default": 12000,
+        "unit": "Hz",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "RESPONSE_DURATION_S",
+        "label": "单点 R 采样时间",
+        "type": "number",
+        "default": 0.2,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "R_BAD_POINT_STD_THRESHOLD_V",
+        "label": "X/Y 复噪声标准差拒绝门槛",
+        "type": "number",
+        "default": 0.1,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 0,
+        "maximum": null,
+        "description": "保留历史键；实际资格使用 sqrt(std(X)^2 + std(Y)^2)，不是 R 标准差。",
+        "read_only": false
+      },
+      {
+        "name": "R_POINT_MAX_ATTEMPTS",
+        "label": "R 点最大采集次数",
+        "type": "integer",
+        "default": 3,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "HF2_SIGNAL_RANGE_V",
+        "label": "锁相放大器 输入量程",
+        "type": "number",
+        "default": 2,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "RESPONSE_RATE_SA_S",
+        "label": "R 请求采样率",
+        "type": "number",
+        "default": 1000,
+        "unit": "Sa/s",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "RESPONSE_TIME_CONSTANT_S",
+        "label": "R 解调时间常数",
+        "type": "number",
+        "default": 0.001,
+        "unit": "s",
+        "group": "advanced",
+        "minimum": 0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "RESPONSE_DEMOD_ORDER",
+        "label": "R 解调滤波阶数",
+        "type": "integer",
+        "default": 4,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TEMP_SWITCH_ON_LAG_S",
+        "label": "温控恢复后等待",
+        "type": "number",
+        "default": 2,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "PUMP_CARRIER_FREQUENCY_HZ",
+        "label": "Pump AOM 载波频率",
+        "type": "number",
+        "default": 100000000,
+        "unit": "Hz",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "PUMP_CARRIER_AMPLITUDE_VPP",
+        "label": "Pump AOM 载波幅度",
+        "type": "number",
+        "default": 0.18,
+        "unit": "Vpp",
+        "group": "advanced",
+        "minimum": 0,
+        "maximum": 0.18,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "PUMP_GATE_VOLTAGE_V",
+        "label": "Pump RF 开关常开电平",
+        "type": "number",
+        "default": 5,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 5,
+        "maximum": 5,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.Pump_laser_power",
+        "label": "Pump 光功率",
+        "type": "number",
+        "default": 0.1,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.Probe_laser_power",
+        "label": "Probe 光功率",
+        "type": "number",
+        "default": 0.05,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.temperature",
+        "label": "气室温度",
+        "type": "number",
+        "default": 120,
+        "unit": "°C",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_VERSION",
+        "label": "最优控制版本",
+        "type": "string",
+        "default": "v1",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_RESULTS_ROOT",
+        "label": "最优控制结果根目录",
+        "type": "string",
+        "default": "D:\\Code\\theory_agent\\simulate\\results\\oc_sens",
+        "unit": "",
+        "group": "advanced",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_CALIBRATION_SOURCE_RUN",
+        "label": "Z 最优控制标定来源运行",
+        "type": "string",
+        "default": "0819_133941_mx_z_cal",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_SCALE",
+        "label": "Z 控制幅度比例",
+        "type": "number",
+        "default": 1,
+        "unit": "",
+        "group": "basic",
+        "minimum": 0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_AW_OUTPUT_VPP",
+        "label": "Z 控制固定 AW 输出幅度",
+        "type": "number",
+        "default": 6,
+        "unit": "Vpp",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_AW_OUTPUT_OFFSET",
+        "label": "Z 控制固定 AW 输出偏置",
+        "type": "number",
+        "default": 0,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_BURST_PHASE_DEG",
+        "label": "Z 控制触发相位",
+        "type": "number",
+        "default": 0,
+        "unit": "deg",
+        "group": "advanced",
+        "minimum": 0,
+        "maximum": 360,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_FREQUENCY_HZ",
+        "label": "最优控制触发频率",
+        "type": "number",
+        "default": 100,
+        "unit": "Hz",
+        "group": "advanced",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_AMPLITUDE_VPP",
+        "label": "最优控制触发幅度",
+        "type": "number",
+        "default": 5,
+        "unit": "Vpp",
+        "group": "advanced",
+        "minimum": 0,
+        "maximum": 20,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_OFFSET_V",
+        "label": "最优控制触发偏置",
+        "type": "number",
+        "default": 2.5,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": -10,
+        "maximum": 10,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_DUTY_PERCENT",
+        "label": "最优控制触发占空比",
+        "type": "number",
+        "default": 50,
+        "unit": "%",
+        "group": "advanced",
+        "minimum": 0.1,
+        "maximum": 99.9,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_WAVEFORM_SOURCE",
+        "label": "控制波形来源",
+        "type": "string",
+        "default": "corrected_run",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false,
+        "options": [
+          {
+            "value": "theory",
+            "label": "理论换算"
+          },
+          {
+            "value": "corrected_run",
+            "label": "闭环冻结波形"
+          }
+        ]
+      },
+      {
+        "name": "CORRECTED_CONTROL_SOURCE_RUN",
+        "label": "闭环校正运行",
+        "type": "string",
+        "default": "0824_094157_z_aw_closed_loop_waveform_correction",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "CONTROL_WAVEFORM_SOURCE=corrected_run 时使用的闭环冻结波形运行。",
+        "read_only": false
+      },
+      {
+        "name": "CONFIRM_GS200_DISCONNECTED",
+        "label": "确认 GS200 已与 Z 线圈断开",
+        "type": "boolean",
+        "default": true,
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "该实验使用 DG4000 给同一 Z 线圈提供偏置；运行前必须物理断开 GS200。",
+        "read_only": false
+      }
+    ],
+    "experiment": "mx-z-optimal-control-dg4000-bias-xyz-balance"
+  },
+  "workflow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "预检、GS200 断开确认与双来源冻结",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [
+          "CONTROL_WAVEFORM_SOURCE",
+          "CORRECTED_CONTROL_SOURCE_RUN",
+          "CONTROL_RESULTS_ROOT",
+          "CONTROL_VERSION",
+          "Z_CALIBRATION_SOURCE_RUN",
+          "CONTROL_SCALE",
+          "Z_AW_OUTPUT_VPP",
+          "Z_AW_OUTPUT_OFFSET",
+          "CONFIRM_GS200_DISCONNECTED"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "CONTROL_WAVEFORM_SOURCE",
+          "CORRECTED_CONTROL_SOURCE_RUN",
+          "CONTROL_RESULTS_ROOT",
+          "CONTROL_VERSION",
+          "Z_CALIBRATION_SOURCE_RUN",
+          "CONTROL_SCALE",
+          "Z_AW_OUTPUT_VPP",
+          "Z_AW_OUTPUT_OFFSET",
+          "CONFIRM_GS200_DISCONNECTED"
+        ],
+        "quality_gates": [
+          "参数、映射、锁相能力及叠加后的完整 Z 包络有效；冻结控制波形与独立 Z 标定内容"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "本轮目录、连接与四通道原态快照",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [
+          "raw/source_manifest.yaml",
+          "raw/applied_control_waveform.npz"
+        ],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": [
+          "不连接 GS200；保存 Z、共同触发与 X/Y 通道完整运行前状态"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "时钟、TEC 目标与 Z 最优控制工作点",
+        "group": "初始条件",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power",
+          "FIXED_PARAMS.temperature",
+          "PUMP_CARRIER_FREQUENCY_HZ",
+          "PUMP_CARRIER_AMPLITUDE_VPP",
+          "PUMP_GATE_VOLTAGE_V",
+          "CONTROL_BURST_PHASE_DEG",
+          "TRIGGER_FREQUENCY_HZ",
+          "TRIGGER_AMPLITUDE_VPP",
+          "TRIGGER_OFFSET_V",
+          "TRIGGER_DUTY_PERCENT",
+          "DEMOD_FREQUENCY_HZ",
+          "DEMOD_IDX",
+          "DEMOD_OSC_IDX",
+          "HF2_SIGNAL_RANGE_V",
+          "RESPONSE_RATE_SA_S",
+          "RESPONSE_TIME_CONSTANT_S",
+          "RESPONSE_DEMOD_ORDER"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power",
+          "FIXED_PARAMS.temperature",
+          "PUMP_CARRIER_FREQUENCY_HZ",
+          "PUMP_CARRIER_AMPLITUDE_VPP",
+          "PUMP_GATE_VOLTAGE_V",
+          "CONTROL_BURST_PHASE_DEG",
+          "TRIGGER_FREQUENCY_HZ",
+          "TRIGGER_AMPLITUDE_VPP",
+          "TRIGGER_OFFSET_V",
+          "TRIGGER_DUTY_PERCENT",
+          "DEMOD_FREQUENCY_HZ",
+          "DEMOD_IDX",
+          "DEMOD_OSC_IDX",
+          "HF2_SIGNAL_RANGE_V",
+          "RESPONSE_RATE_SA_S",
+          "RESPONSE_TIME_CONSTANT_S",
+          "RESPONSE_DEMOD_ORDER"
+        ],
+        "quality_gates": [
+          "参考时钟严格回读；TEC 只写 UI 目标；X/Y 置零关闭后启动 Z 任意波与共同触发"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "XYZ 偏置蛇形网格与同步 R/X/Y 重试采集",
+        "group": "采集",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "X_FIELD_START_V",
+          "X_FIELD_STOP_V",
+          "X_FIELD_POINTS",
+          "Y_FIELD_START_V",
+          "Y_FIELD_STOP_V",
+          "Y_FIELD_POINTS",
+          "Z_BIAS_START_V",
+          "Z_BIAS_STOP_V",
+          "Z_BIAS_POINTS",
+          "RESPONSE_DURATION_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "R_BAD_POINT_STD_THRESHOLD_V",
+          "R_POINT_MAX_ATTEMPTS",
+          "BZ_GAMMA_HZ_PER_NT"
+        ],
+        "artifacts": [
+          "raw/grid_*_attempt_*.npz",
+          "raw/xyz_balance_scan.npz"
+        ],
+        "display_parameters": [
+          "X_FIELD_START_V",
+          "X_FIELD_STOP_V",
+          "X_FIELD_POINTS",
+          "Y_FIELD_START_V",
+          "Y_FIELD_STOP_V",
+          "Y_FIELD_POINTS",
+          "Z_BIAS_START_V",
+          "Z_BIAS_STOP_V",
+          "Z_BIAS_POINTS",
+          "RESPONSE_DURATION_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "R_BAD_POINT_STD_THRESHOLD_V",
+          "R_POINT_MAX_ATTEMPTS"
+        ],
+        "quality_gates": [
+          "Z 仅 set_offset，使用实际波形 Vpp 校验包络；每次尝试恢复温控后写盘；X/Y 复噪声重试用尽阻断"
+        ]
+      },
+      {
+        "id": "A05",
+        "title": "四通道原态恢复与安全封存",
+        "group": "结束",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "温控恢复成功；Z、共同触发和 X/Y 均恢复运行前完整状态，失败不得封存为完成"
+        ]
+      },
+      {
+        "id": "A12",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "运行身份、格式与复数网格输入资格",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "明确 raw1 或已验证 schema v1/v2/v3 历史；完整 R/X/Y、轴、采样率与 Z 标定有效"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "原稳健 Bloch 复数平面拟合与科学图",
+        "group": "独立分析",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "evaluation.json",
+          "balance_results.npz",
+          "bloch_fit_analysis.npz",
+          "bloch_fit_analysis.yaml",
+          "bloch_fit_analysis.json",
+          "xyz_balance_grid.csv",
+          "xyz_balance_slices.png",
+          "xyz_balance_slices.pdf",
+          "xyz_balance_components.png",
+          "xyz_balance_components.pdf",
+          "bloch_fit_summary.png",
+          "bloch_fit_summary.pdf"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "各平面至少两个 X/Y 点；保留原 soft-L1 多初值拟合及质量诊断，不把 R 最小点冒充主结果或严格 Floquet 零场"
+        ]
+      },
+      {
+        "id": "B03",
+        "title": "保存三维复数平衡分析汇总",
+        "group": "独立分析",
+        "dependencies": [
+          "B02"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "analysis.yaml",
+          "analysis.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "CONTROL_WAVEFORM_SOURCE": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CORRECTED_CONTROL_SOURCE_RUN": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CONTROL_RESULTS_ROOT": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CONTROL_VERSION": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "Z_CALIBRATION_SOURCE_RUN": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CONTROL_SCALE": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "Z_AW_OUTPUT_VPP": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "Z_AW_OUTPUT_OFFSET": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CONFIRM_GS200_DISCONNECTED": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "RUN_TAG": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "FIXED_PARAMS.Pump_laser_power": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "FIXED_PARAMS.Probe_laser_power": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "FIXED_PARAMS.temperature": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "PUMP_CARRIER_FREQUENCY_HZ": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "PUMP_CARRIER_AMPLITUDE_VPP": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "PUMP_GATE_VOLTAGE_V": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CONTROL_BURST_PHASE_DEG": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "TRIGGER_FREQUENCY_HZ": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "TRIGGER_AMPLITUDE_VPP": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "TRIGGER_OFFSET_V": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "TRIGGER_DUTY_PERCENT": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "DEMOD_FREQUENCY_HZ": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "DEMOD_IDX": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "DEMOD_OSC_IDX": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "HF2_SIGNAL_RANGE_V": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "RESPONSE_RATE_SA_S": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "RESPONSE_TIME_CONSTANT_S": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "RESPONSE_DEMOD_ORDER": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "X_FIELD_START_V": [
+          "A04",
+          "A05"
+        ],
+        "X_FIELD_STOP_V": [
+          "A04",
+          "A05"
+        ],
+        "X_FIELD_POINTS": [
+          "A04",
+          "A05"
+        ],
+        "Y_FIELD_START_V": [
+          "A04",
+          "A05"
+        ],
+        "Y_FIELD_STOP_V": [
+          "A04",
+          "A05"
+        ],
+        "Y_FIELD_POINTS": [
+          "A04",
+          "A05"
+        ],
+        "Z_BIAS_START_V": [
+          "A04",
+          "A05"
+        ],
+        "Z_BIAS_STOP_V": [
+          "A04",
+          "A05"
+        ],
+        "Z_BIAS_POINTS": [
+          "A04",
+          "A05"
+        ],
+        "RESPONSE_DURATION_S": [
+          "A04",
+          "A05"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A04",
+          "A05"
+        ],
+        "TEMP_SWITCH_ON_LAG_S": [
+          "A04",
+          "A05"
+        ],
+        "R_BAD_POINT_STD_THRESHOLD_V": [
+          "A04",
+          "A05"
+        ],
+        "R_POINT_MAX_ATTEMPTS": [
+          "A04",
+          "A05"
+        ],
+        "BZ_GAMMA_HZ_PER_NT": [
+          "A04",
+          "A05"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/mx-z-optimal-control-dg4000-bias-xyz-balance/workflow/diagram"
+  }
+}

@@ -245,8 +245,8 @@ class MxZOptimalControlXYRFPhaseResponseParams(
                         paired_phase_order(phase_axis)
                     except ValueError as exc:
                         errors.append(f"RF 相位扫描不满足 180° 配对规则: {exc}")
-                if points < 6 or points % 2 or not np.isclose(points * self.phase_scan_step_deg, 360.0, atol=1e-10):
-                    errors.append("RF 相位扫描必须覆盖恰好一个 360° 周期且包含偶数个点")
+                if points < 8 or points % 2 or not np.isclose(points * self.phase_scan_step_deg, 360.0, atol=1e-10):
+                    errors.append("RF 相位扫描必须覆盖恰好一个 360° 周期且包含至少 8 个偶数相位点")
         for offset in (self.y_field_start_v, self.y_field_stop_v):
             for value in (
                 offset - self.phase_cal_rf_amplitude_vpp / 2.0,

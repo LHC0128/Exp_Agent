@@ -12,8 +12,8 @@ import type {
   ParameterValues,
   SchemaField,
 } from "../../types/api";
-import { ParameterForm } from "./ParameterForm";
-import type { MxYOptimalControlFrequencyRunSummary } from "./types";
+import { WorkflowPanel, type XYSession } from "../NoiseSpectrumXY/WorkflowPanel";
+import type { MxYOptimalControlFrequencyRunSummary, MxYOptimalControlFrequencyRunsResponse } from "./types";
 import { readCalibration } from "./types";
 import {
   COMPARISON_PNG,
@@ -22,6 +22,8 @@ import {
 } from "./images";
 import { sameParameterLayout, validatedParameterLayout } from "../../pages/experimentHelpers";
 
+const ANALYSIS_KEYS = {};
+
 type DashboardProps = {
   experimentId: string;
   definition: ExperimentDefinition;
@@ -29,11 +31,11 @@ type DashboardProps = {
   layout: ParameterLayout;
   /** 页面布局与磁盘保存的布局不一致时为 true。 */
   layoutDirty: boolean;
-  onLayoutChange: (next: ParameterLayout) => void;
+  onLayoutChange: Dispatch<SetStateAction<ParameterLayout>>;
   /** 后端回读确认布局已落盘后，把页面布局同步为磁盘布局。 */
   onLayoutSaved: (next: ParameterLayout) => void;
   values: ParameterValues;
-  setValues: (next: ParameterValues) => void;
+  setValues: Dispatch<SetStateAction<ParameterValues>>;
   /** 页面级任务状态：切换 Tab 或重新进入页面后仍保留。 */
   job: Job | undefined;
   setJob: Dispatch<SetStateAction<Job | undefined>>;
@@ -63,12 +65,38 @@ export function Dashboard({
   const [defaultsStatus, setDefaultsStatus] = useState<{ ok: boolean; message: string } | undefined>();
   const [moveNotice, setMoveNotice] = useState("");
   const [error, setError] = useState("");
+  const [session, setSession] = useState<XYSession>();
+  const [analysisJob, setAnalysisJob] = useState<Job>();
+  const [runs, setRuns] = useState<MxYOptimalControlFrequencyRunsResponse["runs"]>([]);
+  const [refresh, setRefresh] = useState(0);
+  const [preview, setPreview] = useState<ParameterValues>({});
+
+  useEffect(() => {
+    let disposed = false;
+    void api<MxYOptimalControlFrequencyRunsResponse>(`/api/experiments/${experimentId}/runs?limit=50&offset=0`)
+      .then(data => { if (!disposed) setRuns(data.runs); })
+      .catch(reason => { if (!disposed) setError(String(reason)); });
+    return () => { disposed = true; };
+  }, [experimentId, refresh, job?.status, analysisJob?.status, session?.run_id, session?.revision, session?.status]);
+
+  useEffect(() => {
+    let disposed = false;
+    const timer = window.setTimeout(() => {
+      void api<{ values: ParameterValues }>(`/api/experiments/${experimentId}/derive`, {
+        method: "POST", body: JSON.stringify({ parameters: values }),
+      }).then(data => { if (!disposed) setPreview(data.values ?? {}); })
+        .catch(reason => { if (!disposed) setError(String(reason)); });
+    }, 200);
+    return () => { disposed = true; window.clearTimeout(timer); };
+  }, [experimentId, values]);
 
   const blockedByOthers = activeJobs.some(
     (item) => item.kind === `experiment:${experimentId}` && ["queued", "running"].includes(item.status),
   ) || hardwareBusy;
   const jobActive = job ? ["queued", "running"].includes(job.status) : false;
-  const disabled = starting || jobActive || blockedByOthers || !fields.length;
+  const live = Boolean(session && session.status !== "closed");
+  const parametersBusy = jobActive && (!live || session?.status !== "waiting" || Boolean(session?.pending_request));
+  const disabled = starting || parametersBusy || blockedByOthers || !fields.length;
 
   // 「填回参数」信号：来自历史 Tab，用户切回运行 Tab 时若有待应用参数，写回并清理。
   useEffect(() => {
@@ -78,10 +106,6 @@ export function Dashboard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
-
-  const handleFieldChange = (field: SchemaField, value: ParameterValues[string]) => {
-    setValues({ ...values, [field.name]: value });
-  };
 
   const runPreflight = async () => {
     setError("");
@@ -148,71 +172,45 @@ export function Dashboard({
   };
 
   return (
-    <div className="zaw-dashboard">
-      <section className="zaw-panel zaw-panel-params">
-        <div className="zaw-panel-head"><small>PARAMETERS</small><h2>实验参数</h2></div>
-        <ParameterForm
-          fields={fields}
-          layout={layout}
-          values={values}
-          onChange={handleFieldChange}
-          onLayoutChange={onLayoutChange}
-          onMoveNotice={setMoveNotice}
-          disabled={jobActive || starting}
-        />
-        {moveNotice && <p className="zaw-layout-dirty" role="status">{moveNotice}</p>}
-        {layoutDirty && (
-          <p className="zaw-layout-dirty" role="status">布局有未保存修改</p>
-        )}
-        <button
-          className="zaw-secondary"
-          disabled={savingDefaults || jobActive || !fields.length}
-          onClick={() => void saveDefaults()}
-        >
-          {savingDefaults ? "保存中…" : "保存参数与布局"}
-        </button>
-        {defaultsStatus && (
-          <div className={`alert ${defaultsStatus.ok ? "success" : "error"}`}>{defaultsStatus.message}</div>
-        )}
-      </section>
-
-      <section className="zaw-panel zaw-panel-control">
-        <div className="zaw-panel-head"><small>CONTROL</small><h2>控制与状态</h2></div>
-        <div className="zaw-control-buttons">
-          <button className="zaw-secondary" disabled={disabled} onClick={() => void runPreflight()}>
-            仅预检
-          </button>
-          <button
-            className="zaw-primary"
-            disabled={disabled || starting}
-            onClick={() => void startRun()}
-          >
-            {jobActive ? "实验运行中" : starting ? "正在启动…" : "预检并运行实验"}
-          </button>
-        </div>
-        {preflight && (
-          <div className={`alert ${preflight.ok ? "success" : "error"}`}>
-            {preflightMessage(preflight, "参数预检通过，可以启动实验。")}
+    <div>
+      <WorkflowPanel experimentId={experimentId} finishStepId="A12" runStepId="A04"
+        analysisParameterKeys={ANALYSIS_KEYS} enabled={fields.length > 0} fields={fields}
+        layout={layout} setLayout={onLayoutChange} setNotice={setMoveNotice}
+        parametersDisabled={parametersBusy || starting || savingDefaults}
+        values={values} setValues={setValues} session={session} setSession={setSession}
+        job={job} setJob={setJob} analysisJob={analysisJob} setAnalysisJob={setAnalysisJob}
+        hardwareBusy={hardwareBusy} runs={runs} setError={setError} onRefresh={setRefresh}>
+        <div className="xy-workflow-controls">
+          <div className="xy-flow-actions">
+            <button disabled={savingDefaults || parametersBusy || !fields.length} onClick={() => void saveDefaults()}>
+              {savingDefaults ? "保存中…" : "保存参数与布局"}
+            </button>
+            <button className="secondary" disabled={disabled} onClick={() => void runPreflight()}>仅预检</button>
+            <button disabled={disabled || jobActive} onClick={() => void startRun()}>
+              {jobActive ? "实验运行中" : starting ? "正在启动…" : "预检并运行实验"}
+            </button>
           </div>
-        )}
-        {blockedByOthers && !jobActive && (
-          <div className="alert">其他硬件任务正在运行，等待其完成后才能启动本实验。</div>
-        )}
-        {error && <div className="alert error">{error}</div>}
-        <div className="zaw-control-meta">
-          <div><small>执行模式</small><span>{definition.execution_mode}</span></div>
-          <div><small>所需设备</small><span>{definition.required_devices.join(" · ")}</span></div>
-          <div><small>采集程序</small><span>{definition.acquisition_program}</span></div>
+          {moveNotice && <p role="status">{moveNotice}</p>}
+          {layoutDirty && <p role="status">布局有未保存修改</p>}
+          {defaultsStatus && <div className={`alert ${defaultsStatus.ok ? "success" : "error"}`}>{defaultsStatus.message}</div>}
+          {Object.keys(preview).length > 0 && <details><summary>派生预览</summary><pre>{JSON.stringify(preview, null, 2)}</pre></details>}
+          {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>
+            {preflightMessage(preflight, "参数预检通过，可以启动实验。")}
+          </div>}
+          {blockedByOthers && !jobActive && <div className="alert">其他硬件任务正在运行，等待其完成后才能启动本实验。</div>}
+          {error && <div className="alert error" role="alert">{error}</div>}
+          <small>{definition.required_devices.join(" · ")}</small>
+          <JobView job={job} onUpdate={setJob} />
+          <JobView job={analysisJob} onUpdate={setAnalysisJob} />
         </div>
-        <JobView job={job} onUpdate={setJob} />
-      </section>
+      </WorkflowPanel>
 
       <section className="zaw-panel zaw-panel-result">
         <div className="zaw-panel-head">
           <small>LATEST</small>
           <h2>最近一次结果</h2>
         </div>
-        <LatestPreview job={job} busy={jobActive} />
+        <LatestPreview job={job} busy={jobActive} runId={session?.run_id ?? runs[0]?.run_id} revision={refresh} analysisStatus={analysisJob?.status} />
       </section>
     </div>
   );
@@ -220,24 +218,23 @@ export function Dashboard({
 
 function LatestPreview({
   job,
-  busy,
+  busy, runId, revision, analysisStatus,
 }: {
   job: Job | undefined;
   busy: boolean;
+  runId?: string; revision: number; analysisStatus?: string;
 }) {
   const [summary, setSummary] = useState<MxYOptimalControlFrequencyRunSummary | undefined>();
 
   useEffect(() => {
-    if (!job || !job.result) return;
-    const runDir = (job.result as { run_dir?: unknown }).run_dir;
-    if (typeof runDir !== "string") return;
-    const runId = runDir.split(/[\\/]/).pop() ?? "";
-    if (!runId) return;
-    api<MxYOptimalControlFrequencyRunSummary>(SUMMARY_PATH(runId))
+    const runDir = (job?.result as { run_dir?: unknown } | null)?.run_dir;
+    const selected = runId ?? (typeof runDir === "string" ? runDir.split(/[\\/]/).pop() : "");
+    if (!selected) return;
+    api<MxYOptimalControlFrequencyRunSummary>(SUMMARY_PATH(selected))
       .then(setSummary)
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [job?.id, job?.status]);
+  }, [job?.id, job?.status, runId, revision, analysisStatus]);
 
   if (!summary && !busy) {
     return <p className="zaw-empty">尚无运行结果，启动一次实验后这里会展示频率响应曲线与相位-频率热图。</p>;
@@ -283,6 +280,7 @@ function LatestPreview({
           ? ` · 标定：${calibration.calibrationRun}`
           : ""}
       </p>
+      {summary.control_source && <p>闭环冻结波形：{String(summary.control_source.run ?? "—")} · 幅度 {formatNumber(summary.control_source.amplitude_vpp)} Vpp · 偏置 {formatNumber(summary.control_source.offset_v)} V</p>}
       {comparison && (
         <figure className="zaw-figure">
           <figcaption>

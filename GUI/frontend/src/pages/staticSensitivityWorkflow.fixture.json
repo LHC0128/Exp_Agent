@@ -7,7 +7,10 @@
       "dependencies": [],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "参数、映射、锁相能力及输出安全限值全部通过。"
+      ]
     },
     {
       "id": "A02",
@@ -18,7 +21,8 @@
       ],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": []
     },
     {
       "id": "A03",
@@ -29,7 +33,10 @@
       ],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "所有已连接设备的参考时钟严格回读一致。"
+      ]
     },
     {
       "id": "A04",
@@ -56,7 +63,8 @@
         "y_magnetic_field",
         "temp_switch",
         "temperature"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A06",
@@ -81,7 +89,8 @@
         "rf_gate_amplitude",
         "rf_gate_offset",
         "rf_gate_delay"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A07",
@@ -104,6 +113,9 @@
         "hf2_signal_range",
         "hf2_demod_rate",
         "hf2_demod_tc"
+      ],
+      "quality_gates": [
+        "实际色散采样率有限且为正，每点至少 2 个样本。"
       ]
     },
     {
@@ -121,6 +133,9 @@
       "display_parameters": [
         "SYSTEM_SETTLE_S",
         "dispersion_temp_switch_on_settle_s"
+      ],
+      "quality_gates": [
+        "校相读数与回读相位有限，失败不执行色散采集。"
       ]
     },
     {
@@ -153,6 +168,9 @@
         "dispersion_temp_switch_interval_points",
         "SYSTEM_SETTLE_S",
         "dispersion_temp_switch_on_settle_s"
+      ],
+      "quality_gates": [
+        "锁相实际配置与有效前置一致；X/Y/R 样本数、有限性和时间轴通过校验。"
       ]
     },
     {
@@ -172,6 +190,9 @@
         "hf2_noise_rate",
         "hf2_noise_tc",
         "noise_duration"
+      ],
+      "quality_gates": [
+        "实际噪声采样率有限且为正，每段至少 2 个样本。"
       ]
     },
     {
@@ -196,8 +217,10 @@
         "gs200_current_ranges",
         "gs200_range_headroom",
         "gs200_range_settle_time",
-        "SYSTEM_SETTLE_S",
-        "dispersion_temp_switch_on_settle_s"
+        "SYSTEM_SETTLE_S"
+      ],
+      "quality_gates": [
+        "GS200 实际量程与设定一致且电流有限；Y 波形为有限一维数组且至少 2 个样本。"
       ]
     },
     {
@@ -209,7 +232,10 @@
       ],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "Z、温控和最后实际色散配置的恢复全部成功，才标记本轮完成。"
+      ]
     },
     {
       "id": "A13",
@@ -218,7 +244,8 @@
       "dependencies": [],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": []
     }
   ],
   "analysis": [
@@ -229,7 +256,10 @@
       "dependencies": [],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "身份、原始格式、色散轴和噪声波形有效；段数与实际采集记录一致。"
+      ]
     },
     {
       "id": "B02",
@@ -246,6 +276,9 @@
       ],
       "display_parameters": [
         "z_v_to_nt"
+      ],
+      "quality_gates": [
+        "至少 7 个有效色散点；R²≥0.85，γ 相对不确定度≤0.5；拟合参数、增益与线宽有效。"
       ]
     },
     {
@@ -263,6 +296,9 @@
       ],
       "display_parameters": [
         "noise_duration"
+      ],
+      "quality_gates": [
+        "逐段实际采样率有效，同一及不同量程的 PSD 频率轴完全一致。"
       ]
     },
     {
@@ -283,7 +319,10 @@
         "analysis.json",
         "run_summary.csv"
       ],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "色散拟合与 PSD 前置有效，各量程平坦段灵敏度均为有限值。"
+      ]
     }
   ],
   "parameter_impacts": {

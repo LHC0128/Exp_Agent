@@ -15,6 +15,7 @@ from sensitivity_analysis.fitting import _dispersive, DispersionFitResult
 from dataclasses import asdict, fields
 from ...experiment_runtime import check_cancelled
 from sensitivity_analysis.acquisition import load_acquisition_rate
+from .run_format import RAW_FORMAT_VERSION
 
 
 QUALITY_THRESHOLDS = {"r_squared_min": 0.85, "relative_gamma_uncertainty_max": 0.5, "residual_sign_change_ratio_min": 0.0}
@@ -88,7 +89,7 @@ def load_scan(run_dir):
         raise FileNotFoundError(f"直流色散原始数据不存在: {scan_path}")
     with np.load(scan_path, allow_pickle=False) as data:
         scan = {name: data[name] for name in data.files}
-    if scan["schema_version"].shape != () or scan["schema_version"].item() != 3:
+    if scan["schema_version"].shape != () or scan["schema_version"].item() != RAW_FORMAT_VERSION:
         raise ValueError("色散原始文件必须为版本 3")
     if scan["completed_mask"].dtype.kind != "b":
         raise ValueError("色散完成掩码必须为布尔数组")

@@ -31,6 +31,15 @@ class MxZOptimalControlXYRFSensitivityParams(
         default=0.002, external_name="NOISE_RF_AMPLITUDE_VPP",
         label="未使用噪声 RF 幅值", visible=False,
     )
+    phase_cal_rf_amplitude_vpp: float = parameter(
+        default=0.01, external_name="PHASE_CAL_RF_AMPLITUDE_VPP", label="校相 Y RF 幅度",
+        unit="Vpp", group="advanced", minimum=0, safety_key="rf_coil",
+        description="必须大于 0；仅在扫描轴中心执行 RF 校相，校准相位复用于全部 XY 点。",
+    )
+    fit_relative_gamma_uncertainty_max: float = parameter(
+        default=0.5, external_name="FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX",
+        label="历史 γ 相对不确定度阈值（未使用）", visible=False,
+    )
 
     # 父类字段保留为历史兼容键；实际校相点由扫描轴中心决定。
     x_dc_field_v: float = parameter(
@@ -141,6 +150,10 @@ class MxZOptimalControlXYRFSensitivityParams(
 
     def validate_model(self) -> list[str]:
         errors = MxZControlSourceSelectionParams.validate_model(self)
+        if self.phase_cal_rf_amplitude_vpp <= 0:
+            errors.append("XY 网格的 PHASE_CAL_RF_AMPLITUDE_VPP 必须大于 0，中心 RF 校相不可跳过")
+        if self.y_rf_nt_per_vpp <= 0:
+            errors.append("XY 灵敏度网格的 Y_RF_NT_PER_VPP 必须大于 0")
         errors.extend(
             self._validate_axis(
                 "X 补偿偏置",

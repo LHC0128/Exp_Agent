@@ -142,7 +142,7 @@ export function MxYOptimalControlFrequencyPage() {
               历史
             </button>
           </div>
-          {tab === "run" && (
+          <div hidden={tab !== "run"}>
             <Dashboard
               experimentId={MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}
               definition={definition}
@@ -161,7 +161,7 @@ export function MxYOptimalControlFrequencyPage() {
               prefill={prefill}
               clearPrefill={() => setPrefill(null)}
             />
-          )}
+          </div>
           {tab === "history" && (
             <HistoryView
               experimentId={MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}

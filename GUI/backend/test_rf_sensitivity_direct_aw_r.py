@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 import time
 import json
+from threading import Event, Thread
 import pytest
 import yaml
 from fastapi import FastAPI
@@ -25,6 +26,7 @@ BASE = f"/api/experiments/{EXPERIMENT_ID}"
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "ROOT", tmp_path)
     monkeypatch.setattr(main, "manager", JobManager())
+    monkeypatch.setattr(main.rf_r_sessions, "manager", main.manager)
     with TestClient(main.app) as client:
         yield client
 
@@ -180,3 +182,133 @@ def test_communication_close_and_backend_restart_do_not_restore_hardware(workflo
     assert not manager.get(response.json()["job_id"]).cancellation.cancelled
     replacement = RFRSessionService(lambda: rrig.tmp_path, JobManager())
     assert replacement.active() is None
+
+
+def start_session(client, service, rrig):
+    response = client.post(f"{BASE}/sessions", json={"parameters": rrig.params.to_external()})
+    assert response.status_code == 200, response.text
+    value = response.json()
+    wait_for(lambda: service.get(value["session_id"])["status"] == "waiting")
+    return value["session_id"], value["job_id"]
+
+
+def test_real_process_rejects_revision_duplicate_and_parallel_commands(workflow_client, rrig, monkeypatch):
+    client, service, manager = workflow_client
+    monkeypatch.setenv("RF_R_CAPTURE_BARRIER", "1")
+    sid, job_id = start_session(client, service, rrig)
+    base = f"{BASE}/sessions/{sid}"
+    response = client.post(base + "/steps", json={"revision": 0, "step_ids": ["A01"]})
+    request_id = response.json()["pending_request"]
+    wait_for(lambda: service.get(sid).get("pending_request") is None)
+    state = service.get(sid)
+    assert client.get(base).json()["revision"] == state["revision"]
+    assert client.get(f"{BASE}/sessions/active").json()["session_id"] == sid
+    assert client.post(base + "/steps", json={"revision": 0, "step_ids": ["A01"]}).headers["X-Error-Code"] == "revision_conflict"
+    item = service.sessions[sid]
+    with service.lock:
+        item["state"]["pending_request"] = request_id
+        item["queue"].put({"request_id": request_id, "revision": state["revision"], "action": "steps", "step_ids": ["A01"]})
+    wait_for(lambda: service.get(sid).get("pending_request") is None)
+    assert "重复" in service.get(sid)["error"]
+    assert service.get(sid)["revision"] == state["revision"]
+    response = client.post(base + "/steps", json={"revision": state["revision"], "step_ids": through("A13")})
+    assert response.status_code == 200, response.text
+    try:
+        wait_for(lambda: (rrig.tmp_path / "capture-entered").exists())
+        current = service.get(sid)["revision"]
+        assert client.post(base + "/steps", json={"revision": current, "step_ids": ["A01"]}).status_code == 409
+        assert client.patch(base + "/parameters", json={"revision": current, "parameters": {"Z_RF_NOISE_FREQ": 2999}}).status_code == 409
+        assert not manager.hardware_lock.acquire(blocking=False)
+    finally:
+        (rrig.tmp_path / "capture-release").touch()
+    wait_for(lambda: service.get(sid).get("pending_request") is None)
+    run_id = service.get(sid)["run_id"]
+    assert (rrig.tmp_path / "data" / DATA_TYPE / run_id / "raw/response_data.npz").is_file()
+    assert client.post(base + "/finish", json={"revision": service.get(sid)["revision"]}).status_code == 200
+    wait_for(lambda: manager.get(job_id).status == "completed")
+    assert manager.hardware_lock.acquire(blocking=False)
+    manager.hardware_lock.release()
+
+
+@pytest.mark.parametrize("ending", ["cancel", "eof", "shutdown"])
+def test_real_process_holds_lock_until_cancel_eof_or_backend_shutdown_finishes(workflow_client, rrig, monkeypatch, ending):
+    client, service, manager = workflow_client
+    monkeypatch.setenv("RF_R_SHUTDOWN_BARRIER", "1")
+    monkeypatch.setenv("RF_R_CAPTURE_BARRIER", "1")
+    sid, job_id = start_session(client, service, rrig)
+    response = client.post(f"{BASE}/sessions/{sid}/steps", json={"revision": 0, "step_ids": through("A13")})
+    assert response.status_code == 200, response.text
+    wait_for(lambda: (rrig.tmp_path / "capture-entered").exists())
+    run_id = service.get(sid)["run_id"]
+    shutdown_thread = None
+    try:
+        if ending == "cancel":
+            manager.get(job_id).cancellation.cancel()
+        elif ending == "eof":
+            service.close_communication()
+        else:
+            shutdown_thread = Thread(target=service.shutdown)
+            shutdown_thread.start()
+        wait_for(lambda: (rrig.tmp_path / "shutdown-entered").exists())
+        assert manager.get(job_id).status == "running"
+        assert not manager.hardware_lock.acquire(blocking=False), "恢复期间硬件锁必须继续持有"
+        if shutdown_thread:
+            assert shutdown_thread.is_alive()
+    finally:
+        (rrig.tmp_path / "capture-release").touch()
+        (rrig.tmp_path / "shutdown-release").touch()
+        if shutdown_thread:
+            shutdown_thread.join(timeout=20)
+            assert not shutdown_thread.is_alive()
+    wait_for(lambda: manager.get(job_id).status in ("cancelled", "completed"))
+    assert service.get(sid)["status"] == "closed" and service.active() is None
+    config = yaml.safe_load((rrig.tmp_path / "data" / DATA_TYPE / run_id / "experiment_config.yaml").read_text(encoding="utf-8"))
+    assert config["completion_status"] == "cancelled" and config["safety_shutdown"]["completed"]
+    assert manager.hardware_lock.acquire(blocking=False)
+    manager.hardware_lock.release()
+
+
+def test_staged_and_legacy_analysis_share_directory_lock_and_keep_history_parameters(client, tmp_path, monkeypatch):
+    directory = make_run(tmp_path)
+    before = yaml.safe_load((directory / "experiment_config.yaml").read_text(encoding="utf-8"))["parameters"]
+    raw = {path.name: path.read_bytes() for path in (directory / "raw").iterdir()}
+    entered, release = Event(), Event()
+    execute = ADAPTER._execute
+    def blocked(module, **kwargs):
+        if module == ADAPTER.analysis_module:
+            entered.set()
+            assert release.wait(20), "分析屏障未释放"
+        return execute(module, **kwargs)
+    monkeypatch.setattr(ADAPTER, "_execute", blocked)
+    state = client.get(f"{BASE}/runs/first/analysis")
+    assert state.status_code == 200, state.text
+    revision = state.json()["revision"]
+    body = {"revision": revision, "step_ids": ["B01", "B02"], "analysis_parameters": {"NOISE_NPERSEG": 256}}
+    response = client.post(f"{BASE}/runs/first/analysis", json=body)
+    assert response.status_code == 200, response.text
+    try:
+        assert entered.wait(5)
+        assert client.post("/api/runs/first/analyze", json={"experiment_id": EXPERIMENT_ID}).status_code == 409
+        assert client.post(f"{BASE}/runs/first/analysis", json=body).status_code == 409
+        assert main.manager.hardware_lock.acquire(blocking=False)
+        main.manager.hardware_lock.release()
+    finally:
+        release.set()
+    job = main.manager.get(response.json()["id"])
+    wait_for(lambda: job.status in ("completed", "failed"))
+    assert job.status == "completed", job.error
+    assert client.post(f"{BASE}/runs/first/analysis", json=body).headers["X-Error-Code"] == "revision_conflict"
+    entered.clear()
+    release.clear()
+    response = client.post("/api/runs/first/analyze", json={"experiment_id": EXPERIMENT_ID})
+    assert response.status_code == 200, response.text
+    try:
+        assert entered.wait(5)
+        assert client.post(f"{BASE}/runs/first/analysis", json={**body, "revision": revision + 1}).status_code == 409
+    finally:
+        release.set()
+    job = main.manager.get(response.json()["id"])
+    wait_for(lambda: job.status in ("completed", "failed"))
+    assert job.status == "completed", job.error
+    assert yaml.safe_load((directory / "experiment_config.yaml").read_text(encoding="utf-8"))["parameters"] == before
+    assert raw == {path.name: path.read_bytes() for path in (directory / "raw").iterdir()}

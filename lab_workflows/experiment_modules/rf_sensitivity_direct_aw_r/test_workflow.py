@@ -4,6 +4,7 @@ from pathlib import Path
 import io
 import json
 import os
+import time
 import numpy as np
 import pytest
 import yaml
@@ -160,6 +161,120 @@ def test_eof_safe_shutdown(rrig):
     assert_shutdown(rrig)
 
 
+@pytest.mark.parametrize("kind", ["low_r", "nonfinite", "nonconverged"])
+def test_xy_quality_failure_keeps_diagnostics_blocks_successors_and_can_retry(rrig, kind):
+    rrig.params = replace(rrig.params, xy_ctrl_phase_max_iter=1)
+    ctx = workflow.Workflow(rrig.params)
+    ctx.execute(through("A08"))
+    rrig.xy_r = 1e-20 if kind == "low_r" else float("nan") if kind == "nonfinite" else 1.0
+    rrig.xy_angle = 0.2 if kind == "nonconverged" else 0.0
+    try:
+        ctx.execute(["A09"])
+        assert ctx.states["A09"]["status"] == "quality_failed"
+        assert ctx.state["xy_phase_calibration"]["history"]
+        first = ctx.directory.root
+        raw = (first / "raw/xy_aw_waveforms.npz").read_bytes()
+        with pytest.raises(ValueError, match="缺少前置"):
+            ctx.execute(["A10"])
+        assert not (first / "raw/response_data.npz").exists()
+        rrig.xy_r, rrig.xy_angle = 1.0, 0.0
+        ctx.execute(["A09"])
+        assert ctx.states["A09"]["status"] == "completed"
+        assert ctx.directory.root != first
+        assert (first / "raw/xy_aw_waveforms.npz").read_bytes() == raw
+    finally:
+        ctx.finish()
+
+
+def test_applied_unrun_parameters_do_not_reconfigure_finish_or_old_snapshot(rrig):
+    ctx = workflow.Workflow(rrig.params)
+    ctx.execute(through("A14"))
+    path = ctx.directory.root / "experiment_config.yaml"
+    old_config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    previous_frequency = ctx.devices["hf2"].get_double("/dev18246/oscs/1/freq")
+    events = list(rrig.events)
+    updates = {"DEMOD3_RATE": 5000.0, "DEMOD3_TC": 0.003, "Z_RF_NOISE_FREQ": 2999.0,
+               "SYSTEM_SETTLE_S": 0.8, "TEMP_SWITCH_ON_LAG_S": 6.0}
+    completed = {key for key, record in ctx.states.items() if record["status"] == "completed"}
+    expected = {step for key in updates for step in definition()["parameter_impacts"]["acquisition"][key]} & completed
+    ctx.update_parameters(updates)
+    assert {key for key, record in ctx.states.items() if record["status"] == "stale"} == expected
+    assert rrig.events == events, "应用参数不执行仪器写入"
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["parameters"] == old_config["parameters"]
+    ctx.execute(["A16"])
+    hf2 = ctx.devices["hf2"]
+    assert hf2.get_double("/dev18246/demods/3/rate") == 0.9 * rrig.params.demod3_rate
+    assert hf2.get_double("/dev18246/demods/3/timeconstant") == rrig.params.demod3_tc
+    assert hf2.get_double("/dev18246/oscs/1/freq") == previous_frequency
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["parameters"] == old_config["parameters"]
+    assert_shutdown(rrig)
+
+
+def test_complete_and_individual_steps_preserve_identical_r_raw_and_frequencies(rrig):
+    first = workflow.run(rrig.params)
+    original = {path.name: path.read_bytes() for path in (first / "raw").glob("*.npz")}
+    ctx = workflow.Workflow(rrig.params)
+    try:
+        for step in through("A15"):
+            ctx.execute([step])
+        assert ctx.directory.root != first
+        for name in original:
+            with np.load(first / "raw" / name) as complete, np.load(ctx.directory.raw / name) as staged:
+                assert complete.files == staged.files
+                for key in complete.files:
+                    np.testing.assert_equal(complete[key], staged[key])
+            assert (first / "raw" / name).read_bytes() == original[name]
+        assert ctx.state["stage_frequencies"] == yaml.safe_load((first / "experiment_config.yaml").read_text(encoding="utf-8"))["stage_frequencies"]
+        assert ctx.states["A09"]["status"] == "stale", "收尾关闭 XY 后必须重新准备"
+        from .analysis import AnalysisWorkflow, analyze
+        whole = analyze(first)
+        for stage in ("B01", "B02", "B03", "B04"):
+            separate = AnalysisWorkflow(ctx.directory.root).execute([stage])
+        assert separate["response_fit"] == whole["response_fit"]
+        assert whole["response_fit"]["method"] == "numeric_gradient"
+        with np.load(first / "raw/response_data.npz") as saved:
+            expected = np.max(np.abs(np.gradient(saved["demod3_r_V"], saved["amplitudes_nT"])))
+        assert whole["response_fit"]["slope_V_per_nT"] == pytest.approx(expected)
+        for name in ("response_fit.npz", "psd_avg.npz", "sensitivity.npz"):
+            with np.load(first / "results" / name) as complete, np.load(ctx.directory.results / name) as staged:
+                assert complete.files == staged.files
+                for key in complete.files:
+                    np.testing.assert_equal(complete[key], staged[key])
+    finally:
+        ctx.finish()
+
+
+def test_preflight_preserves_valid_steps_and_finish_requires_no_predecessor(rrig):
+    empty = workflow.Workflow(rrig.params)
+    empty.execute(["A16"])
+    assert empty.closed and empty.directory is None and not rrig.events
+    ctx = workflow.Workflow(rrig.params)
+    ctx.execute(through("A10"))
+    before = ctx.snapshot()["steps"]
+    ctx.execute(["A01"])
+    assert ctx.snapshot()["steps"] == before
+    ctx.finish()
+
+
+def test_visible_keys_manifest_quality_and_original_diagram_agree(rrig):
+    from ...common import find_project_root
+    flow = definition()
+    assert len(flow["acquisition"]) == 15 and len(flow["analysis"]) == 4
+    fields = rrig.params.schema(rrig.tmp_path)["fields"]
+    assert len(fields) == 63
+    assert not {field["name"] for field in fields} & {"LINEWIDTH_MODE", "BW_FREQ_START", "BW_FREQ_STOP", "BW_FREQ_POINTS"}
+    source = next((Path(__file__).parent).glob("*.excalidraw"))
+    texts = [item.get("text", "") for item in json.loads(source.read_text(encoding="utf-8"))["elements"]]
+    for stage in (*flow["acquisition"], *flow["analysis"]):
+        for gate in stage["quality_gates"]:
+            assert any(gate in text for text in texts), stage["id"]
+    fixture = json.loads((find_project_root() / "GUI/frontend/src/pages/rfDirectAWRWorkflow.fixture.json").read_text(encoding="utf-8"))
+    assert fixture == json.loads(json.dumps(flow))
+    schema_fixture = json.loads((find_project_root() / "GUI/frontend/src/pages/rfDirectAWRSchema.fixture.json").read_text(encoding="utf-8"))
+    metadata = lambda values: [{key: value for key, value in field.items() if key != "default"} for field in values]
+    assert metadata(schema_fixture["fields"]) == metadata(fields)
+
+
 def fake_session_main():
     """真实子进程使用假仪器；生产入口不会导入本函数。"""
     root = Path(os.environ["RF_TEST_ROOT"])
@@ -170,9 +285,28 @@ def fake_session_main():
         values = json.loads(os.environ["LAB_TYPED_PARAMETERS"])
         values.pop("session_id")
         fake.params = RFSensitivityDirectAWRParams.from_external(values)
+        acquire = fake.acquire
+        def blocked_capture(*args, **kwargs):
+            if os.environ.get("RF_R_CAPTURE_BARRIER"):
+                (root / "capture-entered").touch()
+                deadline = time.monotonic() + 20
+                while not (root / "capture-release").exists():
+                    kwargs["cancellation_check"]()
+                    if time.monotonic() > deadline:
+                        raise TimeoutError("假仪器采集屏障未释放")
+                    time.sleep(0.01)
+            return acquire(*args, **kwargs)
+        patch.setattr(shared.acquisition.daq, "acquire_data", blocked_capture)
         def progress(stage, *args, **kwargs):
             if stage == "shutdown":
                 fake.in_shutdown = True
+                if os.environ.get("RF_R_SHUTDOWN_BARRIER"):
+                    (root / "shutdown-entered").touch()
+                    deadline = time.monotonic() + 20
+                    while not (root / "shutdown-release").exists():
+                        if time.monotonic() > deadline:
+                            raise TimeoutError("假仪器收尾屏障未释放")
+                        time.sleep(0.01)
             report(stage, *args, **kwargs)
         patch.setattr(shared, "report_runtime_progress", progress)
         session.main()

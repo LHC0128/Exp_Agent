@@ -1,0 +1,542 @@
+{
+  "schema": {
+    "schema_version": 2,
+    "fields": [
+      {
+        "name": "SYSTEM_SETTLE_S",
+        "label": "系统稳定时间",
+        "type": "number",
+        "default": 1.0,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0,
+        "maximum": null,
+        "description": "配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。",
+        "read_only": false,
+        "legacy_defaults": {
+          "AM_SETTLE_TIME_S": 1.0,
+          "TEMP_SWITCH_OFF_LEAD_S": 0.1
+        }
+      },
+      {
+        "name": "RUN_TAG",
+        "label": "运行标签",
+        "type": "string",
+        "default": "freq_resp",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "AM_FREQ_START_HZ",
+        "label": "AM 调制起始频率",
+        "type": "number",
+        "default": 50000.0,
+        "unit": "Hz",
+        "group": "basic",
+        "minimum": 1000.0,
+        "maximum": null,
+        "description": "Probe AOM AM 调制的起始频率",
+        "read_only": false
+      },
+      {
+        "name": "AM_FREQ_STOP_HZ",
+        "label": "AM 调制终止频率",
+        "type": "number",
+        "default": 130000.0,
+        "unit": "Hz",
+        "group": "basic",
+        "minimum": 1000.0,
+        "maximum": null,
+        "description": "Probe AOM AM 调制的终止频率",
+        "read_only": false
+      },
+      {
+        "name": "AM_FREQ_POINTS",
+        "label": "频率扫描点数",
+        "type": "integer",
+        "default": 41,
+        "unit": "",
+        "group": "basic",
+        "minimum": 2,
+        "maximum": null,
+        "description": "扫描频率点数，推荐 2-3 kHz 步进",
+        "read_only": false
+      },
+      {
+        "name": "TEMP_SWITCH_ON_LAG_S",
+        "label": "温控恢复后等待",
+        "type": "number",
+        "default": 1.0,
+        "unit": "s",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "每点采集后恢复温控的等待时间",
+        "read_only": false
+      },
+      {
+        "name": "PROBE_AOM_CARRIER_FREQ_HZ",
+        "label": "Probe AOM 载波频率",
+        "type": "number",
+        "default": 100000000.0,
+        "unit": "Hz",
+        "group": "advanced",
+        "minimum": 1000000.0,
+        "maximum": null,
+        "description": "Probe AOM 的射频载波频率",
+        "read_only": false
+      },
+      {
+        "name": "PROBE_AOM_CARRIER_AMPLITUDE_VPP",
+        "label": "Probe AOM 载波幅度",
+        "type": "number",
+        "default": 0.05,
+        "unit": "Vpp",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": 0.05,
+        "description": "CH1 载波输出幅度",
+        "read_only": false
+      },
+      {
+        "name": "PROBE_AOM_AM_AMPLITUDE_VPP",
+        "label": "AM 调制幅度",
+        "type": "number",
+        "default": 0.5,
+        "unit": "Vpp",
+        "group": "basic",
+        "minimum": 0.1,
+        "maximum": 5.0,
+        "description": "固定的 AM 调制信号幅度",
+        "read_only": false
+      },
+      {
+        "name": "HF2_DEMOD_IDX",
+        "label": "锁相放大器 Demod 索引",
+        "type": "integer",
+        "default": 0,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 0,
+        "maximum": null,
+        "description": "与 XY 控制噪声谱实验一致，使用 Demod0 的 Y 信号",
+        "read_only": false
+      },
+      {
+        "name": "HF2_OSC_FREQ_HZ",
+        "label": "锁相放大器 解调参考频率",
+        "type": "number",
+        "default": 90000.0,
+        "unit": "Hz",
+        "group": "basic",
+        "minimum": 1000.0,
+        "maximum": null,
+        "description": "HF2 振荡器频率，通常为 90 kHz",
+        "read_only": false
+      },
+      {
+        "name": "HF2_SIGNAL_RANGE_V",
+        "label": "锁相放大器 输入量程",
+        "type": "number",
+        "default": 2.0,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 0.01,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "HF2_DEMOD_ORDER",
+        "label": "锁相放大器 Demod 滤波器阶数",
+        "type": "integer",
+        "default": 8,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": 8,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "HF2_DAQ_DURATION_S",
+        "label": "每点采集时长",
+        "type": "number",
+        "default": 1.0,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0.5,
+        "maximum": null,
+        "description": "每个频率点的 DAQ 采集时长",
+        "read_only": false
+      },
+      {
+        "name": "HF2_DAQ_RATE_SA_S",
+        "label": "DAQ 采样率",
+        "type": "number",
+        "default": 450000.0,
+        "unit": "Sa/s",
+        "group": "advanced",
+        "minimum": 1000.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "HF2_DAQ_TC_S",
+        "label": "锁相放大器 采集解调时间常数",
+        "type": "number",
+        "default": 7.85e-07,
+        "unit": "s",
+        "group": "advanced",
+        "minimum": 1e-07,
+        "maximum": null,
+        "description": "配置 Demod0 的低通时间常数，与 XY 正弦控制噪声谱采集阶段一致",
+        "read_only": false
+      },
+      {
+        "name": "PSD_NPERSEG",
+        "label": "Welch 段长",
+        "type": "integer",
+        "default": 8192,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 256,
+        "maximum": null,
+        "description": "Welch PSD 计算的每段点数",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.Pump_laser_power",
+        "label": "Pump 光功率",
+        "type": "number",
+        "default": 0.1,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "Pump 光功率设置；任何取值都在每点采集期间关闭温控并随后恢复",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.Probe_laser_power",
+        "label": "Probe 光功率",
+        "type": "number",
+        "default": 0.1,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.temperature",
+        "label": "气室温度",
+        "type": "number",
+        "default": 100.0,
+        "unit": "°C",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      }
+    ]
+  },
+  "flow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "启动预检",
+        "group": "启动准备",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "参数、映射、锁相能力与输出安全限值通过，解调器索引与 lockin_r 一致。"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "设备连接",
+        "group": "启动准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": []
+      },
+      {
+        "id": "A03",
+        "title": "参考时钟同步",
+        "group": "启动准备",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "全部已连接时钟设备按设备库配置写入，参考源回读与目标一致；任一设置或回读失败即停止。"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "初始输出与温控",
+        "group": "初始条件",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power",
+          "FIXED_PARAMS.temperature"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power",
+          "FIXED_PARAMS.temperature"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A05",
+        "title": "HF2 解调配置",
+        "group": "激励与解调",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [
+          "HF2_DEMOD_IDX",
+          "HF2_OSC_FREQ_HZ",
+          "HF2_SIGNAL_RANGE_V",
+          "HF2_DEMOD_ORDER",
+          "HF2_DAQ_TC_S",
+          "HF2_DAQ_RATE_SA_S"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "HF2_DEMOD_IDX",
+          "HF2_OSC_FREQ_HZ",
+          "HF2_SIGNAL_RANGE_V",
+          "HF2_DEMOD_ORDER",
+          "HF2_DAQ_TC_S",
+          "HF2_DAQ_RATE_SA_S"
+        ],
+        "quality_gates": [
+          "锁相返回的实际采样率为有限正数。"
+        ]
+      },
+      {
+        "id": "A06",
+        "title": "AOM 载波与外部 AM",
+        "group": "激励与解调",
+        "dependencies": [
+          "A05"
+        ],
+        "parameters": [
+          "PROBE_AOM_CARRIER_FREQ_HZ",
+          "PROBE_AOM_CARRIER_AMPLITUDE_VPP"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "PROBE_AOM_CARRIER_FREQ_HZ",
+          "PROBE_AOM_CARRIER_AMPLITUDE_VPP"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A07",
+        "title": "频率扫描采集",
+        "group": "扫描与结束",
+        "dependencies": [
+          "A06"
+        ],
+        "parameters": [
+          "AM_FREQ_START_HZ",
+          "AM_FREQ_STOP_HZ",
+          "AM_FREQ_POINTS",
+          "SYSTEM_SETTLE_S",
+          "PROBE_AOM_AM_AMPLITUDE_VPP",
+          "HF2_DAQ_DURATION_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "PSD_NPERSEG",
+          "RUN_TAG"
+        ],
+        "artifacts": [
+          "experiment_config.yaml",
+          "raw/waveform_*.npy",
+          "raw/frequency_response.npz",
+          "results/results_summary.yaml"
+        ],
+        "display_parameters": [
+          "AM_FREQ_START_HZ",
+          "AM_FREQ_STOP_HZ",
+          "AM_FREQ_POINTS",
+          "SYSTEM_SETTLE_S",
+          "PROBE_AOM_AM_AMPLITUDE_VPP",
+          "HF2_DAQ_DURATION_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "PSD_NPERSEG",
+          "RUN_TAG"
+        ],
+        "quality_gates": [
+          "最大基带频率严格小于实际采样率的一半，每点至少取得 8 个 Y 样本。"
+        ]
+      },
+      {
+        "id": "A08",
+        "title": "安全收尾 / 结束会话",
+        "group": "扫描与结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "加载配置与准备分析",
+        "group": "加载配置与准备分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "实验身份及原始格式匹配，频率与谱峰数组非空等长，实际采样率为有限正标量。"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "归一化响应与斜率对照",
+        "group": "归一化响应与斜率对照",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "analysis_results.npz"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "排除零基带后至少有一个有限正谱峰；归一化仅使用两侧最近有效点。"
+        ]
+      },
+      {
+        "id": "B03",
+        "title": "响应曲线绘图与汇总",
+        "group": "响应曲线绘图与汇总",
+        "dependencies": [
+          "B02"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "frequency_response.png",
+          "frequency_response.pdf"
+        ],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "FIXED_PARAMS.Pump_laser_power": [
+          "A04",
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "FIXED_PARAMS.Probe_laser_power": [
+          "A04",
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "FIXED_PARAMS.temperature": [
+          "A04",
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "HF2_DEMOD_IDX": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "HF2_OSC_FREQ_HZ": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "HF2_SIGNAL_RANGE_V": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "HF2_DEMOD_ORDER": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "HF2_DAQ_TC_S": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "HF2_DAQ_RATE_SA_S": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "PROBE_AOM_CARRIER_FREQ_HZ": [
+          "A06",
+          "A07"
+        ],
+        "PROBE_AOM_CARRIER_AMPLITUDE_VPP": [
+          "A06",
+          "A07"
+        ],
+        "AM_FREQ_START_HZ": [
+          "A07"
+        ],
+        "AM_FREQ_STOP_HZ": [
+          "A07"
+        ],
+        "AM_FREQ_POINTS": [
+          "A07"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A07"
+        ],
+        "PROBE_AOM_AM_AMPLITUDE_VPP": [
+          "A07"
+        ],
+        "HF2_DAQ_DURATION_S": [
+          "A07"
+        ],
+        "TEMP_SWITCH_ON_LAG_S": [
+          "A07"
+        ],
+        "PSD_NPERSEG": [
+          "A07"
+        ],
+        "RUN_TAG": [
+          "A07"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/detection-chain-frequency-response/workflow/diagram"
+  }
+}

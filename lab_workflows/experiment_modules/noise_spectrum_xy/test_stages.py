@@ -159,6 +159,7 @@ class StageTest(unittest.TestCase):
         commands = [
             dict(request_id="bad", revision=0, action="steps", step_ids=["A03"]),
             dict(request_id="prepare", revision=0, action="steps", step_ids=[stage.id for stage in ACQUISITION[:11]]),
+            dict(request_id="prepare", revision=1, action="steps", step_ids=["A12"]),
             dict(request_id="scan", revision=1, action="steps", step_ids=["A12"]),
             dict(request_id="old", revision=1, action="steps", step_ids=["A12"]),
         ]
@@ -171,6 +172,7 @@ class StageTest(unittest.TestCase):
         self.assertEqual(snapshot["steps"]["A12"]["status"], "completed")
         self.assertIn("缺少前置", output)
         self.assertIn("修订已改变", output)
+        self.assertIn("重复或无效的请求编号", output)
         self.assertTrue((self.root / "data/Noise_Spectrum_XY_Ctrl" / snapshot["run_id"] / "raw/waveform_C0002.npy").exists())
 
 

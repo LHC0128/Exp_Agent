@@ -2,6 +2,7 @@
 
 from ...experiments.contracts import ExperimentDefinition
 from ...experiments.typed import TypedWorkflowAdapter
+from ...experiments.requirements import OPTIMAL_CONTROL
 from .models import MxZOptimalControlXYRFPhaseResponseParams
 
 
@@ -20,10 +21,15 @@ DEFINITION = ExperimentDefinition(
     family="rf-phase-response",
     variant="mx-z-optimal-control-xy-balance",
     description=(
-        ('保持 Z 周期最优控制，在 X/Y DC 平衡场网格上逐点扫描 Y RF Burst 相位，采集 Demod0 R 并拟合绝对值正弦相位响应。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
+        "保持 Z 周期最优控制，在蛇形 X/Y DC 网格按 180° 配对顺序扫描 Y RF Burst 相位，"
+        "采集 R、执行质量重试与单轮异常重采，以非线性色散模型报告相位响应；保留历史正弦诊断，不选最佳 XY。"
+        "运行页在 XY 分步节点内编辑参数，顶部保存布局、预检和完整运行；草稿应用后显式重跑。"
+        "配置完成再关闭温控、等待 SYSTEM_SETTLE_S、采集至内存，恢复温控后保存；TEC 只写 UI 目标。"
+        "历史独立分析可覆盖拟合门槛，不改变采集参数。结束保持 Z 和共同触发当前状态，X/Y 归零关闭。"
     ),
     data_type="Mx_Z_Optimal_Control_XY_RF_Phase_Response",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
+    required_mapping_keys=OPTIMAL_CONTROL,
     execution_mode="typed_workflow",
     acquisition_program=(
         "experiments/Mx_Z_Optimal_Control_XY_RF_Phase_Response.py"

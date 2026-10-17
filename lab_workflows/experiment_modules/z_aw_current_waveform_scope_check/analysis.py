@@ -1,199 +1,134 @@
-"""Z 任意波实际电流波形验证分析。"""
+"""实际电流验证的分步分析；复用内容指纹、归档和目录隔离。"""
 
-from __future__ import annotations
-
-import json
+from copy import deepcopy
 from pathlib import Path
-from typing import Any
+import hashlib
+import json
+import os
 
-import numpy as np
-import yaml
+from ...common import WorkflowCancelled
+from ...experiment_runtime import check_cancelled, runtime_run_dir
+from ..noise_spectrum_xy.state_io import read_state
+from ..mx_z_optimal_control_xy_rf_sensitivity.analysis import AnalysisWorkflow as GridAnalysisWorkflow
+from . import analysis_steps, run_format
+from .stages import ANALYSIS, initial_states, invalidate, validate_selection
 
-from ...current_feedback import sense_voltage_to_current, spectral_nrmse
-from ...plotting import format_axis, new_figure, save_figure, set_plot_style
-from ..z_aw_waveform_scope_check.analysis import (
-    _falling_edge_time,
-    _load_capture,
-    _periodic_alignment,
-    _resample_for_plot,
-    _zscore_rows,
-)
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
 
 
-EXPERIMENT_ID = "z-aw-current-waveform-scope-check"
+class AnalysisWorkflow(GridAnalysisWorkflow):
+    stages = ANALYSIS
+
+    def __init__(self, run_dir, analysis_parameters=None):
+        self.run_dir = Path(run_dir).resolve()
+        self.results = self.run_dir / "results"
+        self.state_path = self.run_dir / "analysis_state.json"
+        self.config_path = self.run_dir / "experiment_config.yaml"
+        self.config = analysis_steps._load_yaml(self.config_path)
+        if reason := run_format.analysis_block_reason(self.config):
+            raise ValueError(reason)
+        if analysis_parameters:
+            raise ValueError("本实验没有可调分析覆盖参数")
+        previous = read_state(self.state_path) or {}
+        self.options = {}
+        self.states = deepcopy(previous.get("steps") or initial_states(self.stages))
+        self.revision = previous.get("revision", 0)
+        self.summary = deepcopy(previous.get("summary", {}))
+        self.fingerprint = self.input_fingerprint()
+        if previous and previous.get("fingerprint") != self.fingerprint:
+            invalidate(self.stages, self.states, "B01")
+            self.revision += 1
+        self.refresh_products()
+        if self.states["B03"]["status"] != "completed":
+            self.summary["status"] = "stale" if previous else "not_started"
+
+    def input_fingerprint(self):
+        self.config = analysis_steps._load_yaml(self.config_path)
+        if reason := run_format.analysis_block_reason(self.config):
+            raise ValueError(reason)
+        fingerprint = super().input_fingerprint() | {"analysis_version": "z-current-waveform-stages-v1"}
+        fingerprint["raw_files"].pop("results/phase_calibration.yaml", None)
+        return fingerprint
+
+    def execute(self, selected, expected_revision=None):
+        self.config = analysis_steps._load_yaml(self.config_path)
+        if reason := run_format.analysis_block_reason(self.config):
+            raise ValueError(reason)
+        fingerprint = self.input_fingerprint()
+        if fingerprint != self.fingerprint:
+            invalidate(self.stages, self.states, "B01")
+            self.fingerprint = fingerprint
+            self.revision += 1
+        self.refresh_products()
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("分析修订已改变，请刷新后重试")
+        selected = validate_selection(self.stages, self.states, selected)
+        self.revision += 1
+        for item in selected:
+            check_cancelled()
+            invalidate(self.stages, self.states, item)
+            self.states[item] = {"status": "running", "error": ""}
+            self.summary = {"status": "running", "options": {}}
+            failure = None
+            try:
+                self.persist()
+                # 当前输入合格后才移动旧产物；坏数据不能搬走上次完整结果。
+                analysis_steps.load_inputs(self.run_dir)
+                if self.input_fingerprint() != self.fingerprint:
+                    raise ValueError("分析输入在执行中改变，请从 B01 重新执行")
+                self._archive_from(item)
+                if item == "B01":
+                    _, expected, paths = analysis_steps.load_inputs(self.run_dir)
+                    from ..noise_spectrum_xy.state_io import write_state
+                    write_state(self.results / "analysis_inputs.json", dict(
+                        captures=[path.name for path in paths],
+                        expected_points=int(expected["time_s"].size), fingerprint=self.fingerprint))
+                    self.summary.update(experiment_id=EXPERIMENT_ID, run_dir=str(self.run_dir),
+                                        capture_count=len(paths))
+                elif item == "B02":
+                    self.summary.update(analysis_steps.evaluate(self.run_dir))
+                elif item == "B03":
+                    self.summary.update(analysis_steps.write_report(self.run_dir))
+                stage = next(stage for stage in self.stages if stage.id == item)
+                files = self.product_files(stage)
+                if missing := set(stage.artifacts) - set(files):
+                    raise RuntimeError("分析阶段缺少产物：" + "、".join(sorted(missing)))
+                self.states[item] = {"status": "completed", "error": "", "artifacts": files,
+                    "files": {name: self._file_signature(self.results / name) for name in files},
+                    "input_fingerprint": deepcopy(self.fingerprint), "parameters": {},
+                    "parameter_fingerprint": hashlib.sha256(b"{}").hexdigest(), "revision": self.revision}
+                self.summary["status"] = "completed" if item == "B03" else "partial"
+            except BaseException as exc:
+                failure = exc
+                status = ("cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else
+                          "quality_failed" if isinstance(exc, ValueError) else "failed")
+                self.states[item] = {"status": status, "error": str(exc)}
+                self.summary.update(status=status, error=str(exc))
+                raise
+            finally:
+                try:
+                    self.persist()
+                except Exception:
+                    if failure is None:
+                        raise
+        return self.summary
 
 
-def _builtin(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(k): _builtin(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_builtin(v) for v in value]
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, np.generic):
-        return value.item()
-    return value
+def analyze(run_dir):
+    ctx = AnalysisWorkflow(run_dir)
+    ctx.execute([stage.id for stage in ANALYSIS])
+    return json.loads((ctx.results / "current_similarity_report.json").read_text(encoding="utf-8"))
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
-    with path.open(encoding="utf-8") as stream:
-        payload = yaml.safe_load(stream) or {}
-    if not isinstance(payload, dict):
-        raise TypeError(f"YAML 顶层必须是映射: {path}")
-    return payload
-
-
-def _load_expected(path: Path) -> dict[str, np.ndarray]:
-    with np.load(path, allow_pickle=False) as data:
-        required = {"time_s", "target_current_a", "repeat_frequency_hz"}
-        missing = sorted(required.difference(data.files))
-        if missing:
-            raise ValueError(f"电流目标波形缺少字段: {', '.join(missing)}")
-        result = {
-            "time_s": np.asarray(data["time_s"], dtype=float).reshape(-1),
-            "voltage_v": np.asarray(data["target_current_a"], dtype=float).reshape(-1),
-            "repeat_frequency_hz": np.asarray(data["repeat_frequency_hz"], dtype=float).reshape(()),
-        }
-    if result["time_s"].size != result["voltage_v"].size or result["time_s"].size < 2:
-        raise ValueError("目标电流时间轴和波形长度不一致")
-    return result
-
-
-def analyze(run_dir: Path) -> dict[str, Any]:
-    """将 CH3 采样电阻电压转换为电流并完成周期相似度分析。"""
-    run_dir = Path(run_dir).resolve()
-    config = _load_yaml(run_dir / "experiment_config.yaml")
-    parameters = config.get("parameters", {})
-    resistance = float(parameters.get("SENSE_RESISTOR_OHM", 0.0))
-    trigger_level = float(parameters.get("SCOPE_TRIGGER_LEVEL_V", 2.5))
-    if resistance <= 0.0:
-        raise ValueError("SENSE_RESISTOR_OHM 必须为正")
-    expected = _load_expected(run_dir / "raw" / "applied_control_waveform.npz")
-    records: list[dict[str, Any]] = []
-    capture_paths = sorted((run_dir / "raw").glob("scope_capture_*.npz"))
-    for path in capture_paths:
-        capture = _load_capture(path)
-        edge_time = _falling_edge_time(
-            capture["trigger_time_s"], capture["trigger_voltage_v"], trigger_level
-        )
-        time_s = capture["time_s"] - edge_time
-        current_a = sense_voltage_to_current(capture["measured_voltage_v"], resistance)
-        aligned = _periodic_alignment(
-            time_s,
-            current_a,
-            expected,
-            scale_v_div=capture.get("scale_used_v_div"),
-            offset_v=capture.get("offset_used_v", 0.0),
-        )
-        aligned["spectral_nrmse"] = spectral_nrmse(
-            aligned["aligned_expected_voltage_v"], aligned["measured_voltage_v"]
-        )
-        aligned["file"] = str(path.relative_to(run_dir))
-        aligned["trigger_edge_time_s"] = edge_time
-        records.append(aligned)
-    if not records:
-        raise FileNotFoundError("未找到电流波形采集文件")
-    metric_names = (
-        "shape_correlation",
-        "shape_nrmse",
-        "best_delay_s",
-        "affine_gain",
-        "affine_offset_v",
-        "raw_affine_rmse_v",
-        "measured_peak_to_peak_v",
-        "expected_peak_to_peak_v",
-        "range_ratio",
-        "spectral_nrmse",
-        "saturation_fraction",
-        "scope_edge_fraction",
-    )
-    summary: dict[str, Any] = {}
-    for name in metric_names:
-        values = np.asarray([record[name] for record in records], dtype=float)
-        summary[name] = {
-            "mean": float(np.nanmean(values)),
-            "std": float(np.nanstd(values)),
-            "minimum": float(np.nanmin(values)),
-            "maximum": float(np.nanmax(values)),
-        }
-    results_dir = run_dir / "results"
-    results_dir.mkdir(exist_ok=True)
-    grid = np.linspace(0.0, 1.0 / float(expected["repeat_frequency_hz"]), 2048, endpoint=False)
-    measured = []
-    reference = []
-    for record in records:
-        expected_record = {
-            "time_s": expected["time_s"],
-            "voltage_v": expected["voltage_v"],
-            "repeat_frequency_hz": expected["repeat_frequency_hz"],
-        }
-        local_grid, local_measured, local_reference = _resample_for_plot(
-            record,
-            expected_record,
-            float(1.0 / expected["repeat_frequency_hz"]),
-            cycles=1,
-            time_window_s=(0.0, float(1.0 / expected["repeat_frequency_hz"])),
-            points=grid.size,
-        )
-        measured.append(local_measured)
-        reference.append(local_reference)
-    measured_array = np.vstack(measured)
-    reference_array = np.vstack(reference)
-    figure, axes = new_figure(nrows=2, ncols=1, kind="wide", constrained_layout=True)
-    time_ms = grid * 1e3
-    axes[0].plot(time_ms, reference_array[0], label="Target current")
-    axes[0].plot(time_ms, np.mean(measured_array, axis=0), label="Measured current")
-    format_axis(axes[0], xlabel="Time (ms)", ylabel="Current (A)")
-    axes[0].grid(True, alpha=0.25)
-    axes[0].legend(loc="best")
-    normalized_measured = _zscore_rows(measured_array)
-    normalized_reference = _zscore_rows(reference_array)
-    axes[1].plot(time_ms, np.mean(normalized_measured, axis=0), label="Measured normalized")
-    axes[1].plot(time_ms, normalized_reference[0], label="Target normalized")
-    format_axis(axes[1], xlabel="Time (ms)", ylabel="Z-score current")
-    axes[1].grid(True, alpha=0.25)
-    axes[1].legend(loc="best")
-    save_figure(figure, results_dir / "current_waveform_similarity.png")
-    np.savez(
-        results_dir / "current_waveforms.npz",
-        measured_current_a=measured_array,
-        target_current_a=reference_array,
-        shape_correlation=np.asarray([r["shape_correlation"] for r in records]),
-        spectral_nrmse=np.asarray([r["spectral_nrmse"] for r in records]),
-    )
-    payload = _builtin(
-        {
-            "experiment_id": EXPERIMENT_ID,
-            "run_dir": str(run_dir),
-            "sense_resistor_ohm": resistance,
-            "capture_count": len(records),
-            "saturation_detected": any(
-                bool(record["saturation_detected"]) for record in records
-            ),
-            "similarity_summary": summary,
-            "captures": [
-                {name: record[name] for name in metric_names} | {"file": record["file"]}
-                for record in records
-            ],
-            "files": [
-                "current_waveform_similarity.png",
-                "current_waveforms.npz",
-                "current_similarity_report.yaml",
-                "current_similarity_report.json",
-            ],
-        }
-    )
-    (results_dir / "current_similarity_report.yaml").write_text(
-        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8"
-    )
-    (results_dir / "current_similarity_report.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    return payload
-
-
-def main() -> int:
-    from ...experiment_runtime import runtime_run_dir
-
-    analyze(runtime_run_dir())
+def main():
+    payload = json.loads(os.environ.get("LAB_TYPED_PARAMETERS", "{}"))
+    if payload.get("step_ids"):
+        AnalysisWorkflow(runtime_run_dir(), payload.get("analysis_parameters")).execute(payload["step_ids"], payload.get("revision"))
+    else:
+        result = analyze(runtime_run_dir())
+        print(f"Z 实际电流波形验证分析完成: {result['run_dir']}")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

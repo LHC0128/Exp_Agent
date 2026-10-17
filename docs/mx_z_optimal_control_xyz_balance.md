@@ -26,7 +26,7 @@ required_devices:
 learned_notes:
   - 三维数组使用 Z/X/Y 规范索引，采集按 Z 外层连续蛇形执行。
   - 任一轴点数为 1 时，必须满足该轴 START=STOP，并固定在该值。
-  - 最优点只按实测 Demod0 mean(R) 选择，不拟合、不复测、不换算 nT。
+  - 最优点只按实测 Demod0 mean(R) 选择，逐层 V 形拟合仅作工作点诊断，不复测、不换算 nT。
   - 分析图按每个 GS200 Z 电流分别显示 XY 平面，并对所有平面使用共同色标。
   - 扫描期间 X/Y 与 GS200 在零设定点也保持 Output ON。
   - Z 最优控制 DG4000 Burst 使用共同触发方波的下降沿启动。
@@ -94,6 +94,7 @@ X/Y 电压及 Z 电流的范围与点数由参数文件指定，总点数为三�
 ```text
 data/Mx_Z_Optimal_Control_XYZ_Balance/<run>/
   experiment_config.yaml
+  analysis_state.json
   raw/
     source_optimal_control_waveform.csv
     source_optimal_control_params.csv
@@ -106,17 +107,57 @@ data/Mx_Z_Optimal_Control_XYZ_Balance/<run>/
     balance_results.npz
     xyz_balance_grid.csv
     xyz_balance_slices.png
+    xyz_balance_slices.pdf
+    balance_linear_fit.npz
+    xyz_balance_linear_fit.png
+    xyz_balance_linear_fit.pdf
+    evaluation.json
     analysis.yaml
     analysis.json
 ```
 
 主结果是所有有效实测点中 Demod0 `mean(R)` 最小的第一个采集点；相同 R 时按
-采集顺序最早者确定。结果只报告 X/Y 电压和 GS200 Z 电流设定值，不进行连续拟合、
-最佳点复测或 nT 换算。分析图按每个实测 GS200 Z 电流分别显示一个 XY 平面，所有
+采集顺序最早者确定。结果只报告 X/Y 电压和 GS200 Z 电流设定值，最佳组合不复测，
+也不做 nT 换算。分析图按每个实测 GS200 Z 电流分别显示一个 XY 平面，所有
 平面共用同一 Mean R 色标，便于直接比较不同 Z 电流下的二维响应；全局实测最小点
-只标在对应的 Z 电流面板中。输出文件名继续使用 `xyz_balance_slices.png`，以兼容
-既有结果入口。若 Z 轴只有一个点，图中只生成一个 XY 平面。最小点位于任一扫描轴
+只标在对应的 Z 电流面板中。若 Z 轴只有一个点，图中只生成一个 XY 平面。最小点位于任一扫描轴
 边界时，分析结果会给出警告。
+
+在实测最小点之外，分析器沿每层网格最小点的行／列执行一维 V 形／复线性模
+拟合，报告各层拟合零点、零点随 Z 电流的耦合斜率、Z 层二次顶点与拟合工作点，
+并按邻域中位数偏差剔除孤立点。拟合仅作工作点诊断：拟合零点落在扫描窗口之外、
+贴近边界或与网格最小点偏差超过一个步长时给出警告和下一轮扫描中心建议，
+不改变实测最小点结论，也不做绝对磁场标定。
+
+## 运行页、分步与独立分析
+
+GUI 保留「运行 / 历史」双 Tab，运行页为用户确认的可勾选、带依赖流程图。保存参数与布局、派生预览、预检、完整运行和任务状态位于流程容器顶部；参数在节点内按基础／高级编辑，多节点可同时展开，共享触发相位的数值与分类同步。
+草稿显示预计失效范围，还原修改后清除；应用只使实际依赖过期，必须显式重跑，不会暗中操作仪器。初始化条件仅在 A03 编辑。完整与分步执行调用同一套业务。
+
+| 节点 | 职责与产物 | 前置及门槛 |
+| --- | --- | --- |
+| A01 | 无硬件预检，冻结理论波形、参数和 Z 标定内容 | 无；映射、锁相兼容及输出包络合格 |
+| A02 | 创建本轮目录、连接、记录 X/Y 通道与 GS200 初态并保存来源 | A01；来源漂移阻断，复用连接前核对设备配置 |
+| A03 | 严格回读时钟、TEC 目标、Mx 工作点；X/Y 置零关闭，GS200 置 Z 起点 | A02；无温度判稳，不能静默更换型号或通道 |
+| A04 | Z 外层、X/Y 连续蛇形三轴 DC 及逐点 R 重试，保存尝试与聚合矩阵 | A03；拒绝数据照常保留，重试用尽禁止 A05 |
+| A05 | 恢复温控、GS200 与运行前 X/Y 原态并安全封存 | A04；恢复失败不标完成，工作点步骤过期，下轮须重新准备 |
+| A12 | 结束会话并释放硬件锁 | 无；不代表原始数据完整，仍保持 Z 与共同触发当前状态 |
+| B01 | 校验运行身份、格式、完整有限三维矩阵、坐标、序号与实际率 | 无；必须是完整安全封存的本网格 |
+| B02 | 实测最小点、逐层 V 形拟合、逐 Z 平面热图与 `evaluation.json` | B01；拟合仅作诊断，不做绝对磁场标定 |
+| B03 | `analysis.yaml/json` 完整汇总 | B02；前置或产物过期时拒绝跳步复用 |
+
+会话等待期间继续占用全局硬件互斥；刷新恢复仍存活的会话，后台重启不恢复仪器状态。执行中不接受受限改参；修订不匹配、重复与并发请求拒绝。取消、通信 EOF 和后台关闭均走相同安全收尾。重跑新建目录，不覆盖原始数据；已执行配置与未执行草稿分离。
+
+分析对象显式选择「下一次实验」或具体运行目录。本实验无可调分析覆盖参数；历史参数只读，填回只更新下一次草稿，不自动保存或运行。输入内容摘要、算法版本或产物变化使对应步骤及后继过期；重算只归档受影响的结果，不移动仍使用的前置或原始文件。坏输入不得搬走上次完整结果，失败状态与旧产物分别展示。
+
+新采集记录 `raw_format_version: 1`，与参数 `schema_version` 独立。无格式标记的 schema v1/v2、`nested_scan` 已完成历史沿用已验证格式；其他版本、未封存或明确恢复失败拒绝重分析，但可只读查看旧结果。离线分析不要求原控制来源仍存在。
+
+```powershell
+# 写入分析必须明确指定目标目录；验证时使用临时副本，不能省略成 latest。
+agent_exp_env/Scripts/python.exe experiments/Mx_Z_Optimal_Control_XYZ_Balance_plot.py "<explicit-run-dir>"
+```
+
+实现位于 `lab_workflows/experiment_modules/mx_z_optimal_control_xyz_balance/`：`preparation.py` 预检／来源／工作点与收尾，`excitation.py` X/Y 置零与三轴控制器，`acquisition.py` 蛇形扫描与聚合，`workflow.py/session.py` 编排，`linear_fit.py` 逐层拟合诊断，`analysis_steps.py` 科学分析与英文科研图。`stages.py` 是 GUI 与执行共用清单，[可编辑流程图](../lab_workflows/experiment_modules/mx_z_optimal_control_xyz_balance/workflow.excalidraw)可从运行页下载。
 
 ## 安全结束状态
 

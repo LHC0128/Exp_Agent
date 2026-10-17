@@ -283,10 +283,6 @@ def configure_mx_z_optimal_control_workpoint(
         devices.get("tec"),
         params.temperature_c,
         channel=1,
-        tolerance_c=params.temperature_tolerance_c,
-        stable_reads=params.temperature_stable_reads,
-        poll_interval_s=params.temperature_poll_interval_s,
-        timeout_s=params.temperature_timeout_s,
         cancellation=cancellation,
         stability_waiter=temperature_stability_waiter,
     )

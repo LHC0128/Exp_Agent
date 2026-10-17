@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,6 +12,8 @@ from .devices import create_lockin
 from .lockin_control import read_outputs, apply_settings as apply_lockin_settings, capture as capture_lockin
 from sds_acquisition import SDSInstrument
 from tec_controller import TECInstrument
+
+from signal_generator.types import normalize_output_load
 
 from .common import load_safety_limits, validate_safety_limit
 from .devices import (
@@ -739,13 +742,49 @@ def read_device(device_id: str) -> dict[str, Any]:
         instrument.disconnect()
 
 
+def _generator_amplitude_vpp(settings: dict[str, Any]) -> float:
+    """将幅度换算为 Vpp；偏置不参与交流幅度单位换算。"""
+    unit = str(settings.get("voltage_unit") or "").strip().upper()
+    if unit not in {"VPP", "VRMS", "DBM"}:
+        raise ValueError("幅度单位未知，请先切换为 Vpp 并重新读取")
+    if settings.get("amplitude") is None:
+        raise ValueError("幅度回读不可用，请重新读取")
+    value = float(settings["amplitude"])
+    if not math.isfinite(value) or (unit != "DBM" and value < 0):
+        raise ValueError("幅度必须是有限数值，Vpp/Vrms 不得为负")
+    if unit == "VPP":
+        return value
+    # ponytail: 不估算脉冲边沿或任意波的 RMS；读取实际波形后再开放换算。
+    factors = {"SINusoid": math.sqrt(8), "SQUare": 2.0, "RAMP": math.sqrt(12)}
+    shape = _canonical_shape(str(settings.get("shape") or ""))
+    if shape not in factors:
+        raise ValueError("当前波形仅支持 Vpp；Vrms/dBm 支持正弦、方波和斜波")
+    if unit == "DBM":
+        load = settings.get("load")
+        if load is None or normalize_output_load(load) == "INF":
+            raise ValueError("dBm 需要明确的数值负载，不能使用高阻或未知负载")
+        try:
+            value = math.sqrt(float(load) / 1000) * 10 ** (value / 20)
+        except OverflowError as exc:
+            raise ValueError("dBm 换算后的电压超出范围") from exc
+    value *= factors[shape]
+    if not math.isfinite(value):
+        raise ValueError("换算后的幅度必须是有限数值")
+    return value
+
+
 def _validate_generator_output(mapping_key: str, settings: dict[str, Any]) -> None:
     limits = load_safety_limits()
     if "dc_voltage" in settings:
-        validate_safety_limit(mapping_key, float(settings["dc_voltage"]), limits)
+        voltage = float(settings["dc_voltage"])
+        if not math.isfinite(voltage):
+            raise ValueError("DC 电压必须是有限数值")
+        validate_safety_limit(mapping_key, voltage, limits)
         return
-    offset = float(settings.get("offset") or 0.0)
-    amplitude = abs(float(settings.get("amplitude") or 0.0))
+    offset = float(settings["offset"])
+    amplitude = float(settings["amplitude"])
+    if not math.isfinite(offset) or not math.isfinite(amplitude):
+        raise ValueError("偏置和幅度必须是有限数值")
     validate_safety_limit(mapping_key, offset, limits)
     validate_safety_limit(mapping_key, offset - amplitude / 2, limits)
     validate_safety_limit(mapping_key, offset + amplitude / 2, limits)
@@ -755,6 +794,10 @@ def _apply_basic_waveform(instrument, device_type: str, channel: int,
                           settings: dict[str, Any]) -> None:
     shape = settings.get("shape")
     is_dc = str(shape).upper() == "DC"
+    # 所有幅度写入均已按 Vpp 校验，先统一单位和负载，最后恢复显示单位。
+    instrument.set_voltage_unit("VPP", channel)
+    if settings.get("load") is not None:
+        instrument.set_output_load(normalize_output_load(settings["load"]), channel)
     if shape:
         if is_dc:
             # DC 波形只有偏置电压有效。DG900 用 :APPLy:DC 一键配置；
@@ -793,12 +836,6 @@ def _apply_basic_waveform(instrument, device_type: str, channel: int,
             setter(float(settings[key]), channel)
     if settings.get("voltage_unit"):
         instrument.set_voltage_unit(settings["voltage_unit"], channel)
-    if settings.get("load") is not None:
-        load = settings["load"]
-        instrument.set_output_load(
-            "INF" if str(load).upper().startswith("INF") else float(load),
-            channel,
-        )
     if is_dc and device_type == "DG4000":
         instrument.set_shape("DC", channel)
         instrument.set_dc_voltage(dc_voltage, channel)
@@ -910,80 +947,14 @@ def apply_generator_channel(
         raise ValueError(
             f"{mapping_key} 未绑定到设备 {device_id} CH{channel_number}"
         )
-    _validate_generator_output(mapping_key, settings)
-
     instrument = _connect(record)
     try:
         try:
-            if record.type == "DG900":
-                instrument.clear_status()
-
-            dg4000_dc = (
-                record.type == "DG4000"
-                and str(settings.get("shape")).upper() == "DC"
+            _apply_generator_connected(
+                {"mapping_key": mapping_key},
+                replace(record, channels=[channel]),
+                instrument, dict(settings),
             )
-            if not dg4000_dc:
-                _apply_basic_waveform(instrument, record.type, channel_number, settings)
-
-            mod = dict(settings.get("mod") or {})
-            burst = dict(settings.get("burst") or {})
-            if mod and burst and mod.get("enabled") and burst.get("enabled"):
-                target = settings.get("target_mode")
-                if target == "mod":
-                    burst["enabled"] = False
-                elif target == "burst":
-                    mod["enabled"] = False
-                else:
-                    raise ValueError("Mod 与 Burst 不能同时启用")
-
-            if mod or burst:
-                if record.type == "DG900":
-                    if burst.get("enabled"):
-                        instrument.disable_all_mod(channel_number)
-                        _apply_burst(instrument, channel_number, burst)
-                        instrument.set_burst_state(True, channel_number)
-                    elif mod.get("enabled"):
-                        instrument.set_burst_state(False, channel_number)
-                        instrument.disable_all_mod(channel_number)
-                        if (mod.get("type") or "AM") == "PWM" and not str(
-                                settings.get("shape", "")).upper().startswith("PULS"):
-                            raise ValueError("PWM 调制要求基础波形为 PULSe")
-                        _apply_modulation(
-                            instrument, record.type, channel_number, mod
-                        )
-                        instrument.set_mod_type_state(
-                            mod.get("type") or "AM", True, channel_number
-                        )
-                    else:
-                        instrument.set_burst_state(False, channel_number)
-                        instrument.disable_all_mod(channel_number)
-                else:
-                    if burst.get("enabled"):
-                        instrument.set_mod_state(False, channel_number)
-                        _apply_burst(instrument, channel_number, burst)
-                        instrument.set_burst_state(True, channel_number)
-                    elif mod.get("enabled"):
-                        instrument.set_burst_state(False, channel_number)
-                        if (mod.get("type") or "AM") == "PWM" and not str(
-                                settings.get("shape", "")).upper().startswith("PULS"):
-                            raise ValueError("PWM 调制要求基础波形为 PULSe")
-                        _apply_modulation(
-                            instrument, record.type, channel_number, mod
-                        )
-                        instrument.set_mod_state(True, channel_number)
-                    else:
-                        instrument.set_burst_state(False, channel_number)
-                        instrument.set_mod_state(False, channel_number)
-
-            if dg4000_dc:
-                # DC 选择会关闭 Mod/Burst；电平设置后只操作输出开关。
-                _apply_basic_waveform(instrument, record.type, channel_number, settings)
-            if "output" in settings:
-                instrument.set_output(bool(settings["output"]), channel_number)
-
-            if record.type == "DG900":
-                instrument.wait_for_operation_complete()
-                instrument.raise_for_errors()
         except Exception:
             rule = load_safety_limits().get(mapping_key, {})
             if rule.get("output_off_on_error"):
@@ -1747,22 +1718,34 @@ def _apply_generator_connected(
 ) -> None:
     channel = record.channels[0].number
     current = _read_generator_channel(instrument, record.type, record.channels[0])
-    current_unit = str(current.get("voltage_unit") or "").upper()
-    requested_unit = str(settings.get("voltage_unit") or current_unit).upper()
-    only_turning_off = settings.get("output") is False and set(settings) <= {"output"}
-    only_switching_vpp = requested_unit == "VPP" and set(settings) <= {"voltage_unit"}
-    if current_unit != "VPP" and not (only_turning_off or only_switching_vpp):
-        raise ValueError("当前电压单位不是 Vpp；只能关闭输出，或先切换为 Vpp 并重新读取")
-    if current_unit == "VPP" and requested_unit not in {"", "VPP"}:
-        raise ValueError("控制页写入必须保持 Vpp；切换到其他电压单位不受支持")
-    if not only_turning_off and not only_switching_vpp:
-        merged = {
-            "offset": settings.get("offset", current.get("offset")),
-            "amplitude": settings.get("amplitude", current.get("amplitude")),
-        }
-        if str(settings.get("shape", current.get("shape", ""))).upper() == "DC":
-            merged["amplitude"] = 0.0
-        _validate_generator_output(target["mapping_key"], merged)
+    settings = {key: value for key, value in settings.items() if value is not None}
+    only_turning_off = settings == {"output": False}
+    if not only_turning_off:
+        unit = str(settings.get("voltage_unit") or current.get("voltage_unit") or "").strip().upper()
+        if unit not in {"VPP", "VRMS", "DBM"}:
+            raise ValueError("幅度单位未知，请先切换为 Vpp 并重新读取")
+        merged = {**current, **settings, "voltage_unit": unit}
+        is_dc = str(merged.get("shape")).upper() == "DC"
+        if is_dc:
+            unit = "VPP"
+        if unit != "VPP":
+            _generator_amplitude_vpp({**merged, "amplitude": 0.0})
+        if set(settings) - {"voltage_unit"}:
+            amplitude = 0.0 if is_dc else _generator_amplitude_vpp(
+                merged if "amplitude" in settings else current
+            )
+            if merged.get("offset") is None:
+                raise ValueError("偏置回读不可用，请重新读取")
+            _validate_generator_output(
+                target["mapping_key"], {"offset": merged["offset"], "amplitude": amplitude}
+            )
+            if "amplitude" in settings or "load" in settings:
+                settings["amplitude"] = amplitude
+            if is_dc:
+                settings["shape"] = "DC"
+        if merged.get("load") is not None:
+            normalize_output_load(merged["load"])
+        settings["voltage_unit"] = unit
 
     if record.type == "DG900":
         instrument.clear_status()
@@ -1770,7 +1753,7 @@ def _apply_generator_connected(
         record.type == "DG4000"
         and str(settings.get("shape")).upper() == "DC"
     )
-    if not dg4000_dc:
+    if not dg4000_dc and not only_turning_off:
         _apply_basic_waveform(instrument, record.type, channel, settings)
     mod = dict(settings.get("mod") or {})
     burst = dict(settings.get("burst") or {})

@@ -37,7 +37,9 @@ def _preflight(values: dict[str, object]) -> list[str]:
 DEFINITION = ExperimentDefinition(
     id="scope-capture", title="示波器采集", category="measurement",
     family="scope", variant="single-channel",
-    description=("单通道时域采集与软件 PSD，支持历史波形比较。" + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
+    description=("单通道时域采集与固定 Welch PSD，运行页按依赖分步执行，历史波形可叠加比较。"
+                 "节点内编辑参数，应用后显式重跑新目录；可选 Temp_Switch 门控，"
+                 "按 SYSTEM_SETTLE_S 稳定，完整帧恢复温控后原子保存，独立分析绑定具体目录。"),
     data_type="Scope_Capture", required_devices=("SDS",),
     required_mapping_keys=("scope_waveform",), execution_mode="typed_workflow",
     acquisition_program="experiments/Scope_Capture.py",

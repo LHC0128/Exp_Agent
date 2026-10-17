@@ -2,6 +2,7 @@
 
 from ...experiments.contracts import ExperimentDefinition
 from ...experiments.typed import TypedWorkflowAdapter
+from ...experiments.requirements import OPTIMAL_CONTROL
 from .models import MxZOptimalControlXYLeakageParams
 
 
@@ -20,10 +21,15 @@ DEFINITION = ExperimentDefinition(
     family="field-response",
     variant="mx-z-optimal-control-xy-direct-aw",
     description=(
-        ('保持 Z 最优控制，二维扫描同形 X/Y 触发任意波的带符号幅度，记录 锁相放大器 Demod0 R 并报告实测网格最小点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
+        "保持 Z 最优控制，蛇形扫描同形 X/Y 触发任意波的带符号幅度，采集 Demod0 R，按原重试门槛选择实测网格最小点。"
+        "运行/历史双 Tab 提供 7 个采集及 3 个独立分析节点；顶部保存、预检与完整运行，节点内编辑共享参数，应用草稿后显式重跑。"
+        "控制来源冻结并校验内容，分析绑定明确目录且无额外覆盖值；保留原热图、历史参数与下载。"
+        "配置后关闭温控、按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后写盘；TEC 只写 UI 目标。"
+        "锁相按设备库选择 HF2/MFLI 和 DAQ/Scope，输入保持高阻、DC 耦合。结束恢复 GS200 原态，保持 Z/XY 与共同触发当前状态。"
     ),
     data_type="Mx_Z_Optimal_Control_XY_Leakage_Response",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
+    required_mapping_keys=OPTIMAL_CONTROL,
     execution_mode="typed_workflow",
     acquisition_program=(
         "experiments/Mx_Z_Optimal_Control_XY_Leakage_Response.py"

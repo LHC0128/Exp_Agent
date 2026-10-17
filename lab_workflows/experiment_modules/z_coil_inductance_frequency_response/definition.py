@@ -20,8 +20,9 @@ DEFINITION = ExperimentDefinition(
     family="field-response",
     variant="scope-sine-sweep",
     description=(
-        "使用固定幅度的 Z 方向正弦驱动和 SDS 双通道采集，比较理想 DG 设定值"
-        "与 Z 线圈端电压的幅值、相位和波形差异。"
+        "固定幅度正弦线性扫频，以 SDS CH3/CH4 比较理想 DG 设定值与线圈端电压。"
+        "运行页在节点内编辑参数，提供依赖检查、显式重跑、无前置安全结束和独立分步分析；"
+        "历史记录保留当轮参数、频响图与模型诊断，不从单一端电压反演唯一电感。"
     ),
     data_type="Z_Coil_Inductance_Frequency_Response",
     required_devices=("DG4000", "SDS"),

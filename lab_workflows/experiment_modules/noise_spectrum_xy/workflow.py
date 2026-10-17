@@ -52,6 +52,7 @@ class Workflow:
         self.connection = None
         self.clock_sources = {}
         self.calibrated_phase = None
+        self.phase_parameters = None
         self.xy_result = None
         self.daq_settings = None
         self.demod_mode = "unknown"
@@ -175,6 +176,7 @@ class Workflow:
         elif item == "A08":
             self.calibrated_phase = calibrate_hf2_phase(self.devices["hf2"], self.devices["dg_comp"],
                 self.devices["dg_temp"], self.params, self.limits)
+            self.phase_parameters = self.params
             self.demod_mode = "phase"
             self.outputs.update(X="OFF", Y="OFF", 温控="ON")
         elif item == "A09":
@@ -222,7 +224,7 @@ class Workflow:
         errors = []
         if failure is None and self.demod_mode == "daq" and self.calibrated_phase is not None:
             try:
-                acquisition.restore_demod(self.devices, self.params, self.calibrated_phase)
+                acquisition.restore_demod(self.devices, self.phase_parameters or self.params, self.calibrated_phase)
                 self.demod_mode = "phase"
             except Exception as exc:
                 errors.append(str(exc))

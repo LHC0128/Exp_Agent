@@ -19,7 +19,10 @@ DEFINITION = ExperimentDefinition(
     category="verification",
     family="hardware-chain",
     variant="optimal-control-current-sense",
-    description="比较最优控制目标电流与采样电阻实测电流的波形、延迟和频谱误差。",
+    description=("比较理论或闭环冻结目标电流与 CH3 采样电阻实测电流，报告延迟、形状、增益、频谱、重复性和饱和诊断。"
+        "运行/历史双 Tab 提供 6 个采集、3 个独立分析节点；参数在节点内编辑，保存、预检与完整运行位于流程顶部。"
+        "应用草稿后显式重跑，来源按内容哈希冻结；历史分析绑定明确目录，无额外覆盖参数。"
+        "结束时停止 SDS、关闭 Z 输出并保持共同触发当前状态。"),
     data_type="Z_AW_Current_Waveform_Scope_Check",
     required_devices=("DG4000", "SDS"),
     required_mapping_keys=("Z_magnetic_field", "Time_sequence_2", "scope_waveform"),

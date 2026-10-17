@@ -20,7 +20,13 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-z-optimal-control",
     description=(
-        ('按配置启停 GS200 主场，并叠加 Z 向周期最优控制；以 X DC 和 Y RF 偏置平衡 XY 剩磁场；校相幅度非零时测量 RF 灵敏度，校相幅度为零时保持 Y DC 补偿并扫描 Z 控制相位。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
+        '按配置启停 GS200 主场，叠加冻结的 Z 周期最优控制，以 X DC 和 Y RF 偏置补偿 XY 剩磁场。'
+        '非零校相幅度执行 180° 成对 R/X/Y 校相、带符号幅度响应及 R 噪声灵敏度；零幅度仅扫描 Z 控制相位并保留弱响应诊断。'
+        '运行/历史双 Tab 中使用可勾选流程、节点参数与统一保存/预检；共享参数同步编辑，草稿应用后显式重跑。'
+        '独立分析绑定具体目录且无额外覆盖参数，保留原科学图与历史下载。'
+        '锁相按设备库选择并检查兼容性，输入保持高阻和 DC 耦合，DAQ/Scope 按最终实际率计算。'
+        '配置后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存、恢复温控后保存；TEC 只下发 UI 目标。'
+        '安全结束关闭横向场、恢复 GS200 原态，保持 Z 最优控制与共同触发。'
     ),
     data_type="Mx_Z_Optimal_Control_RF_Sensitivity",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

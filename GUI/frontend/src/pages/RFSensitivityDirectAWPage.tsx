@@ -82,7 +82,7 @@ function Result({ value }: { value: Summary }) {
       </figure> : null;
     })}
     <details><summary>全部结果图</summary>{["response_curve.png", "noise_psd.png", "sensitivity.png"].filter(name => value.artifacts[name]).map(name => <figure className="zaw-figure" key={name}><figcaption>{name}</figcaption><img src={value.artifacts[name]} alt={name} /></figure>)}</details>
-    <p>{Object.entries(value.artifacts).filter(([name]) => !name.startsWith("controls/") && /\.(npz|json|yaml|pdf)$/.test(name)).map(([name, url]) => <a key={name} href={url} download style={{ marginRight: 12 }}>{name}</a>)}</p>
+    <p className="xy-artifact-links">{Object.entries(value.artifacts).filter(([name]) => !name.startsWith("controls/") && /\.(npz|json|yaml|pdf)$/.test(name)).map(([name, url]) => <a key={name} href={url} download>{name}</a>)}</p>
     <details><summary>校相与安全收尾诊断</summary><pre>{JSON.stringify({ xy_phase_calibration: value.xy_phase_calibration, safety_shutdown: value.safety_shutdown }, null, 2)}</pre></details>
     <details><summary>实际采样率与锁相回读</summary><pre>{JSON.stringify({ actual_rates: value.actual_rates, stage_frequencies: value.stage_frequencies, response: value.hf2_response_snapshot, calibration: value.hf2_calibration_snapshot, noise: value.hf2_noise_snapshot }, null, 2)}</pre></details>
   </div>;

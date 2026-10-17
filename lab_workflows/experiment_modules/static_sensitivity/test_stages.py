@@ -170,6 +170,7 @@ def fake_session_main():
     os.environ["LAB_TYPED_PARAMETERS"]=json.dumps(payload)
     with fake_rig(Path(os.environ["STATIC_TEST_ROOT"]),load_runtime_params(StaticSensitivityParams)) as rig:
         rig.block_noise=os.environ.get("STATIC_TEST_BLOCK_NOISE")=="1"
+        rig.block_shutdown=os.environ.get("STATIC_TEST_BLOCK_SHUTDOWN")=="1"
         from . import session
         # 执行正式入口，只有仪器实现被夹具替换。
         os.environ["LAB_TYPED_PARAMETERS"]=json.dumps(payload|{"session_id":session_id})
@@ -198,6 +199,47 @@ def test_analysis_parameter_edit_does_not_start_empty_round_on_restore(rig):
     assert config["completion_status"]=="completed"
     assert config["parameters"]["z_v_to_nt"]==rig.params.z_v_to_nt
     ctx.finish()
+
+
+def test_applied_but_not_rerun_parameters_preserve_pump_and_restore_snapshot(rig):
+    ctx=workflow.Workflow(rig.params)
+    ctx.execute(through("A08"))
+    original_parameters=yaml.safe_load(ctx.directory.config_path.read_text(encoding="utf-8"))["parameters"]
+    nodes=dict(rig.hf2.nodes)
+    before=list(rig.events)
+    ctx.update_parameters({"pump_mod_freq":95000.,"hf2_demod_idx":2,"hf2_demod_tc":.2})
+    assert rig.events==before and rig.hf2.nodes==nodes
+    assert ctx.states["A06"]["status"]=="stale"
+    assert ctx.states["A07"]["status"]=="stale"
+    pump_endpoints={(rig.mapping[key]["resource"],rig.mapping[key]["channel"]) for key in ("Pump_modulation","Time_sequence")}
+    ctx.finish()
+    assert not [event for event in rig.events[len(before):] if (event[0],event[2]) in pump_endpoints]
+    assert rig.hf2.get_double(rig.hf2.demod_path(rig.params.hf2_demod_idx)+"/timeconstant")==rig.params.hf2_demod_tc
+    assert rig.hf2.get_double(rig.hf2.demod_path(2)+"/timeconstant")==nodes.get(rig.hf2.demod_path(2)+"/timeconstant",0.)
+    assert yaml.safe_load(ctx.directory.config_path.read_text(encoding="utf-8"))["parameters"]==original_parameters
+
+
+def test_finish_without_predecessors_and_acquisition_quality_blocks_successors(rig):
+    empty=workflow.Workflow(rig.params)
+    empty.execute([FINISH_ID])
+    assert empty.closed and empty.directory is None and not rig.events
+    ctx=workflow.Workflow(rig.params)
+    ctx.execute(through("A08"))
+    rig.fault=ValueError("真实采集质量失败")
+    with pytest.raises(ValueError,match="真实采集质量失败"):
+        ctx.execute(["A09"])
+    assert ctx.states["A09"]["status"]=="quality_failed"
+    with pytest.raises(ValueError,match="缺少前置"):
+        ctx.execute(["A10"])
+    ctx.finish()
+
+
+def test_noise_stage_only_exposes_waits_used_by_noise():
+    noise=next(stage for stage in definition()["acquisition"] if stage["id"]=="A11")
+    assert "SYSTEM_SETTLE_S" in noise["display_parameters"]
+    assert "dispersion_temp_switch_on_settle_s" not in noise["display_parameters"]
+    gates={stage["id"]:stage["quality_gates"] for stage in definition()["acquisition"]+definition()["analysis"]}
+    assert gates["A09"] and gates["B02"] and gates["B04"]
 
 
 if __name__=="__main__":

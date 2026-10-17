@@ -1,290 +1,326 @@
-"""Mx Y RF 灵敏度长飘采集工作流。"""
-
-from __future__ import annotations
-
-from lab_workflows.lockin_compatibility import require_lockin_compatibility
-import time
-from datetime import datetime, timezone
+"""长飘完整与分步采集共用的编排；单轮采集复用标准 Mx Y RF。"""
+from copy import deepcopy
 from pathlib import Path
-from typing import Any
-
-import yaml
-
-from ...common import WorkflowCancelled, find_project_root, load_mapping
-from ...experiment_runtime import check_cancelled, load_runtime_params
-from ...steps import DeviceSession, create_run_directory
-from ...steps.run_finish import finalize_run_safety
+from uuid import uuid4
+import time
+from ...common import WorkflowCancelled, find_project_root
+from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
+from ...instrument_config import instrument_config_snapshot
+from ...steps import DeviceSession, create_run_directory, disconnect_device_mapping
+from ..noise_spectrum_xy.state_io import read_state, write_state
 from ..mx_y_rf_sensitivity.analysis import analyze as analyze_single
-from ..mx_y_rf_sensitivity.models import MxYRFParams
 from ..mx_y_rf_sensitivity.workflow import (
-    RPointQualityError,
-    acquire_mx_y_rf_point,
-    configure_mx_y_rf_outputs,
-    connect_mx_y_rf_devices,
-    safe_shutdown,
-    snapshot_mx_y_rf_state,
+    RPointQualityError, acquire_mx_y_rf_point, configure_mx_y_rf_outputs,
+    connect_mx_y_rf_devices, safe_shutdown, snapshot_mx_y_rf_state,
 )
+from . import acquisition, preparation, run_format, scheduling
 from .analysis import refresh_trend
 from .models import MxYRFDriftParams
+from .scheduling import _planned_records, _child_parameters, _set_record_error, _utc_now, _write_manifest
+from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, validate_selection
 
-
-EXPERIMENT_ID = "mx-y-rf-sensitivity-drift"
-DATA_TYPE = "Mx_Y_RF_Sensitivity_Drift"
-CHILD_DATA_TYPE = "Mx_Y_RF_Sensitivity"
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
+DATA_TYPE = run_format.DATA_TYPE
+CHILD_DATA_TYPE = run_format.CHILD_DATA_TYPE
 EXECUTION_MODE = "typed_workflow"
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _sleep_until(deadline):
+    return scheduling._sleep_until(deadline, clock=time.monotonic, sleep=time.sleep)
 
 
-def _write_manifest(path: Path, records: list[dict[str, Any]]) -> None:
-    payload = {"schema_version": 1, "records": records}
-    content = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(content, encoding="utf-8")
-    try:
-        temporary.replace(path)
-    except PermissionError:
-        path.write_text(content, encoding="utf-8")
-        temporary.unlink(missing_ok=True)
-
-
-def _planned_records(params: MxYRFDriftParams) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
-    first_offset = 0.0 if params.drift_start_immediately else params.drift_interval_s
-    for index in range(params.planned_cycle_count):
-        records.append(
-            {
-                "cycle_index": index,
-                "scheduled_offset_s": first_offset + index * params.drift_interval_s,
-                "status": "pending",
-                "child_run_dir": None,
-                "actual_start_utc": None,
-                "start_lag_s": None,
-                "analysis": None,
-                "error": None,
-            }
-        )
-    return records
-
-
-def _child_parameters(params: MxYRFDriftParams) -> dict[str, Any]:
-    names = set(MxYRFParams.external_names())
-    return {key: value for key, value in params.to_external().items() if key in names}
-
-
-def _set_record_error(record: dict[str, Any], status: str, error: Exception) -> None:
-    record["status"] = status
-    record["error"] = str(error)
-
-
-def _sleep_until(deadline: float) -> None:
-    while True:
-        check_cancelled()
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return
-        time.sleep(min(0.1, remaining))
-
-
-def _refresh_safely(parent_root: Path) -> None:
+def _refresh_safely(parent_root):
     try:
         refresh_trend(parent_root)
     except Exception as exc:
         print(f"长飘趋势更新失败，后续轮次继续: {exc}")
 
 
-def run(params: MxYRFDriftParams) -> Path:
-    root = find_project_root()
-    mapping = load_mapping(root)
-    require_lockin_compatibility('mx-y-rf-sensitivity-drift', params.to_external(), mapping=mapping)
-    parent = create_run_directory(
-        DATA_TYPE,
-        params.run_tag,
-        params.to_external(),
-        schema_version=params.schema_version,
-        project_root=root,
-    )
-    manifest_path = parent.raw / "drift_manifest.yaml"
-    records = _planned_records(params)
-    _write_manifest(manifest_path, records)
-    parent.update_config(
-        experiment_id=EXPERIMENT_ID,
-        data_type=DATA_TYPE,
-        execution_mode=EXECUTION_MODE,
-        scan_mode="repeated_measurement",
-        interval_s=params.drift_interval_s,
-        duration_s=params.drift_duration_s,
-        planned_cycle_count=len(records),
-        child_experiment_id="mx-y-rf-sensitivity",
-        manifest="raw/drift_manifest.yaml",
-    )
+class Workflow:
+    stages = ACQUISITION
 
-    session = DeviceSession()
-    devices: dict[str, Any] = {}
-    channels: dict[str, int] = {}
-    completion_status = "failed"
-    failure_reason: str | None = None
-    try:
-        check_cancelled()
-        try:
-            devices, channels = connect_mx_y_rf_devices(mapping, session)
-        except Exception:
-            session.cleanup_connection_failure()
-            raise
-        parent.update_config(device_snapshot=snapshot_mx_y_rf_state(devices, channels))
-        actual_response_rate, clock_sources = configure_mx_y_rf_outputs(
-            params, devices, channels, mapping
-        )
-        parent.update_config(clock_sources=clock_sources)
-        device_id = str(mapping["lockin_r"]["device_id"])
-        start_mono = time.monotonic()
+    def __init__(self, params, *, project_root=None, session_id=None):
+        self.root = Path(project_root).resolve() if project_root else find_project_root()
+        self.params, self.mapping = preparation.preflight(params, self.root)
+        self.pump_parameters = self.response_parameters = self.params
+        self.config_revision = self._configuration_revision()
+        self.session_id, self.revision = session_id or uuid4().hex, 0
+        self.states = initial_states(self.stages)
+        self.devices, self.channels = {}, {}
+        self.device_session = DeviceSession()
+        self.directory = self.run_parameters = self.current_step = None
+        self.closed = self.round_sealed = self.clock_failed = False
+        self.response_attempted = False
+        self.demod_mode = "unknown"
+        self.records = []
+        self.state = self._initial_state()
+        self.outputs = {key: "未知" for key in ("X", "Y RF", "Z", "温控", "Pump")}
 
-        for record in records:
-            check_cancelled()
-            deadline = start_mono + float(record["scheduled_offset_s"])
-            _sleep_until(deadline)
-            check_cancelled()
-            actual_start = time.monotonic()
-            record["actual_start_utc"] = _utc_now()
-            record["start_lag_s"] = max(0.0, actual_start - deadline)
-            record["status"] = "running"
-            child = create_run_directory(
-                CHILD_DATA_TYPE,
-                f"{params.run_tag}_cycle_{record['cycle_index']:03d}",
-                _child_parameters(params),
-                schema_version=2,
-                project_root=root,
-            )
-            record["child_run_dir"] = str(child.root)
-            child.update_config(
-                experiment_id="mx-y-rf-sensitivity",
-                data_type=CHILD_DATA_TYPE,
-                execution_mode=EXECUTION_MODE,
-                parent_experiment_id=EXPERIMENT_ID,
-                parent_run_dir=str(parent.root),
-                drift_cycle_index=record["cycle_index"],
-                scheduled_offset_s=record["scheduled_offset_s"],
-                actual_start_utc=record["actual_start_utc"],
-                geometry={
-                    "main_field": "Z",
-                    "pump": "Z",
-                    "probe": "X",
-                    "rf_field": "Y",
-                    "x_field_output": "OFF",
-                },
-                linewidth_mode=params.linewidth_mode,
-                compatibility={
-                    "stable_data_type": CHILD_DATA_TYPE,
-                    "schema_version": 2,
-                },
-                acquisition_signals=["R"],
-                r_point_quality={
-                    "criterion": "std(R) <= threshold",
-                    "std_threshold_v": params.r_bad_point_std_threshold_v,
-                    "max_attempts": params.r_point_max_attempts,
-                },
-            )
-            _write_manifest(manifest_path, records)
-            _refresh_safely(parent.root)
+    @property
+    def manifest_path(self):
+        return self.directory.root / run_format.MANIFEST
+
+    def _initial_state(self):
+        return dict(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, execution_mode=EXECUTION_MODE,
+            raw_format_version=run_format.RAW_FORMAT_VERSION, scan_mode="repeated_measurement",
+            completion_status="running", child_experiment_id=run_format.CHILD_EXPERIMENT_ID,
+            manifest=run_format.MANIFEST, interval_s=self.params.drift_interval_s,
+            duration_s=self.params.drift_duration_s, planned_cycle_count=self.params.planned_cycle_count)
+
+    def _configuration_revision(self):
+        snapshot = instrument_config_snapshot(self.root)
+        return (snapshot["device_library_revision"], snapshot["physical_mapping_revision"],
+            (self.root / "params/safety_limits.yaml").read_bytes())
+
+    def recheck(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请结束会话后重新连接")
+        self.params, self.mapping = preparation.preflight(self.params, self.root)
+
+    def snapshot(self):
+        return dict(session_id=self.session_id, revision=self.revision,
+            status="closed" if self.closed else "running" if self.current_step else "waiting",
+            parameters=self.params.to_external(), steps=deepcopy(self.states), current_step=self.current_step,
+            run_id=self.directory.root.name if self.directory else None, outputs=dict(self.outputs),
+            output_source="最近成功模块的写入结果；初态来自回读，后续未额外回读",
+            demod_mode=self.demod_mode, safety_shutdown=self.state.get("safety_shutdown"),
+            clock_sources=self.state.get("clock_sources", {}), daq_settings=self.state.get("actual_rates"),
+            drift_records=deepcopy(self.records))
+
+    def publish(self, message="等待选择下一模块"):
+        snapshot = self.snapshot()
+        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        if self.directory and not self.round_sealed:
+            write_state(self.directory.root / "acquisition_state.json", snapshot)
+        elif self.directory and self.closed:
+            path = self.directory.root / "acquisition_state.json"
+            sealed = read_state(path)
+            if sealed is None:
+                raise RuntimeError("封存运行缺少已执行阶段快照")
+            # 结束仅补充收尾状态；已封存参数和执行记录不随下一轮草稿改写。
+            sealed.update(status="closed", current_step=None, revision=self.revision,
+                outputs=dict(self.outputs), safety_shutdown=self.state.get("safety_shutdown"))
+            sealed["steps"][FINISH_ID] = deepcopy(self.states[FINISH_ID])
+            write_state(path, sealed)
+        report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": snapshot})
+
+    def save(self):
+        if self.directory and not self.round_sealed:
+            self.directory.update_config(**self.state)
+
+    def update_parameters(self, values):
+        if self.current_step:
+            raise ValueError("模块执行中不能应用参数")
+        self.recheck()
+        old = self.params.to_external()
+        if unknown := values.keys() - old.keys():
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        params, mapping = preparation.preflight(MxYRFDriftParams.from_external(old | values), self.root)
+        changed = {key for key, value in params.to_external().items() if value != old[key]}
+        for stage in self.stages:
+            if changed.intersection(stage.parameters):
+                invalidate(self.stages, self.states, stage.id)
+        self.params, self.mapping = params, mapping
+        self.revision += 1
+        self.publish("参数已应用；请显式重跑受影响模块")
+
+    def _new_directory(self):
+        previous, inherited = self.directory, deepcopy(self.state)
+        if previous and not self.round_sealed:
+            self.state.update(completion_status="failed", failure_reason="本轮被重跑替代，保留已有数据")
+            self.save()
+        suffix = 0
+        while True:
             try:
-                point = acquire_mx_y_rf_point(
-                    params,
-                    child.raw,
-                    devices,
-                    channels,
-                    actual_response_rate,
-                    device_id,
-                    results_dir=child.results,
-                )
-                actual_response_rate = float(point["actual_response_rate_sa_s"])
-                child.update_config(
-                    completion_status="completed",
-                    actual_rates={
-                        "response_sa_s": actual_response_rate,
-                        "noise_sa_s": float(point["actual_noise_rate_sa_s"]),
-                    },
-                    frequency_gate_fit=point["frequency_gate_fit"],
-                    data_files=[
-                        "raw/amplitude_scan.npz",
-                        *[
-                            f"raw/noise_{index:03d}.npz"
-                            for index in range(params.noise_n_avg)
-                        ],
-                    ],
-                )
-            except RPointQualityError as exc:
-                _set_record_error(record, "invalid_quality", exc)
-                child.update_config(
-                    completion_status="invalid_quality",
-                    failure_reason=str(exc),
-                )
-                _write_manifest(manifest_path, records)
-                _refresh_safely(parent.root)
-                continue
-            except Exception as exc:
-                _set_record_error(record, "acquisition_failed", exc)
-                child.update_config(
-                    completion_status="failed",
-                    failure_reason=str(exc),
-                )
-                _write_manifest(manifest_path, records)
-                _refresh_safely(parent.root)
+                tag = self.params.run_tag + (f"_{suffix:02d}" if suffix else "")
+                self.directory = create_run_directory(DATA_TYPE, tag, self.params.to_external(),
+                    schema_version=self.params.schema_version, project_root=self.root)
+                break
+            except FileExistsError:
+                suffix += 1
+        self.round_sealed = False
+        self.run_parameters = self.params.to_external()
+        self.state = self._initial_state()
+        for key in ("device_snapshot", "clock_sources", "temperature_control", "actual_rates"):
+            if key in inherited:
+                self.state[key] = inherited[key]
+        if previous:
+            self.state["source_run_id"] = previous.root.name
+        self.records = _planned_records(self.params)
+        _write_manifest(self.manifest_path, self.records)
+        self.save()
+
+    def execute(self, selected):
+        if self.current_step:
+            raise ValueError("已有模块正在执行")
+        selected = validate_selection(self.stages, self.states, selected)
+        if selected != [FINISH_ID]:
+            self.recheck()
+        hardware = [item for item in selected if item not in ("A01", "A10", FINISH_ID)]
+        if hardware and (self.directory is None or self.round_sealed or self.run_parameters != self.params.to_external()
+                or "A09" in hardware and self.states["A09"]["status"] != "pending"):
+            self._new_directory()
+        self.revision += 1
+        for item in selected:
+            if item == FINISH_ID:
+                self.finish()
+                break
+            check_cancelled()
+            if item != "A01":
+                invalidate(self.stages, self.states, item)
+            self.current_step = item
+            self.states[item] = dict(status="running", error="")
+            failure = None
+            try:
+                self.publish(next(stage.title for stage in self.stages if stage.id == item))
+                self._execute_step(item)
+                stage = next(stage for stage in self.stages if stage.id == item)
+                artifacts = [path.relative_to(self.directory.root).as_posix() for pattern in stage.artifacts
+                    for path in self.directory.root.glob(pattern) if path.is_file()] if self.directory else []
+                self.states[item] = dict(status="completed", error="", artifacts=artifacts)
+            except BaseException as exc:
+                failure = exc
+                self.states[item] = dict(status="failed", error=str(exc))
+                self.state["failure_reason"] = str(exc)
+                try:
+                    self.save()
+                except Exception as save_error:
+                    self.state["state_save_error"] = str(save_error)
                 raise
+            finally:
+                self.current_step = None
+                try:
+                    self.publish(f"{item} {self.states[item]['status']}")
+                except Exception:
+                    if failure is None:
+                        raise
+                if item == "A10" and failure is None:
+                    self.round_sealed = True
+        return self.snapshot()
 
+    def _execute_step(self, item):
+        params, devices, channels = self.params, self.devices, self.channels
+        if item == "A01":
+            self.recheck()
+        elif item == "A02":
+            if not devices:
+                try:
+                    self.devices, self.channels = connect_mx_y_rf_devices(self.mapping, self.device_session)
+                except BaseException:
+                    self.device_session.cleanup_connection_failure()
+                    raise
+            self.state["device_snapshot"] = snapshot_mx_y_rf_state(self.devices, self.channels)
+        elif item == "A03":
             try:
-                result = analyze_single(child.root)
-            except Exception as exc:
-                _set_record_error(record, "analysis_failed", exc)
-                child.update_config(analysis_status="failed", analysis_error=str(exc))
-            else:
-                record["status"] = "completed" if result.get("success") else "invalid"
-                record["analysis"] = None
-                child.update_config(analysis_status="completed")
-            _write_manifest(manifest_path, records)
-            _refresh_safely(parent.root)
+                self.state["clock_sources"] = preparation._configure_reference_clocks(devices, self.mapping)
+                self.clock_failed = False
+            except BaseException:
+                self.clock_failed = True
+                raise
+        elif item == "A04":
+            preparation.configure_initial_outputs(params, devices, channels, self.mapping)
+            self.outputs.update(X="OFF", Z="OFF", **{"Y RF": "OFF", "温控": "ON"})
+        elif item == "A05":
+            status = preparation.configure_temperature_control(devices.get("tec"), params.temperature_c, channel=1)
+            self.state["temperature_control"] = status.to_dict()
+        elif item == "A06":
+            preparation.configure_pump(params, devices, channels)
+            self.pump_parameters = params
+            self.outputs["Pump"] = "ON"
+        elif item == "A07":
+            self.demod_mode = "unknown"
+            self.response_attempted = True
+            rate = preparation.configure_response(params, devices, channels)
+            self.state.setdefault("actual_rates", {})["response_sa_s"] = rate
+            self.response_parameters = params
+            self.demod_mode = "response"
+        elif item == "A08":
+            self.records = _planned_records(params)
+            self.state.update(interval_s=params.drift_interval_s, duration_s=params.drift_duration_s,
+                planned_cycle_count=len(self.records))
+            _write_manifest(self.manifest_path, self.records)
+        elif item == "A09":
+            acquisition.run_cycles(self, acquire=acquire_mx_y_rf_point, analyze=analyze_single,
+                refresh=_refresh_safely, write_manifest=_write_manifest, create_directory=create_run_directory,
+                clock=time.monotonic, utc_now=_utc_now, wait_until=_sleep_until)
+            self.outputs.update(**{"Y RF": "OFF", "温控": "ON"})
+        elif item == "A10":
+            self.state["actual_rates"]["response_sa_s"] = preparation._restore_response_acquisition_state(
+                self.response_parameters, devices, channels)
+            self.demod_mode = "response"
+            report = safe_shutdown(devices, channels, self.pump_parameters, disconnect_tec=False)
+            self.state["safety_shutdown"] = report.to_dict()
+            if not report.completed:
+                raise RuntimeError("安全收尾失败：" + "；".join(report.errors))
+            self.state.update(completion_status="completed", failure_reason=None, completed_utc=_utc_now())
+            invalidate(self.stages, self.states, "A07")
+        self.save()
 
-        completion_status = "completed"
-        parent.update_config(completion_status=completion_status, completed_utc=_utc_now())
-        return parent.root
-    except WorkflowCancelled as exc:
-        failure_reason = str(exc)
-        completion_status = "cancelled"
-        if parent.config_path.exists():
-            parent.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-            )
-        raise
-    except Exception as exc:
-        failure_reason = str(exc)
-        if parent.config_path.exists():
-            parent.update_config(completion_status="failed", failure_reason=failure_reason)
+    def finish(self, failure=None):
+        if self.closed:
+            return
+        errors = []
+        if self.devices:
+            if self.response_attempted and self.demod_mode != "response":
+                try:
+                    preparation._restore_response_acquisition_state(self.response_parameters, self.devices, self.channels)
+                    self.demod_mode = "response"
+                except Exception as exc:
+                    errors.append("响应模式恢复失败：" + str(exc))
+            try:
+                if self.round_sealed:
+                    errors.extend(disconnect_device_mapping({"tec": self.devices.get("tec")}))
+                else:
+                    report = safe_shutdown(self.devices, self.channels, self.pump_parameters)
+                    self.state["safety_shutdown"] = report.to_dict()
+                    errors.extend(report.errors)
+                if self.clock_failed:
+                    errors.extend(disconnect_device_mapping(self.devices))
+            except Exception as exc:
+                errors.append(str(exc))
+        if errors:
+            self.state["safety_shutdown"] = dict(self.state.get("safety_shutdown") or {}, completed=False, errors=errors)
+        if not self.round_sealed and self.directory:
+            reason = str(failure) if failure else self.state.get("failure_reason") or "本轮采集未完整完成"
+            if errors:
+                reason += "；安全恢复失败：" + "；".join(errors)
+            self.state.update(completion_status="cancelled" if isinstance(failure, (WorkflowCancelled, KeyboardInterrupt)) else "failed",
+                failure_reason=reason, completed_utc=_utc_now())
+            try:
+                self.save()
+                _write_manifest(self.manifest_path, self.records)
+                _refresh_safely(self.directory.root)
+            except Exception as exc:
+                errors.append("运行状态保存失败：" + str(exc))
+        self.closed, self.current_step = True, None
+        self.revision += 1
+        self.states[FINISH_ID] = dict(status="failed" if errors else "completed", error="；".join(errors))
+        if self.devices or errors:
+            self.outputs.update(X="未知" if errors else "OFF", Z="未知" if errors else "OFF",
+                **{"Y RF": "未知" if errors else "OFF", "温控": "未知" if errors else "ON"})
+        try:
+            self.publish("会话已结束")
+            report_runtime_progress("finished", "采集会话已结束", 100)
+        except Exception:
+            if failure is None and not errors:
+                raise
+        if errors and failure is None:
+            raise RuntimeError("安全收尾失败：" + "；".join(errors))
+
+
+def run(params: MxYRFDriftParams, *, project_root=None, workflow_type=Workflow) -> Path:
+    ctx = workflow_type(params, project_root=project_root)
+    failure = None
+    try:
+        ctx.execute([stage.id for stage in ctx.stages if stage.id != FINISH_ID])
+        return ctx.directory.root
+    except BaseException as exc:
+        failure = exc
         raise
     finally:
-        finish = finalize_run_safety(
-            shutdown=lambda: safe_shutdown(devices, channels, params),
-            completion_status=completion_status,
-            failure_reason=failure_reason,
-        )
-        if finish.cleanup_errors:
-            print("安全关闭失败: " + "; ".join(finish.cleanup_errors))
-        if parent.config_path.exists():
-            parent.update_config(
-                completion_status=finish.completion_status,
-                failure_reason=finish.failure_reason,
-                safety_shutdown=finish.shutdown_report.to_dict(),
-            )
-        _write_manifest(manifest_path, records)
-        _refresh_safely(parent.root)
-        if (
-            finish.completion_status != "completed"
-            and not finish.original_exception_pending
-        ):
-            raise RuntimeError(
-                f"实验结束但安全恢复失败: {finish.failure_reason}"
-            )
+        ctx.finish(failure)
 
 
 def main() -> int:

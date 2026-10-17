@@ -22,6 +22,7 @@ from .acquisition import RuntimeCancellation, set_temp_switch, wait_for_settle
 from .phase import demod_config
 from lockin_amplifier import demod
 from ...steps.temperature import TemperatureControlStatus
+from .run_format import RAW_FORMAT_VERSION
 
 EXPERIMENT_ID = "static-sensitivity"
 DATA_TYPE = "Static_Magnetic_Field_Sensitivity"
@@ -36,9 +37,10 @@ DG_ROUTES = {
 
 def initial_state():
     return dict(experiment_id=EXPERIMENT_ID, execution_mode="typed_workflow", acquisition_method="dc_step",
+                raw_format_version=RAW_FORMAT_VERSION,
                 completion_status="running", analysis_status="not_started",
                 started_at=datetime.now().astimezone().isoformat(), failure_reason="",
-                temperature_switch_off_mode="output_off", noise_z_condition="zero_dc_output_off",
+                temperature_switch_off_mode="zero_dc_output_on", noise_z_condition="zero_dc_output_off",
                 purpose="dispersion_and_sensitivity", data_files=[], actual_rates={})
 
 

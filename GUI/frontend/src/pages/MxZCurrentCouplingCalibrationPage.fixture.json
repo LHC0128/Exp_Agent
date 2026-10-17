@@ -1,0 +1,1186 @@
+{
+  "schema": {
+    "schema_version": 2,
+    "fields": [
+      {
+        "name": "SYSTEM_SETTLE_S",
+        "label": "系统稳定时间",
+        "type": "number",
+        "default": 0.001,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0,
+        "maximum": null,
+        "description": "配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。",
+        "read_only": false,
+        "legacy_defaults": {
+          "FREQUENCY_SETTLE_TIME_S": 0.05,
+          "TEMP_SWITCH_OFF_LEAD_S": 0.1
+        }
+      },
+      {
+        "name": "RUN_TAG",
+        "label": "运行标签",
+        "type": "string",
+        "default": "mx_z_cal",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "ZERO_BIAS_CENTER_FREQUENCY_HZ",
+        "label": "Z 零偏预测中心",
+        "type": "number",
+        "default": 90000.0,
+        "unit": "Hz",
+        "group": "basic",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_INITIAL_HZ_PER_V",
+        "label": "Z 场初始频率斜率",
+        "type": "number",
+        "default": 1000.0,
+        "unit": "Hz/V",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "仅用于预测每个 Z 偏置的局部扫频中心，不作为最终标定结果。",
+        "read_only": false
+      },
+      {
+        "name": "Z_PREDICTION_POLARITY",
+        "label": "Z 电压预测极性",
+        "type": "string",
+        "default": "positive_increases_frequency",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false,
+        "options": [
+          {
+            "value": "unselected",
+            "label": "请选择"
+          },
+          {
+            "value": "positive_increases_frequency",
+            "label": "正电压提高共振频率"
+          },
+          {
+            "value": "positive_decreases_frequency",
+            "label": "正电压降低共振频率"
+          }
+        ]
+      },
+      {
+        "name": "Z_BIAS_START_V",
+        "label": "Z 偏置起点",
+        "type": "number",
+        "default": -1.0,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_BIAS_STOP_V",
+        "label": "Z 偏置终点",
+        "type": "number",
+        "default": 1.0,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Z_BIAS_STEP_V",
+        "label": "Z 偏置步进",
+        "type": "number",
+        "default": 1.0,
+        "unit": "V",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FREQUENCY_HALF_WIDTH_HZ",
+        "label": "局部扫频半宽",
+        "type": "number",
+        "default": 1000.0,
+        "unit": "Hz",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FREQUENCY_STEP_HZ",
+        "label": "局部扫频步进",
+        "type": "number",
+        "default": 250.0,
+        "unit": "Hz",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "Y_RF_AMPLITUDE_VPP",
+        "label": "Y RF 扫频幅度",
+        "type": "number",
+        "default": 0.05,
+        "unit": "Vpp",
+        "group": "basic",
+        "minimum": 0.0,
+        "maximum": 2.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FREQUENCY_DURATION_S",
+        "label": "频点采样时间",
+        "type": "number",
+        "default": 0.016,
+        "unit": "s",
+        "group": "advanced",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TEMP_SWITCH_ON_LAG_S",
+        "label": "每频点温控恢复等待",
+        "type": "number",
+        "default": 0.0,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "R_BAD_POINT_STD_THRESHOLD_V",
+        "label": "R 坏点标准差阈值",
+        "type": "number",
+        "default": 0.01,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "R_POINT_MAX_ATTEMPTS",
+        "label": "R 点最大采集次数",
+        "type": "integer",
+        "default": 3,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "DEMOD_IDX",
+        "label": "锁相放大器 Demod 索引",
+        "type": "integer",
+        "default": 0,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "DEMOD_OSC_IDX",
+        "label": "锁相放大器 振荡器索引",
+        "type": "integer",
+        "default": 0,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "HF2_SIGNAL_RANGE_V",
+        "label": "锁相放大器 Input1 量程",
+        "type": "number",
+        "default": 2.0,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "RESPONSE_RATE_SA_S",
+        "label": "响应请求采样率",
+        "type": "number",
+        "default": 1000.0,
+        "unit": "Sa/s",
+        "group": "advanced",
+        "minimum": 1.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "RESPONSE_TIME_CONSTANT_S",
+        "label": "响应时间常数",
+        "type": "number",
+        "default": 0.001,
+        "unit": "s",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "RESPONSE_DEMOD_ORDER",
+        "label": "响应解调阶数",
+        "type": "integer",
+        "default": 4,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "PUMP_CARRIER_FREQUENCY_HZ",
+        "label": "Pump AOM 载波频率",
+        "type": "number",
+        "default": 100000000.0,
+        "unit": "Hz",
+        "group": "advanced",
+        "minimum": 1.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "PUMP_CARRIER_AMPLITUDE_VPP",
+        "label": "Pump AOM 载波幅度",
+        "type": "number",
+        "default": 0.18,
+        "unit": "Vpp",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": 0.18,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "PUMP_GATE_VOLTAGE_V",
+        "label": "Pump RF 开关常开电平",
+        "type": "number",
+        "default": 5.0,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 5.0,
+        "maximum": 5.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.Pump_laser_power",
+        "label": "Pump 光功率",
+        "type": "number",
+        "default": 0.5,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.Probe_laser_power",
+        "label": "Probe 光功率",
+        "type": "number",
+        "default": 0.3,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.main_magnetic_field",
+        "label": "Z 主磁场电流",
+        "type": "number",
+        "default": 9.3,
+        "unit": "mA",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FIXED_PARAMS.temperature",
+        "label": "气室温度",
+        "type": "number",
+        "default": 120.0,
+        "unit": "°C",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "LINEAR_R_SQUARED_MIN",
+        "label": "线性标定最低 R²",
+        "type": "number",
+        "default": 0.99,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_RESISTOR_OHM",
+        "label": "采样电阻实测阻值",
+        "type": "number",
+        "default": 10,
+        "unit": "ohm",
+        "group": "basic",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_RESISTOR_TOLERANCE_PERCENT",
+        "label": "采样电阻误差",
+        "type": "number",
+        "default": 0.0,
+        "unit": "%",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_RESISTOR_POWER_RATING_W",
+        "label": "采样电阻额定功率",
+        "type": "number",
+        "default": 2,
+        "unit": "W",
+        "group": "basic",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_RESISTOR_POWER_DERATING",
+        "label": "采样电阻功率降额系数",
+        "type": "number",
+        "default": 0.5,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 0.01,
+        "maximum": 1.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "MAXIMUM_CURRENT_A",
+        "label": "线圈峰值电流安全上限",
+        "type": "number",
+        "default": 0.2,
+        "unit": "A",
+        "group": "basic",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_SAMPLE_RATE_SA_S",
+        "label": "采样电阻采样率",
+        "type": "number",
+        "default": 64000,
+        "unit": "Sa/s",
+        "group": "basic",
+        "minimum": 100.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_DURATION_S",
+        "label": "采样电阻记录时长",
+        "type": "number",
+        "default": 0.002,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_INITIAL_SCALE_V_DIV",
+        "label": "采样电阻初始量程",
+        "type": "number",
+        "default": 0.2,
+        "unit": "V/div",
+        "group": "basic",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_SCALE_MIN_V_DIV",
+        "label": "采样电阻自动量程下限",
+        "type": "number",
+        "default": 0.01,
+        "unit": "V/div",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_SCALE_MAX_V_DIV",
+        "label": "采样电阻自动量程上限",
+        "type": "number",
+        "default": 10.0,
+        "unit": "V/div",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_VERTICAL_DIVISIONS",
+        "label": "采样电阻示波器垂直总格数",
+        "type": "integer",
+        "default": 8,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_AUTO_RANGE_LOW_FRACTION",
+        "label": "采样电阻自动量程缩小阈值",
+        "type": "number",
+        "default": 0.4,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_AUTO_RANGE_HIGH_FRACTION",
+        "label": "采样电阻自动量程放大阈值",
+        "type": "number",
+        "default": 0.9,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_AUTO_OFFSET_TOLERANCE_FRACTION",
+        "label": "采样电阻自动偏置居中死区",
+        "type": "number",
+        "default": 1,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_AUTO_RANGE_MAX_ATTEMPTS",
+        "label": "采样电阻自动量程最大尝试次数",
+        "type": "integer",
+        "default": 3,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": 10,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_SCOPE_AUTO_RANGE_ALLOW_SHRINK",
+        "label": "允许跨工作点缩小自动量程",
+        "type": "boolean",
+        "default": false,
+        "unit": "",
+        "group": "advanced",
+        "minimum": null,
+        "maximum": null,
+        "description": "直流扫描默认关闭，避免下一个工作点电压跳变时量程过小。",
+        "read_only": false
+      },
+      {
+        "name": "BIDIRECTIONAL_SCAN",
+        "label": "正反向电流扫描",
+        "type": "boolean",
+        "default": true,
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CURRENT_SETTLE_TIME_S",
+        "label": "电流稳定等待",
+        "type": "number",
+        "default": 0,
+        "unit": "s",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      }
+    ]
+  },
+  "flow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "启动预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [
+          "SENSE_RESISTOR_TOLERANCE_PERCENT"
+        ],
+        "quality_gates": [
+          "参数、安全限值、设备映射与完整锁相频率窗口预检通过"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "设备连接与初态回读",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A03",
+        "title": "参考时钟同步与回读",
+        "group": "准备",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "所有已连接时钟设备的实际参考源与设备库目标一致"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "辅助场归零、光功率与固定主场",
+        "group": "初始条件",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power",
+          "FIXED_PARAMS.main_magnetic_field"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power",
+          "FIXED_PARAMS.main_magnetic_field"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A05",
+        "title": "TEC 目标温度",
+        "group": "初始条件",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [
+          "FIXED_PARAMS.temperature"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "FIXED_PARAMS.temperature"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A06",
+        "title": "Pump 连续载波与常开门控",
+        "group": "激励",
+        "dependencies": [
+          "A05"
+        ],
+        "parameters": [
+          "PUMP_CARRIER_FREQUENCY_HZ",
+          "PUMP_CARRIER_AMPLITUDE_VPP",
+          "PUMP_GATE_VOLTAGE_V"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "PUMP_CARRIER_FREQUENCY_HZ",
+          "PUMP_CARRIER_AMPLITUDE_VPP",
+          "PUMP_GATE_VOLTAGE_V"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A07",
+        "title": "Y RF 正弦与 R 解调准备",
+        "group": "激励",
+        "dependencies": [
+          "A06"
+        ],
+        "parameters": [
+          "ZERO_BIAS_CENTER_FREQUENCY_HZ",
+          "Z_INITIAL_HZ_PER_V",
+          "Z_PREDICTION_POLARITY",
+          "Z_BIAS_START_V",
+          "Y_RF_AMPLITUDE_VPP",
+          "DEMOD_IDX",
+          "DEMOD_OSC_IDX",
+          "HF2_SIGNAL_RANGE_V",
+          "RESPONSE_RATE_SA_S",
+          "RESPONSE_TIME_CONSTANT_S",
+          "RESPONSE_DEMOD_ORDER"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "ZERO_BIAS_CENTER_FREQUENCY_HZ",
+          "Z_INITIAL_HZ_PER_V",
+          "Z_PREDICTION_POLARITY",
+          "Z_BIAS_START_V",
+          "Y_RF_AMPLITUDE_VPP",
+          "DEMOD_IDX",
+          "DEMOD_OSC_IDX",
+          "HF2_SIGNAL_RANGE_V",
+          "RESPONSE_RATE_SA_S",
+          "RESPONSE_TIME_CONSTANT_S",
+          "RESPONSE_DEMOD_ORDER"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A08",
+        "title": "SDS CH3 固定采样率与自动量程准备",
+        "group": "采集准备",
+        "dependencies": [
+          "A07"
+        ],
+        "parameters": [
+          "SENSE_SCOPE_SAMPLE_RATE_SA_S",
+          "SENSE_SCOPE_DURATION_S",
+          "SENSE_SCOPE_INITIAL_SCALE_V_DIV",
+          "SENSE_SCOPE_SCALE_MIN_V_DIV",
+          "SENSE_SCOPE_SCALE_MAX_V_DIV",
+          "SENSE_SCOPE_VERTICAL_DIVISIONS",
+          "SENSE_SCOPE_AUTO_RANGE_LOW_FRACTION",
+          "SENSE_SCOPE_AUTO_RANGE_HIGH_FRACTION",
+          "SENSE_SCOPE_AUTO_OFFSET_TOLERANCE_FRACTION",
+          "SENSE_SCOPE_AUTO_RANGE_MAX_ATTEMPTS",
+          "SENSE_SCOPE_AUTO_RANGE_ALLOW_SHRINK",
+          "SENSE_SCOPE_CHANNEL"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "SENSE_SCOPE_SAMPLE_RATE_SA_S",
+          "SENSE_SCOPE_DURATION_S",
+          "SENSE_SCOPE_INITIAL_SCALE_V_DIV",
+          "SENSE_SCOPE_SCALE_MIN_V_DIV",
+          "SENSE_SCOPE_SCALE_MAX_V_DIV",
+          "SENSE_SCOPE_VERTICAL_DIVISIONS",
+          "SENSE_SCOPE_AUTO_RANGE_LOW_FRACTION",
+          "SENSE_SCOPE_AUTO_RANGE_HIGH_FRACTION",
+          "SENSE_SCOPE_AUTO_OFFSET_TOLERANCE_FRACTION",
+          "SENSE_SCOPE_AUTO_RANGE_MAX_ATTEMPTS",
+          "SENSE_SCOPE_AUTO_RANGE_ALLOW_SHRINK"
+        ],
+        "quality_gates": [
+          "SDS 固定采样率存储模式回读一致，实际率与记录点数满足采集要求，量程和偏置有效"
+        ]
+      },
+      {
+        "id": "A09",
+        "title": "逐 Z 电流与局部 Y RF 联合扫描",
+        "group": "采集",
+        "dependencies": [
+          "A08"
+        ],
+        "parameters": [
+          "ZERO_BIAS_CENTER_FREQUENCY_HZ",
+          "Z_INITIAL_HZ_PER_V",
+          "Z_PREDICTION_POLARITY",
+          "Z_BIAS_START_V",
+          "Z_BIAS_STOP_V",
+          "Z_BIAS_STEP_V",
+          "BIDIRECTIONAL_SCAN",
+          "CURRENT_SETTLE_TIME_S",
+          "FREQUENCY_HALF_WIDTH_HZ",
+          "FREQUENCY_STEP_HZ",
+          "Y_RF_AMPLITUDE_VPP",
+          "FREQUENCY_DURATION_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "R_BAD_POINT_STD_THRESHOLD_V",
+          "R_POINT_MAX_ATTEMPTS",
+          "SENSE_RESISTOR_OHM",
+          "SENSE_RESISTOR_POWER_RATING_W",
+          "SENSE_RESISTOR_POWER_DERATING",
+          "MAXIMUM_CURRENT_A"
+        ],
+        "artifacts": [
+          "raw/z_scan_index.npz",
+          "raw/z_*/*.npz"
+        ],
+        "display_parameters": [
+          "ZERO_BIAS_CENTER_FREQUENCY_HZ",
+          "Z_INITIAL_HZ_PER_V",
+          "Z_PREDICTION_POLARITY",
+          "Z_BIAS_START_V",
+          "Z_BIAS_STOP_V",
+          "Z_BIAS_STEP_V",
+          "BIDIRECTIONAL_SCAN",
+          "CURRENT_SETTLE_TIME_S",
+          "FREQUENCY_HALF_WIDTH_HZ",
+          "FREQUENCY_STEP_HZ",
+          "Y_RF_AMPLITUDE_VPP",
+          "FREQUENCY_DURATION_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "R_BAD_POINT_STD_THRESHOLD_V",
+          "R_POINT_MAX_ATTEMPTS",
+          "SENSE_RESISTOR_OHM",
+          "SENSE_RESISTOR_POWER_RATING_W",
+          "SENSE_RESISTOR_POWER_DERATING",
+          "MAXIMUM_CURRENT_A"
+        ],
+        "quality_gates": [
+          "实际 Y RF 正弦及 SDS 存储/触发模式与已执行准备一致",
+          "SDS 完整记录且电压有限，显示贴边比例 < 0.98，峰值电流及电阻功率不超参数限值",
+          "每个 R 点 std(R) <= R_BAD_POINT_STD_THRESHOLD_V；最多 R_POINT_MAX_ATTEMPTS 次，不通过即阻断后继",
+          "每个窗口先恢复温控再保存；恢复或写盘失败停止后继并抢救已读数据"
+        ]
+      },
+      {
+        "id": "A10",
+        "title": "本轮安全收尾与封存",
+        "group": "结束",
+        "dependencies": [
+          "A09"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "安全收尾报告 completed 为真后才封存为 completed"
+        ]
+      },
+      {
+        "id": "A11",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "运行身份、格式与完整频扫加载",
+        "group": "分析准备",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "analysis_inputs.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "本实验身份和原始格式有效，采集已结束，至少一份完整频扫具备同长 R 数组及实际电流/电阻电压字段"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "逐 Z 共振拟合与排除诊断",
+        "group": "共振拟合",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "curve_fits.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": []
+      },
+      {
+        "id": "B03",
+        "title": "实际电流和电阻电压加权标定",
+        "group": "线性标定",
+        "dependencies": [
+          "B02"
+        ],
+        "parameters": [
+          "LINEAR_R_SQUARED_MIN"
+        ],
+        "artifacts": [
+          "calibration_evaluation.json"
+        ],
+        "display_parameters": [
+          "LINEAR_R_SQUARED_MIN"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "B04",
+        "title": "科学图、结果导出与质量结论",
+        "group": "结果导出",
+        "dependencies": [
+          "B03"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "analysis.json",
+          "analysis.yaml",
+          "calibration_results.npz",
+          "current_coupling_calibration.png",
+          "frequency_response_fits.png"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "诊断始终导出；标定可用须满足实际电流加权线性拟合成功、R2 >= LINEAR_R_SQUARED_MIN、电阻电压线性拟合有效且无显示贴边或饱和"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "RUN_TAG": [
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "FIXED_PARAMS.Pump_laser_power": [
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "FIXED_PARAMS.Probe_laser_power": [
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "FIXED_PARAMS.main_magnetic_field": [
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "FIXED_PARAMS.temperature": [
+          "A05",
+          "A06",
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "PUMP_CARRIER_FREQUENCY_HZ": [
+          "A06",
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "PUMP_CARRIER_AMPLITUDE_VPP": [
+          "A06",
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "PUMP_GATE_VOLTAGE_V": [
+          "A06",
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "ZERO_BIAS_CENTER_FREQUENCY_HZ": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "Z_INITIAL_HZ_PER_V": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "Z_PREDICTION_POLARITY": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "Z_BIAS_START_V": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "Y_RF_AMPLITUDE_VPP": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "DEMOD_IDX": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "DEMOD_OSC_IDX": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "HF2_SIGNAL_RANGE_V": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "RESPONSE_RATE_SA_S": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "RESPONSE_TIME_CONSTANT_S": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "RESPONSE_DEMOD_ORDER": [
+          "A07",
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_SAMPLE_RATE_SA_S": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_DURATION_S": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_INITIAL_SCALE_V_DIV": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_SCALE_MIN_V_DIV": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_SCALE_MAX_V_DIV": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_VERTICAL_DIVISIONS": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_AUTO_RANGE_LOW_FRACTION": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_AUTO_RANGE_HIGH_FRACTION": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_AUTO_OFFSET_TOLERANCE_FRACTION": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_AUTO_RANGE_MAX_ATTEMPTS": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_AUTO_RANGE_ALLOW_SHRINK": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "SENSE_SCOPE_CHANNEL": [
+          "A08",
+          "A09",
+          "A10"
+        ],
+        "Z_BIAS_STOP_V": [
+          "A09",
+          "A10"
+        ],
+        "Z_BIAS_STEP_V": [
+          "A09",
+          "A10"
+        ],
+        "BIDIRECTIONAL_SCAN": [
+          "A09",
+          "A10"
+        ],
+        "CURRENT_SETTLE_TIME_S": [
+          "A09",
+          "A10"
+        ],
+        "FREQUENCY_HALF_WIDTH_HZ": [
+          "A09",
+          "A10"
+        ],
+        "FREQUENCY_STEP_HZ": [
+          "A09",
+          "A10"
+        ],
+        "FREQUENCY_DURATION_S": [
+          "A09",
+          "A10"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A09",
+          "A10"
+        ],
+        "TEMP_SWITCH_ON_LAG_S": [
+          "A09",
+          "A10"
+        ],
+        "R_BAD_POINT_STD_THRESHOLD_V": [
+          "A09",
+          "A10"
+        ],
+        "R_POINT_MAX_ATTEMPTS": [
+          "A09",
+          "A10"
+        ],
+        "SENSE_RESISTOR_OHM": [
+          "A09",
+          "A10"
+        ],
+        "SENSE_RESISTOR_POWER_RATING_W": [
+          "A09",
+          "A10"
+        ],
+        "SENSE_RESISTOR_POWER_DERATING": [
+          "A09",
+          "A10"
+        ],
+        "MAXIMUM_CURRENT_A": [
+          "A09",
+          "A10"
+        ]
+      },
+      "analysis": {
+        "LINEAR_R_SQUARED_MIN": [
+          "B03",
+          "B04"
+        ]
+      }
+    },
+    "diagram_url": "/api/experiments/mx-z-current-coupling-calibration/workflow/diagram"
+  }
+}

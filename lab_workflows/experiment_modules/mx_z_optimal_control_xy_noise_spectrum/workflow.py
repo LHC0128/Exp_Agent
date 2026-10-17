@@ -1,446 +1,203 @@
-"""Mx Z 最优控制 XY 偏置噪声谱采集工作流。"""
-
-from __future__ import annotations
-
-from lab_workflows.lockin_compatibility import require_lockin_compatibility
+"""XY 噪声网格编排；复用会话、修订、取消与收尾协议。"""
+from copy import deepcopy
 from dataclasses import asdict, replace
+from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
-
-import numpy as np
-import yaml
-
-from ...common import WorkflowCancelled, find_project_root, load_mapping
-from ...control_sources import (
-    AppliedControlWaveform,
-    TheoryControlSource,
-    ZCalibrationSource,
-    build_applied_control,
-    corrected_control_contract,
-    load_theory_control,
-    load_z_calibration,
-)
-from ...current_feedback import load_corrected_control_waveform
-from ...experiment_runtime import check_cancelled, load_runtime_params
-from ...steps import (
-    DeviceSession,
-    configure_fixed_dc_field,
-    create_run_directory,
-    restore_main_field_state,
-    save_corrected_control_source_snapshot,
-    save_optimal_control_source_snapshot,
-    snapshot_main_field_state,
-    validate_z_trigger_mapping,
-)
-from ..mx_z_field_calibration.workflow import _initial_state_snapshot
+from uuid import uuid4
+import shutil
+from ...common import find_project_root
+from ...experiment_runtime import load_runtime_params
+from ...steps import (create_run_directory, snapshot_main_field_state, DeviceSession, restore_main_field_state)
 from ..mx_z_optimal_control_rf_sensitivity.workflow import (
-    _acquire_noise,
-    _configure_common_outputs,
-    safe_shutdown,
-    _connect_control_devices as _base_connect_control_devices,
-)
+    Workflow as ControlWorkflow, run as run_control, _configure_response_demodulator)
+from . import preparation, acquisition, run_format
 from .models import MxZOptimalControlXYNoiseSpectrumParams
+from .stages import ACQUISITION, FINISH_ID, SOURCES, initial_states, invalidate, invalidated_stages, validate_selection
 
-
-EXPERIMENT_ID = "mx-z-optimal-control-xy-noise-spectrum"
-DATA_TYPE = "Mx_Z_Optimal_Control_XY_Noise_Spectrum"
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
+DATA_TYPE = run_format.DATA_TYPE
 EXECUTION_MODE = "typed_workflow"
 
 
-def _connect_control_devices(
-    mapping: dict[str, dict[str, Any]],
-    session: DeviceSession,
-) -> tuple[dict[str, Any], dict[str, int]]:
-    """连接最优控制实验设备并解析共同触发通道。"""
-    devices, channels = _base_connect_control_devices(mapping, session)
-    channels["trigger"] = validate_z_trigger_mapping(mapping)
-    return devices, channels
+class Workflow(ControlWorkflow):
+    stages = ACQUISITION
 
+    def __init__(self, params, *, project_root=None, session_id=None):
+        root = Path(project_root).resolve() if project_root else find_project_root()
+        self.root = root
+        self.params, self.mapping = preparation.preflight(params, root)
+        self.shutdown_parameters = self.response_parameters = params
+        self.sources = self.executed_source = self.main_field_state = None
+        self.demod_mode = "unknown"
+        self.config_revision = self._configuration_revision()
+        self.session_id = session_id or uuid4().hex
+        self.revision = 0
+        self.states = initial_states(self.stages)
+        self.devices, self.channels = {}, {}
+        self.device_session = DeviceSession()
+        self.directory = self.run_parameters = self.current_step = None
+        self.closed = self.round_sealed = False
+        self.quality_error = self.progress = None
+        self.state = self._initial_state()
+        self.outputs = {key: "未知" for key in ("X", "Y RF", "Z", "温控", "Pump", "共同触发")}
 
-def _load_control_sources(
-    params: MxZOptimalControlXYNoiseSpectrumParams,
-    root: Path,
-) -> tuple[Any, TheoryControlSource, ZCalibrationSource | None, AppliedControlWaveform]:
-    if params.control_waveform_source == "corrected_run":
-        corrected = load_corrected_control_waveform(
-            root,
-            params.corrected_control_source_run,
-        )
-        theory, applied = corrected_control_contract(corrected)
-        return corrected, theory, None, applied
-    theory = load_theory_control(Path(params.control_results_root), params.control_version)
-    calibration = load_z_calibration(root, params.z_calibration_source_run)
-    applied = build_applied_control(
-        theory,
-        calibration,
-        params.control_scale,
-        output_vpp=params.z_aw_output_vpp,
-        output_offset_v=params.z_aw_output_offset_v,
-    )
-    return None, theory, calibration, applied
+    def _initial_state(self):
+        return dict(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, execution_mode=EXECUTION_MODE,
+            measurement_mode="xy_bias_noise_spectrum", raw_format_version=run_format.RAW_FORMAT_VERSION,
+            completion_status="running")
 
+    def recheck(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请安全结束会话后重新连接")
+        self.params, self.mapping = preparation.preflight(self.params, self.root)
+        if self.sources is not None:
+            current = preparation._load_control_sources(self.params, self.root)
+            if preparation.source_fingerprint(current) != preparation.source_fingerprint(self.sources):
+                invalidate(self.stages, self.states, "A01")
+                self.sources = None
+                self.revision += 1
+                raise ValueError("控制来源文件已改变，请从 A01 重新预检冻结")
 
-def _write_manifest(path: Path, manifest: dict[str, Any]) -> None:
-    """原子更新网格清单，保证取消后已完成点可分析。"""
-    content = yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False)
-    temporary = path.with_suffix(f"{path.suffix}.tmp")
-    temporary.write_text(content, encoding="utf-8")
-    try:
-        temporary.replace(path)
-    except PermissionError:
-        path.write_text(content, encoding="utf-8")
-        temporary.unlink(missing_ok=True)
+    def update_parameters(self, values):
+        self.recheck()
+        old = self.params.to_external()
+        if unknown := values.keys() - old.keys():
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        params, mapping = preparation.preflight(MxZOptimalControlXYNoiseSpectrumParams.from_external(old | values), self.root)
+        changed = {key for key, value in params.to_external().items() if value != old[key]}
+        for stage in self.stages:
+            if changed.intersection(stage.parameters):
+                invalidate(self.stages, self.states, stage.id)
+        if changed.intersection(SOURCES):
+            self.sources = None
+        self.params, self.mapping = params, mapping
+        self.revision += 1
+        self.publish("参数已应用；请显式重跑受影响模块")
 
-
-def _grid_points(params: MxZOptimalControlXYNoiseSpectrumParams) -> list[dict[str, Any]]:
-    """构造 X 外层、Y 内层蛇形采集顺序。"""
-    points: list[dict[str, Any]] = []
-    sequence = 0
-    for x_index, x_value in enumerate(params.x_axis()):
-        y_indices = range(params.y_axis().size)
-        if x_index % 2:
-            y_indices = reversed(range(params.y_axis().size))
-        for y_index in y_indices:
-            points.append(
-                {
-                    "key": f"x_{x_index:03d}_y_{y_index:03d}",
-                    "x_index": int(x_index),
-                    "y_index": int(y_index),
-                    "x_field_v": float(x_value),
-                    "y_field_v": float(params.y_axis()[y_index]),
-                    "sequence_index": sequence,
-                }
-            )
-            sequence += 1
-    return points
-
-
-def _initial_manifest(
-    params: MxZOptimalControlXYNoiseSpectrumParams,
-    points: list[dict[str, Any]],
-) -> dict[str, Any]:
-    return {
-        "schema_version": 1,
-        "scan_order": "x_outer_y_inner_serpentine",
-        "x_field_v": params.x_axis().tolist(),
-        "y_field_v": params.y_axis().tolist(),
-        "acquisition_order": [item["key"] for item in points],
-        "points": {
-            item["key"]: {
-                **{key: value for key, value in item.items() if key != "key"},
-                "status": "pending",
-                "reason": None,
-            }
-            for item in points
-        },
-    }
-
-
-def _set_point_bias(
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    point: dict[str, Any],
-) -> None:
-    xy = devices["xy_field"]
-    configure_fixed_dc_field(
-        xy,
-        channels["x_field"],
-        "X_magnetic_field",
-        float(point["x_field_v"]),
-    )
-    configure_fixed_dc_field(
-        xy,
-        channels["y_rf"],
-        "Y_magnetic_field",
-        float(point["y_field_v"]),
-    )
-
-
-def _acquire_point(
-    params: MxZOptimalControlXYNoiseSpectrumParams,
-    point: dict[str, Any],
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    device_id: str,
-) -> dict[str, Any]:
-    """在一个 XY DC 偏置点采集多次 RF-off R 噪声。"""
-    point_raw = Path(run_dir.raw) / "points" / str(point["key"])
-    point_raw.mkdir(parents=True, exist_ok=True)
-    point_run_dir = SimpleNamespace(raw=point_raw, results=run_dir.results)
-    _set_point_bias(devices, channels, point)
-
-    noise_rate = _acquire_noise(
-        params,
-        point_run_dir,
-        devices,
-        channels,
-        device_id,
-        set_y_rf_off_state=lambda: configure_fixed_dc_field(
-            devices["xy_field"],
-            channels["y_rf"],
-            "Y_magnetic_field",
-            float(point["y_field_v"]),
-        ),
-        y_rf_dc_v=float(point["y_field_v"]),
-        y_rf_output_on=float(point["y_field_v"]) != 0.0,
-        noise_metadata={
-            "x_dc_field_v": np.float64(point["x_field_v"]),
-            "y_dc_field_v": np.float64(point["y_field_v"]),
-            "y_rf_waveform_mode": np.str_("dc"),
-            "control_output_on": np.uint8(True),
-            "temperature_gate_state": np.str_("off_during_acquire_then_on"),
-        },
-    )
-    return {
-        "actual_noise_rate_sa_s": float(noise_rate),
-        "x_dc_field_v": float(point["x_field_v"]),
-        "y_dc_field_v": float(point["y_field_v"]),
-    }
-
-
-def _acquire_grid(
-    params: MxZOptimalControlXYNoiseSpectrumParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    device_id: str,
-) -> dict[str, Any]:
-    points = _grid_points(params)
-    manifest_path = Path(run_dir.raw) / "point_manifest.yaml"
-    manifest = _initial_manifest(params, points)
-    _write_manifest(manifest_path, manifest)
-    np.savez(
-        Path(run_dir.raw) / "xy_bias_grid.npz",
-        x_field_v=params.x_axis(),
-        y_field_v=params.y_axis(),
-        acquisition_order=np.asarray([item["key"] for item in points]),
-    )
-
-    completed = 0
-    noise_rates: list[float] = []
-    for point in points:
-        check_cancelled()
-        record = manifest["points"][point["key"]]
-        record["status"] = "running"
-        _write_manifest(manifest_path, manifest)
-        print(
-            f"XY 噪声点 {int(point['sequence_index']) + 1}/{len(points)}: "
-            f"X={float(point['x_field_v']):+.6f} V, "
-            f"Y={float(point['y_field_v']):+.6f} V"
-        )
-        try:
-            result = _acquire_point(
-                params,
-                point,
-                run_dir,
-                devices,
-                channels,
-                device_id,
-            )
-        except WorkflowCancelled:
-            record["status"] = "cancelled"
-            record["reason"] = "收到 GUI 安全停止请求"
-            _write_manifest(manifest_path, manifest)
-            raise
-        except Exception as exc:
-            record["status"] = "failed"
-            record["reason"] = str(exc)
-            _write_manifest(manifest_path, manifest)
-            raise
-        record.update(result)
-        record["status"] = "completed"
-        record["reason"] = None
-        completed += 1
-        noise_rates.append(result["actual_noise_rate_sa_s"])
-        _write_manifest(manifest_path, manifest)
-    return {
-        "total_point_count": len(points),
-        "completed_point_count": completed,
-        "actual_noise_rates_sa_s": noise_rates,
-        "manifest": "raw/point_manifest.yaml",
-        "grid": "raw/xy_bias_grid.npz",
-    }
-
-
-def run(params: MxZOptimalControlXYNoiseSpectrumParams) -> Path:
-    """执行 Z 控制开启下的 XY DC 偏置噪声网格采集。"""
-    root = find_project_root()
-    mapping = load_mapping(root)
-    require_lockin_compatibility('mx-z-optimal-control-xy-noise-spectrum', params.to_external(), mapping=mapping)
-    corrected, theory, calibration, applied = _load_control_sources(params, root)
-    source_files = None
-    run_dir = create_run_directory(
-        DATA_TYPE,
-        params.run_tag,
-        params.to_external(),
-        schema_version=params.schema_version,
-        project_root=root,
-    )
-    source_files = (
-        save_corrected_control_source_snapshot(run_dir.raw, corrected, applied)
-        if corrected is not None
-        else save_optimal_control_source_snapshot(
-            run_dir.raw,
-            theory,
-            calibration,
-            applied,
-        )
-    )
-    x_axis = params.x_axis()
-    y_axis = params.y_axis()
-    run_dir.update_config(
-        experiment_id=EXPERIMENT_ID,
-        data_type=DATA_TYPE,
-        execution_mode=EXECUTION_MODE,
-        measurement_mode="xy_bias_noise_spectrum",
-        scan_mode="nested_scan",
-        scan_order="x_outer_y_inner_serpentine",
-        objective="minimize_noise_median_r_asd_v_per_sqrt_hz",
-        geometry={
-            "control_field": "Z arbitrary waveform",
-            "rf_field": "Y RF AC OFF with Y DC compensation",
-            "x_field_output": "X_magnetic_field DC",
-            "x_points": int(x_axis.size),
-            "y_points": int(y_axis.size),
-            "bias_units": "V",
-        },
-        noise_metric={
-            "signal": "Demod0 R",
-            "quantity": "ASD",
-            "aggregation": "median",
-            "psd_aggregation": "mean_psd_then_sqrt",
-            "band_hz": [params.low_freq_skip_hz, params.noise_band_max_hz],
-            "narrowband_lines_included": True,
-        },
-        scan_axes={
-            "x_field_v": x_axis.tolist(),
-            "y_field_v": y_axis.tolist(),
-            "order": "X outer, Y serpentine",
-        },
-        control_source={
-            "mode": params.control_waveform_source,
-            "version": theory.version,
-            "waveform_sha256": theory.waveform_sha256,
-            "parameter_sha256": theory.parameter_sha256,
-            "repeat_frequency_hz": theory.repeat_frequency_hz,
-            "theory_rf_frequency_hz": theory.theory_rf_frequency_hz,
-            "scale": params.control_scale if corrected is None else None,
-            "corrected_run": corrected.run_name if corrected is not None else None,
-        },
-        z_calibration=(
-            {
-                "source_run": calibration.run_name,
-                "slope_hz_per_v": calibration.slope_hz_per_v,
-                "intercept_hz": calibration.intercept_hz,
-                "r_squared": calibration.r_squared,
-                "analysis_sha256": calibration.analysis_sha256,
-            }
-            if calibration is not None
-            else None
-        ),
-        acquisition_signals=["Demod0 R during each XY bias noise point"],
-        rf_state_during_noise="burst_off_modulation_off_y_dc_on_if_nonzero",
-        warnings=[],
-    )
-
-    session = DeviceSession()
-    devices: dict[str, Any] = {}
-    channels: dict[str, int] = {}
-    main_field_state = None
-    completion_status = "failed"
-    failure_reason: str | None = None
-    grid_summary: dict[str, Any] | None = None
-    try:
-        check_cancelled()
-        try:
-            devices, channels = _connect_control_devices(mapping, session)
-        except Exception:
-            session.cleanup_connection_failure()
-            raise
-        main_field_state = snapshot_main_field_state(devices["gs200"])
-        snapshot = _initial_state_snapshot(devices, channels)
-        snapshot["main_field_before_configuration"] = asdict(main_field_state)
-        run_dir.update_config(device_snapshot=snapshot)
-
-        # 用零偏置配置公共工作点，之后每个网格点只改写 X/Y DC。
-        common_params = replace(params, x_dc_field_v=0.0, y_rf_offset_v=0.0)
-        actual_response_rate, actual_temperature, clock_sources, hf2_snapshot = _configure_common_outputs(
-            common_params,
-            devices,
-            channels,
-            mapping,
-            theory,
-            applied,
-        )
-        run_dir.update_config(
-            clock_sources=clock_sources,
-            hf2_configuration=hf2_snapshot,
-            initial_temperature_c=actual_temperature,
-            actual_rates={"initial_response_sa_s": actual_response_rate},
-        )
-        device_id = str(mapping["lockin_r"]["device_id"])
-        grid_summary = _acquire_grid(params, run_dir, devices, channels, device_id)
-        completion_status = "completed"
-        run_dir.update_config(
-            completion_status=completion_status,
-            failure_reason=None,
-            grid_summary=grid_summary,
-            data_files=[
-                *source_files,
-                "raw/point_manifest.yaml",
-                "raw/xy_bias_grid.npz",
-            ],
-        )
-        print(f"Mx Z 最优控制 XY 噪声谱采集完成: {run_dir.root}")
-        return run_dir.root
-    except WorkflowCancelled as exc:
-        completion_status = "cancelled"
-        failure_reason = str(exc)
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                grid_summary=grid_summary,
-            )
-        raise
-    except Exception as exc:
-        failure_reason = str(exc)
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status="failed",
-                failure_reason=failure_reason,
-                grid_summary=grid_summary,
-            )
-        raise
-    finally:
-        shutdown_report = safe_shutdown(devices, channels, params)
-        restore_errors: list[str] = []
-        if main_field_state is not None and devices.get("gs200") is not None:
+    def _new_directory(self, selected):
+        previous, inherited = self.directory, deepcopy(self.state)
+        if previous and not self.round_sealed:
+            self.state.update(completion_status="failed", failure_reason="本轮被重跑替代，保留已采集数据")
+            self.save()
+        suffix = 0
+        while True:
             try:
-                restore_main_field_state(devices["gs200"], main_field_state)
+                tag = self.params.run_tag if not suffix else f"{self.params.run_tag}_{suffix:02d}"
+                self.directory = create_run_directory(DATA_TYPE, tag, self.params.to_external(),
+                    schema_version=self.params.schema_version, project_root=self.root)
+                break
+            except FileExistsError:
+                suffix += 1
+        self.round_sealed = False
+        self.run_parameters = self.params.to_external()
+        self.state = self._initial_state()
+        affected = {stage.id for item in selected if item != "A01" for stage in invalidated_stages(self.stages, item)}
+        if previous:
+            self.state["source_run_id"] = previous.root.name
+            for key in ("actual_rates", "clock_sources", "hf2_configuration", "temperature_control", "device_snapshot",
+                    "noise_metric"):
+                if key in inherited:
+                    self.state[key] = inherited[key]
+            if "A04" not in affected and self.states["A04"]["status"] == "completed":
+                for name in ("point_manifest.yaml", "xy_bias_grid.npz"):
+                    shutil.copy2(previous.raw / name, self.directory.raw / name)
+            if "A05" not in affected and self.states["A05"]["status"] == "completed":
+                shutil.copytree(previous.raw / "points", self.directory.raw / "points")
+                self.state["grid_summary"] = inherited["grid_summary"]
+        if self.sources is not None:
+            self.state.update(preparation.initial_config(self.params, *self.sources))
+            preparation.save_source(self.directory.raw, self.sources)
+        self.save()
+
+    def _execute_step(self, item):
+        params, devices, channels = self.params, self.devices, self.channels
+        common = replace(params, x_dc_field_v=0., y_rf_offset_v=0., phase_cal_rf_amplitude_vpp=0.)
+        if item == "A01":
+            self.sources = preparation._load_control_sources(params, self.root)
+        elif item == "A02":
+            self.state.update(preparation.initial_config(params, *self.sources))
+            preparation.save_source(self.directory.raw, self.sources)
+            if not devices:
+                try:
+                    self.devices, self.channels = preparation._connect_control_devices(self.mapping, self.device_session)
+                except BaseException:
+                    self.device_session.cleanup_connection_failure()
+                    raise
+                self.main_field_state = snapshot_main_field_state(self.devices["gs200"])
+                self.state["device_snapshot"] = preparation._initial_state_snapshot(self.devices, self.channels)
+                self.state["device_snapshot"]["main_field_before_configuration"] = asdict(self.main_field_state)
+        elif item == "A03":
+            corrected, theory, calibration, applied = self.sources
+            rate, temperature, clocks, snapshot = preparation._configure_common_outputs(
+                common, devices, channels, self.mapping, theory, applied)
+            self.shutdown_parameters = self.response_parameters = common
+            self.executed_source = self.sources
+            self.demod_mode = "response"
+            self.state.update(actual_rates={"response_sa_s": rate}, clock_sources=clocks,
+                hf2_configuration=snapshot, initial_temperature_c=temperature,
+                temperature_control={"target_temperature_c": params.temperature_c, "actual_temperature_c": temperature,
+                    "controlled_by_experiment": devices.get("tec") is not None,
+                    "control_source": "tec103" if devices.get("tec") is not None else "external_software"})
+            self.outputs.update(X="0 V OFF", Z="最优控制ON", **{"Y RF": "纯 DC", "温控": "ON", "Pump": "ON", "共同触发": "ON"})
+        elif item == "A04":
+            acquisition.initialize_grid(params, self.directory)
+        elif item == "A05":
+            self.demod_mode = "noise"
+            self.state["grid_summary"] = acquisition._acquire_grid(params, self.directory, devices, channels,
+                str(self.mapping["lockin_r"]["device_id"]))
+            self.outputs.update(X="最后网格点", **{"Y RF": "最后网格点纯 DC", "温控": "ON"})
+        elif item == "A06":
+            if errors := self._shutdown(disconnect_tec=False):
+                raise RuntimeError("安全收尾失败：" + "；".join(errors))
+            self.state.update(completion_status="completed", failure_reason=None, finished_at=datetime.now().isoformat(),
+                data_files=[path.relative_to(self.directory.root).as_posix() for path in sorted(self.directory.raw.rglob("*")) if path.is_file()])
+            self.save()
+            self.round_sealed = True
+            invalidate(self.stages, self.states, "A03")
+        self.save()
+
+
+    def _shutdown(self, *, disconnect_tec=True):
+        errors = []
+        if self.devices:
+            if self.demod_mode == "noise":
+                try:
+                    rate = _configure_response_demodulator(self.response_parameters, self.devices["hf2"])
+                    self.state.setdefault("actual_rates", {})["restored_response_sa_s"] = rate
+                    self.demod_mode = "response"
+                except Exception as exc:
+                    errors.append("恢复响应解调失败：" + str(exc))
+            try:
+                report = preparation.safe_shutdown(self.devices, self.channels, self.shutdown_parameters,
+                    disconnect_tec=disconnect_tec)
+                self.state["safety_shutdown"] = report.to_dict()
+                errors.extend(report.errors)
             except Exception as exc:
-                restore_errors.append(str(exc))
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                safety_shutdown=shutdown_report.to_dict(),
-                main_field_restore={
-                    "attempted": main_field_state is not None,
-                    "success": not restore_errors,
-                    "errors": restore_errors,
-                },
-                device_disconnect={
-                    "tec_disconnected": not shutdown_report.disconnect_errors,
-                    "other_devices_preserved": True,
-                    "errors": list(shutdown_report.disconnect_errors),
-                },
-            )
+                errors.append(str(exc))
+            main_errors = []
+            if self.main_field_state is not None:
+                try:
+                    restore_main_field_state(self.devices["gs200"], self.main_field_state)
+                except Exception as exc:
+                    main_errors.append(str(exc))
+            self.state["main_field_restore"] = dict(attempted=self.main_field_state is not None,
+                success=not main_errors, errors=main_errors)
+            errors.extend(main_errors)
+            self.outputs.update(X="OFF" if not errors else "未知", **{"Y RF": "OFF" if not errors else "未知",
+                "Z": "保持当前最优控制" if self.executed_source else "未知", "温控": "ON" if not errors else "未知",
+                "共同触发": "保持当前状态"})
+        if errors:
+            self.state["safety_shutdown"] = dict(self.state.get("safety_shutdown") or {}, completed=False, errors=errors)
+        return errors
 
 
-def main() -> int:
+def run(params, *, project_root=None):
+    return run_control(params, project_root=project_root, workflow_type=Workflow)
+
+
+def main():
     run(load_runtime_params(MxZOptimalControlXYNoiseSpectrumParams))
     return 0
 

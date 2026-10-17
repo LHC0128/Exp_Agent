@@ -13,15 +13,14 @@ from ...experiment_runtime import check_cancelled, report_runtime_progress, runt
 from ..noise_spectrum_xy.state_io import read_state, write_state
 from . import analysis_steps
 from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
+from .run_format import format_block_reason
 
 ANALYSIS_VERSION = "static-dc-stages-v1"
 
 
 def analysis_block_reason(config):
-    if not isinstance(config, dict) or config.get("schema_version") not in (3, 4) or config.get("acquisition_method") != "dc_step":
-        return "仅支持版本 3、4 的连续逐点色散；旧格式目录仅可查看已有结果"
-    if config.get("experiment_id") not in (None, "static-sensitivity"):
-        return "运行目录与静磁场实验不匹配"
+    if reason := format_block_reason(config):
+        return reason
     if config.get("completion_status") == "running":
         return "本轮扫描仍在写入数据，不能分析"
     if not isinstance(config.get("parameters"), dict):
@@ -44,7 +43,9 @@ class AnalysisWorkflow:
         self.revision = previous.get("revision", 0)
         self.summary = deepcopy(previous.get("summary", {}))
         raw = self.run_dir / "raw"
-        files = [raw / "dispersion_scan.npz", *sorted((raw / "noise_raw").glob("gs200_range_*/noise_*.npy"))]
+        waveforms = sorted((raw / "noise_raw").glob("gs200_range_*/noise_*.npy"))
+        files = [raw / "dispersion_scan.npz", *waveforms,
+                 *(path.with_name(path.stem + "_acquisition.npz") for path in waveforms)]
         self.fingerprint = dict(analysis_version=ANALYSIS_VERSION,
             config_sha256=hashlib.sha256(json.dumps({key: value for key, value in self.config.items()
                 if key not in ("analysis_status", "analysis_error")}, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),

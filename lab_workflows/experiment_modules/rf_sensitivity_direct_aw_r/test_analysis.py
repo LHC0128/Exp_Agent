@@ -108,6 +108,30 @@ def test_numeric_fallback_disables_linewidth_compensation(tmp_path):
         assert np.array_equal(saved["sensitivity_raw_fT_per_sqrtHz"], saved["sensitivity_corrected_fT_per_sqrtHz"])
 
 
+@pytest.mark.parametrize("key,value", [
+    ("actual_rate_Sa_s", 0.0), ("signal_path", "sample.r"), ("demod_idx", 0),
+    ("noise_x_V", [0.0]), ("noise_x_V", [0.0, np.nan]),
+])
+def test_invalid_r_noise_preserves_calibration_diagnostic_and_blocks_sensitivity(tmp_path, key, value):
+    synthetic_run(tmp_path)
+    path = tmp_path / "raw/noise_D3_0000.npz"
+    with np.load(path, allow_pickle=False) as saved:
+        arrays = dict(saved)
+    np.savez(path, **(arrays | {key: value}))
+    ctx = AnalysisWorkflow(tmp_path)
+    ctx.execute(["B01", "B02"])
+    calibration = (tmp_path / "results/response_fit.npz").read_bytes()
+    with pytest.raises(ValueError, match="噪声记录"):
+        ctx.execute(["B03"])
+    state = json.loads((tmp_path / "analysis_state.json").read_text(encoding="utf-8"))
+    assert state["steps"]["B03"]["status"] == "quality_failed"
+    assert state["steps"]["B03"]["error"]
+    assert (tmp_path / "results/response_fit.npz").read_bytes() == calibration
+    with pytest.raises(ValueError, match="缺少前置"):
+        AnalysisWorkflow(tmp_path).execute(["B04"])
+    assert not (tmp_path / "results/sensitivity.npz").exists()
+
+
 def test_r_comparison_reads_r_and_preserves_inputs(tmp_path):
     from ..rf_sensitivity_direct_aw.comparison import _load_result
     from . import run_format
@@ -155,3 +179,95 @@ def test_imports_without_runtime_or_repository_cwd(tmp_path):
         capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     assert not list(tmp_path.iterdir())
+
+
+def test_full_and_separate_analysis_have_identical_science_arrays(tmp_path):
+    complete, staged = tmp_path / "complete", tmp_path / "staged"
+    synthetic_run(complete)
+    synthetic_run(staged)
+    whole = analyze(complete)
+    for step in ("B01", "B02", "B03", "B04"):
+        AnalysisWorkflow(staged).execute([step])
+    separate = json.loads((staged / "results/analysis.json").read_text(encoding="utf-8"))
+    for key in ("response_fit", "sensitivity", "frequency_response_correction", "calibration_assumption", "stage_frequencies"):
+        assert separate[key] == whole[key]
+    for name in ("response_fit.npz", "psd_avg.npz", "sensitivity.npz"):
+        with np.load(complete / "results" / name) as first, np.load(staged / "results" / name) as second:
+            assert first.files == second.files
+            for key in first.files:
+                np.testing.assert_equal(first[key], second[key])
+
+
+def test_zero_r_slope_blocks_dependents_and_preserves_analysis_diagnostic(tmp_path):
+    config, _ = synthetic_run(tmp_path)
+    path = tmp_path / "raw/response_data.npz"
+    with np.load(path) as data:
+        arrays = dict(data)
+    config["parameters"]["RF_AMP_POINTS"] = 3
+    (tmp_path / "experiment_config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+    for key in ("amplitudes_V", "amplitudes_nT", "demod3_x_V", "demod3_y_V", "demod3_r_V"):
+        arrays[key] = arrays[key][:3]
+    arrays["demod3_r_V"] = np.zeros(3)
+    np.savez(path, **arrays)
+    ctx = AnalysisWorkflow(tmp_path)
+    with pytest.raises(ValueError, match="斜率"):
+        ctx.execute(["B01", "B02"])
+    saved = json.loads((tmp_path / "analysis_state.json").read_text(encoding="utf-8"))
+    assert saved["steps"]["B02"]["status"] == "quality_failed"
+    assert "斜率" in saved["steps"]["B02"]["error"]
+    with pytest.raises(ValueError, match="缺少前置"):
+        AnalysisWorkflow(tmp_path).execute(["B03"])
+    assert not (tmp_path / "results/sensitivity.npz").exists()
+
+
+def test_analysis_fingerprints_override_archive_and_input_drift_are_isolated(tmp_path):
+    synthetic_run(tmp_path)
+    ctx = AnalysisWorkflow(tmp_path)
+    ctx.execute(["B01", "B02", "B03"])
+    response = (tmp_path / "results/response_fit.npz").read_bytes()
+    psd = (tmp_path / "results/psd_avg.npz").read_bytes()
+    config = yaml.safe_load((tmp_path / "experiment_config.yaml").read_text(encoding="utf-8"))
+    raw = {path.name: path.read_bytes() for path in (tmp_path / "raw").glob("*")}
+    override = AnalysisWorkflow(tmp_path, {"NOISE_NPERSEG": 128})
+    assert override.states["B02"]["status"] == "completed"
+    assert override.states["B03"]["status"] == "stale"
+    with pytest.raises(ValueError, match="刷新"):
+        override.execute(["B03"], expected_revision=override.revision + 1)
+    override.execute(["B03"])
+    backups = list((tmp_path / "results").glob("before_*"))
+    assert any((path / "psd_avg.npz").read_bytes() == psd for path in backups if (path / "psd_avg.npz").is_file())
+    assert all(not (path / "response_fit.npz").exists() for path in backups)
+    assert (tmp_path / "results/response_fit.npz").read_bytes() == response
+    assert yaml.safe_load((tmp_path / "experiment_config.yaml").read_text(encoding="utf-8"))["parameters"] == config["parameters"]
+    assert raw == {path.name: path.read_bytes() for path in (tmp_path / "raw").glob("*")}
+    assert AnalysisWorkflow(tmp_path).options == {"noise_nperseg": 128}
+    with (tmp_path / "results/response_fit.npz").open("ab") as stream:
+        stream.write(b"changed")
+    assert AnalysisWorkflow(tmp_path).states["B02"]["status"] == "stale"
+    with (tmp_path / "raw/response_data.npz").open("ab") as stream:
+        stream.write(b"changed input")
+    drift = AnalysisWorkflow(tmp_path)
+    assert drift.states["B01"]["status"] == "stale"
+    with pytest.raises(ValueError, match="缺少前置"):
+        drift.execute(["B04"])
+
+
+def test_legacy_parameter_migration_and_old_raw_remain_compatible(tmp_path):
+    from ...common import find_project_root
+    from .run_format import analysis_block_reason
+    params = RFSensitivityDirectAWRParams.from_external({"RF_STEP_SETTLE_S": 0.2, "TEMP_OFF_SETTLE_S": 0.7})
+    assert params.system_settle_s == 0.7
+    explicit = RFSensitivityDirectAWRParams.from_external({"RF_STEP_SETTLE_S": 0.7, "TEMP_OFF_SETTLE_S": 0.9, "SYSTEM_SETTLE_S": 0.1})
+    assert explicit.system_settle_s == 0.1
+    current = RFSensitivityDirectAWRParams.from_yaml(find_project_root() / "params/experiments/rf-sensitivity-aw-r.yaml")
+    assert RFSensitivityDirectAWRParams.from_external(current.to_external()).to_external() == current.to_external()
+    config, _ = synthetic_run(tmp_path)
+    config["schema_version"] = 2
+    config.pop("raw_format_version", None)
+    assert not analysis_block_reason(config)
+    path = tmp_path / "experiment_config.yaml"
+    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    raw = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (tmp_path / "raw").iterdir()}
+    AnalysisWorkflow(tmp_path).execute(["B01", "B02", "B03"])
+    assert raw == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (tmp_path / "raw").iterdir()}
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["schema_version"] == 2

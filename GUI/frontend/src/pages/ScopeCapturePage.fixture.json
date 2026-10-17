@@ -1,0 +1,460 @@
+{
+  "schema": {
+    "schema_version": 3,
+    "fields": [
+      {
+        "name": "SYSTEM_SETTLE_S",
+        "label": "系统稳定时间",
+        "type": "number",
+        "default": 0.1,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 0,
+        "maximum": null,
+        "description": "配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。",
+        "read_only": false,
+        "legacy_defaults": {
+          "temperature_switch_off_settle_s": 0.1
+        }
+      },
+      {
+        "name": "mode",
+        "label": "模式",
+        "type": "string",
+        "default": "time",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false,
+        "options": [
+          {
+            "value": "time",
+            "label": "时间"
+          },
+          {
+            "value": "frequency",
+            "label": "频域"
+          }
+        ]
+      },
+      {
+        "name": "sampling_rate_sa_s",
+        "label": "采样率",
+        "type": "number",
+        "default": 500000.0,
+        "unit": "Sa/s",
+        "group": "basic",
+        "minimum": 1.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "duration_s",
+        "label": "采集时间",
+        "type": "number",
+        "default": 1.0,
+        "unit": "s",
+        "group": "basic",
+        "minimum": 1e-09,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "channel",
+        "label": "采集通道",
+        "type": "integer",
+        "default": 1,
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false,
+        "options": [
+          {
+            "value": 1,
+            "label": "C1"
+          },
+          {
+            "value": 2,
+            "label": "C2"
+          },
+          {
+            "value": 3,
+            "label": "C3"
+          },
+          {
+            "value": 4,
+            "label": "C4"
+          }
+        ]
+      },
+      {
+        "name": "trigger_channel",
+        "label": "触发通道",
+        "type": "integer",
+        "default": 1,
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false,
+        "options": [
+          {
+            "value": 1,
+            "label": "C1"
+          },
+          {
+            "value": 2,
+            "label": "C2"
+          },
+          {
+            "value": 3,
+            "label": "C3"
+          },
+          {
+            "value": 4,
+            "label": "C4"
+          }
+        ]
+      },
+      {
+        "name": "trigger_mode",
+        "label": "触发模式",
+        "type": "string",
+        "default": "AUTO",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false,
+        "options": [
+          {
+            "value": "AUTO",
+            "label": "Auto"
+          },
+          {
+            "value": "NORMal",
+            "label": "Normal"
+          },
+          {
+            "value": "SINGle",
+            "label": "Single"
+          }
+        ]
+      },
+      {
+        "name": "trigger_slope",
+        "label": "触发边沿",
+        "type": "string",
+        "default": "RISing",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false,
+        "options": [
+          {
+            "value": "RISing",
+            "label": "Rising"
+          },
+          {
+            "value": "FALLing",
+            "label": "Falling"
+          }
+        ]
+      },
+      {
+        "name": "trigger_level_v",
+        "label": "触发电平",
+        "type": "number",
+        "default": 0.0,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "vertical_scale_v_div",
+        "label": "垂直档位",
+        "type": "number",
+        "default": 1.0,
+        "unit": "V/div",
+        "group": "basic",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "vertical_offset_v",
+        "label": "垂直偏置",
+        "type": "number",
+        "default": 0.0,
+        "unit": "V",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "disable_temperature_control",
+        "label": "关闭温控采集",
+        "type": "boolean",
+        "default": true,
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "采集前关闭温度开关，波形读完后立即恢复为开启状态。",
+        "read_only": false
+      },
+      {
+        "name": "temperature_switch_on_settle_s",
+        "label": "温控恢复后等待",
+        "type": "number",
+        "default": 1.0,
+        "unit": "s",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "run_tag",
+        "label": "运行标签",
+        "type": "string",
+        "default": "scope",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      }
+    ]
+  },
+  "flow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数与接线预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "参数校验、scope_waveform 映射与 Temp_Switch 条件检查全部通过"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "连接 SDS 与温度开关",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "disable_temperature_control"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "disable_temperature_control"
+        ],
+        "quality_gates": [
+          "SDS 已连接；启用门控时参考时钟严格回读通过且 Temp_Switch 为 5 V ON"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "示波器采集配置与回读校验",
+        "group": "采集与结束",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "sampling_rate_sa_s",
+          "duration_s",
+          "channel",
+          "trigger_channel",
+          "trigger_mode",
+          "trigger_slope",
+          "trigger_level_v",
+          "vertical_scale_v_div",
+          "vertical_offset_v"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "sampling_rate_sa_s",
+          "duration_s",
+          "channel",
+          "trigger_channel",
+          "trigger_mode",
+          "trigger_slope",
+          "trigger_level_v",
+          "vertical_scale_v_div",
+          "vertical_offset_v"
+        ],
+        "quality_gates": [
+          "FSRate 模式、回读采样率、实际点数 2--50,000,000 与垂直档位读回全部有效"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "温控门控采集与波形保存",
+        "group": "采集与结束",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "SYSTEM_SETTLE_S",
+          "temperature_switch_on_settle_s",
+          "run_tag"
+        ],
+        "artifacts": [
+          "raw/waveform.npz"
+        ],
+        "display_parameters": [
+          "SYSTEM_SETTLE_S",
+          "temperature_switch_on_settle_s",
+          "run_tag",
+          "mode"
+        ],
+        "quality_gates": [
+          "完整帧点数与 preamble 一致且实际时长足够；恢复温控后才写盘"
+        ]
+      },
+      {
+        "id": "A05",
+        "title": "安全收尾 / 结束会话",
+        "group": "采集与结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "SDS 停止并断开，温控开关恢复 5 V ON 后断开；清理错误写入运行配置"
+        ]
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "加载配置与原始波形",
+        "group": "离线分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "analysis_inputs.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "运行身份与原始格式合格；时间轴一维等长严格递增且值有限"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "Welch PSD 计算",
+        "group": "离线分析",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "psd.npz",
+          "psd.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "实际采样率为正有限数，PSD 谱线与计算元数据完整"
+        ]
+      },
+      {
+        "id": "B03",
+        "title": "显示数据与诊断绘图",
+        "group": "离线分析",
+        "dependencies": [
+          "B02"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "display.json",
+          "waveform_psd.png",
+          "waveform_psd.pdf"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "显示抽样按时间桶保留窄脉冲；量程与超量程诊断完整后才发布 display.json"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "disable_temperature_control": [
+          "A02",
+          "A03",
+          "A04"
+        ],
+        "sampling_rate_sa_s": [
+          "A03",
+          "A04"
+        ],
+        "duration_s": [
+          "A03",
+          "A04"
+        ],
+        "channel": [
+          "A03",
+          "A04"
+        ],
+        "trigger_channel": [
+          "A03",
+          "A04"
+        ],
+        "trigger_mode": [
+          "A03",
+          "A04"
+        ],
+        "trigger_slope": [
+          "A03",
+          "A04"
+        ],
+        "trigger_level_v": [
+          "A03",
+          "A04"
+        ],
+        "vertical_scale_v_div": [
+          "A03",
+          "A04"
+        ],
+        "vertical_offset_v": [
+          "A03",
+          "A04"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A04"
+        ],
+        "temperature_switch_on_settle_s": [
+          "A04"
+        ],
+        "run_tag": [
+          "A04"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/scope-capture/workflow/diagram"
+  }
+}

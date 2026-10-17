@@ -1,95 +1,52 @@
-"""Z 任意波实际电流波形验证采集工作流。"""
-
-from __future__ import annotations
-
-from dataclasses import replace
-from pathlib import Path
-
-import numpy as np
-
-from ...common import find_project_root
-from ...current_feedback import (
-    load_corrected_control_waveform,
-    load_current_coupling_calibration,
-    target_current_from_omega,
-    validate_current_power,
-)
+# %% [markdown]
+# # Z 任意波实际电流验证：完整与分步共用同一采集业务
+# %% 导入
 from ...experiment_runtime import load_runtime_params
-from ...control_sources import corrected_control_contract, load_theory_control
-from ...steps import save_corrected_control_source_snapshot
-from ..z_aw_waveform_scope_check.workflow import run_scope_check
+from ..z_aw_waveform_scope_check.workflow import Workflow as ScopeWorkflow, run_scope_check
+from ..z_aw_waveform_scope_check.excitation import _configure_outputs
+from . import preparation
 from .models import ZAWCurrentWaveformScopeCheckParams
+from .run_format import EXPERIMENT_ID, DATA_TYPE
+from .stages import ACQUISITION
 
-
-EXPERIMENT_ID = "z-aw-current-waveform-scope-check"
-DATA_TYPE = "Z_AW_Current_Waveform_Scope_Check"
 EXECUTION_MODE = "typed_workflow"
 
 
-def run(params: ZAWCurrentWaveformScopeCheckParams) -> Path:
-    """采集采样电阻波形并将其作为实际电流验证目标。"""
-    theory_override = None
-    applied_override = None
-    snapshot_writer = None
-    target_control_scale = None
-    corrected = None
-    if params.control_waveform_source == "corrected_run":
-        corrected = load_corrected_control_waveform(
-            find_project_root(), params.corrected_control_source_run
-        )
-        theory_override, applied_override = corrected_control_contract(corrected)
-        snapshot_writer = lambda raw_dir: save_corrected_control_source_snapshot(
-            raw_dir,
-            corrected,
-            applied_override,
-        )
-        target_control_scale = 1.0
-    calibration = load_current_coupling_calibration(
-        find_project_root(), params.current_coupling_calibration_source_run
-    )
-    if abs(calibration.sense_resistor_ohm - params.sense_resistor_ohm) > max(
-        1e-12, abs(params.sense_resistor_ohm) * 1e-6
-    ):
-        raise ValueError("实验参数中的采样电阻与电流耦合标定来源不一致")
-    if corrected is not None:
-        if corrected.coupling_calibration_run != calibration.run_name:
-            raise ValueError("冻结波形与选择的电流耦合标定运行不一致")
-        if corrected.coupling_calibration_sha256 != calibration.analysis_sha256:
-            raise ValueError("冻结波形与当前电流耦合标定文件哈希不一致")
-        target_current = np.asarray(corrected.target_current_a, dtype=float)
-    else:
-        theory = load_theory_control(
-            Path(params.control_results_root),
-            params.control_version,
-        )
-        target_current = target_current_from_omega(
-            params.control_scale * theory.omega_ctrl_hz,
-            calibration,
-        )
-    validate_current_power(
-        target_current,
-        params.sense_resistor_ohm,
-        params.sense_resistor_power_rating_w,
-        derating_fraction=0.5,
-        maximum_current_a=params.maximum_current_a,
-    )
-    return run_scope_check(
-        replace(
-        params,
-            z_calibration_source_run=params.command_z_calibration_source_run,
-        ),
-        experiment_id=EXPERIMENT_ID,
-        data_type=DATA_TYPE,
-        measurement_mode="current",
-        current_calibration=calibration,
-        theory_override=theory_override,
-        applied_override=applied_override,
-        source_snapshot_writer=snapshot_writer,
-        target_control_scale=target_control_scale,
-    )
+class Workflow(ScopeWorkflow):
+    """只替换目标电流准备；设备连接、采集、取消和收尾沿用电压验证。"""
+
+    acquisition_stages = ACQUISITION
+    preflight = staticmethod(preparation.preflight)
+
+    def __init__(self, params, *, project_root=None, session_id=None):
+        super().__init__(params, project_root=project_root, session_id=session_id,
+                         experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, measurement_mode="current")
+
+    def _execute_step(self, item):
+        if item == "A03":
+            self.source = preparation.prepare_control(self.params, self.root)
+            self.outputs_started = True
+            _configure_outputs(self.params, self.devices, self.channels, self.source.theory, self.source.applied)
+            self.outputs.update({"Z 任意波": "外部下降沿 Burst ON", "共同触发": "OFF"})
+        else:
+            super()._execute_step(item)
 
 
-def main() -> int:
+# %% 完整采集
+def run(params: ZAWCurrentWaveformScopeCheckParams, *, project_root=None):
+    ctx = Workflow(params, project_root=project_root)
+    failure = None
+    try:
+        ctx.execute([stage.id for stage in ACQUISITION if stage.id != ctx.finish_id])
+        return ctx.run_dir
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        ctx.finish(failure)
+
+
+def main():
     run(load_runtime_params(ZAWCurrentWaveformScopeCheckParams))
     return 0
 

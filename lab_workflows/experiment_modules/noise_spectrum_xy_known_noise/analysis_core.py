@@ -93,23 +93,49 @@ def write_json(path, payload):
     path.write_text(json.dumps(_json_safe(payload), ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def compute_psd_matrix(run_dir: Path, config: dict, options: dict, suffix: str):
-    """按波形编号对齐控制轴计算单侧（off 或 on）PSD 矩阵。"""
+def psd_input_config(config: dict):
+    """在归档前与 PSD 计算时共用采集配置资格，不读取请求采样率。"""
     daq = config["hf2_daq"]
     rate = float(daq.get("actual_rate_Sa_s", float("nan")))
-    if not np.isfinite(rate) or rate <= 0:
+    if isinstance(daq.get("actual_rate_Sa_s"), bool) or not np.isfinite(rate) or rate <= 0:
         raise ValueError("缺少有效的硬件实际采样率，不能从请求值猜测频率轴")
+    duration = float(daq["DAQ_duration_s"])
+    if isinstance(daq["DAQ_duration_s"], bool) or not np.isfinite(duration) or duration <= 0:
+        raise ValueError("采集时长必须为有限正数")
     scan = config["scan_params"]
     voltage = np.asarray(scan["xy_envelope_voltage_V"], float)
-    if not np.isfinite(voltage).all() or np.any(np.diff(voltage) <= 0):
-        raise ValueError("控制电压轴必须有限且严格递增")
+    if voltage.ndim != 1 or voltage.size < 2 or not np.isfinite(voltage).all() or np.any(np.diff(voltage) <= 0):
+        raise ValueError("控制电压轴必须为至少两点的有限严格递增一维数组")
+    return daq, rate, voltage
+
+
+def psd_sampling(run_dir: Path, config: dict, options: dict, suffix: str):
+    """归档前与实际计算共用逐段速率和 Welch 频率轴，不加载波形或计算 PSD。"""
+    daq, rate, voltage = psd_input_config(config)
     from sensitivity_analysis.acquisition import load_acquisition_rate
     files = sorted((run_dir / "raw").glob(f"waveform_C*_{suffix}.npy"))
     if files:
         rate = load_acquisition_rate(files[0], rate)
     settings = welch_settings(rate, float(daq["DAQ_duration_s"]), options["bin_width_hz"])
+    for i in range(voltage.size):
+        check_cancelled()
+        path = run_dir / "raw" / f"waveform_C{i:04d}_{suffix}.npy"
+        if path.exists() and not np.isclose(load_acquisition_rate(path, rate), rate, rtol=1e-6):
+            raise ValueError("配对波形的实际采样率不一致，无法合并 PSD 频率轴")
+    return rate, voltage, settings, np.fft.rfftfreq(settings["nperseg"], 1 / rate)
+
+
+def require_paired_axes(frequency, voltage, frequency_off, voltage_off):
+    """保留两态 PSD 原有的频率轴及控制轴一致规则。"""
+    if (frequency.shape != frequency_off.shape or not np.allclose(frequency, frequency_off)
+            or voltage.shape != voltage_off.shape or not np.allclose(voltage, voltage_off)):
+        raise ValueError("off/on 实际采样率或控制轴不一致，不能相减 PSD")
+
+
+def compute_psd_matrix(run_dir: Path, config: dict, options: dict, suffix: str):
+    """按波形编号对齐控制轴计算单侧（off 或 on）PSD 矩阵。"""
+    rate, voltage, settings, frequency = psd_sampling(run_dir, config, options, suffix)
     nperseg = settings["nperseg"]
-    frequency = np.fft.rfftfreq(nperseg, 1/rate)
     matrix = np.full((voltage.size, frequency.size), np.nan)
     valid_rows = []
     for i in range(voltage.size):
@@ -118,8 +144,6 @@ def compute_psd_matrix(run_dir: Path, config: dict, options: dict, suffix: str):
         if not path.exists():
             continue
         wave = np.load(path, allow_pickle=False)
-        if not np.isclose(load_acquisition_rate(path, rate), rate, rtol=1e-6):
-            raise ValueError("配对波形的实际采样率不一致，无法合并 PSD 频率轴")
         if wave.ndim != 1 or wave.size < nperseg or not np.isfinite(wave).all() or np.std(wave) == 0:
             continue
         _, psd = welch(wave, fs=rate, nperseg=nperseg, noverlap=nperseg//2,

@@ -116,7 +116,13 @@ def interpolate_in_run(
     相位先展开再插值以免 2π 跳变。参考信号与电流取自同一帧同一时间轴，
     因此相位随频率平缓变化、展开可靠。
     """
-    if target_hz < run_frequency_hz[0] or target_hz > run_frequency_hz[-1]:
+    low, high = float(run_frequency_hz[0]), float(run_frequency_hz[-1])
+    # FFT 网格会在同一物理端点偏离几个 ULP；只吸附舍入误差，不外推。
+    if np.isclose(target_hz, low, rtol=1e-12, atol=1e-9):
+        target_hz = low
+    elif np.isclose(target_hz, high, rtol=1e-12, atol=1e-9):
+        target_hz = high
+    if target_hz < low or target_hz > high:
         return None
     if run_frequency_hz.size < 2:
         return (
@@ -258,7 +264,7 @@ def prepare_closed_loop(root: Path, params) -> PreparedLoop:
         validate_safety_limit("Z_magnetic_field", value)
     if response is None:
         frequency = np.fft.rfftfreq(theory.time_s.size, float(np.median(np.diff(theory.time_s))))
-        band = frequency <= float(params.error_cutoff_hz)
+        band = (frequency <= params.error_cutoff_hz) | np.isclose(frequency, params.error_cutoff_hz, rtol=1e-12, atol=0)
         if params.correction_method == "harmonic_jacobian":
             from .harmonic_feedback import select_harmonics
             selected = select_harmonics(target, frequency, params)

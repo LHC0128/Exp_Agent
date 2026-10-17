@@ -1,0 +1,873 @@
+{
+  "schema": {
+    "schema_version": 13,
+    "fields": [
+      {
+        "name": "RUN_TAG",
+        "label": "运行标签",
+        "type": "string",
+        "default": "z_aw_closed_loop_waveform_correction",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_VERSION",
+        "label": "最优控制版本",
+        "type": "string",
+        "default": "v6",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "按 vN 读取同版本的最优控制波形和理论参数。",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_SCALE",
+        "label": "控制幅度比例",
+        "type": "number",
+        "default": 1.0,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CORRECTION_METHOD",
+        "label": "校正方法",
+        "type": "string",
+        "default": "harmonic_jacobian",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false,
+        "options": [
+          {
+            "value": "harmonic_jacobian",
+            "label": "高通链路谐波辨识闭环（CH4 固定参考）"
+          },
+          {
+            "value": "time_domain",
+            "label": "历史时域实际电流反馈"
+          },
+          {
+            "value": "response_filtered_feedback",
+            "label": "频响预加重反馈"
+          }
+        ]
+      },
+      {
+        "name": "Z_AW_OUTPUT_VPP",
+        "label": "Z 控制 AW 输出幅度",
+        "type": "number",
+        "default": 10.0,
+        "unit": "Vpp",
+        "group": "basic",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_BURST_PHASE_DEG",
+        "label": "Z 控制 Burst 相位",
+        "type": "number",
+        "default": 0.0,
+        "unit": "deg",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": 360.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_FREQUENCY_HZ",
+        "label": "共同触发频率",
+        "type": "number",
+        "default": 100.0,
+        "unit": "Hz",
+        "group": "advanced",
+        "minimum": 0.001,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_AMPLITUDE_VPP",
+        "label": "共同触发幅度",
+        "type": "number",
+        "default": 10.0,
+        "unit": "Vpp",
+        "group": "advanced",
+        "minimum": 0.001,
+        "maximum": 20.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_OFFSET_V",
+        "label": "共同触发偏置",
+        "type": "number",
+        "default": 2.5,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": -10.0,
+        "maximum": 10.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "TRIGGER_DUTY_PERCENT",
+        "label": "共同触发占空比",
+        "type": "number",
+        "default": 50.0,
+        "unit": "%",
+        "group": "advanced",
+        "minimum": 20.0,
+        "maximum": 80.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SCOPE_CYCLES",
+        "label": "每次采集周期数",
+        "type": "integer",
+        "default": 3,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 2,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CONTROL_SOURCE_SET",
+        "label": "理论结果集",
+        "type": "string",
+        "default": "oc_sens",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false,
+        "options": [
+          {
+            "value": "oc_sens",
+            "label": "oc_sens"
+          },
+          {
+            "value": "oc_broadband_v2",
+            "label": "oc_broadband_v2"
+          }
+        ]
+      },
+      {
+        "name": "CURRENT_COUPLING_CALIBRATION_SOURCE_RUN",
+        "label": "静态电流耦合标定",
+        "type": "string",
+        "default": "0914_184134_mx_z_current_coupling_calibration",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN",
+        "label": "电流频响标定来源",
+        "type": "string",
+        "default": "",
+        "unit": "",
+        "group": "basic",
+        "minimum": null,
+        "maximum": null,
+        "description": "只接受 AW 外部下降沿 Burst 协议的新标定运行目录名。",
+        "read_only": false
+      },
+      {
+        "name": "INVERSE_REGULARIZATION",
+        "label": "逆滤波正则化比例",
+        "type": "number",
+        "default": 0.05,
+        "unit": "",
+        "group": "basic",
+        "minimum": 1e-06,
+        "maximum": 1.0,
+        "description": "lambda = 该比例 × 学习频带内最大 |H|，抑制弱响应频率上的过大修正。",
+        "read_only": false
+      },
+      {
+        "name": "MAX_ITERATIONS",
+        "label": "最大测量轮数（含初始轮）",
+        "type": "integer",
+        "default": 20,
+        "unit": "",
+        "group": "basic",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "ITERATION_REPEATS",
+        "label": "每轮重复采集帧数",
+        "type": "integer",
+        "default": 5,
+        "unit": "",
+        "group": "basic",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "ITERATION_DAMPING",
+        "label": "更新系数 α",
+        "type": "number",
+        "default": 0.5,
+        "unit": "",
+        "group": "basic",
+        "minimum": 1e-06,
+        "maximum": 1.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "ERROR_CUTOFF_HZ",
+        "label": "最高学习频率",
+        "type": "number",
+        "default": 500000.0,
+        "unit": "Hz",
+        "group": "basic",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "闭环只更新该频率以下的电压分量；带外误差仍完整计入评分。",
+        "read_only": false
+      },
+      {
+        "name": "TARGET_RELATIVE_RMS",
+        "label": "相对 RMS 误差阈值",
+        "type": "number",
+        "default": 0.02,
+        "unit": "",
+        "group": "basic",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "REQUIRED_PASSES",
+        "label": "连续达标轮数",
+        "type": "integer",
+        "default": 3,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "OUTPUT_SETTLE_S",
+        "label": "更新后稳定等待",
+        "type": "number",
+        "default": 0.1,
+        "unit": "s",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SCOPE_HEADROOM_FACTOR",
+        "label": "理论电压量程余量倍数",
+        "type": "number",
+        "default": 1.5,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1.0,
+        "maximum": null,
+        "description": "理论采样电阻电压峰峰值乘以该倍数，向上选 1/2/5 档并居中；采集中只放大量程。",
+        "read_only": false
+      },
+      {
+        "name": "HOLDOUT_REPEATS",
+        "label": "独立验证帧数",
+        "type": "integer",
+        "default": 3,
+        "unit": "",
+        "group": "basic",
+        "minimum": 1,
+        "maximum": 20,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "MAXIMUM_STEP_V",
+        "label": "单轮最大电压增量",
+        "type": "number",
+        "default": 1.0,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "MAXIMUM_BACKTRACKS",
+        "label": "最大连续回退次数",
+        "type": "integer",
+        "default": 4,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "MAXIMUM_CURRENT_A",
+        "label": "峰值电流上限",
+        "type": "number",
+        "default": 1.0,
+        "unit": "A",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_RESISTOR_POWER_RATING_W",
+        "label": "采样电阻额定功率",
+        "type": "number",
+        "default": 10.0,
+        "unit": "W",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "SENSE_RESISTOR_POWER_DERATING",
+        "label": "采样电阻功率降额系数",
+        "type": "number",
+        "default": 0.5,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": 1.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "HARMONIC_AMPLITUDE_FRACTION",
+        "label": "目标谐波幅度门限（相对最大值）",
+        "type": "number",
+        "default": 0.01,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": 1.0,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "MAXIMUM_HARMONICS",
+        "label": "最大辨识谐波数",
+        "type": "integer",
+        "default": 16,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": 64,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "IDENTIFICATION_STEP_V",
+        "label": "辨识初始扰动峰值",
+        "type": "number",
+        "default": 0.02,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "IDENTIFICATION_MAXIMUM_STEP_V",
+        "label": "辨识最大扰动峰值",
+        "type": "number",
+        "default": 0.05,
+        "unit": "V",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "IDENTIFICATION_REPEATS",
+        "label": "每个扰动重复帧数",
+        "type": "integer",
+        "default": 3,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 3,
+        "maximum": 20,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "IDENTIFICATION_MIN_SNR",
+        "label": "辨识差分最低信噪比",
+        "type": "number",
+        "default": 5.0,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 3.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "HARMONIC_REPEATABILITY_FRACTION",
+        "label": "重载谐波复系数变化上限",
+        "type": "number",
+        "default": 0.05,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1e-06,
+        "maximum": 0.5,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "MINIMUM_IMPROVEMENT",
+        "label": "最小误差改善（绝对比例）",
+        "type": "number",
+        "default": 0.0002,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 0.0,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "REIDENTIFY_INTERVAL",
+        "label": "重新辨识间隔轮数",
+        "type": "integer",
+        "default": 3,
+        "unit": "",
+        "group": "advanced",
+        "minimum": 1,
+        "maximum": null,
+        "description": "",
+        "read_only": false
+      },
+      {
+        "name": "FINAL_VALIDATION_REPEATS",
+        "label": "最终重载验证帧数",
+        "type": "integer",
+        "default": 3,
+        "unit": "",
+        "group": "basic",
+        "minimum": 3,
+        "maximum": 20,
+        "description": "",
+        "read_only": false
+      }
+    ]
+  },
+  "workflow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数、来源与接线预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "参数、来源资格、映射和安全限值全部通过"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "连接设备与同步时钟",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "参考时钟严格回读一致"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "闭环目标与来源准备",
+        "group": "准备",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "CONTROL_SOURCE_SET",
+          "CONTROL_VERSION",
+          "CONTROL_SCALE",
+          "CORRECTION_METHOD",
+          "CURRENT_COUPLING_CALIBRATION_SOURCE_RUN",
+          "CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN",
+          "Z_AW_OUTPUT_VPP",
+          "ERROR_CUTOFF_HZ",
+          "INVERSE_REGULARIZATION",
+          "HARMONIC_AMPLITUDE_FRACTION",
+          "MAXIMUM_HARMONICS",
+          "MAXIMUM_CURRENT_A",
+          "SENSE_RESISTOR_POWER_RATING_W",
+          "SENSE_RESISTOR_POWER_DERATING"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "CONTROL_SOURCE_SET",
+          "CONTROL_VERSION",
+          "CONTROL_SCALE",
+          "CORRECTION_METHOD",
+          "CURRENT_COUPLING_CALIBRATION_SOURCE_RUN",
+          "CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN",
+          "Z_AW_OUTPUT_VPP",
+          "ERROR_CUTOFF_HZ",
+          "INVERSE_REGULARIZATION",
+          "HARMONIC_AMPLITUDE_FRACTION",
+          "MAXIMUM_HARMONICS",
+          "MAXIMUM_CURRENT_A",
+          "SENSE_RESISTOR_POWER_RATING_W",
+          "SENSE_RESISTOR_POWER_DERATING"
+        ],
+        "quality_gates": [
+          "静态标定与理论有效；频响模式严格核对有效重复与相位；谐波模式拒绝直流目标"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "Scope 量程与触发配置",
+        "group": "闭环采集",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "SCOPE_CYCLES",
+          "SCOPE_HEADROOM_FACTOR",
+          "SCOPE_MEASURED_CHANNEL",
+          "SCOPE_TRIGGER_CHANNEL",
+          "SCOPE_VERTICAL_DIVISIONS",
+          "SCOPE_TRIGGER_LEVEL_V"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "SCOPE_CYCLES",
+          "SCOPE_HEADROOM_FACTOR"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A05",
+        "title": "闭环迭代与独立验证",
+        "group": "闭环采集",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [
+          "RUN_TAG",
+          "CONTROL_BURST_PHASE_DEG",
+          "TRIGGER_FREQUENCY_HZ",
+          "TRIGGER_AMPLITUDE_VPP",
+          "TRIGGER_OFFSET_V",
+          "TRIGGER_DUTY_PERCENT",
+          "MAX_ITERATIONS",
+          "ITERATION_REPEATS",
+          "ITERATION_DAMPING",
+          "TARGET_RELATIVE_RMS",
+          "REQUIRED_PASSES",
+          "OUTPUT_SETTLE_S",
+          "HOLDOUT_REPEATS",
+          "MAXIMUM_STEP_V",
+          "MAXIMUM_BACKTRACKS",
+          "IDENTIFICATION_STEP_V",
+          "IDENTIFICATION_MAXIMUM_STEP_V",
+          "IDENTIFICATION_REPEATS",
+          "IDENTIFICATION_MIN_SNR",
+          "HARMONIC_REPEATABILITY_FRACTION",
+          "MINIMUM_IMPROVEMENT",
+          "REIDENTIFY_INTERVAL",
+          "FINAL_VALIDATION_REPEATS"
+        ],
+        "artifacts": [
+          "experiment_config.yaml",
+          "raw/iteration_summary.yaml",
+          "results/iteration_summary.yaml"
+        ],
+        "display_parameters": [
+          "RUN_TAG",
+          "CONTROL_BURST_PHASE_DEG",
+          "TRIGGER_FREQUENCY_HZ",
+          "TRIGGER_AMPLITUDE_VPP",
+          "TRIGGER_OFFSET_V",
+          "TRIGGER_DUTY_PERCENT",
+          "MAX_ITERATIONS",
+          "ITERATION_REPEATS",
+          "ITERATION_DAMPING",
+          "TARGET_RELATIVE_RMS",
+          "REQUIRED_PASSES",
+          "OUTPUT_SETTLE_S",
+          "HOLDOUT_REPEATS",
+          "MAXIMUM_STEP_V",
+          "MAXIMUM_BACKTRACKS",
+          "IDENTIFICATION_STEP_V",
+          "IDENTIFICATION_MAXIMUM_STEP_V",
+          "IDENTIFICATION_REPEATS",
+          "IDENTIFICATION_MIN_SNR",
+          "HARMONIC_REPEATABILITY_FRACTION",
+          "MINIMUM_IMPROVEMENT",
+          "REIDENTIFY_INTERVAL",
+          "FINAL_VALIDATION_REPEATS",
+          "SCOPE_HEADROOM_FACTOR"
+        ],
+        "quality_gates": [
+          "保留全部尝试；谐波辨识、重复性或最终重载不合格时禁止冻结；未收敛仍保存诊断"
+        ]
+      },
+      {
+        "id": "A06",
+        "title": "安全收尾 / 结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "核验运行版本与保存的反馈",
+        "group": "离线分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "analysis_inputs.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "明确版本和方法；保存数组、时间轴与原始反馈有效"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "原算法绘图与报告导出",
+        "group": "离线分析",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "final_waveform_report.yaml"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "使用保存的指标与命令；质量结论独立于分析是否完成"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "CONTROL_SOURCE_SET": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CONTROL_VERSION": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CONTROL_SCALE": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CORRECTION_METHOD": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CURRENT_COUPLING_CALIBRATION_SOURCE_RUN": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "Z_AW_OUTPUT_VPP": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "ERROR_CUTOFF_HZ": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "INVERSE_REGULARIZATION": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "HARMONIC_AMPLITUDE_FRACTION": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "MAXIMUM_HARMONICS": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "MAXIMUM_CURRENT_A": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SENSE_RESISTOR_POWER_RATING_W": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SENSE_RESISTOR_POWER_DERATING": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SCOPE_CYCLES": [
+          "A04",
+          "A05"
+        ],
+        "SCOPE_HEADROOM_FACTOR": [
+          "A04",
+          "A05"
+        ],
+        "SCOPE_MEASURED_CHANNEL": [
+          "A04",
+          "A05"
+        ],
+        "SCOPE_TRIGGER_CHANNEL": [
+          "A04",
+          "A05"
+        ],
+        "SCOPE_VERTICAL_DIVISIONS": [
+          "A04",
+          "A05"
+        ],
+        "SCOPE_TRIGGER_LEVEL_V": [
+          "A04",
+          "A05"
+        ],
+        "RUN_TAG": [
+          "A05"
+        ],
+        "CONTROL_BURST_PHASE_DEG": [
+          "A05"
+        ],
+        "TRIGGER_FREQUENCY_HZ": [
+          "A05"
+        ],
+        "TRIGGER_AMPLITUDE_VPP": [
+          "A05"
+        ],
+        "TRIGGER_OFFSET_V": [
+          "A05"
+        ],
+        "TRIGGER_DUTY_PERCENT": [
+          "A05"
+        ],
+        "MAX_ITERATIONS": [
+          "A05"
+        ],
+        "ITERATION_REPEATS": [
+          "A05"
+        ],
+        "ITERATION_DAMPING": [
+          "A05"
+        ],
+        "TARGET_RELATIVE_RMS": [
+          "A05"
+        ],
+        "REQUIRED_PASSES": [
+          "A05"
+        ],
+        "OUTPUT_SETTLE_S": [
+          "A05"
+        ],
+        "HOLDOUT_REPEATS": [
+          "A05"
+        ],
+        "MAXIMUM_STEP_V": [
+          "A05"
+        ],
+        "MAXIMUM_BACKTRACKS": [
+          "A05"
+        ],
+        "IDENTIFICATION_STEP_V": [
+          "A05"
+        ],
+        "IDENTIFICATION_MAXIMUM_STEP_V": [
+          "A05"
+        ],
+        "IDENTIFICATION_REPEATS": [
+          "A05"
+        ],
+        "IDENTIFICATION_MIN_SNR": [
+          "A05"
+        ],
+        "HARMONIC_REPEATABILITY_FRACTION": [
+          "A05"
+        ],
+        "MINIMUM_IMPROVEMENT": [
+          "A05"
+        ],
+        "REIDENTIFY_INTERVAL": [
+          "A05"
+        ],
+        "FINAL_VALIDATION_REPEATS": [
+          "A05"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/z-aw-closed-loop-waveform-correction/workflow/diagram"
+  }
+}

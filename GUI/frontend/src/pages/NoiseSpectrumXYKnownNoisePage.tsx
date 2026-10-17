@@ -198,7 +198,7 @@ function Result({ value, probeAm }: { value: RunSummary; probeAm: boolean }) {
         </figure>
       ))}
       {files.length > 0 && (
-        <p>{files.map((name) => <a key={name} href={value.artifacts[name]} download style={{ marginRight: 12 }}>{name}</a>)}</p>
+        <p className="xy-artifact-links">{files.map((name) => <a key={name} href={value.artifacts[name]} download>{name}</a>)}</p>
       )}
     </div>
   );
@@ -542,7 +542,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
             <details className="xy-workflow-preview"><summary>{probeAm ? "AM 噪声波形、可选 Z 注入与 Welch 预览" : "波形、注入真值与 Welch 预览"}</summary>{previewContent}</details>
             <p>{probeAm
               ? "完整运行自动执行采集、收尾与 B01～B04；移动峰不足时按运行参数 K/B 输出暂定控制轴并标记质量未通过。"
-              : "未选标定曲线时完整运行完成采集、收尾及 B01～B04；选择静磁场 v3 曲线后继续 B05、B06。"}</p>
+              : "未选标定曲线时完整运行完成采集、收尾及 B01～B04；选择符合格式与质量要求的静磁场直流逐点曲线后继续 B05、B06。"}</p>
           </div>
         </WorkflowPanel>
         {latestContent}

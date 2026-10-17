@@ -13,18 +13,22 @@ class Stage:
     artifacts: tuple[str, ...] = ()
     # 展示归属独立于失效起点；None 表示沿用 parameters。
     display_parameters: tuple[str, ...] | None = None
+    quality_gates: tuple[str, ...] = ()
 
 
 ACQUISITION = (
-    Stage("A01", "启动预检", "启动准备", ()),
+    Stage("A01", "启动预检", "启动准备", (),
+          quality_gates=("参数、映射、锁相能力与输出安全限值通过，解调器索引与 lockin_r 一致。",)),
     Stage("A02", "设备连接", "启动准备", ("A01",)),
-    Stage("A03", "参考时钟同步", "启动准备", ("A02",)),
+    Stage("A03", "参考时钟同步", "启动准备", ("A02",),
+          quality_gates=("全部已连接时钟设备按设备库配置写入，参考源回读与目标一致；任一设置或回读失败即停止。",)),
     Stage("A04", "初始输出与温控", "初始条件", ("A03",),
           ("FIXED_PARAMS.Pump_laser_power", "FIXED_PARAMS.Probe_laser_power",
            "FIXED_PARAMS.temperature")),
     Stage("A05", "HF2 解调配置", "激励与解调", ("A04",),
           ("HF2_DEMOD_IDX", "HF2_OSC_FREQ_HZ", "HF2_SIGNAL_RANGE_V",
-           "HF2_DEMOD_ORDER", "HF2_DAQ_TC_S", "HF2_DAQ_RATE_SA_S")),
+           "HF2_DEMOD_ORDER", "HF2_DAQ_TC_S", "HF2_DAQ_RATE_SA_S"),
+          quality_gates=("锁相返回的实际采样率为有限正数。",)),
     Stage("A06", "AOM 载波与外部 AM", "激励与解调", ("A05",),
           ("PROBE_AOM_CARRIER_FREQ_HZ", "PROBE_AOM_CARRIER_AMPLITUDE_VPP")),
     Stage("A07", "频率扫描采集", "扫描与结束", ("A06",),
@@ -32,13 +36,16 @@ ACQUISITION = (
            "PROBE_AOM_AM_AMPLITUDE_VPP", "HF2_DAQ_DURATION_S",
            "TEMP_SWITCH_ON_LAG_S", "PSD_NPERSEG", "RUN_TAG"),
           ("experiment_config.yaml", "raw/waveform_*.npy", "raw/frequency_response.npz",
-           "results/results_summary.yaml")),
+           "results/results_summary.yaml"),
+          quality_gates=("最大基带频率严格小于实际采样率的一半，每点至少取得 8 个 Y 样本。",)),
     Stage("A08", "安全收尾 / 结束会话", "扫描与结束", ()),
 )
 ANALYSIS = (
-    Stage("B01", "加载配置与准备分析", "加载配置与准备分析", ()),
+    Stage("B01", "加载配置与准备分析", "加载配置与准备分析", (),
+          quality_gates=("实验身份及原始格式匹配，频率与谱峰数组非空等长，实际采样率为有限正标量。",)),
     Stage("B02", "归一化响应与斜率对照", "归一化响应与斜率对照", ("B01",),
-          (), ("analysis_results.npz",)),
+          (), ("analysis_results.npz",),
+          quality_gates=("排除零基带后至少有一个有限正谱峰；归一化仅使用两侧最近有效点。",)),
     Stage("B03", "响应曲线绘图与汇总", "响应曲线绘图与汇总", ("B02",),
           (), ("frequency_response.png", "frequency_response.pdf")),
 )

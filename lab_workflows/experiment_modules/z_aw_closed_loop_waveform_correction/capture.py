@@ -37,8 +37,8 @@ def validate_frame(frame: dict, params, *, check_range: bool = True) -> None:
         if np.any(steps <= 0) or not np.allclose(steps, np.median(steps), rtol=1e-5, atol=1e-15):
             raise ValueError("SDS 时间轴必须递增且等间隔")
     actual_rate = 1 / float(np.median(np.diff(frame["time_s"])))
-    if params.error_cutoff_hz > actual_rate / 2:
-        raise ValueError("最高学习频率超过示波器实际采样奈奎斯特频率")
+    if params.error_cutoff_hz >= actual_rate / 2:
+        raise ValueError("最高学习频率必须严格低于示波器实际采样奈奎斯特频率")
     frame["actual_rate_sa_s"] = actual_rate
     scale, offset = frame["scale_used_v_div"], frame["offset_used_v"]
     if not np.isfinite(scale) or scale <= 0 or not np.isfinite(offset):

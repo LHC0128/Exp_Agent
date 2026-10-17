@@ -3,6 +3,7 @@
 from ...experiments.contracts import ExperimentDefinition
 from ...experiments.typed import TypedWorkflowAdapter
 from .models import MxZFieldCalibrationParams
+from .run_format import REQUIRED_MAPPING_KEYS
 
 
 ADAPTER = TypedWorkflowAdapter(
@@ -19,15 +20,19 @@ DEFINITION = ExperimentDefinition(
     category="calibration",
     family="z-field-calibration",
     variant="mx-y-rf",
-    description=('在 9.3 mA 高主场 Mx 构型下，以 Y RF 共振中心随 Z DC 电压的线性移动标定 Z 通道 Hz/V。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
+    description=("在固定主场的 Mx 构型下，逐 Z DC 电压扫描局部 Y RF 共振，离线拟合中心与 Hz/V 线性标定。"
+        "运行页提供可选步骤、节点参数、共享草稿与显式重跑，分步等待保持设备连接和硬件锁。"
+        "每频点按配置、关温控、SYSTEM_SETTLE_S、采入内存、恢复温控、保存执行；TEC 只写目标温度。"
+        "独立分析按具体运行目录保存覆盖草稿，不改历史采集参数；锁相型号与 DAQ/Scope 能力在启动前检查。"),
     data_type="Mx_Z_Field_Calibration",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
+    required_mapping_keys=REQUIRED_MAPPING_KEYS,
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Z_Field_Calibration.py",
     analysis_program="experiments/Mx_Z_Field_Calibration_plot.py",
     wiring_notes=(
-        "主场和 Pump 光沿 Z、Probe 光沿 X；Z_magnetic_field CH1 提供 DC 偏置，rf_coil CH2 提供 Y 向 RF。",
-        "锁相放大器 Demod0 以每个 Y RF 扫频点直接解调，只采集 R。",
+        "主场和 Pump 光沿 Z、Probe 光沿 X；Z DC 与 Y RF 的设备及通道由当前物理量映射解析。",
+        "锁相放大器使用 DEMOD_IDX 所选解调器，以每个 Y RF 扫频点直接解调，只采集 R。",
     ),
     safety_notes=(
         "每个频点关闭温控采集并立即恢复 5 V ON；Z 偏置切换后不设置专用等待。",

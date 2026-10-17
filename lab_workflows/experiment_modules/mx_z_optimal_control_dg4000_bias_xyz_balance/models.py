@@ -60,6 +60,11 @@ class MxZOptimalControlDG4000BiasXYZBalanceParams(
         group="basic",
         minimum=1,
     )
+    r_bad_point_std_threshold_v: float = parameter(
+        default=0.1, external_name="R_BAD_POINT_STD_THRESHOLD_V",
+        label="X/Y 复噪声标准差拒绝门槛", unit="V", group="advanced", minimum=0.0,
+        description="保留历史键；实际资格使用 sqrt(std(X)^2 + std(Y)^2)，不是 R 标准差。",
+    )
     control_waveform_source: str = parameter(
         default="corrected_run",
         external_name="CONTROL_WAVEFORM_SOURCE",

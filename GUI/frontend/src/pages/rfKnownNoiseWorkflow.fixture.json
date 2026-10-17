@@ -7,7 +7,10 @@
       "dependencies": [],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "参数、控制波形、映射、独立通道与安全限值全部通过预检"
+      ]
     },
     {
       "id": "A02",
@@ -18,7 +21,8 @@
       ],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": []
     },
     {
       "id": "A03",
@@ -29,7 +33,10 @@
       ],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "全部已连接设备参考时钟严格回读一致"
+      ]
     },
     {
       "id": "A04",
@@ -50,7 +57,8 @@
         "FIXED_PARAMS.Probe_laser_power",
         "FIXED_PARAMS.main_magnetic_field",
         "FIXED_PARAMS.Temp_Switch"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A05",
@@ -65,7 +73,8 @@
       "artifacts": [],
       "display_parameters": [
         "FIXED_PARAMS.temperature"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A06",
@@ -88,7 +97,8 @@
         "PUMP_MOD_DUTY",
         "RF_GATE_AMPLITUDE",
         "RF_GATE_OFFSET"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A07",
@@ -116,7 +126,8 @@
         "XY_TRIGGER_OFFSET",
         "XY_TRIGGER_DUTY",
         "XY_TRIGGER_PHASE"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A08",
@@ -145,7 +156,8 @@
         "DEMOD0_RATE",
         "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_LAG_S"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A09",
@@ -193,6 +205,9 @@
         "NOISE_BAND_PSDS_V2_PER_HZ",
         "NOISE_REPEAT_FREQ_HZ",
         "NOISE_SEED"
+      ],
+      "quality_gates": [
+        "XY 校相残差及 R 的绝对幅值、相对幅值满足当前参数门槛"
       ]
     },
     {
@@ -238,7 +253,8 @@
         "RF_INPUT_ROUTE",
         "RF_AUX_OUTPUT_IDX",
         "RF_PHYSICAL_INPUT_SOURCE"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A11",
@@ -269,7 +285,8 @@
         "TEMP_SWITCH_ON_LAG_S",
         "TEMP_GROUP_SIZE",
         "SCAN_POINT_DURATION_S"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A12",
@@ -284,7 +301,8 @@
         "Z_RF_AMPLITUDE_INIT",
         "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_LAG_S"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A13",
@@ -314,7 +332,8 @@
         "TEMP_SWITCH_ON_LAG_S",
         "TEMP_GROUP_SIZE",
         "SCAN_POINT_DURATION_S"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A14",
@@ -341,7 +360,8 @@
         "DEMOD3_NOISE_ORDER",
         "SYSTEM_SETTLE_S",
         "TEMP_SWITCH_ON_LAG_S"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A13B",
@@ -369,7 +389,8 @@
         "TEMP_SWITCH_ON_LAG_S",
         "TEMP_GROUP_SIZE",
         "SCAN_POINT_DURATION_S"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "A15",
@@ -380,7 +401,8 @@
       ],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": []
     },
     {
       "id": "A16",
@@ -389,7 +411,8 @@
       "dependencies": [],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": []
     }
   ],
   "analysis": [
@@ -400,7 +423,10 @@
       "dependencies": [],
       "parameters": [],
       "artifacts": [],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": [
+        "实验身份、原始格式、响应及噪声数据资格有效，采集已封存"
+      ]
     },
     {
       "id": "B02",
@@ -413,7 +439,8 @@
       "artifacts": [
         "response_fits.json"
       ],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": []
     },
     {
       "id": "B03",
@@ -430,7 +457,8 @@
       ],
       "display_parameters": [
         "NOISE_NPERSEG"
-      ]
+      ],
+      "quality_gates": []
     },
     {
       "id": "B04",
@@ -449,7 +477,8 @@
         "z_phase_response_comparison.png",
         "z_phase_response_comparison.pdf"
       ],
-      "display_parameters": []
+      "display_parameters": [],
+      "quality_gates": []
     }
   ],
   "parameter_impacts": {

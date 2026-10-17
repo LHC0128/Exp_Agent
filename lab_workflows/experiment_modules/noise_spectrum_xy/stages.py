@@ -13,12 +13,13 @@ class Stage:
     artifacts: tuple[str, ...] = ()
     # 展示归属独立于失效起点；None 表示沿用 parameters。
     display_parameters: tuple[str, ...] | None = None
+    quality_gates: tuple[str, ...] = ()
 
 
 ACQUISITION = (
-    Stage("A01", "启动预检", "启动准备", ()),
+    Stage("A01", "启动预检", "启动准备", (), quality_gates=("参数、映射、独立通道与安全限值全部通过预检",)),
     Stage("A02", "设备连接", "启动准备", ("A01",)),
-    Stage("A03", "参考时钟同步", "启动准备", ("A02",)),
+    Stage("A03", "参考时钟同步", "启动准备", ("A02",), quality_gates=("全部已连接设备参考时钟严格回读一致",)),
     Stage("A04", "初始输出设置", "初始条件", ("A03",),
           ("FIXED_PARAMS.Pump_laser_power", "FIXED_PARAMS.Probe_laser_power",
            "FIXED_PARAMS.main_magnetic_field", "FIXED_PARAMS.Temp_Switch")),
@@ -29,14 +30,16 @@ ACQUISITION = (
           ("XY_TRIGGER_FREQ", "XY_TRIGGER_AMPLITUDE", "XY_TRIGGER_OFFSET", "XY_TRIGGER_DUTY", "XY_TRIGGER_PHASE")),
     Stage("A08", "Demod0 配置与校相", "相位校准", ("A07",),
           ("HF2_DEMOD_IDX", "HF2_OSC_FREQ", "HF2_SIGNAL_RANGE", "HF2_DEMOD_ORDER",
-           "HF2_DEMOD_TC", "HF2_DEMOD_RATE", "SYSTEM_SETTLE_S", "TEMP_SWITCH_ON_SETTLE_S")),
+           "HF2_DEMOD_TC", "HF2_DEMOD_RATE", "SYSTEM_SETTLE_S", "TEMP_SWITCH_ON_SETTLE_S"),
+          quality_gates=("Demod0 样本和相位回读有限，R 不低于 1e-12 V，5 次内相位残差小于 1°",)),
     Stage("A09", "XY 正弦与 Burst 初始化", "相位校准", ("A08",),
           ("XY_CTRL_FREQ", "XY_CTRL_PHASE", "XY_CTRL_QUAD", "XY_CALIB_ENVELOPE_V")),
     Stage("A10", "XY 迭代校相", "相位校准", ("A09",),
           ("XY_PHASE_CAL_TOL_DEG", "XY_PHASE_CAL_MAX_ITER", "XY_PHASE_CAL_MIN_R_V", "XY_PHASE_CAL_MIN_R_RATIO"),
           display_parameters=("XY_CTRL_PHASE", "XY_CTRL_QUAD", "XY_CALIB_ENVELOPE_V",
                               "XY_PHASE_CAL_TOL_DEG", "XY_PHASE_CAL_MAX_ITER", "XY_PHASE_CAL_MIN_R_V",
-                              "XY_PHASE_CAL_MIN_R_RATIO", "SYSTEM_SETTLE_S", "TEMP_SWITCH_ON_SETTLE_S")),
+                              "XY_PHASE_CAL_MIN_R_RATIO", "SYSTEM_SETTLE_S", "TEMP_SWITCH_ON_SETTLE_S"),
+          quality_gates=("迭代误差满足 XY_PHASE_CAL_TOL_DEG，R 幅值满足绝对值和比例门槛，且未超过最大迭代次数",)),
     Stage("A11", "DAQ 准备", "扫描与结束", ("A10",),
           ("HF2_DAQ_DURATION", "HF2_DAQ_TC", "HF2_DAQ_RATE", "ANALYSIS_BIN_WIDTH_HZ",
            "TARGET_NOISE_FREQ_START_HZ", "TARGET_NOISE_FREQ_STOP_HZ", "TARGET_NOISE_FREQ_POINTS",
@@ -52,13 +55,16 @@ ACQUISITION = (
     Stage("A14", "安全收尾 / 结束会话", "扫描与结束", ()),
 )
 ANALYSIS = (
-    Stage("B01", "加载配置与准备分析", "加载配置与准备分析", ()),
+    Stage("B01", "加载配置与准备分析", "加载配置与准备分析", (),
+          quality_gates=("本实验身份与原始格式有效，实际采样率和控制轴有效；正在采集的目录拒绝分析",)),
     Stage("B02", "计算 Welch PSD", "Welch PSD", ("B01",),
           ("ANALYSIS_BIN_WIDTH_HZ", "ANALYSIS_FREQUENCY_MIN_HZ", "ANALYSIS_FREQUENCY_MAX_HZ"),
-          ("psd_matrix.npz", "noise_spectrum_2d.png", "noise_spectrum_2d.pdf")),
+          ("psd_matrix.npz", "noise_spectrum_2d.png", "noise_spectrum_2d.pdf"),
+          quality_gates=("所选频带存在有效 PSD，实际采样率一致",)),
     Stage("B03", "移动脊线重标定", "移动脊线重标定", ("B02",), (),
           ("calibration.npz", "calibration.png", "calibration.pdf"),
-          display_parameters=("ANALYSIS_FREQUENCY_MIN_HZ", "ANALYSIS_FREQUENCY_MAX_HZ")),
+          display_parameters=("ANALYSIS_FREQUENCY_MIN_HZ", "ANALYSIS_FREQUENCY_MAX_HZ"),
+          quality_gates=("有效控制点及频率点至少各 20 个；移动峰支持不少于 max(20, 45% 控制点)，覆盖至少 60%，残差与两半斜率通过验收",)),
     Stage("B04", "全控制轴拟合与背景验收", "拟合与背景验收", ("B03",),
           ("ANALYSIS_FIT_HALF_WIDTH_HZ",),
           ("popt_fit.npz", "noise_spectra.npz", "noise_spectra.csv", "fit_diagnostics.npz",

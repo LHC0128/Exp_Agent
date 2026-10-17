@@ -60,6 +60,7 @@ class Workflow(SineWorkflow):
         elif item == "A09":
             self.calibrated_phase = calibrate_hf2_phase(self.devices["hf2"], self.devices["dg_comp"],
                 self.devices["dg_temp"], self.params, self.limits)
+            self.phase_parameters = self.params
             self.demod_mode = "phase"
             self.outputs.update(X="OFF", Y="OFF", 温控="ON")
         elif item == "A10":

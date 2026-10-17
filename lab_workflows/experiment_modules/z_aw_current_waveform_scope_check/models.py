@@ -89,6 +89,20 @@ class ZAWCurrentWaveformScopeCheckParams(ZAWWaveformScopeCheckParams):
         minimum=0.0,
     )
 
+    @classmethod
+    def derive_external(cls, values: dict[str, object]) -> dict[str, object]:
+        if values.get("CONTROL_WAVEFORM_SOURCE") != "corrected_run":
+            return ZAWWaveformScopeCheckParams.derive_external(values)
+        try:
+            source = load_corrected_control_waveform(find_project_root(),
+                str(values.get("CORRECTED_CONTROL_SOURCE_RUN", "")))
+            duration = int(values.get("SCOPE_CYCLES", 3)) / source.repeat_frequency_hz
+            return dict(CONTROL_REPEAT_FREQUENCY_HZ=source.repeat_frequency_hz,
+                        SCOPE_DURATION_S=duration,
+                        TOTAL_CAPTURE_DURATION_S=int(values.get("SCOPE_REPEATS", 5)) * duration)
+        except (OSError, TypeError, ValueError, KeyError):
+            return {}
+
     def validate_model(self) -> list[str]:
         if self.control_waveform_source == "theory":
             command_params = replace(
@@ -102,10 +116,14 @@ class ZAWCurrentWaveformScopeCheckParams(ZAWWaveformScopeCheckParams):
                 errors.append("CONTROL_WAVEFORM_SOURCE 必须是 theory 或 corrected_run")
             if not self.run_tag.strip():
                 errors.append("RUN_TAG 不能为空")
+            if self.run_tag in {".", ".."} or any(char in self.run_tag for char in '/\\:\x00'):
+                errors.append("RUN_TAG 必须是单个目录标签，不能包含路径分隔符")
             if self.scope_measured_channel == self.scope_trigger_channel:
                 errors.append("SCOPE_MEASURED_CHANNEL 与 SCOPE_TRIGGER_CHANNEL 必须不同")
             if self.scope_scale_min_v_div > self.scope_scale_max_v_div:
                 errors.append("SCOPE_SCALE_MIN 必须不大于 SCOPE_SCALE_MAX")
+            if not np.isclose(self.scope_trigger_level_v, 2.5, atol=1e-12):
+                errors.append("SCOPE_TRIGGER_LEVEL_V 必须为 2.5 V")
             try:
                 trigger_low = self.trigger_offset_v - self.trigger_amplitude_vpp / 2.0
                 trigger_high = self.trigger_offset_v + self.trigger_amplitude_vpp / 2.0

@@ -17,6 +17,7 @@ from ...steps.dispersion import acquire_dispersion_point, save_scan
 from lockin_amplifier import DAQConfig, select_acquisition
 from lockin_amplifier.acquisition import suspended_demod_streams
 from .models import StaticSensitivityParams
+from .run_format import RAW_FORMAT_VERSION
 class RuntimeCancellation:
     """沿用现有实验的取消文件到公共步骤接入方式。"""
 
@@ -37,12 +38,8 @@ def wait_for_settle(seconds: float) -> None:
 
 
 def set_temp_switch(device, channel: int, enabled: bool) -> None:
-    """静磁场已确认的例外：测量时物理 OFF，恢复为 5 V DC + ON。"""
-    if enabled:
-        set_temperature_switch(device, True, channel=channel)
-    else:
-        validate_safety_limit("Temp_Switch", 0.0)
-        device.set_output(False, channel=channel)
+    """关闭为 0 V DC + ON，恢复为 5 V DC + ON。"""
+    set_temperature_switch(device, enabled, channel=channel)
 
 
 def acquire_dispersion(params: StaticSensitivityParams, z, z_channel: int, temp,
@@ -60,7 +57,7 @@ def _acquire_dispersion(params: StaticSensitivityParams, z, z_channel: int, temp
     """纯 DC 正向扫描，逐点中位数；即使失败也保留已经读取的样本。"""
     offsets = np.linspace(params.dispersion_start_v, params.dispersion_stop_v, params.dispersion_steps)
     data = {
-        "schema_version": np.array(3),
+        "schema_version": np.array(RAW_FORMAT_VERSION),
         "offsets_v": offsets,
         "completed_mask": np.zeros(offsets.size, dtype=bool),
         "sample_counts": np.zeros(offsets.size, dtype=int),

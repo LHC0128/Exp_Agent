@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from time import monotonic as real_monotonic, sleep as real_sleep
 import unittest
 from unittest.mock import patch
 import yaml
@@ -147,9 +148,29 @@ def fake_session_main():
     root = Path(os.environ["XY_TEST_ROOT"])
     payload = json.loads(os.environ["LAB_TYPED_PARAMETERS"])
     session_id = payload.pop("session_id")
-    with rig(root), redirect_stdout(sys.__stdout__):
-        serve(workflow.Workflow(NoiseSpectrumXYKnownNoiseParams.from_external(payload), project_root=root,
-                                session_id=session_id), sys.stdin, stages=stages.ACQUISITION,
+    with rig(root) as hw, redirect_stdout(sys.__stdout__):
+        ctx = workflow.Workflow(NoiseSpectrumXYKnownNoiseParams.from_external(payload), project_root=root,
+                                session_id=session_id)
+        if os.environ.get("KNOWN_TEST_BLOCK_DAQ"):
+            from ...experiment_runtime import check_cancelled
+            def blocked_read(*args, **kwargs):
+                (root / "daq_waiting").touch()
+                while True:
+                    check_cancelled()
+                    real_sleep(.01)
+            hw.acquire.side_effect = blocked_read
+        if os.environ.get("KNOWN_TEST_BLOCK_SHUTDOWN"):
+            original_shutdown = ctx.shutdown_outputs
+            def blocked_shutdown():
+                (root / "shutdown_waiting").touch()
+                deadline = real_monotonic() + 30
+                while not (root / "release_shutdown").exists():
+                    if real_monotonic() > deadline:
+                        raise TimeoutError("测试未释放安全收尾")
+                    real_sleep(.01)
+                return original_shutdown()
+            ctx.shutdown_outputs = blocked_shutdown
+        serve(ctx, sys.stdin, stages=stages.ACQUISITION,
               validate=stages.validate_selection, finish_id=stages.FINISH_ID)
 
 

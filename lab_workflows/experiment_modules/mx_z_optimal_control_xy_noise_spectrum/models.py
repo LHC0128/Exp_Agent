@@ -54,6 +54,10 @@ class MxZOptimalControlXYNoiseSpectrumParams(
     phase_fit_amplitude_sigma_min: float = parameter(default=3.0, external_name="PHASE_FIT_AMPLITUDE_SIGMA_MIN", label="隐藏兼容校相显著性", visible=False)
     phase_outlier_sigma_threshold: float = parameter(default=6.0, external_name="PHASE_OUTLIER_SIGMA_THRESHOLD", label="隐藏兼容校相异常门槛", visible=False)
     phase_outlier_max_reacquire_points: int = parameter(default=4, external_name="PHASE_OUTLIER_MAX_REACQUIRE_POINTS", label="隐藏兼容校相重采点数", visible=False)
+    fit_r_squared_min: float = parameter(default=0.1, external_name="FIT_R_SQUARED_MIN", label="隐藏兼容拟合阈值", visible=False)
+    fit_relative_gamma_uncertainty_max: float = parameter(default=0.5, external_name="FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX", label="隐藏兼容线宽不确定度", visible=False)
+    linear_check_gamma_fraction: float = parameter(default=0.25, external_name="LINEAR_CHECK_GAMMA_FRACTION", label="隐藏兼容线性区间", visible=False)
+    slope_agreement_tolerance: float = parameter(default=0.2, external_name="SLOPE_AGREEMENT_TOLERANCE", label="隐藏兼容斜率容差", visible=False)
 
     noise_n_avg: int = parameter(default=5, external_name="NOISE_N_AVG", label="噪声重复次数", group="basic", minimum=1)
     noise_duration_s: float = parameter(default=1.0, external_name="NOISE_DURATION_S", label="单次噪声时长", unit="s", group="basic", minimum=0.01)
@@ -95,12 +99,7 @@ class MxZOptimalControlXYNoiseSpectrumParams(
         errors = MxZControlSourceSelectionParams.validate_model(self)
         errors.extend(self._validate_axis("X 偏置", self.x_field_start_v, self.x_field_stop_v, self.x_field_points))
         errors.extend(self._validate_axis("Y 偏置", self.y_field_start_v, self.y_field_stop_v, self.y_field_points))
-        if not self.low_freq_skip_hz < self.noise_band_max_hz:
-            errors.append("LOW_FREQ_SKIP_HZ 必须小于 NOISE_BAND_MAX_HZ")
-        if self.noise_band_max_hz >= self.noise_rate_sa_s / 2.0:
-            errors.append("NOISE_BAND_MAX_HZ 必须低于请求采样率的 Nyquist 频率")
-        if self.noise_rate_sa_s * self.noise_duration_s < 8:
-            errors.append("噪声记录预计采样数不足 8")
+        errors.extend(self.validate_noise_parameters())
         for key, values in (
             ("X_magnetic_field", self.x_axis()),
             ("Y_magnetic_field", self.y_axis()),
@@ -110,4 +109,22 @@ class MxZOptimalControlXYNoiseSpectrumParams(
                     validate_safety_limit(key, float(value))
                 except ValueError as exc:
                     errors.append(str(exc))
+        return errors
+
+    def validate_noise_parameters(self) -> list[str]:
+        """离线仅校验噪声参数，不重新加载采集时的外部控制来源。"""
+        errors = []
+        if not all(np.isfinite(value) for value in (self.noise_rate_sa_s, self.noise_duration_s,
+                self.low_freq_skip_hz, self.noise_band_max_hz)):
+            return ["噪声采样与统计参数必须为有限数值"]
+        if self.noise_n_avg < 1 or self.noise_rate_sa_s <= 0 or self.noise_duration_s <= 0:
+            errors.append("噪声重复次数、采样率和时长必须大于零")
+        if self.low_freq_skip_hz < 0:
+            errors.append("噪声统计频率下限不能为负")
+        if not self.low_freq_skip_hz < self.noise_band_max_hz:
+            errors.append("LOW_FREQ_SKIP_HZ 必须小于 NOISE_BAND_MAX_HZ")
+        if self.noise_band_max_hz >= self.noise_rate_sa_s / 2.0:
+            errors.append("NOISE_BAND_MAX_HZ 必须低于请求采样率的 Nyquist 频率")
+        if self.noise_rate_sa_s * self.noise_duration_s < 8:
+            errors.append("噪声记录预计采样数不足 8")
         return errors

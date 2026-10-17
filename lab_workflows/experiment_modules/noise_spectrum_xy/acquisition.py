@@ -14,6 +14,7 @@ from .models import welch_settings
 from ._helpers import wait, set_temp_switch
 from .phase import set_xy_sine_peak
 from .preparation import build_run_config, EXPERIMENT_TYPE
+from .run_format import RAW_FORMAT_VERSION
 
 
 def restore_demod(devices, params, calibrated_phase):
@@ -32,7 +33,7 @@ def prepare_daq(devices, params, calibrated_phase):
     expected_rate = nearest_scope_rate(params.hf2_daq_rate) if acquisition_module(
         devices["hf2"].model, params.hf2_daq_rate, getattr(devices["hf2"], "acquisition_mode", "auto")) == "scope" else rate
     settings = welch_settings(expected_rate, params.hf2_daq_duration, params.analysis_bin_width_hz)
-    return rate, int(rate * params.hf2_daq_duration), settings
+    return expected_rate, int(expected_rate * params.hf2_daq_duration), settings
 
 
 def verify_daq_mode(ctx):
@@ -73,6 +74,8 @@ def initialize_run_directory(ctx, data_type, *, for_scan=False):
         config.update(experiment_id=ctx.experiment_id, experiment_type=data_type,
                       completion_status="initializing", initial_temperature_c=None,
                       workflow_session_id=ctx.session_id)
+        if ctx.experiment_id == "noise-spectrum-xy":
+            config["raw_format_version"] = RAW_FORMAT_VERSION
         save_config(run_dir / "experiment_config.yaml", config)
         ctx.run_dir = run_dir
         ctx.scan_started = False
@@ -91,6 +94,7 @@ def acquire_scan(ctx):
     timestamp = run_dir.name[:9]
     raw_dir = run_dir / "raw"
     config_saved = build_run_config(params, ctx.root, ctx.clock_sources, timestamp, target_frequencies, envelopes)
+    config_saved["raw_format_version"] = RAW_FORMAT_VERSION
     config_saved["completion_status"] = "running"
     config_saved["workflow_session_id"] = ctx.session_id
     config_saved["xy_ctrl"].update(XY_CTRL_PHASE_deg=float(xy_phase),

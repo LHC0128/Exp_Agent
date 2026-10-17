@@ -62,11 +62,21 @@ def fake_rig(root, params=None):
                 time.sleep(.01)
         signal = np.random.default_rng(42).normal(0, 1e-4, config.grid_cols)
         return [DAQResult(signal_name="sample.y", demod_index=kwargs["demod_idx"],
-            values=signal, time=np.arange(signal.size)/kwargs["actual_rate"])]
+            values=signal, time=np.arange(signal.size)/kwargs["actual_rate"], config_snapshot={
+                "acquisition_module": "daq", "requested_rate": kwargs["requested_rate"],
+                "actual_rate": kwargs["actual_rate"], "demod_stream_rate": kwargs["actual_rate"],
+                "actual_duration": signal.size / kwargs["actual_rate"], "time_source": "module_timestamp"})]
     shutdown = preparation.safe_shutdown
     def safe(*args, **kwargs):
         rig.in_shutdown = True
         try:
+            if getattr(rig, "block_shutdown", False):
+                (rig.root / "shutdown_waiting").touch()
+                deadline = time.monotonic() + 15
+                while not (rig.root / "release_shutdown").exists():
+                    if time.monotonic() > deadline:
+                        raise TimeoutError("假仪器安全收尾等待释放超时")
+                    time.sleep(0.01)
             return shutdown(*args, **kwargs)
         finally:
             rig.in_shutdown = False

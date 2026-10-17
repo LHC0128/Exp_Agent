@@ -274,7 +274,7 @@ def build_run_config(params: NoiseSpectrumXYParams, project_root, clock_sources,
             "xy_envelope_voltage_V": envelopes.tolist(),
             "XY_SETTLE_TIME_s": params.system_settle_s,
             "TEMP_SWITCH_ON_SETTLE_S": params.temp_switch_on_settle_s,
-            "temperature_switch_off_mode": "output_off",
+            "temperature_switch_off_mode": "dc_zero_output_on",
         },
         "xy_ctrl": {
             "XY_CTRL_FREQ_Hz": params.xy_ctrl_freq,

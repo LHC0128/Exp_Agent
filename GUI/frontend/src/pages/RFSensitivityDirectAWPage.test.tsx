@@ -1638,6 +1638,7 @@ it.each(["rename", "delete"])("%s 来源后当前对比预览失效，保留自�
   await screen.findByRole("button", { name: "取消任务" });
   comparisonJob = { ...comparisonJob, status: "completed", result: { runs: comparisonRuns, warnings: [],
     artifacts: { "full_analysis_comparison.png": "/compare.png", "full_analysis_comparison.pdf": "/compare.pdf" } } };
+  await waitFor(() => expect(sources.some(source => source.url === "/api/jobs/comparison/events")).toBe(true));
   await act(async () => sources.find(source => source.url === "/api/jobs/comparison/events")!.onmessage?.({ data: JSON.stringify({ done: true, status: "completed" }) }));
   await screen.findByAltText("X 响应与 RF 灵敏度对比");
   fireEvent.click(screen.getByRole("button", { name: "单次详情" }));
@@ -1679,6 +1680,7 @@ it("跨页勾选、图例和 Tab 切换保留顺序，生成后下载，编辑�
     runs: comparisonRuns, warnings: ["1008_older：数值斜率回退，灵敏度谱未作洛伦兹校正。"],
     artifacts: { "full_analysis_comparison.png": "/compare.png", "full_analysis_comparison.pdf": "/compare.pdf" }
   } };
+  await waitFor(() => expect(sources.some(source => source.url === "/api/jobs/comparison/events")).toBe(true));
   await act(async () => sources.find(source => source.url === "/api/jobs/comparison/events")!.onmessage?.({ data: JSON.stringify({ done: true, status: "completed" }) }));
   expect(await screen.findByAltText("X 响应与 RF 灵敏度对比")).toHaveAttribute("src", "/compare.png");
   expect(screen.getByText("1008_older：数值斜率回退，灵敏度谱未作洛伦兹校正。")).toBeVisible();
@@ -1735,6 +1737,7 @@ it("恢复正在执行的对比任务，完成后恢复图例和预览", async (
     runs: [{ run_id: "1009_latest", legend: "Recovered A" }, { run_id: "1008_older", legend: "Recovered B" }],
     warnings: [], artifacts: { "full_analysis_comparison.png": "/recovered.png", "full_analysis_comparison.pdf": "/recovered.pdf" }
   } };
+  await waitFor(() => expect(sources.some(source => source.url === "/api/jobs/comparison/events")).toBe(true));
   await act(async () => sources.find(source => source.url === "/api/jobs/comparison/events")!.onmessage?.({ data: JSON.stringify({ done: true, status: "completed" }) }));
   expect(await screen.findByAltText("X 响应与 RF 灵敏度对比")).toHaveAttribute("src", "/recovered.png");
   expect(screen.getByLabelText("图例：1009_latest")).toHaveValue("Recovered A");

@@ -36,7 +36,11 @@ class NoiseSpectrumXYProcessingTest(TestCase):
             ) as directory:
                 run_dir = Path(directory)
                 config_path = run_dir / "experiment_config.yaml"
-                config_path.write_text(yaml.safe_dump({"parameters": {
+                config_path.write_text(yaml.safe_dump({
+                    "experiment_id": "noise-spectrum-xy", "schema_version": 4, "raw_format_version": 1,
+                    "scan_params": {"xy_envelope_voltage_V": voltage.tolist()},
+                    "hf2_daq": {"actual_rate_Sa_s": 10000.0, "DAQ_duration_s": 1.0},
+                    "parameters": {
                     "ANALYSIS_FREQUENCY_MIN_HZ": 0.0,
                     "ANALYSIS_FREQUENCY_MAX_HZ": 1000.0,
                 }}), encoding="utf-8")
@@ -137,6 +141,9 @@ class NoiseSpectrumXYProcessingTest(TestCase):
         with tempfile.TemporaryDirectory(prefix="xy-analysis-dc-") as directory:
             run_dir = Path(directory)
             (run_dir / "experiment_config.yaml").write_text(yaml.safe_dump({
+                "experiment_id": "noise-spectrum-xy", "schema_version": 4, "raw_format_version": 1,
+                "scan_params": {"xy_envelope_voltage_V": control.tolist()},
+                "hf2_daq": {"actual_rate_Sa_s": 10000.0, "DAQ_duration_s": 1.0},
                 "parameters": {
                     "ANALYSIS_FREQUENCY_MIN_HZ": 0.0,
                     "ANALYSIS_FREQUENCY_MAX_HZ": 3000.0,

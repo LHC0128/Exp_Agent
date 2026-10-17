@@ -35,6 +35,9 @@ def truth_calibration(ctx):
 
 
 def step_B01(ctx):
+    _, voltage, _, frequency = psd_sampling(ctx.run_dir, ctx.config, ctx.options, "on")
+    _, voltage_off, _, frequency_off = psd_sampling(ctx.run_dir, ctx.config, ctx.options, "off")
+    require_paired_axes(frequency, voltage, frequency_off, voltage_off)
     if not ctx.config.get("known_noise") or not ctx.config.get("truth_chain"):
         raise ValueError("运行配置缺少 known_noise/truth_chain")
     if not list((ctx.run_dir / "raw").glob("waveform_C*_*.npy")):
@@ -48,9 +51,7 @@ def step_B02(ctx):
     psd_on, frequency, voltage, rows_on, psd_info = compute_psd_matrix(
         run_dir, config, options, "on")
     psd_off, frequency_off, voltage_off, rows_off, _ = compute_psd_matrix(run_dir, config, options, "off")
-    if (frequency.shape != frequency_off.shape or not np.allclose(frequency, frequency_off)
-            or voltage.shape != voltage_off.shape or not np.allclose(voltage, voltage_off)):
-        raise ValueError("off/on 实际采样率或控制轴不一致，不能相减 PSD")
+    require_paired_axes(frequency, voltage, frequency_off, voltage_off)
     save_known_noise_preview(results, run_dir, known, options["bin_width_hz"])
     rows = np.intersect1d(rows_on, rows_off)
     if rows.size < 20:
@@ -166,7 +167,7 @@ def step_B04(ctx):
         raise ValueError("没有频率点通过全控制轴拟合质量验收")
 
 
-def step_B05(ctx):
+def resolve_detection_gain(ctx):
     calibration = truth_calibration(ctx)
     source = ctx.options["dispersion_source_run"]
     if source:
@@ -177,6 +178,10 @@ def step_B05(ctx):
         raise ValueError("待选择标定曲线")
     if not np.isfinite(fit["slope_v_per_hz"]) or fit["slope_v_per_hz"] <= 0:
         raise ValueError("检测增益无效")
+    return fit
+
+
+def step_B05(ctx, fit):
     arrays = {key: value for key, value in fit.items() if isinstance(value, np.ndarray)}
     metadata = {key: value for key, value in fit.items() if key not in arrays}
     np.savez(ctx.results / "dispersion_source.npz", **arrays, slope_v_per_hz=fit["slope_v_per_hz"])

@@ -141,3 +141,39 @@ def test_original_v3_starts_from_b01_and_running_or_old_runs_are_rejected(run_di
     path.write_text(yaml.safe_dump(config),encoding="utf-8")
     with pytest.raises(ValueError,match="旧格式"):
         analysis.AnalysisWorkflow(run_dir)
+
+
+def test_noise_rate_sidecar_changes_invalidate_and_rebuild_real_psd(run_dir):
+    analysis.analyze(run_dir)
+    waveform=next((run_dir / "raw").rglob("noise_*.npy"))
+    sidecar=waveform.with_name(waveform.stem+"_acquisition.npz")
+    np.savez(sidecar,actual_rate_Sa_s=2000.)
+    ctx=analysis.AnalysisWorkflow(run_dir)
+    assert all(state["status"]=="stale" for state in ctx.states.values())
+    assert "noise_raw/gs200_range_10mA/noise_0000_acquisition.npz" in ctx.fingerprint["raw_files"]
+    with pytest.raises(ValueError,match="缺少前置"):
+        ctx.execute(["B04"])
+    ctx.execute([stage.id for stage in ANALYSIS])
+    with np.load(run_dir / "results/noise_psd.npz") as psd:
+        assert psd["freq"][-1]==1000.
+    sidecar.unlink()
+    assert all(state["status"]=="stale" for state in analysis.AnalysisWorkflow(run_dir).states.values())
+
+
+@pytest.mark.parametrize("schema,raw_version,allowed",[(3,None,True),(4,None,True),(99,3,True),(99,None,False),(4,99,False),(4,True,False)])
+def test_raw_format_is_independent_of_parameter_schema_and_keeps_verified_history(run_dir,schema,raw_version,allowed):
+    path=run_dir / "experiment_config.yaml"
+    config=yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["schema_version"]=schema
+    if raw_version is not None:
+        config["raw_format_version"]=raw_version
+    path.write_text(yaml.safe_dump(config),encoding="utf-8")
+    original=path.read_bytes()
+    if allowed:
+        ctx=analysis.AnalysisWorkflow(run_dir)
+        assert all(state["status"]=="pending" for state in ctx.states.values())
+    else:
+        with pytest.raises(ValueError,match="格式"):
+            analysis.AnalysisWorkflow(run_dir)
+    assert path.read_bytes()==original
+    assert not (run_dir / "analysis_state.json").exists()

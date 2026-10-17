@@ -20,8 +20,10 @@ DEFINITION = ExperimentDefinition(
     family="field-response",
     variant="coherent-swept-sine-log-current",
     description=(
-        "沿对数频率轴测量 Z 线圈实际电流频率响应；可不接示波器 CH1，"
-        "此时按 DG 设定幅值归一，结果用于测量，不作为闭环相位标定。"
+        "沿对数频率轴测量低端采样电阻的实际电流频响，节点内编辑并按依赖分步执行；"
+        "CH1 可选，缺少有效同帧参考时按 DG 设定幅值归一且相位不用于闭环。"
+        "闭环相位要求每频至少两次有效重复；单次测量保留幅值与相位诊断。"
+        "历史分析读取各自采集快照，与下一次实验参数草稿隔离。"
     ),
     data_type="Z_Coil_Current_Frequency_Response",
     required_devices=("DG4000", "SDS"),
@@ -39,7 +41,7 @@ DEFINITION = ExperimentDefinition(
     safety_notes=(
         "阻值、额定功率和线圈峰值电流上限未填写时预检失败。",
         "禁止使用普通示波器通道测量高端浮置采样电阻。",
-        "只有使用有效的同帧 CH1 驱动参考时，响应相位才可用于闭环；"
+        "只有使用有效的同帧 CH1 驱动参考且每频至少两次有效重复、圆周相位标准差 < 15° 时，响应相位才可用于闭环；"
         "未覆盖谐波不参与修正。",
     ),
     schema_version=ZCoilCurrentFrequencyResponseParams.schema_version,

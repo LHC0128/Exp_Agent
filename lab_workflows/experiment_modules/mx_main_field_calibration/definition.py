@@ -3,6 +3,7 @@
 from ...experiments.contracts import ExperimentDefinition
 from ...experiments.typed import TypedWorkflowAdapter
 from .models import MxMainFieldCalibrationParams
+from .run_format import REQUIRED_MAPPING_KEYS
 
 
 ADAPTER = TypedWorkflowAdapter(
@@ -19,8 +20,9 @@ DEFINITION = ExperimentDefinition(
     category="calibration",
     family="z-field-calibration",
     variant="mx-gs200",
-    description=('在 Mx 构型下扫描 GS200 主场电流，以 Y RF 共振中心标定 Hz/mA 和 nT/mA。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
+    description=('在 Mx 构型下扫描 GS200 主场电流，以 Y RF 共振中心标定 Hz/mA 和 nT/mA。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后以 0 V DC 关闭温控并保持 Output ON，按 SYSTEM_SETTLE_S 稳定，采集至内存后恢复温控并保存。支持节点参数编辑、依赖分步会话、GS200 初态恢复及独立分阶段历史标定；TEC 仅下发 UI 目标温度。'),
     data_type="Mx_Main_Field_Calibration",
+    required_mapping_keys=REQUIRED_MAPPING_KEYS,
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Main_Field_Calibration.py",

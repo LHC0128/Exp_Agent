@@ -41,10 +41,22 @@ def create_run_directory(
 ) -> RunDirectory:
     project_root = project_root or find_project_root()
     timestamp = datetime.now().strftime("%m%d_%H%M%S")
-    root = project_root / "data" / experiment_type / f"{timestamp}_{run_tag}"
+    if any(character in run_tag for character in "/\\:\x00"):
+        raise ValueError("运行标签不能包含路径分隔符")
+    base = project_root / "data" / experiment_type
+    base.mkdir(parents=True, exist_ok=True)
+    stem = f"{timestamp}_{run_tag}"
+    counter = 1
+    while True:
+        root = base / (stem if counter == 1 else f"{stem}_{counter}")
+        try:
+            root.mkdir()
+            break
+        except FileExistsError:
+            counter += 1
     raw = root / "raw"
     results = root / "results"
-    raw.mkdir(parents=True, exist_ok=False)
+    raw.mkdir()
     results.mkdir(exist_ok=True)
     config_path = root / "experiment_config.yaml"
     instrument_snapshot = instrument_config_snapshot(project_root)

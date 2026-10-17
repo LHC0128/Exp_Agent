@@ -4,7 +4,7 @@ from typing import ClassVar
 import math
 from dataclasses import dataclass
 import numpy as np
-from ...common import find_project_root
+from ...common import find_project_root, validate_safety_limit
 from ...experiment_params import parameter
 from ..mx_z_control_params import MxZControlSourceSelectionParams
 
@@ -42,6 +42,8 @@ class MxYOptimalControlRFFrequencyResponseParams(
     constant_control_larmor_frequency_hz: float = parameter(default=0.0, external_name="CONSTANT_CONTROL_LARMOR_FREQUENCY_HZ", label="常数控制目标 Larmor 频率", unit="Hz", group="basic", minimum=0.0, active_when="COMPARISON_ENABLED", description="用来反解恒定 Z 电压的目标共振中心频率；关闭对照时不校验。")
     constant_control_calibration_source_run: str = parameter(default="", external_name="CONSTANT_CONTROL_CALIBRATION_SOURCE_RUN", label="电流耦合标定运行", group="basic", options_from_directory="data/Mx_Z_Current_Coupling_Calibration", options_pattern="*", options_include_directories=True, options_require_analysis="results/analysis.yaml", options_require_experiment_id="mx-z-current-coupling-calibration", active_when="COMPARISON_ENABLED", description="只列出 experiment_id 正确且 success: true 的电流耦合标定运行。")
     control_waveform_source: str = parameter(default="corrected_run", external_name="CONTROL_WAVEFORM_SOURCE", label="控制波形来源", visible=False)
+    z_aw_output_vpp: float = parameter(default=10.0, external_name="Z_AW_OUTPUT_VPP", label="历史兼容幅度；实际来自冻结波形", visible=False, minimum=0.001)
+    z_aw_output_offset_v: float = parameter(default=0.0, external_name="Z_AW_OUTPUT_OFFSET", label="历史兼容偏置；实际来自冻结波形", visible=False)
     y_rf_amp_start_vpp: float = parameter(default=-0.1, external_name="Y_RF_AMP_START_VPP", label="未使用幅度扫描起点", visible=False)
     y_rf_amp_stop_vpp: float = parameter(default=0.1, external_name="Y_RF_AMP_STOP_VPP", label="未使用幅度扫描终点", visible=False)
     y_rf_amp_points: int = parameter(default=21, external_name="Y_RF_AMP_POINTS", label="未使用幅度扫描点数", visible=False)
@@ -79,6 +81,15 @@ class MxYOptimalControlRFFrequencyResponseParams(
             intervals = (self.phase_scan_stop_deg - self.phase_scan_start_deg) / self.phase_scan_step_deg
             if not math.isclose(intervals, round(intervals), abs_tol=1e-10): errors.append("相位扫描范围必须被步进整除")
         if not self.corrected_control_source_run.strip(): errors.append("CORRECTED_CONTROL_SOURCE_RUN 不能为空")
+        else:
+            from ...current_feedback import load_corrected_control_waveform
+            try:
+                corrected = load_corrected_control_waveform(find_project_root(), self.corrected_control_source_run)
+                for voltage in (float(np.min(corrected.voltage_v)), float(np.max(corrected.voltage_v)),
+                        corrected.offset_v - corrected.amplitude_vpp / 2, corrected.offset_v + corrected.amplitude_vpp / 2):
+                    validate_safety_limit("Z_magnetic_field", voltage)
+            except (OSError, KeyError, TypeError, ValueError) as exc:
+                errors.append(f"闭环冻结来源预检失败: {exc}")
         if self.frequency_duration_s * self.response_rate_sa_s < 8: errors.append("频点采样数不足 8")
         if self.comparison_enabled:
             errors.extend(self._validate_comparison())

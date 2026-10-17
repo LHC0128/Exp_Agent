@@ -5,7 +5,7 @@ import numpy as np
 from lockin_amplifier import DAQConfig, daq, demod, result_rate, acquisition_metadata
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import set_temperature_switch
-from ._helpers import hf2_snapshot, wait, buffered_acquisition
+from ._helpers import hf2_snapshot, wait, buffered_acquisition, save_npz
 from .excitation import arm_z
 from . import phase
 from .excitation import set_z_rf
@@ -47,7 +47,7 @@ def acquire_response(ctx):
                 series[key].append(values)
             thetas.append(float(np.degrees(np.angle(means["x"][-1] + 1j * means["y"][-1]))))
             phases.append(phase)
-            pending.add(np.savez,
+            pending.add(save_npz,
                 directory.raw / "response_data.npz",
                 amplitudes_V=amplitudes[:index + 1], amplitudes_nT=amplitudes[:index + 1] * params.z_v_to_nt,
                 demod3_x_V=means["x"], demod3_y_V=means["y"], demod3_r_V=means["r"],
@@ -113,7 +113,7 @@ def acquire_bandwidth(ctx):
                     means[key].append(float(values.mean()))
                     stds[key].append(float(values.std(ddof=1)) if values.size > 1 else 0.0)
                     series[key].append(values)
-                pending.add(np.savez,
+                pending.add(save_npz,
                     directory.raw / "bandwidth_data.npz",
                     frequency_Hz=frequencies[:index + 1],
                     demod3_x_V=means["x"], demod3_y_V=means["y"], demod3_r_V=means["r"],

@@ -31,6 +31,12 @@ class MxYRFDriftParams(MxYRFParams):
         label="线宽模式",
         visible=False,
     )
+    # 长飘固定幅度等效模式；这些历史键不进入实际准备、采集或子分析。
+    frequency_start_hz: float = parameter(default=8000.0, external_name="FREQUENCY_START_HZ", label="模式1扫频起点", unit="Hz", group="basic", minimum=0.001, visible=False)
+    frequency_stop_hz: float = parameter(default=12000.0, external_name="FREQUENCY_STOP_HZ", label="模式1扫频终点", unit="Hz", group="basic", minimum=0.001, visible=False)
+    frequency_points: int = parameter(default=201, external_name="FREQUENCY_POINTS", label="模式1扫频点数", group="basic", minimum=5, visible=False)
+    frequency_duration_s: float = parameter(default=0.1, external_name="FREQUENCY_DURATION_S", label="模式1频点采样时间", unit="s", group="advanced", minimum=0.001, visible=False)
+    frequency_rf_amplitude_vpp: float = parameter(default=0.01, external_name="FREQUENCY_RF_AMPLITUDE_VPP", label="Y RF 正弦初始幅度", unit="Vpp", group="basic", minimum=0, maximum=2.0, safety_key="rf_coil", description="用于准备正弦模式；长飘不执行模式1扫频。")
     drift_interval_s: float = parameter(
         default=1800.0,
         external_name="DRIFT_INTERVAL_S",
@@ -71,10 +77,12 @@ class MxYRFDriftParams(MxYRFParams):
     @property
     def planned_cycle_count(self) -> int:
         """返回半开时间区间内的计划轮数。"""
+        if not all(math.isfinite(value) and value > 0 for value in (self.drift_interval_s, self.drift_duration_s)):
+            return 0
         offset = self.drift_interval_s if not self.drift_start_immediately else 0.0
         if offset >= self.drift_duration_s:
             return 0
-        return max(
-            1,
-            int(math.ceil((self.drift_duration_s - offset) / self.drift_interval_s)),
-        )
+        count = int(math.ceil((self.drift_duration_s - offset) / self.drift_interval_s))
+        if offset + (count - 1) * self.drift_interval_s >= self.drift_duration_s:
+            count -= 1
+        return count

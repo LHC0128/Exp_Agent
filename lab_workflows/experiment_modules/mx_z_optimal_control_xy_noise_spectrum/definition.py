@@ -14,13 +14,22 @@ ADAPTER = TypedWorkflowAdapter(
     "lab_workflows.experiment_modules.mx_z_optimal_control_xy_noise_spectrum.analysis",
 )
 
+
+def preflight(values):
+    from .preparation import preflight as check
+    try:
+        check(ADAPTER._resolved(values), ADAPTER.root)
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        return [str(exc)]
+    return []
+
 DEFINITION = ExperimentDefinition(
     id="mx-z-optimal-control-xy-noise-spectrum",
     title="Mx Z 最优控制 XY 噪声谱",
     category="measurement",
     family="noise",
     variant="mx-z-optimal-control-xy-bias",
-    description=('在 Z 周期最优控制下扫描 X/Y DC 偏置，关闭 Y RF 交流分量，测量 Demod0 R 噪声谱并按指定频段中位数寻找最低噪声点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
+    description=('在 Z 周期最优控制下扫描 X/Y DC 偏置，关闭 Y RF 交流分量，测量 Demod0 R 噪声谱并按指定频段中位数寻找最低噪声点。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。' + '运行/历史双 Tab 提供 7 个采集与 3 个独立分析节点；参数在节点内编辑，保存、预检与完整运行位于流程顶部。共享参数同步，草稿应用后显式重跑；具体目录只覆盖噪声统计上下限，与下一次实验及默认值隔离。来源冻结并校验内容，按原 Welch 规则保留窄带谱线、热图和最佳点；结束恢复 GS200 原态，保持 Z 与共同触发。'),
     data_type="Mx_Z_Optimal_Control_XY_Noise_Spectrum",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     required_mapping_keys=OPTIMAL_CONTROL,
@@ -41,7 +50,7 @@ DEFINITION = ExperimentDefinition(
     schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,
-    preflight_runner=ADAPTER.preflight,
+    preflight_runner=preflight,
     experiment_runner=ADAPTER.run,
     analysis_runner=ADAPTER.analyze,
 )

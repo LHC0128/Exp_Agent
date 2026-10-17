@@ -5,12 +5,12 @@ from queue import Queue
 from threading import RLock
 from typing import Any, Literal
 from uuid import uuid4
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import Field, StrictInt
-import yaml
 from lab_workflows.experiment_modules.noise_spectrum_xy.state_io import read_state
 from .schemas import StrictModel
+from .workflow_history import WorkflowRuns, WorkflowRunSummary, list_runs, read_config, run_summary
 
 def conflict(message, code="session_busy"):
     return HTTPException(409, message, headers={"X-Error-Code": code})
@@ -24,6 +24,7 @@ class XYStage(StrictModel):
     parameters: list[str]
     display_parameters: list[str]
     artifacts: list[str]
+    quality_gates: list[str] = Field(default_factory=list)
 
 
 class XYFlow(StrictModel):
@@ -36,8 +37,12 @@ class XYFlow(StrictModel):
 class XYStageState(StrictModel):
     status: str
     error: str = ""
-    files: dict[str, list[int] | None] = Field(default_factory=dict)
+    files: dict[str, list[int | str] | None] = Field(default_factory=dict)
     artifacts: list[str] = Field(default_factory=list)
+    input_fingerprint: dict[str, Any] | None = None
+    parameter_fingerprint: str | None = None
+    parameters: dict[str, Any] | None = None
+    revision: StrictInt | None = Field(default=None, ge=0)
 
 
 class XYSession(StrictModel):
@@ -58,6 +63,7 @@ class XYSession(StrictModel):
     clock_sources: dict[str, Any] = Field(default_factory=dict)
     demod_phase_deg: float | None = None
     daq_settings: dict[str, Any] | None = None
+    drift_records: list[dict[str, Any]] = Field(default_factory=list)
     pending_request: str | None = None
     error: str | None = None
 
@@ -175,7 +181,7 @@ class WorkflowSessionService:
             state = self.get(session_id)
             if revision != state["revision"]:
                 raise conflict("会话修订已改变，请刷新后重试", "revision_conflict")
-            if state["status"] != "waiting" or state.get("pending_request"):
+            if item.get("communication_closed") or state["status"] != "waiting" or state.get("pending_request"):
                 raise conflict("会话正在执行、排队或已结束")
             if self.manager.get(state["job_id"]).cancellation.cancelled:
                 raise conflict("会话已请求安全停止，请等待收尾")
@@ -200,7 +206,9 @@ class WorkflowSessionService:
     def close_communication(self):
         with self.lock:
             for item in self.sessions.values():
-                item["queue"].put(None)
+                if not item.get("communication_closed"):
+                    item["communication_closed"] = True
+                    item["queue"].put(None)
 
     def shutdown(self):
         from time import sleep
@@ -220,7 +228,7 @@ class WorkflowSessionService:
         path = (base / run_id).resolve()
         if path.parent != base or not path.is_dir():
             raise HTTPException(404, "运行目录不存在")
-        config = yaml.safe_load((path / "experiment_config.yaml").read_text(encoding="utf-8"))
+        config = read_config(path / "experiment_config.yaml")
         if config.get("experiment_id") not in (None, self.adapter.id):
             raise HTTPException(422, "运行目录与实验不匹配")
         if not allow_running and config.get("completion_status") == "running":
@@ -228,6 +236,8 @@ class WorkflowSessionService:
         return path
 
     def analysis_state(self, run_id):
+        if self.analysis_workflow is None:
+            raise conflict("该实验没有独立离线分析器", "no_analyzer")
         try:
             path = self.run_directory(run_id)
             if self.manager.has_active_kind(f"analysis:{self.adapter.id}:{run_id}"):
@@ -238,6 +248,8 @@ class WorkflowSessionService:
             raise HTTPException(422, str(exc)) from exc
 
     def analyze(self, run_id, body):
+        if self.analysis_workflow is None:
+            raise conflict("该实验没有独立离线分析器", "no_analyzer")
         with self.manager.jobs_lock:
             kind = f"analysis:{self.adapter.id}:{run_id}"
             if self.manager.has_active_kind(f"comparison:{self.adapter.id}"):
@@ -262,7 +274,7 @@ class WorkflowSessionService:
 
             return self.manager.create(kind, run, hardware_required=False).public()
 
-def create_router(service):
+def create_router(service, *, include_history=False):
     router = APIRouter(prefix=f"/api/experiments/{service.adapter.id}")
 
     @router.get("/workflow", response_model=XYFlow)
@@ -298,9 +310,23 @@ def create_router(service):
     def finish(session_id: str, body: XYRevisionBody):
         return service.command(session_id, body.revision, "finish")
 
-    @router.get("/runs/{run_id}/analysis", response_model=XYAnalysisState)
-    def analysis_state(run_id: str):
-        return service.analysis_state(run_id)
+    if service.analysis_workflow is not None:
+        @router.get("/runs/{run_id}/analysis", response_model=XYAnalysisState)
+        def analysis_state(run_id: str):
+            return service.analysis_state(run_id)
+
+        @router.post("/runs/{run_id}/analysis")
+        def analyze(run_id: str, body: XYAnalysisBody):
+            return service.analyze(run_id, body)
+
+    if include_history:
+        @router.get("/runs", response_model=WorkflowRuns)
+        def runs(limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0)):
+            return list_runs(service, limit, offset)
+
+        @router.get("/runs/{run_id}/summary", response_model=WorkflowRunSummary)
+        def summary(run_id: str):
+            return run_summary(service, run_id)
 
     @router.get("/runs/{run_id}/files/{name:path}")
     def run_file(run_id: str, name: str):
@@ -309,9 +335,5 @@ def create_router(service):
         if directory not in path.parents or not path.is_file():
             raise HTTPException(404, "产物不存在")
         return FileResponse(path, filename=path.name)
-
-    @router.post("/runs/{run_id}/analysis")
-    def analyze(run_id: str, body: XYAnalysisBody):
-        return service.analyze(run_id, body)
 
     return router
