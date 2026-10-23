@@ -3,6 +3,8 @@ import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
+import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
+import { useParameterGuard, useUnsavedChanges } from "../components/NavigationGuard";
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
 import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
@@ -12,6 +14,8 @@ import type { components } from "../types/openapi";
 import "./zawClosedLoop.css";
 import "./rfDirectAW.css";
 
+const analysisParameterKeys = { noise_nperseg: "NOISE_NPERSEG", noise_outlier_policy: "NOISE_OUTLIER_POLICY",
+  band_min_hz: "SENSITIVITY_BAND_MIN_HZ", band_max_hz: "SENSITIVITY_BAND_MAX_HZ" };
 const terminal = (job: Job | undefined) => Boolean(job && ["completed", "failed", "cancelled"].includes(job.status));
 type RunList = components["schemas"]["RFDirectAWRunsResponse"];
 type RunItem = components["schemas"]["RFDirectAWRunItem"];
@@ -31,9 +35,15 @@ function commonTriggerParameters(values: ParameterValues): ParameterValues {
   return next;
 }
 
-function historyParameters(values: ParameterValues): ParameterValues {
-  if (["RF_INPUT_ROUTE", "RF_AUX_OUTPUT_IDX", "RF_PHYSICAL_INPUT_SOURCE"].some(key => key in values)) return values;
-  return { ...values, RF_INPUT_ROUTE: "physical", RF_AUX_OUTPUT_IDX: 1, RF_PHYSICAL_INPUT_SOURCE: "voltage1" };
+function historyParameters(values: ParameterValues, multiControl: boolean): ParameterValues {
+  const next = { ...values };
+  if (multiControl && !Array.isArray(next.CONTROL_WAVEFORM_FILES)) {
+    next.CONTROL_WAVEFORM_FILES = typeof next.ARB_WAVEFORM_FILE === "string" && next.ARB_WAVEFORM_FILE ? [next.ARB_WAVEFORM_FILE] : [];
+  }
+  if (!["RF_INPUT_ROUTE", "RF_AUX_OUTPUT_IDX", "RF_PHYSICAL_INPUT_SOURCE"].some(key => key in next)) {
+    Object.assign(next, { RF_INPUT_ROUTE: "physical", RF_AUX_OUTPUT_IDX: 1, RF_PHYSICAL_INPUT_SOURCE: "voltage1" });
+  }
+  return next;
 }
 
 const statusLabels: Record<string, string> = {
@@ -47,9 +57,12 @@ const statusLabels: Record<string, string> = {
 };
 const status = (value: string) => statusLabels[value] ?? value;
 
+type NoiseQuality = { n_records?: number; n_accepted?: number; n_rejected?: number; reason?: string; policy?: string };
+
 function Result({ value }: { value: Summary }) {
   const component = value.response_component ?? "X";
-  const controls = value.analysis?.controls as Record<string, { response_fit?: { slope_V_per_nT?: number }; sensitivity?: { flat_median_fT_per_sqrtHz?: number } }> | undefined;
+  const controls = value.analysis?.controls as Record<string, { response_fit?: { slope_V_per_nT?: number }; sensitivity?: { flat_median_fT_per_sqrtHz?: number }; noise_rejection?: NoiseQuality }> | undefined;
+  const quality = value.analysis?.noise_rejection as NoiseQuality | undefined;
   const caption = component === "R" ? "R 标定 / X 噪声与 RF 灵敏度" : "X 响应与 RF 灵敏度";
   const fit = value.analysis?.response_fit as { method?: string; success?: boolean; slope_V_per_nT?: number; failure_reason?: string } | undefined;
   const sensitivity = value.analysis?.sensitivity as { flat_median_fT_per_sqrtHz?: number | null; flat_fmin_Hz?: number | null; flat_fmax_Hz?: number | null } | undefined;
@@ -61,13 +74,16 @@ function Result({ value }: { value: Summary }) {
     <p><strong>{value.run_id}</strong> · {value.timestamp}</p>
     <p>采集：{status(value.completion_status)} · 校相：{status(value.phase_calibration_status)} · 分析：{status(value.analysis_status)}</p>
     <p>RF 解调器索引：{String(value.parameters.DEMOD3_IDX ?? 3)}{value.signal_chain && ` · ${value.signal_chain}`}</p>
+    {value.parameters.Z_PHASE_SCAN_ENABLED === false && <p>RF 相位来源：手动 {String(value.parameters.Z_BURST_PHASE_INIT)}°；未执行相位扫描。</p>}
     {value.temperature_control?.control_source === "external_software" && <p className="alert">外部温控：程序未设置或检测温度，请确认外部软件维持目标温度。</p>}
     {value.failure_reason && <div className="alert error">{value.failure_reason}</div>}
     {value.analysis_error && <div className="alert error">{value.analysis_error}</div>}
     {!value.can_analyze && <p>{value.analysis_block_reason}</p>}
     {component === "R" && <p>R 标定 / X 噪声 · 响应 {String(value.parameters.Z_RF_FREQ)} Hz · 校相/噪声 {String(value.parameters.Z_RF_NOISE_FREQ)} Hz</p>}
     {fit && !controls && <p>{component === "R" ? "R 标定底层中心斜率" : "X 斜率"}：{fit.slope_V_per_nT?.toPrecision(5)} V/nT · {fit.success ? component === "R" ? "绝对色散拟合" : "色散拟合" : "数值斜率估算回退"}{fit.failure_reason && `（${fit.failure_reason}）`}</p>}
-    {controls && <table><thead><tr><th>控制版本</th><th>响应斜率（V/nT）</th><th>灵敏度中位数（fT/√Hz）</th></tr></thead><tbody>{Object.entries(controls).map(([version, data]) => <tr key={version}><td>{version}</td><td>{data.response_fit?.slope_V_per_nT?.toPrecision(5) ?? "—"}</td><td>{data.sensitivity?.flat_median_fT_per_sqrtHz?.toPrecision(5) ?? "—"}</td></tr>)}</tbody></table>}
+    {controls && <table><thead><tr><th>控制版本</th><th>响应斜率（V/nT）</th><th>灵敏度中位数（fT/√Hz）</th><th>PSD 保留／总数</th></tr></thead><tbody>{Object.entries(controls).map(([version, data]) => <tr key={version}><td>{version}</td><td>{data.response_fit?.slope_V_per_nT?.toPrecision(5) ?? "—"}</td><td>{data.sensitivity?.flat_median_fT_per_sqrtHz?.toPrecision(5) ?? "—"}</td><td title={data.noise_rejection?.reason}>{data.noise_rejection?.n_accepted ?? "—"}／{data.noise_rejection?.n_records ?? "—"}</td></tr>)}</tbody></table>}
+    {controls && <ul>{Object.entries(controls).filter(([, data]) => data.noise_rejection?.reason).map(([version, data]) => <li key={version}>PSD 提示（{version}）：{data.noise_rejection?.reason}</li>)}</ul>}
+    {typeof quality?.n_records === "number" && <p>PSD 异常谱筛选：保留 {quality.n_accepted}／{quality.n_records} 条，剔除 {quality.n_rejected} 条。{quality.reason}原始数据、未剔除均值和逐记录清单均保留。</p>}
     {typeof sensitivity?.flat_median_fT_per_sqrtHz === "number" && <p>灵敏度中位数：{sensitivity.flat_median_fT_per_sqrtHz.toPrecision(5)} fT/√Hz（{correctionText}）</p>}
     {component === "R" && <p className="alert">换算假定响应与噪声频率的增益一致；增益一致性和等效线宽补偿待实测验证。</p>}
     {value.artifacts["full_analysis.png"] ? <figure className="zaw-figure"><figcaption>{caption}</figcaption><img src={value.artifacts["full_analysis.png"]} alt={caption} /></figure> : <p className="zaw-empty">本次运行暂无结果图。</p>}
@@ -82,20 +98,19 @@ function Result({ value }: { value: Summary }) {
       </figure> : null;
     })}
     <details><summary>全部结果图</summary>{["response_curve.png", "noise_psd.png", "sensitivity.png"].filter(name => value.artifacts[name]).map(name => <figure className="zaw-figure" key={name}><figcaption>{name}</figcaption><img src={value.artifacts[name]} alt={name} /></figure>)}</details>
-    <p className="xy-artifact-links">{Object.entries(value.artifacts).filter(([name]) => !name.startsWith("controls/") && /\.(npz|json|yaml|pdf)$/.test(name)).map(([name, url]) => <a key={name} href={url} download>{name}</a>)}</p>
+    <p className="xy-artifact-links">{Object.entries(value.artifacts).filter(([name]) => !name.startsWith("controls/") && /\.(npz|json|yaml|pdf|csv)$/.test(name)).map(([name, url]) => <a key={name} href={url} download>{name}</a>)}</p>
     <details><summary>校相与安全收尾诊断</summary><pre>{JSON.stringify({ xy_phase_calibration: value.xy_phase_calibration, safety_shutdown: value.safety_shutdown }, null, 2)}</pre></details>
     <details><summary>实际采样率与锁相回读</summary><pre>{JSON.stringify({ actual_rates: value.actual_rates, stage_frequencies: value.stage_frequencies, response: value.hf2_response_snapshot, calibration: value.hf2_calibration_snapshot, noise: value.hf2_noise_snapshot }, null, 2)}</pre></details>
   </div>;
 }
 
-export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }: { experimentId?: "rf-sensitivity-aw" | "rf-sensitivity-aw-r" | "rf-sensitivity-aw-known-noise" }) {
+export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }: { experimentId?: "rf-sensitivity-aw" | "rf-sensitivity-aw-known-noise" }) {
   const ID = experimentId;
   const BASE = `/api/experiments/${ID}`;
-  const isR = ID === "rf-sensitivity-aw-r";
   const isKnownNoise = ID === "rf-sensitivity-aw-known-noise";
   const canManageRuns = ID === "rf-sensitivity-aw";
-  const title = isKnownNoise ? "已知噪声下 RF 灵敏度（DirectAW）" : isR ? "RF 灵敏度（DirectAW R）" : "RF 灵敏度（DirectAW）";
-  const responseLabel = isR ? "R 标定 / X 噪声" : "X 响应";
+  const title = isKnownNoise ? "已知噪声下 RF 灵敏度（DirectAW）" : "RF 灵敏度（DirectAW）";
+  const responseLabel = "X 响应";
   const summaryUrl = (runId: string) => `${BASE}/runs/${encodeURIComponent(runId)}/summary`;
   const [tab, setTab] = useState<"run" | "history">("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
@@ -135,6 +150,8 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   const sessionBusy = Boolean(session && session.status !== "closed" && (session.status !== "waiting" || session.pending_request));
   const parametersBusy = jobActive && (!session || session.status === "closed") || sessionBusy;
   const routeFields = fields.map(field => ({ ...field, read_only: field.read_only
+    || ["Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG"].includes(field.name)
+      && values.Z_PHASE_SCAN_ENABLED === false
     || field.name === "RF_PHYSICAL_INPUT_SOURCE" && values.RF_INPUT_ROUTE === "internal"
     || ["LOOPBACK_INPUT_RANGE_V", "LOOPBACK_INPUT_DIFF"].includes(field.name)
       && !(values.RF_INPUT_ROUTE === "physical" && values.RF_PHYSICAL_INPUT_SOURCE === "voltage1") }));
@@ -143,6 +160,10 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   const comparisonDirty = Boolean(comparisonResult && (comparisonInvalidated || JSON.stringify(comparisonSelection(comparisonRuns)) !== JSON.stringify(comparisonSelection(comparisonResult.runs))));
   const directoryBusy = Boolean(managingRun || jobActive || analysisActive || comparisonBusy || starting || session && session.status !== "closed");
   const legendsInvalid = comparisonRuns.some(item => invalidLegend(item.legend));
+  useParameterGuard(fields, values, layout, savedLayout, session && session.status !== "closed" ? session.parameters as ParameterValues : undefined);
+  useUnsavedChanges(Boolean(renamingId && renameName));
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setComparisonJob, setSelectedId, setHistoryView });
+  const requestedJobId = useRequestedJobId();
 
   useEffect(() => {
     let disposed = false;
@@ -158,7 +179,7 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
       const initial = validatedParameterLayout(schema.fields, schema.parameter_layout) ?? defaultParameterLayout(schema.fields);
       setLayout(initial);
       setSavedLayout(initial);
-      const activeComparison = jobs.find(item => item.kind === `comparison:${ID}` && ["queued", "running"].includes(item.status));
+      const activeComparison = recoverableJob(jobs, ID, requestedJobId, "comparison");
       if (activeComparison) {
         const recovered = await api<Job>(`/api/jobs/${activeComparison.id}`);
         if (!disposed) {
@@ -166,14 +187,12 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
           setHistoryView("comparison");
         }
       }
-      const activeAnalysis = jobs.find(item => item.kind.startsWith(`analysis:${ID}:`) && ["queued", "running"].includes(item.status));
+      const activeAnalysis = recoverableJob(jobs, ID, requestedJobId, "analysis");
       if (activeAnalysis) {
         const recovered = await api<Job>(`/api/jobs/${activeAnalysis.id}`);
         if (!disposed) setAnalysisJob(recovered);
       }
-      const active = jobs.find(item => item.kind === `session:${ID}` && ["queued", "running"].includes(item.status))
-        ?? jobs.find(item => item.kind === `experiment:${ID}` && ["queued", "running"].includes(item.status))
-        ?? jobs.find(item => item.kind === `experiment:${ID}` && item.started_at);
+      const active = recoverableJob(jobs, ID, requestedJobId);
       if (active) {
         const recovered = await api<Job>(`/api/jobs/${active.id}`);
         if (!disposed) setJob(recovered);
@@ -203,7 +222,7 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
 
   useEffect(() => {
     let disposed = false;
-    api<RunList>(`${BASE}/runs?limit=50&offset=${offset}${starredOnly && !isR ? "&starred_only=true" : ""}`).then(data => {
+    api<RunList>(`${BASE}/runs?limit=50&offset=${offset}${starredOnly ? "&starred_only=true" : ""}`).then(data => {
       if (!disposed) {
         if (offset && offset >= data.total) {
           setOffset(Math.max(0, Math.ceil(data.total / 50) - 1) * 50);
@@ -229,7 +248,7 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   useEffect(() => { setRenamingId(""); }, [selectedId]);
 
   const manageRun = async (runId: string, action: "star" | "rename" | "delete", payload?: object) => {
-    if (managingRun || isR) return;
+    if (managingRun || !canManageRuns) return;
     if (action === "delete" && !window.confirm(`将永久删除 ${runId} 的参数、raw/ 原始数据和 results/ 分析结果。此操作不可恢复，是否删除？`)) return;
     setManagingRun(runId);
     setError("");
@@ -300,7 +319,7 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
       });
       const persisted = validatedParameterLayout(result.schema.fields, result.schema.parameter_layout);
       if (!persisted || !sameParameterLayout(persisted, layout)) throw new Error("后端未确认参数布局已保存");
-      setSavedLayout(persisted);
+      setSavedLayout(persisted); setFields(result.schema.fields);
       setNotice("参数与布局已保存");
     } catch (reason) {
       setError(String(reason));
@@ -346,13 +365,13 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   };
 
   return <>
-    <PageHead eyebrow="MEASUREMENT · RF" title={definition?.title ?? title} description={definition?.description ?? "读取参数与运行记录。"} />
+    <PageHead eyebrow="MEASUREMENT · RF" title={definition?.title ?? title} description={definition?.description ?? "读取参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
     <div className="zaw-tab-strip" role="tablist" aria-label={`${title}视图`} onKeyDown={tabKey}>
       {(["run", "history"] as const).map(item => <button key={item} id={`rf-aw-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`rf-aw-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : "历史"}</button>)}
     </div>
     <div id="rf-aw-panel-run" role="tabpanel" aria-labelledby="rf-aw-tab-run" hidden={tab !== "run"}>
-      <WorkflowPanel experimentId={ID} finishStepId="A16" runStepId="A15" analysisParameterPrefix=""
+      <WorkflowPanel experimentId={ID} finishStepId="A16" runStepId="A15" analysisParameterPrefix="" analysisParameterKeys={analysisParameterKeys}
         normalizeParameters={commonTriggerParameters} enabled={fields.length > 0}
         fields={routeFields} layout={layout} setLayout={setLayout} setNotice={setNotice}
         parametersDisabled={parametersBusy || starting || saving || comparisonBusy}
@@ -372,8 +391,13 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
           {notice && <p role="status">{notice}</p>}
           <div className="xy-workflow-preview" aria-label="RF 采集预览">
             <h3>RF 采集预览（只读）</h3>
+            <p>{values.Z_PHASE_SCAN_ENABLED === false
+              ? `A11：跳过相位扫描，使用手动触发相位 ${String(values.Z_BURST_PHASE_INIT ?? "—")}°；分步模式仍需执行 A11 应用相位。`
+              : "A11：扫描并拟合 Z RF 触发相位；可在节点参数中关闭扫描并手动指定相位。"}</p>
+            {isKnownNoise && <p>关闭扫描时，全部控制版本共用手动 RF 相位；仅改变 RF 正弦分量，不改变注入噪声相位。</p>}
             <p>响应范围 {String(values.RF_AMP_START ?? "—")} → {String(values.RF_AMP_STOP ?? "—")} Vpp，共 {String(values.RF_AMP_POINTS ?? "—")} 点，每点 {String(values.SCAN_POINT_DURATION_S ?? "—")} s。</p>
             <p>零 RF 噪声：{String(values.NOISE_N_AVG ?? "—")} 条 × {String(values.NOISE_DURATION ?? "—")} s；采样率以锁相实际回读为准。</p>
+            <p>各控制独立校相、采集和分析，共用当前 RF 参数，不自动改频。PSD 筛选：{values.NOISE_OUTLIER_POLICY === "mad_high" ? "保守 MAD 高值剔除（每控制至少 5 条）" : "保留全部记录"}；评分频带 {String(values.SENSITIVITY_BAND_MIN_HZ ?? "—")}–{String(values.SENSITIVITY_BAND_MAX_HZ ?? "—")} Hz。原始记录始终保留。</p>
             {isKnownNoise && <p>注入噪声 ON：{String(values.NOISE_BAND_STARTS_HZ ?? "—")} → {String(values.NOISE_BAND_STOPS_HZ ?? "—")} Hz，实际噪声幅度自动对齐设计 PSD（V²/Hz）；控制版本：{String(values.CONTROL_WAVEFORM_FILES ?? "—")}。零 RF 保留噪声。</p>}
           </div>
           {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
@@ -417,7 +441,7 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
           </div>
           <div hidden={historyView !== "single"}>{selected ? <>
             <div className="zaw-run-details-actions"><button className="zaw-secondary" disabled={jobActive || starting || saving} onClick={() => {
-              setValues(current => commonTriggerParameters({ ...current, ...historyParameterValues(fields, historyParameters(selected.parameters as ParameterValues)) } as ParameterValues));
+              setValues(current => commonTriggerParameters({ ...current, ...historyParameterValues(fields, historyParameters(selected.parameters as ParameterValues, true)) } as ParameterValues));
               if (!("RF_INPUT_ROUTE" in selected.parameters)) setNotice("旧参数按 HF2 物理接线 AuxOut2 → Signal Input2 填回；使用 MFLI 时请明确改选 Aux Input1 或 Aux Input2，否则预检会拒绝启动。");
               setTab("run");
             }}>填回参数</button><button className="zaw-secondary" disabled={jobActive || analysisActive || comparisonBusy || Boolean(managingRun) || !selected.can_analyze} onClick={() => void reanalyze(selected.run_id)}>重新分析</button></div>

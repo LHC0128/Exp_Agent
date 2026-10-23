@@ -2,6 +2,8 @@ import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
+import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
+import { useParameterGuard } from "../components/NavigationGuard";
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
 import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
@@ -85,6 +87,9 @@ export function BellBloomZCalibrationPage() {
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
   const live = Boolean(session && session.status !== "closed");
   const parametersBusy = jobActive && (!live || session?.status !== "waiting" || Boolean(session?.pending_request));
+  useParameterGuard(fields, values, layout, savedLayout, live ? session?.parameters as ParameterValues : undefined);
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId });
+  const requestedJobId = useRequestedJobId();
 
   useEffect(() => {
     let disposed = false;
@@ -94,7 +99,7 @@ export function BellBloomZCalibrationPage() {
       setValues(Object.fromEntries(schema.fields.map(field => [field.name, field.default])));
       const initial = validatedParameterLayout(schema.fields, schema.parameter_layout) ?? defaultParameterLayout(schema.fields);
       setLayout(initial); setSavedLayout(initial);
-      const active = jobs.find(item => item.kind === `experiment:${ID}` && ["queued", "running"].includes(item.status));
+      const active = recoverableJob(jobs, ID, requestedJobId);
       if (active) { const recovered = await api<Job>(`/api/jobs/${active.id}`); if (!disposed) setJob(recovered); }
     }).catch(reason => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
@@ -146,7 +151,7 @@ export function BellBloomZCalibrationPage() {
       const result = await api<{ schema: ExperimentSchema }>(`${BASE}/defaults`, { method: "PUT", body: JSON.stringify({ parameters: values, parameter_layout: layout }) });
       const persisted = validatedParameterLayout(result.schema.fields, result.schema.parameter_layout);
       if (!persisted || !sameParameterLayout(persisted, layout)) throw new Error("后端未确认参数布局已保存");
-      setSavedLayout(persisted); setNotice("参数与布局已保存");
+      setSavedLayout(persisted); setFields(result.schema.fields); setNotice("参数与布局已保存");
     } catch (reason) { setError(String(reason)); } finally { setSaving(false); }
   };
   const reanalyze = async (runId: string) => {
@@ -162,7 +167,7 @@ export function BellBloomZCalibrationPage() {
   };
 
   return <>
-    <PageHead eyebrow="CALIBRATION · BELL BLOOM" title={definition?.title ?? "Bell Bloom Z 磁场频率标定"} description={definition?.description ?? "读取参数与运行记录。"} />
+    <PageHead eyebrow="CALIBRATION · BELL BLOOM" title={definition?.title ?? "Bell Bloom Z 磁场频率标定"} description={definition?.description ?? "读取参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
     <div className="zaw-tab-strip" role="tablist" aria-label="Bell Bloom Z 标定视图" onKeyDown={tabKey}>
       {(["run", "history"] as const).map(item => <button key={item} id={`bb-z-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`bb-z-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : "历史"}</button>)}

@@ -45,7 +45,7 @@ ACQUISITION_CASES = {
 def test_real_group_settle_restore_slow_disk_and_control_order(known_rig, monkeypatch, stage):
     """实际业务:组首配置先于关温控,关闭窗口内只 settle+采集,慢盘不占用关闭窗口。"""
     points = dict(A13=dict(temp_group_size=2, rf_amp_points=5), A14=dict(temp_group_size=2, noise_n_avg=3))[stage]
-    known_rig.params = replace(known_rig.params, **points)
+    known_rig.params = replace(known_rig.params, control_scale_factors={"v1": 1.25, "v2": .8}, **points)
     ctx = workflow.Workflow(known_rig.params, project_root=known_rig.tmp_path)
     ids = [item.id for item in ACQUISITION]
     ctx.execute(ids[:ids.index(stage)])
@@ -127,6 +127,13 @@ def test_real_group_settle_restore_slow_disk_and_control_order(known_rig, monkey
         child = ctx.directory.root / "controls" / version
         names = [path.name for path in saved if path.is_relative_to(child)]
         assert names, f"{version} 必须真实落盘"
+        from ..rf_sensitivity_direct_aw.waveform import load_envelope
+        control = ctx.controls[version]
+        nominal = load_envelope(replace(control.params, control_scale_factors={}), 16384)
+        with np.load(child / "raw/xy_aw_waveforms.npz", allow_pickle=False) as data:
+            np.testing.assert_allclose(data["omega_ctrl_Hz"],
+                nominal["omega_ctrl_Hz"] * control.params.control_scale_factors[version])
+            assert float(data["control_scale_factor"]) == control.params.control_scale_factors[version]
     for path in saved:
         with np.load(path, allow_pickle=False) as data:
             assert data.files

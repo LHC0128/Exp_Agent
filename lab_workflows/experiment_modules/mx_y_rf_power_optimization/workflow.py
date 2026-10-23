@@ -1,334 +1,264 @@
-"""Mx Y RF 光功率灵敏度优化采集工作流。"""
-
-from __future__ import annotations
-
-from lab_workflows.lockin_compatibility import require_lockin_compatibility
-import io
+"""光功率优化完整/分步共用编排；业务采集与安全恢复各有明确归属。"""
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
-import sys
-from typing import Any
-
-import numpy as np
-import yaml
-from tqdm.auto import tqdm
-
-from ...common import (
-    WorkflowCancelled,
-    find_project_root,
-    load_mapping,
-    validate_safety_limit,
-)
-from ...experiment_runtime import check_cancelled, load_runtime_params
-from ...steps import DeviceSession, create_run_directory
-from ..mx_y_rf_sensitivity.workflow import (
-    RPointQualityError,
-    acquire_mx_y_rf_point,
-    configure_mx_y_rf_outputs,
-    connect_mx_y_rf_devices,
-    restore_mx_y_rf_laser_powers,
-    safe_shutdown,
-    snapshot_mx_y_rf_state,
-)
+from uuid import uuid4
+from ...common import WorkflowCancelled, find_project_root
+from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
+from ...instrument_config import instrument_config_snapshot
+from ...steps import DeviceSession, create_run_directory, disconnect_device_mapping
+from ..noise_spectrum_xy.state_io import write_state
+from . import preparation, acquisition, run_format
 from .models import MxYRFPowerOptimizationParams
-from .scan import PowerGridPoint, build_power_axes, iter_serpentine_grid
+from .stages import ACQUISITION, FINISH_ID, RUN_ID, initial_states, invalidate, validate_selection
+# 兼容已有直接导入；实际业务已移到采集模块。
+from .acquisition import _acquire_grid, _set_power_point, _initial_manifest, _write_manifest, acquire_mx_y_rf_point
 
-
-EXPERIMENT_ID = "mx-y-rf-power-optimization"
-DATA_TYPE = "Mx_Y_RF_Power_Optimization"
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
+DATA_TYPE = run_format.DATA_TYPE
 EXECUTION_MODE = "typed_workflow"
 
 
-def _write_manifest(path: Path, manifest: dict[str, Any]) -> None:
-    """更新可恢复的网格采集清单，并兼容 Windows 覆盖限制。"""
-    content = yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False)
-    temporary = path.with_suffix(f"{path.suffix}.tmp")
-    temporary.write_text(content, encoding="utf-8")
-    try:
-        temporary.replace(path)
-    except PermissionError:
-        path.write_text(content, encoding="utf-8")
-        temporary.unlink(missing_ok=True)
+class Workflow:
+    stages = ACQUISITION
 
+    def __init__(self, params, *, project_root=None, session_id=None):
+        self.root = Path(project_root).resolve() if project_root else find_project_root()
+        self.params, self.mapping = preparation.preflight(params, self.root)
+        self.pump_parameters = self.power_parameters = params
+        self.config_revision = self._configuration_revision()
+        self.session_id, self.revision = session_id or uuid4().hex, 0
+        self.states = initial_states(self.stages)
+        self.devices, self.channels = {}, {}
+        self.device_session = DeviceSession()
+        self.directory = self.run_parameters = self.current_step = None
+        self.closed = self.round_sealed = self.clock_failed = False
+        self.demod_mode = "unknown"
+        self.state = preparation.initial_config(params)
+        self.outputs = {key: "未知" for key in ("X", "Y RF", "Z", "温控", "Pump", "Pump/Probe 光功率")}
 
-def _initial_manifest(
-    params: MxYRFPowerOptimizationParams,
-    points: list[PowerGridPoint],
-) -> dict[str, Any]:
-    pump_axis, probe_axis = build_power_axes(params)
-    return {
-        "schema_version": 1,
-        "scan_order": "pump_outer_probe_inner_serpentine",
-        "pump_power_v": pump_axis.tolist(),
-        "probe_power_v": probe_axis.tolist(),
-        "acquisition_order": [point.key for point in points],
-        "points": {
-            point.key: {
-                "pump_index": point.pump_index,
-                "probe_index": point.probe_index,
-                "pump_power_v": point.pump_power_v,
-                "probe_power_v": point.probe_power_v,
-                "status": "pending",
-                "reason": None,
-            }
-            for point in points
-        },
-    }
+    def _configuration_revision(self):
+        config = instrument_config_snapshot(self.root)
+        return (config["device_library_revision"], config["physical_mapping_revision"],
+            (self.root / "params/safety_limits.yaml").read_bytes())
 
+    def recheck(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请安全结束会话后重新连接")
+        self.params, self.mapping = preparation.preflight(self.params, self.root)
 
-def _set_power_point(
-    point: PowerGridPoint,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-) -> None:
-    """设置一个 Pump/Probe 功率点，不增加额外等待。"""
-    validate_safety_limit("Pump_laser_power", point.pump_power_v)
-    validate_safety_limit("Probe_laser_power", point.probe_power_v)
-    laser = devices["laser"]
-    laser.setup_dc(point.pump_power_v, channel=channels["pump_laser"])
-    laser.set_output(True, channel=channels["pump_laser"])
-    laser.setup_dc(point.probe_power_v, channel=channels["probe_laser"])
-    laser.set_output(True, channel=channels["probe_laser"])
+    def snapshot(self):
+        return dict(session_id=self.session_id, revision=self.revision,
+            status="closed" if self.closed else "running" if self.current_step else "waiting",
+            parameters=self.params.to_external(), steps=deepcopy(self.states), current_step=self.current_step,
+            run_id=self.directory.root.name if self.directory else None, outputs=dict(self.outputs),
+            output_source="初态单独回读；输出为最近成功模块的写入结果，未经额外回读",
+            demod_mode=self.demod_mode, safety_shutdown=self.state.get("safety_shutdown"),
+            clock_sources=self.state.get("clock_sources", {}),
+            daq_settings={"actual_response_rate_sa_s": self.state.get("actual_rates", {}).get("response_sa_s")})
 
+    def publish(self, message="等待选择下一模块"):
+        snapshot = self.snapshot()
+        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        if self.directory and not self.round_sealed:
+            write_state(self.directory.root / "acquisition_state.json", snapshot)
+        report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": snapshot})
 
-def _acquire_grid(
-    params: MxYRFPowerOptimizationParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    actual_response_rate: float,
-    device_id: str,
-) -> dict[str, Any]:
-    points = iter_serpentine_grid(params)
-    pump_axis, probe_axis = build_power_axes(params)
-    points_root = run_dir.raw / "points"
-    points_root.mkdir(parents=True, exist_ok=True)
-    manifest_path = run_dir.raw / "point_manifest.yaml"
-    manifest = _initial_manifest(params, points)
-    _write_manifest(manifest_path, manifest)
-    np.savez(
-        run_dir.raw / "power_grid.npz",
-        pump_power_v=pump_axis,
-        probe_power_v=probe_axis,
-        acquisition_order=np.asarray([point.key for point in points]),
-    )
+    def save(self):
+        if self.directory and not self.round_sealed:
+            self.directory.update_config(**self.state)
 
-    completed = 0
-    invalid = 0
-    actual_response_rates: list[float] = []
-    actual_noise_rates: list[float] = []
-    total = len(points)
-    interactive_progress = bool(sys.stdout.isatty())
-    progress_stream = sys.stdout if interactive_progress else io.StringIO()
-    progress = tqdm(
-        total=total,
-        desc="Pump/Probe 功率网格",
-        unit="point",
-        file=progress_stream,
-        dynamic_ncols=True,
-    )
-    try:
-        point_iterator = enumerate(points)
-        for sequence_index, point in point_iterator:
-            check_cancelled()
-            record = manifest["points"][point.key]
-            record["status"] = "running"
-            record["sequence_index"] = sequence_index
-            _write_manifest(manifest_path, manifest)
-            progress.set_postfix_str(
-                f"Pump={point.pump_power_v:.3f} V, "
-                f"Probe={point.probe_power_v:.3f} V"
-            )
-            print(
-                f"光功率点 {sequence_index + 1}/{total}: "
-                f"Pump={point.pump_power_v:.6g} V, "
-                f"Probe={point.probe_power_v:.6g} V"
-            )
-            _set_power_point(point, devices, channels)
-            point_raw = points_root / point.key
+    def update_parameters(self, values):
+        self.recheck()
+        old = self.params.to_external()
+        if unknown := values.keys() - old.keys():
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        params, mapping = preparation.preflight(MxYRFPowerOptimizationParams.from_external(old | values), self.root)
+        for stage in self.stages:
+            if any(old[key] != params.to_external()[key] for key in stage.parameters):
+                invalidate(self.stages, self.states, stage.id)
+        self.params, self.mapping = params, mapping
+        self.revision += 1
+        self.publish("参数已应用；请显式重跑受影响模块，尚未执行的草稿不改变收尾基线")
+
+    def _new_directory(self):
+        previous, inherited = self.directory, deepcopy(self.state)
+        if previous and not self.round_sealed:
+            self.state.update(completion_status="failed", failure_reason="本轮被重跑替代，保留已有数据")
+            self.save()
+        suffix = 0
+        while True:
             try:
-                point_result = acquire_mx_y_rf_point(
-                    params,
-                    point_raw,
-                    devices,
-                    channels,
-                    actual_response_rate,
-                    device_id,
-                )
-            except RPointQualityError as exc:
-                if getattr(exc, "safety_cleanup_errors", ()):
+                tag = self.params.run_tag if not suffix else f"{self.params.run_tag}_{suffix:02d}"
+                self.directory = create_run_directory(DATA_TYPE, tag, self.params.to_external(),
+                    schema_version=self.params.schema_version, project_root=self.root)
+                break
+            except FileExistsError:
+                suffix += 1
+        self.round_sealed = False
+        self.run_parameters = self.params.to_external()
+        self.state = preparation.initial_config(self.params)
+        for key in ("clock_sources", "device_snapshot", "temperature_control", "actual_rates"):
+            if key in inherited:
+                self.state[key] = inherited[key]
+        if previous:
+            self.state["source_run_id"] = previous.root.name
+        self.save()
+
+    def execute(self, selected):
+        selected = validate_selection(self.stages, self.states, selected)
+        if selected != [FINISH_ID]:
+            self.recheck()
+        hardware = set(selected) - {"A01", "A09", FINISH_ID}
+        if hardware and (self.directory is None or self.round_sealed
+                or self.run_parameters != self.params.to_external()
+                or (RUN_ID in selected and self.states[RUN_ID]["status"] != "pending")):
+            self._new_directory()
+        self.revision += 1
+        for item in selected:
+            if item == FINISH_ID:
+                self.finish()
+                break
+            check_cancelled()
+            if item != "A01":
+                invalidate(self.stages, self.states, item)
+            self.current_step = item
+            self.states[item] = {"status": "running", "error": ""}
+            failure = None
+            try:
+                self.publish(next(stage.title for stage in self.stages if stage.id == item))
+                self._execute_step(item)
+                stage = next(stage for stage in self.stages if stage.id == item)
+                artifacts = [p.relative_to(self.directory.root).as_posix()
+                    for pattern in stage.artifacts for p in self.directory.root.glob(pattern) if p.is_file()] if self.directory else []
+                self.states[item] = {"status": "completed", "error": "", "artifacts": artifacts}
+            except BaseException as exc:
+                failure = exc
+                self.states[item] = {"status": "failed", "error": str(exc)}
+                self.state["failure_reason"] = str(exc)
+                raise
+            finally:
+                self.current_step = None
+                try:
+                    self.save()
+                    self.publish(f"{item} {self.states[item]['status']}")
+                    if item == "A09" and failure is None:
+                        self.round_sealed = True
+                except Exception:
+                    if failure is None:
+                        raise
+        return self.snapshot()
+
+    def _execute_step(self, item):
+        params, devices, channels = self.params, self.devices, self.channels
+        if item == "A01":
+            self.recheck()
+        elif item == "A02":
+            if not devices:
+                try:
+                    self.devices, self.channels = preparation.connect_mx_y_rf_devices(self.mapping, self.device_session)
+                except BaseException:
+                    self.device_session.cleanup_connection_failure()
                     raise
-                invalid += 1
-                record["status"] = "invalid_quality"
-                record["reason"] = str(exc)
-                _write_manifest(manifest_path, manifest)
-                print(f"  该光功率点无效，继续扫描: {exc}")
-            else:
-                completed += 1
-                response_rate = float(
-                    point_result["actual_response_rate_sa_s"]
-                )
-                noise_rate = float(
-                    point_result["actual_noise_rate_sa_s"]
-                )
-                actual_response_rates.append(response_rate)
-                actual_noise_rates.append(noise_rate)
-                record["status"] = "completed"
-                record["reason"] = None
-                record["actual_response_rate_sa_s"] = response_rate
-                record["actual_noise_rate_sa_s"] = noise_rate
-                _write_manifest(manifest_path, manifest)
-            progress.update(1)
-            if not interactive_progress:
-                print(str(progress), flush=True)
-    finally:
-        progress.close()
+            self.state["device_snapshot"] = preparation.snapshot_mx_y_rf_state(self.devices, self.channels)
+        elif item == "A03":
+            try:
+                self.state["clock_sources"] = preparation.synchronize_clocks(devices, self.mapping)
+                self.clock_failed = False
+            except BaseException:
+                self.clock_failed = True
+                raise
+        elif item == "A04":
+            preparation.configure_initial_outputs(params, devices, channels, self.mapping)
+            self.power_parameters = params
+            self.outputs.update(X="OFF", Z="OFF", **{"Y RF": "OFF", "温控": "ON", "Pump/Probe 光功率": "基准 ON"})
+        elif item == "A05":
+            self.state["temperature_control"] = preparation.configure_temperature_control(
+                devices.get("tec"), params.temperature_c, channel=1).to_dict()
+        elif item == "A06":
+            preparation.configure_pump(params, devices, channels)
+            self.pump_parameters = params
+            self.outputs["Pump"] = "ON"
+        elif item == "A07":
+            self.state.setdefault("actual_rates", {})["response_sa_s"] = preparation.configure_response(params, devices, channels)
+            self.demod_mode = "response"
+        elif item == RUN_ID:
+            self.demod_mode = "unknown"
+            self.state["grid_summary"] = acquisition._acquire_grid(params, self.directory, devices, channels,
+                self.state["actual_rates"]["response_sa_s"], str(self.mapping["lockin_r"]["device_id"]))
+            self.demod_mode = "noise"
+            self.outputs.update(**{"Y RF": "OFF", "温控": "ON", "Pump/Probe 光功率": "末个扫描点 ON"})
+        elif item == "A09":
+            self._shutdown(disconnect_tec=False)
+            self.state.update(completion_status="completed", failure_reason=None, finished_at=datetime.now().isoformat(),
+                data_files=["raw/power_grid.npz", "raw/point_manifest.yaml"])
+            # 本轮已关闭 RF；再次采集必须显式重新准备，不覆盖旧网格。
+            invalidate(self.stages, self.states, "A07")
 
-    return {
-        "total_point_count": total,
-        "completed_point_count": completed,
-        "invalid_quality_point_count": invalid,
-        "actual_response_rates_sa_s": actual_response_rates,
-        "actual_noise_rates_sa_s": actual_noise_rates,
-        "manifest": "raw/point_manifest.yaml",
-        "grid": "raw/power_grid.npz",
-    }
+    def _shutdown(self, *, disconnect_tec=True):
+        self.state.update(preparation.shutdown(self.devices, self.channels,
+            self.pump_parameters, self.power_parameters, disconnect_tec=disconnect_tec))
+        success = self.state["safety_shutdown"]["completed"]
+        self.outputs.update({key: "OFF" if success else "未知" for key in ("X", "Y RF", "Z")})
+        self.outputs.update({"温控": "ON" if success else "未知",
+            "Pump/Probe 光功率": "基准 ON" if self.state["laser_power_restore"]["success"] else "未知"})
+        if not success:
+            raise RuntimeError("安全收尾失败：" + "；".join(self.state["safety_shutdown"]["errors"]))
 
-
-def run(params: MxYRFPowerOptimizationParams) -> Path:
-    root = find_project_root()
-    mapping = load_mapping(root)
-    require_lockin_compatibility('mx-y-rf-power-optimization', params.to_external(), mapping=mapping)
-    run_dir = create_run_directory(
-        DATA_TYPE,
-        params.run_tag,
-        params.to_external(),
-        schema_version=params.schema_version,
-        project_root=root,
-    )
-    run_dir.update_config(
-        experiment_id=EXPERIMENT_ID,
-        data_type=DATA_TYPE,
-        execution_mode=EXECUTION_MODE,
-        scan_mode="nested_scan",
-        scan_order="pump_outer_probe_inner_serpentine",
-        objective="minimize flat_median_ft_per_sqrt_hz",
-        geometry={
-            "main_field": "Z",
-            "pump": "Z",
-            "probe": "X",
-            "rf_field": "Y",
-            "x_field_output": "OFF",
-        },
-        linewidth_mode="amplitude_equivalent",
-        compatibility={
-            "reference_experiment_id": "mx-y-rf-sensitivity",
-            "schema_version": params.schema_version,
-        },
-        acquisition_signals=["R"],
-        power_restore={
-            "pump_power_v": params.pump_laser_power_v,
-            "probe_power_v": params.probe_laser_power_v,
-            "outputs_on": True,
-        },
-    )
-    session = DeviceSession()
-    devices: dict[str, Any] = {}
-    channels: dict[str, int] = {}
-    completion_status = "failed"
-    failure_reason: str | None = None
-    grid_summary: dict[str, Any] | None = None
-    try:
-        check_cancelled()
+    def finish(self, failure=None):
+        if self.closed:
+            return
+        errors = []
         try:
-            devices, channels = connect_mx_y_rf_devices(mapping, session)
-        except Exception:
-            session.cleanup_connection_failure()
-            raise
-        run_dir.update_config(
-            device_snapshot=snapshot_mx_y_rf_state(devices, channels)
-        )
-        actual_response_rate, clock_sources = configure_mx_y_rf_outputs(
-            params,
-            devices,
-            channels,
-            mapping,
-        )
-        run_dir.update_config(clock_sources=clock_sources)
-        device_id = str(mapping["lockin_r"]["device_id"])
-        grid_summary = _acquire_grid(
-            params,
-            run_dir,
-            devices,
-            channels,
-            actual_response_rate,
-            device_id,
-        )
-        completion_status = "completed"
-        run_dir.update_config(
-            completion_status=completion_status,
-            actual_rates={"response_sa_s": actual_response_rate},
-            grid_summary=grid_summary,
-            data_files=["raw/power_grid.npz", "raw/point_manifest.yaml"],
-        )
-        print(f"Mx Y RF 光功率灵敏度优化采集完成: {run_dir.root}")
-        return run_dir.root
-    except WorkflowCancelled as exc:
-        completion_status = "cancelled"
-        failure_reason = str(exc)
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                grid_summary=grid_summary,
-            )
-        raise
-    except Exception as exc:
-        failure_reason = str(exc)
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status="failed",
-                failure_reason=failure_reason,
-                grid_summary=grid_summary,
-            )
-        raise
-    finally:
-        shutdown_report = safe_shutdown(devices, channels, params)
-        restore_error = None
-        try:
-            restore_mx_y_rf_laser_powers(
-                devices,
-                channels,
-                pump_power_v=params.pump_laser_power_v,
-                probe_power_v=params.probe_laser_power_v,
-            )
+            if self.devices:
+                try:
+                    if self.round_sealed:
+                        errors.extend(disconnect_device_mapping({"tec": self.devices.get("tec")}))
+                    else:
+                        self._shutdown()
+                except Exception as exc:
+                    errors.append(str(exc))
+                if self.clock_failed:
+                    errors.extend(disconnect_device_mapping(self.devices))
+            if not self.round_sealed:
+                reason = str(failure) if failure else self.state.get("failure_reason") or "本轮采集未完整完成"
+                self.state.update(completion_status="cancelled" if isinstance(failure, WorkflowCancelled) else "failed",
+                    failure_reason=reason, finished_at=datetime.now().isoformat())
+                self.save()
         except Exception as exc:
-            restore_error = str(exc)
-            print(f"光功率基准恢复警告: {restore_error}")
-        if shutdown_report.errors:
-            print("安全关闭警告: " + "；".join(shutdown_report.errors))
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                safety_shutdown=shutdown_report.to_dict(),
-                laser_power_restore={
-                    "pump_power_v": params.pump_laser_power_v,
-                    "probe_power_v": params.probe_laser_power_v,
-                    "outputs_on": True,
-                    "success": restore_error is None,
-                    "error": restore_error,
-                },
-                device_disconnect={
-                    "tec_disconnected": not shutdown_report.disconnect_errors,
-                    "other_devices_preserved": True,
-                    "errors": list(shutdown_report.disconnect_errors),
-                },
-            )
+            errors.append(str(exc))
+        self.closed, self.current_step = True, None
+        self.revision += 1
+        if errors:
+            self.state["safety_shutdown"] = dict(self.state.get("safety_shutdown") or {}, completed=False, errors=errors)
+        self.states[FINISH_ID] = {"status": "failed" if errors else "completed", "error": "；".join(errors)}
+        try:
+            self.publish("会话已结束")
+            report_runtime_progress("finished", "采集会话已结束", 100, data={"estimated_remaining_seconds": None})
+        except Exception:
+            if failure is None and not errors:
+                raise
+        if errors and failure is None:
+            raise RuntimeError("安全收尾失败：" + "；".join(errors))
 
 
-def main() -> int:
-    params = load_runtime_params(MxYRFPowerOptimizationParams)
-    run(params)
+def run(params, *, project_root=None):
+    ctx = Workflow(params, project_root=project_root)
+    failure = None
+    try:
+        ctx.execute([stage.id for stage in ctx.stages if stage.id != FINISH_ID])
+        return ctx.directory.root
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        ctx.finish(failure)
+
+
+def main():
+    run(load_runtime_params(MxYRFPowerOptimizationParams))
     return 0
 
 

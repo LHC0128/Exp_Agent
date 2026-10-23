@@ -1,19 +1,26 @@
-schema_version: 3
+schema_version: 4
 parameters:
-  SYSTEM_SETTLE_S: 0.2
+  SYSTEM_SETTLE_S: 1.0
   RUN_TAG: rf_sens_aw
   RF_AMP_START: -0.1
   RF_AMP_STOP: 0.1
-  RF_AMP_POINTS: 26
+  RF_AMP_POINTS: 41
   TEMP_GROUP_SIZE: 2
   TEMP_SWITCH_ON_LAG_S: 5.0
   NOISE_N_AVG: 40
   NOISE_DURATION: 1.0
   NOISE_RATE: 53000.0
   NOISE_NPERSEG: 50000
-  ARB_WAVEFORM_FILE: 常数控制/waveforms/optimal_control_waveform.csv
+  NOISE_OUTLIER_POLICY: mad_high
+  SENSITIVITY_BAND_MIN_HZ: 3.0
+  SENSITIVITY_BAND_MAX_HZ: 150.0
+  CONTROL_WAVEFORM_FILES:
+  - PI脉冲/waveforms/optimal_control_waveform.csv
+  ARB_WAVEFORM_FILE: PI脉冲/waveforms/optimal_control_waveform.csv
+  CONTROL_SCALE_FACTORS:
+    默认最优控制: 0.9
   AW_REPEAT_FREQ: 3000.0
-  XY_CTRL_K_HZ_PER_V: 1374.4
+  XY_CTRL_K_HZ_PER_V: 1354.4
   XY_CTRL_B_HZ: 0.0
   XY_CTRL_PHASE: 0.0
   XY_CTRL_QUAD: -90.0
@@ -34,7 +41,8 @@ parameters:
   Z_RF_FREQ: 3000.0
   Z_V_TO_NT: 542.89
   Z_RF_AMPLITUDE_INIT: 0.01
-  Z_BURST_PHASE_INIT: 0.0
+  Z_PHASE_SCAN_ENABLED: false
+  Z_BURST_PHASE_INIT: 181.5
   Z_PHASE_SCAN_START_DEG: 0.0
   Z_PHASE_SCAN_STOP_DEG: 340.0
   Z_PHASE_SCAN_STEP_DEG: 20.0

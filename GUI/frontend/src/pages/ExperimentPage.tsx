@@ -1,6 +1,6 @@
 import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
 import { api } from "../api";
 import { ScopeCapturePage } from "./ScopeCapturePage";
@@ -12,7 +12,10 @@ import { NoiseSpectrumXYPage } from "./NoiseSpectrumXYPage";
 import { NoiseSpectrumXYKnownNoisePage, NoiseSpectrumXYProbeAMPage } from "./NoiseSpectrumXYKnownNoisePage";
 import { DetectionChainFrequencyResponsePage } from "./DetectionChainFrequencyResponsePage";
 import { RFSensitivityDirectAWPage } from "./RFSensitivityDirectAWPage";
+import { RFControlScaleSensitivityPage } from "./RFControlScaleSensitivityPage";
 import { MxYRFSensitivityPage } from "./MxYRFSensitivityPage";
+import { MxYRFProbeDetuningOptimizationPage } from "./MxYRFProbeDetuningOptimizationPage";
+import { MxYRFPowerOptimizationPage } from "./MxYRFPowerOptimizationPage";
 import { MxYRFFrequencyResponsePage } from "./MxYRFFrequencyResponsePage";
 import { MxYRFSensitivityDriftPage } from "./MxYRFSensitivityDriftPage";
 import { MxZOptimalControlRFSensitivityPage } from "./MxZOptimalControlRFSensitivityPage";
@@ -33,6 +36,8 @@ import { Field, SelectField } from "../components/FormFields";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { PageHead } from "../components/PageHead";
+import { ExperimentNavigation, recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
+import { useParameterGuard, useUnsavedChanges } from "../components/NavigationGuard";
 import { Status } from "../components/Status";
 import {
   defaultParameterLayout,
@@ -53,6 +58,10 @@ import type {
 } from "../types/api";
 
 export function ExperimentPage() {
+  return <ExperimentNavigation><ExperimentRoute /></ExperimentNavigation>;
+}
+
+function ExperimentRoute() {
   const { experimentId } = useParams();
   if (experimentId === "mx-z-optimal-control-rf-sensitivity") return <MxZOptimalControlRFSensitivityPage />;
   if (experimentId === "mx-z-optimal-control-xy-rf-sensitivity") return <MxZOptimalControlXYRFSensitivityPage />;
@@ -62,6 +71,8 @@ export function ExperimentPage() {
   if (experimentId === "mx-z-optimal-control-xyz-balance") return <MxZOptimalControlXYZBalancePage />;
   if (experimentId === "mx-z-optimal-control-dg4000-bias-xyz-balance") return <MxZOptimalControlDG4000BiasXYZBalancePage />;
   if (experimentId === "mx-y-rf-sensitivity") return <MxYRFSensitivityPage />;
+  if (experimentId === "mx-y-rf-probe-detuning-optimization") return <MxYRFProbeDetuningOptimizationPage />;
+  if (experimentId === "mx-y-rf-power-optimization") return <MxYRFPowerOptimizationPage />;
   if (experimentId === "mx-y-rf-frequency-response") return <MxYRFFrequencyResponsePage />;
   if (experimentId === "mx-y-rf-sensitivity-drift") return <MxYRFSensitivityDriftPage />;
   if (experimentId === "mx-main-field-calibration") return <MxMainFieldCalibrationPage />;
@@ -80,7 +91,8 @@ export function ExperimentPage() {
   if (experimentId === "noise-spectrum-xy-known-noise") return <NoiseSpectrumXYKnownNoisePage />;
   if (experimentId === "noise-spectrum-xy-uncontrolled-probe-am") return <NoiseSpectrumXYProbeAMPage />;
   if (experimentId === "detection-chain-frequency-response") return <DetectionChainFrequencyResponsePage />;
-  if (experimentId === "rf-sensitivity-aw" || experimentId === "rf-sensitivity-aw-r" || experimentId === "rf-sensitivity-aw-known-noise") return <RFSensitivityDirectAWPage key={experimentId} experimentId={experimentId} />;
+  if (experimentId === "rf-control-scale-sensitivity") return <RFControlScaleSensitivityPage />;
+  if (experimentId === "rf-sensitivity-aw" || experimentId === "rf-sensitivity-aw-known-noise") return <RFSensitivityDirectAWPage key={experimentId} experimentId={experimentId} />;
   return <GenericExperimentPage />;
 }
 
@@ -92,6 +104,7 @@ export function GenericExperimentPage() {
   const [fields, setFields] = useState<SchemaField[]>([]);
   const [values, setValues] = useState<ParameterValues>({});
   const [layout, setLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
+  const [savedLayout, setSavedLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
   const [advancedCollapsed, setAdvancedCollapsed] = useState(() => window.localStorage.getItem(collapsedKey) !== "false");
   const [dragging, setDragging] = useState<string>();
   const [dropTarget, setDropTarget] = useState<string>();
@@ -104,28 +117,33 @@ export function GenericExperimentPage() {
   const [actionError, setActionError] = useState("");
   const [job, setJob] = useState<Job>();
   const { hardwareBusy, activeJobs } = useJobActivity();
+  useParameterGuard(fields, values, layout, savedLayout);
+  useUnsavedChanges(Object.entries(arrayDrafts).some(([name, draft]) => draft !== (Array.isArray(values[name]) ? values[name].join(", ") : "")));
+  useExperimentTask({ ready: fields.length > 0, setJob });
+  const requestedJobId = useRequestedJobId();
 
   useEffect(() => {
     let disposed = false;
     setDefinition(undefined); setFields([]); setJob(undefined); setPreflight(undefined);
     setDefaultsStatus(undefined); setSchemaError(""); setActionError(""); setArrayDrafts({});
-    Promise.all([
-      api<ExperimentDefinition>(`/api/experiments/${experimentId}`),
-      api<ExperimentSchema>(`/api/experiments/${experimentId}/schema`),
-    ]).then(([definitionValue, schema]) => {
+    api<ExperimentDefinition>(`/api/experiments/${experimentId}`).then(async (definitionValue) => {
+      if (disposed) return;
+      setDefinition(definitionValue);
+      if (definitionValue.archived) return;
+      const schema = await api<ExperimentSchema>(`/api/experiments/${experimentId}/schema`);
       if (disposed) return;
       const savedLayout = schema.parameter_layout_saved
         ? validatedParameterLayout(schema.fields, schema.parameter_layout)
         : undefined;
-      setDefinition(definitionValue);
       setFields(schema.fields);
       const initial = Object.fromEntries(schema.fields.map((item) => [item.name, item.default]));
       setValues(initial);
-      setLayout(savedLayout || (
+      const initialLayout = savedLayout || (
         schema.parameter_layout_saved
           ? defaultParameterLayout(schema.fields)
           : loadLocalParameterLayout(schema.fields, layoutKey)
-      ));
+      );
+      setLayout(initialLayout); setSavedLayout(initialLayout);
       // 页面加载时仅刷新只读派生字段显示（如共同触发频率），不覆盖可编辑参数。
       api<{ ok: boolean; values?: ParameterValues }>(`/api/experiments/${experimentId}/derive`, {
         method: "POST",
@@ -152,12 +170,11 @@ export function GenericExperimentPage() {
   }, [experimentId]);
 
   useEffect(() => {
+    if (!definition || definition.archived) return;
     let disposed = false;
     api<JobSummary[]>("/api/jobs").then(async (jobs) => {
       if (disposed) return;
-      const matching = jobs.filter((item) => item.kind === `experiment:${experimentId}`);
-      const recovered = matching.find((item) => ["queued", "running"].includes(item.status))
-        || matching.find((item) => Boolean(item.started_at));
+      const recovered = recoverableJob(jobs, experimentId, requestedJobId);
       if (!recovered) return;
       try {
         const full = await api<Job>(`/api/jobs/${recovered.id}`);
@@ -169,7 +186,7 @@ export function GenericExperimentPage() {
       // 任务列表读取失败时保持无任务状态，不影响参数编辑。
     });
     return () => { disposed = true; };
-  }, [experimentId]);
+  }, [experimentId, definition]);
   useEffect(() => {
     if (fields.length) window.localStorage.setItem(layoutKey, JSON.stringify(layout));
   }, [fields.length, layout, layoutKey]);
@@ -224,7 +241,7 @@ export function GenericExperimentPage() {
         : undefined;
       if (!savedLayout) throw new Error("后端未确认参数分类已保存，请重启 GUI 后端后重试");
       if (JSON.stringify(savedLayout) !== JSON.stringify(layout)) throw new Error("后端回传的参数分类与当前布局不一致，未刷新页面布局");
-      setFields(result.schema.fields); setLayout(savedLayout);
+      setFields(result.schema.fields); setLayout(savedLayout); setSavedLayout(savedLayout);
       setDefaultsStatus({ ok: true, message: result.message });
     } catch (error) {
       setDefaultsStatus({ ok: false, message: String(error) });
@@ -380,12 +397,20 @@ export function GenericExperimentPage() {
     );
   };
 
+  if (definition?.archived) return <section className="experiment-card">
+    <h1>{definition.title}</h1>
+    <p>此实验已归档，GUI 仅保留目录卡片，不提供运行或历史页面。</p>
+    {definition.archive_path && <p>代码归档：<code>{definition.archive_path}</code></p>}
+    <p>参数和历史数据仍保留。</p><Link to="/experiments">返回实验中心</Link>
+  </section>;
+
   return (
     <>
       <PageHead
         eyebrow={`${definition?.category_label || "EXPERIMENT"} · ${definition?.variant || ""}`}
         title={definition?.title || "正在载入实验"}
         description={definition?.description || "读取实验定义与默认参数。"}
+        experiment={definition}
       />
       <section className="experiment-card">
         {definition && (

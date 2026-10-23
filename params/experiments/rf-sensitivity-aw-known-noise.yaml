@@ -4,14 +4,15 @@ parameters:
   RUN_TAG: rf_known_noise
   RF_AMP_START: -0.1
   RF_AMP_STOP: 0.1
-  RF_AMP_POINTS: 26
+  RF_AMP_POINTS: 41
   TEMP_GROUP_SIZE: 2
   TEMP_SWITCH_ON_LAG_S: 5.0
-  NOISE_N_AVG: 40
+  NOISE_N_AVG: 45
   NOISE_DURATION: 1.0
   NOISE_RATE: 53000.0
   NOISE_NPERSEG: 20000
   ARB_WAVEFORM_FILE: 常数控制/waveforms/optimal_control_waveform.csv
+  CONTROL_SCALE_FACTORS: {}
   AW_REPEAT_FREQ: 3000.0
   XY_CTRL_K_HZ_PER_V: 1374.4
   XY_CTRL_B_HZ: 0.0
@@ -34,15 +35,16 @@ parameters:
   Z_RF_FREQ: 3000.0
   Z_V_TO_NT: 542.89
   Z_RF_AMPLITUDE_INIT: 0.01
-  Z_BURST_PHASE_INIT: 0.0
+  Z_PHASE_SCAN_ENABLED: false
+  Z_BURST_PHASE_INIT: 181.5
   Z_PHASE_SCAN_START_DEG: 0.0
   Z_PHASE_SCAN_STOP_DEG: 340.0
   Z_PHASE_SCAN_STEP_DEG: 20.0
   SCAN_POINT_DURATION_S: 0.2
   LINEWIDTH_MODE: dispersive_equivalent
-  BW_FREQ_START: 2500.0
-  BW_FREQ_STOP: 3500.0
-  BW_FREQ_POINTS: 101
+  BW_FREQ_START: 2750.0
+  BW_FREQ_STOP: 3250.0
+  BW_FREQ_POINTS: 51
   PUMP_MOD_FREQ: 90000.0
   PUMP_MOD_DUTY: 5.0
   PUMP_MOD_AMPLITUDE: 0.18
@@ -81,6 +83,10 @@ parameters:
   - 常数控制/waveforms/optimal_control_waveform.csv
   - 默认最优控制/waveforms/optimal_control_waveform.csv
   - 3倍噪声/waveforms/optimal_control_waveform.csv
+  - PI脉冲/waveforms/optimal_control_waveform.csv
+  NOISE_OUTLIER_POLICY: none
+  SENSITIVITY_BAND_MIN_HZ: 3.0
+  SENSITIVITY_BAND_MAX_HZ: 150.0
   NOISE_BAND_STARTS_HZ:
   - 8000.0
   NOISE_BAND_STOPS_HZ:

@@ -1,6 +1,7 @@
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useId, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowLeftRight } from "lucide-react";
 import { Field, SelectField } from "../FormFields";
+import { useUnsavedChanges } from "../NavigationGuard";
 import type {
   ParameterGroup,
   ParameterLayout,
@@ -59,13 +60,43 @@ export function ParameterForm({
 }: ParameterFormProps) {
   const [activeGroup, setActiveGroup] = useState<ParameterGroup>("basic");
   const [arrayDrafts, setArrayDrafts] = useState<Record<string, string>>({});
+  useUnsavedChanges(Object.entries(arrayDrafts).some(([name, draft]) => draft !== numberToText(values[name])));
 
   const comparisonEnabled = Boolean(values[COMPARISON_TOGGLE]);
+  const fieldId = useId();
+  const compensationField = fields.find(field => field.name === "CONTROL_SCALE_FACTORS");
+  const controlField = compensationField && fields.find(field =>
+    ["ARB_WAVEFORM_FILE", "CONTROL_WAVEFORM_FILES"].includes(field.name) && field.options !== undefined);
 
   const renderInput = (field: SchemaField) => {
     const value = values[field.name] ?? field.default;
     const label = field.unit ? `${field.label} (${field.unit})` : field.label;
     const isDisabled = disabled || Boolean(field.read_only);
+    if (field === controlField && compensationField) {
+      const selected = Array.isArray(value) ? value.map(String) : [String(value ?? "")];
+      const factors = values[compensationField.name] ?? compensationField.default;
+      const mapping = factors && typeof factors === "object" && !Array.isArray(factors) ? factors : {};
+      return <fieldset className="zaw-multi-options zaw-control-options">
+        <legend>{label}</legend>
+        <div className="zaw-control-option-head"><span>控制波形</span><span>选择</span><span>{compensationField.label}</span></div>
+        {field.options?.filter(option => option.value !== "").map((option, index) => {
+          const relative = String(option.value), name = relative.split("/")[0];
+          const checkboxId = `${fieldId}-${index}`;
+          return <div className="zaw-control-option" key={relative}>
+            <label htmlFor={checkboxId}>{option.label}</label>
+            <input id={checkboxId} type="checkbox" checked={selected.includes(relative)} disabled={isDisabled}
+              onChange={event => onChange(field, field.type === "array"
+                ? event.target.checked ? [...selected, relative] : selected.filter(item => item !== relative)
+                : event.target.checked ? relative : "")} />
+            <div className="zaw-control-coefficient"><Field label={`${compensationField.label} · ${name}`}
+              value={Object.hasOwn(mapping, name) ? mapping[name] : 1} step="any"
+              disabled={isDisabled || Boolean(compensationField.read_only)}
+              onChange={next => onChange(compensationField, { ...mapping, [name]: next })} /></div>
+          </div>;
+        })}
+        {field.type !== "array" && <small>仅可选择一个控制波形。</small>}
+      </fieldset>;
+    }
     if (field.type === "array" && field.options?.length) {
       // 原生 multiple select 的选中反馈不明显且需 Ctrl 多选；
       // 改用勾选列表，勾选状态即选中状态。
@@ -102,6 +133,14 @@ export function ParameterForm({
           ))}
         </SelectField>
       );
+    }
+    if (field.type === "object") {
+      const mapping = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      return <fieldset className="zaw-multi-options"><legend>{label}</legend>{Object.entries(mapping).map(([name, factor]) =>
+        <Field key={name} label={`${label} · ${name}`} value={factor} disabled={isDisabled}
+          onChange={next => onChange(field, { ...mapping, [name]: next })} />)}
+        {!Object.keys(mapping).length && <small>请先选择控制。</small>}
+      </fieldset>;
     }
     if (field.type === "boolean") {
       return (
@@ -156,7 +195,7 @@ export function ParameterForm({
       <Field
         key={field.name}
         label={label}
-        value={typeof value === "number" ? value : Number(value ?? 0)}
+        value={value === null ? null : typeof value === "number" ? value : Number(value ?? 0)}
         disabled={isDisabled}
         min={field.minimum}
         max={field.maximum}
@@ -175,9 +214,10 @@ export function ParameterForm({
     const hidden = new Set<string>(
       comparisonEnabled ? [] : [...COMPARISON_FIELD_NAMES],
     );
+    if (controlField && compensationField) hidden.add(compensationField.name);
     return (group: ParameterGroup) =>
       layout[group].filter((name) => fieldsByName.has(name) && !hidden.has(name));
-  }, [comparisonEnabled, fieldsByName, layout]);
+  }, [comparisonEnabled, fieldsByName, layout, controlField, compensationField]);
 
   /** 把参数移动到目标分组末尾；参数键与取值都不变，只更新 parameter_layout。 */
   const moveField = (name: string, target: ParameterGroup) => {
@@ -187,8 +227,9 @@ export function ParameterForm({
       basic: [...layout.basic],
       advanced: [...layout.advanced],
     };
-    next[source] = next[source].filter((item) => item !== name);
-    next[target] = [...next[target], name];
+    const moving = name === controlField?.name && compensationField ? [name, compensationField.name] : [name];
+    for (const group of parameterGroups) next[group] = next[group].filter(item => !moving.includes(item));
+    next[target].push(...moving);
     onLayoutChange(next);
     // 视图停留在当前分组：参数从本组移出后即从列表中消失，不自动切换 Tab。
     onMoveNotice(target === "basic" ? "已移至基础参数" : "已移至高级参数");
@@ -228,6 +269,9 @@ export function ParameterForm({
           {renderInput(field)}
           {field.description && <small>{field.description}</small>}
           {renderParameterNote?.(field)}
+          {field === controlField && compensationField && <>
+            <small>{compensationField.description}</small>{renderParameterNote?.(compensationField)}
+          </>}
         </div>;
       })}</div>
       : <p className="zaw-empty">当前分组暂无可编辑参数。</p>

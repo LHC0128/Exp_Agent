@@ -3,7 +3,6 @@
 # %% 导入
 from copy import deepcopy
 from dataclasses import replace
-from datetime import datetime
 import numpy as np
 from ...experiment_runtime import load_runtime_params
 from ..rf_sensitivity_direct_aw import workflow as shared
@@ -12,11 +11,11 @@ from .models import RFSensitivityKnownNoiseParams
 from .preparation import preflight
 from .waveform import generate_noise
 from .excitation import upload_z
-from .acquisition import make_control_directory, inherit_control, execute_controls
+from .acquisition import make_control_directory, inherit_control, execute_controls, seal_controls
 from . import run_format, stages
 
 
-class ControlWorkflow(shared.Workflow):
+class ControlWorkflow(shared.SingleControlWorkflow):
     params_type = RFSensitivityKnownNoiseParams
     identity = run_format
 
@@ -32,7 +31,7 @@ class ControlWorkflow(shared.Workflow):
             self.outputs["Z"] = "ON"
 
 
-class Workflow(shared.Workflow):
+class Workflow(shared.SingleControlWorkflow):
     stages = stages.ACQUISITION
     params_type = RFSensitivityKnownNoiseParams
     identity = run_format
@@ -60,6 +59,7 @@ class Workflow(shared.Workflow):
         noise = generate_noise(self.params)
         np.savez(self.directory.raw / "noise_waveform.npz", **noise)
         self.state["data_files"] = ["raw/noise_waveform.npz"]
+        self.state["controls_sealed"] = False
         for relative in self.params.control_waveform_files:
             params = replace(self.params, arb_waveform_file=relative, control_waveform_files=[relative])
             ctx = ControlWorkflow(params, project_root=self.root, session_id=self.session_id)
@@ -89,10 +89,7 @@ class Workflow(shared.Workflow):
                 for ctx in self.controls.values():
                     ctx.devices = self.devices
             if item == "A15":
-                for ctx in self.controls.values():
-                    ctx.state.update(completion_status="completed", finished_at=datetime.now().isoformat(),
-                        safety_shutdown=self.state["safety_shutdown"])
-                    ctx.save()
+                seal_controls(self)
 
 
 # %% 完整采集入口

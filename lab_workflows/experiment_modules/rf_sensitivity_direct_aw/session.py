@@ -5,7 +5,7 @@ import sys
 from ...experiment_runtime import load_runtime_params
 from ..noise_spectrum_xy.session import serve
 from .models import RFSensitivityDirectAWParams
-from .stages import ACQUISITION, FINISH_ID, validate_selection
+from .stages import MULTI_ACQUISITION as ACQUISITION, FINISH_ID, validate_selection
 from .workflow import Workflow
 
 

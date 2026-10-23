@@ -57,7 +57,7 @@ GUI 隐藏开启选项；光子散粒噪声和可选 BB 监控也使用公共初
 | [`aw-const-omega-check`](../experiments/AW_ConstOmega_Calibration_Check.py) | 检查恒定 Omega 任意波标定结果。 | HF2 双主输入，MFLI 禁止启动 |
 | [`bb-duty-scan-burst`](../experiments/BB_Rpump_DutyScan_Burst.py) | Burst 模式下扫描 Pump 占空比。 | HF2 / MFLI，检查频率与通道 |
 | [`bb-power-scan-burst`](../experiments/BB_Rpump_PowerScan_Burst.py) | Burst 模式下扫描 Pump 功率。 | HF2 / MFLI，检查频率与通道 |
-| [`noise-spectrum-xy-v2`](../experiments/Noise_Spectrum_XY_Ctrl_v2.py) | 第二版 XY 控制噪声谱流程。 | HF2 / MFLI，检查频率与通道 |
+| [`noise-spectrum-xy-v2`](../old/experiments/experiments/Noise_Spectrum_XY_Ctrl_v2.py) | 第二版 XY 控制噪声谱流程，已归档，GUI 仅保留卡片。 | HF2 / MFLI，检查频率与通道 |
 | [`photon-shot-noise`](../experiments/Photon_shot_noise.py) | 测量光子散粒噪声随实验参数的变化。 | HF2 / MFLI，检查频率与通道 |
 | [`rf-sensitivity-aw-frequency`](../experiments/RF_Field_Sensitivity_AW_FreqSweep.py) | 扫描 RF 频率的外部 AM 硬件方案。 | HF2 双主输入，MFLI 禁止启动 |
 | [`rf-sensitivity-constxy-frequency`](../experiments/RF_Field_Sensitivity_ConstXY_FreqSweep.py) | 固定 XY 控制下扫描 RF 频率。 | HF2 双主输入，MFLI 禁止启动 |

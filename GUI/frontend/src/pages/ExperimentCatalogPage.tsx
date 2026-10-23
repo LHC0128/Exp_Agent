@@ -1,22 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
+import { useJobActivity } from "../components/JobActivity";
+import { useUnsavedChanges } from "../components/NavigationGuard";
+import { experimentJobUrl } from "../components/experimentNavigation";
 import type {
   ExperimentCatalogConfig,
   ExperimentDefinition,
   ExperimentTag,
 } from "../types/api";
 
+const VIEW_KEY = "exp-agent:catalog-view";
+function readView() {
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(VIEW_KEY) || "{}");
+    return { category: typeof value?.category === "string" ? value.category : "all",
+      query: typeof value?.query === "string" ? value.query : "", archived: value?.archived === true,
+      scroll: typeof value?.scroll === "number" && Number.isFinite(value.scroll) ? Math.max(0, value.scroll) : 0 };
+  } catch { return { category: "all", query: "", archived: false, scroll: 0 }; }
+}
+
 export function ExperimentCatalogPage() {
+  const [view] = useState(readView);
+  const restored = useRef(false);
+  const currentView = useRef(view);
+  const { activeJobs = [], connection = "connected" } = useJobActivity();
   const [experiments, setExperiments] = useState<ExperimentDefinition[]>([]);
   const [tags, setTags] = useState<ExperimentTag[]>([]);
-  const [category, setCategory] = useState("all");
-  const [showArchived, setShowArchived] = useState(false);
+  const [category, setCategory] = useState(view.category);
+  const [showArchived, setShowArchived] = useState(view.archived);
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(view.query);
   const [error, setError] = useState("");
   const [manageTags, setManageTags] = useState(false);
   const [newTag, setNewTag] = useState("");
@@ -26,6 +43,25 @@ export function ExperimentCatalogPage() {
   const [status, setStatus] = useState("");
   const [statusError, setStatusError] = useState(false);
   const [saving, setSaving] = useState("");
+  useUnsavedChanges(Boolean(newTag.trim()) || tags.some(tag => tagNames[tag.id] !== tag.label) || experiments.some(item =>
+    experimentTitles[item.id] !== item.title || experimentDescriptions[item.id] !== item.description));
+  useEffect(() => {
+    currentView.current = { category, query, archived: showArchived, scroll: restored.current ? window.scrollY : view.scroll };
+    try { window.sessionStorage.setItem(VIEW_KEY, JSON.stringify(currentView.current)); } catch { /* 存储不可用不影响筛选。 */ }
+  }, [category, query, showArchived, view.scroll]);
+  useEffect(() => {
+    const remember = () => {
+      currentView.current.scroll = window.scrollY;
+      try { window.sessionStorage.setItem(VIEW_KEY, JSON.stringify(currentView.current)); } catch { /* 只保留本次状态。 */ }
+    };
+    window.addEventListener("scroll", remember, { passive: true });
+    return () => { remember(); window.removeEventListener("scroll", remember); };
+  }, []);
+  useEffect(() => {
+    if (loading || error || restored.current) return;
+    restored.current = true;
+    window.scrollTo({ top: view.scroll });
+  }, [loading, error, view.scroll]);
 
   const loadCatalog = (signal?: AbortSignal) => {
     setLoading(true); setError("");
@@ -116,7 +152,7 @@ export function ExperimentCatalogPage() {
       <PageHead
         eyebrow="EXPERIMENT CENTER"
         title="实验中心"
-        description="正式 Python 实验使用统一配置与运行入口；归档只隐藏目录卡片，保留运行和历史功能。"
+        description="正式 Python 实验使用统一配置与运行入口；已归档实验仅保留卡片，代码和历史数据仍保留。"
         action={<button className="secondary" onClick={() => setManageTags((value) => !value)}>{manageTags ? "完成编辑" : "管理分类与实验信息"}</button>}
       />
       {error && <div className="alert error" role="alert">实验目录加载失败：{error}<button className="secondary" disabled={loading} onClick={() => setReload((value) => value + 1)}>重试</button></div>}
@@ -148,26 +184,33 @@ export function ExperimentCatalogPage() {
       {loading && <p className="alert" role="status">正在加载实验目录…</p>}
       {!loading && !error && visible.length === 0 && <p className="alert" role="status">{keyword ? "未找到匹配的实验。" : showArchived ? "暂无已归档实验。" : "当前分类没有未归档实验，可在“已归档”中查看或恢复。"}</p>}
       <div className="experiment-catalog" aria-busy={loading}>
-        {!loading && !error && visible.map((item) => (
-          <article key={item.id}>
-            <div className="catalog-meta"><span>{item.category_label}{item.archived ? " · 已归档" : ""}</span><i>{item.execution_mode === "typed_workflow" ? "新模式" : "旧模式"}</i></div>
+        {!loading && !error && visible.map((item) => {
+          const tasks = activeJobs.filter(job => job.kind === `experiment:${item.id}` || job.kind === `session:${item.id}`);
+          const task = tasks.find(job => job.status === "running") ?? tasks[0];
+          const running = task?.status === "running" && connection === "connected";
+          return (
+          <article key={item.id} className={`catalog-card${manageTags ? " is-managing" : ""}${running ? " is-running" : ""}`}>
+            <div className="catalog-meta"><span className="catalog-category">{item.category_label}{item.archived ? " · 已归档" : ""}</span>
+              {task && <span className={`catalog-running${running ? " active" : ""}`}>{connection !== "connected" ? "状态未知" : running ? "运行中" : "排队中"}</span>}
+            </div>
             {manageTags ? (
               <div className="experiment-metadata-editor">
                 <label><span>实验名称</span><input value={experimentTitles[item.id] ?? item.title} maxLength={80} aria-label={`${item.title}名称`} onChange={(event) => setExperimentTitles((current) => ({ ...current, [item.id]: event.target.value }))} /></label>
                 <label><span>实验介绍</span><textarea value={experimentDescriptions[item.id] ?? item.description} maxLength={500} aria-label={`${item.title}介绍`} placeholder="填写这个实验的简要介绍" onChange={(event) => setExperimentDescriptions((current) => ({ ...current, [item.id]: event.target.value }))} /></label>
                 <button className="secondary" disabled={busy || ((experimentTitles[item.id] ?? "").trim() === item.title && (experimentDescriptions[item.id] ?? "").trim() === item.description)} onClick={() => saveMetadata(item)}>保存名称和介绍</button>
               </div>
-            ) : <><h2>{item.title}</h2><p>{item.description || "暂未填写实验介绍。"}</p></>}
-            <div className="catalog-programs"><div><span>采集</span><code>{item.acquisition_program}</code></div><div><span>分析</span><code>{item.analysis_program || "无独立分析程序"}</code></div></div>
+            ) : <h2>{item.title}</h2>}
             <div className="catalog-card-actions">
-              <NavLink to={`/experiments/${item.id}`}>配置实验 →</NavLink>
+              {item.archived ? <span>仅保留卡片{item.archive_path && <> · 代码：<code>{item.archive_path}</code></>}</span>
+                : <NavLink to={!manageTags && task ? experimentJobUrl(task)! : `/experiments/${item.id}`} aria-label={`进入实验：${item.title}`}>进入实验 <span aria-hidden="true">→</span></NavLink>}
               {manageTags && <>
                 <label><span>所属分类</span><select value={item.category} disabled={busy} onChange={(event) => move(item.id, event.target.value)}>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.label}</option>)}</select></label>
-                <button className="secondary" disabled={busy} aria-label={`${item.archived ? "恢复" : "归档"}${item.title}`} onClick={() => archiveExperiment(item)}>{saving === `archive:${item.id}` ? "保存中…" : item.archived ? "恢复" : "归档"}</button>
+                {item.archive_path ? <span>恢复前需手动接回代码</span>
+                  : <button className="secondary" disabled={busy} aria-label={`${item.archived ? "恢复" : "归档"}${item.title}`} onClick={() => archiveExperiment(item)}>{saving === `archive:${item.id}` ? "保存中…" : item.archived ? "恢复" : "归档"}</button>}
               </>}
             </div>
           </article>
-        ))}
+        ); })}
       </div>
     </>
   );

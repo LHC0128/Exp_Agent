@@ -64,6 +64,42 @@ def test_parameter_impacts_match_actual_invalidation(rig):
     assert not ctx.devices
 
 
+def test_manual_rf_phase_step_applies_without_acquisition_and_mode_change_invalidates(rig):
+    from dataclasses import replace
+    ctx = workflow.Workflow(replace(rig.params, scan_rf_phase=False, z_burst_phase_init=181.5))
+    try:
+        ctx.execute(through("A10"))
+        first = ctx.directory.root
+        events_before, reads_before = len(rig.events), len(rig.captures)
+        ctx.execute(["A11"])
+        assert ctx.states["A11"] == {"status": "completed", "error": "", "artifacts": []}
+        assert ctx.z_positive_phase == 181.5
+        z, temp = rig.mapping["Z_magnetic_field"], rig.mapping["Temp_Switch"]
+        assert (z["resource"], "set_burst_phase", z["channel"], 181.5) in rig.events[events_before:]
+        assert not any(event[:3] == (temp["resource"], "setup_dc", temp["channel"])
+                       for event in rig.events[events_before:])
+        assert len(rig.captures) == reads_before
+        original = (first / "experiment_config.yaml").read_bytes()
+        ctx.update_parameters({"Z_PHASE_SCAN_ENABLED": True})
+        assert ctx.states["A10"]["status"] == "completed"
+        assert ctx.states["A11"]["status"] == "stale"
+        assert definition()["parameter_impacts"]["acquisition"]["Z_PHASE_SCAN_ENABLED"] == [
+            "A11", "A12", "A13", "A14", "A13B", "A15"]
+        ctx.execute(["A11", "A12"])
+        assert ctx.directory.root != first
+        assert ctx.state["rf_phase_calibration"]["mode"] == "scan"
+        assert ctx.state["rf_phase_calibration"]["scan_skipped"] is False
+        assert ctx.z_positive_phase == pytest.approx(rig.z_phi0)
+        # 重跑另建目录，旧手动相位记录及缺少扫描文件的事实保持不变。
+        assert yaml.safe_load((first / "experiment_config.yaml").read_text(encoding="utf-8"))["parameters"] == yaml.safe_load(original)["parameters"]
+        assert not (first / "raw/z_phase_scan.npz").exists()
+        ctx.update_parameters({"Z_BURST_PHASE_INIT": 45.0})
+        assert ctx.states["A10"]["status"] == ctx.states["A11"]["status"] == ctx.states["A12"]["status"] == "stale"
+    finally:
+        ctx.finish()
+    assert_shutdown(rig)
+
+
 def test_completed_scan_safely_seals_and_rerun_keeps_old_directory(rig):
     ctx = workflow.Workflow(rig.params)
     ctx.execute(through("A15"))

@@ -1,4 +1,4 @@
-"""保留旧脚本的秒单位 CSV 和公共周期重采样规则。"""
+"""保留秒单位 CSV 和公共周期重采样；手动补偿在 K/B 电压标定前应用。"""
 
 from __future__ import annotations
 
@@ -58,10 +58,16 @@ def load_envelope(params: RFSensitivityDirectAWParams, max_points: int) -> dict:
             raise ValueError(f"{name}频率必须是 AW_REPEAT_FREQ 的正整数倍")
     time_s = np.arange(points) * dt
     target = np.interp(time_s % source_period, np.r_[source_time - source_time[0], source_period], np.r_[omega, omega[0]])
+    factor = params.control_scale_factor() if params.compensate_control_on_load else 1.0
+    with np.errstate(over="ignore", invalid="ignore"):
+        target = target * factor
+        voltage = (target - params.xy_ctrl_b_hz) / params.xy_ctrl_k_hz_per_v
+    if not np.isfinite(target).all() or not np.isfinite(voltage).all():
+        raise ValueError("控制补偿后的物理包络或电压不是有限数值")
     return {
         "source_waveform_path": str(path),
         "time_s": time_s, "omega_ctrl_Hz": target,
-        "envelope_V": (target - params.xy_ctrl_b_hz) / params.xy_ctrl_k_hz_per_v,
+        "envelope_V": voltage, "control_scale_factor": factor, "allow_zero_envelope": factor == 0,
         "source_time_s": source_time, "source_omega_ctrl_Hz": omega,
         "repeat_freq_Hz": float(repeat_freq), "source_repeat_freq_Hz": 1 / source_period,
     }
@@ -75,7 +81,10 @@ def synthesize_xy(params: RFSensitivityDirectAWParams, envelope: dict, phase_deg
     angle = 2 * np.pi * params.pump_mod_freq * envelope["time_s"] + math.radians(phase_deg)
     peak_v = float(abs(envelope["envelope_V"]).max())
     vpp = 2.0 * peak_v
-    if vpp < AW_AMPLITUDE_FLOOR_VPP:
+    if peak_v == 0 and envelope.get("allow_zero_envelope", False):
+        # 零包络使用合法的最小满量程和全零 DAC 数据，不输出虚假的最小控制场。
+        vpp = AW_AMPLITUDE_FLOOR_VPP
+    elif vpp < AW_AMPLITUDE_FLOOR_VPP:
         raise ValueError(
             f"控制包络峰值 {peak_v:.6f} V 过小，自动 AW 幅度 {vpp:.6f} Vpp "
             f"低于仪器最小幅度 {AW_AMPLITUDE_FLOOR_VPP} Vpp"
@@ -83,7 +92,7 @@ def synthesize_xy(params: RFSensitivityDirectAWParams, envelope: dict, phase_deg
     result = dict(envelope, xy_aw_vpp=float(vpp), xy_aw_output_offset_v=0.0, xy_ctrl_phase_deg=float(phase_deg), xy_ctrl_quad_deg=params.xy_ctrl_quad)
     for axis, phase in (("x", 0.0), ("y", math.radians(params.xy_ctrl_quad))):
         wave = envelope["envelope_V"] * np.cos(angle + phase)
-        normalized = wave / peak_v
+        normalized = wave / (vpp / 2)
         if not np.all(np.isfinite(normalized)):
             raise ValueError(f"{axis.upper()} AW 归一化波形包含非有限值")
         for value in (float(wave.min()), float(wave.max()), -peak_v, peak_v):

@@ -55,6 +55,7 @@ from lab_workflows.keithley_arb import (
     parse_calibration_text,
 )
 from lab_workflows.experiments import get_experiment, list_experiments
+from lab_workflows.experiments.archived import ARCHIVED_EXPERIMENTS, ARCHIVE_PATH
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.run_format import (
     COMPARISON_FILES as RF_DIRECT_AW_COMPARISON_FILES,
     COMPARISON_JOB_KIND as RF_DIRECT_AW_COMPARISON_KIND,
@@ -66,9 +67,8 @@ from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.run_format import
 )
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.definition import comparison_runner as rf_direct_aw_comparison_runner
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw import run_format as rf_aw_format
-from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_r import run_format as rf_aw_r_format
 from lab_workflows.experiment_modules.rf_sensitivity_aw_known_noise import run_format as rf_known_noise_format
-from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_r.definition import comparison_runner as rf_direct_aw_r_comparison_runner
+from lab_workflows.experiment_modules.rf_control_scale_sensitivity import run_format as rf_control_scale_format
 from lab_workflows.experiment_modules.static_sensitivity.analysis import analysis_block_reason as static_analysis_block_reason
 from lab_workflows.experiment_modules.static_sensitivity.run_format import format_block_reason as static_format_block_reason
 from lab_workflows.experiment_modules.noise_spectrum_xy import run_format as xy_format
@@ -76,6 +76,7 @@ from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.analysis imp
 from lab_workflows.experiment_modules.scope_capture import run_format as scope_capture_format
 from lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction import run_format as z_closed_loop_format
 from lab_workflows.experiment_modules.mx_y_rf_frequency_response import run_format as mx_y_rf_frequency_format
+from lab_workflows.experiment_modules.mx_y_rf_power_optimization import run_format as mx_y_rf_power_format
 from lab_workflows.experiment_modules.mx_y_optimal_control_rf_frequency_response import run_format as mx_y_optimal_frequency_format
 from lab_workflows.experiment_modules.mx_y_rf_sensitivity_drift import run_format as mx_y_rf_drift_format
 from lab_workflows.experiment_modules.mx_z_optimal_control_rf_sensitivity import run_format as mx_z_optimal_rf_format
@@ -85,9 +86,9 @@ from lab_workflows.experiment_modules.mx_z_optimal_control_xy_leakage_response i
 from lab_workflows.experiment_modules.mx_z_optimal_control_xy_rf_phase_response import run_format as mx_z_optimal_xy_phase_format
 from lab_workflows.experiment_modules.mx_z_optimal_control_xyz_balance import run_format as mx_z_optimal_xyz_balance_format
 from lab_workflows.experiment_modules.mx_z_optimal_control_dg4000_bias_xyz_balance import run_format as mx_z_optimal_dg_bias_format
-RF_RUN_FORMATS = {rf_aw_format.EXPERIMENT_ID: rf_aw_format, rf_aw_r_format.EXPERIMENT_ID: rf_aw_r_format, rf_known_noise_format.EXPERIMENT_ID: rf_known_noise_format}
+RF_RUN_FORMATS = {rf_aw_format.EXPERIMENT_ID: rf_aw_format, rf_known_noise_format.EXPERIMENT_ID: rf_known_noise_format}
 WORKFLOW_RUN_FORMATS = {item.EXPERIMENT_ID: item for item in (
-    scope_capture_format, z_closed_loop_format, mx_y_rf_frequency_format, mx_y_optimal_frequency_format, mx_y_rf_drift_format, mx_z_optimal_rf_format, mx_z_optimal_xy_rf_format, mx_z_optimal_xy_noise_format, mx_z_optimal_xy_leakage_format, mx_z_optimal_xy_phase_format, mx_z_optimal_xyz_balance_format, mx_z_optimal_dg_bias_format,
+    rf_control_scale_format, scope_capture_format, z_closed_loop_format, mx_y_rf_power_format, mx_y_rf_frequency_format, mx_y_optimal_frequency_format, mx_y_rf_drift_format, mx_z_optimal_rf_format, mx_z_optimal_xy_rf_format, mx_z_optimal_xy_noise_format, mx_z_optimal_xy_leakage_format, mx_z_optimal_xy_phase_format, mx_z_optimal_xyz_balance_format, mx_z_optimal_dg_bias_format,
 )}
 from lab_workflows.experiments.catalog import (
     add_tag,
@@ -112,12 +113,14 @@ from .noise_spectrum_xy import XYSessionService, create_router as xy_router
 from .updates import UpdatesService, create_router as updates_router
 from .rf_sensitivity_direct_aw import RFSessionService, create_router as rf_workflow_router
 from .rf_sensitivity_aw_known_noise import RFKnownNoiseSessionService
+from .rf_control_scale_sensitivity import RFControlScaleSessionService
 from .noise_spectrum_xy_known_noise import KnownNoiseSessionService
 from .noise_spectrum_xy_probe_am import ProbeAMSessionService
-from .rf_sensitivity_direct_aw_r import RFRSessionService
 from .static_sensitivity import StaticSessionService
 from .detection_chain_frequency_response import DetectionChainFrequencyResponseSessionService
 from .mx_y_rf_sensitivity import MxYRFSessionService
+from .mx_y_rf_probe_detuning_optimization import MxYRFProbeDetuningSessionService
+from .mx_y_rf_power_optimization import MxYRFPowerOptimizationSessionService
 from .scope_capture import ScopeCaptureSessionService
 from .mx_y_rf_frequency_response import MxYRFFrequencyResponseSessionService
 from .mx_y_optimal_control_rf_frequency_response import MxYOptimalControlFrequencySessionService
@@ -199,8 +202,8 @@ def _workflow_session_services():
     """集中列出已接线的会话，由回归检查后台收尾是否遗漏。"""
     return (
         xy_sessions, known_noise_sessions, probe_am_sessions, rf_sessions,
-        rf_r_sessions, rf_known_noise_sessions, static_sessions, detection_chain_sessions,
-        mx_y_rf_sessions, z_aw_scope_sessions, z_aw_current_scope_sessions, z_closed_loop_sessions,
+        rf_known_noise_sessions, rf_control_scale_sessions, static_sessions, detection_chain_sessions,
+        mx_y_rf_sessions, mx_y_rf_probe_detuning_sessions, mx_y_rf_power_sessions, z_aw_scope_sessions, z_aw_current_scope_sessions, z_closed_loop_sessions,
         mx_main_field_sessions,
         z_coil_inductance_sessions,
         mx_z_field_sessions,
@@ -225,6 +228,26 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def archived_experiment_card_only(request: Request, call_next):
+    """归档代码没有运行入口；旧书签/API 同样不能绕过卡片限制。"""
+    parts = request.url.path.strip("/").split("/")
+    experiment_id = None
+    metadata = False
+    if parts[:2] == ["api", "experiments"] and len(parts) >= 3:
+        experiment_id = parts[2]
+        metadata = len(parts) == 3 or (len(parts) == 4 and parts[3] in {
+            "archive", "tag", "description", "metadata",
+        })
+    elif parts[:2] == ["api", "runs"]:
+        experiment_id = parts[2] if len(parts) >= 3 else request.query_params.get("experiment_id")
+    if experiment_id in ARCHIVED_EXPERIMENTS and not metadata:
+        return JSONResponse(status_code=410, content={
+            "detail": f"实验已归档，GUI 仅保留卡片；代码位于 {ARCHIVE_PATH}，参数和历史数据仍保留。",
+        })
+    return await call_next(request)
+
+
 @app.exception_handler(RestartInProgressError)
 async def handle_restart_in_progress(request: Request, exc: RestartInProgressError):
     return JSONResponse(
@@ -245,16 +268,20 @@ probe_am_sessions = ProbeAMSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(probe_am_sessions))
 rf_sessions = RFSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(rf_sessions))
-rf_r_sessions = RFRSessionService(lambda: ROOT, manager)
-app.include_router(rf_workflow_router(rf_r_sessions))
 rf_known_noise_sessions = RFKnownNoiseSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(rf_known_noise_sessions))
+rf_control_scale_sessions = RFControlScaleSessionService(lambda: ROOT, manager)
+app.include_router(rf_workflow_router(rf_control_scale_sessions, include_history=True))
 static_sessions = StaticSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(static_sessions))
 detection_chain_sessions = DetectionChainFrequencyResponseSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(detection_chain_sessions))
 mx_y_rf_sessions = MxYRFSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(mx_y_rf_sessions, include_history=True))
+mx_y_rf_probe_detuning_sessions = MxYRFProbeDetuningSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(mx_y_rf_probe_detuning_sessions, include_history=True))
+mx_y_rf_power_sessions = MxYRFPowerOptimizationSessionService(lambda: ROOT, manager)
+app.include_router(xy_router(mx_y_rf_power_sessions, include_history=True))
 z_aw_scope_sessions = ZAWWaveformScopeCheckSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(z_aw_scope_sessions, include_history=True))
 z_aw_current_scope_sessions = ZAWCurrentWaveformScopeCheckSessionService(lambda: ROOT, manager)
@@ -806,6 +833,8 @@ def keithley_waveform_convert(body: KeithleyWaveformConvertBody):
 
 
 def _experiment_or_404(experiment_id: str):
+    if experiment_id in ARCHIVED_EXPERIMENTS:
+        return ARCHIVED_EXPERIMENTS[experiment_id]
     try:
         return get_experiment(experiment_id)
     except KeyError as exc:
@@ -813,7 +842,7 @@ def _experiment_or_404(experiment_id: str):
 
 
 def _default_categories() -> dict[str, str]:
-    return {definition.id: definition.category for definition in list_experiments()}
+    return {definition.id: definition.category for definition in list_experiments(include_archived=True)}
 
 
 def _experiment_schema(definition) -> dict[str, Any]:
@@ -836,6 +865,7 @@ def _experiment_public(
     return {
         **definition.public(required_devices=required_devices),
         "archived": definition.id in current["archived_experiments"],
+        "archive_path": ARCHIVE_PATH if definition.id in ARCHIVED_EXPERIMENTS else None,
         "category": tag_id,
         "category_label": labels.get(tag_id, tag_id),
         "title": current["experiment_titles"].get(
@@ -874,7 +904,7 @@ def update_experiment_tag(tag_id: str, body: TagBody):
 
 @app.get("/api/experiments")
 def experiments():
-    definitions = list_experiments()
+    definitions = list_experiments(include_archived=True)
     catalog = public_catalog({item.id: item.category for item in definitions})
     try:
         mapping = load_mapping() if any(item.required_mapping_keys for item in definitions) else {}
@@ -1751,11 +1781,6 @@ def rf_direct_aw_runs(limit: int = 50, offset: int = 0, starred_only: bool = Fal
     return _rf_aw_runs(RF_DIRECT_AW_ID, limit, offset, starred_only=starred_only)
 
 
-@app.get("/api/experiments/rf-sensitivity-aw-r/runs", response_model=RFDirectAWRunsResponse)
-def rf_direct_aw_r_runs(limit: int = 50, offset: int = 0):
-    return _rf_aw_runs(rf_aw_r_format.EXPERIMENT_ID, limit, offset)
-
-
 def _rf_aw_runs(experiment_id, limit, offset, *, starred_only=False):
     identity = RF_RUN_FORMATS[experiment_id]
     base = (ROOT / "data" / _experiment_or_404(experiment_id).data_type).resolve()
@@ -1804,11 +1829,6 @@ def rf_direct_aw_summary(run_id: str):
     return _rf_aw_summary(RF_DIRECT_AW_ID, run_id)
 
 
-@app.get("/api/experiments/rf-sensitivity-aw-r/runs/{run_id}/summary", response_model=RFDirectAWRunSummary)
-def rf_direct_aw_r_summary(run_id: str):
-    return _rf_aw_summary(rf_aw_r_format.EXPERIMENT_ID, run_id)
-
-
 def _rf_aw_summary(experiment_id, run_id):
     identity = RF_RUN_FORMATS[experiment_id]
     _validate_run_identifier(run_id)
@@ -1825,7 +1845,7 @@ def _rf_aw_summary(experiment_id, run_id):
         for path in results.glob("*") if path.is_file() and not reason and safe_results and results.resolve() in path.resolve().parents
     }
     controls = (analysis or {}).get("controls", {})
-    if experiment_id == rf_known_noise_format.EXPERIMENT_ID and isinstance(controls, dict):
+    if experiment_id in (RF_DIRECT_AW_ID, rf_known_noise_format.EXPERIMENT_ID) and isinstance(controls, dict):
         for version in controls:
             if not isinstance(version, str) or "\x00" in version:
                 continue
@@ -1833,7 +1853,9 @@ def _rf_aw_summary(experiment_id, run_id):
                 _validate_run_identifier(version)
             except HTTPException:
                 continue
-            for name in ("full_analysis.png", "full_analysis.pdf"):
+            for name in ("full_analysis.png", "full_analysis.pdf", "noise_psd.png", "noise_psd.pdf",
+                         "response_curve.png", "response_curve.pdf", "sensitivity.png", "sensitivity.pdf",
+                         "psd_avg.npz", "response_fit.npz", "sensitivity.npz", "noise_rejection_summary.json", "noise_record_quality.csv"):
                 path = (directory / "controls" / version / "results" / name).resolve()
                 if directory not in path.parents or not path.is_file():
                     continue
@@ -1860,10 +1882,18 @@ def _rf_aw_summary(experiment_id, run_id):
     }
 
 
+@app.get("/api/experiments/rf-sensitivity-aw/runs/{run_id}/controls/{version}/artifacts/{name}")
+def rf_direct_aw_control_artifact(run_id: str, version: str, name: str):
+    return _rf_aw_control_artifact(RF_DIRECT_AW_ID, run_id, version, name)
+
+
 @app.get("/api/experiments/rf-sensitivity-aw-known-noise/runs/{run_id}/controls/{version}/artifacts/{name}")
 def rf_known_noise_control_artifact(run_id: str, version: str, name: str):
+    return _rf_aw_control_artifact(rf_known_noise_format.EXPERIMENT_ID, run_id, version, name)
+
+
+def _rf_aw_control_artifact(experiment_id: str, run_id: str, version: str, name: str):
     _validate_run_identifier(version)
-    experiment_id = rf_known_noise_format.EXPERIMENT_ID
     if f"controls/{version}/{name}" not in _rf_aw_summary(experiment_id, run_id)["artifacts"]:
         raise HTTPException(404, "控制版本结果文件不存在")
     directory = _run_dir(experiment_id, run_id)
@@ -1888,11 +1918,6 @@ def rf_direct_aw_compare(body: RFDirectAWCompareBody):
     return _rf_aw_compare(RF_DIRECT_AW_ID, body)
 
 
-@app.post("/api/experiments/rf-sensitivity-aw-r/compare")
-def rf_direct_aw_r_compare(body: RFDirectAWCompareBody):
-    return _rf_aw_compare(rf_aw_r_format.EXPERIMENT_ID, body)
-
-
 def _rf_aw_compare(experiment_id, body):
     identity = RF_RUN_FORMATS[experiment_id]
     try:
@@ -1914,7 +1939,7 @@ def _rf_aw_compare(experiment_id, body):
 
         def execute(current: Job):
             output = _rf_direct_aw_comparison_dir(current.id, experiment_id=experiment_id)
-            runner = rf_direct_aw_comparison_runner if experiment_id == RF_DIRECT_AW_ID else rf_direct_aw_r_comparison_runner
+            runner = rf_direct_aw_comparison_runner
             result = runner(entries, output,
                 progress=lambda event: manager.event(current, event), cancellation=current.cancellation)
             return {**result, "comparison_id": current.id, "run_dir": str(output), "artifacts": {
@@ -1928,11 +1953,6 @@ def _rf_aw_compare(experiment_id, body):
 @app.get(f"/api/experiments/{RF_DIRECT_AW_ID}/comparisons/{{comparison_id}}/artifacts/{{name}}")
 def rf_direct_aw_comparison_artifact(comparison_id: str, name: str):
     return _rf_aw_comparison_artifact(RF_DIRECT_AW_ID, comparison_id, name)
-
-
-@app.get("/api/experiments/rf-sensitivity-aw-r/comparisons/{comparison_id}/artifacts/{name}")
-def rf_direct_aw_r_comparison_artifact(comparison_id: str, name: str):
-    return _rf_aw_comparison_artifact(rf_aw_r_format.EXPERIMENT_ID, comparison_id, name)
 
 
 def _rf_aw_comparison_artifact(experiment_id, comparison_id, name):

@@ -225,7 +225,7 @@ it("旧流程元数据仍恢复任务并允许取消和安全结束", async () =
   render(<MemoryRouter initialEntries={[`/experiments/${ID}`]}><Routes><Route path="/experiments/:experimentId" element={<ExperimentPage />} /></Routes></MemoryRouter>);
   expect(await screen.findByText(/流程接口版本过旧/)).toBeVisible();
   expect(screen.getByRole("button", { name: "结束会话" })).toBeEnabled();
-  fireEvent.click(screen.getByRole("button", { name: "取消任务" }));
+  fireEvent.click(screen.getByRole("button", { name: "安全停止" }));
   expect(await screen.findByText("已请求安全停止")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url.endsWith("/finish"))).toBe(true));
@@ -238,7 +238,7 @@ it("SSE 恢复阶段状态，执行中禁改参数和结束，取消入口在流
     data: { workflow_session: { ...activeSession, status: "running", current_step: "A09", revision: 4 } } }) }));
   expect(screen.getByRole("button", { name: "结束会话" })).toBeDisabled();
   expect(within(node("A09")).getByLabelText("色散扫描点数")).toBeDisabled();
-  expect(screen.getByRole("region", { name: "交互实验流程图" })).toContainElement(screen.getByRole("button", { name: "取消任务" }));
+  expect(screen.getByRole("region", { name: "交互实验流程图" })).toContainElement(screen.getByRole("button", { name: "安全停止" }));
 });
 
 it("真实 schema 可见参数都有节点入口，噪声只展示实际使用的等待且显示质量门槛", async () => {

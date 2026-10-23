@@ -1,7 +1,7 @@
 ---
 title: RF 灵敏度（DirectAW）
 type: experiment_type
-description: XY 直接任意波控制下测量 RF 灵敏度，采用可勾选、检查依赖的流程图，保持设备会话并按节点编辑参数。最优控制波形从 oc_sens 版本目录选择；四级校相后按温控分组执行定长 DAQ，以 RF 解调器 X 响应斜率和 X 噪声 PSD 计算灵敏度；A14 噪声采集后，可选 A13B 恢复 A11 响应滤波，以校相幅度同步扫描 Z RF 源与解调器频率，对每点 R 均值做洛伦兹拟合，线宽用于频响补偿，未启用时回退色散拟合等效 HWHM；扫频步进由窗口与点数确定，无共同触发频率整数倍限制。仪器设置只回读记录，DAQ 使用实际采样率。XYZ 共用时序信号2主输出触发，HF2/MFLI 经所选物理线路或 MFLI 内部 AuxOut 两级解调；独立分析支持四阶段重算，历史支持多次对比和 PNG/PDF 导出。 RF 解调器索引与辅助通道可选，HF2 支持物理回采，MFLI 支持物理或内部 AuxOut 回采。锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
+description: XY 直接任意波控制下测量 RF 灵敏度，采用可勾选、检查依赖的流程图，保持设备会话并按节点编辑参数。最优控制波形从 oc_sens 版本目录多选，各控制独立校相、采集和分析，共用本轮 RF 参数且不自动改频；PSD 支持按控制独立的可关闭 MAD 高值异常谱筛选，各控制可保存默认 1 的手动 XY 包络补偿系数；A11 可跳过触发相位扫描并使用手动输入相位，其余校相保持；随后按温控分组执行定长 DAQ，以 RF 解调器 X 响应斜率和 X 噪声 PSD 计算灵敏度；A14 噪声采集后，可选 A13B 恢复 A11 响应滤波，以校相幅度同步扫描 Z RF 源与解调器频率，对每点 R 均值做洛伦兹拟合，线宽用于频响补偿，未启用时回退色散拟合等效 HWHM；扫频步进由窗口与点数确定，无共同触发频率整数倍限制。仪器设置只回读记录，DAQ 使用实际采样率。XYZ 共用时序信号2主输出触发，HF2/MFLI 经所选物理线路或 MFLI 内部 AuxOut 两级解调；独立分析支持四阶段重算，历史支持多次对比和 PNG/PDF 导出。 RF 解调器索引与辅助通道可选，HF2 支持物理回采，MFLI 支持物理或内部 AuxOut 回采。锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
 experiment_id: rf-sensitivity-aw
 defaults_file: params/experiments/rf-sensitivity-aw.yaml
 version: 9
@@ -57,9 +57,12 @@ RF 相位/响应/带宽使用 `DEMOD3_RATE` 请求率、`SCAN_POINT_DURATION_S` 
 独立的 [DirectAW R 实验](rf_field_measurement_r.md) 共用本实验的准备、回环、采集及安全收尾，
 采用 R 标定后改频采集 X 噪声的顺序，分别保存默认参数和历史。
 最优控制包络读取 `D:\Code\theory_agent\simulate\results\oc_sens` 的版本化理论输出，
-运行前在 GUI 中明确选择版本。
+运行前在 GUI 中明确选择一个或多个版本。A01–A08 共用设备、时钟、固定条件与 Demod0 校相；A09–A14 和可选 A13B 按阶段依选择顺序遍历全部控制，恢复各自的 XY 相位与 RF 解调设置，独立完成校相、响应、零 RF 噪声和扫频。所有控制共用本轮 RF 参数，不按控制的设计频率自动改频，也不注入额外噪声。每个已选控制都在连接前检查补偿后的电压和仪器能力。
+`CONTROL_SCALE_FACTORS` 按控制名称保存手动补偿倍率，未设为 1：先计算 `Omega_applied(t) = factor * Omega_nominal(t)`（包括平均分量），再以 `(Omega_applied - XY_CTRL_B_HZ) / XY_CTRL_K_HZ_PER_V` 转电压；有非零截距时不能简单把电压乘倍率。只改变 XY 包络，不改主场、Z RF、时间轴或独立校相策略；补偿后仍在连接前检查电压边界，零或低信号仍须通过原校相质量门槛。
 初始化依次执行四级相位校准：Bell-Bloom（Demod0）、控制载波与 Pump 调制（XY DirectAW）、
-控制 AM 调制与 RF 场（扫描 Z RF Burst 相位）、RF 解调器。随后按与相位扫描相同的节奏扫描有符号 Z RF 幅度：
+控制 AM 调制与 RF 场（A11 可扫描 Z RF Burst 相位，也可跳过扫描并手动指定相位）、RF 解调器。
+关闭 `Z_PHASE_SCAN_ENABLED` 时使用 `Z_BURST_PHASE_INIT` 作为正 RF 相位基准，不采集或拟合相位曲线；其他校相不跳过。
+随后按温控分组扫描有符号 Z RF 幅度：
 每点重臂后以 解调时序采集定长时序，取 **X 均值**（同时保存 Y/R 均值、标准差与时序）标定
 电压到磁场响应，再在零 RF 输出下采集 **RF 解调器 X 噪声**，用 Welch PSD 计算
 灵敏度谱。幅度标定采用 X；R 用于校相信号门槛、诊断与带宽扫频响应。
@@ -70,9 +73,9 @@ RF 相位/响应/带宽使用 `DEMOD3_RATE` 请求率、`SCAN_POINT_DURATION_S` 
 用于灵敏度谱频响补偿；未启用时沿用色散拟合的等效 HWHM。
 
 历史页面支持星标、星标筛选、目录重命名和确认后永久删除本次数据，也可勾选多次完整分析的运行，将保存的 X 响应和灵敏度主谱叠加到双面板图中，
-自定义英文图例并导出 PNG/PDF。对比过程只读历史结果，拟合回退会明确提示。
+自定义英文图例并导出 PNG/PDF。新多控制运行按控制展开为独立曲线，可与旧单控制运行混合对比；中文控制名称在跨次英文图例中用控制序号标识，清单保留原名称。对比过程只读历史结果，拟合回退会明确提示。
 
-当前正式入口为 `rf-sensitivity-aw`（`typed_workflow`、schema version 3），
+当前正式入口为 `rf-sensitivity-aw`（`typed_workflow`、参数 schema version 4），
 数据类型和原 Python 文件名保留。Notebook 是历史实验入口，本次没有迁移。
 可编辑流程图源文件见 [RF 灵敏度（DirectAW）.excalidraw](../lab_workflows/experiment_modules/rf_sensitivity_direct_aw/RF%20灵敏度（DirectAW）.excalidraw)，运行页提供下载。
 当前页面没有架构 Tab。
@@ -94,11 +97,11 @@ GUI「保存参数与布局」实际写入上述 YAML 和实验目录配置中�
 缺少参数文件或字段时的回退；运行覆盖优先于默认 YAML。单次运行的真实参数以其
 `experiment_config.yaml` 的 `parameters` 为准，离线分析读取该快照与原始数据。
 
-`ARB_WAVEFORM_FILE` 保留原外部键，值为相对于上述 `oc_sens` 目录的
-`vN/waveforms/optimal_control_waveform.csv`。GUI 仅列出存在波形文件且解析后仍位于该目录
+`CONTROL_WAVEFORM_FILES` 保存所选控制的有序列表，每项为相对于上述 `oc_sens` 目录的
+`<控制名称>/waveforms/optimal_control_waveform.csv`。`ARB_WAVEFORM_FILE` 保留为旧单选兼容键，旧配置自动转为单项列表；完整多选键优先，显式空列表仍拒绝启动，不从旧键悄悄补选。GUI 仅列出存在波形文件且解析后仍位于该目录
 内的 `vN` 版本，不列出 `spectra/` 或 `parameters/` 中的 CSV，也不自动选择最新版本。
 目录不可用或版本尚未选择时预检会阻止采集。
-直接运行脚本也读取参数 YAML，该键必须指向有效版本。公共周期、标定和输出幅度仍按用户参数
+直接运行脚本也读取参数 YAML，所选列表中的每项都必须指向有效版本。公共周期、标定和输出幅度仍按用户参数
 校验，不因选版本而自动调整；采集保存的波形 NPZ 包含实际源文件路径和原始包络。
 
 直接启动采集：
@@ -151,9 +154,10 @@ A10 内编辑 `RF_INPUT_ROUTE`、`RF_AUX_OUTPUT_IDX`、`RF_PHYSICAL_INPUT_SOURCE
 | 参数键 | 单位与约束 |
 |---|---|
 | `RF_AMP_START` / `RF_AMP_STOP` / `RF_AMP_POINTS` | 有符号 Vpp 扫描，起点小于终点，至少两个点；负号用 Burst 相差 180° 表示 |
-| `Z_RF_FREQ` / `Z_BURST_PHASE_INIT` | Hz / °；`Z_BURST_PHASE_INIT` 是 RF 相位扫描前的初始正 RF 相位基准，扫描成功后由选定相位取代 |
+| `Z_RF_FREQ` / `Z_BURST_PHASE_INIT` | Hz / °；`Z_BURST_PHASE_INIT` 是正 RF 触发相位（Burst）：开启扫描时为初始值，扫描成功后由选定相位取代；关闭扫描时使用此手动输入值，必须为有限数，按 360° 归一化，负幅度加 180°。当前默认值见参数文件 |
+| `Z_PHASE_SCAN_ENABLED` | 是否扫描 RF 触发相位；开启时执行原 A11 扫描与拟合，关闭时仅应用手动相位并记录来源；旧参数缺少此键时仍执行扫描 |
 | `Z_V_TO_NT` | Z 通道电压到 RF 磁场大小的转换系数，nT/V；响应磁场轴、配置快照和灵敏度换算使用该值，离线分析读取运行时保存的快照 |
-| `Z_PHASE_SCAN_START_DEG` / `Z_PHASE_SCAN_STOP_DEG` / `Z_PHASE_SCAN_STEP_DEG` | RF 触发相位扫描范围与步进，°；范围被步进整除，至少 6 个偶数点恰好覆盖一个 360° 周期 |
+| `Z_PHASE_SCAN_START_DEG` / `Z_PHASE_SCAN_STOP_DEG` / `Z_PHASE_SCAN_STEP_DEG` | RF 触发相位扫描范围与步进，°；开启扫描时范围被步进整除，至少 6 个偶数点恰好覆盖一个 360° 周期；关闭扫描时不校验扫描范围的一致性 |
 | `SCAN_POINT_DURATION_S` | 相位扫描、幅度扫描与带宽扫频每点时序采样时长，s；三段扫描共用同一时长与 RF 解调器 响应滤波（原键 `Z_PHASE_SCAN_DURATION_S`，加载时自动迁移） |
 | `LINEWIDTH_MODE` | 线宽模式：`frequency_sweep` 在 A14 后执行 A13B，以 R 均值的洛伦兹拟合线宽回补；`dispersive_equivalent` 沿用色散拟合等效 HWHM，完整运行不包含 A13B；当前值见默认参数文件 |
 | `BW_FREQ_START` / `BW_FREQ_STOP` / `BW_FREQ_POINTS` | 带宽扫频窗口 Hz 与点数（至少 5）；窗口必须完整包含 `Z_RF_FREQ`，起点与终点须为共同触发频率的正整数倍；步进由 `(BW_FREQ_STOP - BW_FREQ_START) / (BW_FREQ_POINTS - 1)` 确定，无共同触发频率整数倍限制 |
@@ -162,9 +166,10 @@ A10 内编辑 `RF_INPUT_ROUTE`、`RF_AUX_OUTPUT_IDX`、`RF_PHYSICAL_INPUT_SOURCE
 | `SYSTEM_SETTLE_S` | 温控关闭后稳定等待，s：每次关闭温控后等待温控影响减小，XY 校相每轮重载波形后同样等待（原键 `XY_PHASE_SETTLE_TIME`，加载时自动迁移；旧键 `RESPONSE_N_AVG` / `RESPONSE_AVG_INTERVAL` 已删除并自动剥离） |
 | `TEMP_SWITCH_ON_LAG_S` | 每个温控分组（末组不足分组点数也适用）或其他阶段恢复温控（置 5 V）后的等待，s |
 | `NOISE_N_AVG` / `NOISE_DURATION` / `NOISE_RATE` / `NOISE_NPERSEG` | 噪声记录数、s、请求 Sa/s 和 Welch 段长；计算 PSD 使用实际采样率 |
-| `ARB_WAVEFORM_FILE` / `AW_REPEAT_FREQ` | oc_sens 下的 `vN/waveforms/optimal_control_waveform.csv`；时间列为秒，AW 重复频率为 Hz；运行前必须选择版本 |
+| `CONTROL_WAVEFORM_FILES`（兼容旧 `ARB_WAVEFORM_FILE`）/ `AW_REPEAT_FREQ` | oc_sens 下的 `vN/waveforms/optimal_control_waveform.csv`；时间列为秒，AW 重复频率为 Hz；运行前必须选择版本 |
+| `CONTROL_SCALE_FACTORS` | 以控制名称为键的有限手动补偿倍率；未设为 1，仅所选控制生效，不根据电感自动计算；旧配置缺键同样按 1 |
 | `XY_CTRL_K_HZ_PER_V` / `XY_CTRL_B_HZ` | 控制包络频率到电压的 K/B 标定，K 不为零 |
-| `XY_AW_OUTPUT_VPP`（已废弃）/ 满量程选择 | AW 满量程自动跟随包络峰值：`vpp = 2 × max|V_env|`，offset 恒为 0；旧键 `XY_AW_OUTPUT_VPP` / `XY_AW_OUTPUT_OFFSET` 已删除，加载时自动剥离；物理波形与满量程边界仍须通过 X/Y 安全限值，自动幅度低于仪器最小 0.001 Vpp 时预检拒绝 |
+| `XY_AW_OUTPUT_VPP`（已废弃）/ 满量程选择 | AW 满量程自动跟随包络峰值：`vpp = 2 × max|V_env|`，offset 恒为 0；旧键 `XY_AW_OUTPUT_VPP` / `XY_AW_OUTPUT_OFFSET` 已删除，加载时自动剥离；物理波形与满量程边界仍须通过 X/Y 安全限值，非零包络的自动幅度低于仪器最小 0.001 Vpp 时预检拒绝；显式零补偿且电压包络为零时采用合法最小满量程配全零 DAC，不伪造最小控制场，校相质量门槛不跳过 |
 | `XY_CTRL_PHASE` / `XY_CTRL_QUAD` | 初始控制相位与 XY 正交相差，单位 ° |
 | `XY_CTRL_PHASE_TOL_DEG` / `XY_CTRL_PHASE_MAX_ITER` | XY 校相容差和最大更新次数，初始测量另计一次 |
 | `XY_CTRL_PHASE_MIN_R_V` / `XY_CTRL_PHASE_MIN_R_RATIO` | 绝对最低 R 及相对历史最佳 R 的门槛，低于门槛停止 |
@@ -211,7 +216,7 @@ Y 为 `A(t) cos(2π f_Pump t + phase + quad)`；正交相差 90° 时 Y 是负 s
 | A08 | Bell-Bloom / Demod0 校相 | A07 |
 | A09 | XY DirectAW 上传与迭代校相 | A08 |
 | A10 | RF 输入线路与 Z RF 响应准备 | A09 |
-| A11 | 控制 AM 与 Z RF 触发相位扫描 | A10 |
+| A11 | 控制 AM 与 Z RF 触发相位扫描（可跳过扫描，改为应用手动相位） | A10 |
 | A12 | RF 解调器校相 | A11 |
 | A13 | 有符号 Z RF 幅度扫描 | A12 |
 | A14 | 零 RF 工作点 X 噪声采集 | A13 |
@@ -230,8 +235,12 @@ Y 为 `A(t) cos(2π f_Pump t + phase + quad)`；正交相差 90° 时 Y 是负 s
 3. XY 与 Z 关闭时校准 Demod0。上传 XY DirectAW，在温控 0 V DC + ON 的窗口内迭代
    XY 控制相位；每次保存诊断和实际波形。未收敛、低 R 或非有限读数立即停止后续测量。
    分步模式标为「质量未通过」、恢复温控，允许同连接重试；完整运行抛出原错误并自动安全收尾。
-4. 配置所选 RF 输入线路和响应滤波，开启 Z 校相幅度，按 φ、φ+180° 成对顺序扫描 Z RF Burst
-   相位；每点重臂后按 `SYSTEM_SETTLE_S` 等待，再以统一采集模块按每点采样时长采集 RF 解调器 R/X/Y 并逐点保存。
+4. 配置所选 RF 输入线路和响应滤波，开启 Z 校相幅度。在 A11 节点内设置「扫描 RF 触发相位」和「正 RF 触发相位」。
+   关闭扫描时仅将手动相位归一化后应用到 Z RF，保存 `mode=manual`、`scan_skipped=true` 和正负相位，
+   不关闭温控、不采集相位时序、不拟合或生成相位图；随后 A12 仍在该手动相位上校准 RF 解调器。
+   **分步模式仍需选择并执行 A11 来应用手动相位，不是仅取消勾选 A11 节点**；修改开关并应用后使 A11 及后继失效，
+   修改相位值还会使使用该初始值的 A10 及后继失效，须显式重跑；完整运行自动使用同一设置。
+   开启扫描时按 φ、φ+180° 成对顺序扫描 Z RF Burst 相位；每点重臂后按 `SYSTEM_SETTLE_S` 等待，再以统一采集模块按每点采样时长采集 RF 解调器 R/X/Y 并逐点保存。
    每完成一个温控分组（末组不足分组点数也算一组）
    将温控恢复为 5 V 并按 `TEMP_SWITCH_ON_LAG_S` 等待，下一组开始前再置 0 V 并按 `SYSTEM_SETTLE_S` 等待后继续，避免温度持续下降。
    扫描完成后用正交拟合（不设 R²/显著性门槛）选定最优 RF 触发相位，设为正 RF 相位基准并绘制
@@ -288,36 +297,49 @@ data/RF_Field_Sensitivity_AW/<run_id>/
   acquisition_state.json
   analysis_state.json
   raw/
-    xy_aw_waveforms_initial.npz
-    xy_aw_waveforms.npz
-    z_phase_scan.npz
-    response_data.npz
-    bandwidth_data.npz
-    noise_D3_0000.npz
-    ...
+  controls/<control>/
+    experiment_config.yaml
+    raw/
+      xy_aw_waveforms_initial.npz
+      xy_aw_waveforms.npz
+      z_phase_scan.npz          # 仅扫描相位时存在
+      response_data.npz
+      bandwidth_data.npz        # 仅扫频测线宽时存在
+      noise_D3_0000.npz
+    results/
+      response_fit.npz
+      psd_avg.npz
+      noise_record_quality.csv
+      noise_rejection_summary.json
+      sensitivity.npz
+      analysis.yaml
+      full_analysis.png
   results/
-    z_phase_scan.png
-    response_fit.npz
-    psd_avg.npz
-    sensitivity.npz
-    bandwidth_fit.png
+    response_fits.json
+    psd_index.json
+    noise_record_quality.csv
+    noise_rejection_summary.json
+    sensitivity.npz             # 各控制键带名称前缀
     analysis.yaml
     analysis.json
-    response_curve.png
-    noise_psd.png
-    sensitivity.png
-    full_analysis.png
+    full_analysis.png          # 多控制响应与灵敏度汇总
+    z_phase_response_comparison.png # 仅扫描相位时存在
 ```
 
+多控制响应、灵敏度及相位汇总图使用英文图例：ASCII 控制名直接显示，中文等非 ASCII 名称按本轮选择顺序显示为 `Control N`；目录、配置及 GUI 保留原始名称，摘要的 `plot_label` 记录对应图例。
+
 运行配置保存新格式标记、采集/校相/分析状态、触发来源、正负 RF 相位、校相历史、
-RF 相位扫描选定相位、响应定长采集信息（时长、实际采样率、温控分组点数）、实际响应/噪声采样率、HF2 节点回读和安全收尾报告。
+RF 相位来源（扫描/手动）、跳过标记及最终相位、响应定长采集信息（时长、实际采样率、温控分组点数）、实际响应/噪声采样率、HF2 节点回读和安全收尾报告。
 `hf2_response_snapshot` 保存最近一次响应设置回读，`response_output_snapshot` 保存对应的 XY/Z 与共同触发通道设置；
 `hf2_noise_snapshot`、`hf2_final_snapshot` 分别记录噪声配置和收尾后的 HF2 设置。
 `raw/z_phase_scan.npz` 保存成对扫描相位轴、每点 R/X/Y 时序与均值/标准差及正交拟合
-中间量；`results/z_phase_scan.png` 上幅为 R/X/Y 随相位曲线，下幅为成对同相/正交分量
+中间量；跳过扫描时不生成该 NPZ 及相位 PNG/PDF，分析仍可读取完整响应与噪声数据。
+`results/z_phase_scan.png` 上幅为 R/X/Y 随相位曲线，下幅为成对同相/正交分量
 与拟合及选定相位，拟合失败时仅绘制实测曲线。原始响应包含有符号磁场轴、每点 X/Y/R 均值与
 标准差、逐点时序矩阵、相位、采样时长与实际采样率；`raw/bandwidth_data.npz`（仅扫频测线宽模式）
 保存频率轴、扫频幅度、每点 X/Y/R 均值与标准差、时序矩阵、逐点实际采样率 `point_actual_rate_Sa_s` 和恢复频率标记；保留 `actual_rate_Sa_s` 记录最近采集点的速率。噪声 NPZ 包含 `noise_x_V`、`actual_rate_Sa_s`、Demod 索引和信号路径。
+X 色散拟合成功时，`results/response_fit.npz` 在既有 `popt`、`perr` 之外保存完整四参数协方差 `pcov`，
+供相关参数的不确定度传播使用；模型、中心斜率 `abs(A)/gamma²` 及原有结果键不变，旧结果缺少该附加键仍可读取。
 结果图使用统一 `paper` 风格，并按公共绘图接口配套保存 PDF。`full_analysis` 为双面板总览：
 上幅响应曲线同时绘制 X/Y/R 与色散拟合（标注 R²、dX/dB 斜率、色散半宽与换算后的频率 HWHM、拟合中心虚线），
 下幅灵敏度谱绘制洛伦兹校正结果和未校正结果，高亮校正后的平坦频段并标注 HWHM 与中位数水平线；
@@ -331,11 +353,11 @@ RF 相位扫描选定相位、响应定长采集信息（时长、实际采样�
 |---|---|---|
 | B01 | 加载配置、校验校相与原始数据 | 无 |
 | B02 | X 色散响应拟合与斜率 | B01 |
-| B03 | Welch X 噪声 PSD | B02 |
+| B03 | 各控制 Welch X 噪声 PSD、可关闭 MAD 高值筛选及逐记录审计 | B02 |
 | B04 | RF 灵敏度、洛伦兹频响补偿与结果图 | B03 |
 
-运行目录只支持 `NOISE_NPERSEG` 分析覆盖值，单独保存在 `analysis_state.json`，不改变采集
-参数快照或下一次实验默认值。阶段记录保存输入与产物指纹、修订和状态；配置、raw 或前置
+运行目录支持 `NOISE_NPERSEG`、`NOISE_OUTLIER_POLICY`、`SENSITIVITY_BAND_MIN_HZ` 和 `SENSITIVITY_BAND_MAX_HZ` 分析覆盖值，单独保存在 `analysis_state.json`，不改变采集
+参数快照或下一次实验默认值。修改筛选策略或评分频带只使 B03 及 B04 失效，不重做校相或响应拟合。阶段记录保存输入与产物指纹、修订和状态；配置、raw 或前置
 产物变化时拒绝复用。重算只将受影响阶段及后继的旧结果移入 `results/before_<时间戳>/`，
 保留仍有效的前置输入。旧新格式记录没有阶段状态时从 B01 重建；正在采集的目录拒绝分析，
 同一目录的分步分析和历史重新分析互斥，对比任务读取结果时也禁止重算。
@@ -355,7 +377,7 @@ X 响应使用原色散模型：
 保留方法、拟合失败标记和原因。噪声采集工作点仍是零 RF，拟合中心只作诊断记录。
 
 每条 X 噪声先去均值，Welch 段长取配置值与实际记录长度的较小者，50% 重叠；必要时插值到
-首条记录的频率轴，再等权平均 PSD。灵敏度首先按
+首条记录的频率轴。策略为 `none` 时全部等权平均；`mad_high` 时先按下述规则筛选，再仅对保留记录等权平均 PSD。灵敏度首先按
 `sens_raw(f) = sqrt(PSD_X(f)) / (slope_V_per_nT / 1e6)` 计算，单位为 fT/√Hz。
 若 X 对 Z RF 场的色散拟合成功，则将拟合半宽 `gamma_nT` 按
 `f_larmor_Hz = gamma_nT × LARMOR_PER_NT` 换算为等效频率 HWHM，并按
@@ -375,9 +397,23 @@ X 响应使用原色散模型：
 扫频测线宽模式在本实验内提供真实频率域线宽，不替代独立
 `rf-sensitivity-direct-aw-frequency` 扫频实验的频率响应表征。
 
-分析器只接受完整采集且校相通过的 schema v2/v3 新格式，先校验输入再写结果。旧格式、
+分析器接受参数 schema v2/v3/v4 的已验证格式，原始格式与参数版本独立：旧平铺数据继续读取，新多控制容器以 `raw_format_version=2`、`control_layout=controls` 标识，各子运行使用既有单控制记录布局。所有子快照成功保存后父容器才提交 `controls_sealed=true`；封存失败或任一控制不完整时禁止分析。先校验输入再写结果。旧格式、
 缺失响应点或噪声记录会明确拒绝；旧目录不会删除或改写，本次不兼容其数据内容。
 离线分析不读取仪器、不依赖当前波形 CSV 或当前默认参数。
+
+## PSD 异常谱识别与剔除
+
+`NOISE_OUTLIER_POLICY=mad_high` 复用 Scale 实验的保守高侧规则，`none` 保留全部记录。评分频带由 `SENSITIVITY_BAND_MIN_HZ` / `SENSITIVITY_BAND_MAX_HZ` 配置，当前默认值见[实际参数文件](../params/experiments/rf-sensitivity-aw.yaml)，**只用于异常谱评分，不改变 B04 的平坦频带定义**。
+
+对每个控制分别计算每条记录在该频带的中位 ASD：`score = median(sqrt(PSD_record))`。仅在至少 5 条记录、评分中位数为正、所有记录实际带宽完整覆盖该频带且公共轴内至少两个频点时，剔除满足下式的整条记录：
+
+`score > max(3 × median(score), median(score) + 6 × 1.4826 × MAD(score))`
+
+不跨控制比较绝对噪声，不删频率点，不筛低值；小样本、零基线或频带不可用时不强行筛选，记录原因并保留全部数据。保留全部原始时序、逐记录 PSD 矩阵、`included_record_mask`、评分、未剔除平均 PSD；B04 同时保存 `unfiltered_sensitivity_fT_per_sqrtHz`，有剔除时在 PSD 和灵敏度图中显示前后对照。
+
+各子目录及父目录都输出 `noise_record_quality.csv`、`noise_rejection_summary.json`，历史页显示每控制保留/总数和未筛选原因。改变策略或频带只重算 B03/B04，并归档父子受影响结果；不改采集快照、原始数据或下一次默认值。缺策略键的历史数据继续全部平均，可在目录分析覆盖中显式启用筛选。
+
+以上目录是新多控制布局；旧单控制平铺目录及旧 Python 单文件调用仍保留支持。每个控制的原始数组键保持兼容；下文中 `raw/` 和单控制 `results/` 路径均指对应控制的子目录或旧平铺目录。
 
 ## GUI 运行 / 历史
 
@@ -392,13 +428,14 @@ X 响应使用原色散模型：
   初始化条件只在设置节点展示，基础/高级分类按字段统一保存。
   存活会话的修改标为「草稿未应用」，预览预计需重跑的已完成步骤；应用成功后显式重跑，
   草稿不会改写执行记录，应用失败保留草稿。共同触发只显示一组并同步两套稳定参数键。
-  RF 输入线路和 Z RF 相位扫描参数仍在相应节点；波形版本来自 oc_sens，运行前需手动选择。
+  RF 输入线路和 Z RF 相位扫描参数仍在相应节点；A09 的控制列表逐行显示「波形名称｜勾选框｜补偿倍率」，同次可勾选多个，每个控制独立运行与保存。未选控制也可预填系数，取消或改选不会把系数挪给其他控制；波形与补偿作为一组移动基础/高级分类。更改补偿并应用后使 A09 及后继失效，必须显式重新校相和测量。
   分析操作对象默认为「下一次实验」，与采集参数共用同键值；选择具体已完成目录后编辑独立
   覆盖值，执行分析时生效。各目录草稿分别保留，切换对象或主 Tab 后返回可继续编辑。
   保存默认值始终只保存下一次实验参数与统一分类，历史分析覆盖值不写入默认 YAML。
 - **历史**：新格式运行分页列表；该次参数快照、采集/分析/校相状态、诊断、实际回读、
   结果图与下载。填回只更新当前 schema 识别的字段并切回运行，不保存默认值或自动采集。
-  切换 Tab 保留未保存参数。完整采集且校相通过时可重新分析，使用现有非硬件任务，
+  切换 Tab 保留未保存参数。旧快照缺少补偿映射时，填回使用模型声明的单位补偿，不继承当前默认文件或草稿中的额外补偿。补偿映射保存在运行参数，XY 原始文件额外记录实际 `control_scale_factor`，原始理论源列保持未缩放。旧单选键填回为单项列表；历史缺筛选策略时保持全部平均，除非用户显式启用。响应/噪声数组格式不变，新多控制采用独立子目录，不重写历史原始数据。
+  完整采集且校相通过时可重新分析，使用现有非硬件任务，
   完成后刷新摘要和图片；未完成采集或校相失败只展示诊断。
   列表增加独立对比勾选框，右侧可切换「单次详情 / 对比分析」。选择至少两次完成分析、
   校相通过且结果齐备的运行，支持跨页选择；按勾选顺序绘制，每次运行填写一个英文图例，

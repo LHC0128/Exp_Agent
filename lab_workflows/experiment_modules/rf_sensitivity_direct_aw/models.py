@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from lockin_amplifier import SignalInputConfig
-from dataclasses import Field, dataclass
+from dataclasses import Field, dataclass, replace
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 import math
@@ -16,10 +16,10 @@ from ...experiment_params import ExperimentParams, parameter
 
 
 @dataclass(slots=True)
-class RFSensitivityDirectAWParams(ExperimentParams):
+class RFSensitivityDirectAWSingleParams(ExperimentParams):
     schema_version: ClassVar[int] = 3
     require_rf_integer_cycles: ClassVar[bool] = True
-    scan_rf_phase: ClassVar[bool] = True
+    compensate_control_on_load: ClassVar[bool] = True
 
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RF_STEP_SETTLE_S': 0.3, 'TEMP_OFF_SETTLE_S': 0.5}
     removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
@@ -35,6 +35,7 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     noise_rate: float = parameter(default=100000, external_name="NOISE_RATE", label="请求噪声采样率", unit="Sa/s", minimum=1)
     noise_nperseg: int = parameter(default=10000, external_name="NOISE_NPERSEG", label="Welch 段长", minimum=2)
     arb_waveform_file: str = parameter(default="", external_name="ARB_WAVEFORM_FILE", label="最优控制波形版本", group="basic", description=r"从 D:\Code\theory_agent\simulate\results\oc_sens 选择 vN/waveforms/optimal_control_waveform.csv；时间单位为秒。")
+    control_scale_factors: dict[str, float] = parameter(default_factory=dict, external_name="CONTROL_SCALE_FACTORS", label="各控制补偿倍率", group="basic", legacy_default={}, description="按控制名称手动保存，未设置时为 1；缩放 XY 完整物理包络后再按 K/B 转电压，不改变主场、Z RF 或注入噪声。")
     aw_repeat_freq: float = parameter(default=2000.0, external_name="AW_REPEAT_FREQ", label="AW 重复频率", unit="Hz", group="basic", minimum=1e-6)
     xy_ctrl_k_hz_per_v: float = parameter(default=7508.36, external_name="XY_CTRL_K_HZ_PER_V", label="XY 标定 K", unit="Hz/V")
     xy_ctrl_b_hz: float = parameter(default=-58.77, external_name="XY_CTRL_B_HZ", label="XY 标定 B", unit="Hz")
@@ -60,7 +61,8 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     z_rf_freq: float = parameter(default=8000.0, external_name="Z_RF_FREQ", label="Z RF 频率", unit="Hz", group="basic", minimum=1e-6)
     z_v_to_nt: float = parameter(default=1758.5, external_name="Z_V_TO_NT", label="Z 电压到 RF 场转换", unit="nT/V", group="basic", minimum=1e-12, description="Z 通道电压到射频磁场大小的转换系数，响应磁场轴与灵敏度换算使用该值。")
     z_rf_amplitude_init: float = parameter(default=0.1, external_name="Z_RF_AMPLITUDE_INIT", label="Z 校相幅度", unit="Vpp", minimum=1e-9, safety_key="Z_magnetic_field")
-    z_burst_phase_init: float = parameter(default=0.0, external_name="Z_BURST_PHASE_INIT", label="正 RF Burst 相位", unit="°", description="RF 相位扫描前的初始正 RF 相位基准；扫描成功后由选定相位取代。")
+    scan_rf_phase: bool = parameter(default=True, external_name="Z_PHASE_SCAN_ENABLED", label="扫描 RF 触发相位", group="basic", description="关闭时跳过 A11 相位扫描，使用手动输入的正 RF 触发相位；分步模式仍需执行 A11 应用相位。")
+    z_burst_phase_init: float = parameter(default=181.5, external_name="Z_BURST_PHASE_INIT", label="正 RF 触发相位", unit="°", group="basic", description="Z RF Burst 相位基准；开启扫描时为初始值，扫描成功后由选定相位取代；关闭扫描时使用此手动输入值（按 360° 归一化），负幅度加 180°。")
     z_phase_scan_start_deg: float = parameter(default=0.0, external_name="Z_PHASE_SCAN_START_DEG", label="RF 校相起始相位", unit="°", minimum=0.0, maximum=360.0)
     z_phase_scan_stop_deg: float = parameter(default=340.0, external_name="Z_PHASE_SCAN_STOP_DEG", label="RF 校相终止相位", unit="°", minimum=0.0, maximum=360.0)
     z_phase_scan_step_deg: float = parameter(default=20.0, external_name="Z_PHASE_SCAN_STEP_DEG", label="RF 校相相位步进", unit="°", minimum=0.001, maximum=360.0)
@@ -113,6 +115,10 @@ class RFSensitivityDirectAWParams(ExperimentParams):
         self.loopback_input_ac = defaults.ac_coupling
         self.loopback_input_impedance_ohm = defaults.impedance
 
+    def control_scale_factor(self, relative=None):
+        name = Path(relative or self.arb_waveform_file).parent.parent.name
+        return self.control_scale_factors.get(name, 1.0)
+
     @property
     def rf_input_source(self) -> str:
         return f"aux_output{self.rf_aux_output_idx}" if self.rf_input_route == "internal" else self.rf_physical_input_source
@@ -140,6 +146,11 @@ class RFSensitivityDirectAWParams(ExperimentParams):
 
     def validate_model(self) -> list[str]:
         errors = []
+        if (not isinstance(self.control_scale_factors, dict)
+                or any(not isinstance(name, str) or not name or isinstance(value, bool)
+                       or not isinstance(value, (int, float)) or not math.isfinite(value)
+                       for name, value in self.control_scale_factors.items())):
+            errors.append("CONTROL_SCALE_FACTORS 必须按控制名称填写有限数值")
         if not self.arb_waveform_file:
             errors.append("请选择 oc_sens 中的最优控制波形版本")
         if not self.run_tag or any(char in self.run_tag for char in ("/", "\\", "\0")) or self.run_tag in (".", ".."):
@@ -162,6 +173,8 @@ class RFSensitivityDirectAWParams(ExperimentParams):
         for key, actual, fixed in (("DEMOD0_IDX", self.demod0_idx, 0), ("DEMOD0_OSC_IDX", self.demod0_osc_idx, 0), ("DEMOD3_OSC_IDX", self.demod3_osc_idx, 1), ("FIXED_PARAMS.Temp_Switch", self.temp_switch, 5)):
             if actual != fixed:
                 errors.append(f"{key} 固定为 {fixed}")
+        if not math.isfinite(self.z_burst_phase_init):
+            errors.append("Z_BURST_PHASE_INIT 必须是有限的触发相位")
         if not self.scan_rf_phase:
             pass
         elif self.z_phase_scan_start_deg >= self.z_phase_scan_stop_deg:
@@ -195,7 +208,10 @@ class RFSensitivityDirectAWParams(ExperimentParams):
     @classmethod
     def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
         """AW 满量程自动选择；响应采集改为定长 DAQ，剥离/迁移旧稳定等待与平均键。"""
-        migrated = super(RFSensitivityDirectAWParams, cls).migrate_external(values, schema_version)
+        migrated = super(RFSensitivityDirectAWSingleParams, cls).migrate_external(values, schema_version)
+        # 固定校相策略的派生实验不沿用主实验的可选扫描开关。
+        if "Z_PHASE_SCAN_ENABLED" not in cls.external_names():
+            migrated.pop("Z_PHASE_SCAN_ENABLED", None)
         if not any(key in migrated for key in ("RF_INPUT_ROUTE", "RF_AUX_OUTPUT_IDX", "RF_PHYSICAL_INPUT_SOURCE")):
             # 旧参数保存的是 HF2 AuxOut2 到 Signal Input2，不能套用新默认接线。
             migrated.update(RF_INPUT_ROUTE="physical", RF_AUX_OUTPUT_IDX=1, RF_PHYSICAL_INPUT_SOURCE="voltage1")
@@ -208,7 +224,7 @@ class RFSensitivityDirectAWParams(ExperimentParams):
 
     def validate(self, project_root: Path | None = None) -> list[str]:
         root = project_root or find_project_root()
-        errors = super(RFSensitivityDirectAWParams, self).validate(root)
+        errors = super(RFSensitivityDirectAWSingleParams, self).validate(root)
         if errors:
             return errors
         from .waveform import load_envelope, synthesize_xy
@@ -220,4 +236,74 @@ class RFSensitivityDirectAWParams(ExperimentParams):
             synthesize_xy(self, envelope, self.xy_ctrl_phase)
         except (OSError, KeyError, TypeError, ValueError) as exc:
             errors.append(str(exc))
+        return errors
+
+
+@dataclass(slots=True)
+class RFSensitivityDirectAWParams(RFSensitivityDirectAWSingleParams):
+    """多控制正式参数；None 仅保留旧 Python 单文件调用的目录布局。"""
+
+    schema_version: ClassVar[int] = 4
+    arb_waveform_file: str = parameter(default="", external_name="ARB_WAVEFORM_FILE", label="当前控制文件", visible=False)
+    control_waveform_files: list[str] | None = parameter(default=None, external_name="CONTROL_WAVEFORM_FILES", label="控制波形版本（可多选）", group="basic", legacy_default=[], description="按选择顺序逐控制独立校相、采集和分析；共用本轮 RF 参数，不自动改频。旧 ARB_WAVEFORM_FILE 仍可读取。")
+    noise_outlier_policy: Literal["mad_high", "none"] = parameter(default="mad_high", external_name="NOISE_OUTLIER_POLICY", label="噪声异常谱处理", legacy_default="none", options=(("mad_high", "保守 MAD 高值剔除"), ("none", "保留全部记录")), description="每个控制独立评分，至少 5 条且有正基线时才剔除显著高值整条记录；保留原始数据、全部 PSD、未剔除均值和清单，不删除频率点。")
+    sensitivity_band_min_hz: float = parameter(default=3.0, external_name="SENSITIVITY_BAND_MIN_HZ", label="异常谱评分频带下限", unit="Hz", minimum=1e-9, legacy_default=3.0)
+    sensitivity_band_max_hz: float = parameter(default=150.0, external_name="SENSITIVITY_BAND_MAX_HZ", label="异常谱评分频带上限", unit="Hz", minimum=1e-9, legacy_default=150.0)
+
+    def __post_init__(self):
+        super(RFSensitivityDirectAWParams, self).__post_init__()
+        if self.control_waveform_files is not None:
+            self.arb_waveform_file = self.control_waveform_files[0] if self.control_waveform_files else ""
+
+    @property
+    def selected_control_files(self):
+        if self.control_waveform_files is not None:
+            return self.control_waveform_files
+        return [self.arb_waveform_file] if self.arb_waveform_file else []
+
+    @staticmethod
+    def normalize_control_selection(values):
+        """合并当前默认值前迁移旧单选键，避免被默认多选列表遮蔽。"""
+        values = dict(values)
+        if "CONTROL_WAVEFORM_FILES" not in values and "ARB_WAVEFORM_FILE" in values:
+            values["CONTROL_WAVEFORM_FILES"] = [values["ARB_WAVEFORM_FILE"]] if values["ARB_WAVEFORM_FILE"] else []
+        return values
+
+    @classmethod
+    def migrate_external(cls, values, schema_version):
+        migrated = super(RFSensitivityDirectAWParams, cls).migrate_external(values, schema_version)
+        migrated = cls.normalize_control_selection(migrated)
+        # 缺少筛选策略的历史配置保持原来的全部平均；新默认文件显式启用 MAD。
+        migrated.setdefault("NOISE_OUTLIER_POLICY", "none")
+        return migrated
+
+    @staticmethod
+    def _options(item, root):
+        if item.name == "control_waveform_files":
+            from dataclasses import fields
+            scalar = next(field for field in fields(RFSensitivityDirectAWSingleParams) if field.name == "arb_waveform_file")
+            return RFSensitivityDirectAWSingleParams._options(scalar, root)[1:]
+        return RFSensitivityDirectAWSingleParams._options(item, root)
+
+    def validate_model(self):
+        errors = super(RFSensitivityDirectAWParams, self).validate_model()
+        files = self.selected_control_files
+        if not files or len(set(files)) != len(files):
+            errors.append("请选择至少一个不重复的控制波形版本")
+        if self.noise_outlier_policy not in ("mad_high", "none"):
+            errors.append("NOISE_OUTLIER_POLICY 必须为 mad_high 或 none")
+        if not (math.isfinite(self.sensitivity_band_min_hz) and math.isfinite(self.sensitivity_band_max_hz)
+                and 0 < self.sensitivity_band_min_hz < self.sensitivity_band_max_hz):
+            errors.append("异常谱评分频带必须满足 0 < 下限 < 上限")
+        return errors
+
+    def validate(self, project_root=None):
+        # 所有控制逐个进行真实包络、电压和输出限值预检，不能只检查第一项。
+        selected = self.selected_control_files
+        normalized = replace(self, control_waveform_files=selected)
+        errors = RFSensitivityDirectAWSingleParams.validate(normalized, project_root)
+        if not errors:
+            for relative in selected[1:]:
+                single = replace(normalized, control_waveform_files=[relative])
+                errors.extend(RFSensitivityDirectAWSingleParams.validate(single, project_root))
         return errors

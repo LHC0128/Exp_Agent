@@ -21,6 +21,7 @@ ACQUISITION_STAGES = {
     "rf-sensitivity-aw": _DIRECT,
     "rf-sensitivity-aw-r": _DIRECT,
     "rf-sensitivity-aw-known-noise": _DIRECT,
+    "rf-control-scale-sensitivity": _DIRECT,
     "noise-spectrum-xy": _XY,
     "noise-spectrum-xy-v2": _XY,
     "noise-spectrum-xy-uncontrolled-probe-am": _XY,
@@ -87,6 +88,8 @@ def experiment_acquisition_requests(experiment_id: str, values: dict) -> tuple[A
         values = {**defaults, **values}
     for stage, rate_key, duration_key, demod_key, signals in stages:
         if rate_key not in values or duration_key not in values:
+            continue
+        if experiment_id == "rf-control-scale-sensitivity" and stage == "RF 噪声" and not values.get("INCLUDE_NOISE", True):
             continue
         if stage == "扫频" and values.get("LINEWIDTH_MODE", "frequency_sweep") != "frequency_sweep":
             continue

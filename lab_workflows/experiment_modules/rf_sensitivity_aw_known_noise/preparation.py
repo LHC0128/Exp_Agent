@@ -18,7 +18,7 @@ def preflight(params, root):
         validate_safety_limit("Z_magnetic_field", level)
     frequencies = [params.z_rf_freq]
     if params.linewidth_mode == "frequency_sweep":
-        frequencies.extend(np.linspace(params.bw_freq_start, params.bw_freq_stop, params.bw_freq_points))
+        frequencies.extend(params.bandwidth_frequencies)
     for frequency in frequencies:
         synthesize_z(noise, params.z_rf_amplitude_init, float(frequency))
     synthesize_z(noise, 0.0, params.z_rf_freq)

@@ -4,6 +4,8 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "../../api";
 import { useJobActivity } from "../JobActivity";
 import { JobView } from "../JobView";
+import { useExperimentTask } from "../experimentNavigation";
+import { useParameterGuard } from "../NavigationGuard";
 import type {
   ExperimentDefinition,
   ExperimentSchema,
@@ -33,7 +35,7 @@ type DashboardProps = {
   layoutDirty: boolean;
   onLayoutChange: Dispatch<SetStateAction<ParameterLayout>>;
   /** 后端回读确认布局已落盘后，把页面布局同步为磁盘布局。 */
-  onLayoutSaved: (next: ParameterLayout) => void;
+  onLayoutSaved: (next: ParameterLayout, fields: SchemaField[]) => void;
   values: ParameterValues;
   setValues: Dispatch<SetStateAction<ParameterValues>>;
   /** 页面级任务状态：切换 Tab 或重新进入页面后仍保留。 */
@@ -95,6 +97,8 @@ export function Dashboard({
   ) || hardwareBusy;
   const jobActive = job ? ["queued", "running"].includes(job.status) : false;
   const live = Boolean(session && session.status !== "closed");
+  useParameterGuard(fields, values, layout, layout, live ? session?.parameters as ParameterValues : undefined);
+  useExperimentTask({ ready: fields.length > 0, setJob, setAnalysisJob });
   const parametersBusy = jobActive && (!live || session?.status !== "waiting" || Boolean(session?.pending_request));
   const disabled = starting || parametersBusy || blockedByOthers || !fields.length;
 
@@ -162,7 +166,7 @@ export function Dashboard({
       if (!sameParameterLayout(persisted, layout)) {
         throw new Error("后端回传的参数分类与当前布局不一致，请刷新页面后重试");
       }
-      onLayoutSaved(persisted);
+      onLayoutSaved(persisted, result.schema.fields);
       setDefaultsStatus({ ok: true, message: result.message });
     } catch (reason) {
       setDefaultsStatus({ ok: false, message: String(reason) });

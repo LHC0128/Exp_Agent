@@ -107,6 +107,7 @@ class FakeHF2(HF2Instrument):
             channel = self.rig.mapping["Z_magnetic_field"]["channel"]
             radius = z_device.amplitude.get(channel, 0) * 0.05 if z_device.output.get(channel) else 0.0
             angle = math.pi if z_device.phase.get(channel, 0) > 180 else 0.0
+            angle -= math.radians(self.get_double(path.rsplit("/", 1)[0] + "/phaseshift"))
         return {"x": np.array([radius * math.cos(angle)]), "y": np.array([radius * math.sin(angle)])}
 
 
@@ -186,13 +187,14 @@ def rig(tmp_path, monkeypatch, control_source):
             time = np.arange(columns) / kwargs["actual_rate"]
             kwargs["cancellation_check"]()
             return [DAQResult(signal_name=name, demod_index=kwargs["demod_idx"], values=np.full(columns, value), time=time) for name, value in (("sample.r", abs(response)), ("sample.x", response.real), ("sample.y", response.imag))]
-        assert kwargs["actual_rate"] == 90000
-        assert config.grid_cols == int(90000 * config.duration)
+        # DAQ/Scope 准备下的请求率不等于解调器读回率；按当前假仪器实际配置校验。
+        assert kwargs["actual_rate"] == pytest.approx(hf2.get_double(base + "/rate"))
+        assert config.grid_cols == int(kwargs["actual_rate"] * config.duration)
         assert kwargs["strict_cleanup"] is True
         if instance.daq_error:
             raise instance.daq_error
         kwargs["cancellation_check"]()
-        return [DAQResult(signal_name="sample.x", demod_index=kwargs["demod_idx"], values=np.arange(100, dtype=float), time=np.arange(100) / 90000)]
+        return [DAQResult(signal_name="sample.x", demod_index=kwargs["demod_idx"], values=np.arange(100, dtype=float), time=np.arange(100) / kwargs["actual_rate"])]
     monkeypatch.setattr(acquisition.daq, "acquire_data", acquire)
     instance.acquire = acquire
     instance.tmp_path = tmp_path
@@ -226,6 +228,7 @@ ACQUISITION_CASES = {
     "rf-sensitivity-aw": {
         "mode": "grouped",
         "cases": {
+            "entrypoints": ["test_manual_rf_phase_skips_scan_and_preserves_signed_phase"],
             "order": ["test_real_group_config_settle_restore_and_slow_disk_order"],
             "slow_disk": ["test_real_group_config_settle_restore_and_slow_disk_order"],
             "group_change": ["test_real_group_config_settle_restore_and_slow_disk_order"],
@@ -241,8 +244,14 @@ ACQUISITION_CASES = {
 
 
 def test_complete_run_preserves_trigger_and_signed_phase(rig):
+    rig.params = replace(rig.params, control_scale_factors={"v1": 1.25})
+    original = load_envelope(replace(rig.params, control_scale_factors={}), 16384)
     directory = workflow.run(rig.params)
     config, _ = saved_config(rig)
+    assert config["parameters"]["CONTROL_SCALE_FACTORS"] == {"v1": 1.25}
+    with np.load(directory / "raw/xy_aw_waveforms.npz", allow_pickle=False) as data:
+        np.testing.assert_allclose(data["omega_ctrl_Hz"], original["omega_ctrl_Hz"] * 1.25)
+        assert float(data["control_scale_factor"]) == 1.25
     assert config["completion_status"] == "completed"
     assert config["phase_calibration_status"] == "completed"
     assert config["actual_rates"]["demod3_noise_Sa_s"] == 90000
@@ -332,6 +341,64 @@ def test_complete_run_preserves_trigger_and_signed_phase(rig):
         channel_config = rig.mapping[key]
         assert rig.generators[channel_config["resource"]].output[channel_config["channel"]] is True
     assert config["safety_shutdown"]["preserved_outputs"] == ["main_magnetic_field", "Pump_laser_power", "Probe_laser_power", "Pump_modulation", "HF2_configuration", "Time_sequence_2", "Time_sequence"]
+
+
+@pytest.mark.parametrize("manual_phase", [181.5, -25.0, 725.0])
+def test_manual_rf_phase_skips_scan_and_preserves_signed_phase(rig, manual_phase):
+    params = replace(rig.params, scan_rf_phase=False, z_burst_phase_init=manual_phase)
+    directory = workflow.run(params)
+    config, _ = saved_config(rig)
+    positive = manual_phase % 360
+    negative = (positive + 180) % 360
+    assert config["completion_status"] == config["phase_calibration_status"] == "completed"
+    assert config["parameters"]["Z_PHASE_SCAN_ENABLED"] is False
+    assert config["parameters"]["Z_BURST_PHASE_INIT"] == manual_phase
+    assert config["rf_phase_calibration"] == {
+        "mode": "manual", "scan_skipped": True, "points_completed": 0,
+        "selected_phase_deg": positive, "initial_phase_deg": positive,
+        "rf_amplitude_vpp": params.z_rf_amplitude_init,
+    }
+    assert config["calibration"]["z_positive_field_phase_deg"] == positive
+    assert config["calibration"]["z_negative_field_phase_deg"] == negative
+    assert not rig.z_scan_phases
+    assert len(rig.captures) == params.rf_amp_points + params.noise_n_avg
+    assert "z_phase_scan_plot" not in config
+    assert not (directory / "raw/z_phase_scan.npz").exists()
+    assert not (directory / "results/z_phase_scan.png").exists()
+    assert not (directory / "results/z_phase_scan.pdf").exists()
+    with np.load(directory / "raw/response_data.npz") as data:
+        assert data["z_burst_phase_deg"].tolist() == pytest.approx([negative, positive, positive])
+    from .analysis import AnalysisWorkflow
+    analysis = AnalysisWorkflow(directory)
+    analysis.execute(["B01"])
+    assert analysis.states["B01"]["status"] == "completed"
+    assert_shutdown(rig)
+
+
+def test_manual_rf_phase_parameter_roundtrip_and_validation(control_source, tmp_path):
+    params = replace(control_source, scan_rf_phase=False, z_burst_phase_init=181.5,
+                     z_phase_scan_start_deg=340, z_phase_scan_stop_deg=0)
+    assert not params.validate()
+    path = tmp_path / "manual_phase.yaml"
+    params.save_yaml(path)
+    restored = RFSensitivityDirectAWParams.from_external(yaml.safe_load(path.read_text(encoding="utf-8"))["parameters"])
+    assert restored == params
+    legacy = params.to_external()
+    legacy.pop("Z_PHASE_SCAN_ENABLED")
+    assert RFSensitivityDirectAWParams.from_external(legacy).scan_rf_phase is True
+    for value in (float("nan"), float("inf"), -float("inf")):
+        assert replace(params, z_burst_phase_init=value).validate()
+    assert RFSensitivityDirectAWParams().z_burst_phase_init == 181.5
+    from ..rf_sensitivity_direct_aw_r.models import RFSensitivityDirectAWRParams
+    from ..rf_sensitivity_aw_known_noise.models import RFSensitivityKnownNoiseParams
+    from ..rf_control_scale_sensitivity.models import RFControlScaleParams
+    for variant, expected in ((RFSensitivityDirectAWRParams, False),
+                              (RFSensitivityKnownNoiseParams, False), (RFControlScaleParams, False)):
+        values = {key: value for key, value in params.to_external().items()
+                  if key in variant.external_names() and not (key == "CONTROL_WAVEFORM_FILES" and value is None)}
+        loaded = variant.from_external(values)
+        assert loaded.scan_rf_phase is expected
+        assert ("Z_PHASE_SCAN_ENABLED" in loaded.to_external()) is (variant is not RFSensitivityDirectAWRParams)
 
 
 def test_bandwidth_node_rejects_dispersive_mode(rig):
@@ -758,10 +825,10 @@ def test_control_versions_require_explicit_selection(control_source):
         copy.write_bytes(waveform.read_bytes())
     (directory / "v3").mkdir()
     defaults = RFSensitivityDirectAWParams()
-    field = next(item for item in defaults.schema()["fields"] if item["name"] == "ARB_WAVEFORM_FILE")
-    assert field["default"] == ""
-    assert [option["label"] for option in field["options"]] == ["请选择最优控制版本", "v1", "v2", "v10", "v_bad"]
-    assert [option["value"] for option in field["options"]][1:] == [f"{version}/waveforms/optimal_control_waveform.csv" for version in ("v1", "v2", "v10", "v_bad")]
+    field = next(item for item in defaults.schema()["fields"] if item["name"] == "CONTROL_WAVEFORM_FILES")
+    assert field["type"] == "array" and field["default"] is None
+    assert [option["label"] for option in field["options"]] == ["v1", "v2", "v10", "v_bad"]
+    assert [option["value"] for option in field["options"]] == [f"{version}/waveforms/optimal_control_waveform.csv" for version in ("v1", "v2", "v10", "v_bad")]
     assert "请选择" in "；".join(defaults.validate())
     assert "ARB_WAVEFORM_FILE 必须是" in "；".join(replace(defaults, arb_waveform_file="control_waveform.csv").validate())
     with pytest.raises(ValueError, match="请选择"):
@@ -809,6 +876,7 @@ def test_control_source_rejects_path_escape(control_source, source):
 def test_real_group_config_settle_restore_and_slow_disk_order(rig, monkeypatch, stage, group_size):
     """实际相位/幅度/带宽业务：组首配置在开启时，慢写盘不占关闭窗口。"""
     rig.params = replace(rig.params, temp_group_size=group_size, linewidth_mode="frequency_sweep",
+                         control_scale_factors={"v1": 1.25},
                          z_rf_freq=3000.0, bw_freq_stop=3800.0, bw_freq_points=7)
     ctx = workflow.Workflow(rig.params)
     ids = [item.id for item in ACQUISITION]

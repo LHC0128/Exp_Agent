@@ -8,6 +8,8 @@ import { JobView } from "../components/JobView";
 import { ScopePlot } from "../components/ScopePlot";
 import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
 import { PageHead } from "../components/PageHead";
+import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
+import { useParameterGuard } from "../components/NavigationGuard";
 import type {
   ExperimentDefinition,
   ExperimentSchema,
@@ -241,6 +243,9 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
   const sessionActive = Boolean(session && session.status !== "closed");
   const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
+  useParameterGuard(fields, values, layout, savedLayout, sessionActive ? session?.parameters as ParameterValues : undefined);
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId });
+  const requestedJobId = useRequestedJobId();
 
   useEffect(() => {
     if (!fields.length) return;
@@ -275,12 +280,9 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
       const initial = persisted ?? defaultParameterLayout(schema.fields);
       setLayout(initial);
       setSavedLayout(initial);
-      const matching = jobs.filter((item) => item.kind === `experiment:${ID}`);
-      const recoverable = matching.some((item) => ["queued", "running"].includes(item.status))
-        ? matching.filter((item) => ["queued", "running"].includes(item.status))
-        : matching.filter((item) => item.started_at);
-      if (recoverable.length) {
-        const recovered = await api<Job>(`/api/jobs/${recoverable[0].id}`);
+      const recoverable = recoverableJob(jobs, ID, requestedJobId);
+      if (recoverable) {
+        const recovered = await api<Job>(`/api/jobs/${recoverable.id}`);
         if (!disposed) setJob(recovered);
       }
     }).catch((reason) => { if (!disposed) setError(String(reason)); });
@@ -353,7 +355,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
       if (!persisted || !sameParameterLayout(persisted, layout)) {
         throw new Error("后端未确认参数布局已保存");
       }
-      setSavedLayout(persisted);
+      setSavedLayout(persisted); setFields(result.schema.fields);
       setNotice(result.message);
     } catch (reason) {
       setError(String(reason));
@@ -508,6 +510,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
         eyebrow={probeAm ? "MEASUREMENT · PROBE AM NOISE" : "VERIFICATION · KNOWN INJECTION"}
         title={definition?.title ?? (probeAm ? "XY 控制测量已知不可控 Probe AM 噪声谱" : "XY 控制测量已知可控噪声谱")}
         description={definition?.description ?? "读取实验定义与运行记录。"}
+        experiment={definition}
       />
       {error && <div className="alert error" role="alert">{error}</div>}
       <div className="zaw-tab-strip" role="tablist" aria-label={probeAm ? "XY Probe AM 噪声实验视图" : "XY 已知噪声注入实验视图"} onKeyDown={tabKey}>

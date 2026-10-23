@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api";
@@ -38,12 +38,15 @@ beforeEach(() => {
     if (url === "/api/jobs") return [];
     if (url === `${BASE}/sessions/active`) return active;
     if (url === `${BASE}/sessions/test`) return active;
+    if (url === `${BASE}/sessions/test/steps`) return active;
     if (url === `${BASE}/sessions/test/parameters`) {
       if (applyError) throw new Error("参数校验失败");
       const body = JSON.parse(String(options?.body));
+      const impacts = flow.parameter_impacts.acquisition as Record<string, string[]>;
+      const affected = new Set(Object.keys(body.parameters).filter(name => JSON.stringify(body.parameters[name]) !== JSON.stringify(active.parameters[name])).flatMap(name => impacts[name] ?? []));
       return active = { ...active, revision: active.revision + 1, parameters: body.parameters,
         steps: Object.fromEntries(Object.entries(active.steps).map(([id, state]) => [id,
-          flow.parameter_impacts.acquisition.SYSTEM_SETTLE_S.includes(id) ? { status: "stale", error: "" } : state])) };
+          affected.has(id) ? { status: "stale", error: "" } : state])) };
     }
     if (url === `${BASE}/sessions/test/finish`) return active = { ...active, status: "closed", steps: { ...active.steps, A16: { status: "completed", error: "" } } };
     if (url.startsWith(`${BASE}/runs?`)) return { runs: [historical("first"), historical("second")], total: 2, offset: 0, limit: 50 };
@@ -69,9 +72,9 @@ async function show() {
 }
 function expand() { document.querySelectorAll<HTMLDetailsElement>(".xy-node-parameters, .xy-node-parameters details").forEach(node => { node.open = true; }); }
 
-it("真实模型74字段全部在实际路由出现，保持双Tab和原图下载", async () => {
+it("真实模型字段全部在实际路由出现，包含可选相位扫描，保持双Tab和原图下载", async () => {
   await show();
-  expect(fields).toHaveLength(74);
+  expect(fields).toContainEqual(expect.objectContaining({ name: "Z_PHASE_SCAN_ENABLED", type: "boolean" }));
   expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史"]);
   for (const field of fields) {
     const labels = screen.queryAllByText(field.label, { exact: true });
@@ -80,6 +83,32 @@ it("真实模型74字段全部在实际路由出现，保持双Tab和原图下�
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
   expect(screen.getAllByLabelText(/^系统稳定时间/, { selector: "input" }).length).toBeGreaterThan(1);
   expect(screen.getAllByLabelText(/^Cell 温度/, { selector: "input" })).toHaveLength(1);
+  const bandwidth = within(screen.getByRole("region", { name: "A13B Z RF 扫频带宽测量（可选） 参数" }));
+  expect(bandwidth.getByLabelText(/^Z RF 频率/, { selector: "input" })).toHaveValue(Number(defaults.Z_RF_FREQ));
+  expect(screen.getByText(/启用扫频时自动跳过 Z RF 频率/)).toBeVisible();
+});
+
+it("波形名称、勾选框和各自系数在同一行，多选补偿按名称保存", async () => {
+  await show();
+  const controls = fields.find(field => field.name === "CONTROL_WAVEFORM_FILES")!;
+  const options = controls.options!;
+  const first = options[0], second = options[1];
+  const checkbox = screen.getByRole("checkbox", { name: first.label });
+  const name = String(first.value).split("/")[0], other = String(second.value).split("/")[0];
+  const factor = screen.getByLabelText(`各控制补偿倍率 · ${name}`);
+  const row = checkbox.closest(".zaw-control-option")!;
+  expect(row.children[0].tagName).toBe("LABEL");
+  expect(row.children[1]).toBe(checkbox);
+  expect(row.children[2].contains(factor)).toBe(true);
+  expect(factor).toHaveValue(1);
+  fireEvent.change(factor, { target: { value: "1.25" } });
+  fireEvent.change(screen.getByLabelText(`各控制补偿倍率 · ${other}`), { target: { value: "0.8" } });
+  const otherCheckbox = screen.getByRole("checkbox", { name: second.label });
+  if (!(otherCheckbox as HTMLInputElement).checked) fireEvent.click(otherCheckbox);
+  fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
+  await screen.findByText("参数与布局已保存");
+  const call = mockApi.mock.calls.find(([url]) => url.endsWith("/defaults"))!;
+  expect(JSON.parse(String(call[1]?.body)).parameters.CONTROL_SCALE_FACTORS).toEqual({ [name]: 1.25, [other]: .8 });
 });
 
 it("存活会话恢复、共享值和分类同步，草稿还原及失败保留，应用后显式重跑", async () => {
@@ -118,6 +147,33 @@ it("存活会话恢复、共享值和分类同步，草稿还原及失败保留�
   active = null;
   await show();
   expect(screen.getAllByRole("button", { name: "系统稳定时间 移至基础参数" }).length).toBeGreaterThan(1);
+});
+
+it("全部控制共用手动 RF 相位，草稿显示重跑范围，应用及保存不丢失设置", async () => {
+  active = { session_id: "test", job_id: "job", revision: 7, status: "waiting", pending_request: null,
+    parameters: { ...schemaFixture.parameters }, steps: steps(), outputs: {} };
+  await show();
+  fireEvent.change(screen.getByLabelText("扫描 RF 触发相位"), { target: { value: "false" } });
+  expect(screen.getByText(/预计需重跑的已完成步骤：A11/)).toBeVisible();
+  const phases = () => screen.getAllByLabelText(/^RF 正弦分量相位/, { selector: "input" });
+  expect(phases()[0]).toHaveValue(181.5);
+  fireEvent.change(phases()[0], { target: { value: "205.5" } });
+  phases().forEach(input => expect(input).toHaveValue(205.5));
+  expect(screen.getByText(/全部控制版本共用手动 RF 相位；仅改变 RF 正弦分量/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
+  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeNull());
+  const applied = mockApi.mock.calls.find(([url]) => url.endsWith("/parameters"))!;
+  expect(JSON.parse(String(applied[1]?.body))).toMatchObject({ revision: 7,
+    parameters: { Z_PHASE_SCAN_ENABLED: false, Z_BURST_PHASE_INIT: 205.5 } });
+  for (const id of ["A10", "A11"]) fireEvent.click(screen.getByLabelText(id + " " + flow.acquisition.find(stage => stage.id === id)!.title));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url.endsWith("/steps"))).toBe(true));
+  const executed = mockApi.mock.calls.find(([url]) => url.endsWith("/steps"))!;
+  expect(JSON.parse(String(executed[1]?.body)).step_ids).toEqual(["A10", "A11"]);
+  fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
+  await screen.findByText("参数与布局已保存");
+  const saved = mockApi.mock.calls.find(([url]) => url.endsWith("/defaults"))!;
+  expect(JSON.parse(String(saved[1]?.body)).parameters).toMatchObject({ Z_PHASE_SCAN_ENABLED: false, Z_BURST_PHASE_INIT: 205.5 });
 });
 
 it("两轮历史Welch草稿隔离，保存默认值仅取下一次参数，填回不保存不执行", async () => {

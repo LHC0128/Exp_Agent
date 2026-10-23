@@ -3,6 +3,8 @@
 
 # %% 导入
 from copy import deepcopy
+from dataclasses import replace
+import numpy as np
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -17,10 +19,11 @@ from ..noise_spectrum_xy.state_io import write_state
 from . import preparation, excitation, phase, acquisition, run_format
 from ._helpers import _RuntimeCancellation, hf2_snapshot, wait
 from .models import RFSensitivityDirectAWParams
-from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
+from .control_runs import make_control_directory, inherit_control, execute_controls, seal_controls
+from .stages import SINGLE_ACQUISITION as ACQUISITION, MULTI_ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
 
 
-class Workflow:
+class SingleControlWorkflow:
     """一个设备会话可重复采集；每轮参数和原始数据独立保存。"""
     stages = ACQUISITION
     params_type = RFSensitivityDirectAWParams
@@ -87,6 +90,8 @@ class Workflow:
 
     def update_parameters(self, values):
         self.recheck()
+        if normalize := getattr(self.params_type, "normalize_control_selection", None):
+            values = normalize(values)
         old = self.params.to_external()
         unknown = values.keys() - old.keys()
         if unknown:
@@ -355,6 +360,95 @@ class Workflow:
                 raise
         if errors and failure is None:
             raise RuntimeError("安全收尾失败：" + "；".join(errors))
+
+
+# %% 多控制门面保留公开 Workflow 导入；共享步骤不反向导入编排模块。
+class Workflow(SingleControlWorkflow):
+    """正式多控制编排；旧单文件调用继续使用同一单控制内核。"""
+    stages = MULTI_ACQUISITION
+
+    def __init__(self, *args, **kwargs):
+        self.controls = {}
+        super().__init__(*args, **kwargs)
+
+    @property
+    def multi_control(self):
+        return self.params.control_waveform_files is not None
+
+    def _new_directory(self, selected):
+        if not self.multi_control:
+            super()._new_directory(selected)
+            self.state.update(raw_format_version=1, control_layout="single")
+            self.save()
+            return
+        previous, inherited, old_controls = self.directory, deepcopy(self.state), self.controls
+        if previous and self.state["completion_status"] in ("running", "acquired"):
+            previous.update_config(completion_status="failed", failure_reason="本轮被重跑替代，保留已采集数据")
+        # 多控制的数据只经各自的有效前置复制，禁止从父目录混入旧响应和噪声。
+        self.directory = None
+        super()._new_directory(selected)
+        self.state.update(raw_format_version=2, control_layout="controls", controls_sealed=False)
+        for key in ("calibration", "clock_sync", "temperature_control", "optional_connection_errors", "actual_rates"):
+            if key in inherited:
+                self.state[key] = inherited[key]
+        affected = {stage.id for item in selected if item != "A01"
+                    for stage in invalidated_stages(self.stages, item)}
+        self.controls = {}
+        for relative in self.params.control_waveform_files:
+            params = replace(self.params, control_waveform_files=[relative])
+            ctx = SingleControlWorkflow(params, project_root=self.root, session_id=self.session_id)
+            ctx.devices = self.devices
+            ctx.state.update(raw_format_version=1, control_layout="single")
+            ctx.state["calibration"] = deepcopy(self.state["calibration"])
+            ctx.state["control_metrics"] = {
+                "envelope_rms_V": float(np.sqrt(np.mean(ctx.envelope["envelope_V"] ** 2))),
+                "envelope_peak_V": float(np.max(np.abs(ctx.envelope["envelope_V"]))),
+                "repeat_frequency_Hz": ctx.envelope["source_repeat_freq_Hz"],
+                "control_scale_factor": params.control_scale_factor(relative),
+            }
+            ctx.directory = make_control_directory(self.directory, relative, params, ctx.state)
+            ctx.states = deepcopy(self.states)
+            version = ctx.directory.root.name
+            if old := old_controls.get(version):
+                inherit_control(old, ctx, affected)
+            self.controls[version] = ctx
+        self.save()
+
+    def _execute_step(self, item):
+        if self.multi_control and item in ("A09", "A10", "A11", "A12", "A13", "A14", "A13B"):
+            execute_controls(self, item)
+            return
+        super()._execute_step(item)
+        if item == "A02":
+            for ctx in self.controls.values():
+                ctx.devices = self.devices
+        if item == "A15" and self.multi_control:
+            seal_controls(self)
+
+    def _save_failed_controls(self, failure):
+        for version, ctx in self.controls.items():
+            if ctx.state["completion_status"] == "completed":
+                continue
+            ctx.state.update(completion_status=self.state["completion_status"],
+                finished_at=self.state.get("finished_at"),
+                failure_reason=ctx.state.get("failure_reason") or self.state.get("failure_reason"),
+                safety_shutdown=self.state.get("safety_shutdown"))
+            try:
+                ctx.save()
+            except Exception as error:
+                self.state.setdefault("control_state_save_errors", {})[version] = str(error)
+                if failure is None:
+                    raise
+
+    def finish(self, failure=None):
+        try:
+            super().finish(failure)
+        except BaseException as error:
+            self._save_failed_controls(error)
+            raise
+        else:
+            self._save_failed_controls(failure)
+
 
 
 # %% 完整采集与子进程入口

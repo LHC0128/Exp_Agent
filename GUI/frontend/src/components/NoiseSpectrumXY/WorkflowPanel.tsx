@@ -1,6 +1,8 @@
 import { useEffect, useState, type ComponentProps, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { api } from "../../api";
 import { ParameterForm } from "../MxYOptimalControlFrequency/ParameterForm";
+import { experimentDestination, useRequestedJobId, useRequestedTask } from "../experimentNavigation";
+import { useUnsavedChanges } from "../NavigationGuard";
 import type { Job, ParameterLayout, ParameterValues, SchemaField } from "../../types/api";
 import type { components } from "../../types/openapi";
 import "./workflow.css";
@@ -108,6 +110,14 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
   const [runId, setRunId] = useState("");
   const [analysis, setAnalysis] = useState<AnalysisState>();
   const [analysisDrafts, setAnalysisDrafts] = useState<Record<string, ParameterValues>>({});
+  const [analysisBaselines, setAnalysisBaselines] = useState<Record<string, ParameterValues>>({});
+  const requestedTask = useRequestedTask();
+  const requestedJobId = useRequestedJobId();
+  useUnsavedChanges(Object.entries(analysisDrafts).some(([id, draft]) => analysisBaselines[id] && changedNames(draft, analysisBaselines[id]).length > 0));
+  useEffect(() => {
+    if (!enabled || requestedTask?.destination.type !== "analysis") return;
+    if (requestedTask.destination.runId) setRunId(requestedTask.destination.runId);
+  }, [enabled, requestedTask]);
   const [sending, setSending] = useState(false);
   const live = Boolean(session && session.status !== "closed");
   const busy = sending || (live && (session?.status !== "waiting" || Boolean(session?.pending_request)));
@@ -134,9 +144,13 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
   useEffect(() => {
     if (!enabled) return;
     let disposed = false;
-    void Promise.all([api<Flow>(`${BASE}/workflow`), api<XYSession | null>(`${BASE}/sessions/active`)]).then(async ([definition, active]) => {
+    void Promise.all([api<Flow>(`${BASE}/workflow`), api<XYSession | null>(`${BASE}/sessions/active`),
+      requestedJobId ? api<Job>(`/api/jobs/${encodeURIComponent(requestedJobId)}`).catch(() => undefined) : Promise.resolve(undefined),
+    ]).then(async ([definition, active, target]) => {
       if (disposed) return;
-      if (active) {
+      const destination = target && experimentDestination(target);
+      const otherAcquisition = destination && ["experiment", "session"].includes(destination.type) && target?.id !== active?.job_id;
+      if (active && !otherAcquisition) {
         setSession(active);
         setValues(normalizeParameters(active.parameters as ParameterValues));
         const recovered = await api<Job>(`/api/jobs/${active.job_id}`);
@@ -151,6 +165,18 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
     }).catch((reason) => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
   }, [enabled, setSession, setValues, setJob, setError, BASE, normalizeParameters]);
+
+  useEffect(() => {
+    if (!enabled || !requestedTask || !["experiment", "session"].includes(requestedTask.destination.type)) return;
+    if (session?.job_id === requestedTask.job.id) return;
+    if (requestedTask.destination.type === "experiment") { setSession(undefined); return; }
+    let disposed = false;
+    void api<XYSession | null>(`${BASE}/sessions/active`).then(active => {
+      if (!disposed) setSession(active?.job_id === requestedTask.job.id ? active : undefined);
+    }).catch(reason => { if (!disposed) setError(String(reason)); });
+    // 同页跳转只恢复会话状态，不用后端参数覆盖正在编辑的草稿。
+    return () => { disposed = true; };
+  }, [enabled, requestedTask, BASE, setSession, setError]);
 
   useEffect(() => {
     if (!session || !job || session.job_id !== job.id) return;
@@ -177,6 +203,12 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
       if (to && current[from]) next[to] = current[from];
       return next;
     });
+    setAnalysisBaselines(current => {
+      const next = { ...current };
+      delete next[from];
+      if (to && current[from]) next[to] = current[from];
+      return next;
+    });
     setRunId(current => current === from ? to ?? "" : current);
     setAnalysis(current => current?.run_id === from ? undefined : current);
     if (!to && runId === from) setSelectedB([]);
@@ -189,7 +221,9 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
     void api<AnalysisState>(`${BASE}/runs/${encodeURIComponent(runId)}/analysis`).then((state) => {
       if (!disposed) {
         setAnalysis(state);
-        setAnalysisDrafts((current) => current[runId] ? current : { ...current, [runId]: externalOptions(state.options, analysisParameterPrefix, analysisParameterKeys) });
+        const baseline = externalOptions(state.options, analysisParameterPrefix, analysisParameterKeys);
+        setAnalysisBaselines(current => ({ ...current, [runId]: baseline }));
+        setAnalysisDrafts((current) => current[runId] ? current : { ...current, [runId]: baseline });
       }
     }).catch((reason) => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
@@ -198,7 +232,10 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
   useEffect(() => {
     const event = [...(analysisJob?.events ?? [])].reverse().find((item) => item.data?.analysis_workflow);
     const snapshot = event?.data.analysis_workflow as AnalysisState | undefined;
-    if (snapshot?.run_id === runId) setAnalysis(snapshot);
+    if (snapshot) {
+      setAnalysisBaselines(current => ({ ...current, [snapshot.run_id]: externalOptions(snapshot.options, analysisParameterPrefix, analysisParameterKeys) }));
+      if (snapshot.run_id === runId) setAnalysis(snapshot);
+    }
   }, [analysisJob, runId]);
 
   const act = async (path: string, method: string, payload: object) => {
@@ -229,6 +266,7 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
   };
   const chooseAllA = () => setSelectedA(flow?.acquisition.filter((stage) => stage.id !== finishStepId).map((stage) => stage.id) ?? []);
   const runChoices = [...new Set([session?.steps[runStepId]?.status === "completed" ? session?.run_id : undefined,
+    ...(requestedTask?.destination.type === "analysis" && requestedTask.destination.runId ? [requestedTask.destination.runId] : []),
     ...Object.keys(analysisDrafts),
     ...runs.filter((item) => item.completion_status !== "running").map((item) => item.run_id)].filter((id): id is string => Boolean(id)))];
 

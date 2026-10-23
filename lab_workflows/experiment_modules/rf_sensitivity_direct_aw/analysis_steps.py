@@ -50,7 +50,7 @@ def fit_response_curve(x: np.ndarray, y: np.ndarray, *, component="X") -> dict:
             total = float(np.sum((y - float(np.mean(y))) ** 2))
             r_squared = 1.0 - float(np.sum(residuals**2)) / total if total > 0 else float("nan")
             fit_x = np.linspace(float(x.min()), float(x.max()), 400)
-            return {"success": True, "method": "dispersive_curve_fit", "failure_reason": "", "r_squared": r_squared, "popt": popt, "perr": np.sqrt(np.diag(covariance)), "slope_V_per_nT": slope, "optimum_nT": float(popt[2]), "fit_x_nT": fit_x, "fit_y_V": dispersive(fit_x, *popt)}
+            return {"success": True, "method": "dispersive_curve_fit", "failure_reason": "", "r_squared": r_squared, "popt": popt, "perr": np.sqrt(np.diag(covariance)), "pcov": covariance, "slope_V_per_nT": slope, "optimum_nT": float(popt[2]), "fit_x_nT": fit_x, "fit_y_V": dispersive(fit_x, *popt)}
         except (RuntimeError, ValueError, FloatingPointError, ZeroDivisionError) as exc:
             failure_reason = str(exc)
     gradient = np.gradient(y, x)
@@ -66,6 +66,8 @@ def fit_bandwidth(directory, config):
     if not path.is_file():
         raise ValueError("线宽模式为扫频测线宽，但缺少 raw/bandwidth_data.npz，请重跑 A13B 带宽扫频")
     check_cancelled()
+    expected_points = config["parameters"].get("BW_FREQ_POINTS")
+    selection = {}
     with np.load(path, allow_pickle=False) as data:
         frequency = np.asarray(data["frequency_Hz"], dtype=float)
         if "demod3_r_V" not in data:
@@ -74,7 +76,18 @@ def fit_bandwidth(directory, config):
         amplitude = float(data["z_rf_amplitude_vpp"])
         if "demod_idx" in data and int(data["demod_idx"]) != int(config["parameters"].get("DEMOD3_IDX", 3)):
             raise ValueError("带宽扫频记录的 RF 解调器索引与运行配置不一致")
-    if frequency.ndim != 1 or frequency.size < 5 or frequency.size != int(config["parameters"].get("BW_FREQ_POINTS", frequency.size)) \
+        if "skipped_z_rf_frequency_Hz" in data:
+            skipped = float(data["skipped_z_rf_frequency_Hz"])
+            parameters = config["parameters"]
+            if not math.isfinite(skipped) or not math.isclose(skipped, parameters["Z_RF_FREQ"], rel_tol=0, abs_tol=1e-6):
+                raise ValueError("带宽扫频跳过的频率与运行配置 Z_RF_FREQ 不一致")
+            expected = np.linspace(parameters["BW_FREQ_START"], parameters["BW_FREQ_STOP"], int(expected_points))
+            expected = expected[~np.isclose(expected, skipped, rtol=0, atol=1e-6)]
+            if frequency.shape != expected.shape or not np.allclose(frequency, expected, rtol=0, atol=1e-6):
+                raise ValueError("带宽扫频原始数据不完整或与跳过 Z_RF_FREQ 后的网格不一致")
+            expected_points = len(expected)
+            selection["skipped_z_rf_frequency_Hz"] = skipped
+    if frequency.ndim != 1 or frequency.size < 5 or frequency.size != int(expected_points if expected_points is not None else frequency.size) \
             or response.shape != frequency.shape or not np.all(np.isfinite(frequency)) \
             or not np.all(np.isfinite(response)) or np.any(np.diff(frequency) <= 0) or not math.isfinite(amplitude) or amplitude <= 0:
         raise ValueError("带宽扫频原始数据不完整或含非有限值")
@@ -85,7 +98,7 @@ def fit_bandwidth(directory, config):
     return {"center_Hz": float(result.center), "hwhm_Hz": float(result.gamma), "amplitude_V": float(result.amplitude),
             "offset_V": float(result.offset), "r_squared": float(result.r_squared), "gamma_uncertainty_Hz": float(result.uncertainties[1]),
             "n_points": int(frequency.size), "frequency_min_Hz": float(frequency.min()), "frequency_max_Hz": float(frequency.max()),
-            "rf_amplitude_vpp": amplitude, "response_component": "R", "fit_freq_Hz": fit_freq, "fit_r_V": lorentzian_response(fit_freq, *result.parameters)}
+            "rf_amplitude_vpp": amplitude, "response_component": "R", **selection, "fit_freq_Hz": fit_freq, "fit_r_V": lorentzian_response(fit_freq, *result.parameters)}
 
 
 def _plain(value):
@@ -100,7 +113,15 @@ def _plain(value):
     return value
 
 
+def control_inputs(directory, config):
+    from .control_analysis import control_inputs as inputs
+    return inputs(directory, config)
+
+
 def load_inputs(directory, config):
+    if run_format.is_multi_control(config):
+        from . import control_analysis
+        return control_analysis.load_inputs(directory, config)
     parameters = config["parameters"]
     expected_points = int(parameters["RF_AMP_POINTS"])
     expected_noise = int(parameters["NOISE_N_AVG"])
@@ -125,6 +146,9 @@ def load_inputs(directory, config):
 
 
 def response_fit(directory, config, *, component="X"):
+    if run_format.is_multi_control(config):
+        from . import control_analysis
+        return control_analysis.response_fit(directory, config, component=component)
     response, z_v_to_nt, _ = load_inputs(directory, config)
     fit = fit_response_curve(response["amplitudes_nT"], response[f"demod3_{component.lower()}_V"], component=component)
     slope_ft = fit["slope_V_per_nT"] / 1_000_000
@@ -138,35 +162,18 @@ def response_fit(directory, config, *, component="X"):
 
 
 def noise_psd(directory, config, nperseg_config):
+    if run_format.is_multi_control(config):
+        from . import control_analysis
+        return control_analysis.noise_psd(directory, config, nperseg_config)
+    from .noise_analysis import noise_psd as calculate
     _, _, noise_files = load_inputs(directory, config)
-    spectra, rates = [], []
-    frequency = None
-    for path in noise_files:
-        check_cancelled()
-        with np.load(path, allow_pickle=False) as data:
-            waveform = np.asarray(data["noise_x_V"], dtype=float)
-            rate = float(data["actual_rate_Sa_s"])
-            if str(data["signal_path"]) != "sample.x" or int(data["demod_idx"]) != int(config["parameters"].get("DEMOD3_IDX", 3)):
-                raise ValueError("噪声记录必须来自运行配置指定的 RF 解调器 X")
-        if waveform.ndim != 1 or len(waveform) < 2 or not np.all(np.isfinite(waveform)) or not math.isfinite(rate) or rate <= 0:
-            raise ValueError(f"无效噪声记录：{path.name}")
-        segment = min(nperseg_config, len(waveform))
-        f, psd = welch(waveform - waveform.mean(), fs=rate, nperseg=segment, noverlap=segment // 2, scaling="density")
-        if frequency is None:
-            frequency = f
-        elif len(f) != len(frequency) or not np.allclose(f, frequency):
-            psd = np.interp(frequency, f, psd)
-        spectra.append(psd)
-        rates.append(rate)
-    matrix = np.asarray(spectra)
-    average = matrix.mean(axis=0)
-    np.savez(directory / "results/psd_avg.npz", freq_Hz=frequency, psd_avg_V2_per_Hz=average,
-             psd_matrix_V2_per_Hz=matrix, n_avg=len(spectra), actual_rate_Sa_s=float(np.median(rates)),
-             actual_rates_Sa_s=rates, nperseg=nperseg_config)
-    return dict(n_avg=len(spectra), actual_rates_Sa_s=rates, nperseg=nperseg_config)
+    return calculate(directory, config, nperseg_config, noise_files)
 
 
 def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_format):
+    if run_format.is_multi_control(config):
+        from . import control_analysis
+        return control_analysis.sensitivity_and_plots(directory, config, nperseg_config, identity=identity)
     component = identity.RESPONSE_COMPONENT
     with np.load(directory / "results/response_fit.npz", allow_pickle=False) as saved:
         cached = dict(saved)
@@ -179,6 +186,10 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
     field, x = response["amplitudes_nT"], response[f"demod3_{component.lower()}_V"]
     with np.load(directory / "results/psd_avg.npz", allow_pickle=False) as saved:
         frequency, average, matrix, rates = (saved[key] for key in ("freq_Hz", "psd_avg_V2_per_Hz", "psd_matrix_V2_per_Hz", "actual_rates_Sa_s"))
+        before = saved["unfiltered_psd_avg_V2_per_Hz"] if "unfiltered_psd_avg_V2_per_Hz" in saved else average
+        keep = saved["included_record_mask"] if "included_record_mask" in saved else np.ones(len(matrix), dtype=bool)
+    quality_path = directory / "results/noise_rejection_summary.json"
+    quality = json.loads(quality_path.read_text(encoding="utf-8")) if quality_path.is_file() else {"policy": "none", "n_rejected": 0}
     spectra = matrix
     hwhm_nT = None
     hwhm_hz = None
@@ -199,6 +210,8 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
         f_skip_low=3.0,
         flat_frac=1.0,
     )
+    before_result = compute_sensitivity(before, frequency, slope_V_per_fT=slope_ft,
+        f_larmor_Hz=hwhm_hz or 0.0, f_skip_low=3.0, flat_frac=1.0) if quality["n_rejected"] else sensitivity_result
     sensitivity_raw = sensitivity_result.sens_raw
     sensitivity_corrected = sensitivity_result.sens_corrected
     sensitivity = sensitivity_corrected
@@ -207,6 +220,8 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
     raw_median = float(np.median(sensitivity_raw[flat_mask])) if flat_mask.any() else float("nan")
     flat_min, flat_max = (float(frequency[flat_mask].min()), float(frequency[flat_mask].max())) if flat_mask.any() else (float("nan"), float("nan"))
     actual_rate = float(np.median(rates))
+    quality.update(before_flat_median_fT_per_sqrtHz=float(np.median(before_result.sens_corrected[flat_mask])) if flat_mask.any() else None,
+                   after_flat_median_fT_per_sqrtHz=median)
     analysis = _plain({
         "experiment_id": identity.EXPERIMENT_ID, "experiment_type": identity.DATA_TYPE, "schema_version": 2,
         "data_dir": str(directory), "signal_chain": config.get("signal_chain", identity.SIGNAL_CHAIN), "response_component": component, "noise_component": "X",
@@ -224,7 +239,8 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
         },
         "bandwidth_fit": {"enabled": False, "reason": "LINEWIDTH_MODE 为色散等效线宽，未启用带宽扫频"} if bandwidth is None
             else {"enabled": True, **{key: value for key, value in bandwidth.items() if not key.startswith("fit_")}},
-        "noise_psd": {"n_avg": len(spectra), "actual_rate_Sa_s": actual_rate, "actual_rates_Sa_s": rates, "nperseg": nperseg_config, "freq_min_Hz": float(frequency[0]), "freq_max_Hz": float(frequency[-1])},
+        "noise_rejection": quality,
+        "noise_psd": {"n_avg": int(keep.sum()), "n_records": len(spectra), "n_rejected": int((~keep).sum()), "actual_rate_Sa_s": actual_rate, "actual_rates_Sa_s": rates, "nperseg": nperseg_config, "freq_min_Hz": float(frequency[0]), "freq_max_Hz": float(frequency[-1])},
         "sensitivity": {"best_median_fT_per_sqrtHz": median, "flat_median_fT_per_sqrtHz": median, "raw_flat_median_fT_per_sqrtHz": raw_median, "flat_fmin_Hz": flat_min, "flat_fmax_Hz": flat_max, "report_fmin_Hz": 3.0, "report_fmax_Hz": flat_max, "correction_applied": hwhm_hz is not None},
     })
     if component == "R":
@@ -240,7 +256,7 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
     output = directory / "results"
     output.mkdir(exist_ok=True)
     report_runtime_progress("analysis", f"保存 {component} 标定 / X 噪声灵敏度结果", 95)
-    np.savez(output / "sensitivity.npz", freq_Hz=frequency, sensitivity_fT_per_sqrtHz=sensitivity, sensitivity_raw_fT_per_sqrtHz=sensitivity_raw, sensitivity_corrected_fT_per_sqrtHz=sensitivity_corrected, correction_factor=sensitivity_result.correction_factor, psd_avg_V2_per_Hz=average, slope_V_per_nT=slope_nt, slope_V_per_fT=slope_ft, gamma_nT=np.nan if hwhm_nT is None else hwhm_nT, f_larmor_Hz=np.nan if hwhm_hz is None else hwhm_hz, bandwidth_hwhm_Hz=np.nan if bandwidth is None else bandwidth["hwhm_Hz"], best_median_fT_per_sqrtHz=median, flat_median_fT_per_sqrtHz=median, raw_flat_median_fT_per_sqrtHz=raw_median, flat_fmin_Hz=flat_min, flat_fmax_Hz=flat_max, flat_mask=flat_mask.astype(np.uint8))
+    np.savez(output / "sensitivity.npz", freq_Hz=frequency, unfiltered_psd_avg_V2_per_Hz=before, unfiltered_sensitivity_fT_per_sqrtHz=before_result.sens_corrected, included_record_mask=keep, sensitivity_fT_per_sqrtHz=sensitivity, sensitivity_raw_fT_per_sqrtHz=sensitivity_raw, sensitivity_corrected_fT_per_sqrtHz=sensitivity_corrected, correction_factor=sensitivity_result.correction_factor, psd_avg_V2_per_Hz=average, slope_V_per_nT=slope_nt, slope_V_per_fT=slope_ft, gamma_nT=np.nan if hwhm_nT is None else hwhm_nT, f_larmor_Hz=np.nan if hwhm_hz is None else hwhm_hz, bandwidth_hwhm_Hz=np.nan if bandwidth is None else bandwidth["hwhm_Hz"], best_median_fT_per_sqrtHz=median, flat_median_fT_per_sqrtHz=median, raw_flat_median_fT_per_sqrtHz=raw_median, flat_fmin_Hz=flat_min, flat_fmax_Hz=flat_max, flat_mask=flat_mask.astype(np.uint8))
     (output / "analysis.yaml").write_text(yaml.safe_dump(analysis, allow_unicode=True, sort_keys=False), encoding="utf-8")
     (output / "analysis.json").write_text(json.dumps(analysis, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
 
@@ -266,6 +282,8 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
 
     def sensitivity_plot(axis):
         positive = frequency > 0
+        if quality["n_rejected"]:
+            axis.loglog(frequency[positive], before_result.sens_corrected[positive], "--", color="tab:orange", alpha=0.7, label="Unfiltered sensitivity")
         axis.loglog(frequency[positive], sensitivity[positive], label="Lorentzian-corrected sensitivity" if hwhm_hz is not None else "Estimated sensitivity")
         axis.loglog(frequency[positive], sensitivity_raw[positive], color="gray", linewidth=0.7, alpha=0.5, label="Raw sensitivity")
         if flat_mask.any():
@@ -306,8 +324,11 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
             draw(axis)
             save_figure(figure, output / name)
         figure, axis = new_figure(layout="constrained")
-        axis.loglog(frequency[frequency > 0], average[frequency > 0])
+        if quality["n_rejected"]:
+            axis.loglog(frequency[frequency > 0], before[frequency > 0], "--", label="All records")
+        axis.loglog(frequency[frequency > 0], average[frequency > 0], label=f"Accepted records ({int(keep.sum())}/{len(keep)})")
         axis.set(xlabel="Frequency (Hz)", ylabel="X noise PSD (V²/Hz)")
+        axis.legend(fontsize=8)
         save_figure(figure, output / "noise_psd.png")
         check_cancelled()
         figure, axes = new_figure(nrows=2, height_ratios=(1.2, 1), width_mm=177.8, height_mm=130, layout="constrained")

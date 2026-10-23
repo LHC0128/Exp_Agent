@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useParams } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const routes = vi.hoisted(() => {
   let resolveTools!: () => void;
@@ -40,7 +40,36 @@ function renderLayout(path: string) {
   return render(<MemoryRouter initialEntries={[path]}><Layout /></MemoryRouter>);
 }
 
-afterEach(() => { cleanup(); routes.loaded.length = 0; vi.restoreAllMocks(); });
+beforeEach(() => window.localStorage.clear());
+afterEach(() => { cleanup(); routes.loaded.length = 0; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+describe("可隐藏的导航", () => {
+  it("桌面隐藏后可恢复，刷新记住选择，内容和任务不卸载", () => {
+    const first = renderLayout("/experiments");
+    fireEvent.click(screen.getByRole("button", { name: "隐藏导航" }));
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    expect(screen.getByText("全局任务仍可见")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "测试实验中心" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("exp-agent:sidebar-open")).toBe("false");
+    first.unmount();
+    renderLayout("/experiments");
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "显示导航" }));
+    expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
+  });
+  it("窄屏导航为覆盖菜单，Escape 关闭并恢复焦点", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    renderLayout("/experiments");
+    const toggle = screen.getByRole("button", { name: "显示导航" });
+    fireEvent.click(toggle);
+    expect(screen.getByRole("dialog", { name: "实验控制台导航" })).toHaveAttribute("aria-modal", "true");
+    expect(document.querySelector("main")).toHaveAttribute("inert");
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(toggle).toHaveFocus();
+    expect(document.body.style.overflow).toBe("");
+  });
+});
 
 describe("路由按需加载", () => {
   it("直接进入实验中心不加载其他路由页面", () => {

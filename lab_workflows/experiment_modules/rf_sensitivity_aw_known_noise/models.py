@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 import re
 import math
+import numpy as np
 
 from ...experiment_params import parameter
 from ...control_sources import resolve_control_results_root, load_theory_control
@@ -13,12 +14,13 @@ from ..rf_sensitivity_direct_aw.models import RFSensitivityDirectAWParams
 @dataclass(slots=True)
 class RFSensitivityKnownNoiseParams(RFSensitivityDirectAWParams):
     schema_version: ClassVar[int] = 4
+    scan_rf_phase: bool = parameter(default=True, external_name="Z_PHASE_SCAN_ENABLED", label="扫描 RF 触发相位", group="basic", description="开启时逐控制版本扫描 RF 分量相位；关闭时在 A11 应用全部版本共用的手动 RF 正弦分量相位，不改变噪声相位。")
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RF_STEP_SETTLE_S': 0.3, 'TEMP_OFF_SETTLE_S': 0.5}
     removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
     system_settle_s: float = parameter(default=0.5, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
     arb_waveform_file: str = parameter(default="", external_name="ARB_WAVEFORM_FILE", label="当前控制文件", visible=False)
     control_waveform_files: list[str] = parameter(default_factory=list, external_name="CONTROL_WAVEFORM_FILES", label="控制波形版本（可多选）", group="basic")
-    z_burst_phase_init: float = parameter(default=0.0, external_name="Z_BURST_PHASE_INIT", label="RF 正弦分量初始相位", unit="°", description="相位仅作用于 RF 分量，整体 Z 任意波 Burst 相位固定为 0°。")
+    z_burst_phase_init: float = parameter(default=181.5, external_name="Z_BURST_PHASE_INIT", label="RF 正弦分量相位", unit="°", group="basic", description="开启扫描时为初始相位；关闭扫描时全部控制版本共用此手动相位。相位仅作用于 RF 分量，不改变噪声相位，整体 Z 任意波 Burst 相位固定为 0°。")
     noise_band_starts_hz: list[float] = parameter(default_factory=lambda: [8000.0], external_name="NOISE_BAND_STARTS_HZ", label="噪声频带起点", unit="Hz", group="basic")
     noise_band_stops_hz: list[float] = parameter(default_factory=lambda: [10000.0], external_name="NOISE_BAND_STOPS_HZ", label="噪声频带终点", unit="Hz", group="basic")
     noise_band_psds: list[float] = parameter(default_factory=lambda: [1e-11], external_name="NOISE_BAND_PSDS_V2_PER_HZ", label="噪声设计 PSD", unit="V²/Hz", group="basic", description="设计电压谱密度；实际噪声幅度自动对齐设计 PSD（Vpp = 2×设计波形峰值），实际注入谱等于设计谱。")
@@ -53,11 +55,19 @@ class RFSensitivityKnownNoiseParams(RFSensitivityDirectAWParams):
             migrated.pop("NOISE_AMPLITUDE_VPP", None)
         return migrated
 
+    @property
+    def bandwidth_frequencies(self):
+        """保持原网格，只跳过当前 RF 载频，不改变幅度标定的频率。"""
+        frequencies = np.linspace(self.bw_freq_start, self.bw_freq_stop, self.bw_freq_points)
+        return frequencies[~np.isclose(frequencies, self.z_rf_freq, rtol=0, atol=1e-6)]
+
     def validate_model(self):
         self.arb_waveform_file = self.control_waveform_files[0] if self.control_waveform_files else ""
         errors = super(RFSensitivityKnownNoiseParams, self).validate_model()
         if not self.control_waveform_files or len(set(self.control_waveform_files)) != len(self.control_waveform_files):
             errors.append("请选择至少一个不重复的控制波形版本")
+        if self.linewidth_mode == "frequency_sweep" and len(self.bandwidth_frequencies) < 5:
+            errors.append("A13B 跳过 Z_RF_FREQ 后必须至少保留 5 个带宽扫频点")
         lengths = [len(values) for values in (self.noise_band_starts_hz, self.noise_band_stops_hz, self.noise_band_psds)]
         if not lengths[0] or len(set(lengths)) != 1:
             errors.append("噪声谱段三个数组须非空且等长")

@@ -3,6 +3,8 @@ import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
+import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
+import { useParameterGuard } from "../components/NavigationGuard";
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
 import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
@@ -85,6 +87,9 @@ export function DetectionChainFrequencyResponsePage() {
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
   const sessionActive = Boolean(session && session.status !== "closed");
   const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
+  useParameterGuard(fields, values, layout, savedLayout, sessionActive ? session?.parameters as ParameterValues : undefined);
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId });
+  const requestedJobId = useRequestedJobId();
 
   useEffect(() => {
     let disposed = false;
@@ -100,8 +105,7 @@ export function DetectionChainFrequencyResponsePage() {
       const initial = validatedParameterLayout(schema.fields, schema.parameter_layout) ?? defaultParameterLayout(schema.fields);
       setLayout(initial);
       setSavedLayout(initial);
-      const active = jobs.find(item => item.kind === `experiment:${ID}` && ["queued", "running"].includes(item.status))
-        ?? jobs.find(item => item.kind === `experiment:${ID}` && item.started_at);
+      const active = recoverableJob(jobs, ID, requestedJobId);
       if (active) {
         const recovered = await api<Job>(`/api/jobs/${active.id}`);
         if (!disposed) setJob(recovered);
@@ -178,7 +182,7 @@ export function DetectionChainFrequencyResponsePage() {
       });
       const persisted = validatedParameterLayout(result.schema.fields, result.schema.parameter_layout);
       if (!persisted || !sameParameterLayout(persisted, layout)) throw new Error("后端未确认参数布局已保存");
-      setSavedLayout(persisted);
+      setSavedLayout(persisted); setFields(result.schema.fields);
       setNotice("参数与布局已保存");
     } catch (reason) {
       setError(String(reason));
@@ -208,7 +212,7 @@ export function DetectionChainFrequencyResponsePage() {
   };
 
   return <>
-    <PageHead eyebrow="CALIBRATION · FREQUENCY" title={definition?.title ?? "探测链路频率响应标定"} description={definition?.description ?? "读取参数与运行记录。"} />
+    <PageHead eyebrow="CALIBRATION · FREQUENCY" title={definition?.title ?? "探测链路频率响应标定"} description={definition?.description ?? "读取参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
     <div className="zaw-tab-strip" role="tablist" aria-label="探测链路频率响应标定视图" onKeyDown={tabKey}>
       {(["run", "history"] as const).map(item => <button key={item} id={`dc-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`dc-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : "历史"}</button>)}

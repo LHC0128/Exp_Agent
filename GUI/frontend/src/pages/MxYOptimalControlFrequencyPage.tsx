@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
+import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
+import { useUnsavedChanges } from "../components/NavigationGuard";
 import { Dashboard } from "../components/MxYOptimalControlFrequency/Dashboard";
 import { HistoryView } from "../components/MxYOptimalControlFrequency/HistoryView";
 import { MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID } from "../components/MxYOptimalControlFrequency/images";
@@ -33,20 +35,16 @@ export function MxYOptimalControlFrequencyPage() {
   const [prefill, setPrefill] = useState<ParameterValues | null>(null);
   // 任务状态保存在页面层：切换“运行/历史”Tab 或重新进入页面时不丢失。
   const [job, setJob] = useState<Job | undefined>();
+  const requestedJobId = useRequestedJobId();
 
   useEffect(() => {
     let disposed = false;
     // 恢复本实验最近的活动任务；没有活动任务时恢复最近一次已开始的任务。
     api<JobSummary[]>("/api/jobs")
       .then((summaries) => {
-        const matching = summaries.filter(
-          (item) => item.kind === `experiment:${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}`,
-        );
-        const pool = matching.some((item) => ["queued", "running"].includes(item.status))
-          ? matching.filter((item) => ["queued", "running"].includes(item.status))
-          : matching.filter((item) => item.started_at);
-        if (disposed || pool.length === 0) return undefined;
-        return api<Job>(`/api/jobs/${pool[0].id}`);
+        const selected = recoverableJob(summaries, MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID, requestedJobId);
+        if (disposed || !selected) return undefined;
+        return api<Job>(`/api/jobs/${selected.id}`);
       })
       .then((detail) => {
         if (!disposed && detail) setJob(detail);
@@ -98,6 +96,8 @@ export function MxYOptimalControlFrequencyPage() {
 
   // 参数在基础/高级之间移动后布局与磁盘不一致时，提示用户手动保存。
   const layoutDirty = fields.length > 0 && !sameParameterLayout(layout, savedLayout);
+  useUnsavedChanges(layoutDirty);
+  useExperimentTask({ ready: fields.length > 0, setTab });
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -118,6 +118,7 @@ export function MxYOptimalControlFrequencyPage() {
         eyebrow="EXPERIMENT · MX_Y_OPTIMAL_CONTROL_RF_FREQUENCY_RESPONSE"
         title={definition?.title ?? "正在载入实验"}
         description={description}
+        experiment={definition}
       />
       {loadError && <div className="alert error">实验参数加载失败：{loadError}。请确认 GUI 后端已重启后刷新页面。</div>}
       {definition && fields.length > 0 && (
@@ -150,9 +151,10 @@ export function MxYOptimalControlFrequencyPage() {
               layout={layout}
               layoutDirty={layoutDirty}
               onLayoutChange={setLayout}
-              onLayoutSaved={(persisted) => {
+              onLayoutSaved={(persisted, savedFields) => {
                 setLayout(persisted);
                 setSavedLayout(persisted);
+                setFields(savedFields);
               }}
               values={values}
               setValues={setValues}

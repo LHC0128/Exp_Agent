@@ -1,664 +1,320 @@
-"""Mx Y RF Probe 光功率与 PZT 失谐优化采集工作流。"""
-
+"""完整运行与分步会话共用的 Probe/PZT 实验编排。"""
 from __future__ import annotations
-
-from lab_workflows.lockin_compatibility import require_lockin_compatibility
-from dataclasses import asdict, dataclass
-import io
+from copy import deepcopy
+from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
-import sys
-import time
-from typing import Any
+from uuid import uuid4
 
-import numpy as np
-import yaml
-from tqdm.auto import tqdm
-
-from ...common import (
-    WorkflowCancelled,
-    find_project_root,
-    load_mapping,
-    load_safety_limits,
-    validate_safety_limit,
-)
-from ...devices import create_dlc_pro
-from ...experiment_runtime import check_cancelled, load_runtime_params
-from ...steps import DeviceSession, create_run_directory
-from ...steps.run_finish import finalize_run_safety
-from ...steps.state import StateGuard
-from ..mx_y_rf_sensitivity.workflow import (
-    RPointQualityError,
-    acquire_mx_y_rf_point,
-    configure_mx_y_rf_outputs,
-    connect_mx_y_rf_devices,
-    restore_mx_y_rf_laser_powers,
-    safe_shutdown,
-    snapshot_mx_y_rf_state,
-)
+from ...common import WorkflowCancelled, find_project_root
+from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
+from ...instrument_config import instrument_config_snapshot
+from ...steps import DeviceSession, create_run_directory, disconnect_device_mapping
+from ..noise_spectrum_xy.state_io import write_state
+from ..mx_y_rf_sensitivity import excitation
+from ..mx_y_rf_sensitivity.acquisition_steps import RPointQualityError, acquire_mx_y_rf_point
+from . import acquisition, preparation, run_format
 from .models import MxYRFProbeDetuningOptimizationParams
-from .scan import (
-    ProbeDetuningGridPoint,
-    build_probe_detuning_axes,
-    iter_probe_detuning_grid,
-)
+from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, validate_selection
 
-
-EXPERIMENT_ID = "mx-y-rf-probe-detuning-optimization"
-DATA_TYPE = "Mx_Y_RF_Probe_Detuning_Optimization"
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
+DATA_TYPE = run_format.DATA_TYPE
 EXECUTION_MODE = "typed_workflow"
 
-
-@dataclass(frozen=True, slots=True)
-class ProbeLaserState:
-    """进入实验前需要原样恢复的 DLC pro PZT/扫描状态。"""
-
-    pzt_voltage_v: float
-    pzt_actual_v: float
-    scan_amplitude_vpp: float
-    scan_enabled: bool
+# 保留旧测试/调用方的薄入口，业务只在 acquisition 中实现。
+_set_probe_power = acquisition._set_probe_power
+_set_pzt_row = acquisition._set_pzt_row
+_read_pzt_point = acquisition._read_pzt_point
 
 
-def _write_manifest(path: Path, manifest: dict[str, Any]) -> None:
-    """更新可恢复的网格采集清单，并兼容 Windows 覆盖限制。"""
-    content = yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False)
-    temporary = path.with_suffix(f"{path.suffix}.tmp")
-    temporary.write_text(content, encoding="utf-8")
-    try:
-        temporary.replace(path)
-    except PermissionError:
-        path.write_text(content, encoding="utf-8")
-        temporary.unlink(missing_ok=True)
+def _acquire_grid(*args, **kwargs):
+    return acquisition._acquire_grid(*args, **kwargs, point_reader=acquire_mx_y_rf_point,
+        set_probe=_set_probe_power, set_pzt_row=_set_pzt_row, read_pzt=_read_pzt_point)
 
 
-def _sleep_cancellable(seconds: float) -> None:
-    """以短轮询等待，使 PZT 稳定阶段仍可取消。"""
-    deadline = time.monotonic() + max(0.0, float(seconds))
-    while time.monotonic() < deadline:
-        check_cancelled()
-        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+class Workflow:
+    stages = ACQUISITION
 
+    def __init__(self, params, *, project_root=None, session_id=None):
+        self.root = Path(project_root).resolve() if project_root else find_project_root()
+        self.params, self.mapping = preparation.preflight(params, self.root)
+        self.power_parameters = self.pump_parameters = self.response_parameters = self.params
+        self.config_revision = self._configuration_revision()
+        self.session_id, self.revision = session_id or uuid4().hex, 0
+        self.states = initial_states(self.stages)
+        self.devices, self.channels = {}, {}
+        self.device_session = DeviceSession()
+        self.directory = self.run_parameters = self.current_step = None
+        self.laser_state = None
+        self.closed = self.round_sealed = self.clock_failed = False
+        self.needs_preparation = False
+        self.demod_mode = "unknown"
+        self.state = self._initial_state()
+        self.outputs = {key: "未知" for key in ("X", "Y RF", "Z", "温控", "Pump", "PZT/扫描")}
 
-def _connect_probe_laser_controller(
-    mapping: dict[str, dict[str, Any]],
-    session: DeviceSession,
-) -> tuple[Any, dict[str, Any]]:
-    """连接 DLC pro Probe 激光控制器。"""
-    config = mapping["probe_laser"]
-    resource = str(config["resource"])
-    instrument = session.connect(
-        "probe_laser_controller",
-        f"dlc-pro://{resource}:{int(config.get('laser_channel', 1))}",
-        lambda: create_dlc_pro(config),
-    )
-    return instrument, config
+    def _initial_state(self):
+        return dict(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, execution_mode=EXECUTION_MODE,
+            raw_format_version=run_format.RAW_FORMAT_VERSION, completion_status="running",
+            scan_mode="nested_scan", scan_order="pzt_outer_probe_inner_serpentine",
+            objective="minimize flat_median_ft_per_sqrt_hz", acquisition_signals=["R"],
+            linewidth_mode="amplitude_equivalent",
+            geometry=dict(main_field="Z", pump="Z", probe="X", rf_field="Y", x_field_output="OFF"),
+            detuning_axis=dict(control="DLC pro Laser 1 Scan Offset", unit="V", frequency_calibrated=False),
+            compatibility=dict(reference_experiment_id="mx-y-rf-power-optimization", schema_version=self.params.schema_version),
+            temperature_control=dict(tec_connected=False, tec_target_temperature_configured=False,
+                temperature_stability_waited=False, temperature_switch_controlled=True,
+                temperature_switch_restored_on_exit=True))
 
+    def _configuration_revision(self):
+        snapshot = instrument_config_snapshot(self.root)
+        return (snapshot["device_library_revision"], snapshot["physical_mapping_revision"],
+            (self.root / "params/safety_limits.yaml").read_bytes())
 
-def _snapshot_and_validate_probe_laser(
-    instrument: Any,
-    config: dict[str, Any],
-) -> tuple[ProbeLaserState, dict[str, Any]]:
-    """核对 DLC pro 身份、健康和出光状态并保存恢复快照。"""
-    controller_serial = str(instrument.get_controller_serial())
-    laser_head_serial = str(instrument.get_laser_head_serial())
-    expected_controller = str(config.get("controller_serial", "")).strip()
-    expected_head = str(config.get("laser_head_serial", "")).strip()
-    if expected_controller and controller_serial != expected_controller:
-        raise RuntimeError(
-            "DLC pro 控制器身份不匹配："
-            f"期望 {expected_controller!r}，实际 {controller_serial!r}"
-        )
-    if expected_head and laser_head_serial != expected_head:
-        raise RuntimeError(
-            "DLC pro 激光头身份不匹配："
-            f"期望 {expected_head!r}，实际 {laser_head_serial!r}"
-        )
+    def recheck(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请结束会话后重新连接")
+        self.params, self.mapping = preparation.preflight(self.params, self.root)
 
-    system_health_code = int(instrument.get_system_health_code())
-    laser_health_code = int(instrument.get_laser_health_code())
-    interlock_open = bool(instrument.get_interlock_open())
-    laser_enabled = bool(instrument.get_laser_enabled())
-    emission = bool(instrument.get_emission())
-    laser_emission = bool(instrument.get_laser_emission())
-    if system_health_code != 0:
-        raise RuntimeError("DLC pro 系统健康状态异常，拒绝开始 PZT 扫描")
-    if laser_health_code != 0:
-        raise RuntimeError("DLC pro 激光头健康状态异常，拒绝开始 PZT 扫描")
-    if interlock_open:
-        raise RuntimeError("DLC pro 联锁回路断开，拒绝开始 PZT 扫描")
-    if not laser_enabled:
-        raise RuntimeError("DLC pro Laser Enabled 为 OFF，拒绝开始 PZT 扫描")
-    if not emission or not laser_emission:
-        raise RuntimeError("DLC pro Emission 未开启，拒绝开始 PZT 扫描")
+    def snapshot(self):
+        return dict(session_id=self.session_id, revision=self.revision,
+            status="closed" if self.closed else "running" if self.current_step else "waiting",
+            parameters=self.params.to_external(), steps=deepcopy(self.states), current_step=self.current_step,
+            run_id=self.directory.root.name if self.directory else None, outputs=dict(self.outputs),
+            output_source="连接初态来自回读；后续为最近成功模块写入结果，恢复失败时状态未知",
+            demod_mode=self.demod_mode, safety_shutdown=self.state.get("safety_shutdown"),
+            clock_sources=self.state.get("clock_sources", {}), daq_settings=self.state.get("actual_rates"))
 
-    state = ProbeLaserState(
-        pzt_voltage_v=float(instrument.get_pzt_voltage_v()),
-        pzt_actual_v=float(instrument.get_pzt_voltage_actual_v()),
-        scan_amplitude_vpp=float(instrument.get_scan_amplitude_vpp()),
-        scan_enabled=bool(instrument.get_scan_enabled()),
-    )
-    validate_safety_limit(
-        "probe_laser_pzt_voltage",
-        state.pzt_voltage_v,
-    )
-    validate_safety_limit(
-        "probe_laser_scan_amplitude",
-        state.scan_amplitude_vpp,
-    )
-    safety_limits = load_safety_limits()
-    pzt_rule = safety_limits["probe_laser_pzt_voltage"]
-    pzt_low = float(pzt_rule["min"])
-    pzt_high = float(pzt_rule["max"])
-    envelope_low = (
-        state.pzt_voltage_v - state.scan_amplitude_vpp / 2.0
-    )
-    envelope_high = (
-        state.pzt_voltage_v + state.scan_amplitude_vpp / 2.0
-    )
-    if envelope_low < pzt_low or envelope_high > pzt_high:
-        raise RuntimeError(
-            "DLC pro 初始扫描包络越界，无法保证实验后安全恢复："
-            f"{envelope_low:g}～{envelope_high:g} V，允许范围为 "
-            f"{pzt_low:g}～{pzt_high:g} V"
-        )
-    snapshot = {
-        "controller_serial": controller_serial,
-        "laser_head_serial": laser_head_serial,
-        "system_health_code": system_health_code,
-        "system_health": str(instrument.get_system_health()),
-        "laser_health_code": laser_health_code,
-        "laser_health": str(instrument.get_laser_health()),
-        "interlock_open": interlock_open,
-        "laser_enabled": laser_enabled,
-        "emission": emission,
-        "laser_emission": laser_emission,
-        **asdict(state),
-    }
-    return state, snapshot
+    def publish(self, message="等待选择下一模块；设备连接和硬件锁仍保持"):
+        snapshot = self.snapshot()
+        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        if self.directory and not self.round_sealed:
+            write_state(self.directory.root / "acquisition_state.json", snapshot)
+        report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": snapshot})
 
+    def save(self):
+        if self.directory and not self.round_sealed:
+            self.directory.update_config(**self.state)
 
-def _prepare_probe_laser_scan(instrument: Any) -> None:
-    """关闭 DLC pro 内置扫描并把扫描幅度归零。"""
-    validate_safety_limit("probe_laser_scan_amplitude", 0.0)
-    instrument.set_scan_enabled(False)
-    instrument.set_scan_amplitude_vpp(0.0)
+    def update_parameters(self, values):
+        if self.current_step:
+            raise ValueError("模块执行中不能应用参数")
+        self.recheck()
+        old = self.params.to_external()
+        if unknown := values.keys() - old.keys():
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        params, mapping = preparation.preflight(MxYRFProbeDetuningOptimizationParams.from_external(old | values), self.root)
+        changed = {key for key, value in params.to_external().items() if value != old[key]}
+        for stage in self.stages:
+            if changed.intersection(stage.parameters):
+                invalidate(self.stages, self.states, stage.id)
+        self.params, self.mapping = params, mapping
+        self.revision += 1
+        self.publish("参数已应用；请显式重跑受影响模块")
 
-
-def _restore_probe_laser_state(
-    instrument: Any | None,
-    state: ProbeLaserState | None,
-) -> dict[str, Any]:
-    """按 PZT、扫描幅度、扫描启停顺序恢复进入实验前的状态。"""
-    if instrument is None or state is None:
-        return {
-            "attempted": False,
-            "success": True,
-            "error": None,
-        }
-    try:
-        validate_safety_limit(
-            "probe_laser_pzt_voltage",
-            state.pzt_voltage_v,
-        )
-        validate_safety_limit(
-            "probe_laser_scan_amplitude",
-            state.scan_amplitude_vpp,
-        )
-        instrument.set_pzt_voltage_v(state.pzt_voltage_v)
-        instrument.set_scan_amplitude_vpp(state.scan_amplitude_vpp)
-        instrument.set_scan_enabled(state.scan_enabled)
-    except Exception as exc:
-        error = (
-            f"{exc}；设备状态可能未知，请检查 DLC pro/TOPAS"
-        )
-        print(f"Probe 激光 PZT/扫描状态恢复警告: {error}")
-        return {
-            "attempted": True,
-            "success": False,
-            "error": error,
-            "target": asdict(state),
-        }
-    return {
-        "attempted": True,
-        "success": True,
-        "error": None,
-        "target": asdict(state),
-    }
-
-
-def _set_probe_power(
-    point: ProbeDetuningGridPoint,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-) -> None:
-    """设置一个 Probe 功率点并保持输出开启。"""
-    validate_safety_limit("Probe_laser_power", point.probe_power_v)
-    laser = devices["laser"]
-    laser.setup_dc(
-        point.probe_power_v,
-        channel=channels["probe_laser"],
-    )
-    laser.set_output(True, channel=channels["probe_laser"])
-
-
-def _set_pzt_row(
-    params: MxYRFProbeDetuningOptimizationParams,
-    instrument: Any,
-    pzt_voltage_v: float,
-) -> dict[str, float]:
-    """设置一个静态 PZT 行，等待稳定并返回回读。"""
-    validate_safety_limit("probe_laser_pzt_voltage", pzt_voltage_v)
-    setpoint_readback = float(
-        instrument.set_pzt_voltage_v(pzt_voltage_v)
-    )
-    _sleep_cancellable(params.pzt_settle_time_s)
-    return {
-        "pzt_voltage_v": setpoint_readback,
-        "pzt_actual_v": float(instrument.get_pzt_voltage_actual_v()),
-    }
-
-
-def _read_pzt_point(
-    instrument: Any,
-    requested_pzt_voltage_v: float,
-) -> dict[str, float]:
-    """为每个完整灵敏度点保存 PZT setpoint 与实际电压。"""
-    setpoint_readback = float(instrument.get_pzt_voltage_v())
-    actual = float(instrument.get_pzt_voltage_actual_v())
-    validate_safety_limit(
-        "probe_laser_pzt_voltage",
-        setpoint_readback,
-    )
-    return {
-        "pzt_voltage_setpoint_v": float(requested_pzt_voltage_v),
-        "pzt_voltage_readback_v": setpoint_readback,
-        "pzt_actual_v": actual,
-        "pzt_setpoint_error_v": (
-            setpoint_readback - float(requested_pzt_voltage_v)
-        ),
-    }
-
-
-def _initial_manifest(
-    params: MxYRFProbeDetuningOptimizationParams,
-    points: list[ProbeDetuningGridPoint],
-) -> dict[str, Any]:
-    pzt_axis, probe_axis = build_probe_detuning_axes(params)
-    return {
-        "schema_version": 1,
-        "scan_order": "pzt_outer_probe_inner_serpentine",
-        "pzt_voltage_v": pzt_axis.tolist(),
-        "probe_power_v": probe_axis.tolist(),
-        "pzt_settle_time_s": params.pzt_settle_time_s,
-        "acquisition_order": [point.key for point in points],
-        "pzt_rows": {},
-        "points": {
-            point.key: {
-                "pzt_index": point.pzt_index,
-                "probe_index": point.probe_index,
-                "pzt_voltage_v": point.pzt_voltage_v,
-                "probe_power_v": point.probe_power_v,
-                "status": "pending",
-                "reason": None,
-            }
-            for point in points
-        },
-    }
-
-
-def _acquire_grid(
-    params: MxYRFProbeDetuningOptimizationParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    actual_response_rate: float,
-    device_id: str,
-) -> dict[str, Any]:
-    points = iter_probe_detuning_grid(params)
-    pzt_axis, probe_axis = build_probe_detuning_axes(params)
-    points_root = run_dir.raw / "points"
-    points_root.mkdir(parents=True, exist_ok=True)
-    manifest_path = run_dir.raw / "point_manifest.yaml"
-    manifest = _initial_manifest(params, points)
-    _write_manifest(manifest_path, manifest)
-    np.savez(
-        run_dir.raw / "probe_detuning_grid.npz",
-        pzt_voltage_v=pzt_axis,
-        probe_power_v=probe_axis,
-        acquisition_order=np.asarray([point.key for point in points]),
-    )
-
-    completed = 0
-    invalid = 0
-    actual_response_rates: list[float] = []
-    actual_noise_rates: list[float] = []
-    total = len(points)
-    current_pzt_index: int | None = None
-    pzt_controller = devices["probe_laser_controller"]
-    interactive_progress = bool(sys.stdout.isatty())
-    progress_stream = sys.stdout if interactive_progress else io.StringIO()
-    progress = tqdm(
-        total=total,
-        desc="PZT/Probe 二维网格",
-        unit="point",
-        file=progress_stream,
-        dynamic_ncols=True,
-    )
-    try:
-        for sequence_index, point in enumerate(points):
-            check_cancelled()
-            if point.pzt_index != current_pzt_index:
-                row_readback = _set_pzt_row(
-                    params,
-                    pzt_controller,
-                    point.pzt_voltage_v,
-                )
-                manifest["pzt_rows"][f"pzt_{point.pzt_index:03d}"] = {
-                    "pzt_index": point.pzt_index,
-                    "requested_pzt_voltage_v": point.pzt_voltage_v,
-                    **row_readback,
-                }
-                current_pzt_index = point.pzt_index
-                _write_manifest(manifest_path, manifest)
-
-            record = manifest["points"][point.key]
-            record["status"] = "running"
-            record["sequence_index"] = sequence_index
-            _write_manifest(manifest_path, manifest)
-            progress.set_postfix_str(
-                f"PZT={point.pzt_voltage_v:.3f} V, "
-                f"Probe={point.probe_power_v:.3f} V"
-            )
-            print(
-                f"Probe/PZT 点 {sequence_index + 1}/{total}: "
-                f"PZT={point.pzt_voltage_v:.6g} V, "
-                f"Probe={point.probe_power_v:.6g} V"
-            )
-            _set_probe_power(point, devices, channels)
-            record.update(
-                _read_pzt_point(
-                    pzt_controller,
-                    point.pzt_voltage_v,
-                )
-            )
-            _write_manifest(manifest_path, manifest)
-            point_raw = points_root / point.key
+    def _new_directory(self):
+        previous, inherited = self.directory, deepcopy(self.state)
+        if previous and not self.round_sealed:
+            self.state.update(completion_status="failed", failure_reason="本轮被重跑替代，保留已有数据")
+            self.save()
+        suffix = 0
+        while True:
             try:
-                point_result = acquire_mx_y_rf_point(
-                    params,
-                    point_raw,
-                    devices,
-                    channels,
-                    actual_response_rate,
-                    device_id,
-                )
-            except RPointQualityError as exc:
-                if getattr(exc, "safety_cleanup_errors", ()):
-                    raise
-                invalid += 1
-                record["status"] = "invalid_quality"
-                record["reason"] = str(exc)
-                _write_manifest(manifest_path, manifest)
-                print(f"  该 Probe/PZT 点无效，继续扫描: {exc}")
-            else:
-                completed += 1
-                response_rate = float(
-                    point_result["actual_response_rate_sa_s"]
-                )
-                noise_rate = float(
-                    point_result["actual_noise_rate_sa_s"]
-                )
-                actual_response_rates.append(response_rate)
-                actual_noise_rates.append(noise_rate)
-                record["status"] = "completed"
-                record["reason"] = None
-                record["actual_response_rate_sa_s"] = response_rate
-                record["actual_noise_rate_sa_s"] = noise_rate
-                _write_manifest(manifest_path, manifest)
-            progress.update(1)
-            if not interactive_progress:
-                print(str(progress), flush=True)
-    finally:
-        progress.close()
+                tag = self.params.run_tag + (f"_{suffix:02d}" if suffix else "")
+                self.directory = create_run_directory(DATA_TYPE, tag, self.params.to_external(),
+                    schema_version=self.params.schema_version, project_root=self.root)
+                break
+            except FileExistsError:
+                suffix += 1
+        self.round_sealed = False
+        self.run_parameters = self.params.to_external()
+        self.state = self._initial_state()
+        for key in ("device_snapshot", "clock_sources", "actual_rates"):
+            if key in inherited:
+                self.state[key] = inherited[key]
+        if previous:
+            self.state["source_run_id"] = previous.root.name
+        self.save()
 
-    return {
-        "total_point_count": total,
-        "completed_point_count": completed,
-        "invalid_quality_point_count": invalid,
-        "actual_response_rates_sa_s": actual_response_rates,
-        "actual_noise_rates_sa_s": actual_noise_rates,
-        "manifest": "raw/point_manifest.yaml",
-        "grid": "raw/probe_detuning_grid.npz",
-    }
+    def execute(self, selected):
+        if self.current_step:
+            raise ValueError("已有模块正在执行")
+        selected = validate_selection(self.stages, self.states, selected)
+        if selected != [FINISH_ID]:
+            self.recheck()
+        if "A07" in selected and self.needs_preparation and "A06" not in selected:
+            raise ValueError("PZT/响应模式已恢复，请显式选择 A06 重新准备")
+        hardware = [item for item in selected if item not in ("A01", FINISH_ID)]
+        if hardware and (self.directory is None or self.round_sealed
+                or self.run_parameters != self.params.to_external()
+                or ("A07" in selected and self.states["A07"]["status"] != "pending")):
+            self._new_directory()
+        self.revision += 1
+        for item in selected:
+            if item == FINISH_ID:
+                self.finish()
+                break
+            check_cancelled()
+            if item != "A01":
+                invalidate(self.stages, self.states, item)
+            self.current_step = item
+            self.states[item] = dict(status="running", error="")
+            failure = None
+            try:
+                self.publish(next(stage.title for stage in self.stages if stage.id == item))
+                self._execute_step(item)
+                stage = next(stage for stage in self.stages if stage.id == item)
+                artifacts = [path.relative_to(self.directory.root).as_posix()
+                    for pattern in stage.artifacts for path in self.directory.root.glob(pattern)
+                    if path.is_file()] if self.directory else []
+                self.states[item] = dict(status="completed", error="", artifacts=artifacts,
+                    parameters=self.params.to_external(), revision=self.revision)
+                self.save()
+                self.publish(f"{item} 完成")
+            except BaseException as exc:
+                failure = exc
+                status = "cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else "failed"
+                self.states[item] = dict(status=status, error=str(exc))
+                self.state.update(failure_reason=str(exc), completion_status=status)
+                raise
+            finally:
+                self.current_step = None
+                try:
+                    self.save()
+                    self.publish(f"{item} {self.states[item]['status']}")
+                    if item == "A08" and failure is None:
+                        # 空闲快照保存后再封存，后续草稿不改写本轮记录。
+                        self.round_sealed = True
+                except Exception as save_error:
+                    if failure is None:
+                        raise
+                    if hasattr(failure, "add_note"):
+                        failure.add_note(f"阶段状态保存另失败: {save_error}")
+        return self.snapshot()
+
+    def _execute_step(self, item):
+        params, devices, channels = self.params, self.devices, self.channels
+        if item == "A01":
+            self.recheck()
+        elif item == "A02":
+            if not devices:
+                self.devices, self.channels, self.laser_state, snapshot = preparation.connect(self.mapping, self.device_session)
+                self.state["device_snapshot"] = snapshot
+        elif item == "A03":
+            try:
+                self.state["clock_sources"] = preparation.rf_preparation._configure_reference_clocks(devices, self.mapping)
+                self.clock_failed = False
+            except BaseException:
+                self.clock_failed = True
+                raise
+        elif item == "A04":
+            # 提前记录已尝试的设置，部分配置失败时也使用同一安全基线。
+            self.power_parameters = params
+            preparation.rf_preparation.configure_initial_outputs(params, devices, channels, self.mapping)
+            self.outputs.update(X="OFF", Z="OFF", **{"Y RF": "OFF", "温控": "ON"})
+        elif item == "A05":
+            self.pump_parameters = params
+            excitation.configure_pump(params, devices, channels)
+            self.outputs["Pump"] = "ON"
+        elif item == "A06":
+            preparation._prepare_probe_laser_scan(devices["probe_laser_controller"])
+            self.response_parameters = params
+            self.state.setdefault("actual_rates", {})["response_sa_s"] = excitation.configure_response(params, devices, channels)
+            self.demod_mode = "response"
+            self.needs_preparation = False
+            self.outputs["PZT/扫描"] = "扫描 OFF、幅度 0；PZT 待扫描"
+        elif item == "A07":
+            self.demod_mode = "noise"
+            self.state["grid_summary"] = _acquire_grid(params, self.directory, devices, channels,
+                self.state["actual_rates"]["response_sa_s"], str(self.mapping["lockin_r"]["device_id"]))
+            self.outputs.update(**{"Y RF": "OFF", "温控": "ON", "PZT/扫描": "最近扫描点；扫描 OFF"})
+        elif item == "A08":
+            errors = self._shutdown()
+            if errors:
+                raise RuntimeError("安全收尾失败：" + "；".join(errors))
+            self.state.update(completion_status="completed", failure_reason=None, finished_at=datetime.now().isoformat(),
+                data_files=["raw/probe_detuning_grid.npz", "raw/point_manifest.yaml"])
+
+    def _shutdown(self):
+        errors = []
+        if self.devices:
+            if self.demod_mode == "noise":
+                try:
+                    self.state.setdefault("actual_rates", {})["response_sa_s"] = excitation._restore_response_acquisition_state(
+                        self.response_parameters, self.devices, self.channels)
+                    self.demod_mode = "response"
+                except Exception as exc:
+                    errors.append(f"响应模式恢复失败: {exc}")
+            params = replace(self.pump_parameters, pump_laser_power_v=self.power_parameters.pump_laser_power_v,
+                probe_laser_power_v=self.power_parameters.probe_laser_power_v)
+            try:
+                report, restore = preparation.shutdown(self.devices, self.channels, params, self.laser_state)
+                power_errors = [error for error in report.errors if error.startswith("光功率基准恢复:")]
+                power_restore = dict(pump_power_v=params.pump_laser_power_v,
+                    probe_power_v=params.probe_laser_power_v, outputs_on=True)
+                self.state.update(safety_shutdown=report.to_dict(),
+                    probe_laser_restore=restore | {"guard_errors": [] if restore["success"] else [restore["error"]]},
+                    power_restore=power_restore,
+                    laser_power_restore=power_restore | {"success": not power_errors, "error": "；".join(power_errors) or None},
+                    device_disconnect=dict(tec_connected=False, tec_disconnect_attempted=False,
+                        other_devices_preserved=True, errors=list(report.disconnect_errors)))
+                errors.extend(report.errors)
+            except Exception as exc:
+                errors.append(str(exc))
+        self.needs_preparation = True
+        self.outputs.update(X="未知" if errors else "OFF", Z="未知" if errors else "OFF",
+            **{"Y RF": "未知" if errors else "OFF", "温控": "未知" if errors else "ON",
+               "PZT/扫描": "未知" if errors else "已恢复进入会话前状态"})
+        if errors:
+            self.state["safety_shutdown"] = dict(self.state.get("safety_shutdown") or {}, completed=False, errors=errors)
+        return errors
+
+    def finish(self, failure=None):
+        if self.closed:
+            return
+        errors = [] if self.round_sealed else self._shutdown()
+        if self.clock_failed:
+            errors.extend(disconnect_device_mapping(self.devices))
+        if not self.round_sealed:
+            reason = str(failure) if failure else self.state.get("failure_reason") or "本轮采集未完整完成"
+            if errors:
+                reason += "；安全恢复失败：" + "；".join(errors)
+            self.state.update(completion_status="cancelled" if isinstance(failure, (WorkflowCancelled, KeyboardInterrupt)) else "failed",
+                failure_reason=reason, finished_at=datetime.now().isoformat())
+        self.closed = True
+        self.current_step = None
+        self.revision += 1
+        self.states[FINISH_ID] = dict(status="failed" if errors else "completed", error="；".join(errors))
+        try:
+            self.save()
+            self.publish("会话已结束；安全恢复完成" if not errors else "会话已结束；输出状态未知，请检查仪器")
+            report_runtime_progress("finished", "采集会话已结束", 100, data={"estimated_remaining_seconds": None})
+        except Exception as save_error:
+            if failure is None and not errors:
+                raise
+            errors.append(f"收尾状态保存失败: {save_error}")
+        if errors and failure is None:
+            raise RuntimeError("安全收尾失败：" + "；".join(errors))
+        if errors and hasattr(failure, "add_note"):
+            failure.add_note("安全收尾另失败：" + "；".join(errors))
 
 
-def run(params: MxYRFProbeDetuningOptimizationParams) -> Path:
-    root = find_project_root()
-    mapping = load_mapping(root)
-    require_lockin_compatibility('mx-y-rf-probe-detuning-optimization', params.to_external(), mapping=mapping)
-    run_dir = create_run_directory(
-        DATA_TYPE,
-        params.run_tag,
-        params.to_external(),
-        schema_version=params.schema_version,
-        project_root=root,
-    )
-    run_dir.update_config(
-        experiment_id=EXPERIMENT_ID,
-        data_type=DATA_TYPE,
-        execution_mode=EXECUTION_MODE,
-        scan_mode="nested_scan",
-        scan_order="pzt_outer_probe_inner_serpentine",
-        objective="minimize flat_median_ft_per_sqrt_hz",
-        geometry={
-            "main_field": "Z",
-            "pump": "Z",
-            "probe": "X",
-            "rf_field": "Y",
-            "x_field_output": "OFF",
-        },
-        detuning_axis={
-            "control": "DLC pro Laser 1 Scan Offset",
-            "unit": "V",
-            "frequency_calibrated": False,
-        },
-        linewidth_mode="amplitude_equivalent",
-        compatibility={
-            "reference_experiment_id": "mx-y-rf-power-optimization",
-            "schema_version": params.schema_version,
-        },
-        acquisition_signals=["R"],
-        power_restore={
-            "pump_power_v": params.pump_laser_power_v,
-            "probe_power_v": params.probe_laser_power_v,
-            "outputs_on": True,
-        },
-        temperature_control={
-            "tec_connected": False,
-            "tec_target_temperature_configured": False,
-            "temperature_stability_waited": False,
-            "temperature_switch_controlled": True,
-            "temperature_switch_restored_on_exit": True,
-        },
-    )
-    session = DeviceSession()
-    devices: dict[str, Any] = {}
-    channels: dict[str, int] = {}
-    completion_status = "failed"
-    failure_reason: str | None = None
-    grid_summary: dict[str, Any] | None = None
-    probe_laser_state: ProbeLaserState | None = None
-    probe_laser_guard = StateGuard()
-    probe_laser_restore: dict[str, Any] = {
-        "attempted": False,
-        "success": True,
-        "error": None,
-    }
+def run(params: MxYRFProbeDetuningOptimizationParams, *, project_root=None) -> Path:
+    ctx = Workflow(params, project_root=project_root)
+    failure = None
     try:
-        check_cancelled()
-        try:
-            devices, channels = connect_mx_y_rf_devices(
-                mapping,
-                session,
-                connect_tec=False,
-            )
-            controller, controller_config = (
-                _connect_probe_laser_controller(mapping, session)
-            )
-            devices["probe_laser_controller"] = controller
-        except Exception:
-            session.cleanup_connection_failure()
-            raise
-
-        probe_laser_state, controller_snapshot = (
-            _snapshot_and_validate_probe_laser(
-                devices["probe_laser_controller"],
-                controller_config,
-            )
-        )
-        device_snapshot = snapshot_mx_y_rf_state(devices, channels)
-        device_snapshot["probe_laser_controller"] = controller_snapshot
-        run_dir.update_config(device_snapshot=device_snapshot)
-
-        actual_response_rate, clock_sources = configure_mx_y_rf_outputs(
-            params,
-            devices,
-            channels,
-            mapping,
-            control_tec=False,
-        )
-        run_dir.update_config(clock_sources=clock_sources)
-
-        def restore_probe_laser() -> None:
-            report = _restore_probe_laser_state(
-                devices.get("probe_laser_controller"),
-                probe_laser_state,
-            )
-            probe_laser_restore.update(report)
-            if not report["success"]:
-                raise RuntimeError(str(report["error"]))
-
-        probe_laser_guard.add(
-            "恢复 DLC pro PZT/扫描状态",
-            restore_probe_laser,
-        )
-        _prepare_probe_laser_scan(devices["probe_laser_controller"])
-        device_id = str(mapping["lockin_r"]["device_id"])
-        grid_summary = _acquire_grid(
-            params,
-            run_dir,
-            devices,
-            channels,
-            actual_response_rate,
-            device_id,
-        )
-        completion_status = "completed"
-        run_dir.update_config(
-            completion_status=completion_status,
-            actual_rates={"response_sa_s": actual_response_rate},
-            grid_summary=grid_summary,
-            data_files=[
-                "raw/probe_detuning_grid.npz",
-                "raw/point_manifest.yaml",
-            ],
-        )
-        print(
-            "Mx Y RF Probe 光功率与 PZT 失谐优化采集完成: "
-            f"{run_dir.root}"
-        )
-        return run_dir.root
-    except WorkflowCancelled as exc:
-        completion_status = "cancelled"
-        failure_reason = str(exc)
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                grid_summary=grid_summary,
-            )
-        raise
-    except Exception as exc:
-        failure_reason = str(exc)
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status="failed",
-                failure_reason=failure_reason,
-                grid_summary=grid_summary,
-            )
+        ctx.execute([stage.id for stage in ctx.stages if stage.id != FINISH_ID])
+        return ctx.directory.root
+    except BaseException as exc:
+        failure = exc
         raise
     finally:
-        probe_laser_restore_errors = probe_laser_guard.restore()
-        power_restore_error = None
-        try:
-            restore_mx_y_rf_laser_powers(
-                devices,
-                channels,
-                pump_power_v=params.pump_laser_power_v,
-                probe_power_v=params.probe_laser_power_v,
-            )
-        except Exception as exc:
-            power_restore_error = str(exc)
-        finish = finalize_run_safety(
-            shutdown=lambda: safe_shutdown(devices, channels, params),
-            completion_status=completion_status,
-            failure_reason=failure_reason,
-            extra_errors=(
-                [
-                    f"恢复 DLC pro PZT/扫描状态: {item}"
-                    for item in probe_laser_restore_errors
-                ]
-                + (
-                    [f"光功率基准恢复: {power_restore_error}"]
-                    if power_restore_error
-                    else []
-                )
-            ),
-        )
-        if probe_laser_restore_errors:
-            print(
-                "Probe 激光状态保护失败: "
-                + "；".join(probe_laser_restore_errors)
-            )
-        if power_restore_error:
-            print(f"光功率基准恢复失败: {power_restore_error}")
-        if finish.shutdown_report.errors:
-            print("安全关闭失败: " + "；".join(finish.shutdown_report.errors))
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status=finish.completion_status,
-                failure_reason=finish.failure_reason,
-                safety_shutdown=finish.shutdown_report.to_dict(),
-                probe_laser_restore={
-                    **probe_laser_restore,
-                    "guard_errors": probe_laser_restore_errors,
-                },
-                laser_power_restore={
-                    "pump_power_v": params.pump_laser_power_v,
-                    "probe_power_v": params.probe_laser_power_v,
-                    "outputs_on": True,
-                    "success": power_restore_error is None,
-                    "error": power_restore_error,
-                },
-                device_disconnect={
-                    "tec_connected": False,
-                    "tec_disconnect_attempted": False,
-                    "other_devices_preserved": True,
-                    "errors": list(finish.shutdown_report.disconnect_errors),
-                },
-            )
-        if (
-            finish.completion_status != "completed"
-            and not finish.original_exception_pending
-        ):
-            raise RuntimeError(
-                f"实验结束但安全恢复失败: {finish.failure_reason}"
-            )
+        ctx.finish(failure)
 
 
 def main() -> int:
-    params = load_runtime_params(
-        MxYRFProbeDetuningOptimizationParams
-    )
-    run(params)
+    run(load_runtime_params(MxYRFProbeDetuningOptimizationParams))
     return 0
 
 

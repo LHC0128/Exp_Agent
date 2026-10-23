@@ -14,9 +14,12 @@ from ..noise_spectrum_xy.state_io import read_state, write_state
 from . import analysis_steps
 from .analysis_steps import dispersive, fit_response_curve
 from . import run_format
-from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import SINGLE_ANALYSIS as ANALYSIS, MULTI_ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
 
-ANALYSIS_VERSION = "direct-aw-x-stages-v2-r-bandwidth"
+ANALYSIS_VERSION = "direct-aw-x-v3-multi-noise-quality"
+ANALYSIS_OPTIONS = {"NOISE_NPERSEG": "noise_nperseg", "NOISE_OUTLIER_POLICY": "noise_outlier_policy",
+    "SENSITIVITY_BAND_MIN_HZ": "band_min_hz", "SENSITIVITY_BAND_MAX_HZ": "band_max_hz"}
+CHILD_ARTIFACTS = {stage.id: stage.artifacts for stage in ANALYSIS}
 
 
 class AnalysisWorkflow:
@@ -31,15 +34,21 @@ class AnalysisWorkflow:
         self.state_path = self.run_dir / "analysis_state.json"
         self.config_path = self.run_dir / "experiment_config.yaml"
         self.config = yaml.safe_load(self.config_path.read_text(encoding="utf-8"))
+        if run_format.is_multi_control(self.config):
+            self.stages = MULTI_ANALYSIS
         if reason := self.identity.analysis_block_reason(self.config):
             raise ValueError(reason)
         previous = read_state(self.state_path) or {}
-        self.options = {"noise_nperseg": self.config["parameters"]["NOISE_NPERSEG"]}
+        self.option_names = dict(ANALYSIS_OPTIONS) if self.identity.EXPERIMENT_ID in (
+            "rf-sensitivity-aw", "rf-sensitivity-aw-known-noise") else {"NOISE_NPERSEG": "noise_nperseg"}
+        defaults = {"NOISE_OUTLIER_POLICY": "none", "SENSITIVITY_BAND_MIN_HZ": 3.0, "SENSITIVITY_BAND_MAX_HZ": 150.0}
+        self.options = {name: self.config["parameters"].get(external, defaults.get(external))
+                        for external, name in self.option_names.items()}
         self.options.update(previous.get("options", {}))
         self.states = deepcopy(previous.get("steps") or initial_states(self.stages))
         self.revision = previous.get("revision", 0)
         self.summary = deepcopy(previous.get("summary", {}))
-        config = {key: value for key, value in self.config.items() if key not in ("analysis_status", "analysis_error")}
+        config = {key: value for key, value in self.config.items() if key not in ("analysis_status", "analysis_error", "analysis_options")}
         self.fingerprint = dict(config_sha256=hashlib.sha256(json.dumps(config, sort_keys=True,
             ensure_ascii=False).encode()).hexdigest(), analysis_version=self.analysis_version,
             raw_files=self.input_fingerprint())
@@ -54,29 +63,55 @@ class AnalysisWorkflow:
                 self.revision += 1
                 break
         if analysis_parameters:
-            if analysis_parameters.keys() - {"NOISE_NPERSEG"}:
-                raise ValueError("仅支持分析参数 NOISE_NPERSEG")
-            value = analysis_parameters.get("NOISE_NPERSEG", self.options["noise_nperseg"])
-            if value != self.options["noise_nperseg"]:
-                self.options["noise_nperseg"] = value
-                invalidate(self.stages, self.states, "B03")
+            if analysis_parameters.keys() - self.option_names.keys():
+                raise ValueError("包含不支持的分析参数")
+            for external, value in analysis_parameters.items():
+                name = self.option_names[external]
+                if value != self.options[name]:
+                    self.options[name] = value
+                    invalidate(self.stages, self.states, "B03")
         value = self.options["noise_nperseg"]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 2 or int(value) != value:
             raise ValueError("Welch 段长必须是至少 2 的整数")
         self.options["noise_nperseg"] = int(value)
+        if "NOISE_OUTLIER_POLICY" in self.option_names:
+            if self.options["noise_outlier_policy"] not in ("none", "mad_high"):
+                raise ValueError("NOISE_OUTLIER_POLICY 必须为 mad_high 或 none")
+            low, high = (self.options[name] for name in ("band_min_hz", "band_max_hz"))
+            if not all(type(value) in (int, float) and math.isfinite(value) for value in (low, high)) or not 0 < low < high:
+                raise ValueError("异常谱评分频带必须满足 0 < 下限 < 上限")
+        self.config["analysis_options"] = dict(self.options)
 
     @staticmethod
     def _file_signature(path):
         return [path.stat().st_size, path.stat().st_mtime_ns] if path.is_file() else None
 
+    def child_inputs(self):
+        inputs = getattr(self.steps_module, "control_inputs", None)
+        return [(name, path, config) for name, path, config in inputs(self.run_dir, self.config)
+                if path != self.run_dir] if inputs else []
+
     def input_fingerprint(self):
-        return {path.name: self._file_signature(path) for path in sorted((self.run_dir / "raw").glob("*")) if path.is_file()}
+        result = {path.name: self._file_signature(path) for path in sorted((self.run_dir / "raw").glob("*")) if path.is_file()}
+        for version, child, config in self.child_inputs():
+            clean = {key: value for key, value in config.items() if key not in ("analysis_status", "analysis_error", "analysis_options")}
+            result[version + "/config"] = hashlib.sha256(json.dumps(clean, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+            for path in sorted((child / "raw").glob("*")):
+                if path.is_file():
+                    result[version + "/" + path.name] = self._file_signature(path)
+        return result
 
     def snapshot(self):
         return dict(run_id=self.run_dir.name, revision=self.revision, options=dict(self.options),
                     steps=deepcopy(self.states), fingerprint=self.fingerprint, summary=deepcopy(self.summary))
 
     def persist(self):
+        for version, child, _ in self.child_inputs():
+            for step, names in CHILD_ARTIFACTS.items():
+                if self.states[step]["status"] == "completed":
+                    files = self.states[step].setdefault("files", {})
+                    for name in names:
+                        files[f"../controls/{version}/results/{name}"] = self._file_signature(child / "results" / name)
         write_state(self.state_path, self.snapshot())
         config = yaml.safe_load(self.config_path.read_text(encoding="utf-8"))
         config.update(analysis_status=self.summary.get("status", "not_started"), analysis_error=self.summary.get("error"))
@@ -85,12 +120,16 @@ class AnalysisWorkflow:
 
     def _archive_from(self, item):
         names = {name for stage in invalidated_stages(self.stages, item) for name in stage.artifacts}
-        files = [self.results / name for name in names if (self.results / name).is_file()]
-        if files:
-            backup = self.results / ("before_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
-            backup.mkdir()
-            for path in files:
-                path.replace(backup / path.name)
+        groups = [(self.results, names)]
+        child_names = {name for stage in invalidated_stages(self.stages, item) for name in CHILD_ARTIFACTS.get(stage.id, ())}
+        groups.extend((child / "results", child_names) for _, child, _ in self.child_inputs())
+        for base, artifacts in groups:
+            files = [base / name for name in artifacts if (base / name).is_file()]
+            if files:
+                backup = base / ("before_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+                backup.mkdir()
+                for path in files:
+                    path.replace(backup / path.name)
 
     def execute(self, selected, expected_revision=None):
         if expected_revision is not None and expected_revision != self.revision:
@@ -102,8 +141,9 @@ class AnalysisWorkflow:
             invalidate(self.stages, self.states, item)
             self._archive_from(item)
             self.states[item] = {"status": "running", "error": ""}
-            summary_keys = {"B02": ("response_fit",), "B03": ("noise_psd",),
-                            "B04": ("sensitivity", "frequency_response_correction", "bandwidth_fit")}
+            summary_keys = {"B02": ("response_fit",), "B03": ("noise_psd", "noise_rejection"),
+                            "B04": ("sensitivity", "frequency_response_correction", "bandwidth_fit", "controls",
+                                    "rf_phase_scan_status", "noise_state", "frequency_axis")}
             for stage in invalidated_stages(self.stages, item):
                 for key in summary_keys.get(stage.id, ()):
                     self.summary.pop(key, None)

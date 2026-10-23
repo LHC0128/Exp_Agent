@@ -496,14 +496,14 @@ export type ControlTargetBulkItem = {
 };
 export type ControlTargetBulkResponse = { results: ControlTargetBulkItem[] };
 
-export type ParameterValue = string | number | boolean | null | number[] | string[];
+export type ParameterValue = string | number | boolean | null | number[] | string[] | Record<string, number>;
 export type ParameterValues = Record<string, ParameterValue>;
 
 export type SchemaOption = { value: string | number; label: string };
 export type SchemaField = {
   name: string;
   label: string;
-  type: "string" | "boolean" | "integer" | "number" | "array";
+  type: "string" | "boolean" | "integer" | "number" | "array" | "object";
   unit: string;
   group: string;
   default: ParameterValue;
@@ -512,6 +512,7 @@ export type SchemaField = {
   description?: string;
   read_only?: boolean;
   legacy_defaults?: Record<string, number>;
+  legacy_default?: ParameterValue;
   options?: SchemaOption[];
 };
 export type ParameterGroup = "basic" | "advanced";
@@ -524,6 +525,7 @@ export type ExperimentSchema = {
 export type ExperimentDefinition = {
   id: string;
   archived: boolean;
+  archive_path?: string | null;
   title: string;
   category: string;
   category_label: string;

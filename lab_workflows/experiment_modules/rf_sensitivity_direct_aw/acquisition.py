@@ -74,7 +74,14 @@ def acquire_bandwidth(ctx):
     params, devices, state, directory = ctx.params, ctx.devices, ctx.state, ctx.directory
     signals, channels, hf2 = (devices[key] for key in ("signals", "channels", "hf2"))
     z_positive_phase = ctx.z_positive_phase
-    frequencies = np.linspace(params.bw_freq_start, params.bw_freq_stop, params.bw_freq_points)
+    frequencies = getattr(params, "bandwidth_frequencies", None)
+    bandwidth_selection = {}
+    if frequencies is None:
+        frequencies = np.linspace(params.bw_freq_start, params.bw_freq_stop, params.bw_freq_points)
+    else:
+        bandwidth_selection["skipped_z_rf_frequency_Hz"] = params.z_rf_freq
+    if len(frequencies) < 5:
+        raise ValueError("带宽扫频实际测量点数不能少于 5")
     means = {key: [] for key in ("x", "y", "r")}
     stds = {key: [] for key in ("x", "y", "r")}
     series = {key: [] for key in ("x", "y", "r")}
@@ -85,7 +92,8 @@ def acquire_bandwidth(ctx):
     state["actual_rates"]["demod3_bandwidth_Sa_s"] = response_rate
     bandwidth_daq = DAQConfig(device=hf2.device_id, duration=params.scan_point_duration_s, grid_cols=max(8, int(response_rate * params.scan_point_duration_s)), grid_rows=1, grid_mode=2, signal_paths=["sample.r", "sample.x", "sample.y"])
     state["bandwidth_acquisition"] = {"mode": "daq_duration", "frequency_start_Hz": params.bw_freq_start, "frequency_stop_Hz": params.bw_freq_stop,
-        "points": params.bw_freq_points, "amplitude_vpp": params.z_rf_amplitude_init, "duration_s": params.scan_point_duration_s,
+        "points": len(frequencies), "requested_points": params.bw_freq_points, **bandwidth_selection,
+        "amplitude_vpp": params.z_rf_amplitude_init, "duration_s": params.scan_point_duration_s,
         "actual_rate_Sa_s": response_rate, "temperature_group_size": params.temp_group_size, "response_component": "R"}
     directory.update_config(**state)
     # 与 A11 同节奏：按温控分组关闭温控、组间恢复，每点同步改频重臂后采集。
@@ -121,7 +129,7 @@ def acquire_bandwidth(ctx):
                     demod3_x_series_V=np.asarray(series["x"]), demod3_y_series_V=np.asarray(series["y"]), demod3_r_series_V=np.asarray(series["r"]),
                     z_rf_amplitude_vpp=params.z_rf_amplitude_init, z_burst_phase_deg=z_positive_phase,
                     z_rf_freq_Hz=params.z_rf_freq, duration_s=params.scan_point_duration_s, demod_idx=params.demod3_idx,
-                    point_actual_rate_Sa_s=point_rates,
+                    point_actual_rate_Sa_s=point_rates, **bandwidth_selection,
                     **{**metadata, "actual_rate_Sa_s": capture_rate}, time_s=results[0].time,
                 )
                 state["bandwidth_points_completed"] = index + 1

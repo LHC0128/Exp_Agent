@@ -187,7 +187,7 @@ def test_paths_wrong_experiment_and_r_mutations_are_rejected(client, tmp_path):
         method, body = (client.post, {"name": "new"}) if action == "rename" else (client.put, {"starred": True})
         assert method(f"{BASE}/runs/..%5Coutside/{action}", json=body).status_code == 400
         assert method(f"{BASE}/runs/{directory.name}/{action}", json=body).status_code == 404
-        assert method(f"/api/experiments/rf-sensitivity-aw-r/runs/{directory.name}/{action}", json=body).status_code in (404, 405)
+        assert method(f"/api/experiments/rf-sensitivity-aw-r/runs/{directory.name}/{action}", json=body).status_code == 410
     assert directory.exists()
 
 

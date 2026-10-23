@@ -1,0 +1,985 @@
+{
+  "flow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "启动预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "参数、映射、锁相能力与安全限值有效"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "设备连接与初态回读",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A03",
+        "title": "参考时钟同步与严格回读",
+        "group": "准备",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "全部已连接时钟设备严格回读一致"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "主场、基准光功率与辅助场归零",
+        "group": "初始条件",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "FIXED_PARAMS.main_magnetic_field",
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "FIXED_PARAMS.main_magnetic_field",
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A05",
+        "title": "TEC 目标温度",
+        "group": "初始条件",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [
+          "FIXED_PARAMS.temperature"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "FIXED_PARAMS.temperature"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A06",
+        "title": "Pump 连续载波与常开门控",
+        "group": "激励",
+        "dependencies": [
+          "A05"
+        ],
+        "parameters": [
+          "PUMP_CARRIER_FREQUENCY_HZ",
+          "PUMP_CARRIER_AMPLITUDE_VPP",
+          "PUMP_GATE_VOLTAGE_V"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "PUMP_CARRIER_FREQUENCY_HZ",
+          "PUMP_CARRIER_AMPLITUDE_VPP",
+          "PUMP_GATE_VOLTAGE_V"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A07",
+        "title": "Y RF 正弦与 R 响应解调准备",
+        "group": "激励",
+        "dependencies": [
+          "A06"
+        ],
+        "parameters": [
+          "Y_RF_FREQUENCY_HZ",
+          "DEMOD_IDX",
+          "DEMOD_OSC_IDX",
+          "HF2_SIGNAL_RANGE_V",
+          "RESPONSE_RATE_SA_S",
+          "RESPONSE_TIME_CONSTANT_S",
+          "RESPONSE_DEMOD_ORDER"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "Y_RF_FREQUENCY_HZ",
+          "DEMOD_IDX",
+          "DEMOD_OSC_IDX",
+          "HF2_SIGNAL_RANGE_V",
+          "RESPONSE_RATE_SA_S",
+          "RESPONSE_TIME_CONSTANT_S",
+          "RESPONSE_DEMOD_ORDER"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A08",
+        "title": "Pump × Probe 蛇形网格：幅度响应与零 RF 噪声",
+        "group": "采集",
+        "dependencies": [
+          "A07"
+        ],
+        "parameters": [
+          "PUMP_POWER_START_V",
+          "PUMP_POWER_STOP_V",
+          "PUMP_POWER_POINTS",
+          "PROBE_POWER_START_V",
+          "PROBE_POWER_STOP_V",
+          "PROBE_POWER_POINTS",
+          "Y_RF_AMP_START_VPP",
+          "Y_RF_AMP_STOP_VPP",
+          "Y_RF_AMP_POINTS",
+          "RESPONSE_DURATION_S",
+          "R_BAD_POINT_STD_THRESHOLD_V",
+          "R_POINT_MAX_ATTEMPTS",
+          "NOISE_N_AVG",
+          "NOISE_DURATION_S",
+          "NOISE_RATE_SA_S",
+          "NOISE_TIME_CONSTANT_S",
+          "NOISE_DEMOD_ORDER",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S"
+        ],
+        "artifacts": [
+          "raw/power_grid.npz",
+          "raw/point_manifest.yaml",
+          "raw/points/**/*.npz"
+        ],
+        "display_parameters": [
+          "PUMP_POWER_START_V",
+          "PUMP_POWER_STOP_V",
+          "PUMP_POWER_POINTS",
+          "PROBE_POWER_START_V",
+          "PROBE_POWER_STOP_V",
+          "PROBE_POWER_POINTS",
+          "Y_RF_AMP_START_VPP",
+          "Y_RF_AMP_STOP_VPP",
+          "Y_RF_AMP_POINTS",
+          "RESPONSE_DURATION_S",
+          "R_BAD_POINT_STD_THRESHOLD_V",
+          "R_POINT_MAX_ATTEMPTS",
+          "NOISE_N_AVG",
+          "NOISE_DURATION_S",
+          "NOISE_RATE_SA_S",
+          "NOISE_TIME_CONSTANT_S",
+          "NOISE_DEMOD_ORDER",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S"
+        ],
+        "quality_gates": [
+          "R 标准差超限按上限重采；仅在本点安全收尾成功后标记无效并继续，设备与恢复错误立即停止"
+        ]
+      },
+      {
+        "id": "A09",
+        "title": "本轮安全收尾、基准光功率恢复与封存",
+        "group": "结束",
+        "dependencies": [
+          "A08"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A10",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "加载配置、网格及原始数据资格",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "实验身份、格式、点索引与路径合法，目录不在采集中；坏波形沿用原逐点拒绝规则，不阻断其它点"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "双斜率灵敏度、热图与逐点诊断",
+        "group": "独立分析",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [
+          "FIT_R_SQUARED_MIN",
+          "FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX",
+          "R_BAD_POINT_STD_THRESHOLD_V",
+          "Y_RF_NT_PER_VPP",
+          "LOW_FREQ_SKIP_HZ",
+          "LINEAR_CHECK_GAMMA_FRACTION",
+          "SLOPE_AGREEMENT_TOLERANCE"
+        ],
+        "artifacts": [
+          "optimization.npz",
+          "optimization.yaml",
+          "optimization.json",
+          "points",
+          "sensitivity_heatmap.png",
+          "sensitivity_heatmap.pdf",
+          "slope_heatmap.png",
+          "slope_heatmap.pdf",
+          "zero_point_sensitivity_heatmap.png",
+          "zero_point_sensitivity_heatmap.pdf",
+          "zero_point_slope_heatmap.png",
+          "zero_point_slope_heatmap.pdf",
+          "hwhm_heatmap.png",
+          "hwhm_heatmap.pdf",
+          "best_point_full_analysis.png",
+          "best_point_full_analysis.pdf",
+          "best_zero_point_full_analysis.png",
+          "best_zero_point_full_analysis.pdf"
+        ],
+        "display_parameters": [
+          "FIT_R_SQUARED_MIN",
+          "FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX",
+          "R_BAD_POINT_STD_THRESHOLD_V",
+          "Y_RF_NT_PER_VPP",
+          "LOW_FREQ_SKIP_HZ",
+          "LINEAR_CHECK_GAMMA_FRACTION",
+          "SLOPE_AGREEMENT_TOLERANCE"
+        ],
+        "quality_gates": [
+          "无有效最优点时保留诊断并标记质量未通过，不执行后继汇总"
+        ]
+      },
+      {
+        "id": "B03",
+        "title": "双排名与最优点报告汇总",
+        "group": "独立分析",
+        "dependencies": [
+          "B02"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "analysis.yaml",
+          "analysis.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "RUN_TAG": [
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "FIXED_PARAMS.main_magnetic_field": [
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "FIXED_PARAMS.Pump_laser_power": [
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "FIXED_PARAMS.Probe_laser_power": [
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "FIXED_PARAMS.temperature": [
+          "A05",
+          "A06",
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "PUMP_CARRIER_FREQUENCY_HZ": [
+          "A06",
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "PUMP_CARRIER_AMPLITUDE_VPP": [
+          "A06",
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "PUMP_GATE_VOLTAGE_V": [
+          "A06",
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "Y_RF_FREQUENCY_HZ": [
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "DEMOD_IDX": [
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "DEMOD_OSC_IDX": [
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "HF2_SIGNAL_RANGE_V": [
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "RESPONSE_RATE_SA_S": [
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "RESPONSE_TIME_CONSTANT_S": [
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "RESPONSE_DEMOD_ORDER": [
+          "A07",
+          "A08",
+          "A09"
+        ],
+        "PUMP_POWER_START_V": [
+          "A08",
+          "A09"
+        ],
+        "PUMP_POWER_STOP_V": [
+          "A08",
+          "A09"
+        ],
+        "PUMP_POWER_POINTS": [
+          "A08",
+          "A09"
+        ],
+        "PROBE_POWER_START_V": [
+          "A08",
+          "A09"
+        ],
+        "PROBE_POWER_STOP_V": [
+          "A08",
+          "A09"
+        ],
+        "PROBE_POWER_POINTS": [
+          "A08",
+          "A09"
+        ],
+        "Y_RF_AMP_START_VPP": [
+          "A08",
+          "A09"
+        ],
+        "Y_RF_AMP_STOP_VPP": [
+          "A08",
+          "A09"
+        ],
+        "Y_RF_AMP_POINTS": [
+          "A08",
+          "A09"
+        ],
+        "RESPONSE_DURATION_S": [
+          "A08",
+          "A09"
+        ],
+        "R_BAD_POINT_STD_THRESHOLD_V": [
+          "A08",
+          "A09"
+        ],
+        "R_POINT_MAX_ATTEMPTS": [
+          "A08",
+          "A09"
+        ],
+        "NOISE_N_AVG": [
+          "A08",
+          "A09"
+        ],
+        "NOISE_DURATION_S": [
+          "A08",
+          "A09"
+        ],
+        "NOISE_RATE_SA_S": [
+          "A08",
+          "A09"
+        ],
+        "NOISE_TIME_CONSTANT_S": [
+          "A08",
+          "A09"
+        ],
+        "NOISE_DEMOD_ORDER": [
+          "A08",
+          "A09"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A08",
+          "A09"
+        ],
+        "TEMP_SWITCH_ON_LAG_S": [
+          "A08",
+          "A09"
+        ]
+      },
+      "analysis": {
+        "FIT_R_SQUARED_MIN": [
+          "B02",
+          "B03"
+        ],
+        "FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX": [
+          "B02",
+          "B03"
+        ],
+        "R_BAD_POINT_STD_THRESHOLD_V": [
+          "B02",
+          "B03"
+        ],
+        "Y_RF_NT_PER_VPP": [
+          "B02",
+          "B03"
+        ],
+        "LOW_FREQ_SKIP_HZ": [
+          "B02",
+          "B03"
+        ],
+        "LINEAR_CHECK_GAMMA_FRACTION": [
+          "B02",
+          "B03"
+        ],
+        "SLOPE_AGREEMENT_TOLERANCE": [
+          "B02",
+          "B03"
+        ]
+      }
+    },
+    "diagram_url": "/api/experiments/mx-y-rf-power-optimization/workflow/diagram"
+  },
+  "fields": [
+    {
+      "name": "SYSTEM_SETTLE_S",
+      "label": "系统稳定时间",
+      "type": "number",
+      "default": 0.1,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": null,
+      "description": "配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。",
+      "read_only": false,
+      "legacy_defaults": {
+        "RESPONSE_SETTLE_TIME_S": 0.1,
+        "FREQUENCY_SETTLE_TIME_S": 0.05,
+        "TEMP_SWITCH_OFF_LEAD_S": 0.1
+      }
+    },
+    {
+      "name": "RUN_TAG",
+      "label": "运行标签",
+      "type": "string",
+      "default": "mx_y_rf_power_opt",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_FREQUENCY_HZ",
+      "label": "Y RF 固定频率",
+      "type": "number",
+      "default": 90000,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_AMP_START_VPP",
+      "label": "Y RF 起始带符号幅度",
+      "type": "number",
+      "default": -0.1,
+      "unit": "Vpp",
+      "group": "basic",
+      "minimum": -2,
+      "maximum": 2,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_AMP_STOP_VPP",
+      "label": "Y RF 终止带符号幅度",
+      "type": "number",
+      "default": 0.1,
+      "unit": "Vpp",
+      "group": "basic",
+      "minimum": -2,
+      "maximum": 2,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_AMP_POINTS",
+      "label": "Y RF 幅度点数",
+      "type": "integer",
+      "default": 21,
+      "unit": "",
+      "group": "basic",
+      "minimum": 5,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "RESPONSE_DURATION_S",
+      "label": "幅度点采样时间",
+      "type": "number",
+      "default": 0.2,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_NT_PER_VPP",
+      "label": "Y RF 线圈标定系数",
+      "type": "number",
+      "default": 1517.79147,
+      "unit": "nT/Vpp",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "R_BAD_POINT_STD_THRESHOLD_V",
+      "label": "R 坏点标准差阈值",
+      "type": "number",
+      "default": 0.01,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "R_POINT_MAX_ATTEMPTS",
+      "label": "R 点最大采集次数",
+      "type": "integer",
+      "default": 3,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "NOISE_N_AVG",
+      "label": "噪声平均次数",
+      "type": "integer",
+      "default": 5,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "NOISE_DURATION_S",
+      "label": "单次噪声时长",
+      "type": "number",
+      "default": 1,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0.01,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "NOISE_RATE_SA_S",
+      "label": "噪声请求采样率",
+      "type": "number",
+      "default": 50000,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "NOISE_TIME_CONSTANT_S",
+      "label": "噪声时间常数",
+      "type": "number",
+      "default": 0.000001,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "NOISE_DEMOD_ORDER",
+      "label": "噪声解调阶数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "LOW_FREQ_SKIP_HZ",
+      "label": "平坦段搜索最低频率",
+      "type": "number",
+      "default": 3,
+      "unit": "Hz",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD_IDX",
+      "label": "锁相放大器 Demod 索引",
+      "type": "integer",
+      "default": 0,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD_OSC_IDX",
+      "label": "锁相放大器 振荡器索引",
+      "type": "integer",
+      "default": 0,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "HF2_SIGNAL_RANGE_V",
+      "label": "锁相放大器 Input1 量程",
+      "type": "number",
+      "default": 2,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "RESPONSE_RATE_SA_S",
+      "label": "响应请求采样率",
+      "type": "number",
+      "default": 1000,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "RESPONSE_TIME_CONSTANT_S",
+      "label": "响应时间常数",
+      "type": "number",
+      "default": 0.001,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "RESPONSE_DEMOD_ORDER",
+      "label": "响应解调阶数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "TEMP_SWITCH_ON_LAG_S",
+      "label": "温控恢复后等待",
+      "type": "number",
+      "default": 1,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_CARRIER_FREQUENCY_HZ",
+      "label": "Pump AOM 载波频率",
+      "type": "number",
+      "default": 100000000,
+      "unit": "Hz",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_CARRIER_AMPLITUDE_VPP",
+      "label": "Pump AOM 载波幅度",
+      "type": "number",
+      "default": 0.18,
+      "unit": "Vpp",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": 0.18,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_GATE_VOLTAGE_V",
+      "label": "Pump RF 开关常开电平",
+      "type": "number",
+      "default": 5,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 5,
+      "maximum": 5,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.Pump_laser_power",
+      "label": "结束恢复 Pump 光功率",
+      "type": "number",
+      "default": 0.5,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.Probe_laser_power",
+      "label": "结束恢复 Probe 光功率",
+      "type": "number",
+      "default": 0.3,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.main_magnetic_field",
+      "label": "Z 主磁场电流",
+      "type": "number",
+      "default": 9.28,
+      "unit": "mA",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.temperature",
+      "label": "气室温度",
+      "type": "number",
+      "default": 120,
+      "unit": "°C",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIT_R_SQUARED_MIN",
+      "label": "拟合最低 R²",
+      "type": "number",
+      "default": 0.85,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX",
+      "label": "线宽最大相对不确定度",
+      "type": "number",
+      "default": 0.5,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "LINEAR_CHECK_GAMMA_FRACTION",
+      "label": "中心线性检查范围",
+      "type": "number",
+      "default": 0.25,
+      "unit": "γ",
+      "group": "advanced",
+      "minimum": 0.01,
+      "maximum": 1,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SLOPE_AGREEMENT_TOLERANCE",
+      "label": "两种斜率差异告警阈值",
+      "type": "number",
+      "default": 0.2,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_POWER_START_V",
+      "label": "Pump 扫描起点",
+      "type": "number",
+      "default": 0.2,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_POWER_STOP_V",
+      "label": "Pump 扫描终点",
+      "type": "number",
+      "default": 0.8,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_POWER_POINTS",
+      "label": "Pump 扫描点数",
+      "type": "integer",
+      "default": 7,
+      "unit": "",
+      "group": "basic",
+      "minimum": 2,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PROBE_POWER_START_V",
+      "label": "Probe 扫描起点",
+      "type": "number",
+      "default": 0.1,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PROBE_POWER_STOP_V",
+      "label": "Probe 扫描终点",
+      "type": "number",
+      "default": 0.5,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PROBE_POWER_POINTS",
+      "label": "Probe 扫描点数",
+      "type": "integer",
+      "default": 7,
+      "unit": "",
+      "group": "basic",
+      "minimum": 2,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    }
+  ]
+}

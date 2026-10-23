@@ -142,7 +142,7 @@ agent_exp_env\Scripts\python.exe -m pytest tests/lab_workflows/test_plotting_mig
 | [experiments/DG_AM_to_DG_COMP_Transfer_Check.py](../experiments/DG_AM_to_DG_COMP_Transfer_Check.py) | 本轮修改 |
 | [experiments/DG_AM_to_DG_COMP_Transfer_Check_plot.py](../experiments/DG_AM_to_DG_COMP_Transfer_Check_plot.py) | 本轮修改 |
 | [experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance_Bloch_fit.py](../experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance_Bloch_fit.py) | 本轮修改 |
-| [experiments/Noise_Spectrum_XY_Ctrl_v2_plot.py](../experiments/Noise_Spectrum_XY_Ctrl_v2_plot.py) | 本轮修改 |
+| [experiments/Noise_Spectrum_XY_Ctrl_v2_plot.py](../old/experiments/experiments/Noise_Spectrum_XY_Ctrl_v2_plot.py) | 本轮修改 |
 | [experiments/Photon_shot_noise_plot.py](../experiments/Photon_shot_noise_plot.py) | 本轮修改 |
 | [experiments/RF_Field_Sensitivity_AW_plot.py](../experiments/RF_Field_Sensitivity_AW_plot.py) | 本轮修改 |
 | [experiments/RF_Field_Sensitivity_ConstXY_FreqSweep_plot.py](../experiments/RF_Field_Sensitivity_ConstXY_FreqSweep_plot.py) | 本轮修改 |
@@ -156,12 +156,12 @@ agent_exp_env\Scripts\python.exe -m pytest tests/lab_workflows/test_plotting_mig
 | [experiments/XY_DC_Voltage_Calibration_plot.py](../experiments/XY_DC_Voltage_Calibration_plot.py) | 本轮修改 |
 | [experiments/Z_Field_Bandwidth_Measurement_plot.py](../experiments/Z_Field_Bandwidth_Measurement_plot.py) | 本轮修改 |
 | [lab_workflows/experiment_modules/mx_y_rf_grid_analysis.py](../lab_workflows/experiment_modules/mx_y_rf_grid_analysis.py) | 本轮修改 |
-| [lab_workflows/experiment_modules/mx_keithley_6221_main_field_calibration/analysis.py](../lab_workflows/experiment_modules/mx_keithley_6221_main_field_calibration/analysis.py) | 已有公共接口 |
-| [lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_balanced_sensitivity/analysis.py](../lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_balanced_sensitivity/analysis.py) | 本轮修改 |
-| [lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_rf_sensitivity/phase_plot.py](../lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_rf_sensitivity/phase_plot.py) | 已有公共接口 |
-| [lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_xyz_balance/analysis.py](../lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_xyz_balance/analysis.py) | 本轮修改 |
+| [lab_workflows/experiment_modules/mx_keithley_6221_main_field_calibration/analysis.py](../old/experiments/lab_workflows/experiment_modules/mx_keithley_6221_main_field_calibration/analysis.py) | 已有公共接口 |
+| [lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_balanced_sensitivity/analysis.py](../old/experiments/lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_balanced_sensitivity/analysis.py) | 本轮修改 |
+| [lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_rf_sensitivity/phase_plot.py](../old/experiments/lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_rf_sensitivity/phase_plot.py) | 已有公共接口 |
+| [lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_xyz_balance/analysis.py](../old/experiments/lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_xyz_balance/analysis.py) | 本轮修改 |
 | [lab_workflows/experiment_modules/mx_main_field_calibration/analysis.py](../lab_workflows/experiment_modules/mx_main_field_calibration/analysis.py) | 已有公共接口 |
-| [lab_workflows/experiment_modules/mx_main_field_noise_spectrum/analysis.py](../lab_workflows/experiment_modules/mx_main_field_noise_spectrum/analysis.py) | 本轮修改 |
+| [lab_workflows/experiment_modules/mx_main_field_noise_spectrum/analysis.py](../old/experiments/lab_workflows/experiment_modules/mx_main_field_noise_spectrum/analysis.py) | 本轮修改 |
 | [lab_workflows/experiment_modules/mx_main_field_scope_noise_spectrum/analysis.py](../lab_workflows/experiment_modules/mx_main_field_scope_noise_spectrum/analysis.py) | 本轮修改 |
 | [lab_workflows/experiment_modules/mx_xy_residual_field_calibration/analysis.py](../lab_workflows/experiment_modules/mx_xy_residual_field_calibration/analysis.py) | 本轮修改 |
 | [lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/analysis.py](../lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/analysis.py) | 本轮修改 |
@@ -170,7 +170,7 @@ agent_exp_env\Scripts\python.exe -m pytest tests/lab_workflows/test_plotting_mig
 | [lab_workflows/experiment_modules/mx_y_rf_sensitivity_drift/analysis.py](../lab_workflows/experiment_modules/mx_y_rf_sensitivity_drift/analysis.py) | 已有公共接口 |
 | [lab_workflows/experiment_modules/mx_z_current_coupling_calibration/analysis.py](../lab_workflows/experiment_modules/mx_z_current_coupling_calibration/analysis.py) | 已有公共接口 |
 | [lab_workflows/experiment_modules/mx_z_field_calibration/analysis.py](../lab_workflows/experiment_modules/mx_z_field_calibration/analysis.py) | 已有公共接口 |
-| [lab_workflows/experiment_modules/mx_z_noise_spectrum/analysis.py](../lab_workflows/experiment_modules/mx_z_noise_spectrum/analysis.py) | 本轮修改 |
+| [lab_workflows/experiment_modules/mx_z_noise_spectrum/analysis.py](../old/experiments/lab_workflows/experiment_modules/mx_z_noise_spectrum/analysis.py) | 本轮修改 |
 | [lab_workflows/experiment_modules/mx_z_optimal_control_dg4000_bias_xyz_balance/analysis.py](../lab_workflows/experiment_modules/mx_z_optimal_control_dg4000_bias_xyz_balance/analysis.py) | 本轮修改 |
 | [lab_workflows/experiment_modules/mx_z_optimal_control_rf_sensitivity/phase_plot.py](../lab_workflows/experiment_modules/mx_z_optimal_control_rf_sensitivity/phase_plot.py) | 已有公共接口 |
 | [lab_workflows/experiment_modules/mx_z_optimal_control_xyz_balance/analysis.py](../lab_workflows/experiment_modules/mx_z_optimal_control_xyz_balance/analysis.py) | 本轮修改 |

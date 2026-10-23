@@ -22,6 +22,7 @@ FREQUENCY_KEYS = frozenset({
     "PUMP_MOD_FREQ", "PUMP_MOD_FREQ_HZ", "DEMOD0_OSC_FREQ",
     "HF2_DEMOD0_OSC_FREQ", "HF2_DEMOD0_OSC_FREQ_HZ", "DEMOD0_OSC_FREQ_HZ",
     "Z_RF_FREQ", "Z_RF_NOISE_FREQ", "Z_RF_FREQ_HZ", "Z_RF_FREQS_HZ", "RF_FREQS_HZ",
+    "BW_FREQ_START", "BW_FREQ_STOP",
     "RF_FREQUENCIES_HZ", "Y_RF_FREQUENCY_HZ", "MAIN_FIELD_REFERENCE_FREQUENCY_HZ",
     "ZERO_BIAS_REFERENCE_FREQUENCY_HZ", "ZERO_BIAS_CENTER_FREQUENCY_HZ",
     "FREQUENCY_START_HZ", "FREQUENCY_STOP_HZ", "RF_FREQUENCY_START_HZ", "RF_FREQUENCY_STOP_HZ",
@@ -58,7 +59,7 @@ def lockin_preflight(experiment_id: str, values: dict[str, Any], root: Path | No
         acquisition_preflight(config, experiment_acquisition_requests(experiment_id, values))
     except (ValueError, TypeError) as exc:
         errors.append(str(exc))
-    rf_direct_aw = experiment_id in {"rf-sensitivity-aw", "rf-sensitivity-aw-r", "rf-sensitivity-aw-known-noise"}
+    rf_direct_aw = experiment_id in {"rf-sensitivity-aw", "rf-sensitivity-aw-r", "rf-sensitivity-aw-known-noise", "rf-control-scale-sensitivity"}
     if rf_direct_aw:
         if caps["demodulators"] < 2 or caps["oscillators"] < 2:
             errors.append(f"{model} 缺少独立 RF 解调器或振荡器；MFLI 需要 MF-MD 选件")

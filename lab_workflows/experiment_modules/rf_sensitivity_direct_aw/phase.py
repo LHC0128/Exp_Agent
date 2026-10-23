@@ -119,7 +119,20 @@ def configure_loopback(ctx):
 def calibrate_rf(ctx):
     params, devices, state, directory = ctx.params, ctx.devices, ctx.state, ctx.directory
     signals, channels, hf2 = (devices[key] for key in ("signals", "channels", "hf2"))
-    state["rf_phase_calibration"] = {"points_completed": 0}
+    state["rf_phase_calibration"] = {"mode": "scan" if params.scan_rf_phase else "manual",
+                                      "scan_skipped": not params.scan_rf_phase, "points_completed": 0}
+    if not params.scan_rf_phase:
+        check_cancelled()
+        z_positive_phase = float(params.z_burst_phase_init) % 360.0
+        set_z_rf(ctx, params.z_rf_amplitude_init, phase_base=z_positive_phase)
+        state["rf_phase_calibration"].update(selected_phase_deg=z_positive_phase,
+            initial_phase_deg=z_positive_phase, rf_amplitude_vpp=params.z_rf_amplitude_init)
+        state["calibration"].update(z_positive_field_phase_deg=z_positive_phase,
+                                   z_negative_field_phase_deg=(z_positive_phase + 180) % 360)
+        ctx.z_positive_phase = z_positive_phase
+        report_runtime_progress("phase", f"跳过 Z RF 相位扫描，使用手动触发相位 {z_positive_phase:g}°", 15)
+        directory.update_config(**state)
+        return
     # 延迟导入：mx_z 包的 __init__ 在导入期解析项目根目录，保持模块导入无副作用。
     from ..mx_z_optimal_control_rf_sensitivity.phase import fit_quadrature_phase_scan, paired_phase_order
     report_runtime_progress("phase", "扫描 Z RF 触发相位", 15)

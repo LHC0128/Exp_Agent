@@ -5,8 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../api";
 import type { ExperimentDefinition } from "../types/api";
+import type { JobActivity } from "../components/JobActivity";
 import { ExperimentCatalogPage } from "./ExperimentCatalogPage";
 
+const activity = vi.hoisted(() => ({ value: { hardwareBusy: false, activeJobs: [] } as JobActivity }));
+vi.mock("../components/JobActivity", () => ({ useJobActivity: () => activity.value }));
 vi.mock("../api", () => ({ api: vi.fn() }));
 const mockApi = vi.mocked(api);
 const FIRST: ExperimentDefinition = {
@@ -44,6 +47,9 @@ function renderCatalog() {
 }
 
 beforeEach(() => {
+  window.sessionStorage.clear();
+  activity.value = { hardwareBusy: false, activeJobs: [], connection: "connected" };
+  vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
   items = [{ ...FIRST }, { ...SECOND }];
   mockApi.mockReset();
   mockApi.mockImplementation(async (url, options) => respond(url, options) as never);
@@ -51,7 +57,52 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("实验中心可逆归档", () => {
-  it("普通列表、分类和搜索排除归档，归档入口可独立搜索并保留配置链接", async () => {
+  it("卡片不展示长介绍和脚本路径，仍能按介绍搜索", async () => {
+    renderCatalog();
+    await screen.findByRole("heading", { name: "实验甲" });
+    expect(screen.queryByText("普通实验")).not.toBeInTheDocument();
+    expect(screen.queryByText("experiments/a.py")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索实验" }), { target: { value: "普通实验" } });
+    expect(screen.getByRole("heading", { name: "实验甲" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "管理分类与实验信息" }));
+    expect(screen.getByRole("textbox", { name: "实验甲介绍" })).toHaveValue("普通实验");
+  });
+
+  it("A 型卡片弱化分类、隐藏模式，运行强调且直接进入任务，管理模式不覆盖编辑控件", async () => {
+    activity.value.activeJobs = [{ id: "live", kind: `session:${FIRST.id}`, status: "running", stage: "waiting", percent: 20, message: "等待下一步", created_at: "2026-10-01" }];
+    renderCatalog();
+    const title = await screen.findByRole("heading", { name: FIRST.title });
+    expect(title.closest("article")).toHaveClass("is-running");
+    expect(screen.queryByText("新模式")).not.toBeInTheDocument();
+    expect(screen.queryByText("旧模式")).not.toBeInTheDocument();
+    expect(screen.getByText("运行中")).toBeVisible();
+    expect(screen.getByRole("link", { name: `进入实验：${FIRST.title}` })).toHaveAttribute("href", `/experiments/${FIRST.id}?job=live`);
+    fireEvent.click(screen.getByRole("button", { name: "管理分类与实验信息" }));
+    expect(screen.getByRole("textbox", { name: `${FIRST.title}名称` }).closest("article")).toHaveClass("is-managing");
+    expect(screen.getByRole("link", { name: `进入实验：${FIRST.title}` })).toHaveAttribute("href", `/experiments/${FIRST.id}`);
+    expect(screen.getByRole("combobox")).toBeEnabled();
+  });
+
+  it("返回实验中心恢复搜索、分类与滚动位置，损坏的偏好不阻断加载", async () => {
+    const first = renderCatalog();
+    await screen.findByRole("heading", { name: "实验甲" });
+    fireEvent.click(screen.getByRole("button", { name: "测量 1" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索实验" }), { target: { value: "普通实验" } });
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(420);
+    fireEvent.scroll(window);
+    first.unmount();
+    const second = renderCatalog();
+    await screen.findByRole("heading", { name: "实验甲" });
+    expect(screen.getByRole("textbox", { name: "搜索实验" })).toHaveValue("普通实验");
+    expect(screen.getByRole("button", { name: "测量 1" })).toHaveClass("active");
+    expect(window.scrollTo).toHaveBeenLastCalledWith({ top: 420 });
+    second.unmount();
+    window.sessionStorage.setItem("exp-agent:catalog-view", "{broken");
+    renderCatalog();
+    await screen.findByRole("heading", { name: "实验甲" });
+    expect(screen.getByRole("textbox", { name: "搜索实验" })).toHaveValue("");
+  });
+  it("普通列表、分类和搜索排除归档，归档入口可独立搜索但只显示卡片", async () => {
     renderCatalog();
     expect(await screen.findByRole("heading", { name: "实验甲" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "实验乙" })).not.toBeInTheDocument();
@@ -63,7 +114,8 @@ describe("实验中心可逆归档", () => {
     fireEvent.click(screen.getByRole("button", { name: "已归档 1" }));
     expect(screen.getByRole("heading", { name: "实验乙" })).toBeInTheDocument();
     expect(screen.getByText("标定 · 已归档")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /配置实验/ })).toHaveAttribute("href", "/experiments/experiment-b");
+    expect(screen.queryByRole("link", { name: /进入实验/ })).not.toBeInTheDocument();
+    expect(screen.getByText("仅保留卡片")).toBeVisible();
     fireEvent.change(screen.getByRole("textbox", { name: "搜索实验" }), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "标定 0" }));
     expect(screen.queryByRole("heading", { name: "实验乙" })).not.toBeInTheDocument();
@@ -121,6 +173,19 @@ describe("实验中心可逆归档", () => {
     expect(mockApi.mock.calls.filter(([url]) => url.endsWith("/archive"))).toHaveLength(1);
     await act(async () => resolve({ experiment: { ...FIRST, archived: true } }));
     expect(screen.getByRole("button", { name: "全部 0" })).toBeInTheDocument();
+  });
+
+  it("代码已移走的归档卡片显示路径且没有一键恢复", async () => {
+    items[1] = { ...SECOND, archive_path: "old/experiments" };
+    renderCatalog();
+    await screen.findByRole("heading", { name: "实验甲" });
+    fireEvent.click(screen.getByRole("button", { name: "已归档 1" }));
+    expect(screen.getByText("old/experiments")).toBeVisible();
+    expect(screen.queryByRole("link", { name: /进入实验/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "管理分类与实验信息" }));
+    expect(screen.getByText("恢复前需手动接回代码")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "恢复实验乙" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "实验乙介绍" })).toBeEnabled();
   });
 
   it("归档列表为空时明确提示", async () => {

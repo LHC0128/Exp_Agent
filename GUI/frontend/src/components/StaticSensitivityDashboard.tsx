@@ -4,12 +4,14 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "../api";
 import { useJobActivity } from "./JobActivity";
 import { JobView } from "./JobView";
+import { recoverableJob, useExperimentTask, useRequestedJobId } from "./experimentNavigation";
+import { useParameterGuard } from "./NavigationGuard";
 import { WorkflowPanel, type XYSession } from "./NoiseSpectrumXY/WorkflowPanel";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues, SchemaField } from "../types/api";
 import { sameParameterLayout, validatedParameterLayout } from "../pages/experimentHelpers";
 
 type StaticRunSummary = { run_id: string; timestamp: string; run_tag: string; completion_status: string; analysis: Record<string, unknown>; artifacts: Record<string, string> };
-type Props = { experimentId: string; definition: ExperimentDefinition; fields: SchemaField[]; layout: ParameterLayout; layoutDirty: boolean; onLayoutChange: Dispatch<SetStateAction<ParameterLayout>>; onLayoutSaved: (next: ParameterLayout) => void; values: ParameterValues; setValues: Dispatch<SetStateAction<ParameterValues>>; job: Job | undefined; setJob: Dispatch<SetStateAction<Job | undefined>>; prefill: ParameterValues | null; clearPrefill: () => void };
+type Props = { experimentId: string; definition: ExperimentDefinition; fields: SchemaField[]; layout: ParameterLayout; layoutDirty: boolean; onLayoutChange: Dispatch<SetStateAction<ParameterLayout>>; onLayoutSaved: (next: ParameterLayout, fields: SchemaField[]) => void; values: ParameterValues; setValues: Dispatch<SetStateAction<ParameterValues>>; job: Job | undefined; setJob: Dispatch<SetStateAction<Job | undefined>>; prefill: ParameterValues | null; clearPrefill: () => void };
 const ANALYSIS_KEYS = { z_v_to_nt: "z_v_to_nt" };
 
 export function StaticSensitivityDashboard({ experimentId, definition, fields, layout, layoutDirty, onLayoutChange, onLayoutSaved, values, setValues, job, setJob, prefill, clearPrefill }: Props) {
@@ -25,6 +27,9 @@ export function StaticSensitivityDashboard({ experimentId, definition, fields, l
   const [status, setStatus] = useState<{ ok: boolean; message: string }>();
   const [error, setError] = useState("");
   const live = Boolean(session && session.status !== "closed");
+  useParameterGuard(fields, values, layout, layout, live ? session?.parameters as ParameterValues : undefined);
+  useExperimentTask({ ready: fields.length > 0, setJob, setAnalysisJob });
+  const requestedJobId = useRequestedJobId();
   const jobActive = Boolean(job && ["queued", "running"].includes(job.status));
   const fullActive = jobActive && !live;
   const busySession = live && (session?.status !== "waiting" || Boolean(session?.pending_request));
@@ -43,7 +48,7 @@ export function StaticSensitivityDashboard({ experimentId, definition, fields, l
   useEffect(() => {
     let disposed = false;
     void api<JobSummary[]>("/api/jobs").then(async (items) => {
-      const match = items.find((item) => item.kind.startsWith(`analysis:${experimentId}:`) && ["queued", "running"].includes(item.status));
+      const match = recoverableJob(items, experimentId, requestedJobId, "analysis");
       if (!match || disposed) return;
       const detail = await api<Job>(`/api/jobs/${match.id}`);
       if (!disposed) setAnalysisJob(detail);
@@ -70,7 +75,7 @@ export function StaticSensitivityDashboard({ experimentId, definition, fields, l
       const result = await api<{ message: string; schema: ExperimentSchema }>(`/api/experiments/${experimentId}/defaults`, { method: "PUT", body: JSON.stringify({ parameters: values, parameter_layout: layout }) });
       const persisted = result.schema.parameter_layout_saved ? validatedParameterLayout(result.schema.fields, result.schema.parameter_layout) : undefined;
       if (!persisted || !sameParameterLayout(persisted, layout)) throw new Error("后端未确认参数布局已保存");
-      onLayoutSaved(persisted); setStatus({ ok: true, message: result.message });
+      onLayoutSaved(persisted, result.schema.fields); setStatus({ ok: true, message: result.message });
     } catch (reason) { setStatus({ ok: false, message: String(reason) }); }
     finally { setSaving(false); }
   };

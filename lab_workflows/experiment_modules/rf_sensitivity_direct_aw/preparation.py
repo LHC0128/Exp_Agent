@@ -44,7 +44,7 @@ def preflight(params, root, *, experiment_id=EXPERIMENT_ID):
         for key in ("X_magnetic_field", "Y_magnetic_field")))
     return params, mapping, envelope
 
-def connect_devices(mapping: dict, *, params, experiment_id=EXPERIMENT_ID) -> dict:
+def connect_devices(mapping: dict, *, params, experiment_id=EXPERIMENT_ID, connect_tec=True) -> dict:
     session = DeviceSession()
     try:
         signals, channels = connect_signal_generator_routes(session, "signals", {
@@ -65,7 +65,7 @@ def connect_devices(mapping: dict, *, params, experiment_id=EXPERIMENT_ID) -> di
         actual_mapping = mapping | {"lockin_r": hf_config | {"model": hf2.model, "capabilities": hf2.capabilities}}
         require_lockin_compatibility(experiment_id, params.to_external(), mapping=actual_mapping)
         initialize_lockin_inputs(hf2)
-        tec = session.connect_optional("tec", tec_config["resource"], lambda: TECInstrument(tec_config["resource"]), device_label="TEC")
+        tec = session.connect_optional("tec", tec_config["resource"], lambda: TECInstrument(tec_config["resource"]), device_label="TEC") if connect_tec else None
         return {"signals": signals, "channels": channels, "gs200": gs, "hf2": hf2, "tec": tec, "optional_connection_errors": session.optional_connection_errors()}
     except BaseException:
         session.cleanup_connection_failure()

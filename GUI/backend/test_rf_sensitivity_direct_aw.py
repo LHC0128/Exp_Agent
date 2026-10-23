@@ -150,9 +150,10 @@ def test_schema_lists_oc_sens_versions_without_choosing_a_default(client, tmp_pa
     monkeypatch.setitem(control_sources.CONTROL_SOURCE_SET_ROOTS, "oc_sens", directory)
     response = client.get(f"{BASE}/schema")
     assert response.status_code == 200
-    field = next(item for item in response.json()["fields"] if item["name"] == "ARB_WAVEFORM_FILE")
-    assert field["default"] == ""
-    assert field["options"] == [{"value": "", "label": "请选择最优控制版本"}, {"value": "v8/waveforms/optimal_control_waveform.csv", "label": "v8"}]
+    field = next(item for item in response.json()["fields"] if item["name"] == "CONTROL_WAVEFORM_FILES")
+    assert field["default"] is None and field["type"] == "array"
+    assert field["options"] == [{"value": "v8/waveforms/optimal_control_waveform.csv", "label": "v8"}]
+    assert not any(item["name"] == "ARB_WAVEFORM_FILE" for item in response.json()["fields"])
     response = client.post(f"{BASE}/preflight", json={"parameters": {"ARB_WAVEFORM_FILE": ""}})
     assert response.status_code == 200
     assert response.json()["ok"] is False

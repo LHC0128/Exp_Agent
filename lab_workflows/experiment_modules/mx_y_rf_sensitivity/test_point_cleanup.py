@@ -45,7 +45,8 @@ def test_point_keeps_original_error_and_structured_cleanup_failure(
 def test_grid_continues_only_after_quality_failure_with_successful_cleanup(
     tmp_path, monkeypatch, module_name, cleanup_failed
 ):
-    workflow = import_module(f"lab_workflows.experiment_modules.{module_name}.workflow")
+    module = "acquisition" if module_name == "mx_y_rf_power_optimization" else "workflow"
+    workflow = import_module(f"lab_workflows.experiment_modules.{module_name}.{module}")
     probe = "probe_detuning" in module_name
     params = SimpleNamespace(
         pump_power_start_v=0.1, pump_power_stop_v=0.1, pump_power_points=1,

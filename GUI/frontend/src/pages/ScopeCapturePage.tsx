@@ -4,6 +4,8 @@ import { api } from "../api";
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
 import { PageHead } from "../components/PageHead";
+import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
+import { useParameterGuard } from "../components/NavigationGuard";
 import { ScopePlot } from "../components/ScopePlot";
 import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
 import type {
@@ -73,6 +75,9 @@ export function ScopeCapturePage() {
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
   const sessionActive = Boolean(session && session.status !== "closed");
   const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
+  useParameterGuard(fields, values, layout, savedLayout, sessionActive ? session?.parameters as ParameterValues : undefined);
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob });
+  const requestedJobId = useRequestedJobId();
 
   // 历史 Tab：通用运行记录 + 多曲线叠加比较（时域/频域、超量程诊断）。
   const [history, setHistory] = useState<RunSummary[]>([]);
@@ -105,9 +110,7 @@ export function ScopeCapturePage() {
       const saved = schema.parameter_layout_saved ? validatedParameterLayout(schema.fields, schema.parameter_layout) : undefined;
       const initial = saved ?? defaultParameterLayout(schema.fields);
       setLayout(initial); setSavedLayout(initial);
-      const matching = jobs.filter(item => item.kind === `experiment:${ID}`);
-      const recovered = matching.find(item => ["queued", "running"].includes(item.status))
-        ?? matching.find(item => Boolean(item.started_at));
+      const recovered = recoverableJob(jobs, ID, requestedJobId);
       if (recovered) {
         const full = await api<Job>(`/api/jobs/${recovered.id}`);
         if (!disposed) setJob(full);
@@ -260,7 +263,7 @@ export function ScopeCapturePage() {
 
   return <>
     <PageHead eyebrow="MEASUREMENT · SCOPE" title={definition?.title ?? "示波器采集"}
-      description={definition?.description ?? "读取参数与运行记录。"} />
+      description={definition?.description ?? "读取参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
     {notice && <div className="alert success" role="status">{notice}</div>}
     <div className="zaw-tab-strip" role="tablist" aria-label="示波器采集视图" onKeyDown={tabKey}>

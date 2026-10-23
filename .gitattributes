@@ -1,0 +1,2 @@
+# 归档按移动前原始字节保存，避免跨平台换行转换破坏 SHA256 校验。
+old/experiments/** -text whitespace=cr-at-eol

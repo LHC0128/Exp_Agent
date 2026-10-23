@@ -37,6 +37,10 @@ defaults_file: params/experiments/mx-keithley-6221-optimal-control-balanced-sens
 
 # Mx Keithley 6221 最优控制 平衡-灵敏度一体化
 
+> **已归档：GUI 仅保留目录卡片，不再提供运行/历史页面。** 专属代码与正式测试保存于
+> [`old/experiments/`](../old/experiments/README.md)，默认参数与历史数据原位保留。
+> 下文说明归档前的方案与安全约定，仅供维护和历史复现；重新接入需先恢复代码及注册入口并完成无硬件回归。
+
 ## 采集时序与系统稳定
 
 实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
@@ -50,9 +54,9 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](lockin_amplifier.md#解调时序的模块选择)。
 
-当前默认参数：[参数文件](../params/experiments/mx-keithley-6221-optimal-control-balanced-sensitivity.yaml)。GUI「保存为默认」会更新该文件；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
+归档时保留的参数：[参数文件](../params/experiments/mx-keithley-6221-optimal-control-balanced-sensitivity.yaml)。当前 GUI 不再提供保存入口，该文件仍原位保留；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
 
-锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，GUI 不再提供开启选项。
+锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，归档前的 GUI 不再提供开启选项。
 
 ## 锁相设备与启动检查
 

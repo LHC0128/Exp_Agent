@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api";
 import { ExperimentPage } from "./ExperimentPage";
+import workflowFixture from "./rfDirectAWWorkflow.fixture.json";
 
 vi.mock("../api", () => ({ api: vi.fn() }));
 vi.mock("../components/JobActivity", () => ({ useJobActivity: () => ({ hardwareBusy: false, activeJobs: [] }) }));
@@ -25,9 +26,11 @@ let sessionJob: any;
 let stepResult: any;
 let parameterResult: any;
 let parameterApplyError: boolean;
+let noiseAnalysisOptions: Record<string, number | string> | undefined;
 const fields = [
   { name: "RUN_TAG", label: "运行标签", type: "string", default: "rf_sens_aw", group: "basic" },
-  { name: "ARB_WAVEFORM_FILE", label: "最优控制波形版本", type: "string", default: "", group: "basic", options: [{ value: "", label: "请选择最优控制版本" }, ...["v1", "v8"].map(version => ({ value: `${version}/waveforms/optimal_control_waveform.csv`, label: version }))] },
+  { name: "CONTROL_WAVEFORM_FILES", label: "控制波形版本（可多选）", type: "array", default: [], legacy_default: [], group: "basic", options: ["v1", "v8"].map(version => ({ value: `${version}/waveforms/optimal_control_waveform.csv`, label: version })) },
+  { name: "CONTROL_SCALE_FACTORS", label: "各控制补偿倍率", type: "object", default: {}, legacy_default: {}, group: "basic" },
   ...["FREQ", "AMPLITUDE", "OFFSET", "DUTY", "PHASE"].map((suffix, index) => ({ name: `XY_TRIGGER_${suffix}`, label: `共同触发${suffix}`, type: "number", default: [100, 5, 2.5, 50, 0][index], group: "basic" })),
   { name: "DEMOD3_IDX", label: "RF 解调器索引", type: "integer", default: 3, group: "basic" },
   { name: "RF_INPUT_ROUTE", label: "RF 输入线路", type: "string", default: "physical", group: "basic", options: [{ value: "physical", label: "物理连接" }, { value: "internal", label: "内部回采（仅 MFLI）" }] },
@@ -36,1172 +39,18 @@ const fields = [
   { name: "LOOPBACK_AUX_SCALE", label: "回环增益", type: "number", default: 2.2044, group: "advanced" },
   { name: "TEMP_SWITCH_ON_LAG_S", label: "恢复温控后等待", type: "number", default: 0.5, group: "basic" },
   { name: "NOISE_NPERSEG", label: "Welch 段长", type: "integer", default: 2000, group: "basic" },
+  { name: "NOISE_OUTLIER_POLICY", label: "噪声异常谱处理", type: "string", default: "mad_high", legacy_default: "none", group: "basic", options: [{ value: "mad_high", label: "保守 MAD 高值剔除" }, { value: "none", label: "保留全部记录" }] },
+  { name: "SENSITIVITY_BAND_MIN_HZ", label: "异常谱评分频带下限", type: "number", default: 3, legacy_default: 3, group: "basic" },
+  { name: "SENSITIVITY_BAND_MAX_HZ", label: "异常谱评分频带上限", type: "number", default: 150, legacy_default: 150, group: "basic" },
+  { name: "Z_PHASE_SCAN_ENABLED", label: "扫描 RF 触发相位", type: "boolean", default: true, group: "basic" },
+  { name: "Z_BURST_PHASE_INIT", label: "正 RF 触发相位", type: "number", default: 181.5, group: "basic" },
+  ...["START", "STOP", "STEP"].map((name, index) => ({ name: `Z_PHASE_SCAN_${name}_DEG`, label: `RF 校相${name}`, type: "number", default: [0, 340, 20][index], group: "basic" })),
   { name: "LINEWIDTH_MODE", label: "线宽模式", type: "string", default: "dispersive_equivalent", group: "basic", options: [{ value: "frequency_sweep", label: "扫频测线宽" }, { value: "dispersive_equivalent", label: "色散等效线宽" }] },
   { name: "BW_FREQ_START", label: "带宽扫频起点", type: "number", default: 2000, group: "basic" },
   { name: "BW_FREQ_STOP", label: "带宽扫频终点", type: "number", default: 4000, group: "basic" },
   { name: "BW_FREQ_POINTS", label: "带宽扫频点数", type: "integer", default: 21, group: "basic" },
 ];
-const flow = {
-  "acquisition": [
-    {
-      "id": "A01",
-      "title": "启动预检",
-      "group": "启动准备",
-      "dependencies": [],
-      "parameters": [],
-      "artifacts": [],
-      "display_parameters": []
-    },
-    {
-      "id": "A02",
-      "title": "设备连接",
-      "group": "启动准备",
-      "dependencies": [
-        "A01"
-      ],
-      "parameters": [],
-      "artifacts": [],
-      "display_parameters": []
-    },
-    {
-      "id": "A03",
-      "title": "参考时钟同步",
-      "group": "启动准备",
-      "dependencies": [
-        "A02"
-      ],
-      "parameters": [],
-      "artifacts": [],
-      "display_parameters": []
-    },
-    {
-      "id": "A04",
-      "title": "初始输出设置",
-      "group": "初始条件",
-      "dependencies": [
-        "A03"
-      ],
-      "parameters": [
-        "FIXED_PARAMS.Pump_laser_power",
-        "FIXED_PARAMS.Probe_laser_power",
-        "FIXED_PARAMS.main_magnetic_field",
-        "FIXED_PARAMS.Temp_Switch"
-      ],
-      "artifacts": [],
-      "display_parameters": [
-        "FIXED_PARAMS.Pump_laser_power",
-        "FIXED_PARAMS.Probe_laser_power",
-        "FIXED_PARAMS.main_magnetic_field",
-        "FIXED_PARAMS.Temp_Switch"
-      ]
-    },
-    {
-      "id": "A05",
-      "title": "目标温度设置",
-      "group": "初始条件",
-      "dependencies": [
-        "A04"
-      ],
-      "parameters": [
-        "FIXED_PARAMS.temperature"
-      ],
-      "artifacts": [],
-      "display_parameters": [
-        "FIXED_PARAMS.temperature"
-      ]
-    },
-    {
-      "id": "A06",
-      "title": "Pump 载波与门控",
-      "group": "激励与触发",
-      "dependencies": [
-        "A05"
-      ],
-      "parameters": [
-        "PUMP_MOD_FREQ",
-        "PUMP_MOD_AMPLITUDE",
-        "PUMP_MOD_DUTY",
-        "RF_GATE_AMPLITUDE",
-        "RF_GATE_OFFSET"
-      ],
-      "artifacts": [],
-      "display_parameters": [
-        "PUMP_MOD_FREQ",
-        "PUMP_MOD_AMPLITUDE",
-        "PUMP_MOD_DUTY",
-        "RF_GATE_AMPLITUDE",
-        "RF_GATE_OFFSET"
-      ]
-    },
-    {
-      "id": "A07",
-      "title": "XYZ 共同触发",
-      "group": "激励与触发",
-      "dependencies": [
-        "A06"
-      ],
-      "parameters": [
-        "XY_TRIGGER_FREQ",
-        "XY_TRIGGER_AMPLITUDE",
-        "XY_TRIGGER_OFFSET",
-        "XY_TRIGGER_DUTY",
-        "XY_TRIGGER_PHASE",
-        "Z_TRIGGER_FREQ",
-        "Z_TRIGGER_AMPLITUDE",
-        "Z_TRIGGER_OFFSET",
-        "Z_TRIGGER_DUTY",
-        "Z_TRIGGER_PHASE"
-      ],
-      "artifacts": [],
-      "display_parameters": [
-        "XY_TRIGGER_FREQ",
-        "XY_TRIGGER_AMPLITUDE",
-        "XY_TRIGGER_OFFSET",
-        "XY_TRIGGER_DUTY",
-        "XY_TRIGGER_PHASE"
-      ]
-    },
-    {
-      "id": "A08",
-      "title": "Bell-Bloom / Demod0 校相",
-      "group": "四级相位校准",
-      "dependencies": [
-        "A07"
-      ],
-      "parameters": [
-        "DEMOD0_IDX",
-        "DEMOD0_OSC_IDX",
-        "DEMOD0_SIGNAL_RANGE",
-        "DEMOD0_ORDER",
-        "DEMOD0_TC_CALIB",
-        "DEMOD0_RATE",
-        "SYSTEM_SETTLE_S",
-        "TEMP_SWITCH_ON_LAG_S"
-      ],
-      "artifacts": [],
-      "display_parameters": [
-        "DEMOD0_IDX",
-        "DEMOD0_OSC_IDX",
-        "DEMOD0_SIGNAL_RANGE",
-        "DEMOD0_ORDER",
-        "DEMOD0_TC_CALIB",
-        "DEMOD0_RATE",
-        "SYSTEM_SETTLE_S",
-        "TEMP_SWITCH_ON_LAG_S"
-      ]
-    },
-    {
-      "id": "A09",
-      "title": "XY DirectAW 上传与迭代校相",
-      "group": "四级相位校准",
-      "dependencies": [
-        "A08"
-      ],
-      "parameters": [
-        "ARB_WAVEFORM_FILE",
-        "AW_REPEAT_FREQ",
-        "XY_CTRL_K_HZ_PER_V",
-        "XY_CTRL_B_HZ",
-        "XY_CTRL_PHASE",
-        "XY_CTRL_QUAD",
-        "XY_CTRL_PHASE_TOL_DEG",
-        "XY_CTRL_PHASE_MAX_ITER",
-        "XY_CTRL_PHASE_MIN_R_V",
-        "XY_CTRL_PHASE_MIN_R_RATIO"
-      ],
-      "artifacts": [
-        "raw/xy_aw_waveforms_initial.npz",
-        "raw/xy_aw_waveforms.npz"
-      ],
-      "display_parameters": [
-        "ARB_WAVEFORM_FILE",
-        "AW_REPEAT_FREQ",
-        "XY_CTRL_K_HZ_PER_V",
-        "XY_CTRL_B_HZ",
-        "XY_CTRL_PHASE",
-        "XY_CTRL_QUAD",
-        "XY_CTRL_PHASE_TOL_DEG",
-        "XY_CTRL_PHASE_MAX_ITER",
-        "XY_CTRL_PHASE_MIN_R_V",
-        "XY_CTRL_PHASE_MIN_R_RATIO",
-        "SYSTEM_SETTLE_S",
-        "TEMP_SWITCH_ON_LAG_S"
-      ]
-    },
-    {
-      "id": "A10",
-      "title": "RF 输入线路与 Z RF 响应准备",
-      "group": "四级相位校准",
-      "dependencies": [
-        "A09"
-      ],
-      "parameters": [
-        "DEMOD0_TC_MEAS",
-        "DEMOD3_IDX",
-        "DEMOD3_OSC_IDX",
-        "DEMOD3_ORDER",
-        "DEMOD3_TC",
-        "DEMOD3_RATE",
-        "LOOPBACK_AUX_SCALE",
-        "LOOPBACK_AUX_OFFSET_V",
-        "LOOPBACK_INPUT_RANGE_V",
-        "LOOPBACK_INPUT_DIFF",
-        "Z_RF_FREQ",
-        "Z_RF_AMPLITUDE_INIT",
-        "Z_BURST_PHASE_INIT",
-        "RF_INPUT_ROUTE",
-        "RF_AUX_OUTPUT_IDX",
-        "RF_PHYSICAL_INPUT_SOURCE"
-      ],
-      "artifacts": [],
-      "display_parameters": [
-        "DEMOD0_TC_MEAS",
-        "DEMOD3_IDX",
-        "DEMOD3_OSC_IDX",
-        "DEMOD3_ORDER",
-        "DEMOD3_TC",
-        "DEMOD3_RATE",
-        "LOOPBACK_AUX_SCALE",
-        "LOOPBACK_AUX_OFFSET_V",
-        "LOOPBACK_INPUT_RANGE_V",
-        "LOOPBACK_INPUT_DIFF",
-        "Z_RF_FREQ",
-        "Z_RF_AMPLITUDE_INIT",
-        "Z_BURST_PHASE_INIT",
-        "RF_INPUT_ROUTE",
-        "RF_AUX_OUTPUT_IDX",
-        "RF_PHYSICAL_INPUT_SOURCE"
-      ]
-    },
-    {
-      "id": "A11",
-      "title": "控制 AM 与 Z RF 触发相位扫描",
-      "group": "四级相位校准",
-      "dependencies": [
-        "A10"
-      ],
-      "parameters": [
-        "Z_PHASE_SCAN_START_DEG",
-        "Z_PHASE_SCAN_STOP_DEG",
-        "Z_PHASE_SCAN_STEP_DEG",
-        "TEMP_GROUP_SIZE",
-        "SYSTEM_SETTLE_S",
-        "SCAN_POINT_DURATION_S"
-      ],
-      "artifacts": [
-        "raw/z_phase_scan.npz",
-        "results/z_phase_scan.png",
-        "results/z_phase_scan.pdf"
-      ],
-      "display_parameters": [
-        "Z_PHASE_SCAN_START_DEG",
-        "Z_PHASE_SCAN_STOP_DEG",
-        "Z_PHASE_SCAN_STEP_DEG",
-        "Z_RF_AMPLITUDE_INIT",
-        "SYSTEM_SETTLE_S",
-        "TEMP_SWITCH_ON_LAG_S",
-        "TEMP_GROUP_SIZE",
-        "SCAN_POINT_DURATION_S"
-      ]
-    },
-    {
-      "id": "A12",
-      "title": "RF 解调器校相",
-      "group": "四级相位校准",
-      "dependencies": [
-        "A11"
-      ],
-      "parameters": [],
-      "artifacts": [],
-      "display_parameters": [
-        "Z_RF_AMPLITUDE_INIT",
-        "SYSTEM_SETTLE_S",
-        "TEMP_SWITCH_ON_LAG_S"
-      ]
-    },
-    {
-      "id": "A13",
-      "title": "有符号 Z RF 幅度扫描",
-      "group": "采集与结束",
-      "dependencies": [
-        "A12"
-      ],
-      "parameters": [
-        "RUN_TAG",
-        "RF_AMP_START",
-        "RF_AMP_STOP",
-        "RF_AMP_POINTS",
-        "Z_V_TO_NT"
-      ],
-      "artifacts": [
-        "raw/response_data.npz",
-        "experiment_config.yaml"
-      ],
-      "display_parameters": [
-        "RUN_TAG",
-        "RF_AMP_START",
-        "RF_AMP_STOP",
-        "RF_AMP_POINTS",
-        "Z_V_TO_NT",
-        "SYSTEM_SETTLE_S",
-        "TEMP_SWITCH_ON_LAG_S",
-        "TEMP_GROUP_SIZE",
-        "SCAN_POINT_DURATION_S"
-      ]
-    },
-    {
-      "id": "A14",
-      "title": "零 RF 工作点 X 噪声采集",
-      "group": "采集与结束",
-      "dependencies": [
-        "A13"
-      ],
-      "parameters": [
-        "NOISE_N_AVG",
-        "NOISE_DURATION",
-        "NOISE_RATE",
-        "DEMOD3_NOISE_TC",
-        "DEMOD3_NOISE_ORDER"
-      ],
-      "artifacts": [
-        "raw/noise_D3_*.npz"
-      ],
-      "display_parameters": [
-        "NOISE_N_AVG",
-        "NOISE_DURATION",
-        "NOISE_RATE",
-        "DEMOD3_NOISE_TC",
-        "DEMOD3_NOISE_ORDER",
-        "SYSTEM_SETTLE_S",
-        "TEMP_SWITCH_ON_LAG_S"
-      ]
-    },
-    {
-      "id": "A13B",
-      "title": "Z RF 扫频带宽测量（可选）",
-      "group": "采集与结束",
-      "dependencies": [
-        "A14"
-      ],
-      "parameters": [
-        "LINEWIDTH_MODE",
-        "BW_FREQ_START",
-        "BW_FREQ_STOP",
-        "BW_FREQ_POINTS"
-      ],
-      "artifacts": [
-        "raw/bandwidth_data.npz"
-      ],
-      "display_parameters": [
-        "LINEWIDTH_MODE",
-        "BW_FREQ_START",
-        "BW_FREQ_STOP",
-        "BW_FREQ_POINTS",
-        "Z_RF_AMPLITUDE_INIT",
-        "SYSTEM_SETTLE_S",
-        "TEMP_SWITCH_ON_LAG_S",
-        "TEMP_GROUP_SIZE",
-        "SCAN_POINT_DURATION_S"
-      ]
-    },
-    {
-      "id": "A15",
-      "title": "响应恢复与本轮安全收尾",
-      "group": "采集与结束",
-      "dependencies": [
-        "A14"
-      ],
-      "parameters": [],
-      "artifacts": [],
-      "display_parameters": []
-    },
-    {
-      "id": "A16",
-      "title": "安全收尾 / 结束会话",
-      "group": "采集与结束",
-      "dependencies": [],
-      "parameters": [],
-      "artifacts": [],
-      "display_parameters": []
-    }
-  ],
-  "analysis": [
-    {
-      "id": "B01",
-      "title": "加载配置与校验原始数据",
-      "group": "独立离线分析",
-      "dependencies": [],
-      "parameters": [],
-      "artifacts": [],
-      "display_parameters": []
-    },
-    {
-      "id": "B02",
-      "title": "X 色散响应与斜率",
-      "group": "独立离线分析",
-      "dependencies": [
-        "B01"
-      ],
-      "parameters": [],
-      "artifacts": [
-        "response_fit.npz"
-      ],
-      "display_parameters": []
-    },
-    {
-      "id": "B03",
-      "title": "Welch X 噪声 PSD",
-      "group": "独立离线分析",
-      "dependencies": [
-        "B02"
-      ],
-      "parameters": [
-        "NOISE_NPERSEG"
-      ],
-      "artifacts": [
-        "psd_avg.npz"
-      ],
-      "display_parameters": [
-        "NOISE_NPERSEG"
-      ]
-    },
-    {
-      "id": "B04",
-      "title": "RF 灵敏度、频响补偿与结果图",
-      "group": "独立离线分析",
-      "dependencies": [
-        "B03"
-      ],
-      "parameters": [],
-      "artifacts": [
-        "sensitivity.npz",
-        "analysis.yaml",
-        "analysis.json",
-        "bandwidth_fit.png",
-        "bandwidth_fit.pdf",
-        "response_curve.png",
-        "response_curve.pdf",
-        "noise_psd.png",
-        "noise_psd.pdf",
-        "sensitivity.png",
-        "sensitivity.pdf",
-        "full_analysis.png",
-        "full_analysis.pdf"
-      ],
-      "display_parameters": []
-    }
-  ],
-  "parameter_impacts": {
-    "acquisition": {
-      "FIXED_PARAMS.Pump_laser_power": [
-        "A04",
-        "A05",
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "FIXED_PARAMS.Probe_laser_power": [
-        "A04",
-        "A05",
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "FIXED_PARAMS.main_magnetic_field": [
-        "A04",
-        "A05",
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "FIXED_PARAMS.Temp_Switch": [
-        "A04",
-        "A05",
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "FIXED_PARAMS.temperature": [
-        "A05",
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "PUMP_MOD_FREQ": [
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "PUMP_MOD_AMPLITUDE": [
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "PUMP_MOD_DUTY": [
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "RF_GATE_AMPLITUDE": [
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "RF_GATE_OFFSET": [
-        "A06",
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_TRIGGER_FREQ": [
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_TRIGGER_AMPLITUDE": [
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_TRIGGER_OFFSET": [
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_TRIGGER_DUTY": [
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_TRIGGER_PHASE": [
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_TRIGGER_FREQ": [
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_TRIGGER_AMPLITUDE": [
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_TRIGGER_OFFSET": [
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_TRIGGER_DUTY": [
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_TRIGGER_PHASE": [
-        "A07",
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD0_IDX": [
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD0_OSC_IDX": [
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD0_SIGNAL_RANGE": [
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD0_ORDER": [
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD0_TC_CALIB": [
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD0_RATE": [
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "SYSTEM_SETTLE_S": [
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "TEMP_SWITCH_ON_LAG_S": [
-        "A08",
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "ARB_WAVEFORM_FILE": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "AW_REPEAT_FREQ": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_CTRL_K_HZ_PER_V": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_CTRL_B_HZ": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_CTRL_PHASE": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_CTRL_QUAD": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_CTRL_PHASE_TOL_DEG": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_CTRL_PHASE_MAX_ITER": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_CTRL_PHASE_MIN_R_V": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "XY_CTRL_PHASE_MIN_R_RATIO": [
-        "A09",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD0_TC_MEAS": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD3_IDX": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD3_OSC_IDX": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD3_ORDER": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD3_TC": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD3_RATE": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "LOOPBACK_AUX_SCALE": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "LOOPBACK_AUX_OFFSET_V": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "LOOPBACK_INPUT_RANGE_V": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "LOOPBACK_INPUT_DIFF": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_RF_FREQ": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_RF_AMPLITUDE_INIT": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_BURST_PHASE_INIT": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "RF_INPUT_ROUTE": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "RF_AUX_OUTPUT_IDX": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "RF_PHYSICAL_INPUT_SOURCE": [
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_PHASE_SCAN_START_DEG": [
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_PHASE_SCAN_STOP_DEG": [
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_PHASE_SCAN_STEP_DEG": [
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "TEMP_GROUP_SIZE": [
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "SCAN_POINT_DURATION_S": [
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "RUN_TAG": [
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "RF_AMP_START": [
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "RF_AMP_STOP": [
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "RF_AMP_POINTS": [
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "Z_V_TO_NT": [
-        "A13",
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "NOISE_N_AVG": [
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "NOISE_DURATION": [
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "NOISE_RATE": [
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD3_NOISE_TC": [
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "DEMOD3_NOISE_ORDER": [
-        "A14",
-        "A13B",
-        "A15"
-      ],
-      "LINEWIDTH_MODE": [
-        "A13B"
-      ],
-      "BW_FREQ_START": [
-        "A13B"
-      ],
-      "BW_FREQ_STOP": [
-        "A13B"
-      ],
-      "BW_FREQ_POINTS": [
-        "A13B"
-      ]
-    },
-    "analysis": {
-      "NOISE_NPERSEG": [
-        "B03",
-        "B04"
-      ]
-    }
-  },
-  "diagram_url": "/api/experiments/rf-sensitivity-aw/workflow/diagram"
-};
-const layout = { basic: fields.filter(field => field.group === "basic").map(field => field.name), advanced: ["LOOPBACK_AUX_SCALE"] };
+const flow = workflowFixture;const layout = { basic: fields.filter(field => field.group === "basic").map(field => field.name), advanced: ["LOOPBACK_AUX_SCALE"] };
 
 function makeSession() {
   const parameters: Record<string, any> = Object.fromEntries(fields.map(field => [field.name, field.default]));
@@ -1212,7 +61,7 @@ function makeSession() {
 }
 
 function analysisState(runId: string) {
-  return { run_id: runId, revision: 4, options: { noise_nperseg: runId === "1009_latest" ? 800 : 600 },
+  return { run_id: runId, revision: 4, options: { noise_nperseg: runId === "1009_latest" ? 800 : 600, ...noiseAnalysisOptions },
     steps: Object.fromEntries(flow.analysis.map(stage => [stage.id, { status: "completed", error: "" }])) };
 }
 
@@ -1241,6 +90,7 @@ beforeEach(() => {
   activeSession = null;
   stepResult = parameterResult = undefined;
   parameterApplyError = false;
+  noiseAnalysisOptions = undefined;
   sessionJob = { id: "session-job", kind: `session:${ID}`, status: "running", events: [], message: "等待下一步" };
   analysisJob = { id: "analysis", kind: `analysis:${ID}:1009_latest`, status: "running", stage: "analysis", message: "正在分析", events: [] };
   comparisonJob = { id: "comparison", kind: `comparison:${ID}`, status: "running", stage: "analysis", message: "生成对比", events: [] };
@@ -1320,7 +170,7 @@ beforeEach(() => {
     if (url.endsWith("/summary")) return historyRuns?.find(item => item.run_id === decodeURIComponent(url.split("/").at(-2)!)) ?? summary;
     if (url.endsWith("/analysis")) return options?.method === "POST" ? analysisJob : analysisState(decodeURIComponent(url.split("/").at(-2)!));
     if (url === `${BASE}/preflight`) {
-      const chosen = JSON.parse(String(options?.body)).parameters.ARB_WAVEFORM_FILE;
+      const chosen = JSON.parse(String(options?.body)).parameters.CONTROL_WAVEFORM_FILES?.length;
       return { ok: preflightOk && Boolean(chosen), errors: !preflightOk ? ["共同触发参数不一致"] : chosen ? [] : ["请选择 oc_sens 中的最优控制波形版本"] };
     }
     if (url === `${BASE}/defaults`) return { schema: { fields, parameter_layout: JSON.parse(String(options?.body)).parameter_layout } };
@@ -1338,6 +188,7 @@ it("从实验路由进入双 Tab，切换保留参数，历史填回不启动采
   expect(await within(screen.getByRole("tabpanel", { name: "运行" })).findByAltText("X 响应与 RF 灵敏度")).toHaveAttribute("src", "/plot.png?v=1");
   expect(within(screen.getByRole("tabpanel", { name: "运行" })).getByText(/已作洛伦兹校正/)).toBeVisible();
   fireEvent.change(screen.getByLabelText("运行标签"), { target: { value: "edited" } });
+  fireEvent.change(screen.getByLabelText("各控制补偿倍率 · v1"), { target: { value: "1.4" } });
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "填回参数" })).toBeEnabled());
   fireEvent.click(screen.getByRole("tab", { name: "运行" }));
@@ -1346,7 +197,9 @@ it("从实验路由进入双 Tab，切换保留参数，历史填回不启动采
   expect(screen.getByRole("tab", { name: "历史" })).toHaveAttribute("aria-selected", "true");
   fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
   expect(screen.getByLabelText("运行标签")).toHaveValue("history-tag");
-  expect(screen.getByLabelText("最优控制波形版本")).toHaveValue("v1/waveforms/optimal_control_waveform.csv");
+  expect(screen.getByRole("checkbox", { name: "v1" })).toBeChecked();
+  expect(screen.getByLabelText("各控制补偿倍率 · v1")).toHaveValue(1);
+  expect(screen.getByLabelText("噪声异常谱处理")).toHaveValue("none");
   expect(screen.getByLabelText("共同触发FREQ")).toHaveValue(200);
   expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs` && options?.method === "POST")).toBe(false);
 });
@@ -1355,15 +208,19 @@ it("保存参数与分组布局，并把共同触发同步到两套旧键", asyn
   await renderPage();
   await screen.findByLabelText("运行标签");
   fireEvent.change(screen.getByLabelText("共同触发FREQ"), { target: { value: "200" } });
-  fireEvent.change(screen.getByLabelText("最优控制波形版本"), { target: { value: "v8/waveforms/optimal_control_waveform.csv" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "v1" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "v8" }));
+  expect(screen.getByRole("checkbox", { name: "v1" })).toBeChecked();
+  fireEvent.change(screen.getByLabelText("各控制补偿倍率 · v8"), { target: { value: "1.25" } });
   fireEvent.click(screen.getByRole("button", { name: "运行标签 移至高级参数" }));
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
   await screen.findByText("参数与布局已保存");
   const call = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   const body = JSON.parse(String(call[1]?.body));
   for (const suffix of ["FREQ", "AMPLITUDE", "OFFSET", "DUTY", "PHASE"]) expect(body.parameters[`XY_TRIGGER_${suffix}`]).toEqual(body.parameters[`Z_TRIGGER_${suffix}`]);
-  expect(body.parameters.ARB_WAVEFORM_FILE).toBe("v8/waveforms/optimal_control_waveform.csv");
+  expect(body.parameters.CONTROL_WAVEFORM_FILES).toEqual(["v1/waveforms/optimal_control_waveform.csv", "v8/waveforms/optimal_control_waveform.csv"]);
   expect(body.parameter_layout.advanced).toContain("RUN_TAG");
+  expect(body.parameters.CONTROL_SCALE_FACTORS).toEqual({ v8: 1.25 });
   document.querySelectorAll<HTMLDetailsElement>(".xy-node-parameters details").forEach(node => { node.open = true; });
   expect(screen.getByLabelText("RF 解调器索引")).toBeEnabled();
   expect(screen.getByLabelText("回环增益")).toBeEnabled();
@@ -1415,7 +272,7 @@ it("成功预检后提交运行，并同步两套触发参数", async () => {
   await renderPage();
   await screen.findByLabelText("运行标签");
   fireEvent.change(screen.getByLabelText("共同触发FREQ"), { target: { value: "200" } });
-  fireEvent.change(screen.getByLabelText("最优控制波形版本"), { target: { value: "v8/waveforms/optimal_control_waveform.csv" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "v8" }));
   fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
   await screen.findByRole("button", { name: "安全停止" });
   const startIndex = mockApi.mock.calls.findIndex(([url, options]) => url === `${BASE}/runs` && options?.method === "POST");
@@ -1424,21 +281,64 @@ it("成功预检后提交运行，并同步两套触发参数", async () => {
   const body = JSON.parse(String(mockApi.mock.calls[startIndex][1]?.body));
   expect(body.parameters.XY_TRIGGER_FREQ).toBe(200);
   expect(body.parameters.Z_TRIGGER_FREQ).toBe(200);
-  expect(body.parameters.ARB_WAVEFORM_FILE).toBe("v8/waveforms/optimal_control_waveform.csv");
+  expect(body.parameters.CONTROL_WAVEFORM_FILES).toEqual(["v8/waveforms/optimal_control_waveform.csv"]);
+});
+
+it("A11 可关闭扫描并填写手动相位，保存和完整运行都提交手动设置", async () => {
+  await renderPage();
+  const node = within(screen.getByRole("region", { name: "A11 控制 AM 与 Z RF 触发相位扫描（可跳过） 参数" }));
+  expect(node.getByLabelText("扫描 RF 触发相位")).toHaveValue("true");
+  expect(node.getByLabelText("正 RF 触发相位")).toHaveValue(181.5);
+  fireEvent.change(node.getByLabelText("扫描 RF 触发相位"), { target: { value: "false" } });
+  expect(node.getByLabelText("RF 校相START")).toBeDisabled();
+  expect(screen.getByText(/跳过相位扫描，使用手动触发相位 181.5°/)).toBeVisible();
+  fireEvent.change(node.getByLabelText("正 RF 触发相位"), { target: { value: "205.5" } });
+  screen.getAllByLabelText("正 RF 触发相位").forEach(input => expect(input).toHaveValue(205.5));
+  fireEvent.click(screen.getByRole("checkbox", { name: "v1" }));
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(screen.getByRole("tab", { name: "运行" }));
+  expect(node.getByLabelText("扫描 RF 触发相位")).toHaveValue("false");
+  expect(node.getByLabelText("正 RF 触发相位")).toHaveValue(205.5);
+  fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
+  await screen.findByText("参数与布局已保存");
+  const saved = JSON.parse(String(mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)![1]?.body));
+  expect(saved.parameters).toMatchObject({ Z_PHASE_SCAN_ENABLED: false, Z_BURST_PHASE_INIT: 205.5 });
+  fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
+  await screen.findByRole("button", { name: "安全停止" });
+  const start = mockApi.mock.calls.find(([url, options]) => url === `${BASE}/runs` && options?.method === "POST")!;
+  expect(JSON.parse(String(start[1]?.body)).parameters).toMatchObject({ Z_PHASE_SCAN_ENABLED: false, Z_BURST_PHASE_INIT: 205.5 });
+});
+
+it("A11 扫描开关草稿从 A11 预览失效，应用后显式执行手动相位步骤", async () => {
+  activeSession = makeSession();
+  for (const state of Object.values(activeSession.steps) as { status: string }[]) state.status = "completed";
+  await renderPage();
+  fireEvent.change(screen.getByLabelText("扫描 RF 触发相位"), { target: { value: "false" } });
+  expect(screen.getByText(/预计需重跑的已完成步骤：A11/)).toHaveTextContent(/A11.*A12.*A13.*A14.*A13B.*A15/);
+  fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
+  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeNull());
+  const call = mockApi.mock.calls.find(([url]) => url.endsWith("rf-session/parameters"))!;
+  expect(JSON.parse(String(call[1]?.body))).toMatchObject({ revision: 0,
+    parameters: { Z_PHASE_SCAN_ENABLED: false, Z_BURST_PHASE_INIT: 181.5 } });
+  fireEvent.click(screen.getByLabelText("A11 控制 AM 与 Z RF 触发相位扫描（可跳过）"));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url.endsWith("rf-session/steps"))).toBe(true));
+  const step = mockApi.mock.calls.find(([url]) => url.endsWith("rf-session/steps"))!;
+  expect(JSON.parse(String(step[1]?.body)).step_ids).toEqual(["A11"]);
 });
 
 it("最优控制版本默认留空，未选择时预检阻止启动，选择后切换 Tab 保留", async () => {
   await renderPage();
-  const select = await screen.findByLabelText("最优控制波形版本");
-  expect(select).toHaveValue("");
-  expect(within(select).getByRole("option", { name: "v8" })).toBeVisible();
+  const select = await screen.findByRole("checkbox", { name: "v8" });
+  expect(select).not.toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "v1" })).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
   expect(await screen.findByText("请选择 oc_sens 中的最优控制波形版本")).toBeVisible();
   expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs` && options?.method === "POST")).toBe(false);
-  fireEvent.change(select, { target: { value: "v8/waveforms/optimal_control_waveform.csv" } });
+  fireEvent.click(select);
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   fireEvent.click(screen.getByRole("tab", { name: "运行" }));
-  expect(select).toHaveValue("v8/waveforms/optimal_control_waveform.csv");
+  expect(select).toBeChecked();
 });
 
 it("校相失败只显示诊断，并禁止重新分析", async () => {
@@ -1873,4 +773,37 @@ it("历史分析草稿按目录隔离，保存默认值只保存下一次设置�
   expect(JSON.parse(String(request[1]?.body))).toEqual({ revision: 4,
     step_ids: ["B01", "B02", "B03", "B04"], analysis_parameters: { NOISE_NPERSEG: 512 } });
   expect(screen.getByRole("button", { name: "结束会话" })).toBeEnabled();
+});
+
+it("PSD 策略和频带按目录覆盖，使用稳定外部键提交", async () => {
+  noiseAnalysisOptions = { noise_outlier_policy: "mad_high", band_min_hz: 3, band_max_hz: 150 };
+  await renderPage();
+  fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: "1009_latest" } });
+  await waitFor(() => expect(screen.getByLabelText("Welch 段长")).toHaveValue(800));
+  fireEvent.change(screen.getByLabelText("噪声异常谱处理"), { target: { value: "none" } });
+  fireEvent.change(screen.getByLabelText("异常谱评分频带下限"), { target: { value: "5" } });
+  fireEvent.change(screen.getByLabelText("异常谱评分频带上限"), { target: { value: "200" } });
+  expect(screen.getByText(/预计需重算的已完成步骤：B03/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) =>
+    url === `${BASE}/runs/1009_latest/analysis` && options?.method === "POST")).toBe(true));
+  const call = mockApi.mock.calls.find(([url, options]) => url === `${BASE}/runs/1009_latest/analysis` && options?.method === "POST")!;
+  expect(JSON.parse(String(call[1]?.body)).analysis_parameters).toEqual({
+    NOISE_NPERSEG: 800, NOISE_OUTLIER_POLICY: "none", SENSITIVITY_BAND_MIN_HZ: 5, SENSITIVITY_BAND_MAX_HZ: 200,
+  });
+});
+
+it("多控制结果显示逐控制 PSD 计数和未筛选原因", async () => {
+  summary.analysis = { controls: {
+    v1: { response_fit: { slope_V_per_nT: .001 }, sensitivity: { flat_median_fT_per_sqrtHz: 10 },
+      noise_rejection: { n_records: 5, n_accepted: 4, n_rejected: 1 } },
+    v8: { response_fit: { slope_V_per_nT: .002 }, sensitivity: { flat_median_fT_per_sqrtHz: 20 },
+      noise_rejection: { n_records: 3, n_accepted: 3, n_rejected: 0, reason: "不足 5 条记录，保留全部记录" } },
+  }, noise_rejection: { n_records: 8, n_accepted: 7, n_rejected: 1 } };
+  await renderPage();
+  const panel = within(screen.getByRole("tabpanel", { name: "运行" }));
+  expect(await panel.findByText("PSD 保留／总数")).toBeVisible();
+  expect(panel.getByText("4／5")).toBeVisible();
+  expect(panel.getByText(/PSD 提示（v8）：不足 5 条记录/)).toBeVisible();
 });

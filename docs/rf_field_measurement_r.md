@@ -29,6 +29,10 @@ learned_notes:
 
 # RF 灵敏度（DirectAW R）
 
+> **已归档：GUI 仅保留目录卡片，不再提供运行/历史页面。** 专属代码与正式测试保存于
+> [`old/experiments/`](../old/experiments/README.md)，默认参数与历史数据原位保留。
+> 下文说明归档前的方案与安全约定，仅供维护和历史复现；重新接入需先恢复代码及注册入口并完成无硬件回归。
+
 ## 采集时序与系统稳定
 
 实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
@@ -42,19 +46,19 @@ RF 相位/响应/带宽使用 `DEMOD3_RATE` 请求率、`SCAN_POINT_DURATION_S` 
 
 时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](lockin_amplifier.md#解调时序的模块选择)。
 
-本实验与 [RF 灵敏度（DirectAW）](rf_field_measurement.md) 共用仪器准备、XY DirectAW 校相、
-有符号 RF 采集、PSD、安全收尾及 GUI，会分别保存默认参数和运行历史。
+归档实现与 [RF 灵敏度（DirectAW）](rf_field_measurement.md) 复用仪器准备、XY DirectAW 校相、
+有符号 RF 采集、PSD 与安全收尾。归档前共用 GUI，默认参数与历史目录各自独立；当前只保留卡片。
 正式 ID 为 `rf-sensitivity-aw-r`，模式为 `typed_workflow`。默认参数的唯一来源是
 [新实验参数文件](../params/experiments/rf-sensitivity-aw-r.yaml)，初始设置从当前 DirectAW 文件复制；
 历史参数以各自的 `experiment_config.yaml` 为准。
 
-锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，GUI 不再提供开启选项。
+锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，归档前的 GUI 不再提供开启选项。
 
 ## 入口与参数
 
-GUI 路由为 `/experiments/rf-sensitivity-aw-r`，提供“运行 / 历史”双 Tab。
-完整采集执行 `agent_exp_env/Scripts/python.exe experiments/RF_Field_Sensitivity_AW_R.py`；
-离线分析执行 `agent_exp_env/Scripts/python.exe experiments/RF_Field_Sensitivity_AW_R_plot.py <run_dir>`，
+GUI 仅在实验中心“已归档”中显示卡片。旧 `/experiments/rf-sensitivity-aw-r` 书签只显示归档提示，不加载参数或历史；旧运行/历史 API 返回 410。
+归档采集入口（连接仪器须另行授权）为 `agent_exp_env/Scripts/python.exe old/experiments/experiments/RF_Field_Sensitivity_AW_R.py`；
+离线分析执行 `agent_exp_env/Scripts/python.exe old/experiments/experiments/RF_Field_Sensitivity_AW_R_plot.py <run_dir>`，
 只读取明确指定的目录，不连接仪器。
 
 `Z_RF_FREQ` 为 A10/A13 的响应扫描频率，`Z_RF_NOISE_FREQ` 为 A12/A14 的校相/噪声频率，
@@ -89,7 +93,7 @@ A11 跳过。分步执行按上表依赖和顺序排列，不按编号排序；A
 
 流程图质量门槛来自实际执行：A01 检查参数、映射与安全限值，A03 严格回读时钟，A09 检查校相收敛及 R 幅值；A10 在写入前以实际输入量程检查所选 AuxOut 的电压边界。A13 拒绝非有限 R/X/Y，A14 要求正的实际采样率、至少两点且有限的 X 噪声；失败先恢复温控，再保存已读数据并停止后继。A15 的配置恢复或安全收尾失败不会记为成功。
 
-## 节点编辑与历史
+## 归档前的节点编辑与历史
 
 参数在节点内分基础/高级编辑，允许同时展开多个节点；共享字段在各节点同步值与分类。
 草稿先显示依赖失效范围，应用后显式重跑；执行中禁止受限修改，校验失败保留草稿。

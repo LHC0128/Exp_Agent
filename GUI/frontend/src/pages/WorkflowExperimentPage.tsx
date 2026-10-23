@@ -5,6 +5,8 @@ import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
 import { PageHead } from "../components/PageHead";
+import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
+import { useParameterGuard } from "../components/NavigationGuard";
 import type {
   ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues,
 } from "../types/api";
@@ -79,6 +81,9 @@ export function WorkflowExperimentPage({ experimentId, finishStepId, runStepId,
   const analysisActive = active(analysisJob);
   const live = Boolean(session && session.status !== "closed");
   const parametersBusy = jobActive && (!live || session?.status !== "waiting" || Boolean(session?.pending_request));
+  useParameterGuard(fields, values, layout, savedLayout, live ? session?.parameters as ParameterValues : undefined);
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId });
+  const requestedJobId = useRequestedJobId();
   const summaryUrl = (id: string) => `${BASE}/runs/${encodeURIComponent(id)}/summary`;
   const result = (summary: WorkflowRunSummary) => renderResult
     ? renderResult(summary) : <DefaultResult summary={summary} hasAnalysis={hasAnalysis} />;
@@ -94,9 +99,7 @@ export function WorkflowExperimentPage({ experimentId, finishStepId, runStepId,
       const saved = schema.parameter_layout_saved ? validatedParameterLayout(schema.fields, schema.parameter_layout) : undefined;
       const initial = saved ?? defaultParameterLayout(schema.fields);
       setLayout(initial); setSavedLayout(initial);
-      const matching = jobs.filter(item => item.kind === `experiment:${experimentId}`);
-      const recovered = matching.find(item => ["queued", "running"].includes(item.status))
-        ?? matching.find(item => Boolean(item.started_at));
+      const recovered = recoverableJob(jobs, experimentId, requestedJobId);
       if (recovered) {
         const full = await api<Job>(`/api/jobs/${recovered.id}`);
         if (!disposed) setJob(full);
@@ -195,7 +198,7 @@ export function WorkflowExperimentPage({ experimentId, finishStepId, runStepId,
   };
 
   return <>
-    <PageHead eyebrow="EXPERIMENT" title={definition?.title ?? "正在载入实验"} description={definition?.description ?? "读取实验定义与运行记录。"} />
+    <PageHead eyebrow="EXPERIMENT" title={definition?.title ?? "正在载入实验"} description={definition?.description ?? "读取实验定义与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
     <div className="zaw-tab-strip" role="tablist" aria-label="实验视图" onKeyDown={tabKey}>
       {(["run", "history"] as const).map(item => <button key={item} id={`${experimentId}-tab-${item}`}

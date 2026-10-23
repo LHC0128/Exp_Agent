@@ -36,6 +36,7 @@ def parameter(
     options_require_experiment_id: str | None = None,
     active_when: str | None = None,
     read_only: bool = False,
+    legacy_default: Any = MISSING,
 ) -> Field[Any]:
     """声明模型字段及其稳定外部名称和 GUI 元数据。
 
@@ -45,6 +46,7 @@ def parameter(
 
     ``active_when`` 是另一个布尔字段的外部名；该字段为假时本字段不参与校验，
     用于「只在一项功能启用时才有意义」的参数。
+    ``legacy_default`` 声明旧快照缺键时的兼容值，避免 GUI 填回继承当前默认值。
     """
     metadata = {
         "external_name": external_name,
@@ -66,6 +68,8 @@ def parameter(
         "active_when": active_when,
         "read_only": read_only,
     }
+    if legacy_default is not MISSING:
+        metadata["legacy_default"] = legacy_default
     kwargs: dict[str, Any] = {"metadata": metadata}
     if default is not MISSING:
         kwargs["default"] = default
@@ -102,6 +106,12 @@ def _convert_value(name: str, value: Any, annotation: Any) -> Any:
             raise TypeError(f"{name} 必须是数组")
         item_type = args[0] if args else Any
         return [_convert_value(f"{name}[{index}]", item, item_type) for index, item in enumerate(value)]
+    if origin is dict:
+        if not isinstance(value, dict):
+            raise TypeError(f"{name} 必须是映射")
+        key_type, value_type = args
+        return {_convert_value(name, key, key_type): _convert_value(f"{name}[{key}]", item, value_type)
+                for key, item in value.items()}
     if annotation is Any:
         return value
     if annotation is bool:
@@ -139,6 +149,8 @@ def schema_field_type(annotation: Any) -> str:
         return schema_field_type(concrete[0]) if concrete else "string"
     if origin is list:
         return "array"
+    if origin is dict:
+        return "object"
     if annotation is bool:
         return "boolean"
     if annotation is int:
@@ -356,6 +368,8 @@ class ExperimentParams:
                 "description": str(metadata.get("description", "")),
                 "read_only": bool(metadata.get("read_only", False)),
             }
+            if "legacy_default" in metadata:
+                entry["legacy_default"] = metadata["legacy_default"]
             if entry["name"] == "SYSTEM_SETTLE_S":
                 entry["legacy_defaults"] = dict(getattr(self, "system_settle_legacy_defaults", {}))
             options = self._options(item, root)

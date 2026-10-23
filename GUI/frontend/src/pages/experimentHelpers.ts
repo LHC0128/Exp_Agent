@@ -1,8 +1,11 @@
 import type { ParameterLayout, ParameterValue, ParameterValues, SchemaField } from "../types/api";
 
-/** 按后端声明迁移旧等待，再按当前可见字段填回；历史文件保持原样。 */
+/** 按模型声明补齐兼容值并迁移旧等待，再按当前可见字段填回；不改历史文件。 */
 export function historyParameterValues(fields: SchemaField[], values: ParameterValues): ParameterValues {
   const migrated = { ...values };
+  for (const field of fields) {
+    if (!(field.name in migrated) && "legacy_default" in field) migrated[field.name] = field.legacy_default ?? null;
+  }
   const aliases = fields.find(field => field.name === "SYSTEM_SETTLE_S")?.legacy_defaults ?? {};
   if (!("SYSTEM_SETTLE_S" in migrated) && Object.keys(aliases).some(name => name in migrated)) {
     const durations = Object.entries(aliases).map(([name, fallback]) => name in migrated ? migrated[name] : fallback);

@@ -101,7 +101,9 @@ TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "mx-main-field-scope-noise-spectrum": SCOPE,
     "mx-xy-residual-field-calibration": FULL_HF2,
     "mx-y-rf-power-optimization": FULL_HF2,
-    "mx-y-rf-probe-detuning-optimization": (*FULL_HF2, "probe_laser"),
+    "mx-y-rf-probe-detuning-optimization": (
+        *(key for key in FULL_HF2 if key not in ("temperature", "Y_magnetic_field")), "probe_laser",
+    ),
     "mx-y-rf-sensitivity": FULL_HF2,
     "mx-y-rf-frequency-response": FULL_HF2,
     "mx-y-optimal-control-rf-frequency-response": OPTIMAL_CONTROL,

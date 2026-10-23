@@ -1,10 +1,10 @@
 # 实验迁移主交接
 
-本清单于 2026-10-17 按 `lab_workflows/experiments/registry.py` 核对：共 61 个正式 Python 实验，44 个 typed_workflow、17 个 legacy_script。Notebook、未注册脚本和示例不纳入；运行时以注册表为准，不从脚本数推断。本文作为持续更新的唯一主交接报告；原 `.cache/expcodegen/` 机器状态副本已按用户要求删除并停止维护，状态以本文为准。
+本清单于 2026-10-23 按 `lab_workflows/experiments/registry.py` 核对：完整目录共 62 项：54 项在维护的正式 Python 实验（38 个 typed_workflow、16 个 legacy_script），另 8 项代码归档只保留卡片（原模式为 7 typed、1 legacy）。Notebook、未注册脚本和示例不纳入；运行时以注册表为准，不从脚本数推断。本文作为持续更新的唯一主交接报告；原 `.cache/expcodegen/` 机器状态副本已按用户要求删除并停止维护，状态以本文为准。
 
-新模式只表示强类型参数与执行契约，不能据此认定流程图或业务验收完成。当前**已完成29项：8项补齐、20项迁移、1项达标跳过；另7项归档排除，待迁移25项（9 typed、16 legacy）**。迁移范围合计54项，注册表总数仍为61。本轮 `z-aw-closed-loop-waveform-correction` 已完成同一 agent 的开发、自验收与集成复核，复用 XY 分步界面及既有 Z 波形会话，保留三种校正方法和原科学算法。全仓既有场景缺口仍保留，不宣称全仓通过。已停止，不启动其他实验。
+新模式只表示强类型参数与执行契约，不能据此认定流程图或业务验收完成。当前**已完成31项：8项补齐、22项迁移、1项达标跳过；另7项归档排除，待迁移23项（7 typed、16 legacy）**。原迁移范围合计54项；另新增 `rf-control-scale-sensitivity`，不计入旧实验迁移完成数，完整目录总数为62（54项在维护的正式实验、8项仅保留卡片的代码归档）；默认 `list_experiments()` 只返回在维护的实验。本轮 `mx-y-rf-probe-detuning-optimization` 已完成开发、自验收与集成复核，复用 XY 分步界面，保留 PZT/Probe 蛇形网格及原双斜率科学算法；`mx-y-rf-power-optimization` 的独立 agent 完成记录保留。全仓既有场景缺口仍保留，不宣称全仓通过。已停止，不启动其他实验。
 
-归档以 `params/experiment_catalog.yaml` 的 `archived_experiments` 为准。本次核对的7项均未完成迁移，已从待迁移范围排除，表中标为“归档，不迁移”；归档不算已完成，也不算达标跳过。已有完成记录不因归档被改写。每次接续先重读归档标记，用户未明确恢复时不迁移归档项。
+目录归档标记保存在 `params/experiment_catalog.yaml`；已移出主目录的代码归档清单以 `lab_workflows/experiments/archived.py` 为准，这些 ID 始终只显示卡片，不能仅修改目录标记恢复。专属代码、正式测试与原图按原相对路径保存在 [`old/experiments/`](../old/experiments/README.md)，共享算法、参数和历史数据原位保留；旧 GUI 运行/历史 API 返回 410。当前8项归档中，7项未完成迁移，已从待迁移范围排除，表中标为“归档，不迁移”；另 `rf-sensitivity-aw-r` 在完成后归档，保持原完成记录，不重复排除或回退计数。归档本身不算已完成，也不算达标跳过。每次接续先重读归档标记，用户未明确恢复时不迁移归档项。
 
 原10/15/20/21项累计报告、单实验开发/验收交接及旧备份，已将有效完成结论、兼容边界及未解决问题合并到本文。原文逐字节保存在本地历史归档 `old/experiment_modularization_handoffs.zip`（不随 Git 同步），包内以原仓库相对路径存放，并附SHA清单；原机器状态副本（含 `checkpoint_history`）已停止维护，不再作为现存状态入口；旧交接路径可在归档内查到。早期“尚未接线”等阶段性待办以最终验收为准，旧分工、下一项和历史数量不再作为当前指令。
 
@@ -13,6 +13,20 @@
 既有完成项 `mx-z-optimal-control-xy-rf-sensitivity` 已完成：沿用合格的 Z 控制会话和通用分步界面，保留原蛇形网格、中心唯一校相及逐点科学算法，提供7采集/3分析节点、60个可见参数；参数 schema v2 与外部键不变，新 raw 格式独立为v1。本项 **37项 Python/API、6项 GUI 全部通过**，包含于85项 Python/API集成与351项全前端（2worker）；99项仪器/映射/时钟/锁相回归、Python编译、TypeScript、build、API生成及Skill一致性检查通过。真实历史仅在明确临时副本中重分析，36点/1有效点的14个科学数组在1e-12容差内一致，有效掩码、排名与最佳点均相同。目标历史1822文件的SHA/大小/mtime、除目录简介外的全部参数及暂存区均与本轮基线一致；目录简介仅改本ID，未另建交付或验收报告。
 
 ## 需要保留的异常与边界
+
+- **代码归档整理（不增加迁移完成计数）**：8 项专属代码、正式测试与原图移至 `old/experiments/`，源文件逐份 SHA256 与移动前一致；共享相位算法原位保留。归档相关 API/目录/历史管理 60 项、全前端 443 项、仪器/映射/时钟/锁相 99 项、78 文件编译、TypeScript、临时目录生产构建、API 类型生成及 Skill 一致性检查通过。全 Git 验证仍因其它 ID 的 18 条既有业务场景缺口失败，未执行该计划的检查；扩大回归中的 `lab_workflows/test_lockin_acquisition.py::test_stage_declarations_match_registered_defaults` 仍因 `rf-control-scale-sensitivity` 关闭 `INCLUDE_NOISE` 时旧断言仍预期两个阶段而失败，该测试、参数及业务实现的字节均与任务基线一致，不在本次扩展修复。原 RF R 修改接口预期已从 404/405 更新为 410 并复验通过。测试产生的一个空 `.gui_jobs/*.cancel` 标记在确认假进程结束后移到临时证据目录，未删除原有文件；原 `data/`、`results/` 共 180904 文件的路径、大小与 mtime 保持基线一致。未连接硬件、未操作用户服务；必要日志位于 `C:/Users/LiuHC/AppData/Local/Temp/exp-archive-ka6jtiz1/`。
+
+- **2026-10-23 `mx-y-rf-probe-detuning-optimization` 验证边界**：本 ID 已完成，9 个采集／2 个分析节点，40 个可见参数；准备、网格采集、分析接线与编排分离，复用原网格拟合、PSD、双斜率排名与绘图，不重写科学算法。参数 schema v2、稳定键及用户默认 YAML 保留，新增独立 raw v1，兼容已验证无标记 schema v1/v2 历史。不连接 TEC，取消／异常／EOF／关闭均恢复 PZT/扫描与已执行基准，恢复失败不标记安全成功；薄分析入口必须显式传入目录。
+  - **目标46项 Python/API（16采集、24分析、6 API）全部通过**，包含于81项集成及10个子场景；6项目标 GUI 包含于55文件／445项全前端（1 worker）全部通过。另99项仪器／映射／时钟／锁相及12项共享采集契约、19文件编译与3.10语法、TypeScript、临时目录生产构建、OpenAPI精确对照、fixture和Skill一致性通过。桌面1920×1080两列各768 px，309字符运行名、1620字符诊断和426字符下载名无横向溢出，页面／console错误及未模拟API均为0；仅使用隔离浏览器、静态临时服务与mock API，均已关闭，临时浏览器脚本已删除。输出目录联接到raw的归档风险有正式回归，拒绝移动采集文件。
+  - **工具范围不混淆**：完整Git验证及27路径实际范围计划仍因25条其它ID场景缺口失败（7条归档、18条仍在迁移范围），checks未执行；本ID无缺口。实际范围为57 selected／13 unmapped，未映射的GUI接线／生成类型、文档和目录简介均人工核对并由对应回归覆盖。限定目标工作流路径的交付命令exit 0，共享契约12、关联采集业务6、API6及GUI6实际通过；不将此限定通过冒充完整27路径或全仓通过，也不扩展修复其它ID。
+  - 三份真实历史仅在明确临时副本完成新旧完整分析／出图：27／21／21点，有效点25／20／16；全部原科学JSON字段、每份13个NPZ数组、双排名及最佳点一致（数值rtol=1e-12、atol=1e-15，字符串／掩码一致）。原2040份历史文件的路径集／大小／mtime／SHA及目标默认参数SHA保持。其它agent的光功率实验文件未操作，共用接线保留其改动；用户8000/PID25188、5173/PID32340服务未重启、停止或取消，新接口须用户安全结束会话后自行重启后端加载。真实硬件及Python3.10解释器运行未验证，既有chunk／弃用提示保留。
+  - 必要XML、日志、临时科学运行与桌面证据保留于 `C:/Users/LiuHC/AppData/Local/Temp/exp-agent-probe-detuning-o4ab4bio/`：`target-integration-final-pass.xml`、`frontend-all.xml`、`science.log`、`desktop-final.log`、`instrument-regression.log`、`delivery.log`、`full-validation.log`。工具JSON为 `.cache/expcodegen/probe-detuning-{actual-scope,delivery}.json`，前者failed、后者仅限定范围passed；初始提取／测试／浏览器mock与定位红灯证据保留，最终补验不改写旧失败结果。不创建独立交付／验收／交接Markdown或机器状态副本。仅本ID计入已完成后停止。
+
+
+- **2026-10-23 `mx-y-rf-power-optimization` 验证边界**：本 ID 已完成，10采集/3分析节点、40可见字段；采集12、分析7、API8共27项 Python/API，以及6项目标 GUI 均通过，包含于55文件/445项全前端（2worker）。共享契约12、集成27、仪器/映射/时钟/锁相99项、20文件编译及3.10语法、TypeScript、临时目录生产构建、OpenAPI精确对照和Skill一致性通过。桌面1920×1080两列、长诊断和文件名不撑破布局；仅使用只读隔离服务，临时服务和浏览器已关闭。
+  - 完整 Git 验证仍为 **failed：177 changed /62 selected /70 unmapped /25条其它ID场景缺口 /checks=[]**；9个目标生产源码路径的保守交付也为 **failed：57 selected /0 unmapped /同25条缺口 /checks=[]**，见 `.cache/expcodegen/power-full-validation.json`、`power-target-delivery.json`。其中7条对应归档项、18条仍在迁移范围，本ID无场景缺口，不扩展修复其它实验。仅以目标采集文件隔离的交付检查 **passed**，共享契约、关联业务6条、API8条和GUI6条均实际执行，见 `power-isolated-delivery.json`；隔离通过不改写上述全范围失败。
+  - 三份真实历史均仅在明确临时目录中对照，各49点，有效点41/39/44，全部10个科学数组、逐点科学字段、双排名和最佳点一致（rtol=1e-12、atol=1e-15）。原整批600秒工具超时，只完成第一份完整分析/出图，原批次保留为未完成；其余两份补验仅禁用两边绘图，调用真实旧/新科学函数完成数值对照，不冒充三份均重新出图。坏波形保留原逐点拒绝/掩码规则，不阻断其它点；取消不被旧逐点诊断捕获吞掉，缺少显式目录的薄入口拒绝 latest。
+  - 原4301份目标历史的路径集/大小/mtime/SHA、52份非目录参数文件及Git index均保持。工作区另有独立Probe失谐迁移任务，本轮未派子agent、未操作其文件或进程；共用接线文件保留两者改动，不将其计为本轮完成项。用户8000/PID25188、5173/PID32340服务未操作或重启，新后端接口尚需用户自行重启加载。必要XML、日志、科学临时运行及唯一保护清单保留于 `C:/Users/LiuHC/AppData/Local/Temp/exp-agent-mxy-power-checks-gdbxzph1/`，主要为 `target.xml`、`analysis-latest.xml`、`frontend-latest.xml`、`integration.xml`、`science.json`、`preservation-audit.log`、`desktop-1920.log`；隔离交付业务XML仍在报告指定的 `.cache/expcodegen/` 路径。不创建独立交付/验收/交接Markdown或机器状态副本，正式回归保留；真实硬件和Python3.10解释器运行未验证。仅本ID计入已完成后停止。
 
 - 上一完成项的完整Git验证为 **failed：439 changed /61 selected /149 unmapped /34条其他ID场景缺口 /checks=[]**，没有执行业务checks，见 `.cache/expcodegen/mx-z-xy-rf-full-validation.json`。其中7条对应归档项、27条仍在迁移范围；本ID无场景缺口。先前420/61/143/35的失败记录继续保留；归档排除不修复原验证，不宣布全仓通过，不扩展到其他实验。
 - 本项26路径交付计划为56 selected/13 unmapped、结构与场景检查无错误；13个未映射路径均为GUI接线/生成类型、文档和目录简介，已人工核对并由API/GUI集成覆盖。原 `.cache/expcodegen/mx-z-xy-rf-delivery.json` 仍为 **failed/incomplete**：共享采集契约12项通过，原125节点整批超过900秒，后续API/GUI未在该命令内执行。保留原失败结果后，原125节点完整分为42/42/41节点补验，分别57/61/76个实际条目通过，合计194条、0跳过/失败/遗漏；XML为同目录 `mx-z-xy-rf-business-part1.xml`、`mx-z-xy-rf-business-part2.xml`、`mx-z-xy-rf-business-part3.xml`。验证器的XML核对函数确认全部原节点实际执行；API文件全部8条已在85项集成XML中逐节点核对，原GUI命令补跑6条通过（`mx-z-xy-rf-gui.xml`）。原范围验收证据已补齐，原超时批次不改记通过；该实验没有剩余实现或无硬件验收待办。
@@ -82,6 +96,14 @@
 - **工具范围与异常如实保留**：完整 Git 验证仍为 **failed：595 changed /61 selected /193 unmapped /29 条其他 ID 场景缺口（7 归档、22 仍在迁移范围），checks=[]**。本次实际 30 路径计划为 **failed：56 selected /12 unmapped /27 条其他 ID 缺口，checks=[]**，本 ID 无场景缺口。12 个未映射路径均为 GUI/后端接线、生成类型、文档、目录简介和对应测试，已人工核对并由本项及共享集成覆盖。最终单 ID 交付命令 exit 0，以目标 GUI 测试路径限定范围，执行共享契约、6 条关联采集业务、5 项 API/3 子场景及 9 项 GUI；不把该限定命令或手动集成通过冒充完整 30 路径/全 Git 整批通过，不扩展迁移其他 ID。初始精度断言、假子进程 stdout 捕获和桌面隐藏元素等待的红灯已修正并补验，原日志保留。验证器首次拒绝仓库外 `--report` 路径，后改用仓库内临时路径；工具证据的首次跨盘 rename 被 Windows 拒绝，改用跨盘移动并逐份核对 SHA，证据完整保留，没有绕过限制。本 ID 无剩余实现或无硬件验收待办，其他未通过 ID 不计数。
 - **机器状态仅同步至本文**：已完成 29、归档 7、待迁移 25，不重复计数。schema v2 旧格式、v10 静态反馈、v12 时域反馈及 v13 谐波运行共四份真实历史，只在显式临时 `run_dir` 中完成新旧算法对照，全部科学报告字段在 rtol=1e-12、atol=1e-15 内一致，原轮次汇总及冻结 NPZ/CSV 字节保持。6074 份真实历史文件（2,985,537,653 字节）的路径集/大小/mtime/SHA、任务外 564 份已有改动、51 份非目录参数文件、目录配置中除本 ID 简介外的全部字节，以及 Git index/暂存差异 SHA 均保持；归档仍为 7 项，ZIP 内 59 份清单校验一致。13:40 只读复核 8000、5173 均无监听，临时 6187 preview 和自建浏览器已关闭；未操作用户服务、用户会话或真实仪器。必要 XML、工具日志、四份科学临时运行、唯一保护核验清单和桌面证据统一保留于 `C:/Users/LiuHC/AppData/Local/Temp/exp-agent-z-closed-loop-checks-lla15365/`，主要索引为 `target-final.xml`、`api-contract-final.xml`、`integration.xml`、`frontend-all.xml`、`gui-final.xml`、`single-id-delivery-final.log`、`science.log`、`history-api-readonly.log`、`preservation-audit.log` 和 `desktop-final.log`；验证器自动 JSON/XML 仅作必要工具证据，已移至同目录。临时浏览器测试脚本及本轮自动空白 UI snapshot 已删除，正式测试保留。不恢复机器状态 JSON 副本，不新建独立交付/验收/交接报告或工作区快照。已停止，不自动处理下一项。
 
+## 新增实验
+
+`rf-control-scale-sensitivity`：按用户确认新增统一多控制 × Scale RF 响应与灵敏度实验；只复用控制多选，不注入人为噪声，倍率范围 0.9–1.1。初版 v1 各控制只在 α=1 校相；当前 v2 改为每个控制 × Scale 独立四级校相与完整 RF 测量，外层为 10 个采集与 4 个分析节点。提供独立参数、采集/离线分析薄入口和运行/历史 GUI。原迁移范围和既有验收结论不变。说明见 [实验文档](rf_control_scale_sensitivity.md)。本实验 23 项 Python/API、既有 RF 同族 94 项、仪器/映射/时钟/锁相 99 项、共享采集契约 12 项及全前端 49 文件/400 项通过；22 文件编译及 3.10 语法、TypeScript、生产构建、OpenAPI 生成、文档/流程结构和 Skill 一致性检查通过。完整 `--delivery` 按实际变更追踪共享调用方，被 27 项旧实验场景缺口提前阻塞，报告 `.cache/expcodegen/rf-control-scale-delivery.json` 中业务状态仍为 not_run，不能当成全库交付通过；上述实际独立测试证据分别见 `rf-control-scale-target.xml`、`rf-control-scale-analysis-api.xml` 和 `rf-control-scale-sibling-regression.xml`。本项不加入旧迁移完成计数，未连接真实仪器。
+
+后续离线分析修正为 DirectAW 四参数色散绝对中心斜率，四面板依次为斜率、色散等效 HWHM、洛伦兹绝对中心频率和公共频带灵敏度中位数；保留 3–150 Hz，HWHM 不再作为整组硬截止。该轮分析版本为 `rf-control-scale-v3-noise-quality`，支持保守组内高值筛选/保留全部记录，记录完整原始 PSD、接纳掩码、未剔除指标和清单。增加数据目录便捷脚本及正式 `noise_diagnostics` 模块，独立只读诊断整组偏差、单次异常和混合情况。真实运行 `data/RF_Control_Scale_Sensitivity/1020_194731_rf_control_scale` 的 18 组/810 条记录中识别并在主分析排除 7 条，保留 803 条，871 个原始文件和采集参数不变；只读诊断另核验 909 个既有文件未变。旧主结果归档于该运行 `results/before_noise_record_rejection_20261021_005345_251360/`。本轮 42 项分析/诊断/API 回归通过，后续 7 项重点补跑通过；前端 49 文件/400 项、TypeScript、构建、21 文件编译及 3.10 语法、文档/流程结构与 Skill 一致性检查通过。完整变更验证仍被同样 27 项旧实验采集场景缺口阻塞，不将其表述为全库验收通过；证据见 `.cache/expcodegen/rf-control-scale-noise-{quality-tests,final}.xml`、`rf-control-scale-noise-reprocess.json` 和 `rf-control-scale-noise-validation.json`。
+
+当前采集结构进一步按用户要求改为“控制 × Scale”逐点完整四级校相：共享连接、时钟与固定准备，A13 内依次运行 Demod0、当前倍率 XY、RF 线路准备、RF 触发相位扫描、RF 解调器校相，再测响应/可选噪声/R 扫频；不从其他点或旧轮次继承相位。首点校相失败后重试也新建目录。新采集为 raw v2，分析版本为 `rf-control-scale-v4-per-point-phase`；参数 schema 和所有外部参数键保持不变。保留已验证 raw v1 的固定标称相位兼容路径，摘要明确区分条件，拒绝混合版本、错倍率、缺失/非有限校相及与响应不符的相位。GUI 清单、可编辑原图、模型说明和文档正文同步；A08–A12 移入 A13，不再作为外层可单独执行节点。最终 65 项 Python/采集/分析/API、前端 49 文件/400 项、TypeScript/构建、17 文件编译及 Python 3.10 语法、文档/流程结构和 Skill 同步检查通过。真实旧运行 18 组可只读加载，871 个原始文件和子配置不变；未连接真实仪器，未改写旧结果。完整 Git 变更验证仍有同样 27 项旧实验采集场景缺口，不能声称全库交付通过。证据：`.cache/expcodegen/rf-control-scale-per-point-{final.xml,frontend.log,structure.json,validation.json}`。后端没有热重载，须先安全结束旧会话，再重启后端使用新清单与代码。
+
 ## 新模式
 
 | 稳定实验 ID | 模块 | 状态 |
@@ -107,8 +129,8 @@
 | `mx-z-current-coupling-calibration` | `lab_workflows/experiment_modules/mx_z_current_coupling_calibration/` | 迁移完成并通过独立无硬件验收及原 20 路径 delivery；11 个采集 / 4 个分析节点，98 项独立 Python/API 与 15 项 GUI 通过；两份历史副本科学结果一致，旧 JSON 只读兼容不改原文件 |
 | `z-aw-current-waveform-scope-check` | `lab_workflows/experiment_modules/z_aw_current_waveform_scope_check/` | 已完成；6采集/3分析、20字段，复用 XY 界面与 Z 波形会话，保留双来源与原电流算法；28 Python/API、4 GUI、两份历史临时副本对照通过；完整范围及既有异常见本轮记录 |
 | `z-aw-closed-loop-waveform-correction` | `lab_workflows/experiment_modules/z_aw_closed_loop_waveform_correction/` | 已完成 |
-| `mx-y-rf-power-optimization` | `lab_workflows/experiment_modules/mx_y_rf_power_optimization/` | 待迁移 |
-| `mx-y-rf-probe-detuning-optimization` | `lab_workflows/experiment_modules/mx_y_rf_probe_detuning_optimization/` | 待迁移 |
+| `mx-y-rf-power-optimization` | `lab_workflows/experiment_modules/mx_y_rf_power_optimization/` | 已完成 |
+| `mx-y-rf-probe-detuning-optimization` | `lab_workflows/experiment_modules/mx_y_rf_probe_detuning_optimization/` | 已完成 |
 | `mx-main-field-calibration` | `lab_workflows/experiment_modules/mx_main_field_calibration/` | 迁移完成并通过独立无硬件验收；10 个采集 / 4 个分析节点，含应用参数后未重跑的收尾回归 |
 | `mx-keithley-6221-main-field-calibration` | `lab_workflows/experiment_modules/mx_keithley_6221_main_field_calibration/` | 归档，不迁移 |
 | `mx-keithley-6221-optimal-control-rf-sensitivity` | `lab_workflows/experiment_modules/mx_keithley_6221_optimal_control_rf_sensitivity/` | 归档，不迁移 |
@@ -125,9 +147,10 @@
 | `noise-spectrum-xy-demod3-r` | `lab_workflows/experiment_modules/noise_spectrum_xy_demod3_r/` | 待迁移 |
 | `projection-noise` | `lab_workflows/experiment_modules/projection_noise/` | 待迁移（SDS 原始 PD 采集） |
 | `rf-sensitivity-direct-aw-frequency` | `lab_workflows/experiment_modules/rf_sensitivity_direct_aw_frequency/` | 待迁移 |
-| `rf-sensitivity-aw` | `lab_workflows/experiment_modules/rf_sensitivity_direct_aw/` | 补齐完成并通过独立无硬件验收；参数 schema v3，17 个采集 / 4 个分析节点（含可选带宽步骤），保持原业务与共用触发，兼容已验证的 v2/v3 历史运行 |
-| `rf-sensitivity-aw-r` | `lab_workflows/experiment_modules/rf_sensitivity_direct_aw_r/` | 补齐完成并通过独立无硬件验收；15采集/4分析，保留R标定与独立噪声频率/X噪声，真实分组/原子保存故障保护、63字段真实GUI；完整delivery跨ID缺口失败保留 |
-| `rf-sensitivity-aw-known-noise` | `lab_workflows/experiment_modules/rf_sensitivity_aw_known_noise/` | 达标跳过并通过独立无硬件验收；17采集/4分析、74字段，固定噪声ON及各控制独立校相/标定，60Python/API与8GUI，原实现保留 |
+| `rf-sensitivity-aw` | `lab_workflows/experiment_modules/rf_sensitivity_direct_aw/` | 补齐完成并通过独立无硬件验收；参数 schema v4，17 个采集 / 4 个分析节点（含可选带宽步骤）；支持多控制独立采集分析、可关闭 MAD 异常谱审计和混合跨次对比，保留共用触发，兼容已验证的 v2/v3/v4 格式 |
+| `rf-sensitivity-aw-r`（完成后归档，仅留卡片） | `old/experiments/lab_workflows/experiment_modules/rf_sensitivity_direct_aw_r/` | 补齐完成并通过独立无硬件验收；15采集/4分析，保留R标定与独立噪声频率/X噪声，真实分组/原子保存故障保护、63字段真实GUI；完整delivery跨ID缺口失败保留 |
+| `rf-control-scale-sensitivity` | `lab_workflows/experiment_modules/rf_control_scale_sensitivity/` | 新增；多控制 × Scale，v2 每点独立四级校相，无人为噪声，兼容 v1 标称固定相位，独立采集/离线分析与交互流程图；不计入原迁移范围 |
+| `rf-sensitivity-aw-known-noise` | `lab_workflows/experiment_modules/rf_sensitivity_aw_known_noise/` | 达标跳过并通过独立无硬件验收；17采集/4分析，固定噪声ON及各控制独立校相/标定；共享可关闭 MAD 异常谱筛选、逐控制与聚合审计，保留既有原始数组和 v2/v3/v4 历史兼容 |
 | `t2-calibration` | `lab_workflows/experiment_modules/t2_calibration/` | 待迁移 |
 | `xy-direct-aw-dc-calibration` | `lab_workflows/experiment_modules/xy_direct_aw_dc_calibration/` | 待迁移 |
 

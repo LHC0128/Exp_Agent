@@ -1,9 +1,10 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import { api } from "../api";
 import { formatEta } from "../formatEta";
 import type { Job, JobEvent, JobStatus } from "../types/api";
 import { Status } from "./Status";
+import { useRequestedTask } from "./experimentNavigation";
 
 type JobUpdate = Dispatch<SetStateAction<Job | undefined>>;
 
@@ -142,7 +143,26 @@ function ResultView({ job }: { job: Job }) {
 
 export function JobView({ job, onUpdate }: { job?: Job; onUpdate: JobUpdate }) {
   const [expanded, setExpanded] = useState(false);
-  useEffect(() => { setExpanded(false); }, [job?.id]);
+  const [cancelError, setCancelError] = useState("");
+  const host = useRef<HTMLDivElement>(null);
+  const request = useRequestedTask();
+  const targeted = request?.job.id === job?.id && Boolean(job);
+  useEffect(() => { setExpanded(false); setCancelError(""); }, [job?.id]);
+  useEffect(() => {
+    if (!targeted) return;
+    const timer = window.setTimeout(() => {
+      const element = host.current;
+      if (!element) return;
+      element.focus({ preventScroll: true });
+      element.scrollIntoView?.({ block: "start" });
+      const toolbar = document.querySelector(".app-chrome");
+      if (toolbar) {
+        const gap = element.getBoundingClientRect().top - toolbar.getBoundingClientRect().bottom - 12;
+        if (gap < 0) window.scrollBy({ top: gap });
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [targeted, request?.key]);
 
   useEffect(() => {
     if (!job || !["queued", "running"].includes(job.status)) return;
@@ -209,10 +229,10 @@ export function JobView({ job, onUpdate }: { job?: Job; onUpdate: JobUpdate }) {
 
   if (!job) return null;
   return (
-    <div className="job">
+    <div className={`job${targeted ? " is-targeted" : ""}`} id={`job-${job.id}`} ref={host} tabIndex={-1} role="region" aria-label="任务状态">
       <div className="job-top">
         <Status tone={job.status === "failed" ? "bad" : job.status === "completed" ? "ok" : "work"}>
-          {job.status === "queued" ? "queued" : job.status}
+          {{ queued: "排队中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[job.status]}
         </Status>
         <strong>{job.message}</strong>
         <span>{Math.round(job.percent || 0)}%</span>
@@ -239,16 +259,18 @@ export function JobView({ job, onUpdate }: { job?: Job; onUpdate: JobUpdate }) {
           {expanded ? "收起日志" : `查看全部 ${job.events.length} 条日志`}
         </button>
       )}
+      {cancelError && <p className="alert error" role="alert">{cancelError}</p>}
       {["queued", "running"].includes(job.status) && (
         <button
           className="danger"
-          onClick={() => api<Job>(`/api/jobs/${job.id}/cancel`, { method: "POST" })
-            .then((value) => onUpdate(value))
-            .catch(() => {
-              // 取消失败时保留当前状态，由 SSE 或轮询纠正。
-            })}
+          onClick={() => {
+            setCancelError("");
+            void api<Job>(`/api/jobs/${job.id}/cancel`, { method: "POST" })
+              .then((value) => onUpdate(value))
+              .catch(reason => setCancelError(`取消失败：${String(reason)}。任务可能仍在运行，请核对后重试。`));
+          }}
         >
-          {job.kind.startsWith("experiment:") ? "安全停止" : "取消任务"}
+          {/^(experiment|session):/.test(job.kind) ? "安全停止" : "取消任务"}
         </button>
       )}
     </div>

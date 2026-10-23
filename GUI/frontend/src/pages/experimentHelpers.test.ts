@@ -41,6 +41,14 @@ it("历史填回先取旧等待最大值，新键优先且不带回判稳字段"
   expect(historyParameterValues(fields, { OFF_WAIT: null })).toEqual({ SYSTEM_SETTLE_S: null });
 });
 
+it("历史缺少补偿映射时使用模型声明的兼容值，不继承当前默认补偿", () => {
+  const factors: SchemaField = { ...field("CONTROL_SCALE_FACTORS", "basic"), type: "object",
+    default: { v1: 1.4 }, legacy_default: {} };
+  expect(historyParameterValues([factors], {})).toEqual({ CONTROL_SCALE_FACTORS: {} });
+  expect(historyParameterValues([factors], { CONTROL_SCALE_FACTORS: { v1: .8 } }))
+    .toEqual({ CONTROL_SCALE_FACTORS: { v1: .8 } });
+});
+
 describe("defaultParameterLayout", () => {
   it("按 field.group 拆分为基础与高级参数", () => {
     const layout = defaultParameterLayout([

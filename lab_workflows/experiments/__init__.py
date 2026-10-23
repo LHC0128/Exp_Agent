@@ -12,10 +12,10 @@ def get_experiment(experiment_id: str) -> ExperimentDefinition:
     return _get_experiment(experiment_id)
 
 
-def list_experiments() -> list[ExperimentDefinition]:
-    """延迟加载注册表，保持原有公共导入接口不变。"""
+def list_experiments(*, include_archived: bool = False) -> list[ExperimentDefinition]:
+    """默认列出在维护的实验；GUI 可请求附加静态归档卡片。"""
     from .registry import list_experiments as _list_experiments
 
-    return _list_experiments()
+    return _list_experiments(include_archived=include_archived)
 
 __all__ = ["ExperimentDefinition", "get_experiment", "list_experiments"]

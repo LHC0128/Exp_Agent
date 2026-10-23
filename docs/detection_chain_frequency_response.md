@@ -292,7 +292,7 @@ python experiments/Detection_Chain_Frequency_Response_plot.py data/Detection_Cha
 ## 相关实验
 
 - [XY 控制噪声谱](noise_spectrum_xy_ctrl.md)：观测到的高频下降
-- [Noise_Spectrum_XY_Ctrl_v2](../experiments/Noise_Spectrum_XY_Ctrl_v2.py)：噪声谱 v2
+- [Noise_Spectrum_XY_Ctrl_v2](../old/experiments/experiments/Noise_Spectrum_XY_Ctrl_v2.py)：噪声谱 v2（已归档，GUI 仅保留卡片；源文件与测试保留，不再提供运行/历史入口）
 
 ## 参考文献
 

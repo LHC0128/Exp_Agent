@@ -11,6 +11,7 @@ from uuid import uuid4
 import yaml
 
 from ..common import find_project_root
+from .archived import ARCHIVED_EXPERIMENTS, ARCHIVE_PATH
 
 
 DEFAULT_TAGS = (
@@ -41,7 +42,7 @@ def _normalize(
         not isinstance(item, str) for item in raw_archived
     ):
         raise ValueError("archived_experiments 必须是实验 ID 字符串列表")
-    archived_ids = set(raw_archived)
+    archived_ids = set(raw_archived) | ARCHIVED_EXPERIMENTS.keys()
     raw_tags = payload.get("tags") or list(DEFAULT_TAGS)
     tags: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -296,11 +297,13 @@ def set_experiment_archived(
     archived: bool,
     default_categories: dict[str, str],
 ) -> None:
-    """只改变目录可见性，保留实验分类与运行能力。"""
+    """保留分类和数据；已移出代码的实验只能手动恢复实现后重新接入。"""
     if experiment_id not in default_categories:
         raise KeyError(f"未知实验: {experiment_id}")
     if not isinstance(archived, bool):
         raise ValueError("archived 必须是布尔值")
+    if not archived and experiment_id in ARCHIVED_EXPERIMENTS:
+        raise ValueError(f"实验代码已归档至 {ARCHIVE_PATH}，请先手动恢复代码和注册入口")
     with _CATALOG_LOCK:
         catalog = load_catalog(default_categories)
         ids = set(catalog["archived_experiments"])

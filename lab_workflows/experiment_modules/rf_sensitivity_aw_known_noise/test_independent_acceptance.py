@@ -54,6 +54,46 @@ def scientific_run(path):
     return path
 
 
+def manual_phase_run(path):
+    scientific_run(path)
+    for file in [path / "experiment_config.yaml", *path.glob("controls/*/experiment_config.yaml")]:
+        config = yaml.safe_load(file.read_text(encoding="utf-8"))
+        config["parameters"].update(Z_PHASE_SCAN_ENABLED=False, Z_BURST_PHASE_INIT=181.5)
+        if file.parent != path:
+            config["rf_phase_calibration"] = {"mode": "manual", "scan_skipped": True,
+                "points_completed": 0, "selected_phase_deg": 181.5}
+            (file.parent / "raw/z_phase_scan.npz").unlink()
+            with np.load(file.parent / "raw/response_data.npz") as saved:
+                values = dict(saved)
+            values["z_burst_phase_deg"] = (181.5 + np.where(values["amplitudes_V"] < 0, 180, 0)) % 360
+            np.savez(file.parent / "raw/response_data.npz", **values)
+        file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("fault", ["missing_provenance", "parent_phase", "parent_mode", "response_phase"])
+def test_manual_phase_records_must_match_all_controls_and_response(tmp_path, fault):
+    path = manual_phase_run(tmp_path / "manual")
+    point = path / "controls/v1"
+    file = point / "experiment_config.yaml"
+    config = yaml.safe_load(file.read_text(encoding="utf-8"))
+    if fault == "missing_provenance":
+        config.pop("rf_phase_calibration")
+    elif fault == "parent_phase":
+        config["parameters"]["Z_BURST_PHASE_INIT"] = 182.5
+        config["rf_phase_calibration"]["selected_phase_deg"] = 182.5
+    elif fault == "parent_mode":
+        config["parameters"]["Z_PHASE_SCAN_ENABLED"] = True
+    else:
+        with np.load(point / "raw/response_data.npz") as saved:
+            values = dict(saved)
+        values["z_burst_phase_deg"] += 1
+        np.savez(point / "raw/response_data.npz", **values)
+    file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="相位"):
+        analysis.AnalysisWorkflow(path).execute(["B01"])
+
+
 def assert_independent_science(path, nperseg):
     """用显式 Welch、导数、单位换算及响应补偿核对每个版本。"""
     for index in (1, 2):

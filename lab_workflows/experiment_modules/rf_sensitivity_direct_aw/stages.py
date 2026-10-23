@@ -1,5 +1,5 @@
 """DirectAW 的唯一流程清单、参数归属和依赖失效规则。"""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -35,11 +35,11 @@ ACQUISITION = (
           ("DEMOD0_IDX", "DEMOD0_OSC_IDX", "DEMOD0_SIGNAL_RANGE", "DEMOD0_ORDER",
            "DEMOD0_TC_CALIB", "DEMOD0_RATE", *TEMP)),
     Stage("A09", "XY DirectAW 上传与迭代校相", "四级相位校准", ("A08",),
-          ("ARB_WAVEFORM_FILE", "AW_REPEAT_FREQ", "XY_CTRL_K_HZ_PER_V", "XY_CTRL_B_HZ",
+          ("ARB_WAVEFORM_FILE", "CONTROL_SCALE_FACTORS", "AW_REPEAT_FREQ", "XY_CTRL_K_HZ_PER_V", "XY_CTRL_B_HZ",
            "XY_CTRL_PHASE", "XY_CTRL_QUAD", "XY_CTRL_PHASE_TOL_DEG", "XY_CTRL_PHASE_MAX_ITER",
            "XY_CTRL_PHASE_MIN_R_V", "XY_CTRL_PHASE_MIN_R_RATIO"),
           ("raw/xy_aw_waveforms_initial.npz", "raw/xy_aw_waveforms.npz"),
-          display_parameters=("ARB_WAVEFORM_FILE", "AW_REPEAT_FREQ", "XY_CTRL_K_HZ_PER_V", "XY_CTRL_B_HZ",
+          display_parameters=("ARB_WAVEFORM_FILE", "CONTROL_SCALE_FACTORS", "AW_REPEAT_FREQ", "XY_CTRL_K_HZ_PER_V", "XY_CTRL_B_HZ",
            "XY_CTRL_PHASE", "XY_CTRL_QUAD", "XY_CTRL_PHASE_TOL_DEG", "XY_CTRL_PHASE_MAX_ITER",
            "XY_CTRL_PHASE_MIN_R_V", "XY_CTRL_PHASE_MIN_R_RATIO", *TEMP),
           quality_gates=("XY 校相残差及 R 的绝对幅值、相对幅值满足当前参数门槛",)),
@@ -49,11 +49,12 @@ ACQUISITION = (
            "LOOPBACK_INPUT_RANGE_V",
            "LOOPBACK_INPUT_DIFF", "Z_RF_FREQ", "Z_RF_AMPLITUDE_INIT", "Z_BURST_PHASE_INIT",
            "RF_INPUT_ROUTE", "RF_AUX_OUTPUT_IDX", "RF_PHYSICAL_INPUT_SOURCE")),
-    Stage("A11", "控制 AM 与 Z RF 触发相位扫描", "四级相位校准", ("A10",),
-          ("Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG",
+    Stage("A11", "控制 AM 与 Z RF 触发相位扫描（可跳过）", "四级相位校准", ("A10",),
+          ("Z_PHASE_SCAN_ENABLED", "Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG",
            "TEMP_GROUP_SIZE", "SYSTEM_SETTLE_S", "SCAN_POINT_DURATION_S"),
           ("raw/z_phase_scan.npz", "results/z_phase_scan.png", "results/z_phase_scan.pdf"),
-          display_parameters=("Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG",
+          display_parameters=("Z_PHASE_SCAN_ENABLED", "Z_BURST_PHASE_INIT",
+                              "Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG",
                               "Z_RF_AMPLITUDE_INIT", *SCAN)),
     Stage("A12", "RF 解调器校相", "四级相位校准", ("A11",),
           display_parameters=("Z_RF_AMPLITUDE_INIT", *TEMP)),
@@ -73,16 +74,40 @@ ACQUISITION = (
     Stage("A15", "响应恢复与本轮安全收尾", "采集与结束", ("A14",)),
     Stage(FINISH_ID, "安全收尾 / 结束会话", "采集与结束", ()),
 )
+# 原单控制清单供 R、Scale 和已知噪声内核复用；门面同时识别旧单文件键。
+MULTI_ACQUISITION = tuple(replace(stage,
+    title="所选控制逐版本 XY 上传与迭代校相" if stage.id == "A09" else stage.title,
+    parameters=stage.parameters + (("CONTROL_WAVEFORM_FILES",) if stage.id == "A09" else ()),
+    display_parameters=tuple("CONTROL_WAVEFORM_FILES" if key == "ARB_WAVEFORM_FILE" else key
+        for key in (stage.display_parameters if stage.display_parameters is not None else stage.parameters)),
+    artifacts=tuple(dict.fromkeys(path for original in stage.artifacts
+        for path in ((original, "controls/*/" + original) if original.startswith(("raw/", "results/")) else (original,)))),
+) for stage in ACQUISITION)
+SINGLE_ACQUISITION = ACQUISITION
+ACQUISITION = MULTI_ACQUISITION
+
 ANALYSIS = (
     Stage("B01", "加载配置与校验原始数据", "独立离线分析", (),
           quality_gates=("实验身份、原始格式、响应及噪声数据资格有效，采集已封存",)),
     Stage("B02", "X 色散响应与斜率", "独立离线分析", ("B01",), artifacts=("response_fit.npz",)),
-    Stage("B03", "Welch X 噪声 PSD", "独立离线分析", ("B02",), ("NOISE_NPERSEG",), ("psd_avg.npz",)),
+    Stage("B03", "Welch X 噪声 PSD 与异常谱筛选", "独立离线分析", ("B02",),
+          ("NOISE_NPERSEG", "NOISE_OUTLIER_POLICY", "SENSITIVITY_BAND_MIN_HZ", "SENSITIVITY_BAND_MAX_HZ"),
+          ("psd_avg.npz", "noise_rejection_summary.json", "noise_record_quality.csv")),
     Stage("B04", "RF 灵敏度、频响补偿与结果图", "独立离线分析", ("B03",), artifacts=(
         "sensitivity.npz", "analysis.yaml", "analysis.json", "bandwidth_fit.png", "bandwidth_fit.pdf",
         "response_curve.png", "response_curve.pdf",
         "noise_psd.png", "noise_psd.pdf", "sensitivity.png", "sensitivity.pdf", "full_analysis.png", "full_analysis.pdf")),
 )
+
+
+MULTI_ANALYSIS = tuple(replace(stage,
+    artifacts={"B01": (), "B02": ("response_fits.json",),
+        "B03": ("psd_index.json", "noise_rejection_summary.json", "noise_record_quality.csv"),
+        "B04": ("sensitivity.npz", "analysis.yaml", "analysis.json", "full_analysis.png", "full_analysis.pdf",
+            "z_phase_response_comparison.png", "z_phase_response_comparison.pdf")}[stage.id],
+) for stage in ANALYSIS)
+SINGLE_ANALYSIS = ANALYSIS
+ANALYSIS = MULTI_ANALYSIS
 
 
 def initial_states(stages):
@@ -130,7 +155,7 @@ def validate_selection(stages, states, selected):
     return ordered
 
 
-def definition(*, acquisition=ACQUISITION, analysis=ANALYSIS, experiment_id="rf-sensitivity-aw"):
+def definition(*, acquisition=MULTI_ACQUISITION, analysis=MULTI_ANALYSIS, experiment_id="rf-sensitivity-aw"):
     def public(stage):
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}

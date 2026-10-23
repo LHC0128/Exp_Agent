@@ -3,6 +3,7 @@
 import json
 import math
 import os
+import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -24,13 +25,13 @@ def _curve(data, axis_name: str, value_name: str) -> tuple[np.ndarray, np.ndarra
     return axis, values
 
 
-def _load_result(item: dict, *, identity=run_format) -> dict:
+def _load_result(item: dict, *, identity=run_format, check_analysis=True) -> dict:
     directory = Path(item["run_dir"]).resolve()
     config_path = directory / "experiment_config.yaml"
     if directory not in config_path.resolve().parents:
         raise ValueError("运行配置超出允许范围")
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    reason = identity.comparison_block_reason(directory, config)
+    reason = identity.comparison_block_reason(directory, config) if check_analysis else identity.analysis_block_reason(config)
     if reason:
         raise ValueError(reason)
     results = directory / "results"
@@ -70,11 +71,22 @@ def compare_runs(runs: list[dict], output_dir: Path, *, identity=run_format) -> 
         check_cancelled()
         report_runtime_progress("analysis", f"读取对比结果：{item['run_id']}", 60 * index / len(entries))
         try:
-            loaded.append(_load_result(item, identity=identity))
+            directory = Path(item["run_dir"]).resolve()
+            config = yaml.safe_load((directory / "experiment_config.yaml").read_text(encoding="utf-8"))
+            if identity.EXPERIMENT_ID == run_format.EXPERIMENT_ID and run_format.is_multi_control(config):
+                if reason := identity.comparison_block_reason(directory, config):
+                    raise ValueError(reason)
+                from .control_analysis import control_inputs
+                for number, (version, child, _) in enumerate(control_inputs(directory, config), 1):
+                    label = f"Control {number}" if re.search(r"[\u3400-\u9fff\uf900-\ufaff]", version) else version
+                    loaded.append(_load_result({**item, "control": version, "run_dir": str(child),
+                        "legend": f"{item['legend']} / {label}"}, identity=identity, check_analysis=False))
+            else:
+                loaded.append(_load_result(item, identity=identity))
         except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
             raise ValueError(f"{item['run_id']}：{exc}") from exc
     output = Path(output_dir).resolve()
-    if any(output == Path(item["run_dir"]) or Path(item["run_dir"]) in output.parents for item in loaded):
+    if any(output == Path(item["run_dir"]).resolve() or Path(item["run_dir"]).resolve() in output.parents for item in [*entries, *loaded]):
         raise ValueError("对比输出不能写入源运行目录")
     warnings = []
     for item in loaded:
@@ -83,7 +95,10 @@ def compare_runs(runs: list[dict], output_dir: Path, *, identity=run_format) -> 
         elif not item["corrected"]:
             warnings.append(f"{item['run_id']}：灵敏度谱未作洛伦兹校正。")
     result = {"experiment_id": identity.EXPERIMENT_ID, "response_component": identity.RESPONSE_COMPONENT, "noise_component": "X",
-              "runs": [{key: item[key] for key in ("run_id", "legend", "run_dir", "fit_success", "corrected")} for item in loaded],
+              "runs": [{**item, "run_dir": str(Path(item["run_dir"]).resolve()),
+                        "fit_success": all(curve["fit_success"] for curve in loaded if curve["run_id"] == item["run_id"]),
+                        "corrected": all(curve["corrected"] for curve in loaded if curve["run_id"] == item["run_id"])} for item in entries],
+              "curves": [{key: item[key] for key in ("run_id", "legend", "run_dir", "fit_success", "corrected", "control") if key in item} for item in loaded],
               "warnings": warnings}
     check_cancelled()
     output.mkdir(parents=True, exist_ok=False)

@@ -3,6 +3,7 @@
 from ...experiments.contracts import ExperimentDefinition
 from ...experiments.typed import TypedWorkflowAdapter
 from .models import MxYRFProbeDetuningOptimizationParams
+from .run_format import REQUIRED_MAPPING_KEYS
 
 
 ADAPTER = TypedWorkflowAdapter(
@@ -26,7 +27,11 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-y-probe-power-pzt-grid",
     description=(
-        ('在 Mx Y 向 RF 构型下扫描 Probe 光功率和 DLC pro PZT Scan Offset；Probe 轴也可设为单点，以固定光功率只扫描 PZT。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')
+        "固定 Pump，按 PZT 外层、Probe 功率内层蛇形扫描；支持固定 Probe 单点。"
+        "运行页提供可勾选的采集／独立分析流程，节点编辑参数，顶部保存、预检和完整运行；"
+        "应用草稿后须显式重跑。历史目录的分析覆盖独立，不改采集快照。"
+        "逐点恢复温控后保存，不连接 TEC；结束恢复初始 PZT／扫描与已执行的光功率基准，"
+        "关闭归零辅助磁场，保留主场与 Pump。复用原双斜率灵敏度算法，不自动施加最优点。"
     ),
     data_type="Mx_Y_RF_Probe_Detuning_Optimization",
     required_devices=(
@@ -36,6 +41,7 @@ DEFINITION = ExperimentDefinition(
         "锁相放大器",
         "DLC_PRO",
     ),
+    required_mapping_keys=REQUIRED_MAPPING_KEYS,
     execution_mode="typed_workflow",
     acquisition_program=(
         "experiments/Mx_Y_RF_Probe_Detuning_Optimization.py"
@@ -55,8 +61,8 @@ DEFINITION = ExperimentDefinition(
         "Emission、Laser Enabled、电流或激光温度。",
         "不设置或读取 TEC 温度；采集时仍关闭温控开关，点间及结束时"
         "恢复为 5 V DC + ON。",
-        "正常、取消和异常均恢复进入实验前的 PZT/扫描状态，关闭归零 "
-        "Z 辅助场和 X/Y 场，并恢复 Pump=0.5 V、Probe=0.3 V 基准输出。",
+        "正常、取消、异常和通信结束均恢复进入实验前的 PZT/扫描状态，关闭归零 "
+        "Z 辅助场和 X/Y 场；恢复已执行配置的 Pump/Probe 基准，保持主场与 Pump。",
     ),
     schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,

@@ -88,7 +88,9 @@ def test_non_three_index_reaches_calibration_daq_and_metadata(rig, monkeypatch, 
     if variant == "R":
         from ..rf_sensitivity_direct_aw_r.models import RFSensitivityDirectAWRParams
         from ..rf_sensitivity_direct_aw_r.workflow import Workflow
-        params = RFSensitivityDirectAWRParams.from_external(rig.params.to_external() | {"Z_RF_NOISE_FREQ": 3000})
+        values = {key: value for key, value in rig.params.to_external().items()
+                  if key in RFSensitivityDirectAWRParams.external_names()}
+        params = RFSensitivityDirectAWRParams.from_external(values | {"Z_RF_NOISE_FREQ": 3000})
     else:
         params, Workflow = rig.params, workflow.Workflow
     params = replace(params, demod3_idx=2, rf_aux_output_idx=3,

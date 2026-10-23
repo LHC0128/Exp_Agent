@@ -10,7 +10,7 @@ from ..experiment_modules.rf_sensitivity_direct_aw.definition import (
     DEFINITION as RF_SENSITIVITY_DIRECT_AW_DEFINITION,
 )
 from ..experiment_modules.rf_sensitivity_aw_known_noise.definition import DEFINITION as RF_KNOWN_NOISE_DEFINITION
-from ..experiment_modules.rf_sensitivity_direct_aw_r.definition import DEFINITION as RF_SENSITIVITY_DIRECT_AW_R_DEFINITION
+from ..experiment_modules.rf_control_scale_sensitivity.definition import DEFINITION as RF_CONTROL_SCALE_DEFINITION
 from ..experiment_modules.scope_capture.definition import DEFINITION as SCOPE_CAPTURE_DEFINITION
 from ..experiment_modules.noise_spectrum_xy.definition import (
     DEFINITION as NOISE_SPECTRUM_XY_DEFINITION,
@@ -87,29 +87,11 @@ from ..experiment_modules.mx_y_rf_probe_detuning_optimization.definition import 
 from ..experiment_modules.mx_main_field_calibration.definition import (
     DEFINITION as MX_MAIN_FIELD_CALIBRATION_DEFINITION,
 )
-from ..experiment_modules.mx_keithley_6221_main_field_calibration.definition import (
-    DEFINITION as MX_KEITHLEY_6221_MAIN_FIELD_CALIBRATION_DEFINITION,
-)
-from ..experiment_modules.mx_keithley_6221_optimal_control_rf_sensitivity.definition import (
-    DEFINITION as MX_KEITHLEY_6221_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
-)
-from ..experiment_modules.mx_keithley_6221_optimal_control_xyz_balance.definition import (
-    DEFINITION as MX_KEITHLEY_6221_OPTIMAL_CONTROL_XYZ_BALANCE_DEFINITION,
-)
-from ..experiment_modules.mx_keithley_6221_optimal_control_balanced_sensitivity.definition import (
-    DEFINITION as MX_KEITHLEY_6221_OPTIMAL_CONTROL_BALANCED_SENSITIVITY_DEFINITION,
-)
-from ..experiment_modules.mx_main_field_noise_spectrum.definition import (
-    DEFINITION as MX_MAIN_FIELD_NOISE_SPECTRUM_DEFINITION,
-)
 from ..experiment_modules.mx_main_field_scope_noise_spectrum.definition import (
     DEFINITION as MX_MAIN_FIELD_SCOPE_NOISE_SPECTRUM_DEFINITION,
 )
 from ..experiment_modules.mx_z_field_calibration.definition import (
     DEFINITION as MX_Z_FIELD_CALIBRATION_DEFINITION,
-)
-from ..experiment_modules.mx_z_noise_spectrum.definition import (
-    DEFINITION as MX_Z_NOISE_SPECTRUM_DEFINITION,
 )
 from ..experiment_modules.mx_xy_residual_field_calibration.definition import (
     DEFINITION as MX_XY_RESIDUAL_FIELD_CALIBRATION_DEFINITION,
@@ -127,6 +109,7 @@ from ..experiment_modules.static_sensitivity.definition import (
     DEFINITION as STATIC_SENSITIVITY_DEFINITION,
 )
 from .contracts import ExperimentDefinition
+from .archived import ARCHIVED_EXPERIMENTS, load_archived_experiment
 from ..experiment_modules.bell_bloom_z_field_calibration.definition import DEFINITION as BELL_BLOOM_Z_FIELD_CALIBRATION_DEFINITION
 from ..experiment_modules.detection_chain_frequency_response.definition import (
     DEFINITION as DETECTION_CHAIN_FREQUENCY_RESPONSE_DEFINITION,
@@ -210,25 +193,18 @@ _DEFINITIONS = [
     MX_Y_RF_POWER_OPTIMIZATION_DEFINITION,
     MX_Y_RF_PROBE_DETUNING_OPTIMIZATION_DEFINITION,
     MX_MAIN_FIELD_CALIBRATION_DEFINITION,
-    MX_KEITHLEY_6221_MAIN_FIELD_CALIBRATION_DEFINITION,
-    MX_KEITHLEY_6221_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
-    MX_KEITHLEY_6221_OPTIMAL_CONTROL_XYZ_BALANCE_DEFINITION,
-    MX_KEITHLEY_6221_OPTIMAL_CONTROL_BALANCED_SENSITIVITY_DEFINITION,
-    MX_MAIN_FIELD_NOISE_SPECTRUM_DEFINITION,
     MX_MAIN_FIELD_SCOPE_NOISE_SPECTRUM_DEFINITION,
     MX_Z_FIELD_CALIBRATION_DEFINITION,
-    MX_Z_NOISE_SPECTRUM_DEFINITION,
     MX_XY_RESIDUAL_FIELD_CALIBRATION_DEFINITION,
     NOISE_SPECTRUM_XY_DEFINITION,
     NOISE_SPECTRUM_XY_KNOWN_NOISE_DEFINITION,
     NOISE_SPECTRUM_XY_PROBE_AM_DEFINITION,
     NOISE_SPECTRUM_XY_DEMOD3_R_DEFINITION,
-    _legacy("noise-spectrum-xy-v2", "XY 控制噪声谱 v2", "measurement", "noise", "v2", "Noise_Spectrum_XY_Ctrl_v2.py", "Noise_Spectrum_XY_Ctrl_v2_plot.py", ('第二版 XY 控制噪声谱流程。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'), _DEVICES["xy"]),
     _legacy("photon-shot-noise", "光子散粒噪声", "measurement", "fundamental-noise", "photon", "Photon_shot_noise.py", "Photon_shot_noise_plot.py", ('测量光子散粒噪声随实验参数的变化。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')),
     PROJECTION_NOISE_DEFINITION,
     RF_SENSITIVITY_DIRECT_AW_DEFINITION,
-    RF_SENSITIVITY_DIRECT_AW_R_DEFINITION,
     RF_KNOWN_NOISE_DEFINITION,
+    RF_CONTROL_SCALE_DEFINITION,
     _legacy("rf-sensitivity-aw-frequency", "RF 灵敏度频率扫描（外部 AM）", "measurement", "rf-sensitivity", "external-am", "RF_Field_Sensitivity_AW_FreqSweep.py", "RF_Field_Sensitivity_AW_FreqSweep_plot.py", ('扫描 RF 频率的外部 AM 硬件方案。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'), _DEVICES["xy"]),
     RF_DIRECT_AW_FREQUENCY_DEFINITION,
     _legacy("rf-sensitivity-constxy-frequency", "RF 灵敏度频率扫描（ConstXY）", "measurement", "rf-sensitivity", "const-xy", "RF_Field_Sensitivity_ConstXY_FreqSweep.py", "RF_Field_Sensitivity_ConstXY_FreqSweep_plot.py", ('固定 XY 控制下扫描 RF 频率。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'), _DEVICES["xy"]),
@@ -254,9 +230,9 @@ if len(_REGISTRY) != len(_DEFINITIONS):
     raise RuntimeError("实验注册表中存在重复 ID")
 
 
-def list_experiments() -> list[ExperimentDefinition]:
-    """按注册顺序返回全部正式实验。"""
-    return list(_DEFINITIONS)
+def list_experiments(*, include_archived: bool = False) -> list[ExperimentDefinition]:
+    """默认返回在维护的正式实验；目录可附加不加载实现的归档卡片。"""
+    return [*_DEFINITIONS, *ARCHIVED_EXPERIMENTS.values()] if include_archived else list(_DEFINITIONS)
 
 
 def get_experiment(experiment_id: str) -> ExperimentDefinition:
@@ -264,4 +240,6 @@ def get_experiment(experiment_id: str) -> ExperimentDefinition:
     try:
         return _REGISTRY[experiment_id]
     except KeyError as exc:
+        if experiment_id in ARCHIVED_EXPERIMENTS:
+            return load_archived_experiment(experiment_id)
         raise KeyError(f"未知实验: {experiment_id}") from exc

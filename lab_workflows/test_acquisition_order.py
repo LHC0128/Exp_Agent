@@ -279,7 +279,7 @@ class AcquisitionOrderTest(unittest.TestCase):
                 np.testing.assert_array_equal(saved["signal_v"], np.ones(4))
 
     def test_legacy_xy_v2_group_prepares_first_state_and_reuses_system_wait(self):
-        path = Path(__file__).resolve().parents[1] / "experiments/Noise_Spectrum_XY_Ctrl_v2.py"
+        path = Path(__file__).resolve().parents[1] / "old/experiments/experiments/Noise_Spectrum_XY_Ctrl_v2.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
         group = next(node for node in tree.body if isinstance(node, ast.With) and any(
             isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)

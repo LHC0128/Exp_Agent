@@ -22,6 +22,14 @@ from .preparation import preflight
 from .analysis import AnalysisWorkflow, analyze
 from .stages import ACQUISITION
 
+ACQUISITION_CASES = {
+    "rf-sensitivity-aw-known-noise": {
+        "mode": "grouped",
+        "cases": {"entrypoints": ["test_manual_rf_phase_is_shared_without_moving_injected_noise",
+                                   "test_bandwidth_never_acquires_configured_rf_frequency"]},
+    },
+}
+
 
 @pytest.fixture
 def known_rig(rig, monkeypatch):
@@ -73,6 +81,75 @@ def known_rig(rig, monkeypatch):
             for name, value in (("sample.r", abs(response)), ("sample.x", response.real), ("sample.y", response.imag))]
     monkeypatch.setattr(rf_acquisition.daq, "acquire_data", capture)
     return rig
+
+
+
+def test_bandwidth_grid_skips_current_carrier():
+    params = RFSensitivityKnownNoiseParams(z_rf_freq=3000, bw_freq_start=2500, bw_freq_stop=3500, bw_freq_points=51)
+    assert len(params.bandwidth_frequencies) == 50
+    assert 3000 not in params.bandwidth_frequencies
+    assert 2980 in params.bandwidth_frequencies and 3020 in params.bandwidth_frequencies
+    changed = replace(params, z_rf_freq=3100)
+    assert 3100 not in changed.bandwidth_frequencies and 3000 in changed.bandwidth_frequencies
+    too_few = replace(params, linewidth_mode="frequency_sweep", bw_freq_points=5)
+    assert any("至少保留 5" in error for error in too_few.validate_model())
+    stage = next(item for item in ACQUISITION if item.id == "A13B")
+    assert "Z_RF_FREQ" in stage.display_parameters
+    assert any("自动跳过" in text for text in stage.quality_gates)
+
+
+def test_bandwidth_skip_marker_preserves_legacy_analysis(tmp_path):
+    from ..rf_sensitivity_direct_aw.analysis_steps import fit_bandwidth
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    full = np.linspace(2500, 3500, 51)
+    selected = full[full != 3000]
+    config = {"parameters": {"LINEWIDTH_MODE": "frequency_sweep", "BW_FREQ_START": 2500,
+        "BW_FREQ_STOP": 3500, "BW_FREQ_POINTS": 51, "Z_RF_FREQ": 3000}}
+    def save(frequencies, **metadata):
+        response = 0.1 + 0.3 * 100 ** 2 / ((frequencies - 3000) ** 2 + 100 ** 2)
+        np.savez(raw / "bandwidth_data.npz", frequency_Hz=frequencies, demod3_r_V=response,
+                 z_rf_amplitude_vpp=0.01, **metadata)
+    save(selected, skipped_z_rf_frequency_Hz=3000)
+    assert fit_bandwidth(tmp_path, config)["n_points"] == 50
+    save(full)
+    assert fit_bandwidth(tmp_path, config)["n_points"] == 51
+    save(selected)
+    with pytest.raises(ValueError, match="不完整"):
+        fit_bandwidth(tmp_path, config)
+    save(selected[:-1], skipped_z_rf_frequency_Hz=3000)
+    with pytest.raises(ValueError, match="不完整"):
+        fit_bandwidth(tmp_path, config)
+
+
+def test_bandwidth_never_acquires_configured_rf_frequency(known_rig, monkeypatch):
+    known_rig.params = replace(known_rig.params, scan_rf_phase=False, linewidth_mode="frequency_sweep",
+        bw_freq_start=2400, bw_freq_stop=3600, bw_freq_points=7, temp_group_size=2)
+    ctx = workflow.Workflow(known_rig.params, project_root=known_rig.tmp_path)
+    frequencies = []
+    try:
+        ctx.execute([stage.id for stage in ACQUISITION if stage.id not in ("A13B", "A15", "A16")])
+        acquire = rf_acquisition.daq.acquire_data
+        def capture(hf2, *args, **kwargs):
+            value = hf2.get_double(hf2.osc_path(known_rig.params.demod3_osc_idx) + "/freq")
+            assert not math.isclose(value, known_rig.params.z_rf_freq, abs_tol=1e-6)
+            frequencies.append(value)
+            return acquire(hf2, *args, **kwargs)
+        monkeypatch.setattr(rf_acquisition.daq, "acquire_data", capture)
+        ctx.execute(["A13B"])
+        expected = known_rig.params.bandwidth_frequencies
+        np.testing.assert_allclose(frequencies, np.tile(expected, 2))
+        for version in ("v1", "v2"):
+            child = ctx.directory.root / "controls" / version
+            with np.load(child / "raw/bandwidth_data.npz", allow_pickle=False) as data:
+                np.testing.assert_allclose(data["frequency_Hz"], expected)
+                assert float(data["skipped_z_rf_frequency_Hz"]) == 3000
+            config = yaml.safe_load((child / "experiment_config.yaml").read_text(encoding="utf-8"))
+            assert config["bandwidth_acquisition"]["points"] == 6
+            assert config["bandwidth_acquisition"]["requested_points"] == 7
+    finally:
+        ctx.finish()
+    assert_shutdown(known_rig)
 
 
 def test_sum_normalization_preserves_noise_and_rf_phase():
@@ -131,6 +208,41 @@ def test_output_readback_mismatch_stops_before_acquisition(known_rig):
     with pytest.raises(RuntimeError, match="回读不一致"):
         workflow.run(known_rig.params, project_root=known_rig.tmp_path)
     assert_shutdown(known_rig)
+
+
+def test_manual_rf_phase_is_shared_without_moving_injected_noise(known_rig, monkeypatch):
+    known_rig.params = replace(known_rig.params, scan_rf_phase=False, z_burst_phase_init=181.5)
+    real_upload = excitation.upload_z
+    manual_temperatures = []
+    def upload(ctx, *args, **kwargs):
+        if ctx.current_step == "A11":
+            temp = known_rig.mapping["Temp_Switch"]
+            manual_temperatures.append(known_rig.generators[temp["resource"]].dc[temp["channel"]])
+        return real_upload(ctx, *args, **kwargs)
+    monkeypatch.setattr(excitation, "upload_z", upload)
+    # 工作流导入的上传入口同样指向真实实现，记录仅观察手动相位时的温控。
+    monkeypatch.setattr(workflow, "upload_z", upload)
+    directory = workflow.run(known_rig.params, project_root=known_rig.tmp_path)
+    assert manual_temperatures == [5.0, 5.0]
+    for version in ("v1", "v2"):
+        child = directory / "controls" / version
+        config = yaml.safe_load((child / "experiment_config.yaml").read_text(encoding="utf-8"))
+        assert config["rf_phase_calibration"]["mode"] == "manual"
+        assert config["rf_phase_calibration"]["selected_phase_deg"] == 181.5
+        assert config["rf_phase_calibration"]["points_completed"] == 0
+        assert not (child / "raw/z_phase_scan.npz").exists()
+        with np.load(next(child.glob("raw/z_sum_A11_*.npz"))) as saved:
+            time = np.arange(len(saved["noise_V"])) / (len(saved["noise_V"]) * float(saved["repeat_frequency_Hz"]))
+            rf = float(saved["rf_vpp_V"]) / 2 * np.sin(2 * np.pi * float(saved["rf_frequency_Hz"]) * time + np.deg2rad(181.5))
+            np.testing.assert_allclose(saved["voltage_V"] - saved["noise_V"], rf, atol=1e-14)
+        with np.load(child / "raw/response_data.npz") as saved:
+            np.testing.assert_allclose(saved["z_burst_phase_deg"],
+                (181.5 + np.where(saved["amplitudes_V"] < 0, 180, 0)) % 360)
+    assert_shutdown(known_rig)
+    result = analyze(directory)
+    assert result["status"] == "completed" and result["rf_phase_scan_status"] == "skipped"
+    assert not (directory / "results/z_phase_response_comparison.png").exists()
+    assert (directory / "results/full_analysis.png").is_file()
 
 
 def test_two_controls_complete_and_analyze_without_sources(known_rig, monkeypatch):
