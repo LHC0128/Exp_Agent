@@ -9,6 +9,12 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 旧模式继续读取实际脚本常量及 GUI 保存的参数，不新增另一套默认值。锁相连接已改用 `create_lockin()`，所有实验使用设备库卡片的全系统选择。采集前的能力检查和原有输出收尾均保留。
 
+`photon-shot-noise` 已迁移为强类型模块化采集及交互流程图，默认来源为 `params/experiments/photon-shot-noise.yaml`；下文保留其锁相兼容说明，不再由旧脚本常量取参数。见[光子散粒噪声](Photon_shot_noise.md)。
+
+`z-field-bandwidth` 已迁移为强类型模块化与 10 采集／3 分析流程图节点，默认来源为 `params/experiments/z-field-bandwidth.yaml`；双主电压回环仍只支持 HF2。运行／历史、取消与安全恢复见[Z 场带宽说明](z_field_bandwidth.md)，不再编辑旧脚本常量或默认分析 latest。
+
+`static-sensitivity-optimize-local` 已迁移为[局部优化 DC 工作流](static_sensitivity_optimize_local.md)：6 采集／3 批次分析节点，逐候选重设基准、重校相并复用主实验的 DC 逐点及 Z OFF Y 噪声；默认值来自独立 YAML，旧 RAMP 批次仅读取已有结论。
+
 ## 解调时序的采集模块
 
 所有正式解调时序复用设备库 `acquisition_mode`。自动模式下 HF2 使用 DAQ；MFLI 按当次请求率
@@ -20,9 +26,19 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 旧入口的时序阶段分别声明为：XY v2 的 `HF2_DAQ_RATE/HF2_DAQ_DURATION`、光子噪声的
 `HF2_DEMOD_RATE/ACQ_DURATION`、RF/XY 扫描的 `DEMOD0_RATE` 或 `HF2_DEMOD0_RATE` 与固定单点时长、
-Z 带宽的 `HF2_DEMOD0_RATE/POINT_DURATION`、静磁优化的 `HF2_DEMOD_RATE/DAQ_DURATION` 触发色散
-和 `HF2_NOISE_RATE/NOISE_DURATION` 噪声。静磁优化的色散触发和额外订阅只支持 DAQ，指定 Scope 时拒绝启动。
+Z 带宽的 `HF2_DEMOD0_RATE/POINT_DURATION`、已归档全局静磁优化的 `HF2_DEMOD_RATE/DAQ_DURATION` 触发色散
+和 `HF2_NOISE_RATE/NOISE_DURATION` 噪声。已归档全局优化的色散触发和额外订阅只支持 DAQ；局部优化已改为 `HF2_DEMOD_RATE/DISPERSION_DURATION_S` 的无触发 DC 点，按与主实验相同的选件和内存规则支持 DAQ/Scope。
 已有 `ACQUISITION_MODE=demod_rxy` 的单次样本分支继续读单次样本，不应用时序模块切换。
+
+## 新归档入口
+
+`aw-const-omega-awscale-check`、`dg-am-comp-transfer-check`、`rf-sensitivity-aw-frequency`、`aw-waveform-scope-check`，以及 `static-sensitivity-optimize`、`aw-const-omega-check`、`xy-dc-voltage-calibration`、`xy-aw-voltage-calibration` 的专属代码已移至
+[`old/experiments/`](../old/experiments/README.md)，GUI 仅保留卡片，不再提供运行、参数或历史页面，旧 API 返回 410。
+专属采集／分析脚本按原相对路径保存，默认参数和历史数据原位保留；归档前的设备限制与安全规则继续用于维护和历史复现。
+外部 AM 频响未执行模块化迁移，原扫描与保存逻辑不变；共用 `experiments/RF_Field_Sensitivity_AW_FreqSweep_plot.py` 和 DirectAW 分析模块继续原位使用，归档中另存 plot 入口原始副本。
+DG AM 传递检查与任意波示波器检查均为已归档的纯电学工具；后者在 `old/experiments/experiments/AW_Control_Waveform_Scope_Check.py` 中保留读取前者历史曲线及采集时诊断绘图的原逻辑，无独立离线分析入口，不进行模块化或流程图迁移。传递曲线、共享波形 CSV 和历史数据保持原位。
+
+全局优化保留原采集、拟合和四面板诊断，无独立离线入口；恒定 Omega 与 XY DC／AW 标定的采集／分析脚本均原样保存。参数、波形 CSV 与历史结果不移动，全局优化实际使用的 `data/Static_Magnetic_Field_Sensitivity/` 也不拆分；局部优化、静磁场主实验和 XY DirectAW DC 标定不在本次归档范围。下表保留归档前接线与安全限制，归档不代表可从 GUI 再次启动。
 
 ## 双主电压输入限制
 
@@ -34,14 +50,14 @@ GUI 隐藏开启选项；光子散粒噪声和可选 BB 监控也使用公共初
 
 | 实验 ID | 采集入口 |
 | --- | --- |
-| `aw-const-omega-awscale-check` | [AW_ConstOmega_Calibration_Check_AWScale.py](../experiments/AW_ConstOmega_Calibration_Check_AWScale.py) |
-| `aw-const-omega-check` | [AW_ConstOmega_Calibration_Check.py](../experiments/AW_ConstOmega_Calibration_Check.py) |
+| `aw-const-omega-awscale-check`（已归档） | [AW_ConstOmega_Calibration_Check_AWScale.py](../old/experiments/experiments/AW_ConstOmega_Calibration_Check_AWScale.py) |
+| `aw-const-omega-check`（已归档） | [AW_ConstOmega_Calibration_Check.py](../old/experiments/experiments/AW_ConstOmega_Calibration_Check.py) |
 | `noise-spectrum-xy-demod3-r` | [Noise_Spectrum_XY_Demod3_R.py](../experiments/Noise_Spectrum_XY_Demod3_R.py) |
-| `rf-sensitivity-aw-frequency` | [RF_Field_Sensitivity_AW_FreqSweep.py](../experiments/RF_Field_Sensitivity_AW_FreqSweep.py) |
+| `rf-sensitivity-aw-frequency`（已归档） | [RF_Field_Sensitivity_AW_FreqSweep.py](../old/experiments/experiments/RF_Field_Sensitivity_AW_FreqSweep.py) |
 | `rf-sensitivity-constxy-frequency` | [RF_Field_Sensitivity_ConstXY_FreqSweep.py](../experiments/RF_Field_Sensitivity_ConstXY_FreqSweep.py) |
 | `rf-sensitivity-direct-aw-frequency` | [RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py](../experiments/RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py) |
-| `xy-aw-voltage-calibration` | [XY_AW_Voltage_Calibration.py](../experiments/XY_AW_Voltage_Calibration.py) |
-| `xy-dc-voltage-calibration` | [XY_DC_Voltage_Calibration.py](../experiments/XY_DC_Voltage_Calibration.py) |
+| `xy-aw-voltage-calibration`（已归档） | [XY_AW_Voltage_Calibration.py](../old/experiments/experiments/XY_AW_Voltage_Calibration.py) |
+| `xy-dc-voltage-calibration`（已归档） | [XY_DC_Voltage_Calibration.py](../old/experiments/experiments/XY_DC_Voltage_Calibration.py) |
 | `xy-direct-aw-dc-calibration` | [XY_DirectAW_DC_Calibration.py](../experiments/XY_DirectAW_DC_Calibration.py) |
 | `z-field-bandwidth` | [Z_Field_Bandwidth_Measurement.py](../experiments/Z_Field_Bandwidth_Measurement.py) |
 
@@ -53,21 +69,23 @@ GUI 隐藏开启选项；光子散粒噪声和可选 BB 监控也使用公共初
 
 | 实验 ID | 目的 | 设备适用性 |
 | --- | --- | --- |
-| [`aw-const-omega-awscale-check`](../experiments/AW_ConstOmega_Calibration_Check_AWScale.py) | 使用 AWScale 策略检查恒定 Omega 标定。 | HF2 双主输入，MFLI 禁止启动 |
-| [`aw-const-omega-check`](../experiments/AW_ConstOmega_Calibration_Check.py) | 检查恒定 Omega 任意波标定结果。 | HF2 双主输入，MFLI 禁止启动 |
-| [`bb-duty-scan-burst`](../experiments/BB_Rpump_DutyScan_Burst.py) | Burst 模式下扫描 Pump 占空比。 | HF2 / MFLI，检查频率与通道 |
-| [`bb-power-scan-burst`](../experiments/BB_Rpump_PowerScan_Burst.py) | Burst 模式下扫描 Pump 功率。 | HF2 / MFLI，检查频率与通道 |
+| [`aw-const-omega-awscale-check`](../old/experiments/experiments/AW_ConstOmega_Calibration_Check_AWScale.py) | 使用 AWScale 策略检查恒定 Omega 标定，已归档，GUI 仅保留卡片。 | HF2 双主输入，MFLI 禁止启动 |
+| [`aw-const-omega-check`](../old/experiments/experiments/AW_ConstOmega_Calibration_Check.py)（已归档） | 检查恒定 Omega 任意波标定结果，GUI 仅保留卡片。 | HF2 双主输入，MFLI 禁止启动 |
+| [`bb-duty-scan-burst`](../experiments/BB_Rpump_DutyScan_Burst.py)（已迁移） | 固定 Pump DC、有限 Burst 占空比扫描；8 采集/3 分析交互节点，见[独立说明](bb_duty_scan_burst.md)。 | SDS 主检测；HF2/MFLI 仅可选连接与主输入初始化，不采集锁相数据 |
+| [`bb-power-scan-burst`](../experiments/BB_Rpump_PowerScan_Burst.py)（已迁移） | [强类型 Pump DC 功率扫描](bb_power_scan_burst.md)，8 采集／3 分析节点；结束保留门控/Burst/SYNC 与最后写入 Pump 电压。 | SDS 为主检测；可选 HF2 / MFLI 仅连接并初始化主输入 |
 | [`noise-spectrum-xy-v2`](../old/experiments/experiments/Noise_Spectrum_XY_Ctrl_v2.py) | 第二版 XY 控制噪声谱流程，已归档，GUI 仅保留卡片。 | HF2 / MFLI，检查频率与通道 |
-| [`photon-shot-noise`](../experiments/Photon_shot_noise.py) | 测量光子散粒噪声随实验参数的变化。 | HF2 / MFLI，检查频率与通道 |
-| [`rf-sensitivity-aw-frequency`](../experiments/RF_Field_Sensitivity_AW_FreqSweep.py) | 扫描 RF 频率的外部 AM 硬件方案。 | HF2 双主输入，MFLI 禁止启动 |
+| [`photon-shot-noise`](../experiments/Photon_shot_noise.py)（已迁移） | 扫描 Probe 控制电压，原 ASD² 加权拟合；8 采集/3 分析流程图节点。 | HF2 / MFLI，同一主输入 X/Y；自动 DAQ/Scope |
+| [`rf-sensitivity-aw-frequency`](../old/experiments/experiments/RF_Field_Sensitivity_AW_FreqSweep.py)（已归档） | 扫描 RF 频率的外部 AM 历史方案，GUI 仅保留卡片。 | HF2 双主输入，MFLI 禁止启动 |
 | [`rf-sensitivity-constxy-frequency`](../experiments/RF_Field_Sensitivity_ConstXY_FreqSweep.py) | 固定 XY 控制下扫描 RF 频率。 | HF2 双主输入，MFLI 禁止启动 |
-| [`static-sensitivity-optimize`](../experiments/Static_Magnetic_Field_Sensitivity_Optimize.py) | 全局搜索静磁场灵敏度实验参数。 | HF2 / MFLI，检查频率与通道 |
-| [`static-sensitivity-optimize-local`](../experiments/Static_Magnetic_Field_Sensitivity_Optimize_Local.py) | 在已有结果附近进行局部参数优化。 | HF2 / MFLI，检查频率与通道 |
-| [`xy-aw-voltage-calibration`](../experiments/XY_AW_Voltage_Calibration.py) | 标定 XY 任意波控制电压。 | HF2 双主输入，MFLI 禁止启动 |
-| [`xy-dc-voltage-calibration`](../experiments/XY_DC_Voltage_Calibration.py) | 标定 XY 直流控制电压。 | HF2 双主输入，MFLI 禁止启动 |
-| [`z-field-bandwidth`](../experiments/Z_Field_Bandwidth_Measurement.py) | 测量 Z 磁场控制链路带宽。 | HF2 双主输入，MFLI 禁止启动 |
+| [`static-sensitivity-optimize`](../old/experiments/experiments/Static_Magnetic_Field_Sensitivity_Optimize.py)（已归档） | 全局搜索静磁场灵敏度实验参数，GUI 仅保留卡片。 | HF2 / MFLI，检查频率与通道 |
+| [`static-sensitivity-optimize-local`](../experiments/Static_Magnetic_Field_Sensitivity_Optimize_Local.py)（已迁移） | [局部优化 DC 逐点](static_sensitivity_optimize_local.md)，运行／历史、6 采集／3 批次分析节点；基准漂移与最佳点只作建议。 | HF2 / MFLI，单主输入，检查频率、选件与连续采集能力 |
+| [`xy-aw-voltage-calibration`](../old/experiments/experiments/XY_AW_Voltage_Calibration.py)（已归档） | 标定 XY 任意波控制电压，GUI 仅保留卡片。 | HF2 双主输入，MFLI 禁止启动 |
+| [`xy-dc-voltage-calibration`](../old/experiments/experiments/XY_DC_Voltage_Calibration.py)（已归档） | 标定 XY 直流控制电压，GUI 仅保留卡片。 | HF2 双主输入，MFLI 禁止启动 |
+| [`z-field-bandwidth`](../experiments/Z_Field_Bandwidth_Measurement.py)（已迁移） | 固定 Z 连续正弦扫频，比较 FFT／软件锁相／硬件 R；运行／历史与独立分析流程图。 | HF2 双主输入，MFLI 禁止启动 |
 
 ## 准备、执行和历史数据
+
+以下操作仅适用于仍在维护的实验；归档项只保留历史复现说明，不再提供 GUI 运行或历史入口。
 
 1. 在设备库卡片选择锁相设备；如设备库有草稿先保存。检查对应物理量映射和解调器索引。
 2. 根据当前脚本参数区或 GUI 的参数来源核对运行参数，默认值不在本文复制。连接前拒绝已知不兼容接线、越界解调器和锁相频率。

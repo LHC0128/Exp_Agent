@@ -7,6 +7,8 @@ from lockin_amplifier import SignalInputConfig
 import math
 from dataclasses import dataclass
 
+from ...common import validate_safety_limit
+
 from ...experiment_params import ExperimentParams, parameter
 
 
@@ -98,8 +100,38 @@ class NoiseSpectrumXYDemod3RParams(ExperimentParams):
             migrated.pop(key, None)
         return migrated
 
+    @classmethod
+    def derive_external(cls, values):
+        from .scan import estimate_scan_duration_s
+        params = cls.from_external(values)
+        return dict(total_scan_points=params.control_freq_points * params.demod3_freq_points,
+            estimated_scan_duration_s=estimate_scan_duration_s(params),
+            envelope_start_v=(params.control_freq_start_hz - params.xy_ctrl_b_hz) / params.xy_ctrl_k_hz_per_v,
+            envelope_stop_v=(params.control_freq_stop_hz - params.xy_ctrl_b_hz) / params.xy_ctrl_k_hz_per_v)
+
     def validate_model(self) -> list[str]:
         errors: list[str] = []
+        if any(isinstance(v, (int, float)) and not isinstance(v, bool) and not math.isfinite(v)
+               for v in self.to_external().values()):
+            return ["实验数值参数必须为有限数值"]
+        if self.xy_ctrl_k_hz_per_v <= 0 or self.xy_aw_repeat_freq_hz <= 0 or self.xy_trigger_freq <= 0:
+            return ["标定斜率、AW 重复频率和外触发频率必须大于零"]
+        if any(c in self.run_tag for c in "/\\:\x00"):
+            errors.append("RUN_TAG 不能包含路径分隔符")
+        if not math.isclose(self.temp_switch, 5.0, rel_tol=0, abs_tol=1e-9):
+            errors.append("温控开启电平必须为 5 V；关闭窗口由工作流统一控制")
+        if self.demod0_idx == self.demod3_idx or self.demod0_osc_idx == self.demod3_osc_idx:
+            errors.append("Demod0 与 Demod3 必须使用独立解调器和振荡器")
+        if self.demod3_adc_select != self.sigin2_index or self.sigin2_index != 1:
+            errors.append("Demod3 输入必须与第二路主电压输入一致；不会自动改接线")
+        if self.auxout_source_demod_idx != self.demod0_idx:
+            errors.append("AuxOut 来源必须与 Demod0 索引一致")
+        if not 0 <= self.auxout_index <= 3:
+            errors.append("AuxOut 索引必须为 0–3")
+        if not 1 <= self.demod0_order <= 8 or not 1 <= self.demod3_order <= 8:
+            errors.append("解调阶数必须为 1–8")
+        if self.demod0_tc_calib_s <= 0 or max(self.demod3_tc_min_s, self.demod3_tc_period_fraction) <= 0:
+            errors.append("解调时间常数必须大于零")
         if not self.run_tag.strip():
             errors.append("RUN_TAG 不能为空")
         if self.control_freq_start_hz >= self.control_freq_stop_hz:

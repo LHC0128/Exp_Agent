@@ -31,9 +31,9 @@ class WorkflowRunSummary(WorkflowRunItem):
     artifacts: dict[str, str] = Field(default_factory=dict)
 
 
-def read_config(path: Path) -> dict[str, Any]:
+def read_config(path: Path, *, loader=None) -> dict[str, Any]:
     try:
-        config = yaml.load(path.read_text(encoding="utf-8"), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
+        config = yaml.load(path.read_text(encoding="utf-8"), Loader=loader or getattr(yaml, "CSafeLoader", yaml.SafeLoader))
     except FileNotFoundError as exc:
         raise HTTPException(404, "运行配置不存在") from exc
     except (OSError, ValueError, yaml.YAMLError) as exc:
@@ -52,7 +52,7 @@ def run_item(path: Path, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
-def list_runs(service, limit: int, offset: int):
+def list_runs(service, limit: int, offset: int, *, config_reader=read_config):
     base = service.root() / "data" / service.adapter.data_type
     items = []
     if base.is_dir():
@@ -61,16 +61,16 @@ def list_runs(service, limit: int, offset: int):
                 continue
             try:
                 path = service.run_directory(path.name, allow_running=True)
-                items.append(run_item(path, read_config(path / "experiment_config.yaml")))
+                items.append(run_item(path, config_reader(path / "experiment_config.yaml")))
             except HTTPException as exc:
                 if exc.status_code not in (404, 422):
                     raise
     return dict(runs=items[offset:offset + limit], total=len(items))
 
 
-def run_summary(service, run_id: str):
+def run_summary(service, run_id: str, *, config_reader=read_config):
     path = service.run_directory(run_id, allow_running=True)
-    config = read_config(path / "experiment_config.yaml")
+    config = config_reader(path / "experiment_config.yaml")
     parameters = config.get("parameters", {})
     if not isinstance(parameters, dict):
         raise HTTPException(422, "运行参数快照必须为映射")

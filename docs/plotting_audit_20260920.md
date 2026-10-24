@@ -36,8 +36,9 @@ Notebook 按用户要求只盘点；12 个含绘图的实验 Notebook 的 SHA-25
 
 ## 仍需审定的项目
 
-1. **BB 占空比的上游误差截断**：`BB_Rpump_DutyScan_Burst_plot.py` 在构造
-   `e_GBB` / `e_GD` 时使用 `np.minimum(error, abs(rate))`，影响后续权重及输出。
+1. **BB 占空比的上游误差截断**：`BB_Rpump_DutyScan_Burst_plot.py` 现为显式目录薄入口；原规则位于
+   `lab_workflows/experiment_modules/bb_duty_scan_burst/analysis_steps.py` 的 `statistics()`，构造
+   `e_GBB` / `e_GD` 时仍使用 `np.minimum(error, abs(rate))`，影响后续权重及输出。
    本轮只移除绘图层的额外限制，保留上游统计方法；投稿前需核对误差传播、拟合质量
    门槛和权重策略，不能把现有误差条当作未截断的标准不确定度。
 2. **重复统计口径**：Photon 的 SD 沿用 `ddof=0`，不是 SEM；T₁ 的误差来自拟合
@@ -134,26 +135,26 @@ agent_exp_env\Scripts\python.exe -m pytest tests/lab_workflows/test_plotting_mig
 
 | 文件 | 状态 |
 |---|---|
-| [experiments/AW_ConstOmega_Calibration_Check_AWScale_plot.py](../experiments/AW_ConstOmega_Calibration_Check_AWScale_plot.py) | 本轮修改 |
-| [experiments/AW_ConstOmega_Calibration_Check_plot.py](../experiments/AW_ConstOmega_Calibration_Check_plot.py) | 本轮修改 |
-| [experiments/AW_Control_Waveform_Scope_Check.py](../experiments/AW_Control_Waveform_Scope_Check.py) | 本轮修改 |
+| [experiments/AW_ConstOmega_Calibration_Check_AWScale_plot.py](../old/experiments/experiments/AW_ConstOmega_Calibration_Check_AWScale_plot.py) | 本轮修改 |
+| [AW_ConstOmega_Calibration_Check_plot.py](../old/experiments/experiments/AW_ConstOmega_Calibration_Check_plot.py)（已归档） | 本轮修改；后续按原字节归档 |
+| [AW_Control_Waveform_Scope_Check.py](../old/experiments/experiments/AW_Control_Waveform_Scope_Check.py)（已归档） | 本轮修改；后续按原字节归档，绘图逻辑不变 |
 | [experiments/BB_Rpump_DutyScan_Burst_plot.py](../experiments/BB_Rpump_DutyScan_Burst_plot.py) | 本轮修改 |
 | [experiments/BB_Rpump_PowerScan_Burst_plot.py](../experiments/BB_Rpump_PowerScan_Burst_plot.py) | 本轮修改 |
-| [experiments/DG_AM_to_DG_COMP_Transfer_Check.py](../experiments/DG_AM_to_DG_COMP_Transfer_Check.py) | 本轮修改 |
-| [experiments/DG_AM_to_DG_COMP_Transfer_Check_plot.py](../experiments/DG_AM_to_DG_COMP_Transfer_Check_plot.py) | 本轮修改 |
+| [experiments/DG_AM_to_DG_COMP_Transfer_Check.py](../old/experiments/experiments/DG_AM_to_DG_COMP_Transfer_Check.py) | 本轮修改 |
+| [experiments/DG_AM_to_DG_COMP_Transfer_Check_plot.py](../old/experiments/experiments/DG_AM_to_DG_COMP_Transfer_Check_plot.py) | 本轮修改 |
 | [experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance_Bloch_fit.py](../experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance_Bloch_fit.py) | 本轮修改 |
 | [experiments/Noise_Spectrum_XY_Ctrl_v2_plot.py](../old/experiments/experiments/Noise_Spectrum_XY_Ctrl_v2_plot.py) | 本轮修改 |
 | [experiments/Photon_shot_noise_plot.py](../experiments/Photon_shot_noise_plot.py) | 本轮修改 |
 | [experiments/RF_Field_Sensitivity_AW_plot.py](../experiments/RF_Field_Sensitivity_AW_plot.py) | 本轮修改 |
 | [experiments/RF_Field_Sensitivity_ConstXY_FreqSweep_plot.py](../experiments/RF_Field_Sensitivity_ConstXY_FreqSweep_plot.py) | 本轮修改 |
 | [experiments/Static_Magnetic_Field_Sensitivity.py](../experiments/Static_Magnetic_Field_Sensitivity.py) | 本轮修改 |
-| [experiments/Static_Magnetic_Field_Sensitivity_Optimize.py](../experiments/Static_Magnetic_Field_Sensitivity_Optimize.py) | 本轮修改 |
+| [Static_Magnetic_Field_Sensitivity_Optimize.py](../old/experiments/experiments/Static_Magnetic_Field_Sensitivity_Optimize.py)（已归档） | 本轮修改；后续按原字节归档 |
 | [experiments/Static_Magnetic_Field_Sensitivity_Optimize_Local.py](../experiments/Static_Magnetic_Field_Sensitivity_Optimize_Local.py) | 本轮修改 |
 | [experiments/T1_Calibration_plot.py](../experiments/T1_Calibration_plot.py) | 本轮修改 |
-| [experiments/Temperature_Switch_PID_Cycle_Test.py](../experiments/Temperature_Switch_PID_Cycle_Test.py) | 本轮修改 |
-| [experiments/Temperature_Switch_PID_Cycle_Test_plot.py](../experiments/Temperature_Switch_PID_Cycle_Test_plot.py) | 本轮修改 |
-| [experiments/XY_AW_Voltage_Calibration_plot.py](../experiments/XY_AW_Voltage_Calibration_plot.py) | 本轮修改 |
-| [experiments/XY_DC_Voltage_Calibration_plot.py](../experiments/XY_DC_Voltage_Calibration_plot.py) | 本轮修改 |
+| [experiments/Temperature_Switch_PID_Cycle_Test.py](../old/experiments/experiments/Temperature_Switch_PID_Cycle_Test.py) | 本轮修改；现已归档 |
+| [experiments/Temperature_Switch_PID_Cycle_Test_plot.py](../old/experiments/experiments/Temperature_Switch_PID_Cycle_Test_plot.py) | 本轮修改；现已归档 |
+| [XY_AW_Voltage_Calibration_plot.py](../old/experiments/experiments/XY_AW_Voltage_Calibration_plot.py)（已归档） | 本轮修改；后续按原字节归档 |
+| [XY_DC_Voltage_Calibration_plot.py](../old/experiments/experiments/XY_DC_Voltage_Calibration_plot.py)（已归档） | 本轮修改；后续按原字节归档 |
 | [experiments/Z_Field_Bandwidth_Measurement_plot.py](../experiments/Z_Field_Bandwidth_Measurement_plot.py) | 本轮修改 |
 | [lab_workflows/experiment_modules/mx_y_rf_grid_analysis.py](../lab_workflows/experiment_modules/mx_y_rf_grid_analysis.py) | 本轮修改 |
 | [lab_workflows/experiment_modules/mx_keithley_6221_main_field_calibration/analysis.py](../old/experiments/lab_workflows/experiment_modules/mx_keithley_6221_main_field_calibration/analysis.py) | 已有公共接口 |

@@ -1,182 +1,151 @@
-"""XY DirectAW Demod3 平均 R 矩阵离线分析入口。"""
-
+"""完整与分步分析共用编排、内容指纹和产物归档；采集快照只读。"""
 from __future__ import annotations
-
+from copy import deepcopy
+from datetime import datetime
+from pathlib import Path
 import json
 import os
+from ...common import WorkflowCancelled
+from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
+from ..noise_spectrum_xy.state_io import read_state, write_state
+from . import analysis_steps as steps, analysis_plotting
+from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
 
-import matplotlib
-import numpy as np
-import yaml
-
-matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
-
-from lab_workflows.experiment_runtime import runtime_run_dir
-from lab_workflows.plotting import (
-    COLOR_GRAY,
-    COLOR_OPTIMAL,
-    COLOR_TRAD,
-    PAPER_WIDE,
-    format_axis,
-    new_figure,
-    save_figure,
-    set_plot_style,
-    style_legend,
-)
-
-from .analysis_core import analyze_r_matrix
+PLOTS = ("demod3_r_matrix", "calibration", "r_spectra")
 
 
-def main() -> None:
-    set_plot_style("paper")
-    run_dir = runtime_run_dir()
-    raw_path = run_dir / "raw" / "demod3_r_mean_matrix.npz"
-    config_path = run_dir / "experiment_config.yaml"
-    if not raw_path.is_file():
-        raise FileNotFoundError(f"平均 R 原始矩阵不存在: {raw_path}")
-    if not config_path.is_file():
-        raise FileNotFoundError(f"实验配置不存在: {config_path}")
+class AnalysisWorkflow:
+    stages = ANALYSIS
 
-    with np.load(raw_path) as raw:
-        r_matrix = np.asarray(raw["r_mean_V"], dtype=float)
-        control_configured = np.asarray(raw["control_frequency_Hz"], dtype=float)
-        envelope = np.asarray(raw["xy_envelope_voltage_V"], dtype=float)
-        demod3_frequency = np.asarray(raw["demod3_frequency_Hz"], dtype=float)
-    with config_path.open(encoding="utf-8") as stream:
-        config = yaml.safe_load(stream) or {}
+    def __init__(self, run_dir, analysis_parameters=None):
+        if analysis_parameters:
+            raise ValueError("本实验没有分析覆盖参数")
+        self.run_dir = Path(run_dir).resolve()
+        self.results = steps.output_path(self.run_dir, "results")
+        self.state_path = steps.output_path(self.run_dir, "analysis_state.json")
+        self.config, self.base_params = steps.load_config(self.run_dir)
+        self.params, self.options = self.base_params, {}
+        previous = read_state(self.state_path) or {}
+        self.states = initial_states(self.stages) | deepcopy(previous.get("steps", {}))
+        self.revision = previous.get("revision", 0)
+        self.summary = deepcopy(previous.get("summary", {}))
+        self.fingerprint = previous.get("fingerprint") or steps.fingerprint(self.run_dir)
+        self._refresh()
 
-    results_dir = run_dir / "results"
-    results_dir.mkdir(exist_ok=True)
-    np.savez(
-        results_dir / "demod3_r_matrix.npz",
-        r_mean_V=r_matrix,
-        control_frequency_configured_Hz=control_configured,
-        xy_envelope_voltage_V=envelope,
-        demod3_frequency_Hz=demod3_frequency,
-    )
+    def _signature(self, name):
+        return steps.signature(steps.output_path(self.run_dir, "results/" + name))
 
-    analysis = analyze_r_matrix(r_matrix, envelope, demod3_frequency)
-    calibration = analysis.calibration
-    np.savez(
-        results_dir / "calibration.npz",
-        slope_Hz_per_V=np.float64(calibration.slope_hz_per_v),
-        intercept_Hz=np.float64(calibration.intercept_hz),
-        residual_sigma_Hz=np.float64(calibration.residual_sigma_hz),
-        ridge_envelope_V=analysis.ridge_envelope_v,
-        ridge_frequency_Hz=analysis.ridge_frequency_hz,
-        inlier_mask=calibration.inlier_mask,
-        calibrated_control_frequency_Hz=analysis.calibrated_control_frequency_hz,
-        source=np.array("demod3_r_ridge_robust_fit"),
-    )
+    def _refresh(self):
+        current = steps.fingerprint(self.run_dir)
+        if current != self.fingerprint:
+            self.fingerprint = current
+            invalidate(self.stages, self.states, "B01")
+            self.revision += 1
+        for stage in self.stages:
+            record, names = self.states[stage.id], self.states[stage.id].get("files", {})
+            if record["status"] == "running" or (record["status"] == "completed" and (
+                    not set(stage.artifacts).issubset(names) or any(self._signature(n) != sig for n, sig in names.items()))):
+                invalidate(self.stages, self.states, stage.id)
+                self.revision += 1
+                break
+        if any(record["status"] == "stale" for record in self.states.values()):
+            self.summary.update(status="stale")
+        elif not self.summary:
+            self.summary.update(status="not_started")
 
-    parameter_names = np.array(
-        ["gamma_Hz", "fit_amplitude", "r_baseline_V", "frequency_offset_Hz"]
-    )
-    np.savez(
-        results_dir / "r_fit_params.npz",
-        parameters=analysis.fit_parameters,
-        errors=analysis.fit_errors,
-        fit_mask=analysis.fit_mask,
-        parameter_names=parameter_names,
-        demod3_frequency_Hz=demod3_frequency,
-        calibrated_control_frequency_Hz=analysis.calibrated_control_frequency_hz,
-    )
-    np.savez(
-        results_dir / "r_spectra.npz",
-        demod3_frequency_Hz=demod3_frequency,
-        fit_amplitude=analysis.fit_parameters[:, 1],
-        r_baseline_V=analysis.fit_parameters[:, 2],
-        gamma_Hz=analysis.fit_parameters[:, 0],
-        frequency_offset_Hz=analysis.fit_parameters[:, 3],
-        fit_mask=analysis.fit_mask,
-    )
+    def snapshot(self):
+        return dict(run_id=self.run_dir.name, revision=self.revision, options={}, steps=deepcopy(self.states),
+            fingerprint=deepcopy(self.fingerprint), summary=deepcopy(self.summary))
 
-    extent = [
-        float(demod3_frequency[0]),
-        float(demod3_frequency[-1]),
-        float(analysis.calibrated_control_frequency_hz[0]),
-        float(analysis.calibrated_control_frequency_hz[-1]),
-    ]
-    fig, ax = new_figure(kind="square")
-    image = ax.imshow(r_matrix, aspect="auto", origin="lower", extent=extent, cmap="viridis")
-    format_axis(
-        ax,
-        xlabel="Demod3 frequency (Hz)",
-        ylabel="Calibrated control frequency (Hz)",
-    )
-    fig.colorbar(image, ax=ax, label="Mean R (V)")
-    save_figure(fig, results_dir / "demod3_r_matrix.png")
+    def persist(self):
+        write_state(self.state_path, self.snapshot())
+        report_runtime_progress("analysis", "Demod3 R 分析状态已保存",
+            data={"analysis_workflow": self.snapshot(), "estimated_remaining_seconds": None})
 
-    fig, ax = new_figure()
-    inlier = calibration.inlier_mask
-    ax.scatter(
-        analysis.ridge_envelope_v[~inlier],
-        analysis.ridge_frequency_hz[~inlier],
-        color=COLOR_TRAD,
-        label="Rejected ridge points",
-    )
-    ax.scatter(
-        analysis.ridge_envelope_v[inlier],
-        analysis.ridge_frequency_hz[inlier],
-        color=COLOR_OPTIMAL,
-        label="Calibration ridge points",
-    )
-    x_line = np.linspace(float(np.min(envelope)), float(np.max(envelope)), 300)
-    ax.plot(
-        x_line,
-        calibration.slope_hz_per_v * x_line + calibration.intercept_hz,
-        color=COLOR_GRAY,
-        label="Robust linear fit",
-    )
-    format_axis(
-        ax,
-        xlabel="DirectAW envelope (V)",
-        ylabel="Ridge frequency (Hz)",
-    )
-    style_legend(ax)
-    save_figure(fig, results_dir / "calibration.png")
+    def _outputs(self, item):
+        stage = next(s for s in self.stages if s.id == item)
+        names = list(stage.artifacts)
+        if item == "B03":
+            names += [name + ".pdf" for name in PLOTS]
+        return [steps.output_path(self.run_dir, "results/" + name) for name in names
+                if steps.output_path(self.run_dir, "results/" + name).is_file()]
 
-    fig, axes = new_figure(
-        figsize=(PAPER_WIDE[0], 2.0 * PAPER_WIDE[1]),
-        nrows=2,
-        ncols=2,
-        sharex=True,
-    )
-    labels = (
-        (0, "Linewidth (Hz)"),
-        (1, "Fit amplitude"),
-        (2, "R baseline (V)"),
-        (3, "Frequency offset (Hz)"),
-    )
-    for ax, (parameter_idx, label) in zip(axes.flat, labels, strict=True):
-        ax.plot(
-            demod3_frequency,
-            analysis.fit_parameters[:, parameter_idx],
-            ".-",
-            color=COLOR_OPTIMAL,
-        )
-        format_axis(ax, ylabel=label)
-    for ax in axes[-1]:
-        format_axis(ax, xlabel="Demod3 frequency (Hz)")
-    save_figure(fig, results_dir / "r_spectra.png")
+    def _archive(self, item):
+        paths = sorted({path for stage in invalidated_stages(self.stages, item) for path in self._outputs(stage.id)})
+        if paths:
+            backup = self.results / ("before_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+            backup.mkdir()
+            for path in paths:
+                path.replace(backup / path.name)
+            self.summary["backup_directory"] = backup.name
 
-    summary = {
-        "experiment_id": config.get("experiment_id"),
-        "analysis_source": "mean Demod3 sample.r matrix",
-        "calibration_source": "demod3_r_ridge_robust_fit",
-        "calibration_slope_Hz_per_V": float(calibration.slope_hz_per_v),
-        "calibration_intercept_Hz": float(calibration.intercept_hz),
-        "calibration_residual_sigma_Hz": float(calibration.residual_sigma_hz),
-        "fitted_frequency_points": int(np.count_nonzero(analysis.fit_mask)),
-        "total_frequency_points": int(len(demod3_frequency)),
-        "units_note": "R is voltage amplitude, not PSD; no S_beta/N_S1 fields are emitted.",
-    }
-    with (results_dir / "analysis.yaml").open("w", encoding="utf-8") as stream:
-        yaml.safe_dump(summary, stream, allow_unicode=True, sort_keys=False)
-    with (results_dir / "analysis.json").open("w", encoding="utf-8") as stream:
-        json.dump(summary, stream, ensure_ascii=False, indent=2)
-    print(f"Demod3 R 离线分析完成: {results_dir}")
+    def execute(self, selected, expected_revision=None):
+        self._refresh()
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("分析修订已改变，请刷新后重试")
+        selected = validate_selection(self.stages, self.states, selected)
+        self.revision += 1
+        item = selected[0]
+        try:
+            # 坏输入先拒绝，不移动仍可浏览的旧科学结果。
+            data = steps.load_data(self.run_dir)
+            if steps.fingerprint(self.run_dir) != self.fingerprint:
+                raise ValueError("分析输入读取期间发生变化，请重新执行 B01")
+            self.results.mkdir(exist_ok=True)
+            for stage in self.stages:
+                for name in stage.artifacts:
+                    steps.output_path(self.run_dir, "results/" + name)
+            for item in selected:
+                check_cancelled()
+                self._archive(item)
+                invalidate(self.stages, self.states, item)
+                self.states[item] = dict(status="running", error="")
+                self.summary.update(status="running")
+                self.summary.pop("error", None)
+                self.persist()
+                if item == "B01":
+                    result = steps.write_inputs(self.run_dir, data)
+                elif item == "B02":
+                    result = steps.evaluate(self.run_dir, data)
+                else:
+                    analysis_plotting.render(self.run_dir, data)
+                    result = steps.write_report(self.run_dir, data)
+                if steps.fingerprint(self.run_dir) != self.fingerprint:
+                    raise ValueError("分析输入计算期间发生变化，请重新执行 B01")
+                artifacts = [p.name for p in self._outputs(item)]
+                if not set(next(s.artifacts for s in self.stages if s.id == item)).issubset(artifacts):
+                    raise RuntimeError(f"{item} 缺少必需分析产物")
+                self.states[item] = dict(status="completed", error="", artifacts=artifacts,
+                    files={name: self._signature(name) for name in artifacts}, parameters={}, revision=self.revision,
+                    input_fingerprint=deepcopy(self.fingerprint))
+                self.summary.update(result, status="completed" if item == "B03" else "partial")
+                self.persist()
+        except BaseException as exc:
+            status = "cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else (
+                "quality_failed" if isinstance(exc, ValueError) else "failed")
+            invalidate(self.stages, self.states, item)
+            self.states[item] = dict(status=status, error=str(exc))
+            self.summary.update(status=status, error=str(exc))
+            try:
+                self.persist()
+            except Exception as save_error:
+                if hasattr(exc, "add_note"):
+                    exc.add_note(f"分析诊断保存亦失败: {save_error}")
+            raise
+        return deepcopy(self.summary)
+
+
+def analyze(run_dir: Path, *, step_ids=None, analysis_parameters=None, expected_revision=None):
+    ctx = AnalysisWorkflow(run_dir, analysis_parameters)
+    return ctx.execute([s.id for s in ANALYSIS] if step_ids is None else step_ids, expected_revision)
+
+
+def main():
+    payload = json.loads(os.environ.get("LAB_TYPED_PARAMETERS", "{}"))
+    analyze(runtime_run_dir(), step_ids=payload.get("step_ids"), analysis_parameters=payload.get("analysis_parameters"),
+        expected_revision=payload.get("revision"))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

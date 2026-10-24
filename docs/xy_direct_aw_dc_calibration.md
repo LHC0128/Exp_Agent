@@ -59,7 +59,7 @@ XY 电压标定使用 `DEMOD0_RATE_Sa_s` 请求率、`POINT_DURATION_s` 时长�
 
 在 `RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py` 的物理链路下，标定 DirectAW
 恒定包络电压与 Z 向小信号响应峰位之间的关系。实验区别于既有
-`XY_DC_Voltage_Calibration.py`：既有脚本通过 `dg_am → dg_comp AM EXT` 施加控制，
+`XY_DC_Voltage_Calibration.py`（现已归档于 `old/experiments/experiments/`）：既有脚本通过 `dg_am → dg_comp AM EXT` 施加控制，
 本实验由 `dg_comp` 直接输出 X/Y 正交任意波。
 
 本实验已迁移到强类型新模式。参数模型、采集工作流和离线分析器分别位于

@@ -8,6 +8,8 @@ import numpy as np
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
 
+from ...experiment_runtime import check_cancelled
+
 from lab_workflows.experiment_modules.noise_spectrum_xy.calibration import (
     RobustLinearCalibration,
     fit_robust_linear_calibration,
@@ -42,6 +44,7 @@ def find_ridge_points(
     ridge_envelope: list[float] = []
     ridge_frequency: list[float] = []
     for column_idx, frequency in enumerate(frequencies):
+        check_cancelled()
         column = matrix[:, column_idx]
         finite = np.isfinite(column) & np.isfinite(envelope)
         if np.count_nonzero(finite) < 6:
@@ -92,6 +95,7 @@ def _fit_profiles(
     scan_span = max(float(np.ptp(control)), 1.0)
 
     for idx, frequency in enumerate(frequencies):
+        check_cancelled()
         values = matrix[:, idx]
         finite = np.isfinite(values) & np.isfinite(control)
         if np.count_nonzero(finite) < 10:

@@ -3,6 +3,8 @@
 from ...experiments.contracts import ExperimentDefinition
 from ...experiments.typed import TypedWorkflowAdapter
 from .models import NoiseSpectrumXYDemod3RParams
+from .preparation import preflight
+from . import run_format
 
 
 ADAPTER = TypedWorkflowAdapter(
@@ -13,15 +15,24 @@ ADAPTER = TypedWorkflowAdapter(
     "lab_workflows.experiment_modules.noise_spectrum_xy_demod3_r.analysis",
 )
 
+def preflight_runner(values):
+    try:
+        preflight(ADAPTER._resolved(values), ADAPTER.root)
+        return []
+    except (OSError, KeyError, TypeError, ValueError, PermissionError) as exc:
+        return [str(exc)]
+
+
 DEFINITION = ExperimentDefinition(
     id="noise-spectrum-xy-demod3-r",
     title="XY 控制噪声谱（Demod3 R）",
     category="measurement",
     family="noise",
     variant="direct-aw-demod3-r",
-    description=('二维扫描 DirectAW 控制频率和 Demod3 解调频率，连续采集并平均 R。 当前双主电压回采接线只支持 HF2，选择 MFLI 时预检禁止启动。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
+    description="二维扫描 DirectAW 控制频率与 Demod3 解调频率，连续采集平均 R（V，非 PSD）。运行/历史双 Tab 提供 12 个采集和 3 个独立分析节点；保存、预览与预检位于流程容器，节点内编辑参数，应用后显式重跑。保留 Demod0 和 DirectAW 自动校相、批次恢复温控后保存及原脊线标定/洛伦兹拟合。双主电压物理回环仅支持 HF2，MFLI 预检拒绝；AuxOut 缺安全上下限或预计越界禁止写入。",
     data_type="Noise_Spectrum_XY_Demod3_R",
-    required_devices=("GS200", "DG900", "DG4000", "HF2"),
+    required_devices=("GS200", "DG900", "DG4000", "lockin_amplifier"),
+    required_mapping_keys=run_format.REQUIRED_MAPPING_KEYS,
     execution_mode="typed_workflow",
     acquisition_program="experiments/Noise_Spectrum_XY_Demod3_R.py",
     analysis_program="experiments/Noise_Spectrum_XY_Demod3_R_plot.py",
@@ -35,7 +46,8 @@ DEFINITION = ExperimentDefinition(
     ),
     schema_provider=ADAPTER.schema, schema_version=ADAPTER.params_type.schema_version,
     defaults_saver=ADAPTER.save_defaults,
-    preflight_runner=ADAPTER.preflight,
+    preflight_runner=preflight_runner,
+    derive_runner=ADAPTER.derive,
     experiment_runner=ADAPTER.run,
     analysis_runner=ADAPTER.analyze,
 )

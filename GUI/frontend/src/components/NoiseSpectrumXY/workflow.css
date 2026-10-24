@@ -5,7 +5,7 @@
 .xy-workflow-controls p { overflow-wrap: anywhere; }
 .xy-flow-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .xy-flow-columns.xy-flow-acquisition-only { grid-template-columns: minmax(0, 1fr); }
-.xy-flow-columns > section { min-width: 0; }
+.xy-flow-columns > section { min-width: 0; overflow-wrap: anywhere; }
 .xy-flow-columns select { display: block; width: 100%; margin-top: 8px; }
 .xy-workflow pre { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .xy-flow-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
@@ -27,6 +27,7 @@
 .xy-flow-node.stale { border-left-color: #a07312; }
 .xy-step-status { display: inline-block; margin: 6px 0 0 24px; font-size: 12px; }
 .xy-step-error, .xy-missing { color: #a42c24; margin: 6px 0; }
+.xy-step-error { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .xy-node-parameters { margin: 10px 0; }
 .xy-node-parameters summary { cursor: pointer; overflow-wrap: anywhere; line-height: 1.6; }
 .xy-node-parameters .zaw-parameter-form { margin-top: 12px; }

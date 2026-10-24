@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 from . import main
+from lab_workflows.acquisition_policy import ACQUISITION_EXCEPTIONS
 from lab_workflows.experiments import catalog, get_experiment, list_experiments
 from lab_workflows.experiments.archived import ARCHIVED_EXPERIMENTS, ARCHIVE_PATH
 
@@ -40,8 +41,10 @@ def test_gui_startup_does_not_import_archived_implementations():
 import sys
 from pathlib import Path
 from GUI.backend import main
+from lab_workflows.experiments.archived import ARCHIVED_EXPERIMENTS
 main.experiments()
-main.experiment("rf-sensitivity-aw-r")
+for experiment_id in ARCHIVED_EXPERIMENTS:
+    main.experiment(experiment_id)
 archive = (Path.cwd() / "old/experiments").resolve()
 loaded = [name for name, module in sys.modules.items()
           if getattr(module, "__file__", None) and archive in Path(module.__file__).resolve().parents]
@@ -54,12 +57,84 @@ def test_active_registry_excludes_archive_and_old_python_imports_still_work():
     active = {item.id for item in list_experiments()}
     assert active.isdisjoint(ARCHIVED_EXPERIMENTS)
     assert {item.id for item in list_experiments(include_archived=True)} == active | ARCHIVED_EXPERIMENTS.keys()
+    assert "dg-am-comp-transfer-check" in ACQUISITION_EXCEPTIONS
+    assert "temperature-switch-pid-cycle" in ACQUISITION_EXCEPTIONS
+    assert "aw-waveform-scope-check" in ACQUISITION_EXCEPTIONS
+    for name in ("Temperature_Switch_PID_Cycle_Test.py", "Temperature_Switch_PID_Cycle_Test_plot.py"):
+        assert not (ROOT / "experiments" / name).exists()
     for experiment_id, card in ARCHIVED_EXPERIMENTS.items():
         legacy = get_experiment(experiment_id)
         assert legacy.data_type == card.data_type
+        assert legacy.schema_version == card.schema_version
         assert legacy.schema()["fields"]
+        if card.execution_mode == "legacy_script":
+            adapter = legacy.schema_provider.__self__
+            assert adapter.script.resolve() == (ROOT / card.acquisition_program).resolve()
+            if card.analysis_program:
+                assert adapter.plot.resolve() == (ROOT / card.analysis_program).resolve()
+            else:
+                assert adapter.plot is None
+                assert legacy.analysis_runner is None
+                assert not legacy.auto_analyze
         assert (ROOT / card.acquisition_program).is_file()
-        assert (ROOT / card.analysis_program).is_file()
+        if card.analysis_program:
+            assert (ROOT / card.analysis_program).is_file()
+
+
+def test_aw_scope_archive_preserves_original_script_without_analyzer():
+    experiment_id = "aw-waveform-scope-check"
+    card = ARCHIVED_EXPERIMENTS[experiment_id]
+    assert not (ROOT / "experiments/AW_Control_Waveform_Scope_Check.py").exists()
+    assert card.data_type == "AW_Control_Waveform_Scope_Check"
+    assert card.schema_version == 1 and card.execution_mode == "legacy_script"
+    assert card.analysis_program is None
+    legacy = get_experiment(experiment_id)
+    assert not legacy.public()["can_analyze"]
+    # AST 读取旧参数，不导入或执行带顶层硬件操作的归档脚本。
+    values = legacy.schema_provider.__self__.defaults()
+    assert values["KEEP_OUTPUTS_AFTER_EXIT"] is True
+    assert values["ARB_WAVEFORM_FILE"] == "control_waveformAW.csv"
+    assert (ROOT / "experiments" / values["ARB_WAVEFORM_FILE"]).is_file()
+
+
+@pytest.mark.parametrize(("experiment_id", "script", "has_analysis"), [
+    ("static-sensitivity-optimize", "Static_Magnetic_Field_Sensitivity_Optimize.py", False),
+    ("aw-const-omega-check", "AW_ConstOmega_Calibration_Check.py", True),
+    ("xy-dc-voltage-calibration", "XY_DC_Voltage_Calibration.py", True),
+    ("xy-aw-voltage-calibration", "XY_AW_Voltage_Calibration.py", True),
+])
+def test_legacy_optimization_and_xy_archives_preserve_identity_and_entrypoints(experiment_id, script, has_analysis):
+    card = ARCHIVED_EXPERIMENTS[experiment_id]
+    assert card.data_type == Path(script).stem
+    assert card.schema_version == 2 and card.execution_mode == "legacy_script"
+    assert card.acquisition_program == f"{ARCHIVE_PATH}/experiments/{script}"
+    programs = [script]
+    if has_analysis:
+        plot = f"{Path(script).stem}_plot.py"
+        assert card.analysis_program == f"{ARCHIVE_PATH}/experiments/{plot}"
+        programs.append(plot)
+    else:
+        assert card.analysis_program is None
+    for program in programs:
+        assert not (ROOT / "experiments" / program).exists()
+        assert (ROOT / ARCHIVE_PATH / "experiments" / program).is_file()
+    legacy = get_experiment(experiment_id)
+    assert bool(legacy.analysis_runner) == has_analysis
+    assert bool(legacy.public()["can_analyze"]) == has_analysis
+    assert "SYSTEM_SETTLE_S" in {field["name"] for field in legacy.schema()["fields"]}
+    active = {item.id for item in list_experiments()}
+    assert experiment_id not in active
+    assert {"static-sensitivity", "static-sensitivity-optimize-local", "xy-direct-aw-dc-calibration"} <= active
+
+
+def test_rf_am_frequency_archive_preserves_directaw_shared_analysis():
+    card = ARCHIVED_EXPERIMENTS["rf-sensitivity-aw-frequency"]
+    shared_plot = ROOT / "experiments/RF_Field_Sensitivity_AW_FreqSweep_plot.py"
+    direct = get_experiment("rf-sensitivity-direct-aw-frequency")
+    assert direct.id in {item.id for item in list_experiments()}
+    assert (ROOT / direct.analysis_program).resolve() == shared_plot.resolve()
+    assert shared_plot.read_bytes() == (ROOT / card.analysis_program).read_bytes()
+    assert not (ROOT / "experiments/RF_Field_Sensitivity_AW_FreqSweep.py").exists()
 
 
 def test_cards_survive_old_catalog_and_cannot_be_restored_without_code(client, tmp_path):

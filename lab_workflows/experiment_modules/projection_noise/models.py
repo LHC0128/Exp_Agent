@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+import math
 from typing import ClassVar, Any, Literal
 
-from ...common import find_project_root, validate_safety_limit
+from ...common import find_project_root
 from ...experiment_params import ExperimentParams, parameter
 from .calibration import load_main_field_calibration
 
@@ -58,7 +59,10 @@ class ProjectionNoiseParams(ExperimentParams):
 
     @property
     def scope_requested_points(self) -> int:
-        return int(self.scope_sample_rate_sa_s * self.scope_duration_s)
+        points = self.scope_sample_rate_sa_s * self.scope_duration_s
+        if not math.isfinite(points):
+            raise ValueError("SCOPE_SAMPLE_RATE × SCOPE_DURATION 必须为有限点数")
+        return int(points)
 
     @classmethod
     def migrate_external(
@@ -134,6 +138,14 @@ class ProjectionNoiseParams(ExperimentParams):
 
     def validate_model(self) -> list[str]:
         errors: list[str] = []
+        for field in fields(self):
+            value = getattr(self, field.name)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and not math.isfinite(value):
+                errors.append(f"{field.metadata['external_name']} 必须为有限数值")
+        if errors:
+            return errors
+        if any(character in self.run_tag for character in "/\\:\x00"):
+            errors.append("RUN_TAG 不能包含路径分隔符")
         if not self.run_tag.strip():
             errors.append("RUN_TAG 不能为空")
         if not self.main_field_calibration_source_run.strip():
@@ -163,9 +175,5 @@ class ProjectionNoiseParams(ExperimentParams):
             errors.append("自动量程阈值必须满足 0 < LOW < HIGH < 1")
         if not 0.0 <= self.scope_auto_offset_tolerance_fraction < 1.0:
             errors.append("自动偏置居中死区必须满足 0 <= TOLERANCE < 1")
-        try:
-            current_ma = self.target_current_ma()
-            validate_safety_limit("main_magnetic_field", current_ma)
-        except (FileNotFoundError, TypeError, ValueError) as exc:
-            errors.append(str(exc))
+        # 外部标定来源只在准备预检读取；离线分析不依赖仍存在的来源目录。
         return errors

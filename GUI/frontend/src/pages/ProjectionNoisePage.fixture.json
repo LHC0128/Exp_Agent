@@ -1,0 +1,586 @@
+{
+  "fields": [
+    {
+      "name": "SYSTEM_SETTLE_S",
+      "label": "系统稳定时间",
+      "type": "number",
+      "default": 0.3,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": null,
+      "description": "配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。",
+      "read_only": false,
+      "legacy_defaults": {
+        "TEMP_SWITCH_OFF_SETTLE_S": 0.3
+      }
+    },
+    {
+      "name": "RUN_TAG",
+      "label": "运行标签",
+      "type": "string",
+      "default": "scope_spin_noise",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "TARGET_LARMOR_FREQUENCY_HZ",
+      "label": "目标 Larmor 频率",
+      "type": "number",
+      "default": 90000.0,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 1.0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "MAIN_FIELD_CALIBRATION_SOURCE_RUN",
+      "label": "主场标定来源运行",
+      "type": "string",
+      "default": "0720_124208_mx_main_field_cal",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "MAIN_FIELD_SETTLE_S",
+      "label": "主场打开后等待",
+      "type": "number",
+      "default": 1.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0.0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "MEASURE_FIELD_OFF_CONTROL",
+      "label": "测量关闭电流源对照组",
+      "type": "boolean",
+      "default": false,
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "开启时先采集 GS200 输出关闭背景；关闭时仅采集主场打开数据。",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_SAMPLE_RATE",
+      "label": "示波器请求采样率",
+      "type": "number",
+      "default": 500000.0,
+      "unit": "Sa/s",
+      "group": "basic",
+      "minimum": 1.0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_DURATION",
+      "label": "单帧记录时长",
+      "type": "number",
+      "default": 1.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "ACQ_REPEATS",
+      "label": "每阶段采集帧数",
+      "type": "integer",
+      "default": 10,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_INITIAL_SCALE",
+      "label": "示波器初始量程",
+      "type": "number",
+      "default": 0.1,
+      "unit": "V/div",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "WELCH_NPERSEG",
+      "label": "Welch 每段点数",
+      "type": "integer",
+      "default": 50000,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 8,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIT_HALF_WIDTH_HZ",
+      "label": "拟合频带半宽",
+      "type": "number",
+      "default": 5000.0,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 1.0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "TEMP_SWITCH_ON_SETTLE_S",
+      "label": "温控恢复后等待",
+      "type": "number",
+      "default": 1.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0.0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.Pump_laser_power",
+      "label": "Pump 光功率",
+      "type": "number",
+      "default": 0.5,
+      "unit": "V",
+      "group": "basic",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.Probe_laser_power",
+      "label": "Probe 光功率",
+      "type": "number",
+      "default": 0.3,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.temperature",
+      "label": "气室温度",
+      "type": "number",
+      "default": 120.0,
+      "unit": "°C",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    }
+  ],
+  "flow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数、主场标定与映射预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [
+          "TARGET_LARMOR_FREQUENCY_HZ",
+          "MAIN_FIELD_CALIBRATION_SOURCE_RUN"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "TARGET_LARMOR_FREQUENCY_HZ",
+          "MAIN_FIELD_CALIBRATION_SOURCE_RUN"
+        ],
+        "quality_gates": [
+          "标定成功、反算电流安全；包括保留的 Pump 载波/门控在内无通道冲突；不连接硬件"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "连接设备与 GS200 初态回读",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": [
+          "连接复用、GS200 完整初态可恢复；不连接专用 Pump 载波/门控设备"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "已连接设备参考时钟同步与回读",
+        "group": "准备",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "参考时钟严格回读一致；不设置未连接的 Pump 载波/门控设备"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "辅助场归零与光功率准备",
+        "group": "初始条件",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power"
+        ],
+        "quality_gates": [
+          "GS200 暂时关闭；XY/Z 归零关闭；Pump 载波与门控全程不写"
+        ]
+      },
+      {
+        "id": "A05",
+        "title": "TEC 目标温度",
+        "group": "初始条件",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [
+          "FIXED_PARAMS.temperature"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "FIXED_PARAMS.temperature"
+        ],
+        "quality_gates": [
+          "仅下发 UI 目标，不启停、不判稳；串口不可用告警跳过"
+        ]
+      },
+      {
+        "id": "A06",
+        "title": "SDS 固定采样率与量程回读",
+        "group": "采集",
+        "dependencies": [
+          "A05"
+        ],
+        "parameters": [
+          "SCOPE_SAMPLE_RATE",
+          "SCOPE_DURATION",
+          "SCOPE_INITIAL_SCALE",
+          "SCOPE_PD_CHANNEL",
+          "SCOPE_TRIGGER_MODE",
+          "SCOPE_OFFSET",
+          "SCOPE_VERTICAL_DIVISIONS",
+          "SCOPE_SCALE_MIN",
+          "SCOPE_SCALE_MAX",
+          "SCOPE_AUTO_RANGE_LOW_FRACTION",
+          "SCOPE_AUTO_RANGE_HIGH_FRACTION",
+          "SCOPE_AUTO_OFFSET_TOLERANCE_FRACTION",
+          "SCOPE_AUTO_RANGE_MAX_ATTEMPTS",
+          "SCOPE_RECORD_MAX_ATTEMPTS",
+          "WELCH_NPERSEG",
+          "FIT_HALF_WIDTH_HZ"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "SCOPE_SAMPLE_RATE",
+          "SCOPE_DURATION",
+          "SCOPE_INITIAL_SCALE",
+          "WELCH_NPERSEG",
+          "FIT_HALF_WIDTH_HZ"
+        ],
+        "quality_gates": [
+          "FSRate、实际采样率与点数通过；Nyquist 覆盖拟合窗口"
+        ]
+      },
+      {
+        "id": "A07",
+        "title": "可选 OFF 背景与 ON 自旋噪声采集",
+        "group": "采集",
+        "dependencies": [
+          "A06"
+        ],
+        "parameters": [
+          "MEASURE_FIELD_OFF_CONTROL",
+          "ACQ_REPEATS",
+          "MAIN_FIELD_SETTLE_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_SETTLE_S"
+        ],
+        "artifacts": [
+          "raw/scope_acquisition_index.npz",
+          "raw/field_on/waveform_*.npz"
+        ],
+        "display_parameters": [
+          "MEASURE_FIELD_OFF_CONTROL",
+          "ACQ_REPEATS",
+          "MAIN_FIELD_SETTLE_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_SETTLE_S"
+        ],
+        "quality_gates": [
+          "保持可选 OFF→ON 顺序和跨阶段量程继承；每次尝试恢复温控后保存，失败抢救已读帧"
+        ]
+      },
+      {
+        "id": "A08",
+        "title": "本轮安全恢复与封存",
+        "group": "结束",
+        "dependencies": [
+          "A07"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "恢复 GS200 完整原态、温控与 SDS STOP；XY/Z 关闭；不修改 Pump 载波/门控；恢复失败不能完成"
+        ]
+      },
+      {
+        "id": "A09",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "加载原始数据与采样资格",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [
+          "WELCH_NPERSEG",
+          "FIT_HALF_WIDTH_HZ"
+        ],
+        "artifacts": [
+          "projection_inputs.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "本实验身份、独立 raw 格式、完整波形与时间轴有效；目录已停止写入"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "Welch、洛伦兹诊断与结果图",
+        "group": "独立分析",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [
+          "WELCH_NPERSEG",
+          "FIT_HALF_WIDTH_HZ"
+        ],
+        "artifacts": [
+          "projection_analysis.json"
+        ],
+        "display_parameters": [
+          "WELCH_NPERSEG",
+          "FIT_HALF_WIDTH_HZ"
+        ],
+        "quality_gates": [
+          "SDS 保留原自由洛伦兹拟合；失败仍输出诊断；旧 HF2 仅走原兼容 PSD，不套用 RF 拟合"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "TARGET_LARMOR_FREQUENCY_HZ": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "MAIN_FIELD_CALIBRATION_SOURCE_RUN": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "RUN_TAG": [
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "FIXED_PARAMS.Pump_laser_power": [
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "FIXED_PARAMS.Probe_laser_power": [
+          "A04",
+          "A05",
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "FIXED_PARAMS.temperature": [
+          "A05",
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_SAMPLE_RATE": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_DURATION": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_INITIAL_SCALE": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_PD_CHANNEL": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_TRIGGER_MODE": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_OFFSET": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_VERTICAL_DIVISIONS": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_SCALE_MIN": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_SCALE_MAX": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_AUTO_RANGE_LOW_FRACTION": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_AUTO_RANGE_HIGH_FRACTION": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_AUTO_OFFSET_TOLERANCE_FRACTION": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_AUTO_RANGE_MAX_ATTEMPTS": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "SCOPE_RECORD_MAX_ATTEMPTS": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "WELCH_NPERSEG": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "FIT_HALF_WIDTH_HZ": [
+          "A06",
+          "A07",
+          "A08"
+        ],
+        "MEASURE_FIELD_OFF_CONTROL": [
+          "A07",
+          "A08"
+        ],
+        "ACQ_REPEATS": [
+          "A07",
+          "A08"
+        ],
+        "MAIN_FIELD_SETTLE_S": [
+          "A07",
+          "A08"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A07",
+          "A08"
+        ],
+        "TEMP_SWITCH_ON_SETTLE_S": [
+          "A07",
+          "A08"
+        ]
+      },
+      "analysis": {
+        "WELCH_NPERSEG": [
+          "B01",
+          "B02"
+        ],
+        "FIT_HALF_WIDTH_HZ": [
+          "B01",
+          "B02"
+        ]
+      }
+    },
+    "diagram_url": "/api/experiments/projection-noise/workflow/diagram"
+  }
+}

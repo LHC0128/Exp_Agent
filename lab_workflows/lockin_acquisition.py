@@ -63,7 +63,7 @@ ACQUISITION_STAGES = {
     "z-field-bandwidth": (("Z 带宽", "HF2_DEMOD0_RATE", "POINT_DURATION", "HF2_DEMOD0_IDX", Y),),
     "static-sensitivity-optimize": (("触发色散", "HF2_DEMOD_RATE", "DAQ_DURATION", "HF2_DEMOD_IDX", RXY),
                                     ("噪声", "HF2_NOISE_RATE", "NOISE_DURATION", "HF2_DEMOD_IDX", Y)),
-    "static-sensitivity-optimize-local": (("触发色散", "HF2_DEMOD_RATE", "DAQ_DURATION", "HF2_DEMOD_IDX", RXY),
+    "static-sensitivity-optimize-local": (("DC 逐点色散", "HF2_DEMOD_RATE", "DISPERSION_DURATION_S", "HF2_DEMOD_IDX", XY),
                                           ("噪声", "HF2_NOISE_RATE", "NOISE_DURATION", "HF2_DEMOD_IDX", Y)),
 }
 

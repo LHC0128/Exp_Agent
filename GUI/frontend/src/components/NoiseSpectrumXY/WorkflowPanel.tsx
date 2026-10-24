@@ -19,7 +19,7 @@ const stateLabels: Record<string, string> = {
   waiting_calibration: "待选择标定曲线",
 };
 
-const externalOptions = (options: Record<string, number | string>, prefix: string, keys?: Record<string, string>): ParameterValues => Object.fromEntries(
+const externalOptions = (options: AnalysisState["options"], prefix: string, keys?: Record<string, string>): ParameterValues => Object.fromEntries(
   Object.entries(options).map(([name, value]) => [keys?.[name] ?? `${prefix}${name.toUpperCase()}`, value]),
 );
 const changedNames = (values: ParameterValues, applied: ParameterValues) => Object.keys(values).filter(
@@ -58,7 +58,7 @@ function Nodes({ stages, states, selected, onSelect, disabled, runId, editor, sh
         <small>前置：{stage.dependencies.map((id) => `${id} ${stages.find((item) => item.id === id)?.title ?? ""}`).join("、") || "无"}</small>
         {stage.quality_gates?.map((gate) => <small key={gate}>质量门槛：{gate}</small>)}
         {missing.length > 0 && selected.includes(stage.id) && <p className="xy-missing">缺少前置：{missing.join("、")}</p>}
-        {state?.error && <p className="xy-step-error">{state.error}</p>}
+        {state?.error && <p className="xy-step-error" tabIndex={0} aria-label={`${stage.id} 错误诊断`}>{state.error}</p>}
         {preview && <p className="xy-draft-note">应用草稿后预计需重跑；当前执行记录尚未改变。</p>}
         {nodeFields.length > 0 && <details className="xy-node-parameters">
           <summary>参数：{basicFields.length ? basicFields.map((field) =>

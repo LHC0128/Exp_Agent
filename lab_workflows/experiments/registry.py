@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from ..common import CancellationToken, ProgressCallback
+from ..experiment_modules.bb_power_scan_burst.definition import DEFINITION as BB_POWER_SCAN_BURST_DEFINITION
+from ..experiment_modules.rf_sensitivity_constxy_frequency.definition import DEFINITION as RF_CONSTXY_FREQUENCY_DEFINITION
+from ..experiment_modules.bb_duty_scan_burst.definition import DEFINITION as BB_DUTY_SCAN_BURST_DEFINITION
+from ..experiment_modules.z_field_bandwidth.definition import DEFINITION as Z_FIELD_BANDWIDTH_DEFINITION
 from ..experiment_modules.rf_sensitivity_direct_aw.definition import (
     DEFINITION as RF_SENSITIVITY_DIRECT_AW_DEFINITION,
 )
@@ -24,6 +28,7 @@ from ..experiment_modules.noise_spectrum_xy_probe_am.definition import (
 from ..experiment_modules.noise_spectrum_xy_demod3_r.definition import (
     DEFINITION as NOISE_SPECTRUM_XY_DEMOD3_R_DEFINITION,
 )
+from ..experiment_modules.photon_shot_noise.definition import DEFINITION as PHOTON_SHOT_NOISE_DEFINITION
 from ..experiment_modules.projection_noise.definition import (
     DEFINITION as PROJECTION_NOISE_DEFINITION,
 )
@@ -99,6 +104,7 @@ from ..experiment_modules.mx_xy_residual_field_calibration.definition import (
 from ..experiment_modules.rf_sensitivity_direct_aw_frequency.definition import (
     DEFINITION as RF_DIRECT_AW_FREQUENCY_DEFINITION,
 )
+from ..experiment_modules.t1_calibration.definition import DEFINITION as T1_CALIBRATION_DEFINITION
 from ..experiment_modules.t2_calibration.definition import (
     DEFINITION as T2_CALIBRATION_DEFINITION,
 )
@@ -108,6 +114,7 @@ from ..experiment_modules.xy_direct_aw_dc_calibration.definition import (
 from ..experiment_modules.static_sensitivity.definition import (
     DEFINITION as STATIC_SENSITIVITY_DEFINITION,
 )
+from ..experiment_modules.static_sensitivity_optimize_local.definition import DEFINITION as STATIC_LOCAL_DEFINITION
 from .contracts import ExperimentDefinition
 from .archived import ARCHIVED_EXPERIMENTS, load_archived_experiment
 from ..experiment_modules.bell_bloom_z_field_calibration.definition import DEFINITION as BELL_BLOOM_Z_FIELD_CALIBRATION_DEFINITION
@@ -120,8 +127,6 @@ from ..acquisition_policy import ACQUISITION_EXCEPTIONS
 
 _DEVICES = {
     "optical": ("DG900", "DG4000", "GS200", "HF2"),
-    "xy": ("DG900", "DG4000", "HF2"),
-    "scope": ("DG900", "DG4000", "SDS", "HF2"),
 }
 
 
@@ -200,29 +205,20 @@ _DEFINITIONS = [
     NOISE_SPECTRUM_XY_KNOWN_NOISE_DEFINITION,
     NOISE_SPECTRUM_XY_PROBE_AM_DEFINITION,
     NOISE_SPECTRUM_XY_DEMOD3_R_DEFINITION,
-    _legacy("photon-shot-noise", "光子散粒噪声", "measurement", "fundamental-noise", "photon", "Photon_shot_noise.py", "Photon_shot_noise_plot.py", ('测量光子散粒噪声随实验参数的变化。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')),
+    PHOTON_SHOT_NOISE_DEFINITION,
     PROJECTION_NOISE_DEFINITION,
     RF_SENSITIVITY_DIRECT_AW_DEFINITION,
     RF_KNOWN_NOISE_DEFINITION,
     RF_CONTROL_SCALE_DEFINITION,
-    _legacy("rf-sensitivity-aw-frequency", "RF 灵敏度频率扫描（外部 AM）", "measurement", "rf-sensitivity", "external-am", "RF_Field_Sensitivity_AW_FreqSweep.py", "RF_Field_Sensitivity_AW_FreqSweep_plot.py", ('扫描 RF 频率的外部 AM 硬件方案。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'), _DEVICES["xy"]),
     RF_DIRECT_AW_FREQUENCY_DEFINITION,
-    _legacy("rf-sensitivity-constxy-frequency", "RF 灵敏度频率扫描（ConstXY）", "measurement", "rf-sensitivity", "const-xy", "RF_Field_Sensitivity_ConstXY_FreqSweep.py", "RF_Field_Sensitivity_ConstXY_FreqSweep_plot.py", ('固定 XY 控制下扫描 RF 频率。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'), _DEVICES["xy"]),
-    _legacy("z-field-bandwidth", "Z 场带宽", "measurement", "field-response", "standard", "Z_Field_Bandwidth_Measurement.py", "Z_Field_Bandwidth_Measurement_plot.py", ('测量 Z 磁场控制链路带宽。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')),
-    _legacy("bb-duty-scan-burst", "BB Pump 占空比扫描", "measurement", "bb-scan", "burst", "BB_Rpump_DutyScan_Burst.py", "BB_Rpump_DutyScan_Burst_plot.py", ("Burst 模式下扫描 Pump 占空比。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。" + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')),
-    _legacy("bb-power-scan-burst", "BB Pump 功率扫描", "measurement", "bb-scan", "burst", "BB_Rpump_PowerScan_Burst.py", "BB_Rpump_PowerScan_Burst_plot.py", ("Burst 模式下扫描 Pump 功率。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。" + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')),
-    _legacy("t1-calibration", "T1 标定", "calibration", "relaxation", "t1", "T1_Calibration.py", "T1_Calibration_plot.py", ("采集并拟合纵向弛豫时间 T1。" + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')),
+    RF_CONSTXY_FREQUENCY_DEFINITION,
+    Z_FIELD_BANDWIDTH_DEFINITION,
+    BB_DUTY_SCAN_BURST_DEFINITION,
+    BB_POWER_SCAN_BURST_DEFINITION,
+    T1_CALIBRATION_DEFINITION,
     T2_CALIBRATION_DEFINITION,
-    _legacy("xy-aw-voltage-calibration", "XY 任意波电压标定", "calibration", "xy-calibration", "external-am", "XY_AW_Voltage_Calibration.py", "XY_AW_Voltage_Calibration_plot.py", ('标定 XY 任意波控制电压。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'), _DEVICES["xy"]),
-    _legacy("xy-dc-voltage-calibration", "XY DC 电压标定", "calibration", "xy-calibration", "const-xy", "XY_DC_Voltage_Calibration.py", "XY_DC_Voltage_Calibration_plot.py", ('标定 XY 直流控制电压。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'), _DEVICES["xy"]),
     XY_DIRECT_AW_DC_DEFINITION,
-    _legacy("aw-const-omega-check", "恒定 Omega 标定检查", "calibration", "omega-calibration", "direct-aw", "AW_ConstOmega_Calibration_Check.py", "AW_ConstOmega_Calibration_Check_plot.py", ("检查恒定 Omega 任意波标定结果。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。" + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'), _DEVICES["xy"]),
-    _legacy("aw-const-omega-awscale-check", "恒定 Omega 标定检查（AWScale）", "calibration", "omega-calibration", "aw-scale", "AW_ConstOmega_Calibration_Check_AWScale.py", "AW_ConstOmega_Calibration_Check_AWScale_plot.py", ("使用 AWScale 策略检查恒定 Omega 标定。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。" + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'), _DEVICES["xy"]),
-    _legacy("static-sensitivity-optimize", "静磁场灵敏度优化", "optimization", "static-field", "global", "Static_Magnetic_Field_Sensitivity_Optimize.py", None, ('全局搜索静磁场灵敏度实验参数。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')),
-    _legacy("static-sensitivity-optimize-local", "静磁场灵敏度局部优化", "optimization", "static-field", "local", "Static_Magnetic_Field_Sensitivity_Optimize_Local.py", None, ('在已有结果附近进行局部参数优化。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。')),
-    _legacy("aw-waveform-scope-check", "任意波示波器检查", "verification", "hardware-chain", "direct-aw", "AW_Control_Waveform_Scope_Check.py", None, "通过示波器验证任意波控制波形。", _DEVICES["scope"]),
-    _legacy("dg-am-comp-transfer-check", "DG AM 到 COMP 传递检查", "verification", "hardware-chain", "external-am", "DG_AM_to_DG_COMP_Transfer_Check.py", "DG_AM_to_DG_COMP_Transfer_Check_plot.py", "验证信号源 AM 到补偿链路的传递关系。", _DEVICES["scope"]),
-    _legacy("temperature-switch-pid-cycle", "温控开关 PID 周期测试", "verification", "temperature", "cycle", "Temperature_Switch_PID_Cycle_Test.py", "Temperature_Switch_PID_Cycle_Test_plot.py", "验证温控开关与 PID 恢复过程。", ("DG4000", "TEC103")),
+    STATIC_LOCAL_DEFINITION,
 ]
 
 _REGISTRY = {definition.id: definition for definition in _DEFINITIONS}

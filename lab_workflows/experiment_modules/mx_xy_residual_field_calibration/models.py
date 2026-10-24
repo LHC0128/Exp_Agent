@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+import math
 from typing import ClassVar, Any, Literal
 
 from ...experiment_params import ExperimentParams, parameter
@@ -76,6 +77,12 @@ class MxXYResidualFieldCalibrationParams(ExperimentParams):
 
     def validate_model(self) -> list[str]:
         errors: list[str] = []
+        for item in fields(self):
+            value = getattr(self, item.name)
+            if isinstance(value, float) and not math.isfinite(value):
+                errors.append(f"{item.metadata['external_name']} 必须为有限数值")
+        if errors:
+            return errors
         if self.scope_offset_v != 0.0:
             errors.append("SCOPE_OFFSET 必须固定为 0 V")
         if not self.run_tag.strip():

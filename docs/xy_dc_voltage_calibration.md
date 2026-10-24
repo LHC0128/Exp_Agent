@@ -1,7 +1,7 @@
 ---
 title: XY DC 电压到控制场频率的标定
 type: experiment_type
-description: 在 ConstXY 链路下，通过扫描 X/Y AM 输入的共同 DC 电压，并对 Z 方向小信号频率响应取峰值位置，标定 XY_DC_VOLTAGE 与实际响应中心频率之间的关系。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
+description: 已归档，GUI 仅保留卡片，原采集与分析脚本位于 old/experiments。原方案：在 ConstXY 链路下，通过扫描 X/Y AM 输入的共同 DC 电压，并对 Z 方向小信号频率响应取峰值位置，标定 XY_DC_VOLTAGE 与实际响应中心频率之间的关系。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
 keywords: [XY DC calibration, ConstXY, RF bandwidth, frequency response, offline lock-in, HF2 DAQ]
 version: 1
 
@@ -52,10 +52,17 @@ learned_notes:
   - hardware Demod 3 的绝对幅值可能因 Aux Out 缩放和 Signal Input 量程产生比例缩放；只要归一化峰位一致，就不影响 XY DC 标定。
   - 频谱中可能存在固定窄带干扰线，峰位提取应优先取驱动频点处响应或使用拟合中心，避免 local peak 被干扰线带偏。
 experiment_id: xy-dc-voltage-calibration
-parameters_source: experiments/XY_DC_Voltage_Calibration.py
+parameters_source: old/experiments/experiments/XY_DC_Voltage_Calibration.py
+archived: true
 ---
 
 # XY DC 电压标定方法
+
+## 归档状态
+
+`xy-dc-voltage-calibration` 已归档，不再进行模块化或流程图迁移。采集脚本和对应 `_plot.py` 按原字节保存在 [`old/experiments/experiments/`](../old/experiments/README.md)，原参数键、标定公式和科学结果均保留。GUI 仅提供归档卡片，旧参数、运行、历史和分析入口不开放，需手动恢复代码和注册接线并验收后才可重新启用；不影响仍在维护的 `xy-direct-aw-dc-calibration`。
+
+原 `data/XY_DC_Voltage_Calibration/`、结果、共享波形 CSV 和已保存默认参数保持原位。下文流程、接线与生成 prompt 保留为历史复现说明，不代表当前 GUI 的可执行操作；归档不会自动执行脚本或连接仪器。
 
 ## 采集时序与系统稳定
 
@@ -70,7 +77,7 @@ XY 电压标定使用 `HF2_DEMOD0_RATE` 请求率、`POINT_DURATION_s` 时长和
 
 时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](lockin_amplifier.md#解调时序的模块选择)。
 
-当前参数来源：[采集脚本参数区](../experiments/XY_DC_Voltage_Calibration.py)。GUI 保存目标为 `params/experiments/xy-dc-voltage-calibration.yaml`；该文件尚未生成时按脚本参数回退，本文不复制默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
+历史参数来源：[归档采集脚本参数区](../old/experiments/experiments/XY_DC_Voltage_Calibration.py)。归档前 GUI 的保存目标为 `params/experiments/xy-dc-voltage-calibration.yaml`；已有文件原位保留，未曾生成时仍以原脚本回退值为依据，不为归档创建新默认文件。归档后 GUI 不再加载或保存这些参数。单次运行仍以对应目录的 `experiment_config.yaml` 为准；原离线分析脚本见 [`XY_DC_Voltage_Calibration_plot.py`](../old/experiments/experiments/XY_DC_Voltage_Calibration_plot.py)，数据与结果格式不改写。
 
 锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，GUI 不再提供开启选项。
 
@@ -171,7 +178,7 @@ Z_RF_FREQ = f_peak_coarse ± 500 Hz，步进 25 Hz 或 50 Hz
 - `frequency_response_examples.png`：选几个电压点展示响应曲线。
 - `method_peak_comparison.png`：FFT、offline lock-in、hardware Demod 3 的峰位对比。
 
-## 对应 prompt
+## 历史生成 prompt（仅供参考）
 
 ```text
 使用 expcodegen 生成一个 XY DC 电压标定实验，实验名称为 XY_DC_Voltage_Calibration。

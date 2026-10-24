@@ -94,6 +94,8 @@ RF 扫频使用 `DEMOD0_RATE` 请求率、`POINT_DURATION_s` 时长和 `DEMOD0_I
 
 ## 当前频率扫描入口
 
+固定 XY 的独立实验 `rf-sensitivity-constxy-frequency` 已迁移为强类型模块化及 11 采集／3 分析节点的交互流程图，详见 [ConstXY 专属说明](rf_sensitivity_constxy_frequency.md)。它使用恒定 DC 包络，不加载任意控制波；0 Hz 背景仅关闭 Z、XY 保持开启，结束使用统一安全收尾，勿与下述 DirectAW 频率扫描混用。
+
 稳定 ID `rf-sensitivity-direct-aw-frequency` 已迁移为强类型新模式。参数模型、采集
 工作流和分析器位于
 `lab_workflows/experiment_modules/rf_sensitivity_direct_aw_frequency/`；
@@ -101,6 +103,8 @@ RF 扫频使用 `DEMOD0_RATE` 请求率、`POINT_DURATION_s` 时长和 `DEMOD0_I
 GUI/YAML 仍使用原有大写键，任意波 CSV 选项由模型显式声明并动态读取
 `experiments/*.csv`；同时可选择 `Z_AW_Closed_Loop_Waveform_Correction` 运行目录中的闭环冻结波形，具体来源见参数文件。频率偏移由高级参数 `Z_RF_FREQ_OFFSET_HZ` 指定，实际频点由扫描轴加偏移得到，是否包含 0 Hz 由实际参数决定。本文档中其他 RF 方案仍可能处于旧模式，以 GUI 卡片标记和
 `docs/experiment_migration_status.md` 为准。
+
+外部 AM 频响 `rf-sensitivity-aw-frequency` 已归档，GUI 只保留卡片，不提供运行或历史入口；采集代码与恢复说明见[归档目录](../old/experiments/README.md)。共用 plot 入口仍原位服务于本 DirectAW 实验，归档不改写参数和历史数据。
 
 ## 原理
 

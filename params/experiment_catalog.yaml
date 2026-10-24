@@ -8,6 +8,15 @@ archived_experiments:
 - mx-z-noise-spectrum
 - noise-spectrum-xy-v2
 - rf-sensitivity-aw-r
+- aw-const-omega-awscale-check
+- dg-am-comp-transfer-check
+- rf-sensitivity-aw-frequency
+- temperature-switch-pid-cycle
+- aw-waveform-scope-check
+- static-sensitivity-optimize
+- aw-const-omega-check
+- xy-dc-voltage-calibration
+- xy-aw-voltage-calibration
 tags:
 - id: measurement
   label: 静磁场
@@ -149,64 +158,68 @@ experiment_descriptions:
     标定为主结果，实测 R 最小点仅作诊断。运行/历史双 Tab 提供 6 个采集与 3 个独立分析节点；顶部保存、预检和完整运行，节点内编辑参数，应用草稿后显式重跑。理论/闭环来源与独立
     Z 标定冻结并核对内容，具体目录分析无额外覆盖值。锁相按设备库选择 HF2/MFLI 和 DAQ/Scope，输入高阻、DC 耦合，按最终实际率记录。配置后关闭温控、按
     SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后写盘；TEC 只写 UI 目标。结束恢复运行前 Z、共同触发和 X/Y 通道状态，不自动施加拟合点。
-  mx-y-rf-power-optimization: 蛇形扫描 Pump/Probe 光功率，保留拟合导数与零点实测斜率双排名及逐点诊断。运行/历史双 Tab 提供 10 个采集与 3 个分析节点；参数在节点编辑，保存、预检、完整运行和任务状态位于流程顶部。共享参数同步，应用草稿后显式重跑；具体目录的分析覆盖与下一次实验及默认值隔离。每个 R 点配置后关闭温控，按 SYSTEM_SETTLE_S 稳定，恢复温控后保存；各结束路径恢复已执行配置中的基准光功率并保持输出。
-    锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
-    解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按
-    SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。
-  mx-y-rf-probe-detuning-optimization: 固定 Pump，按 PZT 外层、Probe 功率内层蛇形扫描，支持固定 Probe 单点。运行/历史双 Tab 提供 9 个采集和 2 个独立分析节点；参数在节点编辑，顶部保存、预检、完整运行和任务状态，共享值与分类同步，应用草稿后须显式重跑。历史分析覆盖按目录隔离，不写采集快照。保留双斜率灵敏度排名，不自动施加最优点。锁相按设备库选择 HF2/MFLI 与 DAQ/Scope，输入高阻、DC 耦合，分析按最终实际率。每条记录配置后关闭温控，按 SYSTEM_SETTLE_S 稳定，读入内存并恢复温控后保存；明确不连接 TEC。各结束路径恢复初态 PZT/扫描及已执行的光功率基准，辅助场归零关闭，保持主场与 Pump。
+  mx-y-rf-power-optimization: 蛇形扫描 Pump/Probe 光功率，保留拟合导数与零点实测斜率双排名及逐点诊断。运行/历史双 Tab
+    提供 10 个采集与 3 个分析节点；参数在节点编辑，保存、预检、完整运行和任务状态位于流程顶部。共享参数同步，应用草稿后显式重跑；具体目录的分析覆盖与下一次实验及默认值隔离。每个
+    R 点配置后关闭温控，按 SYSTEM_SETTLE_S 稳定，恢复温控后保存；各结束路径恢复已执行配置中的基准光功率并保持输出。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。
+    锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI
+    请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC
+    可连接时仅下发 UI 目标温度。
+  mx-y-rf-probe-detuning-optimization: 固定 Pump，按 PZT 外层、Probe 功率内层蛇形扫描，支持固定 Probe
+    单点。运行/历史双 Tab 提供 9 个采集和 2 个独立分析节点；参数在节点编辑，顶部保存、预检、完整运行和任务状态，共享值与分类同步，应用草稿后须显式重跑。历史分析覆盖按目录隔离，不写采集快照。保留双斜率灵敏度排名，不自动施加最优点。锁相按设备库选择
+    HF2/MFLI 与 DAQ/Scope，输入高阻、DC 耦合，分析按最终实际率。每条记录配置后关闭温控，按 SYSTEM_SETTLE_S 稳定，读入内存并恢复温控后保存；明确不连接
+    TEC。各结束路径恢复初态 PZT/扫描及已执行的光功率基准，辅助场归零关闭，保持主场与 Pump。
   mx-main-field-calibration: 运行页按节点编辑参数并分步执行，历史目录独立分阶段分析；在 Mx 构型下扫描 GS200 主场电流和 Y
     RF 频率，由离线 Lorentzian 中心拟合标定 Hz/mA 和 nT/mA。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。
     锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI
     请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC
     可连接时仅下发 UI 目标温度。
-  mx-keithley-6221-main-field-calibration: 已归档，GUI 仅保留卡片；代码位于 old/experiments/。原方案：Keithley 6221 独占 Z 主线圈并按可配置电流轴扫描，使用可选固定电流档位，按预测中心附近的
-    Y RF 共振频扫标定自由斜率和截距；GS200 必须物理断开并由程序归零关闭。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭
-    50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s
-    自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发
-    UI 目标温度。
-  mx-keithley-6221-optimal-control-rf-sensitivity: 已归档，GUI 仅保留卡片；代码位于 old/experiments/。原方案：使用 6221 按 Time_sequence_2 每个外部触发输出一个周期的
-    Z 小磁场最优控制任意波，同时由 GS200 驱动独立的 Z 主磁场线圈，沿用 Mx RF 灵敏度采集与分析。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。
+  mx-keithley-6221-main-field-calibration: 已归档，GUI 仅保留卡片；代码位于 old/experiments/。原方案：Keithley
+    6221 独占 Z 主线圈并按可配置电流轴扫描，使用可选固定电流档位，按预测中心附近的 Y RF 共振频扫标定自由斜率和截距；GS200 必须物理断开并由程序归零关闭。
+    锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
+    解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按
+    SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。
+  mx-keithley-6221-optimal-control-rf-sensitivity: 已归档，GUI 仅保留卡片；代码位于 old/experiments/。原方案：使用
+    6221 按 Time_sequence_2 每个外部触发输出一个周期的 Z 小磁场最优控制任意波，同时由 GS200 驱动独立的 Z 主磁场线圈，沿用 Mx
+    RF 灵敏度采集与分析。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和
+    DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。
+    配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。
+  mx-main-field-noise-spectrum: 已归档，GUI 仅保留卡片；代码位于 old/experiments/。原方案：固定锁相放大器解调频率为
+    90 kHz，按实测标定降低 GS200 主场电流，以正控制频率轴从 Demod0 R 的二维 PSD 分离 S_beta 与 N_S1。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。
     锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI
     请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC
     可连接时仅下发 UI 目标温度。
-  mx-main-field-noise-spectrum: 已归档，GUI 仅保留卡片；代码位于 old/experiments/。原方案：固定锁相放大器解调频率为 90 kHz，按实测标定降低 GS200 主场电流，以正控制频率轴从 Demod0
-    R 的二维 PSD 分离 S_beta 与 N_S1。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50
-    Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s
-    自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发
-    UI 目标温度。
-  mx-main-field-scope-noise-spectrum: 按主场标定外推扫描 0–50 kHz Larmor 控制频率，保持可配置的 X/Y DC
-    剩磁补偿，可选 SDS AC/DC 耦合并使用自适应量程与偏置居中采集 PD 原始波形；关断后恢复 DC 耦合、归零关闭 X/Y，并使用共同 Lorentzian
-    响应和秩一控制背景的二维全局拟合分离调制噪声与 N_S1。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC
-    可连接时仅下发 UI 目标温度。
+  mx-main-field-scope-noise-spectrum: 按主场标定外推扫描 Larmor 控制频率，保持 X/Y DC 剩磁补偿，以 SDS 自适应量程采集
+    PD 原始波形。运行/历史页提供分步流程图、节点参数与独立分析，保留局部 Lorentzian 诊断及两阶段二维全局噪声分解。配置后关温控、稳定、内存采集、恢复后保存；TEC
+    仅写目标温度。结束恢复 GS200 和 SDS DC 耦合，归零关闭 Z/XY，保留光路与 Pump。
   mx-z-field-calibration: 在 Mx 高主场构型下扫描 Z 直流偏置和 Y RF 频率，由离线 Lorentzian 中心拟合标定 Z 通道的
     Hz/V。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC
     耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。
     配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。 运行页提供可选步骤、节点参数、共享草稿与显式重跑，分步等待保持设备连接和硬件锁；独立分析按具体目录保存覆盖草稿，不改历史采集参数。
-  mx-z-noise-spectrum: 已归档，GUI 仅保留卡片；代码位于 old/experiments/。原方案：在 Mx 高主场构型下扫描严格标定的 Z 直流控制失谐，固定锁相放大器解调频率为 90 kHz，并从 Demod0 R
-    的二维 PSD 分离 S_beta 与 N_S1。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω
-    与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用
-    Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI
-    目标温度。
-  mx-xy-residual-field-calibration: 在扫描主场下直接读取 SDS CH1 平衡探测器直流均值，二维扫描 X/Y DC 补偿场并用
-    Bloch 曲面拟合剩磁平衡点。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。
-  noise-spectrum-xy-v2: 已归档，GUI 仅保留卡片；代码位于 old/experiments/。原方案：测量 XY 控制条件下的噪声谱，dg_am 作为调制信号。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。
+  mx-z-noise-spectrum: 已归档，GUI 仅保留卡片；代码位于 old/experiments/。原方案：在 Mx 高主场构型下扫描严格标定的
+    Z 直流控制失谐，固定锁相放大器解调频率为 90 kHz，并从 Demod0 R 的二维 PSD 分离 S_beta 与 N_S1。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。
     锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI
     请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC
     可连接时仅下发 UI 目标温度。
-  photon-shot-noise: 测量光子散粒噪声随 Probe 光功率的变化，测量锁相放大器 XY 的噪声谱本底。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。
-    锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI
-    请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC
-    可连接时仅下发 UI 目标温度。
-  projection-noise: 采集 GS200 输出打开时的 SDS CH1 PD 原始噪声谱，可选测量输出关闭对照组，并在主场标定预测中心附近自由拟合洛伦兹自旋噪声峰。
+  mx-xy-residual-field-calibration: 在扫描主场下读取 SDS CH1 直流均值，以 X 外层、Y 同向网格及二维 Bloch/线性漂移拟合剩磁平衡点。运行/历史双
+    Tab 提供可勾选依赖流程图、节点参数、草稿应用和显式重跑；独立分析绑定具体目录，无额外覆盖参数。每次量程尝试关温控、稳定、采集至内存、恢复后保存；TEC
+    仅写目标温度。结束恢复 GS200，XYZ 归零关闭，不施加拟合补偿值。
+  noise-spectrum-xy-v2: 已归档，GUI 仅保留卡片；代码位于 old/experiments/。原方案：测量 XY 控制条件下的噪声谱，dg_am
+    作为调制信号。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和
+    DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。
     配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。
-  rf-sensitivity-aw-frequency: 测量射频频率响应，dg_am 作为调制信号。 当前双主电压回采接线只支持 HF2，选择 MFLI 时预检禁止启动。
+  photon-shot-noise: 扫描 Probe 控制电压，关闭 Pump 并偏置主场，测量同一输入的锁相 X/Y 噪声本底。运行/历史双 Tab 提供 8 个采集、3 个独立分析节点，节点改参与显式重跑，等待保持硬件锁；每条重复恢复温控后保存，TEC 仅写目标温度。保留 Welch PSD→平坦段 ASD 中位数→均值平方加权线性拟合和四组 PNG/PDF；具体目录分析草稿独立，不改历史快照。锁相型号与 DAQ/Scope 由设备库选择，频谱使用最终实际率；收尾恢复温控，保持已执行主场、Probe、Pump OFF 和锁相设置，只断开 TEC。
     锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI
     请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC
     可连接时仅下发 UI 目标温度。
-  rf-sensitivity-constxy-frequency: AM调制的方测量频率响应。 当前双主电压回采接线只支持 HF2，选择 MFLI 时预检禁止启动。
+  projection-noise: SDS PD 自旋噪声测量，运行／历史双 Tab 与 9 采集／2 分析节点，可选 GS200 OFF 背景，保留原 Welch 与自由洛伦兹拟合。
+    参数在节点编辑，草稿应用后显式重跑，具体目录分析覆盖值独立；恢复温控后保存，TEC 只写目标温度。Pump 载波／门控从初始化到所有收尾均不修改，GS200 恢复运行前状态。
+  rf-sensitivity-aw-frequency: 已归档，GUI 仅保留卡片；采集代码位于 old/experiments。原方案以 dg_am 作为外部 AM 调制信号测量射频频率响应，保留 HF2 双主电压回采限制与历史数据；共用分析入口仍供 DirectAW 使用。
     锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI
     请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC
     可连接时仅下发 UI 目标温度。
+  rf-sensitivity-constxy-frequency: 固定 XY 外部 AM 载波与 DC 包络，扫描 Z 射频频率，保留无限 Burst／外触发；0 Hz 背景只关 Z、XY 保持开启。运行／历史双 Tab 提供 11 采集／3 分析节点，节点内编辑，顶部保存、预检及完整运行；草稿应用后显式重跑，分步等待保持输出和硬件锁。
+    双主电压物理回环仅支持 HF2，MFLI 在连接前拒绝；输入高阻／DC，按最终实际率分析。每频点配置后关闭温控，按 SYSTEM_SETTLE_S 稳定，采集到内存，恢复 5 V DC + ON 后保存；TEC 只写 UI 目标温度。
+    离线保留 FFT、软件锁相、硬件矢量／标量 R、原带宽及 Lorentzian／Bloch 拟合与诊断图；具体目录分析草稿隔离，不改采集快照。所有结束路径统一关闭 XY／Z、恢复温控，仅断开 TEC，保留主场、光功率、Pump／时序和锁相设置。
   rf-sensitivity-direct-aw-frequency: 测量射频频率响应，dg_am 作为触发信号，使得 dg_comp 两路同相输出。 当前双主电压回采接线只支持
     HF2，选择 MFLI 时预检禁止启动。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2
     自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC

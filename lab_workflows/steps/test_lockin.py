@@ -59,9 +59,9 @@ class LockinInputTests(unittest.TestCase):
                 self.assertFalse({ac, impedance} & visible)
 
     def test_old_script_overrides_cannot_enable_modes(self):
-        from lab_workflows.experiments.legacy import LegacyScriptAdapter
+        from lab_workflows.experiments import get_experiment
 
-        adapter = LegacyScriptAdapter("rf-sensitivity-aw-frequency", "RF_Field_Sensitivity_AW_FreqSweep.py", "RF_Field_Sensitivity_AW_FreqSweep")
+        adapter = get_experiment("rf-sensitivity-aw-frequency").schema_provider.__self__
         defaults = adapter.defaults()
         values = adapter._nested_overrides({"SIGIN2_AC_COUPLING": True, "SIGIN2_IMPEDANCE": 50}, defaults)
         self.assertFalse(values["SIGIN2_AC_COUPLING"])

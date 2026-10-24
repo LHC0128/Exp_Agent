@@ -182,6 +182,11 @@ class AcquisitionOrderTest(unittest.TestCase):
 
     def test_bb_shot_prepares_scope_before_off_and_keeps_frame_on_restore_failure(self):
         for filename in ("BB_Rpump_DutyScan_Burst.py", "BB_Rpump_PowerScan_Burst.py"):
+            if filename == "BB_Rpump_DutyScan_Burst.py":
+                from .experiment_modules.bb_duty_scan_burst.test_workflow import check_shot_restore_contract
+                with tempfile.TemporaryDirectory() as directory:
+                    check_shot_restore_contract(Path(directory))
+                continue
             for fault in (None, "restore", "acquire"):
                 with self.subTest(experiment=filename, fault=fault), tempfile.TemporaryDirectory() as directory:
                     run_dir = Path(directory)
@@ -215,9 +220,24 @@ class AcquisitionOrderTest(unittest.TestCase):
                         acquirer=SimpleNamespace(acquire_channel=read),
                         auto_scale_signal=lambda *args: (2.0, True),
                         acquisition_window=acquisition_window, DeferredAcquisitionWrites=DeferredAcquisitionWrites)
-                    shot = _legacy_function(filename, "acquire_single_shot", namespace)
                     cfg = SimpleNamespace(acquire_delay=0, timebase_scale=0.1,
-                        horizontal_divisions=10, channels=[SimpleNamespace(scale=1)])
+                        horizontal_divisions=10, channels=[SimpleNamespace(number=1, scale=1)])
+                    if filename == "BB_Rpump_PowerScan_Burst.py":
+                        from .experiment_modules.bb_power_scan_burst import acquisition as power
+                        from .experiment_modules.bb_power_scan_burst.models import BBPowerScanBurstParams
+                        params = BBPowerScanBurstParams(system_settle_s=0.7, temp_switch_on_delay_s=0.1)
+                        namespace["sds_inst"].trigger_status = lambda: "Trig'd"
+                        ctx = SimpleNamespace(params=params, scope_config=cfg, outputs={},
+                            devices={"scope": namespace["sds_inst"], "sg": namespace["dg_laser"], "acquirer": namespace["acquirer"]},
+                            channels={"Pump_laser_power": 1}, state={"scope": {"actual_points": 4, "actual_sample_rate_Hz": 10}})
+                        def shot(value, scale, config):
+                            with patch.object(power, "checked"), \
+                                    patch.object(power, "wait", namespace["time"].sleep), \
+                                    patch.object(power, "switch", side_effect=lambda ctx, enabled: switch(5 if enabled else 0)):
+                                result = power.acquire_single_shot(ctx, value, scale, run_dir/"raw/recovery_power.npz")
+                            return {"signal_v": result["signal"]}
+                    else:
+                        shot = _legacy_function(filename, "acquire_single_shot", namespace)
                     if fault:
                         with self.assertRaises((OSError, WorkflowCancelled)) as caught:
                             shot(0.2, 1.0, cfg)
@@ -232,10 +252,11 @@ class AcquisitionOrderTest(unittest.TestCase):
                     self.assertLess(events.index(("wait", 0.7)), events.index("acquire"))
                     self.assertLess(events.index("acquire"), events.index("on"))
                     rescued = list((run_dir / "raw").glob("recovery_*.npz"))
-                    self.assertEqual(bool(rescued), fault == "restore")
+                    migrated = filename == "BB_Rpump_PowerScan_Burst.py"
+                    self.assertEqual(bool(rescued), fault != "acquire" if migrated else fault == "restore")
                     if rescued:
                         with np.load(rescued[0]) as data:
-                            np.testing.assert_array_equal(data["signal_v"], np.arange(4))
+                            np.testing.assert_array_equal(data["signal" if migrated else "signal_v"], np.arange(4))
 
     def test_t1_scale_retry_reopens_a_prepared_window(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -250,33 +271,38 @@ class AcquisitionOrderTest(unittest.TestCase):
                 self.assertFalse(enabled[0])
                 captures.append(len(captures))
                 return SimpleNamespace(time=np.arange(4), voltage=np.ones(4))
-            cfg = SimpleNamespace(channels=[SimpleNamespace(scale=1)])
-            namespace = dict(np=np, devices={"dg_probe": SimpleNamespace(setup_dc=warm),
-                "dg_ts": SimpleNamespace(setup_dc=switch)}, cfg_probe={"channel": 1}, cfg_ts={"channel": 2},
-                PUMP_SWITCH_FREQ=1.0, SCOPE_VOLT_SCALE=1.0, ACQ_REPEATS=2, VERT_DIVS=8,
-                PUMP_PREP_TIME=0.1, SYSTEM_SETTLE_S=0.7,
-                time=SimpleNamespace(sleep=lambda seconds: None, time_ns=lambda: 123),
-                validate_safety_limit=lambda *a: None, run_dir=run_dir,
-                build_scope_config=lambda scale: cfg, _prepare_ch1_single=warm,
-                _acquire_ch1_single=read, scope=SimpleNamespace(set_channel_scale=warm),
-                auto_scale_signal=Mock(side_effect=[(2.0, True), (2.0, False), (2.0, False)]),
-                _fit_T1=lambda *args: (1.0, 0.1, [1], np.eye(1)),
-                acquisition_window=acquisition_window, DeferredAcquisitionWrites=DeferredAcquisitionWrites)
-            measure = _legacy_function("T1_Calibration.py", "measure_T1_single", namespace)
-            result = measure(0.2)
+            from .experiment_modules.t1_calibration import acquisition as t1
+            from .experiment_modules.t1_calibration.models import T1CalibrationParams
+            params = T1CalibrationParams(acq_repeats=2, system_settle_s=0.7)
+            ctx = SimpleNamespace(params=params, directory=SimpleNamespace(raw=run_dir / "raw"), outputs={},
+                devices={"sg": SimpleNamespace(setup_dc=warm)}, channels={"Probe_laser_power": 1})
+            def capture(ctx, config):
+                result = read(config)
+                return SimpleNamespace(time=np.arange(20), voltage=np.ones(20))
+            def set_enabled(ctx, enabled_value):
+                switch(5 if enabled_value else 0)
+            with patch.object(t1.preparation, "checked"), \
+                    patch.object(t1.preparation, "switch", side_effect=set_enabled), \
+                    patch.object(t1, "wait"), patch.object(t1, "prepare_frame", side_effect=warm), \
+                    patch.object(t1, "read_frame", side_effect=capture), \
+                    patch.object(t1, "auto_scale_signal", side_effect=[(0.1, True), (0.1, False), (0.1, False)]):
+                result = t1.measure_single(ctx, 0.2, 0)
             self.assertEqual(result["n_acquired"], 2)
             self.assertEqual(len(captures), 3)
             self.assertTrue(enabled[0])
-            def failed_restore(value, **kwargs):
-                if value:
+            def failed_restore(ctx, enabled_value):
+                if enabled_value:
                     raise OSError("T1 温控恢复失败")
                 enabled[0] = False
-            namespace["devices"]["dg_ts"].setup_dc = failed_restore
-            with self.assertRaisesRegex(OSError, "T1 温控恢复失败"):
-                measure(0.2)
+            with patch.object(t1.preparation, "checked"), \
+                    patch.object(t1.preparation, "switch", side_effect=failed_restore), \
+                    patch.object(t1, "wait"), patch.object(t1, "prepare_frame", side_effect=warm), \
+                    patch.object(t1, "read_frame", side_effect=capture):
+                with self.assertRaisesRegex(OSError, "T1 温控恢复失败"):
+                    t1.measure_single(ctx, 0.2, 1)
             self.assertEqual(len(captures), 4)
-            with np.load(run_dir / "raw/recovery_t1_123.npz") as saved:
-                np.testing.assert_array_equal(saved["signal_v"], np.ones(4))
+            with np.load(run_dir / "raw/frame_p01_r00_a0.npz") as saved:
+                np.testing.assert_array_equal(saved["signal_v"], np.ones(20))
 
     def test_legacy_xy_v2_group_prepares_first_state_and_reuses_system_wait(self):
         path = Path(__file__).resolve().parents[1] / "old/experiments/experiments/Noise_Spectrum_XY_Ctrl_v2.py"
@@ -312,7 +338,10 @@ class AcquisitionOrderTest(unittest.TestCase):
 
     def test_registry_coverage_has_one_system_wait_per_ordinary_experiment(self):
         definitions = list_experiments()
-        self.assertTrue(ACQUISITION_EXCEPTIONS.issubset({d.id for d in definitions}))
+        # 归档不删除历史采集例外；仅在维护中的普通实验继续接受等待参数检查。
+        self.assertTrue(ACQUISITION_EXCEPTIONS.issubset({
+            d.id for d in list_experiments(include_archived=True)
+        }))
         for definition in definitions:
             if definition.id in ACQUISITION_EXCEPTIONS:
                 continue

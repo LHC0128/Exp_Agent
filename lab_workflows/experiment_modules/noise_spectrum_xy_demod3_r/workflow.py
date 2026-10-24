@@ -1,630 +1,288 @@
-"""XY DirectAW + Demod3 R 二维噪声谱采集工作流。"""
-
+"""完整运行与分步会话共用编排；设备配置、采集和科学算法分别内聚。"""
 from __future__ import annotations
-from ...steps.acquisition_window import DeferredAcquisitionWrites, acquisition_window
-
-from lab_workflows.steps import initialize_lockin_inputs
-from lab_workflows.devices import create_lockin
-from lab_workflows.lockin_compatibility import require_lockin_compatibility
-import math
-import time
+from copy import deepcopy
 from pathlib import Path
-
-import numpy as np
-from lab_workflows.steps import acquisition_window
-from tqdm import tqdm
-
-from gs200 import GS200Instrument
-from lockin_amplifier import (
-    DAQConfig,
-    DemodulatorConfig,
-    HF2Instrument,
-    OscillatorConfig,
-    SignalInputConfig,
-    daq,
-    demod,
-)
-from tec_controller import TECInstrument
-
-from lab_workflows.common import (
-    find_project_root,
-    load_mapping,
-    load_safety_limits,
-    validate_safety_limit,
-)
-from lab_workflows.devices import create_signal_generator
-from lab_workflows.experiment_runtime import check_cancelled, load_runtime_params
-from lab_workflows.steps import (
-    ArbitraryWaveformSpec,
-    DGChannelShutdown,
-    DeviceSession,
-    DirectAWPhaseCalibrationConfig,
-    DisconnectTarget,
-    PhaseCalibrationConfig,
-    STANDARD_PRESERVED_OUTPUTS,
-    TemperatureSwitchRestore,
-    calibrate_demod_phase,
-    calibrate_direct_aw_phase,
-    configure_temperature_control,
-    create_run_directory,
-    run_safety_shutdown,
-    set_temperature_switch,
-    synchronize_connected_clocks,
-    upload_arbitrary,
-)
-
-from .acquisition import acquire_demod_r_mean
+from uuid import uuid4
+from ...common import WorkflowCancelled, find_project_root, load_safety_limits
+from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
+from ...instrument_config import instrument_config_snapshot
+from ...steps import DeviceSession, configure_temperature_control, create_run_directory
+from ...steps.safety_shutdown import disconnect_device_mapping
+from ..noise_spectrum_xy.state_io import write_state
+from . import acquisition, excitation, preparation, run_format
 from .models import NoiseSpectrumXYDemod3RParams
-from .scan import build_scan_axes, estimate_scan_duration_s, iter_frequency_batches
+from .scan import build_scan_axes, estimate_scan_duration_s
+from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, validate_selection
 
-
-EXPERIMENT_ID = "noise-spectrum-xy-demod3-r"
-EXPERIMENT_TYPE = "Noise_Spectrum_XY_Demod3_R"
+EXPERIMENT_ID = run_format.EXPERIMENT_ID
+EXPERIMENT_TYPE = run_format.DATA_TYPE
 PURPOSE = "noise_spectroscopy_demod3_r"
+# 保留旧计算/采集工具导入兼容；业务实现只有一份。
+_build_waveforms = excitation.build_waveforms
+_save_raw_matrix = acquisition.save_matrix
+_interruptible_sleep = excitation.sleep
+AW_AMPLITUDE_FLOOR_VPP = excitation.AW_AMPLITUDE_FLOOR_VPP
 
 
-def _interruptible_sleep(duration_s: float) -> None:
-    """支持 GUI 取消的短等待。"""
-    deadline = time.monotonic() + max(0.0, float(duration_s))
-    while time.monotonic() < deadline:
-        check_cancelled()
-        time.sleep(min(0.1, deadline - time.monotonic()))
+class Workflow:
+    stages = ACQUISITION
 
+    def __init__(self, params, *, project_root=None, session_id=None):
+        self.root = Path(project_root).resolve() if project_root else find_project_root()
+        self.params, self.mapping = preparation.preflight(params, self.root)
+        self.limits = load_safety_limits(self.root)
+        self.config_revision = self._configuration_revision()
+        self.session_id, self.revision = session_id or uuid4().hex, 0
+        self.states = initial_states(self.stages)
+        self.devices, self.channels = {}, {}
+        self.device_session = DeviceSession()
+        self.directory = self.run_parameters = self.current_step = None
+        self.closed = self.round_sealed = self.clock_failed = self.outputs_started = False
+        self.xy_phase_deg = None
+        self.state = self._initial_state()
+        self.outputs = {key: "未知" for key in ("X", "Y", "Z", "双路外触发", "温控", "Pump")}
 
-def _save_raw_matrix(
-    path: Path,
-    r_mean_v: np.ndarray,
-    control_frequency_hz: np.ndarray,
-    envelope_v: np.ndarray,
-    demod3_frequency_hz: np.ndarray,
-) -> None:
-    """增量保存均值矩阵；连续采样数组不会写盘。"""
-    np.savez(
-        path,
-        r_mean_V=np.asarray(r_mean_v, dtype=float),
-        control_frequency_Hz=np.asarray(control_frequency_hz, dtype=float),
-        xy_envelope_voltage_V=np.asarray(envelope_v, dtype=float),
-        demod3_frequency_Hz=np.asarray(demod3_frequency_hz, dtype=float),
-    )
+    def _initial_state(self):
+        control, envelope, frequencies = build_scan_axes(self.params)
+        return dict(experiment_id=EXPERIMENT_ID, data_type=EXPERIMENT_TYPE, purpose=PURPOSE,
+            execution_mode="typed_workflow", raw_format_version=run_format.RAW_FORMAT_VERSION,
+            completion_status="running", data_files=["raw/" + run_format.RAW_FILE],
+            scan=dict(control_frequency_Hz=control.tolist(), xy_envelope_voltage_V=envelope.tolist(),
+                demod3_frequency_Hz=frequencies.tolist(), estimated_duration_s=estimate_scan_duration_s(self.params),
+                temperature_batch_points=self.params.temp_recovery_batch_points,
+                temperature_recovery_time_s=self.params.temp_recovery_time_s),
+            xy_aw_output=dict(mode="auto_per_envelope", vpp_formula="2 * |V_env| per scan point",
+                offset_V=0, amplitude_floor_vpp=AW_AMPLITUDE_FLOOR_VPP,
+                zero_envelope_policy="upload zero waveform at floor amplitude, keep outputs OFF"))
 
+    def _configuration_revision(self):
+        config = instrument_config_snapshot(self.root)
+        return (config["device_library_revision"], config["physical_mapping_revision"],
+                (self.root / "params/safety_limits.yaml").read_bytes())
 
-AW_AMPLITUDE_FLOOR_VPP = 0.001  # DG 任意波幅度仪器下限；零包络点用该幅度上传全零波形并保持输出 OFF。
+    def recheck(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请结束会话后重新连接")
+        self.params, self.mapping = preparation.preflight(self.params, self.root)
 
+    def snapshot(self):
+        return dict(session_id=self.session_id, revision=self.revision,
+            status="closed" if self.closed else "running" if self.current_step else "waiting",
+            parameters=self.params.to_external(), steps=deepcopy(self.states), current_step=self.current_step,
+            run_id=self.directory.root.name if self.directory else None, outputs=dict(self.outputs),
+            output_source="最近成功模块的写入结果；未额外回读物理输出", demod_mode="demod3_r",
+            xy_phase_calibration=self.state.get("xy_phase_calibration"),
+            demod_phase_deg=self.state.get("demod0_phase", {}).get("phase_shift_deg"),
+            clock_sources=self.state.get("clock_sources", {}), daq_settings=self.state.get("actual_rates"),
+            safety_shutdown=self.state.get("safety_shutdown"))
 
-def _build_waveforms(
-    params: NoiseSpectrumXYDemod3RParams,
-    envelope_v: float,
-    phase_deg: float,
-) -> tuple[np.ndarray, np.ndarray, float]:
-    """按包络峰值自动选择满量程，生成 X/Y 归一化 DirectAW 数组。
+    def publish(self, message="等待选择下一模块"):
+        value = self.snapshot()
+        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", value)
+        if self.directory and not self.round_sealed:
+            write_state(self.directory.root / "acquisition_state.json", value)
+        report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": value})
 
-    返回 (x_norm, y_norm, vpp)；vpp = 2 × |envelope_v|，offset 恒为 0。
-    零包络点返回全零波形和下限幅度，由调用方保持输出 OFF。
-    """
-    envelope_v = float(envelope_v)
-    time_s = np.arange(params.xy_aw_points, dtype=float) / (
-        params.xy_aw_points * params.xy_aw_repeat_freq_hz
-    )
-    phase = 2.0 * np.pi * params.xy_ctrl_freq * time_s + math.radians(phase_deg)
-    x_v = envelope_v * np.cos(phase)
-    y_v = envelope_v * np.cos(phase + math.radians(params.xy_ctrl_quad))
-    for key, values in (("X_magnetic_field", x_v), ("Y_magnetic_field", y_v)):
-        validate_safety_limit(key, float(np.min(values)))
-        validate_safety_limit(key, float(np.max(values)))
-    vpp = 2.0 * abs(envelope_v)
-    if vpp == 0.0:
-        return np.zeros_like(x_v), np.zeros_like(y_v), AW_AMPLITUDE_FLOOR_VPP
-    if vpp < AW_AMPLITUDE_FLOOR_VPP:
-        raise ValueError(
-            f"包络 {envelope_v:.6f} V 过小，自动 AW 幅度 {vpp:.6f} Vpp "
-            f"低于仪器最小幅度 {AW_AMPLITUDE_FLOOR_VPP} Vpp"
-        )
-    x_norm = x_v / (vpp / 2.0)
-    y_norm = y_v / (vpp / 2.0)
-    return x_norm, y_norm, vpp
+    def save(self):
+        if self.directory and not self.round_sealed:
+            self.directory.update_config(**self.state)
 
+    def update_parameters(self, values):
+        if self.current_step:
+            raise ValueError("模块执行中不能应用参数")
+        self.recheck()
+        old = self.params.to_external()
+        if unknown := values.keys() - old.keys():
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        params, mapping = preparation.preflight(type(self.params).from_external(old | values), self.root)
+        changed = {key for key, value in params.to_external().items() if value != old[key]}
+        for stage in self.stages:
+            if changed.intersection(stage.parameters):
+                invalidate(self.stages, self.states, stage.id)
+        self.params, self.mapping = params, mapping
+        self.revision += 1
+        self.publish("参数已应用；请显式重跑受影响模块，不会自动设置输出")
 
-def run() -> Path:
-    """执行完整采集并返回运行目录。"""
-    project_root = find_project_root()
-    params = load_runtime_params(NoiseSpectrumXYDemod3RParams)
-    mapping = load_mapping(project_root)
-    require_lockin_compatibility('noise-spectrum-xy-demod3-r', {**globals(), **locals()}, mapping=mapping)
-    limits = load_safety_limits(project_root)
-    control_axis, envelope_axis, demod3_axis = build_scan_axes(params)
-    estimated_s = estimate_scan_duration_s(params)
-    print(
-        f"二维扫描 {params.control_freq_points}×{params.demod3_freq_points} 点，"
-        f"理论耗时 {estimated_s:.0f} s ≈ {estimated_s / 3600:.2f} h（不含升温、校相和通信）"
-    )
+    def _new_directory(self):
+        inherited = self.state
+        if self.directory and not self.round_sealed:
+            self.state.update(completion_status="failed", failure_reason="重跑替代本轮，已有数据保留")
+            self.save()
+        self.directory = create_run_directory(EXPERIMENT_TYPE, self.params.run_tag, self.params.to_external(),
+            schema_version=self.params.schema_version, project_root=self.root)
+        self.run_parameters, self.round_sealed = self.params.to_external(), False
+        self.state = self._initial_state()
+        for key in ("clock_sources", "temperature_control", "initial_temperature_c", "demod0_phase",
+                    "xy_phase_calibration", "actual_rates", "hf2_snapshot"):
+            if key in inherited:
+                self.state[key] = deepcopy(inherited[key])
+        self.save()
 
-    session = DeviceSession()
-    run_directory = None
-    shutdown_report = None
-    connected = False
+    def execute(self, selected):
+        selected = validate_selection(self.stages, self.states, selected)
+        if selected != [FINISH_ID]:
+            self.recheck()
+        if any(item not in ("A01", FINISH_ID) for item in selected) and (
+                self.directory is None or self.round_sealed or self.run_parameters != self.params.to_external()
+                or ("A11" in selected and self.states["A11"]["status"] != "pending")):
+            self._new_directory()
+        self.revision += 1
+        for item in selected:
+            if item == FINISH_ID:
+                self.finish()
+                break
+            check_cancelled()
+            if item != "A01":
+                invalidate(self.stages, self.states, item)
+            self.current_step = item
+            self.states[item] = dict(status="running", error="")
+            failure = None
+            try:
+                self.publish(next(s.title for s in self.stages if s.id == item))
+                self._execute_step(item)
+                self.states[item] = dict(status="completed", error="")
+                if item == "A11":
+                    self.states[item]["artifacts"] = ["raw/" + run_format.RAW_FILE]
+            except BaseException as exc:
+                failure = exc
+                status = "cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else (
+                    "quality_failed" if isinstance(exc, ValueError) else "failed")
+                self.states[item] = dict(status=status, error=str(exc))
+                self.state.update(completion_status=status, failure_reason=str(exc))
+                try:
+                    self.save()
+                except Exception as error:
+                    self.state["state_save_error"] = str(error)
+                raise
+            finally:
+                self.current_step = None
+                try:
+                    if item == "A11" and self.round_sealed and failure is None:
+                        write_state(self.directory.root / "acquisition_state.json", self.snapshot())
+                    self.publish(f"{item} {self.states[item]['status']}")
+                except Exception:
+                    if failure is None:
+                        raise
+        return self.snapshot()
 
-    try:
-        gs_cfg = mapping["main_magnetic_field"]
-        gs = session.connect(
-            "gs200",
-            str(gs_cfg["resource"]),
-            lambda: GS200Instrument(gs_cfg["resource"]),
-        )
-        gs.set_source_function(gs_cfg["source_function"])
-        gs.set_current_limit(limits["main_magnetic_field"]["max"] / 1000.0)
+    def _execute_step(self, item):
+        p, d = self.params, self.devices
+        if item == "A01":
+            self.recheck()
+        elif item == "A02":
+            if not d:
+                try:
+                    self.channels = preparation.connect(p, self.mapping, self.device_session, d)
+                except BaseException:
+                    self.device_session.cleanup_connection_failure()
+                    d.clear()
+                    raise
+        elif item == "A03":
+            try:
+                self.state["clock_sources"] = preparation.clocks(d, self.mapping)
+                self.clock_failed = False
+            except BaseException:
+                self.clock_failed = True
+                raise
+        elif item == "A04":
+            self.outputs_started = True
+            preparation.initial_outputs(p, d, self.channels, self.mapping, self.root)
+            excitation.set_temp(self, True)
+            self.outputs.update(X="OFF", Y="OFF", Z="OFF", **{"双路外触发": "OFF", "温控": "ON"})
+        elif item == "A05":
+            status = configure_temperature_control(d.get("tec"), p.temperature, channel=1)
+            self.state.update(temperature_control=status.to_dict(), initial_temperature_c=status.actual_temperature_c)
+        elif item == "A06":
+            excitation.pump_and_triggers(self)
+            self.outputs.update(Pump="载波与门控 ON", **{"双路外触发": "连续 ON"})
+        elif item == "A07":
+            excitation.demod0(self)
+        elif item == "A08":
+            excitation.loopback(self)
+        elif item == "A09":
+            excitation.xy_phase(self)
+            self.outputs.update(X="校相 AW ON", Y="校相 AW ON")
+        elif item == "A10":
+            rate, _ = excitation.configure_demod3(self, p.demod3_freq_start_hz)
+            self.state.setdefault("actual_rates", {})["demod3_Sa_s"] = float(rate)
+            hfi = d["lockin"]
+            base, aux = hfi.demod_path(p.demod3_idx), hfi.aux_out_path(p.auxout_index)
+            self.state["hf2_snapshot"] = dict(demod0_phase_shift_deg=self.state["demod0_phase"]["phase_shift_deg"],
+                direct_aw_phase_deg=float(self.xy_phase_deg), direct_aw_phase_converged=True,
+                demod3_rate_Sa_s=float(hfi.get_double(base + "/rate")),
+                demod3_time_constant_s=float(hfi.get_double(base + "/timeconstant")),
+                demod3_adcselect=int(hfi.get_int(base + "/adcselect")),
+                auxout_outputselect=int(hfi.get_int(aux + "/outputselect")),
+                auxout_scale=float(hfi.get_double(aux + "/scale")), auxout_offset_V=float(hfi.get_double(aux + "/offset")))
+        elif item == "A11":
+            excitation.verify_ready(self)
+            self.state.update(acquisition.acquire_scan(self))
+            errors = self._shutdown(disconnect_tec=False)
+            if errors:
+                raise RuntimeError("安全收尾失败：" + "；".join(errors))
+            self.state.update(completion_status="completed", failure_reason=None)
+            self.save()
+            self.round_sealed = True
+            # 收尾已改变 XY/外触发模式，再采必须重新准备，不能复用旧相位凭据。
+            invalidate(self.stages, self.states, "A04")
+        self.save()
 
-        dg_comp_cfg = mapping["X_magnetic_field"]
-        dg_comp = session.connect(
-            "dg_comp",
-            str(dg_comp_cfg["resource"]),
-            lambda: create_signal_generator(dg_comp_cfg),
-        )
-        dg_trigger_cfg = mapping["X_magnetic_field_AM"]
-        dg_trigger = session.connect(
-            "dg_trigger",
-            str(dg_trigger_cfg["resource"]),
-            lambda: create_signal_generator(dg_trigger_cfg),
-        )
-        dg_sweep_cfg = mapping["Z_magnetic_field"]
-        dg_sweep = session.connect(
-            "dg_sweep",
-            str(dg_sweep_cfg["resource"]),
-            lambda: create_signal_generator(dg_sweep_cfg),
-        )
-        dg_mod_cfg = mapping["Pump_modulation"]
-        dg_mod = session.connect(
-            "dg_mod",
-            str(dg_mod_cfg["resource"]),
-            lambda: create_signal_generator(dg_mod_cfg),
-        )
+    def _shutdown(self, *, disconnect_tec=True):
+        errors = []
+        if self.devices:
+            if self.outputs_started:
+                report = preparation.shutdown(self.devices, self.channels, disconnect_tec=disconnect_tec)
+                self.state["safety_shutdown"] = report.to_dict()
+                errors.extend(report.errors)
+                self.outputs.update({key: "未知" if errors else value for key, value in
+                    {"X": "OFF", "Y": "OFF", "Z": "OFF", "双路外触发": "OFF", "温控": "ON"}.items()})
+            if self.clock_failed or (not self.outputs_started and disconnect_tec):
+                errors.extend(disconnect_device_mapping({str(i): device for i, device in
+                    enumerate(self.device_session.unique_devices())}))
+        return errors
 
-        dg_temp_cfg = mapping["Temp_Switch"]
-        dg_temp = session.connect(
-            "dg_temp",
-            str(dg_temp_cfg["resource"]),
-            lambda: create_signal_generator(dg_temp_cfg),
-        )
-
-        laser_cfg = mapping["Pump_laser_power"]
-        probe_cfg = mapping["Probe_laser_power"]
-        if laser_cfg["resource"] != probe_cfg["resource"] or laser_cfg["model"] != probe_cfg["model"]:
-            raise ValueError("Pump/Probe 光功率未映射到同一台信号源")
-        dg_laser = session.connect(
-            "dg_laser",
-            str(laser_cfg["resource"]),
-            lambda: create_signal_generator(laser_cfg),
-        )
-
-        tec_cfg = mapping["temperature"]
-        tec = session.connect_optional(
-            "tec",
-            str(tec_cfg["resource"]),
-            lambda: TECInstrument(port=tec_cfg["resource"]),
-            device_label="TEC103",
-        )
-
-        hf2_cfg = mapping["lockin_r"]
-        hf2_resource = f"hf2://{hf2_cfg['device_id']}@{hf2_cfg.get('host', '127.0.0.1')}:{hf2_cfg.get('port', 8005)}"
-        hfi = session.connect(
-            "hf2",
-            hf2_resource,
-            lambda: create_lockin(hf2_cfg),
-        )
-        initialize_lockin_inputs(hfi)
-        clock_sources = synchronize_connected_clocks(
-            {
-                "dg_comp": dg_comp,
-                "dg_trigger": dg_trigger,
-                "dg_sweep": dg_sweep,
-                "dg_mod": dg_mod,
-                "dg_temp": dg_temp,
-                "dg_laser": dg_laser,
-                "hf2": hfi,
-            },
-            mapping,
-            {
-                "dg_comp": "X_magnetic_field",
-                "dg_trigger": "X_magnetic_field_AM",
-                "dg_sweep": "Z_magnetic_field",
-                "dg_mod": "Pump_modulation",
-                "dg_temp": "Temp_Switch",
-                "dg_laser": "Pump_laser_power",
-                "hf2": "lockin_r",
-            },
-        )
-        connected = True
-
-        def set_temp(enabled: bool) -> float:
-            return set_temperature_switch(
-                dg_temp,
-                enabled,
-                channel=int(dg_temp_cfg["channel"]),
-                on_voltage=params.temp_switch,
-                off_voltage=0.0,
-            )
-
-        # 所有初始输出设置前均执行物理量安全校验。
-        validate_safety_limit("Pump_laser_power", params.pump_laser_power, limits)
-        validate_safety_limit("Probe_laser_power", params.probe_laser_power, limits)
-        dg_laser.setup_dc(params.pump_laser_power, channel=int(laser_cfg["channel"]))
-        dg_laser.setup_dc(params.probe_laser_power, channel=int(probe_cfg["channel"]))
-
-        validate_safety_limit("main_magnetic_field", params.main_magnetic_field, limits)
-        gs.set_current(params.main_magnetic_field / 1000.0)
-        gs.set_output(True)
-
-        validate_safety_limit("Temp_Switch", params.temp_switch, limits)
-        set_temp(True)
-        temperature_status = configure_temperature_control(
-            tec,
-            params.temperature,
-            channel=1,
-        )
-        run_dir.update_config(
-            temperature_control=temperature_status.to_dict(),
-            initial_temperature_c=temperature_status.actual_temperature_c,
-        )
-
-        for key, device, channel in (
-            ("X_magnetic_field_AM", dg_trigger, 1),
-            ("Y_magnetic_field_AM", dg_trigger, 2),
-            ("Z_magnetic_field", dg_sweep, 1),
-            ("Time_sequence_2", dg_sweep, 2),
-        ):
-            validate_safety_limit(key, 0.0, limits)
-            device.setup_dc(0.0, channel=channel)
-            device.set_output(False, channel=channel)
-
-        run_directory = create_run_directory(
-            EXPERIMENT_TYPE,
-            params.run_tag,
-            params.to_external(),
-            schema_version=params.schema_version,
-            project_root=project_root,
-        )
-        raw_matrix_path = run_directory.raw / "demod3_r_mean_matrix.npz"
-        r_mean_matrix = np.full(
-            (params.control_freq_points, params.demod3_freq_points),
-            np.nan,
-            dtype=float,
-        )
-        _save_raw_matrix(raw_matrix_path, r_mean_matrix, control_axis, envelope_axis, demod3_axis)
-        run_directory.update_config(
-            experiment_id=EXPERIMENT_ID,
-            execution_mode="typed_workflow",
-            purpose=PURPOSE,
-            clock_sources=clock_sources,
-            xy_aw_output={
-                "mode": "auto_per_envelope",
-                "vpp_formula": "2 * |V_env| per scan point",
-                "offset_V": 0.0,
-                "amplitude_floor_vpp": AW_AMPLITUDE_FLOOR_VPP,
-                "zero_envelope_policy": "upload zero waveform at floor amplitude, keep outputs OFF",
-            },
-            scan={
-                "control_frequency_Hz": control_axis.tolist(),
-                "xy_envelope_voltage_V": envelope_axis.tolist(),
-                "demod3_frequency_Hz": demod3_axis.tolist(),
-                "estimated_duration_s": estimated_s,
-                "temperature_batch_points": params.temp_recovery_batch_points,
-                "temperature_recovery_time_s": params.temp_recovery_time_s,
-            },
-            wiring={
-                "physical_loopback": "Demod0 Y -> AuxOut2 -> Signal Input 2 DC -> Demod3",
-                "signal": "Demod3 sample.r continuous mean",
-            },
-            data_files=["raw/demod3_r_mean_matrix.npz"],
-        )
-
-        # Pump 调制与门控。
-        validate_safety_limit("Pump_modulation", params.pump_mod_amplitude, limits)
-        dg_mod.setup_sine(100e6, params.pump_mod_amplitude, offset=0.0, phase=0.0, channel=1)
-        gate_low = params.rf_gate_offset - params.rf_gate_amplitude / 2.0
-        gate_high = params.rf_gate_offset + params.rf_gate_amplitude / 2.0
-        validate_safety_limit("Time_sequence", gate_low, limits)
-        validate_safety_limit("Time_sequence", gate_high, limits)
-        pulse_width = (params.pump_mod_duty / 100.0) / params.pump_mod_freq
-        dg_mod.setup_pulse(
-            params.pump_mod_freq,
-            params.rf_gate_amplitude,
-            offset=params.rf_gate_offset,
-            width=pulse_width,
-            channel=2,
-        )
-        dg_mod.set_sync_state(False, channel=2)
-
-        # 两路固定相位外触发保持连续运行。
-        trigger_low = params.xy_trigger_offset - params.xy_trigger_amplitude / 2.0
-        trigger_high = params.xy_trigger_offset + params.xy_trigger_amplitude / 2.0
-        for key in ("X_magnetic_field_AM", "Y_magnetic_field_AM"):
-            validate_safety_limit(key, trigger_low, limits)
-            validate_safety_limit(key, trigger_high, limits)
-        for channel in (1, 2):
-            dg_trigger.set_burst_state(False, channel=channel)
-            dg_trigger.set_mod_state(False, channel=channel)
-            dg_trigger.setup_square(
-                params.xy_trigger_freq,
-                params.xy_trigger_amplitude,
-                offset=params.xy_trigger_offset,
-                dcycle=params.xy_trigger_duty,
-                phase=params.xy_trigger_phase % 360.0,
-                channel=channel,
-            )
-        for channel in (1, 2):
-            dg_trigger.phase_init(channel=channel)
-
-        # Demod0 配置与自动校相。
-        for channel in (1, 2):
-            dg_comp.set_output(False, channel=channel)
-        demod.configure_signal_input(
-            hfi,
-            SignalInputConfig(
-                input_index=0,
-                range=params.demod0_signal_range_v,
-                diff=False,
-            ),
-        )
-        demod.configure_oscillator(
-            hfi,
-            OscillatorConfig(osc_index=params.demod0_osc_idx, frequency=params.pump_mod_freq),
-        )
-        actual_rate_d0 = demod.configure_demodulator(
-            hfi,
-            DemodulatorConfig(
-                demod_index=params.demod0_idx,
-                enable=True,
-                rate=params.demod0_rate_sa_s,
-                input_channel=0,
-                osc_select=params.demod0_osc_idx,
-                harmonic=1,
-                time_constant=params.demod0_tc_calib_s,
-                order=params.demod0_order,
-                phase=0.0,
-            ),
-         for_acquisition=False)
-        with acquisition_window(lambda enabled: set_temp(enabled), _interruptible_sleep, params.system_settle_s):
-            _interruptible_sleep(params.system_settle_s)
-            demod0_phase = calibrate_demod_phase(
-                hfi,
-                PhaseCalibrationConfig(
-                    demod_idx=params.demod0_idx,
-                    tolerance_deg=1.0,
-                    max_attempts=5,
-                    settle_time=params.system_settle_s,
-                ),
-            )
-
-        # 物理回环：Demod0 Y -> AuxOut2 -> Signal Input 2 -> Demod3。
-        demod.configure_signal_input(
-            hfi,
-            SignalInputConfig(
-                input_index=params.sigin2_index,
-                range=params.sigin2_range_v,
-                diff=False,
-            ),
-        )
-        auxout_path = hfi.aux_out_path(params.auxout_index)
-        output_select = params.auxout_source_demod_idx * 4 + params.auxout_source_select
-        hfi.set_int(f"{auxout_path}/outputselect", output_select)
-        hfi.set_double(f"{auxout_path}/scale", params.auxout_scale)
-        hfi.set_double(f"{auxout_path}/offset", params.auxout_offset_v)
-        hfi.sync()
-
-        def upload_direct_aw(envelope_v: float, phase_deg: float, outputs_on: bool = True) -> float:
-            """重传自动满量程 AW；零包络点保持输出 OFF。返回本次实际 Vpp。"""
-            x_values, y_values, vpp = _build_waveforms(params, envelope_v, phase_deg)
-            nonzero = abs(float(envelope_v)) > 0.0
-            for channel, values in ((1, x_values), (2, y_values)):
-                dg_comp.set_output(False, channel=channel)
-                upload_arbitrary(
-                    dg_comp,
-                    ArbitraryWaveformSpec(
-                        values=values,
-                        frequency=params.xy_aw_repeat_freq_hz,
-                        amplitude=vpp,
-                        offset=0.0,
-                        phase=0.0,
-                        channel=channel,
-                        output=False,
-                    ),
-                )
-            for channel in (1, 2):
-                dg_comp.set_burst_state(True, channel=channel)
-                dg_comp.set_burst_mode("INFinity", channel=channel)
-                dg_comp.set_burst_trigger_source("EXTernal", channel=channel)
-                dg_comp.set_burst_trigger_slope("POSitive", channel=channel)
-                dg_comp.set_burst_phase(0.0, channel=channel)
-                dg_comp.set_output(bool(outputs_on) and nonzero, channel=channel)
-            return vpp
-
-        # DirectAW 自动校相；没有额外相位扫描。
-        def apply_phase_and_measure(phase_deg: float):
-            upload_direct_aw(params.xy_calib_envelope_v, phase_deg, outputs_on=True)
-            with acquisition_window(lambda enabled: set_temp(enabled), _interruptible_sleep, params.system_settle_s):
-                sample = demod.read_demod_sample(hfi, demod_idx=params.demod0_idx)
-            _interruptible_sleep(1.0)
-            return sample
-
-        direct_aw_phase = calibrate_direct_aw_phase(
-            params.xy_ctrl_phase,
-            apply_phase_and_measure,
-            DirectAWPhaseCalibrationConfig(
-                tolerance_deg=params.xy_phase_cal_tol_deg,
-                max_measurements=params.xy_phase_cal_max_iter,
-                minimum_r_v=params.xy_phase_cal_min_r_v,
-                minimum_r_ratio=params.xy_phase_cal_min_r_ratio,
-            ),
-            cancellation_check=check_cancelled,
-        )
-        final_xy_phase_deg = direct_aw_phase.final_phase_deg
-        set_temp(True)
-
-        # Demod3 初始配置与硬件实际值快照。
-        initial_frequency = float(demod3_axis[0])
-        demod.configure_oscillator(
-            hfi,
-            OscillatorConfig(osc_index=params.demod3_osc_idx, frequency=initial_frequency),
-        )
-        initial_tc = max(params.demod3_tc_min_s, params.demod3_tc_period_fraction / initial_frequency)
-        actual_rate_d3 = demod.configure_demodulator(
-            hfi,
-            DemodulatorConfig(
-                demod_index=params.demod3_idx,
-                enable=True,
-                rate=params.demod3_rate_sa_s,
-                input_channel=params.demod3_adc_select,
-                osc_select=params.demod3_osc_idx,
-                harmonic=1,
-                time_constant=initial_tc,
-                order=params.demod3_order,
-                phase=0.0,
-            ),
-         for_acquisition=True)
-        demod3_path = hfi.demod_path(params.demod3_idx)
-        demod3_r_path = f"{demod3_path}/sample.r"
-        r_config = DAQConfig(device=hf2_cfg["device_id"], trigger_type=0,
-            duration=params.demod3_acquisition_duration_s,
-            grid_cols=max(1, int(round(actual_rate_d3 * params.demod3_acquisition_duration_s))),
-            grid_rows=1, grid_mode=2, signal_paths=["sample.r"])
-        run_directory.update_config(
-            actual_rates={
-                "demod0_calibration_Sa_s": float(actual_rate_d0),
-                "demod3_Sa_s": float(actual_rate_d3),
-            },
-            hf2_snapshot={
-                "demod0_phase_shift_deg": float(demod0_phase.phase_shift_deg),
-                "direct_aw_phase_deg": float(final_xy_phase_deg),
-                "direct_aw_phase_converged": bool(direct_aw_phase.converged),
-                "demod3_rate_Sa_s": float(hfi.get_double(f"{demod3_path}/rate")),
-                "demod3_time_constant_s": float(hfi.get_double(f"{demod3_path}/timeconstant")),
-                "demod3_adcselect": int(hfi.get_int(f"{demod3_path}/adcselect")),
-                "auxout_outputselect": int(hfi.get_int(f"{auxout_path}/outputselect")),
-                "auxout_scale": float(hfi.get_double(f"{auxout_path}/scale")),
-                "auxout_offset_V": float(hfi.get_double(f"{auxout_path}/offset")),
-            },
-        )
-
-        total_points = params.control_freq_points * params.demod3_freq_points
-        progress = tqdm(total=total_points, desc="Demod3 R scan", unit="pt")
-        started = time.monotonic()
+    def finish(self, failure=None):
+        if self.closed:
+            return
+        errors = list(disconnect_device_mapping({"TEC": self.devices.get("tec")})) if self.round_sealed else self._shutdown()
+        self.closed, self.current_step = True, None
+        self.revision += 1
+        self.states[FINISH_ID] = dict(status="failed" if errors else "completed", error="；".join(errors))
+        if not self.round_sealed:
+            self.state.update(completion_status="cancelled" if isinstance(failure, (WorkflowCancelled, KeyboardInterrupt)) else "failed",
+                failure_reason=str(failure) if failure else self.state.get("failure_reason", "本轮未完整采集"))
+        if errors:
+            self.state["safety_shutdown"] = dict(self.state.get("safety_shutdown") or {}, completed=False, errors=errors)
         try:
-            for control_idx, (control_frequency, envelope_v) in enumerate(
-                zip(control_axis, envelope_axis, strict=True)
-            ):
-                check_cancelled()
-                upload_direct_aw(float(envelope_v), final_xy_phase_deg, outputs_on=True)
+            self.save()
+            self.publish("会话已结束")
+            report_runtime_progress("finished", "采集会话已结束", 100, data={"estimated_remaining_seconds": None})
+        except Exception:
+            if failure is None and not errors:
+                raise
+        if errors and failure is None:
+            raise RuntimeError("安全收尾失败：" + "；".join(errors))
 
-                for batch in iter_frequency_batches(
-                    params.demod3_freq_points,
-                    params.temp_recovery_batch_points,
-                ):
-                    with DeferredAcquisitionWrites(restore=lambda: set_temp(True)) as pending:
-                        try:
-                            for demod_idx in batch:
-                                check_cancelled()
-                                frequency = float(demod3_axis[demod_idx])
-                                demod.configure_oscillator(
-                                    hfi,
-                                    OscillatorConfig(
-                                        osc_index=params.demod3_osc_idx,
-                                        frequency=frequency,
-                                    ),
-                                )
-                                tc_s = max(
-                                    params.demod3_tc_min_s,
-                                    params.demod3_tc_period_fraction / frequency,
-                                )
-                                actual_rate_d3 = demod.configure_demodulator(
-                                    hfi,
-                                    DemodulatorConfig(
-                                        demod_index=params.demod3_idx,
-                                        enable=True,
-                                        rate=params.demod3_rate_sa_s,
-                                        input_channel=params.demod3_adc_select,
-                                        osc_select=params.demod3_osc_idx,
-                                        harmonic=1,
-                                        time_constant=tc_s,
-                                        order=params.demod3_order,
-                                        phase=0.0,
-                                    ),
-                                 for_acquisition=True)
-                                if demod_idx == batch[0]:
-                                    set_temp(False)
-                                _interruptible_sleep(params.system_settle_s)
-                                try:
-                                    r_mean, acquisition_info = acquire_demod_r_mean(
-                                        r_collector,
-                                        demod3_r_path,
-                                        params.demod3_acquisition_duration_s, instr=hfi, config=r_config,
-                                        demod_idx=params.demod3_idx, requested_rate=params.demod3_rate_sa_s,
-                                        actual_rate=actual_rate_d3, cancellation_check=check_cancelled,
-                                        return_metadata=True,
-                                    )
-                                    pending.add(run_directory.update_config, demod3_acquisition=acquisition_info)
-                                except Exception as exc:
-                                    tqdm.write(
-                                        f"控制 {control_frequency:.1f} Hz / Demod3 {frequency:.1f} Hz 采集失败: {exc}"
-                                    )
-                                    r_mean = float("nan")
-                                if not np.isfinite(r_mean):
-                                    tqdm.write(
-                                        f"控制 {control_frequency:.1f} Hz / Demod3 {frequency:.1f} Hz 未得到有效 R"
-                                    )
-                                r_mean_matrix[control_idx, demod_idx] = r_mean
-                                progress.set_postfix_str(
-                                    f"Ctrl={control_frequency/1000:.2f}kHz D3={frequency/1000:.2f}kHz"
-                                )
-                                progress.update(1)
-                        finally:
-                            pending.add(_save_raw_matrix, raw_matrix_path, r_mean_matrix,
-                                        control_axis, envelope_axis, demod3_axis)
-                            set_temp(True)
-                            time.sleep(params.temp_recovery_time_s)
-        finally:
-            progress.close()
-            r_collector.close()
-            set_temp(True)
 
-        elapsed_s = time.monotonic() - started
-        run_directory.update_config(
-            elapsed_scan_s=float(elapsed_s),
-            actual_rates={
-                "demod0_calibration_Sa_s": float(actual_rate_d0),
-                "demod3_Sa_s": float(actual_rate_d3),
-            },
-            completed_points=int(np.count_nonzero(np.isfinite(r_mean_matrix))),
-        )
-        print(f"扫描完成，用时 {elapsed_s / 3600:.2f} h，数据保存于 {run_directory.root}")
-        return run_directory.root
-
-    except Exception:
-        if not connected:
-            session.cleanup_connection_failure()
+def run(params: NoiseSpectrumXYDemod3RParams, *, project_root=None) -> Path:
+    ctx = Workflow(params, project_root=project_root)
+    failure = None
+    try:
+        ctx.execute([s.id for s in ACQUISITION if s.id != FINISH_ID])
+        return ctx.directory.root
+    except BaseException as exc:
+        failure = exc
         raise
     finally:
-        if connected:
-            shutdown_report = run_safety_shutdown(
-                dg_channels=(
-                    DGChannelShutdown(locals().get("dg_comp"), 1, "X_magnetic_field", "X DirectAW"),
-                    DGChannelShutdown(locals().get("dg_comp"), 2, "Y_magnetic_field", "Y DirectAW"),
-                    DGChannelShutdown(locals().get("dg_trigger"), 1, "X_magnetic_field_AM", "X 触发"),
-                    DGChannelShutdown(locals().get("dg_trigger"), 2, "Y_magnetic_field_AM", "Y 触发"),
-                    DGChannelShutdown(locals().get("dg_sweep"), 1, "Z_magnetic_field", "Z 场"),
-                    DGChannelShutdown(locals().get("dg_sweep"), 2, "Time_sequence_2", "时序通道 2"),
-                    DGChannelShutdown(locals().get("dg_mod"), 2, "Time_sequence", "Pump 门控"),
-                ),
-                temperature_switch=TemperatureSwitchRestore(
-                    locals().get("dg_temp"),
-                    int(locals().get("dg_temp_cfg", {}).get("channel", 2)),
-                ),
-                disconnect_targets=(DisconnectTarget("TEC", locals().get("tec")),),
-                preserved_outputs=STANDARD_PRESERVED_OUTPUTS,
-            )
-            if run_directory is not None:
-                run_directory.update_config(safety_shutdown=shutdown_report.to_dict())
-            if shutdown_report.errors:
-                print("安全收尾警告: " + "；".join(shutdown_report.errors))
+        ctx.finish(failure)
+
+
+def main():
+    run(load_runtime_params(NoiseSpectrumXYDemod3RParams))
+    return 0
 
 
 if __name__ == "__main__":
-    run()
+    raise SystemExit(main())

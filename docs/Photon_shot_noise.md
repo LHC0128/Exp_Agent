@@ -1,7 +1,7 @@
 ---
-title: 光散粒噪声标定 (PSD 方法)
+title: 光散粒噪声标定 (ASD 底噪法)
 type: experiment_type
-description: 改变主磁场将原子自旋噪声移出 LIA 探测带宽，扫描探测光功率，采用 Welch PSD + 工频陷波 + 积分得噪声功率，通过 Var(X) vs P_probe 线性拟合提取散粒噪声转换系数 α 和电子噪声底噪 β。支持 Bell-Bloom CW 常开探测和频闪 QND 两种模式。Bell-Bloom 模式下可进一步通过 PSD 洛伦兹拟合分离光噪声与原子噪声分量 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
+description: 关闭 Pump 输出并偏置主场，扫描 Probe 控制电压，采集同一主电压输入的解调 X/Y 时序。运行/历史双 Tab 提供可勾选的采集与独立分析流程图；每条重复恢复温控后保存。离线沿用 Welch PSD、平坦段 ASD 中位数及其重复均值平方的加权线性拟合，导出原四组 PNG/PDF；当前自动化不执行工频陷波积分或热态洛伦兹分离。锁相输入保持高阻与 DC，频谱采用最终实际率。
 keywords: [shot noise, calibration, probe power, PSD, welch, notch filter, lock-in, linear fit, bell-bloom, cw-probe, lorentzian fit, S_light decomposition]
 version: 4
 geometry:
@@ -27,7 +27,8 @@ required_devices:
     channels: [2]
   - instrument: lockin_amplifier    # 锁相放大器（解调时序采集 X/Y 时间序列）
     role: detection
-    demod_channels: 2
+    demod_channels: 1
+    signals: [sample.x, sample.y]
     has_daq: true
   - instrument: tec_controller      # 温控器（TEC103）
 
@@ -42,9 +43,9 @@ mapping_keys:
   Pump_laser_power:
     role: fixed
     description: "Pump 光功率，关闭（设为 0 或最小值），确保无极化"
-  lockin_xy:
+  lockin_r:
     role: detection
-    description: "锁相放大器 解调时序采集解调后的 X、Y 时间序列。Welch PSD + 陷波积分得噪声功率，或直接洛伦兹拟合提取光噪声本底。X 为主通道"
+    description: "同一主电压输入 0 的正交解调 X/Y 时序；Welch PSD→平坦段 ASD 中位数→均值平方拟合，X 为主通道"
   temperature:
     role: fixed
     description: "气室温度（TEC103 控制）"
@@ -72,14 +73,14 @@ learned_notes:
   - S_light 的频域确定：取 S_thermal(f) 在 f > 5f_c 的高频平坦段平均值；当散粒噪声高出电噪声 6~10 dB 时，S_light ≈ S_shot，可近似互换
   - 若 DC 附近 (<10 Hz) 存在显著技术 1/f 噪声污染洛伦兹峰，可仅用 f > f_min 数据段拟合（洛伦兹尾部仍能约束 f_c 和 A）
 experiment_id: photon-shot-noise
-parameters_source: experiments/Photon_shot_noise.py
+defaults_file: params/experiments/photon-shot-noise.yaml
 ---
 
 # 光散粒噪声标定
 
 ## 采集时序与系统稳定
 
-实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+实际 Probe、主场和锁相配置完成后，每条重复独立将 `Temp_Switch` 设为 **0 V DC + output ON**，等待唯一的 `SYSTEM_SETTLE_S`，将 X/Y 采集至内存，恢复为 **5 V DC + output ON**，再经过 `TEMP_RECOVERY_TIME_S` 恢复等待并保存。本实验没有注入 OFF/ON 配对，也没有自动校相。保留每点多条重复与原功率轴；组内仅缓存当前 Probe 点，逐条原子更新，后续取消或失败不丢已读重复。初始化目录及初始配置提前保存；关闭温控窗口内不写文件。
 
 TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](acquisition_timing.md)。
 
@@ -90,7 +91,7 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](lockin_amplifier.md#解调时序的模块选择)。
 
-当前参数来源：[采集脚本参数区](../experiments/Photon_shot_noise.py)。GUI 保存目标为 `params/experiments/photon-shot-noise.yaml`；该文件尚未生成时按脚本参数回退，本文不复制默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
+当前参数由强类型模型显式声明，GUI「保存参数与布局」实际写入[默认参数文件](../params/experiments/photon-shot-noise.yaml)。保留原 `PROBE_POWER_*`、`HF2_*`、`FIXED_PARAMS.*`、`PSD_NPERSEG`、`RUN_TAG` 等外部键；参数 schema 为 v2，旧 `PROBE_SETTLE_TIME` 迁移到 `SYSTEM_SETTLE_S`，显式新键优先。原脚本内固定恢复等待现为 `TEMP_RECOVERY_TIME_S`；独立分析允许覆盖 `PSD_NPERSEG`、`FLAT_FREQ_FRACTION` 与 `FIT_START_IDX`。单次参数以对应运行目录的 `experiment_config.yaml` 为准，不用当前默认值替代历史快照。
 
 锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，GUI 不再提供开启选项。
 
@@ -161,10 +162,53 @@ $$
 
 光散粒噪声标定在此框架中的作用是**确定 $S_{\text{light}}$ 和 $S_{\text{shot}}$ 的绝对值**（通过功率扫描 + 线性拟合），为后续 PNL 和 $\tilde{\kappa}^2$ 标定提供噪声基准。
 
-## 实验步骤
+## 模块化执行与交互流程图
+
+采集薄入口为 [Photon_shot_noise.py](../experiments/Photon_shot_noise.py)。实现位于
+[`lab_workflows/experiment_modules/photon_shot_noise/`](../lab_workflows/experiment_modules/photon_shot_noise/)：
+`preparation.py` 管预检、连接、时钟及锁相准备，`acquisition.py` 管扫描和故障抢救，
+`analysis_steps.py` 管原科学计算，`analysis_plotting.py` 管科研绘图，
+`workflow.py` / `analysis.py` 仅编排；完整与分步运行共用同一业务实现。
+
+| 节点 | 输入与前置 | 实际操作、产物与门槛 |
+|---|---|---|
+| A01 预检 | 无 | 参数、映射冲突、安全限值、锁相频率与 DAQ/Scope 能力检查；不连接仪器 |
+| A02 连接与输入初始化 | A01 | 按 resource 复用、按映射路由；主输入 DC/高阻，TEC 失败告警跳过 |
+| A03 时钟同步 | A02 | 设备库参考时钟全部覆盖并严格回读，失败停止 |
+| A04 固定输出 | A03；主场、Pump、Probe 起点、温控协议 | Pump 输出 OFF，Probe DC + ON，GS200 偏置主场，温控恢复 ON |
+| A05 TEC 目标 | A04；UI 目标温度 | 仅设温，不启停或判稳，实际温度未知记 null |
+| A06 锁相准备 | A05；HF2 参数、采集时长 | 实际下发输入量程与振荡器频率，配置单解调器 X/Y；保存量程、时间常数的请求值与设备取整实际值，后续回读与本轮实际配置一致才允许扫描 |
+| A07 Probe 扫描与本轮收尾 | A06；扫描轴、重复、等待、标签 | 每条重复独立门控，恢复后原子保存；保留坏记录 NaN，取消不吞掉；收尾失败不封存完成 |
+| A08 安全结束 | 无前置 | 可随时结束空闲会话；执行中使用取消，结束前完成安全恢复 |
+| B01 PSD/ASD | 已结束的明确目录；Welch、平坦段比例 | 先核对身份、raw、索引、实际率与网格，再归档；输出 `noise_statistics.npz` |
+| B02 加权拟合 | B01；拟合起始索引 | 对 ASD 重复均值的平方拟合；X/Y 各至少 3 个有效正权重点；保存 `fit_summary.json`，不合格阻断 B03 |
+| B03 导出 | B02 | 原四组 PNG/PDF 与 `analysis.yaml`；不改变采集文件 |
+
+GUI 路由为 `/experiments/photon-shot-noise`，主 Tab 只有「运行／历史」。
+运行页顶部集中保存参数与布局、派生预览、预检、完整运行及任务状态；采集／分析为桌面两列。
+节点参数支持基础／高级分类；采集时长和请求率在准备与扫描节点共享，目标温度仅在设温节点编辑。
+修改后显示草稿与预计失效范围，应用参数不会自动写仪器，必须显式勾选并重跑；
+缺前置不自动补选。A07 完成本轮收尾后再次扫描须重新执行 A06，并新建运行目录，旧 raw 不覆盖。
+等待下一模块时仍保持连接、输出并占用全局硬件锁；刷新恢复存活会话，后台重启不恢复硬件。
+可下载[可编辑流程图原图](../lab_workflows/experiment_modules/photon_shot_noise/workflow.excalidraw)。
+
+分析列默认编辑下一次实验的自动分析设置；选中具体运行目录后，三个分析覆盖值按目录独立保留草稿，
+切换对象或 Tab 不混入下一次实验。保存默认值只保存下一次实验参数与统一布局；
+历史填回不自动保存或运行。分步分析与「重新分析」共用目录锁；历史浏览和分析均不改原采集配置。
+阶段以配置、raw 内容和产物 SHA 指纹判断有效性，重算仅归档本阶段与后继，不移动仍使用的 B01 输入。
+
+### 收尾与故障边界
+
+正常、取消、异常、stdin EOF 和后台关闭均先恢复温控，再释放硬件锁；只断开 TEC，
+保持已执行的主场、Probe、Pump OFF 及锁相设置，不把未重跑的参数草稿用于收尾。
+时钟回读失败在必要恢复后释放已连接通信资源。温控恢复或断开失败不能报告安全成功。
+每条读取成功后即注册延迟保存；恢复失败仍尽力抢救，写盘／替换失败保留旧完整文件并另存
+`waveforms_P*_rescue_*.npz`，同时保留原异常，不继续扫描。
+
+### 物理操作背景（不是额外自动执行步骤）
 
 1. 关闭泵浦光和再泵浦光
-2. 将主磁场 $B_x$ 大幅改变（使 $\Omega_L$ 偏离锁相参考频率几十 kHz 以上），原子自旋噪声移出 LIA 探测带宽
+2. 将主磁场（本仓库的 Z 主场线圈）大幅改变（使 $\Omega_L$ 偏离锁相参考频率几十 kHz 以上），原子自旋噪声移出 LIA 探测带宽
 3. 保持探测光正常开启，探测模式（Bell-Bloom CW 常开或频闪 QND 脉冲）、失谐与正式实验一致
 4. 设置一系列探测光功率 $P_{probe}$ 梯度（如 0, 50, 100, 200, 400, 600 μW 等）
 5. 每个功率点采集 LIA 的 X、Y 双路输出时间序列（1~10 s），计算方差 $\mathrm{Var}(X)$
@@ -176,7 +220,7 @@ $$
 |------|------|
 | 泵浦光 | 关闭 |
 | 探测光 | **CW 常开**，保持与正式实验相同的功率和失谐 |
-| 主磁场 B_x | **大幅改变**，使 Ω_L 偏离 LIA 参考频率几十 kHz，原子噪声移出带宽 |
+| 主磁场（Z） | **大幅改变**，使 Ω_L 偏离 LIA 参考频率几十 kHz，原子噪声移出带宽 |
 | 其他 | 等待热平衡（≥ 5×T₁）后采集 LIA X(t) 和 Y(t) 时间序列 |
 
 > **Bell-Bloom CW 常开 vs 频闪 QND**：散粒噪声标定中，探测模式必须与正式实验一致。Bell-Bloom 磁力仪使用连续 CW 探测（无频闪调制），频闪 QND 使用脉冲探测（D≈0.1）。两种模式在此步骤的操作流程完全一致——唯一区别是探测光的调制方式。热态下（Pump 关闭）⟨J⟩=0，无反作用噪声，因此两种模式的标定结果可直接沿用。详见 `主要参数实验标定.md` 3.4.1c 节。
@@ -209,7 +253,26 @@ LIA 解调后信号已在 DC 附近（Larmor 分量被移至零频），频谱�
 
 结果图统一通过 `lab_workflows.plotting` 的 `paper` 配置导出同名 PNG（300 dpi）和 PDF；原 PNG 文件名继续用于历史预览。默认固定画布，英文标注，图幅和导出约定见[科研绘图规范](plotting_style.md)。重新分析生成新图，原始数据和数值结果字段保持原有契约。
 
-当前离线入口为 `experiments/Photon_shot_noise_plot.py`，读取选定运行目录的 `raw/waveforms_P*.npz` 和采集摘要。脚本逐条波形计算 Welch PSD，对 `0 < f <= FLAT_FREQ_LIMIT` 的 ASD 取中位数，再对重复记录求均值；将该均值的平方对探测控制电压进行加权线性拟合。它并未执行下文介绍的 PSD 积分法或热态洛伦兹分离；这些章节用于说明可选物理分析方法。
+当前离线入口为 `experiments/Photon_shot_noise_plot.py`，**必须显式指定运行目录**，不再自动选择 latest：
+
+```powershell
+agent_exp_env\Scripts\python.exe experiments\Photon_shot_noise_plot.py data\Photon_shot_noise\<run_id>
+```
+
+读取该目录的 `raw/scan_meta.npz` 与 `raw/waveforms_P*.npz`。逐条波形沿用 Welch
+`nperseg=min(PSD_NPERSEG, 样本数//2)`、density 和常数去趋势，对
+`0 < f <= 实际率 × FLAT_FREQ_FRACTION` 的 ASD 取中位数，再对重复记录求均值；
+将该均值的平方对 Probe 控制电压作加权线性拟合，权重为 `2 × ASD均值 × 重复SD`。
+原 `shot_noise_x`、`shot_noise_y`、`asd_vs_rms`、`psd_white_noise_check` 图名及
+`analysis.yaml` 原科学字段保留。当前**不执行**下文的 PSD 陷波积分或热态洛伦兹分离，
+这些章节仅介绍可选物理方法。
+
+新原始格式独立为 raw v1，沿用原文件名与 X/Y 矩阵，保存逐条实际率、时间轴和采集元数据，
+摘要增加已保存重复计数。兼容已核实的无 raw 标记 schema v1/v2 GUI 快照及旧手工
+`scan_params/acquisition_params/fixed_params/hf2_demod/psd_params` 格式；
+旧波形缺逐条速率时回退文件 actual_rate，再回退扫描摘要。未知身份／版本、缺失文件、
+索引、时长或网格不一致在归档旧结果前拒绝。非有限记录保留 NaN 和有效掩码，不插值；
+零／无效拟合权重剔除并记录，X/Y 任一路不足三个有效点则保存质量诊断并阻断出图。
 
 图中 `Mean ± SD` 对应重复记录的 `np.nanstd(..., ddof=0)`，不是 SEM 或置信区间；拟合权重沿用该 SD 经平方变换的一阶传播。ASD 单位为 V/√Hz，PSD 为 V²/Hz，时域标准差标为 AC RMS。横轴是 Probe control voltage (V)，未经独立标定不能直接视为光功率。图例保留拟合名称，完整拟合参数及误差仍在 `analysis.yaml`。
 

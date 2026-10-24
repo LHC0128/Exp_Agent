@@ -132,8 +132,9 @@ with TECInstrument("COM13") as tec:
   `temperature_control.control_source: external_software`；
 - 操作者必须在外部温控软件中确认目标温度和温控状态。
 
-`Temperature_Switch_PID_Cycle_Test.py` 是 TEC/PID 专项实验，仍要求独占连接
-TEC 串口；没有 TEC 连接时不会降级运行。
+`temperature-switch-pid-cycle`（温控开关 PID 周期测试）已代码归档，GUI 仅保留卡片，不提供运行、参数或历史入口，旧 API 返回 410。采集脚本与离线分析脚本位于 [`old/experiments/experiments/`](../old/experiments/README.md)，参数和历史数据原位保留。
+
+其历史方案要求独占连接 TEC 串口，没有 TEC 连接时不会降级运行；专用 TEC 启停、初始判稳、可选 PID 写入、周期时序与安全收尾保持原样，不套用普通气室采集协议。归档脚本仍包含仪器操作，不可作为无硬件检查执行。
 
 ## 命令格式
 

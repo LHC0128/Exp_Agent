@@ -267,6 +267,9 @@ export function ParameterForm({
             <ArrowLeftRight size={12} aria-hidden="true" />移至{targetLabel}
           </button>
           {renderInput(field)}
+          {field.default === null && ["number", "integer"].includes(field.type) && <button type="button"
+            aria-label={`${field.label} 恢复自动`} disabled={disabled || field.read_only || values[field.name] === null}
+            onClick={() => onChange(field, null)}>恢复自动</button>}
           {field.description && <small>{field.description}</small>}
           {renderParameterNote?.(field)}
           {field === controlField && compensationField && <>

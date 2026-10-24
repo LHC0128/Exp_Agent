@@ -25,11 +25,12 @@ DATA_TYPE = preparation.DATA_TYPE
 class Workflow:
     """保留连接与有效前置；每轮原始数据和采集快照独立保存。"""
 
-    def __init__(self, params, *, project_root=None, session_id=None):
+    def __init__(self, params, *, project_root=None, session_id=None, progress_callback=None):
         self.root = Path(project_root).resolve() if project_root else find_project_root()
         self.params, self.mapping = preparation.preflight(params, self.root)
         self.config_revision = self._configuration_revision()
         self.session_id = session_id or uuid4().hex
+        self.progress_callback = progress_callback
         self.revision = 0
         self.states = initial_states(ACQUISITION)
         self.device_session = DeviceSession()
@@ -63,8 +64,11 @@ class Workflow:
         write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
         if self.directory and not self.sealed:
             write_state(self.directory.root / "acquisition_state.json", snapshot)
-        report_runtime_progress(self.current_step or "waiting", message, estimated_remaining_seconds=None,
-                                data={"workflow_session": snapshot})
+        if self.progress_callback is not None:
+            self.progress_callback(snapshot, message)
+        else:
+            report_runtime_progress(self.current_step or "waiting", message, estimated_remaining_seconds=None,
+                                    data={"workflow_session": snapshot})
 
     def save(self):
         if self.directory and not self.sealed:

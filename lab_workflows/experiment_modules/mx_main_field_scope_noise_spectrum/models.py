@@ -106,6 +106,8 @@ class MxMainFieldScopeNoiseSpectrumParams(ExperimentParams):
         ) / self.main_field_calibration_hz_per_ma
 
     def validate_model(self) -> list[str]:
+        if self.control_frequency_points < 10:
+            return ["CONTROL_FREQUENCY_POINTS 必须至少为 10"]
         errors: list[str] = []
         if not self.run_tag.strip():
             errors.append("RUN_TAG 不能为空")

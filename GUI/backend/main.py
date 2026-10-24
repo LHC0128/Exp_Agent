@@ -71,6 +71,7 @@ from lab_workflows.experiment_modules.rf_sensitivity_aw_known_noise import run_f
 from lab_workflows.experiment_modules.rf_control_scale_sensitivity import run_format as rf_control_scale_format
 from lab_workflows.experiment_modules.static_sensitivity.analysis import analysis_block_reason as static_analysis_block_reason
 from lab_workflows.experiment_modules.static_sensitivity.run_format import format_block_reason as static_format_block_reason
+from lab_workflows.experiment_modules.static_sensitivity_optimize_local import run_format as static_local_format
 from lab_workflows.experiment_modules.noise_spectrum_xy import run_format as xy_format
 from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.analysis import analysis_block_reason as known_noise_analysis_block_reason
 from lab_workflows.experiment_modules.scope_capture import run_format as scope_capture_format
@@ -86,9 +87,23 @@ from lab_workflows.experiment_modules.mx_z_optimal_control_xy_leakage_response i
 from lab_workflows.experiment_modules.mx_z_optimal_control_xy_rf_phase_response import run_format as mx_z_optimal_xy_phase_format
 from lab_workflows.experiment_modules.mx_z_optimal_control_xyz_balance import run_format as mx_z_optimal_xyz_balance_format
 from lab_workflows.experiment_modules.mx_z_optimal_control_dg4000_bias_xyz_balance import run_format as mx_z_optimal_dg_bias_format
+from lab_workflows.experiment_modules.mx_main_field_scope_noise_spectrum import run_format as mx_main_field_scope_format
+from lab_workflows.experiment_modules.mx_xy_residual_field_calibration import run_format as mx_xy_residual_format
+from lab_workflows.experiment_modules.noise_spectrum_xy_demod3_r import run_format as demod3_r_format
+from lab_workflows.experiment_modules.projection_noise import run_format as projection_noise_format
+from lab_workflows.experiment_modules.photon_shot_noise import run_format as photon_format
+from lab_workflows.experiment_modules.rf_sensitivity_constxy_frequency import run_format as constxy_format
+from lab_workflows.experiment_modules.t1_calibration import run_format as t1_format
+from lab_workflows.experiment_modules.bb_power_scan_burst import run_format as bb_power_format
+from lab_workflows.experiment_modules.bb_duty_scan_burst import run_format as bb_duty_format
+from lab_workflows.experiment_modules.z_field_bandwidth import run_format as z_bandwidth_format
 RF_RUN_FORMATS = {rf_aw_format.EXPERIMENT_ID: rf_aw_format, rf_known_noise_format.EXPERIMENT_ID: rf_known_noise_format}
 WORKFLOW_RUN_FORMATS = {item.EXPERIMENT_ID: item for item in (
-    rf_control_scale_format, scope_capture_format, z_closed_loop_format, mx_y_rf_power_format, mx_y_rf_frequency_format, mx_y_optimal_frequency_format, mx_y_rf_drift_format, mx_z_optimal_rf_format, mx_z_optimal_xy_rf_format, mx_z_optimal_xy_noise_format, mx_z_optimal_xy_leakage_format, mx_z_optimal_xy_phase_format, mx_z_optimal_xyz_balance_format, mx_z_optimal_dg_bias_format,
+    t1_format,
+    static_local_format,
+    bb_power_format,
+    bb_duty_format,
+    z_bandwidth_format, constxy_format, projection_noise_format, photon_format, demod3_r_format, mx_xy_residual_format, mx_main_field_scope_format, rf_control_scale_format, scope_capture_format, z_closed_loop_format, mx_y_rf_power_format, mx_y_rf_frequency_format, mx_y_optimal_frequency_format, mx_y_rf_drift_format, mx_z_optimal_rf_format, mx_z_optimal_xy_rf_format, mx_z_optimal_xy_noise_format, mx_z_optimal_xy_leakage_format, mx_z_optimal_xy_phase_format, mx_z_optimal_xyz_balance_format, mx_z_optimal_dg_bias_format,
 )}
 from lab_workflows.experiments.catalog import (
     add_tag,
@@ -117,6 +132,7 @@ from .rf_control_scale_sensitivity import RFControlScaleSessionService
 from .noise_spectrum_xy_known_noise import KnownNoiseSessionService
 from .noise_spectrum_xy_probe_am import ProbeAMSessionService
 from .static_sensitivity import StaticSessionService
+from .static_sensitivity_optimize_local import StaticLocalSessionService, create_router as static_local_router
 from .detection_chain_frequency_response import DetectionChainFrequencyResponseSessionService
 from .mx_y_rf_sensitivity import MxYRFSessionService
 from .mx_y_rf_probe_detuning_optimization import MxYRFProbeDetuningSessionService
@@ -132,6 +148,16 @@ from .mx_z_optimal_control_xy_rf_phase_response import MxZOptimalControlXYRFPhas
 from .mx_z_optimal_control_xyz_balance import MxZOptimalControlXYZBalanceSessionService
 from .mx_z_optimal_control_dg4000_bias_xyz_balance import MxZOptimalControlDG4000BiasXYZBalanceSessionService
 from .mx_main_field_calibration import MxMainFieldCalibrationSessionService
+from .mx_main_field_scope_noise_spectrum import MxMainFieldScopeNoiseSessionService, create_router as mx_main_field_scope_router
+from .mx_xy_residual_field_calibration import MxXYResidualFieldCalibrationSessionService, create_router as mx_xy_residual_router
+from .noise_spectrum_xy_demod3_r import NoiseSpectrumXYDemod3RSessionService, create_router as demod3_r_router
+from .projection_noise import ProjectionNoiseSessionService, create_router as projection_noise_router
+from .photon_shot_noise import PhotonShotNoiseSessionService, create_router as photon_router
+from .rf_sensitivity_constxy_frequency import ConstXYSessionService, create_router as constxy_router
+from .t1_calibration import T1SessionService, create_router as t1_router
+from .bb_power_scan_burst import BBPowerScanBurstSessionService, create_router as bb_power_router
+from .bb_duty_scan_burst import BBDutySessionService, create_router as bb_duty_router
+from .z_field_bandwidth import ZFieldBandwidthSessionService, create_router as z_bandwidth_router
 from .mx_z_field_calibration import MxZFieldCalibrationSessionService
 from .z_aw_waveform_scope_check import ZAWWaveformScopeCheckSessionService
 from .z_aw_current_waveform_scope_check import ZAWCurrentWaveformScopeCheckSessionService
@@ -201,11 +227,11 @@ async def lifespan(application):
 def _workflow_session_services():
     """集中列出已接线的会话，由回归检查后台收尾是否遗漏。"""
     return (
-        xy_sessions, known_noise_sessions, probe_am_sessions, rf_sessions,
-        rf_known_noise_sessions, rf_control_scale_sessions, static_sessions, detection_chain_sessions,
+        xy_sessions, known_noise_sessions, probe_am_sessions, rf_sessions, bb_power_sessions, t1_sessions,
+        rf_known_noise_sessions, rf_control_scale_sessions, static_sessions, static_local_sessions, detection_chain_sessions,
         mx_y_rf_sessions, mx_y_rf_probe_detuning_sessions, mx_y_rf_power_sessions, z_aw_scope_sessions, z_aw_current_scope_sessions, z_closed_loop_sessions,
-        mx_main_field_sessions,
-        z_coil_inductance_sessions,
+        mx_main_field_sessions, mx_main_field_scope_sessions, mx_xy_residual_sessions, demod3_r_sessions, photon_sessions, projection_noise_sessions, constxy_sessions, z_bandwidth_sessions,
+        bb_duty_sessions, z_coil_inductance_sessions,
         mx_z_field_sessions,
         z_coil_current_sessions,
         bell_bloom_z_sessions,
@@ -274,6 +300,8 @@ rf_control_scale_sessions = RFControlScaleSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(rf_control_scale_sessions, include_history=True))
 static_sessions = StaticSessionService(lambda: ROOT, manager)
 app.include_router(rf_workflow_router(static_sessions))
+static_local_sessions = StaticLocalSessionService(lambda: ROOT, manager)
+app.include_router(static_local_router(static_local_sessions))
 detection_chain_sessions = DetectionChainFrequencyResponseSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(detection_chain_sessions))
 mx_y_rf_sessions = MxYRFSessionService(lambda: ROOT, manager)
@@ -290,6 +318,26 @@ z_closed_loop_sessions = ZAWClosedLoopSessionService(lambda: ROOT, manager)
 app.include_router(z_closed_loop_router(z_closed_loop_sessions))
 mx_main_field_sessions = MxMainFieldCalibrationSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(mx_main_field_sessions, include_history=True))
+mx_main_field_scope_sessions = MxMainFieldScopeNoiseSessionService(lambda: ROOT, manager)
+app.include_router(mx_main_field_scope_router(mx_main_field_scope_sessions))
+mx_xy_residual_sessions = MxXYResidualFieldCalibrationSessionService(lambda: ROOT, manager)
+app.include_router(mx_xy_residual_router(mx_xy_residual_sessions))
+demod3_r_sessions = NoiseSpectrumXYDemod3RSessionService(lambda: ROOT, manager)
+app.include_router(demod3_r_router(demod3_r_sessions))
+projection_noise_sessions = ProjectionNoiseSessionService(lambda: ROOT, manager)
+app.include_router(projection_noise_router(projection_noise_sessions))
+photon_sessions = PhotonShotNoiseSessionService(lambda: ROOT, manager)
+app.include_router(photon_router(photon_sessions))
+constxy_sessions = ConstXYSessionService(lambda: ROOT, manager)
+app.include_router(constxy_router(constxy_sessions))
+t1_sessions = T1SessionService(lambda: ROOT, manager)
+app.include_router(t1_router(t1_sessions))
+bb_power_sessions = BBPowerScanBurstSessionService(lambda: ROOT, manager)
+app.include_router(bb_power_router(bb_power_sessions))
+bb_duty_sessions = BBDutySessionService(lambda: ROOT, manager)
+app.include_router(bb_duty_router(bb_duty_sessions))
+z_bandwidth_sessions = ZFieldBandwidthSessionService(lambda: ROOT, manager)
+app.include_router(z_bandwidth_router(z_bandwidth_sessions))
 z_coil_inductance_sessions = ZCoilInductanceFrequencyResponseSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(z_coil_inductance_sessions, include_history=True))
 mx_z_field_sessions = MxZFieldCalibrationSessionService(lambda: ROOT, manager)
@@ -1189,7 +1237,7 @@ def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
             can_analyze = definition.analysis_runner is not None
             if definition.id in WORKFLOW_RUN_FORMATS:
                 identity = WORKFLOW_RUN_FORMATS[definition.id]
-                config = _read_yaml(path / "experiment_config.yaml")
+                config = getattr(identity, "read_config", _read_yaml)(path / "experiment_config.yaml")
                 if identity.format_block_reason(config):
                     continue
                 can_analyze = can_analyze and not identity.analysis_block_reason(config)
@@ -1236,7 +1284,7 @@ def _run_dir(experiment_id: str, run_id: str) -> Path:
     if base not in path.parents or not path.is_dir():
         raise HTTPException(404, "运行目录不存在")
     if identity := WORKFLOW_RUN_FORMATS.get(definition.id):
-        if reason := identity.format_block_reason(_read_yaml(path / "experiment_config.yaml")):
+        if reason := identity.format_block_reason(getattr(identity, "read_config", _read_yaml)(path / "experiment_config.yaml")):
             raise HTTPException(422, reason)
     return path
 

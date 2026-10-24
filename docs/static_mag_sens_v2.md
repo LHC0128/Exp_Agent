@@ -200,7 +200,9 @@ data/Static_Magnetic_Field_Sensitivity/<时间戳>_<tag>/
 
 原架构 Tab 已撤下，[单张总览](old/architecture/static-sensitivity.html)作为历史图保留，记录撤下时的 DC 点采集、中位数、完整波形落盘、分组温控和无 Z→锁相放大器 SYNC 触发链路。归档图中的 DAQ 采集步骤复用公共选择器，高速 MFLI 使用单段 Scope，每个 DC 点独立保存；这些标记仅描述撤下时的工作区版本，源码未冻结，不用于保证后续实现一致。
 
-独立的 `Static_Magnetic_Field_Sensitivity_Optimize.py` 和 `_Optimize_Local.py` 不在此次采集替换范围。全局优化原有 2×2 汇总面板继续分别展示灵敏度、HWHM、斜率和 R²，以颜色及圆点/叉号区分有效和拒绝点；不混合单位、不补零。它们同样受共享色散拟合的零初值数值修正影响，但采集和选择逻辑不变。
+全局优化 `static-sensitivity-optimize` 已按原字节归档至 [`Static_Magnetic_Field_Sensitivity_Optimize.py`](../old/experiments/experiments/Static_Magnetic_Field_Sensitivity_Optimize.py)，GUI 仅保留卡片，不再提供参数、运行或历史入口，也不进行模块化迁移。原有 2×2 汇总面板保留灵敏度、HWHM、斜率和 R²，以颜色及圆点/叉号区分有效和拒绝点；采集、选择和拟合算法不因归档修改。其实际写入的 `data/Static_Magnetic_Field_Sensitivity/` 与本主实验、局部优化共享历史，整个目录及已有结果保持原位，不按文件名迁移数据。`static-sensitivity` 主实验及局部优化 `static-sensitivity-optimize-local` 不在本次归档范围；原共享色散拟合的零初值数值修正说明继续有效。
+
+局部优化 `static-sensitivity-optimize-local` 现按用户确认改为复用本实验的 DC 逐点工作流及标准单点分析：每候选重设基准、只变一个变量并重校相，6 个父采集／3 个批次分析节点；父汇总只读冻结单点结论，不重算子运行。旧 RAMP 批次仅查看／汇总原结论，不转换原始数据，详见[局部优化说明](static_sensitivity_optimize_local.md)。本主实验的默认入口、参数与算法不变，仅增加可选嵌套进度回调。
 
 ## 接线与安全结束
 

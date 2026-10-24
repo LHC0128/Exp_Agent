@@ -7,8 +7,17 @@ import { ScopeCapturePage } from "./ScopeCapturePage";
 import { ZAWClosedLoopExperimentPage } from "./ZAWClosedLoopExperimentPage";
 import { MxYOptimalControlFrequencyPage } from "./MxYOptimalControlFrequencyPage";
 import { StaticSensitivityPage } from "./StaticSensitivityPage";
+import { StaticSensitivityOptimizeLocalPage } from "./StaticSensitivityOptimizeLocalPage";
 import { BellBloomZCalibrationPage } from "./BellBloomZCalibrationPage";
 import { NoiseSpectrumXYPage } from "./NoiseSpectrumXYPage";
+import { NoiseSpectrumXYDemod3RPage } from "./NoiseSpectrumXYDemod3RPage";
+import { ProjectionNoisePage } from "./ProjectionNoisePage";
+import { PhotonShotNoisePage } from "./PhotonShotNoisePage";
+import { RFConstXYFrequencyPage } from "./RFConstXYFrequencyPage";
+import { T1CalibrationPage } from "./T1CalibrationPage";
+import { BBPowerScanBurstPage } from "./BBPowerScanBurstPage";
+import { BBDutyScanBurstPage } from "./BBDutyScanBurstPage";
+import { ZFieldBandwidthPage } from "./ZFieldBandwidthPage";
 import { NoiseSpectrumXYKnownNoisePage, NoiseSpectrumXYProbeAMPage } from "./NoiseSpectrumXYKnownNoisePage";
 import { DetectionChainFrequencyResponsePage } from "./DetectionChainFrequencyResponsePage";
 import { RFSensitivityDirectAWPage } from "./RFSensitivityDirectAWPage";
@@ -26,6 +35,8 @@ import { MxZOptimalControlXYRFPhaseResponsePage } from "./MxZOptimalControlXYRFP
 import { MxZOptimalControlXYZBalancePage } from "./MxZOptimalControlXYZBalancePage";
 import { MxZOptimalControlDG4000BiasXYZBalancePage } from "./MxZOptimalControlDG4000BiasXYZBalancePage";
 import { MxMainFieldCalibrationPage } from "./MxMainFieldCalibrationPage";
+import { MxMainFieldScopeNoiseSpectrumPage } from "./MxMainFieldScopeNoiseSpectrumPage";
+import { MxXYResidualFieldCalibrationPage } from "./MxXYResidualFieldCalibrationPage";
 import { MxZFieldCalibrationPage } from "./MxZFieldCalibrationPage";
 import { MxZCurrentCouplingCalibrationPage } from "./MxZCurrentCouplingCalibrationPage";
 import { ZAWWaveformScopeCheckPage } from "./ZAWWaveformScopeCheckPage";
@@ -63,6 +74,7 @@ export function ExperimentPage() {
 
 function ExperimentRoute() {
   const { experimentId } = useParams();
+  if (experimentId === "static-sensitivity-optimize-local") return <StaticSensitivityOptimizeLocalPage />;
   if (experimentId === "mx-z-optimal-control-rf-sensitivity") return <MxZOptimalControlRFSensitivityPage />;
   if (experimentId === "mx-z-optimal-control-xy-rf-sensitivity") return <MxZOptimalControlXYRFSensitivityPage />;
   if (experimentId === "mx-z-optimal-control-xy-noise-spectrum") return <MxZOptimalControlXYNoiseSpectrumPage />;
@@ -76,6 +88,8 @@ function ExperimentRoute() {
   if (experimentId === "mx-y-rf-frequency-response") return <MxYRFFrequencyResponsePage />;
   if (experimentId === "mx-y-rf-sensitivity-drift") return <MxYRFSensitivityDriftPage />;
   if (experimentId === "mx-main-field-calibration") return <MxMainFieldCalibrationPage />;
+  if (experimentId === "mx-main-field-scope-noise-spectrum") return <MxMainFieldScopeNoiseSpectrumPage />;
+  if (experimentId === "mx-xy-residual-field-calibration") return <MxXYResidualFieldCalibrationPage />;
   if (experimentId === "mx-z-field-calibration") return <MxZFieldCalibrationPage />;
   if (experimentId === "mx-z-current-coupling-calibration") return <MxZCurrentCouplingCalibrationPage />;
   if (experimentId === "z-aw-waveform-scope-check") return <ZAWWaveformScopeCheckPage />;
@@ -88,6 +102,14 @@ function ExperimentRoute() {
   if (experimentId === "static-sensitivity") return <StaticSensitivityPage />;
   if (experimentId === "bell-bloom-z-field-calibration") return <BellBloomZCalibrationPage />;
   if (experimentId === "noise-spectrum-xy") return <NoiseSpectrumXYPage />;
+  if (experimentId === "noise-spectrum-xy-demod3-r") return <NoiseSpectrumXYDemod3RPage />;
+  if (experimentId === "projection-noise") return <ProjectionNoisePage />;
+  if (experimentId === "photon-shot-noise") return <PhotonShotNoisePage />;
+  if (experimentId === "rf-sensitivity-constxy-frequency") return <RFConstXYFrequencyPage />;
+  if (experimentId === "t1-calibration") return <T1CalibrationPage />;
+  if (experimentId === "bb-power-scan-burst") return <BBPowerScanBurstPage />;
+  if (experimentId === "bb-duty-scan-burst") return <BBDutyScanBurstPage />;
+  if (experimentId === "z-field-bandwidth") return <ZFieldBandwidthPage />;
   if (experimentId === "noise-spectrum-xy-known-noise") return <NoiseSpectrumXYKnownNoisePage />;
   if (experimentId === "noise-spectrum-xy-uncontrolled-probe-am") return <NoiseSpectrumXYProbeAMPage />;
   if (experimentId === "detection-chain-frequency-response") return <DetectionChainFrequencyResponsePage />;

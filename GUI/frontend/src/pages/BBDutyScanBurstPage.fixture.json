@@ -1,0 +1,832 @@
+{
+  "fields": [
+    {
+      "name": "SYSTEM_SETTLE_S",
+      "label": "系统稳定时间",
+      "type": "number",
+      "default": 0.1,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "legacy_defaults": {
+        "TEMP_SWITCH_OFF_DELAY_S": 0.1
+      }
+    },
+    {
+      "name": "RUN_TAG",
+      "label": "运行标签",
+      "type": "string",
+      "default": "duty_scan",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DUTY_CYCLE_LIST",
+      "label": "占空比列表",
+      "type": "array",
+      "default": [
+        0.02,
+        0.04000000000000001,
+        0.06000000000000001,
+        0.08000000000000002,
+        0.10000000000000002,
+        0.12000000000000002,
+        0.14,
+        0.16,
+        0.18000000000000002,
+        0.2
+      ],
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "0～1 比例；写入仪器时换算为百分比",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PUMP_POWER_VOLTAGE",
+      "label": "固定 Pump 控制电压",
+      "type": "number",
+      "default": 0.2,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "MODULATION_FREQUENCY_HZ",
+      "label": "Pump 脉冲频率",
+      "type": "number",
+      "default": 90000.0,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "BURST_CYCLES",
+      "label": "Burst 周期数",
+      "type": "integer",
+      "default": 1000,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PRE_BASELINE_TIME_S",
+      "label": "触发前基线时长",
+      "type": "number",
+      "default": 0.005,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "POST_DARK_TIME_S",
+      "label": "暗弛豫记录/拟合时长",
+      "type": "number",
+      "default": 0.02,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "BURST_BURST_PERIOD_S",
+      "label": "Burst 触发周期",
+      "type": "number",
+      "default": 0.5,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "ACQ_REPEATS",
+      "label": "每点重复次数",
+      "type": "integer",
+      "default": 10,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_FIELD_SETPOINT",
+      "label": "主场电流",
+      "type": "number",
+      "default": 9.31,
+      "unit": "mA",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_RF_GATE_HIGH_V",
+      "label": "Pump 门控高电平",
+      "type": "number",
+      "default": 5.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_RF_GATE_LOW_V",
+      "label": "Pump 门控低电平",
+      "type": "number",
+      "default": 0.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PROBE_POWER",
+      "label": "Probe 控制电压",
+      "type": "number",
+      "default": 0.1,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AOM_CARRIER_FREQ_HZ",
+      "label": "AOM 载波频率",
+      "type": "number",
+      "default": 100000000.0,
+      "unit": "Hz",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AOM_CARRIER_AMPLITUDE_V",
+      "label": "AOM 载波幅度",
+      "type": "number",
+      "default": 0.18,
+      "unit": "Vpp",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AOM_CARRIER_OFFSET_V",
+      "label": "AOM 载波偏置",
+      "type": "number",
+      "default": 0.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "USE_HF2_MONITOR",
+      "label": "连接可选锁相监控",
+      "type": "boolean",
+      "default": false,
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "仅连接并初始化主输入，不采集锁相数据；主检测始终是 SDS",
+      "read_only": false
+    },
+    {
+      "name": "SDS_SAMPLE_RATE",
+      "label": "SDS 请求采样率",
+      "type": "number",
+      "default": 1000000.0,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SDS_PD_CHANNEL",
+      "label": "SDS PD 通道",
+      "type": "integer",
+      "default": 1,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 4,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SDS_TRIG_CHANNEL",
+      "label": "SDS SYNC 触发通道",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 4,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SDS_VOLT_SCALE_PD",
+      "label": "PD 初始垂直档位",
+      "type": "number",
+      "default": 0.1,
+      "unit": "V/div",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SDS_VOLT_SCALE_TRIG",
+      "label": "触发通道垂直档位",
+      "type": "number",
+      "default": 2.0,
+      "unit": "V/div",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SDS_TRIG_LEVEL",
+      "label": "SDS 触发电平",
+      "type": "number",
+      "default": 2.5,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SDS_TRIG_SLOPE",
+      "label": "SYNC 触发斜率",
+      "type": "string",
+      "default": "RISing",
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "上升沿定义 Burst 起点；不自动更改接线",
+      "read_only": false,
+      "options": [
+        {
+          "value": "RISing",
+          "label": "上升沿"
+        }
+      ]
+    },
+    {
+      "name": "VERT_DIVS",
+      "label": "PD 半屏格数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCALE_MIN",
+      "label": "最小垂直档位",
+      "type": "number",
+      "default": 0.005,
+      "unit": "V/div",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCALE_MAX",
+      "label": "最大垂直档位",
+      "type": "number",
+      "default": 10.0,
+      "unit": "V/div",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "TEMP_SWITCH_OFF_V",
+      "label": "温控关闭电压",
+      "type": "number",
+      "default": 0.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": 0,
+      "description": "",
+      "read_only": true
+    },
+    {
+      "name": "TEMP_SWITCH_ON_V",
+      "label": "温控恢复电压",
+      "type": "number",
+      "default": 5.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 5,
+      "maximum": 5,
+      "description": "",
+      "read_only": true
+    },
+    {
+      "name": "TEMP_SWITCH_ON_DELAY_S",
+      "label": "恢复温控等待时间",
+      "type": "number",
+      "default": 2.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "TEC_TEMPERATURE",
+      "label": "TEC 目标温度",
+      "type": "number",
+      "default": 100.0,
+      "unit": "°C",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SDS_TIMEBASE_DELAY_S",
+      "label": "SDS 水平延迟",
+      "type": "number",
+      "default": 0.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "实际波形必须覆盖基线、Burst 和暗弛豫",
+      "read_only": false
+    }
+  ],
+  "flow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数、映射与安全预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "不连接硬件；占空比按比例输入、百分比限值校验，拒绝独立通道冲突"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "连接设备与可选锁相初始化",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "USE_HF2_MONITOR"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "USE_HF2_MONITOR"
+        ],
+        "quality_gates": [
+          "同一资源只连接一次；锁相仅可选监控、主输入高阻/DC；TEC 串口失败告警跳过"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "参考时钟同步与严格回读",
+        "group": "准备",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "全部已连接时钟设备依设备库同步；失败不启动输出"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "关闭辅助磁场、主场与光功率、TEC 设温",
+        "group": "初始条件",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "Z_FIELD_SETPOINT",
+          "FIXED_PUMP_POWER_VOLTAGE",
+          "PROBE_POWER",
+          "TEC_TEMPERATURE"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "Z_FIELD_SETPOINT",
+          "FIXED_PUMP_POWER_VOLTAGE",
+          "PROBE_POWER",
+          "TEC_TEMPERATURE"
+        ],
+        "quality_gates": [
+          "仅下发 TEC 目标、不启停不判稳；恢复温控为 5 V DC + ON"
+        ]
+      },
+      {
+        "id": "A05",
+        "title": "Pump 连续载波、有限 Burst 与 SYNC",
+        "group": "激励",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [
+          "MODULATION_FREQUENCY_HZ",
+          "BURST_CYCLES",
+          "BURST_BURST_PERIOD_S",
+          "PUMP_RF_GATE_HIGH_V",
+          "PUMP_RF_GATE_LOW_V",
+          "AOM_CARRIER_FREQ_HZ",
+          "AOM_CARRIER_AMPLITUDE_V",
+          "AOM_CARRIER_OFFSET_V",
+          "DUTY_CYCLE_LIST"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "MODULATION_FREQUENCY_HZ",
+          "BURST_CYCLES",
+          "BURST_BURST_PERIOD_S",
+          "PUMP_RF_GATE_HIGH_V",
+          "PUMP_RF_GATE_LOW_V",
+          "AOM_CARRIER_FREQ_HZ",
+          "AOM_CARRIER_AMPLITUDE_V",
+          "AOM_CARRIER_OFFSET_V",
+          "DUTY_CYCLE_LIST"
+        ],
+        "quality_gates": [
+          "固定 TTL 0/5 V，内部触发有限周期；SYNC 上升沿定义 Burst 起点"
+        ]
+      },
+      {
+        "id": "A06",
+        "title": "SDS 双通道、时基与实际采样回读",
+        "group": "采集",
+        "dependencies": [
+          "A05"
+        ],
+        "parameters": [
+          "SDS_SAMPLE_RATE",
+          "SDS_PD_CHANNEL",
+          "SDS_TRIG_CHANNEL",
+          "SDS_VOLT_SCALE_PD",
+          "SDS_VOLT_SCALE_TRIG",
+          "SDS_TRIG_LEVEL",
+          "SDS_TRIG_SLOPE",
+          "SDS_TIMEBASE_DELAY_S",
+          "PRE_BASELINE_TIME_S",
+          "POST_DARK_TIME_S"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "SDS_SAMPLE_RATE",
+          "SDS_PD_CHANNEL",
+          "SDS_TRIG_CHANNEL",
+          "SDS_VOLT_SCALE_PD",
+          "SDS_VOLT_SCALE_TRIG",
+          "SDS_TRIG_LEVEL",
+          "SDS_TRIG_SLOPE",
+          "SDS_TIMEBASE_DELAY_S",
+          "PRE_BASELINE_TIME_S",
+          "POST_DARK_TIME_S"
+        ],
+        "quality_gates": [
+          "PD 与 SYNC 通道分开；实际采样率覆盖 Larmor，记录完整基线/Burst/暗弛豫"
+        ]
+      },
+      {
+        "id": "A07",
+        "title": "占空比扫描、逐帧保存与本轮安全封存",
+        "group": "采集",
+        "dependencies": [
+          "A06"
+        ],
+        "parameters": [
+          "RUN_TAG",
+          "DUTY_CYCLE_LIST",
+          "ACQ_REPEATS",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_DELAY_S",
+          "TEMP_SWITCH_OFF_V",
+          "TEMP_SWITCH_ON_V",
+          "VERT_DIVS",
+          "SCALE_MIN",
+          "SCALE_MAX"
+        ],
+        "artifacts": [
+          "raw/shot_d*_r*.npz",
+          "raw/shot_d*_avg.npz",
+          "raw/duty_scan_summary.npz"
+        ],
+        "display_parameters": [
+          "RUN_TAG",
+          "DUTY_CYCLE_LIST",
+          "ACQ_REPEATS",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_DELAY_S",
+          "TEMP_SWITCH_OFF_V",
+          "TEMP_SWITCH_ON_V",
+          "VERT_DIVS",
+          "SCALE_MIN",
+          "SCALE_MAX",
+          "POST_DARK_TIME_S"
+        ],
+        "quality_gates": [
+          "每帧配置/准备→关温控→稳定→内存采集→恢复温控→写盘；每点最多三次探测，重复帧锁档并逐帧保存",
+          "异常抢救已读帧，不伪造完整平均；本轮收尾成功才封存"
+        ]
+      },
+      {
+        "id": "A08",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "停止 SDS、恢复温控、关闭辅助场；保留主场、光功率、Pump 载波、Time_sequence 输出/Burst/SYNC 和锁相设置，仅断开 TEC"
+        ]
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "核对实验身份、索引与原始波形",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "inputs.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "目录已停止写入；文件引用、占空比、时间轴与必需波形字段有效；兼容旧分节配置"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "Hilbert 包络、建立/振荡衰减拟合与有效泵浦率",
+        "group": "独立分析",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [
+          "POST_DARK_TIME_S"
+        ],
+        "artifacts": [
+          "fits.npz",
+          "analysis_pub.yaml",
+          "analysis_pub.json"
+        ],
+        "display_parameters": [
+          "POST_DARK_TIME_S"
+        ],
+        "quality_gates": [
+          "保留原 tau 误差及速率误差限幅、可疑点规则与加权线性拟合；质量失败保存诊断但阻止后继出图"
+        ]
+      },
+      {
+        "id": "B03",
+        "title": "瞬态、泵浦率、速率分量及残差图导出",
+        "group": "独立分析",
+        "dependencies": [
+          "B02"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "transient_fit_duty_examples_pub.png",
+          "transient_fit_duty_examples_pub.pdf",
+          "rpump_eff_vs_duty_cycle_pub.png",
+          "rpump_eff_vs_duty_cycle_pub.pdf",
+          "gamma_rates_vs_duty_cycle_pub.png",
+          "gamma_rates_vs_duty_cycle_pub.pdf",
+          "transient_fit_zoom_pub.png",
+          "transient_fit_zoom_pub.pdf",
+          "residuals_diagnostics_pub.png",
+          "residuals_diagnostics_pub.pdf"
+        ],
+        "display_parameters": [],
+        "quality_gates": []
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "USE_HF2_MONITOR": [
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "Z_FIELD_SETPOINT": [
+          "A04",
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "FIXED_PUMP_POWER_VOLTAGE": [
+          "A04",
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "PROBE_POWER": [
+          "A04",
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "TEC_TEMPERATURE": [
+          "A04",
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "MODULATION_FREQUENCY_HZ": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "BURST_CYCLES": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "BURST_BURST_PERIOD_S": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "PUMP_RF_GATE_HIGH_V": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "PUMP_RF_GATE_LOW_V": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "AOM_CARRIER_FREQ_HZ": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "AOM_CARRIER_AMPLITUDE_V": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "AOM_CARRIER_OFFSET_V": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "DUTY_CYCLE_LIST": [
+          "A05",
+          "A06",
+          "A07"
+        ],
+        "SDS_SAMPLE_RATE": [
+          "A06",
+          "A07"
+        ],
+        "SDS_PD_CHANNEL": [
+          "A06",
+          "A07"
+        ],
+        "SDS_TRIG_CHANNEL": [
+          "A06",
+          "A07"
+        ],
+        "SDS_VOLT_SCALE_PD": [
+          "A06",
+          "A07"
+        ],
+        "SDS_VOLT_SCALE_TRIG": [
+          "A06",
+          "A07"
+        ],
+        "SDS_TRIG_LEVEL": [
+          "A06",
+          "A07"
+        ],
+        "SDS_TRIG_SLOPE": [
+          "A06",
+          "A07"
+        ],
+        "SDS_TIMEBASE_DELAY_S": [
+          "A06",
+          "A07"
+        ],
+        "PRE_BASELINE_TIME_S": [
+          "A06",
+          "A07"
+        ],
+        "POST_DARK_TIME_S": [
+          "A06",
+          "A07"
+        ],
+        "RUN_TAG": [
+          "A07"
+        ],
+        "ACQ_REPEATS": [
+          "A07"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A07"
+        ],
+        "TEMP_SWITCH_ON_DELAY_S": [
+          "A07"
+        ],
+        "TEMP_SWITCH_OFF_V": [
+          "A07"
+        ],
+        "TEMP_SWITCH_ON_V": [
+          "A07"
+        ],
+        "VERT_DIVS": [
+          "A07"
+        ],
+        "SCALE_MIN": [
+          "A07"
+        ],
+        "SCALE_MAX": [
+          "A07"
+        ]
+      },
+      "analysis": {
+        "POST_DARK_TIME_S": [
+          "B02",
+          "B03"
+        ]
+      }
+    },
+    "diagram_url": "/api/experiments/bb-duty-scan-burst/workflow/diagram"
+  }
+}

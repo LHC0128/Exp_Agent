@@ -67,27 +67,27 @@ BB 占空比/功率扫描与 T1 在恢复或后续准备失败时，把已读帧
 | `rf-sensitivity-aw` | [RF_Field_Sensitivity_AW.py](../experiments/RF_Field_Sensitivity_AW.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[rf_field_measurement.md](rf_field_measurement.md)、[rf_field_measurement_known_noise.md](rf_field_measurement_known_noise.md)、[rf_field_measurement_r.md](rf_field_measurement_r.md) |
 | `rf-sensitivity-aw-r` | [RF_Field_Sensitivity_AW_R.py](../old/experiments/experiments/RF_Field_Sensitivity_AW_R.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[rf_field_measurement_r.md](rf_field_measurement_r.md) |
 | `rf-sensitivity-aw-known-noise` | [RF_Field_Sensitivity_AW_Known_Noise.py](../experiments/RF_Field_Sensitivity_AW_Known_Noise.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[rf_field_measurement_known_noise.md](rf_field_measurement_known_noise.md) |
-| `rf-sensitivity-aw-frequency` | [RF_Field_Sensitivity_AW_FreqSweep.py](../experiments/RF_Field_Sensitivity_AW_FreqSweep.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
+| `rf-sensitivity-aw-frequency` | [RF_Field_Sensitivity_AW_FreqSweep.py](../old/experiments/experiments/RF_Field_Sensitivity_AW_FreqSweep.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
 | `rf-sensitivity-direct-aw-frequency` | [RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py](../experiments/RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[rf_field_measurement.md](rf_field_measurement.md)、[rf_field_measurement_2.md](rf_field_measurement_2.md)、[xy_direct_aw_dc_calibration.md](xy_direct_aw_dc_calibration.md) |
 | `rf-sensitivity-constxy-frequency` | [RF_Field_Sensitivity_ConstXY_FreqSweep.py](../experiments/RF_Field_Sensitivity_ConstXY_FreqSweep.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[xy_dc_voltage_calibration.md](xy_dc_voltage_calibration.md) |
-| `z-field-bandwidth` | [Z_Field_Bandwidth_Measurement.py](../experiments/Z_Field_Bandwidth_Measurement.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
-| `bb-duty-scan-burst` | [BB_Rpump_DutyScan_Burst.py](../experiments/BB_Rpump_DutyScan_Burst.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
-| `bb-power-scan-burst` | [BB_Rpump_PowerScan_Burst.py](../experiments/BB_Rpump_PowerScan_Burst.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
+| `z-field-bandwidth` | [Z_Field_Bandwidth_Measurement.py](../experiments/Z_Field_Bandwidth_Measurement.py) | [z_field_bandwidth.md](z_field_bandwidth.md) |
+| `bb-duty-scan-burst` | [BB_Rpump_DutyScan_Burst.py](../experiments/BB_Rpump_DutyScan_Burst.py) | [bb_duty_scan_burst.md](bb_duty_scan_burst.md)：逐帧恢复后保存，重复锁档、取消与恢复失败抢救已读数据 |
+| `bb-power-scan-burst` | [BB_Rpump_PowerScan_Burst.py](../experiments/BB_Rpump_PowerScan_Burst.py) | [bb_power_scan_burst.md](bb_power_scan_burst.md)：逐帧恢复后保存，结束保留门控/Burst/SYNC 与最后写入的 Pump 电压 |
 | `t1-calibration` | [T1_Calibration.py](../experiments/T1_Calibration.py) | [T1_calibration.md](T1_calibration.md) |
 | `t2-calibration` | [T2_Calibration.py](../experiments/T2_Calibration.py) | [T2_relaxation.md](T2_relaxation.md) |
-| `xy-aw-voltage-calibration` | [XY_AW_Voltage_Calibration.py](../experiments/XY_AW_Voltage_Calibration.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
-| `xy-dc-voltage-calibration` | [XY_DC_Voltage_Calibration.py](../experiments/XY_DC_Voltage_Calibration.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[xy_dc_voltage_calibration.md](xy_dc_voltage_calibration.md)、[xy_direct_aw_dc_calibration.md](xy_direct_aw_dc_calibration.md) |
+| `xy-aw-voltage-calibration`（已归档） | [XY_AW_Voltage_Calibration.py](../old/experiments/experiments/XY_AW_Voltage_Calibration.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
+| `xy-dc-voltage-calibration`（已归档） | [XY_DC_Voltage_Calibration.py](../old/experiments/experiments/XY_DC_Voltage_Calibration.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[xy_dc_voltage_calibration.md](xy_dc_voltage_calibration.md)、[xy_direct_aw_dc_calibration.md](xy_direct_aw_dc_calibration.md) |
 | `xy-direct-aw-dc-calibration` | [XY_DirectAW_DC_Calibration.py](../experiments/XY_DirectAW_DC_Calibration.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[xy_direct_aw_dc_calibration.md](xy_direct_aw_dc_calibration.md) |
-| `aw-const-omega-check` | [AW_ConstOmega_Calibration_Check.py](../experiments/AW_ConstOmega_Calibration_Check.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
-| `aw-const-omega-awscale-check` | [AW_ConstOmega_Calibration_Check_AWScale.py](../experiments/AW_ConstOmega_Calibration_Check_AWScale.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
-| `static-sensitivity-optimize` | [Static_Magnetic_Field_Sensitivity_Optimize.py](../experiments/Static_Magnetic_Field_Sensitivity_Optimize.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[plotting_audit_20260920.md](plotting_audit_20260920.md)、[static_mag_sens_v2.md](static_mag_sens_v2.md) |
-| `static-sensitivity-optimize-local` | [Static_Magnetic_Field_Sensitivity_Optimize_Local.py](../experiments/Static_Magnetic_Field_Sensitivity_Optimize_Local.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[plotting_audit_20260920.md](plotting_audit_20260920.md) |
+| `aw-const-omega-check`（已归档） | [AW_ConstOmega_Calibration_Check.py](../old/experiments/experiments/AW_ConstOmega_Calibration_Check.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
+| `aw-const-omega-awscale-check` | [AW_ConstOmega_Calibration_Check_AWScale.py](../old/experiments/experiments/AW_ConstOmega_Calibration_Check_AWScale.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md) |
+| `static-sensitivity-optimize`（已归档） | [Static_Magnetic_Field_Sensitivity_Optimize.py](../old/experiments/experiments/Static_Magnetic_Field_Sensitivity_Optimize.py) | [legacy_lockin_experiments.md](legacy_lockin_experiments.md)、[plotting_audit_20260920.md](plotting_audit_20260920.md)、[static_mag_sens_v2.md](static_mag_sens_v2.md) |
+| `static-sensitivity-optimize-local` | [Static_Magnetic_Field_Sensitivity_Optimize_Local.py](../experiments/Static_Magnetic_Field_Sensitivity_Optimize_Local.py) | [局部优化 DC 逐点与分组温控](static_sensitivity_optimize_local.md)：每候选复用标准静磁场子运行，恢复后保存并即时分析，硬件错误停止后继 |
 
 ## 适用例外
 
-- `aw-waveform-scope-check`：纯电学或波形工具，保留硬件用途和自身安全收尾。
-- `dg-am-comp-transfer-check`：纯电学或波形工具，保留硬件用途和自身安全收尾。
-- `temperature-switch-pid-cycle`：保留专用测温、TEC 启停与 PID 周期时序。
+- `aw-waveform-scope-check`：代码已归档、GUI 仅留卡片；纯电学或波形工具的历史例外和原输出策略保留，不因归档改写硬件逻辑。
+- `dg-am-comp-transfer-check`：代码已归档、GUI 仅留卡片；作为纯电学或波形工具的历史例外规则与自身安全收尾保留，不因移出运行清单删除。
+- `temperature-switch-pid-cycle`：代码已归档、GUI 仅留卡片；保留专用测温、TEC 启停与 PID 周期时序的历史例外，说明见 [TEC 模块](tec_controller.md#实验中的可选连接)。
 - `z-aw-closed-loop-waveform-correction`：纯电学或波形工具，保留硬件用途和自身安全收尾。
 - `z-aw-current-waveform-scope-check`：纯电学或波形工具，保留硬件用途和自身安全收尾。
 - `z-aw-waveform-scope-check`：纯电学或波形工具，保留硬件用途和自身安全收尾。

@@ -70,6 +70,21 @@ STATIC_SENSITIVITY = (
 
 
 TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "t1-calibration": ("X_magnetic_field", "Y_magnetic_field", "Z_magnetic_field", "Probe_laser_power",
+        "Pump_modulation", "Time_sequence", "Temp_Switch", "temperature", "scope_waveform"),
+    "bb-power-scan-burst": ("main_magnetic_field", "Pump_laser_power", "Probe_laser_power", "Pump_modulation",
+        "Time_sequence", "Temp_Switch", "temperature", "scope_waveform"),
+    "bb-duty-scan-burst": ("main_magnetic_field", "Pump_laser_power", "Probe_laser_power",
+        "Pump_modulation", "Time_sequence", "scope_waveform", "Temp_Switch", "temperature"),
+    "z-field-bandwidth": (
+        "main_magnetic_field", "Z_magnetic_field", "Time_sequence_2", "X_magnetic_field", "Y_magnetic_field",
+        "Pump_laser_power", "Probe_laser_power", "Pump_modulation", "Time_sequence", "Temp_Switch", "temperature", "lockin_r",
+    ),
+    "rf-sensitivity-constxy-frequency": (
+        "main_magnetic_field", "Z_magnetic_field", "Time_sequence_2", "X_magnetic_field", "Y_magnetic_field",
+        "X_magnetic_field_AM", "Y_magnetic_field_AM", "Pump_laser_power", "Probe_laser_power", "Pump_modulation",
+        "Time_sequence", "Temp_Switch", "temperature", "lockin_r",
+    ),
     "z-aw-waveform-scope-check": (
         "Z_magnetic_field",
         "Time_sequence_2",
@@ -92,6 +107,7 @@ TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     ),
     "mx-z-current-coupling-calibration": (*FULL_HF2, "scope_waveform"),
     "static-sensitivity": STATIC_SENSITIVITY,
+    "static-sensitivity-optimize-local": STATIC_SENSITIVITY,
     "mx-main-field-calibration": FULL_HF2,
     "mx-keithley-6221-main-field-calibration": KEITHLEY_MAIN_FIELD,
     "mx-keithley-6221-optimal-control-rf-sensitivity": KEITHLEY_OPTIMAL_CONTROL,
@@ -99,7 +115,7 @@ TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "mx-keithley-6221-optimal-control-balanced-sensitivity": KEITHLEY_OPTIMAL_CONTROL_BALANCED_SENSITIVITY,
     "mx-main-field-noise-spectrum": FULL_HF2,
     "mx-main-field-scope-noise-spectrum": SCOPE,
-    "mx-xy-residual-field-calibration": FULL_HF2,
+    "mx-xy-residual-field-calibration": SCOPE,
     "mx-y-rf-power-optimization": FULL_HF2,
     "mx-y-rf-probe-detuning-optimization": (
         *(key for key in FULL_HF2 if key not in ("temperature", "Y_magnetic_field")), "probe_laser",
@@ -120,7 +136,8 @@ TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "noise-spectrum-xy": NOISE_SPECTRUM_XY,
     "noise-spectrum-xy-known-noise": NOISE_SPECTRUM_XY,
     "noise-spectrum-xy-uncontrolled-probe-am": PROBE_AM_NOISE_SPECTRUM_XY,
-    "noise-spectrum-xy-demod3-r": DIRECT_AW,
+    "noise-spectrum-xy-demod3-r": tuple(key for key in DIRECT_AW if key != "rf_coil"),
+    "photon-shot-noise": ("main_magnetic_field", "Pump_laser_power", "Probe_laser_power", "Temp_Switch", "temperature", "lockin_r"),
     "projection-noise": SCOPE,
     "rf-sensitivity-direct-aw-frequency": DIRECT_AW,
     "rf-sensitivity-aw": RF_SENSITIVITY_DIRECT_AW,

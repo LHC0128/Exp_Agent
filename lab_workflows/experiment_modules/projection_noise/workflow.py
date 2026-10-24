@@ -1,669 +1,284 @@
-"""原子自旋投影噪声 SDS 原始 PD 波形采集工作流。"""
-
+"""完整运行和分步会话共用的投影噪声编排，不包含仪器或科学算法。"""
 from __future__ import annotations
-
-import time
-from dataclasses import asdict
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from uuid import uuid4
 
-import numpy as np
-from gs200 import GS200Instrument
-from sds_acquisition import SDSAcquisition, SDSInstrument, save_to_npz
-from tec_controller import TECInstrument
-
-from ...common import (
-    find_project_root,
-    load_mapping,
-    load_safety_limits,
-    validate_safety_limit,
-)
-from ...devices import create_signal_generator
-from ...experiment_runtime import check_cancelled, load_runtime_params
-from ...steps import (
-    DGChannelShutdown,
-    DeviceSession,
-    DisconnectTarget,
-    STANDARD_PRESERVED_OUTPUTS,
-    SafetyShutdownReport,
-    ScopeAutoRangeState,
-    ScopeCaptureSettings,
-    ShutdownAction,
-    TemperatureSwitchRestore,
-    acquire_autoranged_waveform,
-    configure_fixed_rate_scope,
-    configure_temperature_control,
-    connect_signal_generator_routes,
-    create_run_directory,
-    read_complete_scope_record,
-    restore_main_field_state,
-    run_safety_shutdown,
-    set_temperature_switch,
-    snapshot_main_field_state,
-    synchronize_connected_clocks,
-    temperature_gated_acquire,
-    wait_for_temperature_stable,
-)
+from ...common import WorkflowCancelled, find_project_root
+from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
+from ...instrument_config import instrument_config_snapshot
 from ...steps.state import StateGuard
-from .calibration import MainFieldCalibration, load_main_field_calibration
+from ...steps import (DeviceSession, ScopeAutoRangeState, create_run_directory,
+                      snapshot_main_field_state, restore_main_field_state, disconnect_device_mapping)
+from ..noise_spectrum_xy.state_io import write_state
+from . import preparation, acquisition
 from .models import ProjectionNoiseParams
+from .run_format import EXPERIMENT_ID, DATA_TYPE
+from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, validate_selection
 
-
-EXPERIMENT_ID = "projection-noise"
-DATA_TYPE = "Projection_noise"
 EXECUTION_MODE = "typed_workflow"
+# 保留旧工作流导入边界；实际业务仍在相应职责模块。
+_scope_settings = preparation._scope_settings
+safe_shutdown = preparation.safe_shutdown
+_save_frame = acquisition._save_frame
+_save_acquisition_index = acquisition._save_acquisition_index
 
 
-class _RuntimeCancellation:
-    @staticmethod
-    def raise_if_cancelled() -> None:
-        check_cancelled()
+class Workflow:
+    stages = ACQUISITION
 
+    def __init__(self, params, *, project_root=None, session_id=None):
+        self.root = Path(project_root).resolve() if project_root else find_project_root()
+        self.params, self.mapping = preparation.preflight(params, self.root)
+        self.config_revision = self._configuration_revision()
+        self.source_revision = preparation.source_revision(params, self.root)
+        self.session_id = session_id or uuid4().hex
+        self.revision = 0
+        self.states = initial_states(self.stages)
+        self.devices, self.channels = {}, {}
+        self.device_session = DeviceSession()
+        self.main_field_guard = StateGuard()
+        self.main_field_state = None
+        self.scope_config = self.auto_range = None
+        self.directory = self.run_parameters = self.current_step = None
+        self.closed = self.round_sealed = self.clock_failed = False
+        self.records = []
+        self.state = preparation.initial_state(params, self.root)
+        self.outputs = {key: "未知" for key in ("GS200", "X", "Y", "Z", "温控", "SDS", "Pump 光功率", "Probe 光功率")}
+        self.outputs.update({"Pump 载波": "保持当前状态（本实验不写入）", "Pump 门控": "保持当前状态（本实验不写入）"})
 
-def _sleep(seconds: float) -> None:
-    """支持 GUI 取消的短间隔等待。"""
-    deadline = time.monotonic() + max(0.0, float(seconds))
-    while time.monotonic() < deadline:
-        check_cancelled()
-        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+    def _configuration_revision(self):
+        value = instrument_config_snapshot(self.root)
+        return (value["device_library_revision"], value["physical_mapping_revision"],
+                (self.root / "params/safety_limits.yaml").read_bytes())
 
+    def recheck(self):
+        if self.closed:
+            raise ValueError("会话已经结束，请新建会话")
+        if self._configuration_revision() != self.config_revision:
+            raise RuntimeError("设备库、映射或安全限值已改变，请结束会话后重新连接")
+        self.params, self.mapping = preparation.preflight(self.params, self.root)
+        if preparation.source_revision(self.params, self.root) != self.source_revision:
+            raise ValueError("主场标定来源已改变，请结束会话后重新预检")
 
-def _scope_settings(params: ProjectionNoiseParams) -> ScopeCaptureSettings:
-    return ScopeCaptureSettings(
-        sample_rate_sa_s=params.scope_sample_rate_sa_s,
-        duration_s=params.scope_duration_s,
-        pd_channel=params.scope_pd_channel,
-        trigger_mode=params.scope_trigger_mode,
-        initial_scale_v_div=params.scope_initial_scale_v_div,
-        offset_v=params.scope_offset_v,
-        vertical_divisions=params.scope_vertical_divisions,
-        scale_min_v_div=params.scope_scale_min_v_div,
-        scale_max_v_div=params.scope_scale_max_v_div,
-        auto_range_low_fraction=params.scope_auto_range_low_fraction,
-        auto_range_high_fraction=params.scope_auto_range_high_fraction,
-        auto_offset_tolerance_fraction=(
-            params.scope_auto_offset_tolerance_fraction
-        ),
-        auto_range_max_attempts=params.scope_auto_range_max_attempts,
-        welch_nperseg=params.welch_nperseg,
-        maximum_frequency_hz=(
-            params.target_larmor_frequency_hz + params.fit_half_width_hz
-        ),
-        record_max_attempts=params.scope_record_max_attempts,
-    )
+    def snapshot(self):
+        return dict(session_id=self.session_id, revision=self.revision,
+            status="closed" if self.closed else "running" if self.current_step else "waiting",
+            parameters=self.params.to_external(), steps=deepcopy(self.states), current_step=self.current_step,
+            run_id=self.directory.root.name if self.directory else None, outputs=dict(self.outputs),
+            output_source="最近成功模块的写入结果；SDS 配置另有实际回读，Pump 载波/门控未读取也未修改",
+            demod_mode="scope" if self.scope_config is not None else "unknown",
+            safety_shutdown=self.state.get("safety_shutdown"), clock_sources=self.state.get("clock_sources", {}),
+            daq_settings=self.state.get("scope_configuration"))
 
+    def publish(self, message="等待选择下一模块"):
+        value = self.snapshot()
+        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", value)
+        if self.directory and not self.round_sealed:
+            write_state(self.directory.root / "acquisition_state.json", value)
+        report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": value})
 
-def _connect_devices(
-    mapping: dict[str, dict[str, Any]], session: DeviceSession
-) -> tuple[dict[str, Any], dict[str, int]]:
-    """连接实验设备及需要显式关闭的残余输出源。"""
-    devices: dict[str, Any] = {}
-    channels: dict[str, int] = {}
+    def save(self):
+        if self.directory and not self.round_sealed:
+            self.directory.update_config(**self.state)
 
-    gs_cfg = mapping["main_magnetic_field"]
-    devices["gs200"] = session.connect(
-        "gs200", gs_cfg["resource"], lambda: GS200Instrument(gs_cfg["resource"])
-    )
+    def update_parameters(self, values):
+        self.recheck()
+        old = self.params.to_external()
+        if unknown := values.keys() - old.keys():
+            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
+        params, mapping = preparation.preflight(type(self.params).from_external(old | values), self.root)
+        changed = {key for key, value in params.to_external().items() if value != old[key]}
+        for stage in self.stages:
+            if changed.intersection(stage.parameters):
+                invalidate(self.stages, self.states, stage.id)
+        self.params, self.mapping = params, mapping
+        self.source_revision = preparation.source_revision(params, self.root)
+        self.revision += 1
+        self.publish("参数已应用；请显式重跑受影响模块，不会自动设置输出")
 
-    z_cfg = mapping["Z_magnetic_field"]
-    devices["z_field"] = session.connect(
-        "z_field", z_cfg["resource"], lambda: create_signal_generator(z_cfg)
-    )
-    channels["z_field"] = int(z_cfg["channel"])
+    def _new_directory(self):
+        inherited = self.state
+        if self.directory and not self.round_sealed:
+            self.state.update(completion_status="failed", failure_reason="本轮被重跑替代，保留已有数据")
+            self.save()
+        self.directory = create_run_directory(DATA_TYPE, self.params.run_tag, self.params.to_external(),
+                                             schema_version=self.params.schema_version, project_root=self.root)
+        self.run_parameters = self.params.to_external()
+        self.round_sealed = False
+        self.records = []
+        self.state = preparation.initial_state(self.params, self.root)
+        for key in ("device_snapshot", "clock_sources", "temperature_control", "initial_temperature_c",
+                    "scope_configuration", "actual_rates"):
+            if key in inherited:
+                self.state[key] = deepcopy(inherited[key])
+        self.save()
 
-    x_cfg = mapping["X_magnetic_field"]
-    y_cfg = mapping["Y_magnetic_field"]
-    devices["xy_field"], routed_channels = connect_signal_generator_routes(
-        session,
-        "xy_field",
-        {
-            "x_field": ("X_magnetic_field", x_cfg),
-            "y_field": ("Y_magnetic_field", y_cfg),
-        },
-    )
-    channels.update(routed_channels)
+    def execute(self, selected):
+        selected = validate_selection(self.stages, self.states, selected)
+        if selected != [FINISH_ID]:
+            self.recheck()
+        hardware = [item for item in selected if item not in ("A01", "A08", FINISH_ID)]
+        if hardware and (self.directory is None or self.round_sealed
+                or self.run_parameters != self.params.to_external()
+                or ("A07" in selected and self.states["A07"]["status"] != "pending")):
+            self._new_directory()
+        self.revision += 1
+        for item in selected:
+            if item == FINISH_ID:
+                self.finish()
+                break
+            check_cancelled()
+            if item != "A01":
+                invalidate(self.stages, self.states, item)
+            self.current_step = item
+            self.states[item] = dict(status="running", error="")
+            failure = None
+            try:
+                self.publish(next(stage.title for stage in self.stages if stage.id == item))
+                self._execute_step(item)
+                stage = next(stage for stage in self.stages if stage.id == item)
+                artifacts = [p.relative_to(self.directory.root).as_posix() for pattern in stage.artifacts
+                    for p in self.directory.root.glob(pattern) if p.is_file()] if self.directory else []
+                self.states[item] = dict(status="completed", error="", artifacts=artifacts)
+            except BaseException as exc:
+                failure = exc
+                status = ("cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else
+                          "quality_failed" if isinstance(exc, ValueError) else "failed")
+                self.states[item] = dict(status=status, error=str(exc))
+                self.state.update(completion_status=status, failure_reason=str(exc),
+                    data_files=[record["file"] for record in self.records], completed_frames=len(self.records))
+                if notes := getattr(exc, "__notes__", None):
+                    self.state["acquisition_cleanup_notes"] = list(notes)
+                try:
+                    self.save()
+                except Exception as error:
+                    self.state["state_save_error"] = str(error)
+                raise
+            finally:
+                self.current_step = None
+                try:
+                    self.publish(f"{item} {self.states[item]['status']}")
+                except Exception:
+                    if failure is None:
+                        raise
+        return self.snapshot()
 
-    carrier_cfg = mapping["Pump_modulation"]
-    gate_cfg = mapping["Time_sequence"]
-    devices["pump_rf"], routed_channels = connect_signal_generator_routes(
-        session,
-        "pump_rf",
-        {
-            "pump_carrier": ("Pump_modulation", carrier_cfg),
-            "pump_gate": ("Time_sequence", gate_cfg),
-        },
-    )
-    channels.update(routed_channels)
+    def _register_main_field_restore(self):
+        self.main_field_guard = StateGuard()
+        self.main_field_guard.add("恢复 GS200 运行前状态",
+            lambda: restore_main_field_state(self.devices["gs200"], self.main_field_state))
 
-    pump_cfg = mapping["Pump_laser_power"]
-    probe_cfg = mapping["Probe_laser_power"]
-    devices["laser"], routed_channels = connect_signal_generator_routes(
-        session,
-        "laser",
-        {
-            "pump_laser": ("Pump_laser_power", pump_cfg),
-            "probe_laser": ("Probe_laser_power", probe_cfg),
-        },
-    )
-    channels.update(routed_channels)
+    def _execute_step(self, item):
+        p, d, c = self.params, self.devices, self.channels
+        if item == "A01":
+            self.recheck()
+        elif item == "A02":
+            if not d:
+                try:
+                    self.devices, self.channels = preparation._connect_devices(self.mapping, self.device_session)
+                except BaseException:
+                    self.device_session.cleanup_connection_failure()
+                    raise
+                d, c = self.devices, self.channels
+                self.main_field_state = snapshot_main_field_state(d["gs200"])
+                self._register_main_field_restore()
+            self.state["device_snapshot"] = preparation._device_snapshot(self.mapping, self.main_field_state)
+        elif item == "A03":
+            try:
+                self.state["clock_sources"] = preparation.configure_clocks(d, self.mapping)
+                self.clock_failed = False
+            except BaseException:
+                self.clock_failed = True
+                raise
+        elif item == "A04":
+            self._register_main_field_restore()
+            preparation.configure_outputs(p, d, c, self.mapping)
+            self.outputs.update(GS200="OFF", X="OFF", Y="OFF", Z="OFF", **{"温控": "ON",
+                "Pump 光功率": f"{p.pump_laser_power_v:g} V DC", "Probe 光功率": f"{p.probe_laser_power_v:g} V DC"})
+        elif item == "A05":
+            status = preparation.configure_temperature_control(d.get("tec"), p.temperature_c,
+                                                               channel=int(self.mapping["temperature"].get("channel", 1)))
+            self.state.update(temperature_control=status.to_dict(), initial_temperature_c=status.actual_temperature_c)
+        elif item == "A06":
+            self.scope_config, snapshot = preparation.configure_scope(p, d)
+            self.state.update(scope_configuration=snapshot, actual_rates={"scope_sa_s": snapshot["actual_sample_rate_sa_s"]})
+            self.auto_range = ScopeAutoRangeState(snapshot["actual_initial_scale_v_div"], snapshot["actual_initial_offset_v"])
+            self.outputs["SDS"] = "FSRate / DC / AUTO"
+        elif item == "A07":
+            self.state["data_files"] = acquisition.acquire_scan(p, self.directory, d, c, self.scope_config,
+                self.auto_range, self.records, self.state["main_field_calibration"]["target_current_ma"])
+            self.state.update(completed_frames=len(self.records), final_scope_scale_v_div=self.auto_range.scale_v_div,
+                              final_scope_offset_v=self.auto_range.offset_v)
+            self.outputs.update(GS200="目标主场 ON", **{"温控": "ON", "SDS": "STOP"})
+        elif item == "A08":
+            if errors := self._shutdown(disconnect_tec=False):
+                raise RuntimeError("安全收尾失败：" + "；".join(errors))
+            self.state.update(completion_status="completed", failure_reason=None, finished_at=datetime.now().isoformat())
+            self.save()
+            self.round_sealed = True
+            invalidate(self.stages, self.states, "A04")
+        self.save()
 
-    temp_cfg = mapping["Temp_Switch"]
-    devices["temp_switch"] = session.connect(
-        "temp_switch",
-        temp_cfg["resource"],
-        lambda: create_signal_generator(temp_cfg),
-    )
-    channels["temp_switch"] = int(temp_cfg["channel"])
+    def _shutdown(self, *, disconnect_tec=True):
+        errors = []
+        if self.devices:
+            try:
+                report = preparation.safe_shutdown(self.devices, self.channels, self.main_field_guard,
+                                                   disconnect_tec=disconnect_tec)
+                self.state.update(safety_shutdown=report.to_dict(), main_field_restored=not self.main_field_guard.restore_errors)
+                errors.extend(report.errors)
+            except Exception as exc:
+                errors.append(str(exc))
+            if self.clock_failed:
+                errors.extend(disconnect_device_mapping(self.devices))
+            self.outputs.update({key: "未知" if errors else value for key, value in
+                {"GS200": "运行前状态", "X": "OFF", "Y": "OFF", "Z": "OFF", "温控": "ON", "SDS": "STOP"}.items()})
+        if errors:
+            self.state["safety_shutdown"] = dict(self.state.get("safety_shutdown") or {}, completed=False, errors=errors)
+        return errors
 
-    scope_cfg = mapping["scope_waveform"]
-    devices["scope"] = session.connect(
-        "scope",
-        scope_cfg["resource"],
-        lambda: SDSInstrument(scope_cfg["resource"]),
-    )
-    devices["acquirer"] = session.bind(
-        "acquirer", SDSAcquisition(devices["scope"])
-    )
-
-    tec_cfg = mapping["temperature"]
-    devices["tec"] = session.connect_optional(
-        "tec",
-        tec_cfg["resource"],
-        lambda: TECInstrument(port=tec_cfg["resource"]),
-        device_label="TEC103",
-    )
-    return devices, channels
-
-
-def _device_snapshot(
-    mapping: dict[str, dict[str, Any]],
-    main_field_state: Any,
-) -> dict[str, Any]:
-    keys = (
-        "main_magnetic_field",
-        "Z_magnetic_field",
-        "X_magnetic_field",
-        "Y_magnetic_field",
-        "Pump_modulation",
-        "Time_sequence",
-        "Pump_laser_power",
-        "Probe_laser_power",
-        "Temp_Switch",
-        "scope_waveform",
-        "temperature",
-    )
-    return {
-        "mapping": {key: mapping[key] for key in keys},
-        "main_field_before_configuration": asdict(main_field_state),
-    }
-
-
-def _configure_outputs(
-    params: ProjectionNoiseParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    mapping: dict[str, dict[str, Any]],
-) -> tuple[float | None, dict[str, dict[str, Any]]]:
-    """配置热态光学条件、温控和 GS200 安全初始状态。"""
-    clock_sources = synchronize_connected_clocks(
-        devices,
-        mapping,
-        {
-            "z_field": "Z_magnetic_field",
-            "xy_field": "X_magnetic_field",
-            "pump_rf": "Pump_modulation",
-            "laser": "Pump_laser_power",
-            "temp_switch": "Temp_Switch",
-        },
-    )
-    off_channels = (
-        ("z_field", "z_field", "Z_magnetic_field"),
-        ("xy_field", "x_field", "X_magnetic_field"),
-        ("xy_field", "y_field", "Y_magnetic_field"),
-        ("pump_rf", "pump_carrier", "Pump_modulation"),
-        ("pump_rf", "pump_gate", "Time_sequence"),
-    )
-    for device_name, channel_name, safety_key in off_channels:
-        validate_safety_limit(safety_key, 0.0)
-        device = devices[device_name]
-        channel = channels[channel_name]
-        device.set_burst_state(False, channel=channel)
-        device.set_mod_state(False, channel=channel)
-        device.setup_dc(0.0, channel=channel)
-        device.set_output(False, channel=channel)
-
-    laser = devices["laser"]
-    validate_safety_limit("Pump_laser_power", params.pump_laser_power_v)
-    laser.setup_dc(params.pump_laser_power_v, channel=channels["pump_laser"])
-    laser.set_output(
-        params.pump_laser_power_v > 0.0,
-        channel=channels["pump_laser"],
-    )
-    validate_safety_limit("Probe_laser_power", params.probe_laser_power_v)
-    laser.setup_dc(params.probe_laser_power_v, channel=channels["probe_laser"])
-    laser.set_output(True, channel=channels["probe_laser"])
-
-    set_temperature_switch(
-        devices["temp_switch"], True, channel=channels["temp_switch"]
-    )
-    temperature_status = configure_temperature_control(
-        devices.get("tec"),
-        params.temperature_c,
-        channel=1,
-    )
-    actual_temperature = temperature_status.actual_temperature_c
-
-    gs200 = devices["gs200"]
-    gs_cfg = mapping["main_magnetic_field"]
-    gs200.set_output(False)
-    if gs_cfg.get("source_function"):
-        gs200.set_source_function(gs_cfg["source_function"])
-    limits = load_safety_limits()
-    gs200.set_current_limit(float(limits["main_magnetic_field"]["max"]) / 1000.0)
-    return actual_temperature, clock_sources
-
-
-def _temperature_gated_capture(
-    params: ProjectionNoiseParams,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    scope_config: Any,
-) -> Any:
-    settings = _scope_settings(params)
-    return temperature_gated_acquire(
-        temp_switch=devices["temp_switch"],
-        temp_channel=channels["temp_switch"],
-        off_settle_s=params.system_settle_s,
-        on_settle_s=params.temp_switch_on_settle_s,
-        acquire=lambda: read_complete_scope_record(
-            settings,
-            devices,
-            scope_config,
-            check_cancelled=check_cancelled,
-            sleep=_sleep,
-        ),
-        check_cancelled=check_cancelled,
-        sleep=_sleep,
-        set_temperature_switch=set_temperature_switch,
-        cancellation=_RuntimeCancellation(),
-    )
-
-
-def _save_frame(
-    path: Path,
-    payload: dict[str, Any],
-    *,
-    phase: str,
-    frame_index: int,
-    params: ProjectionNoiseParams,
-    main_field_output_on: bool,
-    main_field_current_ma: float,
-) -> str:
-    result = payload["result"]
-    metadata = {
-        "phase": phase,
-        "frame_index": int(frame_index),
-        "main_field_output_on": bool(main_field_output_on),
-        "main_field_current_ma": float(main_field_current_ma),
-        "requested_sample_rate_sa_s": float(params.scope_sample_rate_sa_s),
-        "actual_sample_rate_sa_s": float(payload["actual_rate_sa_s"]),
-        "requested_duration_s": float(params.scope_duration_s),
-        "actual_duration_s": float(payload["actual_duration_s"]),
-        "scale_used_v_div": float(payload["scale_used_v_div"]),
-        "offset_used_v": float(payload["offset_used_v"]),
-        "next_scale_v_div": float(payload["next_scale_v_div"]),
-        "next_offset_v": float(payload["next_offset_v"]),
-        "attempt_count": int(payload["attempt_count"]),
-        "attempt_scales_v_div": np.asarray(
-            payload["attempt_scales_v_div"], dtype=float
-        ).tolist(),
-        "attempt_offsets_v": np.asarray(
-            payload["attempt_offsets_v"], dtype=float
-        ).tolist(),
-        "temp_switch_during_acquisition": "0 V DC + output ON",
-        "temp_switch_between_frames": "5 V DC + output ON",
-        "timebase_scale": float(result.preamble_dict.get("horiz_interval", 0.0))
-        * max(1, len(result.raw_data))
-        / 10.0,
-        "horizontal_divisions": 10,
-    }
-    result.config_snapshot = metadata
-    return save_to_npz(
-        str(path), [result], config_dict=metadata, save_mode="raw"
-    )
-
-
-def _acquire_phase(
-    params: ProjectionNoiseParams,
-    run_dir: Any,
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    scope_config: Any,
-    auto_range: ScopeAutoRangeState,
-    *,
-    phase: str,
-    main_field_output_on: bool,
-    main_field_current_ma: float,
-) -> list[dict[str, Any]]:
-    """采集一个 GS200 状态下的全部示波器帧。"""
-    phase_dir = run_dir.raw / phase
-    phase_dir.mkdir(exist_ok=False)
-    settings = _scope_settings(params)
-    records: list[dict[str, Any]] = []
-    for index in range(params.acq_repeats):
-        check_cancelled()
-        print(f"{phase} 帧 {index + 1}/{params.acq_repeats}")
-        payload = acquire_autoranged_waveform(
-            settings,
-            scope_config,
-            devices["scope"],
-            auto_range,
-            capture=lambda: _temperature_gated_capture(
-                params, devices, channels, scope_config
-            ),
-            check_cancelled=check_cancelled,
-        )
-        relative = f"raw/{phase}/waveform_{index:04d}.npz"
-        _save_frame(
-            run_dir.root / relative,
-            payload,
-            phase=phase,
-            frame_index=index,
-            params=params,
-            main_field_output_on=main_field_output_on,
-            main_field_current_ma=main_field_current_ma,
-        )
-        records.append(
-            {
-                "phase": phase,
-                "frame_index": index,
-                "file": relative,
-                "main_field_output_on": main_field_output_on,
-                "main_field_current_ma": main_field_current_ma,
-                "actual_rate_sa_s": float(payload["actual_rate_sa_s"]),
-                "actual_duration_s": float(payload["actual_duration_s"]),
-                "scale_used_v_div": float(payload["scale_used_v_div"]),
-                "offset_used_v": float(payload["offset_used_v"]),
-                "attempt_count": int(payload["attempt_count"]),
-            }
-        )
-    return records
-
-
-def _save_acquisition_index(run_dir: Any, records: list[dict[str, Any]]) -> str:
-    path = run_dir.raw / "scope_acquisition_index.npz"
-    np.savez(
-        path,
-        phase=np.asarray([item["phase"] for item in records], dtype=str),
-        frame_index=np.asarray([item["frame_index"] for item in records], dtype=int),
-        relative_file=np.asarray([item["file"] for item in records], dtype=str),
-        main_field_output_on=np.asarray(
-            [item["main_field_output_on"] for item in records], dtype=bool
-        ),
-        main_field_current_ma=np.asarray(
-            [item["main_field_current_ma"] for item in records], dtype=float
-        ),
-        actual_rate_sa_s=np.asarray(
-            [item["actual_rate_sa_s"] for item in records], dtype=float
-        ),
-        actual_duration_s=np.asarray(
-            [item["actual_duration_s"] for item in records], dtype=float
-        ),
-        scale_used_v_div=np.asarray(
-            [item["scale_used_v_div"] for item in records], dtype=float
-        ),
-        offset_used_v=np.asarray(
-            [item["offset_used_v"] for item in records], dtype=float
-        ),
-        attempt_count=np.asarray(
-            [item["attempt_count"] for item in records], dtype=int
-        ),
-    )
-    return "raw/scope_acquisition_index.npz"
-
-
-def safe_shutdown(
-    devices: dict[str, Any],
-    channels: dict[str, int],
-    main_field_guard: StateGuard,
-) -> SafetyShutdownReport:
-    """关闭无关输出、停止示波器、恢复温控和 GS200。"""
-    dg_channels: list[DGChannelShutdown] = []
-    for device_name, channel_name, safety_key, label in (
-        ("z_field", "z_field", "Z_magnetic_field", "Z 辅助场"),
-        ("xy_field", "x_field", "X_magnetic_field", "X 磁场"),
-        ("xy_field", "y_field", "Y_magnetic_field", "Y 磁场"),
-        ("pump_rf", "pump_carrier", "Pump_modulation", "Pump 100MHz 载波"),
-        ("pump_rf", "pump_gate", "Time_sequence", "Pump RF 门控"),
-    ):
-        device = devices.get(device_name)
-        channel = channels.get(channel_name)
-        if device is not None and channel is not None:
-            dg_channels.append(
-                DGChannelShutdown(device, channel, safety_key, label)
-            )
-
-    extra_actions: list[ShutdownAction] = []
-    if devices.get("scope") is not None:
-        extra_actions.append(
-            ShutdownAction("停止示波器触发失败", devices["scope"].trigger_stop)
-        )
-    temperature_restore = None
-    if devices.get("temp_switch") is not None and "temp_switch" in channels:
-        temperature_restore = TemperatureSwitchRestore(
-            devices["temp_switch"], channels["temp_switch"]
-        )
-    report = run_safety_shutdown(
-        dg_channels=dg_channels,
-        temperature_switch=temperature_restore,
-        extra_actions=extra_actions,
-        disconnect_targets=(DisconnectTarget("TEC", devices.get("tec")),),
-        preserved_outputs=tuple(
-            output
-            for output in STANDARD_PRESERVED_OUTPUTS
-            if output != "Pump_modulation"
-        ),
-    )
-    guard_errors = tuple(main_field_guard.restore())
-    return SafetyShutdownReport(
-        action_errors=(*report.action_errors, *guard_errors),
-        disconnect_errors=report.disconnect_errors,
-        preserved_outputs=report.preserved_outputs,
-    )
-
-
-def run(params: ProjectionNoiseParams) -> Path:
-    """执行 GS200 打开阶段及可选关闭对照组的 SDS 自旋噪声采集。"""
-    root = find_project_root()
-    mapping = load_mapping(root)
-    calibration = load_main_field_calibration(
-        root, params.main_field_calibration_source_run
-    )
-    target_current_ma = calibration.current_for_frequency(
-        params.target_larmor_frequency_hz
-    )
-    validate_safety_limit("main_magnetic_field", target_current_ma)
-    phase_config: list[dict[str, Any]] = []
-    if params.measure_field_off_control:
-        phase_config.append(
-            {
-                "id": "field_off",
-                "main_field_output": "OFF",
-                "description": "GS200 output-off background",
-            }
-        )
-    phase_config.append(
-        {
-            "id": "field_on",
-            "main_field_output": "ON",
-            "main_field_current_ma": target_current_ma,
-            "predicted_larmor_frequency_hz": params.target_larmor_frequency_hz,
-        }
-    )
-    run_dir = create_run_directory(
-        DATA_TYPE,
-        params.run_tag,
-        params.to_external(),
-        schema_version=params.schema_version,
-        project_root=root,
-    )
-    run_dir.update_config(
-        experiment_id=EXPERIMENT_ID,
-        data_type=DATA_TYPE,
-        execution_mode=EXECUTION_MODE,
-        acquisition_backend="sds_pd_raw",
-        geometry={
-            "main_field": "Z controlled by GS200",
-            "probe": "X",
-            "pump": (
-                f"{params.pump_laser_power_v:g} V DC, output "
-                f"{'ON' if params.pump_laser_power_v > 0.0 else 'OFF'}"
-            ),
-            "pd_detection": "SDS CH1 raw waveform",
-        },
-        measure_field_off_control=params.measure_field_off_control,
-        phases=phase_config,
-        main_field_calibration={
-            "source_run": calibration.source_run,
-            "analysis_path": str(calibration.analysis_path),
-            "slope_hz_per_ma": calibration.slope_hz_per_ma,
-            "intercept_hz": calibration.intercept_hz,
-            "r_squared": calibration.r_squared,
-            "target_current_ma": target_current_ma,
-        },
-        temperature_gating={
-            "scope": "every_scope_attempt",
-            "during_acquisition": "0 V DC + output ON",
-            "between_frames": "5 V DC + output ON",
-            "off_settle_s": params.system_settle_s,
-            "on_settle_s": params.temp_switch_on_settle_s,
-        },
-        analysis_during_acquisition=False,
-    )
-
-    session = DeviceSession()
-    devices: dict[str, Any] = {}
-    channels: dict[str, int] = {}
-    main_field_guard = StateGuard()
-    completion_status = "failed"
-    failure_reason: str | None = None
-    try:
-        check_cancelled()
+    def finish(self, failure=None):
+        if self.closed:
+            return
+        errors = list(disconnect_device_mapping({"tec": self.devices.get("tec")})) if self.round_sealed else self._shutdown()
+        self.closed, self.current_step = True, None
+        self.revision += 1
+        self.states[FINISH_ID] = dict(status="failed" if errors else "completed", error="；".join(errors))
+        if not self.round_sealed:
+            self.state.update(completion_status="cancelled" if isinstance(failure, (WorkflowCancelled, KeyboardInterrupt)) else "failed",
+                failure_reason=str(failure) if failure else self.state.get("failure_reason") or "本轮采集未完整完成",
+                finished_at=datetime.now().isoformat())
+        if errors:
+            self.state["cleanup_errors"] = errors
+            self.state["safety_shutdown"] = dict(self.state.get("safety_shutdown") or {}, completed=False, errors=errors)
         try:
-            devices, channels = _connect_devices(mapping, session)
+            self.save()
+            self.publish("会话已结束")
+            report_runtime_progress("finished", "采集会话已结束", 100)
         except Exception:
-            session.cleanup_connection_failure()
-            raise
-        main_field_state = snapshot_main_field_state(devices["gs200"])
-        main_field_guard.add(
-            "恢复 GS200 运行前状态",
-            lambda: restore_main_field_state(devices["gs200"], main_field_state),
-        )
-        run_dir.update_config(
-            device_snapshot=_device_snapshot(mapping, main_field_state)
-        )
+            if failure is None and not errors:
+                raise
+        if errors and failure is None:
+            raise RuntimeError("安全收尾失败：" + "；".join(errors))
 
-        actual_temperature, clock_sources = _configure_outputs(
-            params, devices, channels, mapping
-        )
-        scope_config, scope_snapshot = configure_fixed_rate_scope(
-            _scope_settings(params), devices, sleep=_sleep
-        )
-        run_dir.update_config(
-            initial_temperature_c=actual_temperature,
-            temperature_control={
-                "target_temperature_c": params.temperature_c,
-                "actual_temperature_c": actual_temperature,
-                "controlled_by_experiment": devices.get("tec") is not None,
-                "control_source": (
-                    "tec103" if devices.get("tec") is not None else "external_software"
-                ),
-            },
-            clock_sources=clock_sources,
-            scope_configuration=scope_snapshot,
-            actual_rates={"scope_sa_s": scope_snapshot["actual_sample_rate_sa_s"]},
-        )
-        auto_range = ScopeAutoRangeState(
-            scale_v_div=float(scope_snapshot["actual_initial_scale_v_div"]),
-            offset_v=float(scope_snapshot["actual_initial_offset_v"]),
-        )
 
-        gs200 = devices["gs200"]
-        gs200.set_output(False)
-        records: list[dict[str, Any]] = []
-        if params.measure_field_off_control:
-            records.extend(
-                _acquire_phase(
-                    params,
-                    run_dir,
-                    devices,
-                    channels,
-                    scope_config,
-                    auto_range,
-                    phase="field_off",
-                    main_field_output_on=False,
-                    main_field_current_ma=0.0,
-                )
-            )
-
-        validate_safety_limit("main_magnetic_field", target_current_ma)
-        gs200.set_output(False)
-        gs200.set_current(target_current_ma / 1000.0)
-        gs200.set_output(True)
-        _sleep(params.main_field_settle_s)
-        records.extend(
-            _acquire_phase(
-                params,
-                run_dir,
-                devices,
-                channels,
-                scope_config,
-                auto_range,
-                phase="field_on",
-                main_field_output_on=True,
-                main_field_current_ma=target_current_ma,
-            )
-        )
-        index_file = _save_acquisition_index(run_dir, records)
-        data_files = [index_file, *[item["file"] for item in records]]
-        completion_status = "completed"
-        run_dir.update_config(
-            completion_status=completion_status,
-            failure_reason=None,
-            data_files=data_files,
-            final_scope_scale_v_div=auto_range.scale_v_div,
-            final_scope_offset_v=auto_range.offset_v,
-        )
-        print(f"原子自旋投影噪声示波器采集完成: {run_dir.root}")
-        return run_dir.root
-    except Exception as exc:
-        failure_reason = str(exc)
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status="failed", failure_reason=failure_reason
-            )
+def run(params: ProjectionNoiseParams, *, project_root=None, workflow_type=Workflow) -> Path:
+    ctx = workflow_type(params, project_root=project_root)
+    failure = None
+    try:
+        ctx.execute([stage.id for stage in ctx.stages if stage.id != FINISH_ID])
+        return ctx.directory.root
+    except BaseException as exc:
+        failure = exc
         raise
     finally:
-        shutdown_report = safe_shutdown(devices, channels, main_field_guard)
-        if shutdown_report.errors:
-            print("安全关闭警告: " + "；".join(shutdown_report.errors))
-        if run_dir.config_path.exists():
-            run_dir.update_config(
-                completion_status=completion_status,
-                failure_reason=failure_reason,
-                safety_shutdown=shutdown_report.to_dict(),
-                main_field_restored=not main_field_guard.restore_errors,
-                device_disconnect={
-                    "tec_disconnected": not shutdown_report.disconnect_errors,
-                    "other_devices_preserved": True,
-                    "errors": list(shutdown_report.disconnect_errors),
-                },
-            )
+        ctx.finish(failure)
 
 
 def main() -> int:
-    params = load_runtime_params(ProjectionNoiseParams)
-    run(params)
+    run(load_runtime_params(ProjectionNoiseParams))
     return 0
 
 

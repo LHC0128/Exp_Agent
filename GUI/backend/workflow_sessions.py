@@ -91,7 +91,7 @@ class XYAnalysisBody(XYStepsBody):
 class XYAnalysisState(StrictModel):
     run_id: str
     revision: int
-    options: dict[str, float | str]
+    options: dict[str, float | str | bool | None]
     steps: dict[str, XYStageState]
     fingerprint: dict[str, Any]
     summary: dict[str, Any]

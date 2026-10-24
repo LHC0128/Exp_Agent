@@ -1,0 +1,44 @@
+schema_version: 3
+parameters:
+  RUN_TAG_PREFIX: opt_local
+  BASELINE_PARAMS:
+    Pump_laser_power: 0.3
+    Probe_laser_power: 0.1
+    PUMP_MOD_DUTY: 5.0
+    temperature: 100.0
+    main_magnetic_field: 1.023
+    X_magnetic_field: 0.0
+    Y_magnetic_field: 0.0
+  OPTIMIZE_SEQUENCE: '[{"parameter": "Pump_laser_power", "values": [0.2, 0.25, 0.3,
+    0.35, 0.4]}, {"parameter": "Probe_laser_power", "values": [0.05, 0.08, 0.1, 0.12,
+    0.15]}, {"parameter": "PUMP_MOD_DUTY", "values": [3, 4, 5, 6, 8]}]'
+  SYSTEM_SETTLE_S: 2.0
+  RAMP_LOW: -0.5
+  RAMP_HIGH: 0.5
+  DISPERSION_STEPS: 41
+  DISPERSION_DURATION_S: 0.1
+  DISPERSION_TEMP_SWITCH_INTERVAL_POINTS: 5
+  DISPERSION_TEMP_SWITCH_ON_SETTLE_S: 3.0
+  PUMP_MOD_FREQ: 10000.0
+  PUMP_MOD_AMPLITUDE: 0.18
+  RF_GATE_AMPLITUDE: 5.0
+  RF_GATE_OFFSET: 2.5
+  HF2_DEMOD_IDX: 0
+  HF2_DEMOD_ORDER: 4
+  HF2_SIGNAL_RANGE: 2.0
+  HF2_DEMOD_RATE: 1000.0
+  HF2_DEMOD_TC: 0.001
+  HF2_NOISE_RATE: 50000.0
+  HF2_NOISE_TC: 1.0e-06
+  NOISE_N_AVG: 20
+  NOISE_DURATION: 1.0
+  GS200_CURRENT_RANGE_A: 0.001
+  GS200_RANGE_SETTLE_TIME: 1.0
+  Z_V_TO_NT: 3517.0
+  SCAN_VARIABLE: Z_magnetic_field
+  RAMP_FREQ: 1.0
+  RAMP_SYMMETRY: 20.0
+  DAQ_DURATION: 1.0
+  DAQ_TRIGGER_CHANNEL: 0
+  DAQ_TRIGGER_LEVEL: 1.0
+  DAQ_TRIGGER_SLOPE: 0

@@ -71,6 +71,22 @@
     "GUI/backend/test_rf_sensitivity_direct_aw_r.py": "61a58261826cf516ce34ae6b11609e522b4c2acd24c888de9d85b2ee81c39e18",
     "GUI/frontend/src/pages/RFSensitivityDirectAWRPage.test.tsx": "1a2fc8b5064842ef0532b1d57fb2c0bff986df94b4d5cdc51eda0ed4b122819b",
     "GUI/frontend/src/pages/rfDirectAWRSchema.fixture.json": "02e54f0f3c5eb0444baa166fcb315e35715c09255313d38a0f2aa3ed36b5e518",
-    "GUI/frontend/src/pages/rfDirectAWRWorkflow.fixture.json": "c37225f07b8fa76a1c67bf693f168d5c6fe7b492fb6b08d0cd9bf1aa61eb24ac"
+    "GUI/frontend/src/pages/rfDirectAWRWorkflow.fixture.json": "c37225f07b8fa76a1c67bf693f168d5c6fe7b492fb6b08d0cd9bf1aa61eb24ac",
+    "experiments/AW_ConstOmega_Calibration_Check_AWScale.py": "248bec4e6b23c7e4dcc88093b14b2ed0420b03df800de3d2e80c5713ea4310d5",
+    "experiments/AW_ConstOmega_Calibration_Check_AWScale_plot.py": "b427ed1a077c2642861fd2a497b82611d07d524c051abaaf0c77a230ee33cd3a",
+    "experiments/DG_AM_to_DG_COMP_Transfer_Check.py": "b425a7675403d26bb0eed8d78a1315cc48466d591b2ee20305a95d9d188449e4",
+    "experiments/DG_AM_to_DG_COMP_Transfer_Check_plot.py": "3f84761ae3f9a5c1630055ef6257e743eecfaae6b04eb116dbbeed44d1e2a55d",
+    "experiments/RF_Field_Sensitivity_AW_FreqSweep.py": "185688e3cbb25ea35b2c4a86afa9870f0590baf9fca5c6ae07b5595c0f962a3c",
+    "experiments/RF_Field_Sensitivity_AW_FreqSweep_plot.py": "c6ebd74f7dc823108b8d036498ed635a8541481da3efaba07ee9ab6b29114beb",
+    "experiments/Temperature_Switch_PID_Cycle_Test.py": "9d59fb005fc73c26d3fa8eec4c79bb27a751335dda288333d8d8ab3047aa0078",
+    "experiments/Temperature_Switch_PID_Cycle_Test_plot.py": "397ccf31aba28bd406d837f3237ec39756ee3b1c5a4f85ed507e6d860edcec34",
+    "experiments/AW_Control_Waveform_Scope_Check.py": "246a4960035b76401859f1bb53ba4face9612590b37208d383f9eb2644e56e4a",
+    "experiments/Static_Magnetic_Field_Sensitivity_Optimize.py": "f2c2ab007268ae050a215074b86c671c21b710b5e3360fc037d34bc7dbc946f6",
+    "experiments/AW_ConstOmega_Calibration_Check.py": "b589d52b13c52230404eae0f50d54c82d060ddf3fd8c10319ff69435f79ad575",
+    "experiments/AW_ConstOmega_Calibration_Check_plot.py": "73debca023d5df2b23a33e4a868419b9d1fc97ac63b95b7a32b935be25a8a0e7",
+    "experiments/XY_DC_Voltage_Calibration.py": "bee313ffdc0f0eddf34d854a376fd191481366d884ff82cd9507391eb5f998ca",
+    "experiments/XY_DC_Voltage_Calibration_plot.py": "8eac9fce3f3bc2fafb826eeaab0fcabfaa498e920deda56cb250878e7dc6a556",
+    "experiments/XY_AW_Voltage_Calibration.py": "a02c02694af37594c1fd720abc7210e9d445282da3936db8937fe66c4fbab1b3",
+    "experiments/XY_AW_Voltage_Calibration_plot.py": "12579c68e0adfa81aee60bc406d9adb6e4ac0d60b52d9a20d6f12dbb5a3288f1"
   }
 }

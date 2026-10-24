@@ -1,14 +1,16 @@
 """验收关联、共享步骤影响和双 Skill 同步的无硬件回归。"""
 
+import ast
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
 from .experiment_validation import (
-    affected_experiments, changed_files, discover_acquisition_cases,
-    missing_scenarios, repository_path, skill_differences,
+    COMMON_SCENARIOS, affected_experiments, canonical_test_targets, changed_files, deduplicate_test_targets,
+    discover_acquisition_cases, discover_test_cases, missing_scenarios, repository_path, skill_differences,
     validation_plan,
     verify_pytest_results,
 )
@@ -127,6 +129,280 @@ def test_disk(): pass
                                  acquisition_program="experiments/legacy.py", analysis_program="experiments/legacy_plot.py")
         impacts = affected_experiments(self.root, [legacy], ["experiments/legacy_plot.py"], {})
         self.assertFalse(impacts["legacy"]["acquisition_changed"])
+
+    def test_non_acquisition_changes_do_not_schedule_full_acquisition(self):
+        self.write("lab_workflows/demo/workflow.py", "from .models import Params\n")
+        self.write("lab_workflows/demo/models.py", "class Params: pass\n")
+        claims = {"demo": {"mode": "single", "cases": {
+            scenario: ["lab_workflows/demo/test_workflow.py::test_order"] for scenario in COMMON_SCENARIOS}}}
+        for path in ("lab_workflows/demo/models.py", "lab_workflows/demo/analysis.py",
+                     "lab_workflows/demo/definition.py", "lab_workflows/demo/stages.py",
+                     "params/experiments/demo.yaml"):
+            with self.subTest(path=path):
+                report, errors = validation_plan(self.root, [self.definition()], [path], claims)
+                if path.endswith(("models.py", "analysis.py", "demo.yaml")):
+                    self.assertTrue(any("REGRESSION_CASES" in error for error in errors))
+                else:
+                    self.assertFalse(errors)
+                entry = report["experiments"][0]
+                self.assertTrue(entry["selected"])
+                self.assertFalse(entry["acquisition_required"])
+                self.assertEqual(entry["acquisition_status"], "not_required")
+                self.assertEqual(report["test_targets"], [])
+        report, errors = validation_plan(self.root, [self.definition()], [], claims, requested_ids=["demo"])
+        self.assertFalse(errors)
+        self.assertEqual(report["test_targets"], [])
+        report, errors = validation_plan(self.root, [self.definition()], [], claims, required_ids=["demo"])
+        self.assertFalse(errors)
+        self.assertTrue(report["experiments"][0]["selected"])
+        self.assertTrue(report["experiments"][0]["acquisition_required"])
+        self.assertEqual(report["test_targets"], ["lab_workflows/demo/test_workflow.py::test_order"])
+        _, errors = validation_plan(self.root, [self.definition()], [], {}, required_ids=["unknown"])
+        self.assertTrue(any("unknown" in error for error in errors))
+
+    def test_changed_test_file_runs_all_its_tests_without_claiming_full_acquisition(self):
+        self.write("lab_workflows/demo/workflow.py", "pass\n")
+        test_file = "lab_workflows/demo/test_workflow.py"
+        self.write(test_file, "def test_order(): pass\ndef test_new_regression(): pass\n")
+        claims = {"demo": {"mode": "single", "cases": {"order": [test_file + "::test_order"]}}}
+        report, errors = validation_plan(self.root, [self.definition()], [test_file], claims)
+        self.assertFalse(errors)
+        self.assertEqual(report["test_targets"], [test_file])
+        self.assertFalse(report["experiments"][0]["acquisition_required"])
+        self.assertEqual(report["experiments"][0]["acquisition_status"], "not_required")
+        self.assertIn("cancel", report["experiments"][0]["missing_scenarios"])
+        self.assertEqual(deduplicate_test_targets([test_file, test_file + "::test_order", test_file]), [test_file])
+
+    def test_shared_acquisition_keeps_all_callers_and_deduplicates_changed_files(self):
+        claims = {}
+        for name in ("one", "two"):
+            self.write(f"lab_workflows/{name}/workflow.py", "from ..shared import acquire\n")
+            path = f"lab_workflows/{name}/test_workflow.py"
+            self.write(path, "def test_order(): pass\n")
+            claims[name] = {"mode": "single", "cases": {scenario: [path + "::test_order"] for scenario in COMMON_SCENARIOS}}
+        self.write("lab_workflows/shared.py", "def acquire(): pass\n")
+        report, errors = validation_plan(self.root, [self.definition("one"), self.definition("two")],
+            ["lab_workflows/shared.py", "lab_workflows/one/test_workflow.py"], claims, requested_ids=["one"])
+        self.assertFalse(errors)
+        self.assertTrue(all(entry["acquisition_required"] for entry in report["experiments"]))
+        self.assertEqual(report["test_targets"], ["lab_workflows/one/test_workflow.py",
+                                                 "lab_workflows/two/test_workflow.py::test_order"])
+
+    def test_shared_analysis_dependency_is_reported_without_acquisition(self):
+        self.write("lab_workflows/demo/workflow.py", "pass\n")
+        self.write("lab_workflows/demo/analysis.py", "from ..offline import fit\n")
+        path = "lab_workflows/offline.py"
+        self.write(path, "def fit(): pass\n")
+        definition = self.definition()
+        definition.experiment_runner.__self__.analysis_module = "lab_workflows.demo.analysis"
+        report, errors = validation_plan(self.root, [definition], [path], {})
+        self.assertTrue(any("analysis" in error for error in errors))
+        self.assertEqual(report["experiments"][0]["regressions"]["analysis"]["status"], "missing_mapping")
+        self.assertTrue(report["experiments"][0]["selected"])
+        self.assertFalse(report["experiments"][0]["acquisition_required"])
+        self.assertEqual(report["unmapped_files"], [])
+        self.assertEqual(report["test_targets"], [])
+
+    def test_discovery_reads_both_declarations_once_without_import(self):
+        self.write("lab_workflows/offline.py", "pass\n")
+        self.write("lab_workflows/test_both.py", '''
+raise AssertionError("发现不能导入")
+ACQUISITION_CASES = {"demo": {"mode": "single", "cases": {"order": ["test_order"]}}}
+REGRESSION_CASES = {"demo": {
+    "analysis": {"sources": ["lab_workflows/offline.py"], "tests": ["ScienceTest::test_fit"]},
+    "parameters": {"sources": ["lab_workflows/offline.py"], "tests": ["test_order"]}}}
+def test_order(): pass
+class ScienceTest:
+    def test_fit(self): pass
+''')
+        with patch("lab_workflows.experiment_validation.ast.parse", wraps=ast.parse) as parse:
+            acquisition, regressions = discover_test_cases(self.root)
+        self.assertEqual(parse.call_count, 1)
+        self.assertEqual(acquisition["demo"]["cases"]["order"], ["lab_workflows/test_both.py::test_order"])
+        self.assertEqual(regressions["demo"]["analysis"]["nodes"], ["lab_workflows/test_both.py::ScienceTest::test_fit"])
+
+    def test_invalid_regression_declarations_are_rejected(self):
+        self.write("lab_workflows/offline.py", "pass\n")
+        valid = {"sources": ["lab_workflows/offline.py"], "tests": ["test_fit"]}
+        declarations = [repr({"demo": {"unknown": valid}}), "dict(demo={})",
+                        repr({"demo": {"analysis": valid | {"tests": ["test_missing"]}}}),
+                        repr({"demo": {"analysis": valid | {"sources": []}}}),
+                        repr({"demo": {"analysis": valid | {"sources": ["../escape.py"]}}}),
+                        repr({"demo": {"analysis": valid | {"sources": ["lab_workflows/missing.py"]}}})]
+        for declaration in declarations:
+            with self.subTest(declaration=declaration):
+                self.write("lab_workflows/test_offline.py", f"REGRESSION_CASES = {declaration}\ndef test_fit(): pass\n")
+                with self.assertRaises(ValueError):
+                    discover_test_cases(self.root)
+
+    def test_shared_analysis_mapping_selects_both_experiments_without_acquisition(self):
+        source = "lab_workflows/offline.py"
+        self.write(source, "def fit(): pass\n")
+        definitions = []
+        for name in ("one", "two"):
+            self.write(f"lab_workflows/{name}/workflow.py", "pass\n")
+            self.write(f"lab_workflows/{name}/analysis.py", "from ..offline import fit\n")
+            definition = self.definition(name)
+            definition.experiment_runner.__self__.analysis_module = f"lab_workflows.{name}.analysis"
+            definitions.append(definition)
+        declaration = {name: {"analysis": {"sources": [source], "tests": ["test_fit"]}} for name in ("one", "two")}
+        self.write("lab_workflows/test_offline.py", f"REGRESSION_CASES = {declaration!r}\ndef test_fit(): pass\n")
+        acquisition, regressions = discover_test_cases(self.root)
+        report, errors = validation_plan(self.root, definitions, [source], acquisition,
+            requested_ids=["one"], regression_cases=regressions)
+        self.assertFalse(errors)
+        self.assertTrue(all(entry["selected"] and not entry["acquisition_required"] for entry in report["experiments"]))
+        self.assertTrue(all(entry["regressions"]["analysis"]["required"] for entry in report["experiments"]))
+        self.assertEqual(report["test_targets"], ["lab_workflows/test_offline.py::test_fit"])
+        report, errors = validation_plan(self.root, definitions, [source, "lab_workflows/test_offline.py"], {},
+            requested_ids=["one"], regression_cases={"one": regressions["one"]})
+        self.assertTrue(any("two" in error and "analysis" in error for error in errors))
+        self.assertEqual(report["experiments"][1]["regressions"]["analysis"]["status"], "missing_mapping")
+        self.assertEqual(report["test_targets"], ["lab_workflows/test_offline.py"])
+        # 分析声明不能隐藏同一源码的真实采集依赖。
+        self.write("lab_workflows/one/workflow.py", "from ..offline import fit\n")
+        report, errors = validation_plan(self.root, definitions, [source], {}, regression_cases=regressions)
+        self.assertTrue(report["experiments"][0]["acquisition_required"])
+        self.assertTrue(any("采集业务验收" in error for error in errors))
+
+    def test_parameter_mapping_covers_models_and_defaults_without_full_acquisition(self):
+        model = "lab_workflows/demo/models.py"
+        defaults = "params/experiments/demo.yaml"
+        self.write("lab_workflows/demo/workflow.py", "from .models import Params\n")
+        self.write(model, "class Params: pass\n")
+        self.write(defaults, "schema_version: 1\n")
+        declaration = {"demo": {"parameters": {"sources": [model, defaults], "tests": ["test_migration", "test_limits"]}}}
+        self.write("lab_workflows/test_params.py", f"REGRESSION_CASES = {declaration!r}\ndef test_migration(): pass\ndef test_limits(): pass\n")
+        acquisition, regressions = discover_test_cases(self.root)
+        for source in (model, defaults):
+            with self.subTest(source=source):
+                report, errors = validation_plan(self.root, [self.definition()], [source], acquisition, regression_cases=regressions)
+                self.assertFalse(errors)
+                entry = report["experiments"][0]
+                self.assertFalse(entry["acquisition_required"])
+                self.assertEqual(entry["regressions"]["parameters"]["status"], "not_run")
+                self.assertFalse(entry["regressions"]["analysis"]["required"])
+                self.assertEqual(len(report["test_targets"]), 2)
+        _, errors = validation_plan(self.root, [self.definition()], [], {}, regression_cases={"unknown": {}})
+        self.assertTrue(any("unknown" in error for error in errors))
+
+    def test_unrelated_analysis_mapping_cannot_cover_changed_second_algorithm(self):
+        self.write("lab_workflows/demo/workflow.py", "pass\n")
+        self.write("lab_workflows/demo/analysis.py", "from .first import fit\nfrom .second import fit\n")
+        first = "lab_workflows/demo/first.py"
+        second = "lab_workflows/demo/second.py"
+        self.write(first, "def fit(): return 1\n")
+        self.write(second, "def fit(): raise RuntimeError('broken')\n")
+        mapping = {"demo": {"analysis": {"sources": [first], "tests": ["test_first"]}}}
+        self.write("lab_workflows/test_first.py", f"REGRESSION_CASES = {mapping!r}\ndef test_first(): pass\n")
+        definition = self.definition()
+        definition.experiment_runner.__self__.analysis_module = "lab_workflows.demo.analysis"
+        acquisition, regressions = discover_test_cases(self.root)
+        for changes in ([second], [first, second]):
+            with self.subTest(changes=changes):
+                report, errors = validation_plan(self.root, [definition], changes, acquisition, regression_cases=regressions)
+                self.assertTrue(errors)
+                regression = report["experiments"][0]["regressions"]["analysis"]
+                self.assertEqual(regression["status"], "missing_mapping")
+                self.assertEqual(regression["uncovered_sources"], [second])
+        mapping = {"demo": {"analysis": {"sources": [second], "tests": ["test_second"]}}}
+        self.write("lab_workflows/test_second.py", f"REGRESSION_CASES = {mapping!r}\ndef test_second(): pass\n")
+        acquisition, regressions = discover_test_cases(self.root)
+        report, errors = validation_plan(self.root, [definition], [second], acquisition, regression_cases=regressions)
+        self.assertFalse(errors)
+        self.assertIn("lab_workflows/test_second.py::test_second", report["test_targets"])
+
+    def test_dynamic_acquisition_source_tracks_its_shared_safety_dependency(self):
+        self.write("lab_workflows/demo/workflow.py", "import importlib\n")
+        callback = "lab_workflows/callback.py"
+        safety = "lab_workflows/shared_safety.py"
+        self.write(callback, "from .shared_safety import acquire\n")
+        self.write(safety, "def acquire(): pass\n")
+        claims = {"demo": {"mode": "single", "sources": [callback], "cases": {
+            scenario: ["lab_workflows/test_dynamic.py::test_order"] for scenario in COMMON_SCENARIOS}}}
+        report, errors = validation_plan(self.root, [self.definition()], [safety], claims)
+        self.assertFalse(errors)
+        self.assertTrue(report["experiments"][0]["acquisition_required"])
+        self.assertEqual(report["test_targets"], ["lab_workflows/test_dynamic.py::test_order"])
+        self.assertEqual(report["unmapped_files"], [])
+
+    def test_regression_dynamic_sources_track_transitive_helpers(self):
+        self.write("lab_workflows/demo/workflow.py", "pass\n")
+        callback = "lab_workflows/callback.py"
+        helper = "lab_workflows/shared_algorithm.py"
+        self.write(callback, "from .shared_algorithm import calculate\n")
+        self.write(helper, "def calculate(): return 1\n")
+        for kind in ("analysis", "parameters"):
+            with self.subTest(kind=kind):
+                mapping = {"demo": {kind: {"sources": [callback], "tests": ["test_calculate"]}}}
+                self.write("lab_workflows/test_dynamic.py", f"REGRESSION_CASES = {mapping!r}\ndef test_calculate(): pass\n")
+                acquisition, regressions = discover_test_cases(self.root)
+                report, errors = validation_plan(self.root, [self.definition()], [helper], acquisition, regression_cases=regressions)
+                self.assertFalse(errors)
+                entry = report["experiments"][0]
+                self.assertTrue(entry["selected"])
+                self.assertFalse(entry["acquisition_required"])
+                self.assertTrue(entry["regressions"][kind]["required"])
+                self.assertEqual(entry["regressions"][kind]["uncovered_sources"], [])
+                self.assertEqual(report["test_targets"], ["lab_workflows/test_dynamic.py::test_calculate"])
+
+    def test_catalog_lookup_does_not_spread_private_models_but_keeps_shared_dependencies(self):
+        definitions = [self.definition("one"), self.definition("two")]
+        for name in ("one", "two"):
+            self.write(f"lab_workflows/{name}/workflow.py", "from .models import Params\n")
+            self.write(f"lab_workflows/{name}/models.py", "from ..experiment_params import Base\nclass Params: pass\n")
+        self.write("lab_workflows/experiment_params.py", "from .experiments import list_experiments\n")
+        self.write("lab_workflows/experiments/__init__.py", "from .registry import list_experiments\n")
+        catalog = "lab_workflows/experiments/registry.py"
+        self.write(catalog, "from ..one.models import Params\nfrom ..two.models import Params\n")
+        impacts = affected_experiments(self.root, definitions, ["lab_workflows/one/models.py"], {})
+        self.assertEqual(set(impacts), {"one"})
+        self.assertTrue(impacts["one"]["parameters_changed"])
+        impacts = affected_experiments(self.root, definitions, [catalog], {})
+        self.assertEqual(set(impacts), {"one", "two"})
+        impacts = affected_experiments(self.root, definitions, ["lab_workflows/experiment_params.py"], {})
+        self.assertEqual(set(impacts), {"one", "two"})
+        # 真正复用另一实验模型时，仍需同时验证两个调用方。
+        self.write("lab_workflows/two/models.py", "from ..one.models import Params\n")
+        impacts = affected_experiments(self.root, definitions, ["lab_workflows/one/models.py"], {})
+        self.assertEqual(set(impacts), {"one", "two"})
+
+    def test_only_known_scaffold_mirror_is_canonicalized_and_reported(self):
+        source = ".agents/skills/expcodegen/scripts/test_scaffold_experiment.py"
+        mirror = ".claude/skills/expcodegen/scripts/test_scaffold_experiment.py"
+        for path in (source, mirror, "lab_workflows/test_one.py", "lab_workflows/test_two.py"):
+            self.write(path, "def test_entry(): pass\n")
+        for inputs in ([mirror], [source, mirror], [source]):
+            with self.subTest(inputs=inputs):
+                targets, _ = canonical_test_targets(self.root, inputs)
+                self.assertEqual(targets, [source])
+        report, errors = validation_plan(self.root, [], [source, mirror], {})
+        self.assertFalse(errors)
+        self.assertEqual(report["test_targets"], [source])
+        self.assertEqual(report["changed_files"], [source, mirror])
+        self.assertEqual(report["test_target_aliases"], {mirror: source})
+        targets, aliases = canonical_test_targets(self.root, [mirror + "::test_entry", "lab_workflows/test_one.py", "lab_workflows/test_two.py"])
+        self.assertEqual(len(targets), 3)
+        self.assertEqual(aliases[mirror + "::test_entry"], source + "::test_entry")
+
+    def test_mirror_mismatch_or_missing_source_cannot_be_skipped(self):
+        source = ".agents/skills/expcodegen/scripts/test_scaffold_experiment.py"
+        mirror = ".claude/skills/expcodegen/scripts/test_scaffold_experiment.py"
+        self.write(mirror, "def test_entry(): pass\n")
+        with self.assertRaisesRegex(ValueError, "不一致"):
+            canonical_test_targets(self.root, [mirror])
+        self.write(source, "def test_other(): pass\n")
+        with self.assertRaisesRegex(ValueError, "不一致"):
+            canonical_test_targets(self.root, [source, mirror])
+
+    def test_whole_file_results_are_verified_including_src_layout(self):
+        for module in ("signal_generator.test_interfaces", "src.signal_generator.test_interfaces"):
+            with self.subTest(module=module):
+                path = self.write("results.xml", f'<testsuite><testcase classname="{module}.ApiTests" name="test_api"/></testsuite>')
+                self.assertEqual(verify_pytest_results(path, ["src/signal_generator/test_interfaces.py"]), 1)
+                self.assertEqual(verify_pytest_results(path, ["src/signal_generator/test_interfaces.py::ApiTests::test_api"]), 1)
+                with self.assertRaisesRegex(ValueError, "未实际执行"):
+                    verify_pytest_results(path, ["src/signal_generator/test_missing.py"])
 
     def test_paths_cannot_escape_repository(self):
         for path in ("../outside.py", str(self.root.parent / "outside.py")):
