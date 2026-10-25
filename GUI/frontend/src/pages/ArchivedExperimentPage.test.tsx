@@ -15,7 +15,7 @@ it.each([
   "mx-main-field-noise-spectrum", "mx-z-noise-spectrum", "noise-spectrum-xy-v2", "rf-sensitivity-aw-r",
   "aw-const-omega-awscale-check", "dg-am-comp-transfer-check", "rf-sensitivity-aw-frequency",
   "temperature-switch-pid-cycle", "aw-waveform-scope-check",
-  "static-sensitivity-optimize", "aw-const-omega-check",
+  "static-sensitivity-optimize", "static-sensitivity-optimize-local", "aw-const-omega-check",
   "xy-dc-voltage-calibration", "xy-aw-voltage-calibration",
 ])("旧书签 %s 只提示归档，不加载参数、会话或历史", async id => {
   vi.mocked(api).mockImplementation(async path => {

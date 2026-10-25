@@ -114,7 +114,6 @@ from ..experiment_modules.xy_direct_aw_dc_calibration.definition import (
 from ..experiment_modules.static_sensitivity.definition import (
     DEFINITION as STATIC_SENSITIVITY_DEFINITION,
 )
-from ..experiment_modules.static_sensitivity_optimize_local.definition import DEFINITION as STATIC_LOCAL_DEFINITION
 from .contracts import ExperimentDefinition
 from .archived import ARCHIVED_EXPERIMENTS, load_archived_experiment
 from ..experiment_modules.bell_bloom_z_field_calibration.definition import DEFINITION as BELL_BLOOM_Z_FIELD_CALIBRATION_DEFINITION
@@ -218,7 +217,6 @@ _DEFINITIONS = [
     T1_CALIBRATION_DEFINITION,
     T2_CALIBRATION_DEFINITION,
     XY_DIRECT_AW_DC_DEFINITION,
-    STATIC_LOCAL_DEFINITION,
 ]
 
 _REGISTRY = {definition.id: definition for definition in _DEFINITIONS}

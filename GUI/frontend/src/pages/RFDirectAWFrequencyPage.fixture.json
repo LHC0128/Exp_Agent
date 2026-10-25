@@ -1,0 +1,1468 @@
+{
+  "fields": [
+    {
+      "name": "SYSTEM_SETTLE_S",
+      "label": "系统稳定时间",
+      "type": "number",
+      "default": 2.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": null,
+      "description": "配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。",
+      "read_only": false,
+      "legacy_defaults": {
+        "FREQ_SETTLE_TIME": 0.1,
+        "PHASE_SETTLE_TIME": 0.1,
+        "TEMP_SWITCH_OFF_LEAD": 0.1,
+        "XY_PHASE_SETTLE_s": 2.0
+      }
+    },
+    {
+      "name": "RUN_TAG",
+      "label": "运行标签",
+      "type": "string",
+      "default": "freq_resp_direct_aw",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "ACQUISITION_MODE",
+      "label": "采集模式",
+      "type": "string",
+      "default": "demod_rxy",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": "yfft",
+          "label": "DAQ Y + FFT"
+        },
+        {
+          "value": "demod_rxy",
+          "label": "Demod 3 X/Y/R"
+        },
+        {
+          "value": "both",
+          "label": "两者同时采集"
+        }
+      ]
+    },
+    {
+      "name": "Z_RF_FREQ_START",
+      "label": "Z RF 起始频率",
+      "type": "number",
+      "default": 0.0,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_RF_FREQ_STOP",
+      "label": "Z RF 终止频率",
+      "type": "number",
+      "default": 20000.0,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_RF_FREQ_POINTS",
+      "label": "Z RF 频率点数",
+      "type": "integer",
+      "default": 201,
+      "unit": "",
+      "group": "basic",
+      "minimum": 2,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_RF_FREQ_LOG_SPACED",
+      "label": "对数频率间隔",
+      "type": "boolean",
+      "default": false,
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_RF_FREQ_OFFSET_HZ",
+      "label": "线性扫描频率偏移",
+      "type": "number",
+      "default": 50.0,
+      "unit": "Hz",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "仅在线性扫描时加到每个频点；保留旧脚本的 +50 Hz 行为",
+      "read_only": false
+    },
+    {
+      "name": "Z_RF_AMPLITUDE",
+      "label": "Z RF 固定幅度",
+      "type": "number",
+      "default": 0.02,
+      "unit": "Vpp",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_RF_DRIVE_MODE",
+      "label": "Z RF 驱动模式",
+      "type": "string",
+      "default": "continuous_sine_no_burst",
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": "continuous_sine_no_burst",
+          "label": "连续正弦（Burst OFF）"
+        }
+      ]
+    },
+    {
+      "name": "PHASE_START",
+      "label": "相位扫描起点",
+      "type": "number",
+      "default": 0.0,
+      "unit": "deg",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PHASE_STOP",
+      "label": "相位扫描终点",
+      "type": "number",
+      "default": 360.0,
+      "unit": "deg",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PHASE_POINTS",
+      "label": "相位扫描点数",
+      "type": "integer",
+      "default": 10,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "ARB_WAVEFORM_SOURCE",
+      "label": "任意波来源",
+      "type": "string",
+      "default": "corrected_run",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": "csv",
+          "label": "实验 CSV 波形"
+        },
+        {
+          "value": "corrected_run",
+          "label": "闭环冻结波形"
+        }
+      ]
+    },
+    {
+      "name": "ARB_WAVEFORM_FILE",
+      "label": "任意波波形文件",
+      "type": "string",
+      "default": "optimal_control_waveform.csv",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": "control_waveform.csv",
+          "label": "control_waveform.csv"
+        },
+        {
+          "value": "control_waveform4500.csv",
+          "label": "control_waveform4500.csv"
+        },
+        {
+          "value": "control_waveform8900.csv",
+          "label": "control_waveform8900.csv"
+        },
+        {
+          "value": "control_waveformAW.csv",
+          "label": "control_waveformAW.csv"
+        },
+        {
+          "value": "control_waveformAW_const.csv",
+          "label": "control_waveformAW_const.csv"
+        },
+        {
+          "value": "control_waveformAW_v3.csv",
+          "label": "control_waveformAW_v3.csv"
+        },
+        {
+          "value": "optimal_control_params_v4.csv",
+          "label": "optimal_control_params_v4.csv"
+        },
+        {
+          "value": "optimal_control_waveform.csv",
+          "label": "optimal_control_waveform.csv"
+        }
+      ]
+    },
+    {
+      "name": "CORRECTED_CONTROL_SOURCE_RUN",
+      "label": "闭环校正运行",
+      "type": "string",
+      "default": "obbv6",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "任意波来源为闭环冻结波形时选择闭环实验结果。",
+      "read_only": false,
+      "options": [
+        {
+          "value": "0824_094157_z_aw_closed_loop_waveform_correction",
+          "label": "0824_094157_z_aw_closed_loop_waveform_correction"
+        },
+        {
+          "value": "0911_160057_z_aw_closed_loop_waveform_correction",
+          "label": "0911_160057_z_aw_closed_loop_waveform_correction"
+        },
+        {
+          "value": "0915_124851_trial_v12_20260915",
+          "label": "0915_124851_trial_v12_20260915"
+        },
+        {
+          "value": "0915_124941_trial_v12_2round_20260915",
+          "label": "0915_124941_trial_v12_2round_20260915"
+        },
+        {
+          "value": "0915_125118_trial_v7_20260915",
+          "label": "0915_125118_trial_v7_20260915"
+        },
+        {
+          "value": "0915_125217_trial_v6_retry_20260915",
+          "label": "0915_125217_trial_v6_retry_20260915"
+        },
+        {
+          "value": "0915_125851_z_aw_closed_loop_waveform_correction",
+          "label": "0915_125851_z_aw_closed_loop_waveform_correction"
+        },
+        {
+          "value": "0915_130254_z_aw_closed_loop_waveform_correction",
+          "label": "0915_130254_z_aw_closed_loop_waveform_correction"
+        },
+        {
+          "value": "0915_130659_z_aw_closed_loop_waveform_correction",
+          "label": "0915_130659_z_aw_closed_loop_waveform_correction"
+        },
+        {
+          "value": "0915_131034_z_aw_closed_loop_waveform_correction",
+          "label": "0915_131034_z_aw_closed_loop_waveform_correction"
+        },
+        {
+          "value": "obbv11",
+          "label": "obbv11"
+        },
+        {
+          "value": "obbv12",
+          "label": "obbv12"
+        },
+        {
+          "value": "obbv5",
+          "label": "obbv5"
+        },
+        {
+          "value": "obbv6",
+          "label": "obbv6"
+        },
+        {
+          "value": "obbv7",
+          "label": "obbv7"
+        },
+        {
+          "value": "obbv8",
+          "label": "obbv8"
+        },
+        {
+          "value": "osens12k",
+          "label": "osens12k"
+        },
+        {
+          "value": "osens20k",
+          "label": "osens20k"
+        },
+        {
+          "value": "osens20kv2",
+          "label": "osens20kv2"
+        },
+        {
+          "value": "osens20kv3",
+          "label": "osens20kv3"
+        },
+        {
+          "value": "osens40kv2",
+          "label": "osens40kv2"
+        },
+        {
+          "value": "osens60kv2",
+          "label": "osens60kv2"
+        }
+      ]
+    },
+    {
+      "name": "A_ENV_FREQ",
+      "label": "包络重复频率",
+      "type": "number",
+      "default": 250.0,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_CTRL_K_HZ_PER_V",
+      "label": "DirectAW 标定斜率 K",
+      "type": "number",
+      "default": 15076.0,
+      "unit": "Hz/V",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_CTRL_B_HZ",
+      "label": "DirectAW 标定截距 B",
+      "type": "number",
+      "default": -218.0,
+      "unit": "Hz",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_CTRL_PHASE",
+      "label": "XY 整体相位",
+      "type": "number",
+      "default": 0.0,
+      "unit": "deg",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_CTRL_QUAD",
+      "label": "XY 正交相位差",
+      "type": "number",
+      "default": 90.0,
+      "unit": "deg",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "ENABLE_XY_CTRL_PHASE_CAL",
+      "label": "启用 XY 相位校准",
+      "type": "boolean",
+      "default": true,
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_CTRL_PHASE_TOL_DEG",
+      "label": "XY 相位校准容差",
+      "type": "number",
+      "default": 0.5,
+      "unit": "deg",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_CTRL_PHASE_MAX_ITER",
+      "label": "XY 相位校准最大迭代",
+      "type": "integer",
+      "default": 8,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_CTRL_PHASE_MIN_R_V",
+      "label": "XY 校相最低 R",
+      "type": "number",
+      "default": 1e-12,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_CTRL_PHASE_MIN_R_RATIO",
+      "label": "XY 校相最低 R 比例",
+      "type": "number",
+      "default": 0.1,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_TRIGGER_FREQ",
+      "label": "XY 外触发频率",
+      "type": "number",
+      "default": 100.0,
+      "unit": "Hz",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_TRIGGER_AMPLITUDE",
+      "label": "XY 外触发幅度",
+      "type": "number",
+      "default": 5.0,
+      "unit": "Vpp",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_TRIGGER_OFFSET",
+      "label": "XY 外触发偏置",
+      "type": "number",
+      "default": 2.5,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_TRIGGER_DUTY",
+      "label": "XY 外触发占空比",
+      "type": "number",
+      "default": 50.0,
+      "unit": "%",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": 100,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "XY_TRIGGER_PHASE",
+      "label": "XY 外触发相位",
+      "type": "number",
+      "default": 0.0,
+      "unit": "deg",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_MOD_FREQ",
+      "label": "Pump 调制频率",
+      "type": "number",
+      "default": 10000.0,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_MOD_DUTY",
+      "label": "Pump 占空比",
+      "type": "number",
+      "default": 5.0,
+      "unit": "%",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": 50,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_MOD_AMPLITUDE",
+      "label": "Pump 载波幅度",
+      "type": "number",
+      "default": 0.18,
+      "unit": "Vpp",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_IDX",
+      "label": "Demod 0 索引",
+      "type": "integer",
+      "default": 0,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_OSC_IDX",
+      "label": "Demod 0 振荡器",
+      "type": "integer",
+      "default": 0,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_SIGNAL_RANGE",
+      "label": "Demod 0 输入量程",
+      "type": "number",
+      "default": 2.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_ORDER",
+      "label": "Demod 0 阶数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_TC_CALIB",
+      "label": "Demod 0 校相时间常数",
+      "type": "number",
+      "default": 0.001,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_TC_MEAS",
+      "label": "Demod 0 测量时间常数",
+      "type": "number",
+      "default": 1e-06,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_RATE",
+      "label": "Demod 0 采样率",
+      "type": "number",
+      "default": 100000.0,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD3_IDX",
+      "label": "Demod 3 索引",
+      "type": "integer",
+      "default": 3,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD3_OSC_IDX",
+      "label": "Demod 3 振荡器",
+      "type": "integer",
+      "default": 1,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD3_TC_PERIOD_FRACTION",
+      "label": "Demod 3 时间常数周期比例",
+      "type": "number",
+      "default": 0.05,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD3_ORDER",
+      "label": "Demod 3 阶数",
+      "type": "integer",
+      "default": 8,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD3_RATE",
+      "label": "Demod 3 采样率",
+      "type": "number",
+      "default": 4800.0,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD3_N_AVG",
+      "label": "Demod 3 平均次数",
+      "type": "integer",
+      "default": 20,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "CONFIGURE_AUXOUT2_TO_DEMOD0_Y",
+      "label": "配置 Demod0 Y 物理回环",
+      "type": "boolean",
+      "default": true,
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AUXOUT_INDEX",
+      "label": "AuxOut 索引",
+      "type": "integer",
+      "default": 1,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AUXOUT_SOURCE_DEMOD_IDX",
+      "label": "AuxOut Demod 来源",
+      "type": "integer",
+      "default": 0,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AUXOUT_SOURCE_SELECT",
+      "label": "AuxOut 信号选择",
+      "type": "integer",
+      "default": 1,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": 3,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AUXOUT_SCALE",
+      "label": "AuxOut 比例",
+      "type": "number",
+      "default": 1.0,
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AUXOUT_OFFSET",
+      "label": "AuxOut 偏置",
+      "type": "number",
+      "default": 0.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SIGIN2_INDEX",
+      "label": "Signal Input 2 索引",
+      "type": "integer",
+      "default": 1,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SIGIN2_RANGE",
+      "label": "Signal Input 2 量程",
+      "type": "number",
+      "default": 1.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "TEMP_SWITCH_ON_LAG",
+      "label": "温控恢复等待",
+      "type": "number",
+      "default": 1.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.Pump_laser_power",
+      "label": "Pump 光功率",
+      "type": "number",
+      "default": 0.5,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.Probe_laser_power",
+      "label": "Probe 光功率",
+      "type": "number",
+      "default": 0.3,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.main_magnetic_field",
+      "label": "主磁场电流",
+      "type": "number",
+      "default": 1.03,
+      "unit": "mA",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.temperature",
+      "label": "气室温度",
+      "type": "number",
+      "default": 100.0,
+      "unit": "°C",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "FIXED_PARAMS.Temp_Switch",
+      "label": "温控开关电平",
+      "type": "number",
+      "default": 5.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    }
+  ],
+  "flow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数、映射、波形与输出安全预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "不连接仪器；参数、通道、波形和安全限值有效"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "按资源复用连接并严格回读时钟",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": [
+          "全部参考时钟严格回读；失败不进入后继"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "主场、光功率、TEC 与 Pump 初始条件",
+        "group": "初始条件",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "PUMP_MOD_FREQ",
+          "PUMP_MOD_DUTY",
+          "PUMP_MOD_AMPLITUDE",
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power",
+          "FIXED_PARAMS.main_magnetic_field",
+          "FIXED_PARAMS.temperature",
+          "FIXED_PARAMS.Temp_Switch"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "PUMP_MOD_FREQ",
+          "PUMP_MOD_DUTY",
+          "PUMP_MOD_AMPLITUDE",
+          "FIXED_PARAMS.Pump_laser_power",
+          "FIXED_PARAMS.Probe_laser_power",
+          "FIXED_PARAMS.main_magnetic_field",
+          "FIXED_PARAMS.temperature",
+          "FIXED_PARAMS.Temp_Switch"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A04",
+        "title": "主解调校相与物理回环准备",
+        "group": "校相",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "SYSTEM_SETTLE_S",
+          "DEMOD0_IDX",
+          "DEMOD0_OSC_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC_CALIB",
+          "DEMOD0_RATE",
+          "DEMOD3_IDX",
+          "DEMOD3_OSC_IDX",
+          "DEMOD3_TC_PERIOD_FRACTION",
+          "DEMOD3_ORDER",
+          "DEMOD3_RATE",
+          "CONFIGURE_AUXOUT2_TO_DEMOD0_Y",
+          "AUXOUT_INDEX",
+          "AUXOUT_SOURCE_DEMOD_IDX",
+          "AUXOUT_SOURCE_SELECT",
+          "AUXOUT_SCALE",
+          "AUXOUT_OFFSET",
+          "SIGIN2_INDEX",
+          "SIGIN2_RANGE",
+          "SIGIN2_AC_COUPLING",
+          "SIGIN2_IMPEDANCE"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "SYSTEM_SETTLE_S",
+          "DEMOD0_IDX",
+          "DEMOD0_OSC_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC_CALIB",
+          "DEMOD0_RATE",
+          "DEMOD3_IDX",
+          "DEMOD3_OSC_IDX",
+          "DEMOD3_TC_PERIOD_FRACTION",
+          "DEMOD3_ORDER",
+          "DEMOD3_RATE",
+          "CONFIGURE_AUXOUT2_TO_DEMOD0_Y",
+          "AUXOUT_INDEX",
+          "AUXOUT_SOURCE_DEMOD_IDX",
+          "AUXOUT_SOURCE_SELECT",
+          "AUXOUT_SCALE",
+          "AUXOUT_OFFSET",
+          "SIGIN2_INDEX",
+          "SIGIN2_RANGE"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A05",
+        "title": "XY DirectAW 校相与测量解调准备",
+        "group": "校相",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [
+          "SYSTEM_SETTLE_S",
+          "ARB_WAVEFORM_SOURCE",
+          "ARB_WAVEFORM_FILE",
+          "CORRECTED_CONTROL_SOURCE_RUN",
+          "A_ENV_FREQ",
+          "XY_CTRL_K_HZ_PER_V",
+          "XY_CTRL_B_HZ",
+          "XY_CTRL_PHASE",
+          "XY_CTRL_QUAD",
+          "ENABLE_XY_CTRL_PHASE_CAL",
+          "XY_CTRL_PHASE_TOL_DEG",
+          "XY_CTRL_PHASE_MAX_ITER",
+          "XY_CTRL_PHASE_MIN_R_V",
+          "XY_CTRL_PHASE_MIN_R_RATIO",
+          "XY_TRIGGER_FREQ",
+          "XY_TRIGGER_AMPLITUDE",
+          "XY_TRIGGER_OFFSET",
+          "XY_TRIGGER_DUTY",
+          "XY_TRIGGER_PHASE",
+          "PUMP_MOD_FREQ",
+          "DEMOD0_IDX",
+          "DEMOD0_OSC_IDX",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC_MEAS",
+          "DEMOD0_RATE"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "SYSTEM_SETTLE_S",
+          "ARB_WAVEFORM_SOURCE",
+          "ARB_WAVEFORM_FILE",
+          "CORRECTED_CONTROL_SOURCE_RUN",
+          "A_ENV_FREQ",
+          "XY_CTRL_K_HZ_PER_V",
+          "XY_CTRL_B_HZ",
+          "XY_CTRL_PHASE",
+          "XY_CTRL_QUAD",
+          "ENABLE_XY_CTRL_PHASE_CAL",
+          "XY_CTRL_PHASE_TOL_DEG",
+          "XY_CTRL_PHASE_MAX_ITER",
+          "XY_CTRL_PHASE_MIN_R_V",
+          "XY_CTRL_PHASE_MIN_R_RATIO",
+          "XY_TRIGGER_FREQ",
+          "XY_TRIGGER_AMPLITUDE",
+          "XY_TRIGGER_OFFSET",
+          "XY_TRIGGER_DUTY",
+          "XY_TRIGGER_PHASE",
+          "PUMP_MOD_FREQ",
+          "DEMOD0_IDX",
+          "DEMOD0_OSC_IDX",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC_MEAS",
+          "DEMOD0_RATE"
+        ],
+        "quality_gates": [
+          "保留校相诊断；是否收敛与步骤完成分别记录"
+        ]
+      },
+      {
+        "id": "A06",
+        "title": "频率 × 相位扫描、恢复温控后保存",
+        "group": "采集",
+        "dependencies": [
+          "A05"
+        ],
+        "parameters": [
+          "SYSTEM_SETTLE_S",
+          "ACQUISITION_MODE",
+          "Z_RF_FREQ_START",
+          "Z_RF_FREQ_STOP",
+          "Z_RF_FREQ_POINTS",
+          "Z_RF_FREQ_LOG_SPACED",
+          "Z_RF_FREQ_OFFSET_HZ",
+          "Z_RF_AMPLITUDE",
+          "Z_RF_DRIVE_MODE",
+          "PHASE_START",
+          "PHASE_STOP",
+          "PHASE_POINTS",
+          "DEMOD0_IDX",
+          "DEMOD0_RATE",
+          "DEMOD3_IDX",
+          "DEMOD3_OSC_IDX",
+          "DEMOD3_TC_PERIOD_FRACTION",
+          "DEMOD3_ORDER",
+          "DEMOD3_RATE",
+          "DEMOD3_N_AVG",
+          "TEMP_SWITCH_ON_LAG"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "SYSTEM_SETTLE_S",
+          "ACQUISITION_MODE",
+          "Z_RF_FREQ_START",
+          "Z_RF_FREQ_STOP",
+          "Z_RF_FREQ_POINTS",
+          "Z_RF_FREQ_LOG_SPACED",
+          "Z_RF_FREQ_OFFSET_HZ",
+          "Z_RF_AMPLITUDE",
+          "Z_RF_DRIVE_MODE",
+          "PHASE_START",
+          "PHASE_STOP",
+          "PHASE_POINTS",
+          "DEMOD0_IDX",
+          "DEMOD0_RATE",
+          "DEMOD3_IDX",
+          "DEMOD3_OSC_IDX",
+          "DEMOD3_TC_PERIOD_FRACTION",
+          "DEMOD3_ORDER",
+          "DEMOD3_RATE",
+          "DEMOD3_N_AVG",
+          "TEMP_SWITCH_ON_LAG"
+        ],
+        "quality_gates": [
+          "配置完成后关温控、稳定、读入内存、恢复再保存；失败保留已读样本及原始异常"
+        ]
+      },
+      {
+        "id": "A07",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "无前置；温控恢复 5 V ON，X/Y/Z 与外触发归零关闭；只断开 TEC，保留主场、光功率及锁相设置"
+        ]
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "核对身份、扫描索引与原始数据资格",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "input_manifest.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "拒绝采集中目录、错误身份、路径越界及损坏数据；不混入抢救帧"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "稳健幅频、相位诊断与科研绘图",
+        "group": "独立分析",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "科学质量单独记录；失败模型保留诊断，不伪造合格结果"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "RUN_TAG": [
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PUMP_MOD_FREQ": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PUMP_MOD_DUTY": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PUMP_MOD_AMPLITUDE": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "FIXED_PARAMS.Pump_laser_power": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "FIXED_PARAMS.Probe_laser_power": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "FIXED_PARAMS.main_magnetic_field": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "FIXED_PARAMS.temperature": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "FIXED_PARAMS.Temp_Switch": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD0_IDX": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD0_OSC_IDX": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD0_SIGNAL_RANGE": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD0_ORDER": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD0_TC_CALIB": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD0_RATE": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD3_IDX": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD3_OSC_IDX": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD3_TC_PERIOD_FRACTION": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD3_ORDER": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD3_RATE": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "CONFIGURE_AUXOUT2_TO_DEMOD0_Y": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "AUXOUT_INDEX": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "AUXOUT_SOURCE_DEMOD_IDX": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "AUXOUT_SOURCE_SELECT": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "AUXOUT_SCALE": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "AUXOUT_OFFSET": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "SIGIN2_INDEX": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "SIGIN2_RANGE": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "SIGIN2_AC_COUPLING": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "SIGIN2_IMPEDANCE": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "ARB_WAVEFORM_SOURCE": [
+          "A05",
+          "A06"
+        ],
+        "ARB_WAVEFORM_FILE": [
+          "A05",
+          "A06"
+        ],
+        "CORRECTED_CONTROL_SOURCE_RUN": [
+          "A05",
+          "A06"
+        ],
+        "A_ENV_FREQ": [
+          "A05",
+          "A06"
+        ],
+        "XY_CTRL_K_HZ_PER_V": [
+          "A05",
+          "A06"
+        ],
+        "XY_CTRL_B_HZ": [
+          "A05",
+          "A06"
+        ],
+        "XY_CTRL_PHASE": [
+          "A05",
+          "A06"
+        ],
+        "XY_CTRL_QUAD": [
+          "A05",
+          "A06"
+        ],
+        "ENABLE_XY_CTRL_PHASE_CAL": [
+          "A05",
+          "A06"
+        ],
+        "XY_CTRL_PHASE_TOL_DEG": [
+          "A05",
+          "A06"
+        ],
+        "XY_CTRL_PHASE_MAX_ITER": [
+          "A05",
+          "A06"
+        ],
+        "XY_CTRL_PHASE_MIN_R_V": [
+          "A05",
+          "A06"
+        ],
+        "XY_CTRL_PHASE_MIN_R_RATIO": [
+          "A05",
+          "A06"
+        ],
+        "XY_TRIGGER_FREQ": [
+          "A05",
+          "A06"
+        ],
+        "XY_TRIGGER_AMPLITUDE": [
+          "A05",
+          "A06"
+        ],
+        "XY_TRIGGER_OFFSET": [
+          "A05",
+          "A06"
+        ],
+        "XY_TRIGGER_DUTY": [
+          "A05",
+          "A06"
+        ],
+        "XY_TRIGGER_PHASE": [
+          "A05",
+          "A06"
+        ],
+        "DEMOD0_TC_MEAS": [
+          "A05",
+          "A06"
+        ],
+        "ACQUISITION_MODE": [
+          "A06"
+        ],
+        "Z_RF_FREQ_START": [
+          "A06"
+        ],
+        "Z_RF_FREQ_STOP": [
+          "A06"
+        ],
+        "Z_RF_FREQ_POINTS": [
+          "A06"
+        ],
+        "Z_RF_FREQ_LOG_SPACED": [
+          "A06"
+        ],
+        "Z_RF_FREQ_OFFSET_HZ": [
+          "A06"
+        ],
+        "Z_RF_AMPLITUDE": [
+          "A06"
+        ],
+        "Z_RF_DRIVE_MODE": [
+          "A06"
+        ],
+        "PHASE_START": [
+          "A06"
+        ],
+        "PHASE_STOP": [
+          "A06"
+        ],
+        "PHASE_POINTS": [
+          "A06"
+        ],
+        "DEMOD3_N_AVG": [
+          "A06"
+        ],
+        "TEMP_SWITCH_ON_LAG": [
+          "A06"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/rf-sensitivity-direct-aw-frequency/workflow/diagram"
+  }
+}

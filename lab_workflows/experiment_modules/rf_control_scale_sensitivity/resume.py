@@ -6,6 +6,7 @@ import shutil
 import numpy as np
 import yaml
 from ...experiment_runtime import check_cancelled
+from ...steps.run_directory import write_run_config
 from ...instrument_config import instrument_config_snapshot
 from ...control_sources import resolve_control_results_root
 from .analysis_steps import load_inputs
@@ -86,8 +87,7 @@ def copy_completed_points(parent):
         # 原始参数、时间和校相结果保持原值，只在副本注明来源。
         child = deepcopy(child)
         child["resumed_from"] = origin
-        (target / "experiment_config.yaml").write_text(
-            yaml.safe_dump(child, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        write_run_config(target / "experiment_config.yaml", child)
         records.append(dict(record, status="acquired", resumed_from=origin))
     parent.state.update(resume_source_run_id=source.name, reused_points=len(records),
         resume_source_temperature_control=deepcopy(config.get("temperature_control")),

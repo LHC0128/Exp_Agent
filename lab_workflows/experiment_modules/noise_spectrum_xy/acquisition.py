@@ -5,11 +5,11 @@ from pathlib import Path
 import time
 import math
 import numpy as np
-import yaml
 from tqdm import tqdm
 from lockin_amplifier import DAQConfig, DemodulatorConfig, daq, demod, result_rate, acquisition_metadata, save_acquisition_metadata, acquisition_module, nearest_scope_rate
 from ...common import WorkflowCancelled
-from ...experiment_runtime import check_cancelled, report_runtime_progress
+from ...experiment_runtime import check_cancelled, report_runtime_progress, report_run_directory
+from ...steps.run_directory import write_run_config
 from .models import welch_settings
 from ._helpers import wait, set_temp_switch
 from .phase import set_xy_sine_peak
@@ -49,9 +49,7 @@ def verify_daq_mode(ctx):
 
 
 def save_config(path, config):
-    temporary = path.with_suffix(".yaml.tmp")
-    temporary.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    temporary.replace(path)
+    write_run_config(path, config)
 
 
 def initialize_run_directory(ctx, data_type, *, for_scan=False):
@@ -79,6 +77,7 @@ def initialize_run_directory(ctx, data_type, *, for_scan=False):
         save_config(run_dir / "experiment_config.yaml", config)
         ctx.run_dir = run_dir
         ctx.scan_started = False
+        report_run_directory(run_dir, data_type)
     if for_scan:
         ctx.scan_started = True
     return ctx.run_dir

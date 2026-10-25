@@ -1,7 +1,7 @@
 # %% [markdown]
 # # ConstXY 频率响应离线分析
 # 必须显式指定 run_dir；绝不隐式选择并改写最新历史运行。
-# 说明：docs/rf_sensitivity_constxy_frequency.md
+# 说明：docs/experiments/rf_sensitivity_constxy_frequency.md
 # %% 离线入口
 import argparse
 from pathlib import Path

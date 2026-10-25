@@ -7,6 +7,7 @@ from pathlib import Path
 import time
 import yaml
 from ...steps import RunDirectory
+from ...steps.run_directory import write_run_config
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ..noise_spectrum_xy.state_io import write_state
 from ..rf_sensitivity_direct_aw import acquisition as shared, phase
@@ -157,6 +158,6 @@ def seal_points(parent):
         path = parent.directory.root / record["path"] / "experiment_config.yaml"
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
         config.update(completion_status="completed", safety_shutdown=parent.state["safety_shutdown"])
-        path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        write_run_config(path, config)
         record["status"] = "completed"
     write_state(manifest_path, manifest)

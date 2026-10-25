@@ -13,14 +13,25 @@ ADAPTER = TypedWorkflowAdapter(
     "lab_workflows.experiment_modules.t2_calibration.analysis",
 )
 
+
+def preflight(values):
+    """运行前复用与分步会话相同的无硬件业务校验。"""
+    errors = ADAPTER.preflight(values)
+    if not errors:
+        from .workflow import preflight as check
+        try:
+            check(ADAPTER._resolved(values), ADAPTER.root)
+        except (OSError, KeyError, TypeError, ValueError, PermissionError) as exc:
+            errors.append(str(exc))
+    return errors
+
 DEFINITION = ExperimentDefinition(
     id="t2-calibration",
     title="T2 标定",
     category="calibration",
     family="relaxation",
     variant="t2",
-    description=('扫描 Probe 光功率并通过光学 FID 阻尼振荡拟合横向弛豫时间 T2。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
-    data_type="T2_Calibration",
+    description="扫描 Probe 光功率，通过光学 FID 阻尼振荡拟合 T2。运行／历史双 Tab 内按真实节点编辑、勾选和分步执行，完整与分步共用准备、采集和安全收尾；独立分析绑定明确目录。保留原始 NPZ、触发后裁剪与平均、raw/recovery 抢救帧、原始异常及收尾失败语义。配置完成后关闭温控，按 SYSTEM_SETTLE_S 稳定，恢复 5 V ON 后保存；TEC 只写 UI 目标温度。结束保持主场、光功率、Pump 调制、RF 门控及其当前 Burst 和锁相设置，只断开 TEC。",    data_type="T2_Calibration",
     required_devices=("GS200", "DG900", "DG4000", "SDS", "锁相放大器"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/T2_Calibration.py",
@@ -30,7 +41,7 @@ DEFINITION = ExperimentDefinition(
     schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,
     defaults_saver=ADAPTER.save_defaults,
-    preflight_runner=ADAPTER.preflight,
+    preflight_runner=preflight,
     experiment_runner=ADAPTER.run,
     analysis_runner=ADAPTER.analyze,
 )

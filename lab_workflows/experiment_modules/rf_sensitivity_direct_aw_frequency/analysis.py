@@ -1,297 +1,150 @@
-# %% [markdown] Cell 0
-# # 射频场频率响应 — 稳健数据分析与可视化
-#
-# 主幅频曲线不再使用 `R_max over phase`，默认使用 `R_median`；
-# 同时保存 `R_mean`、`R_max` 和复数相干一阶相位分量，便于诊断相位扫描异常点。
-
-# %% Cell 1
+"""完整/分步共用离线分析；显式目录、内容指纹、重算归档和独立诊断状态。"""
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
-import os
-import sys
-
-project_root = Path.cwd()
-while not (project_root / "params").exists() and project_root.parent != project_root:
-    project_root = project_root.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 import json
-import numpy as np
-import yaml
+import math
+import os
 
-from lab_workflows.experiment_runtime import runtime_run_dir
-from lab_workflows.plotting import (
-    COLOR_GRAY,
-    COLOR_GREEN,
-    COLOR_OPTIMAL,
-    COLOR_PURPLE,
-    COLOR_TRAD,
-    format_axis,
-    new_figure,
-    save_figure,
-    set_plot_style,
-    style_legend,
-)
-
-import matplotlib
-matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
-
-print("库导入完成")
-
-# %% Cell 2
-# EXPERIMENT_TYPE = "RF_Field_Sensitivity_AW_FreqSweep"
-EXPERIMENT_TYPE = "RF_Field_Sensitivity_AW_FreqSweep_DirectAW"
-PRIMARY_RESPONSE_METHOD = "r_median"  # r_median, r_mean, coherent, r_max_legacy
-
-DATA_DIR = runtime_run_dir()
-
-if DATA_DIR is None or not DATA_DIR.exists():
-    raise FileNotFoundError(f"未找到数据目录: {DATA_DIR}")
-
-raw_dir = DATA_DIR / "raw"
-results_dir = DATA_DIR / "results"
-results_dir.mkdir(parents=True, exist_ok=True)
-print(f"数据目录: {DATA_DIR}")
-
-config_path = DATA_DIR / "experiment_config.yaml"
-if config_path.exists():
-    with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    print("实验配置已加载")
-else:
-    print("[WARN] 未找到 experiment_config.yaml")
-    config = {}
-
-freq_phase_path = raw_dir / "freq_phase_scan.npz"
-if not freq_phase_path.exists():
-    raise FileNotFoundError(f"未找到频率×相位扫描数据: {freq_phase_path}")
-
-data = np.load(freq_phase_path, allow_pickle=True)
-freqs = data["freq_Hz"]
-phases = data["phase_deg"]
-r_matrix = data["r_matrix_V"]
-x_matrix = data["x_matrix_V"] if "x_matrix_V" in data.files else None
-y_matrix = data["y_matrix_V"] if "y_matrix_V" in data.files else None
-
-valid_freq_mask = np.any(np.isfinite(r_matrix), axis=1)
-if not np.any(valid_freq_mask):
-    raise ValueError("r_matrix_V 中没有任何有效 R 数据")
-
-valid_freqs = freqs[valid_freq_mask]
-valid_r_matrix = r_matrix[valid_freq_mask]
-invalid_freqs = freqs[~valid_freq_mask]
-
-print("频率×相位扫描数据已加载")
-print(f"  频率点数:   {len(freqs)} ({freqs[0]:.1f} ~ {freqs[-1]:.1f} Hz)")
-print(f"  相位点数:   {len(phases)} ({phases[0]:.1f} ~ {phases[-1]:.1f} deg)")
-print(f"  R 矩阵形状: {r_matrix.shape}")
-print(f"  R 范围:     [{np.nanmin(r_matrix):.4e}, {np.nanmax(r_matrix):.4e}] V")
-if len(invalid_freqs) > 0:
-    print(f"  跳过全 NaN 频点: {invalid_freqs.tolist()} Hz")
-
-# %% Cell 3
-def unwrap_phase_deg(phase_deg):
-    if len(phase_deg) == 0:
-        return phase_deg
-    return np.rad2deg(np.unwrap(np.deg2rad(phase_deg)))
+from ...common import WorkflowCancelled
+from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
+from ..noise_spectrum_xy.state_io import read_state, write_state
+from . import run_format, analysis_steps
+from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
 
 
-def bandwidth_from_response(freq, response):
-    idx = int(np.nanargmax(response))
-    peak_freq = float(freq[idx])
-    peak_val = float(response[idx])
-    half = peak_val / np.sqrt(2)
-    above = np.where(response >= half)[0]
-    if len(above) >= 2:
-        f_low = float(freq[above[0]])
-        f_high = float(freq[above[-1]])
-        bw = f_high - f_low
-        q = peak_freq / bw if bw > 0 else 0.0
-    else:
-        f_low = f_high = bw = q = None
-    return {
-        "freq_Hz": peak_freq,
-        "R_V": peak_val,
-        "f_low_Hz": f_low,
-        "f_high_Hz": f_high,
-        "bandwidth_Hz": bw,
-        "Q_factor": q,
-    }
+
+def _json_value(value):
+    """只有状态协议把非有限科学诊断值转为 null；原 NPZ/YAML 和返回值保持不变。"""
+    if isinstance(value, dict):
+        return {key: _json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
 
 
-r_mean = np.nanmean(valid_r_matrix, axis=1)
-r_median = np.nanmedian(valid_r_matrix, axis=1)
-r_std = np.nanstd(valid_r_matrix, axis=1)
-r_cv = r_std / np.maximum(r_mean, 1e-30)
-r_max_idx = np.nanargmax(valid_r_matrix, axis=1)
-r_max_legacy = valid_r_matrix[np.arange(len(valid_freqs)), r_max_idx]
-r_max_phase = phases[r_max_idx]
-r_max_phase_unwrapped = unwrap_phase_deg(r_max_phase)
+class AnalysisWorkflow:
+    stages = ANALYSIS
 
-coherent = np.full_like(r_mean, np.nan, dtype=float)
-coherent_phase_deg = np.full_like(r_mean, np.nan, dtype=float)
-if x_matrix is not None and y_matrix is not None:
-    valid_z = (x_matrix + 1j * y_matrix)[valid_freq_mask]
-    phase_rad = np.deg2rad(phases)
-    # 如果 phase_list 同时包含 0 和 360，去掉最后一个重复点，避免双计数。
-    phase_keep = np.ones(len(phases), dtype=bool)
-    if len(phases) > 1 and np.isclose((phases[-1] - phases[0]) % 360.0, 0.0):
-        phase_keep[-1] = False
-    z_use = valid_z[:, phase_keep]
-    phi_use = phase_rad[phase_keep]
-    comp_plus = np.nanmean(z_use * np.exp(-1j * phi_use), axis=1)
-    comp_minus = np.nanmean(z_use * np.exp(1j * phi_use), axis=1)
-    use_plus = np.abs(comp_plus) >= np.abs(comp_minus)
-    comp = np.where(use_plus, comp_plus, comp_minus)
-    coherent = np.abs(comp)
-    coherent_phase_deg = np.rad2deg(np.angle(comp))
+    def __init__(self, run_dir, analysis_parameters=None):
+        if analysis_parameters:
+            raise ValueError("此实验没有可覆盖的离线参数；分析读取所选运行的原始配置")
+        self.run_dir = Path(run_dir).resolve()
+        run_format.load_config(self.run_dir)
+        self.results = run_format.safe_path(self.run_dir, "results")
+        self.state_path = run_format.safe_path(self.run_dir, "analysis_state.json")
+        previous = read_state(self.state_path) or {}
+        self.states = {s.id: deepcopy(previous.get("steps", {}).get(s.id, initial_states(self.stages)[s.id])) for s in self.stages}
+        self.revision = previous.get("revision", 0)
+        self.options = {}
+        self.summary = deepcopy(previous.get("summary", {}))
+        self.fingerprint = previous.get("fingerprint") or run_format.fingerprint(self.run_dir)
+        self._refresh()
 
-responses = {
-    "r_median": r_median,
-    "r_mean": r_mean,
-    "coherent": coherent,
-    "r_max_legacy": r_max_legacy,
-}
-if PRIMARY_RESPONSE_METHOD not in responses:
-    raise ValueError(f"未知 PRIMARY_RESPONSE_METHOD: {PRIMARY_RESPONSE_METHOD}")
-primary_response = responses[PRIMARY_RESPONSE_METHOD]
+    def _signature(self, name):
+        return run_format.signature(run_format.safe_path(self.run_dir, "results/" + name))
 
-primary_peak = bandwidth_from_response(valid_freqs, primary_response)
-legacy_peak = bandwidth_from_response(valid_freqs, r_max_legacy)
+    def _refresh(self):
+        fingerprint = run_format.fingerprint(self.run_dir)
+        if fingerprint != self.fingerprint:
+            self.fingerprint = fingerprint
+            invalidate(self.stages, self.states, "B01")
+            self.revision += 1
+        for stage in self.stages:
+            record = self.states[stage.id]
+            files = record.get("files", {})
+            if record["status"] == "running" or record["status"] == "completed" and (
+                    not files or any(self._signature(name) != signature for name, signature in files.items())):
+                invalidate(self.stages, self.states, stage.id)
+                self.revision += 1
+                break
+        if any(state["status"] == "stale" for state in self.states.values()):
+            self.summary["status"] = "stale"
+        elif not self.summary:
+            self.summary["status"] = "not_started"
 
-print("\n稳健频率响应结果")
-print(f"  primary method: {PRIMARY_RESPONSE_METHOD}")
-print(f"  primary peak: {primary_peak['freq_Hz']:.1f} Hz, R={primary_peak['R_V']:.4e} V")
-print(f"  legacy R_max peak: {legacy_peak['freq_Hz']:.1f} Hz, R={legacy_peak['R_V']:.4e} V")
-print(f"  median phase CV: {np.nanmedian(r_cv):.4f}, max phase CV: {np.nanmax(r_cv):.4f}")
+    def snapshot(self):
+        return dict(run_id=self.run_dir.name, revision=self.revision, options={},
+            steps=deepcopy(self.states), fingerprint=deepcopy(self.fingerprint), summary=deepcopy(self.summary))
 
-# %% Cell 4
-set_plot_style("paper")
+    def persist(self):
+        write_state(self.state_path, self.snapshot())
+        report_runtime_progress("analysis", "分析阶段状态已保存", data={"analysis_workflow": self.snapshot()})
 
-fig1, ax1 = new_figure()
-ax1.plot(valid_freqs, r_median, ".-", color=COLOR_OPTIMAL,
-         label="R median over phase")
-format_axis(
-    ax1,
-    xlabel="Z RF frequency (Hz)",
-    ylabel="Demod3 response (V)",
-)
-style_legend(ax1)
-save_figure(fig1, results_dir / "freq_response_amplitude.png", close=False)
-save_figure(fig1, results_dir / "freq_response_amplitude_robust.png")
-print(f"图已保存: {results_dir / 'freq_response_amplitude.png'}")
+    def _archive(self, item):
+        names = {"input_manifest.json"} if item == "B01" else set()
+        names.update(run_format.RESULT_FILES)
+        paths = [run_format.safe_path(self.run_dir, "results/" + name) for name in names]
+        paths = [path for path in paths if path.is_file()]
+        if paths:
+            backup = self.results / ("before_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+            backup.mkdir()
+            for path in paths:
+                path.replace(backup / path.name)
+            self.summary["backup_directory"] = backup.name
 
-fig2, ax2 = new_figure(kind="wide")
-ax2.plot(valid_freqs, r_max_phase, ".-", color=COLOR_GREEN,
-         label="Legacy phase at R_max")
-ax2.plot(valid_freqs, r_max_phase_unwrapped, "-", color=COLOR_TRAD, alpha=0.7,
-         label="Legacy phase unwrapped")
-if np.any(np.isfinite(coherent_phase_deg)):
-    ax2.plot(valid_freqs, unwrap_phase_deg(coherent_phase_deg), "-", color=COLOR_PURPLE,
-             label="Coherent component phase")
-ax2.axvline(primary_peak["freq_Hz"], color=COLOR_GRAY, linestyle="--")
-format_axis(ax2, xlabel="Z RF frequency (Hz)", ylabel="Phase (deg)")
-style_legend(ax2)
-save_figure(fig2, results_dir / "freq_response_phase.png")
-print(f"图已保存: {results_dir / 'freq_response_phase.png'}")
+    def execute(self, selected, expected_revision=None):
+        self._refresh()
+        if expected_revision is not None and expected_revision != self.revision:
+            raise ValueError("分析修订已改变，请刷新后重试")
+        selected = validate_selection(self.stages, self.states, selected)
+        self.revision += 1
+        item = selected[0]
+        result = {}
+        try:
+            for item in selected:
+                check_cancelled()
+                self.results.mkdir(exist_ok=True)
+                self._archive(item)
+                invalidate(self.stages, self.states, item)
+                self.states[item] = dict(status="running", error="")
+                self.summary.update(status="running")
+                self.summary.pop("error", None)
+                self.persist()
+                validated = run_format.validate_inputs(self.run_dir)
+                if item == "B01":
+                    result = validated
+                    write_state(self.results / "input_manifest.json", dict(input_fingerprint=self.fingerprint, **validated))
+                    names = ["input_manifest.json"]
+                else:
+                    result = analysis_steps.evaluate(self.run_dir)
+                    names = [name for name in run_format.RESULT_FILES if (self.results / name).is_file()]
+                    if not names:
+                        raise RuntimeError("离线算法没有生成结果文件")
+                    result["artifacts"] = [str(self.results / name) for name in names]
+                if run_format.fingerprint(self.run_dir) != self.fingerprint:
+                    raise ValueError("分析期间原始输入发生变化，请重新执行 B01")
+                self.states[item] = dict(status="completed", error="", artifacts=names,
+                    files={name: self._signature(name) for name in names}, parameters={}, revision=self.revision,
+                    input_fingerprint=deepcopy(self.fingerprint))
+                self.summary.update(_json_value(result), status="completed" if item == "B02" else "partial")
+                self.persist()
+        except BaseException as exc:
+            status = "cancelled" if isinstance(exc, (WorkflowCancelled, KeyboardInterrupt)) else "quality_failed" if isinstance(exc, ValueError) else "failed"
+            invalidate(self.stages, self.states, item)
+            self.states[item] = dict(status=status, error=str(exc))
+            self.summary.update(status=status, error=str(exc))
+            try:
+                self.persist()
+            except Exception as secondary:
+                getattr(exc, "add_note", print)(f"分析诊断保存失败：{secondary}")
+            raise
+        return result
 
-fig3, ax3 = new_figure(kind="square")
-phase_ext = np.concatenate([phases - 360, phases, phases + 360])
-r_ext = np.tile(r_matrix, (1, 3))
-im = ax3.pcolormesh(phase_ext, freqs, r_ext, cmap="viridis", shading="auto", rasterized=True)
-if len(phases) == 1:
-    ax3.set_xlim(float(phases[0]) - 1.0, float(phases[0]) + 1.0)
-else:
-    ax3.set_xlim(phases[0], phases[-1])
-format_axis(
-    ax3,
-    xlabel="Z RF burst phase (deg)",
-    ylabel="Z RF frequency (Hz)",
-)
-cb = fig3.colorbar(im, ax=ax3)
-cb.set_label("R (V)")
-save_figure(fig3, results_dir / "freq_phase_heatmap.png")
-print(f"图已保存: {results_dir / 'freq_phase_heatmap.png'}")
 
-fig4, ax4 = new_figure()
-ax4.plot(valid_freqs, r_cv, ".-", color=COLOR_TRAD)
-format_axis(
-    ax4,
-    xlabel="Z RF frequency (Hz)",
-    ylabel="std(R over phase) / mean(R)",
-)
-save_figure(fig4, results_dir / "phase_scan_cv.png")
-print(f"图已保存: {results_dir / 'phase_scan_cv.png'}")
+def analyze(run_dir: Path, *, step_ids=None, analysis_parameters=None, expected_revision=None):
+    ctx = AnalysisWorkflow(run_dir, analysis_parameters)
+    return ctx.execute([s.id for s in ANALYSIS] if step_ids is None else step_ids, expected_revision)
 
-# %% Cell 5
-analysis = {
-    "experiment_type": EXPERIMENT_TYPE,
-    "data_dir": str(DATA_DIR),
-    "method": f"Primary response = {PRIMARY_RESPONSE_METHOD}; R_max is retained only as legacy diagnostic",
-    "n_frequencies": int(len(freqs)),
-    "n_valid_frequencies": int(len(valid_freqs)),
-    "invalid_freq_Hz": invalid_freqs.tolist(),
-    "n_phases": int(len(phases)),
-    "fixed_Z_RF_amplitude_Vpp": config.get("freq_sweep", {}).get("Z_RF_AMPLITUDE_Vpp", None),
-    "freq_range_Hz": [float(freqs[0]), float(freqs[-1])],
-    "phase_range_deg": [float(phases[0]), float(phases[-1])],
-    "primary_response_method": PRIMARY_RESPONSE_METHOD,
-    "primary_peak_response": {
-        "freq_Hz": primary_peak["freq_Hz"],
-        "R_V": primary_peak["R_V"],
-    },
-    "primary_bandwidth": {
-        "f_low_Hz": primary_peak["f_low_Hz"],
-        "f_high_Hz": primary_peak["f_high_Hz"],
-        "bandwidth_Hz": primary_peak["bandwidth_Hz"],
-        "Q_factor": primary_peak["Q_factor"],
-        "criterion": "-3dB (primary response / sqrt(2))",
-    },
-    "legacy_r_max_peak_response": {
-        "freq_Hz": legacy_peak["freq_Hz"],
-        "R_V": legacy_peak["R_V"],
-        "phase_deg_raw": float(r_max_phase[int(np.nanargmax(r_max_legacy))]),
-    },
-    "phase_scan_diagnostic": {
-        "median_cv": float(np.nanmedian(r_cv)),
-        "max_cv": float(np.nanmax(r_cv)),
-    },
-    "freq_response": {
-        "freq_Hz": valid_freqs.tolist(),
-        "R_V_primary": primary_response.tolist(),
-        "R_V_mean": r_mean.tolist(),
-        "R_V_median": r_median.tolist(),
-        "R_V_coherent": coherent.tolist(),
-        "R_V_max_legacy": r_max_legacy.tolist(),
-        "phase_deg_r_max_legacy_raw": r_max_phase.tolist(),
-        "phase_deg_r_max_legacy_unwrapped": r_max_phase_unwrapped.tolist(),
-        "phase_deg_coherent": coherent_phase_deg.tolist(),
-        "phase_cv": r_cv.tolist(),
-    },
-}
 
-analysis_path = results_dir / "analysis.yaml"
-with open(analysis_path, "w", encoding="utf-8") as f:
-    yaml.dump(analysis, f, default_flow_style=False, allow_unicode=True)
-print(f"分析结果已保存: {analysis_path}")
+def main():
+    payload = json.loads(os.environ.get("LAB_TYPED_PARAMETERS", "{}"))
+    analyze(runtime_run_dir(), step_ids=payload.get("step_ids"), analysis_parameters=payload.get("analysis_parameters"),
+        expected_revision=payload.get("revision"))
+    return 0
 
-analysis_json_path = results_dir / "analysis.json"
-with open(analysis_json_path, "w", encoding="utf-8") as f:
-    json.dump(analysis, f, indent=2, ensure_ascii=False)
-print(f"分析结果 (JSON) 已保存: {analysis_json_path}")
 
-print(f"\n{'='*50}")
-print("频率响应分析摘要")
-print(f"{'='*50}")
-print(f"频点数:       {len(freqs)}")
-print(f"有效频点数:   {len(valid_freqs)}")
-print(f"相位点数:     {len(phases)}")
-print(f"主分析方法:   {PRIMARY_RESPONSE_METHOD}")
-print(f"主峰频率:     {primary_peak['freq_Hz']:.1f} Hz")
-print(f"主峰响应:     {primary_peak['R_V']:.4e} V")
-if primary_peak["bandwidth_Hz"] is not None:
-    print(f"-3dB 带宽:    {primary_peak['bandwidth_Hz']:.1f} Hz "
-          f"({primary_peak['f_low_Hz']:.1f} ~ {primary_peak['f_high_Hz']:.1f} Hz)")
-print(f"Legacy R_max: {legacy_peak['freq_Hz']:.1f} Hz, {legacy_peak['R_V']:.4e} V")
-print(f"{'='*50}")
-print("\n[OK] 数据分析与可视化完成")
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import threading
@@ -22,6 +23,7 @@ from ..common import (
 )
 from ..experiment_params import ExperimentParams
 from ..experiment_runtime import PROGRESS_PREFIX, PROGRESS_PROTOCOL_ENV, format_eta
+from ..steps.run_directory import write_run_config
 
 
 ParamsT = TypeVar("ParamsT", bound=ExperimentParams)
@@ -93,12 +95,16 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         progress: ProgressCallback | None = None,
         cancellation: CancellationToken | None = None,
         commands: Queue | None = None,
-    ) -> None:
+    ) -> Path | None:
+        reported_runs: list[Path] = []
         job_dir = self.root / "data" / ".gui_jobs"
         job_dir.mkdir(parents=True, exist_ok=True)
         token = f"{self.id}_{os.getpid()}_{threading.get_ident()}"
         cancel_path = job_dir / f"{token}.cancel"
         environment = os.environ.copy()
+        # 每次调用只使用显式传入的目录和参数，不继承上一次子任务的上下文。
+        environment.pop("LAB_RUN_DIR", None)
+        environment.pop("LAB_TYPED_PARAMETERS", None)
         environment.update({
             "LAB_EXPERIMENT_ID": self.id,
             "LAB_CANCEL_FILE": str(cancel_path),
@@ -111,8 +117,8 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             environment["LAB_TYPED_PARAMETERS"] = json.dumps(parameters, ensure_ascii=False)
         if run_dir is not None:
             environment["LAB_RUN_DIR"] = str(run_dir.resolve())
-        if progress is not None:
-            environment[PROGRESS_PROTOCOL_ENV] = "jsonl"
+        # 无 GUI 回调时也需要读取显式运行结果，不能退回目录猜测。
+        environment[PROGRESS_PROTOCOL_ENV] = "jsonl"
         command = [
             str(self.root / "agent_exp_env" / "Scripts" / "python.exe"),
             "-u",
@@ -168,6 +174,15 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
                     event = self._decode_progress(message[len(PROGRESS_PREFIX):])
                     if event is None:
                         continue
+                    if "run_directory" in event.data:
+                        record = event.data["run_directory"]
+                        if (not isinstance(record, dict) or not isinstance(record.get("path"), str)
+                                or not record["path"] or not isinstance(record.get("data_type"), str)):
+                            raise RuntimeError("子进程上报了无效的运行目录")
+                        if record["data_type"] == self.data_type:
+                            path = Path(record["path"])
+                            if path not in reported_runs:
+                                reported_runs.append(path)
                     if progress is None:
                         eta = event.data.get("estimated_remaining_seconds")
                         print(f"[{event.stage}] {event.message}"
@@ -193,6 +208,18 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             raise WorkflowCancelled("实验已在安全检查点停止")
         if return_code:
             raise RuntimeError(f"模块 {module} 异常结束，退出码 {return_code}")
+        if commands is None and run_dir is None and len(reported_runs) > 1:
+            # 父子实验可以共用 data_type；只在显式上报的目录中按稳定 ID 选唯一父运行。
+            candidates = set()
+            for path in reported_runs:
+                try:
+                    candidates.add(self._validated_run_directory(path))
+                except (RuntimeError, OSError, yaml.YAMLError):
+                    continue
+            if len(candidates) != 1:
+                raise RuntimeError("子进程未上报唯一有效的本次运行目录；不会猜测或回退历史数据")
+            return candidates.pop()
+        return reported_runs[-1] if reported_runs else None
 
     @staticmethod
     def _decode_progress(raw: str) -> ProgressEvent | None:
@@ -209,14 +236,25 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         except (KeyError, TypeError, ValueError):
             return None
 
-    def _latest_run(self, before: set[Path]) -> Path | None:
-        base = self.root / "data" / self.data_type
-        if not base.exists():
-            return None
-        runs = [item for item in base.iterdir() if item.is_dir()]
-        created = [item for item in runs if item not in before]
-        candidates = created or runs
-        return max(candidates, key=lambda item: item.stat().st_mtime) if candidates else None
+    def _validated_run_directory(self, run_dir: Path | None) -> Path:
+        if run_dir is None:
+            raise RuntimeError("采集完成后子进程未上报本次运行目录；不会回退分析历史数据")
+        path = Path(run_dir)
+        if not path.is_absolute():
+            raise RuntimeError("子进程上报的运行目录必须是绝对路径")
+        path = path.resolve()
+        base = (self.root / "data" / self.data_type).resolve()
+        if path.parent != base or not path.is_dir():
+            raise RuntimeError(f"子进程上报的运行目录不属于本实验: {path}")
+        config_path = path / "experiment_config.yaml"
+        if not config_path.is_file():
+            raise RuntimeError(f"本次运行目录缺少 experiment_config.yaml: {path}")
+        with config_path.open(encoding="utf-8") as stream:
+            config = yaml.safe_load(stream)
+        if (not isinstance(config, dict) or config.get("experiment_id") not in (None, self.id)
+                or config.get("data_type", config.get("experiment_type")) != self.data_type):
+            raise RuntimeError(f"本次运行配置与实验身份不匹配: {path}")
+        return path
 
     @staticmethod
     def _write_analysis_status(
@@ -231,15 +269,15 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             return
         try:
             with config_path.open(encoding="utf-8") as stream:
-                config = yaml.safe_load(stream) or {}
+                config = yaml.safe_load(stream)
             if not isinstance(config, dict):
                 return
             config["analysis_status"] = status
             config["analysis_error"] = error
-            with config_path.open("w", encoding="utf-8") as stream:
-                yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
+            write_run_config(config_path, config)
         except Exception:
             # 分析状态是诊断信息，不能覆盖原始分析异常。
+            logging.getLogger(__name__).exception("分析状态保存失败，原配置保留: %s", config_path)
             return
 
     def run(
@@ -252,21 +290,15 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         errors = self.preflight(params.to_external())
         if errors:
             raise ValueError("；".join(errors))
-        base = self.root / "data" / self.data_type
-        before = set(base.iterdir()) if base.exists() else set()
         emit(progress, "start", f"启动 {self.id}", 0)
-        self._execute(
+        reported_run = self._execute(
             self.acquisition_module,
             parameters=params.to_external(),
             progress=progress,
             cancellation=cancellation,
         )
-        run_dir = self._latest_run(before)
+        run_dir = self._validated_run_directory(reported_run)
         if self.analysis_module:
-            if run_dir is None:
-                raise RuntimeError(
-                    f"自动分析失败：采集完成后未找到 {self.data_type} 运行目录"
-                )
             try:
                 self.analyze(run_dir, progress, cancellation=cancellation)
             except WorkflowCancelled:
@@ -329,7 +361,8 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         errors = self.preflight(params.to_external())
         if errors:
             raise ValueError("；".join(errors))
-        self._execute(self.acquisition_module, parameters=params.to_external())
+        run_dir = self._execute(self.acquisition_module, parameters=params.to_external())
+        self._validated_run_directory(run_dir)
         return 0
 
     def analyze_cli(self, run_dir: Path | None = None) -> int:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+from hashlib import sha256
+import json
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -135,10 +137,11 @@ def missing_scenarios(claim: dict | None) -> list[str]:
     return sorted(required - claim["cases"].keys())
 
 
-def verify_pytest_results(path: Path, nodeids: list[str]) -> int:
-    """退出码为零也可能只执行了 skip/xfail，必须核对所选节点的实际结果。"""
+def verify_pytest_results(path: Path | list[Path], nodeids: list[str]) -> int:
+    """逐批或合并核对实际结果；退出码为零也不能接受 skip/xfail 或遗漏节点。"""
     try:
-        cases = ET.parse(path).findall(".//testcase")
+        paths = path if isinstance(path, list) else [path]
+        cases = [case for result in paths for case in ET.parse(result).findall(".//testcase")]
     except (OSError, ET.ParseError) as exc:
         raise ValueError(f"业务回归缺少有效的 pytest 结果: {exc}") from exc
     if not cases or any(case.find(tag) is not None for case in cases for tag in ("skipped", "failure", "error")):
@@ -168,6 +171,18 @@ def deduplicate_test_targets(targets) -> list[str]:
     targets = set(targets)
     files = {target for target in targets if "::" not in target}
     return sorted(target for target in targets if "::" not in target or target.split("::")[0] not in files)
+
+
+def split_test_targets(targets) -> list[list[str]]:
+    """保留全部目标，限制单批规模及 Windows 命令长度，不改变测试本身的超时。"""
+    batches, batch = [], []
+    for target in deduplicate_test_targets(targets):
+        if batch and ("::" not in target or "::" not in batch[-1] or len(batch) >= 25
+                      or len(subprocess.list2cmdline([*batch, target])) > 12000):
+            batches.append(batch)
+            batch = []
+        batch.append(target)
+    return [*batches, batch] if batch else batches
 
 
 def canonical_test_targets(root: Path, targets) -> tuple[list[str], dict[str, str]]:
@@ -352,11 +367,26 @@ def validation_plan(root: Path, definitions: list, changes: list[str], claims: d
     changed_tests = sorted(path for path in set(changes)
                            if Path(path).name.startswith("test_") and Path(path).suffix == ".py"
                            and repository_path(root, path).is_file())
+    # 只豁免清单中原字节不变的归档快照；篡改、缺清单及其他 old/ 测试仍拒绝或照常执行。
+    archived_tests = []
+    snapshots = [path for path in changed_tests if path.startswith("old/experiments/")]
+    if snapshots:
+        try:
+            manifest = json.loads((root / "old/experiments/manifest.json").read_text(encoding="utf-8"))["files"]
+            for path in snapshots:
+                original = path.removeprefix("old/experiments/")
+                if original not in manifest or sha256(repository_path(root, path).read_bytes()).hexdigest() != manifest[original]:
+                    errors.append(f"归档测试快照未登记或字节已改变: {path}")
+                else:
+                    archived_tests.append(path)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            errors.append(f"无法核对归档测试快照: {exc}")
     nodes = {node for entry in entries for node in entry["acquisition_test_nodes"]}
     nodes.update(node for entry in entries for regression in entry["regressions"].values() for node in regression["nodes"])
-    targets, aliases = canonical_test_targets(root, [*nodes, *changed_tests])
+    targets, aliases = canonical_test_targets(root, [*nodes, *(path for path in changed_tests if path not in archived_tests)])
     return {"changed_files": changes, "unmapped_files": sorted(set(changes) - matched),
-            "changed_test_files": changed_tests, "test_targets": targets, "test_target_aliases": aliases,
+            "changed_test_files": changed_tests, "archived_test_files": archived_tests,
+            "test_targets": targets, "test_target_aliases": aliases,
             "required_test_nodes": sorted(nodes),
             "experiments": entries, "checks": [], "hardware_verified": False}, errors
 

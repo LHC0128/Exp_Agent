@@ -20,6 +20,7 @@
 | `temperature-switch-pid-cycle` | `experiments/Temperature_Switch_PID_Cycle_Test.py`、`experiments/Temperature_Switch_PID_Cycle_Test_plot.py` |
 | `aw-waveform-scope-check` | `experiments/AW_Control_Waveform_Scope_Check.py`（原脚本包含诊断绘图，无独立分析入口） |
 | `static-sensitivity-optimize` | `experiments/Static_Magnetic_Field_Sensitivity_Optimize.py`（原脚本包含分析和诊断图，无独立分析入口） |
+| `static-sensitivity-optimize-local` | `lab_workflows/experiment_modules/static_sensitivity_optimize_local/`、同名采集／分析薄入口及专属 GUI 快照 |
 | `aw-const-omega-check` | `experiments/AW_ConstOmega_Calibration_Check.py`、`experiments/AW_ConstOmega_Calibration_Check_plot.py` |
 | `xy-dc-voltage-calibration` | `experiments/XY_DC_Voltage_Calibration.py`、`experiments/XY_DC_Voltage_Calibration_plot.py` |
 | `xy-aw-voltage-calibration` | `experiments/XY_AW_Voltage_Calibration.py`、`experiments/XY_AW_Voltage_Calibration_plot.py` |
@@ -34,7 +35,7 @@
 - DG AM 传递检查与任意波示波器检查均已归档；后者仍按原逻辑读取前者的历史传递曲线，数据不移动、算法不修改。`AW_Control_Waveform_Scope_Check.py` 按原字节保留，不进行模块化或流程图迁移，也不新增离线分析器。其共享输入 `experiments/control_waveformAW.csv` 保持原位；原 `WAIT_BEFORE_EXIT` / `KEEP_OUTPUTS_AFTER_EXIT` 及输出策略不变，归档脚本仍会操作真实仪器，不能作为离线测试或安全收尾工具运行。
 - 外部 AM 频响的采集脚本已移入此处；`experiments/RF_Field_Sensitivity_AW_FreqSweep_plot.py` 及其 DirectAW 分析模块仍供在维护的 `rf-sensitivity-direct-aw-frequency` 使用，不随归档移走。此处另保留共用 plot 入口的原始副本，供旧 Python 兼容调用与恢复参考；未实现模块化迁移或更改原扫描、保存及科学算法。
 - 温控开关 PID 周期测试的采集和离线分析脚本均按原字节归档；专用 TEC 启停、初始判稳、PID 设置、周期时序和收尾规则原样保留，普通采集时序例外也不删除。它不再提供 GUI 运行或历史入口，不能把归档脚本当作无硬件测试。
-- 全局静磁场优化、恒定 Omega 检查、XY DC 与 XY AW 电压标定的 7 份脚本按原字节归档，不进行模块化或流程图迁移。三对采集／分析脚本保留原科学算法，全局优化仍没有独立分析入口。全局优化实际写入的 `data/Static_Magnetic_Field_Sensitivity/` 与主实验、局部优化共享历史，整个目录保持原位；卡片继续保留原注册 `data_type`，不借归档改写历史身份。局部优化 `static-sensitivity-optimize-local`、主实验 `static-sensitivity` 和 `xy-direct-aw-dc-calibration` 不在本次归档范围，共用驱动、分析和波形 CSV 不移动。
+- 全局静磁场优化、恒定 Omega 检查、XY DC 与 XY AW 电压标定的 7 份脚本按原字节归档，不进行模块化或流程图迁移。三对采集／分析脚本保留原科学算法，全局优化仍没有独立分析入口。全局优化实际写入的 `data/Static_Magnetic_Field_Sensitivity/` 与主实验、局部优化共享历史，整个目录保持原位；卡片继续保留原注册 `data_type`，不借归档改写历史身份。局部优化 `static-sensitivity-optimize-local` 也已归档：22 份专属实现、采集／分析薄入口、正式回归、原图及 GUI 快照按归档前字节保留，当前后端不再加载其会话、格式处理或专属路由。主实验 `static-sensitivity` 与 `xy-direct-aw-dc-calibration` 继续维护；共用驱动、标准 DC 工作流、分析和波形 CSV 不移动。
 - 在用 XY 相位响应实验仍复用的 `mx_keithley_6221_optimal_control_rf_sensitivity/phase.py` 原位保留，归档中也保留其原始副本。共享驱动和算法不随专属实验移走。
 - 为兼容已有 Python 导入，`lab_workflows.experiment_modules` 追加此处的包搜索路径；`get_experiment(id)` 仅在显式请求归档 ID 时按需加载旧定义。这不是 GUI 运行入口，导入/schema 检查不连接仪器。
 

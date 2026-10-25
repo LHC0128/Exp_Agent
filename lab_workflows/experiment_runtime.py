@@ -50,6 +50,14 @@ def report_runtime_progress(
     print(f"[{stage}]{percent_text} {message}{eta}", flush=True)
 
 
+def report_run_directory(run_dir: Path, data_type: str) -> None:
+    """显式上报当前运行目录；父进程仍须等待子进程退出及安全收尾。"""
+    if os.environ.get(PROGRESS_PROTOCOL_ENV) == "jsonl":
+        report_runtime_progress("run_directory", f"本轮数据目录: {run_dir}", data={
+            "run_directory": {"data_type": data_type, "path": str(Path(run_dir).resolve())},
+        })
+
+
 def load_runtime_params(params_type: type[ExperimentParams]) -> ExperimentParams:
     raw = os.environ.get("LAB_TYPED_PARAMETERS")
     if raw is None:

@@ -38,7 +38,7 @@ Scope 请求率不会写入 `/demods/n/rate`，返回值仍是保留的主机传
 相位统一由 X/Y 的 `atan2` 返回弧度。正常、异常、超时、取消及断开前恢复相关设置。
 量程沿用 LabOne 当前上下限，保存量程并检查削顶，不试采或自动改量程。
 NPZ 保存采集快照；原 `.npy` 文件通过同名 `_acquisition.npz` 旁文件保存实际率与真实时间轴。
-完整规则、约束、字段和实机验收边界见 [公共说明](../../docs/lockin_amplifier.md#解调时序的模块选择)。
+完整规则、约束、字段和实机验收边界见 [公共说明](../../docs/instruments/lockin_amplifier.md#解调时序的模块选择)。
 
 ## 导入与创建
 
@@ -82,7 +82,7 @@ MFLI 的 USB 连接由 Windows RNDIS 驱动提供虚拟网卡。USB 和网线同
 仅配置本地 `host: 127.0.0.1` 与 `interface: 1GbE` 不能固定物理链路；
 可在本地 Data Server 启动时使用 `--device-ip=192.168.150.246`，限制发现为 USB 地址。
 USB 地址变化时更新此启动参数，本地服务器地址仍为 `127.0.0.1:8004`。
-具体启停步骤和限制见 [公共连接说明](../../docs/lockin_amplifier.md#同时连接-usb-与网线)。
+具体启停步骤和限制见 [公共连接说明](../../docs/instruments/lockin_amplifier.md#同时连接-usb-与网线)。
 
 正式实验按当前物理量映射创建实例：
 
@@ -145,7 +145,7 @@ Scope 来源与设置恢复、取消和安全拦截。修改的 Python 文件还
 
 ## 进一步阅读
 
-- [完整模块说明、采集示例与实机验收](../../docs/lockin_amplifier.md)
+- [完整模块说明、采集示例与实机验收](../../docs/instruments/lockin_amplifier.md)
 - [设备库与物理量映射规则](../../docs/instrument_mapping.md)
 - [旧模式锁相实验与兼容性](../../docs/legacy_lockin_experiments.md)
 - [HF2 / MFLI Notebook 示例](../../examples/lockin_amplifier_demo.ipynb)

@@ -1,0 +1,279 @@
+---
+title: Mx Z 最优控制 RF 灵敏度
+type: Mx_Z_Optimal_Control_RF_Sensitivity
+scan_mode: point_by_point
+mapping_keys:
+  main_magnetic_field:
+    role: configured_current_and_restored
+  Z_magnetic_field:
+    role: optimal_control_preserved_on_exit
+  Time_sequence_2:
+    role: common_trigger
+  rf_coil:
+    role: scanned_detection_drive_with_y_dc_compensation
+  X_magnetic_field:
+    role: fixed_x_dc_compensation
+  Pump_laser_power:
+    role: fixed
+  Probe_laser_power:
+    role: fixed
+  Pump_modulation:
+    role: fixed
+  Time_sequence:
+    role: fixed
+  Temp_Switch:
+    role: point_gate
+  lockin_r:
+    role: detection_rxy_phase_calibration_and_r_measurement
+required_devices:
+  - GS200
+  - DG900
+  - DG4000
+  - 锁相放大器
+learned_notes:
+  - GS200 主场配置为 0 mA 时归零关闭，非零时设定电流后开启；所有结束路径恢复完整运行前状态。
+  - Z 控制只在开始时触发一次；校相和正式幅度扫描只重新触发 Y RF。
+  - Y RF 非零校相同步采集 Demod0 R/X/Y，按 φ 与 φ+180° 紧邻配对，并丢弃首个 dummy 点。
+  - X 剩磁补偿由 X_magnetic_field 输出固定 DC；Y 剩磁补偿作为 rf_coil 波形的 DC offset。
+  - 校相 Y RF 幅度为 0 时 RFY 切换为纯 Y 补偿 DC，改为逐点重新触发并扫描 Z 控制相位。
+  - 剩磁响应模式不要求相位拟合通过，扫描后不执行 RF 幅度和噪声采集。
+  - 剩磁响应模式在所有退出路径恢复 CONTROL_BURST_PHASE_DEG。
+  - 正常结束、取消或异常时均保持 Z 控制波形和输出状态不变，不归零、不关闭。
+  - Z 控制和 Y RF 的 DG4000 Burst 均使用外部下降沿触发，与 Keithley 6221 Trigger Link 输入保持同沿。
+  - 共同触发实体接线由操作者核对，软件只验证仪器配置。
+  - Z 控制电压完全来自闭环冻结波形，不再经 Hz/V 标定换算；冻结文件同时提供电流目标与来源追溯。
+experiment_id: mx-z-optimal-control-rf-sensitivity
+defaults_file: params/experiments/mx-z-optimal-control-rf-sensitivity.yaml
+---
+
+# Mx Z 最优控制 RF 灵敏度
+
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。本实验的校相、幅度点和每段噪声各自使用独立采集窗口；180° 相位成对是采集顺序，不合并成一个关温控窗口，也不增加噪声 OFF/ON 配对。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](../acquisition_timing.md)。
+
+
+## 锁相采集方式与实际速率
+
+响应使用 `RESPONSE_RATE_SA_S` 请求率、`RESPONSE_DURATION_S` 时长和 `DEMOD_IDX` 解调器；噪声使用 `NOISE_RATE_SA_S` 请求率、`NOISE_DURATION_S` 时长和 `DEMOD_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
+
+时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](../instruments/lockin_amplifier.md#解调时序的模块选择)。
+
+当前默认参数：[参数文件](../../params/experiments/mx-z-optimal-control-rf-sensitivity.yaml)。GUI「保存为默认」会更新该文件；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
+
+锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，GUI 不再提供开启选项。
+
+## 锁相设备与启动检查
+
+本实验使用设备库中全系统选择的 HF2 或 MFLI；切换入口为「仪器控制 → 设备库 → 锁相放大器」。主探测信号接所选设备的主电压输入，保留原解调器索引。启动前检查频率与通道能力；MFLI 连接后回读实际选件，EXT 时钟须核对 10 MHz 接线和锁定。历史 `HF2_*` 参数与 `hf2_configuration` 键继续兼容，代表本次实际选择的设备。具体差异、数据速率和安全范围见 [锁相接口说明](../instruments/lockin_amplifier.md)。
+
+## 实验构型
+
+稳定实验 ID 为 `mx-z-optimal-control-rf-sensitivity`。GUI 参数
+`FIXED_PARAMS.main_magnetic_field` 配置 GS200 主场电流：`0 mA` 时
+写入零电流并关闭输出，非零时写入设定电流并开启输出。实验同时在
+`Z_magnetic_field` 上施加周期最优控制；Y RF 由
+`rf_coil` 产生，锁相放大器 Demod0 的振荡器频率始终等于固定 Y RF 频率。
+Y RF 校相同步采集 Demod0 R/X/Y；正式幅度响应、可选 RF 开关状态下的噪声以及
+`YRF=0` 的 Z 控制剩磁扫描仍采集 Demod0 R。
+
+XY 剩磁场补偿沿用 Mx 主磁场示波器噪声谱实验的固定参数键：
+`FIXED_PARAMS.X_magnetic_field` 由 `X_magnetic_field` 通道直接输出 DC；
+`FIXED_PARAMS.Y_magnetic_field` 不占用额外通道，而是作为 `rf_coil`
+正弦/Burst 的 DC offset。程序在每次输出前分别校验 X DC、Y offset
+以及 Y 的完整电压包络 `offset ± Vpp/2`。
+
+参数 schema 为 v6，当前默认值读取[GUI 保存参数](../../params/experiments/mx-z-optimal-control-rf-sensitivity.yaml)，单次运行以自己的 `experiment_config.yaml` 为准。v5 参数按模型迁移旧稳定等待字段，显式 `SYSTEM_SETTLE_S` 优先；原始格式独立标记 `raw_format_version=1`。控制波形固定来自闭环校正实验的冻结文件，本实验
+不再提供理论 CSV 换算路径；提交任何旧版来源参数（如
+`CONTROL_WAVEFORM_SOURCE`、`CONTROL_VERSION`、`Z_CALIBRATION_SOURCE_RUN`
+等）会被未知参数检查拒绝。读取 v4 及更早的历史配置或历史运行目录时，
+参数入口直接报错，请按当前参数重新配置；旧运行目录仍可只读浏览科学报告和下载原文件，但不支持用本实验的离线分析器重新分析。无 raw 标记的历史仅兼容已核对的 v5/v6，不把所有旧数据自动认作 raw1；有明确 raw1 的数据仍须通过参数模型、实验身份和原始字段资格。未知身份、未知 raw 格式和未安全封存的运行拒绝分析。
+
+Z 控制波形从
+`data/Z_AW_Closed_Loop_Waveform_Correction/<CORRECTED_CONTROL_SOURCE_RUN>/results/corrected_control_waveform.npz`
+读取。实验直接使用其中冻结的归一化波形、周期、Vpp 和 offset，不乘控制
+比例、不经任何 Hz/V 标定重新换算电压，也不重新归一化或裁剪数组。冻结
+文件中保存的电流目标和电流耦合标定来源仅用于追溯，保存进运行记录的
+`current_feedback_calibrations`。运行会原样复制冻结文件并记录 SHA-256，
+同时保存实际下发的波形快照：
+
+```text
+raw/source_corrected_control_waveform.npz
+raw/source_manifest.yaml
+raw/applied_control_waveform.npz
+```
+
+若 Y RF/锁相放大器 频率与冻结波形的重复频率不同，预检和运行只给出提示，
+共同触发仍只固定采集起始相位，采集期间相对相位按频差演化。
+
+## 共同触发与两种相位模式
+
+`Time_sequence_2`（Z 控制 DG4000 CH2）输出 100 Hz、5 Vpp、
+2.5 V offset、50% duty 方波。该信号必须经分配后同时接入 Z 控制
+DG4000 和 Y RF DG4000 的 Ext Trig；两台仪器使用下降沿外触发
+`Burst INFinity`，从而与 Keithley 6221 Trigger Link 的下降沿输入保持同沿。
+软件不能判断实体 BNC 线是否接通，运行前必须人工核对。
+
+当 `PHASE_CAL_RF_AMPLITUDE_VPP > 0` 时执行 RF 灵敏度模式。Z 控制被
+触发后连续运行，校相保持 Z 控制相位和 Output 不变，只扫描 Y RF
+Burst 相位。相位轴必须完整覆盖一个 360° 周期且不重复首尾点，范围与步进读取参数文件。实际采集顺序按相隔 180° 的相位成对重排，每点设置相位后对 Y RF 执行
+Output OFF→ON。正式记录前先采集并丢弃一个首相位 dummy 点。每个相位
+独立关闭温控、按 `SYSTEM_SETTLE_S` 稳定、按 `RESPONSE_DURATION_S` 同步采集 R/X/Y，并按
+\(\sqrt{\sigma_X^2+\sigma_Y^2}\) 门槛重采。
+
+首轮完整相位扫描结束后，程序用
+\(Z(\phi)=c_0+c_1\cos\phi+c_2\sin\phi\) 拟合整条复数相位曲线，
+再对复残差使用 MAD 稳健门槛识别“点内噪声很小、但稳定触发到错误
+状态”的异常点。门槛由配置的稳健标准差倍数与点内复噪声中位数倍数共同确定。若首轮异常点不超过配置上限，程序只执行一轮定点修正，
+每个异常相位重新采集一次并替换进入最终拟合；若重采后仍有异常，或
+首轮异常点超过上限，则保留全部诊断数据并拒绝校相结果。这里的一轮
+跨相位重采与单点内部的复噪声质量重试是两套独立机制。
+
+当 `PHASE_CAL_RF_AMPLITUDE_VPP = 0` 时执行剩磁响应模式。程序不向
+RFY 下发零幅正弦波，而是将其配置为
+`FIXED_PARAMS.Y_magnetic_field` 对应的纯 DC 输出，并在每个采集点再次
+确认该 Y 补偿场。相位轴改为 Z 控制 Burst 相位；
+每点对 Z 控制执行 Output OFF→设置相位→Output ON，使其等待下一次
+共同触发。完成、取消或异常退出时，Z 控制均恢复至 GUI 参数
+`CONTROL_BURST_PHASE_DEG`，波形和 Output 保持开启。
+
+Y RF 非零校相把 Demod0 输出写成复数 \(Z=X+iY\)。对每一对相差
+180° 的相位计算
+
+\[
+Z_0=\left\langle\frac{Z(\phi)+Z(\phi+180^\circ)}{2}\right\rangle,
+\qquad
+\Delta Z(\phi)=\frac{Z(\phi)-Z(\phi+180^\circ)}{2}.
+\]
+
+再将差分旋转到平均基线方向：
+
+\[
+W(\phi)=\Delta Z(\phi)e^{-i\arg Z_0}.
+\]
+
+同相分量 \(P=\operatorname{Re}W\) 使用
+\(P(\phi)=a\cos\phi+b\sin\phi\) 拟合；选择 \(P\) 正最大的位置作为
+建设性 Y RF 相位。正交分量 \(Q=\operatorname{Im}W\) 同时拟合并保存，
+用于诊断所选相位处的残余失配。由于计算发生在带符号 X/Y 上，即使
+RF 响应幅度大于基线也不会发生 R 的绝对值折叠。正式正交模型要求
+R² 达到 `PHASE_FIT_R_SQUARED_MIN`、协方差有限且同相幅度通过 `PHASE_FIT_AMPLITUDE_SIGMA_MIN` 显著性门槛；否则保留校相数据、拟合结果和
+`results/phase_calibration.png` 后停止实验。该诊断图的上方面板同时绘制
+Demod0 R/X/Y 的均值与误差条，下方面板绘制成对同相/正交响应及其拟合。
+
+`YRF=0` 的剩磁扫描继续使用
+\(R(\phi)=|C+A\sin(\phi-\phi_0)|\) 和
+\(C+A|\sin(\phi-\phi_0)|\) 诊断，不以拟合是否通过作为成功条件：
+弱响应或平坦响应仍标记为正常完成，并保存完整数据、拒绝原因和诊断图。
+
+## 响应与灵敏度
+
+本节只适用于 `PHASE_CAL_RF_AMPLITUDE_VPP > 0`。正式测量固定
+Y RF/锁相放大器 频率，只扫描带符号 Y RF 幅度。正幅度使用
+校相结果，负幅度增加 180°；零点切换为纯 Y 补偿 DC，不向仪器设置
+`0 Vpp` 正弦，下一个非零点完整恢复带偏置的外触发 Burst 正弦。每个幅度点都重新触发
+Y RF，Z 控制始终连续运行。
+
+R-only 幅度色散拟合的初始值固定为 `V0=0 Vpp`、`C=0 V`；拟合仍受扫描范围
+边界约束，避免把远端尾部最低点作为初始共振中心。
+
+色散、零点实测斜率、Welch PSD、幅度等效 HWHM、线宽校正和平坦频段
+检测复用 Mx Y RF 灵敏度分析。噪声采集的段数和每段时长分别由
+`NOISE_N_AVG`、`NOISE_DURATION_S` 设置，采集信号仍为 Demod0 R。
+
+GUI 基础参数提供“噪声测量时开启 RF”（`NOISE_RF_ENABLED`），取值见参数文件。
+关闭时 Y RF 交流分量关闭，Y 补偿 DC 保持输出；开启时使用独立的
+“噪声测量 RF 幅值”（`NOISE_RF_AMPLITUDE_VPP`），单位 Vpp，取值见参数文件。
+幅值按现有 RF 参数的峰峰值口径设置，允许范围为 `0–2 Vpp`，并校验
+`Y offset ± Vpp/2` 的完整输出包络。设置为零时仍使用纯 Y 补偿 DC。
+
+开启噪声 RF 时沿用 `Y_RF_FREQUENCY_HZ` 和正幅度对应的校准相位，每段采集前
+用 `set_amplitude()` 设置幅值并重新等待共同触发，再按
+`SYSTEM_SETTLE_S` 等待稳定；Z 控制保持连续运行。校相幅值为零的
+剩磁响应模式不进入噪声采集，新开关不会改变该模式。
+
+`experiment_config.yaml` 的 `noise_rf` 和每个 `raw/noise_*.npz` 保存实际采用的
+RF 交流开关、幅值、频率、Burst 相位、Y DC 偏置及通道输出状态；分析结果也
+携带 `noise_rf`。旧配置缺少新增参数时继续按 RF 交流关闭方式采集。
+
+Mx Z 的幅度色散拟合不再使用线宽相对不确定度门槛拒绝结果：拟合完成后直接
+继续绘图和后续灵敏度计算。`FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX` 仍保留在
+配置中用于结果追溯，但不参与 Mx Z 的有效性判断；实际线宽相对不确定度仍写入
+`results/analysis.yaml`、`results/analysis.json` 的 `response_fit`，并写入
+`results/response_fit.npz` 的 `fit_uncertainties`（线宽不确定度为第二个元素）。
+
+采集与分析入口分别为：
+
+```text
+experiments/Mx_Z_Optimal_Control_RF_Sensitivity.py
+experiments/Mx_Z_Optimal_Control_RF_Sensitivity_plot.py
+```
+
+每次运行保存：
+
+```text
+data/Mx_Z_Optimal_Control_RF_Sensitivity/<run>/
+  experiment_config.yaml
+  raw/
+    source_corrected_control_waveform.npz
+    source_manifest.yaml
+    applied_control_waveform.npz
+    phase_scan.npz              # 非零校相含 R/X/Y、成对复差分和投影
+    phase_dummy_attempt_*.npz   # 非零校相首个丢弃点
+    phase_*_cross_retry_attempt_*.npz  # 跨相位异常点的单轮定点重采
+    amplitude_scan.npz
+    noise_*.npz
+  results/
+    phase_calibration.yaml
+    phase_calibration.png
+    analysis.yaml
+    analysis.json
+    amplitude_response.png     # 幅度响应图；拟合失败时仅包含实测点
+    full_analysis.png
+    full_analysis_zero_point.png   # 零点局部斜率有效时生成
+```
+
+如果幅度色散线形拟合未达到质量门槛，分析会保留失败状态并停止后续灵敏度计算，
+但仍输出 `amplitude_response.png`。该图只包含幅度扫描的实际 Demod R 测量点，
+并标出被质量筛选排除的点，不会绘制不合格的拟合曲线。
+
+剩磁响应模式只保存 `phase_scan.npz`、`phase_calibration.yaml`、
+`phase_calibration.png`、`analysis.yaml` 和 `analysis.json`，不会生成
+`amplitude_scan.npz`、`noise_*.npz` 或 RF 灵敏度分析图。
+
+## 安全结束状态
+
+正常、取消和异常路径均保持 `Z_magnetic_field` 当前最优控制波形和
+Output 开启，不发送归零或关闭命令。RF 灵敏度模式保持原 Burst 相位；
+剩磁响应模式恢复 `CONTROL_BURST_PHASE_DEG`。Y RF 与 X 场
+仍关闭归零；共同触发保持当前状态，温控恢复为 5 V DC + Output ON，GS200 恢复运行前源模式、
+电流、量程、限流和输出状态。Pump/Probe、Pump 载波/门控和 锁相放大器 设置
+保留，正常结束只断开 TEC。
+
+## 运行 / 历史 GUI 与分步执行
+
+实验中心路由为 `/experiments/mx-z-optimal-control-rf-sensitivity`。运行 Tab 的流程容器顶部集中保存参数与布局、派生预览、预检、完整运行、取消和任务状态。节点内编辑基础/高级参数；`SYSTEM_SETTLE_S` 等共享过程参数在校相、幅度和噪声节点同步，初始化条件只在工作点节点编辑。草稿不写仪器，应用后按实际失效状态显式重跑。完整运行与分步使用相同业务函数。
+
+| 节点 | 职责与依赖 | 质量与产物 |
+| --- | --- | --- |
+| A01 | 无硬件预检并冻结闭环来源 | 参数、映射、采集能力及完整电压包络通过；来源 SHA 变更拒绝后继，须显式重跑 A01 |
+| A02 | A01 后连接、保存初态及新目录 | 原 GS200 模式/电流/量程/限流/Output，冻结与实际波形快照 |
+| A03 | A02 后同步时钟并设置 TEC/Mx 工作点 | 时钟严格回读；TEC 只下发 UI 目标，实测温度未知为 null；保留实际解调率 |
+| A04 | A03 后执行两种相位模式之一 | RF 模式含 dummy、成对 R/X/Y、单点重试和单轮跨相位修正；不通过阻断。剩磁弱/平坦拟合保存诊断并完成 |
+| A05 | A04 后采集带符号幅度响应 | R 点标准差合格；零点切 DC，负点加 180°。剩磁模式跳过 |
+| A06 | A05 后采集配置的 R 噪声 | RF 开关、幅度和实际率随原始数据保存。剩磁模式跳过 |
+| A07 | A06 后恢复响应解调并安全封存 | 使用已执行配置恢复；关闭横向场、恢复温控和 GS200 原态，保持 Z 控制/共同触发；失败不得标记完成 |
+| A12 | 无前置安全结束会话 | 空闲手动结束；取消、EOF 和后台关闭自动收尾，收尾完成后释放硬件锁 |
+| B01 | 独立分析输入资格 | 身份、参数/raw 版本、模式、校相及对应原始响应/噪声齐备；坏输入不移动已有科学产物 |
+| B02 | B01 后原数值分析 | RF 复用原色散、Welch、线宽和双斜率灵敏度；保持初值 V0/C=0、忽略 γ 相对不确定度门槛。剩磁只统计诊断，不要求拟合显著 |
+| B03 | B02 后绘图和报告 | 原相位图、幅度响应、PSD、完整分析与有效时的零点斜率图；所有标注英文、paper 样式 |
+
+分步等待仍保持仪器连接、输出和全局硬件锁；刷新恢复存活会话，后台重启不从旧文件恢复硬件。A07 封存后保留 TEC 通信供同会话重跑，A12 才断开。A07 使 A03 及后续采集前置失效；再次采集须重新准备，重跑创建新运行目录，旧参数、raw 和已封存记录保持原样。封存后应用但尚未执行的新 Pump/解调参数不会用于旧轮次收尾。
+
+分析列默认编辑下一次实验的自动分析参数；选择具体目录后仅使用该目录的采集参数，`options={}`，本实验没有额外分析覆盖值。保存默认值仍保存下一次实验参数与统一分类，不保存历史对象设置。B01/B02/B03 按内容 SHA 校验输入和产物；输入或产物改变会使前置失效，重算归档受影响产物，校相 YAML 作为输入保留。拟合失败保存测量点图和拒绝原因，不能继续生成合格灵敏度报告。
+
+历史 Tab 只读加载当次参数快照、报告、科学图和下载链接；“填回参数”仅采用当前 schema 可识别的键，不自动保存或运行，完整配置须重新预检。v4 及更早报告允许只读，不承诺旧参数直接复现，带旧版本的参数文件和重分析仍遵守上述不兼容规则。旧报告非有限 JSON 数值经只读诊断接口返回 null，下载保持原始字节；有新阶段失败时优先显示新失败，不用旧成功报告掩盖。可编辑[流程图源文件](../../lab_workflows/experiment_modules/mx_z_optimal_control_rf_sensitivity/workflow.excalidraw)随实验包提供。
+
+代码按职责位于本实验包的 `preparation.py`（来源/连接/工作点/收尾）、`excitation.py`（触发输出）、`acquisition.py`（校相/幅度/噪声）、`workflow.py`（完整/分步编排）、`analysis_steps.py`（原科学算法与报告）、`analysis.py`（阶段与缓存）、`stages.py`（依赖/参数/门槛）、`run_format.py`（格式资格）和 `session.py`（串行会话）。`experiments/` 两个薄入口及共享旧导入仍可使用。

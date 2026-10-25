@@ -9,6 +9,18 @@ ARCHIVE_PATH = "old/experiments"
 ARCHIVED_EXPERIMENTS = {
     item.id: item for item in (
         ExperimentDefinition(
+            id="static-sensitivity-optimize-local",
+            title="静磁场灵敏度局部优化",
+            category="optimization", family="static-field", variant="local",
+            description="已归档，仅保留卡片与恢复参考。归档前每候选复用静磁场 DC 逐点测量与独立批次分析；共享历史数据和默认参数保持原位，不提供 GUI 运行或历史入口。",
+            data_type="Static_Magnetic_Field_Sensitivity",
+            required_devices=("GS200", "信号发生器", "锁相放大器", "TEC103"),
+            execution_mode="typed_workflow",
+            acquisition_program="old/experiments/experiments/Static_Magnetic_Field_Sensitivity_Optimize_Local.py",
+            analysis_program="old/experiments/experiments/Static_Magnetic_Field_Sensitivity_Optimize_Local_plot.py",
+            schema_version=3, supports_cancel=False, auto_analyze=False,
+        ),
+        ExperimentDefinition(
             id="mx-keithley-6221-main-field-calibration",
             title="Mx Keithley 6221 主磁场频率标定",
             category="calibration",

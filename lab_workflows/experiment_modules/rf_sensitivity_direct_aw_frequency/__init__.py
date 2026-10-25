@@ -1,6 +1,11 @@
-"""RF DirectAW 频率响应实验。"""
-
-from .definition import ADAPTER, DEFINITION
+"""实验公开定义惰性加载，显式目录离线分析不依赖当前工作目录。"""
 from .models import RFDirectAWFrequencyParams
 
 __all__ = ["ADAPTER", "DEFINITION", "RFDirectAWFrequencyParams"]
+
+
+def __getattr__(name):
+    if name in ("ADAPTER", "DEFINITION"):
+        from . import definition
+        return getattr(definition, name)
+    raise AttributeError(name)

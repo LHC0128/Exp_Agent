@@ -13,14 +13,25 @@ ADAPTER = TypedWorkflowAdapter(
     "lab_workflows.experiment_modules.rf_sensitivity_direct_aw_frequency.analysis",
 )
 
+
+def preflight(values):
+    """运行前复用与分步会话相同的无硬件业务校验。"""
+    errors = ADAPTER.preflight(values)
+    if not errors:
+        from .workflow import preflight as check
+        try:
+            check(ADAPTER._resolved(values), ADAPTER.root)
+        except (OSError, KeyError, TypeError, ValueError, PermissionError) as exc:
+            errors.append(str(exc))
+    return errors
+
 DEFINITION = ExperimentDefinition(
     id="rf-sensitivity-direct-aw-frequency",
     title="RF 灵敏度频率扫描（DirectAW）",
     category="measurement",
     family="rf-sensitivity",
     variant="direct-aw",
-    description=('扫描 RF 频率的直接任意波方案。 当前双主电压回采接线只支持 HF2，选择 MFLI 时预检禁止启动。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。'),
-    data_type="RF_Field_Sensitivity_AW_FreqSweep_DirectAW",
+    description="固定 Z RF 幅度，扫描频率和源相位；dg_am 提供外触发，dg_comp 两路输出正交 DirectAW。运行／历史双 Tab 提供真实可勾选步骤，节点内编辑、顶部保存／预检／完整运行；草稿应用后显式重跑，分步等待保持输出和硬件锁。双主电压物理回环仅支持 HF2，MFLI 在连接前拒绝，输入高阻／DC。恢复温控后保存，保留已读样本及原始错误；独立目录分析沿用原 R 中位数、相干分量及带宽诊断，无额外覆盖参数。",    data_type="RF_Field_Sensitivity_AW_FreqSweep_DirectAW",
     required_devices=("GS200", "DG900", "DG4000", "HF2"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py",
@@ -29,7 +40,7 @@ DEFINITION = ExperimentDefinition(
     safety_notes=("预检波形文件、触发电平和全部输出限值后才允许启动。",),
     schema_provider=ADAPTER.schema, schema_version=ADAPTER.params_type.schema_version,
     defaults_saver=ADAPTER.save_defaults,
-    preflight_runner=ADAPTER.preflight,
+    preflight_runner=preflight,
     experiment_runner=ADAPTER.run,
     analysis_runner=ADAPTER.analyze,
 )

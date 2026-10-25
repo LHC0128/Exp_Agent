@@ -133,7 +133,7 @@ Python 文件运行 `py_compile`，并执行受影响的工作流回归。
 
 ## 进一步阅读
 
-- [完整驱动说明、使用示例与旧签名迁移](../../docs/signal_generator.md)
+- [完整驱动说明、使用示例与旧签名迁移](../../docs/instruments/signal_generator.md)
 - [设备库、扫描候选和物理量映射规则](../../docs/instrument_mapping.md)
 - [信号发生器交互示例](../../examples/signal_generator_demo.ipynb)
 

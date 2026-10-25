@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
+from ...steps.run_directory import write_run_config
 
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
@@ -82,7 +83,7 @@ class AnalysisWorkflow:
         # 只更新分析状态，不把历史目录的分析覆盖值写入采集快照。
         config = yaml.safe_load(self.config_path.read_text(encoding="utf-8"))
         config.update(analysis_status=self.summary.get("status", "not_started"), analysis_error=self.summary.get("error"))
-        self.config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        write_run_config(self.config_path, config)
         report_runtime_progress("analysis", "离线分析状态已保存", data={"analysis_workflow": plain(self.snapshot())})
 
     def _archive_from(self, item):

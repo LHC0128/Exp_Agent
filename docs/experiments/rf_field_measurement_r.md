@@ -1,0 +1,156 @@
+---
+title: RF 灵敏度（DirectAW R）
+type: experiment_type
+description: 在 DirectAW 准备与 XY 校相后先采集 RF 解调器 R 绝对色散响应，再独立改频执行 RF 解调器校相与零 RF X 噪声采集。运行/历史双 Tab 提供依赖流程图、节点参数编辑、分阶段离线分析和多次运行对比导出；线宽补偿固定色散等效，不提供扫频测线宽节点。 RF 解调器索引与辅助通道可选，HF2 支持物理回采，MFLI 支持物理或内部 AuxOut 回采。锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
+experiment_id: rf-sensitivity-aw-r
+defaults_file: params/experiments/rf-sensitivity-aw-r.yaml
+schema_version: 3
+scan_mode: point_by_point
+mapping_keys:
+  X_magnetic_field: {role: fixed}
+  Y_magnetic_field: {role: fixed}
+  Z_magnetic_field: {role: scan}
+  Time_sequence_2: {role: fixed}
+  main_magnetic_field: {role: fixed}
+  Pump_laser_power: {role: fixed}
+  Probe_laser_power: {role: fixed}
+  Pump_modulation: {role: fixed}
+  Time_sequence: {role: fixed}
+  Temp_Switch: {role: fixed}
+  temperature: {role: fixed}
+  lockin_r: {role: detection}
+required_devices: [GS200, signal_generator, lockin_amplifier, TEC103]
+learned_notes:
+  - A13 在 A12 之前执行，编号保留但依赖与目录判断使用流程清单顺序。
+  - R 绝对值曲线的尖点导数不能当作拟合中心斜率，使用底层色散中心斜率幅值。
+  - 响应与噪声的 RF 频率独立；跨频率增益一致性及等效线宽补偿待实测验证。
+  - 两款设备的所选 AuxOut 使用逐通道已确认的 ±10 V 安全规则，缺少范围或预计越界禁止启动/写入。
+---
+
+# RF 灵敏度（DirectAW R）
+
+> **已归档：GUI 仅保留目录卡片，不再提供运行/历史页面。** 专属代码与正式测试保存于
+> [`old/experiments/`](../../old/experiments/README.md)，默认参数与历史数据原位保留。
+> 下文说明归档前的方案与安全约定，仅供维护和历史复现；重新接入需先恢复代码及注册入口并完成无硬件回归。
+
+## 采集时序与系统稳定
+
+实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
+
+TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。GS200 量程、PZT、6221 电流等专用准备等待在温控开启时完成，恢复等待和触发协议等待保留。参数迁移、异常数据保护和适用边界见[统一采集规范](../acquisition_timing.md)。
+
+
+## 锁相采集方式与实际速率
+
+RF 相位/响应/带宽使用 `DEMOD3_RATE` 请求率、`SCAN_POINT_DURATION_S` 时长和 `DEMOD3_IDX` 解调器；RF 噪声使用 `NOISE_RATE` 请求率、`NOISE_DURATION` 时长和 `DEMOD3_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
+
+时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](../instruments/lockin_amplifier.md#解调时序的模块选择)。
+
+归档实现与 [RF 灵敏度（DirectAW）](rf_field_measurement.md) 复用仪器准备、XY DirectAW 校相、
+有符号 RF 采集、PSD 与安全收尾。归档前共用 GUI，默认参数与历史目录各自独立；当前只保留卡片。
+正式 ID 为 `rf-sensitivity-aw-r`，模式为 `typed_workflow`。默认参数的唯一来源是
+[新实验参数文件](../../params/experiments/rf-sensitivity-aw-r.yaml)，初始设置从当前 DirectAW 文件复制；
+历史参数以各自的 `experiment_config.yaml` 为准。
+
+锁相输入初始化复用 `lab_workflows.steps.initialize_lockin_inputs()`：连接后统一关闭全部主电压输入的 50 Ω 终端和 AC 耦合，使用高阻、DC 耦合；量程与差分设置按实验参数配置。后续校相、回环和采集配置保持这两项关闭。旧耦合/阻抗参数键仍可读取，但统一归一到关闭值，归档前的 GUI 不再提供开启选项。
+
+## 入口与参数
+
+GUI 仅在实验中心“已归档”中显示卡片。旧 `/experiments/rf-sensitivity-aw-r` 书签只显示归档提示，不加载参数或历史；旧运行/历史 API 返回 410。
+归档采集入口（连接仪器须另行授权）为 `agent_exp_env/Scripts/python.exe old/experiments/experiments/RF_Field_Sensitivity_AW_R.py`；
+离线分析执行 `agent_exp_env/Scripts/python.exe old/experiments/experiments/RF_Field_Sensitivity_AW_R_plot.py <run_dir>`，
+只读取明确指定的目录，不连接仪器。
+
+`Z_RF_FREQ` 为 A10/A13 的响应扫描频率，`Z_RF_NOISE_FREQ` 为 A12/A14 的校相/噪声频率，
+二者独立编辑和保存，不随 AW 自动改变。共同触发沿用原实验；AW 仍要求触发间隔内为整周期，
+本实验 RF 可为非整周期。A11 的三个相位扫描字段隐藏，正 RF 相位始终使用 `Z_BURST_PHASE_INIT`，
+负幅度加 180°，每点用 `set_amplitude()` 和 Burst 重臂，保持共同触发和 XY 波形连续运行。
+
+## 采集模块与依赖
+
+| 节点 | 行为 | 前置 |
+| --- | --- | --- |
+| A01 | 映射、参数、锁相能力、波形和所选辅助输出的安全预检 | 无 |
+| A02 | 复用物理资源连接设备 | A01 |
+| A03 | 按设备库同步并严格回读参考时钟 | A02 |
+| A04 | 初始输出；关闭 XY/Z，恢复温控为 5 V DC + ON | A03 |
+| A05 | 目标温度设置；TEC 不可用时记录外部温控状态 | A04 |
+| A06 | Pump 载波与门控 | A05 |
+| A07 | XYZ 共同触发及通道 SYNC | A06 |
+| A08 | Bell-Bloom / Demod0 校相 | A07 |
+| A09 | 上传 XY DirectAW、迭代校相与质量检查 | A08 |
+| A10 | 回环初始化，同步设置 RF / RF 解调器 响应频率 | A09 |
+| A13 | 扫描有符号 RF 幅度，记录 RF 解调器 R、X/Y、时序与统计量 | A10 |
+| A12 | 同步切至校相/噪声频率，按正 RF 校相幅度校准 RF 解调器 | A13 |
+| A14 | 关闭 Z RF，在零 RF 工作点采集 RF 解调器 X 噪声 | A12 |
+| A15 | 恢复响应滤波，安全结束本轮；保持设备会话和硬件锁 | A14 |
+| A16 | 安全收尾并结束设备会话，通信结束、取消或异常也会收尾 | 无 |
+
+A11 跳过。分步执行按上表依赖和顺序排列，不按编号排序；A13 后单独执行 A12/A14 仍写入同一目录。
+重跑 A13 自动恢复响应频率并使 A12/A14/A15 失效，创建新运行目录保留旧原始数据。
+修改校相/噪声频率只使 A12 及其后继失效；新轮需要沿用的有效响应副本记录来源运行 ID。
+仅执行 A01 不使已完成的步骤失效。XY 校相未收敛或信号过低时保存诊断并阻止后继，分步模式可重试。
+
+流程图质量门槛来自实际执行：A01 检查参数、映射与安全限值，A03 严格回读时钟，A09 检查校相收敛及 R 幅值；A10 在写入前以实际输入量程检查所选 AuxOut 的电压边界。A13 拒绝非有限 R/X/Y，A14 要求正的实际采样率、至少两点且有限的 X 噪声；失败先恢复温控，再保存已读数据并停止后继。A15 的配置恢复或安全收尾失败不会记为成功。
+
+## 归档前的节点编辑与历史
+
+参数在节点内分基础/高级编辑，允许同时展开多个节点；共享字段在各节点同步值与分类。
+草稿先显示依赖失效范围，应用后显式重跑；执行中禁止受限修改，校验失败保留草稿。
+保存参数与布局、派生预览、预检、完整运行、取消和任务状态位于流程容器。
+刷新恢复存活会话；后端重启后不恢复硬件连接，需要重新建会话。
+
+下一次实验的分析参数与采集设置共用值，具体运行目录使用独立分析覆盖值；切换分析对象保留各自草稿，
+保存默认值只保存下一次实验设置。历史填回只改变表单，不自动保存或运行。
+历史支持同实验多次运行对比、自定义单行英文图例及 PNG/PDF 导出；X 标定实验的数据不能混入 R 对比。
+界面和图表明确标注“R 标定 / X 噪声”，拟合失败结果明确标记“估算”。
+可编辑流程图源文件位于
+[RF 灵敏度（DirectAW R）.excalidraw](../../lab_workflows/experiment_modules/rf_sensitivity_direct_aw_r/RF%20灵敏度（DirectAW%20R）.excalidraw)，
+运行页提供下载，接口为 `/api/experiments/rf-sensitivity-aw-r/workflow/diagram`。
+
+## 离线分析
+
+B01 校验完整原始数据；B02 以有符号 RF 场轴拟合
+
+\[
+R(B)=\left|\frac{A(B-B_0)}{(B-B_0)^2+\gamma^2}+C\right|,\qquad
+S=\frac{|A|}{\gamma^2}.
+\]
+
+这里的 S 是底层色散函数中心斜率的幅值，用于换算 X 噪声。复用现有绝对色散拟合，
+不增加 R² 或参数不确定度门槛，保留其数值有效性、中心和线宽检查。
+拟合失败时回退为 `max(abs(gradient(R, B)))`，记录原因和估算标记，关闭线宽补偿。
+B03 使用每条噪声记录的实际采样率计算 Welch PSD，并按已有规则对齐频率轴后平均。
+B01 核对响应点数、磁场轴和噪声文件清单；B02 要求最终中心斜率为正且有限，数值梯度回退仍可进入后继；B03 另核对噪声来源、长度、有限性与实际采样率。清单中的门槛不会额外增加 R² 或不确定度判据。
+B04 保存原始灵敏度 `sqrt(PSD_X)/S` 及补偿灵敏度；拟合成功时沿用
+`gamma_nT × LARMOR_PER_NT` 作为等效频域 HWHM，补偿因子为 `sqrt(1+(f/HWHM)^2)`。
+分阶段与完整分析共用算法和缓存；前置或产物变化后不能复用过期结果，重算先归档受影响产物。
+全部图表使用英文标注与 `lab_workflows.plotting` 的 `paper` 样式。
+
+当前换算假定响应频率的 R 标定中心斜率可用于噪声频率的 X 噪声。
+频率、该未验证假定以及等效线宽补偿来源都写入分析结果；增益一致性和等效线宽仍须实测验证。
+
+## 接线与安全
+
+XYZ Ext Trig 共用 `Time_sequence_2` 主输出。RF 线路和索引与 DirectAW 共用：HF2/MFLI 均可选 AuxOut1–4 和 Aux Input1–2，HF2 保留 Signal Input2；MFLI 还可直接读取所选 AuxOut 的内部值。RF 解调器由 `DEMOD3_IDX` 选择，不能占用主解调器 0。MFLI 需要 MF-MD，连接后在启动输出前核对实际选件。具体接线与型号编码见 [共用 RF 信号链](rf_field_measurement.md#接线与-rf-信号链)。预检拒绝不支持的组合，不自动换线或切换设备。
+
+所选 AuxOut 使用 `<设备库ID>_aux_output_<索引>` 安全规则；两款设备的四路输出均已确认 ±10 V。预检和 A10 写入前根据 Demod0 输入来源与量程检查 `offset ± abs(scale) × sqrt(2) × input_range`；MFLI 同时设置硬件限幅。Signal Input2 的量程/差分仅在 HF2 对应物理线路应用，不将辅助输出范围当作主输入范围。
+缺范围或预计越界时拒绝启动/写入，不使用只读 `lockin_r` 规则代替输出安全规则。
+参考时钟严格回读；其他设置回读用作记录，DAQ 使用实际采样率。
+
+收尾关闭 XY/Z，保留共同触发和 SYNC、Pump 门控及 `STANDARD_PRESERVED_OUTPUTS`，
+温控恢复为 5 V DC + ON。不以断开通信代替关闭输出；收尾失败保留原始错误和安全报告。
+
+A10 内编辑 `RF_INPUT_ROUTE`、`RF_AUX_OUTPUT_IDX`、`RF_PHYSICAL_INPUT_SOURCE` 和 `DEMOD3_IDX`；修改并应用后使 A10 及后继失效，须显式重跑，重跑另建运行目录。内部线路的物理输入项不生效。缺少新线路键的旧参数按 HF2 AuxOut2 → Signal Input2 解释；历史填回保留该接线，使用 MFLI 时需明确改选辅助输入，否则预检拒绝。
+
+稳定实验 ID、原始数据格式和 schema 2 历史兼容、`DEMOD3_*` 参数键、`demod3_*` 数据键和 `noise_D3_*` 文件名保留。新采集文件的 `demod_idx` 保存真实 RF 索引，分析按运行快照 `DEMOD3_IDX` 核对，旧快照缺该键时按 3。配置与历史摘要保存真实 `signal_chain`，不从当前默认值重建历史接线。
+
+## 数据结构
+
+运行目录为 `data/RF_Field_Sensitivity_AW_R/<时间戳>_<tag>/`，包含 `experiment_config.yaml`、`raw/` 和 `results/`。
+`response_data.npz` 保留 R/X/Y 均值、标准差、每点时序、幅度场轴、Burst 相位和响应频率；
+`noise_D3_*.npz` 保存 X 噪声、实际采样率和噪声阶段 RF / RF 解调器 频率。
+配置的 `stage_frequencies`、`hf2_response_snapshot`、`hf2_calibration_snapshot`、`hf2_noise_snapshot`
+分别记录响应、校相和噪声；后续改频不得覆盖 R 标定快照。
+响应与 XY 校相的同名 NPZ 快照先写入同目录临时文件，再原子替换；覆盖写盘中断时保留上一份完整快照、清理临时文件并记录失败，不能继续下一组。唯一噪声帧沿用逐记录保存，不覆盖此前记录。
+结果包括 `response_fit.npz`、`psd_avg.npz`、`sensitivity.npz`、`analysis.yaml/json` 及四组 PNG/PDF 图。

@@ -22,7 +22,7 @@
 硬件任务活动或排队时不能修改采集模式或保存设备库。映射解析将模式传给 `create_lockin()`，
 新会话固定该设置，已有会话保持启动快照。自动模式下 HF2 使用 DAQ，MFLI 按当次请求率
 以 70 kSa/s 为界选择 DAQ/Scope。能力与单段内存不足时预检拒绝，不改接线或回退；
-详情见 [解调采集规则](lockin_amplifier.md#解调时序的模块选择)。
+详情见 [解调采集规则](instruments/lockin_amplifier.md#解调时序的模块选择)。
 
 设备库读取和保存时，对已支持的 DG4000/DG900 补全缺失的
 `supports_arbitrary`、`supports_infinite_burst` 为 `true`，适用于 GUI 扫描入库、
@@ -150,7 +150,7 @@ HF2 与 MFLI 合并显示为单张“锁相放大器”卡片，全系统选择�
 保留各绑定的 `demod` 索引。信号源、主磁场 GS200 和锁相选择均在点击“保存设备库”后与设备配置一起
 生效；页面提示未保存更改，失败保留草稿。硬件活动/排队时允许编辑草稿，禁止保存。
 逐行映射不再提供另一处锁相设备选择。
-卡片显示当前设备的 `connection.device_id` 和数据服务器 `host:port`，MFLI 说明同时覆盖 USB RNDIS 与网口。当前 `dev30661` 使用电脑本地服务器 `127.0.0.1:8004`，服务器经 USB RNDIS 地址 `192.168.150.246` 访问仪器，实际报告的 `connection.interface` 为 `1GbE`；设备库标签标明 USB RNDIS，标签本身不选择物理链路。访问仪器内置服务器时，接口才为内部 `PCIe`。扫描使用 `/zi/devices` 中的实际 `INTERFACE`，不按型号或接线名称推断；不要仅为更改显示而将当前接口改成 `USB`。两线同时连接时固定 USB 的服务器启动参数见 [锁相连接说明](lockin_amplifier.md#同时连接-usb-与网线)。
+卡片显示当前设备的 `connection.device_id` 和数据服务器 `host:port`，MFLI 说明同时覆盖 USB RNDIS 与网口。当前 `dev30661` 使用电脑本地服务器 `127.0.0.1:8004`，服务器经 USB RNDIS 地址 `192.168.150.246` 访问仪器，实际报告的 `connection.interface` 为 `1GbE`；设备库标签标明 USB RNDIS，标签本身不选择物理链路。访问仪器内置服务器时，接口才为内部 `PCIe`。扫描使用 `/zi/devices` 中的实际 `INTERFACE`，不按型号或接线名称推断；不要仅为更改显示而将当前接口改成 `USB`。两线同时连接时固定 USB 的服务器启动参数见 [锁相连接说明](instruments/lockin_amplifier.md#同时连接-usb-与网线)。
 
 配置接口为：
 
@@ -163,7 +163,7 @@ HF2 与 MFLI 合并显示为单张“锁相放大器”卡片，全系统选择�
 按设备类型区分的 `PUT .../{mapping_key}/generator|current-source|laser|emission|scope|tec|lockin`。
 目录请求只读取配置，不连接硬件；读取和写入必须携带设备库与映射修订号，并在短硬件锁
 内重新解析绑定。锁相面板提供统一解调、Signal Output 和 Aux Output 设置；输出必须配置对应设备/通道的安全限值，否则只允许回读及关闭主输出。
-`POST .../{mapping_key}/lockin-capture` 使用全局任务队列采集解调 X/Y/R 或内置 Scope 原始电压，并支持取消。旧 `/api/devices` 接口保留兼容。细节及两机差异见 [锁相接口说明](lockin_amplifier.md)。
+`POST .../{mapping_key}/lockin-capture` 使用全局任务队列采集解调 X/Y/R 或内置 Scope 原始电压，并支持取消。旧 `/api/devices` 接口保留兼容。细节及两机差异见 [锁相接口说明](instruments/lockin_amplifier.md)。
 
 控制页严格按映射顺序以多列网格显示物理量，支持逐项读取和顺序读取全部。批量读取允许
 部分设备失败，并在对应面板显示错误。`rf_coil` 是 `Y_magnetic_field` 的历史别名，控制页

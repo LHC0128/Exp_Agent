@@ -14,6 +14,7 @@ archived_experiments:
 - temperature-switch-pid-cycle
 - aw-waveform-scope-check
 - static-sensitivity-optimize
+- static-sensitivity-optimize-local
 - aw-const-omega-check
 - xy-dc-voltage-calibration
 - xy-aw-voltage-calibration
@@ -220,14 +221,8 @@ experiment_descriptions:
   rf-sensitivity-constxy-frequency: 固定 XY 外部 AM 载波与 DC 包络，扫描 Z 射频频率，保留无限 Burst／外触发；0 Hz 背景只关 Z、XY 保持开启。运行／历史双 Tab 提供 11 采集／3 分析节点，节点内编辑，顶部保存、预检及完整运行；草稿应用后显式重跑，分步等待保持输出和硬件锁。
     双主电压物理回环仅支持 HF2，MFLI 在连接前拒绝；输入高阻／DC，按最终实际率分析。每频点配置后关闭温控，按 SYSTEM_SETTLE_S 稳定，采集到内存，恢复 5 V DC + ON 后保存；TEC 只写 UI 目标温度。
     离线保留 FFT、软件锁相、硬件矢量／标量 R、原带宽及 Lorentzian／Bloch 拟合与诊断图；具体目录分析草稿隔离，不改采集快照。所有结束路径统一关闭 XY／Z、恢复温控，仅断开 TEC，保留主场、光功率、Pump／时序和锁相设置。
-  rf-sensitivity-direct-aw-frequency: 测量射频频率响应，dg_am 作为触发信号，使得 dg_comp 两路同相输出。 当前双主电压回采接线只支持
-    HF2，选择 MFLI 时预检禁止启动。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2
-    自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC
-    可连接时仅下发 UI 目标温度。
-  xy-direct-aw-dc-calibration: DirectAW 加常数控制的方式，外加不同频率射频场，寻找频率响应的最大值的位置，来对 控制 进行标定。
-    当前双主电压回采接线只支持 HF2，选择 MFLI 时预检禁止启动。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2
-    自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC
-    可连接时仅下发 UI 目标温度。
+  rf-sensitivity-direct-aw-frequency: 固定 Z RF 幅度，扫描频率和源相位；dg_am 提供外触发，dg_comp 两路输出正交 DirectAW。运行／历史双 Tab 提供真实可勾选步骤，节点内编辑、顶部保存／预检／完整运行；草稿应用后显式重跑，分步等待保持输出和硬件锁。双主电压物理回环仅支持 HF2，MFLI 在连接前拒绝，输入高阻／DC。恢复温控后保存，保留已读样本及原始错误；独立目录分析沿用原 R 中位数、相干分量及带宽诊断，无额外覆盖参数。
+  xy-direct-aw-dc-calibration: 以 DirectAW 恒定包络电压扫描 Z RF 频率，拟合峰位以标定控制。运行／历史双 Tab 提供真实可勾选步骤，节点内编辑、顶部保存／预检／完整运行；完整与分步共用业务，草稿应用后显式重跑。物理回环仅支持 HF2，MFLI 在连接前拒绝，输入高阻／DC；恢复温控后保存并抢救已读样本。独立目录分析保留原 Bloch／Lorentzian 回退、固定杂散排除、边界筛选及正负支路／绝对电压标定，无额外覆盖参数。
   z-aw-waveform-scope-check: 分步配置版本化 Z 任意波与共同触发，使用 SDS CH3 测量线圈电压、CH4 记录触发；运行页按节点编辑参数和执行，历史目录独立分析固定延迟、形状相似度与幅值诊断。
   mx-y-optimal-control-rf-frequency-response: Z 向闭环冻结最优控制下，逐频率扫描 Y RF Burst 相位并取有效相位中位数；可选恒定
     Z DC 的 0° 同频段对照。运行页在依赖节点内编辑共享参数，草稿应用后显式重跑，新轮次保存独立目录；分析绑定已封存目录且无额外覆盖值，保留热图、对照曲线、标定诊断和历史填回。

@@ -7,7 +7,6 @@ import { ScopeCapturePage } from "./ScopeCapturePage";
 import { ZAWClosedLoopExperimentPage } from "./ZAWClosedLoopExperimentPage";
 import { MxYOptimalControlFrequencyPage } from "./MxYOptimalControlFrequencyPage";
 import { StaticSensitivityPage } from "./StaticSensitivityPage";
-import { StaticSensitivityOptimizeLocalPage } from "./StaticSensitivityOptimizeLocalPage";
 import { BellBloomZCalibrationPage } from "./BellBloomZCalibrationPage";
 import { NoiseSpectrumXYPage } from "./NoiseSpectrumXYPage";
 import { NoiseSpectrumXYDemod3RPage } from "./NoiseSpectrumXYDemod3RPage";
@@ -15,6 +14,9 @@ import { ProjectionNoisePage } from "./ProjectionNoisePage";
 import { PhotonShotNoisePage } from "./PhotonShotNoisePage";
 import { RFConstXYFrequencyPage } from "./RFConstXYFrequencyPage";
 import { T1CalibrationPage } from "./T1CalibrationPage";
+import { T2CalibrationPage } from "./T2CalibrationPage";
+import { RFDirectAWFrequencyPage } from "./RFDirectAWFrequencyPage";
+import { XYDirectAWDCCalibrationPage } from "./XYDirectAWDCCalibrationPage";
 import { BBPowerScanBurstPage } from "./BBPowerScanBurstPage";
 import { BBDutyScanBurstPage } from "./BBDutyScanBurstPage";
 import { ZFieldBandwidthPage } from "./ZFieldBandwidthPage";
@@ -74,7 +76,6 @@ export function ExperimentPage() {
 
 function ExperimentRoute() {
   const { experimentId } = useParams();
-  if (experimentId === "static-sensitivity-optimize-local") return <StaticSensitivityOptimizeLocalPage />;
   if (experimentId === "mx-z-optimal-control-rf-sensitivity") return <MxZOptimalControlRFSensitivityPage />;
   if (experimentId === "mx-z-optimal-control-xy-rf-sensitivity") return <MxZOptimalControlXYRFSensitivityPage />;
   if (experimentId === "mx-z-optimal-control-xy-noise-spectrum") return <MxZOptimalControlXYNoiseSpectrumPage />;
@@ -107,6 +108,9 @@ function ExperimentRoute() {
   if (experimentId === "photon-shot-noise") return <PhotonShotNoisePage />;
   if (experimentId === "rf-sensitivity-constxy-frequency") return <RFConstXYFrequencyPage />;
   if (experimentId === "t1-calibration") return <T1CalibrationPage />;
+  if (experimentId === "t2-calibration") return <T2CalibrationPage />;
+  if (experimentId === "rf-sensitivity-direct-aw-frequency") return <RFDirectAWFrequencyPage />;
+  if (experimentId === "xy-direct-aw-dc-calibration") return <XYDirectAWDCCalibrationPage />;
   if (experimentId === "bb-power-scan-burst") return <BBPowerScanBurstPage />;
   if (experimentId === "bb-duty-scan-burst") return <BBDutyScanBurstPage />;
   if (experimentId === "z-field-bandwidth") return <ZFieldBandwidthPage />;

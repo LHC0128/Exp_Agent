@@ -1,7 +1,13 @@
 """验收关联、共享步骤影响和双 Skill 同步的无硬件回归。"""
 
 import ast
+from contextlib import redirect_stdout
+from hashlib import sha256
+import importlib.util
+import io
+import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -11,7 +17,7 @@ from types import SimpleNamespace
 from .experiment_validation import (
     COMMON_SCENARIOS, affected_experiments, canonical_test_targets, changed_files, deduplicate_test_targets,
     discover_acquisition_cases, discover_test_cases, missing_scenarios, repository_path, skill_differences,
-    validation_plan,
+    split_test_targets, validation_plan,
     verify_pytest_results,
 )
 
@@ -37,6 +43,103 @@ class ExperimentValidationTest(unittest.TestCase):
 
         return SimpleNamespace(id=name, experiment_runner=Adapter().run,
                                acquisition_program=f"experiments/{name}.py", analysis_program=None)
+
+    def test_batches_keep_every_target_and_bound_windows_command_length(self):
+        targets = [f"lab_workflows/{'nested_' * 12}/test_demo.py::test_{index:03d}" for index in range(296)]
+        batches = split_test_targets(targets + targets[:3])
+        self.assertEqual([node for batch in batches for node in batch], sorted(targets))
+        self.assertTrue(all(len(batch) <= 25 and len(subprocess.list2cmdline(batch)) <= 12000 for batch in batches))
+        long_targets = [f"{'long_' * 300}/test_{index:03d}.py" for index in range(30)]
+        self.assertTrue(all(len(subprocess.list2cmdline(batch)) <= 12000 for batch in split_test_targets(long_targets)))
+        self.assertEqual(split_test_targets([]), [])
+        self.assertEqual(split_test_targets(["test_one.py", "test_one.py::test_first"]), [["test_one.py"]])
+        self.assertEqual(split_test_targets(["a.py::test_one", "b.py", "c.py"]),
+                         [["a.py::test_one"], ["b.py"], ["c.py"]])
+
+    def test_only_manifest_verified_archive_snapshots_leave_execution_targets(self):
+        snapshot = "old/experiments/lab_workflows/demo/test_workflow.py"
+        path = self.write(snapshot, "raise AssertionError('归档快照不得作为活动测试导入')\n")
+        active = "lab_workflows/test_active.py"
+        other_old = "old/other/test_active.py"
+        self.write(active, "def test_active(): pass\n")
+        self.write(other_old, "def test_active(): pass\n")
+        self.write("old/experiments/manifest.json", json.dumps({"files": {
+            "lab_workflows/demo/test_workflow.py": sha256(path.read_bytes()).hexdigest()}}))
+        changes = [snapshot, active, other_old]
+        report, errors = validation_plan(self.root, [], changes, {})
+        self.assertFalse(errors)
+        self.assertEqual(report["changed_files"], changes)
+        self.assertEqual(report["changed_test_files"], sorted(changes))
+        self.assertEqual(report["archived_test_files"], [snapshot])
+        self.assertEqual(report["test_targets"], [active, other_old])
+        path.write_text("def test_changed(): pass\n", encoding="utf-8")
+        report, errors = validation_plan(self.root, [], changes, {})
+        self.assertTrue(any("字节已改变" in error for error in errors))
+        self.assertIn(snapshot, report["test_targets"])
+        (self.root / "old/experiments/manifest.json").unlink()
+        report, errors = validation_plan(self.root, [], changes, {})
+        self.assertTrue(any("无法核对归档" in error for error in errors))
+        self.assertIn(snapshot, report["test_targets"])
+
+    def test_real_validator_batches_verify_all_xml_and_do_not_pass_partial_runs(self):
+        script = Path(__file__).resolve().parents[1] / ".agents/skills/expcodegen/scripts/validate_experiment.py"
+        spec = importlib.util.spec_from_file_location("validation_batch_test", script)
+        validator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(validator)
+        for failed_index in (None, 0, 25, "timeout", "missing_xml", "skipped", "missing_node"):
+            with self.subTest(failed_index=failed_index):
+                case_root = self.root / str(failed_index)
+                prefix = case_root.relative_to(self.root).as_posix() + "/"
+                source = "lab_workflows/demo/workflow.py"
+                test_file = "lab_workflows/demo/test_workflow.py"
+                shared = "lab_workflows/test_acquisition_order.py"
+                self.write(prefix + source, "pass\n")
+                self.write(prefix + shared, "def test_contract(): assert True\n")
+                self.write(prefix + test_file, "\n".join(
+                    f"def test_{index:02d}(): assert {index != failed_index}" for index in range(26)))
+                claim = {"demo": {"mode": "single", "cases": {scenario: [
+                    f"{test_file}::test_{index:02d}" for index in range(26)] for scenario in COMMON_SCENARIOS}}}
+                real_run = subprocess.run
+
+                def run(command, **kwargs):
+                    if isinstance(failed_index, str) and "pytest" in command:
+                        if failed_index == "timeout":
+                            raise subprocess.TimeoutExpired(command, 900)
+                        if failed_index != "missing_xml":
+                            result = Path(command[command.index("--junitxml") + 1])
+                            skipped = "<skipped/>" if failed_index == "skipped" else ""
+                            result.write_text(f'<testsuite><testcase classname="wrong" name="missing">{skipped}</testcase></testsuite>',
+                                              encoding="utf-8")
+                        return SimpleNamespace(returncode=0)
+                    return real_run(command, **kwargs)
+
+                with patch("lab_workflows.experiments.list_experiments", return_value=[self.definition()]), \
+                        patch("lab_workflows.experiments.get_experiment", return_value=self.definition()), \
+                        patch.object(validator.subprocess, "run", side_effect=run), \
+                        patch.object(validator, "validate", return_value=[]), \
+                        patch.object(validator, "metadata_snapshot", return_value={"workflow_module": None}), \
+                        patch("lab_workflows.experiment_validation.discover_test_cases", return_value=(claim, {})), \
+                        patch.object(sys, "path", sys.path[:]), redirect_stdout(io.StringIO()):
+                    code = validator.main(["--root", str(case_root), "--changed-file", source,
+                        "--changed-file", shared, "--report", "report.json"])
+                report = json.loads((case_root / "report.json").read_text(encoding="utf-8"))
+                batches = report["business_batches"]
+                self.assertEqual(len(batches), 3)
+                self.assertEqual([node for batch in batches for node in batch["targets"]], report["test_targets"])
+                self.assertEqual(code, 0 if failed_index is None else 1)
+                self.assertEqual(report["business_status"], "passed" if failed_index is None else "incomplete")
+                self.assertEqual(report["experiments"][0]["acquisition_status"],
+                                 "passed" if failed_index is None else "batch_incomplete")
+                self.assertEqual(batches[0]["status"], "incomplete" if isinstance(failed_index, str) else
+                                 "failed" if failed_index == 0 else "passed")
+                self.assertEqual(batches[1]["status"], "failed" if failed_index == 25 else
+                                 "passed" if failed_index is None else "not_run")
+                self.assertEqual(batches[-1]["status"], "passed" if failed_index is None else "not_run")
+                if failed_index is None:
+                    paths = [case_root / batch["results"] for batch in batches]
+                    self.assertEqual(verify_pytest_results(paths, report["required_test_nodes"]), 27)
+                    self.assertEqual(verify_pytest_results(case_root / report["business_test_results"],
+                                                         report["required_test_nodes"]), 27)
 
     def test_discovers_real_nodes_without_import_and_reports_missing_scenarios(self):
         self.write("lab_workflows/test_demo.py", '''

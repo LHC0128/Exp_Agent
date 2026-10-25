@@ -5,12 +5,45 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
+import logging
+import time
 
 import yaml
 
 from ..common import find_project_root, load_safety_limits
+from ..experiment_runtime import report_run_directory
 from ..instrument_config import instrument_config_snapshot
+
+
+logger = logging.getLogger(__name__)
+
+
+def write_run_config(path: Path, config: dict[str, Any]) -> None:
+    """同目录临时写入后原子替换；失败保留原配置，不负责并发读改写合并。"""
+    path = Path(path)
+    temporary = None
+    try:
+        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                prefix=f".{path.name}.", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
+        # Windows 读者可能短暂占用目标；替换前已关闭临时文件。
+        for attempt in range(6):
+            try:
+                temporary.replace(path)
+                break
+            except PermissionError:
+                if attempt == 5:
+                    raise
+                time.sleep(0.02)
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                logger.exception("运行配置临时文件清理失败: %s", temporary)
 
 
 @dataclass(slots=True)
@@ -24,10 +57,12 @@ class RunDirectory:
         data: dict[str, Any] = {}
         if self.config_path.exists():
             with self.config_path.open(encoding="utf-8") as stream:
-                data = yaml.safe_load(stream) or {}
+                loaded = yaml.safe_load(stream)
+                data = {} if loaded is None else loaded
+        if not isinstance(data, dict):
+            raise ValueError("运行配置必须是 YAML 对象")
         data.update(updates)
-        with self.config_path.open("w", encoding="utf-8") as stream:
-            yaml.safe_dump(data, stream, allow_unicode=True, sort_keys=False)
+        write_run_config(self.config_path, data)
         return data
 
 
@@ -75,6 +110,6 @@ def create_run_directory(
         "actual_rates": {},
         "data_files": [],
     }
-    with config_path.open("w", encoding="utf-8") as stream:
-        yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
+    write_run_config(config_path, config)
+    report_run_directory(root, experiment_type)
     return RunDirectory(root, raw, results, config_path)

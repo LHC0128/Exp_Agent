@@ -2,7 +2,7 @@
 # # Z 场频率响应与带宽
 # 默认参数见 params/experiments/z-field-bandwidth.yaml。
 # 完整运行与 GUI 分步流程共用模块；0 Hz 为 Z OFF 背景，XY 保持关闭。
-# 说明：docs/z_field_bandwidth.md
+# 说明：docs/experiments/z_field_bandwidth.md
 # %% 采集入口
 import argparse
 from pathlib import Path

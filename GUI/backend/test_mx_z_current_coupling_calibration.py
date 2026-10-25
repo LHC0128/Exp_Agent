@@ -445,14 +445,14 @@ def test_close_during_real_scan_keeps_lock_through_safety_shutdown(client, metho
     assert config["completion_status"] in ("failed", "cancelled")
 
 
-@pytest.mark.parametrize("change, code", [
-    ({"experiment_id": "mx-z-field-calibration"}, 422),
-    ({"experiment_id": None}, 422),
-    ({"raw_format_version": 99}, 422),
-    ({"completion_status": "running"}, 409),
-    ({"completion_status": "acquired"}, 409),
+@pytest.mark.parametrize("change, code, generic_code", [
+    ({"experiment_id": "mx-z-field-calibration"}, 422, 404),
+    ({"experiment_id": None}, 422, 422),
+    ({"raw_format_version": 99}, 422, 422),
+    ({"completion_status": "running"}, 409, 409),
+    ({"completion_status": "acquired"}, 409, 409),
 ])
-def test_both_analysis_routes_reject_ineligible_directory_before_job_creation(client, monkeypatch, change, code):
+def test_both_analysis_routes_reject_ineligible_directory_before_job_creation(client, monkeypatch, change, code, generic_code):
     from . import main
     monkeypatch.setattr(main, "ROOT", client.root)
     monkeypatch.setattr(main, "manager", client.manager)
@@ -466,12 +466,18 @@ def test_both_analysis_routes_reject_ineligible_directory_before_job_creation(cl
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     config.update(change)
     config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    before_config = config_path.read_bytes()
     before = set(client.manager.jobs)
     endpoint = f"{BASE}/runs/{state['run_id']}/analysis"
     assert client.get(endpoint).status_code == code
     assert client.post(endpoint, json={"revision": 0, "step_ids": ["B01"]}).status_code == code
-    assert client.post(f"/api/runs/{state['run_id']}/analyze", json={"experiment_id": ADAPTER.id}).status_code == code
+    response = client.post(f"/api/runs/{state['run_id']}/analyze", json={"experiment_id": ADAPTER.id})
+    assert response.status_code == generic_code
+    if generic_code == 404:
+        # 通用入口在格式检查之前隔离其他实验身份，不能退回放行或泄露目录。
+        assert response.json()["detail"] == "运行目录与实验身份不匹配"
     assert set(client.manager.jobs) == before
+    assert config_path.read_bytes() == before_config
 
 
 def test_real_analysis_quality_failure_is_not_success_even_when_process_completed(client, monkeypatch):

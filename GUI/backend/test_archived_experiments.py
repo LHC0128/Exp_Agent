@@ -124,7 +124,48 @@ def test_legacy_optimization_and_xy_archives_preserve_identity_and_entrypoints(e
     assert "SYSTEM_SETTLE_S" in {field["name"] for field in legacy.schema()["fields"]}
     active = {item.id for item in list_experiments()}
     assert experiment_id not in active
-    assert {"static-sensitivity", "static-sensitivity-optimize-local", "xy-direct-aw-dc-calibration"} <= active
+    assert {"static-sensitivity", "xy-direct-aw-dc-calibration"} <= active
+    assert "static-sensitivity-optimize-local" not in active
+
+
+def test_local_optimization_archive_preserves_shared_identity_and_recovery_files():
+    experiment_id = "static-sensitivity-optimize-local"
+    card = ARCHIVED_EXPERIMENTS[experiment_id]
+    assert card.data_type == get_experiment("static-sensitivity").data_type
+    assert card.execution_mode == "typed_workflow" and card.schema_version == 3
+    assert not card.public()["can_analyze"] and not card.public()["auto_analyze"]
+    assert (ROOT / "params/experiments/static-sensitivity-optimize-local.yaml").is_file()
+    for path in (card.acquisition_program, card.analysis_program,
+            "old/experiments/lab_workflows/experiment_modules/static_sensitivity_optimize_local/workflow.excalidraw",
+            "old/experiments/lab_workflows/experiment_modules/static_sensitivity_optimize_local/test_workflow.py",
+            "old/experiments/lab_workflows/experiment_modules/static_sensitivity_optimize_local/test_analysis.py",
+            "old/experiments/GUI/backend/test_static_sensitivity_optimize_local.py",
+            "old/experiments/GUI/frontend/src/pages/StaticSensitivityOptimizeLocalPage.test.tsx"):
+        assert (ROOT / path).is_file(), path
+    restored = get_experiment(experiment_id)
+    assert restored.id == experiment_id and restored.schema()["fields"]
+    assert experiment_id not in main.WORKFLOW_RUN_FORMATS
+    assert not hasattr(main, "static_local_sessions")
+
+
+def test_shared_static_history_keeps_main_and_blocks_archived_alias_access(client, tmp_path):
+    base = tmp_path / "data" / "Static_Magnetic_Field_Sensitivity"
+    for run_id, experiment_id in (("main_run", "static-sensitivity"), ("local_batch", "static-sensitivity-optimize-local")):
+        path = base / run_id
+        (path / "results").mkdir(parents=True)
+        (path / "experiment_config.yaml").write_text(json.dumps({
+            "experiment_id": experiment_id, "experiment_type": "Static_Magnetic_Field_Sensitivity",
+        }), encoding="utf-8")
+        (path / "results/record.txt").write_text("保留原始历史", encoding="utf-8")
+    result = client.get("/api/runs?experiment_id=static-sensitivity").json()
+    assert result["total"] == 1 and result["runs"][0]["id"] == "main_run"
+    archived = base / "local_batch"
+    before = {path: path.read_bytes() for path in archived.rglob("*") if path.is_file()}
+    with patch.object(main.manager, "create", side_effect=AssertionError("归档批次不得借主实验启动分析")):
+        assert client.post("/api/runs/local_batch/analyze", json={"experiment_id": "static-sensitivity"}).status_code == 404
+        assert client.delete("/api/runs/static-sensitivity/local_batch").status_code == 404
+        assert client.get("/api/runs/static-sensitivity/local_batch/artifacts/record.txt").status_code == 404
+    assert {path: path.read_bytes() for path in before} == before
 
 
 def test_rf_am_frequency_archive_preserves_directaw_shared_analysis():
@@ -153,8 +194,17 @@ def test_cards_survive_old_catalog_and_cannot_be_restored_without_code(client, t
         assert response.status_code == 422
         assert "手动恢复" in response.json()["detail"]
         assert path.read_bytes() == original
-        (tmp_path / "data" / ARCHIVED_EXPERIMENTS[experiment_id].data_type / "old_run" / "results").mkdir(parents=True)
-    with patch.object(main, "_read_yaml", side_effect=AssertionError("全局历史不应读取归档运行")):
+        directory = tmp_path / "data" / ARCHIVED_EXPERIMENTS[experiment_id].data_type / "old_run"
+        (directory / "results").mkdir(parents=True)
+        (directory / "experiment_config.yaml").write_text(json.dumps({
+            "experiment_id": experiment_id, "experiment_type": ARCHIVED_EXPERIMENTS[experiment_id].data_type,
+        }), encoding="utf-8")
+    active_types = {item.data_type for item in list_experiments()}
+    def read_shared_config(path):
+        # 共用类型目录必须读身份才能区分；独占归档目录仍不得读取。
+        assert path.parent.parent.name in active_types, "全局历史不应读取独占归档目录"
+        return json.loads(path.read_text(encoding="utf-8"))
+    with patch.object(main, "_read_yaml", side_effect=read_shared_config):
         assert client.get("/api/runs").json()["total"] == 0
 
 

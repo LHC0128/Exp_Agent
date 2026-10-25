@@ -1,0 +1,573 @@
+{
+  "fields": [
+    {
+      "name": "SYSTEM_SETTLE_S",
+      "label": "系统稳定时间",
+      "type": "number",
+      "default": 0.5,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": null,
+      "description": "配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。",
+      "read_only": false,
+      "legacy_defaults": {}
+    },
+    {
+      "name": "RUN_TAG",
+      "label": "运行标签",
+      "type": "string",
+      "default": "optical_FID",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PUMP_POWER",
+      "label": "Pump 光 DC 功率",
+      "type": "number",
+      "default": 0.5,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AOM_CARRIER_AMPLITUDE",
+      "label": "AOM 载波幅度",
+      "type": "number",
+      "default": 0.18,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "RF_GATE_FREQ",
+      "label": "RF 门控频率",
+      "type": "number",
+      "default": 10000.0,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "RF_GATE_DUTY",
+      "label": "RF 门控占空比",
+      "type": "number",
+      "default": 5.0,
+      "unit": "%",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "BURST_NCYCLES",
+      "label": "Burst 周期数",
+      "type": "integer",
+      "default": 1000,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "BURST_PERIOD",
+      "label": "Burst 周期",
+      "type": "number",
+      "default": 0.2,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DO_POWER_SCAN",
+      "label": "启用 Probe 功率扫描",
+      "type": "boolean",
+      "default": true,
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PROBE_POWER",
+      "label": "单点 Probe 光功率",
+      "type": "number",
+      "default": 0.3,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PROBE_POWER_START",
+      "label": "Probe 功率起始值",
+      "type": "number",
+      "default": 0.03,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PROBE_POWER_STOP",
+      "label": "Probe 功率终止值",
+      "type": "number",
+      "default": 0.3,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PROBE_POWER_POINTS",
+      "label": "Probe 功率扫描点数",
+      "type": "integer",
+      "default": 10,
+      "unit": "",
+      "group": "basic",
+      "minimum": 2,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "MAIN_FIELD_mA",
+      "label": "主磁场电流",
+      "type": "number",
+      "default": 1.03,
+      "unit": "mA",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_SAMPLE_RATE",
+      "label": "示波器采样率",
+      "type": "number",
+      "default": 1000000.0,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_DURATION",
+      "label": "FID 采集时长",
+      "type": "number",
+      "default": 0.05,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "ACQ_REPEATS",
+      "label": "每个功率点重复次数",
+      "type": "integer",
+      "default": 5,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "HF2_SIGNAL_RANGE",
+      "label": "锁相放大器 输入量程",
+      "type": "number",
+      "default": 2.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "HF2_DEMOD_TC",
+      "label": "锁相放大器 解调时间常数",
+      "type": "number",
+      "default": 0.001,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "HF2_DEMOD_ORDER",
+      "label": "锁相放大器 解调滤波阶数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "HF2_DEMOD_RATE",
+      "label": "锁相放大器 解调采样率",
+      "type": "number",
+      "default": 10000.0,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "TEC_TEMPERATURE",
+      "label": "气室温度",
+      "type": "number",
+      "default": 100.0,
+      "unit": "°C",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    }
+  ],
+  "flow": {
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数、映射与输出安全预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "不连接硬件；参数、独立通道与锁相能力有效"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "按资源复用连接仪器",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": [
+          "部分连接失败释放已连接设备；TEC 失败告警跳过"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "时钟严格回读、辅助场关闭与温控开启",
+        "group": "准备",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "参考时钟回读通过后才进入输出配置"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "主场、光功率、Pump Burst 与锁相监控",
+        "group": "初始条件",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "PUMP_POWER",
+          "MAIN_FIELD_mA",
+          "TEC_TEMPERATURE",
+          "AOM_CARRIER_AMPLITUDE",
+          "RF_GATE_FREQ",
+          "RF_GATE_DUTY",
+          "BURST_NCYCLES",
+          "BURST_PERIOD",
+          "DO_POWER_SCAN",
+          "PROBE_POWER",
+          "PROBE_POWER_START",
+          "PROBE_POWER_STOP",
+          "PROBE_POWER_POINTS",
+          "HF2_SIGNAL_RANGE",
+          "HF2_DEMOD_TC",
+          "HF2_DEMOD_ORDER",
+          "HF2_DEMOD_RATE"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "PUMP_POWER",
+          "MAIN_FIELD_mA",
+          "TEC_TEMPERATURE",
+          "AOM_CARRIER_AMPLITUDE",
+          "RF_GATE_FREQ",
+          "RF_GATE_DUTY",
+          "BURST_NCYCLES",
+          "BURST_PERIOD",
+          "DO_POWER_SCAN",
+          "PROBE_POWER",
+          "PROBE_POWER_START",
+          "PROBE_POWER_STOP",
+          "PROBE_POWER_POINTS",
+          "HF2_SIGNAL_RANGE",
+          "HF2_DEMOD_TC",
+          "HF2_DEMOD_ORDER",
+          "HF2_DEMOD_RATE"
+        ],
+        "quality_gates": [
+          "TEC 只写目标温度；RF 门控保持实验 Burst 策略"
+        ]
+      },
+      {
+        "id": "A05",
+        "title": "示波器触发、记录长度与实际采样率",
+        "group": "采集准备",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [
+          "SCOPE_SAMPLE_RATE",
+          "SCOPE_DURATION"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "SCOPE_SAMPLE_RATE",
+          "SCOPE_DURATION"
+        ],
+        "quality_gates": []
+      },
+      {
+        "id": "A06",
+        "title": "逐 Probe 采集 FID、恢复温控后保存",
+        "group": "采集",
+        "dependencies": [
+          "A05"
+        ],
+        "parameters": [
+          "SYSTEM_SETTLE_S",
+          "ACQ_REPEATS",
+          "DO_POWER_SCAN",
+          "PROBE_POWER",
+          "PROBE_POWER_START",
+          "PROBE_POWER_STOP",
+          "PROBE_POWER_POINTS"
+        ],
+        "artifacts": [
+          "raw/fid_waveforms.npz 或 fid_pNN.npz",
+          "raw/recovery/",
+          "raw/power_scan_waveforms.npz（扫描）"
+        ],
+        "display_parameters": [
+          "SYSTEM_SETTLE_S",
+          "ACQ_REPEATS",
+          "DO_POWER_SCAN",
+          "PROBE_POWER",
+          "PROBE_POWER_START",
+          "PROBE_POWER_STOP",
+          "PROBE_POWER_POINTS"
+        ],
+        "quality_gates": [
+          "触发超时不读取旧帧；每次量程尝试恢复后保存；保留完整抢救帧及原始异常"
+        ]
+      },
+      {
+        "id": "A07",
+        "title": "安全结束会话（RF 门控 Burst 保持）",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "无前置；温控恢复 5 V ON；辅助输出归零关闭；只断开 TEC；收尾失败不记成功"
+        ]
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "核对运行身份与单点／功率扫描原始波形",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "input_manifest.json"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "拒绝采集中目录、错误身份及损坏数组；抢救帧不混入正常分析"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "阻尼振荡拟合、功率外推与结果图",
+        "group": "独立分析",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "不衰减或低质量拟合保留 NaN 与诊断；步骤完成不代表科学合格"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "RUN_TAG": [
+          "A02",
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PUMP_POWER": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "MAIN_FIELD_mA": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "TEC_TEMPERATURE": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "AOM_CARRIER_AMPLITUDE": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "RF_GATE_FREQ": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "RF_GATE_DUTY": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "BURST_NCYCLES": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "BURST_PERIOD": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "DO_POWER_SCAN": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PROBE_POWER": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PROBE_POWER_START": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PROBE_POWER_STOP": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PROBE_POWER_POINTS": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "HF2_SIGNAL_RANGE": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "HF2_DEMOD_TC": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "HF2_DEMOD_ORDER": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "HF2_DEMOD_RATE": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "SCOPE_SAMPLE_RATE": [
+          "A05",
+          "A06"
+        ],
+        "SCOPE_DURATION": [
+          "A05",
+          "A06"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A06"
+        ],
+        "ACQ_REPEATS": [
+          "A06"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/t2-calibration/workflow/diagram"
+  }
+}

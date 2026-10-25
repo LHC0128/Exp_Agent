@@ -9,11 +9,11 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 旧模式继续读取实际脚本常量及 GUI 保存的参数，不新增另一套默认值。锁相连接已改用 `create_lockin()`，所有实验使用设备库卡片的全系统选择。采集前的能力检查和原有输出收尾均保留。
 
-`photon-shot-noise` 已迁移为强类型模块化采集及交互流程图，默认来源为 `params/experiments/photon-shot-noise.yaml`；下文保留其锁相兼容说明，不再由旧脚本常量取参数。见[光子散粒噪声](Photon_shot_noise.md)。
+`photon-shot-noise` 已迁移为强类型模块化采集及交互流程图，默认来源为 `params/experiments/photon-shot-noise.yaml`；下文保留其锁相兼容说明，不再由旧脚本常量取参数。见[光子散粒噪声](experiments/Photon_shot_noise.md)。
 
-`z-field-bandwidth` 已迁移为强类型模块化与 10 采集／3 分析流程图节点，默认来源为 `params/experiments/z-field-bandwidth.yaml`；双主电压回环仍只支持 HF2。运行／历史、取消与安全恢复见[Z 场带宽说明](z_field_bandwidth.md)，不再编辑旧脚本常量或默认分析 latest。
+`z-field-bandwidth` 已迁移为强类型模块化与 10 采集／3 分析流程图节点，默认来源为 `params/experiments/z-field-bandwidth.yaml`；双主电压回环仍只支持 HF2。运行／历史、取消与安全恢复见[Z 场带宽说明](experiments/z_field_bandwidth.md)，不再编辑旧脚本常量或默认分析 latest。
 
-`static-sensitivity-optimize-local` 已迁移为[局部优化 DC 工作流](static_sensitivity_optimize_local.md)：6 采集／3 批次分析节点，逐候选重设基准、重校相并复用主实验的 DC 逐点及 Z OFF Y 噪声；默认值来自独立 YAML，旧 RAMP 批次仅读取已有结论。
+`static-sensitivity-optimize-local` 已迁移为[局部优化 DC 工作流](experiments/static_sensitivity_optimize_local.md)：6 采集／3 批次分析节点，逐候选重设基准、重校相并复用主实验的 DC 逐点及 Z OFF Y 噪声；默认值来自独立 YAML，旧 RAMP 批次仅读取已有结论。
 
 ## 解调时序的采集模块
 
@@ -22,7 +22,7 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 要求 MF-DIG、单解调器、无触发、单段及足够内存；不支持的要求在启动输出前拒绝，不更换接线或回退模块。
 原采样率键、文件名和信号键继续保留，逐条 NPZ 或 `.npy` 的 `_acquisition.npz` 旁文件保存模块、
 请求率、解调通信率、最终率、时长和时间轴来源。FFT/Welch 使用最终率，旧数据按原运行快照解释。
-量程、停流恢复及选件规则见[公共采集说明](lockin_amplifier.md#解调时序的模块选择)。
+量程、停流恢复及选件规则见[公共采集说明](instruments/lockin_amplifier.md#解调时序的模块选择)。
 
 旧入口的时序阶段分别声明为：XY v2 的 `HF2_DAQ_RATE/HF2_DAQ_DURATION`、光子噪声的
 `HF2_DEMOD_RATE/ACQ_DURATION`、RF/XY 扫描的 `DEMOD0_RATE` 或 `HF2_DEMOD0_RATE` 与固定单点时长、
@@ -63,7 +63,7 @@ GUI 隐藏开启选项；光子散粒噪声和可选 BB 监控也使用公共初
 
 ## 已接入的旧模式入口
 
-`rf-sensitivity-aw`、`rf-sensitivity-aw-r` 与 `rf-sensitivity-aw-known-noise` 使用强类型工作流，已支持明确选择辅助输入物理线路或 MFLI 内部 AuxOut 线路，不属于上述限制清单。旧参数缺少线路键时仍解释为原 HF2 AuxOut2 → Signal Input2，不能直接在 MFLI 启动；实机增益与带宽仍需验证。详见 [DirectAW](rf_field_measurement.md) 与 [DirectAW R](rf_field_measurement_r.md)。
+`rf-sensitivity-aw`、`rf-sensitivity-aw-r` 与 `rf-sensitivity-aw-known-noise` 使用强类型工作流，已支持明确选择辅助输入物理线路或 MFLI 内部 AuxOut 线路，不属于上述限制清单。旧参数缺少线路键时仍解释为原 HF2 AuxOut2 → Signal Input2，不能直接在 MFLI 启动；实机增益与带宽仍需验证。详见 [DirectAW](experiments/rf_field_measurement.md) 与 [DirectAW R](experiments/rf_field_measurement_r.md)。
 
 以下清单按注册表和当前构造代码核对；简介与运行入口由原实验定义提供，分析器保持离线。
 
@@ -71,14 +71,14 @@ GUI 隐藏开启选项；光子散粒噪声和可选 BB 监控也使用公共初
 | --- | --- | --- |
 | [`aw-const-omega-awscale-check`](../old/experiments/experiments/AW_ConstOmega_Calibration_Check_AWScale.py) | 使用 AWScale 策略检查恒定 Omega 标定，已归档，GUI 仅保留卡片。 | HF2 双主输入，MFLI 禁止启动 |
 | [`aw-const-omega-check`](../old/experiments/experiments/AW_ConstOmega_Calibration_Check.py)（已归档） | 检查恒定 Omega 任意波标定结果，GUI 仅保留卡片。 | HF2 双主输入，MFLI 禁止启动 |
-| [`bb-duty-scan-burst`](../experiments/BB_Rpump_DutyScan_Burst.py)（已迁移） | 固定 Pump DC、有限 Burst 占空比扫描；8 采集/3 分析交互节点，见[独立说明](bb_duty_scan_burst.md)。 | SDS 主检测；HF2/MFLI 仅可选连接与主输入初始化，不采集锁相数据 |
-| [`bb-power-scan-burst`](../experiments/BB_Rpump_PowerScan_Burst.py)（已迁移） | [强类型 Pump DC 功率扫描](bb_power_scan_burst.md)，8 采集／3 分析节点；结束保留门控/Burst/SYNC 与最后写入 Pump 电压。 | SDS 为主检测；可选 HF2 / MFLI 仅连接并初始化主输入 |
+| [`bb-duty-scan-burst`](../experiments/BB_Rpump_DutyScan_Burst.py)（已迁移） | 固定 Pump DC、有限 Burst 占空比扫描；8 采集/3 分析交互节点，见[独立说明](experiments/bb_duty_scan_burst.md)。 | SDS 主检测；HF2/MFLI 仅可选连接与主输入初始化，不采集锁相数据 |
+| [`bb-power-scan-burst`](../experiments/BB_Rpump_PowerScan_Burst.py)（已迁移） | [强类型 Pump DC 功率扫描](experiments/bb_power_scan_burst.md)，8 采集／3 分析节点；结束保留门控/Burst/SYNC 与最后写入 Pump 电压。 | SDS 为主检测；可选 HF2 / MFLI 仅连接并初始化主输入 |
 | [`noise-spectrum-xy-v2`](../old/experiments/experiments/Noise_Spectrum_XY_Ctrl_v2.py) | 第二版 XY 控制噪声谱流程，已归档，GUI 仅保留卡片。 | HF2 / MFLI，检查频率与通道 |
 | [`photon-shot-noise`](../experiments/Photon_shot_noise.py)（已迁移） | 扫描 Probe 控制电压，原 ASD² 加权拟合；8 采集/3 分析流程图节点。 | HF2 / MFLI，同一主输入 X/Y；自动 DAQ/Scope |
 | [`rf-sensitivity-aw-frequency`](../old/experiments/experiments/RF_Field_Sensitivity_AW_FreqSweep.py)（已归档） | 扫描 RF 频率的外部 AM 历史方案，GUI 仅保留卡片。 | HF2 双主输入，MFLI 禁止启动 |
 | [`rf-sensitivity-constxy-frequency`](../experiments/RF_Field_Sensitivity_ConstXY_FreqSweep.py) | 固定 XY 控制下扫描 RF 频率。 | HF2 双主输入，MFLI 禁止启动 |
 | [`static-sensitivity-optimize`](../old/experiments/experiments/Static_Magnetic_Field_Sensitivity_Optimize.py)（已归档） | 全局搜索静磁场灵敏度实验参数，GUI 仅保留卡片。 | HF2 / MFLI，检查频率与通道 |
-| [`static-sensitivity-optimize-local`](../experiments/Static_Magnetic_Field_Sensitivity_Optimize_Local.py)（已迁移） | [局部优化 DC 逐点](static_sensitivity_optimize_local.md)，运行／历史、6 采集／3 批次分析节点；基准漂移与最佳点只作建议。 | HF2 / MFLI，单主输入，检查频率、选件与连续采集能力 |
+| [`static-sensitivity-optimize-local`](../experiments/Static_Magnetic_Field_Sensitivity_Optimize_Local.py)（已迁移） | [局部优化 DC 逐点](experiments/static_sensitivity_optimize_local.md)，运行／历史、6 采集／3 批次分析节点；基准漂移与最佳点只作建议。 | HF2 / MFLI，单主输入，检查频率、选件与连续采集能力 |
 | [`xy-aw-voltage-calibration`](../old/experiments/experiments/XY_AW_Voltage_Calibration.py)（已归档） | 标定 XY 任意波控制电压，GUI 仅保留卡片。 | HF2 双主输入，MFLI 禁止启动 |
 | [`xy-dc-voltage-calibration`](../old/experiments/experiments/XY_DC_Voltage_Calibration.py)（已归档） | 标定 XY 直流控制电压，GUI 仅保留卡片。 | HF2 双主输入，MFLI 禁止启动 |
 | [`z-field-bandwidth`](../experiments/Z_Field_Bandwidth_Measurement.py)（已迁移） | 固定 Z 连续正弦扫频，比较 FFT／软件锁相／硬件 R；运行／历史与独立分析流程图。 | HF2 双主输入，MFLI 禁止启动 |
@@ -96,4 +96,4 @@ GUI 隐藏开启选项；光子散粒噪声和可选 BB 监控也使用公共初
 
 未注册的 `quick_test_scan.py`、`optimize_scan.py` 和 `optimize_scan_round2.py` 也从设备库创建锁相会话，显式声明触发色散与无触发噪声，并在连接前检查采集方式。其触发色散仍只支持 DAQ，显式 Scope 会拒绝启动；噪声波形及 PSD 汇总保存实际速率和模块快照。它们继续作为直接采集脚本使用，不纳入 GUI 正式实验清单，也不能用作无硬件测试。
 
-HF2/MFLI 的同名函数、Scope 独立记录、输出安全规则和实机验收见 [锁相接口说明](lockin_amplifier.md)。没有新增连续原始 stream、硬件分段采集，也未迁移 Notebook。
+HF2/MFLI 的同名函数、Scope 独立记录、输出安全规则和实机验收见 [锁相接口说明](instruments/lockin_amplifier.md)。没有新增连续原始 stream、硬件分段采集，也未迁移 Notebook。

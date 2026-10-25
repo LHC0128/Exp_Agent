@@ -2,7 +2,7 @@
 # # 固定 XY 的 Z 射频场频率响应
 # 默认参数见 params/experiments/rf-sensitivity-constxy-frequency.yaml。
 # 完整运行与 GUI 分步流程共用模块；0 Hz 背景保持 XY，仅关闭 Z。
-# 说明：docs/rf_sensitivity_constxy_frequency.md
+# 说明：docs/experiments/rf_sensitivity_constxy_frequency.md
 # %% 采集入口
 import argparse
 from pathlib import Path

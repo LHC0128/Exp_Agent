@@ -1,7 +1,7 @@
 # %% [markdown]
 # # Z 场带宽 频率响应离线分析
 # 必须显式指定 run_dir；绝不隐式选择并改写最新历史运行。
-# 说明：docs/z_field_bandwidth.md
+# 说明：docs/experiments/z_field_bandwidth.md
 # %% 离线入口
 import argparse
 from pathlib import Path
