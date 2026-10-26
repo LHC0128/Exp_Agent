@@ -334,7 +334,7 @@ class UpdatesService:
 
     def check_skills(self) -> dict[str, Any]:
         skills: dict[str, dict[str, Any]] = {}
-        for rel in (".agents/skills", ".claude/skills"):
+        for rel in (".agents/skills",):
             base = self.root / rel
             try:
                 entries = sorted(p for p in base.iterdir() if (p / "SKILL.md").is_file())

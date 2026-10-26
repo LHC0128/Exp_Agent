@@ -186,15 +186,15 @@ def split_test_targets(targets) -> list[list[str]]:
 
 
 def canonical_test_targets(root: Path, targets) -> tuple[list[str], dict[str, str]]:
-    """仅归并已确认覆盖双入口的 expcodegen 镜像脚手架测试。"""
+    """仅将已退役的 expcodegen 脚手架入口作为字符串别名，不访问旧目录。"""
     source = ".agents/skills/expcodegen/scripts/test_scaffold_experiment.py"
-    mirror = ".claude/skills/expcodegen/scripts/test_scaffold_experiment.py"
+    legacy = ".claude/skills/expcodegen/scripts/test_scaffold_experiment.py"
     result, aliases = [], {}
     for target in targets:
         file, *parts = target.split("::")
-        if file == mirror:
-            if not (root / source).is_file() or not (root / mirror).is_file() or (root / source).read_bytes() != (root / mirror).read_bytes():
-                raise ValueError("expcodegen 镜像测试与维护源不一致，请先同步；不能跳过镜像验证")
+        if file in (source, legacy) and not repository_path(root, source).is_file():
+            raise ValueError("expcodegen 脚手架维护源缺失，不能跳过验证: " + source)
+        if file == legacy:
             mapped = "::".join([source, *parts])
             aliases[target] = mapped
             target = mapped
@@ -364,9 +364,13 @@ def validation_plan(root: Path, definitions: list, changes: list[str], claims: d
             "acquisition_status": "not_run" if acquisition_selected else "not_required",
         })
     matched = {path for impact in impacts.values() for path in impact["files"]}
-    changed_tests = sorted(path for path in set(changes)
-                           if Path(path).name.startswith("test_") and Path(path).suffix == ".py"
-                           and repository_path(root, path).is_file())
+    changed_tests = []
+    for path in sorted(set(changes)):
+        if Path(path).name.startswith("test_") and Path(path).suffix == ".py":
+            # 旧入口先映射再检查存在性，保留报告中的原始变更路径。
+            targets, _ = canonical_test_targets(root, [path])
+            if repository_path(root, targets[0]).is_file():
+                changed_tests.append(path)
     # 只豁免清单中原字节不变的归档快照；篡改、缺清单及其他 old/ 测试仍拒绝或照常执行。
     archived_tests = []
     snapshots = [path for path in changed_tests if path.startswith("old/experiments/")]
@@ -391,13 +395,58 @@ def validation_plan(root: Path, definitions: list, changes: list[str], claims: d
             "experiments": entries, "checks": [], "hardware_verified": False}, errors
 
 
+EXPCODEGEN_RESOURCES = (
+    "SKILL.md",
+    "agents/openai.yaml",
+    "scripts/scaffold_experiment.py",
+    "scripts/sync_skill.py",
+    "scripts/test_scaffold_experiment.py",
+    "scripts/validate_experiment.py",
+    "references/delivery-validation.md",
+    "references/experiment-contract.md",
+    "references/experiment-documentation.md",
+    "references/gui-integration.md",
+    "references/gui-two-tab-template.md",
+    "references/gui-workflow-template.md",
+    "references/modular-workflow.md",
+    "references/shared-steps.md",
+    "references/z-closed-loop.md",
+    "assets/python/__init__.py.tpl",
+    "assets/python/acquisition.py.tpl",
+    "assets/python/acquire_grouped.py.tpl",
+    "assets/python/acquire_paired.py.tpl",
+    "assets/python/acquire_single.py.tpl",
+    "assets/python/analysis.py.tpl",
+    "assets/python/analysis_steps.py.tpl",
+    "assets/python/defaults.yaml.tpl",
+    "assets/python/definition.py.tpl",
+    "assets/python/entry.py.tpl",
+    "assets/python/experiment.md.tpl",
+    "assets/python/models.py.tpl",
+    "assets/python/plot_entry.py.tpl",
+    "assets/python/preparation.py.tpl",
+    "assets/python/run_format.py.tpl",
+    "assets/python/stages.py.tpl",
+    "assets/python/test_workflow.py.tpl",
+    "assets/python/workflow.py.tpl",
+)
+
+
+def skill_resource_errors(root: Path) -> list[str]:
+    """只检查 canonical 单源的必需资源；额外文件和运行缓存不参与验收。"""
+    errors = []
+    for relative in EXPCODEGEN_RESOURCES:
+        try:
+            path = repository_path(root, f".agents/skills/expcodegen/{relative}")
+            if not path.is_file():
+                errors.append(f"Skill 资源缺失: {relative}")
+            elif not path.read_bytes():
+                errors.append(f"Skill 资源为空: {relative}")
+        except (OSError, ValueError) as exc:
+            errors.append(f"Skill 资源不可读: {relative}: {exc}")
+    return errors
+
+
 def skill_differences(root: Path) -> list[str]:
-    """.agents 是维护源；忽略 Python 运行缓存，比较全部受管理资源。"""
-    directories = [root / owner / "skills/expcodegen" for owner in (".agents", ".claude")]
-    files = []
-    for directory in directories:
-        files.append({path.relative_to(directory).as_posix(): path for path in directory.rglob("*")
-                      if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"})
-    return sorted(relative for relative in files[0].keys() | files[1].keys()
-                  if relative not in files[0] or relative not in files[1]
-                  or files[0][relative].read_bytes() != files[1][relative].read_bytes())
+    """兼容旧调用名；只验证 .agents 维护源，不读取或比较退役目录。"""
+    return skill_resource_errors(root)

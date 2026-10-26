@@ -112,6 +112,41 @@ class UpdatesServiceTests(unittest.TestCase):
                 self.service.git_pull(job)
         self.assertIn("领先", str(raised.exception))
 
+    def test_skills_scan_uses_only_agents_and_preserves_fields(self):
+        with tempfile.TemporaryDirectory(prefix="updates-skills-") as temporary:
+            root = Path(temporary)
+            fixtures = {
+                ".agents/skills/a/SKILL.md": "---\nname: shared\ndescription: canonical\n---\n",
+                ".agents/skills/fallback/SKILL.md": "没有 frontmatter\n",
+                ".claude/skills/a/SKILL.md": "---\nname: shared\ndescription: retired\n---\n",
+                ".claude/skills/old-only/SKILL.md": "---\nname: retired-only\n---\n",
+                ".agents/disable skill/disabled/SKILL.md": "---\nname: disabled\n---\n",
+                ".agents/skill-backups/backup/SKILL.md": "---\nname: backup\n---\n",
+                "retired-only/.claude/skills/old/SKILL.md": "---\nname: old\n---\n",
+            }
+            for relative, content in fixtures.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+            real_iterdir = Path.iterdir
+
+            def iterdir(path):
+                self.assertEqual(path, root / ".agents/skills", "scanner 不得枚举退役或停用目录")
+                return real_iterdir(path)
+
+            with patch.object(updates, "_run_command", side_effect=AssertionError("scanner 不能执行命令")), \
+                    patch.object(Path, "iterdir", iterdir):
+                result = UpdatesService(lambda: root, self.manager).check_skills()
+            self.assertEqual(set(result), {"items", "note"})
+            self.assertEqual(result["items"], [
+                {"name": "shared", "description": "canonical", "dirs": [".agents/skills"]},
+                {"name": "fallback", "description": "", "dirs": [".agents/skills"]},
+            ])
+            self.assertEqual(result["note"], "Skills 为本地目录，无版本源，仅列出清单。")
+            with patch.object(updates, "_run_command", side_effect=AssertionError("scanner 不能执行命令")):
+                empty = UpdatesService(lambda: root / "retired-only", self.manager).check_skills()
+            self.assertEqual(empty, {"items": [], "note": result["note"]})
+
     def test_router_exposes_expected_routes(self):
         router = create_router(self.service)
         paths = {route.path for route in router.routes}

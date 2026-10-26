@@ -1,4 +1,4 @@
-"""验收关联、共享步骤影响和双 Skill 同步的无硬件回归。"""
+"""验收关联、共享步骤影响与 Skill 单源资源的无硬件回归。"""
 
 import ast
 from contextlib import redirect_stdout
@@ -15,8 +15,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .experiment_validation import (
-    COMMON_SCENARIOS, affected_experiments, canonical_test_targets, changed_files, deduplicate_test_targets,
-    discover_acquisition_cases, discover_test_cases, missing_scenarios, repository_path, skill_differences,
+    COMMON_SCENARIOS, EXPCODEGEN_RESOURCES, affected_experiments, canonical_test_targets, changed_files,
+    deduplicate_test_targets, discover_acquisition_cases, discover_test_cases, missing_scenarios,
+    repository_path, skill_differences, skill_resource_errors,
     split_test_targets, validation_plan,
     verify_pytest_results,
 )
@@ -94,6 +95,8 @@ class ExperimentValidationTest(unittest.TestCase):
                 test_file = "lab_workflows/demo/test_workflow.py"
                 shared = "lab_workflows/test_acquisition_order.py"
                 self.write(prefix + source, "pass\n")
+                for relative in EXPCODEGEN_RESOURCES:
+                    self.write(prefix + ".agents/skills/expcodegen/" + relative, "resource\n")
                 self.write(prefix + shared, "def test_contract(): assert True\n")
                 self.write(prefix + test_file, "\n".join(
                     f"def test_{index:02d}(): assert {index != failed_index}" for index in range(26)))
@@ -119,6 +122,7 @@ class ExperimentValidationTest(unittest.TestCase):
                         patch.object(validator, "validate", return_value=[]), \
                         patch.object(validator, "metadata_snapshot", return_value={"workflow_module": None}), \
                         patch("lab_workflows.experiment_validation.discover_test_cases", return_value=(claim, {})), \
+                        patch("lab_workflows.experiment_validation.changed_files", return_value=[source, shared]), \
                         patch.object(sys, "path", sys.path[:]), redirect_stdout(io.StringIO()):
                     code = validator.main(["--root", str(case_root), "--changed-file", source,
                         "--changed-file", shared, "--run-regressions", "--report", "report.json"])
@@ -470,33 +474,52 @@ class ScienceTest:
         impacts = affected_experiments(self.root, definitions, ["lab_workflows/one/models.py"], {})
         self.assertEqual(set(impacts), {"one", "two"})
 
-    def test_only_known_scaffold_mirror_is_canonicalized_and_reported(self):
+    def test_only_known_scaffold_alias_is_canonicalized_and_reported(self):
         source = ".agents/skills/expcodegen/scripts/test_scaffold_experiment.py"
-        mirror = ".claude/skills/expcodegen/scripts/test_scaffold_experiment.py"
-        for path in (source, mirror, "lab_workflows/test_one.py", "lab_workflows/test_two.py"):
+        legacy = ".claude/skills/expcodegen/scripts/test_scaffold_experiment.py"
+        for path in (source, "lab_workflows/test_one.py", "lab_workflows/test_two.py"):
             self.write(path, "def test_entry(): pass\n")
-        for inputs in ([mirror], [source, mirror], [source]):
+        self.assertFalse((self.root / ".claude").exists())
+        for inputs in ([legacy], [source, legacy], [source]):
             with self.subTest(inputs=inputs):
                 targets, _ = canonical_test_targets(self.root, inputs)
                 self.assertEqual(targets, [source])
-        report, errors = validation_plan(self.root, [], [source, mirror], {})
+        report, errors = validation_plan(self.root, [], [source, legacy], {})
         self.assertFalse(errors)
         self.assertEqual(report["test_targets"], [source])
-        self.assertEqual(report["changed_files"], [source, mirror])
-        self.assertEqual(report["test_target_aliases"], {mirror: source})
-        targets, aliases = canonical_test_targets(self.root, [mirror + "::test_entry", "lab_workflows/test_one.py", "lab_workflows/test_two.py"])
+        self.assertEqual(report["changed_files"], [source, legacy])
+        self.assertEqual(report["changed_test_files"], [source, legacy])
+        self.assertEqual(report["test_target_aliases"], {legacy: source})
+        targets, aliases = canonical_test_targets(self.root, [legacy + "::test_entry", "lab_workflows/test_one.py", "lab_workflows/test_two.py"])
         self.assertEqual(len(targets), 3)
-        self.assertEqual(aliases[mirror + "::test_entry"], source + "::test_entry")
+        self.assertEqual(aliases[legacy + "::test_entry"], source + "::test_entry")
+        other = ".claude/skills/other/scripts/test_scaffold_experiment.py"
+        self.assertEqual(canonical_test_targets(self.root, [other]), ([other], {}))
 
-    def test_mirror_mismatch_or_missing_source_cannot_be_skipped(self):
+    def test_scaffold_alias_requires_source_without_reading_retired_mirror(self):
         source = ".agents/skills/expcodegen/scripts/test_scaffold_experiment.py"
-        mirror = ".claude/skills/expcodegen/scripts/test_scaffold_experiment.py"
-        self.write(mirror, "def test_entry(): pass\n")
-        with self.assertRaisesRegex(ValueError, "不一致"):
-            canonical_test_targets(self.root, [mirror])
-        self.write(source, "def test_other(): pass\n")
-        with self.assertRaisesRegex(ValueError, "不一致"):
-            canonical_test_targets(self.root, [source, mirror])
+        legacy = ".claude/skills/expcodegen/scripts/test_scaffold_experiment.py"
+        self.write(legacy, "旧内容不再参与验证\n")
+        for target in (source, legacy, legacy + "::test_entry"):
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "维护源缺失"):
+                canonical_test_targets(self.root, [target])
+        with self.assertRaisesRegex(ValueError, "维护源缺失"):
+            validation_plan(self.root, [], [legacy], {})
+        self.write(source, "def test_entry(): pass\n")
+        real_is_file = Path.is_file
+
+        def is_file(path):
+            self.assertNotIn(".claude", path.parts, "不应检查退役目录")
+            return real_is_file(path)
+
+        with patch.object(Path, "is_file", is_file), \
+                patch.object(Path, "read_bytes", side_effect=AssertionError("alias 不能比较内容")):
+            self.assertEqual(canonical_test_targets(self.root, [source, legacy]), ([source], {legacy: source}))
+            report, errors = validation_plan(self.root, [], [legacy], {})
+        self.assertFalse(errors)
+        self.assertEqual(report["test_targets"], [source])
+        self.assertEqual(report["changed_files"], [legacy])
+        self.assertEqual(report["test_target_aliases"], {legacy: source})
 
     def test_whole_file_results_are_verified_including_src_layout(self):
         for module in ("signal_generator.test_interfaces", "src.signal_generator.test_interfaces"):
@@ -522,15 +545,36 @@ class ScienceTest:
         with self.assertRaisesRegex(ValueError, "跳过"):
             verify_pytest_results(path, nodes)
 
-    def test_skill_check_detects_missing_changed_and_extra_resources(self):
-        for owner in (".agents", ".claude"):
-            self.write(f"{owner}/skills/expcodegen/SKILL.md", "same")
-            self.write(f"{owner}/skills/expcodegen/__pycache__/ignored.pyc", owner)
+    def test_skill_check_requires_only_canonical_resources(self):
+        self.assertEqual(len(EXPCODEGEN_RESOURCES), 33)
+        self.assertEqual(len(set(EXPCODEGEN_RESOURCES)), 33)
+        self.assertEqual(len(skill_resource_errors(self.root)), 33)
+        for relative in EXPCODEGEN_RESOURCES:
+            self.write(".agents/skills/expcodegen/" + relative, "resource\n")
+        self.write(".agents/skills/expcodegen/__pycache__/ignored.pyc", "")
+        self.write(".agents/skills/expcodegen/references/extra.md", "")
+        self.write(".claude/skills/expcodegen/SKILL.md", "retired")
+        self.assertEqual(skill_resource_errors(self.root), [])
         self.assertEqual(skill_differences(self.root), [])
-        self.write(".agents/skills/expcodegen/SKILL.md", "updated")
-        self.write(".agents/skills/expcodegen/assets/new.tpl", "new")
-        self.write(".claude/skills/expcodegen/references/extra.md", "extra")
-        self.assertEqual(skill_differences(self.root), ["SKILL.md", "assets/new.tpl", "references/extra.md"])
+        self.write(".agents/skills/expcodegen/SKILL.md", "")
+        (self.root / ".agents/skills/expcodegen/assets/python/acquisition.py.tpl").unlink()
+        unreadable = self.root / ".agents/skills/expcodegen/references/shared-steps.md"
+        real_read_bytes = Path.read_bytes
+
+        def read_bytes(path):
+            self.assertNotIn(".claude", path.parts, "不应读取退役资源")
+            if path == unreadable:
+                raise PermissionError("模拟资源不可读")
+            return real_read_bytes(path)
+
+        with patch.object(Path, "read_bytes", read_bytes), \
+                patch.object(Path, "rglob", side_effect=AssertionError("不应递归比较目录")):
+            errors = skill_resource_errors(self.root)
+            self.assertEqual(skill_differences(self.root), errors)
+        self.assertCountEqual(errors, [
+            "Skill 资源为空: SKILL.md", "Skill 资源缺失: assets/python/acquisition.py.tpl",
+            "Skill 资源不可读: references/shared-steps.md: 模拟资源不可读",
+        ])
 
     def test_git_changes_include_staged_unstaged_and_untracked(self):
         def git(*arguments):
