@@ -568,6 +568,8 @@
       },
       "analysis": {}
     },
+    "run_step_id": "A06",
+    "finish_step_id": "A07",
     "diagram_url": "/api/experiments/t2-calibration/workflow/diagram"
   }
 }

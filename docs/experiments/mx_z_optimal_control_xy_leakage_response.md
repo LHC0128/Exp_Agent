@@ -43,6 +43,10 @@ defaults_file: params/experiments/mx-z-optimal-control-xy-leakage-response.yaml
 
 # Mx Z 最优控制 XY 泄露响应
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.mx_z_optimal_control_xy_leakage_response.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 采集时序与系统稳定
 
 每次实际 XY 任意波和共同触发配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集 R 至内存，恢复温控并等待 `TEMP_SWITCH_ON_LAG_S` 后保存波形和元数据。目录、来源快照与初始配置提前保存；每次重试重新配置并执行完整时序。本实验不做 RF 校相、噪声采集或 OFF/ON 成对扫描。
@@ -120,6 +124,8 @@ data/Mx_Z_Optimal_Control_XY_Leakage_Response/<run>/
 相位、Output 状态、接受的重试文件和实际 锁相放大器 采样率。
 
 ## 运行页、分步与独立分析
+
+本实验清单显式声明 `run_step_id=A04`、`finish_step_id=A12`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 GUI 保留「运行 / 历史」双 Tab，运行页为用户确认的 XY 可勾选、带依赖流程图。保存参数与布局、派生预览、预检、完整运行和任务状态位于流程容器顶部；参数在节点内按基础／高级编辑，多节点可同时展开，共享触发相位的数值与分类同步。
 草稿显示预计失效范围，还原修改后清除；应用只使实际依赖过期，必须显式重跑，不会暗中操作仪器。初始化条件仅在 A03 编辑。完整与分步执行调用同一套业务。

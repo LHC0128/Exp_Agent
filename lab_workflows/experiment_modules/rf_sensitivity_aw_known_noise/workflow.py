@@ -3,21 +3,43 @@
 # %% 导入
 from copy import deepcopy
 from dataclasses import replace
+from pathlib import Path
 import numpy as np
 from ...experiment_runtime import load_runtime_params
 from ..rf_sensitivity_direct_aw import workflow as shared
-from ..rf_sensitivity_direct_aw.stages import initial_states, invalidated_stages
+from ..rf_sensitivity_direct_aw.stages import invalidated_stages
+from lab_workflows.workflow_stages import initial_states
 from .models import RFSensitivityKnownNoiseParams
 from .preparation import preflight
 from .waveform import generate_noise
 from .excitation import upload_z
-from .acquisition import make_control_directory, inherit_control, execute_controls, seal_controls
+from .acquisition import execute_controls, seal_controls
 from . import run_format, stages
 
 
 class ControlWorkflow(shared.SingleControlWorkflow):
     params_type = RFSensitivityKnownNoiseParams
     identity = run_format
+
+    @classmethod
+    def create_control_run(cls, params, *, parent_directory, project_root, session_id,
+                           devices, noise, shared_calibration=None, stage_states=None,
+                           previous=None, affected_stages=frozenset()):
+        """复用本轮已生成的噪声；先建目录和继承有效数据，再保存同一份噪声。"""
+        ctx = super().create_control_run(params, parent_directory=parent_directory,
+            project_root=project_root, session_id=session_id, devices=devices,
+            shared_calibration=shared_calibration, stage_states=stage_states,
+            previous=previous, affected_stages=affected_stages)
+        ctx.noise, ctx.z_rf_frequency_hz = noise, params.z_rf_freq
+        np.savez(ctx.directory.raw / "noise_waveform.npz", **noise)
+        return ctx
+
+    def _control_run_metadata(self):
+        return {"control_metrics": {
+            "envelope_rms_V": float(np.sqrt(np.mean(self.envelope["envelope_V"] ** 2))),
+            "envelope_peak_V": float(np.max(np.abs(self.envelope["envelope_V"]))),
+            "repeat_frequency_Hz": self.envelope["source_repeat_freq_Hz"],
+        }}
 
     def preflight(self, params):
         return preflight(params, self.root)
@@ -62,22 +84,12 @@ class Workflow(shared.SingleControlWorkflow):
         self.state["controls_sealed"] = False
         for relative in self.params.control_waveform_files:
             params = replace(self.params, arb_waveform_file=relative, control_waveform_files=[relative])
-            ctx = ControlWorkflow(params, project_root=self.root, session_id=self.session_id)
-            ctx.devices = self.devices
-            ctx.noise, ctx.z_rf_frequency_hz = noise, params.z_rf_freq
-            ctx.state["calibration"] = deepcopy(self.state["calibration"])
-            ctx.state["control_metrics"] = {
-                "envelope_rms_V": float(np.sqrt(np.mean(ctx.envelope["envelope_V"] ** 2))),
-                "envelope_peak_V": float(np.max(np.abs(ctx.envelope["envelope_V"]))),
-                "repeat_frequency_Hz": ctx.envelope["source_repeat_freq_Hz"],
-            }
-            ctx.directory = make_control_directory(self.directory, relative, params, ctx.state)
-            ctx.states = deepcopy(self.states)
-            version = ctx.directory.root.name
-            if old := old_controls.get(version):
-                inherit_control(old, ctx, affected)
-            np.savez(ctx.directory.raw / "noise_waveform.npz", **noise)
-            self.controls[version] = ctx
+            ctx = ControlWorkflow.create_control_run(params, parent_directory=self.directory,
+                project_root=self.root, session_id=self.session_id, devices=self.devices,
+                noise=noise, shared_calibration=self.state["calibration"],
+                stage_states=self.states, previous=old_controls.get(Path(relative).parent.parent.name),
+                affected_stages=affected)
+            self.controls[ctx.directory.root.name] = ctx
         self.save()
 
     def _execute_step(self, item):

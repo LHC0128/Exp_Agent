@@ -14,6 +14,29 @@ from .models import MxZOptimalControlXYNoiseSpectrumParams
 from .stages import ANALYSIS
 
 
+REGRESSION_CASES = {
+    "mx-z-optimal-control-xy-noise-spectrum": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_z_optimal_control_xy_noise_spectrum/__init__.py",
+                "lab_workflows/experiment_modules/mx_z_optimal_control_xy_noise_spectrum/analysis.py"
+            ],
+            "tests": [
+                "test_full_and_stepwise_match_independent_fft_and_actual_rate",
+                "test_analysis_override_isolation_readonly_get_and_product_archival",
+                "test_content_fingerprint_detects_same_size_same_mtime_changes",
+                "test_bad_input_does_not_move_previous_products",
+                "test_partial_run_and_verified_legacy_output_directory",
+                "test_schema_and_raw_version_are_independent",
+                "test_parameter_migration_roundtrip_and_invalid_overrides",
+                "test_real_thin_plot_subprocess_has_explicit_temporary_run_dir",
+                "test_offline_analysis_uses_raw_without_original_control_sources"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(root, name="synthetic", *, legacy=False):
     run = root / name
     (run / "raw/points").mkdir(parents=True)

@@ -18,6 +18,36 @@ GAMMA_HZ = 300.0
 SATURATION_PER_VPP2 = 20000.0
 
 
+REGRESSION_CASES = {
+    "mx-y-rf-frequency-response": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_y_rf_frequency_response/__init__.py",
+                "lab_workflows/experiment_modules/mx_y_rf_frequency_response/analysis.py"
+            ],
+            "tests": [
+                "test_full_analysis_recovers_bloch_parameters_and_reports_split",
+                "test_single_amplitude_skips_saturation_plot",
+                "test_missing_dependency_missing_summary_and_running_directory_are_rejected",
+                "test_quality_failure_keeps_diagnostics_and_blocks_report",
+                "test_raw_change_invalidates_and_archive_preserves_previous_artifacts",
+                "test_analysis_overrides_invalidate_refit_and_never_touch_acquisition_snapshot",
+                "test_revision_guard_and_partial_rerun_use_cached_fit",
+                "test_stage_definition_declares_real_quality_gates_and_analysis_keys",
+                "test_verified_history_and_raw_format_are_independent_of_parameter_schema",
+                "test_config_qualification_rejects_before_any_scientific_archive",
+                "test_input_qualification_happens_before_archiving_old_outputs",
+                "test_content_fingerprints_detect_same_stat_changes_and_live_context_drift",
+                "test_complete_and_staged_analysis_produce_identical_scientific_arrays",
+                "test_real_module_outside_repository_uses_explicit_run",
+                "test_analysis_model_bounds_without_hardware_revalidation",
+                "test_real_caller_config_failure_preserves_bytes_and_original_error"
+            ]
+        }
+    }
+}
+
+
 def build_run(root, *, amplitudes=(0.01, 0.02, 0.03), points=41, noise=1e-4, seed=7,
               status="completed", drop_summary=False, extra_config=None):
     run_dir = root / "data" / run_format.DATA_TYPE / "0901_0000_mx_y_rf_freq_resp"
@@ -318,3 +348,48 @@ def test_complete_and_staged_analysis_produce_identical_scientific_arrays(tmp_pa
             np.testing.assert_allclose(full[key], staged[key], rtol=1e-12, atol=1e-12, equal_nan=True)
     assert ctx.states["B02"]["input_fingerprint"] == ctx.fingerprint
     assert ctx.states["B02"]["parameters"] == ctx.options
+
+
+@pytest.mark.parametrize("mode", ["explicit", "missing", "nonexistent"])
+def test_real_module_outside_repository_uses_explicit_run(tmp_path, mode):
+    from lab_workflows.experiments.test_analysis_imports import check_real_analysis_module
+
+    run = build_run(tmp_path, amplitudes=(0.01,))
+    check_real_analysis_module(run, __package__ + ".analysis", "bloch_fit.npz", mode)
+
+
+@pytest.mark.parametrize("bound", ["minimum", "maximum"])
+def test_analysis_model_bounds_without_hardware_revalidation(tmp_path, monkeypatch, bound):
+    from dataclasses import fields
+
+    run = build_run(tmp_path, amplitudes=(0.01,))
+    path = run / "experiment_config.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    ctx = AnalysisWorkflow(run)
+    params_type = type(ctx.params)
+    assert params_type.from_external(config["parameters"]).validate(Path(__file__).resolve().parents[3]) == []
+    config["parameters"]["FIXED_PARAMS.temperature"] = 1000.0
+    assert params_type.from_external(config["parameters"]).validate(Path(__file__).resolve().parents[3])
+    path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    before = path.read_bytes()
+    item = next(f for f in fields(ctx.params) if f.metadata.get("external_name") == "FIT_R_SQUARED_MIN")
+    endpoint = item.metadata[bound]
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("离线分析不能重新执行完整硬件预检")
+
+    monkeypatch.setattr(params_type, "validate", forbidden)
+    assert AnalysisWorkflow(run, {"FIT_R_SQUARED_MIN": endpoint}).options["FIT_R_SQUARED_MIN"] == endpoint
+    with pytest.raises(ValueError, match="FIT_R_SQUARED_MIN"):
+        AnalysisWorkflow(run, {"FIT_R_SQUARED_MIN": endpoint + (-1 if bound == "minimum" else 1)})
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("fault", ["write", "replace"])
+@pytest.mark.parametrize("original_error", [False, True])
+def test_real_caller_config_failure_preserves_bytes_and_original_error(tmp_path, monkeypatch, fault, original_error):
+    from lab_workflows.experiments.test_analysis_imports import check_real_caller_config_failure
+    from . import analysis_steps
+
+    run = build_run(tmp_path, amplitudes=(0.01,))
+    check_real_caller_config_failure(AnalysisWorkflow(run), analysis_steps, monkeypatch, fault, original_error)

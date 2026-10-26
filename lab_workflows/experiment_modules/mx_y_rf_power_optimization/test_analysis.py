@@ -16,6 +16,30 @@ from .models import MxYRFPowerOptimizationParams
 from .test_workflow import rig
 
 
+REGRESSION_CASES = {
+    "mx-y-rf-power-optimization": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_y_rf_power_optimization/__init__.py",
+                "lab_workflows/experiment_modules/mx_y_rf_power_optimization/analysis.py"
+            ],
+            "tests": [
+                "test_original_full_and_staged_science_are_identical_and_reads_do_not_write",
+                "test_independent_options_invalidate_only_calculation_and_keep_capture_snapshot",
+                "test_nested_content_and_products_cannot_reuse_stale_predecessors",
+                "test_no_valid_point_keeps_diagnostics_and_blocks_report",
+                "test_partial_legacy_grid_and_format_identity",
+                "test_cancel_is_not_swallowed_as_an_invalid_grid_point",
+                "test_thin_entry_requires_explicit_directory_and_runs_real_child",
+                "test_real_module_outside_repository_uses_explicit_run",
+                "test_analysis_model_bounds_without_hardware_revalidation",
+                "test_positive_calibration_rule_stays_shared_by_analysis_and_model"
+            ]
+        }
+    }
+}
+
+
 @pytest.fixture
 def run_dir(rig):
     return workflow.run(rig.params)
@@ -177,3 +201,52 @@ def test_thin_entry_requires_explicit_directory_and_runs_real_child(run_dir):
     assert child.returncode == 0, child.stdout + child.stderr
     assert (run_dir / "results/optimization.npz").is_file()
     assert json.loads((run_dir / "analysis_state.json").read_text(encoding="utf-8"))["steps"]["B03"]["status"] == "completed"
+
+
+@pytest.mark.parametrize("mode", ["explicit", "missing", "nonexistent"])
+def test_real_module_outside_repository_uses_explicit_run(run_dir, mode):
+    from lab_workflows.experiments.test_analysis_imports import check_real_analysis_module
+
+    run = run_dir
+    check_real_analysis_module(run, __package__ + ".analysis", "optimization.npz", mode)
+
+
+@pytest.mark.parametrize("bound", ["minimum", "maximum"])
+def test_analysis_model_bounds_without_hardware_revalidation(run_dir, monkeypatch, bound):
+    from dataclasses import fields
+
+    run = run_dir
+    path = run / "experiment_config.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    ctx = analysis.AnalysisWorkflow(run)
+    params_type = type(ctx.params)
+    assert params_type.from_external(config["parameters"]).validate(Path(__file__).resolve().parents[3]) == []
+    config["parameters"]["FIXED_PARAMS.temperature"] = 1000.0
+    assert params_type.from_external(config["parameters"]).validate(Path(__file__).resolve().parents[3])
+    path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    before = path.read_bytes()
+    item = next(f for f in fields(ctx.params) if f.metadata.get("external_name") == "FIT_R_SQUARED_MIN")
+    endpoint = item.metadata[bound]
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("离线分析不能重新执行完整硬件预检")
+
+    monkeypatch.setattr(params_type, "validate", forbidden)
+    assert analysis.AnalysisWorkflow(run, {"FIT_R_SQUARED_MIN": endpoint}).options["FIT_R_SQUARED_MIN"] == endpoint
+    with pytest.raises(ValueError, match="FIT_R_SQUARED_MIN"):
+        analysis.AnalysisWorkflow(run, {"FIT_R_SQUARED_MIN": endpoint + (-1 if bound == "minimum" else 1)})
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("value", [0.0, -1.0])
+def test_positive_calibration_rule_stays_shared_by_analysis_and_model(run_dir, value):
+    from dataclasses import replace
+
+    ctx = analysis.AnalysisWorkflow(run_dir)
+    invalid = replace(ctx.params, y_rf_nt_per_vpp=value)
+    assert invalid._analysis_validation_errors()
+    assert any("Y_RF_NT_PER_VPP" in error for error in invalid.validate(Path(__file__).resolve().parents[3]))
+    before = (run_dir / "experiment_config.yaml").read_bytes()
+    with pytest.raises(ValueError, match="Y_RF_NT_PER_VPP"):
+        analysis.AnalysisWorkflow(run_dir, {"Y_RF_NT_PER_VPP": value})
+    assert (run_dir / "experiment_config.yaml").read_bytes() == before

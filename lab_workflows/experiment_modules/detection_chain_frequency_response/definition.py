@@ -35,7 +35,7 @@ DEFINITION = ExperimentDefinition(
     variant="baseline",
     description=("扫描 Probe AOM AM 频率并采集锁相 Y 谱峰，检查探测链路响应；输入保持单端、高阻、DC 耦合，零基带点不参与响应与归一化。"
                  "每点配置后以 0 V DC + 输出 ON 关闭温控，按 SYSTEM_SETTLE_S 稳定并采集至内存，恢复温控后保存；异常也先尝试恢复并抢救已读数据。"
-                 "TEC 可连接时只写 UI 目标温度。运行页共用 A01–A08 采集和 B01–B03 离线分析流程，支持节点改参、显式重跑与具体历史目录重算；本实验无可调分析覆盖值。"),
+                 "TEC 可连接时只写 UI 目标温度。运行页共用 A01–A08 采集和 B01–B03 离线分析流程，支持节点改参、显式重跑与具体历史目录重算；本实验无可调分析覆盖值。分步角色由清单声明，状态与产物以执行记录为准。"),
     data_type="Detection_Chain_Frequency_Response",
     required_devices=("DG4000", "DG900", "锁相放大器"),
     required_mapping_keys=(

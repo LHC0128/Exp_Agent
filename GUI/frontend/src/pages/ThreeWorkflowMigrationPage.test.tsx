@@ -26,7 +26,7 @@ describe.each(experiments)("$id 真实路由", ({ id, fixture, shared, first, se
   const values = () => Object.fromEntries(fields.map(field => [field.name, field.default]));
   const layout = () => ({ basic: fields.filter(f => f.group === "basic").map(f => f.name), advanced: fields.filter(f => f.group !== "basic").map(f => f.name) });
   let savedLayout: ReturnType<typeof layout>;
-  let session: any, preflightOk: boolean, metadata: boolean;
+  let session: any, preflightOk: boolean, metadata: boolean | "run_step_id" | "finish_step_id";
   const history = { run_id: "old", timestamp: "old-date", run_tag: "historical", completion_status: "completed" };
   const makeSession = () => ({ session_id: "session", job_id: "hardware-job", status: "waiting", revision: 0,
     parameters: values(), pending_request: null, outputs: { 温控: "5 V DC + ON" },
@@ -53,7 +53,8 @@ describe.each(experiments)("$id 真实路由", ({ id, fixture, shared, first, se
       if (url === "/api/jobs") return [] as never;
       if (url === "/api/jobs/hardware-job") return { id: "hardware-job", kind: `session:${id}`, status: "running", events: [] } as never;
       if (url === "/api/jobs/analysis-job") return { id: "analysis-job", status: "running", events: [] } as never;
-      if (url === `${BASE}/workflow`) return (metadata ? flow : { ...flow, parameter_impacts: undefined }) as never;
+      if (url === `${BASE}/workflow`) return (metadata === true ? flow : { ...flow,
+        ...(metadata === false ? { parameter_impacts: undefined } : { [metadata]: undefined }) }) as never;
       if (url === `${BASE}/sessions/active`) return session as never;
       if (url === `${BASE}/sessions` && options?.method === "POST") return session = makeSession();
       if (url === `${BASE}/sessions/session`) return session as never;
@@ -153,8 +154,11 @@ describe.each(experiments)("$id 真实路由", ({ id, fixture, shared, first, se
       && Object.keys(JSON.parse(String(opt.body)).analysis_parameters).length === 0)).toBe(true));
   });
 
-  it("缺元数据仍恢复存活会话并允许安全结束", async () => {
-    session = makeSession(); metadata = false; page(); await screen.findByText(/接口版本过旧/);
+  it.each([false, "run_step_id", "finish_step_id"] as const)("缺元数据 %s 阻止新执行但恢复会话并允许安全结束", async missing => {
+    session = makeSession(); metadata = missing; page(); await screen.findByText(/接口版本过旧/);
+    expect(screen.getByRole("button", { name: "创建分步会话" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行所选 / 重跑" })).toBeDisabled();
+    expect(mocked.mock.calls.some(([url, options]) => url === `${BASE}/sessions` && options?.method === "POST")).toBe(false);
     const finish = await screen.findByRole("button", { name: "结束会话" });
     await waitFor(() => expect(finish).toBeEnabled()); fireEvent.click(finish);
     await waitFor(() => expect(session.status).toBe("closed"));

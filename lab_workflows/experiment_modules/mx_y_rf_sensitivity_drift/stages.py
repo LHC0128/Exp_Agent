@@ -1,6 +1,7 @@
 """长飘真实采集与父趋势分析节点、参数归属和依赖失效。"""
 from dataclasses import asdict
-from ..mx_y_rf_sensitivity.stages import Stage, ANALYSIS_KEYS as CHILD_ANALYSIS_KEYS
+from ..mx_y_rf_sensitivity.stages import ANALYSIS_KEYS as CHILD_ANALYSIS_KEYS
+from lab_workflows.workflow_stages import Stage, initial_states
 
 FINISH_ID = "A11"
 RUN_ID = "A09"
@@ -40,10 +41,6 @@ ANALYSIS = (
         ("drift_trend.png", "drift_trend_clock_time.png", "analysis.yaml", "analysis.json"),
         quality_gates=("B02 数值产物 SHA 仍有效；幅度等效线宽不解释为扫频共振线宽",)),
 )
-
-
-def initial_states(stages):
-    return {stage.id: {"status": "pending", "error": ""} for stage in stages}
 
 
 def invalidated_stages(stages, stage_id):
@@ -90,6 +87,7 @@ def validate_selection(stages, states, selected):
 def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return dict(acquisition=[public(stage) for stage in ACQUISITION], analysis=[public(stage) for stage in ANALYSIS],
+    return dict(run_step_id="A09", finish_step_id=FINISH_ID,
+        acquisition=[public(stage) for stage in ACQUISITION], analysis=[public(stage) for stage in ANALYSIS],
         parameter_impacts={"acquisition": parameter_impacts(ACQUISITION), "analysis": parameter_impacts(ANALYSIS)},
         diagram_url="/api/experiments/mx-y-rf-sensitivity-drift/workflow/diagram")

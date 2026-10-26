@@ -1,14 +1,16 @@
 """运行目录协议、适配器与真实无硬件子进程的可靠性回归。"""
 from __future__ import annotations
 
+from io import StringIO
 import json
 import os
 from pathlib import Path
+from queue import Queue
 import sys
 from threading import Thread
 import time
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 import yaml
@@ -50,6 +52,108 @@ def wait_for(predicate):
             return
         time.sleep(0.01)
     raise AssertionError("假子进程未到达预期检查点")
+
+
+@pytest.mark.parametrize("platform_name, creationflags, start_new_session", [
+    ("nt", 0x00000200, False),
+    ("posix", 0, True),
+])
+def test_launch_isolates_child_from_terminal_interrupts(
+    adapter, monkeypatch, platform_name, creationflags, start_new_session,
+):
+    # 只替换 typed 的模块引用，不全局修改 os.name，以免影响 pytest/Path。
+    monkeypatch.setattr(typed, "os", SimpleNamespace(
+        name=platform_name, environ=os.environ, getpid=os.getpid,
+    ))
+    monkeypatch.setattr(typed.subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200, raising=False)
+    process = SimpleNamespace(stdout=StringIO(), poll=lambda: 0, wait=Mock(return_value=0))
+    launch = Mock(return_value=process)
+    monkeypatch.setattr(typed.subprocess, "Popen", launch)
+
+    assert adapter._execute(adapter.acquisition_module) is None
+
+    options = launch.call_args.kwargs
+    assert options["creationflags"] == creationflags
+    assert options["start_new_session"] is start_new_session
+    assert options["stdout"] == typed.subprocess.PIPE
+    assert options["stderr"] == typed.subprocess.STDOUT
+    assert options["stdin"] is None
+    process.wait.assert_called_once_with()
+    assert process.stdout.closed
+
+
+@pytest.mark.parametrize("failure_source", ["callback", "stdout"])
+def test_execute_fault_cancels_commands_and_waits_before_preserving_original_error(
+    adapter, monkeypatch, failure_source,
+):
+    failure = ValueError("父回调原始错误") if failure_source == "callback" else OSError("父通信原始错误")
+    events, commands = [], Queue()
+    # 这里仅验证主线程 finally；真实取消监控和管道由下方真实子进程测试覆盖。
+    monkeypatch.setattr(typed, "threading", SimpleNamespace(
+        get_ident=typed.threading.get_ident, Thread=Mock(),
+    ))
+
+    class Stdout:
+        def __iter__(self):
+            if failure_source == "stdout":
+                raise failure
+            yield "测试子进程日志\n"
+
+        def close(self):
+            assert events == ["wait"]
+            events.append("stdout_closed")
+
+    def wait():
+        cancel_path = Path(launch.call_args.kwargs["env"]["LAB_CANCEL_FILE"])
+        assert cancel_path.is_file(), "回调/通信故障必须先发出协作取消"
+        assert commands.get_nowait() is None, "等待子进程前必须关闭命令流"
+        events.append("wait")
+        return 1
+
+    process = SimpleNamespace(stdout=Stdout(), poll=lambda: None, wait=Mock(side_effect=wait),
+        terminate=Mock(), kill=Mock())
+    launch = Mock(return_value=process)
+    monkeypatch.setattr(typed.subprocess, "Popen", launch)
+
+    def broken(event):
+        raise failure
+
+    with pytest.raises(type(failure)) as caught:
+        adapter._execute(adapter.acquisition_module, progress=broken, commands=commands)
+    assert caught.value is failure
+    assert events == ["wait", "stdout_closed"]
+    process.wait.assert_called_once_with()
+    process.terminate.assert_not_called()
+    process.kill.assert_not_called()
+    assert not Path(launch.call_args.kwargs["env"]["LAB_CANCEL_FILE"]).exists()
+
+
+@pytest.mark.parametrize("return_code", [0, 1, -15])
+def test_cancelled_child_exit_does_not_claim_safety_or_hide_nonzero_exit(adapter, monkeypatch, caplog, return_code):
+    token = CancellationToken()
+    token.cancel()
+    process = SimpleNamespace(
+        stdout=StringIO(), poll=lambda: return_code, wait=Mock(return_value=return_code),
+        terminate=Mock(), kill=Mock(),
+    )
+    monkeypatch.setattr(typed.subprocess, "Popen", Mock(return_value=process))
+
+    with pytest.raises(WorkflowCancelled) as caught:
+        adapter._execute(adapter.acquisition_module, cancellation=token)
+
+    assert "子进程已退出" in str(caught.value)
+    assert "安全收尾结果请核对日志" in str(caught.value)
+    assert "已在安全检查点停止" not in str(caught.value)
+    warnings = [record for record in caplog.records if record.levelname == "WARNING"]
+    assert len(warnings) == int(bool(return_code))
+    if return_code:
+        assert f"退出码 {return_code}" in warnings[0].message
+        assert "未确认仪器安全" in warnings[0].message
+        assert "正常取消也可能如此" in warnings[0].message
+        assert adapter.acquisition_module in warnings[0].message
+    process.wait.assert_called_once_with()
+    process.terminate.assert_not_called()
+    process.kill.assert_not_called()
 
 
 def test_real_child_result_ignores_newer_unreported_and_other_experiment_runs(adapter):

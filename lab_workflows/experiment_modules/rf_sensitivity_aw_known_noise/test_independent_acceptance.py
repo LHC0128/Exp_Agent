@@ -16,6 +16,24 @@ from .test_workflow import known_rig, rig, control_source, assert_shutdown
 from .waveform import generate_noise
 
 
+REGRESSION_CASES = {
+    "rf-sensitivity-aw-known-noise": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/rf_sensitivity_aw_known_noise/analysis.py"
+            ],
+            "tests": [
+                "test_manual_phase_records_must_match_all_controls_and_response",
+                "test_complete_and_separate_analysis_match_independent_formulas",
+                "test_analysis_input_and_child_artifact_drift_and_archive",
+                "test_bad_control_input_blocks_b01_without_successor_outputs",
+                "test_noise_spectrum_matches_independent_fft"
+            ]
+        }
+    }
+}
+
+
 def scientific_run(path):
     """独立构造两个不同响应斜率的控制，避免把生产算法当作数值答案。"""
     params = replace(RFSensitivityKnownNoiseParams(), control_waveform_files=[

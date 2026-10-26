@@ -31,7 +31,7 @@ DEFINITION = ExperimentDefinition(
     variant="scope-pd",
     description=("以采集／分析双列交互流程图分步执行 SDS PD 自旋噪声测量，可选 GS200 OFF 背景，保留原 Welch 与自由洛伦兹拟合。"
         "参数在节点内编辑，草稿应用后显式重跑；历史目录分析覆盖值独立。每次恢复温控后保存，TEC 只写目标温度；"
-        "初始化及所有收尾均不修改 Pump 载波／门控，GS200 恢复运行前状态。"),
+        "初始化及所有收尾均不修改 Pump 载波／门控，GS200 恢复运行前状态。分步角色由清单声明，状态与产物以执行记录为准。"),
     data_type="Projection_noise",
     required_devices=("GS200", "DG900", "DG4000", "SDS"),
     execution_mode="typed_workflow",

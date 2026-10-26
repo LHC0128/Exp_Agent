@@ -17,7 +17,7 @@ from ...experiment_runtime import check_cancelled, load_runtime_params, report_r
 from ...instrument_config import instrument_config_snapshot
 from ...steps import DeviceSession, create_run_directory, set_temperature_switch
 from ...steps.safety_shutdown import disconnect_device_mapping
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from ..mx_y_rf_sensitivity import preparation as sensitivity_preparation
 from ..mx_y_rf_sensitivity import excitation
 from ..mx_y_rf_sensitivity.acquisition import acquire_r, summarize_r
@@ -30,7 +30,8 @@ from ..mx_y_rf_sensitivity.workflow import (
 )
 from . import acquisition_steps, preparation, run_format
 from .models import MxYRFFrequencyResponseParams
-from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ACQUISITION, FINISH_ID, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 # 保留旧调用与回归注入边界；业务实现归属准备与采集模块。
 from .acquisition_steps import (

@@ -12,7 +12,7 @@ import yaml
 
 from ...plotting import (COLOR_GRAY, COLOR_GREEN, COLOR_OPTIMAL, COLOR_ORANGE,
     format_axis, new_figure, save_figure, set_plot_style, style_legend)
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from .analysis_steps import contained, plain
 
 LOCAL_TIMEZONE = ZoneInfo("Asia/Shanghai")

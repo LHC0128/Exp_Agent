@@ -20,6 +20,33 @@ from .run_format import EXPERIMENT_ID, DATA_TYPE
 from .test_workflow import ROOT, copy_config, fake_hardware, scan_params
 
 
+REGRESSION_CASES = {
+    "z-aw-current-waveform-scope-check": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/z_aw_current_waveform_scope_check/__init__.py",
+                "lab_workflows/experiment_modules/z_aw_current_waveform_scope_check/analysis.py",
+                "lab_workflows/experiment_modules/z_aw_waveform_scope_check/__init__.py"
+            ],
+            "tests": [
+                "CurrentAnalysisTests::test_complete_and_staged_science_match_and_replot_keeps_prerequisite",
+                "CurrentAnalysisTests::test_legacy_identity_explicit_and_raw_version_independent_from_schema",
+                "CurrentAnalysisTests::test_offline_analysis_needs_no_original_sources_or_current_defaults",
+                "CurrentAnalysisTests::test_content_fingerprint_detects_same_size_mtime_and_blocks_stale_successor",
+                "CurrentAnalysisTests::test_product_fingerprint_invalidates_only_affected_stage",
+                "CurrentAnalysisTests::test_live_context_reloads_configuration_before_reusing_scientific_products",
+                "CurrentAnalysisTests::test_bad_inputs_do_not_move_previous_scientific_outputs",
+                "CurrentAnalysisTests::test_flat_capture_reports_quality_failure_and_blocks_report",
+                "CurrentAnalysisTests::test_invalid_resistance_target_time_or_frequency_and_running_rejected",
+                "CurrentAnalysisTests::test_ch3_edge_fraction_uses_volts_and_current_in_consistent_units",
+                "CurrentAnalysisTests::test_analysis_has_no_overrides_and_constructor_is_read_only",
+                "CurrentAnalysisTests::test_real_cli_requires_explicit_temporary_run_directory"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(root, name="0101_120000_fake", *, legacy=False, flat=False, source="theory"):
     params = scan_params(root, source=source)
     run = root / "data" / DATA_TYPE / name

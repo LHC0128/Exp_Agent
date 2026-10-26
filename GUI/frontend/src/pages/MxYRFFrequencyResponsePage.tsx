@@ -59,7 +59,7 @@ function FrequencyResult({ summary }: { summary: WorkflowRunSummary }) {
 const renderResult = (summary: WorkflowRunSummary) => <FrequencyResult summary={summary} />;
 
 export function MxYRFFrequencyResponsePage() {
-  return <WorkflowExperimentPage experimentId="mx-y-rf-frequency-response" finishStepId="A10" runStepId="A08"
+  return <WorkflowExperimentPage experimentId="mx-y-rf-frequency-response"
     analysisParameterKeys={{ FIT_R_SQUARED_MIN: "FIT_R_SQUARED_MIN",
       FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX: "FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX",
       R_BAD_POINT_STD_THRESHOLD_V: "R_BAD_POINT_STD_THRESHOLD_V" }} renderResult={renderResult} />;

@@ -31,6 +31,22 @@ ACQUISITION_CASES = {
 }
 
 
+REGRESSION_CASES = {
+    "rf-sensitivity-aw-known-noise": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/rf_sensitivity_aw_known_noise/analysis.py"
+            ],
+            "tests": [
+                "test_bandwidth_skip_marker_preserves_legacy_analysis",
+                "test_manual_rf_phase_is_shared_without_moving_injected_noise",
+                "test_two_controls_complete_and_analyze_without_sources"
+            ]
+        }
+    }
+}
+
+
 @pytest.fixture
 def known_rig(rig, monkeypatch):
     base = control_sources.resolve_control_results_root("oc_sens")
@@ -312,19 +328,61 @@ def test_noise_rerun_keeps_predecessors_and_uses_new_directory(known_rig):
     ctx.finish()
 
 
-def test_quality_failure_blocks_successors_and_can_retry(known_rig):
+def test_quality_failure_blocks_successors_and_can_retry(known_rig, monkeypatch):
+    # 这里只验证子运行重建，不复演 RF 相位扫描出图；每级校相仍实际执行。
+    params = replace(known_rig.params, rf_amp_points=2, noise_n_avg=1,
+                     noise_duration=0.01, scan_point_duration_s=0.001,
+                     scan_rf_phase=False)
+    monkeypatch.setattr(workflow.shared.SingleControlWorkflow, "publish", lambda *_: None)
+    factory = workflow.ControlWorkflow.create_control_run.__func__
+    created = []
+
+    def create(cls, params, **kwargs):
+        assert (kwargs["parent_directory"].raw / "noise_waveform.npz").is_file()
+        before = len(known_rig.events)
+        child = factory(cls, params, **kwargs)
+        assert len(known_rig.events) == before
+        assert child.devices is kwargs["devices"]
+        assert child.states == kwargs["stage_states"] and child.states is not kwargs["stage_states"]
+        calibration = (kwargs["previous"].state["calibration"] if kwargs["previous"]
+                       else kwargs["shared_calibration"])
+        assert child.state["calibration"] == calibration and child.state["calibration"] is not calibration
+        assert child.noise is kwargs["noise"] and child.z_rf_frequency_hz == params.z_rf_freq
+        assert "raw_format_version" not in child.state and "control_layout" not in child.state
+        assert set(child.state["control_metrics"]) == {"envelope_rms_V", "envelope_peak_V", "repeat_frequency_Hz"}
+        with np.load(child.directory.raw / "noise_waveform.npz", allow_pickle=False) as saved:
+            assert set(saved.files) == set(kwargs["noise"])
+            for key, value in kwargs["noise"].items():
+                np.testing.assert_array_equal(saved[key], value)
+        created.append((child, kwargs))
+        return child
+
+    # 缺少显式噪声必须在进入工厂前拒绝，不隐式重新生成或写目录。
+    with pytest.raises(TypeError, match="noise"):
+        workflow.ControlWorkflow.create_control_run(params, parent_directory=None,
+            project_root=known_rig.tmp_path, session_id="missing-noise", devices={})
+    assert not known_rig.events
+    monkeypatch.setattr(workflow.ControlWorkflow, "create_control_run", classmethod(create))
     known_rig.xy_r = 0.0
-    ctx = workflow.Workflow(known_rig.params, project_root=known_rig.tmp_path)
+    ctx = workflow.Workflow(params, project_root=known_rig.tmp_path)
     ctx.execute([stage.id for stage in ACQUISITION if stage.id not in ("A13B", "A16")])
     assert ctx.states["A09"]["status"] == "quality_failed"
     old = ctx.directory.root
+    originals = {path: path.read_bytes() for path in old.rglob("*.npz")}
     with pytest.raises(ValueError):
         ctx.execute(["A13"])
     known_rig.xy_r = 1.0
     ctx.execute([stage.id for stage in ACQUISITION if stage.id in ("A09", "A10", "A11", "A12", "A13", "A14", "A15")])
     assert ctx.directory.root != old
     assert ctx.state["completion_status"] == "completed"
+    assert len(created) == 4
+    assert created[0][1]["noise"] is created[1][1]["noise"]
+    assert created[2][1]["noise"] is created[3][1]["noise"]
+    assert created[0][1]["noise"] is not created[2][1]["noise"]
+    assert all(path.read_bytes() == before for path, before in originals.items())
+    assert all(child.state["completion_status"] == "completed" for child in ctx.controls.values())
     ctx.finish()
+    assert_shutdown(known_rig)
 
 
 def test_cancel_preserves_error_and_shutdown(known_rig):

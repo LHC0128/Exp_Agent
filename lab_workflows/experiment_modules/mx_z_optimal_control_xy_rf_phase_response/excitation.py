@@ -1,7 +1,7 @@
 """Y RF 的 DC 包络、下降沿 Burst 与逐相位重新 arm。"""
 from typing import Any
 from .models import MxZOptimalControlXYRFPhaseResponseParams
-from ..mx_z_optimal_control_rf_sensitivity.excitation import _validate_y_rf_envelope
+from ...steps.mx_z_optimal_control import validate_y_rf_envelope as _validate_y_rf_envelope
 from ...steps import OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE
 
 

@@ -662,6 +662,8 @@
       },
       "analysis": {}
     },
+    "run_step_id": "A08",
+    "finish_step_id": "A10",
     "diagram_url": "/api/experiments/mx-xy-residual-field-calibration/workflow/diagram"
   }
 }

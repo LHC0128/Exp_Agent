@@ -224,8 +224,9 @@ class AnalysisWorkflow:
     """持久化五个分析阶段；前置产物必须属于同一输入和参数修订。"""
 
     def __init__(self, run_dir, analysis_parameters=None, *, use_saved_options=True):
-        from .stages import ANALYSIS, initial_states, invalidate
-        from .state_io import read_state
+        from .stages import ANALYSIS, invalidate
+        from lab_workflows.workflow_stages import initial_states
+        from lab_workflows.workflow_state import read_state
         self.run_dir = Path(run_dir).resolve()
         self.results = self.run_dir / "results"
         self.state_path = self.run_dir / "analysis_state.json"
@@ -300,7 +301,7 @@ class AnalysisWorkflow:
             steps=self.states, fingerprint=self.fingerprint, summary=self.summary)
 
     def persist(self):
-        from .state_io import write_state
+        from lab_workflows.workflow_state import write_state
         from ...experiment_runtime import report_runtime_progress
         write_state(self.state_path, self.snapshot())
         if self.states["B01"]["status"] == "completed":

@@ -24,13 +24,14 @@ class Workflow(FrequencyWorkflow):
             acquisition_signals=["SDS CH3 low-side sense-resistor voltage", "SDS CH4 common trigger reference"],
             physical_limit="CH3 仅允许跨接低端采样电阻；仅可靠同帧驱动参考可用于闭环相位标定。",
             completion_label="Z 线圈实际电流频率响应")
-        self.capture_validator = lambda frame: _validate_capture_current(frame, self.params)
         self._refresh_capture_options()
 
     def _refresh_capture_options(self):
-        self.capture_guard_s = self.params.scope_capture_guard_s
-        self.drive_metadata = dict(output_protocol=OUTPUT_PROTOCOL, command_voltage_reference=COMMAND_VOLTAGE_REFERENCE,
-            frequency_spacing=self.params.frequency_spacing, frequency_points_per_decade=self.params.frequency_points_per_decade)
+        self.configure_capture(capture_validator=lambda frame: _validate_capture_current(frame, self.params),
+            capture_guard_s=self.params.scope_capture_guard_s,
+            drive_metadata=dict(output_protocol=OUTPUT_PROTOCOL, command_voltage_reference=COMMAND_VOLTAGE_REFERENCE,
+                frequency_spacing=self.params.frequency_spacing,
+                frequency_points_per_decade=self.params.frequency_points_per_decade))
 
     def update_parameters(self, values):
         super().update_parameters(values)

@@ -10,7 +10,7 @@ import math
 import numpy as np
 import yaml
 from ...experiment_runtime import check_cancelled
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from .models import MxXYResidualFieldCalibrationParams
 from .fitting import fit_bloch_2d, fit_dispersive_line, bloch_2d_surface
 from . import run_format

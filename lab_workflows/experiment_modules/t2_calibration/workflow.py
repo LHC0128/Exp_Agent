@@ -13,11 +13,12 @@ from ...lockin_compatibility import require_lockin_compatibility
 from ...experiments.requirements import T2 as REQUIRED_MAPPING_KEYS
 from ...steps import (DeviceSession, create_run_directory, set_temperature_switch,
                       synchronize_connected_clocks, disconnect_device_mapping)
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from .models import T2CalibrationParams
 from . import preparation, acquisition
 from .run_metadata import EXPERIMENT_ID, DATA_TYPE, EXECUTION_MODE, initial_metadata
-from .stages import ACQUISITION, RUN_STEP_ID, FINISH_ID, initial_states, invalidate, validate_selection
+from .stages import ACQUISITION, RUN_STEP_ID, FINISH_ID, invalidate, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 # 保留原具名注入点，既有故障回归继续经过真实采集与真实写盘。
 safe_shutdown = preparation.safe_shutdown

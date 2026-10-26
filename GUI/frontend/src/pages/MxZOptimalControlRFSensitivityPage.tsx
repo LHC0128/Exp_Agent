@@ -37,6 +37,6 @@ function Result({ value }: { value: WorkflowRunSummary }) {
 }
 
 export function MxZOptimalControlRFSensitivityPage() {
-  return <WorkflowExperimentPage experimentId="mx-z-optimal-control-rf-sensitivity" finishStepId="A12" runStepId="A04"
+  return <WorkflowExperimentPage experimentId="mx-z-optimal-control-rf-sensitivity"
     renderResult={value => <Result value={value} />} />;
 }

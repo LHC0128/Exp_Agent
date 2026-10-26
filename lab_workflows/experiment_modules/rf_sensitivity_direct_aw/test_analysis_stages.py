@@ -6,6 +6,22 @@ from .analysis import AnalysisWorkflow, analyze
 from .test_analysis import synthetic_run
 
 
+REGRESSION_CASES = {
+    "rf-sensitivity-aw": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/rf_sensitivity_direct_aw/analysis.py"
+            ],
+            "tests": [
+                "test_full_and_staged_analysis_match_and_options_are_isolated",
+                "test_input_or_product_drift_rejects_stale_prerequisites",
+                "test_invalid_analysis_overrides_are_rejected"
+            ]
+        }
+    }
+}
+
+
 def test_full_and_staged_analysis_match_and_options_are_isolated(tmp_path):
     full, staged = tmp_path / "full", tmp_path / "staged"
     synthetic_run(full)

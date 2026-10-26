@@ -266,8 +266,33 @@ def test_failure_saves_partial_and_stops(scale_rig, monkeypatch, fault):
     assert_shutdown(scale_rig)
 
 
-def test_missing_dependencies_and_rerun_preserve_raw(scale_rig):
-    params = replace(scale_rig.params, control_waveform_files=scale_rig.params.control_waveform_files[:1], control_scales=[.9, 1.])
+def test_missing_dependencies_and_rerun_preserve_raw(scale_rig, monkeypatch):
+    # 保留两控制 × 两倍率与 RF 合法最少五点；独立校相不省略，仅隔离 RF 扫描出图。
+    params = replace(scale_rig.params, control_waveform_files=scale_rig.params.control_waveform_files[:2],
+                     control_scales=[.9, 1.], rf_amp_points=5, slope_fit_points=5,
+                     scan_rf_phase=False, noise_rate=1000, noise_duration=0.01,
+                     scan_point_duration_s=0.001)
+    monkeypatch.setattr(workflow.shared.SingleControlWorkflow, "publish", lambda *_: None)
+    factory = workflow.ControlWorkflow.create_control_run.__func__
+    created = []
+
+    def create(cls, params, **kwargs):
+        assert not {"shared_calibration", "stage_states", "previous", "affected_stages"}.intersection(kwargs)
+        before = len(scale_rig.events)
+        child = factory(cls, params, **kwargs)
+        assert len(scale_rig.events) == before and child.devices is kwargs["devices"]
+        assert not {"demod0", "demod3"}.intersection(child.state["calibration"])
+        assert all(state["status"] == "pending" for state in child.states.values())
+        assert child.state["raw_format_version"] == run_format.RAW_FORMAT_VERSION
+        assert child.state["phase_calibration_scope"] == run_format.PHASE_CALIBRATION_SCOPE
+        assert "control_layout" not in child.state
+        assert set(child.state["control_metrics"]) == {"envelope_rms_V", "envelope_peak_V"}
+        assert child.state["control_source_sha256"] == hashlib.sha256(
+            Path(child.envelope["source_waveform_path"]).read_bytes()).hexdigest()
+        created.append(child)
+        return child
+
+    monkeypatch.setattr(workflow.ControlWorkflow, "create_control_run", classmethod(create))
     ctx = workflow.Workflow(params, project_root=scale_rig.tmp_path)
     with pytest.raises(ValueError, match="前置"):
         ctx.execute(["A13"])
@@ -276,8 +301,23 @@ def test_missing_dependencies_and_rerun_preserve_raw(scale_rig):
     previous = ctx.directory.root
     raw = next(previous.glob("controls/*/scales/*/raw/response_data.npz"))
     before = raw.read_bytes()
+    originals = {path: path.read_bytes() for path in previous.rglob("*.npz")}
     ctx.execute(["A13", "A15"])
     assert ctx.directory.root != previous and raw.read_bytes() == before
+    assert len(created) == 4
+    assert all(path.read_bytes() == value for path, value in originals.items())
+    for root in (previous, ctx.directory.root):
+        configs = list(root.glob("controls/*/scales/*/experiment_config.yaml"))
+        assert len(configs) == 4
+        for path in configs:
+            point = yaml.safe_load(path.read_text(encoding="utf-8"))
+            assert point["phase_calibration_status"] == "completed"
+            assert point["calibration_scale"] == point["control_scale"]
+            assert point["calibration_source"] == "."
+            assert {"demod0", "demod3"}.issubset(point["calibration"])
+            assert all(point["phase_calibration_steps"][item]["status"] == "completed"
+                       for item in run_format.POINT_CALIBRATION_STAGES)
+    assert all(not {"demod0", "demod3"}.intersection(child.state["calibration"]) for child in created)
     ctx.finish()
     assert_shutdown(scale_rig)
 

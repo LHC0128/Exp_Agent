@@ -1,19 +1,7 @@
 """XY 正弦实验的流程定义；脚本、后端和界面共用。"""
 
-from dataclasses import asdict, dataclass
-
-
-@dataclass(frozen=True)
-class Stage:
-    id: str
-    title: str
-    group: str
-    dependencies: tuple[str, ...]
-    parameters: tuple[str, ...] = ()
-    artifacts: tuple[str, ...] = ()
-    # 展示归属独立于失效起点；None 表示沿用 parameters。
-    display_parameters: tuple[str, ...] | None = None
-    quality_gates: tuple[str, ...] = ()
+from dataclasses import asdict
+from lab_workflows.workflow_stages import Stage, initial_states
 
 
 ACQUISITION = (
@@ -77,10 +65,6 @@ ANALYSIS = (
 )
 
 
-def initial_states(stages):
-    return {stage.id: {"status": "pending", "error": ""} for stage in stages}
-
-
 def invalidated_stages(stages, stage_id):
     """执行与参数影响预览共用同一失效范围。"""
     start = next(i for i, stage in enumerate(stages) if stage.id == stage_id)
@@ -128,7 +112,8 @@ def definition():
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}
 
-    return {"acquisition": [public_stage(stage) for stage in ACQUISITION],
+    return {"run_step_id": "A12", "finish_step_id": "A14",
+            "acquisition": [public_stage(stage) for stage in ACQUISITION],
             "analysis": [public_stage(stage) for stage in ANALYSIS],
             "parameter_impacts": {"acquisition": parameter_impacts(ACQUISITION),
                                   "analysis": parameter_impacts(ANALYSIS)},

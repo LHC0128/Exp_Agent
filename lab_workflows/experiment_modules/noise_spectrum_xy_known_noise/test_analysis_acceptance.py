@@ -18,6 +18,25 @@ from .test_analysis import static_source
 from .test_workflow import copy_known_config
 
 
+REGRESSION_CASES = {
+    "noise-spectrum-xy-known-noise": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/__init__.py",
+                "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/analysis.py"
+            ],
+            "tests": [
+                "test_real_waveforms_full_and_staged_science_match",
+                "test_real_quality_failure_keeps_diagnostics_and_blocks_summary",
+                "test_actual_rates_and_missing_pairs_are_rejected_without_fabricating_rows",
+                "test_history_options_and_recompute_archive_are_isolated",
+                "test_real_module_outside_repository_uses_explicit_run"
+            ]
+        }
+    }
+}
+
+
 def write_run(root, name):
     copy_known_config(root)
     static_source(root, schema_version=4)
@@ -147,3 +166,11 @@ def test_history_options_and_recompute_archive_are_isolated(tmp_path):
     with redirect_stdout(StringIO()):
         ctx.execute(["B03"])
     assert (directory / "results/psd_matrices.npz").read_bytes() == psd
+
+
+@pytest.mark.parametrize("mode", ["explicit", "missing", "nonexistent"])
+def test_real_module_outside_repository_uses_explicit_run(tmp_path, mode):
+    from lab_workflows.experiments.test_analysis_imports import check_real_analysis_module
+
+    run = write_run(tmp_path, "module")
+    check_real_analysis_module(run, __package__ + ".analysis", "noise_spectra.npz", mode)

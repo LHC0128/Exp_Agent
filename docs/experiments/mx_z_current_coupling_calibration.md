@@ -26,6 +26,10 @@ defaults_file: params/experiments/mx-z-current-coupling-calibration.yaml
 
 # Mx Z 实际电流-耦合强度标定
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.mx_z_current_coupling_calibration.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 采集时序与系统稳定
 
 每个 Z DC 工作点按原顺序先采 SDS CH3 电阻电压，再执行该工作点的局部 Y RF/R 共振频扫。SDS 每个工作点一个采集窗口，R 每个频点及每次质量重采各自一个窗口；这两种记录不组成 OFF/ON 配对。`BIDIRECTIONAL_SCAN` 开启时，沿正向轴到末端后反向返回，不重复转向端点。
@@ -35,6 +39,8 @@ defaults_file: params/experiments/mx-z-current-coupling-calibration.yaml
 TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。运行快照记录 UI 目标值，未知实测温度为 `null`。恢复温控失败时先尝试恢复，再尽力抢救已有数据并停止后继；采集错误不会被次级恢复或保存错误覆盖。参数迁移和公共边界见[统一采集规范](../acquisition_timing.md)。
 
 ## 采集职责与分步执行
+
+本实验清单显式声明 `run_step_id=A09`、`finish_step_id=A11`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 `workflow.py` 只编排步骤与会话状态；`preparation.py` 负责本 ID 预检、设备连接和 SDS 准备，`excitation.py` 复用相同接线的 Pump、Z DC 与 Y RF/R 配置，`acquisition.py` 负责两类采集窗口、正反向扫描、质量检查及写盘。普通 `run(params)` 与 `Workflow.execute()` 执行以下同一套业务函数；采集阶段定义在本包 `stages.py`，不改变独立科学分析入口。
 

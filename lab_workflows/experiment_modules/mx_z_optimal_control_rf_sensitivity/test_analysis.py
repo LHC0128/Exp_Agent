@@ -13,6 +13,26 @@ from . import workflow, analysis, analysis_steps, run_format
 from .test_workflow import copy_config, install_rig, parameters
 
 
+REGRESSION_CASES = {
+    "mx-z-optimal-control-rf-sensitivity": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_z_optimal_control_rf_sensitivity/__init__.py",
+                "lab_workflows/experiment_modules/mx_z_optimal_control_rf_sensitivity/analysis.py"
+            ],
+            "tests": [
+                "test_full_and_staged_science_and_independent_welch",
+                "test_archive_content_fingerprint_and_bad_input_preserve_products",
+                "test_quality_failed_keeps_measured_plot_and_blocks_successor",
+                "test_flat_residual_is_diagnostic_completion",
+                "test_schema_and_raw_qualification",
+                "test_identity_unsealed_options_and_subprocess_entry"
+            ]
+        }
+    }
+}
+
+
 @pytest.fixture
 def run_dir(tmp_path, monkeypatch):
     copy_config(tmp_path)

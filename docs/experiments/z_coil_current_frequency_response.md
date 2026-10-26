@@ -35,6 +35,10 @@ defaults_file: params/experiments/z-coil-current-frequency-response.yaml
 运行页提供节点内参数编辑、明确依赖的采集模块和独立离线分析；完整运行仍自动完成采集、收尾与分析。
 历史分析只读取该目录的参数快照和原始帧，与下一次实验的参数草稿隔离。
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.z_coil_current_frequency_response.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 接线
 
 | 通道 | 用途 |
@@ -70,6 +74,8 @@ defaults_file: params/experiments/z-coil-current-frequency-response.yaml
 每轮从 UI 首频量程/偏置重新准备，同轮频率和重复间保留自动量程状态；SDS 模式发生变化后必须重做 Scope 准备。
 
 ## 可执行流程与 GUI
+
+本实验清单显式声明 `run_step_id=A06`、`finish_step_id=A07`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 运行页顶部在同一流程容器内提供「保存参数与布局」、派生预览、仅预检、完整运行、取消和任务状态。
 基础参数名称常显，节点展开后编辑；高级参数在节点内折叠，允许多个节点同时展开。保存只更新下一次实验参数和统一分类偏好。

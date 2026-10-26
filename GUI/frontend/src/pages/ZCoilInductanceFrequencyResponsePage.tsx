@@ -44,6 +44,6 @@ function FrequencyResult({ summary }: { summary: WorkflowRunSummary }) {
 }
 
 export function ZCoilInductanceFrequencyResponsePage() {
-  return <WorkflowExperimentPage experimentId="z-coil-inductance-frequency-response" finishStepId="A07" runStepId="A06"
+  return <WorkflowExperimentPage experimentId="z-coil-inductance-frequency-response"
     renderResult={summary => <FrequencyResult summary={summary} />} />;
 }

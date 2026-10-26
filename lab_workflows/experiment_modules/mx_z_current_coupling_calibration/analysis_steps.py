@@ -11,7 +11,7 @@ import yaml
 
 from ...experiment_runtime import check_cancelled
 from ..mx_z_field_calibration.analysis_steps import _analyze_curve, _builtin, _load_scan_index, _weighted_linear_fit
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from .analysis_plotting import _plot_calibration, _plot_frequency_responses
 from .models import MxZCurrentCouplingCalibrationParams
 from .run_format import EXPERIMENT_ID, analysis_block_reason

@@ -182,12 +182,16 @@ class MxYRFPowerOptimizationParams(MxYRFParams):
         minimum=2,
     )
 
+    def _analysis_validation_errors(self) -> list[str]:
+        """采集与离线分析共用原有正标定约束，不读取仪器配置。"""
+        return (["Y_RF_NT_PER_VPP 必须大于 0 才能比较磁场灵敏度"]
+                if self.y_rf_nt_per_vpp <= 0 else [])
+
     def validate_model(self) -> list[str]:
         errors = MxYRFParams.validate_model(self)
         if self.linewidth_mode != "amplitude_equivalent":
             errors.append("LINEWIDTH_MODE 必须固定为 amplitude_equivalent")
-        if self.y_rf_nt_per_vpp <= 0:
-            errors.append("Y_RF_NT_PER_VPP 必须大于 0 才能比较磁场灵敏度")
+        errors.extend(self._analysis_validation_errors())
         if self.pump_power_start_v >= self.pump_power_stop_v:
             errors.append("Pump 功率扫描起点必须小于终点")
         if self.probe_power_start_v >= self.probe_power_stop_v:

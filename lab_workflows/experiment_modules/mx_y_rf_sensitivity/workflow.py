@@ -11,12 +11,13 @@ from ...experiment_runtime import check_cancelled, load_runtime_params, report_r
 from ...instrument_config import instrument_config_snapshot
 from ...steps import DeviceSession, create_run_directory, set_temperature_switch
 from ...steps.safety_shutdown import disconnect_device_mapping
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from . import preparation, excitation, acquisition_steps, run_format
 from .models import MxYRFParams
 from ._helpers import _sleep, _uncancellable_sleep, _RuntimeCancellation
 from .acquisition import acquire_r, summarize_r
-from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ACQUISITION, FINISH_ID, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 # 保留变体和原有回归使用的导出名，业务实现分别归属准备、激励和采集模块。
 from .preparation import (_connect_devices, _initial_state_snapshot, _configure_outputs,

@@ -170,6 +170,33 @@ def test_joint_six_step_order_slow_disk_bidirectional_and_last_z(rig, monkeypatc
     monkeypatch.setattr(builtins, "open", guarded_open)
     monkeypatch.setattr(io, "open", guarded_open)
 
+    # 原子配置的打开参数可能是目录/fd，不能把它误当成没有写配置。
+    # 同时监视真实临时流的每次写入与最终替换，原科学/顺序断言保持不变。
+    from ...steps import run_directory as run_directory_module
+    temporary_file, replace_file = run_directory_module.NamedTemporaryFile, Path.replace
+
+    def guarded_temporary(*args, **kwargs):
+        stream = temporary_file(*args, **kwargs)
+        path = Path(stream.name).resolve()
+        if path.is_relative_to(rig.root / "data"):
+            write = stream.write
+            def guarded_write(data):
+                assert rig.enabled, f"恢复温控前不能写入 {path.name}"
+                writes.append(path.name)
+                return write(data)
+            monkeypatch.setattr(stream, "write", guarded_write)
+        return stream
+
+    def guarded_replace(path, target):
+        destination = Path(target).resolve()
+        if destination.is_relative_to(rig.root / "data"):
+            assert rig.enabled, f"恢复温控前不能替换 {destination.name}"
+            writes.append(destination.name)
+        return replace_file(path, target)
+
+    monkeypatch.setattr(run_directory_module, "NamedTemporaryFile", guarded_temporary)
+    monkeypatch.setattr(Path, "replace", guarded_replace)
+
     def save(path, **data):
         assert rig.enabled, "恢复温控前不能写盘"
         name = Path(path).name

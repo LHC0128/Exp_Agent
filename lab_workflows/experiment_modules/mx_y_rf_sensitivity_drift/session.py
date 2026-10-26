@@ -4,7 +4,7 @@ import os
 import sys
 
 from ...experiment_runtime import load_runtime_params
-from ..noise_spectrum_xy.session import serve
+from lab_workflows.workflow_session import serve
 from .models import MxYRFDriftParams
 from .stages import ACQUISITION, FINISH_ID, validate_selection
 from .workflow import Workflow

@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 from lab_workflows.plotting import new_figure, save_figure, set_plot_style
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from .analysis_steps import load_inputs, output_path
 from .fitting import exp_decay
 

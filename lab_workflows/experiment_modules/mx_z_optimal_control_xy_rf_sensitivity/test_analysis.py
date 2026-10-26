@@ -14,6 +14,26 @@ from .models import MxZOptimalControlXYRFSensitivityParams
 from .test_workflow import copy_config, install_rig, parameters
 
 
+REGRESSION_CASES = {
+    "mx-z-optimal-control-xy-rf-sensitivity": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_z_optimal_control_xy_rf_sensitivity/__init__.py",
+                "lab_workflows/experiment_modules/mx_z_optimal_control_xy_rf_sensitivity/analysis.py"
+            ],
+            "tests": [
+                "test_full_staged_science_and_independent_welch",
+                "test_nested_content_and_product_fingerprints_and_archive",
+                "test_bad_input_cannot_move_previous_scientific_products",
+                "test_invalid_grid_keeps_diagnostics_and_blocks_successor",
+                "test_explicit_history_and_independent_raw_qualification",
+                "test_real_analysis_subprocess_requires_explicit_temp_directory"
+            ]
+        }
+    }
+}
+
+
 @pytest.fixture
 def run_dir(tmp_path, monkeypatch):
     copy_config(tmp_path)

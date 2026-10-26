@@ -58,7 +58,7 @@ beforeEach(() => {
     if (url === "/api/jobs/mx-job") return { id: "mx-job", kind: `session:${ID}`, status: "running", events: [] } as never;
     if (url === `${BASE}/workflow`) return { acquisition, analysis,
       parameter_impacts: { acquisition: { RUN_TAG: ["A02", "A09"], SYSTEM_SETTLE_S: ["A08", "A09", "A10", "A11"], Y_RF_AMP_POINTS: ["A09", "A10", "A11"] },
-        analysis: { LOW_FREQ_SKIP_HZ: ["B02", "B03"] } }, diagram_url: `${BASE}/workflow/diagram` } as never;
+        analysis: { LOW_FREQ_SKIP_HZ: ["B02", "B03"] } }, run_step_id: "A09", finish_step_id: "A12", diagram_url: `${BASE}/workflow/diagram` } as never;
     if (url === `${BASE}/sessions/active`) return current as never;
     if (url === `${BASE}/sessions` && options?.method === "POST") return current = makeSession();
     if (url === `${BASE}/sessions/mx-session/steps`) {
@@ -101,7 +101,7 @@ it("真实路由进入两列流程，缺前置拒绝，选择执行和结束使�
   page();
   await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
   for (const gates of Object.values(qualityGates)) {
-    expect(screen.getByText(`质量门槛：${gates[0]}`)).toBeVisible();
+    expect(screen.getByText(`检查与质量说明：${gates[0]}`)).toBeVisible();
   }
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);

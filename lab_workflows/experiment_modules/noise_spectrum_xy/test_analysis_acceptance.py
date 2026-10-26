@@ -19,6 +19,28 @@ from .run_format import require_supported_format
 from .stages import ANALYSIS
 
 
+REGRESSION_CASES = {
+    "noise-spectrum-xy": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_main_field_scope_noise_spectrum/__init__.py",
+                "lab_workflows/experiment_modules/noise_spectrum_xy/analysis.py"
+            ],
+            "tests": [
+                "test_real_waveforms_full_and_staged_science_match",
+                "test_foreign_identity_or_unknown_format_never_touches_results",
+                "test_historical_amp_axis_and_schema_versions_keep_original_segment_rule",
+                "test_invalid_actual_rate_is_rejected_before_archiving_and_running_directory_is_blocked",
+                "test_analysis_overrides_reject_non_numeric_types",
+                "test_b01_ineligible_inputs_preserve_existing_summary_and_products",
+                "test_real_inputs_and_products_invalidate_only_their_own_directory",
+                "test_real_module_outside_repository_uses_explicit_run"
+            ]
+        }
+    }
+}
+
+
 def write_run(directory, *, schema=4):
     """周期平稳信号的已知单边谱；Welch、脊线和拟合均不替换。"""
     raw = directory / "raw"
@@ -207,3 +229,12 @@ def test_real_inputs_and_products_invalidate_only_their_own_directory(tmp_path):
     with pytest.raises(ValueError, match="B01"):
         analysis.analyze(directory, step_ids=["B02"])
     assert (sibling / "analysis_state.json").read_bytes() == sibling_state
+
+
+@pytest.mark.parametrize("mode", ["explicit", "missing", "nonexistent"])
+def test_real_module_outside_repository_uses_explicit_run(tmp_path, mode):
+    from lab_workflows.experiments.test_analysis_imports import check_real_analysis_module
+
+    run = tmp_path / "run"
+    write_run(run)
+    check_real_analysis_module(run, __package__ + ".analysis", "noise_spectra.npz", mode)

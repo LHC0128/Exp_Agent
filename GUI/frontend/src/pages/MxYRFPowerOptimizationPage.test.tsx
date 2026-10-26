@@ -5,7 +5,7 @@ import { api } from "../api";
 import { ExperimentPage } from "./ExperimentPage";
 import fixture from "./MxYRFPowerOptimizationPage.fixture.json";
 import type { ParameterLayout, ParameterValues, SchemaField } from "../types/api";
-import type { XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
+import type { XYSession } from "../components/workflow/WorkflowPanel";
 
 vi.mock("../api", () => ({ api: vi.fn() }));
 vi.mock("../components/JobActivity", () => ({ useJobActivity: () => ({ hardwareBusy: false, activeJobs: [] }) }));

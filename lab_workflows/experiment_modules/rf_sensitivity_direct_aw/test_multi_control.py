@@ -110,6 +110,10 @@ def test_all_selected_controls_are_checked_before_connect(multi_rig):
 @pytest.mark.parametrize("cancel", [False, True])
 def test_second_control_failure_preserves_both_partial_runs(multi_rig, monkeypatch, cancel):
     r = multi_rig
+    r.params = replace(r.params, rf_amp_points=2, noise_rate=1000,
+                       noise_duration=0.01, scan_point_duration_s=0.001)
+    # 子运行契约不验证 GUI 通知；配置、原始数据与安全恢复仍走真实实现。
+    monkeypatch.setattr(workflow.SingleControlWorkflow, "publish", lambda *_: None)
     capture, count = acquisition.daq.acquire_data, 0
     error = WorkflowCancelled("第二控制取消") if cancel else RuntimeError("第二控制采集故障")
 
@@ -122,14 +126,21 @@ def test_second_control_failure_preserves_both_partial_runs(multi_rig, monkeypat
         return capture(hf2, config, **kwargs)
 
     monkeypatch.setattr(acquisition.daq, "acquire_data", read)
-    with pytest.raises(type(error), match=str(error)):
+    with pytest.raises(type(error), match=str(error)) as caught:
         workflow.run(r.params)
+    assert caught.value is error
     directory = next((r.tmp_path / "data/RF_Field_Sensitivity_AW").iterdir())
     assert len(list((directory / "controls/v1/raw").glob("noise_D3_*.npz"))) == 2
     assert len(list((directory / "controls/v2/raw").glob("noise_D3_*.npz"))) == 1
     config = yaml.safe_load((directory / "experiment_config.yaml").read_text(encoding="utf-8"))
     assert config["completion_status"] == ("cancelled" if cancel else "failed")
     assert config["failure_reason"] == str(error)
+    for version, records in (("v1", 2), ("v2", 1)):
+        child = yaml.safe_load((directory / "controls" / version / "experiment_config.yaml").read_text(encoding="utf-8"))
+        assert child["completion_status"] == config["completion_status"]
+        assert child["safety_shutdown"] == config["safety_shutdown"]
+        assert child["noise_records_completed"] == records
+        assert child["raw_format_version"] == 1 and child["control_layout"] == "single"
     assert_shutdown(r)
 
 
@@ -164,19 +175,59 @@ def test_restore_or_save_failure_preserves_read_data(multi_rig, monkeypatch, fau
     assert ctx.state["failure_reason"] == str(failure)
 
 
-def test_noise_rerun_copies_response_but_not_old_noise(multi_rig):
-    ctx = workflow.Workflow(multi_rig.params)
+def test_noise_rerun_copies_response_but_not_old_noise(multi_rig, monkeypatch):
+    params = replace(multi_rig.params, rf_amp_points=2, noise_rate=1000,
+                     noise_duration=0.01, scan_point_duration_s=0.001)
+    monkeypatch.setattr(workflow.SingleControlWorkflow, "publish", lambda *_: None)
+    factory = workflow.SingleControlWorkflow.create_control_run.__func__
+    created = []
+
+    def create(cls, params, **kwargs):
+        before = len(multi_rig.events)
+        child = factory(cls, params, **kwargs)
+        assert len(multi_rig.events) == before and child.devices is kwargs["devices"]
+        assert child.states == kwargs["stage_states"] and child.states is not kwargs["stage_states"]
+        assert child.states["A01"] is not kwargs["stage_states"]["A01"]
+        previous = kwargs["previous"]
+        calibration = previous.state["calibration"] if previous else kwargs["shared_calibration"]
+        assert child.state["calibration"] == calibration and child.state["calibration"] is not calibration
+        assert child.state["raw_format_version"] == 1 and child.state["control_layout"] == "single"
+        assert child.state["control_metrics"]["control_scale_factor"] == params.control_scale_factor(params.control_waveform_files[0])
+        if previous:
+            assert "A14" in kwargs["affected_stages"] and "A13" not in kwargs["affected_stages"]
+            assert previous.states["A10"]["status"] == "pending"
+            assert child.response_config is previous.response_config
+            assert child.xy_phase is previous.xy_phase
+            assert child.state["response_points_completed"] == params.rf_amp_points
+            assert child.state["noise_records_completed"] == 0
+        created.append(child)
+        return child
+
+    monkeypatch.setattr(workflow.SingleControlWorkflow, "create_control_run", classmethod(create))
+    ctx = workflow.Workflow(params)
     try:
         ctx.execute([stage.id for stage in ctx.stages if stage.id not in ("A13B", "A15", "A16")])
         first = ctx.directory.root
+        stale = []
+        for child in ctx.controls.values():
+            # 内存中的响应配置只看 affected；不为它新增 completed 门槛。
+            child.states["A10"]["status"] = "pending"
+            path = child.directory.raw / "noise_D3_obsolete.npz"
+            np.savez(path, sentinel=np.array([123.]))
+            stale.append((path, path.read_bytes()))
         ctx.execute(["A14"])
         assert first != ctx.directory.root
         for version in ("v1", "v2"):
             a, b = (root / "controls" / version / "raw" for root in (first, ctx.directory.root))
             assert (a / "response_data.npz").read_bytes() == (b / "response_data.npz").read_bytes()
-            assert len(list(a.glob("noise_D3_*.npz"))) == len(list(b.glob("noise_D3_*.npz"))) == 2
+            assert len(list(a.glob("noise_D3_*.npz"))) == 3  # 两条旧记录及额外哨兵。
+            assert len(list(b.glob("noise_D3_*.npz"))) == 2
+            assert not (b / "noise_D3_obsolete.npz").exists()
+        assert len(created) == 4
+        assert all(path.read_bytes() == before for path, before in stale)
     finally:
         ctx.finish()
+    assert_shutdown(multi_rig)
 
 
 @pytest.mark.parametrize("kind", ["direct", "known"])

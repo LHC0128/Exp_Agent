@@ -478,6 +478,8 @@
       },
       "analysis": {}
     },
+    "run_step_id": "A04",
+    "finish_step_id": "A12",
     "diagram_url": "/api/experiments/mx-y-optimal-control-rf-frequency-response/workflow/diagram"
   },
   "schema": {

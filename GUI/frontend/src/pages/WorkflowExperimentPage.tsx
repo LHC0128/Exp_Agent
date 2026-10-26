@@ -3,7 +3,7 @@ import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { api } from "../api";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
-import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
+import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useParameterGuard } from "../components/NavigationGuard";
@@ -23,7 +23,7 @@ export type WorkflowRunSummary = Omit<components["schemas"]["WorkflowRunSummary"
 };
 type RunList = components["schemas"]["WorkflowRuns"];
 type Props = {
-  experimentId: string; finishStepId: string; runStepId: string;
+  experimentId: string;
   analysisParameterPrefix?: string; analysisParameterKeys?: Record<string, string>;
   normalizeParameters?: (values: ParameterValues) => ParameterValues;
   renderResult?: (summary: WorkflowRunSummary) => ReactNode;
@@ -51,7 +51,7 @@ function DefaultResult({ summary, hasAnalysis }: { summary: WorkflowRunSummary; 
   </div>;
 }
 
-export function WorkflowExperimentPage({ experimentId, finishStepId, runStepId,
+export function WorkflowExperimentPage({ experimentId,
   analysisParameterPrefix, analysisParameterKeys, normalizeParameters = identity,
   renderResult, hasAnalysis = true }: Props) {
   const BASE = `/api/experiments/${experimentId}`;
@@ -208,7 +208,7 @@ export function WorkflowExperimentPage({ experimentId, finishStepId, runStepId,
       </button>)}
     </div>
     <div id={`${experimentId}-panel-run`} role="tabpanel" aria-labelledby={`${experimentId}-tab-run`} hidden={tab !== "run"}>
-      <WorkflowPanel experimentId={experimentId} finishStepId={finishStepId} runStepId={runStepId}
+      <WorkflowPanel experimentId={experimentId}
         analysisParameterPrefix={analysisParameterPrefix} analysisParameterKeys={analysisParameterKeys}
         normalizeParameters={normalizeParameters} enabled={fields.length > 0} fields={fields}
         layout={layout} setLayout={setLayout} setNotice={setNotice} parametersDisabled={parametersBusy || starting || saving}

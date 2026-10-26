@@ -455,6 +455,8 @@
       },
       "analysis": {}
     },
+    "run_step_id": "A04",
+    "finish_step_id": "A05",
     "diagram_url": "/api/experiments/scope-capture/workflow/diagram"
   }
 }

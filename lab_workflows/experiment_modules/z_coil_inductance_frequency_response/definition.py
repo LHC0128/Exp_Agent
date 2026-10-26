@@ -22,7 +22,7 @@ DEFINITION = ExperimentDefinition(
     description=(
         "固定幅度正弦线性扫频，以 SDS CH3/CH4 比较理想 DG 设定值与线圈端电压。"
         "运行页在节点内编辑参数，提供依赖检查、显式重跑、无前置安全结束和独立分步分析；"
-        "历史记录保留当轮参数、频响图与模型诊断，不从单一端电压反演唯一电感。"
+        "历史记录保留当轮参数、频响图与模型诊断，不从单一端电压反演唯一电感。分步角色由清单声明，状态与产物以执行记录为准。"
     ),
     data_type="Z_Coil_Inductance_Frequency_Response",
     required_devices=("DG4000", "SDS"),

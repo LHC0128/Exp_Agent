@@ -11,11 +11,12 @@ from ...common import find_project_root
 from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
 from ...instrument_config import instrument_config_snapshot
 from ...steps import DeviceSession, synchronize_connected_clocks
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from .models import ZAWWaveformScopeCheckParams
 from . import acquisition, excitation, preparation
 from .run_format import EXPERIMENT_ID, DATA_TYPE
-from .stages import ACQUISITION, initial_states, invalidate, validate_selection
+from .stages import ACQUISITION, invalidate, validate_selection
+from lab_workflows.workflow_stages import initial_states
 # 已发布的电流与闭环实验继续从此模块导入这些接口。
 from .acquisition import (
     _requested_sample_rate, _scope_config, _sleep_cancellable, _wait_for_scope_trigger,
@@ -24,7 +25,7 @@ from .acquisition import (
     SCOPE_TRIGGER_SOURCE, SCOPE_TRIGGER_SLOPE, SCOPE_COUPLING, SCOPE_IMPEDANCE, SCOPE_PROBE,
     SCOPE_FRAME_RETRIES, SCOPE_CAPTURE_GUARD_S, SCOPE_STOP_TIMEOUT_S, SCOPE_SOFT_RESET_SETTLE_S,
 )
-from .preparation import _connect_devices, safe_shutdown
+from .preparation import ControlSource, _connect_devices, safe_shutdown
 from .excitation import _configure_outputs
 
 EXECUTION_MODE = "typed_workflow"
@@ -138,6 +139,10 @@ class Workflow:
             self.publish(f"{item} 已完成")
         return self.snapshot()
 
+    def prepare_control_source(self) -> ControlSource:
+        """仅返回已校验的准备结果；源状态提交和仪器设置仍由 A03 负责。"""
+        return preparation.prepare_control(self.params, self.root, **self.source_options)
+
     def _execute_step(self, item):
         if item == "A01":
             self.recheck()
@@ -156,7 +161,7 @@ class Workflow:
                 self.clock_failed = True
                 raise
         elif item == "A03":
-            self.source = preparation.prepare_control(self.params, self.root, **self.source_options)
+            self.source = self.prepare_control_source()
             self.outputs_started = True
             _configure_outputs(self.params, self.devices, self.channels, self.source.theory, self.source.applied)
             self.outputs.update({"Z 任意波": "外部下降沿 Burst ON", "共同触发": "OFF"})

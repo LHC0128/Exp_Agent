@@ -32,6 +32,12 @@ learned_notes:
 
 # XY 控制 Demod3 R 噪声谱
 
+## 离线模块与运行目录
+
+本实验清单显式声明 `run_step_id=A11`、`finish_step_id=A12`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.noise_spectrum_xy_demod3_r.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 目的与入口
 
 本实验是 `noise-spectrum-xy` 的独立硬件变体。原实验采集 Demod0 Y 时域波形并计算

@@ -7,7 +7,7 @@ import { recoverableJob, useExperimentTask, useRequestedJobId } from "../compone
 import { useParameterGuard } from "../components/NavigationGuard";
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
-import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
+import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import "./zawClosedLoop.css";
@@ -223,7 +223,7 @@ export function DetectionChainFrequencyResponsePage() {
         session={session} setSession={setSession} job={job} setJob={setJob}
         analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
         runs={list.runs} setError={setError} onRefresh={setRefresh}
-        experimentId={ID} finishStepId="A08" runStepId="A07">
+        experimentId={ID}>
         <div className="xy-workflow-controls">
           <div className="xy-flow-actions">
             <button disabled={saving || starting || parametersBusy || !fields.length} onClick={() => void save()}>

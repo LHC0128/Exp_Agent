@@ -64,6 +64,8 @@ agent_exp_env/Scripts/python.exe experiments/RF_Field_Sensitivity_ConstXY_FreqSw
 
 ## 运行流程与交互
 
+本实验清单显式声明 `run_step_id=A10`、`finish_step_id=A11`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
+
 清单、依赖、参数影响及展示归属以 [`stages.py`](../../lab_workflows/experiment_modules/rf_sensitivity_constxy_frequency/stages.py) 为唯一事实源；[可编辑原图](../../lab_workflows/experiment_modules/rf_sensitivity_constxy_frequency/workflow.excalidraw) 也可从运行页下载。
 
 | 节点 | 职责与前置 |

@@ -1433,6 +1433,8 @@
       },
       "analysis": {}
     },
+    "run_step_id": "A11",
+    "finish_step_id": "A12",
     "diagram_url": "/api/experiments/noise-spectrum-xy-demod3-r/workflow/diagram"
   }
 }

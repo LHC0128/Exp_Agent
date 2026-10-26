@@ -31,7 +31,7 @@ DEFINITION = ExperimentDefinition(
     category="measurement",
     family="rf-sensitivity",
     variant="direct-aw",
-    description="固定 Z RF 幅度，扫描频率和源相位；dg_am 提供外触发，dg_comp 两路输出正交 DirectAW。运行／历史双 Tab 提供真实可勾选步骤，节点内编辑、顶部保存／预检／完整运行；草稿应用后显式重跑，分步等待保持输出和硬件锁。双主电压物理回环仅支持 HF2，MFLI 在连接前拒绝，输入高阻／DC。恢复温控后保存，保留已读样本及原始错误；独立目录分析沿用原 R 中位数、相干分量及带宽诊断，无额外覆盖参数。",    data_type="RF_Field_Sensitivity_AW_FreqSweep_DirectAW",
+    description="固定 Z RF 幅度，扫描频率和源相位；dg_am 提供外触发，dg_comp 两路输出正交 DirectAW。运行／历史双 Tab 提供真实可勾选步骤，节点内编辑、顶部保存／预检／完整运行；草稿应用后显式重跑，分步等待保持输出和硬件锁。双主电压物理回环仅支持 HF2，MFLI 在连接前拒绝，输入高阻／DC。恢复温控后保存，保留已读样本及原始错误；独立目录分析沿用原 R 中位数、相干分量及带宽诊断，无额外覆盖参数。分步角色由清单声明，状态与产物以执行记录为准。",    data_type="RF_Field_Sensitivity_AW_FreqSweep_DirectAW",
     required_devices=("GS200", "DG900", "DG4000", "HF2"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/RF_Field_Sensitivity_AW_FreqSweep_DirectAW.py",

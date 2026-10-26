@@ -33,7 +33,7 @@ const analysisStages = ["加载配置与原始帧", "触发对齐与波形相似
 const impacts: Record<string, string[]> = { RUN_TAG: ["A05"], SCOPE_REPEATS: ["A05"],
   SCOPE_CYCLES: ["A04", "A05"], CONTROL_SCALE: ["A03", "A04", "A05"], CONTROL_RESULTS_ROOT: ["A03", "A04", "A05"] };
 const flow = { acquisition, analysis: analysisStages,
-  parameter_impacts: { acquisition: impacts, analysis: {} }, diagram_url: `${BASE}/workflow/diagram` };
+  parameter_impacts: { acquisition: impacts, analysis: {} }, run_step_id: "A05", finish_step_id: "A06", diagram_url: `${BASE}/workflow/diagram` };
 const makeSession = (completed = false) => ({ session_id: "scope-session", job_id: "scope-job", revision: 0,
   status: "waiting", parameters: params(), current_step: null, pending_request: null,
   steps: Object.fromEntries(acquisition.map(stage => [stage.id, { status: completed && stage.id !== "A06" ? "completed" : "pending", error: "" }])),

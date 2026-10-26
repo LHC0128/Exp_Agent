@@ -22,6 +22,36 @@ from .models import RFSensitivityDirectAWParams
 from .run_format import DATA_TYPE, EXPERIMENT_ID
 
 
+REGRESSION_CASES = {
+    "rf-sensitivity-aw": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/rf_sensitivity_direct_aw/analysis.py"
+            ],
+            "tests": [
+                "test_analysis_uses_recorded_index_and_legacy_default",
+                "test_non_three_analysis_keeps_acquired_signal_chain",
+                "test_response_index_must_match_saved_configuration",
+                "test_x_slope_psd_sensitivity_and_artifacts",
+                "test_bandwidth_fit_overrides_dispersive_hwhm",
+                "test_bandwidth_requires_complete_finite_r_data",
+                "test_bandwidth_analysis_and_plot_do_not_require_x_diagnostic",
+                "test_old_x_bandwidth_analysis_version_invalidates_cached_stages",
+                "test_bandwidth_mode_requires_sweep_data",
+                "test_bandwidth_fit_quality_failure_is_not_silently_ignored",
+                "test_dispersive_mode_ignores_bandwidth_data",
+                "test_numeric_slope_fallback",
+                "test_old_or_failed_run_rejected_before_writing_results",
+                "test_incomplete_raw_data_rejected_before_results",
+                "test_registered_analysis_preserves_old_config",
+                "test_analysis_adapter_starts_real_subprocess",
+                "test_imports_do_not_read_runtime_or_create_files"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(directory: Path, *, demod_idx=3) -> tuple[dict, float]:
     (directory / "raw").mkdir(parents=True)
     params = replace(RFSensitivityDirectAWParams(), rf_amp_points=41, noise_n_avg=2, noise_nperseg=400, demod3_idx=demod_idx)

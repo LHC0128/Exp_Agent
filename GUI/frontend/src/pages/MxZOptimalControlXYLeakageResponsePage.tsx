@@ -36,6 +36,6 @@ function Result({ value }: { value: WorkflowRunSummary }) {
 }
 
 export function MxZOptimalControlXYLeakageResponsePage() {
-  return <WorkflowExperimentPage experimentId={ID} finishStepId="A12" runStepId="A04"
+  return <WorkflowExperimentPage experimentId={ID}
     analysisParameterPrefix="" renderResult={value => <Result value={value} />} />;
 }

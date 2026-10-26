@@ -7,10 +7,11 @@ from ...common import WorkflowCancelled, find_project_root
 from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
 from ...instrument_config import instrument_config_snapshot
 from ...steps import DeviceSession, create_run_directory, disconnect_device_mapping
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from . import preparation, acquisition, run_format
 from .models import MxYRFPowerOptimizationParams
-from .stages import ACQUISITION, FINISH_ID, RUN_ID, initial_states, invalidate, validate_selection
+from .stages import ACQUISITION, FINISH_ID, RUN_ID, invalidate, validate_selection
+from lab_workflows.workflow_stages import initial_states
 # 兼容已有直接导入；实际业务已移到采集模块。
 from .acquisition import _acquire_grid, _set_power_point, _initial_manifest, _write_manifest, acquire_mx_y_rf_point
 

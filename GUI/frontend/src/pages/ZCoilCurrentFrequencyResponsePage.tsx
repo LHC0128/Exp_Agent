@@ -53,6 +53,6 @@ function CurrentResult({ summary }: { summary: WorkflowRunSummary }) {
 }
 
 export function ZCoilCurrentFrequencyResponsePage() {
-  return <WorkflowExperimentPage experimentId="z-coil-current-frequency-response" finishStepId="A07" runStepId="A06"
+  return <WorkflowExperimentPage experimentId="z-coil-current-frequency-response"
     renderResult={summary => <CurrentResult summary={summary} />} />;
 }

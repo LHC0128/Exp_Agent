@@ -92,7 +92,7 @@ it("真实路由加载本实验清单和原图，缺前置拒绝，选择执行�
   expect(screen.getByRole("tab", { name: "历史" })).toBeVisible();
   expect(flow.acquisition).toHaveLength(10); expect(flow.analysis).toHaveLength(3);
   for (const stage of [...flow.acquisition, ...flow.analysis]) for (const gate of stage.quality_gates) {
-    expect(screen.getByText(`质量门槛：${gate}`)).toBeVisible();
+    expect(screen.getByText(`检查与质量说明：${gate}`)).toBeVisible();
   }
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);

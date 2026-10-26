@@ -213,7 +213,7 @@ class DetectionChainWorkflowTests(unittest.TestCase):
 
     def test_real_stdin_subprocess_rejects_commands_and_eof_shuts_down(self):
         env = dict(os.environ, DCFR_TEST_ROOT=str(self.root),
-            LAB_TYPED_PARAMETERS=json.dumps(scan_params().to_external() | {"session_id": "fake-session"}))
+            LAB_TYPED_PARAMETERS=json.dumps(scan_params().to_external() | {"AM_FREQ_POINTS": 2, "session_id": "fake-session"}))
         env.pop("LAB_CANCEL_FILE", None)
         process = subprocess.Popen([sys.executable, "-X", "utf8", "-m", __name__], cwd=self.root,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -236,7 +236,7 @@ class DetectionChainWorkflowTests(unittest.TestCase):
         run_dir = self.root / "data/Detection_Chain_Frequency_Response" / snapshot["run_id"]
         self.assertTrue((run_dir / "raw/frequency_response.npz").exists())
         self.assertEqual(sorted(path.name for path in (run_dir / "raw").glob("waveform_*.npy")),
-                         ["waveform_0000.npy", "waveform_0001.npy", "waveform_0002.npy"])
+                         ["waveform_0000.npy", "waveform_0001.npy"])
 
 
 def fake_session_main():

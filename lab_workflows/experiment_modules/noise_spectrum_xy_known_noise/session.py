@@ -2,7 +2,7 @@
 import sys
 import json
 import os
-from ..noise_spectrum_xy.session import serve
+from lab_workflows.workflow_session import serve
 from ...experiment_runtime import load_runtime_params
 from .models import NoiseSpectrumXYKnownNoiseParams
 from .workflow import Workflow

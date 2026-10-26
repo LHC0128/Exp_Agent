@@ -14,6 +14,28 @@ from . import analysis, analysis_steps, run_format
 from .models import MxZOptimalControlDG4000BiasXYZBalanceParams
 
 
+REGRESSION_CASES = {
+    "mx-z-optimal-control-dg4000-bias-xyz-balance": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_z_optimal_control_dg4000_bias_xyz_balance/__init__.py",
+                "lab_workflows/experiment_modules/mx_z_optimal_control_dg4000_bias_xyz_balance/analysis.py",
+                "lab_workflows/experiment_modules/mx_z_optimal_control_xyz_balance/__init__.py"
+            ],
+            "tests": [
+                "test_original_complex_fit_measured_tie_and_full_staged_match",
+                "test_content_fingerprints_product_stale_revision_and_archive",
+                "test_bad_inputs_do_not_move_previous_products_or_run_successor",
+                "test_history_qualification_parameter_version_independent_of_raw",
+                "test_missing_data_invalid_calibration_and_options_rejected",
+                "test_single_z_plane_and_insufficient_xy_keep_original_rule",
+                "test_actual_module_and_thin_entry_require_explicit_temporary_directory"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(base, name="history"):
     directory = base / name
     (directory / "raw").mkdir(parents=True)

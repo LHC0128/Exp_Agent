@@ -397,10 +397,59 @@ def test_xy_acquisition_rate_is_independent_of_phase_stream_rate(model, mode, re
         assert settings[1] == int(capture_rate * params.hf2_daq_duration)
         assert settings[2]["nperseg"] == np.ceil(capture_rate / params.analysis_bin_width_hz)
         ctx = SimpleNamespace(devices=devices, params=params, calibrated_phase=23.0, daq_settings=settings)
-        acquisition.verify_daq_mode(ctx)
+        from .steps.lockin import verify_lockin_acquisition_mode
+        writes_before_verification = list(instr.daq.writes)
+        with patch.object(instr, "get_double", wraps=instr.get_double) as readback:
+            assert verify_lockin_acquisition_mode(instr, demod_index=params.hf2_demod_idx,
+                requested_rate_hz=params.hf2_daq_rate, acquisition_rate_hz=settings[0],
+                time_constant_s=params.hf2_daq_tc, phase_deg=23.0) is None
+            explicit_reads = list(readback.call_args_list)
+            readback.reset_mock()
+            assert acquisition.verify_daq_mode(ctx) is None
+            assert readback.call_args_list == explicit_reads
+            fields = ("timeconstant", "phaseshift") if module == "scope" else ("rate", "timeconstant", "phaseshift")
+            assert [item.args[0] for item in explicit_reads] == [f"{base}/{field}" for field in fields]
+        assert instr.daq.writes == writes_before_verification
         acquisition.restore_demod(devices, params, 23.0)
         assert instr.get_double(f"{base}/rate") == 10000
         assert instr.get_int(f"{base}/enable") == 1
+
+
+def test_xy_family_uses_explicit_lockin_verification():
+    from contextlib import ExitStack
+
+    cases = (("noise_spectrum_xy", "A12"), ("noise_spectrum_xy_known_noise", "A13"),
+             ("noise_spectrum_xy_probe_am", "A14"))
+    for name, step in cases:
+        workflow = import_module(f"lab_workflows.experiment_modules.{name}.workflow")
+        hfi = object()
+        params = SimpleNamespace(hf2_demod_idx=2, hf2_daq_rate=200000.0,
+                                 hf2_demod_rate=10000.0, hf2_daq_tc=0.0005, hf2_demod_tc=0.03)
+        ctx = SimpleNamespace(devices={"hf2": hfi, "dg_comp": object(), "dg_sweep": object(),
+                                       "dg_probe_am": object()}, params=params,
+                              daq_settings=(234375.0, 16, {}), calibrated_phase=37.5,
+                              demod_mode="daq", xy_result=SimpleNamespace(converged=True),
+                              noise_waveform=object(), z_waveform=None, limits={},
+                              mapping={"Probe_AOM_AM": {"channel": 2}})
+        error = RuntimeError("只读锁相校验失败哨兵")
+        with ExitStack() as stack:
+            verify = stack.enter_context(patch.object(workflow, "verify_lockin_acquisition_mode", side_effect=error))
+            acquire = stack.enter_context(patch.object(workflow.acquisition, "acquire_scan"))
+            xy_phase = workflow if name == "noise_spectrum_xy_probe_am" else workflow.phase
+            stack.enter_context(patch.object(xy_phase, "verify_xy_mode"))
+            if name == "noise_spectrum_xy_known_noise":
+                stack.enter_context(patch.object(workflow.excitation, "verify_noise_waveform"))
+            elif name == "noise_spectrum_xy_probe_am":
+                stack.enter_context(patch.object(workflow.excitation, "verify_am_noise"))
+                stack.enter_context(patch.object(workflow.excitation, "verify_z_noise"))
+            with pytest.raises(RuntimeError) as caught:
+                workflow.Workflow._execute_step(ctx, step)
+            assert caught.value is error
+            verify.assert_called_once_with(hfi, demod_index=2, requested_rate_hz=200000.0,
+                acquisition_rate_hz=234375.0, time_constant_s=0.0005, phase_deg=37.5)
+            assert verify.call_args.args[0] is hfi
+            assert all(isinstance(value, (int, float)) for value in verify.call_args.kwargs.values())
+            acquire.assert_not_called()
 
 
 @pytest.mark.parametrize("signal", ["sample.x", "sample.y", "sample.r", "sample.theta"])

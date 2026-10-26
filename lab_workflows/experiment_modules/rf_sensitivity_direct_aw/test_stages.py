@@ -287,18 +287,25 @@ def test_clock_failure_closes_outputs_before_disconnect(rig, monkeypatch):
 
 
 def test_atomic_snapshot_retries_windows_lock(tmp_path, monkeypatch):
+    # 保留旧导入，验证兼容入口与公共实现共享 Path.replace 和虚拟等待注入。
     from ..noise_spectrum_xy.state_io import write_state, read_state
+    from lab_workflows import workflow_state
+    assert write_state is workflow_state.write_state
+    assert read_state is workflow_state.read_state
     original = Path.replace
-    attempts = []
+    attempts, waits = [], []
     def replace(path, target):
         attempts.append(path)
         if len(attempts) == 1:
             raise PermissionError("模拟短暂占用")
         return original(path, target)
     monkeypatch.setattr(Path, "replace", replace)
+    monkeypatch.setattr(workflow_state.time, "sleep", waits.append)
     write_state(tmp_path / "state.json", {"revision": 2})
     assert read_state(tmp_path / "state.json") == {"revision": 2}
     assert len(attempts) == 2
+    assert waits == [0.02]
+    assert not (tmp_path / "state.json.tmp").exists()
 
 
 def fake_session_main():

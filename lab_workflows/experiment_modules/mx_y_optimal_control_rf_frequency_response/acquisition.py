@@ -6,7 +6,7 @@ import numpy as np
 from lockin_amplifier import OscillatorConfig, demod
 from ...common import validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
-from ..mx_z_optimal_control_rf_sensitivity.workflow import _rearm_y_rf
+from ...steps.mx_z_optimal_control import rearm_y_rf as _rearm_y_rf
 from ..mx_y_rf_sensitivity.workflow import _acquire_valid_r_point, RPointQualityError
 from .comparison import ConstantControlPlan
 from .models import MxYOptimalControlRFFrequencyResponseParams

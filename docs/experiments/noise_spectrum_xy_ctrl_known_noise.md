@@ -74,6 +74,10 @@ required_devices:
 
 # X/Y 交流控制测量已知可控噪声谱
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 采集时序与系统稳定
 
 关闭温控使用 `0 V DC + Output ON`，恢复时写回开启电平并保持 `Output ON`；校相与配对采集都采用这一电压门控方式。
@@ -184,6 +188,8 @@ $$S_\text{truth}(\omega) = S_v(\omega)\cdot K_Z^2$$
 实际注入谱 = 设计谱 × (幅度 / (2×设计峰值))²，缩放系数写入运行配置并在 GUI 预览中显示。
 
 ## GUI 使用与交互流程
+
+本实验清单显式声明 `run_step_id=A13`、`finish_step_id=A15`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 真实路由为 `/experiments/noise-spectrum-xy-known-noise`，保留「运行 / 历史」两个主 Tab。
 运行页复用 `WorkflowPanel`，桌面为采集与分析两列，窄屏改为单列。

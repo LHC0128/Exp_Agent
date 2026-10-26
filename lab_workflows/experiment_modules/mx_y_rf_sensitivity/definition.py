@@ -24,7 +24,7 @@ DEFINITION = ExperimentDefinition(
         '运行页提供可勾选的准备、激励、扫频门槛、幅度响应、噪声和安全结束步骤，节点内编辑参数并预览草稿影响。'
         '完整与分步共用采集业务；历史目录的独立分析覆盖值与下一次实验参数隔离。'
         '结束仅保留已执行的 Pump 与响应配置，不下发尚未重跑的参数。'
-        '采集完成恢复温控后保存，TEC 仅下发 UI 目标温度；锁相型号和 DAQ／Scope 方式遵循设备库，频谱使用最终实际率。'),
+        '采集完成恢复温控后保存，TEC 仅下发 UI 目标温度；锁相型号和 DAQ／Scope 方式遵循设备库，频谱使用最终实际率。分步角色由清单声明，状态与产物以执行记录为准。'),
     data_type="Mx_Y_RF_Sensitivity",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     required_mapping_keys=REQUIRED_MAPPING_KEYS,

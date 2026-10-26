@@ -1,18 +1,7 @@
 """完整运行、分步会话、参数编辑和失效预览共用的执行清单。"""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
+from lab_workflows.workflow_stages import Stage, initial_states
 from .run_format import EXPERIMENT_ID
-
-
-@dataclass(frozen=True)
-class Stage:
-    id: str
-    title: str
-    group: str
-    dependencies: tuple[str, ...]
-    parameters: tuple[str, ...] = ()
-    artifacts: tuple[str, ...] = ()
-    display_parameters: tuple[str, ...] | None = None
-    quality_gates: tuple[str, ...] = ()
 
 
 FINISH_ID = "A07"
@@ -48,10 +37,6 @@ ANALYSIS = (
         "frequency_response.yaml", "frequency_response.json", "waveform_overview.png", "waveform_overview.pdf",
         "frequency_response.png", "frequency_response.pdf")),
 )
-
-
-def initial_states(stages):
-    return {stage.id: {"status": "pending", "error": ""} for stage in stages}
 
 
 def invalidated_stages(stages, stage_id):
@@ -100,7 +85,8 @@ def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return {"acquisition": [public(stage) for stage in ACQUISITION],
+    return {"run_step_id": "A06", "finish_step_id": FINISH_ID,
+            "acquisition": [public(stage) for stage in ACQUISITION],
         "analysis": [public(stage) for stage in ANALYSIS],
         "parameter_impacts": {"acquisition": parameter_impacts(ACQUISITION), "analysis": parameter_impacts(ANALYSIS)},
         "diagram_url": f"/api/experiments/{EXPERIMENT_ID}/workflow/diagram"}

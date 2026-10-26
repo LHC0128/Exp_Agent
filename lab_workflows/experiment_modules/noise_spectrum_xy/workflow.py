@@ -14,6 +14,7 @@ from lockin_amplifier import demod, daq
 from ...common import find_project_root
 from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
 from ...instrument_config import instrument_config_snapshot
+from ...steps.lockin import verify_lockin_acquisition_mode
 from .models import NoiseSpectrumXYParams
 from . import preparation, excitation, phase, acquisition
 from .preparation import build_target_scan_axes, build_run_config, connect_devices, configure_initial_outputs, EXPERIMENT_TYPE
@@ -22,8 +23,9 @@ from .phase import calibrate_hf2_phase, configure_xy_sine, calibrate_xy_control,
 from ._helpers import _RuntimeCancellation, wait, set_temp_switch
 from ._shutdown import safe_scan_outputs_off
 from .preparation import GS200Instrument, TECInstrument, create_lockin, synchronize_connected_clocks
-from .stages import ACQUISITION, initial_states, invalidate, validate_selection
-from .state_io import write_state
+from .stages import ACQUISITION, invalidate, validate_selection
+from lab_workflows.workflow_stages import initial_states
+from lab_workflows.workflow_state import write_state
 
 
 class Workflow:
@@ -206,7 +208,10 @@ class Workflow:
             if self.demod_mode != "daq":
                 raise ValueError("解调器已恢复，请重新执行 A11 DAQ 准备")
             phase.verify_xy_mode(self.devices["dg_comp"], self.params)
-            acquisition.verify_daq_mode(self)
+            verify_lockin_acquisition_mode(self.devices["hf2"],
+                demod_index=self.params.hf2_demod_idx, requested_rate_hz=self.params.hf2_daq_rate,
+                acquisition_rate_hz=self.daq_settings[0], time_constant_s=self.params.hf2_daq_tc,
+                phase_deg=self.calibrated_phase)
             acquisition.acquire_scan(self)
             self.states[item]["artifacts"] = ["experiment_config.yaml", "raw/control_scan_axes.npz",
                 *[str(path.relative_to(self.run_dir)).replace("\\", "/")

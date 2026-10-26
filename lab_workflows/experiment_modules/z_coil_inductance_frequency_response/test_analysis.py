@@ -15,6 +15,27 @@ from . import analysis, workflow
 from .test_workflow import ROOT, copy_config, fake_hardware, scan_params
 
 
+REGRESSION_CASES = {
+    "z-coil-inductance-frequency-response": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/z_coil_inductance_frequency_response/__init__.py",
+                "lab_workflows/experiment_modules/z_coil_inductance_frequency_response/analysis.py"
+            ],
+            "tests": [
+                "InductanceAnalysisTests::test_whole_and_staged_analysis_agree_and_export_preserves_predecessors",
+                "InductanceAnalysisTests::test_quality_failure_blocks_export_and_keeps_diagnostics",
+                "InductanceAnalysisTests::test_known_voltage_model_phase_wrapping_and_normalizations_have_independent_values",
+                "InductanceAnalysisTests::test_partial_three_frequency_run_exports_measurements_with_model_unavailable_reason",
+                "InductanceAnalysisTests::test_input_and_artifact_changes_invalidate_without_reusing_stale_fits",
+                "InductanceAnalysisTests::test_historical_identity_parameter_versions_and_invalid_raw",
+                "InductanceAnalysisTests::test_real_analysis_module_entry_writes_stage_outputs"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(root):
     """通过真实采集步骤生成正式格式文件，只在驱动边界使用假设备。"""
     with fake_hardware(root):

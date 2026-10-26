@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import deque
 from dataclasses import asdict, dataclass, field
@@ -15,10 +16,17 @@ from lab_workflows.common import CancellationToken, ProgressEvent, WorkflowCance
 
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 DEFAULT_MAX_TERMINAL_JOBS = 100
+SHUTDOWN_POLL_INTERVAL_S = 0.1
+SHUTDOWN_WARNING_INTERVAL_S = 5.0
+logger = logging.getLogger(__name__)
 
 
 class RestartInProgressError(RuntimeError):
     """后端已进入重启阶段，拒绝创建新的任务。"""
+
+
+class ShutdownInProgressError(RuntimeError):
+    """后端正在等待任务收尾，拒绝接纳新的工作。"""
 
 
 def _json_safe(value: Any) -> Any:
@@ -93,11 +101,13 @@ class JobManager:
         self.hardware_lock = Lock()
         self.jobs_lock = RLock()
         self._hardware_queue: deque[Job] = deque()
-        self._hardware_condition = Condition()
+        # 分析调用方会持 jobs_lock 创建任务；接纳、队列和终态共用此可重入锁，避免锁序反转。
+        self._hardware_condition = Condition(self.jobs_lock)
         self.max_terminal_jobs = max_terminal_jobs
         self._finished_sequence = 0
-        self._lifecycle_lock = Lock()
         self._restart_pending = False
+        self._shutdown_pending = False
+        self._workers: dict[Thread, Job] = {}
 
     def create(
         self,
@@ -106,32 +116,90 @@ class JobManager:
         *,
         hardware_required: bool = True,
     ) -> Job:
-        with self._lifecycle_lock:
-            if self._restart_pending:
-                raise RestartInProgressError("后端正在重启，暂不能创建新任务")
+        with self._hardware_condition:
+            self._ensure_accepting_locked()
+            self._prune_workers_locked()
             job = Job(id=uuid4().hex, kind=kind)
-            with self.jobs_lock:
-                self.jobs[job.id] = job
-            Thread(
+            self.jobs[job.id] = job
+            worker = Thread(
                 target=self._run,
                 args=(job, runner, hardware_required),
                 daemon=True,
-            ).start()
+            )
+            # 登记和 start 与退出封口原子互斥，不能留下已接纳但尚不可等待的任务。
+            self._workers[worker] = job
+            try:
+                worker.start()
+            except BaseException:
+                self._workers.pop(worker, None)
+                self.jobs.pop(job.id, None)
+                raise
             return job
+
+    def _ensure_accepting_locked(self) -> None:
+        if self._shutdown_pending:
+            raise ShutdownInProgressError("后台正在安全退出，暂不能接纳新的任务或硬件操作")
+        if self._restart_pending:
+            raise RestartInProgressError("后端正在重启，暂不能创建新任务")
+
+    def _prune_workers_locked(self) -> None:
+        """仅移除已真正退出的线程；任务终态不代替线程完成。"""
+        self._workers = {
+            worker: job for worker, job in self._workers.items() if worker.is_alive()
+        }
+
+    def begin_shutdown(self) -> None:
+        """幂等地封口并请求所有已接纳任务协作停止，不等待或强杀。"""
+        with self._hardware_condition:
+            if self._shutdown_pending:
+                return
+            self._shutdown_pending = True
+            for job in self.jobs.values():
+                if job.status in {"queued", "running"}:
+                    job.cancellation.cancel()
+                    job.message = "后台正在退出，已请求安全停止"
+            self._hardware_condition.notify_all()
+
+    def wait_for_shutdown(self) -> None:
+        """等待真实工作线程及已开始的短硬件操作结束，无超时强退。"""
+        self.begin_shutdown()
+        started = time.monotonic()
+        next_warning = started + SHUTDOWN_WARNING_INTERVAL_S
+        while True:
+            with self._hardware_condition:
+                self._prune_workers_locked()
+                workers = tuple(self._workers)
+                hardware_busy = self.hardware_lock.locked()
+                if not workers and not hardware_busy:
+                    return
+                kinds = [job.kind for job in self._workers.values()]
+            now = time.monotonic()
+            if now >= next_warning:
+                logger.warning(
+                    "后台仍在等待收尾（%.1f 秒，任务=%s，硬件占用=%s）；不会强行退出，也未确认仪器安全",
+                    now - started, kinds, hardware_busy,
+                )
+                next_warning = now + SHUTDOWN_WARNING_INTERVAL_S
+            if workers:
+                # 不持状态锁 join，让任务继续上报、保存和释放硬件。
+                workers[0].join(timeout=SHUTDOWN_POLL_INTERVAL_S)
+            else:
+                # 短操作沿用公开 hardware_lock 的释放方式，周期复查其真实状态。
+                with self._hardware_condition:
+                    self._hardware_condition.wait(timeout=SHUTDOWN_POLL_INTERVAL_S)
 
     def begin_restart(self) -> bool:
         """在没有任务或硬件操作时原子地锁定重启阶段。"""
-        with self._lifecycle_lock:
-            if self._restart_pending:
+        with self._hardware_condition:
+            if self._restart_pending or self._shutdown_pending:
                 return False
-            with self._hardware_condition:
-                if self.hardware_lock.locked() or self._hardware_queue:
-                    return False
-                with self.jobs_lock:
-                    if any(job.status in {"queued", "running"} for job in self.jobs.values()):
-                        return False
-                    self._restart_pending = True
-                    return True
+            self._prune_workers_locked()
+            if self.hardware_lock.locked() or self._hardware_queue or self._workers:
+                return False
+            if any(job.status in {"queued", "running"} for job in self.jobs.values()):
+                return False
+            self._restart_pending = True
+            return True
 
     def _run(
         self,
@@ -152,6 +220,8 @@ class JobManager:
         percent: float | None = 100
         try:
             with self.jobs_lock:
+                # 包括未入队、已获得硬件但尚未启动，以及不占硬件的分析任务。
+                job.cancellation.raise_if_cancelled()
                 job.status = "running"
                 job.started_at = datetime.now().isoformat(timespec="seconds")
             self.event(job, ProgressEvent("start", "任务开始", 0))
@@ -167,6 +237,11 @@ class JobManager:
             message = str(exc)
             stage = job.stage
             percent = job.percent
+            if self._shutdown_pending:
+                logger.error(
+                    "后台退出期间任务 %s（%s）失败，未确认仪器安全：%s",
+                    job.id, job.kind, exc, exc_info=True,
+                )
         finally:
             if acquired:
                 self._release_hardware()
@@ -185,6 +260,7 @@ class JobManager:
         with self._hardware_condition:
             self._hardware_queue.append(job)
             self.event(job, ProgressEvent("queued", "等待硬件空闲", 0))
+            self._hardware_condition.notify_all()
             while True:
                 if job.cancellation.cancelled:
                     self._hardware_queue.remove(job)
@@ -222,17 +298,18 @@ class JobManager:
         hardware_busy 冲突；成功时保证不会同时持有锁并返回 False。
         """
         deadline = time.monotonic() + max(0.0, float(timeout))
-        with self._lifecycle_lock:
-            if self._restart_pending:
-                return False
-            with self._hardware_condition:
-                while True:
-                    if not self._hardware_queue:
-                        return self.hardware_lock.acquire(blocking=False)
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        return False
-                    self._hardware_condition.wait(timeout=min(0.25, remaining))
+        with self._hardware_condition:
+            while True:
+                if self._shutdown_pending:
+                    raise ShutdownInProgressError("后台正在安全退出，暂不能接纳新的硬件操作")
+                if self._restart_pending:
+                    return False
+                if not self._hardware_queue:
+                    return self.hardware_lock.acquire(blocking=False)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._hardware_condition.wait(timeout=min(0.25, remaining))
 
     def _finish(
         self,
@@ -261,6 +338,8 @@ class JobManager:
             self._finished_sequence += 1
             job.finished_order = self._finished_sequence
             self._prune_terminal_locked()
+            self._prune_workers_locked()
+            self._hardware_condition.notify_all()
 
     def _prune_terminal_locked(self) -> None:
         finished = sorted(
@@ -331,6 +410,7 @@ class JobManager:
                 raise ValueError("任务已经结束，无法取消")
             job.cancellation.cancel()
             job.message = "已请求安全停止"
+            self._hardware_condition.notify_all()
             return job
 
 

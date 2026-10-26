@@ -9,5 +9,5 @@ const analysisParameterKeys = Object.fromEntries([
 
 export function MxMainFieldScopeNoiseSpectrumPage() {
   return <WorkflowExperimentPage experimentId="mx-main-field-scope-noise-spectrum"
-    finishStepId="A10" runStepId="A08" analysisParameterKeys={analysisParameterKeys} />;
+ analysisParameterKeys={analysisParameterKeys} />;
 }

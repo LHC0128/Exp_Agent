@@ -27,6 +27,10 @@ defaults_file: params/experiments/z-coil-inductance-frequency-response.yaml
 
 当前默认参数：[参数文件](../../params/experiments/z-coil-inductance-frequency-response.yaml)。GUI「保存为默认」会更新该文件；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.z_coil_inductance_frequency_response.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 实验目的
 
 使用固定幅度和偏置的 Z 方向正弦驱动，按 `FREQUENCY_START_HZ`、`FREQUENCY_STOP_HZ` 和 `FREQUENCY_POINTS` 构造包含两端的线性频率轴。每个频率点按 `SCOPE_CYCLES` 配置记录窗口，重复 `SCOPE_REPEATS` 次，用于观察线圈端电压相对于理想 DG 设定正弦的幅值、相位和波形差异。当前值以参数文件为准。
@@ -66,6 +70,8 @@ CH3 初始垂直量程由基础参数 `SCOPE_INITIAL_SCALE` 指定，当前取�
 本实验在 `acquisition_policy.py` 中属于纯电学例外：不调用 TEC，不关闭或恢复温控开关，不生成气室温控门控证据。每频内部保持“关闭相关输出并切频 → 配置 Scope → 等待 → 开启触发与正弦 → 采集与逐帧写盘”的专用协议；重复之间不人为添加 OFF/ON 配对。SDS 读取前停止采集，空帧或缺下降沿按既有协议重试，必要时软复位后重新配置。故障保留此前已读并成功写盘的原始帧、部分索引及原始异常；收尾错误另行保存，不覆盖采集错误。
 
 ## GUI 使用与参数生效
+
+本实验清单显式声明 `run_step_id=A06`、`finish_step_id=A07`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 运行页保留“运行 / 历史”两个主 Tab。交互流程容器顶部集中保存参数与布局、派生预览、仅预检、完整运行、任务状态及取消入口；节点内分别编辑基础和高级参数，可以同时展开多个节点。可编辑原图由本实验的 `workflow.excalidraw` 下载。
 

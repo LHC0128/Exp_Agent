@@ -6,7 +6,7 @@ import math
 import numpy as np
 import yaml
 from ...experiment_runtime import check_cancelled
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from . import run_format
 from .models import BBPowerScanBurstParams
 from .fitting import fit_one_shot

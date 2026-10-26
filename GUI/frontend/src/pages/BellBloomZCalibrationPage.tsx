@@ -6,7 +6,7 @@ import { recoverableJob, useExperimentTask, useRequestedJobId } from "../compone
 import { useParameterGuard } from "../components/NavigationGuard";
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
-import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
+import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { defaultParameterLayout, historyParameterValues, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import "./zawClosedLoop.css";
@@ -173,7 +173,7 @@ export function BellBloomZCalibrationPage() {
       {(["run", "history"] as const).map(item => <button key={item} id={`bb-z-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`bb-z-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : "历史"}</button>)}
     </div>
     <div id="bb-z-panel-run" role="tabpanel" aria-labelledby="bb-z-tab-run" hidden={tab !== "run"}>
-      <WorkflowPanel experimentId={ID} finishStepId="A10" runStepId="A08" analysisParameterKeys={ANALYSIS_KEYS}
+      <WorkflowPanel experimentId={ID} analysisParameterKeys={ANALYSIS_KEYS}
         enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout} setNotice={setNotice}
         parametersDisabled={parametersBusy || starting || saving} values={values} setValues={setValues}
         session={session} setSession={setSession} job={job} setJob={setJob}

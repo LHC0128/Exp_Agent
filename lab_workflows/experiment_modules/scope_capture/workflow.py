@@ -16,11 +16,12 @@ from ...experiment_runtime import check_cancelled, load_runtime_params, report_r
 from ...instrument_config import instrument_config_snapshot
 from ...devices import create_signal_generator
 from ...steps import DeviceSession
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from . import acquisition, preparation
 from .models import ScopeCaptureParams
 from .run_format import DATA_TYPE, EXPERIMENT_ID
-from .stages import ACQUISITION, initial_states, invalidate, validate_selection
+from .stages import ACQUISITION, invalidate, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 EXECUTION_MODE = "typed_workflow"
 # 兼容旧导入边界：历史脚本从 workflow 模块使用这些名称。

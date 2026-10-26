@@ -959,6 +959,8 @@
       },
       "analysis": {}
     },
+    "run_step_id": "A04",
+    "finish_step_id": "A12",
     "diagram_url": "/api/experiments/mx-z-optimal-control-dg4000-bias-xyz-balance/workflow/diagram"
   }
 }

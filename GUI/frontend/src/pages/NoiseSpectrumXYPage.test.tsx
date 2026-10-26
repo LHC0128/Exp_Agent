@@ -72,7 +72,7 @@ beforeEach(() => {
     if (url === `${BASE}/schema`) return { fields: fields.map((field) => ({ ...field, default: defaults[field.name] })),
       parameter_layout_saved: true, parameter_layout: parameterLayout };
     if (url === "/api/jobs") return [];
-    if (url === `${BASE}/workflow`) return { acquisition, analysis: analysisStages, parameter_impacts: parameterImpacts, diagram_url: `${BASE}/workflow/diagram` };
+    if (url === `${BASE}/workflow`) return { acquisition, analysis: analysisStages, parameter_impacts: parameterImpacts, run_step_id: "A12", finish_step_id: "A14", diagram_url: `${BASE}/workflow/diagram` };
     if (url === `${BASE}/sessions/active`) return activeSession;
     if (url === "/api/jobs/session-job") return { id: "session-job", kind: "session:noise-spectrum-xy", status: "running", events: [] };
     if (url === `${BASE}/sessions` && options?.method === "POST") return activeSession = makeSession();
@@ -133,7 +133,7 @@ it("两列流程来自后端定义，缺少前置时拒绝且不自动补齐选�
   await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   const nodes = screen.getByRole("region", { name: "交互实验流程图" });
-  expect(within(nodes).getByText(`质量门槛：${acquisition.find((stage) => stage.id === "A10")!.quality_gates[0]}`)).toBeVisible();
+  expect(within(nodes).getByText(`检查与质量说明：${acquisition.find((stage) => stage.id === "A10")!.quality_gates[0]}`)).toBeVisible();
   await waitFor(() => expect(within(nodes).getByLabelText("A03 参考时钟同步")).toBeEnabled());
   fireEvent.click(within(nodes).getByLabelText("A03 参考时钟同步"));
   await waitFor(() => expect(within(nodes).getByRole("button", { name: "运行所选 / 重跑" })).toBeEnabled());
@@ -273,12 +273,12 @@ it("旧后端缺少节点展示或影响范围时提示重启，仍恢复存活�
   mockApi.mockImplementation(async (url, options) => {
     if (url === `${BASE}/workflow`) return {
       acquisition: acquisition.map(({ display_parameters, ...stage }) => stage),
-      analysis: analysisStages, diagram_url: `${BASE}/workflow/diagram`,
+      analysis: analysisStages, run_step_id: "A12", finish_step_id: "A14", diagram_url: `${BASE}/workflow/diagram`,
     };
     return normal(url, options);
   });
   renderPage();
-  expect(await screen.findByText(/流程接口版本过旧，请在任务结束后重启 GUI 后端并刷新页面/)).toBeVisible();
+  expect(await screen.findByText(/流程接口版本过旧或角色无效，请在任务结束后重启 GUI 后端并刷新页面/)).toBeVisible();
   expect(screen.getByRole("button", { name: "创建分步会话" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "结束会话" })).toBeEnabled();
   expect(screen.queryByLabelText("A12 扫描采集 参数")).not.toBeInTheDocument();

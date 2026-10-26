@@ -1,8 +1,8 @@
 """复用 DirectAW 阶段，每个测量阶段依次执行全部所选控制。"""
 from dataclasses import replace
 from ..rf_sensitivity_direct_aw import stages as shared
-from ..rf_sensitivity_direct_aw.stages import (initial_states, invalidate, invalidated_stages,
-    validate_selection, parameter_impacts, FINISH_ID)
+from ..rf_sensitivity_direct_aw.stages import invalidate, invalidated_stages, validate_selection, parameter_impacts, FINISH_ID
+from lab_workflows.workflow_stages import initial_states
 
 NOISE = ("NOISE_BAND_STARTS_HZ", "NOISE_BAND_STOPS_HZ", "NOISE_BAND_PSDS_V2_PER_HZ", "NOISE_REPEAT_FREQ_HZ", "NOISE_SEED")
 ACQUISITION = tuple(replace(stage,
@@ -19,4 +19,4 @@ ANALYSIS = tuple(replace(stage, title="各控制：" + stage.title,
 
 
 def definition():
-    return shared.definition(acquisition=ACQUISITION, analysis=ANALYSIS, experiment_id="rf-sensitivity-aw-known-noise")
+    return shared.definition(acquisition=ACQUISITION, analysis=ANALYSIS, experiment_id="rf-sensitivity-aw-known-noise") | dict(run_step_id="A15", finish_step_id=FINISH_ID)

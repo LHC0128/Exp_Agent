@@ -21,11 +21,12 @@ DEFINITION = ExperimentDefinition(
     family="rf-phase-response",
     variant="mx-z-optimal-control-xy-balance",
     description=(
+        "Y RF 幅度与偏置校验拒绝 NaN/Infinity。"
         "保持 Z 周期最优控制，在蛇形 X/Y DC 网格按 180° 配对顺序扫描 Y RF Burst 相位，"
         "采集 R、执行质量重试与单轮异常重采，以非线性色散模型报告相位响应；保留历史正弦诊断，不选最佳 XY。"
         "运行页在 XY 分步节点内编辑参数，顶部保存布局、预检和完整运行；草稿应用后显式重跑。"
         "配置完成再关闭温控、等待 SYSTEM_SETTLE_S、采集至内存，恢复温控后保存；TEC 只写 UI 目标。"
-        "历史独立分析可覆盖拟合门槛，不改变采集参数。结束保持 Z 和共同触发当前状态，X/Y 归零关闭。"
+        "历史独立分析可覆盖拟合门槛，不改变采集参数。结束保持 Z 和共同触发当前状态，X/Y 归零关闭。分步角色由清单声明，状态与产物以执行记录为准。"
     ),
     data_type="Mx_Z_Optimal_Control_XY_RF_Phase_Response",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

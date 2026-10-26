@@ -4,7 +4,7 @@ from lab_workflows.experiment_modules.mx_y_rf_frequency_response.preparation imp
 from lab_workflows.experiment_modules.mx_y_rf_frequency_response.analysis import AnalysisWorkflow
 from lab_workflows.experiment_modules.mx_y_rf_frequency_response.analysis_steps import plain
 from lab_workflows.experiment_modules.mx_y_rf_frequency_response import stages, run_format
-from lab_workflows.experiment_modules.noise_spectrum_xy.state_io import read_state
+from lab_workflows.workflow_state import read_state
 from fastapi import HTTPException
 from .workflow_history import read_config
 from .workflow_sessions import WorkflowSessionService, create_router, conflict

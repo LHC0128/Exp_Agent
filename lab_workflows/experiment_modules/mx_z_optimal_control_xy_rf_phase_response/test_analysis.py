@@ -17,6 +17,29 @@ from .stages import ANALYSIS_KEYS
 from .test_workflow import parameters
 
 
+REGRESSION_CASES = {
+    "mx-z-optimal-control-xy-rf-phase-response": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_z_optimal_control_rf_sensitivity/__init__.py",
+                "lab_workflows/experiment_modules/mx_z_optimal_control_xy_rf_phase_response/__init__.py",
+                "lab_workflows/experiment_modules/mx_z_optimal_control_xy_rf_phase_response/analysis.py"
+            ],
+            "tests": [
+                "test_full_and_staged_same_scientific_results_and_readonly_snapshot",
+                "test_dependencies_overrides_and_finite_validation_do_not_change_acquisition",
+                "test_explicit_legacy_qualification_and_no_external_sources",
+                "test_invalid_run_rejected_before_any_output",
+                "test_bad_raw_data_preserves_last_report",
+                "test_content_and_product_fingerprints_rerun_archive_and_stale_revision",
+                "test_changed_raw_during_command_stops_later_stage",
+                "test_real_analysis_subprocess_produces_artifacts_and_requires_explicit_directory"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(root, name="1016_historical"):
     directory = root / name
     (directory / "raw").mkdir(parents=True)

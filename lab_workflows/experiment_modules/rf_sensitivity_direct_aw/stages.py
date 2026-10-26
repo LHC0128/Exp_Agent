@@ -1,17 +1,6 @@
 """DirectAW 的唯一流程清单、参数归属和依赖失效规则。"""
-from dataclasses import asdict, dataclass, replace
-
-
-@dataclass(frozen=True)
-class Stage:
-    id: str
-    title: str
-    group: str
-    dependencies: tuple[str, ...]
-    parameters: tuple[str, ...] = ()
-    artifacts: tuple[str, ...] = ()
-    display_parameters: tuple[str, ...] | None = None
-    quality_gates: tuple[str, ...] = ()
+from dataclasses import asdict, replace
+from lab_workflows.workflow_stages import Stage, initial_states
 
 
 FINISH_ID = "A16"
@@ -110,10 +99,6 @@ SINGLE_ANALYSIS = ANALYSIS
 ANALYSIS = MULTI_ANALYSIS
 
 
-def initial_states(stages):
-    return {stage.id: {"status": "pending", "error": ""} for stage in stages}
-
-
 def invalidated_stages(stages, stage_id):
     affected = {stage_id}
     for stage in stages:
@@ -159,7 +144,8 @@ def definition(*, acquisition=MULTI_ACQUISITION, analysis=MULTI_ANALYSIS, experi
     def public(stage):
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return {"acquisition": [public(stage) for stage in acquisition],
+    return {"run_step_id": "A15", "finish_step_id": FINISH_ID,
+            "acquisition": [public(stage) for stage in acquisition],
             "analysis": [public(stage) for stage in analysis],
             "parameter_impacts": {"acquisition": parameter_impacts(acquisition), "analysis": parameter_impacts(analysis)},
             "diagram_url": f"/api/experiments/{experiment_id}/workflow/diagram"}

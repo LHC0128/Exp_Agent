@@ -7,7 +7,9 @@ import sys
 
 import uvicorn
 
+from .jobs import manager
 from .main import app
+from .server_runtime import Server
 
 
 HOST = "127.0.0.1"
@@ -18,8 +20,9 @@ def main() -> None:
     """启动后端，并支持从运行中的服务优雅自重启。"""
     while True:
         app.state.restart_requested = False
-        server = uvicorn.Server(
+        server = Server(
             uvicorn.Config(app, host=HOST, port=PORT, reload=False),
+            manager,
         )
         app.state.uvicorn_server = server
         server.run()

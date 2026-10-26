@@ -1,14 +1,11 @@
 """多控制预检与独立重跑目录；校相始终在每个控制 × Scale 点内完成。"""
 from copy import deepcopy
 from dataclasses import replace
-from pathlib import Path
-import hashlib
 import numpy as np
 from ...control_sources import load_theory_control, resolve_control_results_root
 from ...steps import create_run_directory
 from ..rf_sensitivity_direct_aw import preparation as shared
 from ..rf_sensitivity_direct_aw.waveform import synthesize_xy
-from ..rf_sensitivity_aw_known_noise.acquisition import make_control_directory
 from . import run_format
 
 
@@ -70,14 +67,7 @@ def new_directory(parent, selected, control_type):
     parent.controls = {}
     for relative in parent.params.control_waveform_files:
         params = replace(parent.params, arb_waveform_file=relative, control_waveform_files=[relative])
-        ctx = control_type(params, project_root=parent.root, session_id=parent.session_id)
-        ctx.devices = parent.devices
-        ctx.state.update(control_source_sha256=hashlib.sha256(Path(ctx.envelope["source_waveform_path"]).read_bytes()).hexdigest(),
-                         raw_format_version=run_format.RAW_FORMAT_VERSION,
-                         phase_calibration_scope=run_format.PHASE_CALIBRATION_SCOPE,
-                         control_metrics={"envelope_rms_V": float(np.sqrt(np.mean(ctx.envelope["envelope_V"] ** 2))),
-                                          "envelope_peak_V": float(np.max(np.abs(ctx.envelope["envelope_V"])))})
-        ctx.directory = make_control_directory(parent.directory, relative, params, ctx.state)
-        version = ctx.directory.root.name
-        parent.controls[version] = ctx
+        ctx = control_type.create_control_run(params, parent_directory=parent.directory,
+            project_root=parent.root, session_id=parent.session_id, devices=parent.devices)
+        parent.controls[ctx.directory.root.name] = ctx
     parent.save()

@@ -6,6 +6,7 @@
 from ..noise_spectrum_xy.workflow import Workflow as SineWorkflow
 from ..noise_spectrum_xy import phase
 from ...experiment_runtime import load_runtime_params
+from ...steps.lockin import verify_lockin_acquisition_mode
 from .models import NoiseSpectrumXYKnownNoiseParams
 from . import acquisition, excitation, stages, preparation
 from .preparation import preflight
@@ -47,7 +48,10 @@ class Workflow(SineWorkflow):
             if not self.xy_result or not self.xy_result.converged:
                 raise ValueError("XY 校相未通过，禁止扫描")
             phase.verify_xy_mode(self.devices["dg_comp"], self.params)
-            acquisition.verify_daq_mode(self)
+            verify_lockin_acquisition_mode(self.devices["hf2"],
+                demod_index=self.params.hf2_demod_idx, requested_rate_hz=self.params.hf2_daq_rate,
+                acquisition_rate_hz=self.daq_settings[0], time_constant_s=self.params.hf2_daq_tc,
+                phase_deg=self.calibrated_phase)
             self.noise_readback = excitation.verify_noise_waveform(self.devices["dg_sweep"], self.noise_waveform, self.params, self.limits)
             acquisition.acquire_scan(self)
             self.states[item]["artifacts"] = ["experiment_config.yaml", *[str(path.relative_to(self.run_dir)).replace("\\", "/") for path in sorted((self.run_dir / "raw").iterdir())]]

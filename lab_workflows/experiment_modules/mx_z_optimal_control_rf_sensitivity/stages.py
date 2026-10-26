@@ -1,18 +1,6 @@
 """本实验的执行依赖、参数编辑归属与真实质量门槛。"""
-from dataclasses import asdict, dataclass
-from ..mx_y_rf_sensitivity.stages import initial_states, invalidate, invalidated_stages, parameter_impacts
-
-
-@dataclass(frozen=True)
-class Stage:
-    id: str
-    title: str
-    group: str
-    dependencies: tuple[str, ...]
-    parameters: tuple[str, ...] = ()
-    artifacts: tuple[str, ...] = ()
-    display_parameters: tuple[str, ...] | None = None
-    quality_gates: tuple[str, ...] = ()
+from dataclasses import asdict
+from lab_workflows.workflow_stages import DependencyRules, Stage, initial_states
 
 
 FINISH_ID = "A12"
@@ -64,6 +52,12 @@ ANALYSIS = (
 )
 
 
+_rules = DependencyRules(finish_id=FINISH_ID)
+invalidated_stages = _rules.invalidated_stages
+invalidate = _rules.invalidate
+parameter_impacts = _rules.parameter_impacts
+
+
 def validate_selection(stages, states, selected):
     ids = [stage.id for stage in stages]
     if not selected or len(set(selected)) != len(selected) or any(item not in ids for item in selected):
@@ -84,6 +78,7 @@ def validate_selection(stages, states, selected):
 def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return dict(acquisition=[public(stage) for stage in ACQUISITION], analysis=[public(stage) for stage in ANALYSIS],
+    return dict(run_step_id="A04", finish_step_id=FINISH_ID,
+        acquisition=[public(stage) for stage in ACQUISITION], analysis=[public(stage) for stage in ANALYSIS],
         parameter_impacts={"acquisition": parameter_impacts(ACQUISITION), "analysis": parameter_impacts(ANALYSIS)},
         diagram_url="/api/experiments/mx-z-optimal-control-rf-sensitivity/workflow/diagram")

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from ...experiment_runtime import check_cancelled
 from ...plotting import new_figure, save_figure, set_plot_style
-from ..noise_spectrum_xy.state_io import read_state
+from lab_workflows.workflow_state import read_state
 from .analysis_steps import output_path, statistics
 
 

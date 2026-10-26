@@ -12,7 +12,8 @@ from ..mx_z_optimal_control_rf_sensitivity.workflow import Workflow as ControlWo
 from . import preparation, acquisition, run_format
 from .models import MxZOptimalControlXYRFPhaseResponseParams
 from .scan import build_axes
-from .stages import ACQUISITION, FINISH_ID, SOURCES, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ACQUISITION, FINISH_ID, SOURCES, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE

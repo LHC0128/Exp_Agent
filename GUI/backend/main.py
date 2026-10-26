@@ -123,7 +123,8 @@ from lab_workflows.z_arbitrary_control import (
     ZArbitraryControlService, ZArbitrarySettings, list_sources, preview_source,
 )
 
-from .jobs import Job, RestartInProgressError, manager
+from .jobs import Job, RestartInProgressError, ShutdownInProgressError, manager
+from .server_runtime import await_shutdown
 from .run_management import checked_run_path, read_starred, rename_directory, save_starred, split_run_name
 from .noise_spectrum_xy import XYSessionService, create_router as xy_router
 from .updates import UpdatesService, create_router as updates_router
@@ -220,11 +221,15 @@ async def lifespan(application):
     try:
         yield
     finally:
-        services = _workflow_session_services()
-        for service in services:
-            service.close_communication()
-        for service in services:
-            await asyncio.to_thread(service.shutdown)
+        manager.begin_shutdown()
+        try:
+            for service in _workflow_session_services():
+                service.close_communication()
+        finally:
+            # 完成归属在全局任务管理器；不再只等待有会话对象的任务。
+            await await_shutdown(asyncio.get_running_loop().run_in_executor(
+                None, manager.wait_for_shutdown,
+            ))
 
 
 def _workflow_session_services():
@@ -284,6 +289,15 @@ async def handle_restart_in_progress(request: Request, exc: RestartInProgressErr
         status_code=503,
         content={"detail": str(exc)},
         headers={"X-Error-Code": "restarting"},
+    )
+
+
+@app.exception_handler(ShutdownInProgressError)
+async def handle_shutdown_in_progress(request: Request, exc: ShutdownInProgressError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": str(exc)},
+        headers={"X-Error-Code": "shutting_down"},
     )
 
 

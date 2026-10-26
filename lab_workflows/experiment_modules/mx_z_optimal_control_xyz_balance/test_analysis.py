@@ -15,6 +15,28 @@ from . import analysis, analysis_steps, run_format
 from .models import MxZOptimalControlXYZBalanceParams
 
 
+REGRESSION_CASES = {
+    "mx-z-optimal-control-xyz-balance": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_z_optimal_control_xyz_balance/__init__.py",
+                "lab_workflows/experiment_modules/mx_z_optimal_control_xyz_balance/analysis.py"
+            ],
+            "tests": [
+                "test_original_minimum_tie_breaking_staged_and_full_science",
+                "test_content_and_product_fingerprints_archive_and_stale_revision",
+                "test_bad_inputs_do_not_move_previous_products_and_block_successor",
+                "test_missing_raw_and_rejected_analysis_options",
+                "test_historical_schema_and_raw_format_are_independent",
+                "test_unsealed_or_failed_recovery_is_not_analyzable",
+                "test_single_point_axes_are_valid_and_reported",
+                "test_real_module_and_thin_entry_require_explicit_temporary_directory"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(base, name="history"):
     directory = base / name
     (directory / "raw").mkdir(parents=True)

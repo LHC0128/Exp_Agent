@@ -11,6 +11,7 @@ import json
 import math
 import os
 from copy import deepcopy
+from dataclasses import fields
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -20,11 +21,12 @@ from ...steps.run_directory import write_run_config
 
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from . import analysis_steps, run_format
 from .analysis_steps import AnalysisQualityError, plain
 from .models import MxYRFFrequencyResponseParams
-from .stages import ANALYSIS, ANALYSIS_KEYS, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ANALYSIS, ANALYSIS_KEYS, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 ANALYSIS_VERSION = "mx-y-rf-frequency-response-v1"
 
@@ -66,9 +68,17 @@ class AnalysisWorkflow:
         if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
                 for value in self.options.values()):
             raise ValueError("分析覆盖参数必须为有限数值")
-        if errors := self.params.validate():
-            # 分析覆盖复用模型约束；安全限值仍从当前项目配置读取。
-            raise ValueError("；".join(errors))
+        # 离线分析仅复用模型的分析字段范围，不对历史采集重新执行当前硬件预检。
+        for item in fields(self.params):
+            key = item.metadata.get("external_name", item.name)
+            if key not in ANALYSIS_KEYS:
+                continue
+            value = getattr(self.params, item.name)
+            minimum, maximum = item.metadata.get("minimum"), item.metadata.get("maximum")
+            if minimum is not None and value < minimum:
+                raise ValueError(f"{key} 低于模型下限 {minimum}")
+            if maximum is not None and value > maximum:
+                raise ValueError(f"{key} 高于模型上限 {maximum}")
 
     @staticmethod
     def _file_signature(path):

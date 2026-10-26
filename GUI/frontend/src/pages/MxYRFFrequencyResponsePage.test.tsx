@@ -153,8 +153,8 @@ it("真实清单进入两列流程，质量门槛可见，缺前置拒绝，选�
   page();
   await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
   expect(screen.getByText("A08 嵌套 RF 幅度-频率响应扫描")).toBeVisible();
-  expect(screen.getByText("质量门槛：参数、映射、锁相采集能力与安全限值全部有效")).toBeVisible();
-  expect(screen.getByText("质量门槛：每个 (幅度, 频率) 点 std(R) 合格；重采用尽后保存诊断并阻断后继")).toBeVisible();
+  expect(screen.getByText("检查与质量说明：参数、映射、锁相采集能力与安全限值全部有效")).toBeVisible();
+  expect(screen.getByText("检查与质量说明：每个 (幅度, 频率) 点 std(R) 合格；重采用尽后保存诊断并阻断后继")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A08 嵌套 RF 幅度-频率响应扫描" }));

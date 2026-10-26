@@ -6,7 +6,7 @@ import { api } from "../api";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { ScopePlot } from "../components/ScopePlot";
-import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
+import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useParameterGuard } from "../components/NavigationGuard";
@@ -531,7 +531,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
       </div>
 
       <div id={`${prefix}-panel-run`} role="tabpanel" aria-labelledby={`${prefix}-tab-run`} hidden={tab !== "run"}>
-        <WorkflowPanel experimentId={ID} finishStepId={probeAm ? "A16" : "A15"} runStepId={probeAm ? "A14" : "A13"}
+        <WorkflowPanel experimentId={ID}
           analysisParameterKeys={probeAm ? undefined : ANALYSIS_KEYS}
           enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout}
           setNotice={setNotice} parametersDisabled={parametersBusy || starting} values={values} setValues={setValues}

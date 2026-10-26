@@ -7,7 +7,7 @@ import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useParameterGuard } from "../components/NavigationGuard";
 import { ScopePlot } from "../components/ScopePlot";
-import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
+import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import type {
   ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues,
   RunSummary, RunsResponse,
@@ -278,7 +278,7 @@ export function ScopeCapturePage() {
         session={session} setSession={setSession} job={job} setJob={setJob}
         analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
         runs={workflowRuns} setError={setError} onRefresh={setWorkflowRefresh}
-        experimentId={ID} finishStepId="A05" runStepId="A04">
+        experimentId={ID}>
         <div className="xy-workflow-controls">
           <div className="xy-flow-actions">
             <button disabled={saving || starting || parametersBusy || !fields.length} onClick={() => void save()}>

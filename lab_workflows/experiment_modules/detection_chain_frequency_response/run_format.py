@@ -9,8 +9,8 @@ DATA_TYPE = "Detection_Chain_Frequency_Response"
 RAW_FORMAT_VERSION = 1
 
 
-def load_frequency_response(run_dir, config):
-    """先核对实验身份和数据结构，再返回分析使用的频率与谱峰。"""
+def validate_run_identity(config):
+    """仅核对身份和版本，供任何分析写入前复用，不读取原始波形。"""
     if not isinstance(config, dict) or config.get("experiment_id") != EXPERIMENT_ID:
         raise ValueError("运行目录的 experiment_id 不属于探测链路频率响应实验")
     identities = [config[key] for key in ("data_type", "experiment_type") if key in config]
@@ -19,6 +19,11 @@ def load_frequency_response(run_dir, config):
     version = config.get("raw_format_version")
     if version is not None and (type(version) is not int or version != RAW_FORMAT_VERSION):
         raise ValueError("不支持的 raw_format_version")
+
+
+def load_frequency_response(run_dir, config):
+    """先核对实验身份和数据结构，再返回分析使用的频率与谱峰。"""
+    validate_run_identity(config)
     # 已有运行未标记原始格式，资格仍由身份及实际四键结构共同确认。
     names = ("am_frequencies_hz", "peak_amplitudes", "peak_frequencies_hz", "actual_rate")
     with np.load(Path(run_dir) / "raw/frequency_response.npz", allow_pickle=False) as data:

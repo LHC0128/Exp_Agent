@@ -32,6 +32,10 @@ defaults_file: params/experiments/mx-main-field-scope-noise-spectrum.yaml
 
 # Mx 主磁场示波器噪声谱
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.mx_main_field_scope_noise_spectrum.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 采集时序与系统稳定
 
 每个主场点先设置 GS200 电流；每次 SDS 量程尝试前关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集至内存，恢复温控后才保存波形、采集元数据和扫描快照。量程与 offset 的调整在温控开启时完成，再次采集会重新等待。本实验为单点采集，不引入额外分组、OFF/ON 对照或校相。目录与初始配置提前创建。
@@ -133,6 +137,8 @@ data/Mx_Main_Field_Scope_Noise_Spectrum/<run>/
 7. `global_2d_noise_spectra.csv` 和 `global_2d_noise_separation.npz` 是首选输出。`global_2d_noise_spectra.png` 的横轴使用从 `0 Hz` 开始的线性坐标，投影起点按本次分析参数确定，但只有通过 `quantitative_valid_mask` 的点可作定量解释。由于实验尚未独立给出 `4G^2S_2^2`，当前只能确定乘积 `C_S_beta`，不能把它直接解释为绝对 `S_beta`；报告的不确定度也不包含该标定误差。
 
 ## 模块化与 GUI 操作
+
+本实验清单显式声明 `run_step_id=A08`、`finish_step_id=A10`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 采集入口只调用 `workflow.run(params)`；准备与收尾位于 `preparation.py`，扫描和原始帧暂存在 `acquisition.py`。独立分析由 `analysis.py` 编排，输入/局部诊断/二维接线位于 `analysis_steps.py`，科学绘图位于 `analysis_plotting.py`；原 `global_analysis.py` 及共享局部 Lorentzian 算法不变。
 

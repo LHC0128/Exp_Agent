@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from pathlib import Path
 from threading import Event
 from typing import Any, Callable
@@ -43,7 +44,9 @@ def validate_safety_limit(
     value: float,
     limits: dict[str, dict[str, Any]] | None = None,
 ) -> float:
-    """检查一个物理量是否落在仓库安全限值内。"""
+    """先拒绝非有限数值，再检查物理量是否落在仓库安全限值内。"""
+    if not math.isfinite(value):
+        raise ValueError(f"[安全拦截] {name}={value} 必须是有限数值")
     limits = limits or load_safety_limits()
     rule = limits.get(name)
     if not rule:

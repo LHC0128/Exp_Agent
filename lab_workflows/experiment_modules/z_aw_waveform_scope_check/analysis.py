@@ -14,10 +14,11 @@ matplotlib.use("Agg")
 
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from . import analysis_steps as steps
 from .run_format import EXPERIMENT_ID, analysis_block_reason
-from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ANALYSIS, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 # 保留实际电流、闭环和电流响应实验已经使用的科学函数导入路径。
 from .analysis_steps import (
     _builtin, _load_yaml, _load_expected, _load_capture, _periodic_interp, _falling_edge_time,

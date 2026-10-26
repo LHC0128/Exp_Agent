@@ -13,11 +13,12 @@ from ...steps.run_directory import write_run_config
 
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from . import analysis_steps, run_format
 from .analysis_steps import (AnalysisQualityError, plain, _phase_median, _plot_heatmap,
     _plot_comparison, _builtin, _load_config, OPTIMAL_CONTROL_NPZ, CONSTANT_CONTROL_NPZ)
-from .stages import ANALYSIS, ANALYSIS_KEYS, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ANALYSIS, ANALYSIS_KEYS, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 ANALYSIS_VERSION = "mx-y-optimal-control-frequency-v1"
 EXPERIMENT_ID = run_format.EXPERIMENT_ID

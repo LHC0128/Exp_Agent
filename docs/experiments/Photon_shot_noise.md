@@ -164,6 +164,8 @@ $$
 
 ## 模块化执行与交互流程图
 
+本实验清单显式声明 `run_step_id=A07`、`finish_step_id=A08`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
+
 采集薄入口为 [Photon_shot_noise.py](../../experiments/Photon_shot_noise.py)。实现位于
 [`lab_workflows/experiment_modules/photon_shot_noise/`](../../lab_workflows/experiment_modules/photon_shot_noise/)：
 `preparation.py` 管预检、连接、时钟及锁相准备，`acquisition.py` 管扫描和故障抢救，

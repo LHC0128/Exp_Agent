@@ -62,7 +62,7 @@ beforeEach(() => {
     if (url === "/api/jobs/mx-job") return { id: "mx-job", kind: `session:${ID}`, status: "running", events: [] } as never;
     if (url === `${BASE}/workflow`) return { acquisition, analysis,
       parameter_impacts: { acquisition: { RUN_TAG: acquisition.slice(1, 9).map(stage => stage.id), ZERO_BIAS_CENTER_FREQUENCY_HZ: ["A07", "A08", "A09"], Z_BIAS_STEP_V: ["A08", "A09"] },
-        analysis: { LINEAR_R_SQUARED_MIN: ["B03", "B04"] } }, diagram_url: `${BASE}/workflow/diagram` } as never;
+        analysis: { LINEAR_R_SQUARED_MIN: ["B03", "B04"] } }, run_step_id: "A08", finish_step_id: "A10", diagram_url: `${BASE}/workflow/diagram` } as never;
     if (url === `${BASE}/sessions/active`) return current as never;
     if (url === `${BASE}/sessions` && options?.method === "POST") return current = makeSession();
     if (url === `${BASE}/sessions/mx-session/steps`) {
@@ -251,7 +251,7 @@ it("质量门槛和实际失败记录位于对应节点，失败后允许安全�
   for (const [id, values] of Object.entries(gates)) {
     const stage = [...acquisition, ...analysis].find(item => item.id === id)!;
     const checkbox = await screen.findByRole("checkbox", { name: `${id} ${stage.title}` });
-    expect(within(checkbox.closest("li")!).getByText(`质量门槛：${values[0]}`)).toBeVisible();
+    expect(within(checkbox.closest("li")!).getByText(`检查与质量说明：${values[0]}`)).toBeVisible();
   }
   const failed = screen.getByRole("checkbox", { name: "A08 Z 电压与局部 Y RF 扫频" }).closest("li")!;
   expect(within(failed).getByText("质量未通过")).toBeVisible();

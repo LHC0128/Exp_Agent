@@ -20,13 +20,14 @@ DEFINITION = ExperimentDefinition(
     family="rf-sensitivity",
     variant="mx-z-optimal-control",
     description=(
+        "Y RF 幅度与偏置校验拒绝 NaN/Infinity。"
         '按配置启停 GS200 主场，叠加冻结的 Z 周期最优控制，以 X DC 和 Y RF 偏置补偿 XY 剩磁场。'
         '非零校相幅度执行 180° 成对 R/X/Y 校相、带符号幅度响应及 R 噪声灵敏度；零幅度仅扫描 Z 控制相位并保留弱响应诊断。'
         '运行/历史双 Tab 中使用可勾选流程、节点参数与统一保存/预检；共享参数同步编辑，草稿应用后显式重跑。'
         '独立分析绑定具体目录且无额外覆盖参数，保留原科学图与历史下载。'
         '锁相按设备库选择并检查兼容性，输入保持高阻和 DC 耦合，DAQ/Scope 按最终实际率计算。'
         '配置后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存、恢复温控后保存；TEC 只下发 UI 目标。'
-        '安全结束关闭横向场、恢复 GS200 原态，保持 Z 最优控制与共同触发。'
+        '安全结束关闭横向场、恢复 GS200 原态，保持 Z 最优控制与共同触发。分步角色由清单声明，状态与产物以执行记录为准。'
     ),
     data_type="Mx_Z_Optimal_Control_RF_Sensitivity",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

@@ -4,6 +4,7 @@
 from ...experiment_runtime import load_runtime_params
 from ..z_aw_waveform_scope_check.workflow import Workflow as ScopeWorkflow, run_scope_check
 from ..z_aw_waveform_scope_check.excitation import _configure_outputs
+from ..z_aw_waveform_scope_check.preparation import ControlSource
 from . import preparation
 from .models import ZAWCurrentWaveformScopeCheckParams
 from .run_format import EXPERIMENT_ID, DATA_TYPE
@@ -22,14 +23,9 @@ class Workflow(ScopeWorkflow):
         super().__init__(params, project_root=project_root, session_id=session_id,
                          experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, measurement_mode="current")
 
-    def _execute_step(self, item):
-        if item == "A03":
-            self.source = preparation.prepare_control(self.params, self.root)
-            self.outputs_started = True
-            _configure_outputs(self.params, self.devices, self.channels, self.source.theory, self.source.applied)
-            self.outputs.update({"Z 任意波": "外部下降沿 Burst ON", "共同触发": "OFF"})
-        else:
-            super()._execute_step(item)
+    def prepare_control_source(self) -> ControlSource:
+        """提供电流目标与实际应用波形，不接管父类的输出配置或状态。"""
+        return preparation.prepare_control(self.params, self.root)
 
 
 # %% 完整采集

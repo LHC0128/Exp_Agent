@@ -122,6 +122,10 @@ lab_workflows/            # GUI 与命令行共用的实验契约、参数模型
   experiments/            # 注册表、执行契约与新旧适配器
   plotting/               # 论文图（默认）与 A0 海报共享绘图规范
   steps/                  # 设备会话、输出策略、校相、温控与安全收尾
+  workflow_state.py       # 工作流状态 JSON 的公共原子读写
+  workflow_session.py     # 公共串行会话命令循环
+  workflow_stages.py      # 公共阶段类型、初始状态与显式依赖规则
+  analysis_execution.py   # 分析状态、内容指纹与声明产物归档
 GUI/                      # 本地 Web 实验控制台
   backend/                # FastAPI API、任务队列与 SSE
   frontend/               # React + TypeScript + Vite
@@ -132,6 +136,30 @@ results/                  # 结果图表
 old/experiments/          # 已归档实验的代码、正式测试与恢复说明
 总结/                     # 阶段性总结
 ```
+
+工作流状态使用 `lab_workflows.workflow_state.read_state(path)` 和
+`write_state(path, payload)`；原 XY `state_io.py` 仅保留导入兼容，状态格式和写盘时机不变。
+公共串行会话使用 `lab_workflows.workflow_session.serve(ctx, stream, *, stages, validate, finish_id)`；
+XY 与 Detection Chain 原会话入口保留默认参数和命令行启动，各实验的阶段、校验与结束策略仍由自身提供。
+阶段基础类型与初始状态使用 `lab_workflows.workflow_stages.Stage`、`initial_states(stages)`；
+公共 `DependencyRules` 计算依赖、参数失效与选择校验，各实验显式提供自己的 `finish_id` 和阶段清单，
+不借用其他实验闭包里的结束节点；原阶段模块的函数和导入保持兼容。
+闭环波形分析组合 `lab_workflows.analysis_execution.AnalysisRunState`，由公共模块完整拥有分析状态、
+内容指纹和按声明归档的产物；额外输入、数据资格、执行顺序、异常分类和科学算法仍由实验自己负责。
+其他分析家族逐步迁移，不将现有跨实验继承视为推荐入口，也不引入万能 Context 或统一实验执行循环。
+[MxZ 家族初始化](<lab_workflows/experiment_modules/mx_z_optimal_control_rf_sensitivity/workflow.py>)通过显式预检、受限身份元数据与不可变 `StageModePolicy` 提供扩展点；XY 噪声子实验调用完整父构造，不再自行拼装父字段。其余子实验与采集内部状态继续按真实能力逐步迁移。
+[DirectAW 子控制运行](<lab_workflows/experiment_modules/rf_sensitivity_direct_aw/workflow.py>)由 `create_control_run()` 统一创建：设备仅借用，校准和阶段状态独立复制，目录与有效前置继承沿用原规则。DirectAW、已知噪声和倍率扫描各自声明格式元数据；倍率扫描仍保持逐点独立校准，工厂不接管采集或安全收尾。
+[XY 锁相采集模式校验](<lab_workflows/steps/lockin.py>)仅接收仪器和显式速率、时间常数、相位；三个实验在原采集入口调用，DAQ/Scope 差异、容差与错误语义集中维护，旧 `verify_daq_mode(ctx)` 仅保留兼容入口，不作为新调用范式。
+[Z 线圈采集配置](<lab_workflows/experiment_modules/z_coil_inductance_frequency_response/workflow.py>)通过 `configure_capture()` 一次接收保护等待、格式元数据和校验器；无效输入在修改配置前拒绝，电流子实验不再逐项改写父采集字段，逐帧配置、保存和恢复顺序不变。
+[Scope 波形准备](<lab_workflows/experiment_modules/z_aw_waveform_scope_check/workflow.py>)通过 `prepare_control_source()` 返回完整 `ControlSource`；电流子实验只提供自己的准备结果，父 A03 保持“提交源 → 标记输出已开始 → 设置仪器”的顺序。该结果是已校验的准备输入，不冒充实际仪器回读；采集、失败收尾与部分数据保存仍由原流程负责。
+[静态架构约束](<lab_workflows/test_experiment_architecture.py>)从注册表枚举全部当前实验模块，冻结剩余跨实验执行类继承、构造状态重建和可静态追踪的外部状态写入，禁止新增或增加写入次数；纯数值复用不受限。测试不导入实验模块，也不会自动刷新允许清单；动态分发、容器传播和反射仍需人工审查。五个采集簇本轮各迁移一个能力，不代表全部历史继承和内部状态耦合已经消除。
+最优控制 Y RF 的包络校验、Burst 恢复与重触发共用 `lab_workflows.steps.mx_z_optimal_control`，旧私有入口保留兼容；扫描策略和采集时序不迁移。
+公共 `validate_safety_limit()` 先拒绝 NaN／±Infinity，再按原限值校验有限数值；高阻负载 `INF` 仍走独立归一化入口。
+直接调用 `restore_y_rf_burst_sine()` 仍以调用方已完成包络校验为前提，返回时输出关闭。
+前端分步流程图共用 `GUI/frontend/src/components/workflow/WorkflowPanel.tsx` 及配套样式；原 XY 路径保留兼容转发。
+`pages/WorkflowExperimentPage.tsx` 继续编排运行／历史外壳，专属页面的参数归一化、分析键映射和结果扩展保持原接口。
+运行／结束角色由各实验流程清单显式提供，不套用通用节点编号；旧服务缺字段时阻止新分步执行，仍可恢复、取消和安全结束。
+状态与产物以执行记录为准，执行完成不等于科学质量通过；具体兼容、草稿与下载规则见 [GUI 分步契约](GUI/README.md#分步流程契约与兼容)。
 
 文档分类入口见 [docs/README.md](docs/README.md)。原根目录 `manuals/` 已合并至
 `docs/manuals/`，厂商原始资料与项目内的仪器使用说明分开存放。
@@ -197,9 +225,13 @@ Tailscale 并加入同一网络后，可用启动窗口显示的 `https://<本�
 
 启动器检查 Python、npm、前端依赖、Tailscale 登录状态和 8000 / 5173 端口；缺失依赖或
 端口冲突时报错退出，不杀进程、不自动换端口、不自动安装依赖。按 Ctrl+C 只结束当前
-Vite 进程，后端需在自己的窗口停止或关闭；修改 Python 后端代码后可在总览页点击
-“重启后端”（仅在没有运行或排队任务时可用）。停止服务前应先通过 GUI 正常停止实验或
-功能模块，服务退出不等于仪器安全收尾。单独启动前后端、构建 dist 部署等更多细节见
+Vite 进程，关闭或刷新网页也不会停止后台实验。停止后端时应在其独立窗口按 Ctrl+C 并等待：
+后台停止接纳新任务和短硬件操作，取消排队项，向运行任务请求协作停止，等待现有安全收尾、
+部分数据保存和已开始的短操作结束；重复 Ctrl+C 不强退，等待较长时持续报告状态。
+修改 Python 后端代码后可在总览页点击“重启后端”（仅在没有运行或排队任务时可用）。
+停止服务前仍应优先通过 GUI 正常停止实验或功能模块；退出等待不代表所有仪器输出已确认安全，
+强杀进程、直接关闭终端和断电不在保证范围。完整边界见
+[正常停止与安全边界](GUI/README.md#正常停止与安全边界)；单独启动前后端、构建 dist 部署等见
 [GUI 开发说明](GUI/README.md#启动)。
 
 ### 基本操作
@@ -212,8 +244,8 @@ Vite 进程，后端需在自己的窗口停止或关闭；修改 Python 后端�
   同一次实验独立使用的物理量占用同一通道时预检拒绝启动。
 - 设备写入前会检查当前 mapping key 在 `params/safety_limits.yaml` 的上下限，写入后以
   实际回读值更新页面。
-- 实验结束后先执行模块的“停止”，再分别停止 Vite 与后端；仅停止服务不会自动关闭
-  已启动的任意波。
+- 实验结束后先执行模块的“停止”，再分别停止 Vite 与后端；后端退出沿用各任务的输出保持
+  策略，不替代已启动任意波等独立功能的停止操作，也不代表所有输出已关闭。
 
 “实验中心”默认展示[注册表](lab_workflows/experiments/registry.py)中的未归档正式实验，提供动态参数、
 默认值保存、无副作用预检、运行日志、安全停止和离线重新分析。实验卡片仅显示名称、分类和任务状态，

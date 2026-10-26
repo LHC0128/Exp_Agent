@@ -1245,6 +1245,8 @@
         ]
       }
     },
+    "run_step_id": "A09",
+    "finish_step_id": "A10",
     "diagram_url": "/api/experiments/z-field-bandwidth/workflow/diagram"
   }
 }

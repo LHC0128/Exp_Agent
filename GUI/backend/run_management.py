@@ -8,7 +8,7 @@ import stat
 
 from fastapi import HTTPException
 
-from lab_workflows.experiment_modules.noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 
 
 def split_run_name(run_id: str) -> tuple[str, str]:

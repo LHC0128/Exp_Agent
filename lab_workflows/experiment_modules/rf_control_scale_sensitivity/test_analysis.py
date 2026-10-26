@@ -20,6 +20,34 @@ from ..rf_sensitivity_direct_aw.analysis_steps import dispersive, fit_response_c
 from sensitivity_analysis.fitting import LARMOR_PER_NT
 
 
+REGRESSION_CASES = {
+    "rf-control-scale-sensitivity": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/rf_control_scale_sensitivity/analysis.py"
+            ],
+            "tests": [
+                "test_no_nominal_scale_keeps_absolute_metrics_and_compensation",
+                "test_v2_independent_phase_analysis_and_v1_history_keep_separate_meanings",
+                "test_v2_rejects_missing_stale_or_mixed_phase_calibration",
+                "test_legacy_missing_scan_switch_in_copied_children_keeps_history_unchanged",
+                "test_manual_phase_analysis_keeps_all_metrics_without_scan_file",
+                "test_manual_phase_analysis_rejects_inconsistent_records",
+                "test_dispersive_fit_uses_direct_aw_absolute_slope_and_covariance",
+                "test_complete_analysis_uses_each_scale_and_preserves_raw",
+                "test_median_is_not_globally_masked_by_linewidth_or_one_noisy_bin",
+                "test_numeric_gradient_fallback_is_rejected",
+                "test_noise_record_selection_is_conservative_and_reversible",
+                "test_bad_record_is_excluded_from_mean_but_raw_and_original_psd_remain",
+                "test_noise_disabled_and_invalid_point_diagnostics",
+                "test_partial_and_escaping_manifest_rejected_before_output",
+                "test_real_offline_subprocess_entrypoint"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(path, *, include_noise=True, control_name="ControlA", noise_records=2, raw_version=1,
                   scales=None, control_scale_factors=None):
     path.mkdir(parents=True)

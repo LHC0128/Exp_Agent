@@ -14,9 +14,10 @@ import numpy as np
 
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from .run_format import EXPERIMENT_ID, analysis_block_reason
-from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ANALYSIS, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 from .analysis_steps import (validate_waveform, calculate_psd, envelope_indices, vertical_metadata,
                              load_inputs, export_display, _json)
@@ -99,7 +100,8 @@ class AnalysisWorkflow:
             config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             config.update(analysis_status=self.summary.get("status", "not_started"),
                           analysis_error=self.summary.get("error"))
-            config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            from ...steps.run_directory import write_run_config
+            write_run_config(config_path, config)
         report_runtime_progress("analysis", f"示波器分析：{self.summary.get('status', 'not_started')}",
                                 data={"analysis_workflow": self.snapshot()})
 
@@ -138,7 +140,11 @@ class AnalysisWorkflow:
             self.states["B01"] = {"status": status, "error": str(exc)}
             self.summary.update(status=status, error=str(exc))
             self.revision += 1
-            self.persist()
+            try:
+                self.persist()
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("分析状态保存失败，保留原始输入异常")
             raise
         self.results.mkdir(exist_ok=True)
         self.revision += 1

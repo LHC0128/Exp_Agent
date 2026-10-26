@@ -7,6 +7,7 @@ from dataclasses import replace
 import numpy as np
 from datetime import datetime
 from pathlib import Path
+from typing import TypeVar
 from uuid import uuid4
 import shutil
 import time
@@ -15,12 +16,16 @@ from ...experiment_runtime import check_cancelled, load_runtime_params, report_r
 from ...instrument_config import instrument_config_snapshot
 from ...steps import create_run_directory, synchronize_connected_clocks
 from ...steps.safety_shutdown import disconnect_device_mapping
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from . import preparation, excitation, phase, acquisition, run_format
 from ._helpers import _RuntimeCancellation, hf2_snapshot, wait
 from .models import RFSensitivityDirectAWParams
 from .control_runs import make_control_directory, inherit_control, execute_controls, seal_controls
-from .stages import SINGLE_ACQUISITION as ACQUISITION, MULTI_ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import SINGLE_ACQUISITION as ACQUISITION, MULTI_ACQUISITION, FINISH_ID, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
+
+
+_ControlWorkflow = TypeVar("_ControlWorkflow", bound="SingleControlWorkflow")
 
 
 class SingleControlWorkflow:
@@ -48,6 +53,38 @@ class SingleControlWorkflow:
         self.z_positive_phase = self.quality_error = None
         self.outputs = {name: "未知" for name in ("X", "Y", "Z", "温控", "Pump", "共用触发")}
         self.started = time.monotonic()
+
+    @classmethod
+    def create_control_run(cls: type[_ControlWorkflow], params, *, parent_directory,
+                           project_root, session_id, devices, shared_calibration=None,
+                           stage_states=None, previous=None,
+                           affected_stages=frozenset()) -> _ControlWorkflow:
+        """创建已选定一个控制的子运行；仅借用设备，不采集或接管安全收尾。
+
+        校准和阶段状态独立复制；有效前置仍按 affected_stages 从内存状态继承，
+        不额外要求 completed，也不修改旧运行。
+        """
+        ctx = cls(params, project_root=project_root, session_id=session_id)
+        ctx.devices = devices
+        if shared_calibration is not None:
+            ctx.state["calibration"] = deepcopy(shared_calibration)
+        ctx.state.update(ctx._control_run_metadata())
+        relative = params.control_waveform_files[0]
+        ctx.directory = make_control_directory(parent_directory, relative, params, ctx.state)
+        if stage_states is not None:
+            ctx.states = deepcopy(stage_states)
+        if previous is not None:
+            inherit_control(previous, ctx, affected_stages)
+        return ctx
+
+    def _control_run_metadata(self):
+        relative = self.params.control_waveform_files[0]
+        return dict(raw_format_version=1, control_layout="single", control_metrics={
+            "envelope_rms_V": float(np.sqrt(np.mean(self.envelope["envelope_V"] ** 2))),
+            "envelope_peak_V": float(np.max(np.abs(self.envelope["envelope_V"]))),
+            "repeat_frequency_Hz": self.envelope["source_repeat_freq_Hz"],
+            "control_scale_factor": self.params.control_scale_factor(relative),
+        })
 
     def _configuration_revision(self):
         config = instrument_config_snapshot(self.root)
@@ -396,22 +433,11 @@ class Workflow(SingleControlWorkflow):
         self.controls = {}
         for relative in self.params.control_waveform_files:
             params = replace(self.params, control_waveform_files=[relative])
-            ctx = SingleControlWorkflow(params, project_root=self.root, session_id=self.session_id)
-            ctx.devices = self.devices
-            ctx.state.update(raw_format_version=1, control_layout="single")
-            ctx.state["calibration"] = deepcopy(self.state["calibration"])
-            ctx.state["control_metrics"] = {
-                "envelope_rms_V": float(np.sqrt(np.mean(ctx.envelope["envelope_V"] ** 2))),
-                "envelope_peak_V": float(np.max(np.abs(ctx.envelope["envelope_V"]))),
-                "repeat_frequency_Hz": ctx.envelope["source_repeat_freq_Hz"],
-                "control_scale_factor": params.control_scale_factor(relative),
-            }
-            ctx.directory = make_control_directory(self.directory, relative, params, ctx.state)
-            ctx.states = deepcopy(self.states)
-            version = ctx.directory.root.name
-            if old := old_controls.get(version):
-                inherit_control(old, ctx, affected)
-            self.controls[version] = ctx
+            ctx = SingleControlWorkflow.create_control_run(params, parent_directory=self.directory,
+                project_root=self.root, session_id=self.session_id, devices=self.devices,
+                shared_calibration=self.state["calibration"], stage_states=self.states,
+                previous=old_controls.get(Path(relative).parent.parent.name), affected_stages=affected)
+            self.controls[ctx.directory.root.name] = ctx
         self.save()
 
     def _execute_step(self, item):

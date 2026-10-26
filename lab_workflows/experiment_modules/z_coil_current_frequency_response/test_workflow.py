@@ -77,6 +77,68 @@ class CurrentWorkflowTests(unittest.TestCase):
         copy_config(self.root)
         self.params = scan_params(self.root)
 
+    def test_capture_options_use_parent_interface_at_construction_and_update(self):
+        configure = shared_workflow.Workflow.configure_capture
+        validate = workflow._validate_capture_current
+        with fake_hardware(self.root) as hw, \
+                patch.object(shared_workflow.Workflow, "configure_capture", autospec=True,
+                    side_effect=configure) as configure_call, \
+                patch.object(workflow, "_validate_capture_current", wraps=validate) as validate_call:
+            ctx = workflow.Workflow(self.params, project_root=self.root, session_id="capture-options")
+            self.assertEqual(configure_call.call_count, 2)
+            self.assertEqual(configure_call.call_args_list[0].kwargs,
+                dict(capture_validator=None, capture_guard_s=None, drive_metadata=None))
+            self.assertEqual(ctx.session_id, "capture-options")
+            self.assertEqual(ctx.experiment_id, workflow.EXPERIMENT_ID)
+            self.assertEqual(ctx.data_type, workflow.DATA_TYPE)
+            self.assertEqual(ctx.completion_label, "Z 线圈实际电流频率响应")
+            self.assertEqual(ctx.acquisition_signals,
+                ["SDS CH3 low-side sense-resistor voltage", "SDS CH4 common trigger reference"])
+            self.assertIn("CH3 仅允许跨接低端采样电阻", ctx.physical_limit)
+            self.assertIs(ctx.preflight, workflow.preflight)
+            self.assertIs(ctx.operations, shared_workflow)
+            self.assertEqual(set(ctx.states), {stage.id for stage in ACQUISITION})
+            before = vars(ctx).copy()
+            callback, metadata = ctx.capture_validator, ctx.drive_metadata
+            expected = dict(output_protocol=workflow.OUTPUT_PROTOCOL,
+                command_voltage_reference=workflow.COMMAND_VOLTAGE_REFERENCE,
+                frequency_spacing=ctx.params.frequency_spacing,
+                frequency_points_per_decade=ctx.params.frequency_points_per_decade)
+            self.assertEqual(metadata, expected)
+            self.assertIs(configure_call.call_args.args[0], ctx)
+            self.assertIs(configure_call.call_args.kwargs["capture_validator"], callback)
+            self.assertEqual(configure_call.call_args.kwargs["capture_guard_s"], 0)
+            self.assertIs(configure_call.call_args.kwargs["drive_metadata"], metadata)
+            validate_call.assert_not_called()
+            frame = {"measured_voltage_v": np.array([-.36, .36])}
+            callback(frame)
+            self.assertIs(validate_call.call_args.args[0], frame)
+            self.assertIs(validate_call.call_args.args[1], ctx.params)
+            # 改变对数密度时同步其只读派生点数，保持真实参数预检有效。
+            ctx.update_parameters({"SCOPE_CAPTURE_GUARD_S": .2, "FREQUENCY_POINTS_PER_DECADE": 6,
+                "FREQUENCY_POINTS": 5, "SENSE_RESISTOR_OHM": 20, "MAXIMUM_CURRENT_A": .01})
+            self.assertEqual(configure_call.call_count, 3)
+            self.assertEqual(set(vars(ctx)), set(before))
+            changed = {"params", "mapping", "limits", "revision", "capture_validator", "capture_guard_s", "drive_metadata"}
+            for name in before.keys() - changed:
+                self.assertIs(getattr(ctx, name), before[name], name)
+            self.assertIsNot(ctx.params, before["params"])
+            self.assertEqual(ctx.revision, before["revision"] + 1)
+            self.assertEqual(ctx.capture_guard_s, .2)
+            self.assertEqual(ctx.drive_metadata, expected | {"frequency_points_per_decade": 6})
+            self.assertEqual(metadata, expected)
+            self.assertIs(configure_call.call_args.args[0], ctx)
+            self.assertIs(configure_call.call_args.kwargs["capture_validator"], ctx.capture_validator)
+            self.assertEqual(configure_call.call_args.kwargs["capture_guard_s"], .2)
+            self.assertIs(configure_call.call_args.kwargs["drive_metadata"], ctx.drive_metadata)
+            # 已交给采集方的旧回调同样读取更新后的参数，不冻结构造时参数。
+            for current_callback in (callback, ctx.capture_validator):
+                with self.assertRaisesRegex(ValueError, "峰值电流"):
+                    current_callback(frame)
+                self.assertIs(validate_call.call_args.args[1], ctx.params)
+            self.assertEqual(hw.generator.mock_calls, [])
+            self.assertEqual(hw.scope.mock_calls, [])
+
     def test_manifest_display_and_impacts_match_real_application(self):
         flow = definition()
         self.assertEqual({name for stage in flow["acquisition"]+flow["analysis"]

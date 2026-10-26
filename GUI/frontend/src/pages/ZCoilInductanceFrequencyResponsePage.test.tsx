@@ -41,7 +41,7 @@ const analysisStages = ["配置与原始帧资格校验", "逐帧正弦与频响
 const impacts: Record<string, string[]> = { RUN_TAG: ["A06"], SCOPE_REPEATS: ["A06"],
   SCOPE_CYCLES: ["A05", "A06"], DRIVE_AMPLITUDE_VPP: ["A04", "A05", "A06"], DRIVE_OFFSET_V: ["A04", "A05", "A06"] };
 const flow = { acquisition, analysis: analysisStages,
-  parameter_impacts: { acquisition: impacts, analysis: {} }, diagram_url: `${BASE}/workflow/diagram` };
+  parameter_impacts: { acquisition: impacts, analysis: {} }, run_step_id: "A06", finish_step_id: "A07", diagram_url: `${BASE}/workflow/diagram` };
 const makeSession = (completed = false) => ({ session_id: "frequency-session", job_id: "frequency-job", revision: 0,
   status: "waiting", parameters: params(), current_step: null, pending_request: null,
   steps: Object.fromEntries(acquisition.map(stage => [stage.id, { status: completed && stage.id !== "A07" ? "completed" : "pending", error: "" }])),
@@ -131,7 +131,7 @@ it("真实路由提供运行/历史、节点编辑保留、历史填回且预检
   page();
   const edit = await openParameters("A06");
   expect(screen.getAllByRole("tab")).toHaveLength(2);
-  expect(screen.getByText(`质量门槛：${qualityGates.B02[0]}`)).toBeVisible();
+  expect(screen.getByText(`检查与质量说明：${qualityGates.B02[0]}`)).toBeVisible();
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
   fireEvent.change(edit.getByLabelText("运行标签"), { target: { value: "draft" } });
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));

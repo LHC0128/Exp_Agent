@@ -144,7 +144,7 @@ it("恢复会话，草稿预览只在应用后失效，重跑须显式选择", a
   await renderPage();
   expect(await screen.findByText(/持续占用硬件锁/)).toBeVisible();
   edit("A08", "每组后温控恢复等待 (s)", "0.8");
-  expect(within(node("A08")).getByText("已完成")).toBeVisible();
+  expect(within(node("A08")).getByText("执行完成")).toBeVisible();
   expect(within(node("A08")).getByText(/应用草稿后预计需重跑/)).toBeVisible();
   edit("A09", "每组后温控恢复等待 (s)", "3");
   expect(screen.queryByText(/参数草稿尚未应用/)).toBeNull();
@@ -257,10 +257,10 @@ it("结束后编辑下一次实验保留已完成记录，不制造旧会话失�
   await renderPage();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
   await screen.findByText(/状态为已结束会话/);
-  expect(within(node("A13")).getByText("已完成")).toBeVisible();
+  expect(within(node("A13")).getByText("执行完成")).toBeVisible();
   edit("A09", "色散扫描点数", "61");
   expect(within(node("A09")).getByLabelText("色散扫描点数")).toHaveValue(61);
-  expect(within(node("A09")).getByText("已完成")).toBeVisible();
+  expect(within(node("A09")).getByText("执行完成")).toBeVisible();
   expect(screen.queryByText(/应用草稿后预计需重跑/)).toBeNull();
   expect(mockApi.mock.calls.some(([url]) => url.endsWith("/parameters"))).toBe(false);
 });

@@ -10,6 +10,26 @@ from . import analysis, analysis_steps, run_format
 from .models import MxYOptimalControlRFFrequencyResponseParams
 
 
+REGRESSION_CASES = {
+    "mx-y-optimal-control-rf-frequency-response": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/__init__.py",
+                "lab_workflows/experiment_modules/mx_y_optimal_control_rf_frequency_response/analysis.py"
+            ],
+            "tests": [
+                "test_full_and_stepwise_preserve_independent_phase_median_and_constant_curve",
+                "test_content_fingerprint_detects_same_size_same_timestamp_and_preserves_previous_products",
+                "test_quality_failure_keeps_diagnostics_and_blocks_report",
+                "test_format_rejects_ambiguous_identity_and_unsealed_inputs",
+                "test_parameter_schema_independent_of_explicit_raw_format",
+                "test_real_module_outside_repository_uses_explicit_run"
+            ]
+        }
+    }
+}
+
+
 def build_run(root, comparison=True, schema=3, raw_version=1):
     directory = root / "data" / run_format.DATA_TYPE / "1015_1200_fixture"
     (directory / "raw").mkdir(parents=True)
@@ -121,3 +141,11 @@ def test_parameter_schema_independent_of_explicit_raw_format(tmp_path, schema, v
     else:
         with pytest.raises(ValueError):
             analysis.AnalysisWorkflow(directory)
+
+
+@pytest.mark.parametrize("mode", ["explicit", "missing", "nonexistent"])
+def test_real_module_outside_repository_uses_explicit_run(tmp_path, mode):
+    from lab_workflows.experiments.test_analysis_imports import check_real_analysis_module
+
+    run = build_run(tmp_path)
+    check_real_analysis_module(run, __package__ + ".analysis", "optimal_control_median_response.npz", mode)

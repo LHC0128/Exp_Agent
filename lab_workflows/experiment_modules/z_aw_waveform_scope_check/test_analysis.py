@@ -18,6 +18,26 @@ from .run_format import EXPERIMENT_ID, DATA_TYPE
 from .test_workflow import ROOT, copy_config, scan_params
 
 
+REGRESSION_CASES = {
+    "z-aw-waveform-scope-check": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/z_aw_waveform_scope_check/__init__.py",
+                "lab_workflows/experiment_modules/z_aw_waveform_scope_check/analysis.py"
+            ],
+            "tests": [
+                "ScopeAnalysisTests::test_complete_and_staged_match_and_replot_archives_only_successors",
+                "ScopeAnalysisTests::test_legacy_format_is_explicit_and_schema_change_does_not_change_raw_qualification",
+                "ScopeAnalysisTests::test_raw_and_artifact_content_fingerprints_reject_stale_predecessors",
+                "ScopeAnalysisTests::test_running_missing_and_flat_waveform_failures_preserve_diagnostics",
+                "ScopeAnalysisTests::test_unknown_analysis_overrides_rejected_and_real_subprocess_writes_results",
+                "ScopeAnalysisTests::test_historical_unknown_scope_range_is_null_without_fabricated_diagnostics"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(root, name="0101_120000_fake", *, legacy=False, flat=False):
     params = scan_params(root)
     directory = root / "data" / DATA_TYPE / name

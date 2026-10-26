@@ -10,7 +10,7 @@ import yaml
 from scipy import signal
 from scipy.optimize import curve_fit
 from ...experiment_runtime import check_cancelled
-from ..noise_spectrum_xy.state_io import write_state, read_state
+from lab_workflows.workflow_state import write_state, read_state
 from .storage import save_npz
 from .stages import ANALYSIS_KEYS
 from . import run_format

@@ -14,7 +14,7 @@ import numpy as np
 import yaml
 
 from ...common import WorkflowCancelled
-from ..z_aw_waveform_scope_check import acquisition
+from ..z_aw_waveform_scope_check import acquisition, workflow as scope_workflow
 from ..z_aw_waveform_scope_check.test_workflow import (
     ROOT, copy_config as copy_voltage_config, fake_hardware as voltage_hardware,
 )
@@ -84,6 +84,68 @@ class CurrentWorkflowTests(unittest.TestCase):
         self.root = Path(temporary.name)
         copy_config(self.root)
         self.params = scan_params(self.root)
+
+    def test_prepared_source_hook_and_failed_setup_keep_state_and_shutdown_contract(self):
+        for source in ("theory", "corrected_run"):
+            with self.subTest(source=source), fake_hardware(self.root) as hw:
+                params = scan_params(self.root, source=source)
+                ctx = workflow.Workflow(params, project_root=self.root)
+                files = {path.relative_to(self.root): path.read_bytes()
+                    for path in self.root.rglob("*") if path.is_file()}
+                prepared = ctx.prepare_control_source()
+                self.assertIsInstance(prepared, scope_workflow.ControlSource)
+                self.assertIsNone(ctx.source)
+                self.assertFalse(ctx.outputs_started)
+                self.assertEqual(ctx.devices, {})
+                expected = prepared.theory.omega_ctrl_hz / 100000 * (.9 if source == "corrected_run" else 1)
+                np.testing.assert_array_equal(prepared.target_current_a, expected)
+                self.assertIsNotNone(prepared.applied)
+                self.assertEqual(prepared.current_calibration.sense_resistor_ohm, 10)
+                self.assertTrue(callable(prepared.source_snapshot_writer))
+                self.assertEqual(hw.generator.mock_calls, [])
+                self.assertEqual(hw.scope.mock_calls, [])
+                self.assertEqual({path.relative_to(self.root): path.read_bytes()
+                    for path in self.root.rglob("*") if path.is_file()}, files)
+                ctx.execute(["A01", "A02"])
+                error = RuntimeError("模拟任意波设置中途失败")
+
+                def partial_setup(actual_params, devices, channels, theory, applied):
+                    self.assertIs(actual_params, ctx.params)
+                    self.assertIs(ctx.source, prepared)
+                    self.assertTrue(ctx.outputs_started)
+                    self.assertIs(theory, prepared.theory)
+                    self.assertIs(applied, prepared.applied)
+                    devices["z_control"].set_output(True, channel=channels["z_field"])
+                    raise error
+
+                with patch.object(ctx, "prepare_control_source", return_value=prepared) as prepare, \
+                        patch.object(scope_workflow, "_configure_outputs", side_effect=partial_setup):
+                    with self.assertRaises(RuntimeError) as caught:
+                        ctx.execute(["A03"])
+                    self.assertIs(caught.exception, error)
+                    prepare.assert_called_once_with()
+                ctx.finish(error)
+                self.assertEqual(ctx.states["A03"]["status"], "failed")
+                self.assertTrue(ctx.shutdown["completed"])
+                self.assertEqual([item for item in hw.generator.set_output.call_args_list
+                    if item.kwargs["channel"] == 1][-1], call(False, channel=1))
+                hw.scope.disconnect.assert_called_once()
+        for error in (RuntimeError("模拟准备失败"), WorkflowCancelled("模拟准备取消")):
+            with self.subTest(error=type(error).__name__), fake_hardware(self.root) as hw:
+                ctx = workflow.Workflow(self.params, project_root=self.root)
+                ctx.execute(["A01", "A02"])
+                before = list(hw.generator.mock_calls)
+                with patch.object(ctx, "prepare_control_source", side_effect=error), \
+                        patch.object(scope_workflow, "_configure_outputs") as configure:
+                    with self.assertRaises(type(error)) as caught:
+                        ctx.execute(["A03"])
+                    self.assertIs(caught.exception, error)
+                    configure.assert_not_called()
+                self.assertIsNone(ctx.source)
+                self.assertFalse(ctx.outputs_started)
+                self.assertEqual(hw.generator.mock_calls, before)
+                ctx.finish(error)
+                self.assertTrue(ctx.shutdown["completed"])
 
     def test_full_staged_sources_and_repeat_keep_real_protocol(self):
         for source in ("theory", "corrected_run"):

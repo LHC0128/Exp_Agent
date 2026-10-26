@@ -868,6 +868,8 @@
       },
       "analysis": {}
     },
+    "run_step_id": "A05",
+    "finish_step_id": "A06",
     "diagram_url": "/api/experiments/z-aw-closed-loop-waveform-correction/workflow/diagram"
   }
 }

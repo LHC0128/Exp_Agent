@@ -8,10 +8,11 @@ from ...common import WorkflowCancelled, find_project_root
 from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
 from ...instrument_config import instrument_config_snapshot
 from ...steps import (DeviceSession, create_run_directory, disconnect_device_mapping, set_temperature_switch)
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from . import acquisition, preparation, excitation, run_format
 from .models import MxZFieldCalibrationParams
-from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ACQUISITION, FINISH_ID, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 # 旧导入继续可用，完整运行与分步运行共用下方业务编排。
 from ._helpers import _sleep, _uncancellable_sleep, _RuntimeCancellation
 from .preparation import (_identity, _connect_devices, _initial_state_snapshot,

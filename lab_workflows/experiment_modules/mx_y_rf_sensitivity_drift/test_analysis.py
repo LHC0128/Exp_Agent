@@ -14,6 +14,37 @@ from ...common import WorkflowCancelled
 from . import analysis, analysis_plotting, analysis_steps, run_format, stages
 
 
+REGRESSION_CASES = {
+    "mx-y-rf-sensitivity-drift": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_y_rf_sensitivity_drift/__init__.py",
+                "lab_workflows/experiment_modules/mx_y_rf_sensitivity_drift/analysis.py"
+            ],
+            "tests": [
+                "test_full_and_separate_stages_share_original_numeric_rows_and_preserve_sources",
+                "test_real_plot_inputs_keep_elapsed_clock_time_and_all_three_original_trends",
+                "test_online_refresh_allows_running_and_zero_valid_without_changing_parent_or_stage_state",
+                "test_parent_identity_format_and_running_status_reject_without_writes",
+                "test_output_directory_link_cannot_write_raw_or_escape_project",
+                "test_b01_rejects_bad_references_and_data_before_archiving_old_results",
+                "test_no_valid_cycle_exports_real_diagnostics_and_partial_parent_keeps_original_indices",
+                "test_legacy_invalid_nan_stays_excluded_and_csv_nan_becomes_standard_json_null",
+                "test_no_parent_options_missing_dependencies_revision_and_snapshot_are_read_only",
+                "test_input_sha_invalidates_even_same_size_mtime_and_live_instance",
+                "test_output_sha_invalidates_only_affected_stage_even_same_size_mtime",
+                "test_b03_and_b02_recompute_archive_only_their_own_and_later_products",
+                "test_changed_bad_input_keeps_old_report_before_any_archive",
+                "test_report_failure_and_secondary_diagnostic_failure_keep_original_and_b02",
+                "test_cancel_before_archive_keeps_outputs_and_blocks_following_stages",
+                "test_module_subprocess_uses_explicit_temporary_run_and_generates_real_products",
+                "test_read_only_legacy_summary_sanitizes_json_without_claiming_stepwise_analysis"
+            ]
+        }
+    }
+}
+
+
 def yaml_file(path, payload):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")

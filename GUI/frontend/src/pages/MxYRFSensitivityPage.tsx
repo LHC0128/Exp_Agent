@@ -1,7 +1,7 @@
 import { WorkflowExperimentPage } from "./WorkflowExperimentPage";
 
 export function MxYRFSensitivityPage() {
-  return <WorkflowExperimentPage experimentId="mx-y-rf-sensitivity" finishStepId="A12" runStepId="A09"
+  return <WorkflowExperimentPage experimentId="mx-y-rf-sensitivity"
     analysisParameterKeys={{ FIT_R_SQUARED_MIN: "FIT_R_SQUARED_MIN",
       FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX: "FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX",
       R_BAD_POINT_STD_THRESHOLD_V: "R_BAD_POINT_STD_THRESHOLD_V", Y_RF_NT_PER_VPP: "Y_RF_NT_PER_VPP",

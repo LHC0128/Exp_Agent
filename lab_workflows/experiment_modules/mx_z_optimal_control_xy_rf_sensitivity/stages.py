@@ -1,8 +1,7 @@
 """XY 网格的真实步骤、参数编辑位置与失效依赖。"""
 from dataclasses import asdict
-from ..mx_z_optimal_control_rf_sensitivity.stages import (
-    Stage, TEMP, QUALITY, ANALYSIS_PARAMETERS, FINISH_ID, validate_selection,
-    initial_states, invalidate, invalidated_stages, parameter_impacts)
+from ..mx_z_optimal_control_rf_sensitivity.stages import TEMP, QUALITY, ANALYSIS_PARAMETERS, FINISH_ID, validate_selection, invalidate, invalidated_stages, parameter_impacts
+from lab_workflows.workflow_stages import Stage, initial_states
 
 ANALYSIS_KEYS = ()
 AXES = ("X_FIELD_START_V", "X_FIELD_STOP_V", "X_FIELD_POINTS",
@@ -56,6 +55,7 @@ def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return dict(acquisition=[public(stage) for stage in ACQUISITION], analysis=[public(stage) for stage in ANALYSIS],
+    return dict(run_step_id="A04", finish_step_id=FINISH_ID,
+        acquisition=[public(stage) for stage in ACQUISITION], analysis=[public(stage) for stage in ANALYSIS],
         parameter_impacts={"acquisition": parameter_impacts(ACQUISITION), "analysis": parameter_impacts(ANALYSIS)},
         diagram_url="/api/experiments/mx-z-optimal-control-xy-rf-sensitivity/workflow/diagram")

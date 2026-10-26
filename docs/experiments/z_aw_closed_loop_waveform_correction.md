@@ -26,6 +26,10 @@ defaults_file: params/experiments/z-aw-closed-loop-waveform-correction.yaml
 
 当前默认参数：[参数文件](../../params/experiments/z-aw-closed-loop-waveform-correction.yaml)。GUI「保存为默认」会更新该文件；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 当前推荐方法：harmonic_jacobian
 
 当 DG4000 CH1 与线圈之间串接 10 kHz 高通滤波器时，旧的静态逆滤波会把滤波器的幅度和相位当成未知延时，导致 v6/v7 的三次谐波相位错误（历史实测误差分别约 17.7% 和 11.1%）。选择 `CORRECTION_METHOD=harmonic_jacobian` 时，只用 SDS CH3 采样电阻电压和 CH4 共同触发：
@@ -44,6 +48,8 @@ CH3/CH4 接线保持：CH3 接低端采样电阻，CH4 接 DG4000 CH2 的共同�
 入口为 `experiments/Z_AW_Closed_Loop_Waveform_Correction.py`，离线入口为同名 `_plot.py`。
 
 ## 分步运行与历史
+
+本实验清单显式声明 `run_step_id=A05`、`finish_step_id=A06`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 `/experiments/z-aw-closed-loop-waveform-correction` 复用 XY 两列分步容器，保留「运行 / 历史」两个主 Tab。
 保存参数与布局、派生预览、预检、完整运行、取消及任务日志位于流程顶部；所有当前可见参数在节点内按基础／高级编辑，多个节点可同时展开。

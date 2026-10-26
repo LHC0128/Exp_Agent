@@ -7,8 +7,8 @@ from typing import Any, Literal
 from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import Field, StrictInt
-from lab_workflows.experiment_modules.noise_spectrum_xy.state_io import read_state
+from pydantic import Field, StrictInt, model_validator
+from lab_workflows.workflow_state import read_state
 from .schemas import StrictModel
 from .workflow_history import WorkflowRuns, WorkflowRunSummary, list_runs, read_config, run_summary
 
@@ -28,10 +28,32 @@ class XYStage(StrictModel):
 
 
 class XYFlow(StrictModel):
+    run_step_id: str
+    finish_step_id: str
     acquisition: list[XYStage]
     analysis: list[XYStage]
     parameter_impacts: dict[str, dict[str, list[str]]]
     diagram_url: str
+
+    @model_validator(mode="after")
+    def valid_definition(self):
+        """只校验清单契约，不执行或补选任何业务节点。"""
+        all_ids = [stage.id for stage in (*self.acquisition, *self.analysis)]
+        if len(set(all_ids)) != len(all_ids):
+            raise ValueError("流程节点 ID 必须唯一")
+        for stages in (self.acquisition, self.analysis):
+            preceding = set()
+            for stage in stages:
+                if not set(stage.dependencies).issubset(preceding):
+                    raise ValueError(f"{stage.id} 的前置必须存在于同列且排列在前")
+                preceding.add(stage.id)
+        acquisition = {stage.id: stage for stage in self.acquisition}
+        if (self.run_step_id == self.finish_step_id
+                or self.run_step_id not in acquisition or self.finish_step_id not in acquisition):
+            raise ValueError("运行与结束角色必须指向不同的有效采集节点")
+        if acquisition[self.finish_step_id].dependencies:
+            raise ValueError("安全结束节点必须无前置")
+        return self
 
 
 class XYStageState(StrictModel):

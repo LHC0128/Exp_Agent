@@ -26,7 +26,7 @@ DEFINITION = ExperimentDefinition(
         "理论来源冻结并校验内容，分析绑定明确目录且无额外覆盖值。"
         "锁相按设备库选择 HF2/MFLI 和 DAQ/Scope，输入保持高阻、DC 耦合。"
         "配置后关闭温控、按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后写盘；TEC 只写 UI 目标。"
-        "结束恢复 GS200 与运行前 X/Y 原态，保持 Z 最优控制与共同触发当前状态。"
+        "结束恢复 GS200 与运行前 X/Y 原态，保持 Z 最优控制与共同触发当前状态。分步角色由清单声明，状态与产物以执行记录为准。"
     ),
     data_type="Mx_Z_Optimal_Control_XYZ_Balance",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

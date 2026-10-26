@@ -25,7 +25,7 @@ DEFINITION = ExperimentDefinition(
         "运行/历史双 Tab 提供 7 个采集及 3 个独立分析节点；顶部保存、预检与完整运行，节点内编辑共享参数，应用草稿后显式重跑。"
         "控制来源冻结并校验内容，分析绑定明确目录且无额外覆盖值；保留原热图、历史参数与下载。"
         "配置后关闭温控、按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后写盘；TEC 只写 UI 目标。"
-        "锁相按设备库选择 HF2/MFLI 和 DAQ/Scope，输入保持高阻、DC 耦合。结束恢复 GS200 原态，保持 Z/XY 与共同触发当前状态。"
+        "锁相按设备库选择 HF2/MFLI 和 DAQ/Scope，输入保持高阻、DC 耦合。结束恢复 GS200 原态，保持 Z/XY 与共同触发当前状态。分步角色由清单声明，状态与产物以执行记录为准。"
     ),
     data_type="Mx_Z_Optimal_Control_XY_Leakage_Response",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),

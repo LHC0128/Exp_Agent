@@ -1,9 +1,11 @@
 """完整运行与分步会话共用的 Mx Z 灵敏度编排，兼容既有共享导入。"""
 from __future__ import annotations
+from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from types import MappingProxyType
 import shutil
 import hashlib
 import yaml
@@ -13,7 +15,7 @@ from ...experiment_runtime import check_cancelled, load_runtime_params, report_r
 from ...instrument_config import instrument_config_snapshot
 from ...steps import (DeviceSession, create_run_directory, save_corrected_control_source_snapshot,
     snapshot_main_field_state, restore_main_field_state, disconnect_device_mapping)
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from ..mx_y_rf_sensitivity.acquisition import acquire_r, acquire_rxy, summarize_r, summarize_rxy
 from ..mx_y_rf_sensitivity.workflow import RPointQualityError, _acquire_noise, _acquire_valid_r_point, _temperature_gated_acquire
 from ..mx_y_rf_sensitivity.excitation import _configure_response_demodulator
@@ -23,7 +25,8 @@ from .preparation import _connect_control_devices, _configure_common_outputs, sa
 from .excitation import (_configure_y_rf_output, _validate_y_rf_envelope, _restore_y_rf_burst_sine,
     _rearm_y_rf, _rearm_control)
 from .acquisition import _save_rxy_point, _rxy_summary_arrays, _reacquire_phase_outliers_once
-from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ACQUISITION, FINISH_ID, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE
@@ -47,12 +50,49 @@ def _acquire_control_noise(*args, **kwargs):
     return acquisition._acquire_control_noise(*args, **kwargs, noise_acquirer=_acquire_noise)
 
 
+@dataclass(frozen=True, slots=True)
+class StageModePolicy:
+    """只声明模式恢复、重跑与失败显示所关联的阶段，不携带运行状态。"""
+    response_prepare_id: str
+    response_required_ids: frozenset[str]
+    new_round_on_repeat_ids: frozenset[str]
+    uncertain_y_output_ids: frozenset[str]
+
+    def __post_init__(self):
+        for name in ("response_required_ids", "new_round_on_repeat_ids", "uncertain_y_output_ids"):
+            object.__setattr__(self, name, frozenset(getattr(self, name)))
+
+
 class Workflow:
     stages = ACQUISITION
+    # 尚未调用父构造的同家族子类也沿用这些不可变默认规则。
+    mode_policy = StageModePolicy(
+        response_prepare_id="A03",
+        response_required_ids=frozenset(("A04", "A05")),
+        new_round_on_repeat_ids=frozenset(("A04", "A05", "A06")),
+        uncertain_y_output_ids=frozenset(("A04", "A05", "A06")),
+    )
+    initial_metadata = None
 
-    def __init__(self, params, *, project_root=None, session_id=None):
+    def __init__(self, params, *, project_root=None, session_id=None, preflight=None,
+                 initial_metadata: Mapping[str, str | int] | None = None,
+                 mode_policy: StageModePolicy | None = None):
+        """完整初始化；注入预检仅用于构造，后续重检由具体实验实现。"""
+        if initial_metadata is not None:
+            metadata = dict(initial_metadata)
+            required = {"experiment_id", "data_type", "execution_mode", "raw_format_version"}
+            if not required <= metadata.keys() or metadata.keys() - (required | {"measurement_mode"}):
+                raise ValueError("初始元数据只允许完整实验身份、原始格式版本与可选测量模式")
+            if (type(metadata["raw_format_version"]) is not int or metadata["raw_format_version"] < 1
+                    or any(not isinstance(value, str) or not value
+                           for key, value in metadata.items() if key != "raw_format_version")):
+                raise ValueError("初始元数据的身份与模式必须是非空字符串，原始格式版本必须是正整数")
+            self.initial_metadata = MappingProxyType(metadata)
+        if mode_policy is not None:
+            self.mode_policy = mode_policy
         self.root = Path(project_root).resolve() if project_root else find_project_root()
-        self.params, self.mapping = preparation.preflight(params, self.root)
+        check = preparation.preflight if preflight is None else preflight
+        self.params, self.mapping = check(params, self.root)
         self.shutdown_parameters = self.params
         self.corrected = self.applied = self.executed_source = self.main_field_state = None
         self.response_parameters = self.params
@@ -72,6 +112,8 @@ class Workflow:
 
 
     def _initial_state(self):
+        if self.initial_metadata is not None:
+            return dict(self.initial_metadata, completion_status="running")
         return dict(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, execution_mode=EXECUTION_MODE,
             raw_format_version=run_format.RAW_FORMAT_VERSION, completion_status="running")
 
@@ -174,11 +216,13 @@ class Workflow:
         selected = validate_selection(self.stages, self.states, selected)
         if selected != [FINISH_ID]:
             self.recheck()
-        if self.demod_mode == "noise" and set(selected).intersection(("A04", "A05")) and "A03" not in selected:
-            raise ValueError("当前为噪声模式，请显式选择 A03 重新准备响应解调")
+        policy = self.mode_policy
+        if (self.demod_mode == "noise" and set(selected).intersection(policy.response_required_ids)
+                and policy.response_prepare_id not in selected):
+            raise ValueError(f"当前为噪声模式，请显式选择 {policy.response_prepare_id} 重新准备响应解调")
         hardware = [item for item in selected if item not in ("A01", FINISH_ID)]
         if hardware and (self.directory is None or self.round_sealed or self.run_parameters != self.params.to_external()
-                or any(item in ("A04", "A05", "A06") and self.states[item]["status"] != "pending" for item in hardware)):
+                or any(item in policy.new_round_on_repeat_ids and self.states[item]["status"] != "pending" for item in hardware)):
             self._new_directory(selected)
         self.revision += 1
         self.quality_error = None
@@ -204,7 +248,7 @@ class Workflow:
                 failure = exc
                 if notes := getattr(exc, "acquisition_cleanup_notes", None) or getattr(exc, "__notes__", None):
                     self.state["acquisition_cleanup_notes"] = list(notes)
-                if item in ("A04", "A05", "A06"):
+                if item in policy.uncertain_y_output_ids:
                     self.outputs["Y RF"] = "未知（本模块未完成）"
                 self.states[item] = {"status": "quality_failed" if isinstance(exc, RPointQualityError) else "failed", "error": str(exc)}
                 self.state["failure_reason"] = str(exc)

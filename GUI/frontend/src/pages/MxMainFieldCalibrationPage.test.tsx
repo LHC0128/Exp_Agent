@@ -88,7 +88,7 @@ beforeEach(() => {
     if (url === "/api/jobs") return [] as never;
     if (url === "/api/jobs/mx-job") return { id: "mx-job", kind: `session:${ID}`, status: "running", events: [] } as never;
     if (url === `${BASE}/workflow`) return { acquisition, analysis,
-      parameter_impacts: impacts, diagram_url: `${BASE}/workflow/diagram` } as never;
+      parameter_impacts: impacts, run_step_id: "A08", finish_step_id: "A10", diagram_url: `${BASE}/workflow/diagram` } as never;
     if (url === `${BASE}/sessions/active`) return current as never;
     if (url === `${BASE}/sessions` && options?.method === "POST") return current = makeSession();
     if (url === `${BASE}/sessions/mx-session/steps`) {

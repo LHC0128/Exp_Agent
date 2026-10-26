@@ -14,7 +14,7 @@ import type {
   ParameterValues,
   SchemaField,
 } from "../../types/api";
-import { WorkflowPanel, type XYSession } from "../NoiseSpectrumXY/WorkflowPanel";
+import { WorkflowPanel, type XYSession } from "../workflow/WorkflowPanel";
 import type { MxYOptimalControlFrequencyRunSummary, MxYOptimalControlFrequencyRunsResponse } from "./types";
 import { readCalibration } from "./types";
 import {
@@ -177,7 +177,7 @@ export function Dashboard({
 
   return (
     <div>
-      <WorkflowPanel experimentId={experimentId} finishStepId="A12" runStepId="A04"
+      <WorkflowPanel experimentId={experimentId}
         analysisParameterKeys={ANALYSIS_KEYS} enabled={fields.length > 0} fields={fields}
         layout={layout} setLayout={onLayoutChange} setNotice={setMoveNotice}
         parametersDisabled={parametersBusy || starting || savingDefaults}

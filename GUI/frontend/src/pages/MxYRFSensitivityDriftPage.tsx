@@ -62,6 +62,6 @@ function DriftResult({ summary }: { summary: Summary }) {
 const renderResult = (summary: WorkflowRunSummary) => <DriftResult summary={summary} />;
 
 export function MxYRFSensitivityDriftPage() {
-  return <WorkflowExperimentPage experimentId="mx-y-rf-sensitivity-drift" runStepId="A09" finishStepId="A11"
+  return <WorkflowExperimentPage experimentId="mx-y-rf-sensitivity-drift"
     analysisParameterKeys={ANALYSIS_KEYS} renderResult={renderResult} />;
 }

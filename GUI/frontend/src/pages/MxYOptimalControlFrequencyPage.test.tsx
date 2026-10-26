@@ -156,7 +156,7 @@ it("真实路由双Tab、全字段节点归属和质量门槛，保留专属图�
   expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByRole("tab", { name: "历史" })).toBeInTheDocument();
   for (const field of fields) expect(acquisition.some(stage => stage.display_parameters.includes(field.name))).toBe(true);
-  expect(screen.getByText(/质量门槛：每点至少8个有效样本/)).toBeVisible();
+  expect(screen.getByText(/检查与质量说明：每点至少8个有效样本/)).toBeVisible();
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
   expect(await screen.findByAltText("相位-频率热图")).toBeInTheDocument();
   expect(screen.getByText(/闭环冻结波形：frozen/)).toBeInTheDocument();

@@ -108,7 +108,7 @@ class BackendEntrypointTests(unittest.TestCase):
         def run_server():
             backend_entry.app.state.restart_requested = True
 
-        with patch.object(backend_entry.uvicorn, "Server") as server_factory, \
+        with patch.object(backend_entry, "Server") as server_factory, \
                 patch.object(backend_entry.os, "execv", side_effect=SystemExit) as execv:
             server_factory.return_value.run.side_effect = run_server
             with self.assertRaises(SystemExit):

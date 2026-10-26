@@ -1463,6 +1463,8 @@
       },
       "analysis": {}
     },
+    "run_step_id": "A06",
+    "finish_step_id": "A07",
     "diagram_url": "/api/experiments/rf-sensitivity-direct-aw-frequency/workflow/diagram"
   }
 }

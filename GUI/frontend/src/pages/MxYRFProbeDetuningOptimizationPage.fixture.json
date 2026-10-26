@@ -457,6 +457,8 @@
         ]
       }
     },
+    "run_step_id": "A07",
+    "finish_step_id": "A09",
     "diagram_url": "/api/experiments/mx-y-rf-probe-detuning-optimization/workflow/diagram"
   },
   "fields": [

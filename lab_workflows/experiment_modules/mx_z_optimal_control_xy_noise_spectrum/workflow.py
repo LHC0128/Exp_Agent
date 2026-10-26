@@ -3,20 +3,25 @@ from copy import deepcopy
 from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
 import shutil
 from ...common import find_project_root
 from ...experiment_runtime import load_runtime_params
-from ...steps import (create_run_directory, snapshot_main_field_state, DeviceSession, restore_main_field_state)
+from ...steps import (create_run_directory, snapshot_main_field_state, restore_main_field_state)
 from ..mx_z_optimal_control_rf_sensitivity.workflow import (
-    Workflow as ControlWorkflow, run as run_control, _configure_response_demodulator)
+    StageModePolicy, Workflow as ControlWorkflow, run as run_control, _configure_response_demodulator)
 from . import preparation, acquisition, run_format
 from .models import MxZOptimalControlXYNoiseSpectrumParams
-from .stages import ACQUISITION, FINISH_ID, SOURCES, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ACQUISITION, FINISH_ID, SOURCES, invalidate, invalidated_stages, validate_selection
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE
 EXECUTION_MODE = "typed_workflow"
+NOISE_STAGE_MODE_POLICY = StageModePolicy(
+    response_prepare_id="A03",
+    response_required_ids=frozenset(("A04", "A05")),
+    new_round_on_repeat_ids=frozenset(("A04", "A05", "A06")),
+    uncertain_y_output_ids=frozenset(("A04", "A05", "A06")),
+)
 
 
 class Workflow(ControlWorkflow):
@@ -24,27 +29,13 @@ class Workflow(ControlWorkflow):
 
     def __init__(self, params, *, project_root=None, session_id=None):
         root = Path(project_root).resolve() if project_root else find_project_root()
-        self.root = root
-        self.params, self.mapping = preparation.preflight(params, root)
-        self.shutdown_parameters = self.response_parameters = params
-        self.sources = self.executed_source = self.main_field_state = None
-        self.demod_mode = "unknown"
-        self.config_revision = self._configuration_revision()
-        self.session_id = session_id or uuid4().hex
-        self.revision = 0
-        self.states = initial_states(self.stages)
-        self.devices, self.channels = {}, {}
-        self.device_session = DeviceSession()
-        self.directory = self.run_parameters = self.current_step = None
-        self.closed = self.round_sealed = False
-        self.quality_error = self.progress = None
-        self.state = self._initial_state()
-        self.outputs = {key: "未知" for key in ("X", "Y RF", "Z", "温控", "Pump", "共同触发")}
-
-    def _initial_state(self):
-        return dict(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE, execution_mode=EXECUTION_MODE,
-            measurement_mode="xy_bias_noise_spectrum", raw_format_version=run_format.RAW_FORMAT_VERSION,
-            completion_status="running")
+        super().__init__(params, project_root=root, session_id=session_id,
+            preflight=preparation.preflight,
+            initial_metadata=dict(experiment_id=EXPERIMENT_ID, data_type=DATA_TYPE,
+                execution_mode=EXECUTION_MODE, measurement_mode="xy_bias_noise_spectrum",
+                raw_format_version=run_format.RAW_FORMAT_VERSION),
+            mode_policy=NOISE_STAGE_MODE_POLICY)
+        self.sources = None
 
     def recheck(self):
         if self.closed:

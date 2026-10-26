@@ -1,17 +1,6 @@
 """Mx Y RF 的唯一模块清单、编辑归属与失效规则。"""
-from dataclasses import asdict, dataclass
-
-
-@dataclass(frozen=True)
-class Stage:
-    id: str
-    title: str
-    group: str
-    dependencies: tuple[str, ...]
-    parameters: tuple[str, ...] = ()
-    artifacts: tuple[str, ...] = ()
-    display_parameters: tuple[str, ...] | None = None
-    quality_gates: tuple[str, ...] = ()
+from dataclasses import asdict
+from lab_workflows.workflow_stages import DependencyRules, Stage, initial_states
 
 
 FINISH_ID = "A12"
@@ -58,57 +47,19 @@ ANALYSIS = (
 )
 
 
-def initial_states(stages):
-    return {stage.id: {"status": "pending", "error": ""} for stage in stages}
-
-
-def invalidated_stages(stages, stage_id):
-    affected = {stage_id}
-    for stage in stages:
-        if affected.intersection(stage.dependencies):
-            affected.add(stage.id)
-    return tuple(stage for stage in stages if stage.id in affected and stage.id != FINISH_ID)
-
-
-def invalidate(stages, states, stage_id):
-    for stage in invalidated_stages(stages, stage_id):
-        states[stage.id] = {"status": "pending" if states[stage.id]["status"] == "pending" else "stale", "error": ""}
-
-
-def parameter_impacts(stages):
-    result = {}
-    for stage in stages:
-        for key in stage.parameters:
-            result.setdefault(key, [])
-            result[key] = list(dict.fromkeys([*result[key], *(item.id for item in invalidated_stages(stages, stage.id))]))
-    return result
-
-
-def validate_selection(stages, states, selected):
-    ids = [stage.id for stage in stages]
-    if not selected or len(set(selected)) != len(selected) or any(item not in ids for item in selected):
-        raise ValueError("请选择有效且不重复的模块")
-    if FINISH_ID in selected and selected[-1] != FINISH_ID:
-        raise ValueError("安全结束必须最后执行")
-    available = {key for key, value in states.items() if value["status"] == "completed"}
-    ordered = [item for item in ids if item in selected]
-    for item in ordered:
-        stage = stages[ids.index(item)]
-        missing = set(stage.dependencies) - available
-        if missing:
-            raise ValueError(f"{item} {stage.title} 缺少前置模块：" + "、".join(
-                f"{key} {stages[ids.index(key)].title}" for key in ids if key in missing))
-        if item != "A01":
-            available.difference_update(stage.id for stage in invalidated_stages(stages, item))
-        available.add(item)
-    return ordered
+_rules = DependencyRules(finish_id=FINISH_ID)
+invalidated_stages = _rules.invalidated_stages
+invalidate = _rules.invalidate
+parameter_impacts = _rules.parameter_impacts
+validate_selection = _rules.validate_selection
 
 
 def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return {"acquisition": [public(stage) for stage in ACQUISITION],
+    return {"run_step_id": "A09", "finish_step_id": FINISH_ID,
+            "acquisition": [public(stage) for stage in ACQUISITION],
         "analysis": [public(stage) for stage in ANALYSIS],
         "parameter_impacts": {"acquisition": parameter_impacts(ACQUISITION), "analysis": parameter_impacts(ANALYSIS)},
         "diagram_url": "/api/experiments/mx-y-rf-sensitivity/workflow/diagram"}

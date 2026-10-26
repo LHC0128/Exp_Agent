@@ -6,7 +6,7 @@ import { useJobActivity } from "./JobActivity";
 import { JobView } from "./JobView";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "./experimentNavigation";
 import { useParameterGuard } from "./NavigationGuard";
-import { WorkflowPanel, type XYSession } from "./NoiseSpectrumXY/WorkflowPanel";
+import { WorkflowPanel, type XYSession } from "./workflow/WorkflowPanel";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues, SchemaField } from "../types/api";
 import { sameParameterLayout, validatedParameterLayout } from "../pages/experimentHelpers";
 
@@ -80,7 +80,7 @@ export function StaticSensitivityDashboard({ experimentId, definition, fields, l
     finally { setSaving(false); }
   };
   return <>
-    <WorkflowPanel experimentId={experimentId} finishStepId="A13" runStepId="A12" analysisParameterKeys={ANALYSIS_KEYS}
+    <WorkflowPanel experimentId={experimentId} analysisParameterKeys={ANALYSIS_KEYS}
       enabled={fields.length > 0} fields={fields} layout={layout} setLayout={onLayoutChange} setNotice={setNotice}
       parametersDisabled={starting || fullActive} values={values} setValues={setValues} session={session} setSession={setSession}
       job={job} setJob={setJob} analysisJob={analysisJob} setAnalysisJob={setAnalysisJob}

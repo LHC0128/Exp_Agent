@@ -33,7 +33,7 @@ DEFINITION = ExperimentDefinition(
     variant="mx-direct-dc-scope",
     description=("直接读取 SDS CH1 直流均值，按 X 外层、Y 同向扫描，以二维 Bloch 与线性漂移拟合剩磁平衡点。"
                  "运行/历史双 Tab 提供可勾选依赖流程图、节点参数、草稿应用与显式重跑；独立分析绑定具体目录，无额外覆盖参数。"
-                 "逐次温控恢复后保存，TEC 仅设目标温度；结束恢复 GS200，XYZ 归零关闭，不施加拟合补偿值。"),
+                 "逐次温控恢复后保存，TEC 仅设目标温度；结束恢复 GS200，XYZ 归零关闭，不施加拟合补偿值。分步角色由清单声明，状态与产物以执行记录为准。"),
     data_type="Mx_XY_Residual_Field_Calibration",
     required_devices=("GS200", "DG900", "DG4000", "SDS"),
     required_mapping_keys=REQUIRED_MAPPING_KEYS,

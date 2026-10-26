@@ -1,7 +1,7 @@
 import { WorkflowExperimentPage } from "./WorkflowExperimentPage";
 
 export function MxYRFPowerOptimizationPage() {
-  return <WorkflowExperimentPage experimentId="mx-y-rf-power-optimization" finishStepId="A10" runStepId="A08"
+  return <WorkflowExperimentPage experimentId="mx-y-rf-power-optimization"
     analysisParameterKeys={{ FIT_R_SQUARED_MIN: "FIT_R_SQUARED_MIN",
       FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX: "FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX",
       R_BAD_POINT_STD_THRESHOLD_V: "R_BAD_POINT_STD_THRESHOLD_V", Y_RF_NT_PER_VPP: "Y_RF_NT_PER_VPP",

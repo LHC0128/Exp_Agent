@@ -15,6 +15,29 @@ from .stages import ANALYSIS
 from .test_workflow import copy_known_config
 
 
+REGRESSION_CASES = {
+    "noise-spectrum-xy-known-noise": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/__init__.py",
+                "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/analysis.py"
+            ],
+            "tests": [
+                "KnownAnalysisTests::test_waiting_then_gain_only_source_switch_and_archive",
+                "KnownAnalysisTests::test_full_and_staged_outputs_are_equal_and_b05_is_independent",
+                "KnownAnalysisTests::test_invalid_sources_rejected_without_writing_source",
+                "KnownAnalysisTests::test_legacy_internal_dispersion_and_fingerprints",
+                "KnownAnalysisTests::test_manual_kz_snapshot_and_legacy_source_fallback",
+                "KnownAnalysisTests::test_same_size_and_mtime_drift_invalidates_raw_and_products",
+                "KnownAnalysisTests::test_invalid_load_or_source_keeps_previous_scientific_products",
+                "KnownAnalysisTests::test_verified_schema1_mean_curve_uses_original_fit_and_b05",
+                "KnownAnalysisTests::test_legacy_mean_needs_verified_identity_count_and_finite_complete_curve"
+            ]
+        }
+    }
+}
+
+
 def static_source(root, name="source", *, completed=True, schema_version=3):
     directory = root / "data/Static_Magnetic_Field_Sensitivity" / name
     (directory / "raw").mkdir(parents=True, exist_ok=True)

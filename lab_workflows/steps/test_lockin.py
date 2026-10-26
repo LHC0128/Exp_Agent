@@ -1,12 +1,12 @@
 """公共锁相输入策略的无硬件回归。"""
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from lockin_amplifier import SignalInputConfig, demod
 
 from lab_workflows.test_lockin import fake_instrument
-from .lockin import initialize_lockin_inputs
+from .lockin import initialize_lockin_inputs, verify_lockin_acquisition_mode
 
 
 class LockinInputTests(unittest.TestCase):
@@ -68,3 +68,72 @@ class LockinInputTests(unittest.TestCase):
         self.assertEqual(values["SIGIN2_IMPEDANCE"], 1_000_000)
         visible = {field["name"] for field in adapter.schema()["fields"]}
         self.assertFalse({"SIGIN2_AC_COUPLING", "SIGIN2_IMPEDANCE"} & visible)
+
+
+class LockinAcquisitionModeTests(unittest.TestCase):
+    def test_daq_three_fields_tolerance_and_error_contract(self):
+        base = "/dev-test/demods/2"
+        # 仅开放原有只读操作；任何写入、同步或 get_int 都会直接失败。
+        hfi = Mock(spec_set=["model", "demod_path", "get_double"])
+        hfi.model = "HF2"
+        hfi.demod_path.return_value = base
+        arguments = dict(demod_index=2, requested_rate_hz=50000.0,
+                         acquisition_rate_hz=48000.0, time_constant_s=1e-4, phase_deg=23.0)
+        expected = {f"{base}/rate": 48000.0, f"{base}/timeconstant": 1e-4,
+                    f"{base}/phaseshift": 23.0}
+        read_calls = [call.demod_path(2), *[call.get_double(path) for path in expected]]
+        within = {path: value + 0.5 * max(abs(value) * 1e-6, 1e-9)
+                  for path, value in expected.items()}
+        for label, values in (("exact", expected), ("within", within)):
+            with self.subTest(values=label):
+                hfi.reset_mock()
+                hfi.get_double.side_effect = [str(values[path]) for path in expected]
+                self.assertIsNone(verify_lockin_acquisition_mode(hfi, **arguments))
+                self.assertEqual(hfi.method_calls, read_calls)
+        for index, (path, value) in enumerate(expected.items()):
+            with self.subTest(outside=path):
+                values = dict(expected)
+                values[path] = value + 2 * max(abs(value) * 1e-6, 1e-9)
+                hfi.reset_mock()
+                hfi.get_double.side_effect = [str(values[node]) for node in expected]
+                with self.assertRaises(RuntimeError) as caught:
+                    verify_lockin_acquisition_mode(hfi, **arguments)
+                self.assertEqual(str(caught.exception), "解调器实际模式已改变，请结束会话并重新准备")
+                self.assertEqual(hfi.method_calls, read_calls[:index + 2])
+            with self.subTest(communication=path):
+                error = ConnectionError("锁相回读通信失败")
+                hfi.reset_mock()
+                hfi.get_double.side_effect = [str(value) for value in list(expected.values())[:index]] + [error]
+                with self.assertRaises(ConnectionError) as caught:
+                    verify_lockin_acquisition_mode(hfi, **arguments)
+                self.assertIs(caught.exception, error)
+                self.assertEqual(hfi.method_calls, read_calls[:index + 2])
+
+    def test_scope_skips_rate_and_keeps_filter_phase_checks(self):
+        base = "/dev-test/demods/2"
+        hfi = Mock(spec_set=["model", "acquisition_mode", "demod_path", "get_double"])
+        hfi.model, hfi.acquisition_mode = "MFLI", "auto"
+        hfi.demod_path.return_value = base
+        arguments = dict(demod_index=2, requested_rate_hz=200000.0,
+                         acquisition_rate_hz=234375.0, time_constant_s=1e-4, phase_deg=23.0)
+        expected = {f"{base}/timeconstant": 1e-4, f"{base}/phaseshift": 23.0}
+        values = dict(expected)
+
+        def read_node(path):
+            if path == f"{base}/rate":
+                raise AssertionError("Scope 禁止读取通信 rate")
+            return str(values[path])
+
+        hfi.get_double.side_effect = read_node
+        read_calls = [call.demod_path(2), *[call.get_double(path) for path in expected]]
+        self.assertIsNone(verify_lockin_acquisition_mode(hfi, **arguments))
+        self.assertEqual(hfi.method_calls, read_calls)
+        for index, (path, value) in enumerate(expected.items()):
+            with self.subTest(changed=path):
+                values = dict(expected)
+                values[path] = value + 2 * max(abs(value) * 1e-6, 1e-9)
+                hfi.reset_mock()
+                with self.assertRaises(RuntimeError) as caught:
+                    verify_lockin_acquisition_mode(hfi, **arguments)
+                self.assertEqual(str(caught.exception), "解调器实际模式已改变，请结束会话并重新准备")
+                self.assertEqual(hfi.method_calls, read_calls[:index + 2])

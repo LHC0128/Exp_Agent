@@ -23,7 +23,7 @@ DEFINITION = ExperimentDefinition(
     description=("在固定主场的 Mx 构型下，逐 Z DC 电压扫描局部 Y RF 共振，离线拟合中心与 Hz/V 线性标定。"
         "运行页提供可选步骤、节点参数、共享草稿与显式重跑，分步等待保持设备连接和硬件锁。"
         "每频点按配置、关温控、SYSTEM_SETTLE_S、采入内存、恢复温控、保存执行；TEC 只写目标温度。"
-        "独立分析按具体运行目录保存覆盖草稿，不改历史采集参数；锁相型号与 DAQ/Scope 能力在启动前检查。"),
+        "独立分析按具体运行目录保存覆盖草稿，不改历史采集参数；锁相型号与 DAQ/Scope 能力在启动前检查。分步角色由清单声明，状态与产物以执行记录为准。"),
     data_type="Mx_Z_Field_Calibration",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
     required_mapping_keys=REQUIRED_MAPPING_KEYS,

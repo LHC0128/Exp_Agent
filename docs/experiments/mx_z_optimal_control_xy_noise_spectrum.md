@@ -24,6 +24,16 @@ defaults_file: params/experiments/mx-z-optimal-control-xy-noise-spectrum.yaml
 
 # 实验目标
 
+## 离线模块与运行目录
+
+本实验清单显式声明 `run_step_id=A05`、`finish_step_id=A12`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.mx_z_optimal_control_xy_noise_spectrum.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
+## Y RF 共享步骤与安全校验
+
+Y RF 包络校验复用[公共步骤](../../lab_workflows/steps/mx_z_optimal_control.py)，拒绝幅度、偏置及包络中的 NaN 和 ±Infinity；有限值仍按原安全限值处理，不修改默认参数。仅在公共工作点初始化时复用零 RF 的包络校验；后续仍为纯 X/Y DC 噪声扫描，不新增 RF 校相或幅度扫描。
+
 ## 采集时序与系统稳定
 
 实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。

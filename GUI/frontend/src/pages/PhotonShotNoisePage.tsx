@@ -7,6 +7,6 @@ const analysisParameterKeys = {
 };
 
 export function PhotonShotNoisePage() {
-  return <WorkflowExperimentPage experimentId="photon-shot-noise" finishStepId="A08" runStepId="A07"
+  return <WorkflowExperimentPage experimentId="photon-shot-noise"
     analysisParameterKeys={analysisParameterKeys} />;
 }

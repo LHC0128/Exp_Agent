@@ -1,19 +1,8 @@
 """脚本、会话、参数失效预览和 GUI 共用的执行清单。"""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
+from lab_workflows.workflow_stages import Stage, initial_states
 
 from .run_format import EXPERIMENT_ID
-
-
-@dataclass(frozen=True)
-class Stage:
-    id: str
-    title: str
-    group: str
-    dependencies: tuple[str, ...]
-    parameters: tuple[str, ...] = ()
-    artifacts: tuple[str, ...] = ()
-    display_parameters: tuple[str, ...] | None = None
-    quality_gates: tuple[str, ...] = ()
 
 
 CONTROL_PARAMETERS = ("CONTROL_VERSION", "CONTROL_RESULTS_ROOT", "Z_CALIBRATION_SOURCE_RUN",
@@ -43,10 +32,6 @@ ANALYSIS = (
           artifacts=("waveform_similarity.png", "waveform_similarity.pdf", "similarity_report.yaml",
                      "similarity_report.json")),
 )
-
-
-def initial_states(stages):
-    return {stage.id: {"status": "pending", "error": ""} for stage in stages}
 
 
 def invalidated_stages(stages, stage_id):
@@ -92,7 +77,8 @@ def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(stage.parameters
             if stage.display_parameters is None else stage.display_parameters)}
-    return {"acquisition": [public(stage) for stage in ACQUISITION],
+    return {"run_step_id": "A05", "finish_step_id": "A06",
+            "acquisition": [public(stage) for stage in ACQUISITION],
             "analysis": [public(stage) for stage in ANALYSIS],
             "parameter_impacts": {"acquisition": parameter_impacts(ACQUISITION),
                                   "analysis": parameter_impacts(ANALYSIS)},

@@ -121,7 +121,7 @@ class ExperimentValidationTest(unittest.TestCase):
                         patch("lab_workflows.experiment_validation.discover_test_cases", return_value=(claim, {})), \
                         patch.object(sys, "path", sys.path[:]), redirect_stdout(io.StringIO()):
                     code = validator.main(["--root", str(case_root), "--changed-file", source,
-                        "--changed-file", shared, "--report", "report.json"])
+                        "--changed-file", shared, "--run-regressions", "--report", "report.json"])
                 report = json.loads((case_root / "report.json").read_text(encoding="utf-8"))
                 batches = report["business_batches"]
                 self.assertEqual(len(batches), 3)

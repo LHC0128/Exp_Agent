@@ -37,6 +37,10 @@ defaults_file: params/experiments/z-aw-waveform-scope-check.yaml
 V_Z(t) = CONTROL_SCALE * Omega_ctrl_Hz(t) / K_Z_Hz_per_V
 ```
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.z_aw_waveform_scope_check.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 接线
 
 - `Z_magnetic_field` CH1：Z 小线圈驱动，配置为外部下降沿触发的无限 Burst。
@@ -85,6 +89,8 @@ SDS CH3/CH4 使用 1 MΩ、DC、1×，CH4 触发电平为 2.5 V。运行前必�
 分步等待期间连接与输出保持，任务持续占用全局硬件锁。空闲时使用“结束会话”，执行中使用任务取消。取消、进程通信结束和后台关闭均先执行收尾，再释放硬件锁。刷新页面可恢复存活会话，后台重启不会把磁盘记录当作仍连接的硬件。
 
 ## 运行 / 历史与独立分析
+
+本实验清单显式声明 `run_step_id=A05`、`finish_step_id=A06`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 “运行”Tab 提供流程操作和最近结果；“历史”Tab 读取本次 `experiment_config.yaml` 参数快照、完成状态和产物，支持填回下一次实验参数及重新分析。填回不保存默认值，也不自动运行。
 

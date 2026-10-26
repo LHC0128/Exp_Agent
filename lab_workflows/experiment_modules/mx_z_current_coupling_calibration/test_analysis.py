@@ -21,6 +21,38 @@ from .stages import ANALYSIS, ANALYSIS_KEYS, Stage, definition, validate_selecti
 from .test_workflow import copy_config, install_rig, small_params
 
 
+REGRESSION_CASES = {
+    "mx-z-current-coupling-calibration": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_z_current_coupling_calibration/__init__.py",
+                "lab_workflows/experiment_modules/mx_z_current_coupling_calibration/analysis.py"
+            ],
+            "tests": [
+                "test_real_acquisition_full_and_stages_have_identical_scientific_results",
+                "test_weighted_current_voltage_hysteresis_repeatability_and_legacy_exports",
+                "test_signed_coefficients_and_uncertainties_match_independent_weighted_sums",
+                "test_known_raw_format_is_independent_of_parameter_schema_and_optional_legacy_fields",
+                "test_unknown_identity_format_and_active_acquisition_are_rejected",
+                "test_raw_qualification_failure_retains_diagnostic_and_blocks_fit",
+                "test_missing_prerequisites_duplicate_selection_and_revision_do_not_execute",
+                "test_quality_failure_exports_both_diagnostic_plots_and_strict_json",
+                "test_interrupted_real_acquisition_uses_only_completed_z_summaries",
+                "test_analysis_override_isolated_from_snapshot_defaults_and_other_directories",
+                "test_invalid_or_acquisition_only_overrides_are_rejected_without_writes",
+                "test_changed_inputs_and_artifacts_are_not_reused_even_with_same_stat",
+                "test_cancel_during_real_fit_retains_completed_curves_and_blocks_linear_fit",
+                "test_raw_change_during_one_selected_command_blocks_later_stages",
+                "test_stored_override_without_matching_parameter_fingerprint_is_not_reused",
+                "test_report_write_failure_keeps_predecessors_and_original_exception",
+                "test_status_write_failure_does_not_truncate_acquisition_config",
+                "test_module_and_existing_plot_cli_execute_real_analysis"
+            ]
+        }
+    }
+}
+
+
 def read_json(path):
     def reject(value):
         raise AssertionError("JSON 不允许非有限常量：" + value)

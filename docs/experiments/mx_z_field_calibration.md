@@ -41,6 +41,8 @@ defaults_file: params/experiments/mx-z-field-calibration.yaml
 
 ## 采集时序与系统稳定
 
+本实验清单显式声明 `run_step_id=A08`、`finish_step_id=A10`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
+
 实际 Z DC、Y RF 频率/幅度和锁相振荡器配置完成后，将 `Temp_Switch` 设置为 **0 V DC + Output ON**，等待唯一的 `SYSTEM_SETTLE_S`，把 R 读入内存；随后恢复为 **5 V DC + Output ON**，完成 `TEMP_SWITCH_ON_LAG_S` 恢复等待后保存该尝试。初始化目录和参数/设备配置提前写入。每个频点独立执行一次门控，坏点重采也使用相同的六步顺序；不同 Z 电压的频扫汇总只包含本组完整采集的频点。
 
 TEC 可连接时只下发界面的目标温度，不启停控制器、不等待达标；连接失败告警并跳过。记录 UI 目标值，未知实测温度为 `null`。参考时钟和设备准备在温控开启时完成。取消或异常先尝试恢复温控，恢复失败仍尽力保存已读的当前 payload；保存或恢复错误不覆盖更早的采集异常。已经写入的频点和已完成 Z 频扫保留，不用插值补齐未完成组。参数迁移和异常数据保护见[统一采集规范](../acquisition_timing.md)。
@@ -131,6 +133,8 @@ f_\mathrm{pred}=f_\mathrm{GUI}+sK_\mathrm{initial}V_Z,
 稳定 ID `mx-z-field-calibration`、`data_type=Mx_Z_Field_Calibration`、外部参数键、薄脚本与原 NPZ 文件名保持。旧实验仍导入的 workflow helpers、`run_calibration()`、`analyze_calibration()` 和分析辅助函数继续可用；Bell Bloom 的频率轴标签与电流耦合实验的可选 SDS 支路保持其兼容调用。
 
 ## 离线分析
+
+离线分析只对 `LINEAR_R_SQUARED_MIN` 执行模型声明的类型、有限值及上下限校验，不用当前仪器配置重新预检历史采集参数；采集启动仍执行原有完整参数和安全校验。模块入口 `python -m lab_workflows.experiment_modules.mx_z_field_calibration.analysis` 可由已安装本项目的解释器在仓库外启动，须通过 `LAB_RUN_DIR` 显式给出运行目录；缺少目录或目录不存在时拒绝执行，不回退最新历史。历史采集参数与原始文件保持不变。
 
 分析器从 `raw/z_scan_index.npz` 和各 `raw/z_*/frequency_scan.npz` 重建各 Z 偏置点的频率响应，对每条响应拟合带基线 Lorentzian。正式中心只执行拟合所需的基础有效性检查：
 

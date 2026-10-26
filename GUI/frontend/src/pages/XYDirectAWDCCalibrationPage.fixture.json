@@ -938,6 +938,8 @@
       },
       "analysis": {}
     },
+    "run_step_id": "A06",
+    "finish_step_id": "A07",
     "diagram_url": "/api/experiments/xy-direct-aw-dc-calibration/workflow/diagram"
   }
 }

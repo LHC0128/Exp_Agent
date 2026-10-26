@@ -1,8 +1,7 @@
 """闭环实际步骤、参数编辑位置与失效范围。"""
 from dataclasses import asdict
-from ..z_aw_waveform_scope_check.stages import (
-    Stage, initial_states, invalidated_stages, invalidate, parameter_impacts, validate_selection,
-)
+from ..z_aw_waveform_scope_check.stages import invalidated_stages, invalidate, parameter_impacts, validate_selection
+from lab_workflows.workflow_stages import Stage, initial_states
 from .run_format import EXPERIMENT_ID
 
 SOURCE = ("CONTROL_SOURCE_SET", "CONTROL_VERSION", "CONTROL_SCALE", "CORRECTION_METHOD",
@@ -44,7 +43,8 @@ def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(stage.parameters
             if stage.display_parameters is None else stage.display_parameters)}
-    return {"acquisition": [public(stage) for stage in ACQUISITION],
+    return {"run_step_id": "A05", "finish_step_id": "A06",
+            "acquisition": [public(stage) for stage in ACQUISITION],
         "analysis": [public(stage) for stage in ANALYSIS],
         "parameter_impacts": {"acquisition": parameter_impacts(ACQUISITION), "analysis": {}},
         "diagram_url": f"/api/experiments/{EXPERIMENT_ID}/workflow/diagram"}

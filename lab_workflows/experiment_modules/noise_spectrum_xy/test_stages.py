@@ -151,7 +151,7 @@ class StageTest(unittest.TestCase):
 
     def test_real_stdin_subprocess_rejects_commands_and_eof_shuts_down(self):
         env = dict(os.environ, XY_TEST_ROOT=str(self.root),
-            LAB_TYPED_PARAMETERS=json.dumps(scan_params().to_external() | {"session_id": "fake-session"}))
+            LAB_TYPED_PARAMETERS=json.dumps(scan_params().to_external() | {"TARGET_NOISE_FREQ_POINTS": 2, "session_id": "fake-session"}))
         env.pop("LAB_CANCEL_FILE", None)
         process = subprocess.Popen([sys.executable, "-X", "utf8", "-m", __name__], cwd=self.root,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -173,7 +173,9 @@ class StageTest(unittest.TestCase):
         self.assertIn("缺少前置", output)
         self.assertIn("修订已改变", output)
         self.assertIn("重复或无效的请求编号", output)
-        self.assertTrue((self.root / "data/Noise_Spectrum_XY_Ctrl" / snapshot["run_id"] / "raw/waveform_C0002.npy").exists())
+        raw = self.root / "data/Noise_Spectrum_XY_Ctrl" / snapshot["run_id"] / "raw"
+        self.assertEqual(sorted(path.name for path in raw.glob("waveform_C*.npy")),
+                         ["waveform_C0000.npy", "waveform_C0001.npy"])
 
 
 def fake_session_main():

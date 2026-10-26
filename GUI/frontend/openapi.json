@@ -30137,6 +30137,14 @@
       },
       "XYFlow": {
         "properties": {
+          "run_step_id": {
+            "type": "string",
+            "title": "Run Step Id"
+          },
+          "finish_step_id": {
+            "type": "string",
+            "title": "Finish Step Id"
+          },
           "acquisition": {
             "items": {
               "$ref": "#/components/schemas/XYStage"
@@ -30172,6 +30180,8 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "run_step_id",
+          "finish_step_id",
           "acquisition",
           "analysis",
           "parameter_impacts",

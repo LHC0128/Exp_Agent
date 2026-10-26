@@ -3,13 +3,13 @@ from ...steps.acquisition_window import acquisition_window, DeferredAcquisitionW
 from datetime import datetime
 from pathlib import Path
 import time
-import math
 import numpy as np
 from tqdm import tqdm
 from lockin_amplifier import DAQConfig, DemodulatorConfig, daq, demod, result_rate, acquisition_metadata, save_acquisition_metadata, acquisition_module, nearest_scope_rate
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress, report_run_directory
 from ...steps.run_directory import write_run_config
+from ...steps.lockin import verify_lockin_acquisition_mode
 from .models import welch_settings
 from ._helpers import wait, set_temp_switch
 from .phase import set_xy_sine_peak
@@ -37,15 +37,10 @@ def prepare_daq(devices, params, calibrated_phase):
 
 
 def verify_daq_mode(ctx):
-    hfi = ctx.devices["hf2"]
-    base = hfi.demod_path(ctx.params.hf2_demod_idx)
-    expected = {"rate": ctx.daq_settings[0], "timeconstant": ctx.params.hf2_daq_tc,
-        "phaseshift": ctx.calibrated_phase}
-    if acquisition_module(hfi.model, ctx.params.hf2_daq_rate, getattr(hfi, "acquisition_mode", "auto")) == "scope":
-        expected.pop("rate")  # Scope 后恢复的是原通信速率，内部滤波仍需核对。
-    for field, value in expected.items():
-        if not math.isclose(float(hfi.get_double(f"{base}/{field}")), value, rel_tol=1e-6, abs_tol=1e-9):
-            raise RuntimeError("解调器实际模式已改变，请结束会话并重新准备")
+    verify_lockin_acquisition_mode(ctx.devices["hf2"],
+        demod_index=ctx.params.hf2_demod_idx, requested_rate_hz=ctx.params.hf2_daq_rate,
+        acquisition_rate_hz=ctx.daq_settings[0], time_constant_s=ctx.params.hf2_daq_tc,
+        phase_deg=ctx.calibrated_phase)
 
 
 def save_config(path, config):

@@ -6,5 +6,5 @@ const analysisParameterKeys = Object.fromEntries([
 
 export function ProjectionNoisePage() {
   return <WorkflowExperimentPage experimentId="projection-noise"
-    finishStepId="A09" runStepId="A08" analysisParameterKeys={analysisParameterKeys} />;
+ analysisParameterKeys={analysisParameterKeys} />;
 }

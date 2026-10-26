@@ -29,6 +29,10 @@ defaults_file: params/experiments/z-aw-current-waveform-scope-check.yaml
 
 该实验用于闭环前基线、每轮快速验证和最终冻结波形确认。入口为 `experiments/Z_AW_Current_Waveform_Scope_Check.py` 和 `experiments/Z_AW_Current_Waveform_Scope_Check_plot.py`。
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.z_aw_current_waveform_scope_check.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 接线、预检与采集
 
 - Z 任意波与 `Time_sequence_2` 必须映射到同一信号源的不同通道；按设备库创建型号驱动，连接后严格同步并回读参考时钟，失败不回退设备。
@@ -41,6 +45,8 @@ defaults_file: params/experiments/z-aw-current-waveform-scope-check.yaml
 正常结束、异常、取消和通信 EOF 均复用公共安全收尾：停止 SDS，将 Z 写为 DC 0 V 并关闭输出，释放该会话连接；共同触发保持最后状态，包括配置中断时的 OFF。恢复失败明确记录失败，不把断开通信当作输出恢复成功。
 
 ## GUI：运行与历史
+
+本实验清单显式声明 `run_step_id=A05`、`finish_step_id=A06`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 运行 Tab 复用 XY 采集/分析两列流程，保存参数与布局、派生预览、预检、完整运行、取消及任务日志位于流程顶部。参数在实际配置节点内分基础/高级编辑，初始化条件只展示在配置节点；同一参数草稿统一保存。应用参数使相关节点失效，须显式重跑，保存默认值和预检不会自动执行步骤。等待下一步仍保持设备连接、输出和全局硬件锁；刷新可恢复存活会话，后端重启不会从磁盘恢复硬件。
 

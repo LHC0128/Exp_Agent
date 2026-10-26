@@ -375,7 +375,7 @@ it("校相质量错误不能绕过，展示真实门槛并阻止后继", async (
   activeSession.steps.A10 = { status: "quality_failed", error: "XY 校相未收敛，禁止扫描" };
   renderPage();
   expect(await screen.findByText("XY 校相未收敛，禁止扫描")).toBeVisible();
-  expect(screen.getByText("质量门槛：" + flow.acquisition.find(stage => stage.id === "A11")!.quality_gates[0])).toBeVisible();
+  expect(screen.getByText("检查与质量说明：" + flow.acquisition.find(stage => stage.id === "A11")!.quality_gates[0])).toBeVisible();
   fireEvent.click(screen.getByLabelText("A11 生成与上传 Z 噪声任意波"));
   fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
   expect(await screen.findByText("Error: 缺少前置：A10")).toBeVisible();

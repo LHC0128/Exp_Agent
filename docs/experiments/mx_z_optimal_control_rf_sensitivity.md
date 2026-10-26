@@ -48,6 +48,14 @@ defaults_file: params/experiments/mx-z-optimal-control-rf-sensitivity.yaml
 
 # Mx Z 最优控制 RF 灵敏度
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.mx_z_optimal_control_rf_sensitivity.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
+## Y RF 共享步骤与安全校验
+
+Y RF 包络校验复用[公共步骤](../../lab_workflows/steps/mx_z_optimal_control.py)，拒绝幅度、偏置及包络中的 NaN 和 ±Infinity；有限值仍按原安全限值处理，不修改默认参数。普通 Burst 点保持 OFF→设置相位／幅度→ON，不重绘正弦；零幅度按原规则切为纯 DC，恢复 Burst 时保留原顺序与元数据。
+
 ## 采集时序与系统稳定
 
 实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。本实验的校相、幅度点和每段噪声各自使用独立采集窗口；180° 相位成对是采集顺序，不合并成一个关温控窗口，也不增加噪声 OFF/ON 配对。
@@ -253,6 +261,8 @@ Output 开启，不发送归零或关闭命令。RF 灵敏度模式保持原 Bur
 保留，正常结束只断开 TEC。
 
 ## 运行 / 历史 GUI 与分步执行
+
+本实验清单显式声明 `run_step_id=A04`、`finish_step_id=A12`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 实验中心路由为 `/experiments/mx-z-optimal-control-rf-sensitivity`。运行 Tab 的流程容器顶部集中保存参数与布局、派生预览、预检、完整运行、取消和任务状态。节点内编辑基础/高级参数；`SYSTEM_SETTLE_S` 等共享过程参数在校相、幅度和噪声节点同步，初始化条件只在工作点节点编辑。草稿不写仪器，应用后按实际失效状态显式重跑。完整运行与分步使用相同业务函数。
 

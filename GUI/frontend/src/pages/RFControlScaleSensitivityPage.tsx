@@ -5,7 +5,7 @@ import { recoverableJob, useExperimentTask, useRequestedJobId } from "../compone
 import { useParameterGuard } from "../components/NavigationGuard";
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
-import { WorkflowPanel, type XYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
+import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout, type PreflightResult } from "./experimentHelpers";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import type { components } from "../types/openapi";
@@ -168,7 +168,7 @@ export function RFControlScaleSensitivityPage() {
     {error && <div className="alert error" role="alert">{error}</div>}
     <div className="zaw-tab-strip" role="tablist" aria-label="Scale 实验视图" onKeyDown={tabKey}>{(["run", "history"] as const).map(name => <button key={name} id={`scale-tab-${name}`} role="tab" aria-selected={tab === name} tabIndex={tab === name ? 0 : -1} aria-controls={`scale-panel-${name}`} onClick={() => setTab(name)}>{name === "run" ? "运行" : "历史"}</button>)}</div>
     <div id="scale-panel-run" role="tabpanel" aria-labelledby="scale-tab-run" hidden={tab !== "run"}>
-      <WorkflowPanel experimentId={ID} finishStepId="A16" runStepId="A15" analysisParameterPrefix="" analysisParameterKeys={analysisKeys}
+      <WorkflowPanel experimentId={ID} analysisParameterPrefix="" analysisParameterKeys={analysisKeys}
         normalizeParameters={normalize} enabled={fields.length > 0} fields={routeFields} layout={layout} setLayout={setLayout}
         setNotice={setNotice} parametersDisabled={busy} values={values} setValues={setValues} session={session} setSession={setSession}
         job={job} setJob={setJob} analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}

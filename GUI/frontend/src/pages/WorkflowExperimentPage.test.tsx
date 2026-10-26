@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, expectTypeOf, it, vi } from "vitest";
 
 import { api } from "../api";
 import type { SchemaField } from "../types/api";
 import { WorkflowExperimentPage } from "./WorkflowExperimentPage";
-import { WorkflowPanel } from "../components/NoiseSpectrumXY/WorkflowPanel";
+import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
+import { WorkflowPanel as LegacyWorkflowPanel, type XYSession as LegacyXYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
 
 vi.mock("../api", () => ({ api: vi.fn() }));
 vi.mock("../components/JobActivity", () => ({ useJobActivity: () => ({ hardwareBusy: false, activeJobs: [] }) }));
@@ -33,6 +34,7 @@ beforeEach(() => {
     if (url === `${BASE}/sessions/active`) return null as never;
     if (url === `${BASE}/workflow`) return {
       acquisition: [stage("A01", fields.map(field => field.name)), stage("A02")], analysis: [],
+      run_step_id: "A01", finish_step_id: "A02",
       parameter_impacts: { acquisition: { RUN_TAG: ["A01"], GAIN: ["A01"] }, analysis: {} }, diagram_url: "/diagram",
     } as never;
     if (String(url).startsWith(`${BASE}/runs?`)) return { runs: [old], total: 1 } as never;
@@ -50,8 +52,13 @@ beforeEach(() => {
 afterEach(cleanup);
 
 function page() {
-  return render(<WorkflowExperimentPage experimentId={ID} finishStepId="A02" runStepId="A01" hasAnalysis={false} />);
+  return render(<WorkflowExperimentPage experimentId={ID} hasAnalysis={false} />);
 }
+
+it("旧流程面板导出及会话类型与公共入口兼容", () => {
+  expect(LegacyWorkflowPanel).toBe(WorkflowPanel);
+  expectTypeOf<LegacyXYSession>().toEqualTypeOf<XYSession>();
+});
 
 it("无分析器只显示真实采集节点，参数切换Tab后保留且历史只读取快照", async () => {
   page();
@@ -97,17 +104,20 @@ it("两个主Tab支持键盘切换", async () => {
   await waitFor(() => expect(screen.getByRole("tab", { name: "历史" })).toHaveFocus());
 });
 
-it.each([
+it.each<{ status: string; artifacts: string[]; files?: Record<string, (string | number)[] | null>; expected: string | null }>([
   { status: "quality_failed", artifacts: ["diagnostic.yaml"], expected: "diagnostic.yaml" },
   { status: "quality_failed", artifacts: [], expected: null },
   { status: "stale", artifacts: ["diagnostic.yaml"], expected: null },
   { status: "pending", artifacts: ["diagnostic.yaml"], expected: null },
-  { status: "completed", artifacts: [], expected: "expected.npz" },
-])("$status 节点只显示可复用状态中有依据的产物", async ({ status, artifacts, expected }) => {
+  { status: "completed", artifacts: [], expected: null },
+  { status: "completed", artifacts: [], files: { "actual.npz": [12, "sha256"], "missing.npz": null }, expected: "actual.npz" },
+  { status: "quality_failed", artifacts: [], files: { "diagnostic.yaml": [12, "sha256"] }, expected: "diagnostic.yaml" },
+])("$status 节点只显示执行记录中有依据的产物", async ({ status, artifacts, files, expected }) => {
   const original = mockApi.getMockImplementation()!;
   mockApi.mockImplementation(async (url, options) => {
     if (url === `${BASE}/workflow`) return {
-      acquisition: [{ ...stage("A01"), artifacts: ["expected.npz"] }], analysis: [],
+      run_step_id: "A01", finish_step_id: "A02",
+      acquisition: [{ ...stage("A01"), artifacts: ["expected.npz"] }, stage("A02")], analysis: [],
       parameter_impacts: { acquisition: {}, analysis: {} }, diagram_url: "/diagram",
     } as never;
     return original(url, options);
@@ -116,14 +126,61 @@ it.each([
     setLayout={vi.fn()} setNotice={vi.fn()} parametersDisabled={false} setValues={vi.fn()}
     session={{ session_id: "closed", job_id: "", revision: 1, status: "closed", run_id: "saved",
       parameters: {}, output_source: "none", demod_mode: "none",
-      steps: { A01: { status, artifacts, error: "" } } }}
+      steps: { A01: { status, artifacts, files, error: "" } } }}
     setSession={vi.fn()} setJob={vi.fn()} setAnalysisJob={vi.fn()} hardwareBusy={false} runs={[]}
     setError={vi.fn()} onRefresh={vi.fn()}><div /></WorkflowPanel>);
   await screen.findByRole("checkbox", { name: "A01 A01" });
+  expect(screen.queryByRole("link", { name: "expected.npz", hidden: true })).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "missing.npz", hidden: true })).not.toBeInTheDocument();
   if (expected) {
     expect(screen.getByRole("link", { name: expected, hidden: true })).toHaveAttribute(
       "href", `${BASE}/runs/saved/files/${expected}`);
   } else {
     expect(screen.queryByText("产物")).toBeNull();
   }
+});
+
+it.each(["unknown-run", "unknown-finish", "same-role", "dependent-finish"])("真实页面拒绝非法角色 %s，不创建任务", async invalid => {
+  const original = mockApi.getMockImplementation()!;
+  mockApi.mockImplementation(async (url, options) => {
+    if (url === `${BASE}/workflow`) return {
+      acquisition: [stage("A01"), { ...stage("A02"), dependencies: invalid === "dependent-finish" ? ["A01"] : [] }],
+      analysis: [], parameter_impacts: { acquisition: {}, analysis: {} }, diagram_url: "/diagram",
+      run_step_id: invalid === "unknown-run" ? "missing" : invalid === "same-role" ? "A02" : "A01",
+      finish_step_id: invalid === "unknown-finish" ? "missing" : "A02",
+    } as never;
+    return original(url, options);
+  });
+  page();
+  await screen.findByText(/流程接口版本过旧或角色无效/);
+  expect(screen.getByRole("button", { name: "创建分步会话" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "运行所选 \/ 重跑" })).toBeDisabled();
+  expect(mockApi.mock.calls.some(([url, options]) => [`${BASE}/sessions`, `${BASE}/runs`].includes(String(url))
+    && options?.method === "POST")).toBe(false);
+});
+
+it.each([
+  { id: "session", revision: 4, request: "old", pending: "new", expectedRevision: 4, error: "原错误" },
+  { id: "session", revision: 4, request: "new", pending: null, expectedRevision: 4, error: "本次错误" },
+  { id: "session", revision: 3, request: "new", pending: "new", expectedRevision: 4, error: "原错误" },
+  { id: "other-session", revision: 99, request: "new", pending: "new", expectedRevision: 4, error: "原错误" },
+  { id: "session", revision: 5, request: undefined, pending: "new", expectedRevision: 5, error: "原错误" },
+])("SSE 回执 $request 修订 $revision 只确认同会话的当前请求", async test => {
+  let current: XYSession | undefined = { session_id: "session", job_id: "job", revision: 4, status: "waiting",
+    parameters: {}, steps: {}, pending_request: "new", error: "原错误", output_source: "未回读", demod_mode: "unknown" };
+  const update = vi.fn((value: Parameters<React.Dispatch<React.SetStateAction<XYSession | undefined>>>[0]) => {
+    current = typeof value === "function" ? value(current) : value;
+  });
+  const snapshot = { ...current, session_id: test.id, revision: test.revision };
+  render(<WorkflowPanel experimentId={ID} enabled fields={fields} layout={layout} values={{}}
+    setLayout={vi.fn()} setNotice={vi.fn()} parametersDisabled={false} setValues={vi.fn()}
+    session={current} setSession={update} job={{ id: "job", status: "running", events: [{ data: {
+      workflow_session: snapshot, command_result: test.request ? { request_id: test.request, error: "本次错误" } : undefined,
+    } }] } as never} setJob={vi.fn()} setAnalysisJob={vi.fn()} hardwareBusy={false} runs={[]}
+    setError={vi.fn()} onRefresh={vi.fn()}><div /></WorkflowPanel>);
+  await waitFor(() => expect(update).toHaveBeenCalled());
+  expect(current?.session_id).toBe("session");
+  expect(current?.pending_request).toBe(test.pending);
+  expect(current?.revision).toBe(test.expectedRevision);
+  expect(current?.error).toBe(test.error);
 });

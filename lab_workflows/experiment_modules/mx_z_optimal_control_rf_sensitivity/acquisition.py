@@ -13,7 +13,10 @@ from ...steps.dispersion import save_scan
 from ..mx_y_rf_sensitivity.acquisition import acquire_r, acquire_rxy, summarize_r, summarize_rxy
 from ..mx_y_rf_sensitivity.scan import build_amplitude_axis
 from ..mx_y_rf_sensitivity.workflow import RPointQualityError, _acquire_noise, _acquire_valid_r_point, _temperature_gated_acquire
-from .excitation import _validate_y_rf_envelope, _rearm_y_rf, _rearm_control
+from ...steps.mx_z_optimal_control import (
+    validate_y_rf_envelope as _validate_y_rf_envelope, rearm_y_rf as _rearm_y_rf,
+)
+from .excitation import _rearm_control
 from .phase import detect_complex_phase_outliers, fit_phase_scan, fit_quadrature_phase_scan, paired_phase_order
 from .phase_plot import plot_phase_calibration
 def _save_rxy_point(

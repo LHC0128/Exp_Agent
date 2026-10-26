@@ -2,8 +2,8 @@
 from dataclasses import replace
 from .run_format import POINT_CALIBRATION_STAGES
 from ..rf_sensitivity_direct_aw import stages as shared
-from ..rf_sensitivity_direct_aw.stages import (
-    Stage, FINISH_ID, initial_states, invalidated_stages, invalidate, validate_selection, parameter_impacts)
+from ..rf_sensitivity_direct_aw.stages import FINISH_ID, invalidated_stages, invalidate, validate_selection, parameter_impacts
+from lab_workflows.workflow_stages import Stage, initial_states
 
 SCAN_KEYS = ("CONTROL_SCALES", "CONTROL_SCALE_START", "CONTROL_SCALE_STOP", "CONTROL_SCALE_POINTS",
     "CONTROL_SCALE_FACTORS", "INCLUDE_NOISE", "RUN_TAG", "RESUME_RUN_ID", "RF_AMP_START", "RF_AMP_STOP",
@@ -43,4 +43,4 @@ ANALYSIS = (
 
 def definition():
     return shared.definition(acquisition=ACQUISITION, analysis=ANALYSIS,
-                             experiment_id="rf-control-scale-sensitivity")
+                             experiment_id="rf-control-scale-sensitivity") | dict(run_step_id="A15", finish_step_id=FINISH_ID)

@@ -11,11 +11,12 @@ from ...steps.run_directory import write_run_config
 
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from . import analysis_steps
 from .analysis_steps import dispersive, fit_response_curve
 from . import run_format
-from .stages import SINGLE_ANALYSIS as ANALYSIS, MULTI_ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import SINGLE_ANALYSIS as ANALYSIS, MULTI_ANALYSIS, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 ANALYSIS_VERSION = "direct-aw-x-v3-multi-noise-quality"
 ANALYSIS_OPTIONS = {"NOISE_NPERSEG": "noise_nperseg", "NOISE_OUTLIER_POLICY": "noise_outlier_policy",

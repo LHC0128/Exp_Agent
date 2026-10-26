@@ -8,7 +8,7 @@ import yaml
 from scipy.signal import welch
 from sensitivity_analysis.fitting import LARMOR_PER_NT
 from ...experiment_runtime import check_cancelled
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from ..rf_sensitivity_direct_aw.analysis_steps import fit_bandwidth, fit_response_curve, dispersive, _plain
 from . import run_format
 from .models import RFControlScaleParams

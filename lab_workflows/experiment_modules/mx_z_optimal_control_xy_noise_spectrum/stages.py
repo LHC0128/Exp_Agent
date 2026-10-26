@@ -1,8 +1,7 @@
 """噪声网格的真实步骤、参数归属与失效依赖。"""
 from dataclasses import asdict
-from ..mx_z_optimal_control_rf_sensitivity.stages import (
-    Stage, TEMP, FINISH_ID, initial_states, invalidate, invalidated_stages,
-    parameter_impacts, validate_selection)
+from ..mx_z_optimal_control_rf_sensitivity.stages import TEMP, FINISH_ID, invalidate, invalidated_stages, parameter_impacts, validate_selection
+from lab_workflows.workflow_stages import Stage, initial_states
 from ..mx_z_optimal_control_xy_rf_sensitivity.stages import SOURCES, AXES
 
 ANALYSIS_KEYS = ("LOW_FREQ_SKIP_HZ", "NOISE_BAND_MAX_HZ")
@@ -45,6 +44,7 @@ def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return dict(acquisition=[public(stage) for stage in ACQUISITION], analysis=[public(stage) for stage in ANALYSIS],
+    return dict(run_step_id="A05", finish_step_id=FINISH_ID,
+        acquisition=[public(stage) for stage in ACQUISITION], analysis=[public(stage) for stage in ANALYSIS],
         parameter_impacts={"acquisition": parameter_impacts(ACQUISITION), "analysis": parameter_impacts(ANALYSIS)},
         diagram_url="/api/experiments/mx-z-optimal-control-xy-noise-spectrum/workflow/diagram")

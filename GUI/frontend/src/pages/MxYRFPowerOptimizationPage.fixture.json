@@ -493,6 +493,8 @@
         ]
       }
     },
+    "run_step_id": "A08",
+    "finish_step_id": "A10",
     "diagram_url": "/api/experiments/mx-y-rf-power-optimization/workflow/diagram"
   },
   "fields": [

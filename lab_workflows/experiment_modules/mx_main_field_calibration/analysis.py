@@ -1,5 +1,6 @@
 """Mx 主磁场标定 完整/分步分析共用编排；历史采集参数保持只读。"""
 from copy import deepcopy
+from dataclasses import fields
 from datetime import datetime
 from pathlib import Path
 import hashlib
@@ -10,10 +11,11 @@ import yaml
 from ...steps.run_directory import write_run_config
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from . import analysis_steps, run_format
 from .models import MxMainFieldCalibrationParams
-from .stages import ANALYSIS, ANALYSIS_KEYS, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ANALYSIS, ANALYSIS_KEYS, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 from .analysis_steps import (_builtin, _load_params, _load_scan_index, _discrete_peak_frequency,
     _analyze_curve, _failed_linear_fit, _weighted_linear_fit)
 from .analysis_plotting import _plot_frequency_responses, _plot_calibration, _calibration_fit_label
@@ -63,8 +65,19 @@ class AnalysisWorkflow:
         if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
                 for value in self.options.values()):
             raise ValueError("分析覆盖参数必须为有限数值")
-        if errors := self.params.validate():
-            # 分析覆盖复用模型约束；安全限值仍从当前项目配置读取。
+        # 只校验分析字段的模型边界，不按当前硬件配置重新预检历史采集参数。
+        errors = []
+        for item in fields(self.params):
+            name = item.metadata["external_name"]
+            if name not in ANALYSIS_KEYS:
+                continue
+            value = getattr(self.params, item.name)
+            minimum, maximum = item.metadata.get("minimum"), item.metadata.get("maximum")
+            if minimum is not None and value < minimum:
+                errors.append(f"{name}={value} 低于下限 {minimum}")
+            if maximum is not None and value > maximum:
+                errors.append(f"{name}={value} 高于上限 {maximum}")
+        if errors:
             raise ValueError("；".join(errors))
 
     @staticmethod

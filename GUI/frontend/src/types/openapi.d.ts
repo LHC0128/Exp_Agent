@@ -11868,6 +11868,10 @@ export interface components {
         };
         /** XYFlow */
         XYFlow: {
+            /** Run Step Id */
+            run_step_id: string;
+            /** Finish Step Id */
+            finish_step_id: string;
             /** Acquisition */
             acquisition: components["schemas"]["XYStage"][];
             /** Analysis */

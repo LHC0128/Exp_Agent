@@ -1319,6 +1319,8 @@
         ]
       }
     },
+    "run_step_id": "A12",
+    "finish_step_id": "A14",
     "diagram_url": "/api/experiments/noise-spectrum-xy/workflow/diagram"
   }
 }

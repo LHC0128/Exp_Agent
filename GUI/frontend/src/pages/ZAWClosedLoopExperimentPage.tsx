@@ -27,5 +27,5 @@ const renderResult = (summary: WorkflowRunSummary) => <Result summary={summary} 
 
 export function ZAWClosedLoopExperimentPage() {
   return <WorkflowExperimentPage experimentId="z-aw-closed-loop-waveform-correction"
-    finishStepId="A06" runStepId="A05" renderResult={renderResult} />;
+ renderResult={renderResult} />;
 }

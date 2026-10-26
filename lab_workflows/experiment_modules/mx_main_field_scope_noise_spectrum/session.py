@@ -3,7 +3,7 @@ import json
 import os
 import sys
 from ...experiment_runtime import load_runtime_params
-from ..detection_chain_frequency_response.session import serve as serve_commands
+from lab_workflows.workflow_session import serve as serve_commands
 from .models import MxMainFieldScopeNoiseSpectrumParams
 from .stages import ACQUISITION, FINISH_ID, validate_selection
 from .workflow import Workflow

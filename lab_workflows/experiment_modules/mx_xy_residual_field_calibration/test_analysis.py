@@ -15,6 +15,31 @@ from .models import MxXYResidualFieldCalibrationParams
 from .test_workflow import small_params
 
 
+REGRESSION_CASES = {
+    "mx-xy-residual-field-calibration": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_main_field_scope_noise_spectrum/__init__.py",
+                "lab_workflows/experiment_modules/mx_xy_residual_field_calibration/__init__.py",
+                "lab_workflows/experiment_modules/mx_xy_residual_field_calibration/analysis.py"
+            ],
+            "tests": [
+                "test_known_model_and_no_signal_diagnostic",
+                "test_complete_and_steps_match_and_plot_rerun_keeps_numeric_inputs",
+                "test_legacy_raw_and_parameter_migration",
+                "test_bad_inputs_do_not_archive_old_results",
+                "test_raw_content_change_and_missing_artifact_invalidate_dependents",
+                "test_failed_fit_and_cancel_block_successors_and_save_diagnostics",
+                "test_identity_format_and_busy_run_rejected",
+                "test_no_analysis_overrides_and_revision_conflict",
+                "test_actual_cli_produces_results_and_requires_explicit_run",
+                "test_results_junction_to_raw_is_rejected_without_moving_inputs"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(run_dir, *, schema=3, flat=False):
     run_dir = Path(run_dir)
     (run_dir / "raw").mkdir(parents=True)

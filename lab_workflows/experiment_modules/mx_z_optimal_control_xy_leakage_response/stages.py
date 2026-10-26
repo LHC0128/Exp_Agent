@@ -1,7 +1,7 @@
 """泄露响应的执行步骤、参数真实使用与失效依赖。"""
 from dataclasses import asdict
-from ..mx_z_optimal_control_rf_sensitivity.stages import (
-    Stage, TEMP, QUALITY, FINISH_ID, initial_states, invalidate, invalidated_stages, parameter_impacts, validate_selection)
+from ..mx_z_optimal_control_rf_sensitivity.stages import TEMP, QUALITY, FINISH_ID, invalidate, invalidated_stages, parameter_impacts, validate_selection
+from lab_workflows.workflow_stages import Stage, initial_states
 
 SOURCES = ("CONTROL_RESULTS_ROOT", "CONTROL_VERSION", "Z_CALIBRATION_SOURCE_RUN", "CONTROL_SCALE",
     "Z_AW_OUTPUT_VPP", "Z_AW_OUTPUT_OFFSET")
@@ -44,6 +44,7 @@ def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return dict(acquisition=[public(s) for s in ACQUISITION], analysis=[public(s) for s in ANALYSIS],
+    return dict(run_step_id="A04", finish_step_id=FINISH_ID,
+        acquisition=[public(s) for s in ACQUISITION], analysis=[public(s) for s in ANALYSIS],
         parameter_impacts={"acquisition": parameter_impacts(ACQUISITION), "analysis": parameter_impacts(ANALYSIS)},
         diagram_url="/api/experiments/mx-z-optimal-control-xy-leakage-response/workflow/diagram")

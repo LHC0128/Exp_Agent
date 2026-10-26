@@ -1022,6 +1022,8 @@
         ]
       }
     },
+    "run_step_id": "A05",
+    "finish_step_id": "A12",
     "diagram_url": "/api/experiments/mx-z-optimal-control-xy-noise-spectrum/workflow/diagram"
   }
 }

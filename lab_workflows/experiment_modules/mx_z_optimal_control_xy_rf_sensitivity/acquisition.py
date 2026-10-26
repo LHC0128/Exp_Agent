@@ -9,7 +9,7 @@ from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import configure_fixed_dc_field
 from ..mx_z_optimal_control_rf_sensitivity.workflow import _acquire_amplitude_scan, _acquire_noise
-from ..mx_z_optimal_control_rf_sensitivity.excitation import _restore_y_rf_burst_sine
+from ...steps.mx_z_optimal_control import restore_y_rf_burst_sine as _restore_y_rf_burst_sine
 from ..mx_y_rf_sensitivity.workflow import RPointQualityError, _configure_response_demodulator
 from .models import MxZOptimalControlXYRFSensitivityParams
 

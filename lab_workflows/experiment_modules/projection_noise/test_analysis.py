@@ -14,6 +14,33 @@ from .models import ProjectionNoiseParams
 from .test_workflow import small_params
 
 
+REGRESSION_CASES = {
+    "projection-noise": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/projection_noise/__init__.py",
+                "lab_workflows/experiment_modules/projection_noise/analysis.py"
+            ],
+            "tests": [
+                "test_complete_and_stepwise_preserve_original_welch",
+                "test_free_lorentzian_fit_keeps_parameter_and_t2_definitions",
+                "test_verified_historical_versions_and_raw_version_are_independent",
+                "test_unknown_identity_format_and_writing_run_refuse_without_side_effects",
+                "test_readonly_snapshot_and_independent_directory_overrides",
+                "test_archive_second_stage_keeps_first_input_and_detects_stale_products",
+                "test_nested_raw_content_change_with_same_size_mtime_invalidates",
+                "test_bad_input_does_not_archive_existing_science",
+                "test_failed_fit_exports_diagnostics_instead_of_theoretical_fallback",
+                "test_legacy_hf2_uses_original_psd_branch_not_rf_lorentzian",
+                "test_junction_results_cannot_archive_raw",
+                "test_failed_fit_plot_uses_english_annotations_and_real_png_pdf",
+                "test_actual_thin_cli_requires_directory_and_creates_png_pdf"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(root, *, control=False, schema=6, marked=True):
     root.mkdir(parents=True, exist_ok=True)
     (root / "raw").mkdir(exist_ok=True)

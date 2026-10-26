@@ -1181,6 +1181,8 @@
         ]
       }
     },
+    "run_step_id": "A09",
+    "finish_step_id": "A11",
     "diagram_url": "/api/experiments/mx-z-current-coupling-calibration/workflow/diagram"
   }
 }

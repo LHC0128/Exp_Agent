@@ -40,7 +40,13 @@ defaults_file: params/experiments/mx-y-rf-sensitivity-drift.yaml
 
 # Mx Y RF 灵敏度长飘
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.mx_y_rf_sensitivity_drift.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 运行与历史界面
+
+本实验清单显式声明 `run_step_id=A09`、`finish_step_id=A11`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 实验中心的 `mx-y-rf-sensitivity-drift` 页面提供「运行 / 历史」两个 Tab。运行页使用本实验的交互流程图：顶部集中保存参数与布局、派生预览、预检、完整运行、任务日志和安全停止；采集与父分析分列，节点、分组、依赖和质量门槛均读取实际阶段清单。可从流程顶部下载[可编辑 Excalidraw 原图](../../lab_workflows/experiment_modules/mx_y_rf_sensitivity_drift/workflow.excalidraw)。默认值仍保存到[本实验参数文件](../../params/experiments/mx-y-rf-sensitivity-drift.yaml)。
 

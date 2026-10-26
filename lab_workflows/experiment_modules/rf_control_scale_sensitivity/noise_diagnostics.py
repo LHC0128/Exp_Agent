@@ -6,7 +6,7 @@ import csv
 import math
 import numpy as np
 from ...experiment_runtime import check_cancelled
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from .analysis import AnalysisWorkflow
 from .run_format import calibration_scope
 from .analysis_steps import load_inputs, fit_dispersive_slope, load_noise_spectra, inspect_noise_spectra

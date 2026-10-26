@@ -6,10 +6,11 @@ import json
 import os
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, runtime_run_dir
-from ..noise_spectrum_xy.state_io import read_state
+from lab_workflows.workflow_state import read_state
 from ..mx_z_optimal_control_xy_rf_sensitivity.analysis import AnalysisWorkflow as GridAnalysisWorkflow
 from . import analysis_steps, run_format
-from .stages import ANALYSIS, initial_states, invalidate, validate_selection
+from .stages import ANALYSIS, invalidate, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 

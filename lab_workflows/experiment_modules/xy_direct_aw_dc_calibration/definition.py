@@ -31,7 +31,7 @@ DEFINITION = ExperimentDefinition(
     category="calibration",
     family="xy-calibration",
     variant="direct-aw",
-    description="以 DirectAW 恒定包络电压扫描 Z RF 频率，拟合峰位以标定控制。运行／历史双 Tab 提供真实可勾选步骤，节点内编辑、顶部保存／预检／完整运行；完整与分步共用业务，草稿应用后显式重跑。物理回环仅支持 HF2，MFLI 在连接前拒绝，输入高阻／DC；恢复温控后保存并抢救已读样本。独立目录分析保留原 Bloch／Lorentzian 回退、固定杂散排除、边界筛选及正负支路／绝对电压标定，无额外覆盖参数。",    data_type="XY_DirectAW_DC_Calibration",
+    description="以 DirectAW 恒定包络电压扫描 Z RF 频率，拟合峰位以标定控制。运行／历史双 Tab 提供真实可勾选步骤，节点内编辑、顶部保存／预检／完整运行；完整与分步共用业务，草稿应用后显式重跑。物理回环仅支持 HF2，MFLI 在连接前拒绝，输入高阻／DC；恢复温控后保存并抢救已读样本。独立目录分析保留原 Bloch／Lorentzian 回退、固定杂散排除、边界筛选及正负支路／绝对电压标定，无额外覆盖参数。分步角色由清单声明，状态与产物以执行记录为准。",    data_type="XY_DirectAW_DC_Calibration",
     required_devices=("GS200", "DG900", "DG4000", "HF2"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/XY_DirectAW_DC_Calibration.py",

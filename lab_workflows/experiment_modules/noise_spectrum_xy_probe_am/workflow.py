@@ -8,6 +8,7 @@ from ..noise_spectrum_xy.phase import (calibrate_hf2_phase, calibrate_xy_control
                                        configure_xy_sine, validate_sine_peak, verify_xy_mode)
 from ..noise_spectrum_xy.workflow import Workflow as SineWorkflow
 from ...experiment_runtime import load_runtime_params
+from ...steps.lockin import verify_lockin_acquisition_mode
 from . import acquisition, excitation, preparation, stages
 from .models import NoiseSpectrumXYProbeAMParams
 from .preparation import preflight
@@ -94,7 +95,10 @@ class Workflow(SineWorkflow):
             if not self.xy_result or not self.xy_result.converged:
                 raise ValueError("XY 校相未通过，禁止扫描")
             verify_xy_mode(self.devices["dg_comp"], self.params)
-            xy_acquisition.verify_daq_mode(self)
+            verify_lockin_acquisition_mode(self.devices["hf2"],
+                demod_index=self.params.hf2_demod_idx, requested_rate_hz=self.params.hf2_daq_rate,
+                acquisition_rate_hz=self.daq_settings[0], time_constant_s=self.params.hf2_daq_tc,
+                phase_deg=self.calibrated_phase)
             self.noise_readback = excitation.verify_am_noise(self.devices["dg_probe_am"],
                 int(self.mapping["Probe_AOM_AM"]["channel"]), self.noise_waveform, self.params, self.limits)
             if self.z_waveform is not None:

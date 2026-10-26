@@ -13,7 +13,7 @@ from ...common import WorkflowCancelled, find_project_root
 from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
 from ...plotting import set_plot_style
 from ..noise_spectrum_xy.acquisition import save_config
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from ..noise_spectrum_xy_known_noise.analysis_core import _json_safe, write_json
 from . import analysis_steps, stages
 from .models import NoiseSpectrumXYProbeAMParams

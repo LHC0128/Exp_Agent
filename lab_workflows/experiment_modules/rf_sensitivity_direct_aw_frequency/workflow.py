@@ -14,10 +14,11 @@ from ...experiments.requirements import DIRECT_AW as REQUIRED_MAPPING_KEYS
 from ...steps import (DeviceSession, create_run_directory, set_temperature_switch, run_safety_shutdown,
     DGChannelShutdown, TemperatureSwitchRestore, DisconnectTarget, STANDARD_PRESERVED_OUTPUTS,
     disconnect_device_mapping)
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from .models import RFDirectAWFrequencyParams
 from . import preparation, excitation, phase, acquisition
-from .stages import ACQUISITION, RUN_STEP_ID, FINISH_ID, initial_states, invalidate, validate_selection
+from .stages import ACQUISITION, RUN_STEP_ID, FINISH_ID, invalidate, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 EXPERIMENT_ID, DATA_TYPE = "rf-sensitivity-direct-aw-frequency", "RF_Field_Sensitivity_AW_FreqSweep_DirectAW"
 

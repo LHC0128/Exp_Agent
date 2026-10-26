@@ -112,6 +112,60 @@ class InductanceWorkflowTests(unittest.TestCase):
         copy_config(self.root)
         self.params = scan_params(self.root)
 
+    def test_configure_capture_defaults_zero_and_rejection_are_atomic(self):
+        before = {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        validator, replacement_validator = Mock(), Mock()
+        metadata = {"protocol": "test"}
+        with fake_hardware(self.root) as hw:
+            default = workflow.Workflow(self.params, project_root=self.root)
+            self.assertIsNone(default.capture_validator)
+            self.assertEqual(default.capture_guard_s, workflow.SCOPE_CAPTURE_GUARD_S)
+            self.assertEqual(default.drive_metadata, {})
+            ctx = workflow.Workflow(self.params, project_root=self.root, capture_validator=validator,
+                capture_guard_s=.125, drive_metadata=metadata)
+            self.assertIs(ctx.capture_validator, validator)
+            self.assertEqual(ctx.capture_guard_s, .125)
+            self.assertIs(ctx.drive_metadata, metadata)
+            previous = (ctx.capture_validator, ctx.capture_guard_s, ctx.drive_metadata)
+            for guard in (float("nan"), float("inf"), float("-inf"), -.01):
+                with self.subTest(guard=guard), self.assertRaisesRegex(ValueError,
+                        "^capture_guard_s 必须是有限非负秒数$"):
+                    ctx.configure_capture(capture_validator=replacement_validator, capture_guard_s=guard,
+                        drive_metadata={"protocol": "replacement"})
+                for name, original in zip(("capture_validator", "capture_guard_s", "drive_metadata"), previous):
+                    self.assertIs(getattr(ctx, name), original)
+            ctx.params = SimpleNamespace(scope_capture_guard_s=float("nan"))
+            with self.assertRaisesRegex(ValueError, "^capture_guard_s 必须是有限非负秒数$"):
+                ctx.configure_capture(capture_validator=replacement_validator, drive_metadata={"new": True})
+            for name, original in zip(("capture_validator", "capture_guard_s", "drive_metadata"), previous):
+                self.assertIs(getattr(ctx, name), original)
+            ctx.params = SimpleNamespace(scope_capture_guard_s=.375)
+            self.assertIsNone(ctx.configure_capture(capture_validator=validator, drive_metadata=metadata))
+            self.assertEqual(ctx.capture_guard_s, .375)
+            self.assertIs(ctx.capture_validator, validator)
+            self.assertIs(ctx.drive_metadata, metadata)
+            # 保持旧有宽松选项类型及非空元数据别名，不新增类型拒绝。
+            option, metadata_option = object(), object()
+            ctx.configure_capture(capture_validator=option, capture_guard_s=0, drive_metadata=metadata_option)
+            self.assertIs(ctx.capture_validator, option)
+            self.assertEqual(ctx.capture_guard_s, 0.0)
+            self.assertIs(ctx.drive_metadata, metadata_option)
+            empty = {}
+            ctx.configure_capture(drive_metadata=empty)
+            self.assertIsNone(ctx.capture_validator)
+            self.assertEqual(ctx.capture_guard_s, .375)
+            self.assertEqual(ctx.drive_metadata, {})
+            self.assertIsNot(ctx.drive_metadata, empty)
+            ctx.params = self.params
+            ctx.configure_capture()
+            self.assertEqual(ctx.capture_guard_s, workflow.SCOPE_CAPTURE_GUARD_S)
+            validator.assert_not_called()
+            replacement_validator.assert_not_called()
+            self.assertEqual(hw.generator.mock_calls, [])
+            self.assertEqual(hw.scope.mock_calls, [])
+        self.assertEqual({path.relative_to(self.root): path.read_bytes()
+            for path in self.root.rglob("*") if path.is_file()}, before)
+
     def test_visible_edit_nodes_shared_process_value_and_impacts_match_application(self):
         flow = definition()
         visible = set(self.params.to_external(include_hidden=False))

@@ -28,6 +28,14 @@ defaults_file: params/experiments/mx-y-optimal-control-rf-frequency-response.yam
 
 # Mx Y 最优控制 RF 频率响应
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.mx_y_optimal_control_rf_frequency_response.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
+## Y RF 共享步骤与安全校验
+
+Y RF 包络校验复用[公共步骤](../../lab_workflows/steps/mx_z_optimal_control.py)，拒绝幅度、偏置及包络中的 NaN 和 ±Infinity；有限值仍按原安全限值处理，不修改默认参数。最优控制和恒定对照共用 Burst 重触发；频率、解调器配置与两阶段扫描顺序不变，普通幅度设置不重绘正弦。
+
 ## 采集时序与系统稳定
 
 实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。本实验只有逐点频率×相位扫描与可选常数对照；每个被接受点或坏点重采各自恢复温控后写盘，不把频率行或两种Z控制组成温控关闭组，也没有OFF/ON配对。
@@ -105,6 +113,8 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 所有图使用 `lab_workflows.plotting` 的 `paper` 样式，图中文字为英文。
 
 ## 专属 GUI
+
+本实验清单显式声明 `run_step_id=A04`、`finish_step_id=A12`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 原架构 Tab 已从 GUI 撤下，原图保留在[历史归档](../old/architecture/mx-y-optimal-control-rf-frequency-response.html)。
 

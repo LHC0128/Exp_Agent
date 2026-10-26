@@ -16,10 +16,11 @@ import yaml
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, runtime_run_dir
 from ...plotting import new_figure, save_figure, set_plot_style
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from .models import DetectionChainFrequencyResponseParams
-from .run_format import load_frequency_response
-from .stages import ANALYSIS, initial_states, invalidate, validate_selection
+from .run_format import load_frequency_response, validate_run_identity
+from .stages import ANALYSIS, invalidate, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 ANALYSIS_VERSION = "detection-chain-normalized-response-v2"
 
@@ -38,6 +39,7 @@ class AnalysisWorkflow:
         self.config = yaml.safe_load((self.run_dir / "experiment_config.yaml").read_text(encoding="utf-8"))
         if not isinstance(self.config, dict):
             raise ValueError("运行配置必须为映射")
+        validate_run_identity(self.config)
         if self.config.get("completion_status") == "running":
             raise ValueError("本轮扫描仍在写入数据，请等待扫描结束")
         self.params = DetectionChainFrequencyResponseParams.from_external(
@@ -106,6 +108,8 @@ class AnalysisWorkflow:
             self.summary["backup_directory"] = backup.name
 
     def execute(self, selected, expected_revision=None):
+        # 长存活上下文也不能在目录身份改变后写入状态或归档产物。
+        validate_run_identity(yaml.safe_load((self.run_dir / "experiment_config.yaml").read_text(encoding="utf-8")))
         if expected_revision is not None and expected_revision != self.revision:
             raise ValueError("分析状态已改变，请刷新后重试")
         selected = validate_selection(ANALYSIS, self.states, selected)

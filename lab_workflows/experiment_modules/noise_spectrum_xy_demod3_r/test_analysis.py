@@ -12,6 +12,33 @@ from . import analysis, analysis_steps as steps, analysis_core, run_format
 from .models import NoiseSpectrumXYDemod3RParams
 
 
+REGRESSION_CASES = {
+    "noise-spectrum-xy-demod3-r": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/noise_spectrum_xy_demod3_r/__init__.py",
+                "lab_workflows/experiment_modules/noise_spectrum_xy_demod3_r/analysis.py"
+            ],
+            "tests": [
+                "test_full_and_stepwise_original_scientific_results_and_readonly_config",
+                "test_content_fingerprint_and_missing_artifact_invalidate",
+                "test_rerun_archives_only_affected_outputs",
+                "test_bad_raw_preserves_previous_outputs_and_reports_quality",
+                "test_invalid_columns_preserve_masks_not_interpolation",
+                "test_no_calibration_inliers_blocks_successors_but_keeps_matrix",
+                "test_parameter_schema_independent_of_raw_version",
+                "test_bad_identity_format_and_running_are_rejected",
+                "test_explicit_recovery_matrix_is_loaded",
+                "test_results_directory_link_to_raw_is_rejected",
+                "test_real_subprocess_full_plots_and_required_run_directory",
+                "test_known_raw_does_not_bypass_future_parameter_schema",
+                "test_analysis_options_rejected_before_writes"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(path, *, schema=2, raw_version=1):
     path = Path(path)
     (path / "raw").mkdir(parents=True)

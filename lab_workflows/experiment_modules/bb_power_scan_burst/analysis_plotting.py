@@ -4,7 +4,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.ticker as tck
 from lab_workflows.plotting import new_figure, save_figure, set_plot_style
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from .analysis_steps import load_fits, load_config, output_path
 from .stages import PLOT_NAMES
 

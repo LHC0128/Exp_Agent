@@ -9,7 +9,7 @@ import yaml
 from ...steps import RunDirectory
 from ...steps.run_directory import write_run_config
 from ...experiment_runtime import check_cancelled, report_runtime_progress
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from ..rf_sensitivity_direct_aw import acquisition as shared, phase
 from ..rf_sensitivity_direct_aw._helpers import hf2_snapshot
 from .preparation import scaled_envelope

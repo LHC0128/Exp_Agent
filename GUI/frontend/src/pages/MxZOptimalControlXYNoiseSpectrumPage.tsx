@@ -34,6 +34,6 @@ function Result({ value }: { value: WorkflowRunSummary }) {
 }
 
 export function MxZOptimalControlXYNoiseSpectrumPage() {
-  return <WorkflowExperimentPage experimentId="mx-z-optimal-control-xy-noise-spectrum" finishStepId="A12" runStepId="A05"
+  return <WorkflowExperimentPage experimentId="mx-z-optimal-control-xy-noise-spectrum"
     analysisParameterPrefix="" renderResult={value => <Result value={value} />} />;
 }

@@ -68,6 +68,6 @@ function Result({ value }: { value: WorkflowRunSummary }) {
 }
 
 export function MxZCurrentCouplingCalibrationPage() {
-  return <WorkflowExperimentPage experimentId="mx-z-current-coupling-calibration" finishStepId="A11" runStepId="A09"
+  return <WorkflowExperimentPage experimentId="mx-z-current-coupling-calibration"
     analysisParameterKeys={{ LINEAR_R_SQUARED_MIN: "LINEAR_R_SQUARED_MIN" }} renderResult={value => <Result value={value} />} />;
 }

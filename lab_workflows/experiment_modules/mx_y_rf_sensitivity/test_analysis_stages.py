@@ -14,6 +14,26 @@ from .stages import ANALYSIS, definition
 from .test_workflow import rig
 
 
+REGRESSION_CASES = {
+    "mx-y-rf-sensitivity": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_y_rf_sensitivity/analysis.py"
+            ],
+            "tests": [
+                "test_full_and_stage_analysis_use_same_numbers_and_archive_only_dependants",
+                "test_fingerprint_missing_files_and_legacy_format",
+                "test_fit_quality_failure_saves_diagnostics_and_blocks_report",
+                "test_analysis_real_module_entrypoint_writes_results_and_rejects_unknown_override",
+                "test_real_module_outside_repository_uses_explicit_run",
+                "test_analysis_model_bounds_without_hardware_revalidation",
+                "test_real_caller_config_failure_preserves_bytes_and_original_error"
+            ]
+        }
+    }
+}
+
+
 @pytest.mark.parametrize("linewidth_mode", ["amplitude_equivalent", "frequency_sweep"])
 def test_full_and_stage_analysis_use_same_numbers_and_archive_only_dependants(rig, linewidth_mode):
     rig.params = replace(rig.params, linewidth_mode=linewidth_mode, frequency_start_hz=9000,
@@ -110,3 +130,48 @@ def test_analysis_real_module_entrypoint_writes_results_and_rejects_unknown_over
         analysis.AnalysisWorkflow(directory, {"NOISE_N_AVG": 99})
     with pytest.raises(ValueError, match="有限"):
         analysis.AnalysisWorkflow(directory, {"LOW_FREQ_SKIP_HZ": float("nan")})
+
+
+@pytest.mark.parametrize("mode", ["explicit", "missing", "nonexistent"])
+def test_real_module_outside_repository_uses_explicit_run(rig, mode):
+    from lab_workflows.experiments.test_analysis_imports import check_real_analysis_module
+
+    run = workflow.run(rig.params)
+    check_real_analysis_module(run, __package__ + ".analysis", "sensitivity.npz", mode)
+
+
+@pytest.mark.parametrize("bound", ["minimum", "maximum"])
+def test_analysis_model_bounds_without_hardware_revalidation(rig, monkeypatch, bound):
+    from dataclasses import fields
+
+    run = workflow.run(rig.params)
+    path = run / "experiment_config.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    ctx = analysis.AnalysisWorkflow(run)
+    params_type = type(ctx.params)
+    assert params_type.from_external(config["parameters"]).validate(Path(__file__).resolve().parents[3]) == []
+    config["parameters"]["FIXED_PARAMS.temperature"] = 1000.0
+    assert params_type.from_external(config["parameters"]).validate(Path(__file__).resolve().parents[3])
+    path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    before = path.read_bytes()
+    item = next(f for f in fields(ctx.params) if f.metadata.get("external_name") == "FIT_R_SQUARED_MIN")
+    endpoint = item.metadata[bound]
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("离线分析不能重新执行完整硬件预检")
+
+    monkeypatch.setattr(params_type, "validate", forbidden)
+    assert analysis.AnalysisWorkflow(run, {"FIT_R_SQUARED_MIN": endpoint}).options["FIT_R_SQUARED_MIN"] == endpoint
+    with pytest.raises(ValueError, match="FIT_R_SQUARED_MIN"):
+        analysis.AnalysisWorkflow(run, {"FIT_R_SQUARED_MIN": endpoint + (-1 if bound == "minimum" else 1)})
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("fault", ["write", "replace"])
+@pytest.mark.parametrize("original_error", [False, True])
+def test_real_caller_config_failure_preserves_bytes_and_original_error(rig, monkeypatch, fault, original_error):
+    from lab_workflows.experiments.test_analysis_imports import check_real_caller_config_failure
+    from . import analysis_steps
+
+    run = workflow.run(rig.params)
+    check_real_caller_config_failure(analysis.AnalysisWorkflow(run), analysis_steps, monkeypatch, fault, original_error)

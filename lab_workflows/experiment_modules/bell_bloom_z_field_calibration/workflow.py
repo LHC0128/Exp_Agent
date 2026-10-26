@@ -8,10 +8,11 @@ from ...common import WorkflowCancelled, find_project_root
 from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
 from ...instrument_config import instrument_config_snapshot
 from ...steps import DeviceSession, create_run_directory, disconnect_device_mapping, set_temperature_switch
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from . import acquisition, preparation, excitation, run_format
 from .models import BellBloomZFieldCalibrationParams
-from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ACQUISITION, FINISH_ID, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 # 旧导入和测试注入边界继续委派实际业务。
 from ._helpers import RuntimeCancellation, sleep
 from .preparation import connect_devices, configure_outputs, safe_shutdown

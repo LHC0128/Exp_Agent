@@ -1,17 +1,6 @@
 """Bell Bloom Z 标定的步骤、参数编辑归属和后端失效规则。"""
-from dataclasses import asdict, dataclass
-
-
-@dataclass(frozen=True)
-class Stage:
-    id: str
-    title: str
-    group: str
-    dependencies: tuple[str, ...]
-    parameters: tuple[str, ...] = ()
-    artifacts: tuple[str, ...] = ()
-    display_parameters: tuple[str, ...] | None = None
-    quality_gates: tuple[str, ...] = ()
+from dataclasses import asdict
+from lab_workflows.workflow_stages import Stage, initial_states
 
 
 FINISH_ID = "A10"
@@ -46,10 +35,6 @@ ANALYSIS = (
         "analysis.yaml", "analysis.json", "calibration_results.npz", "frequency_response_fits.png",
         "z_frequency_calibration.png", "z_frequency_residuals.png")),
 )
-
-
-def initial_states(stages):
-    return {stage.id: {"status": "pending", "error": ""} for stage in stages}
 
 
 def invalidated_stages(stages, stage_id):
@@ -98,7 +83,8 @@ def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return {"acquisition": [public(stage) for stage in ACQUISITION],
+    return {"run_step_id": "A08", "finish_step_id": FINISH_ID,
+            "acquisition": [public(stage) for stage in ACQUISITION],
         "analysis": [public(stage) for stage in ANALYSIS],
         "parameter_impacts": {"acquisition": parameter_impacts(ACQUISITION), "analysis": parameter_impacts(ANALYSIS)},
         "diagram_url": "/api/experiments/bell-bloom-z-field-calibration/workflow/diagram"}

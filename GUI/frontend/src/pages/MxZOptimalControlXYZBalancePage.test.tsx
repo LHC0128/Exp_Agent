@@ -76,7 +76,7 @@ it("真实实验路由提供双 Tab、全部可见参数、实际质量门槛与
   await screen.findByRole("checkbox", { name: /A04/ });
   expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByRole("tab", { name: "历史" })).toBeVisible();
-  for (const stage of [...acquisition, ...analysis]) for (const gate of stage.quality_gates) expect(screen.getByText(`质量门槛：${gate}`)).toBeVisible();
+  for (const stage of [...acquisition, ...analysis]) for (const gate of stage.quality_gates) expect(screen.getByText(`检查与质量说明：${gate}`)).toBeVisible();
   const owned = new Set([...acquisition, ...analysis].flatMap(stage => stage.display_parameters));
   expect(fields.every(field => owned.has(field.name))).toBe(true);
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);

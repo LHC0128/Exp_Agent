@@ -46,6 +46,10 @@ defaults_file: params/experiments/mx-y-rf-probe-detuning-optimization.yaml
 
 # Mx Y RF Probe 光功率与失谐灵敏度优化
 
+## 离线模块与运行目录
+
+分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.mx_y_rf_probe_detuning_optimization.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。
+
 ## 采集时序与系统稳定
 
 实际仪器配置完成后关闭 `Temp_Switch`，等待唯一的 `SYSTEM_SETTLE_S`，采集结果先留在内存，恢复温控后再保存波形、采集元数据和扫描快照。初始化目录及初始配置提前保存。校相、扫描和噪声共用该等待；组首配置前移，组内每次换点或换态后重新等待，保留原分组和 OFF/ON 配对边界。
@@ -141,6 +145,8 @@ data/Mx_Y_RF_Probe_Detuning_Optimization/<run>/
 两种方法分别输出矩阵、排名和最优点，目标均为最小化 `flat_median_ft_per_sqrt_hz`。固定 Probe 时矩阵退化为单列 PZT 结果，热图、排名和最优点文件格式保持不变。质量无效点只保留诊断图，不进入有效矩阵或排名。分析器只写入建议工作点，不连接仪器，也不会自动应用最优设置。
 
 ## 交互流程图与运行/历史
+
+本实验清单显式声明 `run_step_id=A07`、`finish_step_id=A09`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
 入口：`/experiments/mx-y-rf-probe-detuning-optimization`。运行页复用 XY 采集/独立分析双列布局，40 个可见参数在节点内按基础/高级分类编辑；保存参数与布局、派生预览、仅预检、完整运行和任务日志均位于流程顶部。下载的[可编辑源图](../../lab_workflows/experiment_modules/mx_y_rf_probe_detuning_optimization/workflow.excalidraw)与后端[模块清单](../../lab_workflows/experiment_modules/mx_y_rf_probe_detuning_optimization/stages.py)一致，不另建静态架构 Tab。
 

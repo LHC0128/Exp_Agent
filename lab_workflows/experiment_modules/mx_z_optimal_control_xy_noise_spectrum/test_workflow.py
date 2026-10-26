@@ -1,5 +1,5 @@
 """真实噪声业务配假仪器，保留文件写入与故障恢复。"""
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 import hashlib
 import json
@@ -11,6 +11,7 @@ import pytest
 import yaml
 from ...common import WorkflowCancelled
 from ..mx_z_optimal_control_rf_sensitivity.test_workflow import install_rig as install_control
+from ..mx_z_optimal_control_rf_sensitivity import workflow as control_workflow
 from ..mx_y_optimal_control_rf_frequency_response.test_workflow import copy_config, assert_safe
 from .. import mx_z_control_params
 from . import workflow, acquisition, preparation
@@ -176,20 +177,83 @@ def test_zero_bias_keeps_rf_off_even_with_legacy_hidden_rf_values(rig, monkeypat
     assert_safe(rig)
 
 
-def test_full_stepwise_and_rerun_preserve_old_directory(rig):
+def test_full_stepwise_and_rerun_preserve_old_directory(rig, monkeypatch):
+    initialize = workflow.ControlWorkflow.__init__
+    preflight = preparation.preflight
+    initializations, preflight_calls = [], []
+
+    def checked(params, root):
+        preflight_calls.append((params, root))
+        return preflight(params, root)
+
+    def shared_init(ctx, *args, **kwargs):
+        initializations.append(kwargs)
+        initialize(ctx, *args, **kwargs)
+
+    def wrong_preflight(*args):
+        raise AssertionError("噪声子实验必须显式使用自己的预检")
+
+    monkeypatch.setattr(preparation, "preflight", checked)
+    monkeypatch.setattr(control_workflow.preparation, "preflight", wrong_preflight)
+    monkeypatch.setattr(workflow.ControlWorkflow, "__init__", shared_init)
     full = workflow.run(rig.params)
-    ctx = workflow.Workflow(rig.params)
+    events, check_count = list(rig.events), len(preflight_calls)
+    ctx = workflow.Workflow(rig.params, session_id="noise-initialization-contract")
+    assert len(initializations) == 2 and initializations[-1]["preflight"] is checked
+    assert preflight_calls[check_count:] == [(rig.params, rig.root)]
+    assert rig.events == events and ctx.directory is None
+    assert ctx.session_id == "noise-initialization-contract" and ctx.revision == 0
+    assert ctx.shutdown_parameters is ctx.response_parameters is ctx.params
+    assert ctx.corrected is ctx.applied is ctx.selected_phase is ctx.sources is None
+    metadata = dict(experiment_id=workflow.EXPERIMENT_ID, data_type=workflow.DATA_TYPE,
+        execution_mode="typed_workflow", raw_format_version=1, measurement_mode="xy_bias_noise_spectrum")
+    assert ctx.state == metadata | {"completion_status": "running"}
+    assert ctx.mode_policy is workflow.NOISE_STAGE_MODE_POLICY
+    assert ctx.mode_policy.response_prepare_id == "A03"
+    assert ctx.mode_policy.response_required_ids == frozenset(("A04", "A05"))
+    assert ctx.mode_policy.new_round_on_repeat_ids == ctx.mode_policy.uncertain_y_output_ids == frozenset(("A04", "A05", "A06"))
+    with pytest.raises(FrozenInstanceError):
+        ctx.mode_policy.response_prepare_id = "A02"
+    with pytest.raises(TypeError):
+        ctx.initial_metadata["measurement_mode"] = "被修改的模板"
+    initializations[-1]["initial_metadata"]["measurement_mode"] = "被修改的调用方字典"
+    assert ctx.initial_metadata == metadata
+    legacy = object.__new__(workflow.ControlWorkflow)
+    assert legacy.mode_policy is workflow.ControlWorkflow.mode_policy and legacy.initial_metadata is None
+    stage_ids = {"A04"}
+    immutable = replace(ctx.mode_policy, response_required_ids=stage_ids)
+    stage_ids.add("A05")
+    assert immutable.response_required_ids == frozenset(("A04",))
+    for invalid in (metadata | {"devices": object()}, metadata | {"raw_format_version": True},
+                    metadata | {"experiment_id": {"state": "不能作为元数据"}}):
+        with pytest.raises(ValueError, match="初始元数据"):
+            initialize(object.__new__(workflow.ControlWorkflow), rig.params, project_root=rig.root,
+                preflight=checked, initial_metadata=invalid)
     for step in ACQUISITION:
         if step.id != FINISH_ID:
             ctx.execute([step.id])
+            if step.id == "A05":
+                events, revision = list(rig.events), ctx.revision
+                with monkeypatch.context() as patch:
+                    patch.setattr(ctx, "mode_policy", replace(ctx.mode_policy,
+                        response_prepare_id="A02", response_required_ids=frozenset(("A06",))))
+                    with pytest.raises(ValueError, match="显式选择 A02"):
+                        ctx.execute(["A06"])
+                assert ctx.revision == revision and rig.events == events
     for point in ("x_000_y_000", "x_001_y_000"):
         relative = f"points/{point}/noise_000.npz"
         with np.load(full / "raw" / relative) as left, np.load(ctx.directory.raw / relative) as right:
             for key in left.files:
                 np.testing.assert_array_equal(left[key], right[key])
-    previous, before = ctx.directory.root, hashes(ctx.directory.root)
+    previous, before, sealed_state = ctx.directory.root, hashes(ctx.directory.root), ctx.state
     ctx.execute(["A03", "A04", "A05", "A06"])
     assert ctx.directory.root != previous and hashes(previous) == before
+    assert ctx.state is not sealed_state and sealed_state["completion_status"] == "completed"
+    assert ctx.state["source_run_id"] == previous.name and ctx.initial_metadata == metadata
+    for directory in (full, previous, ctx.directory.root):
+        config = read_config(directory)
+        assert all(config[key] == value for key, value in metadata.items())
+        assert config["completion_status"] == "completed"
     ctx.finish()
     assert_safe(rig)
 

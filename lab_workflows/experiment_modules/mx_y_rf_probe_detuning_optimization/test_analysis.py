@@ -20,6 +20,32 @@ from . import analysis, analysis_steps, run_format
 from .models import MxYRFProbeDetuningOptimizationParams
 
 
+REGRESSION_CASES = {
+    "mx-y-rf-probe-detuning-optimization": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_y_rf_probe_detuning_optimization/__init__.py",
+                "lab_workflows/experiment_modules/mx_y_rf_probe_detuning_optimization/analysis.py"
+            ],
+            "tests": [
+                "test_original_grid_and_new_stepwise_science_are_identical",
+                "test_options_are_directory_local_and_archive_only_dependants",
+                "test_content_fingerprint_detects_same_size_same_mtime_changes",
+                "test_bad_input_is_rejected_before_old_results_are_archived",
+                "test_explicit_legacy_format_and_parameter_wait_migration",
+                "test_unknown_identity_format_and_active_run_are_rejected",
+                "test_quality_failure_retains_diagnostics_and_excludes_invalid_points",
+                "test_cancel_is_not_swallowed_as_a_bad_grid_point",
+                "test_invalid_analysis_overrides_are_rejected",
+                "test_input_change_during_science_is_not_marked_completed",
+                "test_results_alias_to_raw_cannot_move_acquisition_files",
+                "test_real_subprocess_and_thin_entrypoint_require_explicit_directory"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(root):
     root.mkdir(parents=True)
     params = replace(MxYRFProbeDetuningOptimizationParams(), probe_power_start_v=0.3,

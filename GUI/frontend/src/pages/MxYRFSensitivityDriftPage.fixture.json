@@ -965,6 +965,8 @@
       },
       "analysis": {}
     },
+    "run_step_id": "A09",
+    "finish_step_id": "A11",
     "diagram_url": "/api/experiments/mx-y-rf-sensitivity-drift/workflow/diagram"
   }
 }

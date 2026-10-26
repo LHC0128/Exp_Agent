@@ -7,7 +7,7 @@ from urllib.parse import quote
 import yaml
 from fastapi import HTTPException
 from pydantic import Field
-from lab_workflows.experiment_modules.noise_spectrum_xy.state_io import read_state
+from lab_workflows.workflow_state import read_state
 
 from .schemas import StrictModel
 

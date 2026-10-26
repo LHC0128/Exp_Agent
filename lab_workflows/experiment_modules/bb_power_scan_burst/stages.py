@@ -1,6 +1,6 @@
 """功率扫描唯一执行清单；编辑归属与参数失效分别声明。"""
 from dataclasses import asdict
-from ..mx_y_rf_sensitivity.stages import Stage, initial_states, invalidate, invalidated_stages, parameter_impacts, validate_selection as _validate
+from lab_workflows.workflow_stages import DependencyRules, Stage, initial_states
 
 FINISH_ID = "A08"
 RUN_STEP_ID = "A07"
@@ -43,6 +43,13 @@ ANALYSIS = (
 )
 
 
+_rules = DependencyRules(finish_id=FINISH_ID)
+invalidated_stages = _rules.invalidated_stages
+invalidate = _rules.invalidate
+parameter_impacts = _rules.parameter_impacts
+_validate = _rules.validate_selection
+
+
 def validate_selection(stages, states, selected):
     if FINISH_ID in selected and selected[-1] != FINISH_ID:
         raise ValueError("结束会话必须最后执行")
@@ -52,6 +59,7 @@ def validate_selection(stages, states, selected):
 def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return dict(acquisition=[public(s) for s in ACQUISITION], analysis=[public(s) for s in ANALYSIS],
+    return dict(run_step_id=RUN_STEP_ID, finish_step_id=FINISH_ID,
+        acquisition=[public(s) for s in ACQUISITION], analysis=[public(s) for s in ANALYSIS],
         parameter_impacts=dict(acquisition=parameter_impacts(ACQUISITION), analysis=parameter_impacts(ANALYSIS)),
         diagram_url="/api/experiments/bb-power-scan-burst/workflow/diagram")

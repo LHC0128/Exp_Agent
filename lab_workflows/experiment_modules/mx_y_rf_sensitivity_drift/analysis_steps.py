@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from ..mx_y_rf_sensitivity.run_format import RAW_FORMAT_VERSION as CHILD_RAW_FORMAT_VERSION
 from . import run_format
 from .stages import ANALYSIS

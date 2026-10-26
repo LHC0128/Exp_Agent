@@ -9,12 +9,34 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 import yaml
 from scipy.signal import welch
 
 from ...analysis.noise_spectrum_separation import lorentzian_vs_control
 from . import analysis, analysis_steps, stages
 from .test_workflow import copy_config, scan_params
+
+
+REGRESSION_CASES = {
+    "noise-spectrum-xy-uncontrolled-probe-am": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/noise_spectrum_xy_known_noise/__init__.py",
+                "lab_workflows/experiment_modules/noise_spectrum_xy_probe_am/analysis.py"
+            ],
+            "tests": [
+                "ProbeAMAnalysisTests::test_full_and_staged_outputs_are_equal",
+                "ProbeAMAnalysisTests::test_provisional_axis_completes_with_quality_failed",
+                "ProbeAMAnalysisTests::test_option_change_invalidates_fit_stage_and_archives",
+                "ProbeAMAnalysisTests::test_invalid_options_rejected_and_fingerprint_invalidates",
+                "ProbeAMRawAnalysisTests::test_real_raw_full_and_staged_science_products_match",
+                "ProbeAMRawAnalysisTests::test_real_missing_pairs_keep_nan_and_block_insufficient_data",
+                "test_real_module_outside_repository_uses_explicit_run"
+            ]
+        }
+    }
+}
 
 
 def paired_matrix(scale_on):
@@ -249,6 +271,15 @@ class ProbeAMRawAnalysisTests(unittest.TestCase):
             saved = json.loads((run / "results/analysis_summary.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["status"], "quality_failed")
             self.assertIn("成对有效控制点不足", saved["error"])
+
+
+@pytest.mark.parametrize("mode", ["explicit", "missing", "nonexistent"])
+def test_real_module_outside_repository_uses_explicit_run(tmp_path, mode):
+    from lab_workflows.experiments.test_analysis_imports import check_real_analysis_module
+
+    copy_config(tmp_path)
+    run = synthetic_run(tmp_path, "module")
+    check_real_analysis_module(run, __package__ + ".analysis", "noise_spectra.npz", mode)
 
 
 if __name__ == "__main__":

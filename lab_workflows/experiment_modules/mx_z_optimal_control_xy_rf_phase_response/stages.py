@@ -1,8 +1,7 @@
 """相位网格的真实步骤、参数编辑归属与失效范围。"""
 from dataclasses import asdict
-from ..mx_z_optimal_control_rf_sensitivity.stages import (
-    Stage, TEMP, QUALITY, FINISH_ID, initial_states, invalidate, invalidated_stages,
-    parameter_impacts, validate_selection)
+from ..mx_z_optimal_control_rf_sensitivity.stages import TEMP, QUALITY, FINISH_ID, invalidate, invalidated_stages, parameter_impacts, validate_selection
+from lab_workflows.workflow_stages import Stage, initial_states
 from ..mx_z_optimal_control_xy_rf_sensitivity.stages import SOURCES, AXES
 
 ANALYSIS_KEYS = ("PHASE_FIT_R_SQUARED_MIN", "PHASE_FIT_AMPLITUDE_SIGMA_MIN")
@@ -51,6 +50,7 @@ def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return dict(acquisition=[public(s) for s in ACQUISITION], analysis=[public(s) for s in ANALYSIS],
+    return dict(run_step_id="A04", finish_step_id=FINISH_ID,
+        acquisition=[public(s) for s in ACQUISITION], analysis=[public(s) for s in ANALYSIS],
         parameter_impacts={"acquisition": parameter_impacts(ACQUISITION), "analysis": parameter_impacts(ANALYSIS)},
         diagram_url="/api/experiments/mx-z-optimal-control-xy-rf-phase-response/workflow/diagram")

@@ -19,6 +19,34 @@ from ..z_aw_closed_loop_waveform_correction.response_filter import build_learnin
 from .test_workflow import ROOT, copy_config, fake_hardware, scan_params
 
 
+REGRESSION_CASES = {
+    "z-coil-current-frequency-response": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/z_coil_current_frequency_response/__init__.py",
+                "lab_workflows/experiment_modules/z_coil_current_frequency_response/analysis.py",
+                "lab_workflows/experiment_modules/z_coil_inductance_frequency_response/__init__.py"
+            ],
+            "tests": [
+                "CurrentAnalysisTests::test_whole_and_staged_analysis_agree_and_export_preserves_predecessors",
+                "CurrentAnalysisTests::test_quality_failure_blocks_export_and_keeps_diagnostics",
+                "CurrentAnalysisTests::test_single_valid_repeat_exports_diagnostics_without_closed_loop_phase",
+                "CurrentAnalysisTests::test_mixed_actual_repeats_legacy_raw_and_bad_frame_do_not_qualify_phase",
+                "CurrentAnalysisTests::test_effective_count_uses_individual_quality_without_changing_statistics",
+                "CurrentAnalysisTests::test_real_producer_retains_internal_bad_point_and_old_results_require_raw_reanalysis",
+                "CurrentAnalysisTests::test_distinct_nearby_frequencies_never_count_as_repeated_frames",
+                "CurrentAnalysisTests::test_phase_qualification_version_invalidates_old_cache_without_rewriting_run",
+                "CurrentAnalysisTests::test_input_and_artifact_changes_invalidate_without_reusing_stale_fits",
+                "CurrentAnalysisTests::test_historical_identity_parameter_versions_and_invalid_raw",
+                "CurrentAnalysisTests::test_reference_optional_missing_frame_fallback_and_reliable_band_are_preserved",
+                "CurrentAnalysisTests::test_zero_signal_quality_failure_retains_point_diagnostics_and_blocks_export",
+                "CurrentAnalysisTests::test_real_analysis_module_entry_writes_stage_outputs"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(root, *, reference=0, repeats=2):
     """通过真实采集步骤生成正式格式文件，只在驱动边界使用假设备。"""
     with fake_hardware(root):

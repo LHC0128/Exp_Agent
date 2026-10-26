@@ -1,9 +1,6 @@
 """Probe/PZT 优化的执行清单、编辑归属与失效规则。"""
 from dataclasses import asdict
-from ..mx_y_rf_sensitivity.stages import (
-    Stage, initial_states, invalidate, invalidated_stages, parameter_impacts,
-    validate_selection as _validate_selection,
-)
+from lab_workflows.workflow_stages import DependencyRules, Stage, initial_states
 
 FINISH_ID = "A09"
 ANALYSIS_KEYS = (
@@ -49,6 +46,13 @@ ANALYSIS = (
 )
 
 
+_rules = DependencyRules(finish_id=FINISH_ID)
+invalidated_stages = _rules.invalidated_stages
+invalidate = _rules.invalidate
+parameter_impacts = _rules.parameter_impacts
+_validate_selection = _rules.validate_selection
+
+
 def validate_selection(stages, states, selected):
     if FINISH_ID in selected and selected[-1] != FINISH_ID:
         raise ValueError("安全结束必须最后执行")
@@ -59,7 +63,8 @@ def definition():
     def public(stage):
         return asdict(stage) | {"display_parameters": list(
             stage.parameters if stage.display_parameters is None else stage.display_parameters)}
-    return dict(acquisition=[public(stage) for stage in ACQUISITION],
+    return dict(run_step_id="A07", finish_step_id=FINISH_ID,
+        acquisition=[public(stage) for stage in ACQUISITION],
         analysis=[public(stage) for stage in ANALYSIS],
         parameter_impacts=dict(acquisition=parameter_impacts(ACQUISITION), analysis=parameter_impacts(ANALYSIS)),
         diagram_url="/api/experiments/mx-y-rf-probe-detuning-optimization/workflow/diagram")

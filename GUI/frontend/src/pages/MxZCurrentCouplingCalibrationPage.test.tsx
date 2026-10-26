@@ -59,7 +59,7 @@ beforeEach(() => {
     if (url === "/api/jobs/full-job/cancel") return acquisitionJob = { ...acquisitionJob, status: "cancelled" };
     if (url === "/api/jobs/mx-job/cancel") return { id: "mx-job", kind: `session:${ID}`, status: "cancelled", events: [] } as never;
     if (url === `${BASE}/workflow`) return { acquisition, analysis,
-      parameter_impacts, diagram_url: `${BASE}/workflow/diagram` } as never;
+      parameter_impacts, run_step_id: "A09", finish_step_id: "A11", diagram_url: `${BASE}/workflow/diagram` } as never;
     if (url === `${BASE}/sessions/active`) return current as never;
     if (url === `${BASE}/sessions` && options?.method === "POST") return current = makeSession();
     if (url === `${BASE}/sessions/mx-session/steps`) {
@@ -258,7 +258,7 @@ it("质量门槛和实际失败记录位于对应节点，失败后允许安全�
   for (const [id, values] of Object.entries(gates)) {
     const stage = [...acquisition, ...analysis].find(item => item.id === id)!;
     const checkbox = await screen.findByRole("checkbox", { name: `${id} ${stage.title}` });
-    expect(within(checkbox.closest("li")!).getByText(`质量门槛：${values[0]}`)).toBeVisible();
+    expect(within(checkbox.closest("li")!).getByText(`检查与质量说明：${values[0]}`)).toBeVisible();
   }
   const failed = screen.getByRole("checkbox", { name: "A09 逐 Z 电流与局部 Y RF 联合扫描" }).closest("li")!;
   expect(within(failed).getByText("质量未通过")).toBeVisible();

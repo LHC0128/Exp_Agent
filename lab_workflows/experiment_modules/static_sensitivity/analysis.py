@@ -10,9 +10,10 @@ import yaml
 
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from . import analysis_steps
-from .stages import ANALYSIS, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ANALYSIS, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 from .run_format import format_block_reason
 
 ANALYSIS_VERSION = "static-dc-stages-v1"

@@ -12,11 +12,12 @@ from ...common import WorkflowCancelled, find_project_root, load_mapping, valida
 from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
 from ...instrument_config import instrument_config_snapshot
 from ...steps import DeviceSession, ScopeAutoRangeState, configure_optimal_control_trigger, synchronize_connected_clocks
-from ..noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 from .models import ZCoilInductanceFrequencyResponseParams
 from . import acquisition, preparation
 from .run_format import EXPERIMENT_ID, DATA_TYPE
-from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, validate_selection
+from .stages import ACQUISITION, FINISH_ID, invalidate, validate_selection
+from lab_workflows.workflow_stages import initial_states
 # 已发布电流频响仍使用这些导出；采集编排通过 operations 保留替换入口。
 from .acquisition import (
     build_frequency_axis, sine_reference, _reference_channel, _scope_config, _sample_rate_for_frequency,
@@ -47,12 +48,9 @@ class Workflow:
         self.experiment_id, self.data_type = experiment_id, data_type
         self.acquisition_signals = acquisition_signals or ["SDS CH3 Z coil voltage", "SDS CH4 trigger reference"]
         self.physical_limit = physical_limit or "仅观察线圈端电压频率响应；理论值为 DG 设定值，不能单独反演唯一 L。"
-        self.completion_label, self.capture_validator = completion_label, capture_validator
-        self.capture_guard_s = (float(getattr(params, "scope_capture_guard_s", SCOPE_CAPTURE_GUARD_S))
-            if capture_guard_s is None else float(capture_guard_s))
-        if not np.isfinite(self.capture_guard_s) or self.capture_guard_s < 0:
-            raise ValueError("capture_guard_s 必须是有限非负秒数")
-        self.drive_metadata = drive_metadata or {}
+        self.completion_label = completion_label
+        self.configure_capture(capture_validator=capture_validator, capture_guard_s=capture_guard_s,
+            drive_metadata=drive_metadata)
         self.operations = sys.modules[__name__]
         self.config_revision = self._configuration_revision()
         self.session_id, self.revision = session_id or uuid4().hex, 0
@@ -63,6 +61,15 @@ class Workflow:
         self.closed = self.outputs_started = self.clock_failed = False
         self.outputs = {"Z 正弦": "未知", "共同触发": "未知", "Scope": "未知"}
         self.shutdown, self.persistence_errors = None, []
+
+    def configure_capture(self, *, capture_validator=None, capture_guard_s=None, drive_metadata=None) -> None:
+        """校验秒单位的保护等待后整体替换采集选项；失败时保留原选项。"""
+        guard_s = (float(getattr(self.params, "scope_capture_guard_s", SCOPE_CAPTURE_GUARD_S))
+            if capture_guard_s is None else float(capture_guard_s))
+        if not np.isfinite(guard_s) or guard_s < 0:
+            raise ValueError("capture_guard_s 必须是有限非负秒数")
+        metadata = drive_metadata or {}
+        self.capture_validator, self.capture_guard_s, self.drive_metadata = capture_validator, guard_s, metadata
 
     def _configuration_revision(self):
         snapshot = instrument_config_snapshot(self.root)

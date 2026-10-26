@@ -135,6 +135,9 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             text=True,
             encoding="utf-8",
             errors="replace",
+            # 隔离父终端 Ctrl+C；停止仍通过取消文件和命令/EOF 协作完成。
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+            start_new_session=os.name != "nt",
         )
 
         def watch_cancel() -> None:
@@ -205,7 +208,14 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             process.stdout.close()
             cancel_path.unlink(missing_ok=True)
         if cancellation and cancellation.cancelled:
-            raise WorkflowCancelled("实验已在安全检查点停止")
+            if return_code:
+                # 正常取消也可能非零退出，不能仅凭退出码改判失败或宣称安全。
+                logging.warning(
+                    "模块 %s 在取消后非零退出（退出码 %s）；正常取消也可能如此，未确认仪器安全，请核对收尾日志",
+                    module, return_code,
+                )
+                raise WorkflowCancelled(f"实验子进程已退出（退出码 {return_code}）；安全收尾结果请核对日志")
+            raise WorkflowCancelled("实验子进程已退出；安全收尾结果请核对日志")
         if return_code:
             raise RuntimeError(f"模块 {module} 异常结束，退出码 {return_code}")
         if commands is None and run_dir is None and len(reported_runs) > 1:

@@ -581,6 +581,8 @@
         ]
       }
     },
+    "run_step_id": "A08",
+    "finish_step_id": "A09",
     "diagram_url": "/api/experiments/projection-noise/workflow/diagram"
   }
 }

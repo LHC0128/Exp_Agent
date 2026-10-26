@@ -11,7 +11,7 @@ from . import main, run_management
 from .test_rf_sensitivity_direct_aw import client, create_run
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.analysis import AnalysisWorkflow
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw.run_format import DATA_TYPE, EXPERIMENT_ID
-from lab_workflows.experiment_modules.noise_spectrum_xy.state_io import write_state
+from lab_workflows.workflow_state import write_state
 
 BASE = f"/api/experiments/{EXPERIMENT_ID}"
 
@@ -45,6 +45,7 @@ def test_stars_persist_and_filter_before_paging_without_changing_snapshots(clien
 
 
 def test_failed_star_write_preserves_existing_metadata(client, tmp_path, monkeypatch):
+    assert run_management.write_state is write_state
     directory = create_run(tmp_path)
     assert client.put(f"{BASE}/runs/{directory.name}/star", json={"starred": True}).status_code == 200
     before = files(directory)

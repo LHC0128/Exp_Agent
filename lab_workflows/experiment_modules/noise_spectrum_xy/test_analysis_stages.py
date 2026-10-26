@@ -16,6 +16,24 @@ from . import analysis
 from .stages import ANALYSIS, definition
 
 
+REGRESSION_CASES = {
+    "noise-spectrum-xy": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_main_field_scope_noise_spectrum/__init__.py",
+                "lab_workflows/experiment_modules/noise_spectrum_xy/analysis.py"
+            ],
+            "tests": [
+                "AnalysisStagesTest::test_full_and_separate_steps_produce_same_arrays_and_summary",
+                "AnalysisStagesTest::test_parameter_impact_preview_matches_saved_analysis_invalidation",
+                "AnalysisStagesTest::test_recompute_archives_only_affected_products_and_input_drift_rejects_reuse",
+                "AnalysisStagesTest::test_old_stage_records_artifact_changes_and_failed_calibration_keep_diagnostics"
+            ]
+        }
+    }
+}
+
+
 class AnalysisStagesTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="xy-analysis-stages-")

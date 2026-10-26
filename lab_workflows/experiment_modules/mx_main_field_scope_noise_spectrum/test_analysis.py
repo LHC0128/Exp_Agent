@@ -16,6 +16,29 @@ from . import analysis, analysis_steps as steps, run_format
 from .test_workflow import small_params
 
 
+REGRESSION_CASES = {
+    "mx-main-field-scope-noise-spectrum": {
+        "analysis": {
+            "sources": [
+                "lab_workflows/experiment_modules/mx_main_field_scope_noise_spectrum/__init__.py",
+                "lab_workflows/experiment_modules/mx_main_field_scope_noise_spectrum/analysis.py"
+            ],
+            "tests": [
+                "test_full_and_separate_scientific_arrays_match",
+                "test_analysis_overrides_and_archives_only_scientific_outputs",
+                "test_content_fingerprints_detect_same_stat_changes",
+                "test_bad_input_does_not_move_existing_results",
+                "test_legacy_format_qualification_and_running_rejection",
+                "test_results_directory_junction_cannot_archive_raw",
+                "test_global_numeric_decomposition_and_real_figures",
+                "test_cancelled_scientific_stage_keeps_original_exception",
+                "test_real_subprocess_outputs_and_explicit_thin_entry"
+            ]
+        }
+    }
+}
+
+
 def synthetic_run(path, *, global_analysis=False, schema=8):
     path = Path(path)
     (path / "raw").mkdir(parents=True)

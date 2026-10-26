@@ -1,5 +1,6 @@
 """双斜率网格分析的分阶段编排、内容指纹与独立覆盖值。"""
 from copy import deepcopy
+from dataclasses import fields
 from datetime import datetime
 from pathlib import Path
 import hashlib
@@ -8,11 +9,12 @@ import math
 import os
 from ...common import WorkflowCancelled
 from ...experiment_runtime import check_cancelled, report_runtime_progress, runtime_run_dir
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from . import analysis_steps
 from .analysis_steps import GRID_SPEC, AnalysisQualityError, plain
 from .models import MxYRFPowerOptimizationParams
-from .stages import ANALYSIS, ANALYSIS_KEYS, initial_states, invalidate, invalidated_stages, validate_selection
+from .stages import ANALYSIS, ANALYSIS_KEYS, invalidate, invalidated_stages, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 ANALYSIS_VERSION = "mx-y-power-grid-v1"
 
@@ -46,7 +48,18 @@ class AnalysisWorkflow:
                 for value in self.options.values()):
             raise ValueError("分析覆盖参数必须为有限数值")
         self.params = MxYRFPowerOptimizationParams.from_external(self.base_params.to_external() | self.options)
-        if errors := self.params.validate():
+        # 离线分析仅复用模型的分析字段范围，不对历史采集重新执行当前硬件预检。
+        for item in fields(self.params):
+            key = item.metadata.get("external_name", item.name)
+            if key not in ANALYSIS_KEYS:
+                continue
+            value = getattr(self.params, item.name)
+            minimum, maximum = item.metadata.get("minimum"), item.metadata.get("maximum")
+            if minimum is not None and value < minimum:
+                raise ValueError(f"{key} 低于模型下限 {minimum}")
+            if maximum is not None and value > maximum:
+                raise ValueError(f"{key} 高于模型上限 {maximum}")
+        if errors := self.params._analysis_validation_errors():
             raise ValueError("；".join(errors))
 
     @staticmethod

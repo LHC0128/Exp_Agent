@@ -1,6 +1,9 @@
 # %% [markdown]
 # # 多控制整体幅度扫描：完整运行与交互会话共用业务步骤
 # %% 导入
+import hashlib
+from pathlib import Path
+import numpy as np
 from ...experiment_runtime import load_runtime_params
 from ..rf_sensitivity_direct_aw import workflow as shared
 from ..rf_sensitivity_direct_aw import preparation as direct_preparation
@@ -13,6 +16,16 @@ from . import stages, run_format
 class ControlWorkflow(shared.SingleControlWorkflow):
     params_type = RFControlScaleParams
     identity = run_format
+
+    def _control_run_metadata(self):
+        return dict(
+            control_source_sha256=hashlib.sha256(Path(self.envelope["source_waveform_path"]).read_bytes()).hexdigest(),
+            raw_format_version=run_format.RAW_FORMAT_VERSION,
+            phase_calibration_scope=run_format.PHASE_CALIBRATION_SCOPE,
+            control_metrics={
+                "envelope_rms_V": float(np.sqrt(np.mean(self.envelope["envelope_V"] ** 2))),
+                "envelope_peak_V": float(np.max(np.abs(self.envelope["envelope_V"]))),
+            })
 
     def preflight(self, params):
         return direct_preparation.preflight(params, self.root, experiment_id=run_format.EXPERIMENT_ID)

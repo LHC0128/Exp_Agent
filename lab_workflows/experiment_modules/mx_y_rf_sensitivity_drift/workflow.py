@@ -7,7 +7,7 @@ from ...common import WorkflowCancelled, find_project_root
 from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
 from ...instrument_config import instrument_config_snapshot
 from ...steps import DeviceSession, create_run_directory, disconnect_device_mapping
-from ..noise_spectrum_xy.state_io import read_state, write_state
+from lab_workflows.workflow_state import read_state, write_state
 from ..mx_y_rf_sensitivity.analysis import analyze as analyze_single
 from ..mx_y_rf_sensitivity.workflow import (
     RPointQualityError, acquire_mx_y_rf_point, configure_mx_y_rf_outputs,
@@ -17,7 +17,8 @@ from . import acquisition, preparation, run_format, scheduling
 from .analysis import refresh_trend
 from .models import MxYRFDriftParams
 from .scheduling import _planned_records, _child_parameters, _set_record_error, _utc_now, _write_manifest
-from .stages import ACQUISITION, FINISH_ID, initial_states, invalidate, validate_selection
+from .stages import ACQUISITION, FINISH_ID, invalidate, validate_selection
+from lab_workflows.workflow_stages import initial_states
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE

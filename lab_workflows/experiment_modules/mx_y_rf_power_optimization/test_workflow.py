@@ -12,6 +12,17 @@ from ..mx_y_rf_sensitivity.test_workflow import copy_config, install_rig, assert
 from .models import MxYRFPowerOptimizationParams
 from . import workflow, acquisition, preparation, stages
 
+REGRESSION_CASES = {
+    "mx-y-rf-power-optimization": {
+        "parameters": {
+            "sources": ["lab_workflows/experiment_modules/mx_y_rf_power_optimization/models.py",
+                        "params/experiments/mx-y-rf-power-optimization.yaml"],
+            "tests": ["test_actual_defaults_roundtrip_and_unsafe_yaml_rejected_before_connection"],
+        },
+    },
+}
+
+
 ACQUISITION_CASES = {
     "mx-y-rf-power-optimization": {"mode": "grouped", "cases": {
         "order": ["test_real_serpentine_order_and_slow_disk"],
@@ -273,6 +284,20 @@ def test_visible_parameters_and_impacts_use_actual_schema():
     assert fields <= displayed
     assert flow["parameter_impacts"]["acquisition"]["SYSTEM_SETTLE_S"] == ["A08", "A09"]
     assert flow["parameter_impacts"]["analysis"]["R_BAD_POINT_STD_THRESHOLD_V"] == ["B02", "B03"]
+
+
+def test_actual_defaults_roundtrip_and_unsafe_yaml_rejected_before_connection(tmp_path):
+    root = Path(__file__).resolve().parents[3]
+    params = MxYRFPowerOptimizationParams.from_yaml(root / "params/experiments/mx-y-rf-power-optimization.yaml")
+    assert params.validate(root) == []
+    saved = tmp_path / "defaults.yaml"
+    params.save_yaml(saved)
+    assert MxYRFPowerOptimizationParams.from_yaml(saved).to_external() == params.to_external()
+    unsafe = replace(params, y_rf_amp_start_vpp=-3.0, y_rf_amp_stop_vpp=3.0)
+    unsafe.save_yaml(saved)
+    rejected = MxYRFPowerOptimizationParams.from_yaml(saved)
+    with pytest.raises(ValueError, match="rf_coil|安全"):
+        preparation.preflight(rejected, root)
 
 
 if __name__ == "__main__":

@@ -91,6 +91,8 @@ defaults_file: params/experiments/t2-calibration.yaml
 
 ## 模块化与运行／历史界面
 
+本实验清单显式声明 `run_step_id=A06`、`finish_step_id=A07`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
+
 正式 `t2-calibration` 实现的是光学 FID；下文 MORS 为独立方法的背景，不是本流程的可执行节点。
 `workflow.py` 负责编排，`preparation.py` 负责连接、输出、示波器配置和安全收尾，
 `acquisition.py` 负责逐帧读取与恢复后保存，`analysis_steps.py` 保留原阻尼振荡拟合及绘图。

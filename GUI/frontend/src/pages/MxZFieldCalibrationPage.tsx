@@ -20,6 +20,6 @@ function Result({ value }: { value: WorkflowRunSummary }) {
 }
 
 export function MxZFieldCalibrationPage() {
-  return <WorkflowExperimentPage experimentId="mx-z-field-calibration" finishStepId="A10" runStepId="A08"
+  return <WorkflowExperimentPage experimentId="mx-z-field-calibration"
     analysisParameterKeys={{ LINEAR_R_SQUARED_MIN: "LINEAR_R_SQUARED_MIN" }} renderResult={value => <Result value={value} />} />;
 }
