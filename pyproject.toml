@@ -12,6 +12,33 @@ dependencies = [
   "tqdm>=4.67,<5",
 ]
 
+# 可按用途组合安装；基础安装继续保留已有 SDK 与进度条契约。
+[project.optional-dependencies]
+runtime = [
+  "numpy>=1.24,<3",
+  "PyYAML>=6,<7",
+  "PyVISA>=1.14,<2",
+  "pyserial>=3.5,<4",
+]
+instruments = [
+  "PyVISA-py>=0.7,<1",
+  "zhinst>=26.7,<27",
+]
+analysis = [
+  "scipy>=1.10,<2",
+  "matplotlib>=3.7,<4",
+]
+gui = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "pydantic>=2.10,<3",
+]
+dev = [
+  "pytest>=8,<10",
+  "httpx>=0.27,<1",
+]
+notebook = ["jupyter>=1,<2"]
+
 [tool.setuptools.packages.find]
 where = ["src", "."]
 include = [

@@ -1,0 +1,21 @@
+# -*- coding: utf-8 -*-
+# Windows / Python 3.12 的已知可用直接依赖；不是历史环境全量 freeze。
+# 3.10 保留兼容候选范围，尚未在该解释器运行；不要将其宣称为已验证。
+# 不约束无关 Notebook/绘图库传递依赖，也不改变已有虚拟环境。
+toptica-lasersdk==3.3.0
+tqdm==4.67.3
+numpy==2.4.4; python_version >= '3.11'
+numpy>=1.26,<2.3; python_version < '3.11'
+scipy==1.17.1; python_version >= '3.11'
+scipy>=1.14,<1.16; python_version < '3.11'
+matplotlib==3.10.9
+PyYAML==6.0.3
+PyVISA==1.16.2
+PyVISA-py==0.8.1
+pyserial==3.5
+zhinst==26.7.2
+fastapi==0.139.0
+uvicorn==0.51.0
+pydantic==2.13.4
+pytest==9.1.1
+httpx==0.28.1
