@@ -1,0 +1,79 @@
+name: 无硬件开发检查
+
+'on':
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: '1'
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 判断前端检查范围
+        id: scope
+        shell: pwsh
+        env:
+          DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          $frontend = $true
+          if ($env:DIFF_BASE -and $env:DIFF_BASE -notmatch '^0+$') {
+            $changed = @(git diff --name-only $env:DIFF_BASE HEAD --)
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $frontend = @($changed | Where-Object {
+              $_ -match '^GUI/(frontend|backend)/|^\.github/workflows/quality\.yml$|^tools/|^pyproject\.toml$|^constraints/'
+            }).Count -gt 0
+          }
+          "frontend=$($frontend.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            constraints/development.txt
+
+      - name: 安装明确的开发组合
+        run: python -m pip install -c constraints/development.txt -e ".[runtime,instruments,analysis,gui,dev]"
+
+      - name: 检查依赖一致性
+        run: python -m pip check
+
+      - name: Python 无硬件快检
+        run: python -m tools.check --report .cache/checks/python.json
+
+      - uses: actions/setup-node@v4
+        if: steps.scope.outputs.frontend == 'true'
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: GUI/frontend/package-lock.json
+
+      - name: 按锁文件安装前端
+        if: steps.scope.outputs.frontend == 'true'
+        working-directory: GUI/frontend
+        run: npm ci
+
+      - name: 前端类型、测试与构建
+        if: steps.scope.outputs.frontend == 'true'
+        run: python -m tools.check --profile frontend --timeout 180 --report .cache/checks/frontend.json
+
+      - name: 保留实际执行报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: development-check-reports
+          path: .cache/checks/*.json
+          if-no-files-found: warn
