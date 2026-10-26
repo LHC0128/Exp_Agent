@@ -10,8 +10,10 @@
 ## 安装
 
 先按[仓库初次安装说明](../README.md#初次安装)安装本地包、仪器、分析与 GUI 依赖。
-前端需要 Node.js / npm，当前 Vite 要求 Node.js `^20.19.0 || >=22.12.0`，
-依赖版本由 `frontend/package-lock.json` 锁定。
+前端需要 Node.js / npm，完整依赖要求 `^22.22.2 || ^24.15.0 || >=26.0.0`，推荐 Node.js 24 LTS；
+该范围同时考虑 Vite 与 jsdom。依赖版本由 `frontend/package-lock.json` 锁定。
+开发/CI 的隔离安装及统一快检见[开发安装与无硬件检查](../README.md#开发安装与无硬件检查)，
+不要在正在采集的环境中自动升级依赖。
 
 ```powershell
 .\agent_exp_env\Scripts\python.exe -m pip install -r GUI\requirements.txt
@@ -331,7 +333,7 @@ Keithley 6221 的 Hz 任意波 CSV/TXT 解析与标定换算逻辑位于
   pi 本体、mineru）；更新 pi 后需重启 pi。
 - **olcli 隔离环境**：`~/.local/olcli-ustc` 前缀内的 olcli-ustc、codex、pnpm，
   只用命令级 `npm_config_prefix`，不修改用户级 `.npmrc`。
-- **AI Skills**：列出 `.agents/skills` 与 `.claude/skills` 清单；本地无版本源，仅展示。
+- **AI Skills**：仅列出唯一入口 `.agents/skills` 的清单；退役备份不扫描，本地无版本源，仅展示。
 - **工具链**：python / pip / node / npm / git 版本展示。
 
 更新任务以后台 Job 运行且不占用硬件互斥队列，可与实验并行；更新请求只接受

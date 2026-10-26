@@ -9,8 +9,8 @@
 ZIP 也能启动 GUI，但更新与自动验证功能不完整。
 
 - Python 要求：`>=3.10`；本地包名：`exp-agent`；虚拟环境：`agent_exp_env\`
-- GUI 前端另需 Node.js / npm，当前 Vite 要求 Node.js `^20.19.0 || >=22.12.0`，
-  升级依赖后以锁文件中的 `engines` 为准
+- GUI 前端另需 Node.js / npm；完整开发依赖要求 Node.js `^22.22.2 || ^24.15.0 || >=26.0.0`，
+  推荐 Node.js 24 LTS。该范围同时考虑 Vite 与 jsdom；升级后以锁文件中所有依赖的 `engines` 交集为准。
 
 希望一条命令完成，或由 AI 编码代理代为安装时，直接运行：
 
@@ -18,31 +18,33 @@ ZIP 也能启动 GUI，但更新与自动验证功能不完整。
 powershell -NoProfile -ExecutionPolicy Bypass -File setup.ps1
 ```
 
-脚本幂等、可重复运行，自动完成下述全部步骤，任一步失败即停止并报告，不自动降级；
+脚本幂等、可重复运行，自动完成虚拟环境和分组依赖安装，任一步失败即停止并报告，不自动降级；
 `-SkipFrontend` 可跳过前端依赖。让 AI 代理安装时，可让它运行本脚本并原样转述输出，
 不要在未告知的情况下改动依赖版本或跳过失败的步骤。
 
-手动逐步安装如下（与脚本等价）；在仓库根目录按顺序执行，已有虚拟环境时跳过创建直接复用：
+需要明确依赖版本时，推荐以下受约束的手动安装路径（旧安装脚本仍保留其分组安装方式）。
+在仓库根目录执行；已有日常使用的环境时，不用下面命令刷新它，开发验证改用后面的隔离环境：
 
 ```powershell
-# 1. 虚拟环境、本地包与仪器通信/分析依赖
+# 1. 新建实验环境，安装显式的运行、仪器、分析和 GUI 组合
 if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
     python -m venv agent_exp_env
 }
-.\agent_exp_env\Scripts\python.exe -m pip install -e .
-.\agent_exp_env\Scripts\python.exe -m pip install pyvisa pyvisa-py pyserial zhinst numpy scipy matplotlib pyyaml jupyter
+.\agent_exp_env\Scripts\python.exe -m pip install -c constraints/development.txt -e ".[runtime,instruments,analysis,gui]"
 
-# 2. GUI 后端与前端依赖
-.\agent_exp_env\Scripts\python.exe -m pip install -r GUI\requirements.txt
+# 2. 检查后端依赖，再按锁文件安装前端
 .\agent_exp_env\Scripts\python.exe -m pip check
 Set-Location GUI\frontend
 npm ci
 Set-Location ..\..
 ```
 
-`pip install -e .` 安装 `src/` 下的驱动和根目录的 `lab_workflows`，同时按
-`pyproject.toml` 安装 TOPTICA SDK 与进度条；仪器通信、分析和 GUI 依赖需按上面分组安装。
-根目录 `requirements.txt` 是历史环境快照，不替代上述说明。
+`pip install -e .` 安装 `src/` 下的驱动和根目录的 `lab_workflows`，基础依赖仍只有
+TOPTICA SDK 与进度条。[`pyproject.toml`](pyproject.toml) 的 extras 是可叠加组件，并非各自完整的独立环境；
+GUI 使用上面的 `runtime,instruments,analysis,gui` 组合，不能只安装 `[gui]`。
+需要 Notebook 时在组合中另加 `notebook`；开发测试另加 `dev`。
+[`constraints/development.txt`](constraints/development.txt) 固定直接依赖的开发版本，传递依赖仍由 pip 按兼容性解析，
+不是包含所有传递依赖的完整锁文件。根目录 [`requirements.txt`](requirements.txt) 仅是历史环境快照。
 
 安装完成后双击根目录 **`start_gui.bat`** 启动 GUI，详见
 [GUI 基础使用](#gui-基础使用)。没有连接实验仪器时 GUI 也能正常启动，可浏览界面与
@@ -55,6 +57,95 @@ Set-Location ..\..
 ```
 
 保存前将本项目的可编辑安装条目规范为 `-e .`，移除机器路径和带凭据的地址。
+
+## 开发安装与无硬件检查
+
+开发验证使用独立环境，不升级或覆盖正在运行实验的 `agent_exp_env`。以下命令从仓库根目录执行；
+当前验收组合为 Windows、Python 3.12 和 Node.js 24。项目仍声明支持 Python 3.10，
+约束文件为它提供 NumPy/SciPy 条件版本，但本轮没有实跑 3.10 或 Notebook 组合。
+
+```powershell
+python -m venv .cache/dev-env
+.\.cache\dev-env\Scripts\python.exe -m pip install -c constraints/development.txt -e ".[runtime,instruments,analysis,gui,dev]"
+.\.cache\dev-env\Scripts\python.exe -m pip check
+
+# 固定公共契约快检；默认不依赖 Git，不连接仪器，不启动服务
+.\.cache\dev-env\Scripts\python.exe -m tools.check --report .cache/checks/python.json
+
+# 可选：仅额外记录 Git 变更范围，不自动扩展业务回归
+.\.cache\dev-env\Scripts\python.exe -m tools.check --changed-since HEAD --report .cache/checks/python.json
+
+# 前端独立检查：先安装原锁文件，再运行类型检查、全部前端测试和构建
+npm --prefix GUI/frontend ci
+.\.cache\dev-env\Scripts\python.exe -m tools.check --profile frontend --timeout 180 --report .cache/checks/frontend.json
+```
+
+统一入口是 [`tools/check.py`](tools/check.py)。Python profile 静态编译固定源码目录，并执行
+现有架构约束、状态读写、公共分析、五个阶段契约节点和入口自测；不扫描数据或虚拟环境。
+它复用现有变更读取和 pytest 实跑证据校验，不另建影响分析器，也不代替具体实验的定向回归。
+修改采集、取消或安全收尾后，仍须按实际影响选择假仪器业务测试。
+
+默认每个子进程预算 30 秒；完整前端检查是显式选择的独立 profile，上例将每项预算设为 180 秒。
+非零退出、超时、缺少 pytest 实跑证据或报告写入失败均返回非零；后续步骤记录为 `not_run`，
+不会补写为通过。JSON 报告仅记录本轮执行，不作为跳过测试的缓存。
+固定 Python 套件拒绝 `PYTEST_ADDOPTS` 中缩小范围的选择或配置选项及响应文件，
+保留合法并行和日志设置；这不是针对任意 pytest 插件的安全沙箱。
+检查超时只清理本入口创建的测试进程树，不用于实验安全收尾。
+
+[Windows CI](.github/workflows/quality.yml) 使用同一入口：Python 固定快检总是执行，
+前后端、工具、依赖或 CI 配置有变更时再执行前端 profile，并保留 JSON 报告。
+CI 不连接实验硬件，也不证明真实仪器验收通过；本地验证不等于远端 CI 已实际运行。
+依赖安全告警需单独评估，本入口不自动执行 `npm audit fix`、更新锁文件或安装缺失依赖。
+
+## 长任务的本地检查点
+
+跨模块、多代理或需要中断续接的任务使用 [`tools/checkpoint.py`](<tools/checkpoint.py>)，小修改不强制增加流程。
+初始化时列出本轮允许修改的明确文件；原始字节与 SHA256 保存在本地 `.cache/agent-tasks/<TASK>/`，
+重复初始化不会覆盖原始基线。任务与报告只保留在本机，不上传 GitHub。
+
+```powershell
+.\.cache\dev-env\Scripts\python.exe -m tools.checkpoint init maintain-slice --objective "完成一个可验证切片" --allow tools/check.py --allow README.md --remaining "完成本轮验收"
+.\.cache\dev-env\Scripts\python.exe -m tools.checkpoint agent maintain-slice --id lead --state running --note "主代理接手"
+.\.cache\dev-env\Scripts\python.exe -m tools.checkpoint status maintain-slice
+.\.cache\dev-env\Scripts\python.exe -m tools.checkpoint check maintain-slice --profile python
+```
+
+`agent --remaining` 可重复，传入时替换剩余事项；省略时保留。代理状态只是最后登记，不是进程存活探测。
+写命令由主代理串行执行；同任务的并发写入会被拒绝，OS 锁在进程退出后自动释放，`status` 仍可只读查看。
+检查点每次 `check` 都实际调用现有快检，不使用历史记录跳过测试；只在报告完整通过且执行前后全部批准文件
+指纹一致时记录对应 profile 的证据。批准文件、报告或基线变化后不沿用旧成功；尚未验证会明确显示
+`changed_unverified` / `not_verified`。这些状态只覆盖批准文件和所选 profile，不证明整仓或实验业务回归已通过，
+也不是文件系统写权限沙箱；其他改动仍需核对本轮差异。前端需显式使用 `--profile frontend --timeout 180`。
+
+### 长任务检查点与只读交付检查
+
+跨模块、多代理或可能中断的任务可使用 [`tools/checkpoint.py`](tools/checkpoint.py)；普通小改不强制使用。
+下面仅以开发工具维护为例，不代表实验业务已验证：
+
+```powershell
+python -m tools.checkpoint init dev-tools-audit --objective "维护开发工具" --allow tools/delivery_check.py --allow tools/test_delivery_check.py --remaining "定向自测与审查"
+python -m tools.checkpoint agent dev-tools-audit --id reviewer --state running --note "只检查已批准文件"
+python -m tools.checkpoint status dev-tools-audit
+python -m tools.checkpoint check dev-tools-audit --profile python
+```
+
+任务和改前字节保存在 `.cache/agent-tasks/`。初始化不覆盖已有任务；状态读取会重新核对基线、当前批准文件和报告指纹。
+中断、缺证据或源码改变时不会沿用旧通过；登记代理状态不启动代理，也不扩大文件、硬件或 Git 权限。
+`verified_for_profile_current` 只表示批准文件与该次公共契约检查一致，不等于全仓或科学/硬件验收。
+
+[`tools/delivery_check.py`](tools/delivery_check.py) 只汇总当前仓库的待改/暂存/未跟踪项、明确候选的实际忽略情况、
+本地协作文件分类及可选任务证据。未跟踪项采用 Git `normal` 粒度，新目录可能汇总为目录项，不递归展开。
+已跟踪文件即使匹配忽略规则也不会误列为 ignored；工具不会安装依赖、运行检查、暂存、提交、推送或修改 Git 配置：
+
+```powershell
+python -m tools.delivery_check --candidate README.md AGENTS.md --report .cache/delivery/inventory.json
+python -m tools.delivery_check --task dev-tools-audit --candidate tools/delivery_check.py --report .cache/delivery/dev-tools-audit.json
+```
+
+省略 `--task` 时没有任务验证证据；报告完成不代表可以自动上传或业务测试通过。
+默认只向标准输出写 JSON；显式报告仅允许落在本仓库 `.cache/delivery/`，避免覆盖源码、Git 元数据或检查点。
+工具核对 Git HEAD/index 前后指纹；并发变化会失败而不归因于工具。它只固定调用只读 Git 元数据命令，
+不是针对任意 Git 外部配置、过滤器或插件的安全沙箱。
 
 ## 近期更新（2026 年 10 月）
 
@@ -292,8 +383,9 @@ experiments ───┘
 采集修改的回归通过 `ACQUISITION_CASES` 关联稳定实验 ID 和真实业务场景；已有实验也检查
 六步时序及故障覆盖。脚手架支持 `--acquisition-mode single|grouped|paired`，复用公共采集
 窗口与延迟保存。参数 schema 和原始格式独立版本化，具体约定见 Skill 的实验契约参考。
-`.agents/skills/expcodegen` 是维护源，使用其中的 `scripts/sync_skill.py` 同步 `.claude`；
-两套 Skill 保持本地忽略，共享验收逻辑与正式测试位于 `lab_workflows/experiment_validation.py`
+`.agents/skills/expcodegen` 是唯一维护源；旧 `scripts/sync_skill.py` 名称只保留为只读资源检查入口，
+不重建 Claude 镜像。旧脚手架测试 target 仅作为单源兼容 alias，业务测试不按内容去重。
+Skill 保持本地忽略，共享验收逻辑与正式测试位于 `lab_workflows/experiment_validation.py`
 及 `lab_workflows/test_experiment_validation.py`。
 
 正式实验有两种明确执行模式：
@@ -562,32 +654,21 @@ T2 额外保持 RF 门控 CH2 的输出及当前 Burst 状态；不以断开通�
 
 ## AI 协作
 
-仓库已经为不同 Agent 准备了协作说明和实验代码生成 Skill（均为本地文件，不上传 GitHub）：
+Pi / Codex 共用一个项目入口和实验代码生成 Skill（以下协作资产只在本地维护，不上传 GitHub）：
 
-- `AGENTS.md`
-- `CLAUDE.md`
-- `GUI/AGENTS.md`
-- `.agents/skills/expcodegen/SKILL.md`
-- `.claude/skills/expcodegen/SKILL.md`
-- `.agents/skills/arcgen/SKILL.md`
-- `.claude/skills/arcgen/SKILL.md`
-- `.agents/skills/archify/SKILL.md`
-- `.claude/skills/archify/SKILL.md`
+- [AGENTS.md](AGENTS.md)：常驻工作边界、硬件安全与采集红线，以及按触发条件读取的指南。
+- [GUI/AGENTS.md](GUI/AGENTS.md)：GUI 接线、共享工作流和前后端验证约定。
+- [.agents/README.md](.agents/README.md)：官方 Skill 来源、调用权限与显式确认的更新方式。
+- [.agents/skills/expcodegen/SKILL.md](.agents/skills/expcodegen/SKILL.md)：正式 Python 实验的唯一维护入口。
 
-这些说明会要求 Agent 在生成或修改实验代码时读取：
+新增、修改或修复正式 Python 实验仍使用 `expcodegen`，先核对实际设备、映射、安全限值及相关实验文档；
+行为变化同步实验正文与 GUI 简介。常驻说明不再复制完整目录、安装步骤或旧报告。
+Claude 入口已退役，旧资产保留在本地非扫描归档中，不再同步第二份 Skill。
+`arcgen` / `archify` 当前停用；只有用户明确要求架构图并确认技能可用性后才按其规则使用，不自动启用或接入 GUI。
 
-- `params/devices.yaml`
-- `params/mapping.yaml`
-- `params/safety_limits.yaml`
-- `docs/*.md`
-
-从而尽量保证实验脚本、文档和安全约束保持一致。
-
-用户明确要求独立实验架构图时，使用 `arcgen` 调研真实实现，并由 `archify` 完成图规格、校验和交付；不默认接入 GUI。
-`AGENTS.md`、`CLAUDE.md`、`GUI/AGENTS.md` 与 `.agents/`、`.claude/`、`.codex/`、
-`.vscode/` 等协作说明、Skill 与 Agent 配置一律只保留在本地，不上传 GitHub；仓库同步
-面向其他同学使用的 GUI 实验系统内容。本检出的 `.git/info/exclude` 还忽略 `docs/` 中
-未跟踪的文件，已跟踪文档仍正常提交。被忽略的本地文件需单独检查，普通 `git diff`
-不会显示其变化。
+`AGENTS.md`、`GUI/AGENTS.md`、`.agents/`、`.codex/`、`.vscode/` 及退役协作资产只在本地维护；
+仓库同步面向其他同学使用的 GUI 实验系统内容。本检出的 `.git/info/exclude` 仍忽略 `docs/` 中
+未跟踪的文件，已跟踪文档仍正常提交。不改变忽略策略强行提交本地说明；被忽略文件需单独核对，
+普通 `git diff` 不显示其变化。
 
 普通气室实验的采集顺序、`SYSTEM_SETTLE_S` 兼容规则和 TEC 设温边界见[统一采集规范](docs/acquisition_timing.md)。
