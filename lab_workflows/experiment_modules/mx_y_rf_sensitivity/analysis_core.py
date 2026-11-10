@@ -31,7 +31,8 @@ def absolute_dispersive_response(
 
 
 def lorentzian_response(x: np.ndarray, amplitude: float, gamma: float, center: float, offset: float) -> np.ndarray:
-    return offset + amplitude * gamma**2 / ((x - center) ** 2 + gamma**2)
+    """平方根洛伦兹幅度；gamma 为功率 HWHM／幅度 −3 dB 半宽。"""
+    return offset + amplitude * abs(gamma) / np.hypot(x - center, gamma)
 
 
 @dataclass(slots=True)
@@ -46,7 +47,17 @@ class FitResult:
     rejection_reasons: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        if self.method == "lorentzian":
+            # method 保留历史接口；新模型和宽度定义显式记录，旧文件不会因此改写。
+            result.update(
+                model_type="sqrt_lorentzian_amplitude",
+                model="C + A*gamma/sqrt((f-f0)^2+gamma^2)",
+                gamma_definition="power_hwhm_and_amplitude_3db_half_width",
+                amplitude_hwhm_hz=float(np.sqrt(3.0) * abs(self.gamma)),
+                amplitude_fwhm_hz=float(2.0 * np.sqrt(3.0) * abs(self.gamma)),
+            )
+        return result
 
     @property
     def amplitude(self) -> float:

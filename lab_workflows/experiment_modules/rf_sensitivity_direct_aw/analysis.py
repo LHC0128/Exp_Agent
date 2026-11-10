@@ -18,7 +18,7 @@ from . import run_format
 from .stages import SINGLE_ANALYSIS as ANALYSIS, MULTI_ANALYSIS, invalidate, invalidated_stages, validate_selection
 from lab_workflows.workflow_stages import initial_states
 
-ANALYSIS_VERSION = "direct-aw-x-v3-multi-noise-quality"
+ANALYSIS_VERSION = "direct-aw-x-v4-sqrt-amplitude"
 ANALYSIS_OPTIONS = {"NOISE_NPERSEG": "noise_nperseg", "NOISE_OUTLIER_POLICY": "noise_outlier_policy",
     "SENSITIVITY_BAND_MIN_HZ": "band_min_hz", "SENSITIVITY_BAND_MAX_HZ": "band_max_hz"}
 CHILD_ARTIFACTS = {stage.id: stage.artifacts for stage in ANALYSIS}

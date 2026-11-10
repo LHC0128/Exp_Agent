@@ -6,6 +6,34 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool, StrictStr, model_validator
 
+# 端口档案直接复用共享严格模型，避免 API 与离线保存出现两套校验。
+from lab_workflows.device_ports import (
+    DevicePortPreset,
+    DevicePortProfile,
+    DevicePortsBody,
+    DevicePortsResponse,
+    PhysicalPort,
+    PortMode,
+)
+from lab_workflows.wiring import (
+    WiringBody,
+    WiringCableChange,
+    WiringCompareBody,
+    WiringComparison,
+    WiringDiagnostics,
+    WiringEdge,
+    WiringEndpoint,
+    WiringFollowStatus,
+    WiringFollowStatuses,
+    WiringGraph,
+    WiringMappingGroup,
+    WiringModeChange,
+    WiringNode,
+    WiringResponse,
+    WiringRevision,
+    WiringWarning,
+)
+
 
 class StrictModel(BaseModel):
     """拒绝未知字段，避免仪器设置键拼写错误被静默忽略。"""

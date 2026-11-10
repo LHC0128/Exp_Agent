@@ -106,7 +106,7 @@ it("真实路由提供两列流程、顶部操作、原图和缺前置拒绝", a
   const container = screen.getByRole("region", { name: "交互实验流程图" });
   expect(within(container).getByRole("button", { name: "保存参数与布局" })).toBeInTheDocument();
   expect(within(container).getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", flow.diagram_url);
-  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史"]);
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(new Set([...flow.acquisition, ...flow.analysis].flatMap(stage => stage.display_parameters)))
     .toEqual(new Set(fields.map(field => field.name)));
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));

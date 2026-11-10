@@ -17,7 +17,7 @@ export function NavigationGuard({ children }: { children: ReactNode }) {
   const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname);
   useEffect(() => {
     if (blocker.state !== "blocked") return;
-    if (window.confirm("当前页面有未保存的参数或布局，离开会丢失这些修改。确定离开？\n离开页面不会停止正在运行的实验。")) blocker.proceed();
+    if (window.confirm("当前页面有未保存的参数、布局或设备端口档案，离开会丢失这些修改。确定离开？\n离开页面不会停止正在运行的实验。")) blocker.proceed();
     else blocker.reset();
   }, [blocker]);
   useEffect(() => {

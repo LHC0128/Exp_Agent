@@ -136,10 +136,10 @@ const advanced = (node: Awaited<ReturnType<typeof editor>>) => {
   if (toggle && !toggle.closest("details")!.open) fireEvent.click(toggle);
 };
 
-it("真实路由双 Tab、11+3节点和真实门槛，缺前置拒绝后可显式执行并无前置结束", async () => {
+it("真实路由三 Tab、11+3节点和真实门槛，缺前置拒绝后可显式执行并无前置结束", async () => {
   page();
   await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
-  expect(screen.getAllByRole("tab")).toHaveLength(2);
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(screen.getByText(/全无效轮仍可导出诊断/)).toBeVisible();
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));

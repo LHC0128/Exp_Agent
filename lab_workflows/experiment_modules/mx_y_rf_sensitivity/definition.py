@@ -20,7 +20,7 @@ DEFINITION = ExperimentDefinition(
     category="measurement",
     family="rf-sensitivity",
     variant="mx-y-amplitude",
-    description=('Mx 构型只采集 R，不执行相位校准；以带符号 Y RF 幅度的绝对值色散响应、两种线宽和零 RF 噪声测量灵敏度。'
+    description=('Mx 构型只采集 R，不执行相位校准；以带符号 Y RF 幅度的绝对值色散响应、两种线宽和零 RF 噪声测量灵敏度。扫频 R 使用平方根洛伦兹幅度模型，γ 为幅度 −3 dB 半宽，非幅度半高半宽；历史结果不自动改写。'
         '运行页提供可勾选的准备、激励、扫频门槛、幅度响应、噪声和安全结束步骤，节点内编辑参数并预览草稿影响。'
         '完整与分步共用采集业务；历史目录的独立分析覆盖值与下一次实验参数隔离。'
         '结束仅保留已执行的 Pump 与响应配置，不下发尚未重跑的参数。'

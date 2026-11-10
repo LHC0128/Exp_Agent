@@ -132,7 +132,7 @@ def _analyze_curve(
             "success": bool(accepted),
             "rejection_reasons": reasons,
             "center_uncertainty_hz": center_uncertainty,
-            "model": "C + A*gamma^2/((f-f0)^2+gamma^2)",
+
         },
     }
 

@@ -26,7 +26,7 @@ from .analysis_steps import (_analyze_current_curve, _analyze_curve, _builtin,
                              _load_params, _load_scan_index, _weighted_linear_fit)
 from .analysis_plotting import _plot_calibration, _plot_frequency_responses
 
-ANALYSIS_VERSION = "mx-z-current-coupling-stages-v1"
+ANALYSIS_VERSION = "mx-z-current-coupling-stages-v2-sqrt-amplitude"
 
 
 class AnalysisWorkflow:

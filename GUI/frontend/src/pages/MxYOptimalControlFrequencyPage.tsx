@@ -3,6 +3,7 @@ import { api } from "../api";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useUnsavedChanges } from "../components/NavigationGuard";
+import { ExperimentViewPanel, ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 import { Dashboard } from "../components/MxYOptimalControlFrequency/Dashboard";
 import { HistoryView } from "../components/MxYOptimalControlFrequency/HistoryView";
 import { MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID } from "../components/MxYOptimalControlFrequency/images";
@@ -21,10 +22,8 @@ import {
 } from "./experimentHelpers";
 import "../pages/zawClosedLoop.css";
 
-type Tab = "run" | "history";
-
 export function MxYOptimalControlFrequencyPage() {
-  const [tab, setTab] = useState<Tab>("run");
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition | undefined>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   // 页面统一维护可变参数布局；savedLayout 是磁盘上最近一次确认的布局。
@@ -96,21 +95,9 @@ export function MxYOptimalControlFrequencyPage() {
 
   // 参数在基础/高级之间移动后布局与磁盘不一致时，提示用户手动保存。
   const layoutDirty = fields.length > 0 && !sameParameterLayout(layout, savedLayout);
+  // 常驻运行页按活会话保护参数；页面层只补充尚未保存的布局。
   useUnsavedChanges(layoutDirty);
   useExperimentTask({ ready: fields.length > 0, setTab });
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    const target = event.currentTarget;
-    const items = Array.from(target.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
-    const currentIndex = items.findIndex((item) => item === document.activeElement);
-    if (currentIndex === -1) return;
-    const next = event.key === "ArrowRight"
-      ? (currentIndex + 1) % items.length
-      : (currentIndex - 1 + items.length) % items.length;
-    items[next]?.focus();
-    setTab(items[next]?.dataset.tab as Tab);
-  };
 
   return (
     <>
@@ -121,29 +108,10 @@ export function MxYOptimalControlFrequencyPage() {
         experiment={definition}
       />
       {loadError && <div className="alert error">实验参数加载失败：{loadError}。请确认 GUI 后端已重启后刷新页面。</div>}
+      <ExperimentViewTabs experimentId={MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID} title={definition?.title} value={tab} onChange={setTab} label="Mx Y 最优控制频率响应实验视图" />
       {definition && fields.length > 0 && (
         <>
-          <div className="zaw-tab-strip" role="tablist" aria-label="Mx Y 最优控制频率响应实验视图" onKeyDown={handleKeyDown}>
-            <button
-              role="tab"
-              data-tab="run"
-              aria-selected={tab === "run"}
-              className={tab === "run" ? "active" : ""}
-              onClick={() => setTab("run")}
-            >
-              运行
-            </button>
-            <button
-              role="tab"
-              data-tab="history"
-              aria-selected={tab === "history"}
-              className={tab === "history" ? "active" : ""}
-              onClick={() => setTab("history")}
-            >
-              历史
-            </button>
-          </div>
-          <div hidden={tab !== "run"}>
+          <div id={`${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}-panel-run`} role="tabpanel" aria-labelledby={`${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}-tab-run`} hidden={tab !== "run"}>
             <Dashboard
               experimentId={MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}
               definition={definition}
@@ -164,7 +132,7 @@ export function MxYOptimalControlFrequencyPage() {
               clearPrefill={() => setPrefill(null)}
             />
           </div>
-          {tab === "history" && (
+          <ExperimentViewPanel active={tab === "history"} id={`${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}-panel-history`} labelledBy={`${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}-tab-history`}>
             <HistoryView
               experimentId={MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}
               fields={fields}
@@ -173,7 +141,7 @@ export function MxYOptimalControlFrequencyPage() {
               }}
               onJumpToRun={() => setTab("run")}
             />
-          )}
+          </ExperimentViewPanel>
         </>
       )}
       {definition && !fields.length && !loadError && (

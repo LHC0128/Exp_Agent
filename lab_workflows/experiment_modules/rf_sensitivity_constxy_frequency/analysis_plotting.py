@@ -193,9 +193,9 @@ def render(responses, fits, config, params, point_data, results_dir):
                        f"Ω={fit['Omega_Ctrl_Hz']:.1f}±{fit['Omega_unc_Hz']:.1f} Hz, "
                        f"Γ={fit['Gamma_Hz']:.2f}±{fit['Gamma_unc_Hz']:.2f} Hz")
             else:
-                lbl = (f"Single-Lorentzian fit ({tag}): "
+                lbl = (f"Sqrt-Lorentzian fit ({tag}): "
                        f"f0={fit['f0_Hz']:.1f} Hz, "
-                       f"FWHM={fit['fwhm_Hz']:.1f}±{fit['fwhm_unc_Hz']:.1f} Hz")
+                       f"3 dB width={fit['fwhm_Hz']:.1f}±{fit['fwhm_unc_Hz']:.1f} Hz")
             ax2.plot(fgrid, _safe_norm(norm_fit), "--", color=color,
                      lw=1.0, alpha=0.7, label=lbl)
 
@@ -321,22 +321,23 @@ def render(responses, fits, config, params, point_data, results_dir):
                                    label=f"LARMOR set={LARMOR_FREQ_HZ:.1f} Hz")
             else:
                 ax_fit.plot(f_fit, r_fit, "-", color=color, lw=1.4,
-                            label=(f"Lorentzian fit: "
+                            label=(f"Sqrt-Lorentzian fit: "
                                    f"f0={fit['f0_Hz']:.1f}±{fit['f0_unc_Hz']:.1f} Hz, "
-                                   f"FWHM={fit['fwhm_Hz']:.1f}±"
+                                   f"3 dB width={fit['fwhm_Hz']:.1f}±"
                                    f"{fit['fwhm_unc_Hz']:.1f} Hz"))
                 threshold = fit["A"] / np.sqrt(2.0)
                 ax_fit.axhline(threshold, color="gray", ls=":", lw=0.6,
-                               label=f"half max = {threshold:.3e}")
+                               label=f"-3 dB amplitude = {threshold:.3e}")
                 ax_fit.axvline(fit["f0_Hz"], color=color,
                                ls="--", lw=0.7, alpha=0.5)
                 ax_fit.axvline(fit["f0_Hz"] - fit["fwhm_Hz"] / 2,
                                color=color, ls=":", lw=0.6, alpha=0.4)
                 ax_fit.axvline(fit["f0_Hz"] + fit["fwhm_Hz"] / 2,
                                color=color, ls=":", lw=0.6, alpha=0.4,
-                               label=f"±FWHM/2 = {fit['fwhm_Hz']/2:.1f} Hz")
+                               label=f"3 dB half-width = {fit['fwhm_Hz']/2:.1f} Hz")
             ax_fit.set_ylabel("Amplitude (V)")
-            ax_fit.set_title(f"{tag} — {kind}-Lorentzian fit "
+            fit_label = "Bloch amplitude" if kind == "double" else "Sqrt-Lorentzian amplitude"
+            ax_fit.set_title(f"{tag} — {fit_label} fit "
                              f"(residual std={fit['residual_std']:.2e})")
             ax_fit.legend(fontsize=7, loc="best")
             ax_fit.grid(False)
@@ -349,8 +350,8 @@ def render(responses, fits, config, params, point_data, results_dir):
                 den = np.sqrt(d1 * d1 + d2)
                 r_model = fit["offset_V"] + fit["P0"] * num / np.maximum(den, 1e-12)
             else:
-                r_model = (fit["A"] * fit["hwhm_Hz"] ** 2
-                           / ((f_v - fit["f0_Hz"]) ** 2 + fit["hwhm_Hz"] ** 2))
+                r_model = (fit["A"] * fit["hwhm_Hz"]
+                           / np.hypot(f_v - fit["f0_Hz"], fit["hwhm_Hz"]))
             residual = r_v - r_model
             ax_res.axhline(0, color="black", lw=0.8)
             ax_res.axhline(fit["residual_std"], color="gray", ls=":", lw=0.5,

@@ -42,7 +42,6 @@ export function ToolsPage() {
       <PageHead
         eyebrow="SYSTEM TOOLS"
         title="功能模块"
-        description="执行跨设备准备流程；同一时间只允许运行一个硬件任务。"
       />
       {error && <div className="alert error">{error}</div>}
       <div className="tool-grid">

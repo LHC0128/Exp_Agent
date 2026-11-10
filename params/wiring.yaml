@@ -1,0 +1,1155 @@
+site:
+  nodes: []
+  edges: []
+targets:
+  rf-sensitivity-aw:
+    nodes:
+    - device:
+        id: device-cca5b2fd-cbfa-4ec5-9330-d94fb44f9a6d
+        name: 王湾xy
+        model: DG4000
+        ports:
+        - id: port-08da73f2-f5d6-44dc-b420-c093d2c6c095
+          name: CH1 Output
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-c228f7ff-3b2f-40eb-8eb2-1f7fa1099870
+          name: CH1 Sync
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-00df5922-4f21-410d-a19f-a5bb5ecc51ee
+          name: CH1 External
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 外部触发 / 门控 / AM 输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: port-3add91aa-6b7d-47ba-b4ca-426f2a9602bd
+          name: CH2 Output
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-22db099f-b8ea-40d6-9721-f4c74a2a4eff
+          name: CH2 Sync
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-16f6dcb1-da63-415c-afff-ff545b77b603
+          name: CH2 External
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 外部触发 / 门控 / AM 输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: port-8ad9bc2c-ed6e-4006-ba05-7908a623b724
+          name: 10 MHz
+          group: 参考时钟
+          signal_type: electrical
+          connector: BNC
+          purpose: 共用 10 MHz 参考时钟接口
+          direction: switchable
+          modes:
+          - id: mode-241c7427-ad46-4898-8e70-436f94283a98
+            name: 内部参考时钟
+            direction: out
+          - id: mode-886cfc8d-1bf0-429c-ae07-e0a73bc7347b
+            name: 外部参考时钟
+            direction: in
+          selected_mode: mode-886cfc8d-1bf0-429c-ae07-e0a73bc7347b
+        device_library_id: dg4e261300664
+      x: 440
+      y: 0
+      follow_mapping:
+      - X_magnetic_field
+      - Y_magnetic_field
+      - rf_coil
+      port_directions: {}
+      port_usage:
+        port-08da73f2-f5d6-44dc-b420-c093d2c6c095: used
+        port-c228f7ff-3b2f-40eb-8eb2-1f7fa1099870: unused
+        port-00df5922-4f21-410d-a19f-a5bb5ecc51ee: used
+        port-3add91aa-6b7d-47ba-b4ca-426f2a9602bd: used
+        port-22db099f-b8ea-40d6-9721-f4c74a2a4eff: unused
+        port-16f6dcb1-da63-415c-afff-ff545b77b603: used
+        port-8ad9bc2c-ed6e-4006-ba05-7908a623b724: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: device-a1843aae-9ba0-4603-8265-9f5cb0b2e4ad
+        name: 王湾z
+        model: DG4000
+        ports:
+        - id: port-ba9f40f9-e573-4684-a251-a0409daee363
+          name: CH1 Output
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-ed2a6ff1-c36a-4120-b58b-6c484c507422
+          name: CH1 Sync
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-b14d2b46-dd77-4b86-af86-b3651d432f44
+          name: CH1 External
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 外部触发 / 门控 / AM 输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: port-c908b869-3b36-4496-9392-24431af169c9
+          name: CH2 Output
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-3cf49c83-2bd7-4bf1-b35e-b37b7a612f02
+          name: CH2 Sync
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-79c3aa19-e762-418e-8f57-474ab676c77a
+          name: CH2 External
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 外部触发 / 门控 / AM 输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: port-1ca57427-68b0-46c7-8a32-79edd43dd102
+          name: 10 MHz
+          group: 参考时钟
+          signal_type: electrical
+          connector: BNC
+          purpose: 共用 10 MHz 参考时钟接口
+          direction: switchable
+          modes:
+          - id: mode-5dbf66c5-347e-4704-bf5a-0a529df9bac1
+            name: 内部参考时钟
+            direction: out
+          - id: mode-c48eaf56-e892-4e3b-8f3c-b69b38e0c16c
+            name: 外部参考时钟
+            direction: in
+          selected_mode: mode-c48eaf56-e892-4e3b-8f3c-b69b38e0c16c
+        device_library_id: dg4e261300744
+      x: 440
+      y: 320
+      follow_mapping:
+      - Z_magnetic_field
+      - Time_sequence_2
+      port_directions: {}
+      port_usage:
+        port-ba9f40f9-e573-4684-a251-a0409daee363: used
+        port-ed2a6ff1-c36a-4120-b58b-6c484c507422: unused
+        port-b14d2b46-dd77-4b86-af86-b3651d432f44: used
+        port-c908b869-3b36-4496-9392-24431af169c9: used
+        port-3cf49c83-2bd7-4bf1-b35e-b37b7a612f02: unused
+        port-79c3aa19-e762-418e-8f57-474ab676c77a: unused
+        port-1ca57427-68b0-46c7-8a32-79edd43dd102: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: device-7dce17ad-f249-481b-915e-d6c2c0fbe3a4
+        name: Pump 调制信号源
+        model: DG4000
+        ports:
+        - id: port-549ceca5-e14b-4151-9593-8df9e3eea8f7
+          name: CH1 Output
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-1fccce81-c042-4c8e-bec5-5eceaef47555
+          name: CH1 Sync
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-d5281da3-9d8c-4431-89a8-91796330b019
+          name: CH1 External
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 外部触发 / 门控 / AM 输入；用户确认 Time_sequence 门控实接。当前 configure_pump 未配置外部门控，接线记录不代表模式已启用。
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: port-beb214a7-f382-433c-aa8f-98ac426e0b31
+          name: CH2 Output
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-582de977-c10b-448e-8bf9-25de524eea6d
+          name: CH2 Sync
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-88053b1a-89b8-4431-887b-40244acec9d0
+          name: CH2 External
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 外部触发 / 门控 / AM 输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: port-af1e51f1-ac62-4047-9a2e-f43911287021
+          name: 10 MHz
+          group: 参考时钟
+          signal_type: electrical
+          connector: BNC
+          purpose: 共用 10 MHz 参考时钟接口
+          direction: switchable
+          modes:
+          - id: mode-414a66b4-aa1f-4069-9fd6-b4220ba3af42
+            name: 内部参考时钟
+            direction: out
+          - id: mode-59009070-0519-4201-81b7-950d0a97260d
+            name: 外部参考时钟
+            direction: in
+          selected_mode: mode-59009070-0519-4201-81b7-950d0a97260d
+        device_library_id: dg4e222800868
+      x: 440
+      y: 600
+      follow_mapping:
+      - Pump_modulation
+      - Time_sequence
+      port_directions: {}
+      port_usage:
+        port-549ceca5-e14b-4151-9593-8df9e3eea8f7: used
+        port-1fccce81-c042-4c8e-bec5-5eceaef47555: unused
+        port-d5281da3-9d8c-4431-89a8-91796330b019: used
+        port-beb214a7-f382-433c-aa8f-98ac426e0b31: used
+        port-582de977-c10b-448e-8bf9-25de524eea6d: unused
+        port-88053b1a-89b8-4431-887b-40244acec9d0: unused
+        port-af1e51f1-ac62-4047-9a2e-f43911287021: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: device-da9c419c-cd1d-4d03-8d48-fa7776b8f152
+        name: 光功率
+        model: DG900
+        ports:
+        - id: port-3b5ed89d-a7c1-428f-a976-00f1e4ad01ab
+          name: CH1 Output
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-2399bc95-088d-4327-be05-82bd218c49c7
+          name: CH1 Multi
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步输出或外部触发 / 门控 / AM 输入
+          direction: switchable
+          modes:
+          - id: mode-b68a7274-457f-4ec8-8450-e5a732aeb15f
+            name: 同步
+            direction: out
+          - id: mode-adb82960-774f-4a95-a618-32da137c9372
+            name: 触发
+            direction: in
+          - id: mode-98db8c60-c540-47f4-b6fd-f49325bc9bd1
+            name: 门控
+            direction: in
+          - id: mode-a6ffb46b-ca1b-4d5a-ad60-4285a689392c
+            name: AM
+            direction: in
+          selected_mode: null
+        - id: port-35b1abc3-dfdc-45f9-a948-c196106578eb
+          name: CH2 Output
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-fc01a652-b836-499a-8112-c9316cde94d2
+          name: CH2 Multi
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步输出或外部触发 / 门控 / AM 输入
+          direction: switchable
+          modes:
+          - id: mode-797552d8-e66a-4089-9c8d-e01aa69e9d5b
+            name: 同步
+            direction: out
+          - id: mode-6e73c71a-1ef4-462a-a6f0-eea7a3b92e66
+            name: 触发
+            direction: in
+          - id: mode-df0a7be1-9a00-4c08-a893-7de0cbda698a
+            name: 门控
+            direction: in
+          - id: mode-01e5eab6-c59f-4629-9542-e8fb5e7d5785
+            name: AM
+            direction: in
+          selected_mode: null
+        - id: port-118abfb3-24bf-4559-977e-55b27356daab
+          name: 10 MHz
+          group: 参考时钟
+          signal_type: electrical
+          connector: BNC
+          purpose: 共用 10 MHz 参考时钟接口
+          direction: switchable
+          modes:
+          - id: mode-81c1204f-0685-4da9-a11a-11884f76406b
+            name: 内部参考时钟
+            direction: out
+          - id: mode-d25305bd-e616-417d-b9f2-3f7df5e24ef6
+            name: 外部参考时钟
+            direction: in
+          selected_mode: mode-d25305bd-e616-417d-b9f2-3f7df5e24ef6
+        device_library_id: dg9q280100002
+      x: 440
+      y: 1240
+      follow_mapping:
+      - Pump_laser_power
+      - Probe_laser_power
+      port_directions: {}
+      port_usage:
+        port-3b5ed89d-a7c1-428f-a976-00f1e4ad01ab: used
+        port-2399bc95-088d-4327-be05-82bd218c49c7: unused
+        port-35b1abc3-dfdc-45f9-a948-c196106578eb: used
+        port-fc01a652-b836-499a-8112-c9316cde94d2: unused
+        port-118abfb3-24bf-4559-977e-55b27356daab: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: device-68a11726-41ee-473d-8855-4eabdadef744
+        name: 王湾温控
+        model: DG900
+        ports:
+        - id: port-d7cf2875-b3de-4fac-a2d8-0fd56a02ed06
+          name: CH1 Output
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-0d30c58b-f88f-438e-b1a3-819be31174cd
+          name: CH1 Multi
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步输出或外部触发 / 门控 / AM 输入
+          direction: switchable
+          modes:
+          - id: mode-de64d455-aa30-4ab7-a684-7125224ff7d3
+            name: 同步
+            direction: out
+          - id: mode-d0873109-7a92-48f4-bdbd-330c7c700021
+            name: 触发
+            direction: in
+          - id: mode-7509af26-943a-4702-8a9f-cb8bc066c584
+            name: 门控
+            direction: in
+          - id: mode-4861f415-7a63-4695-b3c9-cde9862209f8
+            name: AM
+            direction: in
+          selected_mode: null
+        - id: port-b0c928c6-8b0d-4c65-9843-b7b32eb6540b
+          name: CH2 Output
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-4c1e17d3-8598-4e6c-b21a-c0ef5580408b
+          name: CH2 Multi
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步输出或外部触发 / 门控 / AM 输入
+          direction: switchable
+          modes:
+          - id: mode-94ce8899-36ca-46dc-8715-2d77460ee123
+            name: 同步
+            direction: out
+          - id: mode-ea746137-880b-4b43-bb03-83fccd3ecb59
+            name: 触发
+            direction: in
+          - id: mode-102e1802-f6eb-45ef-a828-c3f94d616c21
+            name: 门控
+            direction: in
+          - id: mode-346de2b3-f8a7-4568-b6a7-c9edcba9c821
+            name: AM
+            direction: in
+          selected_mode: null
+        - id: port-2b03f589-98c4-4084-b46b-8c13e02431d9
+          name: 10 MHz
+          group: 参考时钟
+          signal_type: electrical
+          connector: BNC
+          purpose: 共用 10 MHz 参考时钟接口
+          direction: switchable
+          modes:
+          - id: mode-d476d0e9-698d-4410-8d19-f47d8acd6dd6
+            name: 内部参考时钟
+            direction: out
+          - id: mode-8ffde08c-793c-41c3-9f25-e61766c6b25c
+            name: 外部参考时钟
+            direction: in
+          selected_mode: mode-8ffde08c-793c-41c3-9f25-e61766c6b25c
+        device_library_id: dg9q275000734
+      x: 440
+      y: 1460
+      follow_mapping:
+      - Heat_Control
+      - Temp_Switch
+      port_directions: {}
+      port_usage:
+        port-d7cf2875-b3de-4fac-a2d8-0fd56a02ed06: unused
+        port-0d30c58b-f88f-438e-b1a3-819be31174cd: unused
+        port-b0c928c6-8b0d-4c65-9843-b7b32eb6540b: used
+        port-4c1e17d3-8598-4e6c-b21a-c0ef5580408b: unused
+        port-2b03f589-98c4-4084-b46b-8c13e02431d9: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-clock-source
+        name: 独立 10 MHz 时钟源
+        model: 型号未记录
+        ports:
+        - id: clock-out
+          name: 10 MHz 输出
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: ''
+          direction: out
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 0
+      y: 0
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        clock-out: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-coil-x
+        name: X 小场线圈
+        model: 线圈
+        ports:
+        - id: drive-in
+          name: 驱动输入
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 用户确认由对应信号源主输出直接连接；未推断驱动器或接口形式
+          direction: in
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 840
+      y: 80
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        drive-in: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-coil-y
+        name: Y 小场线圈
+        model: 线圈
+        ports:
+        - id: drive-in
+          name: 驱动输入
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 用户确认由对应信号源主输出直接连接；未推断驱动器或接口形式
+          direction: in
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 840
+      y: 260
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        drive-in: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-coil-z
+        name: Z 小场线圈
+        model: 线圈
+        ports:
+        - id: drive-in
+          name: 驱动输入
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 用户确认由对应信号源主输出直接连接；未推断驱动器或接口形式
+          direction: in
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 840
+      y: 460
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        drive-in: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-aom
+        name: Pump AOM 与驱动器
+        model: 合并黑盒
+        ports:
+        - id: carrier-in
+          name: 载波输入
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 用户确认 Pump DG4000 CH1 载波接入；不另画 RF 开关
+          direction: in
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 840
+      y: 720
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        carrier-in: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-noise-pump
+        name: Pump Noise Eater
+        model: Noise Eater
+        ports:
+        - id: power-in
+          name: 功率设定输入
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 用户确认只有一个控制输入；具体面板口名和接口形式未记录
+          direction: in
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 840
+      y: 1080
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        power-in: used
+      internal_ports: []
+      settings:
+      - id: range
+        name: 高低档
+        options:
+        - value: high
+          label: 高档
+        - value: low
+          label: 低档
+        value: high
+      - id: step
+        name: 子档
+        options:
+        - value: '1'
+          label: '1'
+        - value: '2'
+          label: '2'
+        - value: '3'
+          label: '3'
+        - value: '4'
+          label: '4'
+        value: '1'
+    - device:
+        id: directaw-noise-probe
+        name: Probe Noise Eater
+        model: Noise Eater
+        ports:
+        - id: power-in
+          name: 功率设定输入
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 用户确认只有一个控制输入；具体面板口名和接口形式未记录
+          direction: in
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 840
+      y: 1320
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        power-in: used
+      internal_ports: []
+      settings:
+      - id: range
+        name: 高低档
+        options:
+        - value: high
+          label: 高档
+        - value: low
+          label: 低档
+        value: high
+      - id: step
+        name: 子档
+        options:
+        - value: '1'
+          label: '1'
+        - value: '2'
+          label: '2'
+        - value: '3'
+          label: '3'
+        - value: '4'
+          label: '4'
+        value: '1'
+    - device:
+        id: directaw-tec
+        name: Cell 温控器
+        model: TEC103
+        ports:
+        - id: temp-switch-in
+          name: Temp_Switch 输入
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 用户确认温控开关信号接入；具体面板口名未记录
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: heater-out
+          name: 加热装置输出
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 用户确认接加热装置；不推断驱动接口形式
+          direction: out
+          modes: []
+          selected_mode: null
+        device_library_id: tec103_com3
+      x: 840
+      y: 1560
+      follow_mapping:
+      - temperature
+      port_directions: {}
+      port_usage:
+        temp-switch-in: used
+        heater-out: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-heater
+        name: Cell 加热装置
+        model: 型号未记录
+        ports:
+        - id: heater-in
+          name: 加热输入
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: ''
+          direction: in
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 1140
+      y: 1560
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        heater-in: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-gs200
+        name: GS200 主磁场电流源
+        model: GS200
+        ports:
+        - id: current-out
+          name: 主场电流输出
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 用户确认直连主磁场线圈；不推断连接器
+          direction: out
+          modes: []
+          selected_mode: null
+        device_library_id: gs200_90z631552
+      x: 0
+      y: 1380
+      follow_mapping:
+      - main_magnetic_field
+      port_directions: {}
+      port_usage:
+        current-out: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-main-coil
+        name: Z 主磁场线圈
+        model: 线圈
+        ports:
+        - id: current-in
+          name: 主场电流输入
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: ''
+          direction: in
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 0
+      y: 1520
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        current-in: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-pdb
+        name: 主探测平衡探测器
+        model: PDB210A/M
+        ports:
+        - id: diff-out
+          name: 差分输出
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 用户确认接 MFLI V，而非 Vdiff；其他输出本次不建口、不连线
+          direction: out
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 0
+      y: 880
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        diff-out: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: directaw-mfli
+        name: MFLI 锁相放大器
+        model: MFLI
+        ports:
+        - id: clock_in
+          name: 10 MHz In
+          group: 参考时钟
+          signal_type: electrical
+          connector: ''
+          purpose: 10 MHz 参考时钟输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: clock_out
+          name: 10 MHz Out
+          group: 参考时钟
+          signal_type: electrical
+          connector: ''
+          purpose: 10 MHz 参考时钟输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: signal_input_i
+          name: I in
+          group: Signal Input
+          signal_type: electrical
+          connector: ''
+          purpose: 电流信号输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: signal_input_v
+          name: V
+          group: Signal Input
+          signal_type: electrical
+          connector: ''
+          purpose: 电压信号输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: signal_input_vdiff
+          name: Vdiff
+          group: Signal Input
+          signal_type: electrical
+          connector: ''
+          purpose: 差分电压信号输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: signal_output_v
+          name: V
+          group: Signal Output
+          signal_type: electrical
+          connector: ''
+          purpose: 电压信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: signal_output_vdiff
+          name: Vdiff
+          group: Signal Output
+          signal_type: electrical
+          connector: ''
+          purpose: 差分电压信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: aux_input_1
+          name: Aux Input 1
+          group: 辅助输入
+          signal_type: electrical
+          connector: ''
+          purpose: 辅助信号输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: aux_input_2
+          name: Aux Input 2
+          group: 辅助输入
+          signal_type: electrical
+          connector: ''
+          purpose: 辅助信号输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: aux_out_1
+          name: Aux Out 1
+          group: 辅助输出
+          signal_type: electrical
+          connector: ''
+          purpose: 辅助信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: aux_out_2
+          name: Aux Out 2
+          group: 辅助输出
+          signal_type: electrical
+          connector: ''
+          purpose: 辅助信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: aux_out_3
+          name: Aux Out 3
+          group: 辅助输出
+          signal_type: electrical
+          connector: ''
+          purpose: 辅助信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: aux_out_4
+          name: Aux Out 4
+          group: 辅助输出
+          signal_type: electrical
+          connector: ''
+          purpose: 辅助信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        device_library_id: mfli_dev30661
+      x: 440
+      y: 820
+      follow_mapping:
+      - lockin_r
+      - lockin_xy
+      port_directions: {}
+      port_usage:
+        clock_in: used
+        clock_out: unused
+        signal_input_i: unused
+        signal_input_v: used
+        signal_input_vdiff: unused
+        signal_output_v: unused
+        signal_output_vdiff: unused
+        aux_input_1: unused
+        aux_input_2: unused
+        aux_out_1: unused
+        aux_out_2: unused
+        aux_out_3: unused
+        aux_out_4: unused
+      internal_ports:
+      - id: demod0-y
+        name: Demod0 Y
+        direction: out
+      - id: auxout2-source
+        name: AuxOut2 信号源
+        direction: in
+      - id: auxout2-value
+        name: AuxOut2 内部值
+        direction: out
+      - id: rf-demod1-input
+        name: RF 解调器输入（索引 1）
+        direction: in
+      settings: []
+    edges:
+    - id: directaw-clock-xy
+      source:
+        device_id: directaw-clock-source
+        port_id: clock-out
+      target:
+        device_id: device-cca5b2fd-cbfa-4ec5-9330-d94fb44f9a6d
+        port_id: port-8ad9bc2c-ed6e-4006-ba05-7908a623b724
+      signal_type: electrical
+      label: 10 MHz
+    - id: directaw-clock-z
+      source:
+        device_id: directaw-clock-source
+        port_id: clock-out
+      target:
+        device_id: device-a1843aae-9ba0-4603-8265-9f5cb0b2e4ad
+        port_id: port-1ca57427-68b0-46c7-8a32-79edd43dd102
+      signal_type: electrical
+      label: 10 MHz
+    - id: directaw-clock-pump
+      source:
+        device_id: directaw-clock-source
+        port_id: clock-out
+      target:
+        device_id: device-7dce17ad-f249-481b-915e-d6c2c0fbe3a4
+        port_id: port-af1e51f1-ac62-4047-9a2e-f43911287021
+      signal_type: electrical
+      label: 10 MHz
+    - id: directaw-clock-power
+      source:
+        device_id: directaw-clock-source
+        port_id: clock-out
+      target:
+        device_id: device-da9c419c-cd1d-4d03-8d48-fa7776b8f152
+        port_id: port-118abfb3-24bf-4559-977e-55b27356daab
+      signal_type: electrical
+      label: 10 MHz
+    - id: directaw-clock-temperature
+      source:
+        device_id: directaw-clock-source
+        port_id: clock-out
+      target:
+        device_id: device-68a11726-41ee-473d-8855-4eabdadef744
+        port_id: port-2b03f589-98c4-4084-b46b-8c13e02431d9
+      signal_type: electrical
+      label: 10 MHz
+    - id: directaw-clock-mfli
+      source:
+        device_id: directaw-clock-source
+        port_id: clock-out
+      target:
+        device_id: directaw-mfli
+        port_id: clock_in
+      signal_type: electrical
+      label: 10 MHz
+    - id: directaw-trigger-x
+      source:
+        device_id: device-a1843aae-9ba0-4603-8265-9f5cb0b2e4ad
+        port_id: port-c908b869-3b36-4496-9392-24431af169c9
+      target:
+        device_id: device-cca5b2fd-cbfa-4ec5-9330-d94fb44f9a6d
+        port_id: port-00df5922-4f21-410d-a19f-a5bb5ecc51ee
+      signal_type: electrical
+      label: 共同外触发
+    - id: directaw-trigger-y
+      source:
+        device_id: device-a1843aae-9ba0-4603-8265-9f5cb0b2e4ad
+        port_id: port-c908b869-3b36-4496-9392-24431af169c9
+      target:
+        device_id: device-cca5b2fd-cbfa-4ec5-9330-d94fb44f9a6d
+        port_id: port-16f6dcb1-da63-415c-afff-ff545b77b603
+      signal_type: electrical
+      label: 共同外触发
+    - id: directaw-trigger-z
+      source:
+        device_id: device-a1843aae-9ba0-4603-8265-9f5cb0b2e4ad
+        port_id: port-c908b869-3b36-4496-9392-24431af169c9
+      target:
+        device_id: device-a1843aae-9ba0-4603-8265-9f5cb0b2e4ad
+        port_id: port-b14d2b46-dd77-4b86-af86-b3651d432f44
+      signal_type: electrical
+      label: 共同外触发
+    - id: directaw-field-coil-x
+      source:
+        device_id: device-cca5b2fd-cbfa-4ec5-9330-d94fb44f9a6d
+        port_id: port-08da73f2-f5d6-44dc-b420-c093d2c6c095
+      target:
+        device_id: directaw-coil-x
+        port_id: drive-in
+      signal_type: electrical
+      label: X 磁场
+    - id: directaw-field-coil-y
+      source:
+        device_id: device-cca5b2fd-cbfa-4ec5-9330-d94fb44f9a6d
+        port_id: port-3add91aa-6b7d-47ba-b4ca-426f2a9602bd
+      target:
+        device_id: directaw-coil-y
+        port_id: drive-in
+      signal_type: electrical
+      label: Y 磁场
+    - id: directaw-field-coil-z
+      source:
+        device_id: device-a1843aae-9ba0-4603-8265-9f5cb0b2e4ad
+        port_id: port-ba9f40f9-e573-4684-a251-a0409daee363
+      target:
+        device_id: directaw-coil-z
+        port_id: drive-in
+      signal_type: electrical
+      label: Z 磁场
+    - id: directaw-pump-carrier
+      source:
+        device_id: device-7dce17ad-f249-481b-915e-d6c2c0fbe3a4
+        port_id: port-549ceca5-e14b-4151-9593-8df9e3eea8f7
+      target:
+        device_id: directaw-aom
+        port_id: carrier-in
+      signal_type: electrical
+      label: Pump 载波
+    - id: directaw-pump-gate
+      source:
+        device_id: device-7dce17ad-f249-481b-915e-d6c2c0fbe3a4
+        port_id: port-beb214a7-f382-433c-aa8f-98ac426e0b31
+      target:
+        device_id: device-7dce17ad-f249-481b-915e-d6c2c0fbe3a4
+        port_id: port-d5281da3-9d8c-4431-89a8-91796330b019
+      signal_type: electrical
+      label: Time_sequence → CH1 门控输入
+    - id: directaw-power-noise-pump
+      source:
+        device_id: device-da9c419c-cd1d-4d03-8d48-fa7776b8f152
+        port_id: port-3b5ed89d-a7c1-428f-a976-00f1e4ad01ab
+      target:
+        device_id: directaw-noise-pump
+        port_id: power-in
+      signal_type: electrical
+      label: Pump 光功率 DC
+    - id: directaw-power-noise-probe
+      source:
+        device_id: device-da9c419c-cd1d-4d03-8d48-fa7776b8f152
+        port_id: port-35b1abc3-dfdc-45f9-a948-c196106578eb
+      target:
+        device_id: directaw-noise-probe
+        port_id: power-in
+      signal_type: electrical
+      label: Probe 光功率 DC
+    - id: directaw-temp-switch
+      source:
+        device_id: device-68a11726-41ee-473d-8855-4eabdadef744
+        port_id: port-b0c928c6-8b0d-4c65-9843-b7b32eb6540b
+      target:
+        device_id: directaw-tec
+        port_id: temp-switch-in
+      signal_type: electrical
+      label: Temp_Switch
+    - id: directaw-heater
+      source:
+        device_id: directaw-tec
+        port_id: heater-out
+      target:
+        device_id: directaw-heater
+        port_id: heater-in
+      signal_type: electrical
+      label: 加热连接
+    - id: directaw-main-field
+      source:
+        device_id: directaw-gs200
+        port_id: current-out
+      target:
+        device_id: directaw-main-coil
+        port_id: current-in
+      signal_type: electrical
+      label: 主磁场电流
+    - id: directaw-probe-detection
+      source:
+        device_id: directaw-pdb
+        port_id: diff-out
+      target:
+        device_id: directaw-mfli
+        port_id: signal_input_v
+      signal_type: electrical
+      label: PDB 差分输出 → V
+    - id: directaw-internal-demod-aux
+      source:
+        device_id: directaw-mfli
+        port_id: demod0-y
+      target:
+        device_id: directaw-mfli
+        port_id: auxout2-source
+      signal_type: internal
+      label: Demod0 Y → AuxOut2
+    - id: directaw-internal-aux-rf
+      source:
+        device_id: directaw-mfli
+        port_id: auxout2-value
+      target:
+        device_id: directaw-mfli
+        port_id: rf-demod1-input
+      signal_type: internal
+      label: 内部回采 → RF 索引 1
+schema_version: 1

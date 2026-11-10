@@ -64,7 +64,7 @@ def fingerprint(run_dir):
     for key in ("analysis_status", "analysis_error"):
         config.pop(key, None)
     config_digest = hashlib.sha256(json.dumps(config, sort_keys=True, default=str, allow_nan=False).encode()).hexdigest()
-    return dict(analysis_version=EXPERIMENT_ID + "-stages-v1", config=config_digest,
+    return dict(analysis_version=EXPERIMENT_ID + "-stages-v2-sqrt-amplitude", config=config_digest,
         raw={p.relative_to(Path(run_dir).resolve()).as_posix(): signature(p) for p in raw_files(run_dir)})
 
 

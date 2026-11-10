@@ -171,6 +171,8 @@ def response_fit(directory, config, *, component="X"):
                        frequency_shift_Hz=bandwidth["center_Hz"] - child["parameters"]["Z_RF_FREQ"],
                        fractional_frequency_shift=(bandwidth["center_Hz"] - child["parameters"]["Z_RF_FREQ"]) / child["parameters"]["Z_RF_FREQ"],
                        peak_V=bandwidth["amplitude_V"], frequency_fit_r_squared=bandwidth["r_squared"], lorentzian_fit_valid=True)
+            row.update({"frequency_" + name: bandwidth[name] for name in (
+                "model_type", "model", "gamma_definition", "amplitude_hwhm_Hz", "amplitude_fwhm_Hz")})
             arrays.update({key + "_frequency_fit_Hz": bandwidth["fit_freq_Hz"], key + "_frequency_fit_r_V": bandwidth["fit_r_V"]})
         except ValueError as exc:
             rejections.append(str(exc))

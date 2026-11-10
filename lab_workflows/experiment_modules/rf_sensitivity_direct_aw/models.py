@@ -70,7 +70,7 @@ class RFSensitivityDirectAWSingleParams(ExperimentParams):
     linewidth_mode: Literal["frequency_sweep", "dispersive_equivalent"] = parameter(
         default="dispersive_equivalent", external_name="LINEWIDTH_MODE", label="线宽模式", group="basic",
         options=(("frequency_sweep", "扫频测线宽"), ("dispersive_equivalent", "色散等效线宽")),
-        description="扫频测线宽时在 A14 零 RF X 噪声采集后执行 A13B，以每点 R 均值做洛伦兹拟合并回补灵敏度谱；色散等效线宽沿用幅度扫描色散拟合的 gamma。")
+        description="扫频测线宽时在 A14 零 RF X 噪声采集后执行 A13B，以每点 R 均值做平方根洛伦兹幅度拟合并回补灵敏度谱；gamma 是幅度 −3 dB 半宽，幅度半高半宽为 √3 gamma；色散等效模式仍沿用幅度扫描色散拟合的 gamma。")
     bw_freq_start: float = parameter(default=2000.0, external_name="BW_FREQ_START", label="带宽扫频起点", unit="Hz", group="basic", minimum=1e-6, description="A13B 带宽扫频起始频率，须与终点共同包含 Z_RF_FREQ。")
     bw_freq_stop: float = parameter(default=4000.0, external_name="BW_FREQ_STOP", label="带宽扫频终点", unit="Hz", group="basic", minimum=1e-6)
     bw_freq_points: int = parameter(default=21, external_name="BW_FREQ_POINTS", label="带宽扫频点数", group="basic", minimum=5)

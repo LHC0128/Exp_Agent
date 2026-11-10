@@ -1,5 +1,6 @@
 import { preflightMessage, type PreflightResult } from "./experimentHelpers";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
+import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
@@ -61,7 +62,7 @@ function Result({ value }: { value: Summary }) {
 }
 
 export function BellBloomZCalibrationPage() {
-  const [tab, setTab] = useState<"run" | "history">("run");
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -159,19 +160,11 @@ export function BellBloomZCalibrationPage() {
     try { setAnalysisJob(await api<Job>(`/api/runs/${encodeURIComponent(runId)}/analyze`, { method: "POST", body: JSON.stringify({ experiment_id: ID }) })); }
     catch (reason) { setError(String(reason)); } finally { setStarting(false); }
   };
-  const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-    event.preventDefault();
-    const next = tab === "run" ? "history" : "run";
-    setTab(next); event.currentTarget.querySelector<HTMLButtonElement>(`#bb-z-tab-${next}`)?.focus();
-  };
 
   return <>
     <PageHead eyebrow="CALIBRATION · BELL BLOOM" title={definition?.title ?? "Bell Bloom Z 磁场频率标定"} description={definition?.description ?? "读取参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
-    <div className="zaw-tab-strip" role="tablist" aria-label="Bell Bloom Z 标定视图" onKeyDown={tabKey}>
-      {(["run", "history"] as const).map(item => <button key={item} id={`bb-z-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`bb-z-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : "历史"}</button>)}
-    </div>
+    <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} idPrefix="bb-z" label="Bell Bloom Z 标定视图" />
     <div id="bb-z-panel-run" role="tabpanel" aria-labelledby="bb-z-tab-run" hidden={tab !== "run"}>
       <WorkflowPanel experimentId={ID} analysisParameterKeys={ANALYSIS_KEYS}
         enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout} setNotice={setNotice}
@@ -185,7 +178,6 @@ export function BellBloomZCalibrationPage() {
             <button disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
             <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>{starting ? "处理中…" : "预检并运行实验"}</button>
           </div>
-          <p>在流程节点编辑参数。保存默认值只保存下一次实验参数与统一分类；具体目录的分析覆盖独立保存。</p>
           {!sameParameterLayout(layout, savedLayout) && <p>布局有未保存修改</p>}
           {notice && <p role="status">{notice}</p>}
           {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}

@@ -286,9 +286,9 @@ it("手动 K_Z 经预检、保存与完整运行提交，并随历史参数填�
   expect(restored.getByLabelText("K_Z 手动标定 (Hz/V)")).toHaveValue(6200);
 });
 
-it("从真实路由进入双 Tab，预检失败不启动采集", async () => {
+it("从真实路由进入三 Tab，预检失败不启动采集", async () => {
   renderPage();
-  expect(within(screen.getByRole("tablist", { name: "XY 已知噪声注入实验视图" })).getAllByRole("tab")).toHaveLength(2);
+  expect(within(screen.getByRole("tablist", { name: "XY 已知噪声注入实验视图" })).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   await waitFor(() => expect(screen.getByRole("button", { name: "完整运行" })).toBeEnabled());
   const normal = mockApi.getMockImplementation()!;
   mockApi.mockImplementation(async (url, options) => {
@@ -316,24 +316,22 @@ it("背景不可辨识时显示空值并保留有符号差分统计", async () =
   expect(within(panel).getByText(/带外背景 ON\/OFF 中位比值：1.020/)).toBeVisible();
 });
 
-it("仅保留运行与历史，交互流程图保留且两个主 Tab 支持双向循环", async () => {
+it("三主 Tab 保留交互流程图，运行与历史支持双向键盘切换", async () => {
   renderPage();
   const tablist = await screen.findByRole("tablist", { name: "XY 已知噪声注入实验视图" });
-  expect(within(tablist).getAllByRole("tab")).toHaveLength(2);
+  expect(within(tablist).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
   expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();
   expect(await screen.findByRole("region", { name: "交互实验流程图" })).toBeVisible();
   const runTab = within(tablist).getByRole("tab", { name: "运行" });
   const historyTab = within(tablist).getByRole("tab", { name: "历史" });
   runTab.focus();
-  for (const key of ["ArrowLeft", "ArrowRight"]) {
-    fireEvent.keyDown(tablist, { key });
-    expect(historyTab).toHaveFocus();
-    expect(historyTab).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(tablist, { key });
-    expect(runTab).toHaveFocus();
-    expect(runTab).toHaveAttribute("aria-selected", "true");
-  }
+  fireEvent.keyDown(tablist, { key: "ArrowRight" });
+  expect(historyTab).toHaveFocus();
+  expect(historyTab).toHaveAttribute("aria-selected", "true");
+  fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+  expect(runTab).toHaveFocus();
+  expect(runTab).toHaveAttribute("aria-selected", "true");
 });
 
 it("真实 schema 的 56 个可见字段全部可在节点编辑并还原", async () => {

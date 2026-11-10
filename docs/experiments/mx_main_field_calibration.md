@@ -99,7 +99,7 @@ f_\mathrm{pred}(I)=f_\mathrm{ref}+K_\mathrm{initial}(I-I_\mathrm{ref}).
 
 ## 离线分析
 
-分析器从 `raw/main_field_scan_index.npz` 和各 `raw/current_*/frequency_scan.npz` 重建频率响应。每条曲线拟合带基线 Lorentzian，再对有效中心执行标准不确定度加权线性拟合。单曲线中心需位于扫描窗口内且距边缘不少于一个 HWHM，最终线性 R² 需满足配置的质量阈值。
+分析器从 `raw/main_field_scan_index.npz` 和各 `raw/current_*/frequency_scan.npz` 重建频率响应。每条曲线拟合带基线平方根洛伦兹幅度模型 `R(f)=C+A·γ/√((f−f0)²+γ²)`，再对有效中心执行标准不确定度加权线性拟合。γ 为扣除基线后幅度 −3 dB 半宽／功率 HWHM，幅度半高半宽为 `√3γ`；保留旧数值键并在新结果中记录模型及宽度定义。单曲线中心需位于扫描窗口内且距边缘不少于一个 γ，最终线性 R² 需满足配置的质量阈值。历史数据及已有结果不自动重算或改写；详见[频率响应拟合清单](frequency_response_fitting.md)。
 
 频率换算磁场时使用 `GYROMAGNETIC_RATIO_HZ_PER_NT`；其值读取参数配置，并作为配置常数处理，不额外传播其系统不确定度。
 

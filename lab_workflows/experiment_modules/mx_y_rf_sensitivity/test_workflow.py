@@ -175,7 +175,7 @@ def install_rig(root, monkeypatch, params=None):
             amplitude = -amplitude
         if rig.params.linewidth_mode == "frequency_sweep" and index < rig.params.frequency_points:
             frequency = float(rf.frequency[channel])
-            mean = 0.1 + 0.5 * 300**2 / ((frequency - 10000)**2 + 300**2)
+            mean = 0.1 + 0.5 / np.sqrt(1 + ((frequency - 10000) / 300)**2)
         else:
             mean = float(absolute_dispersive_response(np.asarray(amplitude), 0.01, 0.05, 0, 0.1))
         values = np.full(max(8, config.grid_cols), mean)

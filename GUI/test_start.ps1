@@ -18,6 +18,7 @@ function Test-Path {
 function Get-Command {
     param($Name, $CommandType, $ErrorAction)
     if ($Name -eq "npm.cmd") { return [pscustomobject]@{ Source = "Invoke-FakeNpm" } }
+    if ($Name -eq "node.exe") { return [pscustomobject]@{ Source = "D:\Fake\node.exe" } }
     if ($Name -eq "tailscale.exe") {
         if ($TestState.Case.MissingTailscale) { return $null }
         return [pscustomobject]@{ Source = "Invoke-FakeTailscale" }
@@ -27,15 +28,80 @@ function Get-Command {
 
 function Get-NetTCPConnection {
     param($State, $LocalPort, $ErrorAction)
-    if ($TestState.Case.BusyPort -eq $LocalPort -or ($TestState.BackendStarted -and $LocalPort -eq 8000)) {
+    if ($TestState.Case.BusyPort -eq $LocalPort -or
+        ($TestState.BackendStarted -and $LocalPort -eq 8000) -or
+        ($TestState.FrontendStarted -and $LocalPort -eq 5173)) {
         return [pscustomobject]@{ LocalPort = $LocalPort }
     }
 }
 
 function Start-Process {
-    param($FilePath, $ArgumentList, $WorkingDirectory)
-    Assert (($ArgumentList -join ' ') -eq '-m backend') "后端命令发生变化"
+    param(
+        $FilePath,
+        $ArgumentList,
+        $WorkingDirectory,
+        $WindowStyle,
+        [switch]$PassThru,
+        $RedirectStandardOutput,
+        $RedirectStandardError
+    )
+    if ($FilePath -like 'http://*') {
+        $TestState.BrowserOpened = $true
+        return
+    }
+    if ($FilePath -like '*node.exe') {
+        Assert ($ArgumentList -match 'vite\.js') "Vite 入口不匹配"
+        Assert ($ArgumentList -match '--strictPort') "Vite 参数不匹配"
+        Assert ($WindowStyle -eq 'Hidden') "Vite 未使用隐藏窗口"
+        Assert ($PassThru) "未获取 Vite 进程句柄"
+        Assert ($RedirectStandardOutput -and $RedirectStandardError) "Vite 日志未重定向"
+        $TestState.FrontendStarted = $true
+        $fake = [pscustomobject]@{ HasExited = $false; ExitCode = 0; Id = 5252 }
+        $fake | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+            $this.HasExited = $true
+        }
+        return $fake
+    }
+    Assert ($ArgumentList -match '(^| )-m backend( |$)') "后端命令发生变化"
+    Assert ($ArgumentList -match '--log-file "[^"]+gui-backend\.log"') "后端日志未重定向"
+    Assert ($ArgumentList -match '--stop-file "[^"]+\.stop"') "未配置后端停止文件"
+    Assert ($ArgumentList -match '--parent-pid \d+') "未传入启动器进程号"
+    Assert ($WindowStyle -eq 'Hidden') "后端未使用隐藏窗口"
+    Assert ($PassThru) "未获取后端进程句柄"
     $TestState.BackendStarted = $true
+    $TestState.BackendStopped = $false
+    $fake = [pscustomobject]@{ HasExited = $false; ExitCode = 0; Id = 4242 }
+    $fake | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+        $this.HasExited = $true
+        $TestState.BackendStopped = $true
+    }
+    return $fake
+}
+
+function Start-Transcript {
+    param($Path, [switch]$Append)
+}
+
+function Stop-Transcript {
+}
+
+function Set-Content {
+    param($LiteralPath, $Value)
+    $TestState.Files[$LiteralPath] = $Value
+}
+
+function Add-Content {
+    param($LiteralPath, $Value, $Encoding)
+    $TestState.Files[$LiteralPath] = "$($TestState.Files[$LiteralPath])$Value"
+}
+
+function New-Item {
+    param($ItemType, $Path, [switch]$Force)
+}
+
+function Remove-Item {
+    param($LiteralPath, [switch]$Force, $ErrorAction)
+    $TestState.Files.Remove($LiteralPath)
 }
 
 function Invoke-FakeTailscale {
@@ -86,7 +152,8 @@ $Cases = @(
     @{ Name = 'Serve 配置失败'; ServeFailure = $true; Error = 'Serve 配置失败' },
     @{ Name = 'Serve 回读不匹配'; BadReadback = $true; Error = '回读不匹配' },
     @{ Name = 'Serve 回读出现其他路径'; ExtraReadbackPath = $true; Error = '回读不匹配' },
-    @{ Name = '前端失败退出码'; FrontendFailure = $true }
+    @{ Name = '前端失败退出码'; FrontendFailure = $true },
+    @{ Name = '隐藏终端启动'; Hidden = $true }
 )
 
 try {
@@ -95,7 +162,11 @@ try {
         $TestState.TailscaleCalls = @()
         $TestState.ServeConfig = @{}
         $TestState.BackendStarted = $false
+        $TestState.BackendStopped = $false
         $TestState.NpmStarted = $false
+        $TestState.FrontendStarted = $false
+        $TestState.BrowserOpened = $false
+        $TestState.Files = @{}
         $initialHosts = if ($TestState.Case.ExistingTarget) { "existing.example.test,$TestHostName" } else { 'existing.example.test' }
         $env:__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS = $initialHosts
         if ($TestState.Case.ExistingTarget) {
@@ -109,7 +180,11 @@ try {
         }
         if ($TestState.Case.Funnel) { $TestState.ServeConfig.AllowFunnel = @{ "${TestHostName}:443" = $true } }
         if ($TestState.Case.TcpForward) { $TestState.ServeConfig.TCP = @{ '443' = @{ TCPForward = 'localhost:22' } } }
-        $options = @{ OpenBrowser = $true; LocalOnly = [bool]$TestState.Case.LocalOnly }
+        $options = @{
+            OpenBrowser = $true
+            LocalOnly = [bool]$TestState.Case.LocalOnly
+            Hidden = [bool]$TestState.Case.Hidden
+        }
         $failure = $null
         try {
             $output = @(& $Launcher @options 6>&1) | Out-String
@@ -118,13 +193,19 @@ try {
 
         if ($TestState.Case.Error) {
             Assert ($failure -match $TestState.Case.Error) "$($TestState.Case.Name)：错误不匹配：$failure"
-            Assert (-not $TestState.BackendStarted -and -not $TestState.NpmStarted) "$($TestState.Case.Name)：失败后仍启动了服务"
+            Assert (-not $TestState.BackendStarted -and -not $TestState.NpmStarted -and -not $TestState.FrontendStarted) "$($TestState.Case.Name)：失败后仍启动了服务"
             if ($TestState.Case.Error -eq '不会覆盖') {
                 Assert (@($TestState.TailscaleCalls | Where-Object { $_ -like 'serve --bg *' }).Count -eq 0) "冲突配置仍被写入"
             }
         } else {
             Assert (-not $failure) "$($TestState.Case.Name)：$failure"
-            Assert ($TestState.BackendStarted -and $TestState.NpmStarted) "未启动前后端"
+            Assert ($TestState.BackendStarted) "未启动后端"
+            Assert ($TestState.BackendStopped) "启动器退出时未等待后端停止"
+            if ($TestState.Case.Hidden) {
+                Assert ($TestState.FrontendStarted -and $TestState.BrowserOpened) "隐藏模式未启动前端或未打开浏览器"
+            } else {
+                Assert ($TestState.NpmStarted) "未启动前端"
+            }
             $expectedExitCode = if ($TestState.Case.FrontendFailure) { 23 } else { 0 }
             Assert ($exitCode -eq $expectedExitCode) "前端退出码没有透传"
             $expectedHosts = if ($TestState.Case.LocalOnly) { $initialHosts } else { "existing.example.test,$TestHostName" }

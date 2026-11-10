@@ -9216,6 +9216,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/device-ports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Device Ports
+         * @description 端口档案只读人工元数据，不获取硬件锁或读取仪器。
+         */
+        get: operations["device_ports_api_device_ports_get"];
+        /**
+         * Update Device Ports
+         * @description 独立修订锁仅保护端口文件，不复用设备配置/硬件任务锁。
+         */
+        put: operations["update_device_ports_api_device_ports_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wiring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wiring
+         * @description 只读投影现场/目标图的用途跟随状态，不接触硬件或写入配置。
+         */
+        get: operations["wiring_api_wiring_get"];
+        /**
+         * Update Wiring
+         * @description 只保存接线图；方向/光电提示不阻止人工记录。
+         */
+        put: operations["update_wiring_api_wiring_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wiring/revision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wiring Revision
+         * @description 只读组合修订；不投影接线图、不计算提示，不接触硬件。
+         */
+        get: operations["wiring_revision_api_wiring_revision_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wiring/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wiring Comparison
+         * @description 仅计算传入快照的连线与人工模式差异，不写磁盘。
+         */
+        post: operations["wiring_comparison_api_wiring_compare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lockin-selection": {
         parameters: {
             query?: never;
@@ -9842,6 +9930,26 @@ export interface paths {
         };
         /** Runs */
         get: operations["runs_api_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{experiment_id}/{run_id}/wiring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Wiring
+         * @description 只读运行创建时记录的接线快照；不补写旧运行，也不改当前接线。
+         */
+        get: operations["run_wiring_api_runs__experiment_id___run_id__wiring_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10627,6 +10735,51 @@ export interface components {
             /** Physical Mapping Revision */
             physical_mapping_revision?: string | null;
         };
+        /** DevicePortPreset */
+        DevicePortPreset: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Model */
+            model: string;
+            /** Ports */
+            ports: components["schemas"]["PhysicalPort"][];
+        };
+        /** DevicePortProfile */
+        DevicePortProfile: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Model */
+            model: string;
+            /** Ports */
+            ports: components["schemas"]["PhysicalPort"][];
+            /** Device Library Id */
+            device_library_id: string | null;
+        };
+        /** DevicePortsBody */
+        DevicePortsBody: {
+            /** Devices */
+            devices: components["schemas"]["DevicePortProfile"][];
+            /** Base Revision */
+            base_revision: string;
+        };
+        /** DevicePortsResponse */
+        DevicePortsResponse: {
+            /** Devices */
+            devices: components["schemas"]["DevicePortProfile"][];
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: 1;
+            /** Revision */
+            revision: string;
+            /** Presets */
+            presets: components["schemas"]["DevicePortPreset"][];
+        };
         /** DeviceSummary */
         DeviceSummary: {
             /** Id */
@@ -11393,6 +11546,39 @@ export interface components {
                 };
             };
         };
+        /** PhysicalPort */
+        PhysicalPort: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Group */
+            group: string;
+            /** Signal Type */
+            signal_type: ("optical" | "electrical") | null;
+            /** Connector */
+            connector: string;
+            /** Purpose */
+            purpose: string;
+            /** Direction */
+            direction: ("in" | "out" | "inout" | "switchable") | null;
+            /** Modes */
+            modes: components["schemas"]["PortMode"][];
+            /** Selected Mode */
+            selected_mode: string | null;
+        };
+        /** PortMode */
+        PortMode: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "in" | "out" | "inout";
+        };
         /** RFDirectAWCompareBody */
         RFDirectAWCompareBody: {
             /** Runs */
@@ -11562,6 +11748,33 @@ export interface components {
         RestartResponse: {
             /** Status */
             status: string;
+        };
+        /**
+         * RunWiringResponse
+         * @description 运行时记录的接线快照；只读，不代表硬件实际状态。
+         */
+        RunWiringResponse: {
+            /** Available */
+            available: boolean;
+            /** Recorded Revision */
+            recorded_revision?: string | null;
+            /** Recorded At */
+            recorded_at?: string | null;
+            site?: components["schemas"]["WiringGraph"] | null;
+            /** Targets */
+            targets?: {
+                [key: string]: components["schemas"]["WiringGraph"];
+            } | null;
+            /** Current Revision */
+            current_revision?: string | null;
+            /** Matches Current */
+            matches_current?: boolean | null;
+            /** Current Error */
+            current_error?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Note */
+            note: string;
         };
         /** ScopeChannelSettings */
         ScopeChannelSettings: {
@@ -11779,6 +11992,279 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WiringBody */
+        WiringBody: {
+            site: components["schemas"]["WiringGraph"];
+            /** Targets */
+            targets: {
+                [key: string]: components["schemas"]["WiringGraph"];
+            };
+            /** Base Revision */
+            base_revision: string;
+        };
+        /**
+         * WiringCableChange
+         * @description 已保留连线的线缆记录差异；匹配时忽略，不改变同一根线身份。
+         */
+        WiringCableChange: {
+            /** Edge Id */
+            edge_id: string;
+            /** Site Connector */
+            site_connector: string | null;
+            /** Target Connector */
+            target_connector: string | null;
+            /** Site Cable Id */
+            site_cable_id: string | null;
+            /** Target Cable Id */
+            target_cable_id: string | null;
+            /** Site Note */
+            site_note: string | null;
+            /** Target Note */
+            target_note: string | null;
+        };
+        /** WiringCompareBody */
+        WiringCompareBody: {
+            site: components["schemas"]["WiringGraph"];
+            target: components["schemas"]["WiringGraph"];
+        };
+        /** WiringComparison */
+        WiringComparison: {
+            /** Retained */
+            retained: components["schemas"]["WiringEdge"][];
+            /** Removed */
+            removed: components["schemas"]["WiringEdge"][];
+            /** Added */
+            added: components["schemas"]["WiringEdge"][];
+            /** Internal Retained */
+            internal_retained?: components["schemas"]["WiringEdge"][];
+            /** Internal Removed */
+            internal_removed?: components["schemas"]["WiringEdge"][];
+            /** Internal Added */
+            internal_added?: components["schemas"]["WiringEdge"][];
+            /** Mode Changes */
+            mode_changes: components["schemas"]["WiringModeChange"][];
+            /** Usage Changes */
+            usage_changes?: components["schemas"]["WiringUsageChange"][];
+            /** Setting Changes */
+            setting_changes?: components["schemas"]["WiringSettingChange"][];
+            /** Cable Changes */
+            cable_changes?: components["schemas"]["WiringCableChange"][];
+            /** Site Warnings */
+            site_warnings: components["schemas"]["WiringWarning"][];
+            /** Target Warnings */
+            target_warnings: components["schemas"]["WiringWarning"][];
+        };
+        /** WiringDiagnostics */
+        WiringDiagnostics: {
+            /** Site */
+            site: components["schemas"]["WiringWarning"][];
+            /** Targets */
+            targets: {
+                [key: string]: components["schemas"]["WiringWarning"][];
+            };
+        };
+        /** WiringEdge */
+        WiringEdge: {
+            /** Id */
+            id: string;
+            source: components["schemas"]["WiringEndpoint"];
+            target: components["schemas"]["WiringEndpoint"];
+            /**
+             * Signal Type
+             * @enum {string}
+             */
+            signal_type: "optical" | "electrical" | "internal";
+            /** Label */
+            label: string;
+            /** Connector */
+            connector?: string | null;
+            /** Cable Id */
+            cable_id?: string | null;
+            /** Note */
+            note?: string | null;
+        };
+        /** WiringEndpoint */
+        WiringEndpoint: {
+            /** Device Id */
+            device_id: string;
+            /** Port Id */
+            port_id: string;
+        };
+        /** WiringFollowStatus */
+        WiringFollowStatus: {
+            /** Device Id */
+            device_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "independent" | "bound" | "updated" | "pending" | "blocked";
+            /** Mapping Keys */
+            mapping_keys: string[];
+            /** Message */
+            message: string;
+        };
+        /** WiringFollowStatuses */
+        WiringFollowStatuses: {
+            /** Site */
+            site?: components["schemas"]["WiringFollowStatus"][];
+            /** Targets */
+            targets?: {
+                [key: string]: components["schemas"]["WiringFollowStatus"][];
+            };
+        };
+        /** WiringGraph */
+        WiringGraph: {
+            /** Nodes */
+            nodes: components["schemas"]["WiringNode"][];
+            /** Edges */
+            edges: components["schemas"]["WiringEdge"][];
+        };
+        /** WiringInternalPort */
+        WiringInternalPort: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "in" | "out";
+        };
+        /** WiringMappingGroup */
+        WiringMappingGroup: {
+            /** Keys */
+            keys: string[];
+            /** Label */
+            label: string;
+            /** Device Library Id */
+            device_library_id: string | null;
+        };
+        /** WiringModeChange */
+        WiringModeChange: {
+            /** Device Id */
+            device_id: string;
+            /** Device Name */
+            device_name: string;
+            /** Port Id */
+            port_id: string;
+            /** Port Name */
+            port_name: string;
+            /** Site Mode */
+            site_mode: string | null;
+            /** Target Mode */
+            target_mode: string | null;
+        };
+        /** WiringNode */
+        WiringNode: {
+            device: components["schemas"]["DevicePortProfile"];
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Follow Mapping */
+            follow_mapping?: string[] | null;
+            /** Port Directions */
+            port_directions?: {
+                [key: string]: "in" | "out";
+            };
+            /** Port Usage */
+            port_usage?: {
+                [key: string]: "used" | "unused" | "unconfirmed";
+            };
+            /** Internal Ports */
+            internal_ports?: components["schemas"]["WiringInternalPort"][];
+            /** Settings */
+            settings?: components["schemas"]["WiringSetting"][];
+        };
+        /** WiringResponse */
+        WiringResponse: {
+            site: components["schemas"]["WiringGraph"];
+            /** Targets */
+            targets: {
+                [key: string]: components["schemas"]["WiringGraph"];
+            };
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: 1;
+            /** Revision */
+            revision: string;
+            diagnostics: components["schemas"]["WiringDiagnostics"];
+            /** Mapping Groups */
+            mapping_groups?: components["schemas"]["WiringMappingGroup"][];
+            follow_status?: components["schemas"]["WiringFollowStatuses"];
+        };
+        /** WiringRevision */
+        WiringRevision: {
+            /** Revision */
+            revision: string;
+        };
+        /** WiringSetting */
+        WiringSetting: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Options */
+            options: components["schemas"]["WiringSettingOption"][];
+            /** Value */
+            value?: string | null;
+        };
+        /** WiringSettingChange */
+        WiringSettingChange: {
+            /** Device Id */
+            device_id: string;
+            /** Device Name */
+            device_name: string;
+            /** Setting Id */
+            setting_id: string;
+            /** Setting Name */
+            setting_name: string;
+            /** Site Value */
+            site_value: string | null;
+            /** Target Value */
+            target_value: string | null;
+        };
+        /** WiringSettingOption */
+        WiringSettingOption: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+        };
+        /** WiringUsageChange */
+        WiringUsageChange: {
+            /** Device Id */
+            device_id: string;
+            /** Device Name */
+            device_name: string;
+            /** Port Id */
+            port_id: string;
+            /** Port Name */
+            port_name: string;
+            /**
+             * Site Usage
+             * @enum {string}
+             */
+            site_usage: "used" | "unused" | "unconfirmed";
+            /**
+             * Target Usage
+             * @enum {string}
+             */
+            target_usage: "used" | "unused" | "unconfirmed";
+        };
+        /** WiringWarning */
+        WiringWarning: {
+            /** Edge Id */
+            edge_id: string;
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
         };
         /** WorkflowRunItem */
         WorkflowRunItem: {
@@ -29753,6 +30239,165 @@ export interface operations {
             };
         };
     };
+    device_ports_api_device_ports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevicePortsResponse"];
+                };
+            };
+        };
+    };
+    update_device_ports_api_device_ports_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DevicePortsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevicePortsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wiring_api_wiring_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WiringResponse"];
+                };
+            };
+        };
+    };
+    update_wiring_api_wiring_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WiringBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WiringResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wiring_revision_api_wiring_revision_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WiringRevision"];
+                };
+            };
+        };
+    };
+    wiring_comparison_api_wiring_compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WiringCompareBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WiringComparison"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_lockin_selection_api_lockin_selection_put: {
         parameters: {
             query?: never;
@@ -30931,6 +31576,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_wiring_api_runs__experiment_id___run_id__wiring_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunWiringResponse"];
                 };
             };
             /** @description Validation Error */

@@ -20,7 +20,7 @@ from .analysis_steps import (_builtin, _load_params, _load_scan_index, _discrete
     _analyze_curve, _failed_linear_fit, _weighted_linear_fit)
 from .analysis_plotting import _plot_frequency_responses, _plot_calibration, _calibration_fit_label
 
-ANALYSIS_VERSION = "mx-main-field-v1"
+ANALYSIS_VERSION = "mx-main-field-v2-sqrt-amplitude"
 
 
 class AnalysisWorkflow:

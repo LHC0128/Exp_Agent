@@ -1,0 +1,96 @@
+.device-ports-page { container: device-ports / inline-size; color: #273f3a; }
+.device-ports-page .page-head a { color: #185d57; font-size: 13px; font-weight: 650; text-decoration: none; }
+.device-ports-page .page-head a:hover { text-decoration: underline; }
+.device-ports-page .ports-safety-note { padding: 14px 17px; border: 1px solid #cbded9; border-left: 4px solid #367e71; border-radius: 9px; background: #f0f7f4; color: #47665e; line-height: 1.8; font-size: 12px; }
+.device-ports-page .ports-safety-note strong { color: #205747; margin-right: 5px; }
+.device-ports-page .ports-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin: 18px 0; }
+.device-ports-page .ports-toolbar > div:first-child { display: grid; gap: 4px; }
+.device-ports-page .ports-toolbar strong { font-size: 13px; }
+.device-ports-page .ports-toolbar span { color: #647a74; font-size: 11px; overflow-wrap: anywhere; }
+.device-ports-page .ports-toolbar > div:last-child { display: flex; gap: 7px; flex-wrap: wrap; }
+.device-ports-page button { padding: 8px 12px; font-size: 12px; }
+.device-ports-page .alert { line-height: 1.8; overflow-wrap: anywhere; }
+.device-ports-page .alert > span { display: block; }
+.device-ports-page .alert > button { margin: 5px 0 0 10px; }
+.device-ports-page .alert ul { margin: 6px 0 0; padding-left: 20px; }
+.device-ports-page fieldset { min-width: 0; margin: 0; }
+.device-ports-page .ports-workspace { display: grid; grid-template-columns: minmax(190px, .74fr) minmax(300px, 1.52fr) minmax(275px, 1.2fr); gap: 14px; padding: 0; border: 0; align-items: start; }
+.device-ports-page .ports-panel { min-width: 0; padding: 19px 16px; border: 1px solid #dce6e2; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px #1b4f3e04; }
+.device-ports-page .ports-panel > header { padding-bottom: 12px; border-bottom: 1px solid #e7eeeb; margin-bottom: 12px; }
+.device-ports-page .ports-eyebrow { font-size: 9px; color: #67887d; font-weight: 750; letter-spacing: .13em; }
+.device-ports-page .ports-panel h2 { margin: 6px 0 0; font-size: 16px; }
+.device-ports-page .ports-panel h3 { margin: 0 0 10px; font-size: 13px; }
+.device-ports-page h2 small, .device-ports-page h3 small { color: #7b8e85; margin-left: 4px; font-size: 11px; font-weight: 500; }
+.device-ports-page .ports-help { margin: 0 0 12px; color: #71857c; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.device-ports-page .ports-empty { padding: 18px 0; color: #86978f; font-size: 12px; line-height: 1.9; }
+.device-ports-page .ports-warning { padding: 10px 12px; border: 1px solid #eadab0; border-radius: 6px; background: #fff9eb; color: #826329; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.device-ports-page .ports-device-items { display: grid; gap: 7px; }
+.device-ports-page .ports-device { min-width: 0; display: grid; gap: 4px; width: 100%; text-align: left; padding: 11px; border: 1px solid #e4ebe7; background: #f8faf9; color: #456157; font-weight: 400; overflow-wrap: anywhere; }
+.device-ports-page .ports-device:hover { background: #edf5f0; transform: none; }
+.device-ports-page .ports-device.active { border-color: #6d9e89; background: #edf5ef; box-shadow: inset 3px 0 #487a5a; }
+.device-ports-page .ports-device strong { font-size: 13px; }
+.device-ports-page .ports-device span { font-size: 11px; }
+.device-ports-page .ports-device small { color: #758b7d; font-size: 10px; }
+.device-ports-page .ports-create { margin-top: 21px; padding-top: 17px; border-top: 1px solid #e7eeeb; }
+.device-ports-page label { min-width: 0; display: grid; gap: 5px; color: #617b6e; font-size: 11px; font-weight: 600; }
+.device-ports-page label > span { overflow-wrap: anywhere; }
+.device-ports-page input:not([type="checkbox"]), .device-ports-page select { min-width: 0; width: 100%; padding: 8px 9px; border: 1px solid #d3dfd7; border-radius: 6px; color: #324c40; background: #fcfdfc; outline: none; }
+.device-ports-page input:focus, .device-ports-page select:focus { border-color: #5c9578; box-shadow: 0 0 0 3px #56956e16; }
+.device-ports-page .ports-candidates { display: grid; gap: 8px; margin: 10px 0 13px; max-height: 260px; overflow-y: auto; }
+.device-ports-page .ports-candidate { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: start; font-weight: 500; }
+.device-ports-page .ports-candidate input { margin: 2px 0; accent-color: #397d5c; }
+.device-ports-page .ports-candidate small { display: block; margin-top: 4px; color: #84968a; font-weight: 400; line-height: 1.5; }
+.device-ports-page .ports-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.device-ports-page .ports-source { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.device-ports-page .ports-source > span { min-width: 0; font-size: 10px; color: #8a9b91; overflow-wrap: anywhere; }
+.device-ports-page .ports-danger { color: #9e5d54; }
+.device-ports-page .ports-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 20px; margin-top: 18px; border-top: 1px solid #e5ede7; }
+.device-ports-page .ports-section-head h3 { margin: 0; }
+.device-ports-page .ports-edit-list { display: grid; gap: 15px; margin-top: 14px; }
+.device-ports-page .ports-port-card { padding: 11px 12px 10px; border: 1px solid #dfe7e1; border-radius: 8px; background: #f9fbf9; transition: border-color .15s; }
+.device-ports-page .ports-port-card.focused { border-color: #6a9f7a; box-shadow: 0 0 0 2px #8cbb9912; }
+.device-ports-page .ports-port-card legend { padding: 0 6px; color: #52785d; font-size: 11px; font-weight: 700; }
+.device-ports-page .ports-port-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 7px; border-top: 1px solid #e7eee7; padding-top: 9px; margin-top: 13px; }
+.device-ports-page .ports-port-actions > span { font-size: 9px; color: #8a9c8c; }
+.device-ports-page .ports-port-actions button { padding: 5px 8px; font-size: 10px; }
+.device-ports-page .ports-modes { margin-top: 13px; padding-top: 13px; border-top: 1px solid #dfe9df; }
+.device-ports-page .ports-modes h4 { margin: 0 0 7px; color: #567256; font-size: 12px; }
+.device-ports-page .ports-mode { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(76px, .8fr) auto; gap: 6px; align-items: end; margin-bottom: 10px; }
+.device-ports-page .ports-mode > button { padding: 8px 7px; font-size: 10px; }
+.device-ports-page .ports-selected-mode { margin-top: 12px; padding-top: 11px; border-top: 1px dashed #dae4d9; }
+.device-ports-page .ports-blackbox { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px 22px; margin-top: 20px; padding: 15px 10px; border: 1px solid #e0e7e2; border-radius: 10px; background: linear-gradient(145deg, #f5f8f5, #fcfdfb); }
+.device-ports-page .ports-blackbox-body { min-width: 0; grid-column: 1 / -1; display: grid; gap: 7px; margin: 0 14px 2px; padding: 22px 12px; border: 1px solid #304e3d; border-radius: 9px; background: #2d4939; color: #f2f7f0; text-align: center; overflow-wrap: anywhere; }
+.device-ports-page .ports-blackbox-body strong { font-size: 15px; line-height: 1.6; }
+.device-ports-page .ports-blackbox-body span { color: #bdd1bf; font-size: 11px; }
+.device-ports-page .ports-blackbox-body small { color: #99b39d; font-size: 9px; }
+.device-ports-page .ports-diagram-group { min-width: 0; display: grid; gap: 8px; align-content: start; }
+.device-ports-page .ports-diagram-group h3 { color: #6e8775; margin: 0; font-size: 10px; }
+.device-ports-page .ports-diagram-port { min-width: 0; display: grid; gap: 5px; position: relative; padding: 10px 8px; text-align: left; border: 1px solid #dce5df; border-left: 3px solid #96a49c; border-radius: 6px; background: #fff; color: #3d5144; font-weight: 500; overflow-wrap: anywhere; }
+.device-ports-page .ports-diagram-port:hover { background: #edf4ed; transform: none; }
+.device-ports-page .ports-diagram-port.focused { outline: 2px solid #65916f; outline-offset: 2px; }
+.device-ports-page .ports-diagram-port strong { font-size: 11px; line-height: 1.6; }
+.device-ports-page .ports-diagram-port small { color: #7d9180; font-size: 9px; }
+.device-ports-page .ports-diagram-port .ports-signal { font-size: 9px; color: #74827a; }
+.device-ports-page .ports-diagram-port.signal-optical { border-left-color: #aa6b33; }
+.device-ports-page .ports-diagram-port.signal-optical .ports-signal { color: #95602c; }
+.device-ports-page .ports-diagram-port.signal-electrical { border-left-color: #4c79ac; }
+.device-ports-page .ports-diagram-port.signal-electrical .ports-signal { color: #456f9e; }
+.device-ports-page .ports-in .ports-diagram-port::after, .device-ports-page .ports-out .ports-diagram-port::after { content: ""; position: absolute; top: 50%; width: 7px; height: 7px; border: 1px solid #b9cbbb; border-radius: 50%; background: #fff; }
+.device-ports-page .ports-in .ports-diagram-port::after { right: -5px; }
+.device-ports-page .ports-out .ports-diagram-port::after { left: -5px; }
+.device-ports-page .ports-diagram-empty { padding: 12px 0; color: #9aab9e; font-size: 10px; }
+.device-ports-page .ports-inout, .device-ports-page .ports-unknown { padding-top: 12px; border-top: 1px dashed #d9e3d8; }
+.device-ports-page .ports-preview-note { margin: 13px 0 0; color: #85978a; font-size: 10px; line-height: 1.8; }
+@container device-ports (max-width: 1050px) {
+  .device-ports-page .ports-workspace { grid-template-columns: minmax(0, 1fr); }
+  .device-ports-page .ports-device-items { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+  .device-ports-page .ports-blackbox { max-width: 620px; margin-inline: auto; }
+}
+@container device-ports (max-width: 430px) {
+  .device-ports-page .ports-fields, .device-ports-page .ports-mode { grid-template-columns: minmax(0, 1fr); }
+  .device-ports-page .ports-mode > button { justify-self: start; }
+  .device-ports-page .ports-panel { padding: 16px 12px; }
+  .device-ports-page .ports-blackbox { padding: 14px 5px; column-gap: 15px; }
+  .device-ports-page .ports-toolbar > div:last-child { width: 100%; }
+  .device-ports-page .ports-toolbar button { flex: 1 1 auto; }
+}

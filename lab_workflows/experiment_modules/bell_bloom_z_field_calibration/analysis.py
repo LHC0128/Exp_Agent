@@ -16,7 +16,7 @@ from .models import BellBloomZFieldCalibrationParams
 from .stages import ANALYSIS, ANALYSIS_KEYS, invalidate, invalidated_stages, validate_selection
 from lab_workflows.workflow_stages import initial_states
 
-ANALYSIS_VERSION = "bell-bloom-z-field-v1"
+ANALYSIS_VERSION = "bell-bloom-z-field-v2-sqrt-amplitude"
 
 
 class AnalysisWorkflow:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import sys
+import tempfile
+import threading
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -115,6 +118,80 @@ class BackendEntrypointTests(unittest.TestCase):
                 backend_entry.main()
 
         execv.assert_called_once_with(sys.executable, [sys.executable, "-m", "backend"])
+
+    def test_restart_arguments_keep_launcher_flags(self):
+        options = backend_entry._parse_options([
+            "--log-file", "backend.log",
+            "--stop-file", "backend.stop",
+            "--parent-pid", "42",
+        ])
+
+        self.assertEqual(
+            backend_entry._restart_arguments(options),
+            [
+                "--log-file", "backend.log",
+                "--stop-file", "backend.stop",
+                "--parent-pid", "42",
+            ],
+        )
+
+
+class ExitWatchTests(unittest.TestCase):
+    def test_stop_file_requests_server_exit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stop_file = Path(tmp) / "backend.stop"
+            server = SimpleNamespace(should_exit=False)
+            application = SimpleNamespace(state=SimpleNamespace(uvicorn_server=server))
+            stop_requested = threading.Event()
+            thread = threading.Thread(
+                target=backend_entry._watch_exit,
+                args=(application, stop_file, None, stop_requested),
+            )
+
+            thread.start()
+            stop_file.touch()
+            thread.join(3)
+
+        self.assertFalse(thread.is_alive())
+        self.assertTrue(stop_requested.is_set())
+        self.assertTrue(server.should_exit)
+
+    def test_dead_launcher_requests_server_exit(self):
+        server = SimpleNamespace(should_exit=False)
+        application = SimpleNamespace(state=SimpleNamespace(uvicorn_server=server))
+        stop_requested = threading.Event()
+        thread = threading.Thread(
+            target=backend_entry._watch_exit,
+            args=(application, None, 0, stop_requested),
+        )
+
+        thread.start()
+        thread.join(3)
+
+        self.assertFalse(thread.is_alive())
+        self.assertTrue(stop_requested.is_set())
+        self.assertTrue(server.should_exit)
+
+    def test_log_file_redirects_stdout_and_stderr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_file = Path(tmp) / "logs" / "backend.log"
+            original_out, original_err = sys.stdout, sys.stderr
+            stream = None
+            try:
+                backend_entry._redirect_output(log_file)
+                stream = sys.stdout
+                print("stdout line")
+                print("stderr line", file=sys.stderr)
+            finally:
+                sys.stdout, sys.stderr = original_out, original_err
+                if stream is not None:
+                    stream.close()
+
+            text = log_file.read_text(encoding="utf-8")
+
+        self.assertIn("backend start pid=", text)
+        self.assertIn("stdout line", text)
+        self.assertIn("stderr line", text)
 
 
 if __name__ == "__main__":

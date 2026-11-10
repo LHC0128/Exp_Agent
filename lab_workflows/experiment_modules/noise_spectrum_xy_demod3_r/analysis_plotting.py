@@ -39,7 +39,7 @@ def render(run_dir, data):
 
     fig, axes = new_figure(figsize=(PAPER_WIDE[0], 2 * PAPER_WIDE[1]), nrows=2, ncols=2, sharex=True)
     for ax, (index, label) in zip(axes.flat, enumerate(
-            ("Linewidth (Hz)", "Fit amplitude", "R baseline (V)", "Frequency offset (Hz)")), strict=True):
+            ("Gamma parameter (Hz)", "Fit amplitude", "R baseline (V)", "Frequency offset (Hz)")), strict=True):
         ax.plot(frequencies, parameters[:, index], ".-", color=COLOR_OPTIMAL)
         format_axis(ax, ylabel=label)
     for ax in axes[-1]:

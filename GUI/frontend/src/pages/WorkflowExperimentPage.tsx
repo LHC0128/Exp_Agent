@@ -1,4 +1,5 @@
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 
 import { api } from "../api";
 import { useJobActivity } from "../components/JobActivity";
@@ -55,7 +56,7 @@ export function WorkflowExperimentPage({ experimentId,
   analysisParameterPrefix, analysisParameterKeys, normalizeParameters = identity,
   renderResult, hasAnalysis = true }: Props) {
   const BASE = `/api/experiments/${experimentId}`;
-  const [tab, setTab] = useState<"run" | "history">("run");
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -190,23 +191,11 @@ export function WorkflowExperimentPage({ experimentId,
     } catch (reason) { setError(String(reason)); }
     finally { setStarting(false); }
   };
-  const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-    event.preventDefault();
-    const next = tab === "run" ? "history" : "run";
-    setTab(next); event.currentTarget.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)?.focus();
-  };
 
   return <>
     <PageHead eyebrow="EXPERIMENT" title={definition?.title ?? "正在载入实验"} description={definition?.description ?? "读取实验定义与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
-    <div className="zaw-tab-strip" role="tablist" aria-label="实验视图" onKeyDown={tabKey}>
-      {(["run", "history"] as const).map(item => <button key={item} id={`${experimentId}-tab-${item}`}
-        role="tab" data-tab={item} aria-selected={tab === item} aria-controls={`${experimentId}-panel-${item}`}
-        tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>
-        {item === "run" ? "运行" : "历史"}
-      </button>)}
-    </div>
+    <ExperimentViewTabs experimentId={experimentId} title={definition?.title} value={tab} onChange={setTab} />
     <div id={`${experimentId}-panel-run`} role="tabpanel" aria-labelledby={`${experimentId}-tab-run`} hidden={tab !== "run"}>
       <WorkflowPanel experimentId={experimentId}
         analysisParameterPrefix={analysisParameterPrefix} analysisParameterKeys={analysisParameterKeys}
@@ -221,7 +210,6 @@ export function WorkflowExperimentPage({ experimentId,
             <button className="secondary" disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
             <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>{starting ? "处理中…" : "预检并运行实验"}</button>
           </div>
-          <p>在流程节点编辑参数。保存默认值仅保存下一次实验参数和统一分类，不保存历史分析覆盖值。</p>
           {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
           {notice && <p role="status">{notice}</p>}
           {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}

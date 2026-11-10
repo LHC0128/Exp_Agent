@@ -181,10 +181,10 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-it("从实验路由进入双 Tab，切换保留参数，历史填回不启动采集", async () => {
+it("从实验路由进入三 Tab，切换保留参数，历史填回不启动采集", async () => {
   await renderPage();
   const tabs = screen.getByRole("tablist", { name: "RF 灵敏度（DirectAW）视图" });
-  expect(within(tabs).getAllByRole("tab")).toHaveLength(2);
+  expect(within(tabs).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(await within(screen.getByRole("tabpanel", { name: "运行" })).findByAltText("X 响应与 RF 灵敏度")).toHaveAttribute("src", "/plot.png?v=1");
   expect(within(screen.getByRole("tabpanel", { name: "运行" })).getByText(/已作洛伦兹校正/)).toBeVisible();
   fireEvent.change(screen.getByLabelText("运行标签"), { target: { value: "edited" } });

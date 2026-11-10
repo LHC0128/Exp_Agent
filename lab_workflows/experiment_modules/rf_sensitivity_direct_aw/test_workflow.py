@@ -179,9 +179,9 @@ def rig(tmp_path, monkeypatch, control_source):
             amplitude = float(z_device.amplitude.get(channel, 0.0)) if z_device.output.get(channel, False) else 0.0
             if amplitude == instance.params.z_rf_amplitude_init:
                 instance.z_scan_phases.append(phase)
-            # 带宽扫频时响应随频率呈洛伦兹线形；中心频率（=当前 z_rf_freq）处因子为 1，不影响相位/幅度扫描断言。
+            # 带宽扫频为平方根洛伦兹幅度；中心处因子为 1，不影响相位/幅度扫描断言。
             frequency = float(z_device.frequency.get(channel, 0.0))
-            factor = instance.bw_gamma ** 2 / ((frequency - instance.params.z_rf_freq) ** 2 + instance.bw_gamma ** 2)
+            factor = 1.0 / np.sqrt(1.0 + ((frequency - instance.params.z_rf_freq) / instance.bw_gamma) ** 2)
             response = complex(instance.z_scan_baseline) + instance.z_scan_amplitude * amplitude * factor * np.exp(1j * math.radians(phase - instance.z_phi0))
             columns = max(8, config.grid_cols)
             time = np.arange(columns) / kwargs["actual_rate"]

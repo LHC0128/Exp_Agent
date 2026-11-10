@@ -117,10 +117,10 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); mockApi.mockReset(); });
 
-it("按真实路由显示双 Tab，节点内编辑保留并从历史填回，预检失败不启动", async () => {
+it("按真实路由显示三 Tab，节点内编辑保留并从历史填回，预检失败不启动", async () => {
   renderPage();
   const tabs = screen.getByRole("tablist", { name: "探测链路频率响应标定视图" });
-  expect(within(tabs).getAllByRole("tab")).toHaveLength(2);
+  expect(within(tabs).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   const parameters = await openParameters("A07");
   fireEvent.change(parameters.getByLabelText("运行标签"), { target: { value: "edited" } });
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
@@ -171,24 +171,22 @@ it("分阶段分析绑定历史目录，独立于等待中的硬件会话", asyn
   expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({ revision: 0, step_ids: ["B01", "B02", "B03"], analysis_parameters: {} });
 });
 
-it("仅保留运行与历史，交互流程图保留且两个主 Tab 支持双向循环", async () => {
+it("三主 Tab 保留交互流程图，运行与历史支持双向键盘切换", async () => {
   renderPage();
   const tablist = await screen.findByRole("tablist", { name: "探测链路频率响应标定视图" });
-  expect(within(tablist).getAllByRole("tab")).toHaveLength(2);
+  expect(within(tablist).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
   expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();
   expect(await screen.findByRole("region", { name: "交互实验流程图" })).toBeVisible();
   const runTab = within(tablist).getByRole("tab", { name: "运行" });
   const historyTab = within(tablist).getByRole("tab", { name: "历史" });
   runTab.focus();
-  for (const key of ["ArrowLeft", "ArrowRight"]) {
-    fireEvent.keyDown(tablist, { key });
-    expect(historyTab).toHaveFocus();
-    expect(historyTab).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(tablist, { key });
-    expect(runTab).toHaveFocus();
-    expect(runTab).toHaveAttribute("aria-selected", "true");
-  }
+  fireEvent.keyDown(tablist, { key: "ArrowRight" });
+  expect(historyTab).toHaveFocus();
+  expect(historyTab).toHaveAttribute("aria-selected", "true");
+  fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+  expect(runTab).toHaveFocus();
+  expect(runTab).toHaveAttribute("aria-selected", "true");
 });
 
 it("真实schema全部可见参数均可节点编辑，初始化参数只出现一次且高级默认折叠", async () => {

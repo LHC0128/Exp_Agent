@@ -286,9 +286,6 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
     <div className="xy-workflow-head"><h2>实验流程图</h2>{flow && <a href={flow.diagram_url} download>下载可编辑流程图</a>}</div>
     {children}
     {flowError && <p role="alert">{flowError}</p>}
-    <p>显式勾选需要执行的模块及尚未完成的前置模块。重跑会使后续步骤失效，每轮扫描保存到独立目录。</p>
-    <p>执行完成不等于科学质量合格；诊断提示不新增阻断条件，后继执行以实际状态和后端校验为准。产物链接只来自执行记录，不用预期文件名补造。</p>
-    <p>基础参数名称常显，展开节点编辑；高级参数单独折叠。共享参数的值和基础／高级分类同步，初始化条件只在配置节点展示。</p>
     {session && <div aria-live="polite">
       <p>会话 {session.session_id.slice(0, 8)} · 修订 {session.revision} · {live ? busy ? "执行或等待命令完成" : "等待下一步" : "已结束"} · 当前模块 {session.current_step ?? "—"}</p>
       {live && <p className="alert">分步等待期间保持输出状态并持续占用硬件锁；检查完成后请结束会话。</p>}
@@ -324,8 +321,7 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
         <label>分析操作对象<select value={runId} disabled={analyzing || sending} onChange={(event) => setRunId(event.target.value)}>
           <option value="">下一次实验（自动分析设置）</option>{runChoices.map((id) => <option key={id} value={id}>{id}</option>)}
         </select></label>
-        <p>{runId ? `正在编辑 ${runId} 的分析覆盖值，不改变下一次实验设置。`
-          : "正在编辑下一次实验的自动分析设置；保存默认值也保存这些参数。完整运行使用这些设置自动分析。"}</p>
+        {runId && <p>正在编辑 {runId} 的分析覆盖值，不改变下一次实验设置。</p>}
         {runId && analysisChanged.length > 0 && <p role="status">分析参数草稿尚未应用，执行分析时生效。预计需重算的已完成步骤：{flow?.analysis
           .filter((stage) => analysisImpacts.includes(stage.id) && analysis?.steps[stage.id]?.status === "completed")
           .map((stage) => `${stage.id} ${stage.title}`).join("、") || "暂无"}。</p>}
@@ -333,7 +329,6 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
           <button className="secondary" disabled={!flow || !analysis || analyzing || sending} onClick={() => setSelectedB(flow?.analysis.map((stage) => stage.id) ?? [])}>选择全部分析步骤</button>
           <button disabled={!flow || !analysis || !selectedB.length || analyzing || sending} onClick={() => void analyze()}>运行所选分析 / 重算</button>
         </div>
-        <p>独立分析绑定所选目录，与硬件会话分开执行；旧数据缺少阶段记录时从 B01 开始。</p>
         {runId && !analysis && <p role="status">正在读取该目录的分析设置…</p>}
         {analysis?.summary?.status === "waiting_calibration" && <p role="status">谱分离已完成，待选择标定曲线后执行增益标定与真值比较。</p>}
         {Boolean(analysis?.summary?.dispersion) && <details><summary>标定来源、条件差异与拟合质量</summary><pre>{JSON.stringify(analysis?.summary?.dispersion, null, 2)}</pre></details>}

@@ -152,7 +152,6 @@ export function ExperimentCatalogPage() {
       <PageHead
         eyebrow="EXPERIMENT CENTER"
         title="实验中心"
-        description="正式 Python 实验使用统一配置与运行入口；已归档实验仅保留卡片，代码和历史数据仍保留。"
         action={<button className="secondary" onClick={() => setManageTags((value) => !value)}>{manageTags ? "完成编辑" : "管理分类与实验信息"}</button>}
       />
       {error && <div className="alert error" role="alert">实验目录加载失败：{error}<button className="secondary" disabled={loading} onClick={() => setReload((value) => value + 1)}>重试</button></div>}

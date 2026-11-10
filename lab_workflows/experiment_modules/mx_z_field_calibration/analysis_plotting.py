@@ -56,7 +56,7 @@ def _plot_frequency_responses(
                 lorentzian_response(dense, *fit["parameters"]),
                 color=COLOR_TRAD,
                 linestyle="--",
-                label="Lorentzian fit",
+                label="Sqrt-Lorentzian fit",
             )
         status = "accepted" if fit["success"] else "excluded"
         axis.set_title(

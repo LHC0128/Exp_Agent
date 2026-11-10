@@ -64,6 +64,8 @@ def test_full_and_stage_analysis_use_same_numbers_and_archive_only_dependants(ri
     if linewidth_mode == "frequency_sweep":
         gate = yaml.safe_load((directory / "results/frequency_gate.yaml").read_text(encoding="utf-8"))
         assert gate["success"] and gate["parameters"][1] == pytest.approx(300, rel=1e-5)
+        assert gate["model_type"] == "sqrt_lorentzian_amplitude"
+        assert gate["gamma_definition"] == "power_hwhm_and_amplitude_3db_half_width"
         assert (directory / "results/frequency_linewidth.png").is_file()
     override = analysis.AnalysisWorkflow(directory, {"LOW_FREQ_SKIP_HZ": 7})
     assert override.states["B01"]["status"] == "completed"

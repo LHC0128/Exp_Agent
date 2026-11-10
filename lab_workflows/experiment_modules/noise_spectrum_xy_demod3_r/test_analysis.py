@@ -92,6 +92,8 @@ def test_full_and_stepwise_original_scientific_results_and_readonly_config(tmp_p
     with np.load(full / "results/r_fit_params.npz") as fit:
         np.testing.assert_allclose(fit["parameters"], expected.fit_parameters, rtol=1e-12, atol=1e-15)
         np.testing.assert_array_equal(fit["fit_mask"], expected.fit_mask)
+    assert result["model_type"] == "bloch_amplitude_modulus"
+    assert result["gamma_definition"] == "bloch_relaxation_parameter_not_control_axis_hwhm"
     assert "S_beta" not in result and "N_S1" not in result
     assert (full / "experiment_config.yaml").read_bytes() == config
     assert json.loads((full / "results/analysis.json").read_text())["units_note"].startswith("R is voltage")

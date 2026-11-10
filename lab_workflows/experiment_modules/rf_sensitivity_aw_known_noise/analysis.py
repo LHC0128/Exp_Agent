@@ -6,7 +6,7 @@ from . import run_format, analysis_steps, stages
 class AnalysisWorkflow(shared.AnalysisWorkflow):
     stages = stages.ANALYSIS
     identity = run_format
-    analysis_version = "direct-aw-known-noise-v4-noise-quality"
+    analysis_version = "direct-aw-known-noise-v5-sqrt-amplitude"
     steps_module = analysis_steps
 
 

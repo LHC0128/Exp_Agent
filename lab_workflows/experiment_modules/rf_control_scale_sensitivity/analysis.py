@@ -13,7 +13,7 @@ class AnalysisWorkflow(shared.AnalysisWorkflow):
     identity = run_format
     stages = stages.ANALYSIS
     steps_module = analysis_steps
-    analysis_version = "rf-control-scale-v6-scale-range-factors"
+    analysis_version = "rf-control-scale-v7-sqrt-amplitude"
 
     def __init__(self, run_dir, analysis_parameters=None):
         # 保留旧分析请求的兼容入口，但局部点数不再参与全曲线色散拟合。

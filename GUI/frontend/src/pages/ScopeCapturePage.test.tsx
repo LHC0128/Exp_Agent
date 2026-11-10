@@ -120,10 +120,10 @@ async function openParameters(id: string) {
 }
 const historyPanel = () => within(screen.getByRole("tabpanel", { name: "历史" }));
 
-it("真实路由提供运行/历史、节点编辑保留、历史叠加波形与超量程诊断、填回参数且预检失败不启动", async () => {
+it("真实路由提供运行/历史/目标接线图三 Tab、节点编辑保留、历史叠加波形与超量程诊断、填回参数且预检失败不启动", async () => {
   page();
   const edit = await openParameters("A03");
-  expect(screen.getAllByRole("tab")).toHaveLength(2);
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
   fireEvent.change(edit.getByLabelText("采集时间 (s)"), { target: { value: "0.02" } });
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));

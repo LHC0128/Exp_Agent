@@ -332,6 +332,17 @@ def test_median_is_not_globally_masked_by_linewidth_or_one_noisy_bin(tmp_path, m
     assert result["comparison_band_Hz"] == [3., 150.]
     assert result["common_band_valid"]
     assert rows[0]["band_exceeds_lorentzian_hwhm"]
+    for row in rows:
+        assert row["frequency_model_type"] == "sqrt_lorentzian_amplitude"
+        assert row["frequency_model"] == "C + A*gamma/sqrt((f-f0)^2+gamma^2)"
+        assert row["frequency_gamma_definition"] == "power_hwhm_and_amplitude_3db_half_width"
+        assert row["frequency_amplitude_hwhm_Hz"] == pytest.approx(np.sqrt(3) * row["lorentzian_hwhm_Hz"])
+        assert row["frequency_amplitude_fwhm_Hz"] == pytest.approx(2 * np.sqrt(3) * row["lorentzian_hwhm_Hz"])
+    for name in ("response_fits.json", "analysis.json", "analysis.yaml"):
+        saved_rows = yaml.safe_load((path / "results" / name).read_text(encoding="utf-8"))["points"]
+        for saved, row in zip(saved_rows, rows, strict=True):
+            assert {key: value for key, value in saved.items() if key.startswith("frequency_")} == {
+                key: value for key, value in row.items() if key.startswith("frequency_")}
     assert all(row["sensitivity_fT_per_sqrtHz"] > 0 for row in rows)
     mask = (frequency >= 3) & (frequency <= 150)
     asd = np.sqrt(spectra["p0000_psd_V2_per_Hz"]) / (rows[0]["slope_V_per_nT"] / 1e6)

@@ -72,10 +72,10 @@ async function show() {
 }
 function expand() { document.querySelectorAll<HTMLDetailsElement>(".xy-node-parameters, .xy-node-parameters details").forEach(node => { node.open = true; }); }
 
-it("真实模型字段全部在实际路由出现，包含可选相位扫描，保持双Tab和原图下载", async () => {
+it("真实模型字段全部在实际路由出现，包含可选相位扫描，保持三Tab和原图下载", async () => {
   await show();
   expect(fields).toContainEqual(expect.objectContaining({ name: "Z_PHASE_SCAN_ENABLED", type: "boolean" }));
-  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史"]);
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   for (const field of fields) {
     const labels = screen.queryAllByText(field.label, { exact: true });
     expect(labels.length, `${field.name}缺少节点编辑入口`).toBeGreaterThan(0);

@@ -108,7 +108,7 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 ## 采集顺序
 
-1. 模式 1 按 `FREQUENCY_START_HZ`、`FREQUENCY_STOP_HZ` 和 `FREQUENCY_POINTS` 扫频，并对 R 拟合带基线 Lorentzian；门槛不合格时停止后续采集。
+1. 模式 1 按 `FREQUENCY_START_HZ`、`FREQUENCY_STOP_HZ` 和 `FREQUENCY_POINTS` 扫频，并对 R 拟合带基线平方根洛伦兹幅度模型；门槛不合格时停止后续采集。
 2. 按 `Y_RF_AMP_START_VPP`、`Y_RF_AMP_STOP_VPP` 和 `Y_RF_AMP_POINTS` 扫描；负幅度通过硬件幅度取绝对值并增加 180° 相位实现。
 3. 每个幅度点和模式 1 频率点都要求 std(R) 不超过 `R_BAD_POINT_STD_THRESHOLD_V`；超限时完整保存该次原始 R 并重新采集，达到 `R_POINT_MAX_ATTEMPTS` 仍失败则停止后继。
 4. 先关闭 Y RF 输出，再将通道切换为 0 V DC 并再次确认 `Output OFF`，按 `NOISE_N_AVG` 和 `NOISE_DURATION_S` 采集 R 时间序列用于 PSD。每段噪声原始数据都记录 `y_rf_dc_v=0.0` 和 `y_rf_output_on=0`。
@@ -117,7 +117,7 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 ## 两种线宽
 
-- frequency_sweep：由 R-Lorentzian 的 gamma 得到真实扫频 HWHM。
+- frequency_sweep：拟合 `R(f)=C+A·γ/√((f−f0)²+γ²)`，γ 是真实扫频的幅度 −3 dB 半宽／功率 HWHM。保留旧 `hwhm_hz` 与 `frequency_sweep_true_hwhm` 键，但它们不是幅度半高半宽；后者为 `√3γ`，幅度 FWHM 为 `2√3γ`。新结果附带 `model_type`、`gamma_definition` 和幅度宽度；历史数据与已有结果不自动重算或改写，见[频率响应拟合清单](frequency_response_fitting.md)。
 - amplitude_equivalent：由 R 的绝对值色散幅度响应拟合得到 gamma_Vpp。仅当 Y_RF_NT_PER_VPP > 0 时才换算为 Rabi/幅度等效 HWHM；该值不是扫频共振线宽。
 
 幅度响应主拟合为
@@ -132,7 +132,7 @@ R(V)=|A(V-V_0)/((V-V_0)^2+\gamma^2)+C|.
 
 ## 灵敏度结果
 
-主结果由零 Y RF 时的 R PSD 除以绝对值色散拟合得到的斜率幅值。若有有效 HWHM，则进行 Lorentzian 频率响应校正。单值灵敏度不再使用固定的 3 Hz 至 HWHM 频段，而是在校正后灵敏度谱上自动识别连续平坦段，再对该区间内未平滑的原始频谱值取中位数。`LOW_FREQ_SKIP_HZ` 只定义自动搜索允许使用的最低候选频率，不再直接作为平坦段下边界。
+主结果由零 Y RF 时的 R PSD 除以绝对值色散拟合得到的斜率幅值。若有有效 γ，则按平方根洛伦兹幅度传递函数乘 `√(1+(f/γ)²)` 校正；该补偿式本身保持不变。单值灵敏度不再使用固定的 3 Hz 至 HWHM 频段，而是在校正后灵敏度谱上自动识别连续平坦段，再对该区间内未平滑的原始频谱值取中位数。`LOW_FREQ_SKIP_HZ` 只定义自动搜索允许使用的最低候选频率，不再直接作为平坦段下边界。
 
 原方法继续写入 `sensitivity.npz` 和 `full_analysis.png`。零点实测数据斜率法独立写入 `sensitivity_zero_point.npz` 和 `full_analysis_zero_point.png`，并在 `analysis.yaml/json` 的 `zero_point_method` 下报告斜率、灵敏度单值、平坦段和有效性。两种方法共用同一份零 RF 噪声 PSD、HWHM 和平坦段识别算法，区别仅在响应斜率来源。公共保存接口同时生成同名矢量 PDF，GUI 保留 PNG 路径；图幅、默认无网格和导出规则遵循[科研绘图规范](../plotting_style.md)，不改变分析结果。
 

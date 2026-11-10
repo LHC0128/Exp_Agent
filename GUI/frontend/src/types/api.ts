@@ -569,6 +569,9 @@ export type RunsResponse = {
   runs: RunSummary[];
 };
 
+export type RunWiringResponse = import("./openapi").components["schemas"]["RunWiringResponse"];
+export type WiringGraph = import("./openapi").components["schemas"]["WiringGraph"];
+
 // 任意波模块契约从后端 OpenAPI 生成，避免手写字段漂移。
 export type ZArbitrarySettings = import("./openapi").components["schemas"]["ZArbitrarySettingsBody"];
 export type ZArbitraryPreview = import("./openapi").components["schemas"]["ZArbitraryPreview"];

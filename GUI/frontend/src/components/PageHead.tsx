@@ -4,7 +4,7 @@ import type { ExperimentDefinition } from "../types/api";
 type PageHeadProps = {
   eyebrow: string;
   title: string;
-  description: string;
+  description?: string;
   action?: ReactNode;
   experiment?: ExperimentDefinition;
 };
@@ -17,10 +17,10 @@ export function PageHead({ eyebrow, title, description, action, experiment }: Pa
         <h1>{title}</h1>
         {experiment ? <details className="experiment-intro">
           <summary>实验说明</summary>
-          <p>{description}</p>
+          {description && <p>{description}</p>}
           {experiment.acquisition_program && <div className="experiment-program"><span>采集程序</span><code>{experiment.acquisition_program}</code></div>}
           {experiment.analysis_program && <div className="experiment-program"><span>分析程序</span><code>{experiment.analysis_program}</code></div>}
-        </details> : <span>{description}</span>}
+        </details> : description ? <span>{description}</span> : null}
       </div>
       {action}
     </header>

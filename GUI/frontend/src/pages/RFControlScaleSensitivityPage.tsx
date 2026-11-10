@@ -1,4 +1,5 @@
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
+import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
@@ -56,7 +57,7 @@ function Result({ value }: { value: Summary }) {
 }
 
 export function RFControlScaleSensitivityPage() {
-  const [tab, setTab] = useState<"run" | "history">("run");
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -156,17 +157,11 @@ export function RFControlScaleSensitivityPage() {
     try { setAnalysisJob(await api<Job>(`/api/runs/${encodeURIComponent(selected.run_id)}/analyze`, { method: "POST", body: JSON.stringify({ experiment_id: ID }) })); }
     catch (reason) { setError(String(reason)); }
   };
-  const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const next = event.key === "Home" ? "run" : event.key === "End" ? "history" : tab === "run" ? "history" : "run";
-    setTab(next); document.getElementById(`scale-tab-${next}`)?.focus();
-  };
 
   return <>
     <PageHead eyebrow="MEASUREMENT · RF SCALE" title={definition?.title ?? "多控制 Scale RF 响应与灵敏度"} description={definition?.description ?? "读取控制、参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
-    <div className="zaw-tab-strip" role="tablist" aria-label="Scale 实验视图" onKeyDown={tabKey}>{(["run", "history"] as const).map(name => <button key={name} id={`scale-tab-${name}`} role="tab" aria-selected={tab === name} tabIndex={tab === name ? 0 : -1} aria-controls={`scale-panel-${name}`} onClick={() => setTab(name)}>{name === "run" ? "运行" : "历史"}</button>)}</div>
+    <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} idPrefix="scale" label="Scale 实验视图" />
     <div id="scale-panel-run" role="tabpanel" aria-labelledby="scale-tab-run" hidden={tab !== "run"}>
       <WorkflowPanel experimentId={ID} analysisParameterPrefix="" analysisParameterKeys={analysisKeys}
         normalizeParameters={normalize} enabled={fields.length > 0} fields={routeFields} layout={layout} setLayout={setLayout}

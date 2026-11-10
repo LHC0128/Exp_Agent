@@ -49,6 +49,7 @@ import { Field, SelectField } from "../components/FormFields";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { PageHead } from "../components/PageHead";
+import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 import { ExperimentNavigation, recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useParameterGuard, useUnsavedChanges } from "../components/NavigationGuard";
 import { Status } from "../components/Status";
@@ -126,6 +127,7 @@ export function GenericExperimentPage() {
   const { experimentId = "static-sensitivity" } = useParams();
   const layoutKey = `exp-agent:${experimentId}:parameter-layout`;
   const collapsedKey = `exp-agent:${experimentId}:advanced-collapsed`;
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<SchemaField[]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -145,7 +147,7 @@ export function GenericExperimentPage() {
   const { hardwareBusy, activeJobs } = useJobActivity();
   useParameterGuard(fields, values, layout, savedLayout);
   useUnsavedChanges(Object.entries(arrayDrafts).some(([name, draft]) => draft !== (Array.isArray(values[name]) ? values[name].join(", ") : "")));
-  useExperimentTask({ ready: fields.length > 0, setJob });
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob });
   const requestedJobId = useRequestedJobId();
 
   useEffect(() => {
@@ -423,12 +425,15 @@ export function GenericExperimentPage() {
     );
   };
 
-  if (definition?.archived) return <section className="experiment-card">
-    <h1>{definition.title}</h1>
-    <p>此实验已归档，GUI 仅保留目录卡片，不提供运行或历史页面。</p>
-    {definition.archive_path && <p>代码归档：<code>{definition.archive_path}</code></p>}
-    <p>参数和历史数据仍保留。</p><Link to="/experiments">返回实验中心</Link>
-  </section>;
+  if (definition?.archived) return <>
+    <section className="experiment-card">
+      <h1>{definition.title}</h1>
+      <p>此实验已归档，GUI 仅保留目录卡片，不提供运行或历史页面。</p>
+      {definition.archive_path && <p>代码归档：<code>{definition.archive_path}</code></p>}
+      <p>参数和历史数据仍保留。</p><Link to="/experiments">返回实验中心</Link>
+    </section>
+    <ExperimentViewTabs experimentId={experimentId} title={definition.title} value="target" onChange={setTab} views={["target"]} />
+  </>;
 
   return (
     <>
@@ -438,6 +443,8 @@ export function GenericExperimentPage() {
         description={definition?.description || "读取实验定义与默认参数。"}
         experiment={definition}
       />
+      <ExperimentViewTabs experimentId={experimentId} title={definition?.title} value={tab} onChange={setTab} views={["run", "target"]} />
+      <div id={`${experimentId}-panel-run`} role="tabpanel" aria-labelledby={`${experimentId}-tab-run`} hidden={tab !== "run"}>
       <section className="experiment-card">
         {definition && (
           <div className="experiment-notes">
@@ -461,6 +468,7 @@ export function GenericExperimentPage() {
         {actionError && <div className="alert error">{actionError}</div>}
       </section>
       <JobView job={job} onUpdate={setJob} />
+      </div>
     </>
   );
 }

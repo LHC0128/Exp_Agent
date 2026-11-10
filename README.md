@@ -46,7 +46,8 @@ GUI 使用上面的 `runtime,instruments,analysis,gui` 组合，不能只安装 
 [`constraints/development.txt`](constraints/development.txt) 固定直接依赖的开发版本，传递依赖仍由 pip 按兼容性解析，
 不是包含所有传递依赖的完整锁文件。根目录 [`requirements.txt`](requirements.txt) 仅是历史环境快照。
 
-安装完成后双击根目录 **`start_gui.bat`** 启动 GUI，详见
+安装完成后双击根目录 **`start_gui.vbs`** 启动 GUI（无终端窗口；`start_gui.bat` 保留为
+兼容入口，会短暂闪一下控制台）。停止服务双击 **`stop_gui.bat`**。详见
 [GUI 基础使用](#gui-基础使用)。没有连接实验仪器时 GUI 也能正常启动，可浏览界面与
 历史数据；运行正式实验前需先在 GUI 中完成设备库与物理量映射配置。
 
@@ -61,8 +62,9 @@ GUI 使用上面的 `runtime,instruments,analysis,gui` 组合，不能只安装 
 ## 开发安装与无硬件检查
 
 开发验证使用独立环境，不升级或覆盖正在运行实验的 `agent_exp_env`。以下命令从仓库根目录执行；
-当前验收组合为 Windows、Python 3.12 和 Node.js 24。项目仍声明支持 Python 3.10，
-约束文件为它提供 NumPy/SciPy 条件版本，但本轮没有实跑 3.10 或 Notebook 组合。
+当前验收组合为 Windows、Python 3.12 和 Node.js 24。项目仍声明支持 Python 3.10；
+约束文件按 Python 版本区分 NumPy、SciPy 和 Matplotlib，保留 3.10 / 3.11 的兼容候选版本，
+但这两个解释器及完整 Notebook 交互流程尚未实跑验证。
 
 ```powershell
 python -m venv .cache/dev-env
@@ -153,7 +155,7 @@ python -m tools.delivery_check --task dev-tools-audit --candidate tools/delivery
 
 - [XY 已知可控噪声谱](docs/experiments/noise_spectrum_xy_ctrl_known_noise.md)提供采集/分析两列交互流程：节点编辑、依赖检查、分步会话和重跑；K_Z 手动输入（Hz/V）并保存为本轮快照，增益使用静磁场 v3 历史曲线，未选曲线时完成谱分离并等待标定，保留原脚本和历史数据兼容。
 - [XY 已知不可控 Probe AM 噪声谱](docs/experiments/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md)同样提供分步流程图：A08 专属载波节点、A12 双噪声上传、A14 配对扫描可选 Z 持续注入；分析 B01–B04 独立验收背景与可控响应，移动峰不足时按运行 K/B 输出暂定轴并标记质量未通过。
-- GUI 支持通过根目录 `start_gui.bat` 双击启动；静磁场与 RF DirectAW 提供可执行交互流程图。静磁场节点支持参数编辑、勾选与依赖检查、分步会话和独立阶段分析，保留逐点 DC 连续波形中位数与分组温控。
+- GUI 支持通过根目录 `start_gui.vbs` 无终端双击启动（`start_gui.bat` 兼容），并由 `stop_gui.bat` 停止；静磁场与 RF DirectAW 提供可执行交互流程图。静磁场节点支持参数编辑、勾选与依赖检查、分步会话和独立阶段分析，保留逐点 DC 连续波形中位数与分组温控。
 - [Mx Z 最优控制 RF 灵敏度](docs/experiments/mx_z_optimal_control_rf_sensitivity.md)支持运行/历史双 Tab、节点参数与分步会话，复用原正交校相、R 灵敏度和零 RF 剩磁模式；结束恢复 GS200 原态并保持 Z 控制/共同触发，历史分析无额外覆盖参数。
 - [Mx Z 最优控制 XY 补偿偏置 RF 灵敏度](docs/experiments/mx_z_optimal_control_xy_rf_sensitivity.md)提供 7 个采集/3 个分析节点，保留理论/闭环双来源、中心一次校相及蛇形网格；历史展示原热图与逐点诊断，最佳点只写结果。
 - [Mx Z 最优控制 XY 噪声谱](docs/experiments/mx_z_optimal_control_xy_noise_spectrum.md)提供 7 个采集/3 个分析节点，保留 RF-off 蛇形 DC 网格与原 Welch；历史目录支持独立统计频段覆盖及噪声热图。
@@ -221,7 +223,10 @@ GUI/                      # 本地 Web 实验控制台
   backend/                # FastAPI API、任务队列与 SSE
   frontend/               # React + TypeScript + Vite
   start.ps1               # 后端与前端开发服务启动器
-start_gui.bat             # Windows 双击启动前后端并打开浏览器
+  stop.ps1                # 停止 Vite 并请求后端优雅收尾
+start_gui.vbs             # Windows 双击无终端启动前后端并打开浏览器
+start_gui.bat             # 兼容入口，转调 start_gui.vbs
+stop_gui.bat              # Windows 双击停止前后端
 data/                     # 原始实验数据
 results/                  # 结果图表
 old/experiments/          # 已归档实验的代码、正式测试与恢复说明
@@ -302,23 +307,28 @@ TOPTICA DLC pro Probe 激光、DG4000、DG900 Pro、HF2 / MFLI、SDS 示波器�
 
 ### 启动 GUI
 
-完成首次安装后，双击仓库根目录的 **`start_gui.bat`**，即可配置 Tailscale 私人 HTTPS
-入口、启动前后端，并在 Vite 就绪后自动打开默认浏览器。也可在仓库根目录运行
-`.\GUI\start.ps1`（默认不自动打开浏览器，附加 `-OpenBrowser` 可开启；仅本机运行、
-无需 Tailscale 时加 `-LocalOnly`）。
+完成首次安装后，双击仓库根目录的 **`start_gui.vbs`**，即可在无终端窗口的情况下配置
+Tailscale 私人 HTTPS 入口、在后台启动 Vite 与 FastAPI 后端，并在 Vite 就绪后自动打开默认
+浏览器。`start_gui.bat` 保留为兼容入口，会短暂闪一下控制台后转入后台。
+停止服务时双击仓库根目录的 **`stop_gui.bat`**：先停止 Vite，再请求后端优雅收尾并等待完成。
+也可在仓库根目录运行 `.\GUI\start.ps1`（默认不自动打开浏览器，附加 `-OpenBrowser` 可开启；
+仅本机运行、无需 Tailscale 时加 `-LocalOnly`；无终端后台模式内部使用 `-Hidden`）。
 
-启动成功后，浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)；Vite 在当前窗口
-运行，将 `/api` 请求代理到独立窗口中的 FastAPI 后端
-[http://127.0.0.1:8000](http://127.0.0.1:8000)，两个服务只监听本机地址。笔记本安装
-Tailscale 并加入同一网络后，可用启动窗口显示的 `https://<本机的 Tailscale 域名>` 远程
-访问，局域网和外网使用同一地址；具体设置与手动命令见
+启动成功后，浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)；Vite 在后台隐藏
+运行，将 `/api` 请求代理到同样隐藏运行的 FastAPI 后端
+[http://127.0.0.1:8000](http://127.0.0.1:8000)，两个服务只监听本机地址。日志分别写入
+`tmp/gui-backend.log`、`tmp/gui-frontend.log` / `tmp/gui-frontend.err.log` 和
+`tmp/gui-launcher.log`。笔记本安装 Tailscale 并加入同一网络后，可用
+`https://<本机的 Tailscale 域名>` 远程访问，局域网和外网使用同一地址；具体设置与手动命令见
 [GUI 远程访问说明](GUI/README.md#笔记本浏览器访问)。
 
-启动器检查 Python、npm、前端依赖、Tailscale 登录状态和 8000 / 5173 端口；缺失依赖或
-端口冲突时报错退出，不杀进程、不自动换端口、不自动安装依赖。按 Ctrl+C 只结束当前
-Vite 进程，关闭或刷新网页也不会停止后台实验。停止后端时应在其独立窗口按 Ctrl+C 并等待：
-后台停止接纳新任务和短硬件操作，取消排队项，向运行任务请求协作停止，等待现有安全收尾、
-部分数据保存和已开始的短操作结束；重复 Ctrl+C 不强退，等待较长时持续报告状态。
+启动器检查 Python、Node/npm、前端依赖、Tailscale 登录状态和 8000 / 5173 端口；缺失依赖或
+端口冲突时报错，不杀进程、不自动换端口、不自动安装依赖。隐藏模式启动失败会弹出错误对话框，
+详情写入 `tmp/gui-launcher.log`。关闭或刷新网页不会停止后台实验；停止服务请双击
+`stop_gui.bat`。收尾期间后端停止接纳新任务和短硬件操作，取消排队项，向运行任务请求协作停止，
+等待现有安全收尾、部分数据保存和已开始的短操作结束；等待较长时会持续报告状态，不用
+“等够时长”作为安全结论。若启动器被强制结束，后端检测到启动器退出后自行收尾；Vite 可能
+残留，可再运行 `stop_gui.bat` 清理。
 修改 Python 后端代码后可在总览页点击“重启后端”（仅在没有运行或排队任务时可用）。
 停止服务前仍应优先通过 GUI 正常停止实验或功能模块；退出等待不代表所有仪器输出已确认安全，
 强杀进程、直接关闭终端和断电不在保证范围。完整边界见

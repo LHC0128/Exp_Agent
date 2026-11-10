@@ -19,7 +19,7 @@ from lab_workflows.workflow_stages import initial_states
 from .analysis_plotting import (_builtin, _load_params, _plot_full_analysis,
     _plot_measured_amplitude_response, analyze_core, analyze as _legacy_analyze)
 
-ANALYSIS_VERSION = "mx-y-r-v1"
+ANALYSIS_VERSION = "mx-y-r-v2-sqrt-amplitude"
 
 
 class AnalysisWorkflow:

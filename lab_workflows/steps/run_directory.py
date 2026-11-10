@@ -15,6 +15,7 @@ import yaml
 from ..common import find_project_root, load_safety_limits
 from ..experiment_runtime import report_run_directory
 from ..instrument_config import instrument_config_snapshot
+from ..wiring import WiringStorageError, read_wiring_snapshot
 
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,17 @@ def create_run_directory(
     raw.mkdir()
     results.mkdir(exist_ok=True)
     config_path = root / "experiment_config.yaml"
+    try:
+        wiring = read_wiring_snapshot(project_root)
+    except WiringStorageError as exc:
+        # 接线记录是附加信息，读取失败不阻塞实验创建，也不伪造空图。
+        wiring_revision = None
+        wiring_snapshot = None
+        wiring_snapshot_error = str(exc)
+    else:
+        wiring_revision = wiring.revision
+        wiring_snapshot = wiring.model_dump(mode="json", exclude={"revision"})
+        wiring_snapshot_error = None
     instrument_snapshot = instrument_config_snapshot(project_root)
     config = {
         "experiment_type": experiment_type,
@@ -106,6 +118,9 @@ def create_run_directory(
         "physical_mapping_revision": instrument_snapshot["physical_mapping_revision"],
         "device_library_snapshot": instrument_snapshot["device_library"],
         "physical_mapping_snapshot": instrument_snapshot["physical_mappings"],
+        "wiring_revision": wiring_revision,
+        "wiring_snapshot": wiring_snapshot,
+        "wiring_snapshot_error": wiring_snapshot_error,
         "safety_limits_snapshot": load_safety_limits(project_root),
         "actual_rates": {},
         "data_files": [],

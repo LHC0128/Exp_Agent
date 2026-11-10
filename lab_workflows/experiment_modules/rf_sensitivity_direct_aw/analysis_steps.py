@@ -59,7 +59,7 @@ def fit_response_curve(x: np.ndarray, y: np.ndarray, *, component="X") -> dict:
 
 
 def fit_bandwidth(directory, config):
-    """加载 A13B 每点 R 均值做洛伦兹拟合；色散等效模式返回 None。"""
+    """加载 A13B 每点 R 均值做平方根洛伦兹拟合；色散等效模式返回 None。"""
     if config["parameters"].get("LINEWIDTH_MODE", "dispersive_equivalent") != "frequency_sweep":
         return None
     path = directory / "raw" / "bandwidth_data.npz"
@@ -93,9 +93,13 @@ def fit_bandwidth(directory, config):
         raise ValueError("带宽扫频原始数据不完整或含非有限值")
     result = fit_lorentzian_response(frequency, response)
     if not result.success or not math.isfinite(result.gamma) or result.gamma <= 0:
-        raise ValueError("带宽扫频洛伦兹拟合质量不合格：" + "；".join(result.rejection_reasons))
+        raise ValueError("带宽扫频平方根洛伦兹拟合质量不合格：" + "；".join(result.rejection_reasons))
     fit_freq = np.linspace(float(frequency.min()), float(frequency.max()), 400)
-    return {"center_Hz": float(result.center), "hwhm_Hz": float(result.gamma), "amplitude_V": float(result.amplitude),
+    return {"model_type": "sqrt_lorentzian_amplitude", "model": result.to_dict()["model"],
+            "gamma_definition": "power_hwhm_and_amplitude_3db_half_width",
+            "amplitude_hwhm_Hz": float(np.sqrt(3.0) * result.gamma),
+            "amplitude_fwhm_Hz": float(2.0 * np.sqrt(3.0) * result.gamma),
+            "center_Hz": float(result.center), "hwhm_Hz": float(result.gamma), "amplitude_V": float(result.amplitude),
             "offset_V": float(result.offset), "r_squared": float(result.r_squared), "gamma_uncertainty_Hz": float(result.uncertainties[1]),
             "n_points": int(frequency.size), "frequency_min_Hz": float(frequency.min()), "frequency_max_Hz": float(frequency.max()),
             "rf_amplitude_vpp": amplitude, "response_component": "R", **selection, "fit_freq_Hz": fit_freq, "fit_r_V": lorentzian_response(fit_freq, *result.parameters)}
@@ -233,7 +237,7 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
             "applied": hwhm_hz is not None,
             "model": "sqrt(1 + (f / f_larmor_Hz)^2)",
             "source": "bandwidth_lorentzian_fit" if bandwidth is not None else "dispersive_gamma",
-            "source_detail": (f"A13B R 均值带宽扫频洛伦兹拟合（中心 {bandwidth['center_Hz']:.6g} Hz）" if bandwidth is not None else f"RF 解调器 {component} 对 Z RF 场色散拟合的 gamma"),
+            "source_detail": (f"A13B R 均值带宽扫频平方根洛伦兹拟合（中心 {bandwidth['center_Hz']:.6g} Hz）" if bandwidth is not None else f"RF 解调器 {component} 对 Z RF 场色散拟合的 gamma"),
             "gamma_nT": hwhm_nT,
             "hwhm_Hz": hwhm_hz,
         },
@@ -284,15 +288,15 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
         positive = frequency > 0
         if quality["n_rejected"]:
             axis.loglog(frequency[positive], before_result.sens_corrected[positive], "--", color="tab:orange", alpha=0.7, label="Unfiltered sensitivity")
-        axis.loglog(frequency[positive], sensitivity[positive], label="Lorentzian-corrected sensitivity" if hwhm_hz is not None else "Estimated sensitivity")
+        axis.loglog(frequency[positive], sensitivity[positive], label="Sqrt-Lorentzian amplitude-corrected sensitivity" if hwhm_hz is not None else "Estimated sensitivity")
         axis.loglog(frequency[positive], sensitivity_raw[positive], color="gray", linewidth=0.7, alpha=0.5, label="Raw sensitivity")
         if flat_mask.any():
             axis.plot(frequency[flat_mask], sensitivity[flat_mask], color="darkgreen", lw=1.6, label=f"Flat band {flat_min:.0f}–{flat_max:.0f} Hz")
         if math.isfinite(median):
             axis.axhline(median, color="darkgreen", linestyle="--", alpha=0.7, label=f"Median = {median:.3g} fT/√Hz")
         if hwhm_hz is not None:
-            axis.axvline(hwhm_hz, color="tab:orange", linestyle=":", alpha=0.7, label=f"HWHM = {hwhm_hz:.0f} Hz")
-        axis.set(xlabel="Frequency (Hz)", ylabel="Sensitivity (fT/√Hz)", title=f"{component} calibration / X noise sensitivity" + (" (Lorentzian corrected)" if hwhm_hz is not None else " (estimated, uncorrected)"))
+            axis.axvline(hwhm_hz, color="tab:orange", linestyle=":", alpha=0.7, label=f"Gamma (3 dB half-width) = {hwhm_hz:.0f} Hz")
+        axis.set(xlabel="Frequency (Hz)", ylabel="Sensitivity (fT/√Hz)", title=f"{component} calibration / X noise sensitivity" + (" (amplitude-response corrected)" if hwhm_hz is not None else " (estimated, uncorrected)"))
         # 与静磁场灵敏度分析一致：横轴只到 max(2×HWHM, 平坦段上限, 1000 Hz)，不再铺满全频段
         x_max = max(2.0 * (hwhm_hz or 0.0), flat_max if math.isfinite(flat_max) else 0.0, 1000.0)
         axis.set_xlim(0.5, x_max)
@@ -308,12 +312,12 @@ def sensitivity_and_plots(directory, config, nperseg_config, *, identity=run_for
 
     def bandwidth_plot(axis):
         axis.plot(frequency_bw, response_bw, "o", ms=3, label="RF demodulator R (bandwidth sweep)")
-        axis.plot(bandwidth["fit_freq_Hz"], bandwidth["fit_r_V"], "k--", label=f"Lorentzian fit (R²={bandwidth['r_squared']:.3f})")
+        axis.plot(bandwidth["fit_freq_Hz"], bandwidth["fit_r_V"], "k--", label=f"Sqrt-Lorentzian fit (R²={bandwidth['r_squared']:.3f})")
         axis.axvline(bandwidth["center_Hz"], color="gray", linestyle=":", alpha=0.5)
-        annotation = (f"Center = {bandwidth['center_Hz']:.6g} Hz\nHWHM = {bandwidth['hwhm_Hz']:.6g} Hz\n"
+        annotation = (f"Center = {bandwidth['center_Hz']:.6g} Hz\nGamma (3 dB half-width) = {bandwidth['hwhm_Hz']:.6g} Hz\n"
                       f"RF amplitude = {bandwidth['rf_amplitude_vpp']:.6g} Vpp")
         axis.text(0.02, 0.96, annotation, transform=axis.transAxes, va="top", ha="left", fontsize=8, bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8, "edgecolor": "0.7"})
-        axis.set(xlabel="RF frequency (Hz)", ylabel="RF demodulator R (V)", title="R bandwidth Lorentzian fit")
+        axis.set(xlabel="RF frequency (Hz)", ylabel="RF demodulator R (V)", title="R bandwidth sqrt-Lorentzian fit")
         axis.grid(True, alpha=0.3)
         axis.legend(fontsize=8)
 

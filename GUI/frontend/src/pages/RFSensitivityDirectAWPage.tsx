@@ -1,6 +1,7 @@
 import { historyParameterValues } from "./experimentHelpers";
 import { preflightMessage, type PreflightResult } from "./experimentHelpers";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
+import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
@@ -112,7 +113,7 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   const title = isKnownNoise ? "已知噪声下 RF 灵敏度（DirectAW）" : "RF 灵敏度（DirectAW）";
   const responseLabel = "X 响应";
   const summaryUrl = (runId: string) => `${BASE}/runs/${encodeURIComponent(runId)}/summary`;
-  const [tab, setTab] = useState<"run" | "history">("run");
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -354,22 +355,11 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
     }
   };
 
-  const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-    event.preventDefault();
-    const order = ["run", "history"] as const;
-    const index = order.indexOf(tab as typeof order[number]);
-    const next = order[(index + (event.key === "ArrowRight" ? 1 : order.length - 1)) % order.length];
-    setTab(next);
-    event.currentTarget.querySelector<HTMLButtonElement>(`#rf-aw-tab-${next}`)?.focus();
-  };
 
   return <>
     <PageHead eyebrow="MEASUREMENT · RF" title={definition?.title ?? title} description={definition?.description ?? "读取参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
-    <div className="zaw-tab-strip" role="tablist" aria-label={`${title}视图`} onKeyDown={tabKey}>
-      {(["run", "history"] as const).map(item => <button key={item} id={`rf-aw-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`rf-aw-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : "历史"}</button>)}
-    </div>
+    <ExperimentViewTabs experimentId={ID} title={definition?.title ?? title} value={tab} onChange={setTab} idPrefix="rf-aw" label={`${title}视图`} />
     <div id="rf-aw-panel-run" role="tabpanel" aria-labelledby="rf-aw-tab-run" hidden={tab !== "run"}>
       <WorkflowPanel experimentId={ID} analysisParameterPrefix="" analysisParameterKeys={analysisParameterKeys}
         normalizeParameters={commonTriggerParameters} enabled={fields.length > 0}
@@ -386,7 +376,6 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
             <button className="secondary" disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
             <button disabled={starting || jobActive || hardwareBusy || analysisActive || comparisonBusy || !fields.length} onClick={() => void check(true)}>{starting ? "正在启动…" : "预检并运行实验"}</button>
           </div>
-          <p>在流程节点编辑参数。保存下一次实验参数与统一分类，历史目录的分析覆盖值独立保留。</p>
           {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
           {notice && <p role="status">{notice}</p>}
           <div className="xy-workflow-preview" aria-label="RF 采集预览">

@@ -203,7 +203,7 @@ def install_rig(root, monkeypatch, params=None, *, progress=False):
         rf_config = mapping["rf_coil"]
         frequency = rig.generators[rf_config["resource"]].frequency[rf_config["channel"]]
         center = 90000 + 1000 * (rig.gs200.current * 1000 - 7)
-        mean = 0.1 + 0.5 * 300**2 / ((frequency - center)**2 + 300**2)
+        mean = 0.1 + 0.5 / np.sqrt(1 + ((frequency - center) / 300)**2)
         values = np.full(max(8, config.grid_cols), mean)
         if rig.bad_quality:
             values[::2] += 0.1

@@ -180,7 +180,7 @@ def evaluate_mx_y_rf_point(
         )
         if not linewidth_fit.success:
             result["invalid_reasons"] = [
-                "模式1 R-Lorentzian 拟合质量不合格: "
+                "模式1 R-sqrt-Lorentzian 拟合质量不合格: "
                 + "；".join(linewidth_fit.rejection_reasons)
             ]
             result.update(

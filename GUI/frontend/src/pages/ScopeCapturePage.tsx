@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 import { ChartNoAxesCombined, Eye, EyeOff, Play, RefreshCw, RotateCcw, Save, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { JobView } from "../components/JobView";
@@ -53,7 +54,7 @@ function LatestResult({ value }: { value: WorkflowRunSummary }) {
 }
 
 export function ScopeCapturePage() {
-  const [tab, setTab] = useState<"run" | "history">("run");
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -252,26 +253,13 @@ export function ScopeCapturePage() {
   const loadedRuns = selected.map(id => records[id]).filter(Boolean);
   const newest = loadedRuns[loadedRuns.length - 1];
 
-  const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-    event.preventDefault();
-    const order = ["run", "history"] as const;
-    const index = order.indexOf(tab);
-    setTab(order[(index + (event.key === "ArrowRight" ? 1 : order.length - 1)) % order.length]);
-    event.currentTarget.querySelector<HTMLButtonElement>(`#scope-tab-${tab === "run" ? "history" : "run"}`)?.focus();
-  };
 
   return <>
     <PageHead eyebrow="MEASUREMENT · SCOPE" title={definition?.title ?? "示波器采集"}
       description={definition?.description ?? "读取参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
     {notice && <div className="alert success" role="status">{notice}</div>}
-    <div className="zaw-tab-strip" role="tablist" aria-label="示波器采集视图" onKeyDown={tabKey}>
-      {(["run", "history"] as const).map(item => <button key={item} id={`scope-tab-${item}`} role="tab"
-        aria-selected={tab === item} aria-controls={`scope-panel-${item}`} tabIndex={tab === item ? 0 : -1}
-        className={tab === item ? "active" : ""} onClick={() => setTab(item)}>
-        {item === "run" ? "运行" : "历史"}</button>)}
-    </div>
+    <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} idPrefix="scope" label="示波器采集视图" />
     <div id="scope-panel-run" role="tabpanel" aria-labelledby="scope-tab-run" hidden={tab !== "run"}>
       <WorkflowPanel enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout}
         setNotice={setNotice} parametersDisabled={parametersBusy || starting || saving} values={values} setValues={setValues}
@@ -287,7 +275,6 @@ export function ScopeCapturePage() {
             <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>
               {starting ? "处理中…" : "预检并运行实验"}</button>
           </div>
-          <p>在流程节点编辑参数。此处保存下一次实验的全部参数和统一的基础／高级分类，不保存历史分析覆盖值。</p>
           {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
           {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}
           {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}

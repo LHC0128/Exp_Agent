@@ -214,7 +214,7 @@ def _acquire_frequency_scan(
     with (run_dir.results / "frequency_gate.yaml").open("w", encoding="utf-8") as stream:
         yaml.safe_dump(fit.to_dict(), stream, allow_unicode=True, sort_keys=False)
     if not fit.success:
-        raise RPointQualityError("模式1 R-Lorentzian 拟合质量不合格: " + "；".join(fit.rejection_reasons))
+        raise RPointQualityError("模式1 R-sqrt-Lorentzian 拟合质量不合格: " + "；".join(fit.rejection_reasons))
     return fit.to_dict()
 
 def _acquire_amplitude_scan(

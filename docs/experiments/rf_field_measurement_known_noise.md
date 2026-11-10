@@ -114,7 +114,7 @@ A13B 保持 `BW_FREQ_START`、`BW_FREQ_STOP`、`BW_FREQ_POINTS` 定义的原始�
 
 每个控制子运行保持独立 `raw/` 与 `results/` 契约。父子参数快照保留完整补偿映射，各自 XY 原始文件记录实际 `control_scale_factor` 和缩放后的包络，理论源列不改写；旧运行缺补偿按 1。历史填回会清除当前额外补偿，使用该次快照或模型声明的单位兼容值，不从当前默认值猜测。实际噪声 PSD、实际采样率、RF 载频与任意波重复频率分别记录；任意波的仪器频率回读不是 RF 载频。
 
-离线入口为 `experiments/RF_Field_Sensitivity_AW_Known_Noise_plot.py <run_dir>`，无需控制波形来源目录或在线仪器。响应斜率、Welch、MAD 异常谱筛选和频响补偿共用 DirectAW 算法，逐版本计算后叠加展示，结果采用 `lab_workflows.plotting` 的 `paper` 配置与英文图注。分析重算归档受影响结果，保留仍使用的前置。
+离线入口为 `experiments/RF_Field_Sensitivity_AW_Known_Noise_plot.py <run_dir>`，无需控制波形来源目录或在线仪器。响应斜率、Welch、MAD 异常谱筛选和频响补偿共用 DirectAW 算法，逐版本计算后叠加展示，结果采用 `lab_workflows.plotting` 的 `paper` 配置与英文图注。A13B 的平均 R 频扫共用平方根洛伦兹幅度模型 `C+A·γ/√((f−f0)²+γ²)`；γ 为幅度 −3 dB 半宽／功率 HWHM，幅度半高半宽另为 `√3γ`。新结果记录模型与宽度定义，旧数值键保留；PSD 计算不改为幅度拟合。本次不执行历史重分析，不自动修改历史数据与已有结果；仅显式重分析时归档受影响结果，保留仍使用的前置。见[频率响应拟合清单](frequency_response_fitting.md)。
 
 离线分析兼容本实验参数 `schema_version` 为 2、3、4 的运行；版本 4 取消手动噪声幅度参数，响应与噪声原始记录仍沿用既有格式。父运行和各控制子运行均核对实验身份、采集方法、采集完成与校相通过状态，分析使用各自保存的参数，不迁移或降级历史配置。
 

@@ -114,7 +114,7 @@ def fit_response_peak_excluding_spurs(freqs, response):
     return result
 
 def fit_lorentzian(freqs, response):
-    """拟合 C + A*g²/((f-f0)²+g²)，失败时保留最大点。"""
+    """拟合 C + A*g/sqrt((f-f0)²+g²)，g 为功率 HWHM；失败保留最大点。"""
     freqs = np.asarray(freqs, dtype=float)
     response = np.asarray(response, dtype=float)
     valid = np.isfinite(freqs) & np.isfinite(response)
@@ -136,13 +136,17 @@ def fit_lorentzian(freqs, response):
     gamma0 = max(span / 10.0, step)
 
     def model(freq, baseline, amplitude, center, hwhm):
-        return baseline + amplitude * hwhm ** 2 / ((freq - center) ** 2 + hwhm ** 2)
+        return baseline + amplitude * hwhm / np.hypot(freq - center, hwhm)
     try:
         popt, pcov = scipy_optimize.curve_fit(model, f, r, p0=[baseline0, amplitude0, float(f[max_idx]), gamma0], bounds=([-np.inf, 0.0, float(f.min()), max(step * 0.1, 0.001)], [np.inf, 20.0 * max(float(np.ptp(r)), amplitude0), float(f.max()), max(span, step)]), maxfev=30000)
         predicted = model(f, *popt)
         grid = np.linspace(float(f.min()), float(f.max()), 800)
         perr = np.sqrt(np.diag(pcov))
-        out.update({'success': True, 'center_Hz': float(popt[2]), 'center_unc_Hz': float(perr[2]), 'fwhm_Hz': float(2.0 * popt[3]), 'rmse_V': float(np.sqrt(np.mean((r - predicted) ** 2))), 'fit_freq_Hz': grid, 'fit_response_V': model(grid, *popt), 'message': 'ok'})
+        out.update({'success': True, 'center_Hz': float(popt[2]), 'center_unc_Hz': float(perr[2]), 'fwhm_Hz': float(2.0 * popt[3]),
+                    'gamma_Hz': float(popt[3]), 'width_definition': 'power_fwhm_and_amplitude_3db_full_width',
+                    'amplitude_hwhm_Hz': float(np.sqrt(3.0) * popt[3]), 'amplitude_fwhm_Hz': float(2.0 * np.sqrt(3.0) * popt[3]),
+                    'model': 'single_sqrt_lorentzian', 'model_formula': 'C + A*gamma/sqrt((f-f0)^2+gamma^2)',
+                    'rmse_V': float(np.sqrt(np.mean((r - predicted) ** 2))), 'fit_freq_Hz': grid, 'fit_response_V': model(grid, *popt), 'message': 'ok'})
     except Exception as exc:
         out['message'] = f'''fit failed: {type(exc).__name__}: {exc}'''
     return out
@@ -193,16 +197,17 @@ def fit_bloch_response(freqs, response):
         out['message'] = 'all Bloch fit restarts failed'
         return out
     rmse, popt, pcov = best
+    out.update(gamma_Hz=float(popt[2]), width_definition='legacy_2gamma_not_exact_bloch_amplitude_fwhm')
     perr = np.sqrt(np.diag(pcov))
     grid = np.linspace(f_min, f_max, 800)
     out.update({'success': True, 'center_Hz': float(popt[3]), 'center_unc_Hz': float(perr[3]), 'fwhm_Hz': float(2.0 * popt[2]), 'rmse_V': rmse, 'fit_freq_Hz': grid, 'fit_response_V': model(grid, *popt), 'message': 'ok'})
     return out
 
 def fit_response_peak(freqs, response):
-    """优先使用物理 Bloch 模型，并以 Lorentzian/最大点作为稳健回退。"""
+    """优先使用物理 Bloch 幅度模型，并以平方根洛伦兹/最大点回退。"""
     bloch = fit_bloch_response(freqs, response)
     lorentz = fit_lorentzian(freqs, response)
-    lorentz['model'] = 'single_lorentzian'
+    lorentz['model'] = 'single_sqrt_lorentzian'
     if bloch['success'] and lorentz['success']:
         selected = bloch if bloch['rmse_V'] <= 1.5 * lorentz['rmse_V'] else lorentz
     elif bloch['success']:
@@ -423,7 +428,7 @@ def evaluate(run_dir):
     def fit_summary_for_voltage(voltage, result):
         fit = result['primary_fit']
         idx = int(np.where(np.isclose(envelope_values, voltage))[0][0])
-        return {'envelope_voltage_V': float(voltage), 'primary_method': result['primary_method'], 'center_Hz': float(fit['center_Hz']), 'center_unc_Hz': float(fit['center_unc_Hz']) if np.isfinite(fit['center_unc_Hz']) else None, 'fwhm_Hz': float(fit['fwhm_Hz']) if np.isfinite(fit['fwhm_Hz']) else None, 'max_bin_Hz': float(fit['max_bin_Hz']), 'unfiltered_max_bin_Hz': float(result['unfiltered_primary_max']['frequency_Hz']), 'unfiltered_max_response_V': float(result['unfiltered_primary_max']['response_V']), 'excluded_spur_was_raw_max': bool(result['excluded_spur_was_raw_max']), 'near_excluded_band': bool(result['near_excluded_band']), 'sweep_boundary_limited': bool(sweep_boundary_limited[idx]), 'upper_sweep_boundary_limited': bool(upper_sweep_limited[idx]), 'lower_sweep_boundary_limited': bool(lower_sweep_limited[idx]), 'included_in_calibration_fit': bool(calibration_fit_mask[idx]), 'calibration_exclusion_reason': calibration_exclusion_reasons[idx], 'excluded_frequency_points_Hz': fit['excluded_frequency_points_Hz'], 'fit_success': bool(fit['success']), 'fit_model': fit.get('model', 'max_bin'), 'fit_message': fit['message']}
+        return {'envelope_voltage_V': float(voltage), 'primary_method': result['primary_method'], 'center_Hz': float(fit['center_Hz']), 'center_unc_Hz': float(fit['center_unc_Hz']) if np.isfinite(fit['center_unc_Hz']) else None, 'fwhm_Hz': float(fit['fwhm_Hz']) if np.isfinite(fit['fwhm_Hz']) else None, 'max_bin_Hz': float(fit['max_bin_Hz']), 'unfiltered_max_bin_Hz': float(result['unfiltered_primary_max']['frequency_Hz']), 'unfiltered_max_response_V': float(result['unfiltered_primary_max']['response_V']), 'excluded_spur_was_raw_max': bool(result['excluded_spur_was_raw_max']), 'near_excluded_band': bool(result['near_excluded_band']), 'sweep_boundary_limited': bool(sweep_boundary_limited[idx]), 'upper_sweep_boundary_limited': bool(upper_sweep_limited[idx]), 'lower_sweep_boundary_limited': bool(lower_sweep_limited[idx]), 'included_in_calibration_fit': bool(calibration_fit_mask[idx]), 'calibration_exclusion_reason': calibration_exclusion_reasons[idx], 'excluded_frequency_points_Hz': fit['excluded_frequency_points_Hz'], 'fit_success': bool(fit['success']), 'fit_model': fit.get('model', 'max_bin'), 'fit_message': fit['message'], **{key: fit[key] for key in ('gamma_Hz', 'width_definition', 'amplitude_hwhm_Hz', 'amplitude_fwhm_Hz', 'model_formula') if key in fit}}
     analysis = {'experiment_type': EXPERIMENT_TYPE, 'data_dir': str(DATA_DIR), 'primary_response_method': 'hardware Demod3 with fixed-spur masking; offline lock-in fallback', 'fixed_spur_filter': {'excluded_bands_Hz': [list(band) for band in FIXED_SPUR_BANDS_HZ], 'proximity_margin_Hz': SPUR_PROXIMITY_MARGIN_HZ, 'reason': '0713 数据确认 20 kHz 分量在不同 Z 驱动频率下持续存在，属于固定相干杂散，不作为标定峰。'}, 'calibration_point_filter': {'method': 'exclude failed/lower-boundary fits; after the first |V_env| whose peak reaches the upper sweep edge, exclude that magnitude and all larger magnitudes', 'sweep_edge_margin_steps': SWEEP_EDGE_MARGIN_STEPS, 'minimum_abs_voltage_threshold_V': ABS_FIT_MIN_V, 'first_upper_limited_abs_voltage_V': first_upper_limited_abs_voltage_V if np.isfinite(first_upper_limited_abs_voltage_V) else None, 'fit_abs_voltage_range_V': [fit_min_included_abs_voltage_V, fit_max_abs_voltage_V] if np.isfinite(fit_min_included_abs_voltage_V) and np.isfinite(fit_max_abs_voltage_V) else None, 'included_voltage_points_V': [float(value) for value in envelope_values[calibration_fit_mask]], 'excluded_voltage_points': [{'envelope_voltage_V': float(envelope_values[idx]), 'reason': calibration_exclusion_reasons[idx]} for idx in np.where(~calibration_fit_mask)[0]]}, 'n_voltage_points': int(len(envelope_values)), 'voltage_range_V': [float(envelope_values.min()), float(envelope_values.max())], 'fixed_aw_output': config.get('xy_direct_aw_scan', {}), 'per_voltage': [fit_summary_for_voltage(float(voltage), per_voltage[float(voltage)]) for voltage in envelope_values], 'calibration_models': {'signed_global': {'formula': 'f_peak_Hz = K_signed * V_env + B_signed', **clean_fit(signed_fit)}, 'positive_branch': {'formula': 'f_peak_Hz = K_pos * V_env + B_pos, valid positive sweep range', **clean_fit(positive_fit)}, 'negative_branch_abs_axis': {'formula': 'f_peak_Hz = K_neg_abs * abs(V_env) + B_neg, valid negative sweep range', **clean_fit(negative_abs_fit)}, 'absolute_voltage_primary': {'formula': 'f_peak_Hz = K_abs * abs(V_env) + B_abs', 'fit_min_abs_voltage_V': ABS_FIT_MIN_V, 'fit_actual_min_abs_voltage_V': fit_min_included_abs_voltage_V if np.isfinite(fit_min_included_abs_voltage_V) else None, 'fit_max_abs_voltage_V': fit_max_abs_voltage_V if np.isfinite(fit_max_abs_voltage_V) else None, **clean_fit(absolute_fit)}}, 'sign_symmetry': pair_rows, 'interpretation_note': '负包络只将正交旋转场整体翻转 180 度；若物理链路线性且无偏置，峰位通常更接近 |V_env| 的函数。主标定已屏蔽固定 20 kHz 杂散；靠近屏蔽带的点仍标记为低可信度。触及扫频上边界的 |V_env| 及更高电压点不参与标定拟合，避免将边界或次峰误认为真实峰。'}
     with open(results_dir / 'analysis.yaml', 'w', encoding='utf-8') as f:
         yaml.safe_dump(analysis, f, allow_unicode=True, sort_keys=False)

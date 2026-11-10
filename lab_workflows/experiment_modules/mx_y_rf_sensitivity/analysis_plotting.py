@@ -222,7 +222,7 @@ def _plot_full_analysis(
             color=COLOR_ORANGE,
             ls=":",
             alpha=0.5,
-            label=f"HWHM: {hwhm_hz:.0f} Hz",
+            label=f"Gamma (3 dB half-width): {hwhm_hz:.0f} Hz",
         )
     format_axis(
         ax2,
@@ -552,7 +552,7 @@ def analyze_core(
             ),
             "--",
             color=COLOR_TRAD,
-            label="R-Lorentzian fit",
+            label="R sqrt-Lorentzian fit",
         )
         format_axis(
             ax,

@@ -3,17 +3,17 @@ import { api } from "../api";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useUnsavedChanges } from "../components/NavigationGuard";
+import { ExperimentViewPanel, ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 import { StaticSensitivityDashboard } from "../components/StaticSensitivityDashboard";
 import { StaticSensitivityHistory } from "../components/StaticSensitivityHistory";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
 import "./zawClosedLoop.css";
 
-type Tab = "run" | "history";
 const ID = "static-sensitivity";
 
 export function StaticSensitivityPage() {
-  const [tab, setTab] = useState<Tab>("run");
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [layout, setLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
@@ -27,8 +27,20 @@ export function StaticSensitivityPage() {
   useEffect(() => { let disposed = false; api<JobSummary[]>("/api/jobs").then(async (items) => { const match = recoverableJob(items, ID, requestedJobId); if (disposed || !match) return; try { const detail = await api<Job>(`/api/jobs/${match.id}`); if (!disposed) setJob(detail); } catch { /* 任务详情不可用时保持空状态。 */ } }).catch(() => undefined); return () => { disposed = true; }; }, []);
   const description = useMemo(() => definition?.description ?? "读取实验定义与默认参数。", [definition]);
   const layoutDirty = fields.length > 0 && !sameParameterLayout(layout, savedLayout);
+  // 常驻运行页按活会话保护参数；页面层只补充尚未保存的布局。
   useUnsavedChanges(layoutDirty);
   useExperimentTask({ ready: fields.length > 0, setTab });
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => { if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return; const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')); const index = tabs.findIndex((item) => item === document.activeElement); if (index < 0) return; const next = (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length; tabs[next].focus(); setTab(tabs[next].dataset.tab as Tab); };
-  return <><PageHead eyebrow="EXPERIMENT · STATIC_SENSITIVITY" title={definition?.title ?? "正在载入实验"} description={description} experiment={definition} />{loadError && <div className="alert error">实验参数加载失败：{loadError}</div>}{definition && fields.length > 0 && <><div className="zaw-tab-strip" role="tablist" aria-label="静磁场灵敏度实验视图" onKeyDown={handleKeyDown}>{(["run", "history"] as Tab[]).map((item) => <button key={item} role="tab" data-tab={item} aria-selected={tab === item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : "历史"}</button>)}</div><div hidden={tab !== "run"}><StaticSensitivityDashboard experimentId={ID} definition={definition} fields={fields} layout={layout} layoutDirty={layoutDirty} onLayoutChange={setLayout} onLayoutSaved={(next, savedFields) => { setLayout(next); setSavedLayout(next); setFields(savedFields); }} values={values} setValues={setValues} job={job} setJob={setJob} prefill={prefill} clearPrefill={() => setPrefill(null)} /></div>{tab === "history" && <StaticSensitivityHistory experimentId={ID} fields={fields} onFillBack={(parameters) => setPrefill(parameters as ParameterValues)} onJumpToRun={() => setTab("run")} />}</>}</>;
+  return <>
+    <PageHead eyebrow="EXPERIMENT · STATIC_SENSITIVITY" title={definition?.title ?? "正在载入实验"} description={description} experiment={definition} />
+    {loadError && <div className="alert error">实验参数加载失败：{loadError}</div>}
+    <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} label="静磁场灵敏度实验视图" />
+    {definition && fields.length > 0 && <>
+      <div id={`${ID}-panel-run`} role="tabpanel" aria-labelledby={`${ID}-tab-run`} hidden={tab !== "run"}>
+        <StaticSensitivityDashboard experimentId={ID} definition={definition} fields={fields} layout={layout} layoutDirty={layoutDirty} onLayoutChange={setLayout} onLayoutSaved={(next, savedFields) => { setLayout(next); setSavedLayout(next); setFields(savedFields); }} values={values} setValues={setValues} job={job} setJob={setJob} prefill={prefill} clearPrefill={() => setPrefill(null)} />
+      </div>
+      <ExperimentViewPanel active={tab === "history"} id={`${ID}-panel-history`} labelledBy={`${ID}-tab-history`}>
+        <StaticSensitivityHistory experimentId={ID} fields={fields} onFillBack={(parameters) => setPrefill(parameters as ParameterValues)} onJumpToRun={() => setTab("run")} />
+      </ExperimentViewPanel>
+    </>}
+  </>;
 }

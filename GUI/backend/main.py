@@ -20,6 +20,20 @@ from pydantic import BaseModel, Field
 from lab_workflows.clock_sync import initialize_output_loads, synchronize_clocks
 from lab_workflows.common import find_project_root, load_mapping
 from lab_workflows.devices import discover_devices
+from lab_workflows.device_ports import (
+    DevicePortsStorageError,
+    read_device_ports,
+    save_device_ports,
+)
+from lab_workflows.wiring import (
+    WiringGraph,
+    WiringRevision,
+    WiringStorageError,
+    compare_wiring,
+    read_wiring,
+    read_wiring_revision,
+    save_wiring,
+)
 from lab_workflows.instrument_control import (
     ControlRevisionConflict,
     apply_control_target_current_source,
@@ -195,6 +209,12 @@ from .schemas import (
     CurrentSourceSettingsBody,
     DeviceSnapshot,
     DeviceSummary,
+    DevicePortsBody,
+    DevicePortsResponse,
+    WiringBody,
+    WiringCompareBody,
+    WiringComparison,
+    WiringResponse,
     ExperimentArchiveBody,
     RFDirectAWCompareBody,
     RFDirectAWRunItem,
@@ -254,7 +274,8 @@ def _workflow_session_services():
     )
 
 
-app = FastAPI(title="Bell-Bloom 实验控制台", version="0.1.0", lifespan=lifespan)
+# 接线图线缆字段仅在序列化时省略 null，校验结构不变；合并输入/输出 schema 以保留既有公开类型名。
+app = FastAPI(title="Bell-Bloom 实验控制台", version="0.1.0", lifespan=lifespan, separate_input_output_schemas=False)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -504,6 +525,21 @@ class RestartResponse(BaseModel):
     status: str
 
 
+class RunWiringResponse(BaseModel):
+    """运行时记录的接线快照；只读，不代表硬件实际状态。"""
+
+    available: bool
+    recorded_revision: str | None = None
+    recorded_at: str | None = None
+    site: WiringGraph | None = None
+    targets: dict[str, WiringGraph] | None = None
+    current_revision: str | None = None
+    matches_current: bool | None = None
+    current_error: str | None = None
+    reason: str | None = None
+    note: str
+
+
 def _job_or_404(job_id: str) -> Job:
     try:
         return manager.get(job_id)
@@ -641,6 +677,61 @@ def update_control_tec(mapping_key: str, body: ControlTecBody):
 @app.get("/api/device-library")
 def device_library():
     return public_device_library(ROOT)
+
+
+@app.get("/api/device-ports", response_model=DevicePortsResponse)
+def device_ports() -> DevicePortsResponse:
+    """端口档案只读人工元数据，不获取硬件锁或读取仪器。"""
+    try:
+        return read_device_ports(ROOT)
+    except DevicePortsStorageError as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@app.put("/api/device-ports", response_model=DevicePortsResponse)
+def update_device_ports(body: DevicePortsBody) -> DevicePortsResponse:
+    """独立修订锁仅保护端口文件，不复用设备配置/硬件任务锁。"""
+    try:
+        return save_device_ports(ROOT, body)
+    except RevisionConflict as exc:
+        raise _conflict(str(exc), "revision_conflict") from exc
+    except DevicePortsStorageError as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@app.get("/api/wiring", response_model=WiringResponse)
+def wiring() -> WiringResponse:
+    """只读投影现场/目标图的用途跟随状态，不接触硬件或写入配置。"""
+    try:
+        return read_wiring(ROOT)
+    except WiringStorageError as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@app.get("/api/wiring/revision", response_model=WiringRevision)
+def wiring_revision() -> WiringRevision:
+    """只读组合修订；不投影接线图、不计算提示，不接触硬件。"""
+    try:
+        return read_wiring_revision(ROOT)
+    except WiringStorageError as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@app.put("/api/wiring", response_model=WiringResponse)
+def update_wiring(body: WiringBody) -> WiringResponse:
+    """只保存接线图；方向/光电提示不阻止人工记录。"""
+    try:
+        return save_wiring(ROOT, body)
+    except RevisionConflict as exc:
+        raise _conflict(str(exc), "revision_conflict") from exc
+    except WiringStorageError as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@app.post("/api/wiring/compare", response_model=WiringComparison)
+def wiring_comparison(body: WiringCompareBody) -> WiringComparison:
+    """仅计算传入快照的连线与人工模式差异，不写磁盘。"""
+    return compare_wiring(body.site, body.target)
 
 
 @app.put("/api/lockin-selection")
@@ -1319,6 +1410,80 @@ def _assert_run_identity(experiment_id: str, path: Path) -> None:
     config = _read_yaml(path / "experiment_config.yaml")
     if config and config.get("experiment_id") not in (None, experiment_id):
         raise HTTPException(404, "运行目录与实验身份不匹配")
+
+
+_RUN_WIRING_NOTE = "运行记录中的接线快照，不代表当时硬件实际状态或安全校验"
+_OLD_RUN_WIRING_REASON = "该运行早于接线快照记录，未保存当时的接线图"
+
+
+def _recorded_wiring(
+    config: dict[str, Any],
+) -> tuple[bool, WiringGraph | None, dict[str, WiringGraph] | None, str | None]:
+    """只解析运行配置中的记录快照；缺失、失败与损坏分别说明原因。"""
+    if "wiring_snapshot" not in config:
+        return False, None, None, _OLD_RUN_WIRING_REASON
+    stored = config["wiring_snapshot"]
+    if stored is None:
+        error = config.get("wiring_snapshot_error")
+        detail = f"：{error}" if isinstance(error, str) and error.strip() else ""
+        return False, None, None, f"运行创建时未能记录接线快照{detail}"
+    try:
+        if not isinstance(stored, dict):
+            raise ValueError("接线快照必须是映射")
+        if type(stored.get("schema_version")) is not int or stored["schema_version"] != 1:
+            raise ValueError("接线快照 schema_version 必须是整数 1")
+        raw_targets = stored["targets"]
+        if not isinstance(raw_targets, dict):
+            raise ValueError("接线快照 targets 必须是映射")
+        targets = {}
+        for key, graph in raw_targets.items():
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError("接线快照目标图键必须是非空字符串")
+            targets[key] = WiringGraph.model_validate(graph)
+        site = WiringGraph.model_validate(stored["site"])
+    except (KeyError, TypeError, ValueError) as exc:
+        return False, None, None, f"运行记录中的接线快照无法解析：{exc}"
+    return True, site, targets, None
+
+
+@app.get("/api/runs/{experiment_id}/{run_id}/wiring", response_model=RunWiringResponse)
+def run_wiring(experiment_id: str, run_id: str) -> RunWiringResponse:
+    """只读运行创建时记录的接线快照；不补写旧运行，也不改当前接线。"""
+    run_dir = _run_dir(experiment_id, run_id)
+    config = _read_yaml(run_dir / "experiment_config.yaml")
+    if config is None:
+        return RunWiringResponse(
+            available=False, reason="运行配置不可读，无法读取记录的接线快照",
+            current_error=None, note=_RUN_WIRING_NOTE,
+        )
+    recorded_at = config.get("timestamp")
+    if not isinstance(recorded_at, str):
+        recorded_at = None
+    recorded_revision = config.get("wiring_revision")
+    if not isinstance(recorded_revision, str) or not recorded_revision.strip():
+        recorded_revision = None
+    available, site, targets, reason = _recorded_wiring(config)
+    try:
+        current_revision = read_wiring_revision(ROOT).revision
+        current_error = None
+    except WiringStorageError as exc:
+        current_revision = None
+        current_error = str(exc)
+    matches_current = None
+    if available and recorded_revision is not None and current_revision is not None:
+        matches_current = recorded_revision == current_revision
+    return RunWiringResponse(
+        available=available,
+        recorded_revision=recorded_revision,
+        recorded_at=recorded_at,
+        site=site,
+        targets=targets,
+        current_revision=current_revision,
+        matches_current=matches_current,
+        current_error=current_error,
+        reason=reason,
+        note=_RUN_WIRING_NOTE,
+    )
 
 
 def _assert_run_idle(definition, run_id: str):

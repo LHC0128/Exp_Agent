@@ -119,6 +119,7 @@ class BlochFitResult:
             "rmse_v": self.rmse,
             "relative_gamma_uncertainty": self.relative_gamma_uncertainty,
             "hwhm_hz": self.gamma,
+            "gamma_definition": "bloch_relaxation_parameter_and_weak_limit_amplitude_3db_half_width",
             "split": self.split,
             "peak_positions_hz": list(peaks) if peaks is not None else None,
             "valley_response_v": self.valley_response,

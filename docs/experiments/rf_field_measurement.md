@@ -383,13 +383,13 @@ X 响应使用原色散模型：
 `f_larmor_Hz = gamma_nT × LARMOR_PER_NT` 换算为等效频率 HWHM，并按
 `sens_corrected(f) = sens_raw(f) × sqrt(1 + (f / f_larmor_Hz)^2)` 补偿洛伦兹型滚降。
 线宽来源按运行时 `LINEWIDTH_MODE` 决定：`frequency_sweep` 时 B04 要求存在
-`raw/bandwidth_data.npz`，对 R 均值 vs 频率做洛伦兹拟合（复用共享拟合，门槛 R²≥0.85、
-γ 相对不确定度≤0.5、中心在窗内、HWHM 小于窗口跨度一半），拟合 HWHM 直接作为
+`raw/bandwidth_data.npz`，对 R 均值 vs 频率做平方根洛伦兹幅度拟合 `C+A·γ/√((f−f0)²+γ²)`（复用共享拟合，门槛 R²≥0.85、
+γ 相对不确定度≤0.5、中心在窗内、γ 小于窗口跨度一半），拟合 γ 直接作为
 `f_larmor_Hz`，`analysis.yaml` 的 `frequency_response_correction.source` 标为
 `bandwidth_lorentzian_fit`，并输出 `results/bandwidth_fit.png/pdf`；拟合不合格即判质量
 失败可重跑，不静默回退。带宽摘要记录 `response_component=R`，图的纵轴与图例均为 R。
 历史重新分析读取保存的 R 均值；缺失 R、点数不完整或数据非有限时明确拒绝，不用 X 替代。
-分析版本已更新，旧 X 带宽分析缓存会失效，重新执行时按现有归档机制保留旧结果。
+γ 是扣除基线后幅度 −3 dB 半宽／功率 HWHM，不是幅度半高半宽 `√3γ`。新结果保留 `hwhm_Hz` 等旧键并记录模型、γ 定义和幅度半高宽；补偿式本身不变。分析版本区分新旧算法，但本次不读取或执行历史重分析，不自动改写历史数据或已有结果；仅用户显式重分析时按现有归档机制保留旧结果。模型分类见[频率响应拟合清单](frequency_response_fitting.md)。
 `dispersive_equivalent` 时即使存在带宽文件也忽略，沿用色散
 等效 HWHM（`source=dispersive_gamma`）。报告的中位数使用校正后的谱，在 `[3 Hz, HWHM]` 内取有限频点；没有有效 HWHM 时不补偿，
 回退为所有 `≥3 Hz` 的有限频点。`results/sensitivity.npz` 同时保存原始谱、校正谱、校正因子、

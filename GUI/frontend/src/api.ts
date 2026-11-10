@@ -1,4 +1,4 @@
-export type ApiError = Error & { code?: string };
+export type ApiError = Error & { code?: string; status?: number };
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const hasBody = options.body !== undefined && options.body !== null;
@@ -33,6 +33,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
       // 保留 HTTP 错误文本。
     }
     const error: ApiError = new Error(message);
+    error.status = response.status;
     error.code = response.headers.get("X-Error-Code") ?? undefined;
     throw error;
   }

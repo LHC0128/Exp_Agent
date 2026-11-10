@@ -134,7 +134,7 @@ export function InstrumentsPage() {
   const [view, setView] = useState<InstrumentView>("control");
   return (
     <>
-      <PageHead eyebrow="INSTRUMENTS" title="仪器控制" description="管理物理量绑定、设备资源和实时参数。" />
+      <PageHead eyebrow="INSTRUMENTS" title="仪器控制" description="管理物理量绑定、设备资源和实时参数。" action={<div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}><Link to="/instruments/ports">设备端口建档</Link><Link to="/instruments/wiring">实验接线图</Link></div>} />
       <div className="instrument-tabs" role="tablist">
         <button className={view === "mapping" ? "active" : ""} onClick={() => setView("mapping")}>物理量映射</button>
         <button className={view === "library" ? "active" : ""} onClick={() => setView("library")}>设备库</button>

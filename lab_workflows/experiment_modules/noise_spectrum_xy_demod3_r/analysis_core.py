@@ -69,7 +69,7 @@ def lorentzian_r_response(
     frequency_offset_hz: float,
     fixed_frequency_hz: float,
 ) -> np.ndarray:
-    """以平均 R 代替 PSD 幅值的洛伦兹响应模型。"""
+    """平均 R 的 Bloch 幅度模；gamma 不是控制频率轴的几何半高半宽。"""
     w = float(fixed_frequency_hz)
     shifted = np.asarray(omega_ctrl_hz, dtype=float) + frequency_offset_hz
     numerator = gamma_hz**2 + w**2
@@ -77,7 +77,7 @@ def lorentzian_r_response(
         (gamma_hz**2 - w**2 + shifted**2) ** 2
         + 4.0 * w**2 * gamma_hz**2
     )
-    return r_baseline_v + fit_amplitude * numerator / denominator
+    return r_baseline_v + fit_amplitude * np.sqrt(numerator / denominator)
 
 
 def _fit_profiles(
@@ -107,9 +107,10 @@ def _fit_profiles(
         if not np.isfinite(height) or height <= 0:
             continue
         gamma_guess = min(300.0, scan_span / 4.0)
-        amplitude_guess = height * (
-            gamma_guess**4 + 4.0 * gamma_guess**2 * frequency**2
-        ) / max(gamma_guess**2 + frequency**2, np.finfo(float).tiny)
+        amplitude_guess = height * np.sqrt(
+            (gamma_guess**4 + 4.0 * gamma_guess**2 * frequency**2)
+            / max(gamma_guess**2 + frequency**2, np.finfo(float).tiny)
+        )
         try:
             popt, covariance = curve_fit(
                 lambda x, gamma, amplitude, base, offset: lorentzian_r_response(

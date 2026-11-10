@@ -247,20 +247,18 @@ it("历史填回参数与质量未通过信息，保留交互流程图", async (
   const restored = await openParameters("A12");
   expect(restored.getByLabelText("注入 Z 已知可控噪声")).toHaveValue("true");
   const tablist = screen.getByRole("tablist", { name: "XY Probe AM 噪声实验视图" });
-  expect(within(tablist).getAllByRole("tab")).toHaveLength(2);
+  expect(within(tablist).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
   expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();
   const runButton = within(tablist).getByRole("tab", { name: "运行" });
   const historyButton = within(tablist).getByRole("tab", { name: "历史" });
   runButton.focus();
-  for (const key of ["ArrowLeft", "ArrowRight"]) {
-    fireEvent.keyDown(tablist, { key });
-    expect(historyButton).toHaveFocus();
-    expect(historyButton).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(tablist, { key });
-    expect(runButton).toHaveFocus();
-    expect(runButton).toHaveAttribute("aria-selected", "true");
-  }
+  fireEvent.keyDown(tablist, { key: "ArrowRight" });
+  expect(historyButton).toHaveFocus();
+  expect(historyButton).toHaveAttribute("aria-selected", "true");
+  fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+  expect(runButton).toHaveFocus();
+  expect(runButton).toHaveAttribute("aria-selected", "true");
   expect(screen.getByRole("region", { name: "交互实验流程图" })).toBeVisible();
   expect(restored.getByLabelText("注入 Z 已知可控噪声")).toHaveValue("true");
 });

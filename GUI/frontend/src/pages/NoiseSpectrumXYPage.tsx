@@ -1,6 +1,7 @@
 import { historyParameterValues } from "./experimentHelpers";
 import { preflightMessage, type PreflightResult } from "./experimentHelpers";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
+import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 
 import { api } from "../api";
 import { useJobActivity } from "../components/JobActivity";
@@ -129,7 +130,7 @@ function Result({ value }: { value: RunSummary }) {
 }
 
 export function NoiseSpectrumXYPage() {
-  const [tab, setTab] = useState<"run" | "history">("run");
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -300,19 +301,6 @@ export function NoiseSpectrumXYPage() {
     setTab("run");
   };
 
-  const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-    event.preventDefault();
-    const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
-    const index = tabs.findIndex((item) => document.activeElement === item);
-    if (index === -1) return;
-    const next = event.key === 'ArrowRight'
-      ? (index + 1) % tabs.length
-      : (index - 1 + tabs.length) % tabs.length;
-    const target = tabs[next];
-    setTab((target?.dataset.tab as typeof tab) ?? "run");
-    target?.focus();
-  };
 
   return (
     <>
@@ -323,23 +311,7 @@ export function NoiseSpectrumXYPage() {
         experiment={definition}
       />
       {error && <div className="alert error" role="alert">{error}</div>}
-      <div className="zaw-tab-strip" role="tablist" aria-label="XY 正弦控制噪声谱实验视图" onKeyDown={tabKey}>
-        {(["run", "history"] as const).map((item) => (
-          <button
-            key={item}
-            id={`noise-xy-tab-${item}`}
-            role="tab"
-            data-tab={item}
-            aria-selected={tab === item}
-            aria-controls={`noise-xy-panel-${item}`}
-            tabIndex={tab === item ? 0 : -1}
-            className={tab === item ? "active" : ""}
-            onClick={() => setTab(item)}
-          >
-            {item === "run" ? "运行" : "历史"}
-          </button>
-        ))}
-      </div>
+      <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} idPrefix="noise-xy" label="XY 正弦控制噪声谱实验视图" />
 
       <div id="noise-xy-panel-run" role="tabpanel" aria-labelledby="noise-xy-tab-run" hidden={tab !== "run"}>
         <WorkflowPanel enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout}
@@ -357,7 +329,6 @@ export function NoiseSpectrumXYPage() {
                 {starting ? "处理中…" : "预检并运行实验"}
               </button>
             </div>
-            <p>在下方流程节点编辑参数。此处保存下一次实验的全部参数和统一的基础／高级分类，不保存历史分析覆盖值。</p>
             {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
             {notice && <p role="status">{notice}</p>}
             {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}

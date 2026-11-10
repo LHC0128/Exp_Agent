@@ -10,7 +10,7 @@ from . import run_format
 from .models import NoiseSpectrumXYDemod3RParams
 from .analysis_core import analyze_r_matrix
 
-ANALYSIS_VERSION = "demod3-r-modular-v1"
+ANALYSIS_VERSION = "demod3-r-modular-v2-amplitude-modulus"
 
 
 def output_path(run_dir, name):
@@ -97,12 +97,17 @@ def evaluate(run_dir, data):
         source=np.array("demod3_r_ridge_robust_fit"))
     np.savez(output_path(run_dir, "results/r_fit_params.npz"), parameters=analysis.fit_parameters,
         errors=analysis.fit_errors, fit_mask=analysis.fit_mask,
+        model_type=np.array("bloch_amplitude_modulus"),
+        gamma_definition=np.array("bloch_relaxation_parameter_not_control_axis_hwhm"),
         parameter_names=np.array(["gamma_Hz", "fit_amplitude", "r_baseline_V", "frequency_offset_Hz"]),
         demod3_frequency_Hz=data["frequencies"], calibrated_control_frequency_Hz=analysis.calibrated_control_frequency_hz)
     np.savez(output_path(run_dir, "results/r_spectra.npz"), demod3_frequency_Hz=data["frequencies"],
         fit_amplitude=analysis.fit_parameters[:, 1], r_baseline_V=analysis.fit_parameters[:, 2],
         gamma_Hz=analysis.fit_parameters[:, 0], frequency_offset_Hz=analysis.fit_parameters[:, 3], fit_mask=analysis.fit_mask)
     return dict(experiment_id=data["config"].get("experiment_id"), analysis_source="mean Demod3 sample.r matrix",
+        model_type="bloch_amplitude_modulus",
+        model="C + F*sqrt((gamma^2+w^2)/((gamma^2-w^2+(Omega+dw)^2)^2+4*w^2*gamma^2))",
+        gamma_definition="bloch_relaxation_parameter_not_control_axis_hwhm",
         calibration_source="demod3_r_ridge_robust_fit",
         calibration_slope_Hz_per_V=float(calibration.slope_hz_per_v),
         calibration_intercept_Hz=float(calibration.intercept_hz),
@@ -116,6 +121,9 @@ def scientific_summary(run_dir, data):
     with np.load(Path(run_dir) / "results/calibration.npz", allow_pickle=False) as cal, np.load(
             Path(run_dir) / "results/r_fit_params.npz", allow_pickle=False) as fit:
         return dict(experiment_id=data["config"].get("experiment_id"), analysis_source="mean Demod3 sample.r matrix",
+            model_type="bloch_amplitude_modulus",
+            model="C + F*sqrt((gamma^2+w^2)/((gamma^2-w^2+(Omega+dw)^2)^2+4*w^2*gamma^2))",
+            gamma_definition="bloch_relaxation_parameter_not_control_axis_hwhm",
             calibration_source="demod3_r_ridge_robust_fit",
             calibration_slope_Hz_per_V=float(cal["slope_Hz_per_V"]),
             calibration_intercept_Hz=float(cal["intercept_Hz"]),

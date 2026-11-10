@@ -302,14 +302,14 @@ def fit_responses(responses, config, params, point_data, run_dir):
             )
             lorentzian_daq_fft["enabled"] = bool(lorentzian_daq_fft.get("success"))
             if lorentzian_daq_fft["enabled"]:
-                print(f"[Lorentzian] direct FFT:  A={lorentzian_daq_fft['A']:.3e}, "
+                print(f"[Sqrt-Lorentzian] direct FFT:  A={lorentzian_daq_fft['A']:.3e}, "
                       f"f0={lorentzian_daq_fft['f0_Hz']:.1f} ± "
                       f"{lorentzian_daq_fft['f0_unc_Hz']:.1f} Hz, "
-                      f"FWHM={lorentzian_daq_fft['fwhm_Hz']:.1f} ± "
+                      f"3 dB width={lorentzian_daq_fft['fwhm_Hz']:.1f} ± "
                       f"{lorentzian_daq_fft['fwhm_unc_Hz']:.1f} Hz "
                       f"(residual std={lorentzian_daq_fft['residual_std']:.3e})")
             else:
-                print(f"[Lorentzian] direct FFT 拟合失败: {lorentzian_daq_fft['message']}")
+                print(f"[Sqrt-Lorentzian] direct FFT 拟合失败: {lorentzian_daq_fft['message']}")
 
         # ---- (b) Offline lock-in ----
         if len(freqs_li) > 0 and np.any(li_valid):
@@ -328,14 +328,14 @@ def fit_responses(responses, config, params, point_data, run_dir):
             lorentzian_offline_lockin["enabled"] = bool(
                 lorentzian_offline_lockin.get("success"))
             if lorentzian_offline_lockin["enabled"]:
-                print(f"[Lorentzian] offline LI:  A={lorentzian_offline_lockin['A']:.3e}, "
+                print(f"[Sqrt-Lorentzian] offline LI:  A={lorentzian_offline_lockin['A']:.3e}, "
                       f"f0={lorentzian_offline_lockin['f0_Hz']:.1f} ± "
                       f"{lorentzian_offline_lockin['f0_unc_Hz']:.1f} Hz, "
-                      f"FWHM={lorentzian_offline_lockin['fwhm_Hz']:.1f} ± "
+                      f"3 dB width={lorentzian_offline_lockin['fwhm_Hz']:.1f} ± "
                       f"{lorentzian_offline_lockin['fwhm_unc_Hz']:.1f} Hz "
                       f"(residual std={lorentzian_offline_lockin['residual_std']:.3e})")
             else:
-                print(f"[Lorentzian] offline LI 拟合失败: {lorentzian_offline_lockin['message']}")
+                print(f"[Sqrt-Lorentzian] offline LI 拟合失败: {lorentzian_offline_lockin['message']}")
 
         # ---- (c) Hardware demod_r (vector mean) ----
         if acquisition_mode in ("demod_r", "both") and len(freqs_dR) > 0:
@@ -351,14 +351,14 @@ def fit_responses(responses, config, params, point_data, run_dir):
             lorentzian_hardware_demod_r["enabled"] = bool(
                 lorentzian_hardware_demod_r.get("success"))
             if lorentzian_hardware_demod_r["enabled"]:
-                print(f"[Lorentzian] HW demod_r:  A={lorentzian_hardware_demod_r['A']:.3e}, "
+                print(f"[Sqrt-Lorentzian] HW demod_r:  A={lorentzian_hardware_demod_r['A']:.3e}, "
                       f"f0={lorentzian_hardware_demod_r['f0_Hz']:.1f} ± "
                       f"{lorentzian_hardware_demod_r['f0_unc_Hz']:.1f} Hz, "
-                      f"FWHM={lorentzian_hardware_demod_r['fwhm_Hz']:.1f} ± "
+                      f"3 dB width={lorentzian_hardware_demod_r['fwhm_Hz']:.1f} ± "
                       f"{lorentzian_hardware_demod_r['fwhm_unc_Hz']:.1f} Hz "
                       f"(residual std={lorentzian_hardware_demod_r['residual_std']:.3e})")
             else:
-                print(f"[Lorentzian] HW demod_r 拟合失败: {lorentzian_hardware_demod_r['message']}")
+                print(f"[Sqrt-Lorentzian] HW demod_r 拟合失败: {lorentzian_hardware_demod_r['message']}")
 
     # ---- 0b. 双 Lorentzian 拟合 (dispersive + absorptive, Bloch 稳态响应) ----
     doublelorentzian_daq_fft = {"enabled": False}
@@ -733,7 +733,8 @@ def fit_responses(responses, config, params, point_data, run_dir):
         # ---- 拟合 (亚 bin 精度线宽) ----
         "enable_lorentzian_fit": ENABLE_LORENTZIAN_FIT,
         "fit_model": FIT_MODEL,
-        "lorentzian_fit_model_single": "A * hwhm^2 / ((f - f0)^2 + hwhm^2)",
+        "lorentzian_fit_model_single": "A * hwhm / sqrt((f - f0)^2 + hwhm^2)",
+        "single_fit_width_definition": "power_hwhm_fwhm_and_amplitude_3db_half_full_width",
         "lorentzian_fit_model_double": (
             "C + P0 * sqrt(Gamma^2 + f^2) / "
             "sqrt((Gamma^2 - f^2 + Omega_Ctrl^2)^2 + 4 * Gamma^2 * f^2)"),
@@ -825,8 +826,12 @@ def fit_responses(responses, config, params, point_data, run_dir):
                       ("hardware_demod_r", lorentzian_hardware_demod_r)]:
         save_npz[f"lorentzian_{tag}_success"] = np.array(
             bool(fit.get("success")))
+        for text_key in ("model_type", "model", "width_definition"):
+            save_npz[f"lorentzian_{tag}_{text_key}"] = np.array(fit.get(text_key, ""))
         for scalar_key in ("A", "f0_Hz", "hwhm_Hz", "fwhm_Hz",
                            "A_unc", "f0_unc_Hz", "hwhm_unc_Hz", "fwhm_unc_Hz",
+                           "amplitude_hwhm_Hz", "amplitude_fwhm_Hz",
+                           "amplitude_hwhm_unc_Hz", "amplitude_fwhm_unc_Hz",
                            "residual_std", "residual_max", "n_points"):
             v = fit.get(scalar_key)
             save_npz[f"lorentzian_{tag}_{scalar_key}"] = (

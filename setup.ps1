@@ -85,4 +85,4 @@ if ($SkipFrontend) {
 }
 
 Write-Host ""
-Write-Host "安装完成。启动 GUI：双击 start_gui.bat，或运行 .\GUI\start.ps1。"
+Write-Host "安装完成。启动 GUI：双击 start_gui.vbs（无终端窗口），停止双击 stop_gui.bat；或运行 .\GUI\start.ps1。"

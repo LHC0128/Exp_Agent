@@ -10,6 +10,8 @@ import { Status } from "./Status";
 
 const ExperimentPage = lazy(() => import("../pages/ExperimentPage").then((module) => ({ default: module.ExperimentPage })));
 const InstrumentsPage = lazy(() => import("../pages/InstrumentsPage").then((module) => ({ default: module.InstrumentsPage })));
+const DevicePortsPage = lazy(() => import("../pages/DevicePortsPage").then((module) => ({ default: module.DevicePortsPage })));
+const WiringPage = lazy(() => import("../pages/WiringPage").then((module) => ({ default: module.WiringPage })));
 const OverviewPage = lazy(() => import("../pages/OverviewPage").then((module) => ({ default: module.OverviewPage })));
 const RunsPage = lazy(() => import("../pages/RunsPage").then((module) => ({ default: module.RunsPage })));
 const UpdatesPage = lazy(() => import("../pages/UpdatesPage").then((module) => ({ default: module.UpdatesPage })));
@@ -115,6 +117,8 @@ export function Layout() {
               <Routes>
                 <Route path="/" element={<OverviewPage />} />
                 <Route path="/instruments" element={<InstrumentsPage />} />
+                <Route path="/instruments/ports" element={<DevicePortsPage />} />
+                <Route path="/instruments/wiring" element={<WiringPage />} />
                 <Route path="/tools" element={<ToolsPage />} />
                 <Route path="/experiments" element={<ExperimentCatalogPage />} />
                 <Route path="/experiments/:experimentId" element={<ExperimentPage />} />

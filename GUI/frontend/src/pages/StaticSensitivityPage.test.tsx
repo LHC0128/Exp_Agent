@@ -94,10 +94,10 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it("从真实路由加载双 Tab，保存节点参数和布局，历史填回不自动运行", async () => {
+it("从真实路由加载三 Tab，保存节点参数和布局，历史填回不自动运行", async () => {
   const view = await renderPage();
   const tablist = screen.getByRole("tablist", { name: "静磁场灵敏度实验视图" });
-  expect(within(tablist).getAllByRole("tab")).toHaveLength(2);
+  expect(within(tablist).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
   expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();
   edit("A09", "色散扫描点数", "61");
@@ -116,14 +116,12 @@ it("从真实路由加载双 Tab，保存节点参数和布局，历史填回不
   expect(within(node("A09")).getByLabelText("运行标签")).toHaveValue("history");
   expect(mockApi.mock.calls.some(([url]) => url === `${BASE}/runs`)).toBe(false);
   tab("运行").focus();
-  for (const key of ["ArrowLeft", "ArrowRight"]) {
-    fireEvent.keyDown(tablist, { key });
-    expect(tab("历史")).toHaveFocus();
-    expect(tab("历史")).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(tablist, { key });
-    expect(tab("运行")).toHaveFocus();
-    expect(tab("运行")).toHaveAttribute("aria-selected", "true");
-  }
+  fireEvent.keyDown(tablist, { key: "ArrowRight" });
+  expect(tab("历史")).toHaveFocus();
+  expect(tab("历史")).toHaveAttribute("aria-selected", "true");
+  fireEvent.keyDown(tab("历史"), { key: "ArrowLeft" });
+  expect(tab("运行")).toHaveFocus();
+  expect(tab("运行")).toHaveAttribute("aria-selected", "true");
   expect(within(node("A09")).getByLabelText("运行标签")).toHaveValue("history");
   view.unmount(); await renderPage();
   expect(within(node("A09")).getByRole("button", { name: "色散每点采集时间 移至高级参数" })).toBeVisible();

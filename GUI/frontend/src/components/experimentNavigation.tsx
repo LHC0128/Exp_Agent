@@ -62,7 +62,7 @@ export function ExperimentNavigation({ children }: { children: ReactNode }) {
 
 type JobSetter = Dispatch<SetStateAction<Job | undefined>>;
 export function useExperimentTask({ ready, setTab, setJob, setAnalysisJob, setComparisonJob, setSelectedId, setHistoryView }: {
-  ready: boolean; setTab?: Dispatch<SetStateAction<"run" | "history">>; setJob?: JobSetter;
+  ready: boolean; setTab?: (value: "run" | "history") => void; setJob?: JobSetter;
   setAnalysisJob?: JobSetter; setComparisonJob?: JobSetter; setSelectedId?: Dispatch<SetStateAction<string>>;
   setHistoryView?: Dispatch<SetStateAction<"single" | "comparison">>;
 }) {

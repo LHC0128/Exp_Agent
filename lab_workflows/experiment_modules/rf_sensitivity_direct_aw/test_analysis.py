@@ -148,7 +148,7 @@ def write_bandwidth(directory, *, gamma=300.0, center=3000.0, demod_idx=3, mode=
     config["parameters"]["LINEWIDTH_MODE"] = mode
     (directory / "experiment_config.yaml").write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
     frequency = np.linspace(2000.0, 4000.0, 21)
-    r = 0.02 + 0.8 * gamma ** 2 / ((frequency - center) ** 2 + gamma ** 2)
+    r = 0.02 + 0.8 / np.sqrt(1 + ((frequency - center) / gamma) ** 2)
     x = 0.01 + 0.3 * 100.0 ** 2 / ((frequency - 3100.0) ** 2 + 100.0 ** 2)
     np.savez(directory / "raw/bandwidth_data.npz", frequency_Hz=frequency,
              demod3_x_V=x, demod3_y_V=np.sqrt(np.maximum(r ** 2 - x ** 2, 0)), demod3_r_V=r,
@@ -170,6 +170,9 @@ def test_bandwidth_fit_overrides_dispersive_hwhm(tmp_path):
     assert "R 均值" in correction["source_detail"]
     assert result["bandwidth_fit"]["center_Hz"] == pytest.approx(3000.0, rel=1e-3)
     assert result["bandwidth_fit"]["n_points"] == 21
+    assert result["bandwidth_fit"]["model_type"] == "sqrt_lorentzian_amplitude"
+    assert result["bandwidth_fit"]["gamma_definition"] == "power_hwhm_and_amplitude_3db_half_width"
+    assert result["bandwidth_fit"]["amplitude_fwhm_Hz"] == pytest.approx(2 * np.sqrt(3) * 300, rel=1e-3)
     with np.load(tmp_path / "results/sensitivity.npz") as data:
         # 扫频线宽取代色散等效 HWHM（80 nT × LARMOR_PER_NT）。
         assert data["f_larmor_Hz"] == pytest.approx(300.0, rel=1e-3)

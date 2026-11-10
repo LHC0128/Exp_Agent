@@ -123,11 +123,14 @@ def test_bandwidth_skip_marker_preserves_legacy_analysis(tmp_path):
     config = {"parameters": {"LINEWIDTH_MODE": "frequency_sweep", "BW_FREQ_START": 2500,
         "BW_FREQ_STOP": 3500, "BW_FREQ_POINTS": 51, "Z_RF_FREQ": 3000}}
     def save(frequencies, **metadata):
-        response = 0.1 + 0.3 * 100 ** 2 / ((frequencies - 3000) ** 2 + 100 ** 2)
+        response = 0.1 + 0.3 / np.sqrt(1 + ((frequencies - 3000) / 100) ** 2)
         np.savez(raw / "bandwidth_data.npz", frequency_Hz=frequencies, demod3_r_V=response,
                  z_rf_amplitude_vpp=0.01, **metadata)
     save(selected, skipped_z_rf_frequency_Hz=3000)
-    assert fit_bandwidth(tmp_path, config)["n_points"] == 50
+    fit = fit_bandwidth(tmp_path, config)
+    assert fit["n_points"] == 50
+    assert fit["hwhm_Hz"] == pytest.approx(100, rel=1e-5)
+    assert fit["model_type"] == "sqrt_lorentzian_amplitude"
     save(full)
     assert fit_bandwidth(tmp_path, config)["n_points"] == 51
     save(selected)

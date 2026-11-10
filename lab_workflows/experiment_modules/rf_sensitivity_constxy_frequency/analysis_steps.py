@@ -68,7 +68,7 @@ def signature(path):
 
 def fingerprint(run_dir):
     load_config(run_dir)
-    return dict(analysis_version="constxy-frequency-v1", config=signature(output_path(run_dir, "experiment_config.yaml")),
+    return dict(analysis_version="constxy-frequency-v2-sqrt-amplitude", config=signature(output_path(run_dir, "experiment_config.yaml")),
         raw={path.relative_to(run_dir).as_posix(): signature(output_path(run_dir, path.relative_to(run_dir)))
              for path in sorted(output_path(run_dir, "raw").rglob("*")) if path.is_file()})
 

@@ -7,6 +7,15 @@ import pytest
 import yaml
 
 from . import run_directory
+from ..wiring import WiringGraph, read_wiring_revision
+
+
+def write_wiring(root, targets):
+    params = root / "params"
+    params.mkdir(exist_ok=True)
+    empty = {"nodes": [], "edges": []}
+    document = {"schema_version": 1, "site": empty, "targets": {key: empty for key in targets}}
+    (params / "wiring.yaml").write_text(yaml.safe_dump(document, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
 @pytest.fixture
@@ -126,25 +135,94 @@ def test_non_mapping_config_is_not_overwritten(frozen_directory, content):
 
 @pytest.mark.parametrize("module", ["rf_sensitivity_direct_aw_frequency", "xy_direct_aw_dc_calibration"])
 def test_legacy_typed_directory_initialization_never_reuses_history(frozen_directory, module):
-    """只执行真实入口的目录初始化语句，不导入会连接仪器的旧形态模块。"""
+    """只执行真实入口的目录初始化语句，不导入会连接仪器的模块。"""
     import ast
     from pathlib import Path
     from types import SimpleNamespace
     source = Path(__file__).resolve().parents[1] / "experiment_modules" / module / "workflow.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
-    data_type = next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
-        and any(isinstance(target, ast.Name) and target.id == "EXPERIMENT_TYPE" for target in node.targets))
-    initialize = next(node for node in tree.body if isinstance(node, ast.Assign)
+    constants = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        targets = [item for target in node.targets for item in (
+            target.elts if isinstance(target, ast.Tuple) else [target])]
+        values = node.value.elts if isinstance(node.value, ast.Tuple) else [node.value]
+        for target, value in zip(targets, values):
+            if isinstance(target, ast.Name):
+                constants[target.id] = ast.literal_eval(value)
+    data_type = constants["DATA_TYPE"]
+    initialize = next(node for node in ast.walk(tree) if isinstance(node, ast.Assign)
         and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name)
         and node.value.func.id == "create_run_directory")
     previous = run_directory.create_run_directory(data_type, "repeat", {"index": 1}, project_root=frozen_directory)
     (previous.raw / "record.txt").write_text("historical", encoding="utf-8")
     before = {path: path.read_bytes() for path in previous.root.rglob("*") if path.is_file()}
-    context = dict(create_run_directory=run_directory.create_run_directory, EXPERIMENT_TYPE=data_type,
-        RUN_TAG="repeat", PARAMS=SimpleNamespace(schema_version=1, to_external=lambda: {"index": 2}),
-        project_root=frozen_directory)
+    owner = SimpleNamespace(
+        params=SimpleNamespace(schema_version=1, run_tag="repeat", to_external=lambda: {"index": 2}),
+        root=frozen_directory,
+    )
+    context = dict(create_run_directory=run_directory.create_run_directory, DATA_TYPE=data_type, self=owner)
     exec(compile(ast.Module(body=[initialize], type_ignores=[]), str(source), "exec"), context)
-    current = context["directory"]
+    current = owner.directory
     assert current.root != previous.root and current.raw.is_dir()
     assert yaml.safe_load(current.config_path.read_text(encoding="utf-8"))["parameters"] == {"index": 2}
     assert {path: path.read_bytes() for path in before} == before
+
+
+def test_run_config_records_wiring_snapshot_and_matching_revision(frozen_directory):
+    write_wiring(frozen_directory, ["Example", "another-experiment"])
+    expected_revision = read_wiring_revision(frozen_directory).revision
+    run = run_directory.create_run_directory("Example", "wired", {}, project_root=frozen_directory)
+    config = yaml.safe_load(run.config_path.read_text(encoding="utf-8"))
+    assert config["wiring_revision"] == expected_revision
+    assert config["wiring_snapshot_error"] is None
+    assert set(config["wiring_snapshot"]) == {"schema_version", "site", "targets"}
+    assert config["wiring_snapshot"]["schema_version"] == 1
+    assert WiringGraph.model_validate(config["wiring_snapshot"]["site"]) == WiringGraph(nodes=[], edges=[])
+    assert set(config["wiring_snapshot"]["targets"]) == {"Example", "another-experiment"}
+    for graph in config["wiring_snapshot"]["targets"].values():
+        assert WiringGraph.model_validate(graph) == WiringGraph(nodes=[], edges=[])
+
+
+def test_wiring_changes_after_creation_do_not_rewrite_recorded_snapshot(frozen_directory):
+    write_wiring(frozen_directory, ["Example", "another-experiment"])
+    run = run_directory.create_run_directory("Example", "frozen", {}, project_root=frozen_directory)
+    before = run.config_path.read_bytes()
+    write_wiring(frozen_directory, ["Example"])
+    assert run.config_path.read_bytes() == before
+    config = yaml.safe_load(run.config_path.read_text(encoding="utf-8"))
+    assert set(config["wiring_snapshot"]["targets"]) == {"Example", "another-experiment"}
+
+
+def test_missing_wiring_is_recorded_as_empty_graph(frozen_directory):
+    run = run_directory.create_run_directory("Example", "empty-wiring", {}, project_root=frozen_directory)
+    config = yaml.safe_load(run.config_path.read_text(encoding="utf-8"))
+    assert config["wiring_revision"] == read_wiring_revision(frozen_directory).revision
+    assert config["wiring_snapshot"] == {
+        "schema_version": 1, "site": {"nodes": [], "edges": []}, "targets": {},
+    }
+    assert config["wiring_snapshot_error"] is None
+
+
+def test_corrupt_wiring_does_not_block_creation(frozen_directory):
+    params = frozen_directory / "params"
+    params.mkdir()
+    (params / "wiring.yaml").write_text("schema_version: 1\nsite: not-a-graph\ntargets: {}\n", encoding="utf-8")
+    run = run_directory.create_run_directory("Example", "corrupt-wiring", {}, project_root=frozen_directory)
+    config = yaml.safe_load(run.config_path.read_text(encoding="utf-8"))
+    assert config["wiring_revision"] is None
+    assert config["wiring_snapshot"] is None
+    assert "接线图" in config["wiring_snapshot_error"]
+
+
+def test_creation_never_reads_or_rewrites_historical_run(frozen_directory):
+    historical = frozen_directory / "data" / "Example" / "1001_000000_old"
+    historical.mkdir(parents=True)
+    (historical / "raw").mkdir()
+    old_config = "experiment_type: Example\ntimestamp: 1001_000000\nparameters: {}\n"
+    (historical / "experiment_config.yaml").write_text(old_config, encoding="utf-8")
+    before = {path: path.read_bytes() for path in historical.rglob("*") if path.is_file()}
+    run_directory.create_run_directory("Example", "new", {}, project_root=frozen_directory)
+    assert {path: path.read_bytes() for path in historical.rglob("*") if path.is_file()} == before
+    assert "wiring_snapshot" not in yaml.safe_load(old_config)

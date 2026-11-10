@@ -300,11 +300,12 @@ def fit_lorentzian(freqs: np.ndarray, response: np.ndarray,
                     p0_hwhm: float = None,
                     hwhm_upper: float = None,
                     min_points: int = 6):
-    """对频率响应做 0-baseline Lorentzian 拟合，得到亚 bin 精度的线宽 (FWHM).
+    """对幅度频响做零基线平方根洛伦兹拟合。
 
     模型：
-        R(f) = A · [hwhm² / ((f - f0)² + hwhm²)]
-    其中 A 是峰位响应，f0 是共振中心，hwhm 是半高半宽，FWHM = 2·hwhm。
+        R(f) = A · hwhm / sqrt((f - f0)² + hwhm²)
+    A 为峰值，f0 为中心。兼容键 hwhm/fwhm 是功率半高半宽/全宽，
+    即幅度 −3 dB 半宽/全宽；幅度半高宽需另乘 sqrt(3)。
 
     参数
     ----------
@@ -338,7 +339,9 @@ def fit_lorentzian(freqs: np.ndarray, response: np.ndarray,
                 "fit_curve_freqs", "fit_curve_values",
                 "message", "model"]
     out = {k: None for k in out_keys}
-    out["model"] = "A * hwhm^2 / ((f - f0)^2 + hwhm^2)"
+    out["model"] = "A * hwhm / sqrt((f - f0)^2 + hwhm^2)"
+    out["model_type"] = "sqrt_lorentzian_amplitude"
+    out["width_definition"] = "power_hwhm_fwhm_and_amplitude_3db_half_full_width"
     out["n_points"] = 0
     if freqs is None or response is None or len(freqs) < min_points:
         out["message"] = f"insufficient points (<{min_points})"
@@ -370,7 +373,7 @@ def fit_lorentzian(freqs: np.ndarray, response: np.ndarray,
 
     def model(f, A, f0, hwhm):
         denom = (f - f0) ** 2 + hwhm ** 2
-        return A * hwhm ** 2 / denom
+        return A * hwhm / np.sqrt(denom)
 
     try:
         popt, pcov = scipy_optimize.curve_fit(
@@ -401,6 +404,10 @@ def fit_lorentzian(freqs: np.ndarray, response: np.ndarray,
             "f0_Hz": f0_fit,
             "hwhm_Hz": hwhm_fit,
             "fwhm_Hz": float(2.0 * hwhm_fit),
+            "amplitude_hwhm_Hz": float(np.sqrt(3.0) * hwhm_fit),
+            "amplitude_fwhm_Hz": float(2.0 * np.sqrt(3.0) * hwhm_fit),
+            "amplitude_hwhm_unc_Hz": float(np.sqrt(3.0) * hwhm_unc),
+            "amplitude_fwhm_unc_Hz": float(2.0 * np.sqrt(3.0) * hwhm_unc),
             "A_unc": A_unc,
             "f0_unc_Hz": f0_unc,
             "hwhm_unc_Hz": hwhm_unc,

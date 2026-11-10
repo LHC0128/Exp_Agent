@@ -22512,6 +22512,176 @@
         }
       }
     },
+    "/api/device-ports": {
+      "get": {
+        "summary": "Device Ports",
+        "description": "端口档案只读人工元数据，不获取硬件锁或读取仪器。",
+        "operationId": "device_ports_api_device_ports_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevicePortsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Device Ports",
+        "description": "独立修订锁仅保护端口文件，不复用设备配置/硬件任务锁。",
+        "operationId": "update_device_ports_api_device_ports_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevicePortsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevicePortsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wiring": {
+      "get": {
+        "summary": "Wiring",
+        "description": "只读投影现场/目标图的用途跟随状态，不接触硬件或写入配置。",
+        "operationId": "wiring_api_wiring_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WiringResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Wiring",
+        "description": "只保存接线图；方向/光电提示不阻止人工记录。",
+        "operationId": "update_wiring_api_wiring_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WiringBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WiringResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wiring/revision": {
+      "get": {
+        "summary": "Wiring Revision",
+        "description": "只读组合修订；不投影接线图、不计算提示，不接触硬件。",
+        "operationId": "wiring_revision_api_wiring_revision_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WiringRevision"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wiring/compare": {
+      "post": {
+        "summary": "Wiring Comparison",
+        "description": "仅计算传入快照的连线与人工模式差异，不写磁盘。",
+        "operationId": "wiring_comparison_api_wiring_compare_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WiringCompareBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WiringComparison"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/lockin-selection": {
       "put": {
         "summary": "Update Lockin Selection",
@@ -24187,6 +24357,55 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{experiment_id}/{run_id}/wiring": {
+      "get": {
+        "summary": "Run Wiring",
+        "description": "只读运行创建时记录的接线快照；不补写旧运行，也不改当前接线。",
+        "operationId": "run_wiring_api_runs__experiment_id___run_id__wiring_get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunWiringResponse"
+                }
               }
             }
           },
@@ -26509,6 +26728,154 @@
           "devices"
         ],
         "title": "DeviceLibraryBody"
+      },
+      "DevicePortPreset": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "ports": {
+            "items": {
+              "$ref": "#/components/schemas/PhysicalPort"
+            },
+            "type": "array",
+            "title": "Ports"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "model",
+          "ports"
+        ],
+        "title": "DevicePortPreset"
+      },
+      "DevicePortProfile": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "ports": {
+            "items": {
+              "$ref": "#/components/schemas/PhysicalPort"
+            },
+            "type": "array",
+            "title": "Ports"
+          },
+          "device_library_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Library Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "model",
+          "ports",
+          "device_library_id"
+        ],
+        "title": "DevicePortProfile"
+      },
+      "DevicePortsBody": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DevicePortProfile"
+            },
+            "type": "array",
+            "title": "Devices"
+          },
+          "base_revision": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Base Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "devices",
+          "base_revision"
+        ],
+        "title": "DevicePortsBody"
+      },
+      "DevicePortsResponse": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DevicePortProfile"
+            },
+            "type": "array",
+            "title": "Devices"
+          },
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version"
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Revision"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/DevicePortPreset"
+            },
+            "type": "array",
+            "title": "Presets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "devices",
+          "schema_version",
+          "revision",
+          "presets"
+        ],
+        "title": "DevicePortsResponse"
       },
       "DeviceSummary": {
         "properties": {
@@ -28881,6 +29248,133 @@
         ],
         "title": "PhysicalMappingsBody"
       },
+      "PhysicalPort": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name"
+          },
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "signal_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "optical",
+                  "electrical"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Type"
+          },
+          "connector": {
+            "type": "string",
+            "title": "Connector"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "in",
+                  "out",
+                  "inout",
+                  "switchable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "modes": {
+            "items": {
+              "$ref": "#/components/schemas/PortMode"
+            },
+            "type": "array",
+            "title": "Modes"
+          },
+          "selected_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Mode"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "group",
+          "signal_type",
+          "connector",
+          "purpose",
+          "direction",
+          "modes",
+          "selected_mode"
+        ],
+        "title": "PhysicalPort"
+      },
+      "PortMode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out",
+              "inout"
+            ],
+            "title": "Direction"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "direction"
+        ],
+        "title": "PortMode"
+      },
       "RFDirectAWCompareBody": {
         "properties": {
           "runs": {
@@ -29270,6 +29764,115 @@
           "status"
         ],
         "title": "RestartResponse"
+      },
+      "RunWiringResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "recorded_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded Revision"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "site": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WiringGraph"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targets": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/WiringGraph"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targets"
+          },
+          "current_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Revision"
+          },
+          "matches_current": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches Current"
+          },
+          "current_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Error"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available",
+          "note"
+        ],
+        "title": "RunWiringResponse",
+        "description": "运行时记录的接线快照；只读，不代表硬件实际状态。"
       },
       "ScopeChannelSettings": {
         "properties": {
@@ -29918,6 +30521,963 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WiringBody": {
+        "properties": {
+          "site": {
+            "$ref": "#/components/schemas/WiringGraph"
+          },
+          "targets": {
+            "patternProperties": {
+              "\\S": {
+                "$ref": "#/components/schemas/WiringGraph"
+              }
+            },
+            "propertyNames": {
+              "minLength": 1
+            },
+            "type": "object",
+            "title": "Targets"
+          },
+          "base_revision": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Base Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "site",
+          "targets",
+          "base_revision"
+        ],
+        "title": "WiringBody"
+      },
+      "WiringCableChange": {
+        "properties": {
+          "edge_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Edge Id"
+          },
+          "site_connector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Connector"
+          },
+          "target_connector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Connector"
+          },
+          "site_cable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Cable Id"
+          },
+          "target_cable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Cable Id"
+          },
+          "site_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Note"
+          },
+          "target_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "edge_id",
+          "site_connector",
+          "target_connector",
+          "site_cable_id",
+          "target_cable_id",
+          "site_note",
+          "target_note"
+        ],
+        "title": "WiringCableChange",
+        "description": "已保留连线的线缆记录差异；匹配时忽略，不改变同一根线身份。"
+      },
+      "WiringCompareBody": {
+        "properties": {
+          "site": {
+            "$ref": "#/components/schemas/WiringGraph"
+          },
+          "target": {
+            "$ref": "#/components/schemas/WiringGraph"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "site",
+          "target"
+        ],
+        "title": "WiringCompareBody"
+      },
+      "WiringComparison": {
+        "properties": {
+          "retained": {
+            "items": {
+              "$ref": "#/components/schemas/WiringEdge"
+            },
+            "type": "array",
+            "title": "Retained"
+          },
+          "removed": {
+            "items": {
+              "$ref": "#/components/schemas/WiringEdge"
+            },
+            "type": "array",
+            "title": "Removed"
+          },
+          "added": {
+            "items": {
+              "$ref": "#/components/schemas/WiringEdge"
+            },
+            "type": "array",
+            "title": "Added"
+          },
+          "internal_retained": {
+            "items": {
+              "$ref": "#/components/schemas/WiringEdge"
+            },
+            "type": "array",
+            "title": "Internal Retained"
+          },
+          "internal_removed": {
+            "items": {
+              "$ref": "#/components/schemas/WiringEdge"
+            },
+            "type": "array",
+            "title": "Internal Removed"
+          },
+          "internal_added": {
+            "items": {
+              "$ref": "#/components/schemas/WiringEdge"
+            },
+            "type": "array",
+            "title": "Internal Added"
+          },
+          "mode_changes": {
+            "items": {
+              "$ref": "#/components/schemas/WiringModeChange"
+            },
+            "type": "array",
+            "title": "Mode Changes"
+          },
+          "usage_changes": {
+            "items": {
+              "$ref": "#/components/schemas/WiringUsageChange"
+            },
+            "type": "array",
+            "title": "Usage Changes"
+          },
+          "setting_changes": {
+            "items": {
+              "$ref": "#/components/schemas/WiringSettingChange"
+            },
+            "type": "array",
+            "title": "Setting Changes"
+          },
+          "cable_changes": {
+            "items": {
+              "$ref": "#/components/schemas/WiringCableChange"
+            },
+            "type": "array",
+            "title": "Cable Changes"
+          },
+          "site_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/WiringWarning"
+            },
+            "type": "array",
+            "title": "Site Warnings"
+          },
+          "target_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/WiringWarning"
+            },
+            "type": "array",
+            "title": "Target Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "retained",
+          "removed",
+          "added",
+          "mode_changes",
+          "site_warnings",
+          "target_warnings"
+        ],
+        "title": "WiringComparison"
+      },
+      "WiringDiagnostics": {
+        "properties": {
+          "site": {
+            "items": {
+              "$ref": "#/components/schemas/WiringWarning"
+            },
+            "type": "array",
+            "title": "Site"
+          },
+          "targets": {
+            "patternProperties": {
+              "\\S": {
+                "items": {
+                  "$ref": "#/components/schemas/WiringWarning"
+                },
+                "type": "array"
+              }
+            },
+            "propertyNames": {
+              "minLength": 1
+            },
+            "type": "object",
+            "title": "Targets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "site",
+          "targets"
+        ],
+        "title": "WiringDiagnostics"
+      },
+      "WiringEdge": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id"
+          },
+          "source": {
+            "$ref": "#/components/schemas/WiringEndpoint"
+          },
+          "target": {
+            "$ref": "#/components/schemas/WiringEndpoint"
+          },
+          "signal_type": {
+            "type": "string",
+            "enum": [
+              "optical",
+              "electrical",
+              "internal"
+            ],
+            "title": "Signal Type"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "connector": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connector"
+          },
+          "cable_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "target",
+          "signal_type",
+          "label"
+        ],
+        "title": "WiringEdge"
+      },
+      "WiringEndpoint": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Device Id"
+          },
+          "port_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Port Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_id",
+          "port_id"
+        ],
+        "title": "WiringEndpoint"
+      },
+      "WiringFollowStatus": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Device Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "independent",
+              "bound",
+              "updated",
+              "pending",
+              "blocked"
+            ],
+            "title": "State"
+          },
+          "mapping_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mapping Keys"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_id",
+          "state",
+          "mapping_keys",
+          "message"
+        ],
+        "title": "WiringFollowStatus"
+      },
+      "WiringFollowStatuses": {
+        "properties": {
+          "site": {
+            "items": {
+              "$ref": "#/components/schemas/WiringFollowStatus"
+            },
+            "type": "array",
+            "title": "Site"
+          },
+          "targets": {
+            "patternProperties": {
+              "\\S": {
+                "items": {
+                  "$ref": "#/components/schemas/WiringFollowStatus"
+                },
+                "type": "array"
+              }
+            },
+            "propertyNames": {
+              "minLength": 1
+            },
+            "type": "object",
+            "title": "Targets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WiringFollowStatuses"
+      },
+      "WiringGraph": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/WiringNode"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/WiringEdge"
+            },
+            "type": "array",
+            "title": "Edges"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "WiringGraph"
+      },
+      "WiringInternalPort": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out"
+            ],
+            "title": "Direction"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "direction"
+        ],
+        "title": "WiringInternalPort"
+      },
+      "WiringMappingGroup": {
+        "properties": {
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Keys"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "device_library_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Library Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "keys",
+          "label",
+          "device_library_id"
+        ],
+        "title": "WiringMappingGroup"
+      },
+      "WiringModeChange": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Device Id"
+          },
+          "device_name": {
+            "type": "string",
+            "title": "Device Name"
+          },
+          "port_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Port Id"
+          },
+          "port_name": {
+            "type": "string",
+            "title": "Port Name"
+          },
+          "site_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Mode"
+          },
+          "target_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Mode"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_id",
+          "device_name",
+          "port_id",
+          "port_name",
+          "site_mode",
+          "target_mode"
+        ],
+        "title": "WiringModeChange"
+      },
+      "WiringNode": {
+        "properties": {
+          "device": {
+            "$ref": "#/components/schemas/DevicePortProfile"
+          },
+          "x": {
+            "type": "integer",
+            "multipleOf": 20.0,
+            "maximum": 20000.0,
+            "minimum": 0.0,
+            "title": "X"
+          },
+          "y": {
+            "type": "integer",
+            "multipleOf": 20.0,
+            "maximum": 20000.0,
+            "minimum": 0.0,
+            "title": "Y"
+          },
+          "follow_mapping": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Follow Mapping"
+          },
+          "port_directions": {
+            "patternProperties": {
+              "\\S": {
+                "type": "string",
+                "enum": [
+                  "in",
+                  "out"
+                ]
+              }
+            },
+            "propertyNames": {
+              "minLength": 1
+            },
+            "type": "object",
+            "title": "Port Directions"
+          },
+          "port_usage": {
+            "patternProperties": {
+              "\\S": {
+                "type": "string",
+                "enum": [
+                  "used",
+                  "unused",
+                  "unconfirmed"
+                ]
+              }
+            },
+            "propertyNames": {
+              "minLength": 1
+            },
+            "type": "object",
+            "title": "Port Usage"
+          },
+          "internal_ports": {
+            "items": {
+              "$ref": "#/components/schemas/WiringInternalPort"
+            },
+            "type": "array",
+            "title": "Internal Ports"
+          },
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/WiringSetting"
+            },
+            "type": "array",
+            "title": "Settings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device",
+          "x",
+          "y"
+        ],
+        "title": "WiringNode"
+      },
+      "WiringResponse": {
+        "properties": {
+          "site": {
+            "$ref": "#/components/schemas/WiringGraph"
+          },
+          "targets": {
+            "patternProperties": {
+              "\\S": {
+                "$ref": "#/components/schemas/WiringGraph"
+              }
+            },
+            "propertyNames": {
+              "minLength": 1
+            },
+            "type": "object",
+            "title": "Targets"
+          },
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version"
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Revision"
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/WiringDiagnostics"
+          },
+          "mapping_groups": {
+            "items": {
+              "$ref": "#/components/schemas/WiringMappingGroup"
+            },
+            "type": "array",
+            "title": "Mapping Groups"
+          },
+          "follow_status": {
+            "$ref": "#/components/schemas/WiringFollowStatuses"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "site",
+          "targets",
+          "schema_version",
+          "revision",
+          "diagnostics"
+        ],
+        "title": "WiringResponse"
+      },
+      "WiringRevision": {
+        "properties": {
+          "revision": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "title": "WiringRevision"
+      },
+      "WiringSetting": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/WiringSettingOption"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Options"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "options"
+        ],
+        "title": "WiringSetting"
+      },
+      "WiringSettingChange": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Device Id"
+          },
+          "device_name": {
+            "type": "string",
+            "title": "Device Name"
+          },
+          "setting_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Setting Id"
+          },
+          "setting_name": {
+            "type": "string",
+            "title": "Setting Name"
+          },
+          "site_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Value"
+          },
+          "target_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_id",
+          "device_name",
+          "setting_id",
+          "setting_name",
+          "site_value",
+          "target_value"
+        ],
+        "title": "WiringSettingChange"
+      },
+      "WiringSettingOption": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "WiringSettingOption"
+      },
+      "WiringUsageChange": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Device Id"
+          },
+          "device_name": {
+            "type": "string",
+            "title": "Device Name"
+          },
+          "port_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Port Id"
+          },
+          "port_name": {
+            "type": "string",
+            "title": "Port Name"
+          },
+          "site_usage": {
+            "type": "string",
+            "enum": [
+              "used",
+              "unused",
+              "unconfirmed"
+            ],
+            "title": "Site Usage"
+          },
+          "target_usage": {
+            "type": "string",
+            "enum": [
+              "used",
+              "unused",
+              "unconfirmed"
+            ],
+            "title": "Target Usage"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_id",
+          "device_name",
+          "port_id",
+          "port_name",
+          "site_usage",
+          "target_usage"
+        ],
+        "title": "WiringUsageChange"
+      },
+      "WiringWarning": {
+        "properties": {
+          "edge_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Edge Id"
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "edge_id",
+          "code",
+          "message"
+        ],
+        "title": "WiringWarning"
       },
       "WorkflowRunItem": {
         "properties": {

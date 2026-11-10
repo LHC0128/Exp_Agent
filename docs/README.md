@@ -48,6 +48,7 @@
 - [设备库与物理量映射](instrument_mapping.md)
 - [采集时序、系统稳定与 TEC 设置](acquisition_timing.md)
 - [科研绘图规范](plotting_style.md)
+- [频率响应拟合清单与线宽定义](experiments/frequency_response_fitting.md)
 - [历史分析与绘图入口](legacy_analysis_plotting.md)
 - [锁相实验兼容性](legacy_lockin_experiments.md)
 - [实验方案模板](experiment_template.md)

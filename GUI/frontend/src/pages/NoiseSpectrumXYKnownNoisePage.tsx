@@ -1,6 +1,7 @@
 import { historyParameterValues } from "./experimentHelpers";
 import { preflightMessage, type PreflightResult } from "./experimentHelpers";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
+import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 
 import { api } from "../api";
 import { useJobActivity } from "../components/JobActivity";
@@ -217,7 +218,7 @@ export function NoiseSpectrumXYProbeAMPage() {
 function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimentId: string; probeAm: boolean }) {
   const BASE = `/api/experiments/${ID}`;
   const prefix = probeAm ? "probe-am-noise" : "known-noise";
-  const [tab, setTab] = useState<"run" | "history">("run");
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -391,15 +392,6 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
     setTab("run");
   };
 
-  const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-    event.preventDefault();
-    const order = ["run", "history"] as const;
-    const index = order.indexOf(tab as typeof order[number]);
-    const next = order[(index + (event.key === "ArrowRight" ? 1 : order.length - 1)) % order.length];
-    setTab(next);
-    event.currentTarget.querySelector<HTMLButtonElement>(`#${prefix}-tab-${next}`)?.focus();
-  };
 
   const previewContent = (
             <div aria-label="噪声波形与分段预览" aria-live="polite">
@@ -513,22 +505,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
         experiment={definition}
       />
       {error && <div className="alert error" role="alert">{error}</div>}
-      <div className="zaw-tab-strip" role="tablist" aria-label={probeAm ? "XY Probe AM 噪声实验视图" : "XY 已知噪声注入实验视图"} onKeyDown={tabKey}>
-        {(["run", "history"] as const).map((item) => (
-          <button
-            key={item}
-            id={`${prefix}-tab-${item}`}
-            role="tab"
-            aria-selected={tab === item}
-            aria-controls={`${prefix}-panel-${item}`}
-            tabIndex={tab === item ? 0 : -1}
-            className={tab === item ? "active" : ""}
-            onClick={() => setTab(item)}
-          >
-            {item === "run" ? "运行" : "历史"}
-          </button>
-        ))}
-      </div>
+      <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} idPrefix={prefix} label={probeAm ? "XY Probe AM 噪声实验视图" : "XY 已知噪声注入实验视图"} />
 
       <div id={`${prefix}-panel-run`} role="tabpanel" aria-labelledby={`${prefix}-tab-run`} hidden={tab !== "run"}>
         <WorkflowPanel experimentId={ID}
@@ -540,7 +517,6 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
           runs={list.runs} setError={setError} onRefresh={setRefresh}>
           <div className="xy-workflow-controls">
             {saveContent}
-            <p>在节点内编辑参数。保存只影响下一次实验和统一布局；历史分析覆盖值独立保存。</p>
             {controlContent}
             <details className="xy-workflow-preview"><summary>{probeAm ? "AM 噪声波形、可选 Z 注入与 Welch 预览" : "波形、注入真值与 Welch 预览"}</summary>{previewContent}</details>
             <p>{probeAm

@@ -1,6 +1,7 @@
 import { historyParameterValues } from "./experimentHelpers";
 import { preflightMessage, type PreflightResult } from "./experimentHelpers";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
+import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 import { api } from "../api";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
@@ -62,7 +63,7 @@ function Result({ value }: { value: Summary }) {
 }
 
 export function DetectionChainFrequencyResponsePage() {
-  const [tab, setTab] = useState<"run" | "history">("run");
+  const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
   const [values, setValues] = useState<ParameterValues>({});
@@ -201,22 +202,11 @@ export function DetectionChainFrequencyResponsePage() {
     } catch (reason) { setError(String(reason)); } finally { setStarting(false); }
   };
 
-  const tabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-    event.preventDefault();
-    const order = ["run", "history"] as const;
-    const index = order.indexOf(tab as typeof order[number]);
-    const next = order[(index + (event.key === "ArrowRight" ? 1 : order.length - 1)) % order.length];
-    setTab(next);
-    event.currentTarget.querySelector<HTMLButtonElement>(`#dc-tab-${next}`)?.focus();
-  };
 
   return <>
     <PageHead eyebrow="CALIBRATION · FREQUENCY" title={definition?.title ?? "探测链路频率响应标定"} description={definition?.description ?? "读取参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
-    <div className="zaw-tab-strip" role="tablist" aria-label="探测链路频率响应标定视图" onKeyDown={tabKey}>
-      {(["run", "history"] as const).map(item => <button key={item} id={`dc-tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`dc-panel-${item}`} tabIndex={tab === item ? 0 : -1} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "run" ? "运行" : "历史"}</button>)}
-    </div>
+    <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} idPrefix="dc" label="探测链路频率响应标定视图" />
     <div id="dc-panel-run" role="tabpanel" aria-labelledby="dc-tab-run" hidden={tab !== "run"}>
       <WorkflowPanel enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout}
         setNotice={setNotice} parametersDisabled={parametersBusy || starting} values={values} setValues={setValues}
@@ -234,7 +224,6 @@ export function DetectionChainFrequencyResponsePage() {
               {starting ? "处理中…" : "预检并运行实验"}
             </button>
           </div>
-          <p>在下方流程节点编辑参数。此处保存下一次实验的全部参数和统一的基础／高级分类，不保存历史分析覆盖值。</p>
           {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
           {notice && <p role="status">{notice}</p>}
           {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}
