@@ -351,8 +351,8 @@ def test_parameters_defaults_migration_and_yaml(tmp_path):
     finally: ADAPTER.defaults_path=original
 
 
-@pytest.mark.parametrize("values",[{"PUMP_POWER":[]},{"PUMP_POWER":[2]},{"PUMP_POWER":[float("nan")]},
-    {"SDS_PD_CHANNEL":4},{"FIXED_DUTY_CYCLE":60},{"TEMP_SWITCH_ON_V":4},{"BURST_BURST_PERIOD_S":.001},
+@pytest.mark.parametrize("values",[{"PUMP_POWER":[]},{"PUMP_POWER":[25]},{"PUMP_POWER":[float("nan")]},
+    {"SDS_PD_CHANNEL":4},{"FIXED_DUTY_CYCLE":100},{"TEMP_SWITCH_ON_V":4},{"BURST_BURST_PERIOD_S":.001},
     {"AOM_CARRIER_OFFSET_V":1},{"ACQ_REPEATS":True},{"SYSTEM_SETTLE_S":-1}])
 def test_invalid_parameters_before_connect(tmp_path, monkeypatch, values):
     copy_config(tmp_path)

@@ -116,7 +116,7 @@ function add(name = "当前目标器件") {
 }
 async function save() {
   fireEvent.click(within(panel()).getByRole("button", { name: "保存当前实验目标" }));
-  await within(panel()).findByText("当前实验目标接线图已保存；现场和其他实验目标保持不变，未操作硬件。");
+  await within(panel()).findByText("当前实验目标接线图已保存。");
   // 异步保存先显示成功提示，子草稿注册与父级刷新保护还需完成后续副作用。
   await act(async () => {});
 }
@@ -265,20 +265,20 @@ it.each([STATIC, SCOPE])("%s 无参数也能编辑目标，但不放宽原运行
   expect(requests.filter(item => /\/(preflight|sessions|defaults|runs)$/.test(item.path) && item.method !== "GET")).toEqual([]);
 }, 15000);
 
-it("目标图旁展示接线要点，缺失型号与未绑定用途标黄且不自动添加器件或连线", async () => {
+it("目标图旁展示可折叠接线要点，缺失型号与未绑定用途进入预检且不自动添加器件或连线", async () => {
   definitionExtras = { wiring_notes: ["先关闭输出再改接探头。"], required_devices: ["驱动 (DG4000)", "HF2"], required_mapping_keys: ["drive", "read"] };
   stored.mapping_groups = [{ keys: ["drive"], label: "驱动", device_library_id: null }, { keys: ["read"], label: "读取", device_library_id: null }];
   stored.targets[GENERIC] = { nodes: [{ device: { id: "device-drive", name: "驱动源", model: "DG4000", device_library_id: null, ports: [] }, x: 60, y: 60, follow_mapping: ["drive"] }], edges: [] };
   await open(GENERIC); await target();
-  const region = within(panel()).getByRole("region", { name: "实验接线要点与设备要求" });
-  expect(within(region).getByText("先关闭输出再改接探头。")).toBeInTheDocument();
-  expect(within(region).getByText("图中已有此型号器件（不代表连接正确）。")).toBeInTheDocument();
-  expect(within(region).getByText("驱动 (DG4000)").closest("li")).not.toHaveClass("wiring-warning");
-  expect(within(region).getByText("HF2").closest("li")).toHaveClass("wiring-warning");
-  expect(within(region).getByText("图中未找到此型号器件；请人工核对，页面不添加器件。")).toBeInTheDocument();
-  expect(within(region).getByText("drive").closest("li")).not.toHaveClass("wiring-warning");
-  expect(within(region).getByText("read").closest("li")).toHaveClass("wiring-warning");
-  expect(within(region).getByText("图中无器件绑定此用途组；请人工核对，页面不自动绑定或添加器件。")).toBeInTheDocument();
+  const notes = within(panel()).getByText("接线要点").closest("details")!;
+  expect(notes).toHaveAttribute("open");
+  expect(within(notes).getByText("先关闭输出再改接探头。")).toBeInTheDocument();
+  const preflight = within(panel()).getByRole("region", { name: "接线预检清单" });
+  expect(within(preflight).getByText("HF2：图中未找到此型号器件。")).toBeInTheDocument();
+  expect(within(preflight).queryByText(/驱动 \(DG4000\)：/)).not.toBeInTheDocument();
+  expect(within(preflight).getByText("用途 read：图中无器件绑定此用途组。")).toBeInTheDocument();
+  expect(within(preflight).queryByText(/用途 drive：/)).not.toBeInTheDocument();
+  expect(within(panel()).queryByRole("region", { name: "实验接线要点与设备要求" })).not.toBeInTheDocument();
   expect(within(panel()).getByText(/1 个器件 \/ 0 条连线/)).toBeInTheDocument();
   expect(puts()).toHaveLength(0);
 }, 15000);
@@ -286,13 +286,12 @@ it("目标图旁展示接线要点，缺失型号与未绑定用途标黄且不�
 it("图内补齐型号后缺失提示消失，仍不自动推断或建立连线", async () => {
   definitionExtras = { wiring_notes: [], required_devices: ["HF2"], required_mapping_keys: [] };
   await open(GENERIC); await target();
-  let region = within(panel()).getByRole("region", { name: "实验接线要点与设备要求" });
-  expect(within(region).getByText("图中未找到此型号器件；请人工核对，页面不添加器件。")).toBeInTheDocument();
+  const preflight = within(panel()).getByRole("region", { name: "接线预检清单" });
+  expect(within(preflight).getByText("HF2：图中未找到此型号器件。")).toBeInTheDocument();
+  expect(within(panel()).queryByText("接线要点")).not.toBeInTheDocument();
   add("锁相放大");
   fireEvent.change(within(panel()).getByLabelText("图内器件型号"), { target: { value: "hf2" } });
-  region = within(panel()).getByRole("region", { name: "实验接线要点与设备要求" });
-  expect(within(region).queryByText("图中未找到此型号器件；请人工核对，页面不添加器件。")).not.toBeInTheDocument();
-  expect(within(region).getByText("图中已有此型号器件（不代表连接正确）。")).toBeInTheDocument();
+  expect(within(preflight).queryByText("HF2：图中未找到此型号器件。")).not.toBeInTheDocument();
   expect(within(panel()).getByText(/1 个器件 \/ 0 条连线/)).toBeInTheDocument();
   expect(puts()).toHaveLength(0);
 }, 15000);
@@ -302,8 +301,8 @@ it("实验定义读取失败只提示要点，目标图仍可编辑", async () =
   const router = createMemoryRouter([{ path: "*", element: <WiringEditor experimentId={GENERIC} experimentTitle="通用实验" /> }], { initialEntries: [`/experiments/${GENERIC}`] });
   render(<RouterProvider router={router} />);
   await screen.findByRole("button", { name: "添加空白图内器件" });
-  const region = screen.getByRole("region", { name: "实验接线要点与设备要求" });
-  await within(region).findByText(/实验接线要点读取失败，不影响当前目标编辑与保存/);
+  const preflight = screen.getByRole("region", { name: "接线预检清单" });
+  await within(preflight).findByText(/实验接线要求读取失败，未核对型号 \/ 用途要求/);
   fireEvent.click(screen.getByRole("button", { name: "添加空白图内器件" }));
   fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "仍可编辑" } });
   expect(screen.getByLabelText("图内器件名称")).toHaveValue("仍可编辑");
@@ -323,13 +322,12 @@ it("接线预检清单汇总缺失型号、未绑定用途、跟随、诊断与�
     edges: [{ id: "edge-preflight", source: { device_id: "device-drive", port_id: "out" }, target: { device_id: "device-read", port_id: "in" }, signal_type: "electrical", label: "待核对连线" }],
   };
   await open(GENERIC); await target();
-  const requirements = within(panel()).getByRole("region", { name: "实验接线要点与设备要求" });
-  expect(within(requirements).getByText("先关闭输出再改接探头。")).toBeInTheDocument();
-  const preflight = within(panel()).getByRole("region", { name: "接线预检清单（只读汇总）" });
+  expect(within(panel()).getByText("先关闭输出再改接探头。")).toBeInTheDocument();
+  const preflight = within(panel()).getByRole("region", { name: "接线预检清单" });
   await waitFor(() => expect(preflight).toHaveTextContent("警告 5 项"));
   expect(preflight).toHaveTextContent("阻断 0 项");
-  expect(within(preflight).getByText("HF2：图中未找到此型号器件；请人工核对，页面不添加器件。")).toBeInTheDocument();
-  expect(within(preflight).getByText("用途 read：图中无器件绑定此用途组；请人工核对，页面不自动绑定或添加器件。")).toBeInTheDocument();
+  expect(within(preflight).getByText("HF2：图中未找到此型号器件。")).toBeInTheDocument();
+  expect(within(preflight).getByText("用途 read：图中无器件绑定此用途组。")).toBeInTheDocument();
   expect(within(preflight).getByText("驱动源：等待确认用途（drive）")).toBeInTheDocument();
   expect(within(preflight).getByText("驱动源 ↔ 读取器：方向待确认")).toBeInTheDocument();
   expect(within(preflight).getByText("驱动源：与设备端口档案存在差异（档案中不存在）；请人工核对。")).toBeInTheDocument();

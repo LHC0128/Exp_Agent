@@ -48,17 +48,17 @@ safety_limits:
 
   Pump_laser_power:
     min: 0.0
-    max: 1.0
+    max: 20.0
     ramp_rate: null
     output_off_on_error: true
-    description: "Pump光功率 DC 电平控制，范围 0-1V"
+    description: "Pump光功率 DC 电平控制；上限取信号源满量程 20 V，大于约 1 V 后输出饱和不再变化"
 
   Probe_laser_power:
     min: 0.0
-    max: 1.0
+    max: 20.0
     ramp_rate: null
     output_off_on_error: true
-    description: "Probe光功率 DC 电平控制，范围 0-1 V"
+    description: "Probe光功率 DC 电平控制；上限取信号源满量程 20 V，大于约 1 V 后输出饱和不再变化"
 
   # ---- Probe 激光器 ----
   probe_laser_current:
@@ -132,25 +132,25 @@ safety_limits:
     description: "Y方向磁场，范围 -20-20 V"
 
   rf_coil:
-    min: 0.0
-    max: 2.0
+    min: -20.0
+    max: 20.0
     ramp_rate: null
     output_off_on_error: true
-    description: "RF 线圈驱动 (Y方向)，MORS/T2 用。弱驱动上限 2V，大功率可能展宽谱线或烧毁线圈"
+    description: "RF 线圈驱动 (Y方向)，MORS/T2 用。线圈电压无幅度限制，范围取信号源满量程 -20-20 V，与其他线圈一致"
 
   Pump_modulation:
     min: -0.18
     max: 0.18
     ramp_rate: null
     output_off_on_error: true
-    description: "Pump AOM 驱动，幅值不超过 180 mV"
+    description: "Pump AOM 驱动，载波幅度不超过 180 mVpp"
 
   PUMP_MOD_DUTY:
-    min: 1
-    max: 50
+    min: 0.1
+    max: 99.9
     ramp_rate: null
     output_off_on_error: false
-    description: "Pump 脉冲占空比 (%)，范围 1-50%，避免过大占空比导致 AOM 过热"
+    description: "Pump 脉冲占空比 (%)，无额外限制，范围取信号源占空比量程 0.1-99.9%"
 
   Time_sequence:
     min: -10
@@ -175,10 +175,10 @@ safety_limits:
 
   Temp_Switch:
     min: 0.0
-    max: 5.0
+    max: 20.0
     ramp_rate: null
     output_off_on_error: false
-    description: "温度开关，5V 打开/0V 关闭，不可用 OFF 模式"
+    description: "温度开关（射频开关控制）：0 V 关闭、高电平打开，当前用 5 V；上限取信号源满量程 20 V；不可用 OFF 模式"
 
   # ---- 温控器 ----
   temperature:

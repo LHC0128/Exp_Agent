@@ -92,16 +92,16 @@ it("真实路由加载本实验清单和原图，缺前置拒绝，选择执行�
   expect(screen.getByRole("tab", { name: "历史" })).toBeVisible();
   expect(flow.acquisition).toHaveLength(9); expect(flow.analysis).toHaveLength(2);
   for (const stage of [...flow.acquisition, ...flow.analysis]) for (const gate of stage.quality_gates) {
-    expect(screen.getByText(`检查与质量说明：${gate}`)).toBeVisible();
+    expect(screen.getByText(`质检：${gate}`)).toBeVisible();
   }
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A07 Probe/PZT 蛇形扫描与完整灵敏度采集" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A06/);
   expect(screen.getByRole("checkbox", { name: "A06 静态 PZT 与响应解调准备" })).not.toBeChecked();
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(current.revision).toBe(1));
   expect(screen.getByRole("checkbox", { name: "A09 安全结束会话" })).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -189,8 +189,8 @@ it("两个历史目录与下一次分析草稿相互隔离，保存默认值不�
   await screen.findByText("已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.LOW_FREQ_SKIP_HZ).toBe(5);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${old.run_id}/analysis`
     && options?.method === "POST" && JSON.parse(String(options.body)).analysis_parameters.LOW_FREQ_SKIP_HZ === 11)).toBe(true));
 });

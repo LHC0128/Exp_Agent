@@ -76,7 +76,7 @@ beforeEach(() => {
     if (url.startsWith(`${BASE}/runs?`)) return { runs: [summary], total: 1 };
     if (url.endsWith("/summary")) return summary;
     if (url === `${BASE}/preflight`) return { ok: true, errors: [] };
-    if (url === `${BASE}/defaults`) return { schema: { fields, parameter_layout: JSON.parse(String(options?.body)).parameter_layout } };
+    if (url === `${BASE}/defaults`) return { schema: { fields, parameter_layout_saved: true, parameter_layout: JSON.parse(String(options?.body)).parameter_layout } };
     if (url === `${BASE}/runs` && options?.method === "POST") return { id: "acquisition", kind: "experiment:bell-bloom-z-field-calibration", status: "running", events: [] };
     if (url.endsWith("/analyze")) return { id: "analysis", status: "running", events: [] };
     throw new Error(`未模拟 ${url}`);
@@ -152,10 +152,10 @@ it("真实路由选择本实验步骤，缺前置拒绝，完整节点执行后�
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A08 Z DC × Pump 调制与解调扫频" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("Error: 缺少前置：A07")).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(currentSession.revision).toBe(1));
   expect(currentSession.steps.A07.status).toBe("stale");
   expect(screen.getByRole("checkbox", { name: "A10 安全结束会话" })).not.toBeChecked();
@@ -198,8 +198,8 @@ it("历史分析覆盖独立保留，保存默认值与历史填回不串改下�
   await screen.findByText("参数与布局已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.LINEAR_R_SQUARED_MIN).toBe(0.9);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url.endsWith("/analysis") && options?.method === "POST"
     && JSON.parse(String(options.body)).analysis_parameters.LINEAR_R_SQUARED_MIN === 0.98)).toBe(true));
 });
@@ -284,7 +284,7 @@ it("恢复真实质量失败状态，参数应用失败保留草稿并可安全�
   renderPage();
   expect(await screen.findByText("质量未通过")).toBeVisible();
   expect(screen.getByText("连续三次 R 标准差超限")).toBeVisible();
-  expect(screen.getByText("检查与质量说明：每次 R 标准差不超过阈值；重采仍失败立即阻断后继并保留全部尝试")).toBeVisible();
+  expect(screen.getByText("质检：每次 R 标准差不超过阈值；重采仍失败立即阻断后继并保留全部尝试")).toBeVisible();
   const pump = await editor("A06");
   fireEvent.change(pump.getByLabelText("Pump 占空比 (%)"), { target: { value: "10" } });
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));

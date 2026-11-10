@@ -56,7 +56,7 @@ beforeEach(() => {
       steps: Object.fromEntries(flow.analysis.map(stage => [stage.id, { status: "completed", error: "" }])) };
     if (url === `${BASE}/defaults`) {
       layout = JSON.parse(String(options?.body)).parameter_layout;
-      return { schema: { fields, parameter_layout: layout } };
+      return { schema: { fields, parameter_layout_saved: true, parameter_layout: layout } };
     }
     if (url === `${BASE}/preflight`) return { ok: false, errors: ["设计 RF 频率不一致"] };
     if (url.startsWith("/api/jobs/")) return { id: "job", kind: `session:${ID}`, status: active?.status === "closed" ? "completed" : "running", events: [] };
@@ -128,15 +128,15 @@ it("存活会话恢复、共享值和分类同步，草稿还原及失败保留�
   expand();
   expect(screen.getAllByRole("button", { name: "系统稳定时间 移至基础参数" })).toHaveLength(inputs().length);
   fireEvent.click(screen.getByLabelText("A13 " + flow.acquisition.find(stage => stage.id === "A13")!.title));
-  expect(screen.getByRole("button", { name: "运行所选 / 重跑" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "运行所选" })).toBeDisabled();
   applyError = true;
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
   await screen.findByText("Error: 参数校验失败");
   expect(inputs()[0]).toHaveValue(.8);
-  expect(screen.getByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeVisible();
+  expect(screen.getByText("参数草稿尚未应用，请先应用到会话。")).toBeVisible();
   applyError = false;
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
-  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用到会话。")).toBeNull());
   const applied = mockApi.mock.calls.filter(([url]) => url.endsWith("/parameters")).at(-1)!;
   expect(JSON.parse(String(applied[1]?.body))).toMatchObject({ revision: 7, parameters: { SYSTEM_SETTLE_S: .8 } });
   expect(mockApi.mock.calls.some(([url]) => url.endsWith("/steps"))).toBe(false);
@@ -161,12 +161,12 @@ it("全部控制共用手动 RF 相位，草稿显示重跑范围，应用及保
   phases().forEach(input => expect(input).toHaveValue(205.5));
   expect(screen.getByText(/全部控制版本共用手动 RF 相位；仅改变 RF 正弦分量/)).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
-  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用到会话。")).toBeNull());
   const applied = mockApi.mock.calls.find(([url]) => url.endsWith("/parameters"))!;
   expect(JSON.parse(String(applied[1]?.body))).toMatchObject({ revision: 7,
     parameters: { Z_PHASE_SCAN_ENABLED: false, Z_BURST_PHASE_INIT: 205.5 } });
   for (const id of ["A10", "A11"]) fireEvent.click(screen.getByLabelText(id + " " + flow.acquisition.find(stage => stage.id === id)!.title));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url.endsWith("/steps"))).toBe(true));
   const executed = mockApi.mock.calls.find(([url]) => url.endsWith("/steps"))!;
   expect(JSON.parse(String(executed[1]?.body)).step_ids).toEqual(["A10", "A11"]);

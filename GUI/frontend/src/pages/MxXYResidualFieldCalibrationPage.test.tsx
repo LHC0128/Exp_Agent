@@ -92,16 +92,16 @@ it("真实路由加载本实验清单和原图，缺前置拒绝，选择执行�
   expect(screen.getByRole("tab", { name: "历史" })).toBeVisible();
   expect(flow.acquisition).toHaveLength(10); expect(flow.analysis).toHaveLength(3);
   for (const stage of [...flow.acquisition, ...flow.analysis]) for (const gate of stage.quality_gates) {
-    expect(screen.getByText(`检查与质量说明：${gate}`)).toBeVisible();
+    expect(screen.getByText(`质检：${gate}`)).toBeVisible();
   }
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A08 XY 同向网格与逐次量程采集" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A07/);
   expect(screen.getByRole("checkbox", { name: "A07 SDS 固定采样率与 DC 量程准备" })).not.toBeChecked();
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(current.revision).toBe(1));
   expect(screen.getByRole("checkbox", { name: "A10 安全结束会话" })).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -188,17 +188,17 @@ it("具体历史目录无分析覆盖值，切换目录和保存默认值不污�
   const scan = await node("A08");
   fireEvent.change(scan.getByLabelText("运行标签"), { target: { value: "next-draft" } });
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: old.run_id } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: other.run_id } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: old.run_id } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
   await screen.findByText("已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.RUN_TAG).toBe("next-draft");
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${old.run_id}/analysis`
     && options?.method === "POST" && Object.keys(JSON.parse(String(options.body)).analysis_parameters).length === 0)).toBe(true));
   expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs` && options?.method === "POST")).toBe(false);

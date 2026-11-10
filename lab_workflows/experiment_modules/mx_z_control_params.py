@@ -42,7 +42,6 @@ class CommonMxZControlParams(MxYRFParams):
         unit="Vpp",
         group="basic",
         minimum=0.0,
-        maximum=2.0,
         safety_key="rf_coil",
         description="开启噪声 RF 时使用的峰峰值；设为 0 时仅保留 Y DC 补偿。",
     )
@@ -73,8 +72,8 @@ class CommonMxZControlParams(MxYRFParams):
         label="Y RF 起始带符号幅度",
         unit="Vpp",
         group="basic",
-        minimum=-2.0,
-        maximum=2.0,
+        minimum=-20.0,
+        maximum=20.0,
     )
     y_rf_amp_stop_vpp: float = parameter(
         default=0.1,
@@ -82,8 +81,8 @@ class CommonMxZControlParams(MxYRFParams):
         label="Y RF 终止带符号幅度",
         unit="Vpp",
         group="basic",
-        minimum=-2.0,
-        maximum=2.0,
+        minimum=-20.0,
+        maximum=20.0,
     )
     y_rf_amp_points: int = parameter(
         default=41,
@@ -218,7 +217,6 @@ class CommonMxZControlParams(MxYRFParams):
         unit="Vpp",
         group="basic",
         minimum=0.0,
-        maximum=2.0,
         safety_key="rf_coil",
         description=(
             "大于 0 时扫描 Y RF Burst 相位并继续 RF 灵敏度测量；"

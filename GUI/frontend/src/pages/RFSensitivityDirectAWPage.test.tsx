@@ -173,7 +173,7 @@ beforeEach(() => {
       const chosen = JSON.parse(String(options?.body)).parameters.CONTROL_WAVEFORM_FILES?.length;
       return { ok: preflightOk && Boolean(chosen), errors: !preflightOk ? ["共同触发参数不一致"] : chosen ? [] : ["请选择 oc_sens 中的最优控制波形版本"] };
     }
-    if (url === `${BASE}/defaults`) return { schema: { fields, parameter_layout: JSON.parse(String(options?.body)).parameter_layout } };
+    if (url === `${BASE}/defaults`) return { schema: { fields, parameter_layout_saved: true, parameter_layout: JSON.parse(String(options?.body)).parameter_layout } };
     if (url === `${BASE}/runs` && options?.method === "POST") return { id: "acquisition", kind: `experiment:${ID}`, status: "running", message: "正在采集", events: [] };
     if (url.endsWith("/analyze")) return analysisJob;
     throw new Error(`未模拟 ${url}`);
@@ -316,12 +316,12 @@ it("A11 扫描开关草稿从 A11 预览失效，应用后显式执行手动相�
   fireEvent.change(screen.getByLabelText("扫描 RF 触发相位"), { target: { value: "false" } });
   expect(screen.getByText(/预计需重跑的已完成步骤：A11/)).toHaveTextContent(/A11.*A12.*A13.*A14.*A13B.*A15/);
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
-  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用到会话。")).toBeNull());
   const call = mockApi.mock.calls.find(([url]) => url.endsWith("rf-session/parameters"))!;
   expect(JSON.parse(String(call[1]?.body))).toMatchObject({ revision: 0,
     parameters: { Z_PHASE_SCAN_ENABLED: false, Z_BURST_PHASE_INIT: 181.5 } });
   fireEvent.click(screen.getByLabelText("A11 控制 AM 与 Z RF 触发相位扫描（可跳过）"));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url.endsWith("rf-session/steps"))).toBe(true));
   const step = mockApi.mock.calls.find(([url]) => url.endsWith("rf-session/steps"))!;
   expect(JSON.parse(String(step[1]?.body)).step_ids).toEqual(["A11"]);
@@ -427,9 +427,9 @@ it("重命名只编辑后缀，迁移分析草稿与对比选择，后续请求�
   fireEvent.change(object, { target: { value: "" } });
   expect(screen.getByLabelText("Welch 段长")).toHaveValue(2000);
   fireEvent.change(object, { target: { value: newId } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi).toHaveBeenCalledWith(`${BASE}/runs/${encodeURIComponent(newId)}/analysis`, {
     method: "POST", body: JSON.stringify({ revision: 4, step_ids: ["B01", "B02", "B03", "B04"], analysis_parameters: { NOISE_NPERSEG: 512 } }),
   }));
@@ -649,17 +649,17 @@ it("RF 节点按显式选择提交，缺前置保留选择，质量失败可结�
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   const panel = within(screen.getByRole("region", { name: "交互实验流程图" }));
   fireEvent.click(panel.getByLabelText("A13 有符号 Z RF 幅度扫描"));
-  await waitFor(() => expect(panel.getByRole("button", { name: "运行所选 / 重跑" })).toBeEnabled());
-  fireEvent.click(panel.getByRole("button", { name: "运行所选 / 重跑" }));
+  await waitFor(() => expect(panel.getByRole("button", { name: "运行所选" })).toBeEnabled());
+  fireEvent.click(panel.getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("Error: 缺少前置：A12 RF 解调器校相")).toBeVisible();
   expect(panel.getByLabelText("A12 RF 解调器校相")).not.toBeChecked();
   const path = `${BASE}/sessions/rf-session/steps`;
   expect(JSON.parse(String(mockApi.mock.calls.find(([url]) => url === path)![1]?.body))).toEqual({ revision: 0, step_ids: ["A13"] });
   stepResult = { ...activeSession, revision: 1, steps: { ...activeSession.steps,
     A09: { status: "quality_failed", error: "XY 校相 R 低于门槛" } } };
-  fireEvent.click(panel.getByRole("button", { name: "选择全部采集步骤" }));
+  fireEvent.click(panel.getByRole("button", { name: "全选采集步骤" }));
   expect(panel.getByLabelText("A16 安全收尾 / 结束会话")).not.toBeChecked();
-  fireEvent.click(panel.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(panel.getByRole("button", { name: "运行所选" }));
   expect(await panel.findByText("质量未通过")).toBeVisible();
   expect(panel.getByText("XY 校相 R 低于门槛")).toBeVisible();
   const all = mockApi.mock.calls.filter(([url]) => url === path).at(-1)!;
@@ -681,12 +681,12 @@ it("带宽节点位于噪声之后，缺前置提示 A14，保留显式选择提
   const bandwidth = panel.getByLabelText("A13B Z RF 扫频带宽测量（可选）");
   expect(noise.compareDocumentPosition(bandwidth) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(bandwidth);
-  await waitFor(() => expect(panel.getByRole("button", { name: "运行所选 / 重跑" })).toBeEnabled());
-  fireEvent.click(panel.getByRole("button", { name: "运行所选 / 重跑" }));
+  await waitFor(() => expect(panel.getByRole("button", { name: "运行所选" })).toBeEnabled());
+  fireEvent.click(panel.getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("Error: 缺少前置：A14 零 RF 工作点 X 噪声采集")).toBeVisible();
   expect(noise).not.toBeChecked();
   fireEvent.click(noise);
-  fireEvent.click(panel.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(panel.getByRole("button", { name: "运行所选" }));
   const path = `${BASE}/sessions/rf-session/steps`;
   await waitFor(() => expect(mockApi.mock.calls.filter(([url]) => url === path)).toHaveLength(2));
   const call = mockApi.mock.calls.filter(([url]) => url === path).at(-1)!;
@@ -705,7 +705,7 @@ it("恢复 RF 会话优先于旧任务，共享参数和分类同步，草稿应
   expect(screen.getByText(/分步等待期间保持输出状态/)).toBeVisible();
   fireEvent.click(screen.getByLabelText("A13 有符号 Z RF 幅度扫描"));
   fireEvent.change(screen.getByLabelText("共同触发FREQ"), { target: { value: "150" } });
-  expect(screen.getByRole("button", { name: "运行所选 / 重跑" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "运行所选" })).toBeDisabled();
   expect(screen.getByText(/预计需重跑的已完成步骤：A07/)).toBeVisible();
   fireEvent.change(screen.getByLabelText("共同触发FREQ"), { target: { value: "100" } });
   expect(screen.queryByText(/预计需重跑的已完成步骤：/)).toBeNull();
@@ -720,14 +720,14 @@ it("恢复 RF 会话优先于旧任务，共享参数和分类同步，草稿应
   parameterApplyError = true;
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
   expect(await screen.findByText("Error: 参数校验失败")).toBeVisible();
-  expect(screen.getByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeVisible();
+  expect(screen.getByText("参数草稿尚未应用，请先应用到会话。")).toBeVisible();
   parameterApplyError = false;
   parameterResult = { ...activeSession, revision: 8, parameters: { ...activeSession.parameters,
     XY_TRIGGER_FREQ: 150, Z_TRIGGER_FREQ: 150, TEMP_SWITCH_ON_LAG_S: 0.8 },
     steps: Object.fromEntries(Object.entries(activeSession.steps).map(([id, state]) => [id,
       id >= "A07" && id <= "A15" ? { status: "stale", error: "" } : state])) };
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
-  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用到会话。")).toBeNull());
   expect(screen.getAllByText("需重跑")).toHaveLength(10);
   const request = mockApi.mock.calls.filter(([url]) => url.endsWith("rf-session/parameters")).at(-1)!;
   expect(JSON.parse(String(request[1]?.body))).toMatchObject({ revision: 7,
@@ -765,8 +765,8 @@ it("历史分析草稿按目录隔离，保存默认值只保存下一次设置�
   await waitFor(() => expect(nperseg()).toHaveValue(2000));
   fireEvent.change(object, { target: { value: "1009_latest" } });
   await waitFor(() => expect(nperseg()).toHaveValue(512));
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) =>
     url === `${BASE}/runs/1009_latest/analysis` && options?.method === "POST")).toBe(true));
   const request = mockApi.mock.calls.find(([url, options]) => url === `${BASE}/runs/1009_latest/analysis` && options?.method === "POST")!;
@@ -784,8 +784,8 @@ it("PSD 策略和频带按目录覆盖，使用稳定外部键提交", async () 
   fireEvent.change(screen.getByLabelText("异常谱评分频带下限"), { target: { value: "5" } });
   fireEvent.change(screen.getByLabelText("异常谱评分频带上限"), { target: { value: "200" } });
   expect(screen.getByText(/预计需重算的已完成步骤：B03/)).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) =>
     url === `${BASE}/runs/1009_latest/analysis` && options?.method === "POST")).toBe(true));
   const call = mockApi.mock.calls.find(([url, options]) => url === `${BASE}/runs/1009_latest/analysis` && options?.method === "POST")!;

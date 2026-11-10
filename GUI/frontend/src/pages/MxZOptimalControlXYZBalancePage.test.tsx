@@ -76,7 +76,7 @@ it("真实实验路由提供双 Tab、全部可见参数、实际质量门槛与
   await screen.findByRole("checkbox", { name: /A04/ });
   expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByRole("tab", { name: "历史" })).toBeVisible();
-  for (const stage of [...acquisition, ...analysis]) for (const gate of stage.quality_gates) expect(screen.getByText(`检查与质量说明：${gate}`)).toBeVisible();
+  for (const stage of [...acquisition, ...analysis]) for (const gate of stage.quality_gates) expect(screen.getByText(`质检：${gate}`)).toBeVisible();
   const owned = new Set([...acquisition, ...analysis].flatMap(stage => stage.display_parameters));
   expect(fields.every(field => owned.has(field.name))).toBe(true);
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
@@ -90,10 +90,10 @@ it("缺前置拒绝，明确勾选后执行，结束会话不自动选择其它�
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: /A04/ }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A03/);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(current.revision).toBe(1));
   expect(screen.getByRole("checkbox", { name: /A12/ })).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -150,8 +150,8 @@ it("具体目录无可调覆盖值，下一次实验草稿不串历史，重算�
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url === `${BASE}/defaults`)).toBe(true));
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.CONTROL_BURST_PHASE_DEG).toBe(30);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url.endsWith(`/${old.run_id}/analysis`)
     && options?.method === "POST" && Object.keys(JSON.parse(String(options.body)).analysis_parameters).length === 0)).toBe(true));
 });

@@ -14,7 +14,6 @@
   .wiring-checklist-print h2 { margin: 0 0 4px; font-size: 12pt; }
   .wiring-checklist-print p { margin: 0; }
   .wiring-checklist-meta { font-weight: 600; }
-  .wiring-checklist-warning { padding: 6px 8px; border: 1px solid #555; font-weight: 600; }
   .wiring-checklist-device { break-inside: avoid-page; }
   .wiring-checklist-print table { width: 100%; border-collapse: collapse; }
   .wiring-checklist-print th, .wiring-checklist-print td { padding: 4px 6px; border: 1px solid #555; text-align: left; vertical-align: top; overflow-wrap: anywhere; }

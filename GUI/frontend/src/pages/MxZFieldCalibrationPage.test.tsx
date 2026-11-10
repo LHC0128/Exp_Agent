@@ -120,11 +120,11 @@ it("真实路由进入两列流程，缺前置拒绝，选择执行和结束使�
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A08 Z 电压与局部 Y RF 扫频" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A07/);
   expect(screen.getByRole("checkbox", { name: "A07 Y RF 正弦与 R 解调准备" })).not.toBeChecked();
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(current.revision).toBe(1));
   expect(screen.getByRole("checkbox", { name: "A10 安全结束会话" })).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -190,8 +190,8 @@ it("历史分析草稿与下一次参数隔离，保存默认值不包含历史�
   await screen.findByText("已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.LINEAR_R_SQUARED_MIN).toBe(0.9);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${old.run_id}/analysis`
     && options?.method === "POST" && JSON.parse(String(options.body)).analysis_parameters.LINEAR_R_SQUARED_MIN === 0.95)).toBe(true));
 });
@@ -251,13 +251,13 @@ it("质量门槛和实际失败记录位于对应节点，失败后允许安全�
   for (const [id, values] of Object.entries(gates)) {
     const stage = [...acquisition, ...analysis].find(item => item.id === id)!;
     const checkbox = await screen.findByRole("checkbox", { name: `${id} ${stage.title}` });
-    expect(within(checkbox.closest("li")!).getByText(`检查与质量说明：${values[0]}`)).toBeVisible();
+    expect(within(checkbox.closest("li")!).getByText(`质检：${values[0]}`)).toBeVisible();
   }
   const failed = screen.getByRole("checkbox", { name: "A08 Z 电压与局部 Y RF 扫频" }).closest("li")!;
   expect(within(failed).getByText("质量未通过")).toBeVisible();
   expect(within(failed).getByText(/连续 3 次 std/)).toBeVisible();
   fireEvent.click(screen.getByRole("checkbox", { name: "A09 本轮安全收尾与封存" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: A09 缺少前置模块：A08 质量未通过/);
   expect(screen.getByRole("button", { name: "结束会话" })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));

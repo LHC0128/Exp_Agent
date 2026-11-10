@@ -133,11 +133,11 @@ it("两列流程来自后端定义，缺少前置时拒绝且不自动补齐选�
   await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   const nodes = screen.getByRole("region", { name: "交互实验流程图" });
-  expect(within(nodes).getByText(`检查与质量说明：${acquisition.find((stage) => stage.id === "A10")!.quality_gates[0]}`)).toBeVisible();
+  expect(within(nodes).getByText(`质检：${acquisition.find((stage) => stage.id === "A10")!.quality_gates[0]}`)).toBeVisible();
   await waitFor(() => expect(within(nodes).getByLabelText("A03 参考时钟同步")).toBeEnabled());
   fireEvent.click(within(nodes).getByLabelText("A03 参考时钟同步"));
-  await waitFor(() => expect(within(nodes).getByRole("button", { name: "运行所选 / 重跑" })).toBeEnabled());
-  fireEvent.click(within(nodes).getByRole("button", { name: "运行所选 / 重跑" }));
+  await waitFor(() => expect(within(nodes).getByRole("button", { name: "运行所选" })).toBeEnabled());
+  fireEvent.click(within(nodes).getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("Error: 缺少前置：A02 设备连接")).toBeVisible();
   expect(within(nodes).getByLabelText("A02 设备连接")).not.toBeChecked();
   const request = mockApi.mock.calls.find(([url]) => url.endsWith("session-test/steps"));
@@ -167,9 +167,9 @@ it("分阶段分析绑定历史目录，独立于等待中的硬件会话", asyn
   activeSession = makeSession();
   renderPage();
   fireEvent.change(await screen.findByLabelText("分析操作对象"), { target: { value: summary.run_id } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  const run = screen.getByRole("button", { name: "运行所选分析 / 重算" });
+  await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  const run = screen.getByRole("button", { name: "运行所选分析" });
   await waitFor(() => expect(run).toBeEnabled());
   fireEvent.click(run);
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url.endsWith(`${summary.run_id}/analysis`) && options?.method === "POST")).toBe(true));
@@ -330,19 +330,19 @@ it("草稿预览使用后端重跑范围，还原会清除预览，应用后再�
   renderPage();
   const scan = await openParameters("A12");
   fireEvent.click(screen.getByLabelText("A12 扫描采集"));
-  const run = screen.getByRole("button", { name: "运行所选 / 重跑" });
+  const run = screen.getByRole("button", { name: "运行所选" });
   await waitFor(() => expect(run).toBeEnabled());
   fireEvent.change(scan.getByLabelText("恢复温控等待时间 (s)"), { target: { value: "3" } });
   expect(run).toBeDisabled();
   expect(screen.getByText(/^预计需重跑的已完成步骤/)).toHaveTextContent("A08 Demod0 配置与校相");
-  expect(screen.getAllByText("应用草稿后预计需重跑；当前执行记录尚未改变。")).toHaveLength(6);
+  expect(screen.getAllByText("应用草稿后预计需重跑。")).toHaveLength(6);
   expect(mockApi.mock.calls.some(([url]) => url.endsWith("session-test/parameters"))).toBe(false);
   fireEvent.change(scan.getByLabelText("恢复温控等待时间 (s)"), { target: { value: "2" } });
   expect(screen.queryByText(/^预计需重跑的已完成步骤/)).not.toBeInTheDocument();
   expect(run).toBeEnabled();
   fireEvent.change(scan.getByLabelText("目标频率扫描点数"), { target: { value: "123" } });
   expect(screen.getByText(/^预计需重跑的已完成步骤/)).toHaveTextContent("A11 DAQ 准备");
-  expect(screen.getAllByText("应用草稿后预计需重跑；当前执行记录尚未改变。")).toHaveLength(3);
+  expect(screen.getAllByText("应用草稿后预计需重跑。")).toHaveLength(3);
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
   await waitFor(() => expect(screen.queryByText(/^预计需重跑的已完成步骤/)).not.toBeInTheDocument());
   expect(screen.getAllByText("需重跑")).toHaveLength(3);
@@ -377,8 +377,8 @@ it("新实验与各历史目录保留独立草稿，保存默认值和分析请�
   expect(defaults.ANALYSIS_BIN_WIDTH_HZ).toBe(24);
   fireEvent.change(target, { target: { value: summary.run_id } });
   await openParameters("B02");
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url.endsWith(`${summary.run_id}/analysis`) && options?.method === "POST")).toBe(true));
   const request = mockApi.mock.calls.find(([url, options]) => url.endsWith(`${summary.run_id}/analysis`) && options?.method === "POST");
   expect(JSON.parse(String(request?.[1]?.body)).analysis_parameters.ANALYSIS_BIN_WIDTH_HZ).toBe(30);
@@ -398,14 +398,14 @@ it("历史分析草稿按后端分析范围预览，恢复原值后清除提示"
   fireEvent.click(ridge.getByText("高级参数（2）"));
   fireEvent.change(ridge.getByLabelText("分析频带下限 (Hz)"), { target: { value: "10" } });
   expect(screen.getByText(/^分析参数草稿尚未应用/)).toHaveTextContent("B02 计算 Welch PSD");
-  expect(screen.getAllByText("应用草稿后预计需重跑；当前执行记录尚未改变。")).toHaveLength(4);
+  expect(screen.getAllByText("应用草稿后预计需重跑。")).toHaveLength(4);
   fireEvent.change(ridge.getByLabelText("分析频带下限 (Hz)"), { target: { value: "5" } });
   expect(screen.queryByText(/^分析参数草稿尚未应用/)).not.toBeInTheDocument();
   const fit = await openParameters("B04");
   fireEvent.click(fit.getByText("高级参数（3）"));
   fireEvent.change(fit.getByLabelText("峰定位半窗口 (Hz)"), { target: { value: "3500" } });
   expect(screen.getByText(/^分析参数草稿尚未应用/)).not.toHaveTextContent("B02");
-  expect(screen.getAllByText("应用草稿后预计需重跑；当前执行记录尚未改变。")).toHaveLength(2);
+  expect(screen.getAllByText("应用草稿后预计需重跑。")).toHaveLength(2);
   expect(defaults.ANALYSIS_FIT_HALF_WIDTH_HZ).toBe(3000);
 });
 
@@ -419,7 +419,7 @@ it("采集执行中锁定采集与新实验参数，历史分析仍可独立编�
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: summary.run_id } });
   const history = await openParameters("B02");
   expect(history.getByLabelText("频率格间距 (Hz)")).toBeEnabled();
-  expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled();
 });
 
 it("实际 schema 的 46 个可见字段均可从真实节点编辑并还原", async () => {
@@ -452,7 +452,7 @@ it("校相质量失败仍保留诊断，DAQ 后继不能被勾选请求绕过", 
   renderPage();
   expect(await screen.findByText("XY 校相未收敛，禁止扫描")).toBeVisible();
   fireEvent.click(screen.getByLabelText("A11 DAQ 准备"));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("Error: 缺少前置：A10 XY 迭代校相")).toBeVisible();
   expect(activeSession.steps.A11.status).toBe("pending");
   expect(activeSession.steps.A10.status).toBe("quality_failed");
@@ -470,12 +470,12 @@ it("多参数应用失败保留草稿和原完成状态", async () => {
   const scan = await openParameters("A12");
   fireEvent.change(scan.getByLabelText("恢复温控等待时间 (s)"), { target: { value: "3" } });
   fireEvent.change(scan.getByLabelText("每点采集时长 (s)"), { target: { value: "2" } });
-  expect(screen.getAllByText("应用草稿后预计需重跑；当前执行记录尚未改变。")).toHaveLength(6);
+  expect(screen.getAllByText("应用草稿后预计需重跑。")).toHaveLength(6);
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
   expect(await screen.findByText("Error: 参数保存失败")).toBeVisible();
   expect(scan.getByLabelText("恢复温控等待时间 (s)")).toHaveValue(3);
   expect(scan.getByLabelText("每点采集时长 (s)")).toHaveValue(2);
   expect(activeSession.steps.A12.status).toBe("completed");
   expect(activeSession.parameters.TEMP_SWITCH_ON_SETTLE_S).toBe(2);
-  expect(screen.getAllByText("应用草稿后预计需重跑；当前执行记录尚未改变。")).toHaveLength(6);
+  expect(screen.getAllByText("应用草稿后预计需重跑。")).toHaveLength(6);
 });

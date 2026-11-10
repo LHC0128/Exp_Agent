@@ -81,7 +81,7 @@ function replaceMapping() {
 function rename(value: string) { fireEvent.click(snapshot("原温控")); fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value } }); }
 async function saveAll() {
   fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" }));
-  await screen.findByText("全部现场和实验目标接线图已保存；未连接硬件、未改软件映射或原设备端口档案。");
+  await screen.findByText("全部接线图已保存。");
   await act(async () => {});
 }
 
@@ -162,7 +162,7 @@ it("保存中阻止版本检查并忽略较早的迟到回执，保存结果不�
   fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" }));
   expect(reads().at(-1)?.signal?.aborted).toBe(true);
   fireEvent(window, new Event("focus")); expect(reads()).toHaveLength(2);
-  await act(async () => releaseSave()); await screen.findByText(/全部现场和实验目标接线图已保存/);
+  await act(async () => releaseSave()); await screen.findByText(/全部接线图已保存。/);
   await act(async () => releaseRead());
   expect(snapshot("保存结果应保留")).toBeVisible();
   expect(screen.queryByText(/设备用途或接线图已有更新，当前草稿/)).not.toBeInTheDocument();
@@ -188,8 +188,9 @@ it("不能同步时保留原器件并显示未同步原因，自动识别的旧�
   stored.site.nodes[0].follow_mapping = null;
   stored.follow_status = { site: [{ device_id: "logical-device", state: "blocked", mapping_keys: keys, message: "未同步：新设备缺少完整对应端口；整张图保持原样" }], targets: {} };
   await open(); expect(snapshot("原温控")).toBeVisible();
-  const followRegion = screen.getByRole("region", { name: "当前图用途跟随状态" });
-  expect(within(followRegion).getByText(/未同步：新设备缺少完整对应端口/)).toBeVisible();
+  expect(screen.queryByRole("region", { name: "当前图用途跟随状态" })).not.toBeInTheDocument();
+  const preflight = screen.getByRole("region", { name: "接线预检清单" });
+  expect(within(preflight).getByText(/原温控：未同步：新设备缺少完整对应端口/)).toBeVisible();
   fireEvent.click(snapshot("原温控"));
   fireEvent.change(screen.getByLabelText("用途跟随（当前图器件）"), { target: { value: JSON.stringify(keys) } });
   await saveAll(); expect(puts()[0].body?.site.nodes[0].follow_mapping).toEqual(keys);
@@ -282,7 +283,7 @@ it("草稿有修改时预检中的跟随与诊断标注基于最近读取，不�
   stored.follow_status = { site: [], targets: { [TARGET]: [{ device_id: "logical-device", state: "blocked", mapping_keys: [...keys], message: "未同步：新设备缺少完整对应端口" }] } };
   stored.diagnostics = { site: [], targets: { [TARGET]: [{ edge_id: "missing-edge", code: "type", message: "旧的光电类型提示" }] } };
   await open(true);
-  const region = screen.getByRole("region", { name: "接线预检清单（只读汇总）" });
+  const region = screen.getByRole("region", { name: "接线预检清单" });
   expect(within(region).getByText("目标原温控：未同步：新设备缺少完整对应端口（Heat_Control / Temp_Switch）")).toBeInTheDocument();
   expect(within(region).getByText("连线提示：旧的光电类型提示")).toBeInTheDocument();
   fireEvent.click(snapshot("目标原温控"));

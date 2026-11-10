@@ -171,7 +171,6 @@ class MxZOptimalControlXYLeakageParams(ExperimentParams):
         unit="Vpp",
         group="advanced",
         minimum=0.0,
-        maximum=0.18,
         safety_key="Pump_modulation",
     )
     pump_gate_voltage_v: float = parameter(

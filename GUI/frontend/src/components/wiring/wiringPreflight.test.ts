@@ -41,7 +41,7 @@ describe("buildWiringPreflight", () => {
     }));
     expect(items.map(item => [item.severity, item.source, item.message])).toEqual([
       ["blocking", "validation", "现场：器件名称不能为空。"],
-      ["warning", "requirement", "HF2：图中未找到此型号器件；请人工核对，页面不添加器件。"],
+      ["warning", "requirement", "HF2：图中未找到此型号器件。"],
     ]);
   });
 
@@ -57,7 +57,7 @@ describe("buildWiringPreflight", () => {
     const targetGraph = graph([node("device-a", "信号源", "DG4000", ["drive"])]);
     const unbound = buildWiringPreflight(base({ targetGraph, requirements: { required_devices: [], required_mapping_keys: ["drive", "read"] } }));
     expect(unbound.filter(item => item.source === "requirement").map(item => item.message)).toEqual([
-      "用途 read：图中无器件绑定此用途组；请人工核对，页面不自动绑定或添加器件。",
+      "用途 read：图中无器件绑定此用途组。",
     ]);
     const unavailable = buildWiringPreflight(base({ targetGraph, mappingGroupsAvailable: false, requirements: { required_devices: [], required_mapping_keys: ["read"] } }));
     expect(unavailable[0].message).toContain("无法确认绑定，请人工核对");
@@ -113,9 +113,8 @@ describe("buildWiringPreflight", () => {
     expect(items[1].focus).toEqual({ kind: "device", deviceId: "device-a" });
   });
 
-  it("零条目返回空清单，文案要求人工核对且不声称通过或正确", () => {
+  it("零条目返回空清单，文案不声称通过或正确", () => {
     expect(buildWiringPreflight(base())).toEqual([]);
-    expect(wiringPreflightEmptyText).toContain("仍需人工核对实际接线和硬件状态");
     expect(wiringPreflightEmptyText).not.toMatch(/通过|正确/);
   });
 });

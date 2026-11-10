@@ -126,7 +126,7 @@ it("读取真实节点定义，依赖拒绝保留显式选择并提供原图下�
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await waitFor(() => expect(screen.getByLabelText("A13 ON/OFF 配对扫描")).toBeEnabled());
   fireEvent.click(screen.getByLabelText("A13 ON/OFF 配对扫描"));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("Error: 缺少前置：A12")).toBeVisible();
   expect(screen.getByLabelText("A12 DAQ 准备")).not.toBeChecked();
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
@@ -141,7 +141,7 @@ it("刷新恢复会话，空闲改参先应用并携带修订，再显式重跑"
   const scan = await openParameters("A13");
   await waitFor(() => expect(scan.getByLabelText("运行标签")).toHaveValue("existing"));
   fireEvent.click(screen.getByLabelText("A13 ON/OFF 配对扫描"));
-  const run = screen.getByRole("button", { name: "运行所选 / 重跑" });
+  const run = screen.getByRole("button", { name: "运行所选" });
   await waitFor(() => expect(run).toBeEnabled());
   fireEvent.change(scan.getByLabelText("运行标签"), { target: { value: "next-scan" } });
   expect(run).toBeDisabled();
@@ -197,7 +197,7 @@ it("未选来源显示等待，历史目录与下一次实验分别保留分析�
   expect(defaults.ANALYSIS_DISPERSION_SOURCE_RUN).toBe("static-v3");
   fireEvent.click(screen.getByLabelText("B05 选择静磁场曲线并拟合检测增益"));
   fireEvent.click(screen.getByLabelText("B06 增益换算、注入真值比较与汇总"));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url.endsWith("/analysis") && options?.method === "POST")).toBe(true));
   const request = mockApi.mock.calls.find(([url, options]) => url.endsWith("/analysis") && options?.method === "POST")!;
   const body = JSON.parse(String(request[1]?.body));
@@ -373,9 +373,9 @@ it("校相质量错误不能绕过，展示真实门槛并阻止后继", async (
   activeSession.steps.A10 = { status: "quality_failed", error: "XY 校相未收敛，禁止扫描" };
   renderPage();
   expect(await screen.findByText("XY 校相未收敛，禁止扫描")).toBeVisible();
-  expect(screen.getByText("检查与质量说明：" + flow.acquisition.find(stage => stage.id === "A11")!.quality_gates[0])).toBeVisible();
+  expect(screen.getByText("质检：" + flow.acquisition.find(stage => stage.id === "A11")!.quality_gates[0])).toBeVisible();
   fireEvent.click(screen.getByLabelText("A11 生成与上传 Z 噪声任意波"));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("Error: 缺少前置：A10")).toBeVisible();
   expect(activeSession.steps.A11.status).toBe("pending");
 });

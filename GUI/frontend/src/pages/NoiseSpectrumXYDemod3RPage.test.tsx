@@ -93,11 +93,11 @@ it("真实路由加载12/3节点，缺前置拒绝且不补选，显式执行与
   await screen.findByText(/分步等待期间保持输出状态/);
   const label = (id: string) => `${id} ${flow.acquisition.find(stage => stage.id === id)!.title}`;
   fireEvent.click(screen.getByRole("checkbox", { name: label("A11") }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A10/);
   expect(screen.getByRole("checkbox", { name: label("A10") })).not.toBeChecked();
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(current.revision).toBe(1));
   expect(screen.getByRole("checkbox", { name: label("A12") })).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -175,13 +175,13 @@ it("具体目录没有分析覆盖，切换对象和保存默认值不污染下�
   fireEvent.change(scan.getByLabelText("运行标签"), { target: { value: "next-draft" } });
   for (const run of [old, other, old]) {
     fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: run.run_id } });
-    await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
   }
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" })); await screen.findByText("已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.RUN_TAG).toBe("next-draft");
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${old.run_id}/analysis`
     && options?.method === "POST" && Object.keys(JSON.parse(String(options.body)).analysis_parameters).length === 0)).toBe(true));
 });

@@ -101,16 +101,16 @@ it("真实路由进入两列流程，缺前置拒绝，选择执行和结束使�
   page();
   await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
   for (const gates of Object.values(qualityGates)) {
-    expect(screen.getByText(`检查与质量说明：${gates[0]}`)).toBeVisible();
+    expect(screen.getByText(`质检：${gates[0]}`)).toBeVisible();
   }
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A09 带符号 Y RF 幅度响应" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A08/);
   expect(screen.getByRole("checkbox", { name: "A08 线宽模式与可选扫频质量门槛" })).not.toBeChecked();
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(current.revision).toBe(1));
   expect(screen.getByRole("checkbox", { name: "A12 安全结束会话" })).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -171,8 +171,8 @@ it("历史分析草稿与下一次参数隔离，保存默认值不包含历史�
   await screen.findByText("已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.LOW_FREQ_SKIP_HZ).toBe(5);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${old.run_id}/analysis`
     && options?.method === "POST" && JSON.parse(String(options.body)).analysis_parameters.LOW_FREQ_SKIP_HZ === 11)).toBe(true));
 });

@@ -96,11 +96,11 @@ it("真实路由加载9采集2分析，缺前置不补选，可执行及结束�
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A07 可选 OFF 背景与 ON 自旋噪声采集" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A06/);
   expect(screen.getByRole("checkbox", { name: "A06 SDS 固定采样率与量程回读" })).not.toBeChecked();
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(current.revision).toBe(1));
   expect(screen.getByRole("checkbox", { name: "A09 安全结束会话" })).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -185,8 +185,8 @@ it("两个历史目录与下一次分析草稿隔离，保存默认值不写历�
   await screen.findByText("已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.FIT_HALF_WIDTH_HZ).toBe(500);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${old.run_id}/analysis`
     && options?.method === "POST" && JSON.parse(String(options.body)).analysis_parameters.FIT_HALF_WIDTH_HZ === 810)).toBe(true));
 });
@@ -197,8 +197,8 @@ it("旧HF2目录不显示或提交SDS分析覆盖值，仍可选择真实兼容�
   await waitFor(() => expect(screen.queryByRole("region", {
     name: "B02 Welch、洛伦兹诊断与结果图 参数", hidden: true,
   })).not.toBeInTheDocument());
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${old.run_id}/analysis`
     && options?.method === "POST" && JSON.stringify(JSON.parse(String(options.body)).analysis_parameters) === "{}")).toBe(true));
 });

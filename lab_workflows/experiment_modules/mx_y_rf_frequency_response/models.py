@@ -44,7 +44,6 @@ class MxYRFFrequencyResponseParams(MxYRFParams):
         unit="Vpp",
         group="basic",
         minimum=0.0,
-        maximum=2.0,
         safety_key="rf_coil",
     )
     rf_amplitude_stop_vpp: float = parameter(
@@ -54,7 +53,6 @@ class MxYRFFrequencyResponseParams(MxYRFParams):
         unit="Vpp",
         group="basic",
         minimum=0.0,
-        maximum=2.0,
         safety_key="rf_coil",
     )
     rf_amplitude_points: int = parameter(
@@ -76,7 +74,6 @@ class MxYRFFrequencyResponseParams(MxYRFParams):
         unit="Vpp",
         visible=False,
         minimum=0,
-        maximum=2.0,
         safety_key="rf_coil",
     )
     y_rf_amp_start_vpp: float = parameter(
@@ -85,8 +82,8 @@ class MxYRFFrequencyResponseParams(MxYRFParams):
         label="Y RF 起始带符号幅度",
         unit="Vpp",
         visible=False,
-        minimum=-2.0,
-        maximum=2.0,
+        minimum=-20.0,
+        maximum=20.0,
     )
     y_rf_amp_stop_vpp: float = parameter(
         default=0.2,
@@ -94,8 +91,8 @@ class MxYRFFrequencyResponseParams(MxYRFParams):
         label="Y RF 终止带符号幅度",
         unit="Vpp",
         visible=False,
-        minimum=-2.0,
-        maximum=2.0,
+        minimum=-20.0,
+        maximum=20.0,
     )
     y_rf_amp_points: int = parameter(
         default=81,

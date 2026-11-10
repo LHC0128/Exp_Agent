@@ -10,7 +10,7 @@ import { WiringChecklist } from "./WiringChecklist";
 import { portUsage, type PortUsage } from "./portUsage";
 import { useWiringHistory } from "./useWiringHistory";
 import { compareNodeProfile, syncNodeFromProfile, wiringSyncBadgeLabel, wiringSyncSummaryLines, type WiringSyncBadge, type WiringSyncResult } from "./wiringSync";
-import { buildWiringPreflight, requiredDevicePresent, wiringPreflightEmptyText, type PreflightItem, type PreflightSeverity, type PreflightSource } from "./wiringPreflight";
+import { buildWiringPreflight, wiringPreflightEmptyText, type PreflightItem, type PreflightSeverity, type PreflightSource } from "./wiringPreflight";
 import type { ExperimentDefinition } from "../../types/api";
 import type { components } from "../../types/openapi";
 import "../../pages/wiring.css";
@@ -88,7 +88,6 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
   const [experimentsError, setExperimentsError] = useState("");
   const [experimentsLoading, setExperimentsLoading] = useState(true);
   const [requirements, setRequirements] = useState<ExperimentDefinition | null>(null);
-  const [requirementsLoading, setRequirementsLoading] = useState(false);
   const [requirementsError, setRequirementsError] = useState("");
   const [comparison, setComparison] = useState<WiringComparison | null>(null);
   const [comparing, setComparing] = useState(false);
@@ -201,7 +200,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     revisionUnsupported.current = false;
     setCheckingUpdate(false); setRemoteUpdate(null); setUpdateError("");
     setLoading(true); setLoadError(""); setProfilesLoading(true); setProfilesError(""); setExperimentsLoading(true); setExperimentsError(""); setSyncPreview(null);
-    setRequirements(null); setRequirementsError(""); setRequirementsLoading(!!experimentId);
+    setRequirements(null); setRequirementsError("");
     void api<WiringResponse>("/api/wiring", { signal: controller.signal }).then(checkedDocument).then(document => {
       if (controller.signal.aborted) return;
       setSaved(document); setDraft(structuredClone({ site: document.site, targets: document.targets }));
@@ -223,7 +222,6 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
         if (!Array.isArray(document?.wiring_notes) || !Array.isArray(document.required_devices) || !Array.isArray(document.required_mapping_keys)) throw new Error("实验接线要点格式不受支持");
         if (!controller.signal.aborted) setRequirements(document);
       }).catch(error => { if (!controller.signal.aborted) { setRequirements(null); setRequirementsError(message(error)); } })
-        .finally(() => { if (!controller.signal.aborted) setRequirementsLoading(false); });
     } else void api<ExperimentDefinition[]>("/api/experiments", { signal: controller.signal }).then(document => {
       if (!Array.isArray(document)) throw new Error("实验列表格式不受支持");
       if (!controller.signal.aborted) setExperiments(document);
@@ -265,7 +263,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
       } else {
         setSaved(document); setDraft(structuredClone({ site: document.site, targets: document.targets }));
         resetSelection(); clearComparison(); history.clear(); setRemoteUpdate(null); setConflict(false); setSaveError("");
-        setNotice("已按最新用途映射刷新现场和全部实验目标的显示；未操作硬件，无法同步的图保留原记录并提示。");
+        setNotice("已按最新用途映射刷新；无法同步的图保留原记录。");
       }
     } catch (error) { if (!controller.signal.aborted) setUpdateError(message(error)); }
     finally {
@@ -318,7 +316,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     setSelectedDevice(id => id !== null && next.nodes.some(node => node.device.id === id) ? id : null);
     setSelectedEdge(id => id !== null && next.edges.some(edge => edge.id === id) ? id : null);
     setSyncPreview(null); setCanvasEpoch(value => value + 1);
-    clearComparison(); setNotice(`已${action}一步图内草稿；仅修改当前图记录，尚未保存。`);
+    clearComparison(); setNotice(`已${action}一步，尚未保存。`);
   }
   function undoGraph() {
     if (locked) return;
@@ -348,7 +346,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     const deviceId = activeNode.device.id;
     changeGraph({ ...graph, nodes: graph.nodes.map(node => node.device.id === deviceId ? synced : node) });
     setSyncPreview(null);
-    setNotice("已从设备端口档案同步当前图器件快照；仅修改当前图草稿，尚未保存，原档案、其它图和硬件均未改变。");
+    setNotice("已从档案同步器件快照，尚未保存。");
   }
   function alreadyAdded(profile: DevicePortProfile) {
     return graph.nodes.some(node => node.device.id === profile.id || (profile.device_library_id !== null && node.device.device_library_id === profile.device_library_id));
@@ -363,7 +361,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     changeGraph({ ...graph, nodes: [...graph.nodes, { device, x: slot.x, y: slot.y,
       ...(supportsFollow ? { follow_mapping: device.device_library_id ? groups.length === 1 ? [...groups[0].keys] : null : [] } : {}) }] });
     setSelectedDevice(device.id); setSelectedEdge(null); setPair(null); setCanvasEpoch(value => value + 1);
-    setNotice(supportsFollow ? groups.length === 1 ? "器件已按唯一用途建立跟随绑定；保存后，同用途换机可联动现场和全部目标。仅更新记录，不代替真实改接。" : "器件已加入图内快照；请在右侧确认用途跟随，多用途必须明确选择，独立器件可关闭跟随。" : "器件已加入当前图内快照；原档案与其它图未修改，后续档案变化不会自动替换本图。");
+    setNotice(supportsFollow ? groups.length === 1 ? "器件已加入，并按唯一用途绑定跟随。" : "器件已加入；请在右侧确认用途跟随。" : "器件已加入。");
   }
   function setFollowMapping(keys: string[] | null) {
     if (!activeNode || locked) return;
@@ -393,7 +391,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     const nextMode = port.modes.find(mode => mode.id === modeId);
     // 已连线的端口换到另一方向的模式会改变线路语义，仅改当前图记录。
     if (directionOf(modeId) !== directionOf(port.selected_mode) && graph.edges.some(edge => attached(edge, deviceId, portId))
-      && !window.confirm(`端口“${portLabel(node.device.name, port)}”已有连线，改为${nextMode ? `记录模式“${nextMode.name}”` : "未记录模式"}会改变方向。仅修改当前图记录，不操作硬件；会改变线路语义和比较结果。继续？`)) return;
+      && !window.confirm(`端口“${portLabel(node.device.name, port)}”已有连线，改为${nextMode ? `记录模式“${nextMode.name}”` : "未记录模式"}会改变方向。继续？`)) return;
     changeGraph({ ...graph, nodes: graph.nodes.map(item => item === node ? { ...item, device: { ...item.device, ports: item.device.ports.map(value => value.id === portId ? { ...value, selected_mode: modeId } : value) } } : item) });
     setPair(null); setCanvasEpoch(value => value + 1);
   }
@@ -417,7 +415,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
   function removeInternalPort(port: InternalPort) {
     if (!activeNode || locked) return;
     const count = graph.edges.filter(edge => attached(edge, activeNode.device.id, port.id)).length;
-    if (!window.confirm(`仅从当前图删除内部端口“${activeNode.device.name} / ${port.name}”及 ${count} 条内部路由？物理端口、其它图和硬件不变。`)) return;
+    if (!window.confirm(`删除内部端口“${activeNode.device.name} / ${port.name}”及 ${count} 条内部路由？`)) return;
     changeGraph({ ...graph, nodes: graph.nodes.map(node => node === activeNode ? { ...node, internal_ports: node.internal_ports?.filter(item => item.id !== port.id) } : node), edges: graph.edges.filter(edge => !attached(edge, activeNode.device.id, port.id)) });
     setSelectedEdge(null); setPair(null); setCanvasEpoch(value => value + 1);
   }
@@ -431,7 +429,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     const semantic = port && ((change.direction !== undefined && change.direction !== port.direction)
       || (change.signal_type !== undefined && change.signal_type !== port.signal_type));
     if (port && semantic && graph.edges.some(edge => attached(edge, active.id, id))
-      && !window.confirm(`端口“${portLabel(active.name, port)}”已有连线，修改方向或光电类型会改变线路语义。仅修改当前图记录，不操作硬件；会改变线路语义和比较结果。继续？`)) return;
+      && !window.confirm(`端口“${portLabel(active.name, port)}”已有连线，修改方向或光电类型会改变线路语义。继续？`)) return;
     changeGraph({ ...graph, nodes: graph.nodes.map(node => {
       if (node.device.id !== active.id) return node;
       const ports = active.ports.map(port => port.id === id ? { ...port, ...change } : port);
@@ -443,12 +441,12 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
   function removePort(port: PhysicalPort) {
     if (!active || locked) return;
     const count = graph.edges.filter(edge => attached(edge, active.id, port.id)).length;
-    if (!window.confirm(`从当前图内快照删除端口“${active.name} / ${port.group ? `${port.group} / ` : ""}${port.name}”，并删除当前图相关的 ${count} 条连线？原端口档案和其它图不变。`)) return;
+    if (!window.confirm(`删除端口“${active.name} / ${port.group ? `${port.group} / ` : ""}${port.name}”及 ${count} 条相关连线？`)) return;
     changeGraph({ nodes: graph.nodes.map(node => node.device.id === active.id ? { ...node, device: { ...node.device, ports: node.device.ports.filter(item => item.id !== port.id) }, ...(node.port_directions ? { port_directions: Object.fromEntries(Object.entries(node.port_directions).filter(([id]) => id !== port.id)) } : {}), ...(node.port_usage ? { port_usage: Object.fromEntries(Object.entries(node.port_usage).filter(([id]) => id !== port.id)) } : {}) } : node), edges: graph.edges.filter(edge => !attached(edge, active.id, port.id)) });
     setSelectedEdge(null); setPair(null); setCanvasEpoch(value => value + 1);
   }
   function removeDevice() {
-    if (!active || locked || !window.confirm(`仅从当前图删除器件“${active.name}”及其相关连线？原设备端口档案和其它图均不删除。`)) return;
+    if (!active || locked || !window.confirm(`删除器件“${active.name}”及其相关连线？`)) return;
     changeGraph({ nodes: graph.nodes.filter(node => node.device.id !== active.id), edges: graph.edges.filter(edge => !attached(edge, active.id)) });
     resetSelection();
   }
@@ -512,19 +510,19 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
   }
   function createTarget() {
     if (locked || Object.hasOwn(draft.targets, targetId)) return;
-    setDraft(current => ({ ...current, targets: { ...current.targets, [targetId]: emptyGraph() } })); clearComparison(); setNotice("已显式新建空目标草稿；没有复制现场连接。");
+    setDraft(current => ({ ...current, targets: { ...current.targets, [targetId]: emptyGraph() } })); clearComparison(); setNotice("已新建空目标。");
   }
   function copySite() {
-    if (locked || !window.confirm(`将现场图完整复制到“${targetName(targetId)}”目标草稿？这会覆盖该目标的全部器件、位置、模式与连线；不改现场、其它目标、原档案或硬件。`)) return;
+    if (locked || !window.confirm(`将现场图复制到“${targetName(targetId)}”？会覆盖该目标的全部器件与连线。`)) return;
     setDraft(current => ({ ...current, targets: { ...current.targets, [targetId]: structuredClone(current.site) } }));
-    clearComparison(); resetSelection(); setNotice("已复制现场到当前实验目标草稿，尚未保存；没有自动改接或下发设置。");
+    clearComparison(); resetSelection(); setNotice("已复制现场到当前目标，尚未保存。");
   }
   function discard() {
-    if (locked || !saved || !dirty || !window.confirm(experimentId ? "放弃当前实验目标的未保存修改，恢复到上次读取或成功保存的目标接线图？" : "放弃全部现场和实验目标的未保存修改，恢复到上次读取或成功保存的接线图？")) return;
-    setDraft(structuredClone({ site: saved.site, targets: saved.targets })); resetSelection(); clearComparison(); history.clear(); setSaveError(""); setNotice(experimentId ? "已放弃当前实验目标草稿；没有重新读取服务端。" : "已放弃全部接线草稿；没有重新读取服务端，若需获取其他窗口更改请重新载入。");
+    if (locked || !saved || !dirty || !window.confirm(experimentId ? "放弃当前目标的未保存修改？" : "放弃全部未保存修改？")) return;
+    setDraft(structuredClone({ site: saved.site, targets: saved.targets })); resetSelection(); clearComparison(); history.clear(); setSaveError(""); setNotice(experimentId ? "已放弃当前目标草稿。" : "已放弃全部草稿。");
   }
   function reloadDocument() {
-    if (loading || saving || (dirty && !window.confirm(experimentId ? "重新载入将丢弃当前实验目标的未保存修改，读取服务端最新接线图。确定？" : "重新载入将丢弃全部现场和实验目标的未保存修改，读取服务端最新接线图。确定？"))) return;
+    if (loading || saving || (dirty && !window.confirm(experimentId ? "重新载入将丢弃当前目标的未保存修改。确定？" : "重新载入将丢弃全部未保存修改。确定？"))) return;
     clearComparison(); setReload(value => value + 1);
   }
   async function save() {
@@ -539,7 +537,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     try {
       const document = checkedDocument(await api<WiringResponse>("/api/wiring", { method: "PUT", body: JSON.stringify(body) }));
       setSaved(document); setDraft(structuredClone({ site: document.site, targets: document.targets })); setConflict(false); setRemoteUpdate(null); setUpdateError(""); clearComparison(); history.clear();
-      setNotice(experimentId ? "当前实验目标接线图已保存；现场和其他实验目标保持不变，未操作硬件。" : "全部现场和实验目标接线图已保存；未连接硬件、未改软件映射或原设备端口档案。");
+      setNotice(experimentId ? "当前实验目标接线图已保存。" : "全部接线图已保存。");
     } catch (error) {
       setConflict((error as ApiError).code === "revision_conflict" || /409/.test(message(error))); setSaveError(message(error));
     } finally { setSaving(false); }
@@ -559,7 +557,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     return items.length ? <ul>{items.map((warning, index) => {
       const edge = value.edges.find(item => item.id === warning.edge_id);
       return <li key={`${warning.edge_id}-${warning.code}-${index}`}>{edge ? `${endpointName(value, edge.source)} ↔ ${endpointName(value, edge.target)}：` : "连线提示："}{warning.message}</li>;
-    })}</ul> : <p>无服务端提示；这不代表连接正确或安全。</p>;
+    })}</ul> : <p>无服务端提示。</p>;
   }
   function edgeList(title: string, edges: WiringEdge[], value: WiringGraph) {
     return <section><h3>{title} <small>{edges.length}</small></h3>{edges.length ? <ul>{edges.map(edge => { const cable = cableSummary(edge); return <li key={edge.id}>{endpointName(value, edge.source)} {edge.signal_type === "internal" ? "→" : "↔"} {endpointName(value, edge.target)} · {signalName(edge.signal_type)}{edge.label ? ` · ${edge.label}` : ""}{cable ? ` · 线缆 ${cable}` : ""}</li>; })}</ul> : <p>无</p>}</section>;
@@ -569,13 +567,12 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     {experimentId ? <header><h2>目标接线图</h2><p>当前实验：{targetName(experimentId)}。</p><div className="wiring-head-links"><Link to="/instruments/wiring">全局现场与目标接线图</Link><Link to="/instruments/ports">设备端口建档</Link></div></header>
       : <PageHead eyebrow="WIRING EDITOR" title="实验接线图" description="手工维护共享现场图和各实验独立目标；绑定用途可跟随已保存的设备选择，独立快照保持原样。"
         action={<div className="wiring-head-links"><Link to="/instruments/ports">设备端口建档</Link><Link to="/instruments">返回仪器控制</Link></div>} />}
-    <div className="wiring-safety-note" role="note"><strong>仅人工接线记录，绝非硬件实际状态或安全判定。</strong>不连接硬件、不修改软件映射、不启停实验；方向 / 光电冲突只由服务端提示，不阻止记录、不构成实验预检。不会推断或自动画出 DirectAW 装置真实连接。</div>
-    <div className="wiring-toolbar"><div><strong>{saved === null ? "接线图尚未载入" : dirty ? experimentId ? "当前目标有未保存修改" : "全部图有未保存修改" : experimentId ? "当前目标无未保存修改" : "全部接线图已保存"}</strong><span>{experimentId ? "保存 / 放弃仅作用于当前实验目标；不更改现场或其他实验。" : "保存 / 放弃均作用于现场及全部实验目标"}{saved ? ` · 修订 ${saved.revision}` : ""}</span></div>
+    <div className="wiring-toolbar"><div><strong>{saved === null ? "接线图尚未载入" : dirty ? experimentId ? "当前目标有未保存修改" : "全部图有未保存修改" : experimentId ? "当前目标无未保存修改" : "全部接线图已保存"}</strong>{saved && <span>修订 {saved.revision}</span>}</div>
       <div><button className="secondary" onClick={undoGraph} disabled={locked || !history.canUndo} title="撤销上一步图内修改（Ctrl+Z）">撤销</button><button className="secondary" onClick={redoGraph} disabled={locked || !history.canRedo} title="重做上一步图内修改（Ctrl+Shift+Z）">重做</button><button onClick={() => void save()} disabled={locked || !!loadError || !dirty || validation.length > 0}>{saving ? experimentId ? "正在保存当前目标…" : "正在保存全部图…" : experimentId ? "保存当前实验目标" : "保存全部接线图"}</button><button className="secondary" onClick={discard} disabled={locked || !dirty}>{experimentId ? "放弃当前目标草稿" : "放弃全部草稿"}</button><button className="secondary" onClick={reloadDocument} disabled={loading || saving}>重新载入</button></div></div>
     {loading && <p className="alert" role="status">正在读取接线图…</p>}
     {loadError && <div className="alert error" role="alert">{saved ? "重新载入失败，现有全部草稿保留；可继续查看和编辑草稿，但保存已暂停，需重新载入成功后才能保存：" : "接线图读取失败，已禁止编辑和空图保存；尚无可用草稿，需重新载入成功后才能继续："}{loadError}<span>新接口若尚未加载，需操作者在任务安全结束后重启现有后端；页面不启停服务。</span><button className="secondary" disabled={loading || saving} onClick={reloadDocument}>重试读取接线图</button></div>}
     {saveError && <div className="alert error" role="alert">{conflict ? experimentId ? "保存冲突（409），当前目标草稿与基础修订已保留；不会覆盖其他窗口更改。" : "保存冲突（409），全部草稿与基础修订已保留；请确认后重新载入，或先保留本页草稿核对。" : experimentId ? "保存失败，当前目标草稿与基础修订已保留，可重试。" : "保存失败，全部草稿与基础修订已保留，可重试。"}<span>{saveError}</span>{conflict && <button className="secondary" onClick={reloadDocument} disabled={loading || saving}>确认重新载入最新接线图</button>}</div>}
-    {supportsFollow && <div className="wiring-follow-tools"><button className="secondary" onClick={() => void checkUpdates()} disabled={loading || saving || checkingUpdate}>{checkingUpdate ? "正在检查用途更新…" : "检查用途与接线图更新"}</button><small>重新聚焦页面 / 回到目标 Tab 时检查；无草稿自动刷新，有草稿只提示。</small></div>}
+    {supportsFollow && <div className="wiring-follow-tools"><button className="secondary" onClick={() => void checkUpdates()} disabled={loading || saving || checkingUpdate}>{checkingUpdate ? "正在检查用途更新…" : "检查用途与接线图更新"}</button></div>}
     {remoteUpdate && <div className="alert" role="alert"><strong>设备用途或接线图已有更新，当前草稿与基础修订已保留，未自动覆盖。</strong><span>请先核对草稿；按旧修订保存可能返回 409。确认放弃草稿后重新载入，才能采用最新的现场及全部目标记录。</span><button className="secondary" onClick={reloadDocument} disabled={loading || saving}>确认重新载入用途更新</button></div>}
     {updateError && <p className="wiring-warning" role="alert">用途更新检查失败，现有草稿和基础修订保留：{updateError}</p>}
     {notice && <p className="alert success" role="status">{notice}</p>}
@@ -589,44 +586,24 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     </fieldset>
     <WiringChecklist active={visible} graph={graph} viewName={view === "site" ? "共享现场图" : `实验目标 · ${targetName(targetId)}`}
       revision={saved?.revision ?? ""} dirty={dirty} disabled={saved === null} />
-    {supportsFollow && followStatuses.length > 0 && <section className="wiring-follow-status" aria-label="当前图用途跟随状态"><h3>当前图用途跟随</h3><ul>{followStatuses.map(status => <li className={status.state === "pending" || status.state === "blocked" ? "wiring-warning" : ""} key={status.device_id}><strong>{graph.nodes.find(node => node.device.id === status.device_id)?.device.name ?? status.device_id}</strong>：{status.message}{status.mapping_keys.length > 0 ? `（${status.mapping_keys.join(" / ")}）` : ""}</li>)}</ul>{dirty && <small>这是最近读取的用途状态，当前草稿尚未保存；调整用途后请保存或检查更新核对。</small>}</section>}
     <div className="wiring-workspace">
       <fieldset className="wiring-panel wiring-library" disabled={locked} aria-label="加入器件">
-        <h2>加入器件</h2><p className="wiring-help">从已保存档案建立器件，保留图内稳定 ID。一图同一设备仅加入一次；可按唯一用途自动绑定，多用途需明确选择，或保留独立快照。</p>
+        <h2>加入器件</h2>
         {profilesLoading && <p role="status">正在读取已保存端口档案…</p>}
         {profilesError && <p className="wiring-warning" role="alert">端口档案读取失败：{profilesError}。仍可维护图内快照或添加空白器件，不会以空档覆盖。</p>}
         <div className="wiring-profile-list">{profiles.map(device => <button className="secondary" key={device.id} disabled={profilesLoading || !!profilesError || alreadyAdded(device)} onClick={() => addDevice(device)}><strong>{device.name}</strong><small>{device.model || "型号待确认"} · {device.ports.length} 个端口{alreadyAdded(device) ? " · 当前图已加入" : ""}</small><span>加入档案快照</span></button>)}</div>
         {!profilesLoading && !profilesError && !profiles.length && <p>还没有已保存的设备端口档案。</p>}
-        <button className="secondary" onClick={() => addDevice()}>添加空白图内器件</button><p className="wiring-help">可手工建立分路器 / 光学器件；名称、型号及物理端口均需人工确认，不从图片或型号推断。</p>
+        <button className="secondary" onClick={() => addDevice()}>添加空白图内器件</button>
         <Link to="/instruments/ports">维护原端口档案与模式定义 →</Link>
       </fieldset>
       <div className="wiring-canvas-column"><h2>{view === "site" ? "共享现场图" : "实验目标图"} <small>图内草稿</small></h2>
-        {(experimentId || (!experimentId && view === "target")) && <section className="wiring-panel wiring-target-requirements" aria-label="实验接线要点与设备要求">
-          <h3>人工接线要点与设备要求 <small>存在性提示</small></h3>
-          <p className="wiring-help">来自该实验定义，只提示要点与型号 / 用途是否存在；不推断或自动添加连线、不自动添加器件，不代表安全预检，不连接硬件。</p>
-          {requirementsLoading && <p role="status">正在读取实验接线要点…</p>}
-          {requirementsError && <p className="wiring-warning" role="alert">实验接线要点读取失败，不影响当前目标编辑与保存：{requirementsError}</p>}
-          {requirementInfo && <>
-            <h4>接线要点</h4>
-            {requirementInfo.wiring_notes.length ? <ul>{requirementInfo.wiring_notes.map((note, index) => <li key={index}>{note}</li>)}</ul> : <p>该实验未提供人工接线要点。</p>}
-            <h4>设备要求</h4>
-            {requirementInfo.required_devices.length ? <ul>{requirementInfo.required_devices.map((device, index) => {
-              const present = requiredDevicePresent(targetGraph, device);
-              return <li key={`${device}-${index}`} className={present ? "" : "wiring-warning"}><span>{device}</span>{present ? <small>图中已有此型号器件（不代表连接正确）。</small> : <small>图中未找到此型号器件；请人工核对，页面不添加器件。</small>}</li>;
-            })}</ul> : <p>该实验未声明型号要求。</p>}
-            <h4>用途要求</h4>
-            {!requirementInfo.required_mapping_keys.length ? <p>该实验未声明用途要求。</p> : saved?.mapping_groups === undefined ? <p className="wiring-warning">当前接线图未提供用途组信息，无法确认绑定；请人工核对。</p>
-              : <ul>{requirementInfo.required_mapping_keys.map(key => {
-                const group = mappingGroups.find(item => item.keys.includes(key));
-                const bound = targetGraph.nodes.some(node => (node.follow_mapping ?? []).includes(key));
-                return <li key={key} className={bound ? "" : "wiring-warning"}><span>{key}</span>{group ? <span> · {group.label}</span> : <span> · 当前设备映射中未找到此用途组</span>}{bound ? <small>图中已有器件绑定此用途（不代表连接正确）。</small> : <small>图中无器件绑定此用途组；请人工核对，页面不自动绑定或添加器件。</small>}</li>;
-              })}</ul>}
-          </>}
-          {requirementsUnavailable && <p className="wiring-help">该目标未在当前实验列表，未核对型号/用途要求。</p>}
-        </section>}
-        <section className="wiring-panel wiring-preflight" aria-label="接线预检清单（只读汇总）">
-          <h3>接线预检清单（只读汇总） <small>不自动修复</small></h3>
-          <p className="wiring-help">汇总当前可自动识别的记录提示，仅用于人工核对；不自动修复、不改变保存与运行阻塞规则，也不代表硬件安全校验。</p>
+        {requirementInfo && requirementInfo.wiring_notes.length > 0 && <details className="wiring-panel wiring-notes" open>
+          <summary>接线要点</summary>
+          <ul>{requirementInfo.wiring_notes.map((note, index) => <li key={index}>{note}</li>)}</ul>
+        </details>}
+        {requirementsUnavailable && <p className="wiring-help">该目标未在当前实验列表，未核对型号/用途要求。</p>}
+        <section className="wiring-panel wiring-preflight" aria-label="接线预检清单">
+          <h3>接线预检清单</h3>
           <div className="wiring-preflight-counts"><span className="wiring-preflight-count severity-blocking">阻断 {preflightBlocking} 项</span><span className="wiring-preflight-count severity-warning">警告 {preflightWarnings} 项</span>{preflightInfo > 0 && <span className="wiring-preflight-count severity-info">提示 {preflightInfo} 项</span>}</div>
           {preflight.length ? <ul className="wiring-preflight-list">{preflight.map(item => <li key={item.id} className={`wiring-preflight-item severity-${item.severity}`}>
             <span className="wiring-preflight-severity">{preflightSeverityLabel[item.severity]}</span>
@@ -646,31 +623,30 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
         {pair && <fieldset className="wiring-panel wiring-pair" disabled={locked} aria-label="待建立连线"><h3>确认新连线</h3><p>{endpointName(graph, pair.source)} ↔ {endpointName(graph, pair.target)}</p>
           {pairType === "internal" ? <p>内部信号（非线缆）：仅同一器件内部输出 → 内部输入，不代表外部插拔连接。</p> : <label><span>新连线光电类型</span><select value={pairType} onChange={event => { if (!locked) setPairType(event.target.value as "" | "optical" | "electrical"); }}><option value="">请明确选择，不自动推断</option><option value="optical">光学</option><option value="electrical">电学</option></select></label>}
           <label><span>新连线标签</span><input value={pairLabel} onChange={event => { if (!locked) setPairLabel(event.target.value); }} /></label><button disabled={!pairType} onClick={connect}>记录连线</button><button className="secondary" onClick={() => { setPair(null); setCanvasEpoch(value => value + 1); }}>取消新连线</button></fieldset>}
-        <fieldset className="wiring-panel wiring-edge-editor" disabled={locked} aria-label="连线列表与编辑"><h3>当前图连线 <small>{graph.edges.length}</small></h3><p className="wiring-help">可点画布线或下列记录选中；选中后拖动两端手柄改接端点，标签与光电类型保持不变。删除不影响其它图。</p>
+        <fieldset className="wiring-panel wiring-edge-editor" disabled={locked} aria-label="连线列表与编辑"><h3>当前图连线 <small>{graph.edges.length}</small></h3><p className="wiring-help">点画布连线或下方记录选中，拖动两端手柄可改接。</p>
           <div className="wiring-edge-list">{graph.edges.map(edge => <button key={edge.id} className={edge.id === selectedEdge ? "active" : "secondary"} onClick={() => { if (!locked) { setSelectedEdge(edge.id); setPair(null); } }} aria-pressed={edge.id === selectedEdge} aria-label={`选择连线记录：${endpointName(graph, edge.source)} ↔ ${endpointName(graph, edge.target)}`}><span>{endpointName(graph, edge.source)} ↔ {endpointName(graph, edge.target)}</span><small>{signalName(edge.signal_type)}{edge.label ? ` · ${edge.label}` : ""}{cableSummary(edge) ? ` · 线缆 ${cableSummary(edge)}` : ""}</small></button>)}</div>
           {activeEdge && <div className="wiring-fields"><label><span>连线标签</span><input value={activeEdge.label} onChange={event => updateEdge({ label: event.target.value }, `edge:${activeEdge.id}:label`)} /></label>{activeEdge.signal_type === "internal" ? <p>内部信号（非线缆），不能改成外部光／电线；改变路由可拖动端点手柄改接。</p> : <><label><span>连线光电类型</span><select value={activeEdge.signal_type} onChange={event => updateEdge({ signal_type: event.target.value as "optical" | "electrical" })}><option value="optical">光学</option><option value="electrical">电学</option></select></label>
             <label><span>线缆接头形式</span><input value={activeEdge.connector ?? ""} placeholder="如 BNC / SMA / 自由空间" onChange={event => updateEdge({ connector: cableInput(event.target.value) }, `edge:${activeEdge.id}:connector`)} /></label>
             <label><span>线缆编号</span><input value={activeEdge.cable_id ?? ""} placeholder="如 C-01" onChange={event => updateEdge({ cable_id: cableInput(event.target.value) }, `edge:${activeEdge.id}:cable_id`)} /></label>
-            <label><span>线缆备注</span><input value={activeEdge.note ?? ""} onChange={event => updateEdge({ note: cableInput(event.target.value) }, `edge:${activeEdge.id}:note`)} /></label>
-            <p className="wiring-help">线缆记录仅用于人工核对；比较时按端点对匹配，接头 / 编号 / 备注差异单列，不改变连线身份。</p></>}<button className="secondary wiring-danger" onClick={() => { if (locked) return; changeGraph({ ...graph, edges: graph.edges.filter(edge => edge.id !== activeEdge.id) }); setSelectedEdge(null); }}>删除所选连线</button></div>}
-          {!graph.edges.length && <p>暂无连线；页面不会代建真实装置连接。</p>}
+            <label><span>线缆备注</span><input value={activeEdge.note ?? ""} onChange={event => updateEdge({ note: cableInput(event.target.value) }, `edge:${activeEdge.id}:note`)} /></label></>}<button className="secondary wiring-danger" onClick={() => { if (locked) return; changeGraph({ ...graph, edges: graph.edges.filter(edge => edge.id !== activeEdge.id) }); setSelectedEdge(null); }}>删除所选连线</button></div>}
+          {!graph.edges.length && <p>暂无连线。</p>}
         </fieldset>
       </div>
       <fieldset className="wiring-panel wiring-device-editor" disabled={locked} aria-label="器件快照编辑"><h2>图内器件快照</h2>
-        {active ? <><p className="wiring-help">修改只影响当前图，不写原档案、不改变其它图或硬件。选模式是人工记录；新增 / 修改模式定义请回端口建档页。</p>
+        {active ? <>
           <label><span>图内器件名称</span><input value={active.name} onChange={event => updateDevice({ name: event.target.value }, `device:${active.id}:name`)} /></label><label><span>图内器件型号</span><input value={active.model} onChange={event => updateDevice({ model: event.target.value }, `device:${active.id}:model`)} /></label>
           <div className="wiring-profile-sync" aria-label="设备端口档案差异与同步">
             <div className="wiring-section-head"><h3>设备端口档案</h3>{activeProfile && <button className="secondary" onClick={previewSync} disabled={locked}>从档案同步本器件</button>}</div>
             {activeBadges.length > 0 && <div className="wiring-profile-badges">{activeBadges.map(badge => <span key={badge} className={`wiring-profile-badge ${badge}`}>{wiringSyncBadgeLabel[badge]}</span>)}</div>}
-            {activeProfile ? <p className="wiring-help">{activeBadges.length > 0 ? "图内快照与同库档案存在差异；同步只改当前图草稿，不写档案、不自动保存。" : "当前图快照与档案一致；重新同步仍只更新当前图草稿。"}</p>
-              : active.device_library_id && !profilesLoading && !profilesError ? <p className="wiring-help">同库档案不存在，无法同步；可继续维护独立图内快照。</p>
+            {activeProfile ? <p className="wiring-help">{activeBadges.length > 0 ? "图内快照与档案存在差异。" : "图内快照与档案一致。"}</p>
+              : active.device_library_id && !profilesLoading && !profilesError ? <p className="wiring-help">同库档案不存在，无法同步。</p>
                 : profilesLoading ? <p className="wiring-help">正在读取设备端口档案…</p>
-                  : profilesError ? <p className="wiring-help">档案读取失败，暂不能比较或同步；图内快照仍可编辑。</p> : null}
+                  : profilesError ? <p className="wiring-help">档案读取失败，暂不能比较或同步。</p> : null}
             {syncPreview && <div className="wiring-sync-preview" role="region" aria-label="从档案同步差异摘要">
               {syncPreview.ok ? <>
                 <h4>差异摘要</h4>
                 <ul>{wiringSyncSummaryLines(syncPreview.summary).map((line, index) => <li key={index}>{line}</li>)}</ul>
-                <p className="wiring-help">保留器件 ID、连线、用途跟随、工作方向、使用状态、图内设置与坐标；新增端口默认未用 / 待确认。仅改当前图草稿，不写档案、不自动保存。</p>
+                <p className="wiring-help">保留器件 ID、连线、用途跟随、工作方向、使用状态、图内设置与坐标；新增端口默认未用 / 待确认。</p>
                 <div className="wiring-target-actions"><button onClick={applySync} disabled={locked || !syncPreview.changed}>{syncPreview.changed ? "确认同步到当前图草稿" : "没有可同步的差异"}</button><button className="secondary" onClick={() => setSyncPreview(null)}>取消同步</button></div>
               </> : <>
                 <p className="alert error" role="alert">无法从档案同步：{syncPreview.reason}</p>
@@ -688,10 +664,10 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
             <option value="independent">独立快照，不跟随换机</option>
             {hasBoundKeys && !boundGroup ? <option value={mappingKeysToken(boundKeys)} disabled>已绑定用途（{foreignGroup ? "用途组属于其他设备" : "当前配置中未找到"}，请改选或设为独立）：{boundKeys.join(" / ")}</option> : null}
             {activeGroups.map(group => <option key={mappingKeysToken(group.keys)} value={mappingKeysToken(group.keys)}>{group.label}</option>)}
-          </select></label><p className="wiring-help">{manualDevice ? "手工节点没有设备库身份，只能保留独立快照；不参与设备库用途跟随换机。" : "仅随已保存的用途映射换机。自动识别为多用途时不会猜；确认具体用途并保存，可让旧图后续稳定跟随。若端口不能完整对应，整张图保留原样并提示未同步。"}</p></>}
+          </select></label><p className="wiring-help">{manualDevice ? "手工节点没有设备库身份，只能保留独立快照。" : "多用途器件需明确选择用途。"}</p></>}
           <button className="secondary wiring-danger" onClick={removeDevice}>删除当前图器件及相关连线</button>
           <div className="wiring-section-head"><h3>物理端口</h3><button className="secondary" onClick={() => { if (!active || locked) return; updateDevice({ ports: [...active.ports, { id: `port-${crypto.randomUUID()}`, name: `端口 ${active.ports.length + 1}`, group: "", signal_type: null, connector: "", purpose: "", direction: null, modes: [], selected_mode: null }] }); }}>添加图内物理端口</button></div>
-          {!active.ports.length && <p>尚无端口，请对照实物手工增加，不自动推断。</p>}
+          {!active.ports.length && <p>尚无端口。</p>}
           {active.ports.map((port, index) => <fieldset className="wiring-port-editor" key={port.id} aria-label={`图内端口 ${index + 1}`}><legend>{[port.group, port.name].filter(Boolean).join(" / ") || `端口 ${index + 1}`}</legend>
             <label><span>图内端口名称</span><input value={port.name} onChange={event => updatePort(port.id, { name: event.target.value }, `port:${port.id}:name`)} /></label><label><span>图内端口分组</span><input value={port.group} onChange={event => updatePort(port.id, { group: event.target.value }, `port:${port.id}:group`)} /></label>
             <label><span>图内端口光电类型</span><select value={port.signal_type ?? ""} onChange={event => updatePort(port.id, { signal_type: (event.target.value || null) as PhysicalPort["signal_type"] })}><option value="">待确认</option><option value="optical">光学</option><option value="electrical">电学</option></select></label>
@@ -699,38 +675,37 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
               disabled={locked || graph.edges.some(edge => attached(edge, active.id, port.id))}
               onClick={() => setPortUsage(active.id, port.id, portUsage(graph, activeNode, port.id) === "used" ? "unused" : "used")}>{usageName(portUsage(graph, activeNode, port.id))}</button></div>}
             {graph.edges.some(edge => attached(edge, active.id, port.id)) && <small>已有连线，不能标为未用；请先明确删除相关连线。</small>}
-            {port.direction === "switchable" ? <label><span>图内记录模式（非硬件状态）</span><select value={port.selected_mode ?? ""} onChange={event => setPortMode(active.id, port.id, event.target.value || null)}><option value="">待确认（未记录）</option>{port.modes.map(mode => <option key={mode.id} value={mode.id} disabled={mode.direction === "inout"}>{mode.name}{mode.direction === "inout" ? "（历史方向待确认）" : ""}</option>)}</select></label>
+            {port.direction === "switchable" ? <label><span>图内记录模式</span><select value={port.selected_mode ?? ""} onChange={event => setPortMode(active.id, port.id, event.target.value || null)}><option value="">待确认（未记录）</option>{port.modes.map(mode => <option key={mode.id} value={mode.id} disabled={mode.direction === "inout"}>{mode.name}{mode.direction === "inout" ? "（历史方向待确认）" : ""}</option>)}</select></label>
               : <label><span>图内端口方向</span><select value={port.direction ?? ""} onChange={event => updatePort(port.id, { direction: (event.target.value || null) as PhysicalPort["direction"] })}><option value="">待确认</option><option value="in">输入</option><option value="out">输出</option>{port.direction === "inout" && <option value="inout" disabled>历史双向记录（请确认单向）</option>}</select></label>}
             <button className="secondary wiring-danger" onClick={() => removePort(port)}>删除图内端口及相关连线</button>
           </fieldset>)}
           {activeNode && <><div className="wiring-section-head"><h3>内部端口（非物理口）</h3><button className="secondary" onClick={() => changeGraph({ ...graph, nodes: graph.nodes.map(node => node === activeNode ? { ...node, internal_ports: [...node.internal_ports ?? [], { id: `internal-${crypto.randomUUID()}`, name: `内部端口 ${(node.internal_ports?.length ?? 0) + 1}`, direction: "out" }] } : node) })}>添加图内内部端口</button></div>
-            <p className="wiring-help">内部信号仅在同一器件内部连接，先选输出再选输入；不代表 BNC 等物理端口。已连线的方向需删除相关路由后再改。</p>
+            <p className="wiring-help">先选内部输出再选内部输入；已连线的方向需删除路由后再改。</p>
             {activeNode.internal_ports?.map((port, index) => <fieldset className="wiring-port-editor" key={port.id} aria-label={`图内内部端口 ${index + 1}`}><legend>{port.name}</legend>
               <label><span>内部端口名称</span><input value={port.name} onChange={event => updateInternalPort(port.id, { name: event.target.value }, `internal:${port.id}:name`)} /></label>
               <label><span>内部信号方向</span><select value={port.direction} disabled={graph.edges.some(edge => attached(edge, active.id, port.id))} onChange={event => updateInternalPort(port.id, { direction: event.target.value as InternalPort["direction"] })}><option value="out">内部输出</option><option value="in">内部输入</option></select></label>
               <button className="secondary wiring-danger" onClick={() => removeInternalPort(port)}>删除内部端口及相关路由</button>
             </fieldset>)}
             <div className="wiring-section-head"><h3>器件图内设置</h3><button className="secondary" onClick={() => changeGraph({ ...graph, nodes: graph.nodes.map(node => node === activeNode ? { ...node, settings: [...node.settings ?? [], { id: `setting-${crypto.randomUUID()}`, name: `设置 ${(node.settings?.length ?? 0) + 1}`, value: null, options: [{ value: "1", label: "选项 1" }] }] } : node) })}>添加图内设置</button></div>
-            <p className="wiring-help">如 Noise Eater 的高／低档与子档 1–4。这些是图内记录，不增加物理输入，不下发硬件。选项值用于稳定比较，标签用于显示。</p>
             {activeNode.settings?.map((setting, index) => <fieldset className="wiring-port-editor" key={setting.id} aria-label={`器件图内设置 ${index + 1}`}><legend>{setting.name}</legend>
               <label><span>设置名称</span><input value={setting.name} onChange={event => updateSetting(setting.id, { name: event.target.value }, `setting:${setting.id}:name`)} /></label>
               <label><span>当前记录值</span><select value={setting.value ?? ""} onChange={event => setSettingChange(active.id, setting.id, event.target.value || null)}><option value="">未记录</option>{setting.options.map((option, optionIndex) => <option key={optionIndex} value={option.value}>{option.label}</option>)}</select></label>
               {setting.options.map((option, optionIndex) => <div className="wiring-setting-option" key={optionIndex}>
                 <label><span>选项值</span><input value={option.value} onChange={event => { const value = event.target.value; updateSetting(setting.id, { options: setting.options.map((item, at) => at === optionIndex ? { ...item, value } : item), ...(setting.value === option.value ? { value: value || null } : {}) }, `setting:${setting.id}:option:${optionIndex}:value`); }} /></label>
                 <label><span>选项标签</span><input value={option.label} onChange={event => updateSetting(setting.id, { options: setting.options.map((item, at) => at === optionIndex ? { ...item, label: event.target.value } : item) }, `setting:${setting.id}:option:${optionIndex}:label`)} /></label>
-                <button className="secondary" disabled={setting.options.length === 1} onClick={() => { if (setting.value === option.value && !window.confirm("删除当前选中的选项并将当前图记录清为未记录？不改变硬件。")) return; updateSetting(setting.id, { options: setting.options.filter((_, at) => at !== optionIndex), ...(setting.value === option.value ? { value: null } : {}) }); }}>删除此选项</button>
+                <button className="secondary" disabled={setting.options.length === 1} onClick={() => { if (setting.value === option.value && !window.confirm("删除当前选中的选项？该设置将清为未记录。")) return; updateSetting(setting.id, { options: setting.options.filter((_, at) => at !== optionIndex), ...(setting.value === option.value ? { value: null } : {}) }); }}>删除此选项</button>
               </div>)}
               <button className="secondary" onClick={() => updateSetting(setting.id, { options: [...setting.options, { value: `option-${crypto.randomUUID()}`, label: `选项 ${setting.options.length + 1}` }] })}>添加设置选项</button>
-              <button className="secondary wiring-danger" onClick={() => { if (window.confirm(`仅删除当前图内设置“${setting.name}”？不改变硬件。`)) changeGraph({ ...graph, nodes: graph.nodes.map(node => node === activeNode ? { ...node, settings: node.settings?.filter(item => item.id !== setting.id) } : node) }); }}>删除图内设置</button>
+              <button className="secondary wiring-danger" onClick={() => { if (window.confirm(`删除图内设置“${setting.name}”？`)) changeGraph({ ...graph, nodes: graph.nodes.map(node => node === activeNode ? { ...node, settings: node.settings?.filter(item => item.id !== setting.id) } : node) }); }}>删除图内设置</button>
             </fieldset>)}
           </>}
         </> : <p className="wiring-help">点击器件标题选择；拖动标题可吸附网格，标题聚焦后方向键每次移动 20。</p>}
       </fieldset>
     </div>
-    <section className="wiring-panel wiring-compare" aria-labelledby={`${prefix}-compare`}><h2 id={`${prefix}-compare`}>现场与目标的草稿比较</h2><p>目标：{targetName(targetId)}。物理连线按端点与光电类型比较；内部信号按同器件的输出 → 输入单独比较，不计入外部改接线。忽略连线标签、ID 与位置，线缆记录（接头 / 编号 / 备注）也不参与匹配而是单列差异，图内设置按稳定设置 ID 的选值单列；只提供人工核对清单，不自动改接或下发硬件。任何后续图修改都会清除过期结果。</p>
+    <section className="wiring-panel wiring-compare" aria-labelledby={`${prefix}-compare`}><h2 id={`${prefix}-compare`}>现场与目标的草稿比较</h2><p>目标：{targetName(targetId)}。</p>
       <button onClick={() => void compare()} disabled={locked || comparing || !Object.hasOwn(draft.targets, targetId)}>{comparing ? "正在比较草稿…" : "比较现场与当前目标草稿"}</button>{!Object.hasOwn(draft.targets, targetId) && <p>此目标尚未建立，请显式新建空目标或编辑目标后再比较。</p>}
       {compareError && <p className="alert error" role="alert">草稿比较失败：{compareError}</p>}
-      {comparison && <div aria-label="草稿比较结果"><p className="alert">当前完整草稿的比较结果，不代表真实接线或安全状态，未自动更改任何连接。</p><div className="wiring-comparison-columns">{edgeList("保留", comparison.retained, draft.site)}{edgeList("拆除", comparison.removed, draft.site)}{edgeList("新增", comparison.added, targetGraph)}</div>
+      {comparison && <div aria-label="草稿比较结果"><div className="wiring-comparison-columns">{edgeList("保留", comparison.retained, draft.site)}{edgeList("拆除", comparison.removed, draft.site)}{edgeList("新增", comparison.added, targetGraph)}</div>
         <section aria-label="内部信号比较"><h3>内部信号变化（非线缆）</h3><div className="wiring-comparison-columns">{edgeList("内部保留", comparison.internal_retained ?? [], draft.site)}{edgeList("内部移除", comparison.internal_removed ?? [], draft.site)}{edgeList("内部新增", comparison.internal_added ?? [], targetGraph)}</div></section>
         <section aria-label="线缆记录比较"><h3>线缆记录变化 <small>{comparison.cable_changes?.length ?? 0}</small></h3>{comparison.cable_changes?.length ? <ul>{comparison.cable_changes.map(change => {
           const edge = targetGraph.edges.find(item => item.id === change.edge_id);
@@ -743,6 +718,6 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
         <h3>端口使用状态变化 <small>{comparison.usage_changes?.length ?? 0}</small></h3>{comparison.usage_changes?.length ? <ul>{comparison.usage_changes.map(change => <li key={`${change.device_id}-${change.port_id}`}>{change.device_name} / {change.port_name}：{usageName(change.site_usage)} → {usageName(change.target_usage)}</li>)}</ul> : <p>无使用状态变化</p>}
         <h3>现场草稿提示</h3>{warnings(comparison.site_warnings, draft.site)}<h3>目标草稿提示</h3>{warnings(comparison.target_warnings, targetGraph)}</div>}
     </section>
-    <section className="wiring-panel wiring-diagnostics"><h2>最近读取 / 保存的服务端提示</h2>{dirty ? <p>当前已编辑，旧提示已隐藏；请{experimentId ? "保存当前目标" : "保存全部图"}或比较草稿以获取新提示。服务端提示不是安全校验。</p> : saved ? experimentId ? warnings(saved.diagnostics.targets[experimentId] ?? [], saved.targets[experimentId] ?? emptyGraph()) : <><h3>共享现场图</h3>{warnings(saved.diagnostics.site, saved.site)}{Object.entries(saved.diagnostics.targets).map(([id, items]) => <div key={id}><h3>{targetName(id)}</h3>{warnings(items, saved.targets[id] ?? emptyGraph())}</div>)}</> : <p>接线图尚未载入，没有可用提示。</p>}</section>
+    <section className="wiring-panel wiring-diagnostics"><h2>最近读取 / 保存的服务端提示</h2>{dirty ? <p>当前已编辑，旧提示已隐藏；请{experimentId ? "保存当前目标" : "保存全部图"}或比较草稿以获取新提示。</p> : saved ? experimentId ? warnings(saved.diagnostics.targets[experimentId] ?? [], saved.targets[experimentId] ?? emptyGraph()) : <><h3>共享现场图</h3>{warnings(saved.diagnostics.site, saved.site)}{Object.entries(saved.diagnostics.targets).map(([id, items]) => <div key={id}><h3>{targetName(id)}</h3>{warnings(items, saved.targets[id] ?? emptyGraph())}</div>)}</> : <p>接线图尚未载入，没有可用提示。</p>}</section>
   </div>;
 }

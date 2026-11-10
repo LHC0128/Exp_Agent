@@ -24,8 +24,5 @@ export function PageHead({ eyebrow, title, description, action, experiment }: Pa
       </div>
       {action}
     </header>
-    {Boolean(experiment?.safety_notes?.length) && <div className="experiment-safety" role="note" aria-label="实验安全提示">
-      <strong>安全提示</strong>{experiment!.safety_notes.map(note => <p key={note}>{note}</p>)}
-    </div>}
   </>);
 }

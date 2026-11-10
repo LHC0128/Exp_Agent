@@ -51,7 +51,7 @@ class RFDirectAWFrequencyParams(ExperimentParams):
     xy_trigger_duty: float = parameter(default=50.0, external_name="XY_TRIGGER_DUTY", label="XY 外触发占空比", unit="%", group="advanced", minimum=0.001, maximum=100)
     xy_trigger_phase: float = parameter(default=0.0, external_name="XY_TRIGGER_PHASE", label="XY 外触发相位", unit="deg", group="advanced")
     pump_mod_freq: float = parameter(default=10000.0, external_name="PUMP_MOD_FREQ", label="Pump 调制频率", unit="Hz", group="basic", minimum=0.001)
-    pump_mod_duty: float = parameter(default=5.0, external_name="PUMP_MOD_DUTY", label="Pump 占空比", unit="%", group="basic", minimum=1, maximum=50)
+    pump_mod_duty: float = parameter(default=5.0, external_name="PUMP_MOD_DUTY", label="Pump 占空比", unit="%", group="basic", minimum=0.1, maximum=99.9)
     pump_mod_amplitude: float = parameter(default=0.18, external_name="PUMP_MOD_AMPLITUDE", label="Pump 载波幅度", unit="Vpp", group="basic", safety_key="Pump_modulation")
     demod0_idx: int = parameter(default=0, external_name="DEMOD0_IDX", label="Demod 0 索引", group="advanced", minimum=0)
     demod0_osc_idx: int = parameter(default=0, external_name="DEMOD0_OSC_IDX", label="Demod 0 振荡器", group="advanced", minimum=0)

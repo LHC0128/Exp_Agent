@@ -50,20 +50,27 @@ function Nodes({ stages, states, selected, onSelect, disabled, runId, editor, sh
       const advancedCount = nodeFields.filter((field) => editor.layout.advanced.includes(field.name)).length;
       const otherUsers = (name: string) => sharingStages.filter((item) => item.id !== stage.id && item.display_parameters.includes(name));
       const preview = state?.status === "completed" && impacts.includes(stage.id);
+      const index = stages.indexOf(stage);
+      // 只依赖紧邻上一步时由箭头表达；跳接或无前置（非首步）才显示文字。
+      const linear = index > 0 && stage.dependencies.length === 1 && stage.dependencies[0] === stages[index - 1].id;
+      const showDependencies = index > 0 && !linear;
+      const status = state?.status ?? "pending";
       return <li className={`xy-flow-node ${state?.status ?? "pending"}${preview ? " draft-affected" : ""}`} key={stage.id}
         data-connect-next={stages[stages.indexOf(stage) + 1]?.dependencies.includes(stage.id) ?? false}>
-        <label className="xy-step-select"><input type="checkbox" checked={selected.includes(stage.id)} disabled={disabled}
-          onChange={(event) => onSelect(event.target.checked ? [...selected, stage.id] : selected.filter((id) => id !== stage.id))} />
-          <strong>{stage.id} {stage.title}</strong></label>
-        <span className="xy-step-status">{stateLabels[state?.status ?? "pending"] ?? state?.status}</span>
-        <small>前置：{stage.dependencies.map((id) => `${id} ${stages.find((item) => item.id === id)?.title ?? ""}`).join("、") || "无"}</small>
-        {stage.quality_gates?.map((gate) => <small key={gate}>检查与质量说明：{gate}</small>)}
+        <div className="xy-step-head">
+          <label className="xy-step-select"><input type="checkbox" checked={selected.includes(stage.id)} disabled={disabled}
+            onChange={(event) => onSelect(event.target.checked ? [...selected, stage.id] : selected.filter((id) => id !== stage.id))} />
+            <strong>{stage.id} {stage.title}</strong></label>
+          <span className={`xy-step-status status-${status}`}>{stateLabels[status] ?? status}</span>
+        </div>
+        {showDependencies && <small>前置：{stage.dependencies.map((id) => `${id} ${stages.find((item) => item.id === id)?.title ?? ""}`).join("、") || "无"}</small>}
+        {stage.quality_gates?.map((gate) => <small className="xy-quality" key={gate}>质检：{gate}</small>)}
         {missing.length > 0 && selected.includes(stage.id) && <p className="xy-missing">缺少前置：{missing.join("、")}</p>}
         {state?.error && <p className="xy-step-error" tabIndex={0} aria-label={`${stage.id} 错误诊断`}>{state.error}</p>}
-        {preview && <p className="xy-draft-note">应用草稿后预计需重跑；当前执行记录尚未改变。</p>}
+        {preview && <p className="xy-draft-note">应用草稿后预计需重跑。</p>}
         {nodeFields.length > 0 && <details className="xy-node-parameters">
-          <summary>参数：{basicFields.length ? basicFields.map((field) =>
-            `${field.label}${otherUsers(field.name).length ? "（共享）" : ""}`).join("、") : "无基础参数"} · 高级 {advancedCount} 项</summary>
+          <summary>{basicFields.length ? `参数：${basicFields.map((field) =>
+            `${field.label}${otherUsers(field.name).length ? "（共享）" : ""}`).join("、")}${advancedCount ? ` · 高级 ${advancedCount} 项` : ""}` : `高级参数 ${advancedCount} 项`}</summary>
           <div role="region" aria-label={`${stage.id} ${stage.title} 参数`}>
             <ParameterForm {...editor} fields={nodeFields} presentation="workflow"
               renderParameterNote={(field) => <>
@@ -284,12 +291,12 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
 
   return <section className="xy-workflow" aria-label="交互实验流程图">
     <div className="xy-workflow-head"><h2>实验流程图</h2>{flow && <a href={flow.diagram_url} download>下载可编辑流程图</a>}</div>
-    {children}
+    <div className="xy-run-block" role="group" aria-label="一键运行"><h3 className="xy-block-label">一键运行</h3>{children}</div>
     {flowError && <p role="alert">{flowError}</p>}
     {session && <div aria-live="polite">
-      <p>会话 {session.session_id.slice(0, 8)} · 修订 {session.revision} · {live ? busy ? "执行或等待命令完成" : "等待下一步" : "已结束"} · 当前模块 {session.current_step ?? "—"}</p>
-      {live && <p className="alert">分步等待期间保持输出状态并持续占用硬件锁；检查完成后请结束会话。</p>}
-      {!live && <p>下方状态为已结束会话的执行记录，参数编辑用于下一次实验。</p>}
+      <p>会话 {session.session_id.slice(0, 8)} · {live ? busy ? "执行中" : "等待下一步" : "已结束"} · 当前步骤 {session.current_step ?? "—"}</p>
+      {live && <p className="alert">分步等待期间保持输出状态并占用硬件，完成后请结束会话。</p>}
+      {!live && <p>下方状态为已结束会话的执行记录。</p>}
       {session.run_id && <p>本轮目录：{session.run_id}</p>}
       <p>输出：{Object.entries(session.outputs ?? {}).map(([name, state]) => `${name} ${state}`).join(" · ")}</p>
       <small>{session.output_source}</small>
@@ -303,16 +310,17 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
     </div>}
     <div className={`xy-flow-columns${flow?.analysis.length === 0 ? " xy-flow-acquisition-only" : ""}`}>
       <section><h2>采集流程</h2>
-        <div className="xy-flow-actions">
+        <div className="xy-flow-actions" role="group" aria-label="分步调试">
+          <span className="xy-block-label">分步调试</span>
           <button disabled={!enabled || !flow || sending || live || hardwareBusy} onClick={() => void create()}>创建分步会话</button>
-          <button className="secondary" disabled={!flow || busy} onClick={chooseAllA}>选择全部采集步骤</button>
-          <button disabled={!flow || !live || busy || !selectedA.length || dirty} onClick={() => void act(`/sessions/${session!.session_id}/steps`, "POST", { revision: session!.revision, step_ids: selectedA })}>运行所选 / 重跑</button>
+          <button className="secondary" aria-label="全选采集步骤" disabled={!flow || busy} onClick={chooseAllA}>全选</button>
+          <button disabled={!flow || !live || busy || !selectedA.length || dirty} onClick={() => void act(`/sessions/${session!.session_id}/steps`, "POST", { revision: session!.revision, step_ids: selectedA })}>运行所选</button>
           <button disabled={!flow || !live || busy || !dirty} onClick={() => void act(`/sessions/${session!.session_id}/parameters`, "PATCH", { revision: session!.revision, parameters: values })}>应用参数到会话</button>
           <button className="danger" disabled={!live || busy} onClick={() => void act(`/sessions/${session!.session_id}/finish`, "POST", { revision: session!.revision })}>结束会话</button>
         </div>
-        {live && dirty && <p role="status">参数草稿尚未应用，请先应用参数再执行模块。</p>}
+        {live && dirty && <p role="status">参数草稿尚未应用，请先应用到会话。</p>}
         {live && dirty && <p role="status">预计需重跑的已完成步骤：{flow?.acquisition.filter((stage) => acquisitionImpacts.includes(stage.id) && session?.steps[stage.id]?.status === "completed")
-          .map((stage) => `${stage.id} ${stage.title}`).join("、") || "暂无"}。实际状态以应用后的后端结果为准。</p>}
+          .map((stage) => `${stage.id} ${stage.title}`).join("、") || "暂无"}。</p>}
         {flow && <Nodes experimentId={experimentId} stages={flow.acquisition} states={session?.steps} selected={selectedA} onSelect={setSelectedA} disabled={busy}
           runId={session?.run_id} editor={acquisitionEditor} sharingStages={sharingStages}
           changed={acquisitionChanged} appliedValues={session?.parameters as ParameterValues | undefined} impacts={acquisitionImpacts} />}
@@ -321,13 +329,13 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
         <label>分析操作对象<select value={runId} disabled={analyzing || sending} onChange={(event) => setRunId(event.target.value)}>
           <option value="">下一次实验（自动分析设置）</option>{runChoices.map((id) => <option key={id} value={id}>{id}</option>)}
         </select></label>
-        {runId && <p>正在编辑 {runId} 的分析覆盖值，不改变下一次实验设置。</p>}
+        {runId && <p>正在编辑 {runId} 的分析覆盖值。</p>}
         {runId && analysisChanged.length > 0 && <p role="status">分析参数草稿尚未应用，执行分析时生效。预计需重算的已完成步骤：{flow?.analysis
           .filter((stage) => analysisImpacts.includes(stage.id) && analysis?.steps[stage.id]?.status === "completed")
           .map((stage) => `${stage.id} ${stage.title}`).join("、") || "暂无"}。</p>}
         <div className="xy-flow-actions">
-          <button className="secondary" disabled={!flow || !analysis || analyzing || sending} onClick={() => setSelectedB(flow?.analysis.map((stage) => stage.id) ?? [])}>选择全部分析步骤</button>
-          <button disabled={!flow || !analysis || !selectedB.length || analyzing || sending} onClick={() => void analyze()}>运行所选分析 / 重算</button>
+          <button className="secondary" aria-label="全选分析步骤" disabled={!flow || !analysis || analyzing || sending} onClick={() => setSelectedB(flow?.analysis.map((stage) => stage.id) ?? [])}>全选</button>
+          <button disabled={!flow || !analysis || !selectedB.length || analyzing || sending} onClick={() => void analyze()}>运行所选分析</button>
         </div>
         {runId && !analysis && <p role="status">正在读取该目录的分析设置…</p>}
         {analysis?.summary?.status === "waiting_calibration" && <p role="status">谱分离已完成，待选择标定曲线后执行增益标定与真值比较。</p>}
@@ -338,6 +346,6 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
           changed={analysisChanged} appliedValues={runId ? appliedAnalysis : session?.parameters as ParameterValues | undefined} impacts={analysisImpacts} />}
       </section>}
     </div>
-    {flow?.analysis.length === 0 && <p>本实验没有独立离线分析器，运行结果通过历史记录查看。</p>}
+    {flow?.analysis.length === 0 && <p>本实验无离线分析，结果见历史记录。</p>}
   </section>;
 }

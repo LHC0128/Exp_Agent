@@ -64,7 +64,7 @@ it("无分析器只显示真实采集节点，参数切换Tab后保留且历史�
   page();
   await screen.findByRole("checkbox", { name: /A01/ });
   expect(screen.queryByRole("heading", { name: "分析流程" })).not.toBeInTheDocument();
-  expect(screen.getByText("本实验没有独立离线分析器，运行结果通过历史记录查看。")).toBeInTheDocument();
+  expect(screen.getByText("本实验无离线分析，结果见历史记录。")).toBeInTheDocument();
   fireEvent.click(screen.getByText(/参数：运行标签、采集增益/));
   const input = screen.getByLabelText("运行标签");
   fireEvent.change(input, { target: { value: "draft" } });
@@ -154,7 +154,7 @@ it.each(["unknown-run", "unknown-finish", "same-role", "dependent-finish"])("真
   page();
   await screen.findByText(/流程接口版本过旧或角色无效/);
   expect(screen.getByRole("button", { name: "创建分步会话" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "运行所选 \/ 重跑" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "运行所选" })).toBeDisabled();
   expect(mockApi.mock.calls.some(([url, options]) => [`${BASE}/sessions`, `${BASE}/runs`].includes(String(url))
     && options?.method === "POST")).toBe(false);
 });

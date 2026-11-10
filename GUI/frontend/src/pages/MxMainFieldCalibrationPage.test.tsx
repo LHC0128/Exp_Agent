@@ -151,11 +151,11 @@ it("真实路由进入两列流程，缺前置拒绝，选择执行和结束使�
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A08 GS200 电流与局部 Y RF 扫频" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A07/);
   expect(screen.getByRole("checkbox", { name: "A07 Y RF 正弦与 R 解调准备" })).not.toBeChecked();
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(current.revision).toBe(1));
   expect(screen.getByRole("checkbox", { name: "A10 安全结束会话" })).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -214,8 +214,8 @@ it("历史分析草稿与下一次参数隔离，保存默认值不包含历史�
   await screen.findByText("已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.GYROMAGNETIC_RATIO_HZ_PER_NT).toBe(5);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${old.run_id}/analysis`
     && options?.method === "POST" && JSON.parse(String(options.body)).analysis_parameters.GYROMAGNETIC_RATIO_HZ_PER_NT === 11)).toBe(true));
 });
@@ -325,7 +325,7 @@ it("恢复质量失败会话显示诊断，后继拒绝后仍能安全结束且�
   await screen.findByText("连续3次 std(R) 超过阈值");
   expect(screen.getByText("质量未通过")).toBeVisible();
   fireEvent.click(screen.getByRole("checkbox", { name: "A09 恢复 GS200 与本轮安全收尾" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A08/);
   expect(current.steps.A09.status).toBe("pending");
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));

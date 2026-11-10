@@ -79,7 +79,6 @@ export function WiringChecklist({ graph, viewName, revision, dirty = false, acti
     <header>
       <h1>人工接线核对清单</h1>
       <p className="wiring-checklist-meta">{viewName} · 修订号 {revisionText}{dirty ? " · 含未保存草稿修改" : ""}</p>
-      <p className="wiring-checklist-warning">人工记录，非硬件状态或安全判定。仅导出当前视图草稿，不保存、不请求后端、不连接硬件。</p>
       <p>共 {graph.nodes.length} 个器件，{graph.edges.length} 条连线。</p>
     </header>
     {graph.nodes.length === 0 ? <p>此图尚无器件，没有可核对的端口记录。</p> : graph.nodes.map(node => {
@@ -97,7 +96,7 @@ export function WiringChecklist({ graph, viewName, revision, dirty = false, acti
     <section className="wiring-checklist" aria-label="导出人工接线核对清单">
       <div>
         <h2>人工接线核对清单</h2>
-        <p>当前视图：{viewName} · 修订号 {revisionText}。按器件列出端口、方向 / 模式、对端、光 / 电类型与连线标签；只读取当前草稿，不保存、不请求后端、不访问硬件。</p>
+        <p>当前视图：{viewName} · 修订号 {revisionText}。按器件列出端口、方向 / 模式、对端、光 / 电类型与连线标签。</p>
       </div>
       <button className="secondary" onClick={() => window.print()} disabled={disabled}>导出/打印核对清单</button>
     </section>

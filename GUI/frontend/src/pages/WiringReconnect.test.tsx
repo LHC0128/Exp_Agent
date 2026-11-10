@@ -111,7 +111,7 @@ const record = (text: string) => screen.getAllByRole("button", { name: /^选择�
 function selectEdge(text: string) { fireEvent.click(record(text)); }
 async function save() {
   fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" }));
-  await screen.findByText("全部现场和实验目标接线图已保存；未连接硬件、未改软件映射或原设备端口档案。");
+  await screen.findByText("全部接线图已保存。");
   await act(async () => {});
 }
 function pointerClick(element: Element, pointerId = 1) {

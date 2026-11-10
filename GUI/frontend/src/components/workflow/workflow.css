@@ -12,8 +12,8 @@
 .xy-flow-group { margin: 16px 0; padding: 12px; border: 1px solid #d6dfe7; border-radius: 10px; }
 .xy-flow-group h3 { margin: 0 0 12px; }
 .xy-flow-group ol { list-style: none; margin: 0; padding: 0; }
-.xy-flow-node { position: relative; margin-bottom: 24px; padding: 12px; border: 1px solid #cad7e2; border-left: 4px solid #8b9fad; border-radius: 8px; background: #f7fafc; }
-.xy-flow-node::after { content: "↓"; position: absolute; bottom: -25px; left: 50%; color: #66808f; }
+.xy-flow-node { position: relative; margin-bottom: 18px; padding: 10px 12px; border: 1px solid #cad7e2; border-left: 4px solid #8b9fad; border-radius: 8px; background: #f7fafc; }
+.xy-flow-node::after { content: "↓"; position: absolute; bottom: -19px; left: 50%; color: #66808f; }
 .xy-flow-node[data-connect-next="false"]::after { content: none; }
 .xy-flow-node a { overflow-wrap: anywhere; }
 .xy-flow-node:last-child { margin-bottom: 0; }
@@ -25,7 +25,16 @@
 .xy-flow-node.running { border-left-color: #007baa; background: #e8f5fc; }
 .xy-flow-node.failed, .xy-flow-node.quality_failed { border-left-color: #b44739; }
 .xy-flow-node.stale { border-left-color: #a07312; }
-.xy-step-status { display: inline-block; margin: 6px 0 0 24px; font-size: 12px; }
+.xy-step-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.xy-step-status { flex: none; padding: 1px 8px; border-radius: 999px; background: #e6edf2; color: #4f6472; font-size: 12px; white-space: nowrap; }
+.xy-step-status.status-completed { background: #dcf1e9; color: #11664f; }
+.xy-step-status.status-running { background: #d8eef9; color: #005f86; }
+.xy-step-status.status-failed, .xy-step-status.status-quality_failed { background: #f8e1de; color: #8f2f24; }
+.xy-step-status.status-stale, .xy-step-status.status-waiting_calibration { background: #f6ecd2; color: #7a560b; }
+.xy-flow-node .xy-quality { color: #6b7f8c; font-size: 12px; }
+.xy-run-block { margin: 12px 0 20px; }
+.xy-block-label { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .04em; color: #6b7f8c; }
+.xy-flow-actions > .xy-block-label { flex-basis: 100%; margin: 0; }
 .xy-step-error, .xy-missing { color: #a42c24; margin: 6px 0; }
 .xy-step-error { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .xy-node-parameters { margin: 10px 0; }

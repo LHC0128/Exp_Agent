@@ -449,7 +449,6 @@ export function GenericExperimentPage() {
         {definition && (
           <div className="experiment-notes">
             <span>所需设备：{definition.required_devices.join(" · ")} · {definition.execution_mode === "typed_workflow" ? "新模式" : "旧模式"}</span>
-            {definition.wiring_notes.map((note) => <p key={note}>{note}</p>)}
           </div>
         )}
         <div className="experiment-strip">

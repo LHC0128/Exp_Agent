@@ -34,7 +34,7 @@ DEFINITION = ExperimentDefinition(
         "DG900 CH1/CH2 分别扫描 Pump/Probe DC 光功率，锁相放大器 Demod0 仅采集 R。",
     ),
     safety_notes=(
-        "所有功率写入前按 0–1 V 安全限值校验；质量坏点标记无效后继续，设备错误立即停止。",
+        "所有功率写入前按 safety_limits.yaml 的光功率限值校验（0–20 V，约 1 V 以上输出饱和）；质量坏点标记无效后继续，设备错误立即停止。",
         "正常、取消、异常与通信结束均归零关闭 Z 辅助场和 X/Y 场，恢复温控及已执行参数中的 Pump/Probe 基准输出；未重跑的参数草稿不改变收尾配置。",
     ),
     schema_version=ADAPTER.params_type.schema_version,

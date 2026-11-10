@@ -7,7 +7,8 @@ import { useParameterGuard } from "../components/NavigationGuard";
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
-import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout, type PreflightResult } from "./experimentHelpers";
+import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
+import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import type { components } from "../types/openapi";
 import "./zawClosedLoop.css";
@@ -73,7 +74,6 @@ export function RFControlScaleSensitivityPage() {
   const [selectedId, setSelectedId] = useState("");
   const [offset, setOffset] = useState(0);
   const [refresh, setRefresh] = useState(0);
-  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const { hardwareBusy } = useJobActivity();
@@ -81,7 +81,10 @@ export function RFControlScaleSensitivityPage() {
   useParameterGuard(fields, values, layout, savedLayout, live ? session?.parameters as ParameterValues : undefined);
   useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId });
   const requestedJobId = useRequestedJobId();
-  const busy = pending || active(analysisJob) || (live ? session?.status !== "waiting" || Boolean(session.pending_request) : active(job));
+  const controls = useRunControls({ experimentId: ID, values, layout, normalize, setError, setJob,
+    onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
+  const { starting, saving, setNotice } = controls;
+  const busy = pending || starting || saving || active(analysisJob) || (live ? session?.status !== "waiting" || Boolean(session.pending_request) : active(job));
   const routeFields = fields.map(field => ({ ...field, read_only: field.read_only
     || ["Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG"].includes(field.name) && values.Z_PHASE_SCAN_ENABLED === false
     || field.name === "RF_PHYSICAL_INPUT_SOURCE" && values.RF_INPUT_ROUTE === "internal"
@@ -124,24 +127,6 @@ export function RFControlScaleSensitivityPage() {
     return () => { disposed = true; };
   }, [selectedId, refresh, analysisJob?.status]);
 
-  const save = async () => {
-    setPending(true); setError("");
-    try {
-      const result = await api<{ schema: ExperimentSchema }>(BASE + "/defaults", { method: "PUT", body: JSON.stringify({ parameters: normalize(values), parameter_layout: layout }) });
-      const confirmed = validatedParameterLayout(result.schema.fields, result.schema.parameter_layout);
-      if (!confirmed || !sameParameterLayout(confirmed, layout)) throw new Error("后端未确认参数布局保存");
-      setSavedLayout(confirmed); setFields(result.schema.fields); setNotice("参数与布局已保存，仅影响下一次实验");
-    } catch (reason) { setError(String(reason)); } finally { setPending(false); }
-  };
-  const check = async (run: boolean) => {
-    setPending(true); setError("");
-    try {
-      const result = await api<PreflightResult>(BASE + "/preflight", { method: "POST", body: JSON.stringify({ parameters: normalize(values) }) });
-      if (!result.ok) { setError(result.errors.join("；")); return; }
-      if (run) setJob(await api<Job>(BASE + "/runs", { method: "POST", body: JSON.stringify({ parameters: normalize(values) }) }));
-      else setNotice("预检通过，未连接仪器");
-    } catch (reason) { setError(String(reason)); } finally { setPending(false); }
-  };
   const fillParameters = async () => {
     if (!selected) return;
     setPending(true); setError("");
@@ -168,23 +153,20 @@ export function RFControlScaleSensitivityPage() {
         setNotice={setNotice} parametersDisabled={busy} values={values} setValues={setValues} session={session} setSession={setSession}
         job={job} setJob={setJob} analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
         runs={workflowRuns.filter(item => item.completion_status === "completed")} setError={setError} onRefresh={setRefresh}>
-        <div className="xy-workflow-controls">
-          <div className="xy-flow-actions">
-            <button disabled={busy || !fields.length} onClick={() => void save()}>保存参数与布局</button>
-            <button disabled={busy || !fields.length} onClick={() => void check(false)}>仅预检</button>
-            <button disabled={busy || live || hardwareBusy || !fields.length} onClick={() => void check(true)}>预检并运行实验</button>
-          </div>
-          <p>在 A13 节点编辑扫描开关和手动 RF 相位。每个控制 × Scale 独立校相；关闭 RF 相位扫描时共用本实验手动相位，其余校相仍逐点执行。不注入人为噪声，不自动追峰；分步等待仍占用硬件锁。</p>
-          <p>{values.Z_PHASE_SCAN_ENABLED === false ? `跳过 RF 相位扫描：全部控制 × Scale 使用手动相位 ${String(values.Z_BURST_PHASE_INIT ?? "—")}°。` : "RF 相位扫描开启：每个控制 × Scale 独立扫描并选相。"}</p>
-          <p aria-label="采集预览">所选控制：{String(values.CONTROL_WAVEFORM_FILES ?? "—")}；扫描倍率：{values.CONTROL_SCALE_START != null && values.CONTROL_SCALE_STOP != null && values.CONTROL_SCALE_POINTS != null ? `${values.CONTROL_SCALE_START} → ${values.CONTROL_SCALE_STOP}，${values.CONTROL_SCALE_POINTS} 点` : String(values.CONTROL_SCALES ?? "—")}；补偿倍率：{JSON.stringify(values.CONTROL_SCALE_FACTORS)}；噪声采集：{values.INCLUDE_NOISE === false ? "关闭" : "开启"}；所有点均测 R 扫频。</p>
-          <p>在 A13 设置扫描倍率起点、终点和点数，以及各控制补偿倍率（默认 1）。实际包络乘两种倍率，图横轴仍用扫描倍率；未测扫描倍率 1 时不做归一化。电压安全和校相质量门槛不变。</p>
-          <p>保存默认值不改历史分析草稿；应用会话草稿后需显式重跑。{!sameParameterLayout(layout, savedLayout) && "布局有未保存修改。"}</p>
-          {notice && <p role="status">{notice}</p>}
-          {definition?.wiring_notes.map(note => <p key={note}>{note}</p>)}
-          <JobView job={job} onUpdate={setJob} />
-        </div>
+        <RunControls controls={controls} canEdit={!busy && fields.length > 0}
+          canStart={!busy && !live && !hardwareBusy && fields.length > 0}
+          layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !active(job)}
+          job={job} onJobUpdate={setJob}
+          preview={<div className="xy-workflow-preview">
+            <p>在 A13 节点编辑扫描开关和手动 RF 相位。每个控制 × Scale 独立校相；关闭 RF 相位扫描时共用本实验手动相位，其余校相仍逐点执行。不注入人为噪声，不自动追峰；分步等待仍占用硬件锁。</p>
+            <p>{values.Z_PHASE_SCAN_ENABLED === false ? `跳过 RF 相位扫描：全部控制 × Scale 使用手动相位 ${String(values.Z_BURST_PHASE_INIT ?? "—")}°。` : "RF 相位扫描开启：每个控制 × Scale 独立扫描并选相。"}</p>
+            <p aria-label="采集预览">所选控制：{String(values.CONTROL_WAVEFORM_FILES ?? "—")}；扫描倍率：{values.CONTROL_SCALE_START != null && values.CONTROL_SCALE_STOP != null && values.CONTROL_SCALE_POINTS != null ? `${values.CONTROL_SCALE_START} → ${values.CONTROL_SCALE_STOP}，${values.CONTROL_SCALE_POINTS} 点` : String(values.CONTROL_SCALES ?? "—")}；补偿倍率：{JSON.stringify(values.CONTROL_SCALE_FACTORS)}；噪声采集：{values.INCLUDE_NOISE === false ? "关闭" : "开启"}；所有点均测 R 扫频。</p>
+            <p>在 A13 设置扫描倍率起点、终点和点数，以及各控制补偿倍率（默认 1）。实际包络乘两种倍率，图横轴仍用扫描倍率；未测扫描倍率 1 时不做归一化。电压安全和校相质量门槛不变。</p>
+            <p>保存默认值不改历史分析草稿；应用会话草稿后需显式重跑。</p>
+          </div>} />
       </WorkflowPanel>
-      <section className="zaw-panel zaw-panel-result"><h2>最近一次结果</h2>{latest ? <Result value={latest} /> : <p>暂无运行记录。</p>}</section>
+      <LatestResultPanel latest={latest} render={value => <Result value={value} />}
+        onOpen={runId => { setSelectedId(runId); setTab("history"); }} />
     </div>
     <div id="scale-panel-history" role="tabpanel" aria-labelledby="scale-tab-history" hidden={tab !== "history"}>
       <div className="zaw-history"><section className="zaw-run-list"><h3>历史运行（{runs.total}）</h3>

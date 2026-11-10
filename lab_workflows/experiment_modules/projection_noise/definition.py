@@ -40,7 +40,7 @@ DEFINITION = ExperimentDefinition(
     analysis_program="experiments/Projection_noise_plot.py",
     wiring_notes=(
         "PD 原始输出接 SDS CH1，使用 DC、1 MΩ、1×探头和 AUTO 自由运行。",
-        "Pump 光功率可在 0–1 V 安全范围内配置；0 V 时通道关闭，"
+        "Pump 光功率按 safety_limits.yaml 限值配置（约 1 V 以上输出饱和）；0 V 时通道关闭，"
         "非零时通道打开。Probe 沿 X，主场由 GS200 沿 Z 控制。",
     ),
     safety_notes=(

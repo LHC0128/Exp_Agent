@@ -44,7 +44,6 @@ class ZCoilInductanceFrequencyResponseParams(ExperimentParams):
         label="频率点数",
         group="basic",
         minimum=2,
-        maximum=1001,
     )
     drive_amplitude_vpp: float = parameter(
         default=1.0,
@@ -75,7 +74,6 @@ class ZCoilInductanceFrequencyResponseParams(ExperimentParams):
         label="每次采集周期数",
         group="basic",
         minimum=2,
-        maximum=100,
     )
     scope_repeats: int = parameter(
         default=5,
@@ -83,7 +81,6 @@ class ZCoilInductanceFrequencyResponseParams(ExperimentParams):
         label="每个频率重复次数",
         group="basic",
         minimum=1,
-        maximum=100,
     )
     trigger_frequency_hz: float = parameter(
         default=100.0,
@@ -202,7 +199,6 @@ class ZCoilInductanceFrequencyResponseParams(ExperimentParams):
         label="自动量程最大尝试次数",
         visible=False,
         minimum=1,
-        maximum=10,
     )
     scope_trigger_level_v: float = parameter(
         default=2.5,

@@ -156,7 +156,7 @@ it("真实路由双Tab、全字段节点归属和质量门槛，保留专属图�
   expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByRole("tab", { name: "历史" })).toBeInTheDocument();
   for (const field of fields) expect(acquisition.some(stage => stage.display_parameters.includes(field.name))).toBe(true);
-  expect(screen.getByText(/检查与质量说明：每点至少8个有效样本/)).toBeVisible();
+  expect(screen.getByText(/质检：每点至少8个有效样本/)).toBeVisible();
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
   expect(await screen.findByAltText("相位-频率热图")).toBeInTheDocument();
   expect(screen.getByText(/闭环冻结波形：frozen/)).toBeInTheDocument();
@@ -168,10 +168,10 @@ it("创建与依赖拒绝、执行步骤和无前置安全结束", async () => {
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A04 最优控制频率×Burst相位扫描" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A03/);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(activeSession.revision).toBe(1));
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
   await waitFor(() => expect(activeSession.status).toBe("closed"));
@@ -219,9 +219,9 @@ it("对照条件字段保值；历史独立分析无覆盖参数；原图与填�
   fireEvent.change(source.getByLabelText("启用常数 Z 控制对照"), { target: { value: "true" } });
   expect(source.getByLabelText("常数控制目标 Larmor 频率 (Hz)")).toHaveValue(1234);
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: summary.run_id } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url.endsWith("/analysis") && options?.method === "POST")).toBe(true));
   const call = mockApi.mock.calls.find(([url, options]) => url.endsWith("/analysis") && options?.method === "POST")!;
   expect(JSON.parse(String(call[1]?.body)).analysis_parameters).toEqual({});

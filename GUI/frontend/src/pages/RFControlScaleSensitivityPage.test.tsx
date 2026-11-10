@@ -43,7 +43,7 @@ beforeEach(() => {
     if (url.endsWith("/analysis")) return { run_id: "history", revision: 0, options: { noise_nperseg: 128 }, steps: Object.fromEntries(flow.analysis.map(s => [s.id, { status: "pending", error: "" }])) };
     if (url === BASE + "/preflight") return { ok: false, errors: ["实际输出超过电压安全限值"] };
     if (url === BASE + "/derive") return { values: { parameters: JSON.parse(String(options?.body)).parameters } };
-    if (url === BASE + "/defaults") return { schema: { fields, parameter_layout: JSON.parse(String(options?.body)).parameter_layout } };
+    if (url === BASE + "/defaults") return { schema: { fields, parameter_layout_saved: true, parameter_layout: JSON.parse(String(options?.body)).parameter_layout } };
     if (url.startsWith("/api/jobs/")) return { id: "job", kind: `session:${ID}`, status: "running", events: [] };
     throw new Error(`未模拟 ${url}`);
   });
@@ -67,7 +67,7 @@ it("真实路由多选控制、保留草稿、保存布局、历史填回，预�
   expect(screen.getByLabelText("运行标签")).toHaveValue("draft");
   expect(screen.getByLabelText("ControlB")).toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
-  await screen.findByText("参数与布局已保存，仅影响下一次实验");
+  await screen.findByText("参数与布局已保存");
   expect(JSON.parse(String(mockApi.mock.calls.find(([url]) => url.endsWith("/defaults"))![1]?.body)).parameters.CONTROL_WAVEFORM_FILES).toEqual(files);
   fireEvent.click(screen.getByRole("button", { name: "预检并运行实验" }));
   await screen.findByText("实际输出超过电压安全限值");
@@ -94,7 +94,7 @@ it("起终点点数和按控制名称的补偿可编辑、保存与应用，横�
   fireEvent.click(screen.getByLabelText("ControlA"));
   expect(screen.getByLabelText("各控制补偿倍率 · ControlA")).toHaveValue(1.25);
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
-  await screen.findByText("参数与布局已保存，仅影响下一次实验");
+  await screen.findByText("参数与布局已保存");
   const saved = mockApi.mock.calls.find(([url]) => url.endsWith("/defaults"))!;
   expect(JSON.parse(String(saved[1]?.body)).parameters).toMatchObject({
     CONTROL_SCALE_START: 2, CONTROL_SCALE_STOP: -2, CONTROL_SCALE_POINTS: 5,
@@ -116,7 +116,7 @@ it("分步流程执行逐点完整校相与测量节点，结束会话可用", a
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByRole("button", { name: "结束会话" });
   fireEvent.click(screen.getByLabelText("A13 " + flow.acquisition.find(s => s.id === "A13")!.title));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url.endsWith("/sessions/test/steps"))).toBe(true));
 });
 
@@ -131,14 +131,14 @@ it("A13 设置全部控制倍率共用的手动相位，默认181.5，保存和�
   expect(screen.getByText(/全部控制 × Scale 使用手动相位 205.5°/)).toBeVisible();
   expect(screen.getByText(/预计需重跑的已完成步骤：A13/)).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
-  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用参数再执行模块。")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("参数草稿尚未应用，请先应用到会话。")).toBeNull());
   const applied = mockApi.mock.calls.find(([url]) => url.endsWith("/parameters"))!;
   expect(JSON.parse(String(applied[1]?.body)).parameters).toMatchObject({ Z_PHASE_SCAN_ENABLED: false, Z_BURST_PHASE_INIT: 205.5 });
   fireEvent.click(screen.getByLabelText("A13 " + flow.acquisition.find(stage => stage.id === "A13")!.title));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url.endsWith("/steps"))).toBe(true));
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
-  await screen.findByText("参数与布局已保存，仅影响下一次实验");
+  await screen.findByText("参数与布局已保存");
   const saved = mockApi.mock.calls.find(([url]) => url.endsWith("/defaults"))!;
   expect(JSON.parse(String(saved[1]?.body)).parameters).toMatchObject({ Z_PHASE_SCAN_ENABLED: false, Z_BURST_PHASE_INIT: 205.5 });
 });

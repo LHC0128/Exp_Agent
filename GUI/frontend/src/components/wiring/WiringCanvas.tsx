@@ -368,7 +368,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
     const hasEdge = connectedEndpoints.has(key);
     const used = usedEndpoints.has(key);
     return <button className="wiring-usage-toggle" disabled={locked || hasEdge} aria-label={`使用状态：${name}`} aria-pressed={used}
-      title={hasEdge ? "此端口已有连线，不能标为未用；请先明确删除相关连线。" : `点击改为${used ? "未用" : "使用"}；仅记录当前图，未用不代表关闭硬件。`}
+      title={hasEdge ? "此端口已有连线，不能标为未用；请先明确删除相关连线。" : `点击改为${used ? "未用" : "使用"}`}
       onClick={() => { if (!locked && !hasEdge) onPortUsage(node.device.id, port.id, used ? "unused" : "used"); }}>{used ? "使用" : "未用"}</button>;
   }
   function renderPort(node: WiringNode, port: PhysicalPort, side: Anchor["side"]) {
@@ -395,7 +395,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
       {port.direction === "inout" && <div className="wiring-port-shortcuts" role="group" aria-label={`历史端口工作方向：${name}`}>
         {(["in", "out"] as const).map(value => <button key={value} disabled={locked || usage === "unused"}
           aria-label={`记录${value === "in" ? "输入" : "输出"}：${name}`} aria-pressed={direction === value}
-          title="补录旧端口在本图的单向工作方向，不修改原物理档案或硬件" onClick={() => chooseDirection(node, port, value)}>{value === "in" ? "输入" : "输出"}</button>)}
+          title="补录旧端口在本图的单向工作方向" onClick={() => chooseDirection(node, port, value)}>{value === "in" ? "输入" : "输出"}</button>)}
       </div>}
       {port.direction === "switchable" && <button className="wiring-mode-toggle" disabled={locked || usage === "unused"} aria-label={`选择图内模式：${name}`}
         title={selectedMode?.name ?? "尚未选择图内功能"} aria-expanded={choosing}
@@ -697,7 +697,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
               </div>
             </div>}
             {settings.length > 0 && <div className="wiring-node-settings" role="group" aria-label={`${device.name}图内设置（仅记录）`}>
-              <div className="wiring-settings-heading">图内设置<small>仅记录，不下发硬件</small></div>
+              <div className="wiring-settings-heading">图内设置</div>
               {settings.map(setting => <label key={setting.id}><span>{setting.name}</span><select disabled={locked} value={setting.value ?? ""}
                 aria-label={`图内设置：${device.name} / ${setting.name}`} onChange={event => { if (!locked) onSettingChange(device.id, setting.id, event.target.value || null); }}>
                 <option value="">未记录</option>{setting.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -721,7 +721,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
                 edgeId: reconnectEdge.id, end, fixed: reconnectEdge[end === "source" ? "target" : "source"], internal: reconnectEdge.signal_type === "internal" });
             }} />;
         })}
-        {!graph.nodes.length && <p className="wiring-canvas-empty">此图尚无器件。手动加入档案快照或空白器件；不会自动绘制真实装置连接。</p>}
+        {!graph.nodes.length && <p className="wiring-canvas-empty">此图尚无器件，请从左侧加入档案快照或空白器件。</p>}
       </div>
       </div>
     </div>
@@ -733,6 +733,6 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
     {focusedEdges.length > 0 && <div className="wiring-path-details" role="status" aria-label="高亮连线路径">{focusedEdges.map(edge => <span key={edge.id}>{edgeLabel(edge)}</span>)}</div>}
     {blockedRoutes.length > 0 && <div className="wiring-warning" role="alert">有 {blockedRoutes.length} 条连线因器件重叠或端口外侧被挡，暂时无法绕行；记录与端口未删除，请移开器件。可在下方连线列表选择：{blockedRoutes.map(({ edge }) => <button className="secondary" disabled={locked} key={edge.id} onClick={() => onSelectEdge(edge.id)}>{endpointLabel(edge.source)} ↔ {endpointLabel(edge.target)}</button>)}</div>}
     {firstPort && <div className="wiring-connect-status" role="status">起点：{endpointLabel(firstPort)}。请选择另一个端口。<button className="secondary" disabled={locked} onClick={cancel}>取消连线</button></div>}
-    <p className="wiring-legend"><span className="signal-optical">━━ 光学连线</span><span className="signal-electrical">┄┄ 电学连线</span><span className="signal-internal">━·━ 内部信号（非线缆）</span><span>● 同一输出的分支点；普通交叉无点、并不相连。悬停或选择高亮完整路径与两端端口；公共段可选具体支路。记录不是安全判定。</span></p>
+    <p className="wiring-legend"><span className="signal-optical">━━ 光学连线</span><span className="signal-electrical">┄┄ 电学连线</span><span className="signal-internal">━·━ 内部信号（非线缆）</span><span>● 同一输出的分支点；普通交叉无点、并不相连。悬停或选择高亮完整路径与两端端口；公共段可选具体支路。</span></p>
   </section>;
 }

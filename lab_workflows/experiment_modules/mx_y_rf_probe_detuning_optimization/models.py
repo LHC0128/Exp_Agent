@@ -91,7 +91,6 @@ class MxYRFProbeDetuningOptimizationParams(MxYRFParams):
         unit="Vpp",
         visible=False,
         minimum=0,
-        maximum=2.0,
         safety_key="rf_coil",
     )
     frequency_duration_s: float = parameter(

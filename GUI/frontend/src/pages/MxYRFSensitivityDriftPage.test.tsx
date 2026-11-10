@@ -145,10 +145,10 @@ it("真实路由三 Tab、11+3节点和真实门槛，缺前置拒绝后可显�
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A09 逐轮标准采集、即时分析与趋势" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A08/);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(session.steps.A10.status).toBe("completed"));
   expect(session.steps.A07.status).toBe("stale");
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -191,7 +191,7 @@ it("A09即时子分析设置保留下一次值，父B列无覆盖参数，分类
   fireEvent.click(node.getByRole("button", { name: "拟合最低 R² 移至基础参数" }));
   for (const target of [summary.run_id, other.run_id, "", summary.run_id]) {
     fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: target } });
-    if (target) await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
+    if (target) await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
     expect(node.getByLabelText("拟合最低 R²")).toHaveValue(.8);
     expect(screen.getAllByLabelText("拟合最低 R²")).toHaveLength(1);
   }
@@ -203,8 +203,8 @@ it("A09即时子分析设置保留下一次值，父B列无覆盖参数，分类
   expect(savedLayout.basic).toContain("FIT_R_SQUARED_MIN");
   expect(savedLayout.advanced).not.toContain("FIT_R_SQUARED_MIN");
   expect(new Set([...savedLayout.basic, ...savedLayout.advanced]).size).toBe(fields.length);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${summary.run_id}/analysis`
     && options?.method === "POST" && Object.keys(JSON.parse(String(options.body)).analysis_parameters).length === 0)).toBe(true));
   cleanup(); page();

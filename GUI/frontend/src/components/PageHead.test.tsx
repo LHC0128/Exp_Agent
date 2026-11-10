@@ -4,7 +4,7 @@ import type { ExperimentDefinition } from "../types/api";
 import { PageHead } from "./PageHead";
 
 afterEach(cleanup);
-it("实验介绍与程序路径默认折叠，名称和安全提示始终可见", () => {
+it("实验介绍与程序路径默认折叠，名称始终可见且不显示安全提示", () => {
   const experiment: ExperimentDefinition = {
     id: "demo", title: "演示实验", description: "完整实验介绍", category: "measurement", category_label: "测量",
     family: "demo", variant: "demo", archived: false, execution_mode: "typed_workflow",
@@ -14,8 +14,8 @@ it("实验介绍与程序路径默认折叠，名称和安全提示始终可见"
   };
   render(<PageHead eyebrow="实验" title={experiment.title} description={experiment.description} experiment={experiment} />);
   expect(screen.getByRole("heading", { name: "演示实验" })).toBeVisible();
-  expect(screen.getByRole("note", { name: "实验安全提示" })).toBeVisible();
-  expect(screen.getByText("确认接线后再开始")).toBeVisible();
+  expect(screen.queryByRole("note", { name: "实验安全提示" })).not.toBeInTheDocument();
+  expect(screen.queryByText("确认接线后再开始")).not.toBeInTheDocument();
   expect(screen.getByText("完整实验介绍")).not.toBeVisible();
   fireEvent.click(screen.getByText("实验说明"));
   expect(screen.getByText("完整实验介绍")).toBeVisible();

@@ -53,7 +53,7 @@ class ProjectionNoiseParams(ExperimentParams):
 
     temp_switch_on_settle_s: float = parameter(default=1.0, external_name="TEMP_SWITCH_ON_SETTLE_S", label="温控恢复后等待", unit="s", group="basic", minimum=0.0)
 
-    pump_laser_power_v: float = parameter(default=0.0, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", minimum=0.0, maximum=1.0, safety_key="Pump_laser_power")
+    pump_laser_power_v: float = parameter(default=0.0, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", minimum=0.0, safety_key="Pump_laser_power")
     probe_laser_power_v: float = parameter(default=0.3, external_name="FIXED_PARAMS.Probe_laser_power", label="Probe 光功率", unit="V", group="basic", safety_key="Probe_laser_power")
     temperature_c: float = parameter(default=120.0, external_name="FIXED_PARAMS.temperature", label="气室温度", unit="°C", group="basic", safety_key="temperature")
 

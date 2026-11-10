@@ -35,7 +35,7 @@ export type WiringPreflightInput = {
   deviceName: (deviceId: string) => string;
 };
 
-export const wiringPreflightEmptyText = "未发现可自动识别的记录提示；仍需人工核对实际接线和硬件状态。";
+export const wiringPreflightEmptyText = "未发现可自动识别的问题。";
 export const wiringPreflightStaleSuffix = "（基于最近读取/保存，草稿尚未保存）";
 
 // 需求条目可能写成“标签 (型号)”；只取型号做存在性比较，不推断连线。
@@ -70,12 +70,12 @@ export function buildWiringPreflight(input: WiringPreflightInput): PreflightItem
 
   if (requirements) {
     for (const device of requirements.required_devices) {
-      if (!requiredDevicePresent(targetGraph, device)) push("warning", "requirement", `${device}：图中未找到此型号器件；请人工核对，页面不添加器件。`);
+      if (!requiredDevicePresent(targetGraph, device)) push("warning", "requirement", `${device}：图中未找到此型号器件。`);
     }
     for (const key of requirements.required_mapping_keys) {
       if (!mappingGroupsAvailable) push("warning", "requirement", `用途 ${key}：当前接线图未提供用途组信息，无法确认绑定，请人工核对。`);
       else if (!targetGraph.nodes.some(node => (node.follow_mapping ?? []).includes(key))) {
-        push("warning", "requirement", `用途 ${key}：图中无器件绑定此用途组；请人工核对，页面不自动绑定或添加器件。`);
+        push("warning", "requirement", `用途 ${key}：图中无器件绑定此用途组。`);
       }
     }
   }

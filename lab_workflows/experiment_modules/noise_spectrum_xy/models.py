@@ -37,7 +37,7 @@ class NoiseSpectrumXYParams(ExperimentParams):
     temp_switch_on_settle_s: float = parameter(default=2.0, external_name="TEMP_SWITCH_ON_SETTLE_S", label="恢复温控等待时间", unit="s", group="advanced", minimum=0, description="校相测量和每点采集恢复温控后等待的时间；支持取消。")
     pump_mod_freq: float = parameter(default=10000.0, external_name="PUMP_MOD_FREQ", label="Pump 调制频率", unit="Hz", group="basic", minimum=0.001)
     pump_mod_amplitude: float = parameter(default=0.18, external_name="PUMP_MOD_AMPLITUDE", label="Pump 载波幅度", unit="Vpp", group="basic", safety_key="Pump_modulation")
-    pump_mod_duty: float = parameter(default=5.0, external_name="PUMP_MOD_DUTY", label="Pump 占空比", unit="%", group="basic", minimum=1, maximum=50)
+    pump_mod_duty: float = parameter(default=5.0, external_name="PUMP_MOD_DUTY", label="Pump 占空比", unit="%", group="basic", minimum=0.1, maximum=99.9)
     rf_gate_amplitude: float = parameter(default=5.0, external_name="RF_GATE_AMPLITUDE", label="RF 门控幅度", unit="Vpp", group="advanced", minimum=0)
     rf_gate_offset: float = parameter(default=2.5, external_name="RF_GATE_OFFSET", label="RF 门控偏置", unit="V", group="advanced")
     xy_ctrl_freq: float = parameter(default=10000.0, external_name="XY_CTRL_FREQ", label="XY 控制载波频率", unit="Hz", group="basic", minimum=0.001)

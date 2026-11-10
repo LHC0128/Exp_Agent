@@ -86,7 +86,6 @@ class MxZOptimalControlXYRFPhaseResponseParams(
         unit="Vpp",
         group="basic",
         minimum=0.001,
-        maximum=2.0,
         safety_key="rf_coil",
     )
     response_duration_s: float = parameter(

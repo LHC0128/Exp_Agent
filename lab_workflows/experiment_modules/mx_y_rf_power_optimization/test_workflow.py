@@ -293,10 +293,10 @@ def test_actual_defaults_roundtrip_and_unsafe_yaml_rejected_before_connection(tm
     saved = tmp_path / "defaults.yaml"
     params.save_yaml(saved)
     assert MxYRFPowerOptimizationParams.from_yaml(saved).to_external() == params.to_external()
-    unsafe = replace(params, y_rf_amp_start_vpp=-3.0, y_rf_amp_stop_vpp=3.0)
+    unsafe = replace(params, y_rf_amp_start_vpp=-30.0, y_rf_amp_stop_vpp=30.0)
     unsafe.save_yaml(saved)
     rejected = MxYRFPowerOptimizationParams.from_yaml(saved)
-    with pytest.raises(ValueError, match="rf_coil|安全"):
+    with pytest.raises(ValueError, match="Y_RF_AMP_START_VPP|rf_coil|安全"):
         preparation.preflight(rejected, root)
 
 

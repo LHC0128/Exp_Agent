@@ -153,16 +153,16 @@ it("真实清单进入两列流程，质量门槛可见，缺前置拒绝，选�
   page();
   await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
   expect(screen.getByText("A08 嵌套 RF 幅度-频率响应扫描")).toBeVisible();
-  expect(screen.getByText("检查与质量说明：参数、映射、锁相采集能力与安全限值全部有效")).toBeVisible();
-  expect(screen.getByText("检查与质量说明：每个 (幅度, 频率) 点 std(R) 合格；重采用尽后保存诊断并阻断后继")).toBeVisible();
+  expect(screen.getByText("质检：参数、映射、锁相采集能力与安全限值全部有效")).toBeVisible();
+  expect(screen.getByText("质检：每个 (幅度, 频率) 点 std(R) 合格；重采用尽后保存诊断并阻断后继")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A08 嵌套 RF 幅度-频率响应扫描" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/Error: 缺少前置：A07/);
   expect(screen.getByRole("checkbox", { name: "A10 安全结束会话" })).not.toBeChecked();
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(activeSession.revision).toBe(1));
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
   await waitFor(() => expect(activeSession.status).toBe("closed"));
@@ -218,8 +218,8 @@ it("历史分析覆盖与下一次参数隔离，分析覆盖使用本实验三�
   await screen.findByText("已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.FIT_R_SQUARED_MIN).toBe(0.9);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${summary.run_id}/analysis`
     && options?.method === "POST" && JSON.parse(String(options.body)).analysis_parameters.FIT_R_SQUARED_MIN === 0.4)).toBe(true));
   expect(parameterImpacts.analysis.FIT_R_SQUARED_MIN).toEqual(["B02", "B03"]);

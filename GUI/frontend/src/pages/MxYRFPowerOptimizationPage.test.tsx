@@ -112,7 +112,7 @@ it("真实路由提供两列流程、顶部操作、原图和缺前置拒绝", a
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByText(/等待下一步/);
   fireEvent.click(node.getByRole("checkbox"));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByRole("alert", { name: "" });
   expect(screen.getAllByText(/缺少前置：A07/).length).toBeGreaterThan(0);
 });
@@ -190,8 +190,8 @@ it("两个历史目录与下一次实验的分析草稿隔离，默认保存不�
   await screen.findByText("已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;
   expect(JSON.parse(String(saved[1]?.body)).parameters.LOW_FREQ_SKIP_HZ).toBe(5);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) => url === `${BASE}/runs/${histories[0].run_id}/analysis`
     && options?.method === "POST" && JSON.parse(String(options.body)).analysis_parameters.LOW_FREQ_SKIP_HZ === 11)).toBe(true));
 });

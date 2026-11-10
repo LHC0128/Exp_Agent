@@ -170,7 +170,7 @@ class ZAWClosedLoopWaveformCorrectionParams(ExperimentParams):
     output_settle_s: float = parameter(default=0.1, external_name="OUTPUT_SETTLE_S", label="更新后稳定等待", unit="s", minimum=0.0)
     scope_headroom_factor: float = parameter(default=1.5, external_name="SCOPE_HEADROOM_FACTOR", label="理论电压量程余量倍数", minimum=1.0, group="advanced", description="理论采样电阻电压峰峰值乘以该倍数，向上选 1/2/5 档并居中；采集中只放大量程。")
 
-    holdout_repeats: int = parameter(default=5, external_name="HOLDOUT_REPEATS", label="独立验证帧数", minimum=1, maximum=20, group="basic")
+    holdout_repeats: int = parameter(default=5, external_name="HOLDOUT_REPEATS", label="独立验证帧数", minimum=1, group="basic")
     maximum_step_v: float = parameter(default=0.5, external_name="MAXIMUM_STEP_V", label="单轮最大电压增量", unit="V", minimum=0.000001, group="advanced")
     maximum_backtracks: int = parameter(default=4, external_name="MAXIMUM_BACKTRACKS", label="最大连续回退次数", minimum=1, group="advanced")
     maximum_current_a: float = parameter(default=1.0, external_name="MAXIMUM_CURRENT_A", label="峰值电流上限", unit="A", minimum=0.000001, group="advanced")
@@ -178,17 +178,17 @@ class ZAWClosedLoopWaveformCorrectionParams(ExperimentParams):
     sense_resistor_power_derating: float = parameter(default=0.5, external_name="SENSE_RESISTOR_POWER_DERATING", label="采样电阻功率降额系数", minimum=0.000001, maximum=1.0, group="advanced")
 
     harmonic_amplitude_fraction: float = parameter(default=0.01, external_name="HARMONIC_AMPLITUDE_FRACTION", label="目标谐波幅度门限（相对最大值）", minimum=0.000001, maximum=1.0, group="advanced")
-    maximum_harmonics: int = parameter(default=16, external_name="MAXIMUM_HARMONICS", label="最大辨识谐波数", minimum=1, maximum=64, group="advanced")
+    maximum_harmonics: int = parameter(default=16, external_name="MAXIMUM_HARMONICS", label="最大辨识谐波数", minimum=1, group="advanced")
     identification_step_v: float = parameter(default=0.02, external_name="IDENTIFICATION_STEP_V", label="辨识初始扰动峰值", unit="V", minimum=0.000001, group="advanced")
     identification_maximum_step_v: float = parameter(default=0.05, external_name="IDENTIFICATION_MAXIMUM_STEP_V", label="辨识最大扰动峰值", unit="V", minimum=0.000001, group="advanced")
-    identification_repeats: int = parameter(default=3, external_name="IDENTIFICATION_REPEATS", label="每个扰动重复帧数", minimum=3, maximum=20, group="advanced")
+    identification_repeats: int = parameter(default=3, external_name="IDENTIFICATION_REPEATS", label="每个扰动重复帧数", minimum=3, group="advanced")
     identification_min_snr: float = parameter(default=5.0, external_name="IDENTIFICATION_MIN_SNR", label="辨识差分最低信噪比", minimum=3.0, group="advanced")
     repeatability_relative_rms: float = parameter(default=0.02, external_name="REPEATABILITY_RELATIVE_RMS", label="重载波形变化上限（相对目标 RMS）", minimum=0.000001, maximum=0.2, group="advanced", visible=False,
         description="保留历史键和值；当前重复性判据使用 HARMONIC_REPEATABILITY_FRACTION。")
     harmonic_repeatability_fraction: float = parameter(default=0.05, external_name="HARMONIC_REPEATABILITY_FRACTION", label="重载谐波复系数变化上限", minimum=0.000001, maximum=0.5, group="advanced")
     minimum_improvement: float = parameter(default=0.0002, external_name="MINIMUM_IMPROVEMENT", label="最小误差改善（绝对比例）", minimum=0.0, group="advanced")
     reidentify_interval: int = parameter(default=3, external_name="REIDENTIFY_INTERVAL", label="重新辨识间隔轮数", minimum=1, group="advanced")
-    final_validation_repeats: int = parameter(default=5, external_name="FINAL_VALIDATION_REPEATS", label="最终重载验证帧数", minimum=3, maximum=20, group="basic")
+    final_validation_repeats: int = parameter(default=5, external_name="FINAL_VALIDATION_REPEATS", label="最终重载验证帧数", minimum=3, group="basic")
 
     @classmethod
     def migrate_external(cls, values: dict[str, object], schema_version: int) -> dict[str, object]:

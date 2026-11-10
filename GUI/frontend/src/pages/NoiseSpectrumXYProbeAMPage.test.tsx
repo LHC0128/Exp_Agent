@@ -203,7 +203,7 @@ it("读取真实节点定义，依赖拒绝保留显式选择并提供原图下�
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await waitFor(() => expect(screen.getByLabelText("A14 AM 噪声 ON/OFF 配对扫描")).toBeEnabled());
   fireEvent.click(screen.getByLabelText("A14 AM 噪声 ON/OFF 配对扫描"));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("Error: 缺少前置：A13")).toBeVisible();
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -283,16 +283,16 @@ it("成功执行所选节点、应用草稿后显式重跑，刷新恢复会话�
   await waitFor(() => expect(screen.getByRole("button", { name: "创建分步会话" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "结束会话" })).toBeEnabled());
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(screen.getByLabelText("A14 AM 噪声 ON/OFF 配对扫描").closest("li")).toHaveClass("completed"));
   const noise = await openParameters("A12");
   fireEvent.change(noise.getByLabelText("AM 噪声输出幅度 (Vpp)"), { target: { value: "0.5" } });
-  expect(screen.getByRole("button", { name: "运行所选 / 重跑" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "运行所选" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "应用参数到会话" }));
   await waitFor(() => expect(screen.getByLabelText("A14 AM 噪声 ON/OFF 配对扫描").closest("li")).toHaveClass("stale"));
   expect(activeSession.parameters.NOISE_AMPLITUDE_VPP).toBe(0.5);
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(screen.getByLabelText("A14 AM 噪声 ON/OFF 配对扫描").closest("li")).toHaveClass("completed"));
   expect(mockApi.mock.calls.filter(([url]) => url === `${BASE}/sessions/probe-session/steps`)).toHaveLength(2);
   mounted.unmount();
@@ -466,7 +466,7 @@ it("校相质量失败显示原因并拒绝依赖步骤，旧历史填回缺省�
   renderPage();
   expect(await screen.findByText("XY 校相未收敛，禁止扫描；可以调整参数后重试")).toBeVisible();
   fireEvent.click(screen.getByLabelText(`A12 ${flow.acquisition.find(stage => stage.id === "A12")!.title}`));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("Error: 缺少前置：A11")).toBeVisible();
   expect(activeSession.steps.A12.status).toBe("pending");
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));

@@ -150,7 +150,6 @@ class MxZCurrentCouplingCalibrationParams(MxZFieldCalibrationParams):
         label="采样电阻自动量程最大尝试次数",
         group="advanced",
         minimum=1,
-        maximum=10,
     )
     sense_scope_auto_range_allow_shrink: bool = parameter(
         default=False,

@@ -16,7 +16,6 @@ from ..z_coil_inductance_frequency_response.models import (
 # 频率轴固定为对数等间隔：扫频只描述连续频带，不再与任何目标 AW 网格绑定。
 FREQUENCY_SPACING = "logarithmic"
 # 单次运行最多允许的扫频点数，避免误填密度造成不可接受的采集时长。
-MAXIMUM_FREQUENCY_POINTS = 2000
 DEFAULT_FREQUENCY_START_HZ = 100.0
 DEFAULT_FREQUENCY_STOP_HZ = 500000.0
 DEFAULT_FREQUENCY_POINTS_PER_DECADE = 20
@@ -72,7 +71,6 @@ class ZCoilCurrentFrequencyResponseParams(ZCoilInductanceFrequencyResponseParams
         label="每十倍频程点数",
         group="basic",
         minimum=2,
-        maximum=500,
         description="对数轴密度；实际点数由起点、终点与该密度按覆盖整个区间推算。",
     )
     frequency_spacing: str = parameter(
@@ -87,7 +85,6 @@ class ZCoilCurrentFrequencyResponseParams(ZCoilInductanceFrequencyResponseParams
         label="扫频点数",
         group="basic",
         minimum=0,
-        maximum=MAXIMUM_FREQUENCY_POINTS,
         read_only=True,
         description="由扫频起点、终点和每十倍频程点数自动计算。",
     )
@@ -114,7 +111,6 @@ class ZCoilCurrentFrequencyResponseParams(ZCoilInductanceFrequencyResponseParams
         label="每个频率重复次数",
         group="basic",
         minimum=1,
-        maximum=100,
         description="相位标准差判据需要至少两次重复；单次重复时该判据退化为无效。",
     )
     scope_sample_rate_sa_s: float = parameter(
@@ -187,7 +183,6 @@ class ZCoilCurrentFrequencyResponseParams(ZCoilInductanceFrequencyResponseParams
         label="记录窗保护周期数",
         visible=False,
         minimum=0,
-        maximum=20,
         description="触发沿不一定落在采样点上，多记录一个周期保证丢弃窗口和待分析窗口都完整。",
     )
     response_settle_cycles: int = parameter(
@@ -334,11 +329,6 @@ class ZCoilCurrentFrequencyResponseParams(ZCoilInductanceFrequencyResponseParams
         )
         if points < 2:
             errors.append("对数扫频区间至少需要两个频率点")
-        elif points > MAXIMUM_FREQUENCY_POINTS:
-            errors.append(
-                f"扫频点数 {points} 超过上限 {MAXIMUM_FREQUENCY_POINTS}，"
-                "请降低每十倍频程点数或收窄频率范围"
-            )
         elif self.frequency_points != points:
             errors.append(f"FREQUENCY_POINTS 应为当前对数区间的点数 {points}")
         if self.scope_sample_rate_sa_s <= 2.0 * self.frequency_stop_hz:

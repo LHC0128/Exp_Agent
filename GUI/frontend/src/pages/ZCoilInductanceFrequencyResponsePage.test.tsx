@@ -131,7 +131,7 @@ it("真实路由提供运行/历史/目标接线图三 Tab、节点编辑保留�
   page();
   const edit = await openParameters("A06");
   expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
-  expect(screen.getByText(`检查与质量说明：${qualityGates.B02[0]}`)).toBeVisible();
+  expect(screen.getByText(`质检：${qualityGates.B02[0]}`)).toBeVisible();
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
   fireEvent.change(edit.getByLabelText("运行标签"), { target: { value: "draft" } });
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
@@ -159,10 +159,10 @@ it("显式选择拒绝缺前置，选择全部后执行并能结束会话", asyn
   fireEvent.click(create);
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A06 线性扫频与重复帧保存" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 \/ 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/A06 缺少前置：A05 Scope/);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 \/ 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(activeSession.steps.A06.status).toBe("completed"));
   expect(activeSession.steps.A07.status).toBe("pending");
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -287,7 +287,7 @@ it("目录分析显示真实质量失败原因，不能跳过失效拟合导出"
   expect(await screen.findByText("归一化参考幅值必须为正")).toBeVisible();
   expect(screen.getByText("质量未通过")).toBeVisible();
   fireEvent.click(screen.getByRole("checkbox", { name: "B03 频响诊断图与报告导出" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await screen.findByText(/B03 缺少前置模块：B02/);
   const posted = mockApi.mock.calls.find(([url, options]) => url === `${BASE}/runs/history-one/analysis` && options?.method === "POST");
   expect(JSON.parse(String(posted?.[1]?.body))).toEqual({ revision: 2, step_ids: ["B03"], analysis_parameters: {} });

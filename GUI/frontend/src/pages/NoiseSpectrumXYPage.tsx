@@ -1,5 +1,4 @@
 import { historyParameterValues } from "./experimentHelpers";
-import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState } from "react";
 import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 
@@ -7,6 +6,7 @@ import { api } from "../api";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
+import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useParameterGuard } from "../components/NavigationGuard";
@@ -139,11 +139,7 @@ export function NoiseSpectrumXYPage() {
   const [job, setJob] = useState<Job>();
   const [analysisJob, setAnalysisJob] = useState<Job>();
   const [session, setSession] = useState<XYSession>();
-  const [starting, setStarting] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [preflight, setPreflight] = useState<PreflightResult>();
   const [welchPreview, setWelchPreview] = useState<WelchPreview>();
   const [latest, setLatest] = useState<RunSummary>();
   const [list, setList] = useState<RunList>({ runs: [], total: 0 });
@@ -155,6 +151,9 @@ export function NoiseSpectrumXYPage() {
   const jobActive = Boolean(job && !terminal(job));
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
   const sessionActive = Boolean(session && session.status !== "closed");
+  const controls = useRunControls({ experimentId: ID, values, layout, setError, setJob,
+    onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
+  const { starting, setStarting, setNotice } = controls;
   const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
   useParameterGuard(fields, values, layout, savedLayout, sessionActive ? session?.parameters as ParameterValues : undefined);
   useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId });
@@ -232,50 +231,6 @@ export function NoiseSpectrumXYPage() {
     return () => { disposed = true; };
   }, [selectedId, refresh, job?.status, analysisJob?.status]);
 
-  const check = async (start: boolean) => {
-    setStarting(true);
-    setError("");
-    try {
-      const result = await api<PreflightResult>(`${BASE}/preflight`, {
-        method: "POST",
-        body: JSON.stringify({ parameters: values }),
-      });
-      setPreflight(result);
-      if (start && result.ok) {
-        setJob(await api<Job>(`${BASE}/runs`, {
-          method: "POST",
-          body: JSON.stringify({ parameters: values }),
-        }));
-      }
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const save = async () => {
-    setSaving(true);
-    setError("");
-    try {
-      const result = await api<{ message: string; schema: ExperimentSchema }>(`${BASE}/defaults`, {
-        method: "PUT",
-        body: JSON.stringify({ parameters: values, parameter_layout: layout }),
-      });
-      const persisted = result.schema.parameter_layout_saved
-        ? validatedParameterLayout(result.schema.fields, result.schema.parameter_layout)
-        : undefined;
-      if (!persisted || !sameParameterLayout(persisted, layout)) {
-        throw new Error("后端未确认参数布局已保存");
-      }
-      setSavedLayout(persisted); setFields(result.schema.fields);
-      setNotice(result.message);
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const reanalyze = async (runId: string) => {
     setStarting(true);
@@ -319,38 +274,22 @@ export function NoiseSpectrumXYPage() {
           session={session} setSession={setSession} job={job} setJob={setJob}
           analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
           runs={list.runs} setError={setError} onRefresh={setRefresh}>
-          <div className="xy-workflow-controls">
-            <div className="xy-flow-actions">
-              <button disabled={saving || starting || parametersBusy || !fields.length} onClick={() => void save()}>
-                {saving ? "保存中…" : "保存参数与布局"}
-              </button>
-              <button className="secondary" disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
-              <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>
-                {starting ? "处理中…" : "预检并运行实验"}
-              </button>
-            </div>
-            {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
-            {notice && <p role="status">{notice}</p>}
-            {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}
-            {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
-            <div className="xy-workflow-preview" aria-label="Welch 分段预览" aria-live="polite">
-              <h3>Welch 分段预览（只读）</h3>
-              {welchPreview?.error ? <p className="alert error">{welchPreview.error}</p> : <>
-                <p>预计每段点数：{welchPreview?.nperseg ?? "—"}；
-                  每点平均段数：{welchPreview?.segments_per_point ?? "—"}（50% 重叠，非独立段数）。</p>
-                <p>预计频率格间距：{welchPreview?.bin_width_hz?.toFixed(3) ?? "—"} Hz；
-                  扫描采集与等待约 {welchPreview?.scan_seconds?.toFixed(1) ?? "—"} 秒。</p>
-              </>}
-              <p>预览基于请求采样率；实际值以分析结果为准。耗时含每点稳定及恢复温控等待，不含初始化、校相、通信和分析。</p>
-            </div>
-            {definition?.wiring_notes.map((note) => <p key={note}>{note}</p>)}
-            <JobView job={job} onUpdate={setJob} />
-          </div>
+          <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
+            canStart={!jobActive && !hardwareBusy && !analysisActive && fields.length > 0}
+            layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
+            job={job} onJobUpdate={setJob}
+            preview={<div className="xy-workflow-preview" aria-label="Welch 分段预览" aria-live="polite">
+                <h3>Welch 分段预览（只读）</h3>
+                {welchPreview?.error ? <p className="alert error">{welchPreview.error}</p> : <>
+                  <p>预计每段点数：{welchPreview?.nperseg ?? "—"}；
+                    每点平均段数：{welchPreview?.segments_per_point ?? "—"}（50% 重叠，非独立段数）。</p>
+                  <p>预计频率格间距：{welchPreview?.bin_width_hz?.toFixed(3) ?? "—"} Hz；
+                    扫描采集与等待约 {welchPreview?.scan_seconds?.toFixed(1) ?? "—"} 秒。</p>
+                </>}
+                <p>预览基于请求采样率；实际值以分析结果为准。耗时含每点稳定及恢复温控等待，不含初始化、校相、通信和分析。</p>
+              </div>} />
         </WorkflowPanel>
-        <section className="zaw-panel zaw-panel-result">
-          <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
-          {latest ? <><Result value={latest} /><button onClick={() => { setSelectedId(latest.run_id); setTab("history"); }}>查看本次详情</button></> : <p>暂无运行记录。</p>}
-        </section>
+        <LatestResultPanel latest={latest} render={value => <Result value={value} />} onOpen={runId => { setSelectedId(runId); setTab("history"); }} />
       </div>
 
       <div id="noise-xy-panel-history" role="tabpanel" aria-labelledby="noise-xy-tab-history" hidden={tab !== "history"}>

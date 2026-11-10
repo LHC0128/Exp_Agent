@@ -157,10 +157,10 @@ it("显式选择拒绝缺前置，选择全部后执行并能结束会话且不�
   fireEvent.click(create);
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A04 温控门控采集与波形保存" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 \/ 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/A04 温控门控采集与波形保存 缺少前置：A03/);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 \/ 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(activeSession.steps.A04.status).toBe("completed"));
   expect(activeSession.steps.A05.status).toBe("pending");
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -250,7 +250,7 @@ it("全部可见参数均在节点内编辑，显示模式与历史按钮共享�
   fireEvent.click(historyPanel().getByRole("button", { name: "时间" }));
   fireEvent.click(screen.getByRole("tab", { name: "运行" }));
   expect((await openParameters("A04")).getByLabelText("模式")).toHaveValue("time");
-  expect(screen.queryByText("参数草稿尚未应用，请先应用参数再执行模块。")).not.toBeInTheDocument();
+  expect(screen.queryByText("参数草稿尚未应用，请先应用到会话。")).not.toBeInTheDocument();
   expect(mockApi.mock.calls.some(([url]) => String(url).endsWith("/parameters"))).toBe(false);
 });
 
@@ -283,7 +283,7 @@ it("历史分析无覆盖字段，切换目录不污染下一次实验，保存�
   const edit = await openParameters("A03");
   fireEvent.change(edit.getByLabelText("采集时间 (s)"), { target: { value: "0.03" } });
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: "1015_0900_scope" } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
   expect(screen.queryByLabelText("PSD 窗")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
   await screen.findByText("已保存");

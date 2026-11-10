@@ -36,7 +36,7 @@ class MxYRFDriftParams(MxYRFParams):
     frequency_stop_hz: float = parameter(default=12000.0, external_name="FREQUENCY_STOP_HZ", label="模式1扫频终点", unit="Hz", group="basic", minimum=0.001, visible=False)
     frequency_points: int = parameter(default=201, external_name="FREQUENCY_POINTS", label="模式1扫频点数", group="basic", minimum=5, visible=False)
     frequency_duration_s: float = parameter(default=0.1, external_name="FREQUENCY_DURATION_S", label="模式1频点采样时间", unit="s", group="advanced", minimum=0.001, visible=False)
-    frequency_rf_amplitude_vpp: float = parameter(default=0.01, external_name="FREQUENCY_RF_AMPLITUDE_VPP", label="Y RF 正弦初始幅度", unit="Vpp", group="basic", minimum=0, maximum=2.0, safety_key="rf_coil", description="用于准备正弦模式；长飘不执行模式1扫频。")
+    frequency_rf_amplitude_vpp: float = parameter(default=0.01, external_name="FREQUENCY_RF_AMPLITUDE_VPP", label="Y RF 正弦初始幅度", unit="Vpp", group="basic", minimum=0, safety_key="rf_coil", description="用于准备正弦模式；长飘不执行模式1扫频。")
     drift_interval_s: float = parameter(
         default=1800.0,
         external_name="DRIFT_INTERVAL_S",

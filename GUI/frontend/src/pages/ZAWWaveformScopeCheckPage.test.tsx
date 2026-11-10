@@ -124,10 +124,10 @@ it("显式选择拒绝缺前置，选择全部后执行并能结束会话", asyn
   fireEvent.click(create);
   await screen.findByText(/分步等待期间保持输出状态/);
   fireEvent.click(screen.getByRole("checkbox", { name: "A05 重复采集与原始帧保存" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 \/ 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await screen.findByText(/A05 缺少前置：A04 Scope/);
-  fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 \/ 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(activeSession.steps.A05.status).toBe("completed"));
   expect(activeSession.steps.A06.status).toBe("pending");
   fireEvent.click(screen.getByRole("button", { name: "结束会话" }));

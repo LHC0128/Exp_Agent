@@ -5,6 +5,7 @@ import { api } from "../api";
 import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
+import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useParameterGuard } from "../components/NavigationGuard";
@@ -13,8 +14,7 @@ import type {
 } from "../types/api";
 import type { components } from "../types/openapi";
 import {
-  defaultParameterLayout, historyParameterValues, preflightMessage, sameParameterLayout,
-  validatedParameterLayout, type PreflightResult,
+  defaultParameterLayout, historyParameterValues, sameParameterLayout, validatedParameterLayout,
 } from "./experimentHelpers";
 import "./zawClosedLoop.css";
 
@@ -65,11 +65,7 @@ export function WorkflowExperimentPage({ experimentId,
   const [job, setJob] = useState<Job>();
   const [analysisJob, setAnalysisJob] = useState<Job>();
   const [session, setSession] = useState<XYSession>();
-  const [starting, setStarting] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [preflight, setPreflight] = useState<PreflightResult>();
   const [preview, setPreview] = useState<ParameterValues>({});
   const [list, setList] = useState<RunList>({ runs: [], total: 0 });
   const [latest, setLatest] = useState<WorkflowRunSummary>();
@@ -78,6 +74,9 @@ export function WorkflowExperimentPage({ experimentId,
   const [offset, setOffset] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const { hardwareBusy } = useJobActivity();
+  const controls = useRunControls({ experimentId, values, layout, setError, setJob,
+    onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
+  const { starting, saving, setStarting, setNotice } = controls;
   const jobActive = active(job);
   const analysisActive = active(analysisJob);
   const live = Boolean(session && session.status !== "closed");
@@ -156,32 +155,6 @@ export function WorkflowExperimentPage({ experimentId,
     return () => { disposed = true; };
   }, [BASE, selectedId, refresh, job?.status, analysisJob?.status]);
 
-  const check = async (start: boolean) => {
-    setStarting(true); setError("");
-    try {
-      const checked = await api<PreflightResult>(`${BASE}/preflight`, {
-        method: "POST", body: JSON.stringify({ parameters: values }),
-      });
-      setPreflight(checked);
-      if (start && checked.ok) setJob(await api<Job>(`${BASE}/runs`, {
-        method: "POST", body: JSON.stringify({ parameters: values }),
-      }));
-    } catch (reason) { setError(String(reason)); }
-    finally { setStarting(false); }
-  };
-  const save = async () => {
-    setSaving(true); setError("");
-    try {
-      const saved = await api<{ message: string; schema: ExperimentSchema }>(`${BASE}/defaults`, {
-        method: "PUT", body: JSON.stringify({ parameters: values, parameter_layout: layout }),
-      });
-      const confirmed = saved.schema.parameter_layout_saved
-        ? validatedParameterLayout(saved.schema.fields, saved.schema.parameter_layout) : undefined;
-      if (!confirmed || !sameParameterLayout(confirmed, layout)) throw new Error("后端未确认参数布局已保存");
-      setSavedLayout(confirmed); setFields(saved.schema.fields); setNotice(saved.message);
-    } catch (reason) { setError(String(reason)); }
-    finally { setSaving(false); }
-  };
   const reanalyze = async (id: string) => {
     setStarting(true); setError("");
     try {
@@ -204,25 +177,15 @@ export function WorkflowExperimentPage({ experimentId,
         values={values} setValues={setValues} session={session} setSession={setSession} job={job} setJob={setJob}
         analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
         runs={list.runs} setError={setError} onRefresh={setRefresh}>
-        <div className="xy-workflow-controls">
-          <div className="xy-flow-actions">
-            <button disabled={saving || starting || parametersBusy || !fields.length} onClick={() => void save()}>{saving ? "保存中…" : "保存参数与布局"}</button>
-            <button className="secondary" disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
-            <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>{starting ? "处理中…" : "预检并运行实验"}</button>
-          </div>
-          {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
-          {notice && <p role="status">{notice}</p>}
-          {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}
-          {Object.keys(preview).length > 0 && <details className="xy-workflow-preview"><summary>派生预览（只读）</summary>
+        <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
+          canStart={!jobActive && !hardwareBusy && !analysisActive && fields.length > 0}
+          layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
+          job={job} onJobUpdate={setJob}
+          preview={Object.keys(preview).length > 0 && <details className="xy-workflow-preview"><summary>派生预览（只读）</summary>
             <dl>{Object.entries(preview).map(([name, value]) => <div key={name}><dt>{fields.find(field => field.name === name)?.label ?? name}</dt><dd>{String(value)}</dd></div>)}</dl>
-          </details>}
-          {definition?.wiring_notes.map(note => <p key={note}>{note}</p>)}
-          <JobView job={job} onUpdate={setJob} />
-        </div>
+          </details>} />
       </WorkflowPanel>
-      <section className="zaw-panel zaw-panel-result"><h2>最近一次结果</h2>
-        {latest ? result(latest) : <p>暂无运行记录。</p>}
-      </section>
+      <LatestResultPanel latest={latest} render={result} onOpen={runId => { setSelectedId(runId); setTab("history"); }} />
     </div>
     <div id={`${experimentId}-panel-history`} role="tabpanel" aria-labelledby={`${experimentId}-tab-history`} hidden={tab !== "history"}>
       <div className="zaw-history">

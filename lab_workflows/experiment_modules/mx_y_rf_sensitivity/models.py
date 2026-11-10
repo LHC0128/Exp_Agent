@@ -31,8 +31,8 @@ class MxYRFParams(ExperimentParams):
         options=(("frequency_sweep", "模式1：RF 扫频 HWHM"), ("amplitude_equivalent", "模式2：幅度等效 HWHM")),
     )
     y_rf_frequency_hz: float = parameter(default=10000.0, external_name="Y_RF_FREQUENCY_HZ", label="Y RF 固定频率", unit="Hz", group="basic", minimum=0.001)
-    y_rf_amp_start_vpp: float = parameter(default=-0.2, external_name="Y_RF_AMP_START_VPP", label="Y RF 起始带符号幅度", unit="Vpp", group="basic", minimum=-2.0, maximum=2.0)
-    y_rf_amp_stop_vpp: float = parameter(default=0.2, external_name="Y_RF_AMP_STOP_VPP", label="Y RF 终止带符号幅度", unit="Vpp", group="basic", minimum=-2.0, maximum=2.0)
+    y_rf_amp_start_vpp: float = parameter(default=-0.2, external_name="Y_RF_AMP_START_VPP", label="Y RF 起始带符号幅度", unit="Vpp", group="basic", minimum=-20.0, maximum=20.0)
+    y_rf_amp_stop_vpp: float = parameter(default=0.2, external_name="Y_RF_AMP_STOP_VPP", label="Y RF 终止带符号幅度", unit="Vpp", group="basic", minimum=-20.0, maximum=20.0)
     y_rf_amp_points: int = parameter(default=81, external_name="Y_RF_AMP_POINTS", label="Y RF 幅度点数", group="basic", minimum=5)
     response_duration_s: float = parameter(default=0.2, external_name="RESPONSE_DURATION_S", label="幅度点采样时间", unit="s", group="basic", minimum=0.001)
     y_rf_nt_per_vpp: float = parameter(default=0.0, external_name="Y_RF_NT_PER_VPP", label="Y RF 线圈标定系数", unit="nT/Vpp", group="basic", minimum=0)
@@ -43,7 +43,7 @@ class MxYRFParams(ExperimentParams):
     frequency_start_hz: float = parameter(default=8000.0, external_name="FREQUENCY_START_HZ", label="模式1扫频起点", unit="Hz", group="basic", minimum=0.001)
     frequency_stop_hz: float = parameter(default=12000.0, external_name="FREQUENCY_STOP_HZ", label="模式1扫频终点", unit="Hz", group="basic", minimum=0.001)
     frequency_points: int = parameter(default=201, external_name="FREQUENCY_POINTS", label="模式1扫频点数", group="basic", minimum=5)
-    frequency_rf_amplitude_vpp: float = parameter(default=0.01, external_name="FREQUENCY_RF_AMPLITUDE_VPP", label="模式1扫频 RF 幅度", unit="Vpp", group="basic", minimum=0, maximum=2.0, safety_key="rf_coil")
+    frequency_rf_amplitude_vpp: float = parameter(default=0.01, external_name="FREQUENCY_RF_AMPLITUDE_VPP", label="模式1扫频 RF 幅度", unit="Vpp", group="basic", minimum=0, safety_key="rf_coil")
     frequency_duration_s: float = parameter(default=0.1, external_name="FREQUENCY_DURATION_S", label="模式1频点采样时间", unit="s", group="advanced", minimum=0.001)
 
     noise_n_avg: int = parameter(default=10, external_name="NOISE_N_AVG", label="噪声平均次数", group="basic", minimum=1)
@@ -63,7 +63,7 @@ class MxYRFParams(ExperimentParams):
     temp_switch_on_lag_s: float = parameter(default=1.0, external_name="TEMP_SWITCH_ON_LAG_S", label="温控恢复后等待", unit="s", group="advanced", minimum=0)
 
     pump_carrier_frequency_hz: float = parameter(default=100e6, external_name="PUMP_CARRIER_FREQUENCY_HZ", label="Pump AOM 载波频率", unit="Hz", group="advanced", minimum=1)
-    pump_carrier_amplitude_vpp: float = parameter(default=0.18, external_name="PUMP_CARRIER_AMPLITUDE_VPP", label="Pump AOM 载波幅度", unit="Vpp", group="advanced", minimum=0, maximum=0.18, safety_key="Pump_modulation")
+    pump_carrier_amplitude_vpp: float = parameter(default=0.18, external_name="PUMP_CARRIER_AMPLITUDE_VPP", label="Pump AOM 载波幅度", unit="Vpp", group="advanced", minimum=0, safety_key="Pump_modulation")
     pump_gate_voltage_v: float = parameter(default=5.0, external_name="PUMP_GATE_VOLTAGE_V", label="Pump RF 开关常开电平", unit="V", group="advanced", minimum=5.0, maximum=5.0, safety_key="Time_sequence")
     pump_laser_power_v: float = parameter(default=0.5, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic", safety_key="Pump_laser_power")
     probe_laser_power_v: float = parameter(default=0.2, external_name="FIXED_PARAMS.Probe_laser_power", label="Probe 光功率", unit="V", group="basic", safety_key="Probe_laser_power")

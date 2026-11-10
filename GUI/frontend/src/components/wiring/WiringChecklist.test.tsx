@@ -47,7 +47,6 @@ describe("WiringChecklist", () => {
     const list = within(printRoot());
 
     expect(list.getByText("实验目标 · RF 灵敏度 · 修订号 rev-42 · 含未保存草稿修改")).toBeInTheDocument();
-    expect(list.getByText(/人工记录，非硬件状态或安全判定/)).toBeInTheDocument();
     expect(list.getByText("共 2 个器件，3 条连线。")).toBeInTheDocument();
     expect(list.getByText("激光器（DL-100）")).toBeInTheDocument();
     expect(list.getByText("锁相放大器（HF2）")).toBeInTheDocument();

@@ -126,7 +126,7 @@ const clean = (embedded = false) => { expect(screen.getByRole("button", { name: 
 const ids = (element: Element) => JSON.parse(element.getAttribute("data-edge-ids")!) as string[];
 async function save(embedded = false) {
   fireEvent.click(screen.getByRole("button", { name: embedded ? "保存当前实验目标" : "保存全部接线图" }));
-  await screen.findByText(embedded ? "当前实验目标接线图已保存；现场和其他实验目标保持不变，未操作硬件。" : "全部现场和实验目标接线图已保存；未连接硬件、未改软件映射或原设备端口档案。");
+  await screen.findByText(embedded ? "当前实验目标接线图已保存。" : "全部接线图已保存。");
   await act(async () => {});
   return puts().at(-1)!.body!;
 }

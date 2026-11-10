@@ -1,5 +1,4 @@
 import { historyParameterValues } from "./experimentHelpers";
-import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState } from "react";
 import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 
@@ -8,6 +7,7 @@ import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { ScopePlot } from "../components/ScopePlot";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
+import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useParameterGuard } from "../components/NavigationGuard";
@@ -227,11 +227,7 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
   const [session, setSession] = useState<XYSession>();
   const [job, setJob] = useState<Job>();
   const [analysisJob, setAnalysisJob] = useState<Job>();
-  const [starting, setStarting] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [preflight, setPreflight] = useState<PreflightResult>();
   const [preview, setPreview] = useState<WaveformPreview>();
   const [latest, setLatest] = useState<RunSummary>();
   const [list, setList] = useState<RunList>({ runs: [], total: 0 });
@@ -240,6 +236,9 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
   const [offset, setOffset] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const { hardwareBusy } = useJobActivity();
+  const controls = useRunControls({ experimentId: ID, values, layout, setError, setJob,
+    onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
+  const { starting, setStarting, setNotice } = controls;
   const jobActive = Boolean(job && !terminal(job));
   const sessionActive = Boolean(session && session.status !== "closed");
   const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
@@ -320,50 +319,6 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
     return () => { disposed = true; };
   }, [selectedId, refresh, job?.status, analysisJob?.status]);
 
-  const check = async (start: boolean) => {
-    setStarting(true);
-    setError("");
-    try {
-      const result = await api<PreflightResult>(`${BASE}/preflight`, {
-        method: "POST",
-        body: JSON.stringify({ parameters: values }),
-      });
-      setPreflight(result);
-      if (start && result.ok) {
-        setJob(await api<Job>(`${BASE}/runs`, {
-          method: "POST",
-          body: JSON.stringify({ parameters: values }),
-        }));
-      }
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const save = async () => {
-    setSaving(true);
-    setError("");
-    try {
-      const result = await api<{ message: string; schema: ExperimentSchema }>(`${BASE}/defaults`, {
-        method: "PUT",
-        body: JSON.stringify({ parameters: values, parameter_layout: layout }),
-      });
-      const persisted = result.schema.parameter_layout_saved
-        ? validatedParameterLayout(result.schema.fields, result.schema.parameter_layout)
-        : undefined;
-      if (!persisted || !sameParameterLayout(persisted, layout)) {
-        throw new Error("后端未确认参数布局已保存");
-      }
-      setSavedLayout(persisted); setFields(result.schema.fields);
-      setNotice(result.message);
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const reanalyze = async (runId: string) => {
     setStarting(true);
@@ -470,31 +425,6 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
               <p>预览基于请求采样率与设计谱；实际值以分析结果为准。三个谱段数组必须等长，逗号分隔。</p>
             </div>
   );
-  const saveContent = <>
-            {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
-            <button disabled={saving || parametersBusy || !fields.length} onClick={() => void save()}>
-              {saving ? "保存中…" : "保存参数与布局"}
-            </button>
-            {notice && <p role="status">{notice}</p>}
-  </>;
-  const controlContent = <>
-            <div className="zaw-control-buttons">
-              <button disabled={starting || jobActive || !fields.length} onClick={() => void check(false)}>仅预检</button>
-              <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>
-                {starting ? "处理中…" : probeAm ? "预检并运行实验" : "完整运行"}
-              </button>
-            </div>
-            {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}
-            {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
-            {definition?.wiring_notes.map((note) => <p key={note}>{note}</p>)}
-            <JobView job={job} onUpdate={setJob} />
-  </>;
-  const latestContent = (
-          <section className="zaw-panel zaw-panel-result">
-            <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
-            {latest ? <><Result value={latest} probeAm={probeAm} /><button onClick={() => { setSelectedId(latest.run_id); setTab("history"); }}>查看本次详情</button></> : <p>暂无运行记录。</p>}
-          </section>
-  );
 
   return (
     <>
@@ -515,16 +445,19 @@ function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimen
           session={session} setSession={setSession} job={job} setJob={setJob}
           analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
           runs={list.runs} setError={setError} onRefresh={setRefresh}>
-          <div className="xy-workflow-controls">
-            {saveContent}
-            {controlContent}
-            <details className="xy-workflow-preview"><summary>{probeAm ? "AM 噪声波形、可选 Z 注入与 Welch 预览" : "波形、注入真值与 Welch 预览"}</summary>{previewContent}</details>
-            <p>{probeAm
-              ? "完整运行自动执行采集、收尾与 B01～B04；移动峰不足时按运行参数 K/B 输出暂定控制轴并标记质量未通过。"
-              : "未选标定曲线时完整运行完成采集、收尾及 B01～B04；选择符合格式与质量要求的静磁场直流逐点曲线后继续 B05、B06。"}</p>
-          </div>
+          <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
+            canStart={!jobActive && !hardwareBusy && !analysisActive && fields.length > 0}
+            layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
+            job={job} onJobUpdate={setJob} startLabel={probeAm ? "预检并运行实验" : "完整运行"}
+            preview={<>
+              <details className="xy-workflow-preview"><summary>{probeAm ? "AM 噪声波形、可选 Z 注入与 Welch 预览" : "波形、注入真值与 Welch 预览"}</summary>{previewContent}</details>
+              <p>{probeAm
+                ? "完整运行自动执行采集、收尾与 B01～B04；移动峰不足时按运行参数 K/B 输出暂定控制轴并标记质量未通过。"
+                : "未选标定曲线时完整运行完成采集、收尾及 B01～B04；选择符合格式与质量要求的静磁场直流逐点曲线后继续 B05、B06。"}</p>
+            </>} />
         </WorkflowPanel>
-        {latestContent}
+        <LatestResultPanel latest={latest} render={value => <Result value={value} probeAm={probeAm} />}
+          onOpen={runId => { setSelectedId(runId); setTab("history"); }} />
       </div>
 
       <div id={`${prefix}-panel-history`} role="tabpanel" aria-labelledby={`${prefix}-tab-history`} hidden={tab !== "history"}>

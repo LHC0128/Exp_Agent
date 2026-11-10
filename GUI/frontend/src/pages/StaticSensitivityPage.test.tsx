@@ -140,7 +140,7 @@ it("共享温控参数同步编辑及分类，初始化条件只在设置节点�
 it("恢复会话，草稿预览只在应用后失效，重跑须显式选择", async () => {
   activeSession = makeSession(true);
   await renderPage();
-  expect(await screen.findByText(/持续占用硬件锁/)).toBeVisible();
+  expect(await screen.findByText(/分步等待期间保持输出状态/)).toBeVisible();
   edit("A08", "每组后温控恢复等待 (s)", "0.8");
   expect(within(node("A08")).getByText("执行完成")).toBeVisible();
   expect(within(node("A08")).getByText(/应用草稿后预计需重跑/)).toBeVisible();
@@ -151,7 +151,7 @@ it("恢复会话，草稿预览只在应用后失效，重跑须显式选择", a
   await waitFor(() => expect(within(node("A08")).getByText("需重跑")).toBeVisible());
   expect(mockApi.mock.calls.some(([url]) => url.endsWith("/steps"))).toBe(false);
   fireEvent.click(screen.getByRole("checkbox", { name: /^A08 / }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url.endsWith("/steps"))).toBe(true));
   expect(JSON.parse(String(mockApi.mock.calls.find(([url]) => url.endsWith("/steps"))![1]?.body)).step_ids).toEqual(["A08"]);
 });
@@ -161,7 +161,7 @@ it("缺少前置拒绝，参数应用失败保留草稿，空闲安全结束", a
   await renderPage();
   fireEvent.click(screen.getByRole("checkbox", { name: /^A09 / }));
   expect(within(node("A09")).getByText("缺少前置：A08")).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("A09 缺少前置模块 A08")).toBeVisible();
   applyError = true;
   edit("A09", "色散扫描点数", "61");
@@ -196,7 +196,7 @@ it("历史小写换算覆盖独立保留，B03 只读，保存只取下一次实
   expect(saved.parameters.z_v_to_nt).toBe(3600);
   fireEvent.click(screen.getByRole("checkbox", { name: /^B02 / }));
   fireEvent.click(screen.getByRole("checkbox", { name: /^B04 / }));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url, init]) => url.endsWith("/analysis") && init?.method === "POST")).toBe(true));
   const request = mockApi.mock.calls.find(([url, init]) => url.endsWith("/analysis") && init?.method === "POST")!;
   expect(JSON.parse(String(request[1]?.body)).analysis_parameters).toEqual({ z_v_to_nt: 3900 });

@@ -90,7 +90,6 @@ class DetectionChainFrequencyResponseParams(ExperimentParams):
         group="advanced",
         safety_key="Probe_AOM_Carrier",
         minimum=0.0,
-        maximum=0.05,
         description="CH1 载波输出幅度"
     )
     

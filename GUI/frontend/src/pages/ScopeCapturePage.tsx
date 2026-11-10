@@ -9,14 +9,15 @@ import { recoverableJob, useExperimentTask, useRequestedJobId } from "../compone
 import { useParameterGuard } from "../components/NavigationGuard";
 import { ScopePlot } from "../components/ScopePlot";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
+import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
 import type {
   ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues,
   RunSummary, RunsResponse,
 } from "../types/api";
 import type { WorkflowRunSummary } from "./WorkflowExperimentPage";
 import {
-  defaultParameterLayout, historyParameterValues, preflightMessage, sameParameterLayout,
-  validatedParameterLayout, type PreflightResult,
+  defaultParameterLayout, historyParameterValues, sameParameterLayout,
+  validatedParameterLayout,
 } from "./experimentHelpers";
 import "./zawClosedLoop.css";
 import "./scopeCapture.css";
@@ -63,11 +64,7 @@ export function ScopeCapturePage() {
   const [job, setJob] = useState<Job>();
   const [analysisJob, setAnalysisJob] = useState<Job>();
   const [session, setSession] = useState<XYSession>();
-  const [starting, setStarting] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [preflight, setPreflight] = useState<PreflightResult>();
   const [workflowRefresh, setWorkflowRefresh] = useState(0);
   const [workflowRuns, setWorkflowRuns] = useState<{ run_id: string; completion_status: string }[]>([]);
   const [latest, setLatest] = useState<WorkflowRunSummary>();
@@ -75,6 +72,9 @@ export function ScopeCapturePage() {
   const jobActive = Boolean(job && !terminal(job));
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
   const sessionActive = Boolean(session && session.status !== "closed");
+  const controls = useRunControls({ experimentId: ID, values, layout, setError, setJob, onStarted: () => setWorkflowRefresh(value => value + 1),
+    onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
+  const { starting, saving, setStarting, setNotice } = controls;
   const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
   useParameterGuard(fields, values, layout, savedLayout, sessionActive ? session?.parameters as ParameterValues : undefined);
   useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob });
@@ -170,33 +170,6 @@ export function ScopeCapturePage() {
     return () => { disposed = true; };
   }, [selected, records, history, job?.kind, job?.status]);
 
-  const check = async (start: boolean) => {
-    setStarting(true); setError("");
-    try {
-      const result = await api<PreflightResult>(`${BASE}/preflight`, { method: "POST", body: JSON.stringify({ parameters: values }) });
-      setPreflight(result);
-      if (!result.ok) { setError(result.errors.join("；")); return; }
-      if (start) {
-        setJob(await api<Job>(`${BASE}/runs`, { method: "POST", body: JSON.stringify({ parameters: values }) }));
-        setWorkflowRefresh(value => value + 1);
-      } else {
-        setNotice(preflightMessage(result, "预检通过"));
-      }
-    } catch (reason) { setError(String(reason)); } finally { setStarting(false); }
-  };
-
-  const save = async () => {
-    setSaving(true); setError("");
-    try {
-      const result = await api<{ message: string; schema: ExperimentSchema }>(`${BASE}/defaults`, {
-        method: "PUT", body: JSON.stringify({ parameters: values, parameter_layout: layout }),
-      });
-      const persisted = result.schema.parameter_layout_saved
-        ? validatedParameterLayout(result.schema.fields, result.schema.parameter_layout) : undefined;
-      if (!persisted || !sameParameterLayout(persisted, layout)) throw new Error("后端未确认参数布局已保存");
-      setSavedLayout(persisted); setFields(result.schema.fields); setNotice(result.message);
-    } catch (reason) { setError(String(reason)); } finally { setSaving(false); }
-  };
 
   const switchMode = (mode: string) => {
     // mode 是稳定外部参数键，同时控制历史叠加的时域/频域显示。
@@ -258,7 +231,6 @@ export function ScopeCapturePage() {
     <PageHead eyebrow="MEASUREMENT · SCOPE" title={definition?.title ?? "示波器采集"}
       description={definition?.description ?? "读取参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
-    {notice && <div className="alert success" role="status">{notice}</div>}
     <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} idPrefix="scope" label="示波器采集视图" />
     <div id="scope-panel-run" role="tabpanel" aria-labelledby="scope-tab-run" hidden={tab !== "run"}>
       <WorkflowPanel enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout}
@@ -267,25 +239,12 @@ export function ScopeCapturePage() {
         analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
         runs={workflowRuns} setError={setError} onRefresh={setWorkflowRefresh}
         experimentId={ID}>
-        <div className="xy-workflow-controls">
-          <div className="xy-flow-actions">
-            <button disabled={saving || starting || parametersBusy || !fields.length} onClick={() => void save()}>
-              {saving ? "保存中…" : "保存参数与布局"}</button>
-            <button className="secondary" disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
-            <button disabled={starting || jobActive || hardwareBusy || analysisActive || !fields.length} onClick={() => void check(true)}>
-              {starting ? "处理中…" : "预检并运行实验"}</button>
-          </div>
-          {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
-          {preflight && <div className={`alert ${preflight.ok ? "success" : "error"}`}>{preflightMessage(preflight, "参数预检通过")}</div>}
-          {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
-          {definition?.wiring_notes.map(note => <p key={note}>{note}</p>)}
-          <JobView job={job} onUpdate={setJob} />
-        </div>
+        <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
+          canStart={!jobActive && !hardwareBusy && !analysisActive && fields.length > 0}
+          layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
+          job={job} onJobUpdate={setJob} />
       </WorkflowPanel>
-      <section className="zaw-panel zaw-panel-result">
-        <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
-        {latest ? <LatestResult value={latest} /> : <p className="zaw-empty">暂无运行记录。</p>}
-      </section>
+      <LatestResultPanel latest={latest} render={value => <LatestResult value={value} />} />
     </div>
     <div id="scope-panel-history" role="tabpanel" aria-labelledby="scope-tab-history" hidden={tab !== "history"}>
       <div className="scope-page">
@@ -345,7 +304,6 @@ export function ScopeCapturePage() {
               <button disabled={selected.length !== 1 || starting || jobActive || sessionActive} onClick={() => void restore(selected[0])}>
                 <Play size={15} />填回参数到运行页</button>
               <p className="scope-muted">勾选历史后叠加比较波形与 PSD；重新分析仅支持单条记录。</p>
-              {definition?.safety_notes.map(note => <p key={note} className="scope-muted">{note}</p>)}
             </section>
           </div>
         </div>

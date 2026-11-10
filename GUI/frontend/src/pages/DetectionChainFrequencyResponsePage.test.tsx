@@ -67,7 +67,7 @@ beforeEach(() => {
       savedLayout = body.parameter_layout;
       savedValues = body.parameters;
       return { schema: { ...fixture.schema, fields: fields.map(field => ({ ...field,
-        default: body.parameters[field.name] })), parameter_layout: savedLayout } };
+        default: body.parameters[field.name] })), parameter_layout_saved: true, parameter_layout: savedLayout } };
     }
     if (url === "/api/jobs") return [];
     if (url === `${base}/workflow`) return flow;
@@ -145,8 +145,8 @@ it("两列流程来自后端定义，缺少前置时拒绝且不自动补齐选�
   const nodes = screen.getByRole("region", { name: "交互实验流程图" });
   await waitFor(() => expect(within(nodes).getByLabelText("A03 参考时钟同步")).toBeEnabled());
   fireEvent.click(within(nodes).getByLabelText("A03 参考时钟同步"));
-  await waitFor(() => expect(within(nodes).getByRole("button", { name: "运行所选 / 重跑" })).toBeEnabled());
-  fireEvent.click(within(nodes).getByRole("button", { name: "运行所选 / 重跑" }));
+  await waitFor(() => expect(within(nodes).getByRole("button", { name: "运行所选" })).toBeEnabled());
+  fireEvent.click(within(nodes).getByRole("button", { name: "运行所选" }));
   expect(await screen.findByText("Error: 缺少前置：A02 设备连接")).toBeVisible();
   expect(within(nodes).getByLabelText("A02 设备连接")).not.toBeChecked();
   const request = mockApi.mock.calls.find(([url]) => url.endsWith("session-test/steps"));
@@ -160,9 +160,9 @@ it("分阶段分析绑定历史目录，独立于等待中的硬件会话", asyn
   activeSession = makeSession();
   renderPage();
   fireEvent.change(await screen.findByLabelText("分析操作对象"), { target: { value: summary.run_id } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
-  fireEvent.click(screen.getByRole("button", { name: "选择全部分析步骤" }));
-  const run = screen.getByRole("button", { name: "运行所选分析 / 重算" });
+  await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "全选分析步骤" }));
+  const run = screen.getByRole("button", { name: "运行所选分析" });
   await waitFor(() => expect(run).toBeEnabled());
   fireEvent.click(run);
   await waitFor(() => expect(mockApi.mock.calls.some(([url, options]) =>
@@ -251,7 +251,7 @@ it("分类保存回读保留值，历史分析无覆盖参数且不会污染下�
   fireEvent.change(parameters.getByLabelText("运行标签"), { target: { value: "next-default" } });
   fireEvent.click(parameters.getByRole("button", { name: "运行标签 移至高级参数" }));
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: summary.run_id } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "选择全部分析步骤" })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "全选分析步骤" })).toBeEnabled());
   for (const stage of analysisStages) expect(screen.queryByLabelText(`${stage.id} ${stage.title} 参数`)).not.toBeInTheDocument();
   const flowRegion = screen.getByRole("region", { name: "交互实验流程图" });
   fireEvent.click(within(flowRegion).getByRole("button", { name: "保存参数与布局" }));
@@ -326,7 +326,7 @@ it("分析质量失败显示真实诊断，并拒绝单独执行缺少有效前�
   expect(await screen.findByText("无有效谱峰点，无法归一化")).toBeVisible();
   expect(screen.getByText("质量未通过")).toBeVisible();
   fireEvent.click(screen.getByLabelText("B03 响应曲线绘图与汇总"));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选分析 / 重算" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选分析" }));
   expect(await screen.findByText("Error: 缺少前置：B02 归一化响应与斜率对照")).toBeVisible();
   expect(mockApi.mock.calls.filter(([url]) => url.endsWith("session-test/steps"))).toHaveLength(0);
 });

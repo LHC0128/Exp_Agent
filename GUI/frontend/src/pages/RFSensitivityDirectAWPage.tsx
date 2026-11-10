@@ -1,5 +1,4 @@
 import { historyParameterValues } from "./experimentHelpers";
-import { preflightMessage, type PreflightResult } from "./experimentHelpers";
 import { useEffect, useState } from "react";
 import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 import { api } from "../api";
@@ -9,6 +8,7 @@ import { useParameterGuard, useUnsavedChanges } from "../components/NavigationGu
 import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
+import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
 import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import type { components } from "../types/openapi";
@@ -126,10 +126,7 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   const [comparisonRuns, setComparisonRuns] = useState<ComparisonRun[]>([]);
   const [comparisonStarting, setComparisonStarting] = useState(false);
   const [historyView, setHistoryView] = useState<"single" | "comparison">("single");
-  const [starting, setStarting] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [latest, setLatest] = useState<Summary>();
   const [list, setList] = useState<RunList>({ runs: [], total: 0, limit: 50, offset: 0 });
   const [workflowRuns, setWorkflowRuns] = useState<RunItem[]>([]);
@@ -149,6 +146,9 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
   const comparisonActive = Boolean(comparisonJob && !terminal(comparisonJob));
   const sessionBusy = Boolean(session && session.status !== "closed" && (session.status !== "waiting" || session.pending_request));
+  const controls = useRunControls({ experimentId: ID, values, layout, normalize: commonTriggerParameters, setError, setJob,
+    onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
+  const { starting, saving, setNotice } = controls;
   const parametersBusy = jobActive && (!session || session.status === "closed") || sessionBusy;
   const routeFields = fields.map(field => ({ ...field, read_only: field.read_only
     || ["Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG"].includes(field.name)
@@ -282,52 +282,6 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
     }
   };
 
-  const check = async (start: boolean) => {
-    setStarting(true);
-    setError("");
-    setNotice("");
-    try {
-      const result = await api<PreflightResult>(`${BASE}/preflight`, {
-        method: "POST",
-        body: JSON.stringify({ parameters: commonTriggerParameters(values) })
-      });
-      if (!result.ok) {
-        setError(result.errors.join("；"));
-        return;
-      }
-      if (start) {
-        setJob(await api<Job>(`${BASE}/runs`, {
-          method: "POST",
-          body: JSON.stringify({ parameters: commonTriggerParameters(values) })
-        }));
-      } else {
-        setNotice(preflightMessage(result, "预检通过"));
-      }
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const save = async () => {
-    setError("");
-    setSaving(true);
-    try {
-      const result = await api<{ schema: ExperimentSchema }>(`${BASE}/defaults`, {
-        method: "PUT",
-        body: JSON.stringify({ parameters: commonTriggerParameters(values), parameter_layout: layout })
-      });
-      const persisted = validatedParameterLayout(result.schema.fields, result.schema.parameter_layout);
-      if (!persisted || !sameParameterLayout(persisted, layout)) throw new Error("后端未确认参数布局已保存");
-      setSavedLayout(persisted); setFields(result.schema.fields);
-      setNotice("参数与布局已保存");
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const reanalyze = async (runId: string) => {
     if (analysisActive || jobActive || comparisonBusy) return;
@@ -370,34 +324,24 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
         hardwareBusy={hardwareBusy} runs={workflowRuns.filter(item => item.completion_status === "completed")}
         runDirectoryChange={runDirectoryChange}
         setError={setError} onRefresh={setRefresh}>
-        <div className="xy-workflow-controls">
-          <div className="xy-flow-actions">
-            <button disabled={saving || starting || parametersBusy || !fields.length} onClick={() => void save()}>{saving ? "保存中…" : "保存参数与布局"}</button>
-            <button className="secondary" disabled={starting || parametersBusy || !fields.length} onClick={() => void check(false)}>仅预检</button>
-            <button disabled={starting || jobActive || hardwareBusy || analysisActive || comparisonBusy || !fields.length} onClick={() => void check(true)}>{starting ? "正在启动…" : "预检并运行实验"}</button>
-          </div>
-          {!sameParameterLayout(layout, savedLayout) && <p role="status">布局有未保存修改</p>}
-          {notice && <p role="status">{notice}</p>}
-          <div className="xy-workflow-preview" aria-label="RF 采集预览">
-            <h3>RF 采集预览（只读）</h3>
-            <p>{values.Z_PHASE_SCAN_ENABLED === false
-              ? `A11：跳过相位扫描，使用手动触发相位 ${String(values.Z_BURST_PHASE_INIT ?? "—")}°；分步模式仍需执行 A11 应用相位。`
-              : "A11：扫描并拟合 Z RF 触发相位；可在节点参数中关闭扫描并手动指定相位。"}</p>
-            {isKnownNoise && <p>关闭扫描时，全部控制版本共用手动 RF 相位；仅改变 RF 正弦分量，不改变注入噪声相位。</p>}
-            <p>响应范围 {String(values.RF_AMP_START ?? "—")} → {String(values.RF_AMP_STOP ?? "—")} Vpp，共 {String(values.RF_AMP_POINTS ?? "—")} 点，每点 {String(values.SCAN_POINT_DURATION_S ?? "—")} s。</p>
-            <p>零 RF 噪声：{String(values.NOISE_N_AVG ?? "—")} 条 × {String(values.NOISE_DURATION ?? "—")} s；采样率以锁相实际回读为准。</p>
-            <p>各控制独立校相、采集和分析，共用当前 RF 参数，不自动改频。PSD 筛选：{values.NOISE_OUTLIER_POLICY === "mad_high" ? "保守 MAD 高值剔除（每控制至少 5 条）" : "保留全部记录"}；评分频带 {String(values.SENSITIVITY_BAND_MIN_HZ ?? "—")}–{String(values.SENSITIVITY_BAND_MAX_HZ ?? "—")} Hz。原始记录始终保留。</p>
-            {isKnownNoise && <p>注入噪声 ON：{String(values.NOISE_BAND_STARTS_HZ ?? "—")} → {String(values.NOISE_BAND_STOPS_HZ ?? "—")} Hz，实际噪声幅度自动对齐设计 PSD（V²/Hz）；控制版本：{String(values.CONTROL_WAVEFORM_FILES ?? "—")}。零 RF 保留噪声。</p>}
-          </div>
-          {hardwareBusy && !jobActive && <p>其他硬件任务正在运行。</p>}
-          {definition?.wiring_notes.map(note => <p key={note}>{note}</p>)}
-          <JobView job={job} onUpdate={setJob} />
-        </div>
+        <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
+          canStart={!jobActive && !hardwareBusy && !analysisActive && !comparisonBusy && fields.length > 0}
+          layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
+          job={job} onJobUpdate={setJob}
+          preview={<div className="xy-workflow-preview" aria-label="RF 采集预览">
+              <h3>RF 采集预览（只读）</h3>
+              <p>{values.Z_PHASE_SCAN_ENABLED === false
+                ? `A11：跳过相位扫描，使用手动触发相位 ${String(values.Z_BURST_PHASE_INIT ?? "—")}°；分步模式仍需执行 A11 应用相位。`
+                : "A11：扫描并拟合 Z RF 触发相位；可在节点参数中关闭扫描并手动指定相位。"}</p>
+              {isKnownNoise && <p>关闭扫描时，全部控制版本共用手动 RF 相位；仅改变 RF 正弦分量，不改变注入噪声相位。</p>}
+              <p>响应范围 {String(values.RF_AMP_START ?? "—")} → {String(values.RF_AMP_STOP ?? "—")} Vpp，共 {String(values.RF_AMP_POINTS ?? "—")} 点，每点 {String(values.SCAN_POINT_DURATION_S ?? "—")} s。</p>
+              <p>零 RF 噪声：{String(values.NOISE_N_AVG ?? "—")} 条 × {String(values.NOISE_DURATION ?? "—")} s；采样率以锁相实际回读为准。</p>
+              <p>各控制独立校相、采集和分析，共用当前 RF 参数，不自动改频。PSD 筛选：{values.NOISE_OUTLIER_POLICY === "mad_high" ? "保守 MAD 高值剔除（每控制至少 5 条）" : "保留全部记录"}；评分频带 {String(values.SENSITIVITY_BAND_MIN_HZ ?? "—")}–{String(values.SENSITIVITY_BAND_MAX_HZ ?? "—")} Hz。原始记录始终保留。</p>
+              {isKnownNoise && <p>注入噪声 ON：{String(values.NOISE_BAND_STARTS_HZ ?? "—")} → {String(values.NOISE_BAND_STOPS_HZ ?? "—")} Hz，实际噪声幅度自动对齐设计 PSD（V²/Hz）；控制版本：{String(values.CONTROL_WAVEFORM_FILES ?? "—")}。零 RF 保留噪声。</p>}
+            </div>} />
       </WorkflowPanel>
-        <section className="zaw-panel zaw-panel-result">
-          <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
-          {latest ? <><Result value={latest} /><button className="zaw-secondary" onClick={() => { setSelectedId(latest.run_id); setHistoryView("single"); setTab("history"); }}>查看本次详情</button></> : <p className="zaw-empty">暂无运行记录。</p>}
-        </section>
+        <LatestResultPanel latest={latest} render={value => <Result value={value} />}
+          onOpen={runId => { setSelectedId(runId); setHistoryView("single"); setTab("history"); }} />
     </div>
     <div id="rf-aw-panel-history" role="tabpanel" aria-labelledby="rf-aw-tab-history" hidden={tab !== "history"}>
       {historyNotice && <p role="status">{historyNotice}</p>}

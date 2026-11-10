@@ -33,7 +33,7 @@ class NoiseSpectrumXYProbeAMParams(NoiseSpectrumXYParams):
     noise_amplitude_vpp: float = parameter(default=2.0, external_name="NOISE_AMPLITUDE_VPP", label="AM 噪声输出幅度", unit="Vpp", group="basic", minimum=0.0, safety_key="Probe_AOM_AM")
     noise_seed: int = parameter(default=20260922, external_name="NOISE_SEED", label="固定随机种子", group="advanced", minimum=0)
     carrier_frequency_hz: float = parameter(default=100e6, external_name="PROBE_AOM_CARRIER_FREQ_HZ", label="Probe AOM 载波频率", unit="Hz", group="basic", minimum=1)
-    carrier_amplitude_vpp: float = parameter(default=0.05, external_name="PROBE_AOM_CARRIER_VPP", label="Probe AOM 载波幅度", unit="Vpp", group="basic", minimum=0.0, maximum=0.05, safety_key="Probe_AOM_Carrier")
+    carrier_amplitude_vpp: float = parameter(default=0.05, external_name="PROBE_AOM_CARRIER_VPP", label="Probe AOM 载波幅度", unit="Vpp", group="basic", minimum=0.0, safety_key="Probe_AOM_Carrier")
     am_depth_percent: float = parameter(default=100.0, external_name="PROBE_AOM_AM_DEPTH_PERCENT", label="外部 AM 深度", unit="%", group="basic", minimum=0, maximum=120)
     inject_controlled_noise: bool = parameter(default=False, external_name="INJECT_CONTROLLED_NOISE", label="注入 Z 已知可控噪声", group="basic")
     z_noise_band_starts_hz: list[float] = parameter(default_factory=lambda: [10000.0], external_name="Z_NOISE_BAND_STARTS_HZ", label="Z 噪声谱段起点", unit="Hz", group="basic")

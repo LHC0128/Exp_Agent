@@ -37,7 +37,7 @@ beforeEach(() => {
     if (url.endsWith("/summary")) return summary;
     if (url.endsWith("/analysis")) return { run_id: "history", revision: 0, options: { noise_nperseg: 128 }, steps: Object.fromEntries(flow.analysis.map(stage => [stage.id, { status: "pending", error: "" }])) };
     if (url === `${BASE}/preflight`) return { ok: false, errors: ["设计 RF 频率不一致"] };
-    if (url === `${BASE}/defaults`) return { schema: { fields, parameter_layout: JSON.parse(String(options?.body)).parameter_layout } };
+    if (url === `${BASE}/defaults`) return { schema: { fields, parameter_layout_saved: true, parameter_layout: JSON.parse(String(options?.body)).parameter_layout } };
     if (url.startsWith("/api/jobs/")) return { id: "job", kind: `session:${ID}`, status: "running", events: [] };
     throw new Error(`未模拟 ${url}`);
   });
@@ -81,7 +81,7 @@ it("分步会话提交所选节点与当前控制列表", async () => {
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByRole("button", { name: "结束会话" });
   fireEvent.click(screen.getByLabelText("A13 " + flow.acquisition.find(stage => stage.id === "A13")!.title));
-  fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+  fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url.endsWith("/sessions/test/steps"))).toBe(true));
 });
 

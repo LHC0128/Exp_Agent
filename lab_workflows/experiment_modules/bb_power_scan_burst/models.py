@@ -14,7 +14,7 @@ class BBPowerScanBurstParams(ExperimentParams):
     pump_power: list[float] = parameter(default_factory=lambda: [0.02 + i * 0.02 for i in range(10)], external_name="PUMP_POWER", label="Pump 功率控制电压列表", unit="V", group="basic")
     system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0)
     modulation_frequency_hz: float = parameter(default=90000, external_name="MODULATION_FREQUENCY_HZ", label="Pump 调制频率", unit="Hz", group="basic", minimum=1)
-    fixed_duty_cycle: float = parameter(default=5, external_name="FIXED_DUTY_CYCLE", label="固定占空比", unit="%", group="basic", minimum=1, maximum=50)
+    fixed_duty_cycle: float = parameter(default=5, external_name="FIXED_DUTY_CYCLE", label="固定占空比", unit="%", group="basic", minimum=0.1, maximum=99.9)
     burst_cycles: int = parameter(default=1000, external_name="BURST_CYCLES", label="Burst 周期数", minimum=1)
     pre_baseline_time_s: float = parameter(default=0.005, external_name="PRE_BASELINE_TIME_S", label="触发前基线时间", unit="s", minimum=0.000001)
     post_dark_time_s: float = parameter(default=0.020, external_name="POST_DARK_TIME_S", label="暗弛豫窗口", unit="s", minimum=0.000001)

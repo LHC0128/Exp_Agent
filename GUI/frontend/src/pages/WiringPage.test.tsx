@@ -135,7 +135,7 @@ function pointerClick(element: Element, pointerId = 1) {
 }
 async function saveAll() {
   fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" }));
-  await screen.findByText("全部现场和实验目标接线图已保存；未连接硬件、未改软件映射或原设备端口档案。");
+  await screen.findByText("全部接线图已保存。");
 }
 function makeLine(source: string, target: string, type: "optical" | "electrical" = "electrical", label = "") {
   pointerClick(endpoint(source)); pointerClick(endpoint(target));
@@ -210,11 +210,10 @@ it("全局目标视图用实验列表中的要求生成预检，不额外请求�
   experiments = [{ ...experiment(), required_devices: ["HF2"], required_mapping_keys: ["read"], wiring_notes: ["从实验列表读取的要点"] }];
   await openPage(); await ready();
   fireEvent.click(screen.getByRole("button", { name: "实验目标图" }));
-  const preflight = await screen.findByRole("region", { name: "接线预检清单（只读汇总）" });
-  await within(preflight).findByText("HF2：图中未找到此型号器件；请人工核对，页面不添加器件。");
-  expect(within(preflight).getByText("用途 read：图中无器件绑定此用途组；请人工核对，页面不自动绑定或添加器件。")).toBeInTheDocument();
-  const requirements = screen.getByRole("region", { name: "实验接线要点与设备要求" });
-  expect(within(requirements).getByText("从实验列表读取的要点")).toBeInTheDocument();
+  const preflight = await screen.findByRole("region", { name: "接线预检清单" });
+  await within(preflight).findByText("HF2：图中未找到此型号器件。");
+  expect(within(preflight).getByText("用途 read：图中无器件绑定此用途组。")).toBeInTheDocument();
+  expect(screen.getByText("接线要点").closest("details")).toHaveTextContent("从实验列表读取的要点");
   expect(requests.some(item => item.path === `/api/experiments/${TARGET}`)).toBe(false);
   expect(puts()).toHaveLength(0);
 }, 15000);
@@ -226,9 +225,9 @@ it("全局目标未在实验列表时只提示未核对，不清空现有图", a
   fireEvent.change(screen.getByLabelText("目标实验"), { target: { value: "retired-unknown" } });
   expect(await screen.findByText("该目标未在当前实验列表，未核对型号/用途要求。")).toBeVisible();
   expect(snapshot("测试锁相")).toBeVisible();
-  const preflight = screen.getByRole("region", { name: "接线预检清单（只读汇总）" });
+  const preflight = screen.getByRole("region", { name: "接线预检清单" });
   expect(within(preflight).queryByText(/图中未找到此型号器件/)).not.toBeInTheDocument();
-  expect(within(preflight).getByText("未发现可自动识别的记录提示；仍需人工核对实际接线和硬件状态。")).toBeInTheDocument();
+  expect(within(preflight).getByText("未发现可自动识别的问题。")).toBeInTheDocument();
   expect(puts()).toHaveLength(0);
 }, 15000);
 
@@ -239,7 +238,7 @@ it("已连线端口改方向或光电类型先确认，未连线端口切换不�
   vi.mocked(window.confirm).mockClear();
   fireEvent.change(firstPort.getByLabelText("图内端口光电类型"), { target: { value: "optical" } });
   expect(window.confirm).toHaveBeenCalledTimes(1);
-  expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining("仅修改当前图记录，不操作硬件；会改变线路语义和比较结果"));
+  expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining("会改变线路语义"));
   expect(firstPort.getByLabelText("图内端口光电类型")).toHaveValue("electrical");
   fireEvent.change(firstPort.getByLabelText("图内端口方向"), { target: { value: "in" } });
   expect(window.confirm).toHaveBeenCalledTimes(2);
@@ -248,15 +247,15 @@ it("已连线端口改方向或光电类型先确认，未连线端口切换不�
   fireEvent.change(firstPort.getByLabelText("图内端口方向"), { target: { value: "in" } });
   expect(firstPort.getByLabelText("图内端口方向")).toHaveValue("in");
   vi.mocked(window.confirm).mockClear();
-  fireEvent.change(screen.getByLabelText("图内记录模式（非硬件状态）"), { target: { value: "mode-in" } });
+  fireEvent.change(screen.getByLabelText("图内记录模式"), { target: { value: "mode-in" } });
   expect(window.confirm).not.toHaveBeenCalled();
-  expect(screen.getByLabelText("图内记录模式（非硬件状态）")).toHaveValue("mode-in");
+  expect(screen.getByLabelText("图内记录模式")).toHaveValue("mode-in");
 }, 15000);
 
 it("已连线可切换端口换到不同方向的模式先确认，取消保留当前记录", async () => {
   stored.site = graph(generator(), receiver()); stored.site.edges = [edge("ref-edge", "ref", "signal-v")];
   await openPage(); await ready(); pointerClick(snapshot("测试信号源"));
-  const select = screen.getByLabelText("图内记录模式（非硬件状态）");
+  const select = screen.getByLabelText("图内记录模式");
   expect(select).toHaveValue("");
   vi.mocked(window.confirm).mockClear();
   fireEvent.change(select, { target: { value: "mode-in" } });
@@ -270,21 +269,21 @@ it("已连线可切换端口换到不同方向的模式先确认，取消保留�
 it("档案完整快照保留设备端口模式ID、单图去重并隔离每图模式与名称", async () => {
   await openPage(); await ready(); add("测试信号源");
   expect(within(screen.getByRole("group", { name: "加入器件" })).getByRole("button", { name: /测试信号源/ })).toBeDisabled();
-  expect(screen.getByLabelText("图内记录模式（非硬件状态）")).toHaveValue("");
+  expect(screen.getByLabelText("图内记录模式")).toHaveValue("");
   fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "现场独立命名" } });
-  fireEvent.change(screen.getByLabelText("图内记录模式（非硬件状态）"), { target: { value: "mode-out" } });
+  fireEvent.change(screen.getByLabelText("图内记录模式"), { target: { value: "mode-out" } });
   vi.mocked(window.confirm).mockClear();
   fireEvent.click(screen.getByRole("button", { name: "实验目标图" }));
   expect(window.confirm).not.toHaveBeenCalled();
   expect(screen.queryByRole("group", { name: /^器件快照：/ })).not.toBeInTheDocument(); add("测试信号源");
-  expect(screen.getByLabelText("图内记录模式（非硬件状态）")).toHaveValue("");
-  fireEvent.change(screen.getByLabelText("图内记录模式（非硬件状态）"), { target: { value: "mode-in" } });
+  expect(screen.getByLabelText("图内记录模式")).toHaveValue("");
+  fireEvent.change(screen.getByLabelText("图内记录模式"), { target: { value: "mode-in" } });
   await saveAll();
   expect(stored.site.nodes[0].device).toEqual({ ...generator(), name: "现场独立命名", ports: generator().ports.map(item => item.id === "ref" ? { ...item, selected_mode: "mode-out" } : item) });
   expect(stored.targets[TARGET].nodes[0].device.ports[1]).toMatchObject({ id: "ref", selected_mode: "mode-in", modes: generator().ports[1].modes });
   expect(profiles[0]).toEqual(generator());
   fireEvent.click(screen.getByRole("button", { name: "共享现场图" })); pointerClick(snapshot("现场独立命名"));
-  expect(screen.getByLabelText("图内记录模式（非硬件状态）")).toHaveValue("mode-out");
+  expect(screen.getByLabelText("图内记录模式")).toHaveValue("mode-out");
 });
 
 it("重建档案同库来源不同profile ID也禁止重复加入且不替换旧图快照", async () => {
@@ -396,7 +395,7 @@ it("空白分路器人工增改端口与光电方向，删除端口/器件确认
   makeLine("人工分路器 / 光路 / 入射光", "测试锁相 / Signal Input / V", "optical");
   fireEvent.click(screen.getByRole("button", { name: "删除图内端口及相关连线" })); expect(screen.getByLabelText("图内端口名称")).toHaveValue("入射光");
   vi.mocked(window.confirm).mockReturnValue(true); fireEvent.click(screen.getByRole("button", { name: "删除图内端口及相关连线" }));
-  expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining("当前图相关的 1 条连线"));
+  expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining("及 1 条相关连线"));
   expect(screen.queryByRole("button", { name: /^选择连线记录：/ })).not.toBeInTheDocument();
   await saveAll(); const blank = stored.site.nodes[1].device; expect(blank.id).not.toBe("receiver"); expect(blank.ports).toEqual([]);
   pointerClick(snapshot("测试锁相")); fireEvent.click(screen.getByRole("button", { name: "删除当前图器件及相关连线" })); await saveAll();
@@ -432,7 +431,7 @@ it.each(["error", "conflict"] as const)("PUT %s失败保全site/targets/base，�
   expect(body()).toMatchObject({ base_revision: "wiring-r1", site: { nodes: [{ device: { name: "失败保留现场" } }] }, targets: { [TARGET]: { nodes: [{ device: { name: "失败保留目标" } }] } } });
   if (failure === "conflict") {
     vi.mocked(window.confirm).mockReturnValue(false); const reads = requests.filter(item => item.path === "/api/wiring" && item.method === "GET").length;
-    fireEvent.click(screen.getByRole("button", { name: "确认重新载入最新接线图" })); expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining("丢弃全部现场和实验目标"));
+    fireEvent.click(screen.getByRole("button", { name: "确认重新载入最新接线图" })); expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining("丢弃全部未保存修改"));
     expect(requests.filter(item => item.path === "/api/wiring" && item.method === "GET")).toHaveLength(reads);
   }
   fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" })); await waitFor(() => expect(puts()).toHaveLength(2));
@@ -448,13 +447,13 @@ it("saving禁全部图编辑、拖动、模式、复制和比较，成功响应�
   fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "保存前快照" } }); selectEdge();
   fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" }));
   expect(screen.getByRole("button", { name: "正在保存全部图…" })).toBeDisabled();
-  for (const element of [screen.getByLabelText("图内器件名称"), screen.getByLabelText("图内器件型号"), screen.getByLabelText("图内记录模式（非硬件状态）"),
+  for (const element of [screen.getByLabelText("图内器件名称"), screen.getByLabelText("图内器件型号"), screen.getByLabelText("图内记录模式"),
     screen.getByLabelText("连线标签"), screen.getByLabelText("连线光电类型"), screen.getByLabelText("目标实验"), snapshot("保存前快照"), endpoint("保存前快照 / CH1"),
     screen.getByRole("button", { name: "添加空白图内器件" }), screen.getByRole("button", { name: "添加图内物理端口" }), screen.getByRole("button", { name: "复制现场到当前实验目标草稿" }),
     screen.getByRole("button", { name: "删除当前图器件及相关连线" }), screen.getByRole("button", { name: "重新载入" }), screen.getByRole("button", { name: "放弃全部草稿" }), screen.getByRole("button", { name: "比较现场与当前目标草稿" })]) expect(element).toBeDisabled();
   fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "不应接受" } }); fireEvent.keyDown(snapshot("保存前快照"), { key: "ArrowRight" });
   expect(screen.getByLabelText("图内器件名称")).toHaveValue("保存前快照");
-  await act(async () => finish()); await screen.findByText(/全部现场和实验目标接线图已保存/);
+  await act(async () => finish()); await screen.findByText(/全部接线图已保存。/);
   expect(stored.site.nodes[0]).toMatchObject({ x: 60, device: { name: "保存前快照" } }); expect(screen.getByLabelText("图内器件名称")).toBeEnabled();
 });
 

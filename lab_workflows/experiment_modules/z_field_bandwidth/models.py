@@ -48,7 +48,7 @@ class ZFieldBandwidthParams(ExperimentParams):
     sigin2_impedance: int = parameter(default=1000000, external_name="SIGIN2_IMPEDANCE", label="旧阻抗键", visible=False)
     pump_mod_freq: float = parameter(default=90000, external_name="PUMP_MOD_FREQ", label="Pump 门控频率", unit="Hz", group="basic", minimum=0.001)
     pump_mod_amplitude: float = parameter(default=0.18, external_name="PUMP_MOD_AMPLITUDE", label="Pump 载波幅度", unit="Vpp", group="basic", minimum=0)
-    pump_mod_duty: float = parameter(default=5, external_name="PUMP_MOD_DUTY", label="Pump 门控占空比", unit="%", group="basic", minimum=1, maximum=50)
+    pump_mod_duty: float = parameter(default=5, external_name="PUMP_MOD_DUTY", label="Pump 门控占空比", unit="%", group="basic", minimum=0.1, maximum=99.9)
     rf_gate_amplitude: float = parameter(default=5, external_name="RF_GATE_AMPLITUDE", label="Pump 门控幅度", unit="Vpp", group="advanced", minimum=0)
     rf_gate_offset: float = parameter(default=2.5, external_name="RF_GATE_OFFSET", label="Pump 门控偏置", unit="V", group="advanced")
     pump_laser_power: float = parameter(default=0.1, external_name="FIXED_PARAMS.Pump_laser_power", label="Pump 光功率", unit="V", group="basic")

@@ -106,11 +106,11 @@ describe.each(experiments)("$id 真实路由", ({ id, fixture, shared, first, se
     await waitFor(() => expect(create).toBeEnabled()); fireEvent.click(create);
     await screen.findByText(/分步等待期间保持输出状态/);
     fireEvent.click(screen.getByRole("checkbox", { name: stageLabel("A06") }));
-    fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+    fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
     await screen.findByText(/Error: 缺少前置 A05/);
     expect(screen.getByRole("checkbox", { name: stageLabel("A05") })).not.toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "选择全部采集步骤" }));
-    fireEvent.click(screen.getByRole("button", { name: "运行所选 / 重跑" }));
+    fireEvent.click(screen.getByRole("button", { name: "全选采集步骤" }));
+    fireEvent.click(screen.getByRole("button", { name: "运行所选" }));
     await waitFor(() => expect(session.revision).toBe(1));
     expect(screen.getByRole("checkbox", { name: stageLabel("A07") })).not.toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
@@ -146,9 +146,9 @@ describe.each(experiments)("$id 真实路由", ({ id, fixture, shared, first, se
     expect(tag).toHaveValue("historical");
     expect(mocked.mock.calls.some(([url, opt]) => url === `${BASE}/runs` && opt?.method === "POST")).toBe(false);
     fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: "old" } });
-    const selectAnalysis = screen.getByRole("button", { name: "选择全部分析步骤" });
+    const selectAnalysis = screen.getByRole("button", { name: "全选分析步骤" });
     await waitFor(() => expect(selectAnalysis).toBeEnabled()); fireEvent.click(selectAnalysis);
-    const analyze = screen.getByRole("button", { name: "运行所选分析 / 重算" });
+    const analyze = screen.getByRole("button", { name: "运行所选分析" });
     await waitFor(() => expect(analyze).toBeEnabled()); fireEvent.click(analyze);
     await waitFor(() => expect(mocked.mock.calls.some(([url, opt]) => url === `${BASE}/runs/old/analysis` && opt?.method === "POST"
       && Object.keys(JSON.parse(String(opt.body)).analysis_parameters).length === 0)).toBe(true));
@@ -157,7 +157,7 @@ describe.each(experiments)("$id 真实路由", ({ id, fixture, shared, first, se
   it.each([false, "run_step_id", "finish_step_id"] as const)("缺元数据 %s 阻止新执行但恢复会话并允许安全结束", async missing => {
     session = makeSession(); metadata = missing; page(); await screen.findByText(/接口版本过旧/);
     expect(screen.getByRole("button", { name: "创建分步会话" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "运行所选 / 重跑" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行所选" })).toBeDisabled();
     expect(mocked.mock.calls.some(([url, options]) => url === `${BASE}/sessions` && options?.method === "POST")).toBe(false);
     const finish = await screen.findByRole("button", { name: "结束会话" });
     await waitFor(() => expect(finish).toBeEnabled()); fireEvent.click(finish);
