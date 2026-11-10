@@ -199,7 +199,7 @@ it("质量验收失败时仍在运行和历史中显示二维谱、错误及有�
     analysis_quality: { fit: { valid_points: 0, total_points: 200, valid_frequency_extent_hz: null } } };
   renderPage();
   const panel = screen.getByRole("tabpanel", { name: "运行" });
-  expect(await within(panel).findByText(/质量验收未通过/)).toBeVisible();
+  expect(await within(panel).findByText(/质量未通过/)).toBeVisible();
   expect(within(panel).getByText(/通过质量验收 0 \/ 200/)).toBeVisible();
   expect(within(panel).getByText("移动峰不足")).toBeVisible();
   const label = "二维噪声谱（未标定时纵轴为扫描电压）";

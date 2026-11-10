@@ -379,7 +379,7 @@ def test_defaults_migration_yaml_and_safety(tmp_path):
     assert owned == {f["name"] for f in p.schema()["fields"]}
 
 
-@pytest.mark.parametrize("values", [{"PROBE_POWER_LIST": []}, {"PROBE_POWER_LIST": [2]}, {"PROBE_POWER_LIST": [float("nan")]},
+@pytest.mark.parametrize("values", [{"PROBE_POWER_LIST": []}, {"PROBE_POWER_LIST": [25]}, {"PROBE_POWER_LIST": [float("nan")]},
     {"PUMP_SWITCH_FREQ": 10}, {"TRIGGER_SOURCE": "C1"}, {"ACQ_REPEATS": True}, {"T1_BOUNDS": [1, .1]},
     {"SCOPE_VOLT_SCALE": 0}, {"SYSTEM_SETTLE_S": -1}, {"X_FIELD_AMPLITUDE": 99}])
 def test_invalid_parameters_rejected_before_connection(tmp_path, monkeypatch, values):

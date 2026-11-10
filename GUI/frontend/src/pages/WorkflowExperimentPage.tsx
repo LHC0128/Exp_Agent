@@ -6,6 +6,7 @@ import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
+import { RunHistoryView, runStatusLabel, useRunHistory } from "../components/workflow/RunHistory";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useParameterGuard } from "../components/NavigationGuard";
@@ -22,7 +23,6 @@ export type WorkflowRunItem = components["schemas"]["WorkflowRunItem"];
 export type WorkflowRunSummary = Omit<components["schemas"]["WorkflowRunSummary"], "parameters"> & {
   parameters: ParameterValues;
 };
-type RunList = components["schemas"]["WorkflowRuns"];
 type Props = {
   experimentId: string;
   analysisParameterPrefix?: string; analysisParameterKeys?: Record<string, string>;
@@ -32,17 +32,11 @@ type Props = {
 };
 const identity = (values: ParameterValues) => values;
 const active = (job?: Job) => Boolean(job && ["queued", "running"].includes(job.status));
-const PAGE_SIZE = 50;
-const labels: Record<string, string> = {
-  completed: "完成", failed: "失败", cancelled: "已取消", running: "运行中",
-  not_started: "未分析", quality_failed: "质量未通过", unknown: "未记录",
-};
-const status = (value: string) => labels[value] ?? value;
 
 function DefaultResult({ summary, hasAnalysis }: { summary: WorkflowRunSummary; hasAnalysis: boolean }) {
   const artifacts = summary.artifacts ?? {};
   return <div className="zaw-latest">
-    <p>{summary.run_id} · {summary.timestamp} · 采集：{status(summary.completion_status)}{hasAnalysis && <> · 分析：{status(summary.analysis_status)}</>}</p>
+    <p>{summary.run_id} · {summary.timestamp} · 采集：{runStatusLabel(summary.completion_status)}{hasAnalysis && <> · 分析：{runStatusLabel(summary.analysis_status)}</>}</p>
     {summary.analysis_error && <p role="alert">{summary.analysis_error}</p>}
     {!Object.keys(artifacts).length && <p>本次运行暂无结果文件。</p>}
     {Object.entries(artifacts).filter(([name]) => /\.(png|jpe?g|svg|webp)$/i.test(name)).map(([name, url]) =>
@@ -67,12 +61,6 @@ export function WorkflowExperimentPage({ experimentId,
   const [session, setSession] = useState<XYSession>();
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<ParameterValues>({});
-  const [list, setList] = useState<RunList>({ runs: [], total: 0 });
-  const [latest, setLatest] = useState<WorkflowRunSummary>();
-  const [selectedId, setSelectedId] = useState("");
-  const [selected, setSelected] = useState<WorkflowRunSummary>();
-  const [offset, setOffset] = useState(0);
-  const [refresh, setRefresh] = useState(0);
   const { hardwareBusy } = useJobActivity();
   const controls = useRunControls({ experimentId, values, layout, setError, setJob,
     onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
@@ -81,10 +69,11 @@ export function WorkflowExperimentPage({ experimentId,
   const analysisActive = active(analysisJob);
   const live = Boolean(session && session.status !== "closed");
   const parametersBusy = jobActive && (!live || session?.status !== "waiting" || Boolean(session?.pending_request));
+  const history = useRunHistory<WorkflowRunItem, WorkflowRunSummary>({ experimentId,
+    reloadKeys: [job?.status, analysisJob?.status], setError });
   useParameterGuard(fields, values, layout, savedLayout, live ? session?.parameters as ParameterValues : undefined);
-  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId });
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId: history.setSelectedId });
   const requestedJobId = useRequestedJobId();
-  const summaryUrl = (id: string) => `${BASE}/runs/${encodeURIComponent(id)}/summary`;
   const result = (summary: WorkflowRunSummary) => renderResult
     ? renderResult(summary) : <DefaultResult summary={summary} hasAnalysis={hasAnalysis} />;
 
@@ -127,34 +116,6 @@ export function WorkflowExperimentPage({ experimentId,
     return () => { disposed = true; window.clearTimeout(timer); };
   }, [BASE, fields, values]);
 
-  useEffect(() => {
-    let disposed = false;
-    void api<RunList>(`${BASE}/runs?limit=${PAGE_SIZE}&offset=${offset}`).then(data => {
-      if (disposed) return;
-      setList(data); setSelectedId(current => current || data.runs[0]?.run_id || "");
-    }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [BASE, offset, refresh, job?.status, analysisJob?.status]);
-
-  useEffect(() => {
-    let disposed = false;
-    void api<RunList>(`${BASE}/runs?limit=1&offset=0`).then(async data => {
-      const value = data.runs[0] ? await api<WorkflowRunSummary>(summaryUrl(data.runs[0].run_id)) : undefined;
-      if (!disposed) setLatest(value);
-    }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [BASE, refresh, job?.status, analysisJob?.status]);
-
-  useEffect(() => {
-    if (!selectedId) { setSelected(undefined); return; }
-    let disposed = false;
-    setSelected(undefined);
-    void api<WorkflowRunSummary>(summaryUrl(selectedId)).then(value => {
-      if (!disposed) setSelected(value);
-    }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [BASE, selectedId, refresh, job?.status, analysisJob?.status]);
-
   const reanalyze = async (id: string) => {
     setStarting(true); setError("");
     try {
@@ -176,7 +137,7 @@ export function WorkflowExperimentPage({ experimentId,
         layout={layout} setLayout={setLayout} setNotice={setNotice} parametersDisabled={parametersBusy || starting || saving}
         values={values} setValues={setValues} session={session} setSession={setSession} job={job} setJob={setJob}
         analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
-        runs={list.runs} setError={setError} onRefresh={setRefresh}>
+        runs={history.list.runs} setError={setError} onRefresh={history.reload}>
         <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
           canStart={!jobActive && !hardwareBusy && !analysisActive && fields.length > 0}
           layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
@@ -185,30 +146,15 @@ export function WorkflowExperimentPage({ experimentId,
             <dl>{Object.entries(preview).map(([name, value]) => <div key={name}><dt>{fields.find(field => field.name === name)?.label ?? name}</dt><dd>{String(value)}</dd></div>)}</dl>
           </details>} />
       </WorkflowPanel>
-      <LatestResultPanel latest={latest} render={result} onOpen={runId => { setSelectedId(runId); setTab("history"); }} />
+      <LatestResultPanel latest={history.latest} render={result} onOpen={runId => { history.setSelectedId(runId); setTab("history"); }} />
     </div>
     <div id={`${experimentId}-panel-history`} role="tabpanel" aria-labelledby={`${experimentId}-tab-history`} hidden={tab !== "history"}>
-      <div className="zaw-history">
-        <section className="zaw-run-list"><h2>历史运行（{list.total}）</h2>
-          <button onClick={() => setRefresh(current => current + 1)}>刷新记录</button>
-          <ul>{list.runs.map(run => <li key={run.run_id}><button className={`zaw-run-card ${selectedId === run.run_id ? "selected" : ""}`}
-            onClick={() => setSelectedId(run.run_id)}><strong>{run.run_id}</strong><span>{run.timestamp}</span><span>{status(run.completion_status)}</span></button></li>)}</ul>
-          <button disabled={offset === 0} onClick={() => setOffset(current => current - PAGE_SIZE)}>上一页</button>
-          <button disabled={offset + PAGE_SIZE >= list.total} onClick={() => setOffset(current => current + PAGE_SIZE)}>下一页</button>
-        </section>
-        <section className="zaw-run-details">{selected ? <>
-          <div className="zaw-run-details-actions">
-            <button disabled={jobActive || starting || live} onClick={() => {
-              setValues(current => normalizeParameters({ ...current, ...historyParameterValues(fields, selected.parameters) })); setTab("run");
-            }}>填回参数</button>
-            {hasAnalysis && <button disabled={starting || jobActive || analysisActive || selected.completion_status === "running"}
-              onClick={() => void reanalyze(selected.run_id)}>重新分析</button>}
-          </div>
-          {result(selected)}
-          <details><summary>本次参数</summary><table><tbody>{Object.entries(selected.parameters).map(([name, value]) =>
-            <tr key={name}><th>{fields.find(field => field.name === name)?.label ?? name}</th><td>{String(value)}</td></tr>)}</tbody></table></details>
-        </> : <p>{selectedId ? "正在读取运行详情…" : "暂无运行记录。"}</p>}</section>
-      </div>
+      <RunHistoryView history={history} fields={fields} renderResult={result}
+        fillBack={{ disabled: jobActive || starting || live, onClick: selected => {
+          setValues(current => normalizeParameters({ ...current, ...historyParameterValues(fields, selected.parameters) })); setTab("run");
+        } }}
+        reanalyze={hasAnalysis ? { disabled: selected => starting || jobActive || analysisActive || selected.completion_status === "running",
+          onClick: selected => void reanalyze(selected.run_id) } : undefined} />
     </div>
     <JobView job={analysisJob} onUpdate={setAnalysisJob} />
   </>;

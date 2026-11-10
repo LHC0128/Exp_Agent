@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api";
@@ -141,6 +141,34 @@ it("A13 设置全部控制倍率共用的手动相位，默认181.5，保存和�
   await screen.findByText("参数与布局已保存");
   const saved = mockApi.mock.calls.find(([url]) => url.endsWith("/defaults"))!;
   expect(JSON.parse(String(saved[1]?.body)).parameters).toMatchObject({ Z_PHASE_SCAN_ENABLED: false, Z_BURST_PHASE_INIT: 205.5 });
+});
+
+it("分析候选独立于历史分页，保留前500条中的已完成运行", async () => {
+  const original = mockApi.getMockImplementation()!;
+  const runs = Array.from({ length: 60 }, (_, index) => ({ ...summary, run_id: `saved-${index}`,
+    completion_status: index === 59 ? "failed" : "completed" }));
+  mockApi.mockImplementation(async (url, options): Promise<any> => {
+    if (url.startsWith(BASE + "/runs?")) {
+      const query = new URLSearchParams(url.split("?")[1]);
+      const offset = Number(query.get("offset")), limit = Number(query.get("limit"));
+      return { runs: runs.slice(offset, offset + limit), total: runs.length };
+    }
+    if (url.endsWith("/summary")) return runs.find(run => url.includes(`/runs/${run.run_id}/`));
+    return original(url, options);
+  });
+  await show();
+  const choices = () => within(screen.getByLabelText("分析操作对象")).getAllByRole("option").map(option => (option as HTMLOptionElement).value);
+  await waitFor(() => expect(choices()).toContain("saved-58"));
+  expect(choices()).toContain("saved-0");
+  expect(choices()).not.toContain("saved-59");
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  await screen.findByRole("button", { name: "saved-50" });
+  expect(screen.queryByRole("button", { name: "saved-0" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: "运行" }));
+  expect(choices()).toContain("saved-0");
+  expect(choices()).toContain("saved-58");
+  expect(choices()).not.toContain("saved-59");
 });
 
 it("真实历史结果展示倍率指标与 PDF，支持重新分析", async () => {

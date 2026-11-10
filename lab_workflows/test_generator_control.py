@@ -72,6 +72,28 @@ class GeneratorControlTests(unittest.TestCase):
                     self.apply(settings)
                 self.assertEqual(self.instrument.mock_calls, [])
 
+    def test_aom_keys_limit_vpp_amplitude_not_envelope(self):
+        # AOM 限值是峰峰值：Pump ≤ 0.18 Vpp、Probe ≤ 0.05 Vpp；按包络会放宽一倍。
+        for key, low, high, ok, too_big in (
+            ("Pump_modulation", -0.18, 0.18, 0.18, 0.2),
+            ("Probe_AOM_Carrier", 0.0, 0.05, 0.05, 0.06),
+        ):
+            self.limits[key] = {"min": low, "max": high}
+            self.record.channels = [ChannelRecord(2, key, key)]
+            with self.subTest(key=key, amplitude=too_big):
+                self.instrument.reset_mock()
+                with self.assertRaises(ValueError):
+                    control._apply_generator_connected(
+                        {"mapping_key": key}, self.record, self.instrument, {"amplitude": too_big},
+                    )
+                self.assertEqual(self.instrument.mock_calls, [])
+            with self.subTest(key=key, amplitude=ok):
+                self.instrument.reset_mock()
+                control._apply_generator_connected(
+                    {"mapping_key": key}, self.record, self.instrument, {"amplitude": ok},
+                )
+                self.instrument.set_amplitude.assert_called_once_with(ok, 2)
+
     def test_missing_readbacks_are_not_assumed_to_be_zero(self):
         for field in ("offset", "amplitude", "voltage_unit"):
             with self.subTest(field=field), patch.dict(self.current, {field: None}):

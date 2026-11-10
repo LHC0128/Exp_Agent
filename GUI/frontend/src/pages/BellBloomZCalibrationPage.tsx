@@ -8,6 +8,7 @@ import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
+import { RunHistoryView, runStatusLabel, useRunHistory } from "../components/workflow/RunHistory";
 import { defaultParameterLayout, historyParameterValues, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import "./zawClosedLoop.css";
@@ -17,7 +18,6 @@ const BASE = `/api/experiments/${ID}`;
 const ANALYSIS_KEYS = { LINEAR_R_SQUARED_MIN: "LINEAR_R_SQUARED_MIN" };
 const terminal = (job: Job | undefined) => Boolean(job && ["completed", "failed", "cancelled"].includes(job.status));
 type Run = { run_id: string; timestamp: string; run_tag: string; completion_status: string };
-type RunList = { runs: Run[]; total: number };
 type Summary = Run & {
   parameters: ParameterValues;
   analysis_status: string;
@@ -33,16 +33,13 @@ type Summary = Run & {
     rejection_reasons: string[];
   };
 };
-const summaryUrl = (runId: string) => `${BASE}/runs/${encodeURIComponent(runId)}/summary`;
 const number = (value: number | null) => value === null ? "—" : value.toLocaleString("zh-CN", { maximumSignificantDigits: 7 });
-const statusLabels: Record<string, string> = { completed: "完成", failed: "失败", cancelled: "已取消", running: "运行中", not_started: "未分析" };
-const status = (value: string) => statusLabels[value] ?? value;
 
 function Result({ value }: { value: Summary }) {
   const analysis = value.analysis;
   return <div className="zaw-latest">
     <p>{value.run_id} · {value.timestamp}</p>
-    <p>采集：{status(value.completion_status)} · 分析：{status(value.analysis_status)}</p>
+    <p>采集：{runStatusLabel(value.completion_status)} · 分析：{runStatusLabel(value.analysis_status)}</p>
     {value.failure_reason && <div className="alert error">{value.failure_reason}</div>}
     {value.analysis_error && <div className="alert error">{value.analysis_error}</div>}
     {value.safety_shutdown.errors?.length ? <div className="alert error">安全恢复：{value.safety_shutdown.errors.join("；")}</div> : null}
@@ -73,12 +70,6 @@ export function BellBloomZCalibrationPage() {
   const [preview, setPreview] = useState<ParameterValues>({});
   const [analysisJob, setAnalysisJob] = useState<Job>();
   const [error, setError] = useState("");
-  const [latest, setLatest] = useState<Summary>();
-  const [list, setList] = useState<RunList>({ runs: [], total: 0 });
-  const [selectedId, setSelectedId] = useState("");
-  const [selected, setSelected] = useState<Summary>();
-  const [offset, setOffset] = useState(0);
-  const [refresh, setRefresh] = useState(0);
   const { hardwareBusy } = useJobActivity();
   const jobActive = Boolean(job && !terminal(job));
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
@@ -87,8 +78,10 @@ export function BellBloomZCalibrationPage() {
     onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
   const { starting, saving, setStarting, setNotice } = controls;
   const parametersBusy = jobActive && (!live || session?.status !== "waiting" || Boolean(session?.pending_request));
+  const history = useRunHistory<Run, Summary>({ experimentId: ID,
+    reloadKeys: [job?.id, job?.status, analysisJob?.status, session?.run_id, session?.steps.A09?.status], setError });
   useParameterGuard(fields, values, layout, savedLayout, live ? session?.parameters as ParameterValues : undefined);
-  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId });
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId: history.setSelectedId });
   const requestedJobId = useRequestedJobId();
 
   useEffect(() => {
@@ -114,29 +107,6 @@ export function BellBloomZCalibrationPage() {
     return () => { disposed = true; };
   }, [values, fields.length]);
 
-  useEffect(() => {
-    let disposed = false;
-    api<RunList>(`${BASE}/runs?limit=1&offset=0`).then(async data => {
-      const result = data.runs.length ? await api<Summary>(summaryUrl(data.runs[0].run_id)) : undefined;
-      if (!disposed) { setLatest(result); setSelectedId(current => current || result?.run_id || ""); }
-    }).catch(reason => { if (!disposed) { setLatest(undefined); setError(String(reason)); } });
-    return () => { disposed = true; };
-  }, [refresh, job?.id, job?.status, analysisJob?.status, session?.run_id, session?.steps.A09?.status]);
-
-  useEffect(() => {
-    let disposed = false;
-    api<RunList>(`${BASE}/runs?limit=50&offset=${offset}`).then(data => { if (!disposed) setList(data); }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [offset, refresh, job?.status, session?.run_id, session?.steps.A09?.status]);
-
-  useEffect(() => {
-    if (!selectedId) return;
-    let disposed = false;
-    setSelected(undefined);
-    api<Summary>(summaryUrl(selectedId)).then(data => { if (!disposed) setSelected(data); }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [selectedId, refresh, job?.status, analysisJob?.status]);
-
   const reanalyze = async (runId: string) => {
     setStarting(true); setError("");
     try { setAnalysisJob(await api<Job>(`/api/runs/${encodeURIComponent(runId)}/analyze`, { method: "POST", body: JSON.stringify({ experiment_id: ID }) })); }
@@ -153,24 +123,23 @@ export function BellBloomZCalibrationPage() {
         parametersDisabled={parametersBusy || starting || saving} values={values} setValues={setValues}
         session={session} setSession={setSession} job={job} setJob={setJob}
         analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
-        runs={list.runs} setError={setError} onRefresh={setRefresh}>
+        runs={history.list.runs} setError={setError} onRefresh={history.reload}>
         <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
           canStart={!jobActive && !hardwareBusy && !analysisActive && fields.length > 0}
           layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
           job={job} onJobUpdate={setJob}
           preview={Object.keys(preview).length > 0 && <details><summary>派生预览（只读）</summary><dl>{Object.entries(preview).map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{String(value)}</dd></div>)}</dl></details>} />
       </WorkflowPanel>
-        <LatestResultPanel latest={latest} render={value => <Result value={value} />} onOpen={runId => { setSelectedId(runId); setTab("history"); }}
+        <LatestResultPanel latest={history.latest} render={value => <Result value={value} />} onOpen={runId => { history.setSelectedId(runId); setTab("history"); }}
           note={jobActive && <p>实验正在运行；下方展示已保存的运行记录及其时间。</p>} />
     </div>
     <div id="bb-z-panel-history" role="tabpanel" aria-labelledby="bb-z-tab-history" hidden={tab !== "history"}>
-      <div className="zaw-history"><section className="zaw-run-list"><h2>历史运行（{list.total}）</h2><button onClick={() => setRefresh(value => value + 1)}>刷新记录</button>
-        <ul>{list.runs.map(run => <li key={run.run_id}><button className={`zaw-run-card ${selectedId === run.run_id ? "selected" : ""}`} onClick={() => setSelectedId(run.run_id)}><strong>{run.run_id}</strong><span>{run.timestamp}</span><span>{status(run.completion_status)}</span></button></li>)}</ul>
-        <button disabled={offset === 0} onClick={() => setOffset(value => value - 50)}>上一页</button><button disabled={offset + 50 >= list.total} onClick={() => setOffset(value => value + 50)}>下一页</button>
-      </section><section className="zaw-run-details">{selected ? <>
-        <div className="zaw-run-details-actions"><button disabled={jobActive || starting || live} onClick={() => { setValues(current => ({ ...current, ...historyParameterValues(fields, selected.parameters) })); setTab("run"); }}>填回参数</button><button disabled={starting || jobActive || analysisActive || ["running", "acquired"].includes(selected.completion_status)} onClick={() => void reanalyze(selected.run_id)}>重新分析</button></div>
-        <Result value={selected} /><details><summary>本次参数</summary><table><tbody>{Object.entries(selected.parameters).map(([key, value]) => <tr key={key}><th>{fields.find(field => field.name === key)?.label ?? key}</th><td>{String(value)}</td></tr>)}</tbody></table></details>
-      </> : <p>{selectedId ? "正在读取运行详情…" : "暂无运行记录。"}</p>}</section></div>
+      <RunHistoryView history={history} fields={fields} renderResult={value => <Result value={value} />}
+        fillBack={{ disabled: jobActive || starting || live, onClick: selected => {
+          setValues(current => ({ ...current, ...historyParameterValues(fields, selected.parameters) })); setTab("run");
+        } }}
+        reanalyze={{ disabled: selected => starting || jobActive || analysisActive || ["running", "acquired"].includes(selected.completion_status),
+          onClick: selected => void reanalyze(selected.run_id) }} />
     </div>
     <JobView job={analysisJob} onUpdate={setAnalysisJob} />
   </>;

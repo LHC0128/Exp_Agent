@@ -8,6 +8,7 @@ import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
+import { RunHistoryView, runStatusLabel, useRunHistory } from "../components/workflow/RunHistory";
 import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import type { components } from "../types/openapi";
@@ -16,7 +17,7 @@ import "./rfDirectAW.css";
 
 const ID = "rf-control-scale-sensitivity";
 const BASE = `/api/experiments/${ID}`;
-type Runs = components["schemas"]["WorkflowRuns"];
+type Run = components["schemas"]["WorkflowRunItem"];
 type Summary = components["schemas"]["WorkflowRunSummary"];
 type Metric = { control: string; scale: number; valid: boolean; control_scale_factor?: number; effective_control_scale?: number; slope_V_per_nT?: number; center_Hz?: number; dispersive_hwhm_Hz?: number; sensitivity_fT_per_sqrtHz?: number; band_exceeds_lorentzian_hwhm?: boolean; noise_records_total?: number; noise_records_rejected?: number; rejection_reason?: string };
 const active = (job?: Job) => Boolean(job && ["queued", "running"].includes(job.status));
@@ -46,7 +47,7 @@ function Result({ value }: { value: Summary }) {
     return () => { disposed = true; };
   }, [value.run_id, artifacts["results/analysis.json"]]);
   return <div className="zaw-latest">
-    <p><strong>{value.run_id}</strong> · {value.completion_status} · 分析：{value.analysis_status}</p>
+    <p><strong>{value.run_id}</strong> · {runStatusLabel(value.completion_status)} · 分析：{runStatusLabel(value.analysis_status)}</p>
     {value.parameters.Z_PHASE_SCAN_ENABLED === false && <p>RF 相位来源：全部控制 × Scale 共用手动相位 {String(value.parameters.Z_BURST_PHASE_INIT)}°；其余校相逐点独立执行。</p>}
     {value.analysis_error && <p className="alert error">{value.analysis_error}</p>}
     {error && <p className="alert error">{error}</p>}
@@ -67,19 +68,14 @@ export function RFControlScaleSensitivityPage() {
   const [session, setSession] = useState<XYSession>();
   const [job, setJob] = useState<Job>();
   const [analysisJob, setAnalysisJob] = useState<Job>();
-  const [runs, setRuns] = useState<Runs>({ runs: [], total: 0 });
-  const [workflowRuns, setWorkflowRuns] = useState<Runs["runs"]>([]);
-  const [selected, setSelected] = useState<Summary>();
-  const [latest, setLatest] = useState<Summary>();
-  const [selectedId, setSelectedId] = useState("");
-  const [offset, setOffset] = useState(0);
-  const [refresh, setRefresh] = useState(0);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [workflowRuns, setWorkflowRuns] = useState<Run[]>([]);
   const { hardwareBusy } = useJobActivity();
   const live = Boolean(session && session.status !== "closed");
+  const history = useRunHistory<Run, Summary>({ experimentId: ID, reloadKeys: [job?.status, analysisJob?.status], setError });
   useParameterGuard(fields, values, layout, savedLayout, live ? session?.parameters as ParameterValues : undefined);
-  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId });
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId: history.setSelectedId });
   const requestedJobId = useRequestedJobId();
   const controls = useRunControls({ experimentId: ID, values, layout, normalize, setError, setJob,
     onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
@@ -108,27 +104,14 @@ export function RFControlScaleSensitivityPage() {
 
   useEffect(() => {
     let disposed = false;
-    void Promise.all([api<Runs>(`${BASE}/runs?limit=50&offset=${offset}`), api<Runs>(BASE + "/runs?limit=500&offset=0")]).then(async ([page, all]) => {
-      if (disposed) return;
-      setRuns(page); setWorkflowRuns(all.runs);
-      const last = all.runs[0];
-      if (last) {
-        const summary = await api<Summary>(`${BASE}/runs/${encodeURIComponent(last.run_id)}/summary`);
-        if (!disposed) { setLatest(summary); setSelectedId(old => old || last.run_id); }
-      }
+    // 分析候选保留原有前500条范围，不随历史列表的50条分页变化。
+    void api<{ runs: Run[]; total: number }>(BASE + "/runs?limit=500&offset=0").then(data => {
+      if (!disposed) setWorkflowRuns(data.runs);
     }).catch(reason => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
-  }, [offset, refresh, job?.status, analysisJob?.status]);
+  }, [history.refreshKey, job?.status, analysisJob?.status]);
 
-  useEffect(() => {
-    let disposed = false;
-    setSelected(undefined);
-    if (selectedId) void api<Summary>(`${BASE}/runs/${encodeURIComponent(selectedId)}/summary`).then(result => { if (!disposed) setSelected(result); }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [selectedId, refresh, analysisJob?.status]);
-
-  const fillParameters = async () => {
-    if (!selected) return;
+  const fillParameters = async (selected: Summary) => {
     setPending(true); setError("");
     try {
       const result = await api<{ values: { parameters: ParameterValues } }>(BASE + "/derive", {
@@ -136,8 +119,7 @@ export function RFControlScaleSensitivityPage() {
       setValues(normalize(result.values.parameters)); setTab("run");
     } catch (reason) { setError(String(reason)); } finally { setPending(false); }
   };
-  const reanalyze = async () => {
-    if (!selected) return;
+  const reanalyze = async (selected: Summary) => {
     setError("");
     try { setAnalysisJob(await api<Job>(`/api/runs/${encodeURIComponent(selected.run_id)}/analyze`, { method: "POST", body: JSON.stringify({ experiment_id: ID }) })); }
     catch (reason) { setError(String(reason)); }
@@ -152,7 +134,7 @@ export function RFControlScaleSensitivityPage() {
         normalizeParameters={normalize} enabled={fields.length > 0} fields={routeFields} layout={layout} setLayout={setLayout}
         setNotice={setNotice} parametersDisabled={busy} values={values} setValues={setValues} session={session} setSession={setSession}
         job={job} setJob={setJob} analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
-        runs={workflowRuns.filter(item => item.completion_status === "completed")} setError={setError} onRefresh={setRefresh}>
+        runs={workflowRuns.filter(item => item.completion_status === "completed")} setError={setError} onRefresh={history.reload}>
         <RunControls controls={controls} canEdit={!busy && fields.length > 0}
           canStart={!busy && !live && !hardwareBusy && fields.length > 0}
           layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !active(job)}
@@ -165,20 +147,14 @@ export function RFControlScaleSensitivityPage() {
             <p>保存默认值不改历史分析草稿；应用会话草稿后需显式重跑。</p>
           </div>} />
       </WorkflowPanel>
-      <LatestResultPanel latest={latest} render={value => <Result value={value} />}
-        onOpen={runId => { setSelectedId(runId); setTab("history"); }} />
+      <LatestResultPanel latest={history.latest} render={value => <Result value={value} />}
+        onOpen={runId => { history.setSelectedId(runId); setTab("history"); }} />
     </div>
     <div id="scale-panel-history" role="tabpanel" aria-labelledby="scale-tab-history" hidden={tab !== "history"}>
-      <div className="zaw-history"><section className="zaw-run-list"><h3>历史运行（{runs.total}）</h3>
-        <button onClick={() => setRefresh(value => value + 1)}>刷新记录</button>
-        <ul>{runs.runs.map(run => <li key={run.run_id}><button className="zaw-run-card" onClick={() => setSelectedId(run.run_id)}><strong>{run.run_id}</strong><span>{run.timestamp} · {run.completion_status}</span></button></li>)}</ul>
-        <button disabled={!offset} onClick={() => setOffset(value => Math.max(0, value - 50))}>上一页</button>
-        <button disabled={offset + 50 >= runs.total} onClick={() => setOffset(value => value + 50)}>下一页</button>
-      </section><section className="zaw-run-details">{selected ? <>
-        <button disabled={busy || live} onClick={() => void fillParameters()}>填回参数</button>
-        <button disabled={busy || live || selected.completion_status !== "completed"} onClick={() => void reanalyze()}>重新分析</button>
-        <Result value={selected} /><details><summary>运行参数快照</summary><pre>{JSON.stringify(selected.parameters, null, 2)}</pre></details>
-      </> : <p>请选择历史运行。</p>}</section></div>
+      <RunHistoryView history={history} fields={fields} renderResult={value => <Result value={value} />}
+        fillBack={{ disabled: busy || live, onClick: selected => void fillParameters(selected) }}
+        reanalyze={{ disabled: selected => busy || live || selected.completion_status !== "completed",
+          onClick: selected => void reanalyze(selected) }} />
     </div>
     <JobView job={analysisJob} onUpdate={setAnalysisJob} />
   </>;

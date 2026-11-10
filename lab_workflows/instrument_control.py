@@ -773,6 +773,10 @@ def _generator_amplitude_vpp(settings: dict[str, Any]) -> float:
     return value
 
 
+# 这些键的安全限值按峰峰值幅度（Vpp）定义，与实验代码一致；其余键按瞬时电平包络校验。
+_VPP_AMPLITUDE_LIMIT_KEYS = frozenset({"Pump_modulation", "Probe_AOM_Carrier"})
+
+
 def _validate_generator_output(mapping_key: str, settings: dict[str, Any]) -> None:
     limits = load_safety_limits()
     if "dc_voltage" in settings:
@@ -786,6 +790,9 @@ def _validate_generator_output(mapping_key: str, settings: dict[str, Any]) -> No
     if not math.isfinite(offset) or not math.isfinite(amplitude):
         raise ValueError("偏置和幅度必须是有限数值")
     validate_safety_limit(mapping_key, offset, limits)
+    if mapping_key in _VPP_AMPLITUDE_LIMIT_KEYS:
+        validate_safety_limit(mapping_key, amplitude, limits)
+        return
     validate_safety_limit(mapping_key, offset - amplitude / 2, limits)
     validate_safety_limit(mapping_key, offset + amplitude / 2, limits)
 

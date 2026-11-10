@@ -118,6 +118,28 @@ it("最新失败运行不显示更早结果，重新分析完成后刷新图片"
   expect(within(history).queryByText("通过")).not.toBeInTheDocument();
 });
 
+it("真实路由刷新最新摘要失败后不再把旧图显示为最近一次", async () => {
+  const previous = mockApi.getMockImplementation()!;
+  const saved = summary;
+  let latestUnavailable = false;
+  mockApi.mockImplementation(async (url, options) => {
+    if (latestUnavailable && url.startsWith(`${BASE}/runs?`)) return { runs: [{ ...saved, run_id: "0921_new" }], total: 2 } as never;
+    if (url === `${BASE}/runs/0921_new/summary`) throw new Error("最新运行摘要读取失败");
+    if (url === `${BASE}/runs/${saved.run_id}/summary`) return saved;
+    return previous(url, options);
+  });
+  renderPage();
+  const run = screen.getByRole("tabpanel", { name: "运行" });
+  expect(await within(run).findByAltText("Z 电压频率标定曲线")).toHaveAttribute("src", "/plot.png?v=1");
+  latestUnavailable = true;
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(screen.getByRole("button", { name: "刷新记录" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("最新运行摘要读取失败");
+  fireEvent.click(screen.getByRole("tab", { name: "运行" }));
+  expect(within(run).queryByAltText("Z 电压频率标定曲线")).not.toBeInTheDocument();
+  expect(within(run).getByText("暂无运行记录。")).toBeVisible();
+});
+
 it("活动任务在切换 Tab 后仍可完成并刷新最近结果", async () => {
   renderPage();
   await waitFor(() => expect(screen.getByRole("button", { name: "预检并运行实验" })).toBeEnabled());

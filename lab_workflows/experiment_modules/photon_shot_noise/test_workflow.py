@@ -425,7 +425,7 @@ def test_saved_defaults_are_preflighted_without_connection(rig, monkeypatch):
     params = ADAPTER.defaults()
     preparation.preflight(params, rig.root)
     unsafe = rig.root / "params/experiments/unsafe_defaults.yaml"
-    replace(params, probe_power_stop=3.0).save_yaml(unsafe)
+    replace(params, probe_power_stop=30.0).save_yaml(unsafe)
     monkeypatch.setattr(ADAPTER, "defaults_path", unsafe)
     with pytest.raises(ValueError):
         preparation.preflight(ADAPTER.defaults(), rig.root)

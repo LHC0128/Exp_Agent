@@ -7,6 +7,7 @@ import { useJobActivity } from "../components/JobActivity";
 import { JobView } from "../components/JobView";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
+import { RunHistoryView, runStatusLabel, useRunHistory } from "../components/workflow/RunHistory";
 import { PageHead } from "../components/PageHead";
 import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
 import { useParameterGuard } from "../components/NavigationGuard";
@@ -27,7 +28,6 @@ import "./zawClosedLoop.css";
 
 const ID = "noise-spectrum-xy";
 const BASE = `/api/experiments/${ID}`;
-const PAGE_SIZE = 50;
 const terminal = (job: Job | undefined) => Boolean(
   job && ["completed", "failed", "cancelled"].includes(job.status),
 );
@@ -38,7 +38,6 @@ type RunItem = {
   run_tag: string;
   completion_status: string;
 };
-type RunList = { runs: RunItem[]; total: number };
 type RunSummary = RunItem & {
   analysis_status: string;
   analysis_error: string;
@@ -59,14 +58,6 @@ type WelchPreview = {
   scan_seconds?: number;
 };
 
-const statusLabels: Record<string, string> = {
-  completed: "完成",
-  failed: "失败",
-  cancelled: "已取消",
-  running: "运行中",
-  not_started: "未分析",
-  quality_failed: "质量验收未通过",
-};
 const figureLabels: Record<string, string> = {
   "calibration.png": "PSD 脊线与正弦峰值标定",
   "noise_spectrum_2d.png": "二维噪声谱（未标定时纵轴为扫描电压）",
@@ -87,16 +78,13 @@ const downloadable = [
   "fit_diagnostics.npz",
   "global_comparison.npz",
 ];
-const summaryUrl = (runId: string) => `${BASE}/runs/${encodeURIComponent(runId)}/summary`;
-const status = (value: string) => statusLabels[value] ?? value;
-
 function Result({ value }: { value: RunSummary }) {
   const figures = Object.entries(figureLabels).filter(([name]) => value.artifacts[name]);
   const files = downloadable.filter((name) => value.artifacts[name]);
   return (
     <div className="zaw-latest">
       <p>{value.run_id} · {value.timestamp}</p>
-      <p>采集：{status(value.completion_status)} · 分析：{status(value.analysis_status)}</p>
+      <p>采集：{runStatusLabel(value.completion_status)} · 分析：{runStatusLabel(value.analysis_status)}</p>
       {value.analysis_error && <div className="alert error">{value.analysis_error}</div>}
       {value.analysis_quality?.psd && <p>
         实际 Welch 每段点数：{value.analysis_quality.psd.nperseg}；
@@ -141,12 +129,6 @@ export function NoiseSpectrumXYPage() {
   const [session, setSession] = useState<XYSession>();
   const [error, setError] = useState("");
   const [welchPreview, setWelchPreview] = useState<WelchPreview>();
-  const [latest, setLatest] = useState<RunSummary>();
-  const [list, setList] = useState<RunList>({ runs: [], total: 0 });
-  const [selectedId, setSelectedId] = useState("");
-  const [selected, setSelected] = useState<RunSummary>();
-  const [offset, setOffset] = useState(0);
-  const [refresh, setRefresh] = useState(0);
   const { hardwareBusy } = useJobActivity();
   const jobActive = Boolean(job && !terminal(job));
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
@@ -155,8 +137,9 @@ export function NoiseSpectrumXYPage() {
     onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
   const { starting, setStarting, setNotice } = controls;
   const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
+  const history = useRunHistory<RunItem, RunSummary>({ experimentId: ID, reloadKeys: [job?.status, analysisJob?.status], setError });
   useParameterGuard(fields, values, layout, savedLayout, sessionActive ? session?.parameters as ParameterValues : undefined);
-  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId });
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId: history.setSelectedId });
   const requestedJobId = useRequestedJobId();
 
   useEffect(() => {
@@ -201,37 +184,6 @@ export function NoiseSpectrumXYPage() {
     return () => { disposed = true; };
   }, []);
 
-  useEffect(() => {
-    let disposed = false;
-    void api<RunList>(`${BASE}/runs?limit=${PAGE_SIZE}&offset=${offset}`).then((data) => {
-      if (disposed) return;
-      setList(data);
-      setSelectedId((current) => current || data.runs[0]?.run_id || "");
-    }).catch((reason) => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [offset, refresh, job?.status, analysisJob?.status]);
-
-  useEffect(() => {
-    let disposed = false;
-    void api<RunList>(`${BASE}/runs?limit=1&offset=0`).then(async (data) => {
-      const latestRun = data.runs[0];
-      const summary = latestRun ? await api<RunSummary>(summaryUrl(latestRun.run_id)) : undefined;
-      if (!disposed) setLatest(summary);
-    }).catch((reason) => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [refresh, job?.status, analysisJob?.status]);
-
-  useEffect(() => {
-    if (!selectedId) return;
-    let disposed = false;
-    setSelected(undefined);
-    void api<RunSummary>(summaryUrl(selectedId))
-      .then((data) => { if (!disposed) setSelected(data); })
-      .catch((reason) => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [selectedId, refresh, job?.status, analysisJob?.status]);
-
-
   const reanalyze = async (runId: string) => {
     setStarting(true);
     setError("");
@@ -273,7 +225,7 @@ export function NoiseSpectrumXYPage() {
           setNotice={setNotice} parametersDisabled={parametersBusy || starting} values={values} setValues={setValues}
           session={session} setSession={setSession} job={job} setJob={setJob}
           analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
-          runs={list.runs} setError={setError} onRefresh={setRefresh}>
+          runs={history.list.runs} setError={setError} onRefresh={history.reload}>
           <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
             canStart={!jobActive && !hardwareBusy && !analysisActive && fields.length > 0}
             layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
@@ -289,31 +241,14 @@ export function NoiseSpectrumXYPage() {
                 <p>预览基于请求采样率；实际值以分析结果为准。耗时含每点稳定及恢复温控等待，不含初始化、校相、通信和分析。</p>
               </div>} />
         </WorkflowPanel>
-        <LatestResultPanel latest={latest} render={value => <Result value={value} />} onOpen={runId => { setSelectedId(runId); setTab("history"); }} />
+        <LatestResultPanel latest={history.latest} render={value => <Result value={value} />} onOpen={runId => { history.setSelectedId(runId); setTab("history"); }} />
       </div>
 
       <div id="noise-xy-panel-history" role="tabpanel" aria-labelledby="noise-xy-tab-history" hidden={tab !== "history"}>
-        <div className="zaw-history">
-          <section className="zaw-run-list">
-            <h2>历史运行（{list.total}）</h2>
-            <button onClick={() => setRefresh((value) => value + 1)}>刷新记录</button>
-            <ul>{list.runs.map((run) => (
-              <li key={run.run_id}><button className={`zaw-run-card ${selectedId === run.run_id ? "selected" : ""}`} onClick={() => setSelectedId(run.run_id)}><strong>{run.run_id}</strong><span>{run.timestamp}</span><span>{status(run.completion_status)}</span></button></li>
-            ))}</ul>
-            <button disabled={offset === 0} onClick={() => setOffset((value) => value - PAGE_SIZE)}>上一页</button>
-            <button disabled={offset + PAGE_SIZE >= list.total} onClick={() => setOffset((value) => value + PAGE_SIZE)}>下一页</button>
-          </section>
-          <section className="zaw-run-details">
-            {selected ? <>
-              <div className="zaw-run-details-actions">
-                <button disabled={jobActive || starting} onClick={() => fillBack(selected.parameters)}>填回参数</button>
-                <button disabled={starting || jobActive || analysisActive || selected.completion_status === "running"} onClick={() => void reanalyze(selected.run_id)}>重新分析</button>
-              </div>
-              <Result value={selected} />
-              <details><summary>本次参数</summary><table><tbody>{Object.entries(selected.parameters).map(([key, value]) => <tr key={key}><th>{fields.find((field) => field.name === key)?.label ?? key}</th><td>{String(value)}</td></tr>)}</tbody></table></details>
-            </> : <p>{selectedId ? "正在读取运行详情…" : "暂无运行记录。"}</p>}
-          </section>
-        </div>
+        <RunHistoryView history={history} fields={fields} renderResult={value => <Result value={value} />}
+          fillBack={{ disabled: jobActive || starting, onClick: selected => fillBack(selected.parameters) }}
+          reanalyze={{ disabled: selected => starting || jobActive || analysisActive || selected.completion_status === "running",
+            onClick: selected => void reanalyze(selected.run_id) }} />
       </div>
       <JobView job={analysisJob} onUpdate={setAnalysisJob} />
     </>

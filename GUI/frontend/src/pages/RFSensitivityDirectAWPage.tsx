@@ -9,6 +9,7 @@ import { JobView } from "../components/JobView";
 import { useJobActivity } from "../components/JobActivity";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
+import { RunHistoryView, runStatusLabel, useRunHistory } from "../components/workflow/RunHistory";
 import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
 import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
 import type { components } from "../types/openapi";
@@ -47,17 +48,6 @@ function historyParameters(values: ParameterValues, multiControl: boolean): Para
   return next;
 }
 
-const statusLabels: Record<string, string> = {
-  completed: "完成",
-  failed: "失败",
-  cancelled: "已取消",
-  running: "运行中",
-  not_started: "未分析",
-  acquired: "已采集，待安全收尾",
-  partial: "部分分析完成"
-};
-const status = (value: string) => statusLabels[value] ?? value;
-
 type NoiseQuality = { n_records?: number; n_accepted?: number; n_rejected?: number; reason?: string; policy?: string };
 
 function Result({ value }: { value: Summary }) {
@@ -73,7 +63,7 @@ function Result({ value }: { value: Summary }) {
     : "未作洛伦兹校正";
   return <div className="zaw-latest">
     <p><strong>{value.run_id}</strong> · {value.timestamp}</p>
-    <p>采集：{status(value.completion_status)} · 校相：{status(value.phase_calibration_status)} · 分析：{status(value.analysis_status)}</p>
+    <p>采集：{runStatusLabel(value.completion_status)} · 校相：{runStatusLabel(value.phase_calibration_status)} · 分析：{runStatusLabel(value.analysis_status)}</p>
     <p>RF 解调器索引：{String(value.parameters.DEMOD3_IDX ?? 3)}{value.signal_chain && ` · ${value.signal_chain}`}</p>
     {value.parameters.Z_PHASE_SCAN_ENABLED === false && <p>RF 相位来源：手动 {String(value.parameters.Z_BURST_PHASE_INIT)}°；未执行相位扫描。</p>}
     {value.temperature_control?.control_source === "external_software" && <p className="alert">外部温控：程序未设置或检测温度，请确认外部软件维持目标温度。</p>}
@@ -112,7 +102,6 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   const canManageRuns = ID === "rf-sensitivity-aw";
   const title = isKnownNoise ? "已知噪声下 RF 灵敏度（DirectAW）" : "RF 灵敏度（DirectAW）";
   const responseLabel = "X 响应";
-  const summaryUrl = (runId: string) => `${BASE}/runs/${encodeURIComponent(runId)}/summary`;
   const [tab, setTab] = useState<ExperimentView>("run");
   const [definition, setDefinition] = useState<ExperimentDefinition>();
   const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
@@ -127,8 +116,6 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   const [comparisonStarting, setComparisonStarting] = useState(false);
   const [historyView, setHistoryView] = useState<"single" | "comparison">("single");
   const [error, setError] = useState("");
-  const [latest, setLatest] = useState<Summary>();
-  const [list, setList] = useState<RunList>({ runs: [], total: 0, limit: 50, offset: 0 });
   const [workflowRuns, setWorkflowRuns] = useState<RunItem[]>([]);
   const [starredOnly, setStarredOnly] = useState(false);
   const [managingRun, setManagingRun] = useState("");
@@ -137,10 +124,6 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   const [historyNotice, setHistoryNotice] = useState("");
   const [runDirectoryChange, setRunDirectoryChange] = useState<{ from: string; to: string | null }>();
   const [comparisonInvalidated, setComparisonInvalidated] = useState(false);
-  const [selectedId, setSelectedId] = useState("");
-  const [selected, setSelected] = useState<Summary>();
-  const [offset, setOffset] = useState(0);
-  const [refresh, setRefresh] = useState(0);
   const { hardwareBusy } = useJobActivity();
   const jobActive = Boolean(job && !terminal(job));
   const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
@@ -161,9 +144,13 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   const comparisonDirty = Boolean(comparisonResult && (comparisonInvalidated || JSON.stringify(comparisonSelection(comparisonRuns)) !== JSON.stringify(comparisonSelection(comparisonResult.runs))));
   const directoryBusy = Boolean(managingRun || jobActive || analysisActive || comparisonBusy || starting || session && session.status !== "closed");
   const legendsInvalid = comparisonRuns.some(item => invalidLegend(item.legend));
+  // 自动选中交由下方第一页读取完成（保持"选中全量最近一次"的原语义），关闭 hook 的列表自动选中。
+  const history = useRunHistory<RunItem, Summary>({ experimentId: ID,
+    reloadKeys: [job?.status, analysisJob?.status], setError,
+    listQuery: starredOnly ? "&starred_only=true" : "", autoSelectLatest: false });
   useParameterGuard(fields, values, layout, savedLayout, session && session.status !== "closed" ? session.parameters as ParameterValues : undefined);
   useUnsavedChanges(Boolean(renamingId && renameName));
-  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setComparisonJob, setSelectedId, setHistoryView });
+  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setComparisonJob, setSelectedId: history.setSelectedId, setHistoryView });
   const requestedJobId = useRequestedJobId();
 
   useEffect(() => {
@@ -208,45 +195,24 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
     if (result?.runs) setComparisonRuns(current => current.length ? current : result.runs.map(({ run_id, legend }) => ({ run_id, legend })));
   }, [comparisonJob?.status, comparisonJob?.result]);
 
+  // 第一页（不带星标筛选）独立读取：供流程面板选择分析对象，并在未选中时选中最近一次。
   useEffect(() => {
     let disposed = false;
-    api<RunList>(`${BASE}/runs?limit=50&offset=0`).then(async data => {
-      if (!disposed) setWorkflowRuns(data.runs);
-      const result = data.runs.length ? await api<Summary>(summaryUrl(data.runs[0].run_id)) : undefined;
-      if (!disposed) {
-        setLatest(result);
-        setSelectedId(current => current || result?.run_id || "");
-      }
+    api<RunList>(`${BASE}/runs?limit=50&offset=0`).then(data => {
+      if (disposed) return;
+      setWorkflowRuns(data.runs);
+      history.setSelectedId(current => current || data.runs[0]?.run_id || "");
     }).catch(reason => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
-  }, [job?.status, analysisJob?.status, refresh]);
+  }, [job?.status, analysisJob?.status, history.refreshKey]);
 
+  // 历史列表读到新数据且未按星标筛选时，流程面板跟随当前页。
+  // 只依赖列表本身：切换筛选开关时列表尚未更新，不能把旧的星标子集同步过去。
   useEffect(() => {
-    let disposed = false;
-    api<RunList>(`${BASE}/runs?limit=50&offset=${offset}${starredOnly ? "&starred_only=true" : ""}`).then(data => {
-      if (!disposed) {
-        if (offset && offset >= data.total) {
-          setOffset(Math.max(0, Math.ceil(data.total / 50) - 1) * 50);
-          return;
-        }
-        setList(data);
-        if (!starredOnly) setWorkflowRuns(data.runs);
-      }
-    }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [job?.status, analysisJob?.status, offset, refresh, starredOnly]);
+    if (!starredOnly) setWorkflowRuns(history.list.runs);
+  }, [history.list]);
 
-  useEffect(() => {
-    if (!selectedId) { setSelected(undefined); return; }
-    let disposed = false;
-    setSelected(undefined);
-    api<Summary>(summaryUrl(selectedId)).then(data => {
-      if (!disposed) setSelected(data);
-    }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [selectedId, job?.status, analysisJob?.status, refresh]);
-
-  useEffect(() => { setRenamingId(""); }, [selectedId]);
+  useEffect(() => { setRenamingId(""); }, [history.selectedId]);
 
   const manageRun = async (runId: string, action: "star" | "rename" | "delete", payload?: object) => {
     if (managingRun || !canManageRuns) return;
@@ -259,21 +225,19 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
         method: action === "star" ? "PUT" : "POST", body: JSON.stringify(payload),
       });
       if (action === "delete") await api(`/api/runs/${ID}/${encodeURIComponent(runId)}`, { method: "DELETE" });
-      setList(current => ({ ...current, runs: current.runs.flatMap(item => item.run_id !== runId ? [item]
+      history.setList(current => ({ ...current, runs: current.runs.flatMap(item => item.run_id !== runId ? [item]
         : updated && (!starredOnly || updated.starred) ? [updated] : []) }));
-      if (action === "star") setSelected(current => current?.run_id === runId ? { ...current, ...updated } : current);
       if (action !== "star") {
         const nextId = updated?.run_id ?? null;
         setRunDirectoryChange({ from: runId, to: nextId });
-        setSelectedId(current => current === runId ? nextId ?? "" : current);
-        setSelected(current => current?.run_id === runId ? undefined : current);
+        history.setSelectedId(current => current === runId ? nextId ?? "" : current);
         setWorkflowRuns(current => updated ? current.map(item => item.run_id === runId ? updated : item) : current.filter(item => item.run_id !== runId));
         setSession(current => current?.run_id === runId ? { ...current, run_id: nextId } : current);
         setComparisonRuns(current => updated ? current.map(item => item.run_id === runId ? { ...item, run_id: updated.run_id } : item) : current.filter(item => item.run_id !== runId));
         if (comparisonResult?.runs.some(item => item.run_id === runId)) setComparisonInvalidated(true);
         setRenamingId("");
       }
-      setRefresh(current => current + 1);
+      history.reload();
       setHistoryNotice(action === "delete" ? "本次实验数据已永久删除。" : action === "rename" ? `已重命名为 ${updated!.run_id}` : updated!.starred ? "已星标本次实验。" : "已取消星标。");
     } catch (reason) {
       setError(String(reason));
@@ -323,7 +287,7 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
         job={job} setJob={setJob} analysisJob={analysisJob} setAnalysisJob={setAnalysisJob}
         hardwareBusy={hardwareBusy} runs={workflowRuns.filter(item => item.completion_status === "completed")}
         runDirectoryChange={runDirectoryChange}
-        setError={setError} onRefresh={setRefresh}>
+        setError={setError} onRefresh={history.reload}>
         <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
           canStart={!jobActive && !hardwareBusy && !analysisActive && !comparisonBusy && fields.length > 0}
           layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
@@ -340,80 +304,72 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
               {isKnownNoise && <p>注入噪声 ON：{String(values.NOISE_BAND_STARTS_HZ ?? "—")} → {String(values.NOISE_BAND_STOPS_HZ ?? "—")} Hz，实际噪声幅度自动对齐设计 PSD（V²/Hz）；控制版本：{String(values.CONTROL_WAVEFORM_FILES ?? "—")}。零 RF 保留噪声。</p>}
             </div>} />
       </WorkflowPanel>
-        <LatestResultPanel latest={latest} render={value => <Result value={value} />}
-          onOpen={runId => { setSelectedId(runId); setHistoryView("single"); setTab("history"); }} />
+        <LatestResultPanel latest={history.latest} render={value => <Result value={value} />}
+          onOpen={runId => { history.setSelectedId(runId); setHistoryView("single"); setTab("history"); }} />
     </div>
     <div id="rf-aw-panel-history" role="tabpanel" aria-labelledby="rf-aw-tab-history" hidden={tab !== "history"}>
       {historyNotice && <p role="status">{historyNotice}</p>}
-      <div className="zaw-history">
-        <section className="zaw-run-list">
-          <div className="zaw-run-list-head"><small>RUNS</small><h3>历史运行（{list.total}）</h3></div>
-          <div className="rf-aw-history-tools">
-            <button className="zaw-secondary" disabled={Boolean(managingRun)} onClick={() => setRefresh(value => value + 1)}>刷新记录</button>
-            {canManageRuns && <label><input type="checkbox" checked={starredOnly} disabled={Boolean(managingRun)} onChange={event => { setStarredOnly(event.target.checked); setOffset(0); }} />仅显示星标</label>}
-          </div>
-          <ul>{list.runs.map(run => <li key={run.run_id}>
-            <div className={`rf-aw-run-row${canManageRuns ? " with-star" : ""}`}>
-              {!isKnownNoise && <input type="checkbox" aria-label={`选择 ${run.run_id} 进行对比`} title={run.comparison_block_reason || "加入对比"} disabled={!run.can_compare || comparisonBusy} checked={comparisonRuns.some(item => item.run_id === run.run_id)} onChange={event => {
-                const checked = event.target.checked;
-                setComparisonRuns(current => checked ? [...current, { run_id: run.run_id, legend: "" }] : current.filter(item => item.run_id !== run.run_id));
-                setHistoryView("comparison");
-              }} />}
-              {canManageRuns && <button className={`rf-aw-star${run.starred ? " starred" : ""}`} aria-label={`${run.starred ? "取消星标" : "星标"} ${run.run_id}`} aria-pressed={Boolean(run.starred)} disabled={Boolean(managingRun)} onClick={() => void manageRun(run.run_id, "star", { starred: !run.starred })}>{run.starred ? "★" : "☆"}</button>}
-              <button aria-label={run.run_id} className={`zaw-run-card ${selectedId === run.run_id ? "selected" : ""}`} onClick={() => { setSelectedId(run.run_id); setHistoryView("single"); }}><strong>{run.run_id}</strong><span>{run.timestamp}</span><span>采集：{status(run.completion_status)} · 校相：{status(run.phase_calibration_status)} · 分析：{status(run.analysis_status)}</span></button>
-            </div>
-            {!isKnownNoise && !run.can_compare && <p className="rf-aw-unavailable">不可对比：{run.comparison_block_reason}</p>}
-          </li>)}</ul>
-          {!list.runs.length && <p className="zaw-empty">{starredOnly ? "暂无星标运行记录。" : "暂无运行记录。"}</p>}
-          <div className="zaw-control-buttons"><button className="zaw-secondary" disabled={!offset} onClick={() => setOffset(value => value - 50)}>上一页</button><button className="zaw-secondary" disabled={offset + 50 >= list.total} onClick={() => setOffset(value => value + 50)}>下一页</button></div>
-        </section>
-        <section className="zaw-run-details">
-          <div className="zaw-control-buttons" role="group" aria-label="历史查看方式">
-            <button className={historyView === "single" ? "zaw-primary" : "zaw-secondary"} aria-pressed={historyView === "single"} onClick={() => setHistoryView("single")}>单次详情</button>
-{!isKnownNoise &&             <button className={historyView === "comparison" ? "zaw-primary" : "zaw-secondary"} aria-pressed={historyView === "comparison"} onClick={() => setHistoryView("comparison")}>对比分析（{comparisonRuns.length}）</button>}
-          </div>
-          <div hidden={historyView !== "single"}>{selected ? <>
-            <div className="zaw-run-details-actions"><button className="zaw-secondary" disabled={jobActive || starting || saving} onClick={() => {
-              setValues(current => commonTriggerParameters({ ...current, ...historyParameterValues(fields, historyParameters(selected.parameters as ParameterValues, true)) } as ParameterValues));
-              if (!("RF_INPUT_ROUTE" in selected.parameters)) setNotice("旧参数按 HF2 物理接线 AuxOut2 → Signal Input2 填回；使用 MFLI 时请明确改选 Aux Input1 或 Aux Input2，否则预检会拒绝启动。");
-              setTab("run");
-            }}>填回参数</button><button className="zaw-secondary" disabled={jobActive || analysisActive || comparisonBusy || Boolean(managingRun) || !selected.can_analyze} onClick={() => void reanalyze(selected.run_id)}>重新分析</button></div>
-            {canManageRuns && <div className="rf-aw-history-tools">
-              <button className="zaw-secondary" disabled={directoryBusy} onClick={() => { setRenamingId(selected.run_id); setRenameName(selected.name || selected.run_id.replace(/^\d{4}_\d{4}(?:\d{2})?_/, "")); }}>重命名</button>
-              <button className="danger" disabled={directoryBusy} onClick={() => void manageRun(selected.run_id, "delete")}>删除本次实验</button>
-            </div>}
-            {renamingId === selected.run_id && <form className="rf-aw-rename" onSubmit={event => { event.preventDefault(); void manageRun(selected.run_id, "rename", { name: renameName }); }}>
-              <label>新名称<input autoFocus aria-label="新名称" maxLength={80} value={renameName} disabled={Boolean(managingRun)} onChange={event => setRenameName(event.target.value)} /></label>
-              <p>只修改名称后缀，保留原时间前缀；无前缀的旧目录会补回原始运行时间。</p>
-              <div className="rf-aw-history-tools"><button disabled={directoryBusy || !renameName.trim()} type="submit">保存名称</button><button className="zaw-secondary" type="button" disabled={Boolean(managingRun)} onClick={() => setRenamingId("")}>取消</button></div>
-            </form>}
-            <Result value={selected} />
-            <details className="zaw-parameter-table"><summary>本次参数</summary><table><tbody>{Object.entries(selected.parameters).map(([key, value]) => <tr key={key}><th>{fields.find(field => field.name === key)?.label ?? key}</th><td>{String(value)}</td></tr>)}</tbody></table></details>
-          </> : <p className="zaw-empty">{selectedId ? "正在读取运行详情…" : "请选择一条运行记录。"}</p>}</div>
-          <div hidden={historyView !== "comparison"} className="rf-aw-comparison">
-            <h3>对比分析</h3>
-            <p>从左侧勾选至少两次运行，支持跨页选择。上图为{responseLabel}与拟合，下图为灵敏度主谱。</p>
-            <p>每次运行填写一个英文图例，两面板使用同色；留空时使用运行 ID{canManageRuns && "，中文目录名使用英文时间标识"}。</p>
-            {comparisonRuns.map(item => <div className="rf-aw-legend" key={item.run_id}>
-              <label><span>{item.run_id}</span><input aria-label={`图例：${item.run_id}`} placeholder={item.run_id} value={item.legend ?? ""} disabled={comparisonBusy} aria-invalid={invalidLegend(item.legend)} onChange={event => {
-                const legend = event.target.value;
-                setComparisonRuns(current => current.map(value => value.run_id === item.run_id ? { ...value, legend } : value));
-              }} /></label>
-              <button className="zaw-secondary" aria-label={`移除 ${item.run_id}`} disabled={comparisonBusy} onClick={() => setComparisonRuns(current => current.filter(value => value.run_id !== item.run_id))}>移除</button>
-            </div>)}
-            {legendsInvalid && <p className="alert error" role="alert">图例请使用单行英文文字、数字或符号。</p>}
-            <button className="zaw-primary" disabled={comparisonRuns.length < 2 || comparisonBusy || analysisActive || legendsInvalid} onClick={() => void generateComparison()}>{comparisonBusy ? "正在生成对比…" : "生成对比"}</button>
-            {analysisActive && <p>重新分析完成后可生成对比。</p>}
-            <JobView job={comparisonJob} onUpdate={setComparisonJob} />
-            {comparisonDirty && <p className="alert" role="status">选择或图例已修改，请重新生成对比。</p>}
-            {comparisonResult && !comparisonDirty && <>
-              {comparisonResult.warnings.map((warning, index) => <p className="alert" key={index}>{warning}</p>)}
-              <figure className="zaw-figure"><figcaption>{responseLabel}与 RF 灵敏度对比</figcaption><img src={comparisonResult.artifacts["full_analysis_comparison.png"]} alt={`${responseLabel}与 RF 灵敏度对比`} /></figure>
-              <p className="rf-aw-downloads">{["png", "pdf"].map(extension => <a key={extension} href={comparisonResult.artifacts[`full_analysis_comparison.${extension}`]} download>下载 {extension.toUpperCase()}</a>)}</p>
-            </>}
-          </div>
-        </section>
-      </div>
+      <RunHistoryView history={history} fields={fields} renderResult={value => <Result value={value} />}
+        refreshDisabled={Boolean(managingRun)}
+        listTools={canManageRuns && <label className="rf-aw-starred-filter"><input type="checkbox" checked={starredOnly} disabled={Boolean(managingRun)} onChange={event => { setStarredOnly(event.target.checked); history.setOffset(0); }} />仅显示星标</label>}
+        runRowClassName={`rf-aw-run-row${canManageRuns ? " with-star" : ""}`}
+        renderRunControls={run => <>
+          {!isKnownNoise && <input type="checkbox" aria-label={`选择 ${run.run_id} 进行对比`} title={run.comparison_block_reason || "加入对比"} disabled={!run.can_compare || comparisonBusy} checked={comparisonRuns.some(item => item.run_id === run.run_id)} onChange={event => {
+            const checked = event.target.checked;
+            setComparisonRuns(current => checked ? [...current, { run_id: run.run_id, legend: "" }] : current.filter(item => item.run_id !== run.run_id));
+            setHistoryView("comparison");
+          }} />}
+          {canManageRuns && <button className={`rf-aw-star${run.starred ? " starred" : ""}`} aria-label={`${run.starred ? "取消星标" : "星标"} ${run.run_id}`} aria-pressed={Boolean(run.starred)} disabled={Boolean(managingRun)} onClick={() => void manageRun(run.run_id, "star", { starred: !run.starred })}>{run.starred ? "★" : "☆"}</button>}
+        </>}
+        renderRunStatus={run => <>采集：{runStatusLabel(run.completion_status)} · 校相：{runStatusLabel(run.phase_calibration_status)} · 分析：{runStatusLabel(run.analysis_status)}</>}
+        renderRunNote={run => !isKnownNoise && !run.can_compare && <p className="rf-aw-unavailable">不可对比：{run.comparison_block_reason}</p>}
+        onSelectRun={() => setHistoryView("single")}
+        emptyListText={starredOnly ? "暂无星标运行记录。" : undefined}
+        detailHeader={<div className="zaw-control-buttons" role="group" aria-label="历史查看方式">
+          <button className={historyView === "single" ? "zaw-primary" : "zaw-secondary"} aria-pressed={historyView === "single"} onClick={() => setHistoryView("single")}>单次详情</button>
+          {!isKnownNoise && <button className={historyView === "comparison" ? "zaw-primary" : "zaw-secondary"} aria-pressed={historyView === "comparison"} onClick={() => setHistoryView("comparison")}>对比分析（{comparisonRuns.length}）</button>}
+        </div>}
+        fillBack={{ disabled: jobActive || starting || saving, onClick: selected => {
+          setValues(current => commonTriggerParameters({ ...current, ...historyParameterValues(fields, historyParameters(selected.parameters as ParameterValues, true)) } as ParameterValues));
+          if (!("RF_INPUT_ROUTE" in selected.parameters)) setNotice("旧参数按 HF2 物理接线 AuxOut2 → Signal Input2 填回；使用 MFLI 时请明确改选 Aux Input1 或 Aux Input2，否则预检会拒绝启动。");
+          setTab("run");
+        } }}
+        reanalyze={{ disabled: selected => jobActive || analysisActive || comparisonBusy || Boolean(managingRun) || !selected.can_analyze,
+          onClick: selected => void reanalyze(selected.run_id) }}
+        detailTools={selected => <>
+          {canManageRuns && <div className="rf-aw-history-tools">
+            <button className="zaw-secondary" disabled={directoryBusy} onClick={() => { setRenamingId(selected.run_id); setRenameName(selected.name || selected.run_id.replace(/^\d{4}_\d{4}(?:\d{2})?_/, "")); }}>重命名</button>
+            <button className="danger" disabled={directoryBusy} onClick={() => void manageRun(selected.run_id, "delete")}>删除本次实验</button>
+          </div>}
+          {renamingId === selected.run_id && <form className="rf-aw-rename" onSubmit={event => { event.preventDefault(); void manageRun(selected.run_id, "rename", { name: renameName }); }}>
+            <label>新名称<input autoFocus aria-label="新名称" maxLength={80} value={renameName} disabled={Boolean(managingRun)} onChange={event => setRenameName(event.target.value)} /></label>
+            <p>只修改名称后缀，保留原时间前缀；无前缀的旧目录会补回原始运行时间。</p>
+            <div className="rf-aw-history-tools"><button disabled={directoryBusy || !renameName.trim()} type="submit">保存名称</button><button className="zaw-secondary" type="button" disabled={Boolean(managingRun)} onClick={() => setRenamingId("")}>取消</button></div>
+          </form>}
+        </>}
+        detailHidden={historyView !== "single"}
+        detailExtra={<div hidden={historyView !== "comparison"} className="rf-aw-comparison">
+          <h3>对比分析</h3>
+          <p>从左侧勾选至少两次运行，支持跨页选择。上图为{responseLabel}与拟合，下图为灵敏度主谱。</p>
+          <p>每次运行填写一个英文图例，两面板使用同色；留空时使用运行 ID{canManageRuns && "，中文目录名使用英文时间标识"}。</p>
+          {comparisonRuns.map(item => <div className="rf-aw-legend" key={item.run_id}>
+            <label><span>{item.run_id}</span><input aria-label={`图例：${item.run_id}`} placeholder={item.run_id} value={item.legend ?? ""} disabled={comparisonBusy} aria-invalid={invalidLegend(item.legend)} onChange={event => {
+              const legend = event.target.value;
+              setComparisonRuns(current => current.map(value => value.run_id === item.run_id ? { ...value, legend } : value));
+            }} /></label>
+            <button className="zaw-secondary" aria-label={`移除 ${item.run_id}`} disabled={comparisonBusy} onClick={() => setComparisonRuns(current => current.filter(value => value.run_id !== item.run_id))}>移除</button>
+          </div>)}
+          {legendsInvalid && <p className="alert error" role="alert">图例请使用单行英文文字、数字或符号。</p>}
+          <button className="zaw-primary" disabled={comparisonRuns.length < 2 || comparisonBusy || analysisActive || legendsInvalid} onClick={() => void generateComparison()}>{comparisonBusy ? "正在生成对比…" : "生成对比"}</button>
+          {analysisActive && <p>重新分析完成后可生成对比。</p>}
+          <JobView job={comparisonJob} onUpdate={setComparisonJob} />
+          {comparisonDirty && <p className="alert" role="status">选择或图例已修改，请重新生成对比。</p>}
+          {comparisonResult && !comparisonDirty && <>
+            {comparisonResult.warnings.map((warning, index) => <p className="alert" key={index}>{warning}</p>)}
+            <figure className="zaw-figure"><figcaption>{responseLabel}与 RF 灵敏度对比</figcaption><img src={comparisonResult.artifacts["full_analysis_comparison.png"]} alt={`${responseLabel}与 RF 灵敏度对比`} /></figure>
+            <p className="rf-aw-downloads">{["png", "pdf"].map(extension => <a key={extension} href={comparisonResult.artifacts[`full_analysis_comparison.${extension}`]} download>下载 {extension.toUpperCase()}</a>)}</p>
+          </>}
+        </div>} />
     </div>
     <JobView job={analysisJob} onUpdate={setAnalysisJob} />
   </>;
