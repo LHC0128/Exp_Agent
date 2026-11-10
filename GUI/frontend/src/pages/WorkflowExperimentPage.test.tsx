@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, expectTypeOf, it, vi } from "vitest";
 
 import { api } from "../api";
-import type { SchemaField } from "../types/api";
+import type { ParameterValues, SchemaField } from "../types/api";
 import { WorkflowExperimentPage } from "./WorkflowExperimentPage";
 import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
 import { WorkflowPanel as LegacyWorkflowPanel, type XYSession as LegacyXYSession } from "../components/NoiseSpectrumXY/WorkflowPanel";
@@ -51,8 +52,8 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function page() {
-  return render(<WorkflowExperimentPage experimentId={ID} hasAnalysis={false} />);
+function page(props: Partial<Omit<ComponentProps<typeof WorkflowExperimentPage>, "experimentId" | "hasAnalysis">> & { hasAnalysis?: boolean } = {}) {
+  return render(<WorkflowExperimentPage experimentId={ID} hasAnalysis={false} {...props} />);
 }
 
 it("旧流程面板导出及会话类型与公共入口兼容", () => {
@@ -183,4 +184,230 @@ it.each([
   expect(current?.pending_request).toBe(test.pending);
   expect(current?.revision).toBe(test.expectedRevision);
   expect(current?.error).toBe(test.error);
+});
+
+it("页头小标题默认 EXPERIMENT，传入 eyebrow 时覆盖", async () => {
+  page();
+  await screen.findByRole("checkbox", { name: /A01/ });
+  expect(screen.getByText("EXPERIMENT")).toBeInTheDocument();
+  cleanup();
+  page({ eyebrow: "MEASUREMENT · XY SINE" });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  expect(screen.getByText("MEASUREMENT · XY SINE")).toBeInTheDocument();
+});
+
+it("mapFields 只影响流程图参数表单，不改动参数值", async () => {
+  page({ mapFields: (items, current) => items.map(field =>
+    field.name === "GAIN" ? { ...field, read_only: current.RUN_TAG === "draft" } : field) });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  fireEvent.click(screen.getByText(/参数：运行标签、采集增益/));
+  fireEvent.change(screen.getByLabelText("运行标签"), { target: { value: "draft" } });
+  expect(screen.getByLabelText("采集增益")).toBeDisabled();
+  expect(screen.getByLabelText("运行标签")).not.toBeDisabled();
+});
+
+it("未传 renderPreview 时保留默认派生预览", async () => {
+  const original = mockApi.getMockImplementation()!;
+  mockApi.mockImplementation(async (url, options) => {
+    if (url === `${BASE}/derive`) return { values: { GAIN: 7 } } as never;
+    return original(url, options);
+  });
+  page();
+  await screen.findByRole("checkbox", { name: /A01/ });
+  const summary = (await screen.findByText("派生预览（只读）")).closest("details")!;
+  await waitFor(() => expect(within(summary).getByText("7")).toBeInTheDocument());
+});
+
+it("renderPreview 接收派生值与 setValues，并替换默认预览", async () => {
+  const original = mockApi.getMockImplementation()!;
+  mockApi.mockImplementation(async (url, options) => {
+    if (url === `${BASE}/derive`) return { values: { GAIN: 7 } } as never;
+    return original(url, options);
+  });
+  page({ renderPreview: ({ derived, derivedError, setValues, busy }) => <div aria-label="自定义预览">
+    {derivedError && <p>{derivedError}</p>}
+    <p>派生增益 {String(derived.GAIN ?? "—")}</p>
+    <button disabled={busy} onClick={() => setValues(current => ({ ...current, RUN_TAG: "preview" }))}>用预览填值</button>
+  </div> });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  expect(screen.queryByText("派生预览（只读）")).not.toBeInTheDocument();
+  expect(await screen.findByText("派生增益 7")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "用预览填值" }));
+  expect(screen.getByLabelText("运行标签")).toHaveValue("preview");
+});
+
+it("renderPreview 的派生失败写入 derivedError，不写页面级错误条", async () => {
+  const original = mockApi.getMockImplementation()!;
+  mockApi.mockImplementation(async (url, options) => {
+    if (url === `${BASE}/derive`) throw new Error("无法计算");
+    return original(url, options);
+  });
+  page({ renderPreview: ({ derivedError }) => <p>{derivedError || "无错误"}</p> });
+  await screen.findByText("派生预览失败：Error: 无法计算");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("未传 renderPreview 时派生失败仍写页面级错误条", async () => {
+  const original = mockApi.getMockImplementation()!;
+  mockApi.mockImplementation(async (url, options) => {
+    if (url === `${BASE}/derive`) throw new Error("无法计算");
+    return original(url, options);
+  });
+  page();
+  expect(await screen.findByRole("alert")).toHaveTextContent("派生预览失败：Error: 无法计算");
+});
+
+it("startLabel 覆盖启动按钮文字", async () => {
+  page();
+  await screen.findByRole("checkbox", { name: /A01/ });
+  expect(screen.getByRole("button", { name: "预检并运行实验" })).toBeInTheDocument();
+  cleanup();
+  page({ startLabel: "完整运行" });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  expect(screen.getByRole("button", { name: "完整运行" })).toBeInTheDocument();
+});
+
+it("fillBack 同步返回自定义参数并写入提示", async () => {
+  page({ fillBack: ({ values }) => ({ values: { ...values, RUN_TAG: "filled" }, notice: "已按实验规则填回" }) });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(await screen.findByRole("button", { name: "填回参数" }));
+  await waitFor(() => expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true"));
+  expect(screen.getByLabelText("运行标签")).toHaveValue("filled");
+  expect(screen.getByText("已按实验规则填回")).toBeInTheDocument();
+});
+
+it("fillBack 只返回部分参数时合并进当前值，未返回的字段保留", async () => {
+  page({ fillBack: () => ({ values: { RUN_TAG: "partial" } }) });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  const gain = screen.getByLabelText("采集增益");
+  fireEvent.change(gain, { target: { value: "7" } });
+  await waitFor(() => expect(screen.getByLabelText("采集增益")).toHaveValue(7));
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(await screen.findByRole("button", { name: "填回参数" }));
+  await waitFor(() => expect(screen.getByLabelText("运行标签")).toHaveValue("partial"));
+  expect(screen.getByLabelText("采集增益")).toHaveValue(7);
+});
+
+it("fillBack 异步期间禁用填回，结果经 normalizeParameters 写入", async () => {
+  const doubleGain = (values: ParameterValues): ParameterValues => ({ ...values, GAIN: Number(values.GAIN) * 2 });
+  let resolve!: (value: { values: ParameterValues }) => void;
+  page({ normalizeParameters: doubleGain,
+    fillBack: () => new Promise(done => { resolve = done; }) });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  const button = await screen.findByRole("button", { name: "填回参数" });
+  fireEvent.click(button);
+  await waitFor(() => expect(button).toBeDisabled());
+  resolve({ values: { RUN_TAG: "async", GAIN: 5 } });
+  await waitFor(() => expect(screen.getByLabelText("采集增益")).toHaveValue(10));
+  expect(screen.getByLabelText("运行标签")).toHaveValue("async");
+});
+
+it("fillBack 异常写入错误条并留在历史 Tab", async () => {
+  page({ fillBack: async () => { throw new Error("旧目录无法填回"); } });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(await screen.findByRole("button", { name: "填回参数" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("旧目录无法填回");
+  expect(screen.getByRole("tab", { name: "历史" })).toHaveAttribute("aria-selected", "true");
+});
+
+function mockAnalysisFlow() {
+  const original = mockApi.getMockImplementation()!;
+  const runs = Array.from({ length: 60 }, (_, index) => ({
+    run_id: `saved-${index}`, timestamp: "t", run_tag: "", completion_status: index === 59 ? "failed" : "completed",
+  }));
+  mockApi.mockImplementation(async (url, options) => {
+    if (url === `${BASE}/workflow`) return {
+      acquisition: [stage("A01", ["RUN_TAG", "GAIN"]), stage("A02")], analysis: [stage("B01")],
+      run_step_id: "A01", finish_step_id: "A02",
+      parameter_impacts: { acquisition: { RUN_TAG: ["A01"], GAIN: ["A01"] }, analysis: {} }, diagram_url: "/diagram",
+    } as never;
+    if (String(url).startsWith(`${BASE}/runs?`)) {
+      const query = new URLSearchParams(String(url).split("?")[1]);
+      const offset = Number(query.get("offset")), limit = Number(query.get("limit"));
+      return { runs: runs.slice(offset, offset + limit), total: runs.length } as never;
+    }
+    if (String(url).endsWith("/summary")) {
+      const runId = String(url).split("/runs/")[1].split("/")[0];
+      const run = runs.find(item => item.run_id === runId);
+      return { ...run, analysis_status: "not_started", analysis_error: "", parameters: { RUN_TAG: "historical", GAIN: 9 }, artifacts: {} } as never;
+    }
+    return original(url, options);
+  });
+  return runs;
+}
+
+it("分析候选读前 500 条，受 analysisRunFilter 过滤且独立于历史分页", async () => {
+  mockAnalysisFlow();
+  page({ hasAnalysis: true, analysisRunFilter: run => run.completion_status === "completed" });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  const choices = () => within(screen.getByLabelText("分析操作对象")).getAllByRole("option").map(option => (option as HTMLOptionElement).value);
+  await waitFor(() => expect(choices()).toContain("saved-58"));
+  expect(choices()).toContain("saved-0");
+  expect(choices()).not.toContain("saved-59");
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  fireEvent.click(await screen.findByRole("button", { name: "下一页" }));
+  await screen.findByRole("button", { name: "saved-50" });
+  expect(screen.queryByRole("button", { name: "saved-0" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: "运行" }));
+  expect(choices()).toContain("saved-0");
+  expect(choices()).toContain("saved-58");
+  expect(choices()).not.toContain("saved-59");
+});
+
+it("未传 analysisRunFilter 时分析候选不过滤", async () => {
+  mockAnalysisFlow();
+  page({ hasAnalysis: true });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  const choices = () => within(screen.getByLabelText("分析操作对象")).getAllByRole("option").map(option => (option as HTMLOptionElement).value);
+  await waitFor(() => expect(choices()).toContain("saved-59"));
+  expect(choices()).toContain("saved-0");
+});
+
+it.each(["running", "acquired"])("%s 运行的重新分析禁用", async status => {
+  const original = mockApi.getMockImplementation()!;
+  mockApi.mockImplementation(async (url, options) => {
+    if (url === `${BASE}/runs/${old.run_id}/summary`) return {
+      ...old, completion_status: status, analysis_status: "not_started", analysis_error: "",
+      parameters: { RUN_TAG: "historical", GAIN: 9 }, artifacts: {},
+    } as never;
+    if (String(url).startsWith(`${BASE}/runs?`)) return { runs: [{ ...old, completion_status: status }], total: 1 } as never;
+    return original(url, options);
+  });
+  page({ hasAnalysis: true });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  const button = await screen.findByRole("button", { name: "重新分析" });
+  expect(button).toBeDisabled();
+});
+
+it("renderLatest 替换最近结果内容并保留标题与打开入口", async () => {
+  page({ hasAnalysis: true, renderLatest: ({ latest, openRun }) => <div>
+    <p>自定义最新：{latest?.run_id ?? "无"}</p>
+    {latest && <button onClick={() => openRun(latest.run_id)}>打开最新</button>}
+  </div> });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  expect(screen.getByRole("heading", { name: "最近一次结果" })).toBeInTheDocument();
+  expect(await screen.findByText("自定义最新：1014_old")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "打开最新" }));
+  expect(screen.getByRole("tab", { name: "历史" })).toHaveAttribute("aria-selected", "true");
+  expect(await screen.findByText("historical")).toBeInTheDocument();
+});
+
+it("renderHistory 替换历史主体并使用模板上下文", async () => {
+  page({ renderHistory: ({ fields, setValues, openRunTab, busy }) => <div>
+    <p>自定义历史 {fields.length} 项</p>
+    <button disabled={busy} onClick={() => {
+      setValues(current => ({ ...current, RUN_TAG: "history-fill" })); openRunTab();
+    }}>自定义填回</button>
+  </div> });
+  await screen.findByRole("checkbox", { name: /A01/ });
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  expect(screen.getByText("自定义历史 2 项")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "填回参数" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "自定义填回" }));
+  expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByLabelText("运行标签")).toHaveValue("history-fill");
 });
