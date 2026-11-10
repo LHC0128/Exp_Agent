@@ -1,152 +1,112 @@
-import { useEffect, useMemo, useState } from "react";
-import { api } from "../api";
-import { PageHead } from "../components/PageHead";
-import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
-import { useUnsavedChanges } from "../components/NavigationGuard";
-import { ExperimentViewPanel, ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
-import { Dashboard } from "../components/MxYOptimalControlFrequency/Dashboard";
-import { HistoryView } from "../components/MxYOptimalControlFrequency/HistoryView";
-import { MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID } from "../components/MxYOptimalControlFrequency/images";
-import type {
-  ExperimentDefinition,
-  ExperimentSchema,
-  Job,
-  JobSummary,
-  ParameterLayout,
-  ParameterValues,
-} from "../types/api";
 import {
-  defaultParameterLayout,
-  sameParameterLayout,
-  validatedParameterLayout,
-} from "./experimentHelpers";
-import "../pages/zawClosedLoop.css";
+  COMPARISON_PNG,
+  MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID,
+  PHASE_FREQUENCY_PNG,
+} from "../components/MxYOptimalControlFrequency/images";
+import {
+  readCalibration,
+  type MxYOptimalControlFrequencyRunSummary,
+} from "../components/MxYOptimalControlFrequency/types";
+import { WorkflowExperimentPage, type WorkflowRunSummary } from "./WorkflowExperimentPage";
 
-export function MxYOptimalControlFrequencyPage() {
-  const [tab, setTab] = useState<ExperimentView>("run");
-  const [definition, setDefinition] = useState<ExperimentDefinition | undefined>();
-  const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
-  // 页面统一维护可变参数布局；savedLayout 是磁盘上最近一次确认的布局。
-  const [layout, setLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
-  const [savedLayout, setSavedLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
-  const [values, setValues] = useState<ParameterValues>({});
-  const [loadError, setLoadError] = useState("");
-  const [prefill, setPrefill] = useState<ParameterValues | null>(null);
-  // 任务状态保存在页面层：切换“运行/历史”Tab 或重新进入页面时不丢失。
-  const [job, setJob] = useState<Job | undefined>();
-  const requestedJobId = useRequestedJobId();
+const ANALYSIS_KEYS = {};
 
-  useEffect(() => {
-    let disposed = false;
-    // 恢复本实验最近的活动任务；没有活动任务时恢复最近一次已开始的任务。
-    api<JobSummary[]>("/api/jobs")
-      .then((summaries) => {
-        const selected = recoverableJob(summaries, MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID, requestedJobId);
-        if (disposed || !selected) return undefined;
-        return api<Job>(`/api/jobs/${selected.id}`);
-      })
-      .then((detail) => {
-        if (!disposed && detail) setJob(detail);
-      })
-      .catch(() => {
-        // 后端不可用时保持无任务状态，页面自身会提示加载错误。
-      });
-    return () => {
-      disposed = true;
-    };
-  }, []);
+type Summary = WorkflowRunSummary & MxYOptimalControlFrequencyRunSummary;
 
-  useEffect(() => {
-    let disposed = false;
-    setDefinition(undefined);
-    setFields([]);
-    setLayout({ basic: [], advanced: [] });
-    setSavedLayout({ basic: [], advanced: [] });
-    setValues({});
-    setLoadError("");
-    Promise.all([
-      api<ExperimentDefinition>(`/api/experiments/${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}`),
-      api<ExperimentSchema>(`/api/experiments/${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}/schema`),
-    ])
-      .then(([def, schema]) => {
-        if (disposed) return;
-        setDefinition(def);
-        setFields(schema.fields);
-        const persisted = schema.parameter_layout_saved
-          ? validatedParameterLayout(schema.fields, schema.parameter_layout)
-          : undefined;
-        const initialLayout = persisted ?? defaultParameterLayout(schema.fields);
-        setLayout(initialLayout);
-        setSavedLayout(initialLayout);
-        setValues(Object.fromEntries(
-          schema.fields.map((field) => [field.name, field.default]),
-        ) as ParameterValues);
-      })
-      .catch((reason) => !disposed && setLoadError(String(reason)));
-    return () => {
-      disposed = true;
-    };
-  }, []);
+const number = (value: unknown): string =>
+  typeof value === "number" && Number.isFinite(value) ? String(value) : "—";
 
-  const description = useMemo(
-    () => definition?.description ?? "读取实验定义与默认参数。",
-    [definition],
-  );
+const text = (value: unknown): string => {
+  if (typeof value === "number") return Number.isFinite(value) ? value.toString() : "—";
+  if (typeof value === "string") return value;
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (value === null || value === undefined) return "—";
+  return String(value);
+};
 
-  // 参数在基础/高级之间移动后布局与磁盘不一致时，提示用户手动保存。
-  const layoutDirty = fields.length > 0 && !sameParameterLayout(layout, savedLayout);
-  // 常驻运行页按活会话保护参数；页面层只补充尚未保存的布局。
-  useUnsavedChanges(layoutDirty);
-  useExperimentTask({ ready: fields.length > 0, setTab });
-
+function Result({ summary }: { summary: Summary }) {
+  const artifacts = summary.artifacts ?? {};
+  const calibration = readCalibration(summary.calibration ?? {});
+  const comparison = artifacts[COMPARISON_PNG];
+  const heatmap = artifacts[PHASE_FREQUENCY_PNG];
+  const optimal = summary.optimal_response_metadata ?? {};
+  const constant = summary.constant_response_metadata ?? {};
   return (
-    <>
-      <PageHead
-        eyebrow="EXPERIMENT · MX_Y_OPTIMAL_CONTROL_RF_FREQUENCY_RESPONSE"
-        title={definition?.title ?? "正在载入实验"}
-        description={description}
-        experiment={definition}
-      />
-      {loadError && <div className="alert error">实验参数加载失败：{loadError}。请确认 GUI 后端已重启后刷新页面。</div>}
-      <ExperimentViewTabs experimentId={MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID} title={definition?.title} value={tab} onChange={setTab} label="Mx Y 最优控制频率响应实验视图" />
-      {definition && fields.length > 0 && (
-        <>
-          <div id={`${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}-panel-run`} role="tabpanel" aria-labelledby={`${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}-tab-run`} hidden={tab !== "run"}>
-            <Dashboard
-              experimentId={MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}
-              definition={definition}
-              fields={fields}
-              layout={layout}
-              layoutDirty={layoutDirty}
-              onLayoutChange={setLayout}
-              onLayoutSaved={(persisted, savedFields) => {
-                setLayout(persisted);
-                setSavedLayout(persisted);
-                setFields(savedFields);
-              }}
-              values={values}
-              setValues={setValues}
-              job={job}
-              setJob={setJob}
-              prefill={prefill}
-              clearPrefill={() => setPrefill(null)}
-            />
-          </div>
-          <ExperimentViewPanel active={tab === "history"} id={`${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}-panel-history`} labelledBy={`${MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}-tab-history`}>
-            <HistoryView
-              experimentId={MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}
-              fields={fields}
-              onFillBack={(parameters) => {
-                setPrefill(parameters as ParameterValues);
-              }}
-              onJumpToRun={() => setTab("run")}
-            />
-          </ExperimentViewPanel>
-        </>
+    <div className="zaw-latest">
+      <div className="zaw-metrics-grid">
+        <div className="zaw-metric">
+          <small>完成状态</small>
+          <span className="zaw-metric-value">{summary.completion_status}</span>
+        </div>
+        <div className="zaw-metric">
+          <small>常数对照</small>
+          <span className="zaw-metric-value">{summary.comparison_enabled ? "已启用" : "未启用"}</span>
+        </div>
+        <div className="zaw-metric">
+          <small>最优控制有效点</small>
+          <span className="zaw-metric-value">{number(optimal.valid_points)}</span>
+        </div>
+        <div className="zaw-metric">
+          <small>常数控制有效点</small>
+          <span className="zaw-metric-value">{number(constant.valid_points)}</span>
+        </div>
+      </div>
+      {summary.comparison_enabled && calibration.extrapolated && (
+        <div className="alert error">
+          目标电压超出标定支撑范围（{text(calibration.supportVoltageMinV)} – {text(calibration.supportVoltageMaxV)} V），
+          结果依赖全局线性外推，请谨慎使用。
+        </div>
       )}
-      {definition && !fields.length && !loadError && (
-        <p className="zaw-empty">实验无可编辑参数。</p>
+      <p className="zaw-latest-meta">
+        {summary.timestamp} · {summary.run_tag}
+        {summary.comparison_enabled && calibration.calibrationRun
+          ? ` · 标定：${calibration.calibrationRun}`
+          : ""}
+      </p>
+      {summary.control_source && (
+        <p>闭环冻结波形：{text(summary.control_source.run)} · 幅度 {text(summary.control_source.amplitude_vpp)} Vpp · 偏置 {text(summary.control_source.offset_v)} V</p>
       )}
-    </>
+      {summary.comparison_enabled && (
+        <details className="zaw-calibration">
+          <summary>标定信息</summary>
+          <table>
+            <tbody>
+              <tr><th>标定运行</th><td>{text(calibration.calibrationRun)}</td></tr>
+              <tr><th>目标 Larmor 频率 (Hz)</th><td>{text(calibration.targetLarmorFrequencyHz)}</td></tr>
+              <tr><th>目标线圈电流 (A)</th><td>{text(calibration.targetCurrentA)}</td></tr>
+              <tr><th>目标恒定 Z 电压 (V)</th><td>{text(calibration.targetVoltageV)}</td></tr>
+              <tr><th>电压-电流拟合斜率 (A/V)</th><td>{text(calibration.gainAPerV)}</td></tr>
+              <tr>
+                <th>标定有效电压范围</th>
+                <td>{text(calibration.supportVoltageMinV)} – {text(calibration.supportVoltageMaxV)} V</td>
+              </tr>
+              <tr><th>分析 SHA-256</th><td>{text(calibration.analysisSha256)}</td></tr>
+            </tbody>
+          </table>
+        </details>
+      )}
+      {comparison && (
+        <figure className="zaw-figure">
+          <figcaption>
+            {summary.comparison_enabled ? "最优控制中位数 vs 常数控制对照" : "最优控制中位数曲线"}
+          </figcaption>
+          <img src={comparison} alt="RF 频率响应曲线" loading="lazy" />
+        </figure>
+      )}
+      {heatmap && (
+        <figure className="zaw-figure">
+          <figcaption>相位-频率热图</figcaption>
+          <img src={heatmap} alt="相位-频率热图" loading="lazy" />
+        </figure>
+      )}
+    </div>
   );
 }
+
+export function MxYOptimalControlFrequencyPage() {
+  return <WorkflowExperimentPage experimentId={MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}
+    eyebrow="EXPERIMENT · MX_Y_OPTIMAL_CONTROL_RF_FREQUENCY_RESPONSE"
+    analysisParameterKeys={ANALYSIS_KEYS}
+    renderResult={summary => <Result summary={summary as Summary} />} />;
+}
+

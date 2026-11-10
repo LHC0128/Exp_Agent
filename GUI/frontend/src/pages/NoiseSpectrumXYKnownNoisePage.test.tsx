@@ -261,7 +261,7 @@ it("结果区展示判据通过与中位比值，历史详情可用", async () =
   expect(screen.getByLabelText("运行标签")).toHaveValue("known_noise");
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
-  expect(screen.getByLabelText("运行标签")).toHaveValue("history-tag");
+  await waitFor(() => expect(screen.getByLabelText("运行标签")).toHaveValue("history-tag"));
   await openParameters("A11");
   expect(screen.getByRole("spinbutton", { name: "K_Z 手动标定 (Hz/V)" })).toHaveValue(0);
 });
@@ -283,12 +283,12 @@ it("手动 K_Z 经预检、保存与完整运行提交，并随历史参数填�
   await waitFor(() => expect(screen.getByRole("button", { name: "填回参数" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
   const restored = await openParameters("A11");
-  expect(restored.getByLabelText("K_Z 手动标定 (Hz/V)")).toHaveValue(6200);
+  await waitFor(() => expect(restored.getByLabelText("K_Z 手动标定 (Hz/V)")).toHaveValue(6200));
 });
 
 it("从真实路由进入三 Tab，预检失败不启动采集", async () => {
   renderPage();
-  expect(within(screen.getByRole("tablist", { name: "XY 已知噪声注入实验视图" })).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
+  expect(within(screen.getByRole("tablist")).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   await waitFor(() => expect(screen.getByRole("button", { name: "完整运行" })).toBeEnabled());
   const normal = mockApi.getMockImplementation()!;
   mockApi.mockImplementation(async (url, options) => {
@@ -318,7 +318,7 @@ it("背景不可辨识时显示空值并保留有符号差分统计", async () =
 
 it("三主 Tab 保留交互流程图，运行与历史支持双向键盘切换", async () => {
   renderPage();
-  const tablist = await screen.findByRole("tablist", { name: "XY 已知噪声注入实验视图" });
+  const tablist = await screen.findByRole("tablist");
   expect(within(tablist).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
   expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();

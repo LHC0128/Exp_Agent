@@ -1,26 +1,11 @@
 import { useEffect, useState } from "react";
-import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
 import { api } from "../api";
-import { PageHead } from "../components/PageHead";
-import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
-import { useParameterGuard } from "../components/NavigationGuard";
-import { JobView } from "../components/JobView";
-import { useJobActivity } from "../components/JobActivity";
-import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
-import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
-import { RunHistoryView, runStatusLabel, useRunHistory } from "../components/workflow/RunHistory";
-import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
-import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
-import type { components } from "../types/openapi";
-import "./zawClosedLoop.css";
-import "./rfDirectAW.css";
-
+import { runStatusLabel } from "../components/workflow/RunHistory";
+import type { ParameterValues, SchemaField } from "../types/api";
+import { WorkflowExperimentPage, type WorkflowRunSummary } from "./WorkflowExperimentPage";
 const ID = "rf-control-scale-sensitivity";
 const BASE = `/api/experiments/${ID}`;
-type Run = components["schemas"]["WorkflowRunItem"];
-type Summary = components["schemas"]["WorkflowRunSummary"];
 type Metric = { control: string; scale: number; valid: boolean; control_scale_factor?: number; effective_control_scale?: number; slope_V_per_nT?: number; center_Hz?: number; dispersive_hwhm_Hz?: number; sensitivity_fT_per_sqrtHz?: number; band_exceeds_lorentzian_hwhm?: boolean; noise_records_total?: number; noise_records_rejected?: number; rejection_reason?: string };
-const active = (job?: Job) => Boolean(job && ["queued", "running"].includes(job.status));
 const analysisKeys = { noise_nperseg: "NOISE_NPERSEG", noise_outlier_policy: "NOISE_OUTLIER_POLICY", band_min_hz: "SENSITIVITY_BAND_MIN_HZ", band_max_hz: "SENSITIVITY_BAND_MAX_HZ" };
 const normalize = (values: ParameterValues): ParameterValues => {
   const factors = values.CONTROL_SCALE_FACTORS;
@@ -35,7 +20,12 @@ const normalize = (values: ParameterValues): ParameterValues => {
 };
 const number = (value?: number | null) => typeof value === "number" && Number.isFinite(value) ? value.toPrecision(5) : "—";
 
-function Result({ value }: { value: Summary }) {
+const mapFields = (fields: SchemaField[], values: ParameterValues): SchemaField[] => fields.map(field => ({ ...field, read_only: field.read_only
+  || ["Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG"].includes(field.name) && values.Z_PHASE_SCAN_ENABLED === false
+  || field.name === "RF_PHYSICAL_INPUT_SOURCE" && values.RF_INPUT_ROUTE === "internal"
+  || ["LOOPBACK_INPUT_RANGE_V", "LOOPBACK_INPUT_DIFF"].includes(field.name) && !(values.RF_INPUT_ROUTE === "physical" && values.RF_PHYSICAL_INPUT_SOURCE === "voltage1") }));
+
+function Result({ value }: { value: WorkflowRunSummary }) {
   const artifacts = value.artifacts ?? {};
   const [metrics, setMetrics] = useState<{ points?: Metric[]; sensitivity_assumption?: string; plot_labels?: Record<string, string> }>();
   const [error, setError] = useState("");
@@ -59,103 +49,19 @@ function Result({ value }: { value: Summary }) {
 }
 
 export function RFControlScaleSensitivityPage() {
-  const [tab, setTab] = useState<ExperimentView>("run");
-  const [definition, setDefinition] = useState<ExperimentDefinition>();
-  const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
-  const [values, setValues] = useState<ParameterValues>({});
-  const [layout, setLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
-  const [savedLayout, setSavedLayout] = useState(layout);
-  const [session, setSession] = useState<XYSession>();
-  const [job, setJob] = useState<Job>();
-  const [analysisJob, setAnalysisJob] = useState<Job>();
-  const [error, setError] = useState("");
-  const [pending, setPending] = useState(false);
-  const [workflowRuns, setWorkflowRuns] = useState<Run[]>([]);
-  const { hardwareBusy } = useJobActivity();
-  const live = Boolean(session && session.status !== "closed");
-  const history = useRunHistory<Run, Summary>({ experimentId: ID, reloadKeys: [job?.status, analysisJob?.status], setError });
-  useParameterGuard(fields, values, layout, savedLayout, live ? session?.parameters as ParameterValues : undefined);
-  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId: history.setSelectedId });
-  const requestedJobId = useRequestedJobId();
-  const controls = useRunControls({ experimentId: ID, values, layout, normalize, setError, setJob,
-    onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
-  const { starting, saving, setNotice } = controls;
-  const busy = pending || starting || saving || active(analysisJob) || (live ? session?.status !== "waiting" || Boolean(session.pending_request) : active(job));
-  const routeFields = fields.map(field => ({ ...field, read_only: field.read_only
-    || ["Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG"].includes(field.name) && values.Z_PHASE_SCAN_ENABLED === false
-    || field.name === "RF_PHYSICAL_INPUT_SOURCE" && values.RF_INPUT_ROUTE === "internal"
-    || ["LOOPBACK_INPUT_RANGE_V", "LOOPBACK_INPUT_DIFF"].includes(field.name) && !(values.RF_INPUT_ROUTE === "physical" && values.RF_PHYSICAL_INPUT_SOURCE === "voltage1") }));
-
-  useEffect(() => {
-    let disposed = false;
-    void Promise.all([api<ExperimentDefinition>(BASE), api<ExperimentSchema>(BASE + "/schema"), api<JobSummary[]>("/api/jobs")]).then(async ([def, schema, jobs]) => {
-      if (disposed) return;
-      setDefinition(def); setFields(schema.fields);
-      setValues(normalize(Object.fromEntries(schema.fields.map(field => [field.name, field.default]))));
-      const initial = validatedParameterLayout(schema.fields, schema.parameter_layout) ?? defaultParameterLayout(schema.fields);
-      setLayout(initial); setSavedLayout(initial);
-      const own = recoverableJob(jobs, ID, requestedJobId);
-      if (own) { const detail = await api<Job>(`/api/jobs/${own.id}`); if (!disposed) setJob(detail); }
-      const analysis = recoverableJob(jobs, ID, requestedJobId, "analysis");
-      if (analysis) { const detail = await api<Job>(`/api/jobs/${analysis.id}`); if (!disposed) setAnalysisJob(detail); }
-    }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, []);
-
-  useEffect(() => {
-    let disposed = false;
-    // 分析候选保留原有前500条范围，不随历史列表的50条分页变化。
-    void api<{ runs: Run[]; total: number }>(BASE + "/runs?limit=500&offset=0").then(data => {
-      if (!disposed) setWorkflowRuns(data.runs);
-    }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [history.refreshKey, job?.status, analysisJob?.status]);
-
-  const fillParameters = async (selected: Summary) => {
-    setPending(true); setError("");
-    try {
-      const result = await api<{ values: { parameters: ParameterValues } }>(BASE + "/derive", {
-        method: "POST", body: JSON.stringify({ parameters: selected.parameters }) });
-      setValues(normalize(result.values.parameters)); setTab("run");
-    } catch (reason) { setError(String(reason)); } finally { setPending(false); }
-  };
-  const reanalyze = async (selected: Summary) => {
-    setError("");
-    try { setAnalysisJob(await api<Job>(`/api/runs/${encodeURIComponent(selected.run_id)}/analyze`, { method: "POST", body: JSON.stringify({ experiment_id: ID }) })); }
-    catch (reason) { setError(String(reason)); }
-  };
-
-  return <>
-    <PageHead eyebrow="MEASUREMENT · RF SCALE" title={definition?.title ?? "多控制 Scale RF 响应与灵敏度"} description={definition?.description ?? "读取控制、参数与运行记录。"} experiment={definition} />
-    {error && <div className="alert error" role="alert">{error}</div>}
-    <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} idPrefix="scale" label="Scale 实验视图" />
-    <div id="scale-panel-run" role="tabpanel" aria-labelledby="scale-tab-run" hidden={tab !== "run"}>
-      <WorkflowPanel experimentId={ID} analysisParameterPrefix="" analysisParameterKeys={analysisKeys}
-        normalizeParameters={normalize} enabled={fields.length > 0} fields={routeFields} layout={layout} setLayout={setLayout}
-        setNotice={setNotice} parametersDisabled={busy} values={values} setValues={setValues} session={session} setSession={setSession}
-        job={job} setJob={setJob} analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
-        runs={workflowRuns.filter(item => item.completion_status === "completed")} setError={setError} onRefresh={history.reload}>
-        <RunControls controls={controls} canEdit={!busy && fields.length > 0}
-          canStart={!busy && !live && !hardwareBusy && fields.length > 0}
-          layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !active(job)}
-          job={job} onJobUpdate={setJob}
-          preview={<div className="xy-workflow-preview">
-            <p>在 A13 节点编辑扫描开关和手动 RF 相位。每个控制 × Scale 独立校相；关闭 RF 相位扫描时共用本实验手动相位，其余校相仍逐点执行。不注入人为噪声，不自动追峰；分步等待仍占用硬件锁。</p>
-            <p>{values.Z_PHASE_SCAN_ENABLED === false ? `跳过 RF 相位扫描：全部控制 × Scale 使用手动相位 ${String(values.Z_BURST_PHASE_INIT ?? "—")}°。` : "RF 相位扫描开启：每个控制 × Scale 独立扫描并选相。"}</p>
-            <p aria-label="采集预览">所选控制：{String(values.CONTROL_WAVEFORM_FILES ?? "—")}；扫描倍率：{values.CONTROL_SCALE_START != null && values.CONTROL_SCALE_STOP != null && values.CONTROL_SCALE_POINTS != null ? `${values.CONTROL_SCALE_START} → ${values.CONTROL_SCALE_STOP}，${values.CONTROL_SCALE_POINTS} 点` : String(values.CONTROL_SCALES ?? "—")}；补偿倍率：{JSON.stringify(values.CONTROL_SCALE_FACTORS)}；噪声采集：{values.INCLUDE_NOISE === false ? "关闭" : "开启"}；所有点均测 R 扫频。</p>
-            <p>在 A13 设置扫描倍率起点、终点和点数，以及各控制补偿倍率（默认 1）。实际包络乘两种倍率，图横轴仍用扫描倍率；未测扫描倍率 1 时不做归一化。电压安全和校相质量门槛不变。</p>
-            <p>保存默认值不改历史分析草稿；应用会话草稿后需显式重跑。</p>
-          </div>} />
-      </WorkflowPanel>
-      <LatestResultPanel latest={history.latest} render={value => <Result value={value} />}
-        onOpen={runId => { history.setSelectedId(runId); setTab("history"); }} />
-    </div>
-    <div id="scale-panel-history" role="tabpanel" aria-labelledby="scale-tab-history" hidden={tab !== "history"}>
-      <RunHistoryView history={history} fields={fields} renderResult={value => <Result value={value} />}
-        fillBack={{ disabled: busy || live, onClick: selected => void fillParameters(selected) }}
-        reanalyze={{ disabled: selected => busy || live || selected.completion_status !== "completed",
-          onClick: selected => void reanalyze(selected) }} />
-    </div>
-    <JobView job={analysisJob} onUpdate={setAnalysisJob} />
-  </>;
+  return <WorkflowExperimentPage experimentId={ID}
+    eyebrow="MEASUREMENT · RF SCALE"
+    analysisParameterPrefix="" analysisParameterKeys={analysisKeys}
+    normalizeParameters={normalize} mapFields={mapFields}
+    analysisRunFilter={run => run.completion_status === "completed"}
+    renderResult={value => <Result value={value} />}
+    renderPreview={({ values }) => <div className="xy-workflow-preview">
+      <p>{values.Z_PHASE_SCAN_ENABLED === false ? `跳过 RF 相位扫描：全部控制 × Scale 使用手动相位 ${String(values.Z_BURST_PHASE_INIT ?? "—")}°。` : "RF 相位扫描开启：每个控制 × Scale 独立扫描并选相。"}</p>
+      <p aria-label="采集预览">所选控制：{String(values.CONTROL_WAVEFORM_FILES ?? "—")}；扫描倍率：{values.CONTROL_SCALE_START != null && values.CONTROL_SCALE_STOP != null && values.CONTROL_SCALE_POINTS != null ? `${values.CONTROL_SCALE_START} → ${values.CONTROL_SCALE_STOP}，${values.CONTROL_SCALE_POINTS} 点` : String(values.CONTROL_SCALES ?? "—")}；补偿倍率：{JSON.stringify(values.CONTROL_SCALE_FACTORS)}；噪声采集：{values.INCLUDE_NOISE === false ? "关闭" : "开启"}；所有点均测 R 扫频。</p>
+    </div>}
+    fillBack={async ({ summary }) => {
+      const derived = await api<{ values: { parameters: ParameterValues } }>(BASE + "/derive", {
+        method: "POST", body: JSON.stringify({ parameters: summary.parameters }) });
+      return { values: derived.values.parameters };
+    }} />;
 }

@@ -246,7 +246,7 @@ it("历史填回参数与质量未通过信息，保留交互流程图", async (
   fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
   const restored = await openParameters("A12");
   expect(restored.getByLabelText("注入 Z 已知可控噪声")).toHaveValue("true");
-  const tablist = screen.getByRole("tablist", { name: "XY Probe AM 噪声实验视图" });
+  const tablist = screen.getByRole("tablist");
   expect(within(tablist).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
   expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();

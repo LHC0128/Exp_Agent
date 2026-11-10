@@ -1,46 +1,61 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
-import { PageHead } from "../components/PageHead";
-import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
-import { useUnsavedChanges } from "../components/NavigationGuard";
-import { ExperimentViewPanel, ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
-import { StaticSensitivityDashboard } from "../components/StaticSensitivityDashboard";
 import { StaticSensitivityHistory } from "../components/StaticSensitivityHistory";
-import type { ExperimentDefinition, ExperimentSchema, Job, JobSummary, ParameterLayout, ParameterValues } from "../types/api";
-import { defaultParameterLayout, sameParameterLayout, validatedParameterLayout } from "./experimentHelpers";
-import "./zawClosedLoop.css";
+import { historyParameterValues } from "./experimentHelpers";
+import { WorkflowExperimentPage, type RenderLatestContext, type WorkflowRunSummary } from "./WorkflowExperimentPage";
 
 const ID = "static-sensitivity";
+const ANALYSIS_KEYS = { z_v_to_nt: "z_v_to_nt" };
+type StaticSummary = WorkflowRunSummary & { analysis: Record<string, unknown> };
+
+const formatNumber = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value.toString() : "—";
+
+function LatestPreview({ latest, job, session }: RenderLatestContext) {
+  const [summary, setSummary] = useState<StaticSummary>();
+  const busy = Boolean(job && ["queued", "running"].includes(job.status));
+  const result = job?.result as { run_dir?: unknown } | undefined;
+  const runDir = typeof result?.run_dir === "string" ? result.run_dir : "";
+  const sessionRunId = session?.steps.A12?.status === "completed" ? session.run_id : undefined;
+  const runId = sessionRunId ?? runDir.split(/[\\/]/).pop() ?? "";
+  useEffect(() => {
+    if (!runId) {
+      setSummary(latest as StaticSummary | undefined);
+      return;
+    }
+    let disposed = false;
+    void api<StaticSummary>(`/api/experiments/${ID}/runs/${encodeURIComponent(runId)}/summary`)
+      .then(value => { if (!disposed) setSummary(value); })
+      .catch(() => undefined);
+    return () => { disposed = true; };
+  }, [job?.id, job?.status, sessionRunId, latest, runId]);
+  if (!summary) return <p className="zaw-empty">{busy ? "正在采集，运行结束后会展示结果。" : "尚无运行结果，启动一次实验后这里会展示灵敏度分析。"}</p>;
+  const analysis = summary.analysis ?? {};
+  return <div className="zaw-latest">
+    <div className="zaw-metrics-grid">
+      <div className="zaw-metric"><small>完成状态</small><span className="zaw-metric-value">{summary.completion_status}</span></div>
+      <div className="zaw-metric"><small>拟合状态</small><span className="zaw-metric-value">{analysis.fit_valid === undefined ? "未分析" : analysis.fit_valid ? "有效" : "无效"}</span></div>
+      <div className="zaw-metric"><small>最佳 GS200 量程</small><span className="zaw-metric-value">{String(analysis.best_range_label ?? "—")}</span></div>
+      <div className="zaw-metric"><small>平坦段灵敏度</small><span className="zaw-metric-value">{formatNumber(analysis.sensitivity_flat_fT_per_sqrt_Hz)} fT/√Hz</span></div>
+    </div>
+    <p className="zaw-latest-meta">{summary.timestamp} · {summary.run_tag}</p>
+    {typeof analysis.error === "string" && <p className="alert error">{analysis.error}</p>}
+    {Array.isArray(analysis.fit_rejection_reasons) && analysis.fit_rejection_reasons.length > 0 && <p className="alert error">{analysis.fit_rejection_reasons.join("；")}</p>}
+    {analysis.success !== false && summary.artifacts?.["full_analysiswithoutpump.png"] && <figure className="zaw-figure">
+      <figcaption>色散、噪声与灵敏度结果</figcaption>
+      <img src={summary.artifacts["full_analysiswithoutpump.png"]} alt="静磁场灵敏度分析结果" loading="lazy" />
+    </figure>}
+  </div>;
+}
 
 export function StaticSensitivityPage() {
-  const [tab, setTab] = useState<ExperimentView>("run");
-  const [definition, setDefinition] = useState<ExperimentDefinition>();
-  const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
-  const [layout, setLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
-  const [savedLayout, setSavedLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
-  const [values, setValues] = useState<ParameterValues>({});
-  const [job, setJob] = useState<Job>();
-  const [prefill, setPrefill] = useState<ParameterValues | null>(null);
-  const [loadError, setLoadError] = useState("");
-  const requestedJobId = useRequestedJobId();
-  useEffect(() => { let disposed = false; Promise.all([api<ExperimentDefinition>(`/api/experiments/${ID}`), api<ExperimentSchema>(`/api/experiments/${ID}/schema`)]).then(([def, schema]) => { if (disposed) return; const persisted = schema.parameter_layout_saved ? validatedParameterLayout(schema.fields, schema.parameter_layout) : undefined; const initial = persisted ?? defaultParameterLayout(schema.fields); setDefinition(def); setFields(schema.fields); setLayout(initial); setSavedLayout(initial); setValues(Object.fromEntries(schema.fields.map((field) => [field.name, field.default])) as ParameterValues); }).catch((reason) => { if (!disposed) setLoadError(String(reason)); }); return () => { disposed = true; }; }, []);
-  useEffect(() => { let disposed = false; api<JobSummary[]>("/api/jobs").then(async (items) => { const match = recoverableJob(items, ID, requestedJobId); if (disposed || !match) return; try { const detail = await api<Job>(`/api/jobs/${match.id}`); if (!disposed) setJob(detail); } catch { /* 任务详情不可用时保持空状态。 */ } }).catch(() => undefined); return () => { disposed = true; }; }, []);
-  const description = useMemo(() => definition?.description ?? "读取实验定义与默认参数。", [definition]);
-  const layoutDirty = fields.length > 0 && !sameParameterLayout(layout, savedLayout);
-  // 常驻运行页按活会话保护参数；页面层只补充尚未保存的布局。
-  useUnsavedChanges(layoutDirty);
-  useExperimentTask({ ready: fields.length > 0, setTab });
-  return <>
-    <PageHead eyebrow="EXPERIMENT · STATIC_SENSITIVITY" title={definition?.title ?? "正在载入实验"} description={description} experiment={definition} />
-    {loadError && <div className="alert error">实验参数加载失败：{loadError}</div>}
-    <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} label="静磁场灵敏度实验视图" />
-    {definition && fields.length > 0 && <>
-      <div id={`${ID}-panel-run`} role="tabpanel" aria-labelledby={`${ID}-tab-run`} hidden={tab !== "run"}>
-        <StaticSensitivityDashboard experimentId={ID} definition={definition} fields={fields} layout={layout} layoutDirty={layoutDirty} onLayoutChange={setLayout} onLayoutSaved={(next, savedFields) => { setLayout(next); setSavedLayout(next); setFields(savedFields); }} values={values} setValues={setValues} job={job} setJob={setJob} prefill={prefill} clearPrefill={() => setPrefill(null)} />
-      </div>
-      <ExperimentViewPanel active={tab === "history"} id={`${ID}-panel-history`} labelledBy={`${ID}-tab-history`}>
-        <StaticSensitivityHistory experimentId={ID} fields={fields} onFillBack={(parameters) => setPrefill(parameters as ParameterValues)} onJumpToRun={() => setTab("run")} />
-      </ExperimentViewPanel>
-    </>}
-  </>;
+  return <WorkflowExperimentPage experimentId={ID} eyebrow="EXPERIMENT · STATIC_SENSITIVITY"
+    analysisParameterKeys={ANALYSIS_KEYS}
+    renderLatest={context => <LatestPreview {...context} />}
+    renderHistory={({ fields, setValues, openRunTab, analysisJob, setAnalysisJob, busy }) =>
+      <StaticSensitivityHistory experimentId={ID} fields={fields} busy={busy}
+        analysisJob={analysisJob} setAnalysisJob={setAnalysisJob}
+        onFillBack={parameters => {
+          setValues(current => ({ ...current, ...historyParameterValues(fields, parameters) }));
+          openRunTab();
+        }} />} />;
 }

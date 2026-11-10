@@ -32,7 +32,7 @@ class MockEventSource {
 const makeSession = (completed = false) => ({ session_id: "static-session", job_id: "session-job", revision: 3, status: "waiting",
   parameters: defaults(), steps: Object.fromEntries(flow.acquisition.map(stage => [stage.id, { status: completed && stage.id !== "A13" ? ["A10", "A11"].includes(stage.id) ? "stale" : "completed" : "pending", error: "" }])),
   outputs: { Z: "OFF", 温控: "ON", "时序 2": "保持当前状态" }, run_id: "test_dc", demod_mode: "dispersion" });
-const tab = (name: string) => within(screen.getByRole("tablist", { name: "静磁场灵敏度实验视图" })).getByRole("tab", { name });
+const tab = (name: string) => within(screen.getByRole("tablist", { name: "实验视图" })).getByRole("tab", { name });
 const node = (id: string) => screen.getByRole("checkbox", { name: new RegExp(`^${id} `) }).closest("li")!;
 const edit = (id: string, label: string, value: string) => fireEvent.change(within(node(id)).getByLabelText(label), { target: { value } });
 const renderPage = async () => {
@@ -62,6 +62,7 @@ beforeEach(() => {
     if (url === "/api/jobs/session-job/cancel") return { ...sessionJob, message: "已请求安全停止" };
     if (url.startsWith(`${BASE}/runs?`)) return { runs: [summary, { ...summary, run_id: "second" }], total: 2 };
     if (url.endsWith("/summary")) return summary;
+    if (url === `${BASE}/derive`) return { values: {} };
     if (url === `${BASE}/workflow`) return oldMetadata ? { ...flow, parameter_impacts: undefined } : flow;
     if (url === `${BASE}/sessions/active`) return activeSession;
     if (url === `${BASE}/sessions`) { activeSession = makeSession(); return activeSession; }
@@ -96,7 +97,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it("从真实路由加载三 Tab，保存节点参数和布局，历史填回不自动运行", async () => {
   const view = await renderPage();
-  const tablist = screen.getByRole("tablist", { name: "静磁场灵敏度实验视图" });
+  const tablist = screen.getByRole("tablist", { name: "实验视图" });
   expect(within(tablist).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
   expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();

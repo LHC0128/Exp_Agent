@@ -1,49 +1,16 @@
 import { historyParameterValues } from "./experimentHelpers";
-import { useEffect, useState } from "react";
-import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
-
-import { api } from "../api";
-import { useJobActivity } from "../components/JobActivity";
-import { JobView } from "../components/JobView";
 import { ScopePlot } from "../components/ScopePlot";
-import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
-import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
-import { RunHistoryView, runStatusLabel, useRunHistory } from "../components/workflow/RunHistory";
-import { PageHead } from "../components/PageHead";
-import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
-import { useParameterGuard } from "../components/NavigationGuard";
-import type {
-  ExperimentDefinition,
-  ExperimentSchema,
-  Job,
-  JobSummary,
-  ParameterLayout,
-  ParameterValues,
-} from "../types/api";
+import { runStatusLabel } from "../components/workflow/RunHistory";
 import {
-  defaultParameterLayout,
-  sameParameterLayout,
-  validatedParameterLayout,
-} from "./experimentHelpers";
-import "./zawClosedLoop.css";
+  WorkflowExperimentPage, type RenderPreviewContext, type WorkflowRunSummary,
+} from "./WorkflowExperimentPage";
+import type { ParameterValues } from "../types/api";
 
 const KNOWN_NOISE_ID = "noise-spectrum-xy-known-noise";
 const PROBE_AM_ID = "noise-spectrum-xy-uncontrolled-probe-am";
 const ANALYSIS_KEYS = { ratio_pass_low: "RATIO_PASS_LOW", ratio_pass_high: "RATIO_PASS_HIGH" };
-const terminal = (job: Job | undefined) => Boolean(
-  job && ["completed", "failed", "cancelled"].includes(job.status),
-);
 
-type RunItem = {
-  run_id: string;
-  timestamp: string;
-  run_tag: string;
-  completion_status: string;
-};
-type RunSummary = RunItem & {
-  analysis_status: string;
-  analysis_error: string;
-  parameters: ParameterValues;
+type RunSummary = Omit<WorkflowRunSummary, "artifacts"> & {
   artifacts: Record<string, string>;
   analysis_quality?: {
     dispersion?: Record<string, unknown>;
@@ -203,223 +170,113 @@ export function NoiseSpectrumXYProbeAMPage() {
   return <NoiseSpectrumXYInjectionPage experimentId={PROBE_AM_ID} probeAm />;
 }
 
-function NoiseSpectrumXYInjectionPage({ experimentId: ID, probeAm }: { experimentId: string; probeAm: boolean }) {
-  const BASE = `/api/experiments/${ID}`;
-  const prefix = probeAm ? "probe-am-noise" : "known-noise";
-  const [tab, setTab] = useState<ExperimentView>("run");
-  const [definition, setDefinition] = useState<ExperimentDefinition>();
-  const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
-  const [values, setValues] = useState<ParameterValues>({});
-  const [layout, setLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
-  const [savedLayout, setSavedLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
-  const [session, setSession] = useState<XYSession>();
-  const [job, setJob] = useState<Job>();
-  const [analysisJob, setAnalysisJob] = useState<Job>();
-  const [error, setError] = useState("");
-  const [preview, setPreview] = useState<WaveformPreview>();
-  const { hardwareBusy } = useJobActivity();
-  const controls = useRunControls({ experimentId: ID, values, layout, setError, setJob,
-    onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
-  const { starting, setStarting, setNotice } = controls;
-  const jobActive = Boolean(job && !terminal(job));
-  const sessionActive = Boolean(session && session.status !== "closed");
-  const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
-  const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
-  const history = useRunHistory<RunItem, RunSummary>({ experimentId: ID, reloadKeys: [job?.status, analysisJob?.status], setError });
-  useParameterGuard(fields, values, layout, savedLayout, sessionActive ? session?.parameters as ParameterValues : undefined);
-  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId: history.setSelectedId });
-  const requestedJobId = useRequestedJobId();
-
-  useEffect(() => {
-    if (!fields.length) return;
-    let disposed = false;
-    setPreview(undefined);
-    const timer = window.setTimeout(() => {
-      void api<{ values: WaveformPreview }>(`${BASE}/derive`, {
-        method: "POST", body: JSON.stringify({ parameters: values }),
-      }).then((result) => {
-        if (!disposed) setPreview(result.values);
-      }).catch((reason) => {
-        if (!disposed) setPreview({ error: `无法计算波形与分段预览：${String(reason)}` });
-      });
-    }, 200);
-    return () => { disposed = true; window.clearTimeout(timer); };
-  }, [fields, values]);
-
-  useEffect(() => {
-    let disposed = false;
-    void Promise.all([
-      api<ExperimentDefinition>(BASE),
-      api<ExperimentSchema>(`${BASE}/schema`),
-      api<JobSummary[]>("/api/jobs"),
-    ]).then(async ([def, schema, jobs]) => {
-      if (disposed) return;
-      setDefinition(def);
-      setFields(schema.fields);
-      setValues(Object.fromEntries(schema.fields.map((field) => [field.name, field.default])));
-      const persisted = schema.parameter_layout_saved
-        ? validatedParameterLayout(schema.fields, schema.parameter_layout)
-        : undefined;
-      const initial = persisted ?? defaultParameterLayout(schema.fields);
-      setLayout(initial);
-      setSavedLayout(initial);
-      const recoverable = recoverableJob(jobs, ID, requestedJobId);
-      if (recoverable) {
-        const recovered = await api<Job>(`/api/jobs/${recoverable.id}`);
-        if (!disposed) setJob(recovered);
-      }
-    }).catch((reason) => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, []);
-
-  const reanalyze = async (runId: string) => {
-    setStarting(true);
-    setError("");
-    try {
-      setAnalysisJob(await api<Job>(`/api/runs/${encodeURIComponent(runId)}/analyze`, {
-        method: "POST",
-        body: JSON.stringify({ experiment_id: ID }),
-      }));
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const fillBack = (parameters: ParameterValues) => {
-    const compatible = historyParameterValues(fields, parameters);
-    if (probeAm && !Object.hasOwn(parameters, "INJECT_CONTROLLED_NOISE")) {
-      compatible.INJECT_CONTROLLED_NOISE = false;
-    }
-    if (!probeAm && !Object.hasOwn(parameters, "Z_CALIBRATION_K_HZ_PER_V")) {
-      compatible.Z_CALIBRATION_K_HZ_PER_V = 0;
-    }
-    setValues((current) => ({ ...current, ...compatible }));
-    setTab("run");
-  };
-
-
-  const previewContent = (
-            <div aria-label="噪声波形与分段预览" aria-live="polite">
-              <h3>噪声波形与分段预览（只读）</h3>
-              {preview?.error ? <p className="alert error">{preview.error}</p> : <>
-                <p>波形：采样率 {format(preview?.sample_rate_sa_s, 0)} Sa/s；谱线间隔 {format(preview?.line_spacing_hz, 1)} Hz；
-                  Nyquist {format((preview?.nyquist_hz ?? Number.NaN) / 1000, 1)} kHz。</p>
-                <p>设计峰值 {format(preview?.design_peak_v)} V；实际注入谱 = 设计谱 × {format(preview?.realized_psd_scale)}；
-                  波形 RMS {format(preview?.waveform_rms_v)} V。</p>
-                <p>
-                  达到设计谱密度需设注入幅度 {format(preview?.aligned_amplitude_vpp)} Vpp。
-                  <button
-                    className="secondary"
-                    disabled={parametersBusy || starting || preview?.aligned_amplitude_vpp === undefined
-                      || (probeAm && !preview.aligned_amplitude_safe)
-                      || Math.abs((Number(values.NOISE_AMPLITUDE_VPP) || 0)
-                        - (preview.aligned_amplitude_vpp ?? Number.NaN)) < 1e-6}
-                    onClick={() => setValues((current) => ({
-                      ...current,
-                      NOISE_AMPLITUDE_VPP: preview?.aligned_amplitude_vpp ?? current.NOISE_AMPLITUDE_VPP,
-                    }))}
-                  >{probeAm ? "对齐 Probe AM 幅度" : "对齐注入幅度"}</button>
-                  {probeAm && preview?.aligned_amplitude_vpp !== undefined && !preview.aligned_amplitude_safe
-                    && <span role="status"> 对齐幅度超出 Probe AOM AM 安全限值，请手动选择安全幅度。</span>}
-                </p>
-                {!probeAm && <p>等效频率噪声（带内中位）{format(preview?.equivalent_noise_hz_per_rt_hz)} Hz/√Hz
-                  （手动 K_Z = {format(preview?.z_calibration_k_hz_per_v, 1)} Hz/V）。</p>
-                }
-                {probeAm && <p>AM 输入峰值 ±{format((Number(values.NOISE_AMPLITUDE_VPP) || 0) / 2)} V；设计谱为参考值，分析同时保存实际任意波 Welch PSD。</p>}
-                {probeAm && <p>Z 可控噪声{values.INJECT_CONTROLLED_NOISE ? "将持续注入" : "本次不注入"}；
-                  开启时电压谱 = 设计谱 × {format(preview?.z_realized_psd_scale)}；
-                  达到设计谱密度需设幅度 {format(preview?.z_aligned_amplitude_vpp)} Vpp。
-                  <button
-                    className="secondary"
-                    disabled={parametersBusy || starting || preview?.z_aligned_amplitude_vpp === undefined
-                      || !preview.z_aligned_amplitude_safe
-                      || Math.abs((Number(values.Z_NOISE_AMPLITUDE_VPP) || 0)
-                        - (preview.z_aligned_amplitude_vpp ?? Number.NaN)) < 1e-6}
-                    onClick={() => setValues((current) => ({
-                      ...current,
-                      Z_NOISE_AMPLITUDE_VPP: preview?.z_aligned_amplitude_vpp ?? current.Z_NOISE_AMPLITUDE_VPP,
-                    }))}
-                  >对齐 Z 噪声幅度</button>
-                  {preview?.z_aligned_amplitude_vpp !== undefined && !preview.z_aligned_amplitude_safe
-                    && <span role="status"> 对齐幅度超出 Z 通道安全限值，请手动选择安全幅度。</span>}
-                </p>}
-                <p>Welch：每段点数 {preview?.nperseg ?? "—"}；每点平均段数 {preview?.segments_per_point ?? "—"}；
-                  格间距 {format(preview?.bin_width_hz)} Hz。</p>
-                <p>扫描采集与等待约 {format(preview?.scan_seconds, 1)} 秒（每点两段，相邻点交替 OFF→ON / ON→OFF，两态均等待稳定）。</p>
-                {preview?.waveform_time_s?.length && preview.waveform_voltage_v?.length ? <>
-                  <h4>任意波时域</h4>
-                  <div className="known-noise-chart">
-                    <ScopePlot
-                      mode="time"
-                      reset={0}
-                      traces={[{ id: "Injected arbitrary waveform", color: "#147d74", x: preview.waveform_time_s, y: preview.waveform_voltage_v }]}
-                    />
-                  </div>
-                </> : null}
-                {preview?.spectrum_frequency_hz?.length && preview.target_psd_v2_per_hz?.length && preview.calculated_psd_v2_per_hz?.length ? <>
-                  <h4>{probeAm ? "设计谱参考与波形计算谱" : "目标谱与波形计算谱"}</h4>
-                  <div className="known-noise-chart">
-                    <ScopePlot
-                      mode="frequency"
-                      xScale="log"
-                      yScale="log"
-                      reset={0}
-                      traces={[
-                        { id: "Target PSD", color: "#d97706", x: preview.spectrum_frequency_hz, y: preview.target_psd_v2_per_hz },
-                        { id: "Welch PSD from waveform", color: "#2563eb", x: preview.spectrum_frequency_hz, y: preview.calculated_psd_v2_per_hz },
-                      ]}
-                    />
-                  </div>
-                </> : null}
-              </>}
-              <p>预览基于请求采样率与设计谱；实际值以分析结果为准。三个谱段数组必须等长，逗号分隔。</p>
-            </div>
-  );
-
+function WaveformPreview({ ctx, probeAm }: { ctx: RenderPreviewContext; probeAm: boolean }) {
+  const preview = ctx.derived as unknown as WaveformPreview;
+  const values = ctx.values;
   return (
-    <>
-      <PageHead
-        eyebrow={probeAm ? "MEASUREMENT · PROBE AM NOISE" : "VERIFICATION · KNOWN INJECTION"}
-        title={definition?.title ?? (probeAm ? "XY 控制测量已知不可控 Probe AM 噪声谱" : "XY 控制测量已知可控噪声谱")}
-        description={definition?.description ?? "读取实验定义与运行记录。"}
-        experiment={definition}
-      />
-      {error && <div className="alert error" role="alert">{error}</div>}
-      <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} idPrefix={prefix} label={probeAm ? "XY Probe AM 噪声实验视图" : "XY 已知噪声注入实验视图"} />
-
-      <div id={`${prefix}-panel-run`} role="tabpanel" aria-labelledby={`${prefix}-tab-run`} hidden={tab !== "run"}>
-        <WorkflowPanel experimentId={ID}
-          analysisParameterKeys={probeAm ? undefined : ANALYSIS_KEYS}
-          enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout}
-          setNotice={setNotice} parametersDisabled={parametersBusy || starting} values={values} setValues={setValues}
-          session={session} setSession={setSession} job={job} setJob={setJob}
-          analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
-          runs={history.list.runs} setError={setError} onRefresh={history.reload}>
-          <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
-            canStart={!jobActive && !hardwareBusy && !analysisActive && fields.length > 0}
-            layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
-            job={job} onJobUpdate={setJob} startLabel={probeAm ? "预检并运行实验" : "完整运行"}
-            preview={<>
-              <details className="xy-workflow-preview"><summary>{probeAm ? "AM 噪声波形、可选 Z 注入与 Welch 预览" : "波形、注入真值与 Welch 预览"}</summary>{previewContent}</details>
-              <p>{probeAm
-                ? "完整运行自动执行采集、收尾与 B01～B04；移动峰不足时按运行参数 K/B 输出暂定控制轴并标记质量未通过。"
-                : "未选标定曲线时完整运行完成采集、收尾及 B01～B04；选择符合格式与质量要求的静磁场直流逐点曲线后继续 B05、B06。"}</p>
-            </>} />
-        </WorkflowPanel>
-        <LatestResultPanel latest={history.latest} render={value => <Result value={value} probeAm={probeAm} />}
-          onOpen={runId => { history.setSelectedId(runId); setTab("history"); }} />
-      </div>
-
-      <div id={`${prefix}-panel-history`} role="tabpanel" aria-labelledby={`${prefix}-tab-history`} hidden={tab !== "history"}>
-        <RunHistoryView history={history} fields={fields} renderResult={value => <Result value={value} probeAm={probeAm} />}
-          fillBack={{ disabled: parametersBusy || starting, onClick: selected => fillBack(selected.parameters) }}
-          reanalyze={{ disabled: selected => starting || jobActive || analysisActive || selected.completion_status === "running",
-            onClick: selected => void reanalyze(selected.run_id) }} />
-      </div>
-
-      <JobView job={analysisJob} onUpdate={setAnalysisJob} />
-    </>
+    <div aria-label="噪声波形与分段预览" aria-live="polite">
+      <h3>噪声波形与分段预览（只读）</h3>
+      {ctx.derivedError
+        // 模板以“派生预览失败”前缀上报，本页沿用原错误文案。
+        ? <p className="alert error">{ctx.derivedError.replace("派生预览失败", "无法计算波形与分段预览")}</p>
+        : <>
+          <p>波形：采样率 {format(preview.sample_rate_sa_s, 0)} Sa/s；谱线间隔 {format(preview.line_spacing_hz, 1)} Hz；
+            Nyquist {format((preview.nyquist_hz ?? Number.NaN) / 1000, 1)} kHz。</p>
+          <p>设计峰值 {format(preview.design_peak_v)} V；实际注入谱 = 设计谱 × {format(preview.realized_psd_scale)}；
+            波形 RMS {format(preview.waveform_rms_v)} V。</p>
+          <p>
+            达到设计谱密度需设注入幅度 {format(preview.aligned_amplitude_vpp)} Vpp。
+            <button
+              className="secondary"
+              disabled={ctx.busy || preview.aligned_amplitude_vpp === undefined
+                || (probeAm && !preview.aligned_amplitude_safe)
+                || Math.abs((Number(values.NOISE_AMPLITUDE_VPP) || 0)
+                  - (preview.aligned_amplitude_vpp ?? Number.NaN)) < 1e-6}
+              onClick={() => ctx.setValues((current) => ({
+                ...current,
+                NOISE_AMPLITUDE_VPP: preview.aligned_amplitude_vpp ?? current.NOISE_AMPLITUDE_VPP,
+              }))}
+            >{probeAm ? "对齐 Probe AM 幅度" : "对齐注入幅度"}</button>
+            {probeAm && preview.aligned_amplitude_vpp !== undefined && !preview.aligned_amplitude_safe
+              && <span role="status"> 对齐幅度超出 Probe AOM AM 安全限值，请手动选择安全幅度。</span>}
+          </p>
+          {!probeAm && <p>等效频率噪声（带内中位）{format(preview.equivalent_noise_hz_per_rt_hz)} Hz/√Hz
+            （手动 K_Z = {format(preview.z_calibration_k_hz_per_v, 1)} Hz/V）。</p>
+          }
+          {probeAm && <p>AM 输入峰值 ±{format((Number(values.NOISE_AMPLITUDE_VPP) || 0) / 2)} V；设计谱为参考值，分析同时保存实际任意波 Welch PSD。</p>}
+          {probeAm && <p>Z 可控噪声{values.INJECT_CONTROLLED_NOISE ? "将持续注入" : "本次不注入"}；
+            开启时电压谱 = 设计谱 × {format(preview.z_realized_psd_scale)}；
+            达到设计谱密度需设幅度 {format(preview.z_aligned_amplitude_vpp)} Vpp。
+            <button
+              className="secondary"
+              disabled={ctx.busy || preview.z_aligned_amplitude_vpp === undefined
+                || !preview.z_aligned_amplitude_safe
+                || Math.abs((Number(values.Z_NOISE_AMPLITUDE_VPP) || 0)
+                  - (preview.z_aligned_amplitude_vpp ?? Number.NaN)) < 1e-6}
+              onClick={() => ctx.setValues((current) => ({
+                ...current,
+                Z_NOISE_AMPLITUDE_VPP: preview.z_aligned_amplitude_vpp ?? current.Z_NOISE_AMPLITUDE_VPP,
+              }))}
+            >对齐 Z 噪声幅度</button>
+            {preview.z_aligned_amplitude_vpp !== undefined && !preview.z_aligned_amplitude_safe
+              && <span role="status"> 对齐幅度超出 Z 通道安全限值，请手动选择安全幅度。</span>}
+          </p>}
+          <p>Welch：每段点数 {preview.nperseg ?? "—"}；每点平均段数 {preview.segments_per_point ?? "—"}；
+            格间距 {format(preview.bin_width_hz)} Hz。</p>
+          <p>扫描采集与等待约 {format(preview.scan_seconds, 1)} 秒（每点两段，相邻点交替 OFF→ON / ON→OFF，两态均等待稳定）。</p>
+          {preview.waveform_time_s?.length && preview.waveform_voltage_v?.length ? <>
+            <h4>任意波时域</h4>
+            <div className="known-noise-chart">
+              <ScopePlot
+                mode="time"
+                reset={0}
+                traces={[{ id: "Injected arbitrary waveform", color: "#147d74", x: preview.waveform_time_s, y: preview.waveform_voltage_v }]}
+              />
+            </div>
+          </> : null}
+          {preview.spectrum_frequency_hz?.length && preview.target_psd_v2_per_hz?.length && preview.calculated_psd_v2_per_hz?.length ? <>
+            <h4>{probeAm ? "设计谱参考与波形计算谱" : "目标谱与波形计算谱"}</h4>
+            <div className="known-noise-chart">
+              <ScopePlot
+                mode="frequency"
+                xScale="log"
+                yScale="log"
+                reset={0}
+                traces={[
+                  { id: "Target PSD", color: "#d97706", x: preview.spectrum_frequency_hz, y: preview.target_psd_v2_per_hz },
+                  { id: "Welch PSD from waveform", color: "#2563eb", x: preview.spectrum_frequency_hz, y: preview.calculated_psd_v2_per_hz },
+                ]}
+              />
+            </div>
+          </> : null}
+        </>}
+      <p>预览基于请求采样率与设计谱；实际值以分析结果为准。三个谱段数组必须等长，逗号分隔。</p>
+    </div>
   );
+}
+
+function NoiseSpectrumXYInjectionPage({ experimentId, probeAm }: { experimentId: string; probeAm: boolean }) {
+  return <WorkflowExperimentPage
+    experimentId={experimentId}
+    analysisParameterKeys={probeAm ? undefined : ANALYSIS_KEYS}
+    eyebrow={probeAm ? "MEASUREMENT · PROBE AM NOISE" : "VERIFICATION · KNOWN INJECTION"}
+    startLabel={probeAm ? undefined : "完整运行"}
+    fillBack={({ summary, fields }) => {
+      const compatible: ParameterValues = historyParameterValues(fields, summary.parameters);
+      if (probeAm && !Object.hasOwn(summary.parameters, "INJECT_CONTROLLED_NOISE")) {
+        compatible.INJECT_CONTROLLED_NOISE = false;
+      }
+      if (!probeAm && !Object.hasOwn(summary.parameters, "Z_CALIBRATION_K_HZ_PER_V")) {
+        compatible.Z_CALIBRATION_K_HZ_PER_V = 0;
+      }
+      return { values: compatible };
+    }}
+    renderResult={value => <Result value={value as RunSummary} probeAm={probeAm} />}
+    renderPreview={ctx => (
+      <details className="xy-workflow-preview">
+        <summary>{probeAm ? "AM 噪声波形、可选 Z 注入与 Welch 预览" : "波形、注入真值与 Welch 预览"}</summary>
+        <WaveformPreview ctx={ctx} probeAm={probeAm} />
+      </details>
+    )}
+  />;
 }

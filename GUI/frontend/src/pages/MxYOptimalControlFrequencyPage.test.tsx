@@ -158,8 +158,10 @@ it("真实路由双Tab、全字段节点归属和质量门槛，保留专属图�
   for (const field of fields) expect(acquisition.some(stage => stage.display_parameters.includes(field.name))).toBe(true);
   expect(screen.getByText(/质检：每点至少8个有效样本/)).toBeVisible();
   expect(screen.getByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", `${BASE}/workflow/diagram`);
-  expect(await screen.findByAltText("相位-频率热图")).toBeInTheDocument();
-  expect(screen.getByText(/闭环冻结波形：frozen/)).toBeInTheDocument();
+  // 共享历史会自动选中最近一次运行，同一摘要同时挂在运行/历史两个面板，按面板定位。
+  const runPanel = within(screen.getByRole("tabpanel", { name: "运行" }));
+  expect(await runPanel.findByAltText("相位-频率热图")).toBeInTheDocument();
+  expect(runPanel.getByText(/闭环冻结波形：frozen/)).toBeInTheDocument();
 });
 
 it("创建与依赖拒绝、执行步骤和无前置安全结束", async () => {
@@ -226,9 +228,10 @@ it("对照条件字段保值；历史独立分析无覆盖参数；原图与填�
   const call = mockApi.mock.calls.find(([url, options]) => url.endsWith("/analysis") && options?.method === "POST")!;
   expect(JSON.parse(String(call[1]?.body)).analysis_parameters).toEqual({});
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
-  fireEvent.click(await screen.findByRole("button", { name: new RegExp(summary.run_id) }));
-  expect(await screen.findByText(/目标电压超出标定支撑范围/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
+  const historyPanel = within(screen.getByRole("tabpanel", { name: "历史" }));
+  fireEvent.click(await historyPanel.findByRole("button", { name: new RegExp(summary.run_id) }));
+  expect(await historyPanel.findByText(/目标电压超出标定支撑范围/)).toBeInTheDocument();
+  fireEvent.click(historyPanel.getByRole("button", { name: "填回参数" }));
   const tag = await editor("A02");
   expect(tag.getByLabelText("运行标签")).toHaveValue("historical");
   expect(mockApi.mock.calls.some(([url]) => url === `${BASE}/defaults`)).toBe(false);

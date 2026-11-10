@@ -212,7 +212,7 @@ it("质量验收失败时仍在运行和历史中显示二维谱、错误及有�
 
 it("从真实路由进入三 Tab，切换保留参数并按当前 schema 填回历史参数", async () => {
   renderPage();
-  expect(within(screen.getByRole("tablist", { name: "XY 正弦控制噪声谱实验视图" })).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
+  expect(within(screen.getByRole("tablist", { name: "实验视图" })).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(await within(screen.getByRole("tabpanel", { name: "运行" })).findByAltText("提取的可控与不可控噪声谱")).toHaveAttribute("src", "/noise.png?v=1");
   await openParameters("A12");
   fireEvent.change(screen.getByLabelText("运行标签"), { target: { value: "edited" } });
@@ -223,13 +223,23 @@ it("从真实路由进入三 Tab，切换保留参数并按当前 schema 填回�
   expect(screen.getByLabelText("运行标签")).toHaveValue("edited");
   fireEvent.click(screen.getByRole("tab", { name: "历史" }));
   fireEvent.click(screen.getByRole("button", { name: "填回参数" }));
-  expect(screen.getByLabelText("运行标签")).toHaveValue("history-tag");
+  await waitFor(() => expect(screen.getByLabelText("运行标签")).toHaveValue("history-tag"));
   expect(screen.getByLabelText("目标频率扫描点数")).toHaveValue(123);
+});
+
+it("旧运行含已废弃的 Welch 每段点数时提示新采集按频率格间距分段", async () => {
+  summary = { ...summary, parameters: { RUN_TAG: "history-tag", HF2_NPERSEG: 4096 } };
+  renderPage();
+  fireEvent.click(await screen.findByRole("tab", { name: "历史" }));
+  fireEvent.click(await screen.findByRole("button", { name: "填回参数" }));
+  expect(await screen.findByText(/旧 Welch 每段点数不再填回/)).toBeVisible();
+  expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByLabelText("运行标签")).toHaveValue("history-tag");
 });
 
 it("三主 Tab 保留交互流程图，运行与历史支持双向键盘切换", async () => {
   renderPage();
-  const tablist = await screen.findByRole("tablist", { name: "XY 正弦控制噪声谱实验视图" });
+  const tablist = await screen.findByRole("tablist", { name: "实验视图" });
   expect(within(tablist).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
   expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();

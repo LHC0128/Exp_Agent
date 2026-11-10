@@ -61,7 +61,9 @@ beforeEach(() => {
   mockApi.mockImplementation(async (url: string, options?: RequestInit) => {
     if (url === base) return { title: "探测链路频率响应标定", description: "探测链路标定", wiring_notes: [] };
     if (url === `${base}/schema`) return { ...fixture.schema,
-      fields: fields.map(field => ({ ...field, default: savedValues[field.name] })), parameter_layout: savedLayout };
+      fields: fields.map(field => ({ ...field, default: savedValues[field.name] })),
+      parameter_layout_saved: true, parameter_layout: savedLayout };
+    if (url === `${base}/derive` && options?.method === "POST") return { values: {} };
     if (url === `${base}/defaults` && options?.method === "PUT") {
       const body = JSON.parse(String(options.body));
       savedLayout = body.parameter_layout;
@@ -119,7 +121,7 @@ afterEach(() => { cleanup(); mockApi.mockReset(); });
 
 it("按真实路由显示三 Tab，节点内编辑保留并从历史填回，预检失败不启动", async () => {
   renderPage();
-  const tabs = screen.getByRole("tablist", { name: "探测链路频率响应标定视图" });
+  const tabs = screen.getByRole("tablist", { name: "实验视图" });
   expect(within(tabs).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   const parameters = await openParameters("A07");
   fireEvent.change(parameters.getByLabelText("运行标签"), { target: { value: "edited" } });
@@ -173,7 +175,7 @@ it("分阶段分析绑定历史目录，独立于等待中的硬件会话", asyn
 
 it("三主 Tab 保留交互流程图，运行与历史支持双向键盘切换", async () => {
   renderPage();
-  const tablist = await screen.findByRole("tablist", { name: "探测链路频率响应标定视图" });
+  const tablist = await screen.findByRole("tablist", { name: "实验视图" });
   expect(within(tablist).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(within(tablist).queryByRole("tab", { name: "架构" })).not.toBeInTheDocument();
   expect(document.querySelector('iframe[src^="/architecture/"]')).toBeNull();
@@ -294,7 +296,7 @@ it("历史旧等待键填回由模型元数据归一，只影响下一次表单�
   const parameters = await openParameters("A07");
   expect(parameters.getByLabelText("运行标签")).toHaveValue("legacy");
   expect(parameters.getByLabelText("系统稳定时间 (s)")).toHaveValue(2.5);
-  expect(mockApi.mock.calls.filter(([, init]) => init?.method)).toHaveLength(0);
+  expect(mockApi.mock.calls.filter(([url, init]) => init?.method && !url.endsWith("/derive"))).toHaveLength(0);
 });
 
 it("真实执行中的会话禁用节点参数、保存和结束操作", async () => {

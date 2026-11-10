@@ -131,6 +131,12 @@ export function WorkflowExperimentPage({ experimentId,
         const full = await api<Job>(`/api/jobs/${recovered.id}`);
         if (!disposed) setJob(full);
       }
+      // 刷新页面后恢复进行中的重新分析，保持其进度显示与按钮互斥。
+      const analysis = recoverableJob(jobs, experimentId, requestedJobId, "analysis");
+      if (analysis) {
+        const full = await api<Job>(`/api/jobs/${analysis.id}`);
+        if (!disposed) setAnalysisJob(full);
+      }
     }).catch(reason => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
   }, [BASE, experimentId, normalizeParameters]);

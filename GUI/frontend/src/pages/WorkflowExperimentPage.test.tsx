@@ -383,6 +383,30 @@ it.each(["running", "acquired"])("%s 运行的重新分析禁用", async status 
   expect(button).toBeDisabled();
 });
 
+it("刷新页面时恢复进行中的重新分析任务，并禁用历史重新分析", async () => {
+  const sources: string[] = [];
+  vi.stubGlobal("EventSource", class { onmessage = null; onerror = null;
+    constructor(url: string) { sources.push(url); } close() {} addEventListener() {} });
+  try {
+    const original = mockApi.getMockImplementation()!;
+    const analysisJob = { id: "analysis-job", kind: `analysis:${ID}:${old.run_id}`, status: "running", events: [] };
+    mockApi.mockImplementation(async (url, options) => {
+      if (url === "/api/jobs") return [analysisJob] as never;
+      if (url === "/api/jobs/analysis-job") return analysisJob as never;
+      if (url === `${BASE}/runs/${old.run_id}/summary`) return {
+        ...old, analysis_status: "running", analysis_error: "", parameters: { RUN_TAG: "historical", GAIN: 9 }, artifacts: {},
+      } as never;
+      return original(url, options);
+    });
+    page({ hasAnalysis: true });
+    await screen.findByRole("checkbox", { name: /A01/ });
+    await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url === "/api/jobs/analysis-job")).toBe(true));
+    fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "重新分析" })).toBeDisabled());
+    expect(sources.some(url => url.includes("analysis-job"))).toBe(true);
+  } finally { vi.unstubAllGlobals(); }
+});
+
 it("renderLatest 替换最近结果内容并保留标题与打开入口", async () => {
   page({ hasAnalysis: true, renderLatest: ({ latest, openRun }) => <div>
     <p>自定义最新：{latest?.run_id ?? "无"}</p>

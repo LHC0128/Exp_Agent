@@ -1,47 +1,12 @@
+import type { ParameterValue, ParameterValues } from "../types/api";
+import { runStatusLabel } from "../components/workflow/RunHistory";
 import { historyParameterValues } from "./experimentHelpers";
-import { useEffect, useState } from "react";
-import { ExperimentViewTabs, type ExperimentView } from "../components/ExperimentViewTabs";
-
-import { api } from "../api";
-import { useJobActivity } from "../components/JobActivity";
-import { JobView } from "../components/JobView";
-import { WorkflowPanel, type XYSession } from "../components/workflow/WorkflowPanel";
-import { LatestResultPanel, RunControls, useRunControls } from "../components/workflow/RunControls";
-import { RunHistoryView, runStatusLabel, useRunHistory } from "../components/workflow/RunHistory";
-import { PageHead } from "../components/PageHead";
-import { recoverableJob, useExperimentTask, useRequestedJobId } from "../components/experimentNavigation";
-import { useParameterGuard } from "../components/NavigationGuard";
-import type {
-  ExperimentDefinition,
-  ExperimentSchema,
-  Job,
-  JobSummary,
-  ParameterLayout,
-  ParameterValues,
-} from "../types/api";
-import {
-  defaultParameterLayout,
-  sameParameterLayout,
-  validatedParameterLayout,
-} from "./experimentHelpers";
-import "./zawClosedLoop.css";
+import { WorkflowExperimentPage, type WorkflowRunSummary } from "./WorkflowExperimentPage";
 
 const ID = "noise-spectrum-xy";
-const BASE = `/api/experiments/${ID}`;
-const terminal = (job: Job | undefined) => Boolean(
-  job && ["completed", "failed", "cancelled"].includes(job.status),
-);
+const OLD_WELCH_NOTICE = "旧 Welch 每段点数不再填回；新采集仅按表单中的频率格间距自动分段。历史重新分析保留旧规则。";
 
-type RunItem = {
-  run_id: string;
-  timestamp: string;
-  run_tag: string;
-  completion_status: string;
-};
-type RunSummary = RunItem & {
-  analysis_status: string;
-  analysis_error: string;
-  parameters: ParameterValues;
+type Summary = WorkflowRunSummary & {
   artifacts: Record<string, string>;
   analysis_quality?: {
     psd?: { actual_rate_sa_s: number; nperseg: number; bin_width_hz: number; segments_per_point_range?: number[] | null };
@@ -49,13 +14,6 @@ type RunSummary = RunItem & {
     fit?: { valid_points: number; background_valid_points?: number; total_points: number; valid_frequency_extent_hz: number[] | null };
     warnings?: string[];
   };
-};
-type WelchPreview = {
-  error?: string;
-  nperseg?: number;
-  bin_width_hz?: number;
-  segments_per_point?: number;
-  scan_seconds?: number;
 };
 
 const figureLabels: Record<string, string> = {
@@ -78,7 +36,7 @@ const downloadable = [
   "fit_diagnostics.npz",
   "global_comparison.npz",
 ];
-function Result({ value }: { value: RunSummary }) {
+function Result({ value }: { value: Summary }) {
   const figures = Object.entries(figureLabels).filter(([name]) => value.artifacts[name]);
   const files = downloadable.filter((name) => value.artifacts[name]);
   return (
@@ -117,140 +75,32 @@ function Result({ value }: { value: RunSummary }) {
   );
 }
 
-export function NoiseSpectrumXYPage() {
-  const [tab, setTab] = useState<ExperimentView>("run");
-  const [definition, setDefinition] = useState<ExperimentDefinition>();
-  const [fields, setFields] = useState<ExperimentSchema["fields"]>([]);
-  const [values, setValues] = useState<ParameterValues>({});
-  const [layout, setLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
-  const [savedLayout, setSavedLayout] = useState<ParameterLayout>({ basic: [], advanced: [] });
-  const [job, setJob] = useState<Job>();
-  const [analysisJob, setAnalysisJob] = useState<Job>();
-  const [session, setSession] = useState<XYSession>();
-  const [error, setError] = useState("");
-  const [welchPreview, setWelchPreview] = useState<WelchPreview>();
-  const { hardwareBusy } = useJobActivity();
-  const jobActive = Boolean(job && !terminal(job));
-  const analysisActive = Boolean(analysisJob && !terminal(analysisJob));
-  const sessionActive = Boolean(session && session.status !== "closed");
-  const controls = useRunControls({ experimentId: ID, values, layout, setError, setJob,
-    onSaved: (schema, confirmed) => { setSavedLayout(confirmed); setFields(schema.fields); } });
-  const { starting, setStarting, setNotice } = controls;
-  const parametersBusy = jobActive && (!sessionActive || session?.status !== "waiting" || Boolean(session?.pending_request));
-  const history = useRunHistory<RunItem, RunSummary>({ experimentId: ID, reloadKeys: [job?.status, analysisJob?.status], setError });
-  useParameterGuard(fields, values, layout, savedLayout, sessionActive ? session?.parameters as ParameterValues : undefined);
-  useExperimentTask({ ready: fields.length > 0, setTab, setJob, setAnalysisJob, setSelectedId: history.setSelectedId });
-  const requestedJobId = useRequestedJobId();
+const derivedText = (value: ParameterValue | undefined) =>
+  typeof value === "number" || typeof value === "string" ? String(value) : "—";
+const derivedFixed = (value: ParameterValue | undefined, digits: number) =>
+  typeof value === "number" ? value.toFixed(digits) : "—";
 
-  useEffect(() => {
-    if (!fields.length) return;
-    let disposed = false;
-    setWelchPreview(undefined);
-    const timer = window.setTimeout(() => {
-      void api<{ values: WelchPreview }>(`${BASE}/derive`, {
-        method: "POST", body: JSON.stringify({ parameters: values }),
-      }).then((result) => {
-        if (!disposed) setWelchPreview(result.values);
-      }).catch((reason) => {
-        if (!disposed) setWelchPreview({ error: `无法计算分段预览：${String(reason)}` });
-      });
-    }, 200);
-    return () => { disposed = true; window.clearTimeout(timer); };
-  }, [fields, values]);
-
-  useEffect(() => {
-    let disposed = false;
-    void Promise.all([
-      api<ExperimentDefinition>(BASE),
-      api<ExperimentSchema>(`${BASE}/schema`),
-      api<JobSummary[]>("/api/jobs"),
-    ]).then(async ([def, schema, jobs]) => {
-      if (disposed) return;
-      setDefinition(def);
-      setFields(schema.fields);
-      setValues(Object.fromEntries(schema.fields.map((field) => [field.name, field.default])));
-      const persisted = schema.parameter_layout_saved
-        ? validatedParameterLayout(schema.fields, schema.parameter_layout)
-        : undefined;
-      const initial = persisted ?? defaultParameterLayout(schema.fields);
-      setLayout(initial);
-      setSavedLayout(initial);
-      const recoverable = recoverableJob(jobs, ID, requestedJobId);
-      if (recoverable) {
-        const recovered = await api<Job>(`/api/jobs/${recoverable.id}`);
-        if (!disposed) setJob(recovered);
-      }
-    }).catch((reason) => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, []);
-
-  const reanalyze = async (runId: string) => {
-    setStarting(true);
-    setError("");
-    try {
-      setAnalysisJob(await api<Job>(`/api/runs/${encodeURIComponent(runId)}/analyze`, {
-        method: "POST",
-        body: JSON.stringify({ experiment_id: ID }),
-      }));
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const fillBack = (parameters: ParameterValues) => {
-    const compatible = historyParameterValues(fields, parameters);
-    setValues((current) => ({ ...current, ...compatible }));
-    if (Object.hasOwn(parameters, "HF2_NPERSEG")) {
-      setNotice("旧 Welch 每段点数不再填回；新采集仅按表单中的频率格间距自动分段。历史重新分析保留旧规则。");
-    }
-    setTab("run");
-  };
-
-
+function WelchPreview({ derived, error }: { derived: ParameterValues; error: string }) {
+  const message = error || (typeof derived.error === "string" ? derived.error : "");
   return (
-    <>
-      <PageHead
-        eyebrow="MEASUREMENT · XY SINE"
-        title={definition?.title ?? "XY 控制测量噪声谱（正弦）"}
-        description={definition?.description ?? "读取实验定义与运行记录。"}
-        experiment={definition}
-      />
-      {error && <div className="alert error" role="alert">{error}</div>}
-      <ExperimentViewTabs experimentId={ID} title={definition?.title} value={tab} onChange={setTab} idPrefix="noise-xy" label="XY 正弦控制噪声谱实验视图" />
-
-      <div id="noise-xy-panel-run" role="tabpanel" aria-labelledby="noise-xy-tab-run" hidden={tab !== "run"}>
-        <WorkflowPanel enabled={fields.length > 0} fields={fields} layout={layout} setLayout={setLayout}
-          setNotice={setNotice} parametersDisabled={parametersBusy || starting} values={values} setValues={setValues}
-          session={session} setSession={setSession} job={job} setJob={setJob}
-          analysisJob={analysisJob} setAnalysisJob={setAnalysisJob} hardwareBusy={hardwareBusy}
-          runs={history.list.runs} setError={setError} onRefresh={history.reload}>
-          <RunControls controls={controls} canEdit={!parametersBusy && fields.length > 0}
-            canStart={!jobActive && !hardwareBusy && !analysisActive && fields.length > 0}
-            layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
-            job={job} onJobUpdate={setJob}
-            preview={<div className="xy-workflow-preview" aria-label="Welch 分段预览" aria-live="polite">
-                <h3>Welch 分段预览（只读）</h3>
-                {welchPreview?.error ? <p className="alert error">{welchPreview.error}</p> : <>
-                  <p>预计每段点数：{welchPreview?.nperseg ?? "—"}；
-                    每点平均段数：{welchPreview?.segments_per_point ?? "—"}（50% 重叠，非独立段数）。</p>
-                  <p>预计频率格间距：{welchPreview?.bin_width_hz?.toFixed(3) ?? "—"} Hz；
-                    扫描采集与等待约 {welchPreview?.scan_seconds?.toFixed(1) ?? "—"} 秒。</p>
-                </>}
-                <p>预览基于请求采样率；实际值以分析结果为准。耗时含每点稳定及恢复温控等待，不含初始化、校相、通信和分析。</p>
-              </div>} />
-        </WorkflowPanel>
-        <LatestResultPanel latest={history.latest} render={value => <Result value={value} />} onOpen={runId => { history.setSelectedId(runId); setTab("history"); }} />
-      </div>
-
-      <div id="noise-xy-panel-history" role="tabpanel" aria-labelledby="noise-xy-tab-history" hidden={tab !== "history"}>
-        <RunHistoryView history={history} fields={fields} renderResult={value => <Result value={value} />}
-          fillBack={{ disabled: jobActive || starting, onClick: selected => fillBack(selected.parameters) }}
-          reanalyze={{ disabled: selected => starting || jobActive || analysisActive || selected.completion_status === "running",
-            onClick: selected => void reanalyze(selected.run_id) }} />
-      </div>
-      <JobView job={analysisJob} onUpdate={setAnalysisJob} />
-    </>
+    <div className="xy-workflow-preview" aria-label="Welch 分段预览" aria-live="polite">
+      <h3>Welch 分段预览（只读）</h3>
+      {message ? <p className="alert error">{message}</p> : <>
+        <p>预计每段点数：{derivedText(derived.nperseg)}；
+          每点平均段数：{derivedText(derived.segments_per_point)}（50% 重叠，非独立段数）。</p>
+        <p>预计频率格间距：{derivedFixed(derived.bin_width_hz, 3)} Hz；
+          扫描采集与等待约 {derivedFixed(derived.scan_seconds, 1)} 秒。</p>
+      </>}
+    </div>
   );
+}
+
+export function NoiseSpectrumXYPage() {
+  return <WorkflowExperimentPage experimentId={ID} eyebrow="MEASUREMENT · XY SINE"
+    renderResult={value => <Result value={value as Summary} />}
+    renderPreview={({ derived, derivedError }) => <WelchPreview derived={derived} error={derivedError} />}
+    fillBack={({ summary, fields }) => ({
+      values: historyParameterValues(fields, summary.parameters),
+      notice: Object.hasOwn(summary.parameters, "HF2_NPERSEG") ? OLD_WELCH_NOTICE : undefined,
+    })} />;
 }

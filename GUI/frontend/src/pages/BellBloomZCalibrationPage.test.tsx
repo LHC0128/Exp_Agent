@@ -86,7 +86,7 @@ afterEach(cleanup);
 
 it("恢复最近结果，提供运行/历史/目标接线图三个 Tab，切换与回填保留参数", async () => {
   renderPage();
-  expect(within(screen.getByRole("tablist", { name: "Bell Bloom Z 标定视图" })).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
+  expect(within(screen.getByRole("tablist")).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["运行", "历史", "目标接线图"]);
   expect(await within(screen.getByRole("tabpanel", { name: "运行" })).findByAltText("Z 电压频率标定曲线")).toHaveAttribute("src", "/plot.png?v=1");
   await editor("A02");
   fireEvent.change(screen.getByLabelText("运行标签"), { target: { value: "edited" } });
