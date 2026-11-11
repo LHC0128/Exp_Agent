@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import numpy as np
@@ -13,7 +14,7 @@ from ..mx_y_rf_sensitivity.analysis_plotting import _plot_full_analysis
 from ..mx_y_rf_sensitivity.point_analysis import evaluate_mx_y_rf_point
 from . import analysis, analysis_steps, workflow
 from .models import MxYRFPowerOptimizationParams
-from .test_workflow import rig
+from .test_workflow import copy_config, install_power_rig, rig
 
 
 REGRESSION_CASES = {
@@ -40,14 +41,29 @@ REGRESSION_CASES = {
 }
 
 
-@pytest.fixture
-def run_dir(rig):
-    return workflow.run(rig.params)
-
-
 def digest_tree(path):
     return {p.relative_to(path).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
         for p in path.rglob("*") if p.is_file()}
+
+
+@pytest.fixture(scope="module")
+def captured_template(tmp_path_factory):
+    """本模块只跑一次真实假仪器采集，结果作只读模板；采集/安全/取消路径仍由 test_workflow.py 独立覆盖。"""
+    root = tmp_path_factory.mktemp("power_optimization_template")
+    with pytest.MonkeyPatch.context() as patch:
+        copy_config(root)
+        rig = install_power_rig(root, patch)
+        directory = workflow.run(rig.params)
+    return root, directory.relative_to(root), digest_tree(root)
+
+
+@pytest.fixture
+def run_dir(captured_template, rig):
+    """每例把整个模板项目根深拷贝到自己的 tmp_path，用例间不共享任何可写文件。"""
+    template, relative, digest = captured_template
+    assert digest_tree(template) == digest, "共享采集模板被改动，用例间可能互相污染"
+    shutil.copytree(template, rig.root, dirs_exist_ok=True)
+    return rig.root / relative
 
 
 def test_original_full_and_staged_science_are_identical_and_reads_do_not_write(run_dir):

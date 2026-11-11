@@ -3,11 +3,91 @@
 from unittest.mock import Mock
 
 import pytest
+import yaml
 
 from . import common
 
 
 NONFINITE = [float("nan"), float("inf"), float("-inf")]
+
+# 覆盖 YAML 1.1 隐式类型、锚点/合并键、显式标签等容易在解析器实现间出现差异的写法。
+YAML_EDGE_CASES = """\
+bools: [yes, No, on, OFF, true, False, y, n]
+nulls: [~, null, Null, ""]
+ints: [0, -17, 0o17, 017, 0x1F, 0b101, 1_000, +5, 190:20:30]
+floats: [1.0, -0.5, 1e3, 1.0e-3, 6.02E+23, .inf, -.Inf, 1_0.5, 190:20:30.15]
+strings: [1e-3, "007", '0x1F', 2026-11-11x, 中文, "\\u03bcT", text with: colon]
+dates: [2026-11-11, 2026-11-11T08:30:00Z, 2026-11-11 08:30:00.5+08:00]
+base: &base {min: -1.0, max: 2.0, unit: V}
+derived: {<<: *base, max: 3.5}
+alias_list: [*base, *base]
+multiline: |
+  第一行
+  第二行
+folded: >
+  a
+  b
+binary: !!binary aGVsbG8=
+pairs: !!omap [{a: 1}, {b: 2}]
+set: !!set {x, y}
+"""
+
+
+def _safe_reference(text):
+    return yaml.load(text, Loader=yaml.SafeLoader)
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted((common.find_project_root() / "params").rglob("*.yaml")),
+    ids=lambda path: path.relative_to(common.find_project_root()).as_posix(),
+)
+def test_load_yaml_matches_pure_python_safe_loader_on_project_params(path):
+    # repr 同时比较值与类型（1 / 1.0 / True）以及映射顺序，比 == 更严格。
+    expected = _safe_reference(path.read_text(encoding="utf-8")) or {}
+    assert repr(common.load_yaml(path)) == repr(expected)
+
+
+def test_load_yaml_matches_pure_python_safe_loader_on_yaml_edge_cases(tmp_path):
+    path = tmp_path / "edge.yaml"
+    path.write_text(YAML_EDGE_CASES, encoding="utf-8")
+    assert repr(common.load_yaml(path)) == repr(_safe_reference(YAML_EDGE_CASES))
+
+
+@pytest.mark.parametrize("text", ["", "# 仅注释\n", "~\n"])
+def test_load_yaml_empty_documents_still_return_empty_mapping(tmp_path, text):
+    path = tmp_path / "empty.yaml"
+    path.write_text(text, encoding="utf-8")
+    assert common.load_yaml(path) == {}
+
+
+@pytest.mark.parametrize("text", ["!!python/object/apply:os.system ['echo unsafe']\n",
+                                  "value: !!python/name:os.system\n"])
+def test_load_yaml_keeps_safe_semantics_for_python_tags(tmp_path, text):
+    path = tmp_path / "unsafe.yaml"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(yaml.constructor.ConstructorError):
+        common.load_yaml(path)
+
+
+def test_load_yaml_uses_libyaml_safe_loader_when_available(tmp_path, monkeypatch):
+    used = []
+    original = yaml.load
+
+    def spy(stream, Loader):
+        used.append(Loader)
+        return original(stream, Loader=Loader)
+
+    monkeypatch.setattr(common.yaml, "load", spy)
+    path = tmp_path / "small.yaml"
+    path.write_text("a: 1\n", encoding="utf-8")
+    assert common.load_yaml(path) == {"a": 1}
+    assert used == [getattr(yaml, "CSafeLoader", yaml.SafeLoader)]
+    # 无 libyaml 的环境回退到纯 Python SafeLoader，语义不变。
+    monkeypatch.delattr(common.yaml, "CSafeLoader", raising=False)
+    used.clear()
+    assert common.load_yaml(path) == {"a": 1}
+    assert used == [yaml.SafeLoader]
 
 
 @pytest.mark.parametrize("value", NONFINITE, ids=["nan", "pos_inf", "neg_inf"])

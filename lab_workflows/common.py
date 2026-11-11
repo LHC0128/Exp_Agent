@@ -22,8 +22,10 @@ def find_project_root(start: Path | None = None) -> Path:
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
+    # libyaml 的 CSafeLoader 与 SafeLoader 语义相同、约快 7 倍；无 libyaml 时回退纯 Python。
+    loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
     with path.open(encoding="utf-8") as stream:
-        return yaml.safe_load(stream) or {}
+        return yaml.load(stream, Loader=loader) or {}
 
 
 def load_mapping(root: Path | None = None) -> dict[str, dict[str, Any]]:

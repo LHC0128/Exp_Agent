@@ -1,5 +1,6 @@
 """显式临时 run_dir：原科学约定、格式资格与分阶段产物保护。"""
 from pathlib import Path
+import hashlib
 import json
 import os
 import shutil
@@ -34,12 +35,33 @@ REGRESSION_CASES = {
 }
 
 
+def _digest_tree(path):
+    return {p.relative_to(path).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in path.rglob("*") if p.is_file()}
+
+
+@pytest.fixture(scope="module")
+def captured_template(tmp_path_factory):
+    """本模块只跑一次真实假仪器采集，结果作只读模板；采集/安全/取消路径仍由 test_workflow.py 独立覆盖。"""
+    root = tmp_path_factory.mktemp("mx_z_optimal_control_xy_rf_sensitivity_template")
+    with pytest.MonkeyPatch.context() as patch:
+        copy_config(root)
+        rig = install_rig(root, patch, parameters(x_field_start_v=0., x_field_stop_v=0., x_field_points=1,
+            y_field_start_v=0., y_field_stop_v=0., y_field_points=1))
+        directory = workflow.run(rig.params)
+    return root, directory.relative_to(root), _digest_tree(root)
+
+
 @pytest.fixture
-def run_dir(tmp_path, monkeypatch):
+def run_dir(captured_template, tmp_path, monkeypatch):
+    """每例照旧建立自己的假仪器环境，再把整个模板项目根深拷贝到本例 tmp_path，用例间不共享可写文件。"""
     copy_config(tmp_path)
-    rig = install_rig(tmp_path, monkeypatch, parameters(x_field_start_v=0., x_field_stop_v=0., x_field_points=1,
-        y_field_start_v=0., y_field_stop_v=0., y_field_points=1))
-    return workflow.run(rig.params)
+    install_rig(tmp_path, monkeypatch, parameters(x_field_start_v=0., x_field_stop_v=0., x_field_points=1,
+            y_field_start_v=0., y_field_stop_v=0., y_field_points=1))
+    template, relative, digest = captured_template
+    assert _digest_tree(template) == digest, "共享采集模板被改动，用例间可能互相污染"
+    shutil.copytree(template, tmp_path, dirs_exist_ok=True)
+    return tmp_path / relative
 
 
 def replace_npz(path, **changes):
