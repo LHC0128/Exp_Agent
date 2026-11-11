@@ -3,6 +3,7 @@ import type { components } from "../../types/openapi";
 import { endpointKey, portUsageSets, type PortUsage } from "./portUsage";
 import { findFreeSlot, type PlacementPoint, type PlacementSize } from "./wiringPlacement";
 import { wiringSyncBadgeLabel, type WiringSyncBadge } from "./wiringSync";
+import { debugBadgeLabel, type DebugBadge } from "./WiringDebugPanel";
 import { routeInternalWires, type InternalWire } from "./wiringInternalRoutes";
 import { routeWire, routeWires, type Point, type WireAnchor as Anchor, type WireBox, type WireLabelSize } from "./wiringRoutes";
 import { type WiringGraph } from "./wiringTypes";
@@ -60,7 +61,7 @@ const cableText = (edge: WiringGraph["edges"][number]) => [edge.connector, edge.
 const wireText = (edge: WiringGraph["edges"][number]) => `${signalName(edge.signal_type)}${edge.label ? ` · ${edge.label}` : ""}${cableText(edge) ? ` · 线缆 ${cableText(edge)}` : ""}`;
 const estimatedLabelSize = (edge: WiringGraph["edges"][number]): WireLabelSize => ({ width: Array.from(wireText(edge)).length * 12, height: 14 });
 
-export function WiringCanvas({ ref, graph, locked, resetToken, active = true, autoFit = false, selectedDevice, selectedEdge, profileBadges = {}, onSelectDevice, onSelectEdge, onMove, onPair, onReconnect, onCancel, onPortDirection, onPortMode, onPortUsage, onSettingChange, onAutoFitSettled, onBlockedRoutesChange, endpointLabel }: {
+export function WiringCanvas({ ref, graph, locked, resetToken, active = true, autoFit = false, selectedDevice, selectedEdge, profileBadges = {}, debugBadges = {}, onSelectDevice, onSelectEdge, onMove, onPair, onReconnect, onCancel, onPortDirection, onPortMode, onPortUsage, onSettingChange, onAutoFitSettled, onBlockedRoutesChange, endpointLabel }: {
   ref?: Ref<WiringCanvasHandle>;
   graph: WiringGraph;
   locked: boolean;
@@ -70,6 +71,8 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
   selectedDevice: string | null;
   selectedEdge: string | null;
   profileBadges?: Partial<Record<string, WiringSyncBadge[]>>;
+  /** 调试页状态：按器件 ID 给出「已回读 / 有未写入值 / ≠ 实验参数」。 */
+  debugBadges?: Partial<Record<string, DebugBadge[]>>;
   onSelectDevice: (id: string) => void;
   onSelectEdge: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
@@ -666,6 +669,9 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
             {profileBadges[device.id]?.length ? <div className="wiring-node-profile-badges" aria-label={`${device.name}与设备端口档案差异`}>
               {profileBadges[device.id]!.map(badge => <span key={badge} className={`wiring-profile-badge ${badge}`}>{wiringSyncBadgeLabel[badge]}</span>)}
             </div> : null}
+            {debugBadges[device.id]?.length ? <div className="wiring-node-profile-badges wiring-node-debug-badges" aria-label={`${device.name}调试状态`}>
+              {debugBadges[device.id]!.map(badge => <span key={badge} className={`wiring-debug-badge ${badge}`}>{debugBadgeLabel[badge]}</span>)}
+            </div> : null}
             <div className="wiring-node-ports wiring-inputs" aria-label={`${device.name}左侧端口`}>{left.map(port => renderPort(node, port, "left"))}</div>
             <div className="wiring-node-ports wiring-outputs" aria-label={`${device.name}右侧端口`}>{right.map(port => renderPort(node, port, "right"))}</div>
             {unused.length > 0 && <div className="wiring-unused-ports">
@@ -721,7 +727,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
                 edgeId: reconnectEdge.id, end, fixed: reconnectEdge[end === "source" ? "target" : "source"], internal: reconnectEdge.signal_type === "internal" });
             }} />;
         })}
-        {!graph.nodes.length && <p className="wiring-canvas-empty">此图尚无器件，请从左侧加入档案快照或空白器件。</p>}
+        {!graph.nodes.length && <p className="wiring-canvas-empty">此图尚无器件，请在「加入器件」中加入档案快照或空白器件。</p>}
       </div>
       </div>
     </div>

@@ -1,4 +1,8 @@
 import { lazy, Suspense, useState, type KeyboardEvent, type ReactNode } from "react";
+import type { ParameterValues } from "../types/api";
+
+/** 运行页参数草稿：目标接线图「存为实验参数」只合并进草稿，保存仍走运行页原有流程。 */
+export type ParameterDraft = { values: ParameterValues; apply: (patch: ParameterValues) => void };
 
 const WiringEditor = lazy(() => import("./wiring/WiringEditor").then(module => ({ default: module.WiringEditor })));
 
@@ -18,9 +22,9 @@ export function ExperimentViewPanel({ active, id, labelledBy, children }: {
 }
 
 /** 各实验共享视图导航；目标编辑固定当前稳定实验 ID，不提供跨实验切换。 */
-export function ExperimentViewTabs({ experimentId, title, value, onChange, idPrefix = experimentId, label = "实验视图", views = defaultViews }: {
+export function ExperimentViewTabs({ experimentId, title, value, onChange, idPrefix = experimentId, label = "实验视图", views = defaultViews, parameterDraft }: {
   experimentId: string; title?: string; value: ExperimentView; onChange: (view: ExperimentView) => void;
-  idPrefix?: string; label?: string; views?: readonly ExperimentView[];
+  idPrefix?: string; label?: string; views?: readonly ExperimentView[]; parameterDraft?: ParameterDraft;
 }) {
   function navigate(event: KeyboardEvent<HTMLDivElement>) {
     const origin = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('[role="tab"]') : null;
@@ -43,7 +47,7 @@ export function ExperimentViewTabs({ experimentId, title, value, onChange, idPre
     </div>
     {views.includes("target") && <ExperimentViewPanel active={value === "target"} id={`${idPrefix}-panel-target`} labelledBy={`${idPrefix}-tab-target`}>
       <Suspense fallback={<p className="alert" role="status">正在载入目标接线图编辑器…</p>}>
-        <WiringEditor key={experimentId} experimentId={experimentId} experimentTitle={title} active={value === "target"} />
+        <WiringEditor key={experimentId} experimentId={experimentId} experimentTitle={title} active={value === "target"} showParameters={views.includes("run")} parameterDraft={parameterDraft} />
       </Suspense>
     </ExperimentViewPanel>}
   </>;

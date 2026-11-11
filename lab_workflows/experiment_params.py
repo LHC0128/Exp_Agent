@@ -188,6 +188,11 @@ class ExperimentParams:
     """所有新模式实验参数模型的共同协议。"""
 
     schema_version: ClassVar[int] = 1
+    # 外部参数名 → 该参数配置的物理用途键（params/mapping.yaml）；仅供 GUI 按器件展示，不参与运行。
+    parameter_roles: ClassVar[dict[str, tuple[str, ...]]] = {}
+    # 外部参数名 → (用途键, 信号源通道设置字段)；仅登记参数值即写入仪器值、无换算的字段，
+    # 供 GUI 调试页比较回读与回存实验参数，不参与运行。
+    parameter_settings: ClassVar[dict[str, tuple[str, str]]] = {}
 
     @classmethod
     def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
@@ -370,6 +375,12 @@ class ExperimentParams:
             }
             if "legacy_default" in metadata:
                 entry["legacy_default"] = metadata["legacy_default"]
+            roles = self.parameter_roles.get(entry["name"])
+            if roles:
+                entry["roles"] = list(roles)
+            setting = self.parameter_settings.get(entry["name"])
+            if setting:
+                entry["setting"] = {"role": setting[0], "field": setting[1]}
             if entry["name"] == "SYSTEM_SETTLE_S":
                 entry["legacy_defaults"] = dict(getattr(self, "system_settle_legacy_defaults", {}))
             options = self._options(item, root)

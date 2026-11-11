@@ -206,7 +206,8 @@ export function WorkflowExperimentPage({ experimentId,
   return <>
     <PageHead eyebrow={eyebrow} title={definition?.title ?? "正在载入实验"} description={definition?.description ?? "读取实验定义与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
-    <ExperimentViewTabs experimentId={experimentId} title={definition?.title} value={tab} onChange={setTab} />
+    <ExperimentViewTabs experimentId={experimentId} title={definition?.title} value={tab} onChange={setTab}
+      parameterDraft={{ values, apply: patch => setValues(current => normalizeParameters({ ...current, ...patch })) }} />
     <div id={`${experimentId}-panel-run`} role="tabpanel" aria-labelledby={`${experimentId}-tab-run`} hidden={tab !== "run"}>
       <WorkflowPanel experimentId={experimentId}
         analysisParameterPrefix={analysisParameterPrefix} analysisParameterKeys={analysisParameterKeys}
@@ -220,13 +221,13 @@ export function WorkflowExperimentPage({ experimentId,
           layoutDirty={!sameParameterLayout(layout, savedLayout)} hardwareBusyNote={hardwareBusy && !jobActive}
           job={job} onJobUpdate={setJob} startLabel={startLabel}
           preview={renderPreview ? renderPreview({ derived: preview, derivedError, values, setValues, fields, busy })
-            : Object.keys(preview).length > 0 && <details className="xy-workflow-preview"><summary>派生预览（只读）</summary>
+            : Object.keys(preview).length > 0 && <details className="xy-workflow-preview"><summary>派生参数</summary>
               <dl>{Object.entries(preview).map(([name, value]) => <div key={name}><dt>{formFields.find(field => field.name === name)?.label ?? name}</dt><dd>{String(value)}</dd></div>)}</dl>
             </details>} />
       </WorkflowPanel>
       {renderLatest
         ? <section className="zaw-panel zaw-panel-result">
-          <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
+          <div className="zaw-panel-head"><h2>最近一次结果</h2></div>
           {renderLatest({ latest: history.latest, job, session, openRun })}
         </section>
         : <LatestResultPanel latest={history.latest} render={result} onOpen={openRun} />}

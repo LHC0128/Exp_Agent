@@ -277,7 +277,8 @@ export function RFSensitivityDirectAWPage({ experimentId = "rf-sensitivity-aw" }
   return <>
     <PageHead eyebrow="MEASUREMENT · RF" title={definition?.title ?? title} description={definition?.description ?? "读取参数与运行记录。"} experiment={definition} />
     {error && <div className="alert error" role="alert">{error}</div>}
-    <ExperimentViewTabs experimentId={ID} title={definition?.title ?? title} value={tab} onChange={setTab} idPrefix="rf-aw" label={`${title}视图`} />
+    <ExperimentViewTabs experimentId={ID} title={definition?.title ?? title} value={tab} onChange={setTab} idPrefix="rf-aw" label={`${title}视图`}
+      parameterDraft={{ values, apply: patch => setValues(current => commonTriggerParameters({ ...current, ...patch })) }} />
     <div id="rf-aw-panel-run" role="tabpanel" aria-labelledby="rf-aw-tab-run" hidden={tab !== "run"}>
       <WorkflowPanel experimentId={ID} analysisParameterPrefix="" analysisParameterKeys={analysisParameterKeys}
         normalizeParameters={commonTriggerParameters} enabled={fields.length > 0}

@@ -20,6 +20,46 @@ class RFSensitivityDirectAWSingleParams(ExperimentParams):
     schema_version: ClassVar[int] = 3
     require_rf_integer_cycles: ClassVar[bool] = True
     compensate_control_on_load: ClassVar[bool] = True
+    # 依据 excitation / phase / waveform / preparation 中各参数写入的映射键；无仪器写入的采集与分析参数不列。
+    parameter_roles: ClassVar[dict[str, tuple[str, ...]]] = {
+        **dict.fromkeys(("RF_AMP_START", "RF_AMP_STOP", "Z_RF_AMPLITUDE_INIT", "Z_PHASE_SCAN_ENABLED", "Z_BURST_PHASE_INIT",
+                         "Z_PHASE_SCAN_START_DEG", "Z_PHASE_SCAN_STOP_DEG", "Z_PHASE_SCAN_STEP_DEG"), ("Z_magnetic_field",)),
+        **dict.fromkeys(("Z_RF_FREQ", "BW_FREQ_START", "BW_FREQ_STOP"), ("Z_magnetic_field", "lockin_r")),
+        **dict.fromkeys(("ARB_WAVEFORM_FILE", "CONTROL_WAVEFORM_FILES", "CONTROL_SCALE_FACTORS", "AW_REPEAT_FREQ",
+                         "XY_CTRL_K_HZ_PER_V", "XY_CTRL_B_HZ", "XY_CTRL_PHASE", "XY_CTRL_QUAD"), ("X_magnetic_field", "Y_magnetic_field")),
+        **dict.fromkeys(("XY_TRIGGER_FREQ", "XY_TRIGGER_AMPLITUDE", "XY_TRIGGER_OFFSET", "XY_TRIGGER_DUTY", "XY_TRIGGER_PHASE"), ("Time_sequence_2",)),
+        "PUMP_MOD_FREQ": ("Time_sequence", "lockin_r", "X_magnetic_field", "Y_magnetic_field"),
+        **dict.fromkeys(("PUMP_MOD_DUTY", "RF_GATE_AMPLITUDE", "RF_GATE_OFFSET"), ("Time_sequence",)),
+        "PUMP_MOD_AMPLITUDE": ("Pump_modulation",),
+        **dict.fromkeys(("DEMOD0_SIGNAL_RANGE", "DEMOD0_ORDER", "DEMOD0_TC_CALIB", "DEMOD0_TC_MEAS", "DEMOD0_RATE", "DEMOD3_IDX",
+                         "RF_INPUT_ROUTE", "RF_AUX_OUTPUT_IDX", "RF_PHYSICAL_INPUT_SOURCE", "DEMOD3_ORDER", "DEMOD3_TC", "DEMOD3_RATE",
+                         "DEMOD3_NOISE_TC", "DEMOD3_NOISE_ORDER", "LOOPBACK_AUX_SCALE", "LOOPBACK_AUX_OFFSET_V",
+                         "LOOPBACK_INPUT_RANGE_V", "LOOPBACK_INPUT_DIFF"), ("lockin_r",)),
+        "FIXED_PARAMS.Pump_laser_power": ("Pump_laser_power",),
+        "FIXED_PARAMS.Probe_laser_power": ("Probe_laser_power",),
+        "FIXED_PARAMS.main_magnetic_field": ("main_magnetic_field",),
+        "FIXED_PARAMS.temperature": ("temperature",),
+        "FIXED_PARAMS.Temp_Switch": ("Temp_Switch",),
+    }
+    # 设置项级绑定：参数值原样写入信号源对应设置项（单位 Hz、Vpp、V、°、%，与通道回读一致）。
+    # 扫描量、标定换算量、锁相与激光/电流源参数不登记。
+    parameter_settings: ClassVar[dict[str, tuple[str, str]]] = {
+        # excitation.configure_trigger: setup_square(freq, amplitude, offset, dcycle, phase)，Time_sequence_2 通道。
+        "XY_TRIGGER_FREQ": ("Time_sequence_2", "frequency"),
+        "XY_TRIGGER_AMPLITUDE": ("Time_sequence_2", "amplitude"),
+        "XY_TRIGGER_OFFSET": ("Time_sequence_2", "offset"),
+        "XY_TRIGGER_DUTY": ("Time_sequence_2", "square_duty"),
+        "XY_TRIGGER_PHASE": ("Time_sequence_2", "phase"),
+        # excitation.configure_pump: setup_sine(freq=100e6, amplitude=PUMP_MOD_AMPLITUDE)，Pump_modulation 通道。
+        "PUMP_MOD_AMPLITUDE": ("Pump_modulation", "amplitude"),
+        # excitation.configure_pump: setup_pulse(freq, amplitude, offset, ...)，Time_sequence 通道；
+        # width 由 PUMP_MOD_DUTY 换算，PUMP_MOD_DUTY 经 set_pulse_dcycle 写入但通道设置无脉冲占空比字段，均不登记。
+        "PUMP_MOD_FREQ": ("Time_sequence", "frequency"),
+        "RF_GATE_AMPLITUDE": ("Time_sequence", "amplitude"),
+        "RF_GATE_OFFSET": ("Time_sequence", "offset"),
+        # excitation.prepare_z_rf: setup_sine(freq=Z_RF_FREQ, ...)，Z_magnetic_field 通道。
+        "Z_RF_FREQ": ("Z_magnetic_field", "frequency"),
+    }
 
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RF_STEP_SETTLE_S': 0.3, 'TEMP_OFF_SETTLE_S': 0.5}
     removed_temperature_keys: ClassVar[tuple[str, ...]] = ()

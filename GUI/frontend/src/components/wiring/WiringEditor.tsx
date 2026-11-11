@@ -3,15 +3,17 @@ import { Link } from "react-router-dom";
 import { api, type ApiError } from "../../api";
 import { useUnsavedChanges } from "../NavigationGuard";
 import { PageHead } from "../PageHead";
+import { useSetups } from "../setups/SetupContext";
 import { WiringCanvas, type WiringCanvasHandle } from "./WiringCanvas";
 import { nodePlacementSize } from "./wiringPlacement";
 import { type WiringComparison, type WiringDocument as WiringResponse, type WiringEdge, type WiringGraph } from "./wiringTypes";
-import { WiringChecklist } from "./WiringChecklist";
 import { portUsage, type PortUsage } from "./portUsage";
 import { useWiringHistory } from "./useWiringHistory";
 import { compareNodeProfile, syncNodeFromProfile, wiringSyncBadgeLabel, wiringSyncSummaryLines, type WiringSyncBadge, type WiringSyncResult } from "./wiringSync";
 import { buildWiringPreflight, wiringPreflightEmptyText, type PreflightItem, type PreflightSeverity, type PreflightSource } from "./wiringPreflight";
-import type { ExperimentDefinition } from "../../types/api";
+import type { ExperimentDefinition, ExperimentSchema, SchemaField } from "../../types/api";
+import { WiringDebugPanel, type DebugBadge } from "./WiringDebugPanel";
+import type { ParameterDraft } from "../ExperimentViewTabs";
 import type { components } from "../../types/openapi";
 import "../../pages/wiring.css";
 
@@ -54,7 +56,12 @@ function checkedDocument(value: WiringResponse): WiringResponse {
 }
 
 /** 全局接线页与固定实验目标共用编辑实现；目标模式只保存当前实验的草稿。 */
-export function WiringEditor({ experimentId, experimentTitle, active: visible = true }: { experimentId?: string; experimentTitle?: string; active?: boolean }) {
+export function WiringEditor({ experimentId, experimentTitle, active: visible = true, showParameters = false, parameterDraft }: { experimentId?: string; experimentTitle?: string; active?: boolean; showParameters?: boolean; parameterDraft?: ParameterDraft }) {
+  // 只读参数面板仅在有运行视图的实验中启用；归档实验只看目标图，不读参数。
+  const parameterExperiment = showParameters ? experimentId : undefined;
+  const { registry, active: activeSetup, setupEpoch } = useSetups();
+  const [loadedSetupEpoch, setLoadedSetupEpoch] = useState(setupEpoch);
+  const previousSetupEpoch = useRef(setupEpoch);
   const [saved, setSaved] = useState<WiringResponse | null>(null);
   const [draft, setDraft] = useState<Draft>({ site: emptyGraph(), targets: {} });
   const [view, setView] = useState<"site" | "target">(experimentId ? "target" : "site");
@@ -89,6 +96,11 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
   const [experimentsLoading, setExperimentsLoading] = useState(true);
   const [requirements, setRequirements] = useState<ExperimentDefinition | null>(null);
   const [requirementsError, setRequirementsError] = useState("");
+  const [parameterFields, setParameterFields] = useState<SchemaField[] | null>(null);
+  const [parametersLoading, setParametersLoading] = useState(Boolean(parameterExperiment));
+  const [parametersError, setParametersError] = useState("");
+  const [sideTab, setSideTab] = useState<"wiring" | "debug">("wiring");
+  const [debugStatus, setDebugStatus] = useState<Record<string, DebugBadge[]>>({});
   const [comparison, setComparison] = useState<WiringComparison | null>(null);
   const [comparing, setComparing] = useState(false);
   const [compareError, setCompareError] = useState("");
@@ -104,6 +116,8 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     ? JSON.stringify(draft.targets[experimentId])
     : JSON.stringify(draft), [draft, experimentId]);
   const dirty = saved !== null && savedFingerprint !== draftFingerprint;
+  const setupChanged = saved?.setup_id && activeSetup ? saved.setup_id !== activeSetup.id : loadedSetupEpoch !== setupEpoch;
+  const setupLabel = registry?.setups.find(setup => setup.id === saved?.setup_id)?.label ?? saved?.setup_id;
   const locked = loading || saving || saved === null;
   useUnsavedChanges(dirty);
   const graph = useMemo(() => view === "site" ? draft.site : draft.targets[targetId] ?? NO_GRAPH, [view, draft, targetId]);
@@ -142,8 +156,22 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
   const boundGroup = hasBoundKeys ? activeGroups.find(group => mappingKeysToken(group.keys) === mappingKeysToken(boundKeys)) : undefined;
   const foreignGroup = hasBoundKeys && !boundGroup ? mappingGroups.find(group => mappingKeysToken(group.keys) === mappingKeysToken(boundKeys)) : undefined;
   const followValue = hasBoundKeys ? mappingKeysToken(boundKeys) : manualDevice ? "independent" : boundKeys === null ? "auto" : "independent";
-  const currentRead = useRef({ saved, dirty, loading, saving, pair, visible, supportsFollow });
-  currentRead.current = { saved, dirty, loading, saving, pair, visible, supportsFollow };
+  // 显式绑定优先；自动识别时取服务端跟随状态解析出的用途键；独立快照没有用途键。
+  const nodeMappingKeys = (node: WiringGraph["nodes"][number]) => node.follow_mapping?.length ? node.follow_mapping
+    : node.follow_mapping === null || node.follow_mapping === undefined ? followStatuses.find(status => status.device_id === node.device.id)?.mapping_keys ?? [] : [];
+  const parameterKeys = activeNode ? nodeMappingKeys(activeNode) : [];
+  // 节点徽标取其全部用途键的调试状态并集，顺序固定为 已回读 → 有未写入值 → ≠ 实验参数。
+  const debugBadges = useMemo(() => {
+    if (!parameterExperiment || view !== "target") return {};
+    const order: DebugBadge[] = ["read", "pending", "diff"];
+    return Object.fromEntries(graph.nodes.flatMap(node => {
+      const found = new Set(nodeMappingKeys(node).flatMap(key => debugStatus[key] ?? []));
+      return found.size ? [[node.device.id, order.filter(badge => found.has(badge))]] : [];
+    }));
+    // nodeMappingKeys 只读 followStatuses。
+  }, [parameterExperiment, view, graph, debugStatus, followStatuses]);
+  const currentRead = useRef({ saved, dirty, loading, saving, pair, visible, supportsFollow, setupEpoch, setupChanged });
+  currentRead.current = { saved, dirty, loading, saving, pair, visible, supportsFollow, setupEpoch, setupChanged };
   const targetOptions = useMemo(() => {
     if (experimentId) return [{ id: experimentId, name: experimentTitle || experimentId }];
     const options = new Map<string, string>();
@@ -195,15 +223,22 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
   useEffect(() => { setBlockedEdgeIds([]); }, [graphKey]);
 
   useEffect(() => {
-    const controller = new AbortController();
+    const epoch = setupEpoch;
+    const switched = previousSetupEpoch.current !== epoch;
+    previousSetupEpoch.current = epoch;
     backgroundRead.current?.abort(); backgroundRead.current = null;
+    if (switched) {
+      clearComparison(); setCheckingUpdate(false); setRemoteUpdate(null); setUpdateError("");
+      if (currentRead.current.dirty || currentRead.current.pair || currentRead.current.saving) { setLoading(false); return; }
+    }
+    const controller = new AbortController();
     revisionUnsupported.current = false;
     setCheckingUpdate(false); setRemoteUpdate(null); setUpdateError("");
     setLoading(true); setLoadError(""); setProfilesLoading(true); setProfilesError(""); setExperimentsLoading(true); setExperimentsError(""); setSyncPreview(null);
     setRequirements(null); setRequirementsError("");
     void api<WiringResponse>("/api/wiring", { signal: controller.signal }).then(checkedDocument).then(document => {
-      if (controller.signal.aborted) return;
-      setSaved(document); setDraft(structuredClone({ site: document.site, targets: document.targets }));
+      if (controller.signal.aborted || epoch !== currentRead.current.setupEpoch) return;
+      setSaved(document); setDraft(structuredClone({ site: document.site, targets: document.targets })); setLoadedSetupEpoch(epoch);
       history.clear();
       setSelectedDevice(null); setSelectedEdge(null); setPair(null); setPairError(""); setCanvasEpoch(value => value + 1);
       setSaveError(""); setConflict(false); setNotice(""); setSyncPreview(null); compareSequence.current += 1; setComparison(null); setCompareError(""); setComparing(false);
@@ -228,7 +263,22 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     }).catch(error => { if (!controller.signal.aborted) { setExperiments([]); setExperimentsError(message(error)); } })
       .finally(() => { if (!controller.signal.aborted) setExperimentsLoading(false); });
     return () => { controller.abort(); compareSequence.current += 1; };
-  }, [reload, experimentId]);
+  }, [reload, experimentId, setupEpoch]);
+
+  // 目标模式只读展示已保存参数；切回本 Tab 时重读，以反映运行页刚保存的值。读取失败只提示，不阻塞图编辑。
+  useEffect(() => {
+    if (!parameterExperiment || !visible) return;
+    const controller = new AbortController();
+    setParametersLoading(true); setParametersError("");
+    void api<ExperimentSchema>(`/api/experiments/${encodeURIComponent(parameterExperiment)}/schema`, { signal: controller.signal }).then(schema => {
+      if (!Array.isArray(schema?.fields)) throw new Error("实验参数格式不受支持");
+      if (!controller.signal.aborted) setParameterFields(schema.fields);
+    }).catch(error => { if (!controller.signal.aborted) { setParameterFields(null); setParametersError(message(error)); } })
+      .finally(() => { if (!controller.signal.aborted) setParametersLoading(false); });
+    return () => controller.abort();
+  }, [parameterExperiment, visible, setupEpoch]);
+  // 选中连线时回到「接线」页，连线编辑只在该页。
+  useEffect(() => { if (selectedEdge) setSideTab("wiring"); }, [selectedEdge]);
 
   // 后台检查先只读组合修订，未变化时不拉取完整文档；不碰配置写入口，回执到达时再次核对草稿和保存状态。
   async function readRevision(signal: AbortSignal): Promise<string | null> {
@@ -245,18 +295,18 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
   }
   async function checkUpdates() {
     const before = currentRead.current;
-    if (!before.supportsFollow || !before.visible || before.loading || before.saving || !before.saved || backgroundRead.current) return;
+    if (!before.supportsFollow || !before.visible || before.loading || before.saving || before.setupChanged || !before.saved || backgroundRead.current) return;
     const controller = new AbortController();
     backgroundRead.current = controller; setCheckingUpdate(true); setUpdateError("");
     try {
       const revision = await readRevision(controller.signal);
       if (controller.signal.aborted) return;
       const current = currentRead.current;
-      if (current.loading || current.saving || !current.saved || current.saved.revision !== before.saved.revision) return;
+      if (current.loading || current.saving || current.setupChanged || current.setupEpoch !== before.setupEpoch || !current.saved || current.saved.revision !== before.saved.revision) return;
       if (revision !== null && revision === current.saved.revision) { setRemoteUpdate(null); return; }
       const document = checkedDocument(await api<WiringResponse>("/api/wiring", { signal: controller.signal }));
       const now = currentRead.current;
-      if (controller.signal.aborted || now.loading || now.saving || !now.saved || now.saved.revision !== before.saved.revision) return;
+      if (controller.signal.aborted || now.loading || now.saving || now.setupChanged || now.setupEpoch !== before.setupEpoch || !now.saved || now.saved.revision !== before.saved.revision) return;
       if (document.revision === now.saved.revision) { setRemoteUpdate(null); return; }
       if (now.dirty || now.pair || !now.visible) {
         setRemoteUpdate(document); clearComparison();
@@ -512,8 +562,9 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     if (locked || Object.hasOwn(draft.targets, targetId)) return;
     setDraft(current => ({ ...current, targets: { ...current.targets, [targetId]: emptyGraph() } })); clearComparison(); setNotice("已新建空目标。");
   }
-  function copySite() {
-    if (locked || !window.confirm(`将现场图复制到“${targetName(targetId)}”？会覆盖该目标的全部器件与连线。`)) return;
+  // 空状态入口只在目标尚未建立时出现，没有可覆盖的内容，因此不再二次确认。
+  function copySite(fromEmptyState = false) {
+    if (locked || (!fromEmptyState && !window.confirm(`将现场图复制到“${targetName(targetId)}”？会覆盖该目标的全部器件与连线。`))) return;
     setDraft(current => ({ ...current, targets: { ...current.targets, [targetId]: structuredClone(current.site) } }));
     clearComparison(); resetSelection(); setNotice("已复制现场到当前目标，尚未保存。");
   }
@@ -522,11 +573,12 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     setDraft(structuredClone({ site: saved.site, targets: saved.targets })); resetSelection(); clearComparison(); history.clear(); setSaveError(""); setNotice(experimentId ? "已放弃当前目标草稿。" : "已放弃全部草稿。");
   }
   function reloadDocument() {
-    if (loading || saving || (dirty && !window.confirm(experimentId ? "重新载入将丢弃当前目标的未保存修改。确定？" : "重新载入将丢弃全部未保存修改。确定？"))) return;
+    if (loading || saving || ((dirty || pair) && !window.confirm(experimentId ? "重新载入将丢弃当前目标的未保存修改。确定？" : "重新载入将丢弃全部未保存修改。确定？"))) return;
     clearComparison(); setReload(value => value + 1);
   }
   async function save() {
-    if (locked || !saved || !dirty || validation.length) return;
+    if (locked || setupChanged || !saved || !dirty || validation.length) return;
+    const epoch = setupEpoch;
     if (loadError) { setSaveError("重新载入尚未成功，已暂停保存；现有草稿保留，请重新载入成功后再保存。"); return; }
     backgroundRead.current?.abort(); backgroundRead.current = null; setCheckingUpdate(false);
     setSaving(true); setSaveError(""); setNotice(""); setPair(null); setCanvasEpoch(value => value + 1);
@@ -536,6 +588,7 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
       : { base_revision: saved.revision, ...draft };
     try {
       const document = checkedDocument(await api<WiringResponse>("/api/wiring", { method: "PUT", body: JSON.stringify(body) }));
+      if (epoch !== currentRead.current.setupEpoch) return;
       setSaved(document); setDraft(structuredClone({ site: document.site, targets: document.targets })); setConflict(false); setRemoteUpdate(null); setUpdateError(""); clearComparison(); history.clear();
       setNotice(experimentId ? "当前实验目标接线图已保存。" : "全部接线图已保存。");
     } catch (error) {
@@ -563,30 +616,33 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
     return <section><h3>{title} <small>{edges.length}</small></h3>{edges.length ? <ul>{edges.map(edge => { const cable = cableSummary(edge); return <li key={edge.id}>{endpointName(value, edge.source)} {edge.signal_type === "internal" ? "→" : "↔"} {endpointName(value, edge.target)} · {signalName(edge.signal_type)}{edge.label ? ` · ${edge.label}` : ""}{cable ? ` · 线缆 ${cable}` : ""}</li>; })}</ul> : <p>无</p>}</section>;
   }
 
-  return <div className="wiring-page">
-    {experimentId ? <header><h2>目标接线图</h2><p>当前实验：{targetName(experimentId)}。</p><div className="wiring-head-links"><Link to="/instruments/wiring">全局现场与目标接线图</Link><Link to="/instruments/ports">设备端口建档</Link></div></header>
-      : <PageHead eyebrow="WIRING EDITOR" title="实验接线图" description="手工维护共享现场图和各实验独立目标；绑定用途可跟随已保存的设备选择，独立快照保持原样。"
-        action={<div className="wiring-head-links"><Link to="/instruments/ports">设备端口建档</Link><Link to="/instruments">返回仪器控制</Link></div>} />}
-    <div className="wiring-toolbar"><div><strong>{saved === null ? "接线图尚未载入" : dirty ? experimentId ? "当前目标有未保存修改" : "全部图有未保存修改" : experimentId ? "当前目标无未保存修改" : "全部接线图已保存"}</strong>{saved && <span>修订 {saved.revision}</span>}</div>
-      <div><button className="secondary" onClick={undoGraph} disabled={locked || !history.canUndo} title="撤销上一步图内修改（Ctrl+Z）">撤销</button><button className="secondary" onClick={redoGraph} disabled={locked || !history.canRedo} title="重做上一步图内修改（Ctrl+Shift+Z）">重做</button><button onClick={() => void save()} disabled={locked || !!loadError || !dirty || validation.length > 0}>{saving ? experimentId ? "正在保存当前目标…" : "正在保存全部图…" : experimentId ? "保存当前实验目标" : "保存全部接线图"}</button><button className="secondary" onClick={discard} disabled={locked || !dirty}>{experimentId ? "放弃当前目标草稿" : "放弃全部草稿"}</button><button className="secondary" onClick={reloadDocument} disabled={loading || saving}>重新载入</button></div></div>
+  const embedded = !!experimentId;
+  const currentHelp = <p className="wiring-help">当前：{view === "site" ? "共享现场图" : `实验目标 · ${targetName(targetId)}`} · {graph.nodes.length} 个器件 / {graph.edges.length} 条连线。{!Object.hasOwn(draft.targets, targetId) && "此目标尚未建立。"}</p>;
+  const statusBlock = <div><strong>{saved === null ? "接线图尚未载入" : dirty ? experimentId ? "当前目标有未保存修改" : "全部图有未保存修改" : experimentId ? "当前目标无未保存修改" : "全部接线图已保存"}</strong>{setupLabel && <span>装置：{setupLabel}</span>}{saved && <span>修订 {saved.revision}</span>}</div>;
+  const toolbarButtons = <div><button className="secondary" onClick={undoGraph} disabled={locked || !history.canUndo} title="撤销上一步图内修改（Ctrl+Z）">撤销</button><button className="secondary" onClick={redoGraph} disabled={locked || !history.canRedo} title="重做上一步图内修改（Ctrl+Shift+Z）">重做</button><button onClick={() => void save()} disabled={locked || setupChanged || !!loadError || !dirty || validation.length > 0}>{saving ? experimentId ? "正在保存当前目标…" : "正在保存全部图…" : experimentId ? "保存当前实验目标" : "保存全部接线图"}</button><button className="secondary" onClick={discard} disabled={locked || !dirty}>{experimentId ? "放弃当前目标草稿" : "放弃全部草稿"}</button><button className="secondary" onClick={reloadDocument} disabled={loading || saving}>重新载入</button></div>;
+  const followTools = supportsFollow && <div className="wiring-follow-tools"><button className="secondary" onClick={() => void checkUpdates()} disabled={loading || saving || checkingUpdate}>{checkingUpdate ? "正在检查用途更新…" : "检查用途与接线图更新"}</button></div>;
+  const alertsBefore = <>
+    {setupChanged && saved && <div className="alert" role="alert">已切换装置，当前草稿属于原装置；请先保存或放弃后重新载入<span>当前草稿保留，已暂停向新装置保存；保存原草稿请先切回原装置并核对。</span><button className="secondary" onClick={reloadDocument} disabled={loading || saving}>确认重新载入当前装置</button></div>}
     {loading && <p className="alert" role="status">正在读取接线图…</p>}
     {loadError && <div className="alert error" role="alert">{saved ? "重新载入失败，现有全部草稿保留；可继续查看和编辑草稿，但保存已暂停，需重新载入成功后才能保存：" : "接线图读取失败，已禁止编辑和空图保存；尚无可用草稿，需重新载入成功后才能继续："}{loadError}<span>新接口若尚未加载，需操作者在任务安全结束后重启现有后端；页面不启停服务。</span><button className="secondary" disabled={loading || saving} onClick={reloadDocument}>重试读取接线图</button></div>}
     {saveError && <div className="alert error" role="alert">{conflict ? experimentId ? "保存冲突（409），当前目标草稿与基础修订已保留；不会覆盖其他窗口更改。" : "保存冲突（409），全部草稿与基础修订已保留；请确认后重新载入，或先保留本页草稿核对。" : experimentId ? "保存失败，当前目标草稿与基础修订已保留，可重试。" : "保存失败，全部草稿与基础修订已保留，可重试。"}<span>{saveError}</span>{conflict && <button className="secondary" onClick={reloadDocument} disabled={loading || saving}>确认重新载入最新接线图</button>}</div>}
-    {supportsFollow && <div className="wiring-follow-tools"><button className="secondary" onClick={() => void checkUpdates()} disabled={loading || saving || checkingUpdate}>{checkingUpdate ? "正在检查用途更新…" : "检查用途与接线图更新"}</button></div>}
+  </>;
+  const alertsAfter = <>
     {remoteUpdate && <div className="alert" role="alert"><strong>设备用途或接线图已有更新，当前草稿与基础修订已保留，未自动覆盖。</strong><span>请先核对草稿；按旧修订保存可能返回 409。确认放弃草稿后重新载入，才能采用最新的现场及全部目标记录。</span><button className="secondary" onClick={reloadDocument} disabled={loading || saving}>确认重新载入用途更新</button></div>}
     {updateError && <p className="wiring-warning" role="alert">用途更新检查失败，现有草稿和基础修订保留：{updateError}</p>}
     {notice && <p className="alert success" role="status">{notice}</p>}
     {validation.length > 0 && <div className="alert error" role="alert"><strong>{experimentId ? "请补全名称后保存当前目标：" : "请补全名称后保存全部图："}</strong><ul>{validation.map((problem, index) => <li key={index}>{problem}</li>)}</ul></div>}
+  </>;
+  const graphToolbar = <>
     <fieldset className="wiring-graph-toolbar" disabled={locked} aria-label="选择接线图">
       {!experimentId && <><div className="wiring-view-buttons"><button className={view === "site" ? "active" : "secondary"} aria-pressed={view === "site"} onClick={() => switchView("site")}>共享现场图</button><button className={view === "target" ? "active" : "secondary"} aria-pressed={view === "target"} onClick={() => switchView("target")}>实验目标图</button></div>
       <label><span>目标实验</span><select value={targetId} onChange={event => chooseTarget(event.target.value)}>{targetOptions.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label></>}
-      <div className="wiring-target-actions"><button className="secondary" onClick={createTarget} disabled={Object.hasOwn(draft.targets, targetId)}>显式新建空目标</button><button className="secondary" onClick={copySite}>复制现场到当前实验目标草稿</button></div>
+      <div className="wiring-target-actions"><button className="secondary" onClick={createTarget} disabled={Object.hasOwn(draft.targets, targetId)}>显式新建空目标</button><button className="secondary" onClick={() => copySite()}>复制现场到当前实验目标草稿</button></div>
       {!experimentId && experimentsLoading && <small role="status">正在读取实验列表…</small>}{!experimentId && experimentsError && <p className="wiring-warning" role="alert">实验列表读取失败：{experimentsError}。现场仍可维护，已有未知 / 退役目标保留，不会丢弃。</p>}
-      <p className="wiring-help">当前：{view === "site" ? "共享现场图" : `实验目标 · ${targetName(targetId)}`} · {graph.nodes.length} 个器件 / {graph.edges.length} 条连线。{!Object.hasOwn(draft.targets, targetId) && "此目标尚未建立。"}</p>
+      {!experimentId && currentHelp}
     </fieldset>
-    <WiringChecklist active={visible} graph={graph} viewName={view === "site" ? "共享现场图" : `实验目标 · ${targetName(targetId)}`}
-      revision={saved?.revision ?? ""} dirty={dirty} disabled={saved === null} />
-    <div className="wiring-workspace">
+  </>;
+  const libraryPanel = <>
       <fieldset className="wiring-panel wiring-library" disabled={locked} aria-label="加入器件">
         <h2>加入器件</h2>
         {profilesLoading && <p role="status">正在读取已保存端口档案…</p>}
@@ -596,12 +652,11 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
         <button className="secondary" onClick={() => addDevice()}>添加空白图内器件</button>
         <Link to="/instruments/ports">维护原端口档案与模式定义 →</Link>
       </fieldset>
-      <div className="wiring-canvas-column"><h2>{view === "site" ? "共享现场图" : "实验目标图"} <small>图内草稿</small></h2>
-        {requirementInfo && requirementInfo.wiring_notes.length > 0 && <details className="wiring-panel wiring-notes" open>
-          <summary>接线要点</summary>
-          <ul>{requirementInfo.wiring_notes.map((note, index) => <li key={index}>{note}</li>)}</ul>
-        </details>}
+  </>;
+  const notesPanel = <>
         {requirementsUnavailable && <p className="wiring-help">该目标未在当前实验列表，未核对型号/用途要求。</p>}
+  </>;
+  const preflightPanel = <>
         <section className="wiring-panel wiring-preflight" aria-label="接线预检清单">
           <h3>接线预检清单</h3>
           <div className="wiring-preflight-counts"><span className="wiring-preflight-count severity-blocking">阻断 {preflightBlocking} 项</span><span className="wiring-preflight-count severity-warning">警告 {preflightWarnings} 项</span>{preflightInfo > 0 && <span className="wiring-preflight-count severity-info">提示 {preflightInfo} 项</span>}</div>
@@ -613,16 +668,22 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
           </li>)}</ul> : <p className="wiring-preflight-empty">{wiringPreflightEmptyText}</p>}
           {dirty && <p className="wiring-help">草稿有未保存修改：跟随与诊断条目基于最近读取 / 保存，尚未反映当前草稿。</p>}
         </section>
-        <WiringCanvas ref={canvasRef} key={view === "site" ? "site" : `target-${targetId}`} graph={graph} locked={locked} active={visible} resetToken={canvasEpoch} selectedDevice={selectedDevice} selectedEdge={selectedEdge} profileBadges={profileBadges} onBlockedRoutesChange={setBlockedEdgeIds}
+  </>;
+  const canvasPanel = <>
+        <WiringCanvas ref={canvasRef} key={view === "site" ? "site" : `target-${targetId}`} graph={graph} locked={locked} active={visible} resetToken={canvasEpoch} selectedDevice={selectedDevice} selectedEdge={selectedEdge} profileBadges={profileBadges} debugBadges={debugBadges} onBlockedRoutesChange={setBlockedEdgeIds}
           autoFit={saved !== null && !autoFitted.current.has(graphKey)} onAutoFitSettled={() => autoFitted.current.add(graphKey)}
           onPortDirection={setPortDirection} onPortMode={setPortMode} onPortUsage={setPortUsage} onSettingChange={setSettingChange}
           onSelectDevice={id => { if (!locked) { setSelectedDevice(id); setSelectedEdge(null); setSyncPreview(null); } }} onSelectEdge={id => { if (!locked) { setSelectedEdge(id); setPair(null); setSyncPreview(null); } }}
           onMove={(id, x, y) => changeGraph({ ...graph, nodes: graph.nodes.map(node => node.device.id === id ? { ...node, x, y } : node) })}
           onPair={pickPair} onReconnect={reconnectEdge} onCancel={() => { setPair(null); setPairError(""); }} endpointLabel={endpoint => endpointName(graph, endpoint)} />
+  </>;
+  const pairPanels = <>
         {pairError && <p className="alert error" role="alert">{pairError}</p>}
         {pair && <fieldset className="wiring-panel wiring-pair" disabled={locked} aria-label="待建立连线"><h3>确认新连线</h3><p>{endpointName(graph, pair.source)} ↔ {endpointName(graph, pair.target)}</p>
           {pairType === "internal" ? <p>内部信号（非线缆）：仅同一器件内部输出 → 内部输入，不代表外部插拔连接。</p> : <label><span>新连线光电类型</span><select value={pairType} onChange={event => { if (!locked) setPairType(event.target.value as "" | "optical" | "electrical"); }}><option value="">请明确选择，不自动推断</option><option value="optical">光学</option><option value="electrical">电学</option></select></label>}
           <label><span>新连线标签</span><input value={pairLabel} onChange={event => { if (!locked) setPairLabel(event.target.value); }} /></label><button disabled={!pairType} onClick={connect}>记录连线</button><button className="secondary" onClick={() => { setPair(null); setCanvasEpoch(value => value + 1); }}>取消新连线</button></fieldset>}
+  </>;
+  const edgePanel = <>
         <fieldset className="wiring-panel wiring-edge-editor" disabled={locked} aria-label="连线列表与编辑"><h3>当前图连线 <small>{graph.edges.length}</small></h3><p className="wiring-help">点画布连线或下方记录选中，拖动两端手柄可改接。</p>
           <div className="wiring-edge-list">{graph.edges.map(edge => <button key={edge.id} className={edge.id === selectedEdge ? "active" : "secondary"} onClick={() => { if (!locked) { setSelectedEdge(edge.id); setPair(null); } }} aria-pressed={edge.id === selectedEdge} aria-label={`选择连线记录：${endpointName(graph, edge.source)} ↔ ${endpointName(graph, edge.target)}`}><span>{endpointName(graph, edge.source)} ↔ {endpointName(graph, edge.target)}</span><small>{signalName(edge.signal_type)}{edge.label ? ` · ${edge.label}` : ""}{cableSummary(edge) ? ` · 线缆 ${cableSummary(edge)}` : ""}</small></button>)}</div>
           {activeEdge && <div className="wiring-fields"><label><span>连线标签</span><input value={activeEdge.label} onChange={event => updateEdge({ label: event.target.value }, `edge:${activeEdge.id}:label`)} /></label>{activeEdge.signal_type === "internal" ? <p>内部信号（非线缆），不能改成外部光／电线；改变路由可拖动端点手柄改接。</p> : <><label><span>连线光电类型</span><select value={activeEdge.signal_type} onChange={event => updateEdge({ signal_type: event.target.value as "optical" | "electrical" })}><option value="optical">光学</option><option value="electrical">电学</option></select></label>
@@ -631,7 +692,8 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
             <label><span>线缆备注</span><input value={activeEdge.note ?? ""} onChange={event => updateEdge({ note: cableInput(event.target.value) }, `edge:${activeEdge.id}:note`)} /></label></>}<button className="secondary wiring-danger" onClick={() => { if (locked) return; changeGraph({ ...graph, edges: graph.edges.filter(edge => edge.id !== activeEdge.id) }); setSelectedEdge(null); }}>删除所选连线</button></div>}
           {!graph.edges.length && <p>暂无连线。</p>}
         </fieldset>
-      </div>
+  </>;
+  const devicePanel = <>
       <fieldset className="wiring-panel wiring-device-editor" disabled={locked} aria-label="器件快照编辑"><h2>图内器件快照</h2>
         {active ? <>
           <label><span>图内器件名称</span><input value={active.name} onChange={event => updateDevice({ name: event.target.value }, `device:${active.id}:name`)} /></label><label><span>图内器件型号</span><input value={active.model} onChange={event => updateDevice({ model: event.target.value }, `device:${active.id}:model`)} /></label>
@@ -701,7 +763,8 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
           </>}
         </> : <p className="wiring-help">点击器件标题选择；拖动标题可吸附网格，标题聚焦后方向键每次移动 20。</p>}
       </fieldset>
-    </div>
+  </>;
+  const comparePanel = <>
     <section className="wiring-panel wiring-compare" aria-labelledby={`${prefix}-compare`}><h2 id={`${prefix}-compare`}>现场与目标的草稿比较</h2><p>目标：{targetName(targetId)}。</p>
       <button onClick={() => void compare()} disabled={locked || comparing || !Object.hasOwn(draft.targets, targetId)}>{comparing ? "正在比较草稿…" : "比较现场与当前目标草稿"}</button>{!Object.hasOwn(draft.targets, targetId) && <p>此目标尚未建立，请显式新建空目标或编辑目标后再比较。</p>}
       {compareError && <p className="alert error" role="alert">草稿比较失败：{compareError}</p>}
@@ -718,6 +781,86 @@ export function WiringEditor({ experimentId, experimentTitle, active: visible = 
         <h3>端口使用状态变化 <small>{comparison.usage_changes?.length ?? 0}</small></h3>{comparison.usage_changes?.length ? <ul>{comparison.usage_changes.map(change => <li key={`${change.device_id}-${change.port_id}`}>{change.device_name} / {change.port_name}：{usageName(change.site_usage)} → {usageName(change.target_usage)}</li>)}</ul> : <p>无使用状态变化</p>}
         <h3>现场草稿提示</h3>{warnings(comparison.site_warnings, draft.site)}<h3>目标草稿提示</h3>{warnings(comparison.target_warnings, targetGraph)}</div>}
     </section>
+  </>;
+  const diagnosticsPanel = <>
     <section className="wiring-panel wiring-diagnostics"><h2>最近读取 / 保存的服务端提示</h2>{dirty ? <p>当前已编辑，旧提示已隐藏；请{experimentId ? "保存当前目标" : "保存全部图"}或比较草稿以获取新提示。</p> : saved ? experimentId ? warnings(saved.diagnostics.targets[experimentId] ?? [], saved.targets[experimentId] ?? emptyGraph()) : <><h3>共享现场图</h3>{warnings(saved.diagnostics.site, saved.site)}{Object.entries(saved.diagnostics.targets).map(([id, items]) => <div key={id}><h3>{targetName(id)}</h3>{warnings(items, saved.targets[id] ?? emptyGraph())}</div>)}</> : <p>接线图尚未载入，没有可用提示。</p>}</section>
+  </>;
+
+  // 实验内嵌：画布优先；低频操作折叠，选中项编辑贴在画布右侧。全局编辑页保持原布局。
+  if (embedded) return <div className="wiring-page wiring-page-embedded">
+    <div className="wiring-toolbar wiring-embedded-bar">
+      <div className="wiring-embedded-title"><h2>目标接线图</h2><span>{targetName(experimentId)} · {graph.nodes.length} 个器件 / {graph.edges.length} 条连线{!Object.hasOwn(draft.targets, targetId) && " · 此目标尚未建立。"}</span></div>
+      <div className="wiring-embedded-status">{statusBlock}</div>
+      <div className="wiring-embedded-actions">
+        <button className="secondary" onClick={undoGraph} disabled={locked || !history.canUndo} title="撤销上一步图内修改（Ctrl+Z）">撤销</button>
+        <button className="secondary" onClick={redoGraph} disabled={locked || !history.canRedo} title="重做上一步图内修改（Ctrl+Shift+Z）">重做</button>
+        <span className="wiring-bar-divider" aria-hidden="true" />
+        <button className="secondary" onClick={discard} disabled={locked || !dirty} aria-label="放弃当前目标草稿">放弃</button>
+        <button onClick={() => void save()} disabled={locked || setupChanged || !!loadError || !dirty || validation.length > 0} aria-label={saving ? "正在保存当前目标…" : "保存当前实验目标"}>{saving ? "保存中…" : "保存"}</button>
+        <details className="wiring-menu">
+          <summary className="secondary" aria-label="更多操作" title="更多操作">⋯</summary>
+          <div className="wiring-menu-list" onClick={event => { if ((event.target as HTMLElement).closest("button, a")) event.currentTarget.closest("details")?.removeAttribute("open"); }}>
+            <button className="secondary" onClick={() => copySite()} disabled={locked}>用现场图覆盖当前目标…</button>
+            <button className="secondary" onClick={reloadDocument} disabled={loading || saving}>重新载入</button>
+            <hr />
+            <Link to="/instruments/wiring">打开全局接线图 ↗</Link>
+            <Link to="/instruments/ports">设备端口建档 ↗</Link>
+          </div>
+        </details>
+      </div>
+    </div>
+    {alertsBefore}
+    {alertsAfter}
+    <div className="wiring-workspace wiring-workspace-embedded">
+      <div className="wiring-canvas-column">
+        {saved && !Object.hasOwn(draft.targets, targetId) && <section className="wiring-panel wiring-empty-target" aria-label="目标尚未建立">
+          <h3>这个实验还没有目标接线图</h3>
+          <p>从共享现场图开始改，通常只需删掉或改接几根线；也可以从空白开始逐个加入器件。</p>
+          <div><button onClick={() => copySite(true)} disabled={locked}>从现场图复制</button><button className="secondary" onClick={createTarget} disabled={locked}>从空白开始</button></div>
+        </section>}
+        <div className="wiring-canvas-meta">{notesPanel}{preflightPanel}</div>
+        {canvasPanel}
+      </div>
+      <aside className="wiring-side" aria-label="选中项编辑与加入器件">
+        {pairPanels}
+        {parameterExperiment && <div className="wiring-side-tabs" role="tablist" aria-label="选中项视图">
+          {(["wiring", "debug"] as const).map(tab => <button key={tab} type="button" role="tab" aria-selected={sideTab === tab} onClick={() => setSideTab(tab)}>{tab === "wiring" ? "接线" : "调试"}</button>)}
+        </div>}
+        {/* 调试页常驻挂载、仅隐藏：切回「接线」不丢回读与未写入输入，画布徽标也随之保留。 */}
+        {parameterExperiment && <div hidden={sideTab !== "debug"} className="wiring-side-page">
+          <WiringDebugPanel active={sideTab === "debug"} deviceName={active?.name ?? null} mappingKeys={parameterKeys} fields={parameterFields} fieldsLoading={parametersLoading} fieldsError={parametersError} parameterDraft={parameterDraft} onStatusChange={setDebugStatus} />
+        </div>}
+        {(!parameterExperiment || sideTab === "wiring") && <>{devicePanel}{edgePanel}{libraryPanel}</>}
+      </aside>
+    </div>
+    <details className="wiring-panel wiring-fold">
+      <summary>现场比较与服务端提示<small>与共享现场图逐项比较；最近读取 / 保存的诊断</small></summary>
+      <div className="wiring-fold-body">{comparePanel}{diagnosticsPanel}</div>
+    </details>
+  </div>;
+
+  return <div className="wiring-page">
+    {experimentId ? <header><h2>目标接线图</h2><p>当前实验：{targetName(experimentId)}。</p><div className="wiring-head-links"><Link to="/instruments/wiring">全局现场与目标接线图</Link><Link to="/instruments/ports">设备端口建档</Link></div></header>
+      : <PageHead eyebrow="WIRING EDITOR" title="实验接线图" description="手工维护共享现场图和各实验独立目标；绑定用途可跟随已保存的设备选择，独立快照保持原样。"
+        action={<div className="wiring-head-links"><Link to="/instruments/ports">设备端口建档</Link><Link to="/instruments">返回仪器控制</Link></div>} />}
+    <div className="wiring-toolbar">{statusBlock}
+      {toolbarButtons}</div>
+    {alertsBefore}
+    {followTools}
+    {alertsAfter}
+    {graphToolbar}
+    <div className="wiring-workspace">
+      {libraryPanel}
+      <div className="wiring-canvas-column"><h2>{view === "site" ? "共享现场图" : "实验目标图"} <small>图内草稿</small></h2>
+        {notesPanel}
+        {preflightPanel}
+        {canvasPanel}
+        {pairPanels}
+        {edgePanel}
+      </div>
+      {devicePanel}
+    </div>
+    {comparePanel}
+    {diagnosticsPanel}
   </div>;
 }

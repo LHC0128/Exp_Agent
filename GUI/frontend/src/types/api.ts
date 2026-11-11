@@ -514,6 +514,10 @@ export type SchemaField = {
   legacy_defaults?: Record<string, number>;
   legacy_default?: ParameterValue;
   options?: SchemaOption[];
+  /** 参数写入的物理用途键（params/mapping.yaml）；目标接线图据此按器件展示。 */
+  roles?: string[];
+  /** 参数对应的仪器用途键与设置项，用于回读对比。 */
+  setting?: { role: string; field: string };
 };
 export type ParameterGroup = "basic" | "advanced";
 export type ParameterLayout = Record<ParameterGroup, string[]>;
