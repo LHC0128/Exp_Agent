@@ -6,13 +6,15 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
 import os
 from pathlib import Path
 import tempfile
 import threading
-from typing import Annotated, Callable, Literal, Mapping, TypedDict
+from typing import Annotated, Callable, Iterator, Literal, Mapping, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_serializer, model_validator
 import yaml
@@ -22,7 +24,10 @@ from lab_workflows.device_ports import (
     effective_port_direction, read_device_ports,
 )
 from lab_workflows.instrument_config import (
-    RevisionConflict, load_device_document as load_device_library, load_mapping_document,
+    RevisionConflict, load_device_document as load_device_library, load_mapping_document, physical_mapping_path,
+)
+from lab_workflows.setups import (
+    DEFAULT_SETUP_ID, SetupConfigError, _validate_id, bound_setup, effective_setup, load_setup_registry,
 )
 
 
@@ -236,6 +241,29 @@ class _WiringDocument(_WiringGraphs):
         return value
 
 
+class _WiringSitesDocument(_WiringModel):
+    """仅磁盘使用的 v2 文档；公开响应仍为单现场图的 v1 结构。"""
+
+    schema_version: Literal[2]
+    sites: dict[str, WiringGraph]
+    targets: dict[NonEmptyString, WiringGraph]
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_schema_version(cls, value: object) -> object:
+        if isinstance(value, Mapping) and type(value.get("schema_version")) is not int:
+            raise ValueError("schema_version 必须是整数 2")
+        return value
+
+    @field_validator("sites")
+    @classmethod
+    def validate_setup_ids(cls, sites: dict[str, WiringGraph]) -> dict[str, WiringGraph]:
+        for setup_id in sites:
+            if _validate_id(setup_id) != setup_id:
+                raise ValueError(f"装置 ID 不得包含首尾空白：{setup_id!r}")
+        return sites
+
+
 class WiringMappingGroup(_WiringModel):
     keys: list[str]
     label: str
@@ -259,6 +287,7 @@ class WiringResponse(_WiringDocument):
     diagnostics: WiringDiagnostics
     mapping_groups: list[WiringMappingGroup] = Field(default_factory=list)
     follow_status: WiringFollowStatuses = Field(default_factory=WiringFollowStatuses)
+    setup_id: str | None = None
 
 
 class WiringRevision(_WiringModel):
@@ -495,21 +524,61 @@ class WiringStorageError(RuntimeError):
 _WIRING_LOCK = threading.Lock()
 
 
-def _read_document(path: Path) -> tuple[_WiringDocument, str]:
+@dataclass(frozen=True)
+class _StoredWiring:
+    schema_version: int
+    sites: dict[str, WiringGraph]
+    targets: dict[str, WiringGraph]
+    payload: dict
+    raw: bytes | None
+
+    def for_setup(self, setup_id: str) -> _WiringDocument:
+        return _WiringDocument(
+            schema_version=1, site=self.sites.get(setup_id, WiringGraph(nodes=[], edges=[])), targets=self.targets,
+        )
+
+    def with_site(self, setup_id: str, site: dict, targets: dict) -> dict:
+        # 未保存的装置图沿用原始字段，不补默认值或投影用途跟随；未登记条目也保留。
+        sites = deepcopy(self.payload["sites"] if self.schema_version == 2 else (
+            {DEFAULT_SETUP_ID: self.payload["site"]} if self.raw is not None else {}
+        ))
+        sites[setup_id] = site
+        return {"schema_version": 2, "sites": sites, "targets": targets}
+
+
+def _read_document(path: Path) -> tuple[_StoredWiring, str]:
     try:
         raw = path.read_bytes()
     except FileNotFoundError:
-        return _WiringDocument(schema_version=1, site=WiringGraph(nodes=[], edges=[]), targets={}), hashlib.sha256(b"").hexdigest()
+        return _StoredWiring(1, {}, {}, {}, None), hashlib.sha256(b"").hexdigest()
     except OSError as exc:
         raise WiringStorageError(f"接线图读取失败：{exc}") from exc
     try:
         data = yaml.safe_load(raw.decode("utf-8"))
-        if isinstance(data, dict) and "schema_version" in data and data["schema_version"] != 1:
-            raise WiringStorageError(f"接线图版本不受支持：{data['schema_version']!r}")
-        document = _WiringDocument.model_validate(data)
+        version = data.get("schema_version") if isinstance(data, dict) else None
+        if isinstance(data, dict) and "schema_version" in data and version not in (1, 2):
+            raise WiringStorageError(f"接线图版本不受支持：{version!r}")
+        if version == 2:
+            document = _WiringSitesDocument.model_validate(data)
+            sites = document.sites
+        else:
+            document = _WiringDocument.model_validate(data)
+            sites = {DEFAULT_SETUP_ID: document.site}
     except (UnicodeError, yaml.YAMLError, ValidationError) as exc:
         raise WiringStorageError(f"接线图损坏或结构非法：{exc}") from exc
-    return document, hashlib.sha256(raw).hexdigest()
+    return _StoredWiring(version, sites, document.targets, data, raw), hashlib.sha256(raw).hexdigest()
+
+
+@contextmanager
+def _setup_context(root: Path) -> Iterator[tuple[str, bool]]:
+    """一次操作固定生效装置，使现场图和用途映射使用同一装置。"""
+    try:
+        registry = load_setup_registry(root)
+        setup_id = effective_setup(root).id
+    except (SetupConfigError, OSError) as exc:
+        raise WiringStorageError(f"装置登记不可用，读取失败：{exc}") from exc
+    with bound_setup(setup_id):
+        yield setup_id, registry.stored
 
 
 _DEPENDENCY_NAMES = ("mapping.yaml", "devices.yaml", "device_ports.yaml")
@@ -537,8 +606,13 @@ def _dependency_files(root: Path, *, follow_required: bool = False) -> tuple[byt
             # 无联动配置/绑定的历史快照连档案读取错误也不受影响。
             result.append(None)
             continue
+        # 映射随生效装置定位；无 setups.yaml 时仍是 params/mapping.yaml，修订语义不变。
         try:
-            result.append((root / "params" / name).read_bytes())
+            path = physical_mapping_path(root) if name == "mapping.yaml" else root / "params" / name
+        except SetupConfigError as exc:
+            raise WiringStorageError(f"装置登记不可用，无法定位映射：{exc}") from exc
+        try:
+            result.append(path.read_bytes())
         except FileNotFoundError:
             result.append(None)
         except OSError as exc:
@@ -776,7 +850,7 @@ def _project_document(document: _WiringDocument, snapshot: _FollowSnapshot) -> t
 
 def _response(
     document: _WiringDocument, revision: str, snapshot: _FollowSnapshot,
-    statuses: WiringFollowStatuses | None = None,
+    statuses: WiringFollowStatuses | None = None, *, setup_id: str,
 ) -> WiringResponse:
     projected = document
     if statuses is None:
@@ -786,24 +860,26 @@ def _response(
         diagnostics=WiringDiagnostics(
             site=_graph_warnings(projected.site),
             targets={key: _graph_warnings(graph) for key, graph in projected.targets.items()},
-        ), mapping_groups=snapshot.groups, follow_status=statuses,
+        ), mapping_groups=snapshot.groups, follow_status=statuses, setup_id=setup_id,
     )
 
 
 def read_wiring(root: str | Path) -> WiringResponse:
-    """只读投影共享现场和全部目标；任何失败均逐图保原，不创建文件或锁文件。"""
+    """只读投影生效装置的现场图和共享目标；不创建文件或锁文件。"""
     root = Path(root)
-    with _WIRING_LOCK:
-        document, raw_revision = _read_document(root / "params" / "wiring.yaml")
+    with _WIRING_LOCK, _setup_context(root) as (setup_id, _):
+        stored, raw_revision = _read_document(root / "params" / "wiring.yaml")
+        document = stored.for_setup(setup_id)
         snapshot = _read_follow_snapshot(root, document)
-        return _response(document, _combined_revision(raw_revision, document, snapshot), snapshot)
+        return _response(document, _combined_revision(raw_revision, document, snapshot), snapshot, setup_id=setup_id)
 
 
 def read_wiring_revision(root: str | Path) -> WiringRevision:
     """只读组合修订；不投影图、不计算提示，不创建文件或锁文件。"""
     root = Path(root)
-    with _WIRING_LOCK:
-        document, raw_revision = _read_document(root / "params" / "wiring.yaml")
+    with _WIRING_LOCK, _setup_context(root) as (setup_id, _):
+        stored, raw_revision = _read_document(root / "params" / "wiring.yaml")
+        document = stored.for_setup(setup_id)
         snapshot = _read_follow_snapshot(root, document)
         return WiringRevision(revision=_combined_revision(raw_revision, document, snapshot))
 
@@ -814,8 +890,9 @@ def read_wiring_snapshot(root: str | Path) -> WiringSnapshot:
     不投影用途跟随、不返回提示；缺省 wiring.yaml 沿用空图语义。
     """
     root = Path(root)
-    with _WIRING_LOCK:
-        document, raw_revision = _read_document(root / "params" / "wiring.yaml")
+    with _WIRING_LOCK, _setup_context(root) as (setup_id, _):
+        stored, raw_revision = _read_document(root / "params" / "wiring.yaml")
+        document = stored.for_setup(setup_id)
         snapshot = _read_follow_snapshot(root, document)
         revision = _combined_revision(raw_revision, document, snapshot)
         return WiringSnapshot(
@@ -823,43 +900,116 @@ def read_wiring_snapshot(root: str | Path) -> WiringSnapshot:
         )
 
 
+def _backup_v1(path: Path, raw: bytes) -> None:
+    backup = path.with_name(f"{path.name}.v1.bak")
+    try:
+        stream = backup.open("xb")
+    except FileExistsError:
+        return
+    try:
+        with stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except OSError as exc:
+        try:
+            backup.unlink()
+        except OSError as cleanup_error:
+            raise WiringStorageError(f"接线图备份失败：{exc}；本次备份清理失败：{cleanup_error}") from exc
+        raise
+
+
+def _write_document(
+    path: Path, payload: dict, raw_revision: str, *, backup_raw: bytes | None = None,
+    verify: Callable[[], None] | None = None,
+) -> bytes:
+    """调用方持有接线写锁；临时文件落盘后核对整个原文件，再备份并原子替换。"""
+    temporary: Path | None = None
+    try:
+        content = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).encode("utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="wb", prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            latest = path.read_bytes()
+        except FileNotFoundError:
+            latest = b""
+        if hashlib.sha256(latest).hexdigest() != raw_revision:
+            raise RevisionConflict("接线图或用途配置在保存期间变化，请重新加载后保存")
+        if verify is not None:
+            verify()
+        if backup_raw is not None:
+            _backup_v1(path, backup_raw)
+            # 备份落盘也可能耗时，替换前再次核对整个文件和依赖。
+            if path.read_bytes() != latest:
+                raise RevisionConflict("接线图在备份期间变化，请重新加载后保存")
+            if verify is not None:
+                verify()
+        os.replace(temporary, path)
+    except (RevisionConflict, WiringStorageError, OSError, UnicodeError, yaml.YAMLError) as exc:
+        message = str(exc) if isinstance(exc, (RevisionConflict, WiringStorageError)) else f"接线图写入失败：{exc}"
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                message += f"；本次临时文件清理失败：{cleanup_error}"
+        error = RevisionConflict if isinstance(exc, RevisionConflict) else WiringStorageError
+        raise error(message) from exc
+    # 成功替换后本次临时路径已被移走，不再清理其他写入者的临时文件。
+    return content
+
+
 def save_wiring(root: str | Path, body: WiringBody | Mapping[str, object]) -> WiringResponse:
-    """同一依赖快照用于版本和投影；落盘前重核原始文件指纹，再原子替换。"""
+    """只替换生效装置现场图和共享目标；未建登记时保持原有 v1 字节与修订。"""
     request = WiringBody.model_validate(body)
     root = Path(root)
     path = root / "params" / "wiring.yaml"
-    with _WIRING_LOCK:
-        current, raw_revision = _read_document(path)
+    with _WIRING_LOCK, _setup_context(root) as (setup_id, registry_stored):
+        stored, raw_revision = _read_document(path)
+        current = stored.for_setup(setup_id)
         snapshot = _read_follow_snapshot(root, current, request)
         if _combined_revision(raw_revision, current, snapshot) != request.base_revision:
             raise RevisionConflict("接线图或用途配置已被其他编辑更新，请重新加载后保存")
         document, statuses = _project_document(_WiringDocument(schema_version=1, site=request.site, targets=request.targets), snapshot)
-        temporary: Path | None = None
-        try:
-            content = yaml.safe_dump(document.model_dump(mode="json"), allow_unicode=True, sort_keys=False).encode("utf-8")
-            result = _response(document, _combined_revision(hashlib.sha256(content).hexdigest(), document, snapshot), snapshot, statuses)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(mode="wb", prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False) as stream:
-                temporary = Path(stream.name)
-                stream.write(content)
-                stream.flush()
-                os.fsync(stream.fileno())
-            try:
-                latest = path.read_bytes()
-            except FileNotFoundError:
-                latest = b""
+        payload = document.model_dump(mode="json")
+        if registry_stored:
+            payload = stored.with_site(setup_id, payload["site"], payload["targets"])
+
+        def verify() -> None:
             follow_required = _has_binding(current) or _has_binding(request)
-            if _dependency_files(root, follow_required=follow_required) != snapshot.raw_files or hashlib.sha256(latest).hexdigest() != raw_revision:
+            if _dependency_files(root, follow_required=follow_required) != snapshot.raw_files:
                 raise RevisionConflict("接线图或用途配置在保存期间变化，请重新加载后保存")
-            os.replace(temporary, path)
-        except (RevisionConflict, WiringStorageError, OSError, UnicodeError, yaml.YAMLError) as exc:
-            message = str(exc) if isinstance(exc, (RevisionConflict, WiringStorageError)) else f"接线图写入失败：{exc}"
-            if temporary is not None:
-                try:
-                    temporary.unlink(missing_ok=True)
-                except OSError as cleanup_error:
-                    message += f"；本次临时文件清理失败：{cleanup_error}"
-            error = RevisionConflict if isinstance(exc, RevisionConflict) else WiringStorageError
-            raise error(message) from exc
-        # 成功替换后本次临时路径已被移走，不再清理其他写入者的临时文件。
-        return result
+            if load_setup_registry(root).stored != registry_stored:
+                raise RevisionConflict("装置登记在保存期间变化，请重新加载后保存")
+
+        content = _write_document(
+            path, payload, raw_revision, verify=verify,
+            backup_raw=stored.raw if registry_stored and stored.schema_version == 1 else None,
+        )
+        return _response(
+            document, _combined_revision(hashlib.sha256(content).hexdigest(), document, snapshot), snapshot, statuses,
+            setup_id=setup_id,
+        )
+
+
+def copy_site_for_setup(root: str | Path, source_id: str, new_id: str) -> None:
+    """新装置登记成功后复制原始现场图；来源无条目时不创建接线文件。"""
+    root = Path(root)
+    source_id, new_id = _validate_id(source_id), _validate_id(new_id)
+    path = root / "params" / "wiring.yaml"
+    with _WIRING_LOCK:
+        stored, raw_revision = _read_document(path)
+        if source_id not in stored.sites:
+            return
+        if new_id in stored.sites:
+            raise WiringStorageError(f"装置 {new_id} 的现场图条目已存在，拒绝覆盖")
+        if not load_setup_registry(root).stored:
+            raise WiringStorageError("复制现场图前必须先保存装置登记")
+        source = stored.payload["sites"][source_id] if stored.schema_version == 2 else stored.payload["site"]
+        payload = stored.with_site(new_id, deepcopy(source), deepcopy(stored.payload["targets"]))
+        _write_document(
+            path, payload, raw_revision, backup_raw=stored.raw if stored.schema_version == 1 else None,
+        )

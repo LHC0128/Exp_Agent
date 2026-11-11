@@ -1,6 +1,7 @@
 """运行目录协议、适配器与真实无硬件子进程的可靠性回归。"""
 from __future__ import annotations
 
+from contextlib import nullcontext
 from io import StringIO
 import json
 import os
@@ -19,7 +20,8 @@ from ..common import CancellationToken, WorkflowCancelled
 from ..experiment_params import ExperimentParams
 from ..experiment_runtime import report_runtime_progress, check_cancelled
 from ..steps.run_directory import create_run_directory, write_run_config
-from . import typed
+from ..setups import SETUP_ENV_VAR, bound_setup
+from . import legacy, typed
 
 
 @pytest.fixture
@@ -80,6 +82,40 @@ def test_launch_isolates_child_from_terminal_interrupts(
     assert options["stdin"] is None
     process.wait.assert_called_once_with()
     assert process.stdout.closed
+
+
+@pytest.mark.parametrize("adapter_kind", ["typed", "legacy"])
+@pytest.mark.parametrize("setup_id, inherited, expected", [
+    ("x", None, "x"), ("x", "inherited", "x"),
+    (None, None, None), (None, "inherited", "inherited"),
+])
+def test_subprocess_environment_keeps_task_setup_binding(
+    adapter, monkeypatch, adapter_kind, setup_id, inherited, expected,
+):
+    monkeypatch.delenv(SETUP_ENV_VAR, raising=False)
+    if inherited is not None:
+        monkeypatch.setenv(SETUP_ENV_VAR, inherited)
+    monkeypatch.setenv("SETUP_TEST_KEEP", "unchanged")
+    process = SimpleNamespace(stdout=StringIO(), poll=lambda: 0, wait=Mock(return_value=0))
+    launch = Mock(return_value=process)
+    monkeypatch.setattr(typed.subprocess, "Popen", launch)
+    value = adapter
+    if adapter_kind == "legacy":
+        monkeypatch.setattr(legacy, "find_project_root", lambda: adapter.root)
+        value = legacy.LegacyScriptAdapter("example", "fake.py", "Example")
+    with bound_setup(setup_id) if setup_id is not None else nullcontext():
+        if adapter_kind == "typed":
+            value._execute(value.acquisition_module)
+        else:
+            value._execute(value.script, {}, None)
+    environment = launch.call_args.kwargs["env"]
+    assert environment["SETUP_TEST_KEEP"] == "unchanged"
+    if expected is None:
+        assert SETUP_ENV_VAR not in environment
+    else:
+        assert environment[SETUP_ENV_VAR] == expected
+    assert os.environ.get(SETUP_ENV_VAR) == inherited
+    process.wait.assert_called_once_with()
 
 
 @pytest.mark.parametrize("failure_source", ["callback", "stdout"])
@@ -314,7 +350,7 @@ def child_main():
         return
     from ..steps import run_directory
     snapshot = dict(resolved_mapping={}, device_library_revision="library", physical_mapping_revision="mapping",
-        device_library={}, physical_mappings={})
+        device_library={}, physical_mappings={}, setup_id="default", setup_label="默认装置")
     with patch.object(run_directory, "instrument_config_snapshot", return_value=snapshot), \
             patch.object(run_directory, "load_safety_limits", return_value={}):
         path = create_run_directory("Other" if scenario == "other_type" else "Example", "current", {}, project_root=root).root

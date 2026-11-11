@@ -1,0 +1,33 @@
+.setup-switcher { position: relative; margin-left: auto; min-width: 0; max-width: min(48vw, 420px); }
+.setup-switcher-trigger { display: flex; align-items: center; gap: 8px; max-width: 100%; min-height: 38px; padding: 7px 12px; overflow-wrap: anywhere; text-align: left; }
+.setup-switcher-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 35; display: grid; gap: 6px; width: min(360px, calc(100vw - 32px)); max-height: 65vh; overflow-y: auto; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 24px #10272524; }
+.setup-switcher-menu .setup-switcher-item { display: flex; justify-content: space-between; gap: 12px; width: 100%; text-align: left; overflow-wrap: anywhere; }
+.setup-switcher-item[aria-current="true"] { color: var(--accent); }
+/* 全局 button:hover 为深色底，次级按钮沿用深色字会看不清；切换器改用浅色悬停与展开态。 */
+.setup-switcher-trigger:hover:not(:disabled), .setup-switcher-trigger[aria-expanded="true"],
+.setup-switcher-menu .setup-switcher-item:hover:not(:disabled) { background: #e2e9e7; color: #294a46; transform: none; }
+.setup-switcher-menu > a { padding: 8px; border-top: 1px solid var(--border); color: var(--accent); text-decoration: none; }
+.setup-switcher-notice { position: absolute; right: 0; top: calc(100% + 6px); z-index: 36; width: max-content; max-width: min(400px, calc(100vw - 32px)); margin: 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--accent); background: var(--panel); overflow-wrap: anywhere; }
+.setup-switcher:has(.setup-switcher-menu) .setup-switcher-notice { position: static; width: auto; margin-top: 6px; }
+.setup-error { color: #9c3029; }
+.setups-view { display: grid; gap: 18px; min-width: 0; }
+.setup-create { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.setup-create h3, .setup-create > p { flex-basis: 100%; margin: 0; }
+.setup-create label { display: grid; flex: 1 1 220px; gap: 6px; min-width: 0; }
+.setup-create input, .setup-create select { width: 100%; min-width: 0; }
+.setup-create input, .setup-create select, .setup-rename input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; color: inherit; background: var(--panel); }
+.setup-create input:focus-visible, .setup-create select:focus-visible, .setup-rename input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.setup-help { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.setup-table-scroll { overflow-x: auto; }
+.setup-table { width: 100%; border-collapse: collapse; text-align: left; background: var(--panel); }
+.setup-table th, .setup-table td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+.setup-table th { color: var(--muted); font-weight: 650; }
+.setup-row-actions, .setup-rename { display: flex; flex-wrap: wrap; gap: 8px; }
+.setup-row-actions { margin-bottom: 6px; }
+.setup-rename input { flex: 1 1 150px; min-width: 0; }
+.config-toolbar .setup-editing-label { color: var(--accent); }
+@media (max-width: 620px) {
+  .setup-switcher { max-width: 55vw; }
+  .setup-switcher-trigger { padding: 7px 8px; }
+  .setup-table { min-width: 600px; }
+}

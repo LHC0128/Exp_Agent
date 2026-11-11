@@ -213,7 +213,7 @@ it("全局目标视图用实验列表中的要求生成预检，不额外请求�
   const preflight = await screen.findByRole("region", { name: "接线预检清单" });
   await within(preflight).findByText("HF2：图中未找到此型号器件。");
   expect(within(preflight).getByText("用途 read：图中无器件绑定此用途组。")).toBeInTheDocument();
-  expect(screen.getByText("接线要点").closest("details")).toHaveTextContent("从实验列表读取的要点");
+  expect(screen.queryByText("从实验列表读取的要点")).not.toBeInTheDocument();
   expect(requests.some(item => item.path === `/api/experiments/${TARGET}`)).toBe(false);
   expect(puts()).toHaveLength(0);
 }, 15000);

@@ -5,13 +5,15 @@ from __future__ import annotations
 import logging
 import time
 from collections import deque
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from threading import Condition, Lock, RLock, Thread
 from typing import Any, Callable
 from uuid import uuid4
 
-from lab_workflows.common import CancellationToken, ProgressEvent, WorkflowCancelled
+from lab_workflows.common import CancellationToken, ProgressEvent, WorkflowCancelled, find_project_root
+from lab_workflows.setups import bound_setup, capture_setup
 
 
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
@@ -59,11 +61,13 @@ class Job:
     events: list[dict[str, Any]] = field(default_factory=list)
     cancellation: CancellationToken = field(default_factory=CancellationToken, repr=False)
     finished_order: int | None = field(default=None, repr=False)
+    setup_id: str | None = None
 
     def public(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "kind": self.kind,
+            "setup_id": self.setup_id,
             "status": self.status,
             "stage": self.stage,
             "percent": self.percent,
@@ -82,6 +86,7 @@ class Job:
         return {
             "id": self.id,
             "kind": self.kind,
+            "setup_id": self.setup_id,
             "status": self.status,
             "stage": self.stage,
             "percent": self.percent,
@@ -94,7 +99,12 @@ class Job:
 
 
 class JobManager:
-    def __init__(self, max_terminal_jobs: int = DEFAULT_MAX_TERMINAL_JOBS) -> None:
+    def __init__(
+        self,
+        max_terminal_jobs: int = DEFAULT_MAX_TERMINAL_JOBS,
+        *,
+        setup_resolver: Callable[[], str] | None = None,
+    ) -> None:
         if max_terminal_jobs < 0:
             raise ValueError("max_terminal_jobs 不能小于 0")
         self.jobs: dict[str, Job] = {}
@@ -104,6 +114,7 @@ class JobManager:
         # 分析调用方会持 jobs_lock 创建任务；接纳、队列和终态共用此可重入锁，避免锁序反转。
         self._hardware_condition = Condition(self.jobs_lock)
         self.max_terminal_jobs = max_terminal_jobs
+        self.setup_resolver = setup_resolver
         self._finished_sequence = 0
         self._restart_pending = False
         self._shutdown_pending = False
@@ -115,11 +126,14 @@ class JobManager:
         runner: Callable[[Job], Any],
         *,
         hardware_required: bool = True,
+        setup_id: str | None = None,
     ) -> Job:
+        if setup_id is None and self.setup_resolver is not None:
+            setup_id = self.setup_resolver()
         with self._hardware_condition:
             self._ensure_accepting_locked()
             self._prune_workers_locked()
-            job = Job(id=uuid4().hex, kind=kind)
+            job = Job(id=uuid4().hex, kind=kind, setup_id=setup_id)
             self.jobs[job.id] = job
             worker = Thread(
                 target=self._run,
@@ -225,7 +239,8 @@ class JobManager:
                 job.status = "running"
                 job.started_at = datetime.now().isoformat(timespec="seconds")
             self.event(job, ProgressEvent("start", "任务开始", 0))
-            result = runner(job)
+            with bound_setup(job.setup_id) if job.setup_id is not None else nullcontext():
+                result = runner(job)
         except WorkflowCancelled as exc:
             status = "cancelled"
             message = str(exc)
@@ -414,4 +429,4 @@ class JobManager:
             return job
 
 
-manager = JobManager()
+manager = JobManager(setup_resolver=lambda: capture_setup(find_project_root()).id)

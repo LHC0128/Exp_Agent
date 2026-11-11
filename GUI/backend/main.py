@@ -19,6 +19,9 @@ from pydantic import BaseModel, Field
 
 from lab_workflows.clock_sync import initialize_output_loads, synchronize_clocks
 from lab_workflows.common import find_project_root, load_mapping
+from lab_workflows.setups import (
+    SetupConfigError, capture_setup, create_setup, load_setup_registry, set_active_setup, update_setup,
+)
 from lab_workflows.devices import discover_devices
 from lab_workflows.device_ports import (
     DevicePortsStorageError,
@@ -226,6 +229,9 @@ from .schemas import (
     LaserEmissionSettingsBody,
     LaserSettingsBody,
     ScopeSettingsBody,
+    SetupActiveBody,
+    SetupCreateBody,
+    SetupUpdateBody,
     ZArbitraryActionBody,
     ZArbitraryPreview,
     ZArbitrarySourceItem,
@@ -323,6 +329,7 @@ async def handle_shutdown_in_progress(request: Request, exc: ShutdownInProgressE
 
 
 ROOT = find_project_root()
+manager.setup_resolver = lambda: capture_setup(ROOT).id
 INSTANCE_ID = uuid4().hex
 z_arbitrary_service = ZArbitraryControlService(ROOT)
 xy_sessions = XYSessionService(lambda: ROOT, manager)
@@ -775,10 +782,20 @@ def _with_configuration_lock(action):
         return action()
     except RevisionConflict as exc:
         raise _conflict(str(exc), "revision_conflict") from exc
+    except SetupConfigError as exc:
+        raise HTTPException(422, str(exc)) from exc
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, {"errors": [str(exc)]}) from exc
     finally:
         manager.hardware_lock.release()
+
+
+def _switch_active_setup(setup_id: str, base_revision: str):
+    """硬件空闲且没有排队任务时切换当前装置，复用配置写入互斥。"""
+    registry = _with_configuration_lock(
+        lambda: set_active_setup(setup_id, base_revision=base_revision, root=ROOT)
+    )
+    return registry.public()
 
 
 @app.put("/api/device-library")
@@ -798,6 +815,35 @@ def update_device_library(body: DeviceLibraryBody):
 @app.post("/api/device-library/discover-visa")
 def discover_device_library():
     return _with_short_hardware_lock(lambda: discover_visa_devices(ROOT))
+
+
+@app.get("/api/setups")
+def setups():
+    try:
+        return load_setup_registry(ROOT).public()
+    except SetupConfigError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.put("/api/setups/active")
+def activate_setup(body: SetupActiveBody):
+    return _switch_active_setup(body.setup_id, body.base_revision)
+
+
+@app.post("/api/setups")
+def add_setup(body: SetupCreateBody):
+    registry = _with_configuration_lock(lambda: create_setup(
+        body.label, copy_from=body.copy_from, base_revision=body.base_revision, root=ROOT,
+    ))
+    return registry.public()
+
+
+@app.patch("/api/setups/{setup_id}")
+def patch_setup(setup_id: str, body: SetupUpdateBody):
+    registry = _with_configuration_lock(lambda: update_setup(
+        setup_id, base_revision=body.base_revision, label=body.label, archived=body.archived, root=ROOT,
+    ))
+    return registry.public()
 
 
 @app.get("/api/physical-mappings")

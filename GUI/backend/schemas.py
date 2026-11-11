@@ -41,6 +41,29 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SetupActiveBody(StrictModel):
+    setup_id: str
+    base_revision: str
+
+
+class SetupCreateBody(StrictModel):
+    label: str
+    copy_from: str
+    base_revision: str
+
+
+class SetupUpdateBody(StrictModel):
+    base_revision: str
+    label: str | None = None
+    archived: StrictBool | None = None
+
+    @model_validator(mode="after")
+    def require_update(self):
+        if self.label is None and self.archived is None:
+            raise ValueError("至少提供装置名称或归档状态")
+        return self
+
+
 class ExperimentArchiveBody(StrictModel):
     """归档只影响目录展示，布尔值不允许字符串或数字代替。"""
 

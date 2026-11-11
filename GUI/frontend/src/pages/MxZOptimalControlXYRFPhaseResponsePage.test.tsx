@@ -162,7 +162,7 @@ it("下一次实验分析门槛共享，两个历史目录覆盖草稿隔离，�
   fireEvent.change(scan.getByLabelText(rSquaredLabel), { target: { value: "0.7" } });
   expect(nextAnalysis.getByLabelText(rSquaredLabel)).toHaveValue(.7);
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: old.run_id } });
-  await screen.findByText(/正在编辑 .* 的分析覆盖值/);
+  await screen.findByText(/正在编辑 .* 的分析参数/);
   const historical = await editor("B02");
   fireEvent.change(historical.getByLabelText(rSquaredLabel), { target: { value: "0.9" } });
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: other.run_id } });

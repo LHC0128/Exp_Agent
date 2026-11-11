@@ -108,7 +108,7 @@ it("22字段有编辑归属，初始化只在设置节点，统一顶部保存�
   expect(top).toContainElement(screen.getByRole("button", { name: "仅预检" }));
   expect(top).toContainElement(screen.getByRole("button", { name: "预检并运行实验" }));
   expect(within(top as HTMLElement).getByText("采集任务状态")).toBeInTheDocument();
-  fireEvent.click(await screen.findByText("派生预览（只读）")); await screen.findByText("计划接受帧数");
+  fireEvent.click(await screen.findByText("派生参数")); await screen.findByText("计划接受帧数");
 });
 
 it("采集与分析拟合界限同步、分类保存回读、草稿还原及应用后只失效不自动运行", async () => {

@@ -196,10 +196,10 @@ it("历史分析只用目录状态，保存默认值仍保存下一次实验与�
   const edit = await openParameters("A04");
   fireEvent.change(edit.getByLabelText("Z 线圈正弦幅度"), { target: { value: ".9" } });
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: "history-one" } });
-  await screen.findByText(/正在编辑 history-one 的分析覆盖值/);
+  await screen.findByText(/正在编辑 history-one 的分析参数/);
   expect(screen.getAllByLabelText("Z 线圈正弦幅度")).toHaveLength(1);
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: "history-two" } });
-  await screen.findByText(/正在编辑 history-two 的分析覆盖值/);
+  await screen.findByText(/正在编辑 history-two 的分析参数/);
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
   await screen.findByText("已保存");
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`);

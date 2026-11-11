@@ -112,7 +112,26 @@ def device_library_path(root: Path | None = None) -> Path:
 
 
 def physical_mapping_path(root: Path | None = None) -> Path:
-    return _root(root) / "params" / "mapping.yaml"
+    """生效装置的映射文件；无 setups.yaml 时即 params/mapping.yaml。"""
+    from .setups import effective_mapping_path
+
+    return effective_mapping_path(_root(root))
+
+
+def _validate_other_setups(devices_document: Mapping[str, Any], root: Path | None) -> None:
+    """设备库变更须对全部已登记装置（含归档）的映射保持有效，避免删改设备破坏其他装置。"""
+    from .setups import all_setup_mapping_paths, load_setup_registry
+
+    if not load_setup_registry(_root(root)).stored:
+        return
+    current = physical_mapping_path(root).resolve()
+    for setup_id, path in all_setup_mapping_paths(_root(root)).items():
+        if path.resolve() == current or not path.exists():
+            continue
+        try:
+            _validate_configuration(devices_document, _normalize_mapping_document(_load_yaml(path)))
+        except ValueError as exc:
+            raise ValueError(f"装置 {setup_id} 的映射与设备库变更冲突：{exc}") from exc
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -425,10 +444,18 @@ def _validate_configuration(
 
 
 def resolve_mapping(root: Path | None = None) -> dict[str, dict[str, Any]]:
-    devices_document = load_device_document(root)
-    mappings_document = load_mapping_document(root)
+    return _resolve_mapping_documents(load_device_document(root), load_mapping_document(root))
+
+
+def _resolve_mapping_documents(
+    devices_document: Mapping[str, Any], mappings_document: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """由同一份设备库与映射文档生成解析结果，供运行快照复用。"""
     _validate_configuration(devices_document, mappings_document)
-    devices = load_device_definitions(root)
+    devices = {
+        device_id: DeviceDefinition.from_item(device_id, config)
+        for device_id, config in devices_document["devices"].items()
+    }
     result: dict[str, dict[str, Any]] = {}
     for key, raw_config in mappings_document["mapping"].items():
         config = dict(raw_config)
@@ -468,8 +495,12 @@ def public_device_library(root: Path | None = None) -> dict[str, Any]:
 
 
 def public_physical_mappings(root: Path | None = None) -> dict[str, Any]:
-    document = load_mapping_document(root)
-    return {**document, "revision": _revision(document)}
+    from .setups import effective_setup, mapping_path_for
+
+    root = _root(root)
+    setup = effective_setup(root)
+    document = _normalize_mapping_document(_load_yaml(mapping_path_for(setup, root)))
+    return {**document, "revision": _revision(document), "setup_id": setup.id, "setup_label": setup.label}
 
 
 def save_device_library(
@@ -497,6 +528,7 @@ def save_device_library(
                 raise RevisionConflict("物理量映射已被其他操作修改，请刷新后重试")
             mappings = _normalize_mapping_document({**mappings, "mapping": mapping})
         _validate_configuration(proposed, mappings)
+        _validate_other_setups(proposed, root)
         library_path = device_library_path(root)
         original = library_path.read_bytes() if library_path.exists() else None
         _atomic_write(library_path, proposed)
@@ -546,14 +578,20 @@ def save_physical_mappings(
 
 
 def instrument_config_snapshot(root: Path | None = None) -> dict[str, Any]:
+    from .setups import effective_setup, mapping_path_for
+
+    root = _root(root)
+    setup = effective_setup(root)
     devices = load_device_document(root)
-    mappings = load_mapping_document(root)
+    mappings = _normalize_mapping_document(_load_yaml(mapping_path_for(setup, root)))
     return {
         "device_library_revision": _revision(devices),
         "physical_mapping_revision": _revision(mappings),
         "device_library": devices,
         "physical_mappings": mappings,
-        "resolved_mapping": resolve_mapping(root),
+        "resolved_mapping": _resolve_mapping_documents(devices, mappings),
+        "setup_id": setup.id,
+        "setup_label": setup.label,
     }
 
 

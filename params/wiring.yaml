@@ -1,6 +1,11 @@
-site:
-  nodes: []
-  edges: []
+schema_version: 2
+sites:
+  default:
+    nodes: []
+    edges: []
+  setup-8eb9fa0c:
+    nodes: []
+    edges: []
 targets:
   rf-sensitivity-aw:
     nodes:
@@ -1152,4 +1157,3 @@ targets:
         port_id: rf-demod1-input
       signal_type: internal
       label: 内部回采 → RF 索引 1
-schema_version: 1

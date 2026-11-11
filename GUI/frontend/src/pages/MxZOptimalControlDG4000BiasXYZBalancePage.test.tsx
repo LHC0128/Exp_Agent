@@ -144,7 +144,7 @@ it("具体目录无可调覆盖值，下一次实验草稿不串历史，重算�
   const scan = await editor("A04");
   fireEvent.change(scan.getByLabelText(phaseLabel), { target: { value: "0.03" } });
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: old.run_id } });
-  await screen.findByText(/正在编辑 .* 的分析覆盖值/);
+  await screen.findByText(/正在编辑 .* 的分析参数/);
   expect(screen.queryByRole("region", { name: /B02 .* 参数/, hidden: true })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url === `${BASE}/defaults`)).toBe(true));

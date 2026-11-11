@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api } from "../../api";
+import { useSetups } from "../setups/SetupContext";
 import { deviceOptionLabel, endpointLabel, linkedMappingKeys, switchMappingDevice } from "./mappingDevices";
 import type {
   DeviceLibraryDocument,
   MappingConstraints,
   PhysicalMappingConfig,
-  PhysicalMappingsDocument,
+  PhysicalMappingsDocument as MappingDocument,
 } from "../../types/api";
 
+type PhysicalMappingsDocument = MappingDocument & { setup_id: string; setup_label: string };
 const clone = <T,>(value: T): T => structuredClone(value);
 
 function endpointKind(instrument: string) {
@@ -18,6 +20,10 @@ function endpointKind(instrument: string) {
 }
 
 export function PhysicalMappingsView() {
+  const { setupEpoch } = useSetups();
+  const currentEpoch = useRef(setupEpoch);
+  currentEpoch.current = setupEpoch;
+  const loadSequence = useRef(0);
   const [document, setDocument] = useState<PhysicalMappingsDocument>();
   const [library, setLibrary] = useState<DeviceLibraryDocument>();
   const [error, setError] = useState("");
@@ -29,19 +35,22 @@ export function PhysicalMappingsView() {
   const [newDescription, setNewDescription] = useState("");
 
   const load = async () => {
-    setError("");
+    const sequence = ++loadSequence.current;
+    const epoch = currentEpoch.current;
+    setDocument(undefined); setLibrary(undefined); setError("");
     try {
       const [mappings, devices] = await Promise.all([
         api<PhysicalMappingsDocument>("/api/physical-mappings"),
         api<DeviceLibraryDocument>("/api/device-library"),
       ]);
+      if (sequence !== loadSequence.current || epoch !== currentEpoch.current) return;
       setDocument(mappings);
       setLibrary(devices);
     } catch (reason) {
-      setError(String(reason));
+      if (sequence === loadSequence.current && epoch === currentEpoch.current) setError(String(reason));
     }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); return () => { loadSequence.current += 1; }; }, [setupEpoch]);
 
   const updateMapping = (key: string, update: Partial<PhysicalMappingConfig>) => {
     if (!document) return;
@@ -52,7 +61,7 @@ export function PhysicalMappingsView() {
   const switchDevice = (key: string, deviceId: string) => {
     if (!document || !library) return;
     try {
-      setDocument(switchMappingDevice(document, library.devices, linkedMappingKeys(document, key), deviceId));
+      setDocument({ ...document, ...switchMappingDevice(document, library.devices, linkedMappingKeys(document, key), deviceId) });
       setError("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   };
@@ -114,29 +123,31 @@ export function PhysicalMappingsView() {
         return;
       }
     }
+    const epoch = currentEpoch.current;
     setSaving(true);
     setError("");
     try {
-      setDocument(await api<PhysicalMappingsDocument>("/api/physical-mappings", {
+      const result = await api<PhysicalMappingsDocument>("/api/physical-mappings", {
         method: "PUT",
         body: JSON.stringify({
           base_revision: document.revision,
           mapping: document.mapping,
           constraints: document.constraints,
         }),
-      }));
+      });
+      if (epoch === currentEpoch.current) setDocument(result);
     } catch (reason) {
-      setError(String(reason));
+      if (epoch === currentEpoch.current) setError(String(reason));
     } finally {
       setSaving(false);
     }
   };
 
-  if (!document || !library) return <div className="empty"><p>正在读取物理量映射…</p></div>;
+  if (!document || !library) return <div className="empty">{error ? <p className="alert error" role="alert">{error}<button className="secondary" onClick={() => void load()}>重新加载</button></p> : <p>正在读取物理量映射…</p>}</div>;
   return (
     <div className="config-view">
       <div className="config-toolbar">
-        <div><h2>物理量映射</h2><p>修订 {document.revision.slice(0, 10)}</p></div>
+        <div><h2>物理量映射</h2><p className="setup-editing-label">正在编辑：{document.setup_label}</p><p>修订 {document.revision.slice(0, 10)}</p></div>
         <div><button className="secondary" onClick={() => void load()}>重新加载</button><button onClick={() => void save()} disabled={saving}>{saving ? "正在保存…" : "保存全部映射"}</button></div>
       </div>
       {error && <div className="alert error">{error}</div>}

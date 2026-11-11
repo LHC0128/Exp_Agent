@@ -22830,6 +22830,139 @@
         }
       }
     },
+    "/api/setups": {
+      "get": {
+        "summary": "Setups",
+        "operationId": "setups_api_setups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add Setup",
+        "operationId": "add_setup_api_setups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupCreateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/setups/active": {
+      "put": {
+        "summary": "Activate Setup",
+        "operationId": "activate_setup_api_setups_active_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupActiveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/setups/{setup_id}": {
+      "patch": {
+        "summary": "Patch Setup",
+        "operationId": "patch_setup_api_setups__setup_id__patch",
+        "parameters": [
+          {
+            "name": "setup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Setup Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupUpdateBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/physical-mappings": {
       "get": {
         "summary": "Physical Mappings",
@@ -30293,6 +30426,85 @@
         ],
         "title": "ScopeTriggerSnapshot"
       },
+      "SetupActiveBody": {
+        "properties": {
+          "setup_id": {
+            "type": "string",
+            "title": "Setup Id"
+          },
+          "base_revision": {
+            "type": "string",
+            "title": "Base Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "setup_id",
+          "base_revision"
+        ],
+        "title": "SetupActiveBody"
+      },
+      "SetupCreateBody": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "copy_from": {
+            "type": "string",
+            "title": "Copy From"
+          },
+          "base_revision": {
+            "type": "string",
+            "title": "Base Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "copy_from",
+          "base_revision"
+        ],
+        "title": "SetupCreateBody"
+      },
+      "SetupUpdateBody": {
+        "properties": {
+          "base_revision": {
+            "type": "string",
+            "title": "Base Revision"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "base_revision"
+        ],
+        "title": "SetupUpdateBody"
+      },
       "StaticSensitivityRunSummary": {
         "properties": {
           "run_id": {
@@ -31244,6 +31456,17 @@
           },
           "follow_status": {
             "$ref": "#/components/schemas/WiringFollowStatuses"
+          },
+          "setup_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Id"
           }
         },
         "additionalProperties": false,

@@ -191,7 +191,7 @@ it("两个历史目录与下一次分析草稿隔离，保存默认值不写历�
     && options?.method === "POST" && JSON.parse(String(options.body)).analysis_parameters.FIT_HALF_WIDTH_HZ === 810)).toBe(true));
 });
 
-it("旧HF2目录不显示或提交SDS分析覆盖值，仍可选择真实兼容分析节点", async () => {
+it("旧HF2目录不显示或提交SDS分析参数，仍可选择真实兼容分析节点", async () => {
   legacy = true; page(); await node("B02");
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: old.run_id } });
   await waitFor(() => expect(screen.queryByRole("region", {

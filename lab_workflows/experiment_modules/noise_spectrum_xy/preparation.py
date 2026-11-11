@@ -266,6 +266,8 @@ def build_run_config(params: NoiseSpectrumXYParams, project_root, clock_sources,
         "device_library_snapshot": instrument_snapshot["device_library"],
         "physical_mapping_snapshot": instrument_snapshot["physical_mappings"],
         "mapping_snapshot": instrument_snapshot["resolved_mapping"],
+        "setup_id": instrument_snapshot["setup_id"],
+        "setup_label": instrument_snapshot["setup_label"],
         "scan_params": {
             "TARGET_NOISE_FREQ_START_HZ": params.target_noise_freq_start_hz,
             "TARGET_NOISE_FREQ_STOP_HZ": params.target_noise_freq_stop_hz,

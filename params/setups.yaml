@@ -1,0 +1,11 @@
+schema_version: 1
+active: default
+setups:
+  default:
+    label: 王湾装置
+    mapping_file: params/mapping.yaml
+    archived: false
+  setup-8eb9fa0c:
+    label: LHC 装置
+    mapping_file: params/setups/setup-8eb9fa0c/mapping.yaml
+    archived: false

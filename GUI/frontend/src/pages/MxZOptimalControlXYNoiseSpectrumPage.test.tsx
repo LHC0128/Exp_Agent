@@ -143,7 +143,7 @@ it("历史频段草稿与下一次参数隔离，保存默认值不串目录，�
   const lower = () => within(screen.getByRole("region", { name: `B02 ${analysis[1].title} 参数`, hidden: true })).getByLabelText("噪声统计频率下限 (Hz)");
   fireEvent.change(lower(), { target: { value: "6" } });
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: old.run_id } });
-  await screen.findByText(/正在编辑 .* 的分析覆盖值/);
+  await screen.findByText(/正在编辑 .* 的分析参数/);
   await editor("B02");
   await waitFor(() => expect(lower()).toHaveValue(10));
   fireEvent.change(lower(), { target: { value: "20" } });

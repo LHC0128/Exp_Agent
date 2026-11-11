@@ -24,6 +24,7 @@ from ..common import (
 from ..experiment_params import ExperimentParams
 from ..experiment_runtime import PROGRESS_PREFIX, PROGRESS_PROTOCOL_ENV, format_eta
 from ..steps.run_directory import write_run_config
+from ..setups import subprocess_environment
 
 
 ParamsT = TypeVar("ParamsT", bound=ExperimentParams)
@@ -119,6 +120,7 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
             environment["LAB_RUN_DIR"] = str(run_dir.resolve())
         # 无 GUI 回调时也需要读取显式运行结果，不能退回目录猜测。
         environment[PROGRESS_PROTOCOL_ENV] = "jsonl"
+        environment = subprocess_environment(environment)
         command = [
             str(self.root / "agent_exp_env" / "Scripts" / "python.exe"),
             "-u",

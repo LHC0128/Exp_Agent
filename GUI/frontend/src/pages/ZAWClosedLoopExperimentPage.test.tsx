@@ -152,7 +152,7 @@ it("历史分析只用目录状态，保存默认值仍保存下一次实验与�
   const edit = await openParameters("A03");
   fireEvent.change(edit.getByLabelText("控制幅度比例"), { target: { value: ".9" } });
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: "history-one" } });
-  await screen.findByText(/正在编辑 history-one 的分析覆盖值/);
+  await screen.findByText(/正在编辑 history-one 的分析参数/);
   expect(screen.getAllByLabelText("控制幅度比例")).toHaveLength(1);
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: "history-two" } });
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: "" } });

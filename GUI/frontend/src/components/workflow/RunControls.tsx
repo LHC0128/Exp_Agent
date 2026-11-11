@@ -107,7 +107,7 @@ export function LatestResultPanel<T extends { run_id: string }>({ latest, render
   note?: ReactNode;
 }) {
   return <section className="zaw-panel zaw-panel-result">
-    <div className="zaw-panel-head"><small>LATEST</small><h2>最近一次结果</h2></div>
+    <div className="zaw-panel-head"><h2>最近一次结果</h2></div>
     {note}
     {latest ? <>{render(latest)}{onOpen && <button className="zaw-secondary" onClick={() => onOpen(latest.run_id)}>查看本次详情</button>}</>
       : <p className="zaw-empty">暂无运行记录。</p>}

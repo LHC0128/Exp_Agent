@@ -7,6 +7,7 @@ import { ExperimentCatalogPage } from "../pages/ExperimentCatalogPage";
 import { GlobalJobBanner } from "./GlobalJobBanner";
 import { JobActivityProvider } from "./JobActivity";
 import { Status } from "./Status";
+import { SetupSwitcher } from "./setups/SetupSwitcher";
 
 const ExperimentPage = lazy(() => import("../pages/ExperimentPage").then((module) => ({ default: module.ExperimentPage })));
 const InstrumentsPage = lazy(() => import("../pages/InstrumentsPage").then((module) => ({ default: module.InstrumentsPage })));
@@ -107,6 +108,7 @@ export function Layout() {
                 {visible ? <PanelLeftClose size={18} aria-hidden="true" /> : <Menu size={18} aria-hidden="true" />}{visible ? "隐藏导航" : "显示导航"}
               </button>
               <span>实验控制台</span>
+              <SetupSwitcher />
               {location.pathname.startsWith("/experiments/") && <NavLink to="/experiments">返回实验中心</NavLink>}
             </div>
             <GlobalJobBanner />

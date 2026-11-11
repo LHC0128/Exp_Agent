@@ -13,6 +13,7 @@ from typing import Any, Callable
 import numpy as np
 import yaml
 
+from ..setups import subprocess_environment
 from ..common import (
     CancellationToken,
     ProgressCallback,
@@ -309,6 +310,7 @@ class LegacyScriptAdapter:
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUNBUFFERED": "1",
         })
+        environment = subprocess_environment(environment)
         command = [
             str(root / "agent_exp_env" / "Scripts" / "python.exe"),
             "-u", "-m", "lab_workflows.script_runner",

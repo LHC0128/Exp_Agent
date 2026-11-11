@@ -412,7 +412,7 @@ it("流程顶部保存预览预检完整运行与真实JobView安全停止、SSE
   const container = save.closest(".xy-workflow")!;
   expect(container).toContainElement(screen.getByRole("button", { name: "仅预检" }));
   expect(container).toContainElement(screen.getByRole("button", { name: "预检并运行实验" }));
-  const preview = await screen.findByText("派生预览（只读）");
+  const preview = await screen.findByText("派生参数");
   fireEvent.click(preview);
   expect(within(container as HTMLElement).getByText("frequency_point_count")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "仅预检" }));

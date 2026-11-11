@@ -1,6 +1,8 @@
 .xy-workflow { container-type: inline-size; min-width: 0; margin: 24px 0; padding: clamp(12px, 1.5vw, 24px); border: 1px solid var(--border, #d6dfe7); border-radius: 12px; background: var(--panel, #fff); }
 .xy-workflow-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.xy-workflow-controls { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border, #d6dfe7); }
+.xy-workflow-controls { padding: 14px 16px; border: 1px solid #e3eae8; border-radius: 10px; background: #f8faf9; }
+.xy-workflow-controls > .xy-flow-actions:first-child { margin-top: 0; }
+.xy-workflow-controls > :last-child { margin-bottom: 0; }
 .xy-workflow-preview { margin: 16px 0; padding-left: 12px; border-left: 2px solid var(--border, #d6dfe7); }
 .xy-workflow-controls p { overflow-wrap: anywhere; }
 .xy-flow-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
@@ -32,9 +34,14 @@
 .xy-step-status.status-failed, .xy-step-status.status-quality_failed { background: #f8e1de; color: #8f2f24; }
 .xy-step-status.status-stale, .xy-step-status.status-waiting_calibration { background: #f6ecd2; color: #7a560b; }
 .xy-flow-node .xy-quality { color: #6b7f8c; font-size: 12px; }
-.xy-run-block { margin: 12px 0 20px; }
-.xy-block-label { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .04em; color: #6b7f8c; }
-.xy-flow-actions > .xy-block-label { flex-basis: 100%; margin: 0; }
+.xy-run-block { margin: 14px 0 24px; }
+/* 操作按钮紧凑排布；全局 .danger 的上边距会把「结束会话」挤出同一行，这里清除。 */
+.xy-flow-actions button { padding: 8px 14px; font-size: 13px; }
+.xy-flow-actions .danger { margin-top: 0; }
+.xy-workflow-head h2 { margin: 0; font-size: 20px; }
+.xy-flow-columns > section > h2 { margin: 0 0 4px; font-size: 16px; }
+.xy-flow-columns label { display: block; font-size: 13px; color: var(--muted, #647773); }
+.xy-flow-columns select { padding: 8px 10px; border: 1px solid var(--border, #dce4e2); border-radius: 8px; background: #fff; color: #172326; }
 .xy-step-error, .xy-missing { color: #a42c24; margin: 6px 0; }
 .xy-step-error { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .xy-node-parameters { margin: 10px 0; }
@@ -65,3 +72,9 @@
 .xy-artifact-links a { min-width: 0; overflow-wrap: anywhere; }
 @container (max-width: 720px) { .xy-flow-columns { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 900px) { .xy-flow-columns { grid-template-columns: minmax(0, 1fr); } .xy-workflow { padding: 12px; } .xy-workflow-head { flex-wrap: wrap; } }
+.xy-diagram-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--border, #dce4e2); border-radius: 8px; background: #fff; color: var(--accent, #185d57); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; transition: background .18s ease, border-color .18s ease; }
+.xy-diagram-link:hover { border-color: #b9ccc8; background: #eef4f2; }
+/* 两列并排时分析列随滚动吸附在视口内，避免采集列很长时右侧大片空白；超出视口高度时列内滚动。 */
+.xy-flow-columns:not(.xy-flow-acquisition-only) > .xy-flow-analysis { position: sticky; top: 16px; align-self: start; max-height: calc(100vh - 32px); overflow-y: auto; overscroll-behavior: contain; }
+@container (max-width: 720px) { .xy-flow-columns:not(.xy-flow-acquisition-only) > .xy-flow-analysis { position: static; max-height: none; overflow: visible; } }
+@media (max-width: 900px) { .xy-flow-columns:not(.xy-flow-acquisition-only) > .xy-flow-analysis { position: static; max-height: none; overflow: visible; } }

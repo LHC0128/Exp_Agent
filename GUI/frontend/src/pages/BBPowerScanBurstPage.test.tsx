@@ -114,7 +114,7 @@ it("33个字段均有编辑归属，初始化不重复，保存预检运行与�
   expect(top).toContainElement(screen.getByRole("button", { name: "仅预检" }));
   expect(top).toContainElement(screen.getByRole("button", { name: "预检并运行实验" }));
   expect(top).toContainElement(within(top as HTMLElement).getByText("采集任务状态"));
-  fireEvent.click(await screen.findByText("派生预览（只读）"));
+  fireEvent.click(await screen.findByText("派生参数"));
   await screen.findByText("repeat_records");
 });
 

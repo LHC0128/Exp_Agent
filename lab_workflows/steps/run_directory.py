@@ -114,6 +114,8 @@ def create_run_directory(
         "timestamp": timestamp,
         "parameters": parameters,
         "mapping_snapshot": instrument_snapshot["resolved_mapping"],
+        "setup_id": instrument_snapshot["setup_id"],
+        "setup_label": instrument_snapshot["setup_label"],
         "device_library_revision": instrument_snapshot["device_library_revision"],
         "physical_mapping_revision": instrument_snapshot["physical_mapping_revision"],
         "device_library_snapshot": instrument_snapshot["device_library"],

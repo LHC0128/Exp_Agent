@@ -8,6 +8,7 @@ import yaml
 
 from . import run_directory
 from ..wiring import WiringGraph, read_wiring_revision
+from ..setups import SETUP_ENV_VAR, bound_setup, create_setup, load_setup_registry
 
 
 def write_wiring(root, targets):
@@ -29,9 +30,31 @@ def frozen_directory(monkeypatch, tmp_path):
     monkeypatch.setattr(run_directory, "load_safety_limits", lambda root: {})
     monkeypatch.setattr(run_directory, "instrument_config_snapshot", lambda root: dict(
         resolved_mapping={}, device_library_revision="library", physical_mapping_revision="mapping",
-        device_library={}, physical_mappings={},
+        device_library={}, physical_mappings={}, setup_id="default", setup_label="默认装置",
     ))
     return tmp_path
+
+
+@pytest.mark.parametrize("setup_id, setup_label", [("default", "默认装置"), ("mag_b", "磁力仪 B")])
+def test_run_config_records_effective_setup(tmp_path, monkeypatch, setup_id, setup_label):
+    monkeypatch.delenv(SETUP_ENV_VAR, raising=False)
+    params = tmp_path / "params"
+    params.mkdir()
+    (params / "mapping.yaml").write_text("mapping: {}\n", encoding="utf-8")
+    (params / "safety_limits.yaml").write_text("limits: {}\n", encoding="utf-8")
+    if setup_id != "default":
+        create_setup(setup_label, copy_from="default", setup_id=setup_id,
+            base_revision=load_setup_registry(tmp_path).revision, root=tmp_path)
+        with bound_setup(setup_id):
+            run = run_directory.create_run_directory("Example", "bound", {}, project_root=tmp_path)
+    else:
+        run = run_directory.create_run_directory("Example", "default", {}, project_root=tmp_path)
+        assert not (params / "setups.yaml").exists()
+    config = yaml.safe_load(run.config_path.read_text(encoding="utf-8"))
+    assert (config["setup_id"], config["setup_label"]) == (setup_id, setup_label)
+    assert config["mapping_snapshot"] == {}
+    updated = run.update_config(completion_status="completed")
+    assert (updated["setup_id"], updated["setup_label"]) == (setup_id, setup_label)
 
 
 def test_concurrent_same_second_runs_preserve_parameters_and_unique_roots(frozen_directory):

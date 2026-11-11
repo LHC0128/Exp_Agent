@@ -145,7 +145,7 @@ it("下一次分析参数保存不混入历史目录，无覆盖的目录仍可�
   const next = await editor("B02");
   fireEvent.change(next.getByLabelText("Y RF 线圈标定系数 (nT/Vpp)"), { target: { value: "2000" } });
   fireEvent.change(screen.getByLabelText("分析操作对象"), { target: { value: old.run_id } });
-  await screen.findByText(/正在编辑 .* 的分析覆盖值/);
+  await screen.findByText(/正在编辑 .* 的分析参数/);
   fireEvent.click(screen.getByRole("button", { name: "保存参数与布局" }));
   await waitFor(() => expect(mockApi.mock.calls.some(([url]) => url === `${BASE}/defaults`)).toBe(true));
   const saved = mockApi.mock.calls.find(([url]) => url === `${BASE}/defaults`)!;

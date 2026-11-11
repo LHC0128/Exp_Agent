@@ -214,7 +214,7 @@ it("未传 renderPreview 时保留默认派生预览", async () => {
   });
   page();
   await screen.findByRole("checkbox", { name: /A01/ });
-  const summary = (await screen.findByText("派生预览（只读）")).closest("details")!;
+  const summary = (await screen.findByText("派生参数")).closest("details")!;
   await waitFor(() => expect(within(summary).getByText("7")).toBeInTheDocument());
 });
 
@@ -230,7 +230,7 @@ it("renderPreview 接收派生值与 setValues，并替换默认预览", async (
     <button disabled={busy} onClick={() => setValues(current => ({ ...current, RUN_TAG: "preview" }))}>用预览填值</button>
   </div> });
   await screen.findByRole("checkbox", { name: /A01/ });
-  expect(screen.queryByText("派生预览（只读）")).not.toBeInTheDocument();
+  expect(screen.queryByText("派生参数")).not.toBeInTheDocument();
   expect(await screen.findByText("派生增益 7")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "用预览填值" }));
   expect(screen.getByLabelText("运行标签")).toHaveValue("preview");

@@ -265,7 +265,8 @@ it("实验目标重新显示时检查版本；干净刷新、脏草稿提示且�
 it("目标检查回执到达时已隐藏则不替换图，回到目标后再采用最新用途", async () => {
   await open(true); replaceMapping();
   let release!: () => void; readWait = new Promise<void>(done => { release = done; });
-  fireEvent.click(screen.getByRole("button", { name: "检查用途与接线图更新" }));
+  // 实验内嵌页不再提供手动检查按钮，窗口重新获得焦点时自动检查。
+  fireEvent(window, new Event("focus"));
   fireEvent.click(screen.getByRole("tab", { name: "运行" }));
   await act(async () => release());
   const hiddenPanel = screen.getByRole("button", { name: "移动器件：目标原温控", hidden: true }).closest<HTMLElement>('[role="tabpanel"]')!;

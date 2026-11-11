@@ -1,4 +1,5 @@
 """实验会话共用的队列、修订、恢复、取消和独立分析接口。"""
+from contextlib import nullcontext
 from copy import deepcopy
 from pathlib import Path
 from queue import Queue
@@ -9,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import Field, StrictInt, model_validator
 from lab_workflows.workflow_state import read_state
+from lab_workflows.setups import bound_setup
 from .schemas import StrictModel
 from .workflow_history import WorkflowRuns, WorkflowRunSummary, list_runs, read_config, run_summary
 
@@ -205,7 +207,8 @@ class WorkflowSessionService:
                 raise conflict("会话修订已改变，请刷新后重试", "revision_conflict")
             if item.get("communication_closed") or state["status"] != "waiting" or state.get("pending_request"):
                 raise conflict("会话正在执行、排队或已结束")
-            if self.manager.get(state["job_id"]).cancellation.cancelled:
+            job = self.manager.get(state["job_id"])
+            if job.cancellation.cancelled:
                 raise conflict("会话已请求安全停止，请等待收尾")
             if action == "steps":
                 try:
@@ -217,7 +220,8 @@ class WorkflowSessionService:
                 try:
                     if unknown:
                         raise ValueError("未知参数：" + "、".join(sorted(unknown)))
-                    self.preflight(self.adapter.params_type.from_external(state["parameters"] | payload["parameters"]), self.root())
+                    with bound_setup(job.setup_id) if job.setup_id is not None else nullcontext():
+                        self.preflight(self.adapter.params_type.from_external(state["parameters"] | payload["parameters"]), self.root())
                 except (OSError, KeyError, TypeError, ValueError, PermissionError) as exc:
                     raise HTTPException(422, str(exc)) from exc
             request_id = uuid4().hex

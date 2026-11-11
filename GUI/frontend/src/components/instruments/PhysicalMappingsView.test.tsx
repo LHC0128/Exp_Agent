@@ -21,8 +21,8 @@ const library: DeviceLibraryDocument = {
       connection: { serial_number: "DG9Q322" }, capabilities: { channels: [1] } },
   },
 };
-const document: PhysicalMappingsDocument = {
-  schema_version: 2, revision: "mapping-revision",
+const document: PhysicalMappingsDocument & { setup_id: string; setup_label: string } = {
+  schema_version: 2, revision: "mapping-revision", setup_id: "default", setup_label: "默认装置",
   mapping: {
     x: { instrument: "signal_generator", device_id: "usb", endpoint: { kind: "channel", index: 1 } },
     y: { instrument: "signal_generator", device_id: "usb", endpoint: { kind: "channel", index: 2 } },
@@ -35,7 +35,7 @@ beforeEach(() => {
   mockApi.mockImplementation(async (url, options) => {
     if (url === "/api/device-library") return structuredClone(library) as never;
     if (url === "/api/physical-mappings" && options?.method === "PUT") {
-      return { ...JSON.parse(String(options.body)), revision: "saved-revision", schema_version: 2 } as never;
+      return { ...JSON.parse(String(options.body)), revision: "saved-revision", schema_version: 2, setup_id: document.setup_id, setup_label: document.setup_label } as never;
     }
     if (url === "/api/physical-mappings") return structuredClone(document) as never;
     throw new Error(`未预期的接口: ${url}`);
@@ -48,6 +48,11 @@ const switchDevice = async (key: string, id: string) => {
 };
 
 describe("物理量设备成组切换", () => {
+  it("标题显示响应中的正在编辑装置名称", async () => {
+    render(<PhysicalMappingsView />);
+    expect(await screen.findByText("正在编辑：默认装置")).toBeInTheDocument();
+  });
+
   it("同一列表显示 USB、网络设备的型号、地址和序列号", async () => {
     render(<PhysicalMappingsView />);
     const select = await screen.findByLabelText("x 设备");

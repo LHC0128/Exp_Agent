@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { api } from "../api";
 import { CurrentSourceEditor } from "../components/instruments/CurrentSourceEditor";
@@ -12,6 +12,7 @@ import { ScopeEditor } from "../components/instruments/ScopeEditor";
 import { TecEditor } from "../components/instruments/TecEditor";
 import { useJobActivity } from "../components/JobActivity";
 import { PageHead } from "../components/PageHead";
+import { SetupsView } from "../components/setups/SetupsView";
 import type { ControlRoute, ControlTarget, ControlTargetBulkResponse, ControlTargetCatalog, ControlTargetResponse, DeviceSnapshot } from "../types/api";
 
 function DeviceControlView() {
@@ -128,10 +129,13 @@ function DeviceControlView() {
   );
 }
 
-type InstrumentView = "mapping" | "library" | "control";
+type InstrumentView = "mapping" | "library" | "control" | "setups";
 
 export function InstrumentsPage() {
-  const [view, setView] = useState<InstrumentView>("control");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedView = searchParams.get("view");
+  const view: InstrumentView = requestedView === "mapping" || requestedView === "library" || requestedView === "setups" ? requestedView : "control";
+  const setView = (next: InstrumentView) => setSearchParams(current => { current.set("view", next); return current; });
   return (
     <>
       <PageHead eyebrow="INSTRUMENTS" title="仪器控制" description="管理物理量绑定、设备资源和实时参数。" action={<div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}><Link to="/instruments/ports">设备端口建档</Link><Link to="/instruments/wiring">实验接线图</Link></div>} />
@@ -139,8 +143,9 @@ export function InstrumentsPage() {
         <button className={view === "mapping" ? "active" : ""} onClick={() => setView("mapping")}>物理量映射</button>
         <button className={view === "library" ? "active" : ""} onClick={() => setView("library")}>设备库</button>
         <button className={view === "control" ? "active" : ""} onClick={() => setView("control")}>设备控制</button>
+        <button className={view === "setups" ? "active" : ""} onClick={() => setView("setups")}>装置</button>
       </div>
-      <div>{view === "mapping" ? <PhysicalMappingsView /> : view === "library" ? <DeviceLibraryView /> : <DeviceControlView />}</div>
+      <div>{view === "mapping" ? <PhysicalMappingsView /> : view === "library" ? <DeviceLibraryView /> : view === "setups" ? <SetupsView /> : <DeviceControlView />}</div>
     </>
   );
 }

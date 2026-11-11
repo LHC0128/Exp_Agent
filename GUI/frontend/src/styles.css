@@ -70,11 +70,10 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
 .page-head p, .section-title small, article > small, .workspace-head small, .panel-head small { margin: 0 0 7px; color: #66817d; font-size: 10px; font-weight: 800; letter-spacing: .15em; }
 .page-head h1 { margin: 0 0 8px; font-size: clamp(28px, 3vw, 40px); letter-spacing: -.04em; }
 .page-head span { color: #6a797b; font-size: 14px; }
-.experiment-intro { max-width: 80ch; color: #586e69; font-size: 13px; letter-spacing: normal; }
-.experiment-intro > summary { cursor: pointer; color: #246b64; font-weight: 650; }
-.experiment-intro > p { margin: 12px 0; color: inherit; font-size: inherit; font-weight: 400; letter-spacing: normal; line-height: 1.8; white-space: pre-line; }
-.experiment-program { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; }
-.experiment-program code { min-width: 0; overflow-wrap: anywhere; }
+.experiment-intro { display: grid; gap: 4px; max-width: 80ch; color: #586e69; font-size: 13px; letter-spacing: normal; }
+.experiment-program { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.experiment-program > span { color: #66817d; font-size: 12px; font-weight: 650; }
+.experiment-program code { min-width: 0; overflow-wrap: anywhere; color: #3d5652; font-size: 12px; }
 .status { display: inline-flex; align-items: center; gap: 7px; color: #44716c; font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
 .status i { width: 7px; height: 7px; border-radius: 50%; background: #63b365; box-shadow: 0 0 0 3px #63b36522; }
 .status.work i { background: #d9a33c; }.status.bad i { background: #c35353; }
@@ -243,3 +242,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
 .updates-toolchain { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .updates-toolchain li { display: flex; justify-content: space-between; border-bottom: 1px dashed #e3e9e7; padding: 4px 0; font-size: 13px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+/* 实验页主 Tab（运行 / 历史 / 目标接线图）：下划线样式，选中项用主题色标出。 */
+.tab-strip { display: flex; gap: 4px; margin: 0 0 18px; border-bottom: 1px solid var(--border); }
+.tab-strip button { margin-bottom: -1px; padding: 10px 18px; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-weight: 650; }
+.tab-strip button:hover { background: transparent; color: #263d39; transform: none; }
+.tab-strip button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); }

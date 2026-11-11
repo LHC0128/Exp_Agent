@@ -153,7 +153,7 @@ export function RunHistoryView<TRun extends RunCardFields, TSummary extends { ru
   </> : <p className="zaw-empty">{selectedId ? "正在读取运行详情…" : "请选择一条运行记录。"}</p>;
   return <div className="zaw-history">
     <section className="zaw-run-list">
-      <div className="zaw-run-list-head"><small>RUNS</small><h3>历史运行（{list.total}）</h3></div>
+      <div className="zaw-run-list-head"><h3>历史运行（{list.total}）</h3></div>
       <div className="zaw-control-buttons">
         <button className="zaw-secondary" disabled={refreshDisabled} onClick={reload}>刷新记录</button>
         {listTools}

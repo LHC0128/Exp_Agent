@@ -183,7 +183,7 @@ it("旧后端缺元数据时提示不兼容，仍恢复会话以安全结束", a
 });
 
 
-it("具体历史目录无分析覆盖值，切换目录和保存默认值不污染下一次实验", async () => {
+it("具体历史目录无分析参数，切换目录和保存默认值不污染下一次实验", async () => {
   page();
   const scan = await node("A08");
   fireEvent.change(scan.getByLabelText("运行标签"), { target: { value: "next-draft" } });

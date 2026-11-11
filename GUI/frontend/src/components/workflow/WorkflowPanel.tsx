@@ -1,4 +1,5 @@
 import { useEffect, useState, type ComponentProps, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { Download } from "lucide-react";
 import { api } from "../../api";
 import { ParameterForm } from "../MxYOptimalControlFrequency/ParameterForm";
 import { experimentDestination, useRequestedJobId, useRequestedTask } from "../experimentNavigation";
@@ -290,8 +291,8 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
     ...runs.filter((item) => item.completion_status !== "running").map((item) => item.run_id)].filter((id): id is string => Boolean(id)))];
 
   return <section className="xy-workflow" aria-label="交互实验流程图">
-    <div className="xy-workflow-head"><h2>实验流程图</h2>{flow && <a href={flow.diagram_url} download>下载可编辑流程图</a>}</div>
-    <div className="xy-run-block" role="group" aria-label="一键运行"><h3 className="xy-block-label">一键运行</h3>{children}</div>
+    <div className="xy-workflow-head"><h2>实验流程图</h2>{flow && <a className="xy-diagram-link" href={flow.diagram_url} download><Download size={14} aria-hidden="true" />下载可编辑流程图</a>}</div>
+    <div className="xy-run-block">{children}</div>
     {flowError && <p role="alert">{flowError}</p>}
     {session && <div aria-live="polite">
       <p>会话 {session.session_id.slice(0, 8)} · {live ? busy ? "执行中" : "等待下一步" : "已结束"} · 当前步骤 {session.current_step ?? "—"}</p>
@@ -310,8 +311,7 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
     </div>}
     <div className={`xy-flow-columns${flow?.analysis.length === 0 ? " xy-flow-acquisition-only" : ""}`}>
       <section><h2>采集流程</h2>
-        <div className="xy-flow-actions" role="group" aria-label="分步调试">
-          <span className="xy-block-label">分步调试</span>
+        <div className="xy-flow-actions" role="group" aria-label="采集会话操作">
           <button disabled={!enabled || !flow || sending || live || hardwareBusy} onClick={() => void create()}>创建分步会话</button>
           <button className="secondary" aria-label="全选采集步骤" disabled={!flow || busy} onClick={chooseAllA}>全选</button>
           <button disabled={!flow || !live || busy || !selectedA.length || dirty} onClick={() => void act(`/sessions/${session!.session_id}/steps`, "POST", { revision: session!.revision, step_ids: selectedA })}>运行所选</button>
@@ -325,11 +325,11 @@ export function WorkflowPanel({ enabled, fields, layout, setLayout, setNotice, p
           runId={session?.run_id} editor={acquisitionEditor} sharingStages={sharingStages}
           changed={acquisitionChanged} appliedValues={session?.parameters as ParameterValues | undefined} impacts={acquisitionImpacts} />}
       </section>
-      {flow?.analysis.length !== 0 && <section><h2>分析流程</h2>
+      {flow?.analysis.length !== 0 && <section className="xy-flow-analysis"><h2>分析流程</h2>
         <label>分析操作对象<select value={runId} disabled={analyzing || sending} onChange={(event) => setRunId(event.target.value)}>
-          <option value="">下一次实验（自动分析设置）</option>{runChoices.map((id) => <option key={id} value={id}>{id}</option>)}
+          <option value="">下一次实验</option>{runChoices.map((id) => <option key={id} value={id}>{id}</option>)}
         </select></label>
-        {runId && <p>正在编辑 {runId} 的分析覆盖值。</p>}
+        {runId && <p>正在编辑 {runId} 的分析参数。</p>}
         {runId && analysisChanged.length > 0 && <p role="status">分析参数草稿尚未应用，执行分析时生效。预计需重算的已完成步骤：{flow?.analysis
           .filter((stage) => analysisImpacts.includes(stage.id) && analysis?.steps[stage.id]?.status === "completed")
           .map((stage) => `${stage.id} ${stage.title}`).join("、") || "暂无"}。</p>}

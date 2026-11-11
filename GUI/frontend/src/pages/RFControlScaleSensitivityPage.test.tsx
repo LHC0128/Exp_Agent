@@ -112,7 +112,7 @@ it("起终点点数和按控制名称的补偿可编辑、保存与应用，横�
 it("分步流程执行逐点完整校相与测量节点，结束会话可用", async () => {
   await show();
   expect(flow.acquisition.find(stage => stage.id === "A13")?.dependencies).toEqual(["A07"]);
-  expect(screen.getByText("每个控制 × Scale 独立四级校相，不注入人为噪声")).toBeInTheDocument();
+  expect(screen.queryByText("每个控制 × Scale 独立四级校相，不注入人为噪声")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "创建分步会话" }));
   await screen.findByRole("button", { name: "结束会话" });
   fireEvent.click(screen.getByLabelText("A13 " + flow.acquisition.find(s => s.id === "A13")!.title));
