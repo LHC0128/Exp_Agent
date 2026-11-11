@@ -164,7 +164,8 @@ def test_finite_lorentzian_centers_use_uncertainty_weights_and_keep_failed_linea
             payload = {key: source[key] for key in source.files}
         frequency = payload["frequency_hz"]
         center = 90000 + 1000 * float(payload["z_bias_v"]) + (250 if index == 1 else 0)
-        payload["r_mean_v"] = 0.1 + 0.5 * 300**2 / ((frequency - center)**2 + 300**2) + (index + 1) * 0.0005 * np.sin(np.arange(frequency.size))
+        # 平方根洛伦兹幅度（功率 HWHM 300 Hz），与共享拟合模型及假仪器一致。
+        payload["r_mean_v"] = 0.1 + 0.5 / np.sqrt(1 + ((frequency - center) / 300)**2) + (index + 1) * 0.0005 * np.sin(np.arange(frequency.size))
         np.savez(path, **payload)
     ctx = analysis.AnalysisWorkflow(directory, {"LINEAR_R_SQUARED_MIN": 1.0})
     ctx.execute(["B01", "B02"])

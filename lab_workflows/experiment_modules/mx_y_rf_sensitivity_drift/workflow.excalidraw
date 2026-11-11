@@ -1847,6 +1847,8 @@
   "customData": {
     "experiment_id": "mx-y-rf-sensitivity-drift",
     "workflow": {
+      "run_step_id": "A09",
+      "finish_step_id": "A11",
       "acquisition": [
         {
           "id": "A01",

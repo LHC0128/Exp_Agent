@@ -14,8 +14,12 @@ from .workflow_sessions import WorkflowSessionService, create_router
 @pytest.fixture
 def history_client(tmp_path):
     adapter = SimpleNamespace(id="history-test", data_type="History_Test", analysis_module=None)
+    # 最小合法采集清单：运行与安全结束角色必须指向两个不同的采集节点（结束节点无前置）；无分析节点。
+    stage = lambda id, title: dict(id=id, title=title, group="采集", dependencies=[], parameters=[],
+        display_parameters=[], artifacts=[])
     stages = SimpleNamespace(definition=lambda: dict(
-        acquisition=[], analysis=[], parameter_impacts=dict(acquisition={}, analysis={}), diagram_url="/diagram",
+        run_step_id="A01", finish_step_id="A02", acquisition=[stage("A01", "采集"), stage("A02", "安全结束")],
+        analysis=[], parameter_impacts=dict(acquisition={}, analysis={}), diagram_url="/diagram",
     ))
     service = WorkflowSessionService(
         lambda: tmp_path, None, adapter=adapter, preflight=None, stages=stages,

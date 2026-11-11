@@ -148,7 +148,7 @@
         "unit": "Vpp",
         "group": "basic",
         "minimum": 0.0,
-        "maximum": 2.0,
+        "maximum": null,
         "description": "",
         "read_only": false
       },
@@ -292,7 +292,7 @@
         "unit": "Vpp",
         "group": "advanced",
         "minimum": 0.0,
-        "maximum": 0.18,
+        "maximum": null,
         "description": "",
         "read_only": false
       },
@@ -544,7 +544,7 @@
         "unit": "",
         "group": "advanced",
         "minimum": 1,
-        "maximum": 10,
+        "maximum": null,
         "description": "",
         "read_only": false
       },

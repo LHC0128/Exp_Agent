@@ -50,8 +50,8 @@
         "default": -0.1,
         "unit": "Vpp",
         "group": "basic",
-        "minimum": -2.0,
-        "maximum": 2.0,
+        "minimum": -20.0,
+        "maximum": 20.0,
         "description": "",
         "read_only": false
       },
@@ -62,8 +62,8 @@
         "default": 0.1,
         "unit": "Vpp",
         "group": "basic",
-        "minimum": -2.0,
-        "maximum": 2.0,
+        "minimum": -20.0,
+        "maximum": 20.0,
         "description": "",
         "read_only": false
       },
@@ -135,7 +135,7 @@
         "unit": "Vpp",
         "group": "basic",
         "minimum": 0,
-        "maximum": 2.0,
+        "maximum": null,
         "description": "用于准备正弦模式；长飘不执行模式1扫频。",
         "read_only": false
       },
@@ -315,7 +315,7 @@
         "unit": "Vpp",
         "group": "advanced",
         "minimum": 0,
-        "maximum": 0.18,
+        "maximum": null,
         "description": "",
         "read_only": false
       },

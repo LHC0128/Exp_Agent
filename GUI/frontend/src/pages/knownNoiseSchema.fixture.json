@@ -108,8 +108,8 @@
       "default": 5.0,
       "unit": "%",
       "group": "basic",
-      "minimum": 1,
-      "maximum": 50,
+      "minimum": 0.1,
+      "maximum": 99.9,
       "description": "",
       "read_only": false
     },
