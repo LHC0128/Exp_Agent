@@ -30,8 +30,9 @@ def _make_root() -> Path:
     root = Path(tempfile.mkdtemp())
     (root / "pyproject.toml").write_text(
         'dependencies = [\n  "tqdm>=4.67,<5",\n]\n', encoding="utf-8")
-    (root / "requirements.txt").write_text(
-        "# 分析依赖\nnumpy>=1.24\n", encoding="utf-8")
+    (root / "constraints").mkdir()
+    (root / "constraints/win-py312.lock.txt").write_text(
+        "# 锁文件\nnumpy==2.5.4\n", encoding="utf-8")
     return root
 
 
@@ -45,7 +46,7 @@ class UpdatesServiceTests(unittest.TestCase):
             result = self.service.check_pip()
         by_name = {item["name"]: item for item in result["items"]}
         self.assertEqual(by_name["tqdm"]["source"], "pyproject.toml")
-        self.assertEqual(by_name["numpy"]["source"], "requirements.txt")
+        self.assertEqual(by_name["numpy"]["source"], "constraints/win-py312.lock.txt")
         self.assertEqual(by_name["requests"]["source"], "venv 其他安装")
         self.assertEqual(self.service._checked["pip"]["tqdm"], "4.80.0")
 

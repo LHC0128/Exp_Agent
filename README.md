@@ -18,11 +18,12 @@ ZIP 也能启动 GUI，但更新与自动验证功能不完整。
 powershell -NoProfile -ExecutionPolicy Bypass -File setup.ps1
 ```
 
-脚本幂等、可重复运行，自动完成虚拟环境和分组依赖安装，任一步失败即停止并报告，不自动降级；
-`-SkipFrontend` 可跳过前端依赖。让 AI 代理安装时，可让它运行本脚本并原样转述输出，
+脚本幂等、可重复运行，自动完成虚拟环境和下面手动路径中的依赖安装（Python 3.12 按完整锁文件，
+其他版本按 `constraints/development.txt`），任一步失败即停止并报告，不自动降级；
+`-SkipFrontend` 可跳过前端依赖，`-Notebook` 另装 Notebook 组合。让 AI 代理安装时，可让它运行本脚本并原样转述输出，
 不要在未告知的情况下改动依赖版本或跳过失败的步骤。
 
-需要明确依赖版本时，推荐以下受约束的手动安装路径（旧安装脚本仍保留其分组安装方式）。
+手动安装时按以下受约束的路径执行（与 `setup.ps1` 等价）。
 在仓库根目录执行；已有日常使用的环境时，不用下面命令刷新它，开发验证改用后面的隔离环境：
 
 ```powershell
@@ -49,7 +50,6 @@ GUI 使用上面的 `runtime,instruments,analysis,gui` 组合，不能只安装 
 只限定版本、不额外装包。`notebook`（jupyter 依赖链）不在锁内，加装时由 pip 自行解析。
 [`constraints/development.txt`](constraints/development.txt) 只固定直接依赖，供 Python 3.10 / 3.11 兼容候选使用，
 传递依赖由 pip 解析；两者在 3.12 上的直接依赖版本由 [`tools/test_dependency_lock.py`](tools/test_dependency_lock.py) 校验一致。
-根目录 [`requirements.txt`](requirements.txt) 仅是历史环境快照。
 
 更新锁文件：在已验证的环境中执行 `pip freeze --exclude-editable`，替换锁文件对应分段（运行组合 / `dev` 增量），
 同步 `development.txt` 的直接依赖版本，再在 `.cache/` 下的临时环境按锁文件安装，确认 `pip check` 通过、
@@ -60,13 +60,11 @@ GUI 使用上面的 `runtime,instruments,analysis,gui` 组合，不能只安装 
 [GUI 基础使用](#gui-基础使用)。没有连接实验仪器时 GUI 也能正常启动，可浏览界面与
 历史数据；运行正式实验前需先在 GUI 中完成设备库与物理量映射配置。
 
-需要导出当前环境时：
+需要排查或对比当前环境时，可导出到 `.cache/` 下（不提交）：
 
 ```powershell
-.\agent_exp_env\Scripts\python.exe -m pip freeze > requirements.txt
+.\agent_exp_env\Scripts\python.exe -m pip freeze --exclude-editable > .cache/env-freeze.txt
 ```
-
-保存前将本项目的可编辑安装条目规范为 `-e .`，移除机器路径和带凭据的地址。
 
 ## 开发安装与无硬件检查
 

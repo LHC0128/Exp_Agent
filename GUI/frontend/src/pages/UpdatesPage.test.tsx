@@ -14,7 +14,7 @@ const GIT = {
 };
 const PIP = {
   items: [
-    { name: "numpy", current: "1.24.0", latest: "2.1.0", source: "requirements.txt" },
+    { name: "numpy", current: "1.24.0", latest: "2.1.0", source: "constraints/win-py312.lock.txt" },
   ],
 };
 const NPM_GLOBAL = {

@@ -187,8 +187,7 @@ class UpdatesService:
         sources: dict[str, str] = {}
         files = [
             ("pyproject.toml", "pyproject.toml"),
-            ("GUI/requirements.txt", "GUI/requirements.txt"),
-            ("requirements.txt", "requirements.txt"),
+            ("constraints/win-py312.lock.txt", "constraints/win-py312.lock.txt"),
         ]
         for label, rel in files:
             path = self.root / rel
