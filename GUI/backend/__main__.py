@@ -14,7 +14,7 @@ from typing import Sequence
 
 import uvicorn
 
-from .jobs import manager
+from .jobs import manager, require_hardware_mode
 from .main import app
 from .server_runtime import Server
 
@@ -108,6 +108,8 @@ def _restart_arguments(options: argparse.Namespace) -> list[str]:
 def main(argv: Sequence[str] | None = None) -> None:
     """启动后端，并支持从运行中的服务优雅自重启。"""
     options = _parse_options(sys.argv[1:] if argv is None else argv)
+    # 只有经启动入口运行的后端才按目录门控拒绝硬件任务（开发目录在入队前拒绝）。
+    manager.hardware_policy = require_hardware_mode
     if options.log_file is not None:
         _redirect_output(options.log_file)
     stop_requested = threading.Event()

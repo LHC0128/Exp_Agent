@@ -195,7 +195,12 @@ class WorkflowSessionService:
                     with self.lock:
                         item["state"].update(status="closed", pending_request=None)
 
-            job = self.manager.create(f"session:{self.adapter.id}", run)
+            try:
+                job = self.manager.create(f"session:{self.adapter.id}", run)
+            except BaseException:
+                # 入队被拒（如开发目录禁用硬件）时撤销登记，避免留下永远“存活”的会话。
+                self.sessions.pop(session_id, None)
+                raise
             state["job_id"] = job.id
             return self.get(session_id)
 

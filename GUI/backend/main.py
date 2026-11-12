@@ -6,7 +6,7 @@ import asyncio
 import json
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -16,6 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+from hardware_gate import hardware_allowed
 
 from lab_workflows.clock_sync import initialize_output_loads, synchronize_clocks
 from lab_workflows.common import find_project_root, load_mapping
@@ -140,7 +142,9 @@ from lab_workflows.z_arbitrary_control import (
     ZArbitraryControlService, ZArbitrarySettings, list_sources, preview_source,
 )
 
-from .jobs import Job, RestartInProgressError, ShutdownInProgressError, manager
+from .jobs import (
+    DevHardwareDisabled, Job, RestartInProgressError, ShutdownInProgressError, manager,
+)
 from .server_runtime import await_shutdown
 from .run_management import checked_run_path, read_starred, rename_directory, save_starred, split_run_name
 from .noise_spectrum_xy import XYSessionService, create_router as xy_router
@@ -316,6 +320,15 @@ async def handle_restart_in_progress(request: Request, exc: RestartInProgressErr
         status_code=503,
         content={"detail": str(exc)},
         headers={"X-Error-Code": "restarting"},
+    )
+
+
+@app.exception_handler(DevHardwareDisabled)
+async def handle_dev_hardware_disabled(request: Request, exc: DevHardwareDisabled):
+    return JSONResponse(
+        status_code=409,
+        content={"detail": str(exc)},
+        headers={"X-Error-Code": "dev_hardware_disabled"},
     )
 
 
@@ -526,6 +539,7 @@ class HealthResponse(BaseModel):
     instance_id: str
     hardware_busy: bool
     queued_hardware_jobs: int
+    runtime_mode: Literal["lab", "dev"]
 
 
 class RestartResponse(BaseModel):
@@ -561,7 +575,8 @@ def _conflict(detail: str, code: str) -> HTTPException:
 
 def _with_short_hardware_lock(action):
     # 短时仪器操作与长任务共享同一把硬件锁和同一排队条件：
-    # 存在排队任务时拒绝插队，返回 hardware_busy。
+    # 存在排队任务时拒绝插队，返回 hardware_busy。开发目录在取锁前拒绝。
+    manager.check_hardware_policy()
     if not manager.try_acquire_short_hardware():
         raise _conflict("其他硬件任务正在运行", "hardware_busy")
     try:
@@ -583,6 +598,7 @@ def health():
         "instance_id": INSTANCE_ID,
         "hardware_busy": manager.hardware_lock.locked(),
         "queued_hardware_jobs": manager.queued_hardware_count(),
+        "runtime_mode": "lab" if hardware_allowed() else "dev",
     }
 
 

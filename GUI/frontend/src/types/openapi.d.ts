@@ -11007,6 +11007,11 @@ export interface components {
             hardware_busy: boolean;
             /** Queued Hardware Jobs */
             queued_hardware_jobs: number;
+            /**
+             * Runtime Mode
+             * @enum {string}
+             */
+            runtime_mode: "lab" | "dev";
         };
         /** Hf2DeviceSnapshot */
         Hf2DeviceSnapshot: {

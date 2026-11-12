@@ -27596,6 +27596,14 @@
           "queued_hardware_jobs": {
             "type": "integer",
             "title": "Queued Hardware Jobs"
+          },
+          "runtime_mode": {
+            "type": "string",
+            "enum": [
+              "lab",
+              "dev"
+            ],
+            "title": "Runtime Mode"
           }
         },
         "type": "object",
@@ -27603,7 +27611,8 @@
           "status",
           "instance_id",
           "hardware_busy",
-          "queued_hardware_jobs"
+          "queued_hardware_jobs",
+          "runtime_mode"
         ],
         "title": "HealthResponse"
       },

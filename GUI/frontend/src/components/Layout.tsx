@@ -4,6 +4,7 @@ import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom"
 
 import { ExperimentCatalogPage } from "../pages/ExperimentCatalogPage";
 
+import { DevModeBanner } from "./DevModeBanner";
 import { GlobalJobBanner } from "./GlobalJobBanner";
 import { JobActivityProvider } from "./JobActivity";
 import { Status } from "./Status";
@@ -111,6 +112,7 @@ export function Layout() {
               <SetupSwitcher />
               {location.pathname.startsWith("/experiments/") && <NavLink to="/experiments">返回实验中心</NavLink>}
             </div>
+            <DevModeBanner />
             <GlobalJobBanner />
           </div>
           <div className="page-content">

@@ -12,6 +12,8 @@ from threading import Condition, Lock, RLock, Thread
 from typing import Any, Callable
 from uuid import uuid4
 
+import hardware_gate
+
 from lab_workflows.common import CancellationToken, ProgressEvent, WorkflowCancelled, find_project_root
 from lab_workflows.setups import bound_setup, capture_setup
 
@@ -29,6 +31,17 @@ class RestartInProgressError(RuntimeError):
 
 class ShutdownInProgressError(RuntimeError):
     """后端正在等待任务收尾，拒绝接纳新的工作。"""
+
+
+class DevHardwareDisabled(RuntimeError):
+    """开发目录后端：需要硬件的任务在入队前拒绝，不建运行目录、不写取消标记。"""
+
+
+def require_hardware_mode() -> None:
+    """非运行目录时拒绝硬件任务；运行目录直接返回。"""
+    reason = hardware_gate.denial_reason()
+    if reason is not None:
+        raise DevHardwareDisabled(f"开发目录不能采集或连接仪器：{reason}")
 
 
 def _json_safe(value: Any) -> Any:
@@ -115,6 +128,8 @@ class JobManager:
         self._hardware_condition = Condition(self.jobs_lock)
         self.max_terminal_jobs = max_terminal_jobs
         self.setup_resolver = setup_resolver
+        # GUI 启动入口挂 require_hardware_mode；直接导入 app 的测试不挂，行为不变。
+        self.hardware_policy: Callable[[], None] | None = None
         self._finished_sequence = 0
         self._restart_pending = False
         self._shutdown_pending = False
@@ -128,6 +143,8 @@ class JobManager:
         hardware_required: bool = True,
         setup_id: str | None = None,
     ) -> Job:
+        if hardware_required:
+            self.check_hardware_policy()
         if setup_id is None and self.setup_resolver is not None:
             setup_id = self.setup_resolver()
         with self._hardware_condition:
@@ -161,6 +178,11 @@ class JobManager:
         self._workers = {
             worker: job for worker, job in self._workers.items() if worker.is_alive()
         }
+
+    def check_hardware_policy(self) -> None:
+        """需要硬件的请求入队或取锁前调用；策略拒绝时原样抛出。"""
+        if self.hardware_policy is not None:
+            self.hardware_policy()
 
     def begin_shutdown(self) -> None:
         """幂等地封口并请求所有已接纳任务协作停止，不等待或强杀。"""

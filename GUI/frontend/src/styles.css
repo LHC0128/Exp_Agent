@@ -285,3 +285,4 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
 .generator-synced { color: #8a9895; font-size: 12px; }
 .target-editor .generator-params input { padding: 8px 54px 8px 9px; font-size: 13px; }
 .target-editor .generator-unit { height: 35px; }
+.dev-mode-banner { margin: 8px 0 0; padding: 9px 13px; border: 1px solid #e0b252; border-radius: 7px; background: #fff4d6; color: #7a5410; font-size: 12px; font-weight: 700; }
