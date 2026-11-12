@@ -41,6 +41,17 @@ dev = [
 ]
 notebook = ["jupyter>=1,<2"]
 
+[tool.pytest.ini_options]
+# 不带路径运行 pytest 时只发现仓库自有测试；虚拟环境、旧代码、第三方仪器示例和数据目录不进入发现。
+testpaths = ["GUI/backend", "lab_workflows", "src", "tools"]
+norecursedirs = [
+  ".*", "*.egg", "*.egg-info", "_darcs", "build", "CVS", "dist", "venv", "{arch}",
+  "__pycache__", "node_modules", "agent_exp_env", "old", "examples", "data", "results", "tmp",
+]
+# pytest-timeout：单个用例超过 300 s 视为卡死，打印线程栈后终止（Windows 只支持 thread 方式）。
+timeout = 300
+timeout_method = "thread"
+
 [tool.setuptools.packages.find]
 where = ["src", "."]
 include = [
