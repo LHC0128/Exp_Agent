@@ -540,6 +540,7 @@ class HealthResponse(BaseModel):
     hardware_busy: bool
     queued_hardware_jobs: int
     runtime_mode: Literal["lab", "dev"]
+    active_data_types: list[str]
 
 
 class RestartResponse(BaseModel):
@@ -599,7 +600,58 @@ def health():
         "hardware_busy": manager.hardware_lock.locked(),
         "queued_hardware_jobs": manager.queued_hardware_count(),
         "runtime_mode": "lab" if hardware_allowed() else "dev",
+        "active_data_types": _active_acquisition_data_types(),
     }
+
+
+def _active_acquisition_data_types() -> list[str]:
+    """正在采集（实验任务或采集会话）的数据类型；开发后端据此避开运行目录正在写入的数据。"""
+    return sorted({
+        definition.data_type for definition in list_experiments()
+        if manager.has_active_kind(f"experiment:{definition.id}")
+        or manager.has_active_kind(f"session:{definition.id}")
+    })
+
+
+LAB_HEALTH_URL = "http://127.0.0.1:8000/api/health"
+
+
+def _dev_backend() -> bool:
+    """经启动入口运行、且不在运行目录的后端（开发 GUI）。"""
+    return manager.hardware_policy is not None and not hardware_allowed()
+
+
+def _assert_not_dev_backend(action: str) -> None:
+    if _dev_backend():
+        raise HTTPException(403, f"开发目录不能{action}历史运行，请在运行目录 GUI 操作",
+                            headers={"X-Error-Code": "dev_data_protected"})
+
+
+def _lab_health() -> dict[str, Any] | None:
+    """读取运行目录后端健康状态；8000 无响应视为运行 GUI 未启动。"""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(LAB_HEALTH_URL, timeout=2) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except OSError:
+        return None
+
+
+def check_lab_data_idle(kind: str) -> None:
+    """开发后端的分析/对比任务入队前检查：运行目录正在采集同类数据时拒绝。"""
+    if not kind.startswith(("analysis:", "comparison:")):
+        return
+    definition = _experiment_or_404(kind.split(":")[1])
+    health = _lab_health()
+    if health is None:
+        return
+    if "active_data_types" not in health:
+        # 旧版运行后端不报告采集类型：忙时保守拒绝。
+        if health.get("hardware_busy"):
+            raise _conflict("运行目录 GUI 正在执行硬件任务，暂不能在开发目录写入分析结果", "lab_run_busy")
+        return
+    if definition.data_type in health["active_data_types"]:
+        raise _conflict("运行目录正在采集同类数据，暂不能在开发目录分析或对比", "lab_run_busy")
 
 
 @app.post("/api/restart", response_model=RestartResponse, status_code=202)
@@ -1565,6 +1617,7 @@ def _assert_run_idle(definition, run_id: str):
 @app.delete("/api/runs/{experiment_id}/{run_id}")
 def delete_run(experiment_id: str, run_id: str):
     """选定运行目录的永久删除，与 GUI 采集/分析任务注册原子互斥。"""
+    _assert_not_dev_backend("删除")
     definition = _experiment_or_404(experiment_id)
     _validate_run_identifier(run_id)
     with manager.jobs_lock:
@@ -2117,6 +2170,7 @@ def _manageable_rf_run(run_id: str, *, recursive=False):
 
 @app.post(f"/api/experiments/{RF_DIRECT_AW_ID}/runs/{{run_id}}/rename", response_model=RFDirectAWRunItem)
 def rename_rf_direct_aw_run(run_id: str, body: RFDirectAWRunRenameBody):
+    _assert_not_dev_backend("改名")
     with manager.jobs_lock:
         _assert_run_idle(_experiment_or_404(RF_DIRECT_AW_ID), run_id)
         directory, config = _manageable_rf_run(run_id, recursive=True)

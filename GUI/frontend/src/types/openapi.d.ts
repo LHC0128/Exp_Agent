@@ -11012,6 +11012,8 @@ export interface components {
              * @enum {string}
              */
             runtime_mode: "lab" | "dev";
+            /** Active Data Types */
+            active_data_types: string[];
         };
         /** Hf2DeviceSnapshot */
         Hf2DeviceSnapshot: {

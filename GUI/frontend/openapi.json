@@ -27604,6 +27604,13 @@
               "dev"
             ],
             "title": "Runtime Mode"
+          },
+          "active_data_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Data Types"
           }
         },
         "type": "object",
@@ -27612,7 +27619,8 @@
           "instance_id",
           "hardware_busy",
           "queued_hardware_jobs",
-          "runtime_mode"
+          "runtime_mode",
+          "active_data_types"
         ],
         "title": "HealthResponse"
       },

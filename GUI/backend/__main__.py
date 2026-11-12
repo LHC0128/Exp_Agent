@@ -128,6 +128,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     options = _parse_options(sys.argv[1:] if argv is None else argv)
     # 只有经启动入口运行的后端才按目录门控拒绝硬件任务（开发目录在入队前拒绝）。
     manager.hardware_policy = require_hardware_mode
+    if not hardware_gate.hardware_allowed():
+        # 开发后端：分析/对比写入前确认运行目录没在采集同类数据。
+        from .main import check_lab_data_idle
+        manager.data_write_policy = check_lab_data_idle
     if options.log_file is not None:
         _redirect_output(options.log_file)
     port = resolve_port()

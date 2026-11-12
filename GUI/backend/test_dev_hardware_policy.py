@@ -122,3 +122,57 @@ def test_backend_port_rejects_wrong_mode(allowed, environ, message):
     with patch("hardware_gate.denial_reason", return_value=None if allowed else "开发"), \
             pytest.raises(SystemExit, match=message):
         resolve_port(environ)
+
+
+def test_data_write_policy_sees_non_hardware_job_kind():
+    manager = JobManager()
+    seen = []
+    manager.data_write_policy = seen.append
+    job = manager.create("analysis:x:run", lambda job: "ok", hardware_required=False)
+    assert finished(manager, job) == "completed"
+    assert seen == ["analysis:x:run"]
+
+
+def _first_experiment():
+    return next(iter(main.list_experiments()))
+
+
+def test_lab_idle_check_follows_lab_health():
+    definition = _first_experiment()
+    kind = f"analysis:{definition.id}:0101_0000_x"
+    cases = [
+        (None, None),  # 运行 GUI 未启动
+        ({"hardware_busy": False, "active_data_types": []}, None),
+        ({"hardware_busy": True, "active_data_types": ["其他类型"]}, None),
+        ({"hardware_busy": True, "active_data_types": [definition.data_type]}, "运行目录正在采集同类数据"),
+        ({"hardware_busy": True}, "运行目录 GUI 正在执行硬件任务"),  # 旧版运行后端
+        ({"hardware_busy": False}, None),
+    ]
+    for health, message in cases:
+        with patch.object(main, "_lab_health", return_value=health):
+            if message is None:
+                main.check_lab_data_idle(kind)
+            else:
+                with pytest.raises(main.HTTPException) as caught:
+                    main.check_lab_data_idle(kind)
+                assert caught.value.status_code == 409 and message in caught.value.detail
+    with patch.object(main, "_lab_health") as health:
+        main.check_lab_data_idle("update:git-pull")
+    health.assert_not_called()
+
+
+def test_health_reports_active_acquisition_types(client):
+    definition = _first_experiment()
+    with patch.object(main.manager, "has_active_kind",
+                      side_effect=lambda kind: kind == f"experiment:{definition.id}"):
+        assert client.get("/api/health").json()["active_data_types"] == [definition.data_type]
+
+
+def test_dev_backend_refuses_delete_and_rename(client):
+    definition = _first_experiment()
+    with DENIED:
+        response = client.delete(f"/api/runs/{definition.id}/0101_0000_x")
+        assert response.status_code == 403
+        assert response.headers["X-Error-Code"] == "dev_data_protected"
+        response = client.post(f"/api/experiments/{main.RF_DIRECT_AW_ID}/runs/0101_0000_x/rename", json={"name": "y"})
+        assert response.status_code == 403

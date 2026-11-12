@@ -130,6 +130,8 @@ class JobManager:
         self.setup_resolver = setup_resolver
         # GUI 启动入口挂 require_hardware_mode；直接导入 app 的测试不挂，行为不变。
         self.hardware_policy: Callable[[], None] | None = None
+        # 开发目录后端挂运行目录忙检查：分析/对比等写数据任务在入队前按任务类型检查。
+        self.data_write_policy: Callable[[str], None] | None = None
         self._finished_sequence = 0
         self._restart_pending = False
         self._shutdown_pending = False
@@ -145,6 +147,8 @@ class JobManager:
     ) -> Job:
         if hardware_required:
             self.check_hardware_policy()
+        elif self.data_write_policy is not None:
+            self.data_write_policy(kind)
         if setup_id is None and self.setup_resolver is not None:
             setup_id = self.setup_resolver()
         with self._hardware_condition:
