@@ -3,7 +3,7 @@
 #   pip install -c constraints/win-py312.lock.txt -e ".[runtime,instruments,analysis,gui]"
 # 约束只限定版本、不额外装包，同一文件也用于加装 dev。只适用于 Windows + Python 3.12；
 # 3.10 / 3.11 仍用 development.txt。notebook extra（jupyter 依赖链）不在锁内，由 pip 自行解析。
-# 更新方法：在已验证的环境中 pip freeze --exclude-editable，替换对应分段，再按 README 在临时环境验证。
+# 更新方法：python -m tools.upgrade_lock prepare → 验证 → python -m tools.upgrade_lock apply（见 README）。
 
 # --- runtime,instruments,analysis,gui（来源：运行目录 agent_exp_env，2026-11-12）---
 annotated-doc==0.0.5

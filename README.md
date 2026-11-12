@@ -51,9 +51,27 @@ GUI 使用上面的 `runtime,instruments,analysis,gui` 组合，不能只安装 
 [`constraints/development.txt`](constraints/development.txt) 只固定直接依赖，供 Python 3.10 / 3.11 兼容候选使用，
 传递依赖由 pip 解析；两者在 3.12 上的直接依赖版本由 [`tools/test_dependency_lock.py`](tools/test_dependency_lock.py) 校验一致。
 
-更新锁文件：在已验证的环境中执行 `pip freeze --exclude-editable`，替换锁文件对应分段（运行组合 / `dev` 增量），
-同步 `development.txt` 的直接依赖版本，再在 `.cache/` 下的临时环境按锁文件安装，确认 `pip check` 通过、
-`pip freeze` 与来源环境一致。不要用 pip-tools / uv 重新解析来更新，它们会改选未经验证的新版本。
+### 升级 Python 依赖
+
+锁文件不禁止升级，只是要求升级先验证再生效。GUI「检查更新」页只列出 Python 包的新版本，
+不在运行环境里就地升级。升级在开发目录用 [`tools/upgrade_lock.py`](tools/upgrade_lock.py) 分两步完成，
+全程只用 `.cache/upgrade-lock/` 下的隔离环境，不碰 `agent_exp_env` 和运行目录：
+
+```powershell
+# 1. 准备：新建隔离环境并升级（省略 --packages 表示按 pyproject 范围全部升到最新），
+#    自动 pip check、生成候选锁、列出版本变化并跑固定快检
+.\agent_exp_env\Scripts\python.exe -m tools.upgrade_lock prepare --packages numpy scipy
+
+# 2. 验证通过后写回锁文件，并同步 development.txt 的直接依赖版本
+.\agent_exp_env\Scripts\python.exe -m tools.upgrade_lock apply
+```
+
+`prepare` 报告仪器 SDK（zhinst、PyVISA、toptica、pyserial）有变化时，`apply` 前需在
+`.cache\upgrade-lock\env` 中连真实仪器确认一次：zhinst 须与 LabOne 和仪器固件版本匹配，假仪器测试发现不了。
+新版本超出 `pyproject.toml` 声明范围（例如 numpy 3）时，先改那里的范围再运行 `prepare`。
+`apply` 后照常提交；`release_to_lab.ps1` 发现 `constraints/` 变化会停下，等你授权在运行目录按新锁文件重装。
+升级出问题时，用 Git 退回上一版锁文件重装即可恢复。不要用 pip-tools / uv 重新解析来更新锁文件，
+它们会改选未经验证的版本。
 
 安装完成后双击根目录 **`start_gui.vbs`** 启动 GUI（无终端窗口；`start_gui.bat` 保留为
 兼容入口，会短暂闪一下控制台）。停止服务双击 **`stop_gui.bat`**。详见
