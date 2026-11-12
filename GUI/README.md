@@ -16,7 +16,7 @@
 不要在正在采集的环境中自动升级依赖。
 
 ```powershell
-.\agent_exp_env\Scripts\python.exe -m pip install -r GUI\requirements.txt
+.\agent_exp_env\Scripts\python.exe -m pip install -c constraints/win-py312.lock.txt -e ".[runtime,instruments,analysis,gui]"
 Set-Location GUI\frontend
 npm ci
 ```

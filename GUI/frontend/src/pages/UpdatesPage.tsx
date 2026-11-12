@@ -36,12 +36,13 @@ type SectionProps<T> = {
   note?: string;
   busy: boolean;
   registerReload: (scope: string, reload: () => void) => void;
-  onUpdate: (path: string, packages: string[]) => void;
+  /** 省略时分区只读：只列出新版本，不提供勾选与更新。 */
+  onUpdate?: (path: string, packages: string[]) => void;
 };
 
 function PackageSection<T>({ scope, url, eyebrow, title, description, rows,
   extraLabel, extraValue, note, busy, registerReload, onUpdate }: SectionProps<T>) {
-  const section = useSection<{ items: ReturnType<typeof rows> }>(url);
+  const section = useSection<{ items: ReturnType<typeof rows>; note?: string }>(url);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   useEffect(() => { setSelected(new Set()); }, [section.data]);
   useEffect(() => { registerReload(scope, section.reload); }, [scope, section.reload, registerReload]);
@@ -60,6 +61,7 @@ function PackageSection<T>({ scope, url, eyebrow, title, description, rows,
       <small>{eyebrow}</small><h2>{title}</h2>
       <p>{description}</p>
       {note && <p><em>{note}</em></p>}
+      {section.data?.note && <p className="alert">{section.data.note}</p>}
       {section.loading && <p className="alert" role="status">正在检查…</p>}
       {section.error && <div className="alert error">{section.error}</div>}
       {section.data && (
@@ -70,14 +72,14 @@ function PackageSection<T>({ scope, url, eyebrow, title, description, rows,
             <table className="job-result-table">
               <thead>
                 <tr>
-                  <th><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="全选" /></th>
+                  {onUpdate && <th><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="全选" /></th>}
                   <th>包</th><th>当前</th><th>最新</th>{extraLabel && <th>{extraLabel}</th>}
                 </tr>
               </thead>
               <tbody>
                 {items.map((row) => (
                   <tr key={row.name}>
-                    <td><input type="checkbox" checked={selected.has(row.name)} onChange={() => toggle(row.name)} aria-label={`选择 ${row.name}`} /></td>
+                    {onUpdate && <td><input type="checkbox" checked={selected.has(row.name)} onChange={() => toggle(row.name)} aria-label={`选择 ${row.name}`} /></td>}
                     <td>{row.name}</td>
                     <td>{row.current}</td>
                     <td>{row.latest}</td>
@@ -91,12 +93,14 @@ function PackageSection<T>({ scope, url, eyebrow, title, description, rows,
       )}
       <div className="updates-actions">
         <button className="secondary" onClick={section.reload} disabled={busy || section.loading}>重新检查</button>
-        <button
-          disabled={busy || selected.size === 0 || section.loading}
-          onClick={() => onUpdate(`/api/updates/${scope}`, [...selected])}
-        >
-          更新选中（{selected.size}）
-        </button>
+        {onUpdate && (
+          <button
+            disabled={busy || selected.size === 0 || section.loading}
+            onClick={() => onUpdate(`/api/updates/${scope}`, [...selected])}
+          >
+            更新选中（{selected.size}）
+          </button>
+        )}
       </div>
     </article>
   );
@@ -221,17 +225,16 @@ export function UpdatesPage() {
       <PageHead
         eyebrow="SYSTEM UPDATES"
         title="检查更新"
-        description="检测 Git 仓库、Python 依赖、npm 包与工具链版本，并提供一键更新；更新任务不占用硬件队列。"
+        description="检测 Git 仓库、Python 依赖、npm 包与工具链版本；Git 与 npm 提供一键更新，Python 依赖按锁文件流程升级；更新任务不占用硬件队列。"
       />
       {error && <div className="alert error">{error}</div>}
       <div className="tool-grid updates-grid">
         <GitSection busy={jobBusy} registerReload={registerReload} onUpdate={startUpdate} />
         <PackageSection<{ items: PipRow[] }>
           scope="pip" url="/api/updates/pip" eyebrow="PYTHON VENV" title="Python 依赖"
-          description="整个 agent_exp_env 的过期包列表，并标注来源声明文件；更新后自动运行 pip check。"
+          description="整个 agent_exp_env 的过期包列表，并标注来源声明文件；只读，不在运行环境里就地升级。"
           rows={(data) => data.items} extraLabel="来源" extraValue={(row) => (row as PipRow).source}
-          note="更新 fastapi / uvicorn / pydantic 后需重启 GUI 后端。"
-          busy={jobBusy} registerReload={registerReload} onUpdate={startUpdate}
+          busy={jobBusy} registerReload={registerReload}
         />
         <PackageSection<{ items: NpmRow[] }>
           scope="npm-frontend" url="/api/updates/npm-frontend" eyebrow="FRONTEND NPM" title="前端依赖"

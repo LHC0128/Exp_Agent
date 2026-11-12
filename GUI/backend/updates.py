@@ -30,6 +30,9 @@ CHECK_TIMEOUT = 180
 UPDATE_TIMEOUT = 900
 NPM_TIMEOUT = 300
 GIT_TIMEOUT = 60
+PIP_UPGRADE_NOTE = ("Python 依赖由 constraints/win-py312.lock.txt 锁定，此处只列出可用新版本；"
+                    "升级请在开发目录运行 tools/upgrade_lock.ps1，验证后更新锁文件再发布。")
+NPM_UPDATE_SCOPES = ("npm-frontend", "npm-global", "npm-olcli")
 
 # 全局 CLI 分区只展示这些包；slidev / marp / opencode 等不列出不检查。
 GLOBAL_CLI_WHITELIST = (
@@ -187,8 +190,7 @@ class UpdatesService:
         sources: dict[str, str] = {}
         files = [
             ("pyproject.toml", "pyproject.toml"),
-            ("GUI/requirements.txt", "GUI/requirements.txt"),
-            ("requirements.txt", "requirements.txt"),
+            ("constraints/win-py312.lock.txt", "constraints/win-py312.lock.txt"),
         ]
         for label, rel in files:
             path = self.root / rel
@@ -217,41 +219,20 @@ class UpdatesService:
             raise RuntimeError(f"pip 输出无法解析：{output[-500:]}") from exc
         sources = self._declared_sources()
         items = []
-        cache: dict[str, str] = {}
         for row in rows:
             name = str(row.get("name") or "").strip()
             current = str(row.get("version") or "")
             latest = str(row.get("latest") or row.get("latest_version") or "")
             if not name or not latest:
                 continue
-            cache[name] = latest
             items.append({
                 "name": name,
                 "current": current,
                 "latest": latest,
                 "source": sources.get(name.lower(), "venv 其他安装"),
             })
-        self._checked["pip"] = cache
-        return {"items": items}
-
-    def update_pip(self, job: Job, packages: list[str]) -> dict[str, Any]:
-        self.manager.event(job, ProgressEvent("update", f"pip install -U {len(packages)} 个包", 10))
-        _, install_out = _run_command(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "--disable-pip-version-check", *packages],
-            timeout=UPDATE_TIMEOUT, cancellation=job.cancellation,
-        )
-        self.manager.event(job, ProgressEvent("check", "运行 pip check 验证依赖一致性", 80))
-        check_rc, check_out = _try_run(
-            [sys.executable, "-m", "pip", "check", "--disable-pip-version-check"], timeout=120,
-        )
-        ok = check_rc == 0
-        return {
-            "updated": packages,
-            "pip_check_ok": ok,
-            "pip_check": check_out.strip()[-2000:],
-            "output_tail": install_out[-2000:],
-            "note": "若更新了 fastapi / uvicorn / pydantic，需重启 GUI 后端生效。",
-        }
+        # 只读：Python 依赖由锁文件固定，不在运行环境里就地升级。
+        return {"items": items, "note": PIP_UPGRADE_NOTE}
 
     # ---------------------------------------------------------------- npm
 
@@ -398,6 +379,8 @@ class UpdatesService:
                 "update:git-pull", self.git_pull, hardware_required=False,
             )
             return job.public()
+        if scope not in NPM_UPDATE_SCOPES:
+            raise HTTPException(422, PIP_UPGRADE_NOTE if scope == "pip" else f"不支持的更新分区：{scope}")
         allowed = self._checked.get(scope)
         if not packages:
             raise HTTPException(422, "未选择任何包。")
@@ -409,8 +392,6 @@ class UpdatesService:
         selected = list(packages)
 
         def runner(job: Job) -> dict[str, Any]:
-            if scope == "pip":
-                return self.update_pip(job, selected)
             return self.update_npm(job, scope, selected)
 
         job = self.manager.create(f"update:{scope}", runner, hardware_required=False)
@@ -470,10 +451,6 @@ def create_router(service: UpdatesService) -> APIRouter:
     @router.post("/git-pull")
     def git_pull():
         return service.start_update("git-pull", None)
-
-    @router.post("/pip")
-    def pip_update(body: UpdateBody):
-        return service.start_update("pip", body.packages)
 
     @router.post("/npm-frontend")
     def npm_frontend_update(body: UpdateBody):

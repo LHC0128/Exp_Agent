@@ -166,7 +166,7 @@ function Get-DependencyChanges([string]$RepoDir, [string]$From, [string]$To) {
 
 function Get-DependencyInstallHint {
     return ('需用户授权后在运行目录手动执行：' +
-        "agent_exp_env\Scripts\python.exe -m pip install -c constraints/development.txt -e `".[runtime,instruments,analysis,gui]`"；" +
+        "agent_exp_env\Scripts\python.exe -m pip install -c constraints/win-py312.lock.txt -e `".[runtime,instruments,analysis,gui]`"；" +
         'GUI\frontend 下 npm ci。')
 }
 

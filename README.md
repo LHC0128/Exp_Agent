@@ -18,11 +18,12 @@ ZIP 也能启动 GUI，但更新与自动验证功能不完整。
 powershell -NoProfile -ExecutionPolicy Bypass -File setup.ps1
 ```
 
-脚本幂等、可重复运行，自动完成虚拟环境和分组依赖安装，任一步失败即停止并报告，不自动降级；
-`-SkipFrontend` 可跳过前端依赖。让 AI 代理安装时，可让它运行本脚本并原样转述输出，
+脚本幂等、可重复运行，自动完成虚拟环境和下面手动路径中的依赖安装（Python 3.12 按完整锁文件，
+其他版本按 `constraints/development.txt`），任一步失败即停止并报告，不自动降级；
+`-SkipFrontend` 可跳过前端依赖，`-Notebook` 另装 Notebook 组合。让 AI 代理安装时，可让它运行本脚本并原样转述输出，
 不要在未告知的情况下改动依赖版本或跳过失败的步骤。
 
-需要明确依赖版本时，推荐以下受约束的手动安装路径（旧安装脚本仍保留其分组安装方式）。
+手动安装时按以下受约束的路径执行（与 `setup.ps1` 等价）。
 在仓库根目录执行；已有日常使用的环境时，不用下面命令刷新它，开发验证改用后面的隔离环境：
 
 ```powershell
@@ -30,7 +31,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File setup.ps1
 if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
     python -m venv agent_exp_env
 }
-.\agent_exp_env\Scripts\python.exe -m pip install -c constraints/development.txt -e ".[runtime,instruments,analysis,gui]"
+# Windows + Python 3.12 用完整锁文件；Python 3.10 / 3.11 改用 -c constraints/development.txt
+.\agent_exp_env\Scripts\python.exe -m pip install -c constraints/win-py312.lock.txt -e ".[runtime,instruments,analysis,gui]"
 
 # 2. 检查后端依赖，再按锁文件安装前端
 .\agent_exp_env\Scripts\python.exe -m pip check
@@ -43,32 +45,56 @@ Set-Location ..\..
 TOPTICA SDK 与进度条。[`pyproject.toml`](pyproject.toml) 的 extras 是可叠加组件，并非各自完整的独立环境；
 GUI 使用上面的 `runtime,instruments,analysis,gui` 组合，不能只安装 `[gui]`。
 需要 Notebook 时在组合中另加 `notebook`；开发测试另加 `dev`。
-[`constraints/development.txt`](constraints/development.txt) 固定直接依赖的开发版本，传递依赖仍由 pip 按兼容性解析，
-不是包含所有传递依赖的完整锁文件。根目录 [`requirements.txt`](requirements.txt) 仅是历史环境快照。
+[`constraints/win-py312.lock.txt`](constraints/win-py312.lock.txt) 是 Windows + Python 3.12 的完整锁文件，
+逐包固定上述组合及 `dev` 的全部传递依赖，取自已验证环境的 `pip freeze`；它以 `-c` 约束形式使用，
+只限定版本、不额外装包。`notebook`（jupyter 依赖链）不在锁内，加装时由 pip 自行解析。
+[`constraints/development.txt`](constraints/development.txt) 只固定直接依赖，供 Python 3.10 / 3.11 兼容候选使用，
+传递依赖由 pip 解析；两者在 3.12 上的直接依赖版本由 [`tools/test_dependency_lock.py`](tools/test_dependency_lock.py) 校验一致。
+
+### 升级 Python 依赖
+
+锁文件不禁止升级，只是要求升级先验证再生效。GUI「检查更新」页只列出 Python 包的新版本，
+不在运行环境里就地升级。升级在开发目录用 [`tools/upgrade_lock.py`](tools/upgrade_lock.py) 分两步完成，
+全程只用 `.cache/upgrade-lock/` 下的隔离环境，不碰 `agent_exp_env` 和运行目录：
+
+```powershell
+# 1. 准备：新建隔离环境并升级（省略 --packages 表示按 pyproject 范围全部升到最新），
+#    自动 pip check、生成候选锁、列出版本变化并跑固定快检
+.\agent_exp_env\Scripts\python.exe -m tools.upgrade_lock prepare --packages numpy scipy
+
+# 2. 验证通过后写回锁文件，并同步 development.txt 的直接依赖版本
+.\agent_exp_env\Scripts\python.exe -m tools.upgrade_lock apply
+```
+
+`prepare` 报告仪器 SDK（zhinst、PyVISA、toptica、pyserial）有变化时，`apply` 前需在
+`.cache\upgrade-lock\env` 中连真实仪器确认一次：zhinst 须与 LabOne 和仪器固件版本匹配，假仪器测试发现不了。
+新版本超出 `pyproject.toml` 声明范围（例如 numpy 3）时，先改那里的范围再运行 `prepare`。
+`apply` 后照常提交；`release_to_lab.ps1` 发现 `constraints/` 变化会停下，等你授权在运行目录按新锁文件重装。
+升级出问题时，用 Git 退回上一版锁文件重装即可恢复。不要用 pip-tools / uv 重新解析来更新锁文件，
+它们会改选未经验证的版本。
 
 安装完成后双击根目录 **`start_gui.vbs`** 启动 GUI（无终端窗口；`start_gui.bat` 保留为
 兼容入口，会短暂闪一下控制台）。停止服务双击 **`stop_gui.bat`**。详见
 [GUI 基础使用](#gui-基础使用)。没有连接实验仪器时 GUI 也能正常启动，可浏览界面与
 历史数据；运行正式实验前需先在 GUI 中完成设备库与物理量映射配置。
 
-需要导出当前环境时：
+需要排查或对比当前环境时，可导出到 `.cache/` 下（不提交）：
 
 ```powershell
-.\agent_exp_env\Scripts\python.exe -m pip freeze > requirements.txt
+.\agent_exp_env\Scripts\python.exe -m pip freeze --exclude-editable > .cache/env-freeze.txt
 ```
-
-保存前将本项目的可编辑安装条目规范为 `-e .`，移除机器路径和带凭据的地址。
 
 ## 开发安装与无硬件检查
 
 开发验证使用独立环境，不升级或覆盖正在运行实验的 `agent_exp_env`。以下命令从仓库根目录执行；
 当前验收组合为 Windows、Python 3.12 和 Node.js 24。项目仍声明支持 Python 3.10；
-约束文件按 Python 版本区分 NumPy、SciPy 和 Matplotlib，保留 3.10 / 3.11 的兼容候选版本，
+下例使用 3.12 完整锁文件；3.10 / 3.11 改用 `constraints/development.txt`，它按 Python 版本区分
+NumPy、SciPy 和 Matplotlib，保留兼容候选版本，
 但这两个解释器及完整 Notebook 交互流程尚未实跑验证。
 
 ```powershell
 python -m venv .cache/dev-env
-.\.cache\dev-env\Scripts\python.exe -m pip install -c constraints/development.txt -e ".[runtime,instruments,analysis,gui,dev]"
+.\.cache\dev-env\Scripts\python.exe -m pip install -c constraints/win-py312.lock.txt -e ".[runtime,instruments,analysis,gui,dev]"
 .\.cache\dev-env\Scripts\python.exe -m pip check
 
 # 固定公共契约快检；默认不依赖 Git，不连接仪器，不启动服务
