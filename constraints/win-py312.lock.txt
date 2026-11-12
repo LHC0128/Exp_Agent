@@ -5,17 +5,17 @@
 # 3.10 / 3.11 仍用 development.txt。notebook extra（jupyter 依赖链）不在锁内，由 pip 自行解析。
 # 更新方法：python -m tools.upgrade_lock prepare → 验证 → python -m tools.upgrade_lock apply（见 README）。
 
-# --- runtime,instruments,analysis,gui（来源：运行目录 agent_exp_env，2026-11-12）---
-annotated-doc==0.0.5
+# --- runtime,instruments,analysis,gui（来源：tools.upgrade_lock 升级环境，2026-11-12）---
+annotated-doc==0.0.6
 annotated-types==0.8.0
-anyio==4.15.1
+anyio==4.16.0
 attrs==26.1.0
-click==8.5.0
+click==8.5.1
 colorama==0.4.6
 contourpy==1.4.0
 cycler==0.12.1
-fastapi==0.162.0
-fonttools==4.67.0
+fastapi==0.162.5
+fonttools==4.68.0
 h11==0.16.0
 httptools==0.9.0
 idna==3.20
@@ -26,15 +26,15 @@ jsonschema-specifications==2025.9.1
 kiwisolver==1.5.1
 matplotlib==3.11.2
 numpy==2.5.4
-opentelemetry-api==1.45.1
+opentelemetry-api==1.45.2
 packaging==26.3
 pillow==13.0.0
-pydantic==2.14.1
-pydantic_core==2.50.1
+pydantic==2.14.3
+pydantic_core==2.50.4
 pyelftools==0.33
 pyparsing==3.3.3
 pyserial==3.5
-python-dateutil==3.0.0
+python-dateutil==4.0.0
 python-dotenv==1.2.4
 PyVISA==1.16.2
 PyVISA-py==0.8.1
@@ -42,23 +42,22 @@ PyYAML==6.0.3
 referencing==0.37.0
 rpds-py==2026.9.1
 scipy==1.18.1
-six==1.17.0
 starlette==1.10.0
 toptica_lasersdk==3.3.0
 tqdm==4.70.1
-typing-inspection==0.4.4
+typing-inspection==0.4.5
 typing_extensions==4.16.0
-tzdata==2026.5
+tzdata==2026.6
 uvicorn==0.54.0
 watchfiles==1.3.0
-websockets==16.1.1
-zhinst==26.7.2
-zhinst-core==26.7.2.5
-zhinst-timing-models==26.7.0
+websockets==17.4
+zhinst==26.10.0
+zhinst-core==26.10.0.988
+zhinst-timing-models==26.10.0
 zhinst-toolkit==1.4.0
 zhinst-utils==0.7.2
 
-# --- dev 增量（来源：开发目录 agent_exp_env，2026-11-12；其余依赖已在上段）---
+# --- dev 增量（来源：tools.upgrade_lock 升级环境，2026-11-12；其余依赖已在上段）---
 certifi==2026.10.23
 execnet==2.1.2
 httpcore==1.0.9
@@ -66,6 +65,6 @@ httpx==0.28.1
 iniconfig==2.3.1
 pluggy==1.7.0
 Pygments==2.21.0
-pytest==9.1.1
+pytest==9.2.0
 pytest-timeout==2.4.0
 pytest-xdist==3.8.0

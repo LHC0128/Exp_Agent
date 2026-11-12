@@ -16,11 +16,11 @@ PyYAML==6.0.3
 PyVISA==1.16.2
 PyVISA-py==0.8.1
 pyserial==3.5
-zhinst==26.7.2
-fastapi==0.162.0
+zhinst==26.10.0
+fastapi==0.162.5
 uvicorn==0.54.0
-pydantic==2.14.1
-pytest==9.1.1
+pydantic==2.14.3
+pytest==9.2.0
 httpx==0.28.1
 pytest-xdist==3.8.0
 pytest-timeout==2.4.0
