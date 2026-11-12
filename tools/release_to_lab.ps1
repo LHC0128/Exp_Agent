@@ -182,7 +182,8 @@ function Update-FrontendDist([string]$RunDirPath) {
     Write-ReleaseLog "构建前端：npm run build -- --outDir $tmpOut"
     Push-Location -LiteralPath $frontendDir
     try {
-        & $npm.Source run build -- --outDir $tmpOut
+        # 构建输出直接显示，不能进入函数输出流：本函数用返回值（$null=成功）表示构建结果。
+        & $npm.Source run build -- --outDir $tmpOut | Out-Host
         $buildCode = $LASTEXITCODE
     } finally {
         Pop-Location

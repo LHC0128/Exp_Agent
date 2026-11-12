@@ -96,6 +96,9 @@ function Invoke-FakeNpm {
         $global:LASTEXITCODE = 1
         return
     }
+    # 真实 npm 会向标准输出打印构建日志；假 npm 同样输出，防止构建日志被误当成失败原因。
+    Write-Output "> vite build --outDir $outDir"
+    Write-Output '✓ built in 0.01s'
     New-Item -ItemType Directory -Force -Path $outDir | Out-Null
     Set-Content -LiteralPath (Join-Path $outDir 'index.html') -Value 'NEW BUILD' -Encoding UTF8
     $global:LASTEXITCODE = 0
