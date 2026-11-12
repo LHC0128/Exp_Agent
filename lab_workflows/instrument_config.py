@@ -11,6 +11,8 @@ from typing import Any, Mapping
 
 import yaml
 
+from hardware_gate import require_hardware_access
+
 from .common import WorkflowCancelled, find_project_root
 
 
@@ -618,6 +620,8 @@ def select_lockin_device(device_id: str, *, device_library_revision: str,
 def discover_visa_devices(root: Path | None = None) -> dict[str, Any]:
     """枚举 VISA、网络资源与锁相设备身份和实际接口，不改变设置或设备库。"""
     from .experiment_runtime import check_cancelled
+
+    require_hardware_access("设备发现（VISA 与 LabOne）")
 
     library = load_device_definitions(root)
     configured = load_device_document(root)["network_resources"]

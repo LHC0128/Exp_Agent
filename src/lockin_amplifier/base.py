@@ -5,6 +5,8 @@ import math
 import re
 from typing import Optional
 
+from hardware_gate import require_hardware_access
+
 logger = logging.getLogger(__name__)
 
 # zhinst 在首次导入时会输出大量日志，暂时压制
@@ -94,6 +96,7 @@ class LockinInstrument:
         )
         if self.connected:
             return
+        require_hardware_access(f"锁相 {self.device_id} @ {self.host}:{self.port}")
         server = _zi.ziDAQServer(self.host, self.port, self.api_level)
         try:
             server.connectDevice(self.device_id, self.interface)

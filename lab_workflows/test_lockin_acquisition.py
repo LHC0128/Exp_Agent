@@ -556,3 +556,15 @@ def test_offline_requests_and_session_snapshot():
     assert instr.acquisition_mode == "auto"
     values["NOISE_DURATION"] = 100
     assert any("超出内存" in message for message in lockin_preflight("rf-sensitivity-aw", values, mapping=mapping | {"lockin_r": {**config, "acquisition_mode": "auto"}}))
+
+# 本模块用打桩的通信库测试驱动连接逻辑；开发目录门控默认拒绝，这里只放行门控本身。
+_HARDWARE_GATE = __import__("unittest.mock", fromlist=["patch"]).patch(
+    "hardware_gate.denial_reason", return_value=None)
+
+
+def setup_module(module=None):
+    _HARDWARE_GATE.start()
+
+
+def teardown_module(module=None):
+    _HARDWARE_GATE.stop()

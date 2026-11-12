@@ -3,6 +3,7 @@ import logging
 from typing import Optional, Tuple
 
 import serial
+from hardware_gate import require_hardware_access
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ class TECInstrument:
             except Exception:
                 pass
             self._serial = None
+        require_hardware_access(f"TEC {self.port}")
         self._serial = serial.Serial(
             port=self.port,
             baudrate=self.baudrate,

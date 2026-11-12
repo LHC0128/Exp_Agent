@@ -26,6 +26,7 @@ from pyvisa.resources import MessageBasedResource
 
 from signal_generator import _visa
 from signal_generator.types import BurstMode, ModType, OutputPolarity, VoltageUnit, WaveShape, normalize_output_load
+from hardware_gate import require_hardware_access
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,7 @@ class DG900Instrument:
 
     def connect(self) -> None:
         """打开 PyVISA 资源。"""
+        require_hardware_access(f"DG900 {self.resource_string}")
         self._rm = pyvisa.ResourceManager()
         self._inst = self._rm.open_resource(self.resource_string)
         self._inst.timeout = self.timeout

@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from hardware_gate import HardwareAccessDenied
+
 from .safety_shutdown import DisconnectTarget, disconnect_device_mapping, disconnect_devices
 
 
@@ -43,6 +45,9 @@ class DeviceSession:
         """连接可选设备；失败时记录原因并允许实验继续。"""
         try:
             return self.connect(semantic_name, resource, factory)
+        except HardwareAccessDenied:
+            # 门控拒绝不是可选设备故障：上抛，避免缺设备继续运行。
+            raise
         except Exception as exc:
             label = device_label or semantic_name
             message = (

@@ -8,6 +8,7 @@ import pyvisa
 from pyvisa.resources import MessageBasedResource
 
 from signal_generator import _visa
+from hardware_gate import require_hardware_access
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ class DG4000Instrument:
     # ==================================================================
 
     def connect(self) -> None:
+        require_hardware_access(f"DG4000 {self.resource_string}")
         self._rm = pyvisa.ResourceManager()
         self._inst = self._rm.open_resource(self.resource_string)
         self._inst.timeout = self.timeout

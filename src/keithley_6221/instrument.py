@@ -9,6 +9,7 @@ from typing import Optional
 
 import pyvisa
 from pyvisa.resources import MessageBasedResource
+from hardware_gate import require_hardware_access
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class Keithley6221Instrument:
         self._inst: Optional[MessageBasedResource] = None
 
     def connect(self) -> None:
+        require_hardware_access(f"Keithley 6221 {self.resource_string}")
         self._rm = pyvisa.ResourceManager()
         self._inst = self._rm.open_resource(self.resource_string)
         self._inst.timeout = self.timeout

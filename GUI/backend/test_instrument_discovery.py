@@ -276,6 +276,18 @@ class InstrumentDiscoveryTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["network_resources"], [LAN])
 
+# 本模块用打桩的通信库测试驱动连接逻辑；开发目录门控默认拒绝，这里只放行门控本身。
+_HARDWARE_GATE = __import__("unittest.mock", fromlist=["patch"]).patch(
+    "hardware_gate.denial_reason", return_value=None)
+
+
+def setup_module(module=None):
+    _HARDWARE_GATE.start()
+
+
+def teardown_module(module=None):
+    _HARDWARE_GATE.stop()
+
 
 if __name__ == "__main__":
     unittest.main()

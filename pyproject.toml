@@ -56,6 +56,7 @@ timeout_method = "thread"
 where = ["src", "."]
 include = [
   "gs200*",
+  "hardware_gate*",
   "keithley_6221*",
   "lockin_amplifier*",
   "sds_acquisition*",

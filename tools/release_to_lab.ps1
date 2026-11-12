@@ -151,11 +151,27 @@ function Split-StatusByParams([string[]]$Lines) {
     return @{ Params = $params; Other = $other }
 }
 
+# 运行目录标记 .lab_runtime（内容为运行目录绝对路径）是驱动层放行真实仪器的唯一依据；
+# 缺失或不符时发布后 GUI 连不上仪器，所以发布前拦截。返回问题描述，正常返回 $null。
+function Get-RuntimeMarkerProblem([string]$RunDirPath) {
+    $marker = Join-Path $RunDirPath '.lab_runtime'
+    if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
+        return "运行目录缺少标记 .lab_runtime（发布后将无法连接仪器）"
+    }
+    $recorded = (Get-Content -LiteralPath $marker -Raw -Encoding UTF8).Trim()
+    if ((Resolve-FullPath $recorded) -ne (Resolve-FullPath $RunDirPath)) {
+        return "运行目录标记 .lab_runtime 记录的路径 $recorded 与运行目录不符"
+    }
+    return $null
+}
+
 function Assert-RunDirOnLab([string]$RunDirPath) {
     $branch = Get-GitBranch $RunDirPath
     if ($branch -ne 'lab') {
         Stop-Release "运行目录当前分支是 $branch，应为 lab；请先人工切回 lab 分支。"
     }
+    $markerProblem = Get-RuntimeMarkerProblem $RunDirPath
+    if ($markerProblem) { Stop-Release "$markerProblem；请先按 T9 设计创建标记。" }
 }
 
 # 两个提交之间依赖清单的变化（文件名列表文本）；无变化返回空串。
@@ -293,6 +309,8 @@ function Show-ReleasePlan([string]$DevDirPath, [string]$RunDirPath) {
         $latestTag = if ($tags.Count -gt 0) { $tags[-1].Name } else { '（无）' }
         Write-ReleaseLog "运行目录：$RunDirPath（分支 $runBranch，HEAD $(Get-ShortRev $runHead)，最新标签 $latestTag）"
         if ($runBranch -ne 'lab') { $blockers += "运行目录分支是 $runBranch，应为 lab" }
+        $markerProblem = Get-RuntimeMarkerProblem $RunDirPath
+        if ($markerProblem) { $blockers += $markerProblem }
 
         $status = Split-StatusByParams (Get-RepoStatusLines $RunDirPath)
         if ($status.Other.Count -gt 0) { $blockers += '运行目录有 params/ 以外的未提交改动' }

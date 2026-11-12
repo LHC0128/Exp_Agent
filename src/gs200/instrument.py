@@ -3,6 +3,7 @@ from typing import Optional
 
 import pyvisa
 from pyvisa.resources import MessageBasedResource
+from hardware_gate import require_hardware_access
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class GS200Instrument:
     # ------------------------------------------------------------------
 
     def connect(self) -> None:
+        require_hardware_access(f"GS200 {self.resource_string}")
         self._rm = pyvisa.ResourceManager()
         try:
             self._inst = self._rm.open_resource(self.resource_string)

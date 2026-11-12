@@ -145,7 +145,7 @@ function New-Fixture([string]$CaseName) {
     New-Item -ItemType Directory -Force -Path $dev | Out-Null
     Invoke-FixtureGit $dev @('init', '-b', 'master') | Out-Null
     Set-FixtureGitIdentity $dev
-    Write-FixtureFile (Join-Path $dev '.gitignore') "agent_exp_env/`ndata/`n.cache/`ntmp/`nGUI/frontend/dist/`nGUI/frontend/node_modules/`n"
+    Write-FixtureFile (Join-Path $dev '.gitignore') "agent_exp_env/`ndata/`n.cache/`ntmp/`nGUI/frontend/dist/`nGUI/frontend/node_modules/`n.lab_runtime`n"
     Write-FixtureFile (Join-Path $dev 'params\mapping.yaml') "base: 1`n"
     Write-FixtureFile (Join-Path $dev 'pyproject.toml') "[project]`nname = 'fixture'`nversion = '0.1.0'`n"
     Write-FixtureFile (Join-Path $dev 'constraints\development.txt') "# 约束占位`n"
@@ -161,6 +161,7 @@ function New-Fixture([string]$CaseName) {
     Set-FixtureGitIdentity $run
     Invoke-FixtureGit $run @('switch', '-c', 'lab', 'origin/master') | Out-Null
     Invoke-FixtureGit $run @('tag', 'lab-20260101-1') | Out-Null
+    Write-FixtureFile (Join-Path $run '.lab_runtime') $run
     Write-FixtureFile (Join-Path $run 'GUI\frontend\dist\index.html') 'OLD BUILD'
     New-Item -ItemType Directory -Force -Path (Join-Path $run 'tmp') | Out-Null
 
@@ -625,6 +626,25 @@ try {
     Assert-CaseFailed $r '未确认测试' '未确认'
     Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '未确认测试：运行目录被改动'
     $Passed += 1; Write-Host '通过：未确认测试取消'
+
+    # 25 运行目录缺少或带错标记 .lab_runtime → 发布与 DryRun 都停止，不改动
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-25'
+    $f = New-Fixture 'no-marker'
+    Remove-Item -LiteralPath (Join-Path $f.Run '.lab_runtime') -Force
+    $headBefore = Get-FixtureHead $f.Run
+    $r = Invoke-ReleaseCase $f
+    Assert-CaseFailed $r '缺少运行标记' '缺少标记 \.lab_runtime'
+    Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '缺少运行标记：运行目录被改动'
+    Assert ($TestState.NpmCalls.Count -eq 0 -and $TestState.StopCalls.Count -eq 0) '缺少运行标记：仍执行了构建/停止'
+    $r = Invoke-ReleaseCase $f -Options @{ DryRun = $true }
+    Assert-CaseFailed $r '缺少运行标记 DryRun' '预检阻塞：运行目录缺少标记'
+    Write-FixtureFile (Join-Path $f.Run '.lab_runtime') $f.Dev
+    $r = Invoke-ReleaseCase $f
+    Assert-CaseFailed $r '标记路径不符' '与运行目录不符'
+    Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '标记路径不符：运行目录被改动'
+    $Passed += 1; Write-Host '通过：运行目录标记缺失或不符停止'
 
     Write-Host "全部 $Passed 项发布演练通过；未连接真实 8000、未启动 GUI、未触碰真实运行目录。"
     Remove-Item -LiteralPath $TestRoot -Recurse -Force

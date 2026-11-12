@@ -373,6 +373,18 @@ class SelectionTests(unittest.TestCase):
         coupling = {**cases[1][1], "SENSE_RESISTOR_OHM": 10}
         self.assertTrue(any("完整扫频窗口" in error for error in lockin_preflight("mx-z-current-coupling-calibration", coupling, mapping=mapping)))
 
+# 本模块用打桩的通信库测试驱动连接逻辑；开发目录门控默认拒绝，这里只放行门控本身。
+_HARDWARE_GATE = __import__("unittest.mock", fromlist=["patch"]).patch(
+    "hardware_gate.denial_reason", return_value=None)
+
+
+def setup_module(module=None):
+    _HARDWARE_GATE.start()
+
+
+def teardown_module(module=None):
+    _HARDWARE_GATE.stop()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -57,3 +57,7 @@ docs/old/architecture/*.visual-check.*
 
 # pi 本地配置（不上传 GitHub）
 .pi/
+
+# 运行目录标记与开发本地配置（各目录本地生成，不上传）
+.lab_runtime
+.lab_dev.yaml

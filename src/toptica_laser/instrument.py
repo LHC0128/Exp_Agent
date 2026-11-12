@@ -6,6 +6,7 @@ import math
 from typing import Any, Callable
 
 from toptica.lasersdk.client import Client, NetworkConnection
+from hardware_gate import require_hardware_access
 
 
 class DLCProInstrument:
@@ -58,6 +59,7 @@ class DLCProInstrument:
     def connect(self) -> None:
         if self.connected:
             return
+        require_hardware_access(f"DLC pro {self.host}")
         connection = self._connection_factory(
             self.host,
             command_line_port=self.command_port,

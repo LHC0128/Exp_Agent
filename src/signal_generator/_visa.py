@@ -6,6 +6,7 @@ import time
 
 import pyvisa
 from pyvisa.constants import StatusCode
+from hardware_gate import require_hardware_access
 
 
 def _image_size(data: bytes, image_format: str) -> int | None:
@@ -112,6 +113,7 @@ def recover_connection(driver, drain_reads, *, wait_seconds=None):
     try:
         if opened:
             # 恢复入口不能依赖 connect() 的首次 IDN 查询成功。
+            require_hardware_access(f"信号源 {driver.resource_string}")
             driver._rm = pyvisa.ResourceManager()
             driver._inst = driver._rm.open_resource(driver.resource_string)
         instrument = driver._inst

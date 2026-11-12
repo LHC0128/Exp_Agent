@@ -422,6 +422,18 @@ class ArbFileTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             driver.get_arb_wave_points("wave.arb")
 
+# 本模块用打桩的通信库测试驱动连接逻辑；开发目录门控默认拒绝，这里只放行门控本身。
+_HARDWARE_GATE = __import__("unittest.mock", fromlist=["patch"]).patch(
+    "hardware_gate.denial_reason", return_value=None)
+
+
+def setup_module(module=None):
+    _HARDWARE_GATE.start()
+
+
+def teardown_module(module=None):
+    _HARDWARE_GATE.stop()
+
 
 if __name__ == "__main__":
     unittest.main()
