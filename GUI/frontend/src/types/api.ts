@@ -500,6 +500,8 @@ export type ParameterValue = string | number | boolean | null | number[] | strin
 export type ParameterValues = Record<string, ParameterValue>;
 
 export type SchemaOption = { value: string | number; label: string };
+/** 参数与一个物理量设置项的绑定：direct 原样相等可比较回存，derived 经换算只展示 note。 */
+export type ParameterSetting = { role: string; field: string; relation: "direct" | "derived"; note?: string };
 export type SchemaField = {
   name: string;
   label: string;
@@ -517,6 +519,8 @@ export type SchemaField = {
   /** 参数写入的物理用途键（params/mapping.yaml）；目标接线图据此按器件展示。 */
   roles?: string[];
   /** 参数对应的仪器用途键与设置项，用于回读对比。 */
+  settings?: ParameterSetting[];
+  /** 后端兼容输出：settings 中第一条 direct 绑定。 */
   setting?: { role: string; field: string };
 };
 export type ParameterGroup = "basic" | "advanced";

@@ -28,7 +28,6 @@ const base = (overrides: Partial<WiringPreflightInput> = {}): WiringPreflightInp
   diagnostics: [],
   diagnosticsStale: false,
   blockedEdgeIds: [],
-  profileBadges: {},
   deviceName: id => (({ "device-a": "信号源", "device-b": "锁相" }) as Record<string, string>)[id] ?? id,
   ...overrides,
 });
@@ -101,16 +100,11 @@ describe("buildWiringPreflight", () => {
     expect(items[1].message).toContain("暂时无法绕行");
   });
 
-  it("档案差异按设备汇总并指向器件；重复条目只保留一条", () => {
+  it("重复条目只保留一条", () => {
     const status = { device_id: "device-a", state: "pending" as const, mapping_keys: [], message: "等待确认用途" };
-    const items = buildWiringPreflight(base({
-      followStatuses: [status, status],
-      profileBadges: { "device-a": ["model", "ports"] },
-    }));
-    expect(items).toHaveLength(2);
+    const items = buildWiringPreflight(base({ followStatuses: [status, status] }));
+    expect(items).toHaveLength(1);
     expect(items[0].message).toContain("信号源：等待确认用途");
-    expect(items[1].message).toContain("型号不一致、端口或模式不一致");
-    expect(items[1].focus).toEqual({ kind: "device", deviceId: "device-a" });
   });
 
   it("零条目返回空清单，文案不声称通过或正确", () => {

@@ -20,8 +20,11 @@
 .wiring-workspace { display: grid; grid-template-columns: minmax(180px, 230px) minmax(0, 1fr) minmax(220px, 280px); gap: 14px; align-items: start; min-width: 0; max-width: 100%; }
 .wiring-workspace > *, .wiring-canvas-column, .wiring-panel { min-width: 0; max-width: 100%; }
 .wiring-panel { padding: 16px; border: 1px solid var(--border, #dbe3e9); border-radius: 10px; background: var(--panel, #fff); overflow-wrap: anywhere; }
-.wiring-library, .wiring-device-editor { display: grid; gap: 13px; }
-.wiring-library p, .wiring-device-editor p { margin-bottom: 0; }
+.wiring-library, .wiring-device-panel { display: grid; gap: 13px; }
+.wiring-library p, .wiring-device-panel p { margin-bottom: 0; }
+.wiring-device-identity { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.wiring-device-identity strong { font-size: .9rem; }
+.wiring-device-identity span { color: var(--muted, #657486); font-size: .8rem; }
 .wiring-profile-list { display: grid; gap: 8px; }
 .wiring-profile-list button { display: grid; gap: 5px; text-align: left; }
 .wiring-profile-list small, .wiring-profile-list span { font-weight: 400; }
@@ -114,15 +117,9 @@
 .wiring-node-title strong { flex: 1 1 auto; min-width: 0; font-size: .75rem; line-height: 1.35; overflow-wrap: anywhere; }
 .wiring-node-title span { flex: 0 1 auto; min-width: 0; font-size: .65rem; font-weight: 400; text-align: right; color: #d5e5ec; overflow-wrap: anywhere; }
 .wiring-node-profile-badges { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
-.wiring-profile-badges { display: flex; flex-wrap: wrap; gap: 4px; }
 .wiring-profile-badge { padding: 2px 6px; border: 1px solid #e2c98f; border-radius: 999px; color: #70521e; background: #fff8df; font-size: .65rem; line-height: 1.4; }
 .wiring-profile-badge.missing { color: #8a3030; background: #fdecec; border-color: #e7b6b6; }
 .wiring-profile-badge.model { color: #3c4c8a; background: #eef2ff; border-color: #c3cdf0; }
-.wiring-profile-sync { display: grid; gap: 8px; padding: 9px; border: 1px dashed #c4d3dc; border-radius: 8px; }
-.wiring-profile-sync h3, .wiring-sync-preview h4 { margin: 0; }
-.wiring-sync-preview { display: grid; gap: 7px; padding: 9px; background: #f6fafc; border: 1px solid #dbe3e9; border-radius: 8px; }
-.wiring-sync-preview ul { margin: 0; padding-left: 18px; font-size: .8rem; line-height: 1.55; }
-.wiring-sync-preview p { margin: 0; }
 .wiring-node-ports { display: grid; align-content: start; gap: 6px; min-width: 0; }
 .wiring-outputs { text-align: right; }
 .wiring-port-item { display: grid; grid-template-columns: minmax(0, 1fr) 29px; align-items: start; gap: 3px; min-width: 0; }
@@ -153,7 +150,6 @@
 .wiring-page .wiring-usage-toggle { min-width: 0; min-height: 26px; padding: 3px 1px; font-size: .6rem; line-height: 1.3; font-weight: 500; color: #68757b; background: #edf0f2; border: 1px solid #c8d4da; border-radius: 3px; }
 .wiring-page .wiring-usage-toggle[aria-pressed="true"] { color: #2f6c59; border-color: #a9c9bc; background: #e9f3ed; }
 .wiring-page .wiring-usage-toggle:disabled { opacity: .8; cursor: default; }
-.wiring-device-editor .wiring-usage-toggle { min-width: 50px; margin-left: 8px; }
 .wiring-unused-ports { grid-column: 1 / -1; min-width: 0; border-top: 1px solid #e0e6e9; padding-top: 5px; }
 .wiring-page .wiring-unused-toggle { width: 100%; padding: 3px 5px; color: #6a757b; background: #edf0f2; font-size: .65rem; font-weight: 400; }
 .wiring-unused-list { display: grid; gap: 4px; padding-top: 5px; }
@@ -163,9 +159,9 @@
 /* 层原点对齐节点盒，坐标即节点局部坐标；画在按钮之前，文字始终在线上方。 */
 .wiring-internal-lines { position: absolute; pointer-events: none; }
 .wiring-internal-lines .wiring-line-hit { stroke-width: 10; }
-.wiring-internal-heading, .wiring-settings-heading { grid-column: 1 / -1; display: grid; gap: 2px; min-width: 0; font-size: .68rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.wiring-internal-heading { grid-column: 1 / -1; display: grid; gap: 2px; min-width: 0; font-size: .68rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .wiring-internal-heading { padding: 0 8px; color: #714292; }
-.wiring-internal-heading small, .wiring-settings-heading small { font-size: .6rem; font-weight: 400; }
+.wiring-internal-heading small { font-size: .6rem; font-weight: 400; }
 .wiring-internal-direction { padding: 0 7px; font-size: .6rem; color: #806291; }
 .wiring-internal-outputs { text-align: right; }
 .wiring-port.signal-internal { border-color: #b196c7; border-style: dashed; background: #f4edf9; color: #694482; border-radius: 0 4px 4px 0; padding-inline: 7px; }
@@ -173,10 +169,6 @@
 .wiring-internal-outputs .wiring-port { text-align: right; border-radius: 4px 0 0 4px; }
 .wiring-internal-outputs .wiring-port::before { left: auto; right: -4px; }
 .wiring-port.signal-internal.pending { outline-color: #b590d0; }
-.wiring-node-settings { grid-column: 1 / -1; display: grid; gap: 7px; min-width: 0; padding-top: 5px; border-top: 1px solid #e0e6e9; }
-.wiring-settings-heading { color: #526c79; }
-.wiring-page .wiring-node-settings label { gap: 3px; font-size: .67rem; line-height: 1.4; overflow-wrap: anywhere; }
-.wiring-page .wiring-node-settings select { width: 100%; padding: 4px; font-size: .7rem; }
 .wiring-canvas-empty { position: absolute; top: 80px; left: 60px; width: 340px; color: #5f7782; line-height: 1.7; }
 .wiring-legend { display: flex; flex-wrap: wrap; gap: 10px 18px; padding: 10px 14px; margin: 0; border-top: 1px solid #dbe3e9; background: #fff; }
 .wiring-legend .signal-optical { color: #267e9d; }.wiring-legend .signal-electrical { color: #9e692f; }.wiring-legend .signal-internal { color: #8052a5; }
@@ -188,15 +180,13 @@
 .wiring-edge-list { display: grid; gap: 7px; margin-bottom: 12px; max-height: 240px; overflow: auto; }
 .wiring-edge-list button { display: grid; gap: 3px; text-align: left; }
 .wiring-edge-list small { font-weight: 400; }
-.wiring-port-editor { display: grid; gap: 10px; padding: 12px; border: 1px solid #d2dfe7; border-radius: 7px; }
-.wiring-port-editor legend { font-size: .78rem; padding: 0 4px; max-width: 100%; }
 .wiring-section-head { justify-content: space-between; }
 .wiring-section-head h3 { margin-bottom: 0; }
 .wiring-section-head button { font-size: .75rem; padding: 7px 10px; }
 .wiring-comparison-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
 .wiring-comparison-columns > section { min-width: 0; padding: 14px; background: #f4f7fa; border-radius: 7px; }
 .wiring-compare li, .wiring-diagnostics li { margin-bottom: 7px; font-size: .84rem; }
-@media (max-width: 1450px) { .wiring-workspace { grid-template-columns: minmax(170px, 210px) minmax(0, 1fr); }.wiring-device-editor { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }.wiring-device-editor > h2, .wiring-device-editor > p, .wiring-device-editor > .wiring-section-head { grid-column: 1 / -1; } }
+@media (max-width: 1450px) { .wiring-workspace { grid-template-columns: minmax(170px, 210px) minmax(0, 1fr); }.wiring-device-panel { grid-column: 1 / -1; } }
 @media (max-width: 850px) { .wiring-workspace { grid-template-columns: minmax(0, 1fr); }.wiring-library { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }.wiring-library > h2, .wiring-library > p, .wiring-library > .wiring-profile-list { grid-column: 1 / -1; }.wiring-profile-list { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }.wiring-viewport { height: 520px; }.wiring-comparison-columns { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .wiring-page * { scroll-behavior: auto; } }
 /* 实验内嵌目标接线图：画布优先，右侧贴边编辑栏，低频操作折叠；全局编辑页不受影响。 */
@@ -225,7 +215,7 @@
 .wiring-workspace-embedded .wiring-viewport { height: max(440px, calc(100vh - 160px)); }
 .wiring-side { position: sticky; top: 12px; display: grid; align-content: start; gap: 12px; max-height: calc(100vh - 24px); overflow-y: auto; overscroll-behavior: contain; }
 .wiring-side .wiring-panel { padding: 12px; }
-.wiring-side .wiring-device-editor { grid-column: auto; grid-template-columns: minmax(0, 1fr); }
+.wiring-side .wiring-device-panel { grid-column: auto; }
 .wiring-side .wiring-pair, .wiring-side .wiring-fields { flex-direction: column; align-items: stretch; }
 .wiring-side .wiring-pair label, .wiring-side .wiring-fields label { flex: 0 0 auto; }
 .wiring-side .wiring-edge-list { max-height: 200px; }
@@ -264,16 +254,27 @@
 .wiring-debug-target h3 { margin: 0; font-size: .95rem; }
 .wiring-debug-target h3 small { font-weight: 400; color: var(--muted, #5b6b78); }
 
-/* 目标接线图调试：紧凑回读对比表、局部写入与独立输出动作。 */
+/* 目标接线图调试：远程信号源面板与只读回读对比表。 */
+.wiring-debug-generator { margin: 8px 0 0; padding: 0; border: 0; }
+.wiring-debug-generator > .workspace-head { display: none; }
+.wiring-debug-generator .generator-panel { margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
+.wiring-debug-generator .generator-head, .wiring-debug-generator .generator-footer { flex-wrap: wrap; }
+.wiring-debug-generator .generator-waveforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wiring-debug-generator .generator-params, .wiring-debug-generator .form-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.wiring-debug-generator .generator-params input { padding: 7px 48px 7px 8px; font-size: 13px; }
+.wiring-debug-generator .generator-unit { height: 33px; }
+.wiring-debug-generator .generator-unit select { width: auto; }
+.wiring-debug-generator label > span { font-size: 10px; }
+.wiring-debug-generator .alert { margin: 8px 0; padding: 8px; font-size: 10px; }
 .wiring-debug-table-wrap { max-width: 100%; overflow-x: auto; margin: 8px 0; }
 .wiring-debug-table { width: 100%; border-collapse: collapse; font-size: .76rem; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .wiring-debug-table th, .wiring-debug-table td { padding: 5px 6px; border-bottom: 1px solid var(--border, #dbe3e9); text-align: left; vertical-align: top; }
 .wiring-debug-table thead th { background: var(--surface-muted, #f3f6f8); white-space: nowrap; font-weight: 600; }
 .wiring-debug-table th[scope="row"] { white-space: nowrap; font-weight: 500; }
 .wiring-debug-table td { min-width: 58px; overflow-wrap: anywhere; }
-.wiring-debug-table input { width: 76px; min-width: 0; padding: 4px 6px; font: inherit; }
 .wiring-debug-table .wiring-debug-diff { background: #fff3cd; }
 .wiring-debug-table .wiring-debug-diff span { margin-right: 4px; font-weight: 700; color: #775500; }
+.wiring-debug-derived { display: block; color: var(--muted, #5b6b78); }
 .wiring-debug-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .wiring-debug-actions button { min-height: 30px; padding: 5px 9px; font-size: .8rem; }
 
@@ -284,5 +285,4 @@
 
 /* 画布节点调试徽标 */
 .wiring-debug-badge { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: .72rem; line-height: 1.5; background: #e8f1fb; color: #24527a; }
-.wiring-debug-badge.pending { background: #fff4d6; color: #7a5a00; }
 .wiring-debug-badge.diff { background: #fde8e4; color: #8a2d1c; }

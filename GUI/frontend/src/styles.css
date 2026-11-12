@@ -247,3 +247,41 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
 .tab-strip button { margin-bottom: -1px; padding: 10px 18px; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-weight: 650; }
 .tab-strip button:hover { background: transparent; color: #263d39; transform: none; }
 .tab-strip button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); }
+/* 信号源通道卡：状态条、波形键、主参数（单位在框内、改动高亮并显示仪器回读）、运行模式、未应用计数。 */
+.generator-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.generator-chips { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.generator-chip { padding: 3px 8px; border-radius: 6px; background: #eef2f1; color: #556c68; font-size: 11px; font-weight: 650; white-space: nowrap; }
+.generator-chip.mode-active { background: #e3eefb; color: #1f4f86; }
+.generator-output { position: relative; flex: none; cursor: pointer; }
+.generator-output input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.generator-output span { display: inline-block; min-width: 78px; padding: 7px 12px; border: 1px solid #cdd7d5; border-radius: 7px; background: #f3f5f5; color: #5d6f6c; font-size: 12px; font-weight: 800; text-align: center; letter-spacing: .03em; transition: .15s; }
+.generator-output.on span { border-color: #2b756d; background: #2b756d; color: #fff; }
+.generator-output input:focus-visible + span { box-shadow: 0 0 0 3px #4e8c8333; }
+.generator-output input:disabled + span { opacity: .55; cursor: not-allowed; }
+.generator-output.dirty span { outline: 2px solid #e2a33a; outline-offset: 1px; }
+.generator-section-label { margin: 12px 0 5px; color: #586966; font-size: 11px; font-weight: 650; }
+.generator-segment { display: flex; gap: 2px; padding: 2px; border: 1px solid #dce4e2; border-radius: 7px; background: #eef2f1; }
+.generator-segment.dirty { border-color: #e2a33a; }
+.generator-segment button { flex: 1 1 0; min-width: 0; padding: 6px 4px; border-radius: 5px; background: transparent; color: #5f716e; font-size: 12px; font-weight: 650; }
+.generator-segment button:hover:not(:disabled) { background: #e2e9e7; color: #294a46; transform: none; }
+.generator-segment button.active { background: #fff; color: #185d57; box-shadow: 0 1px 3px #193a3518; }
+.generator-params { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.generator-param-input { position: relative; }
+.generator-param-input label { display: grid; gap: 5px; color: #586966; font-size: 11px; font-weight: 650; }
+.generator-param-input input { width: 100%; min-width: 0; border: 1px solid #d7dfdd; border-radius: 7px; padding: 9px 58px 9px 10px; color: #263a37; background: #fafbfb; font-size: 14px; font-variant-numeric: tabular-nums; outline: none; }
+.generator-param-input input:focus { border-color: #6a9d97; box-shadow: 0 0 0 3px #4e8c8314; }
+.generator-param-input input:disabled { color: #74817f; background: #f0f3f2; }
+.generator-unit { position: absolute; right: 8px; bottom: 0; height: 38px; display: flex; align-items: center; color: #8a9895; font-size: 12px; pointer-events: none; }
+.generator-unit select { pointer-events: auto; border: 0; padding: 2px 0; background: transparent; color: #355c57; font-size: 12px; font-weight: 650; cursor: pointer; }
+.generator-param.dirty input { border-color: #e2a33a; background: #fdf6e8; }
+.generator-readback { display: block; margin-top: 3px; color: #8a6a2a; font-size: 10px; }
+.generator-mode-fields { margin-top: 10px; padding: 10px; border-radius: 7px; background: #f6f8f8; }
+.generator-panel .generator-advanced { margin-top: 12px; padding-top: 10px; }
+.generator-panel .generator-advanced > summary { font-size: 12px; }
+.generator-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; padding-top: 10px; border-top: 1px solid #edf0ef; }
+.generator-footer-actions { display: flex; gap: 6px; }
+.generator-footer-actions button { padding: 7px 12px; font-size: 12px; }
+.generator-pending { color: #a06a12; font-size: 12px; font-weight: 650; }
+.generator-synced { color: #8a9895; font-size: 12px; }
+.target-editor .generator-params input { padding: 8px 54px 8px 9px; font-size: 13px; }
+.target-editor .generator-unit { height: 35px; }

@@ -72,12 +72,11 @@ it.each([undefined, "experiment"])("接线草稿跨装置保留、禁止保存�
   await screen.findByText("装置：装置甲");
   await waitFor(() => expect(screen.getByRole("button", { name: "添加空白图内器件" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "添加空白图内器件" }));
-  fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "原装置未保存器件" } });
   const saveName = experimentId ? "保存当前实验目标" : "保存全部接线图";
   expect(screen.getByRole("button", { name: saveName })).toBeEnabled();
   await switchTo();
   expect(screen.getByText(warning, { exact: false })).toBeInTheDocument();
-  expect(screen.getByLabelText("图内器件名称")).toHaveValue("原装置未保存器件");
+  expect(screen.getByRole("button", { name: "移动器件：新器件" })).toBeInTheDocument();
   expect(screen.getByText("装置：装置甲")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: saveName })).toBeDisabled();
   await act(async () => { window.dispatchEvent(new Event("focus")); });
@@ -86,11 +85,11 @@ it.each([undefined, "experiment"])("接线草稿跨装置保留、禁止保存�
   expect(requests.filter(item => item.method === "PUT" && item.path === "/api/wiring")).toEqual([]);
   vi.mocked(window.confirm).mockReturnValue(false);
   fireEvent.click(screen.getByRole("button", { name: "确认重新载入当前装置" }));
-  expect(screen.getByLabelText("图内器件名称")).toHaveValue("原装置未保存器件");
+  expect(screen.getByRole("button", { name: "移动器件：新器件" })).toBeInTheDocument();
   vi.mocked(window.confirm).mockReturnValue(true);
   fireEvent.click(screen.getByRole("button", { name: "确认重新载入当前装置" }));
   await screen.findByText("装置：装置乙");
-  expect(screen.queryByDisplayValue("原装置未保存器件")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "移动器件：新器件" })).not.toBeInTheDocument();
   expect(wiringReads()).toHaveLength(2);
 });
 it("放弃旧草稿后仍保持归属隔离，直到显式重新载入", async () => {
@@ -116,11 +115,10 @@ it("切回原装置保留草稿并恢复原装置保存", async () => {
   renderPage(<WiringEditor />);
   await screen.findByText("装置：装置甲");
   fireEvent.click(screen.getByRole("button", { name: "添加空白图内器件" }));
-  fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "切回后保留的草稿" } });
   await switchTo();
   fireEvent.click(screen.getByRole("button", { name: "当前装置：装置乙" }));
   await switchTo("装置甲");
-  expect(screen.getByLabelText("图内器件名称")).toHaveValue("切回后保留的草稿");
+  expect(screen.getByRole("button", { name: "移动器件：新器件" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "保存全部接线图" })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" }));
   await screen.findByText("全部接线图已保存。");

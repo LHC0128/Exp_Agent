@@ -1,8 +1,8 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type Ref } from "react";
 import type { components } from "../../types/openapi";
 import { endpointKey, portUsageSets, type PortUsage } from "./portUsage";
+import { portLabeler } from "./portLabel";
 import { findFreeSlot, type PlacementPoint, type PlacementSize } from "./wiringPlacement";
-import { wiringSyncBadgeLabel, type WiringSyncBadge } from "./wiringSync";
 import { debugBadgeLabel, type DebugBadge } from "./WiringDebugPanel";
 import { routeInternalWires, type InternalWire } from "./wiringInternalRoutes";
 import { routeWire, routeWires, type Point, type WireAnchor as Anchor, type WireBox, type WireLabelSize } from "./wiringRoutes";
@@ -55,13 +55,12 @@ const directionOf = (node: WiringNode, port: PhysicalPort) => port.direction ===
   ? port.modes.find(mode => mode.id === port.selected_mode)?.direction ?? null
   : port.direction === "inout" ? node.port_directions?.[port.id] ?? "inout" : port.direction;
 const signalName = (type: PhysicalPort["signal_type"] | WiringGraph["edges"][number]["signal_type"]) => type === "internal" ? "内部信号（非线缆）" : type === "optical" ? "光学" : type === "electrical" ? "电学" : "光/电待确认";
-const portName = (port: PhysicalPort) => [port.group, port.name || "未命名端口"].filter(Boolean).join(" / ");
 const directionName = (value: string | null) => value === "in" ? "输入" : value === "out" ? "输出" : value === "inout" ? "历史方向待确认" : "方向待确认";
 const cableText = (edge: WiringGraph["edges"][number]) => [edge.connector, edge.cable_id].filter(Boolean).join(" / ");
 const wireText = (edge: WiringGraph["edges"][number]) => `${signalName(edge.signal_type)}${edge.label ? ` · ${edge.label}` : ""}${cableText(edge) ? ` · 线缆 ${cableText(edge)}` : ""}`;
 const estimatedLabelSize = (edge: WiringGraph["edges"][number]): WireLabelSize => ({ width: Array.from(wireText(edge)).length * 12, height: 14 });
 
-export function WiringCanvas({ ref, graph, locked, resetToken, active = true, autoFit = false, selectedDevice, selectedEdge, profileBadges = {}, debugBadges = {}, onSelectDevice, onSelectEdge, onMove, onPair, onReconnect, onCancel, onPortDirection, onPortMode, onPortUsage, onSettingChange, onAutoFitSettled, onBlockedRoutesChange, endpointLabel }: {
+export function WiringCanvas({ ref, graph, locked, resetToken, active = true, autoFit = false, selectedDevice, selectedEdge, debugBadges = {}, onSelectDevice, onSelectEdge, onMove, onPair, onReconnect, onCancel, onPortDirection, onPortMode, onPortUsage, onAutoFitSettled, onBlockedRoutesChange, endpointLabel }: {
   ref?: Ref<WiringCanvasHandle>;
   graph: WiringGraph;
   locked: boolean;
@@ -70,7 +69,6 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
   autoFit?: boolean;
   selectedDevice: string | null;
   selectedEdge: string | null;
-  profileBadges?: Partial<Record<string, WiringSyncBadge[]>>;
   /** 调试页状态：按器件 ID 给出「已回读 / 有未写入值 / ≠ 实验参数」。 */
   debugBadges?: Partial<Record<string, DebugBadge[]>>;
   onSelectDevice: (id: string) => void;
@@ -82,7 +80,6 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
   onPortDirection: (deviceId: string, portId: string, direction: "in" | "out") => void;
   onPortMode: (deviceId: string, portId: string, modeId: string | null) => void;
   onPortUsage: (deviceId: string, portId: string, usage: PortUsage) => void;
-  onSettingChange: (deviceId: string, settingId: string, value: string | null) => void;
   onAutoFitSettled?: () => void;
   onBlockedRoutesChange?: (edgeIds: string[]) => void;
   endpointLabel: (endpoint: WiringEndpoint) => string;
@@ -119,6 +116,8 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
   const expandedRef = useRef(expanded);
   const cancelRef = useRef<() => void>(() => {});
   const { connected: connectedEndpoints, used: usedEndpoints } = useMemo(() => portUsageSets(graph), [graph]);
+  const portLabelers = useMemo(() => new Map(graph.nodes.map(node => [node.device.id, portLabeler(node.device.ports)])), [graph]);
+  const portName = (node: WiringNode, port: PhysicalPort) => portLabelers.get(node.device.id)!(port);
   // 只读过滤：器件、端口、连线标签共用一次匹配，避免高亮与结果顺序不一致。
   const search = useMemo(() => {
     const term = query.trim().toLocaleLowerCase();
@@ -137,7 +136,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
         devices.add(device.id); ports.add(key);
         results.push({ kind: "port", deviceId: device.id, portId, label: `${device.name} / ${name}` });
       };
-      for (const port of device.ports) matchPort(port.id, portName(port));
+      for (const port of device.ports) matchPort(port.id, portName(node, port));
       for (const port of node.internal_ports ?? []) matchPort(port.id, port.name || "未命名内部端口");
     }
     for (const edge of graph.edges) {
@@ -366,7 +365,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
     if (port.direction === "inout") onPortDirection(node.device.id, port.id, direction);
   }
   function usageToggle(node: WiringNode, port: PhysicalPort) {
-    const name = `${node.device.name} / ${portName(port)}`;
+    const name = `${node.device.name} / ${portName(node, port)}`;
     const key = endpointKey(node.device.id, port.id);
     const hasEdge = connectedEndpoints.has(key);
     const used = usedEndpoints.has(key);
@@ -379,7 +378,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
     const endpoint = { device_id: device.id, port_id: port.id };
     const key = keyOf(endpoint);
     const direction = directionOf(node, port);
-    const name = `${device.name} / ${portName(port)}`;
+    const name = `${device.name} / ${portName(node, port)}`;
     const selectedMode = port.modes.find(mode => mode.id === port.selected_mode);
     const usage = usedEndpoints.has(key) ? "used" : "unused";
     const pending = firstPort ? keyOf(firstPort) === key : false;
@@ -392,7 +391,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
         title={`${signalName(port.signal_type)} · ${directionName(direction)}${selectedMode ? ` · ${selectedMode.name}` : ""}${port.connector ? ` · 接头 ${port.connector}` : ""}`}
         onPointerDown={event => { if (usage !== "unused") begin(event, { kind: "port", pointerId: event.pointerId, start: localPoint(event.clientX, event.clientY), moved: false, endpoint }); }}
         onClick={() => { if (locked || usage === "unused") return; if (!firstPort) setFirstPort(endpoint); else if (keyOf(firstPort) === key) { setFirstPort(null); setCursor(null); onCancel(); } else { onPair(firstPort, endpoint); setFirstPort(null); setCursor(null); } }}>
-        <strong>{portName(port)}</strong>
+        <strong>{portName(node, port)}</strong>
         {(direction === null || direction === "inout") && <small className="wiring-port-state">{direction === "inout" ? "历史方向待确认" : "? 方向待确认"}</small>}
       </button>
       {port.direction === "inout" && <div className="wiring-port-shortcuts" role="group" aria-label={`历史端口工作方向：${name}`}>
@@ -430,7 +429,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
   }
   // 只平移显示层，为坐标 0 的黑盒外绕线留边；图中坐标、吸附和保存数据保持原值。
   const width = Math.max(2600, ...graph.nodes.map(node => (moving?.id === node.device.id ? moving.position.x : node.x) + 440)) + PLANE_INSET * 2;
-  const height = Math.max(1600, ...graph.nodes.map(node => (moving?.id === node.device.id ? moving.position.y : node.y) + 360 + (node.device.ports.length + (node.internal_ports?.length ?? 0) + (node.settings?.length ?? 0)) * 120)) + PLANE_INSET * 2;
+  const height = Math.max(1600, ...graph.nodes.map(node => (moving?.id === node.device.id ? moving.position.y : node.y) + 360 + (node.device.ports.length + (node.internal_ports?.length ?? 0)) * 120)) + PLANE_INSET * 2;
   const previewStart = firstPort ? anchors[keyOf(firstPort)] : undefined;
   // 内部信号不进入黑盒绕行算法，只走器件内部区自己的正交通道。
   const externalEdges = useMemo(() => graph.edges.filter(edge => edge.signal_type !== "internal"), [graph]);
@@ -656,7 +655,6 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
           const internalPorts = node.internal_ports ?? [];
           const internalInputs = internalPorts.filter(port => port.direction === "in");
           const internalOutputs = internalPorts.filter(port => port.direction === "out");
-          const settings = node.settings ?? [];
           const internalBox = internal[device.id];
           const internalLines = internalRoutes.get(device.id) ?? [];
           return <article key={device.id} data-node-id={device.id} className={`wiring-node${selectedDevice === device.id ? " selected" : ""}${search?.devices.has(device.id) ? " wiring-search-match" : ""}`} style={{ left: position.x, top: position.y, transform: `translate(${PLANE_INSET}px, ${PLANE_INSET}px)` }} role="group" aria-label={`器件快照：${device.name}`}>
@@ -666,9 +664,6 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
                 const step = { ArrowLeft: [-20, 0], ArrowRight: [20, 0], ArrowUp: [0, -20], ArrowDown: [0, 20] }[event.key];
                 if (!locked && step) { event.preventDefault(); onSelectDevice(device.id); onMove(device.id, snap(node.x + step[0]), snap(node.y + step[1])); }
               }}><strong>{device.name || "未命名器件"}</strong><span>{device.model || "型号待确认"}</span></button>
-            {profileBadges[device.id]?.length ? <div className="wiring-node-profile-badges" aria-label={`${device.name}与设备端口档案差异`}>
-              {profileBadges[device.id]!.map(badge => <span key={badge} className={`wiring-profile-badge ${badge}`}>{wiringSyncBadgeLabel[badge]}</span>)}
-            </div> : null}
             {debugBadges[device.id]?.length ? <div className="wiring-node-profile-badges wiring-node-debug-badges" aria-label={`${device.name}调试状态`}>
               {debugBadges[device.id]!.map(badge => <span key={badge} className={`wiring-debug-badge ${badge}`}>{debugBadgeLabel[badge]}</span>)}
             </div> : null}
@@ -677,7 +672,7 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
             {unused.length > 0 && <div className="wiring-unused-ports">
               <button className="wiring-unused-toggle" disabled={locked} aria-label={`未用端口：${device.name}（${unused.length}）`} aria-expanded={expanded}
                 onClick={() => setExpandedUnused(previous => expanded ? previous.filter(id => id !== device.id) : [...previous, device.id])}>未用 {unused.length} · {expanded ? "收起" : "展开"}</button>
-              {expanded && <div className="wiring-unused-list" aria-label={`${device.name}未用端口`}>{unused.map(port => <div key={port.id} className="wiring-unused-item"><span>{portName(port)}</span>{usageToggle(node, port)}</div>)}</div>}
+              {expanded && <div className="wiring-unused-list" aria-label={`${device.name}未用端口`}>{unused.map(port => <div key={port.id} className="wiring-unused-item"><span>{portName(node, port)}</span>{usageToggle(node, port)}</div>)}</div>}
             </div>}
             {internalPorts.length > 0 && <div className="wiring-internal-section" role="group" aria-label={`${device.name}内部信号（非线缆）`}>
               {internalBox && internalLines.length > 0 && <svg className="wiring-internal-lines" width={internalBox.width} height={internalBox.height}
@@ -701,13 +696,6 @@ export function WiringCanvas({ ref, graph, locked, resetToken, active = true, au
               <div className="wiring-node-ports wiring-internal-outputs" aria-label={`${device.name}内部输出`}>
                 <span className="wiring-internal-direction">内部输出</span>{internalOutputs.map(port => renderInternalPort(node, port, "right"))}
               </div>
-            </div>}
-            {settings.length > 0 && <div className="wiring-node-settings" role="group" aria-label={`${device.name}图内设置（仅记录）`}>
-              <div className="wiring-settings-heading">图内设置</div>
-              {settings.map(setting => <label key={setting.id}><span>{setting.name}</span><select disabled={locked} value={setting.value ?? ""}
-                aria-label={`图内设置：${device.name} / ${setting.name}`} onChange={event => { if (!locked) onSettingChange(device.id, setting.id, event.target.value || null); }}>
-                <option value="">未记录</option>{setting.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select></label>)}
             </div>}
           </article>;
         })}

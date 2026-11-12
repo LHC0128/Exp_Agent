@@ -262,20 +262,20 @@ it.each(["optical", "unknown", "internal"] as const)("总览不折叠 %s 连线�
 
 it("切换双视图保留目标草稿、已选线和待确认新连线，保存仍仅当前目标", async () => {
   await open(true); const before = structuredClone(stored); fireEvent.click(node());
-  fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "保留双视图草稿" } });
+  fireEvent.keyDown(node(), { key: "ArrowRight" });
   fireEvent.keyDown(screen.getByRole("button", { name: /^选择连线：.*接收仪器甲/ }), { key: "Enter" });
   fireEvent.click(screen.getByRole("button", { name: "总览视图" })); expect(screen.getByLabelText("连线标签")).toHaveValue("10 MHz");
-  fireEvent.click(endpoint("保留双视图草稿 / 10 MHz B"));
+  fireEvent.click(endpoint("公共时钟源 / 10 MHz B"));
   fireEvent.click(screen.getByRole("button", { name: "接线视图" }));
   fireEvent.click(endpoint("接收仪器甲 / 参考输入"));
   const pending = screen.getByRole("group", { name: "待建立连线" }); expect(pending).toBeVisible();
   fireEvent.change(screen.getByLabelText("新连线光电类型"), { target: { value: "electrical" } }); fireEvent.change(screen.getByLabelText("新连线标签"), { target: { value: "待确认支路" } });
   fireEvent.click(screen.getByRole("button", { name: "总览视图" })); fireEvent.click(screen.getByRole("tab", { name: "运行" })); fireEvent.click(screen.getByRole("tab", { name: "目标接线图" }));
   expect(screen.getByRole("button", { name: "总览视图" })).toHaveAttribute("aria-pressed", "true"); expect(pending).toBeVisible(); expect(screen.getByLabelText("新连线标签")).toHaveValue("待确认支路");
-  expect(node("保留双视图草稿")).toBeVisible(); expect(unloadBlocked()).toBe(true); expect(puts()).toHaveLength(0);
+  expect(node()).toBeVisible(); expect(unloadBlocked()).toBe(true); expect(puts()).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "记录连线" })); const body = await save(true);
   expect(body.site).toEqual(before.site); expect(body.targets.retired).toEqual(before.targets.retired);
-  expect(body.targets[TARGET].nodes[0].device.name).toBe("保留双视图草稿"); expect(body.targets[TARGET].edges.slice(0, 2)).toEqual(before.targets[TARGET].edges);
+  expect(body.targets[TARGET].nodes[0].x).toBe(80); expect(body.targets[TARGET].edges.slice(0, 2)).toEqual(before.targets[TARGET].edges);
   expect(body.targets[TARGET].edges[2]).toMatchObject({ source: { device_id: "source", port_id: "other" }, target: { device_id: "a", port_id: "in" }, label: "待确认支路" });
   expect(Object.keys(body.targets[TARGET]).sort()).toEqual(["edges", "nodes"]);
 }, 15000);
@@ -374,10 +374,10 @@ it("缩放后端口拖线按屏幕落点建立记录，embedded保存仅当前�
 
 it("目标Tab隐藏时退出展开并释放滚动，草稿仍保留；重新进入不自动适合全图", async () => {
   await open(true); const before = structuredClone(stored); fireEvent.click(screen.getByRole("button", { name: "100%" })); fireEvent.click(screen.getByRole("button", { name: "缩小画布" }));
-  fireEvent.click(node()); fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "保留目标草稿" } });
+  fireEvent.click(node()); fireEvent.keyDown(node(), { key: "ArrowRight" });
   fireEvent.click(screen.getByRole("button", { name: "展开画布" })); expect(document.body.style.overflow).toBe("hidden");
   fireEvent.click(screen.getByRole("tab", { name: "运行" })); expect(document.body.style.overflow).toBe("");
-  fireEvent.click(screen.getByRole("tab", { name: "目标接线图" })); expect(node("保留目标草稿")).toBeVisible(); expect(zoom()).toBe(.8); expect(screen.queryByRole("dialog", { name: "接线画布" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: "目标接线图" })); expect(node()).toBeVisible(); expect(zoom()).toBe(.8); expect(screen.queryByRole("dialog", { name: "接线画布" })).not.toBeInTheDocument();
   expect(unloadBlocked()).toBe(true); expect(puts()).toHaveLength(0); expect(stored).toEqual(before);
 }, 15000);
 

@@ -96,6 +96,8 @@ function DeviceControlView() {
     deviceLibraryRevision: catalog!.device_library_revision,
     physicalMappingRevision: catalog!.physical_mapping_revision,
   });
+  const limitText = (target: ControlTarget) => target.safety.min != null && target.safety.max != null
+    ? `${target.safety.min} ～ ${target.safety.max} ${target.kind === "current_source" ? "mA" : target.kind === "tec" ? "°C" : "V"}` : undefined;
   const editorFor = (target: ControlTarget, snapshot: DeviceSnapshot) => {
     const route = routeFor(target);
     if (snapshot.type === "SDS") return <ScopeEditor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
@@ -103,7 +105,7 @@ function DeviceControlView() {
     if (snapshot.type === "DLC_PRO") return <LaserEditor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
     if (snapshot.type === "TEC103") return <TecEditor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
     if (snapshot.type === "HF2" || snapshot.type === "MFLI") return <Hf2Editor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
-    if (snapshot.type === "DG4000" || snapshot.type === "DG900") return <GeneratorEditor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} />;
+    if (snapshot.type === "DG4000" || snapshot.type === "DG900") return <GeneratorEditor snapshot={snapshot} route={route} onSaved={handleResponse} onError={handleFailure} limitText={limitText(target)} />;
     return null;
   };
   return (
@@ -114,13 +116,15 @@ function DeviceControlView() {
       <div className="control-target-grid">
         {catalog?.targets.map((target) => {
           const snapshot = snapshots[target.mapping_key];
-          const endpoint = target.endpoint ? `${target.endpoint.kind}${target.endpoint.index}` : "设备级";
+          const endpoint = target.endpoint ? target.endpoint.kind === "channel" ? `CH${target.endpoint.index}` : `${target.endpoint.kind}${target.endpoint.index}` : "设备级";
+          // 已读取的信号源由编辑器状态条显示安全范围，读取时间并入副标题。
+          const compactGenerator = Boolean(snapshot) && (snapshot.type === "DG4000" || snapshot.type === "DG900");
           return <article className={`control-target-card kind-${target.kind}${snapshot ? " has-snapshot" : ""}`} key={target.mapping_key}>
-            <header><div><h3>{target.label}</h3><small>{target.model} · {endpoint}</small></div><button onClick={() => void readSnapshot(target)} disabled={readingAll || !!busyKey || hardwareBusy}>{busyKey === target.mapping_key ? "读取中…" : "读取"}</button></header>
-            {target.safety.min != null && target.safety.max != null && <div className="target-limit">{target.safety.min} ～ {target.safety.max} {target.kind === "current_source" ? "mA" : target.kind === "tec" ? "°C" : "V"}</div>}
+            <header><div><h3>{target.label}</h3><small>{target.model} · {endpoint}{compactGenerator && readAt[target.mapping_key] ? ` · 读取于 ${new Date(readAt[target.mapping_key]).toLocaleTimeString()}` : ""}</small></div><button onClick={() => void readSnapshot(target)} disabled={readingAll || !!busyKey || hardwareBusy}>{busyKey === target.mapping_key ? "读取中…" : "读取"}</button></header>
+            {!compactGenerator && limitText(target) && <div className="target-limit">{limitText(target)}</div>}
             {targetErrors[target.mapping_key] && <div className="target-read-error">{targetErrors[target.mapping_key]}</div>}
             {target.mapping_key === "Z_magnetic_field" && <Link to="/tools#z-arbitrary-control">Z 任意波控制：预览、加载与触发 →</Link>}
-            {readAt[target.mapping_key] && <small className="read-time">{new Date(readAt[target.mapping_key]).toLocaleTimeString()}</small>}
+            {!compactGenerator && readAt[target.mapping_key] && <small className="read-time">{new Date(readAt[target.mapping_key]).toLocaleTimeString()}</small>}
             {snapshot ? <div className="target-editor">{editorFor(target, snapshot)}</div> : <div className="target-unread">未读取</div>}
           </article>;
         })}

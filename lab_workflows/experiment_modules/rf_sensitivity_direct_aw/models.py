@@ -12,7 +12,13 @@ import re
 from ...common import find_project_root, load_mapping, validate_safety_limit
 from ...control_sources import resolve_control_results_root
 from ...devices import signal_generator_max_arb_points
-from ...experiment_params import ExperimentParams, parameter
+from ...experiment_params import ExperimentParams, SettingBinding, parameter
+
+
+# X/Y 任意波上传包络公共周期频率与自动满量程：前者在容差内等于 AW_REPEAT_FREQ，后者须由标定换算。
+_AW_FREQUENCY_NOTE = "上传值取包络公共周期频率 1/(点数×CSV dt)，load_envelope 保证与 AW_REPEAT_FREQ 相对偏差 ≤1e-6"
+_XY_AMPLITUDE_NOTE = ("vpp = 2×max|包络电压|，包络电压 = (控制波形×CONTROL_SCALE_FACTORS − XY_CTRL_B_HZ) / XY_CTRL_K_HZ_PER_V；"
+                      "X/Y 共用同一满量程，offset 恒为 0")
 
 
 @dataclass(slots=True)
@@ -41,24 +47,36 @@ class RFSensitivityDirectAWSingleParams(ExperimentParams):
         "FIXED_PARAMS.temperature": ("temperature",),
         "FIXED_PARAMS.Temp_Switch": ("Temp_Switch",),
     }
-    # 设置项级绑定：参数值原样写入信号源对应设置项（单位 Hz、Vpp、V、°、%，与通道回读一致）。
-    # 扫描量、标定换算量、锁相与激光/电流源参数不登记。
-    parameter_settings: ClassVar[dict[str, tuple[str, str]]] = {
-        # excitation.configure_trigger: setup_square(freq, amplitude, offset, dcycle, phase)，Time_sequence_2 通道。
-        "XY_TRIGGER_FREQ": ("Time_sequence_2", "frequency"),
-        "XY_TRIGGER_AMPLITUDE": ("Time_sequence_2", "amplitude"),
-        "XY_TRIGGER_OFFSET": ("Time_sequence_2", "offset"),
-        "XY_TRIGGER_DUTY": ("Time_sequence_2", "square_duty"),
-        "XY_TRIGGER_PHASE": ("Time_sequence_2", "phase"),
-        # excitation.configure_pump: setup_sine(freq=100e6, amplitude=PUMP_MOD_AMPLITUDE)，Pump_modulation 通道。
-        "PUMP_MOD_AMPLITUDE": ("Pump_modulation", "amplitude"),
-        # excitation.configure_pump: setup_pulse(freq, amplitude, offset, ...)，Time_sequence 通道；
-        # width 由 PUMP_MOD_DUTY 换算，PUMP_MOD_DUTY 经 set_pulse_dcycle 写入但通道设置无脉冲占空比字段，均不登记。
-        "PUMP_MOD_FREQ": ("Time_sequence", "frequency"),
-        "RF_GATE_AMPLITUDE": ("Time_sequence", "amplitude"),
-        "RF_GATE_OFFSET": ("Time_sequence", "offset"),
-        # excitation.prepare_z_rf: setup_sine(freq=Z_RF_FREQ, ...)，Z_magnetic_field 通道。
-        "Z_RF_FREQ": ("Z_magnetic_field", "frequency"),
+    # 设置项级绑定：按物理量（用途键）登记 excitation 的实际写入，调试页再经设备库映射找到通道。
+    # 代码写死的常量（Z 偏置/相位、X/Y 偏置与 Burst 相位、Pump 载波 100 MHz）、扫描量、
+    # 锁相与激光/电流源参数不登记。
+    parameter_settings: ClassVar[dict[str, tuple[SettingBinding, ...]]] = {
+        # Time_sequence_2：configure_trigger 的 setup_square(freq, amplitude, offset, dcycle, phase)。
+        "XY_TRIGGER_FREQ": (SettingBinding("Time_sequence_2", "frequency"),),
+        "XY_TRIGGER_AMPLITUDE": (SettingBinding("Time_sequence_2", "amplitude"),),
+        "XY_TRIGGER_OFFSET": (SettingBinding("Time_sequence_2", "offset"),),
+        "XY_TRIGGER_DUTY": (SettingBinding("Time_sequence_2", "square_duty"),),
+        "XY_TRIGGER_PHASE": (SettingBinding("Time_sequence_2", "phase"),),
+        # Pump_modulation：configure_pump 的 setup_sine(amplitude=...)。
+        "PUMP_MOD_AMPLITUDE": (SettingBinding("Pump_modulation", "amplitude"),),
+        # Time_sequence：configure_pump 的 setup_pulse(freq, amplitude, offset, width)。
+        "PUMP_MOD_FREQ": (SettingBinding("Time_sequence", "frequency"),),
+        "RF_GATE_AMPLITUDE": (SettingBinding("Time_sequence", "amplitude"),),
+        "RF_GATE_OFFSET": (SettingBinding("Time_sequence", "offset"),),
+        "PUMP_MOD_DUTY": (SettingBinding("Time_sequence", "pulse_width", "derived",
+                                         "脉宽 = PUMP_MOD_DUTY / 100 / PUMP_MOD_FREQ；占空比另经 set_pulse_dcycle 写入，通道回读无占空比字段"),),
+        # Z_magnetic_field：prepare_z_rf 的 setup_sine 与 arm_z 的 set_amplitude / set_burst_phase。
+        "Z_RF_FREQ": (SettingBinding("Z_magnetic_field", "frequency"),),
+        "Z_RF_AMPLITUDE_INIT": (SettingBinding("Z_magnetic_field", "amplitude",
+                                               note="prepare_z_rf 写入的初始幅度；幅度扫描中由 RF_AMP_START / RF_AMP_STOP 经 set_amplitude 改写"),),
+        "Z_BURST_PHASE_INIT": (SettingBinding("Z_magnetic_field", "burst_phase",
+                                              note="arm_z 写入 (相位基准 + 负幅度 180°) % 360；初始幅度为正故无 180°，相位扫描后由选定相位取代"),),
+        # X/Y_magnetic_field：upload_xy 的 upload_arbitrary(freq=envelope["repeat_freq_Hz"], amplitude=vpp, offset=0)。
+        "AW_REPEAT_FREQ": tuple(SettingBinding(role, "frequency", note=_AW_FREQUENCY_NOTE)
+                                for role in ("X_magnetic_field", "Y_magnetic_field")),
+        **{name: tuple(SettingBinding(role, "amplitude", "derived", _XY_AMPLITUDE_NOTE)
+                       for role in ("X_magnetic_field", "Y_magnetic_field"))
+           for name in ("CONTROL_SCALE_FACTORS", "XY_CTRL_K_HZ_PER_V", "XY_CTRL_B_HZ")},
     }
 
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RF_STEP_SETTLE_S': 0.3, 'TEMP_OFF_SETTLE_S': 0.5}

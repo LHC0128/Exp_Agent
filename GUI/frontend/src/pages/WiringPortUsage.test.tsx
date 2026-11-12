@@ -114,15 +114,15 @@ it("单按钮切换使用与未用，折叠灰显无连接锚点，保存仅写�
   expect(lastBody().site.nodes[0].device.ports).toEqual(ports); expect(lastBody().site.edges).toEqual(edges); expect(lastBody().targets).toEqual(targets); expect(unloadBlocked()).toBe(false);
 }, 15000);
 
-it("已有连线在画布和编辑区均禁切未用，强制点击也不删线或改变图", async () => {
+it("已有连线在画布禁切未用，强制点击也不删线或改变图", async () => {
   await open();
   expect(usage("CH1")).toBeDisabled(); fireEvent.click(usage("CH1"));
   expect(usage("CH1")).toHaveAttribute("aria-pressed", "true"); expect(endpoint("CH1")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "移动器件：使用状态信号源" }));
-  const editor = screen.getByRole("group", { name: "图内端口 1" });
-  const toggle = within(editor).getByRole("button", { name: "图内端口使用状态：使用状态信号源 / CH1" });
-  expect(toggle).toBeDisabled(); fireEvent.click(toggle);
-  expect(screen.getAllByRole("button", { name: /^选择连线：/ })).toHaveLength(1); expect(toggle).toHaveAttribute("aria-pressed", "true");
+  const panel = screen.getByRole("group", { name: "选中器件" });
+  expect(within(panel).getByText("使用状态信号源")).toBeVisible();
+  expect(within(panel).queryByRole("button", { name: /^图内端口使用状态/ })).not.toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: /^选择连线：/ })).toHaveLength(1);
   expect(screen.getByRole("button", { name: "保存全部接线图" })).toBeDisabled(); expect(puts()).toHaveLength(0);
 }, 15000);
 
@@ -182,17 +182,4 @@ it("目标使用按钮草稿跨运行Tab保留，保存只改当前目标而非�
   expect(unused()).toHaveAttribute("aria-expanded", "true"); expect(endpoint()).not.toBeInTheDocument(); expect(unloadBlocked()).toBe(true);
   await save(true); expect(lastBody().targets[TARGET].nodes[0].port_usage).toEqual({ mod: "unused" });
   expect(lastBody().site).toEqual(site); expect(lastBody().targets.retired).toEqual(retired); expect(unloadBlocked()).toBe(false);
-}, 15000);
-
-it("删除未用端口先确认并清除使用字典，不留下悬空状态或改变其他图", async () => {
-  stored.site.nodes[0].port_usage = { mod: "unused" };
-  await open(); const targets = structuredClone(stored.targets); const edges = structuredClone(stored.site.edges);
-  fireEvent.click(screen.getByRole("button", { name: "移动器件：使用状态信号源" }));
-  const editor = screen.getByRole("group", { name: "图内端口 2" });
-  fireEvent.click(within(editor).getByRole("button", { name: "删除图内端口及相关连线" }));
-  expect(unused()).toBeVisible();
-  vi.mocked(window.confirm).mockReturnValue(true);
-  fireEvent.click(within(editor).getByRole("button", { name: "删除图内端口及相关连线" })); await save();
-  expect(lastBody().site.nodes[0].port_usage).toEqual({}); expect(lastBody().site.nodes[0].device.ports.map(port => port.id)).toEqual(["out"]);
-  expect(lastBody().site.edges).toEqual(edges); expect(lastBody().targets).toEqual(targets);
 }, 15000);

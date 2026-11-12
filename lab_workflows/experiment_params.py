@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import fnmatch
 import types
-from dataclasses import MISSING, Field, asdict, field, fields
+from dataclasses import MISSING, Field, asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Union, get_args, get_origin, get_type_hints
 
@@ -184,15 +184,30 @@ def _run_directory_qualifies(
     return payload.get("success") is True
 
 
+@dataclass(frozen=True, slots=True)
+class SettingBinding:
+    """参数与一个物理量设置项的绑定，按用途键定位，不涉及仪器型号与通道号。
+
+    ``direct`` 表示参数值即仪器设置值（Hz、Vpp、V、°、%），可比较回读并回存；
+    ``derived`` 表示经换算得到，只展示关联关系，``note`` 写换算依据。
+    ``field="burst_phase"`` 对应通道回读的 ``burst.phase``，写入走 ``burst`` 字段。
+    """
+
+    role: str
+    field: str
+    relation: Literal["direct", "derived"] = "direct"
+    note: str = ""
+
+
 class ExperimentParams:
     """所有新模式实验参数模型的共同协议。"""
 
     schema_version: ClassVar[int] = 1
     # 外部参数名 → 该参数配置的物理用途键（params/mapping.yaml）；仅供 GUI 按器件展示，不参与运行。
     parameter_roles: ClassVar[dict[str, tuple[str, ...]]] = {}
-    # 外部参数名 → (用途键, 信号源通道设置字段)；仅登记参数值即写入仪器值、无换算的字段，
-    # 供 GUI 调试页比较回读与回存实验参数，不参与运行。
-    parameter_settings: ClassVar[dict[str, tuple[str, str]]] = {}
+    # 外部参数名 → 该参数写入的各物理量设置项绑定；一个参数可写多个物理量。
+    # 仅供 GUI 调试页比较回读与回存实验参数，不参与运行。
+    parameter_settings: ClassVar[dict[str, tuple[SettingBinding, ...]]] = {}
 
     @classmethod
     def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
@@ -378,9 +393,16 @@ class ExperimentParams:
             roles = self.parameter_roles.get(entry["name"])
             if roles:
                 entry["roles"] = list(roles)
-            setting = self.parameter_settings.get(entry["name"])
-            if setting:
-                entry["setting"] = {"role": setting[0], "field": setting[1]}
+            bindings = self.parameter_settings.get(entry["name"])
+            if bindings:
+                entry["settings"] = [
+                    {"role": item.role, "field": item.field, "relation": item.relation,
+                     **({"note": item.note} if item.note else {})}
+                    for item in bindings
+                ]
+                direct = next((item for item in bindings if item.relation == "direct"), None)
+                if direct:
+                    entry["setting"] = {"role": direct.role, "field": direct.field}
             if entry["name"] == "SYSTEM_SETTLE_S":
                 entry["legacy_defaults"] = dict(getattr(self, "system_settle_legacy_defaults", {}))
             options = self._options(item, root)

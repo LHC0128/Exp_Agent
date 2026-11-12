@@ -89,7 +89,8 @@ async function open(embedded = false) {
   if (!embedded) fireEvent.change(screen.getByLabelText("目标实验"), { target: { value: TARGET } });
 }
 const internal = (name: string, device = "内部锁相") => screen.getByRole("button", { name: `连接内部端口：${device} / ${name}` });
-const setting = (name = "高低档") => screen.getByRole("combobox", { name: `图内设置：稳功率器 / ${name}` });
+const devicePanel = () => screen.getByRole("group", { name: "选中器件" });
+const nudge = (name: string) => fireEvent.keyDown(screen.getByRole("button", { name: `移动器件：${name}` }), { key: "ArrowRight" });
 const puts = () => requests.filter(item => item.path === "/api/wiring" && item.method === "PUT");
 const lastBody = () => puts().at(-1)!.body as Body;
 const unloadBlocked = () => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; };
@@ -115,7 +116,7 @@ it("旧图缺内部和设置字段正常读写，不补空字段或使草稿变�
   expect(screen.queryByRole("combobox", { name: /^图内设置：/ })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "保存全部接线图" })).toBeDisabled(); expect(unloadBlocked()).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "移动器件：内部锁相" }));
-  fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "只改名称" } }); await save();
+  nudge("内部锁相"); await save();
   expect(lastBody().site.nodes[0]).not.toHaveProperty("internal_ports"); expect(lastBody().site.nodes[0]).not.toHaveProperty("settings");
   expect(lastBody().targets[TARGET].nodes[1]).not.toHaveProperty("settings");
 }, 15000);
@@ -147,20 +148,16 @@ it("内部路线拒绝混接物理口、跨器件和反方向，不暗自互换�
   expect(screen.getByRole("button", { name: "保存全部接线图" })).toBeDisabled(); expect(unloadBlocked()).toBe(false); expect(puts()).toHaveLength(0);
 }, 15000);
 
-it("内部路由编辑不能变成外线，删除内部端口须确认且仅删除相关内部路线", async () => {
+it("内部路由不能改成外线，选中器件不再提供内部端口编辑", async () => {
   stored.site.edges = [route(), { id: "external-kept", source: { device_id: "lockin", port_id: "v" }, target: { device_id: "noise", port_id: "power" }, signal_type: "electrical", label: "保留外线" }];
-  await open(); const targets = structuredClone(stored.targets);
+  await open();
   fireEvent.click(screen.getByRole("button", { name: "选择连线记录：内部锁相 / 内部 / Demod0 Y ↔ 内部锁相 / 内部 / AuxOut2 信号源" }));
   expect(screen.queryByLabelText("连线光电类型")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("连线标签")).toHaveValue("内部信号源");
   fireEvent.click(screen.getByRole("button", { name: "移动器件：内部锁相" }));
-  const editor = screen.getByRole("group", { name: "图内内部端口 1" });
-  expect(within(editor).getByLabelText("内部信号方向")).toBeDisabled();
-  fireEvent.click(within(editor).getByRole("button", { name: "删除内部端口及相关路由" })); expect(internal("Demod0 Y")).toBeVisible();
-  vi.mocked(window.confirm).mockReturnValue(true);
-  fireEvent.click(within(editor).getByRole("button", { name: "删除内部端口及相关路由" })); await save();
-  expect(lastBody().site.edges.map(edge => edge.id)).toEqual(["external-kept"]);
-  expect(lastBody().site.nodes[0].internal_ports?.map(port => port.id)).toEqual(["aux-source", "aux-value", "rf-input"]);
-  expect(lastBody().site.nodes[0].device.ports.map(port => port.id)).toEqual(["v"]); expect(lastBody().targets).toEqual(targets);
+  expect(within(devicePanel()).getByText("内部锁相")).toBeVisible();
+  expect(within(devicePanel()).queryByRole("button", { name: /内部端口/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "保存全部接线图" })).toBeDisabled(); expect(puts()).toHaveLength(0);
 }, 15000);
 
 it("内部线只在器件盒内走线，外部线仍绕过盒，内部线可点选并删除", async () => {
@@ -196,34 +193,20 @@ it("内部线只在器件盒内走线，外部线仍绕过盒，内部线可点�
   expect(lastBody().site.edges.map(edge => edge.id)).toEqual(["external-kept"]);
 }, 15000);
 
-it("Noise Eater 档位仅改图内选值，可清为未记录，物理输入仍只有一个", async () => {
+it("图内设置不再显示或编辑，保存原样保留已记录值与物理端口", async () => {
   await open(); const original = structuredClone(stored.site.nodes[1]); const targets = structuredClone(stored.targets);
-  expect(setting()).toHaveValue("high"); expect(setting("子档")).toHaveValue("1"); expect(puts()).toHaveLength(0);
-  fireEvent.change(setting(), { target: { value: "low" } }); fireEvent.change(setting("子档"), { target: { value: "4" } }); await save();
-  expect(lastBody().site.nodes[1].settings?.map(entry => entry.value)).toEqual(["low", "4"]);
-  expect(lastBody().site.nodes[1].device.ports).toEqual(original.device.ports); expect(lastBody().site.nodes[1].device.ports).toHaveLength(1); expect(lastBody().targets).toEqual(targets);
-  fireEvent.change(setting(), { target: { value: "" } }); await save(); expect(lastBody().site.nodes[1].settings?.[0].value).toBeNull();
+  expect(screen.queryByRole("combobox", { name: /^图内设置：/ })).not.toBeInTheDocument();
+  expect(screen.queryByText("高低档")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "移动器件：稳功率器" }));
+  expect(within(devicePanel()).queryByText("高低档")).not.toBeInTheDocument();
+  expect(within(devicePanel()).queryByRole("button", { name: /图内设置/ })).not.toBeInTheDocument();
+  nudge("稳功率器"); await save();
+  expect(lastBody().site.nodes[1].settings).toEqual(original.settings);
+  expect(lastBody().site.nodes[1].device.ports).toEqual(original.device.ports); expect(lastBody().site.nodes[1].device.ports).toHaveLength(1);
+  expect(lastBody().targets).toEqual(targets);
 }, 15000);
 
-it("编辑器可添加内部端口及设置，空名和重复选项阻止保存，选值不会添加物理端口", async () => {
-  await open(); fireEvent.click(screen.getByRole("button", { name: "移动器件：稳功率器" }));
-  fireEvent.click(screen.getByRole("button", { name: "添加图内内部端口" }));
-  const port = screen.getByRole("group", { name: "图内内部端口 2" });
-  fireEvent.change(within(port).getByLabelText("内部端口名称"), { target: { value: "" } }); expect(screen.getByRole("button", { name: "保存全部接线图" })).toBeDisabled();
-  fireEvent.change(within(port).getByLabelText("内部端口名称"), { target: { value: "图内输出" } });
-  fireEvent.click(screen.getByRole("button", { name: "添加图内设置" }));
-  const editor = screen.getByRole("group", { name: "器件图内设置 3" });
-  fireEvent.change(within(editor).getByLabelText("设置名称"), { target: { value: "新设置" } });
-  fireEvent.click(within(editor).getByRole("button", { name: "添加设置选项" }));
-  const values = within(editor).getAllByLabelText("选项值");
-  fireEvent.change(values[1], { target: { value: "1" } }); expect(screen.getByRole("button", { name: "保存全部接线图" })).toBeDisabled();
-  fireEvent.change(values[1], { target: { value: "2" } });
-  fireEvent.change(within(editor).getByLabelText("当前记录值"), { target: { value: "2" } }); await save();
-  expect(lastBody().site.nodes[1].internal_ports?.at(-1)).toMatchObject({ name: "图内输出", direction: "out" });
-  expect(lastBody().site.nodes[1].settings?.at(-1)).toMatchObject({ name: "新设置", value: "2" }); expect(lastBody().site.nodes[1].device.ports).toHaveLength(1);
-}, 15000);
-
-it("内部信号和设置差异独立于外线，编辑设置会清除过期比较", async () => {
+it("内部信号和设置差异独立于外线，编辑图会清除过期比较", async () => {
   comparison.internal_added = [route()]; comparison.setting_changes = [{ device_id: "noise", device_name: "稳功率器", setting_id: "range", setting_name: "高低档", site_value: "high", target_value: "low" }];
   await open(); fireEvent.click(screen.getByRole("button", { name: "比较现场与当前目标草稿" }));
   const result = await screen.findByLabelText("草稿比较结果");
@@ -233,26 +216,28 @@ it("内部信号和设置差异独立于外线，编辑设置会清除过期比�
   expect(within(screen.getByLabelText("图内设置比较")).getByText("稳功率器 / 高低档：high → low")).toBeVisible();
   const body = requests.find(item => item.path === "/api/wiring/compare")!.body as CompareBody;
   expect(body.site.nodes[0].internal_ports).toEqual(stored.site.nodes[0].internal_ports); expect(body.target.nodes[1].settings).toEqual(stored.targets[TARGET].nodes[1].settings);
-  fireEvent.change(setting(), { target: { value: "low" } }); expect(screen.queryByLabelText("草稿比较结果")).not.toBeInTheDocument(); expect(puts()).toHaveLength(0);
+  nudge("稳功率器"); expect(screen.queryByLabelText("草稿比较结果")).not.toBeInTheDocument(); expect(puts()).toHaveLength(0);
 }, 15000);
 
-it.each(["error", "conflict"] as const)("内部路由和设置保存 %s 保草稿和修订，保存中禁改且重新载入先确认", async failure => {
-  await open(); const original = structuredClone(stored); connectInternal(); fireEvent.change(setting(), { target: { value: "low" } });
+it.each(["error", "conflict"] as const)("内部路由保存 %s 保草稿和修订，保存中禁改且重新载入先确认", async failure => {
+  await open(); const original = structuredClone(stored); connectInternal();
   let release!: () => void; saveWait = new Promise<void>(done => { release = done; }); saveFailure = failure;
-  fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" })); expect(setting()).toBeDisabled(); expect(internal("Demod0 Y")).toBeDisabled();
-  fireEvent.change(setting(), { target: { value: "high" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" })); expect(internal("Demod0 Y")).toBeDisabled();
+  fireEvent.click(internal("Demod0 Y"));
   await act(async () => release()); await screen.findByText(failure === "conflict" ? /保存冲突（409），全部草稿与基础修订已保留/ : /保存失败，全部草稿与基础修订已保留/);
-  expect(setting()).toHaveValue("low"); expect(screen.getByText(/修订 internal-r1/)).toBeVisible(); expect(unloadBlocked()).toBe(true);
-  expect(lastBody().site.edges).toHaveLength(1); expect(lastBody().site.nodes[1].settings?.[0].value).toBe("low"); expect(stored).toEqual(original);
+  expect(screen.getAllByRole("button", { name: /^选择连线记录：/ })).toHaveLength(1);
+  expect(screen.getByText(/修订 internal-r1/)).toBeVisible(); expect(unloadBlocked()).toBe(true);
+  expect(lastBody().site.edges).toHaveLength(1); expect(lastBody().site.nodes[1].settings).toEqual(original.site.nodes[1].settings); expect(stored).toEqual(original);
   fireEvent.click(screen.getByRole("button", { name: "重新载入" })); expect(requests.filter(item => item.path === "/api/wiring" && item.method === "GET")).toHaveLength(1);
 }, 15000);
 
-it("固定实验目标的内部和设置草稿跨 Tab 保留，PUT 只替换当前目标", async () => {
+it("固定实验目标的内部草稿跨 Tab 保留，PUT 只替换当前目标", async () => {
   await open(true); const site = structuredClone(stored.site); const retired = structuredClone(stored.targets.retired);
-  connectInternal(); fireEvent.change(setting("子档"), { target: { value: "4" } });
+  const settings = structuredClone(stored.targets[TARGET].nodes[1].settings);
+  connectInternal();
   fireEvent.click(screen.getByRole("tab", { name: "运行" })); fireEvent.click(screen.getByRole("tab", { name: "目标接线图" }));
-  expect(setting("子档")).toHaveValue("4"); expect(screen.getAllByRole("button", { name: /^选择连线：/ })).toHaveLength(1); expect(unloadBlocked()).toBe(true);
+  expect(screen.getAllByRole("button", { name: /^选择连线：/ })).toHaveLength(1); expect(unloadBlocked()).toBe(true);
   await save(true);
-  expect(lastBody().targets[TARGET].edges[0].signal_type).toBe("internal"); expect(lastBody().targets[TARGET].nodes[1].settings?.[1].value).toBe("4");
+  expect(lastBody().targets[TARGET].edges[0].signal_type).toBe("internal"); expect(lastBody().targets[TARGET].nodes[1].settings).toEqual(settings);
   expect(lastBody().site).toEqual(site); expect(lastBody().targets.retired).toEqual(retired); expect(unloadBlocked()).toBe(false);
 }, 15000);

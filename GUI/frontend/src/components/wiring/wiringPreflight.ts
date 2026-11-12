@@ -1,12 +1,11 @@
 import type { components } from "../../types/openapi";
 import type { WiringGraph } from "./wiringTypes";
-import { wiringSyncBadgeLabel, type WiringSyncBadge } from "./wiringSync";
 
 type WiringWarning = components["schemas"]["WiringWarning"];
 type WiringFollowStatus = components["schemas"]["WiringFollowStatus"];
 
 export type PreflightSeverity = "blocking" | "warning" | "info";
-export type PreflightSource = "validation" | "requirement" | "follow" | "diagnostic" | "route" | "profile";
+export type PreflightSource = "validation" | "requirement" | "follow" | "diagnostic" | "route";
 export type PreflightFocus = { kind: "device"; deviceId: string } | { kind: "edge"; edgeId: string };
 export type PreflightItem = {
   id: string;
@@ -31,7 +30,6 @@ export type WiringPreflightInput = {
   diagnostics: WiringWarning[];
   diagnosticsStale: boolean;
   blockedEdgeIds: string[];
-  profileBadges?: Partial<Record<string, WiringSyncBadge[]>>;
   deviceName: (deviceId: string) => string;
 };
 
@@ -50,7 +48,7 @@ export const requiredDevicePresent = (graph: WiringGraph, value: string) => {
 };
 
 const severityRank: Record<PreflightSeverity, number> = { blocking: 0, warning: 1, info: 2 };
-const sourceRank: Record<PreflightSource, number> = { validation: 0, requirement: 1, follow: 2, diagnostic: 3, route: 4, profile: 5 };
+const sourceRank: Record<PreflightSource, number> = { validation: 0, requirement: 1, follow: 2, diagnostic: 3, route: 4 };
 
 const focusKey = (focus: PreflightFocus | undefined) => focus
   ? focus.kind === "device" ? `device:${focus.deviceId}` : `edge:${focus.edgeId}`
@@ -59,7 +57,7 @@ const focusKey = (focus: PreflightFocus | undefined) => focus
 /** 只汇总现有提示与画布上报；不读取服务端、不修改图，也不改变保存或运行阻塞规则。 */
 export function buildWiringPreflight(input: WiringPreflightInput): PreflightItem[] {
   const { validation, requirements, requirementsError = "", targetGraph, mappingGroupsAvailable, followStatuses,
-    diagnostics, diagnosticsStale, blockedEdgeIds, profileBadges = {}, deviceName } = input;
+    diagnostics, diagnosticsStale, blockedEdgeIds, deviceName } = input;
   const nameOf = (deviceId: string) => deviceName(deviceId) || deviceId;
   const items: Array<Omit<PreflightItem, "id">> = [];
   const push = (severity: PreflightSeverity, source: PreflightSource, message: string, focus?: PreflightFocus) => {
@@ -98,12 +96,6 @@ export function buildWiringPreflight(input: WiringPreflightInput): PreflightItem
     const edge = targetGraph.edges.find(item => item.id === edgeId);
     const prefix = edge ? `${nameOf(edge.source.device_id)} ↔ ${nameOf(edge.target.device_id)}：` : `连线 ${edgeId}：`;
     push("warning", "route", `${prefix}因器件重叠或端口外侧被挡，暂时无法绕行；记录与端口未删除，请移开器件。`, { kind: "edge", edgeId });
-  }
-
-  for (const [deviceId, badges] of Object.entries(profileBadges)) {
-    if (!badges?.length) continue;
-    push("warning", "profile", `${nameOf(deviceId)}：与设备端口档案存在差异（${badges.map(badge => wiringSyncBadgeLabel[badge]).join("、")}）；请人工核对。`,
-      { kind: "device", deviceId });
   }
 
   const seen = new Set<string>();

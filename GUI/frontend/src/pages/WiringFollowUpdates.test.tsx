@@ -78,7 +78,9 @@ async function check() {
 function replaceMapping() {
   stored = { ...stored, revision: "combined-r2", site: graph("王湾温控"), targets: { [TARGET]: graph("目标王湾温控"), retired: graph("退役目标王湾温控") }, follow_status: { site: [{ device_id: "logical-device", state: "updated", mapping_keys: [...keys], message: "已从原温控跟随到王湾温控，仅更新记录" }], targets: {} } };
 }
-function rename(value: string) { fireEvent.click(snapshot("原温控")); fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value } }); }
+// 器件名称只来自设备库，图内不再改名；用画布键盘移动制造未保存草稿。
+function nudge(name = "原温控") { fireEvent.click(snapshot(name)); fireEvent.keyDown(snapshot(name), { key: "ArrowRight" }); }
+const card = (name: string) => screen.getByRole("group", { name: `器件快照：${name}` });
 async function saveAll() {
   fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" }));
   await screen.findByText("全部接线图已保存。");
@@ -123,15 +125,15 @@ it("旧后端缺少修订接口时静默回退一次全量读取，再次检查�
 }, 15000);
 
 it("未保存草稿收到用途更新不被覆盖，旧基础修订和409保留到用户明确重新载入", async () => {
-  await open(); rename("必须保留的草稿"); replaceMapping(); await check();
+  await open(); nudge(); replaceMapping(); await check();
   expect(screen.getByText(/设备用途或接线图已有更新，当前草稿与基础修订已保留/)).toBeVisible();
-  expect(snapshot("必须保留的草稿")).toBeVisible();
+  expect(card("原温控")).toHaveStyle({ left: "80px" });
   expect(screen.getByText(/修订 combined-r1/)).toBeInTheDocument();
   saveConflict = true; fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" }));
   await screen.findByText(/保存冲突（409），全部草稿与基础修订已保留/);
   expect(puts()[0].body?.base_revision).toBe("combined-r1");
   fireEvent.click(screen.getByRole("button", { name: "确认重新载入用途更新" }));
-  expect(snapshot("必须保留的草稿")).toBeVisible();
+  expect(card("原温控")).toHaveStyle({ left: "80px" });
   vi.mocked(window.confirm).mockReturnValue(true);
   fireEvent.click(screen.getByRole("button", { name: "确认重新载入用途更新" }));
   await screen.findByRole("button", { name: "移动器件：王湾温控" });
@@ -142,10 +144,10 @@ it("检查发起后新编辑也保留，更新检查失败不把现有图当空�
   await open(); replaceMapping();
   let release!: () => void; readWait = new Promise<void>(done => { release = done; });
   fireEvent.click(screen.getByRole("button", { name: "检查用途与接线图更新" }));
-  rename("检查过程中的草稿");
+  nudge();
   await act(async () => release());
   await screen.findByText(/设备用途或接线图已有更新，当前草稿与基础修订已保留/);
-  expect(snapshot("检查过程中的草稿")).toBeVisible();
+  expect(card("原温控")).toHaveStyle({ left: "80px" });
   readWait = undefined; readFailure = true; await check();
   expect(screen.getByText(/用途更新检查失败，现有草稿和基础修订保留/)).toBeVisible();
   expect(screen.getByRole("button", { name: "保存全部接线图" })).toBeEnabled();
@@ -157,14 +159,14 @@ it("保存中阻止版本检查并忽略较早的迟到回执，保存结果不�
   let releaseRead!: () => void; readWait = new Promise<void>(done => { releaseRead = done; });
   fireEvent.click(screen.getByRole("button", { name: "检查用途与接线图更新" }));
   await act(async () => {});
-  rename("保存结果应保留");
+  nudge();
   let releaseSave!: () => void; saveWait = new Promise<void>(done => { releaseSave = done; });
   fireEvent.click(screen.getByRole("button", { name: "保存全部接线图" }));
   expect(reads().at(-1)?.signal?.aborted).toBe(true);
   fireEvent(window, new Event("focus")); expect(reads()).toHaveLength(2);
   await act(async () => releaseSave()); await screen.findByText(/全部接线图已保存。/);
   await act(async () => releaseRead());
-  expect(snapshot("保存结果应保留")).toBeVisible();
+  expect(card("原温控")).toHaveStyle({ left: "80px" });
   expect(screen.queryByText(/设备用途或接线图已有更新，当前草稿/)).not.toBeInTheDocument();
   expect(screen.getByText(/修订 combined-saved/)).toBeInTheDocument();
 }, 15000);
@@ -241,17 +243,16 @@ it("实验目标重新显示时检查版本；干净刷新、脏草稿提示且�
   fireEvent(window, new Event("focus")); expect(reads()).toHaveLength(1);
   fireEvent.click(screen.getByRole("tab", { name: "目标接线图" }));
   await screen.findByRole("button", { name: "移动器件：目标王湾温控" });
-  fireEvent.click(snapshot("目标王湾温控"));
-  fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "当前目标草稿" } });
+  nudge("目标王湾温控");
   fireEvent.click(screen.getByRole("tab", { name: "运行" }));
   stored = { ...stored, revision: "combined-r3", site: graph("更新后的现场"), targets: { ...stored.targets, retired: graph("更新后的退役目标") } };
   fireEvent.click(screen.getByRole("tab", { name: "目标接线图" }));
   await screen.findByText(/设备用途或接线图已有更新，当前草稿与基础修订已保留/);
-  expect(snapshot("当前目标草稿")).toBeVisible();
+  expect(card("目标王湾温控")).toHaveStyle({ left: "80px" });
   saveConflict = true;
   fireEvent.click(screen.getByRole("button", { name: "保存当前实验目标" }));
   await screen.findByText(/保存冲突（409），当前目标草稿与基础修订已保留/);
-  expect(snapshot("当前目标草稿")).toBeVisible();
+  expect(card("目标王湾温控")).toHaveStyle({ left: "80px" });
   expect(stored.revision).toBe("combined-r3");
   expect(stored.site.nodes[0].device.name).toBe("更新后的现场");
   expect(stored.targets.retired.nodes[0].device.name).toBe("更新后的退役目标");
@@ -259,7 +260,8 @@ it("实验目标重新显示时检查版本；干净刷新、脏草稿提示且�
   expect(sent.base_revision).toBe("combined-r2");
   expect(sent.site.nodes[0].device.name).toBe("王湾温控");
   expect(sent.targets.retired.nodes[0].device.name).toBe("退役目标王湾温控");
-  expect(sent.targets[TARGET].nodes[0].device.name).toBe("当前目标草稿");
+  expect(sent.targets[TARGET].nodes[0].device.name).toBe("目标王湾温控");
+  expect(sent.targets[TARGET].nodes[0].x).toBe(80);
 }, 15000);
 
 it("目标检查回执到达时已隐藏则不替换图，回到目标后再采用最新用途", async () => {
@@ -287,9 +289,8 @@ it("草稿有修改时预检中的跟随与诊断标注基于最近读取，不�
   const region = screen.getByRole("region", { name: "接线预检清单" });
   expect(within(region).getByText("目标原温控：未同步：新设备缺少完整对应端口（Heat_Control / Temp_Switch）")).toBeInTheDocument();
   expect(within(region).getByText("连线提示：旧的光电类型提示")).toBeInTheDocument();
-  fireEvent.click(snapshot("目标原温控"));
-  fireEvent.change(screen.getByLabelText("图内器件名称"), { target: { value: "草稿改名" } });
-  expect(within(region).getByText("草稿改名：未同步：新设备缺少完整对应端口（Heat_Control / Temp_Switch）（基于最近读取/保存，草稿尚未保存）")).toBeInTheDocument();
+  nudge("目标原温控");
+  expect(within(region).getByText("目标原温控：未同步：新设备缺少完整对应端口（Heat_Control / Temp_Switch）（基于最近读取/保存，草稿尚未保存）")).toBeInTheDocument();
   expect(within(region).getByText("连线提示：旧的光电类型提示（基于最近读取/保存，草稿尚未保存）")).toBeInTheDocument();
   expect(puts()).toHaveLength(0);
 }, 15000);
