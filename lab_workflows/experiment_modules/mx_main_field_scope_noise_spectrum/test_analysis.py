@@ -29,6 +29,7 @@ REGRESSION_CASES = {
                 "test_content_fingerprints_detect_same_stat_changes",
                 "test_bad_input_does_not_move_existing_results",
                 "test_legacy_format_qualification_and_running_rejection",
+                "test_format_and_analysis_block_reasons_split_running_status",
                 "test_results_directory_junction_cannot_archive_raw",
                 "test_global_numeric_decomposition_and_real_figures",
                 "test_cancelled_scientific_stage_keeps_original_exception",
@@ -178,6 +179,22 @@ def test_legacy_format_qualification_and_running_rejection(tmp_path):
             analysis.AnalysisWorkflow(run)
     config_path.write_text(yaml.safe_dump(original | {"raw_format_version": 1}), encoding="utf8")
     assert steps.load_inputs(run)["raw_format_version"] == 1
+
+
+def test_format_and_analysis_block_reasons_split_running_status(tmp_path):
+    # 历史列表只看身份与格式：采集中的运行仍要列出，但不能分析。
+    config = yaml.safe_load((synthetic_run(tmp_path / "run") / "experiment_config.yaml").read_text(encoding="utf8"))
+    assert run_format.format_block_reason(config) == ""
+    assert run_format.analysis_block_reason(config) == ""
+    for status in ("running", "acquired"):
+        running = config | {"completion_status": status}
+        assert run_format.format_block_reason(running) == ""
+        assert run_format.analysis_block_reason(running)
+    for changes in ({"experiment_id": "other"}, {"raw_format_version": 99}, {"raw_format_version": True}, {"schema_version": 99}):
+        assert run_format.format_block_reason(config | changes)
+        assert run_format.analysis_block_reason(config | changes) == run_format.format_block_reason(config | changes)
+    assert run_format.format_block_reason(None)
+    assert run_format.format_block_reason({"experiment_id": run_format.EXPERIMENT_ID})
 
 
 def test_results_directory_junction_cannot_archive_raw(tmp_path):

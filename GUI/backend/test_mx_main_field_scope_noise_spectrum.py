@@ -192,3 +192,29 @@ def test_main_routes_discovery_and_lifespan_registration():
     assert main.mx_main_field_scope_sessions in main._workflow_session_services()
     from lab_workflows.experiment_modules.mx_main_field_scope_noise_spectrum.definition import DEFINITION
     assert main._experiment_public(DEFINITION)["id"] == ID
+
+
+def test_generic_runs_listing_includes_scope_noise_runs(tmp_path, monkeypatch):
+    # 全部历史接口按 WORKFLOW_RUN_FORMATS 筛选；本实验缺 format_block_reason 时整个列表 500。
+    from . import main
+    monkeypatch.setattr(main, "ROOT", tmp_path)
+    from lab_workflows.experiment_modules.mx_main_field_scope_noise_spectrum import run_format
+    data = tmp_path / "data" / run_format.DATA_TYPE
+    completed = synthetic_run(data / "1112_100000_done")
+    running = synthetic_run(data / "1112_110000_running")
+    config_path = running / "experiment_config.yaml"
+    config_path.write_text(config_path.read_text(encoding="utf8").replace("completion_status: completed", "completion_status: running"), encoding="utf8")
+    response = TestClient(main.app).get("/api/runs", params={"experiment_id": ID})
+    assert response.status_code == 200, response.text
+    listed = {run["id"]: run for run in response.json()["runs"]}
+    assert set(listed) == {completed.name, running.name}
+    assert listed[completed.name]["can_analyze"] is True
+    assert listed[running.name]["can_analyze"] is False
+    assert TestClient(main.app).get("/api/runs").status_code == 200
+
+
+def test_every_workflow_run_format_exposes_both_block_reasons():
+    from . import main
+    for experiment_id, identity in main.WORKFLOW_RUN_FORMATS.items():
+        assert callable(getattr(identity, "format_block_reason", None)), experiment_id
+        assert callable(getattr(identity, "analysis_block_reason", None)), experiment_id
