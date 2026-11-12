@@ -14,6 +14,7 @@ from .stages import ACQUISITION, FINISH_ID, RUN_ID, invalidate, validate_selecti
 from lab_workflows.workflow_stages import initial_states
 # 兼容已有直接导入；实际业务已移到采集模块。
 from .acquisition import _acquire_grid, _set_power_point, _initial_manifest, _write_manifest, acquire_mx_y_rf_point
+from lab_workflows.common import data_root
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE
@@ -62,7 +63,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块"):
         snapshot = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", snapshot)
         if self.directory and not self.round_sealed:
             write_state(self.directory.root / "acquisition_state.json", snapshot)
         report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": snapshot})

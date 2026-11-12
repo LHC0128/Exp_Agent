@@ -7,6 +7,7 @@ from lab_workflows.experiment_modules.bb_duty_scan_burst.analysis import Analysi
 from lab_workflows.experiment_modules.bb_duty_scan_burst import stages, run_format
 from .workflow_sessions import WorkflowSessionService, create_router as workflow_router, conflict
 from .workflow_history import read_config, list_runs, run_summary, WorkflowRuns, WorkflowRunSummary
+from lab_workflows.common import data_root
 
 
 read_bb_config = partial(read_config, loader=run_format.ConfigLoader)
@@ -20,7 +21,7 @@ class BBDutySessionService(WorkflowSessionService):
             diagram_file="lab_workflows/experiment_modules/bb_duty_scan_burst/workflow.excalidraw")
 
     def run_directory(self, run_id, *, allow_running=False):
-        base = (self.root() / "data" / self.adapter.data_type).resolve()
+        base = (data_root(self.root()) / self.adapter.data_type).resolve()
         path = (base / run_id).resolve()
         if path.parent != base or not path.is_dir():
             raise HTTPException(404, "运行目录不存在")

@@ -6,6 +6,7 @@ $ErrorActionPreference = "Stop"
 # 端口：生产模式（运行目录）固定后端 8000；开发模式默认后端 8100、前端 5273，可在仓库根
 #       .lab_dev.yaml 写 backend_port / frontend_port 覆盖（开发后端不得用 8000），经环境变量
 #       LAB_BACKEND_PORT / LAB_FRONTEND_PORT 传给后端和 Vite，两套 GUI 可同时运行。
+# 数据根：开发模式读 .lab_dev.yaml 的 data_root（经 LAB_DATA_ROOT 传递，未配置时开发 GUI 不能读写数据）。
 # 普通模式在当前窗口运行 Vite；-Hidden 模式由 start_gui.vbs 调用，前端和后端都隐藏运行。
 # Vite dev 模式提供 HMR，agent 改前端代码后浏览器秒级刷新，无需每次 npm run build。
 # FastAPI 后端只负责 /api/，前端由 Vite serve，Vite 自动把 /api 转发到后端端口。
@@ -117,12 +118,24 @@ function Read-DevPort([string[]]$Lines, [string]$Key, [int]$Default) {
 if ($Production) {
     $BackendPort = 8000
     $FrontendPort = $null
+    # 运行目录数据根固定为 <根>\data，不接受外部指定。
+    $env:LAB_DATA_ROOT = $null
 } else {
     $DevLines = if (Test-Path -LiteralPath $DevConfig) { @(Get-Content -LiteralPath $DevConfig -Encoding UTF8) } else { @() }
     $BackendPort = Read-DevPort $DevLines "backend_port" 8100
     $FrontendPort = Read-DevPort $DevLines "frontend_port" 5273
     if ($BackendPort -eq 8000) { throw "开发 GUI 不能使用运行目录专用的 8000 端口（.lab_dev.yaml backend_port）" }
     if ($BackendPort -eq $FrontendPort) { throw "开发 GUI 后端与前端端口相同：$BackendPort" }
+    # 开发目录没有 data/；数据根由 .lab_dev.yaml 的 data_root 指定，经 LAB_DATA_ROOT 传给后端与子进程。
+    $DataRootLine = $DevLines | Where-Object { $_ -match '^\s*data_root\s*:\s*(.+?)\s*$' } | Select-Object -First 1
+    if ($DataRootLine) {
+        $null = $DataRootLine -match '^\s*data_root\s*:\s*(.+?)\s*$'
+        $DataRoot = $Matches[1].Trim().Trim('"').Trim("'")
+        if (-not (Test-Path -LiteralPath $DataRoot)) { throw ".lab_dev.yaml 中 data_root 不存在：$DataRoot" }
+        $env:LAB_DATA_ROOT = $DataRoot
+    } else {
+        $env:LAB_DATA_ROOT = $null
+    }
 }
 $env:LAB_BACKEND_PORT = "$BackendPort"
 if ($FrontendPort) { $env:LAB_FRONTEND_PORT = "$FrontendPort" }

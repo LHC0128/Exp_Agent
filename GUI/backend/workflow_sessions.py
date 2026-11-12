@@ -13,6 +13,7 @@ from lab_workflows.workflow_state import read_state
 from lab_workflows.setups import bound_setup
 from .schemas import StrictModel
 from .workflow_history import WorkflowRuns, WorkflowRunSummary, list_runs, read_config, run_summary
+from lab_workflows.common import data_root
 
 def conflict(message, code="session_busy"):
     return HTTPException(409, message, headers={"X-Error-Code": code})
@@ -255,7 +256,7 @@ class WorkflowSessionService:
                 sleep(0.1)
 
     def run_directory(self, run_id, *, allow_running=False):
-        base = (self.root() / "data" / self.adapter.data_type).resolve()
+        base = (data_root(self.root()) / self.adapter.data_type).resolve()
         path = (base / run_id).resolve()
         if path.parent != base or not path.is_dir():
             raise HTTPException(404, "运行目录不存在")

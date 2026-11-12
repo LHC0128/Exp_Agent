@@ -18,6 +18,7 @@ from ._helpers import RuntimeCancellation, sleep
 from .preparation import connect_devices, configure_outputs, safe_shutdown
 from .excitation import set_gate_frequency, set_demod_frequency
 from .acquisition import acquire_r, summarize_r
+from lab_workflows.common import data_root
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE
@@ -92,7 +93,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块"):
         snapshot = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", snapshot)
         if self.directory and not self.round_sealed:
             write_state(self.directory.root / "acquisition_state.json", snapshot | {"parameters": self.run_parameters})
         report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": snapshot})

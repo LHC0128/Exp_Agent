@@ -7,6 +7,7 @@ import yaml
 from sensitivity_analysis.fitting import fit_dispersive
 from ..static_sensitivity.analysis_steps import load_scan, QUALITY_THRESHOLDS
 from ..static_sensitivity.run_format import format_block_reason
+from lab_workflows.common import DataRootNotConfigured, data_root
 
 SOURCE_TYPE = "Static_Magnetic_Field_Sensitivity"
 
@@ -14,7 +15,7 @@ SOURCE_TYPE = "Static_Magnetic_Field_Sensitivity"
 def source_directory(root, run_id):
     if not isinstance(run_id, str) or not run_id or run_id in (".", "..") or any(c in run_id for c in "/\\:"):
         raise ValueError("请选择有效的静磁场标定运行目录")
-    base = (Path(root) / "data" / SOURCE_TYPE).resolve()
+    base = (data_root(Path(root)) / SOURCE_TYPE).resolve()
     path = (base / run_id).resolve()
     if path.parent != base or not path.is_dir():
         raise ValueError("静磁场标定目录不存在或越界")
@@ -81,7 +82,11 @@ def load_source(root, run_id, k_z_hz_per_v, target_config=None):
 def source_choices(root):
     """下拉只列出可用曲线，不要求来源噪声分析完成。"""
     choices = []
-    for path in sorted((Path(root) / "data" / SOURCE_TYPE).glob("*"), reverse=True):
+    try:
+        base = data_root(Path(root))
+    except DataRootNotConfigured:
+        return choices  # 开发目录未配置数据根：表单照常显示，下拉为空
+    for path in sorted((base / SOURCE_TYPE).glob("*"), reverse=True):
         if not path.is_dir():
             continue
         try:

@@ -23,6 +23,7 @@ from .models import RFSensitivityDirectAWParams
 from .control_runs import make_control_directory, inherit_control, execute_controls, seal_controls
 from .stages import SINGLE_ACQUISITION as ACQUISITION, MULTI_ACQUISITION, FINISH_ID, invalidate, invalidated_stages, validate_selection
 from lab_workflows.workflow_stages import initial_states
+from lab_workflows.common import data_root
 
 
 _ControlWorkflow = TypeVar("_ControlWorkflow", bound="SingleControlWorkflow")
@@ -107,7 +108,7 @@ class SingleControlWorkflow:
 
     def publish(self, message="等待选择下一模块", level="info"):
         snapshot = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", snapshot)
         if self.directory:
             write_state(self.directory.root / "acquisition_state.json", snapshot)
         report_runtime_progress(self.current_step or "waiting", message,

@@ -19,6 +19,7 @@ from . import preparation, acquisition
 from .run_metadata import EXPERIMENT_ID, DATA_TYPE, EXECUTION_MODE, initial_metadata
 from .stages import ACQUISITION, RUN_STEP_ID, FINISH_ID, invalidate, validate_selection
 from lab_workflows.workflow_stages import initial_states
+from lab_workflows.common import data_root
 
 # 保留原具名注入点，既有故障回归继续经过真实采集与真实写盘。
 safe_shutdown = preparation.safe_shutdown
@@ -93,7 +94,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块；硬件锁和当前输出保持"):
         value = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", value)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", value)
         if self.directory:
             write_state(self.directory.root / "acquisition_state.json", value)
         report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": value})

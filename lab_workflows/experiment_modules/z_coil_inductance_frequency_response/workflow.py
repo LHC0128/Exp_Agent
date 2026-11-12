@@ -29,6 +29,7 @@ from .acquisition import (
 )
 from .excitation import _configure_sine, Z_BURST_TRIGGER_SLOPE
 from .preparation import _connect_devices, safe_shutdown
+from lab_workflows.common import data_root
 
 EXECUTION_MODE = "typed_workflow"
 
@@ -87,7 +88,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块", level="info"):
         snapshot = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", snapshot)
         if self.run_dir:
             write_state(self.run_dir / "acquisition_state.json", snapshot)
         report_runtime_progress(self.current_step or "waiting", message,

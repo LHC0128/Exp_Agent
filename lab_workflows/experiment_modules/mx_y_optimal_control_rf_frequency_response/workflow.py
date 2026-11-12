@@ -18,6 +18,7 @@ from lab_workflows.workflow_stages import initial_states
 from .acquisition import (ScanProgress, scan_point_counts, build_frequency_axis, build_phase_axis,
     OPTIMAL_CONTROL_DATA_FILE, CONSTANT_CONTROL_DATA_FILE, CONSTANT_CONTROL_PHASE_DEG,
     ACQUISITION_PERCENT_BUDGET, _point_metadata, _configure_constant_control_z, _restore_optimal_control_z)
+from lab_workflows.common import data_root
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE
@@ -90,7 +91,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块"):
         value = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", value)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", value)
         if self.directory and not self.round_sealed:
             write_state(self.directory.root / "acquisition_state.json", value)
         report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": value})

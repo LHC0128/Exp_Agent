@@ -12,6 +12,7 @@ from .models import T1CalibrationParams
 from .stages import ACQUISITION, FINISH_ID, RUN_STEP_ID, invalidate, validate_selection
 from lab_workflows.workflow_stages import initial_states
 from . import preparation, acquisition, run_format
+from lab_workflows.common import data_root
 
 
 class Workflow:
@@ -53,7 +54,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块"):
         value = self.snapshot()
-        write_state(self.root/"data/.gui_jobs"/self.session_id/"session.json", value)
+        write_state(data_root(self.root) / ".gui_jobs"/self.session_id/"session.json", value)
         if self.directory and not self.round_sealed:
             write_state(self.directory.root/"acquisition_state.json", value)
         report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": value})

@@ -23,6 +23,7 @@ from ..common import (
     load_safety_limits,
     validate_safety_limit,
 )
+from lab_workflows.common import data_root
 
 
 _EXCLUDED_CONSTANTS = {
@@ -297,7 +298,7 @@ class LegacyScriptAdapter:
         cancellation: CancellationToken | None = None,
     ) -> None:
         root = find_project_root()
-        job_dir = root / "data" / ".gui_jobs"
+        job_dir = root / "tmp" / "gui_jobs"
         job_dir.mkdir(parents=True, exist_ok=True)
         token = f"{self.id}_{os.getpid()}_{threading.get_ident()}"
         overrides_path = job_dir / f"{token}.json"
@@ -353,7 +354,7 @@ class LegacyScriptAdapter:
             raise RuntimeError(f"脚本 {script.name} 异常结束，退出码 {return_code}")
 
     def _latest_run(self, before: set[Path]) -> Path | None:
-        base = find_project_root() / "data" / self.data_type
+        base = data_root(find_project_root()) / self.data_type
         if not base.exists():
             return None
         runs = [item for item in base.iterdir() if item.is_dir()]
@@ -371,7 +372,7 @@ class LegacyScriptAdapter:
         errors = self.preflight(values)
         if errors:
             raise ValueError("；".join(errors))
-        base = find_project_root() / "data" / self.data_type
+        base = data_root(find_project_root()) / self.data_type
         before = set(base.iterdir()) if base.exists() else set()
         overrides = self._nested_overrides(values, self.defaults())
         emit(progress, "start", f"启动 {self.script.name}", 0)

@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from hardware_gate import hardware_allowed
 
 from lab_workflows.clock_sync import initialize_output_loads, synchronize_clocks
-from lab_workflows.common import find_project_root, load_mapping
+from lab_workflows.common import data_root, find_project_root, load_mapping
 from lab_workflows.setups import (
     SetupConfigError, capture_setup, create_setup, load_setup_registry, set_active_setup, update_setup,
 )
@@ -1380,7 +1380,7 @@ def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
     ]
     result = []
     for definition in definitions:
-        base = ROOT / "data" / definition.data_type
+        base = data_root(ROOT) / definition.data_type
         try:
             if not base.exists():
                 continue
@@ -1456,7 +1456,7 @@ def runs(experiment_id: str | None = None, limit: int = 50, offset: int = 0):
 
 def _run_dir(experiment_id: str, run_id: str) -> Path:
     definition = _experiment_or_404(experiment_id)
-    base = (ROOT / "data" / definition.data_type).resolve()
+    base = (data_root(ROOT) / definition.data_type).resolve()
     path = (base / run_id).resolve()
     if base not in path.parents or not path.is_dir():
         raise HTTPException(404, "运行目录不存在")
@@ -1741,7 +1741,7 @@ def _build_mx_y_optimal_control_frequency_summary(
 def _mx_y_optimal_control_frequency_runs(page_size: int, offset: int) -> dict[str, Any]:
     """按共用原始格式资格列出运行，尚未分析的分步采集同样可见。"""
     definition = _experiment_or_404(MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID)
-    base = (ROOT / "data" / definition.data_type).resolve()
+    base = (data_root(ROOT) / definition.data_type).resolve()
     runs: list[dict[str, Any]] = []
     if base.is_dir():
         for path in base.iterdir():
@@ -1774,7 +1774,7 @@ STATIC_SENSITIVITY_ID = "static-sensitivity"
 
 def _static_sensitivity_runs(limit: int, offset: int) -> dict[str, Any]:
     definition = _experiment_or_404(STATIC_SENSITIVITY_ID)
-    base = (ROOT / "data" / definition.data_type).resolve()
+    base = (data_root(ROOT) / definition.data_type).resolve()
     runs: list[dict[str, Any]] = []
     if base.is_dir():
         for path in base.iterdir():
@@ -1841,7 +1841,7 @@ NOISE_SPECTRUM_XY_ID = "noise-spectrum-xy"
 
 @app.get(f"/api/experiments/{NOISE_SPECTRUM_XY_ID}/runs")
 def noise_spectrum_xy_runs(limit: int = 50, offset: int = 0):
-    base = ROOT / "data" / _experiment_or_404(NOISE_SPECTRUM_XY_ID).data_type
+    base = data_root(ROOT) / _experiment_or_404(NOISE_SPECTRUM_XY_ID).data_type
     items = []
     for path in base.glob("*/experiment_config.yaml"):
         config = _read_yaml(path)
@@ -1914,7 +1914,7 @@ def noise_spectrum_xy_probe_am_runs(limit: int = 50, offset: int = 0):
 
 
 def _noise_spectrum_injection_runs(experiment_id: str, limit: int, offset: int):
-    base = ROOT / "data" / _experiment_or_404(experiment_id).data_type
+    base = data_root(ROOT) / _experiment_or_404(experiment_id).data_type
     items = []
     for path in base.glob("*/experiment_config.yaml"):
         config = _read_yaml(path)
@@ -1986,7 +1986,7 @@ BELL_BLOOM_Z_ID = "bell-bloom-z-field-calibration"
 
 @app.get(f"/api/experiments/{BELL_BLOOM_Z_ID}/runs")
 def bell_bloom_z_runs(limit: int = 50, offset: int = 0):
-    base = ROOT / "data" / _experiment_or_404(BELL_BLOOM_Z_ID).data_type
+    base = data_root(ROOT) / _experiment_or_404(BELL_BLOOM_Z_ID).data_type
     items = []
     for path in base.glob("*/experiment_config.yaml"):
         config = _read_yaml(path) or {}
@@ -2027,7 +2027,7 @@ DETECTION_CHAIN_FREQUENCY_ID = "detection-chain-frequency-response"
 
 @app.get(f"/api/experiments/{DETECTION_CHAIN_FREQUENCY_ID}/runs")
 def detection_chain_frequency_runs(limit: int = 50, offset: int = 0):
-    base = ROOT / "data" / _experiment_or_404(DETECTION_CHAIN_FREQUENCY_ID).data_type
+    base = data_root(ROOT) / _experiment_or_404(DETECTION_CHAIN_FREQUENCY_ID).data_type
     items = []
     for path in base.glob("*/experiment_config.yaml"):
         config = _read_yaml(path)
@@ -2091,7 +2091,7 @@ def rf_direct_aw_runs(limit: int = 50, offset: int = 0, starred_only: bool = Fal
 
 def _rf_aw_runs(experiment_id, limit, offset, *, starred_only=False):
     identity = RF_RUN_FORMATS[experiment_id]
-    base = (ROOT / "data" / _experiment_or_404(experiment_id).data_type).resolve()
+    base = (data_root(ROOT) / _experiment_or_404(experiment_id).data_type).resolve()
     items = []
     for path in base.glob("*/experiment_config.yaml"):
         directory = path.parent.resolve()

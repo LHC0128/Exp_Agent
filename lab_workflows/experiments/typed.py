@@ -25,6 +25,7 @@ from ..experiment_params import ExperimentParams
 from ..experiment_runtime import PROGRESS_PREFIX, PROGRESS_PROTOCOL_ENV, format_eta
 from ..steps.run_directory import write_run_config
 from ..setups import subprocess_environment
+from lab_workflows.common import data_root
 
 
 ParamsT = TypeVar("ParamsT", bound=ExperimentParams)
@@ -98,7 +99,7 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         commands: Queue | None = None,
     ) -> Path | None:
         reported_runs: list[Path] = []
-        job_dir = self.root / "data" / ".gui_jobs"
+        job_dir = self.root / "tmp" / "gui_jobs"
         job_dir.mkdir(parents=True, exist_ok=True)
         token = f"{self.id}_{os.getpid()}_{threading.get_ident()}"
         cancel_path = job_dir / f"{token}.cancel"
@@ -255,7 +256,7 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         if not path.is_absolute():
             raise RuntimeError("子进程上报的运行目录必须是绝对路径")
         path = path.resolve()
-        base = (self.root / "data" / self.data_type).resolve()
+        base = (data_root(self.root) / self.data_type).resolve()
         if path.parent != base or not path.is_dir():
             raise RuntimeError(f"子进程上报的运行目录不属于本实验: {path}")
         config_path = path / "experiment_config.yaml"
@@ -381,7 +382,7 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         if not self.analysis_module:
             raise RuntimeError("该实验没有离线分析器")
         if run_dir is None:
-            base = self.root / "data" / self.data_type
+            base = data_root(self.root) / self.data_type
             candidates = sorted((path for path in base.glob("*") if path.is_dir()), reverse=True)
             if not candidates:
                 raise FileNotFoundError(f"未找到数据目录: {base}")

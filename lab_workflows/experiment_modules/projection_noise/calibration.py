@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 
 import yaml
+from lab_workflows.common import data_root
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +32,7 @@ def load_main_field_calibration(
     source_run: str,
 ) -> MainFieldCalibration:
     """读取并严格校验一个固定的 Mx 主场标定运行。"""
-    base = (project_root / "data/Mx_Main_Field_Calibration").resolve()
+    base = (data_root(project_root) / "Mx_Main_Field_Calibration").resolve()
     run = (base / source_run).resolve()
     path = run / "results/analysis.yaml"
     if not source_run or any(c in source_run for c in "/\\:\x00") or run.parent != base or path.resolve() != path:

@@ -23,6 +23,7 @@ from .acquisition import (_save_point, _acquire_scan, acquire_r, summarize_r,
 from .scan import build_frequency_axis, build_z_axis, initial_rf_frequency_hz, predicted_center_hz
 from ...common import load_mapping
 from ...lockin_compatibility import require_lockin_compatibility
+from lab_workflows.common import data_root
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE
@@ -97,7 +98,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块"):
         snapshot = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", snapshot)
         if self.directory and not self.round_sealed:
             write_state(self.directory.root / "acquisition_state.json", snapshot)
         report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": snapshot})

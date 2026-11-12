@@ -14,6 +14,7 @@ function Test-Path {
     if (-not $Path) { $Path = $LiteralPath }
     $TestState.PathQueries += $Path
     if ($Path -like '*.lab_dev.yaml') { return $null -ne $TestState.Case.DevConfig }
+    if ($Path -like 'D:\Missing*') { return $false }
     if ($TestState.Case.MissingPython -and $Path -like '*Scripts\python.exe') { return $false }
     if ($TestState.Case.MissingDist -and $Path -like '*dist\index.html') { return $false }
     if ($TestState.Case.MissingNodeModules -and $Path -like '*node_modules') { return $false }
@@ -96,6 +97,7 @@ function Start-Process {
     $TestState.BackendStarted = $true
     $TestState.BackendPortEnv = $env:LAB_BACKEND_PORT
     $TestState.FrontendPortEnv = $env:LAB_FRONTEND_PORT
+    $TestState.DataRootEnv = $env:LAB_DATA_ROOT
     $TestState.BackendStopped = $false
     $TestState.BackendWaited = $false
     $backendExitCode = if ($TestState.Case.BackendFailure) { 24 } else { 0 }
@@ -149,7 +151,9 @@ $Cases = @(
     @{ Name = '开发模式 5273 端口冲突'; BusyPort = 5273; Error = '端口 5273 已被占用' },
     @{ Name = '开发模式 8100 端口冲突'; BusyPort = 8100; Error = '端口 8100 已被占用' },
     @{ Name = '开发模式与运行目录 8000 共存'; BusyPort = 8000 },
-    @{ Name = '开发模式读取 .lab_dev.yaml 端口'; Hidden = $true; DevConfig = @('data_root: D:\x', 'backend_port: 8200  # 注释', 'frontend_port: 5300'); BackendPort = 8200; FrontendPort = 5300 },
+    @{ Name = '开发模式读取 .lab_dev.yaml 端口'; Hidden = $true; DevConfig = @('data_root: D:\x', 'backend_port: 8200  # 注释', 'frontend_port: 5300'); BackendPort = 8200; FrontendPort = 5300; DataRoot = 'D:\x' },
+    @{ Name = '开发模式传递数据根'; DevConfig = @('data_root: "D:\Run\data"'); DataRoot = 'D:\Run\data' },
+    @{ Name = '开发模式数据根不存在'; DevConfig = @('data_root: D:\Missing\data'); Error = 'data_root 不存在' },
     @{ Name = '开发模式拒绝 8000 端口'; DevConfig = @('backend_port: 8000'); Error = '不能使用运行目录专用的 8000' },
     @{ Name = '开发模式拒绝无效端口'; DevConfig = @('frontend_port: 80'); Error = '不是有效端口' },
     @{ Name = '前端失败退出码'; FrontendFailure = $true },
@@ -160,7 +164,7 @@ $Cases = @(
     @{ Name = '生产模式缺少 dist'; Production = $true; MissingDist = $true; Error = '未找到前端构建' },
     @{ Name = '生产模式 8000 端口冲突'; Production = $true; BusyPort = 8000; Error = '端口 8000 已被占用' },
     @{ Name = '生产模式忽略开发端口占用'; Production = $true; BusyPort = 8100 },
-    @{ Name = '生产模式忽略 .lab_dev.yaml'; Production = $true; DevConfig = @('backend_port: 8200') },
+    @{ Name = '生产模式忽略 .lab_dev.yaml'; Production = $true; DevConfig = @('backend_port: 8200', 'data_root: D:\Run\data'); StaleDataRoot = $true },
     @{ Name = '生产模式不依赖 node_modules'; Production = $true; MissingNodeModules = $true },
     @{ Name = '生产模式等待后端退出并透传退出码'; Production = $true; BackendFailure = $true },
     @{ Name = '生产模式跟随后端自重启'; Production = $true; Hidden = $true; Restart = $true }
@@ -187,8 +191,11 @@ try {
         $TestState.SuccessorWaited = $false
         $TestState.BackendPortEnv = $null
         $TestState.FrontendPortEnv = $null
-        Remove-Item Env:LAB_BACKEND_PORT -ErrorAction SilentlyContinue
-        Remove-Item Env:LAB_FRONTEND_PORT -ErrorAction SilentlyContinue
+        $env:LAB_BACKEND_PORT = $null
+        $env:LAB_FRONTEND_PORT = $null
+        $env:LAB_DATA_ROOT = $null
+        if ($TestState.Case.StaleDataRoot) { $env:LAB_DATA_ROOT = 'D:\Stale' }
+        $TestState.DataRootEnv = $null
         if ($TestState.Case.Production) {
             $TestState.ExpectedBackendPort = 8000
             $TestState.ExpectedFrontendPort = $null
@@ -215,6 +222,7 @@ try {
             Assert ($TestState.BackendStarted) "未启动后端"
             Assert ($TestState.BackendStopped) "启动器退出时未等待后端停止"
             Assert ($TestState.BackendPortEnv -eq "$($TestState.ExpectedBackendPort)") "后端端口环境变量不匹配：$($TestState.BackendPortEnv)"
+            Assert ($TestState.DataRootEnv -eq $TestState.Case.DataRoot) "数据根环境变量不匹配：$($TestState.DataRootEnv)"
             if ($TestState.Case.Production) {
                 Assert (-not $TestState.NpmStarted -and -not $TestState.FrontendStarted) "生产模式仍启动了前端"
                 Assert (@($TestState.CommandQueries | Where-Object { $_ -in @('npm.cmd', 'node.exe') }).Count -eq 0) "生产模式查询了 npm/node"
@@ -252,7 +260,8 @@ try {
     }
     Write-Host "全部 $($Cases.Count) 项启动回归通过；未启动真实服务或连接仪器。"
 } finally {
-    Remove-Item Env:LAB_BACKEND_PORT -ErrorAction SilentlyContinue
-    Remove-Item Env:LAB_FRONTEND_PORT -ErrorAction SilentlyContinue
+    $env:LAB_BACKEND_PORT = $null
+    $env:LAB_DATA_ROOT = $null
+    $env:LAB_FRONTEND_PORT = $null
     Set-Location -LiteralPath $OriginalLocation
 }

@@ -10,6 +10,7 @@ from pydantic import Field
 from lab_workflows.workflow_state import read_state
 
 from .schemas import StrictModel
+from lab_workflows.common import data_root
 
 
 class WorkflowRunItem(StrictModel):
@@ -53,7 +54,7 @@ def run_item(path: Path, config: dict[str, Any]) -> dict[str, str]:
 
 
 def list_runs(service, limit: int, offset: int, *, config_reader=read_config):
-    base = service.root() / "data" / service.adapter.data_type
+    base = data_root(service.root()) / service.adapter.data_type
     items = []
     if base.is_dir():
         for path in sorted(base.iterdir(), key=lambda item: item.name, reverse=True):

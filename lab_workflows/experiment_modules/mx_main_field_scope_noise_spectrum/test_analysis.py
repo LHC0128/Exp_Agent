@@ -238,7 +238,7 @@ def test_real_subprocess_outputs_and_explicit_thin_entry(tmp_path, monkeypatch):
     from .definition import ADAPTER
     from .test_workflow import copy_config
     from ...experiments import typed
-    # 适配器以 root 放取消标记（data/.gui_jobs）并作子进程工作目录；指向临时根，避免在真实项目根生成 data/。
+    # 适配器以 root 放取消标记（tmp/gui_jobs）并作子进程工作目录；指向临时根，避免在真实项目根生成 data/。
     root = tmp_path / "root"
     root.mkdir()
     copy_config(root)
@@ -248,7 +248,7 @@ def test_real_subprocess_outputs_and_explicit_thin_entry(tmp_path, monkeypatch):
     monkeypatch.setattr(typed.subprocess, "Popen", lambda command, **kwargs: real_popen([sys.executable, *command[1:]], **kwargs))
     ADAPTER._execute(ADAPTER.analysis_module, run_dir=run, parameters={}, progress=lambda event: None)
     monkeypatch.undo()
-    assert (root / "data" / ".gui_jobs").is_dir()
+    assert (root / "tmp" / "gui_jobs").is_dir()
     assert (run / "results/psd_matrix.npz").is_file()
     assert (run / "results/analysis.json").is_file()
     assert json.loads((run / "analysis_state.json").read_text(encoding="utf8"))["steps"]["B02"]["status"] in ("completed", "quality_failed")

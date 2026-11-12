@@ -15,6 +15,7 @@ import numpy as np
 from .common import CancellationToken, emit, find_project_root, validate_safety_limit
 from .current_feedback import load_corrected_control_waveform, sha256_file
 from . import instrument_control as control
+from lab_workflows.common import data_root
 
 
 OPTIMAL_CONTROL_BURST_TRIGGER_SLOPE = "NEGative"
@@ -157,7 +158,7 @@ def stop_outputs(device: Any, z_channel: int, trigger_channel: int | None) -> No
 
 
 def _load_source(root: Path, run_name: str):
-    source_root = (root / "data" / SOURCE_DIRECTORY).resolve()
+    source_root = (data_root(root) / SOURCE_DIRECTORY).resolve()
     path = (source_root / run_name / "results" / "corrected_control_waveform.npz").resolve()
     if source_root not in path.parents:
         raise ValueError("波形路径超出闭环结果目录")
@@ -213,7 +214,7 @@ def preview_source(root: Path, run_name: str) -> dict[str, Any]:
 
 def list_sources(root: Path) -> list[dict[str, Any]]:
     """只枚举存在冻结文件的运行；单个损坏文件不影响其他选项。"""
-    directory = root / "data" / SOURCE_DIRECTORY
+    directory = data_root(root) / SOURCE_DIRECTORY
     results = []
     for path in sorted(directory.glob("*/results/corrected_control_waveform.npz")):
         name = path.parent.parent.name

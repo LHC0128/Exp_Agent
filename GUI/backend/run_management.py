@@ -9,6 +9,7 @@ import stat
 from fastapi import HTTPException
 
 from lab_workflows.workflow_state import read_state, write_state
+from lab_workflows.common import data_root as resolve_data_root
 
 
 def split_run_name(run_id: str) -> tuple[str, str]:
@@ -20,7 +21,7 @@ def checked_run_path(root: Path, data_type: str, run_id: str, *, recursive=False
     if (not run_id or run_id in {".", ".."} or run_id.endswith((".", " "))
             or any(c in run_id for c in '/\\:\x00')):
         raise HTTPException(400, "运行 ID 必须是单个目录名")
-    data_root = root / "data"
+    data_root = resolve_data_root(root)
     base = data_root / data_type
     candidate = base / run_id
     if base.resolve().parent != data_root.resolve() or candidate.resolve().parent != base.resolve():

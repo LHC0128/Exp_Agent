@@ -20,6 +20,7 @@ from lab_workflows.workflow_stages import initial_states
 
 # 保留原连接/收尾导入兼容；设备配置和采集仅使用本实验职责模块。
 from .preparation import _connect_devices, _device_snapshot, _set_pump_gate_on, safe_shutdown
+from lab_workflows.common import data_root
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE
@@ -72,7 +73,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块"):
         value = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", value)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", value)
         if self.directory and not self.round_sealed:
             write_state(self.directory.root / "acquisition_state.json", value)
         report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": value})

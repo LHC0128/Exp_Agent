@@ -14,6 +14,7 @@ import yaml
 
 from .common import validate_safety_limit
 from .current_feedback import CorrectedControlWaveform
+from lab_workflows.common import data_root
 
 
 _VERSION_PATTERN = re.compile(r"^v[1-9]\d*$")
@@ -233,8 +234,7 @@ def load_z_calibration(project_root: Path, run_name: str) -> ZCalibrationSource:
     if not _RUN_PATTERN.fullmatch(run_name):
         raise ValueError("Z_CALIBRATION_SOURCE_RUN 只能包含字母、数字、点、下划线和短横线")
     analysis_path = (
-        Path(project_root)
-        / "data"
+        data_root(Path(project_root))
         / "Mx_Z_Field_Calibration"
         / run_name
         / "results"

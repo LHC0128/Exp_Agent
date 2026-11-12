@@ -12,6 +12,7 @@ from ...control_sources import resolve_control_results_root
 from .analysis_steps import load_inputs
 from .models import RFControlScaleParams
 from . import run_format
+from lab_workflows.common import data_root
 
 OPERATIONAL_KEYS = {"RESUME_RUN_ID", "TEC_EXTERNAL_CONTROL", "RUN_TAG"}
 COUNTERS = ("response_points_completed", "noise_records_completed", "bandwidth_points_completed")
@@ -20,7 +21,7 @@ COUNTERS = ("response_points_completed", "noise_records_completed", "bandwidth_p
 def resume_plan(params, root):
     """不连接仪器、不改文件；任何完整点损坏或配置变化均拒绝续测。"""
     run_id = params.resume_run_id
-    base = (Path(root) / "data" / run_format.DATA_TYPE).resolve()
+    base = (data_root(Path(root)) / run_format.DATA_TYPE).resolve()
     source = (base / run_id).resolve()
     if not run_id or "/" in run_id or "\\" in run_id or source.parent != base or source.name != run_id:
         raise ValueError("续测来源必须是本实验目录下的单个运行 ID")

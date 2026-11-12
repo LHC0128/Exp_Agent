@@ -11,6 +11,7 @@ import yaml
 from scipy.signal import welch
 
 from .models import NOISE_POINTS
+from lab_workflows.common import data_root
 
 # 生成自检：带内中位 PSD 相对设计值的容差（随机相位实现的谱波动）。
 _PSD_TOLERANCE = 0.25
@@ -169,9 +170,9 @@ class ZFrequencyCalibration:
 
 def load_z_calibration(root: Path, run_name: str) -> ZFrequencyCalibration:
     """仅用于缺少 K_Z 数值快照的旧运行离线分析。"""
-    path = (root / "data" / "Bell_Bloom_Z_Field_Calibration" / run_name
+    path = (data_root(root) / "Bell_Bloom_Z_Field_Calibration" / run_name
             / "results" / "analysis.yaml").resolve()
-    source_root = (root / "data" / "Bell_Bloom_Z_Field_Calibration").resolve()
+    source_root = (data_root(root) / "Bell_Bloom_Z_Field_Calibration").resolve()
     if source_root not in path.parents:
         raise ValueError("K_Z 标定路径超出结果目录")
     if not path.is_file():

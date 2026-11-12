@@ -19,6 +19,7 @@ from .models import MxYRFDriftParams
 from .scheduling import _planned_records, _child_parameters, _set_record_error, _utc_now, _write_manifest
 from .stages import ACQUISITION, FINISH_ID, invalidate, validate_selection
 from lab_workflows.workflow_stages import initial_states
+from lab_workflows.common import data_root
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE
@@ -92,7 +93,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块"):
         snapshot = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", snapshot)
         if self.directory and not self.round_sealed:
             write_state(self.directory.root / "acquisition_state.json", snapshot)
         elif self.directory and self.closed:

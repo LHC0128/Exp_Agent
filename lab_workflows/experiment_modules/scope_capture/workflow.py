@@ -22,6 +22,7 @@ from .models import ScopeCaptureParams
 from .run_format import DATA_TYPE, EXPERIMENT_ID
 from .stages import ACQUISITION, invalidate, validate_selection
 from lab_workflows.workflow_stages import initial_states
+from lab_workflows.common import data_root
 
 EXECUTION_MODE = "typed_workflow"
 # 兼容旧导入边界：历史脚本从 workflow 模块使用这些名称。
@@ -84,7 +85,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块", level="info"):
         snapshot = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", snapshot)
         if self.run_dir:
             write_state(self.run_dir / "acquisition_state.json", snapshot)
         report_runtime_progress(self.current_step or "waiting", message,

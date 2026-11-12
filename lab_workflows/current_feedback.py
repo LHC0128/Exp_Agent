@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 import yaml
+from lab_workflows.common import data_root
 
 
 _RUN_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -190,8 +191,7 @@ def load_current_coupling_calibration(
     """读取成功的实际电流-耦合强度标定。"""
     run_name = _validated_run_name(run_name, "CURRENT_COUPLING_CALIBRATION_SOURCE_RUN")
     path = (
-        Path(project_root)
-        / "data"
+        data_root(Path(project_root))
         / "Mx_Z_Current_Coupling_Calibration"
         / str(run_name)
         / "results"
@@ -250,8 +250,7 @@ def load_current_frequency_response(
         run_name, "CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN"
     )
     path = (
-        Path(project_root)
-        / "data"
+        data_root(Path(project_root))
         / "Z_Coil_Current_Frequency_Response"
         / run_name
         / "results"
@@ -309,8 +308,7 @@ def load_aw_frequency_response(project_root: Path, run_name: str) -> AWCurrentRe
     """
     run_name = _validated_run_name(run_name, "CURRENT_FREQUENCY_RESPONSE_SOURCE_RUN")
     path = (
-        Path(project_root)
-        / "data"
+        data_root(Path(project_root))
         / "Z_Coil_Current_Frequency_Response"
         / run_name
         / "results"
@@ -404,8 +402,7 @@ def load_corrected_control_waveform(
     """读取并严格校验闭环实验冻结的任意波。"""
     run_name = _validated_run_name(run_name, "CORRECTED_CONTROL_SOURCE_RUN")
     path = (
-        Path(project_root)
-        / "data"
+        data_root(Path(project_root))
         / "Z_AW_Closed_Loop_Waveform_Correction"
         / str(run_name)
         / "results"

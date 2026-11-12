@@ -15,6 +15,7 @@ from ._helpers import wait, set_temp_switch
 from .phase import set_xy_sine_peak
 from .preparation import build_run_config, EXPERIMENT_TYPE
 from .run_format import RAW_FORMAT_VERSION
+from lab_workflows.common import data_root
 
 
 def restore_demod(devices, params, calibrated_phase):
@@ -51,7 +52,7 @@ def initialize_run_directory(ctx, data_type, *, for_scan=False):
     """首次配置前保存初始快照；第一次扫描复用，后续重扫创建独立目录。"""
     if ctx.run_dir is None or (for_scan and getattr(ctx, "scan_started", False)):
         timestamp = datetime.now().strftime("%m%d_%H%M")
-        base = ctx.root / "data" / data_type
+        base = data_root(ctx.root) / data_type
         base.mkdir(parents=True, exist_ok=True)
         suffix = 0
         while True:

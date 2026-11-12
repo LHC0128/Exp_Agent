@@ -13,6 +13,7 @@ from lab_workflows.workflow_state import write_state
 from ..mx_y_rf_sensitivity.run_format import RAW_FORMAT_VERSION as CHILD_RAW_FORMAT_VERSION
 from . import run_format
 from .stages import ANALYSIS
+from lab_workflows.common import data_root
 
 FIELDNAMES = (
     "cycle_index", "scheduled_offset_s", "actual_elapsed_s", "actual_start_utc", "start_lag_s",
@@ -46,7 +47,7 @@ def contained(path, base):
 def project_directory(run_dir, project_root=None):
     run_dir = Path(run_dir).resolve()
     root = Path(project_root).resolve() if project_root is not None else run_dir.parents[2]
-    if run_dir.parent != contained(root / "data" / run_format.DATA_TYPE, root):
+    if run_dir.parent != contained(data_root(root) / run_format.DATA_TYPE, data_root(root)):
         raise AnalysisQualityError("父运行必须位于项目 data/Mx_Y_RF_Sensitivity_Drift 下")
     for name in ("experiment_config.yaml", run_format.MANIFEST, "results", "analysis_state.json"):
         contained(run_dir / name, run_dir)
@@ -86,7 +87,7 @@ def _child_path(record, run_dir, root):
     if not isinstance(reference, str) or not reference.strip():
         raise AnalysisQualityError("子运行引用必须是非空路径或 null")
     path = Path(reference)
-    child_base = contained(root / "data" / run_format.CHILD_DATA_TYPE, root)
+    child_base = contained(data_root(root) / run_format.CHILD_DATA_TYPE, data_root(root))
     child = contained(path if path.is_absolute() else run_dir / path, child_base)
     if child.parent != child_base:
         raise AnalysisQualityError("子运行引用必须指向标准单层运行目录")

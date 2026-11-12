@@ -16,6 +16,7 @@ from ..common import find_project_root, load_safety_limits
 from ..experiment_runtime import report_run_directory
 from ..instrument_config import instrument_config_snapshot
 from ..wiring import WiringStorageError, read_wiring_snapshot
+from lab_workflows.common import data_root
 
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ def create_run_directory(
     timestamp = datetime.now().strftime("%m%d_%H%M%S")
     if any(character in run_tag for character in "/\\:\x00"):
         raise ValueError("运行标签不能包含路径分隔符")
-    base = project_root / "data" / experiment_type
+    base = data_root(project_root) / experiment_type
     base.mkdir(parents=True, exist_ok=True)
     stem = f"{timestamp}_{run_tag}"
     counter = 1

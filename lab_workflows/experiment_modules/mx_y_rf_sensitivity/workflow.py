@@ -27,6 +27,7 @@ from .excitation import (_set_pump_gate_on, _configure_y_rf_sine_source, _config
     _set_y_rf_zero_off_with_temperature_sequence, restore_mx_y_rf_laser_powers)
 from .acquisition_steps import (RPointQualityError, _save_point, _acquire_frequency_scan,
     _acquire_amplitude_scan, _acquire_noise, acquire_mx_y_rf_point)
+from lab_workflows.common import data_root
 
 EXPERIMENT_ID = run_format.EXPERIMENT_ID
 DATA_TYPE = run_format.DATA_TYPE
@@ -107,7 +108,7 @@ class Workflow:
 
     def publish(self, message="等待选择下一模块"):
         snapshot = self.snapshot()
-        write_state(self.root / "data/.gui_jobs" / self.session_id / "session.json", snapshot)
+        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", snapshot)
         if self.directory and not self.round_sealed:
             write_state(self.directory.root / "acquisition_state.json", snapshot)
         report_runtime_progress(self.current_step or "waiting", message, data={"workflow_session": snapshot})
