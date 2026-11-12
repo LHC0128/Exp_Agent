@@ -2,10 +2,13 @@
 
 $ErrorActionPreference = "Stop"
 
-# GUI 启动器：拉起 FastAPI 后端（8000） + Vite dev server（5173）。
+# GUI 启动器：拉起 FastAPI 后端 + Vite dev server。
+# 端口：生产模式（运行目录）固定后端 8000；开发模式默认后端 8100、前端 5273，可在仓库根
+#       .lab_dev.yaml 写 backend_port / frontend_port 覆盖（开发后端不得用 8000），经环境变量
+#       LAB_BACKEND_PORT / LAB_FRONTEND_PORT 传给后端和 Vite，两套 GUI 可同时运行。
 # 普通模式在当前窗口运行 Vite；-Hidden 模式由 start_gui.vbs 调用，前端和后端都隐藏运行。
 # Vite dev 模式提供 HMR，agent 改前端代码后浏览器秒级刷新，无需每次 npm run build。
-# FastAPI 后端只负责 /api/，前端由 Vite 在 5173 端口 serve，Vite 自动把 /api 转发到 8000。
+# FastAPI 后端只负责 /api/，前端由 Vite serve，Vite 自动把 /api 转发到后端端口。
 # -Production 生产模式（运行目录 start_lab.vbs 使用）：不启动 Vite，后端 8000 直接提供
 #       GUI\frontend\dist 构建产物，需先运行发布脚本或 npm run build。
 #
@@ -31,7 +34,8 @@ $FrontendPidFile = Join-Path $TmpDir "gui-frontend.pid"
 $LauncherPidFile = Join-Path $TmpDir "gui-launcher.pid"
 $BackendProcess = $null
 $ViteProcess = $null
-# 后端导入全部实验模块后才监听 8000；平时约 10 秒，机器负载高或冷缓存时实测 19–38 秒。
+$DevConfig = Join-Path $Root ".lab_dev.yaml"
+# 后端导入全部实验模块后才监听端口；平时约 10 秒，机器负载高或冷缓存时实测 19–38 秒。
 # 超时会让启动器停掉后端，所以留足余量；后端提前退出仍立即报错。
 $BackendStartTimeoutSec = 120
 
@@ -70,11 +74,11 @@ function Stop-FrontendProcess {
 }
 
 # 后端经 /api/restart 自重启时调用 os.execv；Windows 上这会换成新进程号、旧进程退出。
-# 旧进程退出且未收到停止文件时，等待 8000 端口由新进程重新监听，返回新进程；超时返回 $null。
+# 旧进程退出且未收到停止文件时，等待后端端口由新进程重新监听，返回新进程；超时返回 $null。
 function Get-BackendSuccessor([int]$PreviousId) {
     $Deadline = (Get-Date).AddSeconds(30)
     while ((Get-Date) -lt $Deadline) {
-        $Conn = Get-NetTCPConnection -State Listen -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -First 1
+        $Conn = Get-NetTCPConnection -State Listen -LocalPort $BackendPort -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($Conn -and [int]$Conn.OwningProcess -ne $PreviousId) {
             $Successor = Get-Process -Id ([int]$Conn.OwningProcess) -ErrorAction SilentlyContinue
             if ($Successor -and $Successor.ProcessName -in @("python", "pythonw")) { return $Successor }
@@ -99,6 +103,31 @@ function Stop-HiddenBackend {
     Remove-Item -LiteralPath $BackendStopFile -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $BackendPidFile -Force -ErrorAction SilentlyContinue
 }
+
+# 开发模式端口：默认 8100/5273，.lab_dev.yaml 中 `backend_port: <n>` / `frontend_port: <n>` 覆盖。
+function Read-DevPort([string[]]$Lines, [string]$Key, [int]$Default) {
+    $match = $Lines | Where-Object { $_ -match "^\s*$Key\s*:\s*(\d+)\s*(#.*)?$" } | Select-Object -First 1
+    if (-not $match) { return $Default }
+    $null = $match -match "^\s*$Key\s*:\s*(\d+)"
+    $value = [int]$Matches[1]
+    if ($value -lt 1024 -or $value -gt 65535) { throw ".lab_dev.yaml 中 $Key=$value 不是有效端口（1024–65535）" }
+    return $value
+}
+
+if ($Production) {
+    $BackendPort = 8000
+    $FrontendPort = $null
+} else {
+    $DevLines = if (Test-Path -LiteralPath $DevConfig) { @(Get-Content -LiteralPath $DevConfig -Encoding UTF8) } else { @() }
+    $BackendPort = Read-DevPort $DevLines "backend_port" 8100
+    $FrontendPort = Read-DevPort $DevLines "frontend_port" 5273
+    if ($BackendPort -eq 8000) { throw "开发 GUI 不能使用运行目录专用的 8000 端口（.lab_dev.yaml backend_port）" }
+    if ($BackendPort -eq $FrontendPort) { throw "开发 GUI 后端与前端端口相同：$BackendPort" }
+}
+$env:LAB_BACKEND_PORT = "$BackendPort"
+if ($FrontendPort) { $env:LAB_FRONTEND_PORT = "$FrontendPort" }
+$BackendUrl = "http://127.0.0.1:$BackendPort"
+$FrontendUrl = if ($FrontendPort) { "http://127.0.0.1:$FrontendPort" } else { $null }
 
 if (-not (Test-Path $Python)) {
     throw "未找到虚拟环境 Python: $Python"
@@ -128,7 +157,7 @@ if ($Production) {
         }
     }
 }
-$Ports = if ($Production) { @(8000) } else { @(8000, 5173) }
+$Ports = if ($Production) { @($BackendPort) } else { @($BackendPort, $FrontendPort) }
 foreach ($Port in $Ports) {
     if (Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue) {
         throw "端口 $Port 已被占用，请先运行 stop_gui.bat 或手动停止对应旧服务后重试；启动器不会结束已有进程。"
@@ -147,29 +176,29 @@ try {
     $BackendArguments = '-m backend --log-file "{0}" --stop-file "{1}" --parent-pid {2}' -f $BackendLog, $BackendStopFile, $PID
     $BackendProcess = Start-Process -FilePath $Python -ArgumentList $BackendArguments -WorkingDirectory $BackendCwd -WindowStyle Hidden -PassThru
     Set-Content -LiteralPath $BackendPidFile -Value $BackendProcess.Id
-    Write-LauncherLog "FastAPI 后端已隐藏启动  http://127.0.0.1:8000（日志： $BackendLog）"
+    Write-LauncherLog "FastAPI 后端已隐藏启动  $BackendUrl（日志： $BackendLog）"
 
-    # 等 8000 端口 LISTENING 后再继续；避免浏览器打开页面时 /api 请求到还没绑定的后端。
+    # 等后端端口 LISTENING 后再继续；避免浏览器打开页面时 /api 请求到还没绑定的后端。
     $Deadline = (Get-Date).AddSeconds($BackendStartTimeoutSec)
     $Ready = $false
     while ((Get-Date) -lt $Deadline) {
         if ($BackendProcess.HasExited) {
             throw "后端启动后立即退出（退出码 $($BackendProcess.ExitCode)），请检查日志： $BackendLog"
         }
-        $Conn = Get-NetTCPConnection -State Listen -LocalPort 8000 -ErrorAction SilentlyContinue
+        $Conn = Get-NetTCPConnection -State Listen -LocalPort $BackendPort -ErrorAction SilentlyContinue
         if ($Conn) { $Ready = $true; break }
         Start-Sleep -Milliseconds 500
     }
     if (-not $Ready) {
-        throw "$BackendStartTimeoutSec 秒内后端未监听 8000 端口，已取消 GUI 启动。请检查日志： $BackendLog"
+        throw "$BackendStartTimeoutSec 秒内后端未监听 $BackendPort 端口，已取消 GUI 启动。请检查日志： $BackendLog"
     }
 
     if ($Production) {
-        Write-LauncherLog "GUI 生产模式已运行  http://127.0.0.1:8000（前端由后端直接提供 dist 构建）"
+        Write-LauncherLog "GUI 生产模式已运行  $BackendUrl（前端由后端直接提供 dist 构建）"
         Write-LauncherLog "停止服务请双击 stop_gui.bat；关闭浏览器不会停止后台实验"
         if ($OpenBrowser) {
             try {
-                Start-Process -FilePath "http://127.0.0.1:8000" | Out-Null
+                Start-Process -FilePath $BackendUrl | Out-Null
             } catch {
                 Write-LauncherLog "无法自动打开浏览器：$($_.Exception.Message)"
             }
@@ -197,19 +226,19 @@ try {
             if ($ViteProcess.HasExited) {
                 throw "前端启动后立即退出（退出码 $($ViteProcess.ExitCode)），请检查日志： $FrontendErrorLog"
             }
-            $Conn = Get-NetTCPConnection -State Listen -LocalPort 5173 -ErrorAction SilentlyContinue
+            $Conn = Get-NetTCPConnection -State Listen -LocalPort $FrontendPort -ErrorAction SilentlyContinue
             if ($Conn) { $Ready = $true; break }
             Start-Sleep -Milliseconds 300
         }
         if (-not $Ready) {
-            throw "30 秒内前端未监听 5173 端口，已停止后端。请检查日志： $FrontendErrorLog"
+            throw "30 秒内前端未监听 $FrontendPort 端口，已停止后端。请检查日志： $FrontendErrorLog"
         }
 
-        Write-LauncherLog "GUI 已在后台运行  http://127.0.0.1:5173"
+        Write-LauncherLog "GUI 已在后台运行  $FrontendUrl（开发目录，后端 $BackendUrl）"
         Write-LauncherLog "停止服务请双击 stop_gui.bat；关闭浏览器不会停止后台实验"
         if ($OpenBrowser) {
             try {
-                Start-Process -FilePath "http://127.0.0.1:5173" | Out-Null
+                Start-Process -FilePath $FrontendUrl | Out-Null
             } catch {
                 Write-LauncherLog "无法自动打开浏览器：$($_.Exception.Message)"
             }
@@ -218,7 +247,7 @@ try {
         $ExitCode = $ViteProcess.ExitCode
     } else {
         Set-Location -LiteralPath $FrontendDir
-        Write-LauncherLog "Vite dev     http://127.0.0.1:5173"
+        Write-LauncherLog "Vite dev     $FrontendUrl（后端 $BackendUrl）"
         Write-LauncherLog "关闭窗口或 Ctrl+C 会同时结束后端并等待安全收尾"
 
         $ViteArgs = @("run", "dev", "--", "--strictPort")

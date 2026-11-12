@@ -14,13 +14,17 @@ from typing import Sequence
 
 import uvicorn
 
+import hardware_gate
+
 from .jobs import manager, require_hardware_mode
 from .main import app
 from .server_runtime import Server
 
 
 HOST = "127.0.0.1"
-PORT = 8000
+LAB_PORT = 8000
+DEV_DEFAULT_PORT = 8100
+PORT_ENV = "LAB_BACKEND_PORT"
 _WATCH_INTERVAL_S = 0.5
 _SYNCHRONIZE = 0x00100000
 _WAIT_TIMEOUT = 0x00000102
@@ -34,6 +38,20 @@ def _parse_options(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--parent-pid", type=int)
     options, _ = parser.parse_known_args(argv)
     return options
+
+
+def resolve_port(environ=os.environ) -> int:
+    """运行目录固定 8000（发布脚本据此查空闲）；开发目录默认 8100，可经 LAB_BACKEND_PORT 改，但不得占 8000。"""
+    lab = hardware_gate.hardware_allowed()
+    text = environ.get(PORT_ENV, "").strip()
+    port = int(text) if text else (LAB_PORT if lab else DEV_DEFAULT_PORT)
+    if not 1024 <= port <= 65535:
+        raise SystemExit(f"{PORT_ENV}={text} 不是有效端口（1024–65535）")
+    if lab and port != LAB_PORT:
+        raise SystemExit(f"运行目录后端必须使用 {LAB_PORT} 端口，当前 {PORT_ENV}={text}")
+    if not lab and port == LAB_PORT:
+        raise SystemExit(f"开发目录后端不能使用运行目录专用的 {LAB_PORT} 端口")
+    return port
 
 
 def _redirect_output(log_file: Path) -> None:
@@ -112,6 +130,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     manager.hardware_policy = require_hardware_mode
     if options.log_file is not None:
         _redirect_output(options.log_file)
+    port = resolve_port()
     stop_requested = threading.Event()
     if options.stop_file is not None or options.parent_pid is not None:
         threading.Thread(
@@ -123,7 +142,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     while True:
         app.state.restart_requested = False
         server = Server(
-            uvicorn.Config(app, host=HOST, port=PORT, reload=False),
+            uvicorn.Config(app, host=HOST, port=port, reload=False),
             manager,
         )
         app.state.uvicorn_server = server

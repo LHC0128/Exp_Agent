@@ -96,3 +96,29 @@ def test_rejected_workflow_session_is_not_left_registered():
         service.create({})
     assert service.sessions == {}
     assert service.active() is None
+
+
+@pytest.mark.parametrize(("allowed", "environ", "expected"), [
+    (True, {}, 8000),
+    (True, {"LAB_BACKEND_PORT": "8000"}, 8000),
+    (False, {}, 8100),
+    (False, {"LAB_BACKEND_PORT": "8200"}, 8200),
+])
+def test_backend_port_by_runtime_mode(allowed, environ, expected):
+    from .__main__ import resolve_port
+
+    with patch("hardware_gate.denial_reason", return_value=None if allowed else "开发"):
+        assert resolve_port(environ) == expected
+
+
+@pytest.mark.parametrize(("allowed", "environ", "message"), [
+    (True, {"LAB_BACKEND_PORT": "8100"}, "运行目录后端必须使用 8000"),
+    (False, {"LAB_BACKEND_PORT": "8000"}, "不能使用运行目录专用"),
+    (False, {"LAB_BACKEND_PORT": "80"}, "不是有效端口"),
+])
+def test_backend_port_rejects_wrong_mode(allowed, environ, message):
+    from .__main__ import resolve_port
+
+    with patch("hardware_gate.denial_reason", return_value=None if allowed else "开发"), \
+            pytest.raises(SystemExit, match=message):
+        resolve_port(environ)

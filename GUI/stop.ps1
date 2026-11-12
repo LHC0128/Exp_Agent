@@ -29,9 +29,23 @@ function Get-OwnProcess([int]$ProcessId, [string[]]$AllowedNames, [string]$Comma
     return $process
 }
 
-function Get-ListenerPid([int]$Port) {
-    $conn = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($conn) { return [int]$conn.OwningProcess }
+# 开发模式端口与 start.ps1 一致：默认 8100/5273，.lab_dev.yaml 可覆盖；生产模式后端 8000。
+function Read-DevPort([string]$Key, [int]$Default) {
+    $config = Join-Path $Root ".lab_dev.yaml"
+    if (-not (Test-Path -LiteralPath $config)) { return $Default }
+    $line = Get-Content -LiteralPath $config -Encoding UTF8 | Where-Object { $_ -match "^\s*$Key\s*:\s*(\d+)" } | Select-Object -First 1
+    if (-not $line) { return $Default }
+    $null = $line -match "^\s*$Key\s*:\s*(\d+)"
+    return [int]$Matches[1]
+}
+
+# PID 文件失效时按端口回退，但只认命令行属于本目录的进程：开发与运行目录可能同时运行，
+# 不能把另一目录的后端当成自己的（否则会在本目录写停止文件后一直等待它退出）。
+function Get-OwnListenerPid([int[]]$Ports, [string[]]$AllowedNames, [string]$CommandLike) {
+    foreach ($port in $Ports) {
+        $conn = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($conn -and (Get-OwnProcess ([int]$conn.OwningProcess) $AllowedNames $CommandLike)) { return [int]$conn.OwningProcess }
+    }
     return $null
 }
 
@@ -40,10 +54,10 @@ $BackendPid = Read-PidFile $BackendPidFile
 $LauncherPid = Read-PidFile $LauncherPidFile
 
 if ($null -eq (Get-OwnProcess $FrontendPid @("node") "vite")) {
-    $FrontendPid = Get-ListenerPid 5173
+    $FrontendPid = Get-OwnListenerPid @(Read-DevPort "frontend_port" 5273) @("node") "$Root\GUI\frontend\"
 }
 if ($null -eq (Get-OwnProcess $BackendPid @("python", "pythonw") "backend")) {
-    $BackendPid = Get-ListenerPid 8000
+    $BackendPid = Get-OwnListenerPid @(8000, (Read-DevPort "backend_port" 8100)) @("python", "pythonw") "$Root\tmp\"
 }
 
 $Stopped = $false

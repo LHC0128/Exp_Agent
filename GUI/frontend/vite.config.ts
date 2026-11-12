@@ -2,13 +2,17 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { loadEnv } from "vite";
 
+// Vite 只用于开发目录：默认 5273 → 后端 8100，与运行目录 8000 共存；启动器经环境变量传入实际端口。
+const frontendPort = Number(process.env.LAB_FRONTEND_PORT || 5273);
+const backendPort = Number(process.env.LAB_BACKEND_PORT || 8100);
+
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
   server: {
-    port: 5173,
+    port: frontendPort,
     allowedHosts: (loadEnv(mode, ".", "__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS").__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS ?? "")
       .split(",").map((host) => host.trim()).filter(Boolean),
-    proxy: { "/api": "http://127.0.0.1:8000" },
+    proxy: { "/api": `http://127.0.0.1:${backendPort}` },
   },
   test: {
     environment: "jsdom",

@@ -344,14 +344,16 @@ TOPTICA DLC pro Probe 激光、DG4000、DG900 Pro、HF2 / MFLI、SDS 示波器�
 运行目录（如 `D:\Code\exp_agent_run`）双击根目录的 **`start_lab.vbs`**（生产模式）：
 不启动 Vite，后端 8000 直接提供 `GUI\frontend\dist` 构建产物，需先运行发布脚本或 `npm run build`。
 
-开发模式启动成功后，浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)；Vite 在后台隐藏
+开发模式启动成功后，浏览器访问 [http://127.0.0.1:5273](http://127.0.0.1:5273)；Vite 在后台隐藏
 运行，将 `/api` 请求代理到同样隐藏运行的 FastAPI 后端
-[http://127.0.0.1:8000](http://127.0.0.1:8000)，两个服务只监听本机地址。生产模式只有后端一个
+[http://127.0.0.1:8100](http://127.0.0.1:8100)，两个服务只监听本机地址。开发模式端口可在仓库根
+`.lab_dev.yaml`（不进 git）用 `backend_port: <端口>`、`frontend_port: <端口>` 修改，但不能用 8000；
+8000 留给运行目录，所以开发 GUI 与运行目录 GUI 可同时运行。生产模式只有后端一个
 进程，页面与 `/api` 都由 [http://127.0.0.1:8000](http://127.0.0.1:8000) 提供。日志分别写入
 `tmp/gui-backend.log`、`tmp/gui-frontend.log` / `tmp/gui-frontend.err.log`（仅开发模式）和
 `tmp/gui-launcher.log`。
 
-开发模式启动器检查 Python、Node/npm、前端依赖和 8000 / 5173 端口；生产模式只检查 Python、
+开发模式启动器检查 Python、Node/npm、前端依赖和开发端口（默认 8100 / 5273）；生产模式只检查 Python、
 `GUI\frontend\dist\index.html` 和 8000 端口。缺失依赖或端口冲突时报错，不杀进程、不自动换端口、
 不自动安装依赖。隐藏模式启动失败会弹出错误对话框，
 详情写入 `tmp/gui-launcher.log`。关闭或刷新网页不会停止后台实验；停止服务请双击

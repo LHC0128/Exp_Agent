@@ -50,13 +50,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File GUI\star
 
 开发模式下启动器会同时拉起两个进程：
 
-- **FastAPI 后端** `http://127.0.0.1:8000`，提供 `/api/`；存在 `frontend/dist/` 时也提供构建后的页面
-- **Vite dev server** `http://127.0.0.1:5173`，serve 前端源码并把 `/api` 转发到 FastAPI
+- **FastAPI 后端** `http://127.0.0.1:8100`，提供 `/api/`；存在 `frontend/dist/` 时也提供构建后的页面
+- **Vite dev server** `http://127.0.0.1:5273`，serve 前端源码并把 `/api` 转发到 FastAPI
+
+开发模式端口可在仓库根 `.lab_dev.yaml`（不进 git）用 `backend_port: <端口>`、`frontend_port: <端口>`
+修改，启动器经环境变量 `LAB_BACKEND_PORT` / `LAB_FRONTEND_PORT` 传给后端和 Vite。8000 留给运行目录：
+运行目录后端必须用 8000，开发后端不能用 8000，所以两套 GUI 可同时运行。`stop_gui.bat` 只停止
+命令行属于本目录的进程，不会认领另一目录的 GUI。开发目录后端没有运行目录标记 `.lab_runtime`，
+页面顶部显示“开发目录：仪器已禁用”，采集与仪器操作会被拒绝。
 
 生产模式（`-Production`）只启动 FastAPI 后端，页面与 `/api` 都由 `http://127.0.0.1:8000` 提供；
 启动器保持存活等待后端退出；界面「重启后端」换新进程后，启动器跟随新进程继续等待；不写前端 PID 文件。
 
-开发模式页面地址为 `http://127.0.0.1:5173`。修改前端源码后，Vite 会自动 HMR 推送变更到浏览器，
+开发模式页面地址为 `http://127.0.0.1:5273`。修改前端源码后，Vite 会自动 HMR 推送变更到浏览器，
 不需要再 build。`start_gui.vbs` 模式下前后端都隐藏运行，日志分别写入 `tmp/gui-backend.log`、
 `tmp/gui-frontend.log` / `tmp/gui-frontend.err.log` 和 `tmp/gui-launcher.log`。
 关闭或刷新浏览器不会停止后台实验；停止服务请双击 `stop_gui.bat`，它会停止 Vite 并请求后端
@@ -66,7 +72,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File GUI\star
 采集、排队任务或分析运行时可用，会保留 Vite 和当前页面，但清空后端内存中的任务状态。
 正常停止的保证与限制见[正常停止与安全边界](#正常停止与安全边界)。
 
-开发模式启动器检查虚拟环境 Python、`node_modules`、Node/npm 和 8000 / 5173 端口；
+开发模式启动器检查虚拟环境 Python、`node_modules`、Node/npm 和开发端口（默认 8100 / 5273）；
 生产模式只检查虚拟环境 Python、`GUI\frontend\dist\index.html` 和 8000 端口，
 缺少构建产物时报错「未找到前端构建，请先运行发布脚本或 npm run build」。
 缺失依赖或端口占用时直接报错，不会自动安装、结束已有进程或改用其他端口。
@@ -86,12 +92,14 @@ $parseErrors = $null
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
 ```
 
-启动器的无硬件回归覆盖开发模式启动、端口冲突、隐藏 Vite 启动、前端退出码，以及生产模式
+启动器的无硬件回归覆盖开发模式启动、端口冲突、`.lab_dev.yaml` 端口与 8000 拒绝、隐藏 Vite 启动、前端退出码，以及生产模式
 正常启动、缺少 dist、8000 冲突、不依赖 npm/node、等待后端退出与退出码透传、跟随后端自重启；所有外部命令和
 运行时文件都使用替身：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File GUI\test_start.ps1
+# 停止脚本：只认领本目录进程，不把运行目录的后端当成自己的
+powershell -NoProfile -ExecutionPolicy Bypass -File GUI\test_stop.ps1
 ```
 
 如需手动分别启动：
@@ -106,8 +114,8 @@ Set-Location GUI\frontend
 npm run dev
 ```
 
-只运行后端时，先在 `GUI/frontend/` 执行 `npm run build`，再访问
-`http://127.0.0.1:8000`；此方式需要重新构建才能显示前端源码更新。
+只运行后端时，先在 `GUI/frontend/` 执行 `npm run build`，再访问后端地址（开发目录默认
+`http://127.0.0.1:8100`，运行目录 `http://127.0.0.1:8000`）；此方式需要重新构建才能显示前端源码更新。
 
 ### 正常停止与安全边界
 
