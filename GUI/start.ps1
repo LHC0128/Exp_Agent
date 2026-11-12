@@ -1,4 +1,4 @@
-﻿param([switch]$OpenBrowser, [switch]$LocalOnly, [switch]$Hidden)
+﻿param([switch]$OpenBrowser, [switch]$Hidden, [switch]$Production)
 
 $ErrorActionPreference = "Stop"
 
@@ -6,11 +6,13 @@ $ErrorActionPreference = "Stop"
 # 普通模式在当前窗口运行 Vite；-Hidden 模式由 start_gui.vbs 调用，前端和后端都隐藏运行。
 # Vite dev 模式提供 HMR，agent 改前端代码后浏览器秒级刷新，无需每次 npm run build。
 # FastAPI 后端只负责 /api/，前端由 Vite 在 5173 端口 serve，Vite 自动把 /api 转发到 8000。
+# -Production 生产模式（运行目录 start_lab.vbs 使用）：不启动 Vite，后端 8000 直接提供
+#       GUI\frontend\dist 构建产物，需先运行发布脚本或 npm run build。
 #
-# 使用：双击 start_gui.vbs（完全无终端），或 start_gui.bat（会短暂闪一下控制台）。
+# 使用：双击 start_gui.vbs（开发模式，完全无终端），或 start_gui.bat（会短暂闪一下控制台）；
+#       运行目录双击 start_lab.vbs（生产模式，等价于 -Production -OpenBrowser -Hidden）。
 #       命令行调试可用 powershell -File GUI\start.ps1；附加 -OpenBrowser 自动打开浏览器。
-#       默认同时配置 Tailscale 私人 HTTPS 入口；-LocalOnly 只启动本机服务。
-# 停止：双击 stop_gui.bat；它会停止 Vite，并请求后端优雅收尾后等待退出。
+# 停止：双击 stop_gui.bat；它会停止 Vite（如有），并请求后端优雅收尾后等待退出。
 # 日志：后端 tmp\gui-backend.log，前端 tmp\gui-frontend.log / gui-frontend.err.log，
 #       启动器 tmp\gui-launcher.log。
 
@@ -64,6 +66,21 @@ function Stop-FrontendProcess {
     Remove-Item -LiteralPath $FrontendPidFile -Force -ErrorAction SilentlyContinue
 }
 
+# 后端经 /api/restart 自重启时调用 os.execv；Windows 上这会换成新进程号、旧进程退出。
+# 旧进程退出且未收到停止文件时，等待 8000 端口由新进程重新监听，返回新进程；超时返回 $null。
+function Get-BackendSuccessor([int]$PreviousId) {
+    $Deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt $Deadline) {
+        $Conn = Get-NetTCPConnection -State Listen -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($Conn -and [int]$Conn.OwningProcess -ne $PreviousId) {
+            $Successor = Get-Process -Id ([int]$Conn.OwningProcess) -ErrorAction SilentlyContinue
+            if ($Successor -and $Successor.ProcessName -in @("python", "pythonw")) { return $Successor }
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    return $null
+}
+
 function Stop-HiddenBackend {
     if ($null -eq $BackendProcess) { return }
     if ($BackendProcess.HasExited) {
@@ -83,75 +100,35 @@ function Stop-HiddenBackend {
 if (-not (Test-Path $Python)) {
     throw "未找到虚拟环境 Python: $Python"
 }
-if (-not (Test-Path (Join-Path $FrontendDir "node_modules"))) {
-    throw "未找到 $FrontendDir\node_modules，请先在该目录运行 npm ci"
-}
-if ($Hidden) {
-    $Node = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue
-    if (-not $Node) {
-        throw "未找到 node.exe，请先安装 Node.js / npm，并重新启动。"
-    }
-    $ViteCli = Join-Path $FrontendDir "node_modules\vite\bin\vite.js"
-    if (-not (Test-Path $ViteCli)) {
-        throw "未找到 $ViteCli，请在该目录运行 npm ci。"
+if ($Production) {
+    $DistIndex = Join-Path $FrontendDir "dist\index.html"
+    if (-not (Test-Path $DistIndex)) {
+        throw "未找到前端构建，请先运行发布脚本或 npm run build（缺少 $DistIndex）"
     }
 } else {
-    $Npm = Get-Command npm.cmd -CommandType Application -ErrorAction SilentlyContinue
-    if (-not $Npm) {
-        throw "未找到 npm.cmd，请先安装 Node.js / npm，并重新打开启动窗口。"
+    if (-not (Test-Path (Join-Path $FrontendDir "node_modules"))) {
+        throw "未找到 $FrontendDir\node_modules，请先在该目录运行 npm ci"
+    }
+    if ($Hidden) {
+        $Node = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $Node) {
+            throw "未找到 node.exe，请先安装 Node.js / npm，并重新启动。"
+        }
+        $ViteCli = Join-Path $FrontendDir "node_modules\vite\bin\vite.js"
+        if (-not (Test-Path $ViteCli)) {
+            throw "未找到 $ViteCli，请在该目录运行 npm ci。"
+        }
+    } else {
+        $Npm = Get-Command npm.cmd -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $Npm) {
+            throw "未找到 npm.cmd，请先安装 Node.js / npm，并重新打开启动窗口。"
+        }
     }
 }
-foreach ($Port in 8000, 5173) {
+$Ports = if ($Production) { @(8000) } else { @(8000, 5173) }
+foreach ($Port in $Ports) {
     if (Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue) {
         throw "端口 $Port 已被占用，请先运行 stop_gui.bat 或手动停止对应旧服务后重试；启动器不会结束已有进程。"
-    }
-}
-
-if (-not $LocalOnly) {
-    $Tailscale = Get-Command tailscale.exe -CommandType Application -ErrorAction SilentlyContinue
-    if (-not $Tailscale) {
-        throw "未找到 Tailscale，请先安装并登录；仅本机使用可附加 -LocalOnly。"
-    }
-    $StateJson = & $Tailscale.Source status --json
-    if ($LASTEXITCODE -ne 0) { throw "无法读取 Tailscale 状态，请检查 Tailscale 服务。" }
-    $TailscaleState = ($StateJson | Out-String) | ConvertFrom-Json
-    if ($TailscaleState.BackendState -ne "Running") {
-        throw "Tailscale 尚未连接，请先打开 Tailscale 并登录；仅本机使用可附加 -LocalOnly。"
-    }
-    $RemoteHost = ([string]$TailscaleState.Self.DNSName).TrimEnd(".")
-    if ($RemoteHost -notmatch '^[a-z0-9-]+(?:\.[a-z0-9-]+)+\.ts\.net$') {
-        throw "Tailscale 未提供有效的本机域名，请检查 MagicDNS 设置。"
-    }
-    $ServeAddress = "${RemoteHost}:443"
-    $ServeTarget = "http://127.0.0.1:5173"
-    $ServeJson = & $Tailscale.Source serve status --json
-    if ($LASTEXITCODE -ne 0) { throw "无法读取 Tailscale Serve 配置。" }
-    $ServeConfig = ($ServeJson | Out-String) | ConvertFrom-Json
-    $ExistingHandlers = $ServeConfig.Web.$ServeAddress.Handlers
-    $ExistingHandler = $ExistingHandlers."/"
-    if ($ServeConfig.AllowFunnel.$ServeAddress -or
-        ($ServeConfig.TCP."443" -and -not $ServeConfig.TCP."443".HTTPS) -or
-        ($ExistingHandlers -and @($ExistingHandlers.PSObject.Properties | Where-Object { $_.Name -ne "/" }).Count -gt 0) -or
-        ($ExistingHandler -and $ExistingHandler.Proxy -ne $ServeTarget)) {
-        throw "Tailscale 443 端口已有其他服务或公网 Funnel 配置，请先确认并手动处理；启动器不会覆盖。"
-    }
-
-    # 保留调用者已有的域名白名单，只补充当前设备的 Tailscale 域名。
-    $AllowedHosts = @($env:__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS -split ',') + $RemoteHost
-    $env:__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS = ($AllowedHosts | Where-Object { $_ } | Select-Object -Unique) -join ','
-    Write-LauncherLog "正在配置 Tailscale Serve；首次如出现 HTTPS 设置链接，请在浏览器完成一次设置。"
-    & $Tailscale.Source serve --bg --yes --https=443 --set-path=/ $ServeTarget
-    if ($LASTEXITCODE -ne 0) {
-        throw "Tailscale Serve 配置失败，请检查上方错误、HTTPS 设置及账户权限；必要时在管理员终端运行。"
-    }
-    $ServeJson = & $Tailscale.Source serve status --json
-    if ($LASTEXITCODE -ne 0) { throw "无法回读 Tailscale Serve 配置。" }
-    $ServeConfig = ($ServeJson | Out-String) | ConvertFrom-Json
-    if (-not $ServeConfig.TCP."443".HTTPS -or
-        $ServeConfig.Web.$ServeAddress.Handlers."/".Proxy -ne $ServeTarget -or
-        @($ServeConfig.Web.$ServeAddress.Handlers.PSObject.Properties).Count -ne 1 -or
-        $ServeConfig.AllowFunnel.$ServeAddress) {
-        throw "Tailscale 私人 HTTPS 入口回读不匹配，已取消 GUI 启动。"
     }
 }
 
@@ -169,7 +146,7 @@ try {
     Set-Content -LiteralPath $BackendPidFile -Value $BackendProcess.Id
     Write-LauncherLog "FastAPI 后端已隐藏启动  http://127.0.0.1:8000（日志： $BackendLog）"
 
-    # 等 8000 端口 LISTENING 后再启 Vite；避免浏览器打开 5173 时 /api 转发到还没绑定的 8000。
+    # 等 8000 端口 LISTENING 后再继续；避免浏览器打开页面时 /api 请求到还没绑定的后端。
     $Deadline = (Get-Date).AddSeconds(20)
     $Ready = $false
     while ((Get-Date) -lt $Deadline) {
@@ -181,10 +158,32 @@ try {
         Start-Sleep -Milliseconds 500
     }
     if (-not $Ready) {
-        throw "20 秒内后端未监听 8000 端口，已取消前端启动。请检查日志： $BackendLog"
+        throw "20 秒内后端未监听 8000 端口，已取消 GUI 启动。请检查日志： $BackendLog"
     }
 
-    if ($Hidden) {
+    if ($Production) {
+        Write-LauncherLog "GUI 生产模式已运行  http://127.0.0.1:8000（前端由后端直接提供 dist 构建）"
+        Write-LauncherLog "停止服务请双击 stop_gui.bat；关闭浏览器不会停止后台实验"
+        if ($OpenBrowser) {
+            try {
+                Start-Process -FilePath "http://127.0.0.1:8000" | Out-Null
+            } catch {
+                Write-LauncherLog "无法自动打开浏览器：$($_.Exception.Message)"
+            }
+        }
+        # 启动器必须保持存活等待后端退出：后端带 --parent-pid，启动器退出会触发其优雅收尾。
+        # 界面「重启后端」会换新进程号，此时改为跟随新进程继续等待。
+        while ($true) {
+            $BackendProcess.WaitForExit()
+            if (Test-Path -LiteralPath $BackendStopFile) { break }
+            $Successor = Get-BackendSuccessor $BackendProcess.Id
+            if ($null -eq $Successor) { break }
+            $BackendProcess = $Successor
+            Set-Content -LiteralPath $BackendPidFile -Value $BackendProcess.Id
+            Write-LauncherLog "后端已自重启，继续跟随新进程（PID $($BackendProcess.Id)）"
+        }
+        $ExitCode = $BackendProcess.ExitCode
+    } elseif ($Hidden) {
         $ViteArguments = '"{0}" --host 127.0.0.1 --strictPort' -f $ViteCli
         $ViteProcess = Start-Process -FilePath $Node.Source -ArgumentList $ViteArguments -WorkingDirectory $FrontendDir -WindowStyle Hidden -RedirectStandardOutput $FrontendLog -RedirectStandardError $FrontendErrorLog -PassThru
         Set-Content -LiteralPath $FrontendPidFile -Value $ViteProcess.Id
@@ -204,9 +203,6 @@ try {
         }
 
         Write-LauncherLog "GUI 已在后台运行  http://127.0.0.1:5173"
-        if (-not $LocalOnly) {
-            Write-LauncherLog "笔记本访问   https://$RemoteHost（笔记本需连接同一 Tailscale 网络）"
-        }
         Write-LauncherLog "停止服务请双击 stop_gui.bat；关闭浏览器不会停止后台实验"
         if ($OpenBrowser) {
             try {
@@ -220,9 +216,6 @@ try {
     } else {
         Set-Location -LiteralPath $FrontendDir
         Write-LauncherLog "Vite dev     http://127.0.0.1:5173"
-        if (-not $LocalOnly) {
-            Write-LauncherLog "笔记本访问   https://$RemoteHost（前端就绪后可用；笔记本需连接同一 Tailscale 网络）"
-        }
         Write-LauncherLog "关闭窗口或 Ctrl+C 会同时结束后端并等待安全收尾"
 
         $ViteArgs = @("run", "dev", "--", "--strictPort")

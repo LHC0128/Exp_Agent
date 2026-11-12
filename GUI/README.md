@@ -21,17 +21,20 @@ Set-Location GUI\frontend
 npm ci
 ```
 
-`npm run build` 不再是必备步骤；`GUI\start.ps1` 会以 Vite dev 模式直接 serve 源码并提供 HMR。
-只有在准备发布或不便启动 Vite dev（例如纯命令行环境）时才需要 `npm run build`。
+`npm run build` 不是开发模式的必备步骤；`GUI\start.ps1` 会以 Vite dev 模式直接 serve 源码并提供 HMR。
+运行目录的生产模式（`start_lab.vbs`）和纯命令行环境则需要先构建 `dist/`。
 
 ## 启动
 
-完成安装后，在文件资源管理器中双击仓库根目录的 **`start_gui.vbs`**。
-它不显示终端窗口，会配置 Tailscale 私人 HTTPS 入口、在后台启动 Vite 与 FastAPI 后端，
-并在 Vite 就绪后自动打开默认浏览器。`start_gui.bat` 保留为兼容入口，会短暂闪一下控制台后
-转入后台。入口使用自身目录定位仓库，支持从其他工作目录运行；PowerShell 执行策略仅对该
-进程生效，不修改系统设置，不自动安装依赖。
-停止服务时双击 **`stop_gui.bat`**：先停止 Vite，再请求后端优雅收尾并等待完成。
+完成安装后，在文件资源管理器中双击仓库根目录的 **`start_gui.vbs`**（开发模式）。
+它不显示终端窗口，在后台启动 Vite 与 FastAPI 后端，并在 Vite 就绪后自动打开默认浏览器。
+`start_gui.bat` 保留为兼容入口，会短暂闪一下控制台后转入后台。入口使用自身目录定位仓库，
+支持从其他工作目录运行；PowerShell 执行策略仅对该进程生效，不修改系统设置，不自动安装依赖。
+停止服务时双击 **`stop_gui.bat`**：先停止 Vite（如有），再请求后端优雅收尾并等待完成。
+
+运行目录（如 `D:\Code\exp_agent_run`）使用根目录的 **`start_lab.vbs`**（生产模式）：
+不启动 Vite，后端 8000 直接提供 `GUI\frontend\dist` 构建产物，页面地址为
+`http://127.0.0.1:8000`；需先运行发布脚本或 `npm run build`。停止同样用 `stop_gui.bat`。
 
 也可从仓库根目录用命令行启动；默认不自动打开浏览器，附加 `-OpenBrowser` 可开启：
 
@@ -39,18 +42,21 @@ npm ci
 powershell -NoProfile -ExecutionPolicy Bypass -File GUI\start.ps1
 # 自动打开浏览器
 powershell -NoProfile -ExecutionPolicy Bypass -File GUI\start.ps1 -OpenBrowser
-# 仅启动本机服务，不查询或修改 Tailscale
-powershell -NoProfile -ExecutionPolicy Bypass -File GUI\start.ps1 -LocalOnly -OpenBrowser
+# 生产模式：后端 8000 直接提供 dist 构建（start_lab.vbs 内部使用）
+powershell -NoProfile -ExecutionPolicy Bypass -File GUI\start.ps1 -Production -OpenBrowser
 # 无终端后台模式（start_gui.vbs 内部使用）
-powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File GUI\start.ps1 -LocalOnly -OpenBrowser -Hidden
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File GUI\start.ps1 -OpenBrowser -Hidden
 ```
 
-启动器会同时拉起两个进程：
+开发模式下启动器会同时拉起两个进程：
 
 - **FastAPI 后端** `http://127.0.0.1:8000`，提供 `/api/`；存在 `frontend/dist/` 时也提供构建后的页面
 - **Vite dev server** `http://127.0.0.1:5173`，serve 前端源码并把 `/api` 转发到 FastAPI
 
-页面地址为 `http://127.0.0.1:5173`。修改前端源码后，Vite 会自动 HMR 推送变更到浏览器，
+生产模式（`-Production`）只启动 FastAPI 后端，页面与 `/api` 都由 `http://127.0.0.1:8000` 提供；
+启动器保持存活等待后端退出；界面「重启后端」换新进程后，启动器跟随新进程继续等待；不写前端 PID 文件。
+
+开发模式页面地址为 `http://127.0.0.1:5173`。修改前端源码后，Vite 会自动 HMR 推送变更到浏览器，
 不需要再 build。`start_gui.vbs` 模式下前后端都隐藏运行，日志分别写入 `tmp/gui-backend.log`、
 `tmp/gui-frontend.log` / `tmp/gui-frontend.err.log` 和 `tmp/gui-launcher.log`。
 关闭或刷新浏览器不会停止后台实验；停止服务请双击 `stop_gui.bat`，它会停止 Vite 并请求后端
@@ -60,10 +66,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File GUI\star
 采集、排队任务或分析运行时可用，会保留 Vite 和当前页面，但清空后端内存中的任务状态。
 正常停止的保证与限制见[正常停止与安全边界](#正常停止与安全边界)。
 
-启动器检查虚拟环境 Python、`node_modules`、Node/npm 和 8000 / 5173 端口。
+开发模式启动器检查虚拟环境 Python、`node_modules`、Node/npm 和 8000 / 5173 端口；
+生产模式只检查虚拟环境 Python、`GUI\frontend\dist\index.html` 和 8000 端口，
+缺少构建产物时报错「未找到前端构建，请先运行发布脚本或 npm run build」。
 缺失依赖或端口占用时直接报错，不会自动安装、结束已有进程或改用其他端口。
-默认还检查 Tailscale 安装与登录状态、读取当前设备的域名并配置私人 Serve；
-Serve 配置失败或回读不匹配时不启动前后端；同一 HTTPS 入口已有其他路径、443 转发或公网 Funnel 配置时会报错并保留原配置。
 后端 20 秒内未监听时取消前端启动；隐藏模式下前端 30 秒内未监听也会停止后端。
 隐藏模式失败时弹出错误对话框，详情写入 `tmp/gui-launcher.log`；命令行模式仍在当前窗口显示错误。
 后端启动失败或提前退出时，错误信息会指向 `tmp/gui-backend.log`。
@@ -80,8 +86,8 @@ $parseErrors = $null
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
 ```
 
-启动器的无硬件回归覆盖域名白名单、重复配置、本机模式、端口冲突、Tailscale 失败、
-转发冲突、私人 HTTPS 回读、隐藏 Vite 启动、浏览器打开以及前端退出码；所有外部命令和
+启动器的无硬件回归覆盖开发模式启动、端口冲突、隐藏 Vite 启动、前端退出码，以及生产模式
+正常启动、缺少 dist、8000 冲突、不依赖 npm/node、等待后端退出与退出码透传、跟随后端自重启；所有外部命令和
 运行时文件都使用替身：
 
 ```powershell
@@ -131,45 +137,6 @@ npm run dev
 升级后需重跑 `GUI/backend/test_server_runtime.py` 的无硬件契约；直接使用 Uvicorn CLI
 绕过该入口不具备长连接等待前封口及重复 Ctrl+C 保护。运行中的旧后端不会因修改源码自动更新，
 应在当前实验正常结束后再按上述方式重启加载。
-
-### 笔记本浏览器访问
-
-实验电脑和笔记本均需安装 Tailscale 并加入同一个私人网络。默认一键启动从
-`tailscale status --json` 读取实验电脑的域名，通过
-`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` 放行该域名，并后台开启 HTTPS Serve。
-前端就绪后，在笔记本自己的浏览器打开启动窗口显示的 `https://<本机的 Tailscale 域名>`。
-两个服务仍监听 `127.0.0.1`，网页和 `/api` 共用入口；局域网和外网使用同一个地址。
-笔记本需保持 Tailscale 连接，实验电脑需保持 GUI 服务运行。
-
-**Serve 配置在实验电脑的 PowerShell 中执行**，由 Tailscale 客户端保存。
-首次若需要启用 HTTPS，命令会显示设置链接，在 Tailscale 官网账户页面完成一次设置；
-需要账户有相应权限。若本机命令提示访问被拒绝，在管理员 PowerShell 中重试。
-账户设置流程见 [Tailscale Serve 官方说明](https://tailscale.com/docs/features/tailscale-serve)。
-
-需要手动配置或核查时，在实验电脑执行：
-
-```powershell
-tailscale status
-tailscale serve --bg --https=443 --set-path=/ http://127.0.0.1:5173
-tailscale serve status
-# 停止该 HTTPS 根路径的转发，保留其他路径
-tailscale serve --https=443 --set-path=/ off
-```
-
-手动启动 Vite 时也需设置域名白名单；从 `GUI/frontend/` 执行：
-
-```powershell
-$tailscaleInfo = tailscale status --json | ConvertFrom-Json
-$env:__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS = $tailscaleInfo.Self.DNSName.TrimEnd('.')
-npm run dev -- --strictPort
-```
-
-已运行的前端也可从 `GUI/frontend/.env` 读取同名变量（逗号分隔域名），修改后由 Vite 自动重载。
-该本机配置不纳入 Git；默认一键启动仍以实时读取的 Tailscale 域名为准。
-
-Serve 在后台保存配置，退出 GUI 或重启电脑不会自动清除转发，但网页仍依赖前后端服务运行。
-启动器只设置私人 Serve，不启用公网 Funnel；GUI 没有独立登录，应限制私人网络的访问权限。
-`-LocalOnly` 不修改已有 Serve 配置，如需停止已有远程入口，先执行上面的 `off` 命令。
 
 ## 布局与任务导航
 

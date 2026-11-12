@@ -303,27 +303,31 @@ TOPTICA DLC pro Probe 激光、DG4000、DG900 Pro、HF2 / MFLI、SDS 示波器�
 ### 首次安装
 
 按顶部[初次安装](#初次安装)完成虚拟环境、本地包与 GUI 前后端依赖。
-开发模式直接使用前端源码，支持 HMR，无需先运行 `npm run build`。
+开发模式直接使用前端源码，支持 HMR，无需先运行 `npm run build`；运行目录的生产模式需要
+先构建 `GUI/frontend/dist/`。
 
 ### 启动 GUI
 
-完成首次安装后，双击仓库根目录的 **`start_gui.vbs`**，即可在无终端窗口的情况下配置
-Tailscale 私人 HTTPS 入口、在后台启动 Vite 与 FastAPI 后端，并在 Vite 就绪后自动打开默认
-浏览器。`start_gui.bat` 保留为兼容入口，会短暂闪一下控制台后转入后台。
-停止服务时双击仓库根目录的 **`stop_gui.bat`**：先停止 Vite，再请求后端优雅收尾并等待完成。
+完成首次安装后，双击仓库根目录的 **`start_gui.vbs`**（开发模式），即可在无终端窗口的情况下
+在后台启动 Vite 与 FastAPI 后端，并在 Vite 就绪后自动打开默认浏览器。`start_gui.bat` 保留为
+兼容入口，会短暂闪一下控制台后转入后台。
+停止服务时双击仓库根目录的 **`stop_gui.bat`**：先停止 Vite（如有），再请求后端优雅收尾并等待完成。
 也可在仓库根目录运行 `.\GUI\start.ps1`（默认不自动打开浏览器，附加 `-OpenBrowser` 可开启；
-仅本机运行、无需 Tailscale 时加 `-LocalOnly`；无终端后台模式内部使用 `-Hidden`）。
+无终端后台模式内部使用 `-Hidden`；生产模式使用 `-Production`）。
 
-启动成功后，浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)；Vite 在后台隐藏
+运行目录（如 `D:\Code\exp_agent_run`）双击根目录的 **`start_lab.vbs`**（生产模式）：
+不启动 Vite，后端 8000 直接提供 `GUI\frontend\dist` 构建产物，需先运行发布脚本或 `npm run build`。
+
+开发模式启动成功后，浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)；Vite 在后台隐藏
 运行，将 `/api` 请求代理到同样隐藏运行的 FastAPI 后端
-[http://127.0.0.1:8000](http://127.0.0.1:8000)，两个服务只监听本机地址。日志分别写入
-`tmp/gui-backend.log`、`tmp/gui-frontend.log` / `tmp/gui-frontend.err.log` 和
-`tmp/gui-launcher.log`。笔记本安装 Tailscale 并加入同一网络后，可用
-`https://<本机的 Tailscale 域名>` 远程访问，局域网和外网使用同一地址；具体设置与手动命令见
-[GUI 远程访问说明](GUI/README.md#笔记本浏览器访问)。
+[http://127.0.0.1:8000](http://127.0.0.1:8000)，两个服务只监听本机地址。生产模式只有后端一个
+进程，页面与 `/api` 都由 [http://127.0.0.1:8000](http://127.0.0.1:8000) 提供。日志分别写入
+`tmp/gui-backend.log`、`tmp/gui-frontend.log` / `tmp/gui-frontend.err.log`（仅开发模式）和
+`tmp/gui-launcher.log`。
 
-启动器检查 Python、Node/npm、前端依赖、Tailscale 登录状态和 8000 / 5173 端口；缺失依赖或
-端口冲突时报错，不杀进程、不自动换端口、不自动安装依赖。隐藏模式启动失败会弹出错误对话框，
+开发模式启动器检查 Python、Node/npm、前端依赖和 8000 / 5173 端口；生产模式只检查 Python、
+`GUI\frontend\dist\index.html` 和 8000 端口。缺失依赖或端口冲突时报错，不杀进程、不自动换端口、
+不自动安装依赖。隐藏模式启动失败会弹出错误对话框，
 详情写入 `tmp/gui-launcher.log`。关闭或刷新网页不会停止后台实验；停止服务请双击
 `stop_gui.bat`。收尾期间后端停止接纳新任务和短硬件操作，取消排队项，向运行任务请求协作停止，
 等待现有安全收尾、部分数据保存和已开始的短操作结束；等待较长时会持续报告状态，不用
