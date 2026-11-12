@@ -41,6 +41,9 @@ tmp/
 codex_test_tmp_*/
 codex_test_tmp_final_filter_*/
 params/.instrument_config.lock
+# 参数写入的一次性迁移备份与中断残留的临时文件，不随参数回存提交
+params/**/*.v1.bak
+params/**/*.tmp
 .tmp-*.html
 noise_spectra_median_method.npz
 
