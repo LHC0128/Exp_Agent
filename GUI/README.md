@@ -70,7 +70,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File GUI\star
 生产模式只检查虚拟环境 Python、`GUI\frontend\dist\index.html` 和 8000 端口，
 缺少构建产物时报错「未找到前端构建，请先运行发布脚本或 npm run build」。
 缺失依赖或端口占用时直接报错，不会自动安装、结束已有进程或改用其他端口。
-后端 20 秒内未监听时取消前端启动；隐藏模式下前端 30 秒内未监听也会停止后端。
+后端 120 秒内未监听时取消启动（负载高时后端导入实测可达 19–38 秒）；隐藏模式下前端 30 秒内未监听也会停止后端。
 隐藏模式失败时弹出错误对话框，详情写入 `tmp/gui-launcher.log`；命令行模式仍在当前窗口显示错误。
 后端启动失败或提前退出时，错误信息会指向 `tmp/gui-backend.log`。
 重复双击会提示端口占用，请先运行 `stop_gui.bat` 停止旧服务。

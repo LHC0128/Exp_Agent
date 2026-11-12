@@ -12,7 +12,7 @@
 #     -Rollback <标签>      回滚到运行目录的某个 lab-* 标签（停 GUI → 回退 → 重建前端 → 启动）
 #     -DryRun               只打印发布计划和只读预检，不做任何改动
 #     -Resume               依赖已手动安装完成后，跳过依赖检查继续发布
-#     -HealthTimeoutSec <n> 启动后等待健康检查的秒数，默认 60
+#     -HealthTimeoutSec <n> 启动后等待健康检查的秒数，默认 180（启动器自身给后端 120 秒）
 #
 # 约定接口：运行目录 start_lab.vbs 启动、stop_gui.bat 停止（等安全收尾；停止会取消正在运行的任务，
 # 所以停止前必须确认空闲）。
@@ -26,7 +26,7 @@ param(
     [string]$Rollback,
     [switch]$DryRun,
     [switch]$Resume,
-    [int]$HealthTimeoutSec = 60
+    [int]$HealthTimeoutSec = 180
 )
 
 $ErrorActionPreference = 'Stop'

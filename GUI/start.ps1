@@ -31,6 +31,9 @@ $FrontendPidFile = Join-Path $TmpDir "gui-frontend.pid"
 $LauncherPidFile = Join-Path $TmpDir "gui-launcher.pid"
 $BackendProcess = $null
 $ViteProcess = $null
+# 后端导入全部实验模块后才监听 8000；平时约 10 秒，机器负载高或冷缓存时实测 19–38 秒。
+# 超时会让启动器停掉后端，所以留足余量；后端提前退出仍立即报错。
+$BackendStartTimeoutSec = 120
 
 function Write-LauncherLog([string]$Message) {
     Write-Host $Message
@@ -147,7 +150,7 @@ try {
     Write-LauncherLog "FastAPI 后端已隐藏启动  http://127.0.0.1:8000（日志： $BackendLog）"
 
     # 等 8000 端口 LISTENING 后再继续；避免浏览器打开页面时 /api 请求到还没绑定的后端。
-    $Deadline = (Get-Date).AddSeconds(20)
+    $Deadline = (Get-Date).AddSeconds($BackendStartTimeoutSec)
     $Ready = $false
     while ((Get-Date) -lt $Deadline) {
         if ($BackendProcess.HasExited) {
@@ -158,7 +161,7 @@ try {
         Start-Sleep -Milliseconds 500
     }
     if (-not $Ready) {
-        throw "20 秒内后端未监听 8000 端口，已取消 GUI 启动。请检查日志： $BackendLog"
+        throw "$BackendStartTimeoutSec 秒内后端未监听 8000 端口，已取消 GUI 启动。请检查日志： $BackendLog"
     }
 
     if ($Production) {
