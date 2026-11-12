@@ -1,4 +1,4 @@
-"""Bell-Bloom 实验系统本地 FastAPI 入口。"""
+"""原子磁力仪实验系统本地 FastAPI 入口。"""
 
 from __future__ import annotations
 
@@ -281,7 +281,7 @@ def _workflow_session_services():
 
 
 # 接线图线缆字段仅在序列化时省略 null，校验结构不变；合并输入/输出 schema 以保留既有公开类型名。
-app = FastAPI(title="Bell-Bloom 实验控制台", version="0.1.0", lifespan=lifespan, separate_input_output_schemas=False)
+app = FastAPI(title="原子磁力仪实验控制台", version="0.1.0", lifespan=lifespan, separate_input_output_schemas=False)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],

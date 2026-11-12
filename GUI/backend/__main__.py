@@ -1,4 +1,4 @@
-"""Bell-Bloom FastAPI 后端启动入口。"""
+"""原子磁力仪 FastAPI 后端启动入口。"""
 
 from __future__ import annotations
 

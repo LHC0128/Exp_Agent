@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Bell-Bloom 实验控制台",
+    "title": "原子磁力仪实验控制台",
     "version": "0.1.0"
   },
   "paths": {

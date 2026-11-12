@@ -1,4 +1,4 @@
-# Bell-Bloom 实验控制台
+# 原子磁力仪实验控制台
 
 本地 Web GUI，用于读取和设置实验仪器（包括 GS200 主磁场电流源和 TOPTICA DLC pro Probe 激光）、同步参考时钟、校准 Demod0，
 以及从统一“实验中心”配置、预检、运行和重新分析正式 Python 实验。
