@@ -10,7 +10,7 @@
 每台设备使用稳定 `device_id`，其定义包含：
 
 - `instrument`：设备类型，例如 `signal_generator`、`gs200`、`keithley_6221`、
-  `lockin_amplifier`、`sds_acquisition`、`tec_controller`。
+  `lockin_amplifier`、`sds_acquisition`、`tec_controller`、`power_amplifier`。
 - `model`：具体驱动型号，例如 `DG4000` 或 `DG900`。
 - `label`、`resource`：GUI 标签和 VISA/网络/串口资源。
 - `connection`：非 VISA 连接参数，例如 HF2 / MFLI device ID、数据服务器地址和接口、DLC pro 端口。
@@ -42,6 +42,14 @@
 该步骤及 `synchronize_clock_device()` 支持可选 `settle_wait=callback`，把稳定等待交给调用方；
 默认仍使用 `time.sleep`。静磁场提供每 0.1 秒检查取消的等待，取消异常直接传播，
 不被转换成普通时钟失败记录；设置后仍严格回读，未缩短硬件稳定等待时长。
+
+### Aigtek 1200B 放大器登记
+
+[设备库](../params/devices.yaml)新增 `aigtek_1200b_cp210x_0001`，类型 `power_amplifier`，型号 `1200B`，当前地址 `COM3`；`connection` 保存 CP210x 适配器名称、VID/PID、适配器序列号与 9600/8N1/无流控参数。`reference_clock` 为不适用，能力只声明已知增益/阻抗范围及不支持状态查询/成功应答，不声明波形生成或时钟同步能力。
+
+[基础控制库](../src/aigtek_1200b/README.md)独立于信号发生器，不自动绑定 Z/XY 磁场、不改变上游负载或已有安全限值。设备库界面显示功率放大器类型及未接入实时控制的提示；原有 VISA 扫描不向 COM3 发送 `*IDN?`。COM3 是当前记录，连接前核对显式端口和唯一的适配器，不自动换端口。
+
+当前没有线圈后级的已确认安全包络，不注册放大器物理量映射或自动带载开启。不能把信号源 ±20 V 等已有规则直接当作放大后输出限值。基础库只承诺有界发送记录，不能由串口成功或公共收尾 `completed` 推断实际 OFF；详情见[编程手册](instruments/aigtek_1200b_programming.md)。
 
 ### 统一外置参考时钟
 

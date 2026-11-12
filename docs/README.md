@@ -23,9 +23,11 @@
   · [DG4000 与示波器 CH3 接地接线](instruments/dg4000_scope_ch3_grounding.md)
 - [HF2 / MFLI 锁相放大器](instruments/lockin_amplifier.md)
 - [SDS 示波器采集](instruments/sds_acquisition.md)
+- [DHO800 / DHO900 示波器编程手册（Markdown）](<instruments/DHO900_ProgrammingGuide_CN.md>)
 - [GS200 直流源](instruments/gs200.md)
 - [Keithley 6221 电流源](instruments/keithley_6221.md)
 - [TEC103 温控器](instruments/tec_controller.md)
+- [Aigtek 1200B 放大器简明编程手册](instruments/aigtek_1200b_programming.md)
 - [TOPTICA DLC pro 激光器](instruments/toptica_dlc_pro.md)
 
 ## 厂商原始资料
@@ -34,6 +36,7 @@
 | --- | --- |
 | DG4000 | [编程手册 CHM](manuals/DG4000_ProgrammingGuide_CN.chm)、[提取的 HTML](manuals/DG4000_extracted/) |
 | DG900 Pro | [用户手册](manuals/DG900Pro_UserGuide_CN.pdf)、[编程手册](manuals/DG900Pro_ProgrammingGuide_CN0.pdf) |
+| DHO800 / DHO900 | [编程手册 PDF](<instruments/DHO900_ProgrammingGuide_CN.pdf>)、[全文 Markdown](<instruments/DHO900_ProgrammingGuide_CN.md>)（含内置波形发生器命令，非 DG900 信号源手册） |
 | GS200 | [操作手册](manuals/IM_GS210-01CN_20210112.pdf) |
 | HF2 | [中文用户手册](manuals/ziHF2_UserManual_cn.pdf) |
 | LabOne | [编程手册](manuals/LabOneProgrammingManual_20.07.0.pdf)、[API 文档](manuals/LabOne_API_Docs/)、[API 示例](manuals/labone-api-examples/) |

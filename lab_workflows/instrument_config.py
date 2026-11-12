@@ -665,8 +665,12 @@ def discover_visa_devices(root: Path | None = None) -> dict[str, Any]:
                 if serial_number.upper() in {"0", "N/A", "NA", "UNKNOWN", "NONE"}:
                     serial_number = ""
                 upper = idn.upper()
+                manufacturer = fields[0].strip().upper()
+                identity_model = fields[1].strip().upper() if len(fields) > 1 else ""
                 kind = model = "unknown"
-                if "RIGOL" in upper and ("DG8" in upper or "DG9" in upper):
+                if manufacturer in {"RIGOL", "RIGOL TECHNOLOGIES"} and identity_model in {"DHO914", "DHO914S", "DHO924", "DHO924S"}:
+                    kind, model = "oscilloscope", "DHO900"
+                elif "RIGOL" in upper and ("DG8" in upper or "DG9" in upper):
                     kind, model = "signal_generator", "DG900"
                 elif "RIGOL" in upper and "DG4" in upper:
                     kind, model = "signal_generator", "DG4000"

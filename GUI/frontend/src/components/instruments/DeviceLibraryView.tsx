@@ -85,7 +85,7 @@ export function DeviceLibraryView() {
       connection: { ...item.connection, ...(item.serial_number ? { serial_number: item.serial_number } : {}) },
       capabilities: item.instrument === "lockin_amplifier" ? { channels: item.model === "MFLI" ? [0, 1, 2, 3] : [0, 1, 2, 3, 4, 5] }
         : item.instrument === "signal_generator" ? { channels: [1, 2] }
-          : item.instrument === "sds_acquisition" ? { channels: [1, 2, 3, 4] } : {},
+          : ["sds_acquisition", "oscilloscope"].includes(item.instrument) ? { channels: [1, 2, 3, 4] } : {},
     }, slug(item.serial_number || item.resource || item.model));
   };
   const save = async () => {
@@ -207,7 +207,9 @@ export function DeviceLibraryView() {
               <p className="muted">自动模式：HF2 使用 DAQ；MFLI 请求速率 ≤70 kSa/s 使用 DAQ，超过时使用 Scope 最近档位。保存后对新会话生效，运行会话保持启动设置。Scope 需要 MF-DIG，超出能力或记录内存时启动前报错。{hardwareBusy && "硬件任务结束后才可保存。"}</p>
             </div>}
             <label>标签<input value={device.label} disabled={busy} onChange={(event) => update(id, { label: event.target.value })} /></label>
-            <label>设备类型<select value={device.instrument} disabled={busy} onChange={(event) => update(id, { instrument: event.target.value })}><option value="signal_generator">信号发生器</option><option value="gs200">Yokogawa GS200</option><option value="keithley_6221">Keithley 6221</option><option value="sds_acquisition">示波器</option><option value="lockin_amplifier">锁相放大器</option><option value="tec_controller">TEC</option><option value="toptica_dlc_pro">DLC pro</option></select></label>
+            <label>设备类型<select value={device.instrument} disabled={busy} onChange={(event) => update(id, { instrument: event.target.value })}><option value="signal_generator">信号发生器</option><option value="gs200">Yokogawa GS200</option><option value="keithley_6221">Keithley 6221</option><option value="power_amplifier">功率放大器</option><option value="sds_acquisition">Siglent SDS 示波器</option><option value="oscilloscope">示波器（统一接口）</option><option value="lockin_amplifier">锁相放大器</option><option value="tec_controller">TEC</option><option value="toptica_dlc_pro">DLC pro</option></select></label>
+            {device.instrument === "power_amplifier" && <p className="device-config-wide muted">当前仅登记连接信息与基础驱动，未接入实时控制。1200B 无状态查询或成功应答；串口已连接、命令已发送均不能证明输出状态。带线圈使用前需确认后级安全范围。</p>}
+            {device.instrument === "oscilloscope" && device.model.trim().toUpperCase() === "DHO900" && <p className="device-config-wide muted">仅基础驱动与统一工厂，尚未迁移现有实验，不会自动替换 SDS</p>}
             <label>型号<input value={device.model} disabled={busy} onChange={(event) => update(id, { model: event.target.value })} /></label>
             {device.instrument !== "lockin_amplifier" && <label>{card.mappingKeys.length ? "设备连接地址" : "Resource"}<input value={device.resource || ""} disabled={busy} onChange={(event) => update(id, { resource: event.target.value || null })} /></label>}
             {serialNumber(device) && <label>{device.instrument === "lockin_amplifier" ? "设备 ID / 序列号" : "序列号"}<input value={serialNumber(device)} readOnly /></label>}

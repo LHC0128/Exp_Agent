@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import { InstrumentsPage } from "../../pages/InstrumentsPage";
 
 import { api } from "../../api";
-import type { DeviceLibraryDocument, PhysicalMappingsDocument, VisaDiscovery } from "../../types/api";
+import type { DeviceConfig, DeviceLibraryDocument, PhysicalMappingsDocument, VisaDiscovery } from "../../types/api";
 import { DeviceLibraryView } from "./DeviceLibraryView";
 import { useJobActivity } from "../JobActivity";
 
@@ -179,6 +181,142 @@ describe("设备库身份与扫描状态", () => {
     expect(device.resource).toBeNull();
     expect(device.connection).toMatchObject(newHf2.connection);
     expect(device.capabilities.channels).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+});
+
+describe("1200B 独立设备登记", () => {
+  it("真实仪器路由显示功率放大器，保存不改物理映射或丢失连接能力", async () => {
+    const amplifier = {
+      instrument: "power_amplifier", model: "1200B", label: "Aigtek 1200B 线圈驱动放大器",
+      resource: "COM3", reference_clock: null,
+      connection: { adapter_name: "Silicon Labs CP210x USB to UART Bridge", serial_number: "0001",
+        usb_vid: 0x10C4, usb_pid: 0xEA60, baudrate: 9600, bytesize: 8, parity: "N", stopbits: 1,
+        xonxoff: false, rtscts: false, dsrdtr: false },
+      capabilities: { channels: [1], gain_min_db: 0, gain_max_db: 20, gain_step_db: 0.5,
+        supports_state_query: false, supports_command_ack: false },
+    };
+    const handler = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation(async (url, options) => url === "/api/device-library" && !options?.method
+      ? { ...LIBRARY, devices: { ...LIBRARY.devices, aigtek_1200b_cp210x_0001: amplifier } } as never
+      : handler(url, options));
+    render(<MemoryRouter initialEntries={["/instruments?view=library"]}><InstrumentsPage /></MemoryRouter>);
+    const panel = (await screen.findByRole("heading", { name: amplifier.label })).closest("section")!;
+    expect(within(panel).getByLabelText("设备类型")).toHaveValue("power_amplifier");
+    expect(within(panel).getByRole("option", { name: "功率放大器" })).toBeInTheDocument();
+    expect(within(panel).getByLabelText("Resource")).toHaveValue("COM3");
+    expect(within(panel).getByLabelText("序列号")).toHaveValue("0001");
+    expect(within(panel).getByText(/1200B 无状态查询或成功应答/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "设备库" })).toHaveClass("active");
+    fireEvent.click(screen.getByRole("button", { name: "保存设备库" }));
+    await waitFor(() => expect(mockApi.mock.calls.some(([, options]) => options?.method === "PUT")).toBe(true));
+    const [, options] = mockApi.mock.calls.find(([, value]) => value?.method === "PUT")!;
+    expect(JSON.parse(String(options?.body))).toMatchObject({
+      devices: { aigtek_1200b_cp210x_0001: amplifier }, mapping: MAPPINGS.mapping,
+      physical_mapping_revision: MAPPINGS.revision,
+    });
+    expect(mockApi.mock.calls.some(([url]) => url === "/api/control-targets" || url === "/api/device-library/discover-visa")).toBe(false);
+  });
+});
+
+describe("DHO900 独立示波器登记", () => {
+  const pendingId = "rigol_dho900_192_168_124_21";
+  const pendingScope: DeviceConfig = {
+    instrument: "oscilloscope", model: "DHO900", label: "RIGOL DHO900 示波器（子型号/序列号待确认）",
+    resource: "TCPIP0::192.168.124.21::INSTR", reference_clock: null,
+    connection: { host: "192.168.124.21", web_url: "http://192.168.124.21/", identity_verified: false },
+    capabilities: { channels: [1, 2, 3, 4] },
+  };
+  const sds: DeviceConfig = {
+    instrument: "sds_acquisition", model: "SDS", label: "现用 Siglent SDS",
+    resource: "USB0::0xF4EC::0x1015::SDSFAKE::INSTR", reference_clock: null,
+    connection: {}, capabilities: { channels: [1, 2, 3, 4] },
+  };
+  const mappings: PhysicalMappingsDocument = { ...MAPPINGS, mapping: {
+    sds: { instrument: "sds_acquisition", device_id: "siglent_scope" },
+  } };
+  const mockScopes = (includePending: boolean, discovery?: VisaDiscovery) => {
+    let library: DeviceLibraryDocument = { ...LIBRARY,
+      network_resources: includePending ? [...LIBRARY.network_resources, pendingScope.resource!] : LIBRARY.network_resources,
+      devices: { ...LIBRARY.devices, siglent_scope: sds, ...(includePending ? { [pendingId]: pendingScope } : {}) },
+    };
+    let physicalMappings = structuredClone(mappings);
+    mockApi.mockImplementation(async (url, options) => {
+      if (url === "/api/device-library" && options?.method === "PUT") {
+        const body = JSON.parse(String(options.body));
+        library = { ...library, revision: "new-revision", devices: body.devices, network_resources: body.network_resources };
+        physicalMappings = { ...physicalMappings, revision: "new-mapping-revision", mapping: body.mapping };
+        return { ...library, physical_mappings: physicalMappings } as never;
+      }
+      if (url === "/api/device-library") return library as never;
+      if (url === "/api/physical-mappings") return physicalMappings as never;
+      if (url === "/api/device-library/discover-visa" && discovery) return discovery as never;
+      throw new Error(`未预期的接口: ${url}`);
+    });
+  };
+  const renderLibraryRoute = () => render(
+    <MemoryRouter initialEntries={["/instruments?view=library"]}><InstrumentsPage /></MemoryRouter>,
+  );
+
+  it("真实设备库路由显示待确认条目，保存与重新载入不改现用 SDS 映射", async () => {
+    mockScopes(true);
+    const view = renderLibraryRoute();
+    const panel = (await screen.findByRole("heading", { name: pendingScope.label })).closest("section")!;
+    expect(screen.getByRole("button", { name: "设备库" })).toHaveClass("active");
+    expect(within(panel).getByLabelText("设备类型")).toHaveValue("oscilloscope");
+    expect(within(panel).getByRole("option", { name: "示波器（统一接口）" })).toHaveValue("oscilloscope");
+    expect(within(panel).getByRole("option", { name: "Siglent SDS 示波器" })).toHaveValue("sds_acquisition");
+    expect(within(panel).getByLabelText("Resource")).toHaveValue(pendingScope.resource);
+    expect(within(panel).getByLabelText("参考时钟")).toHaveValue("");
+    expect(within(panel).getByLabelText("通道号列表（逗号分隔）")).toHaveValue("1, 2, 3, 4");
+    expect(within(panel).queryByLabelText("序列号")).not.toBeInTheDocument();
+    expect(within(panel).getByText("仅基础驱动与统一工厂，尚未迁移现有实验，不会自动替换 SDS")).toBeInTheDocument();
+    expect(screen.getByLabelText("网络扫描地址（每行一个 VISA 资源）")).toHaveValue(
+      [...LIBRARY.network_resources, pendingScope.resource].join("\n"),
+    );
+    const sdsPanel = screen.getByRole("heading", { name: sds.label }).closest("section")!;
+    expect(within(sdsPanel).getByLabelText("设备类型")).toHaveValue("sds_acquisition");
+    fireEvent.click(screen.getByRole("button", { name: "保存设备库" }));
+    await waitFor(() => expect(screen.getByText(/修订 new-/)).toBeInTheDocument());
+    const [, options] = mockApi.mock.calls.find(([, value]) => value?.method === "PUT")!;
+    const saved = JSON.parse(String(options?.body));
+    expect(saved.devices[pendingId]).toEqual(pendingScope);
+    expect(saved.devices.siglent_scope).toEqual(sds);
+    expect(saved.mapping).toEqual(mappings.mapping);
+    expect(saved.physical_mapping_revision).toBe(mappings.revision);
+    expect(saved.devices[pendingId].connection).not.toHaveProperty("serial_number");
+    view.unmount(); renderLibraryRoute();
+    expect(await screen.findByRole("heading", { name: pendingScope.label })).toBeInTheDocument();
+    expect(mockApi.mock.calls.some(([url]) => url === "/api/control-targets" || url === "/api/device-library/discover-visa")).toBe(false);
+  });
+
+  it("真实设备库路由扫描加入 DHO900 四通道，保存不切换 SDS", async () => {
+    const discovered: VisaDiscovery["devices"][number] = {
+      resource: "TCPIP0::192.0.2.21::INSTR", idn: "RIGOL,DHO924S,DHOFAKE123,0",
+      instrument: "oscilloscope", model: "DHO900", serial_number: "DHOFAKE123",
+    };
+    mockScopes(false, { devices: [discovered], errors: [] });
+    renderLibraryRoute();
+    fireEvent.click(await screen.findByRole("button", { name: "扫描 USB / 网络 / 锁相放大器" }));
+    await screen.findByText(discovered.idn);
+    fireEvent.click(row(discovered.idn).getByRole("button", { name: "加入设备库" }));
+    expect(row(discovered.idn).getByRole("button", { name: "已加入，待保存" })).toBeDisabled();
+    const panel = screen.getByRole("heading", { name: "DHO900" }).closest("section")!;
+    expect(within(panel).getByLabelText("设备类型")).toHaveValue("oscilloscope");
+    expect(within(panel).getByLabelText("通道号列表（逗号分隔）")).toHaveValue("1, 2, 3, 4");
+    expect(within(panel).getByLabelText("参考时钟")).toHaveValue("");
+    expect(within(panel).getByText("仅基础驱动与统一工厂，尚未迁移现有实验，不会自动替换 SDS")).toBeInTheDocument();
+    expect(mockApi.mock.calls.some(([, options]) => options?.method === "PUT")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "保存设备库" }));
+    await waitFor(() => expect(row(discovered.idn).getByRole("button", { name: "已入库" })).toBeDisabled());
+    const [, options] = mockApi.mock.calls.find(([, value]) => value?.method === "PUT")!;
+    const saved = JSON.parse(String(options?.body));
+    expect(saved.devices.dhofake123).toEqual({ instrument: "oscilloscope", model: "DHO900", label: "DHO900",
+      resource: discovered.resource, reference_clock: null,
+      connection: { serial_number: "DHOFAKE123" }, capabilities: { channels: [1, 2, 3, 4] } });
+    expect(saved.mapping).toEqual(mappings.mapping);
+    expect(saved.devices.siglent_scope).toEqual(sds);
+    expect(mockApi.mock.calls.some(([url]) => url === "/api/control-targets")).toBe(false);
+    expect(mockApi.mock.calls.some(([url, options]) => url === "/api/physical-mappings" && options?.method === "PUT")).toBe(false);
   });
 });
 

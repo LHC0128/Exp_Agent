@@ -55,6 +55,9 @@ timeout_method = "thread"
 [tool.setuptools.packages.find]
 where = ["src", "."]
 include = [
+  "aigtek_1200b*",
+  "dho900*",
+  "oscilloscope*",
   "gs200*",
   "hardware_gate*",
   "keithley_6221*",

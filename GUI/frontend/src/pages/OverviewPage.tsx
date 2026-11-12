@@ -5,7 +5,7 @@ import { useJobActivity } from "../components/JobActivity";
 import { PageHead } from "../components/PageHead";
 import type { Device } from "../types/api";
 
-type Health = { status: string; instance_id: string; hardware_busy: boolean };
+type Health = { status: string; instance_id: string; hardware_busy: boolean; runtime_mode?: "lab" | "dev" };
 type RestartState = "idle" | "waiting" | "success" | "error";
 
 const RESTART_POLL_INTERVAL_MS = 500;
@@ -99,20 +99,25 @@ export function OverviewPage() {
   };
 
   const hardwareActive = Boolean(health?.hardware_busy || hardwareBusy);
+  const devMode = health?.runtime_mode === "dev";
   const heroTitle = restartBusy
     ? "后端重启中"
     : hardwareActive
       ? "设备任务运行中"
-      : health
-        ? "系统已就绪"
-        : "后端不可用";
+      : devMode
+        ? "开发目录（仪器已禁用）"
+        : health
+          ? "系统已就绪"
+          : "后端不可用";
   const heroDetail = restartBusy
-    ? "正在等待 FastAPI 后端重新监听 8000 端口"
+    ? "正在等待 FastAPI 后端重新启动"
     : hardwareActive
       ? "当前锁定其他硬件写入"
-      : health
-        ? "可以开始读取设备或执行实验"
-        : "请检查后端窗口或重新启动 GUI";
+      : devMode
+        ? "可修改参数、预检、查看历史与离线分析；采集和仪器操作请在运行目录 GUI 执行"
+        : health
+          ? "可以开始读取设备或执行实验"
+          : "请检查后端窗口或重新启动 GUI";
   const restartAlertClass = restartState === "error"
     ? "alert error"
     : restartState === "success"

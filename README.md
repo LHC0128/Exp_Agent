@@ -190,6 +190,8 @@ python -m tools.delivery_check --task dev-tools-audit --candidate tools/delivery
 - RF 灵敏度（DirectAW）历史 Tab 试点支持星标与筛选、保留时间前缀的目录重命名和确认后永久删除整次数据；已有对比导出保留为生成时的快照。
 - [锁相驱动](src/lockin_amplifier/README.md)拆分为 HF2、MFLI 独立型号模块，共用通信、解调和采集接口；设备库统一设置自动／DAQ／Scope。自动模式下 MFLI 请求 >70 kSa/s 使用解调 Scope，HF2 使用 DAQ；预检检查选件与单段内存，分析使用最终实际率。
 - [信号发生器驱动](src/signal_generator/README.md)拆分为 DG4000、DG900 Pro 独立实现，保留旧导入入口；共同接口覆盖波形、调制、Burst、计数器和截图，Pro 额外支持内置任意波文件。
+- [Aigtek 1200B 放大器](src/aigtek_1200b/README.md)提供串口基础控制与假串口测试，设备库记录 COM3 / CP210x 连接信息。驱动无状态查询或执行确认，不自动开启、保存或接入线圈实验；正式带载使用先确认独立的后级安全范围。
+- [DHO900 与统一示波器工厂](src/dho900/README.md)提供与现有 SDS 同名的基础控制/采集调用，新增 RIGOL 网络设备登记；严格校验采样率，使用实际电压/时间轴。现有正式实验和 SDS 映射保持不变，新入口不自动接管旧程序。
 - 设备库统一管理 USB / 网络 / LabOne 发现与扫描候选地址，设备选择按同机和共享通道约束联动；配置先编辑草稿，再整批保存，同次实验的独立物理量占用同一通道时拒绝启动。
 - “参考时钟同步”先写入全部设备，再统一回读；“输出负载初始化”单独设置 Pump 调制 50 Ω、其余高阻。高阻回读标记统一显示和提交为 `INF`，两项工具分别报告每台设备结果。
 - AI 协作说明（`AGENTS.md`、`CLAUDE.md`、`GUI/AGENTS.md`）与 `.agents/`、`.claude/`、`.codex/`、`.vscode/` 等本地配置退出 GitHub 同步，仅本地维护；仓库继续同步 GUI 实验系统等面向使用者的内容。
@@ -206,6 +208,9 @@ python -m tools.delivery_check --task dev-tools-audit --candidate tools/delivery
 
 ```text
 src/
+  aigtek_1200b/           # 1200B 串口放大器基础控制（无状态查询）
+  dho900/                 # DHO900 基础控制与严格采样、ASCII 波形
+  oscilloscope/           # SDS / DHO900 统一工厂与结果保存入口
   gs200/                  # GS200 控制
   keithley_6221/          # Keithley 6221 电流源与内部波形控制
   lockin_amplifier/       # HF2 / MFLI 控制、DAQ 与内置 Scope
@@ -290,7 +295,8 @@ XY 与 Detection Chain 原会话入口保留默认参数和命令行启动，各
 
 | 模块 | 设备 / 能力 | 说明 |
 |---|---|---|
-| `sds_acquisition` | SDS 系列示波器 | 波形采集、保存、CLI 支持 |
+| `sds_acquisition` | SDS 系列示波器 | 波形采集、保存、CLI 支持；既有公开入口保持不变 |
+| `dho900` / `oscilloscope` | RIGOL DHO900 / 统一示波器入口 | 同名配置与采集、严格率回读、实际电压/时间 NPZ；暂不迁移正式实验 |
 | `signal_generator` | DG4000 / DG900 Pro | 共同波形、Burst、AM、计数器与截图；Pro 内置任意波文件 |
 | `lockin_amplifier` | Zurich Instruments HF2 / MFLI | 统一解调、Signal / Aux 输出、DAQ 与内置 Scope |
 | `gs200` | Yokogawa GS200 | 主磁场电流源控制 |

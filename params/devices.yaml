@@ -1,5 +1,6 @@
 schema_version: 1
 network_resources:
+- TCPIP0::192.168.124.21::INSTR
 - TCPIP0::192.168.124.31::INSTR
 - TCPIP0::192.168.124.32::INSTR
 - TCPIP0::192.168.124.33::INSTR
@@ -7,6 +8,39 @@ network_resources:
 - TCPIP0::192.168.124.35::INSTR
 - TCPIP0::192.168.124.41::7655::SOCKET
 devices:
+  aigtek_1200b_cp210x_0001:
+    instrument: power_amplifier
+    model: '1200B'
+    label: Aigtek 1200B 线圈驱动放大器
+    resource: COM3
+    reference_clock: null
+    connection:
+      # COM3 与适配器身份来自现场记录；CP210x 序列号不是放大器序列号。
+      adapter_name: Silicon Labs CP210x USB to UART Bridge
+      usb_vid: 0x10C4
+      usb_pid: 0xEA60
+      serial_number: '0001'
+      baudrate: 9600
+      bytesize: 8
+      parity: N
+      stopbits: 1
+      xonxoff: false
+      rtscts: false
+      dsrdtr: false
+    capabilities:
+      channels:
+      - 1
+      gain_min_db: 0.0
+      gain_max_db: 20.0
+      gain_step_db: 0.5
+      input_impedance_ohms:
+      - 50
+      - 1000000
+      output_impedance_ohms:
+      - 1
+      - 50
+      supports_state_query: false
+      supports_command_ack: false
   keithley_6221_4503331:
     instrument: keithley_6221
     model: '6221'
@@ -194,6 +228,22 @@ devices:
       voltage_inputs: 1
       aux_input_feedback_verified: false
     acquisition_mode: auto
+  rigol_dho900_192_168_124_21:
+    instrument: oscilloscope
+    model: DHO900
+    label: RIGOL DHO900 示波器（子型号/序列号待确认）
+    resource: TCPIP0::192.168.124.21::INSTR
+    reference_clock: null
+    connection:
+      host: 192.168.124.21
+      web_url: http://192.168.124.21/
+      identity_verified: false
+    capabilities:
+      channels:
+      - 1
+      - 2
+      - 3
+      - 4
   sds_sdsev82x900704:
     instrument: sds_acquisition
     model: SDS

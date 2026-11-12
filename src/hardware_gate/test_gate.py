@@ -45,6 +45,8 @@ def test_development_checkout_has_no_valid_marker():
 
 
 def _drivers():
+    from aigtek_1200b import Aigtek1200BInstrument
+    from dho900 import DHO900Instrument
     from gs200 import GS200Instrument
     from keithley_6221 import Keithley6221Instrument
     from lockin_amplifier import HF2Instrument
@@ -58,15 +60,17 @@ def _drivers():
         (lambda: GS200Instrument("USB0::GS::INSTR"), visa),
         (lambda: Keithley6221Instrument("GPIB0::12::INSTR"), visa),
         (lambda: SDSInstrument("USB0::SDS::INSTR"), visa),
+        (lambda: DHO900Instrument("TCPIP0::192.0.2.21::INSTR"), visa),
         (lambda: DG4000Instrument("USB0::DG4::INSTR"), visa),
         (lambda: DG900Instrument("USB0::DG9::INSTR"), visa),
         (lambda: HF2Instrument(device_id="dev1"), "lockin_amplifier.base._zi.ziDAQServer"),
         (lambda: TECInstrument(port="COM9"), "serial.Serial"),
+        (lambda: Aigtek1200BInstrument(port="COM3"), "serial.Serial"),
         (lambda: DLCProInstrument("192.0.2.1", connection_factory=MagicMock(name="factory")), None),
     ]
 
 
-@pytest.mark.parametrize("index", range(8))
+@pytest.mark.parametrize("index", range(10))
 def test_every_driver_connect_is_denied_before_transport(index):
     make, target = _drivers()[index]
     instrument = make()
@@ -120,6 +124,8 @@ def test_optional_connection_does_not_swallow_denial():
 # 打开真实通信的调用 → 已登记、前面有门控的文件；新增入口必须先接入门控再登记。
 TRANSPORT_CALLS = {"ResourceManager", "ziDAQServer", "Serial", "NetworkConnection", "_connection_factory"}
 GATED_FILES = {
+    "src/aigtek_1200b/instrument.py",
+    "src/dho900/instrument.py",
     "src/gs200/instrument.py",
     "src/keithley_6221/instrument.py",
     "src/sds_acquisition/instrument.py",

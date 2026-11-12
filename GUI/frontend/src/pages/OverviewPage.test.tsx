@@ -41,6 +41,18 @@ describe("总览页", () => {
     expect(screen.getByText("已映射设备")).toBeInTheDocument();
   });
 
+  it("开发目录后端提示仪器已禁用，不显示可执行实验", async () => {
+    mockApi.mockImplementation(async (url) => {
+      if (url === "/api/health") return { status: "ok", instance_id: "instance-1", hardware_busy: false, runtime_mode: "dev" } as never;
+      if (url === "/api/devices") return DEVICES as never;
+      throw new Error(`未预期的接口调用: ${url}`);
+    });
+    render(<OverviewPage />);
+    expect(await screen.findByText("开发目录（仪器已禁用）")).toBeInTheDocument();
+    expect(screen.getByText(/采集和仪器操作请在运行目录 GUI 执行/)).toBeInTheDocument();
+    expect(screen.queryByText("可以开始读取设备或执行实验")).toBeNull();
+  });
+
   it("后端繁忙时切换硬件状态文案并禁用重启", async () => {
     mockApi.mockImplementation(async (url) => {
       if (url === "/api/health") return { status: "ok", instance_id: "instance-1", hardware_busy: true } as never;
