@@ -29,6 +29,7 @@ PYTHON_TESTS = (
     "tools/test_check.py",
     "tools/test_checkpoint.py",
     "tools/test_delivery_check.py",
+    "tools/test_dependency_lock.py",
 )
 COMMAND_TIMEOUT_S = 30
 _CLEANUP_TIMEOUT_S = 10

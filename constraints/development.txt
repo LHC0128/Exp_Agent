@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Windows / Python 3.12 的已知可用直接依赖；不是历史环境全量 freeze。
+# Windows / Python 3.12 的已知可用直接依赖；3.12 的完整锁（含传递依赖）见 win-py312.lock.txt。
 # 3.10 / 3.11 保留兼容候选版本，尚未在这两个解释器运行；不要将其宣称为已验证。
 # 不约束无关 Notebook/绘图库传递依赖，也不改变已有虚拟环境。
 toptica-lasersdk==3.3.0

@@ -30,7 +30,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File setup.ps1
 if (-not (Test-Path .\agent_exp_env\Scripts\python.exe)) {
     python -m venv agent_exp_env
 }
-.\agent_exp_env\Scripts\python.exe -m pip install -c constraints/development.txt -e ".[runtime,instruments,analysis,gui]"
+# Windows + Python 3.12 用完整锁文件；Python 3.10 / 3.11 改用 -c constraints/development.txt
+.\agent_exp_env\Scripts\python.exe -m pip install -c constraints/win-py312.lock.txt -e ".[runtime,instruments,analysis,gui]"
 
 # 2. 检查后端依赖，再按锁文件安装前端
 .\agent_exp_env\Scripts\python.exe -m pip check
@@ -43,8 +44,16 @@ Set-Location ..\..
 TOPTICA SDK 与进度条。[`pyproject.toml`](pyproject.toml) 的 extras 是可叠加组件，并非各自完整的独立环境；
 GUI 使用上面的 `runtime,instruments,analysis,gui` 组合，不能只安装 `[gui]`。
 需要 Notebook 时在组合中另加 `notebook`；开发测试另加 `dev`。
-[`constraints/development.txt`](constraints/development.txt) 固定直接依赖的开发版本，传递依赖仍由 pip 按兼容性解析，
-不是包含所有传递依赖的完整锁文件。根目录 [`requirements.txt`](requirements.txt) 仅是历史环境快照。
+[`constraints/win-py312.lock.txt`](constraints/win-py312.lock.txt) 是 Windows + Python 3.12 的完整锁文件，
+逐包固定上述组合及 `dev` 的全部传递依赖，取自已验证环境的 `pip freeze`；它以 `-c` 约束形式使用，
+只限定版本、不额外装包。`notebook`（jupyter 依赖链）不在锁内，加装时由 pip 自行解析。
+[`constraints/development.txt`](constraints/development.txt) 只固定直接依赖，供 Python 3.10 / 3.11 兼容候选使用，
+传递依赖由 pip 解析；两者在 3.12 上的直接依赖版本由 [`tools/test_dependency_lock.py`](tools/test_dependency_lock.py) 校验一致。
+根目录 [`requirements.txt`](requirements.txt) 仅是历史环境快照。
+
+更新锁文件：在已验证的环境中执行 `pip freeze --exclude-editable`，替换锁文件对应分段（运行组合 / `dev` 增量），
+同步 `development.txt` 的直接依赖版本，再在 `.cache/` 下的临时环境按锁文件安装，确认 `pip check` 通过、
+`pip freeze` 与来源环境一致。不要用 pip-tools / uv 重新解析来更新，它们会改选未经验证的新版本。
 
 安装完成后双击根目录 **`start_gui.vbs`** 启动 GUI（无终端窗口；`start_gui.bat` 保留为
 兼容入口，会短暂闪一下控制台）。停止服务双击 **`stop_gui.bat`**。详见
@@ -63,12 +72,13 @@ GUI 使用上面的 `runtime,instruments,analysis,gui` 组合，不能只安装 
 
 开发验证使用独立环境，不升级或覆盖正在运行实验的 `agent_exp_env`。以下命令从仓库根目录执行；
 当前验收组合为 Windows、Python 3.12 和 Node.js 24。项目仍声明支持 Python 3.10；
-约束文件按 Python 版本区分 NumPy、SciPy 和 Matplotlib，保留 3.10 / 3.11 的兼容候选版本，
+下例使用 3.12 完整锁文件；3.10 / 3.11 改用 `constraints/development.txt`，它按 Python 版本区分
+NumPy、SciPy 和 Matplotlib，保留兼容候选版本，
 但这两个解释器及完整 Notebook 交互流程尚未实跑验证。
 
 ```powershell
 python -m venv .cache/dev-env
-.\.cache\dev-env\Scripts\python.exe -m pip install -c constraints/development.txt -e ".[runtime,instruments,analysis,gui,dev]"
+.\.cache\dev-env\Scripts\python.exe -m pip install -c constraints/win-py312.lock.txt -e ".[runtime,instruments,analysis,gui,dev]"
 .\.cache\dev-env\Scripts\python.exe -m pip check
 
 # 固定公共契约快检；默认不依赖 Git，不连接仪器，不启动服务
