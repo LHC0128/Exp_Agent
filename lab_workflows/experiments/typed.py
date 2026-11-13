@@ -50,6 +50,13 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         self.analysis_module = analysis_module
         self.defaults_path = self.root / "params" / "experiments" / f"{experiment_id}.yaml"
 
+    @property
+    def required_mapping_keys(self) -> tuple[str, ...]:
+        """本适配器所属实验声明的物理量键；由注册表定义单一持有，适配器不再另存副本。"""
+        from .registry import get_experiment
+
+        return get_experiment(self.id).required_mapping_keys
+
     def defaults(self) -> ParamsT:
         return self.params_type.from_yaml(self.defaults_path)  # type: ignore[return-value]
 
@@ -81,8 +88,7 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         try:
             from ..lockin_compatibility import lockin_preflight
             from ..instrument_config import validate_mapping_usage
-            from .requirements import TYPED_MAPPING_REQUIREMENTS
-            validate_mapping_usage(TYPED_MAPPING_REQUIREMENTS.get(self.id, ()), self.root)
+            validate_mapping_usage(self.required_mapping_keys, self.root)
             params = self._resolved(values)
             return params.validate(self.root) + lockin_preflight(self.id, params.to_external(), self.root)
         except (TypeError, ValueError) as exc:

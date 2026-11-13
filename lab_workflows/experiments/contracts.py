@@ -9,11 +9,11 @@ from typing import Any, Callable, Literal
 
 from ..common import CancellationToken, ProgressCallback
 from .requirements import (
+    ARCHIVED_MAPPING_REQUIREMENTS,
     ARBITRARY_MAPPING_KEYS,
     INFINITE_BURST_MAPPING_KEYS,
     MAPPING_ENDPOINT_FIELDS,
     MAPPING_INSTRUMENTS,
-    TYPED_MAPPING_REQUIREMENTS,
 )
 
 
@@ -80,8 +80,9 @@ class ExperimentDefinition:
     run_history: RunHistory | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        # 归档卡片不加载实现，映射键只能由归档表兜底；在册实验一律自带声明。
         if self.execution_mode == "typed_workflow" and not self.required_mapping_keys:
-            self.required_mapping_keys = TYPED_MAPPING_REQUIREMENTS.get(self.id, ())
+            self.required_mapping_keys = ARCHIVED_MAPPING_REQUIREMENTS.get(self.id, ())
 
     def _mapping_errors(self) -> list[str]:
         if self.execution_mode != "typed_workflow":

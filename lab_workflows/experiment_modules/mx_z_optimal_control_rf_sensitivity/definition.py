@@ -1,6 +1,7 @@
 """Mx Z 最优控制 RF 灵敏度实验定义。"""
 
 from ...experiments.contracts import ExperimentDefinition
+from ...experiments.requirements import OPTIMAL_CONTROL
 from ...experiments.typed import TypedWorkflowAdapter
 from .models import MxZOptimalControlRFParams
 
@@ -31,6 +32,7 @@ DEFINITION = ExperimentDefinition(
     ),
     data_type="Mx_Z_Optimal_Control_RF_Sensitivity",
     required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
+    required_mapping_keys=OPTIMAL_CONTROL,
     execution_mode="typed_workflow",
     acquisition_program=(
         "experiments/Mx_Z_Optimal_Control_RF_Sensitivity.py"

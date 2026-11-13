@@ -69,23 +69,7 @@ STATIC_SENSITIVITY = (
 )
 
 
-TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
-    "coil-drive-characterization": ("Z_magnetic_field", "coil_drive_amplifier", "coil_current_scope"),
-    "t1-calibration": ("X_magnetic_field", "Y_magnetic_field", "Z_magnetic_field", "Probe_laser_power",
-        "Pump_modulation", "Time_sequence", "Temp_Switch", "temperature", "scope_waveform"),
-    "bb-power-scan-burst": ("main_magnetic_field", "Pump_laser_power", "Probe_laser_power", "Pump_modulation",
-        "Time_sequence", "Temp_Switch", "temperature", "scope_waveform"),
-    "bb-duty-scan-burst": ("main_magnetic_field", "Pump_laser_power", "Probe_laser_power",
-        "Pump_modulation", "Time_sequence", "scope_waveform", "Temp_Switch", "temperature"),
-    "z-field-bandwidth": (
-        "main_magnetic_field", "Z_magnetic_field", "Time_sequence_2", "X_magnetic_field", "Y_magnetic_field",
-        "Pump_laser_power", "Probe_laser_power", "Pump_modulation", "Time_sequence", "Temp_Switch", "temperature", "lockin_r",
-    ),
-    "rf-sensitivity-constxy-frequency": (
-        "main_magnetic_field", "Z_magnetic_field", "Time_sequence_2", "X_magnetic_field", "Y_magnetic_field",
-        "X_magnetic_field_AM", "Y_magnetic_field_AM", "Pump_laser_power", "Probe_laser_power", "Pump_modulation",
-        "Time_sequence", "Temp_Switch", "temperature", "lockin_r",
-    ),
+ARCHIVED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "z-aw-waveform-scope-check": (
         "Z_magnetic_field",
         "Time_sequence_2",
@@ -107,44 +91,22 @@ TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
         "scope_waveform",
     ),
     "mx-z-current-coupling-calibration": (*FULL_HF2, "scope_waveform"),
-    "static-sensitivity": STATIC_SENSITIVITY,
     "static-sensitivity-optimize-local": STATIC_SENSITIVITY,
-    "mx-main-field-calibration": FULL_HF2,
     "mx-keithley-6221-main-field-calibration": KEITHLEY_MAIN_FIELD,
     "mx-keithley-6221-optimal-control-rf-sensitivity": KEITHLEY_OPTIMAL_CONTROL,
     "mx-keithley-6221-optimal-control-xyz-balance": KEITHLEY_OPTIMAL_CONTROL_XYZ_BALANCE,
     "mx-keithley-6221-optimal-control-balanced-sensitivity": KEITHLEY_OPTIMAL_CONTROL_BALANCED_SENSITIVITY,
     "mx-main-field-noise-spectrum": FULL_HF2,
-    "mx-main-field-scope-noise-spectrum": SCOPE,
     "mx-xy-residual-field-calibration": SCOPE,
-    "mx-y-rf-power-optimization": FULL_HF2,
-    "mx-y-rf-probe-detuning-optimization": (
-        *(key for key in FULL_HF2 if key not in ("temperature", "Y_magnetic_field")), "probe_laser",
-    ),
-    "mx-y-rf-sensitivity": FULL_HF2,
-    "mx-y-rf-frequency-response": FULL_HF2,
-    "mx-y-optimal-control-rf-frequency-response": OPTIMAL_CONTROL,
     "mx-y-rf-sensitivity-drift": FULL_HF2,
-    "mx-z-field-calibration": FULL_HF2,
     "mx-z-noise-spectrum": FULL_HF2,
-    "mx-z-optimal-control-rf-sensitivity": OPTIMAL_CONTROL,
     "mx-z-optimal-control-xy-rf-sensitivity": OPTIMAL_CONTROL,
     "mx-z-optimal-control-xy-noise-spectrum": OPTIMAL_CONTROL,
     "mx-z-optimal-control-xy-leakage-response": OPTIMAL_CONTROL,
     "mx-z-optimal-control-xy-rf-phase-response": OPTIMAL_CONTROL,
     "mx-z-optimal-control-xyz-balance": OPTIMAL_CONTROL,
     "mx-z-optimal-control-dg4000-bias-xyz-balance": DG4000_BIAS_OPTIMAL_CONTROL,
-    "noise-spectrum-xy": NOISE_SPECTRUM_XY,
-    "noise-spectrum-xy-known-noise": NOISE_SPECTRUM_XY,
-    "noise-spectrum-xy-uncontrolled-probe-am": PROBE_AM_NOISE_SPECTRUM_XY,
-    "noise-spectrum-xy-demod3-r": tuple(key for key in DIRECT_AW if key != "rf_coil"),
-    "photon-shot-noise": ("main_magnetic_field", "Pump_laser_power", "Probe_laser_power", "Temp_Switch", "temperature", "lockin_r"),
-    "projection-noise": SCOPE,
-    "rf-sensitivity-direct-aw-frequency": DIRECT_AW,
-    "rf-sensitivity-aw": RF_SENSITIVITY_DIRECT_AW,
     "rf-sensitivity-aw-r": RF_SENSITIVITY_DIRECT_AW,
-    "t2-calibration": T2,
-    "xy-direct-aw-dc-calibration": DIRECT_AW,
 }
 
 
