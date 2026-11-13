@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Callable, Literal
 
 from ..common import CancellationToken, ProgressCallback
@@ -42,6 +43,14 @@ ExecutionMode = Literal["typed_workflow", "legacy_script"]
 
 
 @dataclass(slots=True)
+class RunHistory:
+    """历史读取契约：run_format 判定原始资格，参数快照入口各实验命名不同故显式声明。"""
+
+    run_format: ModuleType
+    historical_parameters: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+
+
+@dataclass(slots=True)
 class ExperimentDefinition:
     id: str
     title: str
@@ -66,6 +75,7 @@ class ExperimentDefinition:
     derive_runner: DeriveRunner | None = field(default=None, repr=False)
     experiment_runner: ExperimentRunner | None = field(default=None, repr=False)
     analysis_runner: AnalysisRunner | None = field(default=None, repr=False)
+    run_history: RunHistory | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.execution_mode == "typed_workflow" and not self.required_mapping_keys:

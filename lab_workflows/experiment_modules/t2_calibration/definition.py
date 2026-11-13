@@ -1,7 +1,8 @@
 """T2 光学 FID 标定实验定义。"""
 
-from ...experiments.contracts import ExperimentDefinition
+from ...experiments.contracts import ExperimentDefinition, RunHistory
 from ...experiments.typed import TypedWorkflowAdapter
+from . import run_format
 from .models import T2CalibrationParams
 
 
@@ -44,4 +45,5 @@ DEFINITION = ExperimentDefinition(
     preflight_runner=preflight,
     experiment_runner=ADAPTER.run,
     analysis_runner=ADAPTER.analyze,
+    run_history=RunHistory(run_format=run_format, historical_parameters=run_format.historical_parameters),
 )

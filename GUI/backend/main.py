@@ -112,7 +112,6 @@ from lab_workflows.experiment_modules.projection_noise import run_format as proj
 from lab_workflows.experiment_modules.photon_shot_noise import run_format as photon_format
 from lab_workflows.experiment_modules.rf_sensitivity_constxy_frequency import run_format as constxy_format
 from lab_workflows.experiment_modules.t1_calibration import run_format as t1_format
-from lab_workflows.experiment_modules.t2_calibration import run_format as t2_format
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_frequency import run_format as rf_direct_frequency_format
 from lab_workflows.experiment_modules.xy_direct_aw_dc_calibration import run_format as xy_dc_format
 from lab_workflows.experiment_modules.bb_power_scan_burst import run_format as bb_power_format
@@ -121,12 +120,18 @@ from lab_workflows.experiment_modules.coil_drive_characterization import run_for
 from lab_workflows.experiment_modules.z_field_bandwidth import run_format as z_bandwidth_format
 RF_RUN_FORMATS = {rf_aw_format.EXPERIMENT_ID: rf_aw_format, rf_known_noise_format.EXPERIMENT_ID: rf_known_noise_format}
 WORKFLOW_RUN_FORMATS = {item.EXPERIMENT_ID: item for item in (
-    t1_format, t2_format, rf_direct_frequency_format, xy_dc_format,
+    t1_format, rf_direct_frequency_format, xy_dc_format,
     bb_power_format,
     bb_duty_format,
     coil_drive_format,
     z_bandwidth_format, constxy_format, projection_noise_format, photon_format, demod3_r_format, mx_xy_residual_format, mx_main_field_scope_format, rf_control_scale_format, scope_capture_format, z_closed_loop_format, mx_y_rf_power_format, mx_y_rf_frequency_format, mx_y_optimal_frequency_format, mx_y_rf_drift_format, mx_z_optimal_rf_format, mx_z_optimal_xy_rf_format, mx_z_optimal_xy_noise_format, mx_z_optimal_xy_leakage_format, mx_z_optimal_xy_phase_format, mx_z_optimal_xyz_balance_format, mx_z_optimal_dg_bias_format,
 )}
+# 声明了 run_history 的实验由注册表提供资格判定，接入新实验不再改本文件。
+WORKFLOW_RUN_FORMATS.update({
+    definition.id: definition.run_history.run_format
+    for definition in list_experiments()
+    if definition.run_history is not None
+})
 from lab_workflows.experiments.catalog import (
     add_tag,
     apply_parameter_layout,
