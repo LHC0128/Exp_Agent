@@ -123,6 +123,26 @@ def test_auto_depth_above_cap_falls_back_to_cap_depth(rig):
     assert acquirer._snapshot["depth_mode"] == "capped" and acquirer._snapshot["actual_points"] == 10_000
 
 
+def test_capped_depth_accepts_scope_smaller_actual_depth(rig):
+    """上限只是上限：仪器在部分时基下给不出等于上限的深度时，按回读的实际深度采帧。"""
+    _, visa, acquirer = rig
+    visa.auto_points = 100_000
+    acquirer.use_auto_depth(10_000)
+    original = visa.write
+
+    def clamped(command):
+        if command.startswith(":ACQuire:MDEPth ") and not command.endswith("AUTO"):
+            original(f":ACQuire:MDEPth {min(int(command.split()[-1]), 5_000)}")
+            return
+        original(command)
+
+    visa.write = clamped
+    results = acquirer.acquire_all(configuration())
+    assert acquirer._snapshot["depth_mode"] == "capped"
+    assert acquirer._snapshot["actual_points"] == 5_000
+    assert len(results[0].voltage) == 5_000
+
+
 def test_auto_depth_rejects_cap_outside_depth_table_before_any_write(rig):
     _, visa, acquirer = rig
     acquirer.use_auto_depth(12_345)

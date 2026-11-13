@@ -62,9 +62,10 @@ class DHO900Acquisition:
         self._auto_depth_cap: int | None = None
 
     def use_auto_depth(self, max_points: int | None) -> None:
-        """由调用方（实验）选择：存储深度取 AUTO，超过 max_points 时改用该深度；None 恢复严格采样率。
+        """由调用方（实验）选择：存储深度取 AUTO，超过 max_points 时改用该上限深度；None 恢复严格采样率。
 
-        AUTO 下 config.sampling_rate 不参与配置，实际采样率与点数以回读为准并写入快照。
+        AUTO 下 config.sampling_rate 不参与配置，实际采样率与点数以回读为准并写入快照；
+        max_points 是上限而不是精确深度，仪器在部分时基下只给得出更小的深度。
         """
         self._auto_depth_cap = None if max_points is None else _integer(max_points, "最大存储深度", 2, self._maximum_points)
         self._configured = False
@@ -107,15 +108,20 @@ class DHO900Acquisition:
         return points
 
     def _resolve_auto_depth(self, config: AcquisitionConfig, cap: int) -> tuple[int, str]:
-        """AUTO 深度由仪器按时基选定；深度与采样率稳定后换算点数，超过上限则改用上限深度并再核对。"""
+        """深度由仪器按时基选定，cap 只是上限；实际深度以深度与采样率一起稳定的回读为准。
+
+        固件在部分时基下给不出等于上限的深度（真机实测 2 ms/div 请求 100000 点得到 50000 点、
+        100 µs/div 请求 10000 点得到 6250 点、1 s 窗请求 100000 点得到 100000 点），只要回读的
+        实际深度不超过上限就按它采帧，不把上限当精确请求。
+        """
         points = self._points_from_rate(self._stable_depth_state()[1], config.sampling_time)
         if points <= cap:
             return points, "AUTO"
         self._inst.set_memory_depth(cap)
         self._wait(0.1)
         points = self._points_from_rate(self._stable_depth_state()[1], config.sampling_time)
-        if points != cap or self._inst.get_actual_points() != cap:
-            raise ValueError(f"DHO900 未按上限深度 {cap} 点配置：回读 {points} 点")
+        if points > cap:
+            raise ValueError(f"DHO900 实际深度 {points} 点超过上限 {cap} 点")
         return points, "capped"
 
     def _wait_stopped(self, timeout: float) -> None:

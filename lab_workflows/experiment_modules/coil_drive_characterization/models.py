@@ -69,9 +69,10 @@ class CoilDriveCharacterizationParams(ExperimentParams):
         minimum=1e-4, maximum=10, legacy_default=0.01, description="零偏与增益核对每帧的记录窗口；取 50 Hz 工频周期 20 ms 的整数倍可平均掉工频干扰")
     pulse_window_multiple: float = parameter(default=5.0, external_name="PULSE_WINDOW_MULTIPLE", label="脉冲记录窗倍数",
         minimum=5, maximum=100, legacy_default=5.0, description="每个脉冲的记录窗口 = 倍数 × 脉宽；触发居中，下限 5 保证触发后窗口 ≥2.5 倍脉宽")
-    max_memory_depth: int = parameter(default=1_000_000, external_name="MAX_MEMORY_DEPTH", label="最大存储深度", unit="点",
+    max_memory_depth: int = parameter(default=1_000_000, external_name="MAX_MEMORY_DEPTH", label="最大存储深度上限", unit="点",
         options=tuple((n, f"{n:,}") for n in (1_000, 10_000, 100_000, 1_000_000, 5_000_000, 10_000_000)),
-        description="示波器深度为 AUTO，由仪器按时基给出最高采样率；超过此点数时改用此深度。实际采样率与点数随每帧保存")
+        description="示波器深度为 AUTO，由仪器按时基给出最高采样率；超过此点数时改用此上限深度。上限不是精确深度："
+                    "部分时基下仪器只给得出更小的深度，以回读为准。实际采样率与点数随每帧保存")
     area_tolerance: float = parameter(default=0.02, external_name="AREA_TOLERANCE", label="脉冲面积/平台容差",
         minimum=0.001, maximum=0.5, description="离线判定最短可用脉宽；具体历史目录可独立覆盖")
 
