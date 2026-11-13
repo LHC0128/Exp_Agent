@@ -29,8 +29,6 @@ def _legacy_profile(child: str, parent: str) -> str:
 
 
 LEGACY_EXECUTOR_BASES = frozenset({
-    _legacy_edge("noise_spectrum_xy_known_noise.workflow.Workflow", "noise_spectrum_xy.workflow.Workflow"),
-    _legacy_edge("noise_spectrum_xy_probe_am.workflow.Workflow", "noise_spectrum_xy.workflow.Workflow"),
     _legacy_edge("rf_control_scale_sensitivity.analysis.AnalysisWorkflow", _DIRECT_ANALYSIS),
     _legacy_edge("rf_control_scale_sensitivity.workflow.ControlWorkflow", _DIRECT),
     _legacy_edge("rf_control_scale_sensitivity.workflow.Workflow", _DIRECT),
@@ -39,8 +37,6 @@ LEGACY_EXECUTOR_BASES = frozenset({
     _legacy_edge("rf_sensitivity_aw_known_noise.workflow.Workflow", _DIRECT),
 })
 LEGACY_CONSTRUCTOR_WRITES = {
-    _legacy_profile("noise_spectrum_xy_probe_am.workflow.Workflow", "noise_spectrum_xy.workflow.Workflow"):
-        {"outputs": 1},
     _legacy_profile("rf_control_scale_sensitivity.analysis.AnalysisWorkflow", _DIRECT_ANALYSIS):
         {"config": 1, "options": 3},
     _legacy_profile("rf_control_scale_sensitivity.workflow.Workflow", _DIRECT): {"state": 1},
@@ -329,7 +325,8 @@ def analyze():
     assert not _instance_writes(tree, _imports(tree, module.rsplit(".", 1)[0]), module)
 
 
-@pytest.mark.parametrize("filename", ["workflow_stages.py", "analysis_execution.py", "steps/lockin.py"])
+@pytest.mark.parametrize("filename", ["workflow_stages.py", "analysis_execution.py", "steps/lockin.py",
+                                      "steps/noise_xy_scan.py"])
 def test_shared_execution_capabilities_do_not_import_experiments(filename):
     path = ROOT / "lab_workflows" / filename
     tree = ast.parse(path.read_text(encoding="utf-8"))

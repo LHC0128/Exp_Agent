@@ -32,6 +32,87 @@ from lab_workflows.workflow_state import write_state
 from lab_workflows.common import data_root
 
 
+# %% 共享节点
+def execute_shared_nodes(ctx, item):
+    """执行 A01–A13 共享节点；子实验按节点号委托本函数，不继承壳类。
+
+    留在本模块而不是 ``steps/``：节点体依赖本包的 preparation / acquisition /
+    excitation / phase 私有函数，工具与测试也按本模块名打桩。
+    """
+    if item == "A01":
+        ctx.recheck()
+    elif item == "A02":
+        if not ctx.devices:
+            ctx.devices, ctx.connection = preparation.connect_instruments(ctx.mapping)
+    elif item == "A03":
+        ctx.clock_failed = False
+        try:
+            ctx.clock_sources = preparation.synchronize_devices(ctx.devices, ctx.mapping)
+        except BaseException:
+            ctx.clock_failed = True
+            raise
+    elif item == "A04":
+        acquisition.initialize_run_directory(ctx, ctx.data_type)
+        ctx.outputs_started = True
+        configure_initial_outputs(ctx.devices, ctx.params, ctx.mapping, ctx.limits)
+        ctx.outputs.update(Z="OFF", 温控="ON", 共用触发="OFF")
+    elif item == "A05":
+        preparation.configure_temperature(ctx.devices, ctx.params)
+    elif item == "A06":
+        configure_pump(ctx.devices["dg_mod"], ctx.params, ctx.limits)
+        ctx.outputs["Pump"] = "ON"
+    elif item == "A07":
+        configure_sequence_2_trigger(ctx.devices["dg_sweep"], ctx.params, ctx.limits)
+        ctx.outputs["共用触发"] = "ON"
+    elif item == "A08":
+        ctx.calibrated_phase = calibrate_hf2_phase(ctx.devices["hf2"], ctx.devices["dg_comp"],
+            ctx.devices["dg_temp"], ctx.params, ctx.limits)
+        ctx.phase_parameters = ctx.params
+        ctx.demod_mode = "phase"
+        ctx.outputs.update(X="OFF", Y="OFF", 温控="ON")
+    elif item == "A09":
+        configure_xy_sine(ctx.devices["dg_comp"], ctx.params, ctx.limits)
+        ctx.outputs.update(X="OFF", Y="OFF")
+    elif item == "A10":
+        if ctx.demod_mode != "phase":
+            acquisition.restore_demod(ctx.devices, ctx.params, ctx.calibrated_phase)
+            ctx.demod_mode = "phase"
+        # 重试时先恢复校相峰值；扫描可能已经改变了仪器幅度。
+        phase.verify_xy_mode(ctx.devices["dg_comp"], ctx.params)
+        for channel in (1, 2):
+            ctx.devices["dg_comp"].set_output(False, channel=channel)
+            ctx.devices["dg_comp"].set_amplitude(2 * validate_sine_peak(
+                ctx.params.xy_calib_envelope_v, ctx.limits), channel=channel)
+        ctx.xy_result = calibrate_xy_control(ctx.devices["hf2"], ctx.devices["dg_comp"],
+            ctx.devices["dg_temp"], ctx.params, ctx.limits)
+        ctx.outputs.update(X="ON", Y="ON", 温控="ON")
+        if not ctx.xy_result.converged:
+            ctx.states[item] = {"status": "quality_failed", "error": "XY 校相未收敛，禁止扫描；可以调整参数后重试"}
+    elif item == "A11":
+        if not ctx.xy_result or not ctx.xy_result.converged:
+            raise ValueError("XY 校相未通过，禁止配置采集")
+        ctx.daq_settings = acquisition.prepare_daq(ctx.devices, ctx.params, ctx.calibrated_phase)
+        ctx.demod_mode = "daq"
+    elif item == "A12":
+        if ctx.demod_mode != "daq":
+            raise ValueError("解调器已恢复，请重新执行 A11 DAQ 准备")
+        phase.verify_xy_mode(ctx.devices["dg_comp"], ctx.params)
+        verify_lockin_acquisition_mode(ctx.devices["hf2"],
+            demod_index=ctx.params.hf2_demod_idx, requested_rate_hz=ctx.params.hf2_daq_rate,
+            acquisition_rate_hz=ctx.daq_settings[0], time_constant_s=ctx.params.hf2_daq_tc,
+            phase_deg=ctx.calibrated_phase)
+        acquisition.acquire_scan(ctx)
+        ctx.states[item]["artifacts"] = ["experiment_config.yaml", "raw/control_scan_axes.npz",
+            *[str(path.relative_to(ctx.run_dir)).replace("\\", "/")
+                for path in sorted((ctx.run_dir / "raw").glob("waveform_C*.npy"))]]
+        last_on = bool(ctx.axes[1][-1])
+        ctx.outputs.update(X="ON" if last_on else "OFF", Y="ON" if last_on else "OFF", 温控="ON")
+    elif item == "A13":
+        acquisition.restore_demod(ctx.devices, ctx.params, ctx.calibrated_phase)
+        ctx.demod_mode = "phase"
+        ctx.states["A11"] = {"status": "stale", "error": "解调器已恢复；再次扫描需要 DAQ 准备"}
+
+
 class Workflow(NoiseXYScan):
     """一个子进程持有一个设备会话；阶段状态不等同于历史数据。"""
 
@@ -45,11 +126,6 @@ class Workflow(NoiseXYScan):
     experiment_id = "noise-spectrum-xy"
     output_keys = ("X", "Y", "Z", "温控", "Pump", "共用触发")
 
-    def __init__(self, params, *, project_root=None, session_id=None):
-        # 输出键由本实验声明；共享引擎只更新取值。
-        self.outputs = {key: "未知" for key in self.output_keys}
-        super().__init__(params, project_root=project_root, session_id=session_id)
-
     def shutdown_outputs(self):
         return safe_scan_outputs_off(self.devices)
 
@@ -57,78 +133,7 @@ class Workflow(NoiseXYScan):
         acquisition.restore_demod(self.devices, params, self.calibrated_phase)
 
     def _execute_step(self, item):
-        if item == "A01":
-            self.recheck()
-        elif item == "A02":
-            if not self.devices:
-                self.devices, self.connection = preparation.connect_instruments(self.mapping)
-        elif item == "A03":
-            self.clock_failed = False
-            try:
-                self.clock_sources = preparation.synchronize_devices(self.devices, self.mapping)
-            except BaseException:
-                self.clock_failed = True
-                raise
-        elif item == "A04":
-            acquisition.initialize_run_directory(self, self.data_type)
-            self.outputs_started = True
-            configure_initial_outputs(self.devices, self.params, self.mapping, self.limits)
-            self.outputs.update(Z="OFF", 温控="ON", 共用触发="OFF")
-        elif item == "A05":
-            preparation.configure_temperature(self.devices, self.params)
-        elif item == "A06":
-            configure_pump(self.devices["dg_mod"], self.params, self.limits)
-            self.outputs["Pump"] = "ON"
-        elif item == "A07":
-            configure_sequence_2_trigger(self.devices["dg_sweep"], self.params, self.limits)
-            self.outputs["共用触发"] = "ON"
-        elif item == "A08":
-            self.calibrated_phase = calibrate_hf2_phase(self.devices["hf2"], self.devices["dg_comp"],
-                self.devices["dg_temp"], self.params, self.limits)
-            self.phase_parameters = self.params
-            self.demod_mode = "phase"
-            self.outputs.update(X="OFF", Y="OFF", 温控="ON")
-        elif item == "A09":
-            configure_xy_sine(self.devices["dg_comp"], self.params, self.limits)
-            self.outputs.update(X="OFF", Y="OFF")
-        elif item == "A10":
-            if self.demod_mode != "phase":
-                acquisition.restore_demod(self.devices, self.params, self.calibrated_phase)
-                self.demod_mode = "phase"
-            # 重试时先恢复校相峰值；扫描可能已经改变了仪器幅度。
-            phase.verify_xy_mode(self.devices["dg_comp"], self.params)
-            for channel in (1, 2):
-                self.devices["dg_comp"].set_output(False, channel=channel)
-                self.devices["dg_comp"].set_amplitude(2 * validate_sine_peak(
-                    self.params.xy_calib_envelope_v, self.limits), channel=channel)
-            self.xy_result = calibrate_xy_control(self.devices["hf2"], self.devices["dg_comp"],
-                self.devices["dg_temp"], self.params, self.limits)
-            self.outputs.update(X="ON", Y="ON", 温控="ON")
-            if not self.xy_result.converged:
-                self.states[item] = {"status": "quality_failed", "error": "XY 校相未收敛，禁止扫描；可以调整参数后重试"}
-        elif item == "A11":
-            if not self.xy_result or not self.xy_result.converged:
-                raise ValueError("XY 校相未通过，禁止配置采集")
-            self.daq_settings = acquisition.prepare_daq(self.devices, self.params, self.calibrated_phase)
-            self.demod_mode = "daq"
-        elif item == "A12":
-            if self.demod_mode != "daq":
-                raise ValueError("解调器已恢复，请重新执行 A11 DAQ 准备")
-            phase.verify_xy_mode(self.devices["dg_comp"], self.params)
-            verify_lockin_acquisition_mode(self.devices["hf2"],
-                demod_index=self.params.hf2_demod_idx, requested_rate_hz=self.params.hf2_daq_rate,
-                acquisition_rate_hz=self.daq_settings[0], time_constant_s=self.params.hf2_daq_tc,
-                phase_deg=self.calibrated_phase)
-            acquisition.acquire_scan(self)
-            self.states[item]["artifacts"] = ["experiment_config.yaml", "raw/control_scan_axes.npz",
-                *[str(path.relative_to(self.run_dir)).replace("\\", "/")
-                    for path in sorted((self.run_dir / "raw").glob("waveform_C*.npy"))]]
-            last_on = bool(self.axes[1][-1])
-            self.outputs.update(X="ON" if last_on else "OFF", Y="ON" if last_on else "OFF", 温控="ON")
-        elif item == "A13":
-            acquisition.restore_demod(self.devices, self.params, self.calibrated_phase)
-            self.demod_mode = "phase"
-            self.states["A11"] = {"status": "stale", "error": "解调器已恢复；再次扫描需要 DAQ 准备"}
+        return execute_shared_nodes(self, item)
 
 
 # %% 运行入口
