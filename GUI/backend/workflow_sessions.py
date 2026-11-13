@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import Field, StrictInt, model_validator
+from lab_workflows.workflow_stages import initial_states
 from lab_workflows.workflow_state import read_state
 from lab_workflows.setups import bound_setup
 from .schemas import StrictModel
@@ -170,7 +171,7 @@ class WorkflowSessionService:
             session_id = uuid4().hex
             queue = Queue()
             state = dict(session_id=session_id, job_id="", revision=0, status="queued",
-                parameters=params.to_external(), steps=self.stages.initial_states(self.stages.ACQUISITION),
+                parameters=params.to_external(), steps=initial_states(self.stages.ACQUISITION),
                 pending_request=None, error=None)
             item = self.sessions[session_id] = {"state": state, "queue": queue}
 

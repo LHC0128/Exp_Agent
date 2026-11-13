@@ -1,7 +1,7 @@
 """线圈驱动特性的唯一执行、编辑归属和失效清单。"""
 from dataclasses import asdict
 
-from lab_workflows.workflow_stages import DependencyRules, Stage, initial_states  # noqa: F401  会话服务经清单模块读取
+from lab_workflows.workflow_stages import DependencyRules, Stage
 
 from .run_format import EXPERIMENT_ID
 
