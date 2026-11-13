@@ -849,12 +849,28 @@ class DG4000Instrument:
 
     def set_pulse_width(self, width: float,
                         channel: Optional[int] = None) -> None:
-        """设置脉冲宽度 (s)."""
+        """设置脉冲宽度 (s).
+
+        DG4162 真机行为（固件 00.01.14 实测）：脉冲边沿时间上限约为周期的 1/512
+        （50 Hz→39.06 µs、20 kHz→97.66 ns），最小脉宽约为边沿的 1.6 倍（50 Hz→62.5 µs、
+        20 kHz→156 ns）。请求小于该下限的脉宽会被静默钳位，错误队列仍是 0，回读才知道
+        真实值；要写更短的脉宽必须先提高重复频率。设置后请用 get_pulse_width() 核对。
+        """
         self.write(f":SOURce{self._ch(channel)}:PULSe:WIDTh {width:e}")
 
     def get_pulse_width(self, channel: Optional[int] = None) -> float:
         return self.query_float(
             f":SOURce{self._ch(channel)}:PULSe:WIDTh?")
+
+    def get_pulse_leading(self, channel: Optional[int] = None) -> float:
+        """回读脉冲上升沿时间 (s)。"""
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:PULSe:TRANsition:LEADing?")
+
+    def get_pulse_trailing(self, channel: Optional[int] = None) -> float:
+        """回读脉冲下降沿时间 (s)。"""
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:PULSe:TRANsition:TRAiling?")
 
     def set_pulse_dcycle(self, percent: float,
                          channel: Optional[int] = None) -> None:
