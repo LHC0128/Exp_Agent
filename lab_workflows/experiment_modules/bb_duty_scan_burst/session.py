@@ -4,5 +4,9 @@ from lab_workflows.staged_workflow import serve_session
 from .models import BBDutyScanBurstParams
 from .workflow import Workflow
 
-if __name__ == "__main__":
+def main() -> None:
     serve_session(Workflow, BBDutyScanBurstParams)
+
+
+if __name__ == "__main__":
+    main()
