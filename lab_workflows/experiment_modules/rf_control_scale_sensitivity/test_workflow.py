@@ -272,7 +272,7 @@ def test_missing_dependencies_and_rerun_preserve_raw(scale_rig, monkeypatch):
                      control_scales=[.9, 1.], rf_amp_points=5, slope_fit_points=5,
                      scan_rf_phase=False, noise_rate=1000, noise_duration=0.01,
                      scan_point_duration_s=0.001)
-    monkeypatch.setattr(workflow.shared.SingleControlWorkflow, "publish", lambda *_: None)
+    monkeypatch.setattr(workflow.DirectAWControlRun, "publish", lambda *_: None)
     factory = workflow.ControlWorkflow.create_control_run.__func__
     created = []
 
@@ -349,6 +349,68 @@ def test_incomplete_phase_return_is_rejected_before_acquisition():
         states={}, save=lambda: None, _execute_step=lambda item: None)
     with pytest.raises(phase.CalibrationQualityError, match="校相未完成"):
         acquisition.calibrate_point(point)
+    assert point.state["phase_calibration_status"] == "failed"
+
+
+def test_shared_engine_reparent_keeps_run_state_and_output_keys(scale_rig):
+    """直接继承共享执行引擎后，运行目录初始键集与输出显示键集逐项不变。"""
+    from ...steps.direct_aw_control import DirectAWControlRun
+    from ...steps.direct_aw_state import initial_state
+    from ..rf_sensitivity_direct_aw import workflow as direct
+    assert workflow.Workflow.__bases__ == (DirectAWControlRun,)
+    assert workflow.ControlWorkflow.__bases__ == (DirectAWControlRun,)
+    assert not issubclass(workflow.Workflow, direct.SingleControlWorkflow)
+    assert not issubclass(workflow.ControlWorkflow, direct.SingleControlWorkflow)
+    assert {"params_type", "identity", "finish_id", "run_id", "stages"} <= set(workflow.Workflow.__dict__)
+    assert {"params_type", "identity", "finish_id", "run_id", "stages", "create_control_run"
+            } <= set(workflow.ControlWorkflow.__dict__)
+    assert (workflow.Workflow.finish_id, workflow.Workflow.run_id) == ("A16", "A15")
+    ctx = workflow.Workflow(scale_rig.params, project_root=scale_rig.tmp_path)
+    assert list(ctx.state) == [*initial_state(scale_rig.params, run_format),
+        "raw_format_version", "phase_calibration_scope"]
+    assert list(ctx.outputs) == ["X", "Y", "Z", "温控", "Pump", "共用触发"]
+    assert set(ctx.outputs.values()) == {"未知"}
+    assert list(ctx.snapshot()) == ["session_id", "revision", "status", "parameters", "steps", "current_step",
+        "run_id", "outputs", "output_source", "safety_shutdown", "clock_sources", "demod_mode",
+        "xy_phase_calibration", "rf_phase_calibration", "demod_phase_deg", "daq_settings"]
+
+
+def test_run_id_completion_keeps_completed_state_under_shared_engine(scale_rig):
+    """本实验阶段表没有 A08–A12，父类的 A09 失效链在此为空操作；A15 完成后仍为 completed。"""
+    from ...steps.direct_aw_control import DirectAWControlRun
+    assert "after_step" not in workflow.Workflow.__dict__
+    assert workflow.Workflow.after_step is DirectAWControlRun.after_step
+    assert not {"A08", "A09", "A10", "A11", "A12"} & {stage.id for stage in stages.ACQUISITION}
+    scale_rig.params = replace(scale_rig.params, control_waveform_files=scale_rig.params.control_waveform_files[:1],
+        control_scales=[1.], rf_amp_points=5, scan_rf_phase=False)
+    ctx = prepared(scale_rig)
+    try:
+        ctx.execute(["A13", "A15"])
+        assert ctx.states["A13"]["status"] == "completed"
+        assert ctx.states["A15"]["status"] == "completed"
+        assert ctx.state["completion_status"] == "completed"
+        assert ctx.state["phase_calibration_status"] == "completed"
+    finally:
+        ctx.finish()
+    assert_shutdown(scale_rig)
+
+
+def test_a11_value_error_is_wrapped_inside_point_calibration():
+    """A11 拟合失败在逐点校相内包成 CalibrationQualityError，引擎侧不需要父类的 A11 特例。"""
+    from types import SimpleNamespace
+    from ...steps.direct_aw_control import DirectAWControlRun
+    assert workflow.Workflow._is_quality_failure is DirectAWControlRun._is_quality_failure
+    assert workflow.Workflow.quality_errors == (phase.CalibrationQualityError,)
+    def execute(item):
+        if item == "A11":
+            raise ValueError("模拟 A11 拟合失败")
+    point = SimpleNamespace(state={"phase_calibration_status": "not_started", "phase_calibration_steps": {},
+        "control_scale": 1.0},
+        params=RFControlScaleParams(arb_waveform_file="ControlA/waveforms/optimal_control_waveform.csv"),
+        states={}, save=lambda: None, _execute_step=execute)
+    with pytest.raises(phase.CalibrationQualityError, match="模拟 A11 拟合失败"):
+        acquisition.calibrate_point(point)
+    assert point.state["phase_calibration_steps"]["A11"]["status"] == "quality_failed"
     assert point.state["phase_calibration_status"] == "failed"
 
 
