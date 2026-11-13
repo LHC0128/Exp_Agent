@@ -102,6 +102,43 @@ def test_rate_mismatch_stops_and_reports_requested_and_actual(rig):
     assert not acquirer._configured
 
 
+def test_auto_depth_uses_scope_choice_and_records_actual_rate(rig):
+    _, visa, acquirer = rig
+    visa.auto_points = 10_000
+    acquirer.use_auto_depth(100_000)
+    results = acquirer.acquire_all(configuration())
+    assert ":ACQuire:MDEPth AUTO" in visa.writes
+    snapshot = results[0].config_snapshot
+    assert snapshot["sample_rate_policy"] == "auto_depth" and snapshot["depth_mode"] == "AUTO"
+    assert snapshot["actual_points"] == 10_000 and snapshot["actual_sample_rate_sa_s"] == 10_000
+    assert len(results[0].voltage) == 10_000
+
+
+def test_auto_depth_above_cap_falls_back_to_cap_depth(rig):
+    _, visa, acquirer = rig
+    visa.auto_points = 100_000
+    acquirer.use_auto_depth(10_000)
+    acquirer.apply_config(configuration())
+    assert visa.writes.count(":ACQuire:MDEPth AUTO") == 1 and ":ACQuire:MDEPth 10000" in visa.writes
+    assert acquirer._snapshot["depth_mode"] == "capped" and acquirer._snapshot["actual_points"] == 10_000
+
+
+def test_auto_depth_rejects_cap_outside_depth_table_before_any_write(rig):
+    _, visa, acquirer = rig
+    acquirer.use_auto_depth(12_345)
+    with pytest.raises(ValueError, match="最大存储深度"):
+        acquirer.apply_config(configuration())
+    assert visa.writes == []
+
+
+def test_auto_depth_rejects_non_integer_point_readback(rig):
+    _, visa, acquirer = rig
+    visa.rate_override = 1234.5
+    acquirer.use_auto_depth(100_000)
+    with pytest.raises(ValueError, match="不是整数点数"):
+        acquirer.apply_config(configuration())
+
+
 def test_ascii_waveform_preserves_voltage_and_real_time_axis_across_chunks(rig):
     _, visa, acquirer = rig
     visa.depth = 300
@@ -296,3 +333,11 @@ def test_acquire_all_cancellation_preserves_cause_and_stops(rig):
         acquirer.acquire_all(configuration())
     assert visa.writes[-1] == ":STOP"
     assert ":WAVeform:DATA?" not in visa.queries
+
+
+def test_auto_depth_can_be_switched_back_to_strict_rate(rig):
+    _, visa, acquirer = rig
+    acquirer.use_auto_depth(100_000)
+    acquirer.use_auto_depth(None)
+    acquirer.apply_config(configuration())
+    assert acquirer._snapshot["sample_rate_policy"] == "strict" and acquirer._snapshot["depth_mode"] == "fixed"

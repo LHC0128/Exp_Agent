@@ -1157,3 +1157,377 @@ targets:
         port_id: rf-demod1-input
       signal_type: internal
       label: 内部回采 → RF 索引 1
+  coil-drive-characterization:
+    nodes:
+    - device:
+        id: device-a1843aae-9ba0-4603-8265-9f5cb0b2e4ad
+        name: 王湾z
+        model: DG4000
+        ports:
+        - id: port-ba9f40f9-e573-4684-a251-a0409daee363
+          name: CH1 Output
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-ed2a6ff1-c36a-4120-b58b-6c484c507422
+          name: CH1 Sync
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-b14d2b46-dd77-4b86-af86-b3651d432f44
+          name: CH1 External
+          group: ch1
+          signal_type: electrical
+          connector: BNC
+          purpose: 外部触发 / 门控 / AM 输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: port-c908b869-3b36-4496-9392-24431af169c9
+          name: CH2 Output
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 通道信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-3cf49c83-2bd7-4bf1-b35e-b37b7a612f02
+          name: CH2 Sync
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步信号输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: port-79c3aa19-e762-418e-8f57-474ab676c77a
+          name: CH2 External
+          group: ch2
+          signal_type: electrical
+          connector: BNC
+          purpose: 外部触发 / 门控 / AM 输入
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: port-1ca57427-68b0-46c7-8a32-79edd43dd102
+          name: 10 MHz
+          group: 参考时钟
+          signal_type: electrical
+          connector: BNC
+          purpose: 共用 10 MHz 参考时钟接口
+          direction: switchable
+          modes:
+          - id: mode-5dbf66c5-347e-4704-bf5a-0a529df9bac1
+            name: 内部参考时钟
+            direction: out
+          - id: mode-c48eaf56-e892-4e3b-8f3c-b69b38e0c16c
+            name: 外部参考时钟
+            direction: in
+          selected_mode: mode-c48eaf56-e892-4e3b-8f3c-b69b38e0c16c
+        device_library_id: dg4e261300744
+      x: 0
+      y: 0
+      follow_mapping:
+      - Z_magnetic_field
+      port_directions: {}
+      port_usage:
+        port-ba9f40f9-e573-4684-a251-a0409daee363: used
+        port-ed2a6ff1-c36a-4120-b58b-6c484c507422: used
+        port-b14d2b46-dd77-4b86-af86-b3651d432f44: unused
+        port-c908b869-3b36-4496-9392-24431af169c9: unused
+        port-3cf49c83-2bd7-4bf1-b35e-b37b7a612f02: unused
+        port-79c3aa19-e762-418e-8f57-474ab676c77a: unused
+        port-1ca57427-68b0-46c7-8a32-79edd43dd102: unused
+      internal_ports: []
+      settings: []
+    - device:
+        id: coil-amp
+        name: Aigtek 1200B 线圈驱动功放
+        model: 1200B
+        ports:
+        - id: in
+          name: Input
+          group: ''
+          signal_type: electrical
+          connector: BNC
+          purpose: ''
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: out-pos
+          name: Output +
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: DC 耦合输出
+          direction: out
+          modes: []
+          selected_mode: null
+        - id: out-gnd
+          name: Output − / GND
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 返回地，与机壳/大地相连
+          direction: out
+          modes: []
+          selected_mode: null
+        device_library_id: aigtek_1200b_cp210x_0001
+      x: 480
+      y: 0
+      follow_mapping:
+      - coil_drive_amplifier
+      port_directions: {}
+      port_usage:
+        in: used
+        out-pos: used
+        out-gnd: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: coil-r-damp
+        name: 阻尼电阻
+        model: 电阻
+        ports:
+        - id: a
+          name: A（功放侧）
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 接功放 Output +
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: b
+          name: B（线圈侧）
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 接 Z 方向线圈
+          direction: out
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 960
+      y: 0
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        a: used
+        b: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: coil-z
+        name: Z 方向线圈
+        model: 线圈
+        ports:
+        - id: '1'
+          name: 端 1
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 接阻尼电阻
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: '2'
+          name: 端 2
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 接采样电阻采样点
+          direction: out
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 960
+      y: 240
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        '1': used
+        '2': used
+      internal_ports: []
+      settings: []
+    - device:
+        id: coil-r-sense
+        name: 采样电阻
+        model: 电阻
+        ports:
+        - id: a
+          name: A（采样点）
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 线圈与采样电阻之间；接示波器探头
+          direction: inout
+          modes: []
+          selected_mode: null
+        - id: b
+          name: B（返回地侧）
+          group: ''
+          signal_type: electrical
+          connector: ''
+          purpose: 接功放返回地；接示波器地夹
+          direction: inout
+          modes: []
+          selected_mode: null
+        device_library_id: null
+      x: 960
+      y: 480
+      follow_mapping: []
+      port_directions: {}
+      port_usage:
+        a: used
+        b: used
+      internal_ports: []
+      settings: []
+    - device:
+        id: coil-scope
+        name: DHO900 线圈电流示波器
+        model: DHO900
+        ports:
+        - id: ch1
+          name: CH1
+          group: ''
+          signal_type: electrical
+          connector: BNC
+          purpose: ''
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: ch2-tip
+          name: CH2 探头
+          group: ''
+          signal_type: electrical
+          connector: BNC
+          purpose: 采样电阻电压 I = V / R_sense
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: ch2-gnd
+          name: CH2 地夹
+          group: ''
+          signal_type: electrical
+          connector: BNC
+          purpose: 接返回地侧，不跨接线圈
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: ch3
+          name: CH3
+          group: ''
+          signal_type: electrical
+          connector: BNC
+          purpose: 同步上升沿触发
+          direction: in
+          modes: []
+          selected_mode: null
+        - id: ch4
+          name: CH4
+          group: ''
+          signal_type: electrical
+          connector: BNC
+          purpose: ''
+          direction: in
+          modes: []
+          selected_mode: null
+        device_library_id: rigol_dho900_192_168_124_21
+      x: 480
+      y: 480
+      follow_mapping:
+      - coil_current_scope
+      port_directions: {}
+      port_usage:
+        ch1: unused
+        ch2-tip: used
+        ch2-gnd: used
+        ch3: used
+        ch4: unused
+      internal_ports: []
+      settings: []
+    edges:
+    - id: coil-drive
+      source:
+        device_id: device-a1843aae-9ba0-4603-8265-9f5cb0b2e4ad
+        port_id: port-ba9f40f9-e573-4684-a251-a0409daee363
+      target:
+        device_id: coil-amp
+        port_id: in
+      signal_type: electrical
+      label: Z 驱动
+      connector: BNC
+    - id: coil-sync
+      source:
+        device_id: device-a1843aae-9ba0-4603-8265-9f5cb0b2e4ad
+        port_id: port-ed2a6ff1-c36a-4120-b58b-6c484c507422
+      target:
+        device_id: coil-scope
+        port_id: ch3
+      signal_type: electrical
+      label: 同步触发
+      connector: BNC
+    - id: coil-out
+      source:
+        device_id: coil-amp
+        port_id: out-pos
+      target:
+        device_id: coil-r-damp
+        port_id: a
+      signal_type: electrical
+      label: 功放输出 +
+    - id: coil-damp
+      source:
+        device_id: coil-r-damp
+        port_id: b
+      target:
+        device_id: coil-z
+        port_id: '1'
+      signal_type: electrical
+      label: 线圈驱动
+    - id: coil-return
+      source:
+        device_id: coil-z
+        port_id: '2'
+      target:
+        device_id: coil-r-sense
+        port_id: a
+      signal_type: electrical
+      label: 线圈电流
+    - id: coil-ground
+      source:
+        device_id: coil-amp
+        port_id: out-gnd
+      target:
+        device_id: coil-r-sense
+        port_id: b
+      signal_type: electrical
+      label: 返回地
+    - id: coil-probe
+      source:
+        device_id: coil-r-sense
+        port_id: a
+      target:
+        device_id: coil-scope
+        port_id: ch2-tip
+      signal_type: electrical
+      label: 采样电压
+    - id: coil-clip
+      source:
+        device_id: coil-r-sense
+        port_id: b
+      target:
+        device_id: coil-scope
+        port_id: ch2-gnd
+      signal_type: electrical
+      label: 探头地

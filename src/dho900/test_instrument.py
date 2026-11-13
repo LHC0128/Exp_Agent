@@ -19,6 +19,8 @@ class FakeVisa:
         self.closed = False
         self.identity = "RIGOL TECHNOLOGIES,DHO924S,FAKE0001,00.01.03"
         self.depth = 1000
+        self.depth_auto = False
+        self.auto_points = 100_000  # AUTO 深度下假仪器自选的点数
         self.scale = 0.1
         self.delay = 0.0
         self.rate_override = None
@@ -50,7 +52,8 @@ class FakeVisa:
         elif command.startswith(":CHANnel") and ":DISPlay " in command:
             self.enabled[int(command[8])] = command.endswith(" ON")
         elif command.startswith(":ACQuire:MDEPth "):
-            self.depth = int(command.split()[-1])
+            self.depth_auto = command.split()[-1] == "AUTO"
+            self.depth = self.auto_points if self.depth_auto else int(command.split()[-1])
         elif command.startswith(":TIMebase:MAIN:SCALe "):
             self.scale = float(command.split()[-1])
         elif command.startswith(":TIMebase:MAIN:OFFSet "):
@@ -85,7 +88,7 @@ class FakeVisa:
         if command == ":ACQuire:SRATe?":
             return str(self.rate_override if self.rate_override is not None else self.depth / (self.scale * 10))
         if command == ":ACQuire:MDEPth?":
-            return str(self.depth)
+            return "AUTO" if self.depth_auto else str(self.depth)
         if command == ":TIMebase:MAIN:SCALe?":
             return str(self.scale)
         if command == ":TIMebase:MAIN:OFFSet?":

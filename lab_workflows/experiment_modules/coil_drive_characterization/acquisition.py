@@ -12,7 +12,7 @@ import numpy as np
 from ...common import load_safety_limits, validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from . import processing
-from .preparation import (VERTICAL_HALF_DIVISIONS, ZERO_WINDOW_S, SafetyAbort, capture_config, current_limit, plan,
+from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, capture_config, current_limit, plan,
                           scale_for, set_dc, sleep)
 from .run_format import SOURCE_KEY
 
@@ -63,7 +63,7 @@ def measure_zero_and_gain(ctx):
     set_dc(ctx, 0.0)
     ctx.devices["sg"].set_sync_state(True)
     ctx.outputs["Z 通道"] = "DC 0 V + ON，同步 ON"
-    config = capture_config(p, ZERO_WINDOW_S, 0.01, trigger_mode="AUTO")
+    config = capture_config(p, p.zero_window_s, 0.01, trigger_mode="AUTO")
     means = {"zero_off": [], "zero_on": []}
     noise = []
     total, started = 2 * p.zero_frames + 1, time.monotonic()
@@ -83,7 +83,7 @@ def measure_zero_and_gain(ctx):
     drive = plan(p)["gain_check_drive_v"]
     set_dc(ctx, drive)
     sleep(p.settle_s)
-    gain_config = capture_config(p, ZERO_WINDOW_S, scale_for(p.gain_check_current_ma * 1e-3 * p.sense_resistor_ohm),
+    gain_config = capture_config(p, p.zero_window_s, scale_for(p.gain_check_current_ma * 1e-3 * p.sense_resistor_ohm),
                                  trigger_mode="AUTO")
     try:
         _, sense = capture(ctx, "gain_check", gain_config, {"kind": "gain_check", "drive_v": drive})
@@ -143,7 +143,7 @@ def measure_steps(ctx):
             sg.setup_pulse(p.pulse_repetition_hz, drive, drive / 2.0, width=width)
             ctx.outputs["Z 通道"] = f"脉冲 0→{drive:.4g} V，宽 {width * 1e6:g} µs"
             sleep(p.settle_s)
-            config = capture_config(p, 5.0 * width, ctx.current_scale, max_points=100_000)
+            config = capture_config(p, p.pulse_window_multiple * width, ctx.current_scale)
             capture(ctx, f"pulse_{index:02d}", config, {"kind": "pulse", "width_s": width, "drive_v": drive})
             _progress("A05", f"脉宽 {width * 1e6:g} µs", index + 1, len(widths), started)
     finally:

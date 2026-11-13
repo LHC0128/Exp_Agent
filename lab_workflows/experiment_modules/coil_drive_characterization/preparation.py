@@ -15,9 +15,7 @@ from ...steps import (DGChannelShutdown, DisconnectTarget, ShutdownAction, run_s
                       synchronize_connected_clocks)
 from .run_format import AMPLIFIER_KEY, CURRENT_LIMIT_KEY, REQUIRED_MAPPING_KEYS, SCOPE_KEY, SOURCE_KEY
 
-MEMORY_DEPTHS = (1_000, 10_000, 100_000, 1_000_000)
 VERTICAL_HALF_DIVISIONS = 4.0
-ZERO_WINDOW_S = 0.01
 
 
 class SafetyAbort(RuntimeError):
@@ -55,15 +53,12 @@ def scale_for(peak_v):
     return min(10.0, max(0.0005, nice_up(max(peak_v, 1e-4) * 1.25 / VERTICAL_HALF_DIVISIONS)))
 
 
-def capture_config(p, window_s, current_scale, *, trigger_mode="NORMal", max_points=10_000):
-    """十格主时基取 1-2-5 序列；点数取深度表内不超采样率上限的最大值。"""
+def capture_config(p, window_s, current_scale, *, trigger_mode="NORMal"):
+    """十格主时基取 1-2-5 序列；存储深度 AUTO，由示波器给出采样率，点数不超过 max_memory_depth。"""
     duration = nice_up(window_s / 10.0) * 10.0
-    allowed = [n for n in MEMORY_DEPTHS if n <= max_points and n / duration <= p.max_sample_rate_sa_s]
-    if not allowed:
-        raise ValueError(f"{duration:g} s 记录窗在采样率上限 {p.max_sample_rate_sa_s:g} Sa/s 下不足 1000 点")
-    points = max(allowed)
     return AcquisitionConfig(
-        sampling_rate=points / duration, sampling_time=duration, memory_management=None, acquire_delay=0.0,
+        sampling_rate=p.max_memory_depth / duration,  # AUTO 深度下仅作占位，实际采样率由示波器回读
+        sampling_time=duration, memory_management=None, acquire_delay=0.0,
         channels=[ChannelConfig(p.scope_current_channel, enabled=True, scale=current_scale, coupling="DC",
                                 impedance="ONEMeg", probe=1),
                   ChannelConfig(p.scope_sync_channel, enabled=True, scale=p.sync_scale_v_div, coupling="DC",
@@ -111,12 +106,12 @@ def preflight(params, root):
                 (params.pulse_current_ma * 1e-3) ** 2 * max(params.pulse_widths_s) * params.pulse_repetition_hz * resistor)
     if power > params.resistor_rated_w / 2:
         raise ValueError(f"电阻平均功耗 {power:.3g} W 超过额定功率 {params.resistor_rated_w:g} W 的一半")
-    # 记录窗/采样率在连接前就能判定，避免测到一半才拒绝。
-    capture_config(params, ZERO_WINDOW_S, 1.0, trigger_mode="AUTO")
+    # 记录窗在连接前就能判定，避免测到一半才拒绝。
+    capture_config(params, params.zero_window_s, 1.0, trigger_mode="AUTO")
     for frequency in params.frequencies():
         capture_config(params, params.sine_cycles / frequency, 1.0)
     for width in params.pulse_widths_s:
-        capture_config(params, 5.0 * width, 1.0, max_points=100_000)
+        capture_config(params, params.pulse_window_multiple * width, 1.0)
     return params, mapping
 
 
@@ -134,7 +129,9 @@ def connect(ctx):
     d["sg"] = session.connect("sg", f"{m[SOURCE_KEY]['resource']}#{m[SOURCE_KEY]['channel']}",
                               lambda: create_signal_generator(m[SOURCE_KEY]))
     d["scope"] = session.connect("scope", str(m[SCOPE_KEY]["resource"]), lambda: create_oscilloscope(m[SCOPE_KEY]))
-    d["acquirer"] = session.bind("acquirer", create_scope_acquisition(d["scope"], check_cancelled=check_cancelled))
+    acquirer = create_scope_acquisition(d["scope"], check_cancelled=check_cancelled)
+    acquirer.use_auto_depth(ctx.params.max_memory_depth)  # 存储深度 AUTO，点数上限由本实验参数给定
+    d["acquirer"] = session.bind("acquirer", acquirer)
     amp = m[AMPLIFIER_KEY]
     d["amp"] = session.connect("amp", str(amp["resource"]), lambda: Aigtek1200BInstrument(
         amp["resource"], serial_number=str((amp.get("connection") or {}).get("serial_number", "0001")),

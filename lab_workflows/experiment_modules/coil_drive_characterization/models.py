@@ -12,7 +12,15 @@ from ...experiment_params import ExperimentParams, parameter
 
 @dataclass
 class CoilDriveCharacterizationParams(ExperimentParams):
-    schema_version: ClassVar[int] = 1
+    schema_version: ClassVar[int] = 2
+
+    @classmethod
+    def migrate_external(cls, values, schema_version):
+        """v1 的 MAX_SAMPLE_RATE_SA_S 已由 AUTO 存储深度取代；新增的记录窗参数取默认值。"""
+        migrated = super().migrate_external(values, schema_version)
+        if schema_version < 2:
+            migrated.pop("MAX_SAMPLE_RATE_SA_S", None)
+        return migrated
 
     run_tag: str = parameter(default="coil_drive", external_name="RUN_TAG", label="运行标签", group="basic")
     amplifier_gain_db: float = parameter(default=20.0, external_name="AMPLIFIER_GAIN_DB", label="功放面板增益", unit="dB",
@@ -54,8 +62,13 @@ class CoilDriveCharacterizationParams(ExperimentParams):
     sync_trigger_level_v: float = parameter(default=1.0, external_name="SYNC_TRIGGER_LEVEL_V", label="同步触发电平", unit="V")
     sync_scale_v_div: float = parameter(default=2.0, external_name="SYNC_SCALE_V_DIV", label="同步通道垂直档位",
         unit="V/div", minimum=0.0005, maximum=10)
-    max_sample_rate_sa_s: float = parameter(default=250e6, external_name="MAX_SAMPLE_RATE_SA_S", label="采样率上限",
-        unit="Sa/s", minimum=1e3, maximum=1.25e9)
+    zero_window_s: float = parameter(default=0.02, external_name="ZERO_WINDOW_S", label="零偏/增益采样时间", unit="s",
+        minimum=1e-4, maximum=10, legacy_default=0.01, description="零偏与增益核对每帧的记录窗口；取 50 Hz 工频周期 20 ms 的整数倍可平均掉工频干扰")
+    pulse_window_multiple: float = parameter(default=5.0, external_name="PULSE_WINDOW_MULTIPLE", label="脉冲记录窗倍数",
+        minimum=5, maximum=100, legacy_default=5.0, description="每个脉冲的记录窗口 = 倍数 × 脉宽；触发居中，下限 5 保证触发后窗口 ≥2.5 倍脉宽")
+    max_memory_depth: int = parameter(default=1_000_000, external_name="MAX_MEMORY_DEPTH", label="最大存储深度", unit="点",
+        options=tuple((n, f"{n:,}") for n in (1_000, 10_000, 100_000, 1_000_000, 5_000_000, 10_000_000)),
+        description="示波器深度为 AUTO，由仪器按时基给出最高采样率；超过此点数时改用此深度。实际采样率与点数随每帧保存")
     area_tolerance: float = parameter(default=0.02, external_name="AREA_TOLERANCE", label="脉冲面积/平台容差",
         minimum=0.001, maximum=0.5, description="离线判定最短可用脉宽；具体历史目录可独立覆盖")
 

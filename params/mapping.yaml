@@ -176,7 +176,7 @@ mapping:
     instrument: power_amplifier
     device_id: aigtek_1200b_cp210x_0001
     label: 线圈驱动功放
-    description: Z 通道输出经 Aigtek 1200B 放大后驱动 14 匝线圈；面板设置增益与 1 MΩ 输入阻抗
+    description: Z 通道输出经 Aigtek 1200B 放大后驱动 Z 方向线圈；面板设置增益与 1 MΩ 输入阻抗
   coil_current_scope:
     instrument: oscilloscope
     device_id: rigol_dho900_192_168_124_21

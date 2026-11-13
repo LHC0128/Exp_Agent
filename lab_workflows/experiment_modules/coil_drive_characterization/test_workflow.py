@@ -101,12 +101,19 @@ class Rig:
             def trigger_stop(self): rig.events.append(("scope_stop",))
 
         class Acquirer:
+            depth_cap = None
+
+            def use_auto_depth(self, max_points):
+                self.depth_cap = max_points
+
             def acquire_all(self, config):
                 rig.reads += 1
                 if rig.cancel_at is not None and rig.reads >= rig.cancel_at:
                     raise WorkflowCancelled("模拟取消")
-                n = round(config.sampling_rate * config.sampling_time)
-                t = (np.arange(n) - n / 2) / config.sampling_rate
+                assert self.depth_cap == 1_000_000  # 实验把最大存储深度参数交给采集器
+                n = 10_000  # 假示波器的 AUTO 点数
+                rate = n / config.sampling_time
+                t = (np.arange(n) - n / 2) / rate
                 channels = {c.number: c for c in config.channels}
                 sense = np.clip(rig.current(t) * 10.0 + np.random.default_rng(rig.reads).normal(0, 1e-5, n),
                                 -4 * channels[2].scale, 4 * channels[2].scale)

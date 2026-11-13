@@ -44,7 +44,7 @@ safety_limits:
     max: 0.3
     ramp_rate: null
     output_off_on_error: true
-    description: "Z 通道经 Aigtek 1200B 驱动 14 匝线圈的实际电流（10 Ω 采样电阻测得），单位 A；两只 10 Ω 电阻额定 ≥2 W"
+    description: "Z 通道经 Aigtek 1200B 驱动 Z 方向线圈的实际电流（10 Ω 采样电阻测得），单位 A；两只 10 Ω 电阻额定 ≥2 W"
 
   Time_sequence_2:
     min: -20.0

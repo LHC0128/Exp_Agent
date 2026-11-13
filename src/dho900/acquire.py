@@ -55,6 +55,15 @@ class DHO900Acquisition:
                                 _integer(maximum_points, "采集点数预算", 1, 50_000_000))
         self._snapshot: dict = {}
         self._configured = False
+        self._auto_depth_cap: int | None = None
+
+    def use_auto_depth(self, max_points: int | None) -> None:
+        """由调用方（实验）选择：存储深度取 AUTO，超过 max_points 时改用该深度；None 恢复严格采样率。
+
+        AUTO 下 config.sampling_rate 不参与配置，实际采样率与点数以回读为准并写入快照。
+        """
+        self._auto_depth_cap = None if max_points is None else _integer(max_points, "最大存储深度", 2, self._maximum_points)
+        self._configured = False
 
     def _wait(self, seconds: float) -> None:
         deadline = time.monotonic() + seconds
@@ -70,6 +79,36 @@ class DHO900Acquisition:
         self._inst.check_errors()
         if self._inst.get_trigger_mode() != "SINGle":
             raise ValueError("DHO900 未接受单次布防，拒绝读取旧帧")
+
+    def _stable_sampling_rate(self, attempts: int = 20, interval_s: float = 0.1) -> float:
+        """连续两次回读一致才认定仪器已更新完采样率。"""
+        previous = self._inst.get_sampling_rate()
+        for _ in range(attempts):
+            self._wait(interval_s)
+            current = self._inst.get_sampling_rate()
+            if current == previous:
+                return current
+            previous = current
+        raise TimeoutError("DHO900 采样率回读持续变化，无法确定实际深度")
+
+    def _points_from_rate(self, rate: float, duration: float) -> int:
+        product = rate * duration
+        points = round(product)
+        if points < 2 or not math.isclose(product, points, rel_tol=RATE_REL_TOLERANCE, abs_tol=0):
+            raise ValueError(f"DHO900 回读采样率 {rate:g} Sa/s × 窗口 {duration:g} s = {product:g} 点，不是整数点数")
+        return points
+
+    def _resolve_auto_depth(self, config: AcquisitionConfig, cap: int) -> tuple[int, str]:
+        """AUTO 深度由仪器按时基选定；回读采样率换算点数，超过上限则改用上限深度并再核对。"""
+        points = self._points_from_rate(self._stable_sampling_rate(), config.sampling_time)
+        if points <= cap:
+            return points, "AUTO"
+        self._inst.set_memory_depth(cap)
+        self._wait(0.1)
+        points = self._points_from_rate(self._stable_sampling_rate(), config.sampling_time)
+        if points != cap or self._inst.get_actual_points() != cap:
+            raise ValueError(f"DHO900 未按上限深度 {cap} 点配置：回读 {points} 点")
+        return points, "capped"
 
     def _wait_stopped(self, timeout: float) -> None:
         deadline = time.monotonic() + timeout
@@ -87,7 +126,7 @@ class DHO900Acquisition:
             raise ValueError("DHO900 录制或回放状态不允许单次采集；请在仪器上关闭，未自动覆盖用户设置")
 
     def _validate(self, config: AcquisitionConfig) -> int:
-        rate = _positive(config.sampling_rate, "目标采样率")
+        auto = self._auto_depth_cap is not None
         duration = _positive(config.sampling_time, "采集时间")
         _positive(config.horizontal_divisions, "水平格数")
         if config.horizontal_divisions != 10:
@@ -96,15 +135,20 @@ class DHO900Acquisition:
             raise NotImplementedError("DHO900 不支持 SDS 的独立存储管理模式；memory_management 须为 None，采集器严格校验实际率")
         if config.interpolation != "ON":
             raise NotImplementedError("基础接口不改变仪器插值设置，interpolation 只接受已有默认 ON")
-        requested_points = rate * duration
-        if not math.isfinite(requested_points):
-            raise ValueError("目标记录点数必须为有限整数")
-        rounded_points = round(requested_points)
-        if not math.isclose(requested_points, rounded_points, rel_tol=1e-12, abs_tol=0):
-            raise ValueError("目标采样率与采集时间的乘积须为整数点数")
-        points = _integer(rounded_points, "目标记录点数", 2, self._maximum_points)
-        if points not in MEMORY_DEPTHS:
-            raise ValueError(f"严格采样请求需要 {points} 点，DHO900 可选存储深度为 {MEMORY_DEPTHS}；未自动改采样率")
+        if auto:
+            points = _integer(self._auto_depth_cap, "最大存储深度", 2, self._maximum_points)
+            if points not in MEMORY_DEPTHS:
+                raise ValueError(f"最大存储深度 {points} 不在 DHO900 可选存储深度 {MEMORY_DEPTHS} 中")
+        else:
+            requested_points = _positive(config.sampling_rate, "目标采样率") * duration
+            if not math.isfinite(requested_points):
+                raise ValueError("目标记录点数必须为有限整数")
+            rounded_points = round(requested_points)
+            if not math.isclose(requested_points, rounded_points, rel_tol=1e-12, abs_tol=0):
+                raise ValueError("目标采样率与采集时间的乘积须为整数点数")
+            points = _integer(rounded_points, "目标记录点数", 2, self._maximum_points)
+            if points not in MEMORY_DEPTHS:
+                raise ValueError(f"严格采样请求需要 {points} 点，DHO900 可选存储深度为 {MEMORY_DEPTHS}；未自动改采样率")
         enabled = [channel for channel in config.channels if channel.enabled]
         numbers = [_channel(channel.number) for channel in config.channels]
         if len(numbers) != len(set(numbers)) or not enabled:
@@ -175,15 +219,22 @@ class DHO900Acquisition:
             self._inst.write(":TIMebase:DELay:ENABle OFF")
             self._inst.set_timebase_scale(config.timebase_scale)
             self._inst.set_timebase_delay(config.timebase_delay)
-            self._inst.set_memory_depth(points)
+            auto = self._auto_depth_cap is not None
+            if auto:
+                self._inst.write(":ACQuire:MDEPth AUTO")
+            else:
+                self._inst.set_memory_depth(points)
             self._wait(0.1)
             if self._inst.query(":TIMebase:MODE?").upper() != "MAIN" or self._inst.query(":TIMebase:ROLL?") != "0":
                 raise ValueError("DHO900 未进入主时基非 ROLL 模式，不能执行完整帧触发")
-            self._inst.set_sampling_rate(config.sampling_rate)
-            actual_points = self._inst.get_actual_points()
+            if auto:
+                actual_points, depth_mode = self._resolve_auto_depth(config, points)
+            else:
+                self._inst.set_sampling_rate(config.sampling_rate)
+                actual_points, depth_mode = self._inst.get_actual_points(), "fixed"
             actual_scale = self._inst.get_timebase_scale()
-            if actual_points != points or not math.isclose(actual_scale, config.timebase_scale,
-                                                          rel_tol=RATE_REL_TOLERANCE, abs_tol=0):
+            if (actual_points != points and not auto) or actual_points > points or not math.isclose(
+                    actual_scale, config.timebase_scale, rel_tol=RATE_REL_TOLERANCE, abs_tol=0):
                 raise ValueError(f"DHO900 记录窗口不匹配：目标 {points} 点/{config.sampling_time:g} s，"
                                  f"实际 {actual_points} 点/{actual_scale * 10:g} s")
             trigger = config.trigger
@@ -198,7 +249,8 @@ class DHO900Acquisition:
             self._snapshot = {"requested": config.to_dict(), "model": "DHO900",
                               "actual_sample_rate_sa_s": self._inst.get_sampling_rate(),
                               "actual_points": actual_points, "actual_timebase_s_div": actual_scale,
-                              "sample_rate_policy": "strict", "waveform_format": "ASCii",
+                              "sample_rate_policy": "auto_depth" if auto else "strict", "depth_mode": depth_mode,
+                              "waveform_format": "ASCii",
                               "frame_trigger_mode": "SINGle",
                               "input_impedance_source": "型号固定 1 MΩ；非查询回读"}
             self._configured = True
@@ -252,7 +304,9 @@ class DHO900Acquisition:
         self._inst.set_waveform_source(f"C{channel}")
         self._inst.set_waveform_mode("RAW")
         self._inst.set_waveform_width("ASCii")
-        frame_points = self._inst.get_actual_points()
+        auto = self._configured and self._snapshot["depth_mode"] != "fixed"
+        # AUTO 深度没有数字回读，点数取自 apply_config 的回读换算；下面的 preamble 仍须与之一致。
+        frame_points = self._snapshot["actual_points"] if auto else self._inst.get_actual_points()
         if frame_points > self._maximum_points:
             raise ValueError("波形点数超出本次允许范围")
         self._inst.set_waveform_start(0)
@@ -266,8 +320,10 @@ class DHO900Acquisition:
             raise ValueError("DHO900 preamble 点数与整帧存储深度不符；拒绝把局部窗口当完整记录")
         if self._configured:
             rate = 1.0 / preamble.xincrement
+            expected_rate = (self._snapshot["actual_sample_rate_sa_s"] if auto
+                             else self._snapshot["requested"]["sampling_rate"])
             if preamble.points != self._snapshot["actual_points"] or not math.isclose(
-                    rate, self._snapshot["requested"]["sampling_rate"], rel_tol=RATE_REL_TOLERANCE, abs_tol=0):
+                    rate, expected_rate, rel_tol=RATE_REL_TOLERANCE, abs_tol=0):
                 raise ValueError("DHO900 帧参数与已配置的严格采样请求不符；拒绝旧帧或改变后的配置")
         values = np.empty(preamble.points, dtype=np.float64)
         budget = self._inst.get_waveform_max_points()
