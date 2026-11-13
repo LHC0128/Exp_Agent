@@ -217,6 +217,8 @@ MAPPING_INSTRUMENTS = {
     "lockin_xy": "lockin_amplifier",
     "scope_waveform": "sds_acquisition",
     "probe_laser": "toptica_dlc_pro",
+    "coil_drive_amplifier": "power_amplifier",
+    "coil_current_scope": "oscilloscope",
 }
 
 

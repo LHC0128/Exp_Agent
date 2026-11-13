@@ -301,3 +301,22 @@ def fake_main():
 
 if __name__ == "__main__":
     fake_main()
+
+
+def test_contract_preflight_accepts_amplifier_and_scope_mapping(monkeypatch):
+    """通用映射预检按功放/示波器类型校验新键，不按信号源要求 channel。"""
+    from ... import common, instrument_config
+    from ...experiments.contracts import ExperimentDefinition
+
+    mapping = {
+        "Z_magnetic_field": {"instrument": "signal_generator", "channel": 1},
+        "coil_drive_amplifier": {"instrument": "power_amplifier", "device_id": "amp"},
+        "coil_current_scope": {"instrument": "oscilloscope", "device_id": "scope"},
+    }
+    monkeypatch.setattr(common, "load_mapping", lambda: mapping)
+    monkeypatch.setattr(instrument_config, "validate_mapping_usage", lambda keys: None)
+    definition = ExperimentDefinition(
+        id="coil-drive-characterization", title="", category="", family="",
+        variant="", description="", data_type="", required_devices=(),
+    )
+    assert definition._mapping_errors() == []
