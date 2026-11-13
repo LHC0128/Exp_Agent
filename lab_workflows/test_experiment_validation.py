@@ -546,9 +546,9 @@ class ScienceTest:
             verify_pytest_results(path, nodes)
 
     def test_skill_check_requires_only_canonical_resources(self):
-        self.assertEqual(len(EXPCODEGEN_RESOURCES), 33)
-        self.assertEqual(len(set(EXPCODEGEN_RESOURCES)), 33)
-        self.assertEqual(len(skill_resource_errors(self.root)), 33)
+        self.assertEqual(len(EXPCODEGEN_RESOURCES), 41)
+        self.assertEqual(len(set(EXPCODEGEN_RESOURCES)), 41)
+        self.assertEqual(len(skill_resource_errors(self.root)), 41)
         for relative in EXPCODEGEN_RESOURCES:
             self.write(".agents/skills/expcodegen/" + relative, "resource\n")
         self.write(".agents/skills/expcodegen/__pycache__/ignored.pyc", "")

@@ -409,6 +409,7 @@ EXPCODEGEN_RESOURCES = (
     "references/gui-two-tab-template.md",
     "references/gui-workflow-template.md",
     "references/modular-workflow.md",
+    "references/new-experiment-wiring.md",
     "references/shared-steps.md",
     "references/z-closed-loop.md",
     "assets/python/__init__.py.tpl",
@@ -426,9 +427,16 @@ EXPCODEGEN_RESOURCES = (
     "assets/python/plot_entry.py.tpl",
     "assets/python/preparation.py.tpl",
     "assets/python/run_format.py.tpl",
-    "assets/python/stages.py.tpl",
+    "assets/python/full_run_plain.py.tpl",
     "assets/python/test_workflow.py.tpl",
     "assets/python/workflow.py.tpl",
+    "assets/python/staged/analysis.py.tpl",
+    "assets/python/staged/analysis_steps.py.tpl",
+    "assets/python/staged/full_run.py.tpl",
+    "assets/python/staged/preparation.py.tpl",
+    "assets/python/staged/session.py.tpl",
+    "assets/python/staged/stages.py.tpl",
+    "assets/python/staged/workflow.py.tpl",
 )
 
 
