@@ -1,0 +1,106 @@
+"""线圈驱动链路电学特性的强类型参数；电流以 mA、脉宽以 µs 输入。"""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import ClassVar
+
+import numpy as np
+
+from ...experiment_params import ExperimentParams, parameter
+
+
+@dataclass
+class CoilDriveCharacterizationParams(ExperimentParams):
+    schema_version: ClassVar[int] = 1
+
+    run_tag: str = parameter(default="coil_drive", external_name="RUN_TAG", label="运行标签", group="basic")
+    amplifier_gain_db: float = parameter(default=20.0, external_name="AMPLIFIER_GAIN_DB", label="功放面板增益", unit="dB",
+        minimum=0, maximum=20, group="basic", description="须与 1200B 面板一致；本实验不修改功放增益与阻抗")
+    sine_peak_current_ma: float = parameter(default=100.0, external_name="SINE_PEAK_CURRENT_MA", label="扫频电流峰值",
+        unit="mA", minimum=0.1, group="basic", description="按声明增益与回路电阻换算信号源幅度")
+    frequency_start_hz: float = parameter(default=10.0, external_name="FREQUENCY_START_HZ", label="扫频起始频率",
+        unit="Hz", minimum=0.1, group="basic")
+    frequency_stop_hz: float = parameter(default=500e3, external_name="FREQUENCY_STOP_HZ", label="扫频终止频率",
+        unit="Hz", minimum=1, maximum=20e6, group="basic")
+    points_per_decade: int = parameter(default=4, external_name="POINTS_PER_DECADE", label="每十倍频点数",
+        minimum=1, maximum=50, group="basic")
+    pulse_current_ma: float = parameter(default=100.0, external_name="PULSE_CURRENT_MA", label="脉冲电流",
+        unit="mA", minimum=0.1, group="basic", description="0→I 单极性矩形脉冲的平台电流")
+    pulse_widths_us: list[float] = parameter(default_factory=lambda: [10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0],
+        external_name="PULSE_WIDTHS_US", label="脉宽列表", unit="µs", group="basic")
+    pulse_repetition_hz: float = parameter(default=50.0, external_name="PULSE_REPETITION_HZ", label="脉冲重复频率",
+        unit="Hz", minimum=0.1, group="basic", description="最宽脉冲的占空比须 <50%")
+
+    sense_resistor_ohm: float = parameter(default=10.0, external_name="SENSE_RESISTOR_OHM", label="采样电阻",
+        unit="Ω", minimum=1e-3, description="I = V_sense / R_sense")
+    damping_resistor_ohm: float = parameter(default=10.0, external_name="DAMPING_RESISTOR_OHM", label="阻尼电阻",
+        unit="Ω", minimum=0)
+    coil_resistance_ohm: float = parameter(default=0.0, external_name="COIL_RESISTANCE_OHM", label="线圈直流电阻",
+        unit="Ω", minimum=0, description="用于预测电流；0 使预测偏大、偏保守")
+    resistor_rated_w: float = parameter(default=2.0, external_name="RESISTOR_RATED_W", label="电阻额定功率",
+        unit="W", minimum=0.01, description="平均功耗按额定一半校验")
+    zero_frames: int = parameter(default=5, external_name="ZERO_FRAMES", label="零偏帧数", minimum=1, maximum=100)
+    gain_check_current_ma: float = parameter(default=20.0, external_name="GAIN_CHECK_CURRENT_MA",
+        label="增益核对直流电流", unit="mA", minimum=0.1)
+    gain_tolerance: float = parameter(default=1.25, external_name="GAIN_TOLERANCE", label="增益上偏容许倍数",
+        minimum=1.01, maximum=3, description="实测 I/V 超过预测值此倍数即中止")
+    settle_s: float = parameter(default=0.3, external_name="SETTLE_S", label="输出切换后等待", unit="s", minimum=0)
+    sine_cycles: float = parameter(default=10.0, external_name="SINE_CYCLES", label="每频记录周期数", minimum=1, maximum=1000)
+    scope_current_channel: int = parameter(default=2, external_name="SCOPE_CURRENT_CHANNEL", label="采样电阻通道",
+        minimum=1, maximum=4)
+    scope_sync_channel: int = parameter(default=3, external_name="SCOPE_SYNC_CHANNEL", label="同步触发通道",
+        minimum=1, maximum=4)
+    sync_trigger_level_v: float = parameter(default=1.0, external_name="SYNC_TRIGGER_LEVEL_V", label="同步触发电平", unit="V")
+    sync_scale_v_div: float = parameter(default=2.0, external_name="SYNC_SCALE_V_DIV", label="同步通道垂直档位",
+        unit="V/div", minimum=0.0005, maximum=10)
+    max_sample_rate_sa_s: float = parameter(default=250e6, external_name="MAX_SAMPLE_RATE_SA_S", label="采样率上限",
+        unit="Sa/s", minimum=1e3, maximum=1.25e9)
+    area_tolerance: float = parameter(default=0.02, external_name="AREA_TOLERANCE", label="脉冲面积/平台容差",
+        minimum=0.001, maximum=0.5, description="离线判定最短可用脉宽；具体历史目录可独立覆盖")
+
+    @property
+    def gain(self) -> float:
+        return 10.0 ** (self.amplifier_gain_db / 20.0)
+
+    @property
+    def loop_resistance_ohm(self) -> float:
+        return self.sense_resistor_ohm + self.damping_resistor_ohm + self.coil_resistance_ohm
+
+    @property
+    def amps_per_drive_volt(self) -> float:
+        """按声明增益预测的直流 I/V_drive。"""
+        return self.gain / self.loop_resistance_ohm
+
+    @property
+    def pulse_widths_s(self) -> list[float]:
+        return sorted(width * 1e-6 for width in self.pulse_widths_us)
+
+    def frequencies(self) -> list[float]:
+        decades = math.log10(self.frequency_stop_hz / self.frequency_start_hz)
+        count = max(2, int(math.ceil(decades * self.points_per_decade - 1e-9)) + 1)
+        return [float(f) for f in np.geomspace(self.frequency_start_hz, self.frequency_stop_hz, count)]
+
+    def validate_model(self) -> list[str]:
+        errors = []
+        if self.frequency_start_hz >= self.frequency_stop_hz:
+            errors.append("扫频起始频率必须低于终止频率")
+        if not self.pulse_widths_us or any(not math.isfinite(w) or w <= 0 for w in self.pulse_widths_us):
+            errors.append("PULSE_WIDTHS_US 必须为非空正数列表")
+        elif len(set(self.pulse_widths_us)) != len(self.pulse_widths_us):
+            errors.append("PULSE_WIDTHS_US 不能有重复脉宽")
+        elif max(self.pulse_widths_s) * self.pulse_repetition_hz >= 0.5:
+            errors.append("最宽脉冲占空比须 <50%（降低 PULSE_REPETITION_HZ）")
+        if self.scope_current_channel == self.scope_sync_channel:
+            errors.append("采样电阻通道与同步触发通道不能相同")
+        if not self.run_tag.strip() or any(c in self.run_tag for c in ("/", "\\", ":", "\0")):
+            errors.append("运行标签不能为空或包含路径分隔符")
+        return errors
+
+    @classmethod
+    def derive_external(cls, values):
+        p = cls.from_external(values)
+        return dict(sine_drive_peak_v=p.sine_peak_current_ma * 1e-3 / p.amps_per_drive_volt,
+                    pulse_drive_v=p.pulse_current_ma * 1e-3 / p.amps_per_drive_volt,
+                    predicted_amps_per_volt=p.amps_per_drive_volt,
+                    sine_points=len(p.frequencies()), pulse_count=len(p.pulse_widths_us))

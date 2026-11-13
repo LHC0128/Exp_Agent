@@ -9,6 +9,7 @@ from ..common import CancellationToken, ProgressCallback
 from ..experiment_modules.bb_power_scan_burst.definition import DEFINITION as BB_POWER_SCAN_BURST_DEFINITION
 from ..experiment_modules.rf_sensitivity_constxy_frequency.definition import DEFINITION as RF_CONSTXY_FREQUENCY_DEFINITION
 from ..experiment_modules.bb_duty_scan_burst.definition import DEFINITION as BB_DUTY_SCAN_BURST_DEFINITION
+from ..experiment_modules.coil_drive_characterization.definition import DEFINITION as COIL_DRIVE_CHARACTERIZATION_DEFINITION
 from ..experiment_modules.z_field_bandwidth.definition import DEFINITION as Z_FIELD_BANDWIDTH_DEFINITION
 from ..experiment_modules.rf_sensitivity_direct_aw.definition import (
     DEFINITION as RF_SENSITIVITY_DIRECT_AW_DEFINITION,
@@ -191,6 +192,7 @@ _DEFINITIONS = [
     Z_AW_WAVEFORM_SCOPE_CHECK_DEFINITION,
     Z_COIL_INDUCTANCE_FREQUENCY_RESPONSE_DEFINITION,
     Z_COIL_CURRENT_FREQUENCY_RESPONSE_DEFINITION,
+    COIL_DRIVE_CHARACTERIZATION_DEFINITION,
     MX_Z_CURRENT_COUPLING_CALIBRATION_DEFINITION,
     Z_AW_CURRENT_WAVEFORM_SCOPE_CHECK_DEFINITION,
     Z_AW_CLOSED_LOOP_WAVEFORM_CORRECTION_DEFINITION,

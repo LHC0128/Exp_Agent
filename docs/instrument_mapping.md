@@ -49,7 +49,7 @@
 
 [基础控制库](../src/aigtek_1200b/README.md)独立于信号发生器，不自动绑定 Z/XY 磁场、不改变上游负载或已有安全限值。设备库界面显示功率放大器类型及未接入实时控制的提示；原有 VISA 扫描不向 COM3 发送 `*IDN?`。COM3 是当前记录，连接前核对显式端口和唯一的适配器，不自动换端口。
 
-当前没有线圈后级的已确认安全包络，不注册放大器物理量映射或自动带载开启。不能把信号源 ±20 V 等已有规则直接当作放大后输出限值。基础库只承诺有界发送记录，不能由串口成功或公共收尾 `completed` 推断实际 OFF；详情见[编程手册](instruments/aigtek_1200b_programming.md)。
+物理量映射 `coil_drive_amplifier`（1200B）与 `coil_current_scope`（DHO900，`scope_waveform` 仍指向 SDS）只由[线圈驱动链路电学特性](experiments/coil_drive_characterization.md)使用；放大后线圈电流以 `z_pulse_coil_current`（A）限值约束，该实验只发送开/关命令，不修改增益与阻抗。两项映射的仪器类型不在设备控制页的可控类型内，不提供实时控制。不能把信号源 ±20 V 等已有规则直接当作放大后输出限值。基础库只承诺有界发送记录，不能由串口成功或公共收尾 `completed` 推断实际 OFF；详情见[编程手册](instruments/aigtek_1200b_programming.md)。
 
 ### 统一外置参考时钟
 

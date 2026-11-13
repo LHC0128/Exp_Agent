@@ -19,6 +19,7 @@ import { RFDirectAWFrequencyPage } from "./RFDirectAWFrequencyPage";
 import { XYDirectAWDCCalibrationPage } from "./XYDirectAWDCCalibrationPage";
 import { BBPowerScanBurstPage } from "./BBPowerScanBurstPage";
 import { BBDutyScanBurstPage } from "./BBDutyScanBurstPage";
+import { CoilDriveCharacterizationPage } from "./CoilDriveCharacterizationPage";
 import { ZFieldBandwidthPage } from "./ZFieldBandwidthPage";
 import { NoiseSpectrumXYKnownNoisePage, NoiseSpectrumXYProbeAMPage } from "./NoiseSpectrumXYKnownNoisePage";
 import { DetectionChainFrequencyResponsePage } from "./DetectionChainFrequencyResponsePage";
@@ -114,6 +115,7 @@ function ExperimentRoute() {
   if (experimentId === "xy-direct-aw-dc-calibration") return <XYDirectAWDCCalibrationPage />;
   if (experimentId === "bb-power-scan-burst") return <BBPowerScanBurstPage />;
   if (experimentId === "bb-duty-scan-burst") return <BBDutyScanBurstPage />;
+  if (experimentId === "coil-drive-characterization") return <CoilDriveCharacterizationPage />;
   if (experimentId === "z-field-bandwidth") return <ZFieldBandwidthPage />;
   if (experimentId === "noise-spectrum-xy-known-noise") return <NoiseSpectrumXYKnownNoisePage />;
   if (experimentId === "noise-spectrum-xy-uncontrolled-probe-am") return <NoiseSpectrumXYProbeAMPage />;

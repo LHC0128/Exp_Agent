@@ -1,0 +1,592 @@
+{
+ "fields": [
+  {
+   "name": "RUN_TAG",
+   "label": "运行标签",
+   "type": "string",
+   "default": "coil_drive",
+   "unit": "",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "AMPLIFIER_GAIN_DB",
+   "label": "功放面板增益",
+   "type": "number",
+   "default": 20.0,
+   "unit": "dB",
+   "group": "basic",
+   "minimum": 0,
+   "maximum": 20,
+   "description": "须与 1200B 面板一致；本实验不修改功放增益与阻抗",
+   "read_only": false
+  },
+  {
+   "name": "SINE_PEAK_CURRENT_MA",
+   "label": "扫频电流峰值",
+   "type": "number",
+   "default": 100.0,
+   "unit": "mA",
+   "group": "basic",
+   "minimum": 0.1,
+   "maximum": null,
+   "description": "按声明增益与回路电阻换算信号源幅度",
+   "read_only": false
+  },
+  {
+   "name": "FREQUENCY_START_HZ",
+   "label": "扫频起始频率",
+   "type": "number",
+   "default": 10.0,
+   "unit": "Hz",
+   "group": "basic",
+   "minimum": 0.1,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "FREQUENCY_STOP_HZ",
+   "label": "扫频终止频率",
+   "type": "number",
+   "default": 500000.0,
+   "unit": "Hz",
+   "group": "basic",
+   "minimum": 1,
+   "maximum": 20000000.0,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "POINTS_PER_DECADE",
+   "label": "每十倍频点数",
+   "type": "integer",
+   "default": 4,
+   "unit": "",
+   "group": "basic",
+   "minimum": 1,
+   "maximum": 50,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "PULSE_CURRENT_MA",
+   "label": "脉冲电流",
+   "type": "number",
+   "default": 100.0,
+   "unit": "mA",
+   "group": "basic",
+   "minimum": 0.1,
+   "maximum": null,
+   "description": "0→I 单极性矩形脉冲的平台电流",
+   "read_only": false
+  },
+  {
+   "name": "PULSE_WIDTHS_US",
+   "label": "脉宽列表",
+   "type": "array",
+   "default": [
+    10.0,
+    20.0,
+    50.0,
+    100.0,
+    200.0,
+    500.0,
+    1000.0
+   ],
+   "unit": "µs",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "PULSE_REPETITION_HZ",
+   "label": "脉冲重复频率",
+   "type": "number",
+   "default": 50.0,
+   "unit": "Hz",
+   "group": "basic",
+   "minimum": 0.1,
+   "maximum": null,
+   "description": "最宽脉冲的占空比须 <50%",
+   "read_only": false
+  },
+  {
+   "name": "SENSE_RESISTOR_OHM",
+   "label": "采样电阻",
+   "type": "number",
+   "default": 10.0,
+   "unit": "Ω",
+   "group": "advanced",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "I = V_sense / R_sense",
+   "read_only": false
+  },
+  {
+   "name": "DAMPING_RESISTOR_OHM",
+   "label": "阻尼电阻",
+   "type": "number",
+   "default": 10.0,
+   "unit": "Ω",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "COIL_RESISTANCE_OHM",
+   "label": "线圈直流电阻",
+   "type": "number",
+   "default": 0.0,
+   "unit": "Ω",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": null,
+   "description": "用于预测电流；0 使预测偏大、偏保守",
+   "read_only": false
+  },
+  {
+   "name": "RESISTOR_RATED_W",
+   "label": "电阻额定功率",
+   "type": "number",
+   "default": 2.0,
+   "unit": "W",
+   "group": "advanced",
+   "minimum": 0.01,
+   "maximum": null,
+   "description": "平均功耗按额定一半校验",
+   "read_only": false
+  },
+  {
+   "name": "ZERO_FRAMES",
+   "label": "零偏帧数",
+   "type": "integer",
+   "default": 5,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1,
+   "maximum": 100,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "GAIN_CHECK_CURRENT_MA",
+   "label": "增益核对直流电流",
+   "type": "number",
+   "default": 20.0,
+   "unit": "mA",
+   "group": "advanced",
+   "minimum": 0.1,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "GAIN_TOLERANCE",
+   "label": "增益上偏容许倍数",
+   "type": "number",
+   "default": 1.25,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1.01,
+   "maximum": 3,
+   "description": "实测 I/V 超过预测值此倍数即中止",
+   "read_only": false
+  },
+  {
+   "name": "SETTLE_S",
+   "label": "输出切换后等待",
+   "type": "number",
+   "default": 0.3,
+   "unit": "s",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "SINE_CYCLES",
+   "label": "每频记录周期数",
+   "type": "number",
+   "default": 10.0,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1,
+   "maximum": 1000,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "SCOPE_CURRENT_CHANNEL",
+   "label": "采样电阻通道",
+   "type": "integer",
+   "default": 2,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1,
+   "maximum": 4,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "SCOPE_SYNC_CHANNEL",
+   "label": "同步触发通道",
+   "type": "integer",
+   "default": 3,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1,
+   "maximum": 4,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "SYNC_TRIGGER_LEVEL_V",
+   "label": "同步触发电平",
+   "type": "number",
+   "default": 1.0,
+   "unit": "V",
+   "group": "advanced",
+   "minimum": null,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "SYNC_SCALE_V_DIV",
+   "label": "同步通道垂直档位",
+   "type": "number",
+   "default": 2.0,
+   "unit": "V/div",
+   "group": "advanced",
+   "minimum": 0.0005,
+   "maximum": 10,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "MAX_SAMPLE_RATE_SA_S",
+   "label": "采样率上限",
+   "type": "number",
+   "default": 250000000.0,
+   "unit": "Sa/s",
+   "group": "advanced",
+   "minimum": 1000.0,
+   "maximum": 1250000000.0,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "AREA_TOLERANCE",
+   "label": "脉冲面积/平台容差",
+   "type": "number",
+   "default": 0.02,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 0.001,
+   "maximum": 0.5,
+   "description": "离线判定最短可用脉宽；具体历史目录可独立覆盖",
+   "read_only": false
+  }
+ ],
+ "flow": {
+  "run_step_id": "A05",
+  "finish_step_id": "A06",
+  "acquisition": [
+   {
+    "id": "A01",
+    "title": "参数、映射与安全限值预检",
+    "group": "准备",
+    "dependencies": [],
+    "parameters": [],
+    "artifacts": [],
+    "display_parameters": [
+     "RUN_TAG"
+    ],
+    "quality_gates": [
+     "不连接硬件；z_pulse_coil_current 必须有有限上下界，计划电流、信号源电平与电阻功耗全部在限内"
+    ]
+   },
+   {
+    "id": "A02",
+    "title": "连接信号源、1200B、DHO900 并同步时钟",
+    "group": "准备",
+    "dependencies": [
+     "A01"
+    ],
+    "parameters": [],
+    "artifacts": [],
+    "display_parameters": [],
+    "quality_gates": [
+     "连接前过硬件门控；Z 信号源参考时钟严格回读，失败不开启任何输出"
+    ]
+   },
+   {
+    "id": "A03",
+    "title": "功放零偏与增益核对",
+    "group": "基线",
+    "dependencies": [
+     "A02"
+    ],
+    "parameters": [
+     "AMPLIFIER_GAIN_DB",
+     "SENSE_RESISTOR_OHM",
+     "DAMPING_RESISTOR_OHM",
+     "COIL_RESISTANCE_OHM",
+     "RESISTOR_RATED_W",
+     "SETTLE_S",
+     "SCOPE_CURRENT_CHANNEL",
+     "SCOPE_SYNC_CHANNEL",
+     "SYNC_TRIGGER_LEVEL_V",
+     "SYNC_SCALE_V_DIV",
+     "MAX_SAMPLE_RATE_SA_S",
+     "ZERO_FRAMES",
+     "GAIN_CHECK_CURRENT_MA",
+     "GAIN_TOLERANCE"
+    ],
+    "artifacts": [
+     "raw/zero_off_*.npz",
+     "raw/zero_on_*.npz",
+     "raw/gain_check.npz"
+    ],
+    "display_parameters": [
+     "AMPLIFIER_GAIN_DB",
+     "SENSE_RESISTOR_OHM",
+     "DAMPING_RESISTOR_OHM",
+     "COIL_RESISTANCE_OHM",
+     "RESISTOR_RATED_W",
+     "SETTLE_S",
+     "SCOPE_CURRENT_CHANNEL",
+     "SCOPE_SYNC_CHANNEL",
+     "SYNC_TRIGGER_LEVEL_V",
+     "SYNC_SCALE_V_DIV",
+     "MAX_SAMPLE_RATE_SA_S",
+     "ZERO_FRAMES",
+     "GAIN_CHECK_CURRENT_MA",
+     "GAIN_TOLERANCE"
+    ],
+    "quality_gates": [
+     "功放关/开两态、信号源 0 V 测零偏；小直流实测 I/V 超过预测 GAIN_TOLERANCE 倍即中止",
+     "每帧实测电流越过 z_pulse_coil_current 即中止并安全收尾"
+    ]
+   },
+   {
+    "id": "A04",
+    "title": "正弦扫频传递函数",
+    "group": "测量",
+    "dependencies": [
+     "A03"
+    ],
+    "parameters": [
+     "SINE_PEAK_CURRENT_MA",
+     "FREQUENCY_START_HZ",
+     "FREQUENCY_STOP_HZ",
+     "POINTS_PER_DECADE",
+     "SINE_CYCLES"
+    ],
+    "artifacts": [
+     "raw/sine_*.npz"
+    ],
+    "display_parameters": [
+     "SINE_PEAK_CURRENT_MA",
+     "FREQUENCY_START_HZ",
+     "FREQUENCY_STOP_HZ",
+     "POINTS_PER_DECADE",
+     "SINE_CYCLES",
+     "SETTLE_S",
+     "MAX_SAMPLE_RATE_SA_S"
+    ],
+    "quality_gates": [
+     "同步上升沿触发；削顶自动放大量程，最大量程仍削顶即中止"
+    ]
+   },
+   {
+    "id": "A05",
+    "title": "矩形脉冲阶跃响应",
+    "group": "测量",
+    "dependencies": [
+     "A03"
+    ],
+    "parameters": [
+     "PULSE_CURRENT_MA",
+     "PULSE_WIDTHS_US",
+     "PULSE_REPETITION_HZ"
+    ],
+    "artifacts": [
+     "raw/pulse_*.npz"
+    ],
+    "display_parameters": [
+     "PULSE_CURRENT_MA",
+     "PULSE_WIDTHS_US",
+     "PULSE_REPETITION_HZ",
+     "SETTLE_S",
+     "MAX_SAMPLE_RATE_SA_S"
+    ],
+    "quality_gates": [
+     "0→I 单极性脉冲，触发居中、触发后窗口 ≥2.5 倍脉宽；最宽脉冲占空比 <50%"
+    ]
+   },
+   {
+    "id": "A06",
+    "title": "安全结束会话",
+    "group": "结束",
+    "dependencies": [],
+    "parameters": [],
+    "artifacts": [],
+    "display_parameters": [],
+    "quality_gates": [
+     "先关闭 1200B 输出，再将 Z 通道 DC 0 V、关闭同步与输出，停止 DHO900 并断开三台设备"
+    ]
+   }
+  ],
+  "analysis": [
+   {
+    "id": "B01",
+    "title": "零偏、增益与正弦传递函数",
+    "group": "独立分析",
+    "dependencies": [],
+    "parameters": [],
+    "artifacts": [
+     "transfer.json"
+    ],
+    "display_parameters": [],
+    "quality_gates": [
+     "运行目录已停止写入；必需零偏帧齐全；扫频帧可缺省（未运行 A04 时传递函数为空）"
+    ]
+   },
+   {
+    "id": "B02",
+    "title": "脉冲指标与最短可用脉宽",
+    "group": "独立分析",
+    "dependencies": [
+     "B01"
+    ],
+    "parameters": [
+     "AREA_TOLERANCE"
+    ],
+    "artifacts": [
+     "summary.json",
+     "coil_drive.png"
+    ],
+    "display_parameters": [
+     "AREA_TOLERANCE"
+    ],
+    "quality_gates": [
+     "面积偏差 ≤ AREA_TOLERANCE 且峰值达到平台 1−AREA_TOLERANCE 的最短实测脉宽；不外推"
+    ]
+   }
+  ],
+  "parameter_impacts": {
+   "acquisition": {
+    "AMPLIFIER_GAIN_DB": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "SENSE_RESISTOR_OHM": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "DAMPING_RESISTOR_OHM": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "COIL_RESISTANCE_OHM": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "RESISTOR_RATED_W": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "SETTLE_S": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "SCOPE_CURRENT_CHANNEL": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "SCOPE_SYNC_CHANNEL": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "SYNC_TRIGGER_LEVEL_V": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "SYNC_SCALE_V_DIV": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "MAX_SAMPLE_RATE_SA_S": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "ZERO_FRAMES": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "GAIN_CHECK_CURRENT_MA": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "GAIN_TOLERANCE": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "SINE_PEAK_CURRENT_MA": [
+     "A04"
+    ],
+    "FREQUENCY_START_HZ": [
+     "A04"
+    ],
+    "FREQUENCY_STOP_HZ": [
+     "A04"
+    ],
+    "POINTS_PER_DECADE": [
+     "A04"
+    ],
+    "SINE_CYCLES": [
+     "A04"
+    ],
+    "PULSE_CURRENT_MA": [
+     "A05"
+    ],
+    "PULSE_WIDTHS_US": [
+     "A05"
+    ],
+    "PULSE_REPETITION_HZ": [
+     "A05"
+    ]
+   },
+   "analysis": {
+    "AREA_TOLERANCE": [
+     "B02"
+    ]
+   }
+  },
+  "diagram_url": "/api/experiments/coil-drive-characterization/workflow/diagram"
+ }
+}

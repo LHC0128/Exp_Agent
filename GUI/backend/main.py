@@ -117,12 +117,14 @@ from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_frequency import 
 from lab_workflows.experiment_modules.xy_direct_aw_dc_calibration import run_format as xy_dc_format
 from lab_workflows.experiment_modules.bb_power_scan_burst import run_format as bb_power_format
 from lab_workflows.experiment_modules.bb_duty_scan_burst import run_format as bb_duty_format
+from lab_workflows.experiment_modules.coil_drive_characterization import run_format as coil_drive_format
 from lab_workflows.experiment_modules.z_field_bandwidth import run_format as z_bandwidth_format
 RF_RUN_FORMATS = {rf_aw_format.EXPERIMENT_ID: rf_aw_format, rf_known_noise_format.EXPERIMENT_ID: rf_known_noise_format}
 WORKFLOW_RUN_FORMATS = {item.EXPERIMENT_ID: item for item in (
     t1_format, t2_format, rf_direct_frequency_format, xy_dc_format,
     bb_power_format,
     bb_duty_format,
+    coil_drive_format,
     z_bandwidth_format, constxy_format, projection_noise_format, photon_format, demod3_r_format, mx_xy_residual_format, mx_main_field_scope_format, rf_control_scale_format, scope_capture_format, z_closed_loop_format, mx_y_rf_power_format, mx_y_rf_frequency_format, mx_y_optimal_frequency_format, mx_y_rf_drift_format, mx_z_optimal_rf_format, mx_z_optimal_xy_rf_format, mx_z_optimal_xy_noise_format, mx_z_optimal_xy_leakage_format, mx_z_optimal_xy_phase_format, mx_z_optimal_xyz_balance_format, mx_z_optimal_dg_bias_format,
 )}
 from lab_workflows.experiments.catalog import (
@@ -182,6 +184,7 @@ from .rf_sensitivity_direct_aw_frequency import RFDirectAWFrequencySessionServic
 from .xy_direct_aw_dc_calibration import XYDirectAWDCSessionService, create_router as xy_dc_router
 from .bb_power_scan_burst import BBPowerScanBurstSessionService, create_router as bb_power_router
 from .bb_duty_scan_burst import BBDutySessionService, create_router as bb_duty_router
+from .coil_drive_characterization import CoilDriveSessionService, create_router as coil_drive_router
 from .z_field_bandwidth import ZFieldBandwidthSessionService, create_router as z_bandwidth_router
 from .mx_z_field_calibration import MxZFieldCalibrationSessionService
 from .z_aw_waveform_scope_check import ZAWWaveformScopeCheckSessionService
@@ -270,7 +273,7 @@ def _workflow_session_services():
         rf_known_noise_sessions, rf_control_scale_sessions, static_sessions, detection_chain_sessions,
         mx_y_rf_sessions, mx_y_rf_probe_detuning_sessions, mx_y_rf_power_sessions, z_aw_scope_sessions, z_aw_current_scope_sessions, z_closed_loop_sessions,
         mx_main_field_sessions, mx_main_field_scope_sessions, mx_xy_residual_sessions, demod3_r_sessions, photon_sessions, projection_noise_sessions, constxy_sessions, z_bandwidth_sessions,
-        bb_duty_sessions, z_coil_inductance_sessions,
+        bb_duty_sessions, z_coil_inductance_sessions, coil_drive_sessions,
         mx_z_field_sessions,
         z_coil_current_sessions,
         bell_bloom_z_sessions,
@@ -399,6 +402,8 @@ bb_power_sessions = BBPowerScanBurstSessionService(lambda: ROOT, manager)
 app.include_router(bb_power_router(bb_power_sessions))
 bb_duty_sessions = BBDutySessionService(lambda: ROOT, manager)
 app.include_router(bb_duty_router(bb_duty_sessions))
+coil_drive_sessions = CoilDriveSessionService(lambda: ROOT, manager)
+app.include_router(coil_drive_router(coil_drive_sessions))
 z_bandwidth_sessions = ZFieldBandwidthSessionService(lambda: ROOT, manager)
 app.include_router(z_bandwidth_router(z_bandwidth_sessions))
 z_coil_inductance_sessions = ZCoilInductanceFrequencyResponseSessionService(lambda: ROOT, manager)

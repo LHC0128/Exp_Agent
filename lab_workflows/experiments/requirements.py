@@ -70,6 +70,7 @@ STATIC_SENSITIVITY = (
 
 
 TYPED_MAPPING_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "coil-drive-characterization": ("Z_magnetic_field", "coil_drive_amplifier", "coil_current_scope"),
     "t1-calibration": ("X_magnetic_field", "Y_magnetic_field", "Z_magnetic_field", "Probe_laser_power",
         "Pump_modulation", "Time_sequence", "Temp_Switch", "temperature", "scope_waveform"),
     "bb-power-scan-burst": ("main_magnetic_field", "Pump_laser_power", "Probe_laser_power", "Pump_modulation",

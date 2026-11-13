@@ -172,6 +172,16 @@ mapping:
     device_id: sds_sdsev82x900704
     label: 示波器波形
     description: SDS 示波器波形采集
+  coil_drive_amplifier:
+    instrument: power_amplifier
+    device_id: aigtek_1200b_cp210x_0001
+    label: 线圈驱动功放
+    description: Z 通道输出经 Aigtek 1200B 放大后驱动 14 匝线圈；面板设置增益与 1 MΩ 输入阻抗
+  coil_current_scope:
+    instrument: oscilloscope
+    device_id: rigol_dho900_192_168_124_21
+    label: 线圈电流示波器
+    description: DHO900 测线圈回路 10 Ω 采样电阻电压，并以信号源同步输出触发
 constraints:
   shared_channel_groups:
     y_field_rf:

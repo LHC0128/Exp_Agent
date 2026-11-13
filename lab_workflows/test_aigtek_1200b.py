@@ -37,7 +37,7 @@ def fake_amplifier(monkeypatch):
     return transport
 
 
-def test_device_entry_loads_offline_and_is_not_a_field_mapping(tmp_path):
+def test_device_entry_loads_offline_and_maps_only_to_coil_drive(tmp_path):
     params = tmp_path / "params"
     params.mkdir()
     for name in ("devices.yaml", "mapping.yaml"):
@@ -60,7 +60,8 @@ def test_device_entry_loads_offline_and_is_not_a_field_mapping(tmp_path):
         assert configured["capabilities"]["supports_command_ack"] is False
         driver = Aigtek1200BInstrument(configured["resource"], serial_number=configured["connection"]["serial_number"])
         assert not driver.connected
-        assert all(item.get("device_id") != DEVICE_ID for item in load_mapping_document(tmp_path)["mapping"].values())
+        users = [key for key, item in load_mapping_document(tmp_path)["mapping"].items() if item.get("device_id") == DEVICE_ID]
+        assert users == ["coil_drive_amplifier"]
         current = resolve_mapping(tmp_path)
         assert current["Z_magnetic_field"]["instrument"] == "signal_generator"
         assert {name: (params / name).read_bytes() for name in before} == before
