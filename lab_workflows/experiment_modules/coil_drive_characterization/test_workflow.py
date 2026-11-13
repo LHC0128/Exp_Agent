@@ -67,6 +67,7 @@ class Rig:
         self.events, self.true_gain, self.offset_a = [], true_gain, offset_a
         self.sync_peak_v = sync_peak_v
         self.amp_on, self.mode, self.reads, self.cancel_at = False, ("dc", 0.0), 0, None
+        self.drop_sync_frames = 0
         rig = self
 
         class Source:
@@ -119,8 +120,12 @@ class Rig:
                 sense = np.clip(rig.current(t) * 10.0 + np.random.default_rng(rig.reads).normal(0, 1e-5, n),
                                 -4 * channels[2].scale, 4 * channels[2].scale)
                 snap = {"requested": config.to_dict()}
+                peak = rig.sync_peak_v
+                if config.trigger.mode == "NORMal" and rig.drop_sync_frames:
+                    rig.drop_sync_frames -= 1
+                    peak = 0.1  # 模拟 DG4000 同步锁存偶发失败：该帧没有同步沿
                 return [AcquisitionResult(2, np.array([], np.int16), sense, t, {}, snap),
-                        AcquisitionResult(3, np.array([], np.int16), np.where(t >= 0, rig.sync_peak_v, 0.0), t, {}, snap)]
+                        AcquisitionResult(3, np.array([], np.int16), np.where(t >= 0, peak, 0.0), t, {}, snap)]
 
         self.Source, self.Amp, self.Scope, self.Acquirer = Source, Amp, Scope, Acquirer
 
@@ -238,16 +243,23 @@ def test_valid_sync_passes_sweep(tmp_path, rig):
     assert len(list((directory / "raw").glob("sine_*.npz"))) == 7
 
 
-def test_sync_armed_with_output_edge_after_each_waveform_setup(tmp_path, rig):
-    """APPLy 重绘波形后必须重新锁存同步：每个 setup_sine/setup_pulse 后紧跟
-    「关输出 → 开同步 → 开输出」三步，DG4000 只在输出 OFF→ON 边沿且边沿时同步已使能才输出同步。"""
+def test_sync_armed_once_per_stage_after_first_waveform_setup(tmp_path, rig):
+    """每个扫描段只在首帧锁存一次同步（关输出→开同步→开输出）；换频 APPLy 不重新锁存。"""
     workflow.run(small_params(), project_root=tmp_path)
     events = rig.events
     arming = [("sg_output", False), ("sg_sync", True), ("sg_output", True)]
-    for i, event in enumerate(events):
-        if event[0] in ("sg_sine", "sg_pulse"):
-            assert events[i + 1:i + 4] == arming, \
-                f"{event} 之后未重新锁存同步：{events[i + 1:i + 4]}"
+    positions = [index for index in range(len(events)) if events[index:index + 3] == arming]
+    assert len(positions) == 2, f"应在 A04/A05 各锁存一次：{positions}"
+    for start in positions:
+        assert events[start - 1][0] in ("sg_sine", "sg_pulse")
+
+
+def test_transient_sync_loss_is_rearmed_and_reframed(tmp_path, rig):
+    """同步锁存偶发失败（真机约三成）时丢帧重采，不把整段扫频判成失败。"""
+    rig.drop_sync_frames = 1
+    directory = workflow.run(small_params(), project_root=tmp_path)
+    assert read_config(directory)["completion_status"] == "completed"
+    assert len(list((directory / "raw").glob("sine_*.npz"))) == 7
 
 
 def test_cancel_mid_sweep_shuts_down_and_keeps_frames(tmp_path, rig):
