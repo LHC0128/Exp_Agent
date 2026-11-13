@@ -43,6 +43,10 @@ class _Preamble:
         )
 
 
+class FrameMismatch(ValueError):
+    """读回的整帧与配置回读不一致；该帧须整帧丢弃，不得当有效数据使用。"""
+
+
 class DHO900Acquisition:
     """同名 apply_config/acquire_channel/acquire_all；严格率、停止后整帧读取。"""
 
@@ -80,16 +84,20 @@ class DHO900Acquisition:
         if self._inst.get_trigger_mode() != "SINGle":
             raise ValueError("DHO900 未接受单次布防，拒绝读取旧帧")
 
-    def _stable_sampling_rate(self, attempts: int = 20, interval_s: float = 0.1) -> float:
-        """连续两次回读一致才认定仪器已更新完采样率。"""
-        previous = self._inst.get_sampling_rate()
+    def _stable_depth_state(self, attempts: int = 16, interval_s: float = 0.25) -> tuple[str, float]:
+        """连续两次回读的「存储深度 + 采样率」一致才认定仪器已按新时基重算完深度。
+
+        固件改时基后先按旧深度给出采样率，随后才重算 AUTO 深度（真机实测 1 s 窗先回读
+        625 kSa/s、再变 500 kSa/s），只比较采样率会在换挡瞬间误判为已稳定。
+        """
+        previous = (self._inst.get_memory_depth(), self._inst.get_sampling_rate())
         for _ in range(attempts):
             self._wait(interval_s)
-            current = self._inst.get_sampling_rate()
+            current = (self._inst.get_memory_depth(), self._inst.get_sampling_rate())
             if current == previous:
                 return current
             previous = current
-        raise TimeoutError("DHO900 采样率回读持续变化，无法确定实际深度")
+        raise TimeoutError("DHO900 深度/采样率回读持续变化，无法确定实际深度")
 
     def _points_from_rate(self, rate: float, duration: float) -> int:
         product = rate * duration
@@ -99,13 +107,13 @@ class DHO900Acquisition:
         return points
 
     def _resolve_auto_depth(self, config: AcquisitionConfig, cap: int) -> tuple[int, str]:
-        """AUTO 深度由仪器按时基选定；回读采样率换算点数，超过上限则改用上限深度并再核对。"""
-        points = self._points_from_rate(self._stable_sampling_rate(), config.sampling_time)
+        """AUTO 深度由仪器按时基选定；深度与采样率稳定后换算点数，超过上限则改用上限深度并再核对。"""
+        points = self._points_from_rate(self._stable_depth_state()[1], config.sampling_time)
         if points <= cap:
             return points, "AUTO"
         self._inst.set_memory_depth(cap)
         self._wait(0.1)
-        points = self._points_from_rate(self._stable_sampling_rate(), config.sampling_time)
+        points = self._points_from_rate(self._stable_depth_state()[1], config.sampling_time)
         if points != cap or self._inst.get_actual_points() != cap:
             raise ValueError(f"DHO900 未按上限深度 {cap} 点配置：回读 {points} 点")
         return points, "capped"
@@ -247,7 +255,9 @@ class DHO900Acquisition:
             self._inst.trigger_stop()
             self._wait_stopped(2.0)
             self._snapshot = {"requested": config.to_dict(), "model": "DHO900",
-                              "actual_sample_rate_sa_s": self._inst.get_sampling_rate(),
+                              # 采样率由已核对的整帧点数与主时基换算，不用 :ACQuire:SRATe?：
+                              # 固件重算深度期间该回读会短暂给出另一档采样率，写进快照就会误拒好帧。
+                              "actual_sample_rate_sa_s": actual_points / (actual_scale * 10),
                               "actual_points": actual_points, "actual_timebase_s_div": actual_scale,
                               "sample_rate_policy": "auto_depth" if auto else "strict", "depth_mode": depth_mode,
                               "waveform_format": "ASCii",
@@ -321,14 +331,14 @@ class DHO900Acquisition:
         if preamble.format != 2 or preamble.mode != 2:
             raise ValueError("DHO900 未进入 ASCII/RAW 波形读取模式")
         if preamble.points != frame_points:
-            raise ValueError("DHO900 preamble 点数与整帧存储深度不符；拒绝把局部窗口当完整记录")
+            raise FrameMismatch("DHO900 preamble 点数与整帧存储深度不符；拒绝把局部窗口当完整记录")
         if self._configured:
             rate = 1.0 / preamble.xincrement
             expected_rate = (self._snapshot["actual_sample_rate_sa_s"] if auto
                              else self._snapshot["requested"]["sampling_rate"])
             if preamble.points != self._snapshot["actual_points"] or not math.isclose(
                     rate, expected_rate, rel_tol=RATE_REL_TOLERANCE, abs_tol=0):
-                raise ValueError("DHO900 帧参数与已配置的严格采样请求不符；拒绝旧帧或改变后的配置")
+                raise FrameMismatch("DHO900 帧参数与已配置的严格采样请求不符；拒绝旧帧或改变后的配置")
         values = np.empty(preamble.points, dtype=np.float64)
         budget = self._inst.get_waveform_max_points()
         for start in range(0, preamble.points, budget):
@@ -361,6 +371,18 @@ class DHO900Acquisition:
                                  timestamp=time.time())
 
     def acquire_all(self, config: AcquisitionConfig) -> list[AcquisitionResult]:
+        """配置、布防、停止并读取整帧；整帧参数与配置回读不符时丢帧重做一次。
+
+        固件在配置回读之后仍可能重算 AUTO 深度（真机实测回读 625 kSa/s、实际 500 kSa/s），
+        首帧因此被拒。重做按同一配置重新配置与布防，不复用被拒的旧帧。
+        """
+        try:
+            return self._acquire_frame(config)
+        except FrameMismatch:
+            self._configured = False
+            return self._acquire_frame(config)
+
+    def _acquire_frame(self, config: AcquisitionConfig) -> list[AcquisitionResult]:
         self.apply_config(config)
         completed = False
         try:

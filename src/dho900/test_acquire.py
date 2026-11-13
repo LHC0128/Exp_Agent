@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from sds_acquisition.config import AcquisitionConfig, ChannelConfig, TriggerConfig
-from .acquire import DHO900Acquisition, _Preamble
+from .acquire import DHO900Acquisition, FrameMismatch, _Preamble
 from .instrument import DHO900Instrument
 from .test_instrument import FakeVisa, RESOURCE
 
@@ -259,6 +259,68 @@ def test_acquire_all_has_same_result_contract_and_stops_in_each_mode(rig, mode):
         assert ":TFORce" in visa.writes
     else:
         assert ":TFORce" not in visa.writes
+
+
+def test_frame_mismatch_is_redispatched_once_with_fresh_configuration(rig, monkeypatch):
+    """AUTO 深度在配置回读后被固件重算时，被拒的整帧要重做一次，且新帧按重做后的回读校验。"""
+    _, visa, acquirer = rig
+    visa.auto_points = 10_000
+    acquirer.use_auto_depth(100_000)
+    original = DHO900Acquisition.apply_config
+    applied = []
+
+    def apply_then_drift(config):
+        original(acquirer, config)
+        applied.append(acquirer._snapshot["actual_points"])
+        if len(applied) == 1:
+            visa.depth = 5_000  # 模拟固件在配置回读之后改小了深度：首帧参数核对必须拒绝
+
+    monkeypatch.setattr(acquirer, "apply_config", apply_then_drift)
+    results = acquirer.acquire_all(configuration())
+    assert applied == [10_000, 10_000]
+    assert results[0].config_snapshot["actual_points"] == 10_000
+    assert len(results[0].voltage) == 10_000
+
+
+def test_persistent_frame_mismatch_is_reported_after_one_retry(rig, monkeypatch):
+    """重做仍不符时如实上抛，不无限重试。"""
+    _, visa, acquirer = rig
+    visa.auto_points = 10_000
+    acquirer.use_auto_depth(100_000)
+    original = DHO900Acquisition.apply_config
+    applied = []
+
+    def apply_then_drift(config):
+        original(acquirer, config)
+        applied.append(acquirer._snapshot["actual_points"])
+        visa.depth = 5_000
+
+    monkeypatch.setattr(acquirer, "apply_config", apply_then_drift)
+    with pytest.raises(FrameMismatch, match="整帧存储深度不符"):
+        acquirer.acquire_all(configuration())
+    assert len(applied) == 2
+    assert ":WAVeform:DATA?" not in visa.queries
+
+
+def test_auto_depth_waits_for_depth_and_rate_to_settle_together(rig):
+    """固件换挡时先按旧深度给出采样率：只让采样率稳定一次不算稳定，深度变化后要重新确认。"""
+    _, visa, acquirer = rig
+    visa.auto_points = 10_000
+    acquirer.use_auto_depth(100_000)
+    queries = []
+    original = visa.query
+
+    def drifting(command):
+        if command == ":ACQuire:SRATe?":
+            queries.append(command)
+            if len(queries) == 2:  # 第 2 次回读后固件重算出新的 AUTO 深度
+                visa.depth = 25_000
+                visa.auto_points = 25_000
+        return original(command)
+
+    visa.query = drifting
+    acquirer.apply_config(configuration())
+    assert acquirer._snapshot["actual_points"] == 25_000
 
 
 def test_two_channels_read_same_stopped_frame_without_rearming_between_reads(rig):
