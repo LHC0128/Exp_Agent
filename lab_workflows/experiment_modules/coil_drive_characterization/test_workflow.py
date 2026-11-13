@@ -68,6 +68,9 @@ class Rig:
         self.sync_peak_v = sync_peak_v
         self.amp_on, self.mode, self.reads, self.cancel_at = False, ("dc", 0.0), 0, None
         self.drop_sync_frames = 0
+        self.pulse_width_s = 0.0
+        self.pulse_leading_s = 100e-9
+        self.pulse_width_clamp_s = None
         # 假 1200B 的写入值：预测电流与假电流都按它计算，与真机“写入即生效、无回读”一致。
         self.amp_settings = {"gain_db": 20.0, "input_impedance_ohm": 1_000_000.0, "output_impedance_ohm": 50.0}
         self.source_load = None
@@ -92,6 +95,11 @@ class Rig:
                 rig.mode = ("sine", f, vpp); rig.events.append(("sg_sine", f))
             def setup_pulse(self, f, amp, offset, width=None, channel=None):
                 rig.mode = ("pulse", amp, width); rig.events.append(("sg_pulse", width))
+                # 假信号源默认如实执行；pulse_width_clamp_s 模拟 DG 的最小脉宽钳位。
+                rig.pulse_width_s = max(width, rig.pulse_width_clamp_s) if rig.pulse_width_clamp_s else width
+            def get_pulse_width(self, channel=None): return rig.pulse_width_s
+            def get_pulse_leading(self, channel=None): return rig.pulse_leading_s
+            def get_pulse_trailing(self, channel=None): return rig.pulse_leading_s
 
         class Amp:
             def __init__(self, *args, safety_check=None, **kwargs): self.check = safety_check
@@ -298,6 +306,19 @@ def test_missing_sync_aborts_sweep_with_shutdown(tmp_path, monkeypatch):
         workflow.run(small_params(), project_root=tmp_path)
     # A03 用 AUTO 强制触发不依赖同步，应已完成；扫频首帧即中止。
     assert any(e[0] == "sg_sine" for e in value.events)  # 已进入扫频并设了首个正弦
+    assert_shutdown_order(value.events)
+
+
+def test_clamped_pulse_width_aborts_before_capture(tmp_path, monkeypatch):
+    """信号源把脉宽静默钳位时立即中止，不把与设定不符的波形当有效脉冲。"""
+    copy_config(tmp_path)
+    value = Rig()
+    value.pulse_width_clamp_s = 62.5e-6   # 例如 DG 在 50 Hz 下的最小脉宽
+    install(monkeypatch, value)
+    with pytest.raises(SafetyAbort, match="未生效"):
+        workflow.run(small_params(), project_root=tmp_path)
+    directory = next((tmp_path / "data" / "coil_drive_characterization").iterdir())
+    assert not list((directory / "raw").glob("pulse_*.npz"))
     assert_shutdown_order(value.events)
 
 

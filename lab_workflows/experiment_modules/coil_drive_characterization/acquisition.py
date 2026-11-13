@@ -11,6 +11,7 @@ import numpy as np
 
 from ...common import load_safety_limits, validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
+from ...steps import arm_sync_output
 from . import processing
 from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, capture_config, current_limit, plan,
                           scale_for, set_amp_output, set_dc, sleep)
@@ -19,23 +20,14 @@ from .run_format import SOURCE_KEY
 # DG4000 同步为 0→3.5 V TTL，真机（DG4162 固件 00.01.14）只在「输出 OFF→ON 边沿、且边沿时
 # 同步已使能」的情况下让同步发生器起振：输出已开启时写同步使能只更新状态位，CH3 无输出；
 # APPLy 重绘波形既不产生也不破坏已锁存的同步（真机 10 Hz→500 kHz 换频 5 点一直保持）。
+# 锁存动作由 lab_workflows.steps.arm_sync_output 统一实现（含真机证据与判据说明）。
 # 该锁存本身偶发失败（真机多次 4/6、5/6、4/4 波动），因此每个扫描段只在首帧锁存一次，
 # 缺同步时重采本帧。NORMal 触发帧的同帧同步峰峰值低于此值即判同步缺失；阈值远低于
 # 3.5 V、远高于噪声。
 SYNC_MIN_PEAK_V = 1.0
 SYNC_ARM_ATTEMPTS = 4
-
-
-def arm_sync(sg):
-    """重新锁存 DG4000 同步：先使能同步，再用一次输出 OFF→ON 边沿起振。
-
-    真机受控实验：APPLy 后直接写同步使能，CH3 连续 3 次无同步；补上输出边沿后 3 次全部
-    出现 3.5 V TTL，零延时与 0.3 s 间隔等效，脉冲与 ±0.4 V 正弦都成立。波形在关输出期间
-    保持不变，不会把线圈驱动切换成 DC。
-    """
-    sg.set_output(False)
-    sg.set_sync_state(True)
-    sg.set_output(True)
+# DG4000 会把小于边沿下限的脉宽静默钳位（边沿约为周期的 1/512，最小脉宽约为边沿的 1.6 倍）。
+PULSE_WIDTH_RTOL = 1e-3
 
 
 def _guard_current(ctx, current_a):
@@ -62,7 +54,7 @@ def capture(ctx, name, config, meta):
         except MissingSync:
             if attempt == SYNC_ARM_ATTEMPTS - 1:
                 raise
-            arm_sync(ctx.devices["sg"])
+            arm_sync_output(ctx.devices["sg"])
 
 
 def _capture_frame(ctx, name, config, meta):
@@ -165,7 +157,7 @@ def measure_transfer(ctx):
             check_cancelled()
             sg.setup_sine(frequency, 2.0 * drive, 0.0)
             if index == 0:
-                arm_sync(sg)  # 每段只锁存一次；换频 APPLy 不破坏已锁存的同步
+                arm_sync_output(sg)  # 每段只锁存一次；换频 APPLy 不破坏已锁存的同步
             ctx.outputs["Z 通道"] = f"正弦 {frequency:.6g} Hz，{2 * drive:.4g} Vpp"
             sleep(p.settle_s)
             config = capture_config(p, p.sine_cycles / frequency, ctx.current_scale)
@@ -192,12 +184,21 @@ def measure_steps(ctx):
         for index, width in enumerate(widths):
             check_cancelled()
             sg.setup_pulse(p.pulse_repetition_hz, drive, drive / 2.0, width=width)
+            # DG4000 会把小于下限的脉宽静默钳位（边沿≈周期/512、最小脉宽≈1.6×边沿），
+            # 只有回读能发现；钳位后波形与设定不符，任何脉冲指标都失去意义。
+            actual_width = sg.get_pulse_width()
+            if abs(actual_width - width) > PULSE_WIDTH_RTOL * width:
+                raise SafetyAbort(f"脉宽 {width * 1e6:g} µs 未生效，信号源实际输出 {actual_width * 1e6:g} µs"
+                                  f"（{p.pulse_repetition_hz:g} Hz 下边沿约 {sg.get_pulse_leading() * 1e6:.3g} µs、"
+                                  f"最小脉宽约 1.6 倍边沿；要更短的脉宽需提高重复频率）")
             if index == 0:
-                arm_sync(sg)  # 每段只锁存一次；换脉宽 APPLy 不破坏已锁存的同步
-            ctx.outputs["Z 通道"] = f"脉冲 0→{drive:.4g} V，宽 {width * 1e6:g} µs"
+                arm_sync_output(sg)  # 每段只锁存一次；换脉宽 APPLy 不破坏已锁存的同步
+            ctx.outputs["Z 通道"] = f"脉冲 0→{drive:.4g} V，宽 {actual_width * 1e6:g} µs"
             sleep(p.settle_s)
             config = capture_config(p, p.pulse_window_multiple * width, ctx.current_scale)
-            capture(ctx, f"pulse_{index:02d}", config, {"kind": "pulse", "width_s": width, "drive_v": drive})
+            capture(ctx, f"pulse_{index:02d}", config,
+                    {"kind": "pulse", "width_s": width, "actual_width_s": actual_width, "drive_v": drive,
+                     "leading_edge_s": sg.get_pulse_leading(), "trailing_edge_s": sg.get_pulse_trailing()})
             _progress("A05", f"脉宽 {width * 1e6:g} µs", index + 1, len(widths), started)
     finally:
         set_dc(ctx, 0.0)
