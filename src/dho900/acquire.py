@@ -302,6 +302,10 @@ class DHO900Acquisition:
         if self._inst.get_channel_units(channel).upper() != "VOLT":
             raise ValueError("通道幅度单位不是 VOLT，拒绝当作电压数据")
         self._inst.set_waveform_source(f"C{channel}")
+        # DHO900 固件：已处于 RAW 时重写 MODE RAW 不刷新内部点数状态，POINts 会锁死在
+        # 屏幕默认点数（实测 5000），深帧 preamble 点数因此与配置深度不符。先切 NORMal
+        # 再切 RAW 强制重置波形读取状态机，POINts 才能正确设为整帧点数。
+        self._inst.set_waveform_mode("NORMal")
         self._inst.set_waveform_mode("RAW")
         self._inst.set_waveform_width("ASCii")
         auto = self._configured and self._snapshot["depth_mode"] != "fixed"

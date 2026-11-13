@@ -375,3 +375,48 @@ def test_stop_confirmation_delay_gates_firmware_buffer_readiness(rig, delay, suc
     else:
         with pytest.raises(ValueError, match="期望 127，实际 1"):
             acquirer.acquire_all(config)
+
+
+def test_raw_mode_reset_unlocks_deep_frame_points(rig):
+    """DHO900 固件：已处 RAW 时重写 MODE RAW 不刷新点数，POINts 锁在屏幕默认值。
+
+    模拟该行为：只有先切 NORMal 再切 RAW 才解除锁定。修复后深帧（>屏幕点数）
+    能正确读回整帧；若缺少重置则 preamble 点数不符而拒绝读帧。
+    """
+    _, visa, acquirer = rig
+    SCREEN_POINTS = 127  # 假仪器屏幕默认点数（小于深帧）
+    state = {"mode": "NORM", "locked_points": SCREEN_POINTS}
+    original_write = visa.write
+    original_query = visa.query
+
+    def write(command):
+        if command.startswith(":WAVeform:MODE "):
+            new_mode = command.split()[-1].upper()[:4]
+            # 先 NORMal 再 RAW 才解除点数锁定；直接重写 RAW 不刷新。
+            if new_mode == "NORM":
+                state["locked_points"] = None
+            state["mode"] = new_mode
+        elif command.startswith(":WAVeform:POINts ") and state["locked_points"] is not None:
+            # 锁定时 POINts 写入被忽略，回读仍是屏幕点数。
+            return
+        original_write(command)
+
+    def query(command):
+        if command == ":WAVeform:POINts?" and state["locked_points"] is not None:
+            return str(state["locked_points"])
+        if command == ":WAVeform:PREamble?" and state["locked_points"] is not None:
+            # preamble 点数反映被锁定的屏幕点数。
+            base = original_query(command).split(",")
+            base[2] = str(state["locked_points"])
+            return ",".join(base)
+        return original_query(command)
+
+    visa.write = write
+    visa.query = query
+    visa.depth = 1000  # 深帧 > 屏幕点数
+    config = configuration()
+    results = acquirer.acquire_all(config)
+    assert len(results[0].voltage) == 1000
+    # 确认读帧前确实做了 NORMal→RAW 重置。
+    modes = [c.split()[-1] for c in visa.writes if c.startswith(":WAVeform:MODE ")]
+    assert "NORMal" in modes and modes.index("NORMal") < len(modes) - 1
