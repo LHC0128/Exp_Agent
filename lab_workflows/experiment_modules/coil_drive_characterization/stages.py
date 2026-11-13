@@ -16,7 +16,7 @@ SINE = ("SINE_PEAK_CURRENT_MA", "FREQUENCY_START_HZ", "FREQUENCY_STOP_HZ", "POIN
 PULSE = ("PULSE_CURRENT_MA", "PULSE_WIDTHS_US", "PULSE_REPETITION_HZ", "PULSE_WINDOW_MULTIPLE")
 SHARED = ("SETTLE_S", "SCOPE_ACQUIRE_DELAY_S", "MAX_MEMORY_DEPTH")
 ACQUISITION = (
-    Stage("A01", "参数、映射与安全限值预检", "准备", (), display_parameters=("RUN_TAG",),
+    Stage("A01", "参数、映射与安全限值预检", "准备", (), ("RUN_TAG",), display_parameters=("RUN_TAG",),
           quality_gates=("不连接硬件；z_pulse_coil_current 必须有有限上下界，计划电流、信号源电平与电阻功耗全部在限内",)),
     Stage("A02", "连接信号源、1200B、DHO900 并同步时钟", "准备", ("A01",),
           quality_gates=("连接前过硬件门控；Z 信号源参考时钟严格回读，失败不开启任何输出",)),

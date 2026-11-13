@@ -48,7 +48,7 @@ class StagedWorkflow:
 
     def __init__(self, params, *, project_root=None, session_id=None):
         self.root = Path(project_root).resolve() if project_root else find_project_root()
-        self.params, self.mapping = self.preflight(params)
+        self.params, self.mapping = self._preflight_state(params)
         self.config_revision = self._configuration_revision()
         self.session_id, self.revision = session_id or uuid4().hex, 0
         self.rules = DependencyRules(finish_id=self.finish_id)
@@ -61,7 +61,7 @@ class StagedWorkflow:
 
     # ---- 子类实现 ----
     def preflight(self, params):
-        """无硬件预检，返回 (params, mapping)。"""
+        """无硬件预检，返回 (params, mapping)；子类可附带回传额外项，基类只使用前两项。"""
         raise NotImplementedError
 
     def run_step(self, item: str) -> None:
@@ -112,12 +112,17 @@ class StagedWorkflow:
         return (config["device_library_revision"], config["physical_mapping_revision"],
                 (self.root / "params/safety_limits.yaml").read_bytes())
 
+    def _preflight_state(self, params):
+        """执行预检，只取基类使用的参数与映射；子类附带的额外项在此忽略。"""
+        current, mapping, *_ = self.preflight(params)
+        return current, mapping
+
     def recheck(self):
         if self.closed:
             raise ValueError("会话已结束，请新建会话")
         if self._configuration_revision() != self.config_revision:
             raise ValueError("设备库、映射或安全限值已改变，请结束会话后重新连接")
-        self.params, self.mapping = self.preflight(self.params)
+        self.params, self.mapping = self._preflight_state(self.params)
 
     def snapshot(self):
         return dict(session_id=self.session_id, revision=self.revision,
@@ -145,12 +150,13 @@ class StagedWorkflow:
         old = self.params.to_external()
         if unknown := values.keys() - old.keys():
             raise ValueError("未知参数：" + "、".join(sorted(unknown)))
-        params, mapping = self.preflight(type(self.params).from_external(old | values))
+        params, mapping = self._preflight_state(type(self.params).from_external(old | values))
         self.validate_update(params)
         changed = {key for key, value in params.to_external().items() if value != old[key]}
+        rules = DependencyRules(finish_id=self.finish_id)
         for stage in self.stages:
             if changed.intersection(stage.parameters):
-                self.rules.invalidate(self.stages, self.states, stage.id)
+                rules.invalidate(self.stages, self.states, stage.id)
         self.params, self.mapping = params, mapping
         self.revision += 1
         self.publish("参数已应用；请显式重跑失效模块，不会自动设置输出")

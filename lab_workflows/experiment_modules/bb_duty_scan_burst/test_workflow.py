@@ -401,7 +401,9 @@ def test_nonfinite_read_frame_is_preserved_but_not_averaged(tmp_path, rig):
 
 
 def test_invalid_parameters_before_connection(tmp_path, rig):
-    for changes in ({"duty_cycle_list": [0.9]}, {"duty_cycle_list": []}, {"fixed_pump_power_voltage": 10},
+    # 占空比与 Pump 电压的拒绝边界由 params/safety_limits.yaml 决定：
+    # PUMP_MOD_DUTY 上限 99.9%、Pump_laser_power 上限 20 V，越界值才被拒绝。
+    for changes in ({"duty_cycle_list": [0.9995]}, {"duty_cycle_list": []}, {"fixed_pump_power_voltage": 25},
                     {"sds_pd_channel": 4}, {"sds_sample_rate": 100}, {"system_settle_s": float("nan")},
                     {"pump_rf_gate_low_v": 1}, {"temp_switch_on_v": 4}, {"run_tag": "../escape"}):
         with pytest.raises((ValueError, TypeError)):
@@ -426,7 +428,7 @@ def test_wait_migration_yaml_and_actual_defaults(tmp_path, monkeypatch):
     monkeypatch.setattr(ADAPTER, "defaults_path", path)
     assert ADAPTER.preflight({}) == []
     assert ADAPTER._resolved({"TEMP_SWITCH_OFF_DELAY_S": 0.9}).system_settle_s == 0.9
-    replace(actual, duty_cycle_list=[0.9]).save_yaml(path)
+    replace(actual, duty_cycle_list=[0.9995]).save_yaml(path)
     assert ADAPTER.preflight({})
     fields = actual.schema(ROOT)["fields"]
     owned = {key for s in (*stages.ACQUISITION, *stages.ANALYSIS) for key in (s.parameters if s.display_parameters is None else s.display_parameters)}
