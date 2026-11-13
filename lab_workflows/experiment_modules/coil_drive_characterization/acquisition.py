@@ -16,6 +16,10 @@ from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, capture_config, 
                           scale_for, set_dc, sleep)
 from .run_format import SOURCE_KEY
 
+# DG4000 同步为 0→3.5 V TTL，仅在非 DC 波形下输出；NORMal 触发帧的同帧同步峰峰值
+# 低于此值即判同步缺失（状态位回读不可靠，须用实测幅度）。阈值远低于 3.5 V、远高于噪声。
+SYNC_MIN_PEAK_V = 1.0
+
 
 def _guard_current(ctx, current_a):
     low, high = current_limit(load_safety_limits(ctx.root))
@@ -33,6 +37,13 @@ def capture(ctx, name, config, meta):
         sense, sync = results[p.scope_current_channel], results[p.scope_sync_channel]
         channel = next(c for c in config.channels if c.number == p.scope_current_channel)
         _guard_current(ctx, sense.voltage / p.sense_resistor_ohm)
+        # NORMal 触发依赖同步信号；DG4000 同步仅在非 DC 波形下输出，状态位不可靠，
+        # 用同帧实测同步幅度判定。缺失即中止，避免把无同步触发的帧当有效数据。
+        if config.trigger.mode == "NORMal":
+            sync_peak = float(np.max(sync.voltage) - np.min(sync.voltage))
+            if sync_peak < SYNC_MIN_PEAK_V:
+                raise SafetyAbort(f"{name}: 同步信号缺失（同帧峰峰值 {sync_peak:.3f} V < {SYNC_MIN_PEAK_V} V）；"
+                                  "DG4000 同步仅在非 DC 波形下输出，请确认信号源波形与同步接线")
         if float(np.max(np.abs(sense.voltage - channel.offset))) < 0.98 * VERTICAL_HALF_DIVISIONS * channel.scale:
             break
         if channel.scale >= 10.0:

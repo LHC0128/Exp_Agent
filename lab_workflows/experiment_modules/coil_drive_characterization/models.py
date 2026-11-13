@@ -54,6 +54,9 @@ class CoilDriveCharacterizationParams(ExperimentParams):
     gain_tolerance: float = parameter(default=1.25, external_name="GAIN_TOLERANCE", label="增益上偏容许倍数",
         minimum=1.01, maximum=3, description="实测 I/V 超过预测值此倍数即中止")
     settle_s: float = parameter(default=0.3, external_name="SETTLE_S", label="输出切换后等待", unit="s", minimum=0)
+    scope_acquire_delay_s: float = parameter(default=1.5, external_name="SCOPE_ACQUIRE_DELAY_S",
+        label="示波器停采后等待", unit="s", minimum=0, maximum=30, legacy_default=0.0,
+        description="整帧 STOP 确认后、停止并读取波形前的等待；真机固件在 STOP 置位后波形缓冲尚不可读，立即读取会返回空数据。0 表示不等待，仅作 A/B 对照")
     sine_cycles: float = parameter(default=10.0, external_name="SINE_CYCLES", label="每频记录周期数", minimum=1, maximum=1000)
     scope_current_channel: int = parameter(default=2, external_name="SCOPE_CURRENT_CHANNEL", label="采样电阻通道",
         minimum=1, maximum=4)

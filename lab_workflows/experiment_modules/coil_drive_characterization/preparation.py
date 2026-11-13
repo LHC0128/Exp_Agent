@@ -58,7 +58,7 @@ def capture_config(p, window_s, current_scale, *, trigger_mode="NORMal"):
     duration = nice_up(window_s / 10.0) * 10.0
     return AcquisitionConfig(
         sampling_rate=p.max_memory_depth / duration,  # AUTO 深度下仅作占位，实际采样率由示波器回读
-        sampling_time=duration, memory_management=None, acquire_delay=0.0,
+        sampling_time=duration, memory_management=None, acquire_delay=p.scope_acquire_delay_s,
         channels=[ChannelConfig(p.scope_current_channel, enabled=True, scale=current_scale, coupling="DC",
                                 impedance="ONEMeg", probe=1),
                   ChannelConfig(p.scope_sync_channel, enabled=True, scale=p.sync_scale_v_div, coupling="DC",

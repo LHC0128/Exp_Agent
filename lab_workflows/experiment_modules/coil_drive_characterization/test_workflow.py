@@ -63,8 +63,9 @@ def small_params(**changes):
 
 
 class Rig:
-    def __init__(self, *, true_gain=10.0, offset_a=2e-3):
+    def __init__(self, *, true_gain=10.0, offset_a=2e-3, sync_peak_v=3.3):
         self.events, self.true_gain, self.offset_a = [], true_gain, offset_a
+        self.sync_peak_v = sync_peak_v
         self.amp_on, self.mode, self.reads, self.cancel_at = False, ("dc", 0.0), 0, None
         rig = self
 
@@ -119,7 +120,7 @@ class Rig:
                                 -4 * channels[2].scale, 4 * channels[2].scale)
                 snap = {"requested": config.to_dict()}
                 return [AcquisitionResult(2, np.array([], np.int16), sense, t, {}, snap),
-                        AcquisitionResult(3, np.array([], np.int16), np.where(t >= 0, 3.3, 0.0), t, {}, snap)]
+                        AcquisitionResult(3, np.array([], np.int16), np.where(t >= 0, rig.sync_peak_v, 0.0), t, {}, snap)]
 
         self.Source, self.Amp, self.Scope, self.Acquirer = Source, Amp, Scope, Acquirer
 
@@ -218,6 +219,25 @@ def test_measured_overcurrent_aborts(tmp_path, monkeypatch):
     assert_shutdown_order(value.events)
 
 
+def test_missing_sync_aborts_sweep_with_shutdown(tmp_path, monkeypatch):
+    """同步缺失（DG4000 处于 DC 波形或同步未输出）时，NORMal 触发的扫频帧即中止并安全收尾。"""
+    copy_config(tmp_path)
+    value = Rig(sync_peak_v=0.1)  # 同步通道只有噪声幅度，远低于 1.0 V 阈值
+    install(monkeypatch, value)
+    with pytest.raises(SafetyAbort, match="同步信号缺失"):
+        workflow.run(small_params(), project_root=tmp_path)
+    # A03 用 AUTO 强制触发不依赖同步，应已完成；扫频首帧即中止。
+    assert any(e[0] == "sg_sine" for e in value.events)  # 已进入扫频并设了首个正弦
+    assert_shutdown_order(value.events)
+
+
+def test_valid_sync_passes_sweep(tmp_path, rig):
+    """正常 3.3 V 同步下扫频不被同步预检拦截（回归对照）。"""
+    directory = workflow.run(small_params(), project_root=tmp_path)
+    assert read_config(directory)["completion_status"] == "completed"
+    assert len(list((directory / "raw").glob("sine_*.npz"))) == 7
+
+
 def test_cancel_mid_sweep_shuts_down_and_keeps_frames(tmp_path, rig):
     rig.cancel_at = 8  # 5 帧零偏 + 1 帧增益 + 第 2 个扫频点
     ctx = workflow.Workflow(small_params(), project_root=tmp_path)
@@ -278,6 +298,7 @@ def test_every_visible_parameter_has_an_edit_entry():
     shown = {key for stage in flow["acquisition"] + flow["analysis"] for key in stage["display_parameters"]}
     assert visible == shown
     assert flow["parameter_impacts"]["acquisition"]["AMPLIFIER_GAIN_DB"] == ["A03", "A04", "A05"]
+    assert flow["parameter_impacts"]["acquisition"]["SCOPE_ACQUIRE_DELAY_S"] == ["A03", "A04", "A05"]
     assert flow["parameter_impacts"]["acquisition"]["PULSE_WIDTHS_US"] == ["A05"]
     assert flow["parameter_impacts"]["analysis"]["AREA_TOLERANCE"] == ["B02"]
 

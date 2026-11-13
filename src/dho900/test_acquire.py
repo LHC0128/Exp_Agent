@@ -341,3 +341,37 @@ def test_auto_depth_can_be_switched_back_to_strict_rate(rig):
     acquirer.use_auto_depth(None)
     acquirer.apply_config(configuration())
     assert acquirer._snapshot["sample_rate_policy"] == "strict" and acquirer._snapshot["depth_mode"] == "fixed"
+
+
+@pytest.mark.parametrize("delay, succeeds", [(0.0, False), (1.5, True)])
+def test_stop_confirmation_delay_gates_firmware_buffer_readiness(rig, delay, succeeds):
+    """真机固件在 STOP 置位后波形缓冲尚不可读：累计等待不足时 DATA? 返回空串。
+
+    空串经 split 得到 1 个字段，即「期望 N，实际 1」的用户症状（N 为分块预算）；
+    acquire_delay 等待后才允许读取，整帧完整且等待值随快照保存。
+    """
+    _, visa, acquirer = rig
+    waited = [0.0]
+    base_wait = acquirer._wait
+
+    def wait(seconds):
+        base_wait(seconds)
+        waited[0] += seconds
+
+    acquirer._wait = wait
+    original_query = visa.query
+
+    def query(command):
+        if command == ":WAVeform:DATA?" and waited[0] < 1.0:
+            return ""
+        return original_query(command)
+
+    visa.query = query
+    config = configuration(acquire_delay=delay)
+    if succeeds:
+        results = acquirer.acquire_all(config)
+        assert len(results[0].voltage) == 1000
+        assert results[0].config_snapshot["requested"]["acquire_delay"] == delay
+    else:
+        with pytest.raises(ValueError, match="期望 127，实际 1"):
+            acquirer.acquire_all(config)

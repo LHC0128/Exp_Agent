@@ -187,6 +187,24 @@ class CommonInterfaceTests(unittest.TestCase):
             driver._inst.responses[":OUTPut2:LOAD?"] = "INF"
             self.assertEqual(driver.get_output_load(), "INF")
 
+    def test_sync_state_write_and_readback_use_native_scpi(self):
+        # DG4000 用 SYNC:STATe，DG900 用 SYNC；回读兼容 ON/OFF 与 1/0。
+        cases = (
+            (DG4000Instrument, ":OUTPut2:SYNC:STATe ON", ":OUTPut2:SYNC:STATe OFF", ":OUTPut2:SYNC:STATe?"),
+            (DG900Instrument, ":OUTPut2:SYNC ON", ":OUTPut2:SYNC OFF", ":OUTPut2:SYNC?"),
+        )
+        for cls, on_cmd, off_cmd, query_cmd in cases:
+            driver = driver_with_fake(cls)
+            with self.subTest(model=cls.__name__):
+                driver.set_sync_state(True)
+                self.assertEqual(driver._inst.writes[-1], on_cmd)
+                driver.set_sync_state(False)
+                self.assertEqual(driver._inst.writes[-1], off_cmd)
+                for response, expected in (("ON", True), ("OFF", False), ("1", True), ("0", False)):
+                    driver._inst.responses[query_cmd] = response
+                    self.assertEqual(driver.get_sync_state(), expected)
+                self.assertIn(query_cmd, driver._inst.queries)
+
     def test_pro_high_z_uses_short_keyword_and_verifies_readback(self):
         for value in ("INF", "INFinity", "INFinite", "9.9E+37", "+9.900000E+37", 9.9e37, 9e37):
             driver = driver_with_fake()

@@ -213,6 +213,19 @@
    "read_only": false
   },
   {
+   "name": "SCOPE_ACQUIRE_DELAY_S",
+   "label": "示波器停采后等待",
+   "type": "number",
+   "default": 1.5,
+   "unit": "s",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": 30,
+   "description": "整帧 STOP 确认后、停止并读取波形前的等待；真机固件在 STOP 置位后波形缓冲尚不可读，立即读取会返回空数据。0 表示不等待，仅作 A/B 对照",
+   "read_only": false,
+   "legacy_default": 0.0
+  },
+  {
    "name": "SINE_CYCLES",
    "label": "每频记录周期数",
    "type": "number",
@@ -395,6 +408,7 @@
      "COIL_RESISTANCE_OHM",
      "RESISTOR_RATED_W",
      "SETTLE_S",
+     "SCOPE_ACQUIRE_DELAY_S",
      "SCOPE_CURRENT_CHANNEL",
      "SCOPE_SYNC_CHANNEL",
      "SYNC_TRIGGER_LEVEL_V",
@@ -417,6 +431,7 @@
      "COIL_RESISTANCE_OHM",
      "RESISTOR_RATED_W",
      "SETTLE_S",
+     "SCOPE_ACQUIRE_DELAY_S",
      "SCOPE_CURRENT_CHANNEL",
      "SCOPE_SYNC_CHANNEL",
      "SYNC_TRIGGER_LEVEL_V",
@@ -456,6 +471,7 @@
      "POINTS_PER_DECADE",
      "SINE_CYCLES",
      "SETTLE_S",
+     "SCOPE_ACQUIRE_DELAY_S",
      "MAX_MEMORY_DEPTH"
     ],
     "quality_gates": [
@@ -484,6 +500,7 @@
      "PULSE_REPETITION_HZ",
      "PULSE_WINDOW_MULTIPLE",
      "SETTLE_S",
+     "SCOPE_ACQUIRE_DELAY_S",
      "MAX_MEMORY_DEPTH"
     ],
     "quality_gates": [
@@ -568,6 +585,11 @@
      "A05"
     ],
     "SETTLE_S": [
+     "A03",
+     "A04",
+     "A05"
+    ],
+    "SCOPE_ACQUIRE_DELAY_S": [
      "A03",
      "A04",
      "A05"

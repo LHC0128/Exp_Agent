@@ -420,9 +420,19 @@ class DG4000Instrument:
 
     def set_sync_state(self, state: bool,
                        channel: Optional[int] = None) -> None:
-        """打开/关闭同步信号输出."""
+        """打开/关闭同步信号输出.
+
+        DG4000 真机行为（DG4162 固件 00.01.14 实测）：同步信号只在非 DC 波形下输出；
+        DC 波形下置 ON 无同步输出。已输出的同步在置 OFF 后不一定立即停止，
+        切到 DC 波形才可靠消除。状态位回读（get_sync_state）不代表物理同步一定存在，
+        需要确认同步信号时应直接测量同步通道幅度。
+        """
         self.write(f":OUTPut{self._ch(channel)}:SYNC:STATe "
                    f"{'ON' if state else 'OFF'}")
+
+    def get_sync_state(self, channel: Optional[int] = None) -> bool:
+        """回读同步使能状态位；不代表物理同步一定输出（见 set_sync_state 说明）."""
+        return self.query(f":OUTPut{self._ch(channel)}:SYNC:STATe?").strip().upper() in {"1", "ON"}
 
     def set_sync_polarity(self, polarity: SyncPolarity,
                           channel: Optional[int] = None) -> None:
