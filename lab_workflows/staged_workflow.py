@@ -218,6 +218,8 @@ class StagedWorkflow:
                     self.run_step(item)
                 self.states[item] = dict(status="completed", error="")
                 self.after_step(item)
+                # 配置写入属于节点本身：写入失败时节点记为失败，不能先标完成再抛异常。
+                self.save()
             except BaseException as exc:
                 failure = exc
                 status = "cancelled" if isinstance(exc, CANCELLED) else (
@@ -236,7 +238,6 @@ class StagedWorkflow:
                     if self._just_sealed and failure is None:
                         write_state(self.directory.root / "acquisition_state.json", self.snapshot())
                     self._just_sealed = False
-                    self.save()
                     self.publish(f"{item} {self.states[item]['status']}")
                 except Exception:
                     if failure is None:
