@@ -16,8 +16,6 @@ ROOT = Path(__file__).resolve().parent.parent
 PREFIX = "lab_workflows.experiment_modules."
 
 # 与改前副本逐项核对，再扣除本轮已消除的债务；不在运行时重新生成。
-_MX = "mx_z_optimal_control_rf_sensitivity.workflow.Workflow"
-_MX_ANALYSIS = "mx_z_optimal_control_xy_rf_sensitivity.analysis.AnalysisWorkflow"
 _DIRECT = "rf_sensitivity_direct_aw.workflow.SingleControlWorkflow"
 _DIRECT_ANALYSIS = "rf_sensitivity_direct_aw.analysis.AnalysisWorkflow"
 _SCOPE = "z_aw_waveform_scope_check.workflow.Workflow"
@@ -32,17 +30,6 @@ def _legacy_profile(child: str, parent: str) -> str:
 
 
 LEGACY_EXECUTOR_BASES = frozenset({
-    _legacy_edge("mx_z_optimal_control_dg4000_bias_xyz_balance.analysis.AnalysisWorkflow", _MX_ANALYSIS),
-    _legacy_edge("mx_z_optimal_control_dg4000_bias_xyz_balance.workflow.Workflow", _MX),
-    _legacy_edge("mx_z_optimal_control_xy_leakage_response.analysis.AnalysisWorkflow", _MX_ANALYSIS),
-    _legacy_edge("mx_z_optimal_control_xy_leakage_response.workflow.Workflow", _MX),
-    _legacy_edge("mx_z_optimal_control_xy_noise_spectrum.analysis.AnalysisWorkflow", _MX_ANALYSIS),
-    _legacy_edge("mx_z_optimal_control_xy_noise_spectrum.workflow.Workflow", _MX),
-    _legacy_edge("mx_z_optimal_control_xy_rf_phase_response.analysis.AnalysisWorkflow", _MX_ANALYSIS),
-    _legacy_edge("mx_z_optimal_control_xy_rf_phase_response.workflow.Workflow", _MX),
-    _legacy_edge("mx_z_optimal_control_xy_rf_sensitivity.workflow.Workflow", _MX),
-    _legacy_edge("mx_z_optimal_control_xyz_balance.analysis.AnalysisWorkflow", _MX_ANALYSIS),
-    _legacy_edge("mx_z_optimal_control_xyz_balance.workflow.Workflow", _MX),
     _legacy_edge("noise_spectrum_xy_known_noise.workflow.Workflow", "noise_spectrum_xy.workflow.Workflow"),
     _legacy_edge("noise_spectrum_xy_probe_am.workflow.Workflow", "noise_spectrum_xy.workflow.Workflow"),
     _legacy_edge("rf_control_scale_sensitivity.analysis.AnalysisWorkflow", _DIRECT_ANALYSIS),
@@ -52,42 +39,15 @@ LEGACY_EXECUTOR_BASES = frozenset({
     _legacy_edge("rf_sensitivity_aw_known_noise.workflow.ControlWorkflow", _DIRECT),
     _legacy_edge("rf_sensitivity_aw_known_noise.workflow.Workflow", _DIRECT),
     _legacy_edge("z_aw_closed_loop_waveform_correction.workflow.Workflow", _SCOPE),
-    _legacy_edge("z_aw_current_waveform_scope_check.analysis.AnalysisWorkflow", _MX_ANALYSIS),
-    _legacy_edge("z_aw_current_waveform_scope_check.workflow.Workflow", _SCOPE),
     _legacy_edge("z_coil_current_frequency_response.workflow.Workflow",
         "z_coil_inductance_frequency_response.workflow.Workflow"),
 })
-_ANALYSIS_FIELDS = dict.fromkeys(
-    "config config_path fingerprint options results run_dir state_path states summary".split(), 1) | {"revision": 2}
-_MX_FIELDS = dict.fromkeys((
-    "channels closed config_revision current_step demod_mode device_session devices directory "
-    "executed_source mapping outputs params progress quality_error response_parameters revision "
-    "root round_sealed run_parameters session_id shutdown_parameters state states").split(), 1)
 LEGACY_CONSTRUCTOR_WRITES = {
-    _legacy_profile("mx_z_optimal_control_dg4000_bias_xyz_balance.analysis.AnalysisWorkflow", _MX_ANALYSIS):
-        dict(_ANALYSIS_FIELDS),
-    _legacy_profile("mx_z_optimal_control_dg4000_bias_xyz_balance.workflow.Workflow", _MX): dict(_MX_FIELDS),
-    _legacy_profile("mx_z_optimal_control_xy_leakage_response.analysis.AnalysisWorkflow", _MX_ANALYSIS):
-        dict(_ANALYSIS_FIELDS),
-    _legacy_profile("mx_z_optimal_control_xy_leakage_response.workflow.Workflow", _MX):
-        _MX_FIELDS | {"main_field_state": 1},
-    _legacy_profile("mx_z_optimal_control_xy_noise_spectrum.analysis.AnalysisWorkflow", _MX_ANALYSIS):
-        _ANALYSIS_FIELDS | {"options": 3},
-    _legacy_profile("mx_z_optimal_control_xy_rf_phase_response.analysis.AnalysisWorkflow", _MX_ANALYSIS):
-        _ANALYSIS_FIELDS | {"options": 3},
-    _legacy_profile("mx_z_optimal_control_xy_rf_phase_response.workflow.Workflow", _MX):
-        _MX_FIELDS | {"main_field_state": 1},
-    _legacy_profile("mx_z_optimal_control_xyz_balance.analysis.AnalysisWorkflow", _MX_ANALYSIS):
-        dict(_ANALYSIS_FIELDS),
-    _legacy_profile("mx_z_optimal_control_xyz_balance.workflow.Workflow", _MX):
-        _MX_FIELDS | {"main_field_state": 1},
     _legacy_profile("noise_spectrum_xy_probe_am.workflow.Workflow", "noise_spectrum_xy.workflow.Workflow"):
         {"outputs": 1},
     _legacy_profile("rf_control_scale_sensitivity.analysis.AnalysisWorkflow", _DIRECT_ANALYSIS):
         {"config": 1, "options": 3},
     _legacy_profile("rf_control_scale_sensitivity.workflow.Workflow", _DIRECT): {"state": 1},
-    _legacy_profile("z_aw_current_waveform_scope_check.analysis.AnalysisWorkflow", _MX_ANALYSIS):
-        _ANALYSIS_FIELDS | {"summary": 2},
 }
 LEGACY_INSTANCE_WRITES = {
     PREFIX + "rf_sensitivity_aw_known_noise.workflow": {PREFIX + _DIRECT + ".directory": 1},

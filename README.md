@@ -526,27 +526,17 @@ NPZ 和数据目录保留，重跑使用独立目录；分析指纹与重算归�
 | Mx Y 向 RF 场灵敏度 | `experiments/Mx_Y_RF_Sensitivity.py`、`experiments/Mx_Y_RF_Sensitivity_plot.py` | [实验说明](docs/experiments/mx_y_rf_sensitivity.md) |
 | Mx Y 向 RF 频率响应 | `experiments/Mx_Y_RF_Frequency_Response.py`、`experiments/Mx_Y_RF_Frequency_Response_plot.py` | [实验说明](docs/experiments/mx_y_rf_frequency_response.md) |
 | Mx Y 最优控制 RF 频率响应 | `experiments/Mx_Y_Optimal_Control_RF_Frequency_Response.py`、`experiments/Mx_Y_Optimal_Control_RF_Frequency_Response_plot.py` | [实验说明](docs/experiments/mx_y_optimal_control_rf_frequency_response.md) |
-| Mx Y RF 灵敏度长飘 | `experiments/Mx_Y_RF_Sensitivity_Drift.py`、`experiments/Mx_Y_RF_Sensitivity_Drift_plot.py` | [实验说明](docs/experiments/mx_y_rf_sensitivity_drift.md) |
 | Mx Z 最优控制 RF 灵敏度 | `experiments/Mx_Z_Optimal_Control_RF_Sensitivity.py`、`experiments/Mx_Z_Optimal_Control_RF_Sensitivity_plot.py` | [实验说明](docs/experiments/mx_z_optimal_control_rf_sensitivity.md) |
-| Mx Z 最优控制 XY 补偿偏置 RF 灵敏度 | `experiments/Mx_Z_Optimal_Control_XY_RF_Sensitivity.py`、`experiments/Mx_Z_Optimal_Control_XY_RF_Sensitivity_plot.py` | [实验说明](docs/experiments/mx_z_optimal_control_xy_rf_sensitivity.md) |
-| Mx Z 最优控制 XY 噪声谱 | `experiments/Mx_Z_Optimal_Control_XY_Noise_Spectrum.py`、`experiments/Mx_Z_Optimal_Control_XY_Noise_Spectrum_plot.py` | [实验说明](docs/experiments/mx_z_optimal_control_xy_noise_spectrum.md) |
-| Mx Z 最优控制 XY 泄露响应 | `experiments/Mx_Z_Optimal_Control_XY_Leakage_Response.py`、`experiments/Mx_Z_Optimal_Control_XY_Leakage_Response_plot.py` | [实验说明](docs/experiments/mx_z_optimal_control_xy_leakage_response.md) |
-| Mx Z 最优控制 XY 平衡场 RF 相位响应 | `experiments/Mx_Z_Optimal_Control_XY_RF_Phase_Response.py`、`experiments/Mx_Z_Optimal_Control_XY_RF_Phase_Response_plot.py` | [实验说明](docs/experiments/mx_z_optimal_control_xy_rf_phase_response.md) |
-| Mx Z 最优控制 XYZ 平衡场 | `experiments/Mx_Z_Optimal_Control_XYZ_Balance.py`、`experiments/Mx_Z_Optimal_Control_XYZ_Balance_plot.py` | [实验说明](docs/experiments/mx_z_optimal_control_xyz_balance.md) |
-| Mx Z 最优控制 DG4000 偏置 XYZ 平衡场 | `experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance.py`、`experiments/Mx_Z_Optimal_Control_DG4000_Bias_XYZ_Balance_plot.py` | [实验说明](docs/experiments/mx_z_optimal_control_dg4000_bias_xyz_balance.md) |
 | Z 任意波线圈波形一致性验证 | `experiments/Z_AW_Waveform_Scope_Check.py`、`experiments/Z_AW_Waveform_Scope_Check_plot.py` | [实验说明](docs/experiments/z_aw_waveform_scope_check.md) |
 | Z 线圈电感效应频率响应 | `experiments/Z_Coil_Inductance_Frequency_Response.py`、`experiments/Z_Coil_Inductance_Frequency_Response_plot.py` | [实验说明](docs/experiments/z_coil_inductance_frequency_response.md) |
 | Z 线圈实际电流频率响应 | `experiments/Z_Coil_Current_Frequency_Response.py`、`experiments/Z_Coil_Current_Frequency_Response_plot.py` | [实验说明](docs/experiments/z_coil_current_frequency_response.md) |
 | 线圈驱动链路电学特性 | `experiments/Coil_Drive_Characterization.py`、`experiments/Coil_Drive_Characterization_plot.py` | [实验说明](docs/experiments/coil_drive_characterization.md) |
-| Mx Z 实际电流-耦合强度标定 | `experiments/Mx_Z_Current_Coupling_Calibration.py`、`experiments/Mx_Z_Current_Coupling_Calibration_plot.py` | [实验说明](docs/experiments/mx_z_current_coupling_calibration.md) |
-| Z 任意波实际电流波形验证 | `experiments/Z_AW_Current_Waveform_Scope_Check.py`、`experiments/Z_AW_Current_Waveform_Scope_Check_plot.py` | [实验说明](docs/experiments/z_aw_current_waveform_scope_check.md) |
 | Z 任意波实际电流闭环波形校正 | `experiments/Z_AW_Closed_Loop_Waveform_Correction.py`、`experiments/Z_AW_Closed_Loop_Waveform_Correction_plot.py` | [实验说明](docs/experiments/z_aw_closed_loop_waveform_correction.md) |
 | Mx Y RF 光功率灵敏度优化 | `experiments/Mx_Y_RF_Power_Optimization.py`、`experiments/Mx_Y_RF_Power_Optimization_plot.py` | [实验说明](docs/experiments/mx_y_rf_power_optimization.md) |
 | Mx Y RF Probe 光功率与失谐灵敏度优化 | `experiments/Mx_Y_RF_Probe_Detuning_Optimization.py`、`experiments/Mx_Y_RF_Probe_Detuning_Optimization_plot.py` | [实验说明](docs/experiments/mx_y_rf_probe_detuning_optimization.md) |
 | Mx 主磁场频率标定 | `experiments/Mx_Main_Field_Calibration.py`、`experiments/Mx_Main_Field_Calibration_plot.py` | [实验说明](docs/experiments/mx_main_field_calibration.md) |
 | Mx 主磁场示波器噪声谱 | `experiments/Mx_Main_Field_Scope_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Scope_Noise_Spectrum_plot.py` | [实验说明](docs/experiments/mx_main_field_scope_noise_spectrum.md) |
 | Mx 高主场 Z 磁场频率标定 | `experiments/Mx_Z_Field_Calibration.py`、`experiments/Mx_Z_Field_Calibration_plot.py` | [实验说明](docs/experiments/mx_z_field_calibration.md) |
-| Mx XY 剩磁二维校准 | `experiments/Mx_XY_Residual_Field_Calibration.py`、`experiments/Mx_XY_Residual_Field_Calibration_plot.py` | [实验说明](docs/experiments/mx_xy_residual_field_calibration.md) |
 | XY 控制噪声谱 | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | [实验说明](docs/experiments/noise_spectrum_xy_ctrl.md) |
 | XY 控制测量已知可控噪声谱 | `experiments/Noise_Spectrum_XY_Ctrl_Known_Noise.py`、`experiments/Noise_Spectrum_XY_Ctrl_Known_Noise_plot.py` | [实验说明](docs/experiments/noise_spectrum_xy_ctrl_known_noise.md) |
 | XY 控制测量已知不可控 Probe AM 噪声谱 | `experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM.py`、`experiments/Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM_plot.py` | [实验说明](docs/experiments/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md) |

@@ -14,7 +14,6 @@ MIGRATED_MODULES = (
     "bb_power_scan_burst",
     "mx_main_field_scope_noise_spectrum",
     "mx_y_optimal_control_rf_frequency_response",
-    "mx_xy_residual_field_calibration",
     "mx_y_rf_probe_detuning_optimization",
     "mx_z_optimal_control_rf_sensitivity",
     "noise_spectrum_xy_demod3_r",

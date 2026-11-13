@@ -26,21 +26,11 @@ import { MxYRFSensitivityPage } from "./MxYRFSensitivityPage";
 import { MxYRFProbeDetuningOptimizationPage } from "./MxYRFProbeDetuningOptimizationPage";
 import { MxYRFPowerOptimizationPage } from "./MxYRFPowerOptimizationPage";
 import { MxYRFFrequencyResponsePage } from "./MxYRFFrequencyResponsePage";
-import { MxYRFSensitivityDriftPage } from "./MxYRFSensitivityDriftPage";
 import { MxZOptimalControlRFSensitivityPage } from "./MxZOptimalControlRFSensitivityPage";
-import { MxZOptimalControlXYRFSensitivityPage } from "./MxZOptimalControlXYRFSensitivityPage";
-import { MxZOptimalControlXYNoiseSpectrumPage } from "./MxZOptimalControlXYNoiseSpectrumPage";
-import { MxZOptimalControlXYLeakageResponsePage } from "./MxZOptimalControlXYLeakageResponsePage";
-import { MxZOptimalControlXYRFPhaseResponsePage } from "./MxZOptimalControlXYRFPhaseResponsePage";
-import { MxZOptimalControlXYZBalancePage } from "./MxZOptimalControlXYZBalancePage";
-import { MxZOptimalControlDG4000BiasXYZBalancePage } from "./MxZOptimalControlDG4000BiasXYZBalancePage";
 import { MxMainFieldCalibrationPage } from "./MxMainFieldCalibrationPage";
 import { MxMainFieldScopeNoiseSpectrumPage } from "./MxMainFieldScopeNoiseSpectrumPage";
-import { MxXYResidualFieldCalibrationPage } from "./MxXYResidualFieldCalibrationPage";
 import { MxZFieldCalibrationPage } from "./MxZFieldCalibrationPage";
-import { MxZCurrentCouplingCalibrationPage } from "./MxZCurrentCouplingCalibrationPage";
 import { ZAWWaveformScopeCheckPage } from "./ZAWWaveformScopeCheckPage";
-import { ZAWCurrentWaveformScopeCheckPage } from "./ZAWCurrentWaveformScopeCheckPage";
 import { ZCoilInductanceFrequencyResponsePage } from "./ZCoilInductanceFrequencyResponsePage";
 import { ZCoilCurrentFrequencyResponsePage } from "./ZCoilCurrentFrequencyResponsePage";
 
@@ -58,24 +48,14 @@ export type ExperimentPageRoute = () => ReactElement;
  */
 export const experimentPageRoutes: Readonly<Record<string, ExperimentPageRoute>> = {
   "mx-z-optimal-control-rf-sensitivity": () => <MxZOptimalControlRFSensitivityPage />,
-  "mx-z-optimal-control-xy-rf-sensitivity": () => <MxZOptimalControlXYRFSensitivityPage />,
-  "mx-z-optimal-control-xy-noise-spectrum": () => <MxZOptimalControlXYNoiseSpectrumPage />,
-  "mx-z-optimal-control-xy-leakage-response": () => <MxZOptimalControlXYLeakageResponsePage />,
-  "mx-z-optimal-control-xy-rf-phase-response": () => <MxZOptimalControlXYRFPhaseResponsePage />,
-  "mx-z-optimal-control-xyz-balance": () => <MxZOptimalControlXYZBalancePage />,
-  "mx-z-optimal-control-dg4000-bias-xyz-balance": () => <MxZOptimalControlDG4000BiasXYZBalancePage />,
   "mx-y-rf-sensitivity": () => <MxYRFSensitivityPage />,
   "mx-y-rf-probe-detuning-optimization": () => <MxYRFProbeDetuningOptimizationPage />,
   "mx-y-rf-power-optimization": () => <MxYRFPowerOptimizationPage />,
   "mx-y-rf-frequency-response": () => <MxYRFFrequencyResponsePage />,
-  "mx-y-rf-sensitivity-drift": () => <MxYRFSensitivityDriftPage />,
   "mx-main-field-calibration": () => <MxMainFieldCalibrationPage />,
   "mx-main-field-scope-noise-spectrum": () => <MxMainFieldScopeNoiseSpectrumPage />,
-  "mx-xy-residual-field-calibration": () => <MxXYResidualFieldCalibrationPage />,
   "mx-z-field-calibration": () => <MxZFieldCalibrationPage />,
-  "mx-z-current-coupling-calibration": () => <MxZCurrentCouplingCalibrationPage />,
   "z-aw-waveform-scope-check": () => <ZAWWaveformScopeCheckPage />,
-  "z-aw-current-waveform-scope-check": () => <ZAWCurrentWaveformScopeCheckPage />,
   "z-coil-inductance-frequency-response": () => <ZCoilInductanceFrequencyResponsePage />,
   "z-coil-current-frequency-response": () => <ZCoilCurrentFrequencyResponsePage />,
   "scope-capture": () => <ScopeCapturePage />,

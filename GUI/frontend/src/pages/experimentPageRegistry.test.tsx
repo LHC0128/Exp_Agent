@@ -24,27 +24,18 @@ vi.mock("./RFSensitivityDirectAWPage", async () => {
 
 vi.mock("../api", () => ({ api: vi.fn() }));
 
-// 稳定实验 ID 清单：原分发链 44 行 if 覆盖的 45 个 ID，顺序与 ExperimentPage 历史顺序一致。
+// 稳定实验 ID 清单：原分发链 44 行 if 覆盖的 45 个 ID，顺序与 ExperimentPage 历史顺序一致；
+// T14 归档 10 个实验后剩 35 个。
 const STABLE_EXPERIMENT_IDS: readonly string[] = [
   "mx-z-optimal-control-rf-sensitivity",
-  "mx-z-optimal-control-xy-rf-sensitivity",
-  "mx-z-optimal-control-xy-noise-spectrum",
-  "mx-z-optimal-control-xy-leakage-response",
-  "mx-z-optimal-control-xy-rf-phase-response",
-  "mx-z-optimal-control-xyz-balance",
-  "mx-z-optimal-control-dg4000-bias-xyz-balance",
   "mx-y-rf-sensitivity",
   "mx-y-rf-probe-detuning-optimization",
   "mx-y-rf-power-optimization",
   "mx-y-rf-frequency-response",
-  "mx-y-rf-sensitivity-drift",
   "mx-main-field-calibration",
   "mx-main-field-scope-noise-spectrum",
-  "mx-xy-residual-field-calibration",
   "mx-z-field-calibration",
-  "mx-z-current-coupling-calibration",
   "z-aw-waveform-scope-check",
-  "z-aw-current-waveform-scope-check",
   "z-coil-inductance-frequency-response",
   "z-coil-current-frequency-response",
   "scope-capture",
@@ -93,7 +84,7 @@ const show = (id: string) => render(
 beforeEach(() => { rfPageMounts.length = 0; });
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
-it("配置表恰好覆盖 45 个稳定实验 ID，不漏不多", () => {
+it("配置表恰好覆盖 35 个稳定实验 ID，不漏不多", () => {
   expect(Object.keys(experimentPageRoutes)).toHaveLength(STABLE_EXPERIMENT_IDS.length);
   expect([...Object.keys(experimentPageRoutes)].sort()).toEqual([...STABLE_EXPERIMENT_IDS].sort());
   for (const route of Object.values(experimentPageRoutes)) expect(route).toBeTypeOf("function");
