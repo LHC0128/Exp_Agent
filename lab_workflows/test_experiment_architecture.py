@@ -30,7 +30,6 @@ def _legacy_profile(child: str, parent: str) -> str:
 
 LEGACY_EXECUTOR_BASES = frozenset({
     _legacy_edge("noise_spectrum_xy_known_noise.workflow.Workflow", "noise_spectrum_xy.workflow.Workflow"),
-    _legacy_edge("noise_spectrum_xy_probe_am.workflow.Workflow", "noise_spectrum_xy.workflow.Workflow"),
     _legacy_edge("rf_control_scale_sensitivity.analysis.AnalysisWorkflow", _DIRECT_ANALYSIS),
     _legacy_edge("rf_control_scale_sensitivity.workflow.ControlWorkflow", _DIRECT),
     _legacy_edge("rf_control_scale_sensitivity.workflow.Workflow", _DIRECT),
@@ -39,8 +38,6 @@ LEGACY_EXECUTOR_BASES = frozenset({
     _legacy_edge("rf_sensitivity_aw_known_noise.workflow.Workflow", _DIRECT),
 })
 LEGACY_CONSTRUCTOR_WRITES = {
-    _legacy_profile("noise_spectrum_xy_probe_am.workflow.Workflow", "noise_spectrum_xy.workflow.Workflow"):
-        {"outputs": 1},
     _legacy_profile("rf_control_scale_sensitivity.analysis.AnalysisWorkflow", _DIRECT_ANALYSIS):
         {"config": 1, "options": 3},
     _legacy_profile("rf_control_scale_sensitivity.workflow.Workflow", _DIRECT): {"state": 1},
