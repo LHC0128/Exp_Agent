@@ -295,8 +295,8 @@ def fake_main():
         if os.environ.get("COIL_DRIVE_TEST_FULL") == "1":
             workflow.run(params, project_root=root)
         else:
-            from .session import serve
-            serve(workflow.Workflow(params, project_root=root, session_id=session_id), sys.stdin)
+            from lab_workflows.staged_workflow import serve_workflow
+            serve_workflow(workflow.Workflow(params, project_root=root, session_id=session_id), sys.stdin)
 
 
 if __name__ == "__main__":

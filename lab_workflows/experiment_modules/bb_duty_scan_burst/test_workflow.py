@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 import yaml
 from ...common import WorkflowCancelled, load_mapping
+from ... import staged_workflow
 from ...steps import routed_signal_generator
 from . import acquisition, preparation, excitation, workflow, stages, run_format
 from .models import BBDutyScanBurstParams
@@ -164,7 +165,7 @@ def install_rig(root, monkeypatch, params=None):
     monkeypatch.setattr(preparation, "TECInstrument", lambda **kw: rig.tec)
     monkeypatch.setattr(preparation, "SDSInstrument", lambda *a: rig.scope)
     monkeypatch.setattr(routed_signal_generator, "create_signal_generator", lambda cfg: rig.generators[cfg["resource"]])
-    original_check = workflow.check_cancelled
+    original_check = staged_workflow.check_cancelled
     def check():
         original_check()
         if rig.cancel: raise WorkflowCancelled("模拟采集取消")
@@ -172,7 +173,7 @@ def install_rig(root, monkeypatch, params=None):
         rig.events.append(("settle" if not rig.enabled else "recovery", seconds))
         if cancellable: check()
     monkeypatch.setattr(preparation, "sleep", wait)
-    monkeypatch.setattr(workflow, "check_cancelled", check)
+    monkeypatch.setattr(staged_workflow, "check_cancelled", check)  # 执行循环在共享基类
     monkeypatch.setattr(acquisition, "check_cancelled", check)
     def read(acquirer, *args, **kwargs):
         assert not rig.enabled and rig.scope.stopped
@@ -466,8 +467,8 @@ def fake_main():
         if os.environ.get("BB_DUTY_TEST_FULL") == "1":
             workflow.run(params, project_root=root)
         else:
-            from .session import serve
-            serve(workflow.Workflow(params, project_root=root, session_id=session_id), sys.stdin)
+            from lab_workflows.staged_workflow import serve_workflow
+            serve_workflow(workflow.Workflow(params, project_root=root, session_id=session_id), sys.stdin)
 
 
 if __name__ == "__main__":
