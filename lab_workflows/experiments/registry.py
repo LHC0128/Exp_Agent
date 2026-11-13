@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
-
-from ..common import CancellationToken, ProgressCallback
 from ..experiment_modules.bb_power_scan_burst.definition import DEFINITION as BB_POWER_SCAN_BURST_DEFINITION
 from ..experiment_modules.rf_sensitivity_constxy_frequency.definition import DEFINITION as RF_CONSTXY_FREQUENCY_DEFINITION
 from ..experiment_modules.bb_duty_scan_burst.definition import DEFINITION as BB_DUTY_SCAN_BURST_DEFINITION
@@ -79,55 +75,6 @@ from ..experiment_modules.bell_bloom_z_field_calibration.definition import DEFIN
 from ..experiment_modules.detection_chain_frequency_response.definition import (
     DEFINITION as DETECTION_CHAIN_FREQUENCY_RESPONSE_DEFINITION,
 )
-from .legacy import LegacyScriptAdapter
-
-
-_DEVICES = {
-    "optical": ("DG900", "DG4000", "GS200", "HF2"),
-}
-
-
-def _legacy(
-    experiment_id: str,
-    title: str,
-    category: str,
-    family: str,
-    variant: str,
-    script: str,
-    plot: str | None,
-    description: str,
-    devices: tuple[str, ...] = _DEVICES["optical"],
-    field_metadata: dict[str, dict[str, Any]] | None = None,
-) -> ExperimentDefinition:
-    """注册尚未迁移的 AST 兼容实验。"""
-    adapter = LegacyScriptAdapter(
-        experiment_id,
-        script,
-        Path(script).stem,
-        plot,
-        field_metadata=field_metadata,
-    )
-    return ExperimentDefinition(
-        id=experiment_id,
-        title=title,
-        category=category,
-        family=family,
-        variant=variant,
-        description=description,
-        data_type=Path(script).stem,
-        required_devices=devices,
-        execution_mode="legacy_script",
-        schema_version=2,
-        acquisition_program=f"experiments/{script}",
-        analysis_program=f"experiments/{plot}" if plot else None,
-        wiring_notes=("运行前按该实验文档和映射表核对接线。",),
-        safety_notes=("预检通过后才允许占用硬件并启动输出。",),
-        schema_provider=adapter.schema,
-        defaults_saver=adapter.save_defaults,
-        preflight_runner=adapter.preflight,
-        experiment_runner=adapter.run,
-        analysis_runner=adapter.analyze if plot else None,
-    )
 
 
 _DEFINITIONS = [
