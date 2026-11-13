@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import time
+from pathlib import Path
 from unittest.mock import Mock, call
 
 import pytest
@@ -43,7 +44,8 @@ def test_default_python_uses_fixed_public_nodes_without_git(sandbox, monkeypatch
     command, cwd = calls[0]
     assert len(calls) == 1 and cwd == root
     assert command[:4] == [sys.executable, "-m", "pytest", "-q"]
-    assert command[5:] == list(check.PYTHON_TESTS)
+    assert command[4].startswith("--junitxml=") and command[5].startswith("--basetemp=")
+    assert command[6:] == list(check.PYTHON_TESTS)
     stage_nodes = [node for node in command if "test_workflow_stages.py::" in node]
     assert len(stage_nodes) == 5
     assert not any("test_old_stage_imports" in node or "test_experiment_rules" in node
@@ -53,6 +55,18 @@ def test_default_python_uses_fixed_public_nodes_without_git(sandbox, monkeypatch
     assert [item["status"] for item in result["checks"]] == ["passed", "passed"]
     assert result["checks"][1]["tests_executed"] == 1
     assert result["scope"]["status"] == result["business_regressions"]["status"] == "not_run"
+
+
+def test_pytest_basetemp_is_private_to_this_run_and_removed_with_it(sandbox):
+    """共享 pytest-of-<user> 根目录会被并发进程互相清理，basetemp 必须是本轮临时目录的子目录。"""
+    root, calls = sandbox
+    assert check.main(["--report", str(root / "report.json")]) == 0
+    command, _ = calls[0]
+    junit = Path(command[4].removeprefix("--junitxml="))
+    basetemp = Path(command[5].removeprefix("--basetemp="))
+    assert basetemp.parent == junit.parent and basetemp != junit.parent
+    assert not any(part.startswith("pytest-of-") for part in basetemp.parts)
+    assert not junit.parent.exists(), "本轮临时目录必须随快检结束一起销毁"
 
 
 def test_frontend_profile_is_separate_and_preserves_command_order(sandbox):
@@ -282,7 +296,7 @@ def test_reap_failure_remains_visible(tmp_path, monkeypatch, owned_process):
 
 
 @pytest.mark.parametrize("profile", ["python", "frontend"])
-@pytest.mark.parametrize("options,expected", [([], 30.0), (["--timeout", "180.5"], 180.5)])
+@pytest.mark.parametrize("options,expected", [([], 60.0), (["--timeout", "180.5"], 180.5)])
 def test_configured_timeout_reaches_every_command_and_report(sandbox, monkeypatch, profile, options, expected):
     root, _ = sandbox
     budgets = []
@@ -295,7 +309,7 @@ def test_configured_timeout_reaches_every_command_and_report(sandbox, monkeypatc
     assert check.main(["--profile", profile, *options, "--report", str(root / "report.json")]) == 0
     assert budgets == [expected] * (1 if profile == "python" else 3)
     assert report_at(root)["timeout_s"] == expected
-    assert check.COMMAND_TIMEOUT_S == 30
+    assert check.COMMAND_TIMEOUT_S == 60
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "NaN", "inf", "-inf", "1e999", "not-a-number"])
