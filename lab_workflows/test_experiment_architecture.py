@@ -2,6 +2,10 @@
 
 跨实验执行类继承、父执行器状态重建、外部执行器状态写入**零容忍**：三项都必须为空。
 动态工厂、容器传播和反射仍须代码审查。
+
+注册表顺序守卫同样只读文本与 `glob`：`_DEFINITIONS` 的稳定 ID 尾注顺序必须与
+`experiments/registry_order.txt` 逐项相同，且顺序文件覆盖的模块目录集合必须等于磁盘上
+带 `definition.py` 的目录集合。生成与改写由 `python -m tools.gen_experiment_registry` 负责。
 """
 from __future__ import annotations
 
@@ -14,6 +18,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 PREFIX = "lab_workflows.experiment_modules."
+REGISTRY_PATH = "lab_workflows/experiments/registry.py"
+ORDER_PATH = "lab_workflows/experiments/registry_order.txt"
+MODULES_PATH = "lab_workflows/experiment_modules"
 
 
 def _imports(tree: ast.Module, package: str) -> dict[str, str]:
@@ -40,20 +47,38 @@ def _name(node: ast.AST, names: dict[str, str]) -> str:
     return ""
 
 
-def _registered_families(root: Path) -> set[str]:
-    tree = ast.parse((root / "lab_workflows/experiments/registry.py").read_text(encoding="utf-8"))
+def _registered_entries(root: Path) -> list[tuple[str, str]]:
+    """静态读出 `_DEFINITIONS` 的 `(模块目录名, 稳定 ID 尾注)`，顺序即列表顺序。
+
+    稳定 ID 取自生成器写在条目行尾的注记；只读文本与 AST，不导入实验模块。
+    缺少尾注时返回空串，由顺序守卫另行断言。
+    """
+    text = (root / REGISTRY_PATH).read_text(encoding="utf-8")
+    tree = ast.parse(text)
     imports = _imports(tree, "lab_workflows.experiments")
     definitions = next(node.value for node in tree.body if isinstance(node, ast.Assign)
         and any(isinstance(target, ast.Name) and target.id == "_DEFINITIONS" for target in node.targets))
     assert isinstance(definitions, (ast.List, ast.Tuple)), "注册表达方式变化，须显式更新静态覆盖入口"
-    families = set()
+    lines = text.split("\n")
+    entries = []
     for item in definitions.elts:
         assert isinstance(item, ast.Name) and item.id in imports, "存在未纳入静态覆盖的注册定义"
         qualified = imports[item.id]
         assert qualified.startswith(PREFIX) and ".definition." in qualified, qualified
-        families.add(qualified[len(PREFIX):].split(".")[0])
-    assert len(families) == len(definitions.elts), "重复模块注册须重新审查覆盖方式"
-    return families
+        _, _, note = lines[item.lineno - 1][item.col_offset:].partition("#")
+        entries.append((qualified[len(PREFIX):].split(".")[0], note.strip()))
+    return entries
+
+
+def _registered_families(root: Path) -> set[str]:
+    families = [directory for directory, _ in _registered_entries(root)]
+    assert len(set(families)) == len(families), "重复模块注册须重新审查覆盖方式"
+    return set(families)
+
+
+def _order_file_ids(root: Path) -> list[str]:
+    """读取顺序文件的稳定 ID，一行一个，顺序即 GUI 展示顺序。"""
+    return [line for line in (root / ORDER_PATH).read_text(encoding="utf-8").splitlines() if line]
 
 
 def _sources(root: Path) -> dict[str, ast.Module]:
@@ -311,3 +336,29 @@ def test_shared_execution_capabilities_do_not_import_experiments(filename):
     imports = ast.Module(body=[node for node in ast.walk(tree)
         if isinstance(node, (ast.ImportFrom, ast.Import))], type_ignores=[])
     assert not {name for name in _imports(imports, package).values() if name.startswith(PREFIX)}
+
+
+def test_registry_definitions_follow_order_file():
+    """`_DEFINITIONS` 的稳定 ID 顺序必须与 registry_order.txt 逐项相同。"""
+    entries = _registered_entries(ROOT)
+    missing_notes = [directory for directory, note in entries if not note]
+    assert not missing_notes, f"生成块条目缺少稳定 ID 尾注：{missing_notes}"
+    assert [note for _, note in entries] == _order_file_ids(ROOT), (
+        "注册表顺序与 registry_order.txt 不一致，运行 python -m tools.gen_experiment_registry 更新"
+    )
+
+
+def test_order_file_covers_every_module_with_definition():
+    """顺序文件覆盖的模块目录集合必须等于磁盘上带 definition.py 的目录集合。"""
+    entries = _registered_entries(ROOT)
+    order_ids = _order_file_ids(ROOT)
+    assert len(order_ids) == len(set(order_ids)), "registry_order.txt 存在重复 ID"
+    directories = {note: directory for directory, note in entries if note}
+    uncovered = [experiment_id for experiment_id in order_ids if experiment_id not in directories]
+    assert not uncovered, f"顺序文件中的 ID 没有对应的注册定义：{uncovered}"
+    on_disk = {path.parent.name for path in (ROOT / MODULES_PATH).glob("*/definition.py")}
+    assert {directories[experiment_id] for experiment_id in order_ids} == on_disk, (
+        "顺序文件与磁盘上的实验模块目录不一致："
+        f"仅顺序文件有 {sorted({directories[experiment_id] for experiment_id in order_ids} - on_disk)}，"
+        f"仅磁盘有 {sorted(on_disk - {directories[experiment_id] for experiment_id in order_ids})}"
+    )
