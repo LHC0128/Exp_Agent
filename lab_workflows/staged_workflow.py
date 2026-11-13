@@ -43,6 +43,8 @@ class StagedWorkflow:
     new_directory_on_rerun: ClassVar[bool] = True
     inherited_state_keys: ClassVar[tuple[str, ...]] = ("clock_sources",)
     quality_errors: ClassVar[tuple[type[BaseException], ...]] = ()
+    cancelled_errors: ClassVar[tuple[type[BaseException], ...]] = CANCELLED
+    sealed_failure_write_back: ClassVar[bool] = True
     output_source: ClassVar[str] = "最近成功模块的写入结果；未经额外回读"
     finished_message: ClassVar[str] = "会话已结束"
 
@@ -95,11 +97,11 @@ class StagedWorkflow:
         """结束时写入运行目录的 completion_status。"""
         if self.seal_after_run:
             if not self.round_sealed:
-                self.state.update(completion_status="cancelled" if isinstance(failure, CANCELLED) else "failed",
+                self.state.update(completion_status="cancelled" if isinstance(failure, self.cancelled_errors) else "failed",
                                   failure_reason=str(failure) if failure else self.state.get("failure_reason", "本轮尚未完整采集"))
             return
         if failure is not None and self.state.get("completion_status") not in ("failed", "cancelled"):
-            self.state.update(completion_status="cancelled" if isinstance(failure, CANCELLED) else "failed",
+            self.state.update(completion_status="cancelled" if isinstance(failure, self.cancelled_errors) else "failed",
                               failure_reason=str(failure))
         elif errors:
             self.state.update(completion_status="failed", failure_reason="安全收尾失败：" + "；".join(errors))
@@ -169,7 +171,7 @@ class StagedWorkflow:
         return (self.directory is None or self.round_sealed or rerun
                 or self.run_parameters != self.params.to_external())
 
-    def _new_directory(self):
+    def _new_directory(self, selected=None):
         previous, old_state = self.directory, self.state
         if previous and not self.round_sealed and old_state.get("completion_status") == "running":
             old_state.update(completion_status="failed", failure_reason="本轮被重跑替代，已有数据保留")
@@ -203,7 +205,7 @@ class StagedWorkflow:
         if selected != [self.finish_id]:
             self.recheck()
         if self._needs_new_directory(selected):
-            self._new_directory()
+            self._new_directory(selected)
         self.revision += 1
         for item in selected:
             if item == self.finish_id:
@@ -222,13 +224,17 @@ class StagedWorkflow:
                     self.recheck()
                 else:
                     self.run_step(item)
-                self.states[item] = dict(status="completed", error="")
+                if self.states[item]["status"] == "running":
+                    self.states[item] = dict(status="completed", error="")
                 self.after_step(item)
                 # 配置写入属于节点本身：写入失败时节点记为失败，不能先标完成再抛异常。
                 self.save()
+                # run_step 可在节点内声明终态（如 quality_failed）；此时不继续执行后继节点。
+                if self.states[item]["status"] != "completed":
+                    break
             except BaseException as exc:
                 failure = exc
-                status = "cancelled" if isinstance(exc, CANCELLED) else (
+                status = "cancelled" if isinstance(exc, self.cancelled_errors) else (
                     "quality_failed" if isinstance(exc, self.quality_errors) else "failed")
                 self.states[item] = dict(status=status, error=str(exc))
                 self.state.update(completion_status="cancelled" if status == "cancelled" else "failed",
@@ -260,7 +266,7 @@ class StagedWorkflow:
         self.final_status(failure, errors)
         try:
             self.save()
-            if errors and self.round_sealed:
+            if errors and self.round_sealed and self.sealed_failure_write_back:
                 self.directory.update_config(completion_status="failed", failure_reason="；".join(errors),
                                              safety_shutdown=self.state.get("safety_shutdown"))
             self.publish(self.finished_message)
