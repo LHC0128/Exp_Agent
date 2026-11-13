@@ -9,7 +9,8 @@ FINISH_ID = "A06"
 RUN_ID = "A05"
 ANALYSIS_KEYS = ("AREA_TOLERANCE",)
 # 每帧采集共用：改动后从 A03 起全部失效。
-CHAIN = ("AMPLIFIER_GAIN_DB", "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM", "COIL_RESISTANCE_OHM", "RESISTOR_RATED_W",
+CHAIN = ("AMPLIFIER_GAIN_DB", "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+         "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM", "COIL_RESISTANCE_OHM", "RESISTOR_RATED_W",
          "SETTLE_S", "SCOPE_ACQUIRE_DELAY_S", "SCOPE_CURRENT_CHANNEL", "SCOPE_SYNC_CHANNEL", "SYNC_TRIGGER_LEVEL_V",
          "SYNC_SCALE_V_DIV", "MAX_MEMORY_DEPTH")
 SINE = ("SINE_PEAK_CURRENT_MA", "FREQUENCY_START_HZ", "FREQUENCY_STOP_HZ", "POINTS_PER_DECADE", "SINE_CYCLES")
@@ -19,10 +20,12 @@ ACQUISITION = (
     Stage("A01", "参数、映射与安全限值预检", "准备", (), ("RUN_TAG",), display_parameters=("RUN_TAG",),
           quality_gates=("不连接硬件；z_pulse_coil_current 必须有有限上下界，计划电流、信号源电平与电阻功耗全部在限内",)),
     Stage("A02", "连接信号源、1200B、DHO900 并同步时钟", "准备", ("A01",),
-          quality_gates=("连接前过硬件门控；Z 信号源参考时钟严格回读，失败不开启任何输出",)),
-    Stage("A03", "功放零偏与增益核对", "基线", ("A02",), (*CHAIN, "ZERO_FRAMES", "ZERO_WINDOW_S", "GAIN_CHECK_CURRENT_MA", "GAIN_TOLERANCE"),
+          quality_gates=("连接前过硬件门控；按参数写入 1200B 增益与输入/输出阻抗，并把信号源输出负载配成与输入阻抗一致；"
+                         "Z 信号源参考时钟严格回读，失败不开启任何输出",)),
+    Stage("A03", "功放零偏与增益核对", "基线", ("A02",),
+          (*CHAIN, "ZERO_FRAMES", "ZERO_WINDOW_S", "GAIN_CHECK_CURRENT_MA", "GAIN_TOLERANCE", "GAIN_LOWER_RATIO"),
           ("raw/zero_off_*.npz", "raw/zero_on_*.npz", "raw/gain_check.npz"),
-          quality_gates=("功放关/开两态、信号源 0 V 测零偏；小直流实测 I/V 超过预测 GAIN_TOLERANCE 倍即中止",
+          quality_gates=("功放关/开两态、信号源 0 V 测零偏；小直流实测 I/V 低于预测 GAIN_LOWER_RATIO 倍或超过 GAIN_TOLERANCE 倍即中止",
                          "每帧实测电流越过 z_pulse_coil_current 即中止并安全收尾",)),
     Stage("A04", "正弦扫频传递函数", "测量", ("A03",), SINE, ("raw/sine_*.npz",),
           display_parameters=(*SINE, *SHARED),

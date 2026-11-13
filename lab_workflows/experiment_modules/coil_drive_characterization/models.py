@@ -23,8 +23,15 @@ class CoilDriveCharacterizationParams(ExperimentParams):
         return migrated
 
     run_tag: str = parameter(default="coil_drive", external_name="RUN_TAG", label="运行标签", group="basic")
-    amplifier_gain_db: float = parameter(default=20.0, external_name="AMPLIFIER_GAIN_DB", label="功放面板增益", unit="dB",
-        minimum=0, maximum=20, group="basic", description="须与 1200B 面板一致；本实验不修改功放增益与阻抗")
+    amplifier_gain_db: float = parameter(default=20.0, external_name="AMPLIFIER_GAIN_DB", label="功放增益", unit="dB",
+        minimum=0, maximum=20, group="basic",
+        description="连接时写入 1200B（0–20 dB，0.5 dB 步进）；预测电流按此值计算，不再是面板声明值")
+    amplifier_input_impedance_ohm: float = parameter(default=1_000_000, external_name="AMPLIFIER_INPUT_IMPEDANCE_OHM",
+        label="功放输入阻抗", unit="Ω", group="basic", options=((50.0, "50 Ω"), (1_000_000.0, "1 MΩ")),
+        description="连接时写入 1200B，并把信号源输出负载配成一致（1 MΩ→高阻，50 Ω→50 Ω），避免上游幅度按错负载标定")
+    amplifier_output_impedance_ohm: float = parameter(default=1.0, external_name="AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+        label="功放输出阻抗", unit="Ω", group="basic", options=((1.0, "1 Ω"), (50.0, "50 Ω")),
+        description="连接时写入 1200B；50 Ω 与线圈回路串联，直接参与回路电阻与预测电流")
     sine_peak_current_ma: float = parameter(default=100.0, external_name="SINE_PEAK_CURRENT_MA", label="扫频电流峰值",
         unit="mA", minimum=0.1, group="basic", description="按声明增益与回路电阻换算信号源幅度")
     frequency_start_hz: float = parameter(default=10.0, external_name="FREQUENCY_START_HZ", label="扫频起始频率",
@@ -53,6 +60,8 @@ class CoilDriveCharacterizationParams(ExperimentParams):
         label="增益核对直流电流", unit="mA", minimum=0.1)
     gain_tolerance: float = parameter(default=1.25, external_name="GAIN_TOLERANCE", label="增益上偏容许倍数",
         minimum=1.01, maximum=3, description="实测 I/V 超过预测值此倍数即中止")
+    gain_lower_ratio: float = parameter(default=0.5, external_name="GAIN_LOWER_RATIO", label="增益下偏容许比例",
+        minimum=0.05, maximum=0.99, description="实测 I/V 低于预测值此比例即中止，用于发现增益/阻抗未生效或回路断线")
     settle_s: float = parameter(default=0.3, external_name="SETTLE_S", label="输出切换后等待", unit="s", minimum=0)
     scope_acquire_delay_s: float = parameter(default=1.5, external_name="SCOPE_ACQUIRE_DELAY_S",
         label="示波器停采后等待", unit="s", minimum=0, maximum=30, legacy_default=0.0,
@@ -82,11 +91,13 @@ class CoilDriveCharacterizationParams(ExperimentParams):
 
     @property
     def loop_resistance_ohm(self) -> float:
-        return self.sense_resistor_ohm + self.damping_resistor_ohm + self.coil_resistance_ohm
+        """线圈回路总电阻：采样电阻 + 阻尼电阻 + 线圈直流电阻 + 功放输出阻抗（50 Ω 档与回路串联）。"""
+        return (self.sense_resistor_ohm + self.damping_resistor_ohm + self.coil_resistance_ohm
+                + self.amplifier_output_impedance_ohm)
 
     @property
     def amps_per_drive_volt(self) -> float:
-        """按声明增益预测的直流 I/V_drive。"""
+        """按写入的功放增益与回路总电阻预测的直流 I/V_drive。"""
         return self.gain / self.loop_resistance_ohm
 
     @property
@@ -110,6 +121,12 @@ class CoilDriveCharacterizationParams(ExperimentParams):
             errors.append("最宽脉冲占空比须 <50%（降低 PULSE_REPETITION_HZ）")
         if self.scope_current_channel == self.scope_sync_channel:
             errors.append("采样电阻通道与同步触发通道不能相同")
+        if not 0 <= self.amplifier_gain_db <= 20 or not (round(self.amplifier_gain_db * 2) == self.amplifier_gain_db * 2):
+            errors.append("AMPLIFIER_GAIN_DB 须为 0–20 dB、0.5 dB 步进（1200B 只接受这些档位）")
+        if self.amplifier_input_impedance_ohm not in (50.0, 1_000_000.0):
+            errors.append("AMPLIFIER_INPUT_IMPEDANCE_OHM 只能是 50 或 1000000 Ω")
+        if self.amplifier_output_impedance_ohm not in (1.0, 50.0):
+            errors.append("AMPLIFIER_OUTPUT_IMPEDANCE_OHM 只能是 1 或 50 Ω")
         if not self.run_tag.strip() or any(c in self.run_tag for c in ("/", "\\", ":", "\0")):
             errors.append("运行标签不能为空或包含路径分隔符")
         return errors

@@ -68,6 +68,9 @@ class Rig:
         self.sync_peak_v = sync_peak_v
         self.amp_on, self.mode, self.reads, self.cancel_at = False, ("dc", 0.0), 0, None
         self.drop_sync_frames = 0
+        # 假 1200B 的写入值：预测电流与假电流都按它计算，与真机“写入即生效、无回读”一致。
+        self.amp_settings = {"gain_db": 20.0, "input_impedance_ohm": 1_000_000.0, "output_impedance_ohm": 1.0}
+        self.source_load = None
         rig = self
 
         class Source:
@@ -81,6 +84,8 @@ class Rig:
             def set_mod_state(self, state, channel=None): rig.events.append(("sg_mod", state))
             def set_sync_state(self, state, channel=None): rig.events.append(("sg_sync", state))
             def set_output(self, state, channel=None): rig.events.append(("sg_output", state))
+            def set_output_load(self, ohms, channel=None):
+                rig.source_load = ohms; rig.events.append(("sg_load", ohms))
             def setup_dc(self, volts, channel=None):
                 rig.mode = ("dc", volts); rig.events.append(("sg_dc", volts))
             def setup_sine(self, f, vpp, offset, channel=None):
@@ -96,6 +101,15 @@ class Rig:
                 if enabled:
                     self.check("output", True)
                 rig.amp_on = enabled; rig.events.append(("amp_output", enabled))
+            def set_gain_db(self, gain_db):
+                self.check("gain_db", gain_db)
+                rig.amp_settings["gain_db"] = gain_db; rig.events.append(("amp_gain", gain_db))
+            def set_input_impedance(self, ohms):
+                self.check("input_impedance_ohms", ohms)
+                rig.amp_settings["input_impedance_ohm"] = ohms; rig.events.append(("amp_input_ohm", ohms))
+            def set_output_impedance(self, ohms):
+                self.check("output_impedance_ohms", ohms)
+                rig.amp_settings["output_impedance_ohm"] = ohms; rig.events.append(("amp_output_ohm", ohms))
 
         class Scope:
             def connect(self): rig.events.append(("scope_connect",))
@@ -132,7 +146,8 @@ class Rig:
     def current(self, t):
         if not self.amp_on:
             return np.zeros_like(t)
-        k = self.true_gain / 20.0
+        # 回路 = 采样 10 Ω + 阻尼 10 Ω（small_params 默认线圈 0 Ω）+ 功放输出阻抗档位。
+        k = self.true_gain / (20.0 + self.amp_settings["output_impedance_ohm"])
         if self.mode[0] == "dc":
             base = np.full_like(t, k * self.mode[1])
         elif self.mode[0] == "sine":
@@ -195,7 +210,9 @@ def test_full_run_then_analysis_recovers_circuit(tmp_path, rig):
     assert summary["zero_offset"]["offset_current_a"] == pytest.approx(2e-3, abs=2e-5)
     # 每十倍频 2 点的对数插值误差约 10%，只核对量级与位置。
     assert summary["bandwidth_3db_hz"] == pytest.approx(1 / (2 * math.pi * TAU), rel=0.15)
-    assert summary["transfer"][0]["admittance_a_per_v"] == pytest.approx(0.5, rel=0.01)
+    # 低频 |I/V| = 实际增益 ÷ (采样 10 Ω + 阻尼 10 Ω + 功放输出阻抗)。
+    expected_low = rig.true_gain / (20.0 + rig.amp_settings["output_impedance_ohm"])
+    assert summary["transfer"][0]["admittance_a_per_v"] == pytest.approx(expected_low, rel=0.01)
     assert summary["rise_10_90_s"] == pytest.approx(TAU * math.log(9), rel=0.05)
     assert summary["shortest_usable_pulse_width_s"] == pytest.approx(20e-6)
     assert (directory / "results" / "coil_drive.png").is_file()
@@ -203,9 +220,9 @@ def test_full_run_then_analysis_recovers_circuit(tmp_path, rig):
 
 def test_gain_above_declared_aborts_with_shutdown(tmp_path, monkeypatch):
     copy_config(tmp_path)
-    value = Rig(true_gain=20.0)  # 面板实际 26 dB，声明 20 dB
+    value = Rig(true_gain=20.0)  # 实际增益 26 dB，参数写入 20 dB
     install(monkeypatch, value)
-    with pytest.raises(SafetyAbort, match="核对功放面板增益"):
+    with pytest.raises(SafetyAbort, match="核对功放增益与阻抗是否生效"):
         workflow.run(small_params(), project_root=tmp_path)
     directory = next((tmp_path / "data" / "coil_drive_characterization").iterdir())
     config = read_config(directory)
@@ -213,6 +230,48 @@ def test_gain_above_declared_aborts_with_shutdown(tmp_path, monkeypatch):
     assert (directory / "raw" / "gain_check.npz").is_file()
     assert not any(e[0] == "sg_sine" for e in value.events)
     assert_shutdown_order(value.events)
+
+
+def test_gain_below_declared_aborts_with_shutdown(tmp_path, monkeypatch):
+    """增益低于声明（例如参数写了 20 dB、功放实际只有 0 dB）时按 GAIN_LOWER_RATIO 中止。"""
+    copy_config(tmp_path)
+    value = Rig(true_gain=1.0)
+    install(monkeypatch, value)
+    with pytest.raises(SafetyAbort, match="低于同一预测值"):
+        workflow.run(small_params(), project_root=tmp_path)
+    directory = next((tmp_path / "data" / "coil_drive_characterization").iterdir())
+    assert read_config(directory)["completion_status"] == "failed"
+    assert not any(e[0] == "sg_sine" for e in value.events)
+    assert_shutdown_order(value.events)
+
+
+def test_amplifier_settings_written_before_any_output(tmp_path, rig):
+    """连接后先按参数写 1200B 增益/输入/输出阻抗，并把信号源负载配成与输入阻抗一致；写入在开输出之前。"""
+    directory = workflow.run(small_params(), project_root=tmp_path)
+    events = rig.events
+    first_output = min(index for index, event in enumerate(events) if event == ("amp_output", True))
+    for expected in (("amp_input_ohm", 1_000_000.0), ("amp_output_ohm", 1.0), ("amp_gain", 20.0)):
+        assert expected in events[:first_output], f"{expected} 应在开启功放输出之前写入"
+    assert ("sg_load", "INF") in events[:first_output]
+    assert read_config(directory)["completion_status"] == "completed"
+    assert rig.amp_settings == {"gain_db": 20.0, "input_impedance_ohm": 1_000_000.0,
+                                "output_impedance_ohm": 1.0}
+
+
+def test_amplifier_settings_rejected_while_output_on(monkeypatch, tmp_path):
+    """功放输出开启时安全回调拒绝改增益或阻抗，命令不会发出。"""
+    from types import SimpleNamespace
+
+    from .preparation import amplifier_safety_check
+
+    ctx = SimpleNamespace(params=small_params(), root=tmp_path, state={"amp_output_on": True})
+    check = amplifier_safety_check(ctx)
+    check("output", False)  # 关闭输出始终放行
+    with pytest.raises(ValueError, match="输出开启时不允许修改"):
+        check("gain_db", 10.0)
+    ctx.state["amp_output_on"] = False
+    with pytest.raises(ValueError, match="不修改功放"):
+        check("save_settings", True)
 
 
 def test_measured_overcurrent_aborts(tmp_path, monkeypatch):

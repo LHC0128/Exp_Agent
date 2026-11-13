@@ -116,12 +116,44 @@ def preflight(params, root):
 
 
 def amplifier_safety_check(ctx):
-    """1200B safety_check 回调：本实验只开启输出，开启前重做整次计划预检。"""
+    """1200B safety_check 回调：放行关闭输出与本次参数里的增益/阻抗写入，开启输出前重做整次预检。"""
     def check(operation, value):
-        if operation != "output" or value is not True:
-            raise ValueError(f"本实验不修改功放 {operation}；请在面板设置后声明增益")
+        if operation == "output":
+            if value is not False:
+                preflight(ctx.params, ctx.root)
+            return
+        if operation not in {"gain_db", "input_impedance_ohms", "output_impedance_ohms"}:
+            raise ValueError(f"本实验不修改功放 {operation}")
+        if ctx.state.get("amp_output_on"):
+            raise ValueError("功放输出开启时不允许修改增益或阻抗；先关闭输出并确认面板")
         preflight(ctx.params, ctx.root)
     return check
+
+
+def configure_amplifier(ctx):
+    """按参数写入 1200B 的增益与输入/输出阻抗，并把信号源输出负载配成与输入阻抗一致。
+
+    1200B 没有增益与阻抗回读，写入值就是预测电流的依据；顺序是上游停输出 → 功放停输出 →
+    写输入/输出阻抗 → 写增益 → 配信号源负载。写入值连同回路电阻与预测 I/V 记入运行状态。
+    """
+    p, sg, amp = ctx.params, ctx.devices["sg"], ctx.devices["amp"]
+    sg.set_output(False)
+    amp.set_output(False)
+    ctx.state["amp_output_on"] = False
+    amp.set_input_impedance(p.amplifier_input_impedance_ohm)
+    amp.set_output_impedance(p.amplifier_output_impedance_ohm)
+    amp.set_gain_db(p.amplifier_gain_db)
+    load = "INF" if p.amplifier_input_impedance_ohm >= 1e6 else 50
+    sg.set_output_load(load)
+    ctx.state["amplifier"] = dict(gain_db=p.amplifier_gain_db,
+                                  input_impedance_ohm=p.amplifier_input_impedance_ohm,
+                                  output_impedance_ohm=p.amplifier_output_impedance_ohm,
+                                  source_output_load=load,
+                                  loop_resistance_ohm=p.loop_resistance_ohm,
+                                  predicted_amps_per_volt=p.amps_per_drive_volt)
+    ctx.outputs["功放"] = (f"{p.amplifier_gain_db:g} dB、输入 {p.amplifier_input_impedance_ohm:g} Ω、"
+                           f"输出 {p.amplifier_output_impedance_ohm:g} Ω（已写入，未回读）")
+    ctx.outputs["Z 通道"] = f"输出 OFF，负载 {load}"
 
 
 def connect(ctx):
@@ -136,6 +168,14 @@ def connect(ctx):
     d["amp"] = session.connect("amp", str(amp["resource"]), lambda: Aigtek1200BInstrument(
         amp["resource"], serial_number=str((amp.get("connection") or {}).get("serial_number", "0001")),
         safety_check=amplifier_safety_check(ctx)))
+    configure_amplifier(ctx)
+
+
+def set_amp_output(ctx, enabled):
+    """开/关 1200B 输出并登记状态；安全回调据此拒绝带载改增益或阻抗。"""
+    ctx.devices["amp"].set_output(enabled)
+    ctx.state["amp_output_on"] = enabled
+    ctx.outputs["功放"] = "ON（已发送 AON，未回读）" if enabled else "OFF（已发送 AOF，未回读）"
 
 
 def clocks(ctx):

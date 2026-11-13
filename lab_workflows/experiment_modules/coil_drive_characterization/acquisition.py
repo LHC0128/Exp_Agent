@@ -13,7 +13,7 @@ from ...common import load_safety_limits, validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from . import processing
 from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, capture_config, current_limit, plan,
-                          scale_for, set_dc, sleep)
+                          scale_for, set_amp_output, set_dc, sleep)
 from .run_format import SOURCE_KEY
 
 # DG4000 同步为 0→3.5 V TTL，真机（DG4162 固件 00.01.14）只在「输出 OFF→ON 边沿、且边沿时
@@ -104,9 +104,8 @@ def _progress(stage, label, index, total, started):
 
 def measure_zero_and_gain(ctx):
     """功放关/开两态、信号源 DC 0 V 下的平均采样电压之差为零偏；再用小直流核对增益。"""
-    p, amp = ctx.params, ctx.devices["amp"]
-    amp.set_output(False)
-    ctx.outputs["功放"] = "OFF（已发送 AOF，未回读）"
+    p = ctx.params
+    set_amp_output(ctx, False)
     set_dc(ctx, 0.0)
     ctx.devices["sg"].set_sync_state(True)
     ctx.outputs["Z 通道"] = "DC 0 V + ON，同步 ON"
@@ -116,8 +115,7 @@ def measure_zero_and_gain(ctx):
     total, started = 2 * p.zero_frames + 1, time.monotonic()
     for kind in ("zero_off", "zero_on"):
         if kind == "zero_on":
-            amp.set_output(True)
-            ctx.outputs["功放"] = "ON（已发送 AON，未回读）"
+            set_amp_output(ctx, True)
             sleep(p.settle_s)
         for index in range(p.zero_frames):
             _, sense = capture(ctx, f"{kind}_{index:02d}", config, {"kind": kind})
@@ -145,8 +143,12 @@ def measure_zero_and_gain(ctx):
                                    ratio=measured / p.amps_per_drive_volt)
     _progress("A03", "增益核对", total, total, started)
     if measured > p.gain_tolerance * p.amps_per_drive_volt:
-        raise SafetyAbort(f"实测 I/V={measured:.4g} A/V 超过按 {p.amplifier_gain_db} dB 预测的 "
-                          f"{p.amps_per_drive_volt:.4g} A/V 的 {p.gain_tolerance} 倍；核对功放面板增益")
+        raise SafetyAbort(f"实测 I/V={measured:.4g} A/V 超过按 {p.amplifier_gain_db:g} dB、"
+                          f"{p.amplifier_output_impedance_ohm:g} Ω 输出阻抗与 {p.loop_resistance_ohm:g} Ω 回路预测的 "
+                          f"{p.amps_per_drive_volt:.4g} A/V 的 {p.gain_tolerance:g} 倍；核对功放增益与阻抗是否生效")
+    if measured < p.gain_lower_ratio * p.amps_per_drive_volt:
+        raise SafetyAbort(f"实测 I/V={measured:.4g} A/V 低于同一预测值 {p.amps_per_drive_volt:.4g} A/V 的 "
+                          f"{p.gain_lower_ratio:g} 倍；核对功放增益、输入/输出阻抗是否生效与回路接线")
 
 
 def measure_transfer(ctx):
