@@ -5,8 +5,9 @@ from typing import Any
 from urllib.parse import quote
 
 import yaml
-from fastapi import HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import Field
+from lab_workflows.experiments.contracts import RunHistory
 from lab_workflows.workflow_state import read_state
 
 from .schemas import StrictModel
@@ -100,3 +101,42 @@ def run_summary(service, run_id: str, *, config_reader=read_config):
         "parameters": parameters,
         "artifacts": artifacts,
     }
+
+
+class RunHistoryGate:
+    """按实验声明的 run_format 追加原始资格判定；须排在 WorkflowSessionService 之前。"""
+
+    run_history: RunHistory | None = None
+
+    def run_directory(self, run_id, *, allow_running=False):
+        path = super().run_directory(run_id, allow_running=allow_running)
+        if self.run_history is None:
+            return path
+        config = read_config(path / "experiment_config.yaml")
+        identity = self.run_history.run_format
+        reason = identity.format_block_reason(config) if allow_running else identity.analysis_block_reason(config)
+        if reason:
+            raise HTTPException(422, reason)
+        return path
+
+
+def add_history_routes(router: APIRouter, service) -> APIRouter:
+    """只读历史路由；响应模型、分页上限与产物 URL 由公共实现统一保持。"""
+
+    @router.get("/runs", response_model=WorkflowRuns)
+    def runs(limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0)):
+        return list_runs(service, limit, offset)
+
+    @router.get("/runs/{run_id}/summary", response_model=WorkflowRunSummary)
+    def summary(run_id: str):
+        value = run_summary(service, run_id)
+        history = getattr(service, "run_history", None)
+        if history is not None and history.historical_parameters is not None:
+            path = service.run_directory(run_id, allow_running=True)
+            try:
+                value["parameters"] = history.historical_parameters(read_config(path / "experiment_config.yaml"))
+            except (OSError, KeyError, TypeError, ValueError) as exc:
+                raise HTTPException(422, f"历史参数迁移失败：{exc}") from exc
+        return value
+
+    return router
