@@ -238,14 +238,16 @@ def test_valid_sync_passes_sweep(tmp_path, rig):
     assert len(list((directory / "raw").glob("sine_*.npz"))) == 7
 
 
-def test_sync_reenabled_after_each_waveform_setup(tmp_path, rig):
-    """APPLy 重绘波形后必须重新使能同步：每个 setup_sine/setup_pulse 后紧跟 set_sync_state(True)。"""
+def test_sync_armed_with_output_edge_after_each_waveform_setup(tmp_path, rig):
+    """APPLy 重绘波形后必须重新锁存同步：每个 setup_sine/setup_pulse 后紧跟
+    「关输出 → 开同步 → 开输出」三步，DG4000 只在输出 OFF→ON 边沿且边沿时同步已使能才输出同步。"""
     workflow.run(small_params(), project_root=tmp_path)
     events = rig.events
+    arming = [("sg_output", False), ("sg_sync", True), ("sg_output", True)]
     for i, event in enumerate(events):
         if event[0] in ("sg_sine", "sg_pulse"):
-            assert i + 1 < len(events) and events[i + 1] == ("sg_sync", True), \
-                f"{event} 之后未重新开同步：{events[i + 1:i + 2]}"
+            assert events[i + 1:i + 4] == arming, \
+                f"{event} 之后未重新锁存同步：{events[i + 1:i + 4]}"
 
 
 def test_cancel_mid_sweep_shuts_down_and_keeps_frames(tmp_path, rig):

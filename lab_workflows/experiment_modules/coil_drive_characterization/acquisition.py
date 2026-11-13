@@ -16,10 +16,23 @@ from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, capture_config, 
                           scale_for, set_dc, sleep)
 from .run_format import SOURCE_KEY
 
-# DG4000 同步为 0→3.5 V TTL，仅在「非 DC 波形 + 主输出 ON + 同步使能 ON」三者同时满足时输出
-# （真机受控实验确认；APPLy 重绘波形后需重新开同步）。NORMal 触发帧的同帧同步峰峰值
-# 低于此值即判同步缺失。阈值远低于 3.5 V、远高于噪声。
+# DG4000 同步为 0→3.5 V TTL，真机（DG4162 固件 00.01.14）只在「输出 OFF→ON 边沿、且边沿时
+# 同步已使能」的情况下让同步发生器起振：输出已开启时写同步使能只更新状态位，CH3 无输出；
+# APPLy 重绘波形既不产生也不破坏已锁存的同步。NORMal 触发帧的同帧同步峰峰值低于此值即判
+# 同步缺失。阈值远低于 3.5 V、远高于噪声。
 SYNC_MIN_PEAK_V = 1.0
+
+
+def arm_sync(sg):
+    """重新锁存 DG4000 同步：先使能同步，再用一次输出 OFF→ON 边沿起振。
+
+    真机受控实验：APPLy 后直接写同步使能，CH3 连续 3 次无同步；补上输出边沿后 3 次全部
+    出现 3.5 V TTL，零延时与 0.3 s 间隔等效，脉冲与 ±0.4 V 正弦都成立。波形在关输出期间
+    保持不变，不会把线圈驱动切换成 DC。
+    """
+    sg.set_output(False)
+    sg.set_sync_state(True)
+    sg.set_output(True)
 
 
 def _guard_current(ctx, current_a):
@@ -127,7 +140,7 @@ def measure_transfer(ctx):
         for index, frequency in enumerate(frequencies):
             check_cancelled()
             sg.setup_sine(frequency, 2.0 * drive, 0.0)
-            sg.set_sync_state(True)  # APPLy 重绘波形后重新使能同步（非 DC + 输出 ON + 同步 ON 才有同步输出）
+            arm_sync(sg)  # APPLy 后必须重新锁存同步，否则 NORMal 触发永远等不到同步沿
             ctx.outputs["Z 通道"] = f"正弦 {frequency:.6g} Hz，{2 * drive:.4g} Vpp"
             sleep(p.settle_s)
             config = capture_config(p, p.sine_cycles / frequency, ctx.current_scale)
@@ -154,7 +167,7 @@ def measure_steps(ctx):
         for index, width in enumerate(widths):
             check_cancelled()
             sg.setup_pulse(p.pulse_repetition_hz, drive, drive / 2.0, width=width)
-            sg.set_sync_state(True)  # APPLy 重绘波形后重新使能同步（非 DC + 输出 ON + 同步 ON 才有同步输出）
+            arm_sync(sg)  # APPLy 后必须重新锁存同步，否则 NORMal 触发永远等不到同步沿
             ctx.outputs["Z 通道"] = f"脉冲 0→{drive:.4g} V，宽 {width * 1e6:g} µs"
             sleep(p.settle_s)
             config = capture_config(p, p.pulse_window_multiple * width, ctx.current_scale)
