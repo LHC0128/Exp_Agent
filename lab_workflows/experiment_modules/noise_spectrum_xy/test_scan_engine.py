@@ -42,6 +42,18 @@ def test_engine_hooks_keep_noise_family_semantics(tmp_path):
     ctx.finish()
 
 
+def test_sub_experiments_reuse_nodes_without_inheriting_shell_class():
+    """两个子实验与正弦实验是兄弟：只复用共享节点函数，不继承本实验壳类。"""
+    from ..noise_spectrum_xy_known_noise.workflow import Workflow as KnownWorkflow
+    from ..noise_spectrum_xy_probe_am.workflow import Workflow as ProbeWorkflow
+
+    for child in (KnownWorkflow, ProbeWorkflow):
+        assert not issubclass(child, workflow.Workflow)
+        assert issubclass(child, NoiseXYScan)
+        # 分派仍由各实验自己声明，不搬进基类或 provider。
+        assert "_execute_step" in child.__dict__
+
+
 @pytest.mark.parametrize("item", ["A01", "A02", "A03"])
 def test_failure_before_output_setup_creates_no_run_directory(tmp_path, item):
     """A01–A03 失败时不得产生运行目录；目录只在 A04 节点内惰性创建。"""

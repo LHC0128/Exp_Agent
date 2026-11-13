@@ -325,7 +325,8 @@ def analyze():
     assert not _instance_writes(tree, _imports(tree, module.rsplit(".", 1)[0]), module)
 
 
-@pytest.mark.parametrize("filename", ["workflow_stages.py", "analysis_execution.py", "steps/lockin.py"])
+@pytest.mark.parametrize("filename", ["workflow_stages.py", "analysis_execution.py", "steps/lockin.py",
+                                      "steps/noise_xy_scan.py"])
 def test_shared_execution_capabilities_do_not_import_experiments(filename):
     path = ROOT / "lab_workflows" / filename
     tree = ast.parse(path.read_text(encoding="utf-8"))
