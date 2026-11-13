@@ -29,9 +29,14 @@ class CoilDriveCharacterizationParams(ExperimentParams):
     amplifier_input_impedance_ohm: float = parameter(default=1_000_000, external_name="AMPLIFIER_INPUT_IMPEDANCE_OHM",
         label="功放输入阻抗", unit="Ω", group="basic", options=((50.0, "50 Ω"), (1_000_000.0, "1 MΩ")),
         description="连接时写入 1200B，并把信号源输出负载配成一致（1 MΩ→高阻，50 Ω→50 Ω），避免上游幅度按错负载标定")
-    amplifier_output_impedance_ohm: float = parameter(default=1.0, external_name="AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+    amplifier_output_impedance_ohm: float = parameter(default=50.0, external_name="AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
         label="功放输出阻抗", unit="Ω", group="basic", options=((1.0, "1 Ω"), (50.0, "50 Ω")),
-        description="连接时写入 1200B；50 Ω 与线圈回路串联，直接参与回路电阻与预测电流")
+        description="连接时写入 1200B；50 Ω 与线圈回路串联，直接参与回路电阻与预测电流。"
+                    "本机 1 Ω 档实测静默不出输出（面板已切换但无驱动），默认 50 Ω")
+    amplifier_write_settings: bool = parameter(default=True, external_name="AMPLIFIER_WRITE_SETTINGS",
+        label="连接时写入功放设置", group="basic",
+        description="true 时按上面三项发送 1200B 命令（写入效果已由面板与 A03 双向核对确认）；"
+                    "false 时只按声明值预测，要求面板与声明一致")
     sine_peak_current_ma: float = parameter(default=100.0, external_name="SINE_PEAK_CURRENT_MA", label="扫频电流峰值",
         unit="mA", minimum=0.1, group="basic", description="按声明增益与回路电阻换算信号源幅度")
     frequency_start_hz: float = parameter(default=10.0, external_name="FREQUENCY_START_HZ", label="扫频起始频率",

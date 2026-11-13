@@ -69,7 +69,7 @@ class Rig:
         self.amp_on, self.mode, self.reads, self.cancel_at = False, ("dc", 0.0), 0, None
         self.drop_sync_frames = 0
         # 假 1200B 的写入值：预测电流与假电流都按它计算，与真机“写入即生效、无回读”一致。
-        self.amp_settings = {"gain_db": 20.0, "input_impedance_ohm": 1_000_000.0, "output_impedance_ohm": 1.0}
+        self.amp_settings = {"gain_db": 20.0, "input_impedance_ohm": 1_000_000.0, "output_impedance_ohm": 50.0}
         self.source_load = None
         rig = self
 
@@ -250,12 +250,18 @@ def test_amplifier_settings_written_before_any_output(tmp_path, rig):
     directory = workflow.run(small_params(), project_root=tmp_path)
     events = rig.events
     first_output = min(index for index, event in enumerate(events) if event == ("amp_output", True))
-    for expected in (("amp_input_ohm", 1_000_000.0), ("amp_output_ohm", 1.0), ("amp_gain", 20.0)):
+    for expected in (("amp_input_ohm", 1_000_000.0), ("amp_output_ohm", 50.0), ("amp_gain", 20.0)):
         assert expected in events[:first_output], f"{expected} 应在开启功放输出之前写入"
     assert ("sg_load", "INF") in events[:first_output]
     assert read_config(directory)["completion_status"] == "completed"
     assert rig.amp_settings == {"gain_db": 20.0, "input_impedance_ohm": 1_000_000.0,
-                                "output_impedance_ohm": 1.0}
+                                "output_impedance_ohm": 50.0}
+
+
+def test_amplifier_settings_not_written_when_disabled(tmp_path, rig):
+    """AMPLIFIER_WRITE_SETTINGS=false 时只按声明值预测，不向 1200B 发增益/阻抗命令。"""
+    workflow.run(small_params(amplifier_write_settings=False), project_root=tmp_path)
+    assert not any(event[0] in ("amp_gain", "amp_input_ohm", "amp_output_ohm") for event in rig.events)
 
 
 def test_amplifier_settings_rejected_while_output_on(monkeypatch, tmp_path):

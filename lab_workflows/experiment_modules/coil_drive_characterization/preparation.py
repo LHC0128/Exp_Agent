@@ -135,24 +135,28 @@ def configure_amplifier(ctx):
 
     1200B 没有增益与阻抗回读，写入值就是预测电流的依据；顺序是上游停输出 → 功放停输出 →
     写输入/输出阻抗 → 写增益 → 配信号源负载。写入值连同回路电阻与预测 I/V 记入运行状态。
+    AMPLIFIER_WRITE_SETTINGS 为 false 时不写硬件，只按声明值预测。
     """
     p, sg, amp = ctx.params, ctx.devices["sg"], ctx.devices["amp"]
     sg.set_output(False)
     amp.set_output(False)
     ctx.state["amp_output_on"] = False
-    amp.set_input_impedance(p.amplifier_input_impedance_ohm)
-    amp.set_output_impedance(p.amplifier_output_impedance_ohm)
-    amp.set_gain_db(p.amplifier_gain_db)
+    if p.amplifier_write_settings:
+        amp.set_input_impedance(p.amplifier_input_impedance_ohm)
+        amp.set_output_impedance(p.amplifier_output_impedance_ohm)
+        amp.set_gain_db(p.amplifier_gain_db)
     load = "INF" if p.amplifier_input_impedance_ohm >= 1e6 else 50
     sg.set_output_load(load)
+    written = "已写入，未回读" if p.amplifier_write_settings else "未写入，需面板一致"
     ctx.state["amplifier"] = dict(gain_db=p.amplifier_gain_db,
                                   input_impedance_ohm=p.amplifier_input_impedance_ohm,
                                   output_impedance_ohm=p.amplifier_output_impedance_ohm,
                                   source_output_load=load,
+                                  written=bool(p.amplifier_write_settings),
                                   loop_resistance_ohm=p.loop_resistance_ohm,
                                   predicted_amps_per_volt=p.amps_per_drive_volt)
     ctx.outputs["功放"] = (f"{p.amplifier_gain_db:g} dB、输入 {p.amplifier_input_impedance_ohm:g} Ω、"
-                           f"输出 {p.amplifier_output_impedance_ohm:g} Ω（已写入，未回读）")
+                           f"输出 {p.amplifier_output_impedance_ohm:g} Ω（{written}）")
     ctx.outputs["Z 通道"] = f"输出 OFF，负载 {load}"
 
 
