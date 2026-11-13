@@ -15,7 +15,7 @@ CHAIN = ("AMPLIFIER_GAIN_DB", "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPLIFIER_OUTPUT
          "SETTLE_S", "SCOPE_ACQUIRE_DELAY_S", "SCOPE_CURRENT_CHANNEL", "SCOPE_SYNC_CHANNEL", "SYNC_TRIGGER_LEVEL_V",
          "SYNC_SCALE_V_DIV", "MAX_MEMORY_DEPTH")
 SINE = ("SINE_PEAK_CURRENT_MA", "FREQUENCY_START_HZ", "FREQUENCY_STOP_HZ", "POINTS_PER_DECADE", "SINE_CYCLES")
-PULSE = ("PULSE_CURRENT_MA", "PULSE_WIDTHS_US", "PULSE_REPETITION_HZ", "PULSE_WINDOW_MULTIPLE")
+PULSE = ("PULSE_CURRENT_MA", "PULSE_WIDTHS_US", "PULSE_REPETITION_HZ", "PULSE_WINDOW_MULTIPLE", "PULSE_MIN_WINDOW_US")
 SHARED = ("SETTLE_S", "SCOPE_ACQUIRE_DELAY_S", "MAX_MEMORY_DEPTH")
 ACQUISITION = (
     Stage("A01", "参数、映射与安全限值预检", "准备", (), ("RUN_TAG",), display_parameters=("RUN_TAG",),
@@ -33,7 +33,8 @@ ACQUISITION = (
           quality_gates=("同步上升沿触发；削顶自动放大量程，最大量程仍削顶即中止",)),
     Stage(RUN_ID, "矩形脉冲阶跃响应", "测量", ("A03",), PULSE, ("raw/pulse_*.npz",),
           display_parameters=(*PULSE, *SHARED),
-          quality_gates=("0→I 单极性脉冲，触发居中、触发后窗口 ≥2.5 倍脉宽；最宽脉冲占空比 <50%",)),
+          quality_gates=("0→I 单极性脉冲，触发居中，记录窗 = max(倍数 × 脉宽, 下限)、触发后可用 ≥2.5 倍脉宽；"
+                       "最宽脉冲占空比 <50%",)),
     Stage(FINISH_ID, "安全结束会话", "结束", (),
           quality_gates=("先关闭 1200B 输出，再将 Z 通道 DC 0 V、关闭同步与输出，停止 DHO900 并断开三台设备",)),
 )

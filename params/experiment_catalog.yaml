@@ -1,19 +1,5 @@
 schema_version: 3
 archived_experiments:
-- mx-y-rf-sensitivity-drift
-- mx-z-optimal-control-xy-rf-sensitivity
-- mx-z-optimal-control-xy-noise-spectrum
-- mx-z-optimal-control-xy-leakage-response
-- mx-z-optimal-control-xy-rf-phase-response
-- mx-z-optimal-control-xyz-balance
-- mx-z-optimal-control-dg4000-bias-xyz-balance
-- z-aw-waveform-scope-check
-- z-coil-inductance-frequency-response
-- z-coil-current-frequency-response
-- mx-z-current-coupling-calibration
-- z-aw-current-waveform-scope-check
-- z-aw-closed-loop-waveform-correction
-- mx-xy-residual-field-calibration
 - static-sensitivity-optimize-local
 - mx-keithley-6221-main-field-calibration
 - mx-keithley-6221-optimal-control-rf-sensitivity
@@ -32,6 +18,20 @@ archived_experiments:
 - aw-const-omega-check
 - xy-dc-voltage-calibration
 - xy-aw-voltage-calibration
+- mx-xy-residual-field-calibration
+- mx-y-rf-sensitivity-drift
+- mx-z-current-coupling-calibration
+- mx-z-optimal-control-dg4000-bias-xyz-balance
+- mx-z-optimal-control-xy-leakage-response
+- mx-z-optimal-control-xy-noise-spectrum
+- mx-z-optimal-control-xy-rf-phase-response
+- mx-z-optimal-control-xy-rf-sensitivity
+- mx-z-optimal-control-xyz-balance
+- z-aw-current-waveform-scope-check
+- z-aw-closed-loop-waveform-correction
+- z-aw-waveform-scope-check
+- z-coil-current-frequency-response
+- z-coil-inductance-frequency-response
 tags:
 - id: measurement
   label: 静磁场
@@ -2101,6 +2101,9 @@ parameter_layouts:
     - PULSE_CURRENT_MA
     - PULSE_WIDTHS_US
     - PULSE_REPETITION_HZ
+    - AMPLIFIER_INPUT_IMPEDANCE_OHM
+    - AMPLIFIER_OUTPUT_IMPEDANCE_OHM
+    - AMPLIFIER_WRITE_SETTINGS
     advanced:
     - SENSE_RESISTOR_OHM
     - DAMPING_RESISTOR_OHM
@@ -2120,3 +2123,4 @@ parameter_layouts:
     - ZERO_WINDOW_S
     - PULSE_WINDOW_MULTIPLE
     - MAX_MEMORY_DEPTH
+    - GAIN_LOWER_RATIO

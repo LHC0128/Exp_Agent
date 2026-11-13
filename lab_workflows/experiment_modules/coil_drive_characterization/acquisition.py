@@ -195,7 +195,10 @@ def measure_steps(ctx):
                 arm_sync_output(sg)  # 每段只锁存一次；换脉宽 APPLy 不破坏已锁存的同步
             ctx.outputs["Z 通道"] = f"脉冲 0→{drive:.4g} V，宽 {actual_width * 1e6:g} µs"
             sleep(p.settle_s)
-            config = capture_config(p, p.pulse_window_multiple * width, ctx.current_scale)
+            # 记录窗只按倍数算会放不下短脉冲的 RL 衰减拖尾（1 µs 脉宽 τ≈0.7 µs），长尾被截断后
+            # 分析既拿不到下降沿也算不准含拖尾面积，因此再加一个绝对下限。
+            window = max(p.pulse_window_multiple * width, p.pulse_min_window_us * 1e-6)
+            config = capture_config(p, window, ctx.current_scale)
             capture(ctx, f"pulse_{index:02d}", config,
                     {"kind": "pulse", "width_s": width, "actual_width_s": actual_width, "drive_v": drive,
                      "leading_edge_s": sg.get_pulse_leading(), "trailing_edge_s": sg.get_pulse_trailing()})

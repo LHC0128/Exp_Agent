@@ -104,20 +104,30 @@ def transfer(run_dir, params):
 
 
 def pulses(run_dir, params, b01):
-    """B02：脉冲指标、最短可用脉宽、汇总图与 summary.json。"""
-    traces, metrics = [], []
+    """B02：脉冲指标、最短可用脉宽、汇总图与 summary.json。
+
+    记录窗未包含衰减尾部的帧整帧跳过并记入 summary["pulse_skipped"]，不因此中止分析；
+    只有全部脉冲帧都不可用时才判失败。
+    """
+    traces, metrics, skipped = [], [], []
     for name, meta, t, v in load_frames(run_dir, {"pulse"}):
         current = v / params.sense_resistor_ohm
         try:
-            metrics.append(processing.step_metrics(t, current, meta["width_s"]))
+            metric = processing.step_metrics(t, current, meta["width_s"])
+        except processing.TruncatedPulse as exc:
+            skipped.append({"frame": name, "width_s": meta["width_s"], "reason": str(exc)})
+            continue
         except ValueError as exc:
             raise AnalysisQualityError(f"{name}: {exc}") from exc
+        metrics.append(metric)
         traces.append((meta["width_s"], t, current))
-    rows = processing.pulse_area_table(metrics) if metrics else []
-    summary = dict(b01, pulse=rows, area_tolerance_fraction=params.area_tolerance,
-                   shortest_usable_pulse_width_s=processing.shortest_usable_width(rows, params.area_tolerance)
-                   if rows else None,
-                   rise_10_90_s=max(metrics, key=lambda m: m.width_s).rise_10_90_s if metrics else None)
+    if not metrics:
+        raise AnalysisQualityError("所有脉冲帧的记录窗都不完整，无法给出脉冲指标；"
+                                  "请加大 PULSE_WINDOW_MULTIPLE 或 PULSE_MIN_WINDOW_US 重采")
+    rows = processing.pulse_area_table(metrics)
+    summary = dict(b01, pulse=rows, pulse_skipped=skipped, area_tolerance_fraction=params.area_tolerance,
+                   shortest_usable_pulse_width_s=processing.shortest_usable_width(rows, params.area_tolerance),
+                   rise_10_90_s=max(metrics, key=lambda m: m.width_s).rise_10_90_s)
     processing.plot_summary(summary, traces, output_path(run_dir, "results/coil_drive.png"))
     output_path(run_dir, "results/summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2),
                                                             encoding="utf-8")
