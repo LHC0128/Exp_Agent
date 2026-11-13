@@ -1,7 +1,7 @@
 """以注册表为范围的静态边界回归；不导入实验模块，不连接硬件。
 
-历史依赖只允许减少。冻结值经本轮修改前源码副本核对并扣除已消除的债务，
-不在测试运行时从当前代码重新生成。动态工厂、容器传播和反射仍须代码审查。
+跨实验执行类继承、父执行器状态重建、外部执行器状态写入**零容忍**：三项都必须为空。
+动态工厂、容器传播和反射仍须代码审查。
 """
 from __future__ import annotations
 
@@ -14,36 +14,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 PREFIX = "lab_workflows.experiment_modules."
-
-# 与改前副本逐项核对，再扣除本轮已消除的债务；不在运行时重新生成。
-_DIRECT = "rf_sensitivity_direct_aw.workflow.SingleControlWorkflow"
-_DIRECT_ANALYSIS = "rf_sensitivity_direct_aw.analysis.AnalysisWorkflow"
-
-
-def _legacy_edge(child: str, parent: str) -> tuple[str, str]:
-    return PREFIX + child, PREFIX + parent
-
-
-def _legacy_profile(child: str, parent: str) -> str:
-    return f"{PREFIX}{child} -> {PREFIX}{parent}"
-
-
-LEGACY_EXECUTOR_BASES = frozenset({
-    _legacy_edge("rf_control_scale_sensitivity.analysis.AnalysisWorkflow", _DIRECT_ANALYSIS),
-    _legacy_edge("rf_control_scale_sensitivity.workflow.ControlWorkflow", _DIRECT),
-    _legacy_edge("rf_control_scale_sensitivity.workflow.Workflow", _DIRECT),
-    _legacy_edge("rf_sensitivity_aw_known_noise.analysis.AnalysisWorkflow", _DIRECT_ANALYSIS),
-    _legacy_edge("rf_sensitivity_aw_known_noise.workflow.ControlWorkflow", _DIRECT),
-    _legacy_edge("rf_sensitivity_aw_known_noise.workflow.Workflow", _DIRECT),
-})
-LEGACY_CONSTRUCTOR_WRITES = {
-    _legacy_profile("rf_control_scale_sensitivity.analysis.AnalysisWorkflow", _DIRECT_ANALYSIS):
-        {"config": 1, "options": 3},
-    _legacy_profile("rf_control_scale_sensitivity.workflow.Workflow", _DIRECT): {"state": 1},
-}
-LEGACY_INSTANCE_WRITES = {
-    PREFIX + "rf_sensitivity_aw_known_noise.workflow": {PREFIX + _DIRECT + ".directory": 1},
-}
 
 
 def _imports(tree: ast.Module, package: str) -> dict[str, str]:
@@ -220,9 +190,9 @@ def _extra_writes(actual: dict[str, dict[str, int]], allowed: dict[str, dict[str
 
 def test_all_registered_experiments_cannot_add_executor_coupling():
     edges, constructors, instances = _snapshot(ROOT)
-    assert not edges - LEGACY_EXECUTOR_BASES, f"新增跨实验执行类继承：{sorted(edges - LEGACY_EXECUTOR_BASES)}"
-    assert not (extra := _extra_writes(constructors, LEGACY_CONSTRUCTOR_WRITES)), f"新增父执行器状态重建：{extra}"
-    assert not (extra := _extra_writes(instances, LEGACY_INSTANCE_WRITES)), f"新增外部执行器状态写入：{extra}"
+    assert not edges, f"存在跨实验执行类继承：{sorted(edges)}"
+    assert not constructors, f"存在父执行器状态重建：{constructors}"
+    assert not instances, f"存在外部执行器状态写入：{instances}"
 
 
 @pytest.mark.parametrize("source", [
@@ -326,11 +296,18 @@ def analyze():
 
 
 @pytest.mark.parametrize("filename", ["workflow_stages.py", "analysis_execution.py", "steps/lockin.py",
-                                      "steps/noise_xy_scan.py"])
+                                      "steps/noise_xy_scan.py", "steps/direct_aw_control.py",
+                                      "steps/direct_aw_state.py", "steps/direct_aw_control_runs.py",
+                                      "analysis/direct_aw_analysis.py"])
 def test_shared_execution_capabilities_do_not_import_experiments(filename):
     path = ROOT / "lab_workflows" / filename
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    package = "lab_workflows.steps" if filename.startswith("steps/") else "lab_workflows"
+    if filename.startswith("steps/"):
+        package = "lab_workflows.steps"
+    elif filename.startswith("analysis/"):
+        package = "lab_workflows.analysis"
+    else:
+        package = "lab_workflows"
     imports = ast.Module(body=[node for node in ast.walk(tree)
         if isinstance(node, (ast.ImportFrom, ast.Import))], type_ignores=[])
     assert not {name for name in _imports(imports, package).values() if name.startswith(PREFIX)}
