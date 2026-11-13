@@ -238,6 +238,16 @@ def test_valid_sync_passes_sweep(tmp_path, rig):
     assert len(list((directory / "raw").glob("sine_*.npz"))) == 7
 
 
+def test_sync_reenabled_after_each_waveform_setup(tmp_path, rig):
+    """APPLy 重绘波形后必须重新使能同步：每个 setup_sine/setup_pulse 后紧跟 set_sync_state(True)。"""
+    workflow.run(small_params(), project_root=tmp_path)
+    events = rig.events
+    for i, event in enumerate(events):
+        if event[0] in ("sg_sine", "sg_pulse"):
+            assert i + 1 < len(events) and events[i + 1] == ("sg_sync", True), \
+                f"{event} 之后未重新开同步：{events[i + 1:i + 2]}"
+
+
 def test_cancel_mid_sweep_shuts_down_and_keeps_frames(tmp_path, rig):
     rig.cancel_at = 8  # 5 帧零偏 + 1 帧增益 + 第 2 个扫频点
     ctx = workflow.Workflow(small_params(), project_root=tmp_path)

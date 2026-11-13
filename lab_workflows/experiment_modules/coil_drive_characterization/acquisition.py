@@ -16,8 +16,9 @@ from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, capture_config, 
                           scale_for, set_dc, sleep)
 from .run_format import SOURCE_KEY
 
-# DG4000 同步为 0→3.5 V TTL，仅在非 DC 波形下输出；NORMal 触发帧的同帧同步峰峰值
-# 低于此值即判同步缺失（状态位回读不可靠，须用实测幅度）。阈值远低于 3.5 V、远高于噪声。
+# DG4000 同步为 0→3.5 V TTL，仅在「非 DC 波形 + 主输出 ON + 同步使能 ON」三者同时满足时输出
+# （真机受控实验确认；APPLy 重绘波形后需重新开同步）。NORMal 触发帧的同帧同步峰峰值
+# 低于此值即判同步缺失。阈值远低于 3.5 V、远高于噪声。
 SYNC_MIN_PEAK_V = 1.0
 
 
@@ -126,6 +127,7 @@ def measure_transfer(ctx):
         for index, frequency in enumerate(frequencies):
             check_cancelled()
             sg.setup_sine(frequency, 2.0 * drive, 0.0)
+            sg.set_sync_state(True)  # APPLy 重绘波形后重新使能同步（非 DC + 输出 ON + 同步 ON 才有同步输出）
             ctx.outputs["Z 通道"] = f"正弦 {frequency:.6g} Hz，{2 * drive:.4g} Vpp"
             sleep(p.settle_s)
             config = capture_config(p, p.sine_cycles / frequency, ctx.current_scale)
@@ -152,6 +154,7 @@ def measure_steps(ctx):
         for index, width in enumerate(widths):
             check_cancelled()
             sg.setup_pulse(p.pulse_repetition_hz, drive, drive / 2.0, width=width)
+            sg.set_sync_state(True)  # APPLy 重绘波形后重新使能同步（非 DC + 输出 ON + 同步 ON 才有同步输出）
             ctx.outputs["Z 通道"] = f"脉冲 0→{drive:.4g} V，宽 {width * 1e6:g} µs"
             sleep(p.settle_s)
             config = capture_config(p, p.pulse_window_multiple * width, ctx.current_scale)
