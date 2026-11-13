@@ -3,7 +3,9 @@
 #
 # 执行引擎（会话状态、快照、发布、保存、目录轮换、执行循环、结束）在共享层
 # `lab_workflows.steps.direct_aw_control`；本模块只声明流程清单与运行格式，
-# 实现节点动作、安全收尾和多控制门面。
+# 实现节点动作、安全收尾和多控制门面。节点动作与安全收尾是模块级
+# `execute_shared_nodes` / `shutdown_outputs`，父子实验共用同一份实现，
+# 子实验按节点号委托，不继承本模块的壳类。
 
 # %% 导入
 from copy import deepcopy
@@ -30,6 +32,127 @@ from .stages import SINGLE_ACQUISITION, MULTI_ACQUISITION, FINISH_ID, invalidate
 _ControlWorkflow = TypeVar("_ControlWorkflow", bound="SingleControlWorkflow")
 # 采集与结束节点：A15 完成本轮采集，A16 安全收尾并关闭会话。
 RUN_ID = "A15"
+
+
+# %% 共享节点与安全收尾
+def execute_shared_nodes(ctx, item) -> None:
+    """父实验与两个子实验共用的节点动作；ctx 为任何满足该协议的执行器实例。
+
+    留在本模块而不是 ``steps/``：节点体依赖本包的 preparation / excitation /
+    phase / acquisition 私有函数，测试也按本模块名打桩。
+    """
+    if item == "A02":
+        if not ctx.devices:
+            ctx.devices = preparation.connect_devices(ctx.mapping, params=ctx.params, experiment_id=ctx.identity.EXPERIMENT_ID)
+    elif item == "A03":
+        try:
+            ctx.state["clock_sync"] = synchronize_connected_clocks(ctx.devices, ctx.mapping,
+                {"signals": "X_magnetic_field", "hf2": "lockin_r"}, settle_wait=wait)
+            ctx.clock_failed = False
+        except BaseException:
+            ctx.clock_failed = True
+            raise
+    elif item == "A04":
+        ctx.outputs_safe = False
+        preparation.configure_initial_outputs(ctx)
+        ctx.outputs.update(X="OFF", Y="OFF", Z="OFF", 温控="ON", 共用触发="OFF")
+    elif item == "A05":
+        preparation.configure_temperature(ctx)
+    elif item == "A06":
+        excitation.configure_pump(ctx)
+        ctx.outputs["Pump"] = "ON"
+    elif item == "A07":
+        excitation.configure_trigger(ctx)
+        ctx.outputs["共用触发"] = "ON"
+    elif item == "A08":
+        ctx.state["phase_calibration_status"] = "running"
+        phase.calibrate_demod0(ctx)
+        ctx.demod_mode = "phase"
+    elif item == "A09":
+        ctx.outputs_safe = False
+        phase.calibrate_xy(ctx)
+        ctx.outputs.update(X="ON", Y="ON", 温控="ON")
+    elif item == "A10":
+        phase.configure_loopback(ctx)
+        ctx.demod_mode = "response"
+        ctx.outputs["Z"] = "ON"
+        acquisition.record_response_settings(ctx)
+    elif item == "A11":
+        acquisition.record_response_settings(ctx)
+        phase.calibrate_rf(ctx)
+    elif item == "A12":
+        phase.calibrate_demod3(ctx)
+    elif item == "A13":
+        acquisition.record_response_settings(ctx)
+        ctx.started = time.monotonic()
+        acquisition.acquire_response(ctx)
+    elif item == "A13B":
+        if ctx.params.linewidth_mode != "frequency_sweep":
+            raise ValueError("线宽模式为色散等效，未启用带宽扫频；请先在 A13B 节点把 LINEWIDTH_MODE 切换为扫频测线宽")
+        if ctx.demod_mode != "response":
+            acquisition.restore_response(ctx)
+        ctx.state["hf2_bandwidth_snapshot"] = hf2_snapshot(ctx.devices["hf2"], ctx.params)
+        acquisition.record_stage_settings(ctx, "bandwidth")
+        acquisition.acquire_bandwidth(ctx)
+    elif item == "A14":
+        if ctx.identity.RESPONSE_COMPONENT == "X":
+            acquisition.record_response_settings(ctx)
+        acquisition.acquire_noise(ctx)
+        ctx.outputs.update(Z="OFF", 温控="ON")
+    elif item == "A15":
+        acquisition.restore_response(ctx)
+        report_runtime_progress("shutdown", "结束本轮采集，关闭 XYZ 并保持设备会话", 95)
+        report = preparation.shutdown(ctx.devices, disconnect_tec=False)
+        ctx.state["safety_shutdown"] = report.to_dict()
+        if not report.completed:
+            raise RuntimeError("安全收尾失败：" + "；".join(report.errors))
+        ctx.outputs_safe = True
+        ctx.outputs.update(X="OFF", Y="OFF", Z="OFF", 温控="ON")
+        ctx.state["hf2_final_snapshot"] = hf2_snapshot(ctx.devices["hf2"], ctx.params)
+        ctx.state.update(completion_status="completed", finished_at=datetime.now().isoformat())
+    ctx.save()
+
+
+def shutdown_outputs(ctx, failure) -> list[str]:
+    """父实验与两个子实验共用的安全收尾；返回全部错误，不抛出。
+
+    ``failure`` 只用于保持父类 ``shutdown`` 协议，收尾分支不读它。
+    """
+    errors = []
+    sealed = ctx.sealed
+    try:
+        report_runtime_progress("shutdown", "恢复响应配置并执行安全收尾", 95)
+    except Exception as exc:
+        ctx.state["progress_reporting_error"] = str(exc)
+    if ctx.demod_mode == "noise":
+        try:
+            acquisition.restore_response(ctx)
+        except Exception as exc:
+            ctx.state["hf2_restore_error"] = str(exc)
+            errors.append(str(exc))
+    if ctx.devices:
+        try:
+            if ctx.outputs_safe:
+                errors.extend(disconnect_device_mapping({"tec": ctx.devices.get("tec")}))
+                if errors:
+                    ctx.state["safety_shutdown"].update(completed=False, errors=list(errors))
+            else:
+                report = preparation.shutdown(ctx.devices)
+                ctx.state["safety_shutdown"] = report.to_dict()
+                errors.extend(report.errors)
+                if report.completed:
+                    ctx.outputs.update(X="OFF", Y="OFF", Z="OFF", 温控="ON")
+            if ctx.clock_failed:
+                errors.extend(disconnect_device_mapping(ctx.devices))
+        except Exception as exc:
+            errors.append(str(exc))
+            ctx.state["safety_shutdown"] = dict(completed=False, errors=list(errors))
+        if not sealed:
+            try:
+                ctx.state["hf2_final_snapshot"] = hf2_snapshot(ctx.devices["hf2"], ctx.params)
+            except Exception as exc:
+                ctx.state["hf2_snapshot_error"] = str(exc)
+    return errors
 
 
 class SingleControlWorkflow(DirectAWControlRun):
@@ -86,114 +209,10 @@ class SingleControlWorkflow(DirectAWControlRun):
             self.states[item] = record
 
     def _execute_step(self, item):
-        if item == "A02":
-            if not self.devices:
-                self.devices = preparation.connect_devices(self.mapping, params=self.params, experiment_id=self.identity.EXPERIMENT_ID)
-        elif item == "A03":
-            try:
-                self.state["clock_sync"] = synchronize_connected_clocks(self.devices, self.mapping,
-                    {"signals": "X_magnetic_field", "hf2": "lockin_r"}, settle_wait=wait)
-                self.clock_failed = False
-            except BaseException:
-                self.clock_failed = True
-                raise
-        elif item == "A04":
-            self.outputs_safe = False
-            preparation.configure_initial_outputs(self)
-            self.outputs.update(X="OFF", Y="OFF", Z="OFF", 温控="ON", 共用触发="OFF")
-        elif item == "A05":
-            preparation.configure_temperature(self)
-        elif item == "A06":
-            excitation.configure_pump(self)
-            self.outputs["Pump"] = "ON"
-        elif item == "A07":
-            excitation.configure_trigger(self)
-            self.outputs["共用触发"] = "ON"
-        elif item == "A08":
-            self.state["phase_calibration_status"] = "running"
-            phase.calibrate_demod0(self)
-            self.demod_mode = "phase"
-        elif item == "A09":
-            self.outputs_safe = False
-            phase.calibrate_xy(self)
-            self.outputs.update(X="ON", Y="ON", 温控="ON")
-        elif item == "A10":
-            phase.configure_loopback(self)
-            self.demod_mode = "response"
-            self.outputs["Z"] = "ON"
-            acquisition.record_response_settings(self)
-        elif item == "A11":
-            acquisition.record_response_settings(self)
-            phase.calibrate_rf(self)
-        elif item == "A12":
-            phase.calibrate_demod3(self)
-        elif item == "A13":
-            acquisition.record_response_settings(self)
-            self.started = time.monotonic()
-            acquisition.acquire_response(self)
-        elif item == "A13B":
-            if self.params.linewidth_mode != "frequency_sweep":
-                raise ValueError("线宽模式为色散等效，未启用带宽扫频；请先在 A13B 节点把 LINEWIDTH_MODE 切换为扫频测线宽")
-            if self.demod_mode != "response":
-                acquisition.restore_response(self)
-            self.state["hf2_bandwidth_snapshot"] = hf2_snapshot(self.devices["hf2"], self.params)
-            acquisition.record_stage_settings(self, "bandwidth")
-            acquisition.acquire_bandwidth(self)
-        elif item == "A14":
-            if self.identity.RESPONSE_COMPONENT == "X":
-                acquisition.record_response_settings(self)
-            acquisition.acquire_noise(self)
-            self.outputs.update(Z="OFF", 温控="ON")
-        elif item == "A15":
-            acquisition.restore_response(self)
-            report_runtime_progress("shutdown", "结束本轮采集，关闭 XYZ 并保持设备会话", 95)
-            report = preparation.shutdown(self.devices, disconnect_tec=False)
-            self.state["safety_shutdown"] = report.to_dict()
-            if not report.completed:
-                raise RuntimeError("安全收尾失败：" + "；".join(report.errors))
-            self.outputs_safe = True
-            self.outputs.update(X="OFF", Y="OFF", Z="OFF", 温控="ON")
-            self.state["hf2_final_snapshot"] = hf2_snapshot(self.devices["hf2"], self.params)
-            self.state.update(completion_status="completed", finished_at=datetime.now().isoformat())
-        self.save()
+        execute_shared_nodes(self, item)
 
     def shutdown(self, failure):
-        """恢复响应配置并执行安全收尾；返回全部错误，不抛出。"""
-        errors = []
-        sealed = self.sealed
-        try:
-            report_runtime_progress("shutdown", "恢复响应配置并执行安全收尾", 95)
-        except Exception as exc:
-            self.state["progress_reporting_error"] = str(exc)
-        if self.demod_mode == "noise":
-            try:
-                acquisition.restore_response(self)
-            except Exception as exc:
-                self.state["hf2_restore_error"] = str(exc)
-                errors.append(str(exc))
-        if self.devices:
-            try:
-                if self.outputs_safe:
-                    errors.extend(disconnect_device_mapping({"tec": self.devices.get("tec")}))
-                    if errors:
-                        self.state["safety_shutdown"].update(completed=False, errors=list(errors))
-                else:
-                    report = preparation.shutdown(self.devices)
-                    self.state["safety_shutdown"] = report.to_dict()
-                    errors.extend(report.errors)
-                    if report.completed:
-                        self.outputs.update(X="OFF", Y="OFF", Z="OFF", 温控="ON")
-                if self.clock_failed:
-                    errors.extend(disconnect_device_mapping(self.devices))
-            except Exception as exc:
-                errors.append(str(exc))
-                self.state["safety_shutdown"] = dict(completed=False, errors=list(errors))
-            if not sealed:
-                try:
-                    self.state["hf2_final_snapshot"] = hf2_snapshot(self.devices["hf2"], self.params)
-                except Exception as exc:
-                    self.state["hf2_snapshot_error"] = str(exc)
-        return errors
+        return shutdown_outputs(self, failure)
 
 
 # %% 多控制门面保留公开 Workflow 导入；共享步骤不反向导入编排模块。
