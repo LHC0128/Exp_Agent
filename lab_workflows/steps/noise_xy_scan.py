@@ -34,9 +34,9 @@ from .safety_shutdown import disconnect_device_mapping
 
 class NoiseXYScan(StagedWorkflow):
     """噪声谱扫描会话。子类必填：``acquisition_stages``、``finish_id``、``data_type``、
-    ``preflight``、``validate_selection``、``invalidate``、``_execute_step``、
-    ``shutdown_outputs``、``restore_demod``；并在 ``__init__`` 中先按 ``output_keys``
-    初始化 ``self.outputs`` 再调用 ``super().__init__``。
+    ``output_keys``、``preflight``、``validate_selection``、``invalidate``、
+    ``_execute_step``、``shutdown_outputs``、``restore_demod``。``self.outputs`` 由本类
+    ``__init__`` 按 ``output_keys`` 建立，子类不再自行建立或补键。
 
     与 ``StagedWorkflow`` 共用配置修订、阶段表与联锁常量；本类自带执行循环与结束
     路径，不调用父类 ``__init__``（本族没有 ``state`` / ``directory`` / 轮次封存）。
@@ -99,6 +99,8 @@ class NoiseXYScan(StagedWorkflow):
         self.shutdown = None
         self.clock_failed = False
         self.outputs_started = False
+        # 输出键由子类 ``output_keys`` 声明；取值由各节点按实际写入更新。
+        self.outputs = {key: "未知" for key in self.output_keys}
 
     def _preflight_state(self, params):
         """噪声预检返回四元组；父类只取前两项，这里保留安全限值与扫描轴。"""
