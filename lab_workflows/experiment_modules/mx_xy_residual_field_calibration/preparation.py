@@ -8,9 +8,9 @@ from ...common import load_mapping, load_safety_limits, validate_safety_limit
 from ...instrument_config import validate_mapping_usage
 from ...experiment_runtime import check_cancelled
 from ...steps import ScopeCaptureSettings, configure_fixed_rate_scope, configure_temperature_control, create_run_directory, set_temperature_switch
-# 沿用原实验已使用的连接/收尾实现，不继承其它实验编排及私有状态。
+from ...steps.mx_continuous_pump import _connect_devices, safe_shutdown
 from ..mx_main_field_scope_noise_spectrum.preparation import (
-    _connect_devices, _device_snapshot, _set_pump_gate_on, safe_shutdown, configure_clocks,
+    _device_snapshot, _set_pump_gate_on, configure_clocks,
 )
 from .models import MxXYResidualFieldCalibrationParams
 from .run_format import EXPERIMENT_ID, DATA_TYPE, RAW_FORMAT_VERSION, REQUIRED_MAPPING_KEYS

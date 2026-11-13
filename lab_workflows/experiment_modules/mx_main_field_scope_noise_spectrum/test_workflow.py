@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from ...common import WorkflowCancelled, find_project_root, load_mapping
-from ...steps import routed_signal_generator
+from ...steps import mx_continuous_pump, routed_signal_generator
 from ..mx_main_field_calibration.test_workflow import FakeSignal, FakeGS200, FakeTEC
 from . import workflow, preparation, acquisition, stages
 from .models import MxMainFieldScopeNoiseSpectrumParams
@@ -111,11 +111,11 @@ def install_rig(root, monkeypatch, params=None, *, progress=False):
         if cfg["instrument"] == "signal_generator":
             rig.generators.setdefault(cfg["resource"], FakeSignal(cfg["resource"], rig))
     monkeypatch.setattr(routed_signal_generator, "create_signal_generator", lambda cfg: rig.generators[cfg["resource"]])
-    monkeypatch.setattr(preparation, "create_signal_generator", lambda cfg: rig.generators[cfg["resource"]])
-    monkeypatch.setattr(preparation, "GS200Instrument", lambda resource: rig.gs200)
-    monkeypatch.setattr(preparation, "SDSInstrument", lambda resource: rig.scope)
-    monkeypatch.setattr(preparation, "SDSAcquisition", FakeAcquirer)
-    monkeypatch.setattr(preparation, "TECInstrument", lambda **kwargs: rig.tec)
+    monkeypatch.setattr(mx_continuous_pump, "create_signal_generator", lambda cfg: rig.generators[cfg["resource"]])
+    monkeypatch.setattr(mx_continuous_pump, "GS200Instrument", lambda resource: rig.gs200)
+    monkeypatch.setattr(mx_continuous_pump, "SDSInstrument", lambda resource: rig.scope)
+    monkeypatch.setattr(mx_continuous_pump, "SDSAcquisition", FakeAcquirer)
+    monkeypatch.setattr(mx_continuous_pump, "TECInstrument", lambda **kwargs: rig.tec)
     monkeypatch.setattr(workflow, "find_project_root", lambda: root)
     original_check = acquisition.check_cancelled
     def check():
@@ -375,7 +375,7 @@ def test_legacy_parameters_and_current_yaml_roundtrip():
     assert not ADAPTER.preflight(ADAPTER.defaults().to_external())
     from .definition import preflight
     assert "CONTROL_FREQUENCY_POINTS" in preflight({"CONTROL_FREQUENCY_POINTS": 1})[0]
-    from ..mx_xy_residual_field_calibration.workflow import _connect_devices, safe_shutdown
+    from ...steps.mx_continuous_pump import _connect_devices, safe_shutdown
     assert _connect_devices is preparation._connect_devices and safe_shutdown is preparation.safe_shutdown
 
 
