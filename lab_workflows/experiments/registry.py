@@ -80,7 +80,6 @@ from ..experiment_modules.detection_chain_frequency_response.definition import (
     DEFINITION as DETECTION_CHAIN_FREQUENCY_RESPONSE_DEFINITION,
 )
 from .legacy import LegacyScriptAdapter
-from ..acquisition_policy import ACQUISITION_EXCEPTIONS
 
 
 _DEVICES = {
@@ -118,7 +117,7 @@ def _legacy(
         data_type=Path(script).stem,
         required_devices=devices,
         execution_mode="legacy_script",
-        schema_version=1 if experiment_id in ACQUISITION_EXCEPTIONS else 2,
+        schema_version=2,
         acquisition_program=f"experiments/{script}",
         analysis_program=f"experiments/{plot}" if plot else None,
         wiring_notes=("运行前按该实验文档和映射表核对接线。",),

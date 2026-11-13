@@ -43,7 +43,8 @@ class ExperimentValidationTest(unittest.TestCase):
                 raise AssertionError("验证不能启动采集")
 
         return SimpleNamespace(id=name, experiment_runner=Adapter().run,
-                               acquisition_program=f"experiments/{name}.py", analysis_program=None)
+                               acquisition_program=f"experiments/{name}.py", analysis_program=None,
+                               acquisition_exception=False)
 
     def test_batches_keep_every_target_and_bound_windows_command_length(self):
         targets = [f"lab_workflows/{'nested_' * 12}/test_demo.py::test_{index:03d}" for index in range(296)]
@@ -233,7 +234,8 @@ def test_disk(): pass
         self.write("experiments/legacy.py", "pass\n")
         self.write("experiments/legacy_plot.py", "pass\n")
         legacy = SimpleNamespace(id="legacy", experiment_runner=None,
-                                 acquisition_program="experiments/legacy.py", analysis_program="experiments/legacy_plot.py")
+                                 acquisition_program="experiments/legacy.py", analysis_program="experiments/legacy_plot.py",
+                                 acquisition_exception=False)
         impacts = affected_experiments(self.root, [legacy], ["experiments/legacy_plot.py"], {})
         self.assertFalse(impacts["legacy"]["acquisition_changed"])
 

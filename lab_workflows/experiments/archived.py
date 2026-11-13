@@ -172,7 +172,7 @@ ARCHIVED_EXPERIMENTS = {
             execution_mode="legacy_script",
             acquisition_program="old/experiments/experiments/DG_AM_to_DG_COMP_Transfer_Check.py",
             analysis_program="old/experiments/experiments/DG_AM_to_DG_COMP_Transfer_Check_plot.py",
-            schema_version=1, supports_cancel=False, auto_analyze=False,
+            schema_version=1, supports_cancel=False, auto_analyze=False, acquisition_exception=True,
         ),
         ExperimentDefinition(
             id="temperature-switch-pid-cycle",
@@ -186,7 +186,7 @@ ARCHIVED_EXPERIMENTS = {
             execution_mode="legacy_script",
             acquisition_program="old/experiments/experiments/Temperature_Switch_PID_Cycle_Test.py",
             analysis_program="old/experiments/experiments/Temperature_Switch_PID_Cycle_Test_plot.py",
-            schema_version=1, supports_cancel=False, auto_analyze=False,
+            schema_version=1, supports_cancel=False, auto_analyze=False, acquisition_exception=True,
         ),
         ExperimentDefinition(
             id="aw-waveform-scope-check",
@@ -200,7 +200,7 @@ ARCHIVED_EXPERIMENTS = {
             execution_mode="legacy_script",
             acquisition_program="old/experiments/experiments/AW_Control_Waveform_Scope_Check.py",
             analysis_program=None,
-            schema_version=1, supports_cancel=False, auto_analyze=False,
+            schema_version=1, supports_cancel=False, auto_analyze=False, acquisition_exception=True,
         ),
         ExperimentDefinition(
             id="static-sensitivity-optimize",
@@ -376,7 +376,7 @@ ARCHIVED_EXPERIMENTS = {
             execution_mode="typed_workflow",
             acquisition_program="old/experiments/experiments/Z_AW_Current_Waveform_Scope_Check.py",
             analysis_program="old/experiments/experiments/Z_AW_Current_Waveform_Scope_Check_plot.py",
-            schema_version=1, supports_cancel=False, auto_analyze=False,
+            schema_version=1, supports_cancel=False, auto_analyze=False, acquisition_exception=True,
         ),
         ExperimentDefinition(
             id="z-aw-closed-loop-waveform-correction",
@@ -388,7 +388,7 @@ ARCHIVED_EXPERIMENTS = {
             execution_mode="typed_workflow",
             acquisition_program="old/experiments/experiments/Z_AW_Closed_Loop_Waveform_Correction.py",
             analysis_program="old/experiments/experiments/Z_AW_Closed_Loop_Waveform_Correction_plot.py",
-            schema_version=13, supports_cancel=False, auto_analyze=False,
+            schema_version=13, supports_cancel=False, auto_analyze=False, acquisition_exception=True,
         ),
         ExperimentDefinition(
             id="z-aw-waveform-scope-check",
@@ -400,7 +400,7 @@ ARCHIVED_EXPERIMENTS = {
             execution_mode="typed_workflow",
             acquisition_program="old/experiments/experiments/Z_AW_Waveform_Scope_Check.py",
             analysis_program="old/experiments/experiments/Z_AW_Waveform_Scope_Check_plot.py",
-            schema_version=1, supports_cancel=False, auto_analyze=False,
+            schema_version=1, supports_cancel=False, auto_analyze=False, acquisition_exception=True,
         ),
         ExperimentDefinition(
             id="z-coil-current-frequency-response",
@@ -412,7 +412,7 @@ ARCHIVED_EXPERIMENTS = {
             execution_mode="typed_workflow",
             acquisition_program="old/experiments/experiments/Z_Coil_Current_Frequency_Response.py",
             analysis_program="old/experiments/experiments/Z_Coil_Current_Frequency_Response_plot.py",
-            schema_version=4, supports_cancel=False, auto_analyze=False,
+            schema_version=4, supports_cancel=False, auto_analyze=False, acquisition_exception=True,
         ),
         ExperimentDefinition(
             id="z-coil-inductance-frequency-response",
@@ -424,7 +424,7 @@ ARCHIVED_EXPERIMENTS = {
             execution_mode="typed_workflow",
             acquisition_program="old/experiments/experiments/Z_Coil_Inductance_Frequency_Response.py",
             analysis_program="old/experiments/experiments/Z_Coil_Inductance_Frequency_Response_plot.py",
-            schema_version=1, supports_cancel=False, auto_analyze=False,
+            schema_version=1, supports_cancel=False, auto_analyze=False, acquisition_exception=True,
         ),
     )
 }

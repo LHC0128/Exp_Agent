@@ -319,8 +319,6 @@ def affected_experiments(root: Path, definitions: list, changes: list[str], clai
 def validation_plan(root: Path, definitions: list, changes: list[str], claims: dict,
                     requested_ids=(), required_ids=(), regression_cases: dict | None = None) -> tuple[dict, list[str]]:
     """覆盖声明与执行结果分开；未修改实验缺少业务证据时仅报告缺口。"""
-    from .acquisition_policy import ACQUISITION_EXCEPTIONS
-
     regression_cases = regression_cases or {}
     ids = {item.id for item in definitions}
     errors = [f"测试关联了未注册实验: {name}" for name in sorted((claims.keys() | regression_cases.keys()) - ids)]
@@ -332,7 +330,7 @@ def validation_plan(root: Path, definitions: list, changes: list[str], claims: d
         claim = claims.get(definition.id)
         impact = impacts.get(definition.id, {})
         acquisition_selected = definition.id in required_ids or impact.get("acquisition_changed", False)
-        required = acquisition_selected and definition.id not in ACQUISITION_EXCEPTIONS
+        required = acquisition_selected and not definition.acquisition_exception
         missing = missing_scenarios(claim)
         if required and missing:
             errors.append(f"{definition.id}: 采集业务验收缺少场景: {', '.join(missing)}")
@@ -358,7 +356,7 @@ def validation_plan(root: Path, definitions: list, changes: list[str], claims: d
             "id": definition.id, "selected": definition.id in selected,
             "changed_files": impact.get("files", []), "acquisition_required": required,
             "acquisition_reason": reason, "acquisition_test_nodes": nodes, "regressions": regressions,
-            "exception": definition.id in ACQUISITION_EXCEPTIONS,
+            "exception": definition.acquisition_exception,
             "mode": claim["mode"] if claim else None,
             "cases": claim["cases"] if claim else {}, "missing_scenarios": missing,
             "acquisition_status": "not_run" if acquisition_selected else "not_required",

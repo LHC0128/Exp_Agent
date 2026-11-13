@@ -69,6 +69,8 @@ class ExperimentDefinition:
     schema_version: int = 1
     supports_cancel: bool = True
     auto_analyze: bool = True
+    # 采集验收策略：为真表示采集变更时豁免完整采集业务验收；不进入 public() 与 GUI 契约。
+    acquisition_exception: bool = False
     schema_provider: SchemaProvider | None = field(default=None, repr=False)
     defaults_saver: DefaultsSaver | None = field(default=None, repr=False)
     preflight_runner: PreflightRunner | None = field(default=None, repr=False)

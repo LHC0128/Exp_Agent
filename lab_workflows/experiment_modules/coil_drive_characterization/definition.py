@@ -46,6 +46,7 @@ DEFINITION = ExperimentDefinition(
     id=run_format.EXPERIMENT_ID, title="线圈驱动链路电学特性", category="calibration",
     family="coil-drive", variant="aigtek-1200b", description=DESCRIPTION, data_type=run_format.DATA_TYPE,
     required_devices=("信号发生器", "Aigtek 1200B", "DHO900"), required_mapping_keys=run_format.REQUIRED_MAPPING_KEYS,
+    acquisition_exception=True,
     execution_mode="typed_workflow", schema_version=CoilDriveCharacterizationParams.schema_version,
     acquisition_program="experiments/Coil_Drive_Characterization.py",
     analysis_program="experiments/Coil_Drive_Characterization_plot.py",
