@@ -45,18 +45,6 @@ from ..experiment_modules.mx_y_optimal_control_rf_frequency_response.definition 
 from ..experiment_modules.mx_z_optimal_control_rf_sensitivity.definition import (
     DEFINITION as MX_Z_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
 )
-from ..experiment_modules.z_aw_waveform_scope_check.definition import (
-    DEFINITION as Z_AW_WAVEFORM_SCOPE_CHECK_DEFINITION,
-)
-from ..experiment_modules.z_coil_inductance_frequency_response.definition import (
-    DEFINITION as Z_COIL_INDUCTANCE_FREQUENCY_RESPONSE_DEFINITION,
-)
-from ..experiment_modules.z_coil_current_frequency_response.definition import (
-    DEFINITION as Z_COIL_CURRENT_FREQUENCY_RESPONSE_DEFINITION,
-)
-from ..experiment_modules.z_aw_closed_loop_waveform_correction.definition import (
-    DEFINITION as Z_AW_CLOSED_LOOP_WAVEFORM_CORRECTION_DEFINITION,
-)
 from ..experiment_modules.mx_y_rf_power_optimization.definition import (
     DEFINITION as MX_Y_RF_POWER_OPTIMIZATION_DEFINITION,
 )
@@ -152,11 +140,7 @@ _DEFINITIONS = [
     MX_Y_RF_FREQUENCY_RESPONSE_DEFINITION,
     MX_Y_OPTIMAL_CONTROL_RF_FREQUENCY_RESPONSE_DEFINITION,
     MX_Z_OPTIMAL_CONTROL_RF_SENSITIVITY_DEFINITION,
-    Z_AW_WAVEFORM_SCOPE_CHECK_DEFINITION,
-    Z_COIL_INDUCTANCE_FREQUENCY_RESPONSE_DEFINITION,
-    Z_COIL_CURRENT_FREQUENCY_RESPONSE_DEFINITION,
     COIL_DRIVE_CHARACTERIZATION_DEFINITION,
-    Z_AW_CLOSED_LOOP_WAVEFORM_CORRECTION_DEFINITION,
     MX_Y_RF_POWER_OPTIMIZATION_DEFINITION,
     MX_Y_RF_PROBE_DETUNING_OPTIMIZATION_DEFINITION,
     MX_MAIN_FIELD_CALIBRATION_DEFINITION,

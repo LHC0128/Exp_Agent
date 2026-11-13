@@ -25,7 +25,7 @@ vi.mock("./RFSensitivityDirectAWPage", async () => {
 vi.mock("../api", () => ({ api: vi.fn() }));
 
 // 稳定实验 ID 清单：原分发链 44 行 if 覆盖的 45 个 ID，顺序与 ExperimentPage 历史顺序一致；
-// T14 归档 10 个实验后剩 35 个。
+// T14 归档 10 个实验后剩 35 个，T15 再归档 4 个后剩 31 个。
 const STABLE_EXPERIMENT_IDS: readonly string[] = [
   "mx-z-optimal-control-rf-sensitivity",
   "mx-y-rf-sensitivity",
@@ -35,11 +35,7 @@ const STABLE_EXPERIMENT_IDS: readonly string[] = [
   "mx-main-field-calibration",
   "mx-main-field-scope-noise-spectrum",
   "mx-z-field-calibration",
-  "z-aw-waveform-scope-check",
-  "z-coil-inductance-frequency-response",
-  "z-coil-current-frequency-response",
   "scope-capture",
-  "z-aw-closed-loop-waveform-correction",
   "mx-y-optimal-control-rf-frequency-response",
   "static-sensitivity",
   "bell-bloom-z-field-calibration",
@@ -84,7 +80,7 @@ const show = (id: string) => render(
 beforeEach(() => { rfPageMounts.length = 0; });
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
-it("配置表恰好覆盖 35 个稳定实验 ID，不漏不多", () => {
+it("配置表恰好覆盖 31 个稳定实验 ID，不漏不多", () => {
   expect(Object.keys(experimentPageRoutes)).toHaveLength(STABLE_EXPERIMENT_IDS.length);
   expect([...Object.keys(experimentPageRoutes)].sort()).toEqual([...STABLE_EXPERIMENT_IDS].sort());
   for (const route of Object.values(experimentPageRoutes)) expect(route).toBeTypeOf("function");
