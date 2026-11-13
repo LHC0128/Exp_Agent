@@ -24,6 +24,10 @@ defaults_file: params/experiments/z-coil-current-frequency-response.yaml
 
 # Z 线圈实际电流频率响应
 
+> **已归档：GUI 仅保留目录卡片，不再提供运行/历史页面。** 专属代码与正式测试保存于
+> [`old/experiments/`](../../old/experiments/README.md)，默认参数与历史数据原位保留。
+> 下文说明归档前的方案与安全约定，仅供维护和历史复现；重新接入需先恢复代码及注册入口并完成无硬件回归。
+
 当前默认参数：[参数文件](../../params/experiments/z-coil-current-frequency-response.yaml)。GUI「保存为默认」会更新该文件；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
 
 稳定实验 ID 为 `z-coil-current-frequency-response`。实验沿**对数等间隔频率轴**

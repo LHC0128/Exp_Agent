@@ -279,8 +279,8 @@ XY 与 Detection Chain 原会话入口保留默认参数和命令行启动，各
 [MxZ 家族初始化](<lab_workflows/experiment_modules/mx_z_optimal_control_rf_sensitivity/workflow.py>)通过显式预检、受限身份元数据与不可变 `StageModePolicy` 提供扩展点；XY 噪声子实验调用完整父构造，不再自行拼装父字段。其余子实验与采集内部状态继续按真实能力逐步迁移。
 [DirectAW 子控制运行](<lab_workflows/experiment_modules/rf_sensitivity_direct_aw/workflow.py>)由 `create_control_run()` 统一创建：设备仅借用，校准和阶段状态独立复制，目录与有效前置继承沿用原规则。DirectAW、已知噪声和倍率扫描各自声明格式元数据；倍率扫描仍保持逐点独立校准，工厂不接管采集或安全收尾。
 [XY 锁相采集模式校验](<lab_workflows/steps/lockin.py>)仅接收仪器和显式速率、时间常数、相位；三个实验在原采集入口调用，DAQ/Scope 差异、容差与错误语义集中维护，旧 `verify_daq_mode(ctx)` 仅保留兼容入口，不作为新调用范式。
-[Z 线圈采集配置](<lab_workflows/experiment_modules/z_coil_inductance_frequency_response/workflow.py>)通过 `configure_capture()` 一次接收保护等待、格式元数据和校验器；无效输入在修改配置前拒绝，电流子实验不再逐项改写父采集字段，逐帧配置、保存和恢复顺序不变。
-[Scope 波形准备](<lab_workflows/experiment_modules/z_aw_waveform_scope_check/workflow.py>)通过 `prepare_control_source()` 返回完整 `ControlSource`；电流子实验只提供自己的准备结果，父 A03 保持“提交源 → 标记输出已开始 → 设置仪器”的顺序。该结果是已校验的准备输入，不冒充实际仪器回读；采集、失败收尾与部分数据保存仍由原流程负责。
+[Z 线圈采集配置](<old/experiments/lab_workflows/experiment_modules/z_coil_inductance_frequency_response/workflow.py>)通过 `configure_capture()` 一次接收保护等待、格式元数据和校验器；无效输入在修改配置前拒绝，电流子实验不再逐项改写父采集字段，逐帧配置、保存和恢复顺序不变。
+[Scope 波形准备](<old/experiments/lab_workflows/experiment_modules/z_aw_waveform_scope_check/workflow.py>)通过 `prepare_control_source()` 返回完整 `ControlSource`；电流子实验只提供自己的准备结果，父 A03 保持“提交源 → 标记输出已开始 → 设置仪器”的顺序。该结果是已校验的准备输入，不冒充实际仪器回读；采集、失败收尾与部分数据保存仍由原流程负责。
 [静态架构约束](<lab_workflows/test_experiment_architecture.py>)从注册表枚举全部当前实验模块，冻结剩余跨实验执行类继承、构造状态重建和可静态追踪的外部状态写入，禁止新增或增加写入次数；纯数值复用不受限。测试不导入实验模块，也不会自动刷新允许清单；动态分发、容器传播和反射仍需人工审查。五个采集簇本轮各迁移一个能力，不代表全部历史继承和内部状态耦合已经消除。
 最优控制 Y RF 的包络校验、Burst 恢复与重触发共用 `lab_workflows.steps.mx_z_optimal_control`，旧私有入口保留兼容；扫描策略和采集时序不迁移。
 公共 `validate_safety_limit()` 先拒绝 NaN／±Infinity，再按原限值校验有限数值；高阻负载 `INF` 仍走独立归一化入口。
@@ -527,11 +527,7 @@ NPZ 和数据目录保留，重跑使用独立目录；分析指纹与重算归�
 | Mx Y 向 RF 频率响应 | `experiments/Mx_Y_RF_Frequency_Response.py`、`experiments/Mx_Y_RF_Frequency_Response_plot.py` | [实验说明](docs/experiments/mx_y_rf_frequency_response.md) |
 | Mx Y 最优控制 RF 频率响应 | `experiments/Mx_Y_Optimal_Control_RF_Frequency_Response.py`、`experiments/Mx_Y_Optimal_Control_RF_Frequency_Response_plot.py` | [实验说明](docs/experiments/mx_y_optimal_control_rf_frequency_response.md) |
 | Mx Z 最优控制 RF 灵敏度 | `experiments/Mx_Z_Optimal_Control_RF_Sensitivity.py`、`experiments/Mx_Z_Optimal_Control_RF_Sensitivity_plot.py` | [实验说明](docs/experiments/mx_z_optimal_control_rf_sensitivity.md) |
-| Z 任意波线圈波形一致性验证 | `experiments/Z_AW_Waveform_Scope_Check.py`、`experiments/Z_AW_Waveform_Scope_Check_plot.py` | [实验说明](docs/experiments/z_aw_waveform_scope_check.md) |
-| Z 线圈电感效应频率响应 | `experiments/Z_Coil_Inductance_Frequency_Response.py`、`experiments/Z_Coil_Inductance_Frequency_Response_plot.py` | [实验说明](docs/experiments/z_coil_inductance_frequency_response.md) |
-| Z 线圈实际电流频率响应 | `experiments/Z_Coil_Current_Frequency_Response.py`、`experiments/Z_Coil_Current_Frequency_Response_plot.py` | [实验说明](docs/experiments/z_coil_current_frequency_response.md) |
 | 线圈驱动链路电学特性 | `experiments/Coil_Drive_Characterization.py`、`experiments/Coil_Drive_Characterization_plot.py` | [实验说明](docs/experiments/coil_drive_characterization.md) |
-| Z 任意波实际电流闭环波形校正 | `experiments/Z_AW_Closed_Loop_Waveform_Correction.py`、`experiments/Z_AW_Closed_Loop_Waveform_Correction_plot.py` | [实验说明](docs/experiments/z_aw_closed_loop_waveform_correction.md) |
 | Mx Y RF 光功率灵敏度优化 | `experiments/Mx_Y_RF_Power_Optimization.py`、`experiments/Mx_Y_RF_Power_Optimization_plot.py` | [实验说明](docs/experiments/mx_y_rf_power_optimization.md) |
 | Mx Y RF Probe 光功率与失谐灵敏度优化 | `experiments/Mx_Y_RF_Probe_Detuning_Optimization.py`、`experiments/Mx_Y_RF_Probe_Detuning_Optimization_plot.py` | [实验说明](docs/experiments/mx_y_rf_probe_detuning_optimization.md) |
 | Mx 主磁场频率标定 | `experiments/Mx_Main_Field_Calibration.py`、`experiments/Mx_Main_Field_Calibration_plot.py` | [实验说明](docs/experiments/mx_main_field_calibration.md) |

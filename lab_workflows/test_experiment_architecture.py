@@ -18,7 +18,6 @@ PREFIX = "lab_workflows.experiment_modules."
 # 与改前副本逐项核对，再扣除本轮已消除的债务；不在运行时重新生成。
 _DIRECT = "rf_sensitivity_direct_aw.workflow.SingleControlWorkflow"
 _DIRECT_ANALYSIS = "rf_sensitivity_direct_aw.analysis.AnalysisWorkflow"
-_SCOPE = "z_aw_waveform_scope_check.workflow.Workflow"
 
 
 def _legacy_edge(child: str, parent: str) -> tuple[str, str]:
@@ -38,9 +37,6 @@ LEGACY_EXECUTOR_BASES = frozenset({
     _legacy_edge("rf_sensitivity_aw_known_noise.analysis.AnalysisWorkflow", _DIRECT_ANALYSIS),
     _legacy_edge("rf_sensitivity_aw_known_noise.workflow.ControlWorkflow", _DIRECT),
     _legacy_edge("rf_sensitivity_aw_known_noise.workflow.Workflow", _DIRECT),
-    _legacy_edge("z_aw_closed_loop_waveform_correction.workflow.Workflow", _SCOPE),
-    _legacy_edge("z_coil_current_frequency_response.workflow.Workflow",
-        "z_coil_inductance_frequency_response.workflow.Workflow"),
 })
 LEGACY_CONSTRUCTOR_WRITES = {
     _legacy_profile("noise_spectrum_xy_probe_am.workflow.Workflow", "noise_spectrum_xy.workflow.Workflow"):

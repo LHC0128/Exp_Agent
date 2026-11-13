@@ -1,7 +1,6 @@
 import type { ReactElement } from "react";
 
 import { ScopeCapturePage } from "./ScopeCapturePage";
-import { ZAWClosedLoopExperimentPage } from "./ZAWClosedLoopExperimentPage";
 import { MxYOptimalControlFrequencyPage } from "./MxYOptimalControlFrequencyPage";
 import { StaticSensitivityPage } from "./StaticSensitivityPage";
 import { BellBloomZCalibrationPage } from "./BellBloomZCalibrationPage";
@@ -30,9 +29,6 @@ import { MxZOptimalControlRFSensitivityPage } from "./MxZOptimalControlRFSensiti
 import { MxMainFieldCalibrationPage } from "./MxMainFieldCalibrationPage";
 import { MxMainFieldScopeNoiseSpectrumPage } from "./MxMainFieldScopeNoiseSpectrumPage";
 import { MxZFieldCalibrationPage } from "./MxZFieldCalibrationPage";
-import { ZAWWaveformScopeCheckPage } from "./ZAWWaveformScopeCheckPage";
-import { ZCoilInductanceFrequencyResponsePage } from "./ZCoilInductanceFrequencyResponsePage";
-import { ZCoilCurrentFrequencyResponsePage } from "./ZCoilCurrentFrequencyResponsePage";
 
 export type ExperimentPageRoute = () => ReactElement;
 
@@ -55,11 +51,7 @@ export const experimentPageRoutes: Readonly<Record<string, ExperimentPageRoute>>
   "mx-main-field-calibration": () => <MxMainFieldCalibrationPage />,
   "mx-main-field-scope-noise-spectrum": () => <MxMainFieldScopeNoiseSpectrumPage />,
   "mx-z-field-calibration": () => <MxZFieldCalibrationPage />,
-  "z-aw-waveform-scope-check": () => <ZAWWaveformScopeCheckPage />,
-  "z-coil-inductance-frequency-response": () => <ZCoilInductanceFrequencyResponsePage />,
-  "z-coil-current-frequency-response": () => <ZCoilCurrentFrequencyResponsePage />,
   "scope-capture": () => <ScopeCapturePage />,
-  "z-aw-closed-loop-waveform-correction": () => <ZAWClosedLoopExperimentPage />,
   "mx-y-optimal-control-rf-frequency-response": () => <MxYOptimalControlFrequencyPage />,
   "static-sensitivity": () => <StaticSensitivityPage />,
   "bell-bloom-z-field-calibration": () => <BellBloomZCalibrationPage />,
