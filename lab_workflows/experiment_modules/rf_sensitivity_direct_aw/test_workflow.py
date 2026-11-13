@@ -15,6 +15,7 @@ from lab_workflows import control_sources
 from lab_workflows.common import WorkflowCancelled, find_project_root, load_mapping
 from lab_workflows.experiments import get_experiment
 from lab_workflows.steps import create_run_directory
+from lab_workflows.steps import direct_aw_control as engine
 from lab_workflows.steps import routed_signal_generator
 from . import workflow, preparation, excitation, phase, acquisition, _helpers
 from .models import RFSensitivityDirectAWParams
@@ -143,15 +144,14 @@ def rig(tmp_path, monkeypatch, control_source):
     monkeypatch.setattr(preparation, "create_lockin", lambda config: FakeHF2(instance, device_id=config["device_id"]))
     monkeypatch.setattr(preparation, "TECInstrument", lambda resource: Mock())
     monkeypatch.setattr(preparation, "configure_temperature_control", lambda *args, **kwargs: SimpleNamespace(to_dict=lambda: {"control_source": "tec103"}))
-    monkeypatch.setattr(workflow, "create_run_directory", lambda data_type, tag, parameters, **kwargs: create_run_directory(data_type, tag, parameters, schema_version=kwargs["schema_version"], project_root=tmp_path))
-    monkeypatch.setattr(workflow, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(engine, "create_run_directory", lambda data_type, tag, parameters, **kwargs: create_run_directory(data_type, tag, parameters, schema_version=kwargs["schema_version"], project_root=tmp_path))
+    monkeypatch.setattr(engine, "find_project_root", lambda: tmp_path)
 
     runtime_check = _helpers.check_cancelled
     def check():
         runtime_check()
         if instance.cancel:
             raise WorkflowCancelled("模拟取消")
-    monkeypatch.setattr(workflow, "check_cancelled", check)
     for module in (workflow, preparation, excitation, phase, acquisition, _helpers):
         monkeypatch.setattr(module, "wait", lambda seconds: check())
     for module in (excitation, phase, acquisition, _helpers):

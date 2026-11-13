@@ -16,6 +16,7 @@ from .clock import (
     synchronize_connected_clocks,
 )
 from .direct_aw_phase import (
+    CalibrationQualityError,
     DirectAWPhaseCalibrationConfig,
     DirectAWPhaseCalibrationResult,
     DirectAWPhaseMeasurement,
