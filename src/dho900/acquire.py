@@ -108,21 +108,28 @@ class DHO900Acquisition:
         return points
 
     def _resolve_auto_depth(self, config: AcquisitionConfig, cap: int) -> tuple[int, str]:
-        """深度由仪器按时基选定，cap 只是上限；实际深度以深度与采样率一起稳定的回读为准。
+        """深度由仪器按时基选定，cap 是上限；实际深度以「深度 + 采样率」一起稳定的回读为准。
 
-        固件在部分时基下给不出等于上限的深度（真机实测 2 ms/div 请求 100000 点得到 50000 点、
-        100 µs/div 请求 10000 点得到 6250 点、1 s 窗请求 100000 点得到 100000 点），只要回读的
-        实际深度不超过上限就按它采帧，不把上限当精确请求。
+        上限是尽力而为：真机在部分时基下既给不出等于上限的深度（2 ms/div 请求 100000 点得到
+        50000 点），也会在显式设浅深度时回读自相矛盾的采样率（5 µs/div 上限 10000 点时回读
+        156.25 MSa/s，与 50 µs 窗相乘不是整数点数）。这两种情况都退回 AUTO 深度并如实记录，
+        不把上限当精确请求，也不猜点数。
         """
         points = self._points_from_rate(self._stable_depth_state()[1], config.sampling_time)
         if points <= cap:
             return points, "AUTO"
         self._inst.set_memory_depth(cap)
         self._wait(0.1)
+        try:
+            capped = self._points_from_rate(self._stable_depth_state()[1], config.sampling_time)
+        except ValueError:
+            capped = None
+        if capped is not None and capped <= cap:
+            return capped, "capped"
+        self._inst.set_memory_depth("AUTO")
+        self._wait(0.1)
         points = self._points_from_rate(self._stable_depth_state()[1], config.sampling_time)
-        if points > cap:
-            raise ValueError(f"DHO900 实际深度 {points} 点超过上限 {cap} 点")
-        return points, "capped"
+        return points, "AUTO"
 
     def _wait_stopped(self, timeout: float) -> None:
         deadline = time.monotonic() + timeout
@@ -247,8 +254,10 @@ class DHO900Acquisition:
                 self._inst.set_sampling_rate(config.sampling_rate)
                 actual_points, depth_mode = self._inst.get_actual_points(), "fixed"
             actual_scale = self._inst.get_timebase_scale()
-            if (actual_points != points and not auto) or actual_points > points or not math.isclose(
-                    actual_scale, config.timebase_scale, rel_tol=RATE_REL_TOLERANCE, abs_tol=0):
+            # 上限只是上限：退回 AUTO 深度时实际点数可以超过上限，但不得超过本次采集点数预算。
+            too_many = actual_points > self._maximum_points if auto else actual_points != points
+            if too_many or not math.isclose(actual_scale, config.timebase_scale,
+                                            rel_tol=RATE_REL_TOLERANCE, abs_tol=0):
                 raise ValueError(f"DHO900 记录窗口不匹配：目标 {points} 点/{config.sampling_time:g} s，"
                                  f"实际 {actual_points} 点/{actual_scale * 10:g} s")
             trigger = config.trigger

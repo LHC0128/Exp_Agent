@@ -143,6 +143,26 @@ def test_capped_depth_accepts_scope_smaller_actual_depth(rig):
     assert len(results[0].voltage) == 5_000
 
 
+def test_cap_falls_back_to_auto_depth_when_timebase_cannot_honor_it(rig):
+    """该时基下设了上限深度却回读不出整数点数时，退回 AUTO 深度并如实记录，不改请求条件。"""
+    _, visa, acquirer = rig
+    visa.auto_points = 100_000
+    acquirer.use_auto_depth(10_000)
+    original = visa.write
+
+    def write(command):
+        if command.startswith(":ACQuire:MDEPth ") and not command.endswith("AUTO"):
+            visa.rate_override = 1234.5  # 显式浅深度下固件给出与窗口不对齐的采样率
+        if command == ":ACQuire:MDEPth AUTO":
+            visa.rate_override = None
+        original(command)
+
+    visa.write = write
+    acquirer.apply_config(configuration())
+    assert acquirer._snapshot["depth_mode"] == "AUTO"
+    assert acquirer._snapshot["actual_points"] == 100_000
+
+
 def test_auto_depth_rejects_cap_outside_depth_table_before_any_write(rig):
     _, visa, acquirer = rig
     acquirer.use_auto_depth(12_345)
