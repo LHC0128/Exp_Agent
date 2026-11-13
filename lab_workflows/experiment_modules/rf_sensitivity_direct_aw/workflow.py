@@ -1,5 +1,9 @@
 # %% [markdown]
 # # RF 灵敏度（DirectAW）：完整运行与分步会话共用编排
+#
+# 执行引擎（会话状态、快照、发布、保存、目录轮换、执行循环、结束）在共享层
+# `lab_workflows.steps.direct_aw_control`；本模块只声明流程清单与运行格式，
+# 实现节点动作、安全收尾和多控制门面。
 
 # %% 导入
 from copy import deepcopy
@@ -8,74 +12,45 @@ import numpy as np
 from datetime import datetime
 from pathlib import Path
 from typing import TypeVar
-from uuid import uuid4
-import shutil
 import time
-from ...common import WorkflowCancelled, find_project_root
-from ...experiment_runtime import check_cancelled, load_runtime_params, report_runtime_progress
-from ...instrument_config import instrument_config_snapshot
-from ...steps import create_run_directory, synchronize_connected_clocks
+from ...common import WorkflowCancelled
+from ...experiment_runtime import load_runtime_params, report_runtime_progress
+from ...steps import synchronize_connected_clocks
+from ...steps import direct_aw_state
+from ...steps.direct_aw_control import DirectAWControlRun
+from ...steps.direct_aw_control_runs import create_control_run as _create_control_run
 from ...steps.safety_shutdown import disconnect_device_mapping
-from lab_workflows.workflow_state import write_state
 from . import preparation, excitation, phase, acquisition, run_format
 from ._helpers import _RuntimeCancellation, hf2_snapshot, wait
 from .models import RFSensitivityDirectAWParams
-from .control_runs import make_control_directory, inherit_control, execute_controls, seal_controls
-from .stages import SINGLE_ACQUISITION as ACQUISITION, MULTI_ACQUISITION, FINISH_ID, invalidate, invalidated_stages, validate_selection
-from lab_workflows.workflow_stages import initial_states
-from lab_workflows.common import data_root
+from .control_runs import execute_controls, seal_controls
+from .stages import SINGLE_ACQUISITION, MULTI_ACQUISITION, FINISH_ID, invalidate, invalidated_stages
 
 
 _ControlWorkflow = TypeVar("_ControlWorkflow", bound="SingleControlWorkflow")
+# 采集与结束节点：A15 完成本轮采集，A16 安全收尾并关闭会话。
+RUN_ID = "A15"
 
 
-class SingleControlWorkflow:
+class SingleControlWorkflow(DirectAWControlRun):
     """一个设备会话可重复采集；每轮参数和原始数据独立保存。"""
-    stages = ACQUISITION
+    stages = SINGLE_ACQUISITION
     params_type = RFSensitivityDirectAWParams
     identity = run_format
+    finish_id, run_id = FINISH_ID, RUN_ID
+    output_keys = ("X", "Y", "Z", "温控", "Pump", "共用触发")
 
     def __init__(self, params, *, project_root=None, session_id=None):
-        self.root = Path(project_root).resolve() if project_root else find_project_root()
-        self.params, self.mapping, self.envelope = self.preflight(params)
-        self.config_revision = self._configuration_revision()
-        self.session_id = session_id or uuid4().hex
-        self.revision = 0
-        self.states = initial_states(self.stages)
-        self.devices = {}
-        self.directory = None
-        self.run_parameters = None
-        self.state = preparation.initial_state(params, identity=self.identity)
+        super().__init__(params, project_root=project_root, session_id=session_id)
+        # 运行目录初始元数据由本实验的运行格式（identity）决定。
+        self.state = direct_aw_state.initial_state(self.params, identity=self.identity)
         self.cancellation = _RuntimeCancellation()
-        self.current_step = None
-        self.closed = self.clock_failed = self.outputs_safe = False
-        self.demod_mode = "unknown"
-        self.d0_config = self.phase0 = self.xy_phase = self.response_config = None
-        self.z_positive_phase = self.quality_error = None
-        self.outputs = {name: "未知" for name in ("X", "Y", "Z", "温控", "Pump", "共用触发")}
         self.started = time.monotonic()
 
     @classmethod
-    def create_control_run(cls: type[_ControlWorkflow], params, *, parent_directory,
-                           project_root, session_id, devices, shared_calibration=None,
-                           stage_states=None, previous=None,
-                           affected_stages=frozenset()) -> _ControlWorkflow:
-        """创建已选定一个控制的子运行；仅借用设备，不采集或接管安全收尾。
-
-        校准和阶段状态独立复制；有效前置仍按 affected_stages 从内存状态继承，
-        不额外要求 completed，也不修改旧运行。
-        """
-        ctx = cls(params, project_root=project_root, session_id=session_id)
-        ctx.devices = devices
-        if shared_calibration is not None:
-            ctx.state["calibration"] = deepcopy(shared_calibration)
-        ctx.state.update(ctx._control_run_metadata())
-        relative = params.control_waveform_files[0]
-        ctx.directory = make_control_directory(parent_directory, relative, params, ctx.state)
-        if stage_states is not None:
-            ctx.states = deepcopy(stage_states)
-        if previous is not None:
-            inherit_control(previous, ctx, affected_stages)
+    def create_control_run(cls: type[_ControlWorkflow], params, **kwargs) -> _ControlWorkflow:
+        """创建已选定一个控制的子运行；共享工厂返回 (ctx, run_dir)，这里保持只返回 ctx。"""
+        ctx, _ = _create_control_run(cls, params, **kwargs)
         return ctx
 
     def _control_run_metadata(self):
@@ -87,181 +62,31 @@ class SingleControlWorkflow:
             "control_scale_factor": self.params.control_scale_factor(relative),
         })
 
-    def _configuration_revision(self):
-        config = instrument_config_snapshot(self.root)
-        return (config["device_library_revision"], config["physical_mapping_revision"],
-                (self.root / "params/safety_limits.yaml").read_bytes())
+    def _is_quality_failure(self, item, exc):
+        """校相门槛失败与 A11 扫描拟合失败都在原会话内停止后继，可重试。"""
+        return super()._is_quality_failure(item, exc) or (item == "A11" and isinstance(exc, ValueError))
+
+    def on_quality_failure(self):
+        preparation.restore_temperature(self)
 
     def preflight(self, params):
         return preparation.preflight(params, self.root, experiment_id=self.identity.EXPERIMENT_ID)
-
-    def snapshot(self):
-        return dict(session_id=self.session_id, revision=self.revision,
-            status="closed" if self.closed else "running" if self.current_step else "waiting",
-            parameters=self.params.to_external(), steps=deepcopy(self.states), current_step=self.current_step,
-            run_id=self.directory.root.name if self.directory else None, outputs=dict(self.outputs),
-            output_source="最近成功模块的写入结果；未经额外回读", demod_mode=self.demod_mode,
-            xy_phase_calibration=self.state["xy_phase_calibration"], rf_phase_calibration=self.state["rf_phase_calibration"],
-            safety_shutdown=self.state.get("safety_shutdown"), clock_sources=self.state.get("clock_sync", {}),
-            demod_phase_deg=self.state["calibration"].get("demod0", {}).get("phase_shift_deg"),
-            daq_settings=self.state.get("response_acquisition"))
-
-    def publish(self, message="等待选择下一模块", level="info"):
-        snapshot = self.snapshot()
-        write_state(data_root(self.root) / ".gui_jobs" / self.session_id / "session.json", snapshot)
-        if self.directory:
-            write_state(self.directory.root / "acquisition_state.json", snapshot)
-        report_runtime_progress(self.current_step or "waiting", message,
-            data={"workflow_session": snapshot, "level": level})
-
-    def save(self):
-        if self.directory:
-            self.directory.update_config(**{key: value for key, value in self.state.items()
-                if key not in ("analysis_status", "analysis_error")})
-
-    def recheck(self):
-        if self.closed:
-            raise ValueError("会话已经结束，请新建会话")
-        if self._configuration_revision() != self.config_revision:
-            raise RuntimeError("设备库、映射或安全限值已改变，请结束会话后重新连接")
-        self.params, self.mapping, self.envelope = self.preflight(self.params)
-
-    def update_parameters(self, values):
-        self.recheck()
-        if normalize := getattr(self.params_type, "normalize_control_selection", None):
-            values = normalize(values)
-        old = self.params.to_external()
-        unknown = values.keys() - old.keys()
-        if unknown:
-            raise ValueError("未知参数：" + "、".join(sorted(unknown)))
-        params, mapping, envelope = self.preflight(self.params_type.from_external(old | values))
-        changed = {name for name, value in params.to_external().items() if value != old[name]}
-        for stage in self.stages:
-            if changed.intersection(stage.parameters):
-                invalidate(self.stages, self.states, stage.id)
-        self.params, self.mapping, self.envelope = params, mapping, envelope
-        self.revision += 1
-        self.publish("参数已应用；请显式重跑受影响模块")
-
-    def _new_directory(self, selected):
-        previous, inherited = self.directory, deepcopy(self.state)
-        if previous and self.state["completion_status"] in ("running", "acquired"):
-            self.state.update(completion_status="failed", failure_reason="本轮被重跑替代，保留已采集数据",
-                              finished_at=datetime.now().isoformat())
-            self.save()
-        suffix = 0
-        while True:
-            try:
-                tag = self.params.run_tag if not suffix else f"{self.params.run_tag}_{suffix:02d}"
-                self.directory = create_run_directory(self.identity.DATA_TYPE, tag, self.params.to_external(),
-                    schema_version=self.params.schema_version, project_root=self.root)
-                break
-            except FileExistsError:
-                suffix += 1
-        self.state = preparation.initial_state(self.params, identity=self.identity)
-        self.run_parameters = self.params.to_external()
-        # 校准副本明确记录来源，旧目录和原始数据保持原样。
-        if previous:
-            affected = {stage.id for item in selected if item != "A01"
-                        for stage in invalidated_stages(self.stages, item)}
-            for key in ("calibration", "actual_rates", "clock_sync", "temperature_control", "optional_connection_errors",
-                        "xy_aw_output", "hf2_response_snapshot", "response_output_snapshot", "response_acquisition",
-                        "stage_frequencies", "hf2_calibration_snapshot", "calibration_output_snapshot",
-                        "hf2_noise_snapshot", "noise_output_snapshot", "noise_acquisition",
-                        "hf2_bandwidth_snapshot", "bandwidth_output_snapshot", "bandwidth_acquisition"):
-                if key in inherited:
-                    self.state[key] = inherited[key]
-            for stage_id, name in (("A13", "response"), ("A12", "calibration"), ("A14", "noise"), ("A13B", "bandwidth")):
-                if stage_id in affected:
-                    self.state.get("stage_frequencies", {}).pop(name, None)
-                    self.state.pop(f"hf2_{name}_snapshot", None)
-                    self.state.pop(f"{name}_output_snapshot", None)
-                    self.state.pop(f"{name}_acquisition", None)
-            for stage_id, key in (("A09", "xy_phase_calibration"), ("A11", "rf_phase_calibration"), ("A13", "response_points_completed"), ("A14", "noise_records_completed"), ("A13B", "bandwidth_points_completed")):
-                if stage_id in self.states and stage_id not in affected and self.states[stage_id]["status"] == "completed":
-                    self.state[key] = inherited[key]
-                    stage = next(item for item in self.stages if item.id == stage_id)
-                    for name in stage.artifacts:
-                        if name.startswith(("raw/", "results/")):
-                            for source in previous.root.glob(name):
-                                if source.is_file():
-                                    relative = source.relative_to(previous.root)
-                                    shutil.copy2(source, self.directory.root / relative)
-                                    if name.startswith("raw/"):
-                                        self.state["data_files"].append(relative.as_posix())
-            if "A12" not in affected and self.states["A12"]["status"] == "completed":
-                self.state["phase_calibration_status"] = "completed"
-            self.state["calibration_source_run_id"] = previous.root.name
-            self.state["calibration"]["z_v_to_nT"] = self.params.z_v_to_nt
-        self.directory.update_config(run_tag=self.params.run_tag, **self.state)
 
     def progress(self, stage, completed):
         total = self.params.rf_amp_points + self.params.noise_n_avg
         report_runtime_progress(stage, f"已完成 {completed}/{total} 个采集单元", 25 + 65 * completed / total,
             estimated_remaining_seconds=(time.monotonic() - self.started) / completed * (total - completed))
 
-    def execute(self, selected):
-        selected = validate_selection(self.stages, self.states, selected)
-        if selected != [FINISH_ID]:
-            self.recheck()
-        hardware = [item for item in selected if item not in ("A01", FINISH_ID)]
-        order = [stage.id for stage in self.stages]
-        if hardware and (self.directory is None or (
-                any(order.index("A04") <= order.index(item) <= order.index("A13") for item in hardware)
-                and self.state["response_points_completed"] > 0)
-                or (any(item != "A15" for item in hardware) and self.run_parameters != self.params.to_external())
-                or any(self.states[item]["status"] in ("completed", "quality_failed", "failed", "stale")
-                       for item in hardware if item in ("A09", "A11", "A13B", "A14"))):
-            self._new_directory(selected)
-        self.revision += 1
-        self.quality_error = None
-        for item in selected:
-            if item == FINISH_ID:
-                self.finish()
-                break
-            check_cancelled()
-            if item != "A01":
-                invalidate(self.stages, self.states, item)
-            self.current_step = item
-            self.states[item] = {"status": "running", "error": ""}
-            failure = None
-            try:
-                self.publish(next(stage.title for stage in self.stages if stage.id == item))
-                self._execute_step(item)
-                stage = next(stage for stage in self.stages if stage.id == item)
-                artifacts = [str(path.relative_to(self.directory.root)).replace(chr(92), "/")
-                    for name in stage.artifacts for path in self.directory.root.glob(name)] if self.directory else []
-                self.states[item] = {"status": "completed", "error": "", "artifacts": artifacts}
-            except BaseException as exc:
-                failure = exc
-                quality = isinstance(exc, phase.CalibrationQualityError) or (item == "A11" and isinstance(exc, ValueError))
-                self.states[item] = {"status": "quality_failed" if quality else "failed", "error": str(exc)}
-                if item in ("A08", "A09", "A11", "A12"):
-                    self.state["phase_calibration_status"] = "failed"
-                try:
-                    self.save()
-                except Exception as error:
-                    self.state["state_save_error"] = str(error)
-                self.outputs = {key: "未知" for key in self.outputs}
-                if quality:
-                    self.quality_error = exc
-                    preparation.restore_temperature(self)
-                    break
-                raise
-            finally:
-                self.current_step = None
-                try:
-                    self.publish(f"{item} {self.states[item]['status']}")
-                except Exception:
-                    if failure is None:
-                        raise
-        return self.snapshot()
+    def after_step(self, item):
+        super().after_step(item)
+        if item == self.run_id:
+            # 本轮完成后校相链失效以便下次显式重跑；本轮结束节点本身保持已完成。
+            record = dict(self.states[item])
+            invalidate(self.stages, self.states, "A09")
+            self.states[item] = record
 
     def _execute_step(self, item):
-        if item == "A01":
-            self.recheck()
-            return
-        elif item == "A02":
+        if item == "A02":
             if not self.devices:
                 self.devices = preparation.connect_devices(self.mapping, params=self.params, experiment_id=self.identity.EXPERIMENT_ID)
         elif item == "A03":
@@ -330,14 +155,12 @@ class SingleControlWorkflow:
             self.outputs.update(X="OFF", Y="OFF", Z="OFF", 温控="ON")
             self.state["hf2_final_snapshot"] = hf2_snapshot(self.devices["hf2"], self.params)
             self.state.update(completion_status="completed", finished_at=datetime.now().isoformat())
-            invalidate(self.stages, self.states, "A09")
         self.save()
 
-    def finish(self, failure=None):
-        if self.closed:
-            return
+    def shutdown(self, failure):
+        """恢复响应配置并执行安全收尾；返回全部错误，不抛出。"""
         errors = []
-        sealed = self.outputs_safe and self.state["completion_status"] == "completed"
+        sealed = self.sealed
         try:
             report_runtime_progress("shutdown", "恢复响应配置并执行安全收尾", 95)
         except Exception as exc:
@@ -370,34 +193,7 @@ class SingleControlWorkflow:
                     self.state["hf2_final_snapshot"] = hf2_snapshot(self.devices["hf2"], self.params)
                 except Exception as exc:
                     self.state["hf2_snapshot_error"] = str(exc)
-        if failure is not None and not sealed:
-            self.state.update(completion_status="cancelled" if isinstance(failure, WorkflowCancelled) else "failed",
-                              failure_reason=str(failure))
-            if self.state["phase_calibration_status"] == "running":
-                self.state["phase_calibration_status"] = "failed"
-        elif errors and not sealed:
-            self.state.update(completion_status="failed", failure_reason="安全收尾失败：" + "；".join(errors))
-        elif self.states["A15"]["status"] == "completed":
-            self.state["completion_status"] = "completed"
-        elif self.directory:
-            self.state.update(completion_status="failed", failure_reason="本轮采集未完整完成，仅可查看诊断")
-        if not sealed:
-            self.state["finished_at"] = datetime.now().isoformat()
-        self.closed = True
-        self.revision += 1
-        self.current_step = None
-        self.states[FINISH_ID] = {"status": "failed" if errors else "completed", "error": "；".join(errors)}
-        try:
-            # 已完成轮次保持快照不变，结束会话不覆盖并行离线分析的记录。
-            if not sealed:
-                self.save()
-            self.publish("会话已结束" + ("；" + "；".join(errors) if errors else ""))
-            report_runtime_progress("finished", f"采集{self.state['completion_status']}", 100)
-        except Exception:
-            if failure is None and not errors:
-                raise
-        if errors and failure is None:
-            raise RuntimeError("安全收尾失败：" + "；".join(errors))
+        return errors
 
 
 # %% 多控制门面保留公开 Workflow 导入；共享步骤不反向导入编排模块。
@@ -475,7 +271,6 @@ class Workflow(SingleControlWorkflow):
             raise
         else:
             self._save_failed_controls(failure)
-
 
 
 # %% 完整采集与子进程入口

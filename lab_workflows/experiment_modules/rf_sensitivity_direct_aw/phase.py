@@ -6,17 +6,13 @@ from ...steps.acquisition_window import acquisition_window
 from lockin_amplifier import DAQConfig, DemodulatorConfig, OscillatorConfig, SignalInputConfig, daq, demod
 from ...common import validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
-from ...steps import (set_temperature_switch, calibrate_demod_phase, calibrate_direct_aw_phase,
+from ...steps import (CalibrationQualityError, set_temperature_switch, calibrate_demod_phase, calibrate_direct_aw_phase,
     PhaseCalibrationConfig, DirectAWPhaseCalibrationConfig)
 from ._helpers import hf2_snapshot, validate_levels, wait, buffered_acquisition, save_npz
 from .excitation import upload_xy, arm_z
 from .waveform import synthesize_xy, AW_AMPLITUDE_FLOOR_VPP
 from .phase_plot import plot_z_phase_scan
 from .excitation import set_z_rf, prepare_z_rf
-
-
-class CalibrationQualityError(RuntimeError):
-    """校相质量未达标，可在同一设备会话中重试。"""
 
 
 def calibrate_demod0(ctx):
