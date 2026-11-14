@@ -15,14 +15,15 @@ type Graph = WiringGraph;
 type Document = WiringDocument;
 type Body = components["schemas"]["WiringBody"];
 const RF = "rf-sensitivity-aw";
-const WORKFLOW = "z-aw-closed-loop-waveform-correction";
+// 取仍在册、仍由共享 `WorkflowExperimentPage` 承载的实验；已归档 ID 会回落到通用表单页，没有流程节点。
+const WORKFLOW = "z-field-bandwidth";
 const STATIC = "static-sensitivity";
 const MX = "mx-y-optimal-control-rf-frequency-response";
 const GENERIC = "generic-target-test";
 const ARCHIVED = "archived-target-test";
 const SCOPE = "scope-capture";
 const IDS = [RF, WORKFLOW, STATIC, MX, GENERIC, ARCHIVED, SCOPE];
-const names: Record<string, string> = { [RF]: "RF 灵敏度（DirectAW）", [WORKFLOW]: "Z 任意波闭环", [STATIC]: "静磁场灵敏度", [MX]: "Mx Y 最优控制", [GENERIC]: "通用实验", [ARCHIVED]: "归档实验", [SCOPE]: "示波器采集" };
+const names: Record<string, string> = { [RF]: "RF 灵敏度（DirectAW）", [WORKFLOW]: "Z 场带宽", [STATIC]: "静磁场灵敏度", [MX]: "Mx Y 最优控制", [GENERIC]: "通用实验", [ARCHIVED]: "归档实验", [SCOPE]: "示波器采集" };
 const graph = (name: string): Graph => ({ nodes: [{ device: { id: "device-stable", name, model: "人工器件", device_library_id: null, ports: [] }, x: 60, y: 60 }], edges: [] });
 const field: SchemaField = { name: "RUN_TAG", label: "运行标签", type: "string", default: "default-tag", group: "basic", unit: "" };
 const definition = (id: string): ExperimentDefinition => ({ id, title: names[id], description: "只读测试定义", archived: id === ARCHIVED, category: "test", category_label: "测试", family: "test", variant: "test", required_devices: [], required_mapping_keys: [], execution_mode: "typed_workflow", acquisition_program: "test", analysis_program: null, wiring_notes: [], safety_notes: [], supports_cancel: true, can_analyze: false, ...definitionExtras });
