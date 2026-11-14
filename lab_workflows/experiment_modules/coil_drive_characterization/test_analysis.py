@@ -78,18 +78,20 @@ def test_area_tolerance_override_only_reruns_b02(tmp_path, monkeypatch):
 
 
 def test_figures_are_exported_as_png_and_pdf(tmp_path, monkeypatch):
-    """汇总图与正弦时域图按存档图约定成对导出 PNG/PDF。"""
+    """幅频、相频、脉冲与正弦时域各出一张单图，均成对导出 PNG/PDF。"""
     copy_config(tmp_path)
     install(monkeypatch, Rig())
     directory = workflow.run(small_params(), project_root=tmp_path)
     analysis.analyze(directory)
     results = directory / "results"
-    for name in ("coil_drive.png", "coil_drive.pdf", "coil_drive_sine.png", "coil_drive_sine.pdf"):
-        assert (results / name).is_file(), f"缺少 {name}"
+    for name in ("coil_drive_transfer", "coil_drive_phase", "coil_drive_pulse", "coil_drive_sine"):
+        for suffix in (".png", ".pdf"):
+            assert (results / f"{name}{suffix}").is_file(), f"缺少 {name}{suffix}"
+    assert not (results / "coil_drive.png").exists()
 
 
 def test_pulse_only_run_plots_single_panel_without_sine_trace(tmp_path, monkeypatch):
-    """未运行 A04 时传递函数为空：汇总图退回单面板，且不生成正弦时域图。"""
+    """未运行 A04 时传递函数为空：只出脉冲单图，不生成幅频/相频/正弦图。"""
     copy_config(tmp_path)
     install(monkeypatch, Rig())
     ctx = workflow.Workflow(small_params(), project_root=tmp_path)
@@ -98,8 +100,9 @@ def test_pulse_only_run_plots_single_panel_without_sine_trace(tmp_path, monkeypa
     summary = analysis.analyze(ctx.directory.root)
     assert summary["transfer"] == []
     results = ctx.directory.root / "results"
-    assert (results / "coil_drive.png").is_file()
-    assert not (results / "coil_drive_sine.png").exists()
+    assert (results / "coil_drive_pulse.png").is_file()
+    for name in ("coil_drive_transfer.png", "coil_drive_phase.png", "coil_drive_sine.png"):
+        assert not (results / name).exists()
 
 
 def test_plot_sine_frames_rejects_empty_input(tmp_path):

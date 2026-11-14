@@ -134,7 +134,8 @@ def pulses(run_dir, params, b01):
     summary = dict(b01, pulse=rows, pulse_skipped=skipped, area_tolerance_fraction=params.area_tolerance,
                    shortest_usable_pulse_width_s=processing.shortest_usable_width(rows, params.area_tolerance),
                    rise_10_90_s=max(metrics, key=lambda m: m.width_s).rise_10_90_s)
-    processing.plot_summary(summary, traces, output_path(run_dir, "results/coil_drive.png"))
+    # 汇总拆成单张图：幅频、相频、脉冲响应各一张，缺数据的那张不生成。
+    processing.plot_summary(summary, traces, output_path(run_dir, "results"))
     output_path(run_dir, "results/summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2),
                                                             encoding="utf-8")
     return summary

@@ -98,10 +98,11 @@ A04 与 A05 只依赖 A03，可单独执行或重跑。顶部提供保存参数�
 data/coil_drive_characterization/<MMDD_HHMMSS_tag>/
   experiment_config.yaml     # 参数、零偏、增益核对、时钟与收尾记录
   raw/zero_off_NN.npz、zero_on_NN.npz、gain_check.npz、sine_NN.npz、pulse_NN.npz
-  results/transfer.json、summary.json、coil_drive.png、coil_drive_sine.png
+  results/transfer.json、summary.json、coil_drive_transfer.png、coil_drive_phase.png、
+          coil_drive_pulse.png、coil_drive_sine.png
 ```
 
-结果图按 `docs/plotting_style.md` 的 `paper` 配置绘制：面板不写标题、默认无网格、坐标标签用数学模式并写明 `pk` 与单位，脉宽等连续量用 viridis 顺序色标加色条而不堆叠图例，每张图同时导出同名 PNG 与 PDF。`coil_drive.png` 为零偏/传递函数/脉冲汇总；`coil_drive_sine.png` 为逐频点时域波形（实测电流与拟合正弦，横轴为相对同步沿的周期数 `t·f`，附 `|I/V|`、相位与拟合质量）。
+结果图一张只画一个物理量：`coil_drive_transfer`（幅频 + −3 dB 参考线与交点）、`coil_drive_phase`（相频）、`coil_drive_pulse`（脉冲响应）、`coil_drive_sine`（逐频点时域波形，各频点共用纵轴范围，避免逐面板自动缩放抹平幅值差异）。样式按 `docs/plotting_style.md` 的 `paper` 配置：面板不写标题、默认无网格、坐标标签用数学模式并写明 `pk` 与单位，脉宽等连续量用 viridis 顺序色标加色条而不堆叠图例，每张图同时导出同名 PNG 与 PDF；缺对应数据的图不生成。
 
 每个 NPZ 含 `time`（s，触发为 0）、`sense_v`（采样电阻电压，V）、`sync_v`（V）与 `meta`（JSON：帧类型、激励参数、示波器配置快照，以及波形 `preamble`：`xorigin`/`xincrement`/`xreference` 与读取窗口起点 `window_start_points`、是否居中 `window_centered`）。时间轴就是由 preamble 生成，`raw_format_version=1`。
 

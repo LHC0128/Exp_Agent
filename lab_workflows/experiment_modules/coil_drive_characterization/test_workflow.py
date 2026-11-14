@@ -223,7 +223,7 @@ def test_full_run_then_analysis_recovers_circuit(tmp_path, rig):
     assert summary["transfer"][0]["admittance_a_per_v"] == pytest.approx(expected_low, rel=0.01)
     assert summary["rise_10_90_s"] == pytest.approx(TAU * math.log(9), rel=0.05)
     assert summary["shortest_usable_pulse_width_s"] == pytest.approx(20e-6)
-    assert (directory / "results" / "coil_drive.png").is_file()
+    assert (directory / "results" / "coil_drive_pulse.png").is_file()
 
 
 def test_gain_above_declared_aborts_with_shutdown(tmp_path, monkeypatch):

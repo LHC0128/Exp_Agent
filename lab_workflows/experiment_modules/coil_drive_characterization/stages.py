@@ -41,7 +41,7 @@ ACQUISITION = (
 ANALYSIS = (
     Stage("B01", "零偏、增益与正弦传递函数", "独立分析", (), artifacts=("transfer.json",),
           quality_gates=("运行目录已停止写入；必需零偏帧齐全；扫频帧可缺省（未运行 A04 时传递函数为空）",)),
-    Stage("B02", "脉冲指标与最短可用脉宽", "独立分析", ("B01",), ANALYSIS_KEYS, ("summary.json", "coil_drive.png"),
+    Stage("B02", "脉冲指标与最短可用脉宽", "独立分析", ("B01",), ANALYSIS_KEYS, ("summary.json", "coil_drive_pulse.png"),
           quality_gates=("面积偏差 ≤ AREA_TOLERANCE 且峰值达到平台 1−AREA_TOLERANCE 的最短实测脉宽；不外推",)),
 )
 

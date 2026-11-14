@@ -218,59 +218,91 @@ def _width_ticks(widths_us: Sequence[float]) -> list[float]:
     return ticks if len(ticks) >= 2 else [ordered[0], ordered[-1]]
 
 
-def plot_summary(summary: dict[str, Any], step_traces: Sequence[tuple[float, np.ndarray, np.ndarray]],
-                 path: Path) -> Path:
-    """零偏/传递函数与脉冲阶跃的汇总图；样式按 docs/plotting_style.md 的 paper 配置。
-
-    面板不写标题（图意由图注说明）；默认无网格；−3 dB 参考线在图例中标为 Reference；
-    脉宽等连续量用 viridis 顺序色标 + 色条表示，不堆叠图例；导出时成对生成 PNG 与 PDF。
-    """
-    import matplotlib as mpl
-
+def plot_magnitude(summary: dict[str, Any], path: Path) -> Path:
+    """传递系数 |I_pk/V_drive,pk| 随频率的单张图，含 −3 dB 参考线与交点。"""
     from lab_workflows.plotting import (COLOR_GRAY, COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure,
                                         plot_style_context, save_figure, style_legend)
 
     _use_file_backend()
     transfer = list(summary.get("transfer") or [])
-    traces = sorted(step_traces, key=lambda item: item[0])
+    if not transfer:
+        raise ValueError("没有传递函数数据，无法绘制幅频图")
+    frequency = np.array([row["frequency_hz"] for row in transfer])
+    admittance = np.array([row["admittance_a_per_v"] for row in transfer]) * 1e3
     with plot_style_context("paper"):
-        figure, axes = new_figure(nrows=3 if transfer else 1, ncols=1, height_mm=185 if transfer else 75)
-        panels = list(np.atleast_1d(axes).ravel())
-        magnitude_axis = panels[0] if transfer else None
-        phase_axis = panels[1] if transfer else None
-        pulse_axis = panels[2] if transfer else panels[0]
-        if transfer:
-            frequency = np.array([row["frequency_hz"] for row in transfer])
-            admittance = np.array([row["admittance_a_per_v"] for row in transfer]) * 1e3
-            magnitude_axis.semilogx(frequency, admittance, "o-", color=COLOR_OPTIMAL, label="Measured")
-            reference = admittance[0] / math.sqrt(2.0)
-            magnitude_axis.axhline(reference, color=COLOR_GRAY, lw=0.8, ls="--",
-                                   label=r"Reference ($-3$ dB)")
-            bandwidth = summary.get("bandwidth_3db_hz")
-            if bandwidth:
-                magnitude_axis.plot([bandwidth], [reference], "D", color=COLOR_TRAD, ms=4, ls="none",
-                                    label=f"$f_{{-3\\,\\mathrm{{dB}}}}$ = {bandwidth * 1e-3:.4g} kHz")
-            format_axis(magnitude_axis, ylabel=r"$|I_\mathrm{pk}/V_\mathrm{drive,pk}|$ (mA/V)")
-            style_legend(magnitude_axis, loc="lower left", fontsize=7)
-            phase = np.unwrap(np.radians([row["phase_deg"] for row in transfer])) * 180 / math.pi
-            phase_axis.semilogx(frequency, phase, "o-", color=COLOR_OPTIMAL)
-            format_axis(phase_axis, xlabel="Frequency (Hz)", ylabel="Phase vs sync edge (deg)")
-        if traces:
-            widths = [width * 1e6 for width, _, _ in traces]
-            cmap = mpl.colormaps["viridis"]
-            norm = (mpl.colors.LogNorm(vmin=min(widths), vmax=max(widths))
-                    if len(set(widths)) > 1 else None)
-            for width, time_s, current in traces:
-                pulse_axis.plot(time_s * 1e6, current * 1e3, lw=0.9,
-                                color=cmap(norm(width * 1e6)) if norm else COLOR_OPTIMAL)
-            if norm is not None:
-                bar = figure.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=pulse_axis, pad=0.015)
-                bar.set_label("Pulse width (µs)")
-                bar.set_ticks(_width_ticks(widths))
-                bar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda value, _: f"{value:g}"))
-                bar.ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
-        format_axis(pulse_axis, xlabel="Time from sync edge (µs)", ylabel="Coil current (mA)")
+        figure, axis = new_figure()
+        axis.semilogx(frequency, admittance, "o-", color=COLOR_OPTIMAL, label="Measured")
+        reference = admittance[0] / math.sqrt(2.0)
+        axis.axhline(reference, color=COLOR_GRAY, lw=0.8, ls="--", label=r"Reference ($-3$ dB)")
+        bandwidth = summary.get("bandwidth_3db_hz")
+        if bandwidth:
+            axis.plot([bandwidth], [reference], "D", color=COLOR_TRAD, ms=4, ls="none",
+                      label=f"$f_{{-3\\,\\mathrm{{dB}}}}$ = {bandwidth * 1e-3:.4g} kHz")
+        format_axis(axis, xlabel="Frequency (Hz)", ylabel=r"$|I_\mathrm{pk}/V_\mathrm{drive,pk}|$ (mA/V)")
+        style_legend(axis, loc="lower left", fontsize=7)
         return save_figure(figure, path)
+
+
+def plot_phase(summary: dict[str, Any], path: Path) -> Path:
+    """电流相对同步沿的相位单张图；相位跨频点展开，避免 −180° 跳变。"""
+    from lab_workflows.plotting import COLOR_OPTIMAL, format_axis, new_figure, plot_style_context, save_figure
+
+    _use_file_backend()
+    transfer = list(summary.get("transfer") or [])
+    if not transfer:
+        raise ValueError("没有传递函数数据，无法绘制相位图")
+    frequency = np.array([row["frequency_hz"] for row in transfer])
+    phase = np.unwrap(np.radians([row["phase_deg"] for row in transfer])) * 180 / math.pi
+    with plot_style_context("paper"):
+        figure, axis = new_figure()
+        axis.semilogx(frequency, phase, "o-", color=COLOR_OPTIMAL)
+        format_axis(axis, xlabel="Frequency (Hz)", ylabel="Phase vs sync edge (deg)")
+        return save_figure(figure, path)
+
+
+def plot_pulse(traces: Sequence[tuple[float, np.ndarray, np.ndarray]], path: Path) -> Path:
+    """矩形脉冲电流响应单张图；脉宽是连续量，用 viridis 顺序色标 + 色条，不堆叠图例。"""
+    import matplotlib as mpl
+
+    from lab_workflows.plotting import COLOR_OPTIMAL, format_axis, new_figure, plot_style_context, save_figure
+
+    _use_file_backend()
+    ordered = sorted(traces, key=lambda item: item[0])
+    if not ordered:
+        raise ValueError("没有脉冲帧，无法绘制阶跃响应图")
+    widths = [width * 1e6 for width, _, _ in ordered]
+    with plot_style_context("paper"):
+        figure, axis = new_figure(kind="wide")
+        cmap = mpl.colormaps["viridis"]
+        norm = (mpl.colors.LogNorm(vmin=min(widths), vmax=max(widths))
+                if len(set(widths)) > 1 else None)
+        for width, time_s, current in ordered:
+            axis.plot(time_s * 1e6, current * 1e3, lw=0.9,
+                      color=cmap(norm(width * 1e6)) if norm else COLOR_OPTIMAL)
+        if norm is not None:
+            bar = figure.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axis, pad=0.015)
+            bar.set_label("Pulse width (µs)")
+            bar.set_ticks(_width_ticks(widths))
+            bar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda value, _: f"{value:g}"))
+            bar.ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+        format_axis(axis, xlabel="Time from sync edge (µs)", ylabel="Coil current (mA)")
+        return save_figure(figure, path)
+
+
+def plot_summary(summary: dict[str, Any], step_traces: Sequence[tuple[float, np.ndarray, np.ndarray]],
+                 results_dir: Path) -> dict[str, Path]:
+    """把汇总拆成单张图写进 results 目录，返回 {名称: 路径}。
+
+    每次只画一个物理量：幅频、相频、脉冲响应各一张，缺对应数据时跳过该张；
+    样式按 docs/plotting_style.md 的 paper 配置（无网格、面板无标题、成对导出 PNG/PDF）。
+    """
+    written: dict[str, Path] = {}
+    if summary.get("transfer"):
+        written["coil_drive_transfer"] = plot_magnitude(summary, Path(results_dir) / "coil_drive_transfer.png")
+        written["coil_drive_phase"] = plot_phase(summary, Path(results_dir) / "coil_drive_phase.png")
+    if step_traces:
+        written["coil_drive_pulse"] = plot_pulse(step_traces, Path(results_dir) / "coil_drive_pulse.png")
+    return written
 
 
 def plot_sine_frames(traces: Sequence[SineTrace], path: Path) -> Path:
@@ -291,6 +323,9 @@ def plot_sine_frames(traces: Sequence[SineTrace], path: Path) -> Path:
     with plot_style_context("paper"):
         figure, axes = new_figure(nrows=nrows, ncols=ncols, width_mm=190, height_mm=14 + 30 * nrows)
         panels = np.atleast_1d(axes).ravel()
+        # 各频点共用纵轴范围：幅值差别（如谐振附近电流下降）才看得见，不被逐面板自动缩放抹平。
+        peak_ma = max(float(np.max(np.abs(trace.current_a))) for trace in traces) * 1e3
+        amplitude_limit = 1.1 * peak_ma
         for index, axis in enumerate(panels):
             if index >= len(traces):
                 axis.set_visible(False)
@@ -302,6 +337,7 @@ def plot_sine_frames(traces: Sequence[SineTrace], path: Path) -> Path:
             cycles = time_s * trace.frequency_hz
             axis.plot(cycles, current_a * 1e3, color=COLOR_OPTIMAL, lw=0.9, label="Measured")
             axis.plot(cycles, fitted * 1e3, color=COLOR_TRAD, lw=0.9, ls="--", label="Fit")
+            axis.set_ylim(-amplitude_limit, amplitude_limit)
             frequency_label = (f"{trace.frequency_hz * 1e-3:.4g} kHz" if trace.frequency_hz >= 1e3
                                else f"{trace.frequency_hz:.4g} Hz")
             axis.text(0.03, 0.97,
