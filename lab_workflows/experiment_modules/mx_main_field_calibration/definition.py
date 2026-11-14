@@ -15,6 +15,7 @@ ADAPTER = TypedWorkflowAdapter(
 )
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/mx_main_field_calibration.md",
     id="mx-main-field-calibration",
     title="Mx 主磁场频率标定",
     category="calibration",

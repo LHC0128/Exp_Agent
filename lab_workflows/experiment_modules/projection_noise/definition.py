@@ -24,6 +24,7 @@ def preflight(values):
 
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/Projection_noise.md",
     id="projection-noise",
     title="原子自旋投影噪声",
     category="measurement",

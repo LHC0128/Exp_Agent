@@ -45,7 +45,7 @@ class BBDutyAdapter(TypedWorkflowAdapter):
 
 ADAPTER = BBDutyAdapter(run_format.EXPERIMENT_ID, run_format.DATA_TYPE, BBDutyScanBurstParams,
     "lab_workflows.experiment_modules.bb_duty_scan_burst.workflow", "lab_workflows.experiment_modules.bb_duty_scan_burst.analysis")
-DEFINITION = ExperimentDefinition(id=run_format.EXPERIMENT_ID, title="BB Pump 占空比扫描", category="measurement",
+DEFINITION = ExperimentDefinition(documentation="docs/experiments/bb_duty_scan_burst.md", id=run_format.EXPERIMENT_ID, title="BB Pump 占空比扫描", category="measurement",
     family="bb-scan", variant="burst", description=DESCRIPTION, data_type=run_format.DATA_TYPE,
     required_devices=("GS200", "信号发生器", "SDS", "TEC103"), required_mapping_keys=run_format.REQUIRED_MAPPING_KEYS,
     execution_mode="typed_workflow", schema_version=BBDutyScanBurstParams.schema_version,

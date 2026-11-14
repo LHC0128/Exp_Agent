@@ -15,6 +15,7 @@ ADAPTER = TypedWorkflowAdapter(
 )
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/mx_z_field_calibration.md",
     id="mx-z-field-calibration",
     title="Mx 高主场 Z 磁场频率标定",
     category="calibration",

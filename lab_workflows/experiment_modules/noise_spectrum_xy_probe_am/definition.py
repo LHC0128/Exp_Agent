@@ -15,6 +15,7 @@ ADAPTER = TypedWorkflowAdapter(
 )
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/noise_spectrum_xy_ctrl_uncontrolled_probe_am.md",
     id=EXPERIMENT_ID,
     title="XY 控制测量已知不可控 Probe AM 噪声谱",
     category="measurement",

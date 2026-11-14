@@ -24,6 +24,7 @@ def preflight(values):
 
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/mx_main_field_scope_noise_spectrum.md",
     id="mx-main-field-scope-noise-spectrum",
     title="Mx 主磁场示波器噪声谱",
     category="measurement",

@@ -35,6 +35,7 @@ def _preflight(values: dict[str, object]) -> list[str]:
     return errors
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/scope_capture.md",
     id="scope-capture", title="示波器采集", category="measurement",
     family="scope", variant="single-channel",
     description=("单通道时域采集与固定 Welch PSD，运行页按依赖分步执行，历史波形可叠加比较。"

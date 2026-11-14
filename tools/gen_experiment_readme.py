@@ -8,8 +8,9 @@ README.md 中「主要实验入口」的正式实验表格位于一对 HTML 注�
     agent_exp_env\\Scripts\\python.exe -m tools.gen_experiment_readme
     agent_exp_env\\Scripts\\python.exe -m tools.gen_experiment_readme --check
 
-`--check` 只比对不写入：README 落后于注册表时非零退出。任何实验在 `docs/experiments/`
-缺少 `experiment_id` 归属时同样非零退出并列出缺口，不生成空链接。
+`--check` 只比对不写入：README 落后于注册表时非零退出。文档链接的唯一数据源是
+`ExperimentDefinition.documentation`；声明为空、声明路径不存在或该文件 frontmatter 的
+`experiment_id` 与定义不一致时同样非零退出并列出缺口，不生成空链接。
 """
 
 from __future__ import annotations
@@ -37,13 +38,24 @@ _FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.S)
 
 
 class MissingDocumentationError(RuntimeError):
-    """正式实验缺少 `docs/experiments/*.md` 的 `experiment_id` 归属。"""
+    """正式实验未声明 `documentation`。"""
 
     def __init__(self, experiment_ids: Sequence[str]) -> None:
         self.experiment_ids = list(experiment_ids)
         super().__init__(
-            "以下正式实验在 docs/experiments/ 中缺少 experiment_id 归属，请先补文档 frontmatter: "
+            "以下正式实验缺少 documentation 声明，请在 definition.py 中补文档路径: "
             + "、".join(self.experiment_ids)
+        )
+
+
+class InvalidDocumentationError(RuntimeError):
+    """声明的文档路径不存在，或该文件 frontmatter 的 `experiment_id` 不匹配。"""
+
+    def __init__(self, problems: Sequence[str]) -> None:
+        self.problems = list(problems)
+        super().__init__(
+            "以下实验的 documentation 声明无效，请修正 definition.py 或对应文档 frontmatter: "
+            + "；".join(self.problems)
         )
 
 
@@ -63,9 +75,14 @@ def write_text(path: Path, text: str) -> None:
     path.write_bytes(text.replace("\n", newline_of(path)).encode("utf-8"))
 
 
+def metadata_text(path: Path) -> str:
+    """读取 frontmatter 用文本；容忍 UTF-8 BOM，带 BOM 的说明不会被误判为缺少 frontmatter。"""
+    return path.read_bytes().decode("utf-8-sig").replace("\r\n", "\n")
+
+
 def experiment_id_of(path: Path) -> str | None:
     """读取文档 frontmatter 的 `experiment_id`，缺失时返回 None。"""
-    match = _FRONTMATTER.match(read_text(path))
+    match = _FRONTMATTER.match(metadata_text(path))
     if match is None:
         return None
     for line in match.group(1).splitlines():
@@ -75,26 +92,34 @@ def experiment_id_of(path: Path) -> str | None:
     return None
 
 
-def read_doc_index(docs_dir: Path) -> dict[str, str]:
-    """建立 `experiment_id -> 文档路径` 映射，路径相对仓库根目录。"""
-    index: dict[str, str] = {}
-    for path in sorted(docs_dir.glob("*.md")):
-        experiment_id = experiment_id_of(path)
-        if experiment_id is None:
+def validate_declarations(
+    definitions: Sequence[ExperimentDefinition], root: Path
+) -> None:
+    """校验 `documentation` 声明：非空、指向仓库根内真实文件、frontmatter 的 id 与定义一致。"""
+    undeclared = [
+        definition.id for definition in definitions if not definition.documentation
+    ]
+    if undeclared:
+        raise MissingDocumentationError(undeclared)
+    problems = []
+    for definition in definitions:
+        path = root / definition.documentation
+        if not path.is_file():
+            problems.append(f"{definition.id} -> {definition.documentation}：文件不存在")
             continue
-        if experiment_id in index:
-            raise ValueError(
-                f"docs frontmatter 中 experiment_id 重复: {experiment_id}"
-                f"（{index[experiment_id]} 与 {path.as_posix()}）"
+        actual = experiment_id_of(path)
+        if actual != definition.id:
+            declared = actual or "缺失或为空"
+            problems.append(
+                f"{definition.id} -> {definition.documentation}："
+                f"frontmatter experiment_id 为 {declared}，与定义不一致"
             )
-        index[experiment_id] = path.relative_to(docs_dir.parent.parent).as_posix()
-    return index
+    if problems:
+        raise InvalidDocumentationError(problems)
 
 
-def build_rows(
-    definitions: Iterable[ExperimentDefinition], doc_index: dict[str, str]
-) -> list[str]:
-    """按给定顺序渲染表格行；调用方负责先确认文档缺口为空。"""
+def build_rows(definitions: Iterable[ExperimentDefinition]) -> list[str]:
+    """按给定顺序渲染表格行；调用方负责先确认文档声明有效。"""
     rows = []
     for definition in definitions:
         programs = "、".join(
@@ -104,25 +129,21 @@ def build_rows(
         )
         rows.append(
             f"| {definition.title} | {programs} | "
-            f"[{DOC_LINK_LABEL}]({doc_index[definition.id]}) |"
+            f"[{DOC_LINK_LABEL}]({definition.documentation}) |"
         )
     return rows
 
 
-def build_block(
-    definitions: Sequence[ExperimentDefinition], doc_index: dict[str, str]
-) -> str:
-    """渲染生成块全文，含起止标记；缺文档时抛 MissingDocumentationError。"""
-    gaps = [definition.id for definition in definitions if definition.id not in doc_index]
-    if gaps:
-        raise MissingDocumentationError(gaps)
+def build_block(definitions: Sequence[ExperimentDefinition], root: Path) -> str:
+    """渲染生成块全文，含起止标记；声明缺失或无效时抛异常。"""
+    validate_declarations(definitions, root)
     return "\n".join(
         [
             BEGIN_MARKER,
             "",
             TABLE_HEADER,
             TABLE_RULE,
-            *build_rows(definitions, doc_index),
+            *build_rows(definitions),
             "",
             END_MARKER,
         ]
@@ -160,12 +181,11 @@ def run(root: Path, *, write: bool) -> int:
     """校验或重写 `root/README.md`；返回进程退出码。"""
     readme_path = root / "README.md"
     text = read_text(readme_path)
-    doc_index = read_doc_index(root / "docs" / "experiments")
     definitions = registry.list_experiments()
     try:
-        block = build_block(definitions, doc_index)
+        block = build_block(definitions, root)
         current = extract_block(text)
-    except (MissingDocumentationError, ValueError) as exc:
+    except (MissingDocumentationError, InvalidDocumentationError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 2
     if current == block:

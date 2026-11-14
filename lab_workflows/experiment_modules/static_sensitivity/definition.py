@@ -15,6 +15,7 @@ ADAPTER = TypedWorkflowAdapter(
 )
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/static_mag_sens_v2.md",
     id="static-sensitivity",
     title="静磁场灵敏度",
     category="measurement",

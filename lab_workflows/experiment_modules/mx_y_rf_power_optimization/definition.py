@@ -15,6 +15,7 @@ ADAPTER = TypedWorkflowAdapter(
 )
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/mx_y_rf_power_optimization.md",
     id="mx-y-rf-power-optimization",
     title="Mx Y RF 光功率灵敏度优化",
     category="optimization",

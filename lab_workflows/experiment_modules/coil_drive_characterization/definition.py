@@ -43,6 +43,7 @@ MODULE = "lab_workflows.experiment_modules.coil_drive_characterization"
 ADAPTER = CoilDriveAdapter(run_format.EXPERIMENT_ID, run_format.DATA_TYPE, CoilDriveCharacterizationParams,
                            f"{MODULE}.workflow", f"{MODULE}.analysis")
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/coil_drive_characterization.md",
     id=run_format.EXPERIMENT_ID, title="线圈驱动链路电学特性", category="calibration",
     family="coil-drive", variant="aigtek-1200b", description=DESCRIPTION, data_type=run_format.DATA_TYPE,
     required_devices=("信号发生器", "Aigtek 1200B", "DHO900"), required_mapping_keys=run_format.REQUIRED_MAPPING_KEYS,
