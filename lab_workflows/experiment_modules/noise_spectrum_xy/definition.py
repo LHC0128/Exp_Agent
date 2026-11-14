@@ -15,6 +15,7 @@ ADAPTER = TypedWorkflowAdapter(
 )
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/noise_spectrum_xy_ctrl.md",
     id="noise-spectrum-xy",
     title="XY 控制噪声谱",
     category="measurement",

@@ -43,7 +43,7 @@ class PhotonShotNoiseAdapter(TypedWorkflowAdapter):
 ADAPTER = PhotonShotNoiseAdapter(run_format.EXPERIMENT_ID, run_format.DATA_TYPE, PhotonShotNoiseParams,
     "lab_workflows.experiment_modules.photon_shot_noise.workflow",
     "lab_workflows.experiment_modules.photon_shot_noise.analysis")
-DEFINITION = ExperimentDefinition(id=run_format.EXPERIMENT_ID, title="光子散粒噪声", category="measurement",
+DEFINITION = ExperimentDefinition(documentation="docs/experiments/Photon_shot_noise.md", id=run_format.EXPERIMENT_ID, title="光子散粒噪声", category="measurement",
     family="fundamental-noise", variant="photon", description=DESCRIPTION, data_type=run_format.DATA_TYPE,
     required_devices=("GS200", "信号发生器", "锁相放大器", "TEC103"),
     required_mapping_keys=run_format.REQUIRED_MAPPING_KEYS, execution_mode="typed_workflow",

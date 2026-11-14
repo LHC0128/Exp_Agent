@@ -48,7 +48,7 @@ class ConstXYAdapter(TypedWorkflowAdapter):
 ADAPTER = ConstXYAdapter(run_format.EXPERIMENT_ID, run_format.DATA_TYPE, RFConstXYFrequencyParams,
     "lab_workflows.experiment_modules.rf_sensitivity_constxy_frequency.workflow",
     "lab_workflows.experiment_modules.rf_sensitivity_constxy_frequency.analysis")
-DEFINITION = ExperimentDefinition(id=run_format.EXPERIMENT_ID, title="RF 灵敏度频率扫描（ConstXY）", category="measurement",
+DEFINITION = ExperimentDefinition(documentation="docs/experiments/rf_sensitivity_constxy_frequency.md", id=run_format.EXPERIMENT_ID, title="RF 灵敏度频率扫描（ConstXY）", category="measurement",
     family="rf-sensitivity", variant="const-xy", description=DESCRIPTION, data_type=run_format.DATA_TYPE,
     required_devices=("GS200", "信号发生器", "HF2", "TEC103"), required_mapping_keys=run_format.REQUIRED_MAPPING_KEYS,
     execution_mode="typed_workflow", schema_version=RFConstXYFrequencyParams.schema_version,

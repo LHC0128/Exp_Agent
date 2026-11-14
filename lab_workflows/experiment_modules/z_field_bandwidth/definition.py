@@ -44,7 +44,7 @@ class ZBandwidthAdapter(TypedWorkflowAdapter):
 
 ADAPTER = ZBandwidthAdapter(run_format.EXPERIMENT_ID, run_format.DATA_TYPE, ZFieldBandwidthParams,
     "lab_workflows.experiment_modules.z_field_bandwidth.workflow", "lab_workflows.experiment_modules.z_field_bandwidth.analysis")
-DEFINITION = ExperimentDefinition(id=run_format.EXPERIMENT_ID, title="Z 场带宽", category="measurement",
+DEFINITION = ExperimentDefinition(documentation="docs/experiments/z_field_bandwidth.md", id=run_format.EXPERIMENT_ID, title="Z 场带宽", category="measurement",
     family="field-response", variant="standard", description=DESCRIPTION, data_type=run_format.DATA_TYPE,
     required_devices=("GS200", "信号发生器", "HF2", "TEC103"), required_mapping_keys=run_format.REQUIRED_MAPPING_KEYS,
     execution_mode="typed_workflow", schema_version=ZFieldBandwidthParams.schema_version,

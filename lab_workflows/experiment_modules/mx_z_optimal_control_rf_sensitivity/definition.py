@@ -15,6 +15,7 @@ ADAPTER = TypedWorkflowAdapter(
 )
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/mx_z_optimal_control_rf_sensitivity.md",
     id="mx-z-optimal-control-rf-sensitivity",
     title="Mx Z 最优控制 RF 灵敏度",
     category="measurement",

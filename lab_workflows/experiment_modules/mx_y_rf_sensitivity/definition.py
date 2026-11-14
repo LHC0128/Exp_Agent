@@ -15,6 +15,7 @@ ADAPTER = TypedWorkflowAdapter(
 )
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/mx_y_rf_sensitivity.md",
     id="mx-y-rf-sensitivity",
     title="Mx Y 向 RF 场灵敏度",
     category="measurement",

@@ -24,6 +24,7 @@ def preflight_runner(values):
 
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/noise_spectrum_xy_demod3_r.md",
     id="noise-spectrum-xy-demod3-r",
     title="XY 控制噪声谱（Demod3 R）",
     category="measurement",
