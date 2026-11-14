@@ -312,6 +312,23 @@ class DHO900Acquisition:
         self._inst.trigger_stop()
         self._wait_stopped(2.0)
 
+    def _centered_window_start(self, preamble: _Preamble, frame_points: int) -> int:
+        """返回读取窗口在内存中的起点，使触发点落在帧中心。
+
+        RAW 的 XORigin 是内存首点相对触发点的时间（手册 3.28.7），XREFerence 恒为 0
+        （3.28.8），所以触发点在内存第 ``-XORigin / XINCrement`` 点。深度档大于屏幕窗口
+        点数时内存比窗口长，从 STARt 0 读窗口点数只会拿到触发前的一段，必须从
+        ``触发点 − 窗口点数/2`` 起读。
+        """
+        trigger_index = int(round(-preamble.xorigin / preamble.xincrement))
+        start = trigger_index - frame_points // 2
+        if start <= 0:
+            return 0
+        depth = self._inst.get_memory_depth().strip()
+        if depth.isdigit():
+            start = min(start, max(0, int(depth) - frame_points))
+        return start
+
     def acquire_channel(self, channel: int, timebase_scale: float, horiz_divisions: int = 10,
                         trim_points: int = 0) -> AcquisitionResult:
         """读取已经冻结的 RAW 整帧；ASCII 已是电压，不作第二次 ADC 缩放。"""
@@ -347,6 +364,17 @@ class DHO900Acquisition:
             raise ValueError("DHO900 未进入 ASCII/RAW 波形读取模式")
         if preamble.points != frame_points:
             raise FrameMismatch("DHO900 preamble 点数与整帧存储深度不符；拒绝把局部窗口当完整记录")
+        # 读取窗口居中：深度档大于屏幕窗口点数时，仪器把整档深度铺在内存里，RAW 的 XORigin 是
+        # 内存首点时间（手册 3.28.7），从 STARt 0 读 frame_points 点只会拿到触发前那一段。
+        window_start = self._centered_window_start(preamble, frame_points)
+        if window_start:
+            self._inst.set_waveform_start(0)
+            self._inst.set_waveform_points(window_start + frame_points)
+            self._inst.set_waveform_start(window_start)
+            shifted = _Preamble.parse(self._inst.get_waveform_preamble())
+            if shifted.points != frame_points:
+                raise FrameMismatch("DHO900 居中窗口点数与整帧不符；拒绝把局部窗口当完整记录")
+            preamble = shifted
         if self._configured:
             rate = 1.0 / preamble.xincrement
             expected_rate = (self._snapshot["actual_sample_rate_sa_s"] if auto
@@ -360,8 +388,8 @@ class DHO900Acquisition:
             self._check_cancelled()
             count = min(budget, preamble.points - start)
             self._inst.set_waveform_start(0)
-            self._inst.set_waveform_points(start + count)
-            self._inst.set_waveform_start(start)
+            self._inst.set_waveform_points(window_start + start + count)
+            self._inst.set_waveform_start(window_start + start)
             text = self._inst.get_waveform_data().decode("ascii").strip()
             fields = text.split(",")
             if len(fields) != count:
@@ -378,9 +406,18 @@ class DHO900Acquisition:
             if trim_points > len(values):
                 raise ValueError("DHO900 帧点数不足，不补点或插值")
             values = values[:trim_points].copy()
-        axis = preamble.xorigin + (np.arange(len(values), dtype=np.float64) - preamble.xreference) * preamble.xincrement
+        # RAW 的 XORigin 是内存首点时间、XREFerence 恒为 0（手册 3.28.7/3.28.8），
+        # 因此时间轴 = 内存首点时间 + 窗口起点 + 帧内序号。
+        axis = preamble.xorigin + (window_start + np.arange(len(values), dtype=np.float64)) * preamble.xincrement
+        midpoint = float(axis[len(axis) // 2])
+        # 请求了居中却没居中，说明 STARt 未生效，必须拒帧；触发点本就在内存起点附近（无法居中）
+        # 时按实际窗口读取，只记录 window_centered=False，由分析侧按截断规则处理。
+        if window_start and abs(midpoint) > 2.0 * preamble.xincrement:
+            raise FrameMismatch("DHO900 读取窗口未以触发点为中心；拒绝把偏窗当整帧")
         metadata = {**asdict(preamble), "model": "DHO900", "point_num": preamble.points,
-                    "horiz_interval": preamble.xincrement, "raw_encoding": "unavailable_ascii_voltage"}
+                    "horiz_interval": preamble.xincrement, "window_start_points": window_start,
+                    "window_centered": abs(midpoint) <= 2.0 * preamble.xincrement,
+                    "raw_encoding": "unavailable_ascii_voltage"}
         return AcquisitionResult(channel=channel, raw_data=np.array([], dtype=np.int16), voltage=values,
                                  time=axis, preamble_dict=metadata, config_snapshot=deepcopy(self._snapshot),
                                  timestamp=time.time())

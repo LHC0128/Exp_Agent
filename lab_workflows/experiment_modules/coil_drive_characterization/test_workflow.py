@@ -420,6 +420,31 @@ def test_default_yaml_round_trip():
     assert CoilDriveCharacterizationParams.from_external(params.to_external()) == params
 
 
+COIL_TAU_S = 0.7e-6  # 2026-11-14 实测：−3 dB 230 kHz、10–90% 上升 1.43 µs → τ≈0.67–0.69 µs
+
+
+def test_pulse_window_covers_tail_and_stays_readable():
+    """默认参数下每个脉宽的后半窗都装得下「脉宽 + 5τ」，且脉宽不超过窗长的 40%。"""
+    params = CoilDriveCharacterizationParams()
+    for width in params.pulse_widths_s:
+        window = preparation.pulse_window_s(params, width)
+        assert window / 2 >= width + 5 * COIL_TAU_S, f"{width * 1e6:g} µs 的后半窗装不下拖尾"
+        assert window / 2 >= 2.5 * width, f"{width * 1e6:g} µs 触发后可用窗口不足 2.5 倍脉宽"
+        assert width / window <= 0.4
+
+
+def test_sine_window_is_closed_form_timebase_with_bounded_cycles():
+    """扫频时基取 1-2-5 序列，一屏周期数落在 [SINE_CYCLES, 2.5×SINE_CYCLES)，无需搜索循环。"""
+    params = CoilDriveCharacterizationParams()
+    for frequency in params.frequencies():
+        duration = preparation.nice_up(params.sine_cycles / frequency / 10) * 10
+        cycles = duration * frequency
+        assert params.sine_cycles - 1e-9 <= cycles < 2.5 * params.sine_cycles
+        scale = duration / 10
+        mantissa = scale / 10 ** math.floor(math.log10(scale))
+        assert min(abs(mantissa - value) for value in (1.0, 2.0, 5.0)) < 1e-9
+
+
 def fake_main():
     """GUI 后端测试的子进程入口：真实会话协议 + 假仪器。"""
     import os

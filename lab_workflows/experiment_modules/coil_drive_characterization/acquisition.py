@@ -14,7 +14,7 @@ from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import arm_sync_output
 from . import processing
 from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, capture_config, current_limit, plan,
-                          scale_for, set_amp_output, set_dc, sleep)
+                          pulse_window_s, scale_for, set_amp_output, set_dc, sleep)
 from .run_format import SOURCE_KEY
 
 # DG4000 同步为 0→3.5 V TTL，真机（DG4162 固件 00.01.14）只在「输出 OFF→ON 边沿、且边沿时
@@ -82,8 +82,10 @@ def _capture_frame(ctx, name, config, meta):
         raise SafetyAbort(f"{name}: 量程调整后仍削顶")
     path = ctx.directory.root / "raw" / f"{name}.npz"
     path.parent.mkdir(exist_ok=True)
+    # preamble 是时间轴来源（XORigin/XINCrement）与读取窗口起点的原始依据，随帧保存以便事后审计。
     np.savez(path, time=sense.time, sense_v=sense.voltage, sync_v=sync.voltage,
-             meta=json.dumps({**meta, "scope": sense.config_snapshot}, default=str, ensure_ascii=False))
+             meta=json.dumps({**meta, "scope": sense.config_snapshot, "preamble": sense.preamble_dict},
+                             default=str, ensure_ascii=False))
     ctx.state["data_files"].append(f"raw/{path.name}")
     return sense.time, sense.voltage
 
@@ -197,7 +199,7 @@ def measure_steps(ctx):
             sleep(p.settle_s)
             # 记录窗只按倍数算会放不下短脉冲的 RL 衰减拖尾（1 µs 脉宽 τ≈0.7 µs），长尾被截断后
             # 分析既拿不到下降沿也算不准含拖尾面积，因此再加一个绝对下限。
-            window = max(p.pulse_window_multiple * width, p.pulse_min_window_us * 1e-6)
+            window = pulse_window_s(p, width)
             config = capture_config(p, window, ctx.current_scale)
             capture(ctx, f"pulse_{index:02d}", config,
                     {"kind": "pulse", "width_s": width, "actual_width_s": actual_width, "drive_v": drive,

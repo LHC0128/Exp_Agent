@@ -94,12 +94,18 @@ def transfer(run_dir, params):
         result["gain_check"] = dict(drive_v=meta["drive_v"], measured_amps_per_volt=measured,
                                     predicted_amps_per_volt=params.amps_per_drive_volt,
                                     ratio=measured / params.amps_per_drive_volt)
-    points = [processing.transfer_point(meta["frequency_hz"], meta["drive_peak_v"], t, v, r)
-              for _, meta, t, v in load_frames(run_dir, {"sine"})]
+    points, traces = [], []
+    for _, meta, t, v in load_frames(run_dir, {"sine"}):
+        current = v / r
+        fit = processing.fit_sine(t, current, meta["frequency_hz"])
+        points.append(processing.point_from_fit(fit, meta["frequency_hz"], meta["drive_peak_v"]))
+        traces.append(processing.SineTrace(meta["frequency_hz"], meta["drive_peak_v"], t, current, fit))
     result["transfer"] = [asdict(point) for point in points]
     result["bandwidth_3db_hz"] = processing.bandwidth_3db(points) if len(points) > 1 else None
     output_path(run_dir, "results/transfer.json").write_text(json.dumps(result, ensure_ascii=False, indent=2),
                                                              encoding="utf-8")
+    if traces:
+        processing.plot_sine_frames(traces, output_path(run_dir, "results/coil_drive_sine.png"))
     return result
 
 

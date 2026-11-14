@@ -75,3 +75,33 @@ def test_area_tolerance_override_only_reruns_b02(tmp_path, monkeypatch):
     assert any(path.name.startswith("before_") for path in (directory / "results").iterdir())
     with pytest.raises(ValueError, match="AREA_TOLERANCE"):
         analysis.AnalysisWorkflow(directory, {"AREA_TOLERANCE": 0.9})
+
+
+def test_figures_are_exported_as_png_and_pdf(tmp_path, monkeypatch):
+    """汇总图与正弦时域图按存档图约定成对导出 PNG/PDF。"""
+    copy_config(tmp_path)
+    install(monkeypatch, Rig())
+    directory = workflow.run(small_params(), project_root=tmp_path)
+    analysis.analyze(directory)
+    results = directory / "results"
+    for name in ("coil_drive.png", "coil_drive.pdf", "coil_drive_sine.png", "coil_drive_sine.pdf"):
+        assert (results / name).is_file(), f"缺少 {name}"
+
+
+def test_pulse_only_run_plots_single_panel_without_sine_trace(tmp_path, monkeypatch):
+    """未运行 A04 时传递函数为空：汇总图退回单面板，且不生成正弦时域图。"""
+    copy_config(tmp_path)
+    install(monkeypatch, Rig())
+    ctx = workflow.Workflow(small_params(), project_root=tmp_path)
+    ctx.execute(["A01", "A02", "A03", "A05"])
+    ctx.finish()
+    summary = analysis.analyze(ctx.directory.root)
+    assert summary["transfer"] == []
+    results = ctx.directory.root / "results"
+    assert (results / "coil_drive.png").is_file()
+    assert not (results / "coil_drive_sine.png").exists()
+
+
+def test_plot_sine_frames_rejects_empty_input(tmp_path):
+    with pytest.raises(ValueError, match="正弦扫频帧"):
+        processing.plot_sine_frames([], tmp_path / "sine.png")

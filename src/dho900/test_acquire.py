@@ -182,14 +182,15 @@ def test_auto_depth_rejects_non_integer_point_readback(rig):
 def test_ascii_waveform_preserves_voltage_and_real_time_axis_across_chunks(rig):
     _, visa, acquirer = rig
     visa.depth = 300
-    visa.xreference = 2
+    # XREFerence 在 RAW 下恒为 0（手册 3.28.8），时间轴由 XORigin + 序号 × XINCrement 给出。
     result = acquirer.acquire_channel(1, timebase_scale=999)
     assert result.channel == 1
     assert result.preamble_dict["point_num"] == 300
     assert result.preamble_dict["format"] == 2
+    assert result.preamble_dict["window_start_points"] == 0
     assert result.raw_data.size == 0
     np.testing.assert_allclose(result.voltage, np.arange(300) * 0.01 - 2)
-    expected_time = -0.5 + (np.arange(300) - 2) / 300
+    expected_time = -0.5 + np.arange(300) / 300
     np.testing.assert_allclose(result.time, expected_time)
     assert ":WAVeform:STOP 127" in visa.writes
     assert ":WAVeform:STARt 128" in visa.writes
@@ -198,6 +199,42 @@ def test_ascii_waveform_preserves_voltage_and_real_time_axis_across_chunks(rig):
     assert visa.queries.count(":WAVeform:DATA?") == 3
     assert ":WAVeform:POINts 300" in visa.writes
     assert not any("BYTeorder" in command or "WIDTh" in command for command in visa.writes)
+
+
+def test_capped_depth_frame_is_read_from_centered_memory_window(rig):
+    """深度档比屏幕窗口长时从内存中段读：触发点落在帧中心，时间轴以触发沿为 0。
+
+    真机实测（2026-11-14，MAX_MEMORY_DEPTH=10000、20 µs 窗）：内存 10000 点、窗口
+    6250 点、XORigin=-16 µs 时，旧实现从 STARt 0 读，触发点落在帧内 80% 处。
+    """
+    _, visa, acquirer = rig
+    depth, window, increment, origin = 10_000, 6_250, 3.2e-9, -16e-6
+    visa.depth = depth
+    visa.preamble_override = f"2,2,{window},1,{increment},{origin},0,0.004,7,128"
+    acquirer._configured = True
+    acquirer._snapshot = {"actual_points": window, "actual_sample_rate_sa_s": 1.0 / increment,
+                          "depth_mode": "capped", "requested": {}}
+    result = acquirer.acquire_channel(1, 0.002)
+    assert result.preamble_dict["window_start_points"] == 1875
+    assert ":WAVeform:STARt 1876" in visa.writes
+    assert len(result.time) == window
+    assert result.time[0] == pytest.approx(-10e-6, rel=1e-9)
+    assert result.time[window // 2] == pytest.approx(0.0, abs=2 * increment)
+
+
+def test_memory_depth_shorter_than_window_keeps_first_points(rig):
+    """触发点前没有半个窗口时退回 STARt 0，按实际窗口读取并标记未居中。"""
+    _, visa, acquirer = rig
+    visa.depth = 6_250
+    visa.preamble_override = f"2,2,6250,1,3.2e-9,{-2e-6},0,0.004,7,128"
+    acquirer._configured = True
+    acquirer._snapshot = {"actual_points": 6_250, "actual_sample_rate_sa_s": 1.0 / 3.2e-9,
+                          "depth_mode": "capped", "requested": {}}
+    result = acquirer.acquire_channel(1, 0.002)
+    # 触发点在第 625 点，窗口 6250 点：起点被内存深度夹到 0。
+    assert result.preamble_dict["window_start_points"] == 0
+    assert result.preamble_dict["window_centered"] is False
+    assert result.time[0] == pytest.approx(-2e-6, rel=1e-9)
 
 
 def test_raw_read_requires_stopped_enabled_voltage_channel(rig):

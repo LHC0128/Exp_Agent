@@ -74,6 +74,16 @@ def plan(p):
                 gain_check_drive_v=p.gain_check_current_ma * 1e-3 / k)
 
 
+def pulse_window_s(p, width_s):
+    """脉冲记录窗：max(PULSE_WINDOW_MULTIPLE × 脉宽, PULSE_MIN_WINDOW_US)。
+
+    触发点居中时后半窗 = 窗长/2，必须装下脉宽与 RL 衰减尾：默认参数下
+    （倍数 5、下限 20 µs，本装置 τ≈0.7 µs）所有脉宽都满足「后半窗 ≥ 脉宽 + 5τ」；
+    倍数与下限改动后由 test_workflow 的窗口判据用例守住这条。
+    """
+    return max(p.pulse_window_multiple * width_s, p.pulse_min_window_us * 1e-6)
+
+
 def preflight(params, root):
     if errors := params.validate(root):
         raise ValueError("；".join(errors))
