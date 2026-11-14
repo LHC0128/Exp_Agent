@@ -38,6 +38,9 @@ class RFSensitivityKnownNoiseParams(RFSensitivityDirectAWParams):
             return RFSensitivityDirectAWParams._options(item, root)
         base = resolve_control_results_root("oc_sens")
         choices = []
+        # 理论结果根目录只存在于装了 theory_agent 的机器；缺失时不给候选，由 validate_model 报告未选版本。
+        if not base.is_dir():
+            return choices
         for directory in sorted((p for p in base.iterdir() if p.is_dir()), key=RFSensitivityKnownNoiseParams._directory_sort_key):
             try:
                 source = load_theory_control(base, directory.name)

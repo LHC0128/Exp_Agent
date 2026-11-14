@@ -196,6 +196,9 @@ class RFSensitivityDirectAWSingleParams(ExperimentParams):
         # vN 按版本号升序，自定义命名目录（如中文备注名）排在后面。
         sort_key = lambda path: (0, int(path.name[1:])) if re.fullmatch(r"v[1-9]\d*", path.name) else (1, path.name)
         choices = [("", "请选择最优控制版本")]
+        # 理论结果根目录只存在于装了 theory_agent 的机器；缺失时不给候选，由 validate_model 报告未选版本。
+        if not directory.is_dir():
+            return choices
         for version in sorted((path for path in directory.iterdir() if path.is_dir()), key=sort_key):
             waveform = version / "waveforms" / "optimal_control_waveform.csv"
             if waveform.is_file() and directory in waveform.resolve().parents:
