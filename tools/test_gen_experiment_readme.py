@@ -1,7 +1,10 @@
 """README 正式实验清单生成块的守卫测试。
 
-覆盖三件事：生成块与注册表一致（漂移即失败）、生成块覆盖且只覆盖全部正式实验、
-手工块中的归档与 Notebook 入口未被吞掉或重复。缺文档时生成器必须非零退出并列出缺口。
+覆盖生成块与注册表一致（漂移即失败）、生成块覆盖且只覆盖全部正式实验、手工块中的
+归档与 Notebook 入口未被吞掉或重复，以及文档链接取自 `definition.documentation`
+而非扫描 `docs/experiments/`。声明为空、声明路径不存在、frontmatter 的
+`experiment_id` 不匹配时生成器必须退出码 2 并定位到实验 id 与路径；这些用例全部
+在 `tmp_path` 造最小 fixture，不读写仓库真实的 `docs/experiments/`。
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ import re
 import pytest
 
 from lab_workflows.experiments import registry
+from lab_workflows.experiments.contracts import ExperimentDefinition
 from tools import gen_experiment_readme as gen
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +47,10 @@ REQUIRED_ARCHIVED = (
     "old/experiments/experiments/XY_DC_Voltage_Calibration.py",
 )
 
+# 临时 fixture 用的最小文档正文；`{experiment_id}` 由调用方填入。
+DOC_STUB = "---\nexperiment_id: {experiment_id}\n---\n\n测试用说明正文。\n"
+EMPTY_BLOCK_README = f"# 标题\n\n{gen.BEGIN_MARKER}\n\n{gen.END_MARKER}\n"
+
 
 @pytest.fixture(scope="module")
 def docs_tree(tmp_path_factory) -> Path:
@@ -56,8 +64,32 @@ def readme_text() -> str:
     return gen.read_text(ROOT / "README.md")
 
 
-def doc_index() -> dict[str, str]:
-    return gen.read_doc_index(ROOT / "docs" / "experiments")
+def make_definition(
+    experiment_id: str = "scope-capture",
+    documentation: str = "docs/experiments/scope_capture.md",
+) -> ExperimentDefinition:
+    """造一个最小可渲染的假定义，字段与真实定义同构。"""
+    return ExperimentDefinition(
+        id=experiment_id,
+        title="示波器采集",
+        category="measurement",
+        family="scope",
+        variant="default",
+        description="测试用最小定义。",
+        data_type="scope_capture",
+        required_devices=(),
+        acquisition_program="experiments/Scope_Capture.py",
+        documentation=documentation,
+    )
+
+
+def build_fixture_tree(root: Path, docs: dict[str, str]) -> None:
+    """在临时仓库根造 README 标记块与 `docs/experiments/` 下的最小文档。"""
+    docs_dir = root / "docs" / "experiments"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    for name, text in docs.items():
+        (docs_dir / name).write_text(text, encoding="utf-8", newline="")
+    (root / "README.md").write_text(EMPTY_BLOCK_README, encoding="utf-8", newline="")
 
 
 def manual_rows(text: str) -> list[str]:
@@ -79,20 +111,20 @@ def generated_rows(text: str) -> list[str]:
 
 def test_generated_block_matches_registry():
     """README 生成块必须与注册表当前内容逐字一致。"""
-    expected = gen.build_block(registry.list_experiments(), doc_index())
+    expected = gen.build_block(registry.list_experiments(), ROOT)
     assert gen.extract_block(readme_text()) == expected
 
 
 def test_generated_block_covers_every_registry_id_in_order():
-    """生成块的文档链接须逐个对回 registry 的稳定 ID，且顺序与注册表一致。"""
-    path_to_id = {path: experiment_id for experiment_id, path in doc_index().items()}
+    """生成块的文档链接须逐个对回定义的 documentation 声明，且顺序与注册表一致。"""
     covered = []
     for row in generated_rows(readme_text()):
         links = DOC_LINK.findall(row)
         assert len(links) == 1, f"行内文档链接数量不为 1: {row}"
-        assert links[0] in path_to_id, f"文档链接未归属任何 experiment_id: {links[0]}"
-        covered.append(path_to_id[links[0]])
-    assert covered == [definition.id for definition in registry.list_experiments()]
+        covered.append(links[0])
+    assert covered == [
+        definition.documentation for definition in registry.list_experiments()
+    ]
 
 
 def test_generated_rows_reference_existing_files():
@@ -130,7 +162,114 @@ def test_block_comparison_detects_hand_edit():
         for line in gen.extract_block(text).split("\n")
         if "bell_bloom_z_field_calibration.md" not in line
     )
-    assert edited != gen.build_block(registry.list_experiments(), doc_index())
+    assert edited != gen.build_block(registry.list_experiments(), ROOT)
+
+
+def test_declaration_is_the_link_target(tmp_path, monkeypatch):
+    """正常渲染：行内链接直接取 definition.documentation，写回可重复且字节不变。"""
+    definition = make_definition()
+    build_fixture_tree(
+        tmp_path, {"scope_capture.md": DOC_STUB.format(experiment_id="scope-capture")}
+    )
+    assert gen.build_rows([definition]) == [
+        "| 示波器采集 | `experiments/Scope_Capture.py` | "
+        "[实验说明](docs/experiments/scope_capture.md) |"
+    ]
+    block = gen.build_block([definition], tmp_path)
+    assert block.split("\n")[0] == gen.BEGIN_MARKER
+    assert block.split("\n")[-1] == gen.END_MARKER
+    assert gen.extract_block(block) == block
+
+    monkeypatch.setattr(gen.registry, "list_experiments", lambda: [definition])
+    readme = tmp_path / "README.md"
+    assert gen.run(tmp_path, write=True) == 0
+    assert "[实验说明](docs/experiments/scope_capture.md)" in gen.extract_block(
+        gen.read_text(readme)
+    )
+    first = readme.read_bytes()
+    assert gen.run(tmp_path, write=True) == 0
+    assert readme.read_bytes() == first
+
+
+def test_empty_declaration_exits_nonzero_and_lists_ids(tmp_path, monkeypatch, capsys):
+    """声明为空串时必须退出码 2，列出缺声明的 id，且不写入 README。"""
+    declared = make_definition()
+    gap = make_definition("mx-z-field-calibration", documentation="")
+    build_fixture_tree(
+        tmp_path, {"scope_capture.md": DOC_STUB.format(experiment_id="scope-capture")}
+    )
+    with pytest.raises(gen.MissingDocumentationError) as excinfo:
+        gen.build_block([declared, gap], tmp_path)
+    assert excinfo.value.experiment_ids == ["mx-z-field-calibration"]
+
+    monkeypatch.setattr(gen.registry, "list_experiments", lambda: [declared, gap])
+    before = (tmp_path / "README.md").read_bytes()
+    assert gen.run(tmp_path, write=True) == 2
+    assert (tmp_path / "README.md").read_bytes() == before, "校验失败时不得写入 README"
+    stderr = capsys.readouterr().err
+    assert "缺少 documentation 声明" in stderr
+    assert "mx-z-field-calibration" in stderr
+    assert "scope-capture" not in stderr
+
+
+def test_declared_file_missing_exits_nonzero_with_id_and_path(
+    tmp_path, monkeypatch, capsys
+):
+    """声明路径不存在时退出码 2，错误信息带实验 id 与声明路径。"""
+    definition = make_definition(documentation="docs/experiments/typo.md")
+    build_fixture_tree(
+        tmp_path, {"scope_capture.md": DOC_STUB.format(experiment_id="scope-capture")}
+    )
+    with pytest.raises(gen.InvalidDocumentationError) as excinfo:
+        gen.build_block([definition], tmp_path)
+    message = str(excinfo.value)
+    assert "scope-capture" in message
+    assert "docs/experiments/typo.md" in message
+    assert "文件不存在" in message
+
+    monkeypatch.setattr(gen.registry, "list_experiments", lambda: [definition])
+    assert gen.run(tmp_path, write=False) == 2
+    stderr = capsys.readouterr().err
+    assert "scope-capture -> docs/experiments/typo.md" in stderr
+
+
+def test_frontmatter_id_mismatch_exits_nonzero_with_id_and_path(tmp_path, capsys):
+    """frontmatter 的 experiment_id 与定义不一致时退出码 2，并给出双方取值。"""
+    definition = make_definition()
+    build_fixture_tree(
+        tmp_path,
+        {"scope_capture.md": DOC_STUB.format(experiment_id="other-experiment")},
+    )
+    with pytest.raises(gen.InvalidDocumentationError) as excinfo:
+        gen.build_block([definition], tmp_path)
+    message = str(excinfo.value)
+    assert "scope-capture -> docs/experiments/scope_capture.md" in message
+    assert "other-experiment" in message
+    assert "不一致" in message
+
+
+def test_missing_frontmatter_exits_nonzero_with_id_and_path(tmp_path):
+    """声明文件没有 frontmatter 时同样视为声明无效，并说明 frontmatter 缺失。"""
+    definition = make_definition()
+    build_fixture_tree(tmp_path, {"scope_capture.md": "# 没有 frontmatter\n"})
+    with pytest.raises(gen.InvalidDocumentationError) as excinfo:
+        gen.build_block([definition], tmp_path)
+    message = str(excinfo.value)
+    assert "scope-capture -> docs/experiments/scope_capture.md" in message
+    assert "缺失或为空" in message
+
+
+def test_run_checks_declared_paths_in_temp_root(tmp_path, capsys):
+    """临时根缺文档时退出码 2，错误信息按声明给 id -> 路径，而不是扫描 docs 的结果。"""
+    (tmp_path / "docs" / "experiments").mkdir(parents=True)
+    (tmp_path / "README.md").write_text(
+        EMPTY_BLOCK_README, encoding="utf-8", newline=""
+    )
+    assert gen.run(tmp_path, write=False) == 2
+    stderr = capsys.readouterr().err
+    assert "文件不存在" in stderr
+    first = registry.list_experiments()[0]
+    assert f"{first.id} -> {first.documentation}" in stderr
 
 
 def test_missing_marker_is_reported(tmp_path):
@@ -153,23 +292,6 @@ def test_check_mode_reports_drift(docs_tree):
         newline="",
     )
     assert gen.run(docs_tree, write=False) == 1
-
-
-def test_missing_documentation_exits_nonzero_and_lists_gaps(tmp_path, capsys):
-    """正式实验缺 docs frontmatter 时必须非零退出并列出缺口，而不是生成空链接。"""
-    docs = tmp_path / "docs" / "experiments"
-    docs.mkdir(parents=True)
-    (docs / "scope_capture.md").write_text(
-        "---\nexperiment_id: scope-capture\n---\n", encoding="utf-8"
-    )
-    (tmp_path / "README.md").write_text(
-        f"# 标题\n\n{gen.BEGIN_MARKER}\n\n{gen.END_MARKER}\n", encoding="utf-8"
-    )
-    assert gen.run(tmp_path, write=True) == 2
-    stderr = capsys.readouterr().err
-    assert "缺少 experiment_id 归属" in stderr
-    assert "bell-bloom-z-field-calibration" in stderr
-    assert "scope-capture" not in stderr
 
 
 def test_generation_is_idempotent_in_temp_tree(tmp_path, docs_tree):

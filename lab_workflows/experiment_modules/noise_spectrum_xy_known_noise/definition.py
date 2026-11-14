@@ -39,6 +39,7 @@ ADAPTER = KnownNoiseAdapter(
 )
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/noise_spectrum_xy_ctrl_known_noise.md",
     id="noise-spectrum-xy-known-noise",
     title="XY 控制测量已知可控噪声谱",
     category="verification",

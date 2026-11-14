@@ -27,6 +27,7 @@ def preflight(values):
     return errors
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/rf_field_measurement_2.md",
     id="rf-sensitivity-direct-aw-frequency",
     title="RF 灵敏度频率扫描（DirectAW）",
     category="measurement",

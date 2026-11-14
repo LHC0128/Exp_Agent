@@ -27,6 +27,7 @@ def preflight(values):
     return errors
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/xy_direct_aw_dc_calibration.md",
     id="xy-direct-aw-dc-calibration",
     title="XY DirectAW DC 标定",
     category="calibration",

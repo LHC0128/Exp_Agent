@@ -30,6 +30,7 @@ PYTHON_TESTS = (
     "tools/test_checkpoint.py",
     "tools/test_delivery_check.py",
     "tools/test_dependency_lock.py",
+    "tools/test_experiment_documentation.py",
     "tools/test_upgrade_lock.py",
     # 安全契约套件。不含 src/hardware_gate/test_gate.py：它在运行目录 pytest.skip，
     # 而 verify_pytest_results 拒绝任何 skip，纳入会让运行目录的快检必然失败。

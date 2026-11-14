@@ -28,6 +28,7 @@ def preflight(values: dict) -> list[str]:
     return []
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/detection_chain_frequency_response.md",
     id="detection-chain-frequency-response",
     title="探测链路频率响应标定",
     category="calibration",

@@ -33,6 +33,7 @@ def preflight(values):
 
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/bell_bloom_z_field_calibration.md",
     id=EXPERIMENT_ID, title="Bell Bloom Z 磁场频率标定",
     category="calibration", family="z-field-calibration", variant="bell-bloom-gated",
     description="扫描 Z DC 与 Pump 调制/解调频率，仅采集 Demod0 R，离线以平方根洛伦兹幅度模型拟合共振中心并标定带符号 Hz/V；γ 为幅度 −3 dB 半宽，历史结果不自动改写。运行页按节点编辑、应用并显式重跑，完整运行共用步骤；历史分析覆盖与下一次实验设置独立。每个频点配置后关闭温控，按 SYSTEM_SETTLE_S 稳定并采集至内存，恢复后保存；TEC 仅设 UI 目标温度。结束按最近已执行配置恢复零偏参考 Pump 脉冲与锁相，保留主场和光功率。分步角色由清单声明，状态与产物以执行记录为准。",

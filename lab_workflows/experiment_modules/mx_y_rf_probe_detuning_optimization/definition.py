@@ -21,6 +21,7 @@ ADAPTER = TypedWorkflowAdapter(
 )
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/mx_y_rf_probe_detuning_optimization.md",
     id="mx-y-rf-probe-detuning-optimization",
     title="Mx Y RF Probe 光功率与失谐灵敏度优化",
     category="optimization",

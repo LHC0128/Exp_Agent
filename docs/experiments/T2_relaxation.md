@@ -81,7 +81,7 @@ learned_notes:
   - Bell-Bloom 特有验证：PSD 洛伦兹拟合得到的 FWHM 应与光学 FID/MORS 法独立标定的 T₂ 一致（差异 < 20%），详见 Projection_noise.md
   - LIA 在本实验中仅用于实时监控，不参与数据采集；示波器是主检测设备
   - 每次采集前（acquire data）关闭 Temp_Switch 以消除温控加热电流产生的磁场干扰，采集完成后恢复
-  - MORS 频域法依赖 MORS_polarization.md 的 MORS 谱数据，RF 驱动功率必须足够低（弱驱动），否则功率展宽使 FWHM 偏大、T₂ 被低估
+  - MORS 频域法依赖 ../old/MORS_polarization.md 的 MORS 谱数据，RF 驱动功率必须足够低（弱驱动），否则功率展宽使 FWHM 偏大、T₂ 被低估
 defaults_file: params/experiments/t2-calibration.yaml
 ---
 
@@ -237,7 +237,7 @@ $$
 
 ### 实验步骤
 
-1. 按 `MORS_polarization.md` 流程采集完整 MORS 谱
+1. 按 `../old/MORS_polarization.md` 流程采集完整 MORS 谱
 2. 选其中一个共振峰，用 Lorentzian 拟合：
 
    $$

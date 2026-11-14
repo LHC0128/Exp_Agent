@@ -42,7 +42,7 @@ class T1Adapter(TypedWorkflowAdapter):
 
 ADAPTER = T1Adapter(run_format.EXPERIMENT_ID, run_format.DATA_TYPE, T1CalibrationParams,
     "lab_workflows.experiment_modules.t1_calibration.workflow", "lab_workflows.experiment_modules.t1_calibration.analysis")
-DEFINITION = ExperimentDefinition(id=run_format.EXPERIMENT_ID, title="T1 标定", category="calibration",
+DEFINITION = ExperimentDefinition(documentation="docs/experiments/T1_calibration.md", id=run_format.EXPERIMENT_ID, title="T1 标定", category="calibration",
     family="relaxation", variant="t1", description=DESCRIPTION, data_type=run_format.DATA_TYPE,
     required_devices=("信号发生器", "SDS", "TEC103（可选）"), required_mapping_keys=run_format.REQUIRED_MAPPING_KEYS,
     execution_mode="typed_workflow", schema_version=T1CalibrationParams.schema_version,

@@ -66,6 +66,7 @@ class ExperimentDefinition:
     analysis_program: str | None = None
     wiring_notes: tuple[str, ...] = ()
     safety_notes: tuple[str, ...] = ()
+    documentation: str = ""
     schema_version: int = 1
     supports_cancel: bool = True
     auto_analyze: bool = True

@@ -28,6 +28,7 @@ def preflight(values):
     return errors
 
 DEFINITION = ExperimentDefinition(
+    documentation="docs/experiments/T2_relaxation.md",
     id="t2-calibration",
     title="T2 标定",
     category="calibration",
