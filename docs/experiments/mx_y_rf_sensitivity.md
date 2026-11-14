@@ -117,7 +117,7 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 ## 两种线宽
 
-- frequency_sweep：拟合 `R(f)=C+A·γ/√((f−f0)²+γ²)`，γ 是真实扫频的幅度 −3 dB 半宽／功率 HWHM。保留旧 `hwhm_hz` 与 `frequency_sweep_true_hwhm` 键，但它们不是幅度半高半宽；后者为 `√3γ`，幅度 FWHM 为 `2√3γ`。新结果附带 `model_type`、`gamma_definition` 和幅度宽度；历史数据与已有结果不自动重算或改写，见[频率响应拟合清单](frequency_response_fitting.md)。
+- frequency_sweep：拟合 `R(f)=C+A·γ/√((f−f0)²+γ²)`，γ 是真实扫频的幅度 −3 dB 半宽／功率 HWHM。保留旧 `hwhm_hz` 与 `frequency_sweep_true_hwhm` 键，但它们不是幅度半高半宽；后者为 `√3γ`，幅度 FWHM 为 `2√3γ`。新结果附带 `model_type`、`gamma_definition` 和幅度宽度；历史数据与已有结果不自动重算或改写，见[频率响应拟合清单](../frequency_response_fitting.md)。
 - amplitude_equivalent：由 R 的绝对值色散幅度响应拟合得到 gamma_Vpp。仅当 Y_RF_NT_PER_VPP > 0 时才换算为 Rabi/幅度等效 HWHM；该值不是扫频共振线宽。
 
 幅度响应主拟合为

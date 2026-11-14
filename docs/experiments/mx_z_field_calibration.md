@@ -136,7 +136,7 @@ f_\mathrm{pred}=f_\mathrm{GUI}+sK_\mathrm{initial}V_Z,
 
 离线分析只对 `LINEAR_R_SQUARED_MIN` 执行模型声明的类型、有限值及上下限校验，不用当前仪器配置重新预检历史采集参数；采集启动仍执行原有完整参数和安全校验。模块入口 `python -m lab_workflows.experiment_modules.mx_z_field_calibration.analysis` 可由已安装本项目的解释器在仓库外启动，须通过 `LAB_RUN_DIR` 显式给出运行目录；缺少目录或目录不存在时拒绝执行，不回退最新历史。历史采集参数与原始文件保持不变。
 
-分析器从 `raw/z_scan_index.npz` 和各 `raw/z_*/frequency_scan.npz` 重建各 Z 偏置点的频率响应，对每条响应拟合带基线平方根洛伦兹幅度模型 `R(f)=C+A·γ/√((f−f0)²+γ²)`。旧 HWHM 数值键保留 γ，其定义为幅度 −3 dB 半宽／功率 HWHM，不是幅度半高半宽 `√3γ`；新结果附带模型和宽度定义。以下宽度判据仍使用 γ。历史数据及已有结果不自动重算或改写，参见[频率响应拟合清单](frequency_response_fitting.md)。正式中心只执行拟合所需的基础有效性检查：
+分析器从 `raw/z_scan_index.npz` 和各 `raw/z_*/frequency_scan.npz` 重建各 Z 偏置点的频率响应，对每条响应拟合带基线平方根洛伦兹幅度模型 `R(f)=C+A·γ/√((f−f0)²+γ²)`。旧 HWHM 数值键保留 γ，其定义为幅度 −3 dB 半宽／功率 HWHM，不是幅度半高半宽 `√3γ`；新结果附带模型和宽度定义。以下宽度判据仍使用 γ。历史数据及已有结果不自动重算或改写，参见[频率响应拟合清单](../frequency_response_fitting.md)。正式中心只执行拟合所需的基础有效性检查：
 
 - 拟合正常收敛且输入中至少有 5 个有限频率点；
 - HWHM 大于频率步进且小于扫描跨度的一半；
