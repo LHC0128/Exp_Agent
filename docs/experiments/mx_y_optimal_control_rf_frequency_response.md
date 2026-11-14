@@ -4,17 +4,28 @@ type: Mx_Y_Optimal_Control_RF_Frequency_Response
 execution_mode: typed_workflow
 scan_mode: nested_scan
 mapping_keys:
-  main_magnetic_field: fixed
-  Z_magnetic_field: optimal_control
-  Time_sequence_2: common_trigger
-  X_magnetic_field: fixed
-  rf_coil: scan
-  Pump_laser_power: fixed
-  Probe_laser_power: fixed
-  Pump_modulation: fixed
-  Time_sequence: fixed
-  Temp_Switch: point_gate
-  lockin_r: detection
+  main_magnetic_field:
+    role: fixed
+  Z_magnetic_field:
+    role: optimal_control
+  Time_sequence_2:
+    role: common_trigger
+  X_magnetic_field:
+    role: fixed
+  rf_coil:
+    role: scan
+  Pump_laser_power:
+    role: fixed
+  Probe_laser_power:
+    role: fixed
+  Pump_modulation:
+    role: fixed
+  Time_sequence:
+    role: fixed
+  Temp_Switch:
+    role: point_gate
+  lockin_r:
+    role: detection
 required_devices: [GS200, DG900, DG4000, 锁相放大器]
 learned_notes:
   - 最优控制阶段每个频率点完整采集 配置的 Y RF Burst 相位轴对应的 Demod0 R，响应按全部有效相位取中位数。

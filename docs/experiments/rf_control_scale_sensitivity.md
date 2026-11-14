@@ -121,7 +121,7 @@ TEC 默认仅下发 UI 目标温度，不启停、不判稳；连接失败告警
   不再使用局部多项式或数值梯度回退。另存有符号斜率和零 RF 点导数供诊断。
 - 色散线宽取 **`abs(gamma)`（HWHM，nT）**，按 DirectAW 的 `LARMOR_PER_NT`
   换成等效 Hz，并独立保存该值及标准误；它不是 R 扫频的洛伦兹线宽。
-- R 扫频共用 DirectAW 的平方根洛伦兹幅度模型 `C+A·γ/√((f−f0)²+γ²)`，输出绝对中心频率、相对目标的频移及 γ（幅度 −3 dB 半宽／功率 HWHM）。幅度半高半宽为 `√3γ`，不是旧 HWHM 键的 γ；响应拟合及最终汇总逐点保存 `frequency_model_type`、`frequency_model`、`frequency_gamma_definition` 和 `frequency_amplitude_hwhm_Hz`／`frequency_amplitude_fwhm_Hz`，与色散等效线宽区分。历史数据及已有结果不自动重算或改写，见[频率响应拟合清单](frequency_response_fitting.md)。
+- R 扫频共用 DirectAW 的平方根洛伦兹幅度模型 `C+A·γ/√((f−f0)²+γ²)`，输出绝对中心频率、相对目标的频移及 γ（幅度 −3 dB 半宽／功率 HWHM）。幅度半高半宽为 `√3γ`，不是旧 HWHM 键的 γ；响应拟合及最终汇总逐点保存 `frequency_model_type`、`frequency_model`、`frequency_gamma_definition` 和 `frequency_amplitude_hwhm_Hz`／`frequency_amplitude_fwhm_Hz`，与色散等效线宽区分。历史数据及已有结果不自动重算或改写，见[频率响应拟合清单](../frequency_response_fitting.md)。
   两种拟合分别记录有效状态，单个拟合失败不抹掉另一个拟合的有效结果；不插值补点。
 - `full_analysis.png/pdf` 按从左上至右下的顺序展示：**色散拟合绝对斜率（V/nT）、
   色散等效 HWHM（Hz）、洛伦兹中心频率（Hz）、灵敏度中位数（fT/√Hz）**。
