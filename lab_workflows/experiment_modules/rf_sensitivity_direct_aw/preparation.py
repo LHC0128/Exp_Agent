@@ -1,7 +1,7 @@
 """无硬件预检、设备连接、初始条件和安全收尾。"""
 from lab_workflows.steps import initialize_lockin_inputs
+from lab_workflows.steps import direct_aw_state
 from lockin_amplifier import HF2Instrument, MFLIInstrument
-from datetime import datetime
 from . import run_format
 import math
 from gs200 import GS200Instrument
@@ -120,18 +120,8 @@ def shutdown(devices, *, disconnect_tec=True):
 
 
 def initial_state(params, *, identity=run_format):
-    return {
-        "experiment_id": identity.EXPERIMENT_ID, "execution_mode": "typed_workflow",
-        "acquisition_method": identity.ACQUISITION_METHOD, "response_component": identity.RESPONSE_COMPONENT,
-        "noise_component": "X", "started_at": datetime.now().isoformat(),
-        "completion_status": "running", "analysis_status": "not_started",
-        "phase_calibration_status": "not_started", "xy_phase_calibration": {"converged": False, "history": []},
-        "rf_phase_calibration": {"points_completed": 0},
-        "signal_chain": params.signal_chain(identity.RESPONSE_COMPONENT), "common_trigger": {"mapping_key": "Time_sequence_2", "output": "channel", "targets": ["X Ext Trig", "Y Ext Trig", "Z Ext Trig"], "frequency_Hz": params.xy_trigger_freq},
-        "calibration": {"z_positive_field_phase_deg": params.z_burst_phase_init % 360, "z_negative_field_phase_deg": (params.z_burst_phase_init + 180) % 360, "z_v_to_nT": params.z_v_to_nt},
-        "actual_rates": {}, "data_files": [], "response_points_completed": 0, "noise_records_completed": 0,
-        "bandwidth_points_completed": 0,
-    }
+    """兼容入口：DirectAW 家族共用的运行目录初始元数据，identity 默认本实验。"""
+    return direct_aw_state.initial_state(params, identity)
 
 
 def restore_temperature(ctx):

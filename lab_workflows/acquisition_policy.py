@@ -1,16 +1,8 @@
-"""普通气室采集的稳定等待兼容规则；专用验证实验显式排除。"""
+"""普通气室采集的稳定等待兼容规则。"""
 
 from __future__ import annotations
 
 import math
-
-
-ACQUISITION_EXCEPTIONS = frozenset({
-    "z-aw-waveform-scope-check", "z-coil-inductance-frequency-response",
-    "z-coil-current-frequency-response", "z-aw-current-waveform-scope-check",
-    "z-aw-closed-loop-waveform-correction", "aw-waveform-scope-check",
-    "dg-am-comp-transfer-check", "temperature-switch-pid-cycle", "coil-drive-characterization",
-})
 
 
 def migrate_system_settle(values: dict, legacy_defaults: dict[str, float],

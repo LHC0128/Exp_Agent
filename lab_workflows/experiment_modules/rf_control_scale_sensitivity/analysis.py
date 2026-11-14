@@ -1,19 +1,27 @@
-"""复用 DirectAW 的分析修订、指纹、归档和分阶段执行协议。"""
+"""复用 DirectAW 家族的分析修订、指纹、归档和分阶段执行协议。
+
+分析引擎在 ``lab_workflows.analysis.direct_aw_analysis``；本模块只声明本实验的阶段清单、
+运行格式、算法模块与分析参数，并覆写本实验自己的选项处理与输入指纹。
+"""
 import hashlib
 import json
 import math
-from ..rf_sensitivity_direct_aw import analysis as shared
+from ...analysis.direct_aw_analysis import ANALYSIS_OPTIONS, DirectAWAnalysis
+from ...analysis.direct_aw_analysis import analyze as run_analysis
+from ...analysis.direct_aw_analysis import main as run_main
 from . import stages, run_format, analysis_steps
 
-ANALYSIS_OPTIONS = {"NOISE_NPERSEG": "noise_nperseg", "NOISE_OUTLIER_POLICY": "noise_outlier_policy",
-    "SENSITIVITY_BAND_MIN_HZ": "band_min_hz", "SENSITIVITY_BAND_MAX_HZ": "band_max_hz"}
 
-
-class AnalysisWorkflow(shared.AnalysisWorkflow):
+class AnalysisWorkflow(DirectAWAnalysis):
     identity = run_format
     stages = stages.ANALYSIS
     steps_module = analysis_steps
     analysis_version = "rf-control-scale-v7-sqrt-amplitude"
+    label = "RF 灵敏度分析"
+    # 子运行由 analysis_steps.load_inputs 直接遍历 controls/*/scales/*，不走家族的子控制
+    # 输入协议，所以不切换整轮多控制清单、也不登记子控制产物。
+    multi_stages = None
+    child_artifacts = {}
 
     def __init__(self, run_dir, analysis_parameters=None):
         # 保留旧分析请求的兼容入口，但局部点数不再参与全曲线色散拟合。
@@ -65,11 +73,11 @@ class AnalysisWorkflow(shared.AnalysisWorkflow):
 
 
 def analyze(run_dir):
-    return shared.analyze(run_dir, workflow_type=AnalysisWorkflow)
+    return run_analysis(run_dir, workflow_type=AnalysisWorkflow)
 
 
 def main():
-    shared.main(workflow_type=AnalysisWorkflow)
+    run_main(workflow_type=AnalysisWorkflow)
 
 
 if __name__ == "__main__":

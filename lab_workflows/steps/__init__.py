@@ -16,6 +16,7 @@ from .clock import (
     synchronize_connected_clocks,
 )
 from .direct_aw_phase import (
+    CalibrationQualityError,
     DirectAWPhaseCalibrationConfig,
     DirectAWPhaseCalibrationResult,
     DirectAWPhaseMeasurement,
@@ -78,6 +79,7 @@ from .safety_shutdown import (
     run_safety_shutdown,
 )
 from .session import DeviceSession
+from .sync_output import arm_sync_output
 from .temperature import (
     TemperatureControlStatus,
     configure_temperature_control,
@@ -91,6 +93,7 @@ from .acquisition_window import acquisition_window, DeferredAcquisitionWrites
 
 __all__ = [
     "acquisition_window",
+    "arm_sync_output",
     "DeferredAcquisitionWrites",
     "AWScaleStrategy",
     "ArbitraryWaveformSpec",

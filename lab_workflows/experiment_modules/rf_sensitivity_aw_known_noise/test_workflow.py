@@ -336,7 +336,7 @@ def test_quality_failure_blocks_successors_and_can_retry(known_rig, monkeypatch)
     params = replace(known_rig.params, rf_amp_points=2, noise_n_avg=1,
                      noise_duration=0.01, scan_point_duration_s=0.001,
                      scan_rf_phase=False)
-    monkeypatch.setattr(workflow.shared.SingleControlWorkflow, "publish", lambda *_: None)
+    monkeypatch.setattr(workflow.DirectAWControlRun, "publish", lambda *_: None)
     factory = workflow.ControlWorkflow.create_control_run.__func__
     created = []
 

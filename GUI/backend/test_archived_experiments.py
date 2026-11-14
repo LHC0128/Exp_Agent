@@ -12,7 +12,6 @@ import pytest
 import yaml
 
 from . import main
-from lab_workflows.acquisition_policy import ACQUISITION_EXCEPTIONS
 from lab_workflows.experiments import catalog, get_experiment, list_experiments
 from lab_workflows.experiments.archived import ARCHIVED_EXPERIMENTS, ARCHIVE_PATH
 
@@ -57,9 +56,8 @@ def test_active_registry_excludes_archive_and_old_python_imports_still_work():
     active = {item.id for item in list_experiments()}
     assert active.isdisjoint(ARCHIVED_EXPERIMENTS)
     assert {item.id for item in list_experiments(include_archived=True)} == active | ARCHIVED_EXPERIMENTS.keys()
-    assert "dg-am-comp-transfer-check" in ACQUISITION_EXCEPTIONS
-    assert "temperature-switch-pid-cycle" in ACQUISITION_EXCEPTIONS
-    assert "aw-waveform-scope-check" in ACQUISITION_EXCEPTIONS
+    for experiment_id in ("dg-am-comp-transfer-check", "temperature-switch-pid-cycle", "aw-waveform-scope-check"):
+        assert ARCHIVED_EXPERIMENTS[experiment_id].acquisition_exception
     for name in ("Temperature_Switch_PID_Cycle_Test.py", "Temperature_Switch_PID_Cycle_Test_plot.py"):
         assert not (ROOT / "experiments" / name).exists()
     for experiment_id, card in ARCHIVED_EXPERIMENTS.items():

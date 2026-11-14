@@ -1,8 +1,11 @@
 """完整/分步离线分析；骨架来自 StagedAnalysis，算法在 analysis_steps、fitting 与 analysis_plotting。"""
+import json
+import os
 from pathlib import Path
 
 from lab_workflows.staged_workflow import StagedAnalysis
 
+from ...experiment_runtime import runtime_run_dir
 from . import analysis_plotting
 from . import analysis_steps as steps
 from .stages import ANALYSIS, ANALYSIS_KEYS
@@ -33,5 +36,12 @@ def analyze(run_dir: Path, *, step_ids=None, analysis_parameters=None, expected_
                                     expected_revision=expected_revision)
 
 
+def main():
+    payload = json.loads(os.environ.get("LAB_TYPED_PARAMETERS", "{}"))
+    analyze(runtime_run_dir(), step_ids=payload.get("step_ids"), analysis_parameters=payload.get("analysis_parameters"),
+        expected_revision=payload.get("revision"))
+    return 0
+
+
 if __name__ == "__main__":
-    raise SystemExit(AnalysisWorkflow.main())
+    raise SystemExit(main())

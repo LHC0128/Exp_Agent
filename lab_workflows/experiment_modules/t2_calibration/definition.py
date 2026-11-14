@@ -1,7 +1,9 @@
 """T2 光学 FID 标定实验定义。"""
 
-from ...experiments.contracts import ExperimentDefinition
+from ...experiments.contracts import ExperimentDefinition, RunHistory
+from ...experiments.requirements import T2
 from ...experiments.typed import TypedWorkflowAdapter
+from . import run_format
 from .models import T2CalibrationParams
 
 
@@ -33,6 +35,7 @@ DEFINITION = ExperimentDefinition(
     variant="t2",
     description="扫描 Probe 光功率，通过光学 FID 阻尼振荡拟合 T2。运行／历史双 Tab 内按真实节点编辑、勾选和分步执行，完整与分步共用准备、采集和安全收尾；独立分析绑定明确目录。保留原始 NPZ、触发后裁剪与平均、raw/recovery 抢救帧、原始异常及收尾失败语义。配置完成后关闭温控，按 SYSTEM_SETTLE_S 稳定，恢复 5 V ON 后保存；TEC 只写 UI 目标温度。结束保持主场、光功率、Pump 调制、RF 门控及其当前 Burst 和锁相设置，只断开 TEC。分步角色由清单声明，状态与产物以执行记录为准。",    data_type="T2_Calibration",
     required_devices=("GS200", "DG900", "DG4000", "SDS", "锁相放大器"),
+    required_mapping_keys=T2,
     execution_mode="typed_workflow",
     acquisition_program="experiments/T2_Calibration.py",
     analysis_program="experiments/T2_Calibration_plot.py",
@@ -44,4 +47,5 @@ DEFINITION = ExperimentDefinition(
     preflight_runner=preflight,
     experiment_runner=ADAPTER.run,
     analysis_runner=ADAPTER.analyze,
+    run_history=RunHistory(run_format=run_format, historical_parameters=run_format.historical_parameters),
 )

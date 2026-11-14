@@ -95,6 +95,10 @@ class StepMetrics:
     area_a_s: float
 
 
+class TruncatedPulse(ValueError):
+    """记录窗未包含脉冲的衰减尾部：下降沿指标与含拖尾面积都不可用，该帧应整帧跳过。"""
+
+
 def step_metrics(time_s: np.ndarray, current_a: np.ndarray, width_s: float) -> StepMetrics:
     """单个矩形脉冲（同步沿 t=0 开始、宽 width_s）的电流响应指标。"""
     before = time_s < -0.02 * width_s
@@ -112,8 +116,12 @@ def step_metrics(time_s: np.ndarray, current_a: np.ndarray, width_s: float) -> S
     t10 = _crossing(time_s, normalized, 0.1, 0.0, True)
     t50 = _crossing(time_s, normalized, 0.5, 0.0, True)
     t90 = _crossing(time_s, normalized, 0.9, 0.0, True)
-    f90 = _crossing(time_s, normalized, 0.9, width_s, False)
-    f10 = _crossing(time_s, normalized, 0.1, width_s, False)
+    try:
+        f90 = _crossing(time_s, normalized, 0.9, width_s, False)
+        f10 = _crossing(time_s, normalized, 0.1, width_s, False)
+    except ValueError as exc:
+        raise TruncatedPulse(f"记录窗在 {time_s[-1] * 1e6:g} µs 结束，未包含脉宽 {width_s * 1e6:g} µs "
+                             f"之后的衰减尾部（{exc}）；加大 PULSE_WINDOW_MULTIPLE 或 PULSE_MIN_WINDOW_US 重采") from exc
     inside = (time_s >= 0.0) & (time_s <= width_s)
     peak = float(np.max(normalized[inside]))
     window = time_s >= -0.02 * width_s

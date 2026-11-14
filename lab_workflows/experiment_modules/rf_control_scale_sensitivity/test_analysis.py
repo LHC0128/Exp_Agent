@@ -445,3 +445,24 @@ def test_real_offline_subprocess_entrypoint(tmp_path):
     process = subprocess.run([sys.executable, str(script), str(path)], env=env, text=True, capture_output=True, timeout=60)
     assert process.returncode == 0, process.stdout + process.stderr
     assert (path / "results/analysis.json").is_file()
+
+
+def test_shared_engine_reparent_keeps_state_and_option_keys(tmp_path):
+    """直接继承共享分析引擎后，状态文件与选项键集逐项不变。"""
+    from ...analysis.direct_aw_analysis import DirectAWAnalysis
+    from ..rf_sensitivity_direct_aw import analysis as direct
+    assert issubclass(AnalysisWorkflow, DirectAWAnalysis)
+    assert not issubclass(AnalysisWorkflow, direct.AnalysisWorkflow)
+    assert {"identity", "stages", "steps_module", "analysis_version", "label",
+            "multi_stages", "child_artifacts"} <= set(AnalysisWorkflow.__dict__)
+    assert AnalysisWorkflow.label == "RF 灵敏度分析"
+    path = synthetic_run(tmp_path / "run")
+    ctx = AnalysisWorkflow(path)
+    assert list(ctx.options) == ["noise_nperseg", "noise_outlier_policy", "band_min_hz", "band_max_hz"]
+    assert list(ctx.snapshot()) == ["run_id", "revision", "options", "steps", "fingerprint", "summary"]
+    ctx.execute(["B01"])
+    saved = json.loads((path / "analysis_state.json").read_text(encoding="utf-8"))
+    assert list(saved) == list(ctx.snapshot())
+    assert list(saved["options"]) == list(ctx.options)
+    assert list(saved["steps"]) == list(stage.id for stage in stages.ANALYSIS)
+    assert (path / "results").is_dir()

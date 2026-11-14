@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Callable, Literal
 
 from ..common import CancellationToken, ProgressCallback
 from .requirements import (
+    ARCHIVED_MAPPING_REQUIREMENTS,
     ARBITRARY_MAPPING_KEYS,
     INFINITE_BURST_MAPPING_KEYS,
     MAPPING_ENDPOINT_FIELDS,
     MAPPING_INSTRUMENTS,
-    TYPED_MAPPING_REQUIREMENTS,
 )
 
 
@@ -42,6 +43,14 @@ ExecutionMode = Literal["typed_workflow", "legacy_script"]
 
 
 @dataclass(slots=True)
+class RunHistory:
+    """历史读取契约：run_format 判定原始资格，参数快照入口各实验命名不同故显式声明。"""
+
+    run_format: ModuleType
+    historical_parameters: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+
+
+@dataclass(slots=True)
 class ExperimentDefinition:
     id: str
     title: str
@@ -60,16 +69,20 @@ class ExperimentDefinition:
     schema_version: int = 1
     supports_cancel: bool = True
     auto_analyze: bool = True
+    # 采集验收策略：为真表示采集变更时豁免完整采集业务验收；不进入 public() 与 GUI 契约。
+    acquisition_exception: bool = False
     schema_provider: SchemaProvider | None = field(default=None, repr=False)
     defaults_saver: DefaultsSaver | None = field(default=None, repr=False)
     preflight_runner: PreflightRunner | None = field(default=None, repr=False)
     derive_runner: DeriveRunner | None = field(default=None, repr=False)
     experiment_runner: ExperimentRunner | None = field(default=None, repr=False)
     analysis_runner: AnalysisRunner | None = field(default=None, repr=False)
+    run_history: RunHistory | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        # 归档卡片不加载实现，映射键只能由归档表兜底；在册实验一律自带声明。
         if self.execution_mode == "typed_workflow" and not self.required_mapping_keys:
-            self.required_mapping_keys = TYPED_MAPPING_REQUIREMENTS.get(self.id, ())
+            self.required_mapping_keys = ARCHIVED_MAPPING_REQUIREMENTS.get(self.id, ())
 
     def _mapping_errors(self) -> list[str]:
         if self.execution_mode != "typed_workflow":

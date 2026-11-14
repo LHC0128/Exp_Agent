@@ -9,6 +9,10 @@ from typing import Any, Callable, Mapping
 from ..common import ProgressCallback, emit
 
 
+class CalibrationQualityError(RuntimeError):
+    """校相质量未达标，可在同一设备会话中重试；DirectAW 家族的共享异常类型。"""
+
+
 @dataclass(slots=True)
 class DirectAWPhaseCalibrationConfig:
     """DirectAW 相位反馈配置。"""

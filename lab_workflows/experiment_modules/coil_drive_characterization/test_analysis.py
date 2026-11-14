@@ -39,6 +39,28 @@ def test_step_metrics_first_order():
     assert metrics.area_a_s == pytest.approx(0.1 * width, rel=0.005)  # 线性 RL 含拖尾面积守恒
 
 
+def test_step_metrics_flags_truncated_tail():
+    """记录窗在脉冲尾部之前结束：抛 TruncatedPulse，由分析跳过该帧而不是中止整段。"""
+    t = np.linspace(-2.5e-6, 2.5e-6, 5001)
+    width = 1e-6
+    current = np.where(t < 0, 0, np.where(t < width, 1 - np.exp(-t / TAU),
+                                          (1 - math.exp(-width / TAU)) * np.exp(-(t - width) / TAU)))
+    with pytest.raises(processing.TruncatedPulse, match="衰减尾部"):
+        processing.step_metrics(t, 0.1 * current, width)
+
+
+def test_truncated_pulse_frame_is_skipped_not_fatal(tmp_path, monkeypatch):
+    """短脉宽窗口被截断时该帧记入 pulse_skipped，其余帧照常出结果。"""
+    copy_config(tmp_path)
+    install(monkeypatch, Rig())
+    params = small_params(pulse_widths_us=[1.0, 20.0, 100.0], pulse_min_window_us=1.0)
+    directory = workflow.run(params, project_root=tmp_path)
+    summary = analysis.analyze(directory)
+    assert summary["status"] == "completed"
+    assert [item["width_s"] for item in summary["pulse_skipped"]] == [1e-6]
+    assert summary["shortest_usable_pulse_width_s"] is not None
+
+
 def test_area_tolerance_override_only_reruns_b02(tmp_path, monkeypatch):
     copy_config(tmp_path)
     install(monkeypatch, Rig())

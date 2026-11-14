@@ -304,7 +304,7 @@ def main(argv: list[str] | None = None, *, _root: Path | None = None, _check_mai
             command.add_argument("--remaining", action="append")
         elif name == "check":
             command.add_argument("--profile", choices=tuple(_CHECKS), default="python")
-            command.add_argument("--timeout", type=_seconds, default=30.0, metavar="SECONDS")
+            command.add_argument("--timeout", type=_seconds, default=60.0, metavar="SECONDS")
     args = parser.parse_args(argv)
     try:
         root = (ROOT if _root is None else _root).resolve()

@@ -1,0 +1,405 @@
+"""Z 线圈实际电流频率响应离线分析：对数扫频复响应拟合。"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import matplotlib
+matplotlib.use("Agg")
+import numpy as np
+import yaml
+
+from ...current_feedback import (
+    AW_CURRENT_RESPONSE_PHASE_REFERENCE, AW_CURRENT_RESPONSE_VALID_FRAME_COUNT_RULE,
+    sense_voltage_to_current,
+)
+from ...experiment_runtime import check_cancelled
+from ...plotting import format_axis, new_figure, save_figure, set_plot_style
+from ..z_coil_inductance_frequency_response.analysis import (
+    _as_scalar, _circular_std_deg, _load_capture, falling_edge_time, fit_sine,
+)
+from ..z_aw_waveform_scope_check.analysis import _saturation_diagnostic
+
+
+EXPERIMENT_ID = "z-coil-current-frequency-response"
+FORMAT_VERSION = 4
+OUTPUT_PROTOCOL = "coherent_swept_sine_current_response"
+COMMAND_VOLTAGE_REFERENCE = "50_ohm"
+# 驱动参考取自同一帧的实测电压时，分母是实测相量；缺少参考通道时退化为设定值。
+PHASE_REFERENCE_MEASURED = AW_CURRENT_RESPONSE_PHASE_REFERENCE
+PHASE_REFERENCE_COMMANDED = "commanded_amplitude"
+# 幅值拟合门槛按本次数据放宽；驱动参考保持严格，避免把噪声当相位基准。
+FIT_CORRELATION_MIN = 0.95
+DRIVE_REFERENCE_CORRELATION_MIN = 0.98
+PHASE_STD_MAX_DEG = 15.0
+PHASE_MIN_VALID_REPEATS = 2
+
+
+def _load_yaml(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as stream:
+        payload = yaml.safe_load(stream) or {}
+    if not isinstance(payload, dict):
+        raise TypeError(f"YAML 顶层必须是映射: {path}")
+    return payload
+
+
+def _builtin(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _builtin(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_builtin(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return _builtin(value.tolist())
+    if isinstance(value, np.generic):
+        return _builtin(value.item())
+    if isinstance(value, float) and not np.isfinite(value):
+        return None
+    return value
+
+
+def select_post_settle_cycles(
+    time_s: np.ndarray, frequency_hz: float, *,
+    discard_cycles: int, retained_cycles: int,
+) -> np.ndarray:
+    """选择相干启动后丢弃指定周期数的完整周期采样掩码。"""
+    period_s = 1.0 / float(frequency_hz)
+    dt = float(np.median(np.diff(time_s)))
+    start = discard_cycles * period_s
+    stop = (discard_cycles + retained_cycles) * period_s
+    if float(np.max(time_s)) < stop - 0.5 * dt:
+        raise ValueError(
+            f"{frequency_hz:.6g} Hz 标定帧的触发后窗口不足："
+            f"需要到 {stop:.6g} s，实际到 {float(np.max(time_s)):.6g} s"
+        )
+    mask = (time_s >= start) & (time_s < stop - 0.5 * dt)
+    if int(mask.sum()) < 4:
+        raise ValueError(
+            f"{frequency_hz:.6g} Hz 标定帧内完整周期采样不足"
+            f"（丢弃 {discard_cycles} 周期后仅 {int(mask.sum())} 点）"
+        )
+    return mask
+
+
+def _phasor(fit: dict[str, float]) -> complex:
+    """把 sin/cos 拟合结果转成 cos 约定的复相量。"""
+    return float(fit["amplitude_v"]) * np.exp(1j * np.deg2rad(fit["phase_deg"]))
+
+
+def _fit_swept_capture(capture: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """从单帧扫频采集恢复复数传递函数 H = I/V。
+
+    驱动参考与电流取自同一帧、同一时间轴：以参考通道实测正弦作分母，
+    相干启动时延、DG 内部延迟与通道共模误差同时被消掉，剩下的才是真实
+    I/V 传递。缺少参考通道时退化为按命令设定值归一，相位会保留一个随
+    频率线性增长的固定时延，只能用于幅度判读。
+    """
+    frequency = float(_as_scalar(capture, "frequency_hz"))
+    drive_amplitude_vpp = float(
+        _as_scalar(capture, "drive_amplitude_vpp", config["DRIVE_AMPLITUDE_VPP"]))
+    drive_offset_v = float(_as_scalar(capture, "drive_offset_v", 0.0))
+    edge_time = falling_edge_time(
+        capture["trigger_time_s"], capture["trigger_voltage_v"],
+        float(config["SCOPE_TRIGGER_LEVEL_V"]),
+    )
+    time_relative_s = np.asarray(capture["time_s"], dtype=float) - edge_time
+    selected = select_post_settle_cycles(
+        time_relative_s, frequency,
+        discard_cycles=int(config["RESPONSE_SETTLE_CYCLES"]),
+        retained_cycles=int(config["SCOPE_CYCLES"]),
+    )
+    measured_voltage = np.asarray(capture["measured_voltage_v"], dtype=float)
+    current_a = sense_voltage_to_current(
+        measured_voltage[selected], float(config["SENSE_RESISTOR_OHM"]))
+    current_fit = fit_sine(
+        time_relative_s[selected], current_a, frequency,
+        drive_amplitude_vpp, drive_offset_v,
+    )
+    reference_fit: dict[str, float] | None = None
+    drive_amplitude_measured_v = float("nan")
+    if "reference_voltage_v" in capture:
+        reference_voltage = np.asarray(capture["reference_voltage_v"], dtype=float)
+        if reference_voltage.size != measured_voltage.size:
+            raise ValueError("驱动参考通道点数与 CH3 不一致")
+        reference_fit = fit_sine(
+            time_relative_s[selected], reference_voltage[selected], frequency,
+            drive_amplitude_vpp, drive_offset_v,
+        )
+        drive_amplitude_measured_v = float(reference_fit["amplitude_v"])
+    commanded_drive_phasor = 0.5 * drive_amplitude_vpp + 0.0j
+    if abs(commanded_drive_phasor) <= 0.0:
+        raise ValueError(f"{frequency:.6g} Hz 的驱动参考幅度为零，无法归一化")
+    current_phasor = _phasor(current_fit)
+    measured_transfer = (
+        current_phasor / _phasor(reference_fit)
+        if reference_fit is not None
+        and reference_fit["amplitude_v"] > 0.0
+        and reference_fit["correlation"] >= DRIVE_REFERENCE_CORRELATION_MIN
+        else complex(float("nan"), float("nan"))
+    )
+    saturation = _saturation_diagnostic(
+        measured_voltage,
+        scale_v_div=_as_scalar(capture, "scale_used_v_div", np.nan),
+        offset_v=_as_scalar(capture, "offset_used_v", 0.0),
+    )
+    return {
+        "frequency_hz": frequency,
+        "transfer": current_phasor / commanded_drive_phasor,
+        "measured_transfer": complex(measured_transfer),
+        "drive_amplitude_measured_v": drive_amplitude_measured_v,
+        "drive_fit_correlation": (
+            float(reference_fit["correlation"]) if reference_fit is not None
+            else float("nan")),
+        "current_amplitude_a": float(current_fit["amplitude_v"]),
+        "current_offset_a": float(current_fit["offset_v"]),
+        "fit_correlation": float(current_fit["correlation"]),
+        "fit_residual_rms_a": float(current_fit["residual_rms_v"]),
+        "sample_count": int(selected.sum()),
+        **saturation,
+    }
+
+
+def _aggregate_points(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """同一频率的重复帧汇总为一点，并给出相位重复性判据。"""
+    frequency_axis = np.asarray(
+        sorted({r["frequency_hz"] for r in records}), dtype=float)
+    points: list[dict[str, Any]] = []
+    for frequency in frequency_axis:
+        # 重复帧保存相同设定频率；容差会把相邻扫描点误算成有效重复。
+        frames = [r for r in records if r["frequency_hz"] == frequency]
+        transfers = np.asarray([r["transfer"] for r in frames], dtype=complex)
+        phases_deg = np.rad2deg(np.angle(transfers))
+        saturation = any(bool(r["saturation_detected"]) for r in frames)
+        correlation = float(np.mean([r["fit_correlation"] for r in frames]))
+        phase_std = float(_circular_std_deg(phases_deg))
+        measured_reference = frames[0]["phase_reference"] == PHASE_REFERENCE_MEASURED
+        valid_frame_count = int(sum(
+            not bool(r["saturation_detected"])
+            and np.isfinite(r["transfer"])
+            and abs(r["transfer"]) > 0.0
+            and np.isfinite(r["fit_correlation"])
+            and r["fit_correlation"] > FIT_CORRELATION_MIN
+            and (not measured_reference or (
+                np.isfinite(r["drive_fit_correlation"])
+                and r["drive_fit_correlation"] >= DRIVE_REFERENCE_CORRELATION_MIN))
+            for r in frames
+        ))
+        phase_reliable = bool(measured_reference
+            and valid_frame_count >= PHASE_MIN_VALID_REPEATS
+            and phase_std < PHASE_STD_MAX_DEG)
+        mean_transfer = complex(np.mean(transfers))
+        amplitude_reliable = bool(
+            not saturation
+            and np.all(np.isfinite(transfers))
+            and np.all(np.abs(transfers) > 0.0)
+            and np.isfinite(correlation)
+            and correlation > FIT_CORRELATION_MIN
+        )
+        reliable = bool(amplitude_reliable and (not measured_reference or phase_reliable))
+        points.append({
+            "frequency_hz": float(frequency),
+            "transfer_real_a_per_v": mean_transfer.real,
+            "transfer_imag_a_per_v": mean_transfer.imag,
+            "transfer_magnitude_a_per_v": abs(mean_transfer),
+            "transfer_phase_deg": float(np.rad2deg(np.angle(mean_transfer))),
+            "reliable": reliable,
+            "amplitude_reliable": amplitude_reliable,
+            "phase_reliable": phase_reliable,
+            "frame_count": len(frames),
+            "valid_frame_count": valid_frame_count,
+            "saturation_detected": saturation,
+            "fit_correlation_mean": correlation,
+            "phase_std_deg": phase_std,
+            "current_amplitude_a_mean": float(
+                np.mean([r["current_amplitude_a"] for r in frames])),
+            "drive_amplitude_measured_v_mean": float(
+                np.mean([r["drive_amplitude_measured_v"] for r in frames])),
+        })
+    return points
+
+
+def _plot_transfer(results_dir: Path, frequency_hz: np.ndarray, transfer: np.ndarray,
+                   reliable: np.ndarray, phase_reliable: np.ndarray) -> str:
+    set_plot_style("paper")
+    fig, axes = new_figure(nrows=2, ncols=1, kind="wide", constrained_layout=True)
+    axes[0].plot(frequency_hz[reliable], np.abs(transfer[reliable]), "o-", ms=3, lw=1.0,
+                 label="Reliable magnitude")
+    axes[0].plot(frequency_hz[~reliable], np.abs(transfer[~reliable]), "x", ms=5,
+                 label="Excluded point")
+    axes[0].set_xscale("log")
+    format_axis(axes[0], xlabel="Drive frequency (Hz)", ylabel="|I/V| (A/V)")
+    axes[0].grid(True, alpha=0.25, which="both")
+    axes[0].legend(loc="best")
+    axes[1].plot(frequency_hz[phase_reliable],
+                 np.rad2deg(np.angle(transfer[phase_reliable])), "o-",
+                 ms=3, lw=1.0, label="Reliable phase")
+    axes[1].plot(frequency_hz[~phase_reliable],
+                 np.rad2deg(np.angle(transfer[~phase_reliable])), "x",
+                 ms=5, label="Phase not qualified")
+    axes[1].set_xscale("log")
+    format_axis(axes[1], xlabel="Drive frequency (Hz)", ylabel="Phase (deg)")
+    axes[1].grid(True, alpha=0.25, which="both")
+    axes[1].legend(loc="best")
+    filename = "transfer_function.png"
+    save_figure(fig, results_dir / filename)
+    return filename
+
+
+def _analyze_swept_captures(run_dir: Path, config: dict[str, Any],
+                            records: list[dict[str, Any]], *, plot=True) -> dict[str, Any]:
+    """对数扫频分析：逐频率汇总重复帧，保留可靠性掩码与可靠覆盖区间。"""
+    # 一次运行统一使用一种相位基准；稀疏的高相关噪声不能混入命令参考数据。
+    use_measured_reference = bool(records) and all(
+        np.isfinite(r["drive_fit_correlation"])
+        and r["drive_fit_correlation"] >= DRIVE_REFERENCE_CORRELATION_MIN
+        for r in records
+    )
+    phase_reference = (
+        PHASE_REFERENCE_MEASURED if use_measured_reference
+        else PHASE_REFERENCE_COMMANDED
+    )
+    for record in records:
+        if use_measured_reference:
+            record["transfer"] = record.pop("measured_transfer")
+        else:
+            record.pop("measured_transfer")
+        record["phase_reference"] = phase_reference
+    point_results = _aggregate_points(records)
+    frequency_hz = np.asarray([p["frequency_hz"] for p in point_results], dtype=float)
+    transfer = np.asarray(
+        [p["transfer_real_a_per_v"] + 1j * p["transfer_imag_a_per_v"]
+         for p in point_results], dtype=complex)
+    reliable = np.asarray([p["reliable"] for p in point_results], dtype=bool)
+    amplitude_reliable = np.asarray([p["amplitude_reliable"] for p in point_results], dtype=bool)
+    phase_reliable = np.asarray([p["phase_reliable"] for p in point_results], dtype=bool)
+    if not np.any(amplitude_reliable):
+        diagnostic = dict(experiment_id=EXPERIMENT_ID, status="quality_failed", points=point_results,
+            phase_reference=phase_reference, error="扫频没有产生任何可靠频点，请检查驱动幅度、接线与重复次数")
+        (run_dir / "results/frequency_evaluation.json").write_text(
+            json.dumps(_builtin(diagnostic), ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+        raise ValueError(diagnostic["error"])
+    reliable_frequency = frequency_hz[reliable]
+    reliable_min = float(np.min(reliable_frequency)) if reliable_frequency.size else None
+    reliable_max = float(np.max(reliable_frequency)) if reliable_frequency.size else None
+    results_dir = run_dir / "results"
+    np.savez(
+        results_dir / "frequency_response.npz",
+        format_version=np.int64(FORMAT_VERSION),
+        output_protocol=np.asarray(OUTPUT_PROTOCOL),
+        command_voltage_reference=np.asarray(COMMAND_VOLTAGE_REFERENCE),
+        phase_reference=np.asarray(phase_reference),
+        frequency_hz=frequency_hz,
+        transfer_real_a_per_v=transfer.real,
+        transfer_imag_a_per_v=transfer.imag,
+        reliable=reliable,
+        amplitude_reliable=amplitude_reliable,
+        phase_reliable=phase_reliable,
+        frame_count=np.asarray([p["frame_count"] for p in point_results], dtype=int),
+        valid_frame_count=np.asarray([p["valid_frame_count"] for p in point_results], dtype=int),
+        valid_frame_count_rule=np.asarray(AW_CURRENT_RESPONSE_VALID_FRAME_COUNT_RULE),
+        fit_correlation_mean=np.asarray(
+            [p["fit_correlation_mean"] for p in point_results], dtype=float),
+        phase_std_deg=np.asarray(
+            [p["phase_std_deg"] for p in point_results], dtype=float),
+        saturation_detected=np.asarray(
+            [p["saturation_detected"] for p in point_results], dtype=np.uint8),
+        sense_resistor_ohm=np.float64(config["SENSE_RESISTOR_OHM"]),
+        reliable_frequency_min_hz=np.float64(reliable_min if reliable_min is not None else np.nan),
+        reliable_frequency_max_hz=np.float64(reliable_max if reliable_max is not None else np.nan),
+    )
+    plot_transfer = (_plot_transfer(results_dir, frequency_hz, transfer, amplitude_reliable, phase_reliable)
+        if plot else "transfer_function.png")
+    excluded = frequency_hz[~reliable]
+    return {
+        "experiment_id": EXPERIMENT_ID,
+        "run_dir": str(run_dir),
+        "analysis_format_version": FORMAT_VERSION,
+        "capture_count": len(records),
+        "valid_frame_count_rule": AW_CURRENT_RESPONSE_VALID_FRAME_COUNT_RULE,
+        "frequency_count": int(frequency_hz.size),
+        "output_protocol": OUTPUT_PROTOCOL,
+        "command_voltage_reference": COMMAND_VOLTAGE_REFERENCE,
+        "phase_reference": phase_reference,
+        "sense_resistor_ohm": float(config["SENSE_RESISTOR_OHM"]),
+        "reliable_point_count": int(np.count_nonzero(reliable)),
+        "amplitude_reliable_point_count": int(np.count_nonzero(amplitude_reliable)),
+        "phase_reliable_point_count": int(np.count_nonzero(phase_reliable)),
+        "closed_loop_usable": bool(np.count_nonzero(reliable & phase_reliable) >= 2),
+        "reliable_band_hz": {
+            "minimum": reliable_min,
+            "maximum": reliable_max,
+        },
+        "excluded_frequency_hz": [float(value) for value in excluded],
+        "points": point_results,
+        "quality_limits": {
+            "fit_correlation_min": FIT_CORRELATION_MIN,
+            "phase_std_max_deg": PHASE_STD_MAX_DEG,
+            "minimum_valid_phase_repeats": PHASE_MIN_VALID_REPEATS,
+        },
+        "files": [plot_transfer, "frequency_response.npz"],
+    }
+
+
+
+def analysis_config(run_dir):
+    """只使用采集快照，不从当前默认值覆盖历史科学参数。"""
+    from .run_format import analysis_block_reason
+    config = _load_yaml(run_dir / "experiment_config.yaml")
+    if reason := analysis_block_reason(config):
+        raise ValueError(reason)
+    p = config["parameters"]
+    values = dict(SENSE_RESISTOR_OHM=float(p.get("SENSE_RESISTOR_OHM", 0)),
+        SCOPE_TRIGGER_LEVEL_V=float(p.get("SCOPE_TRIGGER_LEVEL_V", 2.5)),
+        RESPONSE_SETTLE_CYCLES=int(p.get("RESPONSE_SETTLE_CYCLES", 0)),
+        SCOPE_CYCLES=int(p.get("SCOPE_CYCLES", 3)),
+        DRIVE_AMPLITUDE_VPP=float(p.get("DRIVE_AMPLITUDE_VPP", 1)))
+    if not np.isfinite(values["SENSE_RESISTOR_OHM"]) or values["SENSE_RESISTOR_OHM"] <= 0:
+        raise ValueError("分析配置缺少正的 SENSE_RESISTOR_OHM")
+    return values
+
+
+def load_inputs(run_dir):
+    """验证原始资格、时间轴、频率与触发沿；CH1 缺失按既有命令参考降级。"""
+    config = analysis_config(run_dir)
+    paths = sorted((run_dir / "raw").glob("scope_f*_r*.npz"))
+    if not paths:
+        raise FileNotFoundError(f"未找到 SDS 扫频采集文件: {run_dir / 'raw'}")
+    for path in paths:
+        check_cancelled()
+        frame = _load_capture(path)
+        if _as_scalar(frame, "frequency_hz") <= 0:
+            raise ValueError(f"{path.name} 的频率必须大于零")
+        falling_edge_time(frame["trigger_time_s"], frame["trigger_voltage_v"], config["SCOPE_TRIGGER_LEVEL_V"])
+    return paths
+
+
+def calculate_response(run_dir):
+    """逐帧恢复电流复相量并保存原有掩码，绘图在下一阶段执行。"""
+    config = analysis_config(run_dir)
+    records = []
+    for path in load_inputs(run_dir):
+        check_cancelled()
+        record = _fit_swept_capture(_load_capture(path), config)
+        record["file"] = str(path.relative_to(run_dir))
+        records.append(record)
+    report = _builtin(_analyze_swept_captures(run_dir, config, records, plot=False))
+    (run_dir / "results/frequency_evaluation.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    return report
+
+
+def export_report(run_dir):
+    """从有效的 B02 产物绘图和导出，不重新拟合或移动前置输入。"""
+    results = run_dir / "results"
+    report = json.loads((results / "frequency_evaluation.json").read_text(encoding="utf-8"))
+    with np.load(results / "frequency_response.npz", allow_pickle=False) as response:
+        _plot_transfer(results, response["frequency_hz"],
+            response["transfer_real_a_per_v"] + 1j * response["transfer_imag_a_per_v"],
+            response["amplitude_reliable"] if "amplitude_reliable" in response.files else response["reliable"],
+            response["phase_reliable"])
+    (results / "frequency_response.yaml").write_text(
+        yaml.safe_dump(report, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    (results / "frequency_response.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    return report

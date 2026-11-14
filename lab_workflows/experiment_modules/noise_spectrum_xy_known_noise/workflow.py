@@ -3,17 +3,19 @@
 # 导入不连接仪器；完整与分步模式调用相同业务步骤。
 
 # %% 导入
-from ..noise_spectrum_xy.workflow import Workflow as SineWorkflow
+from ..noise_spectrum_xy.workflow import execute_shared_nodes
+from ..noise_spectrum_xy import acquisition as sine_acquisition
 from ..noise_spectrum_xy import phase
 from ...experiment_runtime import load_runtime_params
 from ...steps.lockin import verify_lockin_acquisition_mode
+from ...steps.noise_xy_scan import NoiseXYScan
 from .models import NoiseSpectrumXYKnownNoiseParams
 from . import acquisition, excitation, stages, preparation
 from .preparation import preflight
 from .safety import safe_scan_outputs_off
 
 
-class Workflow(SineWorkflow):
+class Workflow(NoiseXYScan):
     data_type = acquisition.DATA_TYPE
     experiment_id = 'noise-spectrum-xy-known-noise'
     acquisition_stages = stages.ACQUISITION
@@ -22,11 +24,16 @@ class Workflow(SineWorkflow):
     invalidate = staticmethod(stages.invalidate)
     validate_selection = staticmethod(stages.validate_selection)
     always_shutdown = True
+    output_keys = ("X", "Y", "Z", "温控", "Pump", "共用触发")
 
     def shutdown_outputs(self):
         report = safe_scan_outputs_off(self.devices)
         self.outputs["共用触发"] = "OFF" if report.completed else "未知"
         return report
+
+    def restore_demod(self, params):
+        # 结束时恢复走共享 acquisition：A14 节点的显式恢复另走本模块重导出。
+        sine_acquisition.restore_demod(self.devices, params, self.calibrated_phase)
 
     def _execute_step(self, item):
         if item == "A02":
@@ -34,7 +41,7 @@ class Workflow(SineWorkflow):
                 self.devices, self.connection = preparation.connect_instruments(self)
             return
         if item <= "A10":
-            return super()._execute_step(item)
+            return execute_shared_nodes(self, item)
         if item == "A11":
             excitation.prepare_noise(self)
         elif item == "A12":

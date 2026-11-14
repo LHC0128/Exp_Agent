@@ -24,6 +24,20 @@
 | `aw-const-omega-check` | `experiments/AW_ConstOmega_Calibration_Check.py`、`experiments/AW_ConstOmega_Calibration_Check_plot.py` |
 | `xy-dc-voltage-calibration` | `experiments/XY_DC_Voltage_Calibration.py`、`experiments/XY_DC_Voltage_Calibration_plot.py` |
 | `xy-aw-voltage-calibration` | `experiments/XY_AW_Voltage_Calibration.py`、`experiments/XY_AW_Voltage_Calibration_plot.py` |
+| `mx-xy-residual-field-calibration` | `lab_workflows/experiment_modules/mx_xy_residual_field_calibration/` |
+| `mx-y-rf-sensitivity-drift` | `lab_workflows/experiment_modules/mx_y_rf_sensitivity_drift/` |
+| `mx-z-current-coupling-calibration` | `lab_workflows/experiment_modules/mx_z_current_coupling_calibration/` |
+| `mx-z-optimal-control-dg4000-bias-xyz-balance` | `lab_workflows/experiment_modules/mx_z_optimal_control_dg4000_bias_xyz_balance/` |
+| `mx-z-optimal-control-xy-leakage-response` | `lab_workflows/experiment_modules/mx_z_optimal_control_xy_leakage_response/` |
+| `mx-z-optimal-control-xy-noise-spectrum` | `lab_workflows/experiment_modules/mx_z_optimal_control_xy_noise_spectrum/` |
+| `mx-z-optimal-control-xy-rf-phase-response` | `lab_workflows/experiment_modules/mx_z_optimal_control_xy_rf_phase_response/` |
+| `mx-z-optimal-control-xy-rf-sensitivity` | `lab_workflows/experiment_modules/mx_z_optimal_control_xy_rf_sensitivity/` |
+| `mx-z-optimal-control-xyz-balance` | `lab_workflows/experiment_modules/mx_z_optimal_control_xyz_balance/` |
+| `z-aw-current-waveform-scope-check` | `lab_workflows/experiment_modules/z_aw_current_waveform_scope_check/` |
+| `z-aw-closed-loop-waveform-correction` | `lab_workflows/experiment_modules/z_aw_closed_loop_waveform_correction/` |
+| `z-aw-waveform-scope-check` | `lab_workflows/experiment_modules/z_aw_waveform_scope_check/` |
+| `z-coil-current-frequency-response` | `lab_workflows/experiment_modules/z_coil_current_frequency_response/` |
+| `z-coil-inductance-frequency-response` | `lab_workflows/experiment_modules/z_coil_inductance_frequency_response/` |
 
 采集和分析入口统一在本目录的 `experiments/` 下。RF R 的后端服务、专属接口快照、API 测试，以及前端测试、fixture 和原共用页面快照分别在 `GUI/backend/`、`GUI/frontend/src/pages/`。接口及页面快照仅供恢复参考，不会被当前 GUI 注册或构建；其相对导入需在接回原目录后核对。
 
@@ -37,7 +51,9 @@
 - 温控开关 PID 周期测试的采集和离线分析脚本均按原字节归档；专用 TEC 启停、初始判稳、PID 设置、周期时序和收尾规则原样保留，普通采集时序例外也不删除。它不再提供 GUI 运行或历史入口，不能把归档脚本当作无硬件测试。
 - 全局静磁场优化、恒定 Omega 检查、XY DC 与 XY AW 电压标定的 7 份脚本按原字节归档，不进行模块化或流程图迁移。三对采集／分析脚本保留原科学算法，全局优化仍没有独立分析入口。全局优化实际写入的 `data/Static_Magnetic_Field_Sensitivity/` 与主实验、局部优化共享历史，整个目录保持原位；卡片继续保留原注册 `data_type`，不借归档改写历史身份。局部优化 `static-sensitivity-optimize-local` 也已归档：22 份专属实现、采集／分析薄入口、正式回归、原图及 GUI 快照按归档前字节保留，当前后端不再加载其会话、格式处理或专属路由。主实验 `static-sensitivity` 与 `xy-direct-aw-dc-calibration` 继续维护；共用驱动、标准 DC 工作流、分析和波形 CSV 不移动。
 - 在用 XY 相位响应实验仍复用的 `mx_keithley_6221_optimal_control_rf_sensitivity/phase.py` 原位保留，归档中也保留其原始副本。共享驱动和算法不随专属实验移走。
+- MX 家族 9 个最优控制／标定／漂移实验与 `z-aw-current-waveform-scope-check` 一并归档：234 份专属实现、采集／分析薄入口、正式回归、原图及 GUI 快照按归档前字节保留，注册表剩 35 个在维护实验。`z-aw-current-waveform-scope-check` 在 `mx-z-optimal-control-xy-rf-sensitivity` 之后归档，父类仍通过本目录的包搜索路径可导入；`z_aw_waveform_scope_check` 的测试仍在原处引用其 `workflow`。`lockin_compatibility.py` 对 `MxZCurrentCouplingCalibrationParams` 的导入沿用此前已归档 Keithley 实验的同一机制，不需改共享代码。
 - 为兼容已有 Python 导入，`lab_workflows.experiment_modules` 追加此处的包搜索路径；`get_experiment(id)` 仅在显式请求归档 ID 时按需加载旧定义。这不是 GUI 运行入口，导入/schema 检查不连接仪器。
+- Z AW 剩余 2 个与 Z Coil 2 个实验一并归档：99 份专属实现、采集／分析薄入口、正式回归、原图、GUI 页面快照与闭环仪表盘组件按归档前字节保留，注册表剩 31 个在维护实验。两对继承边（`z_aw_closed_loop_waveform_correction` ← `z_aw_waveform_scope_check`、`z_coil_current_frequency_response` ← `z_coil_inductance_frequency_response`）随父类一并进入本目录，`lab_workflows/test_current_feedback.py` 仍按包搜索路径导入 `z_aw_closed_loop_waveform_correction.response_filter`。`GUI/frontend/src/pages/zawClosedLoop.css` 归 RF DirectAW、Scope 与通用工作流页面共用，原位保留；`z_aw_waveform_scope_check` 的 `Z任意波线圈波形核验.excalidraw` 随模块目录归档。
 
 ## 以后恢复
 

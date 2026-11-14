@@ -37,8 +37,12 @@ def test_stage_declarations_match_registered_defaults():
         expected = len(stages)
         if values.get("ACQUISITION_MODE") == "demod_rxy":
             expected = 0
-        elif values.get("LINEWIDTH_MODE", "frequency_sweep") != "frequency_sweep":
-            expected -= sum(stage[0] == "扫频" for stage in stages)
+        else:
+            if values.get("LINEWIDTH_MODE", "frequency_sweep") != "frequency_sweep":
+                expected -= sum(stage[0] == "扫频" for stage in stages)
+            # 本实验的噪声阶段由 INCLUDE_NOISE 控制，关闭时不产生该阶段请求。
+            if experiment_id == "rf-control-scale-sensitivity" and not values.get("INCLUDE_NOISE", True):
+                expected -= sum(stage[0] == "RF 噪声" for stage in stages)
         assert len(requests) == expected, experiment_id
 
 

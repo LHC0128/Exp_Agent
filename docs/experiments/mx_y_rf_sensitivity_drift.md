@@ -40,6 +40,10 @@ defaults_file: params/experiments/mx-y-rf-sensitivity-drift.yaml
 
 # Mx Y RF 灵敏度长飘
 
+> **已归档：GUI 仅保留目录卡片，不再提供运行/历史页面。** 专属代码与正式测试保存于
+> [`old/experiments/`](../../old/experiments/README.md)，默认参数与历史数据原位保留。
+> 下文说明归档前的方案与安全约定，仅供维护和历史复现；重新接入需先恢复代码及注册入口并完成无硬件回归。
+
 ## 离线模块与运行目录
 
 分析模块可在仓库外、未设置运行上下文时导入，不创建运行目录或产物；原公开导出保留。以 `python -m lab_workflows.experiment_modules.mx_y_rf_sensitivity_drift.analysis` 执行时，必须通过 `LAB_RUN_DIR` 指定具体目录；缺失或不存在时明确拒绝，不回退最新目录。薄脚本仍沿用各自的 CLI 参数规范。

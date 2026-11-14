@@ -24,6 +24,10 @@ defaults_file: params/experiments/z-aw-closed-loop-waveform-correction.yaml
 
 # Z 任意波实际电流闭环校正（10 kHz 高通链路）
 
+> **已归档：GUI 仅保留目录卡片，不再提供运行/历史页面。** 专属代码与正式测试保存于
+> [`old/experiments/`](../../old/experiments/README.md)，默认参数与历史数据原位保留。
+> 下文说明归档前的方案与安全约定，仅供维护和历史复现；重新接入需先恢复代码及注册入口并完成无硬件回归。
+
 当前默认参数：[参数文件](../../params/experiments/z-aw-closed-loop-waveform-correction.yaml)。GUI「保存为默认」会更新该文件；本文不重复记录可变默认数值。单次运行参数以对应运行目录的 `experiment_config.yaml`（或旧入口实际保存的参数快照）为准。
 
 ## 离线模块与运行目录

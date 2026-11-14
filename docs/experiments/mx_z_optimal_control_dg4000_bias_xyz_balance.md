@@ -32,6 +32,10 @@ defaults_file: params/experiments/mx-z-optimal-control-dg4000-bias-xyz-balance.y
 
 # Mx Z 最优控制 DG4000 偏置 XYZ 平衡场
 
+> **已归档：GUI 仅保留目录卡片，不再提供运行/历史页面。** 专属代码与正式测试保存于
+> [`old/experiments/`](../../old/experiments/README.md)，默认参数与历史数据原位保留。
+> 下文说明归档前的方案与安全约定，仅供维护和历史复现；重新接入需先恢复代码及注册入口并完成无硬件回归。
+
 保持 Z 周期最优控制，以同一 DG4000 Z 通道的额外 offset 和 X/Y DC 构成三维蛇形网格；GS200 必须物理断开，本实验不连接它。同步采集所选 `DEMOD_IDX` 的 X/Y/R，保留原 soft-L1 多初值复数 Bloch 平面拟合与静态 Z 标定，实测 R 最小点只作诊断。运行/历史双 Tab 提供可勾选、按依赖执行的流程；不自动施加拟合平衡点。
 
 ## 离线模块与运行目录

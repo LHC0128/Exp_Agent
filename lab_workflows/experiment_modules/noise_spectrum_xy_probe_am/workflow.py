@@ -6,16 +6,17 @@
 from ..noise_spectrum_xy import acquisition as xy_acquisition
 from ..noise_spectrum_xy.phase import (calibrate_hf2_phase, calibrate_xy_control,
                                        configure_xy_sine, validate_sine_peak, verify_xy_mode)
-from ..noise_spectrum_xy.workflow import Workflow as SineWorkflow
+from ..noise_spectrum_xy.workflow import execute_shared_nodes
 from ...experiment_runtime import load_runtime_params
 from ...steps.lockin import verify_lockin_acquisition_mode
+from ...steps.noise_xy_scan import NoiseXYScan
 from . import acquisition, excitation, preparation, stages
 from .models import NoiseSpectrumXYProbeAMParams
 from .preparation import preflight
 from .safety import safe_scan_outputs_off
 
 
-class Workflow(SineWorkflow):
+class Workflow(NoiseXYScan):
     data_type = acquisition.DATA_TYPE
     experiment_id = 'noise-spectrum-xy-uncontrolled-probe-am'
     acquisition_stages = stages.ACQUISITION
@@ -23,6 +24,7 @@ class Workflow(SineWorkflow):
     preflight = staticmethod(preflight)
     invalidate = staticmethod(stages.invalidate)
     validate_selection = staticmethod(stages.validate_selection)
+    output_keys = ("X", "Y", "Z", "温控", "Pump", "共用触发", "Probe AM")
 
     def __init__(self, params, *, project_root=None, session_id=None):
         super().__init__(params, project_root=project_root, session_id=session_id)
@@ -30,7 +32,6 @@ class Workflow(SineWorkflow):
         self.z_waveform = None
         self.noise_readback = None
         self.z_readback = None
-        self.outputs["Probe AM"] = "未知"
 
     def shutdown_outputs(self):
         report = safe_scan_outputs_off(self.devices, self.mapping)
@@ -39,6 +40,9 @@ class Workflow(SineWorkflow):
         else:
             self.outputs.update(X="未知", Y="未知", Z="未知", 温控="未知", 共用触发="未知", **{"Probe AM": "未知"})
         return report
+
+    def restore_demod(self, params):
+        xy_acquisition.restore_demod(self.devices, params, self.calibrated_phase)
 
     def _execute_step(self, item):
         if item == "A02":
@@ -55,7 +59,7 @@ class Workflow(SineWorkflow):
                 raise
             return
         if item <= "A07":
-            return super()._execute_step(item)
+            return execute_shared_nodes(self, item)
         if item == "A08":
             excitation.configure_probe_carrier(self)
         elif item == "A09":

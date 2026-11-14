@@ -420,9 +420,21 @@ class DG4000Instrument:
 
     def set_sync_state(self, state: bool,
                        channel: Optional[int] = None) -> None:
-        """打开/关闭同步信号输出."""
+        """打开/关闭同步信号输出.
+
+        DG4000 真机行为（DG4162 固件 00.01.14 实测）：同步发生器只在「主输出 OFF→ON 边沿、
+        且边沿时同步已使能」的情况下起振。输出已开启时写 ON 只更新状态位，同步口没有信号
+        （同步通道实测仅 0.13 V 噪声）；补一次输出 OFF→ON 边沿后才出现 0→3.5 V TTL，无论
+        边沿与写 ON 之间是否等待。APPLy 重绘波形既不产生也不破坏已锁存的同步，输出保持开启
+        时后续重绘无需再次使能。DC 波形下没有同步输出。状态位回读（get_sync_state）不代表
+        物理同步一定存在，需要确认同步信号时应直接测量同步通道幅度。
+        """
         self.write(f":OUTPut{self._ch(channel)}:SYNC:STATe "
                    f"{'ON' if state else 'OFF'}")
+
+    def get_sync_state(self, channel: Optional[int] = None) -> bool:
+        """回读同步使能状态位；不代表物理同步一定输出（见 set_sync_state 说明）."""
+        return self.query(f":OUTPut{self._ch(channel)}:SYNC:STATe?").strip().upper() in {"1", "ON"}
 
     def set_sync_polarity(self, polarity: SyncPolarity,
                           channel: Optional[int] = None) -> None:
@@ -837,12 +849,28 @@ class DG4000Instrument:
 
     def set_pulse_width(self, width: float,
                         channel: Optional[int] = None) -> None:
-        """设置脉冲宽度 (s)."""
+        """设置脉冲宽度 (s).
+
+        DG4162 真机行为（固件 00.01.14 实测）：脉冲边沿时间上限约为周期的 1/512
+        （50 Hz→39.06 µs、20 kHz→97.66 ns），最小脉宽约为边沿的 1.6 倍（50 Hz→62.5 µs、
+        20 kHz→156 ns）。请求小于该下限的脉宽会被静默钳位，错误队列仍是 0，回读才知道
+        真实值；要写更短的脉宽必须先提高重复频率。设置后请用 get_pulse_width() 核对。
+        """
         self.write(f":SOURce{self._ch(channel)}:PULSe:WIDTh {width:e}")
 
     def get_pulse_width(self, channel: Optional[int] = None) -> float:
         return self.query_float(
             f":SOURce{self._ch(channel)}:PULSe:WIDTh?")
+
+    def get_pulse_leading(self, channel: Optional[int] = None) -> float:
+        """回读脉冲上升沿时间 (s)。"""
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:PULSe:TRANsition:LEADing?")
+
+    def get_pulse_trailing(self, channel: Optional[int] = None) -> float:
+        """回读脉冲下降沿时间 (s)。"""
+        return self.query_float(
+            f":SOURce{self._ch(channel)}:PULSe:TRANsition:TRAiling?")
 
     def set_pulse_dcycle(self, percent: float,
                          channel: Optional[int] = None) -> None:

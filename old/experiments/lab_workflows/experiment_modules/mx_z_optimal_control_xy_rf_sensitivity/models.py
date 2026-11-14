@@ -1,0 +1,209 @@
+"""Mx Z 最优控制 XY 补偿偏置 RF 灵敏度参数。"""
+
+from __future__ import annotations
+from typing import ClassVar
+
+from dataclasses import dataclass
+
+import numpy as np
+
+from ...common import validate_safety_limit
+from ...experiment_params import parameter
+from ..mx_z_control_params import MxZControlSourceSelectionParams
+
+
+@dataclass(slots=True)
+class MxZOptimalControlXYRFSensitivityParams(
+    MxZControlSourceSelectionParams
+):
+    """固定一次 RF 校相，并在 XY DC 补偿网格上测量 RF 灵敏度。"""
+
+    schema_version = 2
+
+    system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'RESPONSE_SETTLE_TIME_S': 0.1, 'FREQUENCY_SETTLE_TIME_S': 0.05, 'TEMP_SWITCH_OFF_LEAD_S': 0.1}
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
+    system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定时间", unit="s", group="basic", minimum=0, description="配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。")
+    noise_rf_enabled: bool = parameter(
+        default=False, external_name="NOISE_RF_ENABLED",
+        label="未使用噪声 RF 开关", visible=False,
+    )
+    noise_rf_amplitude_vpp: float = parameter(
+        default=0.002, external_name="NOISE_RF_AMPLITUDE_VPP",
+        label="未使用噪声 RF 幅值", visible=False,
+    )
+    phase_cal_rf_amplitude_vpp: float = parameter(
+        default=0.01, external_name="PHASE_CAL_RF_AMPLITUDE_VPP", label="校相 Y RF 幅度",
+        unit="Vpp", group="advanced", minimum=0, safety_key="rf_coil",
+        description="必须大于 0；仅在扫描轴中心执行 RF 校相，校准相位复用于全部 XY 点。",
+    )
+    fit_relative_gamma_uncertainty_max: float = parameter(
+        default=0.5, external_name="FIT_RELATIVE_GAMMA_UNCERTAINTY_MAX",
+        label="历史 γ 相对不确定度阈值（未使用）", visible=False,
+    )
+
+    # 父类字段保留为历史兼容键；实际校相点由扫描轴中心决定。
+    x_dc_field_v: float = parameter(
+        default=0.0,
+        external_name="FIXED_PARAMS.X_magnetic_field",
+        label="历史 X 补偿值（未使用）",
+        unit="V",
+        visible=False,
+        safety_key="X_magnetic_field",
+    )
+    y_rf_offset_v: float = parameter(
+        default=0.0,
+        external_name="FIXED_PARAMS.Y_magnetic_field",
+        label="历史 Y 补偿值（未使用）",
+        unit="V",
+        visible=False,
+        safety_key="Y_magnetic_field",
+    )
+
+    x_field_start_v: float = parameter(
+        default=-0.05,
+        external_name="X_FIELD_START_V",
+        label="X 补偿偏置起点",
+        unit="V",
+        group="basic",
+        safety_key="X_magnetic_field",
+    )
+    x_field_stop_v: float = parameter(
+        default=0.05,
+        external_name="X_FIELD_STOP_V",
+        label="X 补偿偏置终点",
+        unit="V",
+        group="basic",
+        safety_key="X_magnetic_field",
+    )
+    x_field_points: int = parameter(
+        default=11,
+        external_name="X_FIELD_POINTS",
+        label="X 补偿偏置点数",
+        group="basic",
+        minimum=1,
+    )
+    y_field_start_v: float = parameter(
+        default=-0.05,
+        external_name="Y_FIELD_START_V",
+        label="Y 补偿偏置起点",
+        unit="V",
+        group="basic",
+        safety_key="Y_magnetic_field",
+    )
+    y_field_stop_v: float = parameter(
+        default=0.05,
+        external_name="Y_FIELD_STOP_V",
+        label="Y 补偿偏置终点",
+        unit="V",
+        group="basic",
+        safety_key="Y_magnetic_field",
+    )
+    y_field_points: int = parameter(
+        default=11,
+        external_name="Y_FIELD_POINTS",
+        label="Y 补偿偏置点数",
+        group="basic",
+        minimum=1,
+    )
+
+    def x_axis(self) -> np.ndarray:
+        return np.linspace(
+            self.x_field_start_v,
+            self.x_field_stop_v,
+            self.x_field_points,
+            dtype=float,
+        )
+
+    def y_axis(self) -> np.ndarray:
+        return np.linspace(
+            self.y_field_start_v,
+            self.y_field_stop_v,
+            self.y_field_points,
+            dtype=float,
+        )
+
+    def phase_calibration_point(self) -> tuple[float, float]:
+        """返回扫描轴的算术中心，用于唯一一次 RF 校相。"""
+        return (
+            0.5 * (self.x_field_start_v + self.x_field_stop_v),
+            0.5 * (self.y_field_start_v + self.y_field_stop_v),
+        )
+
+    @staticmethod
+    def _validate_axis(
+        label: str,
+        start: float,
+        stop: float,
+        points: int,
+    ) -> list[str]:
+        if points < 1:
+            return [f"{label} 点数必须至少为 1"]
+        if points == 1:
+            return (
+                []
+                if np.isclose(start, stop)
+                else [f"{label} 点数为 1 时必须满足 START=STOP"]
+            )
+        if not start < stop:
+            return [f"{label} 点数大于 1 时必须满足 START<STOP"]
+        return []
+
+    def validate_model(self) -> list[str]:
+        errors = MxZControlSourceSelectionParams.validate_model(self)
+        if self.phase_cal_rf_amplitude_vpp <= 0:
+            errors.append("XY 网格的 PHASE_CAL_RF_AMPLITUDE_VPP 必须大于 0，中心 RF 校相不可跳过")
+        if self.y_rf_nt_per_vpp <= 0:
+            errors.append("XY 灵敏度网格的 Y_RF_NT_PER_VPP 必须大于 0")
+        errors.extend(
+            self._validate_axis(
+                "X 补偿偏置",
+                self.x_field_start_v,
+                self.x_field_stop_v,
+                self.x_field_points,
+            )
+        )
+        errors.extend(
+            self._validate_axis(
+                "Y 补偿偏置",
+                self.y_field_start_v,
+                self.y_field_stop_v,
+                self.y_field_points,
+            )
+        )
+
+        for key, values in (
+            (
+                "X_magnetic_field",
+                (self.x_field_start_v, self.x_field_stop_v),
+            ),
+            (
+                "Y_magnetic_field",
+                (self.y_field_start_v, self.y_field_stop_v),
+            ),
+        ):
+            for value in values:
+                try:
+                    validate_safety_limit(key, float(value))
+                except ValueError as exc:
+                    errors.append(str(exc))
+
+        maximum_rf_amplitude = max(
+            abs(float(self.y_rf_amp_start_vpp)),
+            abs(float(self.y_rf_amp_stop_vpp)),
+            abs(float(self.phase_cal_rf_amplitude_vpp)),
+        )
+        try:
+            validate_safety_limit("rf_coil", maximum_rf_amplitude)
+        except ValueError as exc:
+            errors.append(str(exc))
+        for offset in (self.y_field_start_v, self.y_field_stop_v):
+            for value in (
+                float(offset) - maximum_rf_amplitude / 2.0,
+                float(offset) + maximum_rf_amplitude / 2.0,
+            ):
+                try:
+                    validate_safety_limit("Y_magnetic_field", value)
+                except ValueError as exc:
+                    errors.append(f"Y RF 输出包络: {exc}")
+
+        return errors

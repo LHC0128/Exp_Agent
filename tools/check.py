@@ -31,8 +31,16 @@ PYTHON_TESTS = (
     "tools/test_delivery_check.py",
     "tools/test_dependency_lock.py",
     "tools/test_upgrade_lock.py",
+    # 安全契约套件。不含 src/hardware_gate/test_gate.py：它在运行目录 pytest.skip，
+    # 而 verify_pytest_results 拒绝任何 skip，纳入会让运行目录的快检必然失败。
+    "lab_workflows/test_acquisition_order.py",
+    "lab_workflows/test_output_policies.py",
+    "lab_workflows/test_clock_sync.py",
+    "lab_workflows/test_lockin.py",
+    "lab_workflows/test_instrument_config.py",
+    "lab_workflows/steps/test_run_directory.py",
 )
-COMMAND_TIMEOUT_S = 30
+COMMAND_TIMEOUT_S = 60
 _CLEANUP_TIMEOUT_S = 10
 _WINDOWS = os.name == "nt"
 
@@ -144,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--changed-since", metavar="REF", help="仅记录 Git 变更范围，不扩大测试集合")
     parser.add_argument("--report", type=Path, help="写入本轮 JSON 报告（不是测试缓存）")
     parser.add_argument("--timeout", type=_positive_seconds, default=float(COMMAND_TIMEOUT_S),
-                        metavar="SECONDS", help="单个检查子进程的超时秒数，默认 30")
+                        metavar="SECONDS", help="单个检查子进程的超时秒数，默认 60")
     args = parser.parse_args(argv)
     started = time.monotonic()
     names = ("python-syntax", "python-tests") if args.profile == "python" else (
@@ -170,9 +178,13 @@ def main(argv: list[str] | None = None) -> int:
         try:
             with TemporaryDirectory(prefix="exp-agent-check-") as temporary:
                 junit = Path(temporary) / "pytest.xml"
+                # 不给 basetemp 时 pytest 会清理共享的 pytest-of-<user> 根目录，
+                # 同机并发跑测试会在退出阶段抛 PermissionError 而误报失败。
+                basetemp = Path(temporary) / "pytest-tmp"
                 if args.profile == "python":
                     checks[1]["command"] = [sys.executable, "-m", "pytest", "-q",
-                                             f"--junitxml={junit}", *PYTHON_TESTS]
+                                             f"--junitxml={junit}", f"--basetemp={basetemp}",
+                                             *PYTHON_TESTS]
                     cwd = ROOT
                 else:
                     cwd = ROOT / "GUI/frontend"

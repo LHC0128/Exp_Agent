@@ -93,26 +93,16 @@ from lab_workflows.experiment_modules.static_sensitivity.run_format import forma
 from lab_workflows.experiment_modules.noise_spectrum_xy import run_format as xy_format
 from lab_workflows.experiment_modules.noise_spectrum_xy_known_noise.analysis import analysis_block_reason as known_noise_analysis_block_reason
 from lab_workflows.experiment_modules.scope_capture import run_format as scope_capture_format
-from lab_workflows.experiment_modules.z_aw_closed_loop_waveform_correction import run_format as z_closed_loop_format
 from lab_workflows.experiment_modules.mx_y_rf_frequency_response import run_format as mx_y_rf_frequency_format
 from lab_workflows.experiment_modules.mx_y_rf_power_optimization import run_format as mx_y_rf_power_format
 from lab_workflows.experiment_modules.mx_y_optimal_control_rf_frequency_response import run_format as mx_y_optimal_frequency_format
-from lab_workflows.experiment_modules.mx_y_rf_sensitivity_drift import run_format as mx_y_rf_drift_format
 from lab_workflows.experiment_modules.mx_z_optimal_control_rf_sensitivity import run_format as mx_z_optimal_rf_format
-from lab_workflows.experiment_modules.mx_z_optimal_control_xy_rf_sensitivity import run_format as mx_z_optimal_xy_rf_format
-from lab_workflows.experiment_modules.mx_z_optimal_control_xy_noise_spectrum import run_format as mx_z_optimal_xy_noise_format
-from lab_workflows.experiment_modules.mx_z_optimal_control_xy_leakage_response import run_format as mx_z_optimal_xy_leakage_format
-from lab_workflows.experiment_modules.mx_z_optimal_control_xy_rf_phase_response import run_format as mx_z_optimal_xy_phase_format
-from lab_workflows.experiment_modules.mx_z_optimal_control_xyz_balance import run_format as mx_z_optimal_xyz_balance_format
-from lab_workflows.experiment_modules.mx_z_optimal_control_dg4000_bias_xyz_balance import run_format as mx_z_optimal_dg_bias_format
 from lab_workflows.experiment_modules.mx_main_field_scope_noise_spectrum import run_format as mx_main_field_scope_format
-from lab_workflows.experiment_modules.mx_xy_residual_field_calibration import run_format as mx_xy_residual_format
 from lab_workflows.experiment_modules.noise_spectrum_xy_demod3_r import run_format as demod3_r_format
 from lab_workflows.experiment_modules.projection_noise import run_format as projection_noise_format
 from lab_workflows.experiment_modules.photon_shot_noise import run_format as photon_format
 from lab_workflows.experiment_modules.rf_sensitivity_constxy_frequency import run_format as constxy_format
 from lab_workflows.experiment_modules.t1_calibration import run_format as t1_format
-from lab_workflows.experiment_modules.t2_calibration import run_format as t2_format
 from lab_workflows.experiment_modules.rf_sensitivity_direct_aw_frequency import run_format as rf_direct_frequency_format
 from lab_workflows.experiment_modules.xy_direct_aw_dc_calibration import run_format as xy_dc_format
 from lab_workflows.experiment_modules.bb_power_scan_burst import run_format as bb_power_format
@@ -121,12 +111,18 @@ from lab_workflows.experiment_modules.coil_drive_characterization import run_for
 from lab_workflows.experiment_modules.z_field_bandwidth import run_format as z_bandwidth_format
 RF_RUN_FORMATS = {rf_aw_format.EXPERIMENT_ID: rf_aw_format, rf_known_noise_format.EXPERIMENT_ID: rf_known_noise_format}
 WORKFLOW_RUN_FORMATS = {item.EXPERIMENT_ID: item for item in (
-    t1_format, t2_format, rf_direct_frequency_format, xy_dc_format,
+    t1_format, rf_direct_frequency_format, xy_dc_format,
     bb_power_format,
     bb_duty_format,
     coil_drive_format,
-    z_bandwidth_format, constxy_format, projection_noise_format, photon_format, demod3_r_format, mx_xy_residual_format, mx_main_field_scope_format, rf_control_scale_format, scope_capture_format, z_closed_loop_format, mx_y_rf_power_format, mx_y_rf_frequency_format, mx_y_optimal_frequency_format, mx_y_rf_drift_format, mx_z_optimal_rf_format, mx_z_optimal_xy_rf_format, mx_z_optimal_xy_noise_format, mx_z_optimal_xy_leakage_format, mx_z_optimal_xy_phase_format, mx_z_optimal_xyz_balance_format, mx_z_optimal_dg_bias_format,
+    z_bandwidth_format, constxy_format, projection_noise_format, photon_format, demod3_r_format, mx_main_field_scope_format, rf_control_scale_format, scope_capture_format, mx_y_rf_power_format, mx_y_rf_frequency_format, mx_y_optimal_frequency_format, mx_z_optimal_rf_format,
 )}
+# 声明了 run_history 的实验由注册表提供资格判定，接入新实验不再改本文件。
+WORKFLOW_RUN_FORMATS.update({
+    definition.id: definition.run_history.run_format
+    for definition in list_experiments()
+    if definition.run_history is not None
+})
 from lab_workflows.experiments.catalog import (
     add_tag,
     apply_parameter_layout,
@@ -165,15 +161,8 @@ from .scope_capture import ScopeCaptureSessionService
 from .mx_y_rf_frequency_response import MxYRFFrequencyResponseSessionService
 from .mx_y_optimal_control_rf_frequency_response import MxYOptimalControlFrequencySessionService
 from .mx_z_optimal_control_rf_sensitivity import MxZOptimalControlRFSessionService, create_router as mx_z_optimal_rf_router
-from .mx_z_optimal_control_xy_rf_sensitivity import MxZOptimalControlXYRFSessionService, create_router as mx_z_optimal_xy_rf_router
-from .mx_z_optimal_control_xy_noise_spectrum import MxZOptimalControlXYNoiseSessionService
-from .mx_z_optimal_control_xy_leakage_response import MxZOptimalControlXYLeakageSessionService
-from .mx_z_optimal_control_xy_rf_phase_response import MxZOptimalControlXYRFPhaseSessionService
-from .mx_z_optimal_control_xyz_balance import MxZOptimalControlXYZBalanceSessionService
-from .mx_z_optimal_control_dg4000_bias_xyz_balance import MxZOptimalControlDG4000BiasXYZBalanceSessionService
 from .mx_main_field_calibration import MxMainFieldCalibrationSessionService
 from .mx_main_field_scope_noise_spectrum import MxMainFieldScopeNoiseSessionService, create_router as mx_main_field_scope_router
-from .mx_xy_residual_field_calibration import MxXYResidualFieldCalibrationSessionService, create_router as mx_xy_residual_router
 from .noise_spectrum_xy_demod3_r import NoiseSpectrumXYDemod3RSessionService, create_router as demod3_r_router
 from .projection_noise import ProjectionNoiseSessionService, create_router as projection_noise_router
 from .photon_shot_noise import PhotonShotNoiseSessionService, create_router as photon_router
@@ -187,21 +176,7 @@ from .bb_duty_scan_burst import BBDutySessionService, create_router as bb_duty_r
 from .coil_drive_characterization import CoilDriveSessionService, create_router as coil_drive_router
 from .z_field_bandwidth import ZFieldBandwidthSessionService, create_router as z_bandwidth_router
 from .mx_z_field_calibration import MxZFieldCalibrationSessionService
-from .z_aw_waveform_scope_check import ZAWWaveformScopeCheckSessionService
-from .z_aw_current_waveform_scope_check import ZAWCurrentWaveformScopeCheckSessionService
-from .z_aw_closed_loop_waveform_correction import (ZAWClosedLoopSessionService,
-    ZAWClosedLoopRunSummary, create_router as z_closed_loop_router)
-from .z_coil_inductance_frequency_response import ZCoilInductanceFrequencyResponseSessionService
-from .z_coil_current_frequency_response import ZCoilCurrentFrequencyResponseSessionService
 from .bell_bloom_z_field_calibration import BellBloomZFieldCalibrationSessionService
-from .mx_z_current_coupling_calibration import (
-    MxZCurrentCouplingCalibrationSessionService,
-    create_router as mx_z_current_coupling_router,
-)
-from .mx_y_rf_sensitivity_drift import (
-    MxYRFDriftSessionService,
-    create_router as mx_y_rf_drift_router,
-)
 from .schemas import (
     ControlCurrentSourceBody,
     ControlEmissionBody,
@@ -271,19 +246,14 @@ def _workflow_session_services():
         xy_sessions, known_noise_sessions, probe_am_sessions, rf_sessions, bb_power_sessions, t1_sessions,
         t2_sessions, rf_direct_frequency_sessions, xy_dc_sessions,
         rf_known_noise_sessions, rf_control_scale_sessions, static_sessions, detection_chain_sessions,
-        mx_y_rf_sessions, mx_y_rf_probe_detuning_sessions, mx_y_rf_power_sessions, z_aw_scope_sessions, z_aw_current_scope_sessions, z_closed_loop_sessions,
-        mx_main_field_sessions, mx_main_field_scope_sessions, mx_xy_residual_sessions, demod3_r_sessions, photon_sessions, projection_noise_sessions, constxy_sessions, z_bandwidth_sessions,
-        bb_duty_sessions, z_coil_inductance_sessions, coil_drive_sessions,
+        mx_y_rf_sessions, mx_y_rf_probe_detuning_sessions, mx_y_rf_power_sessions,
+        mx_main_field_sessions, mx_main_field_scope_sessions, demod3_r_sessions, photon_sessions, projection_noise_sessions, constxy_sessions, z_bandwidth_sessions,
+        bb_duty_sessions, coil_drive_sessions,
         mx_z_field_sessions,
-        z_coil_current_sessions,
         bell_bloom_z_sessions,
-        mx_z_current_coupling_sessions,
         scope_capture_sessions, mx_y_rf_frequency_response_sessions,
         mx_y_optimal_control_frequency_sessions,
-        mx_y_rf_drift_sessions,
-        mx_z_optimal_rf_sessions, mx_z_optimal_xy_rf_sessions, mx_z_optimal_xy_noise_sessions,
-        mx_z_optimal_xy_leakage_sessions, mx_z_optimal_xy_phase_sessions, mx_z_optimal_xyz_balance_sessions,
-        mx_z_optimal_dg_bias_sessions,
+        mx_z_optimal_rf_sessions,
     )
 
 
@@ -370,18 +340,10 @@ mx_y_rf_probe_detuning_sessions = MxYRFProbeDetuningSessionService(lambda: ROOT,
 app.include_router(xy_router(mx_y_rf_probe_detuning_sessions, include_history=True))
 mx_y_rf_power_sessions = MxYRFPowerOptimizationSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(mx_y_rf_power_sessions, include_history=True))
-z_aw_scope_sessions = ZAWWaveformScopeCheckSessionService(lambda: ROOT, manager)
-app.include_router(xy_router(z_aw_scope_sessions, include_history=True))
-z_aw_current_scope_sessions = ZAWCurrentWaveformScopeCheckSessionService(lambda: ROOT, manager)
-app.include_router(xy_router(z_aw_current_scope_sessions, include_history=True))
-z_closed_loop_sessions = ZAWClosedLoopSessionService(lambda: ROOT, manager)
-app.include_router(z_closed_loop_router(z_closed_loop_sessions))
 mx_main_field_sessions = MxMainFieldCalibrationSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(mx_main_field_sessions, include_history=True))
 mx_main_field_scope_sessions = MxMainFieldScopeNoiseSessionService(lambda: ROOT, manager)
 app.include_router(mx_main_field_scope_router(mx_main_field_scope_sessions))
-mx_xy_residual_sessions = MxXYResidualFieldCalibrationSessionService(lambda: ROOT, manager)
-app.include_router(mx_xy_residual_router(mx_xy_residual_sessions))
 demod3_r_sessions = NoiseSpectrumXYDemod3RSessionService(lambda: ROOT, manager)
 app.include_router(demod3_r_router(demod3_r_sessions))
 projection_noise_sessions = ProjectionNoiseSessionService(lambda: ROOT, manager)
@@ -406,16 +368,10 @@ coil_drive_sessions = CoilDriveSessionService(lambda: ROOT, manager)
 app.include_router(coil_drive_router(coil_drive_sessions))
 z_bandwidth_sessions = ZFieldBandwidthSessionService(lambda: ROOT, manager)
 app.include_router(z_bandwidth_router(z_bandwidth_sessions))
-z_coil_inductance_sessions = ZCoilInductanceFrequencyResponseSessionService(lambda: ROOT, manager)
-app.include_router(xy_router(z_coil_inductance_sessions, include_history=True))
 mx_z_field_sessions = MxZFieldCalibrationSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(mx_z_field_sessions, include_history=True))
-z_coil_current_sessions = ZCoilCurrentFrequencyResponseSessionService(lambda: ROOT, manager)
-app.include_router(xy_router(z_coil_current_sessions, include_history=True))
 bell_bloom_z_sessions = BellBloomZFieldCalibrationSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(bell_bloom_z_sessions))
-mx_z_current_coupling_sessions = MxZCurrentCouplingCalibrationSessionService(lambda: ROOT, manager)
-app.include_router(mx_z_current_coupling_router(mx_z_current_coupling_sessions, include_history=True))
 scope_capture_sessions = ScopeCaptureSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(scope_capture_sessions, include_history=True))
 mx_y_rf_frequency_response_sessions = MxYRFFrequencyResponseSessionService(lambda: ROOT, manager)
@@ -424,20 +380,6 @@ mx_y_optimal_control_frequency_sessions = MxYOptimalControlFrequencySessionServi
 app.include_router(xy_router(mx_y_optimal_control_frequency_sessions))
 mx_z_optimal_rf_sessions = MxZOptimalControlRFSessionService(lambda: ROOT, manager)
 app.include_router(mx_z_optimal_rf_router(mx_z_optimal_rf_sessions))
-mx_z_optimal_xy_rf_sessions = MxZOptimalControlXYRFSessionService(lambda: ROOT, manager)
-app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_xy_rf_sessions))
-mx_z_optimal_xy_noise_sessions = MxZOptimalControlXYNoiseSessionService(lambda: ROOT, manager)
-app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_xy_noise_sessions))
-mx_z_optimal_xy_leakage_sessions = MxZOptimalControlXYLeakageSessionService(lambda: ROOT, manager)
-app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_xy_leakage_sessions))
-mx_z_optimal_xy_phase_sessions = MxZOptimalControlXYRFPhaseSessionService(lambda: ROOT, manager)
-app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_xy_phase_sessions))
-mx_z_optimal_xyz_balance_sessions = MxZOptimalControlXYZBalanceSessionService(lambda: ROOT, manager)
-app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_xyz_balance_sessions))
-mx_z_optimal_dg_bias_sessions = MxZOptimalControlDG4000BiasXYZBalanceSessionService(lambda: ROOT, manager)
-app.include_router(mx_z_optimal_xy_rf_router(mx_z_optimal_dg_bias_sessions))
-mx_y_rf_drift_sessions = MxYRFDriftSessionService(lambda: ROOT, manager)
-app.include_router(mx_y_rf_drift_router(mx_y_rf_drift_sessions, include_history=True))
 updates_service = UpdatesService(lambda: ROOT, manager)
 app.include_router(updates_router(updates_service))
 
@@ -1708,9 +1650,6 @@ def artifact(experiment_id: str, run_id: str, name: str):
     return FileResponse(path)
 
 
-ZAW_CLOSED_LOOP_ID = "z-aw-closed-loop-waveform-correction"
-
-
 def _validate_run_identifier(run_id: str) -> str:
     """运行 ID 必须是单段目录名，避免路径穿越。"""
     if not run_id or run_id.endswith((".", " ")) or any(c in run_id for c in "/\\:"):
@@ -1729,11 +1668,6 @@ def _read_yaml(path: Path) -> dict[str, Any] | None:
     return loaded if isinstance(loaded, dict) else None
 
 
-def _build_zaw_closed_loop_summary(experiment_id: str, run_id: str) -> ZAWClosedLoopRunSummary:
-    _validate_run_identifier(run_id)
-    return ZAWClosedLoopRunSummary(**z_closed_loop_sessions.summary(run_id))
-
-
 @app.get(
     f"/api/experiments/{MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID}/runs/{{run_id}}/summary",
     response_model=MxYOptimalControlFrequencyRunSummary,
@@ -1744,11 +1678,6 @@ def mx_y_optimal_control_frequency_run_summary(run_id: str):
         MX_Y_OPTIMAL_CONTROL_FREQUENCY_ID,
         run_id,
     )
-
-
-def experiment_run_summary(run_id: str):
-    """Z 闭环专属 GUI 历史 Tab 使用的运行摘要：仅解析已有 yaml，不连接硬件。"""
-    return _build_zaw_closed_loop_summary(ZAW_CLOSED_LOOP_ID, run_id)
 
 
 def _build_mx_y_optimal_control_frequency_summary(

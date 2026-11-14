@@ -10,12 +10,21 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from .acquisition_policy import ACQUISITION_EXCEPTIONS, migrate_system_settle
+from .acquisition_policy import migrate_system_settle
 from .common import WorkflowCancelled
 from .experiments.registry import list_experiments
 from .steps.acquisition_window import DeferredAcquisitionWrites, acquisition_window
 from .steps.scope_waveform import temperature_gated_acquire
 from .steps.temperature import configure_temperature_control
+
+
+# 采集验收例外由 ExperimentDefinition.acquisition_exception 承载；这里固定同一组 ID 防止悄悄漂移。
+ACQUISITION_EXCEPTION_IDS = frozenset({
+    "z-aw-waveform-scope-check", "z-coil-inductance-frequency-response",
+    "z-coil-current-frequency-response", "z-aw-current-waveform-scope-check",
+    "z-aw-closed-loop-waveform-correction", "aw-waveform-scope-check",
+    "dg-am-comp-transfer-check", "temperature-switch-pid-cycle", "coil-drive-characterization",
+})
 
 
 # 只关联确实执行实验业务的测试；共享 helper 测试不冒充所有实验的业务覆盖。
@@ -339,11 +348,11 @@ class AcquisitionOrderTest(unittest.TestCase):
     def test_registry_coverage_has_one_system_wait_per_ordinary_experiment(self):
         definitions = list_experiments()
         # 归档不删除历史采集例外；仅在维护中的普通实验继续接受等待参数检查。
-        self.assertTrue(ACQUISITION_EXCEPTIONS.issubset({
-            d.id for d in list_experiments(include_archived=True)
-        }))
+        self.assertEqual(ACQUISITION_EXCEPTION_IDS, {
+            d.id for d in list_experiments(include_archived=True) if d.acquisition_exception
+        })
         for definition in definitions:
-            if definition.id in ACQUISITION_EXCEPTIONS:
+            if definition.acquisition_exception:
                 continue
             with self.subTest(experiment=definition.id):
                 schema = definition.schema()
