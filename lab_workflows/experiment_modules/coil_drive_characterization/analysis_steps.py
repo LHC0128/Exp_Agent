@@ -115,7 +115,7 @@ def pulses(run_dir, params, b01):
     记录窗未包含衰减尾部的帧整帧跳过并记入 summary["pulse_skipped"]，不因此中止分析；
     只有全部脉冲帧都不可用时才判失败。
     """
-    traces, metrics, skipped = [], [], []
+    traces, metrics, skipped, fits = [], [], [], []
     for name, meta, t, v in load_frames(run_dir, {"pulse"}):
         current = v / params.sense_resistor_ohm
         try:
@@ -127,11 +127,15 @@ def pulses(run_dir, params, b01):
             raise AnalysisQualityError(f"{name}: {exc}") from exc
         metrics.append(metric)
         traces.append((meta["width_s"], t, current))
+        fit = processing.fit_step_edge(t, current, meta["width_s"])
+        if fit is not None:
+            fits.append(asdict(fit) | {"width_s": meta["width_s"], "frame": name})
     if not metrics:
         raise AnalysisQualityError("所有脉冲帧的记录窗都不完整，无法给出脉冲指标；"
                                   "请加大 PULSE_WINDOW_MULTIPLE 或 PULSE_MIN_WINDOW_US 重采")
     rows = processing.pulse_area_table(metrics)
-    summary = dict(b01, pulse=rows, pulse_skipped=skipped, area_tolerance_fraction=params.area_tolerance,
+    summary = dict(b01, pulse=rows, pulse_skipped=skipped, step_fit=fits,
+                   area_tolerance_fraction=params.area_tolerance,
                    shortest_usable_pulse_width_s=processing.shortest_usable_width(rows, params.area_tolerance),
                    rise_10_90_s=max(metrics, key=lambda m: m.width_s).rise_10_90_s)
     # 汇总拆成单张图：幅频、相频、脉冲响应各一张，缺数据的那张不生成。

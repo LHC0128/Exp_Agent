@@ -28,6 +28,18 @@ def test_fit_sine_recovers_amplitude_and_phase():
     assert fit.quality == pytest.approx(1.0)
 
 
+def test_step_fit_separates_delay_and_time_constant():
+    """阶跃拟合分离固定延迟与电感时间常数：仿真 0.2 µs 延迟 + 2 µs 时间常数。"""
+    t = np.linspace(-2e-6, 20e-6, 20001)
+    width, delay, tau = 10e-6, 0.2e-6, 2e-6
+    current = np.where(t > delay, 1 - np.exp(-np.clip((t - delay) / tau, -700.0, 700.0)), 0.0) * 0.1
+    fit = processing.fit_step_edge(t, current, width)
+    assert fit is not None
+    assert fit.delay_s == pytest.approx(delay, abs=0.02e-6)
+    assert fit.tau_s == pytest.approx(tau, rel=0.02)
+    assert fit.plateau_a == pytest.approx(0.1, rel=0.01)
+
+
 def test_step_metrics_first_order():
     t = np.linspace(-50e-6, 150e-6, 20001)
     width = 50e-6

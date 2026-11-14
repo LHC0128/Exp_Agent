@@ -126,6 +126,64 @@ class TruncatedPulse(ValueError):
     """记录窗未包含脉冲的衰减尾部：下降沿指标与含拖尾面积都不可用，该帧应整帧跳过。"""
 
 
+@dataclass(frozen=True, slots=True)
+class StepFit:
+    """I(t) = baseline + plateau·(1 − exp(−(t − delay)/τ)) 的阶跃拟合。
+
+    固定延迟（同步与触发点）表现为整段平移，电感表现为一阶曲率，二者在阶跃响应里可分。
+    """
+
+    delay_s: float
+    tau_s: float
+    plateau_a: float
+    baseline_a: float
+    residual_rms_a: float
+
+
+def fit_step_edge(time_s: np.ndarray, current_a: np.ndarray, width_s: float) -> StepFit | None:
+    """在上升沿窗口内拟合阶跃响应，返回固定延迟 δ 与电感时间常数 τ；样本不足返回 None。"""
+    from scipy.optimize import least_squares
+
+    inside = (time_s > -1e-6) & (time_s < width_s)
+    if int(inside.sum()) < 20:
+        return None
+    t, values = time_s[inside], current_a[inside]
+    before = t < -0.05e-6
+    if int(before.sum()) < 5:
+        return None
+    baseline = float(np.median(values[before]))
+    late = (t >= 0.8 * width_s) & (t <= 0.97 * width_s)
+    if int(late.sum()) < 5:
+        return None
+    plateau = float(np.mean(values[late]))
+    if plateau <= baseline:
+        return None
+
+    def model(params):
+        base, amplitude, delay, tau = params
+        ratio = np.clip((t - delay) / tau, -700.0, 700.0)
+        return base + amplitude * np.where(t >= delay, 1.0 - np.exp(-ratio), 0.0)
+
+    best = None
+    for delay0 in (0.0, -0.2e-6, 0.2e-6):
+        for tau0 in (0.3e-6, 0.6e-6, 1.0e-6):
+            try:
+                candidate = least_squares(lambda params: model(params) - values,
+                                          [baseline, plateau - baseline, delay0, tau0],
+                                          bounds=([-1.0, 0.0, -1e-6, 1e-9], [1.0, 1.0, 5e-6, 1e-5]),
+                                          x_scale="jac")
+            except (ValueError, FloatingPointError):
+                continue
+            if best is None or candidate.cost < best.cost:
+                best = candidate
+    if best is None:
+        return None
+    base, amplitude, delay, tau = (float(value) for value in best.x)
+    residual = float(np.sqrt(np.mean((model(best.x) - values) ** 2)))
+    return StepFit(delay_s=delay, tau_s=tau, plateau_a=base + amplitude, baseline_a=base,
+                   residual_rms_a=residual)
+
+
 def step_metrics(time_s: np.ndarray, current_a: np.ndarray, width_s: float) -> StepMetrics:
     """单个矩形脉冲（同步沿 t=0 开始、宽 width_s）的电流响应指标。"""
     before = time_s < -0.02 * width_s
@@ -260,8 +318,12 @@ def plot_phase(summary: dict[str, Any], path: Path) -> Path:
         return save_figure(figure, path)
 
 
-def plot_pulse(traces: Sequence[tuple[float, np.ndarray, np.ndarray]], path: Path) -> Path:
-    """矩形脉冲电流响应单张图；脉宽是连续量，用 viridis 顺序色标 + 色条，不堆叠图例。"""
+def plot_pulse(traces: Sequence[tuple[float, np.ndarray, np.ndarray]],
+               fits: dict[float, "StepFit"], path: Path) -> Path:
+    """矩形脉冲电流响应单张图；脉宽是连续量，用 viridis 顺序色标 + 色条，不堆叠图例。
+
+    每帧叠画阶跃拟合（同色虚线），并在图上标注拟合得到的固定延迟与时间常数。
+    """
     import matplotlib as mpl
 
     from lab_workflows.plotting import COLOR_OPTIMAL, format_axis, new_figure, plot_style_context, save_figure
@@ -277,14 +339,28 @@ def plot_pulse(traces: Sequence[tuple[float, np.ndarray, np.ndarray]], path: Pat
         norm = (mpl.colors.LogNorm(vmin=min(widths), vmax=max(widths))
                 if len(set(widths)) > 1 else None)
         for width, time_s, current in ordered:
-            axis.plot(time_s * 1e6, current * 1e3, lw=0.9,
-                      color=cmap(norm(width * 1e6)) if norm else COLOR_OPTIMAL)
+            color = cmap(norm(width * 1e6)) if norm else COLOR_OPTIMAL
+            axis.plot(time_s * 1e6, current * 1e3, lw=0.9, color=color)
+            fit = fits.get(width)
+            if fit is not None:
+                ratio = np.clip((time_s - fit.delay_s) / fit.tau_s, -700.0, 700.0)
+                model = fit.baseline_a + (fit.plateau_a - fit.baseline_a) * np.where(
+                    time_s >= fit.delay_s, 1.0 - np.exp(-ratio), 0.0)
+                axis.plot(time_s * 1e6, model * 1e3, lw=0.9, ls="--", color=color)
         if norm is not None:
             bar = figure.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axis, pad=0.015)
             bar.set_label("Pulse width (µs)")
             bar.set_ticks(_width_ticks(widths))
             bar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda value, _: f"{value:g}"))
             bar.ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+        delays = [fit.delay_s for fit in fits.values() if fit is not None]
+        taus = [fit.tau_s for fit in fits.values() if fit is not None]
+        if delays and taus:
+            axis.text(0.02, 0.97,
+                      f"step fit: $\\delta$ = {np.median(delays) * 1e6:+.3f} µs, "
+                      f"$\\tau$ = {np.median(taus) * 1e6:.3f} µs",
+                      transform=axis.transAxes, va="top", ha="left", fontsize=7,
+                      bbox=dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="none", alpha=0.75))
         format_axis(axis, xlabel="Time from sync edge (µs)", ylabel="Coil current (mA)")
         return save_figure(figure, path)
 
@@ -296,12 +372,14 @@ def plot_summary(summary: dict[str, Any], step_traces: Sequence[tuple[float, np.
     每次只画一个物理量：幅频、相频、脉冲响应各一张，缺对应数据时跳过该张；
     样式按 docs/plotting_style.md 的 paper 配置（无网格、面板无标题、成对导出 PNG/PDF）。
     """
+    fits = {row["width_s"]: StepFit(row["delay_s"], row["tau_s"], row["plateau_a"], row["baseline_a"],
+                                    row["residual_rms_a"]) for row in summary.get("step_fit") or []}
     written: dict[str, Path] = {}
     if summary.get("transfer"):
         written["coil_drive_transfer"] = plot_magnitude(summary, Path(results_dir) / "coil_drive_transfer.png")
         written["coil_drive_phase"] = plot_phase(summary, Path(results_dir) / "coil_drive_phase.png")
     if step_traces:
-        written["coil_drive_pulse"] = plot_pulse(step_traces, Path(results_dir) / "coil_drive_pulse.png")
+        written["coil_drive_pulse"] = plot_pulse(step_traces, fits, Path(results_dir) / "coil_drive_pulse.png")
     return written
 
 
