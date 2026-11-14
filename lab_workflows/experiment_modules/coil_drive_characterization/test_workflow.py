@@ -424,13 +424,18 @@ COIL_TAU_S = 0.7e-6  # 2026-11-14 实测：−3 dB 230 kHz、10–90% 上升 1.4
 
 
 def test_pulse_window_covers_tail_and_stays_readable():
-    """默认参数下每个脉宽的后半窗都装得下「脉宽 + 5τ」，且脉宽不超过窗长的 40%。"""
-    params = CoilDriveCharacterizationParams()
-    for width in params.pulse_widths_s:
-        window = preparation.pulse_window_s(params, width)
-        assert window / 2 >= width + 5 * COIL_TAU_S, f"{width * 1e6:g} µs 的后半窗装不下拖尾"
-        assert window / 2 >= 2.5 * width, f"{width * 1e6:g} µs 触发后可用窗口不足 2.5 倍脉宽"
-        assert width / window <= 0.4
+    """默认参数下每个脉宽的后半窗都装得下「脉宽 + 5τ」，且脉宽不超过窗长的 40%。
+
+    同时核对保存的默认参数文件，避免「模型默认值合规、实际跑的参数不合规」。
+    """
+    yaml_params = CoilDriveCharacterizationParams.from_yaml(ROOT / "params" / "experiments"
+                                                            / "coil-drive-characterization.yaml")
+    for params in (CoilDriveCharacterizationParams(), yaml_params):
+        for width in params.pulse_widths_s:
+            window = preparation.pulse_window_s(params, width)
+            assert window / 2 >= width + 5 * COIL_TAU_S, f"{width * 1e6:g} µs 的后半窗装不下拖尾"
+            assert window / 2 >= 2.5 * width, f"{width * 1e6:g} µs 触发后可用窗口不足 2.5 倍脉宽"
+            assert width / window <= 0.4
 
 
 def test_sine_window_is_closed_form_timebase_with_bounded_cycles():
