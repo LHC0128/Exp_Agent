@@ -19,7 +19,7 @@ from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import arm_sync_output
 from . import processing
 from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, capture_config, current_limit,
-                          log_scale, pulse_scale, set_amp_output, set_dc, sleep, zero_scale)
+                          log_scale, nice_up, pulse_scale, set_amp_output, set_dc, sleep, zero_scale)
 from .run_format import CURRENT_LIMIT_KEY, SOURCE_KEY
 
 SYNC_MIN_PEAK_V = 1.0
@@ -58,7 +58,7 @@ def _acquire(ctx, config):
                     return sense.time, sense.voltage, (sync.voltage if sync is not None else None), sense
                 if channel.scale >= 10.0:
                     raise SafetyAbort("采样电阻电压在最大量程仍削顶")
-                channel.scale = min(10.0, channel.scale * VERTICAL_HALF_DIVISIONS * 2.0)
+                channel.scale = min(10.0, nice_up(channel.scale * 2.0))
             raise SafetyAbort("量程调整后仍削顶")
         except MissingSync:
             if attempt == SYNC_ARM_ATTEMPTS - 1:
@@ -103,11 +103,12 @@ def _progress(stage, label, index, total, started):
 
 def _zero_frames(ctx, kind):
     p = ctx.params
-    config = capture_config(p, p.zero_window_s, zero_scale(p))
+    scale = zero_scale(p)
     means = []
     for index in range(p.zero_frames):
         check_cancelled()
-        t, sense, sync, result = _acquire(ctx, config)
+        t, sense, sync, result = _acquire(ctx, capture_config(p, p.zero_window_s, scale))
+        scale = ctx.current_scale or scale  # 首帧定档后沿用，避免每帧重新爬档
         _save_frame(ctx, f"{kind}_{index:02d}", t, sense, sync, _meta(result, {"kind": kind}))
         means.append(float(np.mean(sense)))
     return means
@@ -143,6 +144,7 @@ def _log_zero(ctx, mode, volts, *, stage, duration_s, interval_s, save_frames, r
         check_cancelled()
         loop_start = time.monotonic()
         t, sense, sync, result = _acquire(ctx, capture_config(p, p.zero_window_s, scale))
+        scale = ctx.current_scale or scale  # 首帧定档后沿用，避免每帧重新爬档
         mean_v, std_v = float(np.mean(sense)), float(np.std(sense))
         _append_csv(path, dict(timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),
                                elapsed_s=f"{elapsed:.6f}", mean_v=f"{mean_v:.9g}", std_v=f"{std_v:.9g}",
@@ -168,7 +170,7 @@ def measure_zero_dg0(ctx):
     _baseline_offset(ctx)
     _log_zero(ctx, "dg0", 0.0, stage="A03", duration_s=p.zero_log_duration_s,
               interval_s=p.zero_log_interval_s, save_frames=p.zero_save_all_frames,
-              raw_interval_s=p.zero_raw_save_interval_s, scale=log_scale(p))
+              raw_interval_s=p.zero_raw_save_interval_s, scale=ctx.current_scale or log_scale(p))
 
 
 def measure_baseline(ctx):
@@ -196,7 +198,7 @@ def measure_baseline(ctx):
     ctx.state["baseline_measured_current_a"] = measured
     _log_zero(ctx, "baseline", volts, stage="A04", duration_s=p.zero_log_duration_s,
               interval_s=p.zero_log_interval_s, save_frames=p.zero_save_all_frames,
-              raw_interval_s=p.zero_raw_save_interval_s, scale=log_scale(p))
+              raw_interval_s=p.zero_raw_save_interval_s, scale=ctx.current_scale or log_scale(p))
 
 
 def _pulse_offset(ctx):

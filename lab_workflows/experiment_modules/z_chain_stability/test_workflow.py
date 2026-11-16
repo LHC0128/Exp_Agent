@@ -78,12 +78,14 @@ class FakeAcquirer:
     def __init__(self, sg, params, *, fail_at=None):
         self.sg, self.params, self.fail_at = sg, params, fail_at
         self.calls = 0
+        self.scales: list[float] = []
 
     def use_auto_depth(self, value):
         pass
 
     def acquire_all(self, config):
         self.calls += 1
+        self.scales.append(config.channels[0].scale)
         if self.fail_at and self.calls == self.fail_at:
             raise RuntimeError("模拟采集失败")
         n = 4000
@@ -163,6 +165,18 @@ class AcquisitionTest(unittest.TestCase):
             meta = json.loads(str(data["meta"]))
         self.assertEqual(meta["kind"], "zero_dg0")
         self.assertIn("elapsed_s", meta)
+
+    def test_zero_log_remembers_escalated_scale(self):
+        params = fast_params()
+        ctx = FakeContext(self.root, params)
+        ctx.devices["sg"].voltage = 0.05  # 68.5 mV 采样电阻电压：5 mV/div 削顶，需爬两档
+        acquisition._log_zero(ctx, "dg0", 0.0, stage="A03", duration_s=0.15, interval_s=0.05,
+                              save_frames=False, raw_interval_s=0.0, scale=0.005)
+        scales = ctx.devices["acquirer"].scales
+        self.assertEqual(scales[:3], [0.005, 0.01, 0.02])
+        # 档位按段记忆：只有首帧从 5 mV/div 爬档，后续帧直接用 20 mV/div
+        self.assertEqual(scales.count(0.005), 1)
+        self.assertEqual(scales[-1], 0.02)
 
     def test_cancel_keeps_partial_rows(self):
         params = fast_params(zero_log_duration_s=1.0, zero_log_interval_s=0.05)
@@ -292,9 +306,11 @@ class ProcessingTest(unittest.TestCase):
     def test_segment_and_angle(self):
         t = np.linspace(0, 400e-6, 40000)
         current = np.zeros_like(t)
+        # 帧首的截断碎片不得当成完整脉冲
+        current[t < 1e-6] = 0.05
         for k in range(4):
             sign = 1.0 if k % 2 == 0 else -1.0
-            mask = (t >= k * 100e-6) & (t < k * 100e-6 + 4e-6)
+            mask = (t >= k * 100e-6 + 5e-6) & (t < k * 100e-6 + 9e-6)
             current[mask] = sign * 0.255
         pulses = processing.segment_pulses(t, current, period_s=100e-6, width_s=4e-6, tail_s=20e-6)
         self.assertEqual(len(pulses), 4)

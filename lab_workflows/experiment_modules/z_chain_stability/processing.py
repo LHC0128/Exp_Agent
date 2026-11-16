@@ -64,14 +64,19 @@ def segment_pulses(time_s, current_a, *, period_s: float, width_s: float, tail_s
         start = index
         while index < active.size and active[index]:
             index += 1
-        # 取首次越过门限的样本作为脉冲起点；积分窗覆盖完整脉冲与尾场。
+        # 帧首/帧尾被截断的脉冲只含半个波形；峰值为全帧最大值的极小部分时同理，都不计入。
+        if start == 0 or index >= active.size:
+            continue
         onset = float(t[start])
         stop = onset + min(tail_s, period_s)
         window = (t >= onset) & (t < stop)
         if not np.any(window):
             continue
+        segment_peak = float(np.max(np.abs(i[window] - base)))
+        if segment_peak < 0.5 * peak:
+            continue
         q = float(np.trapezoid(i[window] - base, t[window]))
-        pulses.append(dict(onset_s=onset, q_a_s=q, i_base_a=base, peak_a=float(np.max(np.abs(i[window] - base)))))
+        pulses.append(dict(onset_s=onset, q_a_s=q, i_base_a=base, peak_a=segment_peak))
     return pulses
 
 
