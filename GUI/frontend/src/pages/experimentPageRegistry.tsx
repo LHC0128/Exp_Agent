@@ -16,6 +16,7 @@ import { XYDirectAWDCCalibrationPage } from "./XYDirectAWDCCalibrationPage";
 import { BBPowerScanBurstPage } from "./BBPowerScanBurstPage";
 import { BBDutyScanBurstPage } from "./BBDutyScanBurstPage";
 import { CoilDriveCharacterizationPage } from "./CoilDriveCharacterizationPage";
+import { CoilConstantCalibrationPage } from "./CoilConstantCalibrationPage";
 import { ZFieldBandwidthPage } from "./ZFieldBandwidthPage";
 import { NoiseSpectrumXYKnownNoisePage, NoiseSpectrumXYProbeAMPage } from "./NoiseSpectrumXYKnownNoisePage";
 import { DetectionChainFrequencyResponsePage } from "./DetectionChainFrequencyResponsePage";
@@ -67,6 +68,7 @@ export const experimentPageRoutes: Readonly<Record<string, ExperimentPageRoute>>
   "bb-power-scan-burst": () => <BBPowerScanBurstPage />,
   "bb-duty-scan-burst": () => <BBDutyScanBurstPage />,
   "coil-drive-characterization": () => <CoilDriveCharacterizationPage />,
+  "coil-constant-calibration": () => <CoilConstantCalibrationPage />,
   "z-field-bandwidth": () => <ZFieldBandwidthPage />,
   "noise-spectrum-xy-known-noise": () => <NoiseSpectrumXYKnownNoisePage />,
   "noise-spectrum-xy-uncontrolled-probe-am": () => <NoiseSpectrumXYProbeAMPage />,

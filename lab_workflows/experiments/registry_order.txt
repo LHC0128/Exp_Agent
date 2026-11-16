@@ -29,3 +29,4 @@ bb-power-scan-burst
 t1-calibration
 t2-calibration
 xy-direct-aw-dc-calibration
+coil-constant-calibration

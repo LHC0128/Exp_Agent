@@ -1,0 +1,1571 @@
+{
+ "fields": [
+  {
+   "name": "RUN_TAG",
+   "label": "运行标签",
+   "type": "string",
+   "default": "coil_const",
+   "unit": "",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "SYSTEM_SETTLE_S",
+   "label": "系统稳定时间",
+   "type": "number",
+   "default": 0.1,
+   "unit": "s",
+   "group": "basic",
+   "minimum": 0,
+   "maximum": null,
+   "description": "配置和温控门控共同稳定的采集前等待；组内每次换点或换态后重新等待。",
+   "read_only": false,
+   "legacy_defaults": {
+    "TEMP_SWITCH_OFF_DELAY_S": 0.1
+   }
+  },
+  {
+   "name": "AMPLIFIER_GAIN_DB",
+   "label": "功放增益",
+   "type": "number",
+   "default": 10.0,
+   "unit": "dB",
+   "group": "basic",
+   "minimum": 0,
+   "maximum": 20,
+   "description": "连接时写入 1200B（0–20 dB，0.5 dB 步进）；预测电流按此值计算",
+   "read_only": false
+  },
+  {
+   "name": "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+   "label": "功放输入阻抗",
+   "type": "number",
+   "default": 1000000.0,
+   "unit": "Ω",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "连接时写入 1200B，并把信号源输出负载配成一致（1 MΩ→高阻，50 Ω→50 Ω）",
+   "read_only": false,
+   "options": [
+    {
+     "value": 50.0,
+     "label": "50 Ω"
+    },
+    {
+     "value": 1000000.0,
+     "label": "1 MΩ"
+    }
+   ]
+  },
+  {
+   "name": "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+   "label": "功放输出阻抗",
+   "type": "number",
+   "default": 50.0,
+   "unit": "Ω",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "连接时写入 1200B；与线圈回路串联，直接参与回路电阻与预测电流",
+   "read_only": false,
+   "options": [
+    {
+     "value": 1.0,
+     "label": "1 Ω"
+    },
+    {
+     "value": 50.0,
+     "label": "50 Ω"
+    }
+   ]
+  },
+  {
+   "name": "AMPLIFIER_WRITE_SETTINGS",
+   "label": "连接时写入功放设置",
+   "type": "boolean",
+   "default": true,
+   "unit": "",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "true 时按上面三项发送 1200B 命令；false 时只按声明值预测，要求面板与声明一致",
+   "read_only": false
+  },
+  {
+   "name": "SENSE_RESISTOR_OHM",
+   "label": "采样电阻",
+   "type": "number",
+   "default": 10.0,
+   "unit": "Ω",
+   "group": "basic",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "I = V_sense / R_sense；填实测阻值",
+   "read_only": false
+  },
+  {
+   "name": "SENSE_RESISTOR_TOLERANCE_PERCENT",
+   "label": "采样电阻误差",
+   "type": "number",
+   "default": 1.0,
+   "unit": "%",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": null,
+   "description": "仅进入系统误差说明，不改变电流换算",
+   "read_only": false
+  },
+  {
+   "name": "DAMPING_RESISTOR_OHM",
+   "label": "阻尼电阻",
+   "type": "number",
+   "default": 10.0,
+   "unit": "Ω",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "COIL_RESISTANCE_OHM",
+   "label": "线圈直流电阻",
+   "type": "number",
+   "default": 0.0,
+   "unit": "Ω",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": null,
+   "description": "用于预测电流；0 使预测偏大、偏保守",
+   "read_only": false
+  },
+  {
+   "name": "RESISTOR_RATED_W",
+   "label": "电阻额定功率",
+   "type": "number",
+   "default": 2.0,
+   "unit": "W",
+   "group": "advanced",
+   "minimum": 0.01,
+   "maximum": null,
+   "description": "平均功耗按额定一半校验",
+   "read_only": false
+  },
+  {
+   "name": "ZERO_FRAMES",
+   "label": "零偏帧数",
+   "type": "integer",
+   "default": 5,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1,
+   "maximum": 100,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "ZERO_WINDOW_S",
+   "label": "零偏/直流采样时间",
+   "type": "number",
+   "default": 0.02,
+   "unit": "s",
+   "group": "advanced",
+   "minimum": 0.0001,
+   "maximum": 10,
+   "description": "取 50 Hz 工频周期 20 ms 的整数倍可平均掉工频干扰",
+   "read_only": false,
+   "legacy_default": 0.01
+  },
+  {
+   "name": "SETTLE_S",
+   "label": "输出切换后等待",
+   "type": "number",
+   "default": 0.3,
+   "unit": "s",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "DC_CHECK_CURRENTS_MA",
+   "label": "直流 I–V 核对电流",
+   "type": "array",
+   "default": [
+    -50.0,
+    0.0,
+    50.0
+   ],
+   "unit": "mA",
+   "group": "advanced",
+   "minimum": null,
+   "maximum": null,
+   "description": "A04 用这些目标电流实测驱动电压→电流关系（只记录，不设判据）；至少 3 点",
+   "read_only": false
+  },
+  {
+   "name": "MAX_MEMORY_DEPTH",
+   "label": "最大存储深度上限",
+   "type": "integer",
+   "default": 1000000,
+   "unit": "点",
+   "group": "advanced",
+   "minimum": null,
+   "maximum": null,
+   "description": "示波器深度为 AUTO；超过此点数时改用此上限深度，实际采样率与点数随帧保存",
+   "read_only": false,
+   "options": [
+    {
+     "value": 1000,
+     "label": "1,000"
+    },
+    {
+     "value": 10000,
+     "label": "10,000"
+    },
+    {
+     "value": 100000,
+     "label": "100,000"
+    },
+    {
+     "value": 1000000,
+     "label": "1,000,000"
+    },
+    {
+     "value": 5000000,
+     "label": "5,000,000"
+    },
+    {
+     "value": 10000000,
+     "label": "10,000,000"
+    }
+   ]
+  },
+  {
+   "name": "SCOPE_ACQUIRE_DELAY_S",
+   "label": "示波器停采后等待",
+   "type": "number",
+   "default": 0.0,
+   "unit": "s",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": 30,
+   "description": "直流帧整帧 STOP 确认后、读取前的等待；默认 0，采集完成即可读",
+   "read_only": false,
+   "legacy_default": 0.0
+  },
+  {
+   "name": "SCOPE_CURRENT_CHANNEL",
+   "label": "采样电阻通道",
+   "type": "integer",
+   "default": 2,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1,
+   "maximum": 4,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "MAIN_FIELD_ENABLED",
+   "label": "开启主磁场",
+   "type": "boolean",
+   "default": true,
+   "unit": "",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "false 时只关闭 GS200 输出；true 时按下面的电流设主场并开输出",
+   "read_only": false
+  },
+  {
+   "name": "MAIN_FIELD_MA",
+   "label": "主场电流",
+   "type": "number",
+   "default": 15.555,
+   "unit": "mA",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "150 kHz 约对应 15.555 mA（按 9.643 kHz/mA）；按本机实测值手填",
+   "read_only": false
+  },
+  {
+   "name": "MAIN_FIELD_CENTER_HZ",
+   "label": "主场对应的拉莫尔频率",
+   "type": "number",
+   "default": 150000.0,
+   "unit": "Hz",
+   "group": "basic",
+   "minimum": 0.0,
+   "maximum": null,
+   "description": "主磁场开启时 Z 电流为 0 处的共振中心（手填）；关闭时作为残余场中心的初始猜测",
+   "read_only": false
+  },
+  {
+   "name": "CURRENT_START_MA",
+   "label": "电流起点",
+   "type": "number",
+   "default": -200.0,
+   "unit": "mA",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "CURRENT_STOP_MA",
+   "label": "电流终点",
+   "type": "number",
+   "default": 200.0,
+   "unit": "mA",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "CURRENT_STEP_MA",
+   "label": "电流步进",
+   "type": "number",
+   "default": 50.0,
+   "unit": "mA",
+   "group": "basic",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "BIDIRECTIONAL_SCAN",
+   "label": "正反向电流扫描",
+   "type": "boolean",
+   "default": true,
+   "unit": "",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "正向到端点后反向返回，不重复端点",
+   "read_only": false
+  },
+  {
+   "name": "CURRENT_SETTLE_TIME_S",
+   "label": "电流稳定等待",
+   "type": "number",
+   "default": 0.2,
+   "unit": "s",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "INITIAL_HZ_PER_MA",
+   "label": "预测频率斜率",
+   "type": "number",
+   "default": 602.0,
+   "unit": "Hz/mA",
+   "group": "basic",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "用于逐点窗口中心预测（86 nT/mA × 7 Hz/nT），不作为最终标定结果",
+   "read_only": false
+  },
+  {
+   "name": "PREDICTION_POLARITY",
+   "label": "电流极性预测",
+   "type": "string",
+   "default": "positive_increases_frequency",
+   "unit": "",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "用于窗口中心预测；选反时粗扫峰落在窗口边缘会明确报错，翻转后重跑即可",
+   "read_only": false,
+   "options": [
+    {
+     "value": "unselected",
+     "label": "请选择"
+    },
+    {
+     "value": "positive_increases_frequency",
+     "label": "正电流提高共振频率"
+    },
+    {
+     "value": "positive_decreases_frequency",
+     "label": "正电流降低共振频率"
+    }
+   ]
+  },
+  {
+   "name": "COARSE_HALF_WIDTH_HZ",
+   "label": "粗扫半宽",
+   "type": "number",
+   "default": 20000.0,
+   "unit": "Hz",
+   "group": "basic",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "每个电流点先在预测中心 ±该半宽做粗扫找峰，再在峰附近细扫",
+   "read_only": false
+  },
+  {
+   "name": "COARSE_STEP_HZ",
+   "label": "粗扫步进",
+   "type": "number",
+   "default": 1000.0,
+   "unit": "Hz",
+   "group": "basic",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "FREQUENCY_HALF_WIDTH_HZ",
+   "label": "细扫半宽",
+   "type": "number",
+   "default": 4000.0,
+   "unit": "Hz",
+   "group": "basic",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "FREQUENCY_STEP_HZ",
+   "label": "细扫步进",
+   "type": "number",
+   "default": 100.0,
+   "unit": "Hz",
+   "group": "basic",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "NEAR_ZERO_SCAN_FLOOR_HZ",
+   "label": "零场不扫频下限",
+   "type": "number",
+   "default": 8000.0,
+   "unit": "Hz",
+   "group": "basic",
+   "minimum": 0.0,
+   "maximum": null,
+   "description": "预测 |中心| 低于此值的电流点只测电流、不扫 Y RF（主磁场关闭且接近过零时）",
+   "read_only": false
+  },
+  {
+   "name": "NEAR_ZERO_FIT_FLOOR_HZ",
+   "label": "零场不拟合下限",
+   "type": "number",
+   "default": 4000.0,
+   "unit": "Hz",
+   "group": "advanced",
+   "minimum": 0.0,
+   "maximum": null,
+   "description": "拟合中心绝对值低于此值的曲线剔除，不进入线性标定",
+   "read_only": false
+  },
+  {
+   "name": "Y_RF_AMPLITUDE_VPP",
+   "label": "Y RF 扫频幅度",
+   "type": "number",
+   "default": 0.05,
+   "unit": "Vpp",
+   "group": "basic",
+   "minimum": 0.0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "FREQUENCY_DURATION_S",
+   "label": "频点采样时间",
+   "type": "number",
+   "default": 0.1,
+   "unit": "s",
+   "group": "basic",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "TEMP_SWITCH_ON_LAG_S",
+   "label": "每频点温控恢复等待",
+   "type": "number",
+   "default": 1.0,
+   "unit": "s",
+   "group": "basic",
+   "minimum": 0.0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "R_BAD_POINT_STD_THRESHOLD_V",
+   "label": "R 坏点标准差阈值",
+   "type": "number",
+   "default": 0.01,
+   "unit": "V",
+   "group": "advanced",
+   "minimum": 0.0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "R_POINT_MAX_ATTEMPTS",
+   "label": "R 点最大采集次数",
+   "type": "integer",
+   "default": 3,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "DEMOD_IDX",
+   "label": "锁相放大器 Demod 索引",
+   "type": "integer",
+   "default": 0,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "DEMOD_OSC_IDX",
+   "label": "锁相放大器 振荡器索引",
+   "type": "integer",
+   "default": 0,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "HF2_SIGNAL_RANGE_V",
+   "label": "锁相放大器 Input1 量程",
+   "type": "number",
+   "default": 2.0,
+   "unit": "V",
+   "group": "advanced",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "RESPONSE_RATE_SA_S",
+   "label": "响应请求采样率",
+   "type": "number",
+   "default": 1000.0,
+   "unit": "Sa/s",
+   "group": "advanced",
+   "minimum": 1.0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "RESPONSE_TIME_CONSTANT_S",
+   "label": "响应时间常数",
+   "type": "number",
+   "default": 0.001,
+   "unit": "s",
+   "group": "advanced",
+   "minimum": 0.0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "RESPONSE_DEMOD_ORDER",
+   "label": "响应解调阶数",
+   "type": "integer",
+   "default": 4,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "PUMP_CARRIER_FREQUENCY_HZ",
+   "label": "Pump AOM 载波频率",
+   "type": "number",
+   "default": 100000000.0,
+   "unit": "Hz",
+   "group": "advanced",
+   "minimum": 1.0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "PUMP_CARRIER_AMPLITUDE_VPP",
+   "label": "Pump AOM 载波幅度",
+   "type": "number",
+   "default": 0.18,
+   "unit": "Vpp",
+   "group": "advanced",
+   "minimum": 0.0,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "PUMP_GATE_VOLTAGE_V",
+   "label": "Pump RF 开关常开电平",
+   "type": "number",
+   "default": 5.0,
+   "unit": "V",
+   "group": "advanced",
+   "minimum": 5.0,
+   "maximum": 5.0,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "FIXED_PARAMS.Pump_laser_power",
+   "label": "Pump 光功率",
+   "type": "number",
+   "default": 0.5,
+   "unit": "V",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "FIXED_PARAMS.Probe_laser_power",
+   "label": "Probe 光功率",
+   "type": "number",
+   "default": 0.3,
+   "unit": "V",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "FIXED_PARAMS.temperature",
+   "label": "气室温度",
+   "type": "number",
+   "default": 120.0,
+   "unit": "°C",
+   "group": "basic",
+   "minimum": null,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "EXPECTED_K_NT_PER_MA",
+   "label": "预估线圈常数",
+   "type": "number",
+   "default": 86.0,
+   "unit": "nT/mA",
+   "group": "advanced",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "只用于 π 工作点与标定范围预览，不参与拟合",
+   "read_only": false
+  },
+  {
+   "name": "PULSE_WIDTH_S",
+   "label": "π 脉冲宽度",
+   "type": "number",
+   "default": 5e-06,
+   "unit": "s",
+   "group": "advanced",
+   "minimum": 1e-09,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "PULSE_REPETITION_HZ",
+   "label": "π 脉冲重复率",
+   "type": "number",
+   "default": 20000.0,
+   "unit": "Hz",
+   "group": "advanced",
+   "minimum": 1e-06,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "PULSE_FIELD_MARGIN",
+   "label": "π 电流覆盖余量",
+   "type": "number",
+   "default": 1.2,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1.0,
+   "maximum": 10.0,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "LINEAR_R_SQUARED_MIN",
+   "label": "线性标定最低 R²",
+   "type": "number",
+   "default": 0.99,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 0.0,
+   "maximum": 1.0,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "GYROMAGNETIC_RATIO_HZ_PER_NT",
+   "label": "频率-磁场换算系数",
+   "type": "number",
+   "default": 7.0,
+   "unit": "Hz/nT",
+   "group": "advanced",
+   "minimum": 0.001,
+   "maximum": null,
+   "description": "作为精确配置常数使用，不额外传播其系统不确定度",
+   "read_only": false
+  },
+  {
+   "name": "MIN_ACCEPTED_POINTS",
+   "label": "最少有效电流点",
+   "type": "integer",
+   "default": 4,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 2,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "MIN_BRANCH_POINTS",
+   "label": "过零两侧最少点数",
+   "type": "integer",
+   "default": 2,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 1,
+   "maximum": null,
+   "description": "",
+   "read_only": false
+  },
+  {
+   "name": "BRANCH_SLOPE_TOLERANCE",
+   "label": "两支斜率一致性容许",
+   "type": "number",
+   "default": 0.05,
+   "unit": "",
+   "group": "advanced",
+   "minimum": 0.001,
+   "maximum": 0.5,
+   "description": "",
+   "read_only": false
+  }
+ ],
+ "flow": {
+  "run_step_id": "A08",
+  "finish_step_id": "A10",
+  "acquisition": [
+   {
+    "id": "A01",
+    "title": "参数、映射与安全限值预检",
+    "group": "准备",
+    "dependencies": [],
+    "parameters": [
+     "RUN_TAG",
+     "EXPECTED_K_NT_PER_MA",
+     "PULSE_WIDTH_S",
+     "PULSE_REPETITION_HZ",
+     "PULSE_FIELD_MARGIN"
+    ],
+    "artifacts": [],
+    "display_parameters": [
+     "RUN_TAG",
+     "EXPECTED_K_NT_PER_MA",
+     "PULSE_WIDTH_S",
+     "PULSE_REPETITION_HZ",
+     "PULSE_FIELD_MARGIN"
+    ],
+    "quality_gates": [
+     "不连接硬件；主磁场电流与参考频率、预测扫频窗为正、限值与锁相能力有效，过零几何与 π 设计预览成文"
+    ]
+   },
+   {
+    "id": "A02",
+    "title": "连接设备、写入功放设置并记录 GS200 初态",
+    "group": "准备",
+    "dependencies": [
+     "A01"
+    ],
+    "parameters": [
+     "AMPLIFIER_GAIN_DB",
+     "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+     "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+     "AMPLIFIER_WRITE_SETTINGS",
+     "SENSE_RESISTOR_OHM",
+     "SENSE_RESISTOR_TOLERANCE_PERCENT",
+     "DAMPING_RESISTOR_OHM",
+     "COIL_RESISTANCE_OHM",
+     "RESISTOR_RATED_W",
+     "SETTLE_S",
+     "SCOPE_ACQUIRE_DELAY_S",
+     "SCOPE_CURRENT_CHANNEL",
+     "MAX_MEMORY_DEPTH"
+    ],
+    "artifacts": [],
+    "display_parameters": [
+     "AMPLIFIER_GAIN_DB",
+     "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+     "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+     "AMPLIFIER_WRITE_SETTINGS",
+     "SENSE_RESISTOR_OHM",
+     "SENSE_RESISTOR_TOLERANCE_PERCENT",
+     "DAMPING_RESISTOR_OHM",
+     "COIL_RESISTANCE_OHM",
+     "RESISTOR_RATED_W",
+     "SETTLE_S",
+     "SCOPE_ACQUIRE_DELAY_S",
+     "SCOPE_CURRENT_CHANNEL",
+     "MAX_MEMORY_DEPTH"
+    ],
+    "quality_gates": [
+     "连接前过硬件门控；功放输出关闭时写入增益与输入/输出阻抗，信号源负载随输入阻抗配置；记录 GS200 运行前源模式/电流/输出/量程/限值"
+    ]
+   },
+   {
+    "id": "A03",
+    "title": "参考时钟同步与严格回读",
+    "group": "准备",
+    "dependencies": [
+     "A02"
+    ],
+    "parameters": [],
+    "artifacts": [],
+    "display_parameters": [],
+    "quality_gates": [
+     "全部已连接时钟设备先写入再统一回读并严格校验；失败不开启任何输出"
+    ]
+   },
+   {
+    "id": "A04",
+    "title": "功放零偏与直流 I–V 核对",
+    "group": "基线",
+    "dependencies": [
+     "A03"
+    ],
+    "parameters": [
+     "AMPLIFIER_GAIN_DB",
+     "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+     "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+     "AMPLIFIER_WRITE_SETTINGS",
+     "SENSE_RESISTOR_OHM",
+     "SENSE_RESISTOR_TOLERANCE_PERCENT",
+     "DAMPING_RESISTOR_OHM",
+     "COIL_RESISTANCE_OHM",
+     "RESISTOR_RATED_W",
+     "SETTLE_S",
+     "SCOPE_ACQUIRE_DELAY_S",
+     "SCOPE_CURRENT_CHANNEL",
+     "MAX_MEMORY_DEPTH",
+     "DC_CHECK_CURRENTS_MA",
+     "ZERO_FRAMES",
+     "ZERO_WINDOW_S"
+    ],
+    "artifacts": [
+     "raw/zero_*.npz",
+     "raw/dc_check_*.npz"
+    ],
+    "display_parameters": [
+     "AMPLIFIER_GAIN_DB",
+     "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+     "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+     "AMPLIFIER_WRITE_SETTINGS",
+     "SENSE_RESISTOR_OHM",
+     "SENSE_RESISTOR_TOLERANCE_PERCENT",
+     "DAMPING_RESISTOR_OHM",
+     "COIL_RESISTANCE_OHM",
+     "RESISTOR_RATED_W",
+     "SETTLE_S",
+     "SCOPE_ACQUIRE_DELAY_S",
+     "SCOPE_CURRENT_CHANNEL",
+     "MAX_MEMORY_DEPTH",
+     "DC_CHECK_CURRENTS_MA",
+     "ZERO_FRAMES",
+     "ZERO_WINDOW_S"
+    ],
+    "quality_gates": [
+     "功放关/开两态、信号源 0 V 测零偏；多点直流核对实测驱动电压→电流关系与线性，只记录 k 与零偏、不设判据"
+    ]
+   },
+   {
+    "id": "A05",
+    "title": "初始输出：主磁场、辅助场归零与光功率",
+    "group": "初始条件",
+    "dependencies": [
+     "A04"
+    ],
+    "parameters": [
+     "MAIN_FIELD_ENABLED",
+     "MAIN_FIELD_MA",
+     "MAIN_FIELD_CENTER_HZ",
+     "FIXED_PARAMS.Pump_laser_power",
+     "FIXED_PARAMS.Probe_laser_power"
+    ],
+    "artifacts": [],
+    "display_parameters": [
+     "MAIN_FIELD_ENABLED",
+     "MAIN_FIELD_MA",
+     "MAIN_FIELD_CENTER_HZ",
+     "FIXED_PARAMS.Pump_laser_power",
+     "FIXED_PARAMS.Probe_laser_power"
+    ],
+    "quality_gates": [
+     "主磁场开启时按 main_magnetic_field 限值校验并写电流（电流与参考拉莫尔频率手填）；关闭时只关输出、不写电流；X/Z 辅助场归零关闭，温控开关恢复 5 V ON"
+    ]
+   },
+   {
+    "id": "A06",
+    "title": "TEC 目标温度",
+    "group": "初始条件",
+    "dependencies": [
+     "A05"
+    ],
+    "parameters": [
+     "FIXED_PARAMS.temperature"
+    ],
+    "artifacts": [],
+    "display_parameters": [
+     "FIXED_PARAMS.temperature"
+    ],
+    "quality_gates": [
+     "只下发界面目标温度，不启停控制器、不判稳；串口失败告警跳过"
+    ]
+   },
+   {
+    "id": "A07",
+    "title": "Pump 载波与 Y RF/R 解调准备",
+    "group": "激励",
+    "dependencies": [
+     "A06"
+    ],
+    "parameters": [
+     "PUMP_CARRIER_FREQUENCY_HZ",
+     "PUMP_CARRIER_AMPLITUDE_VPP",
+     "PUMP_GATE_VOLTAGE_V",
+     "Y_RF_AMPLITUDE_VPP",
+     "DEMOD_IDX",
+     "DEMOD_OSC_IDX",
+     "HF2_SIGNAL_RANGE_V",
+     "RESPONSE_RATE_SA_S",
+     "RESPONSE_TIME_CONSTANT_S",
+     "RESPONSE_DEMOD_ORDER"
+    ],
+    "artifacts": [],
+    "display_parameters": [
+     "PUMP_CARRIER_FREQUENCY_HZ",
+     "PUMP_CARRIER_AMPLITUDE_VPP",
+     "PUMP_GATE_VOLTAGE_V",
+     "Y_RF_AMPLITUDE_VPP",
+     "DEMOD_IDX",
+     "DEMOD_OSC_IDX",
+     "HF2_SIGNAL_RANGE_V",
+     "RESPONSE_RATE_SA_S",
+     "RESPONSE_TIME_CONSTANT_S",
+     "RESPONSE_DEMOD_ORDER"
+    ],
+    "quality_gates": [
+     "Pump 连续 100 MHz 载波与常开门控；Y RF 正弦初始频率取主场参考拉莫尔频率；记录实际解调率"
+    ]
+   },
+   {
+    "id": "A08",
+    "title": "电流轴 × 逐点粗扫/细扫 Y RF",
+    "group": "测量",
+    "dependencies": [
+     "A07"
+    ],
+    "parameters": [
+     "CURRENT_START_MA",
+     "CURRENT_STOP_MA",
+     "CURRENT_STEP_MA",
+     "BIDIRECTIONAL_SCAN",
+     "CURRENT_SETTLE_TIME_S",
+     "INITIAL_HZ_PER_MA",
+     "PREDICTION_POLARITY",
+     "COARSE_HALF_WIDTH_HZ",
+     "COARSE_STEP_HZ",
+     "FREQUENCY_HALF_WIDTH_HZ",
+     "FREQUENCY_STEP_HZ",
+     "NEAR_ZERO_SCAN_FLOOR_HZ",
+     "Y_RF_AMPLITUDE_VPP",
+     "FREQUENCY_DURATION_S",
+     "SYSTEM_SETTLE_S",
+     "TEMP_SWITCH_ON_LAG_S",
+     "R_BAD_POINT_STD_THRESHOLD_V",
+     "R_POINT_MAX_ATTEMPTS"
+    ],
+    "artifacts": [
+     "raw/current_scan_index.npz",
+     "raw/current_*/*.npz"
+    ],
+    "display_parameters": [
+     "CURRENT_START_MA",
+     "CURRENT_STOP_MA",
+     "CURRENT_STEP_MA",
+     "BIDIRECTIONAL_SCAN",
+     "CURRENT_SETTLE_TIME_S",
+     "INITIAL_HZ_PER_MA",
+     "PREDICTION_POLARITY",
+     "COARSE_HALF_WIDTH_HZ",
+     "COARSE_STEP_HZ",
+     "FREQUENCY_HALF_WIDTH_HZ",
+     "FREQUENCY_STEP_HZ",
+     "NEAR_ZERO_SCAN_FLOOR_HZ",
+     "Y_RF_AMPLITUDE_VPP",
+     "FREQUENCY_DURATION_S",
+     "SYSTEM_SETTLE_S",
+     "TEMP_SWITCH_ON_LAG_S",
+     "R_BAD_POINT_STD_THRESHOLD_V",
+     "R_POINT_MAX_ATTEMPTS"
+    ],
+    "quality_gates": [
+     "每个电流点先在预测中心 ±COARSE_HALF_WIDTH_HZ 粗扫找峰、再在峰附近细扫；主磁场开启时全程不过零，关闭时按 |K(I−I0)| 过零处理；预测 |中心| 低于零场下限的点只测电流；R 坏点超门槛重采"
+    ]
+   },
+   {
+    "id": "A09",
+    "title": "本轮安全收尾与封存",
+    "group": "结束",
+    "dependencies": [
+     "A08"
+    ],
+    "parameters": [],
+    "artifacts": [],
+    "display_parameters": [],
+    "quality_gates": [
+     "先关 1200B 输出，再把 Z 通道归零关闭、Y RF 关、X 归零、温控恢复 5 V ON、停止 DHO900；保持 GS200 本次设定与光路/Pump；失败不得标记安全完成"
+    ]
+   },
+   {
+    "id": "A10",
+    "title": "安全结束会话",
+    "group": "结束",
+    "dependencies": [],
+    "parameters": [],
+    "artifacts": [],
+    "display_parameters": [],
+    "quality_gates": [
+     "正常、取消与异常路径均断开 TEC 与其余设备；未连接时不宣称输出已恢复"
+    ]
+   }
+  ],
+  "analysis": [
+   {
+    "id": "B01",
+    "title": "配置与原始数据资格",
+    "group": "独立分析",
+    "dependencies": [],
+    "parameters": [],
+    "artifacts": [],
+    "display_parameters": [],
+    "quality_gates": [
+     "实验身份、原始格式、扫描索引路径与频扫字段有效"
+    ]
+   },
+   {
+    "id": "B02",
+    "title": "逐曲线平方根洛伦兹中心",
+    "group": "独立分析",
+    "dependencies": [
+     "B01"
+    ],
+    "parameters": [],
+    "artifacts": [
+     "curve_fits.json"
+    ],
+    "display_parameters": [],
+    "quality_gates": [
+     "有效点、γ 与窗口位置基础检查；零场附近曲线标记剔除原因，执行完成与质量通过分开记录"
+    ]
+   },
+   {
+    "id": "B03",
+    "title": "过零几何与加权标定",
+    "group": "独立分析",
+    "dependencies": [
+     "B02"
+    ],
+    "parameters": [
+     "LINEAR_R_SQUARED_MIN",
+     "GYROMAGNETIC_RATIO_HZ_PER_NT",
+     "MIN_ACCEPTED_POINTS",
+     "MIN_BRANCH_POINTS",
+     "BRANCH_SLOPE_TOLERANCE",
+     "NEAR_ZERO_FIT_FLOOR_HZ"
+    ],
+    "artifacts": [
+     "calibration_evaluation.json"
+    ],
+    "display_parameters": [
+     "LINEAR_R_SQUARED_MIN",
+     "GYROMAGNETIC_RATIO_HZ_PER_NT",
+     "MIN_ACCEPTED_POINTS",
+     "MIN_BRANCH_POINTS",
+     "BRANCH_SLOPE_TOLERANCE",
+     "NEAR_ZERO_FIT_FLOOR_HZ"
+    ],
+    "quality_gates": [
+     "f=|K·(I−I0)| 加权拟合与两支一致性检查（单侧数据退化为直线并给带符号 K）；过零在轴内时两支各不少于 MIN_BRANCH_POINTS 点"
+    ]
+   },
+   {
+    "id": "B04",
+    "title": "标定报告与结果图",
+    "group": "独立分析",
+    "dependencies": [
+     "B03"
+    ],
+    "parameters": [],
+    "artifacts": [
+     "analysis.yaml",
+     "analysis.json",
+     "calibration_results.npz",
+     "frequency_response_fits.png",
+     "coil_constant_calibration.png",
+     "coil_voltage_response.png",
+     "coil_constant_residuals.png",
+     "dc_iv_check.png"
+    ],
+    "display_parameters": [],
+    "quality_gates": []
+   }
+  ],
+  "parameter_impacts": {
+   "acquisition": {
+    "RUN_TAG": [
+     "A01",
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "EXPECTED_K_NT_PER_MA": [
+     "A01",
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "PULSE_WIDTH_S": [
+     "A01",
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "PULSE_REPETITION_HZ": [
+     "A01",
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "PULSE_FIELD_MARGIN": [
+     "A01",
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "AMPLIFIER_GAIN_DB": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "AMPLIFIER_INPUT_IMPEDANCE_OHM": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "AMPLIFIER_WRITE_SETTINGS": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "SENSE_RESISTOR_OHM": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "SENSE_RESISTOR_TOLERANCE_PERCENT": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "DAMPING_RESISTOR_OHM": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "COIL_RESISTANCE_OHM": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "RESISTOR_RATED_W": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "SETTLE_S": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "SCOPE_ACQUIRE_DELAY_S": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "SCOPE_CURRENT_CHANNEL": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "MAX_MEMORY_DEPTH": [
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "DC_CHECK_CURRENTS_MA": [
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "ZERO_FRAMES": [
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "ZERO_WINDOW_S": [
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "MAIN_FIELD_ENABLED": [
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "MAIN_FIELD_MA": [
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "MAIN_FIELD_CENTER_HZ": [
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "FIXED_PARAMS.Pump_laser_power": [
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "FIXED_PARAMS.Probe_laser_power": [
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "FIXED_PARAMS.temperature": [
+     "A06",
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "PUMP_CARRIER_FREQUENCY_HZ": [
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "PUMP_CARRIER_AMPLITUDE_VPP": [
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "PUMP_GATE_VOLTAGE_V": [
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "Y_RF_AMPLITUDE_VPP": [
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "DEMOD_IDX": [
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "DEMOD_OSC_IDX": [
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "HF2_SIGNAL_RANGE_V": [
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "RESPONSE_RATE_SA_S": [
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "RESPONSE_TIME_CONSTANT_S": [
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "RESPONSE_DEMOD_ORDER": [
+     "A07",
+     "A08",
+     "A09"
+    ],
+    "CURRENT_START_MA": [
+     "A08",
+     "A09"
+    ],
+    "CURRENT_STOP_MA": [
+     "A08",
+     "A09"
+    ],
+    "CURRENT_STEP_MA": [
+     "A08",
+     "A09"
+    ],
+    "BIDIRECTIONAL_SCAN": [
+     "A08",
+     "A09"
+    ],
+    "CURRENT_SETTLE_TIME_S": [
+     "A08",
+     "A09"
+    ],
+    "INITIAL_HZ_PER_MA": [
+     "A08",
+     "A09"
+    ],
+    "PREDICTION_POLARITY": [
+     "A08",
+     "A09"
+    ],
+    "COARSE_HALF_WIDTH_HZ": [
+     "A08",
+     "A09"
+    ],
+    "COARSE_STEP_HZ": [
+     "A08",
+     "A09"
+    ],
+    "FREQUENCY_HALF_WIDTH_HZ": [
+     "A08",
+     "A09"
+    ],
+    "FREQUENCY_STEP_HZ": [
+     "A08",
+     "A09"
+    ],
+    "NEAR_ZERO_SCAN_FLOOR_HZ": [
+     "A08",
+     "A09"
+    ],
+    "FREQUENCY_DURATION_S": [
+     "A08",
+     "A09"
+    ],
+    "SYSTEM_SETTLE_S": [
+     "A08",
+     "A09"
+    ],
+    "TEMP_SWITCH_ON_LAG_S": [
+     "A08",
+     "A09"
+    ],
+    "R_BAD_POINT_STD_THRESHOLD_V": [
+     "A08",
+     "A09"
+    ],
+    "R_POINT_MAX_ATTEMPTS": [
+     "A08",
+     "A09"
+    ]
+   },
+   "analysis": {
+    "LINEAR_R_SQUARED_MIN": [
+     "B03",
+     "B04"
+    ],
+    "GYROMAGNETIC_RATIO_HZ_PER_NT": [
+     "B03",
+     "B04"
+    ],
+    "MIN_ACCEPTED_POINTS": [
+     "B03",
+     "B04"
+    ],
+    "MIN_BRANCH_POINTS": [
+     "B03",
+     "B04"
+    ],
+    "BRANCH_SLOPE_TOLERANCE": [
+     "B03",
+     "B04"
+    ],
+    "NEAR_ZERO_FIT_FLOOR_HZ": [
+     "B03",
+     "B04"
+    ]
+   }
+  },
+  "diagram_url": "/api/experiments/coil-constant-calibration/workflow/diagram"
+ }
+}

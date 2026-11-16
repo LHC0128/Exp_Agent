@@ -90,6 +90,9 @@ from ..experiment_modules.t2_calibration.definition import DEFINITION as T2_CALI
 from ..experiment_modules.xy_direct_aw_dc_calibration.definition import (
     DEFINITION as XY_DIRECT_AW_DC_DEFINITION,
 )
+from ..experiment_modules.coil_constant_calibration.definition import (
+    DEFINITION as COIL_CONSTANT_CALIBRATION_DEFINITION,
+)
 # </registry:imports>
 
 from .contracts import ExperimentDefinition
@@ -129,6 +132,7 @@ _DEFINITIONS = [
     T1_CALIBRATION_DEFINITION,  # t1-calibration
     T2_CALIBRATION_DEFINITION,  # t2-calibration
     XY_DIRECT_AW_DC_DEFINITION,  # xy-direct-aw-dc-calibration
+    COIL_CONSTANT_CALIBRATION_DEFINITION,  # coil-constant-calibration
 ]
 # </registry:definitions>
 

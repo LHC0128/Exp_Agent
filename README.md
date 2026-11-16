@@ -550,6 +550,7 @@ NPZ 和数据目录保留，重跑使用独立目录；分析指纹与重算归�
 | T1 标定 | `experiments/T1_Calibration.py`、`experiments/T1_Calibration_plot.py` | [实验说明](docs/experiments/T1_calibration.md) |
 | T2 标定 | `experiments/T2_Calibration.py`、`experiments/T2_Calibration_plot.py` | [实验说明](docs/experiments/T2_relaxation.md) |
 | XY DirectAW DC 标定 | `experiments/XY_DirectAW_DC_Calibration.py`、`experiments/XY_DirectAW_DC_Calibration_plot.py` | [实验说明](docs/experiments/xy_direct_aw_dc_calibration.md) |
+| Z 线圈常数标定 | `experiments/Coil_Constant_Calibration.py`、`experiments/Coil_Constant_Calibration_plot.py` | [实验说明](docs/experiments/coil_constant_calibration.md) |
 
 <!-- END GENERATED EXPERIMENTS -->
 

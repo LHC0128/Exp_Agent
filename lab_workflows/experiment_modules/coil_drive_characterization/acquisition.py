@@ -103,7 +103,7 @@ def measure_zero_and_gain(ctx):
     set_dc(ctx, 0.0)
     ctx.devices["sg"].set_sync_state(True)
     ctx.outputs["Z 通道"] = "DC 0 V + ON，同步 ON"
-    config = capture_config(p, p.zero_window_s, 0.01, trigger_mode="AUTO")
+    config = capture_config(p, p.zero_window_s, 0.01)
     means = {"zero_off": [], "zero_on": []}
     noise = []
     total, started = 2 * p.zero_frames + 1, time.monotonic()
@@ -122,8 +122,7 @@ def measure_zero_and_gain(ctx):
     drive = plan(p)["gain_check_drive_v"]
     set_dc(ctx, drive)
     sleep(p.settle_s)
-    gain_config = capture_config(p, p.zero_window_s, scale_for(p.gain_check_current_ma * 1e-3 * p.sense_resistor_ohm),
-                                 trigger_mode="AUTO")
+    gain_config = capture_config(p, p.zero_window_s, scale_for(p.gain_check_current_ma * 1e-3 * p.sense_resistor_ohm))
     try:
         _, sense = capture(ctx, "gain_check", gain_config, {"kind": "gain_check", "drive_v": drive})
     finally:
@@ -162,7 +161,7 @@ def measure_transfer(ctx):
                 arm_sync_output(sg)  # 每段只锁存一次；换频 APPLy 不破坏已锁存的同步
             ctx.outputs["Z 通道"] = f"正弦 {frequency:.6g} Hz，{2 * drive:.4g} Vpp"
             sleep(p.settle_s)
-            config = capture_config(p, p.sine_cycles / frequency, ctx.current_scale)
+            config = capture_config(p, p.sine_cycles / frequency, ctx.current_scale, sync=True)
             t, sense = capture(ctx, f"sine_{index:02d}", config,
                                {"kind": "sine", "frequency_hz": frequency, "drive_peak_v": drive})
             point = processing.transfer_point(frequency, drive, t, sense, p.sense_resistor_ohm)
@@ -200,7 +199,7 @@ def measure_steps(ctx):
             # 记录窗只按倍数算会放不下短脉冲的 RL 衰减拖尾（1 µs 脉宽 τ≈0.7 µs），长尾被截断后
             # 分析既拿不到下降沿也算不准含拖尾面积，因此再加一个绝对下限。
             window = pulse_window_s(p, width)
-            config = capture_config(p, window, ctx.current_scale)
+            config = capture_config(p, window, ctx.current_scale, sync=True)
             capture(ctx, f"pulse_{index:02d}", config,
                     {"kind": "pulse", "width_s": width, "actual_width_s": actual_width, "drive_v": drive,
                      "leading_edge_s": sg.get_pulse_leading(), "trailing_edge_s": sg.get_pulse_trailing()})

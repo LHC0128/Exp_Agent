@@ -8,7 +8,9 @@
 .xy-flow-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .xy-flow-columns.xy-flow-acquisition-only { grid-template-columns: minmax(0, 1fr); }
 .xy-flow-columns > section { min-width: 0; overflow-wrap: anywhere; }
-.xy-flow-columns select { display: block; width: 100%; margin-top: 8px; }
+/* 分析对象选择器属于流程列控制，规则只作用于它，避免泄漏到节点参数表单里的 select/label。 */
+.xy-flow-analysis > label { display: block; font-size: 13px; color: var(--muted, #647773); }
+.xy-flow-analysis > label select { display: block; width: 100%; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border, #dce4e2); border-radius: 8px; background: #fff; color: #172326; }
 .xy-workflow pre { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .xy-flow-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
 .xy-flow-group { margin: 16px 0; padding: 12px; border: 1px solid #d6dfe7; border-radius: 10px; }
@@ -40,8 +42,6 @@
 .xy-flow-actions .danger { margin-top: 0; }
 .xy-workflow-head h2 { margin: 0; font-size: 20px; }
 .xy-flow-columns > section > h2 { margin: 0 0 4px; font-size: 16px; }
-.xy-flow-columns label { display: block; font-size: 13px; color: var(--muted, #647773); }
-.xy-flow-columns select { padding: 8px 10px; border: 1px solid var(--border, #dce4e2); border-radius: 8px; background: #fff; color: #172326; }
 .xy-step-error, .xy-missing { color: #a42c24; margin: 6px 0; }
 .xy-step-error { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .xy-node-parameters { margin: 10px 0; }

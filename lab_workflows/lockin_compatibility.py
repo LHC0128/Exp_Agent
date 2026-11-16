@@ -96,10 +96,18 @@ def lockin_preflight(experiment_id: str, values: dict[str, Any], root: Path | No
                 errors.append(f"{name} 超出 {model} 的 0–{caps['max_frequency_hz']:g} Hz 范围")
     try:
         centers = None
+        half_width_override = None
         if experiment_id == "bell-bloom-z-field-calibration":
             from .experiment_modules.bell_bloom_z_field_calibration.models import BellBloomZFieldCalibrationParams
             params = BellBloomZFieldCalibrationParams.from_external(values)
             centers = [params.predicted_center(value) for value in (params.z_bias_start_v, params.z_bias_stop_v)]
+        elif experiment_id == "coil-constant-calibration":
+            from .experiment_modules.coil_constant_calibration.models import CoilConstantCalibrationParams
+            params = CoilConstantCalibrationParams.from_external(values)
+            scanned = [params.main_field_center_hz] + [
+                params.predicted_center_hz(value) for value in params.current_targets_ma()]
+            centers = [value for value in scanned if value >= params.near_zero_scan_floor_hz] or None
+            half_width_override = params.coarse_half_width_hz
         elif experiment_id in {"mx-z-field-calibration", "mx-z-current-coupling-calibration"}:
             from .experiment_modules.mx_z_field_calibration.models import MxZFieldCalibrationParams
             from .experiment_modules.mx_z_field_calibration.scan import predicted_center_hz
@@ -120,7 +128,7 @@ def lockin_preflight(experiment_id: str, values: dict[str, Any], root: Path | No
             params = MxKeithley6221MainFieldCalibrationParams.from_external(values)
             centers = [predicted_center_hz(params, value) for value in (params.keithley_current_start_ma, params.keithley_current_stop_ma)]
         if centers is not None:
-            half_width = params.frequency_half_width_hz
+            half_width = half_width_override if half_width_override is not None else params.frequency_half_width_hz
             bounds = np.asarray(centers) + np.array([[-half_width], [half_width]])
             if not np.isfinite(bounds).all() or (bounds <= 0).any() or (bounds > caps["max_frequency_hz"]).any():
                 errors.append(f"完整扫频窗口超出 {model} 的 0–{caps['max_frequency_hz']:g} Hz 范围")

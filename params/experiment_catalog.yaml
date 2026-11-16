@@ -112,6 +112,7 @@ assignments:
   rf-sensitivity-aw-known-noise: star
   rf-control-scale-sensitivity: star
   coil-drive-characterization: tag-1f7ca2d6
+  coil-constant-calibration: tag-1f7ca2d6
 experiment_descriptions:
   bell-bloom-z-field-calibration: 扫描 Z DC 与 Pump 调制/解调频率，仅采集 Demod0 R，以平方根洛伦兹幅度模型拟合共振中心并标定带符号
     Hz/V；γ 为幅度 −3 dB 半宽，新结果明确宽度定义，历史结果不自动改写。运行页按节点编辑、应用并显式重跑，完整运行共用步骤；历史分析覆盖与下一次实验设置独立。每个频点配置后关闭温控，按
@@ -253,6 +254,11 @@ experiment_descriptions:
     50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s
     自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按 SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发
     UI 目标温度。 分步角色由清单声明，状态与产物以执行记录为准。
+  coil-constant-calibration: Z 线圈驱动链路电学特性的下一步：固定主磁场（GS200 电流或 OFF）并手填其拉莫尔频率作锚点，逐档扫
+    Z 线圈电流；每个电流点先按预测中心 ±COARSE_HALF_WIDTH_HZ 粗扫找峰、再在峰附近细扫，拟合 Mx 共振中心。离线按 f=|K·(I−I0)|
+    加权拟合：主磁场足够大时全程不过零，给出单支直线与带符号 K；过零落在电流轴内时给出两支一致性与过零电流；同时给出 Hz/mA、nT/mA 与电压—场闭合比。A04
+    测功放零偏与直流 I–V（只记录、不判据），每点实测电流作拟合横轴；结束先关 1200B，再把 Z 通道归零关闭、Y RF 关、X 归零、温控恢复 5 V
+    ON，保持 GS200 设定与光路/Pump。
 experiment_titles:
   z-coil-inductance-frequency-response: Z 线圈电感效应频率响应
   mx-y-rf-sensitivity: Mx Y 向 RF 场灵敏度
@@ -289,6 +295,7 @@ experiment_titles:
   z-aw-current-waveform-scope-check: Z 任意波实际电流波形验证
   z-aw-closed-loop-waveform-correction: Z 任意波实际电流闭环校正
   mx-y-optimal-control-rf-frequency-response: Mx Y 最优控制 RF 频率响应
+  coil-constant-calibration: 放大器链路 Z 线圈常数标定
 parameter_layouts:
   mx-z-optimal-control-xy-noise-spectrum:
     basic:
@@ -2125,3 +2132,66 @@ parameter_layouts:
     - MAX_MEMORY_DEPTH
     - GAIN_LOWER_RATIO
     - PULSE_MIN_WINDOW_US
+  coil-constant-calibration:
+    basic:
+    - RUN_TAG
+    - SYSTEM_SETTLE_S
+    - AMPLIFIER_GAIN_DB
+    - AMPLIFIER_INPUT_IMPEDANCE_OHM
+    - AMPLIFIER_OUTPUT_IMPEDANCE_OHM
+    - AMPLIFIER_WRITE_SETTINGS
+    - SENSE_RESISTOR_OHM
+    - MAIN_FIELD_ENABLED
+    - MAIN_FIELD_MA
+    - MAIN_FIELD_CENTER_HZ
+    - CURRENT_START_MA
+    - CURRENT_STOP_MA
+    - CURRENT_STEP_MA
+    - BIDIRECTIONAL_SCAN
+    - INITIAL_HZ_PER_MA
+    - PREDICTION_POLARITY
+    - COARSE_HALF_WIDTH_HZ
+    - COARSE_STEP_HZ
+    - FREQUENCY_HALF_WIDTH_HZ
+    - FREQUENCY_STEP_HZ
+    - NEAR_ZERO_SCAN_FLOOR_HZ
+    - Y_RF_AMPLITUDE_VPP
+    - FREQUENCY_DURATION_S
+    - TEMP_SWITCH_ON_LAG_S
+    - FIXED_PARAMS.Pump_laser_power
+    - FIXED_PARAMS.Probe_laser_power
+    - FIXED_PARAMS.temperature
+    advanced:
+    - SENSE_RESISTOR_TOLERANCE_PERCENT
+    - DAMPING_RESISTOR_OHM
+    - COIL_RESISTANCE_OHM
+    - RESISTOR_RATED_W
+    - ZERO_FRAMES
+    - ZERO_WINDOW_S
+    - SETTLE_S
+    - DC_CHECK_CURRENTS_MA
+    - MAX_MEMORY_DEPTH
+    - SCOPE_ACQUIRE_DELAY_S
+    - SCOPE_CURRENT_CHANNEL
+    - CURRENT_SETTLE_TIME_S
+    - NEAR_ZERO_FIT_FLOOR_HZ
+    - R_BAD_POINT_STD_THRESHOLD_V
+    - R_POINT_MAX_ATTEMPTS
+    - DEMOD_IDX
+    - DEMOD_OSC_IDX
+    - HF2_SIGNAL_RANGE_V
+    - RESPONSE_RATE_SA_S
+    - RESPONSE_TIME_CONSTANT_S
+    - RESPONSE_DEMOD_ORDER
+    - PUMP_CARRIER_FREQUENCY_HZ
+    - PUMP_CARRIER_AMPLITUDE_VPP
+    - PUMP_GATE_VOLTAGE_V
+    - EXPECTED_K_NT_PER_MA
+    - PULSE_WIDTH_S
+    - PULSE_REPETITION_HZ
+    - PULSE_FIELD_MARGIN
+    - LINEAR_R_SQUARED_MIN
+    - GYROMAGNETIC_RATIO_HZ_PER_NT
+    - MIN_ACCEPTED_POINTS
+    - MIN_BRANCH_POINTS
+    - BRANCH_SLOPE_TOLERANCE

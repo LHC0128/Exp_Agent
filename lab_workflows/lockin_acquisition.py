@@ -47,6 +47,7 @@ ACQUISITION_STAGES = {
     "mx-z-optimal-control-xy-leakage-response": _RESPONSE,
     "mx-z-optimal-control-xy-noise-spectrum": _MX,
     "mx-z-field-calibration": _FREQUENCY,
+    "coil-constant-calibration": _FREQUENCY,
     "mx-z-current-coupling-calibration": _FREQUENCY,
     "mx-main-field-calibration": _FREQUENCY,
     "mx-keithley-6221-main-field-calibration": _FREQUENCY,
