@@ -280,10 +280,13 @@ def _plot_window_psd(run_dir, psd):
 
 
 def _empty_pulse(run_dir, summary, reason):
-    """缺脉冲数据：写空摘要与原因，并补上声明的图片产物。"""
+    """缺脉冲数据：写空摘要、空 CSV 与原因，并补上声明的图片产物。"""
     summary.update(rows=0, reason=reason)
     output_path(run_dir, "results/pulse_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    path = output_path(run_dir, "results/pulse_angles.csv")
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        csv.DictWriter(handle, fieldnames=PULSE_FIELDS).writeheader()
     _plot_unavailable(run_dir, "pulse_timeseries.png", "No pulse data")
     _plot_unavailable(run_dir, "pulse_hist.png", "No pulse data")
     return summary
