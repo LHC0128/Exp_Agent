@@ -13,10 +13,9 @@ from .models import CoilConstantCalibrationParams
 def test_default_yaml_round_trip():
     path = find_project_root() / "params" / "experiments" / "coil-constant-calibration.yaml"
     params = CoilConstantCalibrationParams.from_yaml(path)
-    assert params.main_field_enabled is True
-    assert params.main_field_ma == pytest.approx(15.555)
-    assert params.main_field_center_hz == pytest.approx(150_000.0)
     assert CoilConstantCalibrationParams.from_external(params.to_external()) == params
+    # 默认值是操作者按当前装置保存的（主场开关、锚点和扫频窗都会随标定更新），这里只核对文件自洽。
+    assert params.validate() == []
 
 
 def test_missing_main_field_flag_is_inferred_from_current():

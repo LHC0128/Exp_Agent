@@ -114,7 +114,7 @@ learned_notes:
 
 采样电阻的直流帧（A04 的零偏/核对帧与每个电流点的一帧实测电流）是纯电学量，**不进六步时序、不关温控**：读电流不需要切断 TEC，而关一次就会让温控在整帧传输期间断供，把气室温度拖出工作点。这类帧的深度取 `MAX_MEMORY_DEPTH`（默认 1 000 点，20 ms 窗口即 50 kSa/s），不能沿用 AUTO 深度——AUTO 在本时基给 625 000 点、单帧约 10 MB，单帧传输十几秒，A04 要 3 分钟以上。
 
-每次换电流后有 `CURRENT_SETTLE_TIME_S` 专用等待。每个电流点的流程是：按 A04 记录的 `I = k·V + b` 反算驱动电压 → 在温控保持开启的状态下测一帧采样电阻电压得到**实测电流** → 用实测电流和**预估线圈常数**算出预测中心 `锚点 + 极性·斜率·I` → 在该中心 ±`FREQUENCY_HALF_WIDTH_HZ`、按 `FREQUENCY_STEP_HZ` 做一次 Y RF 扫频（每个频点按六步时序门控）。需要先粗测时可把半宽/步进调大单独跑一轮，再换小窗精测。拟合横轴与窗口预测都用实测电流，不用目标电流。
+每次换电流后有 `CURRENT_SETTLE_TIME_S` 专用等待。每个电流点的流程是：按 A04 记录的 `I = k·V + b` 反算驱动电压 → 在温控保持开启的状态下取 **3 帧**采样电阻电压、按均值得到**实测电流** → 用实测电流和**预估线圈常数**算出预测中心 `锚点 + 极性·斜率·I` → 在该中心 ±`FREQUENCY_HALF_WIDTH_HZ`、按 `FREQUENCY_STEP_HZ` 做一次 Y RF 扫频（每个频点按六步时序门控）。需要先粗测时可把半宽/步进调大单独跑一轮，再换小窗精测。拟合横轴与窗口预测都用实测电流，不用目标电流。单帧 20 ms 窗口的均值噪声约 0.6 mA，是斜率精度的瓶颈，所以逐点取 3 帧平均；不延长单帧窗口是因为 0.1 s 窗口对应 10 ms/div，DHO900 在该时基回读的波形点数异常。
 
 ## 过零几何与拟合
 
@@ -122,7 +122,7 @@ learned_notes:
 - 主磁场开启且足够大时全程不过零：数据落在单支，`geometry.crossing_inside=false`，`K` 由直线斜率给出，同时输出**带符号**的 `K_signed_Hz_per_mA`（正电流升频为正）。
 - 过零在电流轴内时（主磁场关闭或偏置不足），以 `I0` 分两支各做加权直线拟合：斜率应为 `+K` 与 `−K`，支间一致性 `|s_left+s_right|/max(|s|)` 与两支交点写入结果；两支各需 `MIN_BRANCH_POINTS` 点。带符号 `K` 取正场侧支路的斜率。
 - 过零附近：预测 |中心| 低于 `NEAR_ZERO_SCAN_FLOOR_HZ` 的点只测电流；拟合中心低于 `NEAR_ZERO_FIT_FLOOR_HZ`、粗扫未找到峰或拟合幅度不高于 5 倍噪声的曲线剔除并保留原因。
-- 电压—场换算取正场侧支路（单支时为全部点）的 `f–V` 线性拟合；闭合比 `S_f/(1000·K·k)` 应接近 1，用于检查原子标定与电学 I–V 自洽。
+- 电压—场换算取正场侧支路（单支时为全部点）的 `f–V` 线性拟合；闭合比 `S_f/(1000·K·k)` 应接近 1，用于检查原子标定与电学 I–V 自洽。`coil_voltage_response.png` 另外给出电压轴的折叠模型 `f=|S·(V−V0)|`（`linearity_voltage_abs`），与 `coil_constant_calibration.png` 的绝对值拟合同形，并叠画两支的直线拟合。
 
 ## 数据目录与离线分析
 
@@ -132,7 +132,7 @@ data/Coil_Constant_Calibration/MMDD_HHMM_tag/
   raw/
     amp_zero_off_NN.npz、amp_zero_on_NN.npz、dc_check_K.npz
     current_scan_index.npz
-    current_000/sense_current.npz、frequency_IIII_attempt_JJ.npz、frequency_scan.npz
+    current_000/sense_current_NN.npz（逐点 3 帧）、frequency_IIII_attempt_JJ.npz、frequency_scan.npz
                   frequency_IIII_attempt_JJ.npz、frequency_scan.npz
   results/
     curve_fits.json、calibration_evaluation.json、calibration_results.npz

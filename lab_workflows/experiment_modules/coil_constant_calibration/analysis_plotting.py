@@ -107,17 +107,26 @@ def plot_voltage_response(results_dir: Path, curves, payload) -> str:
     voltage = np.asarray([curve["drive_v"] for curve in accepted], dtype=float)
     center = np.asarray([curve["center_hz"] for curve in accepted], dtype=float)
     sigma = np.asarray([curve["fit"]["center_uncertainty_hz"] for curve in accepted], dtype=float)
-    fit = payload.get("linearity_voltage") or {}
     gamma = _gamma(payload)
     fig, axis = new_figure()
     axis.errorbar(voltage, center / 1e3, yerr=sigma / 1e3, fmt="o", capsize=3,
                   color=COLOR_OPTIMAL, label="Accepted centers")
-    if fit.get("success"):
-        grid = np.linspace(float(np.min(voltage)), float(np.max(voltage)), 400)
-        axis.plot(grid, (fit["slope"] * grid + fit["intercept"]) / 1e3, color=COLOR_TRAD, linestyle="--",
-                  label=(f"S = {payload['S_f_Hz_per_V']:.4g} Hz/V\n"
-                         f"S_B = {payload['S_B_nT_per_V']:.4g} nT/V\n"
-                         f"R² = {fit['r_squared']:.5f}"))
+    abs_fit = payload.get("linearity_voltage_abs") or {}
+    fit = payload.get("linearity_voltage") or {}
+    grid = np.linspace(float(np.min(voltage)), float(np.max(voltage)), 400)
+    if abs_fit.get("success"):
+        axis.plot(grid, np.abs(float(abs_fit["slope"]) * (grid - float(abs_fit["crossing"]))) / 1e3,
+                  color=COLOR_TRAD, linestyle="--",
+                  label=(f"S = {float(abs_fit['slope']):.4g} Hz/V\n"
+                         f"S_B = {float(abs_fit['slope']) / gamma:.4g} nT/V\n"
+                         f"R² = {float(abs_fit['r_squared']):.5f}"))
+        axis.axvline(float(abs_fit["crossing"]), color=COLOR_GRAY, linestyle=":", linewidth=1.0)
+    if abs_fit.get("success") and fit.get("success"):
+        for branch in (fit, fit.get("below_branch")):
+            if not branch or not branch.get("success"):
+                continue
+            axis.plot(grid, (float(branch["slope"]) * grid + float(branch["intercept"])) / 1e3,
+                      color=COLOR_TRAD, linewidth=0.8)
     format_axis(axis, xlabel="Signal generator drive voltage (V)", ylabel="Resonance center (kHz)")
     secondary = axis.secondary_yaxis(
         "right", functions=(lambda khz: khz / gamma, lambda field_ut: field_ut * gamma))
@@ -141,7 +150,8 @@ def plot_residuals(results_dir: Path, curves, payload) -> str:
         if not points:
             continue
         current = np.asarray([curve["current_ma"] for curve in points], dtype=float)
-        residual = np.asarray([curve["center_hz"] for curve in points], dtype=float) - slope * (current - crossing)
+        residual = (np.asarray([curve["center_hz"] for curve in points], dtype=float)
+                    - np.abs(slope * (current - crossing)))
         order = np.argsort(current)
         axis.plot(current[order], residual[order], style, markersize=4,
                   color=COLOR_OPTIMAL if direction == "forward" else COLOR_TRAD,

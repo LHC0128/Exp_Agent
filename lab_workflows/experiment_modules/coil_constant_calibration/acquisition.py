@@ -21,6 +21,8 @@ from . import scan
 from .run_format import SOURCE_KEY
 
 MAX_SCALE_ATTEMPTS = 12
+# 逐点电流的取帧数：单帧均值噪声约 0.6 mA，3 帧平均把电流轴误差压到约 1/√3。
+CURRENT_FRAME_AVERAGES = 3
 
 
 class RPointQualityError(RuntimeError):
@@ -87,10 +89,13 @@ def gated_acquire(ctx, acquire, writer=None):
 
 
 def _measure_current_point(ctx, path, meta) -> dict:
-    """在当前电流下采一帧采样电阻电压并换算实际电流。
+    """在当前电流下采 ``CURRENT_FRAME_AVERAGES`` 帧采样电阻电压、取均值后换算实际电流。
 
-    这是纯电学量，不进六步时序：读电流不需要关温控，一次 10 MB 帧的传输会把 TEC 断供十几秒，
+    这是纯电学量，不进六步时序：读电流不需要关温控，一次长传输会把 TEC 断供十几秒，
     反而把气室温度拖出工作点。需要门控的是后面的原子频点。
+
+    单帧 20 ms 窗口的均值噪声约 0.6 mA，电流轴是斜率精度的瓶颈：50 mA 步进上 0.6 mA 就是 1.2%，
+    所以逐点取多帧平均而不是延长单帧窗口（0.1 s 窗口对应 10 ms/div，DHO900 在该时基回读点数异常）。
     """
     p = ctx.params
     dc_check = ctx.state.get("dc_check") or {}
@@ -98,13 +103,24 @@ def _measure_current_point(ctx, path, meta) -> dict:
         raise SafetyAbort("缺少 A04 零偏/直流核对结果，无法换算实际电流")
     scale = _dc_scale(abs(meta["target_ma"]) * 1e-3, p.sense_resistor_ohm)
     config = capture_config(p, p.zero_window_s, scale)
-    sense = read_dc_frame(ctx, config)
-    save_frame(path, sense, meta)
-    ctx.state["data_files"].append(_relative(ctx, path))
-    mean_v = float(np.mean(sense.voltage))
+    means, stds = [], []
+    for index in range(CURRENT_FRAME_AVERAGES):
+        frame = read_dc_frame(ctx, config)
+        frame_path = (path if CURRENT_FRAME_AVERAGES == 1
+                      else path.with_name(f"{path.stem}_{index:02d}{path.suffix}"))
+        save_frame(frame_path, frame, {**meta, "frame_index": index})
+        ctx.state["data_files"].append(_relative(ctx, frame_path))
+        means.append(float(np.mean(frame.voltage)))
+        stds.append(float(np.std(frame.voltage)))
+        if index + 1 < CURRENT_FRAME_AVERAGES:
+            sleep(p.current_settle_time_s)
+    mean_v = float(np.mean(means))
     current_a = ((mean_v - dc_check["baseline_v"]) / p.sense_resistor_ohm - dc_check["offset_a"])
     return dict(current_a=float(current_a), current_ma=float(current_a * 1e3),
-                sense_v=mean_v, sense_std_v=float(np.std(sense.voltage)),
+                sense_v=mean_v, sense_std_v=float(np.mean(stds)),
+                sense_frame_means_v=[float(value) for value in means],
+                sense_frame_spread_v=float(max(means) - min(means)),
+                current_frames=int(CURRENT_FRAME_AVERAGES),
                 drive_v=float(meta["drive_v"]), target_ma=float(meta["target_ma"]))
 
 

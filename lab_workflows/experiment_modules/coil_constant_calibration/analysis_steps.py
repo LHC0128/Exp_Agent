@@ -401,6 +401,12 @@ def evaluate(run_dir, params, config):
     else:
         voltage_fit = _weighted_linear_fit(drive, centers, sigmas)
         voltage_fit_below = None
+    # 电压轴与电流轴一样会过零，折叠后是同一条 |S·(V−V0)|；给图与报告一个绝对值模型。
+    k_dc_guess = float(inputs["dc_check"]["k_a_per_v"])
+    offset_guess = float(inputs["dc_check"].get("offset_fit_a") or 0.0)
+    crossing_v = (crossing * 1e-3 - offset_guess) / k_dc_guess if k_dc_guess else 0.0
+    voltage_abs = _fit_absolute(drive, centers, sigmas,
+                                (max(abs(float(voltage_fit["slope"])), 1.0), crossing_v))
     gamma = params.gyromagnetic_ratio_hz_per_nt
     k_nT_per_mA = float(global_fit["slope"]) / gamma
     s_f = float(voltage_fit["slope"])
@@ -469,6 +475,10 @@ def evaluate(run_dir, params, config):
                                                 if voltage_fit_below else None)),
         "S_f_Hz_per_V": s_f,
         "S_B_nT_per_V": s_f / gamma,
+        "linearity_voltage_abs": dict(voltage_abs,
+                                      model="f_Hz = |S_Hz_per_V * (V - V0_V)|",
+                                      S_B_nT_per_V=float(voltage_abs["slope"]) / gamma),
+        "voltage_crossing_v": float(voltage_abs["crossing"]),
         "closure": dict(k_dc_a_per_v=k_dc, ratio=closure_ratio,
                         definition="S_f / (1000 * K_Hz_per_mA * k_dc)"),
         "geometry": geometry,
