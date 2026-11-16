@@ -406,30 +406,6 @@
    ]
   },
   {
-   "name": "COARSE_HALF_WIDTH_HZ",
-   "label": "粗扫半宽",
-   "type": "number",
-   "default": 20000.0,
-   "unit": "Hz",
-   "group": "basic",
-   "minimum": 0.001,
-   "maximum": null,
-   "description": "每个电流点先在预测中心 ±该半宽做粗扫找峰，再在峰附近细扫",
-   "read_only": false
-  },
-  {
-   "name": "COARSE_STEP_HZ",
-   "label": "粗扫步进",
-   "type": "number",
-   "default": 1000.0,
-   "unit": "Hz",
-   "group": "basic",
-   "minimum": 0.001,
-   "maximum": null,
-   "description": "",
-   "read_only": false
-  },
-  {
    "name": "FREQUENCY_HALF_WIDTH_HZ",
    "label": "细扫半宽",
    "type": "number",
@@ -682,54 +658,6 @@
    "read_only": false
   },
   {
-   "name": "EXPECTED_K_NT_PER_MA",
-   "label": "预估线圈常数",
-   "type": "number",
-   "default": 86.0,
-   "unit": "nT/mA",
-   "group": "advanced",
-   "minimum": 0.001,
-   "maximum": null,
-   "description": "只用于 π 工作点与标定范围预览，不参与拟合",
-   "read_only": false
-  },
-  {
-   "name": "PULSE_WIDTH_S",
-   "label": "π 脉冲宽度",
-   "type": "number",
-   "default": 5e-06,
-   "unit": "s",
-   "group": "advanced",
-   "minimum": 1e-09,
-   "maximum": null,
-   "description": "",
-   "read_only": false
-  },
-  {
-   "name": "PULSE_REPETITION_HZ",
-   "label": "π 脉冲重复率",
-   "type": "number",
-   "default": 20000.0,
-   "unit": "Hz",
-   "group": "advanced",
-   "minimum": 1e-06,
-   "maximum": null,
-   "description": "",
-   "read_only": false
-  },
-  {
-   "name": "PULSE_FIELD_MARGIN",
-   "label": "π 电流覆盖余量",
-   "type": "number",
-   "default": 1.2,
-   "unit": "",
-   "group": "advanced",
-   "minimum": 1.0,
-   "maximum": 10.0,
-   "description": "",
-   "read_only": false
-  },
-  {
    "name": "LINEAR_R_SQUARED_MIN",
    "label": "线性标定最低 R²",
    "type": "number",
@@ -800,22 +728,14 @@
     "group": "准备",
     "dependencies": [],
     "parameters": [
-     "RUN_TAG",
-     "EXPECTED_K_NT_PER_MA",
-     "PULSE_WIDTH_S",
-     "PULSE_REPETITION_HZ",
-     "PULSE_FIELD_MARGIN"
+     "RUN_TAG"
     ],
     "artifacts": [],
     "display_parameters": [
-     "RUN_TAG",
-     "EXPECTED_K_NT_PER_MA",
-     "PULSE_WIDTH_S",
-     "PULSE_REPETITION_HZ",
-     "PULSE_FIELD_MARGIN"
+     "RUN_TAG"
     ],
     "quality_gates": [
-     "不连接硬件；主磁场电流与参考频率、预测扫频窗为正、限值与锁相能力有效，过零几何与 π 设计预览成文"
+     "不连接硬件；主磁场电流与参考频率、预测扫频窗为正、限值与锁相能力有效，过零几何预览成文"
     ]
    },
    {
@@ -1007,7 +927,7 @@
    },
    {
     "id": "A08",
-    "title": "电流轴 × 逐点粗扫/细扫 Y RF",
+    "title": "电流轴 × 逐点 Y RF 扫频",
     "group": "测量",
     "dependencies": [
      "A07"
@@ -1020,8 +940,6 @@
      "CURRENT_SETTLE_TIME_S",
      "INITIAL_HZ_PER_MA",
      "PREDICTION_POLARITY",
-     "COARSE_HALF_WIDTH_HZ",
-     "COARSE_STEP_HZ",
      "FREQUENCY_HALF_WIDTH_HZ",
      "FREQUENCY_STEP_HZ",
      "NEAR_ZERO_SCAN_FLOOR_HZ",
@@ -1044,8 +962,6 @@
      "CURRENT_SETTLE_TIME_S",
      "INITIAL_HZ_PER_MA",
      "PREDICTION_POLARITY",
-     "COARSE_HALF_WIDTH_HZ",
-     "COARSE_STEP_HZ",
      "FREQUENCY_HALF_WIDTH_HZ",
      "FREQUENCY_STEP_HZ",
      "NEAR_ZERO_SCAN_FLOOR_HZ",
@@ -1057,7 +973,7 @@
      "R_POINT_MAX_ATTEMPTS"
     ],
     "quality_gates": [
-     "每个电流点先在预测中心 ±COARSE_HALF_WIDTH_HZ 粗扫找峰、再在峰附近细扫；主磁场开启时全程不过零，关闭时按 |K(I−I0)| 过零处理；预测 |中心| 低于零场下限的点只测电流；R 坏点超门槛重采"
+     "每个电流点在按预估线圈常数算出的预测中心 ±FREQUENCY_HALF_WIDTH_HZ 扫频；主磁场开启时全程不过零，关闭时按 |K(I−I0)| 过零处理；预测 |中心| 低于零场下限的点只测电流；R 坏点超门槛重采；需要粗测时把半宽/步进调大单独跑一轮"
     ]
    },
    {
@@ -1171,50 +1087,6 @@
   "parameter_impacts": {
    "acquisition": {
     "RUN_TAG": [
-     "A01",
-     "A02",
-     "A03",
-     "A04",
-     "A05",
-     "A06",
-     "A07",
-     "A08",
-     "A09"
-    ],
-    "EXPECTED_K_NT_PER_MA": [
-     "A01",
-     "A02",
-     "A03",
-     "A04",
-     "A05",
-     "A06",
-     "A07",
-     "A08",
-     "A09"
-    ],
-    "PULSE_WIDTH_S": [
-     "A01",
-     "A02",
-     "A03",
-     "A04",
-     "A05",
-     "A06",
-     "A07",
-     "A08",
-     "A09"
-    ],
-    "PULSE_REPETITION_HZ": [
-     "A01",
-     "A02",
-     "A03",
-     "A04",
-     "A05",
-     "A06",
-     "A07",
-     "A08",
-     "A09"
-    ],
-    "PULSE_FIELD_MARGIN": [
      "A01",
      "A02",
      "A03",
@@ -1495,14 +1367,6 @@
      "A09"
     ],
     "PREDICTION_POLARITY": [
-     "A08",
-     "A09"
-    ],
-    "COARSE_HALF_WIDTH_HZ": [
-     "A08",
-     "A09"
-    ],
-    "COARSE_STEP_HZ": [
      "A08",
      "A09"
     ],

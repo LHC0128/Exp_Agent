@@ -18,17 +18,13 @@ CHAIN = ("AMPLIFIER_GAIN_DB", "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPLIFIER_OUTPUT
 DC_CHECK = ("DC_CHECK_CURRENTS_MA", "ZERO_FRAMES", "ZERO_WINDOW_S")
 SCAN = ("CURRENT_START_MA", "CURRENT_STOP_MA", "CURRENT_STEP_MA", "BIDIRECTIONAL_SCAN",
         "CURRENT_SETTLE_TIME_S", "INITIAL_HZ_PER_MA", "PREDICTION_POLARITY",
-        "COARSE_HALF_WIDTH_HZ", "COARSE_STEP_HZ",
         "FREQUENCY_HALF_WIDTH_HZ", "FREQUENCY_STEP_HZ", "NEAR_ZERO_SCAN_FLOOR_HZ")
 MX_SHARED = ("Y_RF_AMPLITUDE_VPP", "FREQUENCY_DURATION_S", "SYSTEM_SETTLE_S", "TEMP_SWITCH_ON_LAG_S",
              "R_BAD_POINT_STD_THRESHOLD_V", "R_POINT_MAX_ATTEMPTS")
 ACQUISITION = (
-    Stage("A01", "参数、映射与安全限值预检", "准备", (),
-          ("RUN_TAG", "EXPECTED_K_NT_PER_MA", "PULSE_WIDTH_S", "PULSE_REPETITION_HZ", "PULSE_FIELD_MARGIN"),
-          display_parameters=("RUN_TAG", "EXPECTED_K_NT_PER_MA", "PULSE_WIDTH_S", "PULSE_REPETITION_HZ",
-                              "PULSE_FIELD_MARGIN"),
+    Stage("A01", "参数、映射与安全限值预检", "准备", (), ("RUN_TAG",),
           quality_gates=("不连接硬件；主磁场电流与参考频率、预测扫频窗为正、限值与锁相能力有效，"
-                         "过零几何与 π 设计预览成文",)),
+                         "过零几何预览成文",)),
     Stage("A02", "连接设备、写入功放设置并记录 GS200 初态", "准备", ("A01",), CHAIN,
           quality_gates=("连接前过硬件门控；功放输出关闭时写入增益与输入/输出阻抗，信号源负载随输入阻抗配置；"
                          "记录 GS200 运行前源模式/电流/输出/量程/限值",)),
@@ -50,12 +46,12 @@ ACQUISITION = (
            "Y_RF_AMPLITUDE_VPP", "DEMOD_IDX", "DEMOD_OSC_IDX", "HF2_SIGNAL_RANGE_V",
            "RESPONSE_RATE_SA_S", "RESPONSE_TIME_CONSTANT_S", "RESPONSE_DEMOD_ORDER"),
           quality_gates=("Pump 连续 100 MHz 载波与常开门控；Y RF 正弦初始频率取主场参考拉莫尔频率；记录实际解调率",)),
-    Stage(RUN_ID, "电流轴 × 逐点粗扫/细扫 Y RF", "测量", ("A07",),
+    Stage(RUN_ID, "电流轴 × 逐点 Y RF 扫频", "测量", ("A07",),
           (*SCAN, *MX_SHARED),
           ("raw/current_scan_index.npz", "raw/current_*/*.npz"),
-          quality_gates=("每个电流点先在预测中心 ±COARSE_HALF_WIDTH_HZ 粗扫找峰、再在峰附近细扫；"
+          quality_gates=("每个电流点在按预估线圈常数算出的预测中心 ±FREQUENCY_HALF_WIDTH_HZ 扫频；"
                          "主磁场开启时全程不过零，关闭时按 |K(I−I0)| 过零处理；"
-                         "预测 |中心| 低于零场下限的点只测电流；R 坏点超门槛重采",)),
+                         "预测 |中心| 低于零场下限的点只测电流；R 坏点超门槛重采；需要粗测时把半宽/步进调大单独跑一轮",)),
     Stage("A09", "本轮安全收尾与封存", "结束", ("A08",),
           quality_gates=("先关 1200B 输出，再把 Z 通道归零关闭、Y RF 关、X 归零、温控恢复 5 V ON、停止 DHO900；"
                          "保持 GS200 本次设定与光路/Pump；失败不得标记安全完成",)),

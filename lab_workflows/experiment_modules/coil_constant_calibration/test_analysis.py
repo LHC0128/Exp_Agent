@@ -65,7 +65,6 @@ def make_run(tmp_path, *, k_hz_per_ma=600.0, i0_ma=-50.0, currents=None, flat_in
         initial_hz_per_ma=k_hz_per_ma, prediction_polarity="positive_increases_frequency",
         current_start_ma=min(currents), current_stop_ma=max(currents), current_step_ma=25.0,
         bidirectional_scan=False, near_zero_scan_floor_hz=4000.0, near_zero_fit_floor_hz=2000.0,
-        coarse_half_width_hz=5000.0, coarse_step_hz=500.0,
         frequency_half_width_hz=HALF_WIDTH_HZ, frequency_step_hz=STEP_HZ)
     files, targets = [], []
     for index, current_ma in enumerate(currents):
@@ -85,8 +84,7 @@ def make_run(tmp_path, *, k_hz_per_ma=600.0, i0_ma=-50.0, currents=None, flat_in
              scan_failed=np.zeros(len(targets), dtype=bool),
              summary_file=np.asarray(files),
              anchor_center_hz=np.float64(anchor_hz), polarity_sign=np.float64(1.0),
-             initial_hz_per_ma=np.float64(k_hz_per_ma),
-             coarse_half_width_hz=np.float64(5000.0), coarse_step_hz=np.float64(500.0))
+             initial_hz_per_ma=np.float64(k_hz_per_ma))
     config = {
         "experiment_id": run_format.EXPERIMENT_ID, "data_type": run_format.DATA_TYPE,
         "raw_format_version": run_format.RAW_FORMAT_VERSION, "schema_version": 1,
@@ -120,7 +118,6 @@ def test_recovers_known_constant_and_crossing(tmp_path):
     assert payload["geometry"]["branch_counts"]["below"] >= 2
     assert payload["branch_fits"]["slope_relative_difference"] < 0.05
     assert payload["closure"]["ratio"] == pytest.approx(1.0, rel=0.02)
-    assert payload["pulse_design"]["i_pi_ma"] == pytest.approx(100_000.0 / 7.0 / (600.0 / 7.0), rel=1e-6)
     for name in ("analysis.yaml", "analysis.json", "calibration_results.npz",
                  "frequency_response_fits.png", "coil_constant_calibration.png",
                  "coil_voltage_response.png", "coil_constant_residuals.png", "dc_iv_check.png"):

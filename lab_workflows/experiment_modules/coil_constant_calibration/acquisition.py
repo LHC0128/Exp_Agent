@@ -248,38 +248,7 @@ def _axis_scan(ctx, point_dir, stem: str, frequencies, meta: dict) -> list[dict]
     return summaries
 
 
-def _coarse_center(ctx, point_dir, meta: dict, predicted_signed_hz: float, anchor_hz: float):
-    """粗扫找峰：先按预测中心，峰贴窗口边时退回以锚点为中心的对称宽窗。
-
-    返回 ``dict(center_hz, half_width_hz, method, tag)``；两种窗口都没找到落在窗内的峰时返回 None。
-    """
-    p = ctx.params
-    symmetric_half = abs(predicted_signed_hz - anchor_hz) + p.coarse_half_width_hz
-    attempts = [("coarse", abs(predicted_signed_hz), p.coarse_half_width_hz)]
-    if symmetric_half > p.coarse_half_width_hz * 1.01:
-        attempts.append(("coarse_symmetric", float(anchor_hz), symmetric_half))
-    edge = 2.0 * p.coarse_step_hz
-    for tag, center, half in attempts:
-        frequencies = _axis_from(center, half, p.coarse_step_hz)
-        if len(frequencies) < 5:
-            continue
-        frequencies = _checked_axis(frequencies, f"电流 {meta['target_current_ma']:g} mA 粗扫")
-        summaries = _axis_scan(ctx, point_dir, tag, frequencies, {**meta, "scan_stage": tag})
-        response = np.asarray([item["r_mean_v"] for item in summaries], dtype=float)
-        quick = scan.quick_center_hz(frequencies, response)
-        if not quick.get("success"):
-            continue
-        measured = float(quick["center_hz"])
-        peak = float(quick.get("peak_frequency_hz", np.nan))
-        if min(measured - frequencies[0], frequencies[-1] - measured) < 5.0 * p.coarse_step_hz:
-            continue
-        if np.isfinite(peak) and min(peak - frequencies[0], frequencies[-1] - peak) < edge:
-            continue
-        return dict(center_hz=measured, half_width_hz=float(half), method=quick.get("method"), tag=tag)
-    return None
-
-
-# ---- A08 主扫描：逐电流点粗扫找峰 + 细扫 ----
+# ---- A08 主扫描：逐电流点按预测中心扫频 ----
 def measure_scan(ctx) -> dict:
     p = ctx.params
     dc_check = ctx.state.get("dc_check") or {}
@@ -307,28 +276,21 @@ def measure_scan(ctx) -> dict:
             meta = {"kind": "current", "index": np.int64(index), "target_current_ma": np.float64(target_ma),
                     "current_ma": np.float64(current_record["current_ma"]), "drive_v": np.float64(volts)}
             signed = p.signed_center_hz(current_record["current_ma"], center_hz=anchor_hz)
-            predicted = abs(signed)
-            near_zero = predicted < p.near_zero_scan_floor_hz
-            window_center = predicted
+            window_center = abs(signed)
+            near_zero = window_center < p.near_zero_scan_floor_hz
             frequencies: list[float] = []
             summaries: list[dict] = []
             note = ""
             if not near_zero:
-                coarse = _coarse_center(ctx, point_dir, meta, signed, anchor_hz)
-                if coarse is None:
-                    note = ("粗扫未找到落在窗内的峰：核对 MAIN_FIELD_CENTER_HZ、PREDICTION_POLARITY、"
-                            "INITIAL_HZ_PER_MA 与 COARSE_HALF_WIDTH_HZ")
+                frequencies = _axis_from(window_center, p.frequency_half_width_hz, p.frequency_step_hz)
+                if len(frequencies) < 5:
+                    note = f"扫频窗口贴近 0 Hz（中心 {window_center:.6g} Hz），本点不拟合"
                 else:
-                    window_center = float(coarse["center_hz"])
-                    frequencies = _axis_from(window_center, p.frequency_half_width_hz, p.frequency_step_hz)
-                    if len(frequencies) < 5:
-                        note = f"细扫窗口贴近 0 Hz（中心 {window_center:.6g} Hz），本点不拟合"
-                    else:
-                        frequencies = _checked_axis(frequencies, f"电流 {target_ma:g} mA 细扫")
-                        summaries = _axis_scan(
-                            ctx, point_dir, "frequency", frequencies,
-                            {**meta, "predicted_center_hz": np.float64(window_center),
-                             "window_half_width_hz": np.float64(p.frequency_half_width_hz)})
+                    frequencies = _checked_axis(frequencies, f"电流 {target_ma:g} mA 扫频")
+                    summaries = _axis_scan(
+                        ctx, point_dir, "frequency", frequencies,
+                        {**meta, "predicted_center_hz": np.float64(window_center),
+                         "window_half_width_hz": np.float64(p.frequency_half_width_hz)})
             summary_path = point_dir / "frequency_scan.npz"
             np.savez(
                 summary_path,
@@ -379,8 +341,6 @@ def measure_scan(ctx) -> dict:
         anchor_center_hz=np.float64(anchor_hz),
         polarity_sign=np.float64(p.polarity_sign),
         initial_hz_per_ma=np.float64(p.initial_hz_per_ma),
-        coarse_half_width_hz=np.float64(p.coarse_half_width_hz),
-        coarse_step_hz=np.float64(p.coarse_step_hz),
     )
     ctx.state["data_files"].append(_relative(ctx, index_path))
     ctx.state["current_scan"] = dict(point_count=len(records),

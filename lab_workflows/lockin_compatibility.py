@@ -107,7 +107,6 @@ def lockin_preflight(experiment_id: str, values: dict[str, Any], root: Path | No
             scanned = [params.main_field_center_hz] + [
                 params.predicted_center_hz(value) for value in params.current_targets_ma()]
             centers = [value for value in scanned if value >= params.near_zero_scan_floor_hz] or None
-            half_width_override = params.coarse_half_width_hz
         elif experiment_id in {"mx-z-field-calibration", "mx-z-current-coupling-calibration"}:
             from .experiment_modules.mx_z_field_calibration.models import MxZFieldCalibrationParams
             from .experiment_modules.mx_z_field_calibration.scan import predicted_center_hz

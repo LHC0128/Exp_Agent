@@ -67,12 +67,10 @@ def small_params(**changes):
         main_field_enabled=True, main_field_ma=15.555, main_field_center_hz=ZERO_FIELD_HZ,
         initial_hz_per_ma=TRUE_K_HZ_PER_MA, prediction_polarity="positive_increases_frequency",
         current_start_ma=-100.0, current_stop_ma=100.0, current_step_ma=25.0,
-        coarse_half_width_hz=3000.0, coarse_step_hz=500.0,
         frequency_half_width_hz=1200.0, frequency_step_hz=100.0,
         near_zero_scan_floor_hz=4000.0, near_zero_fit_floor_hz=2000.0,
         frequency_duration_s=0.005, system_settle_s=0.001, temp_switch_on_lag_s=0.0,
-        zero_frames=2, settle_s=0.0, dc_check_currents_ma=[-20.0, 0.0, 20.0],
-        expected_k_nt_per_ma=85.7)
+        zero_frames=2, settle_s=0.0, dc_check_currents_ma=[-20.0, 0.0, 20.0])
     return replace(base, **changes)
 
 
@@ -384,7 +382,6 @@ def test_full_run_then_analysis_recovers_constant(tmp_path, rig):
     assert config["current_scan"]["scan_failed"] == 0
     assert config["current_scan"]["near_zero_skipped"] >= 1
     assert (directory / "raw" / "current_scan_index.npz").is_file()
-    assert any((directory / "raw" / "current_000").glob("coarse_*_attempt_00.npz"))
     assert any((directory / "raw" / "current_000").glob("frequency_*_attempt_00.npz"))
 
     summary = analysis.analyze(directory)
@@ -441,18 +438,15 @@ def test_measured_current_over_limit_is_recorded_without_abort(tmp_path, monkeyp
     assert config["dc_check"]["offset_a"] == pytest.approx(0.35, rel=0.05)
 
 
-def test_wrong_polarity_is_self_healed_by_symmetric_coarse(tmp_path, monkeypatch):
+def test_wrong_polarity_leaves_points_unaccepted_without_abort(tmp_path, monkeypatch):
     copy_config(tmp_path)
     value = Rig(polarity=-1.0)  # 实际正电流降频，但参数仍是 positive_increases
     install(monkeypatch, value)
     directory = run(tmp_path, small_params())
     config = read_config(directory)
-    assert config["completion_status"] == "completed"
-    assert config["current_scan"]["scan_failed"] <= 2  # 近过零两点预测偏差，其余靠对称粗扫找回
-    summary = analysis.analyze(directory)
-    assert summary["status"] == "completed"
-    payload = json.loads((directory / "results" / "calibration_evaluation.json").read_text(encoding="utf-8"))
-    assert payload["K_Hz_per_mA"] == pytest.approx(TRUE_K_HZ_PER_MA, rel=0.05)
+    assert config["completion_status"] == "completed"  # 采集不中止，只把失配点留给分析剔除
+    with pytest.raises(ValueError, match="少于 MIN_ACCEPTED_POINTS"):
+        analysis.analyze(directory)
 
 
 def test_cancel_mid_scan_shuts_down_and_keeps_points(tmp_path, rig):
@@ -492,7 +486,6 @@ def test_stepwise_rerun_inherits_dc_check(tmp_path, rig):
     ({"current_start_ma": -400.0, "current_stop_ma": 400.0}, "z_pulse_coil_current"),
     ({"near_zero_scan_floor_hz": 1000.0, "frequency_half_width_hz": 2000.0}, "NEAR_ZERO_SCAN_FLOOR_HZ"),
     ({"main_field_center_hz": 1000.0}, "MAIN_FIELD_CENTER_HZ"),
-    ({"pulse_width_s": 1e-3, "pulse_repetition_hz": 20000.0}, "占空比"),
 ])
 def test_preflight_rejects_inconsistent_plans(tmp_path, changes, message):
     copy_config(tmp_path)

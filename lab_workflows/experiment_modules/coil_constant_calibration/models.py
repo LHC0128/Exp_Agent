@@ -132,11 +132,6 @@ class CoilConstantCalibrationParams(ExperimentParams):
                  ("positive_increases_frequency", "正电流提高共振频率"),
                  ("positive_decreases_frequency", "正电流降低共振频率")),
         description="用于窗口中心预测；选反时粗扫峰落在窗口边缘会明确报错，翻转后重跑即可")
-    coarse_half_width_hz: float = parameter(default=20_000.0, external_name="COARSE_HALF_WIDTH_HZ",
-        label="粗扫半宽", unit="Hz", group="basic", minimum=0.001,
-        description="每个电流点先在预测中心 ±该半宽做粗扫找峰，再在峰附近细扫")
-    coarse_step_hz: float = parameter(default=1_000.0, external_name="COARSE_STEP_HZ",
-        label="粗扫步进", unit="Hz", group="basic", minimum=0.001)
     frequency_half_width_hz: float = parameter(default=4_000.0, external_name="FREQUENCY_HALF_WIDTH_HZ",
         label="细扫半宽", unit="Hz", group="basic", minimum=0.001)
     frequency_step_hz: float = parameter(default=100.0, external_name="FREQUENCY_STEP_HZ",
@@ -185,17 +180,6 @@ class CoilConstantCalibrationParams(ExperimentParams):
     temperature_c: float = parameter(default=120.0, external_name="FIXED_PARAMS.temperature",
         label="气室温度", unit="°C", group="basic", safety_key="temperature")
 
-    # ---- π 脉冲设计预览 ----
-    expected_k_nt_per_ma: float = parameter(default=86.0, external_name="EXPECTED_K_NT_PER_MA",
-        label="预估线圈常数", unit="nT/mA", group="advanced", minimum=0.001,
-        description="只用于 π 工作点与标定范围预览，不参与拟合")
-    pulse_width_s: float = parameter(default=5e-6, external_name="PULSE_WIDTH_S", label="π 脉冲宽度",
-        unit="s", group="advanced", minimum=1e-9)
-    pulse_repetition_hz: float = parameter(default=20000.0, external_name="PULSE_REPETITION_HZ",
-        label="π 脉冲重复率", unit="Hz", group="advanced", minimum=1e-6)
-    pulse_field_margin: float = parameter(default=1.2, external_name="PULSE_FIELD_MARGIN",
-        label="π 电流覆盖余量", group="advanced", minimum=1.0, maximum=10.0)
-
     # ---- 分析 ----
     linear_r_squared_min: float = parameter(default=0.99, external_name="LINEAR_R_SQUARED_MIN",
         label="线性标定最低 R²", group="advanced", minimum=0.0, maximum=1.0)
@@ -228,10 +212,6 @@ class CoilConstantCalibrationParams(ExperimentParams):
     @property
     def polarity_sign(self) -> float:
         return 1.0 if self.prediction_polarity == "positive_increases_frequency" else -1.0
-
-    @property
-    def expected_k_hz_per_ma(self) -> float:
-        return self.expected_k_nt_per_ma * self.gyromagnetic_ratio_hz_per_nt
 
     def forward_currents_ma(self) -> list[float]:
         span = self.current_stop_ma - self.current_start_ma
@@ -272,11 +252,6 @@ class CoilConstantCalibrationParams(ExperimentParams):
         return [float(center_hz - self.frequency_half_width_hz + index * self.frequency_step_hz)
                 for index in range(count + 1)]
 
-    def coarse_frequency_axis(self, center_hz: float) -> list[float]:
-        count = int(round(2.0 * self.coarse_half_width_hz / self.coarse_step_hz))
-        return [float(center_hz - self.coarse_half_width_hz + index * self.coarse_step_hz)
-                for index in range(count + 1)]
-
     def branch_counts(self, *, center_hz: float | None = None, k_hz_per_ma: float | None = None) -> dict:
         """按预测过零点统计电流轴两侧的目标点数与几何判定。"""
         crossing = self.crossing_current_ma(center_hz=center_hz, k_hz_per_ma=k_hz_per_ma)
@@ -291,24 +266,6 @@ class CoilConstantCalibrationParams(ExperimentParams):
             "linear_case": not inside,
         }
 
-    def pulse_design(self) -> dict:
-        """按预估常数给出 π 脉冲所需的场/电流与覆盖、RWA 余量预览。"""
-        f1_hz = 1.0 / (2.0 * self.pulse_width_s)
-        b1_nt = f1_hz / self.gyromagnetic_ratio_hz_per_nt
-        i_pi_ma = b1_nt / self.expected_k_nt_per_ma
-        i_required_ma = self.pulse_field_margin * i_pi_ma
-        duty = self.pulse_width_s * self.pulse_repetition_hz
-        return {
-            "pulse_width_s": float(self.pulse_width_s),
-            "rabi_frequency_hz": f1_hz,
-            "b1_nt": b1_nt,
-            "i_pi_ma": i_pi_ma,
-            "i_required_ma": i_required_ma,
-            "current_covered": bool(self.current_start_ma <= i_required_ma <= self.current_stop_ma),
-            "larmor_at_zero_hz": self.main_field_center_hz,
-            "rwa_margin": self.main_field_center_hz * self.pulse_width_s,
-            "duty": duty,
-        }
 
     def validate_model(self) -> list[str]:
         errors: list[str] = []
@@ -326,14 +283,6 @@ class CoilConstantCalibrationParams(ExperimentParams):
             count = 2.0 * self.frequency_half_width_hz / self.frequency_step_hz
             if not math.isclose(count, round(count), rel_tol=0.0, abs_tol=1e-9):
                 errors.append("细扫宽度必须包含整数个 FREQUENCY_STEP_HZ")
-        if self.coarse_step_hz <= 0 or self.coarse_half_width_hz <= 0:
-            errors.append("粗扫半宽与步进必须为正")
-        else:
-            count = 2.0 * self.coarse_half_width_hz / self.coarse_step_hz
-            if not math.isclose(count, round(count), rel_tol=0.0, abs_tol=1e-9):
-                errors.append("粗扫宽度必须包含整数个 COARSE_STEP_HZ")
-            if self.coarse_half_width_hz < self.frequency_half_width_hz:
-                errors.append("COARSE_HALF_WIDTH_HZ 必须不小于 FREQUENCY_HALF_WIDTH_HZ")
         if self.near_zero_scan_floor_hz < self.frequency_half_width_hz:
             errors.append("NEAR_ZERO_SCAN_FLOOR_HZ 必须不小于 FREQUENCY_HALF_WIDTH_HZ，保证扫频下限为正")
         if self.prediction_polarity == "unselected":
@@ -343,8 +292,8 @@ class CoilConstantCalibrationParams(ExperimentParams):
                 validate_safety_limit("main_magnetic_field", float(self.main_field_ma))
             except ValueError as exc:
                 errors.append(f"MAIN_FIELD_MA: {exc}")
-            if not math.isfinite(self.main_field_center_hz) or self.main_field_center_hz <= self.coarse_half_width_hz:
-                errors.append("主磁场开启时 MAIN_FIELD_CENTER_HZ 必须大于 COARSE_HALF_WIDTH_HZ，保证窗口下限为正")
+            if not math.isfinite(self.main_field_center_hz) or self.main_field_center_hz <= self.frequency_half_width_hz:
+                errors.append("主磁场开启时 MAIN_FIELD_CENTER_HZ 必须大于 FREQUENCY_HALF_WIDTH_HZ，保证窗口下限为正")
         elif self.main_field_center_hz < 0 or not math.isfinite(self.main_field_center_hz):
             errors.append("主磁场关闭时 MAIN_FIELD_CENTER_HZ 是残余场中心猜测，必须为有限非负数")
         if self.current_start_ma >= self.current_stop_ma:
@@ -387,15 +336,11 @@ class CoilConstantCalibrationParams(ExperimentParams):
             predicted = self.predicted_center_hz(current_ma)
             if predicted < self.near_zero_scan_floor_hz:
                 continue
-            if predicted - self.coarse_half_width_hz <= 0:
-                errors.append(f"电流 {current_ma:g} mA 的预测粗扫下限不大于 0 Hz")
+            if predicted - self.frequency_half_width_hz <= 0:
+                errors.append(f"电流 {current_ma:g} mA 的预测扫频下限不大于 0 Hz")
                 break
-        if self.pulse_width_s <= 0 or self.pulse_repetition_hz <= 0:
-            errors.append("PULSE_WIDTH_S 与 PULSE_REPETITION_HZ 必须为正")
-        elif self.pulse_width_s * self.pulse_repetition_hz > 0.5:
-            errors.append("PULSE_WIDTH_S × PULSE_REPETITION_HZ 不得超过 0.5（占空比过大）")
-        if self.expected_k_nt_per_ma <= 0 or self.gyromagnetic_ratio_hz_per_nt <= 0:
-            errors.append("EXPECTED_K_NT_PER_MA 与 GYROMAGNETIC_RATIO_HZ_PER_NT 必须为正")
+        if self.gyromagnetic_ratio_hz_per_nt <= 0:
+            errors.append("GYROMAGNETIC_RATIO_HZ_PER_NT 必须为正")
         if self.min_accepted_points < 2:
             errors.append("MIN_ACCEPTED_POINTS 至少为 2")
         if self.min_branch_points < 1:
@@ -408,7 +353,6 @@ class CoilConstantCalibrationParams(ExperimentParams):
     def derive_external(cls, values):
         params = cls.from_external(values)
         geometry = params.branch_counts()
-        design = params.pulse_design()
         targets = params.current_targets_ma()
         return dict(
             predicted_amps_per_volt=params.amps_per_drive_volt,
@@ -421,5 +365,4 @@ class CoilConstantCalibrationParams(ExperimentParams):
             crossing_inside=geometry["crossing_inside"],
             branch_counts=geometry["branch_counts"],
             linear_case=geometry["linear_case"],
-            pulse_design=design,
         )

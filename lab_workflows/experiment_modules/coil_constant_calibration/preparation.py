@@ -56,7 +56,6 @@ def preflight(params, root):
     current_limit(load_safety_limits(root))
     require_lockin_compatibility(EXPERIMENT_ID, params.to_external(), mapping=mapping)
     params.branch_counts()
-    params.pulse_design()
     return params, mapping
 
 

@@ -39,12 +39,12 @@ required_devices:
   - DG900
   - 锁相放大器
 learned_notes:
-  - 主磁场手填电流与其拉莫尔频率；Z 电流为 0 处用该频率作锚点，逐档电流先用预测中心粗扫找峰、再细扫。
+  - 主磁场手填电流与其拉莫尔频率；Z 电流为 0 处用该频率作锚点，逐档电流按预估线圈常数算出的预测中心做一次扫频。
   - 主磁场开启且足够大时全程不过零，f(I) 单支线性、斜率带符号；主磁场关闭或偏置不足时按 f=|K·(I−I0)| 过零处理。
   - 默认 15.555 mA ≈ 150 kHz（按 9.643 kHz/mA）；±200 mA 时 Z 场约 ±120 kHz，过零在 −249 mA（轴外）。
   - DHO900 只开采样电阻通道、AUTO 触发测直流电压，不需要同步通道与触发电平。
   - 主磁场关闭时只关 GS200 输出、不写电流；开启时只按参数写一次。
-  - 5 µs π 脉冲的 RWA 余量约 0.75，本轮只交付电流—场常数，π 条件按实测扫脉宽/幅度确定。
+  - 本实验只交付电流—场常数；π 工作点由测得的 K 离线换算，不再在本实验里预览。
 ---
 
 # Z 线圈常数标定
@@ -82,12 +82,10 @@ learned_notes:
 | `MAIN_FIELD_ENABLED`、`MAIN_FIELD_MA`、`MAIN_FIELD_CENTER_HZ` | 主场两种状态：关闭时只关输出；开启时按 `main_magnetic_field` 限值校验后写电流。`MAIN_FIELD_CENTER_HZ` 是**手填**的该主场电流对应的拉莫尔频率，作为 Z 电流为 0 处的扫描锚点 |
 | `CURRENT_START/STOP/STEP_MA`、`BIDIRECTIONAL_SCAN` | 电流轴（含端点、整数步进）；双向时正向到端点后反向返回，不重复端点 |
 | `INITIAL_HZ_PER_MA`、`PREDICTION_POLARITY` | 窗口中心的预测斜率与电流极性：`预测中心 = |锚点 + 极性·斜率·I|`，只用于粗扫定位；选反时粗扫峰贴边会明确报错，对称回退仍可救回 |
-| `COARSE_HALF_WIDTH_HZ`、`COARSE_STEP_HZ` | 每个电流点的粗扫窗（默认 ±20 kHz、1 kHz 步进），用于覆盖预测误差找峰 |
-| `FREQUENCY_HALF_WIDTH_HZ`、`FREQUENCY_STEP_HZ` | 峰附近细扫窗（默认 ±4 kHz、100 Hz 步进），拟合中心用细扫数据 |
+| `FREQUENCY_HALF_WIDTH_HZ`、`FREQUENCY_STEP_HZ` | 每个电流点的扫频窗（围绕预测中心）；需要粗测时把半宽/步进调大单独跑一轮，再换小窗精测 |
 | `NEAR_ZERO_SCAN_FLOOR_HZ` | 预测 |中心| 低于此值的电流点只测电流、不扫 Y RF（主磁场关闭或偏置不足时用） |
 | `NEAR_ZERO_FIT_FLOOR_HZ` | 拟合中心绝对值低于此值的曲线剔除，可在分析中按目录覆盖 |
 | `Y_RF_AMPLITUDE_VPP`、`FREQUENCY_DURATION_S`、`SYSTEM_SETTLE_S`、`TEMP_SWITCH_ON_LAG_S`、`R_BAD_POINT_STD_THRESHOLD_V`、`R_POINT_MAX_ATTEMPTS` | Y RF 幅度与逐频点采集、温控门控、R 坏点重采 |
-| `EXPECTED_K_NT_PER_MA`、`PULSE_WIDTH_S`、`PULSE_REPETITION_HZ`、`PULSE_FIELD_MARGIN` | 只用于 π 设计预览：`f₁=1/(2τ)`、`B₁=f₁/γ`、`I_π=B₁/K`、覆盖与 RWA 余量 |
 
 ## 安全
 
@@ -101,20 +99,20 @@ learned_notes:
 
 | 节点 | 职责 |
 |---|---|
-| A01 | 参数、映射、锁相能力与安全限值预检；主场/锚点、过零几何与 π 设计预览 |
+| A01 | 参数、映射、锁相能力与安全限值预检；主场/锚点与过零几何预览 |
 | A02 | 连接设备、写入功放设置、记录 GS200 初态 |
 | A03 | 参考时钟同步并严格回读 |
 | A04 | 功放零偏（关/开两态）与直流 I–V 多点核对，记录 `k`、`b` 与线性指标（不做判据） |
 | A05 | 初始输出：GS200 两模式（写入主场电流或只关输出）、X/Z 辅助场归零、光功率、温控开关 5 V ON |
 | A06 | TEC 只下发界面目标温度 |
 | A07 | Pump 连续载波与常开门控；Y RF 正弦（初始频率取主场锚点）与 R 解调准备 |
-| A08 | 电流轴 × 逐点粗扫/细扫 Y RF：每个电流点先粗扫找峰、再在峰附近细扫 |
+| A08 | 电流轴 × 逐点 Y RF 扫频：每个电流点在按预估线圈常数算出的预测中心扫频 |
 | A09 | 安全收尾并封存本轮 |
 | A10 | 安全结束会话 |
 
 每个原子采集窗口（采样电阻电压、每个 R 频点）均按普通气室六步顺序执行：设置实际仪器配置 → 关闭 `Temp_Switch`（0 V，输出保持 ON）→ 唯一 `SYSTEM_SETTLE_S` → 读入内存 → 恢复 5 V 与 `TEMP_SWITCH_ON_LAG_S` → 写盘。故障也先恢复温控再抢救数据。TEC 只写目标温度，未知实测温度为 `null`。
 
-每次换电流后有 `CURRENT_SETTLE_TIME_S` 专用等待。每个电流点的流程是：按 A04 记录的 `I = k·V + b` 反算驱动电压 → 门控测一帧采样电阻电压得到**实测电流** → 用实测电流算出有符号预测中心 `锚点 + 极性·斜率·I` → 先在该中心 ±`COARSE_HALF_WIDTH_HZ` 粗扫找峰（峰贴窗口边时自动退回以锚点为中心的对称宽窗，可救回极性选反或斜率偏差大的情况）→ 再在峰附近 ±`FREQUENCY_HALF_WIDTH_HZ` 细扫。拟合横轴与窗口预测都用实测电流，不用目标电流。
+每次换电流后有 `CURRENT_SETTLE_TIME_S` 专用等待。每个电流点的流程是：按 A04 记录的 `I = k·V + b` 反算驱动电压 → 门控测一帧采样电阻电压得到**实测电流** → 用实测电流和**预估线圈常数**算出预测中心 `锚点 + 极性·斜率·I` → 在该中心 ±`FREQUENCY_HALF_WIDTH_HZ`、按 `FREQUENCY_STEP_HZ` 做一次 Y RF 扫频。需要先粗测时可把半宽/步进调大单独跑一轮，再换小窗精测。拟合横轴与窗口预测都用实测电流，不用目标电流。
 
 ## 过零几何与拟合
 
@@ -132,7 +130,7 @@ data/Coil_Constant_Calibration/MMDD_HHMM_tag/
   raw/
     amp_zero_off_NN.npz、amp_zero_on_NN.npz、dc_check_K.npz
     current_scan_index.npz
-    current_000/sense_current.npz、coarse_IIII_attempt_JJ.npz、coarse_symmetric_IIII_attempt_JJ.npz
+    current_000/sense_current.npz、frequency_IIII_attempt_JJ.npz、frequency_scan.npz
                   frequency_IIII_attempt_JJ.npz、frequency_scan.npz
   results/
     curve_fits.json、calibration_evaluation.json、calibration_results.npz
@@ -143,13 +141,9 @@ data/Coil_Constant_Calibration/MMDD_HHMM_tag/
 
 采集与离线分析入口分别为 `experiments/Coil_Constant_Calibration.py` 和 `experiments/Coil_Constant_Calibration_plot.py`。分析只接收明确运行目录，不改写 `raw/`；`LINEAR_R_SQUARED_MIN`、`GYROMAGNETIC_RATIO_HZ_PER_NT`、`MIN_ACCEPTED_POINTS`、`MIN_BRANCH_POINTS`、`BRANCH_SLOPE_TOLERANCE`、`NEAR_ZERO_FIT_FLOOR_HZ` 可按目录覆盖。分析完成与质量通过分开记录：`success=false` 时仍导出诊断图与排除原因。
 
-## π 脉冲设计预览
-
-按 `f₁ = 1/(2τ)`、`B₁ = f₁/γ`、`I_π = B₁/K`（`K` 取测量值）给出 π 工作点电流、所需覆盖余量与 `f_L·τ`（`f_L` 取主场锚点）。默认 5 µs 脉宽对应 `f₁ = 100 kHz`、`B₁ = 14.3 µT`、`I_π ≈ 166 mA`（86 nT/mA）——在 ±200 mA 标定范围内；150 kHz 锚点下 `f_L·τ = 0.75`，脉冲处在 RWA 边缘，本轮只交付电流—场刻度，π 条件按实测扫脉宽/幅度确定。
-
 ## 已知限制与待查
 
-- 主场电流与锚点频率都要手填，两者必须对应同一实际主场；锚点偏差在粗扫半宽（默认 20 kHz）内都能找回，偏差更大时需加大 `COARSE_HALF_WIDTH_HZ`。
+- 主场电流与锚点频率都要手填，两者必须对应同一实际主场；扫描窗围绕按预估线圈常数算出的中心，预测偏差超过 `FREQUENCY_HALF_WIDTH_HZ` 或极性选反时，失配点会被分析剔除——把半宽调大（或翻转极性）单独跑一轮粗测即可找回。
 - 主磁场关闭、残余场较小且 ±200 mA 轴穿过零点时，曲线折叠为 `|K(I−I0)|`，近零区只测电流；若想始终单支，可开主磁场并保证 `|锚点| > 斜率 × |电流上限|`。
 - 主线插入 1200B 后，`Z_magnetic_field` 的 V→I 与 `mx-z-field-calibration` 的 `Z_INITIAL_HZ_PER_V`（仅预测参数）不再一致；本实验不改该实验与历史数据。
 - 只测 `|K|` 时场的绝对方向是约定；需要双极脉冲或相位门时给一个压过剩磁的已知主场，由“随电流升频的那一支”定符号。

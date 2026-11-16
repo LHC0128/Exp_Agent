@@ -445,9 +445,6 @@ def evaluate(run_dir, params, config):
         signed_slope_hz_per_ma = float(np.polyfit(current, centers, 1)[0])
     else:
         signed_slope_hz_per_ma = float("nan")
-    b1_nt = 1.0 / (2.0 * params.pulse_width_s) / gamma
-    i_pi_ma = b1_nt / k_nT_per_mA if k_nT_per_mA > 0 else float("nan")
-    i_required = params.pulse_field_margin * i_pi_ma
     payload = plain({
         "success": bool(success),
         "experiment_id": run_format.EXPERIMENT_ID,
@@ -485,12 +482,6 @@ def evaluate(run_dir, params, config):
             probe_laser_power_v=params.probe_laser_power_v, y_rf_amplitude_vpp=params.y_rf_amplitude_vpp,
             sense_resistor_ohm=params.sense_resistor_ohm,
             gyromagnetic_ratio_hz_per_nt=gamma),
-        "pulse_design": dict(
-            pulse_width_s=params.pulse_width_s, rabi_frequency_hz=1.0 / (2.0 * params.pulse_width_s),
-            b1_nt=b1_nt, i_pi_ma=i_pi_ma, i_required_ma=i_required,
-            current_covered=bool(params.current_start_ma <= i_required <= params.current_stop_ma),
-            rwa_margin=abs(anchor_hz) * params.pulse_width_s,
-            duty=params.pulse_width_s * params.pulse_repetition_hz),
         "accepted_curve_count": int(np.count_nonzero(selected)),
         "total_curve_count": len(curves),
         "rejection_reasons": reasons,
