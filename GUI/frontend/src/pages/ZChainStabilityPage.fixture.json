@@ -270,7 +270,7 @@
       "name": "ZERO_LOG_DURATION_S",
       "label": "零点记录时长",
       "type": "number",
-      "default": 3600.0,
+      "default": 7200.0,
       "unit": "s",
       "group": "advanced",
       "minimum": 1,
@@ -306,7 +306,7 @@
       "name": "BASELINE_CURRENT_MA",
       "label": "基线目标电流",
       "type": "number",
-      "default": 0.0,
+      "default": 100.0,
       "unit": "mA",
       "group": "basic",
       "minimum": null,
@@ -354,7 +354,7 @@
       "name": "PULSE_WIDTH_US",
       "label": "单脉冲宽度",
       "type": "number",
-      "default": 4.0,
+      "default": 5.0,
       "unit": "µs",
       "group": "advanced",
       "minimum": 0.2,
@@ -378,7 +378,7 @@
       "name": "PULSE_PEAK_CURRENT_MA",
       "label": "脉冲峰值电流",
       "type": "number",
-      "default": 200.0,
+      "default": 190.0,
       "unit": "mA",
       "group": "advanced",
       "minimum": 0.1,
@@ -402,7 +402,7 @@
       "name": "PULSE_CAPTURE_INTERVAL_S",
       "label": "脉冲捕获间隔",
       "type": "number",
-      "default": 60.0,
+      "default": 5.0,
       "unit": "s",
       "group": "advanced",
       "minimum": 1,
@@ -426,23 +426,11 @@
       "name": "PULSE_DURATION_S",
       "label": "脉冲列持续时长",
       "type": "number",
-      "default": 3600.0,
+      "default": 7200.0,
       "unit": "s",
       "group": "advanced",
       "minimum": 1,
       "maximum": 604800,
-      "description": "",
-      "read_only": false
-    },
-    {
-      "name": "PULSE_RAW_SAVE_INTERVAL_S",
-      "label": "脉冲原始帧保存间隔",
-      "type": "number",
-      "default": 600.0,
-      "unit": "s",
-      "group": "advanced",
-      "minimum": 0,
-      "maximum": null,
       "description": "",
       "read_only": false
     },
@@ -699,7 +687,6 @@
           "PULSE_CAPTURE_INTERVAL_S",
           "PULSE_CAPTURE_PERIODS",
           "PULSE_DURATION_S",
-          "PULSE_RAW_SAVE_INTERVAL_S",
           "PULSE_TAIL_WINDOW_US",
           "COIL_CONSTANT_HZ_PER_MA"
         ],
@@ -731,7 +718,6 @@
           "PULSE_CAPTURE_INTERVAL_S",
           "PULSE_CAPTURE_PERIODS",
           "PULSE_DURATION_S",
-          "PULSE_RAW_SAVE_INTERVAL_S",
           "PULSE_TAIL_WINDOW_US",
           "COIL_CONSTANT_HZ_PER_MA"
         ],
@@ -780,13 +766,14 @@
         ],
         "parameters": [],
         "artifacts": [
+          "pulse_angles.csv",
           "pulse_summary.json",
           "pulse_timeseries.png",
           "pulse_hist.png"
         ],
         "display_parameters": [],
         "quality_gates": [
-          "缺少脉冲 CSV 时写空摘要、原因与占位图；不把分析完成当作科学质量通过"
+          "由 raw/pulse_*.npz 逐帧重算 Q/θ；没有原始帧时回退到采集时的 pulse_angles.csv；缺少脉冲数据时写空摘要、原因与占位图；不把分析完成当作科学质量通过"
         ]
       }
     ],
@@ -944,9 +931,6 @@
           "A05"
         ],
         "PULSE_DURATION_S": [
-          "A05"
-        ],
-        "PULSE_RAW_SAVE_INTERVAL_S": [
           "A05"
         ],
         "PULSE_TAIL_WINDOW_US": [

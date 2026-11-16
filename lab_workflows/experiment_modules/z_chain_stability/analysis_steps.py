@@ -289,18 +289,58 @@ def _empty_pulse(run_dir, summary, reason):
     return summary
 
 
+PULSE_FIELDS = ["timestamp", "elapsed_s", "sign", "q_a_s", "theta_pi", "i_base_a", "peak_a"]
+
+
+def _pulse_rows_from_frames(run_dir, params):
+    """从每次捕获的原始帧重算逐发积分与角度；没有原始帧时返回 None。"""
+    paths = sorted(output_path(run_dir, "raw").glob("pulse_[0-9]*.npz"))
+    if not paths:
+        return None, 0
+    rows = []
+    for path in paths:
+        check_cancelled()
+        with np.load(path, allow_pickle=False) as data:
+            volts = np.asarray(data["sense_v"], dtype=float)
+            time_s = np.asarray(data["time"], dtype=float)
+            meta = json.loads(str(data["meta"]))
+        if volts.size < 8:
+            continue
+        pulses = processing.segment_pulses(time_s, volts / params.sense_resistor_ohm,
+                                           period_s=params.pulse_period_us * 1e-6,
+                                           width_s=params.pulse_width_us * 1e-6,
+                                           tail_s=params.pulse_tail_window_us * 1e-6)
+        for pulse in pulses:
+            theta = processing.pulse_angle_pi(pulse["q_a_s"], params.coil_constant_hz_per_ma)
+            rows.append({"timestamp": str(meta.get("timestamp", "")),
+                         "elapsed_s": f"{float(meta.get('elapsed_s', 0.0)):.6f}",
+                         "sign": "+" if theta >= 0 else "-",
+                         "q_a_s": f"{pulse['q_a_s']:.9g}", "theta_pi": f"{theta:.9g}",
+                         "i_base_a": f"{pulse['i_base_a']:.9g}", "peak_a": f"{pulse['peak_a']:.9g}"})
+    return rows, len(paths)
+
+
 def pulse_report(run_dir, params):
-    """B02：+π/−π 的 Q/θ 分布、漂移、Allan 与不对称；缺数据写空摘要与原因。"""
+    """B02：优先由逐帧原始波形重算 Q/θ，再给分布、漂移、Allan 与不对称。"""
     (output_path(run_dir, "results")).mkdir(parents=True, exist_ok=True)
-    path = output_path(run_dir, "raw/pulse_angles.csv")
     summary = dict(experiment_id=run_format.EXPERIMENT_ID, coil_constant_hz_per_ma=params.coil_constant_hz_per_ma,
-                   pulse_width_us=params.pulse_width_us, pulse_period_us=params.pulse_period_us,
-                   source="pulse_angles.csv")
-    if not path.is_file():
-        return _empty_pulse(run_dir, summary, "缺少 raw/pulse_angles.csv（未运行 A05）")
+                   pulse_width_us=params.pulse_width_us, pulse_period_us=params.pulse_period_us)
+    rows, captures = _pulse_rows_from_frames(run_dir, params)
+    if rows is not None:
+        path = output_path(run_dir, "results/pulse_angles.csv")
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=PULSE_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+        summary.update(source="raw/pulse_*.npz", captures=captures)
+    else:
+        path = output_path(run_dir, "raw/pulse_angles.csv")
+        summary.update(source="raw/pulse_angles.csv", captures=None)
+        if not path.is_file():
+            return _empty_pulse(run_dir, summary, "缺少 raw/pulse_*.npz 与 raw/pulse_angles.csv（未运行 A05）")
     data = _read_csv(path)
     if not data or data["theta_pi"] is None or data["theta_pi"].size == 0:
-        return _empty_pulse(run_dir, summary, "pulse_angles.csv 无有效行")
+        return _empty_pulse(run_dir, summary, "脉冲数据无有效行")
     sign, theta, elapsed = data["sign"], data["theta_pi"], data["elapsed_s"]
     positive, negative = sign == "+", sign == "-"
     dt = float(np.median(np.diff(elapsed))) if elapsed.size > 1 else 0.0

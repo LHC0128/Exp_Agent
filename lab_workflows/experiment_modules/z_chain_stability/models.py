@@ -24,11 +24,11 @@ def ten_division_window(window_s: float) -> float:
 
 @dataclass
 class ZChainStabilityParams(ExperimentParams):
-    schema_version: ClassVar[int] = 4
+    schema_version: ClassVar[int] = 5
 
     @classmethod
     def migrate_external(cls, values, schema_version):
-        """v1 的 I–V 拟合与电压模式、v2 的快速段已删除；旧配置加载时丢弃对应键。"""
+        """v1 的 I–V 拟合与电压模式、v2 的快速段、v4 前的脉冲稀疏存帧已删除。"""
         migrated = super().migrate_external(values, schema_version)
         if schema_version < 2:
             for key in ("BASELINE_MODE", "BASELINE_VOLTAGE_V", "IV_CHECK_VOLTAGES_V", "IV_CHECK_FRAMES"):
@@ -36,6 +36,8 @@ class ZChainStabilityParams(ExperimentParams):
         if schema_version < 3:
             for key in ("ZERO_FAST_INTERVAL_S", "ZERO_FAST_DURATION_S"):
                 migrated.pop(key, None)
+        if schema_version < 5:
+            migrated.pop("PULSE_RAW_SAVE_INTERVAL_S", None)
         return migrated
 
     run_tag: str = parameter(default="z_chain_stability", external_name="RUN_TAG", label="运行标签", group="basic")
@@ -123,8 +125,6 @@ class ZChainStabilityParams(ExperimentParams):
         label="每次捕获周期数", minimum=2, maximum=20)
     pulse_duration_s: float = parameter(default=3600.0, external_name="PULSE_DURATION_S", label="脉冲列持续时长",
         unit="s", minimum=1, maximum=7 * 24 * 3600)
-    pulse_raw_save_interval_s: float = parameter(default=600.0, external_name="PULSE_RAW_SAVE_INTERVAL_S",
-        label="脉冲原始帧保存间隔", unit="s", minimum=0)
     pulse_tail_window_us: float = parameter(default=20.0, external_name="PULSE_TAIL_WINDOW_US",
         label="单脉冲积分窗", unit="µs", minimum=1,
         description="从脉冲起点到积分结束；须覆盖 RL 衰减尾与退出沿")

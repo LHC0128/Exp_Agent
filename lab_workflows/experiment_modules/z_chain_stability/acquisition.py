@@ -224,25 +224,28 @@ def measure_pulse_angles(ctx):
     ctx.state["data_files"].append(f"raw/{path.name}")
     fields = ["timestamp", "elapsed_s", "sign", "q_a_s", "theta_pi", "i_base_a", "peak_a"]
     config = capture_config(p, p.pulse_capture_window_s, pulse_scale(p), sync=True)
-    started, next_raw, pulses_total, period_s = time.monotonic(), 0.0, 0, p.pulse_period_us * 1e-6
+    started, pulses_total, captures, period_s = time.monotonic(), 0, 0, p.pulse_period_us * 1e-6
     while (elapsed := time.monotonic() - started) < p.pulse_duration_s:
         check_cancelled()
         loop_start = time.monotonic()
         t, sense, sync, result = _acquire(ctx, config)
+        stamp = datetime.now().astimezone().isoformat(timespec="seconds")
+        # 每次捕获都留原始波形；角度分布由离线分析从这些帧重算。
+        _save_frame(ctx, f"pulse_{captures:06d}", t, sense, sync,
+                    _meta(result, {"kind": "pulse", "elapsed_s": elapsed, "timestamp": stamp,
+                                   "vpp": vpp, "offset_v": offset}))
+        captures += 1
         pulses = processing.segment_pulses(t, sense / p.sense_resistor_ohm, period_s=period_s,
                                            width_s=p.pulse_width_us * 1e-6,
                                            tail_s=p.pulse_tail_window_us * 1e-6)
         for pulse in pulses:
             theta = processing.pulse_angle_pi(pulse["q_a_s"], p.coil_constant_hz_per_ma)
-            _append_csv(path, dict(timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),
-                                   elapsed_s=f"{elapsed:.6f}", sign="+" if theta >= 0 else "-",
+            _append_csv(path, dict(timestamp=stamp, elapsed_s=f"{elapsed:.6f}",
+                                   sign="+" if theta >= 0 else "-",
                                    q_a_s=f"{pulse['q_a_s']:.9g}", theta_pi=f"{theta:.9g}",
                                    i_base_a=f"{pulse['i_base_a']:.9g}", peak_a=f"{pulse['peak_a']:.9g}"), fields)
             pulses_total += 1
-        if p.pulse_raw_save_interval_s > 0 and elapsed >= next_raw:
-            _save_frame(ctx, f"pulse_{int(elapsed):06d}", t, sense, sync,
-                        _meta(result, {"kind": "pulse", "elapsed_s": elapsed, "vpp": vpp, "offset_v": offset}))
-            next_raw += p.pulse_raw_save_interval_s
         _progress("A05", "脉冲捕获", int(elapsed), max(1, int(p.pulse_duration_s)), started)
         sleep(max(0.0, p.pulse_capture_interval_s - (time.monotonic() - loop_start)))
     ctx.state["pulse_capture_count"] = pulses_total
+    ctx.state["pulse_captures"] = captures

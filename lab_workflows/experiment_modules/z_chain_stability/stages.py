@@ -17,7 +17,7 @@ ZERO = ("ZERO_WINDOW_S", "ZERO_FRAMES", "ZERO_LOG_INTERVAL_S", "ZERO_LOG_DURATIO
 BASELINE = ("BASELINE_CURRENT_MA", "CONVERSION_AMPS_PER_VOLT", "CONVERSION_OFFSET_MA")
 PULSE = ("PULSE_PERIOD_US", "PULSE_WIDTH_US", "PULSE_EDGE_US", "PULSE_PEAK_CURRENT_MA",
          "PULSE_BASELINE_V", "PULSE_CAPTURE_INTERVAL_S", "PULSE_CAPTURE_PERIODS", "PULSE_DURATION_S",
-         "PULSE_RAW_SAVE_INTERVAL_S", "PULSE_TAIL_WINDOW_US", "COIL_CONSTANT_HZ_PER_MA")
+         "PULSE_TAIL_WINDOW_US", "COIL_CONSTANT_HZ_PER_MA")
 ACQUISITION = (
     Stage("A01", "参数、映射与安全限值预检", "准备", (), ("RUN_TAG",), display_parameters=("RUN_TAG",),
           quality_gates=("不连接硬件；z_pulse_coil_current 与 Z_magnetic_field 必须有有限上下界，"
@@ -47,8 +47,9 @@ ANALYSIS = (
         quality_gates=("运行目录已停止写入；缺少某一段零点数据时该段留空并写占位图，不阻塞另一段；"
                        "没有逐帧 NPZ 时窗口内噪声留空",)),
     Stage("B02", "±π 脉冲角分布与不对称", "独立分析", ("B01",), artifacts=(
-        "pulse_summary.json", "pulse_timeseries.png", "pulse_hist.png"),
-        quality_gates=("缺少脉冲 CSV 时写空摘要、原因与占位图；不把分析完成当作科学质量通过",)),
+        "pulse_angles.csv", "pulse_summary.json", "pulse_timeseries.png", "pulse_hist.png"),
+        quality_gates=("由 raw/pulse_*.npz 逐帧重算 Q/θ；没有原始帧时回退到采集时的 pulse_angles.csv；"
+                       "缺少脉冲数据时写空摘要、原因与占位图；不把分析完成当作科学质量通过",)),
 )
 
 _rules = DependencyRules(finish_id=FINISH_ID)

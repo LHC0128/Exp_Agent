@@ -123,7 +123,7 @@ def fast_params(**overrides):
         run_tag="test", settle_s=0.0, zero_frames=1, zero_window_s=0.02,
         zero_log_interval_s=0.05, zero_log_duration_s=0.15, zero_save_all_frames=False,
         zero_raw_save_interval_s=0.0,
-        pulse_duration_s=0.2, pulse_capture_interval_s=0.05, pulse_raw_save_interval_s=0.0,
+        pulse_duration_s=0.2, pulse_capture_interval_s=0.05,
         pulse_capture_periods=4)
     for key, value in overrides.items():
         setattr(p, key, value)
@@ -226,8 +226,11 @@ class AcquisitionTest(unittest.TestCase):
         acquisition.measure_pulse_angles(ctx)
         csv_path = ctx.directory.root / "raw" / "pulse_angles.csv"
         self.assertTrue(csv_path.is_file())
+        frames = list((ctx.directory.root / "raw").glob("pulse_[0-9]*.npz"))
         with csv_path.open(newline="", encoding="utf-8") as handle:
             rows = list(csv.DictReader(handle))
+        # 每次捕获都留原始波形
+        self.assertEqual(len(frames), ctx.state["pulse_captures"])
         self.assertGreaterEqual(len(rows), 8)
         signs = {row["sign"] for row in rows}
         self.assertEqual(signs, {"+", "-"})
@@ -293,6 +296,25 @@ class AnalysisTest(unittest.TestCase):
         for name in ("zero_timeseries.png", "zero_allan.png", "zero_window_noise.png",
                      "zero_window_psd.png", "pulse_timeseries.png", "pulse_hist.png"):
             self.assertTrue((self.run_dir / "results" / name).is_file(), name)
+
+    def test_pulse_report_recomputes_from_frames(self):
+        _, params = analysis_steps.load_config(self.run_dir)
+        wave = processing.pulse_waveform(params.pulse_period_us, params.pulse_width_us, params.pulse_edge_us,
+                                         points=1250)
+        time_s = np.arange(5000) * 80e-9
+        current = 0.15 * np.tile(wave, 4)
+        for index in range(3):
+            np.savez(self.run_dir / "raw" / f"pulse_{index:06d}.npz", time=time_s,
+                     sense_v=current * params.sense_resistor_ohm,
+                     meta=json.dumps({"kind": "pulse", "elapsed_s": 5.0 * index,
+                                      "timestamp": "2026-01-01T00:00:00"}))
+        summary = analysis_steps.pulse_report(self.run_dir, params)
+        self.assertEqual(summary["source"], "raw/pulse_*.npz")
+        self.assertEqual(summary["captures"], 3)
+        self.assertEqual(summary["rows"], 24)
+        self.assertAlmostEqual(summary["plus"]["mean"], 0.588, places=2)
+        self.assertAlmostEqual(summary["asymmetry_pi"], 0.0, places=2)
+        self.assertTrue((self.run_dir / "results" / "pulse_angles.csv").is_file())
 
     def test_window_frames_report(self):
         rng = np.random.default_rng(0)
