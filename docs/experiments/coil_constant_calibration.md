@@ -122,6 +122,7 @@ learned_notes:
 - 主磁场开启且足够大时全程不过零：数据落在单支，`geometry.crossing_inside=false`，`K` 由直线斜率给出，同时输出**带符号**的 `K_signed_Hz_per_mA`（正电流升频为正）。
 - 过零在电流轴内时（主磁场关闭或偏置不足），以 `I0` 分两支各做加权直线拟合：斜率应为 `+K` 与 `−K`，支间一致性 `|s_left+s_right|/max(|s|)` 与两支交点写入结果；两支各需 `MIN_BRANCH_POINTS` 点。带符号 `K` 取正场侧支路的斜率。
 - 过零附近：预测 |中心| 低于 `NEAR_ZERO_SCAN_FLOOR_HZ` 的点只测电流；拟合中心低于 `NEAR_ZERO_FIT_FLOOR_HZ`、粗扫未找到峰或拟合幅度不高于 5 倍噪声的曲线剔除并保留原因。
+- 两条只记入 `curve_warnings`、不剔除曲线：拟合 HWHM 小于一个 `FREQUENCY_STEP_HZ`（线宽欠采样，中心仍由整条曲线约束），以及中心与预测相差超过半个扫频窗（只反映 `INITIAL_HZ_PER_MA` 的精度，峰是否贴边另有“距窗口边小于一个 HWHM”的判据）。`success` 只由真正的剔除条件决定。
 - 电压—场换算取正场侧支路（单支时为全部点）的 `f–V` 线性拟合；闭合比 `S_f/(1000·K·k)` 应接近 1，用于检查原子标定与电学 I–V 自洽。`coil_voltage_response.png` 另外给出电压轴的折叠模型 `f=|S·(V−V0)|`（`linearity_voltage_abs`），与 `coil_constant_calibration.png` 的绝对值拟合同形，并叠画两支的直线拟合。
 
 ## 数据目录与离线分析

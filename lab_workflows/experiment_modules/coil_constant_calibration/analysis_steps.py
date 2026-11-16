@@ -170,11 +170,23 @@ def _analyze_curve(entry, params):
         return base
     result = fit_lorentzian_response(entry["frequency_hz"], entry["r_mean_v"],
                                      r_squared_min=None, relative_gamma_uncertainty_max=None)
-    reasons = list(result.rejection_reasons)
+    # 这两条只说明“分辨率/预测”不够好，不影响拟合本身可信：
+    # gamma 小于一个频点间距时线宽欠采样，中心仍由整条曲线约束；中心偏离预测只反映 INITIAL_HZ_PER_MA 的精度。
+    # 真正的坏点由 R²、幅度倍数、近零下限、峰贴窗边和拟合异常拦截。
+    reasons = [reason for reason in result.rejection_reasons
+               if not (reason.startswith("gamma=") or reason.startswith("中心与预测相差超过半个扫频窗"))]
+    warnings = [reason for reason in result.rejection_reasons if reason not in reasons]
     center = float(result.parameters[2]) if np.isfinite(result.parameters[2]) else float("nan")
     gamma = abs(float(result.parameters[1])) if np.isfinite(result.parameters[1]) else float("nan")
     amplitude = abs(float(result.parameters[0])) if np.isfinite(result.parameters[0]) else float("nan")
     noise = float(np.median(entry["r_std_v"])) if entry["r_std_v"].size else float("nan")
+    height = (float(np.max(entry["r_mean_v"]) - np.median(entry["r_mean_v"]))
+              if entry["r_mean_v"].size else float("nan"))
+    if np.isfinite(height) and height <= 0:
+        reasons.append("曲线没有峰（最大值不高于中位数）")
+    # R(f) 在共振处是峰：拟合出负幅度说明窗口里只有凹陷，属于噪声拟合，不能当共振中心用。
+    if not (float(result.parameters[0]) > 0):
+        reasons.append(f"拟合幅度 {float(result.parameters[0]):.4g} V 不为正，窗口内没有共振峰")
     if np.isfinite(amplitude) and np.isfinite(noise) and noise > 0 and amplitude < 5.0 * noise:
         reasons.append(f"拟合幅度 {amplitude:.4g} V 不高于 5 倍噪声 {noise:.4g} V")
     step = float(np.median(np.diff(entry["frequency_hz"])))
@@ -186,15 +198,15 @@ def _analyze_curve(entry, params):
         if edge_distance < gamma:
             reasons.append("中心距扫描窗口边小于一个 HWHM")
     if np.isfinite(center) and abs(center - entry["predicted_center_hz"]) > 0.5 * params.frequency_half_width_hz:
-        reasons.append("中心与预测相差超过半个扫频窗，可能窗口错位")
-    base["fit"] = dict(success=bool(result.success and not reasons),
+        warnings.append("中心与预测相差超过半个扫频窗，可能窗口错位")
+    base["fit"] = dict(success=bool(not reasons),
                        parameters=[float(value) for value in result.parameters],
                        uncertainties=[float(value) for value in result.uncertainties],
                        r_squared=float(result.r_squared), rmse=float(result.rmse),
                        center_uncertainty_hz=float(result.uncertainties[2]),
                        model="C + A*gamma/sqrt((f-f0)^2+gamma^2)",
                        gamma_definition="power_hwhm_and_amplitude_3db_half_width",
-                       rejection_reasons=reasons)
+                       rejection_reasons=reasons, warnings=warnings)
     base["center_hz"] = center
     base["gamma_hz"] = gamma
     base["frequency_step_hz"] = step
@@ -441,6 +453,8 @@ def evaluate(run_dir, params, config):
             continue
         if not curve["fit"]["success"]:
             reasons.append(f"{curve['summary_file']}: " + "；".join(curve["fit"]["rejection_reasons"]))
+    curve_warnings = [f"{curve['summary_file']}: {item}" for curve in curves
+                      for item in (curve["fit"].get("warnings") or [])]
     success = not reasons
 
     if inside and branch_fits.get("above", {}).get("success"):
@@ -495,6 +509,7 @@ def evaluate(run_dir, params, config):
         "accepted_curve_count": int(np.count_nonzero(selected)),
         "total_curve_count": len(curves),
         "rejection_reasons": reasons,
+        "curve_warnings": curve_warnings,
         "curves": [{key: curve[key] for key in ("index", "summary_file", "current_ma", "current_a", "drive_v",
                                                 "scan_direction", "predicted_center_hz", "near_zero_skipped",
                                                 "center_hz", "gamma_hz", "fit")}
