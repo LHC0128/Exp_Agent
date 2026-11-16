@@ -1,6 +1,7 @@
 """零偏/直流核对、引导与主扫描；每个原子采集窗口先恢复温控再写盘。
 
-纯电学核对不连接温控窗口；原子频点按普通气室六步时序门控，文件只在恢复温控后保存。
+纯电学帧（功放零偏、直流 I–V 核对、逐点采样电阻电流）不进温控窗口：读电流不需要关温控，
+关一次只会让 TEC 断供一次长传输。只有原子 R 频点按普通气室六步时序门控，文件在恢复温控后保存。
 """
 from __future__ import annotations
 
@@ -86,15 +87,19 @@ def gated_acquire(ctx, acquire, writer=None):
 
 
 def _measure_current_point(ctx, path, meta) -> dict:
-    """在当前电流下门控采集采样电阻电压并换算实际电流。"""
+    """在当前电流下采一帧采样电阻电压并换算实际电流。
+
+    这是纯电学量，不进六步时序：读电流不需要关温控，一次 10 MB 帧的传输会把 TEC 断供十几秒，
+    反而把气室温度拖出工作点。需要门控的是后面的原子频点。
+    """
     p = ctx.params
     dc_check = ctx.state.get("dc_check") or {}
     if "baseline_v" not in dc_check:
         raise SafetyAbort("缺少 A04 零偏/直流核对结果，无法换算实际电流")
     scale = _dc_scale(abs(meta["target_ma"]) * 1e-3, p.sense_resistor_ohm)
     config = capture_config(p, p.zero_window_s, scale)
-    sense = gated_acquire(ctx, lambda: read_dc_frame(ctx, config),
-                          writer=lambda payload: save_frame(path, payload, meta))
+    sense = read_dc_frame(ctx, config)
+    save_frame(path, sense, meta)
     ctx.state["data_files"].append(_relative(ctx, path))
     mean_v = float(np.mean(sense.voltage))
     current_a = ((mean_v - dc_check["baseline_v"]) / p.sense_resistor_ohm - dc_check["offset_a"])

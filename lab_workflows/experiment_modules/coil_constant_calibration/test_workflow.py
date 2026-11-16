@@ -170,6 +170,7 @@ class FakeAcquirer:
     def __init__(self, rig):
         self.rig = rig
         self.depth_cap = None
+        rig.acquirer = self
 
     def use_auto_depth(self, max_points):
         self.depth_cap = max_points
@@ -178,7 +179,7 @@ class FakeAcquirer:
         self.rig.reads += 1
         if self.rig.cancel_at is not None and self.rig.reads >= self.rig.cancel_at:
             raise WorkflowCancelled("模拟取消")
-        assert self.depth_cap == 1_000_000
+        assert self.depth_cap == self.rig.expected_depth_cap
         n = 5000
         rate = n / config.sampling_time
         time = (np.arange(n) - n / 2) / rate
@@ -288,6 +289,8 @@ class Rig:
         self.true_k_a_per_v, self.offset_a, self.r_std, self.polarity = true_k_a_per_v, offset_a, r_std, polarity
         self.amp_on, self.reads, self.cancel_at, self.last_rf_hz = False, 0, None, ZERO_FIELD_HZ
         self.rng = np.random.default_rng(20261116)
+        self.acquirer = None
+        self.expected_depth_cap = CoilConstantCalibrationParams().max_memory_depth
         self.generators, self.gs200, self.tec, self.hf2 = {}, FakeGS200(), FakeTEC(), FakeHF2(device_id="dev18246")
         self.mapping = load_mapping(ROOT)
         self.sense_resistor_ohm = 10.0
@@ -413,6 +416,24 @@ def test_main_field_enabled_sets_current(tmp_path, rig):
     assert ("output", True) in rig.gs200.calls
     assert read_config(directory)["main_field"] == {
         "enabled": True, "current_ma": 15.555, "center_hz": ZERO_FIELD_HZ}
+
+
+def test_scope_depth_cap_defaults_low_and_follows_parameter(tmp_path, rig):
+    """直流帧深度按 MAX_MEMORY_DEPTH 下发；默认降到 1 000 点，避免单帧 10 MB 的传输。"""
+    assert CoilConstantCalibrationParams().max_memory_depth == 1_000
+    rig.expected_depth_cap = 1_000
+    ctx = workflow.Workflow(small_params(max_memory_depth=1_000), project_root=tmp_path)
+    ctx.execute(["A01", "A02"])
+    assert rig.acquirer.depth_cap == 1_000
+
+
+def test_current_frame_does_not_gate_temperature(tmp_path, rig):
+    """读电流是纯电学量：只有 R 频点关温控，每个电流点不再额外断一次 TEC。"""
+    directory = run(tmp_path, small_params())
+    points = sum(int(np.load(scan)["frequency_hz"].size)
+                 for scan in sorted((directory / "raw").glob("current_*/frequency_scan.npz")))
+    assert points > 0
+    assert rig.temp_events.count("off") == points
 
 
 def test_gain_mismatch_is_recorded_without_abort(tmp_path, monkeypatch):

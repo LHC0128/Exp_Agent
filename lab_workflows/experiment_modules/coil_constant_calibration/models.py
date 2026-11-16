@@ -87,10 +87,13 @@ class CoilConstantCalibrationParams(ExperimentParams):
     dc_check_currents_ma: list[float] = parameter(default_factory=lambda: [-50.0, 0.0, 50.0],
         external_name="DC_CHECK_CURRENTS_MA", label="直流 I–V 核对电流", unit="mA", group="advanced",
         description="A04 用这些目标电流实测驱动电压→电流关系（只记录，不设判据）；至少 3 点")
-    max_memory_depth: int = parameter(default=1_000_000, external_name="MAX_MEMORY_DEPTH", label="最大存储深度上限",
+    max_memory_depth: int = parameter(default=1_000, external_name="MAX_MEMORY_DEPTH", label="最大存储深度上限",
         unit="点", group="advanced",
         options=tuple((n, f"{n:,}") for n in (1_000, 10_000, 100_000, 1_000_000, 5_000_000, 10_000_000)),
-        description="示波器深度为 AUTO；超过此点数时改用此上限深度，实际采样率与点数随帧保存")
+        description="本实验只采直流帧（20 ms 窗口取均值）：1 000 点即 50 kSa/s、每个工频周期 50 点。"
+                    "AUTO 深度在本时基会给 625 000 点、单帧约 10 MB、传输十几秒，A04 与逐个电流点都被拖慢；"
+                    "1 000 点仍在驱动的一次 10 000 点分块内，单帧传输按一个分块计。"
+                    "需要更长记录窗时才提高此上限，实际采样率与点数随帧保存")
     scope_acquire_delay_s: float = parameter(default=0.0, external_name="SCOPE_ACQUIRE_DELAY_S",
         label="示波器停采后等待", unit="s", group="advanced", minimum=0, maximum=30, legacy_default=0.0,
         description="直流帧整帧 STOP 确认后、读取前的等待；默认 0，采集完成即可读")
