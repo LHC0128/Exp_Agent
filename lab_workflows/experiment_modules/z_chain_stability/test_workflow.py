@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import shutil
 import tempfile
 import unittest
@@ -118,8 +119,8 @@ class FakeContext:
 def fast_params(**overrides):
     p = models.ZChainStabilityParams(
         run_tag="test", settle_s=0.0, zero_frames=1, zero_window_s=0.02,
-        zero_log_interval_s=0.05, zero_log_duration_s=0.15, zero_raw_save_interval_s=0.0,
-        zero_fast_duration_s=0.0,
+        zero_log_interval_s=0.05, zero_log_duration_s=0.15, zero_save_all_frames=False,
+        zero_raw_save_interval_s=0.0,
         pulse_duration_s=0.2, pulse_capture_interval_s=0.05, pulse_raw_save_interval_s=0.0,
         pulse_capture_periods=4)
     for key, value in overrides.items():
@@ -149,6 +150,20 @@ class AcquisitionTest(unittest.TestCase):
         self.assertFalse(list((ctx.directory.root / "raw").glob("iv_check_*.npz")))
         self.assertEqual(ctx.state["zero_offset"]["offset_current_a"], 0.0)
 
+    def test_saves_every_frame_when_enabled(self):
+        params = fast_params(zero_save_all_frames=True)
+        ctx = FakeContext(self.root, params)
+        acquisition.measure_zero_dg0(ctx)
+        frames = sorted((ctx.directory.root / "raw").glob("zero_dg0_[0-9]*.npz"))
+        with (ctx.directory.root / "raw" / "zero_dg0.csv").open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertGreaterEqual(len(rows), 2)
+        self.assertEqual(len(frames), len(rows))
+        with np.load(frames[0]) as data:
+            meta = json.loads(str(data["meta"]))
+        self.assertEqual(meta["kind"], "zero_dg0")
+        self.assertIn("elapsed_s", meta)
+
     def test_cancel_keeps_partial_rows(self):
         params = fast_params(zero_log_duration_s=1.0, zero_log_interval_s=0.05)
         ctx = FakeContext(self.root, params)
@@ -162,7 +177,7 @@ class AcquisitionTest(unittest.TestCase):
         with patch.object(acquisition, "check_cancelled", side_effect=cancel_after_two):
             with self.assertRaises(WorkflowCancelled):
                 acquisition._log_zero(ctx, "dg0", 0.0, stage="A03", duration_s=1.0,
-                                      interval_s=0.05, raw_interval_s=0.0, scale=0.005)
+                                      interval_s=0.05, save_frames=False, raw_interval_s=0.0, scale=0.005)
         csv_path = ctx.directory.root / "raw" / "zero_dg0.csv"
         self.assertTrue(csv_path.is_file())
         with csv_path.open(newline="", encoding="utf-8") as handle:
@@ -235,6 +250,36 @@ class AnalysisTest(unittest.TestCase):
         self.assertAlmostEqual(pulse["asymmetry_pi"], 0.0, places=6)
         self.assertTrue((self.run_dir / "results" / "zero_summary.json").is_file())
         self.assertTrue((self.run_dir / "results" / "pulse_summary.json").is_file())
+
+    def test_missing_data_still_writes_declared_artifacts(self):
+        _, params = analysis_steps.load_config(self.run_dir)
+        zero = analysis_steps.zero_report(self.run_dir, params)
+        self.assertEqual(zero["segments"], {})
+        self.assertEqual(zero["windows"], {})
+        pulse = analysis_steps.pulse_report(self.run_dir, params)
+        self.assertEqual(pulse["rows"], 0)
+        self.assertIn("reason", pulse)
+        for name in ("zero_timeseries.png", "zero_allan.png", "zero_window_noise.png",
+                     "zero_window_psd.png", "pulse_timeseries.png", "pulse_hist.png"):
+            self.assertTrue((self.run_dir / "results" / name).is_file(), name)
+
+    def test_window_frames_report(self):
+        rng = np.random.default_rng(0)
+        for index in range(4):
+            volts = 1e-3 * (1.0 + 0.01 * rng.standard_normal(2000))
+            np.savez(self.run_dir / "raw" / f"zero_dg0_{index:04d}.npz", sense_v=volts,
+                     meta=json.dumps({"kind": "zero_dg0", "elapsed_s": 10.0 * index,
+                                      "preamble": {"xincrement": 1e-5, "points": 2000}}))
+        _, params = analysis_steps.load_config(self.run_dir)
+        summary = analysis_steps.zero_report(self.run_dir, params)
+        window = summary["windows"]["dg0"]
+        self.assertEqual(window["frames"], 4)
+        self.assertEqual(window["frames_analyzed"], 4)
+        self.assertEqual(window["points"], 2000)
+        self.assertAlmostEqual(window["sample_rate_sa_s"], 1e5, places=3)
+        self.assertGreater(window["within_std_median_nt"], 0.0)
+        self.assertTrue((self.run_dir / "results" / "zero_window_noise.png").is_file())
+        self.assertTrue((self.run_dir / "results" / "zero_window_psd.png").is_file())
 
 
 class ProcessingTest(unittest.TestCase):

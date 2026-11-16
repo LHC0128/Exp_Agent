@@ -12,16 +12,29 @@ from typing import ClassVar
 from ...experiment_params import ExperimentParams, parameter
 
 
+def ten_division_window(window_s: float) -> float:
+    """按十格 1-2-5 时基规则返回实际采集窗口；与 ``capture_config`` 的换算一致。"""
+    exponent = math.floor(math.log10(window_s / 10.0))
+    for mantissa in (1.0, 2.0, 5.0, 10.0):
+        candidate = mantissa * 10.0 ** exponent
+        if candidate >= window_s / 10.0 * (1 - 1e-12):
+            return candidate * 10.0
+    raise AssertionError("unreachable")
+
+
 @dataclass
 class ZChainStabilityParams(ExperimentParams):
-    schema_version: ClassVar[int] = 2
+    schema_version: ClassVar[int] = 3
 
     @classmethod
     def migrate_external(cls, values, schema_version):
-        """v1 的 I–V 拟合与电压模式已删除；换算改由手动 k/偏置给出。"""
+        """v1 的 I–V 拟合与电压模式、v2 的快速段已删除；旧配置加载时丢弃对应键。"""
         migrated = super().migrate_external(values, schema_version)
         if schema_version < 2:
             for key in ("BASELINE_MODE", "BASELINE_VOLTAGE_V", "IV_CHECK_VOLTAGES_V", "IV_CHECK_FRAMES"):
+                migrated.pop(key, None)
+        if schema_version < 3:
+            for key in ("ZERO_FAST_INTERVAL_S", "ZERO_FAST_DURATION_S"):
                 migrated.pop(key, None)
         return migrated
 
@@ -68,17 +81,17 @@ class ZChainStabilityParams(ExperimentParams):
 
     # ---- A03：DG 0 V 零点 ----
     zero_frames: int = parameter(default=5, external_name="ZERO_FRAMES", label="首尾零点帧数", minimum=1, maximum=100)
-    zero_log_interval_s: float = parameter(default=1.0, external_name="ZERO_LOG_INTERVAL_S", label="零点记录间隔",
-        unit="s", minimum=0.05, maximum=600)
+    zero_log_interval_s: float = parameter(default=10.0, external_name="ZERO_LOG_INTERVAL_S", label="零点记录间隔",
+        unit="s", minimum=0.05, maximum=600,
+        description="相邻两帧的目标间隔；单帧至少占用约 2 s（示波器停采等待与读帧），短于此值时为背靠背采集")
     zero_log_duration_s: float = parameter(default=3600.0, external_name="ZERO_LOG_DURATION_S", label="零点记录时长",
         unit="s", minimum=1, maximum=7 * 24 * 3600)
+    zero_save_all_frames: bool = parameter(default=True, external_name="ZERO_SAVE_ALL_FRAMES",
+        label="保存每帧原始波形",
+        description="开启时每测一帧都存 NPZ，可离线看 20 ms 窗口内的噪声；关闭后按「零点原始帧保存间隔」稀疏保存")
     zero_raw_save_interval_s: float = parameter(default=600.0, external_name="ZERO_RAW_SAVE_INTERVAL_S",
-        label="零点原始帧保存间隔", unit="s", minimum=0, description="0 表示只存均值，不存原始帧")
-    zero_fast_interval_s: float = parameter(default=0.1, external_name="ZERO_FAST_INTERVAL_S",
-        label="短时噪声记录间隔", unit="s", minimum=0.01, maximum=10)
-    zero_fast_duration_s: float = parameter(default=0.0, external_name="ZERO_FAST_DURATION_S",
-        label="短时噪声记录时长", unit="s", minimum=0, maximum=3600,
-        description="0 表示不做快速段；>0 时在长记前后各插入一段短间隔记录")
+        label="零点原始帧保存间隔", unit="s", minimum=0,
+        description="仅在关闭「保存每帧原始波形」时生效；0 表示只存均值，不存原始帧")
 
     # ---- A04：目标电流 + 手动 I–V 换算 ----
     baseline_current_ma: float = parameter(default=0.0, external_name="BASELINE_CURRENT_MA", label="基线目标电流",
@@ -172,8 +185,13 @@ class ZChainStabilityParams(ExperimentParams):
             errors.append("ZERO_LOG_INTERVAL_S 必须为正")
         if self.zero_log_duration_s < self.zero_log_interval_s:
             errors.append("ZERO_LOG_DURATION_S 不能短于记录间隔")
-        if self.zero_fast_duration_s > 0 and self.zero_fast_duration_s < self.zero_fast_interval_s:
-            errors.append("ZERO_FAST_DURATION_S 不能短于快速记录间隔")
+        if self.zero_window_s <= 0:
+            errors.append("ZERO_WINDOW_S 必须为正")
+        else:
+            actual_window = ten_division_window(self.zero_window_s)
+            if abs(actual_window - self.zero_window_s) > 1e-9 * max(1.0, actual_window):
+                errors.append(f"ZERO_WINDOW_S 须落在十格 1-2-5 时基上（如 0.02、0.05、0.1、0.2），"
+                              f"否则实际窗口会变成 {actual_window:g} s")
         if not math.isfinite(self.baseline_current_ma):
             errors.append("BASELINE_CURRENT_MA 必须为有限数")
         if not math.isfinite(self.conversion_amps_per_volt) or self.conversion_amps_per_volt <= 0:

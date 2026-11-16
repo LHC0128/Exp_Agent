@@ -108,7 +108,7 @@
       "name": "COIL_RESISTANCE_OHM",
       "label": "线圈直流电阻",
       "type": "number",
-      "default": 0.0,
+      "default": 2.0,
       "unit": "Ω",
       "group": "advanced",
       "minimum": 0,
@@ -258,12 +258,12 @@
       "name": "ZERO_LOG_INTERVAL_S",
       "label": "零点记录间隔",
       "type": "number",
-      "default": 1.0,
+      "default": 10.0,
       "unit": "s",
       "group": "advanced",
       "minimum": 0.05,
       "maximum": 600,
-      "description": "",
+      "description": "相邻两帧的目标间隔；单帧至少占用约 2 s（示波器停采等待与读帧），短于此值时为背靠背采集",
       "read_only": false
     },
     {
@@ -279,6 +279,18 @@
       "read_only": false
     },
     {
+      "name": "ZERO_SAVE_ALL_FRAMES",
+      "label": "保存每帧原始波形",
+      "type": "boolean",
+      "default": true,
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "开启时每测一帧都存 NPZ，可离线看 20 ms 窗口内的噪声；关闭后按「零点原始帧保存间隔」稀疏保存",
+      "read_only": false
+    },
+    {
       "name": "ZERO_RAW_SAVE_INTERVAL_S",
       "label": "零点原始帧保存间隔",
       "type": "number",
@@ -287,31 +299,7 @@
       "group": "advanced",
       "minimum": 0,
       "maximum": null,
-      "description": "0 表示只存均值，不存原始帧",
-      "read_only": false
-    },
-    {
-      "name": "ZERO_FAST_INTERVAL_S",
-      "label": "短时噪声记录间隔",
-      "type": "number",
-      "default": 0.1,
-      "unit": "s",
-      "group": "advanced",
-      "minimum": 0.01,
-      "maximum": 10,
-      "description": "",
-      "read_only": false
-    },
-    {
-      "name": "ZERO_FAST_DURATION_S",
-      "label": "短时噪声记录时长",
-      "type": "number",
-      "default": 0.0,
-      "unit": "s",
-      "group": "advanced",
-      "minimum": 0,
-      "maximum": 3600,
-      "description": "0 表示不做快速段；>0 时在长记前后各插入一段短间隔记录",
+      "description": "仅在关闭「保存每帧原始波形」时生效；0 表示只存均值，不存原始帧",
       "read_only": false
     },
     {
@@ -390,7 +378,7 @@
       "name": "PULSE_PEAK_CURRENT_MA",
       "label": "脉冲峰值电流",
       "type": "number",
-      "default": 255.0,
+      "default": 200.0,
       "unit": "mA",
       "group": "advanced",
       "minimum": 0.1,
@@ -564,12 +552,12 @@
           "ZERO_FRAMES",
           "ZERO_LOG_INTERVAL_S",
           "ZERO_LOG_DURATION_S",
-          "ZERO_RAW_SAVE_INTERVAL_S",
-          "ZERO_FAST_INTERVAL_S",
-          "ZERO_FAST_DURATION_S"
+          "ZERO_SAVE_ALL_FRAMES",
+          "ZERO_RAW_SAVE_INTERVAL_S"
         ],
         "artifacts": [
           "raw/zero_dg0.csv",
+          "raw/zero_dg0_*.npz",
           "raw/zero_off_*.npz",
           "raw/zero_on_*.npz"
         ],
@@ -593,12 +581,11 @@
           "ZERO_FRAMES",
           "ZERO_LOG_INTERVAL_S",
           "ZERO_LOG_DURATION_S",
-          "ZERO_RAW_SAVE_INTERVAL_S",
-          "ZERO_FAST_INTERVAL_S",
-          "ZERO_FAST_DURATION_S"
+          "ZERO_SAVE_ALL_FRAMES",
+          "ZERO_RAW_SAVE_INTERVAL_S"
         ],
         "quality_gates": [
-          "功放关/开两态、DG 0 V 测零偏；长记逐点追加 CSV 并按间隔存原始帧；不写任何 I–V 电压"
+          "功放关/开两态、DG 0 V 测零偏；长记逐点追加 CSV，默认每帧原始波形另存 NPZ；不写任何 I–V 电压"
         ]
       },
       {
@@ -628,15 +615,15 @@
           "ZERO_FRAMES",
           "ZERO_LOG_INTERVAL_S",
           "ZERO_LOG_DURATION_S",
+          "ZERO_SAVE_ALL_FRAMES",
           "ZERO_RAW_SAVE_INTERVAL_S",
-          "ZERO_FAST_INTERVAL_S",
-          "ZERO_FAST_DURATION_S",
           "BASELINE_CURRENT_MA",
           "CONVERSION_AMPS_PER_VOLT",
           "CONVERSION_OFFSET_MA"
         ],
         "artifacts": [
           "raw/zero_baseline.csv",
+          "raw/zero_baseline_*.npz",
           "raw/baseline_setup.npz"
         ],
         "display_parameters": [
@@ -659,9 +646,8 @@
           "ZERO_FRAMES",
           "ZERO_LOG_INTERVAL_S",
           "ZERO_LOG_DURATION_S",
+          "ZERO_SAVE_ALL_FRAMES",
           "ZERO_RAW_SAVE_INTERVAL_S",
-          "ZERO_FAST_INTERVAL_S",
-          "ZERO_FAST_DURATION_S",
           "BASELINE_CURRENT_MA",
           "CONVERSION_AMPS_PER_VOLT",
           "CONVERSION_OFFSET_MA"
@@ -755,18 +741,20 @@
     "analysis": [
       {
         "id": "B01",
-        "title": "零点漂移、Allan 与电流/场换算",
+        "title": "零点漂移、Allan、窗口内噪声与电流/场换算",
         "group": "独立分析",
         "dependencies": [],
         "parameters": [],
         "artifacts": [
           "zero_summary.json",
           "zero_timeseries.png",
-          "zero_allan.png"
+          "zero_allan.png",
+          "zero_window_noise.png",
+          "zero_window_psd.png"
         ],
         "display_parameters": [],
         "quality_gates": [
-          "运行目录已停止写入；缺少某一段零点数据时该段留空，不阻塞另一段"
+          "运行目录已停止写入；缺少某一段零点数据时该段留空并写占位图，不阻塞另一段；没有逐帧 NPZ 时窗口内噪声留空"
         ]
       },
       {
@@ -784,7 +772,7 @@
         ],
         "display_parameters": [],
         "quality_gates": [
-          "缺少脉冲 CSV 时写空摘要与原因；不把分析完成当作科学质量通过"
+          "缺少脉冲 CSV 时写空摘要、原因与占位图；不把分析完成当作科学质量通过"
         ]
       }
     ],
@@ -903,15 +891,11 @@
           "A03",
           "A04"
         ],
+        "ZERO_SAVE_ALL_FRAMES": [
+          "A03",
+          "A04"
+        ],
         "ZERO_RAW_SAVE_INTERVAL_S": [
-          "A03",
-          "A04"
-        ],
-        "ZERO_FAST_INTERVAL_S": [
-          "A03",
-          "A04"
-        ],
-        "ZERO_FAST_DURATION_S": [
           "A03",
           "A04"
         ],

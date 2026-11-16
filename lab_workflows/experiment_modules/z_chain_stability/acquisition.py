@@ -1,7 +1,7 @@
 """A03 DG 0 V 零点、A04 可设定基线零点、A05 ±π 双脉冲角分布。
 
 三段都是纯电学采集：不连接 TEC、不操作温控，因此不适用普通气室的关温控采集窗口。
-零点长记只把窗口均值追加到 CSV，原始帧按稀疏间隔保存；脉冲段按周期捕获短窗，
+零点长记把窗口均值追加到 CSV，默认每帧原始波形另存 NPZ；脉冲段按周期捕获短窗，
 逐脉冲积分后把每发的 Q/θ 追加到 CSV。每段都可协作式取消，已写入的数据保留。
 """
 from __future__ import annotations
@@ -130,14 +130,14 @@ def _baseline_offset(ctx):
     return baseline, current
 
 
-def _log_zero(ctx, mode, volts, *, stage, duration_s, interval_s, raw_interval_s, scale):
-    """按固定间隔记录窗口均值，逐点追加 CSV；原始帧按稀疏间隔保存。"""
+def _log_zero(ctx, mode, volts, *, stage, duration_s, interval_s, save_frames, raw_interval_s, scale):
+    """按固定间隔记录窗口均值，逐点追加 CSV；原始帧按「每帧都存」或稀疏间隔保存。"""
     p = ctx.params
     path = _csv_path(ctx, f"zero_{mode}.csv")
     fields = ["timestamp", "elapsed_s", "mean_v", "std_v", "current_a"]
     ctx.state["data_files"].append(f"raw/{path.name}")
     total = max(1, int(duration_s / interval_s))
-    started, next_raw, rows = time.monotonic(), 0.0, 0
+    started, next_raw, rows, saved = time.monotonic(), 0.0, 0, 0
     ctx.outputs["Z 通道"] = f"DC {volts:.6g} V + ON，零点记录 {mode}"
     while (elapsed := time.monotonic() - started) < duration_s:
         check_cancelled()
@@ -148,31 +148,27 @@ def _log_zero(ctx, mode, volts, *, stage, duration_s, interval_s, raw_interval_s
                                elapsed_s=f"{elapsed:.6f}", mean_v=f"{mean_v:.9g}", std_v=f"{std_v:.9g}",
                                current_a=f"{mean_v / p.sense_resistor_ohm:.9g}"), fields)
         rows += 1
-        if raw_interval_s > 0 and elapsed >= next_raw:
+        sparse_save = raw_interval_s > 0 and elapsed >= next_raw
+        if save_frames or sparse_save:
             _save_frame(ctx, f"zero_{mode}_{rows - 1:04d}", t, sense, sync,
                         _meta(result, {"kind": f"zero_{mode}", "elapsed_s": elapsed, "volts": volts}))
-            next_raw += raw_interval_s
+            saved += 1
+            if sparse_save:
+                next_raw += raw_interval_s
         _progress(stage, f"零点 {mode}", rows, total, started)
         sleep(max(0.0, interval_s - (time.monotonic() - loop_start)))
     ctx.state.setdefault("zero_logs", {})[mode] = dict(volts=volts, duration_s=duration_s,
-                                                       interval_s=interval_s, rows=rows)
-
-
-def _fast_segment(ctx, mode, volts, stage):
-    p = ctx.params
-    if p.zero_fast_duration_s <= 0:
-        return
-    _log_zero(ctx, f"{mode}_fast", volts, stage=stage, duration_s=p.zero_fast_duration_s,
-              interval_s=p.zero_fast_interval_s, raw_interval_s=0, scale=log_scale(p))
+                                                       interval_s=interval_s, rows=rows,
+                                                       saved_frames=saved)
 
 
 def measure_zero_dg0(ctx):
     """A03：DG 0 V 下功放零偏与长时间零点；不写 I–V 电压。"""
     p = ctx.params
     _baseline_offset(ctx)
-    _fast_segment(ctx, "dg0", 0.0, "A03")
     _log_zero(ctx, "dg0", 0.0, stage="A03", duration_s=p.zero_log_duration_s,
-              interval_s=p.zero_log_interval_s, raw_interval_s=p.zero_raw_save_interval_s, scale=log_scale(p))
+              interval_s=p.zero_log_interval_s, save_frames=p.zero_save_all_frames,
+              raw_interval_s=p.zero_raw_save_interval_s, scale=log_scale(p))
 
 
 def measure_baseline(ctx):
@@ -198,9 +194,9 @@ def measure_baseline(ctx):
     ctx.state["baseline_setpoint_v"] = volts
     ctx.state["baseline_target_current_a"] = target_current
     ctx.state["baseline_measured_current_a"] = measured
-    _fast_segment(ctx, "baseline", volts, "A04")
     _log_zero(ctx, "baseline", volts, stage="A04", duration_s=p.zero_log_duration_s,
-              interval_s=p.zero_log_interval_s, raw_interval_s=p.zero_raw_save_interval_s, scale=log_scale(p))
+              interval_s=p.zero_log_interval_s, save_frames=p.zero_save_all_frames,
+              raw_interval_s=p.zero_raw_save_interval_s, scale=log_scale(p))
 
 
 def _pulse_offset(ctx):

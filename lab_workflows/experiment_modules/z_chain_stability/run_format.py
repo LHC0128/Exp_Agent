@@ -15,7 +15,7 @@ AMPLIFIER_KEY = "coil_drive_amplifier"
 SCOPE_KEY = "coil_current_scope"
 CURRENT_LIMIT_KEY = "z_pulse_coil_current"
 REQUIRED_MAPPING_KEYS = (SOURCE_KEY, AMPLIFIER_KEY, SCOPE_KEY)
-# raw/：zero_*.csv / pulse_angles.csv 为长记与逐脉冲汇总；*.npz 为稀疏原始帧。
+# raw/：zero_*.csv / pulse_angles.csv 为长记与逐脉冲汇总；*.npz 为原始帧（默认逐帧保存）。
 FRAME_KINDS = ("zero_off", "zero_on", "zero_dg0", "zero_baseline", "baseline_setup", "pulse")
 
 
