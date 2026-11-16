@@ -18,8 +18,8 @@ from ...common import load_safety_limits, validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import arm_sync_output
 from . import processing
-from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, capture_config, current_limit,
-                          log_scale, nice_up, pulse_scale, set_amp_output, set_dc, sleep, zero_scale)
+from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, baseline_scale, capture_config, current_limit,
+                          nice_up, pulse_scale, set_amp_output, set_dc, sleep, zero_scale)
 from .run_format import CURRENT_LIMIT_KEY, SOURCE_KEY
 
 SYNC_MIN_PEAK_V = 1.0
@@ -170,7 +170,7 @@ def measure_zero_dg0(ctx):
     _baseline_offset(ctx)
     _log_zero(ctx, "dg0", 0.0, stage="A03", duration_s=p.zero_log_duration_s,
               interval_s=p.zero_log_interval_s, save_frames=p.zero_save_all_frames,
-              raw_interval_s=p.zero_raw_save_interval_s, scale=ctx.current_scale or log_scale(p))
+              raw_interval_s=p.zero_raw_save_interval_s, scale=ctx.current_scale or zero_scale(p))
 
 
 def measure_baseline(ctx):
@@ -186,7 +186,7 @@ def measure_baseline(ctx):
     validate_safety_limit(CURRENT_LIMIT_KEY, target_current, limits)
     set_dc(ctx, volts)
     sleep(p.settle_s)
-    t, sense, sync, result = _acquire(ctx, capture_config(p, p.zero_window_s, log_scale(p)))
+    t, sense, sync, result = _acquire(ctx, capture_config(p, p.zero_window_s, baseline_scale(p)))
     measured = float(np.mean(sense)) / p.sense_resistor_ohm
     _save_frame(ctx, "baseline_setup", t, sense, sync,
                 _meta(result, {"kind": "baseline_setup", "target_current_a": target_current, "set_volts": volts,
@@ -198,7 +198,7 @@ def measure_baseline(ctx):
     ctx.state["baseline_measured_current_a"] = measured
     _log_zero(ctx, "baseline", volts, stage="A04", duration_s=p.zero_log_duration_s,
               interval_s=p.zero_log_interval_s, save_frames=p.zero_save_all_frames,
-              raw_interval_s=p.zero_raw_save_interval_s, scale=ctx.current_scale or log_scale(p))
+              raw_interval_s=p.zero_raw_save_interval_s, scale=ctx.current_scale or baseline_scale(p))
 
 
 def _pulse_offset(ctx):

@@ -54,17 +54,16 @@ def plan(p):
 
 
 def zero_scale(p):
-    """零点帧的垂直档位：按基线电流或 1 mA 取较灵敏一档；自动量程仍会兜底。"""
-    peak = max(abs(p.baseline_current_ma) * 1e-3, 1e-3)
-    return scale_for(peak * p.sense_resistor_ohm)
+    """A03 零点帧的垂直档位：只按 DG 0 V 下的 mA 量级选档，与 A04 基线目标无关。"""
+    return scale_for(1e-3 * p.sense_resistor_ohm)
 
 
 def pulse_scale(p):
     return scale_for(p.pulse_peak_current_ma * 1e-3 * p.sense_resistor_ohm)
 
 
-def log_scale(p):
-    """长记零点的垂直档位：按 1 mA 或基线电流，取较灵敏的一档；自动量程仍会兜底。"""
+def baseline_scale(p):
+    """A04 基线帧的垂直档位：覆盖目标基线电流；自动量程仍会逐档兜底。"""
     peak = max(abs(p.baseline_current_ma) * 1e-3, 1e-3)
     return scale_for(peak * p.sense_resistor_ohm)
 

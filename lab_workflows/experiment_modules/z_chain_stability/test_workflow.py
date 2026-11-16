@@ -166,6 +166,12 @@ class AcquisitionTest(unittest.TestCase):
         self.assertEqual(meta["kind"], "zero_dg0")
         self.assertIn("elapsed_s", meta)
 
+    def test_zero_scale_ignores_baseline_target(self):
+        params = fast_params(baseline_current_ma=100.0)
+        self.assertAlmostEqual(preparation.zero_scale(params),
+                               preparation.scale_for(1e-3 * params.sense_resistor_ohm))
+        self.assertGreater(preparation.baseline_scale(params), preparation.zero_scale(params))
+
     def test_zero_log_remembers_escalated_scale(self):
         params = fast_params()
         ctx = FakeContext(self.root, params)
