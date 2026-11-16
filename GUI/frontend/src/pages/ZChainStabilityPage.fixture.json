@@ -1,0 +1,1017 @@
+{
+  "fields": [
+    {
+      "name": "RUN_TAG",
+      "label": "运行标签",
+      "type": "string",
+      "default": "z_chain_stability",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AMPLIFIER_GAIN_DB",
+      "label": "功放增益",
+      "type": "number",
+      "default": 20.0,
+      "unit": "dB",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": 20,
+      "description": "连接时写入 1200B（0–20 dB，0.5 dB 步进）；预测电流按此值计算",
+      "read_only": false
+    },
+    {
+      "name": "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+      "label": "功放输入阻抗",
+      "type": "number",
+      "default": 1000000.0,
+      "unit": "Ω",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "连接时写入 1200B，并把信号源输出负载配成一致",
+      "read_only": false,
+      "options": [
+        {
+          "value": 50.0,
+          "label": "50 Ω"
+        },
+        {
+          "value": 1000000.0,
+          "label": "1 MΩ"
+        }
+      ]
+    },
+    {
+      "name": "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+      "label": "功放输出阻抗",
+      "type": "number",
+      "default": 50.0,
+      "unit": "Ω",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "50 Ω 与线圈回路串联；本机 1 Ω 档实测不出输出，默认 50 Ω",
+      "read_only": false,
+      "options": [
+        {
+          "value": 50.0,
+          "label": "50 Ω"
+        },
+        {
+          "value": 1.0,
+          "label": "1 Ω"
+        }
+      ]
+    },
+    {
+      "name": "AMPLIFIER_WRITE_SETTINGS",
+      "label": "连接时写入功放设置",
+      "type": "boolean",
+      "default": true,
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SENSE_RESISTOR_OHM",
+      "label": "采样电阻",
+      "type": "number",
+      "default": 10.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "I = V_sense / R_sense",
+      "read_only": false
+    },
+    {
+      "name": "DAMPING_RESISTOR_OHM",
+      "label": "阻尼电阻",
+      "type": "number",
+      "default": 10.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "COIL_RESISTANCE_OHM",
+      "label": "线圈直流电阻",
+      "type": "number",
+      "default": 0.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "用于预测电流；0 使预测偏大、偏保守",
+      "read_only": false
+    },
+    {
+      "name": "RESISTOR_RATED_W",
+      "label": "电阻额定功率",
+      "type": "number",
+      "default": 2.0,
+      "unit": "W",
+      "group": "advanced",
+      "minimum": 0.01,
+      "maximum": null,
+      "description": "平均功耗按额定一半校验",
+      "read_only": false
+    },
+    {
+      "name": "SETTLE_S",
+      "label": "输出切换后等待",
+      "type": "number",
+      "default": 0.3,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_ACQUIRE_DELAY_S",
+      "label": "示波器停采后等待",
+      "type": "number",
+      "default": 1.5,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": 30,
+      "description": "STOP 置位后波形缓冲尚不可读；立即读取会返回空数据",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_CURRENT_CHANNEL",
+      "label": "采样电阻通道",
+      "type": "integer",
+      "default": 2,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 4,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_SYNC_CHANNEL",
+      "label": "同步触发通道",
+      "type": "integer",
+      "default": 3,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 4,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SYNC_TRIGGER_LEVEL_V",
+      "label": "同步触发电平",
+      "type": "number",
+      "default": 1.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SYNC_SCALE_V_DIV",
+      "label": "同步通道垂直档位",
+      "type": "number",
+      "default": 2.0,
+      "unit": "V/div",
+      "group": "advanced",
+      "minimum": 0.0005,
+      "maximum": 10,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "MAX_MEMORY_DEPTH",
+      "label": "最大存储深度上限",
+      "type": "integer",
+      "default": 10000,
+      "unit": "点",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "示波器深度为 AUTO，由仪器按时基给出采样率；超过此点数时改用此上限。上限不是精确深度，以回读为准",
+      "read_only": false,
+      "options": [
+        {
+          "value": 1000,
+          "label": "1,000"
+        },
+        {
+          "value": 10000,
+          "label": "10,000"
+        },
+        {
+          "value": 100000,
+          "label": "100,000"
+        },
+        {
+          "value": 1000000,
+          "label": "1,000,000"
+        }
+      ]
+    },
+    {
+      "name": "ZERO_WINDOW_S",
+      "label": "零点/直采窗口",
+      "type": "number",
+      "default": 0.02,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0.0001,
+      "maximum": 10,
+      "description": "取 50 Hz 工频周期 20 ms 的整数倍可平均掉工频干扰",
+      "read_only": false
+    },
+    {
+      "name": "ZERO_FRAMES",
+      "label": "首尾零点帧数",
+      "type": "integer",
+      "default": 5,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "IV_CHECK_VOLTAGES_V",
+      "label": "I–V 检查电压",
+      "type": "array",
+      "default": [
+        -0.05,
+        0.0,
+        0.05
+      ],
+      "unit": "V",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "小直流三点拟合 I = k·V + b，用于 A04 由目标电流反推电压",
+      "read_only": false
+    },
+    {
+      "name": "IV_CHECK_FRAMES",
+      "label": "I–V 每档帧数",
+      "type": "integer",
+      "default": 5,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 50,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "ZERO_LOG_INTERVAL_S",
+      "label": "零点记录间隔",
+      "type": "number",
+      "default": 1.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0.05,
+      "maximum": 600,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "ZERO_LOG_DURATION_S",
+      "label": "零点记录时长",
+      "type": "number",
+      "default": 3600.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 604800,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "ZERO_RAW_SAVE_INTERVAL_S",
+      "label": "零点原始帧保存间隔",
+      "type": "number",
+      "default": 600.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "0 表示只存均值，不存原始帧",
+      "read_only": false
+    },
+    {
+      "name": "ZERO_FAST_INTERVAL_S",
+      "label": "短时噪声记录间隔",
+      "type": "number",
+      "default": 0.1,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0.01,
+      "maximum": 10,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "ZERO_FAST_DURATION_S",
+      "label": "短时噪声记录时长",
+      "type": "number",
+      "default": 0.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": 3600,
+      "description": "0 表示不做快速段；>0 时在长记前后各插入一段短间隔记录",
+      "read_only": false
+    },
+    {
+      "name": "BASELINE_MODE",
+      "label": "基线设定方式",
+      "type": "string",
+      "default": "current",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": "current",
+          "label": "目标电流"
+        },
+        {
+          "value": "voltage",
+          "label": "直接电压"
+        }
+      ]
+    },
+    {
+      "name": "BASELINE_CURRENT_MA",
+      "label": "基线目标电流",
+      "type": "number",
+      "default": 0.0,
+      "unit": "mA",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "current 模式：由 I–V 拟合反推电压后写入",
+      "read_only": false
+    },
+    {
+      "name": "BASELINE_VOLTAGE_V",
+      "label": "基线电压",
+      "type": "number",
+      "default": 0.0,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "voltage 模式：直接写入该电压",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_PERIOD_US",
+      "label": "双脉冲周期",
+      "type": "number",
+      "default": 100.0,
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": 10,
+      "maximum": null,
+      "description": "+π 与 −π 成对的一个周期；脉冲事件间隔为周期的一半",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_WIDTH_US",
+      "label": "单脉冲宽度",
+      "type": "number",
+      "default": 4.0,
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": 0.2,
+      "maximum": null,
+      "description": "含升降沿的总宽度",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_EDGE_US",
+      "label": "升/降沿宽度",
+      "type": "number",
+      "default": 1.0,
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": 0.05,
+      "maximum": null,
+      "description": "升余弦沿；单脉冲面积 = (宽度 − 沿宽) × 峰值",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_PEAK_CURRENT_MA",
+      "label": "脉冲峰值电流",
+      "type": "number",
+      "default": 255.0,
+      "unit": "mA",
+      "group": "advanced",
+      "minimum": 0.1,
+      "maximum": null,
+      "description": "相对基线的 +π 峰值；−π 取相反号。默认按 K=653.79 Hz/mA 估为约 1.0π",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_CAPTURE_INTERVAL_S",
+      "label": "脉冲捕获间隔",
+      "type": "number",
+      "default": 60.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_CAPTURE_PERIODS",
+      "label": "每次捕获周期数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 2,
+      "maximum": 20,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_DURATION_S",
+      "label": "脉冲列持续时长",
+      "type": "number",
+      "default": 3600.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 604800,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_RAW_SAVE_INTERVAL_S",
+      "label": "脉冲原始帧保存间隔",
+      "type": "number",
+      "default": 600.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_TAIL_WINDOW_US",
+      "label": "单脉冲积分窗",
+      "type": "number",
+      "default": 20.0,
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "从脉冲起点到积分结束；须覆盖 RL 衰减尾与退出沿",
+      "read_only": false
+    },
+    {
+      "name": "COIL_CONSTANT_HZ_PER_MA",
+      "label": "Z 线圈常数",
+      "type": "number",
+      "default": 653.79,
+      "unit": "Hz/mA",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "由 Z 线圈常数标定给出；脉冲角 θ = 2π·K·∫I dt",
+      "read_only": false
+    }
+  ],
+  "flow": {
+    "run_step_id": "A05",
+    "finish_step_id": "A06",
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数、映射与安全限值预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": [
+          "不连接硬件；z_pulse_coil_current 与 Z_magnetic_field 必须有有限上下界，计划电流、基线电压、脉冲峰谷与电阻功耗全部在限内"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "连接信号源、1200B、DHO900 并同步时钟",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH"
+        ],
+        "quality_gates": [
+          "连接前过硬件门控；按参数写入 1200B 增益与输入/输出阻抗，并把信号源输出负载配成一致；Z 信号源参考时钟严格回读，失败不开启任何输出"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "DG 0 V 零点与 I–V 检查（可勾选）",
+        "group": "测量",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH",
+          "ZERO_WINDOW_S",
+          "ZERO_FRAMES",
+          "IV_CHECK_VOLTAGES_V",
+          "IV_CHECK_FRAMES",
+          "ZERO_LOG_INTERVAL_S",
+          "ZERO_LOG_DURATION_S",
+          "ZERO_RAW_SAVE_INTERVAL_S",
+          "ZERO_FAST_INTERVAL_S",
+          "ZERO_FAST_DURATION_S"
+        ],
+        "artifacts": [
+          "raw/zero_dg0.csv",
+          "raw/iv_check_*.npz",
+          "raw/zero_off_*.npz",
+          "raw/zero_on_*.npz"
+        ],
+        "display_parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH",
+          "ZERO_WINDOW_S",
+          "ZERO_FRAMES",
+          "IV_CHECK_VOLTAGES_V",
+          "IV_CHECK_FRAMES",
+          "ZERO_LOG_INTERVAL_S",
+          "ZERO_LOG_DURATION_S",
+          "ZERO_RAW_SAVE_INTERVAL_S",
+          "ZERO_FAST_INTERVAL_S",
+          "ZERO_FAST_DURATION_S"
+        ],
+        "quality_gates": [
+          "功放关/开两态、DG 0 V 测零偏；I–V 小直流至少两点；长记逐点追加 CSV 并按间隔存原始帧"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "可设定基线零点（可勾选）",
+        "group": "测量",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH",
+          "ZERO_WINDOW_S",
+          "ZERO_FRAMES",
+          "IV_CHECK_VOLTAGES_V",
+          "IV_CHECK_FRAMES",
+          "ZERO_LOG_INTERVAL_S",
+          "ZERO_LOG_DURATION_S",
+          "ZERO_RAW_SAVE_INTERVAL_S",
+          "ZERO_FAST_INTERVAL_S",
+          "ZERO_FAST_DURATION_S",
+          "BASELINE_MODE",
+          "BASELINE_CURRENT_MA",
+          "BASELINE_VOLTAGE_V"
+        ],
+        "artifacts": [
+          "raw/zero_baseline.csv",
+          "raw/baseline_setup.npz"
+        ],
+        "display_parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH",
+          "ZERO_WINDOW_S",
+          "ZERO_FRAMES",
+          "IV_CHECK_VOLTAGES_V",
+          "IV_CHECK_FRAMES",
+          "ZERO_LOG_INTERVAL_S",
+          "ZERO_LOG_DURATION_S",
+          "ZERO_RAW_SAVE_INTERVAL_S",
+          "ZERO_FAST_INTERVAL_S",
+          "ZERO_FAST_DURATION_S",
+          "BASELINE_MODE",
+          "BASELINE_CURRENT_MA",
+          "BASELINE_VOLTAGE_V"
+        ],
+        "quality_gates": [
+          "current 模式由实测 I–V 反推电压，voltage 模式直接写电压；写入前校验电压与目标电流；设置后测实际电流再开始长记"
+        ]
+      },
+      {
+        "id": "A05",
+        "title": "±π 双脉冲角分布（可勾选）",
+        "group": "测量",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH",
+          "PULSE_PERIOD_US",
+          "PULSE_WIDTH_US",
+          "PULSE_EDGE_US",
+          "PULSE_PEAK_CURRENT_MA",
+          "PULSE_CAPTURE_INTERVAL_S",
+          "PULSE_CAPTURE_PERIODS",
+          "PULSE_DURATION_S",
+          "PULSE_RAW_SAVE_INTERVAL_S",
+          "PULSE_TAIL_WINDOW_US",
+          "COIL_CONSTANT_HZ_PER_MA"
+        ],
+        "artifacts": [
+          "raw/pulse_angles.csv",
+          "raw/pulse_*.npz"
+        ],
+        "display_parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH",
+          "PULSE_PERIOD_US",
+          "PULSE_WIDTH_US",
+          "PULSE_EDGE_US",
+          "PULSE_PEAK_CURRENT_MA",
+          "PULSE_CAPTURE_INTERVAL_S",
+          "PULSE_CAPTURE_PERIODS",
+          "PULSE_DURATION_S",
+          "PULSE_RAW_SAVE_INTERVAL_S",
+          "PULSE_TAIL_WINDOW_US",
+          "COIL_CONSTANT_HZ_PER_MA"
+        ],
+        "quality_gates": [
+          "100 µs 周期、两个 4 µs 反号脉冲连续输出；同步沿触发、触发居中；按间隔捕获短窗并逐脉冲积分，θ = 2π·K·∫I dt"
+        ]
+      },
+      {
+        "id": "A06",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "先关闭 1200B 输出，再将 Z 通道 DC 0 V、关闭同步与输出，停止 DHO900 并断开三台设备"
+        ]
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "零点漂移、Allan 与电流/场换算",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "zero_summary.json",
+          "zero_timeseries.png",
+          "zero_allan.png"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "运行目录已停止写入；缺少某一段零点数据时该段留空，不阻塞另一段"
+        ]
+      },
+      {
+        "id": "B02",
+        "title": "±π 脉冲角分布与不对称",
+        "group": "独立分析",
+        "dependencies": [
+          "B01"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "pulse_summary.json",
+          "pulse_timeseries.png",
+          "pulse_hist.png"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "缺少脉冲 CSV 时写空摘要与原因；不把分析完成当作科学质量通过"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "RUN_TAG": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "AMPLIFIER_GAIN_DB": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "AMPLIFIER_INPUT_IMPEDANCE_OHM": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "AMPLIFIER_WRITE_SETTINGS": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SENSE_RESISTOR_OHM": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "DAMPING_RESISTOR_OHM": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "COIL_RESISTANCE_OHM": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "RESISTOR_RATED_W": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SETTLE_S": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SCOPE_ACQUIRE_DELAY_S": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SCOPE_CURRENT_CHANNEL": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SCOPE_SYNC_CHANNEL": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SYNC_TRIGGER_LEVEL_V": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SYNC_SCALE_V_DIV": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "MAX_MEMORY_DEPTH": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "ZERO_WINDOW_S": [
+          "A03",
+          "A04"
+        ],
+        "ZERO_FRAMES": [
+          "A03",
+          "A04"
+        ],
+        "IV_CHECK_VOLTAGES_V": [
+          "A03",
+          "A04"
+        ],
+        "IV_CHECK_FRAMES": [
+          "A03",
+          "A04"
+        ],
+        "ZERO_LOG_INTERVAL_S": [
+          "A03",
+          "A04"
+        ],
+        "ZERO_LOG_DURATION_S": [
+          "A03",
+          "A04"
+        ],
+        "ZERO_RAW_SAVE_INTERVAL_S": [
+          "A03",
+          "A04"
+        ],
+        "ZERO_FAST_INTERVAL_S": [
+          "A03",
+          "A04"
+        ],
+        "ZERO_FAST_DURATION_S": [
+          "A03",
+          "A04"
+        ],
+        "BASELINE_MODE": [
+          "A04"
+        ],
+        "BASELINE_CURRENT_MA": [
+          "A04"
+        ],
+        "BASELINE_VOLTAGE_V": [
+          "A04"
+        ],
+        "PULSE_PERIOD_US": [
+          "A05"
+        ],
+        "PULSE_WIDTH_US": [
+          "A05"
+        ],
+        "PULSE_EDGE_US": [
+          "A05"
+        ],
+        "PULSE_PEAK_CURRENT_MA": [
+          "A05"
+        ],
+        "PULSE_CAPTURE_INTERVAL_S": [
+          "A05"
+        ],
+        "PULSE_CAPTURE_PERIODS": [
+          "A05"
+        ],
+        "PULSE_DURATION_S": [
+          "A05"
+        ],
+        "PULSE_RAW_SAVE_INTERVAL_S": [
+          "A05"
+        ],
+        "PULSE_TAIL_WINDOW_US": [
+          "A05"
+        ],
+        "COIL_CONSTANT_HZ_PER_MA": [
+          "A05"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/z-chain-stability/workflow/diagram"
+  }
+}

@@ -59,6 +59,7 @@ const STABLE_EXPERIMENT_IDS: readonly string[] = [
   "rf-control-scale-sensitivity",
   "rf-sensitivity-aw",
   "rf-sensitivity-aw-known-noise",
+  "z-chain-stability",
 ];
 
 function RouteSwitcher() {

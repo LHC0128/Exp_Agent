@@ -1,0 +1,272 @@
+"""Z 链路零点/脉冲角的假仪器回归：波形、分割、I–V、长记写盘、基线与取消。"""
+from __future__ import annotations
+
+import csv
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import numpy as np
+
+import yaml
+
+from ... import common
+from ...experiment_runtime import WorkflowCancelled
+from . import acquisition, analysis_steps, models, preparation, processing, run_format
+
+ACQUISITION_CASES = {
+    "z-chain-stability": {
+        "mode": "single",
+        "cases": {
+            "order": ["AcquisitionTest::test_zero_log_and_iv"],
+            "cancel": ["AcquisitionTest::test_cancel_keeps_partial_rows"],
+            "acquire_failure": ["AcquisitionTest::test_acquire_failure_propagates"],
+            "entrypoints": ["AcquisitionTest::test_pulse_angles"],
+        },
+    },
+}
+
+
+class FakeSignalGenerator:
+    channel = 1
+
+    def __init__(self):
+        self.voltage = 0.0
+        self.arb = None
+        self.output = False
+        self.sync = False
+
+    def set_output(self, value):
+        self.output = value
+
+    def set_sync_state(self, value):
+        self.sync = value
+
+    def set_burst_state(self, value):
+        pass
+
+    def set_mod_state(self, value):
+        pass
+
+    def setup_dc(self, volts):
+        self.voltage, self.arb = volts, None
+
+    def setup_arbitrary(self, values, freq, amplitude, offset, output=False):
+        self.arb = (np.asarray(values, float), freq, amplitude, offset)
+        self.voltage, self.output = offset, output
+
+
+class FakeAmplifier:
+    def set_output(self, value):
+        pass
+
+
+class FakeResult:
+    def __init__(self, channel, time, voltage):
+        self.channel, self.time, self.voltage = channel, time, voltage
+        self.config_snapshot = {"channel": channel}
+        self.preamble_dict = {"xorigin": 0.0, "xincrement": float(time[1] - time[0])}
+
+
+class FakeAcquirer:
+    """按信号源当前 DC/任意波产生采样电阻电压；通道 2 电流、通道 3 同步。"""
+
+    def __init__(self, sg, params, *, fail_at=None):
+        self.sg, self.params, self.fail_at = sg, params, fail_at
+        self.calls = 0
+
+    def use_auto_depth(self, value):
+        pass
+
+    def acquire_all(self, config):
+        self.calls += 1
+        if self.fail_at and self.calls == self.fail_at:
+            raise RuntimeError("模拟采集失败")
+        n = 4000
+        duration = 400e-6 if config.trigger.mode == "NORMal" else self.params.zero_window_s
+        time = np.arange(n) * duration / n
+        if self.sg.arb is not None:
+            values, _, amplitude, offset = self.sg.arb
+            y = np.interp(np.linspace(0, 1, n), np.linspace(0, 1, values.size), values)
+            volts = offset + amplitude / 2.0 * y
+        else:
+            volts = np.full(n, self.sg.voltage)
+        current = volts * self.params.amps_per_drive_volt
+        results = [FakeResult(self.params.scope_current_channel, time, current * self.params.sense_resistor_ohm)]
+        if config.trigger.mode == "NORMal":
+            sync = np.where((time % (self.params.pulse_period_us * 1e-6)) < 10e-6, 3.5, 0.0)
+            results.append(FakeResult(self.params.scope_sync_channel, time, sync))
+        return results
+
+
+class FakeContext:
+    def __init__(self, root, params):
+        self.root, self.params = root, params
+        self.directory = SimpleNamespace(root=root / "run")
+        (self.directory.root / "raw").mkdir(parents=True, exist_ok=True)
+        sg = FakeSignalGenerator()
+        self.devices = {"sg": sg, "amp": FakeAmplifier()}
+        self.devices["acquirer"] = FakeAcquirer(sg, params)
+        self.state = {"data_files": []}
+        self.outputs = {}
+        self.current_scale = None
+
+
+def fast_params(**overrides):
+    p = models.ZChainStabilityParams(
+        run_tag="test", settle_s=0.0, zero_frames=1, iv_check_frames=1,
+        iv_check_voltages_v=[-0.05, 0.0, 0.05], zero_window_s=0.02,
+        zero_log_interval_s=0.05, zero_log_duration_s=0.15, zero_raw_save_interval_s=0.0,
+        zero_fast_duration_s=0.0,
+        pulse_duration_s=0.2, pulse_capture_interval_s=0.05, pulse_raw_save_interval_s=0.0,
+        pulse_capture_periods=4)
+    for key, value in overrides.items():
+        setattr(p, key, value)
+    return p
+
+
+class AcquisitionTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        shutil.copytree(Path(common.__file__).resolve().parents[1] / "params", self.root / "params")
+
+    def test_zero_log_and_iv(self):
+        params = fast_params()
+        ctx = FakeContext(self.root, params)
+        acquisition.measure_zero_dg0(ctx)
+        csv_path = ctx.directory.root / "raw" / "zero_dg0.csv"
+        self.assertTrue(csv_path.is_file())
+        with csv_path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertGreaterEqual(len(rows), 2)
+        self.assertIn("current_a", rows[0])
+        self.assertAlmostEqual(ctx.state["iv_fit"]["k_a_per_v"], params.amps_per_drive_volt, places=6)
+        self.assertEqual(ctx.state["zero_offset"]["offset_current_a"], 0.0)
+
+    def test_cancel_keeps_partial_rows(self):
+        params = fast_params(zero_log_duration_s=1.0, zero_log_interval_s=0.05)
+        ctx = FakeContext(self.root, params)
+        calls = {"n": 0}
+
+        def cancel_after_two():
+            calls["n"] += 1
+            if calls["n"] > 2:
+                raise WorkflowCancelled("模拟取消")
+
+        with patch.object(acquisition, "check_cancelled", side_effect=cancel_after_two):
+            with self.assertRaises(WorkflowCancelled):
+                acquisition._log_zero(ctx, "dg0", 0.0, stage="A03", duration_s=1.0,
+                                      interval_s=0.05, raw_interval_s=0.0, scale=0.005)
+        csv_path = ctx.directory.root / "raw" / "zero_dg0.csv"
+        self.assertTrue(csv_path.is_file())
+        with csv_path.open(newline="", encoding="utf-8") as handle:
+            self.assertGreaterEqual(len(list(csv.DictReader(handle))), 1)
+
+    def test_acquire_failure_propagates(self):
+        params = fast_params()
+        ctx = FakeContext(self.root, params)
+        ctx.devices["acquirer"] = FakeAcquirer(ctx.devices["sg"], params, fail_at=2)
+        with self.assertRaises(RuntimeError):
+            acquisition.measure_zero_dg0(ctx)
+
+    def test_baseline_current_mode(self):
+        params = fast_params(baseline_mode="current", baseline_current_ma=1.0,
+                             zero_log_duration_s=0.1)
+        ctx = FakeContext(self.root, params)
+        ctx.state["iv_fit"] = processing.iv_fit([-0.05, 0.0, 0.05],
+                                                [-0.05, 0.0, 0.05]) | {"k_a_per_v": 0.137, "b_a": 0.0002}
+        acquisition.measure_baseline(ctx)
+        self.assertAlmostEqual(ctx.state["baseline_target_current_a"], 1e-3, places=9)
+        self.assertGreater(ctx.state["baseline_setpoint_v"], 0)
+        self.assertTrue((ctx.directory.root / "raw" / "zero_baseline.csv").is_file())
+
+    def test_pulse_angles(self):
+        params = fast_params()
+        ctx = FakeContext(self.root, params)
+        acquisition.measure_pulse_angles(ctx)
+        csv_path = ctx.directory.root / "raw" / "pulse_angles.csv"
+        self.assertTrue(csv_path.is_file())
+        with csv_path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertGreaterEqual(len(rows), 8)
+        signs = {row["sign"] for row in rows}
+        self.assertEqual(signs, {"+", "-"})
+        theta = np.asarray([float(row["theta_pi"]) for row in rows])
+        self.assertTrue(np.all(np.abs(theta) > 0.1))
+
+
+class AnalysisTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.run_dir = Path(self.temporary.name) / "run"
+        (self.run_dir / "raw").mkdir(parents=True)
+        self.params = fast_params()
+        config = dict(experiment_id=run_format.EXPERIMENT_ID, data_type=run_format.DATA_TYPE,
+                      schema_version=self.params.schema_version, raw_format_version=run_format.RAW_FORMAT_VERSION,
+                      completion_status="completed", parameters=self.params.to_external())
+        (self.run_dir / "experiment_config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    def test_zero_and_pulse_reports(self):
+        with (self.run_dir / "raw" / "zero_dg0.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["timestamp", "elapsed_s", "mean_v", "std_v", "current_a"])
+            for index in range(5):
+                writer.writerow(["2026-01-01T00:00:00", index, 0.001 * index, 0.0001, 0.0001 * index])
+        with (self.run_dir / "raw" / "pulse_angles.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["timestamp", "elapsed_s", "sign", "q_a_s", "theta_pi", "i_base_a", "peak_a"])
+            for index, sign in enumerate(("+", "-", "+", "-")):
+                writer.writerow(["2026-01-01T00:00:00", index, sign, 7.65e-7 * (1 if sign == "+" else -1),
+                                 1.0 * (1 if sign == "+" else -1), 0.0, 0.255])
+        config, params = analysis_steps.load_config(self.run_dir)
+        self.assertEqual(config["experiment_id"], run_format.EXPERIMENT_ID)
+        zero = analysis_steps.zero_report(self.run_dir, params)
+        self.assertEqual(zero["segments"]["dg0"]["rows"], 5)
+        pulse = analysis_steps.pulse_report(self.run_dir, params)
+        self.assertEqual(pulse["rows"], 4)
+        self.assertAlmostEqual(pulse["plus"]["mean"], 1.0, places=6)
+        self.assertAlmostEqual(pulse["minus"]["mean"], -1.0, places=6)
+        self.assertAlmostEqual(pulse["asymmetry_pi"], 0.0, places=6)
+        self.assertTrue((self.run_dir / "results" / "zero_summary.json").is_file())
+        self.assertTrue((self.run_dir / "results" / "pulse_summary.json").is_file())
+
+
+class ProcessingTest(unittest.TestCase):
+    def test_waveform_has_two_opposite_pulses(self):
+        wave = processing.pulse_waveform(100.0, 4.0, 1.0, points=4096)
+        self.assertAlmostEqual(float(wave.min()), -1.0, places=6)
+        self.assertAlmostEqual(float(wave.max()), 1.0, places=6)
+        self.assertAlmostEqual(float(np.trapezoid(wave, dx=100.0 / 4096)), 0.0, places=3)
+
+    def test_segment_and_angle(self):
+        t = np.linspace(0, 400e-6, 40000)
+        current = np.zeros_like(t)
+        for k in range(4):
+            sign = 1.0 if k % 2 == 0 else -1.0
+            mask = (t >= k * 100e-6) & (t < k * 100e-6 + 4e-6)
+            current[mask] = sign * 0.255
+        pulses = processing.segment_pulses(t, current, period_s=100e-6, width_s=4e-6, tail_s=20e-6)
+        self.assertEqual(len(pulses), 4)
+        angle = processing.pulse_angle_pi(pulses[0]["q_a_s"], 653.79)
+        self.assertAlmostEqual(angle, 1.332, places=2)
+        self.assertLess(pulses[1]["q_a_s"], 0)
+
+    def test_iv_fit(self):
+        fit = processing.iv_fit([-0.05, 0.0, 0.05], [-0.00685, 0.0, 0.00685])
+        self.assertAlmostEqual(fit["k_a_per_v"], 0.137, places=6)
+        self.assertAlmostEqual(fit["b_a"], 0.0, places=12)
+
+    def test_preflight_rejects_over_limit_pulse(self):
+        p = models.ZChainStabilityParams(pulse_peak_current_ma=500.0)
+        with self.assertRaises(ValueError):
+            preparation.preflight(p, Path(__file__).resolve().parents[3])
+
+
+if __name__ == "__main__":
+    unittest.main()

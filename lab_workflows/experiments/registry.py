@@ -93,6 +93,9 @@ from ..experiment_modules.xy_direct_aw_dc_calibration.definition import (
 from ..experiment_modules.coil_constant_calibration.definition import (
     DEFINITION as COIL_CONSTANT_CALIBRATION_DEFINITION,
 )
+from ..experiment_modules.z_chain_stability.definition import (
+    DEFINITION as Z_CHAIN_STABILITY_DEFINITION,
+)
 # </registry:imports>
 
 from .contracts import ExperimentDefinition
@@ -133,6 +136,7 @@ _DEFINITIONS = [
     T2_CALIBRATION_DEFINITION,  # t2-calibration
     XY_DIRECT_AW_DC_DEFINITION,  # xy-direct-aw-dc-calibration
     COIL_CONSTANT_CALIBRATION_DEFINITION,  # coil-constant-calibration
+    Z_CHAIN_STABILITY_DEFINITION,  # z-chain-stability
 ]
 # </registry:definitions>
 
