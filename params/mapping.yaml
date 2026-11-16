@@ -7,10 +7,10 @@ mapping:
     description: 6221 控制 Z 方向小磁场线圈的任意波电流，单位 mA；与 GS200 主磁场线圈独立
   main_magnetic_field:
     instrument: gs200
-    device_id: gs200_90z631552
-    label: GS200 Z 主磁场
+    device_id: gs200_192_168_124_41
+    label: GS200 主磁场（王湾，网络）
     source_function: CURRent
-    description: 磁力仪中 Z 主磁场线圈控制，单位mA，通过电流控制磁场强度，范围-10到10mA；与 6221 小磁场线圈独立
+    description: 王湾装置 Z 主磁场线圈电流源（TCPIP 192.168.124.41）；单位 mA，通过电流控制磁场强度
   Z_magnetic_field:
     instrument: signal_generator
     device_id: dg4e261300744
