@@ -387,6 +387,18 @@
       "read_only": false
     },
     {
+      "name": "PULSE_BASELINE_V",
+      "label": "脉冲直流偏置",
+      "type": "number",
+      "default": 0.0,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "±π 脉冲所骑的 DG 直流偏置，与 A04 的基线目标无关；0 V 表示不写偏置，此时实测电流不为 0（功放零偏）",
+      "read_only": false
+    },
+    {
       "name": "PULSE_CAPTURE_INTERVAL_S",
       "label": "脉冲捕获间隔",
       "type": "number",
@@ -683,6 +695,7 @@
           "PULSE_WIDTH_US",
           "PULSE_EDGE_US",
           "PULSE_PEAK_CURRENT_MA",
+          "PULSE_BASELINE_V",
           "PULSE_CAPTURE_INTERVAL_S",
           "PULSE_CAPTURE_PERIODS",
           "PULSE_DURATION_S",
@@ -714,6 +727,7 @@
           "PULSE_WIDTH_US",
           "PULSE_EDGE_US",
           "PULSE_PEAK_CURRENT_MA",
+          "PULSE_BASELINE_V",
           "PULSE_CAPTURE_INTERVAL_S",
           "PULSE_CAPTURE_PERIODS",
           "PULSE_DURATION_S",
@@ -918,6 +932,9 @@
           "A05"
         ],
         "PULSE_PEAK_CURRENT_MA": [
+          "A05"
+        ],
+        "PULSE_BASELINE_V": [
           "A05"
         ],
         "PULSE_CAPTURE_INTERVAL_S": [

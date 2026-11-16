@@ -24,7 +24,7 @@ def ten_division_window(window_s: float) -> float:
 
 @dataclass
 class ZChainStabilityParams(ExperimentParams):
-    schema_version: ClassVar[int] = 3
+    schema_version: ClassVar[int] = 4
 
     @classmethod
     def migrate_external(cls, values, schema_version):
@@ -113,6 +113,10 @@ class ZChainStabilityParams(ExperimentParams):
     pulse_peak_current_ma: float = parameter(default=255.0, external_name="PULSE_PEAK_CURRENT_MA",
         label="脉冲峰值电流", unit="mA", minimum=0.1,
         description="相对基线的 +π 峰值；−π 取相反号。默认按 K=653.79 Hz/mA 估为约 1.0π")
+    pulse_baseline_v: float = parameter(default=0.0, external_name="PULSE_BASELINE_V",
+        label="脉冲直流偏置", unit="V", group="basic",
+        description="±π 脉冲所骑的 DG 直流偏置，与 A04 的基线目标无关；0 V 表示不写偏置，"
+                    "此时实测电流不为 0（功放零偏）")
     pulse_capture_interval_s: float = parameter(default=60.0, external_name="PULSE_CAPTURE_INTERVAL_S",
         label="脉冲捕获间隔", unit="s", minimum=1)
     pulse_capture_periods: int = parameter(default=4, external_name="PULSE_CAPTURE_PERIODS",
@@ -145,6 +149,11 @@ class ZChainStabilityParams(ExperimentParams):
     def baseline_setpoint_voltage(self) -> float:
         """由目标电流与手动 I–V 换算得到 DG 电压：V = (I_target − I_offset) / k。"""
         return (self.baseline_current_ma - self.conversion_offset_ma) * 1e-3 / self.conversion_amps_per_volt
+
+    @property
+    def pulse_baseline_voltage(self) -> float:
+        """±π 脉冲的直流偏置电压；0 V 表示不写偏置，与 A04 的基线目标无关。"""
+        return self.pulse_baseline_v
 
     @property
     def pulse_area_s(self) -> float:
@@ -208,6 +217,8 @@ class ZChainStabilityParams(ExperimentParams):
             errors.append("PULSE_TAIL_WINDOW_US 必须小于半个周期，避免跨到下一个脉冲")
         if self.pulse_peak_current_ma <= 0 or not math.isfinite(self.pulse_peak_current_ma):
             errors.append("PULSE_PEAK_CURRENT_MA 必须为正")
+        if not math.isfinite(self.pulse_baseline_v):
+            errors.append("PULSE_BASELINE_V 必须为有限数")
         if self.coil_constant_hz_per_ma <= 0:
             errors.append("COIL_CONSTANT_HZ_PER_MA 必须为正")
         if self.pulse_capture_periods < 2:

@@ -234,6 +234,17 @@ class AcquisitionTest(unittest.TestCase):
         theta = np.asarray([float(row["theta_pi"]) for row in rows])
         self.assertTrue(np.all(np.abs(theta) > 0.1))
 
+    def test_pulse_offset_ignores_baseline_target(self):
+        # A04 的基线目标不影响 A05 的脉冲偏置；PULSE_BASELINE_V=0 就是 DG 0 V
+        params = fast_params(baseline_current_ma=100.0)
+        ctx = FakeContext(self.root, params)
+        acquisition.measure_pulse_angles(ctx)
+        self.assertEqual(ctx.devices["sg"].arb[3], 0.0)
+        params = fast_params(baseline_current_ma=100.0, pulse_baseline_v=0.4, pulse_peak_current_ma=100.0)
+        ctx = FakeContext(self.root, params)
+        acquisition.measure_pulse_angles(ctx)
+        self.assertAlmostEqual(ctx.devices["sg"].arb[3], 0.4, places=12)
+
 
 class AnalysisTest(unittest.TestCase):
     def setUp(self):

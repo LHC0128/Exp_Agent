@@ -202,9 +202,8 @@ def measure_baseline(ctx):
 
 
 def _pulse_offset(ctx):
-    if "baseline_setpoint_v" in ctx.state:
-        return float(ctx.state["baseline_setpoint_v"])
-    return float(ctx.params.baseline_setpoint_voltage)
+    """±π 脉冲的 DG 直流偏置：用脉冲自己的参数，不继承 A04 的基线目标。"""
+    return float(ctx.params.pulse_baseline_voltage)
 
 
 def measure_pulse_angles(ctx):
