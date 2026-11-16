@@ -1,4 +1,4 @@
-schema_version: 3
+schema_version: 4
 parameters:
   RUN_TAG: z_chain_stability
   AMPLIFIER_GAIN_DB: 20.0
@@ -29,6 +29,7 @@ parameters:
   PULSE_WIDTH_US: 4.0
   PULSE_EDGE_US: 1.0
   PULSE_PEAK_CURRENT_MA: 200.0
+  PULSE_BASELINE_V: 0.0
   PULSE_CAPTURE_INTERVAL_S: 60.0
   PULSE_CAPTURE_PERIODS: 4
   PULSE_DURATION_S: 3600.0
