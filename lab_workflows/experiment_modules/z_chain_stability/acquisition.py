@@ -19,7 +19,7 @@ from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import arm_sync_output
 from . import processing
 from .preparation import (VERTICAL_HALF_DIVISIONS, SafetyAbort, capture_config, current_limit,
-                          log_scale, plan, pulse_scale, set_amp_output, set_dc, sleep, zero_scale)
+                          log_scale, pulse_scale, set_amp_output, set_dc, sleep, zero_scale)
 from .run_format import CURRENT_LIMIT_KEY, SOURCE_KEY
 
 SYNC_MIN_PEAK_V = 1.0
@@ -101,30 +101,6 @@ def _progress(stage, label, index, total, started):
                             estimated_remaining_seconds=elapsed / index * (total - index) if index else None)
 
 
-def _iv_check(ctx):
-    """小直流多点测 I(V)，拟合 I=k·V+b，供 A04 由目标电流反推电压。"""
-    p = ctx.params
-    volts, currents = [], []
-    config = capture_config(p, p.zero_window_s, zero_scale(p))
-    for index, volts_set in enumerate(p.iv_check_voltages_v):
-        check_cancelled()
-        set_dc(ctx, volts_set)
-        sleep(p.settle_s)
-        means = []
-        for frame in range(p.iv_check_frames):
-            t, sense, sync, result = _acquire(ctx, config)
-            if frame == 0:
-                _save_frame(ctx, f"iv_check_{index:02d}", t, sense, sync,
-                            _meta(result, {"kind": "iv_check", "volts": volts_set}))
-            means.append(float(np.mean(sense)))
-        volts.append(float(volts_set))
-        currents.append(float(np.mean(means)) / p.sense_resistor_ohm)
-    set_dc(ctx, 0.0)
-    fit = processing.iv_fit(volts, currents)
-    ctx.state["iv_fit"] = {**fit, "volts": volts, "currents_a": currents}
-    return fit
-
-
 def _zero_frames(ctx, kind):
     p = ctx.params
     config = capture_config(p, p.zero_window_s, zero_scale(p))
@@ -191,36 +167,22 @@ def _fast_segment(ctx, mode, volts, stage):
 
 
 def measure_zero_dg0(ctx):
-    """A03：DG 0 V 下功放零偏、I–V 检查与长时间零点。"""
+    """A03：DG 0 V 下功放零偏与长时间零点；不写 I–V 电压。"""
     p = ctx.params
     _baseline_offset(ctx)
-    _iv_check(ctx)
     _fast_segment(ctx, "dg0", 0.0, "A03")
     _log_zero(ctx, "dg0", 0.0, stage="A03", duration_s=p.zero_log_duration_s,
               interval_s=p.zero_log_interval_s, raw_interval_s=p.zero_raw_save_interval_s, scale=log_scale(p))
 
 
-def _baseline_voltage(ctx):
-    p = ctx.params
-    fit = ctx.state.get("iv_fit") or _iv_check(ctx)
-    if p.baseline_mode == "voltage":
-        volts = float(p.baseline_voltage_v)
-        current = fit["k_a_per_v"] * volts + fit["b_a"]
-    else:
-        current = p.baseline_current_ma * 1e-3
-        if abs(fit["k_a_per_v"]) < 1e-12:
-            raise SafetyAbort("I–V 斜率过小，无法由目标电流反推电压")
-        volts = (current - fit["b_a"]) / fit["k_a_per_v"]
-    return float(volts), float(current)
-
-
 def measure_baseline(ctx):
-    """A04：可设定基线——目标电流经 I–V 反推电压，或直接写电压；再长时间记录残流。"""
+    """A04：目标电流经手动 I–V 换算写电压，再长时间记录残流。"""
     p = ctx.params
     set_amp_output(ctx, True)
     set_dc(ctx, 0.0)
     sleep(p.settle_s)
-    volts, target_current = _baseline_voltage(ctx)
+    volts = p.baseline_setpoint_voltage
+    target_current = p.baseline_current_ma * 1e-3
     limits = load_safety_limits(ctx.root)
     validate_safety_limit(SOURCE_KEY, volts, limits)
     validate_safety_limit(CURRENT_LIMIT_KEY, target_current, limits)
@@ -229,9 +191,10 @@ def measure_baseline(ctx):
     t, sense, sync, result = _acquire(ctx, capture_config(p, p.zero_window_s, log_scale(p)))
     measured = float(np.mean(sense)) / p.sense_resistor_ohm
     _save_frame(ctx, "baseline_setup", t, sense, sync,
-                _meta(result, {"kind": "baseline_setup", "mode": p.baseline_mode,
-                               "target_current_a": target_current, "set_volts": volts,
-                               "measured_current_a": measured, "iv_fit": ctx.state.get("iv_fit")}))
+                _meta(result, {"kind": "baseline_setup", "target_current_a": target_current, "set_volts": volts,
+                               "conversion_amps_per_volt": p.conversion_amps_per_volt,
+                               "conversion_offset_ma": p.conversion_offset_ma,
+                               "measured_current_a": measured}))
     ctx.state["baseline_setpoint_v"] = volts
     ctx.state["baseline_target_current_a"] = target_current
     ctx.state["baseline_measured_current_a"] = measured
@@ -243,10 +206,7 @@ def measure_baseline(ctx):
 def _pulse_offset(ctx):
     if "baseline_setpoint_v" in ctx.state:
         return float(ctx.state["baseline_setpoint_v"])
-    p = ctx.params
-    if p.baseline_mode == "voltage":
-        return float(p.baseline_voltage_v)
-    return float(plan(p)["baseline_nominal_v"])
+    return float(ctx.params.baseline_setpoint_voltage)
 
 
 def measure_pulse_angles(ctx):

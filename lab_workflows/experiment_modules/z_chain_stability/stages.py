@@ -12,10 +12,10 @@ CHAIN = ("AMPLIFIER_GAIN_DB", "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPLIFIER_OUTPUT
          "AMPLIFIER_WRITE_SETTINGS", "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM", "COIL_RESISTANCE_OHM",
          "RESISTOR_RATED_W", "SETTLE_S", "SCOPE_ACQUIRE_DELAY_S", "SCOPE_CURRENT_CHANNEL",
          "SCOPE_SYNC_CHANNEL", "SYNC_TRIGGER_LEVEL_V", "SYNC_SCALE_V_DIV", "MAX_MEMORY_DEPTH")
-ZERO = ("ZERO_WINDOW_S", "ZERO_FRAMES", "IV_CHECK_VOLTAGES_V", "IV_CHECK_FRAMES",
+ZERO = ("ZERO_WINDOW_S", "ZERO_FRAMES",
         "ZERO_LOG_INTERVAL_S", "ZERO_LOG_DURATION_S", "ZERO_RAW_SAVE_INTERVAL_S",
         "ZERO_FAST_INTERVAL_S", "ZERO_FAST_DURATION_S")
-BASELINE = ("BASELINE_MODE", "BASELINE_CURRENT_MA", "BASELINE_VOLTAGE_V")
+BASELINE = ("BASELINE_CURRENT_MA", "CONVERSION_AMPS_PER_VOLT", "CONVERSION_OFFSET_MA")
 PULSE = ("PULSE_PERIOD_US", "PULSE_WIDTH_US", "PULSE_EDGE_US", "PULSE_PEAK_CURRENT_MA",
          "PULSE_CAPTURE_INTERVAL_S", "PULSE_CAPTURE_PERIODS", "PULSE_DURATION_S",
          "PULSE_RAW_SAVE_INTERVAL_S", "PULSE_TAIL_WINDOW_US", "COIL_CONSTANT_HZ_PER_MA")
@@ -26,13 +26,13 @@ ACQUISITION = (
     Stage("A02", "连接信号源、1200B、DHO900 并同步时钟", "准备", ("A01",), CHAIN,
           quality_gates=("连接前过硬件门控；按参数写入 1200B 增益与输入/输出阻抗，并把信号源输出负载配成一致；"
                          "Z 信号源参考时钟严格回读，失败不开启任何输出",)),
-    Stage("A03", "DG 0 V 零点与 I–V 检查（可勾选）", "测量", ("A02",), (*CHAIN, *ZERO),
-          ("raw/zero_dg0.csv", "raw/iv_check_*.npz", "raw/zero_off_*.npz", "raw/zero_on_*.npz"),
-          quality_gates=("功放关/开两态、DG 0 V 测零偏；I–V 小直流至少两点；长记逐点追加 CSV 并按间隔存原始帧",)),
-    Stage("A04", "可设定基线零点（可勾选）", "测量", ("A02",), (*CHAIN, *ZERO, *BASELINE),
+    Stage("A03", "DG 0 V 零点（可勾选）", "测量", ("A02",), (*CHAIN, *ZERO),
+          ("raw/zero_dg0.csv", "raw/zero_off_*.npz", "raw/zero_on_*.npz"),
+          quality_gates=("功放关/开两态、DG 0 V 测零偏；长记逐点追加 CSV 并按间隔存原始帧；不写任何 I–V 电压",)),
+    Stage("A04", "目标电流与手动换算基线（可勾选）", "测量", ("A02",), (*CHAIN, *ZERO, *BASELINE),
           ("raw/zero_baseline.csv", "raw/baseline_setup.npz"),
-          quality_gates=("current 模式由实测 I–V 反推电压，voltage 模式直接写电压；写入前校验电压与目标电流；"
-                         "设置后测实际电流再开始长记",)),
+          quality_gates=("目标电流经手动 I–V 换算（k 默认取线圈常数标定值）写电压；写入前校验电压与目标电流；"
+                         "设置后测实际电流再开始长记；不做 I–V 拟合",)),
     Stage(RUN_ID, "±π 双脉冲角分布（可勾选）", "测量", ("A02",), (*CHAIN, *PULSE),
           ("raw/pulse_angles.csv", "raw/pulse_*.npz"),
           quality_gates=("100 µs 周期、两个 4 µs 反号脉冲连续输出；同步沿触发、触发居中；"

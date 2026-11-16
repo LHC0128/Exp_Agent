@@ -21,7 +21,7 @@ ACQUISITION_CASES = {
     "z-chain-stability": {
         "mode": "single",
         "cases": {
-            "order": ["AcquisitionTest::test_zero_log_and_iv"],
+            "order": ["AcquisitionTest::test_zero_log"],
             "cancel": ["AcquisitionTest::test_cancel_keeps_partial_rows"],
             "acquire_failure": ["AcquisitionTest::test_acquire_failure_propagates"],
             "entrypoints": ["AcquisitionTest::test_pulse_angles"],
@@ -117,8 +117,7 @@ class FakeContext:
 
 def fast_params(**overrides):
     p = models.ZChainStabilityParams(
-        run_tag="test", settle_s=0.0, zero_frames=1, iv_check_frames=1,
-        iv_check_voltages_v=[-0.05, 0.0, 0.05], zero_window_s=0.02,
+        run_tag="test", settle_s=0.0, zero_frames=1, zero_window_s=0.02,
         zero_log_interval_s=0.05, zero_log_duration_s=0.15, zero_raw_save_interval_s=0.0,
         zero_fast_duration_s=0.0,
         pulse_duration_s=0.2, pulse_capture_interval_s=0.05, pulse_raw_save_interval_s=0.0,
@@ -135,7 +134,7 @@ class AcquisitionTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         shutil.copytree(Path(common.__file__).resolve().parents[1] / "params", self.root / "params")
 
-    def test_zero_log_and_iv(self):
+    def test_zero_log(self):
         params = fast_params()
         ctx = FakeContext(self.root, params)
         acquisition.measure_zero_dg0(ctx)
@@ -145,7 +144,9 @@ class AcquisitionTest(unittest.TestCase):
             rows = list(csv.DictReader(handle))
         self.assertGreaterEqual(len(rows), 2)
         self.assertIn("current_a", rows[0])
-        self.assertAlmostEqual(ctx.state["iv_fit"]["k_a_per_v"], params.amps_per_drive_volt, places=6)
+        # A03 只写 DG 0 V 零点，不再写 I–V 电压，也不应产生 iv_check 帧。
+        self.assertNotIn("iv_fit", ctx.state)
+        self.assertFalse(list((ctx.directory.root / "raw").glob("iv_check_*.npz")))
         self.assertEqual(ctx.state["zero_offset"]["offset_current_a"], 0.0)
 
     def test_cancel_keeps_partial_rows(self):
@@ -174,16 +175,15 @@ class AcquisitionTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             acquisition.measure_zero_dg0(ctx)
 
-    def test_baseline_current_mode(self):
-        params = fast_params(baseline_mode="current", baseline_current_ma=1.0,
-                             zero_log_duration_s=0.1)
+    def test_baseline_current_conversion(self):
+        params = fast_params(baseline_current_ma=1.0, zero_log_duration_s=0.1)
         ctx = FakeContext(self.root, params)
-        ctx.state["iv_fit"] = processing.iv_fit([-0.05, 0.0, 0.05],
-                                                [-0.05, 0.0, 0.05]) | {"k_a_per_v": 0.137, "b_a": 0.0002}
         acquisition.measure_baseline(ctx)
         self.assertAlmostEqual(ctx.state["baseline_target_current_a"], 1e-3, places=9)
-        self.assertGreater(ctx.state["baseline_setpoint_v"], 0)
+        self.assertAlmostEqual(ctx.state["baseline_setpoint_v"],
+                               1e-3 / params.conversion_amps_per_volt, places=12)
         self.assertTrue((ctx.directory.root / "raw" / "zero_baseline.csv").is_file())
+        self.assertFalse(list((ctx.directory.root / "raw").glob("iv_check_*.npz")))
 
     def test_pulse_angles(self):
         params = fast_params()
@@ -256,11 +256,6 @@ class ProcessingTest(unittest.TestCase):
         angle = processing.pulse_angle_pi(pulses[0]["q_a_s"], 653.79)
         self.assertAlmostEqual(angle, 1.332, places=2)
         self.assertLess(pulses[1]["q_a_s"], 0)
-
-    def test_iv_fit(self):
-        fit = processing.iv_fit([-0.05, 0.0, 0.05], [-0.00685, 0.0, 0.00685])
-        self.assertAlmostEqual(fit["k_a_per_v"], 0.137, places=6)
-        self.assertAlmostEqual(fit["b_a"], 0.0, places=12)
 
     def test_preflight_rejects_over_limit_pulse(self):
         p = models.ZChainStabilityParams(pulse_peak_current_ma=500.0)

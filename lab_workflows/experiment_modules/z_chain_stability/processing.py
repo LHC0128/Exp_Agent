@@ -80,17 +80,6 @@ def pulse_angle_pi(q_a_s: float, coil_constant_hz_per_ma: float) -> float:
     return 2.0 * coil_constant_hz_per_ma * 1000.0 * float(q_a_s)
 
 
-def iv_fit(volts, currents) -> dict:
-    """最小二乘 I = k·V + b；返回 k(A/V)、b(A) 与残差。"""
-    v = np.asarray(volts, dtype=float)
-    i = np.asarray(currents, dtype=float)
-    if v.size < 2 or v.size != i.size:
-        raise ValueError("I–V 拟合至少需要两个同长度点")
-    k, b = np.polyfit(v, i, 1)
-    residual = i - (k * v + b)
-    return dict(k_a_per_v=float(k), b_a=float(b), residual_a=[float(x) for x in residual])
-
-
 def allan_deviation(values, dt_s: float) -> tuple[list[float], list[float]]:
     """重叠 Allan 偏差；返回 (平均时间, 偏差)。非均匀时间戳请先重采样。"""
     x = np.asarray(values, dtype=float)

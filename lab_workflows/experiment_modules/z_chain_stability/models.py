@@ -14,7 +14,16 @@ from ...experiment_params import ExperimentParams, parameter
 
 @dataclass
 class ZChainStabilityParams(ExperimentParams):
-    schema_version: ClassVar[int] = 1
+    schema_version: ClassVar[int] = 2
+
+    @classmethod
+    def migrate_external(cls, values, schema_version):
+        """v1 的 I–V 拟合与电压模式已删除；换算改由手动 k/偏置给出。"""
+        migrated = super().migrate_external(values, schema_version)
+        if schema_version < 2:
+            for key in ("BASELINE_MODE", "BASELINE_VOLTAGE_V", "IV_CHECK_VOLTAGES_V", "IV_CHECK_FRAMES"):
+                migrated.pop(key, None)
+        return migrated
 
     run_tag: str = parameter(default="z_chain_stability", external_name="RUN_TAG", label="运行标签", group="basic")
 
@@ -57,13 +66,8 @@ class ZChainStabilityParams(ExperimentParams):
     zero_window_s: float = parameter(default=0.02, external_name="ZERO_WINDOW_S", label="零点/直采窗口", unit="s",
         minimum=1e-4, maximum=10, description="取 50 Hz 工频周期 20 ms 的整数倍可平均掉工频干扰")
 
-    # ---- A03：DG 0 V 零点与 I–V 检查 ----
+    # ---- A03：DG 0 V 零点 ----
     zero_frames: int = parameter(default=5, external_name="ZERO_FRAMES", label="首尾零点帧数", minimum=1, maximum=100)
-    iv_check_voltages_v: list[float] = parameter(default_factory=lambda: [-0.05, 0.0, 0.05],
-        external_name="IV_CHECK_VOLTAGES_V", label="I–V 检查电压", unit="V",
-        description="小直流三点拟合 I = k·V + b，用于 A04 由目标电流反推电压")
-    iv_check_frames: int = parameter(default=5, external_name="IV_CHECK_FRAMES", label="I–V 每档帧数",
-        minimum=1, maximum=50)
     zero_log_interval_s: float = parameter(default=1.0, external_name="ZERO_LOG_INTERVAL_S", label="零点记录间隔",
         unit="s", minimum=0.05, maximum=600)
     zero_log_duration_s: float = parameter(default=3600.0, external_name="ZERO_LOG_DURATION_S", label="零点记录时长",
@@ -76,13 +80,15 @@ class ZChainStabilityParams(ExperimentParams):
         label="短时噪声记录时长", unit="s", minimum=0, maximum=3600,
         description="0 表示不做快速段；>0 时在长记前后各插入一段短间隔记录")
 
-    # ---- A04：可设定基线 ----
-    baseline_mode: str = parameter(default="current", external_name="BASELINE_MODE", label="基线设定方式",
-        options=(("current", "目标电流"), ("voltage", "直接电压")), group="basic")
+    # ---- A04：目标电流 + 手动 I–V 换算 ----
     baseline_current_ma: float = parameter(default=0.0, external_name="BASELINE_CURRENT_MA", label="基线目标电流",
-        unit="mA", group="basic", description="current 模式：由 I–V 拟合反推电压后写入")
-    baseline_voltage_v: float = parameter(default=0.0, external_name="BASELINE_VOLTAGE_V", label="基线电压",
-        unit="V", group="basic", description="voltage 模式：直接写入该电压")
+        unit="mA", group="basic", description="目标线圈电流；0 即零流基线")
+    conversion_amps_per_volt: float = parameter(default=0.137027, external_name="CONVERSION_AMPS_PER_VOLT",
+        label="电流/电压换算", unit="A/V", group="basic", minimum=1e-9,
+        description="I = k·V + 偏置；默认取线圈常数标定 1116_173127 的 k_dc_a_per_v=0.137027 A/V")
+    conversion_offset_ma: float = parameter(default=0.0, external_name="CONVERSION_OFFSET_MA",
+        label="换算偏置电流", unit="mA", group="basic",
+        description="DG 0 V 时的功放零偏电流（可填 A03 的 I_off）；V_set = (I_target − I_offset) / k")
 
     # ---- A05：±π 双脉冲与脉冲角 ----
     pulse_period_us: float = parameter(default=100.0, external_name="PULSE_PERIOD_US", label="双脉冲周期",
@@ -121,6 +127,11 @@ class ZChainStabilityParams(ExperimentParams):
     @property
     def amps_per_drive_volt(self) -> float:
         return self.gain / self.loop_resistance_ohm
+
+    @property
+    def baseline_setpoint_voltage(self) -> float:
+        """由目标电流与手动 I–V 换算得到 DG 电压：V = (I_target − I_offset) / k。"""
+        return (self.baseline_current_ma - self.conversion_offset_ma) * 1e-3 / self.conversion_amps_per_volt
 
     @property
     def pulse_area_s(self) -> float:
@@ -163,14 +174,12 @@ class ZChainStabilityParams(ExperimentParams):
             errors.append("ZERO_LOG_DURATION_S 不能短于记录间隔")
         if self.zero_fast_duration_s > 0 and self.zero_fast_duration_s < self.zero_fast_interval_s:
             errors.append("ZERO_FAST_DURATION_S 不能短于快速记录间隔")
-        if self.baseline_mode not in ("current", "voltage"):
-            errors.append("BASELINE_MODE 只能是 current 或 voltage")
-        if not math.isfinite(self.baseline_current_ma) or not math.isfinite(self.baseline_voltage_v):
-            errors.append("基线电流/电压必须为有限数")
-        if not self.iv_check_voltages_v or len(self.iv_check_voltages_v) < 2:
-            errors.append("IV_CHECK_VOLTAGES_V 至少需要两个电压点")
-        if any(not math.isfinite(v) for v in self.iv_check_voltages_v):
-            errors.append("IV_CHECK_VOLTAGES_V 必须为有限数")
+        if not math.isfinite(self.baseline_current_ma):
+            errors.append("BASELINE_CURRENT_MA 必须为有限数")
+        if not math.isfinite(self.conversion_amps_per_volt) or self.conversion_amps_per_volt <= 0:
+            errors.append("CONVERSION_AMPS_PER_VOLT 必须为正的有限数")
+        if not math.isfinite(self.conversion_offset_ma):
+            errors.append("CONVERSION_OFFSET_MA 必须为有限数")
         if self.pulse_period_us <= 2 * self.pulse_width_us:
             errors.append("PULSE_PERIOD_US 必须大于两倍 PULSE_WIDTH_US（一个周期内 +/− 两个脉冲）")
         if self.pulse_width_us < 2 * self.pulse_edge_us:
@@ -197,4 +206,4 @@ class ZChainStabilityParams(ExperimentParams):
                     pulse_vpp=p.pulse_vpp,
                     capture_window_us=p.pulse_capture_window_s * 1e6,
                     zero_points=p.zero_log_points,
-                    baseline_nominal_voltage_v=p.baseline_current_ma * 1e-3 / p.amps_per_drive_volt)
+                    baseline_nominal_voltage_v=p.baseline_setpoint_voltage)

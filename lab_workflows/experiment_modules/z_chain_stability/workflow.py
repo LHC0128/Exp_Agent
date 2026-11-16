@@ -13,7 +13,7 @@ from .stages import ACQUISITION, FINISH_ID, RUN_ID
 
 MEASUREMENTS = {"A03": acquisition.measure_zero_dg0, "A04": acquisition.measure_baseline,
                 "A05": acquisition.measure_pulse_angles}
-ARTIFACT_PREFIX = {"A03": ("raw/zero_dg0", "raw/iv_check_", "raw/zero_off_", "raw/zero_on_"),
+ARTIFACT_PREFIX = {"A03": ("raw/zero_dg0", "raw/zero_off_", "raw/zero_on_"),
                    "A04": ("raw/zero_baseline", "raw/baseline_setup"),
                    "A05": ("raw/pulse_angles", "raw/pulse_")}
 
@@ -38,7 +38,7 @@ class Workflow(StagedWorkflow):
         return preparation.preflight(params, self.root)
 
     def extra_snapshot(self):
-        keys = ("zero_offset", "iv_fit", "zero_logs", "baseline_setpoint_v", "baseline_target_current_a",
+        keys = ("zero_offset", "zero_logs", "baseline_setpoint_v", "baseline_target_current_a",
                 "baseline_measured_current_a", "pulse_capture_count")
         return {"daq_settings": {key: self.state.get(key) for key in keys}}
 

@@ -42,26 +42,20 @@ def amplifier_safety_check(ctx):
 
 def plan(p):
     """计划中的信号源电平、峰值电流与示波器窗口；预检与执行共用。"""
-    k = p.amps_per_drive_volt
-    iv_peak_v = max(abs(v) for v in p.iv_check_voltages_v)
-    baseline_v = p.baseline_current_ma * 1e-3 / k
-    pulse_offset = baseline_v
+    baseline_v = p.baseline_setpoint_voltage
     pulse_vpp = p.pulse_vpp
-    return dict(iv_peak_v=iv_peak_v,
-                baseline_nominal_v=baseline_v,
+    return dict(baseline_nominal_v=baseline_v,
                 pulse_vpp=pulse_vpp,
-                pulse_offset_nominal_v=pulse_offset,
-                pulse_max_v=pulse_offset + pulse_vpp / 2.0,
-                pulse_min_v=pulse_offset - pulse_vpp / 2.0,
-                iv_peak_current_a=iv_peak_v * k,
+                pulse_offset_nominal_v=baseline_v,
+                pulse_max_v=baseline_v + pulse_vpp / 2.0,
+                pulse_min_v=baseline_v - pulse_vpp / 2.0,
                 baseline_current_a=p.baseline_current_ma * 1e-3,
                 pulse_peak_current_a=p.pulse_peak_current_ma * 1e-3)
 
 
 def zero_scale(p):
-    """零点帧的垂直档位：取 I–V 小直流与基线电流的较大者。"""
-    peak = max(max(abs(v) for v in p.iv_check_voltages_v) * p.amps_per_drive_volt,
-               abs(p.baseline_current_ma) * 1e-3, 5e-4)
+    """零点帧的垂直档位：按基线电流或 1 mA 取较灵敏一档；自动量程仍会兜底。"""
+    peak = max(abs(p.baseline_current_ma) * 1e-3, 1e-3)
     return scale_for(peak * p.sense_resistor_ohm)
 
 
@@ -99,16 +93,13 @@ def preflight(params, root):
     if rule.get("min") is None or rule.get("max") is None:
         raise ValueError(f"{SOURCE_KEY} 缺少明确安全上下限")
     levels = plan(params)
-    for value in (0.0, levels["iv_peak_v"], -levels["iv_peak_v"], levels["baseline_nominal_v"],
-                  levels["pulse_max_v"], levels["pulse_min_v"]):
+    for value in (0.0, levels["baseline_nominal_v"], levels["pulse_max_v"], levels["pulse_min_v"]):
         validate_safety_limit(SOURCE_KEY, value, limits)
-    for current_a in (levels["iv_peak_current_a"], -levels["iv_peak_current_a"], levels["baseline_current_a"],
-                      levels["pulse_peak_current_a"], -levels["pulse_peak_current_a"]):
+    for current_a in (levels["baseline_current_a"], levels["pulse_peak_current_a"], -levels["pulse_peak_current_a"]):
         validate_safety_limit(CURRENT_LIMIT_KEY, current_a, limits)
     duty = 2.0 * params.pulse_width_us / params.pulse_period_us
     resistor = max(params.sense_resistor_ohm, params.damping_resistor_ohm)
-    power = max((levels["iv_peak_current_a"]) ** 2 * resistor,
-                (levels["pulse_peak_current_a"]) ** 2 * duty * resistor,
+    power = max((levels["pulse_peak_current_a"]) ** 2 * duty * resistor,
                 (levels["baseline_current_a"]) ** 2 * resistor)
     if power > params.resistor_rated_w / 2:
         raise ValueError(f"电阻平均/瞬时功耗 {power:.3g} W 超过额定功率 {params.resistor_rated_w:g} W 的一半")

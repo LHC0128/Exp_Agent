@@ -255,34 +255,6 @@
       "read_only": false
     },
     {
-      "name": "IV_CHECK_VOLTAGES_V",
-      "label": "I–V 检查电压",
-      "type": "array",
-      "default": [
-        -0.05,
-        0.0,
-        0.05
-      ],
-      "unit": "V",
-      "group": "advanced",
-      "minimum": null,
-      "maximum": null,
-      "description": "小直流三点拟合 I = k·V + b，用于 A04 由目标电流反推电压",
-      "read_only": false
-    },
-    {
-      "name": "IV_CHECK_FRAMES",
-      "label": "I–V 每档帧数",
-      "type": "integer",
-      "default": 5,
-      "unit": "",
-      "group": "advanced",
-      "minimum": 1,
-      "maximum": 50,
-      "description": "",
-      "read_only": false
-    },
-    {
       "name": "ZERO_LOG_INTERVAL_S",
       "label": "零点记录间隔",
       "type": "number",
@@ -343,28 +315,6 @@
       "read_only": false
     },
     {
-      "name": "BASELINE_MODE",
-      "label": "基线设定方式",
-      "type": "string",
-      "default": "current",
-      "unit": "",
-      "group": "basic",
-      "minimum": null,
-      "maximum": null,
-      "description": "",
-      "read_only": false,
-      "options": [
-        {
-          "value": "current",
-          "label": "目标电流"
-        },
-        {
-          "value": "voltage",
-          "label": "直接电压"
-        }
-      ]
-    },
-    {
       "name": "BASELINE_CURRENT_MA",
       "label": "基线目标电流",
       "type": "number",
@@ -373,19 +323,31 @@
       "group": "basic",
       "minimum": null,
       "maximum": null,
-      "description": "current 模式：由 I–V 拟合反推电压后写入",
+      "description": "目标线圈电流；0 即零流基线",
       "read_only": false
     },
     {
-      "name": "BASELINE_VOLTAGE_V",
-      "label": "基线电压",
+      "name": "CONVERSION_AMPS_PER_VOLT",
+      "label": "电流/电压换算",
+      "type": "number",
+      "default": 0.137027,
+      "unit": "A/V",
+      "group": "basic",
+      "minimum": 1e-09,
+      "maximum": null,
+      "description": "I = k·V + 偏置；默认取线圈常数标定 1116_173127 的 k_dc_a_per_v=0.137027 A/V",
+      "read_only": false
+    },
+    {
+      "name": "CONVERSION_OFFSET_MA",
+      "label": "换算偏置电流",
       "type": "number",
       "default": 0.0,
-      "unit": "V",
+      "unit": "mA",
       "group": "basic",
       "minimum": null,
       "maximum": null,
-      "description": "voltage 模式：直接写入该电压",
+      "description": "DG 0 V 时的功放零偏电流（可填 A03 的 I_off）；V_set = (I_target − I_offset) / k",
       "read_only": false
     },
     {
@@ -577,7 +539,7 @@
       },
       {
         "id": "A03",
-        "title": "DG 0 V 零点与 I–V 检查（可勾选）",
+        "title": "DG 0 V 零点（可勾选）",
         "group": "测量",
         "dependencies": [
           "A02"
@@ -600,8 +562,6 @@
           "MAX_MEMORY_DEPTH",
           "ZERO_WINDOW_S",
           "ZERO_FRAMES",
-          "IV_CHECK_VOLTAGES_V",
-          "IV_CHECK_FRAMES",
           "ZERO_LOG_INTERVAL_S",
           "ZERO_LOG_DURATION_S",
           "ZERO_RAW_SAVE_INTERVAL_S",
@@ -610,7 +570,6 @@
         ],
         "artifacts": [
           "raw/zero_dg0.csv",
-          "raw/iv_check_*.npz",
           "raw/zero_off_*.npz",
           "raw/zero_on_*.npz"
         ],
@@ -632,8 +591,6 @@
           "MAX_MEMORY_DEPTH",
           "ZERO_WINDOW_S",
           "ZERO_FRAMES",
-          "IV_CHECK_VOLTAGES_V",
-          "IV_CHECK_FRAMES",
           "ZERO_LOG_INTERVAL_S",
           "ZERO_LOG_DURATION_S",
           "ZERO_RAW_SAVE_INTERVAL_S",
@@ -641,12 +598,12 @@
           "ZERO_FAST_DURATION_S"
         ],
         "quality_gates": [
-          "功放关/开两态、DG 0 V 测零偏；I–V 小直流至少两点；长记逐点追加 CSV 并按间隔存原始帧"
+          "功放关/开两态、DG 0 V 测零偏；长记逐点追加 CSV 并按间隔存原始帧；不写任何 I–V 电压"
         ]
       },
       {
         "id": "A04",
-        "title": "可设定基线零点（可勾选）",
+        "title": "目标电流与手动换算基线（可勾选）",
         "group": "测量",
         "dependencies": [
           "A02"
@@ -669,16 +626,14 @@
           "MAX_MEMORY_DEPTH",
           "ZERO_WINDOW_S",
           "ZERO_FRAMES",
-          "IV_CHECK_VOLTAGES_V",
-          "IV_CHECK_FRAMES",
           "ZERO_LOG_INTERVAL_S",
           "ZERO_LOG_DURATION_S",
           "ZERO_RAW_SAVE_INTERVAL_S",
           "ZERO_FAST_INTERVAL_S",
           "ZERO_FAST_DURATION_S",
-          "BASELINE_MODE",
           "BASELINE_CURRENT_MA",
-          "BASELINE_VOLTAGE_V"
+          "CONVERSION_AMPS_PER_VOLT",
+          "CONVERSION_OFFSET_MA"
         ],
         "artifacts": [
           "raw/zero_baseline.csv",
@@ -702,19 +657,17 @@
           "MAX_MEMORY_DEPTH",
           "ZERO_WINDOW_S",
           "ZERO_FRAMES",
-          "IV_CHECK_VOLTAGES_V",
-          "IV_CHECK_FRAMES",
           "ZERO_LOG_INTERVAL_S",
           "ZERO_LOG_DURATION_S",
           "ZERO_RAW_SAVE_INTERVAL_S",
           "ZERO_FAST_INTERVAL_S",
           "ZERO_FAST_DURATION_S",
-          "BASELINE_MODE",
           "BASELINE_CURRENT_MA",
-          "BASELINE_VOLTAGE_V"
+          "CONVERSION_AMPS_PER_VOLT",
+          "CONVERSION_OFFSET_MA"
         ],
         "quality_gates": [
-          "current 模式由实测 I–V 反推电压，voltage 模式直接写电压；写入前校验电压与目标电流；设置后测实际电流再开始长记"
+          "目标电流经手动 I–V 换算（k 默认取线圈常数标定值）写电压；写入前校验电压与目标电流；设置后测实际电流再开始长记；不做 I–V 拟合"
         ]
       },
       {
@@ -942,14 +895,6 @@
           "A03",
           "A04"
         ],
-        "IV_CHECK_VOLTAGES_V": [
-          "A03",
-          "A04"
-        ],
-        "IV_CHECK_FRAMES": [
-          "A03",
-          "A04"
-        ],
         "ZERO_LOG_INTERVAL_S": [
           "A03",
           "A04"
@@ -970,13 +915,13 @@
           "A03",
           "A04"
         ],
-        "BASELINE_MODE": [
-          "A04"
-        ],
         "BASELINE_CURRENT_MA": [
           "A04"
         ],
-        "BASELINE_VOLTAGE_V": [
+        "CONVERSION_AMPS_PER_VOLT": [
+          "A04"
+        ],
+        "CONVERSION_OFFSET_MA": [
           "A04"
         ],
         "PULSE_PERIOD_US": [
