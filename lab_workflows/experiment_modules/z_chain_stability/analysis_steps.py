@@ -298,11 +298,14 @@ PULSE_FIELDS = ["timestamp", "elapsed_s", "sign", "q_a_s", "theta_pi", "i_base_a
 
 
 def _pulse_rows_from_frames(run_dir, params):
-    """从每次捕获的原始帧重算逐发积分与角度；没有原始帧时返回 None。"""
+    """从每次捕获的原始帧重算逐发积分与角度；没有原始帧时返回 None。
+
+    顺便从首帧测出示波器的电压码宽，供基线台阶与 θ 量化标注。
+    """
     paths = sorted(output_path(run_dir, "raw").glob("pulse_[0-9]*.npz"))
     if not paths:
-        return None, 0
-    rows = []
+        return None, 0, None
+    rows, adc_step = [], None
     for path in paths:
         check_cancelled()
         with np.load(path, allow_pickle=False) as data:
@@ -311,6 +314,11 @@ def _pulse_rows_from_frames(run_dir, params):
             meta = json.loads(str(data["meta"]))
         if volts.size < 8:
             continue
+        if adc_step is None:
+            steps = np.diff(np.unique(np.round(volts, 9)))
+            positive = steps[steps > 0]
+            if positive.size:
+                adc_step = float(np.min(positive))
         pulses = processing.segment_pulses(time_s, volts / params.sense_resistor_ohm,
                                            period_s=params.pulse_period_us * 1e-6,
                                            width_s=params.pulse_width_us * 1e-6,
@@ -322,7 +330,7 @@ def _pulse_rows_from_frames(run_dir, params):
                          "sign": "+" if theta >= 0 else "-",
                          "q_a_s": f"{pulse['q_a_s']:.9g}", "theta_pi": f"{theta:.9g}",
                          "i_base_a": f"{pulse['i_base_a']:.9g}", "peak_a": f"{pulse['peak_a']:.9g}"})
-    return rows, len(paths)
+    return rows, len(paths), adc_step
 
 
 def pulse_report(run_dir, params):
@@ -330,17 +338,19 @@ def pulse_report(run_dir, params):
     (output_path(run_dir, "results")).mkdir(parents=True, exist_ok=True)
     summary = dict(experiment_id=run_format.EXPERIMENT_ID, coil_constant_hz_per_ma=params.coil_constant_hz_per_ma,
                    pulse_width_us=params.pulse_width_us, pulse_period_us=params.pulse_period_us)
-    rows, captures = _pulse_rows_from_frames(run_dir, params)
+    rows, captures, adc_step = _pulse_rows_from_frames(run_dir, params)
     if rows is not None:
         path = output_path(run_dir, "results/pulse_angles.csv")
         with path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=PULSE_FIELDS)
             writer.writeheader()
             writer.writerows(rows)
-        summary.update(source="raw/pulse_*.npz", captures=captures)
+        summary.update(source="raw/pulse_*.npz", captures=captures,
+                       adc_step_mv=(float(adc_step) * 1e3 if adc_step else None),
+                       adc_step_ma=(float(adc_step) / params.sense_resistor_ohm * 1e3 if adc_step else None))
     else:
         path = output_path(run_dir, "raw/pulse_angles.csv")
-        summary.update(source="raw/pulse_angles.csv", captures=None)
+        summary.update(source="raw/pulse_angles.csv", captures=None, adc_step_mv=None, adc_step_ma=None)
         if not path.is_file():
             return _empty_pulse(run_dir, summary, "缺少 raw/pulse_*.npz 与 raw/pulse_angles.csv（未运行 A05）")
     data = _read_csv(path)
@@ -353,7 +363,7 @@ def pulse_report(run_dir, params):
     for name, mask in (("plus", positive), ("minus", negative)):
         if np.count_nonzero(mask) >= 2:
             stats[name] = _stats(theta[mask], elapsed[mask], dt)
-    base_summary, base_series = _base_report(data, params)
+    base_summary, base_series = _base_report(data, params, adc_step)
     summary.update(rows=int(theta.size), plus=stats.get("plus"), minus=stats.get("minus"),
                    asymmetry_pi=(stats["plus"]["mean"] + stats["minus"]["mean"])
                    if "plus" in stats and "minus" in stats else None,
@@ -364,11 +374,12 @@ def pulse_report(run_dir, params):
     if base_series is None:
         _plot_unavailable(run_dir, "pulse_base.png", "No baseline data")
     else:
-        _plot_base(run_dir, base_series)
+        _plot_base(run_dir, base_series,
+                   adc_step / params.sense_resistor_ohm * 1e3 if adc_step else None)
     return summary
 
 
-def _base_report(data, params):
+def _base_report(data, params, adc_step=None):
     """逐次捕获的帧内基线：台阶、漂移以及它对 θ 的影响；缺列时返回 None。"""
     base = data.get("i_base_a")
     if base is None or base.size == 0:
@@ -381,17 +392,19 @@ def _base_report(data, params):
     drift = processing.drift_rate(values, elapsed)
     # 基线整体偏 δ 时，两发面积都变化 δ·积分窗；这是 θ/π 对基线的敏感度
     theta_per_ma = 2.0 * params.coil_constant_hz_per_ma * 1000.0 * 1e-3 * params.pulse_tail_window_us * 1e-6
+    code_ma = float(adc_step) / params.sense_resistor_ohm * 1e3 if adc_step else None
     summary = dict(captures=int(values.size), mean_ma=float(np.mean(values)) * 1e3,
                    std_ma=float(np.std(values)) * 1e3, min_ma=float(np.min(values)) * 1e3,
                    max_ma=float(np.max(values)) * 1e3, span_ma=float(np.max(values) - np.min(values)) * 1e3,
                    levels=int(levels.size), step_ma=step * 1e3,
+                   steps_per_code=(step * 1e3 / code_ma) if code_ma else None,
                    drift_ma_per_day=float(drift) * 86400.0 * 1e3,
                    theta_per_ma=theta_per_ma,
                    theta_drift_bound_per_day=float(drift) * 86400.0 * 1e3 * theta_per_ma)
     return summary, dict(elapsed_s=elapsed, base_ma=values * 1e3)
 
 
-def _plot_base(run_dir, series):
+def _plot_base(run_dir, series, adc_step_ma=None):
     """帧内基线随时间；台阶状分布说明它被示波器垂直分辨率量化。"""
     import matplotlib
     matplotlib.use("Agg")
@@ -401,6 +414,15 @@ def _plot_base(run_dir, series):
         figure, axis = new_figure()
         axis.plot(series["elapsed_s"], series["base_ma"], ".", ms=2, color=COLOR_OPTIMAL)
         format_axis(axis, xlabel="Elapsed (s)", ylabel="Frame baseline (mA)")
+        if adc_step_ma:
+            # 右侧标出一码的高度，说明台阶来自 ADC 量化而不是真实漂移
+            low = float(np.min(series["base_ma"]))
+            bar_x = 0.95
+            axis.annotate("", xy=(bar_x, low + adc_step_ma), xytext=(bar_x, low),
+                          xycoords=axis.get_yaxis_transform(),
+                          arrowprops=dict(arrowstyle="<->", lw=0.8, color="#555555"))
+            axis.text(bar_x - 0.04, low + adc_step_ma / 2.0, f"1 ADC code\n{adc_step_ma:.3f} mA",
+                      transform=axis.get_yaxis_transform(), ha="right", va="center", fontsize=7, color="#555555")
         save_figure(figure, output_path(run_dir, "results/pulse_base.png"))
 
 
