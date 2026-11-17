@@ -20,7 +20,8 @@ class Workflow(StagedWorkflow):
     stages = ACQUISITION
     finish_id, run_id = FINISH_ID, RUN_ID
     run_format = run_format
-    output_keys = ("功放", "Z 通道", "Y 射频", "共同触发", "温控", "MFLI", "主磁场", "DHO900", "相位粗扫")
+    output_keys = ("功放", "X 偏置", "Z 通道", "Y 射频", "共同触发", "温控", "MFLI", "主磁场", "DHO900",
+                   "相位粗扫")
     hardware_free = ("A01", "A02")
     seal_after_run = False
     quality_errors = (preparation.SafetyAbort,)
@@ -52,6 +53,7 @@ class Workflow(StagedWorkflow):
             preparation.configure_rf(self)
             preparation.configure_trigger(self)
             preparation.configure_z_idle(self)
+            preparation.configure_x_bias(self)
             preparation.enable_temperature_switch(self)
             self.state["optional_connection_errors"] = self.devices.get("optional_connection_errors", {})
             self.outputs["DHO900"] = "已连接（不采集，仅供人工核对脉冲波形）"

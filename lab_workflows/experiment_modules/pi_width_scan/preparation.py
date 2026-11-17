@@ -27,11 +27,11 @@ from ...steps.coil_drive_chain import SafetyAbort, current_limit, set_amp_output
 from .models import ARB_POINTS, PiWidthScanParams
 from .run_format import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, EXPERIMENT_ID, LOCKIN_KEY, MAIN_FIELD_KEY,
                          REQUIRED_MAPPING_KEYS, RF_KEY, SCOPE_KEY, SOURCE_KEY, TEC_KEY, TEMP_SWITCH_KEY,
-                         TRIGGER_KEY)
+                         TRIGGER_KEY, X_KEY)
 
 __all__ = [
     "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "BURST_NCYCLES", "SafetyAbort", "amplifier_safety_check",
-    "clocks", "configure_chain", "configure_lockin", "configure_rf", "configure_trigger",
+    "clocks", "configure_chain", "configure_lockin", "configure_rf", "configure_trigger", "configure_x_bias",
     "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
     "plan", "preflight", "set_rf_phase", "shutdown", "sleep",
 ]
@@ -87,6 +87,7 @@ def preflight(params: PiWidthScanParams, root):
     validate_mapping_usage(REQUIRED_MAPPING_KEYS, root)
     expected = {
         SOURCE_KEY: ("signal_generator", None),
+        X_KEY: ("signal_generator", None),
         RF_KEY: ("signal_generator", None),
         TRIGGER_KEY: ("signal_generator", None),
         TEMP_SWITCH_KEY: ("signal_generator", None),
@@ -102,7 +103,7 @@ def preflight(params: PiWidthScanParams, root):
             raise ValueError(f"{key} 必须映射到 {kind}{'（' + '/'.join(sorted(models)) + '）' if models else ''}")
     limits = load_safety_limits(root)
     current_limit(limits)
-    for key in (SOURCE_KEY, RF_KEY, TRIGGER_KEY, TEMP_SWITCH_KEY, MAIN_FIELD_KEY):
+    for key in (SOURCE_KEY, X_KEY, RF_KEY, TRIGGER_KEY, TEMP_SWITCH_KEY, MAIN_FIELD_KEY):
         rule = limits.get(key) or {}
         if rule.get("min") is None or rule.get("max") is None:
             raise ValueError(f"{key} 缺少明确安全上下限")
@@ -111,6 +112,8 @@ def preflight(params: PiWidthScanParams, root):
     levels = plan(params)
     for value in (0.0, levels["pulse_max_v"], levels["pulse_min_v"]):
         validate_safety_limit(SOURCE_KEY, value, limits)
+    validate_safety_limit(X_KEY, 0.0, limits)
+    validate_safety_limit(X_KEY, params.x_bias_v, limits)
     for value in (0.0, params.y_rf_vpp / 2.0, -params.y_rf_vpp / 2.0):
         validate_safety_limit(RF_KEY, value, limits)
     for value in (0.0, TRIGGER_OFFSET_V - TRIGGER_VPP / 2.0, TRIGGER_OFFSET_V + TRIGGER_VPP / 2.0):
@@ -145,7 +148,8 @@ def connect(ctx):
     try:
         signals, channels = connect_signal_generator_routes(session, "signals", {
             name: (key, mapping[key]) for name, key in (
-                ("z", SOURCE_KEY), ("y", RF_KEY), ("trigger", TRIGGER_KEY), ("temp", TEMP_SWITCH_KEY),
+                ("z", SOURCE_KEY), ("x", X_KEY), ("y", RF_KEY), ("trigger", TRIGGER_KEY),
+                ("temp", TEMP_SWITCH_KEY),
             )
         })
         devices["signals"], devices["channels"] = signals, channels
@@ -308,6 +312,21 @@ def configure_z_idle(ctx):
     ctx.outputs["Z 通道"] = "DC 0 V，输出 OFF（等待上传脉冲串）"
 
 
+def configure_x_bias(ctx):
+    """按 X_BIAS_V 在 X 通道加静态偏置；0 V 时明确关输出，避免沿用上一次的偏置。"""
+    p = ctx.params
+    signals, channels = ctx.devices["signals"], ctx.devices["channels"]
+    limits = load_safety_limits(ctx.root)
+    validate_safety_limit(X_KEY, 0.0, limits)
+    validate_safety_limit(X_KEY, p.x_bias_v, limits)
+    signals.set_burst_state(False, channel=channels["x"])
+    signals.set_mod_state(False, channel=channels["x"])
+    signals.setup_dc(float(p.x_bias_v), channel=channels["x"])
+    signals.set_output(abs(p.x_bias_v) > 0.0, channel=channels["x"])
+    ctx.state["x_bias_v"] = float(p.x_bias_v)
+    ctx.outputs["X 偏置"] = (f"DC {p.x_bias_v:+.3f} V（输出 ON）" if p.x_bias_v else "0 V（输出 OFF）")
+
+
 def disable_main_field(ctx):
     """关闭 GS200 主磁场输出并回读；本实验不需要主场，关闭是 A02 的质量门槛。"""
     gs200 = ctx.devices["gs200"]
@@ -367,6 +386,8 @@ def shutdown(ctx):
     dg_channels = []
     if signals is not None and "z" in channels:
         dg_channels.append(DGChannelShutdown(signals, channels["z"], SOURCE_KEY, "Z 线圈驱动", disable_sync=True))
+    if signals is not None and "x" in channels:
+        dg_channels.append(DGChannelShutdown(signals, channels["x"], X_KEY, "X 静态偏置"))
     if signals is not None and "y" in channels:
         dg_channels.append(DGChannelShutdown(signals, channels["y"], RF_KEY, "Y 射频"))
     disconnect_targets = [
@@ -383,7 +404,8 @@ def shutdown(ctx):
         disconnect_targets=disconnect_targets,
         # 时序信号2 是共同触发：保持运行（Z burst 已关闭，不会再有脉冲），与 DirectAW 一致。
         preserved_outputs=(*STANDARD_PRESERVED_OUTPUTS, TRIGGER_KEY))
-    ctx.outputs.update({"功放": "OFF（已发送 AOF）", "Z 通道": "DC 0 V + OFF，burst/sync OFF",
+    ctx.outputs.update({"功放": "OFF（已发送 AOF）", "X 偏置": "OFF，已归零",
+                        "Z 通道": "DC 0 V + OFF，burst/sync OFF",
                         "Y 射频": "OFF", "温控": "ON（已恢复）", "MFLI": "已停止解调传输",
                         "DHO900": "STOP，已断开", **({"主磁场": "已恢复原状态"} if main_field_state else {})})
     return first.action_errors + second.action_errors, second.disconnect_errors

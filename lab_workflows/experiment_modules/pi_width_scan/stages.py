@@ -11,7 +11,7 @@ RUN_ID = "A04"
 # B01 可在离线重算时覆盖电学参考宽度；分析参数必须是 ACQUISITION 里已声明的键。
 ANALYSIS_KEYS: tuple[str, ...] = ("REFERENCE_PI_WIDTH_US",)
 # A02 建立链路、锁相与激励；这些参数改动会同时失效相位粗扫与扫描。
-CHAIN = ("AMPLIFIER_GAIN_DB", "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+CHAIN = ("AMPLIFIER_GAIN_DB", "X_BIAS_V", "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
          "AMPLIFIER_WRITE_SETTINGS", "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM", "COIL_RESISTANCE_OHM",
          "RESISTOR_RATED_W", "Y_RF_FREQ_HZ", "Y_RF_VPP", "DEMOD0_IDX", "DEMOD0_SIGNAL_RANGE",
          "DEMOD0_ORDER", "DEMOD0_TC", "DEMOD0_RATE")
@@ -34,7 +34,8 @@ ACQUISITION = (
                          "射频相位粗扫的起点/终点/步进能生成非空角度列表；"
                          "z_pulse_coil_current、Z/Y 场电平与电阻功耗全部在限内",)),
     Stage("A02", "连接 DG、MFLI、1200B、DHO900、GS200 并同步时钟", "准备", ("A01",), CHAIN,
-          quality_gates=("连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；MFLI 第 0 路解调器按参数配置并记录回读；"
+          quality_gates=("连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；按 X_BIAS_V 设 X 静态偏置；"
+                         "MFLI 第 0 路解调器按参数配置并记录回读；"
                          "射频按无限 burst 与 Y_RF_PHASE_DEG 起振；GS200 主磁场输出回读为 OFF 才继续；"
                          "DG 与 MFLI 参考时钟严格回读一致",)),
     Stage("A03", "射频相位粗扫（可勾选）", "测量", ("A02",), (*CHAIN, *PHASE),
