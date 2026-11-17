@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import numpy as np
 
 from ...experiment_runtime import check_cancelled
 from . import run_format
+from .stages import ANALYSIS_KEYS
 
 GYROMAGNETIC_RATIO_HZ_PER_NT = 7.0048
 
@@ -37,16 +39,38 @@ def _read_scan(path: Path) -> list[dict]:
         return list(csv.DictReader(handle))
 
 
+def resolve_options(base, options):
+    """本实验没有独立分析覆盖值；出现未知键时明确拒绝。"""
+    if unknown := options.keys() - set(ANALYSIS_KEYS):
+        raise ValueError("不支持的分析覆盖值：" + "、".join(sorted(unknown)))
+    return base
+
+
+def signature(path):
+    if not path.is_file():
+        return None
+    return [path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest()]
+
+
+def fingerprint(run_dir):
+    """分步分析用的输入指纹：配置、扫描表与全部原始帧。"""
+    root = Path(run_dir)
+    raw = output_path(root, "raw")
+    paths = [output_path(root, "experiment_config.yaml"), *sorted(raw.glob("*.csv")), *sorted(raw.glob("*.npz"))]
+    return {p.relative_to(root).as_posix(): signature(p) for p in paths}
+
+
 def _fit_line(width, value, weight):
-    """加权最小二乘 y = m x + b；返回 (m, b, 预测值, 残差)。"""
+    """加权最小二乘 y = m x + b；返回 (m, b, 预测值, 残差, 参数协方差)。"""
     x = np.asarray(width, float)
     y = np.asarray(value, float)
     w = np.asarray(weight, float)
     A = np.vstack([x, np.ones_like(x)]).T
     W = np.diag(w)
-    coef = np.linalg.solve(A.T @ W @ A, A.T @ W @ y)
+    normal = A.T @ W @ A
+    coef = np.linalg.solve(normal, A.T @ W @ y)
     model = A @ coef
-    return float(coef[0]), float(coef[1]), model, y - model
+    return float(coef[0]), float(coef[1]), model, y - model, np.linalg.inv(normal)
 
 
 def scan_report(run_dir, params):
@@ -98,14 +122,22 @@ def scan_report(run_dir, params):
         x = np.array([item["width_us"] for item in per_width])
         y = np.array([abs(item["mean_pi"]) for item in per_width])
         sem = np.array([max(item["sem_pi"], 1e-6) for item in per_width])
-        slope, intercept, model, resid = _fit_line(x, y, 1.0 / sem ** 2)
+        slope, intercept, model, resid, cov = _fit_line(x, y, 1.0 / sem ** 2)
         if abs(slope) < 1e-12:
             continue
         width_pi = (params.target_angle_pi - intercept) / slope
+        # σ(w*) 由 (m, b) 的协方差传播：w* = (T − b)/m
+        der_b, der_m = -1.0 / slope, -(params.target_angle_pi - intercept) / slope ** 2
+        var_w = der_m ** 2 * cov[0, 0] + der_b ** 2 * cov[1, 1] + 2 * der_m * der_b * cov[0, 1]
+        width_pi_sem = float(np.sqrt(max(var_w, 0.0)))
+        # 理想升余弦沿下 θ(0) = −m·沿宽，用截距反推等效沿宽，可与 PULSE_EDGE_US 对照
+        effective_edge_us = float(-intercept / slope)
         peak_ma = float(np.mean(peak[mask])) * 1e3
         k_implied = slope / (2.0 * peak_ma * 1e-3 * 1e-6 * 1000.0) if peak_ma else None
-        points.append(dict(side=label, width_pi=float(width_pi), slope_pi_per_us=float(slope),
-                           intercept_pi=float(intercept), residual_pi=float(np.sqrt(np.mean(resid ** 2))),
+        points.append(dict(side=label, width_pi=float(width_pi), width_pi_sem=width_pi_sem,
+                           slope_pi_per_us=float(slope), intercept_pi=float(intercept),
+                           effective_edge_us=effective_edge_us,
+                           residual_pi=float(np.sqrt(np.mean(resid ** 2))),
                            peak_current_ma=peak_ma, k_implied_hz_per_ma=k_implied,
                            per_width=per_width,
                            fit_width_us=x.tolist(), fit_value_pi=y.tolist(), fit_model_pi=model.tolist()))
