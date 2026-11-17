@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 import shutil
 import tempfile
@@ -19,7 +20,7 @@ import yaml
 from ... import common
 from ...experiment_runtime import WorkflowCancelled
 from ...steps import DeviceSession
-from . import acquisition, analysis_steps, models, phase_scan, preparation, run_format, stages
+from . import acquisition, analysis, analysis_steps, models, phase_scan, preparation, run_format, stages
 
 ACQUISITION_CASES = {
     "pi-width-scan": {
@@ -122,6 +123,16 @@ class FakeSignals:
         return 25.0
 
 
+class FakeAmp:
+    """1200B 假对象：只记录 AON/AOF。"""
+
+    def __init__(self):
+        self.states = []
+
+    def set_output(self, enabled):
+        self.states.append(bool(enabled))
+
+
 class FakeDirectory:
     """不落盘的运行目录替身；记录配置更新的时刻是否已恢复温控。"""
 
@@ -189,7 +200,7 @@ class FakeContext:
         self.mapping = {"temperature": {"channel": 1}}
         signals = FakeSignals()
         self.devices = {"signals": signals, "channels": dict(CHANNELS), "hf2": SimpleNamespace(device_id="dev1"),
-                        "tec": None}
+                        "tec": None, "amp": FakeAmp()}
         self.directory = FakeDirectory(root / "run", signals)
         self.state = {"data_files": [], "actual_rates": {"demod0_Sa_s": 1000.0}}
         self.outputs = {}
@@ -341,8 +352,8 @@ class AcquisitionTest(unittest.TestCase):
         ctx = FakeContext(self.root, params)
         self.run_phase_scan(ctx)
         rows = self.read_phase_rows(ctx)
-        self.assertEqual(len(rows), 9 * params.y_rf_phase_repeat)
-        self.assertEqual([row["phase_deg"] for row in rows[::params.y_rf_phase_repeat]],
+        self.assertEqual(len(rows), 9 * params.n_repeat)
+        self.assertEqual([row["phase_deg"] for row in rows[::params.n_repeat]],
                          [f"{angle:g}" for angle in params.rf_phase_angles_deg()])
         record = ctx.state["phase_check"]
         self.assertTrue(record["enabled"])
@@ -372,6 +383,38 @@ class AcquisitionTest(unittest.TestCase):
                                       ("burst", CHANNELS["y"], True), ("output", CHANNELS["y"], True)])
         phases = [event[2] for event in events if event[0] == "burst_phase"]
         self.assertEqual(phases, params.rf_phase_angles_deg())
+
+    def test_phase_scan_arms_width_from_parameter(self):
+        params = fast_params(phase_check_width_us=4.7)
+        ctx = FakeContext(self.root, params)
+        armed = []
+        original = acquisition._arm_width
+
+        def record(context, width_us):
+            armed.append(width_us)
+            return original(context, width_us)
+
+        with patch.object(acquisition, "_arm_width", record):
+            self.run_phase_scan(ctx)
+        self.assertEqual(armed, [4.7])
+        # 打脉冲前必须发 AON，否则脉冲到不了线圈。
+        self.assertEqual(ctx.devices["amp"].states, [True])
+
+    def test_phase_scan_groups_temperature_like_scan(self):
+        params = fast_params()
+        ctx = FakeContext(self.root, params)
+        self.run_phase_scan(ctx)
+        toggles = [state for kind, *rest in ctx.devices["signals"].events
+                   if kind == "temp" for state in rest]
+        total = len(params.rf_phase_angles_deg()) * params.n_repeat
+        # 与 A04 相同：每 TEMP_GROUP_SIZE 个读数关一次温控，组末恢复后再落盘。
+        self.assertEqual(toggles[0], False)
+        self.assertEqual(toggles[-1], True)
+        self.assertEqual(sum(1 for state in toggles if not state),
+                         math.ceil(total / params.temp_group_size))
+        self.assertTrue(all(ctx.directory.updates))
+        self.assertTrue(all(restored for restored, _ in ctx.directory.updates))
+        self.assertEqual(len(self.read_phase_rows(ctx)), total)
 
     def test_phase_scan_disabled_skips_stage(self):
         params = fast_params(phase_check_enabled=False)
@@ -695,6 +738,15 @@ class AnalysisTest(unittest.TestCase):
                       completion_status="completed", parameters=self.params.to_external())
         (self.run_dir / "experiment_config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
 
+    def test_analysis_workflow_runs_through_staged_path(self):
+        # 走 StagedAnalysis：分析节点声明的参数必须都是 analysis_keys，否则构造即 KeyError。
+        self.write_scan([[width, 0, synthetic_r(width), 30.0, "t", 0.05, 5000.0, 190.0, ""]
+                         for width in (4.0, 4.5, 5.0, 5.5, 6.0)])
+        analysis.analyze(self.run_dir)
+        summary = json.loads((self.run_dir / "results" / "scan_summary.json").read_text(encoding="utf-8"))
+        self.assertAlmostEqual(summary["tau_pi_us"], TRUE_TAU_PI_US, delta=0.3)
+        self.assertEqual(summary["electrical_pi_width_us"], models.PiWidthScanParams().reference_pi_width_us)
+
     def write_scan(self, rows):
         with (self.run_dir / "raw" / "scan.csv").open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
@@ -825,7 +877,16 @@ class ParamsTest(unittest.TestCase):
         q = models.PiWidthScanParams(y_rf_phase_stop_deg=100.0)
         self.assertEqual(q.rf_phase_angles_deg()[-1], 100.0)
         self.assertEqual(len(q.rf_phase_angles_deg()), 6)
-        self.assertAlmostEqual(p.phase_check_width_us(), 5.0)
+        # 粗扫脉宽由参数给定，与扫描网格无关。
+        self.assertEqual(p.phase_check_width_us, 5.0)
+
+    def test_preflight_rejects_invalid_phase_check_width(self):
+        zero = models.PiWidthScanParams(phase_check_width_us=0.0)
+        self.assertTrue(any("PHASE_CHECK_WIDTH_US" in error for error in zero.validate()))
+        long = models.PiWidthScanParams(phase_check_width_us=120.0)
+        self.assertTrue(any("PHASE_CHECK_WIDTH_US" in error for error in long.validate()))
+        narrow = models.PiWidthScanParams(phase_check_width_us=1.0)
+        self.assertTrue(any("PHASE_CHECK_WIDTH_US 至少为两倍沿宽" in error for error in narrow.validate()))
 
     def test_preflight_rejects_invalid_phase_range(self):
         zero = models.PiWidthScanParams(y_rf_phase_step_deg=0.0)
@@ -847,6 +908,13 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(by_id["A03"].dependencies, ("A02",))
         self.assertEqual(by_id["A04"].dependencies, ("A02",))
         self.assertEqual(by_id["A03"].artifacts, ("raw/phase_scan.csv", "results/phase_vs_phase.png"))
+        # 温控分组三件套由 A03 与 A04 共用，改任一项两阶段一起失效。
+        shared = {"SYSTEM_SETTLE_S", "TEMP_GROUP_SIZE", "TEMP_SWITCH_ON_LAG_S",
+                  "N_REPEAT", "SCAN_POINT_DURATION_S"}
+        self.assertTrue(shared.issubset(by_id["A03"].parameters))
+        self.assertTrue(shared.issubset(by_id["A04"].parameters))
+        for key in shared:
+            self.assertEqual(stages.parameter_impacts(stages.ACQUISITION)[key], ["A03", "A04"])
 
     def test_phase_scan_peak_math(self):
         points = [dict(phase_deg=0.0, r_mean_v=0.1), dict(phase_deg=22.5, r_mean_v=0.9),

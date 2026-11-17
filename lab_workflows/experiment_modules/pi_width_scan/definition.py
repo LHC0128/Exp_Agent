@@ -16,7 +16,7 @@ DESCRIPTION = (
     "配置第 0 路解调器并把参考频率设为射频频率，射频按无限 burst 与 Y_RF_PHASE_DEG 起振；"
     "关闭 GS200 主磁场输出并回读，参考时钟严格回读。"
     "A03 射频相位粗扫（可勾选）：Z 脉冲串按预测 π 宽度只写一次，之后逐角度按 DirectAW 顺序改射频 burst 相位"
-    "（关 burst → 写相位 → 开 burst → 开 output），读 Y_RF_PHASE_REPEAT 次 R/θ 写 raw/phase_scan.csv 与 "
+    "（关 burst → 写相位 → 开 burst → 开 output），读 N_REPEAT 次 R/θ 写 raw/phase_scan.csv 与 "
     "results/phase_vs_phase.png；取 R 峰并对相邻三点做抛物线精化，结果记入运行配置。"
     "A04 扫脉宽：射频相位取 A03 的选中/精化值，A03 未运行或关闭时回落 Y_RF_PHASE_DEG 并记 phase_source；"
     "逐点上传脉宽、关闭温控并等待 SYSTEM_SETTLE_S，在关闭窗口内连续采 SCAN_POINT_DURATION_S，"

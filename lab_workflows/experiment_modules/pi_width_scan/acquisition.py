@@ -1,10 +1,10 @@
 """A03 相位粗扫与 A04 脉宽扫描：温控关闭窗口内读 MFLI 第 0 路解调器，恢复后落盘。
 
-Z 通道的 ±π 双脉冲任意波在一个阶段内只写一次（A03 用预测 π 宽度写一次，A04 按每个扫描
-宽度重写）并 arm 无限 burst；A03 只改射频 burst 相位，不改 Z 波形。每次读数在温控关闭窗口
-内连续采 ``SCAN_POINT_DURATION_S``；A04 每 ``TEMP_GROUP_SIZE`` 个读数恢复一次温控并等待
-``TEMP_SWITCH_ON_LAG_S`` 后才写盘——关闭温控的窗口内不写任何文件，故障时先恢复温控再抢救
-已读数据。
+Z 通道的 ±π 双脉冲任意波在一个阶段内只写一次（A03 用 ``PHASE_CHECK_WIDTH_US`` 写一次，
+A04 按每个扫描宽度重写）并 arm 无限 burst；A03 只改射频 burst 相位，不改 Z 波形。每次读数在
+温控关闭窗口内连续采 ``SCAN_POINT_DURATION_S``；A03 与 A04 都每 ``TEMP_GROUP_SIZE`` 个读数
+恢复一次温控并等待 ``TEMP_SWITCH_ON_LAG_S`` 后才写盘——关闭温控的窗口内不写任何文件，故障时
+先恢复温控再抢救已读数据。
 """
 from __future__ import annotations
 
@@ -61,6 +61,8 @@ def _arm_width(ctx, width_us):
     signals.set_burst_phase(0.0, channel=channels["z"])
     signals.set_burst_state(True, channel=channels["z"])
     signals.set_output(True, channel=channels["z"])
+    # A02 收尾把 1200B 输出关掉了；不发 AON 时脉冲只到功放输入、到不了线圈。
+    preparation.set_amp_output(ctx, True)
     ctx.outputs["Z 通道"] = (f"±π 双脉冲连续输出，周期 {p.pulse_period_us:g} µs、宽 {width_us:g} µs、"
                              f"峰值 {p.z_peak_current_ma:g} mA、外触发 {p.y_rf_freq_hz:g} Hz")
 
@@ -161,8 +163,8 @@ def measure_phase_scan(ctx):
     """A03：逐角度改射频 burst 相位并读 R/θ，取 R 峰（含抛物线精化）供 A04 使用。
 
     每个角度按 DirectAW 校相的顺序改相位（关 burst → 写 burst 相位 → 开 burst → 开输出），
-    再等 ``SYSTEM_SETTLE_S`` 后读 ``Y_RF_PHASE_REPEAT`` 次。Z 脉冲串在本阶段开始时用预测
-    π 宽度写一次，之后不再改动。
+    Z 脉冲串按 ``PHASE_CHECK_WIDTH_US`` 只写一次。读数与 A04 一样按 ``TEMP_GROUP_SIZE`` 分组：
+    组首关闭温控、等 ``SYSTEM_SETTLE_S`` 再读，组末恢复温控、等 ``TEMP_SWITCH_ON_LAG_S`` 后落盘。
     """
     p, directory = ctx.params, ctx.directory
     if not p.phase_check_enabled:
@@ -176,12 +178,13 @@ def measure_phase_scan(ctx):
     angles = p.rf_phase_angles_deg()
     rate = float(ctx.state["actual_rates"]["demod0_Sa_s"])
     config = _daq_config(ctx, rate)
-    width_us = p.phase_check_width_us()
+    width_us = p.phase_check_width_us
     path = directory.raw / Path(run_format.PHASE_SCAN_FILE).name
-    total, done, started = len(angles) * p.y_rf_phase_repeat, 0, time.monotonic()
+    total, done, started = len(angles) * p.n_repeat, 0, time.monotonic()
     ctx.state["phase_scan_acquisition"] = {
         "mode": "daq_duration", "duration_s": p.scan_point_duration_s, "actual_rate_Sa_s": rate,
-        "angles_deg": angles, "repeats": p.y_rf_phase_repeat, "width_us": width_us,
+        "angles_deg": angles, "repeats": p.n_repeat, "width_us": width_us,
+        "temperature_group_size": p.temp_group_size,
         "demod_idx": p.demod0_idx, "signals": ["sample.r", "sample.theta"], "phase_check_enabled": True}
     directory.update_config(**ctx.state)
     points = []
@@ -192,32 +195,35 @@ def measure_phase_scan(ctx):
         ctx.state["data_files"].append(run_format.PHASE_SCAN_FILE)
         pending.add(directory.update_config, **ctx.state)
         _arm_width(ctx, width_us)
-        set_temperature_switch(signals, False, channel=channels["temp"])
-        try:
-            for angle in angles:
-                preparation.set_rf_phase(ctx, angle)
+        index = 0
+        for angle in angles:
+            preparation.set_rf_phase(ctx, angle)
+            values = []
+            for repeat in range(p.n_repeat):
+                check_cancelled()
+                if index % p.temp_group_size == 0:
+                    set_temperature_switch(signals, False, channel=channels["temp"])
                 sleep(p.system_settle_s)
-                values = []
-                for repeat in range(p.y_rf_phase_repeat):
-                    check_cancelled()
-                    _, meta = _acquire_point(ctx, config, rate)
-                    values.append(meta["R_mean_v"])
-                    pending.add(_append_phase_row, path, {
-                        "phase_deg": f"{angle:g}", "repeat": repeat,
-                        "R_v": f"{meta['R_mean_v']:.9g}",
-                        "theta_deg": f"{meta['theta_mean_deg']:.9g}",
-                        "timestamp": datetime.now().astimezone().isoformat(timespec="seconds")})
-                    done += 1
-                    _progress("A03", "相位粗扫", done, total, started)
-                points.append(dict(phase_deg=float(angle), r_mean_v=float(np.mean(values)),
-                                   r_sem_v=(float(np.std(values, ddof=1) / math.sqrt(len(values)))
-                                            if len(values) > 1 else 0.0)))
-        finally:
-            set_temperature_switch(signals, True, channel=channels["temp"])
-            sleep(p.temp_switch_on_lag_s)
-        ctx.state["phase_check"] = dict(enabled=True, **phase_scan.choose_peak(points))
-        ctx.state["phase_source"] = "stage"
-        pending.add(directory.update_config, **ctx.state)
+                _, meta = _acquire_point(ctx, config, rate)
+                values.append(meta["R_mean_v"])
+                pending.add(_append_phase_row, path, {
+                    "phase_deg": f"{angle:g}", "repeat": repeat,
+                    "R_v": f"{meta['R_mean_v']:.9g}",
+                    "theta_deg": f"{meta['theta_mean_deg']:.9g}",
+                    "timestamp": datetime.now().astimezone().isoformat(timespec="seconds")})
+                index += 1
+                done += 1
+                if index % p.temp_group_size == 0 or index == total:
+                    set_temperature_switch(signals, True, channel=channels["temp"])
+                    sleep(p.temp_switch_on_lag_s)
+                    pending.flush()
+                _progress("A03", "相位粗扫", done, total, started)
+            points.append(dict(phase_deg=float(angle), r_mean_v=float(np.mean(values)),
+                               r_sem_v=(float(np.std(values, ddof=1) / math.sqrt(len(values)))
+                                        if len(values) > 1 else 0.0)))
+    ctx.state["phase_check"] = dict(enabled=True, **phase_scan.choose_peak(points))
+    ctx.state["phase_source"] = "stage"
+    pending.add(directory.update_config, **ctx.state)
     phase_scan.plot_phase_scan(directory.results / Path(run_format.PHASE_PLOT_FILE).name,
                                points, ctx.state["phase_check"])
     ctx.state["data_files"].append(run_format.PHASE_PLOT_FILE)

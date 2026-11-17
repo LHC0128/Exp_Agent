@@ -90,6 +90,9 @@ class XYSession(StrictModel):
     demod_phase_deg: float | None = None
     daq_settings: dict[str, Any] | None = None
     drift_records: list[dict[str, Any]] = Field(default_factory=list)
+    scan_progress: dict[str, Any] | None = None
+    phase_check: dict[str, Any] | None = None
+    main_field: dict[str, Any] | None = None
     pending_request: str | None = None
     error: str | None = None
 

@@ -62,7 +62,7 @@ Z 通道链路与 π 脉冲面积标定完全一致：DG 的 Z 通道 → Aigtek
 
 - Y 向射频：`Y_magnetic_field` 5 kHz 正弦，频率 `Y_RF_FREQ_HZ`、幅度 `Y_RF_VPP`，无限 burst 门控；相对相位只由 burst 相位决定，A02 用 `Y_RF_PHASE_DEG` 起振，A03/A04 改相位时不动波形。
 - 改相位的顺序（DirectAW 校相的做法）：关闭 burst → 写 burst 相位 → 打开 burst → 打开 output，再等 `SYSTEM_SETTLE_S` 才读数。
-- Z 脉冲：一次上传双脉冲任意波（相位固定 0）后 arm 无限 burst；A03 用预测 π 宽度写一次，A04 按每个扫描宽度重写。
+- Z 脉冲：一次上传双脉冲任意波（相位固定 0）后 arm 无限 burst，随后发 1200B 的 AON（A02 收尾时功放是关的，不打开则脉冲只到功放输入、到不了线圈）；A03 用 `PHASE_CHECK_WIDTH_US` 写一次，A04 按每个扫描宽度重写。
 - 读出：MFLI 的 Signal Input 1（探测器输出）→ 第 0 路解调器，参考频率设为 `Y_RF_FREQ_HZ`，读该频率上的模量 R 与相位 θ；解调档照 DirectAW 校相档配成 1 ms / 100 kSa/s。
 - 共同触发：`Time_sequence_2` 输出 5 kHz 方波（固定 5 Vpp、2.5 V 偏置、50% 占空比）接 Z 通道与 Y 射频的外触发输入；它同时是共同触发，安全收尾后保持运行。
 - DHO900 接采样电阻仅供人工核对脉冲波形，本实验不采集示波器数据。
@@ -72,7 +72,7 @@ Z 通道链路与 π 脉冲面积标定完全一致：DG 的 Z 通道 → Aigtek
 
 - **A01** 参数、映射与安全限值预检（不连硬件）：脉宽列表由 start/stop/step 生成，逐项检查非空、不超过半个周期、不小于两倍沿宽；射频相位粗扫的起点/终点/步进必须能生成非空角度列表；`z_pulse_coil_current`、Z/Y 场电平、触发电平与电阻平均功耗全部在限内；检查 Z 信号源的任意波点数与 burst 能力。
 - **A02** 连接 DG、MFLI、1200B、DHO900、GS200 与 TEC（可选）：写 1200B 增益与输入/输出阻抗并把 Z 通道负载配成一致；按参数配置 MFLI 第 0 路解调器（量程、阶数、时间常数、采样率）并把参考频率设为射频频率，解调相位沿用库默认值并回读记录；射频与 Z 都按无限 burst 起振；关闭 GS200 主磁场输出并回读；DG 与 MFLI 参考时钟严格回读。
-- **A03** 射频相位粗扫（可勾选）：Z 脉冲串按预测 π 宽度只写一次；逐角度按 DirectAW 顺序改射频 burst 相位、等 `SYSTEM_SETTLE_S` 后读 `Y_RF_PHASE_REPEAT` 次 R/θ，写 `raw/phase_scan.csv` 与 `results/phase_vs_phase.png`；取 R 峰，峰不在端点时用相邻三点抛物线插值给出亚步进精化角度；`chosen_deg`、`refined_deg`、`R_chosen`、`R_curve` 写进运行配置。`PHASE_CHECK_ENABLED=false` 时本阶段整段跳过、不写任何文件。
+- **A03** 射频相位粗扫（可勾选）：Z 脉冲串按 `PHASE_CHECK_WIDTH_US` 只写一次；逐角度按 DirectAW 顺序改射频 burst 相位，随后与 A04 一样按 `TEMP_GROUP_SIZE` 分组采集——组首关闭温控并等 `SYSTEM_SETTLE_S` 再读、组末恢复温控并等 `TEMP_SWITCH_ON_LAG_S` 后落盘，关温控窗口内不写文件；每角度读 `N_REPEAT` 次 R/θ，写 `raw/phase_scan.csv` 与 `results/phase_vs_phase.png`；取 R 峰，峰不在端点时用相邻三点抛物线插值给出亚步进精化角度；`chosen_deg`、`refined_deg`、`R_chosen`、`R_curve` 写进运行配置。`PHASE_CHECK_ENABLED=false` 时本阶段整段跳过、不写任何文件。
 - **A04** 扫脉宽（可勾选）：射频相位取 A03 的 `chosen_deg`（有 `refined_deg` 时优先用精化值），A03 未运行或关闭时回落到 `Y_RF_PHASE_DEG`，来源记进摘要的 `phase_source`；逐点上传该宽度的 ±π 双脉冲并 arm 无限 burst；关闭温控、等待 `SYSTEM_SETTLE_S`，在关闭窗口内连续采 `SCAN_POINT_DURATION_S` 的 R/θ，每点重复 `N_REPEAT` 次；每 `TEMP_GROUP_SIZE` 个读数恢复温控并等待 `TEMP_SWITCH_ON_LAG_S`，之后才写盘。取消时保留已完成点。
 - **A05** 安全结束：先关 1200B，Z 通道 DC 0 V 并关 burst/sync，关 Y 射频，停 MFLI 解调传输与 DHO900，恢复温控与 GS200 原状态，再断开全部设备；`Time_sequence_2` 保持运行。
 - **B01** 离线分析：按宽度汇总 R 的均值与标准误，加权拟合判据模型，给出 τ_π ± 1σ、R_max、残差 RMS 与 keep 判据，产出 `results/scan_summary.json` 与 `results/r_vs_width.png`；摘要同时记录实际生效的射频相位 `rf_phase_deg` 与时间偏移 `rf_phase_offset_us`、`phase_source`、相位粗扫曲线、`REFERENCE_PI_WIDTH_US` 对照与 MFLI 解调相位回读；R_max 小于单点标准误中位数的 5 倍时加 `signal_low` 提示。
@@ -86,15 +86,15 @@ Z 通道链路与 π 脉冲面积标定完全一致：DG 的 Z 通道 → Aigtek
 | `Y_RF_PHASE_DEG` | A03 未运行或关闭时使用的固定射频相位，默认 90°（0–360°） |
 | `PHASE_CHECK_ENABLED` | 相位粗扫开关，默认开启：关闭则 A03 跳过，A04 用 `Y_RF_PHASE_DEG` |
 | `Y_RF_PHASE_START/STOP/STEP_DEG` | 相位粗扫网格，默认 0–180°、步进 22.5°（9 点）；只扫 0–180° |
-| `Y_RF_PHASE_REPEAT` | 每个角度读 R/θ 的次数，默认 3 |
+| `PHASE_CHECK_WIDTH_US` | A03 期间 Z 双脉冲串的单脉冲宽度，默认 5.0 µs；与 A04 的扫描网格无关 |
 | `Z_PEAK_CURRENT_MA` | 固定的脉冲峰值电流，默认 190 mA；−π 取相反号 |
 | `Z_PULSE_EDGE_US` | 升余弦沿宽，默认 1 µs；等效面积按「宽度 − 沿宽」计 |
 | `Z_PULSE_WIDTH_START/STOP/STEP_US` | 脉宽扫描网格，默认 4.0–7.0 µs、步进 0.5（7 点） |
-| `N_REPEAT` | 每个宽度的读数次数，默认 5；逐点标准误由这些读数给出 |
-| `SCAN_POINT_DURATION_S` | 每次读数在关温控窗口内的连续采样时长，默认 0.2 s |
-| `SYSTEM_SETTLE_S` | 关温控（A04）或改相位（A03）后的稳定等待，默认 0.5 s |
-| `TEMP_GROUP_SIZE` | 每关闭温控一次连续采集的读数个数，默认 5 |
-| `TEMP_SWITCH_ON_LAG_S` | 组末恢复温控后的等待，默认 0.5 s |
+| `N_REPEAT` | 每个点的读数次数，默认 5；A03 每个角度、A04 每个宽度共用这一项，逐点标准误由这些读数给出 |
+| `SCAN_POINT_DURATION_S` | 每次读数在关温控窗口内的连续采样时长（A03 与 A04 共用），默认 0.2 s |
+| `SYSTEM_SETTLE_S` | 关温控后的稳定等待（A03 与 A04 共用），默认 0.5 s；A03 每次读数前都会等，因此改相位后也覆盖在内 |
+| `TEMP_GROUP_SIZE` | 每关闭温控一次连续采集的读数个数（A03 与 A04 共用），默认 5 |
+| `TEMP_SWITCH_ON_LAG_S` | 组末恢复温控后、落盘前的等待（A03 与 A04 共用），默认 0.5 s |
 | `DEMOD0_*` | 第 0 路解调器的索引、输入量程（2.0 V）、阶数（4）、时间常数（1 ms）与采样率（100 kSa/s），照 DirectAW 校相档 |
 | `COIL_CONSTANT_HZ_PER_MA` / `TARGET_ANGLE_PI` | 只用于预测宽度与结果对照，不参与峰位判定 |
 | `REFERENCE_PI_WIDTH_US` | 电学参考 π 宽度，默认 5.122 µs；只进入 `ratio_to_electrical` 并写入摘要 |
@@ -129,7 +129,7 @@ Z 通道链路与 π 脉冲面积标定完全一致：DG 的 Z 通道 → Aigtek
 - `DEMOD0_TC`=1 ms / `DEMOD0_RATE`=100 kSa/s 照 DirectAW 校相档设定，但 100 kSa/s 超过 MFLI 自动选模阈值 70 kSa/s：`daq.acquire_data` 会选解调 Scope 采集（需要 MF-DIG 选件，仓库声明的 MFLI 已装），解调传输率不再重写，实际采样率取最近的 Scope 档（约 117 kSa/s）、每点约 2.3 万点；`SCAN_POINT_DURATION_S`×`DEMOD0_RATE`=2 万点只是名义值。真实采样率与时间轴以每次读数的采集元数据为准，需首轮实测确认。
 - DG4000 的 burst 相位在 `INFinity` + 外部触发下是否真的决定射频起步相位、相位分辨率与「关 burst → 写相位 → 开 burst」后是否等下一个触发沿才重启，都需要示波器核对；若相位写入不是即时生效，A03 的角度轴会整体平移。
 - Z 与 Y 两条通道共用一个 5 kHz 触发沿，长时运行时相对相位是否保持（两次独立 burst 的自由运行各按自身时基）；若漂移，相位粗扫的结果只在短时间内有效。
-- 相位粗扫的脉冲宽度取扫描网格中最接近预测 π 宽度的一点：真实 π 宽度偏离预测时，R 幅度整体变小，但 `|cos|` 的峰位不受影响。
+- 相位粗扫的脉冲宽度由 `PHASE_CHECK_WIDTH_US` 给定（默认 5.0 µs）：真实 π 宽度偏离它时，R 幅度整体变小，但 `|cos|` 的峰位不受影响。
 - 抛物线精化只用相邻三点：`|cos|` 不是抛物线，精化值在真实零点附近通常差零点几度，需按 `refined_deg` 的重复性判断是否值得采信。
 - 共同触发 5 Vpp/2.5 V 偏置与上升沿、burst 相位 0 是否让脉冲落在周期起点，需示波器核对一次。这三个电平是接线常量（`preparation.TRIGGER_VPP`/`TRIGGER_OFFSET_V`/`TRIGGER_DUTY`），没有做成参数；若现场需要改电平，应连同安全限值一起评审。
 - 收尾保留 `Time_sequence_2` 运行（与 DirectAW 的“共同触发持续运行”一致），只关闭 Z 与 Y 的 burst；若该通道是本实验独占、希望收尾后也停，需要单独确认。
