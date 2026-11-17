@@ -115,6 +115,7 @@ assignments:
   coil-constant-calibration: tag-1f7ca2d6
   z-chain-stability: tag-1f7ca2d6
   pi-pulse-calibration: tag-1f7ca2d6
+  pi-width-scan: tag-1f7ca2d6
 experiment_descriptions:
   bell-bloom-z-field-calibration: 扫描 Z DC 与 Pump 调制/解调频率，仅采集 Demod0 R，以平方根洛伦兹幅度模型拟合共振中心并标定带符号
     Hz/V；γ 为幅度 −3 dB 半宽，新结果明确宽度定义，历史结果不自动改写。运行页按节点编辑、应用并显式重跑，完整运行共用步骤；历史分析覆盖与下一次实验设置独立。每个频点配置后关闭温控，按
