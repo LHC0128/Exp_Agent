@@ -294,7 +294,8 @@ class AnalysisTest(unittest.TestCase):
         self.assertEqual(pulse["rows"], 0)
         self.assertIn("reason", pulse)
         for name in ("zero_timeseries.png", "zero_allan.png", "zero_window_noise.png",
-                     "zero_window_psd.png", "pulse_timeseries.png", "pulse_hist.png"):
+                     "zero_window_psd.png", "pulse_timeseries.png", "pulse_hist_plus.png",
+                     "pulse_hist_minus.png"):
             self.assertTrue((self.run_dir / "results" / name).is_file(), name)
 
     def test_pulse_report_recomputes_from_frames(self):
@@ -315,6 +316,8 @@ class AnalysisTest(unittest.TestCase):
         self.assertAlmostEqual(summary["plus"]["mean"], 0.588, places=2)
         self.assertAlmostEqual(summary["asymmetry_pi"], 0.0, places=2)
         self.assertTrue((self.run_dir / "results" / "pulse_angles.csv").is_file())
+        self.assertTrue((self.run_dir / "results" / "pulse_hist_plus.png").is_file())
+        self.assertTrue((self.run_dir / "results" / "pulse_hist_minus.png").is_file())
 
     def test_window_frames_report(self):
         rng = np.random.default_rng(0)

@@ -288,7 +288,8 @@ def _empty_pulse(run_dir, summary, reason):
     with path.open("w", newline="", encoding="utf-8") as handle:
         csv.DictWriter(handle, fieldnames=PULSE_FIELDS).writeheader()
     _plot_unavailable(run_dir, "pulse_timeseries.png", "No pulse data")
-    _plot_unavailable(run_dir, "pulse_hist.png", "No pulse data")
+    _plot_unavailable(run_dir, "pulse_hist_plus.png", "No pulse data")
+    _plot_unavailable(run_dir, "pulse_hist_minus.png", "No pulse data")
     return summary
 
 
@@ -360,6 +361,25 @@ def pulse_report(run_dir, params):
     return summary
 
 
+def _plot_angle_histogram(run_dir, values, name, color):
+    """单独画一侧的角度分布：只覆盖该侧 ±4σ，边上标均值与标准差。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    from lab_workflows.plotting import format_axis, new_figure, plot_style_context, save_figure
+
+    center, spread = float(np.mean(values)), float(np.std(values))
+    half = max(4.0 * spread, 1e-6)
+    with plot_style_context("paper"):
+        figure, axis = new_figure()
+        axis.hist(values, bins=np.linspace(center - half, center + half, 41), color=color, alpha=0.8)
+        axis.axvline(center, color="black", lw=0.8, ls="--")
+        axis.margins(y=0.22)
+        axis.text(0.03, 0.98, f"mean {center:.4f}$\\pi$  sd {spread:.4f}$\\pi$  n {values.size}",
+                  transform=axis.transAxes, va="top", fontsize=8)
+        format_axis(axis, xlabel=r"Pulse angle $\theta/\pi$", ylabel="Count")
+        save_figure(figure, output_path(run_dir, f"results/{name}"))
+
+
 def _plot_pulse(run_dir, data, positive, negative):
     import matplotlib
     matplotlib.use("Agg")
@@ -373,8 +393,7 @@ def _plot_pulse(run_dir, data, positive, negative):
         axis.legend(loc="best", fontsize=7)
         save_figure(figure, output_path(run_dir, "results/pulse_timeseries.png"))
 
-        figure, axis = new_figure()
-        bins = max(10, min(60, int(np.sqrt(max(1, data["theta_pi"].size)))))
-        axis.hist(data["theta_pi"], bins=bins, color=COLOR_OPTIMAL, alpha=0.75)
-        format_axis(axis, xlabel=r"Pulse angle $\theta/\pi$", ylabel="Count")
-        save_figure(figure, output_path(run_dir, "results/pulse_hist.png"))
+    for mask, name, color in ((positive, "pulse_hist_plus.png", COLOR_OPTIMAL),
+                              (negative, "pulse_hist_minus.png", COLOR_TRAD)):
+        if np.count_nonzero(mask) >= 2:
+            _plot_angle_histogram(run_dir, data["theta_pi"][mask], name, color)

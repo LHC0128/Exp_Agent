@@ -769,7 +769,8 @@
           "pulse_angles.csv",
           "pulse_summary.json",
           "pulse_timeseries.png",
-          "pulse_hist.png"
+          "pulse_hist_plus.png",
+          "pulse_hist_minus.png"
         ],
         "display_parameters": [],
         "quality_gates": [

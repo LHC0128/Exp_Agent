@@ -47,7 +47,8 @@ ANALYSIS = (
         quality_gates=("运行目录已停止写入；缺少某一段零点数据时该段留空并写占位图，不阻塞另一段；"
                        "没有逐帧 NPZ 时窗口内噪声留空",)),
     Stage("B02", "±π 脉冲角分布与不对称", "独立分析", ("B01",), artifacts=(
-        "pulse_angles.csv", "pulse_summary.json", "pulse_timeseries.png", "pulse_hist.png"),
+        "pulse_angles.csv", "pulse_summary.json", "pulse_timeseries.png",
+        "pulse_hist_plus.png", "pulse_hist_minus.png"),
         quality_gates=("由 raw/pulse_*.npz 逐帧重算 Q/θ；没有原始帧时回退到采集时的 pulse_angles.csv；"
                        "缺少脉冲数据时写空摘要、原因与占位图；不把分析完成当作科学质量通过",)),
 )
