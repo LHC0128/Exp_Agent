@@ -303,6 +303,18 @@
       "read_only": false
     },
     {
+      "name": "SETTLE_EXCLUDE_S",
+      "label": "分析剔除开头的时长",
+      "type": "number",
+      "default": 0.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "B01 拟合与统计时丢弃开头这一段，用来排除开机或换基线后的热建立；0 表示全部保留",
+      "read_only": false
+    },
+    {
       "name": "BASELINE_CURRENT_MA",
       "label": "基线目标电流",
       "type": "number",
@@ -553,7 +565,8 @@
           "ZERO_LOG_INTERVAL_S",
           "ZERO_LOG_DURATION_S",
           "ZERO_SAVE_ALL_FRAMES",
-          "ZERO_RAW_SAVE_INTERVAL_S"
+          "ZERO_RAW_SAVE_INTERVAL_S",
+          "SETTLE_EXCLUDE_S"
         ],
         "artifacts": [
           "raw/zero_dg0.csv",
@@ -582,7 +595,8 @@
           "ZERO_LOG_INTERVAL_S",
           "ZERO_LOG_DURATION_S",
           "ZERO_SAVE_ALL_FRAMES",
-          "ZERO_RAW_SAVE_INTERVAL_S"
+          "ZERO_RAW_SAVE_INTERVAL_S",
+          "SETTLE_EXCLUDE_S"
         ],
         "quality_gates": [
           "功放关/开两态、DG 0 V 测零偏；长记逐点追加 CSV，默认每帧原始波形另存 NPZ；不写任何 I–V 电压"
@@ -617,6 +631,7 @@
           "ZERO_LOG_DURATION_S",
           "ZERO_SAVE_ALL_FRAMES",
           "ZERO_RAW_SAVE_INTERVAL_S",
+          "SETTLE_EXCLUDE_S",
           "BASELINE_CURRENT_MA",
           "CONVERSION_AMPS_PER_VOLT",
           "CONVERSION_OFFSET_MA"
@@ -648,6 +663,7 @@
           "ZERO_LOG_DURATION_S",
           "ZERO_SAVE_ALL_FRAMES",
           "ZERO_RAW_SAVE_INTERVAL_S",
+          "SETTLE_EXCLUDE_S",
           "BASELINE_CURRENT_MA",
           "CONVERSION_AMPS_PER_VOLT",
           "CONVERSION_OFFSET_MA"
@@ -899,6 +915,10 @@
           "A04"
         ],
         "ZERO_RAW_SAVE_INTERVAL_S": [
+          "A03",
+          "A04"
+        ],
+        "SETTLE_EXCLUDE_S": [
           "A03",
           "A04"
         ],

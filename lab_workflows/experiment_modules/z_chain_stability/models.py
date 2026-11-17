@@ -24,7 +24,7 @@ def ten_division_window(window_s: float) -> float:
 
 @dataclass
 class ZChainStabilityParams(ExperimentParams):
-    schema_version: ClassVar[int] = 5
+    schema_version: ClassVar[int] = 6
 
     @classmethod
     def migrate_external(cls, values, schema_version):
@@ -94,6 +94,9 @@ class ZChainStabilityParams(ExperimentParams):
     zero_raw_save_interval_s: float = parameter(default=600.0, external_name="ZERO_RAW_SAVE_INTERVAL_S",
         label="零点原始帧保存间隔", unit="s", minimum=0,
         description="仅在关闭「保存每帧原始波形」时生效；0 表示只存均值，不存原始帧")
+    settle_exclude_s: float = parameter(default=0.0, external_name="SETTLE_EXCLUDE_S",
+        label="分析剔除开头的时长", unit="s", minimum=0, group="advanced",
+        description="B01 拟合与统计时丢弃开头这一段，用来排除开机或换基线后的热建立；0 表示全部保留")
 
     # ---- A04：目标电流 + 手动 I–V 换算 ----
     baseline_current_ma: float = parameter(default=0.0, external_name="BASELINE_CURRENT_MA", label="基线目标电流",

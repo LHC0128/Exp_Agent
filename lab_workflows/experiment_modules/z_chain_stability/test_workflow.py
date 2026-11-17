@@ -276,7 +276,13 @@ class AnalysisTest(unittest.TestCase):
         config, params = analysis_steps.load_config(self.run_dir)
         self.assertEqual(config["experiment_id"], run_format.EXPERIMENT_ID)
         zero = analysis_steps.zero_report(self.run_dir, params)
-        self.assertEqual(zero["segments"]["dg0"]["rows"], 5)
+        segment = zero["segments"]["dg0"]
+        self.assertEqual(segment["rows"], 5)
+        self.assertEqual(segment["unit"], "nT")
+        self.assertIn("drift_se_nt_per_day", segment)
+        self.assertIn("end_minus_start_se_nt", segment)
+        self.assertEqual(segment["sampling"]["rows"], 5)
+        self.assertEqual(segment["sampling"]["long_gaps"], 0)
         pulse = analysis_steps.pulse_report(self.run_dir, params)
         self.assertEqual(pulse["rows"], 4)
         self.assertAlmostEqual(pulse["plus"]["mean"], 1.0, places=6)
@@ -323,6 +329,21 @@ class AnalysisTest(unittest.TestCase):
         self.assertAlmostEqual(summary["base"]["theta_per_ma"], 0.02615, places=5)
         self.assertTrue((self.run_dir / "results" / "pulse_base.png").is_file())
 
+    def test_settle_exclude_drops_leading_points(self):
+        with (self.run_dir / "raw" / "zero_dg0.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["timestamp", "elapsed_s", "mean_v", "std_v", "current_a"])
+            for index in range(10):
+                writer.writerow(["2026-01-01T00:00:00", 10 * index, 1e-3, 1e-5,
+                                 1e-4 + (1e-5 if index < 3 else 0.0)])
+        _, params = analysis_steps.load_config(self.run_dir)
+        params.settle_exclude_s = 30.0
+        summary = analysis_steps.zero_report(self.run_dir, params)
+        segment = summary["segments"]["dg0"]
+        self.assertEqual(segment["excluded_rows"], 3)
+        self.assertEqual(segment["rows"], 7)
+        self.assertEqual(summary["settle_exclude_s"], 30.0)
+
     def test_window_frames_report(self):
         rng = np.random.default_rng(0)
         for index in range(4):
@@ -343,6 +364,13 @@ class AnalysisTest(unittest.TestCase):
 
 
 class ProcessingTest(unittest.TestCase):
+    def test_allan_truncates_long_tau(self):
+        x = np.random.default_rng(0).normal(size=400)
+        taus, devs = processing.allan_deviation(x, 1.0)
+        self.assertTrue(taus)
+        self.assertLessEqual(max(taus), 400 / 4)
+        self.assertTrue(all(dev >= 0 for dev in devs))
+
     def test_waveform_has_two_opposite_pulses(self):
         wave = processing.pulse_waveform(100.0, 4.0, 1.0, points=4096)
         self.assertAlmostEqual(float(wave.min()), -1.0, places=6)

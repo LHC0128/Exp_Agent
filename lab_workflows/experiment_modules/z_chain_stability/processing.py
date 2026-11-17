@@ -86,20 +86,26 @@ def pulse_angle_pi(q_a_s: float, coil_constant_hz_per_ma: float) -> float:
 
 
 def allan_deviation(values, dt_s: float) -> tuple[list[float], list[float]]:
-    """重叠 Allan 偏差；返回 (平均时间, 偏差)。非均匀时间戳请先重采样。"""
+    """重叠 Allan 偏差；返回 (平均时间, 偏差)。
+
+    重叠估计用累加和一次算出全部 m 点滑动均值：非重叠分组在长 τ 端只剩一两个差分，
+    会给出纯统计噪声的点。τ 截到 n/4 个样本，并至少要求 10 个差分。
+    非均匀时间戳请先重采样。
+    """
     x = np.asarray(values, dtype=float)
     if x.size < 4 or dt_s <= 0:
         return [], []
+    cumulative = np.concatenate(([0.0], np.cumsum(x)))
     taus, devs = [], []
-    max_m = x.size // 2
     m = 1
-    while m <= max_m:
-        groups = x.size // m
-        means = x[: groups * m].reshape(groups, m).mean(axis=1)
-        diffs = np.diff(means)
-        if diffs.size:
-            taus.append(m * dt_s)
-            devs.append(float(np.sqrt(0.5 * np.mean(diffs ** 2))))
+    limit = max(2, x.size // 4)
+    while m <= limit:
+        means = (cumulative[m:] - cumulative[:-m]) / m
+        diffs = means[m:] - means[:-m]
+        if diffs.size < 10:
+            break
+        taus.append(m * dt_s)
+        devs.append(float(np.sqrt(0.5 * np.mean(diffs ** 2))))
         m *= 2
     return taus, devs
 

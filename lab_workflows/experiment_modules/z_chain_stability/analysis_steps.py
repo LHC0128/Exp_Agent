@@ -87,14 +87,50 @@ def _stats(values, elapsed, dt_s):
                 allan_dt_s=float(dt_s), allan_tau_s=taus, allan_dev=devs)
 
 
+def _drift_se(values, elapsed):
+    """线性拟合斜率的标准误；按白噪声残差估，未计自相关，偏乐观。"""
+    x, y = np.asarray(elapsed, float), np.asarray(values, float)
+    if x.size < 3:
+        return None
+    sxx = float(np.sum((x - x.mean()) ** 2))
+    if sxx <= 0:
+        return None
+    resid = y - np.polyval(np.polyfit(x, y, 1), x)
+    dof = x.size - 2
+    return float(np.sqrt((float(np.sum(resid ** 2)) / dof) / sxx)) if dof > 0 else None
+
+
+def _decile_change(values):
+    """首尾各 10% 的均值差及其标准误；不依赖线性模型。"""
+    values = np.asarray(values, float)
+    n = max(1, values.size // 10)
+    head, tail = values[:n], values[-n:]
+    if head.size < 2 or tail.size < 2:
+        return None, None
+    change = float(tail.mean() - head.mean())
+    se = float(np.sqrt(head.var(ddof=1) / head.size + tail.var(ddof=1) / tail.size))
+    return change, se
+
+
+def _sampling(elapsed, nominal_dt_s):
+    """采样完整性：间隔中位数、最大间隔与超长间隔个数。"""
+    dt = np.diff(np.asarray(elapsed, float))
+    if dt.size == 0:
+        return dict(rows=1, nominal_dt_s=nominal_dt_s, dt_median_s=None, max_gap_s=None, long_gaps=0)
+    median = float(np.median(dt))
+    return dict(rows=int(dt.size + 1), nominal_dt_s=nominal_dt_s, dt_median_s=median,
+                max_gap_s=float(np.max(dt)), long_gaps=int(np.count_nonzero(dt > 1.5 * median)))
+
+
 def _mode_file(run_dir, mode):
     return output_path(run_dir, f"raw/zero_{mode}.csv")
 
 
 def zero_report(run_dir, params):
-    """B01：各零点段的均值、噪声、漂移、Allan，以及逐帧窗口内噪声；缺段留空。"""
+    """B01：各零点段的均值、噪声、漂移、Allan 与窗口内噪声；缺段留空。"""
     (output_path(run_dir, "results")).mkdir(parents=True, exist_ok=True)
     b_nt_per_ma = params.coil_constant_hz_per_ma / GYROMAGNETIC_RATIO_HZ_PER_NT
+    windows = _window_report(run_dir, params, b_nt_per_ma)
     segments = {}
     for mode in ("dg0", "baseline"):
         path = _mode_file(run_dir, mode)
@@ -104,21 +140,40 @@ def zero_report(run_dir, params):
         data = _read_csv(path)
         if not data or data["current_a"].size < 2:
             continue
-        dt = float(np.median(np.diff(data["elapsed_s"]))) if data["elapsed_s"].size > 1 else 0.0
-        stats = _stats(data["current_a"], data["elapsed_s"], dt)
-        segments[mode] = {**stats,
-                          "mean_nt": stats["mean"] * 1e3 * b_nt_per_ma,
-                          "std_nt": stats["std"] * 1e3 * b_nt_per_ma,
-                          "drift_nt_per_day": stats["drift_per_s"] * 86400.0 * 1e3 * b_nt_per_ma}
-    windows = _window_report(run_dir, params, b_nt_per_ma)
+        elapsed = np.asarray(data["elapsed_s"], float)
+        values = np.asarray(data["current_a"], float) * 1e3 * b_nt_per_ma
+        keep = elapsed >= params.settle_exclude_s
+        excluded = int(np.count_nonzero(~keep))
+        elapsed, values = elapsed[keep], values[keep]
+        if values.size < 2:
+            continue
+        dt = float(np.median(np.diff(elapsed))) if elapsed.size > 1 else 0.0
+        stats = _stats(values, elapsed, dt)
+        change, change_se = _decile_change(values)
+        drift_se = _drift_se(values, elapsed)
+        window = windows["summary"].get(mode)
+        floor = window["within_std_median_nt"] / np.sqrt(window["points"]) if window else None
+        segments[mode] = dict(
+            unit="nT", rows=stats["rows"], excluded_rows=excluded,
+            mean_nt=stats["mean"], std_nt=stats["std"], min_nt=stats["min"], max_nt=stats["max"],
+            drift_nt_per_day=stats["drift_per_s"] * 86400.0,
+            drift_se_nt_per_day=None if drift_se is None else drift_se * 86400.0,
+            end_minus_start_nt=change,
+            end_minus_start_se_nt=change_se,
+            white_noise_floor_nt=floor,
+            frames_vs_floor=(stats["std"] / floor) if floor else None,
+            allan_dt_s=stats["allan_dt_s"], allan_tau_s=stats["allan_tau_s"],
+            allan_dev_nt=stats["allan_dev"],
+            sampling=_sampling(elapsed, params.zero_log_interval_s))
     summary = dict(experiment_id=run_format.EXPERIMENT_ID, b_nt_per_ma=b_nt_per_ma,
                    coil_constant_hz_per_ma=params.coil_constant_hz_per_ma,
-                   sense_resistor_ohm=params.sense_resistor_ohm, segments=segments,
-                   windows=windows["summary"])
+                   sense_resistor_ohm=params.sense_resistor_ohm,
+                   settle_exclude_s=params.settle_exclude_s,
+                   segments=segments, windows=windows["summary"])
     output_path(run_dir, "results/zero_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     if segments:
-        _plot_zero(run_dir, segments)
+        _plot_zero(run_dir, segments, b_nt_per_ma)
     else:
         _plot_unavailable(run_dir, "zero_timeseries.png", "No zero log data")
         _plot_unavailable(run_dir, "zero_allan.png", "No zero log data")
@@ -214,7 +269,7 @@ def _plot_unavailable(run_dir, name, message):
         save_figure(figure, output_path(run_dir, f"results/{name}"))
 
 
-def _plot_zero(run_dir, segments):
+def _plot_zero(run_dir, segments, b_nt_per_ma):
     import matplotlib
     matplotlib.use("Agg")
     from lab_workflows.plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context, save_figure
@@ -226,8 +281,8 @@ def _plot_zero(run_dir, segments):
             if not path.is_file():
                 continue
             data = _read_csv(path)
-            axis.plot(data["elapsed_s"], data["current_a"] * 1e3, ".", ms=2, color=color, label=mode)
-        format_axis(axis, xlabel="Elapsed (s)", ylabel="Current (mA)")
+            axis.plot(data["elapsed_s"], data["current_a"] * 1e3 * b_nt_per_ma, ".", ms=2, color=color, label=mode)
+        format_axis(axis, xlabel="Elapsed (s)", ylabel="Field equivalent (nT)")
         if axis.get_legend_handles_labels()[0]:
             axis.legend(loc="best", fontsize=7)
         save_figure(figure, output_path(run_dir, "results/zero_timeseries.png"))
@@ -236,8 +291,16 @@ def _plot_zero(run_dir, segments):
         for mode, color in (("dg0", COLOR_OPTIMAL), ("baseline", COLOR_TRAD)):
             if mode not in segments or not segments[mode]["allan_tau_s"]:
                 continue
-            axis.loglog(segments[mode]["allan_tau_s"], segments[mode]["allan_dev"], "o-", ms=3, color=color, label=mode)
-        format_axis(axis, xlabel=r"$\tau$ (s)", ylabel=r"Allan deviation (mA)")
+            segment = segments[mode]
+            taus = np.asarray(segment["allan_tau_s"], float)
+            devs = np.asarray(segment["allan_dev_nt"], float)
+            # 独立平均段数 n/(2m)；少于此数时长 τ 的点只有统计意义
+            pairs = segment["rows"] / (2.0 * np.maximum(1.0, taus / max(segment["allan_dt_s"], 1e-12)))
+            errors = devs / np.sqrt(np.maximum(pairs, 1.0))
+            axis.set_xscale("log")
+            axis.set_yscale("log")
+            axis.errorbar(taus, devs, yerr=errors, fmt="o-", ms=3, lw=1, capsize=2, color=color, label=mode)
+        format_axis(axis, xlabel=r"$\tau$ (s)", ylabel=r"Allan deviation (nT)")
         if axis.get_legend_handles_labels()[0]:
             axis.legend(loc="best", fontsize=7)
         save_figure(figure, output_path(run_dir, "results/zero_allan.png"))
