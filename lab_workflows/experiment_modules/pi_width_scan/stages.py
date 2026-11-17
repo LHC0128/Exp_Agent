@@ -8,15 +8,19 @@ from .run_format import EXPERIMENT_ID
 
 FINISH_ID = "A05"
 RUN_ID = "A04"
-ANALYSIS_KEYS: tuple[str, ...] = ()
+# B01 可在离线重算时覆盖电学参考宽度；分析参数必须是 ACQUISITION 里已声明的键。
+ANALYSIS_KEYS: tuple[str, ...] = ("REFERENCE_PI_WIDTH_US",)
 # A02 建立链路、锁相与激励；这些参数改动会同时失效相位粗扫与扫描。
 CHAIN = ("AMPLIFIER_GAIN_DB", "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
          "AMPLIFIER_WRITE_SETTINGS", "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM", "COIL_RESISTANCE_OHM",
          "RESISTOR_RATED_W", "Y_RF_FREQ_HZ", "Y_RF_VPP", "DEMOD0_IDX", "DEMOD0_SIGNAL_RANGE",
          "DEMOD0_ORDER", "DEMOD0_TC", "DEMOD0_RATE")
-# A03 只改射频 burst 相位；Z 脉冲宽度沿用预测值，不动扫描网格。
-PHASE = ("PHASE_CHECK_ENABLED", "Y_RF_PHASE_START_DEG", "Y_RF_PHASE_STOP_DEG", "Y_RF_PHASE_STEP_DEG",
-         "Y_RF_PHASE_REPEAT")
+# A03 只改射频 burst 相位；Z 脉冲宽度由 PHASE_CHECK_WIDTH_US 单独给定，不动扫描网格。
+# 温控分组三件套与 A04 共用：两阶段同属普通气室采集，改任一项都要同时失效 A03 与 A04。
+PHASE = ("PHASE_CHECK_ENABLED", "PHASE_CHECK_WIDTH_US", "Y_RF_PHASE_START_DEG", "Y_RF_PHASE_STOP_DEG",
+         "Y_RF_PHASE_STEP_DEG",
+         "SYSTEM_SETTLE_S", "TEMP_GROUP_SIZE", "TEMP_SWITCH_ON_LAG_S", "N_REPEAT",
+         "SCAN_POINT_DURATION_S")
 # A04 的扫描参数；Y_RF_PHASE_DEG 是 A03 未运行时的回落相位，所以两处都归属。
 SCAN = ("SYSTEM_SETTLE_S", "TEMP_SWITCH_ON_LAG_S", "TEMP_GROUP_SIZE", "SCAN_POINT_DURATION_S", "N_REPEAT",
         "Z_PEAK_CURRENT_MA", "Z_PULSE_EDGE_US", "Z_PULSE_WIDTH_START_US", "Z_PULSE_WIDTH_STOP_US",
@@ -35,10 +39,11 @@ ACQUISITION = (
                          "DG 与 MFLI 参考时钟严格回读一致",)),
     Stage("A03", "射频相位粗扫（可勾选）", "测量", ("A02",), (*CHAIN, *PHASE),
           ("raw/phase_scan.csv", "results/phase_vs_phase.png"),
-          quality_gates=("Z 脉冲串按预测 π 宽度只写一次；每个角度按 DirectAW 顺序改射频 burst 相位"
+          quality_gates=("Z 脉冲串按 PHASE_CHECK_WIDTH_US 只写一次；每个角度按 DirectAW 顺序改射频 burst 相位"
                          "（关 burst → 写相位 → 开 burst → 开 output）后等 SYSTEM_SETTLE_S 再读 "
-                         "Y_RF_PHASE_REPEAT 次；取 R 峰并用相邻三点抛物线精化；"
-                         "温控关闭窗口内只读不写盘；PHASE_CHECK_ENABLED=false 时整阶段跳过且不写文件",)),
+                         "N_REPEAT 次；读数按 TEMP_GROUP_SIZE 分组，组首关闭温控、组末恢复温控并等 "
+                         "TEMP_SWITCH_ON_LAG_S 后落盘，关温控窗口内不写文件；取 R 峰并用相邻三点抛物线精化；"
+                         "PHASE_CHECK_ENABLED=false 时整阶段跳过且不写文件",)),
     Stage(RUN_ID, "扫脉宽并读 MFLI R/θ（可勾选）", "测量", ("A02",), (*CHAIN, *SCAN),
           ("raw/scan.csv", "raw/R_*.csv", "experiment_config.yaml"),
           quality_gates=("射频相位取 A03 的 chosen_deg（有 refined_deg 时优先），A03 未运行或关闭时回落 "

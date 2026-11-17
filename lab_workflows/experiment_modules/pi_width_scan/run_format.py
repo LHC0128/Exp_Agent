@@ -88,4 +88,5 @@ def initial_metadata(p: PiWidthScanParams):
                            "rf_phase_offset_us": p.rf_phase_offset_us(),
                            "rf_phase_angles_deg": p.rf_phase_angles_deg(),
                            "phase_check_enabled": p.phase_check_enabled,
-                           "predicted_width_us": p.predicted_width_us()})
+                           "predicted_width_us": p.predicted_width_us(),
+                           "phase_check_width_us": p.phase_check_width_us})

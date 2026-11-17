@@ -5,6 +5,8 @@
 ``R(τ) = R_max |sin(π(τ − τ0) / (2 τ_π))|`` 的峰位给出 π 宽度。脉冲周期由射频频率
 反算（5 kHz → 200 µs），两个脉冲相隔半周期。
 
+A03 的 Z 脉冲宽度由 ``PHASE_CHECK_WIDTH_US`` 单独给定，与 A04 的扫描网格无关。
+
 射频相位（A03 粗扫或 ``Y_RF_PHASE_DEG``）只改变读出幅度：``R ∝ |cos(φ − ψ0)|``，
 曲线在 0–360° 内有两个等高峰、相隔 180°，所以粗扫只走 0–180°；判据峰位不受相位影响。
 """
@@ -28,7 +30,8 @@ class PiWidthScanParams(ExperimentParams):
     schema_version: ClassVar[int] = 1
     # 新实验没有历史短等待键；保留声明以便普通气室采集的迁移规则统一适用。
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {}
-    removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
+    # Y_RF_PHASE_REPEAT 并入 N_REPEAT：A03 与 A04 共用「每点重复次数」。
+    removed_temperature_keys: ClassVar[tuple[str, ...]] = ("Y_RF_PHASE_REPEAT",)
 
     run_tag: str = parameter(default="pi_width_scan", external_name="RUN_TAG", label="运行标签", group="basic")
 
@@ -70,9 +73,10 @@ class PiWidthScanParams(ExperimentParams):
     y_rf_phase_step_deg: float = parameter(default=22.5, external_name="Y_RF_PHASE_STEP_DEG",
         label="相位粗扫步进", unit="°", minimum=1e-3, group="basic",
         description="默认 0–180°、步进 22.5°，共 9 个角度；峰不在端点时按相邻三点做抛物线精化。")
-    y_rf_phase_repeat: int = parameter(default=3, external_name="Y_RF_PHASE_REPEAT", label="相位粗扫每角度次数",
-        minimum=1, maximum=50, group="basic",
-        description="每个角度读 R/θ 的次数；每角度均值与标准误由这些读数给出。")
+    phase_check_width_us: float = parameter(default=5.0, external_name="PHASE_CHECK_WIDTH_US",
+        label="相位粗扫脉宽", unit="µs", minimum=1e-3, group="basic",
+        description="A03 期间 Z 双脉冲串的单脉冲宽度；默认 5 µs 取电学参考 π 宽度附近，"
+                    "粗扫只用它把脉冲串打响，不改动 A04 的扫描网格。")
 
     amplifier_gain_db: float = parameter(default=20.0, external_name="AMPLIFIER_GAIN_DB", label="功放增益", unit="dB",
         minimum=0, maximum=20, group="basic",
@@ -166,12 +170,6 @@ class PiWidthScanParams(ExperimentParams):
         """A03 粗扫的角度列表（含两端）。"""
         return phase_grid(self.y_rf_phase_start_deg, self.y_rf_phase_stop_deg, self.y_rf_phase_step_deg)
 
-    def phase_check_width_us(self) -> float:
-        """A03 期间 Z 脉冲所用的脉宽：扫描网格中最接近预测 π 宽度的一点。"""
-        widths = self.widths_us()
-        target = self.predicted_width_us()
-        return min(widths, key=lambda width: abs(width - target))
-
     def widths_us(self) -> list[float]:
         """由 start/stop/step 生成脉宽列表；终点按步进向下取整。"""
         start, stop, step = self.z_pulse_width_start_us, self.z_pulse_width_stop_us, self.z_pulse_width_step_us
@@ -217,6 +215,13 @@ class PiWidthScanParams(ExperimentParams):
             errors.append("每个脉宽至少为两倍沿宽")
         if self.z_pulse_edge_us >= self.pulse_half_period_us / 2:
             errors.append("Z_PULSE_EDGE_US 必须明显小于半个周期")
+        if not math.isfinite(self.phase_check_width_us) or self.phase_check_width_us <= 0:
+            errors.append("PHASE_CHECK_WIDTH_US 必须为正的有限数")
+        elif self.phase_check_width_us > self.pulse_half_period_us:
+            errors.append(f"PHASE_CHECK_WIDTH_US 不能超过半个脉冲周期 {self.pulse_half_period_us:g} µs"
+                          "（+π 与 −π 相隔半周期）")
+        elif self.phase_check_width_us < 2 * self.z_pulse_edge_us:
+            errors.append("PHASE_CHECK_WIDTH_US 至少为两倍沿宽")
         if self.z_peak_current_ma <= 0 or not math.isfinite(self.z_peak_current_ma):
             errors.append("Z_PEAK_CURRENT_MA 必须为正")
         if not math.isfinite(self.y_rf_phase_deg) or not 0.0 <= self.y_rf_phase_deg <= 360.0:
@@ -225,8 +230,6 @@ class PiWidthScanParams(ExperimentParams):
             self.rf_phase_angles_deg()
         except ValueError as exc:
             errors.append(str(exc))
-        if self.y_rf_phase_repeat < 1:
-            errors.append("Y_RF_PHASE_REPEAT 至少为 1")
         if self.coil_constant_hz_per_ma <= 0:
             errors.append("COIL_CONSTANT_HZ_PER_MA 必须为正")
         if self.target_angle_pi <= 0:
@@ -261,6 +264,7 @@ class PiWidthScanParams(ExperimentParams):
                     acquisition_count=len(widths) * p.n_repeat,
                     samples_per_point=p.samples_per_point(),
                     predicted_width_us=p.predicted_width_us(),
+                    phase_check_width_us=p.phase_check_width_us,
                     rf_phase_deg=p.y_rf_phase_deg,
                     rf_phase_offset_us=p.rf_phase_offset_us(),
                     rf_phase_angles_deg=p.rf_phase_angles_deg())
