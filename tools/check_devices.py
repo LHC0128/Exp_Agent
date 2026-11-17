@@ -31,9 +31,19 @@ from lab_workflows.common import load_mapping  # noqa: E402
 from lab_workflows.devices import create_lockin, create_signal_generator  # noqa: E402
 
 
+# 本实验链路不涉及、且自检未实现连接方式的类型；遇到时标记跳过而不是失败。
+UNSUPPORTED_KINDS = frozenset({"keithley_6221", "toptica_dlc_pro", "sds_acquisition"})
+
+
+class SkipDevice(Exception):
+    """自检不支持的设备类型：跳过，不影响退出码。"""
+
+
 def _factory(config: dict[str, Any]) -> Callable[[], Any]:
     """按映射里的 instrument 类型选择创建函数；不支持的型号直接报错。"""
     kind = str(config.get("instrument", "")).lower()
+    if kind in UNSUPPORTED_KINDS:
+        raise SkipDevice(f"自检暂不支持该设备类型: {kind}")
     if kind == "signal_generator":
         return lambda: create_signal_generator(config)
     if kind == "lockin_amplifier":
@@ -68,6 +78,10 @@ def probe(mapping: dict[str, Any], keys: Iterable[str] | None = None) -> list[di
             entry["error"] = ""
         except HardwareAccessDenied:
             raise
+        except SkipDevice as exc:
+            entry["ok"] = True
+            entry["skipped"] = str(exc)
+            entry["error"] = ""
         except Exception as exc:  # noqa: BLE001 - 自检要把任何失败都报出来
             entry["ok"] = False
             entry["error"] = f"{type(exc).__name__}: {exc}"
@@ -103,8 +117,11 @@ def main(argv: list[str] | None = None) -> int:
 
     failed = [item for item in results if not item["ok"]]
     for item in results:
-        mark = "OK  " if item["ok"] else "FAIL"
-        detail = "" if item["ok"] else f"  {item['error']}"
+        if item.get("skipped"):
+            mark, detail = "SKIP", f"  {item['skipped']}"
+        else:
+            mark = "OK  " if item["ok"] else "FAIL"
+            detail = "" if item["ok"] else f"  {item['error']}"
         print(f"{mark} {item['key']:26s} {item['seconds']:6.1f} s{detail}", flush=True)
     print(f"共 {len(results)} 台，失败 {len(failed)} 台", flush=True)
     return 0 if not failed else 1
