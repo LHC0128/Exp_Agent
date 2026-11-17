@@ -48,9 +48,10 @@ ANALYSIS = (
                        "没有逐帧 NPZ 时窗口内噪声留空",)),
     Stage("B02", "±π 脉冲角分布与不对称", "独立分析", ("B01",), artifacts=(
         "pulse_angles.csv", "pulse_summary.json", "pulse_timeseries.png",
-        "pulse_hist_plus.png", "pulse_hist_minus.png"),
+        "pulse_hist_plus.png", "pulse_hist_minus.png", "pulse_base.png"),
         quality_gates=("由 raw/pulse_*.npz 逐帧重算 Q/θ；没有原始帧时回退到采集时的 pulse_angles.csv；"
-                       "缺少脉冲数据时写空摘要、原因与占位图；不把分析完成当作科学质量通过",)),
+                       "逐次捕获的帧内基线单独出统计与时间序列；缺少脉冲数据时写空摘要、原因与占位图；"
+                       "不把分析完成当作科学质量通过",)),
 )
 
 _rules = DependencyRules(finish_id=FINISH_ID)

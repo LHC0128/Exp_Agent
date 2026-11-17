@@ -290,6 +290,7 @@ def _empty_pulse(run_dir, summary, reason):
     _plot_unavailable(run_dir, "pulse_timeseries.png", "No pulse data")
     _plot_unavailable(run_dir, "pulse_hist_plus.png", "No pulse data")
     _plot_unavailable(run_dir, "pulse_hist_minus.png", "No pulse data")
+    _plot_unavailable(run_dir, "pulse_base.png", "No pulse data")
     return summary
 
 
@@ -352,13 +353,55 @@ def pulse_report(run_dir, params):
     for name, mask in (("plus", positive), ("minus", negative)):
         if np.count_nonzero(mask) >= 2:
             stats[name] = _stats(theta[mask], elapsed[mask], dt)
+    base_summary, base_series = _base_report(data, params)
     summary.update(rows=int(theta.size), plus=stats.get("plus"), minus=stats.get("minus"),
                    asymmetry_pi=(stats["plus"]["mean"] + stats["minus"]["mean"])
-                   if "plus" in stats and "minus" in stats else None)
+                   if "plus" in stats and "minus" in stats else None,
+                   base=base_summary)
     output_path(run_dir, "results/pulse_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     _plot_pulse(run_dir, data, positive, negative)
+    if base_series is None:
+        _plot_unavailable(run_dir, "pulse_base.png", "No baseline data")
+    else:
+        _plot_base(run_dir, base_series)
     return summary
+
+
+def _base_report(data, params):
+    """逐次捕获的帧内基线：台阶、漂移以及它对 θ 的影响；缺列时返回 None。"""
+    base = data.get("i_base_a")
+    if base is None or base.size == 0:
+        return None, None
+    order = np.argsort(data["elapsed_s"])
+    elapsed, first = np.unique(np.asarray(data["elapsed_s"], float)[order], return_index=True)
+    values = np.asarray(base, float)[order][first]
+    levels = np.unique(np.round(values, 12))
+    step = float(np.median(np.diff(levels))) if levels.size > 1 else 0.0
+    drift = processing.drift_rate(values, elapsed)
+    # 基线整体偏 δ 时，两发面积都变化 δ·积分窗；这是 θ/π 对基线的敏感度
+    theta_per_ma = 2.0 * params.coil_constant_hz_per_ma * 1000.0 * 1e-3 * params.pulse_tail_window_us * 1e-6
+    summary = dict(captures=int(values.size), mean_ma=float(np.mean(values)) * 1e3,
+                   std_ma=float(np.std(values)) * 1e3, min_ma=float(np.min(values)) * 1e3,
+                   max_ma=float(np.max(values)) * 1e3, span_ma=float(np.max(values) - np.min(values)) * 1e3,
+                   levels=int(levels.size), step_ma=step * 1e3,
+                   drift_ma_per_day=float(drift) * 86400.0 * 1e3,
+                   theta_per_ma=theta_per_ma,
+                   theta_drift_bound_per_day=float(drift) * 86400.0 * 1e3 * theta_per_ma)
+    return summary, dict(elapsed_s=elapsed, base_ma=values * 1e3)
+
+
+def _plot_base(run_dir, series):
+    """帧内基线随时间；台阶状分布说明它被示波器垂直分辨率量化。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    from lab_workflows.plotting import COLOR_OPTIMAL, format_axis, new_figure, plot_style_context, save_figure
+
+    with plot_style_context("paper"):
+        figure, axis = new_figure()
+        axis.plot(series["elapsed_s"], series["base_ma"], ".", ms=2, color=COLOR_OPTIMAL)
+        format_axis(axis, xlabel="Elapsed (s)", ylabel="Frame baseline (mA)")
+        save_figure(figure, output_path(run_dir, "results/pulse_base.png"))
 
 
 def _plot_angle_histogram(run_dir, values, name, color):
