@@ -8,8 +8,8 @@ from .preparation import preflight
 
 DESCRIPTION = (
     "π 脉冲准备的电学稳定性标定：只测 Z 通道 → Aigtek 1200B → 阻尼电阻 → 14 匝线圈 → 10 Ω 采样电阻回路，"
-    "不连接原子、TEC 或 GS200。A03 在 DG 0 V 下测功放零偏、I–V 小直流与长时间零点；"
-    "A04 按目标电流经实测 I–V 反推电压（或直接写电压）后记录工作基线残流；"
+    "不连接原子、TEC 或 GS200。A03 在 DG 0 V 下测功放零偏与长时间零点（窗口均值序列 + 每帧原始波形）；"
+    "A04 按目标电流经手动 I–V 换算（k 默认取线圈常数标定值，偏置可手填）写电压后记录工作基线残流；"
     "A05 连续输出 100 µs 周期的 ±π 双脉冲，按间隔捕获短窗并逐脉冲积分，给出 θ=2π·K·∫I dt 的分布。"
     "零点长记把窗口均值追加到 CSV，默认每帧原始波形另存 NPZ，可同时看 20 ms 窗口内噪声与逐帧漂移；"
     "脉冲段分别记录 +π 与 −π 的 Q/θ。"
@@ -59,7 +59,7 @@ DEFINITION = ExperimentDefinition(
     safety_notes=(
         "z_pulse_coil_current 与 Z_magnetic_field 必须有有限上下界；计划电流、基线电压、脉冲峰谷与电阻功耗在连接前预检。",
         "A02 在功放输出关闭、信号源停输出时写入 1200B 增益与输入/输出阻抗；带载改这些设置被安全回调拒绝。",
-        "每帧实测电流越限、最大量程仍削顶或同步缺失即中止并安全收尾；A04 写入电压前按实测 I–V 重算并校验。",
+        "每帧实测电流越限、最大量程仍削顶或同步缺失即中止并安全收尾；A04 写入电压前按手动换算与安全限值校验。",
     ),
     run_history=RunHistory(run_format=run_format, historical_parameters=run_format.recorded_parameters),
     schema_provider=ADAPTER.schema, defaults_saver=ADAPTER.save_defaults, preflight_runner=ADAPTER.preflight,
