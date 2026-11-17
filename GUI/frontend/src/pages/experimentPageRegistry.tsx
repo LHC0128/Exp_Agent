@@ -19,6 +19,7 @@ import { CoilDriveCharacterizationPage } from "./CoilDriveCharacterizationPage";
 import { CoilConstantCalibrationPage } from "./CoilConstantCalibrationPage";
 import { ZChainStabilityPage } from "./ZChainStabilityPage";
 import { PiPulseCalibrationPage } from "./PiPulseCalibrationPage";
+import { PiWidthScanPage } from "./PiWidthScanPage";
 import { ZFieldBandwidthPage } from "./ZFieldBandwidthPage";
 import { NoiseSpectrumXYKnownNoisePage, NoiseSpectrumXYProbeAMPage } from "./NoiseSpectrumXYKnownNoisePage";
 import { DetectionChainFrequencyResponsePage } from "./DetectionChainFrequencyResponsePage";
@@ -73,6 +74,7 @@ export const experimentPageRoutes: Readonly<Record<string, ExperimentPageRoute>>
   "coil-constant-calibration": () => <CoilConstantCalibrationPage />,
   "z-chain-stability": () => <ZChainStabilityPage />,
   "pi-pulse-calibration": () => <PiPulseCalibrationPage />,
+  "pi-width-scan": () => <PiWidthScanPage />,
   "z-field-bandwidth": () => <ZFieldBandwidthPage />,
   "noise-spectrum-xy-known-noise": () => <NoiseSpectrumXYKnownNoisePage />,
   "noise-spectrum-xy-uncontrolled-probe-am": () => <NoiseSpectrumXYProbeAMPage />,

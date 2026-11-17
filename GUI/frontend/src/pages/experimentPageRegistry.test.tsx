@@ -25,7 +25,8 @@ vi.mock("./RFSensitivityDirectAWPage", async () => {
 vi.mock("../api", () => ({ api: vi.fn() }));
 
 // 稳定实验 ID 清单：原分发链 44 行 if 覆盖的 45 个 ID，顺序与 ExperimentPage 历史顺序一致；
-// T14 归档 10 个实验后剩 35 个，T15 再归档 4 个后剩 31 个，新增 Z 线圈常数标定后剩 32 个。
+// T14 归档 10 个实验后剩 35 个，T15 再归档 4 个后剩 31 个，新增 Z 线圈常数标定后剩 32 个，
+// 之后陆续新增 π 脉冲面积标定与 π 脉冲宽度原子域定标。
 const STABLE_EXPERIMENT_IDS: readonly string[] = [
   "mx-z-optimal-control-rf-sensitivity",
   "mx-y-rf-sensitivity",
@@ -60,6 +61,8 @@ const STABLE_EXPERIMENT_IDS: readonly string[] = [
   "rf-sensitivity-aw",
   "rf-sensitivity-aw-known-noise",
   "z-chain-stability",
+  "pi-pulse-calibration",
+  "pi-width-scan",
 ];
 
 function RouteSwitcher() {

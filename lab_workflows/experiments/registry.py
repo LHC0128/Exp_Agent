@@ -99,6 +99,7 @@ from ..experiment_modules.z_chain_stability.definition import (
 from ..experiment_modules.pi_pulse_calibration.definition import (
     DEFINITION as PI_PULSE_CALIBRATION_DEFINITION,
 )
+from ..experiment_modules.pi_width_scan.definition import DEFINITION as PI_WIDTH_SCAN_DEFINITION
 # </registry:imports>
 
 from .contracts import ExperimentDefinition
@@ -141,6 +142,7 @@ _DEFINITIONS = [
     COIL_CONSTANT_CALIBRATION_DEFINITION,  # coil-constant-calibration
     Z_CHAIN_STABILITY_DEFINITION,  # z-chain-stability
     PI_PULSE_CALIBRATION_DEFINITION,  # pi-pulse-calibration
+    PI_WIDTH_SCAN_DEFINITION,  # pi-width-scan
 ]
 # </registry:definitions>
 
