@@ -400,6 +400,7 @@ def pulse_report(run_dir, params):
     """B02：优先由逐帧原始波形重算 Q/θ，再给分布、漂移、Allan 与不对称。"""
     (output_path(run_dir, "results")).mkdir(parents=True, exist_ok=True)
     summary = dict(experiment_id=run_format.EXPERIMENT_ID, coil_constant_hz_per_ma=params.coil_constant_hz_per_ma,
+                   b_nt_per_ma=params.coil_constant_hz_per_ma / GYROMAGNETIC_RATIO_HZ_PER_NT,
                    pulse_width_us=params.pulse_width_us, pulse_period_us=params.pulse_period_us)
     rows, captures, adc_step = _pulse_rows_from_frames(run_dir, params)
     if rows is not None:
@@ -426,7 +427,7 @@ def pulse_report(run_dir, params):
     for name, mask in (("plus", positive), ("minus", negative)):
         if np.count_nonzero(mask) >= 2:
             stats[name] = _stats(theta[mask], elapsed[mask], dt)
-    base_summary, base_series = _base_report(data, params, adc_step)
+    base_summary, base_series = _base_report(data, params, summary["b_nt_per_ma"], adc_step)
     summary.update(rows=int(theta.size), plus=stats.get("plus"), minus=stats.get("minus"),
                    asymmetry_pi=(stats["plus"]["mean"] + stats["minus"]["mean"])
                    if "plus" in stats and "minus" in stats else None,
@@ -438,11 +439,11 @@ def pulse_report(run_dir, params):
         _plot_unavailable(run_dir, "pulse_base.png", "No baseline data")
     else:
         _plot_base(run_dir, base_series,
-                   adc_step / params.sense_resistor_ohm * 1e3 if adc_step else None)
+                   adc_step / params.sense_resistor_ohm * 1e3 * summary["b_nt_per_ma"] if adc_step else None)
     return summary
 
 
-def _base_report(data, params, adc_step=None):
+def _base_report(data, params, b_nt_per_ma, adc_step=None):
     """逐次捕获的帧内基线：台阶、漂移以及它对 θ 的影响；缺列时返回 None。"""
     base = data.get("i_base_a")
     if base is None or base.size == 0:
@@ -459,15 +460,18 @@ def _base_report(data, params, adc_step=None):
     summary = dict(captures=int(values.size), mean_ma=float(np.mean(values)) * 1e3,
                    std_ma=float(np.std(values)) * 1e3, min_ma=float(np.min(values)) * 1e3,
                    max_ma=float(np.max(values)) * 1e3, span_ma=float(np.max(values) - np.min(values)) * 1e3,
-                   levels=int(levels.size), step_ma=step * 1e3,
+                   mean_nt=float(np.mean(values)) * 1e3 * b_nt_per_ma,
+                   span_nt=float(np.max(values) - np.min(values)) * 1e3 * b_nt_per_ma,
+                   levels=int(levels.size), step_ma=step * 1e3, step_nt=step * 1e3 * b_nt_per_ma,
                    steps_per_code=(step * 1e3 / code_ma) if code_ma else None,
                    drift_ma_per_day=float(drift) * 86400.0 * 1e3,
+                   drift_nt_per_day=float(drift) * 86400.0 * 1e3 * b_nt_per_ma,
                    theta_per_ma=theta_per_ma,
                    theta_drift_bound_per_day=float(drift) * 86400.0 * 1e3 * theta_per_ma)
-    return summary, dict(elapsed_s=elapsed, base_ma=values * 1e3)
+    return summary, dict(elapsed_s=elapsed, base_nt=values * 1e3 * b_nt_per_ma)
 
 
-def _plot_base(run_dir, series, adc_step_ma=None):
+def _plot_base(run_dir, series, adc_step_nt=None):
     """帧内基线随时间；台阶状分布说明它被示波器垂直分辨率量化。"""
     import matplotlib
     matplotlib.use("Agg")
@@ -475,16 +479,16 @@ def _plot_base(run_dir, series, adc_step_ma=None):
 
     with plot_style_context("paper"):
         figure, axis = new_figure()
-        axis.plot(series["elapsed_s"], series["base_ma"], ".", ms=2, color=COLOR_OPTIMAL)
-        format_axis(axis, xlabel="Elapsed (s)", ylabel="Frame baseline (mA)")
-        if adc_step_ma:
+        axis.plot(series["elapsed_s"], series["base_nt"], ".", ms=2, color=COLOR_OPTIMAL)
+        format_axis(axis, xlabel="Elapsed (s)", ylabel="Frame baseline (nT)")
+        if adc_step_nt:
             # 右侧标出一码的高度，说明台阶来自 ADC 量化而不是真实漂移
-            low = float(np.min(series["base_ma"]))
+            low = float(np.min(series["base_nt"]))
             bar_x = 0.95
-            axis.annotate("", xy=(bar_x, low + adc_step_ma), xytext=(bar_x, low),
+            axis.annotate("", xy=(bar_x, low + adc_step_nt), xytext=(bar_x, low),
                           xycoords=axis.get_yaxis_transform(),
                           arrowprops=dict(arrowstyle="<->", lw=0.8, color="#555555"))
-            axis.text(bar_x - 0.04, low + adc_step_ma / 2.0, f"1 ADC code\n{adc_step_ma:.3f} mA",
+            axis.text(bar_x - 0.04, low + adc_step_nt / 2.0, f"1 ADC code\n{adc_step_nt:.1f} nT",
                       transform=axis.get_yaxis_transform(), ha="right", va="center", fontsize=7, color="#555555")
         save_figure(figure, output_path(run_dir, "results/pulse_base.png"))
 
