@@ -102,6 +102,7 @@ def scan_report(run_dir, params):
     theta = np.array([float(r["theta_pi"]) for r in rows])
     sign = np.array([r["sign"] for r in rows])
     peak = np.array([float(r["peak_a"]) for r in rows])
+    q = np.array([float(r["q_a_s"]) for r in rows])
     check_cancelled()
 
     points = []
@@ -114,6 +115,7 @@ def scan_report(run_dir, params):
         for width in sorted(set(widths[mask])):
             values = theta[mask & (widths == width)]
             per_width.append(dict(width_us=float(width), rows=int(values.size),
+                                  mean_q_a_s=float(np.mean(np.abs(q[mask & (widths == width)]))),
                                   mean_pi=float(np.mean(values)),
                                   sem_pi=float(np.std(values, ddof=1) / np.sqrt(values.size))
                                   if values.size > 1 else 0.0))
@@ -133,15 +135,22 @@ def scan_report(run_dir, params):
         # 理想升余弦沿下 θ(0) = −m·沿宽，用截距反推等效沿宽，可与 PULSE_EDGE_US 对照
         effective_edge_us = float(-intercept / slope)
         peak_ma = float(np.mean(peak[mask])) * 1e3
-        k_implied = slope / (2.0 * peak_ma * 1e-3 * 1e-6 * 1000.0) if peak_ma else None
+        # 脉冲的有效平顶电流由 ∫I dt 随宽度的斜率给出；它与峰值之比描述波形过冲，
+        # 不是线圈常数——θ 本身用 K 定义，反解 K 只会回到 K×该比值。
+        q_slope = float(np.polyfit(x, np.array([abs(item["mean_q_a_s"]) for item in per_width]), 1)[0])
+        flat_ma = q_slope * 1e6 * 1e3
         points.append(dict(side=label, width_pi=float(width_pi), width_pi_sem=width_pi_sem,
                            slope_pi_per_us=float(slope), intercept_pi=float(intercept),
                            effective_edge_us=effective_edge_us,
                            residual_pi=float(np.sqrt(np.mean(resid ** 2))),
-                           peak_current_ma=peak_ma, k_implied_hz_per_ma=k_implied,
+                           peak_current_ma=peak_ma, flat_current_ma=flat_ma,
+                           flat_over_peak_ratio=(flat_ma / peak_ma) if peak_ma else None,
                            per_width=per_width,
                            fit_width_us=x.tolist(), fit_value_pi=y.tolist(), fit_model_pi=model.tolist()))
     summary["reason"] = "" if points else "每个符号至少需要两个宽度点才能内插"
+    summary["note"] = ("width_pi 是在当前 COIL_CONSTANT_HZ_PER_MA 下定义的角度；K 改变时 width_pi 按 1/K 缩放。"
+                       "flat_current_ma 由 ∫I dt 对宽度的斜率给出，与 peak_current_ma 之比描述波形过冲，"
+                       "不是线圈常数。")
     output_path(run_dir, "results/scan_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     if points:

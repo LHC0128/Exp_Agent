@@ -180,15 +180,20 @@ class AnalysisTest(unittest.TestCase):
             writer.writerow(["width_us", "shot", "sign", "q_a_s", "theta_pi", "i_base_a", "peak_a", "elapsed_s"])
             for width in (4.6, 4.8, 5.0, 5.2, 5.4):
                 for shot in range(3):
-                    value = 0.2 * width
-                    writer.writerow([width, shot, "+", 1e-7, value, -0.002, 0.198, 1.0])
-                    writer.writerow([width, shot, "-", -1e-7, -value, -0.002, 0.198, 1.0])
+                    value = 0.25 * (width - 1.0)
+                    q_value = 0.18 * (width - 1.0) * 1e-6
+                    writer.writerow([width, shot, "+", q_value, value, -0.002, 0.198, 1.0])
+                    writer.writerow([width, shot, "-", -q_value, -value, -0.002, 0.198, 1.0])
         _, params = analysis_steps.load_config(self.run_dir)
         summary = analysis_steps.scan_report(self.run_dir, params)
         self.assertEqual(summary["rows"], 30)
         plus = [item for item in summary["points"] if item["side"] == "plus"][0]
         self.assertAlmostEqual(plus["width_pi"], 5.0, places=6)
-        self.assertAlmostEqual(plus["k_implied_hz_per_ma"], 0.2 / (2 * 198 * 1e-3 * 1e-6 * 1000), places=3)
+        # 合成数据里 Q = 0.18 A × (宽 − 1 µs)，故平顶电流应为 180 mA，峰值 198 mA
+        self.assertAlmostEqual(plus["flat_current_ma"], 180.0, places=6)
+        self.assertAlmostEqual(plus["flat_over_peak_ratio"], 180.0 / 198.0, places=6)
+        self.assertAlmostEqual(plus["effective_edge_us"], 1.0, places=6)
+        self.assertIn("width_pi 是在当前", summary["note"])
         self.assertTrue((self.run_dir / "results" / "scan_summary.json").is_file())
         self.assertTrue((self.run_dir / "results" / "scan_fit.png").is_file())
 
