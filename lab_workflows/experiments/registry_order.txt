@@ -31,3 +31,4 @@ t2-calibration
 xy-direct-aw-dc-calibration
 coil-constant-calibration
 z-chain-stability
+pi-pulse-calibration

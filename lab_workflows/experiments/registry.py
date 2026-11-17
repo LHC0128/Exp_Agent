@@ -96,6 +96,9 @@ from ..experiment_modules.coil_constant_calibration.definition import (
 from ..experiment_modules.z_chain_stability.definition import (
     DEFINITION as Z_CHAIN_STABILITY_DEFINITION,
 )
+from ..experiment_modules.pi_pulse_calibration.definition import (
+    DEFINITION as PI_PULSE_CALIBRATION_DEFINITION,
+)
 # </registry:imports>
 
 from .contracts import ExperimentDefinition
@@ -137,6 +140,7 @@ _DEFINITIONS = [
     XY_DIRECT_AW_DC_DEFINITION,  # xy-direct-aw-dc-calibration
     COIL_CONSTANT_CALIBRATION_DEFINITION,  # coil-constant-calibration
     Z_CHAIN_STABILITY_DEFINITION,  # z-chain-stability
+    PI_PULSE_CALIBRATION_DEFINITION,  # pi-pulse-calibration
 ]
 # </registry:definitions>
 

@@ -1,0 +1,644 @@
+{
+  "fields": [
+    {
+      "name": "RUN_TAG",
+      "label": "运行标签",
+      "type": "string",
+      "default": "pi_pulse_calibration",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AMPLIFIER_GAIN_DB",
+      "label": "功放增益",
+      "type": "number",
+      "default": 20.0,
+      "unit": "dB",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": 20,
+      "description": "连接时写入 1200B（0–20 dB，0.5 dB 步进）；预测电流按此值计算",
+      "read_only": false
+    },
+    {
+      "name": "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+      "label": "功放输入阻抗",
+      "type": "number",
+      "default": 1000000.0,
+      "unit": "Ω",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": 50.0,
+          "label": "50 Ω"
+        },
+        {
+          "value": 1000000.0,
+          "label": "1 MΩ"
+        }
+      ]
+    },
+    {
+      "name": "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+      "label": "功放输出阻抗",
+      "type": "number",
+      "default": 50.0,
+      "unit": "Ω",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": 50.0,
+          "label": "50 Ω"
+        },
+        {
+          "value": 1.0,
+          "label": "1 Ω"
+        }
+      ]
+    },
+    {
+      "name": "AMPLIFIER_WRITE_SETTINGS",
+      "label": "连接时写入功放设置",
+      "type": "boolean",
+      "default": true,
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SENSE_RESISTOR_OHM",
+      "label": "采样电阻",
+      "type": "number",
+      "default": 10.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DAMPING_RESISTOR_OHM",
+      "label": "阻尼电阻",
+      "type": "number",
+      "default": 10.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "COIL_RESISTANCE_OHM",
+      "label": "线圈直流电阻",
+      "type": "number",
+      "default": 2.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "RESISTOR_RATED_W",
+      "label": "电阻额定功率",
+      "type": "number",
+      "default": 2.0,
+      "unit": "W",
+      "group": "advanced",
+      "minimum": 0.01,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SETTLE_S",
+      "label": "输出切换后等待",
+      "type": "number",
+      "default": 0.3,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_ACQUIRE_DELAY_S",
+      "label": "示波器停采后等待",
+      "type": "number",
+      "default": 1.5,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": 30,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_CURRENT_CHANNEL",
+      "label": "采样电阻通道",
+      "type": "integer",
+      "default": 2,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 4,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SCOPE_SYNC_CHANNEL",
+      "label": "同步触发通道",
+      "type": "integer",
+      "default": 3,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 4,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SYNC_TRIGGER_LEVEL_V",
+      "label": "同步触发电平",
+      "type": "number",
+      "default": 1.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SYNC_SCALE_V_DIV",
+      "label": "同步通道垂直档位",
+      "type": "number",
+      "default": 2.0,
+      "unit": "V/div",
+      "group": "advanced",
+      "minimum": 0.0005,
+      "maximum": 10,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "MAX_MEMORY_DEPTH",
+      "label": "最大存储深度上限",
+      "type": "integer",
+      "default": 10000,
+      "unit": "点",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": 1000,
+          "label": "1,000"
+        },
+        {
+          "value": 10000,
+          "label": "10,000"
+        },
+        {
+          "value": 100000,
+          "label": "100,000"
+        },
+        {
+          "value": 1000000,
+          "label": "1,000,000"
+        }
+      ]
+    },
+    {
+      "name": "PULSE_PERIOD_US",
+      "label": "双脉冲周期",
+      "type": "number",
+      "default": 100.0,
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": 10,
+      "maximum": null,
+      "description": "+π 与 −π 成对的一个周期；脉冲间隔为半个周期",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_WIDTHS_US",
+      "label": "扫描的单脉冲宽度",
+      "type": "array",
+      "default": [
+        4.6,
+        4.8,
+        5.0,
+        5.2,
+        5.4
+      ],
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "从这几个宽度里找 θ = π；每个宽度内部再重复 SHOTS_PER_WIDTH 次",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_EDGE_US",
+      "label": "升/降沿宽度",
+      "type": "number",
+      "default": 1.0,
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": 0.05,
+      "maximum": null,
+      "description": "升余弦沿；等效面积 = 宽度 − 沿宽",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_PEAK_CURRENT_MA",
+      "label": "脉冲峰值电流",
+      "type": "number",
+      "default": 190.0,
+      "unit": "mA",
+      "group": "advanced",
+      "minimum": 0.1,
+      "maximum": null,
+      "description": "相对基线的 +π 峰值；−π 取相反号",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_BASELINE_V",
+      "label": "脉冲直流偏置",
+      "type": "number",
+      "default": 0.0,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "脉冲所骑的 DG 直流偏置；0 V 表示不写偏置",
+      "read_only": false
+    },
+    {
+      "name": "SHOTS_PER_WIDTH",
+      "label": "每个宽度的捕获次数",
+      "type": "integer",
+      "default": 8,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 2,
+      "maximum": 100,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "CAPTURE_INTERVAL_S",
+      "label": "相邻捕获的最小间隔",
+      "type": "number",
+      "default": 0.5,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "CAPTURE_PERIODS",
+      "label": "每次捕获覆盖周期数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 2,
+      "maximum": 20,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "PULSE_TAIL_WINDOW_US",
+      "label": "单脉冲积分窗",
+      "type": "number",
+      "default": 20.0,
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "从脉冲起点到积分结束；须覆盖 RL 衰减尾与退出沿",
+      "read_only": false
+    },
+    {
+      "name": "COIL_CONSTANT_HZ_PER_MA",
+      "label": "Z 线圈常数",
+      "type": "number",
+      "default": 653.79,
+      "unit": "Hz/mA",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "TARGET_ANGLE_PI",
+      "label": "目标转角",
+      "type": "number",
+      "default": 1.0,
+      "unit": "π",
+      "group": "basic",
+      "minimum": 0.05,
+      "maximum": null,
+      "description": "内插求这个角度对应的宽度，默认 π",
+      "read_only": false
+    }
+  ],
+  "flow": {
+    "run_step_id": "A03",
+    "finish_step_id": "A04",
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数、映射与安全限值预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": [
+          "不连接硬件；z_pulse_coil_current 与 Z_magnetic_field 必须有有限上下界，脉冲峰值、偏置电平与电阻功耗全部在限内"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "连接信号源、1200B、DHO900 并同步时钟",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH"
+        ],
+        "quality_gates": [
+          "连接前过硬件门控；按参数写入 1200B 增益与输入/输出阻抗，并把信号源输出负载配成一致；Z 信号源参考时钟严格回读，失败不开启任何输出"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "扫宽度并逐发记录 θ（可勾选）",
+        "group": "测量",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH",
+          "PULSE_PERIOD_US",
+          "PULSE_WIDTHS_US",
+          "PULSE_EDGE_US",
+          "PULSE_PEAK_CURRENT_MA",
+          "PULSE_BASELINE_V",
+          "SHOTS_PER_WIDTH",
+          "CAPTURE_INTERVAL_S",
+          "CAPTURE_PERIODS",
+          "PULSE_TAIL_WINDOW_US",
+          "COIL_CONSTANT_HZ_PER_MA",
+          "TARGET_ANGLE_PI"
+        ],
+        "artifacts": [
+          "raw/scan.csv",
+          "raw/scan_*.npz"
+        ],
+        "display_parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "SETTLE_S",
+          "SCOPE_ACQUIRE_DELAY_S",
+          "SCOPE_CURRENT_CHANNEL",
+          "SCOPE_SYNC_CHANNEL",
+          "SYNC_TRIGGER_LEVEL_V",
+          "SYNC_SCALE_V_DIV",
+          "MAX_MEMORY_DEPTH",
+          "PULSE_PERIOD_US",
+          "PULSE_WIDTHS_US",
+          "PULSE_EDGE_US",
+          "PULSE_PEAK_CURRENT_MA",
+          "PULSE_BASELINE_V",
+          "SHOTS_PER_WIDTH",
+          "CAPTURE_INTERVAL_S",
+          "CAPTURE_PERIODS",
+          "PULSE_TAIL_WINDOW_US",
+          "COIL_CONSTANT_HZ_PER_MA",
+          "TARGET_ANGLE_PI"
+        ],
+        "quality_gates": [
+          "固定峰值、逐宽度打 ±π 双脉冲；每帧存原始波形并逐发积分；实测电流越限或同步缺失即中止"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "先关闭 1200B 输出，再将 Z 通道 DC 0 V、关闭同步与输出，停止 DHO900 并断开三台设备"
+        ]
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "θ(宽度) 线性内插与 π 宽度",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "scan_summary.json",
+          "scan_fit.png"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "运行目录已停止写入；至少两个宽度点才能内插；缺数据时写空摘要、原因与占位图"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "RUN_TAG": [
+          "A01",
+          "A02",
+          "A03"
+        ],
+        "AMPLIFIER_GAIN_DB": [
+          "A02",
+          "A03"
+        ],
+        "AMPLIFIER_INPUT_IMPEDANCE_OHM": [
+          "A02",
+          "A03"
+        ],
+        "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": [
+          "A02",
+          "A03"
+        ],
+        "AMPLIFIER_WRITE_SETTINGS": [
+          "A02",
+          "A03"
+        ],
+        "SENSE_RESISTOR_OHM": [
+          "A02",
+          "A03"
+        ],
+        "DAMPING_RESISTOR_OHM": [
+          "A02",
+          "A03"
+        ],
+        "COIL_RESISTANCE_OHM": [
+          "A02",
+          "A03"
+        ],
+        "RESISTOR_RATED_W": [
+          "A02",
+          "A03"
+        ],
+        "SETTLE_S": [
+          "A02",
+          "A03"
+        ],
+        "SCOPE_ACQUIRE_DELAY_S": [
+          "A02",
+          "A03"
+        ],
+        "SCOPE_CURRENT_CHANNEL": [
+          "A02",
+          "A03"
+        ],
+        "SCOPE_SYNC_CHANNEL": [
+          "A02",
+          "A03"
+        ],
+        "SYNC_TRIGGER_LEVEL_V": [
+          "A02",
+          "A03"
+        ],
+        "SYNC_SCALE_V_DIV": [
+          "A02",
+          "A03"
+        ],
+        "MAX_MEMORY_DEPTH": [
+          "A02",
+          "A03"
+        ],
+        "PULSE_PERIOD_US": [
+          "A03"
+        ],
+        "PULSE_WIDTHS_US": [
+          "A03"
+        ],
+        "PULSE_EDGE_US": [
+          "A03"
+        ],
+        "PULSE_PEAK_CURRENT_MA": [
+          "A03"
+        ],
+        "PULSE_BASELINE_V": [
+          "A03"
+        ],
+        "SHOTS_PER_WIDTH": [
+          "A03"
+        ],
+        "CAPTURE_INTERVAL_S": [
+          "A03"
+        ],
+        "CAPTURE_PERIODS": [
+          "A03"
+        ],
+        "PULSE_TAIL_WINDOW_US": [
+          "A03"
+        ],
+        "COIL_CONSTANT_HZ_PER_MA": [
+          "A03"
+        ],
+        "TARGET_ANGLE_PI": [
+          "A03"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/pi-pulse-calibration/workflow/diagram"
+  }
+}

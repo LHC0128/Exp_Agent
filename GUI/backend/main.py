@@ -176,6 +176,7 @@ from .bb_duty_scan_burst import BBDutySessionService, create_router as bb_duty_r
 from .coil_drive_characterization import CoilDriveSessionService, create_router as coil_drive_router
 from .coil_constant_calibration import CoilConstantSessionService, create_router as coil_constant_router
 from .z_chain_stability import ZChainStabilitySessionService, create_router as z_chain_stability_router
+from .pi_pulse_calibration import PiPulseCalibrationSessionService, create_router as pi_pulse_calibration_router
 from .z_field_bandwidth import ZFieldBandwidthSessionService, create_router as z_bandwidth_router
 from .mx_z_field_calibration import MxZFieldCalibrationSessionService
 from .bell_bloom_z_field_calibration import BellBloomZFieldCalibrationSessionService
@@ -251,6 +252,7 @@ def _workflow_session_services():
         mx_y_rf_sessions, mx_y_rf_probe_detuning_sessions, mx_y_rf_power_sessions,
         mx_main_field_sessions, mx_main_field_scope_sessions, demod3_r_sessions, photon_sessions, projection_noise_sessions, constxy_sessions, z_bandwidth_sessions,
         bb_duty_sessions, coil_drive_sessions, coil_constant_sessions, z_chain_stability_sessions,
+        pi_pulse_calibration_sessions,
         mx_z_field_sessions,
         bell_bloom_z_sessions,
         scope_capture_sessions, mx_y_rf_frequency_response_sessions,
@@ -372,6 +374,8 @@ coil_constant_sessions = CoilConstantSessionService(lambda: ROOT, manager)
 app.include_router(coil_constant_router(coil_constant_sessions))
 z_chain_stability_sessions = ZChainStabilitySessionService(lambda: ROOT, manager)
 app.include_router(z_chain_stability_router(z_chain_stability_sessions))
+pi_pulse_calibration_sessions = PiPulseCalibrationSessionService(lambda: ROOT, manager)
+app.include_router(pi_pulse_calibration_router(pi_pulse_calibration_sessions))
 z_bandwidth_sessions = ZFieldBandwidthSessionService(lambda: ROOT, manager)
 app.include_router(z_bandwidth_router(z_bandwidth_sessions))
 mx_z_field_sessions = MxZFieldCalibrationSessionService(lambda: ROOT, manager)

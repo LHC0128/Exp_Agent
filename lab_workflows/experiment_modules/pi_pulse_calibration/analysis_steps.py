@@ -1,0 +1,152 @@
+"""离线分析：按宽度汇总逐发 θ，线性内插 θ = 目标角 的宽度，并反推等效线圈常数。"""
+from __future__ import annotations
+
+import csv
+import json
+from pathlib import Path
+
+import numpy as np
+
+from ...experiment_runtime import check_cancelled
+from . import run_format
+
+GYROMAGNETIC_RATIO_HZ_PER_NT = 7.0048
+
+
+class AnalysisQualityError(ValueError):
+    """输入或拟合不满足分析条件；诊断仍保存。"""
+
+
+def output_path(run_dir, name):
+    root = Path(run_dir).resolve()
+    path = (root / name).resolve()
+    if path != root and root not in path.parents:
+        raise ValueError("输入或产物路径越出运行目录")
+    return path
+
+
+def load_config(run_dir):
+    config = run_format.read_config(output_path(run_dir, "experiment_config.yaml"))
+    if reason := run_format.analysis_block_reason(config):
+        raise ValueError(reason)
+    return config, run_format.parameters(config)
+
+
+def _read_scan(path: Path) -> list[dict]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _fit_line(width, value, weight):
+    """加权最小二乘 y = m x + b；返回 (m, b, 预测值, 残差)。"""
+    x = np.asarray(width, float)
+    y = np.asarray(value, float)
+    w = np.asarray(weight, float)
+    A = np.vstack([x, np.ones_like(x)]).T
+    W = np.diag(w)
+    coef = np.linalg.solve(A.T @ W @ A, A.T @ W @ y)
+    model = A @ coef
+    return float(coef[0]), float(coef[1]), model, y - model
+
+
+def scan_report(run_dir, params):
+    """B01：θ(宽度) 的线性内插、π 宽度、等效线圈常数与残差。"""
+    (output_path(run_dir, "results")).mkdir(parents=True, exist_ok=True)
+    path = output_path(run_dir, "raw/scan.csv")
+    summary = dict(experiment_id=run_format.EXPERIMENT_ID,
+                   coil_constant_hz_per_ma=params.coil_constant_hz_per_ma,
+                   target_angle_pi=params.target_angle_pi,
+                   predicted_width_us=params.predicted_width_us(),
+                   peak_current_ma=params.pulse_peak_current_ma,
+                   edge_us=params.pulse_edge_us)
+    if not path.is_file():
+        summary.update(rows=0, reason="缺少 raw/scan.csv（未运行扫描）")
+        output_path(run_dir, "results/scan_summary.json").write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        _plot_unavailable(run_dir, "No scan data")
+        return summary
+
+    rows = _read_scan(path)
+    if not rows:
+        summary.update(rows=0, reason="scan.csv 无有效行")
+        output_path(run_dir, "results/scan_summary.json").write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        _plot_unavailable(run_dir, "No valid scan rows")
+        return summary
+
+    widths = np.array([float(r["width_us"]) for r in rows])
+    theta = np.array([float(r["theta_pi"]) for r in rows])
+    sign = np.array([r["sign"] for r in rows])
+    peak = np.array([float(r["peak_a"]) for r in rows])
+    check_cancelled()
+
+    points = []
+    summary["points"] = points
+    summary["rows"] = int(theta.size)
+    for label, mask in (("plus", sign == "+"), ("minus", sign == "-")):
+        if np.count_nonzero(mask) < 2:
+            continue
+        per_width = []
+        for width in sorted(set(widths[mask])):
+            values = theta[mask & (widths == width)]
+            per_width.append(dict(width_us=float(width), rows=int(values.size),
+                                  mean_pi=float(np.mean(values)),
+                                  sem_pi=float(np.std(values, ddof=1) / np.sqrt(values.size))
+                                  if values.size > 1 else 0.0))
+        if len(per_width) < 2:
+            continue
+        x = np.array([item["width_us"] for item in per_width])
+        y = np.array([abs(item["mean_pi"]) for item in per_width])
+        sem = np.array([max(item["sem_pi"], 1e-6) for item in per_width])
+        slope, intercept, model, resid = _fit_line(x, y, 1.0 / sem ** 2)
+        if abs(slope) < 1e-12:
+            continue
+        width_pi = (params.target_angle_pi - intercept) / slope
+        peak_ma = float(np.mean(peak[mask])) * 1e3
+        k_implied = slope / (2.0 * peak_ma * 1e-3 * 1e-6 * 1000.0) if peak_ma else None
+        points.append(dict(side=label, width_pi=float(width_pi), slope_pi_per_us=float(slope),
+                           intercept_pi=float(intercept), residual_pi=float(np.sqrt(np.mean(resid ** 2))),
+                           peak_current_ma=peak_ma, k_implied_hz_per_ma=k_implied,
+                           per_width=per_width,
+                           fit_width_us=x.tolist(), fit_value_pi=y.tolist(), fit_model_pi=model.tolist()))
+    summary["reason"] = "" if points else "每个符号至少需要两个宽度点才能内插"
+    output_path(run_dir, "results/scan_summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    if points:
+        _plot_scan(run_dir, summary, points)
+    else:
+        _plot_unavailable(run_dir, "Need two or more widths")
+    return summary
+
+
+def _plot_scan(run_dir, summary, points):
+    import matplotlib
+    matplotlib.use("Agg")
+    from ...plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context, save_figure
+
+    with plot_style_context("paper"):
+        figure, axis = new_figure()
+        for item, color in zip(points, (COLOR_OPTIMAL, COLOR_TRAD)):
+            x = np.asarray(item["fit_width_us"], float)
+            y = np.asarray(item["fit_value_pi"], float)
+            axis.errorbar(x, y, yerr=[p["sem_pi"] for p in item["per_width"]], fmt="o", ms=4, capsize=2,
+                          color=color, label=r"$+\pi$" if item["side"] == "plus" else r"$-\pi$")
+            axis.plot(x, item["fit_model_pi"], "-", lw=1, color=color)
+            axis.axvline(item["width_pi"], color=color, ls=":", lw=0.8)
+        axis.axhline(summary["target_angle_pi"], color="0.5", ls="--", lw=0.8)
+        axis.axvline(summary["predicted_width_us"], color="0.3", ls="-.", lw=0.8)
+        format_axis(axis, xlabel="Pulse width (us)", ylabel=r"Pulse angle $|\theta|/\pi$")
+        axis.legend(loc="best", fontsize=7)
+        save_figure(figure, output_path(run_dir, "results/scan_fit.png"))
+
+
+def _plot_unavailable(run_dir, message):
+    import matplotlib
+    matplotlib.use("Agg")
+    from ...plotting import new_figure, plot_style_context, save_figure
+
+    with plot_style_context("paper"):
+        figure, axis = new_figure()
+        axis.text(0.5, 0.5, message, ha="center", va="center", transform=axis.transAxes, fontsize=8)
+        axis.set_axis_off()
+        save_figure(figure, output_path(run_dir, "results/scan_fit.png"))

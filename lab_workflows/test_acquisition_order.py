@@ -24,7 +24,7 @@ ACQUISITION_EXCEPTION_IDS = frozenset({
     "z-coil-current-frequency-response", "z-aw-current-waveform-scope-check",
     "z-aw-closed-loop-waveform-correction", "aw-waveform-scope-check",
     "dg-am-comp-transfer-check", "temperature-switch-pid-cycle", "coil-drive-characterization",
-    "z-chain-stability",
+    "z-chain-stability", "pi-pulse-calibration",
 })
 
 
