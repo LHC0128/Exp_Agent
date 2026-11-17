@@ -11,15 +11,16 @@ from . import acquisition, preparation, run_format
 from .models import PiWidthScanParams
 from .stages import ACQUISITION, FINISH_ID, RUN_ID
 
-MEASUREMENTS = {"A03": acquisition.measure_scan}
-ARTIFACT_PREFIX = {"A03": ("raw/scan.csv", "raw/R_")}
+MEASUREMENTS = {"A03": acquisition.measure_phase_scan, "A04": acquisition.measure_scan}
+ARTIFACT_PREFIX = {"A03": ("raw/phase_scan.csv", "results/phase_vs_phase.png"),
+                   "A04": ("raw/scan.csv", "raw/R_")}
 
 
 class Workflow(StagedWorkflow):
     stages = ACQUISITION
     finish_id, run_id = FINISH_ID, RUN_ID
     run_format = run_format
-    output_keys = ("功放", "Z 通道", "Y 射频", "共同触发", "温控", "MFLI", "主磁场", "DHO900")
+    output_keys = ("功放", "Z 通道", "Y 射频", "共同触发", "温控", "MFLI", "主磁场", "DHO900", "相位粗扫")
     hardware_free = ("A01", "A02")
     seal_after_run = False
     quality_errors = (preparation.SafetyAbort,)
@@ -37,6 +38,7 @@ class Workflow(StagedWorkflow):
     def extra_snapshot(self):
         keys = ("scan_widths", "scan_repeats", "scan_points_completed")
         return {"scan_progress": {key: self.state.get(key) for key in keys},
+                "phase_check": self.state.get("phase_check"),
                 "main_field": self.state.get("main_field")}
 
     def run_step(self, item):
@@ -81,4 +83,4 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

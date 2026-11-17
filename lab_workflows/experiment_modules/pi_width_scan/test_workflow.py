@@ -1,4 +1,4 @@
-"""π 脉冲宽度原子域定标的假仪器回归：分组扫描写盘、温控门控、取消保留与缺数据占位。
+"""π 脉冲宽度原子域定标的假仪器回归：相位粗扫、分组扫描写盘、温控门控、取消保留与缺数据占位。
 
 所有用例只用假仪器与临时目录，不连接任何硬件；合成数据由判据模型直接生成。
 """
@@ -19,7 +19,7 @@ import yaml
 from ... import common
 from ...experiment_runtime import WorkflowCancelled
 from ...steps import DeviceSession
-from . import acquisition, analysis_steps, models, preparation, run_format
+from . import acquisition, analysis_steps, models, phase_scan, preparation, run_format, stages
 
 ACQUISITION_CASES = {
     "pi-width-scan": {
@@ -39,6 +39,7 @@ ACQUISITION_CASES = {
         },
         "sources": [
             "lab_workflows/experiment_modules/pi_width_scan/acquisition.py",
+            "lab_workflows/experiment_modules/pi_width_scan/phase_scan.py",
             "lab_workflows/experiment_modules/pi_width_scan/preparation.py",
             "lab_workflows/experiment_modules/pi_width_scan/workflow.py",
         ],
@@ -58,8 +59,8 @@ REGRESSION_CASES = {
                         "params/experiments/pi-width-scan.yaml"],
             "tests": ["ParamsTest::test_widths_come_from_start_stop_step",
                       "ParamsTest::test_preflight_rejects_width_over_half_period",
-                      "ParamsTest::test_pulse_phase_maps_to_shift_and_offset",
-                      "ParamsTest::test_preflight_rejects_phase_out_of_range"],
+                      "ParamsTest::test_rf_phase_grid_and_offset",
+                      "ParamsTest::test_preflight_rejects_invalid_phase_range"],
         },
     },
 }
@@ -75,22 +76,25 @@ def synthetic_r(width_us):
 
 
 class FakeSignals:
-    """记录温度开关与脉宽配置的调用顺序；不连接仪器。"""
+    """记录温度开关、脉宽与射频相位的调用顺序；不连接仪器。"""
 
     def __init__(self):
         self.events = []
         self.temp_on = True
         self.widths = []
         self.current_width = None
+        self.burst_phase = {}
+        self.burst_state = {}
 
     def set_output(self, state, channel=None):
         self.events.append(("output", channel, state))
 
     def set_burst_state(self, state, channel=None):
-        pass
+        self.burst_state[channel] = bool(state)
+        self.events.append(("burst", channel, state))
 
     def set_burst_mode(self, mode, channel=None):
-        pass
+        self.events.append(("burst_mode", channel, mode))
 
     def set_burst_ncycles(self, count, channel=None):
         pass
@@ -102,7 +106,8 @@ class FakeSignals:
         pass
 
     def set_burst_phase(self, angle, channel=None):
-        pass
+        self.burst_phase[channel] = float(angle)
+        self.events.append(("burst_phase", channel, float(angle)))
 
     def setup_arbitrary(self, values, freq, amplitude, offset, phase=0.0, channel=None, output=True):
         self.events.append(("arbitrary", channel, freq, amplitude))
@@ -163,6 +168,21 @@ class FakeAcquirer:
                 FakeResult("sample.theta", time, np.full(size, math.radians(30.0)))]
 
 
+class PhaseFakeAcquirer:
+    """R 只随已写入的射频 burst 相位变化：|cos(φ − ψ0)|，ψ0 由构造指定。"""
+
+    def __init__(self, signals, *, psi0_deg=85.5):
+        self.signals, self.psi0_deg = signals, psi0_deg
+
+    def __call__(self, device, config=None, demod_idx=0, actual_rate=None, requested_rate=None,
+                 timeout=None, cancellation_check=None, strict_cleanup=False):
+        phase = float(self.signals.burst_phase[CHANNELS["y"]])
+        value = TRUE_R_MAX_V * abs(math.cos(math.radians(phase - self.psi0_deg)))
+        time = np.arange(10) / 1000.0
+        return [FakeResult("sample.r", time, np.full(10, value)),
+                FakeResult("sample.theta", time, np.full(10, math.radians(30.0)))]
+
+
 class FakeContext:
     def __init__(self, root, params, *, fail_at=None):
         self.root, self.params = root, params
@@ -177,11 +197,10 @@ class FakeContext:
 
 
 def fast_params(**overrides):
-    # 相位自检需要额外 6 次读数并改写脉宽推进顺序；逐点用例默认关闭，单独用例覆盖开关行为。
     p = models.PiWidthScanParams(run_tag="test", n_repeat=2, temp_group_size=3, system_settle_s=0.0,
                                  temp_switch_on_lag_s=0.0, scan_point_duration_s=0.02,
                                  z_pulse_width_start_us=4.0, z_pulse_width_stop_us=6.0,
-                                 z_pulse_width_step_us=0.5, phase_check_enabled=False)
+                                 z_pulse_width_step_us=0.5)
     for key, value in overrides.items():
         setattr(p, key, value)
     return p
@@ -307,53 +326,81 @@ class AcquisitionTest(unittest.TestCase):
         self.assertTrue((ctx.directory.raw / "R_4_0.csv").is_file())
         self.assertFalse((ctx.directory.raw / "scan.csv").exists())
 
-    def phase_acquirer(self, ctx):
-        """R 只随已 arm 的相位变化：φ=180° 最大、φ=90° 落在零点。"""
-        def acquire(device, config=None, demod_idx=0, actual_rate=None, requested_rate=None,
-                    timeout=None, cancellation_check=None, strict_cleanup=False):
-            phase = float(ctx.state["pulse_phase_deg"])
-            value = TRUE_R_MAX_V * abs(math.cos(math.radians(phase - 180.0)))
-            time = np.arange(10) / 1000.0
-            return [FakeResult("sample.r", time, np.full(10, value)),
-                    FakeResult("sample.theta", time, np.full(10, math.radians(30.0)))]
-        return acquire
-
     def read_phase_rows(self, ctx):
-        path = ctx.directory.raw / "phase_check.csv"
+        path = ctx.directory.raw / "phase_scan.csv"
         with path.open(newline="", encoding="utf-8") as handle:
             return list(csv.DictReader(handle))
 
-    def test_phase_check_writes_rows_and_chooses_larger(self):
-        params = fast_params(phase_check_enabled=True)
+    def run_phase_scan(self, ctx, acquirer=None):
+        with patch.object(acquisition.daq, "acquire_data", acquirer or PhaseFakeAcquirer(ctx.devices["signals"])):
+            acquisition.measure_phase_scan(ctx)
+
+    def test_phase_scan_stage_writes_curve_and_chooses_peak(self):
+        # 0–180°、步进 22.5°，共 9 个角度，每角度 3 次。
+        params = fast_params()
         ctx = FakeContext(self.root, params)
-        with patch.object(acquisition.daq, "acquire_data", self.phase_acquirer(ctx)):
-            acquisition.measure_scan(ctx)
+        self.run_phase_scan(ctx)
         rows = self.read_phase_rows(ctx)
-        self.assertEqual(len(rows), 2 * acquisition.PHASE_CHECK_REPEATS)
-        self.assertEqual([row["phase_deg"] for row in rows],
-                         ["90"] * acquisition.PHASE_CHECK_REPEATS + ["180"] * acquisition.PHASE_CHECK_REPEATS)
-        self.assertEqual([row["repeat"] for row in rows],
-                         [str(index) for index in range(acquisition.PHASE_CHECK_REPEATS)] * 2)
+        self.assertEqual(len(rows), 9 * params.y_rf_phase_repeat)
+        self.assertEqual([row["phase_deg"] for row in rows[::params.y_rf_phase_repeat]],
+                         [f"{angle:g}" for angle in params.rf_phase_angles_deg()])
         record = ctx.state["phase_check"]
         self.assertTrue(record["enabled"])
-        self.assertEqual((record["measured_deg"], record["chosen_deg"]), (90.0, 180.0))
-        self.assertAlmostEqual(record["R_measured"], 0.0, places=9)
-        self.assertAlmostEqual(record["R_chosen"], TRUE_R_MAX_V, places=9)
-        # 扫描各点都按选定相位 arm；180° 对应半个周期 = 100 µs。
-        self.assertEqual(ctx.state["pulse_phase_deg"], 180.0)
-        self.assertAlmostEqual(ctx.state["pulse_phase_offset_us"], params.pulse_period_us / 2.0, places=9)
-        # 相位自检不改变扫描点数。
-        self.assertEqual(len(list(csv.DictReader((ctx.directory.raw / "scan.csv").open(newline="", encoding="utf-8")))),
-                         len(params.widths_us()) * params.n_repeat)
+        self.assertEqual(record["chosen_deg"], 90.0)
+        # 峰在内部：抛物线精化落在 67.5° 与 112.5° 之间，且贴近真实零点 85.5°
+        # （三点抛物线只是 |cos| 的局部近似，允许 1° 内偏差）。
+        self.assertGreater(record["refined_deg"], 67.5)
+        self.assertLess(record["refined_deg"], 112.5)
+        self.assertAlmostEqual(record["refined_deg"], 85.5, delta=1.0)
+        self.assertEqual(len(record["R_curve"]), 9)
+        self.assertAlmostEqual(record["R_chosen"],
+                               TRUE_R_MAX_V * math.cos(math.radians(4.5)), places=9)
+        self.assertEqual(ctx.state["phase_source"], "stage")
+        self.assertTrue((ctx.directory.results / "phase_vs_phase.png").is_file())
+        # 只跑 A03 时只产出相位曲线，不写扫描表。
+        self.assertFalse((ctx.directory.raw / "scan.csv").exists())
+        self.assertFalse((ctx.directory.raw / "R_4_0.csv").exists())
 
-    def test_phase_check_disabled_skips_measurement(self):
+    def test_rf_phase_change_follows_direct_aw_order(self):
+        params = fast_params()
+        ctx = FakeContext(self.root, params)
+        self.run_phase_scan(ctx)
+        events = [event for event in ctx.devices["signals"].events if event[1] == CHANNELS["y"]]
+        # 每个角度都按 DirectAW 校相顺序：关 output → 关 burst → 写相位 → 开 burst → 开 output。
+        self.assertEqual(events[:5], [("output", CHANNELS["y"], False), ("burst", CHANNELS["y"], False),
+                                      ("burst_phase", CHANNELS["y"], params.rf_phase_angles_deg()[0]),
+                                      ("burst", CHANNELS["y"], True), ("output", CHANNELS["y"], True)])
+        phases = [event[2] for event in events if event[0] == "burst_phase"]
+        self.assertEqual(phases, params.rf_phase_angles_deg())
+
+    def test_phase_scan_disabled_skips_stage(self):
         params = fast_params(phase_check_enabled=False)
         ctx = FakeContext(self.root, params)
-        self.run_scan(ctx)
-        self.assertFalse((ctx.directory.raw / "phase_check.csv").exists())
+        self.run_phase_scan(ctx)
+        self.assertFalse((ctx.directory.raw / "phase_scan.csv").exists())
+        self.assertFalse((ctx.directory.results / "phase_vs_phase.png").exists())
         self.assertEqual(ctx.state["phase_check"], {"enabled": False})
-        self.assertEqual(ctx.acquirer.calls, len(params.widths_us()) * params.n_repeat)
-        self.assertEqual(ctx.state["pulse_phase_deg"], params.pulse_phase_effective_deg)
+        self.assertEqual(ctx.state["phase_source"], "parameter")
+
+    def test_scan_uses_parameter_phase_without_phase_stage(self):
+        # 只跑 A04（未跑 A03）：状态里没有 phase_check，回落到 Y_RF_PHASE_DEG。
+        params = fast_params()
+        ctx = FakeContext(self.root, params)
+        self.run_scan(ctx)
+        self.assertEqual(ctx.state["phase_source"], "parameter")
+        self.assertEqual(ctx.state["phase_check"], {"enabled": False})
+        self.assertEqual(ctx.state["rf_phase_deg"], params.y_rf_phase_deg)
+        self.assertEqual(ctx.devices["signals"].burst_phase[CHANNELS["y"]], params.y_rf_phase_deg)
+
+    def test_scan_prefers_phase_stage_refined_angle(self):
+        params = fast_params()
+        ctx = FakeContext(self.root, params)
+        ctx.state["phase_check"] = dict(enabled=True, chosen_deg=90.0, refined_deg=85.5,
+                                        R_chosen=0.79, R_curve=[])
+        self.run_scan(ctx)
+        self.assertEqual(ctx.state["phase_source"], "stage")
+        self.assertEqual(ctx.state["rf_phase_deg"], 85.5)
+        self.assertEqual(ctx.devices["signals"].burst_phase[CHANNELS["y"]], 85.5)
 
 
 class PreparationTest(unittest.TestCase):
@@ -398,6 +445,21 @@ class PreparationTest(unittest.TestCase):
 
             def set_burst_state(self, state, channel=None):
                 self.calls.append(("burst", state))
+
+            def set_burst_mode(self, mode, channel=None):
+                self.calls.append(("burst_mode", channel, mode))
+
+            def set_burst_ncycles(self, count, channel=None):
+                self.calls.append(("burst_ncycles", count))
+
+            def set_burst_trigger_source(self, source, channel=None):
+                self.calls.append(("burst_source", source))
+
+            def set_burst_trigger_slope(self, slope, channel=None):
+                self.calls.append(("burst_slope", slope))
+
+            def set_burst_phase(self, angle, channel=None):
+                self.calls.append(("burst_phase", channel, angle))
 
             def set_mod_state(self, state, channel=None):
                 pass
@@ -654,8 +716,8 @@ class AnalysisTest(unittest.TestCase):
                 rows.append([width, repeat, f"{value:.9g}", "30.0", "2026-01-01T00:00:00+08:00",
                              "0.05", "5000", "190", "25.0"])
         self.write_scan(rows)
-        self.write_phase_check_config(dict(enabled=True, measured_deg=90.0, chosen_deg=180.0,
-                                           R_measured=0.1, R_chosen=0.8))
+        self.write_phase_check_config(dict(enabled=True, chosen_deg=90.0, refined_deg=85.5,
+                                           R_chosen=0.8, R_curve=[]))
         _, params = analysis_steps.load_config(self.run_dir)
         summary = analysis_steps.scan_report(self.run_dir, params)
         self.assertEqual(summary["rows"], 35)
@@ -667,10 +729,12 @@ class AnalysisTest(unittest.TestCase):
         self.assertEqual(summary["fit_quality"], "good")
         self.assertTrue(summary["keep"])
         self.assertTrue(all(item["keep"] for item in summary["points"]))
-        # 摘要记录实际生效的相位与自检结果：相位自检选了 180°，对应半个周期。
-        self.assertEqual(summary["pulse_phase_deg"], 180.0)
-        self.assertAlmostEqual(summary["pulse_phase_offset_us"], 100.0, places=9)
-        self.assertEqual(summary["phase_check"]["chosen_deg"], 180.0)
+        # 摘要记录实际生效的射频相位（优先精化值）、时间偏移、来源与相位曲线。
+        self.assertEqual(summary["rf_phase_deg"], 85.5)
+        self.assertAlmostEqual(summary["rf_phase_offset_us"], 85.5 / 360.0 * 200.0, places=9)
+        self.assertEqual(summary["phase_source"], "stage")
+        self.assertEqual(summary["phase_check"]["chosen_deg"], 90.0)
+        self.assertIsNone(summary["demod0_phase_deg"])
         self.assertNotIn("signal_low", summary)
         self.assertTrue((self.run_dir / "results" / "scan_summary.json").is_file())
         self.assertTrue((self.run_dir / "results" / "r_vs_width.png").is_file())
@@ -689,9 +753,10 @@ class AnalysisTest(unittest.TestCase):
         self.assertEqual(summary["fit_quality"], "poor")
         self.assertIn("残差 RMS", summary["fit_quality_reason"])
         self.assertFalse(summary["keep"])
-        # 运行配置没有相位自检记录时按关闭记录，扫描相位回落到参数值（默认 90°）。
+        # 运行配置没有相位粗扫记录时按关闭记录，射频相位回落到参数值（默认 90°）。
         self.assertEqual(summary["phase_check"], {"enabled": False})
-        self.assertEqual(summary["pulse_phase_deg"], 90.0)
+        self.assertEqual(summary["phase_source"], "parameter")
+        self.assertEqual(summary["rf_phase_deg"], 90.0)
 
     def test_low_signal_is_flagged_with_reason(self):
         rows = []
@@ -704,7 +769,7 @@ class AnalysisTest(unittest.TestCase):
         _, params = analysis_steps.load_config(self.run_dir)
         summary = analysis_steps.scan_report(self.run_dir, params)
         self.assertTrue(summary["signal_low"])
-        self.assertIn("相位落在零点附近", summary["signal_low_reason"])
+        self.assertIn("射频相位落在零点附近", summary["signal_low_reason"])
 
     def test_missing_scan_writes_placeholder(self):
         _, params = analysis_steps.load_config(self.run_dir)
@@ -750,25 +815,50 @@ class ParamsTest(unittest.TestCase):
         p = models.PiWidthScanParams()
         self.assertAlmostEqual(p.predicted_width_us(), 1.0 + 1e6 / (2 * 653.79 * 190.0), places=9)
 
-    def test_pulse_phase_maps_to_shift_and_offset(self):
+    def test_rf_phase_grid_and_offset(self):
         p = models.PiWidthScanParams()
-        # 默认 90°：四分之一周期 = 4096 点、50 µs。
-        self.assertEqual(p.pulse_phase_effective_deg, 90.0)
-        self.assertEqual(p.pulse_phase_shift_points(), models.ARB_POINTS // 4)
-        self.assertAlmostEqual(p.pulse_phase_offset_us(), p.pulse_period_us / 4.0, places=9)
-        # 360° 与 0° 等价；相位按整点取整后换算偏移。
-        self.assertEqual(models.phase_effective_deg(360.0), 0.0)
-        self.assertEqual(models.phase_shift_points(0.0), 0)
-        self.assertEqual(p.phase_check_candidates_deg(),
-                         [90.0, models.phase_effective_deg(180.0)])
-        # 相位自检用扫描网格中最接近预测宽度的点。
+        # 默认 0–180°、步进 22.5°，共 9 个角度（|cos| 的周期是 180°，另一半重复）。
+        self.assertEqual(p.rf_phase_angles_deg(), [0.0, 22.5, 45.0, 67.5, 90.0, 112.5, 135.0, 157.5, 180.0])
+        self.assertAlmostEqual(p.rf_phase_offset_us(), p.pulse_period_us / 4.0, places=9)
+        self.assertAlmostEqual(p.rf_phase_offset_us(1.0), p.pulse_period_us / 360.0, places=9)
+        # 步进除不尽时补上终点，保持两端都在。
+        q = models.PiWidthScanParams(y_rf_phase_stop_deg=100.0)
+        self.assertEqual(q.rf_phase_angles_deg()[-1], 100.0)
+        self.assertEqual(len(q.rf_phase_angles_deg()), 6)
         self.assertAlmostEqual(p.phase_check_width_us(), 5.0)
 
-    def test_preflight_rejects_phase_out_of_range(self):
-        p = models.PiWidthScanParams(z_pulse_phase_deg=400.0)
-        self.assertTrue(any("0–360" in error for error in p.validate()))
-        q = models.PiWidthScanParams(reference_pi_width_us=0.0)
-        self.assertTrue(any("REFERENCE_PI_WIDTH_US" in error for error in q.validate()))
+    def test_preflight_rejects_invalid_phase_range(self):
+        zero = models.PiWidthScanParams(y_rf_phase_step_deg=0.0)
+        self.assertTrue(any("Y_RF_PHASE_STEP_DEG 必须为正" in error for error in zero.validate()))
+        inverted = models.PiWidthScanParams(y_rf_phase_start_deg=100.0, y_rf_phase_stop_deg=20.0)
+        self.assertTrue(any("不能小于" in error for error in inverted.validate()))
+        out_of_range = models.PiWidthScanParams(y_rf_phase_deg=400.0)
+        self.assertTrue(any("0–360" in error for error in out_of_range.validate()))
+        reference = models.PiWidthScanParams(reference_pi_width_us=0.0)
+        self.assertTrue(any("REFERENCE_PI_WIDTH_US" in error for error in reference.validate()))
+
+
+class StagesTest(unittest.TestCase):
+    def test_stage_ids_and_independent_selection(self):
+        by_id = {stage.id: stage for stage in stages.ACQUISITION}
+        self.assertEqual(list(by_id), ["A01", "A02", "A03", "A04", "A05"])
+        self.assertEqual((stages.RUN_ID, stages.FINISH_ID), ("A04", "A05"))
+        # A03（相位粗扫）与 A04（扫脉宽）都只依赖 A02，因此可以各自单独勾选。
+        self.assertEqual(by_id["A03"].dependencies, ("A02",))
+        self.assertEqual(by_id["A04"].dependencies, ("A02",))
+        self.assertEqual(by_id["A03"].artifacts, ("raw/phase_scan.csv", "results/phase_vs_phase.png"))
+
+    def test_phase_scan_peak_math(self):
+        points = [dict(phase_deg=0.0, r_mean_v=0.1), dict(phase_deg=22.5, r_mean_v=0.9),
+                  dict(phase_deg=45.0, r_mean_v=0.2)]
+        record = phase_scan.choose_peak(points)
+        self.assertEqual((record["chosen_deg"], record["R_chosen"]), (22.5, 0.9))
+        self.assertGreater(record["refined_deg"], 0.0)
+        self.assertLess(record["refined_deg"], 45.0)
+        # 端点峰不做精化；相邻三点共线时也没有顶点。
+        self.assertIsNone(phase_scan.choose_peak([dict(phase_deg=0.0, r_mean_v=0.9),
+                                                  dict(phase_deg=22.5, r_mean_v=0.2)])["refined_deg"])
+        self.assertIsNone(phase_scan.parabolic_peak(0.0, 0.0, 1.0, 1.0, 2.0, 2.0))
 
 
 if __name__ == "__main__":

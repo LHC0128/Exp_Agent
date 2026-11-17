@@ -30,15 +30,17 @@ from .run_format import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, EXPERIMENT_ID, LOCKIN
                          TRIGGER_KEY)
 
 __all__ = [
-    "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "SafetyAbort", "amplifier_safety_check", "clocks",
-    "configure_chain", "configure_lockin", "configure_rf", "configure_trigger", "configure_z_idle",
-    "connect", "current_limit", "disable_main_field", "enable_temperature_switch", "plan", "preflight",
-    "shutdown", "sleep",
+    "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "BURST_NCYCLES", "SafetyAbort", "amplifier_safety_check",
+    "clocks", "configure_chain", "configure_lockin", "configure_rf", "configure_trigger",
+    "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
+    "plan", "preflight", "set_rf_phase", "shutdown", "sleep",
 ]
 
-# 任意波点数与相位换算共用模型里的 ARB_POINTS（DG4000 的上限正好是 16384 点）。
+# 任意波点数：与 pi_pulse_calibration 相同，DG4000 的上限正好是 16384 点。
 # 任意波播放采样率上限（DG4000 为 500 MSa/s）；用于预检脉冲沿是否被采样率截断。
 ARB_SAMPLE_RATE_CHECK = 500e6
+# 射频与 Z 都用无限 burst，靠共同触发启动；NCYCles 在 INFinity 下被忽略，写上限值。
+BURST_NCYCLES = 50000
 # 共同触发的固定接线电平：5 Vpp 方波、2.5 V 偏置、50% 占空比，频率跟随 Y_RF_FREQ_HZ。
 TRIGGER_VPP = 5.0
 TRIGGER_OFFSET_V = 2.5
@@ -222,20 +224,23 @@ def configure_lockin(ctx):
     if not math.isfinite(actual_rate) or actual_rate <= 0:
         raise RuntimeError("MFLI 第 0 路解调器的实际采样率无效")
     ctx.state["actual_rates"]["demod0_Sa_s"] = actual_rate
+    # 解调相位沿用库默认行为（configure_demodulator 按 DemodulatorConfig 的默认值写入），
+    # 本实验不另外设置：读出的模量 R 与参考相位无关，θ 的绝对值依赖它、但不参与判据。
     # 离散档位由设备取整，只记录回读值作为诊断，不作为启动门槛。
     ctx.state["lockin"] = dict(model=mfli.model, device_id=mfli.device_id, demod_idx=p.demod0_idx,
                                requested_rate_Sa_s=p.demod0_rate_sa_s, actual_rate_Sa_s=actual_rate,
                                time_constant_s=p.demod0_tc_s, order=p.demod0_order,
                                signal_range_v=p.demod0_signal_range_v, rf_frequency_Hz=p.y_rf_freq_hz,
                                readback={node: float(mfli.get_double(f"{mfli.demod_path(p.demod0_idx)}/{node}"))
-                                         for node in ("rate", "timeconstant")},
+                                         for node in ("rate", "timeconstant", "phaseshift")},
+                               phase_deg=float(mfli.get_double(f"{mfli.demod_path(p.demod0_idx)}/phaseshift")),
                                capabilities=dict(mfli.capabilities))
     ctx.outputs["MFLI"] = (f"Demod{p.demod0_idx} 请求 {p.demod0_rate_sa_s:g} Sa/s、TC {p.demod0_tc_s * 1e3:g} ms、"
                            f"参考 {p.y_rf_freq_hz:g} Hz（传输率回读 {actual_rate:g} Sa/s）")
 
 
 def configure_rf(ctx):
-    """Y 向射频：连续正弦，频率与脉冲周期共用同一个 5 kHz 时基。"""
+    """Y 向射频：5 kHz 正弦，无限 burst 由共同触发启动，相位由 burst 相位决定。"""
     p = ctx.params
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
     for value in (0.0, p.y_rf_vpp / 2.0, -p.y_rf_vpp / 2.0):
@@ -243,7 +248,38 @@ def configure_rf(ctx):
     signals.set_burst_state(False, channel=channels["y"])
     signals.set_mod_state(False, channel=channels["y"])
     signals.setup_sine(freq=p.y_rf_freq_hz, amplitude=p.y_rf_vpp, offset=0.0, phase=0.0, channel=channels["y"])
-    ctx.outputs["Y 射频"] = f"连续正弦 {p.y_rf_freq_hz:g} Hz、{p.y_rf_vpp:g} Vpp"
+    # 射频与 Z 共用 Time_sequence_2：无限 burst 让射频只在第一个触发沿起步，
+    # 之后相位由 burst 相位唯一决定，A03 才能只改相位、不动波形。
+    signals.set_burst_mode("INFinity", channel=channels["y"])
+    signals.set_burst_ncycles(BURST_NCYCLES, channel=channels["y"])
+    signals.set_burst_trigger_source("EXTernal", channel=channels["y"])
+    signals.set_burst_trigger_slope("POSitive", channel=channels["y"])
+    signals.set_burst_phase(p.y_rf_phase_deg, channel=channels["y"])
+    signals.set_burst_state(True, channel=channels["y"])
+    signals.set_output(True, channel=channels["y"])
+    ctx.outputs["Y 射频"] = (f"无限 burst 正弦 {p.y_rf_freq_hz:g} Hz、{p.y_rf_vpp:g} Vpp、"
+                             f"相位 {p.y_rf_phase_deg:g}°")
+
+
+def set_rf_phase(ctx, phase_deg):
+    """按 DirectAW 校相的顺序改射频相位：关 burst → 写 burst 相位 → 开 burst → 开 output。
+
+    不能在输出开启时直接改相位（会打断波形并留下未定义的起始相位）；幅度不动，
+    所以只需在重新打开输出前复核射频电平。
+    """
+    p = ctx.params
+    signals, channels = ctx.devices["signals"], ctx.devices["channels"]
+    for value in (0.0, p.y_rf_vpp / 2.0, -p.y_rf_vpp / 2.0):
+        validate_safety_limit(RF_KEY, value, load_safety_limits(ctx.root))
+    signals.set_output(False, channel=channels["y"])
+    signals.set_burst_state(False, channel=channels["y"])
+    signals.set_burst_phase(float(phase_deg), channel=channels["y"])
+    signals.set_burst_state(True, channel=channels["y"])
+    signals.set_output(True, channel=channels["y"])
+    ctx.state["rf_phase_deg"] = float(phase_deg)
+    ctx.state["rf_phase_offset_us"] = p.rf_phase_offset_us(phase_deg)
+    ctx.outputs["Y 射频"] = (f"无限 burst 正弦 {p.y_rf_freq_hz:g} Hz、{p.y_rf_vpp:g} Vpp、"
+                             f"相位 {float(phase_deg):g}°（{p.rf_phase_offset_us(phase_deg):g} µs）")
 
 
 def configure_trigger(ctx):
@@ -262,14 +298,14 @@ def configure_trigger(ctx):
 
 
 def configure_z_idle(ctx):
-    """Z 通道停在 DC 0 V 且关闭输出；A03 逐点上传宽度前不会打脉冲。"""
+    """Z 通道停在 DC 0 V 且关闭输出；A03/A04 上传脉冲串前不会打脉冲。"""
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
     validate_safety_limit(SOURCE_KEY, 0.0, load_safety_limits(ctx.root))
     signals.set_burst_state(False, channel=channels["z"])
     signals.set_mod_state(False, channel=channels["z"])
     signals.setup_dc(0.0, channel=channels["z"])
     signals.set_output(False, channel=channels["z"])
-    ctx.outputs["Z 通道"] = "DC 0 V，输出 OFF（等待逐点上传脉宽）"
+    ctx.outputs["Z 通道"] = "DC 0 V，输出 OFF（等待上传脉冲串）"
 
 
 def disable_main_field(ctx):

@@ -3,8 +3,10 @@
 本实验在原子域读回 MFLI 第 0 路解调器的 R：Y 向 5 kHz 射频持续激励，Z 向由
 ``Time_sequence_2`` 触发无限 burst、连续打 +π 与 −π 两个脉冲，扫单脉冲宽度，用
 ``R(τ) = R_max |sin(π(τ − τ0) / (2 τ_π))|`` 的峰位给出 π 宽度。脉冲周期由射频频率
-反算（5 kHz → 200 µs），两个脉冲相隔半周期；脉冲串相对射频的相位由
-``Z_PULSE_PHASE_DEG`` 按任意波数组循环移位设定。
+反算（5 kHz → 200 µs），两个脉冲相隔半周期。
+
+射频相位（A03 粗扫或 ``Y_RF_PHASE_DEG``）只改变读出幅度：``R ∝ |cos(φ − ψ0)|``，
+曲线在 0–360° 内有两个等高峰、相隔 180°，所以粗扫只走 0–180°；判据峰位不受相位影响。
 """
 from __future__ import annotations
 
@@ -13,22 +15,12 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from ...experiment_params import ExperimentParams, parameter
+from .phase_scan import phase_grid
 
 # 脉冲周期由 Y 向射频频率反算；脉冲宽度列表由 start/stop/step 生成。
 _WIDTH_ROUND_DIGITS = 9
 # 任意波点数：与 pi_pulse_calibration 相同，DG4000 的上限正好是 16384 点。
-# 相位偏移按这个点数换算：一点对应 脉冲周期 / ARB_POINTS 的时间。
 ARB_POINTS = 16384
-
-
-def phase_shift_points(phase_deg: float) -> int:
-    """相位对应的任意波循环移位数；360° 与 0° 等价。"""
-    return int(round((phase_deg % 360.0) / 360.0 * ARB_POINTS)) % ARB_POINTS
-
-
-def phase_effective_deg(phase_deg: float) -> float:
-    """取整到整点后实际生效的相位。"""
-    return phase_shift_points(phase_deg) / ARB_POINTS * 360.0
 
 
 @dataclass
@@ -47,6 +39,11 @@ class PiWidthScanParams(ExperimentParams):
                     "+π 与 −π 相隔半个周期。")
     y_rf_vpp: float = parameter(default=0.05, external_name="Y_RF_VPP", label="Y 向射频幅度", unit="Vpp",
         minimum=1e-9, maximum=20.0, group="basic")
+    y_rf_phase_deg: float = parameter(default=90.0, external_name="Y_RF_PHASE_DEG", label="射频相位",
+        unit="°", minimum=0.0, maximum=360.0, group="basic",
+        description="A03 未运行或关闭时 A04 使用的固定射频相位，按 DG burst 相位写入。"
+                    "读出的幅度按 |cos(φ − ψ0)| 变化，ψ0 由脉冲占空比决定；默认 90° 落在幅度峰附近，"
+                    "0° 附近是零点，判据峰位不受相位影响但信噪比差约 5 倍。")
 
     # ---- Z 向脉冲与链路 ----
     z_peak_current_ma: float = parameter(default=190.0, external_name="Z_PEAK_CURRENT_MA", label="脉冲峰值电流",
@@ -59,16 +56,24 @@ class PiWidthScanParams(ExperimentParams):
         label="脉宽终点", unit="µs", minimum=1e-3, group="basic")
     z_pulse_width_step_us: float = parameter(default=0.5, external_name="Z_PULSE_WIDTH_STEP_US",
         label="脉宽步进", unit="µs", minimum=1e-6, group="basic")
-    z_pulse_phase_deg: float = parameter(default=90.0, external_name="Z_PULSE_PHASE_DEG", label="脉冲相位",
-        unit="°", minimum=0.0, maximum=360.0, group="basic",
-        description="脉冲串相对射频（即共同触发周期起点）的相位；按任意波数组循环移位实现，"
-                    "等效时间偏移 = 相位/360 × 脉冲周期。读出的幅度按 |cos(φ − ψ0)| 变化，"
-                    "ψ0 = 90° − 180° × 占空比（2.5% 时约 85.5°）：默认 90° 对应幅度最大，"
-                    "0° 附近是零点，判据峰位不受相位影响但信噪比差约 5 倍。")
-    phase_check_enabled: bool = parameter(default=True, external_name="PHASE_CHECK_ENABLED", label="相位自检",
+
+    # ---- 射频相位粗扫（A03）----
+    phase_check_enabled: bool = parameter(default=True, external_name="PHASE_CHECK_ENABLED", label="相位粗扫",
         group="basic",
-        description="扫描前先测当前相位与其 +90° 两点的 R，取较大者用于扫描；"
-                    "关闭则直接用 Z_PULSE_PHASE_DEG。")
+        description="A03 按起点/终点/步进扫射频相位、取 R 峰作为 A04 的射频相位；"
+                    "关闭则 A03 跳过，A04 直接用 Y_RF_PHASE_DEG。")
+    y_rf_phase_start_deg: float = parameter(default=0.0, external_name="Y_RF_PHASE_START_DEG",
+        label="相位粗扫起点", unit="°", minimum=0.0, maximum=360.0, group="basic",
+        description="射频相位粗扫的起点；只扫 0–180°，因为 |cos(φ − ψ0)| 的周期是 180°。")
+    y_rf_phase_stop_deg: float = parameter(default=180.0, external_name="Y_RF_PHASE_STOP_DEG",
+        label="相位粗扫终点", unit="°", minimum=0.0, maximum=360.0, group="basic")
+    y_rf_phase_step_deg: float = parameter(default=22.5, external_name="Y_RF_PHASE_STEP_DEG",
+        label="相位粗扫步进", unit="°", minimum=1e-3, group="basic",
+        description="默认 0–180°、步进 22.5°，共 9 个角度；峰不在端点时按相邻三点做抛物线精化。")
+    y_rf_phase_repeat: int = parameter(default=3, external_name="Y_RF_PHASE_REPEAT", label="相位粗扫每角度次数",
+        minimum=1, maximum=50, group="basic",
+        description="每个角度读 R/θ 的次数；每角度均值与标准误由这些读数给出。")
+
     amplifier_gain_db: float = parameter(default=20.0, external_name="AMPLIFIER_GAIN_DB", label="功放增益", unit="dB",
         minimum=0, maximum=20, group="basic",
         description="连接时写入 1200B（0–20 dB，0.5 dB 步进）；预测电流按此值计算")
@@ -152,30 +157,20 @@ class PiWidthScanParams(ExperimentParams):
     def pulse_half_period_us(self) -> float:
         return self.pulse_period_us / 2.0
 
-    def pulse_phase_shift_points(self, phase_deg: float | None = None) -> int:
-        """任意波循环移位数；缺省用 ``Z_PULSE_PHASE_DEG``。"""
-        return phase_shift_points(self.z_pulse_phase_deg if phase_deg is None else phase_deg)
-
-    @property
-    def pulse_phase_effective_deg(self) -> float:
-        """``Z_PULSE_PHASE_DEG`` 实际生效的相位（整点取整后）。"""
-        return phase_effective_deg(self.z_pulse_phase_deg)
-
-    def pulse_phase_offset_us(self, phase_deg: float | None = None) -> float:
-        """相位对应的时间偏移（µs）；缺省用 ``Z_PULSE_PHASE_DEG``。"""
-        phase = self.pulse_phase_effective_deg if phase_deg is None else phase_effective_deg(phase_deg)
+    def rf_phase_offset_us(self, phase_deg: float | None = None) -> float:
+        """射频相位对应的时间偏移（µs）；5 kHz 下 1° = 0.556 µs。"""
+        phase = self.y_rf_phase_deg if phase_deg is None else float(phase_deg)
         return phase / 360.0 * self.pulse_period_us
 
+    def rf_phase_angles_deg(self) -> list[float]:
+        """A03 粗扫的角度列表（含两端）。"""
+        return phase_grid(self.y_rf_phase_start_deg, self.y_rf_phase_stop_deg, self.y_rf_phase_step_deg)
+
     def phase_check_width_us(self) -> float:
-        """相位自检所用的脉宽：扫描网格中最接近预测 π 宽度的一点。"""
+        """A03 期间 Z 脉冲所用的脉宽：扫描网格中最接近预测 π 宽度的一点。"""
         widths = self.widths_us()
         target = self.predicted_width_us()
         return min(widths, key=lambda width: abs(width - target))
-
-    def phase_check_candidates_deg(self) -> list[float]:
-        """相位自检的两个候选相位：``Z_PULSE_PHASE_DEG`` 与其 +90°。"""
-        return [phase_effective_deg(self.z_pulse_phase_deg),
-                phase_effective_deg(self.z_pulse_phase_deg + 90.0)]
 
     def widths_us(self) -> list[float]:
         """由 start/stop/step 生成脉宽列表；终点按步进向下取整。"""
@@ -224,8 +219,14 @@ class PiWidthScanParams(ExperimentParams):
             errors.append("Z_PULSE_EDGE_US 必须明显小于半个周期")
         if self.z_peak_current_ma <= 0 or not math.isfinite(self.z_peak_current_ma):
             errors.append("Z_PEAK_CURRENT_MA 必须为正")
-        if not math.isfinite(self.z_pulse_phase_deg) or not 0.0 <= self.z_pulse_phase_deg <= 360.0:
-            errors.append("Z_PULSE_PHASE_DEG 必须在 0–360° 之间")
+        if not math.isfinite(self.y_rf_phase_deg) or not 0.0 <= self.y_rf_phase_deg <= 360.0:
+            errors.append("Y_RF_PHASE_DEG 必须在 0–360° 之间")
+        try:
+            self.rf_phase_angles_deg()
+        except ValueError as exc:
+            errors.append(str(exc))
+        if self.y_rf_phase_repeat < 1:
+            errors.append("Y_RF_PHASE_REPEAT 至少为 1")
         if self.coil_constant_hz_per_ma <= 0:
             errors.append("COIL_CONSTANT_HZ_PER_MA 必须为正")
         if self.target_angle_pi <= 0:
@@ -260,5 +261,6 @@ class PiWidthScanParams(ExperimentParams):
                     acquisition_count=len(widths) * p.n_repeat,
                     samples_per_point=p.samples_per_point(),
                     predicted_width_us=p.predicted_width_us(),
-                    pulse_phase_deg=p.pulse_phase_effective_deg,
-                    pulse_phase_offset_us=p.pulse_phase_offset_us())
+                    rf_phase_deg=p.y_rf_phase_deg,
+                    rf_phase_offset_us=p.rf_phase_offset_us(),
+                    rf_phase_angles_deg=p.rf_phase_angles_deg())

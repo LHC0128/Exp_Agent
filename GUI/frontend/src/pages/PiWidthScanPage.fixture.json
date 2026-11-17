@@ -37,6 +37,18 @@
       "read_only": false
     },
     {
+      "name": "Y_RF_PHASE_DEG",
+      "label": "射频相位",
+      "type": "number",
+      "default": 90.0,
+      "unit": "°",
+      "group": "basic",
+      "minimum": 0.0,
+      "maximum": 360.0,
+      "description": "A03 未运行或关闭时 A04 使用的固定射频相位，按 DG burst 相位写入。读出的幅度按 |cos(φ − ψ0)| 变化，ψ0 由脉冲占空比决定；默认 90° 落在幅度峰附近，0° 附近是零点，判据峰位不受相位影响但信噪比差约 5 倍。",
+      "read_only": false
+    },
+    {
       "name": "Z_PEAK_CURRENT_MA",
       "label": "脉冲峰值电流",
       "type": "number",
@@ -97,27 +109,63 @@
       "read_only": false
     },
     {
-      "name": "Z_PULSE_PHASE_DEG",
-      "label": "脉冲相位",
-      "type": "number",
-      "default": 90.0,
-      "unit": "°",
-      "group": "basic",
-      "minimum": 0.0,
-      "maximum": 360.0,
-      "description": "脉冲串相对射频（即共同触发周期起点）的相位；按任意波数组循环移位实现，等效时间偏移 = 相位/360 × 脉冲周期。读出的幅度按 |cos(φ − ψ0)| 变化，ψ0 = 90° − 180° × 占空比（2.5% 时约 85.5°）：默认 90° 对应幅度最大，0° 附近是零点，判据峰位不受相位影响但信噪比差约 5 倍。",
-      "read_only": false
-    },
-    {
       "name": "PHASE_CHECK_ENABLED",
-      "label": "相位自检",
+      "label": "相位粗扫",
       "type": "boolean",
       "default": true,
       "unit": "",
       "group": "basic",
       "minimum": null,
       "maximum": null,
-      "description": "扫描前先测当前相位与其 +90° 两点的 R，取较大者用于扫描；关闭则直接用 Z_PULSE_PHASE_DEG。",
+      "description": "A03 按起点/终点/步进扫射频相位、取 R 峰作为 A04 的射频相位；关闭则 A03 跳过，A04 直接用 Y_RF_PHASE_DEG。",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_PHASE_START_DEG",
+      "label": "相位粗扫起点",
+      "type": "number",
+      "default": 0.0,
+      "unit": "°",
+      "group": "basic",
+      "minimum": 0.0,
+      "maximum": 360.0,
+      "description": "射频相位粗扫的起点；只扫 0–180°，因为 |cos(φ − ψ0)| 的周期是 180°。",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_PHASE_STOP_DEG",
+      "label": "相位粗扫终点",
+      "type": "number",
+      "default": 180.0,
+      "unit": "°",
+      "group": "basic",
+      "minimum": 0.0,
+      "maximum": 360.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_PHASE_STEP_DEG",
+      "label": "相位粗扫步进",
+      "type": "number",
+      "default": 22.5,
+      "unit": "°",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "默认 0–180°、步进 22.5°，共 9 个角度；峰不在端点时按相邻三点做抛物线精化。",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_PHASE_REPEAT",
+      "label": "相位粗扫每角度次数",
+      "type": "integer",
+      "default": 3,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": 50,
+      "description": "每个角度读 R/θ 的次数；每角度均值与标准误由这些读数给出。",
       "read_only": false
     },
     {
@@ -395,8 +443,8 @@
     }
   ],
   "flow": {
-    "run_step_id": "A03",
-    "finish_step_id": "A04",
+    "run_step_id": "A04",
+    "finish_step_id": "A05",
     "acquisition": [
       {
         "id": "A01",
@@ -411,7 +459,7 @@
           "RUN_TAG"
         ],
         "quality_gates": [
-          "不连接硬件；脉宽列表由起点/终点/步进生成，逐项检查非空、不超过半个周期且不小于两倍沿宽；z_pulse_coil_current、Z/Y 场电平与电阻功耗全部在限内"
+          "不连接硬件；脉宽列表由起点/终点/步进生成，逐项检查非空、不超过半个周期且不小于两倍沿宽；射频相位粗扫的起点/终点/步进能生成非空角度列表；z_pulse_coil_current、Z/Y 场电平与电阻功耗全部在限内"
         ]
       },
       {
@@ -457,11 +505,70 @@
           "DEMOD0_RATE"
         ],
         "quality_gates": [
-          "连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；MFLI 第 0 路解调器按参数配置并记录回读；GS200 主磁场输出回读为 OFF 才继续；DG 与 MFLI 参考时钟严格回读一致"
+          "连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；MFLI 第 0 路解调器按参数配置并记录回读；射频按无限 burst 与 Y_RF_PHASE_DEG 起振；GS200 主磁场输出回读为 OFF 才继续；DG 与 MFLI 参考时钟严格回读一致"
         ]
       },
       {
         "id": "A03",
+        "title": "射频相位粗扫（可勾选）",
+        "group": "测量",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "DEMOD0_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC",
+          "DEMOD0_RATE",
+          "PHASE_CHECK_ENABLED",
+          "Y_RF_PHASE_START_DEG",
+          "Y_RF_PHASE_STOP_DEG",
+          "Y_RF_PHASE_STEP_DEG",
+          "Y_RF_PHASE_REPEAT"
+        ],
+        "artifacts": [
+          "raw/phase_scan.csv",
+          "results/phase_vs_phase.png"
+        ],
+        "display_parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "DEMOD0_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC",
+          "DEMOD0_RATE",
+          "PHASE_CHECK_ENABLED",
+          "Y_RF_PHASE_START_DEG",
+          "Y_RF_PHASE_STOP_DEG",
+          "Y_RF_PHASE_STEP_DEG",
+          "Y_RF_PHASE_REPEAT"
+        ],
+        "quality_gates": [
+          "Z 脉冲串按预测 π 宽度只写一次；每个角度按 DirectAW 顺序改射频 burst 相位（关 burst → 写相位 → 开 burst → 开 output）后等 SYSTEM_SETTLE_S 再读 Y_RF_PHASE_REPEAT 次；取 R 峰并用相邻三点抛物线精化；温控关闭窗口内只读不写盘；PHASE_CHECK_ENABLED=false 时整阶段跳过且不写文件"
+        ]
+      },
+      {
+        "id": "A04",
         "title": "扫脉宽并读 MFLI R/θ（可勾选）",
         "group": "测量",
         "dependencies": [
@@ -493,15 +600,13 @@
           "Z_PULSE_WIDTH_START_US",
           "Z_PULSE_WIDTH_STOP_US",
           "Z_PULSE_WIDTH_STEP_US",
-          "Z_PULSE_PHASE_DEG",
-          "PHASE_CHECK_ENABLED",
+          "Y_RF_PHASE_DEG",
           "COIL_CONSTANT_HZ_PER_MA",
           "TARGET_ANGLE_PI",
           "Y_RF_FREQ_HZ",
           "Y_RF_VPP"
         ],
         "artifacts": [
-          "raw/phase_check.csv",
           "raw/scan.csv",
           "raw/R_*.csv",
           "experiment_config.yaml"
@@ -532,19 +637,18 @@
           "Z_PULSE_WIDTH_START_US",
           "Z_PULSE_WIDTH_STOP_US",
           "Z_PULSE_WIDTH_STEP_US",
-          "Z_PULSE_PHASE_DEG",
-          "PHASE_CHECK_ENABLED",
+          "Y_RF_PHASE_DEG",
           "COIL_CONSTANT_HZ_PER_MA",
           "TARGET_ANGLE_PI",
           "Y_RF_FREQ_HZ",
           "Y_RF_VPP"
         ],
         "quality_gates": [
-          "相位自检开启时先在 Z_PULSE_PHASE_DEG 与其 +90° 两点各读 3 次、取 R 较大者，两次读数写入 raw/phase_check.csv；每个宽度上传一对 +π/−π 脉冲并由 Time_sequence_2 外触发无限 burst；温控关闭窗口内只读不写盘，每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘；取消保留已完成点"
+          "射频相位取 A03 的 chosen_deg（有 refined_deg 时优先），A03 未运行或关闭时回落 Y_RF_PHASE_DEG 并在摘要记 phase_source；每个宽度上传一对 +π/−π 脉冲并由 Time_sequence_2 外触发无限 burst；温控关闭窗口内只读不写盘，每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘；取消保留已完成点"
         ]
       },
       {
-        "id": "A04",
+        "id": "A05",
         "title": "安全结束会话",
         "group": "结束",
         "dependencies": [],
@@ -582,109 +686,137 @@
         "RUN_TAG": [
           "A01",
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "AMPLIFIER_GAIN_DB": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "AMPLIFIER_INPUT_IMPEDANCE_OHM": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "AMPLIFIER_WRITE_SETTINGS": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "SENSE_RESISTOR_OHM": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "DAMPING_RESISTOR_OHM": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "COIL_RESISTANCE_OHM": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "RESISTOR_RATED_W": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "Y_RF_FREQ_HZ": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "Y_RF_VPP": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "DEMOD0_IDX": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "DEMOD0_SIGNAL_RANGE": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "DEMOD0_ORDER": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "DEMOD0_TC": [
           "A02",
-          "A03"
+          "A03",
+          "A04"
         ],
         "DEMOD0_RATE": [
           "A02",
-          "A03"
-        ],
-        "SYSTEM_SETTLE_S": [
-          "A03"
-        ],
-        "TEMP_SWITCH_ON_LAG_S": [
-          "A03"
-        ],
-        "TEMP_GROUP_SIZE": [
-          "A03"
-        ],
-        "SCAN_POINT_DURATION_S": [
-          "A03"
-        ],
-        "N_REPEAT": [
-          "A03"
-        ],
-        "Z_PEAK_CURRENT_MA": [
-          "A03"
-        ],
-        "Z_PULSE_EDGE_US": [
-          "A03"
-        ],
-        "Z_PULSE_WIDTH_START_US": [
-          "A03"
-        ],
-        "Z_PULSE_WIDTH_STOP_US": [
-          "A03"
-        ],
-        "Z_PULSE_WIDTH_STEP_US": [
-          "A03"
-        ],
-        "Z_PULSE_PHASE_DEG": [
-          "A03"
+          "A03",
+          "A04"
         ],
         "PHASE_CHECK_ENABLED": [
           "A03"
         ],
-        "COIL_CONSTANT_HZ_PER_MA": [
+        "Y_RF_PHASE_START_DEG": [
           "A03"
         ],
-        "TARGET_ANGLE_PI": [
+        "Y_RF_PHASE_STOP_DEG": [
           "A03"
+        ],
+        "Y_RF_PHASE_STEP_DEG": [
+          "A03"
+        ],
+        "Y_RF_PHASE_REPEAT": [
+          "A03"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A04"
+        ],
+        "TEMP_SWITCH_ON_LAG_S": [
+          "A04"
+        ],
+        "TEMP_GROUP_SIZE": [
+          "A04"
+        ],
+        "SCAN_POINT_DURATION_S": [
+          "A04"
+        ],
+        "N_REPEAT": [
+          "A04"
+        ],
+        "Z_PEAK_CURRENT_MA": [
+          "A04"
+        ],
+        "Z_PULSE_EDGE_US": [
+          "A04"
+        ],
+        "Z_PULSE_WIDTH_START_US": [
+          "A04"
+        ],
+        "Z_PULSE_WIDTH_STOP_US": [
+          "A04"
+        ],
+        "Z_PULSE_WIDTH_STEP_US": [
+          "A04"
+        ],
+        "Y_RF_PHASE_DEG": [
+          "A04"
+        ],
+        "COIL_CONSTANT_HZ_PER_MA": [
+          "A04"
+        ],
+        "TARGET_ANGLE_PI": [
+          "A04"
         ]
       },
       "analysis": {

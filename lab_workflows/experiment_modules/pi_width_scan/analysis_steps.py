@@ -2,7 +2,7 @@
 
 判据模型为 ``R(τ) = R_max |sin(π(τ − τ0) / (2 τ_π))|``：峰位即 π 宽度。拟合用逐点标准误
 作权重；残差 RMS 超过单点标准误中位数的 3 倍时标记 ``fit_quality: poor`` 并写明原因。
-R_max 小于单点标准误中位数的 5 倍时标记 ``signal_low``，只提示可能是相位落在零点附近。
+R_max 小于单点标准误中位数的 5 倍时标记 ``signal_low``，只提示可能是射频相位落在零点附近。
 本实验不做漂移校正。
 """
 from __future__ import annotations
@@ -17,7 +17,6 @@ import numpy as np
 
 from ...experiment_runtime import check_cancelled
 from . import run_format
-from .models import phase_effective_deg
 from .stages import ANALYSIS_KEYS
 
 # 单点离开拟合曲线超过 3 倍标准误即不保留；残差 RMS 超过 3 倍中位标准误即判拟合质量差。
@@ -174,23 +173,42 @@ def _summarize_points(rows):
     return points
 
 
-def _phase_record(run_dir, params):
-    """本轮扫描实际生效的相位与相位自检记录；运行配置缺键时回落到参数值。"""
+def _run_state(run_dir):
+    """读运行目录的 experiment_config.yaml；缺文件返回空映射。"""
     config = run_format.read_config(output_path(run_dir, "experiment_config.yaml"))
-    record = config.get("phase_check") if isinstance(config, dict) else None
-    if isinstance(record, dict) and record:
-        chosen = record.get("chosen_deg")
-        if isinstance(chosen, (int, float)) and not isinstance(chosen, bool):
-            return phase_effective_deg(float(chosen)), dict(record)
-        return params.pulse_phase_effective_deg, dict(record)
-    return params.pulse_phase_effective_deg, dict(enabled=False)
+    return config if isinstance(config, dict) else {}
+
+
+def _phase_record(config, params):
+    """本轮实际生效的射频相位、来源与相位粗扫记录；配置缺键时回落到参数值。"""
+    record = config.get("phase_check")
+    if isinstance(record, dict) and record.get("enabled"):
+        chosen, refined = record.get("chosen_deg"), record.get("refined_deg")
+        for value in (refined, chosen):
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value), dict(record), "stage"
+    elif isinstance(record, dict):
+        return float(params.y_rf_phase_deg), dict(record), "parameter"
+    # 没有记录（A03 未运行）时以运行配置里最后一次写入的相位为准，再退回参数。
+    phase = config.get("rf_phase_deg")
+    source = config.get("phase_source")
+    phase = float(phase) if isinstance(phase, (int, float)) and not isinstance(phase, bool) else float(params.y_rf_phase_deg)
+    return phase, dict(enabled=False), source if source in {"stage", "parameter"} else "parameter"
+
+
+def _demod_phase_deg(config):
+    """MFLI 解调相位回读值；本实验只用 R，不依赖它。"""
+    lockin = config.get("lockin")
+    value = lockin.get("phase_deg") if isinstance(lockin, dict) else None
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
 def scan_report(run_dir, params):
     """B01：R(宽度) 加权拟合、τπ 及其 1σ、残差判据与电学参考比值。"""
     root = Path(run_dir)
     output_path(root, "results").mkdir(parents=True, exist_ok=True)
-    phase_deg, phase_check = _phase_record(root, params)
+    config = _run_state(root)
+    rf_phase_deg, phase_check, phase_source = _phase_record(config, params)
     summary = dict(experiment_id=run_format.EXPERIMENT_ID,
                    rf_frequency_hz=params.y_rf_freq_hz, rf_vpp=params.y_rf_vpp,
                    pulse_period_us=params.pulse_period_us, peak_current_ma=params.z_peak_current_ma,
@@ -199,9 +217,11 @@ def scan_report(run_dir, params):
                    coil_constant_hz_per_ma=params.coil_constant_hz_per_ma,
                    target_angle_pi=params.target_angle_pi,
                    predicted_width_us=params.predicted_width_us(),
-                   pulse_phase_deg=phase_deg,
-                   pulse_phase_offset_us=params.pulse_phase_offset_us(phase_deg),
+                   rf_phase_deg=rf_phase_deg,
+                   rf_phase_offset_us=params.rf_phase_offset_us(rf_phase_deg),
+                   phase_source=phase_source,
                    phase_check=phase_check,
+                   demod0_phase_deg=_demod_phase_deg(config),
                    electrical_pi_width_us=params.reference_pi_width_us,
                    demod0_rate_sa_s=params.demod0_rate_sa_s, demod0_tc_s=params.demod0_tc_s,
                    model="R(tau) = R_max * |sin(pi*(tau - tau0)/(2*tau_pi))|",
@@ -260,7 +280,7 @@ def scan_report(run_dir, params):
         summary["signal_low"] = True
         summary["signal_low_reason"] = (
             f"拟合幅度 R_max {fit['r_max_v']:.3g} V 小于单点标准误中位数 {sem_median:.3g} V 的 "
-            f"{LOW_SIGNAL_MULTIPLE:g} 倍：信号可忽略，可能是脉冲相位落在零点附近；"
+            f"{LOW_SIGNAL_MULTIPLE:g} 倍：信号可忽略，可能是射频相位落在零点附近；"
             f"不改变拟合结果，先核对相位自检记录")
     output_path(root, "results/scan_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")

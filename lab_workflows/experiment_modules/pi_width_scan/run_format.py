@@ -24,9 +24,10 @@ CURRENT_LIMIT_KEY = "z_pulse_coil_current"
 REQUIRED_MAPPING_KEYS = (SOURCE_KEY, RF_KEY, TRIGGER_KEY, TEMP_SWITCH_KEY, LOCKIN_KEY,
                          AMPLIFIER_KEY, SCOPE_KEY, MAIN_FIELD_KEY, TEC_KEY)
 # raw/：scan.csv 每行一个读数；R_<width>_<repeat>.csv 保存该次读数的完整序列；
-# phase_check.csv 保存相位自检两个候选相位的读数。
+# phase_scan.csv 保存 A03 相位粗扫每个角度的读数；相位曲线在 results/ 下。
 SCAN_FILE = "raw/scan.csv"
-PHASE_CHECK_FILE = "raw/phase_check.csv"
+PHASE_SCAN_FILE = "raw/phase_scan.csv"
+PHASE_PLOT_FILE = "results/phase_vs_phase.png"
 POINT_FILE_PREFIX = "raw/R_"
 
 
@@ -83,7 +84,8 @@ def initial_metadata(p: PiWidthScanParams):
                 predicted={"amps_per_drive_volt": p.amps_per_drive_volt,
                            "loop_resistance_ohm": p.loop_resistance_ohm, "pulse_vpp": p.pulse_vpp,
                            "pulse_period_us": p.pulse_period_us, "widths_us": p.widths_us(),
-                           "pulse_phase_deg": p.pulse_phase_effective_deg,
-                           "pulse_phase_offset_us": p.pulse_phase_offset_us(),
+                           "rf_phase_deg": p.y_rf_phase_deg,
+                           "rf_phase_offset_us": p.rf_phase_offset_us(),
+                           "rf_phase_angles_deg": p.rf_phase_angles_deg(),
                            "phase_check_enabled": p.phase_check_enabled,
                            "predicted_width_us": p.predicted_width_us()})
