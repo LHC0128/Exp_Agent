@@ -1,4 +1,4 @@
-schema_version: 5
+schema_version: 6
 parameters:
   RUN_TAG: z_chain_stability
   AMPLIFIER_GAIN_DB: 20.0
@@ -22,6 +22,7 @@ parameters:
   ZERO_LOG_DURATION_S: 7200.0
   ZERO_SAVE_ALL_FRAMES: true
   ZERO_RAW_SAVE_INTERVAL_S: 600.0
+  SETTLE_EXCLUDE_S: 0.0
   BASELINE_CURRENT_MA: 100.0
   CONVERSION_AMPS_PER_VOLT: 0.137027
   CONVERSION_OFFSET_MA: 0.0
