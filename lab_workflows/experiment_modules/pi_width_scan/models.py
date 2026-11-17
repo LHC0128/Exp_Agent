@@ -73,6 +73,10 @@ class PiWidthScanParams(ExperimentParams):
     y_rf_phase_step_deg: float = parameter(default=22.5, external_name="Y_RF_PHASE_STEP_DEG",
         label="相位粗扫步进", unit="°", minimum=1e-3, group="basic",
         description="默认 0–180°、步进 22.5°，共 9 个角度；峰不在端点时按相邻三点做抛物线精化。")
+    x_bias_v: float = parameter(default=0.0, external_name="X_BIAS_V", label="X 静态偏置",
+        unit="V", group="basic",
+        description="A02 在 X 通道加的静态偏置；用来补掉残余横向场，把脉冲轴与自旋拉回 z。"
+                    "默认 0 表示不加偏置、通道保持关闭。本机实测 -0.02 V 可把 5 kHz 残留从 12.7 压到 3.9 mV。")
     phase_check_width_us: float = parameter(default=5.0, external_name="PHASE_CHECK_WIDTH_US",
         label="相位粗扫脉宽", unit="µs", minimum=1e-3, group="basic",
         description="A03 期间 Z 双脉冲串的单脉冲宽度；默认 5 µs 取电学参考 π 宽度附近，"
@@ -215,6 +219,8 @@ class PiWidthScanParams(ExperimentParams):
             errors.append("每个脉宽至少为两倍沿宽")
         if self.z_pulse_edge_us >= self.pulse_half_period_us / 2:
             errors.append("Z_PULSE_EDGE_US 必须明显小于半个周期")
+        if not math.isfinite(self.x_bias_v):
+            errors.append("X_BIAS_V 必须是有限数")
         if not math.isfinite(self.phase_check_width_us) or self.phase_check_width_us <= 0:
             errors.append("PHASE_CHECK_WIDTH_US 必须为正的有限数")
         elif self.phase_check_width_us > self.pulse_half_period_us:

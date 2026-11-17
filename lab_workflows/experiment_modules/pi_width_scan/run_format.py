@@ -12,6 +12,7 @@ DATA_TYPE = "pi_width_scan"
 RAW_FORMAT_VERSION = 1
 
 SOURCE_KEY = "Z_magnetic_field"
+X_KEY = "X_magnetic_field"
 RF_KEY = "Y_magnetic_field"
 TRIGGER_KEY = "Time_sequence_2"
 TEMP_SWITCH_KEY = "Temp_Switch"
@@ -21,7 +22,7 @@ SCOPE_KEY = "coil_current_scope"
 MAIN_FIELD_KEY = "main_magnetic_field"
 TEC_KEY = "temperature"
 CURRENT_LIMIT_KEY = "z_pulse_coil_current"
-REQUIRED_MAPPING_KEYS = (SOURCE_KEY, RF_KEY, TRIGGER_KEY, TEMP_SWITCH_KEY, LOCKIN_KEY,
+REQUIRED_MAPPING_KEYS = (SOURCE_KEY, X_KEY, RF_KEY, TRIGGER_KEY, TEMP_SWITCH_KEY, LOCKIN_KEY,
                          AMPLIFIER_KEY, SCOPE_KEY, MAIN_FIELD_KEY, TEC_KEY)
 # raw/：scan.csv 每行一个读数；R_<width>_<repeat>.csv 保存该次读数的完整序列；
 # phase_scan.csv 保存 A03 相位粗扫每个角度的读数；相位曲线在 results/ 下。
@@ -89,4 +90,5 @@ def initial_metadata(p: PiWidthScanParams):
                            "rf_phase_angles_deg": p.rf_phase_angles_deg(),
                            "phase_check_enabled": p.phase_check_enabled,
                            "predicted_width_us": p.predicted_width_us(),
-                           "phase_check_width_us": p.phase_check_width_us})
+                           "phase_check_width_us": p.phase_check_width_us,
+                           "x_bias_v": p.x_bias_v})

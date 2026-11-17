@@ -700,7 +700,10 @@ class PreparationTest(unittest.TestCase):
         preparation.configure_rf(ctx)
         preparation.configure_trigger(ctx)
         preparation.configure_z_idle(ctx)
+        preparation.configure_x_bias(ctx)
         preparation.enable_temperature_switch(ctx)
+        self.assertEqual(ctx.state["x_bias_v"], params.x_bias_v)
+        self.assertTrue(ctx.outputs["X 偏置"].endswith("（输出 OFF）"))
         self.assertTrue(any(call[0] == "square" and call[2] == params.y_rf_freq_hz for call in fakes["dg"].calls))
         self.assertTrue(any(call[0] == "sine" and call[2] == params.y_rf_freq_hz for call in fakes["dg"].calls))
         action_errors, disconnect_errors = preparation.shutdown(ctx)
@@ -715,6 +718,20 @@ class PreparationTest(unittest.TestCase):
         self.assertTrue(fakes["dg"].disconnected)
         self.assertTrue(fakes["lockin"].disconnected)
         self.assertTrue(ctx.outputs["温控"].startswith("ON"))
+        self.assertTrue(ctx.outputs["X 偏置"].startswith("OFF"))
+
+    def test_x_bias_is_written_and_restored(self):
+        params = fast_params(x_bias_v=-0.02)
+        ctx, fakes = self.build_context(params)
+        preparation.connect(ctx)
+        preparation.configure_x_bias(ctx)
+        self.assertIn(("dc", None, -0.02), fakes["dg"].calls)
+        self.assertIs(fakes["dg"].outputs[None], True)
+        self.assertIn("-0.020 V", ctx.outputs["X 偏置"])
+        self.assertEqual(ctx.state["x_bias_v"], -0.02)
+        preparation.shutdown(ctx)
+        # 收尾把 X 通道归零并关输出；假对象按通道去重，改用输出摘要核对。
+        self.assertTrue(ctx.outputs["X 偏置"].startswith("OFF"))
 
     def test_main_field_must_read_back_off(self):
         params = fast_params()
