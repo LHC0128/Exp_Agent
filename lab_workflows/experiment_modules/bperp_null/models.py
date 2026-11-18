@@ -4,8 +4,8 @@
 5 kHz（谐波 1）与 10 kHz（谐波 2）的复振幅；10 kHz 复振幅 c2 = 0 即 B⊥ = 0。
 本实验只扫 X、Y 信号源的直流电压，不做线圈常数或磁场换算。
 
-A03 在 ``X_BIAS_V``/``Y_BIAS_V`` 附近按偏移网格扫 X、Y；补偿点本身由 B01 的复平面拟合给出，
-下一轮运行把拟合结果填回 ``X_BIAS_V``/``Y_BIAS_V`` 即可。
+A03 在 ``X_BIAS_MV``/``Y_BIAS_MV`` 附近按偏移网格扫 X、Y；补偿点本身由 B01 的复平面拟合给出，
+下一轮运行把拟合结果填回 ``X_BIAS_MV``/``Y_BIAS_MV`` 即可。
 """
 from __future__ import annotations
 
@@ -30,7 +30,8 @@ def _grid(start: float, stop: float, step: float) -> list[float]:
 
 @dataclass
 class BperpNullParams(ExperimentParams):
-    schema_version: ClassVar[int] = 1
+    # 2：X/Y 补偿电压的 UI 单位由 V 改为 mV；版本 1 的快照按 ×1000 迁移。
+    schema_version: ClassVar[int] = 2
     # 新实验没有历史短等待键；保留声明以便普通气室采集的迁移规则统一适用。
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {}
     removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
@@ -38,22 +39,23 @@ class BperpNullParams(ExperimentParams):
     run_tag: str = parameter(default="bperp_null", external_name="RUN_TAG", label="运行标签", group="basic")
 
     # ---- 补偿点（本轮要验证的直流电压）----
-    x_bias_v: float = parameter(default=0.0, external_name="X_BIAS_V", label="X 补偿电压",
-        unit="V", minimum=-20.0, maximum=20.0, group="basic",
-        description="A02 在 X 通道加的直流电压，也是 A03 扫描网格的中心；B01 把拟合零点写回这里供下一轮使用。")
-    y_bias_v: float = parameter(default=0.0, external_name="Y_BIAS_V", label="Y 补偿电压",
-        unit="V", minimum=-20.0, maximum=20.0, group="basic",
-        description="A02 在 Y 通道加的直流电压（关射频，Y 线圈只出 DC），也是 A03 扫描网格的中心。")
+    x_bias_mv: float = parameter(default=0.0, external_name="X_BIAS_MV", label="X 补偿电压",
+        unit="mV", minimum=-20000.0, maximum=20000.0, group="basic",
+        description="A02 在 X 通道加的直流电压（mV，后端换算成 V 写仪器），也是 A03 扫描网格的中心；"
+                    "B01 把拟合零点写回这里供下一轮使用。")
+    y_bias_mv: float = parameter(default=0.0, external_name="Y_BIAS_MV", label="Y 补偿电压",
+        unit="mV", minimum=-20000.0, maximum=20000.0, group="basic",
+        description="A02 在 Y 通道加的直流电压（mV；关射频，Y 线圈只出 DC），也是 A03 扫描网格的中心。")
 
     # ---- X/Y 扫描网格（相对补偿点的偏移）----
     x_scan_start_mv: float = parameter(default=-40.0, external_name="X_SCAN_START_MV", label="X 扫描起点",
-        unit="mV", group="basic", description="相对 X_BIAS_V 的偏移；实际写入电压 = X_BIAS_V + 偏移/1000。")
+        unit="mV", group="basic", description="相对 X_BIAS_MV 的偏移；实际写入电压 = (X_BIAS_MV + 偏移)/1000。")
     x_scan_stop_mv: float = parameter(default=40.0, external_name="X_SCAN_STOP_MV", label="X 扫描终点",
         unit="mV", group="basic")
     x_scan_step_mv: float = parameter(default=20.0, external_name="X_SCAN_STEP_MV", label="X 扫描步进",
         unit="mV", minimum=1e-6, group="basic")
     y_scan_start_mv: float = parameter(default=-40.0, external_name="Y_SCAN_START_MV", label="Y 扫描起点",
-        unit="mV", group="basic", description="相对 Y_BIAS_V 的偏移；实际写入电压 = Y_BIAS_V + 偏移/1000。")
+        unit="mV", group="basic", description="相对 Y_BIAS_MV 的偏移；实际写入电压 = (Y_BIAS_MV + 偏移)/1000。")
     y_scan_stop_mv: float = parameter(default=40.0, external_name="Y_SCAN_STOP_MV", label="Y 扫描终点",
         unit="mV", group="basic")
     y_scan_step_mv: float = parameter(default=20.0, external_name="Y_SCAN_STEP_MV", label="Y 扫描步进",
@@ -69,7 +71,8 @@ class BperpNullParams(ExperimentParams):
         unit="µs", minimum=0.05, description="升余弦沿；等效面积 = 宽度 − 沿宽。")
     z_pulse_width_us: float = parameter(default=6.6, external_name="Z_PULSE_WIDTH_US", label="脉冲宽度",
         unit="µs", minimum=1e-3, group="basic",
-        description="本轮的单脉冲宽度（原子域 π 工作点 6.6 µs）；脉宽对照通过不同轮次完成。")
+        description="本轮 Z 向单个脉冲的宽度；默认 6.6 µs 是当前装置的工作点，判据不要求严格 π。"
+                    "脉宽对照通过不同轮次完成。")
 
     # ---- MFLI 两个解调器 ----
     demod0_idx: int = parameter(default=0, external_name="DEMOD0_IDX", label="1f 解调器索引",
@@ -124,6 +127,16 @@ class BperpNullParams(ExperimentParams):
         description="只用于预测与记录；判据不经该常数。")
 
     # ---- 派生量 ----
+    @property
+    def x_bias_v(self) -> float:
+        """写入 X 通道的直流电压（V）；UI 以 mV 输入。"""
+        return self.x_bias_mv / 1000.0
+
+    @property
+    def y_bias_v(self) -> float:
+        """写入 Y 通道的直流电压（V）；UI 以 mV 输入。"""
+        return self.y_bias_mv / 1000.0
+
     @property
     def gain(self) -> float:
         return 10.0 ** (self.amplifier_gain_db / 20.0)
@@ -190,8 +203,8 @@ class BperpNullParams(ExperimentParams):
             errors.append("Z_PULSE_WIDTH_US 至少为两倍沿宽")
         if self.z_peak_current_ma <= 0 or not math.isfinite(self.z_peak_current_ma):
             errors.append("Z_PEAK_CURRENT_MA 必须为正")
-        for name, values in (("X", (self.x_bias_v, self.x_scan_start_mv, self.x_scan_stop_mv, self.x_scan_step_mv)),
-                             ("Y", (self.y_bias_v, self.y_scan_start_mv, self.y_scan_stop_mv, self.y_scan_step_mv))):
+        for name, values in (("X", (self.x_bias_mv, self.x_scan_start_mv, self.x_scan_stop_mv, self.x_scan_step_mv)),
+                             ("Y", (self.y_bias_mv, self.y_scan_start_mv, self.y_scan_stop_mv, self.y_scan_step_mv))):
             if any(not math.isfinite(value) for value in values):
                 errors.append(f"{name} 偏置或扫描参数必须是有限数")
         if not self.x_offsets_mv():
@@ -215,6 +228,15 @@ class BperpNullParams(ExperimentParams):
         if not math.isfinite(self.demod_rate_sa_s) or self.demod_rate_sa_s <= 0:
             errors.append("DEMOD_RATE 必须为正")
         return errors
+
+    @classmethod
+    def migrate_external(cls, values, schema_version):
+        migrated = super().migrate_external(values, schema_version)
+        if schema_version < 2:
+            for old, new in (("X_BIAS_V", "X_BIAS_MV"), ("Y_BIAS_V", "Y_BIAS_MV")):
+                if old in migrated:
+                    migrated.setdefault(new, float(migrated.pop(old)) * 1000.0)
+        return migrated
 
     @classmethod
     def derive_external(cls, values):

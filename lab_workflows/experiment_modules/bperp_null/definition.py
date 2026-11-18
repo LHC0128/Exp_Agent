@@ -12,13 +12,13 @@ DESCRIPTION = (
     "拖尾、α≠π 与拖尾横向分量随脉冲反号，主要进入 5 kHz 奇部。"
     "所以 10 kHz 复振幅 c2 = 0 即 B⊥ = 0，与 Bz、拖尾和脉宽无关。"
     "A02 连接 DG、MFLI、1200B、GS200：写 1200B 增益与阻抗、配平 Z 负载、配置两个解调器、"
-    "按 X_BIAS_V/Y_BIAS_V 给 X/Y 线圈加直流（Y 通道不出射频）、关闭 GS200 主磁场并回读、严格回读参考时钟。"
-    "A03 在 X_BIAS_V/Y_BIAS_V 附近按各自 start/stop/step 扫 X/Y 偏移网格，每个点重复 N_REPEAT 次；"
+    "按 X_BIAS_MV/Y_BIAS_MV 给 X/Y 线圈加直流（UI 以 mV 输入，后端换算成 V）（Y 通道不出射频）、关闭 GS200 主磁场并回读、严格回读参考时钟。"
+    "A03 在 X_BIAS_MV/Y_BIAS_MV 附近按各自 start/stop/step 扫 X/Y 偏移网格，每个点重复 N_REPEAT 次；"
     "两路解调器在同一个 DAQ 采集里同时读 X/Y，温控关闭窗口内只读不写盘，组末恢复温控后落盘。"
     "A04 安全收尾：先关 1200B，Z 归零并关 burst/sync，X/Y 归零关输出，恢复温控与 GS200 原状态。"
     "B01 按 (x,y) 聚合重复读数，对 c2 做复平面拟合 c=a+b·x+c·y，解 c=0 得补偿电压与蒙特卡洛不确定度；"
     "同法给 5 kHz 零点，补偿点处的残余 |c1| 与两个零点之差作为拖尾横向分量的指示量；"
-    "写 null_summary.json、next_run.yaml（下一轮建议的 X_BIAS_V/Y_BIAS_V 与扫描范围）和两张图。"
+    "写 null_summary.json、next_run.yaml（下一轮建议的 X_BIAS_MV/Y_BIAS_MV 与扫描范围）和两张图。"
     "本实验只报直流电压与 mV/V 斜率，不做线圈常数或磁场换算。"
 )
 

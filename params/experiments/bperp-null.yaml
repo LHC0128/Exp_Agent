@@ -1,8 +1,8 @@
-schema_version: 1
+schema_version: 2
 parameters:
   RUN_TAG: bperp_null
-  X_BIAS_V: 0.0
-  Y_BIAS_V: 0.0
+  X_BIAS_MV: 0.0
+  Y_BIAS_MV: 0.0
   X_SCAN_START_MV: -40.0
   X_SCAN_STOP_MV: 40.0
   X_SCAN_STEP_MV: 20.0

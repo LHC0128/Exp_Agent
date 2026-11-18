@@ -274,7 +274,7 @@ def configure_z_idle(ctx):
 
 
 def configure_bias(ctx):
-    """按 X_BIAS_V / Y_BIAS_V 给 X、Y 线圈加直流偏置；Y 通道不配射频。"""
+    """按 X_BIAS_MV / Y_BIAS_MV（mV）换算成 V，给 X、Y 线圈加直流偏置；Y 通道不配射频。"""
     p = ctx.params
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
     vx = configure_fixed_dc_field(signals, channels["x"], X_KEY, p.x_bias_v)

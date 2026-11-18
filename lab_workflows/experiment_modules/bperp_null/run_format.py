@@ -91,6 +91,6 @@ def initial_metadata(p: BperpNullParams):
                            "loop_resistance_ohm": p.loop_resistance_ohm, "pulse_vpp": p.pulse_vpp,
                            "pulse_period_us": p.pulse_period_us,
                            "predicted_width_us": p.predicted_width_us(),
-                           "x_bias_v": p.x_bias_v, "y_bias_v": p.y_bias_v,
+                           "x_bias_mv": p.x_bias_mv, "y_bias_mv": p.y_bias_mv,
                            "x_offsets_mv": p.x_offsets_mv(), "y_offsets_mv": p.y_offsets_mv(),
                            "grid_points": len(p.scan_voltages())})

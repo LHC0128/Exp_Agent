@@ -125,8 +125,12 @@ def _null(fit, x_bias_v, y_bias_v):
         if abs(np.linalg.det(m)) < 1e-18:
             continue
         nulls.append(np.linalg.solve(m, -np.array([pa.real, pa.imag])))
-    sigma = np.std(np.array(nulls), axis=0) if len(nulls) > 2 else np.array([float("nan")] * 2)
+    samples = np.array(nulls) if len(nulls) > 2 else np.full((1, 2), np.nan)
+    sigma = np.std(samples, axis=0)
+    covariance = np.cov(samples.T) if len(nulls) > 2 else np.full((2, 2), np.nan)
     return dict(offset_mv=[float(offset[0]), float(offset[1])],
+                cov_offset_mv=[[float(covariance[0, 0]), float(covariance[0, 1])],
+                               [float(covariance[1, 0]), float(covariance[1, 1])]],
                 voltage_v=[float(x_bias_v + offset[0] / 1000.0), float(y_bias_v + offset[1] / 1000.0)],
                 sigma_offset_mv=[float(sigma[0]), float(sigma[1])],
                 sigma_voltage_v=[float(sigma[0] / 1000.0), float(sigma[1] / 1000.0)],
@@ -157,11 +161,14 @@ def scan_report(run_dir, params: BperpNullParams):
     if null2 is None or null1 is None:
         raise ValueError("复平面拟合退化，无法解零点；请扩大扫描范围或检查信号")
     signal_ok = bool(np.max(np.abs(c2 - fit2["coef"][0])) > 4.0 * max(float(np.median(np.abs(sem2))), 1e-9))
+    angle_deg = _zero_line_angle(fit2)
     summary = dict(
         experiment_id=run_dir.name, width_us=params.z_pulse_width_us,
+        x_bias_mv=params.x_bias_mv, y_bias_mv=params.y_bias_mv,
         x_bias_v=params.x_bias_v, y_bias_v=params.y_bias_v,
         x_offsets_mv=[float(v) for v in x_mv], y_offsets_mv=[float(v) for v in y_mv],
         grid_points=int(len(x_mv)), repeats=int(params.n_repeat),
+        zero_line_angle_deg=angle_deg,
         c2=dict(null=null2, residual_rms_v=fit2["residual_rms"], residual_max_v=fit2["residual_max"],
                 sem_median_v=float(np.median(np.abs(sem2))), signal_ok=signal_ok),
         c1=dict(null=null1, residual_rms_v=fit1["residual_rms"], residual_max_v=fit1["residual_max"],
@@ -169,7 +176,7 @@ def scan_report(run_dir, params: BperpNullParams):
                 sem_median_v=float(np.median(np.abs(sem1)))),
         null_offset_difference_mv=[float(null1["offset_mv"][i] - null2["offset_mv"][i]) for i in range(2)],
         noise_v=dict(c2_sem_median=float(np.median(np.abs(sem2))), c1_sem_median=float(np.median(np.abs(sem1)))),
-        method="复平面拟合 c=a+b·x+c·y（x、y 为相对 X_BIAS_V/Y_BIAS_V 的 mV），取 c=0；"
+        method="复平面拟合 c=a+b·x+c·y（x、y 为相对 X_BIAS_MV/Y_BIAS_MV 的 mV），取 c=0；"
                "不确定度为参数协方差蒙特卡洛",
         notes="未做线圈常数换算；5 kHz 零点与 2f 零点之差只作残余奇部（拖尾横向分量）的指示量。")
     results = output_path(run_dir, "results")
@@ -177,41 +184,106 @@ def scan_report(run_dir, params: BperpNullParams):
     (results / "null_summary.json").write_text(json.dumps(_jsonable(summary), ensure_ascii=False, indent=2),
                                                encoding="utf-8")
     half = max(5.0, min(50.0, 3.0 * max(null2["sigma_offset_mv"])))
-    next_run = dict(X_BIAS_V=round(null2["voltage_v"][0], 6), Y_BIAS_V=round(null2["voltage_v"][1], 6),
+    next_run = dict(X_BIAS_MV=round(null2["voltage_v"][0] * 1000.0, 3),
+                    Y_BIAS_MV=round(null2["voltage_v"][1] * 1000.0, 3),
                     X_SCAN_START_MV=-round(half), X_SCAN_STOP_MV=round(half),
                     X_SCAN_STEP_MV=round(half / 2.0), Y_SCAN_START_MV=-round(half),
                     Y_SCAN_STOP_MV=round(half), Y_SCAN_STEP_MV=round(half / 2.0))
     (results / "next_run.yaml").write_text(yaml.safe_dump(next_run, allow_unicode=True, sort_keys=False),
                                            encoding="utf-8")
-    _plot_bias_map(run_dir, x_mv, y_mv, c2, fit2)
+    _plot_null_map(run_dir, x_mv, y_mv, c2, fit2, null2)
+    _plot_complex_plane(run_dir, x_mv, y_mv, c2, fit2)
     _plot_residuals(run_dir, x_mv, y_mv, fit2)
     return _jsonable(summary)
 
 
-def _plot_bias_map(run_dir, x_mv, y_mv, c2, fit):
+def _zero_line_angle(fit):
+    """两条实零线的锐夹角（度）；越小说明 2×2 条件数越差。"""
+    b, c = fit["coef"][1], fit["coef"][2]
+    n1, n2 = np.array([b.real, c.real]), np.array([b.imag, c.imag])
+    denom = float(np.linalg.norm(n1) * np.linalg.norm(n2))
+    if denom <= 0:
+        return float("nan")
+    cosine = min(1.0, abs(float(n1 @ n2)) / denom)
+    return float(math.degrees(math.acos(cosine)))
+
+
+def _ellipse(axis, center, covariance, n_sigma, color, linestyle):
+    from matplotlib.patches import Ellipse
+    values, vectors = np.linalg.eigh(np.asarray(covariance, dtype=float))
+    order = np.argsort(values)[::-1]
+    values, vectors = values[order], vectors[:, order]
+    if not np.all(np.isfinite(values)) or np.any(values <= 0):
+        return
+    angle = math.degrees(math.atan2(vectors[1, 0], vectors[0, 0]))
+    axis.add_patch(Ellipse(center, width=2 * n_sigma * math.sqrt(values[0]),
+                           height=2 * n_sigma * math.sqrt(values[1]), angle=angle, fill=False,
+                           edgecolor=color, linestyle=linestyle, lw=1.0, zorder=5))
+
+
+def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null):
+    """二维零点图：|c2| 底图 + Re/Im 零线 + 零点与 1σ/2σ 椭圆。"""
     import matplotlib
     matplotlib.use("Agg")
+    from matplotlib.lines import Line2D
     from ...plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context, save_figure
 
-    offsets = np.unique(y_mv)
-    colors = [COLOR_OPTIMAL, COLOR_TRAD, "0.35", "0.6", "0.8"]
+    a, b, c = fit["coef"][0], fit["coef"][1], fit["coef"][2]
+    margin_x = max(1.0, 0.15 * (x_mv.max() - x_mv.min()))
+    margin_y = max(1.0, 0.15 * (y_mv.max() - y_mv.min()))
+    xx = np.linspace(x_mv.min() - margin_x, x_mv.max() + margin_x, 240)
+    yy = np.linspace(y_mv.min() - margin_y, y_mv.max() + margin_y, 240)
+    mesh_x, mesh_y = np.meshgrid(xx, yy)
+    plane = a + b * mesh_x + c * mesh_y
+    magnitude_mv = np.abs(plane) * 1000.0
     with plot_style_context("paper"):
-        figure, (left, right) = new_figure(nrows=2, sharex=True)
-        for index, offset in enumerate(offsets):
-            mask = y_mv == offset
-            order = np.argsort(x_mv[mask])
-            color = colors[index % len(colors)]
-            left.plot(x_mv[mask][order], c2.real[mask][order], "o", ms=3, color=color,
-                      label=f"Y = {offset:g} mV")
-            right.plot(x_mv[mask][order], c2.imag[mask][order], "o", ms=3, color=color)
-            grid = np.linspace(x_mv.min(), x_mv.max(), 50)
-            model = fit["coef"][0] + fit["coef"][1] * grid + fit["coef"][2] * offset
-            left.plot(grid, model.real, "-", lw=0.8, color=color)
-            right.plot(grid, model.imag, "-", lw=0.8, color=color)
-        format_axis(left, ylabel="Re c2 (V)")
-        format_axis(right, xlabel="X offset from bias (mV)", ylabel="Im c2 (V)")
-        left.legend(loc="best", fontsize=6)
-        save_figure(figure, output_path(run_dir, "results/bias_map.png"))
+        figure, axis = new_figure()
+        image = axis.pcolormesh(mesh_x, mesh_y, magnitude_mv, shading="auto", cmap="Blues", alpha=0.55)
+        colorbar = figure.colorbar(image, ax=axis, pad=0.02)
+        colorbar.set_label("|c2| (mV)")
+        axis.contour(mesh_x, mesh_y, plane.real, levels=[0.0], colors="k", linewidths=1.1, linestyles="-")
+        axis.contour(mesh_x, mesh_y, plane.imag, levels=[0.0], colors="k", linewidths=1.1, linestyles="--")
+        axis.scatter(x_mv, y_mv, s=16, facecolors="white", edgecolors="0.25", linewidths=0.6, zorder=4)
+        center = null["offset_mv"]
+        _ellipse(axis, center, null["cov_offset_mv"], 2.0, COLOR_TRAD, "--")
+        _ellipse(axis, center, null["cov_offset_mv"], 1.0, COLOR_TRAD, "-")
+        axis.plot(center[0], center[1], marker="*", ms=13, color=COLOR_OPTIMAL, markeredgecolor="k",
+                  markeredgewidth=0.4, zorder=6)
+        format_axis(axis, xlabel="X offset from bias (mV)", ylabel="Y offset from bias (mV)")
+        sigma = null["sigma_offset_mv"]
+        axis.set_title(f"null = ({center[0]:.2f}, {center[1]:.2f}) mV, sigma = ({sigma[0]:.2f}, {sigma[1]:.2f}) mV\n"
+                       f"zero-line angle = {_zero_line_angle(fit):.1f} deg; ellipses 1 sigma / 2 sigma", fontsize=7)
+        handles = [Line2D([], [], color="k", ls="-", lw=1.1, label="Re c2 = 0"),
+                   Line2D([], [], color="k", ls="--", lw=1.1, label="Im c2 = 0"),
+                   Line2D([], [], color=COLOR_TRAD, ls="-", lw=1.0, label="1 sigma"),
+                   Line2D([], [], color=COLOR_TRAD, ls="--", lw=1.0, label="2 sigma")]
+        axis.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.16),
+                    ncol=2, fontsize=7, frameon=False)
+        save_figure(figure, output_path(run_dir, "results/null_map.png"))
+
+
+def _plot_complex_plane(run_dir, x_mv, y_mv, c2, fit):
+    """复平面图：实测 c2 与拟合仿射网格；原点在图中即为零点。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    from ...plotting import COLOR_OPTIMAL, format_axis, new_figure, plot_style_context, save_figure
+
+    a, b, c = fit["coef"][0], fit["coef"][1], fit["coef"][2]
+    with plot_style_context("paper"):
+        figure, axis = new_figure()
+        for offset in np.unique(y_mv):
+            xs = np.linspace(x_mv.min(), x_mv.max(), 40)
+            axis.plot((a + b * xs + c * offset).real * 1000, (a + b * xs + c * offset).imag * 1000,
+                      "-", color="0.75", lw=0.7, zorder=1)
+        for offset in np.unique(x_mv):
+            ys = np.linspace(y_mv.min(), y_mv.max(), 40)
+            axis.plot((a + b * offset + c * ys).real * 1000, (a + b * offset + c * ys).imag * 1000,
+                      "-", color="0.75", lw=0.7, zorder=1)
+        axis.scatter(c2.real * 1000, c2.imag * 1000, s=18, color=COLOR_OPTIMAL, zorder=3, label="measured c2")
+        axis.plot(0.0, 0.0, marker="+", ms=12, mew=1.6, color="k", zorder=4, label="c2 = 0")
+        format_axis(axis, xlabel="Re c2 (mV)", ylabel="Im c2 (mV)")
+        axis.legend(loc="best", fontsize=7)
+        save_figure(figure, output_path(run_dir, "results/complex_plane.png"))
 
 
 def _plot_residuals(run_dir, x_mv, y_mv, fit):
@@ -219,11 +291,14 @@ def _plot_residuals(run_dir, x_mv, y_mv, fit):
     matplotlib.use("Agg")
     from ...plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context, save_figure
 
-    residual = fit["residual"]
+    residual = fit["residual"] * 1000.0
     with plot_style_context("paper"):
-        figure, (left, right) = new_figure(nrows=2, sharex=True)
-        left.plot(x_mv, residual.real, "o", ms=3, color=COLOR_OPTIMAL)
-        right.plot(y_mv, residual.imag, "o", ms=3, color=COLOR_TRAD)
-        format_axis(left, ylabel="Re residual (V)")
-        format_axis(right, xlabel="X offset (mV) / Y offset (mV)", ylabel="Im residual (V)")
+        figure, (left, right) = new_figure(nrows=2, sharex=False)
+        left.plot(x_mv, residual.real, "o", ms=3, color=COLOR_OPTIMAL, label="Re")
+        left.plot(x_mv, residual.imag, "s", ms=3, color=COLOR_TRAD, label="Im")
+        right.plot(y_mv, residual.real, "o", ms=3, color=COLOR_OPTIMAL)
+        right.plot(y_mv, residual.imag, "s", ms=3, color=COLOR_TRAD)
+        format_axis(left, xlabel="X offset (mV)", ylabel="residual (mV)")
+        format_axis(right, xlabel="Y offset (mV)", ylabel="residual (mV)")
+        left.legend(loc="best", fontsize=7)
         save_figure(figure, output_path(run_dir, "results/residuals.png"))

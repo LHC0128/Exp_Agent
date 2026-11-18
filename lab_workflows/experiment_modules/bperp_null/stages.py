@@ -10,7 +10,7 @@ FINISH_ID = "A04"
 RUN_ID = "A03"
 ANALYSIS_KEYS: tuple[str, ...] = ()
 # A02 建立链路、锁相、触发与初始 X/Y 偏置。
-CHAIN = ("X_BIAS_V", "Y_BIAS_V", "PULSE_FREQ_HZ", "AMPLIFIER_GAIN_DB",
+CHAIN = ("X_BIAS_MV", "Y_BIAS_MV", "PULSE_FREQ_HZ", "AMPLIFIER_GAIN_DB",
          "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
          "AMPLIFIER_WRITE_SETTINGS", "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM",
          "COIL_RESISTANCE_OHM", "RESISTOR_RATED_W", "DEMOD0_IDX", "DEMOD1_IDX",
@@ -30,7 +30,7 @@ ACQUISITION = (
     Stage("A02", "连接 DG、MFLI、1200B、GS200 并同步时钟", "准备", ("A01",), CHAIN,
           quality_gates=("连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；"
                          "振荡器 0 = 脉冲频率，第 0 路谐波 1、第 1 路谐波 2，相位均 0 并回读；"
-                         "按 X_BIAS_V/Y_BIAS_V 给 X、Y 线圈加 DC，Y 通道不出射频；"
+                         "按 X_BIAS_MV/Y_BIAS_MV 给 X、Y 线圈加 DC，Y 通道不出射频；"
                          "GS200 主磁场输出回读为 OFF 才继续；DG 与 MFLI 参考时钟严格回读一致",)),
     Stage(RUN_ID, "X/Y 偏置网格测量（可勾选）", "测量", ("A02",), (*CHAIN, *SCAN),
           ("raw/bias_grid.csv", "experiment_config.yaml"),
@@ -43,7 +43,8 @@ ACQUISITION = (
 )
 ANALYSIS = (
     Stage("B01", "复平面拟合与零点", "独立分析", (), ANALYSIS_KEYS,
-          artifacts=("null_summary.json", "next_run.yaml", "bias_map.png", "residuals.png"),
+          artifacts=("null_summary.json", "next_run.yaml", "null_map.png", "complex_plane.png",
+                     "residuals.png"),
           quality_gates=("运行目录已停止写入；按 (x,y) 聚合重复读数并做复数平面拟合；"
                          "解 c2=0 得补偿电压与蒙特卡洛不确定度；同法给 5 kHz 零点与补偿点残余 |c1|；"
                          "信号不足时在摘要中标记 signal_ok=false",)),

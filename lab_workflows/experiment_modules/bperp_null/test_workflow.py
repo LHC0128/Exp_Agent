@@ -132,7 +132,7 @@ class AnalysisTest(unittest.TestCase):
         (root / "raw").mkdir(parents=True)
         params = models.BperpNullParams(x_scan_start_mv=-40, x_scan_stop_mv=40, x_scan_step_mv=10,
                                         y_scan_start_mv=-40, y_scan_stop_mv=40, y_scan_step_mv=10,
-                                        n_repeat=3, x_bias_v=bias[0], y_bias_v=bias[1])
+                                        n_repeat=3, x_bias_mv=bias[0] * 1000.0, y_bias_mv=bias[1] * 1000.0)
         config = dict(experiment_id=run_format.EXPERIMENT_ID, data_type=run_format.DATA_TYPE,
                       raw_format_version=run_format.RAW_FORMAT_VERSION, completion_status="completed",
                       schema_version=1, parameters=params.to_external())
@@ -171,7 +171,7 @@ class AnalysisTest(unittest.TestCase):
             root, params = self._make_run(tmp, noise=1e-5)
             analysis_steps.scan_report(root, params)
             payload = yaml.safe_load((root / "results" / "next_run.yaml").read_text(encoding="utf-8"))
-            self.assertIn("X_BIAS_V", payload)
+            self.assertIn("X_BIAS_MV", payload)
             self.assertGreater(payload["X_SCAN_STOP_MV"], 0)
             summary = json.loads((root / "results" / "null_summary.json").read_text(encoding="utf-8"))
             self.assertIn("c1", summary)
