@@ -191,7 +191,8 @@ def scan_report(run_dir, params: BperpNullParams):
                     Y_SCAN_STOP_MV=round(half), Y_SCAN_STEP_MV=round(half / 2.0))
     (results / "next_run.yaml").write_text(yaml.safe_dump(next_run, allow_unicode=True, sort_keys=False),
                                            encoding="utf-8")
-    _plot_null_map(run_dir, x_mv, y_mv, c2, fit2, null2)
+    _plot_null_map(run_dir, x_mv, y_mv, c2, fit2, null2,
+                   noise_mv=float(np.median(np.abs(sem2))) * 1000.0)
     _plot_complex_plane(run_dir, x_mv, y_mv, c2, fit2)
     _plot_residuals(run_dir, x_mv, y_mv, fit2)
     return _jsonable(summary)
@@ -221,7 +222,7 @@ def _ellipse(axis, center, covariance, n_sigma, color, linestyle):
                            edgecolor=color, linestyle=linestyle, lw=1.0, zorder=5))
 
 
-def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null):
+def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null, noise_mv):
     """二维零点图：|c2| 底图 + Re/Im 零线 + 零点与 1σ/2σ 椭圆。"""
     import matplotlib
     matplotlib.use("Agg")
@@ -243,6 +244,16 @@ def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null):
         colorbar.set_label("|c2| (mV)")
         axis.contour(mesh_x, mesh_y, plane.real, levels=[0.0], colors="k", linewidths=1.1, linestyles="-")
         axis.contour(mesh_x, mesh_y, plane.imag, levels=[0.0], colors="k", linewidths=1.1, linestyles="--")
+        levels = [value for value in (1.0, 3.0) if value < magnitude_mv.max()]
+        noise_level = 10.0 * noise_mv
+        if 0.1 <= noise_level < min(levels or [1.0]):
+            levels.append(noise_level)
+        levels = sorted(levels)
+        if levels:
+            contours = axis.contour(mesh_x, mesh_y, magnitude_mv, levels=levels, colors="0.3",
+                                    linewidths=0.8, linestyles=":")
+            axis.clabel(contours, inline=True, fontsize=6,
+                        fmt=lambda value: "10x noise" if abs(value - noise_level) < 1e-9 else f"{value:g} mV")
         axis.scatter(x_mv, y_mv, s=16, facecolors="white", edgecolors="0.25", linewidths=0.6, zorder=4)
         center = null["offset_mv"]
         _ellipse(axis, center, null["cov_offset_mv"], 2.0, COLOR_TRAD, "--")
@@ -252,7 +263,7 @@ def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null):
         format_axis(axis, xlabel="X offset from bias (mV)", ylabel="Y offset from bias (mV)")
         sigma = null["sigma_offset_mv"]
         axis.set_title(f"null = ({center[0]:.2f}, {center[1]:.2f}) mV, sigma = ({sigma[0]:.2f}, {sigma[1]:.2f}) mV\n"
-                       f"zero-line angle = {_zero_line_angle(fit):.1f} deg; ellipses 1 sigma / 2 sigma", fontsize=7)
+                       f"zero-line angle = {_zero_line_angle(fit):.1f} deg; dotted: |c2| = 1, 3 mV", fontsize=7)
         handles = [Line2D([], [], color="k", ls="-", lw=1.1, label="Re c2 = 0"),
                    Line2D([], [], color="k", ls="--", lw=1.1, label="Im c2 = 0"),
                    Line2D([], [], color=COLOR_TRAD, ls="-", lw=1.0, label="1 sigma"),
