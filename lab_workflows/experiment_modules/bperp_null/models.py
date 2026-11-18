@@ -83,6 +83,17 @@ class BperpNullParams(ExperimentParams):
         description="data/z_waveforms/ 下的 .csv：注释行含 period_us（须等于脉冲周期），"
                     "其后 16384 行归一化电流，最大绝对值 1 对应 Z_PEAK_CURRENT_MA；可用 tools/make_z_waveform.py 生成。")
 
+    # ---- GS200 主磁场（提高残余 Bz）----
+    main_field_enabled: bool = parameter(default=False, external_name="MAIN_FIELD_ENABLED",
+        label="主磁场设定电流", group="basic",
+        description="关闭时 A02 关断 GS200 输出，残余 Bz 保持原样（以前的行为）；开启时 A02 按 MAIN_FIELD_CURRENT_MA "
+                    "设电流并打开输出，提高 |Bz| 以恢复 2f 判据较弱方向的灵敏度。A04 恢复 GS200 运行前状态。")
+    main_field_current_ma: float = parameter(default=0.0, external_name="MAIN_FIELD_CURRENT_MA", label="主磁场电流",
+        unit="mA", minimum=-20.0, maximum=20.0, safety_key="main_magnetic_field", active_when="MAIN_FIELD_ENABLED",
+        group="basic",
+        description="GS200 直流电流（mA，带符号）。约 11 kHz/mA（8.07 mA ≈ 90 kHz）；残余 Bz ≈ 1.4 kHz 方向未知，"
+                    "±0.40 mA 两种符号下合成 |Bz| 约 3.0 或 5.9 kHz。")
+
     # ---- MFLI 两个解调器 ----
     demod0_idx: int = parameter(default=0, external_name="DEMOD0_IDX", label="1f 解调器索引",
         read_only=True, description="固定为第 0 路，读 5 kHz（谐波 1）。")
@@ -210,6 +221,8 @@ class BperpNullParams(ExperimentParams):
             errors.append(f"Z_PULSE_WIDTH_US 不能超过半个脉冲周期 {self.pulse_half_period_us:g} µs")
         elif self.z_pulse_width_us < 2 * self.z_pulse_edge_us:
             errors.append("Z_PULSE_WIDTH_US 至少为两倍沿宽")
+        if self.main_field_enabled and (not math.isfinite(self.main_field_current_ma) or self.main_field_current_ma == 0.0):
+            errors.append("MAIN_FIELD_ENABLED 开启时 MAIN_FIELD_CURRENT_MA 必须是非零有限值")
         if self.z_waveform_from_file and not self.z_waveform_file.strip():
             errors.append("Z_WAVEFORM_FROM_FILE 开启时必须选择 Z_WAVEFORM_FILE")
         if self.z_peak_current_ma <= 0 or not math.isfinite(self.z_peak_current_ma):

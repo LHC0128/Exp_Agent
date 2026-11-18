@@ -10,7 +10,7 @@ FINISH_ID = "A04"
 RUN_ID = "A03"
 ANALYSIS_KEYS: tuple[str, ...] = ()
 # A02 建立链路、锁相、触发与初始 X/Y 偏置。
-CHAIN = ("X_BIAS_MV", "Y_BIAS_MV", "PULSE_FREQ_HZ", "AMPLIFIER_GAIN_DB",
+CHAIN = ("X_BIAS_MV", "Y_BIAS_MV", "MAIN_FIELD_ENABLED", "MAIN_FIELD_CURRENT_MA", "PULSE_FREQ_HZ", "AMPLIFIER_GAIN_DB",
          "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
          "AMPLIFIER_WRITE_SETTINGS", "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM",
          "COIL_RESISTANCE_OHM", "RESISTOR_RATED_W", "DEMOD0_IDX", "DEMOD1_IDX",
@@ -34,7 +34,7 @@ ACQUISITION = (
           quality_gates=("连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；"
                          "振荡器 0 = 脉冲频率，第 0 路谐波 1、第 1 路谐波 2，相位均 0 并回读；"
                          "按 X_BIAS_MV/Y_BIAS_MV 给 X、Y 线圈加 DC，Y 通道不出射频；"
-                         "GS200 主磁场输出回读为 OFF 才继续；DG 与 MFLI 参考时钟严格回读一致",)),
+                         "GS200 主磁场：MAIN_FIELD_ENABLED 关闭时输出回读为 OFF 才继续，开启时按 MAIN_FIELD_CURRENT_MA 设电流并回读电流与输出；DG 与 MFLI 参考时钟严格回读一致",)),
     Stage(RUN_ID, "X/Y 偏置网格测量（可勾选）", "测量", ("A02",), (*CHAIN, *SCAN),
           ("raw/bias_grid.csv", "experiment_config.yaml"),
           quality_gates=("上传内置 ±π 脉冲或选定波形文件，文件原样复制到 raw/z_waveform.csv 并记录 SHA-256；"

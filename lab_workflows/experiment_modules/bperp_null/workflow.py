@@ -24,7 +24,7 @@ class Workflow(StagedWorkflow):
     seal_after_run = False
     quality_errors = (preparation.SafetyAbort,)
     output_source = "最近成功写入的命令；1200B 无状态查询，主磁场关闭与参考时钟经回读"
-    finished_message = "会话已结束；功放 OFF、Z 通道 0 V、X/Y 偏置归零，温控与 GS200 已恢复"
+    finished_message = "会话已结束；功放 OFF、Z 通道 0 V、X/Y 偏置归零，温控与 GS200 已恢复运行前状态"
 
     def __init__(self, params, *, project_root=None, session_id=None):
         super().__init__(params, project_root=project_root, session_id=session_id)
@@ -44,7 +44,7 @@ class Workflow(StagedWorkflow):
         if item == "A02":
             preparation.connect(self)
             self.state["clock_sources"] = preparation.clocks(self)
-            preparation.disable_main_field(self)
+            preparation.configure_main_field(self)
             preparation.configure_chain(self)
             preparation.configure_lockin(self)
             preparation.configure_trigger(self)

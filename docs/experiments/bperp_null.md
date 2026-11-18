@@ -71,10 +71,17 @@ learned_notes:
 ## 阶段
 
 - **A01**：参数、映射与安全限值预检；脉宽不超过半个周期且不小于两倍沿宽；X/Y 网格非空；X/Y/Z 电平与 `z_pulse_coil_current` 在限内；两路解调器同速率且走 DAQ；用波形文件时按下节规则校验文件，电阻功耗按文件的 mean(v²) 计算（内置脉冲仍按占空比）。
-- **A02**：连接 DG、MFLI、1200B、GS200（TEC 可选）；严格回读参考时钟；写 1200B 增益/阻抗并配平 Z 负载；振荡器 0 = 脉冲频率，第 0 路谐波 1、第 1 路谐波 2，相位 0 并回读；按 `X_BIAS_MV`/`Y_BIAS_MV`（mV，后端换算成 V）给 X、Y 线圈加直流（Y 通道不出射频）；关闭 GS200 主磁场并回读；温控 ON。
+- **A02**：连接 DG、MFLI、1200B、GS200（TEC 可选）；严格回读参考时钟；写 1200B 增益/阻抗并配平 Z 负载；振荡器 0 = 脉冲频率，第 0 路谐波 1、第 1 路谐波 2，相位 0 并回读；按 `X_BIAS_MV`/`Y_BIAS_MV`（mV，后端换算成 V）给 X、Y 线圈加直流（Y 通道不出射频）；GS200 主磁场默认关闭并回读，`MAIN_FIELD_ENABLED` 开启时改为按 `MAIN_FIELD_CURRENT_MA` 设直流电流、回读电流后打开输出并回读（见下节）；温控 ON。
 - **A03**：先上传 Z 任意波并 arm 无限 burst（内置脉冲或波形文件；文件原样复制到 `raw/z_waveform.csv`，SHA-256 与注释头写入 `experiment_config.yaml` 的 `z_waveform`，复制前核对文件自上传后未被改动）；再在 `X_BIAS_MV`/`Y_BIAS_MV` 附近按 `X_SCAN_*`、`Y_SCAN_*` 偏移扫网格；每点先写 X/Y 偏置，再按温控分组关窗、等 `SYSTEM_SETTLE_S`、采 `SCAN_POINT_DURATION_S`；组末恢复温控并等待后落盘；写 `raw/bias_grid.csv`。
 - **A04**：安全收尾。
 - **B01**：按 (x,y) 聚合重复读数，复平面拟合 `c2 = a + b·x + c·y`，解 `c2 = 0` 得补偿电压与蒙特卡洛不确定度；对 `c1` 做同样拟合，给出 5 kHz 零点、两个零点之差与补偿点处的残余 `|c1|`；写 `results/null_summary.json`、`results/next_run.yaml`、`results/null_map.png`（2f）、`results/null_map_1f.png`（1f）、`results/component_maps.png`（2f/1f 并排）、`results/complex_plane.png`、`results/residuals.png`；图与摘要的横纵轴都用绝对补偿电压（mV），不是相对偏置的偏移。
+
+## 主磁场直流偏置（提高 |Bz|）
+
+拖尾补偿后，2f 雅可比较弱方向的灵敏度只剩基线的 0.3–0.5 倍。这一方向的灵敏度来自 z 向场：拖尾消除后，只剩残余 Bz ≈ 1.4 kHz。
+- `MAIN_FIELD_ENABLED` 开启时，A02 先快照 GS200 运行前状态，关闭输出，按 `MAIN_FIELD_CURRENT_MA`（mA，带符号，按 `main_magnetic_field` 安全限值校验）设电流。电流回读一致后才打开输出，输出回读为 ON 才继续；任一回读失败即中止，输出保持关闭。A04 恢复运行前状态。
+- 换算：约 11 kHz/mA（8.07 mA ≈ 90 kHz，2026-11-18 用户给出）。残余 Bz 的方向未知，所以取 ±0.40 mA：两种符号下合成 |Bz| 约 3.0 或 5.9 kHz。按模型，补偿波形下较弱方向灵敏度分别约为现状的 1.9 倍和 6.7 倍。
+- 关闭时（默认）行为与以前相同。
 
 ## Z 波形文件（拖尾补偿）
 
@@ -100,7 +107,7 @@ learned_notes:
 
 - 只测电压，不测电流；X/Y 线圈的 nT/V 常数未定，因此模型预言的 nT 级零点偏移暂不能换算成电压。
 - 5 kHz 通道可能含触发方波的电气拾取（理想 50% 方波没有偶次谐波，所以 10 kHz 判据受影响很小）；5 kHz 残余量只作指示量。
-- 残余 Bz 必须保持非零；Bz = 0 时 2f 判据会丢一个方向。
+- 残余 Bz 必须保持非零；Bz = 0 时 2f 判据会丢一个方向。主磁场电流选错符号可能把 |Bz| 抵消到接近零，所以电流大小要让两种符号下都远离零。
 
 ## 首轮实测记录（2026-11-18）
 

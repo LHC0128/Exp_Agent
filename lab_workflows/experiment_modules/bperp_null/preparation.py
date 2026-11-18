@@ -32,7 +32,7 @@ from .run_format import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, EXPERIMENT_ID, LOCKIN
 __all__ = [
     "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "BURST_NCYCLES", "SafetyAbort", "amplifier_safety_check",
     "arm_pulse", "clocks", "configure_bias", "configure_chain", "configure_lockin", "configure_trigger",
-    "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
+    "configure_main_field", "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
     "plan", "preflight", "resistor_power_w", "shutdown", "sleep", "z_output_text", "z_wave",
 ]
 
@@ -149,6 +149,8 @@ def preflight(params: BperpNullParams, root):
     validate_safety_limit(TEMP_SWITCH_KEY, TEMP_SWITCH_ON_V, limits)
     for current_a in (levels["pulse_peak_current_a"], -levels["pulse_peak_current_a"]):
         validate_safety_limit(CURRENT_LIMIT_KEY, current_a, limits)
+    if params.main_field_enabled:
+        validate_safety_limit(MAIN_FIELD_KEY, params.main_field_current_ma, limits)
 
     _wave, wave_record = z_wave(params, root)
     # 内置脉冲沿用按占空比（平顶近似，略偏保守）的原判据；波形文件按实际 mean(v²)。
@@ -340,6 +342,41 @@ def disable_main_field(ctx):
                                                current_limit_a=state.current_limit_a),
                                    output_after=False, restored_on_shutdown=True)
     ctx.outputs["主磁场"] = "OFF（已回读）"
+
+
+MAIN_FIELD_READBACK_TOL_A = 1e-6
+
+
+def configure_main_field(ctx):
+    """A02 的主磁场：MAIN_FIELD_ENABLED 关闭时关断输出（原行为）；开启时设定直流电流、打开输出并回读。
+
+    两种情况都先快照运行前状态，A04 由 restore_main_field_state 复原。
+    """
+    p = ctx.params
+    if not p.main_field_enabled:
+        disable_main_field(ctx)
+        return
+    gs200 = ctx.devices["gs200"]
+    if not ctx.mapping[MAIN_FIELD_KEY].get("resource"):
+        raise ValueError(f"{MAIN_FIELD_KEY} 缺少 GS200 resource")
+    validate_safety_limit(MAIN_FIELD_KEY, p.main_field_current_ma, load_safety_limits(ctx.root))
+    state = snapshot_main_field_state(gs200)
+    ctx.main_field_state = state
+    gs200.set_output(False)
+    gs200.set_current(p.main_field_current_ma / 1000.0)
+    readback_a = float(gs200.get_current())
+    if abs(readback_a - p.main_field_current_ma / 1000.0) > MAIN_FIELD_READBACK_TOL_A:
+        raise SafetyAbort(f"GS200 电流回读 {readback_a * 1e3:.6g} mA 与设定 {p.main_field_current_ma:g} mA 不一致；输出保持关闭")
+    gs200.set_output(True)
+    if not gs200.get_output():
+        raise SafetyAbort("GS200 主磁场输出未能打开；拒绝开始采集")
+    ctx.state["main_field"] = dict(before=dict(source_function=state.source_function,
+                                               current_a=state.current_a, output_on=state.output_on,
+                                               current_range_a=state.current_range_a,
+                                               current_limit_a=state.current_limit_a),
+                                   set_current_ma=p.main_field_current_ma, readback_current_ma=readback_a * 1e3,
+                                   output_after=True, restored_on_shutdown=True)
+    ctx.outputs["主磁场"] = f"ON，{p.main_field_current_ma:+g} mA（已回读）"
 
 
 def enable_temperature_switch(ctx):

@@ -12,7 +12,7 @@ DESCRIPTION = (
     "拖尾、α≠π 与拖尾横向分量随脉冲反号，主要进入 5 kHz 奇部。"
     "所以 10 kHz 复振幅 c2 = 0 即 B⊥ = 0，与 Bz、拖尾和脉宽无关。"
     "A02 连接 DG、MFLI、1200B、GS200：写 1200B 增益与阻抗、配平 Z 负载、配置两个解调器、"
-    "按 X_BIAS_MV/Y_BIAS_MV 给 X/Y 线圈加直流（UI 以 mV 输入，后端换算成 V）（Y 通道不出射频）、关闭 GS200 主磁场并回读、严格回读参考时钟。"
+    "按 X_BIAS_MV/Y_BIAS_MV 给 X/Y 线圈加直流（UI 以 mV 输入，后端换算成 V）（Y 通道不出射频）、GS200 主磁场默认关闭并回读（MAIN_FIELD_ENABLED 开启时改为按 MAIN_FIELD_CURRENT_MA 设直流电流并回读，用于提高 |Bz|）、严格回读参考时钟。"
     "A03 先上传 Z 任意波：默认内置 ±π 升余弦脉冲；Z_WAVEFORM_FROM_FILE 开启时上传 data/z_waveforms/ 下"
     "选定的一个周期波形文件（如拖尾补偿波形，峰值仍为 Z_PEAK_CURRENT_MA），原样复制到 raw/z_waveform.csv 并记录 SHA-256。"
     "随后在 X_BIAS_MV/Y_BIAS_MV 附近按各自 start/stop/step 扫 X/Y 偏移网格，每个点重复 N_REPEAT 次；"
@@ -69,7 +69,7 @@ DEFINITION = ExperimentDefinition(
     safety_notes=(
         "X_magnetic_field、Y_magnetic_field、Z_magnetic_field 与 z_pulse_coil_current 必须有有限上下界；"
         "脉冲峰值、触发电平与电阻功耗在连接前预检。",
-        "A02 关闭 GS200 主磁场输出并回读为 OFF 后才继续；主磁场原状态在 A04 恢复。",
+        "A02 默认关闭 GS200 主磁场输出并回读为 OFF 后才继续；MAIN_FIELD_ENABLED 开启时设定电流、回读电流与输出；主磁场原状态在 A04 恢复。",
         "A02 在功放输出关闭、信号源停输出时写增益与阻抗；带载改这些设置被安全回调拒绝。",
         "温控关闭窗口内不写任何文件；每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘，故障时先恢复温控再抢救已读数据。",
         "结束时先关 1200B 再把 Z 通道归零并关 burst/sync，X/Y 偏置归零；时序信号2 按共同触发保持运行。",
