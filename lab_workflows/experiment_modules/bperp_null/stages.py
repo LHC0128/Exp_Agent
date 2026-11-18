@@ -20,6 +20,7 @@ CHAIN = ("X_BIAS_MV", "Y_BIAS_MV", "MAIN_FIELD_ENABLED", "MAIN_FIELD_CURRENT_MA"
 SCAN = ("X_SCAN_START_MV", "X_SCAN_STOP_MV", "X_SCAN_STEP_MV",
         "Y_SCAN_START_MV", "Y_SCAN_STOP_MV", "Y_SCAN_STEP_MV",
         "Z_PEAK_CURRENT_MA", "Z_PULSE_EDGE_US", "Z_PULSE_WIDTH_US", "Z_WAVEFORM_FROM_FILE", "Z_WAVEFORM_FILE",
+        "XY_TAIL_COMP_ENABLED", "XY_TAIL_X_MV", "XY_TAIL_Y_MV", "XY_TAIL_TAU_E_US",
         "PULSE_FREQ_HZ",
         "N_REPEAT", "SCAN_POINT_DURATION_S", "SYSTEM_SETTLE_S", "TEMP_GROUP_SIZE",
         "TEMP_SWITCH_ON_LAG_S", "COIL_CONSTANT_HZ_PER_MA")
@@ -38,6 +39,7 @@ ACQUISITION = (
     Stage(RUN_ID, "X/Y 偏置网格测量（可勾选）", "测量", ("A02",), (*CHAIN, *SCAN),
           ("raw/bias_grid.csv", "experiment_config.yaml"),
           quality_gates=("上传内置 ±π 脉冲或选定波形文件，文件原样复制到 raw/z_waveform.csv 并记录 SHA-256；"
+                         "XY_TAIL_COMP_ENABLED 开启时 X/Y 在直流偏置上叠加与 Z 同步的补偿波形（外触发无限 burst），逐点只改 offset，偏置 ± 峰值在限内；"
                          "每个网格点写一次 X/Y 偏置；两路解调器在同一个 DAQ 采集里同时读 X/Y；"
                          "温控关闭窗口内只读不写盘，每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘；"
                          "取消保留已完成点",)),

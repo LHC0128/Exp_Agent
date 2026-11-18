@@ -96,4 +96,6 @@ def initial_metadata(p: BperpNullParams):
                            "x_offsets_mv": p.x_offsets_mv(), "y_offsets_mv": p.y_offsets_mv(),
                            "grid_points": len(p.scan_voltages()),
                            "z_waveform": ({"source": "file", "file": p.z_waveform_file} if p.z_waveform_from_file
-                                          else {"source": "builtin"})})
+                                          else {"source": "builtin"}),
+                           "xy_tail_comp": ({"x_mv": p.xy_tail_x_mv, "y_mv": p.xy_tail_y_mv, "tau_e_us": p.xy_tail_tau_e_us}
+                                            if p.xy_tail_comp_enabled else None)})

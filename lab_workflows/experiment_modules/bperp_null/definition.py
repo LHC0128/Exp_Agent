@@ -15,6 +15,7 @@ DESCRIPTION = (
     "按 X_BIAS_MV/Y_BIAS_MV 给 X/Y 线圈加直流（UI 以 mV 输入，后端换算成 V）（Y 通道不出射频）、GS200 主磁场默认关闭并回读（MAIN_FIELD_ENABLED 开启时改为按 MAIN_FIELD_CURRENT_MA 设直流电流并回读，用于提高 |Bz|）、严格回读参考时钟。"
     "A03 先上传 Z 任意波：默认内置 ±π 升余弦脉冲；Z_WAVEFORM_FROM_FILE 开启时上传 data/z_waveforms/ 下"
     "选定的一个周期波形文件（如拖尾补偿波形，峰值仍为 Z_PEAK_CURRENT_MA），原样复制到 raw/z_waveform.csv 并记录 SHA-256。"
+    "XY_TAIL_COMP_ENABLED 开启时，再给 X/Y 叠加与 Z 同步的横向补偿波形 A·x̂(t)（x̂ 为 Z 波形经 τe 低通，外触发无限 burst），网格逐点只改 offset。"
     "随后在 X_BIAS_MV/Y_BIAS_MV 附近按各自 start/stop/step 扫 X/Y 偏移网格，每个点重复 N_REPEAT 次；"
     "两路解调器在同一个 DAQ 采集里同时读 X/Y，温控关闭窗口内只读不写盘，组末恢复温控后落盘。"
     "A04 安全收尾：先关 1200B，Z 归零并关 burst/sync，X/Y 归零关输出，恢复温控与 GS200 原状态。"

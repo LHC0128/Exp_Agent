@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 from aigtek_1200b import Aigtek1200BInstrument
 from gs200 import GS200Instrument
 from lockin_amplifier import DemodulatorConfig, OscillatorConfig, SignalInputConfig, demod
@@ -31,7 +32,7 @@ from .run_format import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, EXPERIMENT_ID, LOCKIN
 
 __all__ = [
     "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "BURST_NCYCLES", "SafetyAbort", "amplifier_safety_check",
-    "arm_pulse", "clocks", "configure_bias", "configure_chain", "configure_lockin", "configure_trigger",
+    "arm_pulse", "arm_xy_tail", "set_xy_offset", "xy_extremes", "xy_tail_shape", "clocks", "configure_bias", "configure_chain", "configure_lockin", "configure_trigger",
     "configure_main_field", "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
     "plan", "preflight", "resistor_power_w", "shutdown", "sleep", "z_output_text", "z_wave",
 ]
@@ -76,6 +77,66 @@ def resistor_power_w(p: BperpNullParams, weight: float) -> float:
     """较大电阻上的平均功耗：I_peak² × weight × R；weight 为周期内归一化电流平方的均值（或其上界）。"""
     resistor = max(p.sense_resistor_ohm, p.damping_resistor_ohm)
     return (p.z_peak_current_ma * 1e-3) ** 2 * weight * resistor
+
+
+def xy_extremes(bias_v: float, amplitude_v: float) -> tuple[float, ...]:
+    """X/Y 通道在一个网格点上的输出极值：直流偏置 ± 补偿波形峰值（波形归一化到 ±1）。"""
+    return (bias_v,) if not amplitude_v else (bias_v - abs(amplitude_v), bias_v + abs(amplitude_v))
+
+
+def xy_tail_shape(p: BperpNullParams, root):
+    """由本轮将上传的 Z 波形算出 X/Y 补偿形状（峰值 1）与记录。"""
+    import hashlib
+    wave, _record = z_wave(p, root)
+    shape, raw_peak = z_waveform.slow_shape(wave, p.pulse_period_us, p.xy_tail_tau_e_us)
+    return shape, dict(tau_e_us=p.xy_tail_tau_e_us, raw_peak=raw_peak, points=int(len(shape)),
+                       sha256=hashlib.sha256(np.round(shape, 9).tobytes()).hexdigest())
+
+
+def arm_xy_tail(ctx) -> set:
+    """A03：在 X/Y 直流偏置上叠加补偿波形 A·x(t)/max|x|，外触发无限 burst；返回已改为任意波的轴。"""
+    p = ctx.params
+    amps = p.xy_tail_amplitudes_v()
+    if not amps:
+        return set()
+    signals, channels = ctx.devices["signals"], ctx.devices["channels"]
+    limits = load_safety_limits(ctx.root)
+    shape, record = xy_tail_shape(p, ctx.root)
+    biases = {"x": p.x_bias_v, "y": p.y_bias_v}
+    keys = {"x": X_KEY, "y": Y_KEY}
+    armed = set()
+    for axis, amp in amps.items():
+        for extreme in xy_extremes(biases[axis], amp):
+            validate_safety_limit(keys[axis], extreme, limits)
+        ch = channels[axis]
+        signals.set_output(False, channel=ch)
+        signals.setup_arbitrary(np.sign(amp) * shape, p.pulse_freq_hz, 2.0 * abs(amp), biases[axis],
+                                output=False, channel=ch)
+        signals.set_burst_mode("INFinity", channel=ch)
+        signals.set_burst_ncycles(BURST_NCYCLES, channel=ch)
+        signals.set_burst_trigger_source("EXTernal", channel=ch)
+        signals.set_burst_trigger_slope("POSitive", channel=ch)
+        signals.set_burst_phase(0.0, channel=ch)
+        signals.set_burst_state(True, channel=ch)
+        signals.set_output(True, channel=ch)
+        armed.add(axis)
+    ctx.state["xy_tail_comp"] = dict(record, x_mv=p.xy_tail_x_mv, y_mv=p.xy_tail_y_mv, armed=sorted(armed),
+                                     trigger="Time_sequence_2（外触发，无限 burst）")
+    for axis in sorted(armed):
+        ctx.outputs[f"{axis.upper()} 偏置"] = (f"DC {biases[axis]:+.6f} V + 补偿波形峰值 {amps[axis] * 1e3:+g} mV"
+                                              f"（τe {p.xy_tail_tau_e_us:g} µs，外触发）")
+    return armed
+
+
+def set_xy_offset(ctx, axis: str, bias_v: float) -> float:
+    """已叠加补偿波形的轴：校验 偏置 ± 峰值 后只改 offset，不切回直流模式。"""
+    p = ctx.params
+    key = X_KEY if axis == "x" else Y_KEY
+    limits = load_safety_limits(ctx.root)
+    for extreme in xy_extremes(bias_v, p.xy_tail_amplitudes_v()[axis]):
+        validate_safety_limit(key, extreme, limits)
+    ctx.devices["signals"].set_offset(bias_v, channel=ctx.devices["channels"][axis])
+    return bias_v
 
 
 def amplifier_safety_check(ctx):
@@ -141,9 +202,11 @@ def preflight(params: BperpNullParams, root):
         validate_safety_limit(SOURCE_KEY, value, limits)
     for key in (X_KEY, Y_KEY):
         validate_safety_limit(key, 0.0, limits)
+    amps = params.xy_tail_amplitudes_v()
     for _x_mv, _y_mv, x_v, y_v in params.scan_voltages():
-        validate_safety_limit(X_KEY, x_v, limits)
-        validate_safety_limit(Y_KEY, y_v, limits)
+        for key, axis, value in ((X_KEY, "x", x_v), (Y_KEY, "y", y_v)):
+            for extreme in xy_extremes(value, amps.get(axis, 0.0)):
+                validate_safety_limit(key, extreme, limits)
     for value in (0.0, TRIGGER_OFFSET_V - TRIGGER_VPP / 2.0, TRIGGER_OFFSET_V + TRIGGER_VPP / 2.0):
         validate_safety_limit(TRIGGER_KEY, value, limits)
     validate_safety_limit(TEMP_SWITCH_KEY, TEMP_SWITCH_ON_V, limits)
@@ -169,6 +232,16 @@ def preflight(params: BperpNullParams, root):
         raise ValueError(f"{SOURCE_KEY} 当前设备缺少 burst 能力 supports_infinite_burst")
     if signal_generator_max_arb_points(source) < ARB_POINTS:
         raise ValueError(f"{SOURCE_KEY} 的任意波点数上限小于 {ARB_POINTS} 点")
+    for axis, key in (("x", X_KEY), ("y", Y_KEY)):
+        if axis not in amps:
+            continue
+        caps = mapping[key].get("capabilities") or {}
+        if not caps.get("supports_arbitrary", False) or not caps.get("supports_infinite_burst", False):
+            raise ValueError(f"{key} 当前设备缺少任意波或无限 burst 能力，不能叠加横向补偿波形")
+        if signal_generator_max_arb_points(mapping[key]) < ARB_POINTS:
+            raise ValueError(f"{key} 的任意波点数上限小于 {ARB_POINTS} 点")
+    if amps:
+        xy_tail_shape(params, root)
     return params, mapping
 
 

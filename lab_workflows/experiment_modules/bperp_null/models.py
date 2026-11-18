@@ -83,6 +83,21 @@ class BperpNullParams(ExperimentParams):
         description="data/z_waveforms/ 下的 .csv：注释行含 period_us（须等于脉冲周期），"
                     "其后 16384 行归一化电流，最大绝对值 1 对应 Z_PEAK_CURRENT_MA；可用 tools/make_z_waveform.py 生成。")
 
+    # ---- X/Y 横向拖尾补偿 ----
+    xy_tail_comp_enabled: bool = parameter(default=False, external_name="XY_TAIL_COMP_ENABLED",
+        label="X/Y 横向拖尾补偿", group="basic",
+        description="关闭时 X/Y 只输出直流偏置（以前的行为）；开启时 A03 在直流偏置上叠加与 Z 同步的补偿波形 "
+                    "A·x̂(t)，x̂ 为上传的 Z 波形经 τe 低通、归一化到峰值 1，X/Y 由时序信号 2 外触发、无限 burst。")
+    xy_tail_x_mv: float = parameter(default=0.0, external_name="XY_TAIL_X_MV", label="X 补偿波形峰值",
+        unit="mV", minimum=-500.0, maximum=500.0, active_when="XY_TAIL_COMP_ENABLED", group="basic",
+        description="X 通道补偿波形的带符号峰值（mV）；0 表示 X 仍只出直流。")
+    xy_tail_y_mv: float = parameter(default=0.0, external_name="XY_TAIL_Y_MV", label="Y 补偿波形峰值",
+        unit="mV", minimum=-500.0, maximum=500.0, active_when="XY_TAIL_COMP_ENABLED", group="basic",
+        description="Y 通道补偿波形的带符号峰值（mV）；0 表示 Y 仍只出直流。")
+    xy_tail_tau_e_us: float = parameter(default=46.9, external_name="XY_TAIL_TAU_E_US", label="补偿形状时间常数",
+        unit="µs", minimum=1.0, maximum=1000.0, active_when="XY_TAIL_COMP_ENABLED",
+        description="生成 x̂(t) 的屏蔽时间常数 τe；46.9 µs 为模型值，2026-11-18 示波器时域确认。")
+
     # ---- GS200 主磁场（提高残余 Bz）----
     main_field_enabled: bool = parameter(default=False, external_name="MAIN_FIELD_ENABLED",
         label="主磁场设定电流", group="basic",
@@ -197,6 +212,12 @@ class BperpNullParams(ExperimentParams):
         return [(x, y, self.x_bias_v + x / 1000.0, self.y_bias_v + y / 1000.0)
                 for x in self.x_offsets_mv() for y in self.y_offsets_mv()]
 
+    def xy_tail_amplitudes_v(self) -> dict[str, float]:
+        """开启补偿时各轴的带符号峰值（V）；未开启或为 0 的轴不出现。"""
+        if not self.xy_tail_comp_enabled:
+            return {}
+        return {axis: value / 1000.0 for axis, value in (("x", self.xy_tail_x_mv), ("y", self.xy_tail_y_mv)) if value}
+
     def predicted_width_us(self, angle_pi: float = 1.0) -> float:
         area_us = angle_pi / (2.0 * self.coil_constant_hz_per_ma * self.z_peak_current_ma) * 1e6
         return area_us + self.z_pulse_edge_us
@@ -221,6 +242,11 @@ class BperpNullParams(ExperimentParams):
             errors.append(f"Z_PULSE_WIDTH_US 不能超过半个脉冲周期 {self.pulse_half_period_us:g} µs")
         elif self.z_pulse_width_us < 2 * self.z_pulse_edge_us:
             errors.append("Z_PULSE_WIDTH_US 至少为两倍沿宽")
+        if self.xy_tail_comp_enabled:
+            if not all(math.isfinite(v) for v in (self.xy_tail_x_mv, self.xy_tail_y_mv, self.xy_tail_tau_e_us)):
+                errors.append("XY_TAIL_X_MV / XY_TAIL_Y_MV / XY_TAIL_TAU_E_US 必须是有限数")
+            elif self.xy_tail_x_mv == 0.0 and self.xy_tail_y_mv == 0.0:
+                errors.append("XY_TAIL_COMP_ENABLED 开启时 XY_TAIL_X_MV 与 XY_TAIL_Y_MV 不能都为 0")
         if self.main_field_enabled and (not math.isfinite(self.main_field_current_ma) or self.main_field_current_ma == 0.0):
             errors.append("MAIN_FIELD_ENABLED 开启时 MAIN_FIELD_CURRENT_MA 必须是非零有限值")
         if self.z_waveform_from_file and not self.z_waveform_file.strip():

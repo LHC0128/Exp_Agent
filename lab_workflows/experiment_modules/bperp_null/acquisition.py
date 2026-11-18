@@ -183,12 +183,18 @@ def measure_grid(ctx):
             pending.add(_write_bytes, directory.raw / Path(run_format.Z_WAVEFORM_COPY).name, content)
             ctx.state["data_files"].append(run_format.Z_WAVEFORM_COPY)
             pending.add(directory.update_config, **ctx.state)
+        armed = preparation.arm_xy_tail(ctx)
+        if armed:
+            pending.add(directory.update_config, **ctx.state)
         for x_mv, y_mv, x_v, y_v in points:
             check_cancelled()
             validate_safety_limit(X_KEY, x_v, limits)
             validate_safety_limit(Y_KEY, y_v, limits)
-            _write_retry(lambda: configure_fixed_dc_field(signals, channels["x"], X_KEY, x_v))
-            _write_retry(lambda: configure_fixed_dc_field(signals, channels["y"], Y_KEY, y_v))
+            for axis, key, value in (("x", X_KEY, x_v), ("y", Y_KEY, y_v)):
+                if axis in armed:
+                    _write_retry(lambda: preparation.set_xy_offset(ctx, axis, value))
+                else:
+                    _write_retry(lambda: configure_fixed_dc_field(signals, channels[axis], key, value))
             for repeat in range(p.n_repeat):
                 check_cancelled()
                 if done % p.temp_group_size == 0:

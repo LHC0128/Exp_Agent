@@ -72,7 +72,7 @@ learned_notes:
 
 - **A01**：参数、映射与安全限值预检；脉宽不超过半个周期且不小于两倍沿宽；X/Y 网格非空；X/Y/Z 电平与 `z_pulse_coil_current` 在限内；两路解调器同速率且走 DAQ；用波形文件时按下节规则校验文件，电阻功耗按文件的 mean(v²) 计算（内置脉冲仍按占空比）。
 - **A02**：连接 DG、MFLI、1200B、GS200（TEC 可选）；严格回读参考时钟；写 1200B 增益/阻抗并配平 Z 负载；振荡器 0 = 脉冲频率，第 0 路谐波 1、第 1 路谐波 2，相位 0 并回读；按 `X_BIAS_MV`/`Y_BIAS_MV`（mV，后端换算成 V）给 X、Y 线圈加直流（Y 通道不出射频）；GS200 主磁场默认关闭并回读，`MAIN_FIELD_ENABLED` 开启时改为按 `MAIN_FIELD_CURRENT_MA` 设直流电流、回读电流后打开输出并回读（见下节）；温控 ON。
-- **A03**：先上传 Z 任意波并 arm 无限 burst（内置脉冲或波形文件；文件原样复制到 `raw/z_waveform.csv`，SHA-256 与注释头写入 `experiment_config.yaml` 的 `z_waveform`，复制前核对文件自上传后未被改动）；再在 `X_BIAS_MV`/`Y_BIAS_MV` 附近按 `X_SCAN_*`、`Y_SCAN_*` 偏移扫网格；每点先写 X/Y 偏置，再按温控分组关窗、等 `SYSTEM_SETTLE_S`、采 `SCAN_POINT_DURATION_S`；组末恢复温控并等待后落盘；写 `raw/bias_grid.csv`。
+- **A03**：先上传 Z 任意波并 arm 无限 burst（内置脉冲或波形文件；文件原样复制到 `raw/z_waveform.csv`，SHA-256 与注释头写入 `experiment_config.yaml` 的 `z_waveform`，复制前核对文件自上传后未被改动）；`XY_TAIL_COMP_ENABLED` 开启时再给 X/Y 叠加横向补偿波形（见下节）；再在 `X_BIAS_MV`/`Y_BIAS_MV` 附近按 `X_SCAN_*`、`Y_SCAN_*` 偏移扫网格（叠加了补偿波形的轴每点只改 offset）；每点先写 X/Y 偏置，再按温控分组关窗、等 `SYSTEM_SETTLE_S`、采 `SCAN_POINT_DURATION_S`；组末恢复温控并等待后落盘；写 `raw/bias_grid.csv`。
 - **A04**：安全收尾。
 - **B01**：按 (x,y) 聚合重复读数，复平面拟合 `c2 = a + b·x + c·y`，解 `c2 = 0` 得补偿电压与蒙特卡洛不确定度；对 `c1` 做同样拟合，给出 5 kHz 零点、两个零点之差与补偿点处的残余 `|c1|`；写 `results/null_summary.json`、`results/next_run.yaml`、`results/null_map.png`（2f）、`results/null_map_1f.png`（1f）、`results/component_maps.png`（2f/1f 并排）、`results/complex_plane.png`、`results/residuals.png`；图与摘要的横纵轴都用绝对补偿电压（mV），不是相对偏置的偏移。
 
@@ -82,6 +82,20 @@ learned_notes:
 - `MAIN_FIELD_ENABLED` 开启时，A02 先快照 GS200 运行前状态，关闭输出，按 `MAIN_FIELD_CURRENT_MA`（mA，带符号，按 `main_magnetic_field` 安全限值校验）设电流。电流回读一致后才打开输出，输出回读为 ON 才继续；任一回读失败即中止，输出保持关闭。A04 恢复运行前状态。
 - 换算：约 11 kHz/mA（8.07 mA ≈ 90 kHz，2026-11-18 用户给出）。残余 Bz 的方向未知，所以取 ±0.40 mA：两种符号下合成 |Bz| 约 3.0 或 5.9 kHz。按模型，补偿波形下较弱方向灵敏度分别约为现状的 1.9 倍和 6.7 倍。
 - 关闭时（默认）行为与以前相同。
+
+## X/Y 横向拖尾补偿
+
+屏蔽筒的慢场带有百分之几的横向分量（slow_tilt）。Z 波形补掉拖尾的 z 分量后，横向分量仍在，并会把 2f 零点带偏几十 mV。Z 补偿后，不论横向分量来自屏蔽筒磁化的方向偏离，还是来自涡流或线圈轴倾斜，脉冲后的横向场都与慢分量 x(t) 同形。所以在 X/Y 上叠加 A·x̂(t)，两个系数 A_x、A_y 调到使 2f 零点处的 c1 = 0，就能把它抵消。推导与模型验证见运行目录 `data/pi_width_scan/_pi_width_investigation_20261118/10_tail_compensation/结论.md` 附录 A。
+
+- `XY_TAIL_COMP_ENABLED` 开启后，A03 在上传 Z 波形之后，把 `XY_TAIL_X_MV`/`XY_TAIL_Y_MV` 不为 0 的轴改为任意波。
+  - 形状 x̂ = Z 驱动经 `XY_TAIL_TAU_E_US` 一阶周期低通，归一化到峰值 1，由代码从实际上传的 Z 波形算出，内置脉冲和波形文件都自动跟随。
+  - 带符号峰值 A 映射为 Vpp = 2|A|，A < 0 时上传 −x̂；offset 为当前偏置。
+  - 由时序信号 2 外触发无限 burst，与 Z 同一个触发沿。
+- 扫网格时叠加了补偿的轴每点只改 offset，不切回直流模式。预检与每次写入都按"偏置 ± |A|"校验 X/Y 限值，并检查 X/Y 信号源的任意波与无限 burst 能力。
+- 形状哈希、τe、两个幅度与已布置的轴写入 `experiment_config.yaml` 的 `xy_tail_comp`。A04 照旧关 burst、归零并关输出。
+- 前提：X/Y 所在信号源（DG4E261300664）的外触发接时序信号 2，且与 Z 所在信号源锁同一外部参考时钟（A02 严格回读）。
+- 关闭时（默认）行为与以前相同。
+- 标定方法：固定 Z 工作波形与主磁场，(A_x, A_y) 取 (0, 0)、(+a, 0)、(0, +a) 各测一次，每次在当前 2f 零点附近用小网格。零点处的 c1 对 A 是线性的，三个点即可解出 c1 = 0 的 (A_x, A_y)，再在解上复测确认。
 
 ## Z 波形文件（拖尾补偿）
 

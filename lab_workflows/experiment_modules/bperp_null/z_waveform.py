@@ -151,3 +151,20 @@ def write_waveform_file(path, values, header: dict) -> Path:
     lines += [f"{float(v):.8f}" for v in values]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
+
+
+def slow_shape(z_wave, period_us: float, tau_e_us: float) -> tuple[np.ndarray, float]:
+    """X/Y 横向补偿的形状：Z 驱动经 τe 周期一阶低通（屏蔽筒慢分量 x(t)），归一化到最大绝对值 1。
+
+    返回 (形状, 归一化前的最大绝对值)。脉冲后横向拖尾的时间形状与 x(t) 相同（推导见实验正文）。
+    """
+    z = np.asarray(z_wave, dtype=float)
+    if tau_e_us <= 0 or not np.isfinite(z).all():
+        raise ValueError("τe 须为正、Z 波形须为有限值")
+    n = len(z)
+    k = np.fft.rfftfreq(n, period_us / n) * 2 * np.pi
+    x = np.fft.irfft(np.fft.rfft(z) / (1 + 1j * k * tau_e_us), n)
+    peak = float(np.max(np.abs(x)))
+    if peak <= 0:
+        raise ValueError("Z 波形低通后为零，无法生成横向补偿形状")
+    return x / peak, peak
