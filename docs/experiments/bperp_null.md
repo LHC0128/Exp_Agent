@@ -70,11 +70,21 @@ learned_notes:
 
 ## 阶段
 
-- **A01**：参数、映射与安全限值预检；脉宽不超过半个周期且不小于两倍沿宽；X/Y 网格非空；X/Y/Z 电平与 `z_pulse_coil_current` 在限内；两路解调器同速率且走 DAQ。
+- **A01**：参数、映射与安全限值预检；脉宽不超过半个周期且不小于两倍沿宽；X/Y 网格非空；X/Y/Z 电平与 `z_pulse_coil_current` 在限内；两路解调器同速率且走 DAQ；用波形文件时按下节规则校验文件，电阻功耗按文件的 mean(v²) 计算（内置脉冲仍按占空比）。
 - **A02**：连接 DG、MFLI、1200B、GS200（TEC 可选）；严格回读参考时钟；写 1200B 增益/阻抗并配平 Z 负载；振荡器 0 = 脉冲频率，第 0 路谐波 1、第 1 路谐波 2，相位 0 并回读；按 `X_BIAS_MV`/`Y_BIAS_MV`（mV，后端换算成 V）给 X、Y 线圈加直流（Y 通道不出射频）；关闭 GS200 主磁场并回读；温控 ON。
-- **A03**：在 `X_BIAS_MV`/`Y_BIAS_MV` 附近按 `X_SCAN_*`、`Y_SCAN_*` 偏移扫网格；每点先写 X/Y 偏置，再按温控分组关窗、等 `SYSTEM_SETTLE_S`、采 `SCAN_POINT_DURATION_S`；组末恢复温控并等待后落盘；写 `raw/bias_grid.csv`。
+- **A03**：先上传 Z 任意波并 arm 无限 burst（内置脉冲或波形文件；文件原样复制到 `raw/z_waveform.csv`，SHA-256 与注释头写入 `experiment_config.yaml` 的 `z_waveform`，复制前核对文件自上传后未被改动）；再在 `X_BIAS_MV`/`Y_BIAS_MV` 附近按 `X_SCAN_*`、`Y_SCAN_*` 偏移扫网格；每点先写 X/Y 偏置，再按温控分组关窗、等 `SYSTEM_SETTLE_S`、采 `SCAN_POINT_DURATION_S`；组末恢复温控并等待后落盘；写 `raw/bias_grid.csv`。
 - **A04**：安全收尾。
 - **B01**：按 (x,y) 聚合重复读数，复平面拟合 `c2 = a + b·x + c·y`，解 `c2 = 0` 得补偿电压与蒙特卡洛不确定度；对 `c1` 做同样拟合，给出 5 kHz 零点、两个零点之差与补偿点处的残余 `|c1|`；写 `results/null_summary.json`、`results/next_run.yaml`、`results/null_map.png`（2f）、`results/null_map_1f.png`（1f）、`results/component_maps.png`（2f/1f 并排）、`results/complex_plane.png`、`results/residuals.png`；图与摘要的横纵轴都用绝对补偿电压（mV），不是相对偏置的偏移。
+
+## Z 波形文件（拖尾补偿）
+
+`Z_WAVEFORM_FROM_FILE` 关闭时 Z 输出内置 ±π 升余弦脉冲（与以前相同）；开启时上传 `Z_WAVEFORM_FILE`，下拉列出运行目录 `data/z_waveforms/` 下的 `*.csv`。
+
+- 用途：屏蔽筒使原子处 Z 场约 54% 瞬时出现、其余以 τe ≈ 47 µs 滞后（s_f ≈ 0.544）。在每个脉冲后接反号指数尾 −A·exp(−(t−w)/τc)，τc = s_f·τe，A 由模型精确给出，脉冲后的 z 场为零；峰值不变，π 宽度因此变长（190 mA 时约 7.93 µs）。原理与模型验证见运行目录 `data/pi_width_scan/_pi_width_investigation_20261118/10_tail_compensation/结论.md`。
+- 格式：UTF-8 文本；`# key: value` 注释行（必须有 `period_us`，建议有 `width_us`），其后正好 16384 行，一个周期的归一化电流，从 +脉冲上升沿起算；最大绝对值 1 对应 `Z_PEAK_CURRENT_MA`。DG4000 按 ±1 → ±Vpp/2 固定映射，不按内容重新缩放。
+- 预检拒绝：点数不等于 16384、含非有限值、最大绝对值不等于 1、首尾跳变超过 0.05、缺 `period_us` 或与脉冲周期不一致、`width_us` 与 `Z_PULSE_WIDTH_US` 不一致、文件名带路径。电流上限仍按 ±`Z_PEAK_CURRENT_MA` 校验。
+- 生成：`python tools/make_z_waveform.py --width 7.93 --s-f 0.544 --tau-e 46.9`（按模型给精确尾），或 `--tail-a 0.12 --tau-c 25.5` 直接给尾参数；`--tail-a 0` 得到与内置相同的脉冲。尾的周期叠加使最大值略高于主脉冲平顶（约 0.3%），注释 `normalization_scale` 记录该比例。
+- `bias_grid.csv` 的 `width_us` 列仍取 `Z_PULSE_WIDTH_US`，所以用文件时两者须一致。
 
 ## 运行序列
 

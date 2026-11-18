@@ -24,6 +24,7 @@ from ...steps import (DGChannelShutdown, DisconnectTarget, ShutdownAction, STAND
                       run_safety_shutdown, set_temperature_switch, snapshot_main_field_state,
                       synchronize_connected_clocks)
 from ...steps.coil_drive_chain import SafetyAbort, current_limit, set_amp_output, sleep
+from . import z_waveform
 from .models import ARB_POINTS, BperpNullParams
 from .run_format import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, EXPERIMENT_ID, LOCKIN_KEY, MAIN_FIELD_KEY,
                          REQUIRED_MAPPING_KEYS, SOURCE_KEY, TEC_KEY, TEMP_SWITCH_KEY, TRIGGER_KEY, X_KEY, Y_KEY)
@@ -32,7 +33,7 @@ __all__ = [
     "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "BURST_NCYCLES", "SafetyAbort", "amplifier_safety_check",
     "arm_pulse", "clocks", "configure_bias", "configure_chain", "configure_lockin", "configure_trigger",
     "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
-    "plan", "preflight", "shutdown", "sleep",
+    "plan", "preflight", "resistor_power_w", "shutdown", "sleep", "z_output_text", "z_wave",
 ]
 
 ARB_SAMPLE_RATE_CHECK = 500e6
@@ -52,6 +53,29 @@ def plan(p: BperpNullParams) -> dict:
                 pulse_peak_current_a=p.z_peak_current_ma * 1e-3,
                 pulse_period_us=p.pulse_period_us,
                 arb_sample_rate_sa_s=ARB_POINTS / (p.pulse_period_us * 1e-6))
+
+
+def z_wave(p: BperpNullParams, root):
+    """本轮要上传的一个周期 Z 波形（归一化 ±1）与记录；波形文件在此处做边界校验。"""
+    from ..z_chain_stability import processing as pulse_processing
+    if not p.z_waveform_from_file:
+        wave = pulse_processing.pulse_waveform(p.pulse_period_us, p.z_pulse_width_us, p.z_pulse_edge_us,
+                                               points=ARB_POINTS)
+        return wave, dict(source="builtin", width_us=p.z_pulse_width_us, edge_us=p.z_pulse_edge_us,
+                          mean_square=float((wave ** 2).mean()))
+    loaded = z_waveform.load_z_waveform(z_waveform.waveform_path(root, p.z_waveform_file),
+                                        points=ARB_POINTS, period_us=p.pulse_period_us)
+    if "width_us" in loaded.header:
+        file_width = float(loaded.header["width_us"])
+        if abs(file_width - p.z_pulse_width_us) > 1e-6:
+            raise ValueError(f"Z_PULSE_WIDTH_US={p.z_pulse_width_us:g} µs 与波形文件 width_us={file_width:g} µs 不一致")
+    return loaded.values, loaded.record()
+
+
+def resistor_power_w(p: BperpNullParams, weight: float) -> float:
+    """较大电阻上的平均功耗：I_peak² × weight × R；weight 为周期内归一化电流平方的均值（或其上界）。"""
+    resistor = max(p.sense_resistor_ohm, p.damping_resistor_ohm)
+    return (p.z_peak_current_ma * 1e-3) ** 2 * weight * resistor
 
 
 def amplifier_safety_check(ctx):
@@ -126,9 +150,11 @@ def preflight(params: BperpNullParams, root):
     for current_a in (levels["pulse_peak_current_a"], -levels["pulse_peak_current_a"]):
         validate_safety_limit(CURRENT_LIMIT_KEY, current_a, limits)
 
-    duty = 2.0 * params.z_pulse_width_us / params.pulse_period_us
-    resistor = max(params.sense_resistor_ohm, params.damping_resistor_ohm)
-    power = levels["pulse_peak_current_a"] ** 2 * duty * resistor
+    _wave, wave_record = z_wave(params, root)
+    # 内置脉冲沿用按占空比（平顶近似，略偏保守）的原判据；波形文件按实际 mean(v²)。
+    weight = (2.0 * params.z_pulse_width_us / params.pulse_period_us if wave_record["source"] == "builtin"
+              else wave_record["mean_square"])
+    power = resistor_power_w(params, weight)
     if power > params.resistor_rated_w / 2:
         raise ValueError(f"电阻平均功耗 {power:.3g} W 超过额定功率 {params.resistor_rated_w:g} W 的一半")
     if levels["arb_sample_rate_sa_s"] > ARB_SAMPLE_RATE_CHECK:
@@ -323,16 +349,15 @@ def enable_temperature_switch(ctx):
 
 
 def arm_pulse(ctx):
-    """上传本轮 ±π 双脉冲任意波并 arm 无限 burst；打开 1200B 输出。"""
-    from ..z_chain_stability import processing as pulse_processing
+    """上传本轮 Z 任意波（内置 ±π 双脉冲或波形文件）并 arm 无限 burst；打开 1200B 输出。"""
     p = ctx.params
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
     levels = plan(p)
     limits = load_safety_limits(ctx.root)
     for value in (0.0, levels["pulse_max_v"], levels["pulse_min_v"]):
         validate_safety_limit(SOURCE_KEY, value, limits)
-    wave = pulse_processing.pulse_waveform(p.pulse_period_us, p.z_pulse_width_us, p.z_pulse_edge_us,
-                                           points=ARB_POINTS)
+    wave, record = z_wave(p, ctx.root)
+    ctx.state["z_waveform"] = record
     signals.set_output(False, channel=channels["z"])
     signals.setup_arbitrary(wave, p.pulse_freq_hz, p.pulse_vpp, 0.0, output=False, channel=channels["z"])
     signals.set_burst_mode("INFinity", channel=channels["z"])
@@ -343,8 +368,14 @@ def arm_pulse(ctx):
     signals.set_burst_state(True, channel=channels["z"])
     signals.set_output(True, channel=channels["z"])
     set_amp_output(ctx, True)
-    ctx.outputs["Z 通道"] = (f"±π 双脉冲连续输出，周期 {p.pulse_period_us:g} µs、宽 {p.z_pulse_width_us:g} µs、"
-                             f"峰值 {p.z_peak_current_ma:g} mA、外触发 {p.pulse_freq_hz:g} Hz")
+    ctx.outputs["Z 通道"] = z_output_text(p, record)
+
+
+def z_output_text(p: BperpNullParams, record: dict) -> str:
+    shape = (f"波形文件 {record['file']}" if record.get("source") == "file"
+             else f"±π 双脉冲，宽 {p.z_pulse_width_us:g} µs")
+    return (f"{shape}连续输出，周期 {p.pulse_period_us:g} µs、峰值 {p.z_peak_current_ma:g} mA、"
+            f"外触发 {p.pulse_freq_hz:g} Hz")
 
 
 def _unique_source_routes(ctx):

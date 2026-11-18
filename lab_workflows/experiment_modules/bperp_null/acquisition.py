@@ -7,6 +7,7 @@ DAQ 采集里同时订阅，保证 1f 与 2f 的读数来自同一段时间。
 from __future__ import annotations
 
 import csv
+import hashlib
 import math
 import time
 from datetime import datetime
@@ -19,7 +20,7 @@ from lockin_amplifier.daq import DAQCollector
 from ...common import load_safety_limits, validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import DeferredAcquisitionWrites, configure_fixed_dc_field, set_temperature_switch
-from . import preparation, run_format
+from . import preparation, run_format, z_waveform
 from .run_format import SOURCE_KEY, TEC_KEY, X_KEY, Y_KEY
 
 MIN_POINT_SAMPLES = 8
@@ -107,6 +108,20 @@ def _append_row(path, row):
         writer.writerow(row)
 
 
+def _waveform_bytes(root, name, sha256):
+    """读取已上传波形文件的原始字节；与上传时的哈希不一致则拒绝（文件在上传后被改动）。"""
+    content = z_waveform.waveform_path(root, name).read_bytes()
+    if hashlib.sha256(content).hexdigest() != sha256:
+        raise RuntimeError("Z 波形文件在上传后被改动，拒绝继续；请重新运行")
+    return content
+
+
+def _write_bytes(path, content):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+
+
 def _write_retry(action, attempts=3, delay_s=0.2):
     """DG 的 VISA 写偶发超时；这些写是幂等的，做有界重试后再上抛。"""
     last = None
@@ -162,6 +177,12 @@ def measure_grid(ctx):
         ctx.state["data_files"].append(run_format.GRID_FILE)
         pending.add(directory.update_config, **ctx.state)
         preparation.arm_pulse(ctx)
+        record = ctx.state.get("z_waveform") or {}
+        if record.get("source") == "file":
+            content = _waveform_bytes(ctx.root, p.z_waveform_file, record["sha256"])
+            pending.add(_write_bytes, directory.raw / Path(run_format.Z_WAVEFORM_COPY).name, content)
+            ctx.state["data_files"].append(run_format.Z_WAVEFORM_COPY)
+            pending.add(directory.update_config, **ctx.state)
         for x_mv, y_mv, x_v, y_v in points:
             check_cancelled()
             validate_safety_limit(X_KEY, x_v, limits)

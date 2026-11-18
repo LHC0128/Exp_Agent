@@ -72,7 +72,16 @@ class BperpNullParams(ExperimentParams):
     z_pulse_width_us: float = parameter(default=6.6, external_name="Z_PULSE_WIDTH_US", label="脉冲宽度",
         unit="µs", minimum=1e-3, group="basic",
         description="本轮 Z 向单个脉冲的宽度；默认 6.6 µs 是当前装置的工作点，判据不要求严格 π。"
-                    "脉宽对照通过不同轮次完成。")
+                    "脉宽对照通过不同轮次完成。使用波形文件时须与文件注释里的 width_us 一致。")
+    z_waveform_from_file: bool = parameter(default=False, external_name="Z_WAVEFORM_FROM_FILE",
+        label="Z 使用波形文件", group="basic",
+        description="关闭时 Z 输出内置 ±π 升余弦脉冲；开启时上传 Z_WAVEFORM_FILE 选定的一个周期任意波"
+                    "（例如带拖尾补偿尾的脉冲），峰值仍为 Z_PEAK_CURRENT_MA。")
+    z_waveform_file: str = parameter(default="", external_name="Z_WAVEFORM_FILE", label="Z 波形文件",
+        group="basic", options_from_directory="data/z_waveforms", options_pattern="*.csv",
+        active_when="Z_WAVEFORM_FROM_FILE",
+        description="data/z_waveforms/ 下的 .csv：注释行含 period_us（须等于脉冲周期），"
+                    "其后 16384 行归一化电流，最大绝对值 1 对应 Z_PEAK_CURRENT_MA；可用 tools/make_z_waveform.py 生成。")
 
     # ---- MFLI 两个解调器 ----
     demod0_idx: int = parameter(default=0, external_name="DEMOD0_IDX", label="1f 解调器索引",
@@ -201,6 +210,8 @@ class BperpNullParams(ExperimentParams):
             errors.append(f"Z_PULSE_WIDTH_US 不能超过半个脉冲周期 {self.pulse_half_period_us:g} µs")
         elif self.z_pulse_width_us < 2 * self.z_pulse_edge_us:
             errors.append("Z_PULSE_WIDTH_US 至少为两倍沿宽")
+        if self.z_waveform_from_file and not self.z_waveform_file.strip():
+            errors.append("Z_WAVEFORM_FROM_FILE 开启时必须选择 Z_WAVEFORM_FILE")
         if self.z_peak_current_ma <= 0 or not math.isfinite(self.z_peak_current_ma):
             errors.append("Z_PEAK_CURRENT_MA 必须为正")
         for name, values in (("X", (self.x_bias_mv, self.x_scan_start_mv, self.x_scan_stop_mv, self.x_scan_step_mv)),

@@ -19,14 +19,17 @@ CHAIN = ("X_BIAS_MV", "Y_BIAS_MV", "PULSE_FREQ_HZ", "AMPLIFIER_GAIN_DB",
 # A03 逐点写 X/Y 偏置并按温控分组采集。
 SCAN = ("X_SCAN_START_MV", "X_SCAN_STOP_MV", "X_SCAN_STEP_MV",
         "Y_SCAN_START_MV", "Y_SCAN_STOP_MV", "Y_SCAN_STEP_MV",
-        "Z_PEAK_CURRENT_MA", "Z_PULSE_EDGE_US", "Z_PULSE_WIDTH_US", "PULSE_FREQ_HZ",
+        "Z_PEAK_CURRENT_MA", "Z_PULSE_EDGE_US", "Z_PULSE_WIDTH_US", "Z_WAVEFORM_FROM_FILE", "Z_WAVEFORM_FILE",
+        "PULSE_FREQ_HZ",
         "N_REPEAT", "SCAN_POINT_DURATION_S", "SYSTEM_SETTLE_S", "TEMP_GROUP_SIZE",
         "TEMP_SWITCH_ON_LAG_S", "COIL_CONSTANT_HZ_PER_MA")
 ACQUISITION = (
     Stage("A01", "参数、映射与安全限值预检", "准备", (), ("RUN_TAG",), display_parameters=("RUN_TAG",),
           quality_gates=("不连接硬件；脉宽不超过半个周期且不小于两倍沿宽；X/Y 网格非空；"
                          "X_magnetic_field、Y_magnetic_field、Z 通道电平与 z_pulse_coil_current 全部在限内；"
-                         "两路解调器同速率且走 DAQ，MFLI 至少有 2 个解调器",)),
+                         "两路解调器同速率且走 DAQ，MFLI 至少有 2 个解调器；"
+                         "用波形文件时校验 16384 点、有限、最大绝对值 1、首尾连续、period_us 与脉冲周期一致、"
+                         "width_us 与 Z_PULSE_WIDTH_US 一致，电阻功耗按文件 mean(v²) 计算",)),
     Stage("A02", "连接 DG、MFLI、1200B、GS200 并同步时钟", "准备", ("A01",), CHAIN,
           quality_gates=("连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；"
                          "振荡器 0 = 脉冲频率，第 0 路谐波 1、第 1 路谐波 2，相位均 0 并回读；"
@@ -34,7 +37,8 @@ ACQUISITION = (
                          "GS200 主磁场输出回读为 OFF 才继续；DG 与 MFLI 参考时钟严格回读一致",)),
     Stage(RUN_ID, "X/Y 偏置网格测量（可勾选）", "测量", ("A02",), (*CHAIN, *SCAN),
           ("raw/bias_grid.csv", "experiment_config.yaml"),
-          quality_gates=("每个网格点写一次 X/Y 偏置；两路解调器在同一个 DAQ 采集里同时读 X/Y；"
+          quality_gates=("上传内置 ±π 脉冲或选定波形文件，文件原样复制到 raw/z_waveform.csv 并记录 SHA-256；"
+                         "每个网格点写一次 X/Y 偏置；两路解调器在同一个 DAQ 采集里同时读 X/Y；"
                          "温控关闭窗口内只读不写盘，每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘；"
                          "取消保留已完成点",)),
     Stage(FINISH_ID, "安全结束会话", "结束", (),
