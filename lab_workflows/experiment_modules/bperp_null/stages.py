@@ -43,8 +43,8 @@ ACQUISITION = (
 )
 ANALYSIS = (
     Stage("B01", "复平面拟合与零点", "独立分析", (), ANALYSIS_KEYS,
-          artifacts=("null_summary.json", "next_run.yaml", "null_map.png", "complex_plane.png",
-                     "residuals.png"),
+          artifacts=("null_summary.json", "next_run.yaml", "null_map.png", "null_map_1f.png",
+                     "component_maps.png", "complex_plane.png", "residuals.png"),
           quality_gates=("运行目录已停止写入；按 (x,y) 聚合重复读数并做复数平面拟合；"
                          "解 c2=0 得补偿电压与蒙特卡洛不确定度；同法给 5 kHz 零点与补偿点残余 |c1|；"
                          "信号不足时在摘要中标记 signal_ok=false",)),

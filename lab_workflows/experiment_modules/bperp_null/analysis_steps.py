@@ -204,8 +204,11 @@ def scan_report(run_dir, params: BperpNullParams):
     (results / "next_run.yaml").write_text(yaml.safe_dump(next_run, allow_unicode=True, sort_keys=False),
                                            encoding="utf-8")
     bias_mv = (params.x_bias_mv, params.y_bias_mv)
-    _plot_null_map(run_dir, x_mv, y_mv, c2, fit2, null2,
-                   noise_mv=float(np.median(np.abs(sem2))) * 1000.0, bias_mv=bias_mv)
+    _plot_null_map(run_dir, x_mv, y_mv, c2, fit2, null2, filename="results/null_map.png",
+                   label="c2 (10 kHz)", bias_mv=bias_mv)
+    _plot_null_map(run_dir, x_mv, y_mv, c1, fit1, null1, filename="results/null_map_1f.png",
+                   label="c1 (5 kHz)", bias_mv=bias_mv)
+    _plot_component_maps(run_dir, x_mv, y_mv, c2, fit2, null2, c1, fit1, null1, bias_mv)
     _plot_complex_plane(run_dir, x_mv, y_mv, c2, fit2)
     _plot_residuals(run_dir, x_mv, y_mv, fit2, bias_mv=bias_mv)
     return _jsonable(summary)
@@ -235,72 +238,80 @@ def _ellipse(axis, center, covariance, n_sigma, color, linestyle):
                            edgecolor=color, linestyle=linestyle, lw=1.0, zorder=5))
 
 
-def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null, noise_mv, bias_mv):
-    """二维零点图：|c2| 底图 + Re/Im 零线 + 零点与 1σ/2σ 椭圆；横纵轴为绝对补偿电压。"""
+def _draw_null_panel(axis, figure, x_mv, y_mv, values, fit, null, label, bias_mv, fontsize=7,
+                     colorbar_label=None):
+    """在 axes 上画一个分量的零点图；横纵轴与零点都用绝对补偿电压（mV）。"""
+    from ...plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis
+    a, b, c = fit["coef"][0], fit["coef"][1], fit["coef"][2]
+    x_abs, y_abs = x_mv + bias_mv[0], y_mv + bias_mv[1]
+    margin_x = max(1.0, 0.15 * (x_abs.max() - x_abs.min()))
+    margin_y = max(1.0, 0.15 * (y_abs.max() - y_abs.min()))
+    xx = np.linspace(x_abs.min() - margin_x, x_abs.max() + margin_x, 220)
+    yy = np.linspace(y_abs.min() - margin_y, y_abs.max() + margin_y, 220)
+    mesh_x, mesh_y = np.meshgrid(xx, yy)
+    plane = a + b * (mesh_x - bias_mv[0]) + c * (mesh_y - bias_mv[1])
+    magnitude_mv = np.abs(plane) * 1000.0
+    center = (bias_mv[0] + null["offset_mv"][0], bias_mv[1] + null["offset_mv"][1])
+    pad_x = max(4.0, 0.35 * (x_abs.max() - x_abs.min()))
+    pad_y = max(4.0, 0.35 * (y_abs.max() - y_abs.min()))
+    span_x = max(1.0, x_abs.max() - x_abs.min())
+    span_y = max(1.0, y_abs.max() - y_abs.min())
+    view_x = (max(min(x_abs.min(), center[0]) - pad_x, x_abs.min() - span_x),
+              min(max(x_abs.max(), center[0]) + pad_x, x_abs.max() + span_x))
+    view_y = (max(min(y_abs.min(), center[1]) - pad_y, y_abs.min() - span_y),
+              min(max(y_abs.max(), center[1]) + pad_y, y_abs.max() + span_y))
+    axis.set_facecolor("0.93")
+    image = axis.pcolormesh(mesh_x, mesh_y, magnitude_mv, shading="auto", cmap="Blues", alpha=0.65)
+    colorbar = figure.colorbar(image, ax=axis, pad=0.02)
+    colorbar.set_label(colorbar_label or f"|{label}| (mV)")
+    line_x = np.linspace(view_x[0], view_x[1], 2)
+    if abs(c.imag) > 1e-15:
+        axis.plot(line_x, bias_mv[1] - (a.imag + b.imag * (line_x - bias_mv[0])) / c.imag,
+                  "-", color="k", lw=1.1)
+    if abs(c.real) > 1e-15:
+        axis.plot(line_x, bias_mv[1] - (a.real + b.real * (line_x - bias_mv[0])) / c.real,
+                  "--", color="k", lw=1.1)
+    axis.scatter(x_abs, y_abs, s=14, facecolors="white", edgecolors="0.25", linewidths=0.6, zorder=4)
+    _ellipse(axis, center, null["cov_offset_mv"], 2.0, COLOR_TRAD, "--")
+    _ellipse(axis, center, null["cov_offset_mv"], 1.0, COLOR_TRAD, "-")
+    axis.plot(center[0], center[1], marker="*", ms=12, color=COLOR_OPTIMAL, markeredgecolor="k",
+              markeredgewidth=0.4, zorder=6)
+    axis.set_xlim(*view_x)
+    axis.set_ylim(*view_y)
+    sigma = null["sigma_offset_mv"]
+    outside = not (x_mv.min() <= null["offset_mv"][0] <= x_mv.max()
+                   and y_mv.min() <= null["offset_mv"][1] <= y_mv.max())
+    suffix = "  [outside grid]" if outside else ""
+    axis.set_title(f"{label} null ({center[0]:.2f}, {center[1]:.2f}) mV{suffix.replace('  [outside grid]', ' [outside]')}\n"
+                   f"sigma ({sigma[0]:.3f}, {sigma[1]:.3f}) mV, {_zero_line_angle(fit):.1f} deg",
+                   fontsize=fontsize)
+    format_axis(axis, xlabel="X compensation voltage (mV)", ylabel="Y compensation voltage (mV)")
+
+
+def _plot_null_map(run_dir, x_mv, y_mv, values, fit, null, *, filename, label, bias_mv):
     import matplotlib
     matplotlib.use("Agg")
-    from matplotlib.lines import Line2D
     from ...plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context, save_figure
 
-    a, b, c = fit["coef"][0], fit["coef"][1], fit["coef"][2]
-    bx, by = float(bias_mv[0]), float(bias_mv[1])
-    margin_x = max(1.0, 0.15 * (x_mv.max() - x_mv.min()))
-    margin_y = max(1.0, 0.15 * (y_mv.max() - y_mv.min()))
-    xx = np.linspace(x_mv.min() - margin_x, x_mv.max() + margin_x, 240)
-    yy = np.linspace(y_mv.min() - margin_y, y_mv.max() + margin_y, 240)
-    mesh_x, mesh_y = np.meshgrid(xx, yy)
-    plane = a + b * mesh_x + c * mesh_y
-    magnitude_mv = np.abs(plane) * 1000.0
-    center = null["offset_mv"]
-    center_abs = (bx + center[0], by + center[1])
-    pad_x = max(4.0, 0.35 * (x_mv.max() - x_mv.min()))
-    pad_y = max(4.0, 0.35 * (y_mv.max() - y_mv.min()))
-    view_x = (min(x_mv.min(), center[0]) - pad_x, max(x_mv.max(), center[0]) + pad_x)
-    view_y = (min(y_mv.min(), center[1]) - pad_y, max(y_mv.max(), center[1]) + pad_y)
-    line_x = np.linspace(view_x[0], view_x[1], 2)
     with plot_style_context("paper"):
         figure, axis = new_figure()
-        axis.set_facecolor("0.93")
-        image = axis.pcolormesh(mesh_x + bx, mesh_y + by, magnitude_mv, shading="auto", cmap="Blues", alpha=0.65)
-        colorbar = figure.colorbar(image, ax=axis, pad=0.02)
-        colorbar.set_label("|c2| (mV)")
-        # 实零线与虚零线用解析式画满整个视窗，外推段也可见。
-        if abs(c.imag) > 1e-15:
-            axis.plot(line_x + bx, -(a.imag + b.imag * line_x) / c.imag + by, "-", color="k", lw=1.1)
-        if abs(c.real) > 1e-15:
-            axis.plot(line_x + bx, -(a.real + b.real * line_x) / c.real + by, "--", color="k", lw=1.1)
-        levels = [value for value in (1.0, 3.0) if value < magnitude_mv.max()]
-        noise_level = 10.0 * noise_mv
-        if 0.1 <= noise_level < min(levels or [1.0]):
-            levels.append(noise_level)
-        levels = sorted(levels)
-        if levels:
-            contours = axis.contour(mesh_x + bx, mesh_y + by, magnitude_mv, levels=levels, colors="0.3",
-                                    linewidths=0.8, linestyles=":")
-            labelled = [value for value in levels if abs(value - noise_level) > 1e-9]
-            if labelled:
-                axis.clabel(contours, levels=labelled, inline=True, fontsize=6, fmt="%g mV")
-        axis.scatter(x_mv + bx, y_mv + by, s=16, facecolors="white", edgecolors="0.25", linewidths=0.6, zorder=4)
-        axis.set_xlim(view_x[0] + bx, view_x[1] + bx)
-        axis.set_ylim(view_y[0] + by, view_y[1] + by)
-        _ellipse(axis, center_abs, null["cov_offset_mv"], 2.0, COLOR_TRAD, "--")
-        _ellipse(axis, center_abs, null["cov_offset_mv"], 1.0, COLOR_TRAD, "-")
-        axis.plot(center_abs[0], center_abs[1], marker="*", ms=13, color=COLOR_OPTIMAL, markeredgecolor="k",
-                  markeredgewidth=0.4, zorder=6)
-        format_axis(axis, xlabel="X compensation voltage (mV)", ylabel="Y compensation voltage (mV)")
-        sigma = null["sigma_offset_mv"]
-        outside = not (x_mv.min() <= center[0] <= x_mv.max() and y_mv.min() <= center[1] <= y_mv.max())
-        suffix = "  [OUTSIDE GRID]" if outside else ""
-        axis.set_title(f"null = ({center_abs[0]:.2f}, {center_abs[1]:.2f}) mV, "
-                       f"sigma = ({sigma[0]:.3f}, {sigma[1]:.3f}) mV{suffix}\n"
-                       f"zero-line angle = {_zero_line_angle(fit):.1f} deg; dotted |c2| = 1, 3 mV", fontsize=7)
-        handles = [Line2D([], [], color="k", ls="-", lw=1.1, label="Re c2 = 0"),
-                   Line2D([], [], color="k", ls="--", lw=1.1, label="Im c2 = 0"),
-                   Line2D([], [], color=COLOR_TRAD, ls="-", lw=1.0, label="1 sigma"),
-                   Line2D([], [], color=COLOR_TRAD, ls="--", lw=1.0, label="2 sigma")]
-        axis.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.16),
-                    ncol=2, fontsize=7, frameon=False)
-        save_figure(figure, output_path(run_dir, "results/null_map.png"))
+        _draw_null_panel(axis, figure, x_mv, y_mv, values, fit, null, label, bias_mv)
+        save_figure(figure, output_path(run_dir, filename))
+
+
+def _plot_component_maps(run_dir, x_mv, y_mv, c2, fit2, null2, c1, fit1, null1, bias_mv):
+    """2f 与 1f 两张零点图并排，便于直接比较两个零点。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    from ...plotting import new_figure, plot_style_context, save_figure
+
+    with plot_style_context("paper"):
+        figure, axes = new_figure(ncols=2)
+        _draw_null_panel(axes[0], figure, x_mv, y_mv, c2, fit2, null2, "2f", bias_mv, fontsize=6.5,
+                         colorbar_label="|c2| at 10 kHz (mV)")
+        _draw_null_panel(axes[1], figure, x_mv, y_mv, c1, fit1, null1, "1f", bias_mv, fontsize=6.5,
+                         colorbar_label="|c1| at 5 kHz (mV)")
+        save_figure(figure, output_path(run_dir, "results/component_maps.png"))
 
 
 def _plot_complex_plane(run_dir, x_mv, y_mv, c2, fit):
