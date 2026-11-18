@@ -107,6 +107,19 @@ def _append_row(path, row):
         writer.writerow(row)
 
 
+def _write_retry(action, attempts=3, delay_s=0.2):
+    """DG 的 VISA 写偶发超时；这些写是幂等的，做有界重试后再上抛。"""
+    last = None
+    for attempt in range(attempts):
+        try:
+            return action()
+        except Exception as exc:  # noqa: BLE001 - 保留最后一次原始异常
+            last = exc
+            if attempt + 1 < attempts:
+                preparation.sleep(delay_s)
+    raise last
+
+
 def _read_temperature_c(ctx):
     tec = ctx.devices.get("tec")
     if tec is None:
@@ -153,12 +166,12 @@ def measure_grid(ctx):
             check_cancelled()
             validate_safety_limit(X_KEY, x_v, limits)
             validate_safety_limit(Y_KEY, y_v, limits)
-            configure_fixed_dc_field(signals, channels["x"], X_KEY, x_v)
-            configure_fixed_dc_field(signals, channels["y"], Y_KEY, y_v)
+            _write_retry(lambda: configure_fixed_dc_field(signals, channels["x"], X_KEY, x_v))
+            _write_retry(lambda: configure_fixed_dc_field(signals, channels["y"], Y_KEY, y_v))
             for repeat in range(p.n_repeat):
                 check_cancelled()
                 if done % p.temp_group_size == 0:
-                    set_temperature_switch(signals, False, channel=channels["temp"])
+                    _write_retry(lambda: set_temperature_switch(signals, False, channel=channels["temp"]))
                 preparation.sleep(p.system_settle_s)
                 meta = _acquire_point(ctx, config, rate)
                 temperature_c = _read_temperature_c(ctx)
@@ -174,7 +187,7 @@ def measure_grid(ctx):
                 ctx.state["scan_reads_completed"] = done
                 pending.add(directory.update_config, **ctx.state)
                 if done % p.temp_group_size == 0 or done == total:
-                    set_temperature_switch(signals, True, channel=channels["temp"])
+                    _write_retry(lambda: set_temperature_switch(signals, True, channel=channels["temp"]))
                     preparation.sleep(p.temp_switch_on_lag_s)
                     pending.flush()
                 _progress(done, total, started)
