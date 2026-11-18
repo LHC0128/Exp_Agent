@@ -162,6 +162,15 @@ def scan_report(run_dir, params: BperpNullParams):
         raise ValueError("复平面拟合退化，无法解零点；请扩大扫描范围或检查信号")
     signal_ok = bool(np.max(np.abs(c2 - fit2["coef"][0])) > 4.0 * max(float(np.median(np.abs(sem2))), 1e-9))
     angle_deg = _zero_line_angle(fit2)
+    outside = not (x_mv.min() <= null2["offset_mv"][0] <= x_mv.max()
+                   and y_mv.min() <= null2["offset_mv"][1] <= y_mv.max())
+    if outside:
+        outside = {
+            "x": bool(null2["offset_mv"][0] < x_mv.min() or null2["offset_mv"][0] > x_mv.max()),
+            "y": bool(null2["offset_mv"][1] < y_mv.min() or null2["offset_mv"][1] > y_mv.max()),
+            "distance_mv": [float(max(0.0, x_mv.min() - null2["offset_mv"][0], null2["offset_mv"][0] - x_mv.max())),
+                            float(max(0.0, y_mv.min() - null2["offset_mv"][1], null2["offset_mv"][1] - y_mv.max()))],
+        }
     summary = dict(
         experiment_id=run_dir.name, width_us=params.z_pulse_width_us,
         x_bias_mv=params.x_bias_mv, y_bias_mv=params.y_bias_mv,
@@ -169,6 +178,7 @@ def scan_report(run_dir, params: BperpNullParams):
         x_offsets_mv=[float(v) for v in x_mv], y_offsets_mv=[float(v) for v in y_mv],
         grid_points=int(len(x_mv)), repeats=int(params.n_repeat),
         zero_line_angle_deg=angle_deg,
+        null_outside_grid=outside,
         c2=dict(null=null2, residual_rms_v=fit2["residual_rms"], residual_max_v=fit2["residual_max"],
                 sem_median_v=float(np.median(np.abs(sem2))), signal_ok=signal_ok),
         c1=dict(null=null1, residual_rms_v=fit1["residual_rms"], residual_max_v=fit1["residual_max"],
@@ -178,7 +188,8 @@ def scan_report(run_dir, params: BperpNullParams):
         noise_v=dict(c2_sem_median=float(np.median(np.abs(sem2))), c1_sem_median=float(np.median(np.abs(sem1)))),
         method="复平面拟合 c=a+b·x+c·y（x、y 为相对 X_BIAS_MV/Y_BIAS_MV 的 mV），取 c=0；"
                "不确定度为参数协方差蒙特卡洛",
-        notes="未做线圈常数换算；5 kHz 零点与 2f 零点之差只作残余奇部（拖尾横向分量）的指示量。")
+        notes=("未做线圈常数换算；5 kHz 零点与 2f 零点之差只作残余奇部（拖尾横向分量）的指示量。"
+               + (" 零点落在扫描范围外，结果为线性外推，系统不确定度未计入。" if outside else "")))
     results = output_path(run_dir, "results")
     results.mkdir(parents=True, exist_ok=True)
     (results / "null_summary.json").write_text(json.dumps(_jsonable(summary), ensure_ascii=False, indent=2),
@@ -237,13 +248,23 @@ def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null, noise_mv):
     mesh_x, mesh_y = np.meshgrid(xx, yy)
     plane = a + b * mesh_x + c * mesh_y
     magnitude_mv = np.abs(plane) * 1000.0
+    center = null["offset_mv"]
+    pad_x = max(4.0, 0.35 * (x_mv.max() - x_mv.min()))
+    pad_y = max(4.0, 0.35 * (y_mv.max() - y_mv.min()))
+    view_x = (min(x_mv.min(), center[0]) - pad_x, max(x_mv.max(), center[0]) + pad_x)
+    view_y = (min(y_mv.min(), center[1]) - pad_y, max(y_mv.max(), center[1]) + pad_y)
+    line_x = np.linspace(view_x[0], view_x[1], 2)
     with plot_style_context("paper"):
         figure, axis = new_figure()
-        image = axis.pcolormesh(mesh_x, mesh_y, magnitude_mv, shading="auto", cmap="Blues", alpha=0.55)
+        axis.set_facecolor("0.93")
+        image = axis.pcolormesh(mesh_x, mesh_y, magnitude_mv, shading="auto", cmap="Blues", alpha=0.65)
         colorbar = figure.colorbar(image, ax=axis, pad=0.02)
         colorbar.set_label("|c2| (mV)")
-        axis.contour(mesh_x, mesh_y, plane.real, levels=[0.0], colors="k", linewidths=1.1, linestyles="-")
-        axis.contour(mesh_x, mesh_y, plane.imag, levels=[0.0], colors="k", linewidths=1.1, linestyles="--")
+        # 实零线与虚零线用解析式画满整个视窗，外推段也可见。
+        if abs(c.imag) > 1e-15:
+            axis.plot(line_x, -(a.imag + b.imag * line_x) / c.imag, "-", color="k", lw=1.1)
+        if abs(c.real) > 1e-15:
+            axis.plot(line_x, -(a.real + b.real * line_x) / c.real, "--", color="k", lw=1.1)
         levels = [value for value in (1.0, 3.0) if value < magnitude_mv.max()]
         noise_level = 10.0 * noise_mv
         if 0.1 <= noise_level < min(levels or [1.0]):
@@ -255,15 +276,18 @@ def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null, noise_mv):
             axis.clabel(contours, inline=True, fontsize=6,
                         fmt=lambda value: "10x noise" if abs(value - noise_level) < 1e-9 else f"{value:g} mV")
         axis.scatter(x_mv, y_mv, s=16, facecolors="white", edgecolors="0.25", linewidths=0.6, zorder=4)
-        center = null["offset_mv"]
+        axis.set_xlim(*view_x)
+        axis.set_ylim(*view_y)
         _ellipse(axis, center, null["cov_offset_mv"], 2.0, COLOR_TRAD, "--")
         _ellipse(axis, center, null["cov_offset_mv"], 1.0, COLOR_TRAD, "-")
         axis.plot(center[0], center[1], marker="*", ms=13, color=COLOR_OPTIMAL, markeredgecolor="k",
                   markeredgewidth=0.4, zorder=6)
         format_axis(axis, xlabel="X offset from bias (mV)", ylabel="Y offset from bias (mV)")
         sigma = null["sigma_offset_mv"]
-        axis.set_title(f"null = ({center[0]:.2f}, {center[1]:.2f}) mV, sigma = ({sigma[0]:.2f}, {sigma[1]:.2f}) mV\n"
-                       f"zero-line angle = {_zero_line_angle(fit):.1f} deg; dotted: |c2| = 1, 3 mV", fontsize=7)
+        outside = not (x_mv.min() <= center[0] <= x_mv.max() and y_mv.min() <= center[1] <= y_mv.max())
+        suffix = "  [OUTSIDE GRID]" if outside else ""
+        axis.set_title(f"null = ({center[0]:.1f}, {center[1]:.1f}) mV, sigma = ({sigma[0]:.1f}, {sigma[1]:.1f}) mV{suffix}\n"
+                       f"zero-line angle = {_zero_line_angle(fit):.1f} deg; dotted |c2| = 1, 3 mV", fontsize=7)
         handles = [Line2D([], [], color="k", ls="-", lw=1.1, label="Re c2 = 0"),
                    Line2D([], [], color="k", ls="--", lw=1.1, label="Im c2 = 0"),
                    Line2D([], [], color=COLOR_TRAD, ls="-", lw=1.0, label="1 sigma"),
