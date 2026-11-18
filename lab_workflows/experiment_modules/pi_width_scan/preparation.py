@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 from aigtek_1200b import Aigtek1200BInstrument
 from gs200 import GS200Instrument
 from lockin_amplifier import DemodulatorConfig, OscillatorConfig, SignalInputConfig, demod
@@ -24,6 +25,8 @@ from ...steps import (DGChannelShutdown, DisconnectTarget, ShutdownAction, STAND
                       initialize_lockin_inputs, restore_main_field_state, run_safety_shutdown,
                       set_temperature_switch, snapshot_main_field_state, synchronize_connected_clocks)
 from ...steps.coil_drive_chain import SafetyAbort, current_limit, set_amp_output, sleep
+from ..bperp_null import z_waveform as tail_waveform
+from ..z_chain_stability import processing as pulse_processing
 from .models import ARB_POINTS, PiWidthScanParams
 from .run_format import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, EXPERIMENT_ID, LOCKIN_KEY, MAIN_FIELD_KEY,
                          REQUIRED_MAPPING_KEYS, RF_KEY, SCOPE_KEY, SOURCE_KEY, TEC_KEY, TEMP_SWITCH_KEY,
@@ -33,7 +36,7 @@ __all__ = [
     "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "BURST_NCYCLES", "SafetyAbort", "amplifier_safety_check",
     "clocks", "configure_chain", "configure_lockin", "configure_rf", "configure_trigger", "configure_x_bias",
     "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
-    "plan", "preflight", "set_rf_phase", "shutdown", "sleep",
+    "plan", "preflight", "pulse_wave", "set_rf_phase", "shutdown", "sleep",
 ]
 
 # 任意波点数：与 pi_pulse_calibration 相同，DG4000 的上限正好是 16384 点。
@@ -59,6 +62,26 @@ def plan(p: PiWidthScanParams) -> dict:
                 pulse_peak_current_a=p.z_peak_current_ma * 1e-3,
                 pulse_period_us=p.pulse_period_us,
                 arb_sample_rate_sa_s=ARB_POINTS / (p.pulse_period_us * 1e-6))
+
+
+def pulse_wave(p: PiWidthScanParams, width_us: float) -> tuple[np.ndarray, dict]:
+    """写入 Z 通道的一个周期归一化电流（最大绝对值 1 ↔ Z_PEAK_CURRENT_MA）与该脉宽的记录。
+
+    关闭拖尾补偿时为原升余弦 ±π 双脉冲；开启时每个脉冲后接精确反号指数尾，尾幅 A 相对主脉冲平顶，
+    按周期延拓叠加后整体归一化，平顶电流 = Z_PEAK_CURRENT_MA / scale。
+    """
+    if not p.z_tail_comp_enabled:
+        wave = pulse_processing.pulse_waveform(p.pulse_period_us, width_us, p.z_pulse_edge_us, points=ARB_POINTS)
+        return wave, dict(tail_comp=False, width_us=float(width_us), mean_square=float(np.mean(np.square(wave))))
+    tail_a, tau_c = tail_waveform.exact_tail(width_us, p.z_pulse_edge_us, p.z_tail_s_f, p.z_tail_tau_e_us)
+    wave, scale = tail_waveform.tail_compensated_waveform(p.pulse_period_us, width_us, p.z_pulse_edge_us,
+                                                          tail_a, tau_c, ARB_POINTS)
+    half = ARB_POINTS // 2
+    return wave, dict(tail_comp=True, width_us=float(width_us), tail_a=float(tail_a), tau_c_us=float(tau_c),
+                      scale=float(scale), plateau_current_ma=p.z_peak_current_ma / scale,
+                      tail_start_current_ma=-tail_a * p.z_peak_current_ma / scale,
+                      mean_square=float(np.mean(np.square(wave))),
+                      antisymmetry_error=float(np.max(np.abs(wave[:half] + wave[half:2 * half]))))
 
 
 def amplifier_safety_check(ctx):
@@ -123,9 +146,15 @@ def preflight(params: PiWidthScanParams, root):
         validate_safety_limit(CURRENT_LIMIT_KEY, current_a, limits)
 
     widths = params.widths_us()
-    duty = 2.0 * max(widths) / params.pulse_period_us
     resistor = max(params.sense_resistor_ohm, params.damping_resistor_ohm)
-    power = levels["pulse_peak_current_a"] ** 2 * duty * resistor
+    if params.z_tail_comp_enabled:
+        # 带尾波形不再是矩形占空比：按实际写入波形的 mean(v²) 取所有脉宽中的最大值。
+        widths_checked = list(widths) + ([params.phase_check_width_us] if not params.multi_phase else [])
+        mean_square = max(pulse_wave(params, width)[1]["mean_square"] for width in widths_checked)
+        power = levels["pulse_peak_current_a"] ** 2 * mean_square * resistor
+    else:
+        duty = 2.0 * max(widths) / params.pulse_period_us
+        power = levels["pulse_peak_current_a"] ** 2 * duty * resistor
     if power > params.resistor_rated_w / 2:
         raise ValueError(f"电阻平均功耗 {power:.3g} W 超过额定功率 {params.resistor_rated_w:g} W 的一半")
     if levels["arb_sample_rate_sa_s"] > ARB_SAMPLE_RATE_CHECK:

@@ -11,6 +11,10 @@
 
 A03 的 Z 脉冲宽度由 ``PHASE_CHECK_WIDTH_US`` 单独给定，与 A04 的扫描网格无关；多相位模式下
 A03 跳过。
+
+``Z_TAIL_COMP_ENABLED`` 开启时，每个脉宽 w 的 ±π 脉冲后各接一段反号指数尾 −A(w)·exp(−(t−w)/τc)：
+按屏蔽筒单时间常数模型 B = s_f·I + (1−s_f)·LP_τe[I]，A(w) 使脉冲后原子处 z 场为零，τc = s_f·τe。
+波形由 ``bperp_null.z_waveform`` 的同一组生成函数计算，最大绝对值对应 ``Z_PEAK_CURRENT_MA``。
 """
 from __future__ import annotations
 
@@ -66,6 +70,16 @@ class PiWidthScanParams(ExperimentParams):
         label="脉宽终点", unit="µs", minimum=1e-3, group="basic")
     z_pulse_width_step_us: float = parameter(default=0.5, external_name="Z_PULSE_WIDTH_STEP_US",
         label="脉宽步进", unit="µs", minimum=1e-6, group="basic")
+    z_tail_comp_enabled: bool = parameter(default=False, external_name="Z_TAIL_COMP_ENABLED",
+        label="Z 拖尾补偿", group="basic",
+        description="开启后每个脉宽的 ±π 脉冲后接一段反号指数尾，使屏蔽筒慢响应在脉冲后抵消；"
+                    "尾幅按每个脉宽由 Z_TAIL_S_F、Z_TAIL_TAU_E_US 精确计算，τc = s_f·τe。关闭时为原升余弦脉冲。")
+    z_tail_s_f: float = parameter(default=0.544, external_name="Z_TAIL_S_F", label="屏蔽模型快分量 s_f",
+        minimum=1e-3, maximum=0.999, active_when="Z_TAIL_COMP_ENABLED", group="basic",
+        description="原子处 z 场中随电流瞬时出现的比例；其余 1 − s_f 以 τe 延迟到达。")
+    z_tail_tau_e_us: float = parameter(default=46.9, external_name="Z_TAIL_TAU_E_US", label="屏蔽模型时间常数 τe",
+        unit="µs", minimum=1e-3, maximum=1000.0, active_when="Z_TAIL_COMP_ENABLED", group="basic",
+        description="慢分量的一阶时间常数；补偿尾的衰减时间 τc = s_f·τe。")
 
     # ---- 射频相位粗扫（A03）----
     phase_check_enabled: bool = parameter(default=True, external_name="PHASE_CHECK_ENABLED", label="相位粗扫",
@@ -217,6 +231,11 @@ class PiWidthScanParams(ExperimentParams):
         area_us = angle / (2.0 * self.coil_constant_hz_per_ma * self.z_peak_current_ma) * 1e6
         return area_us + self.z_pulse_edge_us
 
+    @property
+    def z_tail_tau_c_us(self) -> float:
+        """补偿尾的衰减时间常数 τc = s_f·τe。"""
+        return self.z_tail_s_f * self.z_tail_tau_e_us
+
     def samples_per_point(self) -> float:
         return self.demod0_rate_sa_s * self.scan_point_duration_s
 
@@ -247,6 +266,10 @@ class PiWidthScanParams(ExperimentParams):
             errors.append("每个脉宽至少为两倍沿宽")
         if self.z_pulse_edge_us >= self.pulse_half_period_us / 2:
             errors.append("Z_PULSE_EDGE_US 必须明显小于半个周期")
+        if self.z_tail_comp_enabled and not (math.isfinite(self.z_tail_s_f) and 0.0 < self.z_tail_s_f < 1.0):
+            errors.append("Z_TAIL_S_F 须在 (0, 1) 内")
+        if self.z_tail_comp_enabled and not (math.isfinite(self.z_tail_tau_e_us) and self.z_tail_tau_e_us > 0):
+            errors.append("Z_TAIL_TAU_E_US 必须为正的有限数")
         if not math.isfinite(self.x_bias_v):
             errors.append("X_BIAS_V 必须是有限数")
         if not math.isfinite(self.phase_check_width_us) or self.phase_check_width_us <= 0:
@@ -304,4 +327,6 @@ class PiWidthScanParams(ExperimentParams):
                     phase_check_width_us=p.phase_check_width_us,
                     rf_phase_deg=p.y_rf_phase_deg,
                     rf_phase_offset_us=p.rf_phase_offset_us(),
-                    rf_phase_angles_deg=p.rf_phase_angles_deg())
+                    rf_phase_angles_deg=p.rf_phase_angles_deg(),
+                    z_tail_comp_enabled=p.z_tail_comp_enabled,
+                    z_tail_tau_c_us=p.z_tail_tau_c_us if p.z_tail_comp_enabled else None)

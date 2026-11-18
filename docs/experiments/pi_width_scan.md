@@ -73,12 +73,22 @@ Z 通道链路与 π 脉冲面积标定完全一致：DG 的 Z 通道 → Aigtek
 
 - Y 向射频：`Y_magnetic_field` 5 kHz 正弦，频率 `Y_RF_FREQ_HZ`、幅度 `Y_RF_VPP`，无限 burst 门控；相对相位只由 burst 相位决定，A02 用 `Y_RF_PHASE_DEG` 起振，A03/A04 改相位时不动波形。多相位模式的相位组为 `Y_RF_PHASE_DEG + k·360°/N`（k = 0…N−1，折回 0–360°）。
 - 改相位的顺序（DirectAW 校相的做法）：关闭 burst → 写 burst 相位 → 打开 burst → 打开 output，再等 `SYSTEM_SETTLE_S` 才读数。
-- Z 脉冲：一次上传双脉冲任意波（相位固定 0）后 arm 无限 burst，随后发 1200B 的 AON（A02 收尾时功放是关的，不打开则脉冲只到功放输入、到不了线圈）；A03 用 `PHASE_CHECK_WIDTH_US` 写一次，A04 按每个扫描宽度重写。
+- Z 脉冲：一次上传双脉冲任意波（相位固定 0）后 arm 无限 burst，随后发 1200B 的 AON（A02 收尾时功放是关的，不打开则脉冲只到功放输入、到不了线圈）；A03 用 `PHASE_CHECK_WIDTH_US` 写一次，A04 按每个扫描宽度重写。`Z_TAIL_COMP_ENABLED` 开启时改写带拖尾补偿的波形（见下节）。
 - 读出：MFLI 的 Signal Input 1（探测器输出）→ 第 0 路解调器，参考频率设为 `Y_RF_FREQ_HZ`，读该频率上的模量 R 与相位 θ；解调档照 DirectAW 校相档配成 1 ms / 100 kSa/s。
 - 共同触发：`Time_sequence_2` 输出 5 kHz 方波（固定 5 Vpp、2.5 V 偏置、50% 占空比）接 Z 通道与 Y 射频的外触发输入；它同时是共同触发，安全收尾后保持运行。
 - DHO900 接采样电阻仅供人工核对脉冲波形，本实验不采集示波器数据。
 - X 通道在 A02 按 `X_BIAS_V` 加静态偏置（默认 0 V、输出关闭），A05 归零并关输出；它用于补掉残余横向场，实测 −0.02 V 可把关射频时的 5 kHz 残留从 12.7 mV 压到 3.9 mV。
 - GS200 主磁场在 A02 关闭输出并回读为 OFF，A05 恢复运行前状态。
+
+## Z 拖尾补偿（可选）
+
+线圈在坡莫合金屏蔽筒内，原子处的 z 场按 B = s_f·I + (1 − s_f)·LP_τe[I] 响应：只有 s_f 的部分随电流瞬时出现，其余以 τe 延迟到达，脉冲结束后还在继续转动自旋。`Z_TAIL_COMP_ENABLED` 开启后，每个脉宽 w 的 ±π 脉冲后各接一段反号指数尾 −A(w)·exp(−(t − w)/τc)：
+
+- τc = `Z_TAIL_S_F`·`Z_TAIL_TAU_E_US`；A(w) = (1 − s_f)/s_f·u(w)，u 为脉冲结束时自身的低通值。这样脉冲后原子处 z 场为零，转角只由脉冲期间决定，c−1 峰位直接给出补偿波形下的 π 宽度。
+- 尾按周期延拓叠加，整个波形归一化到最大绝对值 1，对应 `Z_PEAK_CURRENT_MA`；平顶电流 = `Z_PEAK_CURRENT_MA`/scale（scale 略大于 1）。
+- 波形由 `bperp_null.z_waveform` 的同一组生成函数计算（`exact_tail`、`tail_compensated_waveform`），与 bperp-null 用的拖尾补偿波形文件同源；各脉宽的 A、τc、scale、mean(v²) 与反对称误差写进 `experiment_config.yaml` 的 `z_waveform`。
+- 电阻功耗预检改按实际写入波形的 mean(v²) 计算，取所有脉宽中的最大值。
+- 关闭时与原升余弦双脉冲完全相同。模型推导与上机确认见运行目录 `data/pi_width_scan/_pi_width_investigation_20261118/10_tail_compensation/结论.md`。
 
 ## 阶段
 
@@ -109,6 +119,8 @@ Z 通道链路与 π 脉冲面积标定完全一致：DG 的 Z 通道 → Aigtek
 | `X_BIAS_V` | X 通道静态偏置，默认 0 V（输出关闭）；实测 −0.02 V 把 5 kHz 残留从 12.7 压到 3.9 mV |
 | `Z_PEAK_CURRENT_MA` | 固定的脉冲峰值电流，默认 190 mA；−π 取相反号 |
 | `Z_PULSE_EDGE_US` | 升余弦沿宽，默认 1 µs；等效面积按「宽度 − 沿宽」计 |
+| `Z_TAIL_COMP_ENABLED` | Z 拖尾补偿开关，默认关闭；开启后每个脉宽接精确反号指数尾（见上节） |
+| `Z_TAIL_S_F` / `Z_TAIL_TAU_E_US` | 屏蔽模型的快分量比例与慢分量时间常数，只在补偿开启时生效；τc = s_f·τe |
 | `Z_PULSE_WIDTH_START/STOP/STEP_US` | 脉宽扫描网格；要同时看到 c−1 的峰与回零点，190 mA 下需覆盖约 5–13 µs |
 | `N_REPEAT` | 每个点的读数次数，默认 5；A03 每个角度、A04 每个宽度共用这一项，逐点标准误由这些读数给出 |
 | `SCAN_POINT_DURATION_S` | 每次读数在关温控窗口内的连续采样时长（A03 与 A04 共用），默认 0.2 s |

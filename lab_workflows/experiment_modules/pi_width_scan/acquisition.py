@@ -21,7 +21,6 @@ from lockin_amplifier import DAQConfig, acquisition_metadata, daq, result_rate
 from ...common import load_safety_limits, validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import DeferredAcquisitionWrites, set_temperature_switch
-from ..z_chain_stability import processing as pulse_processing
 from . import phase_scan, preparation, run_format
 from .preparation import ARB_POINTS, plan, sleep
 from .run_format import SOURCE_KEY, TEC_KEY
@@ -52,7 +51,12 @@ def _arm_width(ctx, width_us):
     limits, levels = load_safety_limits(ctx.root), plan(p)
     for value in (0.0, levels["pulse_max_v"], levels["pulse_min_v"]):
         validate_safety_limit(SOURCE_KEY, value, limits)
-    wave = pulse_processing.pulse_waveform(p.pulse_period_us, width_us, p.z_pulse_edge_us, points=ARB_POINTS)
+    wave, record = preparation.pulse_wave(p, width_us)
+    ctx.state.setdefault("z_waveform", dict(
+        tail_comp=bool(p.z_tail_comp_enabled), points=ARB_POINTS,
+        **(dict(s_f=p.z_tail_s_f, tau_e_us=p.z_tail_tau_e_us, tau_c_us=p.z_tail_tau_c_us)
+           if p.z_tail_comp_enabled else {}),
+        widths={}))["widths"][f"{float(width_us):g}"] = record
     signals.set_output(False, channel=channels["z"])
     signals.setup_arbitrary(wave, p.y_rf_freq_hz, p.pulse_vpp, 0.0, output=False, channel=channels["z"])
     signals.set_burst_mode("INFinity", channel=channels["z"])
@@ -64,8 +68,10 @@ def _arm_width(ctx, width_us):
     signals.set_output(True, channel=channels["z"])
     # A02 收尾把 1200B 输出关掉了；不发 AON 时脉冲只到功放输入、到不了线圈。
     preparation.set_amp_output(ctx, True)
+    tail = (f"、拖尾补偿尾 {record['tail_start_current_ma']:+.1f} mA / τc {record['tau_c_us']:.1f} µs"
+            if record["tail_comp"] else "")
     ctx.outputs["Z 通道"] = (f"±π 双脉冲连续输出，周期 {p.pulse_period_us:g} µs、宽 {width_us:g} µs、"
-                             f"峰值 {p.z_peak_current_ma:g} mA、外触发 {p.y_rf_freq_hz:g} Hz")
+                             f"峰值 {p.z_peak_current_ma:g} mA{tail}、外触发 {p.y_rf_freq_hz:g} Hz")
 
 
 def _read_temperature_c(ctx):

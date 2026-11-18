@@ -18,14 +18,16 @@ CHAIN = ("AMPLIFIER_GAIN_DB", "X_BIAS_V", "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPL
 # A03 只改射频 burst 相位；Z 脉冲宽度由 PHASE_CHECK_WIDTH_US 单独给定，不动扫描网格。
 # SCAN_RF_PHASE_COUNT 决定 A03 是否跳过（多相位模式跳过），因此同时归属 A03 与 A04。
 # 温控分组三件套与 A04 共用：两阶段同属普通气室采集，改任一项都要同时失效 A03 与 A04。
+# Z 拖尾补偿决定 A03 与 A04 写入的 Z 波形，两阶段都归属。
+TAIL = ("Z_TAIL_COMP_ENABLED", "Z_TAIL_S_F", "Z_TAIL_TAU_E_US")
 PHASE = ("PHASE_CHECK_ENABLED", "SCAN_RF_PHASE_COUNT", "PHASE_CHECK_WIDTH_US", "Y_RF_PHASE_START_DEG", "Y_RF_PHASE_STOP_DEG",
-         "Y_RF_PHASE_STEP_DEG",
+         "Y_RF_PHASE_STEP_DEG", *TAIL,
          "SYSTEM_SETTLE_S", "TEMP_GROUP_SIZE", "TEMP_SWITCH_ON_LAG_S", "N_REPEAT",
          "SCAN_POINT_DURATION_S")
 # A04 的扫描参数；Y_RF_PHASE_DEG 是多相位组的起点、也是单相位模式下 A03 未运行时的回落相位。
 SCAN = ("SYSTEM_SETTLE_S", "TEMP_SWITCH_ON_LAG_S", "TEMP_GROUP_SIZE", "SCAN_POINT_DURATION_S", "N_REPEAT",
         "Z_PEAK_CURRENT_MA", "Z_PULSE_EDGE_US", "Z_PULSE_WIDTH_START_US", "Z_PULSE_WIDTH_STOP_US",
-        "Z_PULSE_WIDTH_STEP_US", "Y_RF_PHASE_DEG", "SCAN_RF_PHASE_COUNT",
+        "Z_PULSE_WIDTH_STEP_US", "Y_RF_PHASE_DEG", "SCAN_RF_PHASE_COUNT", *TAIL,
         "COIL_CONSTANT_HZ_PER_MA", "TARGET_ANGLE_PI", "Y_RF_FREQ_HZ", "Y_RF_VPP")
 # 电学参考宽度只进入 B01 的比值对照，不影响采集。
 REFERENCE = ("REFERENCE_PI_WIDTH_US",)
@@ -33,7 +35,7 @@ ACQUISITION = (
     Stage("A01", "参数、映射与安全限值预检", "准备", (), ("RUN_TAG",), display_parameters=("RUN_TAG",),
           quality_gates=("不连接硬件；脉宽列表由起点/终点/步进生成，逐项检查非空、不超过半个周期且不小于两倍沿宽；"
                          "射频相位粗扫的起点/终点/步进能生成非空角度列表；"
-                         "z_pulse_coil_current、Z/Y 场电平与电阻功耗全部在限内",)),
+                         "z_pulse_coil_current、Z/Y 场电平与电阻功耗全部在限内（Z_TAIL_COMP_ENABLED 时功耗按实际波形 mean(v²) 取各脉宽最大值）",)),
     Stage("A02", "连接 DG、MFLI、1200B、DHO900、GS200 并同步时钟", "准备", ("A01",), CHAIN,
           quality_gates=("连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；按 X_BIAS_V 设 X 静态偏置；"
                          "MFLI 第 0 路解调器按参数配置并记录回读；"
@@ -51,7 +53,8 @@ ACQUISITION = (
           quality_gates=("多相位模式：每个宽度在 Y_RF_PHASE_DEG + k·360°/N 上按「重复 → 相位」交错读数，"
                          "每次读数前按 DirectAW 顺序改射频相位；单相位模式：相位取 A03 的 chosen_deg"
                          "（有 refined_deg 时优先），A03 未运行或关闭时回落 Y_RF_PHASE_DEG 并记 phase_source；"
-                         "每个宽度上传一对 +π/−π 脉冲并由 "
+                         "每个宽度上传一对 +π/−π 脉冲（Z_TAIL_COMP_ENABLED 时每个脉冲后接该脉宽的精确反号指数尾，"
+                         "A、τc 与归一化因子按脉宽记入 z_waveform）并由 "
                          "Time_sequence_2 外触发无限 burst；温控关闭窗口内只读不写盘，"
                          "每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘；取消保留已完成点",)),
     Stage(FINISH_ID, "安全结束会话", "结束", (),

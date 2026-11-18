@@ -121,6 +121,42 @@
       "read_only": false
     },
     {
+      "name": "Z_TAIL_COMP_ENABLED",
+      "label": "Z 拖尾补偿",
+      "type": "boolean",
+      "default": false,
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "开启后每个脉宽的 ±π 脉冲后接一段反号指数尾，使屏蔽筒慢响应在脉冲后抵消；尾幅按每个脉宽由 Z_TAIL_S_F、Z_TAIL_TAU_E_US 精确计算，τc = s_f·τe。关闭时为原升余弦脉冲。",
+      "read_only": false
+    },
+    {
+      "name": "Z_TAIL_S_F",
+      "label": "屏蔽模型快分量 s_f",
+      "type": "number",
+      "default": 0.544,
+      "unit": "",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": 0.999,
+      "description": "原子处 z 场中随电流瞬时出现的比例；其余 1 − s_f 以 τe 延迟到达。",
+      "read_only": false
+    },
+    {
+      "name": "Z_TAIL_TAU_E_US",
+      "label": "屏蔽模型时间常数 τe",
+      "type": "number",
+      "default": 46.9,
+      "unit": "µs",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": 1000.0,
+      "description": "慢分量的一阶时间常数；补偿尾的衰减时间 τc = s_f·τe。",
+      "read_only": false
+    },
+    {
       "name": "PHASE_CHECK_ENABLED",
       "label": "相位粗扫",
       "type": "boolean",
@@ -483,7 +519,7 @@
           "RUN_TAG"
         ],
         "quality_gates": [
-          "不连接硬件；脉宽列表由起点/终点/步进生成，逐项检查非空、不超过半个周期且不小于两倍沿宽；射频相位粗扫的起点/终点/步进能生成非空角度列表；z_pulse_coil_current、Z/Y 场电平与电阻功耗全部在限内"
+          "不连接硬件；脉宽列表由起点/终点/步进生成，逐项检查非空、不超过半个周期且不小于两倍沿宽；射频相位粗扫的起点/终点/步进能生成非空角度列表；z_pulse_coil_current、Z/Y 场电平与电阻功耗全部在限内（Z_TAIL_COMP_ENABLED 时功耗按实际波形 mean(v²) 取各脉宽最大值）"
         ]
       },
       {
@@ -564,6 +600,9 @@
           "Y_RF_PHASE_START_DEG",
           "Y_RF_PHASE_STOP_DEG",
           "Y_RF_PHASE_STEP_DEG",
+          "Z_TAIL_COMP_ENABLED",
+          "Z_TAIL_S_F",
+          "Z_TAIL_TAU_E_US",
           "SYSTEM_SETTLE_S",
           "TEMP_GROUP_SIZE",
           "TEMP_SWITCH_ON_LAG_S",
@@ -597,6 +636,9 @@
           "Y_RF_PHASE_START_DEG",
           "Y_RF_PHASE_STOP_DEG",
           "Y_RF_PHASE_STEP_DEG",
+          "Z_TAIL_COMP_ENABLED",
+          "Z_TAIL_S_F",
+          "Z_TAIL_TAU_E_US",
           "SYSTEM_SETTLE_S",
           "TEMP_GROUP_SIZE",
           "TEMP_SWITCH_ON_LAG_S",
@@ -643,6 +685,9 @@
           "Z_PULSE_WIDTH_STEP_US",
           "Y_RF_PHASE_DEG",
           "SCAN_RF_PHASE_COUNT",
+          "Z_TAIL_COMP_ENABLED",
+          "Z_TAIL_S_F",
+          "Z_TAIL_TAU_E_US",
           "COIL_CONSTANT_HZ_PER_MA",
           "TARGET_ANGLE_PI",
           "Y_RF_FREQ_HZ",
@@ -682,13 +727,16 @@
           "Z_PULSE_WIDTH_STEP_US",
           "Y_RF_PHASE_DEG",
           "SCAN_RF_PHASE_COUNT",
+          "Z_TAIL_COMP_ENABLED",
+          "Z_TAIL_S_F",
+          "Z_TAIL_TAU_E_US",
           "COIL_CONSTANT_HZ_PER_MA",
           "TARGET_ANGLE_PI",
           "Y_RF_FREQ_HZ",
           "Y_RF_VPP"
         ],
         "quality_gates": [
-          "多相位模式：每个宽度在 Y_RF_PHASE_DEG + k·360°/N 上按「重复 → 相位」交错读数，每次读数前按 DirectAW 顺序改射频相位；单相位模式：相位取 A03 的 chosen_deg（有 refined_deg 时优先），A03 未运行或关闭时回落 Y_RF_PHASE_DEG 并记 phase_source；每个宽度上传一对 +π/−π 脉冲并由 Time_sequence_2 外触发无限 burst；温控关闭窗口内只读不写盘，每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘；取消保留已完成点"
+          "多相位模式：每个宽度在 Y_RF_PHASE_DEG + k·360°/N 上按「重复 → 相位」交错读数，每次读数前按 DirectAW 顺序改射频相位；单相位模式：相位取 A03 的 chosen_deg（有 refined_deg 时优先），A03 未运行或关闭时回落 Y_RF_PHASE_DEG 并记 phase_source；每个宽度上传一对 +π/−π 脉冲（Z_TAIL_COMP_ENABLED 时每个脉冲后接该脉宽的精确反号指数尾，A、τc 与归一化因子按脉宽记入 z_waveform）并由 Time_sequence_2 外触发无限 burst；温控关闭窗口内只读不写盘，每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘；取消保留已完成点"
         ]
       },
       {
@@ -831,6 +879,18 @@
         ],
         "Y_RF_PHASE_STEP_DEG": [
           "A03"
+        ],
+        "Z_TAIL_COMP_ENABLED": [
+          "A03",
+          "A04"
+        ],
+        "Z_TAIL_S_F": [
+          "A03",
+          "A04"
+        ],
+        "Z_TAIL_TAU_E_US": [
+          "A03",
+          "A04"
         ],
         "SYSTEM_SETTLE_S": [
           "A03",
