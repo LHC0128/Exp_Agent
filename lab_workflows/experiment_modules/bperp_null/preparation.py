@@ -144,20 +144,31 @@ def preflight(params: BperpNullParams, root):
     return params, mapping
 
 
+def _connect_labeled(session, label, resource, factory):
+    """按设备标签连接；失败时把设备名与资源写进异常，便于定位间歇性 VISA 故障。"""
+    try:
+        return session.connect(label, resource, factory)
+    except BaseException as exc:
+        raise RuntimeError(f"{label} 连接失败（{resource}）：{exc}") from exc
+
+
 def connect(ctx):
     """连接所有设备；失败时断开已连接设备，不留半开会话。"""
     mapping, devices, session = ctx.mapping, ctx.devices, ctx.device_session
     try:
-        signals, channels = connect_signal_generator_routes(session, "signals", {
-            name: (key, mapping[key]) for name, key in (
-                ("z", SOURCE_KEY), ("x", X_KEY), ("y", Y_KEY), ("trigger", TRIGGER_KEY),
-                ("temp", TEMP_SWITCH_KEY),
-            )
-        })
+        try:
+            signals, channels = connect_signal_generator_routes(session, "signals", {
+                name: (key, mapping[key]) for name, key in (
+                    ("z", SOURCE_KEY), ("x", X_KEY), ("y", Y_KEY), ("trigger", TRIGGER_KEY),
+                    ("temp", TEMP_SWITCH_KEY),
+                )
+            })
+        except BaseException as exc:
+            raise RuntimeError(f"信号源路由连接失败：{exc}") from exc
         devices["signals"], devices["channels"] = signals, channels
         lockin_config = mapping[LOCKIN_KEY]
-        devices["hf2"] = session.connect(
-            "hf2", f"mfli://{lockin_config.get('host')}:{lockin_config.get('port')}/{lockin_config['device_id']}",
+        devices["hf2"] = _connect_labeled(
+            session, "hf2", f"mfli://{lockin_config.get('host')}:{lockin_config.get('port')}/{lockin_config['device_id']}",
             lambda: create_lockin(lockin_config))
         mfli = devices["hf2"]
         if str(mfli.model).upper() != str(lockin_config.get("model", "MFLI")).upper():
@@ -167,15 +178,18 @@ def connect(ctx):
         require_lockin_compatibility(EXPERIMENT_ID, ctx.params.to_external(), mapping=actual_mapping)
         initialize_lockin_inputs(mfli)
         amp = mapping[AMPLIFIER_KEY]
-        devices["amp"] = session.connect("amp", str(amp["resource"]), lambda: Aigtek1200BInstrument(
+        devices["amp"] = _connect_labeled(session, "amp", str(amp["resource"]), lambda: Aigtek1200BInstrument(
             amp["resource"], serial_number=str((amp.get("connection") or {}).get("serial_number", "0001")),
             safety_check=amplifier_safety_check(ctx)))
         main_field = mapping[MAIN_FIELD_KEY]
-        devices["gs200"] = session.connect("gs200", str(main_field["resource"]),
-                                           lambda: GS200Instrument(main_field["resource"]))
+        devices["gs200"] = _connect_labeled(session, "gs200", str(main_field["resource"]),
+                                            lambda: GS200Instrument(main_field["resource"]))
         tec_config = mapping[TEC_KEY]
-        devices["tec"] = session.connect_optional(
-            "tec", tec_config["resource"], lambda: TECInstrument(tec_config["resource"]), device_label="TEC")
+        try:
+            devices["tec"] = session.connect_optional(
+                "tec", tec_config["resource"], lambda: TECInstrument(tec_config["resource"]), device_label="TEC")
+        except BaseException as exc:
+            raise RuntimeError(f"TEC 连接失败（{tec_config['resource']}）：{exc}") from exc
         devices["optional_connection_errors"] = session.optional_connection_errors()
     except BaseException:
         session.cleanup_connection_failure()
