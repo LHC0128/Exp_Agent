@@ -66,6 +66,8 @@ ACQUISITION_STAGES = {
                                     ("噪声", "HF2_NOISE_RATE", "NOISE_DURATION", "HF2_DEMOD_IDX", Y)),
     "static-sensitivity-optimize-local": (("DC 逐点色散", "HF2_DEMOD_RATE", "DISPERSION_DURATION_S", "HF2_DEMOD_IDX", XY),
                                           ("噪声", "HF2_NOISE_RATE", "NOISE_DURATION", "HF2_DEMOD_IDX", Y)),
+    "bperp-null": (("1f 解调", "DEMOD_RATE", "SCAN_POINT_DURATION_S", "DEMOD0_IDX", XY),
+                   ("2f 解调", "DEMOD_RATE", "SCAN_POINT_DURATION_S", "DEMOD1_IDX", XY)),
 }
 
 # 这些既有入口将时长/速率固定在工作流中，没有对应 GUI 参数。

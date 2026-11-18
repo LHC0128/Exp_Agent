@@ -100,6 +100,7 @@ from ..experiment_modules.pi_pulse_calibration.definition import (
     DEFINITION as PI_PULSE_CALIBRATION_DEFINITION,
 )
 from ..experiment_modules.pi_width_scan.definition import DEFINITION as PI_WIDTH_SCAN_DEFINITION
+from ..experiment_modules.bperp_null.definition import DEFINITION as BPERP_NULL_DEFINITION
 # </registry:imports>
 
 from .contracts import ExperimentDefinition
@@ -143,6 +144,7 @@ _DEFINITIONS = [
     Z_CHAIN_STABILITY_DEFINITION,  # z-chain-stability
     PI_PULSE_CALIBRATION_DEFINITION,  # pi-pulse-calibration
     PI_WIDTH_SCAN_DEFINITION,  # pi-width-scan
+    BPERP_NULL_DEFINITION,  # bperp-null
 ]
 # </registry:definitions>
 

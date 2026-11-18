@@ -554,6 +554,7 @@ NPZ 和数据目录保留，重跑使用独立目录；分析指纹与重算归�
 | Z 链路零点与脉冲角稳定性 | `experiments/ZChainStability.py`、`experiments/ZChainStability_plot.py` | [实验说明](docs/experiments/z_chain_stability.md) |
 | π 脉冲面积标定 | `experiments/PiPulseCalibration.py`、`experiments/PiPulseCalibration_plot.py` | [实验说明](docs/experiments/pi_pulse_calibration.md) |
 | π 脉冲宽度原子域定标 | `experiments/PiWidthScan.py`、`experiments/PiWidthScan_plot.py` | [实验说明](docs/experiments/pi_width_scan.md) |
+| 横向静态场补平（10 kHz 偶部） | `experiments/BperpNull.py`、`experiments/BperpNull_plot.py` | [实验说明](docs/experiments/bperp_null.md) |
 
 <!-- END GENERATED EXPERIMENTS -->
 

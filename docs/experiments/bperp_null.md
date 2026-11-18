@@ -1,0 +1,89 @@
+---
+title: 横向静态场补平（10 kHz 偶部）
+type: bperp_null
+experiment_id: bperp-null
+execution_mode: typed_workflow
+scan_mode: point_by_point
+defaults_file: params/experiments/bperp-null.yaml
+mapping_keys:
+  Z_magnetic_field:
+    role: pulsed_pi_field_and_amplifier_input
+  X_magnetic_field:
+    role: x_static_bias
+  Y_magnetic_field:
+    role: y_static_bias
+  Time_sequence_2:
+    role: external_burst_trigger
+  Temp_Switch:
+    role: temperature_gate
+  lockin_r:
+    role: demod0_1f_and_demod1_2f_readout
+  coil_drive_amplifier:
+    role: power_amplifier
+  main_magnetic_field:
+    role: output_off_during_run_then_restored
+  temperature:
+    role: cell_temperature_readout
+required_devices:
+  - DG4000
+  - MFLI
+  - Aigtek 1200B
+  - GS200
+learned_notes:
+  - 关射频后静态 Bx、By 只进入 10 kHz 偶部；拖尾、α≠π 与拖尾横向分量随脉冲反号，主要进入 5 kHz 奇部，所以 10 kHz 复振幅零点与 Bz、拖尾、脉宽无关。
+  - 当前残余 Bz/2π ≈ 1426 Hz（约 204 nT）、Γ/2π ≈ 548 Hz；6.6 µs 处 10 kHz 的 2×2 条件数约 3.9，8.0 µs 会丢一个方向，7.0 µs 时 5 kHz 接近盲点。
+  - 两路解调器必须共用同一个 5 kHz 振荡器（第 0 路谐波 1、第 1 路谐波 2），参考相位都写 0；第二个振荡器不参与。
+  - 判据用 10 kHz 的 X/Y 复数零点，不用 R 的极小；R 的极小在噪声下有偏。
+  - 模型预言的零点偏移：拖尾横向分量每 ε=0.02 约 13–18 nT、线圈轴倾斜约 4.4 nT、泵浦倾斜约 1.6 nT；本实验不换算 nT，只在报告里列为已知系统项。
+  - 一次运行只测一轮网格；把 B01 的零点填回 `X_BIAS_V`/`Y_BIAS_V` 后再跑下一轮，脉宽对照也走独立运行。
+---
+
+# 横向静态场补平（10 kHz 偶部）
+
+## 目的
+
+在 π 脉冲模式下把原子处的静态横向场 Bx、By 补平：关射频，Z 向连续打 +π/−π，MFLI 用两个解调器分别读 5 kHz 与 10 kHz 的复数 X/Y，用 **10 kHz 复振幅 c2 = 0** 作判据，给出 X、Y 信号源的直流补偿电压及其不确定度。
+
+本实验只输出直流电压（V）和 c2 对偏置电压的复斜率（mV/V），不做线圈常数、nT/V 或补偿电流换算。
+
+## 判据
+
+| 场 | 两个半周期之间 | 进入 P_x 的频率 | 单独能否产生 P_x |
+| --- | --- | --- | --- |
+| 静态 Bx、By | 相同 | 10 kHz（偶部） | 能 |
+| 静态残余 Bz | 相同 | 不单独出现，改变偶部斜率 | 不能（泵浦沿 z） |
+| 理想 π 脉冲 | 反号，但 R(+π)=R(−π) | 等效于相同 | 不能 |
+| 转角偏离 π、Z 慢拖尾、有限脉宽 | 反号 | 5 kHz（奇部） | 不能 |
+| 拖尾自带的横向分量 | 反号 | 5 kHz 为主 | 能 |
+
+所以 B⊥ = 0 时 c2 = 0，且零点不随 Bz、拖尾和脉宽移动；已知系统偏移来自拖尾横向分量、线圈轴倾斜和泵浦倾斜，量级见 frontmatter 的 learned_notes。
+
+## 数据与判据
+
+- 解调器 0：振荡器 0（脉冲频率，5 kHz），谐波 1，相位 0 → `c1 = X1 + iY1`。
+- 解调器 1：同一振荡器，谐波 2，相位 0 → `c2 = X2 + iY2`（判据）。
+- 两路在同一个 DAQ 采集里同时订阅，每个网格点重复 `N_REPEAT` 次。
+
+## 阶段
+
+- **A01**：参数、映射与安全限值预检；脉宽不超过半个周期且不小于两倍沿宽；X/Y 网格非空；X/Y/Z 电平与 `z_pulse_coil_current` 在限内；两路解调器同速率且走 DAQ。
+- **A02**：连接 DG、MFLI、1200B、GS200（TEC 可选）；严格回读参考时钟；写 1200B 增益/阻抗并配平 Z 负载；振荡器 0 = 脉冲频率，第 0 路谐波 1、第 1 路谐波 2，相位 0 并回读；按 `X_BIAS_V`/`Y_BIAS_V` 给 X、Y 线圈加直流（Y 通道不出射频）；关闭 GS200 主磁场并回读；温控 ON。
+- **A03**：在 `X_BIAS_V`/`Y_BIAS_V` 附近按 `X_SCAN_*`、`Y_SCAN_*` 偏移扫网格；每点先写 X/Y 偏置，再按温控分组关窗、等 `SYSTEM_SETTLE_S`、采 `SCAN_POINT_DURATION_S`；组末恢复温控并等待后落盘；写 `raw/bias_grid.csv`。
+- **A04**：安全收尾。
+- **B01**：按 (x,y) 聚合重复读数，复平面拟合 `c2 = a + b·x + c·y`，解 `c2 = 0` 得补偿电压与蒙特卡洛不确定度；对 `c1` 做同样拟合，给出 5 kHz 零点、两个零点之差与补偿点处的残余 `|c1|`；写 `results/null_summary.json`、`results/next_run.yaml`、`results/bias_map.png`、`results/residuals.png`。
+
+## 运行序列
+
+| 运行 | 脉宽 | 偏置 | 偏移范围 | 目的 |
+| --- | --- | --- | --- | --- |
+| R1 | 6.6 µs | 0 / 0 | −40…+40 mV，步 20 | 粗定零点 |
+| R2 | 6.6 µs | R1 的零点 | 建议范围（`next_run.yaml`） | 验证零点与不确定度 |
+| R3/R4 | 6.0/7.0 µs | R2 的偏置 | 同 R2 | 脉宽对照 |
+
+每次运行的 B01 会把下一轮建议写入 `results/next_run.yaml`，手工填回运行参数即可；不自动改 `params/` 默认值。
+
+## 限制
+
+- 只测电压，不测电流；X/Y 线圈的 nT/V 常数未定，因此模型预言的 nT 级零点偏移暂不能换算成电压。
+- 5 kHz 通道可能含触发方波的电气拾取（理想 50% 方波没有偶次谐波，所以 10 kHz 判据受影响很小）；5 kHz 残余量只作指示量。
+- 残余 Bz 必须保持非零；Bz = 0 时 2f 判据会丢一个方向。
