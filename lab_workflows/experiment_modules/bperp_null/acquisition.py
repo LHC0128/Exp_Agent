@@ -2,7 +2,9 @@
 
 每个网格点由 ``(X_BIAS_MV + 偏移)/1000`` 与 ``(Y_BIAS_MV + 偏移)/1000`` 给出（V）；每个点重复
 ``N_REPEAT`` 次，每次都在温控关闭窗口内连续采 ``SCAN_POINT_DURATION_S``。两路解调器在同一个
-DAQ 采集里同时订阅，保证 1f 与 2f 的读数来自同一段时间。
+DAQ 采集里同时订阅，保证 1f 与 2f 的读数来自同一段时间。单次采集返回丢样标志、含非有限值或有效
+样本不足时，原地重采该次读数，最多 ``POINT_RETRIES`` 次；仍失败才中断。重采只发生在内存采集
+阶段，不写盘、不改偏置与温控时序。
 """
 from __future__ import annotations
 
@@ -24,6 +26,11 @@ from . import preparation, run_format, z_waveform
 from .run_format import SOURCE_KEY, TEC_KEY, X_KEY, Y_KEY
 
 MIN_POINT_SAMPLES = 8
+POINT_RETRIES = 2
+
+
+class PointDataError(RuntimeError):
+    """单次 DAQ 读数不可用（丢样、非有限值、样本不足）；可原地重采。"""
 
 
 def _daq_config(ctx, rate):
@@ -39,7 +46,7 @@ def _burst_values(value):
     for burst in bursts:
         flags = burst.get("flags", 0) if isinstance(burst, dict) else 0
         if np.any(np.asarray(flags, dtype=int) & 4):
-            raise RuntimeError("DAQ 丢样或传输异常")
+            raise PointDataError("DAQ 丢样或传输异常")
         raw = burst["value"] if isinstance(burst, dict) else burst
         array = np.asarray(raw, dtype=float).ravel()
         if array.size:
@@ -78,16 +85,29 @@ def _acquire_point(ctx, config, rate):
         raise RuntimeError(f"MFLI 未返回所需解调信号：{missing}")
     size = min(series[key].size for key in needed)
     if size < MIN_POINT_SAMPLES:
-        raise RuntimeError(f"该点有效样本不足 {MIN_POINT_SAMPLES}：{size}")
+        raise PointDataError(f"该点有效样本不足 {MIN_POINT_SAMPLES}：{size}")
     result = {"samples": size}
     for key in needed:
         values = series[key][:size]
         if not np.isfinite(values).all():
-            raise RuntimeError(f"MFLI 解调信号 {key} 含非有限值")
+            raise PointDataError(f"MFLI 解调信号 {key} 含非有限值")
         result[f"x{key[0]}" if key[1] == "x" else f"y{key[0]}"] = float(np.mean(values))
         result[f"x{key[0]}_sem" if key[1] == "x" else f"y{key[0]}_sem"] = (
             float(np.std(values, ddof=1) / math.sqrt(values.size)) if values.size > 1 else 0.0)
     return result
+
+
+def _acquire_point_with_retry(ctx, config, rate):
+    """``_acquire_point`` 遇到 ``PointDataError`` 时原地重采，最多 ``POINT_RETRIES`` 次，耗尽后上抛最后一次异常。"""
+    for attempt in range(POINT_RETRIES + 1):
+        try:
+            return _acquire_point(ctx, config, rate)
+        except PointDataError as exc:
+            if attempt == POINT_RETRIES:
+                raise
+            check_cancelled()
+            ctx.state["scan_point_retries"] = ctx.state.get("scan_point_retries", 0) + 1
+            ctx.state.setdefault("scan_point_retry_reasons", []).append(str(exc))
 
 
 def _start_table(path):
@@ -200,7 +220,7 @@ def measure_grid(ctx):
                 if done % p.temp_group_size == 0:
                     _write_retry(lambda: set_temperature_switch(signals, False, channel=channels["temp"]))
                 preparation.sleep(p.system_settle_s)
-                meta = _acquire_point(ctx, config, rate)
+                meta = _acquire_point_with_retry(ctx, config, rate)
                 temperature_c = _read_temperature_c(ctx)
                 pending.add(_append_row, path, {
                     "width_us": f"{p.z_pulse_width_us:g}", "x_offset_mv": f"{x_mv:g}",

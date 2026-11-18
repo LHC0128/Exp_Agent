@@ -28,6 +28,9 @@ ACQUISITION_CASES = {
             "group_change": ["AcquisitionTest::test_grid_writes_after_temperature_restore"],
             "last_group": ["AcquisitionTest::test_grid_writes_after_temperature_restore"],
             "cancel": ["AcquisitionTest::test_cancel_keeps_completed_points"],
+            "acquire_failure": ["AcquisitionTest::test_bad_point_data_retried_in_place",
+                                "AcquisitionTest::test_bad_point_data_exhausted_keeps_completed_points",
+                                "PointReadTest::test_nonfinite_samples_raise_point_data_error"],
         },
         "sources": ["lab_workflows/experiment_modules/bperp_null/acquisition.py",
                     "lab_workflows/experiment_modules/bperp_null/preparation.py",
@@ -85,7 +88,7 @@ def _ctx(tmp):
 
 
 class AcquisitionTest(unittest.TestCase):
-    def _run(self, tmp, fail_at=None):
+    def _run(self, tmp, fail_at=None, bad_reads=()):
         ctx = _ctx(tmp)
         calls = {"reads": 0}
 
@@ -93,6 +96,9 @@ class AcquisitionTest(unittest.TestCase):
             calls["reads"] += 1
             if fail_at is not None and calls["reads"] == fail_at:
                 raise RuntimeError("模拟采集失败")
+            if calls["reads"] in bad_reads:
+                ctx.devices["signals"].events.append(("bad_read", calls["reads"]))
+                raise acquisition.PointDataError("MFLI 解调信号 (0, 'x') 含非有限值")
             return {"x0": 0.001, "y0": 0.0, "x0_sem": 1e-5, "y0_sem": 1e-5,
                     "x1": 0.002, "y1": 0.001, "x1_sem": 2e-5, "y1_sem": 2e-5}
 
@@ -124,6 +130,63 @@ class AcquisitionTest(unittest.TestCase):
             rows = list(csv.DictReader((Path(tmp) / "raw" / "bias_grid.csv").open(encoding="utf-8")))
             self.assertGreaterEqual(len(rows), 2)
             self.assertLess(len(rows), 18)
+
+
+    def test_bad_point_data_retried_in_place(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx, calls = self._run(Path(tmp), bad_reads={3, 4})
+            rows = list(csv.DictReader((Path(tmp) / "raw" / "bias_grid.csv").open(encoding="utf-8")))
+            self.assertEqual(len(rows), 18)
+            self.assertEqual(calls["reads"], 20)
+            self.assertEqual(ctx.state["scan_point_retries"], 2)
+            self.assertEqual(len(ctx.state["scan_point_retry_reasons"]), 2)
+            # 重采发生在同一关温控窗口内：坏读数与重采之间没有温控切换，也不改偏置。
+            events = ctx.devices["signals"].events
+            first_bad = events.index(("bad_read", 3))
+            self.assertNotIn(("temp", True), events[first_bad:first_bad + 2])
+            self.assertEqual(events[-1], ("temp", True))
+
+    def test_bad_point_data_exhausted_keeps_completed_points(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = {3 + i for i in range(acquisition.POINT_RETRIES + 1)}
+            with self.assertRaises(acquisition.PointDataError):
+                self._run(Path(tmp), bad_reads=bad)
+            rows = list(csv.DictReader((Path(tmp) / "raw" / "bias_grid.csv").open(encoding="utf-8")))
+            self.assertEqual(len(rows), 2)
+
+
+class PointReadTest(unittest.TestCase):
+    def test_nonfinite_samples_raise_point_data_error(self):
+        ctx = _ctx(tempfile.gettempdir())
+        values = np.ones(16)
+        values[5] = np.nan
+
+        class FakeCollector:
+            def __init__(self, _mfli):
+                pass
+
+            def configure(self, _config):
+                pass
+
+            def subscribe(self, _paths, _demod):
+                pass
+
+            def execute(self):
+                pass
+
+            def wait(self, *_args, **_kwargs):
+                pass
+
+            def read(self):
+                return {f"/dev_fake/demods/{d}/sample.{c}": [{"value": values if (d, c) == (0, "x") else np.ones(16)}]
+                        for d in (0, 1) for c in ("x", "y")}
+
+            def close(self, strict=True):
+                pass
+
+        with patch.object(acquisition, "DAQCollector", FakeCollector):
+            with self.assertRaises(acquisition.PointDataError):
+                acquisition._acquire_point(ctx, None, 10000.0)
 
 
 class AnalysisTest(unittest.TestCase):

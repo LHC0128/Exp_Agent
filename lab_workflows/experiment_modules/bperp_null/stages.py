@@ -40,7 +40,7 @@ ACQUISITION = (
           ("raw/bias_grid.csv", "experiment_config.yaml"),
           quality_gates=("上传内置 ±π 脉冲或选定波形文件，文件原样复制到 raw/z_waveform.csv 并记录 SHA-256；"
                          "XY_TAIL_COMP_ENABLED 开启时 X/Y 在直流偏置上叠加与 Z 同步的补偿波形（外触发无限 burst），逐点只改 offset，偏置 ± 峰值在限内；"
-                         "每个网格点写一次 X/Y 偏置；两路解调器在同一个 DAQ 采集里同时读 X/Y；"
+                         "每个网格点写一次 X/Y 偏置；两路解调器在同一个 DAQ 采集里同时读 X/Y；单次读数丢样、含非有限值或样本不足时原地重采，最多 2 次；"
                          "温控关闭窗口内只读不写盘，每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘；"
                          "取消保留已完成点",)),
     Stage(FINISH_ID, "安全结束会话", "结束", (),

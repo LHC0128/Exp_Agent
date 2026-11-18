@@ -72,7 +72,7 @@ learned_notes:
 
 - **A01**：参数、映射与安全限值预检；脉宽不超过半个周期且不小于两倍沿宽；X/Y 网格非空；X/Y/Z 电平与 `z_pulse_coil_current` 在限内；两路解调器同速率且走 DAQ；用波形文件时按下节规则校验文件，电阻功耗按文件的 mean(v²) 计算（内置脉冲仍按占空比）。
 - **A02**：连接 DG、MFLI、1200B、GS200（TEC 可选）；严格回读参考时钟；写 1200B 增益/阻抗并配平 Z 负载；振荡器 0 = 脉冲频率，第 0 路谐波 1、第 1 路谐波 2，相位 0 并回读；按 `X_BIAS_MV`/`Y_BIAS_MV`（mV，后端换算成 V）给 X、Y 线圈加直流（Y 通道不出射频）；GS200 主磁场默认关闭并回读，`MAIN_FIELD_ENABLED` 开启时改为按 `MAIN_FIELD_CURRENT_MA` 设直流电流、回读电流后打开输出并回读（见下节）；温控 ON。
-- **A03**：先上传 Z 任意波并 arm 无限 burst（内置脉冲或波形文件；文件原样复制到 `raw/z_waveform.csv`，SHA-256 与注释头写入 `experiment_config.yaml` 的 `z_waveform`，复制前核对文件自上传后未被改动）；`XY_TAIL_COMP_ENABLED` 开启时再给 X/Y 叠加横向补偿波形（见下节）；再在 `X_BIAS_MV`/`Y_BIAS_MV` 附近按 `X_SCAN_*`、`Y_SCAN_*` 偏移扫网格（叠加了补偿波形的轴每点只改 offset）；每点先写 X/Y 偏置，再按温控分组关窗、等 `SYSTEM_SETTLE_S`、采 `SCAN_POINT_DURATION_S`；组末恢复温控并等待后落盘；写 `raw/bias_grid.csv`。
+- **A03**：先上传 Z 任意波并 arm 无限 burst（内置脉冲或波形文件；文件原样复制到 `raw/z_waveform.csv`，SHA-256 与注释头写入 `experiment_config.yaml` 的 `z_waveform`，复制前核对文件自上传后未被改动）；`XY_TAIL_COMP_ENABLED` 开启时再给 X/Y 叠加横向补偿波形（见下节）；再在 `X_BIAS_MV`/`Y_BIAS_MV` 附近按 `X_SCAN_*`、`Y_SCAN_*` 偏移扫网格（叠加了补偿波形的轴每点只改 offset）；每点先写 X/Y 偏置，再按温控分组关窗、等 `SYSTEM_SETTLE_S`、采 `SCAN_POINT_DURATION_S`；组末恢复温控并等待后落盘；写 `raw/bias_grid.csv`。单次读数返回丢样标志、含非有限值（DAQ grid 中缺样本的位置为 NaN）或有效样本不足时，在同一关温控窗口内原地重采该次读数，最多 2 次，重采次数与原因记入 `experiment_config.yaml` 的 `scan_point_retries` / `scan_point_retry_reasons`；仍失败才中断，已完成点照常保留。
 - **A04**：安全收尾。
 - **B01**：按 (x,y) 聚合重复读数，复平面拟合 `c2 = a + b·x + c·y`，解 `c2 = 0` 得补偿电压与蒙特卡洛不确定度；对 `c1` 做同样拟合，给出 5 kHz 零点、两个零点之差与补偿点处的残余 `|c1|`；写 `results/null_summary.json`、`results/next_run.yaml`、`results/null_map.png`（2f）、`results/null_map_1f.png`（1f）、`results/component_maps.png`（2f/1f 并排）、`results/complex_plane.png`、`results/residuals.png`；图与摘要的横纵轴都用绝对补偿电压（mV），不是相对偏置的偏移。
 
