@@ -230,14 +230,14 @@ devices:
     acquisition_mode: auto
   rigol_dho900_192_168_124_21:
     instrument: oscilloscope
-    model: DHO900
-    label: RIGOL DHO900 示波器（子型号/序列号待确认）
+    model: DHO924
+    label: RIGOL DHO924 示波器（DHO9A273802587）
     resource: TCPIP0::192.168.124.21::INSTR
     reference_clock: null
     connection:
       host: 192.168.124.21
       web_url: http://192.168.124.21/
-      identity_verified: false
+      identity_verified: true
     capabilities:
       channels:
       - 1
