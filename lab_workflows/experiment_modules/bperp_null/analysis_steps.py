@@ -286,7 +286,8 @@ def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null, noise_mv):
         sigma = null["sigma_offset_mv"]
         outside = not (x_mv.min() <= center[0] <= x_mv.max() and y_mv.min() <= center[1] <= y_mv.max())
         suffix = "  [OUTSIDE GRID]" if outside else ""
-        axis.set_title(f"null = ({center[0]:.1f}, {center[1]:.1f}) mV, sigma = ({sigma[0]:.1f}, {sigma[1]:.1f}) mV{suffix}\n"
+        axis.set_title(f"null = ({center[0]:.2f}, {center[1]:.2f}) mV, "
+                       f"sigma = ({sigma[0]:.3f}, {sigma[1]:.3f}) mV{suffix}\n"
                        f"zero-line angle = {_zero_line_angle(fit):.1f} deg; dotted |c2| = 1, 3 mV", fontsize=7)
         handles = [Line2D([], [], color="k", ls="-", lw=1.1, label="Re c2 = 0"),
                    Line2D([], [], color="k", ls="--", lw=1.1, label="Im c2 = 0"),
