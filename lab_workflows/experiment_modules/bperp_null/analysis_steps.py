@@ -132,6 +132,7 @@ def _null(fit, x_bias_v, y_bias_v):
                 cov_offset_mv=[[float(covariance[0, 0]), float(covariance[0, 1])],
                                [float(covariance[1, 0]), float(covariance[1, 1])]],
                 voltage_v=[float(x_bias_v + offset[0] / 1000.0), float(y_bias_v + offset[1] / 1000.0)],
+                voltage_mv=[float(x_bias_v * 1000.0 + offset[0]), float(y_bias_v * 1000.0 + offset[1])],
                 sigma_offset_mv=[float(sigma[0]), float(sigma[1])],
                 sigma_voltage_v=[float(sigma[0] / 1000.0), float(sigma[1] / 1000.0)],
                 slope_mv_per_v=[complex(b * 1000.0), complex(c * 1000.0)])
@@ -202,10 +203,11 @@ def scan_report(run_dir, params: BperpNullParams):
                     Y_SCAN_STOP_MV=round(half), Y_SCAN_STEP_MV=round(half / 2.0))
     (results / "next_run.yaml").write_text(yaml.safe_dump(next_run, allow_unicode=True, sort_keys=False),
                                            encoding="utf-8")
+    bias_mv = (params.x_bias_mv, params.y_bias_mv)
     _plot_null_map(run_dir, x_mv, y_mv, c2, fit2, null2,
-                   noise_mv=float(np.median(np.abs(sem2))) * 1000.0)
+                   noise_mv=float(np.median(np.abs(sem2))) * 1000.0, bias_mv=bias_mv)
     _plot_complex_plane(run_dir, x_mv, y_mv, c2, fit2)
-    _plot_residuals(run_dir, x_mv, y_mv, fit2)
+    _plot_residuals(run_dir, x_mv, y_mv, fit2, bias_mv=bias_mv)
     return _jsonable(summary)
 
 
@@ -233,14 +235,15 @@ def _ellipse(axis, center, covariance, n_sigma, color, linestyle):
                            edgecolor=color, linestyle=linestyle, lw=1.0, zorder=5))
 
 
-def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null, noise_mv):
-    """二维零点图：|c2| 底图 + Re/Im 零线 + 零点与 1σ/2σ 椭圆。"""
+def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null, noise_mv, bias_mv):
+    """二维零点图：|c2| 底图 + Re/Im 零线 + 零点与 1σ/2σ 椭圆；横纵轴为绝对补偿电压。"""
     import matplotlib
     matplotlib.use("Agg")
     from matplotlib.lines import Line2D
     from ...plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context, save_figure
 
     a, b, c = fit["coef"][0], fit["coef"][1], fit["coef"][2]
+    bx, by = float(bias_mv[0]), float(bias_mv[1])
     margin_x = max(1.0, 0.15 * (x_mv.max() - x_mv.min()))
     margin_y = max(1.0, 0.15 * (y_mv.max() - y_mv.min()))
     xx = np.linspace(x_mv.min() - margin_x, x_mv.max() + margin_x, 240)
@@ -249,6 +252,7 @@ def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null, noise_mv):
     plane = a + b * mesh_x + c * mesh_y
     magnitude_mv = np.abs(plane) * 1000.0
     center = null["offset_mv"]
+    center_abs = (bx + center[0], by + center[1])
     pad_x = max(4.0, 0.35 * (x_mv.max() - x_mv.min()))
     pad_y = max(4.0, 0.35 * (y_mv.max() - y_mv.min()))
     view_x = (min(x_mv.min(), center[0]) - pad_x, max(x_mv.max(), center[0]) + pad_x)
@@ -257,36 +261,37 @@ def _plot_null_map(run_dir, x_mv, y_mv, c2, fit, null, noise_mv):
     with plot_style_context("paper"):
         figure, axis = new_figure()
         axis.set_facecolor("0.93")
-        image = axis.pcolormesh(mesh_x, mesh_y, magnitude_mv, shading="auto", cmap="Blues", alpha=0.65)
+        image = axis.pcolormesh(mesh_x + bx, mesh_y + by, magnitude_mv, shading="auto", cmap="Blues", alpha=0.65)
         colorbar = figure.colorbar(image, ax=axis, pad=0.02)
         colorbar.set_label("|c2| (mV)")
         # 实零线与虚零线用解析式画满整个视窗，外推段也可见。
         if abs(c.imag) > 1e-15:
-            axis.plot(line_x, -(a.imag + b.imag * line_x) / c.imag, "-", color="k", lw=1.1)
+            axis.plot(line_x + bx, -(a.imag + b.imag * line_x) / c.imag + by, "-", color="k", lw=1.1)
         if abs(c.real) > 1e-15:
-            axis.plot(line_x, -(a.real + b.real * line_x) / c.real, "--", color="k", lw=1.1)
+            axis.plot(line_x + bx, -(a.real + b.real * line_x) / c.real + by, "--", color="k", lw=1.1)
         levels = [value for value in (1.0, 3.0) if value < magnitude_mv.max()]
         noise_level = 10.0 * noise_mv
         if 0.1 <= noise_level < min(levels or [1.0]):
             levels.append(noise_level)
         levels = sorted(levels)
         if levels:
-            contours = axis.contour(mesh_x, mesh_y, magnitude_mv, levels=levels, colors="0.3",
+            contours = axis.contour(mesh_x + bx, mesh_y + by, magnitude_mv, levels=levels, colors="0.3",
                                     linewidths=0.8, linestyles=":")
-            axis.clabel(contours, inline=True, fontsize=6,
-                        fmt=lambda value: "10x noise" if abs(value - noise_level) < 1e-9 else f"{value:g} mV")
-        axis.scatter(x_mv, y_mv, s=16, facecolors="white", edgecolors="0.25", linewidths=0.6, zorder=4)
-        axis.set_xlim(*view_x)
-        axis.set_ylim(*view_y)
-        _ellipse(axis, center, null["cov_offset_mv"], 2.0, COLOR_TRAD, "--")
-        _ellipse(axis, center, null["cov_offset_mv"], 1.0, COLOR_TRAD, "-")
-        axis.plot(center[0], center[1], marker="*", ms=13, color=COLOR_OPTIMAL, markeredgecolor="k",
+            labelled = [value for value in levels if abs(value - noise_level) > 1e-9]
+            if labelled:
+                axis.clabel(contours, levels=labelled, inline=True, fontsize=6, fmt="%g mV")
+        axis.scatter(x_mv + bx, y_mv + by, s=16, facecolors="white", edgecolors="0.25", linewidths=0.6, zorder=4)
+        axis.set_xlim(view_x[0] + bx, view_x[1] + bx)
+        axis.set_ylim(view_y[0] + by, view_y[1] + by)
+        _ellipse(axis, center_abs, null["cov_offset_mv"], 2.0, COLOR_TRAD, "--")
+        _ellipse(axis, center_abs, null["cov_offset_mv"], 1.0, COLOR_TRAD, "-")
+        axis.plot(center_abs[0], center_abs[1], marker="*", ms=13, color=COLOR_OPTIMAL, markeredgecolor="k",
                   markeredgewidth=0.4, zorder=6)
-        format_axis(axis, xlabel="X offset from bias (mV)", ylabel="Y offset from bias (mV)")
+        format_axis(axis, xlabel="X compensation voltage (mV)", ylabel="Y compensation voltage (mV)")
         sigma = null["sigma_offset_mv"]
         outside = not (x_mv.min() <= center[0] <= x_mv.max() and y_mv.min() <= center[1] <= y_mv.max())
         suffix = "  [OUTSIDE GRID]" if outside else ""
-        axis.set_title(f"null = ({center[0]:.2f}, {center[1]:.2f}) mV, "
+        axis.set_title(f"null = ({center_abs[0]:.2f}, {center_abs[1]:.2f}) mV, "
                        f"sigma = ({sigma[0]:.3f}, {sigma[1]:.3f}) mV{suffix}\n"
                        f"zero-line angle = {_zero_line_angle(fit):.1f} deg; dotted |c2| = 1, 3 mV", fontsize=7)
         handles = [Line2D([], [], color="k", ls="-", lw=1.1, label="Re c2 = 0"),
@@ -322,19 +327,20 @@ def _plot_complex_plane(run_dir, x_mv, y_mv, c2, fit):
         save_figure(figure, output_path(run_dir, "results/complex_plane.png"))
 
 
-def _plot_residuals(run_dir, x_mv, y_mv, fit):
+def _plot_residuals(run_dir, x_mv, y_mv, fit, bias_mv):
     import matplotlib
     matplotlib.use("Agg")
     from ...plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context, save_figure
 
+    bx, by = float(bias_mv[0]), float(bias_mv[1])
     residual = fit["residual"] * 1000.0
     with plot_style_context("paper"):
         figure, (left, right) = new_figure(nrows=2, sharex=False)
-        left.plot(x_mv, residual.real, "o", ms=3, color=COLOR_OPTIMAL, label="Re")
-        left.plot(x_mv, residual.imag, "s", ms=3, color=COLOR_TRAD, label="Im")
-        right.plot(y_mv, residual.real, "o", ms=3, color=COLOR_OPTIMAL)
-        right.plot(y_mv, residual.imag, "s", ms=3, color=COLOR_TRAD)
-        format_axis(left, xlabel="X offset (mV)", ylabel="residual (mV)")
-        format_axis(right, xlabel="Y offset (mV)", ylabel="residual (mV)")
+        left.plot(x_mv + bx, residual.real, "o", ms=3, color=COLOR_OPTIMAL, label="Re")
+        left.plot(x_mv + bx, residual.imag, "s", ms=3, color=COLOR_TRAD, label="Im")
+        right.plot(y_mv + by, residual.real, "o", ms=3, color=COLOR_OPTIMAL)
+        right.plot(y_mv + by, residual.imag, "s", ms=3, color=COLOR_TRAD)
+        format_axis(left, xlabel="X compensation voltage (mV)", ylabel="residual (mV)")
+        format_axis(right, xlabel="Y compensation voltage (mV)", ylabel="residual (mV)")
         left.legend(loc="best", fontsize=7)
         save_figure(figure, output_path(run_dir, "results/residuals.png"))
