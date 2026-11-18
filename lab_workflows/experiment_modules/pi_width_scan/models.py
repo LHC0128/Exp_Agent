@@ -1,14 +1,16 @@
 """π 脉冲宽度原子域定标的强类型参数；电流以 mA、时间以 µs/s 输入。
 
-本实验在原子域读回 MFLI 第 0 路解调器的 R：Y 向 5 kHz 射频持续激励，Z 向由
-``Time_sequence_2`` 触发无限 burst、连续打 +π 与 −π 两个脉冲，扫单脉冲宽度，用
-``R(τ) = R_max |sin(π(τ − τ0) / (2 τ_π))|`` 的峰位给出 π 宽度。脉冲周期由射频频率
-反算（5 kHz → 200 µs），两个脉冲相隔半周期。
+本实验在原子域读回 MFLI 第 0 路解调器的 R/θ：Y 向 5 kHz 射频持续激励，Z 向由
+``Time_sequence_2`` 触发无限 burst、连续打 +π 与 −π 两个脉冲，扫单脉冲宽度。脉冲周期由
+射频频率反算（5 kHz → 200 µs），两个脉冲相隔半周期。
 
-A03 的 Z 脉冲宽度由 ``PHASE_CHECK_WIDTH_US`` 单独给定，与 A04 的扫描网格无关。
+多相位模式（``SCAN_RF_PHASE_COUNT`` = N ≥ 3）：每个脉宽在 ``Y_RF_PHASE_DEG + k·360°/N``
+上各读一次，复读数分解为 ``Z(φ) = c0 + c+1 e^{iφ} + c−1 e^{−iφ}``，c−1 只由脉冲产生，
+其模量的峰位即 π 宽度。单相位模式（N = 1）沿用 ``R(τ) = R_max |sin(π(τ − τ0)/(2τ_π))|``
+拟合；该模式下 R 的峰位受与射频无关的背景 c0 影响，会随射频相位移动。
 
-射频相位（A03 粗扫或 ``Y_RF_PHASE_DEG``）只改变读出幅度：``R ∝ |cos(φ − ψ0)|``，
-曲线在 0–360° 内有两个等高峰、相隔 180°，所以粗扫只走 0–180°；判据峰位不受相位影响。
+A03 的 Z 脉冲宽度由 ``PHASE_CHECK_WIDTH_US`` 单独给定，与 A04 的扫描网格无关；多相位模式下
+A03 跳过。
 """
 from __future__ import annotations
 
@@ -27,7 +29,8 @@ ARB_POINTS = 16384
 
 @dataclass
 class PiWidthScanParams(ExperimentParams):
-    schema_version: ClassVar[int] = 1
+    # 2：新增 SCAN_RF_PHASE_COUNT；版本 1 的快照按单相位（1）迁移，保持历史运行的原意。
+    schema_version: ClassVar[int] = 2
     # 新实验没有历史短等待键；保留声明以便普通气室采集的迁移规则统一适用。
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {}
     # Y_RF_PHASE_REPEAT 并入 N_REPEAT：A03 与 A04 共用「每点重复次数」。
@@ -44,18 +47,22 @@ class PiWidthScanParams(ExperimentParams):
         minimum=1e-9, maximum=20.0, group="basic")
     y_rf_phase_deg: float = parameter(default=90.0, external_name="Y_RF_PHASE_DEG", label="射频相位",
         unit="°", minimum=0.0, maximum=360.0, group="basic",
-        description="A03 未运行或关闭时 A04 使用的固定射频相位，按 DG burst 相位写入。"
-                    "读出的幅度按 |cos(φ − ψ0)| 变化，ψ0 由脉冲占空比决定；默认 90° 落在幅度峰附近，"
-                    "0° 附近是零点，判据峰位不受相位影响但信噪比差约 5 倍。")
+        description="多相位模式下是 A04 相位组的起点；单相位模式下是 A03 未运行或关闭时 A04 使用的"
+                    "固定射频相位。按 DG burst 相位写入。")
+    scan_rf_phase_count: int = parameter(default=4, external_name="SCAN_RF_PHASE_COUNT", label="每个脉宽的射频相位数",
+        minimum=1, maximum=12, group="basic",
+        description="A04 在每个脉宽上依次测的射频相位个数，从 Y_RF_PHASE_DEG 起等间隔 360°/N。"
+                    "N ≥ 3 时 B01 解出 c0/c+1/c−1，用 |c−1| 峰位定 π，A03 跳过；"
+                    "N = 1 时为单相位 R 拟合（R 峰会随相位移动，仅作兼容）；N = 2 不足以分解，预检拒绝。")
 
     # ---- Z 向脉冲与链路 ----
     z_peak_current_ma: float = parameter(default=190.0, external_name="Z_PEAK_CURRENT_MA", label="脉冲峰值电流",
         unit="mA", minimum=0.1, group="basic", description="相对基线的 +π 峰值；−π 取相反号")
     z_pulse_edge_us: float = parameter(default=1.0, external_name="Z_PULSE_EDGE_US", label="升/降沿宽度",
         unit="µs", minimum=0.05, description="升余弦沿；等效面积 = 宽度 − 沿宽")
-    z_pulse_width_start_us: float = parameter(default=4.0, external_name="Z_PULSE_WIDTH_START_US",
+    z_pulse_width_start_us: float = parameter(default=2.0, external_name="Z_PULSE_WIDTH_START_US",
         label="脉宽起点", unit="µs", minimum=1e-3, group="basic")
-    z_pulse_width_stop_us: float = parameter(default=7.0, external_name="Z_PULSE_WIDTH_STOP_US",
+    z_pulse_width_stop_us: float = parameter(default=14.0, external_name="Z_PULSE_WIDTH_STOP_US",
         label="脉宽终点", unit="µs", minimum=1e-3, group="basic")
     z_pulse_width_step_us: float = parameter(default=0.5, external_name="Z_PULSE_WIDTH_STEP_US",
         label="脉宽步进", unit="µs", minimum=1e-6, group="basic")
@@ -64,7 +71,8 @@ class PiWidthScanParams(ExperimentParams):
     phase_check_enabled: bool = parameter(default=True, external_name="PHASE_CHECK_ENABLED", label="相位粗扫",
         group="basic",
         description="A03 按起点/终点/步进扫射频相位、取 R 峰作为 A04 的射频相位；"
-                    "关闭则 A03 跳过，A04 直接用 Y_RF_PHASE_DEG。")
+                    "关闭则 A03 跳过，A04 直接用 Y_RF_PHASE_DEG。只在单相位模式（SCAN_RF_PHASE_COUNT=1）生效，"
+                    "多相位模式下 A03 一律跳过。")
     y_rf_phase_start_deg: float = parameter(default=0.0, external_name="Y_RF_PHASE_START_DEG",
         label="相位粗扫起点", unit="°", minimum=0.0, maximum=360.0, group="basic",
         description="射频相位粗扫的起点；只扫 0–180°，因为 |cos(φ − ψ0)| 的周期是 180°。")
@@ -174,6 +182,26 @@ class PiWidthScanParams(ExperimentParams):
         """A03 粗扫的角度列表（含两端）。"""
         return phase_grid(self.y_rf_phase_start_deg, self.y_rf_phase_stop_deg, self.y_rf_phase_step_deg)
 
+    @property
+    def multi_phase(self) -> bool:
+        """A04 是否按多相位分解（N ≥ 3）；N = 1 为单相位兼容模式。"""
+        return self.scan_rf_phase_count >= 3
+
+    def scan_phases_deg(self) -> list[float]:
+        """多相位模式下 A04 每个脉宽依次写入的射频相位：起点 Y_RF_PHASE_DEG、间隔 360°/N，折回 [0, 360)。"""
+        count = self.scan_rf_phase_count
+        if count < 1:
+            return []
+        return [round((self.y_rf_phase_deg + index * 360.0 / count) % 360.0, _WIDTH_ROUND_DIGITS)
+                for index in range(count)]
+
+    @classmethod
+    def migrate_external(cls, values, schema_version):
+        migrated = super().migrate_external(values, schema_version)
+        if schema_version < 2:
+            migrated.setdefault("SCAN_RF_PHASE_COUNT", 1)
+        return migrated
+
     def widths_us(self) -> list[float]:
         """由 start/stop/step 生成脉宽列表；终点按步进向下取整。"""
         start, stop, step = self.z_pulse_width_start_us, self.z_pulse_width_stop_us, self.z_pulse_width_step_us
@@ -236,6 +264,8 @@ class PiWidthScanParams(ExperimentParams):
             self.rf_phase_angles_deg()
         except ValueError as exc:
             errors.append(str(exc))
+        if self.scan_rf_phase_count == 2 or not 1 <= self.scan_rf_phase_count <= 12:
+            errors.append("SCAN_RF_PHASE_COUNT 取 1（单相位）或 3–12：两个相位解不出 c0、c+1、c−1 三个分量")
         if self.coil_constant_hz_per_ma <= 0:
             errors.append("COIL_CONSTANT_HZ_PER_MA 必须为正")
         if self.target_angle_pi <= 0:
@@ -267,7 +297,8 @@ class PiWidthScanParams(ExperimentParams):
                     pulse_half_period_us=p.pulse_half_period_us,
                     widths_us=widths,
                     width_count=len(widths),
-                    acquisition_count=len(widths) * p.n_repeat,
+                    scan_phases_deg=p.scan_phases_deg(),
+                    acquisition_count=len(widths) * p.n_repeat * p.scan_rf_phase_count,
                     samples_per_point=p.samples_per_point(),
                     predicted_width_us=p.predicted_width_us(),
                     phase_check_width_us=p.phase_check_width_us,

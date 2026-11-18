@@ -1,7 +1,8 @@
 """A03 相位粗扫与 A04 脉宽扫描：温控关闭窗口内读 MFLI 第 0 路解调器，恢复后落盘。
 
 Z 通道的 ±π 双脉冲任意波在一个阶段内只写一次（A03 用 ``PHASE_CHECK_WIDTH_US`` 写一次，
-A04 按每个扫描宽度重写）并 arm 无限 burst；A03 只改射频 burst 相位，不改 Z 波形。每次读数在
+A04 按每个扫描宽度重写）并 arm 无限 burst；A03 只改射频 burst 相位，不改 Z 波形。多相位模式下
+A03 跳过，A04 在每个脉宽上交错读 ``SCAN_RF_PHASE_COUNT`` 个射频相位。每次读数在
 温控关闭窗口内连续采 ``SCAN_POINT_DURATION_S``；A03 与 A04 都每 ``TEMP_GROUP_SIZE`` 个读数
 恢复一次温控并等待 ``TEMP_SWITCH_ON_LAG_S`` 后才写盘——关闭温控的窗口内不写任何文件，故障时
 先恢复温控再抢救已读数据。
@@ -25,7 +26,7 @@ from . import phase_scan, preparation, run_format
 from .preparation import ARB_POINTS, plan, sleep
 from .run_format import SOURCE_KEY, TEC_KEY
 
-SCAN_FIELDS = ("width_us", "repeat", "R_v", "theta_deg", "timestamp", "rf_vpp", "rf_freq_hz",
+SCAN_FIELDS = ("width_us", "rf_phase_deg", "repeat", "R_v", "theta_deg", "timestamp", "rf_vpp", "rf_freq_hz",
                "z_peak_ma", "temp_c")
 PHASE_SCAN_FIELDS = ("phase_deg", "repeat", "R_v", "theta_deg", "timestamp")
 POINT_FIELDS = ("time_s", "R_v", "theta_deg")
@@ -167,6 +168,14 @@ def measure_phase_scan(ctx):
     组首关闭温控、等 ``SYSTEM_SETTLE_S`` 再读，组末恢复温控、等 ``TEMP_SWITCH_ON_LAG_S`` 后落盘。
     """
     p, directory = ctx.params, ctx.directory
+    if p.multi_phase:
+        # 多相位模式由 A04 在每个脉宽上测整组相位，按 R 峰挑相位没有意义。
+        ctx.state["phase_check"] = dict(enabled=False, skipped="multi_phase")
+        ctx.state["phase_source"] = "scan_phases"
+        directory.update_config(**ctx.state)
+        ctx.outputs["相位粗扫"] = (f"多相位模式（SCAN_RF_PHASE_COUNT={p.scan_rf_phase_count}），"
+                              "A04 每个脉宽测整组相位，跳过粗扫")
+        return
     if not p.phase_check_enabled:
         ctx.state["phase_check"] = dict(enabled=False)
         ctx.state["phase_source"] = "parameter"
@@ -234,68 +243,87 @@ def measure_phase_scan(ctx):
                               f"（精化 {picked:g}°）、R = {record['R_chosen']:.6g} V")
 
 
+def _scan_phases(ctx):
+    """A04 的射频相位组与来源。
+
+    多相位模式取 ``scan_phases_deg()``（来源 ``scan_phases``）；单相位模式取 A03 的结果
+    （有精化值优先），A03 未运行或关闭时回落 ``Y_RF_PHASE_DEG``。
+    """
+    p = ctx.params
+    if p.multi_phase:
+        ctx.state.setdefault("phase_check", dict(enabled=False, skipped="multi_phase"))
+        return p.scan_phases_deg(), "scan_phases"
+    record = ctx.state.get("phase_check") or {}
+    if record.get("enabled") and record.get("chosen_deg") is not None:
+        refined = record.get("refined_deg")
+        return [float(refined if refined is not None else record["chosen_deg"])], "stage"
+    ctx.state.setdefault("phase_check", dict(enabled=False))
+    return [float(p.y_rf_phase_deg)], "parameter"
+
+
 def measure_scan(ctx):
     """A04：逐点扫脉宽并在温控关闭窗口内读 MFLI R/θ，组末恢复温控后落盘。
 
-    射频相位取 A03 的结果（有精化值优先），A03 未运行或关闭时回落到 ``Y_RF_PHASE_DEG``，
-    并把来源记进摘要的 ``phase_source``。
+    每个脉宽只上传一次 Z 波形；多相位模式在该脉宽上按「重复 → 相位」交错读整组射频相位，
+    相邻相位间隔只有一次读数，慢漂移对各相位的影响相同。每次读数先改相位（仪器配置），
+    再按分组关温控、等 ``SYSTEM_SETTLE_S``；单相位模式只在扫描前写一次相位。
     """
     p, directory = ctx.params, ctx.directory
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
     widths = p.widths_us()
-    record = ctx.state.get("phase_check") or {}
-    if record.get("enabled") and record.get("chosen_deg") is not None:
-        refined = record.get("refined_deg")
-        phase_deg = float(refined if refined is not None else record["chosen_deg"])
-        phase_source = "stage"
-    else:
-        phase_deg, phase_source = float(p.y_rf_phase_deg), "parameter"
-        ctx.state.setdefault("phase_check", dict(enabled=False))
+    phases, phase_source = _scan_phases(ctx)
+    multi = p.multi_phase
     ctx.state["phase_source"] = phase_source
     rate = float(ctx.state["actual_rates"]["demod0_Sa_s"])
     config = _daq_config(ctx, rate)
     ctx.state["scan_acquisition"] = {
         "mode": "daq_duration", "duration_s": p.scan_point_duration_s, "actual_rate_Sa_s": rate,
         "repeats": p.n_repeat, "temperature_group_size": p.temp_group_size, "widths_us": widths,
-        "demod_idx": p.demod0_idx, "signals": ["sample.r", "sample.theta"],
+        "rf_phases_deg": phases, "demod_idx": p.demod0_idx, "signals": ["sample.r", "sample.theta"],
         "phase_source": phase_source}
     directory.update_config(**ctx.state)
-    preparation.set_rf_phase(ctx, phase_deg)
+    if not multi:
+        preparation.set_rf_phase(ctx, phases[0])
 
     scan_path = directory.raw / "scan.csv"
     ctx.state["data_files"].append(run_format.SCAN_FILE)
-    total, index, started = len(widths) * p.n_repeat, 0, time.monotonic()
+    total, index, started = len(widths) * p.n_repeat * len(phases), 0, time.monotonic()
     with DeferredAcquisitionWrites(
             restore=lambda: set_temperature_switch(signals, True, channel=channels["temp"])) as pending:
         for width in widths:
             _arm_width(ctx, width)
             for repeat in range(p.n_repeat):
-                check_cancelled()
-                if index % p.temp_group_size == 0:
-                    set_temperature_switch(signals, False, channel=channels["temp"])
-                sleep(p.system_settle_s)
-                series, meta = _acquire_point(ctx, config, rate)
-                temperature_c = _read_temperature_c(ctx)
-                point_name = run_format.point_file(width, repeat)
-                ctx.state["data_files"].append(point_name)
-                ctx.state["scan_acquisition"].update(meta)
-                ctx.state["scan_points_completed"] = index + 1
-                pending.add(_write_point_series, directory.raw / Path(point_name).name, series)
-                pending.add(_append_scan_row, scan_path, {
-                    "width_us": f"{width:g}", "repeat": repeat, "R_v": f"{meta['R_mean_v']:.9g}",
-                    "theta_deg": f"{meta['theta_mean_deg']:.9g}",
-                    "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
-                    "rf_vpp": f"{p.y_rf_vpp:g}", "rf_freq_hz": f"{p.y_rf_freq_hz:g}",
-                    "z_peak_ma": f"{p.z_peak_current_ma:g}",
-                    "temp_c": "" if temperature_c is None else f"{temperature_c:.6g}"})
-                index += 1
-                pending.add(directory.update_config, **ctx.state)
-                if index % p.temp_group_size == 0 or index == total:
-                    set_temperature_switch(signals, True, channel=channels["temp"])
-                    sleep(p.temp_switch_on_lag_s)
-                    pending.flush()
-                _progress("A04", "脉宽扫描", index, total, started)
+                for phase in phases:
+                    check_cancelled()
+                    if multi:
+                        preparation.set_rf_phase(ctx, phase)
+                    if index % p.temp_group_size == 0:
+                        set_temperature_switch(signals, False, channel=channels["temp"])
+                    sleep(p.system_settle_s)
+                    series, meta = _acquire_point(ctx, config, rate)
+                    temperature_c = _read_temperature_c(ctx)
+                    point_name = run_format.point_file(width, repeat, phase if multi else None)
+                    ctx.state["data_files"].append(point_name)
+                    ctx.state["scan_acquisition"].update(meta)
+                    ctx.state["scan_points_completed"] = index + 1
+                    pending.add(_write_point_series, directory.raw / Path(point_name).name, series)
+                    pending.add(_append_scan_row, scan_path, {
+                        "width_us": f"{width:g}", "rf_phase_deg": f"{phase:.9g}", "repeat": repeat,
+                        "R_v": f"{meta['R_mean_v']:.9g}", "theta_deg": f"{meta['theta_mean_deg']:.9g}",
+                        "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+                        "rf_vpp": f"{p.y_rf_vpp:g}", "rf_freq_hz": f"{p.y_rf_freq_hz:g}",
+                        "z_peak_ma": f"{p.z_peak_current_ma:g}",
+                        "temp_c": "" if temperature_c is None else f"{temperature_c:.6g}"})
+                    index += 1
+                    pending.add(directory.update_config, **ctx.state)
+                    if index % p.temp_group_size == 0 or index == total:
+                        set_temperature_switch(signals, True, channel=channels["temp"])
+                        sleep(p.temp_switch_on_lag_s)
+                        pending.flush()
+                    _progress("A04", "脉宽扫描", index, total, started)
     ctx.state["scan_widths"] = widths
     ctx.state["scan_repeats"] = p.n_repeat
+    ctx.state["scan_phases_deg"] = phases
     ctx.state["scan_points_completed"] = total
-    ctx.outputs["Z 通道"] = f"扫描完成：{len(widths)} 个宽度 × {p.n_repeat} 次"
+    ctx.outputs["Z 通道"] = (f"扫描完成：{len(widths)} 个宽度 × {len(phases)} 个射频相位 × {p.n_repeat} 次"
+                            if multi else f"扫描完成：{len(widths)} 个宽度 × {p.n_repeat} 次")

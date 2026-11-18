@@ -26,7 +26,8 @@ ACQUISITION_CASES = {
     "pi-width-scan": {
         "mode": "grouped",
         "cases": {
-            "order": ["AcquisitionTest::test_grouped_scan_writes_after_temperature_restore"],
+            "order": ["AcquisitionTest::test_grouped_scan_writes_after_temperature_restore",
+                      "AcquisitionTest::test_multi_phase_scan_sets_phase_before_each_reading"],
             "slow_disk": ["AcquisitionTest::test_grouped_scan_writes_after_temperature_restore"],
             "group_change": ["AcquisitionTest::test_grouped_scan_writes_after_temperature_restore"],
             "last_group": ["AcquisitionTest::test_grouped_scan_writes_after_temperature_restore"],
@@ -53,7 +54,11 @@ REGRESSION_CASES = {
             "sources": ["lab_workflows/experiment_modules/pi_width_scan/analysis_steps.py"],
             "tests": ["AnalysisTest::test_synthetic_model_recovers_tau_pi",
                       "AnalysisTest::test_poor_fit_is_flagged_with_reason",
-                      "AnalysisTest::test_low_signal_is_flagged_with_reason"],
+                      "AnalysisTest::test_low_signal_is_flagged_with_reason",
+                      "AnalysisTest::test_harmonic_decomposition_locates_c_minus1_peak_and_null",
+                      "AnalysisTest::test_harmonic_peak_at_scan_edge_is_poor",
+                      "AnalysisTest::test_harmonic_skips_widths_missing_a_phase",
+                      "AnalysisTest::test_legacy_single_phase_run_still_fits_r"],
         },
         "parameters": {
             "sources": ["lab_workflows/experiment_modules/pi_width_scan/models.py",
@@ -61,7 +66,9 @@ REGRESSION_CASES = {
             "tests": ["ParamsTest::test_widths_come_from_start_stop_step",
                       "ParamsTest::test_preflight_rejects_width_over_half_period",
                       "ParamsTest::test_rf_phase_grid_and_offset",
-                      "ParamsTest::test_preflight_rejects_invalid_phase_range"],
+                      "ParamsTest::test_preflight_rejects_invalid_phase_range",
+                      "ParamsTest::test_scan_phases_and_schema_migration",
+                      "ParamsTest::test_preflight_rejects_two_phases"],
         },
     },
 }
@@ -74,6 +81,20 @@ TRUE_R_MAX_V = 0.8
 
 def synthetic_r(width_us):
     return TRUE_R_MAX_V * abs(math.sin(math.pi * (width_us - TRUE_TAU0_US) / (2.0 * TRUE_TAU_PI_US)))
+
+
+# 原始格式 1 的扫描表列（没有 rf_phase_deg）。
+LEGACY_SCAN_FIELDS = tuple(name for name in acquisition.SCAN_FIELDS if name != "rf_phase_deg")
+# 多相位合成数据：c−1 按面积 = 宽度 − 1 µs 沿宽在 τπ 处取峰、在 2τπ − 1 处回零。
+HARMONIC_TAU_PI_US = 6.6
+
+
+def synthetic_harmonics(width_us):
+    """(c0, c+1, c−1)：c0 与 c+1 随宽度缓变且不为零，c−1 只由脉冲面积决定。"""
+    c0 = 0.015 * (0.5 + 0.5 * math.cos(width_us / 3.0)) * np.exp(1.1j)
+    cp = 0.02 * (1.0 - 0.02 * width_us) * np.exp(-0.6j)
+    cm = 0.012 * math.sin(math.pi * (width_us - 1.0) / (2.0 * (HARMONIC_TAU_PI_US - 1.0))) * np.exp(0.4j)
+    return c0, cp, cm
 
 
 class FakeSignals:
@@ -172,7 +193,8 @@ class FakeAcquirer:
         if self.fail_at and self.calls == self.fail_at:
             raise RuntimeError("模拟 DAQ 采集失败")
         widths = self.params.widths_us()
-        width = widths[min((self.calls - 1) // self.params.n_repeat, len(widths) - 1)]
+        per_width = self.params.n_repeat * (self.params.scan_rf_phase_count if self.params.multi_phase else 1)
+        width = widths[min((self.calls - 1) // per_width, len(widths) - 1)]
         size = 10
         time = np.arange(size) / 1000.0
         return [FakeResult("sample.r", time, np.full(size, synthetic_r(width))),
@@ -253,19 +275,24 @@ class AcquisitionTest(unittest.TestCase):
             return list(csv.DictReader(handle))
 
     def test_grouped_scan_writes_after_temperature_restore(self):
+        # 默认多相位（4 个相位）：生产路径的时序、分组与写盘都在这一用例里核对。
         params = fast_params()
+        self.assertTrue(params.multi_phase)
         ctx = FakeContext(self.root, params)
         self.run_scan(ctx, series_writer=guarded(acquisition._write_point_series, ctx, "series"),
                       row_writer=guarded(acquisition._append_scan_row, ctx, "row"))
         rows = self.read_rows(ctx)
-        total = len(params.widths_us()) * params.n_repeat
+        phases = params.scan_phases_deg()
+        total = len(params.widths_us()) * params.n_repeat * len(phases)
         self.assertEqual(len(rows), total)
-        self.assertEqual([(row["width_us"], int(row["repeat"])) for row in rows],
-                         [(f"{width:g}", repeat) for width in params.widths_us()
-                          for repeat in range(params.n_repeat)])
+        # 每个宽度内按「重复 → 相位」交错。
+        self.assertEqual([(row["width_us"], int(row["repeat"]), float(row["rf_phase_deg"])) for row in rows],
+                         [(f"{width:g}", repeat, phase) for width in params.widths_us()
+                          for repeat in range(params.n_repeat) for phase in phases])
         for width in params.widths_us():
             for repeat in range(params.n_repeat):
-                self.assertTrue((ctx.directory.raw / f"R_{width:g}_{repeat}.csv").is_file())
+                for phase in phases:
+                    self.assertTrue((ctx.directory.raw / f"R_{width:g}_p{phase:g}_{repeat}.csv").is_file())
         # 每 TEMP_GROUP_SIZE 个读数关一次温控，组末恢复。
         toggles = [state for kind, *rest in ctx.devices["signals"].events
                    if kind == "temp" for state in rest]
@@ -334,7 +361,7 @@ class AcquisitionTest(unittest.TestCase):
         with self.assertRaises(OSError):
             self.run_scan(ctx, row_writer=broken_row)
         self.assertTrue(ctx.devices["signals"].temp_on)
-        self.assertTrue((ctx.directory.raw / "R_4_0.csv").is_file())
+        self.assertTrue((ctx.directory.raw / "R_4_p90_0.csv").is_file())
         self.assertFalse((ctx.directory.raw / "scan.csv").exists())
 
     def read_phase_rows(self, ctx):
@@ -348,7 +375,7 @@ class AcquisitionTest(unittest.TestCase):
 
     def test_phase_scan_stage_writes_curve_and_chooses_peak(self):
         # 0–180°、步进 22.5°，共 9 个角度，每角度 3 次。
-        params = fast_params()
+        params = fast_params(scan_rf_phase_count=1)
         ctx = FakeContext(self.root, params)
         self.run_phase_scan(ctx)
         rows = self.read_phase_rows(ctx)
@@ -373,7 +400,7 @@ class AcquisitionTest(unittest.TestCase):
         self.assertFalse((ctx.directory.raw / "R_4_0.csv").exists())
 
     def test_rf_phase_change_follows_direct_aw_order(self):
-        params = fast_params()
+        params = fast_params(scan_rf_phase_count=1)
         ctx = FakeContext(self.root, params)
         self.run_phase_scan(ctx)
         events = [event for event in ctx.devices["signals"].events if event[1] == CHANNELS["y"]]
@@ -385,7 +412,7 @@ class AcquisitionTest(unittest.TestCase):
         self.assertEqual(phases, params.rf_phase_angles_deg())
 
     def test_phase_scan_arms_width_from_parameter(self):
-        params = fast_params(phase_check_width_us=4.7)
+        params = fast_params(phase_check_width_us=4.7, scan_rf_phase_count=1)
         ctx = FakeContext(self.root, params)
         armed = []
         original = acquisition._arm_width
@@ -401,7 +428,7 @@ class AcquisitionTest(unittest.TestCase):
         self.assertEqual(ctx.devices["amp"].states, [True])
 
     def test_phase_scan_groups_temperature_like_scan(self):
-        params = fast_params()
+        params = fast_params(scan_rf_phase_count=1)
         ctx = FakeContext(self.root, params)
         self.run_phase_scan(ctx)
         toggles = [state for kind, *rest in ctx.devices["signals"].events
@@ -417,7 +444,7 @@ class AcquisitionTest(unittest.TestCase):
         self.assertEqual(len(self.read_phase_rows(ctx)), total)
 
     def test_phase_scan_disabled_skips_stage(self):
-        params = fast_params(phase_check_enabled=False)
+        params = fast_params(phase_check_enabled=False, scan_rf_phase_count=1)
         ctx = FakeContext(self.root, params)
         self.run_phase_scan(ctx)
         self.assertFalse((ctx.directory.raw / "phase_scan.csv").exists())
@@ -427,7 +454,7 @@ class AcquisitionTest(unittest.TestCase):
 
     def test_scan_uses_parameter_phase_without_phase_stage(self):
         # 只跑 A04（未跑 A03）：状态里没有 phase_check，回落到 Y_RF_PHASE_DEG。
-        params = fast_params()
+        params = fast_params(scan_rf_phase_count=1)
         ctx = FakeContext(self.root, params)
         self.run_scan(ctx)
         self.assertEqual(ctx.state["phase_source"], "parameter")
@@ -436,7 +463,7 @@ class AcquisitionTest(unittest.TestCase):
         self.assertEqual(ctx.devices["signals"].burst_phase[CHANNELS["y"]], params.y_rf_phase_deg)
 
     def test_scan_prefers_phase_stage_refined_angle(self):
-        params = fast_params()
+        params = fast_params(scan_rf_phase_count=1)
         ctx = FakeContext(self.root, params)
         ctx.state["phase_check"] = dict(enabled=True, chosen_deg=90.0, refined_deg=85.5,
                                         R_chosen=0.79, R_curve=[])
@@ -444,6 +471,60 @@ class AcquisitionTest(unittest.TestCase):
         self.assertEqual(ctx.state["phase_source"], "stage")
         self.assertEqual(ctx.state["rf_phase_deg"], 85.5)
         self.assertEqual(ctx.devices["signals"].burst_phase[CHANNELS["y"]], 85.5)
+
+    def test_single_phase_scan_keeps_legacy_point_names(self):
+        params = fast_params(scan_rf_phase_count=1)
+        ctx = FakeContext(self.root, params)
+        self.run_scan(ctx)
+        rows = self.read_rows(ctx)
+        self.assertEqual(len(rows), len(params.widths_us()) * params.n_repeat)
+        self.assertEqual({row["rf_phase_deg"] for row in rows}, {f"{params.y_rf_phase_deg:g}"})
+        self.assertTrue((ctx.directory.raw / "R_4_0.csv").is_file())
+        # 单相位只在扫描前写一次相位。
+        phases = [e for e in ctx.devices["signals"].events if e[0] == "burst_phase" and e[1] == CHANNELS["y"]]
+        self.assertEqual(len(phases), 1)
+
+    def test_multi_phase_skips_phase_scan_stage(self):
+        params = fast_params(y_rf_phase_deg=10.0)
+        ctx = FakeContext(self.root, params)
+        self.run_phase_scan(ctx)
+        self.assertFalse((ctx.directory.raw / "phase_scan.csv").exists())
+        self.assertFalse((ctx.directory.results / "phase_vs_phase.png").exists())
+        self.assertEqual(ctx.state["phase_check"], {"enabled": False, "skipped": "multi_phase"})
+        self.assertEqual(ctx.state["phase_source"], "scan_phases")
+        self.assertFalse(any(e[0] == "temp" for e in ctx.devices["signals"].events))
+
+    def test_multi_phase_scan_sets_phase_before_each_reading(self):
+        params = fast_params(y_rf_phase_deg=10.0)
+        ctx = FakeContext(self.root, params)
+        written_at_read = []
+        acquirer = FakeAcquirer(params, ctx.devices["signals"])
+
+        def record(*args, **kwargs):
+            written_at_read.append(ctx.devices["signals"].burst_phase[CHANNELS["y"]])
+            return acquirer(*args, **kwargs)
+
+        with patch.object(acquisition.daq, "acquire_data", record):
+            acquisition.measure_scan(ctx)
+        phases = params.scan_phases_deg()
+        self.assertEqual(phases, [10.0, 100.0, 190.0, 280.0])
+        widths = params.widths_us()
+        # 每次读数时生效的相位依次走完整组，宽度 × 重复次数轮。
+        self.assertEqual(written_at_read, phases * (len(widths) * params.n_repeat))
+        events = ctx.devices["signals"].events
+        # 每个宽度只上传一次 Z 波形，不因换相位重写。
+        self.assertEqual(sum(1 for e in events if e[0] == "arbitrary"), len(widths))
+        # 换相位按 DirectAW 顺序，且排在组首关温控之前（先配置、再关温控）。
+        y = CHANNELS["y"]
+        first_temp_off = events.index(("temp", False))
+        self.assertEqual(events[first_temp_off - 5:first_temp_off],
+                         [("output", y, False), ("burst", y, False), ("burst_phase", y, 10.0),
+                          ("burst", y, True), ("output", y, True)])
+        self.assertEqual(ctx.state["phase_source"], "scan_phases")
+        self.assertEqual(ctx.state["scan_phases_deg"], phases)
+        self.assertEqual(ctx.state["scan_acquisition"]["rf_phases_deg"], phases)
+        self.assertEqual(ctx.state["scan_points_completed"], len(widths) * params.n_repeat * len(phases))
+        self.assertTrue(ctx.devices["signals"].temp_on)
 
 
 class PreparationTest(unittest.TestCase):
@@ -748,11 +829,16 @@ class AnalysisTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.run_dir = Path(self.temporary.name) / "run"
         (self.run_dir / "raw").mkdir(parents=True)
-        self.params = fast_params()
+        # 单相位用例按旧格式（无 rf_phase_deg 列）写表，多相位用例自行改写配置。
+        self.write_config(fast_params(scan_rf_phase_count=1))
+
+    def write_config(self, params, *, schema_version=None, raw_format_version=None, drop=()):
+        self.params = params
+        parameters = {k: v for k, v in params.to_external().items() if k not in drop}
         config = dict(experiment_id=run_format.EXPERIMENT_ID, data_type=run_format.DATA_TYPE,
-                      schema_version=self.params.schema_version,
-                      raw_format_version=run_format.RAW_FORMAT_VERSION,
-                      completion_status="completed", parameters=self.params.to_external())
+                      schema_version=schema_version or params.schema_version,
+                      raw_format_version=raw_format_version or run_format.RAW_FORMAT_VERSION,
+                      completion_status="completed", parameters=parameters)
         (self.run_dir / "experiment_config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
 
     def test_analysis_workflow_runs_through_staged_path(self):
@@ -765,10 +851,106 @@ class AnalysisTest(unittest.TestCase):
         self.assertEqual(summary["electrical_pi_width_us"], models.PiWidthScanParams().reference_pi_width_us)
 
     def write_scan(self, rows):
+        """按原始格式 1 的列（无 rf_phase_deg）写单相位扫描表。"""
         with (self.run_dir / "raw" / "scan.csv").open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
-            writer.writerow(list(acquisition.SCAN_FIELDS))
+            writer.writerow(list(LEGACY_SCAN_FIELDS))
             writer.writerows(rows)
+
+    def write_harmonic_scan(self, widths, phases, *, repeats=3, noise_v=2e-5, drop=()):
+        """按 Z(φ) = c0 + c+1 e^{iφ} + c−1 e^{−iφ} 合成多相位扫描表；drop 为要缺掉的 (宽度, 相位)。"""
+        rng = np.random.default_rng(7)
+        with (self.run_dir / "raw" / "scan.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(acquisition.SCAN_FIELDS))
+            writer.writeheader()
+            for width in widths:
+                c0, cp, cm = synthetic_harmonics(width)
+                for repeat in range(repeats):
+                    for phase in phases:
+                        if (width, phase) in drop:
+                            continue
+                        phi = math.radians(phase)
+                        z = c0 + cp * np.exp(1j * phi) + cm * np.exp(-1j * phi)
+                        z += noise_v * complex(rng.normal(), rng.normal())
+                        writer.writerow(dict(width_us=f"{width:g}", rf_phase_deg=f"{phase:.9g}", repeat=repeat,
+                                             R_v=f"{abs(z):.9g}", theta_deg=f"{math.degrees(np.angle(z)):.9g}",
+                                             timestamp="2026-11-18T00:00:00+08:00", rf_vpp="0.1",
+                                             rf_freq_hz="5000", z_peak_ma="190", temp_c="25.0"))
+
+    def test_harmonic_decomposition_locates_c_minus1_peak_and_null(self):
+        self.write_config(fast_params(y_rf_phase_deg=10.0, z_pulse_width_start_us=2.0,
+                                      z_pulse_width_stop_us=14.0))
+        widths = self.params.widths_us()
+        self.write_harmonic_scan(widths, self.params.scan_phases_deg())
+        _, params = analysis_steps.load_config(self.run_dir)
+        summary = analysis_steps.scan_report(self.run_dir, params)
+        self.assertEqual(summary["mode"], "harmonic")
+        self.assertEqual(summary["rf_phases_deg"], [10.0, 100.0, 190.0, 280.0])
+        self.assertEqual(summary["phase_source"], "scan_phases")
+        self.assertEqual(summary["widths"], len(widths))
+        self.assertAlmostEqual(summary["tau_pi_us"], HARMONIC_TAU_PI_US, delta=0.05)
+        self.assertGreater(summary["tau_pi_sem_us"], 0.0)
+        self.assertEqual(summary["tau_pi_method"], "c_minus1_peak_parabola")
+        self.assertAlmostEqual(summary["tau_2pi_us"], 2 * HARMONIC_TAU_PI_US - 1.0, delta=0.05)
+        self.assertAlmostEqual(summary["tau_pi_from_null_us"], HARMONIC_TAU_PI_US, delta=0.03)
+        self.assertEqual(summary["fit_quality"], "good")
+        self.assertTrue(summary["keep"])
+        self.assertNotIn("signal_low", summary)
+        # 背景 c0 被单独分离出来，不进入 c−1。
+        point = next(item for item in summary["points"] if item["width_us"] == 8.0)
+        c0, cp, cm = synthetic_harmonics(8.0)
+        self.assertAlmostEqual(point["c0"]["abs_v"], abs(c0), delta=5e-5)
+        self.assertAlmostEqual(point["c_plus1"]["abs_v"], abs(cp), delta=5e-5)
+        self.assertAlmostEqual(point["c_minus1"]["abs_v"], abs(cm), delta=5e-5)
+        self.assertAlmostEqual(summary["ratio_to_electrical"], summary["tau_pi_us"] / 5.122, places=9)
+        self.assertTrue((self.run_dir / "results" / "r_vs_width.png").is_file())
+
+    def test_harmonic_peak_at_scan_edge_is_poor(self):
+        self.write_config(fast_params(z_pulse_width_start_us=2.0, z_pulse_width_stop_us=5.0))
+        self.write_harmonic_scan(self.params.widths_us(), self.params.scan_phases_deg())
+        _, params = analysis_steps.load_config(self.run_dir)
+        summary = analysis_steps.scan_report(self.run_dir, params)
+        self.assertEqual(summary["tau_pi_method"], "c_minus1_peak_grid")
+        self.assertEqual(summary["tau_pi_us"], 5.0)
+        self.assertEqual(summary["fit_quality"], "poor")
+        self.assertIn("扫描端点", summary["fit_quality_reason"])
+        self.assertFalse(summary["keep"])
+        self.assertIsNone(summary["tau_2pi_us"])
+        self.assertTrue(summary["null_reason"])
+
+    def test_harmonic_skips_widths_missing_a_phase(self):
+        self.write_config(fast_params(z_pulse_width_start_us=4.0, z_pulse_width_stop_us=9.0,
+                                      scan_rf_phase_count=3))
+        phases = self.params.scan_phases_deg()
+        self.write_harmonic_scan(self.params.widths_us(), phases, drop={(6.0, phases[1])})
+        _, params = analysis_steps.load_config(self.run_dir)
+        summary = analysis_steps.scan_report(self.run_dir, params)
+        self.assertEqual(summary["incomplete_widths_us"], [6.0])
+        self.assertEqual(summary["widths"], len(self.params.widths_us()) - 1)
+        # 三个相位恰好解三个分量，残差为零。
+        self.assertLess(summary["decomposition_residual_median_v"], 1e-12)
+
+    def test_legacy_single_phase_run_still_fits_r(self):
+        # 原始格式 1、参数快照 schema 1（没有 SCAN_RF_PHASE_COUNT）：迁移为单相位，走 R(τ) 拟合。
+        self.write_config(fast_params(scan_rf_phase_count=1), schema_version=1, raw_format_version=1,
+                          drop=("SCAN_RF_PHASE_COUNT",))
+        rows = [[width, repeat, f"{synthetic_r(width):.9g}", "30.0", "t", "0.05", "5000", "190", ""]
+                for width in (4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0) for repeat in range(3)]
+        self.write_scan(rows)
+        config, params = analysis_steps.load_config(self.run_dir)
+        self.assertEqual(params.scan_rf_phase_count, 1)
+        summary = analysis_steps.scan_report(self.run_dir, params)
+        self.assertEqual(summary["mode"], "single_phase")
+        self.assertAlmostEqual(summary["tau_pi_us"], TRUE_TAU_PI_US, places=3)
+
+    def test_multi_phase_params_without_phase_column_writes_reason(self):
+        self.write_config(fast_params())
+        self.write_scan([[width, 0, "0.1", "0.0", "t", "0.05", "5000", "190", ""]
+                         for width in (4.0, 4.5, 5.0, 5.5)])
+        _, params = analysis_steps.load_config(self.run_dir)
+        summary = analysis_steps.scan_report(self.run_dir, params)
+        self.assertEqual(summary["fit_quality"], "unavailable")
+        self.assertIn("射频相位", summary["reason"])
 
     def write_phase_check_config(self, record):
         """把相位自检结果写进运行配置，模拟 A03 落盘后的 experiment_config.yaml。"""
@@ -861,12 +1043,40 @@ class AnalysisTest(unittest.TestCase):
 
 class ParamsTest(unittest.TestCase):
     def test_widths_come_from_start_stop_step(self):
-        p = models.PiWidthScanParams()
+        p = models.PiWidthScanParams(z_pulse_width_start_us=4.0, z_pulse_width_stop_us=7.0)
         self.assertEqual(p.widths_us(), [4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0])
         self.assertAlmostEqual(p.pulse_period_us, 200.0)
         self.assertAlmostEqual(p.pulse_half_period_us, 100.0)
-        q = models.PiWidthScanParams(z_pulse_width_stop_us=6.2, z_pulse_width_step_us=0.5)
+        q = models.PiWidthScanParams(z_pulse_width_start_us=4.0, z_pulse_width_stop_us=6.2,
+                                     z_pulse_width_step_us=0.5)
         self.assertEqual(q.widths_us(), [4.0, 4.5, 5.0, 5.5, 6.0])
+
+    def test_scan_phases_and_schema_migration(self):
+        p = models.PiWidthScanParams(y_rf_phase_deg=300.0)
+        self.assertTrue(p.multi_phase)
+        # 等间隔 360°/N，折回 0–360°。
+        self.assertEqual(p.scan_phases_deg(), [300.0, 30.0, 120.0, 210.0])
+        self.assertEqual(models.PiWidthScanParams(scan_rf_phase_count=3, y_rf_phase_deg=0.0).scan_phases_deg(),
+                         [0.0, 120.0, 240.0])
+        single = models.PiWidthScanParams(scan_rf_phase_count=1)
+        self.assertFalse(single.multi_phase)
+        self.assertEqual(single.scan_phases_deg(), [single.y_rf_phase_deg])
+        # schema 1 的快照没有该键：迁移为单相位，保持历史运行原意；schema 2 缺键时取模型默认。
+        legacy = models.PiWidthScanParams.from_external({"RUN_TAG": "old"}, schema_version=1)
+        self.assertEqual(legacy.scan_rf_phase_count, 1)
+        current = models.PiWidthScanParams.from_external({"RUN_TAG": "new"}, schema_version=2)
+        self.assertEqual(current.scan_rf_phase_count, 4)
+        derived = models.PiWidthScanParams.derive_external(p.to_external())
+        self.assertEqual(derived["acquisition_count"], len(p.widths_us()) * p.n_repeat * 4)
+        self.assertEqual(derived["scan_phases_deg"], p.scan_phases_deg())
+
+    def test_preflight_rejects_two_phases(self):
+        for count in (0, 2, 13):
+            errors = models.PiWidthScanParams(scan_rf_phase_count=count).validate()
+            self.assertTrue(any("SCAN_RF_PHASE_COUNT" in error for error in errors), count)
+        for count in (1, 3, 4, 12):
+            errors = models.PiWidthScanParams(scan_rf_phase_count=count).validate()
+            self.assertFalse(any("SCAN_RF_PHASE_COUNT" in error for error in errors), count)
 
     def test_preflight_rejects_width_over_half_period(self):
         p = models.PiWidthScanParams(z_pulse_width_stop_us=120.0, z_pulse_width_step_us=20.0)

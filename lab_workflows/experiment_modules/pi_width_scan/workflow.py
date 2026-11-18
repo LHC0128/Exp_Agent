@@ -37,7 +37,7 @@ class Workflow(StagedWorkflow):
         return preparation.preflight(params, self.root)
 
     def extra_snapshot(self):
-        keys = ("scan_widths", "scan_repeats", "scan_points_completed")
+        keys = ("scan_widths", "scan_repeats", "scan_phases_deg", "scan_points_completed")
         return {"scan_progress": {key: self.state.get(key) for key in keys},
                 "phase_check": self.state.get("phase_check"),
                 "main_field": self.state.get("main_field")}

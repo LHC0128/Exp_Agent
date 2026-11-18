@@ -1,9 +1,16 @@
-"""离线分析：按宽度汇总 R 的均值与标准误，加权拟合 R(τ) 的峰位给出 π 宽度。
+"""离线分析：多相位运行按射频相位分解求 c−1 定 π 宽度；单相位运行沿用 R(τ) 拟合。
 
-判据模型为 ``R(τ) = R_max |sin(π(τ − τ0) / (2 τ_π))|``：峰位即 π 宽度。拟合用逐点标准误
-作权重；残差 RMS 超过单点标准误中位数的 3 倍时标记 ``fit_quality: poor`` 并写明原因。
-R_max 小于单点标准误中位数的 5 倍时标记 ``signal_low``，只提示可能是射频相位落在零点附近。
-本实验不做漂移校正。
+多相位（scan.csv 含 ≥3 个不同 ``rf_phase_deg``）：每个脉宽把各相位的复读数 Z = R·e^{iθ}
+按 ``Z(φ) = c0 + c+1 e^{iφ} + c−1 e^{−iφ}`` 做最小二乘分解。c0 与射频无关，c+1 在没有脉冲时
+也存在，c−1 只由脉冲产生，因此用 |c−1| 的峰位（相邻至多 7 点的加权抛物线顶点）作 τ_π；
+c−1 在峰之后最接近零的位置（实部、虚部各做二次拟合）给出 2π 宽度，按「面积 = 宽度 − 沿宽」
+换算出第二个 τ_π 作交叉核对。
+
+单相位（旧格式或 ``SCAN_RF_PHASE_COUNT`` = 1）：判据模型 ``R(τ) = R_max |sin(π(τ − τ0)/(2τ_π))|``，
+逐点标准误作权重；残差 RMS 超过单点标准误中位数 3 倍时标记 ``fit_quality: poor``。该模式下 R 峰
+受 c0 影响随射频相位移动，结论只作兼容参考。
+
+两种模式下信号小于单点标准误中位数的 5 倍时标记 ``signal_low``。本实验不做漂移校正。
 """
 from __future__ import annotations
 
@@ -25,6 +32,10 @@ POOR_FIT_SIGMA = 3.0
 # R_max 低于单点标准误中位数的 5 倍时判信号可忽略（相位可能落在零点附近）。
 LOW_SIGNAL_MULTIPLE = 5.0
 MIN_WIDTH_POINTS = 4
+# 多相位分解：至少 3 个相位才能解 c0、c+1、c−1；峰位抛物线取峰两侧各至多 3 点。
+MIN_PHASES = 3
+PEAK_HALF_WINDOW = 3
+HARMONIC_KEYS = ("c0", "c_plus1", "c_minus1")
 
 
 class AnalysisQualityError(ValueError):
@@ -146,6 +157,200 @@ def fit_r_vs_width(widths, values, sem):
                 model_v=model.tolist(), residual_v=residuals.tolist())
 
 
+def harmonic_matrix(phases_deg):
+    """分解矩阵：列依次为 1、e^{iφ}、e^{−iφ}（φ 为写入 DG 的 burst 相位）。"""
+    phi = np.radians(np.asarray(phases_deg, dtype=float))
+    return np.stack([np.ones_like(phi), np.exp(1j * phi), np.exp(-1j * phi)], axis=1).astype(complex)
+
+
+def decompose(phases_deg, values):
+    """最小二乘解 (c0, c+1, c−1) 与残差 RMS；相位数为 3 时残差恒为 0。"""
+    matrix = harmonic_matrix(phases_deg)
+    values = np.asarray(values, dtype=complex)
+    coefficients, *_ = np.linalg.lstsq(matrix, values, rcond=None)
+    residual = values - matrix @ coefficients
+    return coefficients, float(np.sqrt(np.mean(np.abs(residual) ** 2)))
+
+
+def _complex_sem(values):
+    """复数均值的每轴标准误：sqrt((var Re + var Im)/2 / n)；不足 2 个时为 0。"""
+    values = np.asarray(values, dtype=complex)
+    if values.size < 2:
+        return 0.0
+    variance = (np.var(values.real, ddof=1) + np.var(values.imag, ddof=1)) / 2.0
+    return float(math.sqrt(variance / values.size))
+
+
+def _complex_record(value):
+    return dict(re_v=float(value.real), im_v=float(value.imag), abs_v=float(abs(value)),
+                arg_deg=float(math.degrees(math.atan2(value.imag, value.real))))
+
+
+def _summarize_harmonics(rows, phases):
+    """按宽度分解；缺任一相位的宽度不参与并单独计数。
+
+    系数由各相位的均值分解；重复次数 ≥2 且每次都齐全时，对每次重复单独分解给出标准误。
+    """
+    by_width = {}
+    for row in rows:
+        width = float(row["width_us"])
+        phase = float(row["rf_phase_deg"])
+        value = float(row["R_v"]) * np.exp(1j * math.radians(float(row["theta_deg"])))
+        if not np.isfinite(value):
+            continue
+        entry = by_width.setdefault(width, dict(values={}, temperatures=[]))
+        entry["values"].setdefault(phase, {})[int(row["repeat"])] = value
+        if str(row.get("temp_c", "")).strip():
+            entry["temperatures"].append(float(row["temp_c"]))
+    points, incomplete = [], []
+    for width in sorted(by_width):
+        entry = by_width[width]
+        if any(phase not in entry["values"] for phase in phases):
+            incomplete.append(width)
+            continue
+        means = [np.mean(list(entry["values"][phase].values())) for phase in phases]
+        coefficients, residual = decompose(phases, means)
+        repeats = sorted(set.intersection(*(set(entry["values"][phase]) for phase in phases)))
+        per_repeat = np.array([decompose(phases, [entry["values"][phase][r] for phase in phases])[0]
+                               for r in repeats]) if repeats else np.zeros((0, 3), dtype=complex)
+        sems = [_complex_sem(per_repeat[:, k]) for k in range(3)]
+        point = dict(width_us=float(width), repeats=len(repeats), residual_rms_v=residual,
+                     phase_r_mean_v=[float(abs(value)) for value in means],
+                     phase_sem_v=[_complex_sem(list(entry["values"][phase].values())) for phase in phases],
+                     temperature_c=float(np.mean(entry["temperatures"])) if entry["temperatures"] else None)
+        for key, value, sem in zip(HARMONIC_KEYS, coefficients, sems):
+            point[key] = _complex_record(value) | dict(sem_v=sem)
+        points.append(point)
+    return points, incomplete
+
+
+def _weighted_quadratic(u, y, sigma):
+    """y ≈ a·u² + b·u + c 的加权最小二乘；返回系数与按约化 χ²（≥1）放大的协方差。"""
+    design = np.stack([u ** 2, u, np.ones_like(u)], axis=1)
+    weights = 1.0 / sigma
+    coefficients, *_ = np.linalg.lstsq(design * weights[:, None], y * weights, rcond=None)
+    dof = u.size - 3
+    chi2 = float(np.sum(((design @ coefficients - y) * weights) ** 2))
+    scale = max(1.0, chi2 / dof) if dof > 0 else 1.0
+    covariance = np.linalg.pinv((design * weights[:, None]).T @ (design * weights[:, None])) * scale
+    return coefficients, covariance, dof
+
+
+def locate_peak(widths, magnitudes, sems):
+    """|c−1| 峰位：峰在内部时取相邻至多 7 点的加权抛物线顶点，否则取网格峰并标 at_edge。"""
+    x = np.asarray(widths, dtype=float)
+    y = np.asarray(magnitudes, dtype=float)
+    s = np.asarray(sems, dtype=float)
+    k = int(np.argmax(y))
+    grid = dict(peak_us=float(x[k]), peak_v=float(y[k]), peak_sem_us=None, method="grid",
+                at_edge=k in (0, x.size - 1), window_us=None, curve=None)
+    if grid["at_edge"]:
+        return grid
+    lo, hi = max(0, k - PEAK_HALF_WINDOW), min(x.size, k + PEAK_HALF_WINDOW + 1)
+    u, yy, ss = x[lo:hi] - x[k], y[lo:hi], s[lo:hi]
+    positive = ss[ss > 0]
+    sigma = np.where(ss > 0, ss, float(np.median(positive)) if positive.size else 1.0)
+    (a, b, c), covariance, _ = _weighted_quadratic(u, yy, sigma)
+    if not a < 0:
+        return grid
+    vertex = -b / (2.0 * a)
+    if not u[0] <= vertex <= u[-1]:
+        return grid
+    gradient = np.array([b / (2.0 * a * a), -1.0 / (2.0 * a)])
+    variance = float(gradient @ covariance[:2, :2] @ gradient)
+    curve_u = np.linspace(u[0], u[-1], 200)
+    return dict(peak_us=float(x[k] + vertex), peak_v=float(a * vertex ** 2 + b * vertex + c),
+                peak_sem_us=float(math.sqrt(max(variance, 0.0))), method="parabola", at_edge=False,
+                window_us=[float(x[lo]), float(x[hi - 1])],
+                curve=dict(width_us=(x[k] + curve_u).tolist(),
+                           abs_v=(a * curve_u ** 2 + b * curve_u + c).tolist()))
+
+
+def locate_null(widths, c_minus1, peak_index):
+    """峰之后 c−1 最接近零的位置；实部、虚部分别二次拟合后在窗口内取模量最小点。
+
+    最小点须离峰至少两个网格点、且不在扫描末端，否则返回 (None, 原因)。
+    """
+    x = np.asarray(widths, dtype=float)
+    z = np.asarray(c_minus1, dtype=complex)
+    j = peak_index + int(np.argmin(np.abs(z[peak_index:])))
+    if j - peak_index < 2:
+        return None, "峰之后 |c−1| 没有下降到明显的极小，回零点不在扫描范围内"
+    if j == x.size - 1:
+        return None, "|c−1| 在扫描末端仍在下降，回零点在扫描范围外"
+    lo, hi = max(peak_index, j - PEAK_HALF_WINDOW), min(x.size, j + PEAK_HALF_WINDOW + 1)
+    u = x[lo:hi] - x[j]
+    real = np.polyfit(u, z[lo:hi].real, 2)
+    imag = np.polyfit(u, z[lo:hi].imag, 2)
+    fine = np.linspace(u[0], u[-1], 4001)
+    magnitude = np.hypot(np.polyval(real, fine), np.polyval(imag, fine))
+    m = int(np.argmin(magnitude))
+    return dict(null_us=float(x[j] + fine[m]), null_v=float(magnitude[m]),
+                window_us=[float(x[lo]), float(x[hi - 1])]), ""
+
+
+def harmonic_report(root, summary, rows, phases, params):
+    """多相位 B01：分解、定 c−1 峰与回零点、判质量并作图。"""
+    points, incomplete = _summarize_harmonics(rows, phases)
+    summary.update(mode="harmonic", rf_phases_deg=phases, phase_source="scan_phases",
+                   model="Z(phi) = c0 + c+1*exp(i*phi) + c-1*exp(-i*phi); tau_pi = argmax |c-1|",
+                   points=points, rows=len(rows), widths=len(points), incomplete_widths_us=incomplete)
+    if len(points) < MIN_WIDTH_POINTS:
+        return _write_unavailable(summary, root,
+                                  f"相位齐全的宽度点 {len(points)} 个，少于定峰所需的 {MIN_WIDTH_POINTS} 个",
+                                  plot_message=f"Fewer than {MIN_WIDTH_POINTS} complete widths", write_points=True)
+    widths = [item["width_us"] for item in points]
+    magnitudes = [item["c_minus1"]["abs_v"] for item in points]
+    sems = np.array([item["c_minus1"]["sem_v"] for item in points], dtype=float)
+    peak = locate_peak(widths, magnitudes, sems)
+    peak_index = int(np.argmax(magnitudes))
+    c_minus1 = [complex(item["c_minus1"]["re_v"], item["c_minus1"]["im_v"]) for item in points]
+    null, null_reason = locate_null(widths, c_minus1, peak_index)
+    edge = params.z_pulse_edge_us
+    tau_pi = peak["peak_us"]
+    positive = sems[sems > 0]
+    sem_median = float(np.median(positive)) if positive.size else 0.0
+    phase_sems = np.array([s for item in points for s in item["phase_sem_v"]], dtype=float)
+    phase_sem_median = float(np.median(phase_sems[phase_sems > 0])) if np.any(phase_sems > 0) else 0.0
+    residual_median = float(np.median([item["residual_rms_v"] for item in points]))
+    fit_quality, fit_reason = "good", ""
+    if peak["at_edge"]:
+        fit_quality = "poor"
+        fit_reason = "|c−1| 的峰在扫描端点，τπ 只是网格端点，需扩大 Z_PULSE_WIDTH_START/STOP_US"
+    elif len(phases) > MIN_PHASES and phase_sem_median > 0 and residual_median > POOR_FIT_SIGMA * phase_sem_median:
+        fit_quality = "poor"
+        fit_reason = (f"分解残差中位数 {residual_median:.3g} V 超过单相位标准误中位数 {phase_sem_median:.3g} V 的 "
+                      f"{POOR_FIT_SIGMA:g} 倍：响应含高次谐波或相位间漂移")
+    elif sem_median <= 0:
+        fit_reason = "N_REPEAT=1 或重复读数相同，c−1 没有标准误，峰位不确定度无法估计"
+    summary.update(
+        tau_pi_us=tau_pi, tau_pi_sem_us=peak["peak_sem_us"], tau_pi_method=f"c_minus1_peak_{peak['method']}",
+        c_minus1_peak_v=peak["peak_v"], peak=dict((k, v) for k, v in peak.items() if k != "curve"),
+        tau_2pi_us=null["null_us"] if null else None, c_minus1_null_v=null["null_v"] if null else None,
+        tau_pi_from_null_us=(null["null_us"] - edge) / 2.0 + edge if null else None,
+        null_reason=null_reason, decomposition_residual_median_v=residual_median,
+        c_minus1_sem_median_v=sem_median,
+        ratio_to_electrical=tau_pi / params.reference_pi_width_us,
+        ratio_to_predicted=tau_pi / params.predicted_width_us(),
+        fit_quality=fit_quality, fit_quality_reason=fit_reason, fit=None,
+        keep=fit_quality == "good", reason="")
+    if sem_median > 0 and peak["peak_v"] < LOW_SIGNAL_MULTIPLE * sem_median:
+        summary["signal_low"] = True
+        summary["signal_low_reason"] = (f"|c−1| 峰值 {peak['peak_v']:.3g} V 小于其标准误中位数 {sem_median:.3g} V 的 "
+                                        f"{LOW_SIGNAL_MULTIPLE:g} 倍：脉冲产生的分量可忽略，峰位不可信")
+        summary["keep"] = False
+    output_path(root, "results/scan_summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    _plot_harmonics(root, summary, points, peak, null)
+    return summary
+
+
+def _scan_phases(rows):
+    """scan.csv 中出现的射频相位（升序）；旧格式无该列时为空。"""
+    values = {float(row["rf_phase_deg"]) for row in rows if str(row.get("rf_phase_deg") or "").strip()}
+    return sorted(values)
+
+
 def _read_scan(path: Path) -> list[dict]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
@@ -235,6 +440,14 @@ def scan_report(run_dir, params):
         return _write_unavailable(summary, root, "scan.csv 无有效行",
                                   plot_message="No valid scan rows")
     check_cancelled()
+    phases = _scan_phases(rows)
+    if params.multi_phase or len(phases) >= MIN_PHASES:
+        if len(phases) < MIN_PHASES:
+            summary.update(mode="harmonic", rf_phases_deg=phases, rows=len(rows))
+            return _write_unavailable(summary, root, f"scan.csv 只有 {len(phases)} 个射频相位，分解至少需要 {MIN_PHASES} 个",
+                                      plot_message=f"Fewer than {MIN_PHASES} RF phases recorded")
+        return harmonic_report(root, summary, rows, phases, params)
+    summary["mode"] = "single_phase"
     points = _summarize_points(rows)
     summary["points"] = points
     summary["rows"] = len(rows)
@@ -321,6 +534,46 @@ def _plot_scan(run_dir, summary, points, fit):
                      label=f"predicted {summary['predicted_width_us']:.3f} us")
         format_axis(axis, xlabel="Pulse width (us)", ylabel="R (V)")
         axis.legend(loc="best", fontsize=7)
+        save_figure(figure, output_path(run_dir, "results/r_vs_width.png"))
+
+
+def _plot_harmonics(run_dir, summary, points, peak, null):
+    """多相位结果写进 r_vs_width.png：上图各相位的 R，下图 |c0|、|c+1|、|c−1| 与定峰结果。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    from ...plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context, save_figure
+
+    widths = np.array([item["width_us"] for item in points], dtype=float)
+    phases = summary["rf_phases_deg"]
+    with plot_style_context("paper"):
+        figure, (top, bottom) = new_figure(nrows=2, sharex=True)
+        for index, phase in enumerate(phases):
+            top.errorbar(widths, [item["phase_r_mean_v"][index] for item in points],
+                         yerr=[item["phase_sem_v"][index] for item in points], fmt="o-", ms=3, lw=0.8,
+                         capsize=1.5, label=f"RF phase {phase:g} deg")
+        format_axis(top, ylabel="R (V)")
+        top.legend(loc="best", fontsize=6)
+        styles = (("c0", "|c0| (RF-independent)", "0.55", "s"),
+                  ("c_plus1", "|c+1| (co-rotating)", COLOR_TRAD, "^"),
+                  ("c_minus1", "|c-1| (pulse-only)", COLOR_OPTIMAL, "o"))
+        for key, label, color, marker in styles:
+            bottom.errorbar(widths, [item[key]["abs_v"] for item in points],
+                            yerr=[item[key]["sem_v"] for item in points], fmt=marker + "-", ms=3, lw=0.8,
+                            capsize=1.5, color=color, label=label)
+        if peak.get("curve"):
+            bottom.plot(peak["curve"]["width_us"], peak["curve"]["abs_v"], "-", lw=1.4, color="k",
+                        label="parabola near peak")
+        for axis in (top, bottom):
+            axis.axvline(summary["tau_pi_us"], color="k", ls=":", lw=0.9)
+            if null:
+                axis.axvline(null["null_us"], color="0.4", ls="-.", lw=0.8)
+            axis.axvline(summary["predicted_width_us"], color="0.7", ls="--", lw=0.8)
+        bottom.plot([], [], "k:", label=fr"$\tau_\pi$ = {summary['tau_pi_us']:.3f} us (|c-1| peak)")
+        if null:
+            bottom.plot([], [], "-.", color="0.4", label=fr"$\tau_{{2\pi}}$ = {null['null_us']:.3f} us (c-1 null)")
+        bottom.plot([], [], "--", color="0.7", label=f"predicted {summary['predicted_width_us']:.3f} us")
+        format_axis(bottom, xlabel="Pulse width (us)", ylabel="Harmonic amplitude (V)")
+        bottom.legend(loc="best", fontsize=6)
         save_figure(figure, output_path(run_dir, "results/r_vs_width.png"))
 
 

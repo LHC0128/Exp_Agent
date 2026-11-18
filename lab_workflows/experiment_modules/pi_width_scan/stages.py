@@ -16,15 +16,16 @@ CHAIN = ("AMPLIFIER_GAIN_DB", "X_BIAS_V", "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPL
          "RESISTOR_RATED_W", "Y_RF_FREQ_HZ", "Y_RF_VPP", "DEMOD0_IDX", "DEMOD0_SIGNAL_RANGE",
          "DEMOD0_ORDER", "DEMOD0_TC", "DEMOD0_RATE")
 # A03 只改射频 burst 相位；Z 脉冲宽度由 PHASE_CHECK_WIDTH_US 单独给定，不动扫描网格。
+# SCAN_RF_PHASE_COUNT 决定 A03 是否跳过（多相位模式跳过），因此同时归属 A03 与 A04。
 # 温控分组三件套与 A04 共用：两阶段同属普通气室采集，改任一项都要同时失效 A03 与 A04。
-PHASE = ("PHASE_CHECK_ENABLED", "PHASE_CHECK_WIDTH_US", "Y_RF_PHASE_START_DEG", "Y_RF_PHASE_STOP_DEG",
+PHASE = ("PHASE_CHECK_ENABLED", "SCAN_RF_PHASE_COUNT", "PHASE_CHECK_WIDTH_US", "Y_RF_PHASE_START_DEG", "Y_RF_PHASE_STOP_DEG",
          "Y_RF_PHASE_STEP_DEG",
          "SYSTEM_SETTLE_S", "TEMP_GROUP_SIZE", "TEMP_SWITCH_ON_LAG_S", "N_REPEAT",
          "SCAN_POINT_DURATION_S")
-# A04 的扫描参数；Y_RF_PHASE_DEG 是 A03 未运行时的回落相位，所以两处都归属。
+# A04 的扫描参数；Y_RF_PHASE_DEG 是多相位组的起点、也是单相位模式下 A03 未运行时的回落相位。
 SCAN = ("SYSTEM_SETTLE_S", "TEMP_SWITCH_ON_LAG_S", "TEMP_GROUP_SIZE", "SCAN_POINT_DURATION_S", "N_REPEAT",
         "Z_PEAK_CURRENT_MA", "Z_PULSE_EDGE_US", "Z_PULSE_WIDTH_START_US", "Z_PULSE_WIDTH_STOP_US",
-        "Z_PULSE_WIDTH_STEP_US", "Y_RF_PHASE_DEG",
+        "Z_PULSE_WIDTH_STEP_US", "Y_RF_PHASE_DEG", "SCAN_RF_PHASE_COUNT",
         "COIL_CONSTANT_HZ_PER_MA", "TARGET_ANGLE_PI", "Y_RF_FREQ_HZ", "Y_RF_VPP")
 # 电学参考宽度只进入 B01 的比值对照，不影响采集。
 REFERENCE = ("REFERENCE_PI_WIDTH_US",)
@@ -44,11 +45,13 @@ ACQUISITION = (
                          "（关 burst → 写相位 → 开 burst → 开 output）后等 SYSTEM_SETTLE_S 再读 "
                          "N_REPEAT 次；读数按 TEMP_GROUP_SIZE 分组，组首关闭温控、组末恢复温控并等 "
                          "TEMP_SWITCH_ON_LAG_S 后落盘，关温控窗口内不写文件；取 R 峰并用相邻三点抛物线精化；"
-                         "PHASE_CHECK_ENABLED=false 时整阶段跳过且不写文件",)),
+                         "PHASE_CHECK_ENABLED=false 或 SCAN_RF_PHASE_COUNT≥3（多相位模式）时整阶段跳过且不写文件",)),
     Stage(RUN_ID, "扫脉宽并读 MFLI R/θ（可勾选）", "测量", ("A02",), (*CHAIN, *SCAN),
           ("raw/scan.csv", "raw/R_*.csv", "experiment_config.yaml"),
-          quality_gates=("射频相位取 A03 的 chosen_deg（有 refined_deg 时优先），A03 未运行或关闭时回落 "
-                         "Y_RF_PHASE_DEG 并在摘要记 phase_source；每个宽度上传一对 +π/−π 脉冲并由 "
+          quality_gates=("多相位模式：每个宽度在 Y_RF_PHASE_DEG + k·360°/N 上按「重复 → 相位」交错读数，"
+                         "每次读数前按 DirectAW 顺序改射频相位；单相位模式：相位取 A03 的 chosen_deg"
+                         "（有 refined_deg 时优先），A03 未运行或关闭时回落 Y_RF_PHASE_DEG 并记 phase_source；"
+                         "每个宽度上传一对 +π/−π 脉冲并由 "
                          "Time_sequence_2 外触发无限 burst；温控关闭窗口内只读不写盘，"
                          "每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘；取消保留已完成点",)),
     Stage(FINISH_ID, "安全结束会话", "结束", (),
@@ -56,11 +59,13 @@ ACQUISITION = (
                          "再恢复温控与 GS200 原状态并断开全部设备",)),
 )
 ANALYSIS = (
-    Stage("B01", "R(宽度) 拟合与 π 宽度", "独立分析", (), REFERENCE,
+    Stage("B01", "c−1 分解（或单相位 R 拟合）与 π 宽度", "独立分析", (), REFERENCE,
           artifacts=("scan_summary.json", "r_vs_width.png"),
-          quality_gates=("运行目录已停止写入；至少四个宽度点才能拟合三个参数；"
+          quality_gates=("运行目录已停止写入；≥3 个射频相位时逐宽度分解 c0/c+1/c−1，|c−1| 峰位为 τπ、"
+                         "峰后最接近零处为 2π 宽度，峰在端点时 fit_quality=poor；单相位时拟合 R(τ)；"
+                         "至少四个相位齐全的宽度点；"
                          "缺数据或点不足时写原因、空摘要与占位图；"
-                         "电学参考宽度取自 REFERENCE_PI_WIDTH_US，R_max 小于单点标准误中位数 5 倍时提示 signal_low",)),
+                         "电学参考宽度取自 REFERENCE_PI_WIDTH_US，信号小于其标准误中位数 5 倍时提示 signal_low",)),
 )
 
 _rules = DependencyRules(finish_id=FINISH_ID)

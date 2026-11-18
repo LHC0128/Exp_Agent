@@ -9,7 +9,9 @@ from .models import PiWidthScanParams
 
 EXPERIMENT_ID = "pi-width-scan"
 DATA_TYPE = "pi_width_scan"
-RAW_FORMAT_VERSION = 1
+# 2：scan.csv 增加 rf_phase_deg 列，多相位模式逐点文件名带相位；1 为单相位旧格式，分析仍可读。
+RAW_FORMAT_VERSION = 2
+SUPPORTED_RAW_FORMAT_VERSIONS = (1, 2)
 
 SOURCE_KEY = "Z_magnetic_field"
 X_KEY = "X_magnetic_field"
@@ -24,16 +26,19 @@ TEC_KEY = "temperature"
 CURRENT_LIMIT_KEY = "z_pulse_coil_current"
 REQUIRED_MAPPING_KEYS = (SOURCE_KEY, X_KEY, RF_KEY, TRIGGER_KEY, TEMP_SWITCH_KEY, LOCKIN_KEY,
                          AMPLIFIER_KEY, SCOPE_KEY, MAIN_FIELD_KEY, TEC_KEY)
-# raw/：scan.csv 每行一个读数；R_<width>_<repeat>.csv 保存该次读数的完整序列；
-# phase_scan.csv 保存 A03 相位粗扫每个角度的读数；相位曲线在 results/ 下。
+# raw/：scan.csv 每行一个读数；逐点文件保存该次读数的完整序列——单相位为 R_<width>_<repeat>.csv，
+# 多相位为 R_<width>_p<phase>_<repeat>.csv；phase_scan.csv 保存 A03 相位粗扫每个角度的读数；
+# 相位曲线在 results/ 下。
 SCAN_FILE = "raw/scan.csv"
 PHASE_SCAN_FILE = "raw/phase_scan.csv"
 PHASE_PLOT_FILE = "results/phase_vs_phase.png"
 POINT_FILE_PREFIX = "raw/R_"
 
 
-def point_file(width_us: float, repeat: int) -> str:
-    return f"{POINT_FILE_PREFIX}{width_us:g}_{repeat}.csv"
+def point_file(width_us: float, repeat: int, phase_deg: float | None = None) -> str:
+    if phase_deg is None:
+        return f"{POINT_FILE_PREFIX}{width_us:g}_{repeat}.csv"
+    return f"{POINT_FILE_PREFIX}{width_us:g}_p{phase_deg:g}_{repeat}.csv"
 
 
 def read_config(path):
@@ -57,7 +62,7 @@ def format_block_reason(config):
         return "运行配置必须为映射"
     if config.get("experiment_id") != EXPERIMENT_ID or config.get("data_type") != DATA_TYPE:
         return "运行目录属于其他实验"
-    if config.get("raw_format_version") != RAW_FORMAT_VERSION:
+    if config.get("raw_format_version") not in SUPPORTED_RAW_FORMAT_VERSIONS:
         return "不支持该原始数据格式版本"
     try:
         parameters(config)
@@ -88,6 +93,7 @@ def initial_metadata(p: PiWidthScanParams):
                            "rf_phase_deg": p.y_rf_phase_deg,
                            "rf_phase_offset_us": p.rf_phase_offset_us(),
                            "rf_phase_angles_deg": p.rf_phase_angles_deg(),
+                           "scan_phases_deg": p.scan_phases_deg(),
                            "phase_check_enabled": p.phase_check_enabled,
                            "predicted_width_us": p.predicted_width_us(),
                            "phase_check_width_us": p.phase_check_width_us,
