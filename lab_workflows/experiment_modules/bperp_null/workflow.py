@@ -38,8 +38,7 @@ class Workflow(StagedWorkflow):
         keys = ("scan_points_completed", "scan_reads_completed", "scan_reads_total")
         return {"scan_progress": {key: self.state.get(key) for key in keys},
                 "daq_settings": {"scan_acquisition": self.state.get("scan_acquisition")},
-                "main_field": self.state.get("main_field"),
-                "z_waveform": self.state.get("z_waveform")}
+                "main_field": self.state.get("main_field")}
 
     def run_step(self, item):
         if item == "A02":

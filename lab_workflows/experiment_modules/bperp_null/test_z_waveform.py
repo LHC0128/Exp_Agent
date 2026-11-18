@@ -217,5 +217,18 @@ class UploadAndRecordTest(unittest.TestCase):
             self.assertFalse((Path(tmp) / "run" / "raw" / "z_waveform.csv").exists())
 
 
+class SessionSnapshotTest(unittest.TestCase):
+    def test_snapshot_fits_gui_session_model(self):
+        """会话快照必须通过 GUI 的严格响应模型（多余字段会让 GET 会话返回 500）。"""
+        from GUI.backend.workflow_sessions import XYSession
+        from .workflow import Workflow
+        flow = Workflow(models.BperpNullParams(), project_root=common.find_project_root())
+        flow.state["z_waveform"] = {"source": "file", "file": "tail.csv"}
+        body = flow.snapshot() | {"job_id": "job", "status": "running"}
+        XYSession.model_validate(body)
+        with self.assertRaises(Exception):     # 模型是严格的：任何新快照键都必须先加进 XYSession
+            XYSession.model_validate(body | {"z_waveform": None})
+
+
 if __name__ == "__main__":
     unittest.main()
