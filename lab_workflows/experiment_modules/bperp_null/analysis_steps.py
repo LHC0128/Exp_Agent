@@ -185,7 +185,7 @@ def scan_report(run_dir, params: BperpNullParams):
                                            encoding="utf-8")
     _plot_bias_map(run_dir, x_mv, y_mv, c2, fit2)
     _plot_residuals(run_dir, x_mv, y_mv, fit2)
-    return summary
+    return _jsonable(summary)
 
 
 def _plot_bias_map(run_dir, x_mv, y_mv, c2, fit):
