@@ -31,15 +31,16 @@ def write_run_config(path: Path, config: dict[str, Any]) -> None:
                 prefix=f".{path.name}.", suffix=".tmp", delete=False) as stream:
             temporary = Path(stream.name)
             yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
-        # Windows 读者可能短暂占用目标；替换前已关闭临时文件。
-        for attempt in range(6):
+        # Windows 读者可能短暂占用目标；替换前已关闭临时文件。杀软或索引服务可能占用数百毫秒，
+        # 因此按递增间隔重试到约 1.4 s 再放弃。
+        for attempt in range(8):
             try:
                 temporary.replace(path)
                 break
             except PermissionError:
-                if attempt == 5:
+                if attempt == 7:
                     raise
-                time.sleep(0.02)
+                time.sleep(0.05 * (attempt + 1))
     finally:
         if temporary is not None:
             try:
