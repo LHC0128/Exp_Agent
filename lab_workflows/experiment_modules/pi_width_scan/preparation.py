@@ -84,6 +84,11 @@ def pulse_wave(p: PiWidthScanParams, width_us: float) -> tuple[np.ndarray, dict]
                       antisymmetry_error=float(np.max(np.abs(wave[:half] + wave[half:2 * half]))))
 
 
+def rf_levels(p: PiWidthScanParams) -> tuple[float, ...]:
+    """Y 通道需在限内的电平：0、Y_BIAS_V 与射频叠加后的上下峰值。"""
+    return (0.0, p.y_bias_v, p.y_bias_v + p.y_rf_vpp / 2.0, p.y_bias_v - p.y_rf_vpp / 2.0)
+
+
 def amplifier_safety_check(ctx):
     """1200B 安全回调：只放行关闭输出与本次参数里的增益/阻抗写入，其余一律拒绝。"""
     def check(operation, value):
@@ -137,7 +142,7 @@ def preflight(params: PiWidthScanParams, root):
         validate_safety_limit(SOURCE_KEY, value, limits)
     validate_safety_limit(X_KEY, 0.0, limits)
     validate_safety_limit(X_KEY, params.x_bias_v, limits)
-    for value in (0.0, params.y_rf_vpp / 2.0, -params.y_rf_vpp / 2.0):
+    for value in rf_levels(params):
         validate_safety_limit(RF_KEY, value, limits)
     for value in (0.0, TRIGGER_OFFSET_V - TRIGGER_VPP / 2.0, TRIGGER_OFFSET_V + TRIGGER_VPP / 2.0):
         validate_safety_limit(TRIGGER_KEY, value, limits)
@@ -273,14 +278,15 @@ def configure_lockin(ctx):
 
 
 def configure_rf(ctx):
-    """Y 向射频：5 kHz 正弦，无限 burst 由共同触发启动，相位由 burst 相位决定。"""
+    """Y 向射频：5 kHz 正弦叠加 Y_BIAS_V 直流 offset，无限 burst 由共同触发启动，相位由 burst 相位决定。"""
     p = ctx.params
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
-    for value in (0.0, p.y_rf_vpp / 2.0, -p.y_rf_vpp / 2.0):
+    for value in rf_levels(p):
         validate_safety_limit(RF_KEY, value, load_safety_limits(ctx.root))
     signals.set_burst_state(False, channel=channels["y"])
     signals.set_mod_state(False, channel=channels["y"])
-    signals.setup_sine(freq=p.y_rf_freq_hz, amplitude=p.y_rf_vpp, offset=0.0, phase=0.0, channel=channels["y"])
+    signals.setup_sine(freq=p.y_rf_freq_hz, amplitude=p.y_rf_vpp, offset=float(p.y_bias_v), phase=0.0,
+                       channel=channels["y"])
     # 射频与 Z 共用 Time_sequence_2：无限 burst 让射频只在第一个触发沿起步，
     # 之后相位由 burst 相位唯一决定，A03 才能只改相位、不动波形。
     signals.set_burst_mode("INFinity", channel=channels["y"])
@@ -290,8 +296,9 @@ def configure_rf(ctx):
     signals.set_burst_phase(p.y_rf_phase_deg, channel=channels["y"])
     signals.set_burst_state(True, channel=channels["y"])
     signals.set_output(True, channel=channels["y"])
+    ctx.state["y_bias_v"] = float(p.y_bias_v)
     ctx.outputs["Y 射频"] = (f"无限 burst 正弦 {p.y_rf_freq_hz:g} Hz、{p.y_rf_vpp:g} Vpp、"
-                             f"相位 {p.y_rf_phase_deg:g}°")
+                             f"offset {p.y_bias_v:+.4f} V、相位 {p.y_rf_phase_deg:g}°")
 
 
 def set_rf_phase(ctx, phase_deg):
@@ -302,7 +309,7 @@ def set_rf_phase(ctx, phase_deg):
     """
     p = ctx.params
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
-    for value in (0.0, p.y_rf_vpp / 2.0, -p.y_rf_vpp / 2.0):
+    for value in rf_levels(p):
         validate_safety_limit(RF_KEY, value, load_safety_limits(ctx.root))
     signals.set_output(False, channel=channels["y"])
     signals.set_burst_state(False, channel=channels["y"])
@@ -311,7 +318,7 @@ def set_rf_phase(ctx, phase_deg):
     signals.set_output(True, channel=channels["y"])
     ctx.state["rf_phase_deg"] = float(phase_deg)
     ctx.state["rf_phase_offset_us"] = p.rf_phase_offset_us(phase_deg)
-    ctx.outputs["Y 射频"] = (f"无限 burst 正弦 {p.y_rf_freq_hz:g} Hz、{p.y_rf_vpp:g} Vpp、"
+    ctx.outputs["Y 射频"] = (f"无限 burst 正弦 {p.y_rf_freq_hz:g} Hz、{p.y_rf_vpp:g} Vpp、offset {p.y_bias_v:+.4f} V、"
                              f"相位 {float(phase_deg):g}°（{p.rf_phase_offset_us(phase_deg):g} µs）")
 
 

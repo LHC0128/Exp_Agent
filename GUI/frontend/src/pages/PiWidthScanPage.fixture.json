@@ -217,6 +217,18 @@
       "read_only": false
     },
     {
+      "name": "Y_BIAS_V",
+      "label": "Y 静态偏置",
+      "type": "number",
+      "default": 0.0,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "叠加在 Y 向射频正弦上的直流 offset，与 X_BIAS_V 一起补掉残余横向场；与 bperp-null 的 Y 偏置是同一通道（Y_magnetic_field）、同一电压。默认 0 与原行为相同。",
+      "read_only": false
+    },
+    {
       "name": "PHASE_CHECK_WIDTH_US",
       "label": "相位粗扫脉宽",
       "type": "number",
@@ -532,6 +544,7 @@
         "parameters": [
           "AMPLIFIER_GAIN_DB",
           "X_BIAS_V",
+          "Y_BIAS_V",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
           "AMPLIFIER_WRITE_SETTINGS",
@@ -551,6 +564,7 @@
         "display_parameters": [
           "AMPLIFIER_GAIN_DB",
           "X_BIAS_V",
+          "Y_BIAS_V",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
           "AMPLIFIER_WRITE_SETTINGS",
@@ -567,7 +581,7 @@
           "DEMOD0_RATE"
         ],
         "quality_gates": [
-          "连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；按 X_BIAS_V 设 X 静态偏置；MFLI 第 0 路解调器按参数配置并记录回读；射频按无限 burst 与 Y_RF_PHASE_DEG 起振；GS200 主磁场输出回读为 OFF 才继续；DG 与 MFLI 参考时钟严格回读一致"
+          "连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；按 X_BIAS_V 设 X 静态偏置、Y 射频正弦叠加 Y_BIAS_V 直流 offset（电平 offset ± Vpp/2 在限内）；MFLI 第 0 路解调器按参数配置并记录回读；射频按无限 burst 与 Y_RF_PHASE_DEG 起振；GS200 主磁场输出回读为 OFF 才继续；DG 与 MFLI 参考时钟严格回读一致"
         ]
       },
       {
@@ -580,6 +594,7 @@
         "parameters": [
           "AMPLIFIER_GAIN_DB",
           "X_BIAS_V",
+          "Y_BIAS_V",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
           "AMPLIFIER_WRITE_SETTINGS",
@@ -616,6 +631,7 @@
         "display_parameters": [
           "AMPLIFIER_GAIN_DB",
           "X_BIAS_V",
+          "Y_BIAS_V",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
           "AMPLIFIER_WRITE_SETTINGS",
@@ -659,6 +675,7 @@
         "parameters": [
           "AMPLIFIER_GAIN_DB",
           "X_BIAS_V",
+          "Y_BIAS_V",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
           "AMPLIFIER_WRITE_SETTINGS",
@@ -701,6 +718,7 @@
         "display_parameters": [
           "AMPLIFIER_GAIN_DB",
           "X_BIAS_V",
+          "Y_BIAS_V",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
           "AMPLIFIER_WRITE_SETTINGS",
@@ -787,6 +805,11 @@
           "A04"
         ],
         "X_BIAS_V": [
+          "A02",
+          "A03",
+          "A04"
+        ],
+        "Y_BIAS_V": [
           "A02",
           "A03",
           "A04"

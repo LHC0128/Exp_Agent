@@ -8,7 +8,8 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -33,7 +34,8 @@ REGRESSION_CASES = {
     "pi-width-scan": {
         "parameters": {
             "sources": ["lab_workflows/experiment_modules/pi_width_scan/models.py"],
-            "tests": ["TailWaveformTest::test_tail_parameters_validated"],
+            "tests": ["TailWaveformTest::test_tail_parameters_validated",
+                      "YBiasTest::test_preflight_rejects_y_offset_beyond_limit"],
         },
     },
 }
@@ -138,6 +140,48 @@ class TailScanTest(unittest.TestCase):
         self.assertTrue(ctx.directory.signals.temp_on)
         self.assertEqual(ctx.state["scan_points_completed"],
                          len(widths) * params.n_repeat * params.scan_rf_phase_count)
+
+
+class YBiasTest(unittest.TestCase):
+    """Y_BIAS_V 作为射频正弦的直流 offset 写入 Y 通道，电平 offset ± Vpp/2 在每次写入前核对。"""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        shutil.copytree(Path(common.__file__).resolve().parents[1] / "params", self.root / "params")
+
+    def ctx(self, params):
+        signals = MagicMock()
+        return SimpleNamespace(params=params, root=self.root, devices={"signals": signals, "channels": dict(CHANNELS)},
+                               state={}, outputs={}), signals
+
+    def test_rf_sine_carries_y_offset(self):
+        ctx, signals = self.ctx(fast_params(y_bias_v=-0.0069))
+        preparation.configure_rf(ctx)
+        kwargs = signals.setup_sine.call_args.kwargs
+        self.assertEqual(kwargs["channel"], CHANNELS["y"])
+        self.assertAlmostEqual(kwargs["offset"], -0.0069)
+        self.assertAlmostEqual(kwargs["amplitude"], 0.05)
+        self.assertAlmostEqual(ctx.state["y_bias_v"], -0.0069)
+        # 改相位不重写波形，offset 保持；默认 0 时与原行为相同。
+        preparation.set_rf_phase(ctx, 180.0)
+        self.assertEqual(signals.setup_sine.call_count, 1)
+        ctx0, signals0 = self.ctx(fast_params())
+        preparation.configure_rf(ctx0)
+        self.assertEqual(signals0.setup_sine.call_args.kwargs["offset"], 0.0)
+
+    def test_levels_include_offset_and_rf_peaks(self):
+        self.assertEqual(preparation.rf_levels(fast_params(y_bias_v=-0.0069)),
+                         (0.0, -0.0069, -0.0069 + 0.025, -0.0069 - 0.025))
+
+    def test_preflight_rejects_y_offset_beyond_limit(self):
+        preparation.preflight(fast_params(y_bias_v=-0.0069), self.root)
+        with self.assertRaises(ValueError):
+            preparation.preflight(fast_params(y_bias_v=1e3), self.root)
+        with self.assertRaises(ValueError):
+            preparation.configure_rf(self.ctx(fast_params(y_bias_v=1e3))[0])
+        self.assertTrue(any("Y_BIAS_V" in e for e in fast_params(y_bias_v=float("nan")).validate_model()))
 
 
 if __name__ == "__main__":

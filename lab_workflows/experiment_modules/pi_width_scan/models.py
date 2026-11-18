@@ -99,6 +99,10 @@ class PiWidthScanParams(ExperimentParams):
         unit="V", group="basic",
         description="A02 在 X 通道加的静态偏置；用来补掉残余横向场，把脉冲轴与自旋拉回 z。"
                     "默认 0 表示不加偏置、通道保持关闭。本机实测 -0.02 V 可把 5 kHz 残留从 12.7 压到 3.9 mV。")
+    y_bias_v: float = parameter(default=0.0, external_name="Y_BIAS_V", label="Y 静态偏置",
+        unit="V", group="basic",
+        description="叠加在 Y 向射频正弦上的直流 offset，与 X_BIAS_V 一起补掉残余横向场；"
+                    "与 bperp-null 的 Y 偏置是同一通道（Y_magnetic_field）、同一电压。默认 0 与原行为相同。")
     phase_check_width_us: float = parameter(default=5.0, external_name="PHASE_CHECK_WIDTH_US",
         label="相位粗扫脉宽", unit="µs", minimum=1e-3, group="basic",
         description="A03 期间 Z 双脉冲串的单脉冲宽度；默认 5 µs 取电学参考 π 宽度附近，"
@@ -272,6 +276,8 @@ class PiWidthScanParams(ExperimentParams):
             errors.append("Z_TAIL_TAU_E_US 必须为正的有限数")
         if not math.isfinite(self.x_bias_v):
             errors.append("X_BIAS_V 必须是有限数")
+        if not math.isfinite(self.y_bias_v):
+            errors.append("Y_BIAS_V 必须是有限数")
         if not math.isfinite(self.phase_check_width_us) or self.phase_check_width_us <= 0:
             errors.append("PHASE_CHECK_WIDTH_US 必须为正的有限数")
         elif self.phase_check_width_us > self.pulse_half_period_us:

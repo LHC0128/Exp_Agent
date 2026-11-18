@@ -78,6 +78,7 @@ Z 通道链路与 π 脉冲面积标定完全一致：DG 的 Z 通道 → Aigtek
 - 共同触发：`Time_sequence_2` 输出 5 kHz 方波（固定 5 Vpp、2.5 V 偏置、50% 占空比）接 Z 通道与 Y 射频的外触发输入；它同时是共同触发，安全收尾后保持运行。
 - DHO900 接采样电阻仅供人工核对脉冲波形，本实验不采集示波器数据。
 - X 通道在 A02 按 `X_BIAS_V` 加静态偏置（默认 0 V、输出关闭），A05 归零并关输出；它用于补掉残余横向场，实测 −0.02 V 可把关射频时的 5 kHz 残留从 12.7 mV 压到 3.9 mV。
+- Y 通道同时出射频与静态偏置：射频正弦叠加 `Y_BIAS_V` 直流 offset（默认 0，即原行为）。它与 bperp-null 的 Y 偏置是同一通道 `Y_magnetic_field`、同一电压，bperp-null 标定的零场 Y 值可直接填入；预检与每次改相位前都核对 offset ± Vpp/2 在安全限内，A05 归零并关输出。
 - GS200 主磁场在 A02 关闭输出并回读为 OFF，A05 恢复运行前状态。
 
 ## Z 拖尾补偿（可选）
@@ -93,7 +94,7 @@ Z 通道链路与 π 脉冲面积标定完全一致：DG 的 Z 通道 → Aigtek
 ## 阶段
 
 - **A01** 参数、映射与安全限值预检（不连硬件）：脉宽列表由 start/stop/step 生成，逐项检查非空、不超过半个周期、不小于两倍沿宽；射频相位粗扫的起点/终点/步进必须能生成非空角度列表；`z_pulse_coil_current`、Z/Y 场电平、触发电平与电阻平均功耗全部在限内；检查 Z 信号源的任意波点数与 burst 能力。
-- **A02** 连接 DG、MFLI、1200B、DHO900、GS200 与 TEC（可选）：写 1200B 增益与输入/输出阻抗并把 Z 通道负载配成一致；按 `X_BIAS_V` 在 X 通道加静态偏置；按参数配置 MFLI 第 0 路解调器（量程、阶数、时间常数、采样率）并把参考频率设为射频频率，解调相位沿用库默认值并回读记录；射频与 Z 都按无限 burst 起振；关闭 GS200 主磁场输出并回读；DG 与 MFLI 参考时钟严格回读。
+- **A02** 连接 DG、MFLI、1200B、DHO900、GS200 与 TEC（可选）：写 1200B 增益与输入/输出阻抗并把 Z 通道负载配成一致；按 `X_BIAS_V` 在 X 通道加静态偏置、Y 射频叠加 `Y_BIAS_V` offset；按参数配置 MFLI 第 0 路解调器（量程、阶数、时间常数、采样率）并把参考频率设为射频频率，解调相位沿用库默认值并回读记录；射频与 Z 都按无限 burst 起振；关闭 GS200 主磁场输出并回读；DG 与 MFLI 参考时钟严格回读。
 - **A03** 射频相位粗扫（可勾选）：Z 脉冲串按 `PHASE_CHECK_WIDTH_US` 只写一次；逐角度按 DirectAW 顺序改射频 burst 相位，随后与 A04 一样按 `TEMP_GROUP_SIZE` 分组采集——组首关闭温控并等 `SYSTEM_SETTLE_S` 再读、组末恢复温控并等 `TEMP_SWITCH_ON_LAG_S` 后落盘，关温控窗口内不写文件；每角度读 `N_REPEAT` 次 R/θ，写 `raw/phase_scan.csv` 与 `results/phase_vs_phase.png`；取 R 峰，峰不在端点时用相邻三点抛物线插值给出亚步进精化角度；`chosen_deg`、`refined_deg`、`R_chosen`、`R_curve` 写进运行配置。`PHASE_CHECK_ENABLED=false` 或多相位模式（`SCAN_RF_PHASE_COUNT` ≥ 3）时本阶段整段跳过、不写任何文件，多相位跳过时 `phase_check` 记 `skipped: multi_phase`。
 - **A04** 扫脉宽（可勾选）：逐个宽度上传 ±π 双脉冲并 arm 无限 burst（每个宽度只上传一次）。
   - 多相位模式：在该宽度上按「重复 → 相位」交错读数，即依次读完整组相位再开始下一次重复，相邻相位只隔一次读数，慢漂移对各相位的影响相同。每次读数前按 DirectAW 顺序改射频相位，`phase_source` 记 `scan_phases`。
@@ -117,6 +118,7 @@ Z 通道链路与 π 脉冲面积标定完全一致：DG 的 Z 通道 → Aigtek
 | `Y_RF_PHASE_START/STOP/STEP_DEG` | 相位粗扫网格，默认 0–180°、步进 22.5°（9 点）；只扫 0–180° |
 | `PHASE_CHECK_WIDTH_US` | A03 期间 Z 双脉冲串的单脉冲宽度，默认 5.0 µs；与 A04 的扫描网格无关 |
 | `X_BIAS_V` | X 通道静态偏置，默认 0 V（输出关闭）；实测 −0.02 V 把 5 kHz 残留从 12.7 压到 3.9 mV |
+| `Y_BIAS_V` | 叠加在 Y 射频正弦上的直流 offset，默认 0 V；与 bperp-null 的 Y 偏置同一通道、同一电压 |
 | `Z_PEAK_CURRENT_MA` | 固定的脉冲峰值电流，默认 190 mA；−π 取相反号 |
 | `Z_PULSE_EDGE_US` | 升余弦沿宽，默认 1 µs；等效面积按「宽度 − 沿宽」计 |
 | `Z_TAIL_COMP_ENABLED` | Z 拖尾补偿开关，默认关闭；开启后每个脉宽接精确反号指数尾（见上节） |
