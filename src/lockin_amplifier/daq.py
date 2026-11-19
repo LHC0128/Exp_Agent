@@ -197,6 +197,11 @@ class DAQCollector:
         """清理 DAQ 模块；严格模式不把清理失败当作成功。"""
         if self._mod is not None:
             try:
+                # 超时或取消后模块可能仍在运行，先 finish 再 clear，避免下一次 configure 继承忙状态。
+                try:
+                    self._mod.finish()
+                except Exception:
+                    logger.debug("DAQ 模块 finish 未生效，继续 clear")
                 self._mod.clear()
                 logger.debug("DAQ 模块已清理")
             except Exception as exc:
