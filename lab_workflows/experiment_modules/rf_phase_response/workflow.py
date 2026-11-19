@@ -44,8 +44,8 @@ class Workflow(StagedWorkflow):
         if item == "A02":
             preparation.connect(self)
             self.state["clock_sources"] = preparation.clocks(self)
-            # 主磁场先关，再起射频与脉冲输出。
-            preparation.disable_main_field(self)
+            # 主磁场按参数设置：0 关闭并回读，非零写电流并回读。
+            preparation.configure_main_field(self, self.params.main_field_current_ma)
             preparation.configure_chain(self)
             preparation.configure_lockin(self)
             preparation.configure_rf(self)

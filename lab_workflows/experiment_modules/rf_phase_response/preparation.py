@@ -17,10 +17,10 @@ from ..z_chain_common.keys import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, LOCKIN_KEY,
 from ..z_chain_common.params import ARB_POINTS
 from ..z_chain_common.prep import (ARB_SAMPLE_RATE_CHECK, BURST_NCYCLES, TEMP_SWITCH_ON_V,
                                    TRIGGER_DUTY, TRIGGER_OFFSET_V, TRIGGER_VPP, clocks,
-                                   configure_chain, configure_lockin, configure_rf,
-                                   configure_trigger, configure_x_bias, configure_z_idle,
-                                   disable_main_field, enable_temperature_switch, plan, pulse_wave,
-                                   rf_levels, set_rf_phase, shutdown)
+                                   configure_chain, configure_lockin, configure_main_field,
+                                   configure_rf, configure_trigger, configure_x_bias,
+                                   configure_z_idle, disable_main_field, enable_temperature_switch,
+                                   plan, pulse_wave, rf_levels, set_rf_phase, shutdown)
 from .models import RfPhaseResponseParams
 from .run_format import EXPERIMENT_ID
 
@@ -28,7 +28,8 @@ __all__ = [
     "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "BURST_NCYCLES", "SafetyAbort", "TEMP_SWITCH_ON_V",
     "TRIGGER_DUTY", "TRIGGER_OFFSET_V", "TRIGGER_VPP", "amplifier_safety_check", "clocks",
     "configure_chain", "configure_lockin", "configure_rf", "configure_trigger", "configure_x_bias",
-    "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
+    "configure_z_idle", "connect", "current_limit", "disable_main_field",
+    "enable_temperature_switch", "configure_main_field",
     "plan", "preflight", "pulse_wave", "rf_levels", "set_amp_output", "set_rf_phase", "shutdown", "sleep",
 ]
 
@@ -71,6 +72,11 @@ def preflight(params: RfPhaseResponseParams, root):
         validate_safety_limit(SOURCE_KEY, value, limits)
     validate_safety_limit(X_KEY, 0.0, limits)
     validate_safety_limit(X_KEY, params.x_bias_v, limits)
+    if params.main_field_current_ma:
+        source_function = str(mapping[MAIN_FIELD_KEY].get("source_function", "")).upper()
+        if source_function not in ("CURR", "CURRENT"):
+            raise ValueError(f"{MAIN_FIELD_KEY} 必须配置为电流模式才能加主磁场")
+        validate_safety_limit(MAIN_FIELD_KEY, params.main_field_current_ma, limits)
     for value in rf_levels(params):
         validate_safety_limit(RF_KEY, value, limits)
     for value in (0.0, TRIGGER_OFFSET_V - TRIGGER_VPP / 2.0, TRIGGER_OFFSET_V + TRIGGER_VPP / 2.0):

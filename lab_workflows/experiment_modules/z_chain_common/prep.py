@@ -33,7 +33,8 @@ from .keys import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, LOCKIN_KEY, MAIN_FIELD_KEY,
 
 __all__ = [
     "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "BURST_NCYCLES", "SafetyAbort", "amplifier_safety_check",
-    "clocks", "configure_chain", "configure_lockin", "configure_rf", "configure_trigger", "configure_x_bias",
+    "clocks", "configure_chain", "configure_lockin", "configure_main_field", "configure_rf",
+    "configure_trigger", "configure_x_bias",
     "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
     "plan", "pulse_wave", "rf_levels", "set_rf_phase", "shutdown", "sleep",
 ]
@@ -291,22 +292,52 @@ def configure_x_bias(ctx):
     ctx.outputs["X 偏置"] = (f"DC {p.x_bias_v:+.3f} V（输出 ON）" if p.x_bias_v else "0 V（输出 OFF）")
 
 
-def disable_main_field(ctx):
-    """关闭 GS200 主磁场输出并回读；本实验不需要主场，关闭是 A02 的质量门槛。"""
+def configure_main_field(ctx, current_ma):
+    """按需设置 GS200 主磁场：0 表示关闭输出；非零时按 mA 写电流并回读。
+
+    运行前状态先快照，收尾由 ``shutdown`` 恢复；写入前按 ``main_magnetic_field``
+    安全限值校验，回读电流或输出状态不符即 SafetyAbort。
+    """
     gs200 = ctx.devices["gs200"]
     if not ctx.mapping[MAIN_FIELD_KEY].get("resource"):
         raise ValueError(f"{MAIN_FIELD_KEY} 缺少 GS200 resource")
     state = snapshot_main_field_state(gs200)
     ctx.main_field_state = state
+    before = dict(source_function=state.source_function, current_a=state.current_a,
+                  output_on=state.output_on, current_range_a=state.current_range_a,
+                  current_limit_a=state.current_limit_a)
+    value_ma = float(current_ma)
+    if value_ma == 0.0:
+        gs200.set_output(False)
+        if gs200.get_output():
+            raise SafetyAbort("GS200 主磁场输出未关闭；拒绝开始采集")
+        ctx.state["main_field"] = dict(before=before, output_after=False,
+                                       restored_on_shutdown=True)
+        ctx.outputs["主磁场"] = "OFF（已回读）"
+        return
+    limits = load_safety_limits(ctx.root)
+    validate_safety_limit(MAIN_FIELD_KEY, value_ma, limits)
+    value_a = value_ma / 1000.0
+    limit_a = float(limits[MAIN_FIELD_KEY]["max"]) / 1000.0
     gs200.set_output(False)
-    if gs200.get_output():
-        raise SafetyAbort("GS200 主磁场输出未关闭；拒绝开始采集")
-    ctx.state["main_field"] = dict(before=dict(source_function=state.source_function,
-                                               current_a=state.current_a, output_on=state.output_on,
-                                               current_range_a=state.current_range_a,
-                                               current_limit_a=state.current_limit_a),
-                                   output_after=False, restored_on_shutdown=True)
-    ctx.outputs["主磁场"] = "OFF（已回读）"
+    gs200.set_source_function(state.source_function)
+    if state.current_limit_a < abs(value_a):
+        gs200.set_current_limit(limit_a)
+    if state.current_range_a < abs(value_a):
+        gs200.set_current_range(0.01)
+    gs200.set_current(value_a)
+    gs200.set_output(True)
+    actual_a = float(gs200.get_current())
+    if not gs200.get_output() or abs(actual_a - value_a) > max(1e-6, abs(value_a) * 0.01):
+        raise SafetyAbort(f"GS200 主磁场回读不符：设定 {value_ma:g} mA，回读 {actual_a * 1000:g} mA")
+    ctx.state["main_field"] = dict(before=before, output_after=True, current_after_ma=value_ma,
+                                   restored_on_shutdown=True)
+    ctx.outputs["主磁场"] = f"ON {value_ma:+.3f} mA（已回读）"
+
+
+def disable_main_field(ctx):
+    """关闭 GS200 主磁场输出并回读；本实验不需要主场，关闭是 A02 的质量门槛。"""
+    configure_main_field(ctx, 0.0)
 
 
 def enable_temperature_switch(ctx):

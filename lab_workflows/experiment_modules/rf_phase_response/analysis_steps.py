@@ -331,6 +331,7 @@ def scan_report(run_dir, params):
                    rf_frequency_hz=params.y_rf_freq_hz, rf_vpp=params.y_rf_vpp,
                    pulse_period_us=params.pulse_period_us, peak_current_ma=params.z_peak_current_ma,
                    width_us=params.z_pulse_width_us, edge_us=params.z_pulse_edge_us,
+                   main_field_current_ma=params.main_field_current_ma,
                    tail_comp=bool(params.z_tail_comp_enabled), tail_tau_c_us=params.z_tail_tau_c_us,
                    n_repeat=params.n_repeat, point_duration_s=params.scan_point_duration_s,
                    demod0_rate_sa_s=params.demod0_rate_sa_s, demod0_tc_s=params.demod0_tc_s,

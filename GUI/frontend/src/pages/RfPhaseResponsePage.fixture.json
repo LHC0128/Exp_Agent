@@ -181,6 +181,18 @@
       "read_only": false
     },
     {
+      "name": "MAIN_FIELD_CURRENT_MA",
+      "label": "主磁场电流",
+      "type": "number",
+      "default": 0.0,
+      "unit": "mA",
+      "group": "basic",
+      "minimum": -20.0,
+      "maximum": 20.0,
+      "description": "GS200 主磁场电流；0 表示关闭输出（原行为），非零时按该电流输出并回读，收尾恢复运行前状态。按 main_magnetic_field 安全限值校验。",
+      "read_only": false
+    },
+    {
       "name": "AMPLIFIER_GAIN_DB",
       "label": "功放增益",
       "type": "number",
@@ -449,6 +461,7 @@
           "AMPLIFIER_GAIN_DB",
           "X_BIAS_V",
           "Y_BIAS_V",
+          "MAIN_FIELD_CURRENT_MA",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
           "AMPLIFIER_WRITE_SETTINGS",
@@ -470,6 +483,7 @@
           "AMPLIFIER_GAIN_DB",
           "X_BIAS_V",
           "Y_BIAS_V",
+          "MAIN_FIELD_CURRENT_MA",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
           "AMPLIFIER_WRITE_SETTINGS",
@@ -501,6 +515,7 @@
           "AMPLIFIER_GAIN_DB",
           "X_BIAS_V",
           "Y_BIAS_V",
+          "MAIN_FIELD_CURRENT_MA",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
           "AMPLIFIER_WRITE_SETTINGS",
@@ -540,6 +555,7 @@
           "AMPLIFIER_GAIN_DB",
           "X_BIAS_V",
           "Y_BIAS_V",
+          "MAIN_FIELD_CURRENT_MA",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
           "AMPLIFIER_WRITE_SETTINGS",
@@ -623,6 +639,10 @@
           "A03"
         ],
         "Y_BIAS_V": [
+          "A02",
+          "A03"
+        ],
+        "MAIN_FIELD_CURRENT_MA": [
           "A02",
           "A03"
         ],

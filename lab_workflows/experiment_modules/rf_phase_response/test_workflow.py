@@ -76,6 +76,75 @@ class PreparationTest(unittest.TestCase):
             preparation.preflight(params, ROOT)
 
 
+class _FakeGS200:
+    def __init__(self):
+        self.source_function = "CURR"
+        self.current_a = 0.0
+        self.output = False
+        self.current_range_a = 0.01
+        self.current_limit_a = 0.2
+
+    def get_source_function(self):
+        return self.source_function
+
+    def get_current(self):
+        return self.current_a
+
+    def get_output(self):
+        return self.output
+
+    def get_current_range(self):
+        return self.current_range_a
+
+    def get_current_limit(self):
+        return self.current_limit_a
+
+    def set_output(self, value):
+        self.output = bool(value)
+
+    def set_source_function(self, value):
+        self.source_function = value
+
+    def set_current_limit(self, value):
+        self.current_limit_a = float(value)
+
+    def set_current_range(self, value):
+        self.current_range_a = float(value)
+
+    def set_current(self, value):
+        self.current_a = float(value)
+
+
+class MainFieldTest(unittest.TestCase):
+    def _context(self):
+        from types import SimpleNamespace
+        gs = _FakeGS200()
+        ctx = SimpleNamespace(root=ROOT, devices={"gs200": gs}, state={}, outputs={},
+                              main_field_state=None,
+                              mapping={"main_magnetic_field": {"resource": "ASRL1::INSTR",
+                                                               "source_function": "CURR"}})
+        return ctx, gs
+
+    def test_zero_current_keeps_output_off(self):
+        ctx, gs = self._context()
+        preparation.configure_main_field(ctx, 0.0)
+        self.assertFalse(gs.output)
+        self.assertFalse(ctx.state["main_field"]["output_after"])
+
+    def test_nonzero_current_sets_and_reads_back(self):
+        ctx, gs = self._context()
+        preparation.configure_main_field(ctx, 0.2)
+        self.assertTrue(gs.output)
+        self.assertAlmostEqual(gs.current_a, 0.0002, places=12)
+        self.assertTrue(ctx.state["main_field"]["output_after"])
+        self.assertAlmostEqual(ctx.state["main_field"]["current_after_ma"], 0.2)
+
+    def test_current_over_safety_limit_is_rejected(self):
+        ctx, gs = self._context()
+        with self.assertRaisesRegex(ValueError, "安全"):
+            preparation.configure_main_field(ctx, 21.0)
+
+
 class AnalysisTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

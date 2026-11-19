@@ -76,6 +76,7 @@ def initial_metadata(p: RfPhaseResponseParams):
                 predicted={"amps_per_drive_volt": p.amps_per_drive_volt,
                            "loop_resistance_ohm": p.loop_resistance_ohm, "pulse_vpp": p.pulse_vpp,
                            "pulse_period_us": p.pulse_period_us, "width_us": p.z_pulse_width_us,
+                           "main_field_current_ma": p.main_field_current_ma,
                            "tail_comp": p.z_tail_comp_enabled,
                            "tail_tau_c_us": p.z_tail_tau_c_us,
                            "rf_phase_deg": p.y_rf_phase_deg,

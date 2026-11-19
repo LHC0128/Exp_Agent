@@ -73,6 +73,10 @@ class RfPhaseResponseParams(ExperimentParams):
     y_bias_v: float = parameter(default=-0.0069, external_name="Y_BIAS_V", label="Y 静态偏置",
         unit="V", group="basic",
         description="叠加在 Y 向射频正弦上的直流 offset；默认取同一运行的重标值。")
+    main_field_current_ma: float = parameter(default=0.0, external_name="MAIN_FIELD_CURRENT_MA",
+        label="主磁场电流", unit="mA", minimum=-20.0, maximum=20.0, group="basic",
+        description="GS200 主磁场电流；0 表示关闭输出（原行为），非零时按该电流输出并回读，"
+                    "收尾恢复运行前状态。按 main_magnetic_field 安全限值校验。")
 
     # ---- 链路 ----
     amplifier_gain_db: float = parameter(default=20.0, external_name="AMPLIFIER_GAIN_DB", label="功放增益", unit="dB",
