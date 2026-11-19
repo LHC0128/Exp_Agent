@@ -56,7 +56,7 @@ Z(φ) = c0 + c+1 · e^{iφ} + c−1 · e^{−iφ}
 - `c+1`：共旋分量，没有脉冲时也存在；
 - `c−1`：反旋分量，只由脉冲把自旋翻转时出现。
 
-N 个相位点解 3 个复分量后，残差 `residual_rms_v` 用来检验模型；`model_best_phase_deg` 是模型 |Z(φ)| 最大的相位，`measured_best_phase_deg` 是实测 R 均值最大的相位。两者不一致时说明 c0 把椭圆推离原点，按 R 选读相位会偏离真正的最敏感点。
+N 个相位点解 3 个复分量后，残差 `residual_rms_v` 用来检验模型。最佳读相位取相位响应最快处，即 `|dZ/dφ|` 最大：`best_phase_deg` 来自模型解析导数，`measured_best_phase_deg` 来自相邻实测点的差分。`|dZ/dφ|` 的幅值以 180° 为周期，因此另给相差 180° 的 `best_phase_alt_deg`；两点灵敏度相同、斜率符号相反。
 
 ## 链路
 
@@ -75,7 +75,7 @@ Z 通道链路与 π 脉冲宽度实验一致：DG 的 Z 通道 → Aigtek 1200B
 - **A02** 连接 DG、MFLI、1200B、DHO900、GS200 与 TEC（可选）：写功放增益与阻抗、配平 Z 通道负载；按 `X_BIAS_V` 加静态偏置、Y 射频叠加 `Y_BIAS_V`；配置 MFLI 第 0 路解调器并把参考频率设为射频频率；射频与 Z 都按无限 burst 起振；关闭 GS200 主磁场输出并回读；DG 与 MFLI 参考时钟严格回读。
 - **A03** 扫射频相位：Z 双脉冲按 `Z_PULSE_WIDTH_US` 只写一次；逐角度按 DirectAW 顺序改射频 burst 相位；每个角度读 `N_REPEAT` 次，读数按 `TEMP_GROUP_SIZE` 分组——组首关闭温控并等 `SYSTEM_SETTLE_S` 再读，组末恢复温控并等 `TEMP_SWITCH_ON_LAG_S` 后落盘，关温控窗口内不写文件；写 `raw/phase_response.csv` 与逐点序列 `raw/phase_<phase>_<repeat>.csv`。取消时保留已完成读数。
 - **A04** 安全结束：先关 1200B，Z 通道 DC 0 V 并关 burst/sync，关 Y 射频，停 MFLI 解调传输与 DHO900，恢复温控与 GS200 原状态，再断开全部设备；`Time_sequence_2` 保持运行。
-- **B01** 离线分析：逐相位汇总 X/Y/R/θ，最小二乘解 `c0/c+1/c−1`，给出残差、模型最佳相位与实测最大相位，写 `results/phase_response_summary.json`、相位响应图 `results/phase_response.png` 与相量图 `results/phase_response_phasor.png`。
+- **B01** 离线分析：逐相位汇总 X/Y/R/θ，最小二乘解 `c0/c+1/c−1`，给出残差、`|dZ/dφ|` 最大的最佳相位（含 ±180° 的另一点）与实测差分相位，写 `results/phase_response_summary.json`、相位响应图 `results/phase_response.png` 与相量图 `results/phase_response_phasor.png`。
 
 ## 参数要点
 
@@ -103,7 +103,7 @@ Z 通道链路与 π 脉冲宽度实验一致：DG 的 Z 通道 → Aigtek 1200B
 - `raw/phase_response.csv`：每行一次读数，字段 `phase_deg, repeat, x_v, y_v, R_v, theta_deg, timestamp`；`x_v/y_v` 是解调器正交分量，格式版本 2 起提供，版本 1 只有 R/θ
 - `raw/phase_<phase>_<repeat>.csv`：该次读数的完整序列 `time_s, x_v, y_v, R_v, theta_deg`
 - `experiment_config.yaml`：运行参数、`z_waveform`（各脉宽的尾幅、τc、归一化与 mean(v²)）、`phase_response` 扫描记录、解调相位回读
-- `results/phase_response_summary.json`：`phases_deg`、逐相位 R/θ/X/Y 均值与标准误、`components`（`c0/c_plus1/c_minus1` 的 `re_v/im_v/abs_v/arg_deg/sem_v`）、`residual_rms_v`、`fit_quality`、`best_phase_deg`、`measured_best_phase_deg`、`signal_low`
+- `results/phase_response_summary.json`：`phases_deg`、逐相位 X/Y/R/θ 均值与标准误、`components`（`c0/c_plus1/c_minus1` 的 `re_v/im_v/abs_v/arg_deg/sem_v`）、`residual_rms_v`、`fit_quality`、`best_phase_deg`/`best_phase_alt_deg`、`sensitivity_max_v_per_deg`、`measured_best_phase_deg`/`measured_best_phase_alt_deg`、`measured_sensitivity_max_v_per_deg`、`sensitivity_curve`、`signal_low`
 - `results/phase_response.png`：上图为 R(φ) 散点与模型 |Z(φ)|、下图为 θ(φ) 散点（θ 在 ±180° 换支，不连线）
 - `results/phase_response_phasor.png`：相量图，实测 Z(φ) 沿相位顺序的轨迹、模型闭曲线、原点与 c0 中心；颜色表示射频相位，箭头指示扫描方向
 

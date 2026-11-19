@@ -142,8 +142,37 @@ def _model_curve(coefficients, start=0.0, stop=360.0, step=1.0):
     return phases, values
 
 
-def _plot(path, points, model_phases, model_values, summary):
-    """上：R(φ) 与三分量模型 |Z(φ)|；下：θ(φ) 散点。paper 样式，图中文字用英文与 mathtext。"""
+def _phase_sensitivity(coefficients, start=0.0, stop=360.0, step=0.1):
+    """|dZ/dφ|（V/deg）：相量随射频相位变化的快慢，最大值处是相位响应最灵敏的工作点。"""
+    phases = np.arange(start, stop, step)
+    phi = np.radians(phases)
+    derivative = 1j * (coefficients[1] * np.exp(1j * phi) - coefficients[2] * np.exp(-1j * phi))
+    return phases, np.abs(derivative) * math.pi / 180.0
+
+
+def _measured_sensitivity(phases, values):
+    """相邻实测点的 |ΔZ/Δφ|，斜率记在两点中点；返回 (中点相位, 最大斜率 V/deg)。"""
+    order = np.argsort(phases)
+    p = np.asarray(phases, dtype=float)[order]
+    z = np.asarray(values, dtype=complex)[order]
+    if p.size < 2:
+        return None, 0.0
+    mids, slopes = [], []
+    for index in range(p.size):
+        nxt = (index + 1) % p.size
+        delta = (p[nxt] - p[index]) % 360.0
+        if delta <= 0:
+            continue
+        mids.append((p[index] + delta / 2.0) % 360.0)
+        slopes.append(abs(z[nxt] - z[index]) / delta)
+    if not slopes:
+        return None, 0.0
+    best = int(np.argmax(slopes))
+    return float(mids[best]), float(slopes[best])
+
+
+def _plot(path, points, model_phases, model_values, sensitivity, summary):
+    """(a) R(φ) 与模型；(b) θ(φ)；(c) |dZ/dφ| 及实测差分。paper 样式，英文与 mathtext。"""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -156,34 +185,58 @@ def _plot(path, points, model_phases, model_values, summary):
     errors = np.array([item["R_sem_v"] for item in points], dtype=float)
     thetas = np.array([item["theta_mean_deg"] for item in points], dtype=float)
     theta_errors = np.array([item["theta_sem_deg"] for item in points], dtype=float)
+    z_values = np.array([item["R_mean_v"] * np.exp(1j * math.radians(item["theta_mean_deg"]))
+                         for item in points], dtype=complex)
+    sens_phases, sens_values = sensitivity
+    measured_mid, measured_max = _measured_sensitivity(phases, z_values)
+    best = summary.get("best_phase_deg")
+    alt = summary.get("best_phase_alt_deg")
     with plot_style_context("paper"):
-        figure, (top, bottom) = new_figure(nrows=2, sharex=True,
-                                          gridspec_kw={"height_ratios": [3, 2]})
+        figure, (top, middle, bottom) = new_figure(
+            nrows=3, sharex=True, gridspec_kw={"height_ratios": [3, 2, 2]})
         top.errorbar(phases, values, yerr=errors, fmt="o", ms=3.2, capsize=1.5, lw=0.8,
                      color=COLOR_OPTIMAL, label="MFLI R")
         top.plot(model_phases, np.abs(model_values), "-", lw=1.0, color=COLOR_TRAD,
                  label=r"model $|Z(\varphi)|$")
-        best = summary.get("model_best_phase_deg")
         if best is not None:
             top.axvline(float(best), color="0.4", ls=":", lw=0.8,
-                        label=rf"best $\varphi$ = {float(best):.1f}$^\circ$")
+                        label=rf"max $|\mathrm{{d}}Z/\mathrm{{d}}\varphi|$: {float(best):.0f}$^\circ$ / {float(alt):.0f}$^\circ$")
+        if alt is not None:
+            top.axvline(float(alt), color="0.4", ls=(0, (1, 1)), lw=0.8)
         top.set_xlim(0.0, 360.0)
         top.set_xticks(np.arange(0.0, 361.0, 45.0))
         top.text(0.01, 1.01, "(a)", transform=top.transAxes, fontsize=7, va="bottom")
         format_axis(top, xlabel="", ylabel=r"$R$ (V)")
         style_legend(top, loc="lower left", fontsize=5.8, frameon=False)
         # θ 在 ±180° 处换支，连线会画出竖直跳变；这里只画散点。
-        bottom.errorbar(phases, thetas, yerr=theta_errors, fmt="o", ms=2.6, capsize=1.5, lw=0.8,
+        middle.errorbar(phases, thetas, yerr=theta_errors, fmt="o", ms=2.6, capsize=1.5, lw=0.8,
                         color=COLOR_OPTIMAL)
+        middle.set_xlim(0.0, 360.0)
+        middle.set_xticks(np.arange(0.0, 361.0, 45.0))
+        middle.text(0.01, 1.01, "(b)", transform=middle.transAxes, fontsize=7, va="bottom")
+        format_axis(middle, xlabel="", ylabel=r"$\theta$ (deg)")
+        bottom.plot(sens_phases, sens_values * 1e3, "-", lw=1.0, color=COLOR_TRAD,
+                    label=r"model $|\mathrm{d}Z/\mathrm{d}\varphi|$")
+        if measured_mid is not None:
+            bottom.plot([measured_mid], [measured_max * 1e3], "o", ms=3.0, mfc="none", mew=0.8,
+                        color=COLOR_OPTIMAL, label="finite difference")
+        if measured_mid is not None:
+            bottom.annotate("finite diff", (measured_mid, measured_max * 1e3),
+                            textcoords="offset points", xytext=(4, -2), fontsize=5.5, color="0.25")
+        if best is not None:
+            bottom.axvline(float(best), color="0.4", ls=":", lw=0.8)
+        if alt is not None:
+            bottom.axvline(float(alt), color="0.4", ls=(0, (1, 1)), lw=0.8)
         bottom.set_xlim(0.0, 360.0)
         bottom.set_xticks(np.arange(0.0, 361.0, 45.0))
-        bottom.text(0.01, 1.01, "(b)", transform=bottom.transAxes, fontsize=7, va="bottom")
-        format_axis(bottom, xlabel=r"RF phase $\varphi$ (deg)", ylabel=r"$\theta$ (deg)")
+        bottom.text(0.01, 1.01, "(c)", transform=bottom.transAxes, fontsize=7, va="bottom")
+        format_axis(bottom, xlabel=r"RF phase $\varphi$ (deg)",
+                    ylabel=r"$|\mathrm{d}Z/\mathrm{d}\varphi|$ (mV/deg)")
         save_figure(figure, path)
 
 
-def _plot_phasor(path, points, model_values, summary, c0):
-    """相量图：实测 Z(φ) 沿相位顺序的轨迹、模型闭曲线与 c0 中心，箭头指示扫描方向。"""
+def _plot_phasor(path, points, model_values, coefficients, summary):
+    """相量图：实测 Z(φ) 轨迹、模型闭曲线、c0 中心；星标为 |dZ/dφ| 最大处并画切向箭头。"""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -195,7 +248,17 @@ def _plot_phasor(path, points, model_values, summary, c0):
     z_mv = np.array([item["R_mean_v"] * np.exp(1j * math.radians(item["theta_mean_deg"]))
                      for item in points]) * 1e3
     model_mv = np.asarray(model_values, dtype=complex) * 1e3
-    best_index = int(np.argmax(np.abs(model_values)))
+    best = float(summary["best_phase_deg"])
+    alt = float(summary.get("best_phase_alt_deg", (best + 180.0) % 360.0))
+    phi = math.radians(best)
+    z_best = (coefficients[0] + coefficients[1] * np.exp(1j * phi)
+              + coefficients[2] * np.exp(-1j * phi)) * 1e3
+    phi_alt = math.radians(alt)
+    z_alt = (coefficients[0] + coefficients[1] * np.exp(1j * phi_alt)
+             + coefficients[2] * np.exp(-1j * phi_alt)) * 1e3
+    tangent = 1j * (coefficients[1] * np.exp(1j * phi) - coefficients[2] * np.exp(-1j * phi))
+    direction = tangent / abs(tangent) if abs(tangent) > 0 else 1.0 + 0.0j
+    length = 0.22 * float(np.max(np.abs(model_mv)))
     with plot_style_context("paper"):
         figure, axis = new_figure(kind="square")
         axis.plot(model_mv.real, model_mv.imag, "-", color="0.72", lw=1.2, zorder=1,
@@ -209,17 +272,16 @@ def _plot_phasor(path, points, model_values, summary, c0):
                           xytext=(z_mv[index].real, z_mv[index].imag),
                           arrowprops=dict(arrowstyle="-|>", color="0.25", lw=0.5,
                                           shrinkA=0.0, shrinkB=0.0), zorder=2)
-        axis.plot(model_mv[best_index].real, model_mv[best_index].imag, marker="*", ms=8,
-                  color=COLOR_TRAD, zorder=4,
-                  label=rf"best $\varphi$ = {float(summary['model_best_phase_deg']):.0f}°")
+        axis.plot([z_best.real - direction.real * length, z_best.real + direction.real * length],
+                  [z_best.imag - direction.imag * length, z_best.imag + direction.imag * length],
+                  "-", lw=1.0, color=COLOR_TRAD, zorder=4)
+        axis.plot(z_best.real, z_best.imag, marker="*", ms=9, color=COLOR_TRAD, zorder=5,
+                  label=rf"max $|\mathrm{{d}}Z/\mathrm{{d}}\varphi|$ = {best:.0f}$^\circ$ / {alt:.0f}$^\circ$")
+        axis.plot(z_alt.real, z_alt.imag, marker="*", ms=9, mfc="none", mew=0.9,
+                  color=COLOR_TRAD, zorder=5)
         axis.plot(0.0, 0.0, marker="+", ms=9, mew=1.0, color="k", zorder=4, label="origin")
-        axis.plot(c0.real * 1e3, c0.imag * 1e3, marker="D", ms=4.0, mfc="none", mew=0.8,
-                  color=COLOR_TRAD, zorder=4, label=r"$c_0$")
-        offsets = {0: (-15, 4), 90: (5, 2), 180: (5, -8), 270: (5, -8)}
-        for angle in (0, 90, 180, 270):
-            nearest = int(np.argmin(np.abs(phases - angle)))
-            axis.annotate(f"{angle}°", (z_mv[nearest].real, z_mv[nearest].imag),
-                          textcoords="offset points", xytext=offsets[angle], fontsize=5.5, color="0.25")
+        axis.plot(coefficients[0].real * 1e3, coefficients[0].imag * 1e3, marker="D", ms=4.0,
+                  mfc="none", mew=0.8, color=COLOR_TRAD, zorder=4, label=r"$c_0$")
         axis.axhline(0.0, color="0.85", lw=0.5, zorder=0)
         axis.axvline(0.0, color="0.85", lw=0.5, zorder=0)
         axis.set_aspect("equal", adjustable="datalim")
@@ -228,11 +290,12 @@ def _plot_phasor(path, points, model_values, summary, c0):
         colorbar = figure.colorbar(scatter, ax=axis, pad=0.02)
         colorbar.set_label(r"RF phase $\varphi$ (deg)")
         colorbar.ax.tick_params(labelsize=6)
-        style_legend(axis, loc="upper left", fontsize=6, frameon=False)
+        style_legend(axis, loc="lower left", fontsize=6, frameon=False)
         save_figure(figure, path)
 
 
-def _placeholder(root, filename, xlabel, ylabel, message):
+def _placeholder(root, name, xlabel, ylabel, message):
+    """缺数据时的占位图；绘图失败不掩盖摘要里的原因。"""
     try:
         import matplotlib
 
@@ -243,7 +306,7 @@ def _placeholder(root, filename, xlabel, ylabel, message):
             figure, axis = new_figure()
             axis.text(0.5, 0.5, message, ha="center", va="center", transform=axis.transAxes, fontsize=7)
             format_axis(axis, xlabel=xlabel, ylabel=ylabel)
-            save_figure(figure, output_path(root, filename))
+            save_figure(figure, output_path(root, name))
     except Exception:
         pass
 
@@ -294,8 +357,14 @@ def scan_report(run_dir, params):
         components = {key: _component_record(coefficients[index])
                       for index, key in enumerate(("c0", "c_plus1", "c_minus1"))}
     model_phases, model_values = _model_curve(coefficients)
-    best_index = int(np.argmax(np.abs(model_values)))
-    measured_best = max(points, key=lambda item: item["R_mean_v"])
+    sensitivity = _phase_sensitivity(coefficients)
+    sens_phases, sens_values = sensitivity
+    best_index = int(np.argmax(sens_values))
+    best_phase = float(sens_phases[best_index])
+    # |dZ/dφ| 的幅值以 180° 为周期：相差 180° 的两点同样是最快点，方向相反。
+    alt_phase = (best_phase + 180.0) % 360.0
+    measured_phase, measured_sens = _measured_sensitivity([item["phase_deg"] for item in points], values)
+    measured_alt = None if measured_phase is None else (measured_phase + 180.0) % 360.0
     sems = np.array([item["R_sem_v"] for item in points], dtype=float)
     positive = sems[sems > 0]
     sem_median = float(np.median(positive)) if positive.size else 0.0
@@ -304,19 +373,24 @@ def scan_report(run_dir, params):
     summary.update(mode="phase_response", phases_deg=phases, rows=len(rows), points=points,
                    components=components, residual_rms_v=float(residual_rms),
                    fit_quality=fit_quality,
-                   best_phase_deg=float(model_phases[best_index]),
-                   model_best_phase_deg=float(model_phases[best_index]),
-                   best_phase_source="model",
-                   measured_best_phase_deg=float(measured_best["phase_deg"]),
-                   measured_best_R_v=float(measured_best["R_mean_v"]),
+                   best_phase_deg=best_phase,
+                   best_phase_alt_deg=alt_phase,
+                   best_phase_source="model_sensitivity",
+                   sensitivity_max_v_per_deg=float(sens_values[best_index]),
+                   measured_best_phase_deg=measured_phase,
+                   measured_best_phase_alt_deg=measured_alt,
+                   measured_sensitivity_max_v_per_deg=float(measured_sens),
+                   sensitivity_curve=[dict(phase_deg=float(p), v_per_deg=float(s))
+                                      for p, s in zip(sens_phases.tolist()[::10], sens_values[::10])],
                    model_v=[dict(phase_deg=float(p), R_v=float(abs(v)))
                             for p, v in zip(model_phases.tolist()[::5], model_values[::5])],
                    signal_low=signal_low,
                    phase_source="scan",
                    demod0_phase_deg=config.get("demod0_phase_deg"))
     check_cancelled()
-    _plot(output_path(root, run_format.PHASE_RESPONSE_PLOT), points, model_phases, model_values, summary)
-    _plot_phasor(output_path(root, run_format.PHASOR_PLOT), points, model_values, summary, coefficients[0])
+    _plot(output_path(root, run_format.PHASE_RESPONSE_PLOT), points, model_phases, model_values,
+          sensitivity, summary)
+    _plot_phasor(output_path(root, run_format.PHASOR_PLOT), points, model_values, coefficients, summary)
     summary_path = output_path(root, run_format.SUMMARY_FILE)
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     return summary

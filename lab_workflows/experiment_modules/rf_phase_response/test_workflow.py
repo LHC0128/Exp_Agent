@@ -116,11 +116,16 @@ class AnalysisTest(unittest.TestCase):
         self.assertAlmostEqual(summary["residual_rms_v"], 0.0, places=9)
         self.assertAlmostEqual(summary["components"]["c0"]["re_v"], c0.real, places=9)
         self.assertAlmostEqual(summary["components"]["c_minus1"]["im_v"], c_minus1.imag, places=9)
-        best = summary["model_best_phase_deg"]
-        phi = np.radians(np.arange(0.0, 360.0, 1.0))
-        model = c0 + c_plus1 * np.exp(1j * phi) + c_minus1 * np.exp(-1j * phi)
-        expected = float(np.degrees(phi[int(np.argmax(np.abs(model)))]))
-        self.assertAlmostEqual(best, expected, delta=1.0)
+        # 最佳点定义为 |dZ/dφ| 最大，不是 |Z| 最大；幅值以 180° 为周期，两个点等价。
+        best = summary["best_phase_deg"]
+        phi = np.radians(np.arange(0.0, 360.0, 0.1))
+        derivative = 1j * (c_plus1 * np.exp(1j * phi) - c_minus1 * np.exp(-1j * phi))
+        expected = float(np.degrees(phi[int(np.argmax(np.abs(derivative)))]))
+        distance = min(abs(best - expected), 180.0 - abs(best - expected))
+        self.assertLess(distance, 0.3)
+        self.assertAlmostEqual((summary["best_phase_alt_deg"] - best) % 360.0, 180.0, places=6)
+        self.assertGreater(summary["sensitivity_max_v_per_deg"], 0.0)
+        self.assertIsNotNone(summary["measured_best_phase_deg"])
         self.assertTrue((self.root / run_format.SUMMARY_FILE).is_file())
         self.assertTrue((self.root / run_format.PHASE_RESPONSE_PLOT).is_file())
         self.assertTrue((self.root / run_format.PHASOR_PLOT).is_file())
