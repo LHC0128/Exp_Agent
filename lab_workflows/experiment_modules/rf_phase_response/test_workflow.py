@@ -23,6 +23,8 @@ REGRESSION_CASES = {
         "analysis": {
             "sources": ["lab_workflows/experiment_modules/rf_phase_response/analysis_steps.py"],
             "tests": ["AnalysisTest::test_synthetic_three_component_response_recovers_best_phase",
+                      "AnalysisTest::test_v1_rows_without_xy_still_analyze",
+                      "AnalysisTest::test_staged_analysis_runs_on_minimal_run",
                       "AnalysisTest::test_missing_raw_writes_unavailable_summary"],
         },
         "parameters": {
