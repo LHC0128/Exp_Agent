@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -23,7 +24,40 @@ MIN_PHASES = 3
 
 
 def output_path(run_dir, name):
-    return Path(run_dir) / name
+    root = Path(run_dir).resolve()
+    path = (root / name).resolve()
+    if path != root and root not in path.parents:
+        raise ValueError("输入或产物路径越出运行目录")
+    return path
+
+
+def load_config(run_dir):
+    config = run_format.read_config(output_path(run_dir, "experiment_config.yaml"))
+    if reason := run_format.analysis_block_reason(config):
+        raise ValueError(reason)
+    return config, run_format.parameters(config)
+
+
+def resolve_options(base, options):
+    """本实验没有独立分析覆盖值；出现未知键时明确拒绝。"""
+    if options:
+        raise ValueError("不支持的分析覆盖值：" + "、".join(sorted(options)))
+    return base
+
+
+def signature(path):
+    path = Path(path)
+    if not path.is_file():
+        return None
+    return [path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest()]
+
+
+def fingerprint(run_dir):
+    """分步分析用的输入指纹：配置、相位表与全部逐点序列。"""
+    root = Path(run_dir)
+    raw = output_path(root, "raw")
+    paths = [output_path(root, "experiment_config.yaml"), *sorted(raw.glob("*.csv"))]
+    return {p.relative_to(root).as_posix(): signature(p) for p in paths}
 
 
 def _run_state(run_dir):

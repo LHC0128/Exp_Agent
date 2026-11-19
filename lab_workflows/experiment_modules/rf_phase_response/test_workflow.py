@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 from . import analysis_steps, models, preparation, run_format, stages
 
@@ -115,6 +116,20 @@ class AnalysisTest(unittest.TestCase):
         self.assertTrue((self.root / run_format.SUMMARY_FILE).is_file())
         self.assertTrue((self.root / run_format.PHASE_RESPONSE_PLOT).is_file())
         self.assertEqual(json.loads((self.root / run_format.SUMMARY_FILE).read_text(encoding="utf-8"))["rows"], 72)
+
+    def test_staged_analysis_runs_on_minimal_run(self):
+        self._write_rows(0.010 + 0.005j, 0.003 - 0.002j, 0.004 + 0.001j)
+        params = models.RfPhaseResponseParams()
+        config = dict(run_format.initial_metadata(params), schema_version=params.schema_version,
+                      parameters=params.to_external(), completion_status="completed")
+        (self.root / "experiment_config.yaml").write_text(yaml.safe_dump(config, allow_unicode=True),
+                                                          encoding="utf-8")
+        from . import analysis
+
+        analysis.AnalysisWorkflow.analyze(self.root)
+        summary = json.loads((self.root / run_format.SUMMARY_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(summary["mode"], "phase_response")
+        self.assertTrue((self.root / run_format.PHASE_RESPONSE_PLOT).is_file())
 
     def test_missing_raw_writes_unavailable_summary(self):
         summary = analysis_steps.scan_report(self.root, models.RfPhaseResponseParams())
