@@ -35,8 +35,10 @@ class Workflow(StagedWorkflow):
         return preparation.preflight(params, self.root)
 
     def extra_snapshot(self):
-        keys = ("phase_response",)
-        return {key: self.state.get(key) for key in keys} | {"main_field": self.state.get("main_field")}
+        # 会话模型只接受已声明键；实验专属读数放进 daq_settings 字典。
+        return {"daq_settings": {"phase_response": self.state.get("phase_response"),
+                                 "phase_response_acquisition": self.state.get("phase_response_acquisition")},
+                "main_field": self.state.get("main_field")}
 
     def run_step(self, item):
         if item == "A02":
