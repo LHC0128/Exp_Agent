@@ -12,12 +12,13 @@ from .models import RfPhaseResponseParams
 
 EXPERIMENT_ID = "rf-phase-response"
 DATA_TYPE = "rf_phase_response"
-# 1：首个格式；phase_response.csv 每行一次读数，模型残差与最佳相位在 B01 生成。
-RAW_FORMAT_VERSION = 1
-SUPPORTED_RAW_FORMAT_VERSIONS = (1,)
+# 1：首个格式，仅 R/θ；2：phase_response.csv 与逐点序列增加 X/Y 正交分量，分析仍读 1。
+RAW_FORMAT_VERSION = 2
+SUPPORTED_RAW_FORMAT_VERSIONS = (1, 2)
 
 PHASE_RESPONSE_FILE = "raw/phase_response.csv"
 PHASE_RESPONSE_PLOT = "results/phase_response.png"
+PHASOR_PLOT = "results/phase_response_phasor.png"
 SUMMARY_FILE = "results/phase_response_summary.json"
 POINT_FILE_PREFIX = "raw/phase_"
 

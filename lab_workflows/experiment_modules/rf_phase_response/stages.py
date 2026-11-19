@@ -42,9 +42,10 @@ ACQUISITION = (
 )
 ANALYSIS = (
     Stage("B01", "相位响应汇总、三分量分解与最佳读相位", "独立分析", (), (),
-          artifacts=("phase_response_summary.json", "phase_response.png"),
+          artifacts=("phase_response_summary.json", "phase_response.png", "phase_response_phasor.png"),
           quality_gates=("运行目录已停止写入；逐相位汇总 R/θ，按 Z(φ)=c0+c+1e^{iφ}+c−1e^{−iφ} 最小二乘分解；"
                          "给模型残差、最佳读相位（模型 |Z| 最大处）与实测 R 最大相位；"
+                         "相位响应图与相量图都用 paper 样式输出；"
                          "缺数据或相位不足 3 个时写原因、空摘要与占位图",)),
 )
 

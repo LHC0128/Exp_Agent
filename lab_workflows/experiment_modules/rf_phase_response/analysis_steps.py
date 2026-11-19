@@ -76,7 +76,14 @@ def _read_rows(path):
             except (KeyError, TypeError, ValueError):
                 continue
             if all(math.isfinite(value) for value in (phase, r_v, theta)):
-                rows.append(dict(phase_deg=phase, repeat=repeat, R_v=r_v, theta_deg=theta))
+                try:
+                    x_v, y_v = float(row["x_v"]), float(row["y_v"])
+                    if not (math.isfinite(x_v) and math.isfinite(y_v)):
+                        x_v = y_v = None
+                except (KeyError, TypeError, ValueError):
+                    x_v = y_v = None
+                rows.append(dict(phase_deg=phase, repeat=repeat, R_v=r_v, theta_deg=theta,
+                                 x_v=x_v, y_v=y_v))
     return rows
 
 
@@ -94,10 +101,14 @@ def _phase_summary(rows):
         unwrapped = np.unwrap(np.array([item["theta_deg"] for item in items], dtype=float),
                               period=360.0)
         theta_sem = float(np.std(unwrapped, ddof=1) / math.sqrt(len(items))) if len(items) > 1 else 0.0
+        xs = [item["x_v"] for item in items if item["x_v"] is not None]
+        ys = [item["y_v"] for item in items if item["y_v"] is not None]
         points.append(dict(phase_deg=float(phase), R_mean_v=float(np.mean(values)),
                            R_sem_v=(float(np.std(values, ddof=1) / math.sqrt(len(values)))
                                     if len(values) > 1 else 0.0),
                            theta_mean_deg=math.degrees(theta), theta_sem_deg=theta_sem,
+                           x_mean_v=float(np.mean(xs)) if xs else None,
+                           y_mean_v=float(np.mean(ys)) if ys else None,
                            samples=len(items)))
     return points
 
@@ -132,13 +143,13 @@ def _model_curve(coefficients, start=0.0, stop=360.0, step=1.0):
 
 
 def _plot(path, points, model_phases, model_values, summary):
-    """上：R 随相位（带误差棒）与三分量模型 |Z(φ)|；下：θ 随相位。图中文字用英文。"""
+    """上：R(φ) 与三分量模型 |Z(φ)|；下：θ(φ) 散点。paper 样式，图中文字用英文与 mathtext。"""
     import matplotlib
 
     matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
 
-    from ...plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis, plot_style_context, save_figure
+    from ...plotting import (COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context,
+                             save_figure, style_legend)
 
     phases = np.array([item["phase_deg"] for item in points], dtype=float)
     values = np.array([item["R_mean_v"] for item in points], dtype=float)
@@ -146,28 +157,82 @@ def _plot(path, points, model_phases, model_values, summary):
     thetas = np.array([item["theta_mean_deg"] for item in points], dtype=float)
     theta_errors = np.array([item["theta_sem_deg"] for item in points], dtype=float)
     with plot_style_context("paper"):
-        figure, (top, bottom) = plt.subplots(2, 1, sharex=True, figsize=(7.0, 5.4),
-                                            gridspec_kw={"height_ratios": [3, 2]})
-        top.errorbar(phases, values, yerr=errors, fmt="o", ms=4, capsize=2, color=COLOR_OPTIMAL,
-                     label="MFLI R (Demod0)")
-        top.plot(model_phases, np.abs(model_values), "-", lw=1.2, color=COLOR_TRAD,
-                 label="model |c0 + c+1 e^{i phi} + c-1 e^{-i phi}|")
+        figure, (top, bottom) = new_figure(nrows=2, sharex=True,
+                                          gridspec_kw={"height_ratios": [3, 2]})
+        top.errorbar(phases, values, yerr=errors, fmt="o", ms=3.2, capsize=1.5, lw=0.8,
+                     color=COLOR_OPTIMAL, label="MFLI R")
+        top.plot(model_phases, np.abs(model_values), "-", lw=1.0, color=COLOR_TRAD,
+                 label=r"model $|Z(\varphi)|$")
         best = summary.get("model_best_phase_deg")
         if best is not None:
-            top.axvline(float(best), color="0.4", ls=":", lw=0.9, label=f"best {float(best):.1f} deg")
-        format_axis(top, xlabel="RF phase (deg)", ylabel="R (V)")
-        top.legend(loc="best", fontsize=7)
-        bottom.errorbar(phases, thetas, yerr=theta_errors, fmt="o-", ms=3, lw=0.8, capsize=2,
+            top.axvline(float(best), color="0.4", ls=":", lw=0.8,
+                        label=rf"best $\varphi$ = {float(best):.1f}$^\circ$")
+        top.set_xlim(0.0, 360.0)
+        top.set_xticks(np.arange(0.0, 361.0, 45.0))
+        top.text(0.01, 1.01, "(a)", transform=top.transAxes, fontsize=7, va="bottom")
+        format_axis(top, xlabel="", ylabel=r"$R$ (V)")
+        style_legend(top, loc="lower left", fontsize=5.8, frameon=False)
+        # θ 在 ±180° 处换支，连线会画出竖直跳变；这里只画散点。
+        bottom.errorbar(phases, thetas, yerr=theta_errors, fmt="o", ms=2.6, capsize=1.5, lw=0.8,
                         color=COLOR_OPTIMAL)
-        format_axis(bottom, xlabel="RF phase (deg)", ylabel="theta (deg)")
+        bottom.set_xlim(0.0, 360.0)
+        bottom.set_xticks(np.arange(0.0, 361.0, 45.0))
+        bottom.text(0.01, 1.01, "(b)", transform=bottom.transAxes, fontsize=7, va="bottom")
+        format_axis(bottom, xlabel=r"RF phase $\varphi$ (deg)", ylabel=r"$\theta$ (deg)")
         save_figure(figure, path)
 
 
-def _write_unavailable(summary, root, reason, plot_message):
-    summary = dict(summary, error=reason)
-    path = output_path(root, run_format.SUMMARY_FILE)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+def _plot_phasor(path, points, model_values, summary, c0):
+    """相量图：实测 Z(φ) 沿相位顺序的轨迹、模型闭曲线与 c0 中心，箭头指示扫描方向。"""
+    import matplotlib
+
+    matplotlib.use("Agg")
+
+    from ...plotting import (COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context,
+                             save_figure, style_legend)
+
+    phases = np.array([item["phase_deg"] for item in points], dtype=float)
+    z_mv = np.array([item["R_mean_v"] * np.exp(1j * math.radians(item["theta_mean_deg"]))
+                     for item in points]) * 1e3
+    model_mv = np.asarray(model_values, dtype=complex) * 1e3
+    best_index = int(np.argmax(np.abs(model_values)))
+    with plot_style_context("paper"):
+        figure, axis = new_figure(kind="square")
+        axis.plot(model_mv.real, model_mv.imag, "-", color="0.72", lw=1.2, zorder=1,
+                  label=r"model $Z(\varphi)$")
+        axis.plot(z_mv.real, z_mv.imag, "-", color=COLOR_OPTIMAL, lw=0.5, alpha=0.45, zorder=2)
+        scatter = axis.scatter(z_mv.real, z_mv.imag, c=phases, cmap="viridis", s=16, zorder=3,
+                               edgecolors="k", linewidths=0.25, label="measured")
+        step = max(1, len(phases) // 8)
+        for index in range(0, len(phases) - 1, step):
+            axis.annotate("", xy=(z_mv[index + 1].real, z_mv[index + 1].imag),
+                          xytext=(z_mv[index].real, z_mv[index].imag),
+                          arrowprops=dict(arrowstyle="-|>", color="0.25", lw=0.5,
+                                          shrinkA=0.0, shrinkB=0.0), zorder=2)
+        axis.plot(model_mv[best_index].real, model_mv[best_index].imag, marker="*", ms=8,
+                  color=COLOR_TRAD, zorder=4,
+                  label=rf"best $\varphi$ = {float(summary['model_best_phase_deg']):.0f}°")
+        axis.plot(0.0, 0.0, marker="+", ms=9, mew=1.0, color="k", zorder=4, label="origin")
+        axis.plot(c0.real * 1e3, c0.imag * 1e3, marker="D", ms=4.0, mfc="none", mew=0.8,
+                  color=COLOR_TRAD, zorder=4, label=r"$c_0$")
+        offsets = {0: (-15, 4), 90: (5, 2), 180: (5, -8), 270: (5, -8)}
+        for angle in (0, 90, 180, 270):
+            nearest = int(np.argmin(np.abs(phases - angle)))
+            axis.annotate(f"{angle}°", (z_mv[nearest].real, z_mv[nearest].imag),
+                          textcoords="offset points", xytext=offsets[angle], fontsize=5.5, color="0.25")
+        axis.axhline(0.0, color="0.85", lw=0.5, zorder=0)
+        axis.axvline(0.0, color="0.85", lw=0.5, zorder=0)
+        axis.set_aspect("equal", adjustable="datalim")
+        axis.margins(0.12)
+        format_axis(axis, xlabel=r"Re $Z$ (mV)", ylabel=r"Im $Z$ (mV)")
+        colorbar = figure.colorbar(scatter, ax=axis, pad=0.02)
+        colorbar.set_label(r"RF phase $\varphi$ (deg)")
+        colorbar.ax.tick_params(labelsize=6)
+        style_legend(axis, loc="upper left", fontsize=6, frameon=False)
+        save_figure(figure, path)
+
+
+def _placeholder(root, filename, xlabel, ylabel, message):
     try:
         import matplotlib
 
@@ -176,11 +241,21 @@ def _write_unavailable(summary, root, reason, plot_message):
 
         with plot_style_context("paper"):
             figure, axis = new_figure()
-            axis.text(0.5, 0.5, plot_message, ha="center", va="center", transform=axis.transAxes)
-            format_axis(axis, xlabel="RF phase (deg)", ylabel="R (V)")
-            save_figure(figure, output_path(root, run_format.PHASE_RESPONSE_PLOT))
+            axis.text(0.5, 0.5, message, ha="center", va="center", transform=axis.transAxes, fontsize=7)
+            format_axis(axis, xlabel=xlabel, ylabel=ylabel)
+            save_figure(figure, output_path(root, filename))
     except Exception:
         pass
+
+
+def _write_unavailable(summary, root, reason, plot_message):
+    summary = dict(summary, error=reason)
+    path = output_path(root, run_format.SUMMARY_FILE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    _placeholder(root, run_format.PHASE_RESPONSE_PLOT, "RF phase (deg)", "R (V)", plot_message)
+    _placeholder(root, run_format.PHASOR_PLOT, "Re Z (mV)", "Im Z (mV)",
+                 "No phasor: phase response data unavailable")
     return summary
 
 
@@ -241,6 +316,7 @@ def scan_report(run_dir, params):
                    demod0_phase_deg=config.get("demod0_phase_deg"))
     check_cancelled()
     _plot(output_path(root, run_format.PHASE_RESPONSE_PLOT), points, model_phases, model_values, summary)
+    _plot_phasor(output_path(root, run_format.PHASOR_PLOT), points, model_values, summary, coefficients[0])
     summary_path = output_path(root, run_format.SUMMARY_FILE)
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     return summary

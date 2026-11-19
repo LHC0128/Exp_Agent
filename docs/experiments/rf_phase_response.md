@@ -32,7 +32,7 @@ required_devices:
   - GS200
 learned_notes:
   - 默认脉冲取自运行目录 `1118_220918_pi_width_scan` 的精确 π 波形：5 kHz、50 mVpp、190 mA、8.03 µs，拖尾 s_f 0.544 / τe 46.9 µs（A 0.11545 ≈ −21.9 mA、τc 25.51 µs）；X/Y 偏置取同次重标值。
-  - 整周 24 个相位点解 3 个复分量，剩余 21 个自由度可直接当模型残差用。
+  - 整周 36 个相位点解 3 个复分量，剩余 33 个自由度可直接当模型残差用；默认每点只读 1 次。
   - 0.2 Vpp 以内射频响应线性，一次谐波分解足够；更高次谐波在 1 mV 量级。
   - 相位响应带 c0 时椭圆被推离原点，R 最大相位不等于 |c−1| 最大；本实验同时给模型 |Z| 最大与实测 R 最大两个角度。
   - 8.03 µs π 波形下相位响应仍不对称：|c0| 约 12.7 mV 大于 |c±1|，R(φ) 两峰约 27.6 与 2.1 mV（`_pi_width_investigation_20261118/10_tail_compensation/结论.md` §4.6）。
@@ -75,7 +75,7 @@ Z 通道链路与 π 脉冲宽度实验一致：DG 的 Z 通道 → Aigtek 1200B
 - **A02** 连接 DG、MFLI、1200B、DHO900、GS200 与 TEC（可选）：写功放增益与阻抗、配平 Z 通道负载；按 `X_BIAS_V` 加静态偏置、Y 射频叠加 `Y_BIAS_V`；配置 MFLI 第 0 路解调器并把参考频率设为射频频率；射频与 Z 都按无限 burst 起振；关闭 GS200 主磁场输出并回读；DG 与 MFLI 参考时钟严格回读。
 - **A03** 扫射频相位：Z 双脉冲按 `Z_PULSE_WIDTH_US` 只写一次；逐角度按 DirectAW 顺序改射频 burst 相位；每个角度读 `N_REPEAT` 次，读数按 `TEMP_GROUP_SIZE` 分组——组首关闭温控并等 `SYSTEM_SETTLE_S` 再读，组末恢复温控并等 `TEMP_SWITCH_ON_LAG_S` 后落盘，关温控窗口内不写文件；写 `raw/phase_response.csv` 与逐点序列 `raw/phase_<phase>_<repeat>.csv`。取消时保留已完成读数。
 - **A04** 安全结束：先关 1200B，Z 通道 DC 0 V 并关 burst/sync，关 Y 射频，停 MFLI 解调传输与 DHO900，恢复温控与 GS200 原状态，再断开全部设备；`Time_sequence_2` 保持运行。
-- **B01** 离线分析：逐相位汇总 R/θ，最小二乘解 `c0/c+1/c−1`，给出残差、模型最佳相位与实测最大相位，写 `results/phase_response_summary.json` 与 `results/phase_response.png`。
+- **B01** 离线分析：逐相位汇总 X/Y/R/θ，最小二乘解 `c0/c+1/c−1`，给出残差、模型最佳相位与实测最大相位，写 `results/phase_response_summary.json`、相位响应图 `results/phase_response.png` 与相量图 `results/phase_response_phasor.png`。
 
 ## 参数要点
 
@@ -84,13 +84,13 @@ Z 通道链路与 π 脉冲宽度实验一致：DG 的 Z 通道 → Aigtek 1200B
 | `Y_RF_FREQ_HZ` | Y 向射频频率，同时决定脉冲周期 `1e6/f`（5 kHz → 200 µs） |
 | `Y_RF_VPP` | Y 向射频幅度 |
 | `Y_RF_PHASE_DEG` | A02 起振时的 burst 相位 |
-| `Y_RF_PHASE_START/STOP/STEP_DEG` | 相位扫描网格；终点不写入，默认 0–360°、15° 共 24 点 |
+| `Y_RF_PHASE_START/STOP/STEP_DEG` | 相位扫描网格；终点不写入，默认 0–360°、10° 共 36 点 |
 | `Z_PULSE_WIDTH_US` | 固定的单脉冲宽度；不能超过半个周期，且不小于两倍沿宽 |
 | `Z_PEAK_CURRENT_MA` | 脉冲峰值电流；−π 取相反号 |
 | `Z_PULSE_EDGE_US` | 升余弦沿宽；等效面积按「宽度 − 沿宽」计 |
 | `Z_TAIL_COMP_ENABLED` | Z 拖尾补偿开关；开启后按 s_f、τe 与脉宽生成精确反号指数尾 |
 | `Z_TAIL_S_F` / `Z_TAIL_TAU_E_US` | 屏蔽模型快分量比例与慢分量时间常数；τc = s_f·τe |
-| `N_REPEAT` | 每个相位的读数次数，逐点标准误由这些读数给出 |
+| `N_REPEAT` | 每个相位的读数次数；默认 1，逐点标准误为 0，需要统计误差时再调大 |
 | `SCAN_POINT_DURATION_S` | 每次读数在关温控窗口内的连续采样时长 |
 | `SYSTEM_SETTLE_S` | 改相位或关温控后的稳定等待 |
 | `TEMP_GROUP_SIZE` | 每关闭温控一次连续采集的读数个数 |
@@ -100,15 +100,17 @@ Z 通道链路与 π 脉冲宽度实验一致：DG 的 Z 通道 → Aigtek 1200B
 
 ## 数据
 
-- `raw/phase_response.csv`：每行一次读数，字段 `phase_deg, repeat, R_v, theta_deg, timestamp`
-- `raw/phase_<phase>_<repeat>.csv`：该次读数的完整序列 `time_s, R_v, theta_deg`
+- `raw/phase_response.csv`：每行一次读数，字段 `phase_deg, repeat, x_v, y_v, R_v, theta_deg, timestamp`；`x_v/y_v` 是解调器正交分量，格式版本 2 起提供，版本 1 只有 R/θ
+- `raw/phase_<phase>_<repeat>.csv`：该次读数的完整序列 `time_s, x_v, y_v, R_v, theta_deg`
 - `experiment_config.yaml`：运行参数、`z_waveform`（各脉宽的尾幅、τc、归一化与 mean(v²)）、`phase_response` 扫描记录、解调相位回读
-- `results/phase_response_summary.json`：`phases_deg`、逐相位 R/θ 均值与标准误、`components`（`c0/c_plus1/c_minus1` 的 `re_v/im_v/abs_v/arg_deg/sem_v`）、`residual_rms_v`、`fit_quality`、`best_phase_deg`、`measured_best_phase_deg`、`signal_low`
-- `results/phase_response.png`：上图为 R(φ) 散点与模型 |Z(φ)|、下图为 θ(φ)
+- `results/phase_response_summary.json`：`phases_deg`、逐相位 R/θ/X/Y 均值与标准误、`components`（`c0/c_plus1/c_minus1` 的 `re_v/im_v/abs_v/arg_deg/sem_v`）、`residual_rms_v`、`fit_quality`、`best_phase_deg`、`measured_best_phase_deg`、`signal_low`
+- `results/phase_response.png`：上图为 R(φ) 散点与模型 |Z(φ)|、下图为 θ(φ) 散点（θ 在 ±180° 换支，不连线）
+- `results/phase_response_phasor.png`：相量图，实测 Z(φ) 沿相位顺序的轨迹、模型闭曲线、原点与 c0 中心；颜色表示射频相位，箭头指示扫描方向
 
 ## 判据与限制
 
 - 至少 3 个相位才能解三个分量；相位不足或缺行时写原因、空摘要与占位图。
+- 两张图都用 `lab_workflows.plotting` 的 paper 样式（300 dpi，PNG 与 PDF 成对保存），图中文字用英文与 mathtext；面板标签为 (a)/(b)。
 - 残差 RMS 超过逐相位 R 标准误中位数 3 倍时 `fit_quality = poor`；最大 R 小于标准误中位数 5 倍时 `signal_low = true`。
 - 本实验不做漂移校正；重复读数只用于给逐点标准误。
 - 相位扫描只覆盖写入 DG 的 burst 相位；若 DG 的相位写入不是即时生效，角度轴会整体平移，但三分量模量与最佳相位差不变。
@@ -118,5 +120,5 @@ Z 通道链路与 π 脉冲宽度实验一致：DG 的 Z 通道 → Aigtek 1200B
 ## 待查
 
 - DG4000 的 burst 相位在 `INFinity` + 外部触发下是否即时生效、相位分辨率与重启等待触发沿的行为，需示波器核对一次。
-- 24 个相位点在 0° 与 360° 附近是否出现周期性拼接误差；首轮实测后用相邻点残差检查。
+- 36 个相位点在 0° 与 360° 附近是否出现周期性拼接误差；首轮实测后用相邻点残差检查。
 - 8.03 µs 波形下 |c0| 大于 |c±1|，模型残差在多大相位噪声下仍能判 good，需首轮实测确认阈值。

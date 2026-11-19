@@ -23,8 +23,9 @@ from . import preparation, run_format
 from .preparation import ARB_POINTS, plan, sleep
 from .run_format import SOURCE_KEY, TEC_KEY
 
-PHASE_RESPONSE_FIELDS = ("phase_deg", "repeat", "R_v", "theta_deg", "timestamp")
-POINT_FIELDS = ("time_s", "R_v", "theta_deg")
+PHASE_RESPONSE_FIELDS = ("phase_deg", "repeat", "x_v", "y_v", "R_v", "theta_deg", "timestamp")
+POINT_FIELDS = ("time_s", "x_v", "y_v", "R_v", "theta_deg")
+SIGNALS = ("sample.x", "sample.y", "sample.r", "sample.theta")
 MIN_POINT_SAMPLES = 4
 
 
@@ -33,7 +34,7 @@ def _daq_config(ctx, rate):
     p = ctx.params
     return DAQConfig(device=ctx.devices["hf2"].device_id, duration=p.scan_point_duration_s,
                      grid_cols=max(8, int(round(rate * p.scan_point_duration_s))), grid_rows=1,
-                     grid_mode=2, signal_paths=["sample.r", "sample.theta"])
+                     grid_mode=2, signal_paths=list(SIGNALS))
 
 
 def _arm_width(ctx):
@@ -87,23 +88,29 @@ def _acquire_point(ctx, config, actual_rate):
                                cancellation_check=check_cancelled, strict_cleanup=True)
     capture_rate = result_rate(results, actual_rate)
     by_name = {result.signal_name: np.asarray(result.values, dtype=float) for result in results}
-    if set(by_name) != {"sample.r", "sample.theta"}:
-        raise RuntimeError(f"MFLI 第 {p.demod0_idx} 路解调器未返回 R/θ：{sorted(by_name)}")
+    if set(by_name) != set(SIGNALS):
+        raise RuntimeError(f"MFLI 第 {p.demod0_idx} 路解调器未返回 X/Y/R/θ：{sorted(by_name)}")
     size = min(values.size for values in by_name.values())
+    x_values = by_name["sample.x"][:size]
+    y_values = by_name["sample.y"][:size]
     r_values = by_name["sample.r"][:size]
     theta_values = by_name["sample.theta"][:size]
     axis = np.asarray(results[0].time, dtype=float)[:size]
     if axis.size != size:
         axis = np.arange(size) / capture_rate
-    finite = np.isfinite(r_values) & np.isfinite(theta_values)
+    finite = (np.isfinite(r_values) & np.isfinite(theta_values)
+              & np.isfinite(x_values) & np.isfinite(y_values))
     if int(np.count_nonzero(finite)) < MIN_POINT_SAMPLES:
-        raise RuntimeError(f"该点 R/θ 有效样本不足 {MIN_POINT_SAMPLES}：{int(np.count_nonzero(finite))}")
-    r_values, theta_values, axis = r_values[finite], theta_values[finite], axis[finite]
-    series = dict(time_s=axis.tolist(), R_v=r_values.tolist(), theta_deg=np.degrees(theta_values).tolist())
+        raise RuntimeError(f"该点 X/Y/R/θ 有效样本不足 {MIN_POINT_SAMPLES}：{int(np.count_nonzero(finite))}")
+    r_values, theta_values = r_values[finite], theta_values[finite]
+    x_values, y_values, axis = x_values[finite], y_values[finite], axis[finite]
+    series = dict(time_s=axis.tolist(), x_v=x_values.tolist(), y_v=y_values.tolist(),
+                  R_v=r_values.tolist(), theta_deg=np.degrees(theta_values).tolist())
     # 相位按圆周平均，避免 ±180° 附近的跳变把均值拉回 0。
     theta_mean = math.atan2(float(np.mean(np.sin(theta_values))), float(np.mean(np.cos(theta_values))))
     meta = {"acquisition": acquisition_metadata(results), "actual_rate_Sa_s": capture_rate,
             "samples": int(r_values.size), "R_mean_v": float(np.mean(r_values)),
+            "x_mean_v": float(np.mean(x_values)), "y_mean_v": float(np.mean(y_values)),
             "R_sem_within_v": (float(np.std(r_values, ddof=1) / math.sqrt(r_values.size))
                                if r_values.size > 1 else 0.0),
             "theta_mean_deg": math.degrees(theta_mean)}
@@ -117,8 +124,10 @@ def _write_point_series(path, series):
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(POINT_FIELDS))
         writer.writeheader()
-        for time_s, r_v, theta_deg in zip(series["time_s"], series["R_v"], series["theta_deg"]):
-            writer.writerow({"time_s": f"{time_s:.9g}", "R_v": f"{r_v:.9g}", "theta_deg": f"{theta_deg:.9g}"})
+        for time_s, x_v, y_v, r_v, theta_deg in zip(series["time_s"], series["x_v"], series["y_v"],
+                                                    series["R_v"], series["theta_deg"]):
+            writer.writerow({"time_s": f"{time_s:.9g}", "x_v": f"{x_v:.9g}", "y_v": f"{y_v:.9g}",
+                             "R_v": f"{r_v:.9g}", "theta_deg": f"{theta_deg:.9g}"})
 
 
 def _start_phase_table(path):
@@ -181,6 +190,7 @@ def measure_phase_response(ctx):
                 pending.add(_write_point_series, directory.raw / run_format.point_file(phase, repeat), series)
                 pending.add(_append_phase_row, path, {
                     "phase_deg": f"{phase:g}", "repeat": repeat,
+                    "x_v": f"{meta['x_mean_v']:.9g}", "y_v": f"{meta['y_mean_v']:.9g}",
                     "R_v": f"{meta['R_mean_v']:.9g}",
                     "theta_deg": f"{meta['theta_mean_deg']:.9g}",
                     "timestamp": datetime.now().astimezone().isoformat(timespec="seconds")})

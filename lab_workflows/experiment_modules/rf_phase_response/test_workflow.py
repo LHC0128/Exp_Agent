@@ -56,10 +56,10 @@ class ParamsTest(unittest.TestCase):
     def test_phase_grid_is_full_circle(self):
         p = models.RfPhaseResponseParams()
         phases = p.phase_angles_deg()
-        self.assertEqual(len(phases), 24)
+        self.assertEqual(len(phases), 36)
         self.assertEqual(phases[0], 0.0)
-        self.assertEqual(phases[-1], 345.0)
-        self.assertEqual(len(set(phases)), 24)
+        self.assertEqual(phases[-1], 350.0)
+        self.assertEqual(len(set(phases)), 36)
 
 
 class PreparationTest(unittest.TestCase):
@@ -80,21 +80,27 @@ class AnalysisTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
 
-    def _write_rows(self, c0, c_plus1, c_minus1, repeats=3):
+    def _write_rows(self, c0, c_plus1, c_minus1, repeats=3, with_xy=True):
         phases = models.RfPhaseResponseParams().phase_angles_deg()
         path = self.root / run_format.PHASE_RESPONSE_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
+        fields = ["phase_deg", "repeat", "R_v", "theta_deg", "timestamp"]
+        if with_xy:
+            fields[2:2] = ["x_v", "y_v"]
         with path.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=["phase_deg", "repeat", "R_v", "theta_deg", "timestamp"])
+            writer = csv.DictWriter(handle, fieldnames=fields)
             writer.writeheader()
             for repeat in range(repeats):
                 for phase in phases:
                     phi = math.radians(phase)
                     value = c0 + c_plus1 * np.exp(1j * phi) + c_minus1 * np.exp(-1j * phi)
-                    writer.writerow({"phase_deg": f"{phase:g}", "repeat": repeat,
-                                     "R_v": f"{abs(value):.12g}",
-                                     "theta_deg": f"{math.degrees(np.angle(value)):.12g}",
-                                     "timestamp": "2026-11-19T00:00:00+08:00"})
+                    row = {"phase_deg": f"{phase:g}", "repeat": repeat,
+                           "R_v": f"{abs(value):.12g}",
+                           "theta_deg": f"{math.degrees(np.angle(value)):.12g}",
+                           "timestamp": "2026-11-19T00:00:00+08:00"}
+                    if with_xy:
+                        row.update(x_v=f"{value.real:.12g}", y_v=f"{value.imag:.12g}")
+                    writer.writerow(row)
         return phases
 
     def test_synthetic_three_component_response_recovers_best_phase(self):
@@ -115,7 +121,17 @@ class AnalysisTest(unittest.TestCase):
         self.assertAlmostEqual(best, expected, delta=1.0)
         self.assertTrue((self.root / run_format.SUMMARY_FILE).is_file())
         self.assertTrue((self.root / run_format.PHASE_RESPONSE_PLOT).is_file())
-        self.assertEqual(json.loads((self.root / run_format.SUMMARY_FILE).read_text(encoding="utf-8"))["rows"], 72)
+        self.assertTrue((self.root / run_format.PHASOR_PLOT).is_file())
+        self.assertIsNotNone(summary["points"][0]["x_mean_v"])
+        self.assertEqual(json.loads((self.root / run_format.SUMMARY_FILE).read_text(encoding="utf-8"))["rows"], 108)
+
+    def test_v1_rows_without_xy_still_analyze(self):
+        """版本 1 的旧数据没有 X/Y 列，分析仍按 R/θ 完成分解。"""
+        self._write_rows(0.010 + 0.005j, 0.003 - 0.002j, 0.004 + 0.001j, with_xy=False)
+        summary = analysis_steps.scan_report(self.root, models.RfPhaseResponseParams())
+        self.assertEqual(summary["mode"], "phase_response")
+        self.assertIsNone(summary["points"][0]["x_mean_v"])
+        self.assertTrue((self.root / run_format.PHASOR_PLOT).is_file())
 
     def test_staged_analysis_runs_on_minimal_run(self):
         self._write_rows(0.010 + 0.005j, 0.003 - 0.002j, 0.004 + 0.001j)
@@ -135,6 +151,7 @@ class AnalysisTest(unittest.TestCase):
         summary = analysis_steps.scan_report(self.root, models.RfPhaseResponseParams())
         self.assertIn("缺少", summary["error"])
         self.assertTrue((self.root / "results/phase_response.png").is_file())
+        self.assertTrue((self.root / "results/phase_response_phasor.png").is_file())
 
 
 class StagesTest(unittest.TestCase):

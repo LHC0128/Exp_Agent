@@ -41,8 +41,8 @@ class RfPhaseResponseParams(ExperimentParams):
         label="相位扫描起点", unit="°", minimum=0.0, maximum=360.0, group="basic")
     y_rf_phase_stop_deg: float = parameter(default=360.0, external_name="Y_RF_PHASE_STOP_DEG",
         label="相位扫描终点", unit="°", minimum=0.0, maximum=360.0, group="basic",
-        description="终点不写入：默认 0–360°、步进 15° 得到 24 个相位点，0° 与 360° 不重复。")
-    y_rf_phase_step_deg: float = parameter(default=15.0, external_name="Y_RF_PHASE_STEP_DEG",
+        description="终点不写入：默认 0–360°、步进 10° 得到 36 个相位点，0° 与 360° 不重复。")
+    y_rf_phase_step_deg: float = parameter(default=10.0, external_name="Y_RF_PHASE_STEP_DEG",
         label="相位扫描步进", unit="°", minimum=1e-3, group="basic")
 
     # ---- Z 向脉冲与链路 ----
@@ -94,8 +94,8 @@ class RfPhaseResponseParams(ExperimentParams):
         unit="W", minimum=0.01)
 
     # ---- 逐点采集与温控分组 ----
-    n_repeat: int = parameter(default=5, external_name="N_REPEAT", label="每点重复次数", minimum=1, maximum=200,
-        group="basic", description="每个相位重复采集的 MFLI 读数次数；逐点均值与标准误由这些读数给出。")
+    n_repeat: int = parameter(default=1, external_name="N_REPEAT", label="每点重复次数", minimum=1, maximum=200,
+        group="basic", description="每个相位重复采集的 MFLI 读数次数；默认 1 次，逐点标准误为 0。")
     scan_point_duration_s: float = parameter(default=0.2, external_name="SCAN_POINT_DURATION_S", label="每点采样时长",
         unit="s", minimum=1e-6, group="basic", description="每次 MFLI 读数在温控关闭窗口内连续采集的时长。")
     system_settle_s: float = parameter(default=0.1, external_name="SYSTEM_SETTLE_S", label="系统稳定等待",
