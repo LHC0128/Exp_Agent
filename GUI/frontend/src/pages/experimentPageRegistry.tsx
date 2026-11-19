@@ -20,6 +20,7 @@ import { CoilConstantCalibrationPage } from "./CoilConstantCalibrationPage";
 import { ZChainStabilityPage } from "./ZChainStabilityPage";
 import { PiPulseCalibrationPage } from "./PiPulseCalibrationPage";
 import { PiWidthScanPage } from "./PiWidthScanPage";
+import { RfPhaseResponsePage } from "./RfPhaseResponsePage";
 import { BperpNullPage } from "./BperpNullPage";
 import { ZFieldBandwidthPage } from "./ZFieldBandwidthPage";
 import { NoiseSpectrumXYKnownNoisePage, NoiseSpectrumXYProbeAMPage } from "./NoiseSpectrumXYKnownNoisePage";
@@ -76,6 +77,7 @@ export const experimentPageRoutes: Readonly<Record<string, ExperimentPageRoute>>
   "z-chain-stability": () => <ZChainStabilityPage />,
   "pi-pulse-calibration": () => <PiPulseCalibrationPage />,
   "pi-width-scan": () => <PiWidthScanPage />,
+  "rf-phase-response": () => <RfPhaseResponsePage />,
   "bperp-null": () => <BperpNullPage />,
   "z-field-bandwidth": () => <ZFieldBandwidthPage />,
   "noise-spectrum-xy-known-noise": () => <NoiseSpectrumXYKnownNoisePage />,

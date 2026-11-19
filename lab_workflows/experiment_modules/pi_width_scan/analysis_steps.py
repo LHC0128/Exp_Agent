@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from ...experiment_runtime import check_cancelled
+from ..z_chain_common.analysis import decompose, harmonic_matrix
 from . import run_format
 from .stages import ANALYSIS_KEYS
 
@@ -155,21 +156,6 @@ def fit_r_vs_width(widths, values, sem):
                 residual_rms_v=float(np.sqrt(np.mean(residuals ** 2))),
                 reduced_chi2=reduced_chi2, dof=dof,
                 model_v=model.tolist(), residual_v=residuals.tolist())
-
-
-def harmonic_matrix(phases_deg):
-    """分解矩阵：列依次为 1、e^{iφ}、e^{−iφ}（φ 为写入 DG 的 burst 相位）。"""
-    phi = np.radians(np.asarray(phases_deg, dtype=float))
-    return np.stack([np.ones_like(phi), np.exp(1j * phi), np.exp(-1j * phi)], axis=1).astype(complex)
-
-
-def decompose(phases_deg, values):
-    """最小二乘解 (c0, c+1, c−1) 与残差 RMS；相位数为 3 时残差恒为 0。"""
-    matrix = harmonic_matrix(phases_deg)
-    values = np.asarray(values, dtype=complex)
-    coefficients, *_ = np.linalg.lstsq(matrix, values, rcond=None)
-    residual = values - matrix @ coefficients
-    return coefficients, float(np.sqrt(np.mean(np.abs(residual) ** 2)))
 
 
 def _complex_sem(values):

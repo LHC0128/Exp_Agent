@@ -101,6 +101,9 @@ from ..experiment_modules.pi_pulse_calibration.definition import (
 )
 from ..experiment_modules.pi_width_scan.definition import DEFINITION as PI_WIDTH_SCAN_DEFINITION
 from ..experiment_modules.bperp_null.definition import DEFINITION as BPERP_NULL_DEFINITION
+from ..experiment_modules.rf_phase_response.definition import (
+    DEFINITION as RF_PHASE_RESPONSE_DEFINITION,
+)
 # </registry:imports>
 
 from .contracts import ExperimentDefinition
@@ -145,6 +148,7 @@ _DEFINITIONS = [
     PI_PULSE_CALIBRATION_DEFINITION,  # pi-pulse-calibration
     PI_WIDTH_SCAN_DEFINITION,  # pi-width-scan
     BPERP_NULL_DEFINITION,  # bperp-null
+    RF_PHASE_RESPONSE_DEFINITION,  # rf-phase-response
 ]
 # </registry:definitions>
 

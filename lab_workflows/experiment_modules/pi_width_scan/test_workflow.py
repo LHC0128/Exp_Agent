@@ -20,6 +20,7 @@ import yaml
 from ... import common
 from ...experiment_runtime import WorkflowCancelled
 from ...steps import DeviceSession
+from ..z_chain_common import prep as shared_prep
 from . import acquisition, analysis, analysis_steps, models, phase_scan, preparation, run_format, stages
 
 ACQUISITION_CASES = {
@@ -745,12 +746,12 @@ class PreparationTest(unittest.TestCase):
             device_session=DeviceSession(), state=run_format.initial_metadata(params),
             mapping=None, main_field_state=None)
         patches = [
-            patch.object(preparation, "connect_signal_generator_routes", side_effect=routes),
-            patch.object(preparation, "create_lockin", side_effect=lambda config: fakes["lockin"]),
-            patch.object(preparation, "Aigtek1200BInstrument", side_effect=lambda *a, **k: fakes["amp"]),
-            patch.object(preparation, "create_oscilloscope", side_effect=lambda config: fakes["scope"]),
-            patch.object(preparation, "GS200Instrument", side_effect=lambda *a, **k: fakes["gs"]),
-            patch.object(preparation, "TECInstrument", side_effect=lambda *a, **k: fakes["tec"]),
+            patch.object(shared_prep, "connect_signal_generator_routes", side_effect=routes),
+            patch.object(shared_prep, "create_lockin", side_effect=lambda config: fakes["lockin"]),
+            patch.object(shared_prep, "Aigtek1200BInstrument", side_effect=lambda *a, **k: fakes["amp"]),
+            patch.object(shared_prep, "create_oscilloscope", side_effect=lambda config: fakes["scope"]),
+            patch.object(shared_prep, "GS200Instrument", side_effect=lambda *a, **k: fakes["gs"]),
+            patch.object(shared_prep, "TECInstrument", side_effect=lambda *a, **k: fakes["tec"]),
         ]
         for item in patches:
             item.start()

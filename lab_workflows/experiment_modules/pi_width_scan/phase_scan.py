@@ -8,27 +8,9 @@ from __future__ import annotations
 
 import math
 
-# 角度一律按这个精度取整，避免 0.1+0.2 式的浮点尾数进 CSV 与摘要。
-ROUND_DIGITS = 9
+from ..z_chain_common.phase import ROUND_DIGITS, phase_grid
 
-
-def phase_grid(start_deg: float, stop_deg: float, step_deg: float) -> list[float]:
-    """含两端的角度网格（度）；步进除不尽时按实际间隔补上终点。"""
-    for name, value in (("Y_RF_PHASE_START_DEG", start_deg), ("Y_RF_PHASE_STOP_DEG", stop_deg),
-                        ("Y_RF_PHASE_STEP_DEG", step_deg)):
-        if not math.isfinite(value):
-            raise ValueError(f"{name} 必须是有限数")
-    if step_deg <= 0:
-        raise ValueError("Y_RF_PHASE_STEP_DEG 必须为正")
-    if stop_deg < start_deg:
-        raise ValueError("Y_RF_PHASE_STOP_DEG 不能小于 Y_RF_PHASE_START_DEG")
-    count = int(math.floor((stop_deg - start_deg) / step_deg + 1e-9))
-    angles = [round(start_deg + index * step_deg, ROUND_DIGITS) for index in range(count + 1)]
-    if angles[-1] < stop_deg - 1e-9:
-        angles.append(round(stop_deg, ROUND_DIGITS))
-    if not angles:
-        raise ValueError("射频相位粗扫角度列表为空，请检查起点、终点与步进")
-    return angles
+__all__ = ["ROUND_DIGITS", "phase_grid", "parabolic_peak", "choose_peak", "plot_phase_scan"]
 
 
 def parabolic_peak(x_left: float, y_left: float, x_mid: float, y_mid: float,

@@ -1,0 +1,735 @@
+{
+  "fields": [
+    {
+      "name": "RUN_TAG",
+      "label": "运行标签",
+      "type": "string",
+      "default": "rf_phase_response",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_FREQ_HZ",
+      "label": "Y 向射频频率",
+      "type": "number",
+      "default": 5000.0,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "Y 向射频正弦频率；脉冲周期按 1e6/f 自动确定（5 kHz → 200 µs）。",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_VPP",
+      "label": "Y 向射频幅度",
+      "type": "number",
+      "default": 0.05,
+      "unit": "Vpp",
+      "group": "basic",
+      "minimum": 1e-09,
+      "maximum": 20.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_PHASE_DEG",
+      "label": "射频参考相位",
+      "type": "number",
+      "default": 0.0,
+      "unit": "°",
+      "group": "basic",
+      "minimum": 0.0,
+      "maximum": 360.0,
+      "description": "A02 起振时的 burst 相位；相位扫描的起点由 Y_RF_PHASE_START_DEG 单独给定。",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_PHASE_START_DEG",
+      "label": "相位扫描起点",
+      "type": "number",
+      "default": 0.0,
+      "unit": "°",
+      "group": "basic",
+      "minimum": 0.0,
+      "maximum": 360.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_PHASE_STOP_DEG",
+      "label": "相位扫描终点",
+      "type": "number",
+      "default": 360.0,
+      "unit": "°",
+      "group": "basic",
+      "minimum": 0.0,
+      "maximum": 360.0,
+      "description": "终点不写入：默认 0–360°、步进 15° 得到 24 个相位点，0° 与 360° 不重复。",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_PHASE_STEP_DEG",
+      "label": "相位扫描步进",
+      "type": "number",
+      "default": 15.0,
+      "unit": "°",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_PEAK_CURRENT_MA",
+      "label": "脉冲峰值电流",
+      "type": "number",
+      "default": 190.0,
+      "unit": "mA",
+      "group": "basic",
+      "minimum": 0.1,
+      "maximum": null,
+      "description": "相对基线的 +π 峰值；−π 取相反号",
+      "read_only": false
+    },
+    {
+      "name": "Z_PULSE_EDGE_US",
+      "label": "升/降沿宽度",
+      "type": "number",
+      "default": 1.0,
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": 0.05,
+      "maximum": null,
+      "description": "升余弦沿；等效面积 = 宽度 − 沿宽",
+      "read_only": false
+    },
+    {
+      "name": "Z_PULSE_WIDTH_US",
+      "label": "脉冲宽度",
+      "type": "number",
+      "default": 8.03,
+      "unit": "µs",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "固定的单脉冲宽度；默认 8.03 µs 取自 pi_width_scan 的精确 π 波形。不能超过半个射频周期，且不小于两倍沿宽。",
+      "read_only": false
+    },
+    {
+      "name": "Z_TAIL_COMP_ENABLED",
+      "label": "Z 拖尾补偿",
+      "type": "boolean",
+      "default": true,
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "开启后每个 ±π 脉冲后接一段反号指数尾，使屏蔽筒慢响应在脉冲后抵消；尾幅按脉宽由 Z_TAIL_S_F、Z_TAIL_TAU_E_US 精确计算，τc = s_f·τe。关闭时为原升余弦脉冲。",
+      "read_only": false
+    },
+    {
+      "name": "Z_TAIL_S_F",
+      "label": "屏蔽模型快分量 s_f",
+      "type": "number",
+      "default": 0.544,
+      "unit": "",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": 0.999,
+      "description": "原子处 z 场中随电流瞬时出现的比例；其余 1 − s_f 以 τe 延迟到达。",
+      "read_only": false
+    },
+    {
+      "name": "Z_TAIL_TAU_E_US",
+      "label": "屏蔽模型时间常数 τe",
+      "type": "number",
+      "default": 46.9,
+      "unit": "µs",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": 1000.0,
+      "description": "慢分量的一阶时间常数；补偿尾的衰减时间 τc = s_f·τe。",
+      "read_only": false
+    },
+    {
+      "name": "X_BIAS_V",
+      "label": "X 静态偏置",
+      "type": "number",
+      "default": -0.0409,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "A02 在 X 通道加的静态偏置，用来补掉残余横向场；默认取运行目录 pi_width_scan 精确 π 波形下的重标值。0 表示不加偏置、通道保持关闭。",
+      "read_only": false
+    },
+    {
+      "name": "Y_BIAS_V",
+      "label": "Y 静态偏置",
+      "type": "number",
+      "default": -0.0069,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "叠加在 Y 向射频正弦上的直流 offset；默认取同一运行的重标值。",
+      "read_only": false
+    },
+    {
+      "name": "AMPLIFIER_GAIN_DB",
+      "label": "功放增益",
+      "type": "number",
+      "default": 20.0,
+      "unit": "dB",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": 20,
+      "description": "连接时写入 1200B（0–20 dB，0.5 dB 步进）；预测电流按此值计算",
+      "read_only": false
+    },
+    {
+      "name": "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+      "label": "功放输入阻抗",
+      "type": "number",
+      "default": 1000000.0,
+      "unit": "Ω",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": 50.0,
+          "label": "50 Ω"
+        },
+        {
+          "value": 1000000.0,
+          "label": "1 MΩ"
+        }
+      ]
+    },
+    {
+      "name": "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+      "label": "功放输出阻抗",
+      "type": "number",
+      "default": 50.0,
+      "unit": "Ω",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": 50.0,
+          "label": "50 Ω"
+        },
+        {
+          "value": 1.0,
+          "label": "1 Ω"
+        }
+      ]
+    },
+    {
+      "name": "AMPLIFIER_WRITE_SETTINGS",
+      "label": "连接时写入功放设置",
+      "type": "boolean",
+      "default": true,
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SENSE_RESISTOR_OHM",
+      "label": "采样电阻",
+      "type": "number",
+      "default": 10.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DAMPING_RESISTOR_OHM",
+      "label": "阻尼电阻",
+      "type": "number",
+      "default": 10.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "COIL_RESISTANCE_OHM",
+      "label": "线圈直流电阻",
+      "type": "number",
+      "default": 2.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "RESISTOR_RATED_W",
+      "label": "电阻额定功率",
+      "type": "number",
+      "default": 2.0,
+      "unit": "W",
+      "group": "advanced",
+      "minimum": 0.01,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "N_REPEAT",
+      "label": "每点重复次数",
+      "type": "integer",
+      "default": 5,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": 200,
+      "description": "每个相位重复采集的 MFLI 读数次数；逐点均值与标准误由这些读数给出。",
+      "read_only": false
+    },
+    {
+      "name": "SCAN_POINT_DURATION_S",
+      "label": "每点采样时长",
+      "type": "number",
+      "default": 0.2,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "每次 MFLI 读数在温控关闭窗口内连续采集的时长。",
+      "read_only": false
+    },
+    {
+      "name": "SYSTEM_SETTLE_S",
+      "label": "系统稳定等待",
+      "type": "number",
+      "default": 0.1,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": null,
+      "description": "改相位或关温控后、开始读数前的等待。",
+      "read_only": false,
+      "legacy_defaults": {}
+    },
+    {
+      "name": "TEMP_GROUP_SIZE",
+      "label": "温控关闭分组点数",
+      "type": "integer",
+      "default": 2,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": 200,
+      "description": "每关闭温控一次连续采集的读数个数；组末恢复温控并等待 TEMP_SWITCH_ON_LAG_S 后再落盘。",
+      "read_only": false
+    },
+    {
+      "name": "TEMP_SWITCH_ON_LAG_S",
+      "label": "恢复温控后等待",
+      "type": "number",
+      "default": 2.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_IDX",
+      "label": "解调器索引",
+      "type": "integer",
+      "default": 0,
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "固定为第 0 路解调器；本实验不占用其他解调器。",
+      "read_only": true
+    },
+    {
+      "name": "DEMOD0_SIGNAL_RANGE",
+      "label": "输入量程",
+      "type": "number",
+      "default": 3.0,
+      "unit": "V",
+      "group": "basic",
+      "minimum": 1e-06,
+      "maximum": null,
+      "description": "Signal Input 1 的量程；按探测器信号幅度选择。",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_ORDER",
+      "label": "解调器阶数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 8,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_TC",
+      "label": "解调器时间常数",
+      "type": "number",
+      "default": 0.001,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1e-09,
+      "maximum": null,
+      "description": "第 0 路解调器低通时间常数；默认取运行目录 pi_width_scan 的配置。",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_RATE",
+      "label": "解调器采样率",
+      "type": "number",
+      "default": 10000.0,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": null,
+      "description": "第 0 路解调器数据速率；默认取运行目录 pi_width_scan 的配置。",
+      "read_only": false
+    }
+  ],
+  "flow": {
+    "run_step_id": "A03",
+    "finish_step_id": "A04",
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数、映射与安全限值预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": [
+          "不连接硬件；相位网格由起点/终点/步进生成且非空；脉宽大于两倍沿宽且不超过半个周期；z_pulse_coil_current、Z/Y 场电平、触发电平与电阻功耗全部在限内（Z_TAIL_COMP_ENABLED 时功耗按实际波形 mean(v²)）"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "连接 DG、MFLI、1200B、DHO900、GS200 并同步时钟",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "X_BIAS_V",
+          "Y_BIAS_V",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "Y_RF_PHASE_DEG",
+          "DEMOD0_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC",
+          "DEMOD0_RATE"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "X_BIAS_V",
+          "Y_BIAS_V",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "Y_RF_PHASE_DEG",
+          "DEMOD0_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC",
+          "DEMOD0_RATE"
+        ],
+        "quality_gates": [
+          "连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；按 X_BIAS_V 设 X 静态偏置、Y 射频正弦叠加 Y_BIAS_V 直流 offset；MFLI 第 0 路解调器按参数配置并记录回读；射频按无限 burst 与 Y_RF_PHASE_DEG 起振；GS200 主磁场输出回读为 OFF 才继续；DG 与 MFLI 参考时钟严格回读一致"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "扫射频相位并读 MFLI R/θ",
+        "group": "测量",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "X_BIAS_V",
+          "Y_BIAS_V",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "Y_RF_PHASE_DEG",
+          "DEMOD0_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC",
+          "DEMOD0_RATE",
+          "Z_PEAK_CURRENT_MA",
+          "Z_PULSE_EDGE_US",
+          "Z_PULSE_WIDTH_US",
+          "Z_TAIL_COMP_ENABLED",
+          "Z_TAIL_S_F",
+          "Z_TAIL_TAU_E_US",
+          "Y_RF_PHASE_START_DEG",
+          "Y_RF_PHASE_STOP_DEG",
+          "Y_RF_PHASE_STEP_DEG",
+          "N_REPEAT",
+          "SCAN_POINT_DURATION_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_GROUP_SIZE",
+          "TEMP_SWITCH_ON_LAG_S",
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP"
+        ],
+        "artifacts": [
+          "raw/phase_response.csv"
+        ],
+        "display_parameters": [
+          "AMPLIFIER_GAIN_DB",
+          "X_BIAS_V",
+          "Y_BIAS_V",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_WRITE_SETTINGS",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "Y_RF_PHASE_DEG",
+          "DEMOD0_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC",
+          "DEMOD0_RATE",
+          "Z_PEAK_CURRENT_MA",
+          "Z_PULSE_EDGE_US",
+          "Z_PULSE_WIDTH_US",
+          "Z_TAIL_COMP_ENABLED",
+          "Z_TAIL_S_F",
+          "Z_TAIL_TAU_E_US",
+          "Y_RF_PHASE_START_DEG",
+          "Y_RF_PHASE_STOP_DEG",
+          "Y_RF_PHASE_STEP_DEG",
+          "N_REPEAT",
+          "SCAN_POINT_DURATION_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_GROUP_SIZE",
+          "TEMP_SWITCH_ON_LAG_S",
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP"
+        ],
+        "quality_gates": [
+          "Z 双脉冲按 Z_PULSE_WIDTH_US 只写一次并 arm 无限 burst；逐相位按 DirectAW 顺序改 射频 burst 相位后等 SYSTEM_SETTLE_S 再读 N_REPEAT 次；读数按 TEMP_GROUP_SIZE 分组，组首关闭温控、组末恢复温控并等 TEMP_SWITCH_ON_LAG_S 后落盘，关温控窗口内不写文件；取消保留已完成读数"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "先关 1200B，Z 通道 DC 0 V 并关 burst/sync、关 Y 射频、停 MFLI 解调传输与 DHO900，再恢复温控与 GS200 原状态并断开全部设备"
+        ]
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "相位响应汇总、三分量分解与最佳读相位",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "phase_response_summary.json",
+          "phase_response.png"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "运行目录已停止写入；逐相位汇总 R/θ，按 Z(φ)=c0+c+1e^{iφ}+c−1e^{−iφ} 最小二乘分解；给模型残差、最佳读相位（模型 |Z| 最大处）与实测 R 最大相位；缺数据或相位不足 3 个时写原因、空摘要与占位图"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "RUN_TAG": [
+          "A01",
+          "A02",
+          "A03"
+        ],
+        "AMPLIFIER_GAIN_DB": [
+          "A02",
+          "A03"
+        ],
+        "X_BIAS_V": [
+          "A02",
+          "A03"
+        ],
+        "Y_BIAS_V": [
+          "A02",
+          "A03"
+        ],
+        "AMPLIFIER_INPUT_IMPEDANCE_OHM": [
+          "A02",
+          "A03"
+        ],
+        "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": [
+          "A02",
+          "A03"
+        ],
+        "AMPLIFIER_WRITE_SETTINGS": [
+          "A02",
+          "A03"
+        ],
+        "SENSE_RESISTOR_OHM": [
+          "A02",
+          "A03"
+        ],
+        "DAMPING_RESISTOR_OHM": [
+          "A02",
+          "A03"
+        ],
+        "COIL_RESISTANCE_OHM": [
+          "A02",
+          "A03"
+        ],
+        "RESISTOR_RATED_W": [
+          "A02",
+          "A03"
+        ],
+        "Y_RF_FREQ_HZ": [
+          "A02",
+          "A03"
+        ],
+        "Y_RF_VPP": [
+          "A02",
+          "A03"
+        ],
+        "Y_RF_PHASE_DEG": [
+          "A02",
+          "A03"
+        ],
+        "DEMOD0_IDX": [
+          "A02",
+          "A03"
+        ],
+        "DEMOD0_SIGNAL_RANGE": [
+          "A02",
+          "A03"
+        ],
+        "DEMOD0_ORDER": [
+          "A02",
+          "A03"
+        ],
+        "DEMOD0_TC": [
+          "A02",
+          "A03"
+        ],
+        "DEMOD0_RATE": [
+          "A02",
+          "A03"
+        ],
+        "Z_PEAK_CURRENT_MA": [
+          "A03"
+        ],
+        "Z_PULSE_EDGE_US": [
+          "A03"
+        ],
+        "Z_PULSE_WIDTH_US": [
+          "A03"
+        ],
+        "Z_TAIL_COMP_ENABLED": [
+          "A03"
+        ],
+        "Z_TAIL_S_F": [
+          "A03"
+        ],
+        "Z_TAIL_TAU_E_US": [
+          "A03"
+        ],
+        "Y_RF_PHASE_START_DEG": [
+          "A03"
+        ],
+        "Y_RF_PHASE_STOP_DEG": [
+          "A03"
+        ],
+        "Y_RF_PHASE_STEP_DEG": [
+          "A03"
+        ],
+        "N_REPEAT": [
+          "A03"
+        ],
+        "SCAN_POINT_DURATION_S": [
+          "A03"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A03"
+        ],
+        "TEMP_GROUP_SIZE": [
+          "A03"
+        ],
+        "TEMP_SWITCH_ON_LAG_S": [
+          "A03"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/rf-phase-response/workflow/diagram"
+  }
+}
