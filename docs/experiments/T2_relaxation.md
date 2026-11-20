@@ -264,7 +264,7 @@ $$
 
 ## Bell-Bloom 特有交叉验证
 
-Bell-Bloom 磁力仪下 PSD 洛伦兹拟合的 FWHM 也给出 $T_2^{\text{PSD}}$。将此值与本节独立标定的 $T_2^{\text{FID}}$ 或 $T_2^{\text{MORS}}$ 交叉比对：
+原子磁力仪在 Bell-Bloom 模式下，PSD 洛伦兹拟合的 FWHM 也给出 $T_2^{\text{PSD}}$。将此值与本节独立标定的 $T_2^{\text{FID}}$ 或 $T_2^{\text{MORS}}$ 交叉比对：
 
 | 验证项 | 通过标准 | 参考 |
 |--------|---------|------|
