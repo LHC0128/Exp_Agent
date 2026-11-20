@@ -183,11 +183,6 @@ function Get-DistContent([string]$RunDir) {
     if (-not (Test-Path -LiteralPath $path)) { return $null }
     return (Get-Content -LiteralPath $path -Raw).Trim()
 }
-function Test-NoMergeInProgress([string]$RepoDir) {
-    $ErrorActionPreference = 'Continue'
-    & git -C $RepoDir rev-parse -q --verify MERGE_HEAD 2>&1 | Out-Null
-    return ($LASTEXITCODE -ne 0)
-}
 
 # ===== 用例执行 =====
 
@@ -278,27 +273,34 @@ try {
     Assert ($TestState.NpmCalls.Count -eq 0) '排队拒绝：仍执行了构建'
     $Passed += 1; Write-Host '通过：忙时拒绝（queued_hardware_jobs）'
 
-    # 4 参数回存并合并：第一次停止提示重新测试，重跑完成发布
+    # 4 参数回存：开发目录一条提交、运行目录 HEAD 不动、无合并提交；推送后重跑完成发布
     $TestState.Case = @{}
     $TestState.HealthDown = $false
     $TestState.Health = New-HealthObject 'pre-4'
     $f = New-Fixture 'params'
     Write-FixtureFile (Join-Path $f.Run 'params\mapping.yaml') "base: run`n"
     $devHeadBefore = Get-FixtureHead $f.Dev
+    $runHeadBefore = Get-FixtureHead $f.Run
     $r = Invoke-ReleaseCase $f
-    Assert-CaseFailed $r '参数回存' '重新测试'
-    $labLog = Invoke-FixtureGit $f.Run @('log', '-1', '--format=%s')
-    Assert ($labLog -match "^运行参数回存 $(Get-Date -Format 'yyyy-MM-dd')$") "参数回存：lab 提交信息不对：$labLog"
-    Assert ((Get-FixtureHead $f.Dev) -ne $devHeadBefore) '参数回存：未合并进开发 master'
+    Assert-CaseFailed $r '参数回存' '推送'
+    $devLog = Invoke-FixtureGit $f.Dev @('log', '-1', '--format=%s')
+    Assert ($devLog -match "^运行参数回存 $(Get-Date -Format 'yyyy-MM-dd')$") "参数回存：开发目录提交信息不对：$devLog"
+    Assert ((Get-FixtureHead $f.Dev) -ne $devHeadBefore) '参数回存：开发目录 HEAD 未推进'
+    Assert ((Invoke-FixtureGit $f.Dev @('rev-list', '--count', '--merges', 'HEAD')) -eq '0') '参数回存：产生了合并提交'
+    Assert ((Get-FixtureHead $f.Run) -eq $runHeadBefore) '参数回存：运行目录 HEAD 被改动'
     Assert ((Get-FixtureTags $f.Run).Count -eq 1) '参数回存：不应打新标签'
     Assert ($TestState.NpmCalls.Count -eq 0 -and $TestState.StartCalls.Count -eq 0) '参数回存：不应构建/重启'
+    Assert (-not (Invoke-FixtureGit $f.Run @('status', '--porcelain'))) '参数回存：运行目录仍有未提交改动'
+    Assert ((Get-Content -LiteralPath (Join-Path $f.Run 'params\mapping.yaml') -Raw).Trim() -eq 'base: 1') '参数回存：运行目录参数未被丢弃'
     $r2 = Invoke-ReleaseCase $f
     Assert-CaseOk $r2 '参数回存后重跑'
     Assert ((Get-FixtureHead $f.Run) -eq (Get-FixtureHead $f.Dev)) '参数回存后重跑：未快进'
     Assert ((Get-DistContent $f.Run) -eq 'NEW BUILD') '参数回存后重跑：dist 未更新'
-    $Passed += 1; Write-Host '通过：参数回存并合并（含重跑完成）'
+    Assert ((Get-Content -LiteralPath (Join-Path $f.Run 'params\mapping.yaml') -Raw).Trim() -eq 'base: run') '参数回存后重跑：参数未同步回运行目录'
+    Assert ((Invoke-FixtureGit $f.Run @('rev-list', '--count', '--merges', 'HEAD')) -eq '0') '参数回存后重跑：历史出现合并提交'
+    $Passed += 1; Write-Host '通过：参数回存一条提交 + 推送后重跑（无合并提交）'
 
-    # 5 合并冲突停止（merge --abort）
+    # 5 两侧改同一参数文件 → 停止，运行目录改动保持未暂存
     $TestState.Case = @{}
     $TestState.HealthDown = $false
     $TestState.Health = New-HealthObject 'pre-5'
@@ -308,12 +310,35 @@ try {
     Invoke-FixtureGit $f.Dev @('commit', '-m', '开发改参数') | Out-Null
     Write-FixtureFile (Join-Path $f.Run 'params\mapping.yaml') "base: run`n"
     $devHeadBefore = Get-FixtureHead $f.Dev
+    $runHeadBefore = Get-FixtureHead $f.Run
     $r = Invoke-ReleaseCase $f
-    Assert-CaseFailed $r '合并冲突' '冲突'
-    Assert ((Get-FixtureHead $f.Dev) -eq $devHeadBefore) '合并冲突：开发 HEAD 被改动'
-    Assert (Test-NoMergeInProgress $f.Dev) '合并冲突：未执行 merge --abort'
-    Assert ($TestState.NpmCalls.Count -eq 0) '合并冲突：仍执行了构建'
-    $Passed += 1; Write-Host '通过：合并冲突停止并 abort'
+    Assert-CaseFailed $r '参数回存冲突' '都改过同一参数文件'
+    Assert ((Get-FixtureHead $f.Dev) -eq $devHeadBefore) '参数回存冲突：开发 HEAD 被改动'
+    Assert ((Get-FixtureHead $f.Run) -eq $runHeadBefore) '参数回存冲突：运行目录 HEAD 被改动'
+    Assert ((Get-DistContent $f.Run) -eq 'OLD BUILD') '参数回存冲突：dist 被改动'
+    Assert ((Invoke-FixtureGit $f.Run @('status', '--porcelain')) -match 'mapping\.yaml') '参数回存冲突：运行目录改动被丢弃'
+    Assert ($TestState.NpmCalls.Count -eq 0) '参数回存冲突：仍执行了构建'
+    $Passed += 1; Write-Host '通过：两侧改同一参数文件停止'
+
+    # 5b 开发目录未推送 → 停止（否则会发布旧版本，回存后还会退回参数）
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-5b'
+    $f = New-Fixture 'unpushed'
+    $bare = Join-Path $f.Root 'origin.git'
+    Invoke-FixtureGit $f.Root @('clone', '--bare', $f.Dev, $bare) | Out-Null
+    Invoke-FixtureGit $f.Run @('remote', 'set-url', 'origin', $bare) | Out-Null
+    Invoke-FixtureGit $f.Run @('fetch', 'origin') | Out-Null
+    Write-FixtureFile (Join-Path $f.Dev 'GUI\frontend\src\app.txt') "v3`n"
+    Invoke-FixtureGit $f.Dev @('add', '-A') | Out-Null
+    Invoke-FixtureGit $f.Dev @('commit', '-m', '未推送的提交') | Out-Null
+    $runHeadBefore = Get-FixtureHead $f.Run
+    $r = Invoke-ReleaseCase $f
+    Assert-CaseFailed $r '开发目录未推送' '推送到 origin'
+    Assert ((Get-FixtureHead $f.Run) -eq $runHeadBefore) '开发目录未推送：运行目录被改动'
+    Assert ($TestState.NpmCalls.Count -eq 0 -and $TestState.StopCalls.Count -eq 0) '开发目录未推送：仍构建/停 GUI'
+    Assert ((Get-FixtureTags $f.Run).Count -eq 1) '开发目录未推送：不应打标签'
+    $Passed += 1; Write-Host '通过：开发目录未推送时停止'
 
     # 6 非快进停止（lab 有未合并提交且工作区干净）
     $TestState.Case = @{}

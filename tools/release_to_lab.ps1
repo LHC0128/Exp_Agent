@@ -2,6 +2,8 @@
 # 只在运行目录空闲时发布；只允许快进；依赖变化时停下等用户授权手动安装。
 # 顺序原则：能提前做的检查都在停 GUI 之前完成；停 GUI 前再查一次空闲；
 # 运行目录代码只在 GUI 停止后才改动，构建失败自动退回原版本并按原状态启动。
+# 参数回存只在开发目录产生一条提交，运行目录不提交、不合并：lab 始终是 master 的纯快进，
+# 主干不再出现「运行参数回存」+「Merge branch 'lab'」这两条记账提交。
 #
 # 用法（在开发目录执行）：
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\release_to_lab.ps1
@@ -149,6 +151,81 @@ function Split-StatusByParams([string[]]$Lines) {
         if ($path -like 'params/*' -or $path -eq 'params') { $params += $line } else { $other += $line }
     }
     return @{ Params = $params; Other = $other }
+}
+
+# 参数回存：把运行目录 params/ 的改动逐文件带回开发目录，在 master 上提交一条。
+# 运行目录不提交、不合并，HEAD 保持不变——lab 始终是 master 的纯快进，主干上不再出现
+# 「运行参数回存」+「Merge branch 'lab'」这类记账提交。按文件搬运，二进制内容原样保留。
+function Restore-RunParamsIntoDev([string]$DevDirPath, [string]$RunDirPath, [int]$ChangeCount) {
+    $today = Get-Date -Format 'yyyy-MM-dd'
+
+    # 开发目录 params/ 必须先干净，否则无法区分哪些改动来自运行目录。
+    $devParams = Invoke-Git $DevDirPath @('-c', 'core.quotepath=false', 'status', '--porcelain', '--', 'params/')
+    if ($devParams.Text.Trim()) {
+        Stop-Release ("开发目录 params/ 有未提交改动，无法回存；请先提交或还原：`n" + $devParams.Text.Trim())
+    }
+
+    # 冲突判定需要共同基线：运行目录当前版本必须已在开发目录 master 里。
+    $runHead = Get-GitHead $RunDirPath
+    $devHead = Get-GitHead $DevDirPath
+    if ((Invoke-Git $DevDirPath @('merge-base', '--is-ancestor', $runHead, $devHead) -AllowFail).Code -ne 0) {
+        Stop-Release '开发目录 master 不包含运行目录当前版本，无法判断参数回存冲突；请先把运行目录版本同步回 master。'
+    }
+
+    # 以运行目录为准暂存 params/，取相对 HEAD 的逐文件改动；重命名拆成删除 + 新增，便于逐个搬运。
+    Invoke-Git $RunDirPath @('add', '-A', '--', 'params/') | Out-Null
+    $nameStatus = Invoke-Git $RunDirPath @('-c', 'core.quotepath=false', 'diff', '--cached', '--name-status', '--no-renames', '--', 'params/')
+    $changed = @()
+    foreach ($line in ($nameStatus.Text -split "`n")) {
+        if (-not $line.Trim()) { continue }
+        $parts = $line -split "`t"
+        if ($parts.Count -lt 2 -or -not $parts[1]) { throw "无法解析 git diff --name-status 输出：$line" }
+        $changed += [pscustomobject]@{ Status = $parts[0].Substring(0, 1); Path = $parts[1] }
+    }
+
+    # 开发目录自上一版本以来也改过同一参数文件时直接覆盖会静默丢改动，停下交人工比对。
+    if ($changed.Count -gt 0) {
+        $devChanged = Invoke-Git $DevDirPath @('-c', 'core.quotepath=false', 'diff', '--name-only', '--no-renames', $runHead, $devHead, '--', 'params/')
+        $devChangedSet = @($devChanged.Text -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() })
+        $overlap = @($changed | Where-Object { $devChangedSet -contains $_.Path } | ForEach-Object { $_.Path })
+        if ($overlap.Count -gt 0) {
+            Invoke-Git $RunDirPath @('reset', '-q', 'HEAD', '--', 'params/') -AllowFail | Out-Null
+            Stop-Release ("运行目录与开发目录都改过同一参数文件，已停止（运行目录改动已放回未暂存状态）；请人工比对后再发布：`n" + ($overlap -join "`n"))
+        }
+    }
+
+    foreach ($item in $changed) {
+        $src = Join-Path $RunDirPath $item.Path
+        $dst = Join-Path $DevDirPath $item.Path
+        if ($item.Status -eq 'D') {
+            if (Test-Path -LiteralPath $dst) { Remove-Item -LiteralPath $dst -Force }
+            continue
+        }
+        $dstDir = Split-Path -Parent $dst
+        if (-not (Test-Path -LiteralPath $dstDir)) { New-Item -ItemType Directory -Force -Path $dstDir | Out-Null }
+        Copy-Item -LiteralPath $src -Destination $dst -Force
+    }
+    Invoke-Git $DevDirPath @('add', '-A', '--', 'params/') | Out-Null
+
+    # 逐文件搬运可能漏删除或空目录，提交前用 params 子树哈希确认两侧完全一致。
+    $runTree = (Invoke-Git $RunDirPath @('write-tree')).Text.Trim()
+    $devTree = (Invoke-Git $DevDirPath @('write-tree')).Text.Trim()
+    $runParamsTree = (Invoke-Git $RunDirPath @('rev-parse', ($runTree + ':params'))).Text.Trim()
+    $devParamsTree = (Invoke-Git $DevDirPath @('rev-parse', ($devTree + ':params'))).Text.Trim()
+    if ($runParamsTree -ne $devParamsTree) {
+        Invoke-Git $DevDirPath @('reset', '-q', 'HEAD', '--', 'params/') -AllowFail | Out-Null
+        Invoke-Git $DevDirPath @('checkout', '--', 'params/') -AllowFail | Out-Null
+        Stop-Release '参数回存校验失败：开发目录与运行目录的 params/ 内容不一致，已还原开发目录；请人工比对。'
+    }
+
+    Invoke-Git $DevDirPath @('commit', '-m', "运行参数回存 $today") | Out-Null
+    Write-ReleaseLog "参数回存已提交到开发目录 master（$ChangeCount 项改动，无合并提交）。"
+
+    # 改动已转移：丢弃运行目录的 params/ 改动，HEAD 不变，后续发布仍是纯快进。
+    Invoke-Git $RunDirPath @('reset', '-q', 'HEAD', '--', 'params/') | Out-Null
+    Invoke-Git $RunDirPath @('checkout', '--', 'params/') | Out-Null
+    Invoke-Git $RunDirPath @('clean', '-fdq', '--', 'params/') | Out-Null
+    Write-ReleaseLog '运行目录 params/ 改动已丢弃（内容已在开发目录提交）。'
 }
 
 # 运行目录标记 .lab_runtime（内容为运行目录绝对路径）是驱动层放行真实仪器的唯一依据；
@@ -315,7 +392,7 @@ function Show-ReleasePlan([string]$DevDirPath, [string]$RunDirPath) {
         $status = Split-StatusByParams (Get-RepoStatusLines $RunDirPath)
         if ($status.Other.Count -gt 0) { $blockers += '运行目录有 params/ 以外的未提交改动' }
         if ($status.Params.Count -gt 0) {
-            Write-ReleaseLog "将先在 lab 提交参数回存（$($status.Params.Count) 项），再合并回开发目录并停止，提示重新测试。"
+            Write-ReleaseLog "将把运行目录 params/ 的 $($status.Params.Count) 项改动回存为开发目录 master 上的一条提交，然后停止；无合并提交，推送后重跑即可。"
         }
 
         $health = Get-HealthState
@@ -340,7 +417,7 @@ function Show-ReleasePlan([string]$DevDirPath, [string]$RunDirPath) {
         Write-ReleaseLog '（DryRun 只比对本地已有的 origin/master，不执行 fetch。）'
     }
 
-    Write-ReleaseLog '计划步骤：1 开发目录检查与测试确认 → 2 空闲检查 → 3 参数回存/合并 → 4 预检（快进、依赖、标签）→ 5 再查空闲并停 GUI → 6 快进并打标签 → 7 构建前端（失败则退回原版本）→ 8 启动 GUI 并验证 instance_id。'
+    Write-ReleaseLog '计划步骤：1 开发目录检查与测试确认 → 2 空闲检查 → 3 参数回存（开发目录一条提交，无合并）→ 4 预检（已推送、快进、依赖、标签）→ 5 再查空闲并停 GUI → 6 快进并打标签 → 7 构建前端（失败则退回原版本）→ 8 启动 GUI 并验证 instance_id。'
     if ($SkipRestart) { Write-ReleaseLog '已指定 -SkipRestart：不停止/启动 GUI（要求 GUI 未运行）。' }
     if ($blockers.Count -gt 0) {
         foreach ($b in $blockers) { Write-ReleaseLog "预检阻塞：$b" }
@@ -447,35 +524,33 @@ Write-ReleaseLog '步骤 2：检查 GUI 是否空闲...'
 Assert-GuiIdle | Out-Null
 Assert-SkipRestartAllowed '发布开始时'
 
-# 步骤 3：参数回存与合并（只提交 params/，不改代码，GUI 可继续运行）。
-Write-ReleaseLog '步骤 3：检查运行目录改动...'
+# 步骤 3：参数回存（只改开发目录 master 的一条提交，运行目录 HEAD 不动，GUI 可继续运行）。
+Write-ReleaseLog '步骤 3：检查运行目录改动与参数回存...'
 Assert-RunDirOnLab $RunDir
 $status = Split-StatusByParams (Get-RepoStatusLines $RunDir)
 if ($status.Other.Count -gt 0) {
     Stop-Release ("运行目录有 params/ 以外的未提交改动，已停止；请人工处理：`n" + ($status.Other -join "`n"))
 }
 if ($status.Params.Count -gt 0) {
-    $today = Get-Date -Format 'yyyy-MM-dd'
-    Write-ReleaseLog "运行目录 params/ 有 $($status.Params.Count) 项改动，提交参数回存..."
-    Invoke-Git $RunDir @('add', '--', 'params/') | Out-Null
-    Invoke-Git $RunDir @('commit', '-m', "运行参数回存 $today") | Out-Null
-    Write-ReleaseLog '把参数回存合并回开发目录 master...'
-    $pull = Invoke-Git $DevDir @('pull', '--no-rebase', '--no-edit', $RunDir, 'lab') -AllowFail
-    if ($pull.Code -ne 0) {
-        Invoke-Git $DevDir @('merge', '--abort') -AllowFail | Out-Null
-        Stop-Release "参数回存合并冲突，已执行 git merge --abort；请人工处理冲突后再发布。git 输出：`n$($pull.Text)"
-    }
-    $devHeadAfter = Get-GitHead $DevDir
-    if ($devHeadAfter -ne $devHeadBefore) {
-        Stop-Release '参数回存已合并进 master（开发目录 HEAD 变化）；请重新测试后再运行发布。'
-    }
+    Write-ReleaseLog "运行目录 params/ 有 $($status.Params.Count) 项改动，回存到开发目录..."
+    Restore-RunParamsIntoDev $DevDir $RunDir $status.Params.Count
+    Stop-Release ('运行参数回存已提交到开发目录 master（只含 params/，无需重新测试）；' +
+        '请推送到 origin 后再运行发布。运行目录与 GUI 均未改动。')
 } else {
     Write-ReleaseLog '运行目录无未提交改动，跳过参数回存。'
 }
 
-# 步骤 4：停 GUI 前的预检——快进可行性、标签、依赖变化，全部只读。
+# 步骤 4：停 GUI 前的预检——开发目录是否已推送、快进可行性、标签、依赖变化，全部只读。
 Write-ReleaseLog '步骤 4：预检快进与依赖...'
 Invoke-Git $RunDir @('fetch', 'origin') | Out-Null
+# 发布目标固定为 origin/master：开发目录未推送（或有未同步提交）时发布会悄悄发出旧版本，
+# 参数回存后误重跑还会把运行目录参数退回去，所以先比对两侧 HEAD。
+$originHead = (Invoke-Git $RunDir @('rev-parse', 'origin/master')).Text.Trim()
+$devHeadNow = Get-GitHead $DevDir
+if ($devHeadNow -ne $originHead) {
+    Stop-Release ("开发目录 master（$(Get-ShortRev $devHeadNow)）与 origin/master（$(Get-ShortRev $originHead)）不一致；" +
+        '请先把 master 推送到 origin 再运行发布。运行目录与 GUI 均未改动。')
+}
 $ffCheck = Invoke-Git $RunDir @('merge-base', '--is-ancestor', 'HEAD', 'origin/master') -AllowFail
 if ($ffCheck.Code -ne 0) {
     Stop-Release '运行目录 lab 不能快进到 origin/master（lab 上有未合并进 master 的提交），已停止；请先把 lab 的提交合并回 master 并重新测试。'
