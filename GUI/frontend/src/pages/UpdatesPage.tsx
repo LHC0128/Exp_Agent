@@ -245,9 +245,9 @@ export function UpdatesPage() {
         />
         <PackageSection<{ items: NpmRow[] }>
           scope="npm-global" url="/api/updates/npm-global" eyebrow="GLOBAL CLI" title="全局 CLI 工具"
-          description="全局 npm 白名单包：codegraph（含 MCP server）、playwright cli、pi 本体、mineru。"
+          description="全局 npm 白名单包：playwright cli、pi 本体、mineru。"
           rows={(data) => data.items} extraLabel="wanted" extraValue={(row) => (row as NpmRow).wanted}
-          note="更新 @agegr/pi-web 后需重启 pi；更新 codegraph 同时更新其 MCP server。"
+          note="更新 @agegr/pi-web 后需重启 pi。"
           busy={jobBusy} registerReload={registerReload} onUpdate={startUpdate}
         />
         <PackageSection<{ items: NpmRow[] }>

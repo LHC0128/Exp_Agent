@@ -14,7 +14,6 @@ tests/
 AGENTS.md
 CLAUDE.md
 GUI/AGENTS.md
-.codegraph/
 .zcode/
 .zcodeignore
 .codex/

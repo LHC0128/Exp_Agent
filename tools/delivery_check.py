@@ -21,7 +21,7 @@ _COMMANDS = {
     "status": ("-c", "core.fsmonitor=false", "status", "--porcelain=v1", "-z", "--untracked-files=normal"),
     "ignored": ("check-ignore", "-z", "--stdin"),
 }
-_LOCAL_DIRS = {".agents", ".claude", ".codex", ".vscode", ".codegraph", ".zcode", ".pi"}
+_LOCAL_DIRS = {".agents", ".claude", ".codex", ".vscode", ".zcode", ".pi"}
 
 
 def _git(root: Path, key: str, runner, stdin: bytes = b"") -> bytes | None:

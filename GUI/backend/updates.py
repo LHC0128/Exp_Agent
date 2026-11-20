@@ -36,7 +36,6 @@ NPM_UPDATE_SCOPES = ("npm-frontend", "npm-global", "npm-olcli")
 
 # 全局 CLI 分区只展示这些包；slidev / marp / opencode 等不列出不检查。
 GLOBAL_CLI_WHITELIST = (
-    "@colbymchenry/codegraph",
     "@playwright/cli",
     "@agegr/pi-web",
     "mineru-open-api",

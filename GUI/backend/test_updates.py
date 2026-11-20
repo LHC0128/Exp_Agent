@@ -20,7 +20,6 @@ PIP_OUTDATED = json.dumps([
 
 NPM_OUTDATED = json.dumps({
     "@slidev/cli": {"current": "53.0.0", "wanted": "53.1.0", "latest": "54.0.0"},
-    "@colbymchenry/codegraph": {"current": "1.6.2", "wanted": "1.7.0", "latest": "1.7.0"},
     "@playwright/cli": {"current": "0.1.22", "wanted": "0.2.0", "latest": "0.2.0"},
 })
 
@@ -54,7 +53,6 @@ class UpdatesServiceTests(unittest.TestCase):
              patch.object(updates.shutil, "which", return_value="npm"):
             result = self.service.check_npm_global()
         names = [item["name"] for item in result["items"]]
-        self.assertIn("@colbymchenry/codegraph", names)
         self.assertIn("@playwright/cli", names)
         self.assertNotIn("@slidev/cli", names)
 

@@ -369,8 +369,8 @@ Keithley 6221 的 Hz 任意波 CSV/TXT 解析与标定换算逻辑位于
 - **Python 依赖**：全 venv `pip list --outdated`，标注包来自哪个声明文件；
   勾选后 `pip install -U`，任务末尾自动运行 `pip check`。
 - **前端依赖**：`GUI/frontend` 的 npm 过期包，勾选后安装 `@latest`。
-- **全局 CLI 工具**：全局 npm 白名单包（codegraph 含其 MCP server、playwright cli、
-  pi 本体、mineru）；更新 pi 后需重启 pi。
+- **全局 CLI 工具**：全局 npm 白名单包（playwright cli、pi 本体、mineru）；
+  更新 pi 后需重启 pi。
 - **olcli 隔离环境**：`~/.local/olcli-ustc` 前缀内的 olcli-ustc、codex、pnpm，
   只用命令级 `npm_config_prefix`，不修改用户级 `.npmrc`。
 - **AI Skills**：仅列出唯一入口 `.agents/skills` 的清单；退役备份不扫描，本地无版本源，仅展示。

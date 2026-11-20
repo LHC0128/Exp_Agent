@@ -20,7 +20,7 @@ const PIP = {
 };
 const NPM_GLOBAL = {
   items: [
-    { name: "@colbymchenry/codegraph", current: "1.6.2", wanted: "1.7.0", latest: "1.7.0" },
+    { name: "@playwright/cli", current: "1.6.2", wanted: "1.7.0", latest: "1.7.0" },
   ],
 };
 const SKILLS = {
@@ -32,7 +32,7 @@ const TOOLCHAIN = { items: [{ name: "python", version: "3.13.0", error: null }] 
 const DONE_JOB = {
   id: "job-1", kind: "update:npm-global", status: "completed", stage: "complete",
   percent: 100, message: "任务完成", created_at: "2026-10-13T10:00:00",
-  events: [], result: { updated: ["@colbymchenry/codegraph"] },
+  events: [], result: { updated: ["@playwright/cli"] },
 };
 
 beforeEach(() => {
@@ -61,7 +61,7 @@ describe("检查更新页", () => {
   it("渲染各分区与过期包行", async () => {
     render(<UpdatesPage />);
     expect(await screen.findByText("numpy")).toBeInTheDocument();
-    expect(screen.getByText("@colbymchenry/codegraph")).toBeInTheDocument();
+    expect(screen.getByText("@playwright/cli")).toBeInTheDocument();
     expect(screen.getByText("expcodegen")).toBeInTheDocument();
     expect(screen.getByText(/落后远端/)).toBeInTheDocument();
     expect(screen.getAllByText("全部均为最新版本。")).toHaveLength(2);
@@ -70,11 +70,11 @@ describe("检查更新页", () => {
 
   it("勾选包后调用对应更新接口", async () => {
     render(<UpdatesPage />);
-    (await screen.findByRole("checkbox", { name: "选择 @colbymchenry/codegraph" })).click();
+    (await screen.findByRole("checkbox", { name: "选择 @playwright/cli" })).click();
     (await screen.findByRole("button", { name: /更新选中（1）/ })).click();
     await waitFor(() => expect(mockApi).toHaveBeenCalledWith(
       "/api/updates/npm-global",
-      { method: "POST", body: JSON.stringify({ packages: ["@colbymchenry/codegraph"] }) },
+      { method: "POST", body: JSON.stringify({ packages: ["@playwright/cli"] }) },
     ));
   });
 
