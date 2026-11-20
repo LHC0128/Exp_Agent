@@ -85,7 +85,7 @@ learned_notes:
 
 ## X/Y 横向拖尾补偿
 
-屏蔽筒的慢场带有百分之几的横向分量（slow_tilt）。Z 波形补掉拖尾的 z 分量后，横向分量仍在，并会把 2f 零点带偏几十 mV。Z 补偿后，不论横向分量来自屏蔽筒磁化的方向偏离，还是来自涡流或线圈轴倾斜，脉冲后的横向场都与慢分量 x(t) 同形。所以在 X/Y 上叠加 A·x̂(t)，两个系数 A_x、A_y 调到使 2f 零点处的 c1 = 0，就能把它抵消。推导与模型验证见运行目录 `data/pi_width_scan/_pi_width_investigation_20261118/10_tail_compensation/结论.md` 附录 A。
+屏蔽筒的慢场带有百分之几的横向分量（slow_tilt）。Z 波形补掉拖尾的 z 分量后，横向分量仍在，并会把 2f 零点带偏几十 mV。Z 补偿后，不论横向分量来自屏蔽筒磁化的方向偏离，还是来自涡流或线圈轴倾斜，脉冲后的横向场都与慢分量 x(t) 同形。所以在 X/Y 上叠加 A·x̂(t)，两个系数 A_x、A_y 调到使 2f 零点处的 c1 = 0，就能把它抵消。推导与模型验证见开发仓库 `scripts/pi_width_scan/20261118_pi_width_investigation/10_tail_compensation/结论.md` 附录 A。
 
 - `XY_TAIL_COMP_ENABLED` 开启后，A03 在上传 Z 波形之后，把 `XY_TAIL_X_MV`/`XY_TAIL_Y_MV` 不为 0 的轴改为任意波。
   - 形状 x̂ = Z 驱动经 `XY_TAIL_TAU_E_US` 一阶周期低通，归一化到峰值 1，由代码从实际上传的 Z 波形算出，内置脉冲和波形文件都自动跟随。
@@ -101,7 +101,7 @@ learned_notes:
 
 `Z_WAVEFORM_FROM_FILE` 关闭时 Z 输出内置 ±π 升余弦脉冲（与以前相同）；开启时上传 `Z_WAVEFORM_FILE`，下拉列出运行目录 `data/z_waveforms/` 下的 `*.csv`。
 
-- 用途：屏蔽筒使原子处 Z 场约 54% 瞬时出现、其余以 τe ≈ 47 µs 滞后（s_f ≈ 0.544）。在每个脉冲后接反号指数尾 −A·exp(−(t−w)/τc)，τc = s_f·τe，A 由模型精确给出，脉冲后的 z 场为零；峰值不变，π 宽度因此变长（190 mA 时约 7.93 µs）。原理与模型验证见运行目录 `data/pi_width_scan/_pi_width_investigation_20261118/10_tail_compensation/结论.md`。
+- 用途：屏蔽筒使原子处 Z 场约 54% 瞬时出现、其余以 τe ≈ 47 µs 滞后（s_f ≈ 0.544）。在每个脉冲后接反号指数尾 −A·exp(−(t−w)/τc)，τc = s_f·τe，A 由模型精确给出，脉冲后的 z 场为零；峰值不变，π 宽度因此变长（190 mA 时约 7.93 µs）。原理与模型验证见开发仓库 `scripts/pi_width_scan/20261118_pi_width_investigation/10_tail_compensation/结论.md`。
 - 格式：UTF-8 文本；`# key: value` 注释行（必须有 `period_us`，建议有 `width_us`），其后正好 16384 行，一个周期的归一化电流，从 +脉冲上升沿起算；最大绝对值 1 对应 `Z_PEAK_CURRENT_MA`。DG4000 按 ±1 → ±Vpp/2 固定映射，不按内容重新缩放。
 - 预检拒绝：点数不等于 16384、含非有限值、最大绝对值不等于 1、首尾跳变超过 0.05、缺 `period_us` 或与脉冲周期不一致、`width_us` 与 `Z_PULSE_WIDTH_US` 不一致、文件名带路径。电流上限仍按 ±`Z_PEAK_CURRENT_MA` 校验。
 - 生成：`python tools/make_z_waveform.py --width 7.93 --s-f 0.544 --tau-e 46.9`（按模型给精确尾），或 `--tail-a 0.12 --tau-c 25.5` 直接给尾参数；`--tail-a 0` 得到与内置相同的脉冲。尾的周期叠加使最大值略高于主脉冲平顶（约 0.3%），注释 `normalization_scale` 记录该比例。

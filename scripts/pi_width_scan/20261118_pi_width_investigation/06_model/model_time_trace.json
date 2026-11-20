@@ -1,0 +1,32 @@
+{
+ "model_tau_e_us": 46.86882650896505,
+ "rows": [
+  {
+   "case": "static field only (fitted bx,by)",
+   "tau_odd_us": 27.50767309118774
+  },
+  {
+   "case": "static x 100 Hz",
+   "tau_odd_us": 94.51039573809383
+  },
+  {
+   "case": "static y 100 Hz",
+   "tau_odd_us": -650911.4880208301
+  },
+  {
+   "case": "slow-tail transverse x 0.02",
+   "tau_odd_us": 30.225573860601926
+  },
+  {
+   "case": "slow-tail transverse y 0.02",
+   "tau_odd_us": 6.564083753674517
+  },
+  {
+   "case": "fitted static + slow-tail x 0.02",
+   "tau_odd_us": 27.62762628081357
+  }
+ ],
+ "odd_even_ratio_with_tail": 1.2548492833805747,
+ "odd_even_ratio_without_tail": 0.2949974300787718,
+ "odd_even_ratio_measured": 2.50725496002369
+}

@@ -1,0 +1,4 @@
+38 points
+nominal: rms 0.225
+joint fit: s_f=0.594±0.005, tau_e=59.9±1.8 us, corr=+0.97, rms 0.125
+physically exact tail (field after pulse = 0) at 190 mA: w_pi=7.505 us, A=0.0696 (13.2 mA), tau_c=35.62 us

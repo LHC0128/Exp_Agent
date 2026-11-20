@@ -1,0 +1,4 @@
+snapshot root: D:\Code\exp_agent_run\data\scope_px_snapshot\1118_163546_tail_comp
+builtin66: Px p2p at 2f-null bias 226.2 mV; static-Bx response (40 mV): even rms 7.17 mV, odd rms 12.67 mV, odd/even 1.768
+cand1_w8.20_tc25.5: Px p2p at 2f-null bias 238.4 mV; static-Bx response (40 mV): even rms 3.98 mV, odd rms 7.47 mV, odd/even 1.879
+cand2_w7.50_tc35.6: Px p2p at 2f-null bias 244.9 mV; static-Bx response (40 mV): even rms 12.17 mV, odd rms 8.27 mV, odd/even 0.680

@@ -1,0 +1,3 @@
+nominal s_f=0.544 tau_e=46.9: rms log-resid 0.231
+fit s_f=0.595±0.008, tau_e=60.0±3.3 us: rms log-resid 0.146
+with fitted params: exact tail at w_pi=7.500 us: A=0.0694 (13.2 mA), tau_c=35.67 us

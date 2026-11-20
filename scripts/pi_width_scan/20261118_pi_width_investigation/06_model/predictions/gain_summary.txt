@@ -1,0 +1,1 @@
+﻿max|c-1| fitted 13.58; Bz=0: 103.7 (x7.64); no slow tail: 14.99 (x1.10)

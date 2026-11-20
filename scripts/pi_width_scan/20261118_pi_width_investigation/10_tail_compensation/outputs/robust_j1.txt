@@ -1,0 +1,7 @@
+baseline: exact (w=7.93) A=0.1139 tau_c=25.51 | 2-knob min A=0.1276 w=8.225 |J1|=1.94e-04 | 3-knob min A=0.3099 w=9.472 tau_c=12.53 |J1|=9.16e-08 rot=1.0713pi
+op. point B=(45,14) nT: exact (w=7.93) A=0.1139 tau_c=25.51 | 2-knob min A=0.1275 w=8.223 |J1|=1.91e-04 | 3-knob min A=0.3004 w=9.425 tau_c=12.79 |J1|=5.11e-06 rot=1.0703pi
+slow_tilt (0.025,0.033): exact (w=7.93) A=0.1139 tau_c=25.51 | 2-knob min A=0.1276 w=8.225 |J1|=1.93e-04 | 3-knob min A=0.3100 w=9.472 tau_c=12.52 |J1|=1.21e-07 rot=1.0713pi
+true s_f 0.63 (+15%): exact (w=7.93) A=0.0799 tau_c=29.53 | 2-knob min A=0.0947 w=7.521 |J1|=1.40e-04 | 3-knob min A=0.1786 w=8.175 tau_c=14.93 |J1|=1.91e-05 rot=1.0595pi
+true tau_e 54 (+15%): exact (w=7.93) A=0.0999 tau_c=29.39 | 2-knob min A=0.1295 w=8.463 |J1|=1.63e-04 | 3-knob min A=0.2571 w=9.425 tau_c=14.40 |J1|=1.01e-05 rot=1.0764pi
+true tau_e 40 (-15%): exact (w=7.93) A=0.1316 tau_c=21.77 | 2-knob min A=0.1232 w=7.940 |J1|=2.31e-04 | 3-knob min A=0.3369 w=9.325 tau_c=11.53 |J1|=1.49e-05 rot=1.0604pi
+residual z after pulse at J1 min: max 0.0045 vs uncomp 0.0574 (area ratio 0.078)

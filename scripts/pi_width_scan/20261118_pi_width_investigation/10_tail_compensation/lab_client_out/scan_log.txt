@@ -1,0 +1,59 @@
+[15:03:03] START base
+[15:03:07] END base exit=2 
+STOP: base exit 2
+--- restart after fix bb6cf61 / lab-20261118-14 ---
+[15:06:48] START base
+[15:08:04] END base exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_150651_bperp_null"
+[15:08:04] START w7.40_A0.000
+[15:09:22] END w7.40_A0.000 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_150807_bperp_null"
+[15:09:22] START w7.40_A0.060
+[15:10:42] END w7.40_A0.060 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_150925_bperp_null"
+[15:10:42] START w7.40_A0.114
+[15:11:57] END w7.40_A0.114 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_151045_bperp_null"
+[15:11:57] START w7.40_A0.160
+[15:12:04] END w7.40_A0.160 exit=1 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_151200_bperp_null"
+STOP: w7.40_A0.160 exit 1
+--- resume from w7.40_A0.160 after MFLI released ---
+[15:13:31] START w7.40_A0.160
+[15:14:48] END w7.40_A0.160 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_151334_bperp_null"
+[15:14:48] START w7.70_A0.000
+[15:16:05] END w7.70_A0.000 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_151451_bperp_null"
+[15:16:05] START w7.70_A0.060
+[15:17:25] END w7.70_A0.060 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_151611_bperp_null"
+[15:17:25] START w7.70_A0.114
+[15:18:44] END w7.70_A0.114 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_151728_bperp_null"
+[15:18:44] START w7.70_A0.160
+[15:19:17] END w7.70_A0.160 exit=1 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_151847_bperp_null"
+STOP: w7.70_A0.160 exit 1
+--- resume from w7.70_A0.160 after user confirmed MFLI free ---
+[15:21:10] START w7.70_A0.160
+[15:22:27] END w7.70_A0.160 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_152113_bperp_null"
+[15:22:27] START w7.93_A0.000
+[15:23:44] END w7.93_A0.000 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_152230_bperp_null"
+[15:23:44] START w7.93_A0.060
+[15:25:01] END w7.93_A0.060 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_152347_bperp_null"
+[15:25:01] START w7.93_A0.114
+[15:26:20] END w7.93_A0.114 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_152504_bperp_null"
+[15:26:20] START w7.93_A0.160
+[15:27:39] END w7.93_A0.160 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_152623_bperp_null"
+[15:27:39] START w8.20_A0.000
+[15:28:56] END w8.20_A0.000 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_152742_bperp_null"
+[15:28:56] START w8.20_A0.060
+[15:30:13] END w8.20_A0.060 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_152859_bperp_null"
+[15:30:13] START w8.20_A0.114
+[15:31:30] END w8.20_A0.114 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_153016_bperp_null"
+[15:31:31] START w8.20_A0.160
+[15:32:48] END w8.20_A0.160 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_153133_bperp_null"
+[15:32:48] START w8.50_A0.000
+[15:34:05] END w8.50_A0.000 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_153251_bperp_null"
+[15:34:05] START w8.50_A0.060
+[15:35:22] END w8.50_A0.060 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_153408_bperp_null"
+[15:35:22] START w8.50_A0.114
+[15:36:39] END w8.50_A0.114 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_153525_bperp_null"
+[15:36:39] START w8.50_A0.160
+[15:36:46] END w8.50_A0.160 exit=1 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_153642_bperp_null"
+STOP: w8.50_A0.160 exit 1
+--- rerun last group w8.50_A0.160 (user request) ---
+[15:40:36] START w8.50_A0.160
+[15:41:55] END w8.50_A0.160 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_154038_bperp_null"
+ALL DONE

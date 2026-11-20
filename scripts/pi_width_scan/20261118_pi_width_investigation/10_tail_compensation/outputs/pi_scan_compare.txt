@@ -1,0 +1,5 @@
+1118_213636_pi_width_scan  built-in pulse (no tail comp)    tau_pi = 6.772 +- 0.029 us  |c-1|peak 6.53 mV  |c0| max 19.9 mV  (good)
+1118_205941_pi_width_scan  tail comp, X bias only           tau_pi = 8.027 +- 0.055 us  |c-1|peak 6.80 mV  |c0| max 19.2 mV  (good)
+1118_220918_pi_width_scan  tail comp, X + Y bias            tau_pi = 8.023 +- 0.069 us  |c-1|peak 6.76 mV  |c0| max 13.5 mV  (good)
+  1118_205941_pi_width_scan: field scale vs model 0.9855; working waveform (8.20 us, A 0.114) = 1.045 pi [1.036, 1.053]; pi waveform = 8.03 us, A 0.1154 (-21.9 mA), tau_c 25.5 us
+  1118_220918_pi_width_scan: field scale vs model 0.9861; working waveform (8.20 us, A 0.114) = 1.045 pi [1.034, 1.056]; pi waveform = 8.02 us, A 0.1153 (-21.9 mA), tau_c 25.5 us

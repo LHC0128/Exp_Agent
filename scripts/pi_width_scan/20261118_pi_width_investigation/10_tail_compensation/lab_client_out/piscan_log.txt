@@ -1,0 +1,10 @@
+[20:59:32] START tail_on tail=true --dry-run
+[20:59:33] END tail_on exit=0 
+[20:59:37] START tail_on tail=true 
+[21:36:04] END tail_on exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\pi_width_scan\\1118_205941_pi_width_scan"
+[21:36:33] START tail_off tail=false 
+[22:08:37] END tail_off exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\pi_width_scan\\1118_213636_pi_width_scan"
+[22:09:09] START tail_on_y tail=true ybias=-0.0069 --dry-run
+[22:09:11] END tail_on_y exit=0 
+[22:09:14] START tail_on_y tail=true ybias=-0.0069 
+[22:45:40] END tail_on_y exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\pi_width_scan\\1118_220918_pi_width_scan"

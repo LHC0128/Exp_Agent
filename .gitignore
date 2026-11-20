@@ -60,3 +60,6 @@ docs/old/architecture/*.visual-check.*
 # 运行目录标记与开发本地配置（各目录本地生成，不上传）
 .lab_runtime
 .lab_dev.yaml
+
+# 研究脚本重跑时 save_figure 同时导出的 PDF（与 PNG 重复，不入库）
+scripts/**/*.pdf

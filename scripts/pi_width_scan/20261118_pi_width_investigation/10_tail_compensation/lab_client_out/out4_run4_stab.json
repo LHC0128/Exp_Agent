@@ -1,0 +1,162 @@
+已建立会话 1e6ded525e624d79928cf794452f8de0（任务 344c24f11e7b4e2c95688b3755e9a974）
+运行步骤：A01、A02、A03
+[344c24f11e7b4e2c95688b3755e9a974] failed running 100.0% 模块 lab_workflows.experiment_modules.bperp_null.session 异常结束，退出码 1
+{
+  "experiment_id": "bperp-null",
+  "mode": "session",
+  "authorized_params": {
+    "X_BIAS_MV": "-20.53:-20.53",
+    "Y_BIAS_MV": "-31.63:-31.63",
+    "X_SCAN_START_MV": "-20:-20",
+    "X_SCAN_STOP_MV": "20:20",
+    "X_SCAN_STEP_MV": "10:10",
+    "Y_SCAN_START_MV": "-20:-20",
+    "Y_SCAN_STOP_MV": "20:20",
+    "Y_SCAN_STEP_MV": "10:10",
+    "Z_PULSE_WIDTH_US": "8.2:8.2",
+    "Z_WAVEFORM_FROM_FILE": "true|true",
+    "Z_WAVEFORM_FILE": "\"z_tail_w8.20_A0.114_tc25.5.csv\"|\"z_tail_w8.20_A0.114_tc25.5.csv\"",
+    "MAIN_FIELD_ENABLED": "true|true",
+    "MAIN_FIELD_CURRENT_MA": "-0.4:-0.4",
+    "XY_TAIL_COMP_ENABLED": "true|true",
+    "XY_TAIL_TAU_E_US": "46.9:46.9",
+    "XY_TAIL_X_MV": "-32.6:-32.6",
+    "XY_TAIL_Y_MV": "60.9:60.9"
+  },
+  "overrides": {
+    "X_BIAS_MV": -20.53,
+    "Y_BIAS_MV": -31.63,
+    "X_SCAN_START_MV": -20,
+    "X_SCAN_STOP_MV": 20,
+    "X_SCAN_STEP_MV": 10,
+    "Y_SCAN_START_MV": -20,
+    "Y_SCAN_STOP_MV": 20,
+    "Y_SCAN_STEP_MV": 10,
+    "Z_PULSE_WIDTH_US": 8.2,
+    "Z_WAVEFORM_FROM_FILE": true,
+    "Z_WAVEFORM_FILE": "z_tail_w8.20_A0.114_tc25.5.csv",
+    "MAIN_FIELD_ENABLED": true,
+    "MAIN_FIELD_CURRENT_MA": -0.4,
+    "XY_TAIL_COMP_ENABLED": true,
+    "XY_TAIL_TAU_E_US": 46.9,
+    "XY_TAIL_X_MV": -32.6,
+    "XY_TAIL_Y_MV": 60.9
+  },
+  "parameters": {
+    "RUN_TAG": "bperp_null",
+    "X_SCAN_START_MV": -20,
+    "X_SCAN_STOP_MV": 20,
+    "X_SCAN_STEP_MV": 10,
+    "Y_SCAN_START_MV": -20,
+    "Y_SCAN_STOP_MV": 20,
+    "Y_SCAN_STEP_MV": 10,
+    "PULSE_FREQ_HZ": 5000.0,
+    "Z_PEAK_CURRENT_MA": 190.0,
+    "Z_PULSE_WIDTH_US": 8.2,
+    "N_REPEAT": 2,
+    "SCAN_POINT_DURATION_S": 0.2,
+    "SYSTEM_SETTLE_S": 0.2,
+    "TEMP_GROUP_SIZE": 2,
+    "TEMP_SWITCH_ON_LAG_S": 2.0,
+    "X_BIAS_MV": -20.53,
+    "Y_BIAS_MV": -31.63,
+    "Z_WAVEFORM_FROM_FILE": true,
+    "Z_WAVEFORM_FILE": "z_tail_w8.20_A0.114_tc25.5.csv",
+    "XY_TAIL_COMP_ENABLED": true,
+    "XY_TAIL_X_MV": -32.6,
+    "XY_TAIL_Y_MV": 60.9,
+    "MAIN_FIELD_ENABLED": true,
+    "MAIN_FIELD_CURRENT_MA": -0.4,
+    "Z_PULSE_EDGE_US": 1.0,
+    "DEMOD0_IDX": 0,
+    "DEMOD_HARMONIC_2F": 2,
+    "DEMOD0_ORDER": 4,
+    "SENSE_RESISTOR_OHM": 10.0,
+    "DAMPING_RESISTOR_OHM": 10.0,
+    "COIL_RESISTANCE_OHM": 2.0,
+    "RESISTOR_RATED_W": 2.0,
+    "COIL_CONSTANT_HZ_PER_MA": 653.79,
+    "AMPLIFIER_INPUT_IMPEDANCE_OHM": 1000000.0,
+    "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": 50.0,
+    "AMPLIFIER_WRITE_SETTINGS": true,
+    "AMPLIFIER_GAIN_DB": 20.0,
+    "DEMOD1_IDX": 1,
+    "DEMOD_PHASE_DEG": 0.0,
+    "DEMOD_TC": 0.003,
+    "DEMOD_RATE": 10000.0,
+    "DEMOD0_SIGNAL_RANGE": 2.0,
+    "XY_TAIL_TAU_E_US": 46.9
+  },
+  "steps": [
+    "A01",
+    "A02",
+    "A03"
+  ],
+  "run_root": "D:\\Code\\exp_agent_run",
+  "data_type": "bperp_null",
+  "preflight": {
+    "ok": true,
+    "errors": [],
+    "acquisition": [
+      {
+        "stage": "1f 解调",
+        "acquisition_module": "daq",
+        "requested_rate_Sa_s": 10000.0,
+        "estimated_rate_Sa_s": 10000.0,
+        "duration_s": 0.2,
+        "demod_index": 0,
+        "signals": [
+          "sample.x",
+          "sample.y"
+        ]
+      },
+      {
+        "stage": "2f 解调",
+        "acquisition_module": "daq",
+        "requested_rate_Sa_s": 10000.0,
+        "estimated_rate_Sa_s": 10000.0,
+        "duration_s": 0.2,
+        "demod_index": 1,
+        "signals": [
+          "sample.x",
+          "sample.y"
+        ]
+      }
+    ]
+  },
+  "session_id": "1e6ded525e624d79928cf794452f8de0",
+  "job_id": "344c24f11e7b4e2c95688b3755e9a974",
+  "status": "failed",
+  "message": "模块 lab_workflows.experiment_modules.bperp_null.session 异常结束，退出码 1",
+  "error": "模块 lab_workflows.experiment_modules.bperp_null.session 异常结束，退出码 1",
+  "result": null,
+  "session_error": "模块 lab_workflows.experiment_modules.bperp_null.session 异常结束，退出码 1",
+  "run_id": "1118_200636_bperp_null",
+  "step_states": {
+    "A01": {
+      "status": "completed",
+      "error": "",
+      "artifacts": []
+    },
+    "A02": {
+      "status": "completed",
+      "error": "",
+      "artifacts": []
+    },
+    "A03": {
+      "status": "failed",
+      "error": "MFLI 解调信号 (0, 'x') 含非有限值",
+      "artifacts": []
+    },
+    "A04": {
+      "status": "completed",
+      "error": "",
+      "artifacts": []
+    }
+  },
+  "safety_shutdown": {
+    "completed": true,
+    "errors": []
+  },
+  "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_200636_bperp_null"
+}

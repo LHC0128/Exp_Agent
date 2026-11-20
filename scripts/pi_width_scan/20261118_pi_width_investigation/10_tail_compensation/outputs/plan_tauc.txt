@@ -1,0 +1,6 @@
+s_f=0.544 tau_e=46.9: tau_c=25.5: min A=0.128 (24.4 mA) w=8.251 us |J1|/base=0.174 rot=1.004pi
+s_f=0.544 tau_e=46.9: tau_c=35.0: min A=0.094 (17.8 mA) w=7.848 us |J1|/base=0.240 rot=0.986pi
+s_f=0.544 tau_e=46.9: tau_c=45.0: min A=0.077 (14.6 mA) w=7.600 us |J1|/base=0.282 rot=0.978pi
+s_f=0.595 tau_e=60.0: tau_c=25.5: min A=0.107 (20.3 mA) w=8.121 us |J1|/base=0.110 rot=1.033pi
+s_f=0.595 tau_e=60.0: tau_c=35.0: min A=0.079 (15.0 mA) w=7.785 us |J1|/base=0.171 rot=1.013pi
+s_f=0.595 tau_e=60.0: tau_c=45.0: min A=0.065 (12.3 mA) w=7.576 us |J1|/base=0.210 rot=1.004pi

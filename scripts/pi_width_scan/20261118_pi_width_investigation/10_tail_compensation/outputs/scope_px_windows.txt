@@ -1,0 +1,4 @@
+odd part of static-Bx response (40 mV), mean over windows after the pulse end; noise = std over 70-98 us
+builtin66              peak in pulse  38.7 | end+2..+10 us  23.33 | +10..+30  13.06 | +30..+60   5.14 | noise/window ~0.41 mV
+cand1_w8.20_tc25.5     peak in pulse  39.0 | end+2..+10 us   1.58 | +10..+30   0.25 | +30..+60  -0.45 | noise/window ~0.42 mV
+cand2_w7.50_tc35.6     peak in pulse  38.2 | end+2..+10 us   8.40 | +10..+30   4.18 | +30..+60   2.00 | noise/window ~0.47 mV

@@ -1,0 +1,342 @@
+已建立会话 d602655451ab449f85472a0bf8f3ece4（任务 a9bfde53985b496592383b67f567bf67）
+运行步骤：A01、A02、A03
+执行安全结束节点
+[a9bfde53985b496592383b67f567bf67] running waiting 100.0% 命令已完成
+[a9bfde53985b496592383b67f567bf67] completed complete 100% 任务完成
+{
+  "experiment_id": "bperp-null",
+  "mode": "session",
+  "authorized_params": {
+    "X_BIAS_MV": "89.1:89.1",
+    "Y_BIAS_MV": "-15.1:-15.1",
+    "X_SCAN_START_MV": "-20:-20",
+    "X_SCAN_STOP_MV": "20:20",
+    "X_SCAN_STEP_MV": "20:20",
+    "Y_SCAN_START_MV": "-20:-20",
+    "Y_SCAN_STOP_MV": "20:20",
+    "Y_SCAN_STEP_MV": "20:20",
+    "Z_PULSE_WIDTH_US": "6.6|7.4|7.7|7.93|8.2|8.5",
+    "Z_WAVEFORM_FROM_FILE": "true|false",
+    "Z_WAVEFORM_FILE": "\"z_tail_w7.40_A0.000_tc25.5.csv\"|\"z_tail_w7.40_A0.060_tc25.5.csv\"|\"z_tail_w7.40_A0.114_tc25.5.csv\"|\"z_tail_w7.40_A0.160_tc25.5.csv\"|\"z_tail_w7.70_A0.000_tc25.5.csv\"|\"z_tail_w7.70_A0.060_tc25.5.csv\"|\"z_tail_w7.70_A0.114_tc25.5.csv\"|\"z_tail_w7.70_A0.160_tc25.5.csv\"|\"z_tail_w7.93_A0.000_tc25.5.csv\"|\"z_tail_w7.93_A0.060_tc25.5.csv\"|\"z_tail_w7.93_A0.114_tc25.5.csv\"|\"z_tail_w7.93_A0.160_tc25.5.csv\"|\"z_tail_w7.93_model_exact.csv\"|\"z_tail_w8.20_A0.000_tc25.5.csv\"|\"z_tail_w8.20_A0.060_tc25.5.csv\"|\"z_tail_w8.20_A0.114_tc25.5.csv\"|\"z_tail_w8.20_A0.160_tc25.5.csv\"|\"z_tail_w8.50_A0.000_tc25.5.csv\"|\"z_tail_w8.50_A0.060_tc25.5.csv\"|\"z_tail_w8.50_A0.114_tc25.5.csv\"|\"z_tail_w8.50_A0.160_tc25.5.csv\""
+  },
+  "overrides": {
+    "X_BIAS_MV": 89.1,
+    "Y_BIAS_MV": -15.1,
+    "X_SCAN_START_MV": -20,
+    "X_SCAN_STOP_MV": 20,
+    "X_SCAN_STEP_MV": 20,
+    "Y_SCAN_START_MV": -20,
+    "Y_SCAN_STOP_MV": 20,
+    "Y_SCAN_STEP_MV": 20,
+    "Z_PULSE_WIDTH_US": 7.7,
+    "Z_WAVEFORM_FROM_FILE": true,
+    "Z_WAVEFORM_FILE": "z_tail_w7.70_A0.000_tc25.5.csv"
+  },
+  "parameters": {
+    "RUN_TAG": "bperp_null",
+    "X_SCAN_START_MV": -20,
+    "X_SCAN_STOP_MV": 20,
+    "X_SCAN_STEP_MV": 20,
+    "Y_SCAN_START_MV": -20,
+    "Y_SCAN_STOP_MV": 20,
+    "Y_SCAN_STEP_MV": 20,
+    "PULSE_FREQ_HZ": 5000.0,
+    "Z_PEAK_CURRENT_MA": 190.0,
+    "Z_PULSE_WIDTH_US": 7.7,
+    "N_REPEAT": 2,
+    "SCAN_POINT_DURATION_S": 0.2,
+    "SYSTEM_SETTLE_S": 0.2,
+    "TEMP_GROUP_SIZE": 2,
+    "TEMP_SWITCH_ON_LAG_S": 2.0,
+    "X_BIAS_MV": 89.1,
+    "Y_BIAS_MV": -15.1,
+    "Z_WAVEFORM_FROM_FILE": true,
+    "Z_WAVEFORM_FILE": "z_tail_w7.70_A0.000_tc25.5.csv",
+    "Z_PULSE_EDGE_US": 1.0,
+    "DEMOD0_IDX": 0,
+    "DEMOD_HARMONIC_2F": 2,
+    "DEMOD0_ORDER": 4,
+    "SENSE_RESISTOR_OHM": 10.0,
+    "DAMPING_RESISTOR_OHM": 10.0,
+    "COIL_RESISTANCE_OHM": 2.0,
+    "RESISTOR_RATED_W": 2.0,
+    "COIL_CONSTANT_HZ_PER_MA": 653.79,
+    "AMPLIFIER_INPUT_IMPEDANCE_OHM": 1000000.0,
+    "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": 50.0,
+    "AMPLIFIER_WRITE_SETTINGS": true,
+    "AMPLIFIER_GAIN_DB": 20.0,
+    "DEMOD1_IDX": 1,
+    "DEMOD_PHASE_DEG": 0.0,
+    "DEMOD_TC": 0.003,
+    "DEMOD_RATE": 10000.0,
+    "DEMOD0_SIGNAL_RANGE": 2.0
+  },
+  "steps": [
+    "A01",
+    "A02",
+    "A03"
+  ],
+  "run_root": "D:\\Code\\exp_agent_run",
+  "data_type": "bperp_null",
+  "preflight": {
+    "ok": true,
+    "errors": [],
+    "acquisition": [
+      {
+        "stage": "1f 解调",
+        "acquisition_module": "daq",
+        "requested_rate_Sa_s": 10000.0,
+        "estimated_rate_Sa_s": 10000.0,
+        "duration_s": 0.2,
+        "demod_index": 0,
+        "signals": [
+          "sample.x",
+          "sample.y"
+        ]
+      },
+      {
+        "stage": "2f 解调",
+        "acquisition_module": "daq",
+        "requested_rate_Sa_s": 10000.0,
+        "estimated_rate_Sa_s": 10000.0,
+        "duration_s": 0.2,
+        "demod_index": 1,
+        "signals": [
+          "sample.x",
+          "sample.y"
+        ]
+      }
+    ]
+  },
+  "session_id": "d602655451ab449f85472a0bf8f3ece4",
+  "job_id": "a9bfde53985b496592383b67f567bf67",
+  "step_error": null,
+  "status": "completed",
+  "message": "任务完成",
+  "error": null,
+  "result": {
+    "session_id": "d602655451ab449f85472a0bf8f3ece4",
+    "job_id": "a9bfde53985b496592383b67f567bf67",
+    "revision": 2,
+    "status": "closed",
+    "parameters": {
+      "RUN_TAG": "bperp_null",
+      "X_BIAS_MV": 89.1,
+      "Y_BIAS_MV": -15.1,
+      "X_SCAN_START_MV": -20.0,
+      "X_SCAN_STOP_MV": 20.0,
+      "X_SCAN_STEP_MV": 20.0,
+      "Y_SCAN_START_MV": -20.0,
+      "Y_SCAN_STOP_MV": 20.0,
+      "Y_SCAN_STEP_MV": 20.0,
+      "PULSE_FREQ_HZ": 5000.0,
+      "Z_PEAK_CURRENT_MA": 190.0,
+      "Z_PULSE_EDGE_US": 1.0,
+      "Z_PULSE_WIDTH_US": 7.7,
+      "Z_WAVEFORM_FROM_FILE": true,
+      "Z_WAVEFORM_FILE": "z_tail_w7.70_A0.000_tc25.5.csv",
+      "DEMOD0_IDX": 0,
+      "DEMOD1_IDX": 1,
+      "DEMOD_HARMONIC_2F": 2,
+      "DEMOD_PHASE_DEG": 0.0,
+      "DEMOD_TC": 0.003,
+      "DEMOD0_ORDER": 4,
+      "DEMOD_RATE": 10000.0,
+      "DEMOD0_SIGNAL_RANGE": 2.0,
+      "N_REPEAT": 2,
+      "SCAN_POINT_DURATION_S": 0.2,
+      "SYSTEM_SETTLE_S": 0.2,
+      "TEMP_GROUP_SIZE": 2,
+      "TEMP_SWITCH_ON_LAG_S": 2.0,
+      "AMPLIFIER_GAIN_DB": 20.0,
+      "AMPLIFIER_INPUT_IMPEDANCE_OHM": 1000000.0,
+      "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": 50.0,
+      "AMPLIFIER_WRITE_SETTINGS": true,
+      "SENSE_RESISTOR_OHM": 10.0,
+      "DAMPING_RESISTOR_OHM": 10.0,
+      "COIL_RESISTANCE_OHM": 2.0,
+      "RESISTOR_RATED_W": 2.0,
+      "COIL_CONSTANT_HZ_PER_MA": 653.79
+    },
+    "steps": {
+      "A01": {
+        "status": "completed",
+        "error": ""
+      },
+      "A02": {
+        "status": "completed",
+        "error": ""
+      },
+      "A03": {
+        "status": "completed",
+        "error": "",
+        "artifacts": [
+          "raw/bias_grid.csv",
+          "raw/z_waveform.csv"
+        ]
+      },
+      "A04": {
+        "status": "completed",
+        "error": ""
+      }
+    },
+    "pending_request": null,
+    "error": null,
+    "current_step": null,
+    "run_id": "1118_151451_bperp_null",
+    "outputs": {
+      "功放": "OFF（已发送 AOF）",
+      "X 偏置": "OFF，已归零",
+      "Y 偏置": "OFF，已归零",
+      "Y 射频": "OFF（本实验未使用）",
+      "Z 通道": "DC 0 V + OFF，burst/sync OFF",
+      "共同触发": "5000 Hz 方波（5 Vpp）",
+      "温控": "ON（已恢复）",
+      "MFLI": "已停止解调传输",
+      "主磁场": "已恢复原状态"
+    },
+    "output_source": "最近成功写入的命令；1200B 无状态查询，主磁场关闭与参考时钟经回读",
+    "safety_shutdown": {
+      "completed": true,
+      "errors": []
+    },
+    "clock_sources": {
+      "signals": {
+        "device_id": "dg4e261300744",
+        "device_type": "DG4000",
+        "before": "EXT",
+        "target": "EXT",
+        "actual": "EXT",
+        "ok": true,
+        "error": ""
+      },
+      "signals:X_magnetic_field": {
+        "device_id": "dg4e261300664",
+        "device_type": "DG4000",
+        "before": "EXT",
+        "target": "EXT",
+        "actual": "EXT",
+        "ok": true,
+        "error": ""
+      },
+      "signals:Temp_Switch": {
+        "device_id": "dg9q275000734",
+        "device_type": "DG900",
+        "before": "INT",
+        "target": "EXT",
+        "actual": "EXT",
+        "ok": true,
+        "error": ""
+      },
+      "hf2": {
+        "device_id": "dev30661",
+        "device_type": "MFLI",
+        "before": "EXT",
+        "target": "EXT",
+        "actual": "EXT",
+        "ok": true,
+        "error": "",
+        "capabilities": {
+          "model": "MFLI",
+          "options": [
+            "BOX",
+            "DIG",
+            "F5M",
+            "IA",
+            "MD",
+            "MOD",
+            "PID"
+          ],
+          "demodulators": 4,
+          "oscillators": 4,
+          "voltage_inputs": 1,
+          "signal_outputs": 1,
+          "aux_outputs": 4,
+          "max_frequency_hz": 5000000.0,
+          "scope_channels": 2,
+          "scope_max_samples": 5000000,
+          "scope_max_rate": 60000000.0,
+          "aux_input_feedback_verified": false
+        }
+      }
+    },
+    "scan_progress": {
+      "scan_points_completed": 9,
+      "scan_reads_completed": 18,
+      "scan_reads_total": 18
+    },
+    "daq_settings": {
+      "scan_acquisition": {
+        "mode": "daq_duration",
+        "duration_s": 0.2,
+        "actual_rate_Sa_s": 13392.857421875,
+        "repeats": 2,
+        "temperature_group_size": 2,
+        "width_us": 7.7,
+        "x_bias_v": 0.0891,
+        "y_bias_v": -0.015099999999999999,
+        "x_offsets_mv": [
+          -20.0,
+          0.0,
+          20.0
+        ],
+        "y_offsets_mv": [
+          -20.0,
+          0.0,
+          20.0
+        ],
+        "demod0_idx": 0,
+        "demod1_idx": 1,
+        "signals": [
+          "demod0.sample.x",
+          "demod0.sample.y",
+          "demod1.sample.x",
+          "demod1.sample.y"
+        ]
+      }
+    },
+    "main_field": {
+      "before": {
+        "source_function": "CURR",
+        "current_a": -0.00013,
+        "output_on": false,
+        "current_range_a": 0.01,
+        "current_limit_a": 0.2
+      },
+      "output_after": false,
+      "restored_on_shutdown": true
+    }
+  },
+  "session_error": null,
+  "run_id": "1118_151451_bperp_null",
+  "step_states": {
+    "A01": {
+      "status": "completed",
+      "error": "",
+      "artifacts": []
+    },
+    "A02": {
+      "status": "completed",
+      "error": "",
+      "artifacts": []
+    },
+    "A03": {
+      "status": "completed",
+      "error": "",
+      "artifacts": [
+        "raw/bias_grid.csv",
+        "raw/z_waveform.csv"
+      ]
+    },
+    "A04": {
+      "status": "completed",
+      "error": "",
+      "artifacts": []
+    }
+  },
+  "safety_shutdown": {
+    "completed": true,
+    "errors": []
+  },
+  "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_151451_bperp_null"
+}

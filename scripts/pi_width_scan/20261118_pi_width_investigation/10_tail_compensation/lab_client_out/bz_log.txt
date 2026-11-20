@@ -1,0 +1,7 @@
+[19:05:00] START bz_off
+[19:07:37] END bz_off exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_190503_bperp_null"
+[19:08:07] START bz_p040
+[19:10:44] END bz_p040 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_190810_bperp_null"
+[19:11:14] START bz_m040
+[19:13:53] END bz_m040 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_191117_bperp_null"
+ALL DONE

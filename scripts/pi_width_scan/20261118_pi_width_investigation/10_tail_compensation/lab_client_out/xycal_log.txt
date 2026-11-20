@@ -1,0 +1,38 @@
+[19:28:38] START run1_ax30 bias=(-14.37,-30.57) A=(30,0) --dry-run
+[19:28:39] END run1_ax30 exit=0 
+[19:50:16] START run1_ax30 bias=(-14.37,-30.57) A=(30,0) 
+[19:51:15] END run1_ax30 exit=1 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_195019_bperp_null"
+[19:52:10] START run1_ax30 bias=(-14.37,-30.57) A=(30,0) 
+[19:54:49] END run1_ax30 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_195215_bperp_null"
+[19:55:39] START run2_ay30 bias=(-14.37,-30.57) A=(0,30) 
+[19:58:16] END run2_ay30 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_195542_bperp_null"
+[19:58:39] START run3_verify bias=(-20.72,-30.67) A=(-32.64,60.94) --dry-run
+[19:58:39] END run3_verify exit=0 
+[19:59:04] START run3_verify bias=(-20.72,-30.67) A=(-32.64,60.94) 
+[20:01:43] END run3_verify exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_195907_bperp_null"
+[20:06:28] START run4_stab MF=-0.4 bias=(-20.53,-31.63) A=(-32.6,60.9) --dry-run
+[20:06:29] END run4_stab exit=0 
+[20:06:32] START run4_stab MF=-0.4 bias=(-20.53,-31.63) A=(-32.6,60.9) 
+[20:08:40] END run4_stab exit=1 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_200636_bperp_null"
+[20:09:35] START run5_m030 MF=-0.3 bias=(-20.53,-31.63) A=(-32.6,60.9) --dry-run
+[20:09:36] END run5_m030 exit=0 
+[20:09:51] START run5_m030 MF=-0.3 bias=(-20.53,-31.63) A=(-32.6,60.9) 
+[20:10:26] END run5_m030 exit=1 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_200954_bperp_null"
+[20:18:34] START release_check MF=-0.4 bias=(-20.53,-31.63) A=(-32.6,60.9) --dry-run
+[20:18:35] END release_check exit=0 
+[20:26:35] START run5_m030 MF=-0.3 bias=(-20.53,-31.63) A=(-32.6,60.9) 
+[20:29:45] END run5_m030 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_202638_bperp_null"
+[20:30:08] START run6_m050 MF=-0.5 bias=(-20.53,-31.63) A=(-32.6,60.9) 
+[20:33:34] END run6_m050 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_203020_bperp_null"
+[22:49:31] START w803_r1 W=8.03 MF=-0.4 bias=(-20.53,-31.63) A=(-32.6,60.9) --dry-run
+[22:49:32] END w803_r1 exit=0 
+[22:49:36] START w803_r1 W=8.03 MF=-0.4 bias=(-20.53,-31.63) A=(-32.6,60.9) 
+[22:52:51] END w803_r1 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_224939_bperp_null"
+[22:53:02] START w803_r2 W=8.03 MF=-0.4 bias=(-19.41,-31.49) A=(-33.17,56.76) --dry-run
+[22:53:03] END w803_r2 exit=0 
+[22:53:24] START w803_r2 W=8.03 MF=-0.4 bias=(-19.41,-31.49) A=(-33.17,56.76) 
+[22:56:09] END w803_r2 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_225327_bperp_null"
+[23:05:17] START w803_gs_off W=8.03 MF=off bias=(-39.7,-6.6) A=(-33.17,56.76) --dry-run
+[23:05:18] END w803_gs_off exit=0 
+[23:05:21] START w803_gs_off W=8.03 MF=off bias=(-39.7,-6.6) A=(-33.17,56.76) 
+[23:08:06] END w803_gs_off exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_230524_bperp_null"

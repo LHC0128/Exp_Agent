@@ -1,0 +1,10 @@
+uncompensated 6.6 us 190 mA: J2 sv 1.26e-03/3.19e-04
+exact comp 190 mA: w_pi=7.930 us A=0.1139 -> J2 sv 1.50e-03/2.31e-04 (weak/uncomp = 0.72)
+exact comp 200 mA: w_pi=7.600 us A=0.1088 -> J2 sv 1.50e-03/2.30e-04 (weak/uncomp = 0.72)
+exact comp 210 mA: w_pi=7.300 us A=0.1042 -> J2 sv 1.50e-03/2.28e-04 (weak/uncomp = 0.72)
+exact comp 220 mA: w_pi=7.026 us A=0.1000 -> J2 sv 1.51e-03/2.27e-04 (weak/uncomp = 0.71)
+  190 mA exact tail at w=6.0: rot 0.711pi J2 sv 1.20e-03/2.43e-04
+  190 mA exact tail at w=6.6: rot 0.800pi J2 sv 1.35e-03/2.64e-04
+  190 mA exact tail at w=7.0: rot 0.860pi J2 sv 1.42e-03/2.67e-04
+  190 mA exact tail at w=7.5: rot 0.935pi J2 sv 1.48e-03/2.56e-04
+  190 mA exact tail at w=8.0: rot 1.011pi J2 sv 1.50e-03/2.26e-04

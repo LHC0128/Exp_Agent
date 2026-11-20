@@ -1,0 +1,6 @@
+# 运行目录 data/ 下允许保留的代码（tools/audit_data_tree.py 读取）。每行一个相对数据根的路径，# 后写原因。
+# 只登记被该运行溯源记录引用（写入自身 SHA256 或被 analysis_derivation.yaml 指向）的复现脚本：迁出会断溯源链。
+Noise_Spectrum_XY_Ctrl_Known_Noise/0923_1237_noise/plot_validation_figures.py  # 写入 plot_script_sha256
+Noise_Spectrum_XY_Ctrl_Uncontrolled_Probe_AM/0924_1523_probe_am/plot_validation_figures.py  # 写入 script_sha256
+RF_Field_Sensitivity_AW_Known_Noise/1023_121427_rf_known_noise_exclude3000Hz/reproduce_analysis.py  # analysis_derivation.yaml 引用
+RF_Field_Sensitivity_AW_Known_Noise/1023_121427_rf_known_noise_exclude3000Hz/provenance/before_noise_screening/reproduce_analysis.py  # 同目录 analysis_derivation.yaml 引用

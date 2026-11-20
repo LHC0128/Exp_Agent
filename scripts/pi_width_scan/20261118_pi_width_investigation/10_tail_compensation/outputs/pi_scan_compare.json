@@ -1,0 +1,53 @@
+{
+ "1118_213636_pi_width_scan": {
+  "label": "built-in pulse (no tail comp)",
+  "tau_pi_us": 6.772173254120772,
+  "tau_pi_sem_us": 0.028909790107378642,
+  "c_minus1_peak_mV": 6.5319715237246365,
+  "fit_quality": "good",
+  "c0_max_mV": 19.906080354862766,
+  "c0_at_tau_pi_mV": 5.291439377759204
+ },
+ "1118_205941_pi_width_scan": {
+  "label": "tail comp, X bias only",
+  "tau_pi_us": 8.027212766476254,
+  "tau_pi_sem_us": 0.05493349277439685,
+  "c_minus1_peak_mV": 6.796277723635394,
+  "fit_quality": "good",
+  "c0_max_mV": 19.150495895299407,
+  "c0_at_tau_pi_mV": 11.50618792691673,
+  "field_scale_vs_model": 0.985490441860821,
+  "working_point_angle_pi": 1.044533937094361,
+  "working_point_angle_range_pi": [
+   1.0360038122108028,
+   1.0531991736909139
+  ],
+  "pi_waveform": {
+   "width_us": 8.027212766476254,
+   "tail_a": 0.11537761596279628,
+   "tau_c_us": 25.50638708396621,
+   "tail_start_mA": -21.921747032931293
+  }
+ },
+ "1118_220918_pi_width_scan": {
+  "label": "tail comp, X + Y bias",
+  "tau_pi_us": 8.022947416831983,
+  "tau_pi_sem_us": 0.06906627219512697,
+  "c_minus1_peak_mV": 6.759188020181039,
+  "fit_quality": "good",
+  "c0_max_mV": 13.481891433308919,
+  "c0_at_tau_pi_mV": 12.763707887759649,
+  "field_scale_vs_model": 0.9861386188676318,
+  "working_point_angle_pi": 1.0452209482028396,
+  "working_point_angle_range_pi": [
+   1.0344825443000152,
+   1.0561738554989721
+  ],
+  "pi_waveform": {
+   "width_us": 8.022947416831983,
+   "tail_a": 0.11531270045310349,
+   "tau_c_us": 25.50638708396621,
+   "tail_start_mA": -21.909413086089664
+  }
+ }
+}

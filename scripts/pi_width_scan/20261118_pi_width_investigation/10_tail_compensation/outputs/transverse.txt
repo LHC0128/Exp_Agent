@@ -1,0 +1,12 @@
+scope fit A: static + slow_tilt: R2 = 0.9888, rms = 5.50 mV, coef = bx=46093, by=11606, stx=2289, sty=2993
+scope fit B: static + eddy (I-x): R2 = 0.9888, rms = 5.50 mV, coef = bx=42900, by=9643, eddyx=-1246, eddyy=-1629
+scope fit A+tilt free: R2 = 0.9985, rms = 2.03 mV, coef = bx=-128231380, by=114826141, stx=-73728464, sty=28028300, tx=-73732463, ty=28029405
+  A+tilt: tilt/slow_tilt ratio x +1.000, y +1.000 (picture A -> 0, picture B -> -0.838)
+uncompensated 6.6 us, slow_tilt: 2f null at (+43.33, +14.16) nT, |c1| there = 5.883e-02 P
+Z comp, slow_tilt, no XY comp: 2f null at (+17.61, +1.49) nT, |c1| there = 1.844e-02 P
+Z comp, slow_tilt, XY comp = -slow_tilt: 2f null at (+0.00, +0.00) nT, |c1| there = 0.000e+00 P
+Z comp, slow_tilt, XY comp half: 2f null at (+8.82, +0.75) nT, |c1| there = 9.241e-03 P
+Z comp, tilt 0.02 x (no slow_tilt): 2f null at (+2.37, -1.58) nT, |c1| there = 3.154e-02 P
+Z comp, pump 0.02 x (no slow_tilt): 2f null at (+0.00, +1.57) nT, |c1| there = 8.597e-16 P
+Z comp, slow_tilt + tilt 0.02 x, XY comp = -slow_tilt: 2f null at (+2.37, -1.58) nT, |c1| there = 3.154e-02 P
+kappa scan: min |c1 at 2f null| = 7.220e-04 at kappa = (-0.020, -0.020); true -slow_tilt = (-0.025, -0.033)

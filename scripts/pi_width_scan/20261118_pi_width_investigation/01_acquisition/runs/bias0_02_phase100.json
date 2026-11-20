@@ -1,0 +1,422 @@
+﻿python.exe : 已建立会话 ddb7e8efe4854818a18d2506589386e5（任务 8be62344665e4f9499043678afd24d8c）
+At D:\Code\exp_agent\.cache\pi_width_investigation\run_batch.ps1:15 char:12
++     $out = & .\agent_exp_env\Scripts\python.exe -m tools.lab_client r ...
++            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (已建立会话 ddb7e8efe...043678afd24d8c）:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+运行步骤：A01、A02、A04
+执行安全结束节点
+[8be62344665e4f9499043678afd24d8c] running waiting 100.0% 命令已完成
+[8be62344665e4f9499043678afd24d8c] completed complete 100% 任务完成
+{
+  "experiment_id": "pi-width-scan",
+  "mode": "session",
+  "authorized_params": {
+    "Y_RF_VPP": "0.01:0.2",
+    "N_REPEAT": "1:5",
+    "X_BIAS_V": "-0.05:0.05",
+    "PHASE_CHECK_ENABLED": "false",
+    "Y_RF_PHASE_DEG": "0:360",
+    "Z_PULSE_WIDTH_START_US": "2:14",
+    "Z_PULSE_WIDTH_STOP_US": "2:14",
+    "Z_PULSE_WIDTH_STEP_US": "0.1:1"
+  },
+  "overrides": {
+    "Y_RF_VPP": 0.1,
+    "N_REPEAT": 2,
+    "X_BIAS_V": 0,
+    "PHASE_CHECK_ENABLED": false,
+    "Y_RF_PHASE_DEG": 100,
+    "Z_PULSE_WIDTH_START_US": 2.0,
+    "Z_PULSE_WIDTH_STOP_US": 14.0,
+    "Z_PULSE_WIDTH_STEP_US": 0.5
+  },
+  "parameters": {
+    "RUN_TAG": "pi_width_scan",
+    "Y_RF_FREQ_HZ": 5000.0,
+    "Y_RF_VPP": 0.1,
+    "Y_RF_PHASE_DEG": 100,
+    "Z_PEAK_CURRENT_MA": 190.0,
+    "Z_PULSE_WIDTH_START_US": 2.0,
+    "Z_PULSE_WIDTH_STOP_US": 14.0,
+    "Z_PULSE_WIDTH_STEP_US": 0.5,
+    "PHASE_CHECK_ENABLED": false,
+    "Y_RF_PHASE_START_DEG": 0.0,
+    "Y_RF_PHASE_STOP_DEG": 359.0,
+    "Y_RF_PHASE_STEP_DEG": 22.5,
+    "N_REPEAT": 2,
+    "SCAN_POINT_DURATION_S": 0.2,
+    "TARGET_ANGLE_PI": 1.0,
+    "REFERENCE_PI_WIDTH_US": 5.122,
+    "PHASE_CHECK_WIDTH_US": 5.0,
+    "X_BIAS_V": 0,
+    "Z_PULSE_EDGE_US": 1.0,
+    "SENSE_RESISTOR_OHM": 10.0,
+    "DAMPING_RESISTOR_OHM": 10.0,
+    "COIL_RESISTANCE_OHM": 2.0,
+    "RESISTOR_RATED_W": 2.0,
+    "DEMOD0_IDX": 0,
+    "DEMOD0_ORDER": 4,
+    "DEMOD0_TC": 0.001,
+    "DEMOD0_RATE": 10000.0,
+    "COIL_CONSTANT_HZ_PER_MA": 653.79,
+    "AMPLIFIER_WRITE_SETTINGS": true,
+    "AMPLIFIER_INPUT_IMPEDANCE_OHM": 1000000.0,
+    "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": 50.0,
+    "AMPLIFIER_GAIN_DB": 20.0,
+    "TEMP_SWITCH_ON_LAG_S": 2.0,
+    "SYSTEM_SETTLE_S": 0.1,
+    "TEMP_GROUP_SIZE": 2,
+    "DEMOD0_SIGNAL_RANGE": 3.0
+  },
+  "steps": [
+    "A01",
+    "A02",
+    "A04"
+  ],
+  "run_root": "D:\\Code\\exp_agent_run",
+  "data_type": "pi_width_scan",
+  "preflight": {
+    "ok": true,
+    "errors": [],
+    "acquisition": []
+  },
+  "session_id": "ddb7e8efe4854818a18d2506589386e5",
+  "job_id": "8be62344665e4f9499043678afd24d8c",
+  "step_error": null,
+  "status": "completed",
+  "message": "任务完成",
+  "error": null,
+  "result": {
+    "session_id": "ddb7e8efe4854818a18d2506589386e5",
+    "job_id": "8be62344665e4f9499043678afd24d8c",
+    "revision": 2,
+    "status": "closed",
+    "parameters": {
+      "RUN_TAG": "pi_width_scan",
+      "Y_RF_FREQ_HZ": 5000.0,
+      "Y_RF_VPP": 0.1,
+      "Y_RF_PHASE_DEG": 100.0,
+      "Z_PEAK_CURRENT_MA": 190.0,
+      "Z_PULSE_EDGE_US": 1.0,
+      "Z_PULSE_WIDTH_START_US": 2.0,
+      "Z_PULSE_WIDTH_STOP_US": 14.0,
+      "Z_PULSE_WIDTH_STEP_US": 0.5,
+      "PHASE_CHECK_ENABLED": false,
+      "Y_RF_PHASE_START_DEG": 0.0,
+      "Y_RF_PHASE_STOP_DEG": 359.0,
+      "Y_RF_PHASE_STEP_DEG": 22.5,
+      "X_BIAS_V": 0.0,
+      "PHASE_CHECK_WIDTH_US": 5.0,
+      "AMPLIFIER_GAIN_DB": 20.0,
+      "AMPLIFIER_INPUT_IMPEDANCE_OHM": 1000000.0,
+      "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": 50.0,
+      "AMPLIFIER_WRITE_SETTINGS": true,
+      "SENSE_RESISTOR_OHM": 10.0,
+      "DAMPING_RESISTOR_OHM": 10.0,
+      "COIL_RESISTANCE_OHM": 2.0,
+      "RESISTOR_RATED_W": 2.0,
+      "N_REPEAT": 2,
+      "SCAN_POINT_DURATION_S": 0.2,
+      "SYSTEM_SETTLE_S": 0.1,
+      "TEMP_GROUP_SIZE": 2,
+      "TEMP_SWITCH_ON_LAG_S": 2.0,
+      "DEMOD0_IDX": 0,
+      "DEMOD0_SIGNAL_RANGE": 3.0,
+      "DEMOD0_ORDER": 4,
+      "DEMOD0_TC": 0.001,
+      "DEMOD0_RATE": 10000.0,
+      "COIL_CONSTANT_HZ_PER_MA": 653.79,
+      "TARGET_ANGLE_PI": 1.0,
+      "REFERENCE_PI_WIDTH_US": 5.122
+    },
+    "steps": {
+      "A01": {
+        "status": "completed",
+        "error": ""
+      },
+      "A02": {
+        "status": "completed",
+        "error": ""
+      },
+      "A03": {
+        "status": "pending",
+        "error": ""
+      },
+      "A04": {
+        "status": "completed",
+        "error": "",
+        "artifacts": [
+          "raw/scan.csv",
+          "raw/R_2_0.csv",
+          "raw/R_2_1.csv",
+          "raw/R_2.5_0.csv",
+          "raw/R_2.5_1.csv",
+          "raw/R_3_0.csv",
+          "raw/R_3_1.csv",
+          "raw/R_3.5_0.csv",
+          "raw/R_3.5_1.csv",
+          "raw/R_4_0.csv",
+          "raw/R_4_1.csv",
+          "raw/R_4.5_0.csv",
+          "raw/R_4.5_1.csv",
+          "raw/R_5_0.csv",
+          "raw/R_5_1.csv",
+          "raw/R_5.5_0.csv",
+          "raw/R_5.5_1.csv",
+          "raw/R_6_0.csv",
+          "raw/R_6_1.csv",
+          "raw/R_6.5_0.csv",
+          "raw/R_6.5_1.csv",
+          "raw/R_7_0.csv",
+          "raw/R_7_1.csv",
+          "raw/R_7.5_0.csv",
+          "raw/R_7.5_1.csv",
+          "raw/R_8_0.csv",
+          "raw/R_8_1.csv",
+          "raw/R_8.5_0.csv",
+          "raw/R_8.5_1.csv",
+          "raw/R_9_0.csv",
+          "raw/R_9_1.csv",
+          "raw/R_9.5_0.csv",
+          "raw/R_9.5_1.csv",
+          "raw/R_10_0.csv",
+          "raw/R_10_1.csv",
+          "raw/R_10.5_0.csv",
+          "raw/R_10.5_1.csv",
+          "raw/R_11_0.csv",
+          "raw/R_11_1.csv",
+          "raw/R_11.5_0.csv",
+          "raw/R_11.5_1.csv",
+          "raw/R_12_0.csv",
+          "raw/R_12_1.csv",
+          "raw/R_12.5_0.csv",
+          "raw/R_12.5_1.csv",
+          "raw/R_13_0.csv",
+          "raw/R_13_1.csv",
+          "raw/R_13.5_0.csv",
+          "raw/R_13.5_1.csv",
+          "raw/R_14_0.csv",
+          "raw/R_14_1.csv"
+        ]
+      },
+      "A05": {
+        "status": "completed",
+        "error": ""
+      }
+    },
+    "pending_request": null,
+    "error": null,
+    "current_step": null,
+    "run_id": "1118_003802_pi_width_scan",
+    "outputs": {
+      "功放": "OFF（已发送 AOF）",
+      "X 偏置": "OFF，已归零",
+      "Z 通道": "DC 0 V + OFF，burst/sync OFF",
+      "Y 射频": "OFF",
+      "共同触发": "5000 Hz 方波（5 Vpp）",
+      "温控": "ON（已恢复）",
+      "MFLI": "已停止解调传输",
+      "主磁场": "已恢复原状态",
+      "DHO900": "STOP，已断开",
+      "相位粗扫": "未知"
+    },
+    "output_source": "最近成功写入的命令；1200B 无状态查询，主磁场关闭与参考时钟经回读",
+    "safety_shutdown": {
+      "completed": true,
+      "errors": []
+    },
+    "clock_sources": {
+      "signals": {
+        "device_id": "dg4e261300744",
+        "device_type": "DG4000",
+        "before": "EXT",
+        "target": "EXT",
+        "actual": "EXT",
+        "ok": true,
+        "error": ""
+      },
+      "signals:X_magnetic_field": {
+        "device_id": "dg4e261300664",
+        "device_type": "DG4000",
+        "before": "EXT",
+        "target": "EXT",
+        "actual": "EXT",
+        "ok": true,
+        "error": ""
+      },
+      "signals:Temp_Switch": {
+        "device_id": "dg9q275000734",
+        "device_type": "DG900",
+        "before": "INT",
+        "target": "EXT",
+        "actual": "EXT",
+        "ok": true,
+        "error": ""
+      },
+      "hf2": {
+        "device_id": "dev30661",
+        "device_type": "MFLI",
+        "before": "EXT",
+        "target": "EXT",
+        "actual": "EXT",
+        "ok": true,
+        "error": "",
+        "capabilities": {
+          "model": "MFLI",
+          "options": [
+            "BOX",
+            "DIG",
+            "F5M",
+            "IA",
+            "MD",
+            "MOD",
+            "PID"
+          ],
+          "demodulators": 4,
+          "oscillators": 4,
+          "voltage_inputs": 1,
+          "signal_outputs": 1,
+          "aux_outputs": 4,
+          "max_frequency_hz": 5000000.0,
+          "scope_channels": 2,
+          "scope_max_samples": 5000000,
+          "scope_max_rate": 60000000.0,
+          "aux_input_feedback_verified": false
+        }
+      }
+    },
+    "scan_progress": {
+      "scan_widths": [
+        2.0,
+        2.5,
+        3.0,
+        3.5,
+        4.0,
+        4.5,
+        5.0,
+        5.5,
+        6.0,
+        6.5,
+        7.0,
+        7.5,
+        8.0,
+        8.5,
+        9.0,
+        9.5,
+        10.0,
+        10.5,
+        11.0,
+        11.5,
+        12.0,
+        12.5,
+        13.0,
+        13.5,
+        14.0
+      ],
+      "scan_repeats": 2,
+      "scan_points_completed": 50
+    },
+    "phase_check": {
+      "enabled": false
+    },
+    "main_field": {
+      "before": {
+        "source_function": "CURR",
+        "current_a": 0.00814,
+        "output_on": false,
+        "current_range_a": 0.01,
+        "current_limit_a": 0.2
+      },
+      "output_after": false,
+      "restored_on_shutdown": true
+    }
+  },
+  "session_error": null,
+  "run_id": "1118_003802_pi_width_scan",
+  "step_states": {
+    "A01": {
+      "status": "completed",
+      "error": "",
+      "artifacts": []
+    },
+    "A02": {
+      "status": "completed",
+      "error": "",
+      "artifacts": []
+    },
+    "A03": {
+      "status": "pending",
+      "error": "",
+      "artifacts": []
+    },
+    "A04": {
+      "status": "completed",
+      "error": "",
+      "artifacts": [
+        "raw/scan.csv",
+        "raw/R_2_0.csv",
+        "raw/R_2_1.csv",
+        "raw/R_2.5_0.csv",
+        "raw/R_2.5_1.csv",
+        "raw/R_3_0.csv",
+        "raw/R_3_1.csv",
+        "raw/R_3.5_0.csv",
+        "raw/R_3.5_1.csv",
+        "raw/R_4_0.csv",
+        "raw/R_4_1.csv",
+        "raw/R_4.5_0.csv",
+        "raw/R_4.5_1.csv",
+        "raw/R_5_0.csv",
+        "raw/R_5_1.csv",
+        "raw/R_5.5_0.csv",
+        "raw/R_5.5_1.csv",
+        "raw/R_6_0.csv",
+        "raw/R_6_1.csv",
+        "raw/R_6.5_0.csv",
+        "raw/R_6.5_1.csv",
+        "raw/R_7_0.csv",
+        "raw/R_7_1.csv",
+        "raw/R_7.5_0.csv",
+        "raw/R_7.5_1.csv",
+        "raw/R_8_0.csv",
+        "raw/R_8_1.csv",
+        "raw/R_8.5_0.csv",
+        "raw/R_8.5_1.csv",
+        "raw/R_9_0.csv",
+        "raw/R_9_1.csv",
+        "raw/R_9.5_0.csv",
+        "raw/R_9.5_1.csv",
+        "raw/R_10_0.csv",
+        "raw/R_10_1.csv",
+        "raw/R_10.5_0.csv",
+        "raw/R_10.5_1.csv",
+        "raw/R_11_0.csv",
+        "raw/R_11_1.csv",
+        "raw/R_11.5_0.csv",
+        "raw/R_11.5_1.csv",
+        "raw/R_12_0.csv",
+        "raw/R_12_1.csv",
+        "raw/R_12.5_0.csv",
+        "raw/R_12.5_1.csv",
+        "raw/R_13_0.csv",
+        "raw/R_13_1.csv",
+        "raw/R_13.5_0.csv",
+        "raw/R_13.5_1.csv",
+        "raw/R_14_0.csv",
+        "raw/R_14_1.csv"
+      ]
+    },
+    "A05": {
+      "status": "completed",
+      "error": "",
+      "artifacts": []
+    }
+  },
+  "safety_shutdown": {
+    "completed": true,
+    "errors": []
+  },
+  "run_dir": "D:\\Code\\exp_agent_run\\data\\pi_width_scan\\1118_003802_pi_width_scan"
+}

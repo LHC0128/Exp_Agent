@@ -1,0 +1,5 @@
+scaleonly: fitted X-bias field per 20 mV: dx/2pi = 363 Hz, dy/2pi = -1 Hz; rms 5.46 mV (|L| up to 10.9 mV); |L| min: data 8.5 us, model 13.5 us
+scaleonly: c0(X bias 0) explained by static transverse field only: rms 12.05 mV (|c0| up to 16.7 mV); field ratio relative to 20 mV X bias: x +1.27, y-component -0.000216 (model units)
+scaleonly: c0(bias 0) with static field + pump tilt (4 real): rms 11.89 mV; all three biases jointly (6 real): rms 12.67 mV
+scaleonly: c0 at three biases with static field + coil-axis tilt (6 real): rms 12.73 mV; implied coil tilt |t| = 26989.3 mrad (1546.37 deg)
+scaleonly: c0 at three biases with static field + slow-tail transverse component (6 real): rms 5.55 mV

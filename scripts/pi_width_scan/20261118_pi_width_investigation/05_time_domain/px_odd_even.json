@@ -1,0 +1,19 @@
+{
+ "source": "D:\\Code\\exp_agent_run\\data\\pi_width_scan\\_phase_background_diagnostic\\px_gated_rf_off.npz",
+ "periods": 10,
+ "current_end_us": 13.53600000002968,
+ "odd_peak_mV": 33.86800000000005,
+ "odd_peak_us": 6.912000000015156,
+ "odd_fit_window_us": [
+  20,
+  98
+ ],
+ "odd_tau_us": 31.90518020176551,
+ "odd_tau_err_us": 0.13529259764607995,
+ "odd_amp_mV": 34.71232675375736,
+ "odd_offset_mV": 0.6355893761667327,
+ "even_p2p_after10us_mV": 13.507979999999975,
+ "fundamental_5k_rms_mV": 11.223272348686502,
+ "harmonic_10k_rms_mV": 2.381313584501004,
+ "relaxation_reference_us": 290.428728269882
+}

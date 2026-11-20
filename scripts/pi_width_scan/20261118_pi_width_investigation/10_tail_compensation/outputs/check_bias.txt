@@ -1,0 +1,4 @@
+exact comp: w=7.930 A=0.1139 (21.6 mA) |J1|=3.79e-04 -> kappa*=(-0.0250,-0.0330), 2f null after D at (+0.00,+0.00) nT
+J1 minimum: w=8.225 A=0.1276 (24.2 mA) |J1|=1.94e-04 -> kappa*=(-0.0250,-0.0330), 2f null after D at (+0.00,+0.00) nT
+A -20% on pi line: w=7.446 A=0.0911 (17.3 mA) |J1|=8.75e-04 -> kappa*=(-0.0250,-0.0330), 2f null after D at (+0.00,+0.00) nT
+A +20% on pi line: w=8.411 A=0.1367 (26.0 mA) |J1|=2.83e-04 -> kappa*=(-0.0250,-0.0330), 2f null after D at (+0.00,+0.00) nT

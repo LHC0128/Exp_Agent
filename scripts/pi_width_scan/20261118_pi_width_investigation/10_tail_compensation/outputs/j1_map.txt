@@ -1,0 +1,12 @@
+exact compensation at 190 mA: w_pi = 7.930 us, A = 0.1139 (= 21.6 mA), tau_c = 25.51 us
+|J1| uncompensated 6.6 us: 1.116e-03  J2 sv [0.00125592 0.00031922]
+|J1| exact comp 7.93 us: 3.785e-04  J2 sv [0.00150327 0.00023092]
+|J1| no-tail physics (s_f=1) at its pi width 5.025 us: 2.240e-04  J2 sv [0.0015083  0.00022032]
+map (12, 15) in 29s
+grid min |J1| = 2.034e-04 at A = 0.120, w = 8.20
+refined min |J1| = 1.938e-04 at A = 0.1276, w = 8.225; rotation there = 1.0011 pi; exact tail for that w: A = 0.1184
+  start A=0.02, w=7.0 -> A=0.1276, w=8.225, |J1|=1.938e-04
+  start A=0.2, w=7.0 -> A=0.1275, w=8.225, |J1|=1.938e-04
+  start A=0.02, w=9.2 -> A=0.1276, w=8.225, |J1|=1.938e-04
+  start A=0.2, w=9.2 -> A=0.1275, w=8.225, |J1|=1.938e-04
+  start A=0.1, w=8.0 -> A=0.1275, w=8.225, |J1|=1.938e-04

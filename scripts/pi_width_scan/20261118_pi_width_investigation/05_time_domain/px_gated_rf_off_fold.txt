@@ -1,0 +1,6 @@
+periods folded: 10, dt = 3.2 ns
+baseline 15-30 us after +pulse start: odd part +0.077 mA, even part +0.922 mA
+baseline 30-60 us after +pulse start: odd part +0.109 mA, even part +0.920 mA
+baseline 60-95 us after +pulse start: odd part -0.006 mA, even part +0.920 mA
+odd-baseline area 12-98 us: 3953.55 mA*us*1e3 -> extra rotation per half period +0.93 deg
+pulse area (0-12 us, odd part): 739.9 mA*us

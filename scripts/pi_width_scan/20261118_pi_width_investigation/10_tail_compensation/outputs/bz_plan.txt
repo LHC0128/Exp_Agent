@@ -1,0 +1,12 @@
+reference (built-in 6.6 us, 1426 Hz): J2 sv 1.26e-03/3.19e-04, |J1| 1.12e-03
+work waveform, w0 =   300 Hz: J2 sv 1.39e-03/3.14e-05 (weak/ref 0.10, cond 44.1), |J1|/ref 0.264
+work waveform, w0 =  1426 Hz: J2 sv 1.50e-03/2.06e-04 (weak/ref 0.64, cond 7.3), |J1|/ref 0.200
+work waveform, w0 =  2000 Hz: J2 sv 1.64e-03/3.22e-04 (weak/ref 1.01, cond 5.1), |J1|/ref 0.202
+work waveform, w0 =  2900 Hz: J2 sv 2.07e-03/5.97e-04 (weak/ref 1.87, cond 3.5), |J1|/ref 0.229
+work waveform, w0 =  4000 Hz: J2 sv 3.55e-03/1.42e-03 (weak/ref 4.44, cond 2.5), |J1|/ref 0.337
+work waveform, w0 =  5000 Hz: J2 sv 6.83e-03/3.42e-03 (weak/ref 10.72, cond 2.0), |J1|/ref 0.578
+work waveform, w0 =  5800 Hz: J2 sv 3.68e-03/2.14e-03 (weak/ref 6.72, cond 1.7), |J1|/ref 0.320
+work waveform, w0 =  7000 Hz: J2 sv 1.63e-03/1.15e-03 (weak/ref 3.62, cond 1.4), |J1|/ref 0.209
+GS200 0.15 mA -> +/-1446 Hz: |Bz| = 2872 Hz (same sign) or 20 Hz (opposite sign)
+GS200 0.30 mA -> +/-2893 Hz: |Bz| = 4319 Hz (same sign) or 1467 Hz (opposite sign)
+GS200 0.45 mA -> +/-4339 Hz: |Bz| = 5765 Hz (same sign) or 2913 Hz (opposite sign)

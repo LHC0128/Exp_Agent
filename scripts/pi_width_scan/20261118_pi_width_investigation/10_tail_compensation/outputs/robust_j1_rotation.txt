@@ -1,0 +1,3 @@
+sf0.63 rot 1.0094 resid area ratio 0.133 max resid 0.0123 vs 0.0423
+te54 rot 1.0163 resid area ratio 0.099 max resid 0.0125 vs 0.0502
+te40 rot 0.9826 resid area ratio 0.054 max resid 0.0060 vs 0.0659

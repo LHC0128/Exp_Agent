@@ -181,13 +181,13 @@ data/RF_Control_Scale_Sensitivity/<timestamp>_<tag>/
 
 ## 只读噪声记录诊断程序
 
-数据类型目录提供本地便捷入口 `data/RF_Control_Scale_Sensitivity/analyze_noise_records.py`。
+开发仓库提供便捷入口 `scripts/RF_Control_Scale_Sensitivity/analyze_noise_records.py`。
 与正式分析共用 Welch、实际采样率校验、色散拟合与高值规则，**直接从 raw 重算**，
 无需先生成 `results/psd_data.npz`，不连接仪器，不修改原始记录、采集快照、主分析结果或分析状态。
 仓库维护实现也可直接使用模块入口，便于迁移到其他已完成运行：
 
 ```powershell
-.\agent_exp_env\Scripts\python.exe data/RF_Control_Scale_Sensitivity/analyze_noise_records.py data/RF_Control_Scale_Sensitivity/<run_id>
+.\agent_exp_env\Scripts\python.exe scripts/RF_Control_Scale_Sensitivity/analyze_noise_records.py <数据根>/RF_Control_Scale_Sensitivity/<run_id>
 .\agent_exp_env\Scripts\python.exe -m lab_workflows.experiment_modules.rf_control_scale_sensitivity.noise_diagnostics data/RF_Control_Scale_Sensitivity/<run_id> --reference-scale 1 --whole-group-ratio 2
 ```
 

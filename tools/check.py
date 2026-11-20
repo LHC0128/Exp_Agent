@@ -16,7 +16,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE_DIRECTORIES = ("src", "lab_workflows", "experiments", "GUI/backend", "tools")
+SOURCE_DIRECTORIES = ("src", "lab_workflows", "experiments", "GUI/backend", "tools", "scripts")
 PYTHON_TESTS = (
     "lab_workflows/test_experiment_architecture.py",
     "lab_workflows/test_workflow_state.py",
@@ -26,11 +26,13 @@ PYTHON_TESTS = (
     "lab_workflows/test_workflow_stages.py::test_dependency_rules_keep_explicit_finish_and_only_invalidate_dependants",
     "lab_workflows/test_workflow_stages.py::test_analysis_rules_have_no_implicit_finish_node",
     "lab_workflows/test_workflow_stages.py::test_dependency_selection_preserves_preflight_exception_and_rerun_invalidation",
+    "tools/test_audit_data_tree.py",
     "tools/test_check.py",
     "tools/test_checkpoint.py",
     "tools/test_delivery_check.py",
     "tools/test_dependency_lock.py",
     "tools/test_experiment_documentation.py",
+    "tools/test_gen_script_index.py",
     "tools/test_upgrade_lock.py",
     # 安全契约套件。不含 src/hardware_gate/test_gate.py：它在运行目录 pytest.skip，
     # 而 verify_pytest_results 拒绝任何 skip，纳入会让运行目录的快检必然失败。

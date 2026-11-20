@@ -1,0 +1,5 @@
+coil tilt tc=0.02 x (fast only): no XY comp -> 2f null (+2.37,-1.58) nT |c1| 3.15e-02; kappa*=(+0.0200,+0.0000) -> 2f null (+4.08,-1.57) nT |c1| 2.1e-16
+eddy picture eps=0.03 x,y: no XY comp -> 2f null (-23.24,+0.70) nT |c1| 5.12e-02; kappa*=(+0.0551,+0.0551) -> 2f null (+7.09,+3.15) nT |c1| 1.6e-16
+image picture ts=(0.025,0.033): no XY comp -> 2f null (+17.61,+1.49) nT |c1| 1.84e-02; kappa*=(-0.0250,-0.0330) -> 2f null (-0.00,-0.00) nT |c1| 5.2e-15
+image + coil tilt 0.02 y: no XY comp -> 2f null (+9.82,+4.68) nT |c1| 3.11e-02; kappa*=(-0.0250,-0.0130) -> 2f null (+1.57,+4.08) nT |c1| 3.5e-16
+pump tilt 0.02 x: no XY comp -> 2f null (+0.00,+1.57) nT |c1| 8.60e-16; kappa*=(+0.0000,+0.0000) -> 2f null (+0.00,+1.57) nT |c1| 8.6e-16

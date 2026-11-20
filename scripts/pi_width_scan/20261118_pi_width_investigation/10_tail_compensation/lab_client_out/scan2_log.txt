@@ -1,0 +1,45 @@
+[15:56:06] START t2_base
+[15:57:22] END t2_base exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_155608_bperp_null"
+[15:57:23] START t2_ref
+[15:58:41] END t2_ref exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_155725_bperp_null"
+[15:58:42] START t2_tc35.0_w7.55_A0.060
+[15:59:59] END t2_tc35.0_w7.55_A0.060 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_155844_bperp_null"
+[15:59:59] START t2_tc35.0_w7.55_A0.085
+[16:01:20] END t2_tc35.0_w7.55_A0.085 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_160002_bperp_null"
+[16:01:20] START t2_tc35.0_w7.55_A0.110
+[16:02:38] END t2_tc35.0_w7.55_A0.110 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_160123_bperp_null"
+[16:02:38] START t2_tc35.0_w7.80_A0.060
+[16:03:57] END t2_tc35.0_w7.80_A0.060 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_160241_bperp_null"
+[16:03:57] START t2_tc35.0_w7.80_A0.085
+[16:05:14] END t2_tc35.0_w7.80_A0.085 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_160400_bperp_null"
+[16:05:14] START t2_tc35.0_w7.80_A0.110
+[16:06:33] END t2_tc35.0_w7.80_A0.110 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_160517_bperp_null"
+[16:06:33] START t2_tc35.0_w8.05_A0.060
+[16:07:50] END t2_tc35.0_w8.05_A0.060 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_160636_bperp_null"
+[16:07:50] START t2_tc35.0_w8.05_A0.085
+[16:09:07] END t2_tc35.0_w8.05_A0.085 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_160753_bperp_null"
+[16:09:07] START t2_tc35.0_w8.05_A0.110
+[16:10:22] END t2_tc35.0_w8.05_A0.110 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_160910_bperp_null"
+[16:10:22] START t2_tc45.0_w7.35_A0.050
+[16:10:29] END t2_tc45.0_w7.35_A0.050 exit=1 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_161025_bperp_null"
+STOP: t2_tc45.0_w7.35_A0.050 exit 1
+--- resume t2 from t2_tc45.0_w7.35_A0.050 (30 s gap, one retry on in-use) ---
+[16:11:00] START t2_tc45.0_w7.35_A0.050
+[16:12:15] END t2_tc45.0_w7.35_A0.050 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_161103_bperp_null"
+[16:12:45] START t2_tc45.0_w7.35_A0.070
+[16:14:02] END t2_tc45.0_w7.35_A0.070 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_161248_bperp_null"
+[16:14:33] START t2_tc45.0_w7.35_A0.090
+[16:15:50] END t2_tc45.0_w7.35_A0.090 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_161435_bperp_null"
+[16:16:20] START t2_tc45.0_w7.60_A0.050
+[16:17:37] END t2_tc45.0_w7.60_A0.050 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_161623_bperp_null"
+[16:18:07] START t2_tc45.0_w7.60_A0.070
+[16:19:24] END t2_tc45.0_w7.60_A0.070 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_161810_bperp_null"
+[16:19:54] START t2_tc45.0_w7.60_A0.090
+[16:21:11] END t2_tc45.0_w7.60_A0.090 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_161957_bperp_null"
+[16:21:41] START t2_tc45.0_w7.85_A0.050
+[16:22:58] END t2_tc45.0_w7.85_A0.050 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_162144_bperp_null"
+[16:23:28] START t2_tc45.0_w7.85_A0.070
+[16:24:45] END t2_tc45.0_w7.85_A0.070 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_162331_bperp_null"
+[16:25:15] START t2_tc45.0_w7.85_A0.090
+[16:26:34] END t2_tc45.0_w7.85_A0.090 exit=0 "run_dir": "D:\\Code\\exp_agent_run\\data\\bperp_null\\1118_162518_bperp_null"
+ALL DONE

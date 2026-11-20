@@ -1,0 +1,9 @@
+w803_r1: A (-32.60, +60.90) mV, GS200 -0.40 mA -> null (-19.80, -31.45) +- (0.032, 0.009) mV, c1@null -0.160+0.212i (|c1| 0.266 mV), weak sv 0.294, res c2 0.067 mV
+    c1 at grid centre (-20.53, -31.63): -0.057+0.242i (|c1| 0.248 mV); |c1| over grid 0.20-3.22 mV; |J1| 0.147
+    one-step correction: A -> (-33.17, +56.76) mV, predicted null (-19.41, -31.49); GS200-off null from this run (-39.94, -6.68) mV; converged (|c1| <= 0.1): False
+w803_r2: A (-33.17, +56.76) mV, GS200 -0.40 mA -> null (-19.52, -31.40) +- (0.023, 0.007) mV, c1@null +0.009+0.008i (|c1| 0.012 mV), weak sv 0.293, res c2 0.050 mV
+    c1 at grid centre (-19.41, -31.49): -0.003+0.001i (|c1| 0.004 mV); |c1| over grid 0.01-3.19 mV; |J1| 0.147
+    one-step correction: A -> (-32.98, +57.13) mV, predicted null (-19.55, -31.40); GS200-off null from this run (-39.66, -6.63) mV; converged (|c1| <= 0.1): True
+w803_gs_off: A (-33.17, +56.76) mV, GS200 +0.00 mA -> null (-52.66, -5.83) +- (0.133, 0.010) mV, c1@null +0.161+6.537i (|c1| 6.539 mV), weak sv 0.039, res c2 0.027 mV
+    c1 at grid centre (-39.70, -6.60): -1.197+6.626i (|c1| 6.733 mV); |c1| over grid 3.65-10.44 mV; |J1| 0.187
+    one-step correction: A -> (+19.28, +103.26) mV, predicted null (-56.19, -4.44); GS200-off null from this run (-52.66, -5.83) mV; converged (|c1| <= 0.1): False

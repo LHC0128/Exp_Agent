@@ -89,7 +89,7 @@ Z 通道链路与 π 脉冲面积标定完全一致：DG 的 Z 通道 → Aigtek
 - 尾按周期延拓叠加，整个波形归一化到最大绝对值 1，对应 `Z_PEAK_CURRENT_MA`；平顶电流 = `Z_PEAK_CURRENT_MA`/scale（scale 略大于 1）。
 - 波形由 `bperp_null.z_waveform` 的同一组生成函数计算（`exact_tail`、`tail_compensated_waveform`），与 bperp-null 用的拖尾补偿波形文件同源；各脉宽的 A、τc、scale、mean(v²) 与反对称误差写进 `experiment_config.yaml` 的 `z_waveform`。
 - 电阻功耗预检改按实际写入波形的 mean(v²) 计算，取所有脉宽中的最大值。
-- 关闭时与原升余弦双脉冲完全相同。模型推导与上机确认见运行目录 `data/pi_width_scan/_pi_width_investigation_20261118/10_tail_compensation/结论.md`。
+- 关闭时与原升余弦双脉冲完全相同。模型推导与上机确认见开发仓库 `scripts/pi_width_scan/20261118_pi_width_investigation/10_tail_compensation/结论.md`。
 
 ## 阶段
 
