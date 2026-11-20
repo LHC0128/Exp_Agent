@@ -1,0 +1,171 @@
+{
+  "stage1": {
+    "label": "stage 1 Z check",
+    "max_abs_change": 0.07302998028614827,
+    "gaps": [
+      {
+        "from": "cc1_ref00",
+        "to": "cc1_ref01",
+        "change": 0.02207570890426669,
+        "flagged": false
+      },
+      {
+        "from": "cc1_ref01",
+        "to": "cc1_ref02",
+        "change": -0.07302998028614827,
+        "flagged": true
+      },
+      {
+        "from": "cc1_ref02",
+        "to": "cc1_ref03",
+        "change": 0.056339620982226224,
+        "flagged": true
+      },
+      {
+        "from": "cc1_ref03",
+        "to": "cc1_ref04",
+        "change": 0.004859551924782934,
+        "flagged": false
+      },
+      {
+        "from": "cc1_ref04",
+        "to": "cc1_ref05",
+        "change": 0.004986602193030043,
+        "flagged": false
+      }
+    ],
+    "refs": [
+      {
+        "tag": "cc1_ref00",
+        "S_mV_per_deg": 2.62788033187937,
+        "time": "2026-11-20T12:25:56"
+      },
+      {
+        "tag": "cc1_ref01",
+        "S_mV_per_deg": 2.6858926531211864,
+        "time": "2026-11-20T12:35:46"
+      },
+      {
+        "tag": "cc1_ref02",
+        "S_mV_per_deg": 2.4897419656130357,
+        "time": "2026-11-20T12:47:00"
+      },
+      {
+        "tag": "cc1_ref03",
+        "S_mV_per_deg": 2.630013084299217,
+        "time": "2026-11-20T12:56:59"
+      },
+      {
+        "tag": "cc1_ref04",
+        "S_mV_per_deg": 2.6427937694452273,
+        "time": "2026-11-20T13:07:01"
+      },
+      {
+        "tag": "cc1_ref05",
+        "S_mV_per_deg": 2.655972330651669,
+        "time": "2026-11-20T13:12:54"
+      }
+    ],
+    "scan_points": 18
+  },
+  "stage2": {
+    "label": "stage 2 w x sf grid",
+    "max_abs_change": 0.02156441336473014,
+    "gaps": [
+      {
+        "from": "cc2_ref00",
+        "to": "cc2_ref01",
+        "change": -0.01655930825544516,
+        "flagged": false
+      },
+      {
+        "from": "cc2_ref01",
+        "to": "cc2_ref02",
+        "change": 0.0011171039562909435,
+        "flagged": false
+      },
+      {
+        "from": "cc2_ref02",
+        "to": "cc2_ref03",
+        "change": 0.02156441336473014,
+        "flagged": false
+      },
+      {
+        "from": "cc2_ref03",
+        "to": "cc2_ref04",
+        "change": -0.018228898991612064,
+        "flagged": false
+      },
+      {
+        "from": "cc2_ref04",
+        "to": "cc2_ref05",
+        "change": 0.00457250747954685,
+        "flagged": false
+      },
+      {
+        "from": "cc2_ref05",
+        "to": "cc2_ref06",
+        "change": 0.004993145055365966,
+        "flagged": false
+      },
+      {
+        "from": "cc2_ref06",
+        "to": "cc2_ref07",
+        "change": -0.010731334857481123,
+        "flagged": false
+      }
+    ],
+    "refs": [
+      {
+        "tag": "cc2_ref00",
+        "S_mV_per_deg": 2.825395270204731,
+        "time": "2026-11-20T13:28:30"
+      },
+      {
+        "tag": "cc2_ref01",
+        "S_mV_per_deg": 2.778608678981934,
+        "time": "2026-11-20T13:38:20"
+      },
+      {
+        "tag": "cc2_ref02",
+        "S_mV_per_deg": 2.781712673730209,
+        "time": "2026-11-20T13:48:08"
+      },
+      {
+        "tag": "cc2_ref03",
+        "S_mV_per_deg": 2.841698675688436,
+        "time": "2026-11-20T13:57:52"
+      },
+      {
+        "tag": "cc2_ref04",
+        "S_mV_per_deg": 2.7898976375647138,
+        "time": "2026-11-20T14:07:41"
+      },
+      {
+        "tag": "cc2_ref05",
+        "S_mV_per_deg": 2.8026544653796486,
+        "time": "2026-11-20T14:17:23"
+      },
+      {
+        "tag": "cc2_ref06",
+        "S_mV_per_deg": 2.816648525665358,
+        "time": "2026-11-20T14:27:08"
+      },
+      {
+        "tag": "cc2_ref07",
+        "S_mV_per_deg": 2.7864221271606127,
+        "time": "2026-11-20T14:31:03"
+      }
+    ],
+    "scan_points": 25
+  },
+  "stage3": {
+    "label": "stage 3 A/B/C",
+    "refs": [],
+    "gaps": [],
+    "max_abs_change": null,
+    "pairs": 5,
+    "scan_points": 15,
+    "note": "轮内配对，无独立参考点"
+  }
+}

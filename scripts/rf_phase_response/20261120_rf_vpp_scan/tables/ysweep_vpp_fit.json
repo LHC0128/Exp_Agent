@@ -1,0 +1,27 @@
+{
+  "points": 12,
+  "grid_points": 9,
+  "linear_gain_mV_per_deg_per_vpp": 62.21027226057098,
+  "linear_region_vpp": [
+    0.02,
+    0.04
+  ],
+  "first_vpp_below_90pct_linear": 0.12,
+  "saturation_peak_v": 0.344,
+  "max_r_peak_v": 0.339081275,
+  "refs": [
+    {
+      "tag": "y_ref00",
+      "S": 3.0778448928729527
+    },
+    {
+      "tag": "y_ref01",
+      "S": 2.8406352675747244
+    },
+    {
+      "tag": "y_ref02",
+      "S": 2.9751655613981463
+    }
+  ],
+  "ref_spread": 0.2372096252982283
+}
