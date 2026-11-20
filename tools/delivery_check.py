@@ -95,7 +95,9 @@ def _relative(value: str) -> str:
 
 def _local_only(name: str) -> bool:
     parts = [p.casefold() for p in PurePosixPath(name).parts]
-    return (any(p in _LOCAL_DIRS for p in parts) or parts[-1] in ("agents.md", "claude.md")
+    # 根 AGENTS.md 随仓库提交；子目录的 AGENTS.md 与所有 CLAUDE.md 仍只在本地维护。
+    nested_agents = parts[-1] == "agents.md" and len(parts) > 1
+    return (any(p in _LOCAL_DIRS for p in parts) or nested_agents or parts[-1] == "claude.md"
             or name.casefold() in ("skills-lock.json", ".mcp.json", ".zcodeignore"))
 
 

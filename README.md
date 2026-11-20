@@ -427,10 +427,10 @@ experiments ───┘
 流程图模板，不再询问是否需要；新建或整体重构 GUI 时按 Skill 的 `gui-workflow-template.md`
 实现分步会话、状态、重跑和安全结束。仅用户明确要求只交付脚本时省略 GUI。
 
-探索期允许用 Notebook 或 `.cache/` 下脚本配合只读运行目录数据，不进注册表、不接 GUI、
+探索期允许用 Notebook 或 `.cache/` 下脚本配合运行目录数据，不进注册表、不接 GUI、
 不写 `docs/experiments/`；跨天或跨样品重复运行同一脚本（探索期内连续调参重跑不计）、
 交给其他同学使用，或数据进论文/正式报告时升级为正式档并补齐上述产物。探索档同样遵守
-输出限值校验、`try/finally` 安全收尾、普通气室六步时序、硬件门控与历史运行不重写。
+输出限值校验、`try/finally` 安全收尾、普通气室六步时序与硬件门控。
 测试完成后清理本次临时测试脚本，保留正式回归测试。
 实验说明只链接 GUI 实际保存的默认参数文件，不重复记录可变默认值；历史运行参数以
 各自的 `experiment_config.yaml` 为准。新增实验使用 Skill 验证器的 `--delivery` 模式，
@@ -715,7 +715,7 @@ T2 额外保持 RF 门控 CH2 的输出及当前 Burst 状态；不以断开通�
 
 ## AI 协作
 
-Pi / Codex 共用一个项目入口和实验代码生成 Skill（以下协作资产只在本地维护，不上传 GitHub）：
+Pi / Codex 共用一个项目入口和实验代码生成 Skill（`AGENTS.md` 随仓库提交，其余协作资产只在本地维护）：
 
 - [AGENTS.md](AGENTS.md)：常驻工作边界、硬件安全与采集红线，以及按触发条件读取的指南。
 - [GUI/AGENTS.md](GUI/AGENTS.md)：GUI 接线、共享工作流和前后端验证约定。
@@ -727,7 +727,7 @@ Pi / Codex 共用一个项目入口和实验代码生成 Skill（以下协作资
 Claude 入口已退役，旧资产保留在本地非扫描归档中，不再同步第二份 Skill。
 `arcgen` / `archify` 当前停用；只有用户明确要求架构图并确认技能可用性后才按其规则使用，不自动启用或接入 GUI。
 
-`AGENTS.md`、`GUI/AGENTS.md`、`.agents/`、`.codex/`、`.vscode/` 及退役协作资产只在本地维护；
+`GUI/AGENTS.md`、`.agents/`、`.codex/`、`.vscode/` 及退役协作资产只在本地维护（根 `AGENTS.md` 随仓库提交）；
 仓库同步面向其他同学使用的 GUI 实验系统内容。本检出的 `.git/info/exclude` 仍忽略 `docs/` 中
 未跟踪的文件，已跟踪文档仍正常提交。不改变忽略策略强行提交本地说明；被忽略文件需单独核对，
 普通 `git diff` 不显示其变化。

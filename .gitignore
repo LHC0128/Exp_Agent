@@ -11,7 +11,6 @@ tests/
 # 本地 AI 协作内容（说明、Skill、Agent 配置），均不上传 GitHub
 .claude/
 .agents/
-AGENTS.md
 CLAUDE.md
 GUI/AGENTS.md
 .zcode/

@@ -115,7 +115,7 @@ def test_default_classifies_nul_rename_spaces_and_explicit_ignored_without_scann
     assert {p["path"] for p in result["changed"]} == {"src/dirty name.py", "new name.py", "GUI/AGENTS.md"}
     assert result["untracked"][0]["path"] == "loose folder/"
     assert result["ignored"] == ["space ignored.txt", ".agents/retired-claude/20261026/manifest.json"]
-    assert set(result["local_only"]) == set(candidates[1:]) | {".agents/", "GUI/AGENTS.md"}
+    assert set(result["local_only"]) == (set(candidates[1:]) - {"AGENTS.md"}) | {".agents/", "GUI/AGENTS.md"}
     assert set(result["ignored_query_paths"]) == set(result["candidates"])
     assert result["task"]["status"] == "not_verified"
     assert all(p["status"] == "not_verified" for p in result["task"]["verification"].values())
