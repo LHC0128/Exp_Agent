@@ -33,7 +33,9 @@ REGRESSION_CASES = {
             "tests": ["ParamsTest::test_defaults_match_pi_width_run",
                       "ParamsTest::test_phase_grid_is_full_circle",
                       "PreparationTest::test_preflight_rejects_width_over_half_period",
-                      "PreparationTest::test_preflight_accepts_defaults"],
+                      "PreparationTest::test_preflight_accepts_defaults",
+                      "PreparationTest::test_preflight_accepts_x_direction",
+                      "PreparationTest::test_x_direction_rejects_level_over_limit"],
         },
     },
 }
@@ -69,6 +71,20 @@ class PreparationTest(unittest.TestCase):
         params, mapping = preparation.preflight(models.RfPhaseResponseParams(), ROOT)
         self.assertEqual(params, models.RfPhaseResponseParams())
         self.assertIn("Y_magnetic_field", mapping)
+
+    def test_preflight_accepts_x_direction(self):
+        params = models.RfPhaseResponseParams(rf_direction="X", x_bias_v=0.16, y_bias_v=0.08)
+        self.assertEqual(preparation.rf_role(params), "x")
+        self.assertEqual(preparation.channel_key("x"), "X_magnetic_field")
+        levels = preparation.rf_levels(params)
+        self.assertIn(0.16 + 0.05 / 2.0, levels)
+        preparation.preflight(params, ROOT)
+        self.assertEqual(models.RfPhaseResponseParams().rf_direction, "Y")
+
+    def test_x_direction_rejects_level_over_limit(self):
+        params = models.RfPhaseResponseParams(rf_direction="X", x_bias_v=20.0, y_rf_vpp=20.0)
+        with self.assertRaisesRegex(ValueError, "安全拦截"):
+            preparation.preflight(params, ROOT)
 
     def test_preflight_rejects_width_over_half_period(self):
         params = models.RfPhaseResponseParams(z_pulse_width_us=150.0)

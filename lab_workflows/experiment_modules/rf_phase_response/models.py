@@ -28,6 +28,12 @@ class RfPhaseResponseParams(ExperimentParams):
 
     run_tag: str = parameter(default="rf_phase_response", external_name="RUN_TAG", label="运行标签", group="basic")
 
+    # ---- 射频方向与幅度 ----
+    rf_direction: str = parameter(default="Y", external_name="RF_DIRECTION", label="射频方向",
+        group="basic", options=(("Y", "Y 向（默认）"), ("X", "X 向")),
+        description="射频 burst 所在的横向线圈；该方向静态偏置作为正弦 offset 一起叠加，"
+                    "另一方向只保留 DC 偏置。切换方向会改变相位参考，跨方向数据不能直接比较。")
+
     # ---- Y 向射频 ----
     y_rf_freq_hz: float = parameter(default=5000.0, external_name="Y_RF_FREQ_HZ", label="Y 向射频频率", unit="Hz",
         minimum=1e-6, group="basic",

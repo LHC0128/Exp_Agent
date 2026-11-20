@@ -33,8 +33,9 @@ from .keys import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, LOCKIN_KEY, MAIN_FIELD_KEY,
 
 __all__ = [
     "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "BURST_NCYCLES", "SafetyAbort", "amplifier_safety_check",
-    "clocks", "configure_chain", "configure_lockin", "configure_main_field", "configure_rf",
-    "configure_trigger", "configure_x_bias",
+    "channel_bias_v", "channel_key", "clocks", "configure_chain", "configure_dc_bias",
+    "configure_dc_side", "configure_lockin", "configure_main_field", "configure_rf",
+    "configure_trigger", "configure_x_bias", "rf_role",
     "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
     "plan", "pulse_wave", "rf_levels", "set_rf_phase", "shutdown", "sleep",
 ]
@@ -84,9 +85,26 @@ def pulse_wave(p: PulseChainParams, width_us: float) -> tuple[np.ndarray, dict]:
                       antisymmetry_error=float(np.max(np.abs(wave[:half] + wave[half:2 * half]))))
 
 
-def rf_levels(p: PulseChainParams) -> tuple[float, ...]:
-    """Y 通道需在限内的电平：0、Y_BIAS_V 与射频叠加后的上下峰值。"""
-    return (0.0, p.y_bias_v, p.y_bias_v + p.y_rf_vpp / 2.0, p.y_bias_v - p.y_rf_vpp / 2.0)
+def rf_role(p: PulseChainParams) -> str:
+    """射频所在通道：RF_DIRECTION=X 时用 X 通道，否则 Y（默认，保持历史行为）。"""
+    return "x" if str(getattr(p, "rf_direction", "Y")).upper() == "X" else "y"
+
+
+def channel_bias_v(p: PulseChainParams, role: str) -> float:
+    """该方向的静态偏置；射频通道把它作为正弦 offset 承载，另一方向用 DC。"""
+    return float(p.x_bias_v if role == "x" else p.y_bias_v)
+
+
+def channel_key(role: str) -> str:
+    """通道角色对应的映射键与安全限值键。"""
+    return X_KEY if role == "x" else RF_KEY
+
+
+def rf_levels(p: PulseChainParams, role: str | None = None) -> tuple[float, ...]:
+    """射频通道需在限内的电平：0、静态偏置与射频叠加后的上下峰值。"""
+    role = role or rf_role(p)
+    bias = channel_bias_v(p, role)
+    return (0.0, bias, bias + p.y_rf_vpp / 2.0, bias - p.y_rf_vpp / 2.0)
 
 
 def amplifier_safety_check(ctx, preflight_fn):
@@ -207,27 +225,33 @@ def configure_lockin(ctx):
 
 
 def configure_rf(ctx):
-    """Y 向射频：5 kHz 正弦叠加 Y_BIAS_V 直流 offset，无限 burst 由共同触发启动，相位由 burst 相位决定。"""
+    """射频：5 kHz 正弦叠加所在通道的静态偏置 offset，无限 burst 由共同触发启动，相位由 burst 相位决定。
+
+    通道由 ``rf_role`` 按 RF_DIRECTION 决定（默认 Y，与历史行为一致）；静态偏置作为正弦
+    offset 一起写入，因此该通道的电平上限是 offset ± vpp/2。
+    """
     p = ctx.params
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
-    for value in rf_levels(p):
-        validate_safety_limit(RF_KEY, value, load_safety_limits(ctx.root))
-    signals.set_burst_state(False, channel=channels["y"])
-    signals.set_mod_state(False, channel=channels["y"])
-    signals.setup_sine(freq=p.y_rf_freq_hz, amplitude=p.y_rf_vpp, offset=float(p.y_bias_v), phase=0.0,
-                       channel=channels["y"])
+    role = rf_role(p)
+    key, bias = channel_key(role), channel_bias_v(p, role)
+    for value in rf_levels(p, role):
+        validate_safety_limit(key, value, load_safety_limits(ctx.root))
+    signals.set_burst_state(False, channel=channels[role])
+    signals.set_mod_state(False, channel=channels[role])
+    signals.setup_sine(freq=p.y_rf_freq_hz, amplitude=p.y_rf_vpp, offset=float(bias), phase=0.0,
+                       channel=channels[role])
     # 射频与 Z 共用 Time_sequence_2：无限 burst 让射频只在第一个触发沿起步，
     # 之后相位由 burst 相位唯一决定，A03 才能只改相位、不动波形。
-    signals.set_burst_mode("INFinity", channel=channels["y"])
-    signals.set_burst_ncycles(BURST_NCYCLES, channel=channels["y"])
-    signals.set_burst_trigger_source("EXTernal", channel=channels["y"])
-    signals.set_burst_trigger_slope("POSitive", channel=channels["y"])
-    signals.set_burst_phase(p.y_rf_phase_deg, channel=channels["y"])
-    signals.set_burst_state(True, channel=channels["y"])
-    signals.set_output(True, channel=channels["y"])
-    ctx.state["y_bias_v"] = float(p.y_bias_v)
-    ctx.outputs["Y 射频"] = (f"无限 burst 正弦 {p.y_rf_freq_hz:g} Hz、{p.y_rf_vpp:g} Vpp、"
-                             f"offset {p.y_bias_v:+.4f} V、相位 {p.y_rf_phase_deg:g}°")
+    signals.set_burst_mode("INFinity", channel=channels[role])
+    signals.set_burst_ncycles(BURST_NCYCLES, channel=channels[role])
+    signals.set_burst_trigger_source("EXTernal", channel=channels[role])
+    signals.set_burst_trigger_slope("POSitive", channel=channels[role])
+    signals.set_burst_phase(p.y_rf_phase_deg, channel=channels[role])
+    signals.set_burst_state(True, channel=channels[role])
+    signals.set_output(True, channel=channels[role])
+    ctx.state[f"{role}_bias_v"] = float(bias)
+    ctx.outputs[f"{role.upper()} 射频"] = (f"无限 burst 正弦 {p.y_rf_freq_hz:g} Hz、{p.y_rf_vpp:g} Vpp、"
+                                           f"offset {bias:+.4f} V、相位 {p.y_rf_phase_deg:g}°")
 
 
 def set_rf_phase(ctx, phase_deg):
@@ -238,17 +262,20 @@ def set_rf_phase(ctx, phase_deg):
     """
     p = ctx.params
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
-    for value in rf_levels(p):
-        validate_safety_limit(RF_KEY, value, load_safety_limits(ctx.root))
-    signals.set_output(False, channel=channels["y"])
-    signals.set_burst_state(False, channel=channels["y"])
-    signals.set_burst_phase(float(phase_deg), channel=channels["y"])
-    signals.set_burst_state(True, channel=channels["y"])
-    signals.set_output(True, channel=channels["y"])
+    role = rf_role(p)
+    key, bias = channel_key(role), channel_bias_v(p, role)
+    for value in rf_levels(p, role):
+        validate_safety_limit(key, value, load_safety_limits(ctx.root))
+    signals.set_output(False, channel=channels[role])
+    signals.set_burst_state(False, channel=channels[role])
+    signals.set_burst_phase(float(phase_deg), channel=channels[role])
+    signals.set_burst_state(True, channel=channels[role])
+    signals.set_output(True, channel=channels[role])
     ctx.state["rf_phase_deg"] = float(phase_deg)
     ctx.state["rf_phase_offset_us"] = p.rf_phase_offset_us(phase_deg)
-    ctx.outputs["Y 射频"] = (f"无限 burst 正弦 {p.y_rf_freq_hz:g} Hz、{p.y_rf_vpp:g} Vpp、offset {p.y_bias_v:+.4f} V、"
-                             f"相位 {float(phase_deg):g}°（{p.rf_phase_offset_us(phase_deg):g} µs）")
+    ctx.outputs[f"{role.upper()} 射频"] = (f"无限 burst 正弦 {p.y_rf_freq_hz:g} Hz、{p.y_rf_vpp:g} Vpp、"
+                                           f"offset {bias:+.4f} V、相位 {float(phase_deg):g}°"
+                                           f"（{p.rf_phase_offset_us(phase_deg):g} µs）")
 
 
 def configure_trigger(ctx):
@@ -277,19 +304,34 @@ def configure_z_idle(ctx):
     ctx.outputs["Z 通道"] = "DC 0 V，输出 OFF（等待上传脉冲串）"
 
 
-def configure_x_bias(ctx):
-    """按 X_BIAS_V 在 X 通道加静态偏置；0 V 时明确关输出，避免沿用上一次的偏置。"""
+def configure_dc_bias(ctx, role: str = "x"):
+    """把静态偏置 DC 写到指定通道；0 V 时明确关输出，避免沿用上一次的偏置。
+
+    射频所在通道不调用本函数：它的静态偏置作为正弦 offset 由 ``configure_rf`` 一起写。
+    """
     p = ctx.params
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
     limits = load_safety_limits(ctx.root)
-    validate_safety_limit(X_KEY, 0.0, limits)
-    validate_safety_limit(X_KEY, p.x_bias_v, limits)
-    signals.set_burst_state(False, channel=channels["x"])
-    signals.set_mod_state(False, channel=channels["x"])
-    signals.setup_dc(float(p.x_bias_v), channel=channels["x"])
-    signals.set_output(abs(p.x_bias_v) > 0.0, channel=channels["x"])
-    ctx.state["x_bias_v"] = float(p.x_bias_v)
-    ctx.outputs["X 偏置"] = (f"DC {p.x_bias_v:+.3f} V（输出 ON）" if p.x_bias_v else "0 V（输出 OFF）")
+    key, bias = channel_key(role), channel_bias_v(p, role)
+    validate_safety_limit(key, 0.0, limits)
+    if bias:
+        validate_safety_limit(key, bias, limits)
+    signals.set_burst_state(False, channel=channels[role])
+    signals.set_mod_state(False, channel=channels[role])
+    signals.setup_dc(float(bias), channel=channels[role])
+    signals.set_output(abs(bias) > 0.0, channel=channels[role])
+    ctx.state[f"{role}_bias_v"] = float(bias)
+    ctx.outputs[f"{role.upper()} 偏置"] = (f"DC {bias:+.3f} V（输出 ON）" if bias else "0 V（输出 OFF）")
+
+
+def configure_x_bias(ctx):
+    """按 X_BIAS_V 在 X 通道加静态偏置（历史调用点，等价于 ``configure_dc_bias(ctx, "x")``）。"""
+    configure_dc_bias(ctx, "x")
+
+
+def configure_dc_side(ctx):
+    """把静态偏置写到非射频的那一路；射频一路的偏置由 ``configure_rf`` 一起写。"""
+    configure_dc_bias(ctx, "y" if rf_role(ctx.params) == "x" else "x")
 
 
 def configure_main_field(ctx, current_ma):
@@ -381,10 +423,13 @@ def shutdown(ctx):
     dg_channels = []
     if signals is not None and "z" in channels:
         dg_channels.append(DGChannelShutdown(signals, channels["z"], SOURCE_KEY, "Z 线圈驱动", disable_sync=True))
+    role = rf_role(ctx.params)
     if signals is not None and "x" in channels:
-        dg_channels.append(DGChannelShutdown(signals, channels["x"], X_KEY, "X 静态偏置"))
+        dg_channels.append(DGChannelShutdown(signals, channels["x"], X_KEY,
+                                            "X 射频" if role == "x" else "X 静态偏置"))
     if signals is not None and "y" in channels:
-        dg_channels.append(DGChannelShutdown(signals, channels["y"], RF_KEY, "Y 射频"))
+        dg_channels.append(DGChannelShutdown(signals, channels["y"], RF_KEY,
+                                            "Y 射频" if role == "y" else "Y 静态偏置"))
     disconnect_targets = [
         DisconnectTarget("1200B", devices.get("amp")), DisconnectTarget("MFLI", devices.get("hf2")),
         DisconnectTarget("DHO900", devices.get("scope")), DisconnectTarget("GS200", devices.get("gs200")),

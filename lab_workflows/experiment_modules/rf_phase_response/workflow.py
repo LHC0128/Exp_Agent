@@ -51,7 +51,7 @@ class Workflow(StagedWorkflow):
             preparation.configure_rf(self)
             preparation.configure_trigger(self)
             preparation.configure_z_idle(self)
-            preparation.configure_x_bias(self)
+            preparation.configure_dc_side(self)
             preparation.enable_temperature_switch(self)
             self.state["optional_connection_errors"] = self.devices.get("optional_connection_errors", {})
             self.outputs["DHO900"] = "已连接（不采集，仅供人工核对脉冲波形）"

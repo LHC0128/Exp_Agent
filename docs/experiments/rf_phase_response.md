@@ -66,7 +66,7 @@ Z 通道链路与 π 脉冲宽度实验一致：DG 的 Z 通道 → Aigtek 1200B
 - 改相位顺序：关闭 burst → 写 burst 相位 → 打开 burst → 打开 output，再等 `SYSTEM_SETTLE_S` 才读数。
 - Z 脉冲：一次上传双脉冲任意波（相位固定 0）后 arm 无限 burst 并发 1200B 的 AON；`Z_TAIL_COMP_ENABLED` 时每个脉冲后接该脉宽的精确反号指数尾。
 - 读出：MFLI 的 Signal Input 1 → 第 0 路解调器，参考频率设为 `Y_RF_FREQ_HZ`，读 R 与 θ。
-- X 通道按 `X_BIAS_V` 加静态偏置；Y 射频叠加 `Y_BIAS_V` 直流 offset，两者默认取运行目录的重标值。
+- 射频所在通道由 `RF_DIRECTION` 决定（默认 `Y`）：`Y` 时射频叠加 `Y_BIAS_V`、X 通道只加 `X_BIAS_V` 静态偏置；`X` 时反过来，射频叠加 `X_BIAS_V`、Y 通道只加 `Y_BIAS_V`。安全校验按射频所在通道做（`0`、偏置、偏置 ± Vpp/2 四个电平）。切方向会改相位参考，两个方向的数据不能直接比较。
 - GS200 主磁场由 `MAIN_FIELD_CURRENT_MA` 决定：0 时关闭输出并回读为 OFF（原行为），非零时按该电流输出并回读，A04 恢复运行前状态；写入前按 `main_magnetic_field` 安全限值校验。
 
 ## 阶段
@@ -82,7 +82,8 @@ Z 通道链路与 π 脉冲宽度实验一致：DG 的 Z 通道 → Aigtek 1200B
 | 键 | 含义 |
 | --- | --- |
 | `Y_RF_FREQ_HZ` | Y 向射频频率，同时决定脉冲周期 `1e6/f`（5 kHz → 200 µs） |
-| `Y_RF_VPP` | Y 向射频幅度 |
+| `RF_DIRECTION` | 射频所在横向线圈，`Y`（默认）或 `X`；该方向偏置作为正弦 offset 一起叠加 |
+| `Y_RF_VPP` | 射频幅度（两个方向共用同一参数） |
 | `Y_RF_PHASE_DEG` | A02 起振时的 burst 相位 |
 | `Y_RF_PHASE_START/STOP/STEP_DEG` | 相位扫描网格；终点不写入，默认 0–360°、10° 共 36 点 |
 | `Z_PULSE_WIDTH_US` | 固定的单脉冲宽度；不能超过半个周期，且不小于两倍沿宽 |
