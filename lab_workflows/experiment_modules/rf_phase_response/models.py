@@ -117,6 +117,11 @@ class RfPhaseResponseParams(ExperimentParams):
         unit="s", minimum=0, group="basic")
 
     # ---- MFLI 第 0 路解调器 ----
+    demod0_phase_deg: float = parameter(default=0.0, external_name="DEMOD0_PHASE_DEG",
+        label="解调器相位", unit="°", minimum=0.0, maximum=360.0, group="advanced",
+        description="MFLI 第 0 路解调器的参考相位偏移；让测到的相量整体旋转，"
+                    "模量与斜率不变，只有最佳读相位随它平移。")
+
     demod0_idx: int = parameter(default=0, external_name="DEMOD0_IDX", label="解调器索引", read_only=True,
         description="固定为第 0 路解调器；本实验不占用其他解调器。")
     demod0_signal_range_v: float = parameter(default=3.0, external_name="DEMOD0_SIGNAL_RANGE", label="输入量程",

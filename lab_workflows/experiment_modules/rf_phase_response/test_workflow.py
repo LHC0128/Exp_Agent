@@ -35,7 +35,8 @@ REGRESSION_CASES = {
                       "PreparationTest::test_preflight_rejects_width_over_half_period",
                       "PreparationTest::test_preflight_accepts_defaults",
                       "PreparationTest::test_preflight_accepts_x_direction",
-                      "PreparationTest::test_x_direction_rejects_level_over_limit"],
+                      "PreparationTest::test_x_direction_rejects_level_over_limit",
+                      "PreparationTest::test_demod_phase_parameter_and_drift"],
         },
     },
 }
@@ -85,6 +86,14 @@ class PreparationTest(unittest.TestCase):
         params = models.RfPhaseResponseParams(rf_direction="X", x_bias_v=20.0, y_rf_vpp=20.0)
         with self.assertRaisesRegex(ValueError, "安全拦截"):
             preparation.preflight(params, ROOT)
+
+    def test_demod_phase_parameter_and_drift(self):
+        self.assertEqual(models.RfPhaseResponseParams().demod0_phase_deg, 0.0)
+        params = models.RfPhaseResponseParams(demod0_phase_deg=90.0)
+        preparation.preflight(params, ROOT)
+        self.assertAlmostEqual(preparation.phase_drift_deg(95.0, 90.0), 5.0, places=6)
+        self.assertAlmostEqual(preparation.phase_drift_deg(355.0, 5.0), 10.0, places=6)
+        self.assertAlmostEqual(preparation.phase_drift_deg(0.0, 350.0), 10.0, places=6)
 
     def test_preflight_rejects_width_over_half_period(self):
         params = models.RfPhaseResponseParams(z_pulse_width_us=150.0)

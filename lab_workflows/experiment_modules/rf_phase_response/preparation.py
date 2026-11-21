@@ -20,8 +20,8 @@ from ..z_chain_common.prep import (ARB_SAMPLE_RATE_CHECK, BURST_NCYCLES, TEMP_SW
                                    configure_chain, configure_lockin, configure_main_field,
                                    configure_rf, configure_trigger, configure_x_bias,
                                    configure_z_idle, disable_main_field, enable_temperature_switch,
-                                   channel_bias_v, channel_key, configure_dc_side, plan, pulse_wave,
-                                   rf_levels, rf_role, set_rf_phase, shutdown)
+                                   channel_bias_v, channel_key, configure_dc_side, phase_drift_deg, plan,
+                                   pulse_wave, rf_levels, rf_role, set_rf_phase, shutdown)
 from .models import RfPhaseResponseParams
 from .run_format import EXPERIMENT_ID
 
@@ -30,7 +30,7 @@ __all__ = [
     "TRIGGER_DUTY", "TRIGGER_OFFSET_V", "TRIGGER_VPP", "amplifier_safety_check", "clocks",
     "configure_chain", "configure_dc_side", "configure_lockin", "configure_rf", "configure_trigger",
     "configure_x_bias",
-    "configure_z_idle", "connect", "current_limit", "disable_main_field",
+    "configure_z_idle", "connect", "phase_drift_deg", "current_limit", "disable_main_field",
     "enable_temperature_switch", "configure_main_field",
     "plan", "preflight", "pulse_wave", "rf_levels", "set_amp_output", "set_rf_phase", "shutdown", "sleep",
 ]

@@ -37,7 +37,7 @@ __all__ = [
     "configure_dc_side", "configure_lockin", "configure_main_field", "configure_rf",
     "configure_trigger", "configure_x_bias", "rf_role",
     "configure_z_idle", "connect", "current_limit", "disable_main_field", "enable_temperature_switch",
-    "plan", "pulse_wave", "rf_levels", "set_rf_phase", "shutdown", "sleep",
+    "phase_drift_deg", "plan", "pulse_wave", "rf_levels", "set_rf_phase", "shutdown", "sleep",
 ]
 
 # 任意波点数：与 pi_pulse_calibration 相同，DG4000 的上限正好是 16384 点。
@@ -45,6 +45,8 @@ __all__ = [
 ARB_SAMPLE_RATE_CHECK = 500e6
 # 射频与 Z 都用无限 burst，靠共同触发启动；NCYCles 在 INFinity 下被忽略，写上限值。
 BURST_NCYCLES = 50000
+# 解调相位回读容差：设备按 1e-6 分辨率写，超过这个差别即视为设定未生效。
+PHASE_READBACK_TOLERANCE_DEG = 0.5
 # 共同触发的固定接线电平：5 Vpp 方波、2.5 V 偏置、50% 占空比，频率跟随 Y_RF_FREQ_HZ。
 TRIGGER_VPP = 5.0
 TRIGGER_OFFSET_V = 2.5
@@ -197,31 +199,42 @@ def configure_chain(ctx):
     ctx.outputs["Z 通道"] = f"输出 OFF，负载 {load}"
 
 
+def phase_drift_deg(actual_deg: float, requested_deg: float) -> float:
+    """两个角度在圆周上的最小差值（度），用于校验解调相位回读。"""
+    return abs(((float(actual_deg) - float(requested_deg) + 180.0) % 360.0) - 180.0)
+
+
 def configure_lockin(ctx):
     """按参数配置 MFLI 第 0 路解调器：输入量程、参考频率与解调滤波。"""
     p = ctx.params
     mfli = ctx.devices["hf2"]
     demod.configure_signal_input(mfli, SignalInputConfig(input_index=0, range=p.demod0_signal_range_v, diff=False))
     demod.configure_oscillator(mfli, OscillatorConfig(osc_index=0, frequency=p.y_rf_freq_hz))
+    # 解调相位由 DEMOD0_PHASE_DEG 给定（默认 0°，与非相位扫描实验的历史行为一致）；
+    # 它让测到的相量整体旋转，模量与斜率与之无关，只有最佳读相位随之平移。
+    configured_phase = float(getattr(p, "demod0_phase_deg", 0.0))
     config = DemodulatorConfig(demod_index=p.demod0_idx, rate=p.demod0_rate_sa_s, input_channel=0,
-                               osc_select=0, time_constant=p.demod0_tc_s, order=p.demod0_order)
+                               osc_select=0, time_constant=p.demod0_tc_s, order=p.demod0_order,
+                               phase=configured_phase)
     actual_rate = float(demod.configure_demodulator(mfli, config, for_acquisition=True))
     if not math.isfinite(actual_rate) or actual_rate <= 0:
         raise RuntimeError("MFLI 第 0 路解调器的实际采样率无效")
     ctx.state["actual_rates"]["demod0_Sa_s"] = actual_rate
-    # 解调相位沿用库默认行为（configure_demodulator 按 DemodulatorConfig 的默认值写入），
-    # 本实验不另外设置：读出的模量 R 与参考相位无关，θ 的绝对值依赖它、但不参与判据。
-    # 离散档位由设备取整，只记录回读值作为诊断，不作为启动门槛。
+    # 相位回读必须与设定一致：相位本身是扫描自变量时，读错一位整批数据就废了。
+    readback_phase = float(mfli.get_double(f"{mfli.demod_path(p.demod0_idx)}/phaseshift"))
+    drift = phase_drift_deg(readback_phase, configured_phase)
+    if drift > PHASE_READBACK_TOLERANCE_DEG:
+        raise RuntimeError(f"MFLI 解调相位回读 {readback_phase:g}° 与设定 {configured_phase:g}° 相差 {drift:.3g}°")
     ctx.state["lockin"] = dict(model=mfli.model, device_id=mfli.device_id, demod_idx=p.demod0_idx,
                                requested_rate_Sa_s=p.demod0_rate_sa_s, actual_rate_Sa_s=actual_rate,
                                time_constant_s=p.demod0_tc_s, order=p.demod0_order,
                                signal_range_v=p.demod0_signal_range_v, rf_frequency_Hz=p.y_rf_freq_hz,
                                readback={node: float(mfli.get_double(f"{mfli.demod_path(p.demod0_idx)}/{node}"))
                                          for node in ("rate", "timeconstant", "phaseshift")},
-                               phase_deg=float(mfli.get_double(f"{mfli.demod_path(p.demod0_idx)}/phaseshift")),
+                               phase_deg=readback_phase, phase_requested_deg=configured_phase,
                                capabilities=dict(mfli.capabilities))
     ctx.outputs["MFLI"] = (f"Demod{p.demod0_idx} 请求 {p.demod0_rate_sa_s:g} Sa/s、TC {p.demod0_tc_s * 1e3:g} ms、"
-                           f"参考 {p.y_rf_freq_hz:g} Hz（传输率回读 {actual_rate:g} Sa/s）")
+                           f"参考 {p.y_rf_freq_hz:g} Hz、相位 {readback_phase:g}°（传输率回读 {actual_rate:g} Sa/s）")
 
 
 def configure_rf(ctx):
