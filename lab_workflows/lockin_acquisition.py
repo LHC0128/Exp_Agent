@@ -68,6 +68,9 @@ ACQUISITION_STAGES = {
                                           ("噪声", "HF2_NOISE_RATE", "NOISE_DURATION", "HF2_DEMOD_IDX", Y)),
     "bperp-null": (("1f 解调", "DEMOD_RATE", "SCAN_POINT_DURATION_S", "DEMOD0_IDX", XY),
                    ("2f 解调", "DEMOD_RATE", "SCAN_POINT_DURATION_S", "DEMOD1_IDX", XY)),
+    "rf-phase-sensitivity": (("静态相位标定", "DEMOD0_RATE", "STATIC_POINT_DURATION_S", "DEMOD0_IDX", XY),
+                             ("基带 PM 频响", "DEMOD0_RATE", "PM_TONE_DURATION_S", "DEMOD0_IDX", XY),
+                             ("无调制噪声", "DEMOD0_RATE", "NOISE_DURATION_S", "DEMOD0_IDX", XY)),
 }
 
 # 这些既有入口将时长/速率固定在工作流中，没有对应 GUI 参数。

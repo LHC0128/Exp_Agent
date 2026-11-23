@@ -1,0 +1,703 @@
+{
+  "fields": [
+    {
+      "name": "RUN_TAG",
+      "label": "运行标签",
+      "type": "string",
+      "default": "phase_sensitivity",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_FREQ_HZ",
+      "label": "Y 射频载波频率",
+      "type": "number",
+      "default": 5000.0,
+      "unit": "Hz",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": true
+    },
+    {
+      "name": "Y_RF_VPP",
+      "label": "Y 射频幅度",
+      "type": "number",
+      "default": 0.05,
+      "unit": "Vpp",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": true
+    },
+    {
+      "name": "X_BIAS_V",
+      "label": "X 静态偏置",
+      "type": "number",
+      "default": 0.16,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_BIAS_V",
+      "label": "Y 正弦直流偏置",
+      "type": "number",
+      "default": 0.08,
+      "unit": "V",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "MAIN_FIELD_CURRENT_MA",
+      "label": "主磁场电流",
+      "type": "number",
+      "default": -0.0655,
+      "unit": "mA",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "0 表示关闭；会话结束恢复原状态。",
+      "read_only": false
+    },
+    {
+      "name": "Z_PEAK_CURRENT_MA",
+      "label": "Z 脉冲峰值电流",
+      "type": "number",
+      "default": 190.0,
+      "unit": "mA",
+      "group": "basic",
+      "minimum": 0.1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_PULSE_WIDTH_US",
+      "label": "Z 单个 π 脉冲宽度",
+      "type": "number",
+      "default": 8.6,
+      "unit": "µs",
+      "group": "basic",
+      "minimum": 0.1,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_PULSE_EDGE_US",
+      "label": "Z 脉冲升降沿宽度",
+      "type": "number",
+      "default": 1.0,
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": 0.05,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_TAIL_COMP_ENABLED",
+      "label": "Z 拖尾补偿",
+      "type": "boolean",
+      "default": true,
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_TAIL_S_F",
+      "label": "屏蔽模型快分量",
+      "type": "number",
+      "default": 0.5,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": 0.999,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Z_TAIL_TAU_E_US",
+      "label": "屏蔽模型时间常数",
+      "type": "number",
+      "default": 38.3,
+      "unit": "µs",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": 1000,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AMPLIFIER_GAIN_DB",
+      "label": "功放增益",
+      "type": "number",
+      "default": 20.0,
+      "unit": "dB",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": 20,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+      "label": "功放输入阻抗",
+      "type": "number",
+      "default": 1000000.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": 50.0,
+          "label": "50 Ω"
+        },
+        {
+          "value": 1000000.0,
+          "label": "1 MΩ"
+        }
+      ]
+    },
+    {
+      "name": "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+      "label": "功放输出阻抗",
+      "type": "number",
+      "default": 50.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false,
+      "options": [
+        {
+          "value": 50.0,
+          "label": "50 Ω"
+        },
+        {
+          "value": 1.0,
+          "label": "1 Ω"
+        }
+      ]
+    },
+    {
+      "name": "SENSE_RESISTOR_OHM",
+      "label": "采样电阻",
+      "type": "number",
+      "default": 10.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DAMPING_RESISTOR_OHM",
+      "label": "阻尼电阻",
+      "type": "number",
+      "default": 10.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "COIL_RESISTANCE_OHM",
+      "label": "Z 线圈直流电阻",
+      "type": "number",
+      "default": 2.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "RESISTOR_RATED_W",
+      "label": "电阻额定功率",
+      "type": "number",
+      "default": 2.0,
+      "unit": "W",
+      "group": "advanced",
+      "minimum": 0.01,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_IDX",
+      "label": "MFLI 解调器索引",
+      "type": "integer",
+      "default": 0,
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": true
+    },
+    {
+      "name": "DEMOD0_SIGNAL_RANGE",
+      "label": "MFLI 输入量程",
+      "type": "number",
+      "default": 3.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": 3.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_ORDER",
+      "label": "MFLI 滤波阶数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 8,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_TC",
+      "label": "MFLI 时间常数",
+      "type": "number",
+      "default": 0.001,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": 0.1,
+      "description": "频响与噪声保持同一解调滤波条件，不作二次滤波校正。",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_RATE",
+      "label": "MFLI 解调传输率",
+      "type": "number",
+      "default": 2000.0,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1000,
+      "maximum": 10000,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "STATIC_POINT_DURATION_S",
+      "label": "静态点 MFLI 采集时长",
+      "type": "number",
+      "default": 0.2,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0.05,
+      "maximum": 1.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "LOCAL_SPAN_DEG",
+      "label": "局部标定外档角度",
+      "type": "number",
+      "default": 6.0,
+      "unit": "°",
+      "group": "advanced",
+      "minimum": 3,
+      "maximum": 10,
+      "description": "在最佳工作点两侧取内外两档对称偏移。",
+      "read_only": false
+    },
+    {
+      "name": "PM_FREQUENCIES_HZ",
+      "label": "基带调相频率列表",
+      "type": "array",
+      "default": [
+        5.0,
+        10.0,
+        20.0,
+        40.0,
+        80.0
+      ],
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "严格递增，不改变 5 kHz 载波。先按电学验证过的 20 Hz 对准；包含 20 Hz 时用它夹测，否则用最低频点。",
+      "read_only": false
+    },
+    {
+      "name": "PM_TONE_DURATION_S",
+      "label": "每档 MFLI 音调采集时长",
+      "type": "number",
+      "default": 2.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0.5,
+      "maximum": 12.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "NOISE_DURATION_S",
+      "label": "无调制噪声记录时长",
+      "type": "number",
+      "default": 24.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 8.0,
+      "maximum": 60.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "WELCH_SEGMENT_S",
+      "label": "Welch 分段时长",
+      "type": "number",
+      "default": 4.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 1.0,
+      "maximum": 10.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SYSTEM_SETTLE_S",
+      "label": "系统稳定等待",
+      "type": "number",
+      "default": 0.3,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0.1,
+      "maximum": 4.0,
+      "description": "",
+      "read_only": false,
+      "legacy_defaults": {}
+    },
+    {
+      "name": "TEMP_SWITCH_ON_LAG_S",
+      "label": "温控恢复等待",
+      "type": "number",
+      "default": 2.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0.1,
+      "maximum": 15.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "SET_TEC_TARGET",
+      "label": "下发 TEC 目标温度",
+      "type": "boolean",
+      "default": false,
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "TARGET_TEMPERATURE_C",
+      "label": "TEC 目标温度",
+      "type": "number",
+      "default": 90.0,
+      "unit": "°C",
+      "group": "advanced",
+      "minimum": 20.0,
+      "maximum": 130.0,
+      "description": "只下发目标；不启停 TEC、不判稳。未启用时保留现场设定。",
+      "read_only": false
+    }
+  ],
+  "flow": {
+    "run_step_id": "A03",
+    "finish_step_id": "A04",
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数与映射预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [
+          "RUN_TAG"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "RUN_TAG"
+        ],
+        "quality_gates": [
+          "固定 Y 向 5 kHz / 50 mVpp；核对驱动能力、映射、电平、电流与实际脉冲功耗。"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "连接设备并同步公共参考时钟",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "所有参与参考时钟的设备写后回读；DHO924 验证接线所需通道和面板状态。"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "同次标定、基带扫频与噪声",
+        "group": "测量",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "X_BIAS_V",
+          "Y_BIAS_V",
+          "MAIN_FIELD_CURRENT_MA",
+          "Z_PEAK_CURRENT_MA",
+          "Z_PULSE_WIDTH_US",
+          "Z_PULSE_EDGE_US",
+          "Z_TAIL_COMP_ENABLED",
+          "Z_TAIL_S_F",
+          "Z_TAIL_TAU_E_US",
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "DEMOD0_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC",
+          "DEMOD0_RATE",
+          "STATIC_POINT_DURATION_S",
+          "LOCAL_SPAN_DEG",
+          "PM_FREQUENCIES_HZ",
+          "PM_TONE_DURATION_S",
+          "NOISE_DURATION_S",
+          "WELCH_SEGMENT_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "SET_TEC_TARGET",
+          "TARGET_TEMPERATURE_C"
+        ],
+        "artifacts": [
+          "raw/"
+        ],
+        "display_parameters": [
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "X_BIAS_V",
+          "Y_BIAS_V",
+          "MAIN_FIELD_CURRENT_MA",
+          "Z_PEAK_CURRENT_MA",
+          "Z_PULSE_WIDTH_US",
+          "Z_PULSE_EDGE_US",
+          "Z_TAIL_COMP_ENABLED",
+          "Z_TAIL_S_F",
+          "Z_TAIL_TAU_E_US",
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "DEMOD0_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC",
+          "DEMOD0_RATE",
+          "STATIC_POINT_DURATION_S",
+          "LOCAL_SPAN_DEG",
+          "PM_FREQUENCIES_HZ",
+          "PM_TONE_DURATION_S",
+          "NOISE_DURATION_S",
+          "WELCH_SEGMENT_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "SET_TEC_TARGET",
+          "TARGET_TEMPERATURE_C"
+        ],
+        "quality_gates": [
+          "整周扫描拟合最大切线；按 CH4 相对 CH3 实测角度、正交分量和对称局部扫拟合静态斜率。",
+          "固定 1° 原生 PM 后才回调载波中心；扫频只改基带频率，不复用不合格的电学标定。",
+          "无调制但保留载波，前后核查物理相位、载波幅值和同一锁相配置。关闭温控窗口只读不写。"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "先关 1200B，再关 Y/X/Z 输出并归零、恢复温控、主场与示波器；共同触发保持。"
+        ]
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "相位频响与输入等效噪声分析",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "phase_sensitivity_summary.json",
+          "phase_transfer.csv",
+          "phase_noise.csv",
+          "phase_transfer.png",
+          "phase_noise.png"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "核对同轮低频标度和锚点复测；仅在相邻合格频点覆盖的连续频段内折算 Welch 噪声。质量不足时只导出可用诊断，不填补被拒频点或外推。"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "RUN_TAG": [
+          "A01",
+          "A02",
+          "A03"
+        ],
+        "Y_RF_FREQ_HZ": [
+          "A03"
+        ],
+        "Y_RF_VPP": [
+          "A03"
+        ],
+        "X_BIAS_V": [
+          "A03"
+        ],
+        "Y_BIAS_V": [
+          "A03"
+        ],
+        "MAIN_FIELD_CURRENT_MA": [
+          "A03"
+        ],
+        "Z_PEAK_CURRENT_MA": [
+          "A03"
+        ],
+        "Z_PULSE_WIDTH_US": [
+          "A03"
+        ],
+        "Z_PULSE_EDGE_US": [
+          "A03"
+        ],
+        "Z_TAIL_COMP_ENABLED": [
+          "A03"
+        ],
+        "Z_TAIL_S_F": [
+          "A03"
+        ],
+        "Z_TAIL_TAU_E_US": [
+          "A03"
+        ],
+        "AMPLIFIER_GAIN_DB": [
+          "A03"
+        ],
+        "AMPLIFIER_INPUT_IMPEDANCE_OHM": [
+          "A03"
+        ],
+        "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": [
+          "A03"
+        ],
+        "SENSE_RESISTOR_OHM": [
+          "A03"
+        ],
+        "DAMPING_RESISTOR_OHM": [
+          "A03"
+        ],
+        "COIL_RESISTANCE_OHM": [
+          "A03"
+        ],
+        "RESISTOR_RATED_W": [
+          "A03"
+        ],
+        "DEMOD0_IDX": [
+          "A03"
+        ],
+        "DEMOD0_SIGNAL_RANGE": [
+          "A03"
+        ],
+        "DEMOD0_ORDER": [
+          "A03"
+        ],
+        "DEMOD0_TC": [
+          "A03"
+        ],
+        "DEMOD0_RATE": [
+          "A03"
+        ],
+        "STATIC_POINT_DURATION_S": [
+          "A03"
+        ],
+        "LOCAL_SPAN_DEG": [
+          "A03"
+        ],
+        "PM_FREQUENCIES_HZ": [
+          "A03"
+        ],
+        "PM_TONE_DURATION_S": [
+          "A03"
+        ],
+        "NOISE_DURATION_S": [
+          "A03"
+        ],
+        "WELCH_SEGMENT_S": [
+          "A03"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A03"
+        ],
+        "TEMP_SWITCH_ON_LAG_S": [
+          "A03"
+        ],
+        "SET_TEC_TARGET": [
+          "A03"
+        ],
+        "TARGET_TEMPERATURE_C": [
+          "A03"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/rf-phase-sensitivity/workflow/diagram"
+  }
+}

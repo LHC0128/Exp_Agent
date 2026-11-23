@@ -65,6 +65,7 @@ const STABLE_EXPERIMENT_IDS: readonly string[] = [
   "pi-width-scan",
   "bperp-null",
   "rf-phase-response",
+  "rf-phase-sensitivity",
 ];
 
 function RouteSwitcher() {
@@ -87,7 +88,7 @@ const show = (id: string) => render(
 beforeEach(() => { rfPageMounts.length = 0; });
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
-it("配置表恰好覆盖 37 个稳定实验 ID，不漏不多", () => {
+it("配置表恰好覆盖稳定实验 ID，不漏不多", () => {
   expect(Object.keys(experimentPageRoutes)).toHaveLength(STABLE_EXPERIMENT_IDS.length);
   expect([...Object.keys(experimentPageRoutes)].sort()).toEqual([...STABLE_EXPERIMENT_IDS].sort());
   for (const route of Object.values(experimentPageRoutes)) expect(route).toBeTypeOf("function");

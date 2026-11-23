@@ -104,6 +104,9 @@ from ..experiment_modules.bperp_null.definition import DEFINITION as BPERP_NULL_
 from ..experiment_modules.rf_phase_response.definition import (
     DEFINITION as RF_PHASE_RESPONSE_DEFINITION,
 )
+from ..experiment_modules.rf_phase_sensitivity.definition import (
+    DEFINITION as RF_PHASE_SENSITIVITY_DEFINITION,
+)
 # </registry:imports>
 
 from .contracts import ExperimentDefinition
@@ -149,6 +152,7 @@ _DEFINITIONS = [
     PI_WIDTH_SCAN_DEFINITION,  # pi-width-scan
     BPERP_NULL_DEFINITION,  # bperp-null
     RF_PHASE_RESPONSE_DEFINITION,  # rf-phase-response
+    RF_PHASE_SENSITIVITY_DEFINITION,  # rf-phase-sensitivity
 ]
 # </registry:definitions>
 
