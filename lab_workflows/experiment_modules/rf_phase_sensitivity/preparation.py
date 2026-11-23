@@ -107,12 +107,16 @@ def _route(ctx, name):
     return route.device, route.actual_channel
 
 
-def dg_output(device, channel):
-    """DG4000 的原生输出回读必须明确是 ON 或 OFF。"""
-    value = device.query(f":OUTPut{channel}:STATe?").strip().upper()
+def _dg_state(device, command):
+    """仅接受明确的 DG4000 开关回读，不把未知响应解释为 OFF。"""
+    value = device.query(command).strip().upper()
     if value not in {"0", "1", "OFF", "ON"}:
-        raise SafetyAbort(f"DG4000 CH{channel} 输出状态不可判定：{value!r}")
+        raise SafetyAbort(f"DG4000 {command} 状态不可判定：{value!r}")
     return value in {"1", "ON"}
+
+
+def dg_output(device, channel):
+    return _dg_state(device, f":OUTPut{channel}:STATe?")
 
 
 def _verify_generators(ctx):
@@ -265,32 +269,70 @@ def prepare_measurement(ctx):
 
 
 def _off_and_zero(ctx, role, key):
-    """DG4000 在核实 OFF 后才改形状；不调用会隐式开输出的 setup_dc。"""
+    """仅在回读 OFF 时归零；命令失败也再次关输出并分别保存回读。"""
     device, channel = _route(ctx, role)
-    zero = 0.
-    validate_safety_limit(key, zero, load_safety_limits(ctx.root))
-    device.set_output(False, channel=channel)
-    if dg_output(device, channel):
-        raise SafetyAbort(f"{key} 未回读为 OFF，禁止改变波形")
-    device.set_burst_state(False, channel=channel)
-    device.set_mod_state(False, channel=channel)
+    label = {"y": "Y 射频", "x": "X 偏置", "z": "Z 通道"}[role]
+    record = ctx.state.setdefault("shutdown_readbacks", {})[key] = {"channel": channel}
+    errors = []
+
+    def shape():
+        return device.get_shape(channel=channel).strip().upper()
+
+    try:
+        device.set_output(False, channel=channel)
+        if dg_output(device, channel):
+            raise SafetyAbort("未回读为 OFF，禁止改变波形")
+        device.set_burst_state(False, channel=channel)
+        device.set_mod_state(False, channel=channel)
+        if role == "z":
+            device.set_sync_state(False, channel=channel)
+        validate_safety_limit(key, 0., load_safety_limits(ctx.root))
+        # 即使 X 已处于 DC，也清除普通 OFFSET 设定，再写专用 DC 电平。
+        # DG4162 的 OFFSET 回读不是物理电压，不以普通 OFFSET 写入替代 DC 命令。
+        device.set_offset(0., channel=channel)
+        if shape() != "DC":
+            device.set_shape("DC", channel=channel)
+        if dg_output(device, channel) or shape() != "DC":
+            raise SafetyAbort("未确认 OFF + DC，禁止写专用 DC 电平")
+        device.set_dc_voltage(0., channel=channel)
+        record["dc_commanded_v"] = 0.
+    except Exception as exc:
+        errors.append(f"归零命令: {exc}")
+    finally:
+        try:
+            device.set_output(False, channel=channel)
+            device.wait_for_operation_complete()
+        except Exception as exc:
+            errors.append(f"最终关闭输出或等待完成: {exc}")
+
+    checks = {
+        "output": (lambda: dg_output(device, channel), lambda value: value is False),
+        "shape": (shape, lambda value: value == "DC"),
+        "dc_setting_v": (lambda: device.get_dc_voltage(channel=channel),
+                         lambda value: math.isclose(value, 0., abs_tol=1e-4)),
+        "burst": (lambda: _dg_state(device, f":SOURce{channel}:BURSt:STATe?"), lambda value: value is False),
+        "modulation": (lambda: _dg_state(device, f":SOURce{channel}:MOD:STATe?"), lambda value: value is False),
+    }
     if role == "z":
-        device.set_sync_state(False, channel=channel)
-    # 正弦模式下先清常规偏置，再用 DG4000 的专用 DC 命令设置。
-    if device.get_shape(channel=channel).upper() != "DC":
-        device.set_offset(zero, channel=channel)
-    device.set_shape("DC", channel=channel)
-    device.set_dc_voltage(zero, channel=channel)
-    device.wait_for_operation_complete()
-    offset = device.get_dc_voltage(channel=channel)
-    if (dg_output(device, channel) or device.get_shape(channel=channel).upper() != "DC"
-            or not math.isfinite(offset) or abs(offset) > 1e-4 or device.get_mod_state(channel=channel)
-            or device.get_burst_state(channel=channel) or (role == "z" and device.get_sync_state(channel=channel))):
-        raise SafetyAbort(f"{key} 的 OFF/DC 0 V 或调制、Burst、同步状态未通过仪器回读")
-    device.raise_for_errors()
-    ctx.state.setdefault("shutdown_readbacks", {})[key] = dict(output=False, shape="DC", dc_setting_v=offset,
-                                                               burst=False, modulation=False)
-    ctx.outputs[{"y": "Y 射频", "x": "X 偏置", "z": "Z 通道"}[role]] = "OFF，仪器报告 DC 0 V"
+        checks["sync"] = (lambda: _dg_state(device, f":OUTPut{channel}:SYNC:STATe?"), lambda value: value is False)
+    for field, (query, expected) in checks.items():
+        try:
+            value = record[field] = query()
+            if not expected(value):
+                errors.append(f"{field} 回读不符: {value!r}")
+        except Exception as exc:
+            errors.append(f"{field} 回读异常: {exc}")
+    try:
+        device.raise_for_errors()
+    except Exception as exc:
+        errors.append(f"SCPI 错误队列: {exc}")
+    if errors:
+        record["errors"] = errors
+        output = record.get("output")
+        ctx.outputs[label] = ("OFF（已回读），其余收尾未确认" if output is False else
+                              "回读为 ON，需现场检查" if output is True else "输出状态未知，需现场检查")
+        raise SafetyAbort(f"{key} 收尾未通过: {'；'.join(errors)}")
+    ctx.outputs[label] = "OFF，仪器报告 DC 0 V"
 
 
 def park(ctx):

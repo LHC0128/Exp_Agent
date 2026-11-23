@@ -261,7 +261,7 @@ def _calibrate(ctx, carrier):
         done = i + 1
         report_runtime_progress("A03", f"扫描原子相位 {done}/{len(_STATIC_GRID_DEG)}", 15 * done / len(_STATIC_GRID_DEG),
                                 estimated_remaining_seconds=(time.monotonic() - start) / done * (len(_STATIC_GRID_DEG) - done),
-                                eta_scope="当前静态扫描")
+                                data={"eta_scope": "当前静态扫描"})
     best, rotation, prediction = signal_fit.best_tangent(_STATIC_GRID_DEG, coarse)
     d = ctx.devices["hf2"]
     setpoint = float(signal_fit.wrap_deg(lockin_readback(ctx)["phase_deg"] + rotation))
@@ -371,7 +371,7 @@ def _sweep(ctx, carrier, cal, lockin, anchor):
         report_runtime_progress("A03", f"基带频响 {done}/{len(frequencies)}，{f_hz:g} Hz：{row['reason'] or '电学与时序通过'}",
                                 40 + 40 * done / len(frequencies),
                                 estimated_remaining_seconds=(time.monotonic() - start) / done * (len(frequencies) - done),
-                                eta_scope="当前基带扫频")
+                                data={"eta_scope": "当前基带扫频"})
 
 
 def _baseline(ctx, carrier, cal, lockin, anchor):

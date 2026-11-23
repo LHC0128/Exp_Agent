@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 import math
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ import numpy as np
 import pytest
 
 from ...common import WorkflowCancelled
+from ...experiment_runtime import PROGRESS_PREFIX, PROGRESS_PROTOCOL_ENV
 from ...steps import RoutedSignalGenerator, SignalGeneratorRoute
 from ...steps.coil_drive_chain import SafetyAbort
 from . import acquisition, analysis, monitor, preparation, run_format, signal_fit
@@ -45,8 +47,8 @@ class FakeGenerator:
     def __init__(self, events, name):
         self.events, self.name = events, name
         self.channels = {i: dict(output=False, shape="DC", frequency=5000., amplitude=.05, offset=0.,
-                                 output_load="INF", voltage_unit="VPP", burst_state=False, mod_state=False,
-                                 burst_delay=0., phase_adjust=0., sync_state=False) for i in (1, 2)}
+                                 dc_level=0., output_load="INF", voltage_unit="VPP", burst_state=False,
+                                 mod_state=False, burst_delay=0., phase_adjust=0., sync_state=False) for i in (1, 2)}
         self.restore_failures = 0
 
     def __getattr__(self, name):
@@ -67,10 +69,17 @@ class FakeGenerator:
         return self.get_offset(channel=channel)
 
     def set_dc_voltage(self, value, *, channel):
-        if self.name == "temp" and value == 5. and self.channels[channel]["offset"] == 0. and self.restore_failures:
+        ch = self.channels[channel]
+        assert ch["shape"] == "DC", "必须先选择 DC 波形"
+        if self.name == "temp" and value == 5. and ch["offset"] == 0. and self.restore_failures:
             self.restore_failures -= 1
             raise IOError("注入温控恢复错误")
-        self.set_offset(value, channel=channel)
+        ch["dc_level"] = value
+        if self.name == "xy" and channel == 1:
+            # 模拟 DG4162 物理 DC 与 OFFSET? 不同步，两个寄存器分别写入。
+            self.events.append((self.name, channel, "set_dc_voltage", value))
+        else:
+            self.set_offset(value, channel=channel)
 
     def setup_dc(self, value, *, channel):
         self.set_shape("DC", channel=channel)
@@ -96,8 +105,10 @@ class FakeGenerator:
         if "COUPling" in command:
             return "OFF,OFF,OFF"
         if command.endswith(":STATe?"):
-            channel = int(command.split(":")[1][-1])
-            return "1" if self.get_output(channel=channel) else "0"
+            field = {":STATe?": "output", ":BURSt:STATe?": "burst_state",
+                     ":MOD:STATe?": "mod_state", ":SYNC:STATe?": "sync_state"}
+            _, route, suffix = command.split(":", 2)
+            return "1" if self.channels[int(route[-1])][field[":" + suffix]] else "0"
         assert command.endswith(":POLarity?")
         return "NORM"
 
@@ -162,6 +173,7 @@ def rig(monkeypatch, tmp_path):
     monkeypatch.setenv("LAB_DATA_ROOT", str(tmp_path / "data"))
     events = []
     xygen, zgen, temp = (FakeGenerator(events, name) for name in ("xy", "z", "temp"))
+    xygen.channels[1]["offset"] = .16  # 专用 DC 命令不更新这个残留的普通偏置设定。
     amp, tec = Mock(), Mock()
     amp.set_output.side_effect = lambda enable: events.append(("amp", enable))
     gs = Mock()
@@ -188,7 +200,7 @@ def rig(monkeypatch, tmp_path):
     monkeypatch.setattr(monitor, "restore_scope", lambda ctx: events.append(("scope", "restore")))
     monkeypatch.setattr(acquisition, "sleep", lambda s: events.append(("wait", s)))
     monkeypatch.setattr(acquisition, "_STATIC_GRID_DEG", tuple(range(0, 360, 45)))
-    monkeypatch.setattr(acquisition, "report_runtime_progress", lambda *a, **k: None)
+    monkeypatch.setenv(PROGRESS_PROTOCOL_ENV, "jsonl")
     p = replace(RfPhaseSensitivityParams(), pm_frequencies_hz=[20., 40.], pm_tone_duration_s=.5,
                 noise_duration_s=8., welch_segment_s=2., static_point_duration_s=.05,
                 demod0_rate_sa_s=1000., system_settle_s=.1, temp_switch_on_lag_s=.1)
@@ -248,7 +260,9 @@ def _ctx(rig):
 def _assert_parked(rig):
     assert rig.settings["shape"] == "DC" and not rig.settings["output"] and rig.settings["offset"] == 0.
     assert not rig.settings["mod_state"] and not rig.settings["burst_state"]
-    assert rig.z.channels[1]["output"] is False and rig.z.channels[2]["output"] is True
+    for ch in (rig.xy.channels[1], rig.z.channels[1]):
+        assert ch["shape"] == "DC" and ch["output"] is False and ch["offset"] == ch["dc_level"] == 0.
+    assert rig.z.channels[2]["output"] is True
     assert rig.temp.channels[2]["offset"] == 5. and rig.temp.channels[2]["output"] is True
     assert rig.gs["output"] and rig.gs["current"] == -.001
 
@@ -264,8 +278,17 @@ def test_preflight_and_defaults():
     assert ADAPTER.preflight({"SYSTEM_SETTLE_S": 0.101, "DEMOD0_TC": .01})
 
 
-def test_full_round_and_physical_phase_transfer(rig):
+def test_full_round_and_physical_phase_transfer(rig, capsys):
     run_dir = Workflow.run(rig.p, project_root=ROOT)
+    events = [json.loads(line.removeprefix(PROGRESS_PREFIX)) for line in capsys.readouterr().out.splitlines()
+              if line.startswith(PROGRESS_PREFIX)]
+    for scope, count in (("当前静态扫描", len(acquisition._STATIC_GRID_DEG)),
+                         ("当前基带扫频", len(rig.p.sweep_order_hz))):
+        updates = [event for event in events if event["data"].get("eta_scope") == scope]
+        assert len(updates) == count and all(event["stage"] == "A03" for event in updates)
+        assert [event["percent"] for event in updates] == sorted({event["percent"] for event in updates})
+        assert all(event["data"]["estimated_remaining_seconds"] >= 0 for event in updates)
+        assert updates[-1]["data"]["estimated_remaining_seconds"] == 0
     c = run_format.read_config(run_dir / "experiment_config.yaml")
     assert c["completion_status"] == "completed" and c["calibration"]["accepted"] and c["noise"]["accepted"], c
     assert abs(c["calibration"]["k0_v_per_rad"]) == pytest.approx(.10, rel=.02)
@@ -275,6 +298,9 @@ def test_full_round_and_physical_phase_transfer(rig):
     assert [e[3] for e in rig.events if e[:3] == ("xy", 2, "set_mod_pm_deviation")] == [1.]
     assert c["noise"]["candidate"]["carrier_center_deg"] != pytest.approx(c["noise"]["after"]["carrier_center_deg"], abs=5.)
     assert c["safety_shutdown"]["completed"] and c["shutdown_readbacks"]["Temp_Switch"]["dc_setting_v"] == 5.
+    x = c["shutdown_readbacks"]["X_magnetic_field"]
+    assert x == dict(channel=1, output=False, shape="DC", dc_commanded_v=0., dc_setting_v=0.,
+                     burst=False, modulation=False)
     assert len(c["data_files"]) == len(list((run_dir / "raw").glob("*.npz")))
     metadata, arrays = run_format.read_frame(run_dir, "noise_xy", "xy")
     assert metadata["rate_sa_s"] == 1000. and len(arrays["time_s"]) == 8000
@@ -283,9 +309,15 @@ def test_full_round_and_physical_phase_transfer(rig):
     assert rig.events.index(("scope", "restore")) < rig.events.index(("temp", "disconnect"))
     assert rig.events[-3:] == [("temp", "disconnect"), ("z", "disconnect"), ("xy", "disconnect")]
     for device, channel in (("z", 1), ("xy", 2), ("xy", 1)):
-        end = rig.events[shutdown:]
-        assert end.index((device, channel, "set_output", False)) < end.index((device, channel, "set_shape", "DC"))
+        end = [event for event in rig.events[shutdown:] if event[:2] == (device, channel)]
+        assert end[0] == end[-1] == (device, channel, "set_output", False)
         assert (device, channel, "set_output", True) not in end
+        offset_write = end.index((device, channel, "set_offset", 0.))
+        if (device, channel) == ("xy", 1):
+            assert (device, channel, "set_shape", "DC") not in end  # X 已经是 DC
+            assert offset_write < end.index((device, channel, "set_dc_voltage", 0.))
+        else:
+            assert offset_write < end.index((device, channel, "set_shape", "DC"))
     for i, event in enumerate(rig.events):
         if event[0] != "daq":
             continue
@@ -345,6 +377,74 @@ def test_cancel_preserves_completed_frames(rig, monkeypatch):
     assert c["completion_status"] == "cancelled"
     assert c["data_files"] == ["raw/coarse_00.npz"] and c["safety_shutdown"]["completed"]
     _assert_parked(rig)
+
+
+def test_failed_acquisition_preserves_failed_shutdown_readbacks(rig, monkeypatch):
+    original_read = acquisition.daq.acquire_data
+    original_offset = rig.xy.set_offset
+    original_query = rig.xy.query
+
+    def read(*args, **kwargs):
+        if ("disk", "coarse_00") in rig.events:
+            # 模拟普通 OFFSET 清零没有生效、Burst 回读含无效字串；不是对真机根因的假定。
+            monkeypatch.setattr(rig.xy, "set_offset", lambda v, *, channel:
+                                None if channel == 1 else original_offset(v, channel=channel), raising=False)
+            monkeypatch.setattr(rig.xy, "query", lambda cmd:
+                                "?" if cmd == ":SOURce1:BURSt:STATe?" else original_query(cmd))
+            raise WorkflowCancelled("注入取消")
+        return original_read(*args, **kwargs)
+
+    monkeypatch.setattr(acquisition.daq, "acquire_data", read)
+    ctx = _ctx(rig)
+    with pytest.raises(WorkflowCancelled, match="注入取消") as caught:
+        ctx.execute(["A01", "A02", "A03"])
+    ctx.finish(caught.value)
+    c = run_format.read_config(ctx.directory.config_path)
+    x = c["shutdown_readbacks"]["X_magnetic_field"]
+    assert c["completion_status"] == "cancelled" and c["data_files"] == ["raw/coarse_00.npz"]
+    assert not c["safety_shutdown"]["completed"] and ctx.states["A04"]["status"] == "failed"
+    assert x["output"] is False and x["dc_commanded_v"] == 0. and x["dc_setting_v"] == .16
+    assert x["modulation"] is False and "burst" not in x
+    assert len(x["errors"]) == 2 and "dc_setting_v" in x["errors"][0] and "burst" in x["errors"][1]
+    assert ctx.outputs["X 偏置"] == "OFF（已回读），其余收尾未确认"
+    assert c["shutdown_readbacks"]["Temp_Switch"] == dict(output=True, dc_setting_v=5.)
+    assert c["main_field"]["restored_on_shutdown"]
+    assert not rig.xy.channels[2]["output"] and not rig.z.channels[1]["output"]
+    assert rig.events[-3:] == [("temp", "disconnect"), ("z", "disconnect"), ("xy", "disconnect")]
+
+
+@pytest.mark.parametrize("fault", ["first_off", "dc_write"])
+def test_shutdown_always_attempts_final_off(rig, monkeypatch, fault):
+    ctx = _ctx(rig)
+    try:
+        ctx.execute(["A01", "A02"])
+        ch = rig.xy.channels[1]
+        ch.update(output=True, dc_level=.16)
+        if fault == "first_off":
+            original_output = rig.xy.set_output
+
+            def skip_first_off(value, *, channel):
+                if ch["output"] and not ("xy", channel, "first_off_lost") in rig.events:
+                    rig.events.append(("xy", channel, "first_off_lost"))
+                else:
+                    original_output(value, channel=channel)
+
+            monkeypatch.setattr(rig.xy, "set_output", skip_first_off, raising=False)
+        else:
+            def bad_dc_write(value, *, channel):
+                assert not ch["output"] and ch["shape"] == "DC"
+                raise IOError("注入 DC 写入错误")
+
+            monkeypatch.setattr(rig.xy, "set_dc_voltage", bad_dc_write)
+        with pytest.raises(SafetyAbort, match="禁止改变波形" if fault == "first_off" else "注入 DC 写入错误"):
+            preparation._off_and_zero(ctx, "x", "X_magnetic_field")
+        x = ctx.state["shutdown_readbacks"]["X_magnetic_field"]
+        assert x["output"] is False and not ch["output"]
+        assert ch["dc_level"] == .16 and "dc_commanded_v" not in x
+        assert ch["offset"] == (.16 if fault == "first_off" else 0.)
+        assert ("xy", 1, "set_output", False) in rig.events
+    finally:
+        ctx.finish()
 
 
 def test_uses_strict_daq_and_rejects_synthetic_time(rig, monkeypatch):
