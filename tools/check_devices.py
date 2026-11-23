@@ -45,7 +45,8 @@ def _factory(config: dict[str, Any]) -> Callable[[], Any]:
     if kind in UNSUPPORTED_KINDS:
         raise SkipDevice(f"自检暂不支持该设备类型: {kind}")
     if kind == "signal_generator":
-        return lambda: create_signal_generator(config)
+        # DG 连接默认下发输出负载；连通性自检必须只查身份。
+        return lambda: create_signal_generator(config, apply_load_policy=False)
     if kind == "lockin_amplifier":
         return lambda: create_lockin(config)
     if kind == "power_amplifier":
@@ -66,10 +67,14 @@ def probe(mapping: dict[str, Any], keys: Iterable[str] | None = None) -> list[di
     results = []
     for key in (keys if keys is not None else sorted(mapping)):
         config = mapping.get(key) or {}
-        if not config.get("resource"):
+        kind, resource = config.get("instrument"), config.get("resource")
+        entry = {"key": key, "instrument": kind, "resource": resource}
+        # LabOne 锁相按设备 ID 连接，不使用 VISA resource。
+        if not (resource or (kind == "lockin_amplifier" and config.get("device_id"))):
+            if keys is not None:
+                results.append({**entry, "ok": False, "error": "指定映射不存在或缺少连接地址", "seconds": 0.})
             continue
         started = time.monotonic()
-        entry = {"key": key, "instrument": config.get("instrument"), "resource": config.get("resource")}
         device = None
         try:
             device = _factory(config)()
