@@ -210,6 +210,11 @@ class DHO900Acquisition:
         except Exception:
             pass
 
+    def _verify_timebase_mode(self) -> None:
+        """在固件空闲后确认主时基、非 ROLL；变挡后立即查询会阻塞到 VISA 超时。"""
+        if self._inst.query(":TIMebase:MODE?").upper() != "MAIN" or self._inst.query(":TIMebase:ROLL?") != "0":
+            raise ValueError("DHO900 未进入主时基非 ROLL 模式，不能执行完整帧触发")
+
     def _warm_up(self, config: AcquisitionConfig) -> None:
         """丢弃一帧，让固件按当前时基重算 AUTO 深度；不复用该帧数据。"""
         mode = self._inst.validate_trigger_mode(config.trigger.mode)
@@ -262,11 +267,9 @@ class DHO900Acquisition:
                 self._inst.write(":ACQuire:MDEPth AUTO")
             else:
                 self._inst.set_memory_depth(points)
-            # 真机在 0.2→0.1 s/div 这类变挡后立刻查询会让 SCPI 阻塞到读超时并留下 -232；
-            # 停表写时基后先等约 1 s 再回读，等固件重算完成。
-            self._wait(1.0)
-            if self._inst.query(":TIMebase:MODE?").upper() != "MAIN" or self._inst.query(":TIMebase:ROLL?") != "0":
-                raise ValueError("DHO900 未进入主时基非 ROLL 模式，不能执行完整帧触发")
+            # 真机在 0.2→0.1 s/div 这类变挡后立刻查询 MODE?/ROLL? 会让 SCPI 阻塞到读超时，
+            # 并留下 -232；回读放到预热帧之后（固定深度放到配置末尾），此时固件已空闲。
+            self._wait(0.3)
             trigger = config.trigger
             self._inst.set_trigger_type(trigger.type)
             self._inst.set_trigger_source(trigger.source)
@@ -277,9 +280,12 @@ class DHO900Acquisition:
                 # 慢时基下 AUTO 深度只在真正采集后重算；STOP 时 :ACQuire:MDEPth?/:SRATe? 仍是旧档。
                 # 先跑一帧丢弃的预热帧，让固件按新时基重算深度，再读取真实深度与采样率。
                 self._warm_up(config)
+                self._verify_timebase_mode()
                 actual_points, depth_mode = self._resolve_auto_depth(config, points)
             else:
                 self._inst.set_sampling_rate(config.sampling_rate)
+                self._wait(1.0)
+                self._verify_timebase_mode()
                 actual_points, depth_mode = self._inst.get_actual_points(), "fixed"
             actual_scale = self._inst.get_timebase_scale()
             # 上限只是上限：退回 AUTO 深度时实际点数可以超过上限，但不得超过本次采集点数预算。
