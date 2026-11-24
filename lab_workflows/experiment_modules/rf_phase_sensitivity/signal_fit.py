@@ -100,11 +100,20 @@ def best_tangent(phase_deg, values):
         tangent_v_per_command_rad=float(max_gain), residual_rms_v=residual)
 
 
-def local_slopes(center, degrees, times_s, values, full_span_deg):
-    """同轮对称角度测 d(X+iY)/dφ，回归包含时间漂移并比较内外档。"""
+_LEGACY_LAYOUT = dict(center_indices=(0, 3, 6), outer_pairs=((2, 1),), inner_pairs=((4, 5),))
+
+
+def local_slopes(center, degrees, times_s, values, full_span_deg, layout=None):
+    """同轮对称角度测 d(X+iY)/dφ；内外档用成对差分，跨对平均抵消线性时间漂移。
+
+    ``layout`` 指定哪几个点是重复中心、哪些索引组成内/外档的 (正偏移, 负偏移) 对。
+    默认沿用旧的 7 点顺序；新的采集顺序把内外档各测两次，成对差分后平均，
+    线性漂移在一次斜率中自动抵消，不再只靠回归时间项。
+    """
     dphi = np.deg2rad(wrap_deg(np.asarray(degrees) - center))
     time = np.asarray(times_s) - np.mean(times_s)
     volts = np.asarray(values, dtype=complex)
+    layout = dict(_LEGACY_LAYOUT if layout is None else layout)
     design = np.stack([np.ones(dphi.size), dphi, time], axis=1)
     params, _, rank, _ = np.linalg.lstsq(design, volts, rcond=None)
     slope = params[1]
@@ -112,16 +121,22 @@ def local_slopes(center, degrees, times_s, values, full_span_deg):
     if rank != 3 or dphi.size <= 3:
         raise ValueError("局部相位与时间漂移无法独立估计")
     se = math.sqrt(float(np.linalg.inv(design.T @ design)[1, 1] * np.sum((volts - modeled).imag**2) / (dphi.size - 3)))
-    drift_corrected = volts - time * params[2]
-    # 顺序固定为 0、-外、+外、0、+内、-内、0；逐次核对实测角度覆盖和重复中心。
-    if np.max(np.abs(dphi[[0, 3, 6]])) > np.deg2rad(0.75):
+    if np.max(np.abs(dphi[list(layout["center_indices"])])) > np.deg2rad(0.75):
         raise ValueError("Burst 工作点重复中心漂移超过 0.75°")
+
+    def pair_slope(positive, negative):
+        return float((volts[positive].imag - volts[negative].imag) / (dphi[positive] - dphi[negative]))
+
+    outer_pairs = [pair_slope(*pair) for pair in layout["outer_pairs"]]
+    inner_pairs = [pair_slope(*pair) for pair in layout["inner_pairs"]]
     floor = np.deg2rad(full_span_deg)
-    if abs(dphi[2] - dphi[1]) < 1.4 * floor or abs(dphi[4] - dphi[5]) < 0.65 * floor:
+    outer_span = min(abs(dphi[positive] - dphi[negative]) for positive, negative in layout["outer_pairs"])
+    inner_span = min(abs(dphi[positive] - dphi[negative]) for positive, negative in layout["inner_pairs"])
+    if outer_span < 1.4 * floor or inner_span < 0.65 * floor:
         raise ValueError("CH4 实测局部内外档相位展宽不足")
-    outer = (drift_corrected[2] - drift_corrected[1]).imag / (dphi[2] - dphi[1])
-    inner = (drift_corrected[4] - drift_corrected[5]).imag / (dphi[4] - dphi[5])
     return dict(k0_v_per_rad=float(slope.imag), k0_se_v_per_rad=se, slope_x_v_per_rad=float(slope.real),
-                outer_v_per_rad=float(outer), inner_v_per_rad=float(inner), drift_y_v_per_s=float(params[2].imag),
+                outer_v_per_rad=float(np.mean(outer_pairs)), inner_v_per_rad=float(np.mean(inner_pairs)),
+                outer_pairs_v_per_rad=outer_pairs, inner_pairs_v_per_rad=inner_pairs,
+                drift_y_v_per_s=float(params[2].imag),
                 local_model_rms_v=float(np.sqrt(np.mean(np.abs(volts - modeled)**2))),
                 local_phase_offsets_deg=list(map(float, np.rad2deg(dphi))))

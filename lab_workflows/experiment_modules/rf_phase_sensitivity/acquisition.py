@@ -26,6 +26,10 @@ _DEPTH_TOL_DEG = 0.1
 _AM_MAX_FRACTION = 0.001
 _CARRIER_FRACTION_TOL = 0.05
 _STATIC_GRID_DEG = tuple(range(0, 360, 15))
+# 局部标定：中心 → 外档 (-,+ ,+,−) → 中心 → 内档 (-,+,+,−)。
+# 内外档各成对测两次，成对差分后再平均，线性漂移在每一对中间自动抵消。
+_LOCAL_FRACTIONS = (0., -1., 1., 1., -1., 0., -0.5, 0.5, 0.5, -0.5)
+_LOCAL_LAYOUT = dict(center_indices=(0, 5), outer_pairs=((2, 1), (3, 4)), inner_pairs=((7, 6), (8, 9)))
 
 
 class Carrier:
@@ -298,7 +302,7 @@ def local_calibration(ctx, carrier):
                coarse_fit=phase.get("coarse_fit"), points=rows)
     ctx.state["calibration"] = cal
     values, times, centers, carrier_levels = [], [], [], []
-    offsets = (0., -span, span, 0., span / 2, -span / 2, 0.)
+    offsets = tuple(fraction * span for fraction in _LOCAL_FRACTIONS)
     for i, delta in enumerate(offsets):
         command = carrier.burst_phase(best + delta)
         scope_label, xy_label = f"local_{i:02d}_scope", f"local_{i:02d}_xy"
@@ -318,10 +322,11 @@ def local_calibration(ctx, carrier):
         report_runtime_progress("A04", f"局部标定 {done}/{len(offsets)}", 5 + 85 * done / len(offsets),
                                 estimated_remaining_seconds=(time.monotonic() - start) / done * (len(offsets) - done),
                                 data={"eta_scope": "当前局部标定"})
-    target_center, target_v_pk = centers[-1], float(np.median(carrier_levels))
+    target_center = float(np.mean(np.asarray(centers)[list(_LOCAL_LAYOUT["center_indices"])]))
+    target_v_pk = float(np.median(carrier_levels))
     if np.max(np.abs(np.asarray(carrier_levels) / target_v_pk - 1.)) > _CARRIER_FRACTION_TOL:
         raise SafetyAbort("Burst 局部扫描的线圈监视幅度变化超过 5%")
-    fitted = signal_fit.local_slopes(target_center, centers, times, values, span)
+    fitted = signal_fit.local_slopes(target_center, centers, times, values, span, layout=_LOCAL_LAYOUT)
     cal.update(fitted, carrier_center_deg=target_center, carrier_v_pk=target_v_pk)
     k = fitted["k0_v_per_rad"]
     if (abs(k) < max(1e-6, 5 * fitted["k0_se_v_per_rad"]) or abs(fitted["slope_x_v_per_rad"]) > 0.15 * abs(k)

@@ -290,7 +290,7 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
     events = [json.loads(line.removeprefix(PROGRESS_PREFIX)) for line in capsys.readouterr().out.splitlines()
               if line.startswith(PROGRESS_PREFIX)]
     for scope, stage_id, count in (("当前静态扫描", "A03", len(acquisition._STATIC_GRID_DEG)),
-                                   ("当前局部标定", "A04", 7),
+                                   ("当前局部标定", "A04", len(acquisition._LOCAL_FRACTIONS)),
                                    ("当前基带扫频", "A05", len(rig.p.sweep_order_hz))):
         updates = [event for event in events if event["data"].get("eta_scope") == scope]
         assert len(updates) == count and all(event["stage"] == stage_id for event in updates)
@@ -551,6 +551,21 @@ def test_scope_monitor_one_frame_and_mismatched_axis(monkeypatch):
     frames[-1] = shot(4, arrays["coil_v"], t + 1e-5)
     with pytest.raises(SafetyAbort, match="时间轴"):
         monitor.acquire(ctx, 20.)
+
+
+def test_local_slope_pairs_cancel_linear_drift():
+    """成对重复测量后，线性漂移在每对内自动抵消，内外档斜率都应回到真值。"""
+    span = 6.0
+    offsets = np.asarray([fraction * span for fraction in acquisition._LOCAL_FRACTIONS])
+    centers = offsets + 0.08
+    times = np.arange(offsets.size) * 15.0
+    slope_true, drift = 0.15, 5e-5
+    values = 1j * (slope_true * np.deg2rad(centers) + 0.05 + drift * times) + 0.002
+    center = float(np.mean(centers[list(acquisition._LOCAL_LAYOUT["center_indices"])]))
+    fitted = signal_fit.local_slopes(center, centers, times, values, span, layout=acquisition._LOCAL_LAYOUT)
+    assert fitted["outer_v_per_rad"] == pytest.approx(slope_true, abs=1e-6)
+    assert fitted["inner_v_per_rad"] == pytest.approx(slope_true, abs=1e-6)
+    assert fitted["k0_v_per_rad"] == pytest.approx(slope_true, abs=1e-6)
 
 
 def test_scope_restore_memory_depth_normalizes_auto_points():
