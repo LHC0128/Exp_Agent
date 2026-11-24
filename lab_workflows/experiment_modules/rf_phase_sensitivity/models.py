@@ -8,8 +8,8 @@ from typing import ClassVar
 from ...experiment_params import ExperimentParams, parameter
 
 CARRIER_HZ = 5000.0
-CARRIER_VPP = 0.05
-PM_DEPTH_DEG = 1.0
+CARRIER_VPP = 0.5
+PM_DEPTH_DEG = 2.0
 
 
 @dataclass
@@ -119,7 +119,7 @@ class RfPhaseSensitivityParams(ExperimentParams):
     def validate_model(self) -> list[str]:
         errors = []
         if (self.y_rf_freq_hz, self.y_rf_vpp, self.demod0_idx) != (CARRIER_HZ, CARRIER_VPP, 0):
-            errors.append("本方案只支持 Y 方向 5 kHz / 50 mVpp 和 MFLI Demod0")
+            errors.append("本方案只支持 Y 方向 5 kHz / 500 mVpp 和 MFLI Demod0")
         if not self.run_tag.strip() or any(c in self.run_tag for c in '/\\:*?"<>|\x00'):
             errors.append("RUN_TAG 必须是非空且可作目录名的标签")
         if any(not math.isfinite(v) for v in (self.x_bias_v, self.y_bias_v, self.main_field_current_ma,

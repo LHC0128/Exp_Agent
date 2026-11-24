@@ -18,6 +18,7 @@ from .models import PM_DEPTH_DEG
 
 _PM_ALIGN_HZ = 20.
 _NUDGE_DEG = 30.
+_ALIGN_ATTEMPTS = 3
 _CENTER_TOL_DEG = 2.
 _PM_ALIGN_TOL_DEG = 1.
 _PM_ALIGN_ATTEMPTS = 3
@@ -437,17 +438,28 @@ def _baseline(ctx, carrier, cal, lockin, anchor):
     candidate = _electrical(ctx, label, settings, f_hz)
     state["candidate"] = candidate
     previous = _require_stable(candidate)
-    if abs(signal_fit.wrap_deg(previous - cal["carrier_center_deg"])) > _ANCHOR_TOL_DEG or abs(signal_fit.wrap_deg(previous - anchor)) > _ANCHOR_TOL_DEG:
-        probe = _electrical(ctx, "noise_nudge_scope", carrier.phase_adjust(carrier.command_deg + _NUDGE_DEG, "off"), f_hz)
+    attempts = []
+    scope_labels = [label]
+    for attempt in range(_ALIGN_ATTEMPTS):
+        delta = signal_fit.wrap_deg(cal["carrier_center_deg"] - previous)
+        if abs(delta) <= _ANCHOR_TOL_DEG and abs(signal_fit.wrap_deg(previous - anchor)) <= _ANCHOR_TOL_DEG:
+            break
+        base_command = carrier.command_deg
+        probe = _electrical(ctx, f"noise_nudge_scope_{attempt}",
+                            carrier.phase_adjust(base_command + _NUDGE_DEG, "off"), f_hz)
         moved = signal_fit.wrap_deg(_require_stable(probe) - previous)
-        state["nudge"] = dict(probe, measured_delta_deg=moved)
         if abs(abs(moved) - _NUDGE_DEG) > 3.:
             state["reason"] = "PM OFF 时相位调整未通过实测跟随"
             return
-        goal = carrier.command_deg + signal_fit.wrap_deg(cal["carrier_center_deg"] - probe["carrier_center_deg"]) / (moved / _NUDGE_DEG)
-        label = "noise_aligned_scope"
+        goal = base_command + delta / (moved / _NUDGE_DEG)
+        label = f"noise_aligned_scope_{attempt}"
         candidate = _electrical(ctx, label, carrier.phase_adjust(goal, "off"), f_hz)
-    state.update(before=candidate, scope_labels=[label])
+        previous = _require_stable(candidate)
+        attempts.append(dict(nudge=probe, measured_delta_deg=moved, goal_command_deg=goal,
+                             carrier_center_deg=previous))
+        scope_labels.append(label)
+    state["attempts"] = attempts
+    state.update(before=candidate, scope_labels=scope_labels)
     if reason := _electrical_reason(candidate, cal, anchor, pm=False):
         state["reason"] = reason
         return

@@ -240,7 +240,7 @@ def rig(monkeypatch, tmp_path):
         theta = np.deg2rad(center() + 1.)
         if settings["mod_state"]:
             f = settings["mod_pm_internal_freq"]
-            theta += np.deg2rad(1.) * np.sin(2 * np.pi * f * t) / np.sqrt(1 + (f / 85.)**2)
+            theta += np.deg2rad(acquisition.PM_DEPTH_DEG) * np.sin(2 * np.pi * f * t) / np.sqrt(1 + (f / 85.)**2)
         phase_shift = np.deg2rad(lockin.get_double(lockin.demod_path(0) + "/phaseshift"))
         z = (.1j * np.sin(theta) + .02 * np.cos(theta)) * np.exp(-1j * phase_shift)
         snaps = dict(actual_rate=rate, time_source="module_timestamp", acquisition_module="daq", unit="V")
@@ -303,7 +303,7 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
     assert abs(c["calibration"]["slope_x_v_per_rad"]) < 1e-3
     assert c["pm_alignment"]["measured_delta_deg"] == pytest.approx(30., abs=.04)
     assert [point["frequency_hz"] for point in c["transfer"] if point["accepted"]] == [20., 40., 20.]
-    assert [e[3] for e in rig.events if e[:3] == ("xy", 2, "set_mod_pm_deviation")] == [1.]
+    assert [e[3] for e in rig.events if e[:3] == ("xy", 2, "set_mod_pm_deviation")] == [2.]
     assert c["noise"]["candidate"]["carrier_center_deg"] != pytest.approx(c["noise"]["after"]["carrier_center_deg"], abs=5.)
     assert c["safety_shutdown"]["completed"] and c["shutdown_readbacks"]["Temp_Switch"]["dc_setting_v"] == 5.
     x = c["shutdown_readbacks"]["X_magnetic_field"]
@@ -604,7 +604,7 @@ def test_pm_alignment_iterates_nonlinear_command_gain(monkeypatch):
 
     def point():
         return dict(stable=True, carrier_center_deg=center(), carrier_v_pk=0.016,
-                    phase_pk_rad=math.radians(1.), phase_scatter_rad=1e-4, am_fraction_pk=1e-5)
+                    phase_pk_rad=math.radians(2.), phase_scatter_rad=1e-4, am_fraction_pk=1e-5)
 
     carrier = Carrier()
     ctx = SimpleNamespace(state={}, devices={}, outputs={}, params=RfPhaseSensitivityParams())
@@ -612,6 +612,45 @@ def test_pm_alignment_iterates_nonlinear_command_gain(monkeypatch):
     anchor = acquisition._align_pm(ctx, carrier, dict(carrier_center_deg=0., carrier_v_pk=0.016))
     assert abs(anchor) <= acquisition._PM_ALIGN_TOL_DEG
     assert len(ctx.state["pm_alignment"]["attempts"]) == 2
+
+
+def test_noise_baseline_iterates_phase_command_gain(monkeypatch):
+    """PM OFF 的相位跟随增益偏离 1 时，单次修正会留残差，必须按实测迭代看到零。"""
+
+    def wrap(value):
+        return (value + 180.) % 360. - 180.
+
+    class Carrier:
+        command_deg = 300.
+
+        def stop_pm(self):
+            return dict(mode="off")
+
+        def phase_adjust(self, value, mode):
+            assert mode == "off"
+            self.command_deg = value % 360.
+            return self.command_deg
+
+        def verify_unmodulated(self):
+            return dict(mode="off", burst=False)
+
+    def center():
+        # 大信号跟随接近 1，但小信号附近带曲率：一次线性修正会留几度残差。
+        return wrap(160. + carrier.command_deg + 0.0005 * (carrier.command_deg - 300.) ** 2)
+
+    def point():
+        return dict(stable=True, carrier_center_deg=center(), carrier_v_pk=0.016,
+                    phase_pk_rad=0., phase_scatter_rad=0., am_fraction_pk=0.)
+
+    carrier = Carrier()
+    ctx = SimpleNamespace(state={}, devices={}, outputs={}, params=RfPhaseSensitivityParams())
+    monkeypatch.setattr(acquisition, "_electrical", lambda ctx, label, settings, f=None: point())
+    monkeypatch.setattr(acquisition, "_xy", lambda *args, **kwargs: complex(0.0, 0.0))
+    acquisition._baseline(ctx, carrier, dict(carrier_center_deg=0., carrier_v_pk=0.016), None, 0.)
+    state = ctx.state["noise"]
+    assert state["accepted"] is True, state["reason"]
+    assert abs(acquisition.signal_fit.wrap_deg(state["before"]["carrier_center_deg"])) <= acquisition._ANCHOR_TOL_DEG
+    assert len(state["attempts"]) >= 2
 
 
 def test_scope_error_drain_separates_legacy_errors():

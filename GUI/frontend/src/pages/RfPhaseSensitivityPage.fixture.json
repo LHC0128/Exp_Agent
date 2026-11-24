@@ -28,7 +28,7 @@
       "name": "Y_RF_VPP",
       "label": "Y 射频幅度",
       "type": "number",
-      "default": 0.05,
+      "default": 0.5,
       "unit": "Vpp",
       "group": "advanced",
       "minimum": null,

@@ -2,7 +2,7 @@ schema_version: 1
 parameters:
   RUN_TAG: phase_sensitivity
   Y_RF_FREQ_HZ: 5000.0
-  Y_RF_VPP: 0.05
+  Y_RF_VPP: 0.5
   X_BIAS_V: 0.0
   Y_BIAS_V: 0.0
   MAIN_FIELD_CURRENT_MA: -0.0655
