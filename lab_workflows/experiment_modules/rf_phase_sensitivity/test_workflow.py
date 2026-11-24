@@ -543,6 +543,7 @@ def test_scope_monitor_one_frame_and_mismatched_axis(monkeypatch):
     monkeypatch.setattr(monitor, "DHO900Acquisition", factory)
     ctx = SimpleNamespace(params=RfPhaseSensitivityParams(), devices={"scope": Mock()}, scope_touched=False)
     metadata, arrays = monitor.acquire(ctx, 20.)
+    assert ctx.devices["scope"].read_chunk_points == monitor._READ_CHUNK_POINTS
     assert metadata["rate_sa_s"] == pytest.approx(actual_rate) and len(arrays["time_s"]) == 50_000
     cfg = fake.acquire_all.call_args.args[0]
     assert cfg.sampling_time == pytest.approx(.5) and cfg.acquire_delay == 1.5

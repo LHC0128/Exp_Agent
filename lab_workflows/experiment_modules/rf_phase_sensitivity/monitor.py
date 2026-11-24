@@ -14,6 +14,8 @@ from ...steps.coil_drive_chain import SafetyAbort, capture_config, nice_up
 
 REF_CH, COIL_CH = 3, 4
 _SCOPE_BUDGET = 1_000_000
+# 深帧 ASCII 读取的分块点数：1e5 点/次比默认 1e4 快约一倍，且不触发固件截断响应。
+_READ_CHUNK_POINTS = 100_000
 _READOUT = (":WAVeform:SOURce", ":WAVeform:MODE", ":WAVeform:FORMat")
 _TIMEBASE = (":TIMebase:MODE", ":TIMebase:ROLL", ":TIMebase:DELay:ENABle")
 _COMMON = ("timebase_scale", "timebase_delay", "memory_depth", "acquire_type", "trigger_type",
@@ -130,7 +132,10 @@ def acquire(ctx, f_hz):
     """按公开严格采集入口读 CH3/4 两路；驱动负责 STOP 延时及整帧一次重试。"""
     cfg = frame_config(f_hz)
     ctx.scope_touched = True
-    acquirer = DHO900Acquisition(ctx.devices["scope"], check_cancelled=check_cancelled,
+    scope = ctx.devices["scope"]
+    if hasattr(scope, "read_chunk_points"):
+        scope.read_chunk_points = _READ_CHUNK_POINTS
+    acquirer = DHO900Acquisition(scope, check_cancelled=check_cancelled,
                                 maximum_points=_SCOPE_BUDGET)
     acquirer.use_auto_depth(_SCOPE_BUDGET)
     results = acquirer.acquire_all(cfg)
