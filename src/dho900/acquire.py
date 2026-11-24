@@ -210,6 +210,20 @@ class DHO900Acquisition:
         except Exception:
             pass
 
+    def _warm_up(self, config: AcquisitionConfig) -> None:
+        """丢弃一帧，让固件按当前时基重算 AUTO 深度；不复用该帧数据。"""
+        mode = self._inst.validate_trigger_mode(config.trigger.mode)
+        self._check_cancelled()
+        self._arm_single()
+        if mode == "AUTO":
+            self._inst.write(":TFORce")
+        self._inst.check_errors()
+        self._wait_stopped(config.sampling_time + 10.0)
+        self._wait(config.acquire_delay)
+        self._inst.trigger_stop()
+        self._wait_stopped(2.0)
+        self._check_cancelled()
+
     def apply_config(self, config: AcquisitionConfig) -> None:
         """配置只在全部静态校验通过后写入，成功后停止，不触发正式采集。"""
         points = self._validate(config)
@@ -251,7 +265,16 @@ class DHO900Acquisition:
             self._wait(0.1)
             if self._inst.query(":TIMebase:MODE?").upper() != "MAIN" or self._inst.query(":TIMebase:ROLL?") != "0":
                 raise ValueError("DHO900 未进入主时基非 ROLL 模式，不能执行完整帧触发")
+            trigger = config.trigger
+            self._inst.set_trigger_type(trigger.type)
+            self._inst.set_trigger_source(trigger.source)
+            self._inst.set_trigger_slope(trigger.slope)
+            self._inst.set_trigger_level(trigger.level)
+            self._inst.set_trigger_mode(trigger.mode)
             if auto:
+                # 慢时基下 AUTO 深度只在真正采集后重算；STOP 时 :ACQuire:MDEPth?/:SRATe? 仍是旧档。
+                # 先跑一帧丢弃的预热帧，让固件按新时基重算深度，再读取真实深度与采样率。
+                self._warm_up(config)
                 actual_points, depth_mode = self._resolve_auto_depth(config, points)
             else:
                 self._inst.set_sampling_rate(config.sampling_rate)
@@ -263,12 +286,6 @@ class DHO900Acquisition:
                                             rel_tol=RATE_REL_TOLERANCE, abs_tol=0):
                 raise ValueError(f"DHO900 记录窗口不匹配：目标 {points} 点/{config.sampling_time:g} s，"
                                  f"实际 {actual_points} 点/{actual_scale * 10:g} s")
-            trigger = config.trigger
-            self._inst.set_trigger_type(trigger.type)
-            self._inst.set_trigger_source(trigger.source)
-            self._inst.set_trigger_slope(trigger.slope)
-            self._inst.set_trigger_level(trigger.level)
-            self._inst.set_trigger_mode(trigger.mode)
             self._inst.check_errors()
             self._inst.trigger_stop()
             self._wait_stopped(2.0)

@@ -427,6 +427,7 @@ def test_failed_acquisition_preserves_failed_shutdown_readbacks(rig, monkeypatch
     def read(*args, **kwargs):
         if ("disk", "coarse_00") in rig.events:
             # 模拟普通 OFFSET 清零没有生效、Burst 回读含无效字串；不是对真机根因的假定。
+            rig.xy.channels[1]["offset"] = .16  # 残留旧偏置，供 DC 回读不符断言使用
             monkeypatch.setattr(rig.xy, "set_offset", lambda v, *, channel:
                                 None if channel == 1 else original_offset(v, channel=channel), raising=False)
             monkeypatch.setattr(rig.xy, "query", lambda cmd:

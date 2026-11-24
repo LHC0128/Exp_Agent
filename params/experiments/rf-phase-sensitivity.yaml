@@ -3,8 +3,8 @@ parameters:
   RUN_TAG: phase_sensitivity
   Y_RF_FREQ_HZ: 5000.0
   Y_RF_VPP: 0.05
-  X_BIAS_V: 0.16
-  Y_BIAS_V: 0.08
+  X_BIAS_V: 0.0
+  Y_BIAS_V: 0.0
   MAIN_FIELD_CURRENT_MA: -0.0655
   Z_PEAK_CURRENT_MA: 190.0
   Z_PULSE_WIDTH_US: 8.6

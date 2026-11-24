@@ -570,3 +570,16 @@ def test_apply_config_stops_before_touching_timebase(rig):
     first_timebase = next(index for index, command in enumerate(visa.writes)
                           if command.startswith(":TIMebase:MAIN:SCALe"))
     assert visa.writes.index(":STOP") < first_timebase
+
+
+def test_auto_depth_warm_up_frame_before_resolving_depth(rig):
+    """慢时基 STOP 下深度/采样率回读是旧档；必须先跑一帧丢弃的预热帧再解析 AUTO 深度。"""
+    instrument, visa, acquirer = rig
+    acquirer.use_auto_depth(1_000_000)
+    acquirer.apply_config(configuration())
+    assert acquirer._snapshot["sample_rate_policy"] == "auto_depth"
+    arm = ":TRIGger:SWEep SINGle"
+    assert arm in visa.writes
+    auto_index = visa.writes.index(":ACQuire:MDEPth AUTO")
+    first_single = visa.writes.index(arm)
+    assert auto_index < first_single

@@ -23,8 +23,8 @@ class RfPhaseSensitivityParams(ExperimentParams):
                                    unit="Hz", read_only=True)
     y_rf_vpp: float = parameter(default=CARRIER_VPP, external_name="Y_RF_VPP", label="Y 射频幅度",
                                 unit="Vpp", read_only=True)
-    x_bias_v: float = parameter(default=0.16, external_name="X_BIAS_V", label="X 静态偏置", unit="V", group="basic")
-    y_bias_v: float = parameter(default=0.08, external_name="Y_BIAS_V", label="Y 正弦直流偏置", unit="V", group="basic")
+    x_bias_v: float = parameter(default=0.0, external_name="X_BIAS_V", label="X 静态偏置", unit="V", group="basic")
+    y_bias_v: float = parameter(default=0.0, external_name="Y_BIAS_V", label="Y 正弦直流偏置", unit="V", group="basic")
     main_field_current_ma: float = parameter(default=-0.0655, external_name="MAIN_FIELD_CURRENT_MA", label="主磁场电流",
                                              unit="mA", group="basic", description="0 表示关闭；会话结束恢复原状态。")
     z_peak_current_ma: float = parameter(default=190.0, external_name="Z_PEAK_CURRENT_MA", label="Z 脉冲峰值电流",
