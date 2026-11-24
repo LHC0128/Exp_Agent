@@ -105,6 +105,8 @@ def restore_scope(ctx):
     deadline = time.monotonic() + 2.0
     while scope.trigger_status().upper() == "STOP" and time.monotonic() < deadline:
         time.sleep(0.1)  # 收尾不允许取消打断
+    # AUTO 深度只在采集后重算；RUN 起来后稍等，避免把旧档点数当成回读不符。
+    time.sleep(0.5)
     actual = _state(scope)
     ctx.state["scope_restore"] = dict(expected=original, actual=actual, pre_restore_errors=pending)
     changes = [key for key in original if key != "status" and actual[key] != original[key]]

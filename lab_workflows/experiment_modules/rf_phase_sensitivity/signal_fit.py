@@ -100,43 +100,46 @@ def best_tangent(phase_deg, values):
         tangent_v_per_command_rad=float(max_gain), residual_rms_v=residual)
 
 
-_LEGACY_LAYOUT = dict(center_indices=(0, 3, 6), outer_pairs=((2, 1),), inner_pairs=((4, 5),))
+def _linear_slope(dphi, volts):
+    """在给定子集上线性回归斜率；返回虚部斜率。"""
+    design = np.stack([np.ones(dphi.size), dphi], axis=1)
+    params, _, rank, _ = np.linalg.lstsq(design, volts, rcond=None)
+    if rank != 2 or dphi.size < 3:
+        raise ValueError("局部相位子集太少，无法估计斜率")
+    return float(params[1].imag)
 
 
-def local_slopes(center, degrees, times_s, values, full_span_deg, layout=None):
-    """同轮对称角度测 d(X+iY)/dφ；内外档用成对差分，跨对平均抵消线性时间漂移。
+def local_slopes(center, degrees, times_s, values, full_span_deg, center_indices=(0, 2)):
+    """细角度局部扫描：用首尾中心点估计线性漂移并扣除，再回归 d(X+iY)/dφ。
 
-    ``layout`` 指定哪几个点是重复中心、哪些索引组成内/外档的 (正偏移, 负偏移) 对。
-    默认沿用旧的 7 点顺序；新的采集顺序把内外档各测两次，成对差分后平均，
-    线性漂移在一次斜率中自动抵消，不再只靠回归时间项。
+    扫描是单方向的，扫描段内时间与角度共线，不能在同一子集里同时回归时间和斜率；
+    改用扫描首尾两次中心测量估计漂移，扣除后再分内/外半区检查局部斜率。
     """
     dphi = np.deg2rad(wrap_deg(np.asarray(degrees) - center))
     time = np.asarray(times_s) - np.mean(times_s)
     volts = np.asarray(values, dtype=complex)
-    layout = dict(_LEGACY_LAYOUT if layout is None else layout)
-    design = np.stack([np.ones(dphi.size), dphi, time], axis=1)
-    params, _, rank, _ = np.linalg.lstsq(design, volts, rcond=None)
-    slope = params[1]
+    first, last = (int(center_indices[0]), int(center_indices[-1]))
+    interval = time[last] - time[first]
+    drift = (volts[last] - volts[first]) / interval if interval > 0 else 0j
+    corrected = volts - drift * time
+    design = np.stack([np.ones(dphi.size), dphi], axis=1)
+    params, _, rank, _ = np.linalg.lstsq(design, corrected, rcond=None)
     modeled = design @ params
-    if rank != 3 or dphi.size <= 3:
-        raise ValueError("局部相位与时间漂移无法独立估计")
-    se = math.sqrt(float(np.linalg.inv(design.T @ design)[1, 1] * np.sum((volts - modeled).imag**2) / (dphi.size - 3)))
-    if np.max(np.abs(dphi[list(layout["center_indices"])])) > np.deg2rad(0.75):
+    if rank != 2 or dphi.size < 6:
+        raise ValueError("局部相位无法拟合")
+    se = math.sqrt(float(np.linalg.inv(design.T @ design)[1, 1] * np.sum((corrected - modeled).imag**2)
+                         / (dphi.size - 2)))
+    if abs(dphi[first]) > np.deg2rad(0.75) or abs(dphi[last]) > np.deg2rad(0.75):
         raise ValueError("Burst 工作点重复中心漂移超过 0.75°")
-
-    def pair_slope(positive, negative):
-        return float((volts[positive].imag - volts[negative].imag) / (dphi[positive] - dphi[negative]))
-
-    outer_pairs = [pair_slope(*pair) for pair in layout["outer_pairs"]]
-    inner_pairs = [pair_slope(*pair) for pair in layout["inner_pairs"]]
     floor = np.deg2rad(full_span_deg)
-    outer_span = min(abs(dphi[positive] - dphi[negative]) for positive, negative in layout["outer_pairs"])
-    inner_span = min(abs(dphi[positive] - dphi[negative]) for positive, negative in layout["inner_pairs"])
-    if outer_span < 1.4 * floor or inner_span < 0.65 * floor:
-        raise ValueError("CH4 实测局部内外档相位展宽不足")
-    return dict(k0_v_per_rad=float(slope.imag), k0_se_v_per_rad=se, slope_x_v_per_rad=float(slope.real),
-                outer_v_per_rad=float(np.mean(outer_pairs)), inner_v_per_rad=float(np.mean(inner_pairs)),
-                outer_pairs_v_per_rad=outer_pairs, inner_pairs_v_per_rad=inner_pairs,
-                drift_y_v_per_s=float(params[2].imag),
-                local_model_rms_v=float(np.sqrt(np.mean(np.abs(volts - modeled)**2))),
+    if np.max(np.abs(dphi)) < 0.98 * floor:
+        raise ValueError("CH4 实测局部角度展宽不足")
+    inner_mask = np.abs(dphi) <= 0.5 * floor
+    outer_mask = np.abs(dphi) >= 0.5 * floor
+    outer = _linear_slope(dphi[outer_mask], corrected[outer_mask])
+    inner = _linear_slope(dphi[inner_mask], corrected[inner_mask])
+    return dict(k0_v_per_rad=float(params[1].imag), k0_se_v_per_rad=se, slope_x_v_per_rad=float(params[1].real),
+                outer_v_per_rad=outer, inner_v_per_rad=inner,
+                drift_y_v_per_s=float(drift.imag),
+                local_model_rms_v=float(np.sqrt(np.mean(np.abs(corrected - modeled)**2))),
                 local_phase_offsets_deg=list(map(float, np.rad2deg(dphi))))

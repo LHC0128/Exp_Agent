@@ -60,8 +60,8 @@ class RfPhaseSensitivityParams(ExperimentParams):
                                         unit="Sa/s", minimum=1000, maximum=10000)
     static_point_duration_s: float = parameter(default=0.20, external_name="STATIC_POINT_DURATION_S",
                                                label="静态点 MFLI 采集时长", unit="s", minimum=0.05, maximum=1.)
-    local_span_deg: float = parameter(default=6., external_name="LOCAL_SPAN_DEG", label="局部标定外档角度",
-                                      unit="°", minimum=3, maximum=10, description="在最佳工作点两侧取内外两档对称偏移。")
+    local_span_deg: float = parameter(default=15., external_name="LOCAL_SPAN_DEG", label="局部标定外档角度",
+                                      unit="°", minimum=3, maximum=30, description="在最佳工作点两侧等分细扫的对称偏移跨度。")
     pm_frequencies_hz: list[float] = parameter(default_factory=lambda: [5., 10., 20., 40., 80.],
         external_name="PM_FREQUENCIES_HZ", label="基带调相频率列表", unit="Hz", group="basic",
         description="严格递增，不改变 5 kHz 载波。先按电学验证过的 20 Hz 对准；包含 20 Hz 时用它夹测，否则用最低频点。")

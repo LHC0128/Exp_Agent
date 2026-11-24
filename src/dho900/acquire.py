@@ -262,7 +262,9 @@ class DHO900Acquisition:
                 self._inst.write(":ACQuire:MDEPth AUTO")
             else:
                 self._inst.set_memory_depth(points)
-            self._wait(0.1)
+            # 真机在 0.2→0.1 s/div 这类变挡后立刻查询会让 SCPI 阻塞到读超时并留下 -232；
+            # 停表写时基后先等约 1 s 再回读，等固件重算完成。
+            self._wait(1.0)
             if self._inst.query(":TIMebase:MODE?").upper() != "MAIN" or self._inst.query(":TIMebase:ROLL?") != "0":
                 raise ValueError("DHO900 未进入主时基非 ROLL 模式，不能执行完整帧触发")
             trigger = config.trigger

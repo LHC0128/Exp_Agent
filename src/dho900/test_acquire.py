@@ -501,7 +501,7 @@ def test_stop_confirmation_delay_gates_firmware_buffer_readiness(rig, delay, suc
     original_query = visa.query
 
     def query(command):
-        if command == ":WAVeform:DATA?" and waited[0] < 1.0:
+        if command == ":WAVeform:DATA?" and waited[0] < 2.0:
             return ""
         return original_query(command)
 
@@ -583,3 +583,17 @@ def test_auto_depth_warm_up_frame_before_resolving_depth(rig):
     auto_index = visa.writes.index(":ACQuire:MDEPth AUTO")
     first_single = visa.writes.index(arm)
     assert auto_index < first_single
+
+
+def test_apply_config_settles_after_timebase_change(rig, monkeypatch):
+    """真机变挡后立即查询会阻塞；配置阶段必须在写时基后等待约 1 s 再回读。"""
+    instrument, visa, acquirer = rig
+    waits = []
+
+    def record(seconds):
+        waits.append(seconds)
+        acquirer._check_cancelled()
+
+    monkeypatch.setattr(acquirer, "_wait", record)
+    acquirer.apply_config(configuration())
+    assert any(seconds >= 1.0 for seconds in waits)

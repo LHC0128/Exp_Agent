@@ -324,12 +324,12 @@
       "name": "LOCAL_SPAN_DEG",
       "label": "局部标定外档角度",
       "type": "number",
-      "default": 6.0,
+      "default": 15.0,
       "unit": "°",
       "group": "advanced",
       "minimum": 3,
-      "maximum": 10,
-      "description": "在最佳工作点两侧取内外两档对称偏移。",
+      "maximum": 30,
+      "description": "在最佳工作点两侧等分细扫的对称偏移跨度。",
       "read_only": false
     },
     {
