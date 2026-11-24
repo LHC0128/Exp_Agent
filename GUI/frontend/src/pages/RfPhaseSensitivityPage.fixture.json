@@ -30,11 +30,11 @@
       "type": "number",
       "default": 0.5,
       "unit": "Vpp",
-      "group": "advanced",
-      "minimum": null,
-      "maximum": null,
-      "description": "",
-      "read_only": true
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": 20.0,
+      "description": "由 MFLI Signal Output 1（MF-MOD 载波）按峰值 Vpk = Vpp / 2 输出。",
+      "read_only": false
     },
     {
       "name": "X_BIAS_V",
@@ -57,7 +57,7 @@
       "group": "basic",
       "minimum": null,
       "maximum": null,
-      "description": "",
+      "description": "叠加在 MFLI Signal Output 1 的直流偏置（sigouts/0/offset）。",
       "read_only": false
     },
     {
@@ -250,14 +250,14 @@
     },
     {
       "name": "DEMOD0_IDX",
-      "label": "MFLI 解调器索引",
+      "label": "MFLI 读出解调器索引",
       "type": "integer",
-      "default": 0,
+      "default": 3,
       "unit": "",
       "group": "advanced",
       "minimum": null,
       "maximum": null,
-      "description": "",
+      "description": "开启 MF-MOD 后 Demod 1–3 由调制器占用，原子读出固定使用 Demod 4（索引 3）。",
       "read_only": true
     },
     {
@@ -347,7 +347,7 @@
       "group": "basic",
       "minimum": null,
       "maximum": null,
-      "description": "严格递增，不改变 5 kHz 载波。先按电学验证过的 20 Hz 对准；包含 20 Hz 时用它夹测，否则用最低频点。",
+      "description": "严格递增，不改变 5 kHz 载波。包含 20 Hz 时以 20 Hz 作锚点，否则用最低频点。",
       "read_only": false
     },
     {
@@ -453,7 +453,7 @@
           "RUN_TAG"
         ],
         "quality_gates": [
-          "固定 Y 向 5 kHz / 50 mVpp；核对驱动能力、映射、电平、电流与实际脉冲功耗。"
+          "Y 向 5 kHz 载波由 MFLI Out1（MF-MOD）输出且 Y_RF_VPP 可调；核对 mfli_dev30661_signal_output_0、Demod 4 与 Z 脉冲限值。"
         ]
       },
       {
@@ -467,7 +467,7 @@
         "artifacts": [],
         "display_parameters": [],
         "quality_gates": [
-          "所有参与参考时钟的设备写后回读；DHO924 验证接线所需通道和面板状态。"
+          "连接设备并验证 MFLI MF-MD/MF-MOD 选件；先写入再严格回读 10 MHz 外部时钟；DHO924 核对面板状态。"
         ]
       },
       {
@@ -541,7 +541,7 @@
           "TARGET_TEMPERATURE_C"
         ],
         "quality_gates": [
-          "整周扫描拟合最大切线；MFLI 解调相位转回读偏差不超过 0.5°。"
+          "开启 MF-MOD 连续无调制载波并整周扫描拟合最大切线；将独立 Demod 4 相位转到 sample.y（回读偏差不超过 0.5°）。"
         ]
       },
       {
@@ -584,7 +584,7 @@
           "PM_TONE_DURATION_S"
         ],
         "quality_gates": [
-          "固定 1° 原生 PM 后才回调载波中心；扫频只改基带频率，每点核对载波中心、深度与残余 AM。"
+          "开启 MF-MOD 固定 2° 峰值相干边带 PM 并维持工作点中心；只改调制振荡器 Osc 3 频率，每点核对中心、深度与残余 AM。"
         ]
       },
       {
@@ -606,7 +606,7 @@
           "WELCH_SEGMENT_S"
         ],
         "quality_gates": [
-          "无调制但保留载波；前后复核物理相位、载波幅值和同一锁相配置，关闭温控窗口只读不写。"
+          "关闭边带保留连续载波；前后复核物理相位、载波幅值和同一 Demod 4 配置，关闭温控窗口只读不写。"
         ]
       },
       {
@@ -618,7 +618,7 @@
         "artifacts": [],
         "display_parameters": [],
         "quality_gates": [
-          "先关 1200B，再关 Y/X/Z 输出并归零、恢复温控、主场与示波器；共同触发保持。"
+          "先关 1200B，再关 MFLI Out1/MOD 并清零偏置与幅值，Z/X 关闭归零并回读，停 Demod 4 传输并恢复温控、主场与示波器；共同触发保持。"
         ]
       }
     ],

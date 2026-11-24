@@ -10,6 +10,11 @@ from ...experiment_params import ExperimentParams, parameter
 CARRIER_HZ = 5000.0
 CARRIER_VPP = 0.5
 PM_DEPTH_DEG = 2.0
+READOUT_DEMOD_IDX = 3
+MOD_IDX = 0
+MOD_CARRIER_OSC_IDX = 1
+MOD_SIDEBAND_OSC_IDX = 2
+MFLI_MAX_SIGOUT_V = 10.0
 
 
 @dataclass
@@ -22,9 +27,11 @@ class RfPhaseSensitivityParams(ExperimentParams):
     y_rf_freq_hz: float = parameter(default=CARRIER_HZ, external_name="Y_RF_FREQ_HZ", label="Y 射频载波频率",
                                    unit="Hz", read_only=True)
     y_rf_vpp: float = parameter(default=CARRIER_VPP, external_name="Y_RF_VPP", label="Y 射频幅度",
-                                unit="Vpp", read_only=True)
+                                unit="Vpp", minimum=0.001, maximum=20.0, group="basic",
+                                description="由 MFLI Signal Output 1（MF-MOD 载波）按峰值 Vpk = Vpp / 2 输出。")
     x_bias_v: float = parameter(default=0.0, external_name="X_BIAS_V", label="X 静态偏置", unit="V", group="basic")
-    y_bias_v: float = parameter(default=0.0, external_name="Y_BIAS_V", label="Y 正弦直流偏置", unit="V", group="basic")
+    y_bias_v: float = parameter(default=0.0, external_name="Y_BIAS_V", label="Y 正弦直流偏置", unit="V", group="basic",
+                                description="叠加在 MFLI Signal Output 1 的直流偏置（sigouts/0/offset）。")
     main_field_current_ma: float = parameter(default=-0.0655, external_name="MAIN_FIELD_CURRENT_MA", label="主磁场电流",
                                              unit="mA", group="basic", description="0 表示关闭；会话结束恢复原状态。")
     z_peak_current_ma: float = parameter(default=190.0, external_name="Z_PEAK_CURRENT_MA", label="Z 脉冲峰值电流",
@@ -49,7 +56,9 @@ class RfPhaseSensitivityParams(ExperimentParams):
     coil_resistance_ohm: float = parameter(default=2., external_name="COIL_RESISTANCE_OHM", label="Z 线圈直流电阻", unit="Ω", minimum=0)
     resistor_rated_w: float = parameter(default=2., external_name="RESISTOR_RATED_W", label="电阻额定功率", unit="W", minimum=0.01)
 
-    demod0_idx: int = parameter(default=0, external_name="DEMOD0_IDX", label="MFLI 解调器索引", read_only=True)
+    demod0_idx: int = parameter(default=READOUT_DEMOD_IDX, external_name="DEMOD0_IDX", label="MFLI 读出解调器索引",
+                                read_only=True,
+                                description="开启 MF-MOD 后 Demod 1–3 由调制器占用，原子读出固定使用 Demod 4（索引 3）。")
     demod0_signal_range_v: float = parameter(default=3., external_name="DEMOD0_SIGNAL_RANGE", label="MFLI 输入量程",
                                             unit="V", minimum=0.001, maximum=3.)
     demod0_order: int = parameter(default=4, external_name="DEMOD0_ORDER", label="MFLI 滤波阶数", minimum=1, maximum=8)
@@ -64,7 +73,7 @@ class RfPhaseSensitivityParams(ExperimentParams):
                                       unit="°", minimum=3, maximum=30, description="在最佳工作点两侧等分细扫的对称偏移跨度。")
     pm_frequencies_hz: list[float] = parameter(default_factory=lambda: [5., 10., 20., 40., 80.],
         external_name="PM_FREQUENCIES_HZ", label="基带调相频率列表", unit="Hz", group="basic",
-        description="严格递增，不改变 5 kHz 载波。先按电学验证过的 20 Hz 对准；包含 20 Hz 时用它夹测，否则用最低频点。")
+        description="严格递增，不改变 5 kHz 载波。包含 20 Hz 时以 20 Hz 作锚点，否则用最低频点。")
     pm_tone_duration_s: float = parameter(default=2., external_name="PM_TONE_DURATION_S", label="每档 MFLI 音调采集时长",
                                          unit="s", minimum=0.5, maximum=12.)
     noise_duration_s: float = parameter(default=24., external_name="NOISE_DURATION_S", label="无调制噪声记录时长",
@@ -83,6 +92,20 @@ class RfPhaseSensitivityParams(ExperimentParams):
     # 公共 Z 链的固定协议，不由本实验参数覆盖。
     amplifier_write_settings: ClassVar[bool] = True
     y_rf_phase_deg: ClassVar[float] = 0.
+
+    @property
+    def y_carrier_vpk(self) -> float:
+        return self.y_rf_vpp / 2.0
+
+    @property
+    def y_pm_depth_rad(self) -> float:
+        return math.radians(PM_DEPTH_DEG)
+
+    def y_output_envelope(self, *, pm_enabled: bool = True) -> tuple[float, float]:
+        """返回 MFLI Signal Output 1 叠加偏置与调相边带后的理论瞬时电压包络 (min_v, max_v)。"""
+        factor = 1.0 + self.y_pm_depth_rad if pm_enabled else 1.0
+        half_span = factor * self.y_carrier_vpk
+        return float(self.y_bias_v - half_span), float(self.y_bias_v + half_span)
 
     @property
     def loop_resistance_ohm(self) -> float:
@@ -118,8 +141,12 @@ class RfPhaseSensitivityParams(ExperimentParams):
 
     def validate_model(self) -> list[str]:
         errors = []
-        if (self.y_rf_freq_hz, self.y_rf_vpp, self.demod0_idx) != (CARRIER_HZ, CARRIER_VPP, 0):
-            errors.append("本方案只支持 Y 方向 5 kHz / 500 mVpp 和 MFLI Demod0")
+        if not math.isfinite(self.y_rf_freq_hz) or not math.isclose(self.y_rf_freq_hz, CARRIER_HZ, rel_tol=0.0, abs_tol=1e-9):
+            errors.append("本方案只支持 Y 方向 5 kHz 载波")
+        if not math.isfinite(self.y_rf_vpp) or self.y_rf_vpp <= 0:
+            errors.append("Y_RF_VPP 必须为有限正值")
+        if self.demod0_idx not in {0, READOUT_DEMOD_IDX}:
+            errors.append("MFLI 读出解调器仅支持现用 Demod 4（索引 3）或历史 Demod 1（索引 0）")
         if not self.run_tag.strip() or any(c in self.run_tag for c in '/\\:*?"<>|\x00'):
             errors.append("RUN_TAG 必须是非空且可作目录名的标签")
         if any(not math.isfinite(v) for v in (self.x_bias_v, self.y_bias_v, self.main_field_current_ma,
@@ -150,6 +177,6 @@ class RfPhaseSensitivityParams(ExperimentParams):
     def derive_external(cls, values):
         p = cls.from_external(values)
         return {} if p.validate_model() else dict(
-            z_pulse_vpp=p.pulse_vpp, pulse_period_us=p.pulse_period_us,
+            y_rf_vpk=p.y_carrier_vpk, z_pulse_vpp=p.pulse_vpp, pulse_period_us=p.pulse_period_us,
             pm_depth_deg_peak=PM_DEPTH_DEG, pm_sweep_order_hz=p.sweep_order_hz,
             welch_resolution_hz=1 / p.welch_segment_s)

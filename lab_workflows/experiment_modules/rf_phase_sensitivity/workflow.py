@@ -23,7 +23,7 @@ class Workflow(StagedWorkflow):
     hardware_free = ("A01", "A02")
     inherited_state_keys = ("clock_sources", "optional_connection_errors")
     output_keys = ("功放", "Z 通道", "Y 射频", "X 偏置", "温控", "共同触发", "主磁场", "DHO924", "MFLI", "相位灵敏度")
-    output_source = "功放为已发送命令；Y/X/Z、时钟和示波器有仪器回读，DC 设定不是独立物理测量"
+    output_source = "功放为已发送命令；Z/X 信号源、MFLI MF-MOD、时钟和示波器有仪器回读，DC 设定不是独立物理测量"
     finished_message = "采集会话已结束；安全收尾结果见回读和错误清单"
 
     def __init__(self, params, *, project_root=None, session_id=None):

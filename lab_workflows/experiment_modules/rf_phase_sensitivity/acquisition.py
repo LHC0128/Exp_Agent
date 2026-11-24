@@ -1,4 +1,4 @@
-"""同一轮四段采集：整周相位响应、局部 K₀ 标定、原生 PM 频响和无调制锁相噪声。"""
+"""同一轮四段采集：MFLI MF-MOD 整周调相、局部 K₀ 标定、相干边带 PM 频响和无调制锁相噪声。"""
 from __future__ import annotations
 
 import math
@@ -11,13 +11,9 @@ from ...common import load_safety_limits, validate_safety_limit
 from ...experiment_runtime import check_cancelled, report_runtime_progress
 from ...steps import DeferredAcquisitionWrites, acquisition_window
 from ...steps.coil_drive_chain import SafetyAbort, sleep
-from ..z_chain_common import prep
-from ..z_chain_common.keys import RF_KEY
 from . import monitor, preparation, run_format, signal_fit
-from .models import PM_DEPTH_DEG
+from .models import MOD_CARRIER_OSC_IDX, MOD_IDX, MOD_SIDEBAND_OSC_IDX, PM_DEPTH_DEG
 
-_PM_ALIGN_HZ = 20.
-_NUDGE_DEG = 30.
 _ALIGN_ATTEMPTS = 3
 _CENTER_TOL_DEG = 2.
 _PM_ALIGN_TOL_DEG = 1.
@@ -40,155 +36,191 @@ def local_offsets(span_deg):
 
 
 class Carrier:
-    """只管理已映射的 Y DG4000 通道和该通道的仪器回读。"""
+    """控制 MFLI Signal Output 1 与 MF-MOD 调制器，并作全量节点回读验证。"""
 
     def __init__(self, ctx):
         self.ctx = ctx
-        routed = ctx.devices["signals"].routes[ctx.devices["channels"]["y"]]
-        self.device, self.channel = routed.device, routed.actual_channel
-        self.command_deg = 0.
-        self.fm_hz = None
+        self.device = ctx.devices["hf2"]
+        self.dev = self.device.device_id
+        self.safety_key = preparation.mfli_sigout_safety_key(ctx.mapping)
+        self.command_deg = 0.0
+        self.fm_hz = float(ctx.params.pm_anchor_hz)
+        self.sidebands_enabled = False
+        self.output_range_v = preparation.select_mfli_output_range(ctx.params)
 
-    def _call(self, name, *args):
-        return getattr(self.device, name)(*args, channel=self.channel)
+    def _sigout(self, node: str) -> str:
+        return f"/{self.dev}/sigouts/0/{node}"
 
-    def _output(self):
-        return preparation.dg_output(self.device, self.channel)
+    def _mod(self, node: str) -> str:
+        return f"/{self.dev}/mods/{MOD_IDX}/{node}"
 
-    def _safe(self):
+    def _safe(self, *, pm_enabled: bool):
         check_cancelled()
         limits = load_safety_limits(self.ctx.root)
-        for v in prep.rf_levels(self.ctx.params):
-            validate_safety_limit(RF_KEY, v, limits)
+        y_min, y_max = self.ctx.params.y_output_envelope(pm_enabled=pm_enabled)
+        for v in (0.0, float(self.ctx.params.y_bias_v), y_min, y_max):
+            validate_safety_limit(self.safety_key, v, limits)
 
-    def _verify(self, *, output, mode):
-        self.device.wait_for_operation_complete()
-        self.device.raise_for_errors()
+    def _verify(self, *, output: bool, sidebands: bool):
+        self.device.sync()
         p = self.ctx.params
-        got = dict(shape=self._call("get_shape"), output=self._output(),
-                   burst=self._call("get_burst_state"), modulation=self._call("get_mod_state"),
-                   carrier_hz=self._call("get_frequency"), carrier_vpp=self._call("get_amplitude"),
-                   offset_v=self._call("get_offset"))
-        valid = (got["shape"].upper() in {"SIN", "SINUSOID"} and got["output"] is output
-                 and got["burst"] is (mode == "burst") and got["modulation"] is (mode == "pm")
-                 and math.isclose(got["carrier_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
-                 and math.isclose(got["carrier_vpp"], p.y_rf_vpp, abs_tol=1e-4)
-                 and math.isclose(got["offset_v"], p.y_bias_v, abs_tol=1e-4))
-        if mode == "burst":
-            got.update(command_deg=self._call("get_burst_phase"), burst_mode=self._call("get_burst_mode"),
-                       source=self._call("get_burst_trigger_source"), slope=self._call("get_burst_trigger_slope"))
-            valid = (valid and got["burst_mode"].upper() in {"INF", "INFINITY"}
-                     and got["source"].upper() in {"EXT", "EXTERNAL"} and got["slope"].upper() in {"POS", "POSITIVE"})
-        else:
-            got["command_deg"] = self._call("get_phase_adjust")
-        if mode == "pm":
-            got.update(frequency_hz=self._call("get_mod_pm_internal_freq"), depth_deg=self._call("get_mod_pm_deviation"),
-                       type=self._call("get_mod_type"), source=self._call("get_mod_pm_source"),
-                       function=self._call("get_mod_pm_internal_func"))
-            valid = (valid and got["type"].upper() == "PM" and got["source"].upper() in {"INT", "INTERNAL"}
-                     and got["function"].upper() in {"SIN", "SINUSOID", "SINE"}
-                     and math.isclose(got["frequency_hz"], self.fm_hz, abs_tol=0.001)
-                     and math.isclose(got["depth_deg"], PM_DEPTH_DEG, abs_tol=0.01))
-        if not valid or not abs(signal_fit.wrap_deg(got["command_deg"] - self.command_deg)) <= 0.02:
-            raise SafetyAbort(f"Y 射频 {mode} 仪器回读不符：{got}")
+        got = dict(
+            extclk=bool(self.device.get_extclk()),
+            output=bool(self.device.get_int(self._sigout("on"))),
+            range_v=float(self.device.get_double(self._sigout("range"))),
+            offset_v=float(self.device.get_double(self._sigout("offset"))),
+            add_enabled=bool(self.device.get_int(self._sigout("add"))),
+            mod_enable=bool(self.device.get_int(self._mod("enable"))),
+            mode=int(self.device.get_int(self._mod("mode"))),
+            freqdevenable=int(self.device.get_int(self._mod("freqdevenable"))),
+            mod_output=int(self.device.get_int(self._mod("output"))),
+            carrier_enable=bool(self.device.get_int(self._mod("carrier/enable"))),
+            carrier_osc=int(self.device.get_int(self._mod("carrier/oscselect"))),
+            carrier_hz=float(self.device.get_double(f"{self.device.osc_path(MOD_CARRIER_OSC_IDX)}/freq")),
+            carrier_vpk=float(self.device.get_double(self._mod("carrier/amplitude"))),
+            command_deg=float(self.device.get_double(self._mod("carrier/phaseshift"))),
+            sideband0_enable=bool(self.device.get_int(self._mod("sidebands/0/enable"))),
+            sideband1_enable=bool(self.device.get_int(self._mod("sidebands/1/enable"))),
+            sideband0_osc=int(self.device.get_int(self._mod("sidebands/0/oscselect"))),
+            sideband1_osc=int(self.device.get_int(self._mod("sidebands/1/oscselect"))),
+            mod_index_rad=float(self.device.get_double(self._mod("index"))),
+            fm_hz=float(self.device.get_double(f"{self.device.osc_path(MOD_SIDEBAND_OSC_IDX)}/freq")),
+        )
+        valid = (
+            got["extclk"]
+            and got["output"] is output
+            and not got["add_enabled"]
+            and got["range_v"] >= max(abs(v) for v in p.y_output_envelope(pm_enabled=sidebands)) - 1e-9
+            and math.isclose(got["offset_v"], p.y_bias_v, abs_tol=1e-4)
+            and got["mod_enable"]
+            and got["mode"] == 1
+            and got["freqdevenable"] == 0
+            and got["mod_output"] == 1
+            and got["carrier_enable"]
+            and got["carrier_osc"] == MOD_CARRIER_OSC_IDX
+            and math.isclose(got["carrier_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
+            and math.isclose(got["carrier_vpk"], p.y_carrier_vpk, abs_tol=1e-5)
+            and abs(signal_fit.wrap_deg(got["command_deg"] - self.command_deg)) <= 0.02
+            and got["sideband0_osc"] == MOD_SIDEBAND_OSC_IDX
+            and got["sideband1_osc"] == MOD_SIDEBAND_OSC_IDX
+            and got["sideband0_enable"] is sidebands
+            and got["sideband1_enable"] is sidebands
+            and math.isclose(got["mod_index_rad"], p.y_pm_depth_rad, abs_tol=1e-4)
+        )
+        if sidebands:
+            valid = valid and math.isclose(got["fm_hz"], self.fm_hz, abs_tol=1e-3)
+        if not valid:
+            mode_name = "pm" if sidebands else "carrier"
+            raise SafetyAbort(f"MFLI MF-MOD {mode_name} 仪器回读不符：{got}")
         return got
 
-    def _off(self):
-        self._call("set_output", False)
-        if self._output():
-            raise SafetyAbort("Y 射频未回读为 OFF，不切换波形模式")
-
-    def begin_burst(self):
-        self._safe()
-        self._off()
+    def begin_carrier(self):
+        """先停输出并配置 MF-MOD（FM index 模式，闭环载波，初始关闭边带），再开启 Out1。"""
+        self._safe(pm_enabled=False)
+        if int(self.device.get_int(self._sigout("add"))) != 0:
+            raise SafetyAbort("MFLI Signal Output 1 开启了外部 Add 叠加，无法确保总电压安全")
         p = self.ctx.params
-        self._call("set_burst_state", False)
-        self._call("set_mod_state", False)
-        self._call("set_shape", "SINusoid")
-        self._call("set_frequency", p.y_rf_freq_hz)
-        self._call("set_amplitude", p.y_rf_vpp)
-        self._call("set_offset", p.y_bias_v)
-        self._call("set_phase_adjust", 0.)
-        self._call("set_burst_mode", "INFinity")
-        self._call("set_burst_ncycles", prep.BURST_NCYCLES)
-        self._call("set_burst_trigger_source", "EXTernal")
-        self._call("set_burst_trigger_slope", "POSitive")
-        return self.burst_phase(0.)
-
-    def burst_phase(self, phase_deg):
-        self._safe()
-        self._off()
-        self.command_deg = phase_deg % 360.
-        self._call("set_burst_state", False)
-        self._call("set_burst_phase", self.command_deg)
-        self._call("set_burst_state", True)
-        self._verify(output=False, mode="burst")
-        self._call("set_output", True)
-        if not self._output():
-            raise SafetyAbort("Y Burst 启动未回读为 ON")
-        self.ctx.outputs["Y 射频"] = f"Burst，指令相位 {self.command_deg:g}°"
+        self.command_deg = 0.0
+        self.fm_hz = float(p.pm_anchor_hz)
+        self.sidebands_enabled = False
+        self.device.set_int(self._sigout("on"), 0)
+        self.device.set_int(self._mod("enable"), 0)
+        self.device.set_double(self._sigout("range"), self.output_range_v)
+        self.device.set_double(self._sigout("offset"), float(p.y_bias_v))
+        self.device.set_int(self._mod("mode"), 1)
+        self.device.set_int(self._mod("freqdevenable"), 0)
+        self.device.set_int(self._mod("carrier/oscselect"), MOD_CARRIER_OSC_IDX)
+        self.device.set_double(f"{self.device.osc_path(MOD_CARRIER_OSC_IDX)}/freq", float(p.y_rf_freq_hz))
+        self.device.set_int(self._mod("sidebands/0/oscselect"), MOD_SIDEBAND_OSC_IDX)
+        self.device.set_int(self._mod("sidebands/1/oscselect"), MOD_SIDEBAND_OSC_IDX)
+        self.device.set_double(f"{self.device.osc_path(MOD_SIDEBAND_OSC_IDX)}/freq", self.fm_hz)
+        self.device.set_double(self._mod("index"), float(p.y_pm_depth_rad))
+        self.device.set_double(self._mod("carrier/amplitude"), float(p.y_carrier_vpk))
+        self.device.set_double(self._mod("carrier/phaseshift"), 0.0)
+        self.device.set_int(self._mod("carrier/enable"), 1)
+        self.device.set_int(self._mod("sidebands/0/enable"), 0)
+        self.device.set_int(self._mod("sidebands/1/enable"), 0)
+        self.device.set_int(self._mod("output"), 1)
+        self.device.set_int(self._mod("enable"), 1)
+        self.device.set_int(self._sigout("on"), 1)
+        self._verify(output=True, sidebands=False)
+        self.ctx.outputs["Y 射频"] = (
+            f"MFLI Out1 连续载波（MOD 无调制），{p.y_carrier_vpk:g} Vpk，"
+            f"偏置 {p.y_bias_v:+g} V，指令相位 0°"
+        )
         return self.command_deg
 
-    def begin_pm(self):
-        self._safe()
-        self._off()
-        self._call("set_burst_state", False)
-        self._call("set_mod_state", False)
-        self._call("set_mod_type", "PM")
-        self._call("set_mod_pm_source", "INTernal")
-        self._call("set_mod_pm_internal_func", "SINusoid")
-        self.fm_hz = _PM_ALIGN_HZ
-        self._call("set_mod_pm_internal_freq", self.fm_hz)
-        self._call("set_mod_pm_deviation", PM_DEPTH_DEG)
-        self._call("set_mod_state", True)
-        self._call("set_phase_adjust", self.command_deg)
-        self._verify(output=False, mode="pm")
-        self._call("set_output", True)
-        return self._verify(output=True, mode="pm")
+    def set_phase(self, phase_deg):
+        """在输出开启状态下连续改写 MOD 载波相移并回读确认。"""
+        self._safe(pm_enabled=self.sidebands_enabled)
+        self.command_deg = float(phase_deg) % 360.0
+        self.device.set_double(self._mod("carrier/phaseshift"), self.command_deg)
+        self._verify(output=True, sidebands=self.sidebands_enabled)
+        tag = f"PM {self.fm_hz:g} Hz" if self.sidebands_enabled else "MOD 无调制"
+        self.ctx.outputs["Y 射频"] = f"MFLI Out1（{tag}），指令相位 {self.command_deg:g}°"
+        return self.command_deg
 
-    def phase_adjust(self, value, mode):
-        self._safe()
-        self.command_deg = value % 360.
-        self._call("set_phase_adjust", self.command_deg)
-        return self._verify(output=True, mode=mode)
+    def phase_adjust(self, phase_deg):
+        """微调载波相移并返回完整回读字典。"""
+        self._safe(pm_enabled=self.sidebands_enabled)
+        self.command_deg = float(phase_deg) % 360.0
+        self.device.set_double(self._mod("carrier/phaseshift"), self.command_deg)
+        return self._verify(output=True, sidebands=self.sidebands_enabled)
+
+    def begin_pm(self):
+        """保持载波与相移不变，使能 2° 峰值相干边带 PM。"""
+        self._safe(pm_enabled=True)
+        self.fm_hz = float(self.ctx.params.pm_anchor_hz)
+        self.sidebands_enabled = True
+        self.device.set_double(f"{self.device.osc_path(MOD_SIDEBAND_OSC_IDX)}/freq", self.fm_hz)
+        self.device.set_double(self._mod("index"), float(self.ctx.params.y_pm_depth_rad))
+        self.device.set_int(self._mod("sidebands/0/enable"), 1)
+        self.device.set_int(self._mod("sidebands/1/enable"), 1)
+        return self._verify(output=True, sidebands=True)
 
     def frequency(self, f_hz):
-        self._safe()
+        """切换 Osc 3 调制基带频率并回读确认。"""
+        self._safe(pm_enabled=True)
         if f_hz != self.fm_hz:
-            self._call("set_mod_pm_internal_freq", f_hz)
-            self.fm_hz = f_hz
-        self.ctx.outputs["Y 射频"] = f"原生 PM {self.fm_hz:g} Hz，深度 1° 峰值"
-        return self._verify(output=True, mode="pm")
+            self.fm_hz = float(f_hz)
+            self.device.set_double(f"{self.device.osc_path(MOD_SIDEBAND_OSC_IDX)}/freq", self.fm_hz)
+        self.ctx.outputs["Y 射频"] = f"MFLI MF-MOD 相干边带 PM {self.fm_hz:g} Hz，深度 {PM_DEPTH_DEG:g}° 峰值"
+        return self._verify(output=True, sidebands=True)
 
     def stop_pm(self):
-        self._safe()
-        self._call("set_mod_state", False)
-        # 不退出载波正弦；若仪器同时改变相位指令，记录后按物理相位回调。
-        self.command_deg = self._call("get_phase_adjust")
-        self.ctx.outputs["Y 射频"] = "连续载波，PM OFF"
-        return self._verify(output=True, mode="off")
+        """关闭上下边带回到无调制连续载波，保持相移与幅值不变。"""
+        self._safe(pm_enabled=False)
+        self.sidebands_enabled = False
+        self.device.set_int(self._mod("sidebands/0/enable"), 0)
+        self.device.set_int(self._mod("sidebands/1/enable"), 0)
+        self.ctx.outputs["Y 射频"] = (
+            f"MFLI Out1 连续载波（MOD 无调制），{self.ctx.params.y_carrier_vpk:g} Vpk，指令相位 {self.command_deg:g}°"
+        )
+        return self._verify(output=True, sidebands=False)
 
     def verify_unmodulated(self):
-        return self._verify(output=True, mode="off")
+        return self._verify(output=True, sidebands=False)
 
 
 def lockin_readback(ctx):
-    """回读实际参考、滤波与传输，禁止采集中替换链路。"""
+    """回读实际参考、滤波与传输，确认原子读出锁定在 Demod 4 + Osc 2，禁止采集中替换链路。"""
     d, p = ctx.devices["hf2"], ctx.params
     base = d.demod_path(p.demod0_idx)
-    state = dict(phase_deg=float(d.get_double(f"{base}/phaseshift")),
-                 time_constant_s=float(d.get_double(f"{base}/timeconstant")),
-                 stream_rate_sa_s=float(d.get_double(f"{base}/rate")),
-                 order=int(d.get_int(f"{base}/order")),
-                 oscillator_hz=float(d.get_double(f"{d.osc_path(0)}/freq")))
+    state = dict(
+        phase_deg=float(d.get_double(f"{base}/phaseshift")),
+        time_constant_s=float(d.get_double(f"{base}/timeconstant")),
+        stream_rate_sa_s=float(d.get_double(f"{base}/rate")),
+        order=int(d.get_int(f"{base}/order")),
+        oscillator_hz=float(d.get_double(f"{d.osc_path(MOD_CARRIER_OSC_IDX)}/freq")),
+    )
     if (not d.get_extclk() or not all(math.isfinite(v) for v in state.values())
             or state["stream_rate_sa_s"] < 10 * max(p.pm_frequencies_hz)
             or not math.isclose(state["oscillator_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
             or not math.isclose(state["time_constant_s"], p.demod0_tc_s, rel_tol=0.01)
             or state["order"] != p.demod0_order
             or any(d.get_int(f"{base}/{node}") != value for node, value in
-                   (("adcselect", 0), ("oscselect", 0), ("harmonic", 1), ("enable", 1)))):
-        raise SafetyAbort(f"MFLI 输入、参考、解调滤波或采样率回读不符：{state}")
+                   (("adcselect", 0), ("oscselect", MOD_CARRIER_OSC_IDX), ("harmonic", 1), ("enable", 1)))):
+        raise SafetyAbort(f"MFLI Demod{p.demod0_idx + 1} 输入、参考、解调滤波或采样率回读不符：{state}")
     return state
 
 
@@ -264,13 +296,13 @@ def _require_stable(point):
 
 
 def phase_response(ctx, carrier):
-    """整周 Burst 扫描找最大切线，并把 MFLI 解调相位转到该切线。"""
+    """整周调相扫描找最大切线，并把 MFLI Demod 4 解调相位转到该切线。"""
     p = ctx.params
     start = time.monotonic()
     coarse = []
     coarse_lockin = lockin_readback(ctx)
     for i, phase in enumerate(_STATIC_GRID_DEG):
-        carrier.burst_phase(phase)
+        carrier.set_phase(phase)
         coarse.append(_xy(ctx, f"coarse_{i:02d}", p.static_point_duration_s, lockin=coarse_lockin, burst_command_deg=phase))
         done = i + 1
         report_runtime_progress("A03", f"扫描原子相位 {done}/{len(_STATIC_GRID_DEG)}", 10 + 80 * done / len(_STATIC_GRID_DEG),
@@ -284,9 +316,15 @@ def phase_response(ctx, carrier):
     if abs(signal_fit.wrap_deg(settings["phase_deg"] - setpoint)) > 0.5:
         raise SafetyAbort("MFLI 最大切线转到 Y 的相位设定未通过回读")
     ctx.state["phase_response"] = dict(
-        burst_command_deg=best, rotation_deg=rotation, coarse_fit=prediction,
-        lockin_phase_deg=settings["phase_deg"], lockin=settings, grid_deg=list(_STATIC_GRID_DEG),
-        points=len(coarse))
+        burst_command_deg=best,
+        carrier_command_deg=best,
+        rotation_deg=rotation,
+        coarse_fit=prediction,
+        lockin_phase_deg=settings["phase_deg"],
+        lockin=settings,
+        grid_deg=list(_STATIC_GRID_DEG),
+        points=len(coarse),
+    )
     ctx.save()
     ctx.outputs["相位灵敏度"] = f"整周扫描完成，工作点 {best:.3f}°；待局部 K₀ 标定"
     report_runtime_progress("A03", f"整周扫描完成，工作点 {best:.3f}°", 95, estimated_remaining_seconds=None)
@@ -305,18 +343,18 @@ def local_calibration(ctx, carrier):
     start = time.monotonic()
     span = p.local_span_deg
     rows = []
-    cal = dict(accepted=False, burst_command_deg=best, lockin_phase_deg=settings["phase_deg"],
-               coarse_fit=phase.get("coarse_fit"), points=rows)
+    cal = dict(accepted=False, burst_command_deg=best, carrier_command_deg=best,
+               lockin_phase_deg=settings["phase_deg"], coarse_fit=phase.get("coarse_fit"), points=rows)
     ctx.state["calibration"] = cal
     values, times, centers, carrier_levels = [], [], [], []
     offsets = local_offsets(span)
     for i, delta in enumerate(offsets):
-        command = carrier.burst_phase(best + delta)
+        command = carrier.set_phase(best + delta)
         scope_label, xy_label = f"local_{i:02d}_scope", f"local_{i:02d}_xy"
-        scope = _electrical(ctx, scope_label, dict(mode="burst", command_deg=command))
+        scope = _electrical(ctx, scope_label, dict(mode="mf_mod_carrier", command_deg=command, amplitude_vpk=p.y_carrier_vpk))
         center = _require_stable(scope)
         now = time.monotonic() - start
-        rows.append(dict(burst_command_deg=command, requested_offset_deg=delta,
+        rows.append(dict(burst_command_deg=command, carrier_command_deg=command, requested_offset_deg=delta,
                          scope_label=scope_label, xy_label=xy_label, elapsed_s=now, **scope))
         value = _xy(ctx, xy_label, p.static_point_duration_s, lockin=settings, burst_command_deg=command,
                     carrier_center_deg=center, scope_label=scope_label)
@@ -333,7 +371,7 @@ def local_calibration(ctx, carrier):
     target_center = float(np.mean(np.asarray(centers)[list(center_indices)]))
     target_v_pk = float(np.median(carrier_levels))
     if np.max(np.abs(np.asarray(carrier_levels) / target_v_pk - 1.)) > _CARRIER_FRACTION_TOL:
-        raise SafetyAbort("Burst 局部扫描的线圈监视幅度变化超过 5%")
+        raise SafetyAbort("局部扫描的线圈监视幅度变化超过 5%")
     fitted = signal_fit.local_slopes(target_center, centers, times, values, span, center_indices=center_indices)
     cal.update(fitted, carrier_center_deg=target_center, carrier_v_pk=target_v_pk)
     k = fitted["k0_v_per_rad"]
@@ -353,11 +391,11 @@ def _electrical_reason(point, calibration, anchor, *, pm):
         return "帧内载波中心或拟合不稳定"
     center = point["carrier_center_deg"]
     if abs(signal_fit.wrap_deg(center - calibration["carrier_center_deg"])) > _CENTER_TOL_DEG:
-        return "实测载波中心偏离 Burst 工作点超过 2°"
+        return "实测载波中心偏离工作点超过 2°"
     if anchor is not None and abs(signal_fit.wrap_deg(center - anchor)) > _ANCHOR_TOL_DEG:
         return "实测载波中心与对准锚点相差超过 1°"
     if not math.isclose(point["carrier_v_pk"], calibration["carrier_v_pk"], rel_tol=_CARRIER_FRACTION_TOL):
-        return "载波监视幅度与 Burst 工作点相差超过 5%"
+        return "载波监视幅度与标定工作点相差超过 5%"
     pm_deg = math.degrees(point["phase_pk_rad"])
     if pm and (abs(pm_deg - PM_DEPTH_DEG) > _DEPTH_TOL_DEG or math.degrees(point["phase_scatter_rad"]) > 0.2):
         return "实测 PM 峰值或帧内相量重复性超限"
@@ -369,32 +407,26 @@ def _electrical_reason(point, calibration, anchor, *, pm):
 
 
 def _align_pm(ctx, carrier, cal):
-    a = _electrical(ctx, "pm_align_start", carrier.begin_pm(), _PM_ALIGN_HZ)
-    phase_a = _require_stable(a)
-    b = _electrical(ctx, "pm_align_nudge", carrier.phase_adjust(carrier.command_deg + _NUDGE_DEG, "pm"), _PM_ALIGN_HZ)
-    phase_b = _require_stable(b)
-    measured = signal_fit.wrap_deg(phase_b - phase_a)
-    ctx.state["pm_alignment"] = dict(start=a, nudge=b, command_delta_deg=_NUDGE_DEG, measured_delta_deg=measured,
-                                     attempts=[])
-    if abs(abs(measured) - _NUDGE_DEG) > 3.:
-        raise SafetyAbort("原生 PM 开启时载波调整未按实测跟随，不能回调工作点")
-    gain = measured / _NUDGE_DEG
-    # 一次外推在 160° 量级修正时，1.7% 的跟随增益误差就留下约 3° 残差；按实测反复回调。
-    point = b
+    """开启 MF-MOD 2° 相干边带后核对并维持工作点载波中心（斜率为 1，按需直接回调）。"""
+    anchor_hz = float(ctx.params.pm_anchor_hz)
+    point = _electrical(ctx, "pm_align_start", carrier.begin_pm(), anchor_hz)
+    _require_stable(point)
+    ctx.state["pm_alignment"] = dict(start=point, attempts=[])
     for attempt in range(_PM_ALIGN_ATTEMPTS):
         error = signal_fit.wrap_deg(cal["carrier_center_deg"] - point["carrier_center_deg"])
         if abs(error) <= _PM_ALIGN_TOL_DEG:
             break
-        command = carrier.command_deg + error / gain
         label = "pm_align_verified" if attempt == 0 else f"pm_align_verified_{attempt + 1}"
-        point = _electrical(ctx, label, carrier.phase_adjust(command, "pm"), _PM_ALIGN_HZ)
+        point = _electrical(ctx, label, carrier.phase_adjust(carrier.command_deg + error), anchor_hz)
+        _require_stable(point)
         ctx.state["pm_alignment"]["attempts"].append(
-            dict(scope_label=label, command_deg=carrier.command_deg, **point))
+            dict(scope_label=label, command_deg=carrier.command_deg, **point)
+        )
     ctx.state["pm_alignment"].update(aligned=point, command_deg=carrier.command_deg)
     if abs(signal_fit.wrap_deg(cal["carrier_center_deg"] - point["carrier_center_deg"])) > _PM_ALIGN_TOL_DEG:
-        raise SafetyAbort(f"原生 PM 回调 {_PM_ALIGN_ATTEMPTS} 次后仍偏离 Burst 工作点超过 {_PM_ALIGN_TOL_DEG:g}°")
+        raise SafetyAbort(f"MF-MOD PM 开启回调 {_PM_ALIGN_ATTEMPTS} 次后仍偏离工作点超过 {_PM_ALIGN_TOL_DEG:g}°")
     if reason := _electrical_reason(point, cal, None, pm=True):
-        raise SafetyAbort(f"原生 PM 回调后拒绝：{reason}")
+        raise SafetyAbort(f"MF-MOD PM 核对后拒绝：{reason}")
     ctx.state["pm_alignment"]["anchor_center_deg"] = point["carrier_center_deg"]
     return point["carrier_center_deg"]
 
@@ -430,7 +462,7 @@ def _sweep(ctx, carrier, cal, lockin, anchor):
 
 def _baseline(ctx, carrier, cal, lockin, anchor):
     f_hz = ctx.params.pm_anchor_hz
-    report_runtime_progress("A06", "关闭调制并复核锚点载波", 10, estimated_remaining_seconds=None)
+    report_runtime_progress("A06", "关闭调制边带并复核锚点载波", 10, estimated_remaining_seconds=None)
     settings = carrier.stop_pm()
     state = dict(accepted=False, reason="未完成基线检查", scope_labels=[], xy_label=None)
     ctx.state["noise"] = state
@@ -444,19 +476,11 @@ def _baseline(ctx, carrier, cal, lockin, anchor):
         delta = signal_fit.wrap_deg(cal["carrier_center_deg"] - previous)
         if abs(delta) <= _ANCHOR_TOL_DEG and abs(signal_fit.wrap_deg(previous - anchor)) <= _ANCHOR_TOL_DEG:
             break
-        base_command = carrier.command_deg
-        probe = _electrical(ctx, f"noise_nudge_scope_{attempt}",
-                            carrier.phase_adjust(base_command + _NUDGE_DEG, "off"), f_hz)
-        moved = signal_fit.wrap_deg(_require_stable(probe) - previous)
-        if abs(abs(moved) - _NUDGE_DEG) > 3.:
-            state["reason"] = "PM OFF 时相位调整未通过实测跟随"
-            return
-        goal = base_command + delta / (moved / _NUDGE_DEG)
+        goal = carrier.command_deg + delta
         label = f"noise_aligned_scope_{attempt}"
-        candidate = _electrical(ctx, label, carrier.phase_adjust(goal, "off"), f_hz)
+        candidate = _electrical(ctx, label, carrier.phase_adjust(goal), f_hz)
         previous = _require_stable(candidate)
-        attempts.append(dict(nudge=probe, measured_delta_deg=moved, goal_command_deg=goal,
-                             carrier_center_deg=previous))
+        attempts.append(dict(goal_command_deg=goal, carrier_center_deg=previous))
         scope_labels.append(label)
     state["attempts"] = attempts
     state.update(before=candidate, scope_labels=scope_labels)

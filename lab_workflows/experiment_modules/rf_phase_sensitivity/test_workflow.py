@@ -11,13 +11,13 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
-from ...common import WorkflowCancelled
+from ...common import WorkflowCancelled, load_mapping
 from ...experiment_runtime import PROGRESS_PREFIX, PROGRESS_PROTOCOL_ENV
 from ...steps import RoutedSignalGenerator, SignalGeneratorRoute
 from ...steps.coil_drive_chain import SafetyAbort
 from . import acquisition, analysis, monitor, preparation, run_format, signal_fit
 from .definition import ADAPTER
-from .models import RfPhaseSensitivityParams
+from .models import MOD_CARRIER_OSC_IDX, MOD_SIDEBAND_OSC_IDX, READOUT_DEMOD_IDX, RfPhaseSensitivityParams
 from .workflow import Workflow
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -137,12 +137,41 @@ class FakeGenerator:
 
 class FakeLockin:
     model = "MFLI"
-    device_id = "devfake"
-    capabilities = {}
+    device_id = "dev30661"
     acquisition_mode = "daq"
 
-    def __init__(self):
-        self.values = {}
+    def __init__(self, events):
+        self.events = events
+        self.capabilities = {
+            "model": "MFLI",
+            "options": ["MF-F5M", "MF-MD", "MF-MOD", "MF-DIG"],
+            "demodulators": 4,
+            "oscillators": 4,
+            "voltage_inputs": 1,
+            "signal_outputs": 1,
+            "aux_outputs": 4,
+            "max_frequency_hz": 5e6,
+        }
+        dev = self.device_id
+        self.values = {
+            f"/{dev}/sigouts/0/on": 0,
+            f"/{dev}/sigouts/0/add": 0,
+            f"/{dev}/sigouts/0/range": 1.0,
+            f"/{dev}/sigouts/0/offset": 0.0,
+            f"/{dev}/mods/0/enable": 0,
+            f"/{dev}/mods/0/mode": 1,
+            f"/{dev}/mods/0/freqdevenable": 0,
+            f"/{dev}/mods/0/output": 0,
+            f"/{dev}/mods/0/carrier/enable": 0,
+            f"/{dev}/mods/0/carrier/oscselect": 0,
+            f"/{dev}/mods/0/carrier/amplitude": 0.0,
+            f"/{dev}/mods/0/carrier/phaseshift": 0.0,
+            f"/{dev}/mods/0/sidebands/0/enable": 0,
+            f"/{dev}/mods/0/sidebands/1/enable": 0,
+            f"/{dev}/mods/0/sidebands/0/oscselect": 0,
+            f"/{dev}/mods/0/sidebands/1/oscselect": 0,
+            f"/{dev}/mods/0/index": 0.0,
+        }
 
     def demod_path(self, i):
         return f"/{self.device_id}/demods/{i}"
@@ -154,12 +183,14 @@ class FakeLockin:
         return f"/{self.device_id}/sigins/{i}"
 
     def set_double(self, path, value):
+        self.events.append(("mfli", path, float(value)))
         self.values[path] = float(value)
 
     def get_double(self, path):
         return self.values[path]
 
     def set_int(self, path, value):
+        self.events.append(("mfli", path, int(value)))
         self.values[path] = int(value)
 
     def get_int(self, path):
@@ -188,21 +219,22 @@ def rig(monkeypatch, tmp_path):
     for key in gs_state:
         getattr(gs, f"get_{key}").side_effect = lambda key=key: gs_state[key]
         getattr(gs, f"set_{key}").side_effect = lambda value, key=key: gs_state.update({key: value})
-    lockin = FakeLockin()
-    channels = dict(x=1, y=2, z=3, trigger=4, temp=5)
+    lockin = FakeLockin(events)
+    channels = dict(x=1, z=2, trigger=3, temp=4)
     proxy = RoutedSignalGenerator({i: SignalGeneratorRoute(dev, c, name) for i, (name, dev, c) in enumerate(
-        (("x", xygen, 1), ("y", xygen, 2), ("z", zgen, 1), ("trigger", zgen, 2), ("temp", temp, 2)), 1)})
+        (("x", xygen, 1), ("z", zgen, 1), ("trigger", zgen, 2), ("temp", temp, 2)), 1)})
     scope = Mock()
     devices = dict(hf2=lockin, amp=amp, gs200=gs, signals=proxy, channels=channels, scope=scope, tec=tec)
 
     def connect(ctx, **kwargs):
+        preparation._require_mfli_capabilities(lockin.capabilities, require_mod_option=True)
         for name, device in (("xy", xygen), ("z", zgen), ("temp", temp), ("hf2", lockin),
                              ("amp", amp), ("gs200", gs), ("scope", scope), ("tec", tec)):
             ctx.device_session.connect(name, name, lambda device=device: device)
         ctx.devices.update(devices)
 
-    monkeypatch.setattr(preparation.prep, "connect", connect)
-    monkeypatch.setattr(preparation.prep, "clocks", lambda ctx: {"fake": "EXT"})
+    monkeypatch.setattr(preparation, "_connect_devices", connect)
+    monkeypatch.setattr(preparation, "clocks", lambda ctx: {"fake": "EXT"})
     monkeypatch.setattr(monitor, "snapshot_scope", lambda s: {"status": "AUTO"})
     monkeypatch.setattr(monitor, "restore_scope", lambda ctx: events.append(("scope", "restore")))
     monkeypatch.setattr(acquisition, "sleep", lambda s: events.append(("wait", s)))
@@ -212,12 +244,11 @@ def rig(monkeypatch, tmp_path):
                 noise_duration_s=8., welch_segment_s=2., static_point_duration_s=.05,
                 demod0_rate_sa_s=1000., system_settle_s=.1, temp_switch_on_lag_s=.1)
     rnd = np.random.default_rng(7429)
-    settings = xygen.channels[2]
+    dev = lockin.device_id
 
     def center():
-        if settings["burst_state"]:
-            return settings["burst_phase"] - 91.
-        return settings["phase_adjust"] - (51. if settings["mod_state"] else 22.)
+        # MF-MOD 保持统一 10 MHz 相干参考（无 DG Burst->PM 跳变），示波器相对脉冲上升沿含固定电缆延迟 37°。
+        return float(lockin.values[f"/{dev}/mods/0/carrier/phaseshift"]) + 37.0
 
     def capture(ctx, f):
         assert temp.channels[2]["offset"] == 5.
@@ -228,20 +259,25 @@ def rig(monkeypatch, tmp_path):
         theta = 2 * np.pi * ctx.params.y_rf_freq_hz * t
         ref = 5. * (np.sin(theta + .1) >= 0)
         phase = np.deg2rad(center())
-        if settings["mod_state"]:
-            phase += np.deg2rad(settings["mod_pm_deviation"]) * np.sin(2 * np.pi * settings["mod_pm_internal_freq"] * t)
-        return dict(rate_sa_s=fs), dict(time_s=t, reference_v=ref, coil_v=.016 * np.cos(theta + phase))
+        sb_on = lockin.values[f"/{dev}/mods/0/sidebands/0/enable"] and lockin.values[f"/{dev}/mods/0/sidebands/1/enable"]
+        if lockin.values[f"/{dev}/mods/0/enable"] and sb_on:
+            fm = lockin.values[f"/{dev}/oscs/{MOD_SIDEBAND_OSC_IDX}/freq"]
+            phase += lockin.values[f"/{dev}/mods/0/index"] * np.sin(2 * np.pi * fm * t)
+        vpk = lockin.values[f"/{dev}/mods/0/carrier/amplitude"] * 0.665
+        return dict(rate_sa_s=fs), dict(time_s=t, reference_v=ref, coil_v=vpk * np.cos(theta + phase))
 
     def collect(instr, config, index, rate, **kwargs):
+        assert index == READOUT_DEMOD_IDX
         assert kwargs["strict_cleanup"] and config.grid_mode == 4 and kwargs["requested_rate"] == p.demod0_rate_sa_s
         assert temp.channels[2]["offset"] == 0.
         events.append(("daq", config.duration, center()))
         t = np.arange(config.grid_cols) / rate
         theta = np.deg2rad(center() + 1.)
-        if settings["mod_state"]:
-            f = settings["mod_pm_internal_freq"]
-            theta += np.deg2rad(acquisition.PM_DEPTH_DEG) * np.sin(2 * np.pi * f * t) / np.sqrt(1 + (f / 85.)**2)
-        phase_shift = np.deg2rad(lockin.get_double(lockin.demod_path(0) + "/phaseshift"))
+        sb_on = lockin.values[f"/{dev}/mods/0/sidebands/0/enable"] and lockin.values[f"/{dev}/mods/0/sidebands/1/enable"]
+        if lockin.values[f"/{dev}/mods/0/enable"] and sb_on:
+            f = lockin.values[f"/{dev}/oscs/{MOD_SIDEBAND_OSC_IDX}/freq"]
+            theta += lockin.values[f"/{dev}/mods/0/index"] * np.sin(2 * np.pi * f * t) / np.sqrt(1 + (f / 85.)**2)
+        phase_shift = np.deg2rad(lockin.get_double(lockin.demod_path(READOUT_DEMOD_IDX) + "/phaseshift"))
         z = (.1j * np.sin(theta) + .02 * np.cos(theta)) * np.exp(-1j * phase_shift)
         snaps = dict(actual_rate=rate, time_source="module_timestamp", acquisition_module="daq", unit="V")
         return [SimpleNamespace(signal_name=f"sample.{key}", values=signal + rnd.normal(0, 6e-6, t.size),
@@ -257,7 +293,7 @@ def rig(monkeypatch, tmp_path):
         return original_write(path, label, kind, metadata, **arrays)
 
     monkeypatch.setattr(run_format, "write_frame", checked_write)
-    return SimpleNamespace(events=events, p=p, xy=xygen, z=zgen, temp=temp, gs=gs_state, settings=settings, lockin=lockin)
+    return SimpleNamespace(events=events, p=p, xy=xygen, z=zgen, temp=temp, gs=gs_state, lockin=lockin)
 
 
 def _ctx(rig):
@@ -265,8 +301,15 @@ def _ctx(rig):
 
 
 def _assert_parked(rig):
-    assert rig.settings["shape"] == "DC" and not rig.settings["output"] and rig.settings["offset"] == 0.
-    assert not rig.settings["mod_state"] and not rig.settings["burst_state"]
+    dev = rig.lockin.device_id
+    vals = rig.lockin.values
+    assert vals[f"/{dev}/sigouts/0/on"] == 0
+    assert vals[f"/{dev}/sigouts/0/offset"] == 0.0
+    assert vals[f"/{dev}/mods/0/enable"] == 0
+    assert vals[f"/{dev}/mods/0/output"] == 0
+    assert vals[f"/{dev}/mods/0/sidebands/0/enable"] == 0 and vals[f"/{dev}/mods/0/sidebands/1/enable"] == 0
+    assert vals[f"/{dev}/mods/0/carrier/amplitude"] == 0.0
+    assert vals[f"/{dev}/demods/{READOUT_DEMOD_IDX}/enable"] == 0
     for ch in (rig.xy.channels[1], rig.z.channels[1]):
         assert ch["shape"] == "DC" and ch["output"] is False and ch["offset"] == ch["dc_level"] == 0.
     assert rig.z.channels[2]["output"] is True
@@ -276,13 +319,36 @@ def _assert_parked(rig):
 
 def test_preflight_and_defaults():
     p = RfPhaseSensitivityParams.from_yaml(ROOT / "params/experiments/rf-phase-sensitivity.yaml")
-    assert p == RfPhaseSensitivityParams() and ADAPTER.preflight({}) == []
-    assert ADAPTER.preflight({"Y_RF_VPP": 1., "Z_PEAK_CURRENT_MA": 1000})
+    assert p == RfPhaseSensitivityParams() and p.demod0_idx == 3 and ADAPTER.preflight({}) == []
+    assert ADAPTER.preflight({"Y_RF_VPP": 0.2}) == []
+    assert ADAPTER.preflight({"Y_RF_VPP": 2.0, "Y_BIAS_V": 1.0}) == []
+    assert ADAPTER.preflight({"Y_RF_VPP": 21.0})
+    assert ADAPTER.preflight({"Y_RF_VPP": 2.0, "Y_BIAS_V": 9.5})
+    assert ADAPTER.preflight({"Y_RF_FREQ_HZ": 6000.0})
+    assert ADAPTER.preflight({"DEMOD0_IDX": 0})
+    assert ADAPTER.preflight({"Z_PEAK_CURRENT_MA": 1000})
     assert ADAPTER.preflight({"Z_PEAK_CURRENT_MA": 301})
     assert ADAPTER.preflight({"Z_PULSE_WIDTH_US": 300})
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [5., 5., 20.]})
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [1., 5., 20.]})
     assert ADAPTER.preflight({"SYSTEM_SETTLE_S": 0.101, "DEMOD0_TC": .01})
+
+
+def test_legacy_demod0_history_config_remains_readable():
+    legacy = RfPhaseSensitivityParams(demod0_idx=0, y_rf_vpp=0.5)
+    cfg = run_format.initial_metadata(legacy) | {
+        "completion_status": "completed",
+        "schema_version": legacy.schema_version,
+        "parameters": legacy.to_external(),
+    }
+    assert run_format.format_block_reason(cfg) == ""
+    assert run_format.analysis_block_reason(cfg) == ""
+
+
+def test_connect_rejects_missing_mod_option(rig):
+    rig.lockin.capabilities["options"] = ["MF-F5M", "MF-MD", "MF-DIG"]
+    with pytest.raises(ValueError, match="MF-MOD"):
+        Workflow.run(rig.p, project_root=ROOT)
 
 
 def test_full_round_and_physical_phase_transfer(rig, capsys):
@@ -299,16 +365,21 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
         assert updates[-1]["data"]["estimated_remaining_seconds"] == 0
     c = run_format.read_config(run_dir / "experiment_config.yaml")
     assert c["completion_status"] == "completed" and c["calibration"]["accepted"] and c["noise"]["accepted"], c
+    assert c["lockin"]["demod_idx"] == READOUT_DEMOD_IDX and c["lockin"]["osc_select"] == MOD_CARRIER_OSC_IDX
     assert abs(c["calibration"]["k0_v_per_rad"]) == pytest.approx(.10, rel=.02)
     assert abs(c["calibration"]["slope_x_v_per_rad"]) < 1e-3
-    assert c["pm_alignment"]["measured_delta_deg"] == pytest.approx(30., abs=.04)
     assert [point["frequency_hz"] for point in c["transfer"] if point["accepted"]] == [20., 40., 20.]
-    assert [e[3] for e in rig.events if e[:3] == ("xy", 2, "set_mod_pm_deviation")] == [2.]
-    assert c["noise"]["candidate"]["carrier_center_deg"] != pytest.approx(c["noise"]["after"]["carrier_center_deg"], abs=5.)
+    dev = rig.lockin.device_id
+    mod_index_writes = [e[2] for e in rig.events if e[:2] == ("mfli", f"/{dev}/mods/0/index")]
+    assert mod_index_writes and all(math.isclose(v, math.radians(2.0), rel_tol=1e-6) for v in mod_index_writes)
     assert c["safety_shutdown"]["completed"] and c["shutdown_readbacks"]["Temp_Switch"]["dc_setting_v"] == 5.
     x = c["shutdown_readbacks"]["X_magnetic_field"]
     assert x == dict(channel=1, output=False, shape="DC", dc_commanded_v=0., dc_setting_v=0.,
                      burst=False, modulation=False)
+    sigout_key = preparation.mfli_sigout_safety_key(load_mapping(ROOT))
+    mfli_shut = c["shutdown_readbacks"][sigout_key]
+    assert mfli_shut["output"] is False and mfli_shut["mod_enable"] == 0 and mfli_shut["offset_v"] == 0.0
+    assert mfli_shut["carrier_amplitude_vpk"] == 0.0
     assert len(c["data_files"]) == len(list((run_dir / "raw").glob("*.npz")))
     metadata, arrays = run_format.read_frame(run_dir, "noise_xy", "xy")
     assert metadata["rate_sa_s"] == 1000. and len(arrays["time_s"]) == 8000
@@ -316,7 +387,7 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
     shutdown = max(i for i, event in enumerate(rig.events) if event == ("amp", False))
     assert rig.events.index(("scope", "restore")) < rig.events.index(("temp", "disconnect"))
     assert rig.events[-3:] == [("temp", "disconnect"), ("z", "disconnect"), ("xy", "disconnect")]
-    for device, channel in (("z", 1), ("xy", 2), ("xy", 1)):
+    for device, channel in (("z", 1), ("xy", 1)):
         end = [event for event in rig.events[shutdown:] if event[:2] == (device, channel)]
         assert end[0] == end[-1] == (device, channel, "set_output", False)
         assert (device, channel, "set_output", True) not in end
@@ -340,6 +411,24 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
     assert result["transfer_bands_hz"] == [[20., 40.]]
     assert result["k0_closure"]["normalized_gain"] == pytest.approx(1 / np.sqrt(1 + (20. / 85.)**2), rel=.01)
     assert (run_dir / "results" / run_format.NOISE_PLOT).is_file()
+
+
+def test_editable_y_rf_vpp_and_xy_biases(rig):
+    rig.p = replace(rig.p, y_rf_vpp=0.2, y_bias_v=0.45, x_bias_v=-0.2)
+    run_dir = Workflow.run(rig.p, project_root=ROOT)
+    dev = rig.lockin.device_id
+    amp_writes = [e[2] for e in rig.events if e[:2] == ("mfli", f"/{dev}/mods/0/carrier/amplitude")]
+    offset_writes = [e[2] for e in rig.events if e[:2] == ("mfli", f"/{dev}/sigouts/0/offset")]
+    range_writes = [e[2] for e in rig.events if e[:2] == ("mfli", f"/{dev}/sigouts/0/range")]
+    assert amp_writes[0] == pytest.approx(0.1) and amp_writes[-1] == 0.0
+    assert offset_writes[0] == pytest.approx(0.45) and offset_writes[-1] == 0.0
+    assert range_writes[0] == pytest.approx(1.0)
+    assert ("xy", 1, "set_offset", -0.2) in rig.events
+    c = run_format.read_config(run_dir / "experiment_config.yaml")
+    assert c["parameters"]["Y_RF_VPP"] == pytest.approx(0.2)
+    assert c["parameters"]["Y_BIAS_V"] == pytest.approx(0.45)
+    assert c["parameters"]["X_BIAS_V"] == pytest.approx(-0.2)
+    _assert_parked(rig)
 
 
 def test_z_readback_mismatch_keeps_amplifier_off(rig, monkeypatch):
@@ -451,7 +540,7 @@ def test_failed_acquisition_preserves_failed_shutdown_readbacks(rig, monkeypatch
     assert ctx.outputs["X 偏置"] == "OFF（已回读），其余收尾未确认"
     assert c["shutdown_readbacks"]["Temp_Switch"] == dict(output=True, dc_setting_v=5.)
     assert c["main_field"]["restored_on_shutdown"]
-    assert not rig.xy.channels[2]["output"] and not rig.z.channels[1]["output"]
+    assert rig.lockin.values[f"/{rig.lockin.device_id}/sigouts/0/on"] == 0 and not rig.z.channels[1]["output"]
     assert rig.events[-3:] == [("temp", "disconnect"), ("z", "disconnect"), ("xy", "disconnect")]
 
 
@@ -485,6 +574,37 @@ def test_shutdown_always_attempts_final_off(rig, monkeypatch, fault):
         assert ch["dc_level"] == .16 and "dc_commanded_v" not in x
         assert ch["offset"] == .16
         assert ("xy", 1, "set_output", False) in rig.events
+    finally:
+        ctx.finish()
+
+
+def test_mfli_rf_shutdown_always_attempts_final_off(rig, monkeypatch):
+    ctx = _ctx(rig)
+    dev = rig.lockin.device_id
+    sigout_key = preparation.mfli_sigout_safety_key(load_mapping(ROOT))
+    try:
+        ctx.execute(["A01", "A02"])
+        rig.lockin.values.update({
+            f"/{dev}/sigouts/0/on": 1,
+            f"/{dev}/sigouts/0/offset": 0.4,
+            f"/{dev}/mods/0/enable": 1,
+            f"/{dev}/mods/0/carrier/amplitude": 0.25,
+        })
+        orig_set_int = rig.lockin.set_int
+
+        def skip_first_off(path, val):
+            if path == f"/{dev}/sigouts/0/on" and val == 0 and ("mfli", "first_off_lost") not in rig.events:
+                rig.events.append(("mfli", "first_off_lost"))
+            else:
+                orig_set_int(path, val)
+
+        monkeypatch.setattr(rig.lockin, "set_int", skip_first_off)
+        with pytest.raises(SafetyAbort, match="未回读为 OFF"):
+            preparation._stop_mfli_rf(ctx)
+        shut = ctx.state["shutdown_readbacks"][sigout_key]
+        assert shut["output"] is False and rig.lockin.values[f"/{dev}/sigouts/0/on"] == 0
+        assert rig.lockin.values[f"/{dev}/mods/0/enable"] == 0
+        assert shut["offset_v"] == 0.4 and "offset_commanded_v" not in shut
     finally:
         ctx.finish()
 
@@ -581,8 +701,8 @@ def test_scope_restore_memory_depth_normalizes_auto_points():
     scope.set_memory_depth.assert_called_once_with("AUTO")
 
 
-def test_pm_alignment_iterates_nonlinear_command_gain(monkeypatch):
-    """真实跟随增益约 1.7% 偏差时，一次 160° 外推会留下约 3° 残差，必须按实测迭代。"""
+def test_pm_alignment_realigns_if_drifted(monkeypatch):
+    """MF-MOD 边带切换若受外部影响偏移超过 1°，按实测误差直接回调对齐。"""
 
     def wrap(value):
         return (value + 180.) % 360. - 180.
@@ -591,31 +711,29 @@ def test_pm_alignment_iterates_nonlinear_command_gain(monkeypatch):
         command_deg = 0.
 
         def begin_pm(self):
-            return self.command_deg
+            return dict(mode="mf_mod_pm", command_deg=self.command_deg)
 
-        def phase_adjust(self, value, mode):
-            assert mode == "pm"
+        def phase_adjust(self, value):
             self.command_deg = value % 360.
-            return self.command_deg
+            return dict(mode="mf_mod_pm", command_deg=self.command_deg)
 
     def center():
-        command = carrier.command_deg
-        return wrap(160. + 0.983 * command + 2e-4 * command * command)
+        return wrap(3.2 + carrier.command_deg)
 
     def point():
-        return dict(stable=True, carrier_center_deg=center(), carrier_v_pk=0.016,
+        return dict(stable=True, carrier_center_deg=center(), carrier_v_pk=0.066,
                     phase_pk_rad=math.radians(2.), phase_scatter_rad=1e-4, am_fraction_pk=1e-5)
 
     carrier = Carrier()
     ctx = SimpleNamespace(state={}, devices={}, outputs={}, params=RfPhaseSensitivityParams())
     monkeypatch.setattr(acquisition, "_electrical", lambda ctx, label, settings, f=None: point())
-    anchor = acquisition._align_pm(ctx, carrier, dict(carrier_center_deg=0., carrier_v_pk=0.016))
+    anchor = acquisition._align_pm(ctx, carrier, dict(carrier_center_deg=0., carrier_v_pk=0.066))
     assert abs(anchor) <= acquisition._PM_ALIGN_TOL_DEG
-    assert len(ctx.state["pm_alignment"]["attempts"]) == 2
+    assert len(ctx.state["pm_alignment"]["attempts"]) == 1
 
 
-def test_noise_baseline_iterates_phase_command_gain(monkeypatch):
-    """PM OFF 的相位跟随增益偏离 1 时，单次修正会留残差，必须按实测迭代看到零。"""
+def test_noise_baseline_realigns_if_drifted(monkeypatch):
+    """关闭边带若意外偏移超 1°，直接回调到工作点后再采集无调制噪声。"""
 
     def wrap(value):
         return (value + 180.) % 360. - 180.
@@ -624,33 +742,31 @@ def test_noise_baseline_iterates_phase_command_gain(monkeypatch):
         command_deg = 300.
 
         def stop_pm(self):
-            return dict(mode="off")
+            return dict(mode="mf_mod_carrier")
 
-        def phase_adjust(self, value, mode):
-            assert mode == "off"
+        def phase_adjust(self, value):
             self.command_deg = value % 360.
-            return self.command_deg
+            return dict(mode="mf_mod_carrier")
 
         def verify_unmodulated(self):
-            return dict(mode="off", burst=False)
+            return dict(mode="mf_mod_carrier")
 
     def center():
-        # 大信号跟随接近 1，但小信号附近带曲率：一次线性修正会留几度残差。
-        return wrap(160. + carrier.command_deg + 0.0005 * (carrier.command_deg - 300.) ** 2)
+        return wrap(62.5 + carrier.command_deg)
 
     def point():
-        return dict(stable=True, carrier_center_deg=center(), carrier_v_pk=0.016,
+        return dict(stable=True, carrier_center_deg=center(), carrier_v_pk=0.066,
                     phase_pk_rad=0., phase_scatter_rad=0., am_fraction_pk=0.)
 
     carrier = Carrier()
     ctx = SimpleNamespace(state={}, devices={}, outputs={}, params=RfPhaseSensitivityParams())
     monkeypatch.setattr(acquisition, "_electrical", lambda ctx, label, settings, f=None: point())
     monkeypatch.setattr(acquisition, "_xy", lambda *args, **kwargs: complex(0.0, 0.0))
-    acquisition._baseline(ctx, carrier, dict(carrier_center_deg=0., carrier_v_pk=0.016), None, 0.)
+    acquisition._baseline(ctx, carrier, dict(carrier_center_deg=0., carrier_v_pk=0.066), None, 0.)
     state = ctx.state["noise"]
     assert state["accepted"] is True, state["reason"]
     assert abs(acquisition.signal_fit.wrap_deg(state["before"]["carrier_center_deg"])) <= acquisition._ANCHOR_TOL_DEG
-    assert len(state["attempts"]) >= 2
+    assert len(state["attempts"]) == 1
 
 
 def test_scope_error_drain_separates_legacy_errors():

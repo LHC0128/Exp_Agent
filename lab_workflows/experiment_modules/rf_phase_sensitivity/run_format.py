@@ -11,8 +11,16 @@ from zipfile import BadZipFile
 import numpy as np
 import yaml
 
-from ..z_chain_common.keys import REQUIRED_MAPPING_KEYS as REQUIRED_MAPPING_KEYS
+from ..z_chain_common.keys import (
+    AMPLIFIER_KEY, LOCKIN_KEY, MAIN_FIELD_KEY, SCOPE_KEY,
+    SOURCE_KEY, TEC_KEY, TEMP_SWITCH_KEY, TRIGGER_KEY, X_KEY,
+)
 from .models import RfPhaseSensitivityParams
+
+REQUIRED_MAPPING_KEYS = (
+    SOURCE_KEY, X_KEY, TRIGGER_KEY, TEMP_SWITCH_KEY, LOCKIN_KEY,
+    AMPLIFIER_KEY, SCOPE_KEY, MAIN_FIELD_KEY, TEC_KEY,
+)
 
 EXPERIMENT_ID = "rf-phase-sensitivity"
 DATA_TYPE = "rf_phase_sensitivity"

@@ -83,14 +83,15 @@ def test_discovery_schema_workflow_and_real_preflight(client):
     assert manifest["diagram_url"] == f"{BASE}/workflow/diagram"
     assert client.get(f"{RESPONSE_BASE}/workflow").json()["diagram_url"] == f"{RESPONSE_BASE}/workflow/diagram"
 
-    parameters = {"PM_FREQUENCIES_HZ": [10.0, 20.0, 40.0]}
+    parameters = {"PM_FREQUENCIES_HZ": [10.0, 20.0, 40.0], "Y_RF_VPP": 0.2, "Y_BIAS_V": 0.5}
     response = client.post(f"{BASE}/preflight", json={"parameters": parameters})
     assert response.status_code == 200 and response.json()["ok"], response.text
-    invalid = parameters | {"Y_RF_FREQ_HZ": 6000.0}
-    response = client.post(f"{BASE}/preflight", json={"parameters": invalid})
-    assert response.status_code == 200 and not response.json()["ok"], response.text
-    assert response.json()["errors"]
-    assert client.post(f"{BASE}/runs", json={"parameters": invalid}).status_code == 422
+    for bad in ({"Y_RF_FREQ_HZ": 6000.0}, {"Y_RF_VPP": 21.0}):
+        invalid = parameters | bad
+        response = client.post(f"{BASE}/preflight", json={"parameters": invalid})
+        assert response.status_code == 200 and not response.json()["ok"], response.text
+        assert response.json()["errors"]
+        assert client.post(f"{BASE}/runs", json={"parameters": invalid}).status_code == 422
     assert client.get(f"{BASE}/sessions/active").json() is None
     assert client.get("/api/jobs").json() == []
     assert not data_root(main.ROOT).exists()
