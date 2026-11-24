@@ -551,6 +551,51 @@ def test_scope_monitor_one_frame_and_mismatched_axis(monkeypatch):
         monitor.acquire(ctx, 20.)
 
 
+def test_scope_restore_memory_depth_normalizes_auto_points():
+    scope = Mock()
+    monitor._restore_memory_depth(scope, "6.2500E+05")
+    scope.set_memory_depth.assert_called_once_with("AUTO")
+    scope.set_memory_depth.reset_mock()
+    monitor._restore_memory_depth(scope, "1.0000E+06")
+    scope.set_memory_depth.assert_called_once_with("1000000")
+    scope.set_memory_depth.reset_mock()
+    monitor._restore_memory_depth(scope, "AUTO")
+    scope.set_memory_depth.assert_called_once_with("AUTO")
+
+
+def test_pm_alignment_iterates_nonlinear_command_gain(monkeypatch):
+    """真实跟随增益约 1.7% 偏差时，一次 160° 外推会留下约 3° 残差，必须按实测迭代。"""
+
+    def wrap(value):
+        return (value + 180.) % 360. - 180.
+
+    class Carrier:
+        command_deg = 0.
+
+        def begin_pm(self):
+            return self.command_deg
+
+        def phase_adjust(self, value, mode):
+            assert mode == "pm"
+            self.command_deg = value % 360.
+            return self.command_deg
+
+    def center():
+        command = carrier.command_deg
+        return wrap(160. + 0.983 * command + 2e-4 * command * command)
+
+    def point():
+        return dict(stable=True, carrier_center_deg=center(), carrier_v_pk=0.016,
+                    phase_pk_rad=math.radians(1.), phase_scatter_rad=1e-4, am_fraction_pk=1e-5)
+
+    carrier = Carrier()
+    ctx = SimpleNamespace(state={}, devices={}, outputs={}, params=RfPhaseSensitivityParams())
+    monkeypatch.setattr(acquisition, "_electrical", lambda ctx, label, settings, f=None: point())
+    anchor = acquisition._align_pm(ctx, carrier, dict(carrier_center_deg=0., carrier_v_pk=0.016))
+    assert abs(anchor) <= acquisition._PM_ALIGN_TOL_DEG
+    assert len(ctx.state["pm_alignment"]["attempts"]) == 2
+
+
 def test_scope_error_drain_separates_legacy_errors():
     scope = Mock()
     scope.query.side_effect = ['-232,"Format err"', '0,"No error"']

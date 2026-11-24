@@ -19,6 +19,8 @@ from .models import PM_DEPTH_DEG
 _PM_ALIGN_HZ = 20.
 _NUDGE_DEG = 30.
 _CENTER_TOL_DEG = 2.
+_PM_ALIGN_TOL_DEG = 1.
+_PM_ALIGN_ATTEMPTS = 3
 _ANCHOR_TOL_DEG = 1.
 _DEPTH_TOL_DEG = 0.1
 _AM_MAX_FRACTION = 0.001
@@ -359,13 +361,25 @@ def _align_pm(ctx, carrier, cal):
     b = _electrical(ctx, "pm_align_nudge", carrier.phase_adjust(carrier.command_deg + _NUDGE_DEG, "pm"), _PM_ALIGN_HZ)
     phase_b = _require_stable(b)
     measured = signal_fit.wrap_deg(phase_b - phase_a)
-    ctx.state["pm_alignment"] = dict(start=a, nudge=b, command_delta_deg=_NUDGE_DEG, measured_delta_deg=measured)
+    ctx.state["pm_alignment"] = dict(start=a, nudge=b, command_delta_deg=_NUDGE_DEG, measured_delta_deg=measured,
+                                     attempts=[])
     if abs(abs(measured) - _NUDGE_DEG) > 3.:
         raise SafetyAbort("原生 PM 开启时载波调整未按实测跟随，不能回调工作点")
     gain = measured / _NUDGE_DEG
-    command = carrier.command_deg + signal_fit.wrap_deg(cal["carrier_center_deg"] - phase_b) / gain
-    point = _electrical(ctx, "pm_align_verified", carrier.phase_adjust(command, "pm"), _PM_ALIGN_HZ)
+    # 一次外推在 160° 量级修正时，1.7% 的跟随增益误差就留下约 3° 残差；按实测反复回调。
+    point = b
+    for attempt in range(_PM_ALIGN_ATTEMPTS):
+        error = signal_fit.wrap_deg(cal["carrier_center_deg"] - point["carrier_center_deg"])
+        if abs(error) <= _PM_ALIGN_TOL_DEG:
+            break
+        command = carrier.command_deg + error / gain
+        label = "pm_align_verified" if attempt == 0 else f"pm_align_verified_{attempt + 1}"
+        point = _electrical(ctx, label, carrier.phase_adjust(command, "pm"), _PM_ALIGN_HZ)
+        ctx.state["pm_alignment"]["attempts"].append(
+            dict(scope_label=label, command_deg=carrier.command_deg, **point))
     ctx.state["pm_alignment"].update(aligned=point, command_deg=carrier.command_deg)
+    if abs(signal_fit.wrap_deg(cal["carrier_center_deg"] - point["carrier_center_deg"])) > _PM_ALIGN_TOL_DEG:
+        raise SafetyAbort(f"原生 PM 回调 {_PM_ALIGN_ATTEMPTS} 次后仍偏离 Burst 工作点超过 {_PM_ALIGN_TOL_DEG:g}°")
     if reason := _electrical_reason(point, cal, None, pm=True):
         raise SafetyAbort(f"原生 PM 回调后拒绝：{reason}")
     ctx.state["pm_alignment"]["anchor_center_deg"] = point["carrier_center_deg"]

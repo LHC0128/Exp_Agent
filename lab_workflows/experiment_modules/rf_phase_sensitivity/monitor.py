@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 from dho900 import DHO900Acquisition
+from dho900.instrument import MEMORY_DEPTHS
 
 from ...experiment_runtime import check_cancelled
 from ...steps import ShutdownAction, run_safety_shutdown
@@ -57,6 +58,20 @@ def _drain_errors(scope):
     return errors
 
 
+def _restore_memory_depth(scope, value):
+    """AUTO 深度回读是当前点数（如 6.2500E+05），不能当显式深度写回，改回 AUTO。"""
+    text = str(value).strip()
+    try:
+        points = float(text)
+    except ValueError:
+        scope.set_memory_depth(text)
+        return
+    if not points.is_integer() or int(points) not in MEMORY_DEPTHS:
+        scope.set_memory_depth("AUTO")
+    else:
+        scope.set_memory_depth(str(int(points)))
+
+
 def restore_scope(ctx):
     """逐条恢复本实验改变的面板状态，重新 RUN 后核对。"""
     import time
@@ -76,7 +91,11 @@ def restore_scope(ctx):
     for name in _TIMEBASE:
         actions.append(ShutdownAction(f"DHO924 {name}", lambda name=name: scope.write(f"{name} {original['controls'][name]}")))
     for name, value in original["common"].items():
-        actions.append(ShutdownAction(f"DHO924 {name}", lambda name=name, value=value: getattr(scope, "set_" + name)(value)))
+        if name == "memory_depth":
+            actions.append(ShutdownAction("DHO924 memory_depth", lambda value=value: _restore_memory_depth(scope, value)))
+        else:
+            actions.append(ShutdownAction("DHO924 " + name,
+                                          lambda name=name, value=value: getattr(scope, "set_" + name)(value)))
     for name in _READOUT:
         actions.append(ShutdownAction(f"DHO924 {name}", lambda name=name: scope.write(f"{name} {original['controls'][name]}")))
     actions.append(ShutdownAction("DHO924 RUN", scope.trigger_run))
