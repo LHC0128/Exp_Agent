@@ -46,11 +46,24 @@ def snapshot_scope(scope):
     return state
 
 
+def _drain_errors(scope):
+    """读空错误队列并返回；恢复前遗留错误与恢复动作新产生的错误分开记录。"""
+    errors = []
+    for _ in range(16):
+        response = scope.query(":SYSTem:ERRor?").strip()
+        if response.startswith("0"):
+            break
+        errors.append(response)
+    return errors
+
+
 def restore_scope(ctx):
     """逐条恢复本实验改变的面板状态，重新 RUN 后核对。"""
     import time
 
     scope, original = ctx.devices["scope"], ctx.scope_original
+    # 采集超时或异常可能已在示波器里留下待读错误；先记下来，只把恢复动作新增的错误当失败。
+    pending = _drain_errors(scope)
     actions = [ShutdownAction("DHO924 STOP", scope.trigger_stop)]
     actions += [ShutdownAction(f"DHO924 CH{ch} 显示",
                               lambda ch=ch, enabled=enabled: scope.set_channel_state(ch, enabled))
@@ -72,12 +85,14 @@ def restore_scope(ctx):
     while scope.trigger_status().upper() == "STOP" and time.monotonic() < deadline:
         time.sleep(0.1)  # 收尾不允许取消打断
     actual = _state(scope)
-    ctx.state["scope_restore"] = dict(expected=original, actual=actual)
+    ctx.state["scope_restore"] = dict(expected=original, actual=actual, pre_restore_errors=pending)
     changes = [key for key in original if key != "status" and actual[key] != original[key]]
     errors = [*report.errors]
     if changes or actual["status"].upper() == "STOP":
         errors.append(f"示波器面板回读不符：{changes or ['持续 STOP']}")
-    scope.check_errors()
+    fresh = _drain_errors(scope)
+    if fresh:
+        errors.append("DHO900 SCPI 错误：" + "；".join(fresh))
     if errors:
         raise SafetyAbort("；".join(errors))
     ctx.outputs["DHO924"] = "已回读恢复面板与连续触发"

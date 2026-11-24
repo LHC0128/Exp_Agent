@@ -559,3 +559,14 @@ def test_raw_mode_reset_unlocks_deep_frame_points(rig):
     # 确认读帧前确实做了 NORMal→RAW 重置。
     modes = [c.split()[-1] for c in visa.writes if c.startswith(":WAVeform:MODE ")]
     assert "NORMal" in modes and modes.index("NORMal") < len(modes) - 1
+
+
+def test_apply_config_stops_before_touching_timebase(rig):
+    """慢时基 RUN 中改时基会让真机 SCPI 阻塞；配置阶段必须先 STOP 且不进入 RUN。"""
+    instrument, visa, acquirer = rig
+    acquirer.apply_config(configuration())
+    assert visa.writes[0] == ":STOP"
+    assert ":RUN" not in visa.writes
+    first_timebase = next(index for index, command in enumerate(visa.writes)
+                          if command.startswith(":TIMebase:MAIN:SCALe"))
+    assert visa.writes.index(":STOP") < first_timebase

@@ -68,6 +68,13 @@ class FakeGenerator:
     def get_dc_voltage(self, *, channel):
         return self.get_offset(channel=channel)
 
+    def set_offset(self, value, *, channel):
+        self.events.append((self.name, channel, "set_offset", value))
+        # 复现 DG4162 固件 00.01.14：DC 波形下 OFFSET/APPLy 写入被忽略，必须先离开 DC。
+        if self.name in {"xy", "z"} and self.channels[channel]["shape"].upper() == "DC":
+            return
+        self.channels[channel]["offset"] = value
+
     def set_dc_voltage(self, value, *, channel):
         ch = self.channels[channel]
         assert ch["shape"] == "DC", "必须先选择 DC 波形"
@@ -282,10 +289,11 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
     run_dir = Workflow.run(rig.p, project_root=ROOT)
     events = [json.loads(line.removeprefix(PROGRESS_PREFIX)) for line in capsys.readouterr().out.splitlines()
               if line.startswith(PROGRESS_PREFIX)]
-    for scope, count in (("当前静态扫描", len(acquisition._STATIC_GRID_DEG)),
-                         ("当前基带扫频", len(rig.p.sweep_order_hz))):
+    for scope, stage_id, count in (("当前静态扫描", "A03", len(acquisition._STATIC_GRID_DEG)),
+                                   ("当前局部标定", "A04", 7),
+                                   ("当前基带扫频", "A05", len(rig.p.sweep_order_hz))):
         updates = [event for event in events if event["data"].get("eta_scope") == scope]
-        assert len(updates) == count and all(event["stage"] == "A03" for event in updates)
+        assert len(updates) == count and all(event["stage"] == stage_id for event in updates)
         assert [event["percent"] for event in updates] == sorted({event["percent"] for event in updates})
         assert all(event["data"]["estimated_remaining_seconds"] >= 0 for event in updates)
         assert updates[-1]["data"]["estimated_remaining_seconds"] == 0
@@ -314,8 +322,9 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
         assert (device, channel, "set_output", True) not in end
         offset_write = end.index((device, channel, "set_offset", 0.))
         if (device, channel) == ("xy", 1):
-            assert (device, channel, "set_shape", "DC") not in end  # X 已经是 DC
-            assert offset_write < end.index((device, channel, "set_dc_voltage", 0.))
+            # X 收尾时已处于 DC：必须先切正弦写 OFFSET 0，再切回 DC。
+            assert (end.index((device, channel, "set_shape", "SINusoid"))
+                    < offset_write < end.index((device, channel, "set_shape", "DC")))
         else:
             assert offset_write < end.index((device, channel, "set_shape", "DC"))
     for i, event in enumerate(rig.events):
@@ -347,12 +356,43 @@ def test_stepwise_rerun_keeps_prior_run(rig):
     try:
         with pytest.raises(ValueError, match="缺少前置"):
             ctx.execute(["A03"])
+        chain = ["A01", "A02", "A03", "A04", "A05", "A06"]
         ctx.execute(["A01", "A02", "A03"])
+        ctx.execute(["A04"])
+        ctx.execute(["A05"])
+        ctx.execute(["A06"])
         original = ctx.directory.root
         baseline = (original / "experiment_config.yaml").read_bytes()
-        ctx.update_parameters({"RUN_TAG": "rerun"})
-        ctx.execute(["A01", "A02", "A03"])
+        assert ctx.states["A06"]["status"] == "completed" and ctx.round_sealed
+        ctx.execute(chain)
         assert ctx.directory.root != original and (original / "experiment_config.yaml").read_bytes() == baseline
+    finally:
+        ctx.finish()
+    _assert_parked(rig)
+
+
+def test_interrupted_chain_must_rerun_whole_chain(rig, monkeypatch):
+    ctx = _ctx(rig)
+    chain = ["A01", "A02", "A03", "A04", "A05", "A06"]
+    try:
+        ctx.execute(["A01", "A02", "A03"])
+        with pytest.raises(ValueError, match="同一轮不能改参数"):
+            ctx.update_parameters({"NOISE_DURATION_S": 10.})
+        ctx.execute(["A04"])
+        original = ctx.directory.root
+        frames = sorted((original / "raw").glob("*.npz"))
+        real_frequency_response = acquisition.frequency_response
+        monkeypatch.setattr(acquisition, "frequency_response", lambda ctx: (_ for _ in ()).throw(SafetyAbort("注入频响失败")))
+        with pytest.raises(SafetyAbort, match="注入频响失败"):
+            ctx.execute(["A05"])
+        assert ctx.states["A05"]["status"] == "quality_failed"
+        with pytest.raises(ValueError, match="请整链选择 A03"):
+            ctx.execute(["A05"])
+        monkeypatch.setattr(acquisition, "frequency_response", real_frequency_response)
+        ctx.execute(chain)
+        assert ctx.directory.root != original
+        assert sorted((original / "raw").glob("*.npz")) == frames
+        assert ctx.states["A06"]["status"] == "completed" and ctx.round_sealed
     finally:
         ctx.finish()
     _assert_parked(rig)
@@ -402,10 +442,11 @@ def test_failed_acquisition_preserves_failed_shutdown_readbacks(rig, monkeypatch
     c = run_format.read_config(ctx.directory.config_path)
     x = c["shutdown_readbacks"]["X_magnetic_field"]
     assert c["completion_status"] == "cancelled" and c["data_files"] == ["raw/coarse_00.npz"]
-    assert not c["safety_shutdown"]["completed"] and ctx.states["A04"]["status"] == "failed"
-    assert x["output"] is False and x["dc_commanded_v"] == 0. and x["dc_setting_v"] == .16
+    assert not c["safety_shutdown"]["completed"] and ctx.states["A07"]["status"] == "failed"
+    assert x["output"] is False and "dc_commanded_v" not in x and x["dc_setting_v"] == .16
     assert x["modulation"] is False and "burst" not in x
-    assert len(x["errors"]) == 2 and "dc_setting_v" in x["errors"][0] and "burst" in x["errors"][1]
+    assert len(x["errors"]) == 3 and "DC 电平" in x["errors"][0]
+    assert "dc_setting_v" in x["errors"][1] and "burst" in x["errors"][2]
     assert ctx.outputs["X 偏置"] == "OFF（已回读），其余收尾未确认"
     assert c["shutdown_readbacks"]["Temp_Switch"] == dict(output=True, dc_setting_v=5.)
     assert c["main_field"]["restored_on_shutdown"]
@@ -432,16 +473,16 @@ def test_shutdown_always_attempts_final_off(rig, monkeypatch, fault):
             monkeypatch.setattr(rig.xy, "set_output", skip_first_off, raising=False)
         else:
             def bad_dc_write(value, *, channel):
-                assert not ch["output"] and ch["shape"] == "DC"
+                assert not ch["output"]
                 raise IOError("注入 DC 写入错误")
 
-            monkeypatch.setattr(rig.xy, "set_dc_voltage", bad_dc_write)
+            monkeypatch.setattr(rig.xy, "set_offset", bad_dc_write)
         with pytest.raises(SafetyAbort, match="禁止改变波形" if fault == "first_off" else "注入 DC 写入错误"):
             preparation._off_and_zero(ctx, "x", "X_magnetic_field")
         x = ctx.state["shutdown_readbacks"]["X_magnetic_field"]
         assert x["output"] is False and not ch["output"]
         assert ch["dc_level"] == .16 and "dc_commanded_v" not in x
-        assert ch["offset"] == (.16 if fault == "first_off" else 0.)
+        assert ch["offset"] == .16
         assert ("xy", 1, "set_output", False) in rig.events
     finally:
         ctx.finish()
@@ -508,6 +549,14 @@ def test_scope_monitor_one_frame_and_mismatched_axis(monkeypatch):
     frames[-1] = shot(4, arrays["coil_v"], t + 1e-5)
     with pytest.raises(SafetyAbort, match="时间轴"):
         monitor.acquire(ctx, 20.)
+
+
+def test_scope_error_drain_separates_legacy_errors():
+    scope = Mock()
+    scope.query.side_effect = ['-232,"Format err"', '0,"No error"']
+    assert monitor._drain_errors(scope) == ['-232,"Format err"']
+    scope.query.side_effect = ['0,"No error"']
+    assert monitor._drain_errors(scope) == []
 
 
 def test_pm_and_am_are_separated_using_same_frame():

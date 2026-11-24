@@ -437,8 +437,8 @@
     }
   ],
   "flow": {
-    "run_step_id": "A03",
-    "finish_step_id": "A04",
+    "run_step_id": "A06",
+    "finish_step_id": "A07",
     "acquisition": [
       {
         "id": "A01",
@@ -472,7 +472,7 @@
       },
       {
         "id": "A03",
-        "title": "同次标定、基带扫频与噪声",
+        "title": "整周相位响应扫描与工作点选择",
         "group": "测量",
         "dependencies": [
           "A02"
@@ -502,18 +502,13 @@
           "DEMOD0_TC",
           "DEMOD0_RATE",
           "STATIC_POINT_DURATION_S",
-          "LOCAL_SPAN_DEG",
-          "PM_FREQUENCIES_HZ",
-          "PM_TONE_DURATION_S",
-          "NOISE_DURATION_S",
-          "WELCH_SEGMENT_S",
           "SYSTEM_SETTLE_S",
           "TEMP_SWITCH_ON_LAG_S",
           "SET_TEC_TARGET",
           "TARGET_TEMPERATURE_C"
         ],
         "artifacts": [
-          "raw/"
+          "raw/coarse_*.npz"
         ],
         "display_parameters": [
           "Y_RF_FREQ_HZ",
@@ -540,24 +535,82 @@
           "DEMOD0_TC",
           "DEMOD0_RATE",
           "STATIC_POINT_DURATION_S",
-          "LOCAL_SPAN_DEG",
-          "PM_FREQUENCIES_HZ",
-          "PM_TONE_DURATION_S",
-          "NOISE_DURATION_S",
-          "WELCH_SEGMENT_S",
           "SYSTEM_SETTLE_S",
           "TEMP_SWITCH_ON_LAG_S",
           "SET_TEC_TARGET",
           "TARGET_TEMPERATURE_C"
         ],
         "quality_gates": [
-          "整周扫描拟合最大切线；按 CH4 相对 CH3 实测角度、正交分量和对称局部扫拟合静态斜率。",
-          "固定 1° 原生 PM 后才回调载波中心；扫频只改基带频率，不复用不合格的电学标定。",
-          "无调制但保留载波，前后核查物理相位、载波幅值和同一锁相配置。关闭温控窗口只读不写。"
+          "整周扫描拟合最大切线；MFLI 解调相位转回读偏差不超过 0.5°。"
         ]
       },
       {
         "id": "A04",
+        "title": "局部 K₀ 标定",
+        "group": "测量",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [
+          "LOCAL_SPAN_DEG"
+        ],
+        "artifacts": [
+          "raw/local_*_scope.npz",
+          "raw/local_*_xy.npz"
+        ],
+        "display_parameters": [
+          "LOCAL_SPAN_DEG"
+        ],
+        "quality_gates": [
+          "按 CH4 相对 CH3 实测角度、Y 正交分量和对称内外两档一致拟合静态斜率；载波监视幅度变化不超过 5%。"
+        ]
+      },
+      {
+        "id": "A05",
+        "title": "基带频率响应测量",
+        "group": "测量",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [
+          "PM_FREQUENCIES_HZ",
+          "PM_TONE_DURATION_S"
+        ],
+        "artifacts": [
+          "raw/pm_*.npz"
+        ],
+        "display_parameters": [
+          "PM_FREQUENCIES_HZ",
+          "PM_TONE_DURATION_S"
+        ],
+        "quality_gates": [
+          "固定 1° 原生 PM 后才回调载波中心；扫频只改基带频率，每点核对载波中心、深度与残余 AM。"
+        ]
+      },
+      {
+        "id": "A06",
+        "title": "无调制噪声测量",
+        "group": "测量",
+        "dependencies": [
+          "A05"
+        ],
+        "parameters": [
+          "NOISE_DURATION_S",
+          "WELCH_SEGMENT_S"
+        ],
+        "artifacts": [
+          "raw/noise_*.npz"
+        ],
+        "display_parameters": [
+          "NOISE_DURATION_S",
+          "WELCH_SEGMENT_S"
+        ],
+        "quality_gates": [
+          "无调制但保留载波；前后复核物理相位、载波幅值和同一锁相配置，关闭温控窗口只读不写。"
+        ]
+      },
+      {
+        "id": "A07",
         "title": "安全结束会话",
         "group": "结束",
         "dependencies": [],
@@ -594,106 +647,197 @@
         "RUN_TAG": [
           "A01",
           "A02",
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "Y_RF_FREQ_HZ": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "Y_RF_VPP": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "X_BIAS_V": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "Y_BIAS_V": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "MAIN_FIELD_CURRENT_MA": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "Z_PEAK_CURRENT_MA": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "Z_PULSE_WIDTH_US": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "Z_PULSE_EDGE_US": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "Z_TAIL_COMP_ENABLED": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "Z_TAIL_S_F": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "Z_TAIL_TAU_E_US": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "AMPLIFIER_GAIN_DB": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "AMPLIFIER_INPUT_IMPEDANCE_OHM": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "SENSE_RESISTOR_OHM": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "DAMPING_RESISTOR_OHM": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "COIL_RESISTANCE_OHM": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "RESISTOR_RATED_W": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "DEMOD0_IDX": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "DEMOD0_SIGNAL_RANGE": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "DEMOD0_ORDER": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "DEMOD0_TC": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "DEMOD0_RATE": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "STATIC_POINT_DURATION_S": [
-          "A03"
-        ],
-        "LOCAL_SPAN_DEG": [
-          "A03"
-        ],
-        "PM_FREQUENCIES_HZ": [
-          "A03"
-        ],
-        "PM_TONE_DURATION_S": [
-          "A03"
-        ],
-        "NOISE_DURATION_S": [
-          "A03"
-        ],
-        "WELCH_SEGMENT_S": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "SYSTEM_SETTLE_S": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "TEMP_SWITCH_ON_LAG_S": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "SET_TEC_TARGET": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
         ],
         "TARGET_TEMPERATURE_C": [
-          "A03"
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "LOCAL_SPAN_DEG": [
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "PM_FREQUENCIES_HZ": [
+          "A05",
+          "A06"
+        ],
+        "PM_TONE_DURATION_S": [
+          "A05",
+          "A06"
+        ],
+        "NOISE_DURATION_S": [
+          "A06"
+        ],
+        "WELCH_SEGMENT_S": [
+          "A06"
         ]
       },
       "analysis": {}

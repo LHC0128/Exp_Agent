@@ -1,4 +1,4 @@
-"""同一轮 Burst 局部标定、原生 PM 传递函数和无调制锁相噪声采集。"""
+"""同一轮四段采集：整周相位响应、局部 K₀ 标定、原生 PM 频响和无调制锁相噪声。"""
 from __future__ import annotations
 
 import math
@@ -250,7 +250,8 @@ def _require_stable(point):
     return point["carrier_center_deg"]
 
 
-def _calibrate(ctx, carrier):
+def phase_response(ctx, carrier):
+    """整周 Burst 扫描找最大切线，并把 MFLI 解调相位转到该切线。"""
     p = ctx.params
     start = time.monotonic()
     coarse = []
@@ -259,7 +260,7 @@ def _calibrate(ctx, carrier):
         carrier.burst_phase(phase)
         coarse.append(_xy(ctx, f"coarse_{i:02d}", p.static_point_duration_s, lockin=coarse_lockin, burst_command_deg=phase))
         done = i + 1
-        report_runtime_progress("A03", f"扫描原子相位 {done}/{len(_STATIC_GRID_DEG)}", 15 * done / len(_STATIC_GRID_DEG),
+        report_runtime_progress("A03", f"扫描原子相位 {done}/{len(_STATIC_GRID_DEG)}", 10 + 80 * done / len(_STATIC_GRID_DEG),
                                 estimated_remaining_seconds=(time.monotonic() - start) / done * (len(_STATIC_GRID_DEG) - done),
                                 data={"eta_scope": "当前静态扫描"})
     best, rotation, prediction = signal_fit.best_tangent(_STATIC_GRID_DEG, coarse)
@@ -269,14 +270,34 @@ def _calibrate(ctx, carrier):
     settings = lockin_readback(ctx)
     if abs(signal_fit.wrap_deg(settings["phase_deg"] - setpoint)) > 0.5:
         raise SafetyAbort("MFLI 最大切线转到 Y 的相位设定未通过回读")
+    ctx.state["phase_response"] = dict(
+        burst_command_deg=best, rotation_deg=rotation, coarse_fit=prediction,
+        lockin_phase_deg=settings["phase_deg"], lockin=settings, grid_deg=list(_STATIC_GRID_DEG),
+        points=len(coarse))
+    ctx.save()
+    ctx.outputs["相位灵敏度"] = f"整周扫描完成，工作点 {best:.3f}°；待局部 K₀ 标定"
+    report_runtime_progress("A03", f"整周扫描完成，工作点 {best:.3f}°", 95, estimated_remaining_seconds=None)
 
+
+def local_calibration(ctx, carrier):
+    """在整周工作点两侧对称取内外两档，标定本轮 K₀。"""
+    p = ctx.params
+    phase = ctx.state.get("phase_response") or {}
+    best = phase.get("burst_command_deg")
+    if best is None:
+        raise SafetyAbort("缺少本轮整周扫描结果；A04 不能跨轮接在 A03 之前")
+    settings = lockin_readback(ctx)
+    if abs(signal_fit.wrap_deg(settings["phase_deg"] - phase["lockin_phase_deg"])) > 0.5:
+        raise SafetyAbort("MFLI 解调相位与整周扫描结束时不一致；请整链重跑")
+    start = time.monotonic()
     span = p.local_span_deg
     rows = []
     cal = dict(accepted=False, burst_command_deg=best, lockin_phase_deg=settings["phase_deg"],
-               coarse_fit=prediction, points=rows)
+               coarse_fit=phase.get("coarse_fit"), points=rows)
     ctx.state["calibration"] = cal
     values, times, centers, carrier_levels = [], [], [], []
-    for i, delta in enumerate((0., -span, span, 0., span / 2, -span / 2, 0.)):
+    offsets = (0., -span, span, 0., span / 2, -span / 2, 0.)
+    for i, delta in enumerate(offsets):
         command = carrier.burst_phase(best + delta)
         scope_label, xy_label = f"local_{i:02d}_scope", f"local_{i:02d}_xy"
         scope = _electrical(ctx, scope_label, dict(mode="burst", command_deg=command))
@@ -291,6 +312,10 @@ def _calibrate(ctx, carrier):
         centers.append(center)
         carrier_levels.append(scope["carrier_v_pk"])
         rows[-1].update(x_mean_v=value.real, y_mean_v=value.imag)
+        done = i + 1
+        report_runtime_progress("A04", f"局部标定 {done}/{len(offsets)}", 5 + 85 * done / len(offsets),
+                                estimated_remaining_seconds=(time.monotonic() - start) / done * (len(offsets) - done),
+                                data={"eta_scope": "当前局部标定"})
     target_center, target_v_pk = centers[-1], float(np.median(carrier_levels))
     if np.max(np.abs(np.asarray(carrier_levels) / target_v_pk - 1.)) > _CARRIER_FRACTION_TOL:
         raise SafetyAbort("Burst 局部扫描的线圈监视幅度变化超过 5%")
@@ -302,9 +327,10 @@ def _calibrate(ctx, carrier):
         raise SafetyAbort("局部 K0 信噪比、Y 投影或内外两档线性一致性不足")
     cal["accepted"] = True
     ctx.save()
-    report_runtime_progress("A03", f"静态局部斜率 {k:.5g} V/rad，本轮工作点 {target_center:.3f}°", 35,
+    ctx.outputs["相位灵敏度"] = f"局部 K₀ = {k:.5g} V/rad，工作点 {target_center:.3f}°"
+    report_runtime_progress("A04", f"局部 K₀ {k:.5g} V/rad，工作点 {target_center:.3f}°", 95,
                             estimated_remaining_seconds=None)
-    return cal, settings
+    return cal
 
 
 def _electrical_reason(point, calibration, anchor, *, pm):
@@ -342,6 +368,7 @@ def _align_pm(ctx, carrier, cal):
     ctx.state["pm_alignment"].update(aligned=point, command_deg=carrier.command_deg)
     if reason := _electrical_reason(point, cal, None, pm=True):
         raise SafetyAbort(f"原生 PM 回调后拒绝：{reason}")
+    ctx.state["pm_alignment"]["anchor_center_deg"] = point["carrier_center_deg"]
     return point["carrier_center_deg"]
 
 
@@ -368,14 +395,15 @@ def _sweep(ctx, carrier, cal, lockin, anchor):
                 row["accepted"] = True
         ctx.save()
         done = i + 1
-        report_runtime_progress("A03", f"基带频响 {done}/{len(frequencies)}，{f_hz:g} Hz：{row['reason'] or '电学与时序通过'}",
-                                40 + 40 * done / len(frequencies),
+        report_runtime_progress("A05", f"基带频响 {done}/{len(frequencies)}，{f_hz:g} Hz：{row['reason'] or '电学与时序通过'}",
+                                15 + 75 * done / len(frequencies),
                                 estimated_remaining_seconds=(time.monotonic() - start) / done * (len(frequencies) - done),
                                 data={"eta_scope": "当前基带扫频"})
 
 
 def _baseline(ctx, carrier, cal, lockin, anchor):
     f_hz = ctx.params.pm_anchor_hz
+    report_runtime_progress("A06", "关闭调制并复核锚点载波", 10, estimated_remaining_seconds=None)
     settings = carrier.stop_pm()
     state = dict(accepted=False, reason="未完成基线检查", scope_labels=[], xy_label=None)
     ctx.state["noise"] = state
@@ -397,9 +425,11 @@ def _baseline(ctx, carrier, cal, lockin, anchor):
     if reason := _electrical_reason(candidate, cal, anchor, pm=False):
         state["reason"] = reason
         return
+    report_runtime_progress("A06", "采集无调制基带记录", 40, estimated_remaining_seconds=None)
     state["xy_label"] = "noise_xy"
     mean = _xy(ctx, "noise_xy", ctx.params.noise_duration_s, lockin=lockin, source_mode="unmodulated_carrier")
     state.update(mean_x_v=mean.real, mean_y_v=mean.imag)
+    report_runtime_progress("A06", "复核噪声前后载波", 80, estimated_remaining_seconds=None)
     after = _electrical(ctx, "noise_after_scope", carrier.verify_unmodulated(), f_hz)
     state.update(after=after, scope_labels=[label, "noise_after_scope"])
     reason = _electrical_reason(after, cal, anchor, pm=False)
@@ -410,13 +440,36 @@ def _baseline(ctx, carrier, cal, lockin, anchor):
     state.update(accepted=not reason, reason=reason)
 
 
-def measure(ctx, carrier):
+def _calibration_state(ctx):
+    cal = ctx.state.get("calibration") or {}
+    if cal.get("accepted") is not True:
+        raise SafetyAbort("缺少本轮合格的局部 K₀ 标定；请先运行 A04")
+    lockin = lockin_readback(ctx)
+    if abs(signal_fit.wrap_deg(lockin["phase_deg"] - cal["lockin_phase_deg"])) > 0.5:
+        raise SafetyAbort("MFLI 解调相位与本轮标定不一致；请整链重跑")
+    return cal, lockin
+
+
+def frequency_response(ctx):
     try:
-        cal, lockin = _calibrate(ctx, carrier)
-        anchor = _align_pm(ctx, carrier, cal)
-        _sweep(ctx, carrier, cal, lockin, anchor)
-        _baseline(ctx, carrier, cal, lockin, anchor)
+        cal, lockin = _calibration_state(ctx)
+        anchor = _align_pm(ctx, ctx.carrier, cal)
+        ctx.save()
+        _sweep(ctx, ctx.carrier, cal, lockin, anchor)
+    except ValueError as exc:
+        raise SafetyAbort(str(exc)) from exc
+    ctx.outputs["相位灵敏度"] = "基带频率响应采集完成；待无调制噪声基线"
+    report_runtime_progress("A05", "基带频响完成", 95, estimated_remaining_seconds=None)
+
+
+def noise_measurement(ctx):
+    try:
+        cal, lockin = _calibration_state(ctx)
+        anchor = (ctx.state.get("pm_alignment") or {}).get("anchor_center_deg")
+        if anchor is None:
+            raise SafetyAbort("缺少本轮 PM 对准锚点；请先运行 A05")
+        _baseline(ctx, ctx.carrier, cal, lockin, anchor)
     except ValueError as exc:
         raise SafetyAbort(str(exc)) from exc
     ctx.outputs["相位灵敏度"] = "数据已读入；频响、低频一致性和噪声折算资格见离线分析"
-    report_runtime_progress("A03", "完成原始采集，开始安全恢复", 90, estimated_remaining_seconds=None)
+    report_runtime_progress("A06", "完成原始采集，开始安全恢复", 95, estimated_remaining_seconds=None)

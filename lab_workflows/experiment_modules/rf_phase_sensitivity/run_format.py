@@ -29,7 +29,7 @@ _MAX_POINTS = 1_000_000
 def initial_metadata(p: RfPhaseSensitivityParams):
     return dict(experiment_id=EXPERIMENT_ID, experiment_type=DATA_TYPE, data_type=DATA_TYPE,
                 execution_mode="typed_workflow", raw_format_version=RAW_FORMAT_VERSION, completion_status="running",
-                data_files=[], actual_rates={}, calibration={}, transfer=[], noise={},
+                data_files=[], actual_rates={}, phase_response={}, calibration={}, transfer=[], noise={},
                 temperature_gating=dict(scope="each_atomic_record", off_voltage_v=0., on_voltage_v=5.,
                                         system_settle_s=p.system_settle_s, on_lag_s=p.temp_switch_on_lag_s),
                 temperature=dict(target_temperature_c=p.target_temperature_c if p.set_tec_target else None,

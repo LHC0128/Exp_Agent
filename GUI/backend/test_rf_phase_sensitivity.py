@@ -77,9 +77,9 @@ def test_discovery_schema_workflow_and_real_preflight(client):
     assert schema.json()["fields"] == fixture["fields"]
     manifest = flow.json()
     assert manifest == fixture["flow"]
-    assert [stage["id"] for stage in manifest["acquisition"]] == ["A01", "A02", "A03", "A04"]
+    assert [stage["id"] for stage in manifest["acquisition"]] == ["A01", "A02", "A03", "A04", "A05", "A06", "A07"]
     assert [stage["id"] for stage in manifest["analysis"]] == ["B01"]
-    assert (manifest["run_step_id"], manifest["finish_step_id"]) == ("A03", "A04")
+    assert (manifest["run_step_id"], manifest["finish_step_id"]) == ("A06", "A07")
     assert manifest["diagram_url"] == f"{BASE}/workflow/diagram"
     assert client.get(f"{RESPONSE_BASE}/workflow").json()["diagram_url"] == f"{RESPONSE_BASE}/workflow/diagram"
 
@@ -152,7 +152,7 @@ def test_history_lists_only_own_format_and_serves_existing_readonly_artifacts(cl
 
 def test_session_dispatch_dependencies_and_cancel_wait_for_child(client, monkeypatch):
     waiting, completed, cleaning, release = Event(), Event(), Event(), Event()
-    stage_ids = ["A01", "A02", "A03"]
+    stage_ids = ["A01", "A02", "A03", "A04", "A05"]
 
     def execute(module, *, parameters, commands, cancellation, progress):
         assert module.endswith(".rf_phase_sensitivity.session")
@@ -164,7 +164,7 @@ def test_session_dispatch_dependencies_and_cancel_wait_for_child(client, monkeyp
         progress(ProgressEvent("waiting", "替身命令已完成", data={
             "workflow_session": {"revision": 1, "steps": {
                 stage: {"status": "completed", "error": ""} for stage in stage_ids
-            } | {"A04": {"status": "pending", "error": ""}}},
+            } | {"A06": {"status": "pending", "error": ""}, "A07": {"status": "pending", "error": ""}}},
             "command_result": {"request_id": command["request_id"], "error": None},
         }))
         completed.set()

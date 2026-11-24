@@ -56,7 +56,8 @@ async function response(url: string, options?: RequestInit): Promise<unknown> {
     return session = { ...session, steps: steps(ids), revision: session.revision + 1 };
   }
   if (url === `${sessionUrl}/finish` && options?.method === "POST" && session) {
-    return session = { ...session, status: "closed", steps: steps(["A01", "A02", "A03", "A04"]), revision: session.revision + 1 };
+    const done = flow.acquisition.filter(stage => stage.id !== flow.finish_step_id).map(stage => stage.id);
+    return session = { ...session, status: "closed", steps: steps(done), revision: session.revision + 1 };
   }
   if (url.startsWith(`${BASE}/runs?`)) return { runs: [history], total: 1 };
   if (url === summaryUrl) return {

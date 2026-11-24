@@ -157,6 +157,44 @@ def write_temperature(ctx, enabled):
     return dict(output=True, dc_setting_v=readback)
 
 
+def _dc_level(device, channel, value):
+    """写 DC 电平；DG4162 在 DC 波形下会忽略 OFFSET/APPLy 写入，先切正弦再写。
+
+    真机实测（2026-11-24）：波形已是 DC 时 ``set_offset`` 与 ``:APPLy:USER`` 都不改变
+    OFFSET 回读，X 偏置因此改不动、收尾也归不了零；先切到 SINusoid 写 OFFSET，
+    再切回 DC，DC 会沿用刚写入的电平。
+    """
+    if device.get_shape(channel=channel).strip().upper() == "DC":
+        device.set_shape("SINusoid", channel=channel)
+    device.set_offset(float(value), channel=channel)
+    device.set_shape("DC", channel=channel)
+    shape = device.get_shape(channel=channel).strip().upper()
+    actual = device.get_dc_voltage(channel=channel)
+    if shape != "DC" or not math.isclose(actual, float(value), abs_tol=1e-4):
+        raise SafetyAbort(f"DC 电平 {value:g} V 未生效：波形 {shape}、回读 {actual:g} V")
+
+
+def _configure_dc_side(ctx):
+    """把静态偏置 DC 写到非射频通道；DC 波形下的电平写入先切正弦再写。"""
+    p = ctx.params
+    role = "y" if prep.rf_role(p) == "x" else "x"
+    device, channel = _route(ctx, role)
+    limits = load_safety_limits(ctx.root)
+    key, bias = prep.channel_key(role), prep.channel_bias_v(p, role)
+    validate_safety_limit(key, 0.0, limits)
+    if bias:
+        validate_safety_limit(key, bias, limits)
+    device.set_burst_state(False, channel=channel)
+    device.set_mod_state(False, channel=channel)
+    device.set_output(False, channel=channel)
+    if dg_output(device, channel):
+        raise SafetyAbort(f"{role} 偏置未回读为 OFF，拒绝改写 DC 电平")
+    _dc_level(device, channel, float(bias))
+    device.set_output(abs(bias) > 0.0, channel=channel)
+    ctx.state[f"{role}_bias_v"] = float(bias)
+    ctx.outputs[f"{role.upper()} 偏置"] = (f"DC {bias:+.3f} V（输出 ON）" if bias else "0 V（输出 OFF）")
+
+
 def _prepare_temperature(ctx):
     write_temperature(ctx, True)
     ctx.outputs["温控"] = "ON（5 V，已回读）"
@@ -258,7 +296,7 @@ def prepare_measurement(ctx):
     prep.configure_chain(ctx)
     prep.configure_main_field(ctx, ctx.params.main_field_current_ma)
     prep.configure_lockin(ctx)
-    prep.configure_dc_side(ctx)
+    _configure_dc_side(ctx)
     _prepare_trigger(ctx)
     from .acquisition import Carrier
     carrier = Carrier(ctx)
@@ -287,14 +325,8 @@ def _off_and_zero(ctx, role, key):
         if role == "z":
             device.set_sync_state(False, channel=channel)
         validate_safety_limit(key, 0., load_safety_limits(ctx.root))
-        # 即使 X 已处于 DC，也清除普通 OFFSET 设定，再写专用 DC 电平。
-        # DG4162 的 OFFSET 回读不是物理电压，不以普通 OFFSET 写入替代 DC 命令。
-        device.set_offset(0., channel=channel)
-        if shape() != "DC":
-            device.set_shape("DC", channel=channel)
-        if dg_output(device, channel) or shape() != "DC":
-            raise SafetyAbort("未确认 OFF + DC，禁止写专用 DC 电平")
-        device.set_dc_voltage(0., channel=channel)
+        # 即使 X 已处于 DC，也要先离开 DC 才能改写电平；否则 DG4162 忽略写入、旧偏置残留。
+        _dc_level(device, channel, 0.)
         record["dc_commanded_v"] = 0.
     except Exception as exc:
         errors.append(f"归零命令: {exc}")

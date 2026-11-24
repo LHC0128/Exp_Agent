@@ -218,7 +218,10 @@ class DHO900Acquisition:
         self._require_live_acquisition()
         self._inst.check_errors()
         try:
-            self._inst.trigger_run()
+            # 慢时基（真机 0.2 s/div）在 RUN 中改时基会让 DHO924 的 SCPI 阻塞到读超时，
+            # 并留下 -232 格式错误；配置阶段一律先 STOP 再写，采集由 start_acquisition 单次布防。
+            self._inst.trigger_stop()
+            self._wait_stopped(2.0)
             self._wait(0.1)
             enabled = {channel.number for channel in config.channels if channel.enabled}
             # 显式关闭未请求通道，确保通道数/深度约束不依赖前面板残留状态。
