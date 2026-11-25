@@ -73,7 +73,7 @@ class RfPhaseSensitivityParams(ExperimentParams):
                                       unit="°", minimum=3, maximum=30, description="在最佳工作点两侧等分细扫的对称偏移跨度。")
     pm_frequencies_hz: list[float] = parameter(default_factory=lambda: [5., 10., 20., 40., 80.],
         external_name="PM_FREQUENCIES_HZ", label="基带调相频率列表", unit="Hz", group="basic",
-        description="严格递增，不改变 5 kHz 载波。包含 20 Hz 时以 20 Hz 作锚点，否则用最低频点。")
+        description="严格递增，不改变 5 kHz 载波，按列表顺序单次扫描。")
     pm_tone_duration_s: float = parameter(default=2., external_name="PM_TONE_DURATION_S", label="每档 MFLI 音调采集时长",
                                          unit="s", minimum=0.5, maximum=12.)
     noise_duration_s: float = parameter(default=24., external_name="NOISE_DURATION_S", label="无调制噪声记录时长",
@@ -136,8 +136,7 @@ class RfPhaseSensitivityParams(ExperimentParams):
 
     @property
     def sweep_order_hz(self) -> list[float]:
-        anchor = self.pm_anchor_hz
-        return [anchor, *(f for f in self.pm_frequencies_hz if f != anchor), anchor]
+        return list(self.pm_frequencies_hz)
 
     def validate_model(self) -> list[str]:
         errors = []

@@ -8,7 +8,6 @@ from aigtek_1200b import Aigtek1200BInstrument
 from gs200 import GS200Instrument
 from hardware_gate import HardwareAccessDenied
 from lockin_amplifier import DemodulatorConfig, OscillatorConfig, SignalInputConfig, demod, lockin_capabilities
-from oscilloscope import create_oscilloscope
 from signal_generator.types import normalize_output_load
 from tec_controller import TECInstrument
 
@@ -36,14 +35,13 @@ from ..z_chain_common.keys import (
     CURRENT_LIMIT_KEY,
     LOCKIN_KEY,
     MAIN_FIELD_KEY,
-    SCOPE_KEY,
     SOURCE_KEY,
     TEC_KEY,
     TEMP_SWITCH_KEY,
     TRIGGER_KEY,
     X_KEY,
 )
-from . import monitor, run_format
+from . import run_format
 from .models import MFLI_MAX_SIGOUT_V, MOD_CARRIER_OSC_IDX, READOUT_DEMOD_IDX
 
 _EXPECTED = {
@@ -53,7 +51,6 @@ _EXPECTED = {
     TEMP_SWITCH_KEY: ("signal_generator", {"DG4000", "DG900"}),
     LOCKIN_KEY: ("lockin_amplifier", {"MFLI"}),
     AMPLIFIER_KEY: ("power_amplifier", {"1200B"}),
-    SCOPE_KEY: ("oscilloscope", {"DHO924", "DHO924S"}),
     MAIN_FIELD_KEY: ("gs200", {"GS200"}),
     TEC_KEY: ("tec_controller", {"TEC103"}),
 }
@@ -209,9 +206,6 @@ def _connect_devices(ctx):
                 safety_check=prep.amplifier_safety_check(ctx, preflight),
             ),
         )
-        devices["scope"] = session.connect(
-            "scope", str(mapping[SCOPE_KEY]["resource"]), lambda: create_oscilloscope(mapping[SCOPE_KEY])
-        )
         main_field = mapping[MAIN_FIELD_KEY]
         devices["gs200"] = session.connect(
             "gs200", str(main_field["resource"]), lambda: GS200Instrument(main_field["resource"])
@@ -241,7 +235,6 @@ def connect_and_synchronize(ctx):
         _connect_devices(ctx)
     ctx.state["clock_sources"] = clocks(ctx)
     ctx.state["optional_connection_errors"] = ctx.device_session.optional_connection_errors()
-    ctx.outputs["DHO924"] = "已连接，采集前核对面板状态"
 
 
 def _route(ctx, name):
@@ -479,12 +472,9 @@ def _prepare_trigger(ctx):
 
 
 def prepare_measurement(ctx):
-    """在启动输出前核对专用监视路径；先关功放，再配置 Z/X/共同触发/MFLI 与 MF-MOD。"""
-    scope = ctx.devices["scope"]
-    original = monitor.snapshot_scope(scope)
+    """在启动输出前核对信号源并先关功放，再配置 Z/X/共同触发/MFLI 与 MF-MOD。"""
     _verify_generators(ctx)
     check_cancelled()
-    ctx.scope_original = original
     ctx.active = True
     prep.set_amp_output(ctx, False)
     _prepare_temperature(ctx)
@@ -666,13 +656,9 @@ def park(ctx):
     actions.extend((ShutdownAction("恢复温控并回读", restore_temperature), ShutdownAction("停 MFLI 解调传输", stop_mfli)))
     if ctx.main_field_state is not None:
         actions.append(ShutdownAction("恢复 GS200 主磁场", restore_main_field))
-    if ctx.scope_touched:
-        ctx.outputs["DHO924"] = "收尾待回读"
-        actions.append(ShutdownAction("恢复 DHO924 面板与连续触发", lambda: monitor.restore_scope(ctx)))
     report = run_safety_shutdown(extra_actions=actions, preserved_outputs=(*STANDARD_PRESERVED_OUTPUTS, TRIGGER_KEY))
     ctx.state["safety_shutdown"] = report.to_dict()
     if report.completed:
         ctx.active = False
-        ctx.scope_touched = False
         ctx.main_field_state = None
     return list(report.errors)

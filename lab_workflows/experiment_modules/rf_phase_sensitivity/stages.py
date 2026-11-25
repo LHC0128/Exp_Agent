@@ -29,28 +29,29 @@ ACQUISITION = (
     Stage("A01", "参数与映射预检", "准备", (), ("RUN_TAG",),
           quality_gates=("Y 向 5 kHz 载波由 MFLI Out1（MF-MOD）输出且 Y_RF_VPP 可调；核对 mfli_dev30661_signal_output_0、Demod 4 与 Z 脉冲限值。",)),
     Stage("A02", "连接设备并同步公共参考时钟", "准备", ("A01",), (),
-          quality_gates=("连接设备并验证 MFLI MF-MD/MF-MOD 选件；先写入再严格回读 10 MHz 外部时钟；DHO924 核对面板状态。",)),
+          quality_gates=("连接设备并验证 MFLI MF-MD/MF-MOD 选件；先写入再严格回读 10 MHz 外部时钟。",)),
     Stage("A03", "整周相位响应扫描与工作点选择", "测量", ("A02",), SETUP_KEYS,
           artifacts=("raw/coarse_*.npz",),
           quality_gates=("开启 MF-MOD 连续无调制载波并整周扫描拟合最大切线；将独立 Demod 4 相位转到 sample.y（回读偏差不超过 0.5°）。",)),
     Stage("A04", "局部 K₀ 标定", "测量", ("A03",), LOCAL_KEYS,
-          artifacts=("raw/local_*_scope.npz", "raw/local_*_xy.npz"),
-          quality_gates=("按 CH4 相对 CH3 实测角度、Y 正交分量和对称内外两档一致拟合静态斜率；载波监视幅度变化不超过 5%。",)),
+          artifacts=("raw/local_*_xy.npz",),
+          quality_gates=("在工作点两侧以 MFLI 指令角加密细扫，按 Demod 4 Y 正交分量直线拟合静态斜率（含首尾线性漂移扣除）；信噪比或线性度偏离记为告警但不中断采集。",)),
     Stage("A05", "基带频率响应测量", "测量", ("A04",), SWEEP_KEYS,
           artifacts=("raw/pm_*.npz",),
-          quality_gates=("开启 MF-MOD 固定 2° 峰值相干边带 PM 并维持工作点中心；只改调制振荡器 Osc 3 频率，每点核对中心、深度与残余 AM。",)),
+          quality_gates=("开启 MF-MOD 固定 2° 峰值相干边带 PM，按 PM_FREQUENCIES_HZ 单次顺序切换 Osc 3 基带频率并在 Demod 4 采集各档 XY 帧。",)),
     Stage("A06", "无调制噪声测量", "测量", ("A05",), NOISE_KEYS,
           artifacts=("raw/noise_*.npz",),
-          quality_gates=("关闭边带保留连续载波；前后复核物理相位、载波幅值和同一 Demod 4 配置，关闭温控窗口只读不写。",)),
+          quality_gates=("关闭上下边带保留 5 kHz 连续载波，仅在 MFLI Demod 4 采集无调制噪声 XY 帧，严格守住温控窗口只读不写。",)),
     Stage(FINISH_ID, "安全结束会话", "结束", (), (), quality_gates=(
-        "先关 1200B，再关 MFLI Out1/MOD 并清零偏置与幅值，Z/X 关闭归零并回读，停 Demod 4 传输并恢复温控、主场与示波器；共同触发保持。",)),
+        "先关 1200B，再关 MFLI Out1/MOD 并清零偏置与幅值，Z/X 关闭归零并回读，停 Demod 4 传输并恢复温控与主场；共同触发保持。",)),
 )
 ANALYSIS = (
     Stage("B01", "相位频响与输入等效噪声分析", "独立分析", (), (),
           artifacts=(run_format.SUMMARY, run_format.TRANSFER_TABLE, run_format.NOISE_TABLE,
+                     run_format.RESPONSE_PLOT, run_format.LOCAL_PLOT,
                      run_format.TRANSFER_PLOT, run_format.NOISE_PLOT),
-          quality_gates=("核对同轮低频标度和锚点复测；仅在相邻合格频点覆盖的连续频段内折算 Welch 噪声。"
-                         "质量不足时只导出可用诊断，不填补被拒频点或外推。",)),
+          quality_gates=("绘制 A03 相图、A04 工作点附近 XY 响应、A05 归一化相位频响 |H(f)|/|K₀| 与 A06 相位灵敏度谱（°/√Hz）；"
+                         "低频闭合等参考检查仅作告警与图例标注，不扣留出图。",)),
 )
 _rules = DependencyRules(finish_id=FINISH_ID)
 invalidated_stages = _rules.invalidated_stages

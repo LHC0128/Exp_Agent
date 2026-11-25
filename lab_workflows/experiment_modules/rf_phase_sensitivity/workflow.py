@@ -22,16 +22,14 @@ class Workflow(StagedWorkflow):
     quality_errors = (SafetyAbort,)
     hardware_free = ("A01", "A02")
     inherited_state_keys = ("clock_sources", "optional_connection_errors")
-    output_keys = ("功放", "Z 通道", "Y 射频", "X 偏置", "温控", "共同触发", "主磁场", "DHO924", "MFLI", "相位灵敏度")
-    output_source = "功放为已发送命令；Z/X 信号源、MFLI MF-MOD、时钟和示波器有仪器回读，DC 设定不是独立物理测量"
+    output_keys = ("功放", "Z 通道", "Y 射频", "X 偏置", "温控", "共同触发", "主磁场", "MFLI", "相位灵敏度")
+    output_source = "功放为已发送命令；Z/X 信号源、MFLI MF-MOD 与时钟有仪器回读，DC 设定不是独立物理测量"
     finished_message = "采集会话已结束；安全收尾结果见回读和错误清单"
 
     def __init__(self, params, *, project_root=None, session_id=None):
         super().__init__(params, project_root=project_root, session_id=session_id)
         self.device_session = DeviceSession()
         self.active = False
-        self.scope_original = None
-        self.scope_touched = False
         self.main_field_state = None
         self.carrier = None
         self._round_marker = None
@@ -46,6 +44,7 @@ class Workflow(StagedWorkflow):
         noise = self.state.get("noise") or {}
         phase = self.state.get("phase_response") or {}
         return {"daq_settings": {"k0_v_per_rad": cal.get("k0_v_per_rad") if cal.get("accepted") else None,
+                "k0_warnings": cal.get("quality_warnings") or [],
                 "carrier_center_deg": cal.get("carrier_center_deg"),
                 "work_point_deg": phase.get("burst_command_deg"), "noise_accepted": noise.get("accepted"),
                 "noise_reason": noise.get("reason")}, "main_field": self.state.get("main_field")}

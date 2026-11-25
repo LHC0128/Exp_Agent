@@ -1,4 +1,4 @@
-"""从封存的 XY 帧测量基带增益和噪声；示波器与锁相数据只比较幅值。"""
+"""从封存的 XY 帧测量基带增益和噪声；兼容旧版含示波器监视帧的归档目录。"""
 from __future__ import annotations
 
 from collections import Counter
@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import re
 from tempfile import TemporaryDirectory
 from zipfile import BadZipFile
 
@@ -16,20 +17,24 @@ from scipy.signal import correlate, welch
 from ...analysis_execution import file_signature as signature
 from ...experiment_runtime import check_cancelled
 from ...workflow_state import write_state
+from ..z_chain_common.phase import decompose
 from . import run_format
 
 ANALYSIS_VERSION = "rf-phase-sensitivity-v1"
 SUMMARY = run_format.SUMMARY
 TRANSFER_CSV = run_format.TRANSFER_TABLE
 NOISE_CSV = run_format.NOISE_TABLE
+RESPONSE_PNG = run_format.RESPONSE_PLOT
+LOCAL_PNG = run_format.LOCAL_PLOT
 TRANSFER_PNG = run_format.TRANSFER_PLOT
 NOISE_PNG = run_format.NOISE_PLOT
-ARTIFACTS = (SUMMARY, TRANSFER_CSV, NOISE_CSV, TRANSFER_PNG, NOISE_PNG)
+ARTIFACTS = (SUMMARY, TRANSFER_CSV, NOISE_CSV, RESPONSE_PNG, LOCAL_PNG, TRANSFER_PNG, NOISE_PNG)
 
 MIN_TONE_SNR = 5.0
 MIN_TONE_CYCLES = 9.8
 MIN_NOISE_HZ = 1.0
 MIN_WELCH_SEGMENTS = 2
+MAINS_HARMONICS_HZ = (50.0, 100.0, 150.0, 200.0, 250.0)
 CLOSURE_RANGE = (0.8, 1.2)
 REPEAT_FLOOR = 0.15
 REPEAT_CAP = 0.30
@@ -49,10 +54,11 @@ TRANSFER_COLUMNS = (
     "attempt", "frequency_hz", "repeat", "scope_label", "xy_label", "electrical_accepted", "electrical_reason",
     "phase_pk_rad", "phase_scatter_rad", "am_fraction_pk", "center_error_deg", "rate_sa_s", "samples", "cycles",
     "y_pk_v", "y_pk_se_v", "y_snr", "x_pk_v", "x_2f_pk_v", "y_2f_pk_v",
-    "h_v_per_rad", "h_fit_se_v_per_rad", "normalized_gain", "normalized_gain_se", "accepted", "reason",
+    "h_v_per_rad", "h_fit_se_v_per_rad", "normalized_gain", "normalized_gain_se",
+    "quality_passed", "warnings", "accepted", "reason",
 )
 NOISE_COLUMNS = ("frequency_hz", "detector_y_psd_v2_per_hz", "detector_y_asd_v_per_sqrt_hz",
-                 "transfer_band", "h_v_per_rad", "phase_asd_rad_per_sqrt_hz")
+                 "transfer_band", "h_v_per_rad", "phase_asd_rad_per_sqrt_hz", "phase_asd_deg_per_sqrt_hz")
 
 
 def output_path(run_dir, name):
@@ -112,7 +118,7 @@ def _text(value):
 
 def _verify_attestations(metadata, **expected):
     if any(key in metadata and metadata[key] != value for key, value in expected.items()):
-        raise ValueError("帧的频率、激励模式或示波器标签与采集清单不符")
+        raise ValueError("帧的频率、激励模式或监视标签与采集清单不符")
 
 
 def sample_grid(time_s, rate_sa_s):
@@ -166,7 +172,7 @@ def _same_lockin(a, b):
 
 
 def fit_tone(time_s, x_v, y_v, rate_sa_s, frequency_hz, *, correlation_s=0.0):
-    """直接同时拟合正余弦、常量、漂移；只发布幅值和拟合标准误。"""
+    """同时拟合基频、二次谐波、直流漂移及不碰撞的 50 Hz 工频谐波；发布幅值与拟合标准误。"""
     t, rate = sample_grid(time_s, rate_sa_s)
     frequency = _number(frequency_hz)
     nyquist = min(rate, rate_sa_s) / 2
@@ -181,6 +187,15 @@ def fit_tone(time_s, x_v, y_v, rate_sa_s, frequency_hz, *, correlation_s=0.0):
     include_2f = 2 * frequency + 1 / t[-1] < nyquist
     if include_2f:
         columns.extend((np.sin(2 * theta), np.cos(2 * theta)))
+    avoid = (frequency, *((2 * frequency,) if include_2f else ()))
+    guard_hz = max(2.0 / float(t[-1]), 0.5)
+    for mains_hz in MAINS_HARMONICS_HZ:
+        if mains_hz + 1 / t[-1] >= nyquist:
+            break
+        if any(abs(mains_hz - target) < guard_hz for target in avoid) or len(t) <= len(columns) + 8:
+            continue
+        angle = (2 * np.pi * mains_hz) * t
+        columns.extend((np.sin(angle), np.cos(angle)))
     design = np.column_stack(columns)
     coeff, _, rank, spectrum = np.linalg.lstsq(design, np.column_stack((x, y)), rcond=None)
     if rank != design.shape[1] or spectrum[-1] <= spectrum[0] * 1e-8:
@@ -221,30 +236,33 @@ def _transfer_rows(run_dir, attempts, configured, calibration):
         check_cancelled()
         f = _number(item.get("frequency_hz"))
         pm = _number(item.get("phase_pk_rad"))
-        repeat, electrical = item.get("repeat"), item.get("accepted")
+        repeat = item.get("repeat")
+        electrical = item.get("electrical_accepted")
+        if not isinstance(electrical, bool):
+            electrical = item.get("accepted")
         scope, xy = _text(item.get("scope_label")), _text(item.get("xy_label"))
         row = dict(attempt=index, frequency_hz=f, repeat=repeat if isinstance(repeat, bool) else None,
                    scope_label=scope, xy_label=xy, phase_pk_rad=pm, phase_scatter_rad=_number(item.get("phase_scatter_rad")),
                    am_fraction_pk=_number(item.get("am_fraction_pk")), center_error_deg=_number(item.get("center_error_deg")),
                    electrical_accepted=electrical if isinstance(electrical, bool) else None,
                    electrical_reason=_text(item.get("reason")))
-        reasons = []
+        hard_reasons, warnings = [], []
         if f not in configured or not isinstance(repeat, bool):
-            reasons.append("频点或复测标志与历史扫描定义不符")
+            hard_reasons.append("频点或复测标志与历史扫描定义不符")
         elif repeat is False and primary[f] != 1:
-            reasons.append("同一频点有重复的主测记录")
+            hard_reasons.append("同一频点有重复的主测记录")
         if any(counts[key][row[key]] > 1 for key in counts):
-            reasons.append("原始帧标签被多个频响尝试使用")
+            hard_reasons.append("原始帧标签被多个频响尝试使用")
         if electrical is not True:
-            reasons.append(row["electrical_reason"] or "未通过电学资格")
-        else:
-            if pm is None or pm <= 0:
-                reasons.append("缺少有效的示波器实测 PM 峰值")
+            warnings.append(row["electrical_reason"] or "未通过参考电学指标")
+        if pm is None or pm <= 0:
+            hard_reasons.append("缺少有效的调相峰值（phase_pk_rad）")
+        if scope is not None:
             try:
                 metadata, _ = run_format.read_frame(run_dir, scope, "scope")
                 _verify_attestations(metadata, modulation_analysis_hz=f)
             except FRAME_ERRORS as exc:
-                reasons.append(f"示波器原始帧不可读或与清单不符：{exc}")
+                hard_reasons.append(f"示波器原始帧不可读或与清单不符：{exc}")
         if xy is not None:
             try:
                 metadata, arrays = run_format.read_frame(run_dir, xy, "xy")
@@ -253,19 +271,19 @@ def _transfer_rows(run_dir, attempts, configured, calibration):
                 row.update(fit_tone(arrays["time_s"], arrays["x_v"], arrays["y_v"], metadata["rate_sa_s"], f,
                                     correlation_s=state["order"] * state["time_constant_s"]))
                 if row["y_snr"] < MIN_TONE_SNR:
-                    reasons.append(f"Y 音调信噪比低于 {MIN_TONE_SNR:g}")
+                    warnings.append(f"Y 音调信噪比低于 {MIN_TONE_SNR:g}")
                 if (phase := calibration.get("lockin_phase_deg")) is not None and not _same_phase(state["phase_deg"], phase):
-                    reasons.append("频响帧锁相相位与静态标定不一致")
+                    hard_reasons.append("频响帧锁相相位与静态标定不一致")
                 if reference is not None and not _same_lockin(state, reference):
-                    reasons.append("频响帧锁相状态与首个合格频点不一致")
+                    hard_reasons.append("频响帧锁相状态与首个有效频点不一致")
             except FRAME_ERRORS as exc:
-                reasons.append(f"XY 帧或音调拟合无效：{exc}")
+                hard_reasons.append(f"XY 帧或音调拟合无效：{exc}")
         else:
-            reasons.append("缺少 XY 帧")
-        if not reasons:
+            hard_reasons.append("缺少 XY 帧")
+        if not hard_reasons:
             h, h_se = row["y_pk_v"] / pm, row["y_pk_se_v"] / pm
             if not math.isfinite(h) or h <= 0 or not math.isfinite(h_se):
-                reasons.append("实测相位换算的增益无效")
+                hard_reasons.append("实测相位换算的增益无效")
             else:
                 row.update(h_v_per_rad=h, h_fit_se_v_per_rad=h_se)
                 if k0:
@@ -276,12 +294,13 @@ def _transfer_rows(run_dir, attempts, configured, calibration):
                             row["normalized_gain_se"] = _number(math.hypot(h_se / abs(k0), gain * (k0_se / abs(k0))))
                 if reference is None:
                     reference = state
-        row.update(accepted=not reasons, reason="；".join(reasons))
+        row.update(accepted=not hard_reasons, reason="；".join(hard_reasons),
+                   quality_passed=(not hard_reasons) and (not warnings), warnings="；".join(warnings))
         rows.append(row)
     return rows, reference
 
 
-def _gates(rows, accepted, lowest, anchor):
+def _gates(rows, accepted, lowest, anchor, *, repeat_expected=None):
     closure = dict(frequency_hz=lowest, accepted_range=list(CLOSURE_RANGE), passed=False)
     if (gain := accepted.get(lowest, {}).get("normalized_gain")) is None:
         closure["reason"] = "最低配置频点缺少合格增益或有效静态 K0"
@@ -290,7 +309,13 @@ def _gates(rows, accepted, lowest, anchor):
         if not closure["passed"]:
             closure["reason"] = "最低频点 H/|K0| 超出 0.8–1.2；未以锚点强制归一"
 
-    repeat = dict(frequency_hz=anchor, passed=False)
+    has_repeat = any(row["repeat"] is True for row in rows)
+    if repeat_expected is None:
+        repeat_expected = has_repeat
+    if not repeat_expected and not has_repeat:
+        return closure, dict(frequency_hz=None, configured=False, passed=True, reason="")
+
+    repeat = dict(frequency_hz=anchor, configured=True, passed=False)
     if (len(rows) < 2 or rows[0]["frequency_hz"] != anchor or rows[0]["repeat"] is not False
             or rows[-1]["frequency_hz"] != anchor or rows[-1]["repeat"] is not True
             or sum(row["repeat"] is True for row in rows) != 1):
@@ -354,38 +379,49 @@ def _noise(run_dir, noise, rows, reference, segment_s):
     frequency, psd = empty, empty
     xy = _text(noise.get("xy_label"))
     monitor = noise.get("scope_labels")
-    electrical = noise.get("accepted") is True
+    raw_electrical = noise.get("electrical_accepted")
+    electrical = (raw_electrical if isinstance(raw_electrical, bool) else noise.get("accepted")) is True
+    explicit_rejected = raw_electrical is False or (raw_electrical is None and noise.get("accepted") is False)
     details = dict(xy_label=xy, electrical_accepted=electrical, electrical_reason=_text(noise.get("reason")))
-    reasons = []
-    if not electrical:
-        reasons.append(details["electrical_reason"] or "噪声未通过电学资格")
-    elif (not isinstance(monitor, list) or len(monitor) != 2 or not all(_text(label) for label in monitor)
-          or monitor[0] == monitor[1] or any(label in {r["scope_label"] for r in rows} for label in monitor)):
-        reasons.append("噪声缺少独立的前后示波器监测帧")
-    else:
-        details["scope_labels"] = monitor
-        for label in monitor:
-            check_cancelled()
-            try:
-                run_format.read_frame(run_dir, label, "scope")
-            except FRAME_ERRORS as exc:
-                reasons.append(f"噪声监测帧不可读：{exc}")
+    hard_reasons, warnings = [], []
+    if explicit_rejected or (xy is not None and not electrical):
+        warnings.append(details["electrical_reason"] or "噪声未通过参考电学指标")
+    has_scope_frames = any(row.get("scope_label") is not None for row in rows)
+    if isinstance(monitor, list) and monitor:
+        if (len(monitor) != 2 or not all(_text(label) for label in monitor)
+                or monitor[0] == monitor[1] or any(label in {r["scope_label"] for r in rows} for label in monitor)):
+            warnings.append("噪声缺少独立的前后示波器监测帧")
+        else:
+            details["scope_labels"] = monitor
+            for label in monitor:
+                check_cancelled()
+                try:
+                    run_format.read_frame(run_dir, label, "scope")
+                except FRAME_ERRORS as exc:
+                    warnings.append(f"噪声监测帧不可读：{exc}")
+    elif has_scope_frames or monitor not in (None, []):
+        warnings.append("噪声缺少独立的前后示波器监测帧")
     try:
         metadata, arrays = run_format.read_frame(run_dir, xy, "xy")
         frequency, psd, welch_details = _welch(arrays["time_s"], arrays["y_v"], metadata["rate_sa_s"], segment_s)
         details["welch"] = welch_details
-        if not welch_details["resolution_met"] or welch_details["segments"] < MIN_WELCH_SEGMENTS:
-            reasons.append("噪声帧长度不足以达到请求的 Welch 分辨率和最少分段数")
+        if welch_details["segments"] < MIN_WELCH_SEGMENTS:
+            hard_reasons.append("噪声帧长度不足最少 Welch 分段数")
+        elif not welch_details["resolution_met"]:
+            warnings.append("噪声帧未达到请求的 Welch 频率分辨率")
         if any(xy == row["xy_label"] for row in rows):
-            reasons.append("噪声帧与频响帧共用标签")
+            hard_reasons.append("噪声帧与频响帧共用标签")
         _verify_attestations(metadata, source_mode="unmodulated_carrier")
         state = _lockin(metadata)
         details["lockin"] = state
         if reference is None or not _same_lockin(state, reference):
-            reasons.append("噪声帧锁相状态与合格频响不一致或无法比对")
+            hard_reasons.append("噪声帧锁相状态与有效频响不一致或无法比对")
     except FRAME_ERRORS as exc:
-        reasons.append(f"噪声帧或回读无效：{exc}")
-    details.update(detector_spectrum_available=bool(frequency.size), qualified=not reasons, reasons=reasons)
+        hard_reasons.append(f"噪声帧或回读无效：{exc}")
+    if isinstance(noise.get("quality_warnings"), list):
+        warnings = list(dict.fromkeys([*warnings, *(w for w in noise["quality_warnings"] if isinstance(w, str) and w)]))
+    details.update(detector_spectrum_available=bool(frequency.size), qualified=not hard_reasons,
+                   reasons=hard_reasons, quality_passed=(not hard_reasons) and (not warnings), warnings=warnings)
     return frequency, psd, details
 
 
@@ -412,8 +448,116 @@ def _refer_noise(frequency, asd, bands, accepted):
         metrics.append(dict(transfer_band=band_id, bins=int(indices.size), frequency_min_hz=float(frequency[indices[0]]),
                             frequency_max_hz=float(frequency[indices[-1]]), midpoint_bin_hz=float(frequency[indices[middle]]),
                             midpoint_rad_per_sqrt_hz=float(values[middle]), midpoint_urad_per_sqrt_hz=float(values[middle] * 1e6),
-                            median_rad_per_sqrt_hz=median, median_urad_per_sqrt_hz=median * 1e6))
+                            midpoint_deg_per_sqrt_hz=float(math.degrees(values[middle])),
+                            median_rad_per_sqrt_hz=median, median_urad_per_sqrt_hz=median * 1e6,
+                            median_deg_per_sqrt_hz=math.degrees(median)))
     return h, phase, band_ids, metrics
+
+
+def _coarse_plot_data(run_dir, config):
+    files = config.get("data_files") or []
+    labels = [Path(item).stem for item in files if isinstance(item, str) and re.fullmatch(r"raw/coarse_\d+\.npz", item)]
+    if not labels:
+        raw_dir = output_path(run_dir, "raw")
+        if raw_dir.is_dir():
+            labels = [p.stem for p in raw_dir.iterdir() if p.is_file() and re.fullmatch(r"coarse_\d+\.npz", p.name)]
+    labels.sort(key=lambda stem: int(stem.split("_")[1]))
+    phis, raw_z = [], []
+    for label in labels:
+        check_cancelled()
+        try:
+            meta, arr = run_format.read_frame(run_dir, label, "xy")
+        except FRAME_ERRORS:
+            continue
+        phi = _number(meta.get("burst_command_deg"))
+        if phi is None:
+            continue
+        x_m, y_m = float(np.mean(arr["x_v"])), float(np.mean(arr["y_v"]))
+        if math.isfinite(x_m) and math.isfinite(y_m):
+            phis.append(phi)
+            raw_z.append(complex(x_m, y_m))
+    if not phis:
+        return None
+    order = np.argsort(phis)
+    phi_arr = np.asarray(phis, dtype=float)[order]
+    phase_cfg = _mapping(config.get("phase_response"))
+    best_deg = _number(phase_cfg.get("burst_command_deg"))
+    rot_deg = _number(phase_cfg.get("rotation_deg"))
+    z_aligned = np.asarray(raw_z, dtype=complex)[order] * np.exp(-1j * np.deg2rad(0.0 if rot_deg is None else rot_deg))
+    curve_deg = z_curve = z_best = tangent = tangent_gain = None
+    if phi_arr.size >= 6:
+        try:
+            (c0, pos, neg), _ = decompose(phi_arr, z_aligned)
+            curve_deg = np.linspace(0.0, 360.0, 361)
+            rad = np.deg2rad(curve_deg)
+            z_curve = c0 + pos * np.exp(1j * rad) + neg * np.exp(-1j * rad)
+            if best_deg is not None:
+                phi_b = math.radians(best_deg)
+                z_best = c0 + pos * np.exp(1j * phi_b) + neg * np.exp(-1j * phi_b)
+                tangent = 1j * (pos * np.exp(1j * phi_b) - neg * np.exp(-1j * phi_b))
+                tangent_gain = abs(tangent) if np.isfinite(tangent) else None
+        except FRAME_ERRORS:
+            pass
+    if tangent_gain is None:
+        tangent_gain = _number(_mapping(phase_cfg.get("coarse_fit")).get("tangent_v_per_command_rad"))
+    return dict(phi_deg=phi_arr, z_aligned=z_aligned, rotated=rot_deg is not None, best_deg=best_deg,
+                curve_deg=curve_deg, z_curve=z_curve, z_best=z_best, tangent=tangent, tangent_gain=tangent_gain)
+
+
+def _local_plot_data(run_dir, config, calibration):
+    raw_points = _mapping(config.get("calibration")).get("points")
+    if not isinstance(raw_points, list) or not raw_points:
+        return None
+    degs, zs, times = [], [], []
+    for pt in raw_points:
+        if not isinstance(pt, dict):
+            continue
+        deg = _number(pt.get("carrier_center_deg"))
+        if deg is None:
+            deg = _number(pt.get("carrier_command_deg"))
+        if deg is None:
+            deg = _number(pt.get("burst_command_deg"))
+        if deg is None:
+            continue
+        x_val = y_val = None
+        if xy_label := _text(pt.get("xy_label")):
+            try:
+                _, arr = run_format.read_frame(run_dir, xy_label, "xy")
+                x_val, y_val = float(np.mean(arr["x_v"])), float(np.mean(arr["y_v"]))
+            except FRAME_ERRORS:
+                pass
+        if x_val is None:
+            x_val, y_val = _number(pt.get("x_mean_v")), _number(pt.get("y_mean_v"))
+        t_val = _number(pt.get("elapsed_s"))
+        if x_val is None or y_val is None or not (math.isfinite(x_val) and math.isfinite(y_val)):
+            continue
+        degs.append(deg)
+        zs.append(complex(x_val, y_val))
+        times.append(0.0 if t_val is None else t_val)
+    if len(degs) < 3:
+        return None
+    deg_arr = np.asarray(degs, dtype=float)
+    z_arr = np.asarray(zs, dtype=complex)
+    t_arr = np.asarray(times, dtype=float)
+    center_deg = _number(calibration.get("carrier_center_deg"))
+    if center_deg is None:
+        center_deg = _number(calibration.get("burst_command_deg"))
+    if center_deg is None:
+        center_deg = float(deg_arr[0])
+    dphi_deg = ((deg_arr - center_deg + 180.0) % 360.0) - 180.0
+    dphi_rad = np.deg2rad(dphi_deg)
+    if deg_arr.size >= 2 and t_arr[-1] > t_arr[0] and abs(dphi_deg[0]) < 1.0 and abs(dphi_deg[-1]) < 1.0:
+        drift = (z_arr[-1] - z_arr[0]) / (t_arr[-1] - t_arr[0])
+        z_corr = z_arr - drift * (t_arr - np.mean(t_arr))
+    else:
+        z_corr = z_arr
+    design = np.column_stack((np.ones_like(dphi_rad), dphi_rad))
+    coef, _, rank, _ = np.linalg.lstsq(design, z_corr, rcond=None)
+    if rank != 2:
+        return None
+    return dict(center_deg=center_deg, dphi_deg=dphi_deg, z_corr=z_corr,
+                x0=float(coef[0].real), y0=float(coef[0].imag),
+                slope_x=float(coef[1].real), slope_y=float(coef[1].imag))
 
 
 def _save_csv(path, columns, rows):
@@ -423,7 +567,7 @@ def _save_csv(path, columns, rows):
         writer.writerows(rows)
 
 
-def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids):
+def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids, *, coarse_data=None, local_data=None):
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
     from ...plotting import figure_size, plot_style_context
@@ -437,97 +581,260 @@ def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids):
         return figure, figure.subplots(2, 1, sharex=True)
 
     with plot_style_context("paper"):
+        fig = Figure(figsize=figure_size("wide", height_mm=84), layout="constrained")
+        FigureCanvasAgg(fig)
+        ax_xy, ax_wave = fig.subplots(1, 2)
+        if coarse_data is not None:
+            phi_deg = coarse_data["phi_deg"]
+            z_aligned = coarse_data["z_aligned"]
+            x_mv, y_mv = z_aligned.real * 1e3, z_aligned.imag * 1e3
+            if coarse_data["z_curve"] is not None:
+                zc = coarse_data["z_curve"]
+                ax_xy.plot(zc.real * 1e3, zc.imag * 1e3, color="#666666", lw=1.2, alpha=0.8, label="3-harmonic fit")
+            sc = ax_xy.scatter(x_mv, y_mv, c=phi_deg, cmap="twilight", vmin=0, vmax=360,
+                               s=34, edgecolor="#222222", linewidth=0.4, zorder=3)
+            fig.colorbar(sc, ax=ax_xy, label="Carrier phase (deg)", pad=0.02)
+            if coarse_data["z_best"] is not None:
+                zb = coarse_data["z_best"]
+                bx, by = float(zb.real * 1e3), float(zb.imag * 1e3)
+                ax_xy.plot(bx, by, marker="*", markersize=11, color="#d55e00", linestyle="none",
+                           zorder=4, label=f"Work point {coarse_data['best_deg']:.1f}°")
+                tang = coarse_data["tangent"]
+                if tang is not None and abs(tang) > 0:
+                    span = max(float(np.ptp(x_mv)), float(np.ptp(y_mv)), 1e-3)
+                    vec = tang / abs(tang) * (0.25 * span)
+                    ax_xy.annotate("", xy=(bx + float(vec.real), by + float(vec.imag)), xytext=(bx, by),
+                                   arrowprops=dict(arrowstyle="->", lw=2.0, color="#d55e00"), zorder=5)
+            ax_xy.set_aspect("equal", adjustable="datalim")
+            ax_xy.legend(fontsize=8)
+            ax_xy.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)",
+                      title="Phase portrait (aligned Demod 4)" if coarse_data["rotated"] else "Phase portrait (raw Demod 4)")
+
+            if coarse_data["z_curve"] is not None:
+                zc = coarse_data["z_curve"]
+                ax_wave.plot(coarse_data["curve_deg"], zc.imag * 1e3, color="#d55e00", lw=1.2, alpha=0.8)
+                ax_wave.plot(coarse_data["curve_deg"], zc.real * 1e3, color="#1f77b4", lw=1.2, alpha=0.8)
+            ax_wave.plot(phi_deg, y_mv, "o", markersize=4, color="#d55e00", label="Demod 4 Y")
+            ax_wave.plot(phi_deg, x_mv, "s", markersize=4, color="#1f77b4", label="Demod 4 X")
+            if coarse_data["best_deg"] is not None:
+                ax_wave.axvline(coarse_data["best_deg"], color="#555555", ls="--", lw=1.0,
+                                label=f"phi* = {coarse_data['best_deg']:.1f}°")
+            ax_wave.set(xlim=(0, 360), xlabel="Carrier command phase (deg)", ylabel="Demod 4 output (mV)",
+                        title="Full-cycle X & Y waveforms")
+            ax_wave.legend(fontsize=8)
+        else:
+            diagnostic(ax_xy, "No usable A03 coarse phase frames")
+            diagnostic(ax_wave, "No usable A03 coarse phase frames")
+            ax_xy.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Phase portrait")
+            ax_wave.set(xlabel="Carrier command phase (deg)", ylabel="Demod 4 output (mV)", title="Full-cycle waveforms")
+        gain_txt = (f" | |dZ/dφ| = {coarse_data['tangent_gain']:.4g} V/rad"
+                    if coarse_data and coarse_data["tangent_gain"] else "")
+        fig.suptitle(f"A03: Full-cycle phase portrait{gain_txt}")
+        fig.savefig(directory / RESPONSE_PNG, dpi=240)
+        check_cancelled()
+
+        fig = Figure(figsize=figure_size("wide", height_mm=84), layout="constrained")
+        FigureCanvasAgg(fig)
+        ax_resp, ax_locus = fig.subplots(1, 2)
+        if local_data is not None:
+            dphi = local_data["dphi_deg"]
+            zc = local_data["z_corr"]
+            dx_mv = (zc.real - local_data["x0"]) * 1e3
+            dy_mv = (zc.imag - local_data["y0"]) * 1e3
+            ax_resp.axhline(0.0, color="#888888", lw=0.7)
+            ax_resp.axvline(0.0, color="#888888", lw=0.7, ls="--")
+            ax_resp.plot(dphi, dy_mv, "o", markersize=4, color="#d55e00",
+                         label=f"Y - Y0 (K0 = {local_data['slope_y']:.4g} V/rad)")
+            ax_resp.plot(dphi, dx_mv, "s", markersize=4, color="#1f77b4",
+                         label=f"X - X0 (slope = {local_data['slope_x']:.4g} V/rad)")
+            grid_deg = np.linspace(float(dphi.min()), float(dphi.max()), 100)
+            grid_rad = np.deg2rad(grid_deg)
+            ax_resp.plot(grid_deg, local_data["slope_y"] * grid_rad * 1e3, "-", color="#d55e00", lw=1.2)
+            ax_resp.plot(grid_deg, local_data["slope_x"] * grid_rad * 1e3, "-", color="#1f77b4", lw=1.2)
+            ratio = (abs(local_data["slope_x"] / local_data["slope_y"]) if local_data["slope_y"] else float("nan"))
+            ratio_txt = f" | |slope_X / K0| = {ratio:.1%}" if math.isfinite(ratio) else ""
+            ax_resp.legend(fontsize=8, loc="best")
+            ax_resp.set(xlabel="Phase offset Δφ (deg)", ylabel="Response relative to center (mV)",
+                        title="X & Y vs Δφ (same scale)")
+
+            x_mv, y_mv = zc.real * 1e3, zc.imag * 1e3
+            order = np.argsort(dphi)
+            ax_locus.plot(x_mv[order], y_mv[order], "-", color="#777777", lw=1.0, alpha=0.7)
+            sc = ax_locus.scatter(x_mv, y_mv, c=dphi, cmap="coolwarm", s=30, edgecolor="#222222", lw=0.4, zorder=3)
+            fig.colorbar(sc, ax=ax_locus, label="Δφ (deg)", pad=0.02)
+            ax_locus.plot(local_data["x0"] * 1e3, local_data["y0"] * 1e3, marker="*", markersize=10,
+                          color="#111111", linestyle="none", zorder=4, label="Work point")
+            x_mid = 0.5 * (float(x_mv.min()) + float(x_mv.max()))
+            y_mid = 0.5 * (float(y_mv.min()) + float(y_mv.max()))
+            half = max(0.5 * float(np.ptp(x_mv)), 0.5 * float(np.ptp(y_mv)), 1e-3) * 1.15
+            ax_locus.set(xlim=(x_mid - half, x_mid + half), ylim=(y_mid - half, y_mid + half),
+                         xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Local (X, Y) locus (1:1 scale)")
+            ax_locus.set_aspect("equal", adjustable="box")
+            ax_locus.legend(fontsize=8)
+            fig.suptitle(f"A04: Local phase response near {local_data['center_deg']:.2f}°{ratio_txt}")
+        else:
+            diagnostic(ax_resp, "No usable A04 local calibration frames")
+            diagnostic(ax_locus, "No usable A04 local calibration frames")
+            ax_resp.set(xlabel="Phase offset Δφ (deg)", ylabel="Response (mV)", title="X & Y vs Δφ")
+            ax_locus.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Local (X, Y) locus")
+            fig.suptitle("A04: Local phase response")
+        fig.savefig(directory / LOCAL_PNG, dpi=240)
+        check_cancelled()
+
         fig, axes = figure_pair()
+        clean_primary = [row for row in accepted.values() if row["quality_passed"] and row.get("h_v_per_rad", 0) > 0]
+        warn_primary = [row for row in accepted.values() if not row["quality_passed"] and row.get("h_v_per_rad", 0) > 0]
+        clean_repeat = [row for row in rows if row["repeat"] and row["accepted"] and row["quality_passed"]
+                        and row.get("h_v_per_rad", 0) > 0]
+        warn_repeat = [row for row in rows if row["repeat"] and row["accepted"] and not row["quality_passed"]
+                       and row.get("h_v_per_rad", 0) > 0]
+        series = (
+            (clean_primary, "o", "#1f77b4", "Primary (no warnings)"),
+            (warn_primary, "^", "#d55e00", "Primary (with warnings)"),
+            (clean_repeat, "x", "#009e73", "Repeat (no warnings)"),
+            (warn_repeat, "d", "#cc3311", "Repeat (with warnings)"),
+        )
         for ax, key, error, ylabel in zip(axes, ("h_v_per_rad", "normalized_gain"),
                                          ("h_fit_se_v_per_rad", "normalized_gain_se"),
-                                         ("Magnitude |H| (V/rad)", "Normalized gain |H| / |K0|")):
-            primary = [row for row in accepted.values() if row.get(key, 0) > 0]
-            repeated = [row for row in rows if row["repeat"] and row["accepted"] and row.get(key, 0) > 0]
-            for selection, marker, label in ((primary, "o", "Primary"), (repeated, "x", "Repeat")):
-                if selection:
-                    ax.plot([r["frequency_hz"] for r in selection], [r[key] for r in selection],
-                            linestyle="none", marker=marker, label=label)
-                    bars = [r for r in selection if r.get(error) is not None and r[error] < r[key]]
-                    if bars:
-                        ax.errorbar([r["frequency_hz"] for r in bars], [r[key] for r in bars],
-                                    yerr=[r[error] for r in bars], fmt="none", capsize=2)
+                                         ("Magnitude |H| (V/rad)", "Normalized response |H| / |K0|")):
+            plotted_any = False
+            if key == "normalized_gain" and any(r.get(key, 0) > 0 for sel, _, _, _ in series for r in sel):
+                ax.axhspan(CLOSURE_RANGE[0], CLOSURE_RANGE[1], color="#888888", alpha=0.12)
+                ax.axhline(1.0, color="#666666", linestyle="--", linewidth=0.9)
+            for selection, marker, color, label in series:
+                points = [r for r in selection if (r.get(key) or 0) > 0]
+                if not points:
+                    continue
+                plotted_any = True
+                ax.plot([r["frequency_hz"] for r in points], [r[key] for r in points],
+                        linestyle="none", marker=marker, color=color, label=label)
+                bars = [r for r in points if r.get(error) is not None and r[error] < r[key]]
+                if bars:
+                    ax.errorbar([r["frequency_hz"] for r in bars], [r[key] for r in bars],
+                                yerr=[r[error] for r in bars], fmt="none", ecolor=color, capsize=2, alpha=0.85)
             ax.set(xscale="log", ylabel=ylabel)
-            if primary or repeated:
+            if plotted_any:
                 ax.set_yscale("log")
-                ax.legend()
+                ax.legend(fontsize=8)
             else:
-                diagnostic(ax, "No qualified magnitude estimates" if ax is axes[0] else "No usable K0-normalized estimates")
+                diagnostic(ax, "No usable magnitude estimates" if ax is axes[0] else "No usable K0-normalized estimates")
         n = len(summary["configured_frequencies_hz"])
+        clean_n = summary["clean_primary_points"]
+        warn_n = len(accepted) - clean_n
         closure = "pass" if summary["k0_closure"]["passed"] else "not passed"
-        repeat = "pass" if summary["anchor_repeat"]["passed"] else "not passed"
-        fig.suptitle(f"Transfer: {len(accepted)}/{n} primary points | K0 closure: {closure} | Repeat: {repeat}")
+        title = f"A05 Transfer: {len(accepted)}/{n} plotted ({clean_n} clean, {warn_n} warned) | K0 closure: {closure}"
+        if summary["anchor_repeat"].get("configured", True):
+            repeat = "pass" if summary["anchor_repeat"]["passed"] else "not passed"
+            title += f" | Repeat: {repeat}"
+        fig.suptitle(title)
         axes[-1].set_xlabel("Modulation frequency (Hz)")
         fig.savefig(directory / TRANSFER_PNG, dpi=240)
         check_cancelled()
 
         fig, (detector, referred) = figure_pair()
         detector.set(xscale="log", ylabel=r"Detector Y ASD (V/$\sqrt{\mathrm{Hz}}$)")
-        referred.set(xscale="log", xlabel="Frequency (Hz)", ylabel=r"Equivalent phase ASD (rad/$\sqrt{\mathrm{Hz}}$)")
+        referred.set(xscale="log", xlabel="Frequency (Hz)", ylabel=r"Phase sensitivity ASD ($^\circ/\sqrt{\mathrm{Hz}}$)")
         if (asd > 0).any():
             detector.loglog(frequency, np.where(asd > 0, asd, np.nan))
         else:
             diagnostic(detector, "Detector Y ASD is zero" if frequency.size else "No valid detector Y spectrum")
+        phase_deg = np.rad2deg(phase)
         if summary["phase_referral"]["available"]:
-            for band in summary["phase_referral"]["bands"]:
+            has_warnings = bool(summary["advisory_warnings"])
+            color = "#d55e00" if has_warnings else "#1f77b4"
+            bands_info = summary["phase_referral"]["bands"]
+            med_txt = ", ".join(f"{b['median_deg_per_sqrt_hz']:.3g}" for b in bands_info)
+            prefix = "With advisory warnings" if has_warnings else "Referred phase sensitivity"
+            label = f"{prefix} (median {med_txt} deg/sqrt(Hz))"
+            for idx, band in enumerate(bands_info):
                 bins = band_ids == band["transfer_band"]
-                if (phase[bins] > 0).any():
-                    referred.loglog(frequency[bins], np.where(phase[bins] > 0, phase[bins], np.nan),
-                                     marker="." if bins.sum() == 1 else None)
-            if not (phase > 0).any():
-                diagnostic(referred, "Qualified phase ASD is zero")
+                if (phase_deg[bins] > 0).any():
+                    referred.loglog(frequency[bins], np.where(phase_deg[bins] > 0, phase_deg[bins], np.nan),
+                                    color=color, marker="." if bins.sum() == 1 else None,
+                                    label=label if idx == 0 else None)
+            if not (phase_deg > 0).any():
+                diagnostic(referred, "Referred phase ASD is zero")
+            else:
+                referred.legend(fontsize=8)
         else:
             diagnostic(referred, "Phase referral withheld; see summary")
+        fig.suptitle("A06: Phase sensitivity spectrum")
         fig.savefig(directory / NOISE_PNG, dpi=240)
 
 
 def analyze_frames(run_dir, config, params, expected_fingerprint):
-    """生成可辨识的部分结果；输入改变时拒绝发布候选产物。"""
+    """全量计算可解析的频响与等效相位噪声；参考质检超限记为告警但不扣留绘图。"""
     configured = sorted(params.pm_frequencies_hz)
     config_calibration = _mapping(config.get("calibration"))
     calibration = {key: value for key in CALIBRATION_KEYS if (value := _number(config_calibration.get(key))) is not None}
-    if config_calibration.get("accepted") is not True:
+    cal_warnings = [w for w in config_calibration.get("quality_warnings") or [] if isinstance(w, str) and w]
+    if config_calibration.get("accepted") is not True and not cal_warnings:
         calibration.pop("k0_v_per_rad", None)
         calibration.pop("k0_se_v_per_rad", None)
     if reason := _text(config_calibration.get("reason")):
         calibration["reason"] = reason
+    calibration["quality_warnings"] = cal_warnings
+    calibration["quality_passed"] = (config_calibration.get("accepted") is True) and not cal_warnings
     attempts = config.get("transfer")
     rows, reference = _transfer_rows(run_dir, [_mapping(item) for item in attempts] if isinstance(attempts, list) else [],
                                     configured, calibration)
     accepted = {row["frequency_hz"]: row for row in rows if row["accepted"] and not row["repeat"]}
-    closure, repeat = _gates(rows, accepted, configured[0], params.pm_anchor_hz)
+    predicted_sweep = _mapping(config.get("predicted")).get("pm_sweep_order_hz")
+    repeat_expected = isinstance(predicted_sweep, list) and len(predicted_sweep) > len(set(predicted_sweep))
+    closure, repeat = _gates(rows, accepted, configured[0], params.pm_anchor_hz, repeat_expected=repeat_expected)
     bands = _bands(configured, accepted)
     frequency, psd, noise = _noise(run_dir, _mapping(config.get("noise")), rows, reference, params.welch_segment_s)
     asd = np.sqrt(psd)
-    reasons = [gate["reason"] for gate in (closure, repeat) if not gate["passed"]] + noise["reasons"]
+    block_reasons = list(noise["reasons"])
     if not bands:
-        reasons.append("相邻合格主测频点不足，不能在任何频带插值")
+        block_reasons.append("相邻有效主测频点不足，不能在任何频带插值")
     metrics = []
-    if not reasons:
+    if not block_reasons:
         h, phase, band_ids, metrics = _refer_noise(frequency, asd, bands, accepted)
         if not metrics:
-            reasons.append("合格频带内没有可折算的 Welch 频点")
+            block_reasons.append("有效频带内没有可折算的 Welch 频点")
     else:
         h = phase = np.full(frequency.shape, np.nan)
         band_ids = np.zeros(frequency.shape, dtype=int)
+
+    advisory_warnings = []
+    for text in cal_warnings:
+        advisory_warnings.append(f"静态标定：{text}")
+    pm_align = _mapping(config.get("pm_alignment"))
+    align_warnings = pm_align.get("quality_warnings") or ([pm_align["reason"]] if _text(pm_align.get("reason")) else [])
+    for text in align_warnings:
+        if isinstance(text, str) and text:
+            advisory_warnings.append(f"调制对准：{text}")
+    for row in rows:
+        if row["accepted"] and row["warnings"]:
+            tag = f"{row['frequency_hz']:g} Hz（复测）" if row["repeat"] else f"{row['frequency_hz']:g} Hz"
+            advisory_warnings.append(f"频响 {tag}：{row['warnings']}")
+    for gate in (closure, repeat):
+        if not gate["passed"] and gate.get("reason"):
+            advisory_warnings.append(gate["reason"])
+    advisory_warnings.extend(noise["warnings"])
+    advisory_warnings = list(dict.fromkeys(advisory_warnings))
+
     status = _text(config.get("completion_status"))
     complete = bool(metrics) and len(accepted) == len(configured) and status == "completed"
+    clean_primary = sum(1 for row in accepted.values() if row["quality_passed"])
+    quality_passed = bool(metrics) and not block_reasons and not advisory_warnings
     summary = dict(experiment_id=run_format.EXPERIMENT_ID, data_type=run_format.DATA_TYPE,
                    analysis_version=ANALYSIS_VERSION, input_fingerprint=expected_fingerprint,
                    acquisition_status=status, acquisition_failure_reason=_text(config.get("failure_reason")),
                    result_status="complete" if complete else "partial" if rows or frequency.size else "no_usable_data",
-                   quality_passed=bool(metrics), calibration=calibration, lockin_reference=reference,
-                   configured_frequencies_hz=configured, transfer_attempts=len(rows), accepted_primary_points=len(accepted),
+                   quality_passed=quality_passed, advisory_warnings=advisory_warnings,
+                   calibration=calibration, lockin_reference=reference,
+                   configured_frequencies_hz=configured, transfer_attempts=len(rows),
+                   accepted_primary_points=len(accepted), clean_primary_points=clean_primary,
                    k0_closure=closure, anchor_repeat=repeat, transfer_bands_hz=[[b[0], b[-1]] for b in bands],
                    minimum_y_tone_snr=MIN_TONE_SNR, minimum_tone_cycles=MIN_TONE_CYCLES, noise=noise,
-                   phase_referral=dict(available=bool(metrics), reasons=reasons, bands=metrics, minimum_frequency_hz=MIN_NOISE_HZ,
+                   phase_referral=dict(available=bool(metrics), reasons=block_reasons, advisory_warnings=advisory_warnings,
+                                       bands=metrics, minimum_frequency_hz=MIN_NOISE_HZ,
                                        interpolation="log_frequency_log_magnitude_within_adjacent_accepted_points"),
-                   method_notes=["实测示波器 PM 峰值与锁相 Y 峰值只比较幅值，不计算复频响。",
-                                 "H 与复测的标准误只传播 Y 拟合误差；归一增益另外传播可用的 K0 标准误，未含 PM 测量不确定度。"])
+                   method_notes=["频响只比较调制深度与锁相 Y 音调幅值 |H(f)| = |Y_pk(f)| / phi_pk(f)，不计算复频响相角；与基频/二次谐波不碰撞的 50–250 Hz 工频谐波在最小二乘正交解调中一并投影去除。",
+                                 "H 与标准误仅传播 Y 拟合误差（含时间序列相关修正）；归一增益另外传播 K0 标准误，不含激励幅度标定不确定度。",
+                                 "低频闭合（|H|/|K0| 0.8–1.2）等参考指标仅作告警与图例标注，不阻止有效频点参与出图与相位噪声折算。"])
     invalid_sections = [key for key, kind in (("calibration", dict), ("transfer", list), ("noise", dict))
                         if config.get(key) is not None and not isinstance(config[key], kind)]
     if invalid_sections:
@@ -535,15 +842,19 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
 
     def noise_rows():
         for f, p, a, band, gain, value in zip(frequency, psd, asd, band_ids, h, phase):
-            yield f, p, a, int(band) or None, gain if band else None, value if band else None
+            value_deg = math.degrees(value) if band and math.isfinite(value) else None
+            yield f, p, a, int(band) or None, gain if band else None, value if band else None, value_deg
 
+    coarse_data = _coarse_plot_data(run_dir, config)
+    local_data = _local_plot_data(run_dir, config, calibration)
     results = output_path(run_dir, "results")
     with TemporaryDirectory(dir=results, prefix=".phase-analysis-") as temporary:
         temp = Path(temporary)
         write_state(temp / SUMMARY, summary)
         _save_csv(temp / TRANSFER_CSV, TRANSFER_COLUMNS, ([row.get(key) for key in TRANSFER_COLUMNS] for row in rows))
         _save_csv(temp / NOISE_CSV, NOISE_COLUMNS, noise_rows())
-        _plots(temp, rows, accepted, summary, frequency, asd, phase, band_ids)
+        _plots(temp, rows, accepted, summary, frequency, asd, phase, band_ids,
+               coarse_data=coarse_data, local_data=local_data)
         check_cancelled()
         if fingerprint(run_dir) != expected_fingerprint:
             raise ValueError("离线分析期间输入发生变化，请重新执行 B01")

@@ -12,20 +12,22 @@ import numpy as np
 import yaml
 
 from ..z_chain_common.keys import (
-    AMPLIFIER_KEY, LOCKIN_KEY, MAIN_FIELD_KEY, SCOPE_KEY,
+    AMPLIFIER_KEY, LOCKIN_KEY, MAIN_FIELD_KEY,
     SOURCE_KEY, TEC_KEY, TEMP_SWITCH_KEY, TRIGGER_KEY, X_KEY,
 )
 from .models import RfPhaseSensitivityParams
 
 REQUIRED_MAPPING_KEYS = (
     SOURCE_KEY, X_KEY, TRIGGER_KEY, TEMP_SWITCH_KEY, LOCKIN_KEY,
-    AMPLIFIER_KEY, SCOPE_KEY, MAIN_FIELD_KEY, TEC_KEY,
+    AMPLIFIER_KEY, MAIN_FIELD_KEY, TEC_KEY,
 )
 
 EXPERIMENT_ID = "rf-phase-sensitivity"
 DATA_TYPE = "rf_phase_sensitivity"
 RAW_FORMAT_VERSION = 1
 SUMMARY = "phase_sensitivity_summary.json"
+RESPONSE_PLOT = "phase_response.png"
+LOCAL_PLOT = "local_calibration.png"
 TRANSFER_TABLE = "phase_transfer.csv"
 TRANSFER_PLOT = "phase_transfer.png"
 NOISE_TABLE = "phase_noise.csv"
