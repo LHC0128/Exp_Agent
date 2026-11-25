@@ -2,7 +2,7 @@
 
 用法（开发目录，先设数据根）：
     export LAB_DATA_ROOT="D:/Code/exp_agent_run/data"
-    agent_exp_env/Scripts/python.exe scripts/rf_phase_response/20261119_rf_phase_scan/coupling_check/scripts/run_stage.py stage3
+    agent_exp_env/Scripts/python.exe scripts/rf_phase_response/20261120_coupling_check/scripts/run_stage.py stage3
 
 路径：逐点记录与日志写运行目录 `_studies/20261119_rf_phase_scan/coupling_check/`，
 运行清单从本目录上一级的 `runlists/` 读；不直接连接仪器，经运行目录 GUI 的 `tools.lab_client` 启停实验。
@@ -30,7 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cc_common as cc
 
-REPO = Path(__file__).resolve().parents[5]
+REPO = Path(__file__).resolve().parents[4]
 DEV = REPO
 LOG_DIR = cc.PROCESS_DIR / "logs"
 DATA_DIR = cc.PROCESS_DIR
