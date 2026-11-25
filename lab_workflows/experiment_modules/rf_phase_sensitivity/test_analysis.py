@@ -64,7 +64,7 @@ def _true_h(f_hz):
 def _synthetic_run(run, *, status="completed", frequencies=None, missing=(), rejected=(), malformed=(),
                    low_snr=(), repeat_ratio=1.03, k0=K0, noise_bad=None, legacy_scope=False):
     p = RfPhaseSensitivityParams(pm_frequencies_hz=frequencies or [5., 10., 20., 40., 80.],
-                                 noise_duration_s=16., welch_segment_s=1.)
+                                 noise_duration_s=16., noise_n_avg=1, welch_segment_s=1.)
     (run / "raw").mkdir(parents=True)
     config = run_format.initial_metadata(p) | dict(completion_status=status, schema_version=p.schema_version,
                                                   parameters=p.to_external())
@@ -458,3 +458,73 @@ def test_lorentzian_fit_excludes_mains_harmonic_collisions(tmp_path):
     assert lor["h0_v_per_rad"] == pytest.approx(K0 * 0.96, rel=0.02)
     assert lor["fc_hz"] == pytest.approx(60.0, rel=0.03)
     assert lor["chi2_red"] < 10.0
+
+
+def test_segmented_noise_averages_welch_psd_and_warns_partial(tmp_path):
+    """独立温控分段按段分别算 Welch PSD 后等权平均；缺段仍折算并记录告警，段间锁相失配则阻断折算。"""
+    p = RfPhaseSensitivityParams(pm_frequencies_hz=[5., 10., 20., 40., 80.],
+                                 noise_duration_s=4., noise_n_avg=3, welch_segment_s=4.)
+    full_dir = tmp_path / "full"
+    config = _synthetic_run(full_dir)
+    for item in (full_dir / "raw" / "noise.npz",):
+        if item.exists():
+            item.unlink()
+    rng = np.random.default_rng(7711)
+    t = np.arange(round(RATE * p.noise_duration_s)) / RATE
+    seg_labels = []
+    for seg_idx in range(3):
+        label = f"noise_seg_{seg_idx:02d}_xy"
+        seg_labels.append(label)
+        run_format.write_frame(
+            full_dir, label, "xy",
+            dict(rate_sa_s=RATE, time_source="module_timestamp", lockin=LOCKIN, source_mode="unmodulated_carrier"),
+            time_s=t, x_v=0.04 + 0.002 * t, y_v=0.02 + 0.004 * t + rng.normal(scale=NOISE_SIGMA_V, size=t.size),
+        )
+    config["schema_version"] = p.schema_version
+    config["parameters"] = p.to_external()
+    config["noise"].update(xy_label=None, xy_labels=seg_labels, segments_requested=3, segments_completed=3)
+    config["data_files"] = [f"raw/{path.name}" for path in sorted((full_dir / "raw").glob("*.npz"))]
+    _write_config(full_dir, config)
+
+    summary = analysis.analyze(full_dir)
+    assert summary["result_status"] == "complete" and summary["quality_passed"] is True
+    assert summary["noise"]["welch"]["acquisition_segments"] == 3
+    assert summary["noise"]["welch"]["segments"] == 3
+    assert summary["noise"]["welch"]["resolution_hz"] == pytest.approx(RATE / round(RATE * 4.), rel=1e-4)
+    asds = [float(r["detector_y_asd_v_per_sqrt_hz"]) for r in _csv(full_dir, steps.NOISE_CSV) if float(r["frequency_hz"]) >= 10.]
+    assert float(np.median(asds)) == pytest.approx(NOISE_SIGMA_V * math.sqrt(2 / RATE), rel=0.12)
+
+    # 缺第 3 段时（2/3 分段），仍应折算并提示告警
+    partial_dir = tmp_path / "partial"
+    config_p = _synthetic_run(partial_dir, status="cancelled")
+    (partial_dir / "raw" / "noise.npz").unlink()
+    for label in seg_labels[:2]:
+        meta, arr = run_format.read_frame(full_dir, label, "xy")
+        run_format.write_frame(partial_dir, label, "xy", meta, **arr)
+    config_p["schema_version"] = p.schema_version
+    config_p["parameters"] = p.to_external()
+    config_p["noise"].update(xy_label=None, xy_labels=seg_labels[:2], segments_requested=3, segments_completed=2)
+    config_p["data_files"] = [f"raw/{path.name}" for path in sorted((partial_dir / "raw").glob("*.npz"))]
+    _write_config(partial_dir, config_p)
+    partial_summary = analysis.analyze(partial_dir)
+    assert partial_summary["result_status"] == "partial" and partial_summary["phase_referral"]["available"] is True
+    assert partial_summary["quality_passed"] is False
+    assert any("2/3" in w for w in partial_summary["advisory_warnings"])
+
+    # 段间锁相参数不一致时应阻断折算并保留探测器本底
+    bad_dir = tmp_path / "bad_seg"
+    config_b = _synthetic_run(bad_dir)
+    (bad_dir / "raw" / "noise.npz").unlink()
+    meta0, arr0 = run_format.read_frame(full_dir, seg_labels[0], "xy")
+    run_format.write_frame(bad_dir, seg_labels[0], "xy", meta0, **arr0)
+    meta1, arr1 = run_format.read_frame(full_dir, seg_labels[1], "xy")
+    meta1["lockin"] = dict(meta1["lockin"], phase_deg=float(LOCKIN["phase_deg"]) + 15.0)
+    run_format.write_frame(bad_dir, seg_labels[1], "xy", meta1, **arr1)
+    config_b["schema_version"] = p.schema_version
+    config_b["parameters"] = p.to_external()
+    config_b["noise"].update(xy_label=None, xy_labels=seg_labels[:2])
+    _write_config(bad_dir, config_b)
+    bad_summary = analysis.analyze(bad_dir)
+    assert not bad_summary["phase_referral"]["available"]
+    assert any("分段噪声帧之间锁相状态不一致" in r for r in bad_summary["noise"]["reasons"])
+    assert bad_summary["noise"]["detector_spectrum_available"] is True

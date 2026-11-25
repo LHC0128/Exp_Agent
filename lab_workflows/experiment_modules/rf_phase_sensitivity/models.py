@@ -19,7 +19,7 @@ MFLI_MAX_SIGOUT_V = 10.0
 
 @dataclass
 class RfPhaseSensitivityParams(ExperimentParams):
-    schema_version: ClassVar[int] = 2
+    schema_version: ClassVar[int] = 3
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {}
     removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
 
@@ -83,14 +83,23 @@ class RfPhaseSensitivityParams(ExperimentParams):
         description="严格递增，不改变 5 kHz 载波，按列表顺序单次扫描（默认 3–203 Hz 错开 50 Hz 工频）。")
     pm_tone_duration_s: float = parameter(default=4., external_name="PM_TONE_DURATION_S", label="每档 MFLI 音调采集时长",
                                          unit="s", minimum=0.5, maximum=12.)
-    noise_duration_s: float = parameter(default=24., external_name="NOISE_DURATION_S", label="无调制噪声记录时长",
-                                       unit="s", minimum=8., maximum=60., group="basic")
+    noise_duration_s: float = parameter(default=4., external_name="NOISE_DURATION_S", label="单段无调制噪声采集时长",
+                                       unit="s", minimum=1., maximum=60., group="basic",
+                                       description="A06 每次关闭温控窗口内连续采集无调制噪声的时长；推荐 4 s 以限制单次关温控温漂。")
+    noise_n_avg: int = parameter(default=6, external_name="NOISE_N_AVG", label="无调制噪声分段次数",
+                                 minimum=1, maximum=60, group="basic",
+                                 description="A06 独立温控窗口的噪声采集分段数；每段先恢复温控等待再采下一段，离线对各段 Welch PSD 等权平均。")
     welch_segment_s: float = parameter(default=4., external_name="WELCH_SEGMENT_S", label="Welch 分段时长",
                                        unit="s", minimum=1., maximum=10., group="basic")
     system_settle_s: float = parameter(default=0.3, external_name="SYSTEM_SETTLE_S", label="系统稳定等待",
                                        unit="s", minimum=0.1, maximum=4., group="basic")
-    temp_switch_on_lag_s: float = parameter(default=2., external_name="TEMP_SWITCH_ON_LAG_S", label="温控恢复等待",
-                                           unit="s", minimum=0.1, maximum=15.)
+    temp_switch_on_lag_s: float = parameter(default=2., external_name="TEMP_SWITCH_ON_LAG_S", label="A03/A04 温控恢复等待",
+                                            unit="s", minimum=0.1, maximum=30.,
+                                            description="A03/A04 静态点每次恢复温控后的固定等待时间。")
+    dynamic_temp_switch_on_lag_s: float = parameter(default=4., external_name="DYNAMIC_TEMP_SWITCH_ON_LAG_S",
+                                                    label="A05/A06 温控恢复等待", unit="s", minimum=0.1, maximum=30.,
+                                                    group="basic",
+                                                    description="A05 频响单音与 A06 噪声每段恢复温控（5 V ON）后的固定等待时间。")
     set_tec_target: bool = parameter(default=False, external_name="SET_TEC_TARGET", label="下发 TEC 目标温度")
     target_temperature_c: float = parameter(default=90., external_name="TARGET_TEMPERATURE_C", label="TEC 目标温度",
         unit="°C", minimum=20., maximum=130., active_when="SET_TEC_TARGET",
@@ -151,7 +160,14 @@ class RfPhaseSensitivityParams(ExperimentParams):
         if schema_version < 2:
             migrated.setdefault("DEMOD0_DYNAMIC_TC", migrated.get("DEMOD0_TC", 0.001))
             migrated.setdefault("DEMOD0_DYNAMIC_RATE", migrated.get("DEMOD0_RATE", 2000.0))
+        if schema_version < 3:
+            migrated.setdefault("NOISE_N_AVG", 1)
+            migrated.setdefault("DYNAMIC_TEMP_SWITCH_ON_LAG_S", migrated.get("TEMP_SWITCH_ON_LAG_S", 2.0))
         return migrated
+
+    def _noise_welch_segments(self) -> int:
+        per_window = 1 + math.floor((self.noise_duration_s - self.welch_segment_s + 1e-12) / (0.5 * self.welch_segment_s))
+        return int(self.noise_n_avg) * max(1, per_window)
 
     def validate_model(self) -> list[str]:
         errors = []
@@ -163,13 +179,15 @@ class RfPhaseSensitivityParams(ExperimentParams):
             errors.append("MFLI 读出解调器仅支持现用 Demod 4（索引 3）或历史 Demod 1（索引 0）")
         if not self.run_tag.strip() or any(c in self.run_tag for c in '/\\:*?"<>|\x00'):
             errors.append("RUN_TAG 必须是非空且可作目录名的标签")
+        if type(self.noise_n_avg) is not int or self.noise_n_avg < 1:
+            errors.append("NOISE_N_AVG 必须为不少于 1 的整数")
         if any(not math.isfinite(v) for v in (self.x_bias_v, self.y_bias_v, self.main_field_current_ma,
                 self.z_peak_current_ma, self.z_pulse_width_us, self.z_pulse_edge_us, self.amplifier_gain_db,
                 self.sense_resistor_ohm, self.damping_resistor_ohm, self.coil_resistance_ohm, self.resistor_rated_w,
                 self.demod0_rate_sa_s, self.demod0_tc_s, self.demod0_dynamic_rate_sa_s, self.demod0_dynamic_tc_s,
                 self.demod0_signal_range_v, self.local_span_deg,
                 self.pm_tone_duration_s, self.static_point_duration_s, self.noise_duration_s,
-                self.welch_segment_s, self.temp_switch_on_lag_s,
+                self.welch_segment_s, self.temp_switch_on_lag_s, self.dynamic_temp_switch_on_lag_s,
                 *((self.z_tail_s_f, self.z_tail_tau_e_us) if self.z_tail_comp_enabled else ()),
                 *((self.target_temperature_c,) if self.set_tec_target else ()))):
             errors.append("实际使用的标量参数必须有限")
@@ -181,8 +199,13 @@ class RfPhaseSensitivityParams(ExperimentParams):
             errors.append("基带 MFLI 记录至少覆盖最低频点 10 个周期，A05/A06 采样率至少为最高频点的 10 倍")
         if self.system_settle_s < 10 * self.demod0_order * max(self.demod0_tc_s, self.demod0_dynamic_tc_s):
             errors.append("SYSTEM_SETTLE_S 必须覆盖至少 10 × 滤波阶数 × 时间常数")
-        if self.noise_duration_s < 3 * self.welch_segment_s:
-            errors.append("NOISE_DURATION_S 至少为 WELCH_SEGMENT_S 的 3 倍")
+        if (math.isfinite(self.noise_duration_s) and math.isfinite(self.welch_segment_s)
+                and self.welch_segment_s > 0 and self.noise_duration_s < self.welch_segment_s):
+            errors.append("单段 NOISE_DURATION_S 不能小于 WELCH_SEGMENT_S")
+        elif (type(self.noise_n_avg) is int and self.noise_n_avg >= 1
+                and math.isfinite(self.noise_duration_s) and math.isfinite(self.welch_segment_s)
+                and self.welch_segment_s > 0 and self._noise_welch_segments() < 2):
+            errors.append("总 Welch 分段数不足 2 段，请增大 NOISE_N_AVG 或 NOISE_DURATION_S")
         if math.isfinite(self.amplifier_gain_db) and not math.isclose(
                 self.amplifier_gain_db * 2, round(self.amplifier_gain_db * 2), abs_tol=1e-9):
             errors.append("1200B 增益须为 0.5 dB 的整数倍")
@@ -194,4 +217,6 @@ class RfPhaseSensitivityParams(ExperimentParams):
         return {} if p.validate_model() else dict(
             y_rf_vpk=p.y_carrier_vpk, z_pulse_vpp=p.pulse_vpp, pulse_period_us=p.pulse_period_us,
             pm_depth_deg_peak=PM_DEPTH_DEG, pm_sweep_order_hz=p.sweep_order_hz,
-            welch_resolution_hz=1 / p.welch_segment_s)
+            welch_resolution_hz=1 / p.welch_segment_s,
+            total_noise_duration_s=p.noise_n_avg * p.noise_duration_s,
+            noise_welch_segments=p._noise_welch_segments())

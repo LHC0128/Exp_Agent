@@ -404,14 +404,26 @@
     },
     {
       "name": "NOISE_DURATION_S",
-      "label": "无调制噪声记录时长",
+      "label": "单段无调制噪声采集时长",
       "type": "number",
-      "default": 24.0,
+      "default": 4.0,
       "unit": "s",
       "group": "basic",
-      "minimum": 8.0,
+      "minimum": 1.0,
       "maximum": 60.0,
-      "description": "",
+      "description": "A06 每次关闭温控窗口内连续采集无调制噪声的时长；推荐 4 s 以限制单次关温控温漂。",
+      "read_only": false
+    },
+    {
+      "name": "NOISE_N_AVG",
+      "label": "无调制噪声分段次数",
+      "type": "integer",
+      "default": 6,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": 60,
+      "description": "A06 独立温控窗口的噪声采集分段数；每段先恢复温控等待再采下一段，离线对各段 Welch PSD 等权平均。",
       "read_only": false
     },
     {
@@ -441,14 +453,26 @@
     },
     {
       "name": "TEMP_SWITCH_ON_LAG_S",
-      "label": "温控恢复等待",
+      "label": "A03/A04 温控恢复等待",
       "type": "number",
       "default": 2.0,
       "unit": "s",
       "group": "advanced",
       "minimum": 0.1,
-      "maximum": 15.0,
-      "description": "",
+      "maximum": 30.0,
+      "description": "A03/A04 静态点每次恢复温控后的固定等待时间。",
+      "read_only": false
+    },
+    {
+      "name": "DYNAMIC_TEMP_SWITCH_ON_LAG_S",
+      "label": "A05/A06 温控恢复等待",
+      "type": "number",
+      "default": 4.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0.1,
+      "maximum": 30.0,
+      "description": "A05 频响单音与 A06 噪声每段恢复温控（5 V ON）后的固定等待时间。",
       "read_only": false
     },
     {
@@ -488,10 +512,10 @@
         "parameters": [
           "RUN_TAG"
         ],
-        "artifacts": [],
         "display_parameters": [
           "RUN_TAG"
         ],
+        "artifacts": [],
         "quality_gates": [
           "Y 向 5 kHz 载波由 MFLI Out1（MF-MOD）输出且 Y_RF_VPP 可调；核对 mfli_dev30661_signal_output_0、Demod 4 与 Z 脉冲限值。"
         ]
@@ -504,8 +528,8 @@
           "A01"
         ],
         "parameters": [],
-        "artifacts": [],
         "display_parameters": [],
+        "artifacts": [],
         "quality_gates": [
           "连接设备并验证 MFLI MF-MD/MF-MOD 选件；先写入再严格回读 10 MHz 外部时钟。"
         ]
@@ -547,9 +571,6 @@
           "SET_TEC_TARGET",
           "TARGET_TEMPERATURE_C"
         ],
-        "artifacts": [
-          "raw/coarse_*.npz"
-        ],
         "display_parameters": [
           "Y_RF_FREQ_HZ",
           "Y_RF_VPP",
@@ -580,6 +601,9 @@
           "SET_TEC_TARGET",
           "TARGET_TEMPERATURE_C"
         ],
+        "artifacts": [
+          "raw/coarse_*.npz"
+        ],
         "quality_gates": [
           "开启 MF-MOD 连续无调制载波整周扫描；先以三分量粗定再用多阶谐波细化工作点与切线角，将独立 Demod 4 相位转到 sample.y（回读偏差不超过 0.5°）。"
         ]
@@ -594,11 +618,11 @@
         "parameters": [
           "LOCAL_SPAN_DEG"
         ],
-        "artifacts": [
-          "raw/local_*_xy.npz"
-        ],
         "display_parameters": [
           "LOCAL_SPAN_DEG"
+        ],
+        "artifacts": [
+          "raw/local_*_xy.npz"
         ],
         "quality_gates": [
           "在工作点两侧以 MFLI 指令角加密细扫，按 Demod 4 Y 正交分量理论式 (2.2.2) 非线性拟合计算斜率 K₀ 与 X 正交泄漏（含首尾线性漂移扣除），并将 A05/A06 载波更新至局部拐点中心。"
@@ -614,20 +638,22 @@
         "parameters": [
           "DEMOD0_DYNAMIC_TC",
           "DEMOD0_DYNAMIC_RATE",
+          "DYNAMIC_TEMP_SWITCH_ON_LAG_S",
+          "PM_FREQUENCIES_HZ",
+          "PM_TONE_DURATION_S"
+        ],
+        "display_parameters": [
+          "DEMOD0_DYNAMIC_TC",
+          "DEMOD0_DYNAMIC_RATE",
+          "DYNAMIC_TEMP_SWITCH_ON_LAG_S",
           "PM_FREQUENCIES_HZ",
           "PM_TONE_DURATION_S"
         ],
         "artifacts": [
           "raw/pm_*.npz"
         ],
-        "display_parameters": [
-          "DEMOD0_DYNAMIC_TC",
-          "DEMOD0_DYNAMIC_RATE",
-          "PM_FREQUENCIES_HZ",
-          "PM_TONE_DURATION_S"
-        ],
         "quality_gates": [
-          "仅对 A05/A06 将 MFLI Demod 4 切至高带宽 DEMOD0_DYNAMIC_TC / DEMOD0_DYNAMIC_RATE（保持 A03/A04 滤波参数不变）并保持对齐相位；开启 MF-MOD 固定 2° 峰值相干边带 PM，按 PM_FREQUENCIES_HZ 单次顺序切换 Osc 3 采集各档 XY 帧。"
+          "仅对 A05/A06 将 MFLI Demod 4 切至高带宽 DEMOD0_DYNAMIC_TC / DEMOD0_DYNAMIC_RATE（保持 A03/A04 滤波参数不变）并保持对齐相位；开启 MF-MOD 固定 2° 峰值相干边带 PM，按 PM_FREQUENCIES_HZ 单次顺序切换 Osc 3 采集各档 XY 帧，每点后恢复温控并按 DYNAMIC_TEMP_SWITCH_ON_LAG_S 等待。"
         ]
       },
       {
@@ -639,17 +665,19 @@
         ],
         "parameters": [
           "NOISE_DURATION_S",
+          "NOISE_N_AVG",
+          "WELCH_SEGMENT_S"
+        ],
+        "display_parameters": [
+          "NOISE_DURATION_S",
+          "NOISE_N_AVG",
           "WELCH_SEGMENT_S"
         ],
         "artifacts": [
           "raw/noise_*.npz"
         ],
-        "display_parameters": [
-          "NOISE_DURATION_S",
-          "WELCH_SEGMENT_S"
-        ],
         "quality_gates": [
-          "保持 A05 高带宽滤波设置不变，关闭上下边带保留 5 kHz 连续载波在工作点，仅在 MFLI Demod 4 采集无调制噪声 XY 帧，严格守住温控窗口只读不写。"
+          "保持 A05 高带宽滤波设置不变，关闭上下边带保留 5 kHz 连续载波在工作点，仅在 MFLI Demod 4 按 NOISE_N_AVG × NOISE_DURATION_S 分段独立进出温控窗口采集无调制噪声 XY 帧，每段恢复温控后写盘并按 DYNAMIC_TEMP_SWITCH_ON_LAG_S 等待。"
         ]
       },
       {
@@ -658,8 +686,8 @@
         "group": "结束",
         "dependencies": [],
         "parameters": [],
-        "artifacts": [],
         "display_parameters": [],
+        "artifacts": [],
         "quality_gates": [
           "先关 1200B，再关 MFLI Out1/MOD 并清零偏置与幅值，Z/X 关闭归零并回读，停 Demod 4 传输并恢复温控与主场；共同触发保持。"
         ]
@@ -672,6 +700,7 @@
         "group": "独立分析",
         "dependencies": [],
         "parameters": [],
+        "display_parameters": [],
         "artifacts": [
           "phase_sensitivity_summary.json",
           "phase_transfer.csv",
@@ -681,7 +710,6 @@
           "phase_transfer.png",
           "phase_noise.png"
         ],
-        "display_parameters": [],
         "quality_gates": [
           "绘制 A03 含放大插图相图与理论式 (2.2.2) 波形、A04 左相图右理论色散响应、A05 零频 √Lorentzian 拟合与 H₀ 归一化频响及 A06 相位灵敏度谱（µrad/√Hz，含全频段 √Lorentzian 回补）；参考检查仅作告警与标注，不扣留出图。"
         ]
@@ -878,6 +906,10 @@
           "A05",
           "A06"
         ],
+        "DYNAMIC_TEMP_SWITCH_ON_LAG_S": [
+          "A05",
+          "A06"
+        ],
         "PM_FREQUENCIES_HZ": [
           "A05",
           "A06"
@@ -887,6 +919,9 @@
           "A06"
         ],
         "NOISE_DURATION_S": [
+          "A06"
+        ],
+        "NOISE_N_AVG": [
           "A06"
         ],
         "WELCH_SEGMENT_S": [

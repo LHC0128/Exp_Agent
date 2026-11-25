@@ -247,13 +247,17 @@ def _daq(ctx, duration_s, lockin, *, requested_rate):
         time_s=x.time, x_v=x.values, y_v=y.values)
 
 
-def _xy(ctx, label, duration_s, *, lockin=None, dynamic=False, **record):
+def _xy(ctx, label, duration_s, *, lockin=None, dynamic=False, recovery_wait_s=None, **record):
     """仪器设置在关温控前，缓冲数据仅在开温控后保存。"""
     before = lockin_readback(ctx, dynamic=dynamic)
     if lockin is not None and before != lockin:
         raise SafetyAbort("MFLI 配置发生变化，拒绝并入同轮标定")
     temperature_on = True
     requested_rate = ctx.params.demod0_dynamic_rate_sa_s if dynamic else ctx.params.demod0_rate_sa_s
+    if recovery_wait_s is None:
+        wait_lag_s = ctx.params.dynamic_temp_switch_on_lag_s if dynamic else ctx.params.temp_switch_on_lag_s
+    else:
+        wait_lag_s = float(recovery_wait_s)
 
     def set_enabled(enabled):
         nonlocal temperature_on
@@ -270,10 +274,49 @@ def _xy(ctx, label, duration_s, *, lockin=None, dynamic=False, **record):
         with acquisition_window(set_enabled, sleep, ctx.params.system_settle_s):
             metadata, arrays = _daq(ctx, duration_s, before, requested_rate=requested_rate)
             pending.add(lambda meta, **data: _save(ctx, label, "xy", meta, **data), dict(metadata, **record), **arrays)
-        sleep(ctx.params.temp_switch_on_lag_s)
+        if wait_lag_s > 0:
+            sleep(wait_lag_s)
         if lockin_readback(ctx, dynamic=dynamic) != before:
             raise SafetyAbort("MFLI 采集前后回读不一致；原始记录仅供诊断")
     return complex(np.mean(arrays["x_v"]), np.mean(arrays["y_v"]))
+
+
+def acquire_noise_segments(
+    ctx,
+    *,
+    label_prefix: str,
+    count: int,
+    duration_s: float,
+    lockin: dict,
+    recovery_wait_s: float | None = None,
+    single_label: str | None = None,
+    on_segment=None,
+    **record,
+) -> tuple[list[str], list[complex]]:
+    """按独立温控窗口分段采集噪声 XY 帧；每段恢复温控后写入磁盘并立即回调。"""
+    if count < 1:
+        raise SafetyAbort(f"噪声分段次数必须为正整数：{count}")
+    labels: list[str] = []
+    means: list[complex] = []
+    for seg_idx in range(count):
+        check_cancelled()
+        label = single_label if (single_label is not None and count == 1) else f"{label_prefix}_seg_{seg_idx:02d}_xy"
+        mean_z = _xy(
+            ctx,
+            label,
+            duration_s,
+            lockin=lockin,
+            dynamic=True,
+            recovery_wait_s=recovery_wait_s,
+            segment_index=seg_idx,
+            segment_count=count,
+            **record,
+        )
+        labels.append(label)
+        means.append(mean_z)
+        if on_segment is not None:
+            on_segment(seg_idx + 1, count, label, mean_z, list(labels), list(means))
+    return labels, means
 
 
 def _unique_warnings(items):
@@ -406,16 +449,61 @@ def _sweep(ctx, carrier, cal, lockin):
 def _baseline(ctx, carrier, lockin):
     report_runtime_progress("A06", "关闭调制边带保留 5 kHz 连续载波", 10, estimated_remaining_seconds=None)
     carrier.stop_pm()
-    state = dict(accepted=False, electrical_accepted=True, quality_passed=False, quality_warnings=[],
-                 reason="未完成基线采集", scope_labels=[], xy_label=None)
+    count = int(ctx.params.noise_n_avg)
+    state = dict(
+        accepted=False,
+        electrical_accepted=True,
+        quality_passed=False,
+        quality_warnings=[],
+        reason="未完成基线采集",
+        scope_labels=[],
+        xy_label=None,
+        xy_labels=[],
+        segments_requested=count,
+        segments_completed=0,
+    )
     ctx.state["noise"] = state
-    report_runtime_progress("A06", "采集无调制基带记录", 40, estimated_remaining_seconds=None)
-    mean = _xy(ctx, "noise_xy", ctx.params.noise_duration_s, lockin=lockin, dynamic=True,
-               source_mode="unmodulated_carrier")
+    ctx.save()
+    start = time.monotonic()
+
+    def _on_segment(done, total, label, _mean_z, labels, means):
+        mean_all = sum(means) / len(means)
+        state.update(
+            xy_labels=labels,
+            xy_label=labels[0] if total == 1 else None,
+            segments_completed=done,
+            mean_x_v=float(mean_all.real),
+            mean_y_v=float(mean_all.imag),
+        )
+        ctx.save()
+        report_runtime_progress(
+            "A06",
+            f"无调制噪声分段 {done}/{total}",
+            15 + 80 * done / total,
+            estimated_remaining_seconds=(time.monotonic() - start) / done * (total - done),
+            data={"eta_scope": "当前无调制噪声"},
+        )
+
+    report_runtime_progress("A06", f"开始分段采集无调制基带记录（共 {count} 段 × {ctx.params.noise_duration_s:g} s）",
+                            15, estimated_remaining_seconds=None)
+    acquire_noise_segments(
+        ctx,
+        label_prefix="noise",
+        count=count,
+        duration_s=ctx.params.noise_duration_s,
+        lockin=lockin,
+        single_label="noise_xy",
+        on_segment=_on_segment,
+        source_mode="unmodulated_carrier",
+    )
     after = carrier.verify_unmodulated()
-    state.update(xy_label="noise_xy", mean_x_v=mean.real, mean_y_v=mean.imag,
-                 carrier_command_deg=after["command_deg"], accepted=True,
-                 quality_passed=True, quality_warnings=[], reason="")
+    state.update(
+        carrier_command_deg=after["command_deg"],
+        accepted=True,
+        quality_passed=True,
+        quality_warnings=[],
+        reason="",
+    )
 
 
 def _calibration_state(ctx, *, dynamic: bool = False):

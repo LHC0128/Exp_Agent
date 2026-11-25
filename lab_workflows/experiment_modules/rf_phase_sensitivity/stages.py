@@ -21,8 +21,9 @@ SETUP_KEYS = (
     "TEMP_SWITCH_ON_LAG_S", "SET_TEC_TARGET", "TARGET_TEMPERATURE_C",
 )
 LOCAL_KEYS = ("LOCAL_SPAN_DEG",)
-SWEEP_KEYS = ("DEMOD0_DYNAMIC_TC", "DEMOD0_DYNAMIC_RATE", "PM_FREQUENCIES_HZ", "PM_TONE_DURATION_S")
-NOISE_KEYS = ("NOISE_DURATION_S", "WELCH_SEGMENT_S")
+SWEEP_KEYS = ("DEMOD0_DYNAMIC_TC", "DEMOD0_DYNAMIC_RATE", "DYNAMIC_TEMP_SWITCH_ON_LAG_S",
+              "PM_FREQUENCIES_HZ", "PM_TONE_DURATION_S")
+NOISE_KEYS = ("NOISE_DURATION_S", "NOISE_N_AVG", "WELCH_SEGMENT_S")
 MEASUREMENT_KEYS = tuple(SETUP_KEYS + LOCAL_KEYS + SWEEP_KEYS + NOISE_KEYS)
 assert set(MEASUREMENT_KEYS) == set(RfPhaseSensitivityParams.external_names()) - {"RUN_TAG"}
 ACQUISITION = (
@@ -38,10 +39,10 @@ ACQUISITION = (
           quality_gates=("在工作点两侧以 MFLI 指令角加密细扫，按 Demod 4 Y 正交分量理论式 (2.2.2) 非线性拟合计算斜率 K₀ 与 X 正交泄漏（含首尾线性漂移扣除），并将 A05/A06 载波更新至局部拐点中心。",)),
     Stage("A05", "基带频率响应测量", "测量", ("A04",), SWEEP_KEYS,
           artifacts=("raw/pm_*.npz",),
-          quality_gates=("仅对 A05/A06 将 MFLI Demod 4 切至高带宽 DEMOD0_DYNAMIC_TC / DEMOD0_DYNAMIC_RATE（保持 A03/A04 滤波参数不变）并保持对齐相位；开启 MF-MOD 固定 2° 峰值相干边带 PM，按 PM_FREQUENCIES_HZ 单次顺序切换 Osc 3 采集各档 XY 帧。",)),
+          quality_gates=("仅对 A05/A06 将 MFLI Demod 4 切至高带宽 DEMOD0_DYNAMIC_TC / DEMOD0_DYNAMIC_RATE（保持 A03/A04 滤波参数不变）并保持对齐相位；开启 MF-MOD 固定 2° 峰值相干边带 PM，按 PM_FREQUENCIES_HZ 单次顺序切换 Osc 3 采集各档 XY 帧，每点后恢复温控并按 DYNAMIC_TEMP_SWITCH_ON_LAG_S 等待。",)),
     Stage("A06", "无调制噪声测量", "测量", ("A05",), NOISE_KEYS,
           artifacts=("raw/noise_*.npz",),
-          quality_gates=("保持 A05 高带宽滤波设置不变，关闭上下边带保留 5 kHz 连续载波在工作点，仅在 MFLI Demod 4 采集无调制噪声 XY 帧，严格守住温控窗口只读不写。",)),
+          quality_gates=("保持 A05 高带宽滤波设置不变，关闭上下边带保留 5 kHz 连续载波在工作点，仅在 MFLI Demod 4 按 NOISE_N_AVG × NOISE_DURATION_S 分段独立进出温控窗口采集无调制噪声 XY 帧，每段恢复温控后写盘并按 DYNAMIC_TEMP_SWITCH_ON_LAG_S 等待。",)),
     Stage(FINISH_ID, "安全结束会话", "结束", (), (), quality_gates=(
         "先关 1200B，再关 MFLI Out1/MOD 并清零偏置与幅值，Z/X 关闭归零并回读，停 Demod 4 传输并恢复温控与主场；共同触发保持。",)),
 )

@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 parameters:
   RUN_TAG: phase_sensitivity
   Y_RF_FREQ_HZ: 5000.0
@@ -51,9 +51,11 @@ parameters:
   - 193.0
   - 203.0
   PM_TONE_DURATION_S: 4.0
-  NOISE_DURATION_S: 24.0
+  NOISE_DURATION_S: 4.0
+  NOISE_N_AVG: 6
   WELCH_SEGMENT_S: 4.0
   SYSTEM_SETTLE_S: 0.3
   TEMP_SWITCH_ON_LAG_S: 2.0
+  DYNAMIC_TEMP_SWITCH_ON_LAG_S: 4.0
   SET_TEC_TARGET: false
   TARGET_TEMPERATURE_C: 90.0

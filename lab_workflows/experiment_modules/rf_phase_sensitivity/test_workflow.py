@@ -237,8 +237,9 @@ def rig(monkeypatch, tmp_path):
     monkeypatch.setattr(acquisition, "_STATIC_GRID_DEG", tuple(range(0, 360, 45)))
     monkeypatch.setenv(PROGRESS_PROTOCOL_ENV, "jsonl")
     p = replace(RfPhaseSensitivityParams(), pm_frequencies_hz=[20., 40.], pm_tone_duration_s=.5,
-                noise_duration_s=8., welch_segment_s=2., static_point_duration_s=.05,
-                demod0_rate_sa_s=1000., demod0_dynamic_rate_sa_s=2000., system_settle_s=.1, temp_switch_on_lag_s=.1)
+                noise_duration_s=4., noise_n_avg=2, welch_segment_s=2., static_point_duration_s=.05,
+                demod0_rate_sa_s=1000., demod0_dynamic_rate_sa_s=2000., system_settle_s=.1,
+                temp_switch_on_lag_s=.1, dynamic_temp_switch_on_lag_s=.2)
     rnd = np.random.default_rng(7429)
     dev = lockin.device_id
 
@@ -306,9 +307,14 @@ def test_preflight_and_defaults():
     assert p.demod0_dynamic_tc_s == pytest.approx(1e-6) and p.demod0_dynamic_rate_sa_s == pytest.approx(50000.)
     assert p.pm_frequencies_hz == [float(f) for f in range(3, 204, 10)]
     assert p.pm_tone_duration_s == pytest.approx(4.0)
+    assert p.noise_duration_s == pytest.approx(4.0) and p.noise_n_avg == 6
+    assert p.temp_switch_on_lag_s == pytest.approx(2.0) and p.dynamic_temp_switch_on_lag_s == pytest.approx(4.0)
     assert ADAPTER.preflight({"Y_RF_VPP": 0.2}) == []
     assert ADAPTER.preflight({"Y_RF_VPP": 2.0, "Y_BIAS_V": 1.0}) == []
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [3., 103., 203.], "PM_TONE_DURATION_S": 4.0}) == []
+    assert ADAPTER.preflight({"NOISE_DURATION_S": 4.0, "NOISE_N_AVG": 2, "WELCH_SEGMENT_S": 4.0}) == []
+    assert ADAPTER.preflight({"NOISE_DURATION_S": 3.0, "WELCH_SEGMENT_S": 4.0})
+    assert ADAPTER.preflight({"NOISE_DURATION_S": 4.0, "NOISE_N_AVG": 1, "WELCH_SEGMENT_S": 4.0})
     assert ADAPTER.preflight({"Y_RF_VPP": 21.0})
     assert ADAPTER.preflight({"Y_RF_VPP": 2.0, "Y_BIAS_V": 9.5})
     assert ADAPTER.preflight({"Y_RF_FREQ_HZ": 6000.0})
@@ -326,12 +332,12 @@ def test_preflight_and_defaults():
 
 def test_legacy_demod0_history_config_remains_readable():
     legacy = RfPhaseSensitivityParams(
-        demod0_idx=0, y_rf_vpp=0.5,
+        demod0_idx=0, y_rf_vpp=0.5, noise_duration_s=24.0,
         pm_frequencies_hz=[float(f) for f in range(10, 201, 10)], pm_tone_duration_s=2.0,
     )
     v1_params = legacy.to_external()
-    v1_params.pop("DEMOD0_DYNAMIC_TC")
-    v1_params.pop("DEMOD0_DYNAMIC_RATE")
+    for key in ("DEMOD0_DYNAMIC_TC", "DEMOD0_DYNAMIC_RATE", "NOISE_N_AVG", "DYNAMIC_TEMP_SWITCH_ON_LAG_S"):
+        v1_params.pop(key)
     v1_params["DEMOD0_RATE"] = 2000.0
     cfg = run_format.initial_metadata(legacy) | {
         "completion_status": "completed",
@@ -343,6 +349,19 @@ def test_legacy_demod0_history_config_remains_readable():
     migrated = run_format.parameters(cfg)
     assert migrated.demod0_dynamic_tc_s == pytest.approx(migrated.demod0_tc_s)
     assert migrated.demod0_dynamic_rate_sa_s == pytest.approx(2000.0)
+    assert migrated.noise_n_avg == 1 and migrated.dynamic_temp_switch_on_lag_s == pytest.approx(migrated.temp_switch_on_lag_s)
+
+    v2_params = legacy.to_external()
+    for key in ("NOISE_N_AVG", "DYNAMIC_TEMP_SWITCH_ON_LAG_S"):
+        v2_params.pop(key)
+    cfg_v2 = run_format.initial_metadata(legacy) | {
+        "completion_status": "completed",
+        "schema_version": 2,
+        "parameters": v2_params,
+    }
+    assert run_format.format_block_reason(cfg_v2) == ""
+    migrated_v2 = run_format.parameters(cfg_v2)
+    assert migrated_v2.noise_n_avg == 1 and migrated_v2.dynamic_temp_switch_on_lag_s == pytest.approx(2.0)
 
 
 def test_connect_rejects_missing_mod_option(rig):
@@ -385,8 +404,12 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
     assert len(c["data_files"]) == len(list((run_dir / "raw").glob("*.npz")))
     coarse_meta, _ = run_format.read_frame(run_dir, "coarse_00", "xy")
     assert coarse_meta["rate_sa_s"] == 1000. and coarse_meta["lockin"]["time_constant_s"] == pytest.approx(0.001)
-    metadata, arrays = run_format.read_frame(run_dir, "noise_xy", "xy")
-    assert metadata["rate_sa_s"] == 2000. and metadata["lockin"]["time_constant_s"] == pytest.approx(1e-6) and len(arrays["time_s"]) == 16000
+    assert c["noise"]["xy_labels"] == ["noise_seg_00_xy", "noise_seg_01_xy"] and c["noise"]["segments_completed"] == 2
+    for seg_label in c["noise"]["xy_labels"]:
+        metadata, arrays = run_format.read_frame(run_dir, seg_label, "xy")
+        assert metadata["rate_sa_s"] == 2000. and metadata["lockin"]["time_constant_s"] == pytest.approx(1e-6)
+        assert len(arrays["time_s"]) == 8000
+    assert rig.events.count(("wait", 0.2)) == len(rig.p.sweep_order_hz) + rig.p.noise_n_avg
     assert not any(e[0] == "scope" for e in rig.events)
     assert "DHO924" not in DEFINITION.required_devices
     assert "coil_current_scope" not in run_format.REQUIRED_MAPPING_KEYS
@@ -773,7 +796,7 @@ def test_advisory_warnings_do_not_withhold_phase_noise_deg(rig, monkeypatch):
     c = run_format.read_config(run_dir / "experiment_config.yaml")
     assert c["completion_status"] == "completed" and c["safety_shutdown"]["completed"]
     assert all(row["xy_label"] is not None and row["repeat"] is False for row in c["transfer"])
-    assert c["noise"]["xy_label"] == "noise_xy" and c["noise"]["scope_labels"] == []
+    assert c["noise"]["xy_labels"] == ["noise_seg_00_xy", "noise_seg_01_xy"] and c["noise"]["scope_labels"] == []
     result = analysis.analyze(run_dir)
     assert result["phase_referral"]["available"] is True
     assert result["accepted_primary_points"] == 2
@@ -781,6 +804,33 @@ def test_advisory_warnings_do_not_withhold_phase_noise_deg(rig, monkeypatch):
     assert "median_deg_per_sqrt_hz" in result["phase_referral"]["bands"][0]
     for artifact in (run_format.RESPONSE_PLOT, run_format.LOCAL_PLOT, run_format.TRANSFER_PLOT, run_format.NOISE_PLOT):
         assert (run_dir / "results" / artifact).stat().st_size > 0
+    _assert_parked(rig)
+
+
+def test_a06_cancel_between_segments_preserves_completed_segments_and_restores_temp(rig, monkeypatch):
+    """A06 分段中途取消时，已完成分段须在开温控后落盘并登记到 noise.xy_labels，且安全恢复温控。"""
+    rig.p = replace(rig.p, noise_n_avg=3, noise_duration_s=4., welch_segment_s=2.)
+    original = acquisition.daq.acquire_data
+
+    def read(*args, **kwargs):
+        if ("disk", "noise_seg_00_xy") in rig.events:
+            raise WorkflowCancelled("注入分段取消")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(acquisition.daq, "acquire_data", read)
+    ctx = _ctx(rig)
+    with pytest.raises(WorkflowCancelled, match="注入分段取消"):
+        try:
+            ctx.execute(["A01", "A02", "A03", "A04", "A05", "A06"])
+        finally:
+            import sys
+            ctx.finish(sys.exc_info()[1])
+    c = run_format.read_config(ctx.directory.config_path)
+    assert c["completion_status"] == "cancelled"
+    assert c["noise"]["xy_labels"] == ["noise_seg_00_xy"]
+    assert "raw/noise_seg_00_xy.npz" in c["data_files"]
+    assert "raw/noise_seg_01_xy.npz" not in c["data_files"]
+    assert c["safety_shutdown"]["completed"] and c["shutdown_readbacks"]["Temp_Switch"]["dc_setting_v"] == 5.
     _assert_parked(rig)
 
 

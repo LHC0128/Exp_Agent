@@ -35,6 +35,8 @@ NOISE_PLOT = "phase_noise.png"
 _ARRAYS = {"xy": ("time_s", "x_v", "y_v"), "scope": ("time_s", "reference_v", "coil_v")}
 _MAX_POINTS = 5_000_000
 _LEGACY_V1_ADDED_KEYS = frozenset({"DEMOD0_DYNAMIC_TC", "DEMOD0_DYNAMIC_RATE"})
+_LEGACY_V2_ADDED_KEYS = frozenset({"DYNAMIC_TEMP_SWITCH_ON_LAG_S", "NOISE_N_AVG"})
+_KNOWN_SCHEMA_VERSIONS = frozenset({1, 2, RfPhaseSensitivityParams.schema_version})
 
 
 def initial_metadata(p: RfPhaseSensitivityParams):
@@ -42,7 +44,8 @@ def initial_metadata(p: RfPhaseSensitivityParams):
                 execution_mode="typed_workflow", raw_format_version=RAW_FORMAT_VERSION, completion_status="running",
                 data_files=[], actual_rates={}, phase_response={}, calibration={}, transfer=[], noise={},
                 temperature_gating=dict(scope="each_atomic_record", off_voltage_v=0., on_voltage_v=5.,
-                                        system_settle_s=p.system_settle_s, on_lag_s=p.temp_switch_on_lag_s),
+                                        system_settle_s=p.system_settle_s, on_lag_s=p.temp_switch_on_lag_s,
+                                        dynamic_on_lag_s=p.dynamic_temp_switch_on_lag_s),
                 temperature=dict(target_temperature_c=p.target_temperature_c if p.set_tec_target else None,
                                  actual_temperature_c=None, controlled_by_experiment=False),
                 predicted=dict(z_pulse_vpp=p.pulse_vpp, pulse_period_us=p.pulse_period_us,
@@ -58,14 +61,16 @@ def read_config(path):
 
 def parameters(config):
     version = config.get("schema_version")
-    if version not in {1, RfPhaseSensitivityParams.schema_version}:
+    if version not in _KNOWN_SCHEMA_VERSIONS:
         raise ValueError("不支持该参数版本")
     values = config["parameters"]
     if not isinstance(values, dict):
         raise ValueError("运行参数快照格式无效")
     expected = set(RfPhaseSensitivityParams.external_names())
-    if version == 1:
+    if version < 2:
         expected -= _LEGACY_V1_ADDED_KEYS
+    if version < 3:
+        expected -= _LEGACY_V2_ADDED_KEYS
     if values.keys() != expected:
         raise ValueError("运行参数快照缺键或包含未知字段")
     return RfPhaseSensitivityParams.from_external(values, schema_version=version)

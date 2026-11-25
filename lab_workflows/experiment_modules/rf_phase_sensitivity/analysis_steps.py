@@ -371,24 +371,80 @@ def _welch(time_s, y_v, rate_sa_s, segment_s):
     keep = frequency >= MIN_NOISE_HZ
     if not keep.any() or not np.isfinite(psd).all() or (psd < 0).any():
         raise ValueError("没有有效的 1 Hz 以上噪声谱")
-    details = dict(rate_sa_s=rate, samples=int(y.size), nperseg=nperseg, noverlap=noverlap,
+    details = dict(rate_sa_s=rate, samples=int(y.size), duration_s=float(t[-1] + 1.0 / rate),
+                   nperseg=nperseg, noverlap=noverlap,
                    overlap_fraction=noverlap / nperseg, segments=nsegments, window="hann", detrend="linear",
                    one_sided=True, segment_s=nperseg / rate, requested_segment_s=segment_s,
                    resolution_hz=rate / nperseg, resolution_met=nperseg == requested)
     return frequency[keep], psd[keep], details
 
 
-def _noise(run_dir, noise, rows, reference, segment_s):
+def welch_segmented(frames, segment_s):
+    """对多个独立温控窗口录得的连续段分别计算 Welch PSD，并按段数加权（等长即等权）平均。"""
+    if not frames:
+        raise ValueError("缺少可计算 Welch PSD 的噪声分段")
+    freq_ref = None
+    nperseg_ref = None
+    weighted_psd = None
+    first_details = None
+    total_samples = 0
+    total_segments = 0
+    total_duration_s = 0.0
+    per_frame_segments = []
+    resolution_met = True
+    for time_s, y_v, rate_sa_s in frames:
+        freq, psd, details = _welch(time_s, y_v, rate_sa_s, segment_s)
+        if freq_ref is None:
+            freq_ref = freq
+            nperseg_ref = details["nperseg"]
+            weighted_psd = psd * details["segments"]
+            first_details = details
+        else:
+            if details["nperseg"] != nperseg_ref or not np.allclose(freq, freq_ref, rtol=1e-9, atol=1e-9):
+                raise ValueError("各噪声分段的实际采样率或 Welch 频率网格不一致，拒绝拼接平均")
+            weighted_psd = weighted_psd + psd * details["segments"]
+        total_samples += details["samples"]
+        total_segments += details["segments"]
+        total_duration_s += details["duration_s"]
+        per_frame_segments.append(details["segments"])
+        resolution_met = resolution_met and bool(details["resolution_met"])
+    combined = dict(
+        first_details,
+        samples=int(total_samples),
+        duration_s=float(total_duration_s),
+        segment_duration_s=float(first_details["duration_s"]),
+        segments=int(total_segments),
+        acquisition_segments=len(frames),
+        per_frame_segments=per_frame_segments,
+        resolution_met=resolution_met,
+    )
+    return freq_ref, weighted_psd / total_segments, combined
+
+
+def _noise_labels(noise):
+    raw_list = noise.get("xy_labels")
+    if isinstance(raw_list, list) and raw_list:
+        labels = [_text(item) for item in raw_list]
+        if any(label is None for label in labels) or len(set(labels)) != len(labels):
+            return None, "噪声分段标签列表无效或存在重复"
+        return labels, None
+    single = _text(noise.get("xy_label"))
+    return ([single] if single is not None else []), None
+
+
+def _noise(run_dir, noise, rows, reference, segment_s, *, expected_segments=None):
     empty = np.array([], dtype=float)
     frequency, psd = empty, empty
-    xy = _text(noise.get("xy_label"))
+    labels, label_error = _noise_labels(noise)
+    xy = labels[0] if labels else _text(noise.get("xy_label"))
     monitor = noise.get("scope_labels")
     raw_electrical = noise.get("electrical_accepted")
     electrical = (raw_electrical if isinstance(raw_electrical, bool) else noise.get("accepted")) is True
     explicit_rejected = raw_electrical is False or (raw_electrical is None and noise.get("accepted") is False)
-    details = dict(xy_label=xy, electrical_accepted=electrical, electrical_reason=_text(noise.get("reason")))
+    details = dict(xy_label=xy, xy_labels=labels or [], electrical_accepted=electrical,
+                   electrical_reason=_text(noise.get("reason")))
     hard_reasons, warnings = [], []
-    if explicit_rejected or (xy is not None and not electrical):
+    if explicit_rejected or (bool(labels) and not electrical):
         warnings.append(details["electrical_reason"] or "噪声未通过参考电学指标")
     has_scope_frames = any(row.get("scope_label") is not None for row in rows)
     if isinstance(monitor, list) and monitor:
@@ -405,23 +461,45 @@ def _noise(run_dir, noise, rows, reference, segment_s):
                     warnings.append(f"噪声监测帧不可读：{exc}")
     elif has_scope_frames or monitor not in (None, []):
         warnings.append("噪声缺少独立的前后示波器监测帧")
-    try:
-        metadata, arrays = run_format.read_frame(run_dir, xy, "xy")
-        frequency, psd, welch_details = _welch(arrays["time_s"], arrays["y_v"], metadata["rate_sa_s"], segment_s)
-        details["welch"] = welch_details
-        if welch_details["segments"] < MIN_WELCH_SEGMENTS:
-            hard_reasons.append("噪声帧长度不足最少 Welch 分段数")
-        elif not welch_details["resolution_met"]:
-            warnings.append("噪声帧未达到请求的 Welch 频率分辨率")
-        if any(xy == row["xy_label"] for row in rows):
-            hard_reasons.append("噪声帧与频响帧共用标签")
-        _verify_attestations(metadata, source_mode="unmodulated_carrier")
-        state = _lockin(metadata)
-        details["lockin"] = state
-        if reference is None or not _same_lockin(state, reference):
-            hard_reasons.append("噪声帧锁相状态与有效频响不一致或无法比对")
-    except FRAME_ERRORS as exc:
-        hard_reasons.append(f"噪声帧或回读无效：{exc}")
+    if label_error is not None:
+        hard_reasons.append(label_error)
+    else:
+        try:
+            transfer_labels = {row["xy_label"] for row in rows if row.get("xy_label") is not None}
+            target_labels = labels if labels else [None]
+            loaded = []
+            for label in target_labels:
+                check_cancelled()
+                if label in transfer_labels:
+                    hard_reasons.append("噪声帧与频响帧共用标签")
+                metadata, arrays = run_format.read_frame(run_dir, label, "xy")
+                loaded.append((label, metadata, arrays))
+            if len(loaded) == len(target_labels) and loaded:
+                frequency, psd, welch_details = welch_segmented(
+                    [(arr["time_s"], arr["y_v"], meta["rate_sa_s"]) for _, meta, arr in loaded],
+                    segment_s,
+                )
+                details["welch"] = welch_details
+                if welch_details["segments"] < MIN_WELCH_SEGMENTS:
+                    hard_reasons.append("噪声帧长度不足最少 Welch 分段数")
+                elif not welch_details["resolution_met"]:
+                    warnings.append("噪声帧未达到请求的 Welch 频率分辨率")
+                if expected_segments is not None and len(loaded) < int(expected_segments):
+                    warnings.append(f"无调制噪声仅完成 {len(loaded)}/{int(expected_segments)} 个分段")
+            first_state = None
+            for _, metadata, _ in loaded:
+                _verify_attestations(metadata, source_mode="unmodulated_carrier")
+                state = _lockin(metadata)
+                if first_state is None:
+                    first_state = state
+                    details["lockin"] = first_state
+                elif not _same_lockin(state, first_state):
+                    hard_reasons.append("分段噪声帧之间锁相状态不一致")
+                if reference is None or not _same_lockin(state, reference):
+                    hard_reasons.append("噪声帧锁相状态与有效频响不一致或无法比对")
+        except FRAME_ERRORS as exc:
+            hard_reasons.append(f"噪声帧或回读无效：{exc}")
+    hard_reasons = list(dict.fromkeys(hard_reasons))
     if isinstance(noise.get("quality_warnings"), list):
         warnings = list(dict.fromkeys([*warnings, *(w for w in noise["quality_warnings"] if isinstance(w, str) and w)]))
     details.update(detector_spectrum_available=bool(frequency.size), qualified=not hard_reasons,
@@ -992,7 +1070,14 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
     repeat_expected = isinstance(predicted_sweep, list) and len(predicted_sweep) > len(set(predicted_sweep))
     closure, repeat = _gates(rows, accepted, configured[0], params.pm_anchor_hz, repeat_expected=repeat_expected)
     bands = _bands(configured, accepted)
-    frequency, psd, noise = _noise(run_dir, _mapping(config.get("noise")), rows, reference, params.welch_segment_s)
+    frequency, psd, noise = _noise(
+        run_dir,
+        _mapping(config.get("noise")),
+        rows,
+        reference,
+        params.welch_segment_s,
+        expected_segments=params.noise_n_avg,
+    )
     asd = np.sqrt(psd)
     block_reasons = list(noise["reasons"])
     if not bands:
@@ -1049,7 +1134,7 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
                                        backfill="zero_centered_sqrt_lorentzian_full_band"),
                    method_notes=["频响只比较调制深度与锁相 Y 音调幅值 |H(f)| = |Y_pk(f)| / phi_pk(f)，不计算复频响相角；与基频/二次谐波不碰撞的 50–250 Hz 工频谐波在最小二乘正交解调中一并投影去除。",
                                  "A05 对 |H(f)| 拟合以 0 Hz 为中心的 √Lorentzian 线型 H0 / sqrt(1 + (f/fc)²)（若非碰撞点 ≥ 2 个则自动剔除 50–250 Hz 工频整倍频碰撞点）并以零频截距 H0 归一化；A05/A06 使用宽带滤波（默认 1 µs），不再做锁相软件滤波反卷积。",
-                                 "A06 灵敏度谱以 µrad/√Hz 输出：除实测频点插值带外，同时按 √Lorentzian 传递函数对全频段噪声做外推回补。",
+                                 "A06 灵敏度谱以 µrad/√Hz 输出：多温控分段各自计算 Welch PSD 后按段数等权平均，不跨恢复温控窗口拼接波形；除实测频点插值带外，同时按 √Lorentzian 传递函数对全频段噪声做外推回补。",
                                  "H 与标准误仅传播 Y 拟合误差（含时间序列相关修正）；归一增益另外传播 K0/H0 标准误，不含激励幅度标定不确定度。",
                                  "低频闭合（|H|/|K0| 0.8–1.2）等参考指标仅作告警与图例标注，不阻止有效频点参与出图与相位噪声折算。"])
     invalid_sections = [key for key, kind in (("calibration", dict), ("transfer", list), ("noise", dict))

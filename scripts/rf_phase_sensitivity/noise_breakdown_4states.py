@@ -1,13 +1,15 @@
-"""完成 A03/A04 工作点对齐后，按六态（含 Z 常数控制对照）测量解调 Y 噪声功率谱（V^2/Hz）并出图。
+"""完成 A03/A04 工作点对齐后，按六态（含 Z 常数控制对照）分段测量解调 Y 噪声功率谱（V^2/Hz）并出图。
 
 流程概要：
-1. 读取并校验 ``rf-phase-sensitivity`` 运行参数（``--vpp`` / ``--duration`` / ``--welch-segment`` 可覆盖）
+1. 读取并校验 ``rf-phase-sensitivity`` 运行参数（``--vpp`` / ``--duration`` / ``--n-avg`` /
+   ``--temp-lag`` / ``--welch-segment`` 可覆盖，默认每段 ``4 s × 6 段``、段间恢复温控 ``4 s``）
    以及 Z 常数控制目标电流 ``--const-z-ma``（默认 ``0.3893`` mA，可用 ``--skip-const-z`` 仅测前四态）。
 2. 在运行目录门控（``.lab_runtime``）通过后连接设备与 ``王湾pump``（``TCPIP0::192.168.124.32::5025::SOCKET`` CH1），
    记录并要求 Pump 初始为 ON；经时钟同步与激励准备后依次执行 ``A03 phase_response``、
    ``A04 local_calibration`` 与宽带解调配置（``1e-6 s / 50000 Sa/s``）。
-3. 保持 ``Demod 4`` 在对齐工作点与宽带参数下，依次切换并采集各态无调制噪声（全程受 6 步 ``Temp_Switch``
-   门控保护，窗口外才写盘；状态间安全顺序切换并回读确认）：
+3. 保持 ``Demod 4`` 在对齐工作点与宽带参数下，依次切换并按独立温控窗口分段采集各态无调制噪声
+   （每段均严格受 6 步 ``Temp_Switch`` 门控保护，窗口恢复并等待 ``--temp-lag`` 后才写盘及进下一段；
+   状态间按安全顺序切换并回读确认）：
    - ``all_on``: 全部开启（Pump ON + RF ON + Z 脉冲控制 ON + GS200 脉冲工作点）
    - ``rf_only``: 只开射频场、关闭 Z 控制（Pump ON + RF ON + 1200B OFF & Z 信号源 OFF）
    - ``ctrl_only``: 只开 Z 控制、关闭射频场（Pump ON + MFLI Out1 OFF 保留载波相移 + Z 脉冲控制 ON）
@@ -16,9 +18,10 @@
    - ``const_z_rf_off``: Z 常数控制 + 射频 OFF（GS200 设 ``0.3893 mA``，关 1200B & Z 信号源，Pump ON + RF OFF）
 4. ``finally`` 中优先恢复 ``王湾pump`` CH1 到原始状态并回读确认，随后执行 ``preparation.park(ctx)``
    安全关断与设备断开（并将 GS200 恢复至运行前状态）。
-5. 直接计算各态解调 Y 的 Welch 单边功率谱密度（``V^2/Hz``，不做 √Lorentzian 频响回补），
-   输出至 ``data/rf_phase_sensitivity/_studies/<MMDD_HHMMSS>_<tag>/results/``，
-   同时支持 ``--analyze <study_dir>`` 对已有 4 态或 6 态目录纯离线重算与重绘。
+5. 复用 ``analysis_steps.welch_segmented`` 对各态独立温控分段分别计算 Welch 单边 PSD 后等权平均
+   （``V^2/Hz``，不跨恢复温控间隔拼接波形，不做 √Lorentzian 频响回补），输出至
+   ``data/rf_phase_sensitivity/_studies/<MMDD_HHMMSS>_<tag>/results/``，同时支持
+   ``--analyze <study_dir>`` 对历史单段（4/6 态）与新版分段目录纯离线重算与重绘。
 """
 from __future__ import annotations
 
@@ -35,7 +38,6 @@ from typing import Any
 
 import numpy as np
 from pyvisa.errors import VisaIOError
-from scipy.signal import welch
 import yaml
 
 try:
@@ -285,6 +287,10 @@ def _load_params(root: Path, args: argparse.Namespace) -> RfPhaseSensitivityPara
         merged["Y_RF_VPP"] = float(args.vpp)
     if args.duration is not None:
         merged["NOISE_DURATION_S"] = float(args.duration)
+    if args.n_avg is not None:
+        merged["NOISE_N_AVG"] = int(args.n_avg)
+    if args.temp_lag is not None:
+        merged["DYNAMIC_TEMP_SWITCH_ON_LAG_S"] = float(args.temp_lag)
     if args.welch_segment is not None:
         merged["WELCH_SEGMENT_S"] = float(args.welch_segment)
     params = RfPhaseSensitivityParams.from_external(merged, schema_version=schema_ver)
@@ -472,47 +478,6 @@ def _apply_noise_state(
     )
 
 
-def _welch_psd_v2_per_hz(time_s: np.ndarray, y_v: np.ndarray, rate_sa_s: float, segment_s: float):
-    t, rate = analysis_steps.sample_grid(time_s, rate_sa_s)
-    y = np.asarray(y_v, dtype=float)
-    if y.shape != t.shape or not np.isfinite(y).all():
-        raise ValueError("XY 帧 y_v 波形长度或数值无效")
-    requested = max(8, math.ceil(rate * segment_s))
-    nperseg = min(requested, y.size)
-    noverlap = nperseg // 2
-    nsegments = 1 + (y.size - nperseg) // (nperseg - noverlap)
-    freq, psd = welch(
-        y,
-        fs=rate,
-        window="hann",
-        nperseg=nperseg,
-        noverlap=noverlap,
-        detrend="linear",
-        return_onesided=True,
-        scaling="density",
-    )
-    keep = freq >= MIN_FREQ_HZ
-    if not keep.any() or not np.isfinite(psd).all() or (psd < 0).any():
-        raise ValueError("未生成有效的 >=1 Hz Welch PSD")
-    details = dict(
-        rate_sa_s=float(rate),
-        samples=int(y.size),
-        duration_s=float(t[-1] + 1.0 / rate),
-        nperseg=int(nperseg),
-        noverlap=int(noverlap),
-        segments=int(nsegments),
-        segment_s=float(nperseg / rate),
-        requested_segment_s=float(segment_s),
-        resolution_hz=float(rate / nperseg),
-        resolution_met=bool(nperseg == requested),
-        window="hann",
-        detrend="linear",
-        one_sided=True,
-        unit="V^2/Hz",
-    )
-    return freq[keep], psd[keep], details
-
-
 def _band_metrics(freq: np.ndarray, psd: np.ndarray, f_lo: float, f_hi: float) -> dict[str, Any]:
     mask = (freq >= f_lo) & (freq <= f_hi)
     if not mask.any():
@@ -529,17 +494,42 @@ def _band_metrics(freq: np.ndarray, psd: np.ndarray, f_lo: float, f_hi: float) -
     )
 
 
+def _resolve_state_frame_labels(
+    study_dir: Path,
+    spec: StateSpec,
+    state_rec: dict[str, Any],
+) -> list[str]:
+    """解析某状态的全部噪声原始帧（兼容新版分段 xy_labels 与历史单帧 xy_label）。"""
+    recorded_labels = state_rec.get("xy_labels")
+    if isinstance(recorded_labels, list) and recorded_labels:
+        existing = [str(lbl) for lbl in recorded_labels if run_format.frame_path(study_dir, str(lbl)).is_file()]
+        if existing:
+            return existing
+    single = state_rec.get("xy_label")
+    if isinstance(single, str) and single.strip() and run_format.frame_path(study_dir, single.strip()).is_file():
+        return [single.strip()]
+    prefix = spec.xy_label.removesuffix("_xy")
+    seg_files = sorted((study_dir / "raw").glob(f"{prefix}_seg_*_xy.npz"))
+    if seg_files:
+        return [path.stem for path in seg_files]
+    if run_format.frame_path(study_dir, spec.xy_label).is_file():
+        return [spec.xy_label]
+    return []
+
+
 def _selected_specs_from_config(study_dir: Path, config: dict[str, Any]) -> tuple[StateSpec, ...]:
     by_id = {spec.state_id: spec for spec in ALL_STATES}
     noise_cfg = config.get("four_state_noise") or {}
+    state_records = noise_cfg.get("states") or {}
     order = noise_cfg.get("order") or [spec.state_id for spec in ALL_STATES]
     selected: list[StateSpec] = []
     for state_id in order:
         spec = by_id.get(state_id)
-        if spec is not None and run_format.frame_path(study_dir, spec.xy_label).is_file():
+        if spec is not None and _resolve_state_frame_labels(study_dir, spec, state_records.get(state_id) or {}):
             selected.append(spec)
     if not selected:
-        selected = [spec for spec in ALL_STATES if run_format.frame_path(study_dir, spec.xy_label).is_file()]
+        selected = [spec for spec in ALL_STATES
+                    if _resolve_state_frame_labels(study_dir, spec, state_records.get(spec.state_id) or {})]
     if not selected:
         raise FileNotFoundError(f"{study_dir / 'raw'} 下未找到任何可分析的噪声帧")
     return tuple(selected)
@@ -563,18 +553,29 @@ def analyze_study(study_dir: Path, *, welch_segment_s: float | None = None) -> d
     active_specs = _selected_specs_from_config(study_dir, config)
 
     for spec in active_specs:
-        meta, arr = run_format.read_frame(study_dir, spec.xy_label, "xy")
-        freq, psd, details = _welch_psd_v2_per_hz(arr["time_s"], arr["y_v"], meta["rate_sa_s"], segment_s)
+        state_rec = state_records.get(spec.state_id) or {}
+        frame_labels = _resolve_state_frame_labels(study_dir, spec, state_rec)
+        frames = []
+        first_meta: dict[str, Any] = {}
+        x_means, y_means = [], []
+        for idx, label in enumerate(frame_labels):
+            meta, arr = run_format.read_frame(study_dir, label, "xy")
+            if idx == 0:
+                first_meta = meta
+            frames.append((arr["time_s"], arr["y_v"], meta["rate_sa_s"]))
+            x_means.append(float(np.mean(arr["x_v"])))
+            y_means.append(float(np.mean(arr["y_v"])))
+        freq, psd, details = analysis_steps.welch_segmented(frames, segment_s)
+        details["unit"] = "V^2/Hz"
         if ref_freq is None:
             ref_freq = freq
         elif freq.shape != ref_freq.shape or not np.allclose(freq, ref_freq, rtol=1e-9, atol=1e-9):
             raise ValueError(f"{spec.state_id} 频点网格与 {active_specs[0].state_id} 不一致")
-        state_rec = state_records.get(spec.state_id) or {}
         label_zh, label_en = _format_labels(spec, const_z_ma)
         label_zh = str(state_rec.get("label_zh") or label_zh)
         label_en = str(state_rec.get("label_en") or label_en)
         default_ma = float(const_z_ma) if spec.main_field_mode == "const_z" else pulse_z_ma
-        main_field_ma = state_rec.get("main_field_ma", meta.get("main_field_ma", default_ma))
+        main_field_ma = state_rec.get("main_field_ma", first_meta.get("main_field_ma", default_ma))
         mains = {}
         for hz in MAINS_HARMONICS_HZ:
             if hz <= freq[-1]:
@@ -587,12 +588,13 @@ def analyze_study(study_dir: Path, *, welch_segment_s: float | None = None) -> d
             spec=spec,
             label_zh=label_zh,
             label_en=label_en,
+            xy_labels=frame_labels,
             main_field_ma=float(main_field_ma),
             freq=freq,
             psd=psd,
             welch=details,
-            mean_x_v=float(state_rec.get("mean_x_v", np.mean(arr["x_v"]))),
-            mean_y_v=float(state_rec.get("mean_y_v", np.mean(arr["y_v"]))),
+            mean_x_v=float(state_rec.get("mean_x_v", float(np.mean(x_means)))),
+            mean_y_v=float(state_rec.get("mean_y_v", float(np.mean(y_means)))),
             band_1_250=_band_metrics(freq, psd, 1.0, 250.0),
             band_3_203=_band_metrics(freq, psd, 3.0, 203.0),
             band_250_5k=_band_metrics(freq, psd, 250.0, 5000.0),
@@ -721,9 +723,12 @@ def analyze_study(study_dir: Path, *, welch_segment_s: float | None = None) -> d
         wp_txt = f"phi={wp_deg:.2f} deg" if isinstance(wp_deg, (int, float)) else "phi=N/A"
         rate_txt = f"{rate_hz:g}" if isinstance(rate_hz, (int, float)) else "N/A"
         tc_txt = f"{tc_s:g}" if isinstance(tc_s, (int, float)) else "N/A"
+        acq_segs = spectra[ref_id]["welch"].get("acquisition_segments", 1)
+        seg_dur = spectra[ref_id]["welch"].get("segment_duration_s", spectra[ref_id]["welch"].get("duration_s"))
+        seg_txt = f", {acq_segs}x{seg_dur:.2g}s" if isinstance(seg_dur, (int, float)) and acq_segs > 1 else ""
         fig.suptitle(
             f"{study_dir.name}: {len(active_specs)}-State Demod 4 Y Noise PSD (V^2/Hz)\n"
-            f"{k0_txt}, {wp_txt} | Demod4 tc={tc_txt} s, fs={rate_txt} Sa/s, df={df_hz:.2g} Hz",
+            f"{k0_txt}, {wp_txt} | Demod4 tc={tc_txt} s, fs={rate_txt} Sa/s, df={df_hz:.2g} Hz{seg_txt}",
             fontsize=8.8,
         )
         fig.savefig(png_path, dpi=240)
@@ -741,6 +746,8 @@ def _write_study_readme(
     png_path: Path,
 ) -> None:
     n_states = summary.get("state_count", len(summary["states"]))
+    ref_state = next(iter(summary["states"].values())) if summary["states"] else {}
+    welch_ref = ref_state.get("welch") or {}
     lines = [
         f"# {study_dir.name}: {n_states} 态解调 Y 噪声谱对照（V^2/Hz）",
         "",
@@ -751,6 +758,9 @@ def _write_study_readme(
         f"- 宽带 Demod 4：`tc = {summary['dynamic_lockin']['time_constant_s']}` s，"
         f"`fs = {summary['dynamic_lockin']['rate_sa_s']}` Sa/s，"
         f"`order = {summary['dynamic_lockin']['order']}`",
+        f"- 分段 Welch：`acquisition_segments = {welch_ref.get('acquisition_segments', 1)}`，"
+        f"`segment_duration_s = {welch_ref.get('segment_duration_s', welch_ref.get('duration_s'))}` s，"
+        f"`welch_segments = {welch_ref.get('segments')}`，`df = {welch_ref.get('resolution_hz')}` Hz",
         "- 产物：",
         f"  - 图表：`{png_path.relative_to(study_dir).as_posix()}`",
         f"  - 数据：`{csv_path.relative_to(study_dir).as_posix()}`",
@@ -825,17 +835,27 @@ def run_capture(args: argparse.Namespace) -> int:
         if ctx.params.system_settle_s > 0:
             sleep(ctx.params.system_settle_s)
 
+        n_avg = int(ctx.params.noise_n_avg)
+        seg_duration_s = float(ctx.params.noise_duration_s)
+        temp_lag_s = float(ctx.params.dynamic_temp_switch_on_lag_s)
         ctx.state["four_state_noise"] = dict(
             order=[s.state_id for s in active_specs],
             const_z_ma=None if args.skip_const_z else const_z_ma,
-            duration_s=float(ctx.params.noise_duration_s),
+            segment_duration_s=seg_duration_s,
+            segments_per_state=n_avg,
+            duration_s=seg_duration_s * n_avg,
+            temp_switch_on_lag_s=temp_lag_s,
             settle_after_switch_s=float(args.settle_after_switch),
             states={},
         )
         for idx, spec in enumerate(active_specs, 1):
             label_zh, label_en = _format_labels(spec, const_z_ma)
             target_ma = const_z_ma if spec.main_field_mode == "const_z" else float(ctx.params.main_field_current_ma)
-            print(f"[{idx}/{len(active_specs)}] 切换状态 {spec.state_id}: {label_zh}", flush=True)
+            print(
+                f"[{idx}/{len(active_specs)}] 切换状态 {spec.state_id}: {label_zh} "
+                f"({n_avg} 段 × {seg_duration_s:g} s，段间开温控 {temp_lag_s:g} s)",
+                flush=True,
+            )
             readbacks = _apply_noise_state(
                 ctx,
                 pump_dev,
@@ -844,12 +864,46 @@ def run_capture(args: argparse.Namespace) -> int:
                 const_z_ma=const_z_ma,
                 settle_s=float(args.settle_after_switch),
             )
-            mean_z = acquisition._xy(
+            state_record = dict(
+                label_zh=label_zh,
+                label_en=label_en,
+                xy_label=spec.xy_label if n_avg == 1 else None,
+                xy_labels=[],
+                segments_requested=n_avg,
+                segments_completed=0,
+                pump_on=spec.pump_on,
+                rf_on=spec.rf_on,
+                z_control_on=spec.z_on,
+                main_field_mode=spec.main_field_mode,
+                main_field_target_ma=target_ma,
+                main_field_ma=float(readbacks["gs200_current_ma"]),
+                mean_x_v=None,
+                mean_y_v=None,
+                verified_readbacks=readbacks,
+            )
+            ctx.state["four_state_noise"]["states"][spec.state_id] = state_record
+            ctx.save()
+
+            def _on_seg(done: int, total: int, _label: str, _mean_z: complex, labels: list[str], means: list[complex],
+                        _state_id: str = spec.state_id, _rec: dict[str, Any] = state_record) -> None:
+                mean_all = sum(means) / len(means)
+                _rec["xy_labels"] = labels
+                _rec["xy_label"] = labels[0] if total == 1 else None
+                _rec["segments_completed"] = done
+                _rec["mean_x_v"] = float(mean_all.real)
+                _rec["mean_y_v"] = float(mean_all.imag)
+                ctx.save()
+                print(f"  [{_state_id}] 分段 {done}/{total} 完成（温控已恢复并等待 {temp_lag_s:g} s）", flush=True)
+
+            acquisition.acquire_noise_segments(
                 ctx,
-                spec.xy_label,
-                float(ctx.params.noise_duration_s),
+                label_prefix=spec.xy_label.removesuffix("_xy"),
+                count=n_avg,
+                duration_s=seg_duration_s,
                 lockin=dyn_lockin,
-                dynamic=True,
+                recovery_wait_s=temp_lag_s,
+                single_label=spec.xy_label,
+                on_segment=_on_seg,
                 source_mode=f"noise_{spec.state_id}",
                 state_id=spec.state_id,
                 pump_on=spec.pump_on,
@@ -859,21 +913,6 @@ def run_capture(args: argparse.Namespace) -> int:
                 main_field_ma=float(readbacks["gs200_current_ma"]),
                 carrier_command_deg=readbacks["carrier_command_deg"],
             )
-            ctx.state["four_state_noise"]["states"][spec.state_id] = dict(
-                label_zh=label_zh,
-                label_en=label_en,
-                xy_label=spec.xy_label,
-                pump_on=spec.pump_on,
-                rf_on=spec.rf_on,
-                z_control_on=spec.z_on,
-                main_field_mode=spec.main_field_mode,
-                main_field_target_ma=target_ma,
-                main_field_ma=float(readbacks["gs200_current_ma"]),
-                mean_x_v=float(mean_z.real),
-                mean_y_v=float(mean_z.imag),
-                verified_readbacks=readbacks,
-            )
-            ctx.save()
         ctx.state["completion_status"] = "completed"
         ctx.save()
     except BaseException as exc:
@@ -929,12 +968,14 @@ def run_capture(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="完成 A03/A04 后测量六态（含 GS200 常数 Z 控制 RF 开/关对照）Demod 4 Y 噪声谱（V^2/Hz）"
+        description="完成 A03/A04 后按独立温控分段测量六态（含 GS200 常数 Z 控制 RF 开/关对照）Demod 4 Y 噪声谱（V^2/Hz）"
     )
     parser.add_argument("--analyze", type=Path, default=None, help="离线重算并重绘已有 _studies 目录，不连接硬件")
     parser.add_argument("--tag", default=None, help="研究目录名后缀（默认 noise_6states；--skip-const-z 时 noise_4states）")
     parser.add_argument("--vpp", type=float, default=None, help="覆盖 Y_RF_VPP（Vpp）")
-    parser.add_argument("--duration", type=float, default=None, help="覆盖每态噪声采样时长（s，默认沿用参数 24 s）")
+    parser.add_argument("--duration", type=float, default=None, help="覆盖单段噪声采样时长（s，默认沿用 NOISE_DURATION_S=4 s）")
+    parser.add_argument("--n-avg", type=int, default=None, help="覆盖每态噪声分段次数（默认沿用 NOISE_N_AVG=6）")
+    parser.add_argument("--temp-lag", type=float, default=None, help="覆盖每段恢复温控后的等待时长（s，默认沿用 DYNAMIC_TEMP_SWITCH_ON_LAG_S=4 s）")
     parser.add_argument("--welch-segment", type=float, default=None, help="覆盖 Welch 分段时长（s，默认 4 s）")
     parser.add_argument("--const-z-ma", type=float, default=CONST_Z_MA_DEFAULT, help="Z 常数控制 GS200 电流（mA，默认 0.3893）")
     parser.add_argument("--skip-const-z", action="store_true", help="跳过 GS200 常数控制对照，仅测原四态")
