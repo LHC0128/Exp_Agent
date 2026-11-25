@@ -441,6 +441,18 @@ class InstrumentConfigTests(unittest.TestCase):
         self.assertEqual(timing["load_policy"], {1: "INF", 2: "INF"})
         self.assertEqual(carrier["load_policy"], {1: "INF", 2: "INF"})
 
+    def test_short_resource_uses_host_for_socket_and_serial_for_usb(self):
+        self.assertEqual(devices.short_resource("TCPIP0::192.168.124.31::5025::SOCKET"), "192.168.124.31")
+        self.assertEqual(devices.short_resource("TCPIP0::192.168.124.32::5025::SOCKET"), "192.168.124.32")
+        self.assertEqual(devices.short_resource(USB), "DG4E123")
+        self.assertEqual(devices.short_resource(LAN), LAN)
+        device = instrument_config.DeviceDefinition.from_item(
+            "dg9q275000734",
+            {"instrument": "signal_generator", "model": "DG900", "label": "王湾温控",
+             "resource": "TCPIP0::192.168.124.31::5025::SOCKET"},
+        )
+        self.assertEqual(instrument_control._short_device_resource(device), "192.168.124.31")
+
 # 本模块用打桩的通信库测试驱动连接逻辑；开发目录门控默认拒绝，这里只放行门控本身。
 _HARDWARE_GATE = __import__("unittest.mock", fromlist=["patch"]).patch(
     "hardware_gate.denial_reason", return_value=None)

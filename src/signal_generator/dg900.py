@@ -118,6 +118,10 @@ class DG900Instrument:
         self._rm = pyvisa.ResourceManager()
         self._inst = self._rm.open_resource(self.resource_string)
         self._inst.timeout = self.timeout
+        if self.resource_string.upper().endswith("::SOCKET"):
+            # 流式 Socket 没有 EOI，使用 LF 判断回读消息结束。
+            self._inst.read_termination = "\n"
+            self._inst.write_termination = "\n"
         try:
             idn = self.idn()
             for channel, load in self._load_policy.items():

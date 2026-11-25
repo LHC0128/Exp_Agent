@@ -198,8 +198,11 @@ class DeviceRecord:
         return asdict(self)
 
 
-def _short_resource(resource: str) -> str:
+def short_resource(resource: str) -> str:
+    """USB 取序列号；TCPIP SOCKET 的端口段不是设备标识，改取地址。"""
     fields = resource.split("::")
+    if resource.upper().endswith("::SOCKET") and len(fields) > 1 and fields[1]:
+        return fields[1]
     return fields[3] if len(fields) > 3 else resource
 
 
@@ -213,7 +216,7 @@ def discover_devices() -> list[DeviceRecord]:
     for device_id, device in library.items():
         resource = device.resource
         if device.instrument == "signal_generator" and resource:
-            short = _short_resource(resource)
+            short = short_resource(resource)
             record = DeviceRecord(
                 id=short,
                 type=signal_generator_model(
@@ -227,7 +230,7 @@ def discover_devices() -> list[DeviceRecord]:
             records[resource] = record
             device_records[device_id] = record
         elif device.instrument == "gs200" and resource:
-            short = _short_resource(resource)
+            short = short_resource(resource)
             record = DeviceRecord(
                 id=short,
                 type="GS200",
@@ -239,7 +242,7 @@ def discover_devices() -> list[DeviceRecord]:
             records[resource] = record
             device_records[device_id] = record
         elif device.instrument == "keithley_6221" and resource:
-            short = _short_resource(resource)
+            short = short_resource(resource)
             record = DeviceRecord(
                 id=short,
                 type="6221",
@@ -265,7 +268,7 @@ def discover_devices() -> list[DeviceRecord]:
             records[f"toptica:{resource}"] = record
             device_records[device_id] = record
         elif device.instrument == "sds_acquisition" and resource:
-            short = _short_resource(resource)
+            short = short_resource(resource)
             record = DeviceRecord(
                 id=short,
                 type="SDS",

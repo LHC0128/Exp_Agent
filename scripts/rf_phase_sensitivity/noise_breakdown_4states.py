@@ -3,7 +3,7 @@
 流程概要：
 1. 读取并校验 ``rf-phase-sensitivity`` 运行参数（``--vpp`` / ``--duration`` / ``--welch-segment`` 可覆盖）
    以及 Z 常数控制目标电流 ``--const-z-ma``（默认 ``0.3893`` mA，可用 ``--skip-const-z`` 仅测前四态）。
-2. 在运行目录门控（``.lab_runtime``）通过后连接设备与 ``王湾pump``（``TCPIP0::192.168.124.32::INSTR`` CH1），
+2. 在运行目录门控（``.lab_runtime``）通过后连接设备与 ``王湾pump``（``TCPIP0::192.168.124.32::5025::SOCKET`` CH1），
    记录并要求 Pump 初始为 ON；经时钟同步与激励准备后依次执行 ``A03 phase_response``、
    ``A04 local_calibration`` 与宽带解调配置（``1e-6 s / 50000 Sa/s``）。
 3. 保持 ``Demod 4`` 在对齐工作点与宽带参数下，依次切换并采集各态无调制噪声（全程受 6 步 ``Temp_Switch``
@@ -76,7 +76,7 @@ from lab_workflows.steps.coil_drive_chain import SafetyAbort, sleep
 from lab_workflows.steps.run_directory import write_run_config
 
 
-PUMP_RESOURCE = "TCPIP0::192.168.124.32::INSTR"
+PUMP_RESOURCE = "TCPIP0::192.168.124.32::5025::SOCKET"
 PUMP_DEVICE_ID = "dg9q275000733"
 PUMP_CHANNEL = 1
 CONST_Z_MA_DEFAULT = 0.3893

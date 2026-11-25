@@ -1,8 +1,8 @@
 schema_version: 1
 network_resources:
 - TCPIP0::192.168.124.21::INSTR
-- TCPIP0::192.168.124.31::INSTR
-- TCPIP0::192.168.124.32::INSTR
+- TCPIP0::192.168.124.31::5025::SOCKET
+- TCPIP0::192.168.124.32::5025::SOCKET
 - TCPIP0::192.168.124.33::INSTR
 - TCPIP0::192.168.124.34::INSTR
 - TCPIP0::192.168.124.35::INSTR
@@ -289,7 +289,7 @@ devices:
     instrument: signal_generator
     model: DG900
     label: 王湾pump
-    resource: TCPIP0::192.168.124.32::INSTR
+    resource: TCPIP0::192.168.124.32::5025::SOCKET
     reference_clock: EXT
     connection:
       serial_number: DG9Q275000733
@@ -303,7 +303,7 @@ devices:
     instrument: signal_generator
     model: DG900
     label: 王湾温控
-    resource: TCPIP0::192.168.124.31::INSTR
+    resource: TCPIP0::192.168.124.31::5025::SOCKET
     reference_clock: EXT
     connection:
       serial_number: DG9Q275000734

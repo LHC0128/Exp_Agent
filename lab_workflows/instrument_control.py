@@ -23,6 +23,7 @@ from .devices import (
     LASER_DRIVERS,
     SIGNAL_GENERATOR_DRIVERS,
     find_device,
+    short_resource,
     signal_generator_load_policy,
 )
 from .instrument_config import (
@@ -1395,8 +1396,7 @@ _CONTROL_TYPES = {
 def _short_device_resource(device: DeviceDefinition) -> str:
     if not device.resource:
         return str(device.connection.get("device_id", device.device_id))
-    fields = device.resource.split("::")
-    return fields[3] if len(fields) > 3 else device.resource
+    return short_resource(device.resource)
 
 
 def _shared_aliases(mapping_key: str, mapping_document: dict[str, Any]) -> list[str]:

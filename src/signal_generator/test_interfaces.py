@@ -254,6 +254,24 @@ class CommonInterfaceTests(unittest.TestCase):
         resource_manager.close.assert_not_called()
         self.assertIsNone(driver._inst)
 
+    def test_socket_resource_sets_lf_termination_before_identity_query(self):
+        for resource, expected in (
+            ("TCPIP0::192.0.2.31::5025::SOCKET", ("\n", "\n")),
+            ("TCPIP0::192.0.2.31::INSTR", ("\r\n", "\r\n")),
+        ):
+            driver = DG900Instrument(resource, channel=1)
+            visa = FakeVisa()
+            manager = Mock()
+            manager.open_resource.return_value = visa
+            with self.subTest(resource=resource), patch("pyvisa.ResourceManager", return_value=manager):
+                driver.connect()
+                try:
+                    self.assertEqual((visa.read_termination, visa.write_termination), expected)
+                    self.assertEqual(visa.queries, ["*IDN?"])
+                finally:
+                    driver.disconnect()
+            self.assertTrue(visa.closed)
+
     def test_screenshot_reads_complete_split_blocks_and_returns_saved_bytes(self):
         for cls, image_format, payload in ((DG4000Instrument, "BMP", BMP), (DG900Instrument, "BMP", BMP), (DG900Instrument, "PNG", PNG)):
             driver = driver_with_fake(cls)
