@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import ast
-import json
 import os
-import subprocess
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -13,7 +11,7 @@ from typing import Any, Callable
 import numpy as np
 import yaml
 
-from ..setups import subprocess_environment
+from ..script_subprocess import run_script_runner
 from ..common import (
     CancellationToken,
     ProgressCallback,
@@ -329,57 +327,14 @@ class LegacyScriptAdapter:
         progress: ProgressCallback | None,
         cancellation: CancellationToken | None = None,
     ) -> None:
-        root = find_project_root()
-        job_dir = root / "tmp" / "gui_jobs"
-        job_dir.mkdir(parents=True, exist_ok=True)
-        token = f"{self.id}_{os.getpid()}_{threading.get_ident()}"
-        overrides_path = job_dir / f"{token}.json"
-        cancel_path = job_dir / f"{token}.cancel"
-        overrides_path.write_text(json.dumps(overrides, ensure_ascii=False), encoding="utf-8")
-        environment = os.environ.copy()
-        environment.update({
-            "MPLBACKEND": "Agg",
-            "PYTHONUTF8": "1",
-            "PYTHONIOENCODING": "utf-8",
-            "PYTHONUNBUFFERED": "1",
-        })
-        environment = subprocess_environment(environment)
-        command = [
-            str(root / "agent_exp_env" / "Scripts" / "python.exe"),
-            "-u", "-m", "lab_workflows.script_runner",
-            "--script", str(script),
-            "--overrides", str(overrides_path),
-            "--cancel-file", str(cancel_path),
-        ]
-        process = subprocess.Popen(
-            command,
-            cwd=root,
-            env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+        return_code = run_script_runner(
+            find_project_root(),
+            script,
+            token=f"{self.id}_{os.getpid()}_{threading.get_ident()}",
+            overrides=overrides,
+            on_line=lambda message: emit(progress, "running", message),
+            cancellation=cancellation,
         )
-
-        def watch_cancel() -> None:
-            while cancellation and process.poll() is None:
-                if cancellation.wait(0.1):
-                    cancel_path.touch(exist_ok=True)
-                    return
-
-        watcher = threading.Thread(target=watch_cancel, daemon=True)
-        watcher.start()
-        assert process.stdout is not None
-        try:
-            for line in process.stdout:
-                message = line.rstrip()
-                if message:
-                    emit(progress, "running", message)
-            return_code = process.wait()
-        finally:
-            overrides_path.unlink(missing_ok=True)
-            cancel_path.unlink(missing_ok=True)
         if cancellation and cancellation.cancelled:
             raise WorkflowCancelled("实验已在安全检查点停止")
         if return_code:

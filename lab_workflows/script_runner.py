@@ -1,4 +1,9 @@
-"""在隔离子进程中执行带参数覆盖和取消检查点的历史实验脚本。"""
+"""在隔离子进程中执行带参数覆盖和取消检查点的脚本。
+
+两种用法：旧式实验以 ``--overrides`` 注入大写常量初值；GUI 代跑 ``scripts/`` 脚本以
+``--argv-json`` 传命令行参数。两者都在脚本内每个 ``for``/``while`` 循环开头插入取消
+检查，检测到取消文件时抛一次 ``KeyboardInterrupt``，由脚本的 ``finally`` 完成收尾。
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,7 @@ import argparse
 import ast
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -121,19 +127,29 @@ class OverrideTransformer(ast.NodeTransformer):
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--script", required=True)
-    parser.add_argument("--overrides", required=True)
+    parser.add_argument("--overrides")
+    parser.add_argument("--argv-json")
     parser.add_argument("--cancel-file")
     args = parser.parse_args()
 
     script = Path(args.script).resolve()
-    overrides = json.loads(Path(args.overrides).read_text(encoding="utf-8"))
+    overrides = (json.loads(Path(args.overrides).read_text(encoding="utf-8"))
+                 if args.overrides else {})
     for name in ("DATA_DIR", "RUN_DIR"):
         if name in overrides and overrides[name] is not None:
             overrides[name] = Path(overrides[name]).resolve()
+    if args.argv_json is not None:
+        # 脚本模式：与 ``python <脚本> <参数...>`` 一致的 argv 与导入路径。
+        sys.argv = [str(script), *json.loads(args.argv_json)]
+        sys.path.insert(0, str(script.parent))
     cancel_file = Path(args.cancel_file).resolve() if args.cancel_file else None
+    cancel_raised = False
 
     def check_cancel() -> None:
-        if cancel_file and cancel_file.exists():
+        # 只抛一次：之后 finally/except 里的收尾循环同样带检查点，再抛会打断安全收尾。
+        nonlocal cancel_raised
+        if not cancel_raised and cancel_file and cancel_file.exists():
+            cancel_raised = True
             raise KeyboardInterrupt("收到 GUI 安全停止请求")
 
     source = script.read_text(encoding="utf-8-sig")

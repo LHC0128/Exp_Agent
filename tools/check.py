@@ -44,6 +44,7 @@ PYTHON_TESTS = (
     "lab_workflows/test_lockin.py",
     "lab_workflows/test_instrument_config.py",
     "lab_workflows/steps/test_run_directory.py",
+    "lab_workflows/test_script_subprocess.py",
 )
 COMMAND_TIMEOUT_S = 60
 _CLEANUP_TIMEOUT_S = 10
