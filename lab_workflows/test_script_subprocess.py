@@ -137,6 +137,45 @@ def test_library_check_cancelled_sees_cancel_file(root: Path) -> None:
     assert marker.read_text(encoding="utf-8") == "done"
 
 
+def test_library_cancel_is_not_redelivered_to_cleanup_loops(root: Path) -> None:
+    """真机复现（2026-11-25 验收 B）：取消先由库层 check_cancelled() 投递，脚本层检查点
+    尚未抛过；收尾里带重试循环的恢复函数不能再被脚本层检查点打断。"""
+    marker = root / "cleanup.txt"
+    _script(root, "scripts/lib2/slow_library.py", """
+        import time
+        from lab_workflows.experiment_runtime import check_cancelled
+
+        def wait(seconds):
+            deadline = time.monotonic() + seconds
+            while time.monotonic() < deadline:
+                check_cancelled()
+                time.sleep(0.05)
+    """)
+    script = _script(root, "scripts/lib2/main.py", f"""
+        from slow_library import wait
+
+        def restore_pump(steps):
+            for attempt in range(3):
+                steps.append(f"attempt{{attempt}}")
+                return
+
+        steps = []
+        print("start", flush=True)
+        try:
+            wait(30)
+        finally:
+            restore_pump(steps)
+            for item in ("park", "disconnect"):
+                steps.append(item)
+            open({str(marker)!r}, "w", encoding="utf-8").write("\\n".join(steps))
+    """)
+    token = CancellationToken()
+    code = run_script_runner(root, script, token="t7", argv=[], cancellation=token,
+                             on_line=lambda message: token.cancel())
+    assert code != 0
+    assert marker.read_text(encoding="utf-8").splitlines() == ["attempt0", "park", "disconnect"]
+
+
 def test_forwarding_error_requests_stop_and_waits_for_cleanup(root: Path) -> None:
     marker = root / "cleanup.txt"
     script = _cleanup_script(root, marker)

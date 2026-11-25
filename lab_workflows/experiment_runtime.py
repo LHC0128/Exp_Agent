@@ -94,7 +94,20 @@ def runtime_run_dir() -> Path:
     return path
 
 
+_cancel_delivered = False
+
+
+def cancel_delivered() -> bool:
+    """本进程是否已经由 ``check_cancelled()`` 抛出过取消。
+
+    ``script_runner`` 的脚本层检查点据此不再二次投递，避免打断 ``finally`` 收尾。
+    """
+    return _cancel_delivered
+
+
 def check_cancelled() -> None:
+    global _cancel_delivered
     raw = os.environ.get("LAB_CANCEL_FILE")
     if raw and Path(raw).exists():
+        _cancel_delivered = True
         raise WorkflowCancelled("收到 GUI 安全停止请求")

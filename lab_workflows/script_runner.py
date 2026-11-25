@@ -2,7 +2,8 @@
 
 两种用法：旧式实验以 ``--overrides`` 注入大写常量初值；GUI 代跑 ``scripts/`` 脚本以
 ``--argv-json`` 传命令行参数。两者都在脚本内每个 ``for``/``while`` 循环开头插入取消
-检查，检测到取消文件时抛一次 ``KeyboardInterrupt``，由脚本的 ``finally`` 完成收尾。
+检查，检测到取消文件时抛一次 ``KeyboardInterrupt``（库层 ``check_cancelled()`` 已先抛过取消时不再抛），
+由脚本的 ``finally`` 完成收尾。
 """
 
 from __future__ import annotations
@@ -146,11 +147,16 @@ def main() -> int:
     cancel_raised = False
 
     def check_cancel() -> None:
-        # 只抛一次：之后 finally/except 里的收尾循环同样带检查点，再抛会打断安全收尾。
+        # 只投递一次：之后 finally/except 里的收尾循环同样带检查点，再抛会打断安全收尾。
+        # 取消可能先由库层 check_cancelled() 投递（WorkflowCancelled），那时这里同样不再抛。
         nonlocal cancel_raised
-        if not cancel_raised and cancel_file and cancel_file.exists():
-            cancel_raised = True
-            raise KeyboardInterrupt("收到 GUI 安全停止请求")
+        if cancel_raised or not (cancel_file and cancel_file.exists()):
+            return
+        runtime = sys.modules.get("lab_workflows.experiment_runtime")
+        cancel_raised = True
+        if runtime is not None and runtime.cancel_delivered():
+            return
+        raise KeyboardInterrupt("收到 GUI 安全停止请求")
 
     source = script.read_text(encoding="utf-8-sig")
     tree = ast.parse(source, filename=str(script))
