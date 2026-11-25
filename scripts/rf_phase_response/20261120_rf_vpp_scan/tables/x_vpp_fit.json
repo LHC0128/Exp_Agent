@@ -1,0 +1,35 @@
+{
+  "points": 23,
+  "grid_points": 18,
+  "linear_gain_mV_per_deg_per_vpp": 16.732123880560504,
+  "linear_region_vpp": [
+    0.02,
+    0.04
+  ],
+  "first_vpp_below_90pct_linear": 0.06,
+  "saturation_peak_v": 0.344,
+  "max_r_peak_v": 0.0911314235,
+  "refs": [
+    {
+      "tag": "x_ref00",
+      "S": 0.578387574038672
+    },
+    {
+      "tag": "x_ref01",
+      "S": 0.629194423235377
+    },
+    {
+      "tag": "x_ref02",
+      "S": 0.7665932196305458
+    },
+    {
+      "tag": "x_ref03",
+      "S": 0.4857388560594254
+    },
+    {
+      "tag": "x_ref04",
+      "S": 0.8383731327085696
+    }
+  ],
+  "ref_spread": 0.3526342766491442
+}

@@ -1,7 +1,9 @@
-"""射频幅度扫描（Y 方向）分析：S、|c0|、R 峰与拟合残差随 Y_RF_VPP 的变化。
+"""射频幅度扫描分析（Y 或 X 方向）：S、|c0|、R 峰、残差与逐幅度谐波随 Y_RF_VPP 的变化。
 
-输入 _studies/20261120_rf_vpp_scan/y_sweep_runs.jsonl；输出 tables/ysweep_vpp.csv、
-tables/ysweep_vpp_fit.json 与 figures/ysweep_vpp.png。参考点用来做漂移归一。
+用法：python scripts/rf_phase_response/20261120_rf_vpp_scan/scripts/analyze_vpp_sweep.py [--runlist x_sweep]
+输入 _studies/20261120_rf_vpp_scan/<runlist>_runs.jsonl；输出按 runlist 前缀命名：
+tables/<前缀>_vpp.csv、<前缀>_vpp_fit.json、<前缀>_harmonics.csv/.json，figures/<前缀>_vpp.png、
+<前缀>_phase_family.png。参考点用来做漂移归一。
 """
 from __future__ import annotations
 
@@ -20,8 +22,8 @@ OUT = Path(__file__).resolve().parents[1]
 SATURATION_V = 0.344
 
 
-def load():
-    path = PROCESS / "y_sweep_runs.jsonl"
+def load(runlist):
+    path = PROCESS / f"{runlist}_runs.jsonl"
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     return sorted(rows, key=lambda row: int(row["order"]))
 
@@ -63,7 +65,7 @@ def fit_harmonics(phases, zs, n_harm):
     return dict(zip(names, coef)), float(np.sqrt(np.mean(np.abs(residual) ** 2)))
 
 
-def family(grid, figures):
+def family(grid, figures, prefix):
     """逐幅度的相位响应：谐波内容表 + R(φ) 曲线族 + Z(φ) 轨迹。
 
     指标与 11-20 上午的幅度扫描一致（S_model / S_raw / c0 / c1 / c3 / c5 / R 峰谷 / 残差），
@@ -94,12 +96,12 @@ def family(grid, figures):
 
     OUT.joinpath("tables").mkdir(parents=True, exist_ok=True)
     flat = [{key: value for key, value in item.items() if key not in ("phases", "R", "Z")} for item in series]
-    with (OUT / "tables" / "vpp_harmonics.csv").open("w", newline="", encoding="utf-8") as handle:
+    with (OUT / "tables" / f"{prefix}_harmonics.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(flat[0].keys()))
         writer.writeheader()
         writer.writerows([{key: (round(value, 6) if isinstance(value, float) else value)
                            for key, value in row.items()} for row in flat])
-    (OUT / "tables" / "vpp_harmonics.json").write_text(
+    (OUT / "tables" / f"{prefix}_harmonics.json").write_text(
         json.dumps(flat, ensure_ascii=False, indent=2), encoding="utf-8")
 
     import matplotlib
@@ -147,12 +149,19 @@ def family(grid, figures):
         style_legend(axis, loc="upper left", fontsize=5, frameon=False)
         axis.set_title("(d) fit vs raw slope", fontsize=6, loc="left")
 
-        save_figure(figure, figures / "vpp_phase_family.png")
+        save_figure(figure, figures / f"{prefix}_phase_family.png")
     return flat
 
 
-def main():
-    rows = load()
+def main(argv=None):
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--runlist", default="y_sweep", help="runlists 与 _studies 里的名字，默认 y_sweep")
+    args = parser.parse_args(argv)
+    prefix = args.runlist.replace("_sweep", "")
+    axis_label = "X_RF" if prefix == "x" else "Y_RF"
+    rows = load(args.runlist)
     ref_at = drift(rows)
     grid = [row for row in rows if row["role"] == "grid"]
     for row in rows:
@@ -185,7 +194,7 @@ def main():
     }
 
     OUT.joinpath("tables").mkdir(parents=True, exist_ok=True)
-    with (OUT / "tables" / "ysweep_vpp.csv").open("w", newline="", encoding="utf-8") as handle:
+    with (OUT / "tables" / f"{prefix}_vpp.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["tag", "run_dir", "vpp_v", "S_mV_per_deg", "r", "c0_mV", "R_peak_V",
                          "residual_mV", "fit_quality"])
@@ -193,7 +202,7 @@ def main():
             writer.writerow([row["tag"], Path(row["run_dir"]).name, "%.3f" % row["vpp"],
                              "%.4f" % row["S_mV_per_deg"], "%.4f" % row["r"], "%.2f" % row["c0_abs_mV"],
                              "%.4f" % row["r_peak_v"], "%.2f" % row["residual_mV"], row["fit_quality"]])
-    (OUT / "tables" / "ysweep_vpp_fit.json").write_text(json.dumps(record, ensure_ascii=False, indent=2),
+    (OUT / "tables" / f"{prefix}_vpp_fit.json").write_text(json.dumps(record, ensure_ascii=False, indent=2),
                                                        encoding="utf-8")
 
     import matplotlib
@@ -225,11 +234,11 @@ def main():
                 axis.axhline(SATURATION_V * 1e3, color="0.4", ls=":", lw=0.8)
             format_axis(axis, xlabel="", ylabel=label)
         for axis in axes[1]:
-            format_axis(axis, xlabel="Y_RF_VPP (mVpp)", ylabel=axis.get_ylabel())
+            format_axis(axis, xlabel=f"{axis_label}_VPP (mVpp)", ylabel=axis.get_ylabel())
         figure.tight_layout()
-        save_figure(figure, figures / "ysweep_vpp.png")
+        save_figure(figure, figures / f"{prefix}_vpp.png")
 
-    harmonics = family(grid, figures)
+    harmonics = family(grid, figures, prefix)
     print(json.dumps(record, ensure_ascii=False, indent=2))
     print("线性区增益 %.4f mV/deg 每 Vpp；压缩到 90%% 以下的首个幅度 %s Vpp"
           % (gain, record["first_vpp_below_90pct_linear"]))
