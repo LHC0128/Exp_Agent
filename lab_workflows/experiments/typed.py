@@ -23,6 +23,7 @@ from ..common import (
 )
 from ..experiment_params import ExperimentParams
 from ..experiment_runtime import PROGRESS_PREFIX, PROGRESS_PROTOCOL_ENV, format_eta
+from .param_layers import ParamLayers
 from ..steps.run_directory import write_run_config
 from ..setups import subprocess_environment
 from lab_workflows.common import data_root
@@ -57,8 +58,16 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
 
         return get_experiment(self.id).required_mapping_keys
 
+    @property
+    def param_layers(self) -> ParamLayers:
+        """基线 + 本机覆盖两层视图；每次按当前 ``defaults_path`` 重新解析。"""
+        return ParamLayers(self.defaults_path)
+
     def defaults(self) -> ParamsT:
-        return self.params_type.from_yaml(self.defaults_path)  # type: ignore[return-value]
+        layers = self.param_layers
+        return self.params_type.from_external(  # type: ignore[return-value]
+            layers.merged(), schema_version=layers.schema_version()
+        )
 
     def _resolved(self, values: dict[str, Any]) -> ParamsT:
         merged = self.defaults().to_external()
@@ -83,6 +92,27 @@ class TypedWorkflowAdapter(Generic[ParamsT]):
         if errors:
             raise ValueError("；".join(errors))
         params.save_yaml(self.defaults_path)
+
+    def save_overrides(self, values: dict[str, Any]) -> Path:
+        """把当前取值中与基线不同的键写进本机覆盖层，不改基线。"""
+        params = self._resolved(values)
+        errors = params.validate(self.root)
+        if errors:
+            raise ValueError("；".join(errors))
+        return self.param_layers.write_override(params.to_external())
+
+    def promote_defaults(self) -> Path:
+        """把合并后的取值提升为基线并删除覆盖层。"""
+        params = self.defaults()
+        errors = params.validate(self.root)
+        if errors:
+            raise ValueError("；".join(errors))
+        self.param_layers.promote(params.to_external())
+        return self.defaults_path
+
+    def param_state(self) -> dict[str, Any]:
+        """返回被本机覆盖的键，供 GUI 标注与排查。"""
+        return {"overrides": self.param_layers.overridden_keys()}
 
     def preflight(self, values: dict[str, Any]) -> list[str]:
         try:

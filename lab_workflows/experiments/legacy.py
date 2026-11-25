@@ -25,6 +25,8 @@ from ..common import (
 )
 from lab_workflows.common import data_root
 
+from .param_layers import ParamLayers
+
 
 _EXCLUDED_CONSTANTS = {
     "MAPPING", "LIMITS", "PROJECT_ROOT", "EXPERIMENT_TYPE", "PURPOSE",
@@ -156,13 +158,24 @@ class LegacyScriptAdapter:
             if path.is_file()
         ] if directory.is_dir() else []
 
-    def defaults(self) -> dict[str, Any]:
+    @property
+    def param_layers(self) -> ParamLayers:
+        """基线 + 本机覆盖两层视图；每次按当前 ``defaults_path`` 重新解析。"""
+        return ParamLayers(self.defaults_path)
+
+    def _baseline(self) -> dict[str, Any]:
+        """脚本字面量与基线 YAML 合成的基线取值，不含本机覆盖。"""
         values = _literal_assignments(self.script)
         if self.defaults_path.exists():
             with self.defaults_path.open(encoding="utf-8") as stream:
                 saved = yaml.safe_load(stream) or {}
             values.update(self._migrate_values(saved.get("parameters", saved)))
         values.update({key: value for key, value in _LOCKIN_INPUT_DEFAULTS.items() if key in values})
+        return self._migrate_values(values)
+
+    def defaults(self) -> dict[str, Any]:
+        values = self._baseline()
+        values.update(self.param_layers.override_values())
         return self._migrate_values(values)
 
     def _migrate_values(self, values: dict[str, Any]) -> dict[str, Any]:
@@ -228,6 +241,25 @@ class LegacyScriptAdapter:
                 allow_unicode=True,
                 sort_keys=False,
             )
+
+    def save_overrides(self, values: dict[str, Any]) -> Path:
+        """把当前取值中与基线不同的键写进本机覆盖层，不改基线。"""
+        values = self._migrate_values(values)
+        errors = self.preflight(values)
+        if errors:
+            raise ValueError("；".join(errors))
+        return self.param_layers.write_override(values, baseline=self._baseline())
+
+    def promote_defaults(self) -> Path:
+        """把合并后的取值提升为基线并删除覆盖层。"""
+        values = self.defaults()
+        self.save_defaults(values)
+        self.param_layers.discard()
+        return self.defaults_path
+
+    def param_state(self) -> dict[str, Any]:
+        """返回被本机覆盖的键，供 GUI 标注与排查。"""
+        return {"overrides": self.param_layers.overridden_keys(self._baseline())}
 
     def preflight(self, values: dict[str, Any]) -> list[str]:
         try:

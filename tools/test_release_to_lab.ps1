@@ -671,6 +671,40 @@ try {
     Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '标记路径不符：运行目录被改动'
     $Passed += 1; Write-Host '通过：运行目录标记缺失或不符停止'
 
+    # 26 本机覆盖层在参数回存中保留：未跟踪、也未被 .gitignore 忽略时也不能被清理删掉
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-26'
+    $f = New-Fixture 'override'
+    $overridePath = Join-Path $f.Run 'params\experiments\probe.local.yaml'
+    Write-FixtureFile $overridePath "parameters:`n  ACQ_REPEATS: 12`n"
+    Write-FixtureFile (Join-Path $f.Run 'params\mapping.yaml') "base: run`n"
+    $r = Invoke-ReleaseCase $f
+    Assert-CaseFailed $r '覆盖层保留' '推送'
+    Assert (Test-Path -LiteralPath $overridePath) '覆盖层保留：回存把覆盖层删掉了'
+    Assert ((Get-Content -LiteralPath $overridePath -Raw).Trim() -eq "parameters:`n  ACQ_REPEATS: 12") '覆盖层保留：内容被改写'
+    $committed = Invoke-FixtureGit $f.Dev @('-c', 'core.quotepath=false', 'show', '--name-only', '--format=', 'HEAD')
+    Assert ($committed -notmatch 'probe\.local\.yaml') '覆盖层保留：覆盖层被提交进开发目录'
+    Assert ($committed -match 'params/mapping\.yaml') '覆盖层保留：基线改动未回存'
+    $Passed += 1; Write-Host '通过：本机覆盖层在参数回存后保留'
+
+    # 27 本机覆盖层被 git add（跟踪）→ 发布与 DryRun 都停止，提示先取消跟踪
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-27'
+    $f = New-Fixture 'override-tracked'
+    $overridePath = Join-Path $f.Run 'params\experiments\probe.local.yaml'
+    Write-FixtureFile $overridePath "parameters:`n  ACQ_REPEATS: 12`n"
+    Invoke-FixtureGit $f.Run @('add', '-f', '--', 'params/experiments/probe.local.yaml') | Out-Null
+    Invoke-FixtureGit $f.Run @('commit', '-qm', '误提交覆盖层') | Out-Null
+    $headBefore = Get-FixtureHead $f.Run
+    $r = Invoke-ReleaseCase $f
+    Assert-CaseFailed $r '覆盖层被跟踪' '被 git 跟踪的本机覆盖层'
+    Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '覆盖层被跟踪：运行目录被改动'
+    $r = Invoke-ReleaseCase $f -Options @{ DryRun = $true }
+    Assert-CaseFailed $r '覆盖层被跟踪 DryRun' '预检阻塞：运行目录有被跟踪的本机覆盖层'
+    $Passed += 1; Write-Host '通过：被跟踪的本机覆盖层拒绝发布'
+
     Write-Host "全部 $Passed 项发布演练通过；未连接真实 8000、未启动 GUI、未触碰真实运行目录。"
     Remove-Item -LiteralPath $TestRoot -Recurse -Force
 } catch {

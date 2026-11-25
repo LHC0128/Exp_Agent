@@ -140,7 +140,8 @@ function Get-RepoStatusLines([string]$RepoDir) {
     return @($result.Text -split "`n" | Where-Object { $_ })
 }
 
-# porcelain 行分类：params/ 内（含未跟踪）与其他改动分开。
+# porcelain 行分类：params/ 内（含未跟踪）与其他改动分开。本机覆盖层既不是基线改动、
+# 也不是「其他改动」，单独排除，避免被回存或触发「非 params 改动」停止。
 function Split-StatusByParams([string[]]$Lines) {
     $params = @()
     $other = @()
@@ -148,9 +149,33 @@ function Split-StatusByParams([string[]]$Lines) {
         $path = $line.Substring(3)
         if ($path -match ' -> ') { $path = ($path -split ' -> ')[-1] }
         $path = $path.Trim('"')
+        if ($path -match '\.local\.yaml$') { continue }
         if ($path -like 'params/*' -or $path -eq 'params') { $params += $line } else { $other += $line }
     }
     return @{ Params = $params; Other = $other }
+}
+
+# 本机覆盖层 <id>.local.yaml 只在本机生效：不能进 git（跟踪后快进会冲突、回存会把它当基线改动搬走），
+# 也不能被收尾清理删掉。
+function Get-TrackedOverrides([string]$RepoDir) {
+    $listing = Invoke-Git $RepoDir @('-c', 'core.quotepath=false', 'ls-files', '--', 'params/')
+    return @($listing.Text -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '\.local\.yaml$' })
+}
+
+function Assert-NoTrackedOverrides([string]$RepoDir, [string]$Label) {
+    $tracked = @(Get-TrackedOverrides $RepoDir)
+    if ($tracked.Count -gt 0) {
+        Stop-Release ("{0}有被 git 跟踪的本机覆盖层，已停止；覆盖层只在本机生效，请先 git rm --cached 再发布：`n{1}" -f $Label, ($tracked -join "`n"))
+    }
+}
+
+# 覆盖层内容指纹：回存前后必须完全一致。
+function Get-OverrideFingerprint([string]$RepoDir) {
+    $root = Join-Path $RepoDir 'params'
+    if (-not (Test-Path -LiteralPath $root)) { return @() }
+    return @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.local.yaml' | Sort-Object FullName | ForEach-Object {
+        "$($_.FullName)|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+    })
 }
 
 # 参数回存：把运行目录 params/ 的改动逐文件带回开发目录，在 master 上提交一条。
@@ -159,6 +184,10 @@ function Split-StatusByParams([string[]]$Lines) {
 function Restore-RunParamsIntoDev([string]$DevDirPath, [string]$RunDirPath, [int]$ChangeCount) {
     $today = Get-Date -Format 'yyyy-MM-dd'
 
+    # 覆盖层不属于基线改动：既不回存，也不得在收尾清理时被删掉。
+    Assert-NoTrackedOverrides $RunDirPath '运行目录'
+    Assert-NoTrackedOverrides $DevDirPath '开发目录'
+    $overridesBefore = @(Get-OverrideFingerprint $RunDirPath)
     # 开发目录 params/ 必须先干净，否则无法区分哪些改动来自运行目录。
     $devParams = Invoke-Git $DevDirPath @('-c', 'core.quotepath=false', 'status', '--porcelain', '--', 'params/')
     if ($devParams.Text.Trim()) {
@@ -173,7 +202,8 @@ function Restore-RunParamsIntoDev([string]$DevDirPath, [string]$RunDirPath, [int
     }
 
     # 以运行目录为准暂存 params/，取相对 HEAD 的逐文件改动；重命名拆成删除 + 新增，便于逐个搬运。
-    Invoke-Git $RunDirPath @('add', '-A', '--', 'params/') | Out-Null
+    # 本机覆盖层永远不回存：显式排除，避免它被当成基线改动带进开发目录。
+    Invoke-Git $RunDirPath @('add', '-A', '--', 'params/', ':(exclude)**/*.local.yaml') | Out-Null
     $nameStatus = Invoke-Git $RunDirPath @('-c', 'core.quotepath=false', 'diff', '--cached', '--name-status', '--no-renames', '--', 'params/')
     $changed = @()
     foreach ($line in ($nameStatus.Text -split "`n")) {
@@ -192,6 +222,13 @@ function Restore-RunParamsIntoDev([string]$DevDirPath, [string]$RunDirPath, [int
             Invoke-Git $RunDirPath @('reset', '-q', 'HEAD', '--', 'params/') -AllowFail | Out-Null
             Stop-Release ("运行目录与开发目录都改过同一参数文件，已停止（运行目录改动已放回未暂存状态）；请人工比对后再发布：`n" + ($overlap -join "`n"))
         }
+    }
+
+    if ($changed.Count -eq 0) {
+        # 只有本机覆盖层变化时没有可回存的基线改动：清掉暂存状态，直接结束。
+        Invoke-Git $RunDirPath @('reset', '-q', 'HEAD', '--', 'params/') -AllowFail | Out-Null
+        Write-ReleaseLog '运行目录只有本机覆盖层变化，无需回存。'
+        return
     }
 
     foreach ($item in $changed) {
@@ -222,9 +259,15 @@ function Restore-RunParamsIntoDev([string]$DevDirPath, [string]$RunDirPath, [int
     Write-ReleaseLog "参数回存已提交到开发目录 master（$ChangeCount 项改动，无合并提交）。"
 
     # 改动已转移：丢弃运行目录的 params/ 改动，HEAD 不变，后续发布仍是纯快进。
+    # -e '*.local.yaml' 显式保留覆盖层：即使它没被 .gitignore 忽略，也不能在这里被删。
     Invoke-Git $RunDirPath @('reset', '-q', 'HEAD', '--', 'params/') | Out-Null
     Invoke-Git $RunDirPath @('checkout', '--', 'params/') | Out-Null
-    Invoke-Git $RunDirPath @('clean', '-fdq', '--', 'params/') | Out-Null
+    Invoke-Git $RunDirPath @('clean', '-fdq', '-e', '*.local.yaml', '--', 'params/') | Out-Null
+    $overridesAfter = @(Get-OverrideFingerprint $RunDirPath)
+    if (($overridesAfter -join "`n") -ne ($overridesBefore -join "`n")) {
+        Stop-Release ('参数回存收尾改动了运行目录的本机覆盖层（回存前 {0} 个，回存后 {1} 个）已停止；' +
+            '开发目录的回存提交已保留，请先核对 params/experiments/*.local.yaml 再发布。' -f $overridesBefore.Count, $overridesAfter.Count)
+    }
     Write-ReleaseLog '运行目录 params/ 改动已丢弃（内容已在开发目录提交）。'
 }
 
@@ -249,6 +292,7 @@ function Assert-RunDirOnLab([string]$RunDirPath) {
     }
     $markerProblem = Get-RuntimeMarkerProblem $RunDirPath
     if ($markerProblem) { Stop-Release "$markerProblem；请先按 T9 设计创建标记。" }
+    Assert-NoTrackedOverrides $RunDirPath '运行目录'
 }
 
 # 两个提交之间依赖清单的变化（文件名列表文本）；无变化返回空串。
@@ -375,6 +419,7 @@ function Show-ReleasePlan([string]$DevDirPath, [string]$RunDirPath) {
     if ($devBranch -ne 'master') { $blockers += "开发目录分支是 $devBranch，应为 master" }
     $staged = Invoke-Git $DevDirPath @('diff', '--cached', '--quiet') -AllowFail
     if ($staged.Code -ne 0) { $blockers += '开发目录有已暂存改动' }
+    if (@(Get-TrackedOverrides $DevDirPath).Count -gt 0) { $blockers += '开发目录有被跟踪的本机覆盖层' }
 
     if (-not (Test-Path -LiteralPath $RunDirPath)) {
         Write-ReleaseLog "运行目录不存在：$RunDirPath（需先完成 T4 建运行目录）"
@@ -391,6 +436,7 @@ function Show-ReleasePlan([string]$DevDirPath, [string]$RunDirPath) {
 
         $status = Split-StatusByParams (Get-RepoStatusLines $RunDirPath)
         if ($status.Other.Count -gt 0) { $blockers += '运行目录有 params/ 以外的未提交改动' }
+        if (@(Get-TrackedOverrides $RunDirPath).Count -gt 0) { $blockers += '运行目录有被跟踪的本机覆盖层' }
         if ($status.Params.Count -gt 0) {
             Write-ReleaseLog "将把运行目录 params/ 的 $($status.Params.Count) 项改动回存为开发目录 master 上的一条提交，然后停止；无合并提交，推送后重跑即可。"
         }

@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE_DIRECTORIES = ("src", "lab_workflows", "experiments", "GUI/backend", "tools", "scripts")
 PYTHON_TESTS = (
     "lab_workflows/test_experiment_architecture.py",
+    "lab_workflows/test_param_layers.py",
     "lab_workflows/test_workflow_state.py",
     "lab_workflows/test_analysis_execution.py",
     "lab_workflows/test_workflow_stages.py::test_stage_fields_defaults_frozen_and_json_contract",
@@ -33,6 +34,7 @@ PYTHON_TESTS = (
     "tools/test_dependency_lock.py",
     "tools/test_experiment_documentation.py",
     "tools/test_gen_script_index.py",
+    "tools/test_params.py",
     "tools/test_upgrade_lock.py",
     # 安全契约套件。不含 src/hardware_gate/test_gate.py：它在运行目录 pytest.skip，
     # 而 verify_pytest_results 拒绝任何 skip，纳入会让运行目录的快检必然失败。
