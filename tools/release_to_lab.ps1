@@ -1,17 +1,21 @@
-﻿# 发布脚本：把开发目录 master 的已测试提交快进发布到运行目录 lab 分支。
+﻿# 发布脚本：把开发目录的已测试提交快进发布到运行目录。
+# 正式模式从 master 发布到运行目录 lab 分支；迭代模式（-Iterate）从 exp/* 实验分支发布到
+# 运行目录的分离 HEAD，lab 分支不动，标签为 lab-wip-*，供协同实验会话反复上机。
 # 只在运行目录空闲时发布；只允许快进；依赖变化时停下等用户授权手动安装。
 # 顺序原则：能提前做的检查都在停 GUI 之前完成；停 GUI 前再查一次空闲；
 # 运行目录代码只在 GUI 停止后才改动，构建失败自动退回原版本并按原状态启动。
-# 参数回存只在开发目录产生一条提交，运行目录不提交、不合并：lab 始终是 master 的纯快进，
-# 主干不再出现「运行参数回存」+「Merge branch 'lab'」这两条记账提交。
+# 参数回存只在开发目录产生一条提交（正式落 master，迭代落当前实验分支），运行目录不提交、不合并。
 #
 # 用法（在开发目录执行）：
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\release_to_lab.ps1
 #   可选参数：
 #     -RunDir <路径>        运行目录，默认 D:\Code\exp_agent_run
 #     -DevDir <路径>        开发目录，默认脚本所在仓库
+#     -Iterate              迭代发布：开发目录在 exp/* 分支，运行目录更新到分离 HEAD，打 lab-wip-* 标签
+#     -BackfillOnly         与 -Iterate 同用：只把运行目录 params/ 回存到实验分支，不动代码与 GUI
+#     -Confirm              迭代发布时仍确认「已通过测试」（正式模式总是确认）
 #     -SkipRestart          只更新代码和前端，不停止/启动 GUI；仅在 GUI 未运行时可用
-#     -Rollback <标签>      回滚到运行目录的某个 lab-* 标签（停 GUI → 回退 → 重建前端 → 启动）
+#     -Rollback <标签>      回滚到某个 lab-* 标签（回到 lab 分支）或 lab-wip-* 标签（分离 HEAD）
 #     -DryRun               只打印发布计划和只读预检，不做任何改动
 #     -Resume               依赖已手动安装完成后，跳过依赖检查继续发布
 #     -HealthTimeoutSec <n> 启动后等待健康检查的秒数，默认 180（启动器自身给后端 120 秒）
@@ -24,6 +28,9 @@
 param(
     [string]$RunDir = 'D:\Code\exp_agent_run',
     [string]$DevDir,
+    [switch]$Iterate,
+    [switch]$BackfillOnly,
+    [switch]$Confirm,
     [switch]$SkipRestart,
     [string]$Rollback,
     [switch]$DryRun,
@@ -40,6 +47,8 @@ if (-not $DevDir) { $DevDir = Split-Path -Parent $PSScriptRoot }
 $HealthUrl = 'http://127.0.0.1:8000/api/health'
 $DependencyPaths = @('pyproject.toml', 'constraints/', 'GUI/frontend/package-lock.json')
 $script:LogFile = $null
+$ModeName = if ($BackfillOnly) { '仅回存' } elseif ($Iterate) { '迭代' } else { '正式' }
+$LogPrefix = if ($Iterate) { '[迭代] ' } else { '' }
 
 function Resolve-FullPath([string]$Path) {
     if ([System.IO.Path]::IsPathRooted($Path)) { return [System.IO.Path]::GetFullPath($Path) }
@@ -47,7 +56,7 @@ function Resolve-FullPath([string]$Path) {
 }
 
 function Write-ReleaseLog([string]$Message) {
-    $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
+    $line = '[{0}] {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $LogPrefix, $Message
     Write-Host $line
     if ($script:LogFile) {
         Add-Content -LiteralPath $script:LogFile -Value $line -Encoding UTF8
@@ -121,17 +130,52 @@ function Assert-SkipRestartAllowed([string]$When) {
 }
 
 # lab-YYYYMMDD-N 标签按日期 + 当日序号数值排序（字典序在 N>=10 时错误）。
-function Get-LabTagsSorted([string]$RepoDir) {
+# -Wip 只看 lab-wip-YYYYMMDD-N：迭代与正式两套序号各自递增，互不影响。
+function Get-LabTagsSorted([string]$RepoDir, [switch]$Wip) {
+    $pattern = if ($Wip) { '^lab-wip-(\d{8})-(\d+)$' } else { '^lab-(\d{8})-(\d+)$' }
     $result = Invoke-Git $RepoDir @('tag', '--list', 'lab-*')
     $tags = @()
     foreach ($line in ($result.Text -split "`n")) {
         $name = $line.Trim()
-        if ($name -match '^lab-(\d{8})-(\d+)$') {
+        if ($name -match $pattern) {
             $tags += [pscustomobject]@{ Name = $name; Day = $Matches[1]; Seq = [int]$Matches[2] }
         }
     }
     # 逗号包裹：单元素数组经 return 会被解包成 PSCustomObject（无 .Count），调用方 .Count 判断会失效。
     return ,@($tags | Sort-Object Day, Seq)
+}
+
+# 某个提交上的发布标签（正式或 wip）；分离 HEAD 靠它判断运行目录停在哪个已发布版本。
+function Get-ReleaseTagsAt([string]$RepoDir, [string]$Rev, [switch]$Wip) {
+    $pattern = if ($Wip) { '^lab-wip-\d{8}-\d+$' } else { '^lab-\d{8}-\d+$' }
+    $result = Invoke-Git $RepoDir @('tag', '--points-at', $Rev)
+    return @($result.Text -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match $pattern })
+}
+
+# 本次发布要用的标签：目标提交已有同类标签则复用（幂等），否则按当日序号新建。
+function Resolve-ReleaseTag([string]$RepoDir, [string]$TargetHead, [switch]$Wip) {
+    $tags = Get-LabTagsSorted $RepoDir -Wip:$Wip
+    $targetTags = @(Get-ReleaseTagsAt $RepoDir $TargetHead -Wip:$Wip)
+    if ($targetTags.Count -gt 0) {
+        $name = $targetTags[0]
+        $index = -1
+        for ($i = 0; $i -lt $tags.Count; $i++) { if ($tags[$i].Name -eq $name) { $index = $i } }
+        Write-ReleaseLog "目标提交已有标签 $name，复用（不新建）。"
+        return [pscustomobject]@{
+            Name = $name
+            PrevTag = if ($index -gt 0) { $tags[$index - 1].Name } else { $null }
+            Create = $false
+        }
+    }
+    $today = Get-Date -Format 'yyyyMMdd'
+    $seq = 1
+    foreach ($t in $tags) { if ($t.Day -eq $today -and $t.Seq -ge $seq) { $seq = $t.Seq + 1 } }
+    $prefix = if ($Wip) { 'lab-wip-' } else { 'lab-' }
+    return [pscustomobject]@{
+        Name = "$prefix$today-$seq"
+        PrevTag = if ($tags.Count -gt 0) { $tags[-1].Name } else { $null }
+        Create = $true
+    }
 }
 
 function Get-RepoStatusLines([string]$RepoDir) {
@@ -178,11 +222,11 @@ function Get-OverrideFingerprint([string]$RepoDir) {
     })
 }
 
-# 参数回存：把运行目录 params/ 的改动逐文件带回开发目录，在 master 上提交一条。
-# 运行目录不提交、不合并，HEAD 保持不变——lab 始终是 master 的纯快进，主干上不再出现
-# 「运行参数回存」+「Merge branch 'lab'」这类记账提交。按文件搬运，二进制内容原样保留。
+# 参数回存：把运行目录 params/ 的改动逐文件带回开发目录，在当前分支（正式 master / 迭代 exp/*）上提交一条。
+# 运行目录不提交、不合并，HEAD 保持不变。按文件搬运，二进制内容原样保留。
 function Restore-RunParamsIntoDev([string]$DevDirPath, [string]$RunDirPath, [int]$ChangeCount) {
     $today = Get-Date -Format 'yyyy-MM-dd'
+    $devBranch = Get-GitBranch $DevDirPath
 
     # 覆盖层不属于基线改动：既不回存，也不得在收尾清理时被删掉。
     Assert-NoTrackedOverrides $RunDirPath '运行目录'
@@ -194,11 +238,11 @@ function Restore-RunParamsIntoDev([string]$DevDirPath, [string]$RunDirPath, [int
         Stop-Release ("开发目录 params/ 有未提交改动，无法回存；请先提交或还原：`n" + $devParams.Text.Trim())
     }
 
-    # 冲突判定需要共同基线：运行目录当前版本必须已在开发目录 master 里。
+    # 冲突判定需要共同基线：运行目录当前版本必须已在开发目录当前分支里（分离 HEAD 同样按提交判定）。
     $runHead = Get-GitHead $RunDirPath
     $devHead = Get-GitHead $DevDirPath
     if ((Invoke-Git $DevDirPath @('merge-base', '--is-ancestor', $runHead, $devHead) -AllowFail).Code -ne 0) {
-        Stop-Release '开发目录 master 不包含运行目录当前版本，无法判断参数回存冲突；请先把运行目录版本同步回 master。'
+        Stop-Release "开发目录 $devBranch 不包含运行目录当前版本，无法判断参数回存冲突；请先把运行目录版本同步回 $devBranch。"
     }
 
     # 以运行目录为准暂存 params/，取相对 HEAD 的逐文件改动；重命名拆成删除 + 新增，便于逐个搬运。
@@ -256,7 +300,7 @@ function Restore-RunParamsIntoDev([string]$DevDirPath, [string]$RunDirPath, [int
     }
 
     Invoke-Git $DevDirPath @('commit', '-m', "运行参数回存 $today") | Out-Null
-    Write-ReleaseLog "参数回存已提交到开发目录 master（$ChangeCount 项改动，无合并提交）。"
+    Write-ReleaseLog "参数回存已提交到开发目录 $devBranch（$ChangeCount 项改动，无合并提交）。"
 
     # 改动已转移：丢弃运行目录的 params/ 改动，HEAD 不变，后续发布仍是纯快进。
     # -e '*.local.yaml' 显式保留覆盖层：即使它没被 .gitignore 忽略，也不能在这里被删。
@@ -285,14 +329,36 @@ function Get-RuntimeMarkerProblem([string]$RunDirPath) {
     return $null
 }
 
-function Assert-RunDirOnLab([string]$RunDirPath) {
+# 运行目录版本状态：在 lab 分支，或分离 HEAD 且 HEAD 恰好是某个 lab-* / lab-wip-* 标签。
+function Get-RunDirVersion([string]$RunDirPath) {
     $branch = Get-GitBranch $RunDirPath
-    if ($branch -ne 'lab') {
-        Stop-Release "运行目录当前分支是 $branch，应为 lab；请先人工切回 lab 分支。"
+    $head = Get-GitHead $RunDirPath
+    $detached = ($branch -eq 'HEAD')
+    $tags = @(Get-ReleaseTagsAt $RunDirPath $head) + @(Get-ReleaseTagsAt $RunDirPath $head -Wip)
+    return [pscustomobject]@{ Branch = $branch; Head = $head; Detached = $detached; Tags = $tags }
+}
+
+function Get-RunDirVersionText($State) {
+    if ($State.Detached) {
+        return "分离 HEAD $(Get-ShortRev $State.Head)（标签 $($State.Tags -join ', ')）"
+    }
+    return "分支 $($State.Branch) $(Get-ShortRev $State.Head)"
+}
+
+function Assert-RunDirVersion([string]$RunDirPath) {
+    $state = Get-RunDirVersion $RunDirPath
+    if ($state.Detached) {
+        if ($state.Tags.Count -eq 0) {
+            Stop-Release ("运行目录处于分离 HEAD $(Get-ShortRev $state.Head)，不在任何 lab-* / lab-wip-* 标签上；" +
+                '请先人工切回 lab 分支或某个发布标签。')
+        }
+    } elseif ($state.Branch -ne 'lab') {
+        Stop-Release "运行目录当前分支是 $($state.Branch)，应为 lab 或分离于发布标签；请先人工切回。"
     }
     $markerProblem = Get-RuntimeMarkerProblem $RunDirPath
     if ($markerProblem) { Stop-Release "$markerProblem；请先按 T9 设计创建标记。" }
     Assert-NoTrackedOverrides $RunDirPath '运行目录'
+    return $state
 }
 
 # 两个提交之间依赖清单的变化（文件名列表文本）；无变化返回空串。
@@ -387,13 +453,20 @@ function Start-LabGui([string]$RunDirPath, [string]$PreInstanceId, [int]$Timeout
     Stop-Release "等待 GUI 启动超时（$TimeoutSec 秒）：instance_id 未变化或健康检查无响应；请检查运行目录 tmp\gui-launcher.log。"
 }
 
-# 构建失败：运行目录退回到 $RestoreRef（旧 dist 未动，与旧代码一致），删除本次新建的标签，
+# 构建失败：运行目录退回到发布前的状态（旧 dist 未动，与旧代码一致），删除本次新建的标签，
 # 未指定 -SkipRestart 时按原版本启动 GUI，最后以失败结束。
-function Restore-AfterBuildFailure([string]$RunDirPath, [string]$Reason, [string]$RestoreRef, [string]$CreatedTag, [string]$PreInstanceId) {
+# -Detached 表示发布前是分离 HEAD：直接 checkout --detach 回去，不动 lab 分支；
+# 否则发布前在 lab 分支，checkout lab 后 reset --hard 回原提交。
+function Restore-AfterBuildFailure([string]$RunDirPath, [string]$Reason, [string]$RestoreRef, [string]$CreatedTag, [string]$PreInstanceId, [switch]$Detached) {
     Write-ReleaseLog $Reason
     if ($RestoreRef) {
-        Invoke-Git $RunDirPath @('reset', '--hard', $RestoreRef) | Out-Null
-        Write-ReleaseLog "运行目录已退回 $(Get-ShortRev $RestoreRef)。"
+        if ($Detached) {
+            Invoke-Git $RunDirPath @('checkout', '--detach', $RestoreRef) | Out-Null
+        } else {
+            Invoke-Git $RunDirPath @('checkout', 'lab') | Out-Null
+            Invoke-Git $RunDirPath @('reset', '--hard', $RestoreRef) | Out-Null
+        }
+        Write-ReleaseLog "运行目录已退回 $(Get-ShortRev $RestoreRef)$(if ($Detached) { '（分离 HEAD）' } else { '（lab 分支）' })。"
     } else {
         Write-ReleaseLog '没有可退回的上一版本，运行目录代码保持当前状态。'
     }
@@ -410,13 +483,17 @@ function Restore-AfterBuildFailure([string]$RunDirPath, [string]$Reason, [string
 
 # -DryRun：打印计划并做只读预检，不确认、不改动、不重启。
 function Show-ReleasePlan([string]$DevDirPath, [string]$RunDirPath) {
-    Write-ReleaseLog '===== DryRun：发布计划（只读预检，不做任何改动） ====='
+    Write-ReleaseLog "===== DryRun：发布计划（模式：$ModeName；只读预检，不做任何改动） ====="
     $blockers = @()
 
     $devBranch = Get-GitBranch $DevDirPath
     $devHead = Get-GitHead $DevDirPath
     Write-ReleaseLog "开发目录：$DevDirPath（分支 $devBranch，HEAD $(Get-ShortRev $devHead)）"
-    if ($devBranch -ne 'master') { $blockers += "开发目录分支是 $devBranch，应为 master" }
+    if ($Iterate) {
+        if ($devBranch -notmatch '^exp/') { $blockers += "开发目录分支是 $devBranch，迭代发布要求 exp/*" }
+    } elseif ($devBranch -ne 'master') {
+        $blockers += "开发目录分支是 $devBranch，应为 master"
+    }
     $staged = Invoke-Git $DevDirPath @('diff', '--cached', '--quiet') -AllowFail
     if ($staged.Code -ne 0) { $blockers += '开发目录有已暂存改动' }
     if (@(Get-TrackedOverrides $DevDirPath).Count -gt 0) { $blockers += '开发目录有被跟踪的本机覆盖层' }
@@ -425,45 +502,91 @@ function Show-ReleasePlan([string]$DevDirPath, [string]$RunDirPath) {
         Write-ReleaseLog "运行目录不存在：$RunDirPath（需先完成 T4 建运行目录）"
         $blockers += '运行目录不存在'
     } else {
-        $runBranch = Get-GitBranch $RunDirPath
-        $runHead = Get-GitHead $RunDirPath
+        $runState = Get-RunDirVersion $RunDirPath
         $tags = Get-LabTagsSorted $RunDirPath
+        $wipTags = Get-LabTagsSorted $RunDirPath -Wip
         $latestTag = if ($tags.Count -gt 0) { $tags[-1].Name } else { '（无）' }
-        Write-ReleaseLog "运行目录：$RunDirPath（分支 $runBranch，HEAD $(Get-ShortRev $runHead)，最新标签 $latestTag）"
-        if ($runBranch -ne 'lab') { $blockers += "运行目录分支是 $runBranch，应为 lab" }
+        $latestWip = if ($wipTags.Count -gt 0) { $wipTags[-1].Name } else { '（无）' }
+        Write-ReleaseLog "运行目录：$RunDirPath（$(Get-RunDirVersionText $runState)，最新正式标签 $latestTag，最新迭代标签 $latestWip）"
+        if ($runState.Detached) {
+            if ($runState.Tags.Count -eq 0) { $blockers += '运行目录分离 HEAD 不在任何 lab-* / lab-wip-* 标签上' }
+        } elseif ($runState.Branch -ne 'lab') {
+            $blockers += "运行目录分支是 $($runState.Branch)，应为 lab 或分离于发布标签"
+        }
         $markerProblem = Get-RuntimeMarkerProblem $RunDirPath
         if ($markerProblem) { $blockers += $markerProblem }
 
         $status = Split-StatusByParams (Get-RepoStatusLines $RunDirPath)
         if ($status.Other.Count -gt 0) { $blockers += '运行目录有 params/ 以外的未提交改动' }
         if (@(Get-TrackedOverrides $RunDirPath).Count -gt 0) { $blockers += '运行目录有被跟踪的本机覆盖层' }
+        $wipTagHere = @($runState.Tags | Where-Object { $_ -match '^lab-wip-' })
+        if (-not $Iterate -and $runState.Detached -and $wipTagHere.Count -gt 0) {
+            Write-ReleaseLog "运行目录在 $($wipTagHere -join ', ')；最后一次回存之后的 params/ 改动将阻止发布。"
+        }
         if ($status.Params.Count -gt 0) {
-            Write-ReleaseLog "将把运行目录 params/ 的 $($status.Params.Count) 项改动回存为开发目录 master 上的一条提交，然后停止；无合并提交，推送后重跑即可。"
-        }
-
-        $health = Get-HealthState
-        if ($null -eq $health) {
-            Write-ReleaseLog 'GUI 未运行，视为空闲。'
-        } elseif ($health.hardware_busy -or [int]$health.queued_hardware_jobs -gt 0) {
-            $blockers += 'GUI 硬件任务忙'
-        } else {
-            Write-ReleaseLog "GUI 空闲（instance_id: $($health.instance_id)）。"
-            if ($SkipRestart) { $blockers += '-SkipRestart 只能在 GUI 未运行时使用' }
-        }
-
-        $ff = Invoke-Git $RunDirPath @('merge-base', '--is-ancestor', 'HEAD', 'origin/master') -AllowFail
-        if ($ff.Code -ne 0) {
-            $blockers += '运行目录 lab 不能快进到 origin/master（需先处理 lab 上的独立提交）'
-        } else {
-            $deps = Get-DependencyChanges $RunDirPath 'HEAD' 'origin/master'
-            if ($deps -and -not $Resume) {
-                Write-ReleaseLog "依赖清单有变化：发布会停 GUI、更新代码后暂停，等授权手动安装依赖再 -Resume：`n$deps"
+            if (-not $Iterate -and $runState.Detached) {
+                $blockers += "运行目录分离于迭代版本且 params/ 有 $($status.Params.Count) 项改动：先跑 -Iterate -BackfillOnly 回存并把回存提交整理进 master"
+            } elseif ($BackfillOnly) {
+                Write-ReleaseLog "将把运行目录 params/ 的 $($status.Params.Count) 项改动回存为开发目录 $devBranch 上的一条提交；不动代码与 GUI。"
+            } elseif ($Iterate) {
+                Write-ReleaseLog "将把运行目录 params/ 的 $($status.Params.Count) 项改动回存到开发目录 $devBranch，然后继续迭代发布。"
+            } else {
+                Write-ReleaseLog "将把运行目录 params/ 的 $($status.Params.Count) 项改动回存为开发目录 master 上的一条提交，然后停止；无合并提交，推送后重跑即可。"
             }
+        } elseif ($BackfillOnly) {
+            Write-ReleaseLog '运行目录 params/ 无改动：无需回存。'
         }
-        Write-ReleaseLog '（DryRun 只比对本地已有的 origin/master，不执行 fetch。）'
+
+        if ($BackfillOnly) {
+            Write-ReleaseLog '仅回存模式：不检查空闲、不停/启 GUI、不更新代码、不打标签。'
+        } else {
+            $health = Get-HealthState
+            if ($null -eq $health) {
+                Write-ReleaseLog 'GUI 未运行，视为空闲。'
+            } elseif ($health.hardware_busy -or [int]$health.queued_hardware_jobs -gt 0) {
+                $blockers += 'GUI 硬件任务忙'
+            } else {
+                Write-ReleaseLog "GUI 空闲（instance_id: $($health.instance_id)）。"
+                if ($SkipRestart) { $blockers += '-SkipRestart 只能在 GUI 未运行时使用' }
+            }
+
+            $targetRef = if ($Iterate) { "origin/$devBranch" } else { 'origin/master' }
+            $targetCheck = Invoke-Git $RunDirPath @('rev-parse', '--verify', $targetRef) -AllowFail
+            if ($targetCheck.Code -ne 0) {
+                Write-ReleaseLog "本地还没有 $targetRef（DryRun 不 fetch）：无法预检目标提交与标签。"
+            } else {
+                $targetHead = $targetCheck.Text.Trim()
+                $planTag = Resolve-ReleaseTag $RunDirPath $targetHead -Wip:$Iterate
+                Write-ReleaseLog "目标：$targetRef $(Get-ShortRev $targetHead)，标签 $($planTag.Name)$(if ($planTag.Create) { '（新建）' } else { '（复用）' })。"
+                if ($devHead -ne $targetHead) {
+                    Write-ReleaseLog "开发目录 HEAD 与本地 $targetRef 不一致：真正发布前需先推送（DryRun 不 fetch，本地 ref 可能落后）。"
+                }
+                $ffFrom = if ($Iterate -or -not $runState.Detached) { 'HEAD' } else { 'lab' }
+                $ff = Invoke-Git $RunDirPath @('merge-base', '--is-ancestor', $ffFrom, $targetRef) -AllowFail
+                if ($ff.Code -ne 0) {
+                    if ($Iterate) {
+                        $blockers += '实验分支未包含运行目录当前版本：可能改写了已发布提交，或分支不是从当前运行版本拉出'
+                    } else {
+                        $blockers += "运行目录 $ffFrom 不能快进到 $targetRef（需先处理独立提交）"
+                    }
+                } else {
+                    $deps = Get-DependencyChanges $RunDirPath 'HEAD' $targetRef
+                    if ($deps -and -not $Resume) {
+                        Write-ReleaseLog "依赖清单有变化：发布会停 GUI、更新代码后暂停，等授权手动安装依赖再 -Resume：`n$deps"
+                    }
+                }
+            }
+            Write-ReleaseLog "（DryRun 只比对本地已有的 $targetRef，不执行 fetch。）"
+        }
     }
 
-    Write-ReleaseLog '计划步骤：1 开发目录检查与测试确认 → 2 空闲检查 → 3 参数回存（开发目录一条提交，无合并）→ 4 预检（已推送、快进、依赖、标签）→ 5 再查空闲并停 GUI → 6 快进并打标签 → 7 构建前端（失败则退回原版本）→ 8 启动 GUI 并验证 instance_id。'
+    if ($BackfillOnly) {
+        Write-ReleaseLog '计划步骤：1 开发目录检查（exp/* 分支）→ 2 运行目录状态与改动检查 → 3 参数回存到实验分支（一条提交）→ 结束。'
+    } elseif ($Iterate) {
+        Write-ReleaseLog '计划步骤：1 开发目录检查（exp/* 分支）→ 2 空闲检查 → 3 参数回存到实验分支后继续 → 4 预检（已推送、后代、依赖、wip 标签）→ 5 再查空闲并停 GUI → 6 checkout --detach 目标并打 lab-wip 标签（lab 不动）→ 7 构建前端（失败则退回原状态）→ 8 启动 GUI 并验证 instance_id。'
+    } else {
+        Write-ReleaseLog '计划步骤：1 开发目录检查与测试确认 → 2 空闲检查 → 3 参数回存（开发目录一条提交，无合并）→ 4 预检（已推送、快进、依赖、标签）→ 5 再查空闲并停 GUI → 6 回到 lab 并快进到 origin/master、打标签 → 7 构建前端（失败则退回原版本）→ 8 启动 GUI 并验证 instance_id。'
+    }
     if ($SkipRestart) { Write-ReleaseLog '已指定 -SkipRestart：不停止/启动 GUI（要求 GUI 未运行）。' }
     if ($blockers.Count -gt 0) {
         foreach ($b in $blockers) { Write-ReleaseLog "预检阻塞：$b" }
@@ -477,6 +600,7 @@ function Show-ReleasePlan([string]$DevDirPath, [string]$RunDirPath) {
 $DevDir = Resolve-FullPath $DevDir
 $RunDir = Resolve-FullPath $RunDir
 if ($HealthTimeoutSec -lt 1) { Stop-Release '-HealthTimeoutSec 必须 >= 1。' }
+if ($BackfillOnly -and -not $Iterate) { Stop-Release '-BackfillOnly 必须与 -Iterate 同用（回存到实验分支）。' }
 
 if (-not (Test-Path -LiteralPath (Join-Path $DevDir '.git'))) {
     Stop-Release "开发目录不是 git 仓库：$DevDir"
@@ -495,16 +619,21 @@ if (Test-Path -LiteralPath $RunDir) {
 Write-ReleaseLog "===== 发布开始：开发目录 $DevDir → 运行目录 $RunDir ====="
 
 if ($DryRun) {
-    if ($Rollback) { Write-ReleaseLog "回滚计划：停 GUI → reset --hard $Rollback → 重建前端 → 启动 GUI。" }
+    if ($Rollback) {
+        $how = if ($Rollback -match '^lab-wip-') { "checkout --detach $Rollback（lab 不动）" } else { "回到 lab 并 reset --hard $Rollback" }
+        Write-ReleaseLog "回滚计划：停 GUI → $how → 重建前端 → 启动 GUI。"
+    }
     Show-ReleasePlan $DevDir $RunDir
 }
 
 if ($Rollback) {
-    # ===== 回滚流程：检查 → 确认 → 再查空闲并停 GUI → reset --hard → 重建前端 → 启动 =====
+    # ===== 回滚流程：检查 → 确认 → 再查空闲并停 GUI → 回退 → 重建前端 → 启动 =====
     Write-ReleaseLog "===== 回滚到标签 $Rollback ====="
     $tagCheck = Invoke-Git $RunDir @('rev-parse', '--verify', "refs/tags/$Rollback") -AllowFail
     if ($tagCheck.Code -ne 0) { Stop-Release "运行目录不存在标签：$Rollback" }
-    Assert-RunDirOnLab $RunDir
+    # wip 标签回滚到分离 HEAD，正式标签回滚到 lab 分支。
+    $rollbackWip = $Rollback -match '^lab-wip-\d{8}-\d+$'
+    $runState = Assert-RunDirVersion $RunDir
     Assert-GuiIdle | Out-Null
     Assert-SkipRestartAllowed '回滚开始时'
 
@@ -534,15 +663,21 @@ if ($Rollback) {
         if ($health) { $preId = [string]$health.instance_id }
     }
 
-    Invoke-Git $RunDir @('reset', '--hard', $Rollback) | Out-Null
-    Write-ReleaseLog "已 reset --hard 到 $Rollback。"
+    if ($rollbackWip) {
+        Invoke-Git $RunDir @('checkout', '--detach', $Rollback) | Out-Null
+        Write-ReleaseLog "已 checkout --detach 到 $Rollback（lab 分支不动）。"
+    } else {
+        if ($runState.Detached) { Invoke-Git $RunDir @('checkout', 'lab') | Out-Null }
+        Invoke-Git $RunDir @('reset', '--hard', $Rollback) | Out-Null
+        Write-ReleaseLog "已回到 lab 分支并 reset --hard 到 $Rollback。"
+    }
     if ($rollbackDeps) {
         Stop-Release ("代码已回退到 $Rollback，GUI 保持停止。依赖清单与回滚前不同；" + (Get-DependencyInstallHint) +
             "完成后重跑同一回滚命令（-Rollback $Rollback）完成前端构建与启动。")
     }
     $buildError = Update-FrontendDist $RunDir
     if ($buildError) {
-        Restore-AfterBuildFailure $RunDir $buildError $headBefore $null $preId
+        Restore-AfterBuildFailure $RunDir $buildError $headBefore $null $preId -Detached:$runState.Detached
     }
     if ($SkipRestart) {
         Write-ReleaseLog '已指定 -SkipRestart：不启动 GUI。'
@@ -553,81 +688,109 @@ if ($Rollback) {
     exit 0
 }
 
-# ===== 正常发布流程 =====
+# ===== 发布流程：正式（master → lab）/ 迭代（exp/* → 分离 HEAD）/ 仅回存 =====
 # 步骤 1：开发目录检查 + 测试确认。
-Write-ReleaseLog '步骤 1：检查开发目录...'
+Write-ReleaseLog "步骤 1：检查开发目录（模式：$ModeName）..."
 $devBranch = Get-GitBranch $DevDir
-if ($devBranch -ne 'master') { Stop-Release "开发目录当前分支是 $devBranch，发布只允许从 master 进行。" }
+if ($Iterate) {
+    if ($devBranch -notmatch '^exp/') {
+        Stop-Release "迭代发布的开发目录当前分支是 $devBranch，必须是 exp/<YYYYMMDD>-<主题> 实验分支。"
+    }
+} elseif ($devBranch -ne 'master') {
+    Stop-Release "开发目录当前分支是 $devBranch，发布只允许从 master 进行。"
+}
 $staged = Invoke-Git $DevDir @('diff', '--cached', '--quiet') -AllowFail
 if ($staged.Code -ne 0) { Stop-Release '开发目录有已暂存改动，请先提交或取消暂存后再发布。' }
 $devHeadBefore = Get-GitHead $DevDir
-Write-ReleaseLog "开发目录 master HEAD：$(Get-ShortRev $devHeadBefore)"
-$answer = Read-Host '确认本提交已通过测试（y/N）'
-if ("$answer".Trim().ToLower() -ne 'y') { Stop-Release '未确认测试通过，已取消发布。' }
+Write-ReleaseLog "开发目录 $devBranch HEAD：$(Get-ShortRev $devHeadBefore)"
+# 迭代发布的测试门槛由协同实验会话规则约束，默认不再逐次确认；-Confirm 可保留确认。
+if (-not $Iterate -or $Confirm) {
+    $answer = Read-Host '确认本提交已通过测试（y/N）'
+    if ("$answer".Trim().ToLower() -ne 'y') { Stop-Release '未确认测试通过，已取消发布。' }
+}
 
-# 步骤 2：首次空闲检查（提前拦截，不改动任何东西）。
-Write-ReleaseLog '步骤 2：检查 GUI 是否空闲...'
-Assert-GuiIdle | Out-Null
-Assert-SkipRestartAllowed '发布开始时'
+# 步骤 2：首次空闲检查（提前拦截，不改动任何东西）。仅回存不动 GUI，跳过。
+if ($BackfillOnly) {
+    Write-ReleaseLog '步骤 2：仅回存模式，跳过空闲检查（GUI 可继续运行）。'
+} else {
+    Write-ReleaseLog '步骤 2：检查 GUI 是否空闲...'
+    Assert-GuiIdle | Out-Null
+    Assert-SkipRestartAllowed '发布开始时'
+}
 
-# 步骤 3：参数回存（只改开发目录 master 的一条提交，运行目录 HEAD 不动，GUI 可继续运行）。
+# 步骤 3：参数回存（只改开发目录当前分支的一条提交，运行目录 HEAD 不动，GUI 可继续运行）。
 Write-ReleaseLog '步骤 3：检查运行目录改动与参数回存...'
-Assert-RunDirOnLab $RunDir
+$runState = Assert-RunDirVersion $RunDir
+Write-ReleaseLog "运行目录当前版本：$(Get-RunDirVersionText $runState)"
 $status = Split-StatusByParams (Get-RepoStatusLines $RunDir)
 if ($status.Other.Count -gt 0) {
     Stop-Release ("运行目录有 params/ 以外的未提交改动，已停止；请人工处理：`n" + ($status.Other -join "`n"))
 }
 if ($status.Params.Count -gt 0) {
-    Write-ReleaseLog "运行目录 params/ 有 $($status.Params.Count) 项改动，回存到开发目录..."
+    if (-not $Iterate -and $runState.Detached) {
+        Stop-Release ("运行目录分离于迭代版本（$($runState.Tags -join ', ')）且 params/ 有 $($status.Params.Count) 项改动，" +
+            '正式发布不把迭代参数回存到 master，已停止（GUI 未停）；' +
+            '请先跑 -Iterate -BackfillOnly 回存到实验分支，并把回存提交整理进 master 后再正式发布。')
+    }
+    Write-ReleaseLog "运行目录 params/ 有 $($status.Params.Count) 项改动，回存到开发目录 $devBranch..."
     Restore-RunParamsIntoDev $DevDir $RunDir $status.Params.Count
-    Stop-Release ('运行参数回存已提交到开发目录 master（只含 params/，无需重新测试）；' +
-        '请推送到 origin 后再运行发布。运行目录与 GUI 均未改动。')
+    if ($BackfillOnly) {
+        Write-ReleaseLog '===== 仅回存完成：代码与 GUI 均未改动 ====='
+        exit 0
+    }
+    if (-not $Iterate) {
+        Stop-Release ('运行参数回存已提交到开发目录 master（只含 params/，无需重新测试）；' +
+            '请推送到 origin 后再运行发布。运行目录与 GUI 均未改动。')
+    }
 } else {
     Write-ReleaseLog '运行目录无未提交改动，跳过参数回存。'
+    if ($BackfillOnly) {
+        Write-ReleaseLog '无需回存。'
+        exit 0
+    }
 }
 
-# 步骤 4：停 GUI 前的预检——开发目录是否已推送、快进可行性、标签、依赖变化，全部只读。
-Write-ReleaseLog '步骤 4：预检快进与依赖...'
+# 步骤 4：停 GUI 前的预检——开发目录是否已推送、目标是否包含当前版本、标签、依赖变化，全部只读。
+Write-ReleaseLog '步骤 4：预检目标版本与依赖...'
 Invoke-Git $RunDir @('fetch', 'origin') | Out-Null
-# 发布目标固定为 origin/master：开发目录未推送（或有未同步提交）时发布会悄悄发出旧版本，
+# 目标固定为 origin 上的同名分支：开发目录未推送（或有未同步提交）时发布会悄悄发出旧版本，
 # 参数回存后误重跑还会把运行目录参数退回去，所以先比对两侧 HEAD。
-$originHead = (Invoke-Git $RunDir @('rev-parse', 'origin/master')).Text.Trim()
-$devHeadNow = Get-GitHead $DevDir
-if ($devHeadNow -ne $originHead) {
-    Stop-Release ("开发目录 master（$(Get-ShortRev $devHeadNow)）与 origin/master（$(Get-ShortRev $originHead)）不一致；" +
-        '请先把 master 推送到 origin 再运行发布。运行目录与 GUI 均未改动。')
+$targetRef = if ($Iterate) { "origin/$devBranch" } else { 'origin/master' }
+$targetCheck = Invoke-Git $RunDir @('rev-parse', '--verify', $targetRef) -AllowFail
+if ($targetCheck.Code -ne 0) {
+    Stop-Release "运行目录的 origin 上没有分支 $devBranch；请先把 $devBranch 推送到 origin 再运行发布。运行目录与 GUI 均未改动。"
 }
-$ffCheck = Invoke-Git $RunDir @('merge-base', '--is-ancestor', 'HEAD', 'origin/master') -AllowFail
-if ($ffCheck.Code -ne 0) {
-    Stop-Release '运行目录 lab 不能快进到 origin/master（lab 上有未合并进 master 的提交），已停止；请先把 lab 的提交合并回 master 并重新测试。'
+$targetHead = $targetCheck.Text.Trim()
+$devHeadNow = Get-GitHead $DevDir
+if ($devHeadNow -ne $targetHead) {
+    Stop-Release ("开发目录 $devBranch（$(Get-ShortRev $devHeadNow)）与 $targetRef（$(Get-ShortRev $targetHead)）不一致；" +
+        "请先把 $devBranch 推送到 origin 再运行发布。运行目录与 GUI 均未改动。")
+}
+if ($Iterate) {
+    $descend = Invoke-Git $RunDir @('merge-base', '--is-ancestor', 'HEAD', $targetRef) -AllowFail
+    if ($descend.Code -ne 0) {
+        Stop-Release ('实验分支未包含运行目录当前版本：可能改写了已发布提交，或分支不是从当前运行版本拉出。' +
+            '已停止；运行目录与 GUI 均未改动。')
+    }
+} else {
+    # 分离 HEAD 时 lab 分支才是正式发布的起点：lab 必须是 origin/master 的祖先。
+    $ffFrom = if ($runState.Detached) { 'lab' } else { 'HEAD' }
+    $ffCheck = Invoke-Git $RunDir @('merge-base', '--is-ancestor', $ffFrom, 'origin/master') -AllowFail
+    if ($ffCheck.Code -ne 0) {
+        Stop-Release "运行目录 $ffFrom 不能快进到 origin/master（有未合并进 master 的提交），已停止；请先把这些提交合并回 master 并重新测试。"
+    }
 }
 $runHeadBefore = Get-GitHead $RunDir
-$targetHead = (Invoke-Git $RunDir @('rev-parse', 'origin/master')).Text.Trim()
-$tags = Get-LabTagsSorted $RunDir
-$targetTags = @((Invoke-Git $RunDir @('tag', '--points-at', $targetHead)).Text -split "`n" |
-    ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^lab-\d{8}-\d+$' })
-if ($targetTags.Count -gt 0) {
-    # 幂等：目标提交已打过标签（例如上次发布中途停下后重跑或 -Resume）则复用，不新建。
-    $newTag = $targetTags[0]
-    $newTagIndex = -1
-    for ($i = 0; $i -lt $tags.Count; $i++) { if ($tags[$i].Name -eq $newTag) { $newTagIndex = $i } }
-    $prevTag = if ($newTagIndex -gt 0) { $tags[$newTagIndex - 1].Name } else { $null }
-    $createTag = $false
-    Write-ReleaseLog "目标提交已有标签 $newTag，复用（不新建）。"
-} else {
-    $prevTag = if ($tags.Count -gt 0) { $tags[-1].Name } else { $null }
-    $today = Get-Date -Format 'yyyyMMdd'
-    $seq = 1
-    foreach ($t in $tags) { if ($t.Day -eq $today -and $t.Seq -ge $seq) { $seq = $t.Seq + 1 } }
-    $newTag = "lab-$today-$seq"
-    $createTag = $true
-}
+$tagPlan = Resolve-ReleaseTag $RunDir $targetHead -Wip:$Iterate
+$newTag = $tagPlan.Name
+$prevTag = $tagPlan.PrevTag
+$createTag = $tagPlan.Create
 
 $depsChanged = $false
 if ($Resume) {
     Write-ReleaseLog '已指定 -Resume：跳过依赖检查（视为依赖已手动安装完成）。'
 } else {
-    $deps = Get-DependencyChanges $RunDir 'HEAD' 'origin/master'
+    $deps = Get-DependencyChanges $RunDir 'HEAD' $targetRef
     if ($deps) {
         $depsChanged = $true
         Write-ReleaseLog "依赖清单有变化：`n$deps"
@@ -648,28 +811,41 @@ if ($SkipRestart) {
     if ($health) { $preId = [string]$health.instance_id }
 }
 
-# 步骤 6：GUI 已停止，快进并打标签。
-Write-ReleaseLog '步骤 6：快进运行目录到 origin/master...'
-if ($runHeadBefore -ne $targetHead) {
-    Invoke-Git $RunDir @('merge', '--ff-only', 'origin/master') | Out-Null
-}
+# 步骤 6：GUI 已停止，更新代码并打标签。迭代只移动 HEAD，lab 分支保持不动。
 $createdTag = $null
-if ($createTag) {
-    Invoke-Git $RunDir @('tag', $newTag) | Out-Null
-    $createdTag = $newTag
-    Write-ReleaseLog "已快进到 origin/master 并打标签 $newTag。"
+if ($Iterate) {
+    Write-ReleaseLog "步骤 6：运行目录 checkout --detach 到 $targetRef..."
+    Invoke-Git $RunDir @('checkout', '--detach', $targetHead) | Out-Null
+    if ($createTag) {
+        Invoke-Git $RunDir @('tag', $newTag) | Out-Null
+        $createdTag = $newTag
+    }
+    Write-ReleaseLog "运行目录已分离到 $(Get-ShortRev $targetHead)，标签 $newTag（lab 分支未动）。"
+} else {
+    Write-ReleaseLog '步骤 6：回到 lab 分支并快进到 origin/master...'
+    if ($runState.Detached) { Invoke-Git $RunDir @('checkout', 'lab') | Out-Null }
+    if ((Get-GitHead $RunDir) -ne $targetHead) {
+        Invoke-Git $RunDir @('merge', '--ff-only', 'origin/master') | Out-Null
+    }
+    if ($createTag) {
+        Invoke-Git $RunDir @('tag', $newTag) | Out-Null
+        $createdTag = $newTag
+        Write-ReleaseLog "已快进到 origin/master 并打标签 $newTag。"
+    }
 }
 if ($depsChanged) {
     Stop-Release ("代码已更新到 $newTag，GUI 保持停止。依赖清单相对上一版本有变化；" + (Get-DependencyInstallHint) +
         '完成后加 -Resume 重跑本脚本，完成前端构建与启动。')
 }
 
-# 步骤 7：构建前端；失败则退回发布前的版本（本次运行没有改动代码时退回上一个标签）。
+# 步骤 7：构建前端；失败则退回发布前的状态（正式发布本次没改动代码时退回上一个标签）。
 Write-ReleaseLog '步骤 7：构建前端...'
 $buildError = Update-FrontendDist $RunDir
 if ($buildError) {
-    $restoreRef = if ($runHeadBefore -ne $targetHead) { $runHeadBefore } elseif ($prevTag) { $prevTag } else { $null }
-    Restore-AfterBuildFailure $RunDir $buildError $restoreRef $createdTag $preId
+    $restoreRef = if ($Iterate -or $runState.Detached) {
+        $runHeadBefore
+    } elseif ($runHeadBefore -ne $targetHead) { $runHeadBefore } elseif ($prevTag) { $prevTag } else { $null }
+    Restore-AfterBuildFailure $RunDir $buildError $restoreRef $createdTag $preId -Detached:$runState.Detached
 }
 
 # 步骤 8：启动 GUI。
@@ -679,5 +855,9 @@ if ($SkipRestart) {
     Write-ReleaseLog '步骤 8：启动 GUI...'
     Start-LabGui $RunDir $preId $HealthTimeoutSec
 }
-Write-ReleaseLog "===== 发布完成：$newTag ====="
+if ($Iterate) {
+    Write-ReleaseLog "===== 迭代发布完成：$newTag（分离 HEAD，lab 未动） ====="
+} else {
+    Write-ReleaseLog "===== 发布完成：$newTag ====="
+}
 exit 0

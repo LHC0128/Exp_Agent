@@ -172,11 +172,31 @@ function New-Fixture([string]$CaseName) {
 }
 
 function Get-FixtureHead([string]$RepoDir) { return Invoke-FixtureGit $RepoDir @('rev-parse', 'HEAD') }
+function Get-FixtureBranch([string]$RepoDir) { return Invoke-FixtureGit $RepoDir @('rev-parse', '--abbrev-ref', 'HEAD') }
 function Get-FixtureTags([string]$RepoDir) {
     $text = Invoke-FixtureGit $RepoDir @('tag', '--list', 'lab-*')
     if (-not $text) { return @() }
     # 逗号包裹：单元素数组经 return 会被解包成字符串（无 .Count）。
     return ,@($text -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+function Get-FixtureWipTags([string]$RepoDir) {
+    $text = Invoke-FixtureGit $RepoDir @('tag', '--list', 'lab-wip-*')
+    if (-not $text) { return @() }
+    return ,@($text -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
+# 迭代夹具：开发目录切到实验分支并追加一个提交，运行目录仍停在 lab（初始正式标签）。
+function New-IterateFixture([string]$CaseName, [string]$Branch = 'exp/20261125-probe') {
+    $f = New-Fixture $CaseName
+    Invoke-FixtureGit $f.Dev @('switch', '-c', $Branch) | Out-Null
+    Add-FixtureDevCommit $f '实验改动' "v3`n"
+    return $f
+}
+
+function Add-FixtureDevCommit($Fixture, [string]$Message, [string]$AppText) {
+    Write-FixtureFile (Join-Path $Fixture.Dev 'GUI\frontend\src\app.txt') $AppText
+    Invoke-FixtureGit $Fixture.Dev @('add', '-A') | Out-Null
+    Invoke-FixtureGit $Fixture.Dev @('commit', '-m', $Message) | Out-Null
 }
 function Get-DistContent([string]$RunDir) {
     $path = Join-Path $RunDir 'GUI\frontend\dist\index.html'
@@ -704,6 +724,294 @@ try {
     $r = Invoke-ReleaseCase $f -Options @{ DryRun = $true }
     Assert-CaseFailed $r '覆盖层被跟踪 DryRun' '预检阻塞：运行目录有被跟踪的本机覆盖层'
     $Passed += 1; Write-Host '通过：被跟踪的本机覆盖层拒绝发布'
+
+    # 28 迭代发布：开发目录非 exp/* 分支 → 拒绝
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-28'
+    $f = New-Fixture 'iter-branch'
+    $headBefore = Get-FixtureHead $f.Run
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseFailed $r '迭代非实验分支' 'exp/'
+    Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '迭代非实验分支：运行目录被改动'
+    Assert ($TestState.NpmCalls.Count -eq 0 -and $TestState.StopCalls.Count -eq 0) '迭代非实验分支：仍构建/停 GUI'
+    $Passed += 1; Write-Host '通过：迭代发布拒绝非 exp/* 分支'
+
+    # 29 迭代发布：分离 HEAD、lab 不动、wip 标签当日序号递增、不再确认测试
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-29'
+    $f = New-IterateFixture 'iter-normal'
+    $labBefore = Invoke-FixtureGit $f.Run @('rev-parse', 'lab')
+    $runHeadBefore = Get-FixtureHead $f.Run
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '迭代发布'
+    Assert ((Get-FixtureBranch $f.Run) -eq 'HEAD') '迭代发布：运行目录未进入分离 HEAD'
+    Assert ((Get-FixtureHead $f.Run) -eq (Get-FixtureHead $f.Dev)) '迭代发布：运行目录未到实验分支 HEAD'
+    Assert ((Invoke-FixtureGit $f.Run @('rev-parse', 'lab')) -eq $labBefore) '迭代发布：lab 分支被移动'
+    Assert ((Get-FixtureWipTags $f.Run) -contains "lab-wip-$Today-1") "迭代发布：未打 lab-wip-$Today-1"
+    Assert ((Get-FixtureTags $f.Run) -notcontains "lab-$Today-1") '迭代发布：打了正式标签'
+    Assert ($TestState.HeadAtStop -eq $runHeadBefore) '迭代发布：停 GUI 之前代码已被改动'
+    Assert ((Get-DistContent $f.Run) -eq 'NEW BUILD') '迭代发布：dist 未更新'
+    Assert ($TestState.Prompts.Count -eq 0) '迭代发布：仍要求确认已通过测试'
+    Assert ($TestState.StopCalls.Count -eq 1 -and $TestState.StartCalls.Count -eq 1) '迭代发布：停止/启动次数不对'
+    $log = Get-Content -LiteralPath (Join-Path $f.Run 'tmp\release.log') -Raw
+    Assert ($log -match '\[迭代\]') '迭代发布：日志缺少 [迭代] 标识'
+    Add-FixtureDevCommit $f '再改一次' "v4`n"
+    $r2 = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r2 '迭代第二次'
+    Assert ((Get-FixtureWipTags $f.Run) -contains "lab-wip-$Today-2") "迭代第二次：未打 lab-wip-$Today-2"
+    Assert ((Invoke-FixtureGit $f.Run @('rev-parse', 'lab')) -eq $labBefore) '迭代第二次：lab 分支被移动'
+    $Passed += 1; Write-Host '通过：迭代发布分离 HEAD + wip 标签序号递增'
+
+    # 30 迭代参数回存：落到实验分支（不在 master），回存后继续完成发布
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-30'
+    $f = New-IterateFixture 'iter-params'
+    Write-FixtureFile (Join-Path $f.Run 'params\mapping.yaml') "base: run`n"
+    $masterBefore = Invoke-FixtureGit $f.Dev @('rev-parse', 'master')
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '迭代参数回存'
+    $devLog = Invoke-FixtureGit $f.Dev @('log', '-1', '--format=%s')
+    Assert ($devLog -match "^运行参数回存 $(Get-Date -Format 'yyyy-MM-dd')$") "迭代参数回存：提交信息不对：$devLog"
+    Assert ((Get-FixtureBranch $f.Dev) -eq 'exp/20261125-probe') '迭代参数回存：回存提交不在实验分支上'
+    Assert ((Invoke-FixtureGit $f.Dev @('rev-parse', 'master')) -eq $masterBefore) '迭代参数回存：master 被推进'
+    Assert ((Invoke-FixtureGit $f.Dev @('log', 'master', '--format=%s')) -notmatch '运行参数回存') '迭代参数回存：回存提交进了 master'
+    Assert (-not (Invoke-FixtureGit $f.Run @('status', '--porcelain'))) '迭代参数回存：运行目录仍有未提交改动'
+    Assert ((Get-Content -LiteralPath (Join-Path $f.Run 'params\mapping.yaml') -Raw).Trim() -eq 'base: run') '迭代参数回存：运行目录参数不是回存后版本'
+    Assert ((Get-FixtureHead $f.Run) -eq (Get-FixtureHead $f.Dev)) '迭代参数回存：回存后未继续完成发布'
+    Assert ((Get-FixtureWipTags $f.Run) -contains "lab-wip-$Today-1") '迭代参数回存：未打 wip 标签'
+    $Passed += 1; Write-Host '通过：迭代参数回存到实验分支后继续发布'
+
+    # 31 迭代：实验分支不包含运行目录当前版本（改写已发布提交）→ 停 GUI 之前停止
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-31'
+    $f = New-IterateFixture 'iter-rewritten'
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '迭代改写前置发布'
+    $runHeadBefore = Get-FixtureHead $f.Run
+    $tagsBefore = (Get-FixtureTags $f.Run).Count
+    Invoke-FixtureGit $f.Dev @('reset', '--hard', 'HEAD~1') | Out-Null
+    Add-FixtureDevCommit $f '改写后的提交' "v3b`n"
+    $r2 = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseFailed $r2 '迭代改写历史' '实验分支未包含运行目录当前版本'
+    Assert ($TestState.StopCalls.Count -eq 0) '迭代改写历史：仍停了 GUI'
+    Assert ($TestState.NpmCalls.Count -eq 0) '迭代改写历史：仍执行了构建'
+    Assert ((Get-FixtureHead $f.Run) -eq $runHeadBefore) '迭代改写历史：运行目录被改动'
+    Assert ((Get-FixtureTags $f.Run).Count -eq $tagsBefore) '迭代改写历史：打了新标签'
+    $Passed += 1; Write-Host '通过：迭代发布拒绝改写过的实验分支'
+
+    # 32 迭代构建失败（发布前在 lab）→ 回到 lab 原提交，删除新 wip 标签
+    $TestState.Case = @{ BuildFailure = $true }
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-32'
+    $f = New-IterateFixture 'iter-buildfail-lab'
+    $headBefore = Get-FixtureHead $f.Run
+    $labBefore = Invoke-FixtureGit $f.Run @('rev-parse', 'lab')
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseFailed $r '迭代构建失败（lab）' '构建失败'
+    Assert ((Get-FixtureBranch $f.Run) -eq 'lab') '迭代构建失败（lab）：未回到 lab 分支'
+    Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '迭代构建失败（lab）：未退回原提交'
+    Assert ((Invoke-FixtureGit $f.Run @('rev-parse', 'lab')) -eq $labBefore) '迭代构建失败（lab）：lab 分支被移动'
+    Assert ((Get-FixtureWipTags $f.Run).Count -eq 0) '迭代构建失败（lab）：新 wip 标签未删除'
+    Assert ((Get-DistContent $f.Run) -eq 'OLD BUILD') '迭代构建失败（lab）：旧 dist 未保留'
+    Assert ($TestState.StopCalls.Count -eq 1 -and $TestState.StartCalls.Count -eq 1) '迭代构建失败（lab）：未按原版本重启 GUI'
+    $Passed += 1; Write-Host '通过：迭代构建失败从 lab 退回 lab'
+
+    # 33 迭代构建失败（发布前是分离 HEAD）→ 退回原分离提交，lab 不动
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-33'
+    $f = New-IterateFixture 'iter-buildfail-detached'
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '迭代构建失败前置发布'
+    $headBefore = Get-FixtureHead $f.Run
+    $labBefore = Invoke-FixtureGit $f.Run @('rev-parse', 'lab')
+    Add-FixtureDevCommit $f '再改一次' "v4`n"
+    $TestState.Case = @{ BuildFailure = $true }
+    $r2 = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseFailed $r2 '迭代构建失败（分离）' '构建失败'
+    Assert ((Get-FixtureBranch $f.Run) -eq 'HEAD') '迭代构建失败（分离）：未保持分离 HEAD'
+    Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '迭代构建失败（分离）：未退回原分离提交'
+    Assert ((Invoke-FixtureGit $f.Run @('rev-parse', 'lab')) -eq $labBefore) '迭代构建失败（分离）：lab 分支被移动'
+    Assert ((Get-FixtureWipTags $f.Run).Count -eq 1) '迭代构建失败（分离）：新 wip 标签未删除'
+    Assert ((Get-DistContent $f.Run) -eq 'NEW BUILD') '迭代构建失败（分离）：旧 dist 未保留'
+    $Passed += 1; Write-Host '通过：迭代构建失败从分离 HEAD 退回原提交'
+
+    # 34 迭代：GUI 忙 → 拒绝，不停 GUI、不改代码
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-34'
+    $TestState.Health.hardware_busy = $true
+    $f = New-IterateFixture 'iter-busy'
+    $headBefore = Get-FixtureHead $f.Run
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseFailed $r '迭代忙时拒绝' '硬件任务忙'
+    Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '迭代忙时拒绝：运行目录被改动'
+    Assert ($TestState.NpmCalls.Count -eq 0 -and $TestState.StopCalls.Count -eq 0) '迭代忙时拒绝：仍构建/停 GUI'
+    $Passed += 1; Write-Host '通过：迭代发布忙时拒绝'
+
+    # 35 迭代：依赖变化 → 更新代码后停下，-Resume 续跑复用 wip 标签
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-35'
+    $f = New-IterateFixture 'iter-deps'
+    Write-FixtureFile (Join-Path $f.Dev 'pyproject.toml') "[project]`nname = 'fixture'`nversion = '0.2.0'`n"
+    Invoke-FixtureGit $f.Dev @('add', '-A') | Out-Null
+    Invoke-FixtureGit $f.Dev @('commit', '-m', '升级依赖') | Out-Null
+    $runHeadBefore = Get-FixtureHead $f.Run
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true } -Answers @('y')
+    Assert-CaseFailed $r '迭代依赖变化' 'pip install'
+    Assert ($TestState.HeadAtStop -eq $runHeadBefore) '迭代依赖变化：停 GUI 之前代码已被改动'
+    Assert ((Get-FixtureHead $f.Run) -eq (Get-FixtureHead $f.Dev)) '迭代依赖变化：GUI 停止后未更新代码'
+    Assert ((Get-DistContent $f.Run) -eq 'OLD BUILD') '迭代依赖变化：不应构建'
+    Assert ($TestState.StopCalls.Count -eq 1 -and $TestState.StartCalls.Count -eq 0) '迭代依赖变化：应停 GUI 且不启动'
+    $r2 = Invoke-ReleaseCase $f -Options @{ Iterate = $true; Resume = $true }
+    Assert-CaseOk $r2 '迭代依赖 -Resume'
+    Assert ($r2.Output -match '复用') '迭代依赖 -Resume：未复用已有 wip 标签'
+    Assert ((Get-FixtureWipTags $f.Run).Count -eq 1) '迭代依赖 -Resume：重复打了 wip 标签'
+    Assert ((Get-DistContent $f.Run) -eq 'NEW BUILD') '迭代依赖 -Resume：dist 未更新'
+    $Passed += 1; Write-Host '通过：迭代依赖变化停下 + -Resume 续跑'
+
+    # 36 -Iterate -BackfillOnly：只回存，不动代码与 GUI；无改动时以 0 退出
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-36'
+    $f = New-IterateFixture 'backfill'
+    Write-FixtureFile (Join-Path $f.Run 'params\mapping.yaml') "base: run`n"
+    $runHeadBefore = Get-FixtureHead $f.Run
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true; BackfillOnly = $true }
+    Assert-CaseOk $r '仅回存'
+    $devLog = Invoke-FixtureGit $f.Dev @('log', '-1', '--format=%s')
+    Assert ($devLog -match "^运行参数回存 $(Get-Date -Format 'yyyy-MM-dd')$") "仅回存：提交信息不对：$devLog"
+    Assert ((Get-FixtureHead $f.Run) -eq $runHeadBefore) '仅回存：运行目录 HEAD 被改动'
+    Assert ((Get-FixtureBranch $f.Run) -eq 'lab') '仅回存：运行目录分支被改动'
+    Assert ($TestState.StopCalls.Count -eq 0 -and $TestState.StartCalls.Count -eq 0) '仅回存：停/启了 GUI'
+    Assert ($TestState.NpmCalls.Count -eq 0) '仅回存：执行了构建'
+    Assert ((Get-FixtureTags $f.Run).Count -eq 1) '仅回存：打了标签'
+    Assert (-not (Invoke-FixtureGit $f.Run @('status', '--porcelain'))) '仅回存：运行目录仍有未提交改动'
+    $devHeadAfter = Get-FixtureHead $f.Dev
+    $r2 = Invoke-ReleaseCase $f -Options @{ Iterate = $true; BackfillOnly = $true }
+    Assert-CaseOk $r2 '仅回存无改动'
+    Assert ($r2.Output -match '无需回存') '仅回存无改动：未报告无需回存'
+    Assert ((Get-FixtureHead $f.Dev) -eq $devHeadAfter) '仅回存无改动：产生了空回存提交'
+    $r3 = Invoke-ReleaseCase $f -Options @{ BackfillOnly = $true }
+    Assert-CaseFailed $r3 '仅回存缺 -Iterate' '必须与 -Iterate 同用'
+    $Passed += 1; Write-Host '通过：-BackfillOnly 只回存不动代码与 GUI'
+
+    # 37 正式发布：运行目录分离于 wip 且 params/ 有改动 → 停 GUI 之前停止
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-37'
+    $f = New-IterateFixture 'formal-from-wip'
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '正式收尾前置迭代'
+    Invoke-FixtureGit $f.Dev @('switch', 'master') | Out-Null
+    Write-FixtureFile (Join-Path $f.Run 'params\mapping.yaml') "base: wip`n"
+    $runHeadBefore = Get-FixtureHead $f.Run
+    $r2 = Invoke-ReleaseCase $f
+    Assert-CaseFailed $r2 '正式从 wip 带参数' 'BackfillOnly'
+    Assert ($TestState.StopCalls.Count -eq 0) '正式从 wip 带参数：仍停了 GUI'
+    Assert ($TestState.NpmCalls.Count -eq 0) '正式从 wip 带参数：仍执行了构建'
+    Assert ((Get-FixtureHead $f.Run) -eq $runHeadBefore) '正式从 wip 带参数：运行目录被改动'
+    Assert ((Get-FixtureBranch $f.Run) -eq 'HEAD') '正式从 wip 带参数：运行目录分支被改动'
+    $Passed += 1; Write-Host '通过：正式发布拒绝 wip 状态的未回存参数'
+
+    # 38 正式发布：分离且干净 → 回到 lab 并快进到 master，打正式标签
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-38'
+    Invoke-FixtureGit $f.Run @('checkout', '--', 'params/') | Out-Null
+    $r3 = Invoke-ReleaseCase $f
+    Assert-CaseOk $r3 '正式从 wip 回到 lab'
+    Assert ((Get-FixtureBranch $f.Run) -eq 'lab') '正式从 wip 回到 lab：未回到 lab 分支'
+    Assert ((Get-FixtureHead $f.Run) -eq (Get-FixtureHead $f.Dev)) '正式从 wip 回到 lab：未快进到 master'
+    Assert ((Get-FixtureTags $f.Run) -contains "lab-$Today-1") "正式从 wip 回到 lab：未打 lab-$Today-1"
+    Assert ((Get-DistContent $f.Run) -eq 'NEW BUILD') '正式从 wip 回到 lab：dist 未更新'
+    Assert ($TestState.StopCalls.Count -eq 1 -and $TestState.StartCalls.Count -eq 1) '正式从 wip 回到 lab：停止/启动次数不对'
+    $Passed += 1; Write-Host '通过：正式发布从分离 HEAD 回到 lab 并快进'
+
+    # 39 回滚：从分离状态回滚到正式标签 → 回到 lab 分支
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-39'
+    $f = New-IterateFixture 'rollback-from-detached'
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '分离回滚前置迭代'
+    $tagCommit = Invoke-FixtureGit $f.Run @('rev-parse', 'lab-20260101-1')
+    $r2 = Invoke-ReleaseCase $f -Options @{ Rollback = 'lab-20260101-1' }
+    Assert-CaseOk $r2 '从分离回滚到正式标签'
+    Assert ((Get-FixtureBranch $f.Run) -eq 'lab') '从分离回滚到正式标签：未回到 lab 分支'
+    Assert ((Get-FixtureHead $f.Run) -eq $tagCommit) '从分离回滚到正式标签：HEAD 未回到标签'
+    Assert ((Invoke-FixtureGit $f.Run @('rev-parse', 'lab')) -eq $tagCommit) '从分离回滚到正式标签：lab 未指向标签'
+    Assert ((Get-DistContent $f.Run) -eq 'NEW BUILD') '从分离回滚到正式标签：未重建前端'
+    $Passed += 1; Write-Host '通过：从分离 HEAD 回滚到正式标签'
+
+    # 40 回滚到 wip 标签：分离 HEAD，lab 分支不动
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-40'
+    $f = New-IterateFixture 'rollback-wip'
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r 'wip 回滚前置迭代'
+    $wip1 = Invoke-FixtureGit $f.Run @('rev-parse', "lab-wip-$Today-1")
+    $labBefore = Invoke-FixtureGit $f.Run @('rev-parse', 'lab')
+    Add-FixtureDevCommit $f '再改一次' "v4`n"
+    $r2 = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r2 'wip 回滚第二次迭代'
+    $r3 = Invoke-ReleaseCase $f -Options @{ Rollback = "lab-wip-$Today-1" }
+    Assert-CaseOk $r3 '回滚到 wip 标签'
+    Assert ((Get-FixtureBranch $f.Run) -eq 'HEAD') '回滚到 wip 标签：未保持分离 HEAD'
+    Assert ((Get-FixtureHead $f.Run) -eq $wip1) '回滚到 wip 标签：HEAD 未回到 wip 标签'
+    Assert ((Invoke-FixtureGit $f.Run @('rev-parse', 'lab')) -eq $labBefore) '回滚到 wip 标签：lab 分支被移动'
+    Assert ((Get-DistContent $f.Run) -eq 'NEW BUILD') '回滚到 wip 标签：未重建前端'
+    $Passed += 1; Write-Host '通过：回滚到 wip 标签保持 lab 不动'
+
+    # 41 DryRun：迭代模式打印模式/目标/标签；正式模式提示 wip 状态的参数风险
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-41'
+    $f = New-IterateFixture 'dryrun-iterate'
+    Invoke-FixtureGit $f.Run @('fetch', 'origin') | Out-Null
+    $headBefore = Get-FixtureHead $f.Run
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true; DryRun = $true }
+    Assert-CaseOk $r '迭代 DryRun'
+    Assert ($r.Output -match '模式：迭代') '迭代 DryRun：未打印模式'
+    Assert ($r.Output -match '目标：origin/exp/20261125-probe') '迭代 DryRun：未打印目标分支'
+    Assert ($r.Output -match "lab-wip-$Today-1") '迭代 DryRun：未打印将打的 wip 标签'
+    Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '迭代 DryRun：运行目录被改动'
+    Assert ((Get-FixtureTags $f.Run).Count -eq 1) '迭代 DryRun：打了标签'
+    Assert ($TestState.NpmCalls.Count -eq 0 -and $TestState.StopCalls.Count -eq 0 -and $TestState.StartCalls.Count -eq 0) '迭代 DryRun：执行了构建/重启'
+    $r2 = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r2 '正式 DryRun 前置迭代'
+    Invoke-FixtureGit $f.Dev @('switch', 'master') | Out-Null
+    $r3 = Invoke-ReleaseCase $f -Options @{ DryRun = $true }
+    Assert-CaseOk $r3 '正式 DryRun（wip 状态）'
+    Assert ($r3.Output -match '模式：正式') '正式 DryRun：未打印模式'
+    Assert ($r3.Output -match "运行目录在 lab-wip-$Today-1") '正式 DryRun：未提示 wip 状态的参数风险'
+    Assert ($r3.Output -match '分离 HEAD') '正式 DryRun：未打印运行目录分离状态'
+    $Passed += 1; Write-Host '通过：DryRun 打印模式与 wip 状态提示'
+
+    # 42 正式发布从分离 HEAD 出发构建失败 → 退回原分离提交，不留在 lab 上
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-42'
+    $f = New-IterateFixture 'formal-buildfail-detached'
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '正式构建失败前置迭代'
+    $wipHead = Get-FixtureHead $f.Run
+    Invoke-FixtureGit $f.Dev @('switch', 'master') | Out-Null
+    $TestState.Case = @{ BuildFailure = $true }
+    $r2 = Invoke-ReleaseCase $f
+    Assert-CaseFailed $r2 '正式从分离构建失败' '构建失败'
+    Assert ((Get-FixtureBranch $f.Run) -eq 'HEAD') '正式从分离构建失败：未退回分离 HEAD'
+    Assert ((Get-FixtureHead $f.Run) -eq $wipHead) '正式从分离构建失败：未退回原分离提交'
+    Assert ((Get-FixtureTags $f.Run) -notcontains "lab-$Today-1") '正式从分离构建失败：新正式标签未删除'
+    Assert ((Get-DistContent $f.Run) -eq 'NEW BUILD') '正式从分离构建失败：旧 dist 未保留'
+    Assert ($TestState.StartCalls.Count -eq 1) '正式从分离构建失败：未按原版本重启 GUI'
+    $Passed += 1; Write-Host '通过：正式发布从分离 HEAD 构建失败退回原提交'
 
     Write-Host "全部 $Passed 项发布演练通过；未连接真实 8000、未启动 GUI、未触碰真实运行目录。"
     Remove-Item -LiteralPath $TestRoot -Recurse -Force
