@@ -782,3 +782,35 @@ def test_advisory_warnings_do_not_withhold_phase_noise_deg(rig, monkeypatch):
     for artifact in (run_format.RESPONSE_PLOT, run_format.LOCAL_PLOT, run_format.TRANSFER_PLOT, run_format.NOISE_PLOT):
         assert (run_dir / "results" / artifact).stat().st_size > 0
     _assert_parked(rig)
+
+
+def test_write_temperature_reconnects_on_visa_timeout_and_fails_if_unrecoverable(rig, monkeypatch):
+    """Temp_Switch 遇到 VisaIOError 超时应断开重连重试并严格回读；连续三次仍失败须上抛。"""
+    from pyvisa.constants import StatusCode
+    from pyvisa.errors import VisaIOError
+
+    ctx = _ctx(rig)
+    monkeypatch.setattr(preparation.time, "sleep", lambda _s: None)
+    try:
+        ctx.execute(["A01", "A02"])
+        original_setup_dc = rig.temp.setup_dc
+        failures_left = 1
+
+        def flaky_setup_dc(volts, *, channel):
+            nonlocal failures_left
+            if failures_left > 0:
+                failures_left -= 1
+                raise VisaIOError(StatusCode.error_timeout)
+            return original_setup_dc(volts, channel=channel)
+
+        monkeypatch.setattr(rig.temp, "setup_dc", flaky_setup_dc)
+        out = preparation.write_temperature(ctx, True)
+        assert out == {"output": True, "dc_setting_v": 5.0}
+        assert ("temp", "disconnect") in rig.events
+        assert ("temp", "connect") in rig.events
+
+        failures_left = 5
+        with pytest.raises(VisaIOError):
+            preparation.write_temperature(ctx, True)
+    finally:
+        ctx.finish()

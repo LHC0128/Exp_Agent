@@ -27,16 +27,20 @@ import json
 import math
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 import numpy as np
+from pyvisa.errors import VisaIOError
 from scipy.signal import welch
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
 import yaml
+
+try:
+    import hardware_gate as _hg  # noqa: F401
+except ImportError:
+    _REPO_ROOT = Path(__file__).resolve().parents[2]
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
 
 from hardware_gate import require_hardware_access, runtime_root
 from signal_generator import DG900Instrument
@@ -277,16 +281,34 @@ def _connect_or_reuse_pump(ctx: StudyContext) -> DG900Instrument | Any:
 
 
 def _set_pump_output(pump_dev: Any, enabled: bool) -> bool:
-    pump_dev.set_output(bool(enabled), channel=PUMP_CHANNEL)
-    pump_dev.wait_for_operation_complete()
-    pump_dev.raise_for_errors()
-    actual = bool(pump_dev.get_output(channel=PUMP_CHANNEL))
-    if actual is not bool(enabled):
-        raise SafetyAbort(
-            f"王湾pump ({PUMP_RESOURCE}) CH{PUMP_CHANNEL} 回读为 {'ON' if actual else 'OFF'}，"
-            f"与目标 {'ON' if enabled else 'OFF'} 不符"
-        )
-    return actual
+    last_exc: VisaIOError | None = None
+    can_reconnect = callable(getattr(pump_dev, "disconnect", None)) and callable(getattr(pump_dev, "connect", None))
+    for attempt in range(3):
+        if attempt > 0:
+            print(f"[警告] 王湾pump CH{PUMP_CHANNEL} VISA 超时/异常，断开重连重试（{attempt}/2）：{last_exc}", flush=True)
+            try:
+                pump_dev.disconnect()
+            except Exception:
+                pass
+            time.sleep(0.3)
+        try:
+            if attempt > 0:
+                pump_dev.connect()
+            pump_dev.set_output(bool(enabled), channel=PUMP_CHANNEL)
+            pump_dev.wait_for_operation_complete()
+            pump_dev.raise_for_errors()
+            actual = bool(pump_dev.get_output(channel=PUMP_CHANNEL))
+            if actual is not bool(enabled):
+                raise SafetyAbort(
+                    f"王湾pump ({PUMP_RESOURCE}) CH{PUMP_CHANNEL} 回读为 {'ON' if actual else 'OFF'}，"
+                    f"与目标 {'ON' if enabled else 'OFF'} 不符"
+                )
+            return actual
+        except VisaIOError as exc:
+            last_exc = exc
+            if attempt == 2 or not can_reconnect:
+                raise
+    raise AssertionError("unreachable")
 
 
 def _apply_noise_state(
@@ -744,6 +766,9 @@ def run_capture(args: argparse.Namespace) -> int:
         ctx.save()
         if capture_failed is None and all_errors:
             raise SafetyAbort("安全收尾存在未完成项：" + "；".join(all_errors))
+
+    if capture_failed is not None:
+        raise capture_failed
 
     summary = analyze_study(study_dir.root, welch_segment_s=ctx.params.welch_segment_s)
     print(f"完成采集与 PSD 分析：{study_dir.root}")

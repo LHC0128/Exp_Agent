@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict
+import time
 
 from aigtek_1200b import Aigtek1200BInstrument
 from gs200 import GS200Instrument
 from hardware_gate import HardwareAccessDenied
 from lockin_amplifier import DemodulatorConfig, OscillatorConfig, SignalInputConfig, demod, lockin_capabilities
+from pyvisa.errors import VisaIOError
 from signal_generator.types import normalize_output_load
 from tec_controller import TECInstrument
 
@@ -273,17 +275,40 @@ def _verify_generators(ctx):
         source.raise_for_errors()
 
 
-def write_temperature(ctx, enabled):
-    """开关写入与回读通过后才开始稳定等待或写数据。"""
-    device, channel = _route(ctx, "temp")
-    volts = prep.TEMP_SWITCH_ON_V if enabled else 0.
-    validate_safety_limit(TEMP_SWITCH_KEY, volts, load_safety_limits(ctx.root))
+def _write_temperature_once(device, channel, enabled, volts):
     set_temperature_switch(device, enabled, channel=channel)
+    if callable(getattr(device, "wait_for_operation_complete", None)):
+        device.wait_for_operation_complete()
     readback = device.get_dc_voltage(channel=channel)
     if (not device.get_output(channel=channel) or device.get_shape(channel=channel).upper() != "DC"
             or not math.isclose(readback, volts, abs_tol=1e-4)):
         raise SafetyAbort(f"温控开关未回读为 DC {volts:g} V + 输出 ON")
     return dict(output=True, dc_setting_v=readback)
+
+
+def write_temperature(ctx, enabled):
+    """开关写入与回读通过后才开始稳定等待或写数据；DG900 VXI-11 瞬时超时时重连重试。"""
+    device, channel = _route(ctx, "temp")
+    volts = prep.TEMP_SWITCH_ON_V if enabled else 0.
+    validate_safety_limit(TEMP_SWITCH_KEY, volts, load_safety_limits(ctx.root))
+    can_reconnect = callable(getattr(device, "disconnect", None)) and callable(getattr(device, "connect", None))
+    last_exc: VisaIOError | None = None
+    for attempt in range(3):
+        if attempt > 0:
+            print(f"[警告] Temp_Switch CH{channel} VISA 通信超时/异常，断开重连后重试（{attempt}/2）：{last_exc}", flush=True)
+            try:
+                device.disconnect()
+            except Exception:
+                pass
+            time.sleep(0.3)
+        try:
+            if attempt > 0:
+                device.connect()
+            return _write_temperature_once(device, channel, enabled, volts)
+        except VisaIOError as exc:
+            last_exc = exc
+            if attempt == 2 or not can_reconnect:
+                raise
 
 
 def _dc_level(device, channel, value):
