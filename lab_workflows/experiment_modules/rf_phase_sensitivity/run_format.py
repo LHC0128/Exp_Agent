@@ -33,7 +33,8 @@ TRANSFER_PLOT = "phase_transfer.png"
 NOISE_TABLE = "phase_noise.csv"
 NOISE_PLOT = "phase_noise.png"
 _ARRAYS = {"xy": ("time_s", "x_v", "y_v"), "scope": ("time_s", "reference_v", "coil_v")}
-_MAX_POINTS = 1_000_000
+_MAX_POINTS = 5_000_000
+_LEGACY_V1_ADDED_KEYS = frozenset({"DEMOD0_DYNAMIC_TC", "DEMOD0_DYNAMIC_RATE"})
 
 
 def initial_metadata(p: RfPhaseSensitivityParams):
@@ -56,12 +57,18 @@ def read_config(path):
 
 
 def parameters(config):
-    if config.get("schema_version") != RfPhaseSensitivityParams.schema_version:
+    version = config.get("schema_version")
+    if version not in {1, RfPhaseSensitivityParams.schema_version}:
         raise ValueError("不支持该参数版本")
     values = config["parameters"]
-    if not isinstance(values, dict) or values.keys() != RfPhaseSensitivityParams.external_names().keys():
+    if not isinstance(values, dict):
+        raise ValueError("运行参数快照格式无效")
+    expected = set(RfPhaseSensitivityParams.external_names())
+    if version == 1:
+        expected -= _LEGACY_V1_ADDED_KEYS
+    if values.keys() != expected:
         raise ValueError("运行参数快照缺键或包含未知字段")
-    return RfPhaseSensitivityParams.from_external(values, schema_version=config["schema_version"])
+    return RfPhaseSensitivityParams.from_external(values, schema_version=version)
 
 
 def recorded_parameters(config):

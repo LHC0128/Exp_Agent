@@ -323,49 +323,75 @@ def _configure_x_bias(ctx):
     ctx.outputs["X 偏置"] = (f"DC {bias:+.3f} V（输出 ON）" if bias else "0 V（输出 OFF）")
 
 
-def _configure_lockin(ctx):
-    """配置 MFLI Signal Input 1 与独立读出 Demod 4（绑定 Osc 2），避开 MOD 占用的 Demod 1–3。"""
+def configure_readout_demodulator(
+    ctx, *, rate_sa_s: float, time_constant_s: float, phase_deg: float,
+    state_key: str, actual_rate_key: str, configure_input: bool, stage_tag: str,
+):
+    """配置并严格回读 MFLI Signal Input 1 / Osc 2 与独立读出解调器 Demod 4。"""
     p = ctx.params
     mfli = ctx.devices["hf2"]
-    demod.configure_signal_input(mfli, SignalInputConfig(input_index=0, range=p.demod0_signal_range_v, diff=False))
-    demod.configure_oscillator(mfli, OscillatorConfig(osc_index=MOD_CARRIER_OSC_IDX, frequency=p.y_rf_freq_hz))
+    if configure_input:
+        demod.configure_signal_input(mfli, SignalInputConfig(input_index=0, range=p.demod0_signal_range_v, diff=False))
+        demod.configure_oscillator(mfli, OscillatorConfig(osc_index=MOD_CARRIER_OSC_IDX, frequency=p.y_rf_freq_hz))
     config = DemodulatorConfig(
         demod_index=p.demod0_idx,
-        rate=p.demod0_rate_sa_s,
+        rate=rate_sa_s,
         input_channel=0,
         osc_select=MOD_CARRIER_OSC_IDX,
-        time_constant=p.demod0_tc_s,
+        time_constant=time_constant_s,
         order=p.demod0_order,
-        phase=0.0,
+        phase=phase_deg,
     )
     actual_rate = float(demod.configure_demodulator(mfli, config, for_acquisition=True))
     if not math.isfinite(actual_rate) or actual_rate <= 0:
         raise RuntimeError(f"MFLI Demod{p.demod0_idx + 1} 实际采样率无效")
-    ctx.state["actual_rates"]["demod0_Sa_s"] = actual_rate
+    ctx.state["actual_rates"][actual_rate_key] = actual_rate
     readback_phase = float(mfli.get_double(f"{mfli.demod_path(p.demod0_idx)}/phaseshift"))
-    drift = prep.phase_drift_deg(readback_phase, 0.0)
+    drift = prep.phase_drift_deg(readback_phase, phase_deg)
     if drift > prep.PHASE_READBACK_TOLERANCE_DEG:
-        raise RuntimeError(f"MFLI Demod{p.demod0_idx + 1} 解调相位回读 {readback_phase:g}° 与设定 0° 相差 {drift:.3g}°")
-    ctx.state["lockin"] = dict(
+        raise RuntimeError(
+            f"MFLI Demod{p.demod0_idx + 1} 解调相位回读 {readback_phase:g}° 与设定 {phase_deg:g}° 相差 {drift:.3g}°"
+        )
+    record = dict(
         model=mfli.model,
         device_id=mfli.device_id,
         demod_idx=p.demod0_idx,
         osc_select=MOD_CARRIER_OSC_IDX,
-        requested_rate_Sa_s=p.demod0_rate_sa_s,
+        requested_rate_Sa_s=rate_sa_s,
         actual_rate_Sa_s=actual_rate,
-        time_constant_s=p.demod0_tc_s,
+        time_constant_s=time_constant_s,
         order=p.demod0_order,
         signal_range_v=p.demod0_signal_range_v,
         rf_frequency_Hz=p.y_rf_freq_hz,
         readback={node: float(mfli.get_double(f"{mfli.demod_path(p.demod0_idx)}/{node}"))
                   for node in ("rate", "timeconstant", "phaseshift")},
         phase_deg=readback_phase,
-        phase_requested_deg=0.0,
+        phase_requested_deg=phase_deg,
         capabilities=dict(mfli.capabilities),
     )
+    ctx.state[state_key] = record
     ctx.outputs["MFLI"] = (
-        f"Demod{p.demod0_idx + 1}（idx {p.demod0_idx}，Osc{MOD_CARRIER_OSC_IDX + 1}）请求 {p.demod0_rate_sa_s:g} Sa/s、"
-        f"TC {p.demod0_tc_s * 1e3:g} ms、参考 {p.y_rf_freq_hz:g} Hz、相位 {readback_phase:g}°（传输率回读 {actual_rate:g} Sa/s）"
+        f"Demod{p.demod0_idx + 1}（{stage_tag}，Osc{MOD_CARRIER_OSC_IDX + 1}）请求 {rate_sa_s:g} Sa/s、"
+        f"TC {time_constant_s:g} s、参考 {p.y_rf_freq_hz:g} Hz、相位 {readback_phase:g}°（传输率回读 {actual_rate:g} Sa/s）"
+    )
+    return record
+
+
+def _configure_lockin(ctx):
+    """初始化 A03/A04 静态相位读出所需的 MFLI 输入、振荡器与 Demod 4 窄带滤波。"""
+    p = ctx.params
+    return configure_readout_demodulator(
+        ctx, rate_sa_s=p.demod0_rate_sa_s, time_constant_s=p.demod0_tc_s, phase_deg=0.0,
+        state_key="lockin", actual_rate_key="demod0_Sa_s", configure_input=True, stage_tag="A03/A04",
+    )
+
+
+def configure_dynamic_lockin(ctx, *, phase_deg: float):
+    """仅在 A05/A06 将 Demod 4 切换到高带宽低通滤波与高采样率，保持对齐后的解调相位。"""
+    p = ctx.params
+    return configure_readout_demodulator(
+        ctx, rate_sa_s=p.demod0_dynamic_rate_sa_s, time_constant_s=p.demod0_dynamic_tc_s, phase_deg=float(phase_deg),
+        state_key="dynamic_lockin", actual_rate_key="demod0_dynamic_Sa_s", configure_input=False, stage_tag="A05/A06",
     )
 
 

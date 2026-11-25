@@ -238,7 +238,7 @@ def rig(monkeypatch, tmp_path):
     monkeypatch.setenv(PROGRESS_PROTOCOL_ENV, "jsonl")
     p = replace(RfPhaseSensitivityParams(), pm_frequencies_hz=[20., 40.], pm_tone_duration_s=.5,
                 noise_duration_s=8., welch_segment_s=2., static_point_duration_s=.05,
-                demod0_rate_sa_s=1000., system_settle_s=.1, temp_switch_on_lag_s=.1)
+                demod0_rate_sa_s=1000., demod0_dynamic_rate_sa_s=2000., system_settle_s=.1, temp_switch_on_lag_s=.1)
     rnd = np.random.default_rng(7429)
     dev = lockin.device_id
 
@@ -248,7 +248,10 @@ def rig(monkeypatch, tmp_path):
 
     def collect(instr, config, index, rate, **kwargs):
         assert index == READOUT_DEMOD_IDX
-        assert kwargs["strict_cleanup"] and config.grid_mode == 4 and kwargs["requested_rate"] == p.demod0_rate_sa_s
+        tc_now = lockin.values[f"/{dev}/demods/{READOUT_DEMOD_IDX}/timeconstant"]
+        expected_req = (p.demod0_dynamic_rate_sa_s
+                        if math.isclose(tc_now, p.demod0_dynamic_tc_s, rel_tol=1e-6) else p.demod0_rate_sa_s)
+        assert kwargs["strict_cleanup"] and config.grid_mode == 4 and kwargs["requested_rate"] == expected_req
         assert temp.channels[2]["offset"] == 0.
         events.append(("daq", config.duration, center()))
         t = np.arange(config.grid_cols) / rate
@@ -299,6 +302,9 @@ def _assert_parked(rig):
 def test_preflight_and_defaults():
     p = RfPhaseSensitivityParams.from_yaml(ROOT / "params/experiments/rf-phase-sensitivity.yaml")
     assert p == RfPhaseSensitivityParams() and p.demod0_idx == 3 and ADAPTER.preflight({}) == []
+    assert p.demod0_tc_s == pytest.approx(0.001) and p.demod0_rate_sa_s == pytest.approx(5000.)
+    assert p.demod0_dynamic_tc_s == pytest.approx(1e-6) and p.demod0_dynamic_rate_sa_s == pytest.approx(50000.)
+    assert p.pm_frequencies_hz == [float(f) for f in range(10, 201, 10)]
     assert ADAPTER.preflight({"Y_RF_VPP": 0.2}) == []
     assert ADAPTER.preflight({"Y_RF_VPP": 2.0, "Y_BIAS_V": 1.0}) == []
     assert ADAPTER.preflight({"Y_RF_VPP": 21.0})
@@ -311,17 +317,25 @@ def test_preflight_and_defaults():
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [5., 5., 20.]})
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [1., 5., 20.]})
     assert ADAPTER.preflight({"SYSTEM_SETTLE_S": 0.101, "DEMOD0_TC": .01})
+    assert ADAPTER.preflight({"DEMOD0_DYNAMIC_RATE": 1500.})
 
 
 def test_legacy_demod0_history_config_remains_readable():
     legacy = RfPhaseSensitivityParams(demod0_idx=0, y_rf_vpp=0.5)
+    v1_params = legacy.to_external()
+    v1_params.pop("DEMOD0_DYNAMIC_TC")
+    v1_params.pop("DEMOD0_DYNAMIC_RATE")
+    v1_params["DEMOD0_RATE"] = 2000.0
     cfg = run_format.initial_metadata(legacy) | {
         "completion_status": "completed",
-        "schema_version": legacy.schema_version,
-        "parameters": legacy.to_external(),
+        "schema_version": 1,
+        "parameters": v1_params,
     }
     assert run_format.format_block_reason(cfg) == ""
     assert run_format.analysis_block_reason(cfg) == ""
+    migrated = run_format.parameters(cfg)
+    assert migrated.demod0_dynamic_tc_s == pytest.approx(migrated.demod0_tc_s)
+    assert migrated.demod0_dynamic_rate_sa_s == pytest.approx(2000.0)
 
 
 def test_connect_rejects_missing_mod_option(rig):
@@ -362,8 +376,10 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
     assert mfli_shut["output"] is False and mfli_shut["mod_enable"] == 0 and mfli_shut["offset_v"] == 0.0
     assert mfli_shut["carrier_amplitude_vpk"] == 0.0
     assert len(c["data_files"]) == len(list((run_dir / "raw").glob("*.npz")))
+    coarse_meta, _ = run_format.read_frame(run_dir, "coarse_00", "xy")
+    assert coarse_meta["rate_sa_s"] == 1000. and coarse_meta["lockin"]["time_constant_s"] == pytest.approx(0.001)
     metadata, arrays = run_format.read_frame(run_dir, "noise_xy", "xy")
-    assert metadata["rate_sa_s"] == 1000. and len(arrays["time_s"]) == 8000
+    assert metadata["rate_sa_s"] == 2000. and metadata["lockin"]["time_constant_s"] == pytest.approx(1e-6) and len(arrays["time_s"]) == 16000
     assert not any(e[0] == "scope" for e in rig.events)
     assert "DHO924" not in DEFINITION.required_devices
     assert "coil_current_scope" not in run_format.REQUIRED_MAPPING_KEYS
@@ -393,7 +409,9 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
     assert result["anchor_repeat"]["configured"] is False
     assert result["transfer_bands_hz"] == [[20., 40.]]
     assert result["k0_closure"]["normalized_gain"] == pytest.approx(1 / np.sqrt(1 + (20. / 85.)**2), rel=.01)
-    assert "median_deg_per_sqrt_hz" in result["phase_referral"]["bands"][0]
+    assert result["transfer_lorentzian_fit"]["available"] and result["transfer_lorentzian_fit"]["fc_hz"] == pytest.approx(85., rel=.03)
+    assert result["phase_referral"]["lorentzian_full_band"]["available"]
+    assert "median_urad_per_sqrt_hz" in result["phase_referral"]["bands"][0]
     for artifact in (run_format.RESPONSE_PLOT, run_format.LOCAL_PLOT, run_format.TRANSFER_PLOT, run_format.NOISE_PLOT):
         assert (run_dir / "results" / artifact).is_file()
 
@@ -662,33 +680,35 @@ def test_preflight_allows_mapping_without_scope(tmp_path):
 
 
 def test_local_slope_dense_sweep_recovers_slope_with_linear_drift():
-    """细角度扫描 + 时间项回归：线性漂移下内外半区斜率都应回到真值。"""
-    span = 6.0
+    """细角度扫描 + 时间项回归：强色散式 (2.2.2) 与时间线性漂移下仍应准确恢复中心斜率 K0。"""
+    span = 15.0
     offsets = np.asarray(acquisition.local_offsets(span))
     centers = offsets + 0.08
-    times = np.arange(offsets.size) * 12.0
-    slope_true, drift = 0.15, 5e-5
-    values = 1j * (slope_true * np.deg2rad(centers) + 0.05 + drift * times) + 0.002
+    times = np.arange(offsets.size) * 2.0
+    slope_true, r_true, drift = 1.80, 3.0, 5e-5
+    y_ideal = signal_fit.eq222_y(np.deg2rad(centers), -0.03, slope_true, r_true ** 2, 0.0)
+    values = 1j * (y_ideal + drift * times) + 0.002
     center_indices = (0, offsets.size - 1)
     center = float(np.mean(centers[list(center_indices)]))
     fitted = signal_fit.local_slopes(center, centers, times, values, span, center_indices=center_indices)
-    assert fitted["outer_v_per_rad"] == pytest.approx(slope_true, abs=1e-6)
-    assert fitted["inner_v_per_rad"] == pytest.approx(slope_true, abs=1e-6)
-    assert fitted["k0_v_per_rad"] == pytest.approx(slope_true, abs=1e-6)
+    assert fitted["local_model_mode"] == "eq_2_2_2"
+    assert fitted["eq222_r"] == pytest.approx(r_true, rel=1e-4)
+    assert fitted["k0_v_per_rad"] == pytest.approx(slope_true, abs=1e-5)
 
 
 def test_local_slope_drift_warning_does_not_abort():
-    """工作点中心漂移超 0.75° 或角度展宽略窄时记为告警，仍返回斜率供用户判断。"""
-    span = 6.0
+    """工作点中心漂移超 0.75° 或角度展宽略窄时记为告警，仍返回式 (2.2.2) 斜率供用户判断。"""
+    span = 10.0
     offsets = np.asarray(acquisition.local_offsets(span))
     centers = offsets * 0.94
     centers[0] += 1.1
     centers[-1] += 1.1
-    times = np.arange(offsets.size) * 10.0
-    slope_true = 0.14
-    values = 1j * (slope_true * np.deg2rad(centers) + 0.02 + 2e-5 * times)
+    times = np.arange(offsets.size) * 2.0
+    slope_true, r_true = 1.4, 2.2
+    y_ideal = signal_fit.eq222_y(np.deg2rad(centers), 0.02, slope_true, r_true ** 2, 0.0)
+    values = 1j * (y_ideal + 2e-5 * times)
     fitted = signal_fit.local_slopes(0.0, centers, times, values, span, center_indices=(0, offsets.size - 1))
-    assert fitted["k0_v_per_rad"] == pytest.approx(slope_true, rel=1e-3)
+    assert fitted["k0_v_per_rad"] == pytest.approx(slope_true, rel=5e-3)
     assert any("漂移" in msg for msg in fitted["local_warnings"])
     assert any("98%" in msg for msg in fitted["local_warnings"])
 

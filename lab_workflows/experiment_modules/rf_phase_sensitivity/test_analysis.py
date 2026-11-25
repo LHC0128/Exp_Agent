@@ -58,7 +58,7 @@ def _scope(run, label, f_hz):
 
 
 def _true_h(f_hz):
-    return K0 * 0.93 * (f_hz / 5) ** -0.37
+    return K0 * 0.96 / math.sqrt(1.0 + (f_hz / 60.0) ** 2)
 
 
 def _synthetic_run(run, *, status="completed", frequencies=None, missing=(), rejected=(), malformed=(),
@@ -229,13 +229,17 @@ def test_real_analysis_subprocess_publishes_all_products(tmp_path):
     summary = _json(run / "results" / steps.SUMMARY)
     assert summary["result_status"] == "complete" and summary["quality_passed"]
     assert summary["k0_closure"]["frequency_hz"] == 5
-    assert summary["k0_closure"]["normalized_gain"] == pytest.approx(0.93, abs=0.001)
+    assert summary["k0_closure"]["normalized_gain"] == pytest.approx(_true_h(5.) / K0, abs=0.001)
+    lor = summary["transfer_lorentzian_fit"]
+    assert lor["available"] and lor["h0_v_per_rad"] == pytest.approx(K0 * 0.96, rel=0.01)
+    assert lor["fc_hz"] == pytest.approx(60.0, rel=0.02)
     assert summary["anchor_repeat"]["configured"] is False
     rows = _csv(run, steps.TRANSFER_CSV)
     for row in rows:
         expected = _true_h(float(row["frequency_hz"]))
         assert float(row["h_v_per_rad"]) == pytest.approx(expected, rel=0.001)
         assert float(row["normalized_gain"]) == pytest.approx(expected / K0, rel=0.001)
+        assert float(row["normalized_h0_gain"]) == pytest.approx(expected / lor["h0_v_per_rad"], rel=0.001)
         assert float(row["normalized_gain_se"]) > float(row["h_fit_se_v_per_rad"]) / K0
         assert float(row["x_pk_v"]) == pytest.approx(5e-5, rel=0.001)
     w = summary["noise"]["welch"]
@@ -243,18 +247,28 @@ def test_real_analysis_subprocess_publishes_all_products(tmp_path):
     assert w["nperseg"] == 2049 and w["noverlap"] == w["nperseg"] // 2 and w["segments"] == 30
     assert w["one_sided"] is True and w["window"] == "hann" and w["detrend"] == "linear"
     assert w["resolution_hz"] <= 1.0
+    band_f = np.log([5., 10., 20., 40., 80.])
+    band_h = np.log([_true_h(f_val) for f_val in (5., 10., 20., 40., 80.)])
     noise = _csv(run, steps.NOISE_CSV)
     for row in noise:
         f = float(row["frequency_hz"])
         assert f >= 1
+        assert float(row["h_lorentzian_v_per_rad"]) == pytest.approx(
+            lor["h0_v_per_rad"] / math.sqrt(1.0 + (f / lor["fc_hz"]) ** 2), rel=1e-4)
+        assert float(row["phase_asd_lorentzian_urad_per_sqrt_hz"]) == pytest.approx(
+            float(row["detector_y_asd_v_per_sqrt_hz"]) / float(row["h_lorentzian_v_per_rad"]) * 1e6, rel=1e-4)
         if 5 <= f <= 80:
-            assert float(row["h_v_per_rad"]) == pytest.approx(_true_h(f), rel=0.001)
+            expected_interp = math.exp(float(np.interp(math.log(f), band_f, band_h)))
+            assert float(row["h_v_per_rad"]) == pytest.approx(expected_interp, rel=0.001)
             assert float(row["phase_asd_rad_per_sqrt_hz"]) == pytest.approx(
-                float(row["detector_y_asd_v_per_sqrt_hz"]) / _true_h(f), rel=0.001)
+                float(row["detector_y_asd_v_per_sqrt_hz"]) / expected_interp, rel=0.001)
+            assert float(row["phase_asd_urad_per_sqrt_hz"]) == pytest.approx(
+                float(row["phase_asd_rad_per_sqrt_hz"]) * 1e6, rel=0.001)
             assert float(row["phase_asd_deg_per_sqrt_hz"]) == pytest.approx(
                 math.degrees(float(row["phase_asd_rad_per_sqrt_hz"])), rel=0.001)
         else:
-            assert row["phase_asd_rad_per_sqrt_hz"] == "" and row["phase_asd_deg_per_sqrt_hz"] == ""
+            assert row["phase_asd_rad_per_sqrt_hz"] == "" and row["phase_asd_deg_per_sqrt_hz"] == "" and row["phase_asd_urad_per_sqrt_hz"] == ""
+    assert summary["phase_referral"]["lorentzian_full_band"]["available"]
     band = summary["phase_referral"]["bands"][0]
     asds = [float(row["detector_y_asd_v_per_sqrt_hz"]) for row in noise if row["transfer_band"]]
     assert float(np.median(asds)) == pytest.approx(NOISE_SIGMA_V * math.sqrt(2 / RATE), rel=0.10)

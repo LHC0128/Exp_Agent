@@ -194,10 +194,12 @@ class Carrier:
         return self._verify(output=True, sidebands=False)
 
 
-def lockin_readback(ctx):
+def lockin_readback(ctx, *, dynamic: bool = False):
     """回读实际参考、滤波与传输，确认原子读出锁定在 Demod 4 + Osc 2，禁止采集中替换链路。"""
     d, p = ctx.devices["hf2"], ctx.params
     base = d.demod_path(p.demod0_idx)
+    expected_tc = p.demod0_dynamic_tc_s if dynamic else p.demod0_tc_s
+    min_rate = 10 * max(p.pm_frequencies_hz) if dynamic else 0.0
     state = dict(
         phase_deg=float(d.get_double(f"{base}/phaseshift")),
         time_constant_s=float(d.get_double(f"{base}/timeconstant")),
@@ -206,9 +208,10 @@ def lockin_readback(ctx):
         oscillator_hz=float(d.get_double(f"{d.osc_path(MOD_CARRIER_OSC_IDX)}/freq")),
     )
     if (not d.get_extclk() or not all(math.isfinite(v) for v in state.values())
-            or state["stream_rate_sa_s"] < 10 * max(p.pm_frequencies_hz)
+            or state["stream_rate_sa_s"] <= 0
+            or state["stream_rate_sa_s"] < min_rate
             or not math.isclose(state["oscillator_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
-            or not math.isclose(state["time_constant_s"], p.demod0_tc_s, rel_tol=0.01)
+            or not math.isclose(state["time_constant_s"], expected_tc, rel_tol=0.01)
             or state["order"] != p.demod0_order
             or any(d.get_int(f"{base}/{node}") != value for node, value in
                    (("adcselect", 0), ("oscselect", MOD_CARRIER_OSC_IDX), ("harmonic", 1), ("enable", 1)))):
@@ -221,14 +224,14 @@ def _save(ctx, label, kind, metadata, **arrays):
     ctx.state["data_files"].append(path)
 
 
-def _daq(ctx, duration_s, lockin):
+def _daq(ctx, duration_s, lockin, *, requested_rate):
     rate = lockin["stream_rate_sa_s"]
     d, p = ctx.devices["hf2"], ctx.params
     cols = round(rate * duration_s)
     cfg = DAQConfig(device=d.device_id, duration=duration_s, grid_cols=cols, grid_rows=1, grid_mode=4,
                     signal_paths=["sample.x", "sample.y"])
     results = daq.acquire_data(d, cfg, p.demod0_idx, rate, timeout=duration_s + 15.,
-                               requested_rate=p.demod0_rate_sa_s, cancellation_check=check_cancelled, strict_cleanup=True)
+                               requested_rate=requested_rate, cancellation_check=check_cancelled, strict_cleanup=True)
     by_name = {r.signal_name: r for r in results}
     if len(results) != 2 or set(by_name) != {"sample.x", "sample.y"}:
         raise SafetyAbort("DAQ 未返回完整同步 X/Y")
@@ -244,12 +247,13 @@ def _daq(ctx, duration_s, lockin):
         time_s=x.time, x_v=x.values, y_v=y.values)
 
 
-def _xy(ctx, label, duration_s, *, lockin=None, **record):
+def _xy(ctx, label, duration_s, *, lockin=None, dynamic=False, **record):
     """仪器设置在关温控前，缓冲数据仅在开温控后保存。"""
-    before = lockin_readback(ctx)
+    before = lockin_readback(ctx, dynamic=dynamic)
     if lockin is not None and before != lockin:
         raise SafetyAbort("MFLI 配置发生变化，拒绝并入同轮标定")
     temperature_on = True
+    requested_rate = ctx.params.demod0_dynamic_rate_sa_s if dynamic else ctx.params.demod0_rate_sa_s
 
     def set_enabled(enabled):
         nonlocal temperature_on
@@ -264,10 +268,10 @@ def _xy(ctx, label, duration_s, *, lockin=None, **record):
 
     with DeferredAcquisitionWrites(restore=retry_restore) as pending:
         with acquisition_window(set_enabled, sleep, ctx.params.system_settle_s):
-            metadata, arrays = _daq(ctx, duration_s, before)
+            metadata, arrays = _daq(ctx, duration_s, before, requested_rate=requested_rate)
             pending.add(lambda meta, **data: _save(ctx, label, "xy", meta, **data), dict(metadata, **record), **arrays)
         sleep(ctx.params.temp_switch_on_lag_s)
-        if lockin_readback(ctx) != before:
+        if lockin_readback(ctx, dynamic=dynamic) != before:
             raise SafetyAbort("MFLI 采集前后回读不一致；原始记录仅供诊断")
     return complex(np.mean(arrays["x_v"]), np.mean(arrays["y_v"]))
 
@@ -360,10 +364,6 @@ def local_calibration(ctx, carrier):
         warnings.append("局部 K0 拟合信噪比低于 5")
     if abs(fitted["slope_x_v_per_rad"]) > 0.15 * abs(k):
         warnings.append("局部 X 残留正交分量超过 15%")
-    for name in ("outer_v_per_rad", "inner_v_per_rad"):
-        sub = fitted.get(name)
-        if sub is not None and math.isfinite(sub) and abs(sub - k) > 0.2 * abs(k):
-            warnings.append("局部内外两档斜率线性偏离超过 20%")
     warnings = _unique_warnings(warnings)
     cal["accepted"] = True
     cal["quality_passed"] = not warnings
@@ -390,7 +390,7 @@ def _sweep(ctx, carrier, cal, lockin):
                    phase_pk_rad=pm_rad, modulation_hz=f_hz, electrical_accepted=True,
                    accepted=False, reason="尚未完成")
         ctx.state["transfer"].append(row)
-        _xy(ctx, xy_label, ctx.params.pm_tone_duration_s, lockin=lockin,
+        _xy(ctx, xy_label, ctx.params.pm_tone_duration_s, lockin=lockin, dynamic=True,
             frequency_hz=f_hz, phase_pk_rad=pm_rad)
         row.update(xy_label=xy_label, accepted=True, reason="")
         ctx.save()
@@ -408,18 +408,19 @@ def _baseline(ctx, carrier, lockin):
                  reason="未完成基线采集", scope_labels=[], xy_label=None)
     ctx.state["noise"] = state
     report_runtime_progress("A06", "采集无调制基带记录", 40, estimated_remaining_seconds=None)
-    mean = _xy(ctx, "noise_xy", ctx.params.noise_duration_s, lockin=lockin, source_mode="unmodulated_carrier")
+    mean = _xy(ctx, "noise_xy", ctx.params.noise_duration_s, lockin=lockin, dynamic=True,
+               source_mode="unmodulated_carrier")
     after = carrier.verify_unmodulated()
     state.update(xy_label="noise_xy", mean_x_v=mean.real, mean_y_v=mean.imag,
                  carrier_command_deg=after["command_deg"], accepted=True,
                  quality_passed=True, quality_warnings=[], reason="")
 
 
-def _calibration_state(ctx):
+def _calibration_state(ctx, *, dynamic: bool = False):
     cal = ctx.state.get("calibration") or {}
     if cal.get("accepted") is not True:
         raise SafetyAbort("缺少本轮合格的局部 K₀ 标定；请先运行 A04")
-    lockin = lockin_readback(ctx)
+    lockin = lockin_readback(ctx, dynamic=dynamic)
     if abs(signal_fit.wrap_deg(lockin["phase_deg"] - cal["lockin_phase_deg"])) > 0.5:
         raise SafetyAbort("MFLI 解调相位与本轮标定不一致；请整链重跑")
     return cal, lockin
@@ -427,7 +428,9 @@ def _calibration_state(ctx):
 
 def frequency_response(ctx):
     try:
-        cal, lockin = _calibration_state(ctx)
+        cal, _ = _calibration_state(ctx, dynamic=False)
+        preparation.configure_dynamic_lockin(ctx, phase_deg=float(cal["lockin_phase_deg"]))
+        _, lockin = _calibration_state(ctx, dynamic=True)
         pm_settings = ctx.carrier.begin_pm()
         pm_rad = float(pm_settings["mod_index_rad"])
         ctx.state["pm_alignment"] = dict(skipped=True, method="mf_mod_coherent_direct",
@@ -443,7 +446,7 @@ def frequency_response(ctx):
 
 def noise_measurement(ctx):
     try:
-        _, lockin = _calibration_state(ctx)
+        _, lockin = _calibration_state(ctx, dynamic=True)
         if not any(row.get("accepted") for row in ctx.state.get("transfer") or ()):
             raise SafetyAbort("缺少本轮有效频响采集记录；请先运行 A05")
         _baseline(ctx, ctx.carrier, lockin)

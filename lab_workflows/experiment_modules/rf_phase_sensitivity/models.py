@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from ...experiment_params import ExperimentParams, parameter
 
@@ -19,7 +19,7 @@ MFLI_MAX_SIGOUT_V = 10.0
 
 @dataclass
 class RfPhaseSensitivityParams(ExperimentParams):
-    schema_version: ClassVar[int] = 1
+    schema_version: ClassVar[int] = 2
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {}
     removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
 
@@ -62,16 +62,23 @@ class RfPhaseSensitivityParams(ExperimentParams):
     demod0_signal_range_v: float = parameter(default=3., external_name="DEMOD0_SIGNAL_RANGE", label="MFLI 输入量程",
                                             unit="V", minimum=0.001, maximum=3.)
     demod0_order: int = parameter(default=4, external_name="DEMOD0_ORDER", label="MFLI 滤波阶数", minimum=1, maximum=8)
-    demod0_tc_s: float = parameter(default=0.001, external_name="DEMOD0_TC", label="MFLI 时间常数",
+    demod0_tc_s: float = parameter(default=0.001, external_name="DEMOD0_TC", label="A03/A04 MFLI 时间常数",
                                    unit="s", minimum=1e-6, maximum=0.1,
-                                   description="频响与噪声保持同一解调滤波条件，不作二次滤波校正。")
-    demod0_rate_sa_s: float = parameter(default=2000., external_name="DEMOD0_RATE", label="MFLI 解调传输率",
-                                        unit="Sa/s", minimum=1000, maximum=10000)
+                                   description="A03 整周扫描与 A04 局部斜率标定的静态读出滤波时间常数，保持不变。")
+    demod0_rate_sa_s: float = parameter(default=5000., external_name="DEMOD0_RATE", label="A03/A04 MFLI 解调传输率",
+                                        unit="Sa/s", minimum=1000, maximum=20000,
+                                        description="A03/A04 静态相位采样的连续流传输率。")
+    demod0_dynamic_tc_s: float = parameter(default=1e-6, external_name="DEMOD0_DYNAMIC_TC", label="A05/A06 MFLI 时间常数",
+                                           unit="s", minimum=1e-6, maximum=0.1,
+                                           description="仅对 A05 频响与 A06 噪声放宽的宽带时间常数（不改 A03/A04）；不再做软件滤波反卷积。")
+    demod0_dynamic_rate_sa_s: float = parameter(default=50000., external_name="DEMOD0_DYNAMIC_RATE", label="A05/A06 MFLI 解调传输率",
+                                                unit="Sa/s", minimum=1000, maximum=60000,
+                                                description="A05/A06 高带宽连续流采样率（低于 70 kSa/s 阈值，保持 DAQ 连续采集）。")
     static_point_duration_s: float = parameter(default=0.20, external_name="STATIC_POINT_DURATION_S",
                                                label="静态点 MFLI 采集时长", unit="s", minimum=0.05, maximum=1.)
     local_span_deg: float = parameter(default=15., external_name="LOCAL_SPAN_DEG", label="局部标定外档角度",
                                       unit="°", minimum=3, maximum=30, description="在最佳工作点两侧等分细扫的对称偏移跨度。")
-    pm_frequencies_hz: list[float] = parameter(default_factory=lambda: [5., 10., 20., 40., 80.],
+    pm_frequencies_hz: list[float] = parameter(default_factory=lambda: [float(f) for f in range(10, 201, 10)],
         external_name="PM_FREQUENCIES_HZ", label="基带调相频率列表", unit="Hz", group="basic",
         description="严格递增，不改变 5 kHz 载波，按列表顺序单次扫描。")
     pm_tone_duration_s: float = parameter(default=2., external_name="PM_TONE_DURATION_S", label="每档 MFLI 音调采集时长",
@@ -138,6 +145,14 @@ class RfPhaseSensitivityParams(ExperimentParams):
     def sweep_order_hz(self) -> list[float]:
         return list(self.pm_frequencies_hz)
 
+    @classmethod
+    def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
+        migrated = super().migrate_external(values, schema_version)
+        if schema_version < 2:
+            migrated.setdefault("DEMOD0_DYNAMIC_TC", migrated.get("DEMOD0_TC", 0.001))
+            migrated.setdefault("DEMOD0_DYNAMIC_RATE", migrated.get("DEMOD0_RATE", 2000.0))
+        return migrated
+
     def validate_model(self) -> list[str]:
         errors = []
         if not math.isfinite(self.y_rf_freq_hz) or not math.isclose(self.y_rf_freq_hz, CARRIER_HZ, rel_tol=0.0, abs_tol=1e-9):
@@ -151,19 +166,20 @@ class RfPhaseSensitivityParams(ExperimentParams):
         if any(not math.isfinite(v) for v in (self.x_bias_v, self.y_bias_v, self.main_field_current_ma,
                 self.z_peak_current_ma, self.z_pulse_width_us, self.z_pulse_edge_us, self.amplifier_gain_db,
                 self.sense_resistor_ohm, self.damping_resistor_ohm, self.coil_resistance_ohm, self.resistor_rated_w,
-                self.demod0_rate_sa_s, self.demod0_tc_s, self.demod0_signal_range_v, self.local_span_deg,
+                self.demod0_rate_sa_s, self.demod0_tc_s, self.demod0_dynamic_rate_sa_s, self.demod0_dynamic_tc_s,
+                self.demod0_signal_range_v, self.local_span_deg,
                 self.pm_tone_duration_s, self.static_point_duration_s, self.noise_duration_s,
                 self.welch_segment_s, self.temp_switch_on_lag_s,
                 *((self.z_tail_s_f, self.z_tail_tau_e_us) if self.z_tail_comp_enabled else ()),
                 *((self.target_temperature_c,) if self.set_tec_target else ()))):
             errors.append("实际使用的标量参数必须有限")
         fm = self.pm_frequencies_hz
-        if (not 2 <= len(fm) <= 12 or any(not math.isfinite(f) or not 1 <= f <= 200 for f in fm)
+        if (not 2 <= len(fm) <= 40 or any(not math.isfinite(f) or not 1 <= f <= 200 for f in fm)
                 or any(a >= b for a, b in zip(fm, fm[1:]))):
-            errors.append("PM_FREQUENCIES_HZ 须含 2–12 个严格递增的 1–200 Hz 频点")
-        elif self.pm_tone_duration_s * fm[0] < 10 or self.demod0_rate_sa_s < 10 * max(fm):
-            errors.append("基带 MFLI 记录至少覆盖最低频点 10 个周期，采样率至少为最高频点的 10 倍")
-        if self.system_settle_s < 10 * self.demod0_order * self.demod0_tc_s:
+            errors.append("PM_FREQUENCIES_HZ 须含 2–40 个严格递增的 1–200 Hz 频点")
+        elif self.pm_tone_duration_s * fm[0] < 10 or self.demod0_dynamic_rate_sa_s < 10 * max(fm):
+            errors.append("基带 MFLI 记录至少覆盖最低频点 10 个周期，A05/A06 采样率至少为最高频点的 10 倍")
+        if self.system_settle_s < 10 * self.demod0_order * max(self.demod0_tc_s, self.demod0_dynamic_tc_s):
             errors.append("SYSTEM_SETTLE_S 必须覆盖至少 10 × 滤波阶数 × 时间常数")
         if self.noise_duration_s < 3 * self.welch_segment_s:
             errors.append("NOISE_DURATION_S 至少为 WELCH_SEGMENT_S 的 3 倍")

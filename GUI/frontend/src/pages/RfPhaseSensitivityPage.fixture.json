@@ -286,26 +286,50 @@
     },
     {
       "name": "DEMOD0_TC",
-      "label": "MFLI 时间常数",
+      "label": "A03/A04 MFLI 时间常数",
       "type": "number",
       "default": 0.001,
       "unit": "s",
       "group": "advanced",
       "minimum": 1e-06,
       "maximum": 0.1,
-      "description": "频响与噪声保持同一解调滤波条件，不作二次滤波校正。",
+      "description": "A03 整周扫描与 A04 局部斜率标定的静态读出滤波时间常数，保持不变。",
       "read_only": false
     },
     {
       "name": "DEMOD0_RATE",
-      "label": "MFLI 解调传输率",
+      "label": "A03/A04 MFLI 解调传输率",
       "type": "number",
-      "default": 2000.0,
+      "default": 5000.0,
       "unit": "Sa/s",
       "group": "advanced",
       "minimum": 1000,
-      "maximum": 10000,
-      "description": "",
+      "maximum": 20000,
+      "description": "A03/A04 静态相位采样的连续流传输率。",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_DYNAMIC_TC",
+      "label": "A05/A06 MFLI 时间常数",
+      "type": "number",
+      "default": 1e-06,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": 0.1,
+      "description": "仅对 A05 频响与 A06 噪声放宽的宽带时间常数（不改 A03/A04）；不再做软件滤波反卷积。",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD0_DYNAMIC_RATE",
+      "label": "A05/A06 MFLI 解调传输率",
+      "type": "number",
+      "default": 50000.0,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1000,
+      "maximum": 60000,
+      "description": "A05/A06 高带宽连续流采样率（低于 70 kSa/s 阈值，保持 DAQ 连续采集）。",
       "read_only": false
     },
     {
@@ -337,11 +361,26 @@
       "label": "基带调相频率列表",
       "type": "array",
       "default": [
-        5.0,
         10.0,
         20.0,
+        30.0,
         40.0,
-        80.0
+        50.0,
+        60.0,
+        70.0,
+        80.0,
+        90.0,
+        100.0,
+        110.0,
+        120.0,
+        130.0,
+        140.0,
+        150.0,
+        160.0,
+        170.0,
+        180.0,
+        190.0,
+        200.0
       ],
       "unit": "Hz",
       "group": "basic",
@@ -561,7 +600,7 @@
           "LOCAL_SPAN_DEG"
         ],
         "quality_gates": [
-          "在工作点两侧以 MFLI 指令角加密细扫，按 Demod 4 Y 正交分量直线拟合静态斜率（含首尾线性漂移扣除）；信噪比或线性度偏离记为告警但不中断采集。"
+          "在工作点两侧以 MFLI 指令角加密细扫，按 Demod 4 Y 正交分量理论式 (2.2.2) 非线性拟合计算工作点斜率 K₀ 与 X 正交泄漏（含首尾线性漂移扣除）；信噪比或正交泄漏超限记为告警但不中断采集。"
         ]
       },
       {
@@ -572,6 +611,8 @@
           "A04"
         ],
         "parameters": [
+          "DEMOD0_DYNAMIC_TC",
+          "DEMOD0_DYNAMIC_RATE",
           "PM_FREQUENCIES_HZ",
           "PM_TONE_DURATION_S"
         ],
@@ -579,11 +620,13 @@
           "raw/pm_*.npz"
         ],
         "display_parameters": [
+          "DEMOD0_DYNAMIC_TC",
+          "DEMOD0_DYNAMIC_RATE",
           "PM_FREQUENCIES_HZ",
           "PM_TONE_DURATION_S"
         ],
         "quality_gates": [
-          "开启 MF-MOD 固定 2° 峰值相干边带 PM，按 PM_FREQUENCIES_HZ 单次顺序切换 Osc 3 基带频率并在 Demod 4 采集各档 XY 帧。"
+          "仅对 A05/A06 将 MFLI Demod 4 切至高带宽 DEMOD0_DYNAMIC_TC / DEMOD0_DYNAMIC_RATE（保持 A03/A04 滤波参数不变）并保持对齐相位；开启 MF-MOD 固定 2° 峰值相干边带 PM，按 PM_FREQUENCIES_HZ 单次顺序切换 Osc 3 采集各档 XY 帧。"
         ]
       },
       {
@@ -605,7 +648,7 @@
           "WELCH_SEGMENT_S"
         ],
         "quality_gates": [
-          "关闭上下边带保留 5 kHz 连续载波，仅在 MFLI Demod 4 采集无调制噪声 XY 帧，严格守住温控窗口只读不写。"
+          "保持 A05 高带宽滤波设置不变，关闭上下边带保留 5 kHz 连续载波在工作点，仅在 MFLI Demod 4 采集无调制噪声 XY 帧，严格守住温控窗口只读不写。"
         ]
       },
       {
@@ -639,7 +682,7 @@
         ],
         "display_parameters": [],
         "quality_gates": [
-          "绘制 A03 相图、A04 工作点附近 XY 响应、A05 归一化相位频响 |H(f)|/|K₀| 与 A06 相位灵敏度谱（°/√Hz）；低频闭合等参考检查仅作告警与图例标注，不扣留出图。"
+          "绘制 A03 含放大插图相图与理论式 (2.2.2) 波形、A04 左相图右理论色散响应、A05 零频 √Lorentzian 拟合与 H₀ 归一化频响及 A06 相位灵敏度谱（µrad/√Hz，含全频段 √Lorentzian 回补）；参考检查仅作告警与标注，不扣留出图。"
         ]
       }
     ],
@@ -823,6 +866,14 @@
         ],
         "LOCAL_SPAN_DEG": [
           "A04",
+          "A05",
+          "A06"
+        ],
+        "DEMOD0_DYNAMIC_TC": [
+          "A05",
+          "A06"
+        ],
+        "DEMOD0_DYNAMIC_RATE": [
           "A05",
           "A06"
         ],

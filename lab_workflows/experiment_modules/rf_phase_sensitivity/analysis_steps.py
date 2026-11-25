@@ -18,7 +18,7 @@ from ...analysis_execution import file_signature as signature
 from ...experiment_runtime import check_cancelled
 from ...workflow_state import write_state
 from ..z_chain_common.phase import decompose
-from . import run_format
+from . import run_format, signal_fit
 
 ANALYSIS_VERSION = "rf-phase-sensitivity-v1"
 SUMMARY = run_format.SUMMARY
@@ -55,10 +55,14 @@ TRANSFER_COLUMNS = (
     "phase_pk_rad", "phase_scatter_rad", "am_fraction_pk", "center_error_deg", "rate_sa_s", "samples", "cycles",
     "y_pk_v", "y_pk_se_v", "y_snr", "x_pk_v", "x_2f_pk_v", "y_2f_pk_v",
     "h_v_per_rad", "h_fit_se_v_per_rad", "normalized_gain", "normalized_gain_se",
+    "normalized_h0_gain", "normalized_h0_gain_se",
     "quality_passed", "warnings", "accepted", "reason",
 )
-NOISE_COLUMNS = ("frequency_hz", "detector_y_psd_v2_per_hz", "detector_y_asd_v_per_sqrt_hz",
-                 "transfer_band", "h_v_per_rad", "phase_asd_rad_per_sqrt_hz", "phase_asd_deg_per_sqrt_hz")
+NOISE_COLUMNS = (
+    "frequency_hz", "detector_y_psd_v2_per_hz", "detector_y_asd_v_per_sqrt_hz",
+    "transfer_band", "h_v_per_rad", "phase_asd_rad_per_sqrt_hz", "phase_asd_deg_per_sqrt_hz",
+    "phase_asd_urad_per_sqrt_hz", "h_lorentzian_v_per_rad", "phase_asd_lorentzian_urad_per_sqrt_hz",
+)
 
 
 def output_path(run_dir, name):
@@ -425,7 +429,33 @@ def _noise(run_dir, noise, rows, reference, segment_s):
     return frequency, psd, details
 
 
-def _refer_noise(frequency, asd, bands, accepted):
+def _fit_transfer_lorentzian(rows, accepted, k0):
+    ordered = sorted(accepted.values(), key=lambda row: row["frequency_hz"])
+    if len(ordered) < 2:
+        return dict(available=False, reason="有效主测频点不足 2 个，无法拟合 √Lorentzian")
+    freqs = [row["frequency_hz"] for row in ordered]
+    gains = [row["h_v_per_rad"] for row in ordered]
+    ses = [row.get("h_fit_se_v_per_rad") for row in ordered]
+    fit = signal_fit.fit_sqrt_lorentzian(freqs, gains, ses if all(s is not None for s in ses) else None)
+    if not fit.get("available"):
+        return fit
+    h0 = fit["h0_v_per_rad"]
+    h0_se = fit.get("h0_se_v_per_rad")
+    valid_h0_se = h0_se is not None and math.isfinite(h0_se) and h0_se >= 0
+    for row in rows:
+        if (h := row.get("h_v_per_rad")) is not None and h > 0:
+            gain = _number(h / h0)
+            row["normalized_h0_gain"] = gain
+            if gain is not None and (h_se := row.get("h_fit_se_v_per_rad")) is not None:
+                rel_h = h_se / h0
+                rel_h0 = (gain * (h0_se / h0)) if valid_h0_se else 0.0
+                row["normalized_h0_gain_se"] = _number(math.hypot(rel_h, rel_h0))
+    if k0 is not None and math.isfinite(k0) and abs(k0) > 0:
+        fit["h0_to_k0_ratio"] = _number(h0 / abs(k0))
+    return fit
+
+
+def _refer_noise(frequency, asd, bands, accepted, lorentzian_fit=None):
     h = np.full(frequency.shape, np.nan)
     phase = np.full(frequency.shape, np.nan)
     band_ids = np.zeros(frequency.shape, dtype=int)
@@ -451,7 +481,34 @@ def _refer_noise(frequency, asd, bands, accepted):
                             midpoint_deg_per_sqrt_hz=float(math.degrees(values[middle])),
                             median_rad_per_sqrt_hz=median, median_urad_per_sqrt_hz=median * 1e6,
                             median_deg_per_sqrt_hz=math.degrees(median)))
-    return h, phase, band_ids, metrics
+
+    h_lor = np.full(frequency.shape, np.nan)
+    phase_lor = np.full(frequency.shape, np.nan)
+    lor_summary = dict(available=False, reason="缺少有效的 √Lorentzian 频响拟合")
+    if metrics and lorentzian_fit and lorentzian_fit.get("available"):
+        h0 = float(lorentzian_fit["h0_v_per_rad"])
+        fc = float(lorentzian_fit["fc_hz"])
+        if h0 > 0 and fc > 0 and frequency.size:
+            with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+                cand_h = h0 / np.sqrt(1.0 + (frequency / fc) ** 2)
+                cand_p = asd / cand_h
+                valid = np.isfinite(cand_p) & np.isfinite(cand_p * 1e6) & (cand_h > 0)
+            if valid.any():
+                h_lor[valid] = cand_h[valid]
+                phase_lor[valid] = cand_p[valid]
+                vals = cand_p[valid]
+                med_lor = float(np.median(vals))
+                lor_summary = dict(
+                    available=True,
+                    bins=int(valid.sum()),
+                    frequency_min_hz=float(frequency[valid][0]),
+                    frequency_max_hz=float(frequency[valid][-1]),
+                    h0_v_per_rad=h0,
+                    fc_hz=fc,
+                    median_rad_per_sqrt_hz=med_lor,
+                    median_urad_per_sqrt_hz=med_lor * 1e6,
+                )
+    return h, phase, band_ids, metrics, h_lor, phase_lor, lor_summary
 
 
 def _coarse_plot_data(run_dir, config):
@@ -484,24 +541,52 @@ def _coarse_plot_data(run_dir, config):
     best_deg = _number(phase_cfg.get("burst_command_deg"))
     rot_deg = _number(phase_cfg.get("rotation_deg"))
     z_aligned = np.asarray(raw_z, dtype=complex)[order] * np.exp(-1j * np.deg2rad(0.0 if rot_deg is None else rot_deg))
-    curve_deg = z_curve = z_best = tangent = tangent_gain = None
+    curve_deg = z_curve = z_best = tangent = tangent_gain = eq222_fit = None
     if phi_arr.size >= 6:
         try:
             (c0, pos, neg), _ = decompose(phi_arr, z_aligned)
-            curve_deg = np.linspace(0.0, 360.0, 361)
+            curve_deg = np.linspace(0.0, 360.0, 721)
             rad = np.deg2rad(curve_deg)
-            z_curve = c0 + pos * np.exp(1j * rad) + neg * np.exp(-1j * rad)
+            eq222_fit = signal_fit.fit_eq222_full_cycle(
+                phi_arr, z_aligned.imag, phi_c_init_deg=0.0 if best_deg is None else best_deg
+            )
+            phi_c_rad = math.radians(eq222_fit["phi_c_deg"])
+            y_eq = signal_fit.eq222_y(rad, eq222_fit["y0"], eq222_fit["amp"] * eq222_fit["r"],
+                                      eq222_fit["r"] ** 2, phi_c_rad, eq222_fit["v0"])
+            # X 分量以低阶正交谐波加色散投影拟合连续轨迹（若退化则回退三分量）。
+            phi_data_rad = np.deg2rad(phi_arr)
+            v_data = eq222_fit["v0"] + eq222_fit["r"] * np.sin(phi_data_rad - phi_c_rad)
+            y_unit_data = v_data / (1.0 + v_data * v_data)
+            x_design = np.column_stack((np.ones_like(phi_data_rad), np.sin(phi_data_rad - phi_c_rad),
+                                        np.cos(phi_data_rad - phi_c_rad), y_unit_data))
+            x_coef, _, x_rank, _ = np.linalg.lstsq(x_design, z_aligned.real, rcond=None)
+            if x_rank == 4:
+                v_grid = eq222_fit["v0"] + eq222_fit["r"] * np.sin(rad - phi_c_rad)
+                x_eq = (x_coef[0] + x_coef[1] * np.sin(rad - phi_c_rad)
+                        + x_coef[2] * np.cos(rad - phi_c_rad) + x_coef[3] * (v_grid / (1.0 + v_grid * v_grid)))
+            else:
+                x_eq = (c0 + pos * np.exp(1j * rad) + neg * np.exp(-1j * rad)).real
+            z_curve = x_eq + 1j * y_eq
             if best_deg is not None:
                 phi_b = math.radians(best_deg)
-                z_best = c0 + pos * np.exp(1j * phi_b) + neg * np.exp(-1j * phi_b)
                 tangent = 1j * (pos * np.exp(1j * phi_b) - neg * np.exp(-1j * phi_b))
                 tangent_gain = abs(tangent) if np.isfinite(tangent) else None
+                v_b = eq222_fit["v0"] + eq222_fit["r"] * math.sin(phi_b - phi_c_rad)
+                y_b = signal_fit.eq222_y(np.array([phi_b]), eq222_fit["y0"], eq222_fit["amp"] * eq222_fit["r"],
+                                         eq222_fit["r"] ** 2, phi_c_rad, eq222_fit["v0"])[0]
+                if x_rank == 4:
+                    x_b = (x_coef[0] + x_coef[1] * math.sin(phi_b - phi_c_rad)
+                           + x_coef[2] * math.cos(phi_b - phi_c_rad) + x_coef[3] * (v_b / (1.0 + v_b * v_b)))
+                else:
+                    x_b = float((c0 + pos * np.exp(1j * phi_b) + neg * np.exp(-1j * phi_b)).real)
+                z_best = complex(x_b, float(y_b))
         except FRAME_ERRORS:
             pass
     if tangent_gain is None:
         tangent_gain = _number(_mapping(phase_cfg.get("coarse_fit")).get("tangent_v_per_command_rad"))
     return dict(phi_deg=phi_arr, z_aligned=z_aligned, rotated=rot_deg is not None, best_deg=best_deg,
-                curve_deg=curve_deg, z_curve=z_curve, z_best=z_best, tangent=tangent, tangent_gain=tangent_gain)
+                curve_deg=curve_deg, z_curve=z_curve, z_best=z_best, tangent=tangent,
+                tangent_gain=tangent_gain, eq222=eq222_fit)
 
 
 def _local_plot_data(run_dir, config, calibration):
@@ -555,9 +640,40 @@ def _local_plot_data(run_dir, config, calibration):
     coef, _, rank, _ = np.linalg.lstsq(design, z_corr, rcond=None)
     if rank != 2:
         return None
+    grid_deg = np.linspace(float(dphi_deg.min()), float(dphi_deg.max()), 300)
+    grid_rad = np.deg2rad(grid_deg)
+    x_poly = np.polyfit(dphi_rad, z_corr.real, 3 if dphi_rad.size >= 6 else 1)
+    x_curve_v = np.polyval(x_poly, grid_rad)
+    slope_x = float(coef[1].real)
+    eq_fit = None
+    if dphi_rad.size >= 6:
+        try:
+            span_rad = max(float(np.max(np.abs(dphi_rad))), 0.05)
+            eq_fit = signal_fit.fit_eq222_local(dphi_rad, z_corr.imag, max_offset_rad=span_rad)
+        except FRAME_ERRORS:
+            eq_fit = None
+    if eq_fit is not None:
+        k0_val = float(eq_fit["k0"])
+        k0_se = float(eq_fit["k0_se"])
+        y0_val = float(eq_fit["y0"])
+        x0_val = float(np.polyval(x_poly, eq_fit["phi_offset_rad"]))
+        y_curve_v = signal_fit.eq222_y(grid_rad, eq_fit["y0"], eq_fit["k0"], eq_fit["b_r2"], eq_fit["phi_offset_rad"])
+        rms_v = float(eq_fit["rms_v"])
+        r_val = float(eq_fit["r"])
+        mode = "eq_2_2_2"
+    else:
+        k0_val = float(coef[1].imag)
+        k0_se = float("nan")
+        y0_val = float(coef[0].imag)
+        x0_val = float(coef[0].real)
+        y_curve_v = y0_val + k0_val * grid_rad
+        rms_v = float(np.sqrt(np.mean((z_corr.imag - (y0_val + k0_val * dphi_rad)) ** 2)))
+        r_val = 0.0
+        mode = "linear"
     return dict(center_deg=center_deg, dphi_deg=dphi_deg, z_corr=z_corr,
-                x0=float(coef[0].real), y0=float(coef[0].imag),
-                slope_x=float(coef[1].real), slope_y=float(coef[1].imag))
+                x0=x0_val, y0=y0_val, k0=k0_val, k0_se=k0_se, slope_x=slope_x,
+                grid_deg=grid_deg, x_curve_v=x_curve_v, y_curve_v=y_curve_v,
+                rms_v=rms_v, r=r_val, mode=mode)
 
 
 def _save_csv(path, columns, rows):
@@ -567,7 +683,8 @@ def _save_csv(path, columns, rows):
         writer.writerows(rows)
 
 
-def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids, *, coarse_data=None, local_data=None):
+def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids, phase_lor, *,
+           coarse_data=None, local_data=None):
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
     from ...plotting import figure_size, plot_style_context
@@ -576,112 +693,160 @@ def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids, 
         ax.text(0.5, 0.5, text, ha="center", va="center", transform=ax.transAxes)
 
     def figure_pair():
-        figure = Figure(figsize=figure_size("wide", height_mm=112), layout="constrained")
+        figure = Figure(figsize=figure_size("wide", height_mm=115), layout="constrained")
         FigureCanvasAgg(figure)
         return figure, figure.subplots(2, 1, sharex=True)
 
+    def _add_zoom_x_inset(parent, x_mv, y_mv, color_vals, cmap, *, line_x=None, line_y=None,
+                          star_xy=None, title="X zoomed", bounds=(0.08, 0.14, 0.34, 0.72), s=12):
+        ax_in = parent.inset_axes(list(bounds))
+        if line_x is not None and line_y is not None:
+            ax_in.plot(line_x, line_y, "-", color="#888888", lw=0.8, alpha=0.7)
+        ax_in.scatter(x_mv, y_mv, c=color_vals, cmap=cmap, s=s, edgecolor="#222222", lw=0.25, zorder=3)
+        if star_xy is not None:
+            ax_in.plot(star_xy[0], star_xy[1], marker="*", markersize=7.5, color="#d55e00", linestyle="none", zorder=4)
+        x_pad = max(0.2 * float(np.ptp(x_mv)), 1.0)
+        y_pad = max(0.08 * float(np.ptp(y_mv)), 1.0)
+        ax_in.set_xlim(float(x_mv.min()) - x_pad, float(x_mv.max()) + x_pad)
+        ax_in.set_ylim(float(y_mv.min()) - y_pad, float(y_mv.max()) + y_pad)
+        ax_in.tick_params(labelsize=6.5)
+        ax_in.set_title(title, fontsize=7, pad=2)
+        ax_in.grid(alpha=0.25, lw=0.4)
+
     with plot_style_context("paper"):
-        fig = Figure(figsize=figure_size("wide", height_mm=84), layout="constrained")
+        # --- Fig 1: A03 Full-cycle phase portrait & Eq.(2.2.2)+v0 waveforms ---
+        fig = Figure(figsize=figure_size("wide", height_mm=90), layout="constrained")
         FigureCanvasAgg(fig)
         ax_xy, ax_wave = fig.subplots(1, 2)
         if coarse_data is not None:
             phi_deg = coarse_data["phi_deg"]
             z_aligned = coarse_data["z_aligned"]
             x_mv, y_mv = z_aligned.real * 1e3, z_aligned.imag * 1e3
-            if coarse_data["z_curve"] is not None:
-                zc = coarse_data["z_curve"]
-                ax_xy.plot(zc.real * 1e3, zc.imag * 1e3, color="#666666", lw=1.2, alpha=0.8, label="3-harmonic fit")
+            eq222 = coarse_data.get("eq222")
+            zc = coarse_data["z_curve"]
+            if zc is not None:
+                ax_xy.plot(zc.real * 1e3, zc.imag * 1e3, color="#888888", lw=0.9, alpha=0.75,
+                           label="Eq. (2.2.2) + v0 locus" if eq222 else "Phase locus", zorder=2)
             sc = ax_xy.scatter(x_mv, y_mv, c=phi_deg, cmap="twilight", vmin=0, vmax=360,
-                               s=34, edgecolor="#222222", linewidth=0.4, zorder=3)
+                               s=14, edgecolor="none", alpha=0.9, zorder=3)
             fig.colorbar(sc, ax=ax_xy, label="Carrier phase (deg)", pad=0.02)
+            star_xy = None
             if coarse_data["z_best"] is not None:
                 zb = coarse_data["z_best"]
                 bx, by = float(zb.real * 1e3), float(zb.imag * 1e3)
-                ax_xy.plot(bx, by, marker="*", markersize=11, color="#d55e00", linestyle="none",
-                           zorder=4, label=f"Work point {coarse_data['best_deg']:.1f}°")
+                star_xy = (bx, by)
+                ax_xy.plot(bx, by, marker="*", markersize=9, color="#d55e00", linestyle="none",
+                           zorder=4, label=f"Work point {coarse_data['best_deg']:.1f} deg")
                 tang = coarse_data["tangent"]
                 if tang is not None and abs(tang) > 0:
                     span = max(float(np.ptp(x_mv)), float(np.ptp(y_mv)), 1e-3)
-                    vec = tang / abs(tang) * (0.25 * span)
+                    vec = tang / abs(tang) * (0.22 * span)
                     ax_xy.annotate("", xy=(bx + float(vec.real), by + float(vec.imag)), xytext=(bx, by),
-                                   arrowprops=dict(arrowstyle="->", lw=2.0, color="#d55e00"), zorder=5)
+                                   arrowprops=dict(arrowstyle="->", lw=1.6, color="#d55e00"), zorder=5)
             ax_xy.set_aspect("equal", adjustable="datalim")
-            ax_xy.legend(fontsize=8)
+            ax_xy.legend(fontsize=7.5, loc="lower right")
             ax_xy.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)",
-                      title="Phase portrait (aligned Demod 4)" if coarse_data["rotated"] else "Phase portrait (raw Demod 4)")
+                      title="Phase portrait (1:1 aligned)" if coarse_data["rotated"] else "Phase portrait (1:1 raw)")
+            if np.ptp(x_mv) < 0.25 * max(float(np.ptp(y_mv)), 1e-6):
+                _add_zoom_x_inset(ax_xy, x_mv, y_mv, phi_deg, "twilight",
+                                  line_x=(zc.real * 1e3 if zc is not None else None),
+                                  line_y=(zc.imag * 1e3 if zc is not None else None),
+                                  star_xy=star_xy, title="X zoomed")
 
-            if coarse_data["z_curve"] is not None:
-                zc = coarse_data["z_curve"]
-                ax_wave.plot(coarse_data["curve_deg"], zc.imag * 1e3, color="#d55e00", lw=1.2, alpha=0.8)
-                ax_wave.plot(coarse_data["curve_deg"], zc.real * 1e3, color="#1f77b4", lw=1.2, alpha=0.8)
-            ax_wave.plot(phi_deg, y_mv, "o", markersize=4, color="#d55e00", label="Demod 4 Y")
-            ax_wave.plot(phi_deg, x_mv, "s", markersize=4, color="#1f77b4", label="Demod 4 X")
+            if zc is not None:
+                y_fit_lbl = (f"Eq. (2.2.2)+v0 Y (r={eq222['r']:.2f}, RMS {eq222['rms_v']*1e3:.1f} mV)"
+                             if eq222 else "Y theory fit")
+                ax_wave.plot(coarse_data["curve_deg"], zc.imag * 1e3, color="#d55e00", lw=1.5, label=y_fit_lbl)
+                ax_wave.plot(coarse_data["curve_deg"], zc.real * 1e3, color="#1f77b4", lw=1.1, alpha=0.85)
+            ax_wave.plot(phi_deg, y_mv, "o", markersize=3.2, color="#d55e00", label="Demod 4 Y data")
+            ax_wave.plot(phi_deg, x_mv, "s", markersize=3.0, color="#1f77b4", label="Demod 4 X data")
             if coarse_data["best_deg"] is not None:
-                ax_wave.axvline(coarse_data["best_deg"], color="#555555", ls="--", lw=1.0,
-                                label=f"phi* = {coarse_data['best_deg']:.1f}°")
-            ax_wave.set(xlim=(0, 360), xlabel="Carrier command phase (deg)", ylabel="Demod 4 output (mV)",
+                ax_wave.axvline(coarse_data["best_deg"], color="#555555", ls=":", lw=1.0,
+                                label=f"phi* = {coarse_data['best_deg']:.1f} deg")
+            y_lo, y_hi = float(y_mv.min()), float(y_mv.max())
+            y_sp = max(y_hi - y_lo, 1e-3)
+            ax_wave.set(xlim=(0, 360), ylim=(y_lo - 0.14 * y_sp, y_hi + 0.34 * y_sp),
+                        xlabel="Carrier command phase (deg)", ylabel="Demod 4 output (mV)",
                         title="Full-cycle X & Y waveforms")
-            ax_wave.legend(fontsize=8)
+            ax_wave.legend(fontsize=7.2, loc="upper left")
         else:
             diagnostic(ax_xy, "No usable A03 coarse phase frames")
             diagnostic(ax_wave, "No usable A03 coarse phase frames")
             ax_xy.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Phase portrait")
             ax_wave.set(xlabel="Carrier command phase (deg)", ylabel="Demod 4 output (mV)", title="Full-cycle waveforms")
-        gain_txt = (f" | |dZ/dφ| = {coarse_data['tangent_gain']:.4g} V/rad"
-                    if coarse_data and coarse_data["tangent_gain"] else "")
+        gain_txt = ""
+        if coarse_data and coarse_data.get("eq222"):
+            eq222 = coarse_data["eq222"]
+            gain_txt = f" | r={eq222['r']:.2f}, v0={eq222['v0']:.3f}, crossing K={eq222['k0_v_per_rad']:.4g} V/rad"
+        elif coarse_data and coarse_data["tangent_gain"]:
+            gain_txt = f" | |dZ/dφ| = {coarse_data['tangent_gain']:.4g} V/rad"
         fig.suptitle(f"A03: Full-cycle phase portrait{gain_txt}")
         fig.savefig(directory / RESPONSE_PNG, dpi=240)
         check_cancelled()
 
-        fig = Figure(figsize=figure_size("wide", height_mm=84), layout="constrained")
+        # --- Fig 2: A04 Local calibration (Left = Portrait matching A03, Right = Eq.(2.2.2) response) ---
+        fig = Figure(figsize=figure_size("wide", height_mm=90), layout="constrained")
         FigureCanvasAgg(fig)
-        ax_resp, ax_locus = fig.subplots(1, 2)
+        ax_locus, ax_resp = fig.subplots(1, 2)
         if local_data is not None:
             dphi = local_data["dphi_deg"]
             zc = local_data["z_corr"]
-            dx_mv = (zc.real - local_data["x0"]) * 1e3
-            dy_mv = (zc.imag - local_data["y0"]) * 1e3
-            ax_resp.axhline(0.0, color="#888888", lw=0.7)
-            ax_resp.axvline(0.0, color="#888888", lw=0.7, ls="--")
-            ax_resp.plot(dphi, dy_mv, "o", markersize=4, color="#d55e00",
-                         label=f"Y - Y0 (K0 = {local_data['slope_y']:.4g} V/rad)")
-            ax_resp.plot(dphi, dx_mv, "s", markersize=4, color="#1f77b4",
-                         label=f"X - X0 (slope = {local_data['slope_x']:.4g} V/rad)")
-            grid_deg = np.linspace(float(dphi.min()), float(dphi.max()), 100)
-            grid_rad = np.deg2rad(grid_deg)
-            ax_resp.plot(grid_deg, local_data["slope_y"] * grid_rad * 1e3, "-", color="#d55e00", lw=1.2)
-            ax_resp.plot(grid_deg, local_data["slope_x"] * grid_rad * 1e3, "-", color="#1f77b4", lw=1.2)
-            ratio = (abs(local_data["slope_x"] / local_data["slope_y"]) if local_data["slope_y"] else float("nan"))
-            ratio_txt = f" | |slope_X / K0| = {ratio:.1%}" if math.isfinite(ratio) else ""
-            ax_resp.legend(fontsize=8, loc="best")
-            ax_resp.set(xlabel="Phase offset Δφ (deg)", ylabel="Response relative to center (mV)",
-                        title="X & Y vs Δφ (same scale)")
-
             x_mv, y_mv = zc.real * 1e3, zc.imag * 1e3
-            order = np.argsort(dphi)
-            ax_locus.plot(x_mv[order], y_mv[order], "-", color="#777777", lw=1.0, alpha=0.7)
-            sc = ax_locus.scatter(x_mv, y_mv, c=dphi, cmap="coolwarm", s=30, edgecolor="#222222", lw=0.4, zorder=3)
-            fig.colorbar(sc, ax=ax_locus, label="Δφ (deg)", pad=0.02)
-            ax_locus.plot(local_data["x0"] * 1e3, local_data["y0"] * 1e3, marker="*", markersize=10,
+            order_loc = np.argsort(dphi)
+            ax_locus.plot(local_data["x_curve_v"] * 1e3, local_data["y_curve_v"] * 1e3,
+                          "-", color="#777777", lw=0.9, alpha=0.75)
+            sc = ax_locus.scatter(x_mv, y_mv, c=dphi, cmap="coolwarm", s=16, edgecolor="#222222", lw=0.25, zorder=3)
+            fig.colorbar(sc, ax=ax_locus, label="Phase offset dphi (deg)", pad=0.02)
+            ax_locus.plot(local_data["x0"] * 1e3, local_data["y0"] * 1e3, marker="*", markersize=9,
                           color="#111111", linestyle="none", zorder=4, label="Work point")
             x_mid = 0.5 * (float(x_mv.min()) + float(x_mv.max()))
             y_mid = 0.5 * (float(y_mv.min()) + float(y_mv.max()))
             half = max(0.5 * float(np.ptp(x_mv)), 0.5 * float(np.ptp(y_mv)), 1e-3) * 1.15
             ax_locus.set(xlim=(x_mid - half, x_mid + half), ylim=(y_mid - half, y_mid + half),
-                         xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Local (X, Y) locus (1:1 scale)")
+                         xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Local (X, Y) portrait (1:1 scale)")
             ax_locus.set_aspect("equal", adjustable="box")
-            ax_locus.legend(fontsize=8)
-            fig.suptitle(f"A04: Local phase response near {local_data['center_deg']:.2f}°{ratio_txt}")
+            ax_locus.legend(fontsize=7.5, loc="upper right")
+            if np.ptp(x_mv) < 0.25 * max(float(np.ptp(y_mv)), 1e-6):
+                _add_zoom_x_inset(ax_locus, x_mv, y_mv, dphi, "coolwarm",
+                                  line_x=x_mv[order_loc], line_y=y_mv[order_loc], title="X zoomed",
+                                  bounds=(0.09, 0.14, 0.34, 0.72), s=13)
+
+            dx_mv = (zc.real - local_data["x0"]) * 1e3
+            dy_mv = (zc.imag - local_data["y0"]) * 1e3
+            ax_resp.axhline(0.0, color="#888888", lw=0.7)
+            ax_resp.axvline(0.0, color="#888888", lw=0.7, ls="--")
+            fit_lbl = ("Eq. (2.2.2) fit" if local_data["mode"] == "eq_2_2_2" else "Linear fit")
+            ax_resp.plot(dphi, dy_mv, "o", markersize=3.5, color="#d55e00", label=f"Y - Y0 data (n={dphi.size})")
+            ax_resp.plot(local_data["grid_deg"], (local_data["y_curve_v"] - local_data["y0"]) * 1e3,
+                         "-", color="#d55e00", lw=1.6,
+                         label=f"{fit_lbl}: K0 = {local_data['k0']:.4g} V/rad (RMS {local_data['rms_v']*1e3:.2f} mV)")
+            ratio = (abs(local_data["slope_x"] / local_data["k0"]) if local_data["k0"] else float("nan"))
+            ratio_txt = f" | |slope_X / K0| = {ratio:.1%}" if math.isfinite(ratio) else ""
+            ax_resp.plot(dphi, dx_mv, "s", markersize=3.2, color="#1f77b4",
+                         label=f"X - X0 (slope = {local_data['slope_x']:.4g} V/rad)")
+            ax_resp.plot(local_data["grid_deg"], (local_data["x_curve_v"] - local_data["x0"]) * 1e3,
+                         "-", color="#1f77b4", lw=1.1)
+            all_r = np.concatenate((dy_mv, dx_mv))
+            r_lo, r_hi = float(all_r.min()), float(all_r.max())
+            r_sp = max(r_hi - r_lo, 1e-3)
+            ax_resp.set(xlabel="Phase offset Δφ (deg)", ylabel="Response relative to crossing (mV)",
+                        ylim=(r_lo - 0.16 * r_sp, r_hi + 0.36 * r_sp),
+                        title="Local X & Y phase response vs Eq. (2.2.2)")
+            ax_resp.legend(fontsize=7.0, loc="upper left")
+            fig.suptitle(f"A04: Local phase response near {local_data['center_deg']:.2f}° | K0 = {local_data['k0']:.4g} V/rad{ratio_txt}")
         else:
-            diagnostic(ax_resp, "No usable A04 local calibration frames")
             diagnostic(ax_locus, "No usable A04 local calibration frames")
-            ax_resp.set(xlabel="Phase offset Δφ (deg)", ylabel="Response (mV)", title="X & Y vs Δφ")
-            ax_locus.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Local (X, Y) locus")
+            diagnostic(ax_resp, "No usable A04 local calibration frames")
+            ax_locus.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Local (X, Y) portrait")
+            ax_resp.set(xlabel="Phase offset Δφ (deg)", ylabel="Response (mV)", title="Local phase response")
             fig.suptitle("A04: Local phase response")
         fig.savefig(directory / LOCAL_PNG, dpi=240)
         check_cancelled()
 
+        # --- Fig 3: A05 Transfer response & 0-Hz sqrt-Lorentzian normalization ---
         fig, axes = figure_pair()
+        lor_fit = summary.get("transfer_lorentzian_fit") or {}
+        lor_ok = bool(lor_fit.get("available"))
         clean_primary = [row for row in accepted.values() if row["quality_passed"] and row.get("h_v_per_rad", 0) > 0]
         warn_primary = [row for row in accepted.values() if not row["quality_passed"] and row.get("h_v_per_rad", 0) > 0]
         clean_repeat = [row for row in rows if row["repeat"] and row["accepted"] and row["quality_passed"]
@@ -694,13 +859,22 @@ def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids, 
             (clean_repeat, "x", "#009e73", "Repeat (no warnings)"),
             (warn_repeat, "d", "#cc3311", "Repeat (with warnings)"),
         )
-        for ax, key, error, ylabel in zip(axes, ("h_v_per_rad", "normalized_gain"),
-                                         ("h_fit_se_v_per_rad", "normalized_gain_se"),
-                                         ("Magnitude |H| (V/rad)", "Normalized response |H| / |K0|")):
+        norm_key = "normalized_h0_gain" if lor_ok else "normalized_gain"
+        norm_err = "normalized_h0_gain_se" if lor_ok else "normalized_gain_se"
+        norm_ylabel = "Normalized |H(f)| / H0 (0 Hz)" if lor_ok else "Normalized response |H| / |K0|"
+
+        f_all = [r["frequency_hz"] for sel, _, _, _ in series for r in sel]
+        f_grid = (np.geomspace(0.8 * min(f_all), 1.2 * max(f_all), 200) if f_all else np.array([]))
+        cal_k0 = _number(summary.get("calibration", {}).get("k0_v_per_rad"))
+
+        for ax, key, error, ylabel in zip(axes, ("h_v_per_rad", norm_key),
+                                         ("h_fit_se_v_per_rad", norm_err),
+                                         ("Magnitude |H| (V/rad)", norm_ylabel)):
             plotted_any = False
-            if key == "normalized_gain" and any(r.get(key, 0) > 0 for sel, _, _, _ in series for r in sel):
-                ax.axhspan(CLOSURE_RANGE[0], CLOSURE_RANGE[1], color="#888888", alpha=0.12)
+            if key == norm_key and any(r.get(key, 0) > 0 for sel, _, _, _ in series for r in sel):
                 ax.axhline(1.0, color="#666666", linestyle="--", linewidth=0.9)
+                if not lor_ok:
+                    ax.axhspan(CLOSURE_RANGE[0], CLOSURE_RANGE[1], color="#888888", alpha=0.12)
             for selection, marker, color, label in series:
                 points = [r for r in selection if (r.get(key) or 0) > 0]
                 if not points:
@@ -712,50 +886,81 @@ def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids, 
                 if bars:
                     ax.errorbar([r["frequency_hz"] for r in bars], [r[key] for r in bars],
                                 yerr=[r[error] for r in bars], fmt="none", ecolor=color, capsize=2, alpha=0.85)
+            if lor_ok and f_grid.size:
+                h0_fit, fc_fit = float(lor_fit["h0_v_per_rad"]), float(lor_fit["fc_hz"])
+                if key == "h_v_per_rad":
+                    ax.plot(f_grid, h0_fit / np.sqrt(1.0 + (f_grid / fc_fit) ** 2), "-", color="#1f77b4", lw=1.4,
+                            label=f"sqrt-Lorentzian fit (H0={h0_fit:.3g} V/rad, fc={fc_fit:.1f} Hz)")
+                    if cal_k0 is not None and abs(cal_k0) > 0:
+                        ax.axhline(abs(cal_k0), color="#d55e00", ls=":", lw=1.2,
+                                   label=f"A04 K0 = {abs(cal_k0):.3g} V/rad")
+                else:
+                    ax.plot(f_grid, 1.0 / np.sqrt(1.0 + (f_grid / fc_fit) ** 2), "-", color="#1f77b4", lw=1.4,
+                            label=f"1 / sqrt(1 + (f/{fc_fit:.1f} Hz)^2)")
+            elif key == "h_v_per_rad" and cal_k0 is not None and abs(cal_k0) > 0 and plotted_any:
+                ax.axhline(abs(cal_k0), color="#d55e00", ls=":", lw=1.2, label=f"A04 K0 = {abs(cal_k0):.3g} V/rad")
             ax.set(xscale="log", ylabel=ylabel)
+            ax.grid(True, which="both", alpha=0.2)
             if plotted_any:
                 ax.set_yscale("log")
-                ax.legend(fontsize=8)
+                ax.legend(fontsize=7.5, loc="lower left")
             else:
-                diagnostic(ax, "No usable magnitude estimates" if ax is axes[0] else "No usable K0-normalized estimates")
+                diagnostic(ax, "No usable magnitude estimates" if ax is axes[0] else "No usable normalized estimates")
         n = len(summary["configured_frequencies_hz"])
         clean_n = summary["clean_primary_points"]
         warn_n = len(accepted) - clean_n
-        closure = "pass" if summary["k0_closure"]["passed"] else "not passed"
-        title = f"A05 Transfer: {len(accepted)}/{n} plotted ({clean_n} clean, {warn_n} warned) | K0 closure: {closure}"
+        title = f"A05 Transfer: {len(accepted)}/{n} plotted ({clean_n} clean, {warn_n} warned)"
+        if lor_ok:
+            title += f" | H0={lor_fit['h0_v_per_rad']:.3g}, fc={lor_fit['fc_hz']:.1f} Hz"
+            if (ratio := lor_fit.get("h0_to_k0_ratio")) is not None:
+                title += f" | H0/K0={ratio:.3f}"
         if summary["anchor_repeat"].get("configured", True):
-            repeat = "pass" if summary["anchor_repeat"]["passed"] else "not passed"
-            title += f" | Repeat: {repeat}"
+            title += f" | Repeat: {'pass' if summary['anchor_repeat']['passed'] else 'not passed'}"
         fig.suptitle(title)
         axes[-1].set_xlabel("Modulation frequency (Hz)")
         fig.savefig(directory / TRANSFER_PNG, dpi=240)
         check_cancelled()
 
+        # --- Fig 4: A06 Phase sensitivity spectrum (urad/sqrt(Hz), full-band sqrt-Lorentzian back-fill) ---
         fig, (detector, referred) = figure_pair()
         detector.set(xscale="log", ylabel=r"Detector Y ASD (V/$\sqrt{\mathrm{Hz}}$)")
-        referred.set(xscale="log", xlabel="Frequency (Hz)", ylabel=r"Phase sensitivity ASD ($^\circ/\sqrt{\mathrm{Hz}}$)")
+        referred.set(xscale="log", xlabel="Frequency (Hz)", ylabel=r"Phase sensitivity ASD ($\mu\mathrm{rad}/\sqrt{\mathrm{Hz}}$)")
         if (asd > 0).any():
-            detector.loglog(frequency, np.where(asd > 0, asd, np.nan))
+            detector.loglog(frequency, np.where(asd > 0, asd, np.nan), lw=0.9)
+            detector.grid(True, which="both", alpha=0.2)
         else:
             diagnostic(detector, "Detector Y ASD is zero" if frequency.size else "No valid detector Y spectrum")
-        phase_deg = np.rad2deg(phase)
+        phase_urad = phase * 1e6
+        phase_lor_urad = phase_lor * 1e6
         if summary["phase_referral"]["available"]:
             has_warnings = bool(summary["advisory_warnings"])
-            color = "#d55e00" if has_warnings else "#1f77b4"
+            band_color = "#d55e00" if has_warnings else "#009e73"
+            lor_band = summary["phase_referral"].get("lorentzian_full_band") or {}
+            plotted_sens = False
+            if lor_band.get("available") and (phase_lor_urad > 0).any():
+                plotted_sens = True
+                referred.loglog(frequency, np.where(phase_lor_urad > 0, phase_lor_urad, np.nan),
+                                color="#1f77b4", lw=0.95, alpha=0.85,
+                                label=f"Full-band sqrt-Lorentzian back-fill (median {lor_band['median_urad_per_sqrt_hz']:.3g} urad/sqrt(Hz))")
+                fc_val = float(lor_band["fc_hz"])
+                if frequency.size and frequency[0] <= fc_val <= frequency[-1]:
+                    referred.axvline(fc_val, color="#7f7f7f", ls=":", lw=1.0, label=f"fc = {fc_val:.1f} Hz")
             bands_info = summary["phase_referral"]["bands"]
-            med_txt = ", ".join(f"{b['median_deg_per_sqrt_hz']:.3g}" for b in bands_info)
-            prefix = "With advisory warnings" if has_warnings else "Referred phase sensitivity"
-            label = f"{prefix} (median {med_txt} deg/sqrt(Hz))"
+            med_txt = ", ".join(f"{b['median_urad_per_sqrt_hz']:.3g}" for b in bands_info)
+            prefix = "Measured band (with warnings)" if has_warnings else "Measured band direct interp"
+            label = f"{prefix} (median {med_txt} urad/sqrt(Hz))"
             for idx, band in enumerate(bands_info):
                 bins = band_ids == band["transfer_band"]
-                if (phase_deg[bins] > 0).any():
-                    referred.loglog(frequency[bins], np.where(phase_deg[bins] > 0, phase_deg[bins], np.nan),
-                                    color=color, marker="." if bins.sum() == 1 else None,
+                if (phase_urad[bins] > 0).any():
+                    plotted_sens = True
+                    referred.loglog(frequency[bins], np.where(phase_urad[bins] > 0, phase_urad[bins], np.nan),
+                                    color=band_color, lw=1.3, marker="." if bins.sum() == 1 else None,
                                     label=label if idx == 0 else None)
-            if not (phase_deg > 0).any():
+            referred.grid(True, which="both", alpha=0.2)
+            if not plotted_sens:
                 diagnostic(referred, "Referred phase ASD is zero")
             else:
-                referred.legend(fontsize=8)
+                referred.legend(fontsize=7.3, loc="lower left")
         else:
             diagnostic(referred, "Phase referral withheld; see summary")
         fig.suptitle("A06: Phase sensitivity spectrum")
@@ -779,6 +984,7 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
     rows, reference = _transfer_rows(run_dir, [_mapping(item) for item in attempts] if isinstance(attempts, list) else [],
                                     configured, calibration)
     accepted = {row["frequency_hz"]: row for row in rows if row["accepted"] and not row["repeat"]}
+    lorentzian_fit = _fit_transfer_lorentzian(rows, accepted, calibration.get("k0_v_per_rad"))
     predicted_sweep = _mapping(config.get("predicted")).get("pm_sweep_order_hz")
     repeat_expected = isinstance(predicted_sweep, list) and len(predicted_sweep) > len(set(predicted_sweep))
     closure, repeat = _gates(rows, accepted, configured[0], params.pm_anchor_hz, repeat_expected=repeat_expected)
@@ -790,12 +996,15 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
         block_reasons.append("相邻有效主测频点不足，不能在任何频带插值")
     metrics = []
     if not block_reasons:
-        h, phase, band_ids, metrics = _refer_noise(frequency, asd, bands, accepted)
+        h, phase, band_ids, metrics, h_lor, phase_lor, lor_summary = _refer_noise(
+            frequency, asd, bands, accepted, lorentzian_fit=lorentzian_fit
+        )
         if not metrics:
             block_reasons.append("有效频带内没有可折算的 Welch 频点")
     else:
-        h = phase = np.full(frequency.shape, np.nan)
+        h = phase = h_lor = phase_lor = np.full(frequency.shape, np.nan)
         band_ids = np.zeros(frequency.shape, dtype=int)
+        lor_summary = dict(available=False, reason="存在阻断噪声折算的完整性故障")
 
     advisory_warnings = []
     for text in cal_warnings:
@@ -827,13 +1036,18 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
                    calibration=calibration, lockin_reference=reference,
                    configured_frequencies_hz=configured, transfer_attempts=len(rows),
                    accepted_primary_points=len(accepted), clean_primary_points=clean_primary,
-                   k0_closure=closure, anchor_repeat=repeat, transfer_bands_hz=[[b[0], b[-1]] for b in bands],
+                   k0_closure=closure, anchor_repeat=repeat, transfer_lorentzian_fit=lorentzian_fit,
+                   transfer_bands_hz=[[b[0], b[-1]] for b in bands],
                    minimum_y_tone_snr=MIN_TONE_SNR, minimum_tone_cycles=MIN_TONE_CYCLES, noise=noise,
                    phase_referral=dict(available=bool(metrics), reasons=block_reasons, advisory_warnings=advisory_warnings,
-                                       bands=metrics, minimum_frequency_hz=MIN_NOISE_HZ,
-                                       interpolation="log_frequency_log_magnitude_within_adjacent_accepted_points"),
+                                       bands=metrics, lorentzian_full_band=lor_summary,
+                                       minimum_frequency_hz=MIN_NOISE_HZ,
+                                       interpolation="log_frequency_log_magnitude_within_adjacent_accepted_points",
+                                       backfill="zero_centered_sqrt_lorentzian_full_band"),
                    method_notes=["频响只比较调制深度与锁相 Y 音调幅值 |H(f)| = |Y_pk(f)| / phi_pk(f)，不计算复频响相角；与基频/二次谐波不碰撞的 50–250 Hz 工频谐波在最小二乘正交解调中一并投影去除。",
-                                 "H 与标准误仅传播 Y 拟合误差（含时间序列相关修正）；归一增益另外传播 K0 标准误，不含激励幅度标定不确定度。",
+                                 "A05 对 |H(f)| 拟合以 0 Hz 为中心的 √Lorentzian 线型 H0 / sqrt(1 + (f/fc)²)，并以零频截距 H0 归一化；A05/A06 使用宽带滤波（默认 1 µs），不再做锁相软件滤波反卷积。",
+                                 "A06 灵敏度谱以 µrad/√Hz 输出：除实测频点插值带外，同时按 √Lorentzian 传递函数对全频段噪声做外推回补。",
+                                 "H 与标准误仅传播 Y 拟合误差（含时间序列相关修正）；归一增益另外传播 K0/H0 标准误，不含激励幅度标定不确定度。",
                                  "低频闭合（|H|/|K0| 0.8–1.2）等参考指标仅作告警与图例标注，不阻止有效频点参与出图与相位噪声折算。"])
     invalid_sections = [key for key, kind in (("calibration", dict), ("transfer", list), ("noise", dict))
                         if config.get(key) is not None and not isinstance(config[key], kind)]
@@ -841,9 +1055,16 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
         summary["invalid_metadata_sections"] = invalid_sections
 
     def noise_rows():
-        for f, p, a, band, gain, value in zip(frequency, psd, asd, band_ids, h, phase):
-            value_deg = math.degrees(value) if band and math.isfinite(value) else None
-            yield f, p, a, int(band) or None, gain if band else None, value if band else None, value_deg
+        for f, p, a, band, gain, value, gl, vl in zip(frequency, psd, asd, band_ids, h, phase, h_lor, phase_lor):
+            ok_band = bool(band and math.isfinite(value))
+            ok_lor = bool(lor_summary.get("available") and math.isfinite(vl) and math.isfinite(gl))
+            yield (f, p, a, int(band) or None,
+                   gain if ok_band else None,
+                   value if ok_band else None,
+                   math.degrees(value) if ok_band else None,
+                   value * 1e6 if ok_band else None,
+                   gl if ok_lor else None,
+                   vl * 1e6 if ok_lor else None)
 
     coarse_data = _coarse_plot_data(run_dir, config)
     local_data = _local_plot_data(run_dir, config, calibration)
@@ -853,7 +1074,7 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
         write_state(temp / SUMMARY, summary)
         _save_csv(temp / TRANSFER_CSV, TRANSFER_COLUMNS, ([row.get(key) for key in TRANSFER_COLUMNS] for row in rows))
         _save_csv(temp / NOISE_CSV, NOISE_COLUMNS, noise_rows())
-        _plots(temp, rows, accepted, summary, frequency, asd, phase, band_ids,
+        _plots(temp, rows, accepted, summary, frequency, asd, phase, band_ids, phase_lor,
                coarse_data=coarse_data, local_data=local_data)
         check_cancelled()
         if fingerprint(run_dir) != expected_fingerprint:
