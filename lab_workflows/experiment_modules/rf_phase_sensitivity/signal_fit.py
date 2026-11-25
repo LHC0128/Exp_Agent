@@ -14,17 +14,54 @@ def wrap_deg(value):
 
 
 def best_tangent(phase_deg, values):
-    """整周三分量模型的最大模切线；两支等价时取 [0, 180) 的支。"""
-    (_, pos, neg), residual = decompose(phase_deg, values)
+    """整周三分量初定位后，若点数充裕且高次谐波显著，用全谐波模型细化工作点与切线角。"""
+    phis = np.asarray(phase_deg, dtype=float)
+    vals = np.asarray(values, dtype=complex)
+    (_, pos, neg), residual = decompose(phis, vals)
     product = pos * neg.conjugate()
     best = float((180 - np.angle(product, deg=True)) / 2 % 180)
     phi = np.deg2rad(best)
     tangent = 1j * (pos * np.exp(1j * phi) - neg * np.exp(-1j * phi))
-    max_gain = abs(tangent)
+    max_gain = float(abs(tangent))
     if not np.isfinite(tangent) or max_gain < 1e-6:
         raise ValueError("整周相位响应幅度不足，未找到可靠工作点")
-    return best, float(wrap_deg(np.angle(tangent, deg=True) - 90.)), dict(
-        tangent_v_per_command_rad=float(max_gain), residual_rms_v=residual)
+    rot = float(wrap_deg(np.angle(tangent, deg=True) - 90.))
+    prediction = dict(tangent_v_per_command_rad=max_gain, residual_rms_v=float(residual))
+
+    # 强 RF 含高次谐波且网格够密时，在初定位 ±35° 内细化工作点与旋转角，避免噪声过拟合弱场。
+    max_k = min(7, (phis.size - 5) // 2)
+    if phis.size >= 16 and max_k >= 3 and residual > 0.05 * max_gain:
+        rad = np.deg2rad(phis)
+        cols = [np.ones_like(rad)]
+        for k in range(1, max_k + 1):
+            cols.extend((np.cos(k * rad), np.sin(k * rad)))
+        design = np.column_stack(cols)
+        coef, _, rank, _ = np.linalg.lstsq(design, vals, rcond=None)
+        if rank == design.shape[1]:
+            rms_k = float(np.sqrt(np.mean(np.abs(vals - design @ coef) ** 2)))
+            if rms_k < 0.5 * residual:
+                grid = np.linspace(0.0, 360.0, 7200, endpoint=False)
+                g_rad = np.deg2rad(grid)
+                dz = np.zeros_like(grid, dtype=complex)
+                for k in range(1, max_k + 1):
+                    c_k, s_k = coef[1 + 2 * (k - 1)], coef[2 + 2 * (k - 1)]
+                    dz += -k * c_k * np.sin(k * g_rad) + k * s_k * np.cos(k * g_rad)
+                near = np.abs(wrap_deg(grid - best)) <= 35.0
+                idx = int(np.argmax(np.abs(dz) * near))
+                dz_best = dz[idx]
+                gain_ref = float(abs(dz_best))
+                if np.isfinite(dz_best) and gain_ref >= 0.8 * max_gain:
+                    rot_ref = float(wrap_deg(np.angle(dz_best, deg=True) - 90.))
+                    if abs(wrap_deg(rot_ref - rot)) <= 30.0:
+                        best = float(grid[idx] % 360.0)
+                        rot = rot_ref
+                        prediction.update(
+                            refined_by_harmonics=True,
+                            max_harmonic_order=int(max_k),
+                            harmonic_rms_v=rms_k,
+                            refined_tangent_v_per_command_rad=gain_ref,
+                        )
+    return best, rot, prediction
 
 
 def eq222_y(phi_rad: np.ndarray, y0: float, k0: float, b_r2: float, phi_c_rad: float, v0: float = 0.0) -> np.ndarray:

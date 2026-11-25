@@ -27,8 +27,8 @@ DEFINITION = ExperimentDefinition(
     id=run_format.EXPERIMENT_ID, title="射频相位灵敏度", category="measurement", family="z-chain",
     variant="rf-phase-sensitivity", data_type=run_format.DATA_TYPE,
     description=("采用 MFLI Signal Output 1（MF-MOD 相干边带）产生 Y 向 5 kHz 连续载波与可选偏置，"
-                 "与 Z 外触发 ±π 双脉冲配合，使用独立解调器 Demod 4 寻找最大局部切线并对齐到 sample.y，"
-                 "以 MFLI 指令角加密局部斜率标定 K₀。开启固定 2° 峰值相干边带 PM 单次顺序扫描基带调制频率，"
+                 "与 Z 外触发 ±π 双脉冲配合，使用独立解调器 Demod 4 整周初定并经多阶谐波细化工作点后对齐到 sample.y，"
+                 "以 MFLI 指令角加密局部斜率标定 K₀ 并据此更新后续 A05/A06 工作点。开启固定 2° 峰值相干边带 PM 单次顺序扫描基带调制频率，"
                  "再关闭边带保留同一载波测噪声，全程仅在 MFLI 锁相采集并用同轮实测相位频响折算输入等效相位噪声。"),
     documentation="docs/experiments/rf_phase_sensitivity.md",
     required_devices=("DG4000", "MFLI", "Aigtek 1200B", "GS200", "TEC103（可选设温）"),

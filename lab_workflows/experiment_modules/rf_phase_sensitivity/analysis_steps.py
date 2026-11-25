@@ -433,9 +433,11 @@ def _fit_transfer_lorentzian(rows, accepted, k0):
     ordered = sorted(accepted.values(), key=lambda row: row["frequency_hz"])
     if len(ordered) < 2:
         return dict(available=False, reason="有效主测频点不足 2 个，无法拟合 √Lorentzian")
-    freqs = [row["frequency_hz"] for row in ordered]
-    gains = [row["h_v_per_rad"] for row in ordered]
-    ses = [row.get("h_fit_se_v_per_rad") for row in ordered]
+    clean = [row for row in ordered if not any(abs(row["frequency_hz"] - m) <= 0.5 for m in MAINS_HARMONICS_HZ)]
+    fit_rows = clean if len(clean) >= 2 else ordered
+    freqs = [row["frequency_hz"] for row in fit_rows]
+    gains = [row["h_v_per_rad"] for row in fit_rows]
+    ses = [row.get("h_fit_se_v_per_rad") for row in fit_rows]
     fit = signal_fit.fit_sqrt_lorentzian(freqs, gains, ses if all(s is not None for s in ses) else None)
     if not fit.get("available"):
         return fit
@@ -631,7 +633,8 @@ def _local_plot_data(run_dir, config, calibration):
         center_deg = float(deg_arr[0])
     dphi_deg = ((deg_arr - center_deg + 180.0) % 360.0) - 180.0
     dphi_rad = np.deg2rad(dphi_deg)
-    if deg_arr.size >= 2 and t_arr[-1] > t_arr[0] and abs(dphi_deg[0]) < 1.0 and abs(dphi_deg[-1]) < 1.0:
+    dphi_anchor = ((deg_arr[-1] - deg_arr[0] + 180.0) % 360.0) - 180.0
+    if deg_arr.size >= 2 and t_arr[-1] > t_arr[0] and abs(dphi_anchor) < 1.0:
         drift = (z_arr[-1] - z_arr[0]) / (t_arr[-1] - t_arr[0])
         z_corr = z_arr - drift * (t_arr - np.mean(t_arr))
     else:
@@ -1045,7 +1048,7 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
                                        interpolation="log_frequency_log_magnitude_within_adjacent_accepted_points",
                                        backfill="zero_centered_sqrt_lorentzian_full_band"),
                    method_notes=["频响只比较调制深度与锁相 Y 音调幅值 |H(f)| = |Y_pk(f)| / phi_pk(f)，不计算复频响相角；与基频/二次谐波不碰撞的 50–250 Hz 工频谐波在最小二乘正交解调中一并投影去除。",
-                                 "A05 对 |H(f)| 拟合以 0 Hz 为中心的 √Lorentzian 线型 H0 / sqrt(1 + (f/fc)²)，并以零频截距 H0 归一化；A05/A06 使用宽带滤波（默认 1 µs），不再做锁相软件滤波反卷积。",
+                                 "A05 对 |H(f)| 拟合以 0 Hz 为中心的 √Lorentzian 线型 H0 / sqrt(1 + (f/fc)²)（若非碰撞点 ≥ 2 个则自动剔除 50–250 Hz 工频整倍频碰撞点）并以零频截距 H0 归一化；A05/A06 使用宽带滤波（默认 1 µs），不再做锁相软件滤波反卷积。",
                                  "A06 灵敏度谱以 µrad/√Hz 输出：除实测频点插值带外，同时按 √Lorentzian 传递函数对全频段噪声做外推回补。",
                                  "H 与标准误仅传播 Y 拟合误差（含时间序列相关修正）；归一增益另外传播 K0/H0 标准误，不含激励幅度标定不确定度。",
                                  "低频闭合（|H|/|K0| 0.8–1.2）等参考指标仅作告警与图例标注，不阻止有效频点参与出图与相位噪声折算。"])

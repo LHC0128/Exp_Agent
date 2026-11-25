@@ -78,10 +78,10 @@ class RfPhaseSensitivityParams(ExperimentParams):
                                                label="静态点 MFLI 采集时长", unit="s", minimum=0.05, maximum=1.)
     local_span_deg: float = parameter(default=15., external_name="LOCAL_SPAN_DEG", label="局部标定外档角度",
                                       unit="°", minimum=3, maximum=30, description="在最佳工作点两侧等分细扫的对称偏移跨度。")
-    pm_frequencies_hz: list[float] = parameter(default_factory=lambda: [float(f) for f in range(10, 201, 10)],
+    pm_frequencies_hz: list[float] = parameter(default_factory=lambda: [float(f) for f in range(3, 204, 10)],
         external_name="PM_FREQUENCIES_HZ", label="基带调相频率列表", unit="Hz", group="basic",
-        description="严格递增，不改变 5 kHz 载波，按列表顺序单次扫描。")
-    pm_tone_duration_s: float = parameter(default=2., external_name="PM_TONE_DURATION_S", label="每档 MFLI 音调采集时长",
+        description="严格递增，不改变 5 kHz 载波，按列表顺序单次扫描（默认 3–203 Hz 错开 50 Hz 工频）。")
+    pm_tone_duration_s: float = parameter(default=4., external_name="PM_TONE_DURATION_S", label="每档 MFLI 音调采集时长",
                                          unit="s", minimum=0.5, maximum=12.)
     noise_duration_s: float = parameter(default=24., external_name="NOISE_DURATION_S", label="无调制噪声记录时长",
                                        unit="s", minimum=8., maximum=60., group="basic")
@@ -174,9 +174,9 @@ class RfPhaseSensitivityParams(ExperimentParams):
                 *((self.target_temperature_c,) if self.set_tec_target else ()))):
             errors.append("实际使用的标量参数必须有限")
         fm = self.pm_frequencies_hz
-        if (not 2 <= len(fm) <= 40 or any(not math.isfinite(f) or not 1 <= f <= 200 for f in fm)
+        if (not 2 <= len(fm) <= 40 or any(not math.isfinite(f) or not 1 <= f <= 250 for f in fm)
                 or any(a >= b for a, b in zip(fm, fm[1:]))):
-            errors.append("PM_FREQUENCIES_HZ 须含 2–40 个严格递增的 1–200 Hz 频点")
+            errors.append("PM_FREQUENCIES_HZ 须含 2–40 个严格递增的 1–250 Hz 频点")
         elif self.pm_tone_duration_s * fm[0] < 10 or self.demod0_dynamic_rate_sa_s < 10 * max(fm):
             errors.append("基带 MFLI 记录至少覆盖最低频点 10 个周期，A05/A06 采样率至少为最高频点的 10 倍")
         if self.system_settle_s < 10 * self.demod0_order * max(self.demod0_tc_s, self.demod0_dynamic_tc_s):

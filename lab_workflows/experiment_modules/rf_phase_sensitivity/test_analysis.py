@@ -436,3 +436,25 @@ def test_raw_and_result_fingerprints_invalidate_previous_metrics(tmp_path):
     (state.results / steps.NOISE_CSV).unlink()
     restored = analysis.AnalysisWorkflow(tmp_path)
     assert restored.states["B01"]["status"] == "stale" and "quality_passed" not in restored.summary
+
+
+def test_lorentzian_fit_excludes_mains_harmonic_collisions(tmp_path):
+    """即使历史或扫频数据含 50/150 Hz 整倍频干扰飞点，√Lorentzian 拟合仍应自动跳过碰撞点恢复真实 H0/fc。"""
+    config = _synthetic_run(tmp_path, frequencies=[13., 43., 50., 103., 150., 193.])
+    # 人为给 50 Hz 和 150 Hz 注入 +45% 工频污染，验证拟合不被拉偏。
+    for row in config["transfer"]:
+        if row["frequency_hz"] in (50.0, 150.0):
+            meta, arr = run_format.read_frame(tmp_path, row["xy_label"], "xy")
+            (tmp_path / "raw" / f"{row['xy_label']}.npz").unlink()
+            run_format.write_frame(tmp_path, row["xy_label"], "xy", meta,
+                                   time_s=arr["time_s"], x_v=arr["x_v"], y_v=arr["y_v"] * 1.45)
+    # 同时验证 carrier_center_deg 相对 burst_command_deg 偏移 > 1° 时仍可正常做 A04 漂移扣除与成图。
+    config["calibration"]["carrier_center_deg"] = config["calibration"]["burst_command_deg"] + 2.5
+    _write_config(tmp_path, config)
+
+    summary = analysis.analyze(tmp_path)
+    lor = summary["transfer_lorentzian_fit"]
+    assert lor["available"] is True
+    assert lor["h0_v_per_rad"] == pytest.approx(K0 * 0.96, rel=0.02)
+    assert lor["fc_hz"] == pytest.approx(60.0, rel=0.03)
+    assert lor["chi2_red"] < 10.0

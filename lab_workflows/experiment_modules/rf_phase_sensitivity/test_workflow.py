@@ -304,9 +304,11 @@ def test_preflight_and_defaults():
     assert p == RfPhaseSensitivityParams() and p.demod0_idx == 3 and ADAPTER.preflight({}) == []
     assert p.demod0_tc_s == pytest.approx(0.001) and p.demod0_rate_sa_s == pytest.approx(5000.)
     assert p.demod0_dynamic_tc_s == pytest.approx(1e-6) and p.demod0_dynamic_rate_sa_s == pytest.approx(50000.)
-    assert p.pm_frequencies_hz == [float(f) for f in range(10, 201, 10)]
+    assert p.pm_frequencies_hz == [float(f) for f in range(3, 204, 10)]
+    assert p.pm_tone_duration_s == pytest.approx(4.0)
     assert ADAPTER.preflight({"Y_RF_VPP": 0.2}) == []
     assert ADAPTER.preflight({"Y_RF_VPP": 2.0, "Y_BIAS_V": 1.0}) == []
+    assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [3., 103., 203.], "PM_TONE_DURATION_S": 4.0}) == []
     assert ADAPTER.preflight({"Y_RF_VPP": 21.0})
     assert ADAPTER.preflight({"Y_RF_VPP": 2.0, "Y_BIAS_V": 9.5})
     assert ADAPTER.preflight({"Y_RF_FREQ_HZ": 6000.0})
@@ -316,12 +318,17 @@ def test_preflight_and_defaults():
     assert ADAPTER.preflight({"Z_PULSE_WIDTH_US": 300})
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [5., 5., 20.]})
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [1., 5., 20.]})
+    assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [3., 103., 203.], "PM_TONE_DURATION_S": 2.0})
+    assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [10., 260.], "PM_TONE_DURATION_S": 2.0})
     assert ADAPTER.preflight({"SYSTEM_SETTLE_S": 0.101, "DEMOD0_TC": .01})
     assert ADAPTER.preflight({"DEMOD0_DYNAMIC_RATE": 1500.})
 
 
 def test_legacy_demod0_history_config_remains_readable():
-    legacy = RfPhaseSensitivityParams(demod0_idx=0, y_rf_vpp=0.5)
+    legacy = RfPhaseSensitivityParams(
+        demod0_idx=0, y_rf_vpp=0.5,
+        pm_frequencies_hz=[float(f) for f in range(10, 201, 10)], pm_tone_duration_s=2.0,
+    )
     v1_params = legacy.to_external()
     v1_params.pop("DEMOD0_DYNAMIC_TC")
     v1_params.pop("DEMOD0_DYNAMIC_RATE")
@@ -653,7 +660,7 @@ def test_save_failure_keeps_previous_frames(rig, monkeypatch):
 
 
 def test_best_tangent_accepts_non_sinusoidal_high_rf_response():
-    """去掉 15% 三分量残差门控后，高射频幅度（如 0.5 Vpp）下的陡峭非正弦过零仍应定位并对齐到 Y。"""
+    """三分量初定 + 高次谐波细化应把非线性陡坡定准到过零处，同时弱场噪声不触发高次拟合过拟合。"""
     grid = np.arange(0., 360., 15.)
     phi = np.deg2rad(signal_fit.wrap_deg(grid - 141.37))
     # 陡峭色散曲线含显著 3θ 等高次谐波（三分量模型 RMS 残差 > 0.15 * max_gain）
@@ -661,10 +668,56 @@ def test_best_tangent_accepts_non_sinusoidal_high_rf_response():
     values = dispersive * np.exp(1j * np.deg2rad(131.07))
     best, rot, fit = signal_fit.best_tangent(grid, values)
     assert fit["residual_rms_v"] > 0.15 * fit["tangent_v_per_command_rad"]
-    assert abs(signal_fit.wrap_deg(best - 141.37)) < 3.0
+    assert fit.get("refined_by_harmonics") is True
+    assert abs(signal_fit.wrap_deg(best - 141.37)) < 0.5
     rotated = values * np.exp(-1j * np.deg2rad(rot))
     # 旋转后在 135°–150° 之间存在显著单向 Y 跳变
     assert rotated[10].imag - rotated[9].imag > 0.2
+    # 弱场近正弦加噪声应保持一阶三分量结果，避免噪声触发过拟合
+    rng = np.random.default_rng(1)
+    weak = (0.05 * np.sin(phi) * np.exp(1j * np.deg2rad(42.0))) + rng.normal(0, 1e-3, phi.size) + 1j * rng.normal(0, 1e-3, phi.size)
+    weak_best, _, weak_fit = signal_fit.best_tangent(grid, weak)
+    assert "refined_by_harmonics" not in weak_fit
+    assert abs(signal_fit.wrap_deg(weak_best - 141.37)) < 2.0
+
+
+def test_a04_inflection_updates_carrier_center_for_a05_and_a06(rig, monkeypatch):
+    """A04 拟合出局部拐点相对 A03 中心的偏移后，必须更新 A05/A06 的载波相移到新工作点。"""
+    monkeypatch.setattr(acquisition, "_STATIC_GRID_DEG", tuple(range(0, 360, 15)))
+    dev = rig.lockin.device_id
+    rig.p = replace(rig.p, pm_frequencies_hz=[13., 43.], pm_tone_duration_s=1.0)
+    rng = np.random.default_rng(8123)
+
+    def collect(instr, config, index, rate, **kwargs):
+        cmd = float(rig.lockin.values[f"/{dev}/mods/0/carrier/phaseshift"])
+        t = np.arange(config.grid_cols) / rate
+        phi = np.deg2rad(signal_fit.wrap_deg(cmd - 103.5))
+        sb_on = rig.lockin.values[f"/{dev}/mods/0/sidebands/0/enable"] and rig.lockin.values[f"/{dev}/mods/0/sidebands/1/enable"]
+        if rig.lockin.values[f"/{dev}/mods/0/enable"] and sb_on:
+            f = rig.lockin.values[f"/{dev}/oscs/{MOD_SIDEBAND_OSC_IDX}/freq"]
+            phi = phi + rig.lockin.values[f"/{dev}/mods/0/index"] * np.sin(2 * np.pi * f * t) / np.sqrt(1 + (f / 85.)**2)
+        # 故意构造非零 v0 不对称强色散响应，使 A03 高次与 A04 拐点存在约 2° 递进。
+        r = 2.6
+        v = -0.18 + r * np.sin(phi)
+        y_sig = 0.25 * v / (1.0 + v * v) + 0.008 * np.sin(phi)
+        x_sig = 0.006 * np.cos(phi)
+        phase_shift = np.deg2rad(rig.lockin.get_double(rig.lockin.demod_path(READOUT_DEMOD_IDX) + "/phaseshift"))
+        z = (x_sig + 1j * y_sig) * np.exp(-1j * phase_shift)
+        snaps = dict(actual_rate=rate, time_source="module_timestamp", acquisition_module="daq", unit="V")
+        return [SimpleNamespace(signal_name=f"sample.{key}", values=signal + rng.normal(0, 4e-6, t.size),
+            time=t, record_slices=[(0, t.size)], config_snapshot=snaps.copy()) for key, signal in (("x", z.real), ("y", z.imag))]
+
+    monkeypatch.setattr(acquisition.daq, "acquire_data", collect)
+    run_dir = Workflow.run(rig.p, project_root=ROOT)
+    c = run_format.read_config(run_dir / "experiment_config.yaml")
+    assert c["phase_response"]["coarse_fit"].get("refined_by_harmonics") is True
+    cal = c["calibration"]
+    assert abs(cal["eq222_phi_offset_deg"]) > 0.2
+    expected_center = (cal["burst_command_deg"] + cal["eq222_phi_offset_deg"]) % 360.0
+    assert abs(signal_fit.wrap_deg(cal["carrier_center_deg"] - expected_center)) < 0.05
+    assert abs(signal_fit.wrap_deg(c["pm_alignment"]["command_deg"] - cal["carrier_center_deg"])) < 0.05
+    assert abs(signal_fit.wrap_deg(c["noise"]["carrier_command_deg"] - cal["carrier_center_deg"])) < 0.05
+    _assert_parked(rig)
 
 
 def test_preflight_allows_mapping_without_scope(tmp_path):

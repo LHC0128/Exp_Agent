@@ -350,13 +350,15 @@ def local_calibration(ctx, carrier):
                                 estimated_remaining_seconds=(time.monotonic() - start) / done * (len(offsets) - done),
                                 data={"eta_scope": "当前局部标定"})
     center_indices = (0, len(offsets) - 1)
-    target_center = float(best % 360.0)
+    sweep_center = float(best % 360.0)
     try:
-        fitted = signal_fit.local_slopes(target_center, centers, times, values, span, center_indices=center_indices)
+        fitted = signal_fit.local_slopes(sweep_center, centers, times, values, span, center_indices=center_indices)
     except ValueError as exc:
         raise SafetyAbort(str(exc)) from exc
     warnings.extend(fitted.pop("local_warnings", ()))
-    cal.update(fitted, carrier_center_deg=target_center, carrier_v_pk=float(p.y_carrier_vpk))
+    offset_deg = float(np.clip(fitted.get("eq222_phi_offset_deg") or 0.0, -span, span))
+    refined_center = float(carrier.set_phase((sweep_center + offset_deg) % 360.0))
+    cal.update(fitted, carrier_center_deg=refined_center, carrier_v_pk=float(p.y_carrier_vpk))
     k = fitted["k0_v_per_rad"]
     if not math.isfinite(k) or abs(k) < 1e-6:
         raise SafetyAbort("局部 K0 无效或接近零，无法作为标定斜率")
@@ -371,8 +373,8 @@ def local_calibration(ctx, carrier):
     cal["reason"] = "；".join(warnings)
     ctx.save()
     suffix = f"（含 {len(warnings)} 项质检告警）" if warnings else ""
-    ctx.outputs["相位灵敏度"] = f"局部 K₀ = {k:.5g} V/rad，工作点 {target_center:.3f}°{suffix}"
-    report_runtime_progress("A04", f"局部 K₀ {k:.5g} V/rad，工作点 {target_center:.3f}°{suffix}", 95,
+    ctx.outputs["相位灵敏度"] = f"局部 K₀ = {k:.5g} V/rad，工作点更新为 {refined_center:.3f}°{suffix}"
+    report_runtime_progress("A04", f"局部 K₀ {k:.5g} V/rad，工作点 {refined_center:.3f}°{suffix}", 95,
                             estimated_remaining_seconds=None)
     return cal
 
