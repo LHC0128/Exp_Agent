@@ -920,13 +920,17 @@ def run_capture(args: argparse.Namespace) -> int:
         ctx.state["completion_status"] = "failed"
         ctx.state["failure_reason"] = str(exc)
     finally:
+        # 收尾各项兜住中断（Ctrl+C 或代跑取消落在收尾里），记录后继续执行后续项，全部完成再重抛。
+        cleanup_interrupt: KeyboardInterrupt | None = None
         pump_errors: list[str] = []
         if pump_dev is not None and pump_initial_on is not None:
             try:
                 restored = _set_pump_output(pump_dev, pump_initial_on)
                 ctx.state["pump_control"]["restored"] = True
                 ctx.state["pump_control"]["restored_output_on"] = restored
-            except Exception as exc:
+            except (Exception, KeyboardInterrupt) as exc:
+                if isinstance(exc, KeyboardInterrupt):
+                    cleanup_interrupt = cleanup_interrupt or exc
                 pump_errors.append(f"恢复 王湾pump CH{PUMP_CHANNEL} 失败：{exc}")
                 ctx.state["pump_control"]["restore_error"] = str(exc)
 
@@ -934,7 +938,9 @@ def run_capture(args: argparse.Namespace) -> int:
         if ctx.active:
             try:
                 park_errors = preparation.park(ctx)
-            except Exception as exc:
+            except (Exception, KeyboardInterrupt) as exc:
+                if isinstance(exc, KeyboardInterrupt):
+                    cleanup_interrupt = cleanup_interrupt or exc
                 park_errors = [f"安全收尾异常：{exc}"]
 
         devices = reversed(ctx.device_session.unique_devices())
@@ -952,6 +958,8 @@ def run_capture(args: argparse.Namespace) -> int:
             "disconnect_errors": list(disconnect_report.disconnect_errors),
         }
         ctx.save()
+        if capture_failed is None and cleanup_interrupt is not None:
+            raise cleanup_interrupt
         if capture_failed is None and all_errors:
             raise SafetyAbort("安全收尾存在未完成项：" + "；".join(all_errors))
 
