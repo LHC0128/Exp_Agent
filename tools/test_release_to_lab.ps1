@@ -198,6 +198,12 @@ function Add-FixtureDevCommit($Fixture, [string]$Message, [string]$AppText) {
     Invoke-FixtureGit $Fixture.Dev @('add', '-A') | Out-Null
     Invoke-FixtureGit $Fixture.Dev @('commit', '-m', $Message) | Out-Null
 }
+function Add-FixtureScriptCommit($Fixture, [string]$Message, [string]$ScriptText, [string]$AppText = $null) {
+    Write-FixtureFile (Join-Path $Fixture.Dev 'scripts\probe\demo.py') $ScriptText
+    if ($AppText) { Write-FixtureFile (Join-Path $Fixture.Dev 'GUI\frontend\src\app.txt') $AppText }
+    Invoke-FixtureGit $Fixture.Dev @('add', '-A') | Out-Null
+    Invoke-FixtureGit $Fixture.Dev @('commit', '-m', $Message) | Out-Null
+}
 function Get-DistContent([string]$RunDir) {
     $path = Join-Path $RunDir 'GUI\frontend\dist\index.html'
     if (-not (Test-Path -LiteralPath $path)) { return $null }
@@ -1012,6 +1018,61 @@ try {
     Assert ((Get-DistContent $f.Run) -eq 'NEW BUILD') '正式从分离构建失败：旧 dist 未保留'
     Assert ($TestState.StartCalls.Count -eq 1) '正式从分离构建失败：未按原版本重启 GUI'
     $Passed += 1; Write-Host '通过：正式发布从分离 HEAD 构建失败退回原提交'
+
+    # 43 迭代：相对运行目录当前版本只改 scripts/ → 不停/启 GUI、不构建前端，代码更新并打新 wip 标签
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-43'
+    $f = New-IterateFixture 'iter-scripts-only'
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '只改脚本（首轮完整发布）'
+    Add-FixtureScriptCommit $f '只改调试脚本' "print('v2')"
+    $distBefore = Get-DistContent $f.Run
+    $labBefore = Invoke-FixtureGit $f.Run @('rev-parse', 'lab')
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '只改脚本'
+    Assert ($TestState.StopCalls.Count -eq 0 -and $TestState.StartCalls.Count -eq 0) '只改脚本：仍停/启 GUI'
+    Assert ($TestState.NpmCalls.Count -eq 0) '只改脚本：仍构建前端'
+    Assert ((Get-FixtureHead $f.Run) -eq (Get-FixtureHead $f.Dev)) '只改脚本：运行目录未更新到实验分支 HEAD'
+    Assert ((Get-FixtureBranch $f.Run) -eq 'HEAD') '只改脚本：运行目录不在分离 HEAD'
+    Assert ((Invoke-FixtureGit $f.Run @('rev-parse', 'lab')) -eq $labBefore) '只改脚本：lab 分支被移动'
+    Assert ((Get-FixtureWipTags $f.Run) -contains "lab-wip-$Today-2") "只改脚本：未打 lab-wip-$Today-2"
+    Assert ((Get-DistContent $f.Run) -eq $distBefore) '只改脚本：dist 被改动'
+    Assert ((Get-Content -LiteralPath (Join-Path $f.Run 'scripts\probe\demo.py') -Raw).Trim() -eq "print('v2')") '只改脚本：脚本未更新'
+    $log = Get-Content -LiteralPath (Join-Path $f.Run 'tmp\release.log') -Raw
+    Assert ($log -match '只改 scripts/') '只改脚本：日志未说明跳过重启'
+    $Passed += 1; Write-Host '通过：迭代只改 scripts/ 不重启 GUI'
+
+    # 44 迭代：只改 scripts/ 但 GUI 忙 → 拒绝，代码不动
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-44'
+    $f = New-IterateFixture 'iter-scripts-busy'
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '只改脚本忙时（首轮完整发布）'
+    Add-FixtureScriptCommit $f '只改调试脚本' "print('busy')"
+    $TestState.Health.hardware_busy = $true
+    $headBefore = Get-FixtureHead $f.Run
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseFailed $r '只改脚本忙时拒绝' '硬件任务忙'
+    Assert ((Get-FixtureHead $f.Run) -eq $headBefore) '只改脚本忙时拒绝：运行目录被改动'
+    Assert ($TestState.StopCalls.Count -eq 0 -and $TestState.NpmCalls.Count -eq 0) '只改脚本忙时拒绝：仍停 GUI/构建'
+    $Passed += 1; Write-Host '通过：迭代只改 scripts/ 忙时拒绝'
+
+    # 45 迭代：scripts/ 与其他文件一起改 → 照旧完整停/启与构建
+    $TestState.Case = @{}
+    $TestState.HealthDown = $false
+    $TestState.Health = New-HealthObject 'pre-45'
+    $f = New-IterateFixture 'iter-scripts-mixed'
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '混合改动（首轮完整发布）'
+    Add-FixtureScriptCommit $f '脚本与前端一起改' "print('mixed')" "v9`n"
+    $r = Invoke-ReleaseCase $f -Options @{ Iterate = $true }
+    Assert-CaseOk $r '混合改动'
+    Assert ($TestState.StopCalls.Count -eq 1 -and $TestState.StartCalls.Count -eq 1) '混合改动：未完整停/启 GUI'
+    Assert ($TestState.NpmCalls.Count -gt 0) '混合改动：未构建前端'
+    Assert ((Get-FixtureHead $f.Run) -eq (Get-FixtureHead $f.Dev)) '混合改动：运行目录未更新'
+    $Passed += 1; Write-Host '通过：迭代混合改动照旧完整发布'
 
     Write-Host "全部 $Passed 项发布演练通过；未连接真实 8000、未启动 GUI、未触碰真实运行目录。"
     Remove-Item -LiteralPath $TestRoot -Recurse -Force

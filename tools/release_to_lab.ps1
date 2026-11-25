@@ -11,7 +11,8 @@
 #   可选参数：
 #     -RunDir <路径>        运行目录，默认 D:\Code\exp_agent_run
 #     -DevDir <路径>        开发目录，默认脚本所在仓库
-#     -Iterate              迭代发布：开发目录在 exp/* 分支，运行目录更新到分离 HEAD，打 lab-wip-* 标签
+#     -Iterate              迭代发布：开发目录在 exp/* 分支，运行目录更新到分离 HEAD，打 lab-wip-* 标签；
+#                           相对运行目录当前版本只改了 scripts/ 时不停/启 GUI、不重建前端
 #     -BackfillOnly         与 -Iterate 同用：只把运行目录 params/ 回存到实验分支，不动代码与 GUI
 #     -Confirm              迭代发布时仍确认「已通过测试」（正式模式总是确认）
 #     -SkipRestart          只更新代码和前端，不停止/启动 GUI；仅在 GUI 未运行时可用
@@ -798,6 +799,25 @@ if ($Resume) {
         if ("$answer".Trim().ToLower() -ne 'y') { Stop-Release '未确认依赖变化的发布，已取消；运行目录与 GUI 均未改动。' }
     } else {
         Write-ReleaseLog '依赖清单无变化。'
+    }
+}
+
+# 迭代发布只改了 scripts/ 时不停/启 GUI、不重建前端：后端与 lab_workflows 从不导入 scripts/，
+# 代跑脚本每次由子进程从磁盘读取，热更新不影响在用后端。scripts/ 以外的任何改动（含参数回存）照旧走完整流程。
+if ($Iterate -and -not $depsChanged) {
+    $changedText = (Invoke-Git $RunDir @('-c', 'core.quotepath=false', 'diff', '--name-only', 'HEAD', $targetHead)).Text
+    $changedPaths = @($changedText -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $outsideScripts = @($changedPaths | Where-Object { -not $_.StartsWith('scripts/') })
+    if ($changedPaths.Count -gt 0 -and $outsideScripts.Count -eq 0) {
+        Write-ReleaseLog "本次只改 scripts/（$($changedPaths.Count) 个文件）：不停 GUI、不重建前端。"
+        Write-ReleaseLog '步骤 5：更新代码前再次检查空闲（不停 GUI）...'
+        Assert-GuiIdle | Out-Null
+        Write-ReleaseLog "步骤 6：运行目录 checkout --detach 到 $targetRef..."
+        Invoke-Git $RunDir @('checkout', '--detach', $targetHead) | Out-Null
+        if ($createTag) { Invoke-Git $RunDir @('tag', $newTag) | Out-Null }
+        Write-ReleaseLog "运行目录已分离到 $(Get-ShortRev $targetHead)，标签 $newTag（lab 分支未动）。"
+        Write-ReleaseLog "===== 迭代发布完成：$newTag（只改 scripts/，GUI 未重启） ====="
+        exit 0
     }
 }
 
