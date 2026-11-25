@@ -113,7 +113,7 @@ mapping:
     description: RF 线圈驱动（MORS 扫频 / T2 FID 脉冲），与 Y_magnetic_field 共用同一物理通道
   Pump_modulation:
     instrument: signal_generator
-    device_id: dg4e222800868
+    device_id: dg9q275000733
     endpoint:
       kind: channel
       index: 1
@@ -121,7 +121,7 @@ mapping:
     description: 100MHz 连续正弦波经 RF 开关与 AOM 控制 Pump 光
   Time_sequence:
     instrument: signal_generator
-    device_id: dg4e222800868
+    device_id: dg9q275000733
     endpoint:
       kind: channel
       index: 2

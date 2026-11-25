@@ -10,15 +10,14 @@ network_resources:
 devices:
   aigtek_1200b_cp210x_0001:
     instrument: power_amplifier
-    model: '1200B'
+    model: 1200B
     label: Aigtek 1200B 线圈驱动放大器
     resource: COM3
     reference_clock: null
     connection:
-      # COM3 与适配器身份来自现场记录；CP210x 序列号不是放大器序列号。
       adapter_name: Silicon Labs CP210x USB to UART Bridge
-      usb_vid: 0x10C4
-      usb_pid: 0xEA60
+      usb_vid: 4292
+      usb_pid: 60000
       serial_number: '0001'
       baudrate: 9600
       bytesize: 8
@@ -30,8 +29,8 @@ devices:
     capabilities:
       channels:
       - 1
-      gain_min_db: 0.0
-      gain_max_db: 20.0
+      gain_min_db: 0
+      gain_max_db: 20
       gain_step_db: 0.5
       input_impedance_ohms:
       - 50
