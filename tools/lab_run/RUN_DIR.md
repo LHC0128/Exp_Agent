@@ -4,7 +4,7 @@
 
 - 代码更新只能从开发目录发布：在开发目录执行 `tools\release_to_lab.ps1`（发布前检查 GUI 空闲）。
   - 正式发布：从 master 发布，`lab` 分支只快进，打 `lab-YYYYMMDD-N` 标签。
-  - 迭代发布（协同实验会话）：`-Iterate` 从 `exp/*` 实验分支发布，本目录切到分离 HEAD 并打 `lab-wip-YYYYMMDD-N` 标签，`lab` 分支不动；收尾由正式发布切回 `lab`。
+  - 迭代发布（上机调试）：`-Iterate` 从 `exp/*` 实验分支发布，本目录切到分离 HEAD 并打 `lab-wip-YYYYMMDD-N` 标签，`lab` 分支不动；收尾由正式发布切回 `lab`。
 - 本目录的 `origin` 是开发目录：脚本比对开发目录 HEAD 与这里刚拉到的同名分支，不一致即停止。
 - 不要在本目录改代码、手动切分支或提交（`params/` 的界面改动由发布脚本回存到开发目录并丢弃本地改动，本目录不留提交）。
 - 回滚：开发目录执行 `tools\release_to_lab.ps1 -Rollback <标签>`；`lab-*` 回到 `lab` 分支，`lab-wip-*` 回到对应的分离 HEAD。
