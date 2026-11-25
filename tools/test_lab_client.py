@@ -34,6 +34,9 @@ WORKFLOW = {
 }
 
 
+SCRIPT = "scripts/rf_phase_sensitivity/noise_breakdown_4states.py"
+
+
 class FakeLab:
     """模拟 GUI 后端：任务每拍推进一次，取消后经若干拍安全收尾才进入 cancelled。"""
 
@@ -71,6 +74,9 @@ class FakeLab:
             if job["kind"].startswith("experiment:") and self.run_ticks is not None and job["_ticks"] >= self.run_ticks:
                 job.update(status="completed", stage="complete", percent=100,
                            result={"run_dir": r"D:\Code\exp_agent_run\data\fake\run1"})
+            if job["kind"].startswith("script:") and self.run_ticks is not None and job["_ticks"] >= self.run_ticks:
+                job.update(status="completed", stage="running", percent=None,
+                           result={"exit_code": 0, "log_path": r"D:\Code\exp_agent_run\tmp\script_jobs\x.log"})
         session = self.session
         if session and session["status"] != "closed":
             if session["status"] == "queued":
@@ -172,6 +178,18 @@ def build_app(lab: FakeLab) -> FastAPI:
         lab.calls.append(("finish",))
         lab.session["pending_request"] = "finish"
         return lab.public_session()
+
+    @app.post("/api/scripts/preflight")
+    def script_preflight(body: dict):
+        lab.calls.append(("script-preflight", body["path"], body["argv"]))
+        if body["path"] != SCRIPT:
+            raise HTTPException(400, "脚本未在当前版本（HEAD）中跟踪")
+        return {"path": body["path"], "argv": body["argv"], "commit": "abc1234"}
+
+    @app.post("/api/scripts/runs")
+    def script_runs(body: dict):
+        lab.calls.append(("script-run", body["path"], body["argv"]))
+        return lab.new_job(f"script:{body['path']}")
 
     @app.post("/api/devices/{device_id}/refresh")
     def refresh(device_id: str):
@@ -338,6 +356,67 @@ def test_cancel_command_waits_until_terminal(lab, cli):
     lab.new_job("experiment:one-shot")
     code, report, _ = cli("cancel", "job1")
     assert code == EXIT_OK and report["status"] == "cancelled"
+
+
+# ---------------------------------------------------------------- 代跑脚本
+
+
+def script_started(lab):
+    return [call for call in lab.calls if call[0] == "script-run"]
+
+
+def test_script_run_passes_argv_after_separator_and_reports(lab, cli):
+    code, report, _ = cli("script-run", SCRIPT, "--allow-script", SCRIPT, "--", "--vpp", "0.2", "--skip-const-z")
+    assert code == EXIT_OK
+    assert report["status"] == "completed" and report["job_id"] == "job1"
+    assert report["argv"] == ["--vpp", "0.2", "--skip-const-z"]
+    assert report["preflight"]["commit"] == "abc1234"
+    assert report["result"]["log_path"].endswith("x.log")
+    assert script_started(lab) == [("script-run", SCRIPT, ["--vpp", "0.2", "--skip-const-z"])]
+
+
+def test_script_run_requires_matching_allow(lab, cli):
+    # 缺 --allow-script：argparse 以退出码 2 结束，与 EXIT_REFUSED 一致。
+    with pytest.raises(SystemExit) as missing:
+        cli("script-run", SCRIPT)
+    assert missing.value.code == EXIT_REFUSED
+    code, _, err = cli("script-run", SCRIPT, "--allow-script", "scripts/other.py")
+    assert code == EXIT_REFUSED and "--allow-script" in err
+    assert not script_started(lab) and not [c for c in lab.calls if c[0] == "script-preflight"]
+
+
+def test_script_run_preflight_rejection_does_not_start(lab, cli):
+    other = "scripts/unreleased.py"
+    code, _, err = cli("script-run", other, "--allow-script", other)
+    assert code == EXIT_REFUSED and "未在当前版本" in err
+    assert not script_started(lab)
+
+
+def test_script_run_dry_run_only_preflights(lab, cli):
+    code, report, _ = cli("script-run", SCRIPT, "--allow-script", SCRIPT, "--dry-run", "--", "--vpp", "0.1")
+    assert code == EXIT_OK and report["status"] == "dry_run"
+    assert ("script-preflight", SCRIPT, ["--vpp", "0.1"]) in lab.calls
+    assert not script_started(lab)
+
+
+def test_script_run_refuses_when_gui_busy(lab, cli):
+    lab.health["hardware_busy"] = True
+    code, _, _ = cli("script-run", SCRIPT, "--allow-script", SCRIPT)
+    assert code == EXIT_REFUSED and not script_started(lab)
+
+
+def test_script_run_timeout_cancels_and_waits_for_cleanup(lab, cli):
+    lab.run_ticks, lab.cleanup_ticks = None, 3
+    code, report, _ = cli("script-run", SCRIPT, "--allow-script", SCRIPT, "--timeout", "5")
+    assert code == EXIT_RUN_FAILED
+    assert report["interrupted"] == "timeout" and report["status"] == "cancelled"
+    assert ("cancel", "job1") in lab.calls
+
+
+def test_script_run_unconfirmed_cleanup_exits_with_dedicated_code(lab, cli):
+    lab.run_ticks, lab.cleanup_ticks = None, None
+    code, _, err = cli("script-run", SCRIPT, "--allow-script", SCRIPT, "--timeout", "3", "--cleanup-timeout", "4")
+    assert code == EXIT_CLEANUP_UNCONFIRMED and "安全收尾未确认" in err
 
 
 # ---------------------------------------------------------------- 只读查询

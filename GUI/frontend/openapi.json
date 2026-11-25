@@ -5,6 +5,78 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/scripts/preflight": {
+      "post": {
+        "summary": "Preflight",
+        "operationId": "preflight_api_scripts_preflight_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptRunBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scripts/runs": {
+      "post": {
+        "summary": "Run",
+        "operationId": "run_api_scripts_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptRunBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/experiments/noise-spectrum-xy/workflow": {
       "get": {
         "summary": "Workflow Definition",
@@ -27052,6 +27124,26 @@
           "level"
         ],
         "title": "ScopeTriggerSnapshot"
+      },
+      "ScriptRunBody": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "argv": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Argv"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "ScriptRunBody"
       },
       "SetupActiveBody": {
         "properties": {

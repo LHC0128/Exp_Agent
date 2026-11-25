@@ -147,6 +147,7 @@ from .server_runtime import await_shutdown
 from .run_management import checked_run_path, read_starred, rename_directory, save_starred, split_run_name
 from .noise_spectrum_xy import XYSessionService, create_router as xy_router
 from .updates import UpdatesService, create_router as updates_router
+from .script_jobs import create_router as script_jobs_router
 from .rf_sensitivity_direct_aw import RFSessionService, create_router as rf_workflow_router
 from .rf_sensitivity_aw_known_noise import RFKnownNoiseSessionService
 from .rf_control_scale_sensitivity import RFControlScaleSessionService
@@ -329,6 +330,7 @@ ROOT = find_project_root()
 manager.setup_resolver = lambda: capture_setup(ROOT).id
 INSTANCE_ID = uuid4().hex
 z_arbitrary_service = ZArbitraryControlService(ROOT)
+app.include_router(script_jobs_router(manager, lambda: ROOT))
 xy_sessions = XYSessionService(lambda: ROOT, manager)
 app.include_router(xy_router(xy_sessions))
 known_noise_sessions = KnownNoiseSessionService(lambda: ROOT, manager)

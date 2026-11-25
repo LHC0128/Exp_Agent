@@ -10,6 +10,8 @@
     python -m tools.lab_client show <实验ID>
     python -m tools.lab_client run <实验ID> --allow <实验ID> \\
         --allow-param rf_amplitude=0.1:0.5 --param rf_amplitude=0.2 [--steps a,b] [--dry-run]
+    python -m tools.lab_client script-run scripts/<类型>/<脚本>.py \\
+        --allow-script scripts/<类型>/<脚本>.py [--dry-run] -- --vpp 0.2
     python -m tools.lab_client cancel <任务ID>
     python -m tools.lab_client device-read <设备ID>
 
@@ -336,6 +338,32 @@ class LabClient:
         final = self._guarded(lambda: self.wait_job(job["id"], deadline), job["id"], cleanup_timeout, report)
         return self._finish_job_report(report, final)
 
+    def script_run(
+        self,
+        path: str,
+        *,
+        allowed_scripts: list[str],
+        argv: list[str],
+        timeout: float = 3600.0,
+        cleanup_timeout: float = 600.0,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """经 GUI 代跑运行目录 ``scripts/`` 下已发布的连仪器脚本（GUI 硬件队列内执行）。"""
+        if path not in allowed_scripts:
+            raise LabClientError(f"脚本 {path} 不在本次 --allow-script 授权清单内")
+        report: dict[str, Any] = {"script": path, "argv": argv, "run_root": str(self.run_root)}
+        self.ensure_idle()
+        report["preflight"] = self.post("/api/scripts/preflight", {"path": path, "argv": argv})
+        if dry_run:
+            report["status"] = "dry_run"
+            return report
+        deadline = self.clock() + timeout
+        job = self.post("/api/scripts/runs", {"path": path, "argv": argv})
+        report["job_id"] = job["id"]
+        self.log(f"已开始脚本 {path}，任务 {job['id']}")
+        final = self._guarded(lambda: self.wait_job(job["id"], deadline), job["id"], cleanup_timeout, report)
+        return self._finish_job_report(report, final)
+
     @staticmethod
     def _select_steps(flow: dict[str, Any] | None, steps: list[str] | None) -> list[str] | None:
         if flow is None:
@@ -452,6 +480,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--timeout", type=float, default=3600.0, help="运行时限（秒），超时即取消")
     run.add_argument("--cleanup-timeout", type=float, default=600.0, help="取消后等待安全收尾的时限（秒）")
     run.add_argument("--dry-run", action="store_true", help="只做 GUI 预检，不开始实验")
+    script = sub.add_parser("script-run", help="在授权范围内经 GUI 代跑 scripts/ 下的连仪器脚本")
+    script.add_argument("path", help="相对运行目录根、以 / 分隔，如 scripts/<类型>/<脚本>.py")
+    script.add_argument("--allow-script", action="append", default=[], required=True,
+                        help="本次授权的脚本路径（须与 path 完全一致），可重复")
+    script.add_argument("--timeout", type=float, default=3600.0, help="运行时限（秒），超时即取消")
+    script.add_argument("--cleanup-timeout", type=float, default=600.0, help="取消后等待安全收尾的时限（秒）")
+    script.add_argument("--dry-run", action="store_true", help="只做 GUI 预检，不开始脚本")
+    script.epilog = "脚本参数写在 -- 之后，原样传给脚本。"
     cancel = sub.add_parser("cancel", help="取消任务并等待安全收尾")
     cancel.add_argument("job_id")
     cancel.add_argument("--cleanup-timeout", type=float, default=600.0)
@@ -461,6 +497,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def execute(argv: list[str], client: LabClient) -> tuple[int, Any]:
+    script_argv: list[str] = []
+    if argv[:1] == ["script-run"] and "--" in argv:
+        # 脚本参数可能以 - 开头，先在 -- 处切开，不交给 argparse 解析。
+        split = argv.index("--")
+        argv, script_argv = argv[:split], argv[split + 1:]
     args = build_parser().parse_args(argv)
     if args.command == "status":
         return EXIT_OK, client.status()
@@ -471,7 +512,18 @@ def execute(argv: list[str], client: LabClient) -> tuple[int, Any]:
     if args.command == "cancel":
         job = client.cancel_and_wait(args.job_id, args.cleanup_timeout)
         return EXIT_OK, {"job_id": args.job_id, "status": job.get("status"), "message": job.get("message")}
-    overrides = dict(_split_assignment(item, "--param") for item in args.param)
+    if args.command == "script-run":
+        report = client.script_run(
+            args.path,
+            allowed_scripts=args.allow_script,
+            argv=script_argv,
+            timeout=args.timeout,
+            cleanup_timeout=args.cleanup_timeout,
+            dry_run=args.dry_run,
+        )
+        ok = report["status"] in ("completed", "dry_run") and not report.get("interrupted")
+        return (EXIT_OK if ok else EXIT_RUN_FAILED), report
+    overrides =dict(_split_assignment(item, "--param") for item in args.param)
     report = client.run(
         args.experiment_id,
         allowed_experiments=args.allow,
