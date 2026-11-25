@@ -92,16 +92,19 @@ class DHO900ConfigurationTests(unittest.TestCase):
         self.manager_factory.assert_not_called()
         self.server_factory.assert_not_called()
 
-    def test_repository_entry_keeps_identity_pending_without_a_fabricated_serial(self):
+    def test_repository_entry_records_verified_dho924_identity(self):
+        # 2026-11-18 实机确认（1faf7bd）：Z 链路示波器为 DHO924，序列号来自仪器回读，不是编造值。
         path = Path(__file__).resolve().parents[1] / "params" / "devices.yaml"
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
         device = document["devices"]["rigol_dho900_192_168_124_21"]
         self.assertEqual(device, {
             **PENDING_DEVICE,
+            "model": "DHO924",
+            "label": "RIGOL DHO924 示波器（DHO9A273802587）",
             "resource": "TCPIP0::192.168.124.21::INSTR",
             "connection": {
                 "host": "192.168.124.21", "web_url": "http://192.168.124.21/",
-                "identity_verified": False,
+                "identity_verified": True,
             },
         })
         self.assertEqual(document["network_resources"].count(device["resource"]), 1)
