@@ -53,6 +53,20 @@ it("只通知本次观察到的终态变化，可关闭；初始历史任务不�
   fireEvent.click(screen.getByRole("button", { name: "关闭通知" }));
   expect(screen.getByText(/"finishedJobs"/)).toHaveTextContent('"finishedJobs":[]');
 });
+it("脚本任务原样进入活动列表，安全停止期间不算终态", async () => {
+  jobs = [{ id: "script", kind: "script:scripts/a/b.py", status: "running", stage: "running", message: "启动 b.py", percent: null, created_at: "2026-11-25" }];
+  start();
+  await act(async () => undefined);
+  expect(screen.getByText(/"activeJobs"/)).toHaveTextContent("script:scripts/a/b.py");
+  jobs = [{ ...jobs[0], message: "已请求安全停止" }];
+  await tick();
+  expect(screen.getByText(/"activeJobs"/)).toHaveTextContent("已请求安全停止");
+  expect(screen.getByText(/"finishedJobs"/)).toHaveTextContent('"finishedJobs":[]');
+  jobs = [{ ...jobs[0], status: "cancelled" }];
+  await tick();
+  expect(screen.getByText(/"activeJobs"/)).toHaveTextContent('"activeJobs":[]');
+  expect(screen.getByText(/"finishedJobs"/)).toHaveTextContent('"finishedJobs":[{"id":"script"');
+});
 it("慢请求不会重叠轮询，卸载后中止请求", async () => {
   vi.mocked(api).mockImplementation(() => new Promise(() => undefined));
   const view = start();
