@@ -718,6 +718,13 @@ class TestSyntheticEq222Analysis:
         summary = analysis_steps.scan_report(tmp_path, params)
         assert summary["fit_mode"] == "eq222_full_cycle"
         assert summary["k0_v_per_rad"] == pytest.approx(_EQ222_MODEL["k0"], rel=0.02)
+        assert summary["k0_defined"] is True and summary["k0_degenerate_reason"] == ""
+        assert summary["k0_fit_v_per_rad"] == pytest.approx(summary["k0_v_per_rad"])
+        c1, cm1 = summary["components"]["c_plus1"], summary["components"]["c_minus1"]
+        expected_response = (abs(complex(c1["re_v"], c1["im_v"]))
+                             + abs(complex(cm1["re_v"], cm1["im_v"])))
+        assert summary["response_v_per_rad"] == pytest.approx(expected_response, rel=1e-9)
+        assert summary["response_v_per_rad"] > 0.0
         assert summary["phi_c_deg"] == pytest.approx(_EQ222_MODEL["phi_c_deg"], abs=0.5)
         delta = math.degrees(math.asin(-_EQ222_MODEL["v0"] / _EQ222_MODEL["r"]))
         assert summary["phi_z1_deg"] == pytest.approx(
@@ -733,6 +740,28 @@ class TestSyntheticEq222Analysis:
         assert (tmp_path / run_format.SUMMARY_FILE).is_file()
         assert (tmp_path / run_format.PHASE_RESPONSE_PLOT).is_file()
         assert (tmp_path / run_format.PHASOR_PLOT).is_file()
+
+    def test_degenerate_crossing_nulls_k0_and_reports_reason(self, tmp_path, monkeypatch):
+        params, _ = _write_eq222_run(tmp_path)
+        real_fit = analysis_steps.signal_fit.fit_eq222_full_cycle
+
+        def degenerate_fit(phi_deg, y_v, **kwargs):
+            fitted = real_fit(phi_deg, y_v, **kwargs)
+            fitted.update(v0=0.70, r=0.05, k0_v_per_rad=5e-5)
+            return fitted
+
+        monkeypatch.setattr(analysis_steps.signal_fit, "fit_eq222_full_cycle", degenerate_fit)
+        summary = analysis_steps.scan_report(tmp_path, params)
+        assert summary["k0_defined"] is False
+        assert summary["k0_v_per_rad"] is None
+        assert "不定义" in summary["k0_degenerate_reason"]
+        assert summary["k0_fit_v_per_rad"] == pytest.approx(5e-5)
+        assert summary["response_v_per_rad"] > 0.0
+
+    def test_k0_degeneracy_rule_matches_crossing_condition(self):
+        assert analysis_steps._k0_is_undefined(0.69, 0.05)
+        assert analysis_steps._k0_is_undefined(0.0, 0.0)
+        assert not analysis_steps._k0_is_undefined(-0.048, 0.198)
 
     def test_rotation_deg_aligns_raw_frames_before_fit(self, tmp_path):
         params, _ = _write_eq222_run(tmp_path, rotation_deg=40.0, work_point_deg=70.0)

@@ -289,6 +289,11 @@ def _eq222_locus(points, fit, grid_deg):
     return np.asarray(x_grid, dtype=float) + 1j * np.asarray(y_grid, dtype=float), degenerate
 
 
+def _k0_is_undefined(v0, r) -> bool:
+    """|v0| ≥ r 时色散零点不在扫描范围内，全局 eq222 的 K0 无定义。"""
+    return not (math.isfinite(float(r)) and float(r) > 0.0) or abs(float(v0)) >= abs(float(r))
+
+
 def _eq222_summary(summary, points, fit, locus, grid_deg, *, work_point_deg, rotation_deg,
                    rotated, phase_cfg):
     """把 (2.2.2) 拟合、工作点与逐点均值写进摘要。"""
@@ -301,10 +306,16 @@ def _eq222_summary(summary, points, fit, locus, grid_deg, *, work_point_deg, rot
     coefficients, residual = decompose(phases, z_aligned)
     components = {key: _component_record(coefficients[index])
                   for index, key in enumerate(("c0", "c_plus1", "c_minus1"))}
+    k0_undefined = _k0_is_undefined(fit["v0"], fit["r"])
     summary.update(
         fit_mode="eq222_full_cycle",
         model="Y(phi) = Y0 + A*v/(1+v^2), v = v0 + r*sin(phi - phi_c)",
-        k0_v_per_rad=float(fit["k0_v_per_rad"]),
+        k0_v_per_rad=None if k0_undefined else float(fit["k0_v_per_rad"]),
+        k0_fit_v_per_rad=float(fit["k0_v_per_rad"]),
+        k0_defined=not k0_undefined,
+        k0_degenerate_reason=("拟合静态失衡 |v0| 不小于调制深度 r，色散零点落在扫描范围外，"
+                              "K0 不定义；请用 response_v_per_rad 或局部标定" if k0_undefined else ""),
+        response_v_per_rad=float(abs(coefficients[1]) + abs(coefficients[2])),
         y0=float(fit["y0"]),
         amp=float(fit["amp"]),
         r=float(fit["r"]),
@@ -713,6 +724,7 @@ def _report_three_component(root, config, summary):
         model="Z(phi) = c0 + c+1*exp(i*phi) + c-1*exp(-i*phi)",
         rows=len(rows), phases_deg=phases, points=points, n_phases=len(phases),
         components=components, residual_rms_v=float(residual_rms), fit_quality=fit_quality,
+        response_v_per_rad=float(abs(coefficients[1]) + abs(coefficients[2])),
         best_phase_deg=best_phase, best_phase_alt_deg=alt_phase,
         best_phase_source="model_sensitivity",
         sensitivity_max_v_per_deg=float(sens_values[best_index]),
