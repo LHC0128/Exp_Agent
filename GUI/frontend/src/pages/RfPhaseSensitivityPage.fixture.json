@@ -28,12 +28,12 @@
       "name": "Y_RF_VPP",
       "label": "Y 射频幅度",
       "type": "number",
-      "default": 0.5,
+      "default": 0.05,
       "unit": "Vpp",
       "group": "basic",
       "minimum": 0.001,
       "maximum": 20.0,
-      "description": "由 MFLI Signal Output 1（MF-MOD 载波）按峰值 Vpk = Vpp / 2 输出。",
+      "description": "由 MFLI Signal Output 1（MF-MOD 载波）按峰值 Vpk = Vpp / 2 输出；11-25 实机记录 0.5 Vpp 饱和、0.05 Vpp 线性，默认取 0.05 Vpp。",
       "read_only": false
     },
     {
@@ -81,7 +81,19 @@
       "group": "basic",
       "minimum": 0.1,
       "maximum": null,
-      "description": "",
+      "description": "仅功放链路的历史目标值；DG 直驱时电流按 Z_PULSE_VPP 与回路电阻估算，本键只用于读旧配置。",
+      "read_only": false
+    },
+    {
+      "name": "Z_PULSE_VPP",
+      "label": "Z 脉冲幅度",
+      "type": "number",
+      "default": 20.0,
+      "unit": "Vpp",
+      "group": "basic",
+      "minimum": 1e-06,
+      "maximum": 20.0,
+      "description": "DG4000 直驱时写入 Z 通道的高阻档幅度；峰值为 Vpp/2，真实线圈电流按回路电阻估算；高阻档上限 20 Vpp。",
       "read_only": false
     },
     {
@@ -112,12 +124,12 @@
       "name": "Z_TAIL_COMP_ENABLED",
       "label": "Z 拖尾补偿",
       "type": "boolean",
-      "default": true,
+      "default": false,
       "unit": "",
       "group": "basic",
       "minimum": null,
       "maximum": null,
-      "description": "",
+      "description": "DG 直驱阶段默认关闭（只发原升余弦 ±脉冲）；开启后按Z_TAIL_S_F、Z_TAIL_TAU_E_US 计算反号指数尾。",
       "read_only": false
     },
     {
@@ -153,7 +165,7 @@
       "group": "advanced",
       "minimum": 0,
       "maximum": 20,
-      "description": "",
+      "description": "历史功放链路的目标增益；DG 直驱时不使用，仅用于读旧配置。",
       "read_only": false
     },
     {
@@ -165,7 +177,7 @@
       "group": "advanced",
       "minimum": null,
       "maximum": null,
-      "description": "",
+      "description": "历史功放链路参数；DG 直驱时不使用。",
       "read_only": false,
       "options": [
         {
@@ -187,7 +199,7 @@
       "group": "advanced",
       "minimum": null,
       "maximum": null,
-      "description": "",
+      "description": "历史功放链路参数；DG 直驱时不使用，回路电阻改计 Z_DRIVE_SOURCE_IMPEDANCE_OHM。",
       "read_only": false,
       "options": [
         {
@@ -199,6 +211,18 @@
           "label": "1 Ω"
         }
       ]
+    },
+    {
+      "name": "Z_DRIVE_SOURCE_IMPEDANCE_OHM",
+      "label": "DG 源阻抗",
+      "type": "number",
+      "default": 50.0,
+      "unit": "Ω",
+      "group": "advanced",
+      "minimum": 0.0,
+      "maximum": 1000000.0,
+      "description": "DG 直驱时计入回路的信号源输出阻抗；DG4000 固定 50 Ω，按已知回路电阻估算线圈电流。",
+      "read_only": false
     },
     {
       "name": "SENSE_RESISTOR_OHM",
@@ -512,10 +536,10 @@
         "parameters": [
           "RUN_TAG"
         ],
+        "artifacts": [],
         "display_parameters": [
           "RUN_TAG"
         ],
-        "artifacts": [],
         "quality_gates": [
           "Y 向 5 kHz 载波由 MFLI Out1（MF-MOD）输出且 Y_RF_VPP 可调；核对 mfli_dev30661_signal_output_0、Demod 4 与 Z 脉冲限值。"
         ]
@@ -528,8 +552,8 @@
           "A01"
         ],
         "parameters": [],
-        "display_parameters": [],
         "artifacts": [],
+        "display_parameters": [],
         "quality_gates": [
           "连接设备并验证 MFLI MF-MD/MF-MOD 选件；先写入再严格回读 10 MHz 外部时钟。"
         ]
@@ -548,6 +572,7 @@
           "Y_BIAS_V",
           "MAIN_FIELD_CURRENT_MA",
           "Z_PEAK_CURRENT_MA",
+          "Z_PULSE_VPP",
           "Z_PULSE_WIDTH_US",
           "Z_PULSE_EDGE_US",
           "Z_TAIL_COMP_ENABLED",
@@ -556,36 +581,7 @@
           "AMPLIFIER_GAIN_DB",
           "AMPLIFIER_INPUT_IMPEDANCE_OHM",
           "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
-          "SENSE_RESISTOR_OHM",
-          "DAMPING_RESISTOR_OHM",
-          "COIL_RESISTANCE_OHM",
-          "RESISTOR_RATED_W",
-          "DEMOD0_IDX",
-          "DEMOD0_SIGNAL_RANGE",
-          "DEMOD0_ORDER",
-          "DEMOD0_TC",
-          "DEMOD0_RATE",
-          "STATIC_POINT_DURATION_S",
-          "SYSTEM_SETTLE_S",
-          "TEMP_SWITCH_ON_LAG_S",
-          "SET_TEC_TARGET",
-          "TARGET_TEMPERATURE_C"
-        ],
-        "display_parameters": [
-          "Y_RF_FREQ_HZ",
-          "Y_RF_VPP",
-          "X_BIAS_V",
-          "Y_BIAS_V",
-          "MAIN_FIELD_CURRENT_MA",
-          "Z_PEAK_CURRENT_MA",
-          "Z_PULSE_WIDTH_US",
-          "Z_PULSE_EDGE_US",
-          "Z_TAIL_COMP_ENABLED",
-          "Z_TAIL_S_F",
-          "Z_TAIL_TAU_E_US",
-          "AMPLIFIER_GAIN_DB",
-          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
-          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "Z_DRIVE_SOURCE_IMPEDANCE_OHM",
           "SENSE_RESISTOR_OHM",
           "DAMPING_RESISTOR_OHM",
           "COIL_RESISTANCE_OHM",
@@ -604,6 +600,38 @@
         "artifacts": [
           "raw/coarse_*.npz"
         ],
+        "display_parameters": [
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "X_BIAS_V",
+          "Y_BIAS_V",
+          "MAIN_FIELD_CURRENT_MA",
+          "Z_PEAK_CURRENT_MA",
+          "Z_PULSE_VPP",
+          "Z_PULSE_WIDTH_US",
+          "Z_PULSE_EDGE_US",
+          "Z_TAIL_COMP_ENABLED",
+          "Z_TAIL_S_F",
+          "Z_TAIL_TAU_E_US",
+          "AMPLIFIER_GAIN_DB",
+          "AMPLIFIER_INPUT_IMPEDANCE_OHM",
+          "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
+          "Z_DRIVE_SOURCE_IMPEDANCE_OHM",
+          "SENSE_RESISTOR_OHM",
+          "DAMPING_RESISTOR_OHM",
+          "COIL_RESISTANCE_OHM",
+          "RESISTOR_RATED_W",
+          "DEMOD0_IDX",
+          "DEMOD0_SIGNAL_RANGE",
+          "DEMOD0_ORDER",
+          "DEMOD0_TC",
+          "DEMOD0_RATE",
+          "STATIC_POINT_DURATION_S",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "SET_TEC_TARGET",
+          "TARGET_TEMPERATURE_C"
+        ],
         "quality_gates": [
           "开启 MF-MOD 连续无调制载波整周扫描；先以三分量粗定再用多阶谐波细化工作点与切线角，将独立 Demod 4 相位转到 sample.y（回读偏差不超过 0.5°）。"
         ]
@@ -618,11 +646,11 @@
         "parameters": [
           "LOCAL_SPAN_DEG"
         ],
-        "display_parameters": [
-          "LOCAL_SPAN_DEG"
-        ],
         "artifacts": [
           "raw/local_*_xy.npz"
+        ],
+        "display_parameters": [
+          "LOCAL_SPAN_DEG"
         ],
         "quality_gates": [
           "在工作点两侧以 MFLI 指令角加密细扫，按 Demod 4 Y 正交分量理论式 (2.2.2) 非线性拟合计算斜率 K₀ 与 X 正交泄漏（含首尾线性漂移扣除），并将 A05/A06 载波更新至局部拐点中心。"
@@ -642,15 +670,15 @@
           "PM_FREQUENCIES_HZ",
           "PM_TONE_DURATION_S"
         ],
+        "artifacts": [
+          "raw/pm_*.npz"
+        ],
         "display_parameters": [
           "DEMOD0_DYNAMIC_TC",
           "DEMOD0_DYNAMIC_RATE",
           "DYNAMIC_TEMP_SWITCH_ON_LAG_S",
           "PM_FREQUENCIES_HZ",
           "PM_TONE_DURATION_S"
-        ],
-        "artifacts": [
-          "raw/pm_*.npz"
         ],
         "quality_gates": [
           "仅对 A05/A06 将 MFLI Demod 4 切至高带宽 DEMOD0_DYNAMIC_TC / DEMOD0_DYNAMIC_RATE（保持 A03/A04 滤波参数不变）并保持对齐相位；开启 MF-MOD 固定 2° 峰值相干边带 PM，按 PM_FREQUENCIES_HZ 单次顺序切换 Osc 3 采集各档 XY 帧，每点后恢复温控并按 DYNAMIC_TEMP_SWITCH_ON_LAG_S 等待。"
@@ -668,13 +696,13 @@
           "NOISE_N_AVG",
           "WELCH_SEGMENT_S"
         ],
+        "artifacts": [
+          "raw/noise_*.npz"
+        ],
         "display_parameters": [
           "NOISE_DURATION_S",
           "NOISE_N_AVG",
           "WELCH_SEGMENT_S"
-        ],
-        "artifacts": [
-          "raw/noise_*.npz"
         ],
         "quality_gates": [
           "保持 A05 高带宽滤波设置不变，关闭上下边带保留 5 kHz 连续载波在工作点，仅在 MFLI Demod 4 按 NOISE_N_AVG × NOISE_DURATION_S 分段独立进出温控窗口采集无调制噪声 XY 帧，每段恢复温控后写盘并按 DYNAMIC_TEMP_SWITCH_ON_LAG_S 等待。"
@@ -686,10 +714,10 @@
         "group": "结束",
         "dependencies": [],
         "parameters": [],
-        "display_parameters": [],
         "artifacts": [],
+        "display_parameters": [],
         "quality_gates": [
-          "先关 1200B，再关 MFLI Out1/MOD 并清零偏置与幅值，Z/X 关闭归零并回读，停 Demod 4 传输并恢复温控与主场；共同触发保持。"
+          "DG 直驱无 1200B：先关 MFLI Out1/MOD 并清零偏置与幅值，Z/X 关闭归零并回读，停 Demod 4 传输并恢复温控与主场；共同触发保持。"
         ]
       }
     ],
@@ -700,7 +728,6 @@
         "group": "独立分析",
         "dependencies": [],
         "parameters": [],
-        "display_parameters": [],
         "artifacts": [
           "phase_sensitivity_summary.json",
           "phase_transfer.csv",
@@ -710,6 +737,7 @@
           "phase_transfer.png",
           "phase_noise.png"
         ],
+        "display_parameters": [],
         "quality_gates": [
           "绘制 A03 含放大插图相图与理论式 (2.2.2) 波形、A04 左相图右理论色散响应、A05 零频 √Lorentzian 拟合与 H₀ 归一化频响及 A06 相位灵敏度谱（µrad/√Hz，含全频段 √Lorentzian 回补）；参考检查仅作告警与标注，不扣留出图。"
         ]
@@ -761,6 +789,12 @@
           "A05",
           "A06"
         ],
+        "Z_PULSE_VPP": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
         "Z_PULSE_WIDTH_US": [
           "A03",
           "A04",
@@ -804,6 +838,12 @@
           "A06"
         ],
         "AMPLIFIER_OUTPUT_IMPEDANCE_OHM": [
+          "A03",
+          "A04",
+          "A05",
+          "A06"
+        ],
+        "Z_DRIVE_SOURCE_IMPEDANCE_OHM": [
           "A03",
           "A04",
           "A05",

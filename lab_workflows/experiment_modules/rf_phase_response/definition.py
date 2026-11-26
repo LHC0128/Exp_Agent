@@ -6,38 +6,41 @@ from .models import RfPhaseResponseParams
 from .preparation import preflight
 
 DESCRIPTION = (
-    "在原子域表征射频相位响应：Y 向 5 kHz 射频持续激励并用 MFLI 第 0 路解调器读该频率上的 R/θ，"
-    "Z 通道由 Time_sequence_2 外触发无限 burst、连续打 +π 与 −π 各一个固定宽度脉冲；"
-    "按 Y_RF_PHASE_START/STOP/STEP_DEG 扫射频 burst 相位（默认 0–360°、15°，24 点），"
-    "每点读 N_REPEAT 次；离线把复数读数分解为 Z(φ)=c0+c+1·e^{iφ}+c−1·e^{−iφ}，"
-    "给出三分量、模型残差与最佳读相位（模型 |Z| 最大处），并与实测 R 最大相位对照。"
-    "本实验的 1200B 功放已物理旁路，DG4000 直驱 Z 线圈：Z 脉冲按 Z_PULSE_VPP 设电压"
-    "（默认 20 Vpp，DG 高阻档上限），线圈峰值电流按已知回路电阻估算、不是直接测量值；"
-    "拖尾补偿默认关闭（只发原升余弦 ±脉冲），Z_PULSE_WIDTH_US、拖尾 s_f/τe、X/Y 偏置与解调配置均可调。"
-    "A02 连接 DG、MFLI、DHO900 与 GS200：配平 Z 通道高阻负载、"
-    "配置第 0 路解调器并把参考频率设为射频频率，射频按无限 burst 与 Y_RF_PHASE_DEG 起振；"
-    "关闭 GS200 主磁场输出并回读，参考时钟严格回读。A03 逐相位按 DirectAW 顺序改 burst 相位"
-    "（关 burst → 写相位 → 开 burst → 开 output）后读数，按 TEMP_GROUP_SIZE 分组采集、"
-    "关温控窗口内不写盘，取消保留已完成读数。A04 Z 通道归零并关 burst/sync，"
-    "关 Y 射频、停解调传输与示波器，恢复温控与 GS200 原状态后断开设备；时序信号2 作为共同触发保持运行。"
+    "在原子域表征射频相位响应：MFLI Signal Output 1 的 MF-MOD 无调制载波经串联大电阻驱动 Y 向 5 kHz "
+    "射频场，MFLI 用独立解调器 Demod 4（参考 Osc 2）读该频率上的同步 X/Y；Z 通道由 Time_sequence_2 "
+    "外触发无限 burst、连续打 +π 与 −π 各一个固定宽度脉冲。"
+    "A03 按 Y_RF_PHASE_START/STOP/STEP_DEG 逐点改 MFLI 载波指令相位（默认 0–360°、10°，36 点），"
+    "每点在独立关温控窗口内采集一段同步 X/Y，恢复温控并回读后再落盘；扫描结束后按实测切线把 Demod 4 "
+    "相位转到工作点并回读。B01 离线按 A03 的 rotation_deg 把原始帧旋转到对齐帧，对 Y(φ) 用理论式 (2.2.2) "
+    "整周拟合，给出 K₀、Y0/A/r/v0/φc/φz1、拟合残差、工作点与相量闭曲线。"
+    "本实验的 1200B 功放已物理旁路，DG4000 直驱 Z 线圈：Z 脉冲按 Z_PULSE_VPP 设电压（默认 20 Vpp，"
+    "DG 高阻档上限），线圈峰值电流按已知回路电阻估算、不是直接测量值；拖尾补偿默认关闭。"
+    "A02 连接 DG 的 Z/X/trigger/temp、MFLI、GS200 与可选 TEC，严格回读 10 MHz 外部参考后配置链路、"
+    "X 偏置、Demod 4、共同触发与 MF-MOD 载波并设主磁场；A04 先关 MFLI Out1、清 MF-MOD 并归零偏置，"
+    "再关 Z/X 并归零、停 Demod 4 传输、恢复温控与 GS200 原状态；时序信号2 作为共同触发保持运行。"
 )
 
 WIRING_NOTES = (
+    "MFLI Signal Output 1 经串联大电阻接 Y 方向射频线圈（MF-MOD：Osc 2 载波、Osc 3 边带调制，"
+    "本实验只输出无调制载波）；不再使用 DG4000 Y 通道。",
+    "MFLI Signal Input 1 接探测器输出，Demod 4（索引 3）参考 Osc 2 读出同步 X/Y；Demod 1–3 由 MF-MOD 占用。",
     "Z_magnetic_field 直连 Z 线圈（1200B 已物理旁路），DG 负载配成高阻：写入幅度即开路电动势，"
-    "回路电阻计入 Z_DRIVE_SOURCE_IMPEDANCE_OHM（DG4000 源阻抗 50 Ω）+ 阻尼 + 线圈 + 采样。",
-    "Time_sequence_2 主输出（5 kHz 方波）接 Z 通道与 Y 射频的外触发输入；两条通道都用无限 burst，"
-    "由同一个触发沿启动，射频相位只由 burst 相位决定。",
-    "Y_magnetic_field 输出 5 kHz 正弦驱动 Y 向射频场；MFLI Signal Input 1 接探测器输出，参考频率设为射频频率。",
-    "DHO900 接采样电阻用于人工核对脉冲波形，本实验不采集示波器数据。",
+    "回路电阻计入 Z_DRIVE_SOURCE_IMPEDANCE_OHM（DG4000 源阻抗 50 Ω）+ 阻尼 + 线圈 + 采样；"
+    "X_magnetic_field 只给静态 DC 偏置。",
+    "Time_sequence_2 主输出（5 kHz 方波）接 Z 通道的外触发输入；Z 通道用无限 burst，"
+    "载波相位由 MF-MOD 指令角决定，二者共用 Z 与 MFLI 的 10 MHz 外部参考。",
 )
 
 SAFETY_NOTES = (
-    "z_pulse_coil_current 与 Z/Y 场必须有有限上下界；Z_PULSE_VPP/2、按回路电阻估算的峰值电流、"
-    "射频电平、触发电平与电阻功耗在连接前预检；Z_PULSE_VPP 不得超过 DG4000 高阻档上限 20 Vpp。",
+    "MFLI Signal Output 1 的偏置与 2° 峰值调相包络之和必须在 ±10 V 安全限内"
+    "（mfli_dev30661_signal_output_0）；Z_PULSE_VPP/2、按已知回路电阻估算的峰值电流、"
+    "X 偏置、触发电平与电阻平均功耗在连接前预检；Z_PULSE_VPP 不得超过 DG4000 高阻档上限 20 Vpp。",
     "线圈电流为按已知回路电阻估算，非直接测量；判据与报告都标注估算值。",
-    "A02 关闭 GS200 主磁场输出并回读为 OFF 后才继续；主磁场原状态在 A04 恢复。",
-    "温控关闭窗口内不写任何文件；每 TEMP_GROUP_SIZE 个读数恢复温控后再落盘，故障时先恢复温控再抢救已读数据。",
-    "结束时先把 Z 通道归零并关 burst/sync；时序信号2 按共同触发保持运行，Z burst 已关闭故无脉冲。",
+    "A02 按参数快照后设置 GS200 主磁场并回读；A04 恢复运行前状态并复核输出、电流、量程与限流。",
+    "每点在关温控窗口内只采不写，恢复温控并回读、等待 TEMP_SWITCH_ON_LAG_S 后才落盘；"
+    "故障或取消时先恢复温控再抢救已完成帧。",
+    "结束时先关 MFLI Out1 再清 MF-MOD 载波幅值/边带/输出并归零偏置，Z/X 归零回读；"
+    "时序信号2 按共同触发保持运行，Z burst 已关闭故无脉冲。",
 )
 
 
@@ -60,7 +63,8 @@ class RfPhaseResponseAdapter(TypedWorkflowAdapter):
             raise WorkflowCancelled("分析已取消，原始数据保留")
         emit(progress, "analysis", f"分析 {run_dir.name}", 90, estimated_remaining_seconds=None)
         self._execute(self.analysis_module, run_dir=run_dir, progress=progress, cancellation=cancellation)
-        return {"run_dir": str(run_dir), "artifacts": [str(p) for p in (run_dir / "results").iterdir() if p.is_file()]}
+        return {"run_dir": str(run_dir),
+                "artifacts": [str(p) for p in (run_dir / "results").iterdir() if p.is_file()]}
 
 
 MODULE = "lab_workflows.experiment_modules.rf_phase_response"
@@ -70,7 +74,7 @@ DEFINITION = ExperimentDefinition(
     documentation="docs/experiments/rf_phase_response.md",
     id=run_format.EXPERIMENT_ID, title="射频相位响应", category="characterization",
     family="z-chain", variant="rf-phase-response", description=DESCRIPTION, data_type=run_format.DATA_TYPE,
-    required_devices=("DG4000", "MFLI", "DHO900", "GS200", "TEC103"),
+    required_devices=("DG4000", "DG900/DG4000（温控开关）", "MFLI", "GS200", "TEC103（可选设温）"),
     required_mapping_keys=run_format.REQUIRED_MAPPING_KEYS,
     execution_mode="typed_workflow", schema_version=RfPhaseResponseParams.schema_version,
     acquisition_program="experiments/RfPhaseResponse.py",
