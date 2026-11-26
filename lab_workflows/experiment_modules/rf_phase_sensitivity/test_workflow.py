@@ -37,7 +37,9 @@ ACQUISITION_CASES = {"rf-phase-sensitivity": {"mode": "single", "cases": {
                 "experiments/RfPhaseSensitivity.py"]}}
 REGRESSION_CASES = {"rf-phase-sensitivity": {"parameters": {
     "sources": ["lab_workflows/experiment_modules/rf_phase_sensitivity/models.py",
-                "params/experiments/rf-phase-sensitivity.yaml"], "tests": ["test_preflight_and_defaults"]}}}
+                "params/experiments/rf-phase-sensitivity.yaml"], "tests": ["test_preflight_and_defaults",
+                                                                          "test_legacy_demod0_history_config_remains_readable",
+                                                                          "test_preflight_allows_mapping_without_scope_or_amplifier"]}}}
 
 
 class FakeGenerator:
@@ -211,8 +213,8 @@ def rig(monkeypatch, tmp_path):
     events = []
     xygen, zgen, temp = (FakeGenerator(events, name) for name in ("xy", "z", "temp"))
     xygen.channels[1]["offset"] = .16  # 专用 DC 命令不更新这个残留的普通偏置设定。
-    amp, tec = Mock(), Mock()
-    amp.set_output.side_effect = lambda enable: events.append(("amp", enable))
+    # 1200B 已物理旁路：本实验不连接功放，夹具里也不提供功放会话。
+    tec = Mock()
     gs = Mock()
     gs_state = dict(source_function="CURR", current=-0.001, output=True, current_range=0.01, current_limit=0.02)
     for key in gs_state:
@@ -222,12 +224,12 @@ def rig(monkeypatch, tmp_path):
     channels = dict(x=1, z=2, trigger=3, temp=4)
     proxy = RoutedSignalGenerator({i: SignalGeneratorRoute(dev, c, name) for i, (name, dev, c) in enumerate(
         (("x", xygen, 1), ("z", zgen, 1), ("trigger", zgen, 2), ("temp", temp, 2)), 1)})
-    devices = dict(hf2=lockin, amp=amp, gs200=gs, signals=proxy, channels=channels, tec=tec)
+    devices = dict(hf2=lockin, gs200=gs, signals=proxy, channels=channels, tec=tec)
 
     def connect(ctx, **kwargs):
         preparation._require_mfli_capabilities(lockin.capabilities, require_mod_option=True)
         for name, device in (("xy", xygen), ("z", zgen), ("temp", temp), ("hf2", lockin),
-                             ("amp", amp), ("gs200", gs), ("tec", tec)):
+                             ("gs200", gs), ("tec", tec)):
             ctx.device_session.connect(name, name, lambda device=device: device)
         ctx.devices.update(devices)
 
@@ -286,6 +288,8 @@ def _ctx(rig):
 def _assert_parked(rig):
     dev = rig.lockin.device_id
     vals = rig.lockin.values
+    # DG 直驱：无功放会话，任何 amp 写入/开关都属于越界路径。
+    assert not any(event[0] == "amp" for event in rig.events)
     assert vals[f"/{dev}/sigouts/0/on"] == 0
     assert vals[f"/{dev}/sigouts/0/offset"] == 0.0
     assert vals[f"/{dev}/mods/0/enable"] == 0
@@ -309,7 +313,19 @@ def test_preflight_and_defaults():
     assert p.pm_tone_duration_s == pytest.approx(4.0)
     assert p.noise_duration_s == pytest.approx(4.0) and p.noise_n_avg == 6
     assert p.temp_switch_on_lag_s == pytest.approx(2.0) and p.dynamic_temp_switch_on_lag_s == pytest.approx(4.0)
+    # 功放物理旁路：DG 直驱电压设定与回路电阻估算，拖尾补偿默认关闭。
+    assert p.z_drive_amplifier_enabled is False and p.z_tail_comp_enabled is False
+    assert p.y_rf_vpp == pytest.approx(0.05) and p.z_pulse_vpp == pytest.approx(20.0)
+    assert p.z_drive_source_impedance_ohm == pytest.approx(50.0)
+    assert p.pulse_vpp == pytest.approx(20.0)
+    assert p.loop_resistance_ohm == pytest.approx(10.0 + 10.0 + 2.0 + 50.0)
+    assert p.estimated_peak_current_ma == pytest.approx(10.0 / 72.0 * 1e3)
     assert ADAPTER.preflight({"Y_RF_VPP": 0.2}) == []
+    assert ADAPTER.preflight({"Y_RF_VPP": 2.0, "Y_BIAS_V": 1.0}) == []
+    assert ADAPTER.preflight({"Z_PULSE_VPP": 10.0}) == []
+    assert ADAPTER.preflight({"Z_PULSE_VPP": 20.0}) == []
+    assert ADAPTER.preflight({"Z_PULSE_VPP": 21.0})
+    assert ADAPTER.preflight({"Z_DRIVE_SOURCE_IMPEDANCE_OHM": 0.5})
     assert ADAPTER.preflight({"Y_RF_VPP": 2.0, "Y_BIAS_V": 1.0}) == []
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [3., 103., 203.], "PM_TONE_DURATION_S": 4.0}) == []
     assert ADAPTER.preflight({"NOISE_DURATION_S": 4.0, "NOISE_N_AVG": 2, "WELCH_SEGMENT_S": 4.0}) == []
@@ -319,8 +335,8 @@ def test_preflight_and_defaults():
     assert ADAPTER.preflight({"Y_RF_VPP": 2.0, "Y_BIAS_V": 9.5})
     assert ADAPTER.preflight({"Y_RF_FREQ_HZ": 6000.0})
     assert ADAPTER.preflight({"DEMOD0_IDX": 0})
-    assert ADAPTER.preflight({"Z_PEAK_CURRENT_MA": 1000})
-    assert ADAPTER.preflight({"Z_PEAK_CURRENT_MA": 301})
+    assert ADAPTER.preflight({"Z_PULSE_VPP": 12.0, "Z_DRIVE_SOURCE_IMPEDANCE_OHM": 0.0}) == []
+    assert ADAPTER.preflight({"Z_PULSE_VPP": 14.0, "Z_DRIVE_SOURCE_IMPEDANCE_OHM": 0.0})
     assert ADAPTER.preflight({"Z_PULSE_WIDTH_US": 300})
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [5., 5., 20.]})
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [1., 5., 20.]})
@@ -335,8 +351,10 @@ def test_legacy_demod0_history_config_remains_readable():
         demod0_idx=0, y_rf_vpp=0.5, noise_duration_s=24.0,
         pm_frequencies_hz=[float(f) for f in range(10, 201, 10)], pm_tone_duration_s=2.0,
     )
+    v4_only = ("Z_PULSE_VPP", "Z_DRIVE_SOURCE_IMPEDANCE_OHM")
     v1_params = legacy.to_external()
-    for key in ("DEMOD0_DYNAMIC_TC", "DEMOD0_DYNAMIC_RATE", "NOISE_N_AVG", "DYNAMIC_TEMP_SWITCH_ON_LAG_S"):
+    for key in ("DEMOD0_DYNAMIC_TC", "DEMOD0_DYNAMIC_RATE", "NOISE_N_AVG", "DYNAMIC_TEMP_SWITCH_ON_LAG_S",
+                *v4_only):
         v1_params.pop(key)
     v1_params["DEMOD0_RATE"] = 2000.0
     cfg = run_format.initial_metadata(legacy) | {
@@ -350,9 +368,11 @@ def test_legacy_demod0_history_config_remains_readable():
     assert migrated.demod0_dynamic_tc_s == pytest.approx(migrated.demod0_tc_s)
     assert migrated.demod0_dynamic_rate_sa_s == pytest.approx(2000.0)
     assert migrated.noise_n_avg == 1 and migrated.dynamic_temp_switch_on_lag_s == pytest.approx(migrated.temp_switch_on_lag_s)
+    assert migrated.z_pulse_vpp == pytest.approx(20.0)
+    assert migrated.z_drive_source_impedance_ohm == pytest.approx(50.0)
 
     v2_params = legacy.to_external()
-    for key in ("NOISE_N_AVG", "DYNAMIC_TEMP_SWITCH_ON_LAG_S"):
+    for key in ("NOISE_N_AVG", "DYNAMIC_TEMP_SWITCH_ON_LAG_S", *v4_only):
         v2_params.pop(key)
     cfg_v2 = run_format.initial_metadata(legacy) | {
         "completion_status": "completed",
@@ -362,6 +382,22 @@ def test_legacy_demod0_history_config_remains_readable():
     assert run_format.format_block_reason(cfg_v2) == ""
     migrated_v2 = run_format.parameters(cfg_v2)
     assert migrated_v2.noise_n_avg == 1 and migrated_v2.dynamic_temp_switch_on_lag_s == pytest.approx(2.0)
+    assert migrated_v2.z_pulse_vpp == pytest.approx(20.0)
+
+    # 版本 3（功放仍在链路）的历史快照没有 DG 直驱键，按默认值补齐后仍可读。
+    v3_params = legacy.to_external()
+    for key in v4_only:
+        v3_params.pop(key)
+    cfg_v3 = run_format.initial_metadata(legacy) | {
+        "completion_status": "completed",
+        "schema_version": 3,
+        "parameters": v3_params,
+    }
+    assert run_format.format_block_reason(cfg_v3) == ""
+    migrated_v3 = run_format.parameters(cfg_v3)
+    assert migrated_v3.z_pulse_vpp == pytest.approx(20.0)
+    assert migrated_v3.z_drive_source_impedance_ohm == pytest.approx(50.0)
+    assert migrated_v3.noise_n_avg == 6
 
 
 def test_connect_rejects_missing_mod_option(rig):
@@ -413,7 +449,20 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
     assert not any(e[0] == "scope" for e in rig.events)
     assert "DHO924" not in DEFINITION.required_devices
     assert "coil_current_scope" not in run_format.REQUIRED_MAPPING_KEYS
-    shutdown = max(i for i, event in enumerate(rig.events) if event == ("amp", False))
+    # 1200B 已物理旁路：定义与必需映射都不再要求功放，整个会话也没有功放写/开关。
+    assert "Aigtek 1200B" not in DEFINITION.required_devices
+    assert "coil_drive_amplifier" not in run_format.REQUIRED_MAPPING_KEYS
+    assert "coil_drive_amplifier" not in DEFINITION.required_mapping_keys
+    assert not any(e[0] == "amp" for e in rig.events)
+    assert c["predicted"]["z_drive_amplifier_enabled"] is False
+    assert c["predicted"]["z_pulse_vpp"] == pytest.approx(20.0)
+    assert c["predicted"]["estimated_peak_current_ma"] == pytest.approx(10.0 / 72.0 * 1e3)
+    assert c["parameters"]["Z_PULSE_VPP"] == pytest.approx(20.0)
+    assert c["parameters"]["Z_PEAK_CURRENT_MA"] == pytest.approx(190.0)
+    # 收尾从最后一个落盘帧之后 Z 通道首次关输出开始，覆盖 Z/X 归零与温控恢复。
+    last_disk = max(i for i, event in enumerate(rig.events) if event[0] == "disk")
+    shutdown = next(i for i in range(last_disk, len(rig.events))
+                    if rig.events[i][:3] == ("z", 1, "set_output") and rig.events[i][3] is False)
     assert rig.events[-3:] == [("temp", "disconnect"), ("z", "disconnect"), ("xy", "disconnect")]
     for device, channel in (("z", 1), ("xy", 1)):
         end = [event for event in rig.events[shutdown:] if event[:2] == (device, channel)]
@@ -464,11 +513,13 @@ def test_editable_y_rf_vpp_and_xy_biases(rig):
     _assert_parked(rig)
 
 
-def test_z_readback_mismatch_keeps_amplifier_off(rig, monkeypatch):
+def test_z_readback_mismatch_keeps_output_off(rig, monkeypatch):
     monkeypatch.setattr(rig.z, "get_arb_points", lambda **kw: 2, raising=False)
     with pytest.raises(SafetyAbort, match="Z 双脉冲写入回读不符"):
         Workflow.run(rig.p, project_root=ROOT)
-    assert ("amp", True) not in rig.events
+    # 回读不符时 Z 输出保持 OFF，且整条无水冷链路都没有功放写/开关。
+    assert ("z", 1, "set_output", True) not in rig.events
+    assert not any(event[0] == "amp" for event in rig.events)
     assert not any(event[0] == "daq" for event in rig.events)
     _assert_parked(rig)
 
@@ -743,7 +794,7 @@ def test_a04_inflection_updates_carrier_center_for_a05_and_a06(rig, monkeypatch)
     _assert_parked(rig)
 
 
-def test_preflight_allows_mapping_without_scope(tmp_path):
+def test_preflight_allows_mapping_without_scope_or_amplifier(tmp_path):
     import yaml
     config = tmp_path / "params"
     config.mkdir()
@@ -751,8 +802,11 @@ def test_preflight_allows_mapping_without_scope(tmp_path):
         (config / name).write_text((ROOT / "params" / name).read_text(encoding="utf-8"), encoding="utf-8")
     mapping = yaml.safe_load((ROOT / "params/mapping.yaml").read_text(encoding="utf-8"))
     mapping.get("mapping", {}).pop("coil_current_scope", None)
+    mapping.get("mapping", {}).pop("coil_drive_amplifier", None)
     (config / "mapping.yaml").write_text(yaml.safe_dump(mapping, allow_unicode=True), encoding="utf-8")
-    preparation.preflight(RfPhaseSensitivityParams(), tmp_path)
+    params, loaded = preparation.preflight(RfPhaseSensitivityParams(), tmp_path)
+    assert "coil_drive_amplifier" not in loaded
+    assert params.z_drive_amplifier_enabled is False
 
 
 def test_local_slope_dense_sweep_recovers_slope_with_linear_drift():

@@ -12,14 +12,15 @@ import numpy as np
 import yaml
 
 from ..z_chain_common.keys import (
-    AMPLIFIER_KEY, LOCKIN_KEY, MAIN_FIELD_KEY,
+    LOCKIN_KEY, MAIN_FIELD_KEY,
     SOURCE_KEY, TEC_KEY, TEMP_SWITCH_KEY, TRIGGER_KEY, X_KEY,
 )
 from .models import RfPhaseSensitivityParams
 
+# 1200B 已物理旁路：DG 直驱不再要求 coil_drive_amplifier 映射。
 REQUIRED_MAPPING_KEYS = (
     SOURCE_KEY, X_KEY, TRIGGER_KEY, TEMP_SWITCH_KEY, LOCKIN_KEY,
-    AMPLIFIER_KEY, MAIN_FIELD_KEY, TEC_KEY,
+    MAIN_FIELD_KEY, TEC_KEY,
 )
 
 EXPERIMENT_ID = "rf-phase-sensitivity"
@@ -36,7 +37,9 @@ _ARRAYS = {"xy": ("time_s", "x_v", "y_v"), "scope": ("time_s", "reference_v", "c
 _MAX_POINTS = 5_000_000
 _LEGACY_V1_ADDED_KEYS = frozenset({"DEMOD0_DYNAMIC_TC", "DEMOD0_DYNAMIC_RATE"})
 _LEGACY_V2_ADDED_KEYS = frozenset({"DYNAMIC_TEMP_SWITCH_ON_LAG_S", "NOISE_N_AVG"})
-_KNOWN_SCHEMA_VERSIONS = frozenset({1, 2, RfPhaseSensitivityParams.schema_version})
+# 4：功放物理旁路，新增 DG 直驱电压设定与源阻抗。
+_LEGACY_V3_ADDED_KEYS = frozenset({"Z_PULSE_VPP", "Z_DRIVE_SOURCE_IMPEDANCE_OHM"})
+_KNOWN_SCHEMA_VERSIONS = frozenset({1, 2, 3, RfPhaseSensitivityParams.schema_version})
 
 
 def initial_metadata(p: RfPhaseSensitivityParams):
@@ -49,6 +52,10 @@ def initial_metadata(p: RfPhaseSensitivityParams):
                 temperature=dict(target_temperature_c=p.target_temperature_c if p.set_tec_target else None,
                                  actual_temperature_c=None, controlled_by_experiment=False),
                 predicted=dict(z_pulse_vpp=p.pulse_vpp, pulse_period_us=p.pulse_period_us,
+                               estimated_peak_current_ma=p.estimated_peak_current_ma,
+                               z_drive_amplifier_enabled=p.z_drive_amplifier_enabled,
+                               z_drive_source_impedance_ohm=p.z_drive_source_impedance_ohm,
+                               loop_resistance_ohm=p.loop_resistance_ohm,
                                pm_sweep_order_hz=p.sweep_order_hz))
 
 
@@ -71,6 +78,8 @@ def parameters(config):
         expected -= _LEGACY_V1_ADDED_KEYS
     if version < 3:
         expected -= _LEGACY_V2_ADDED_KEYS
+    if version < 4:
+        expected -= _LEGACY_V3_ADDED_KEYS
     if values.keys() != expected:
         raise ValueError("运行参数快照缺键或包含未知字段")
     return RfPhaseSensitivityParams.from_external(values, schema_version=version)

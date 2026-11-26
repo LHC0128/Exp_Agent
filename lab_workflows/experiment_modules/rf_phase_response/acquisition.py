@@ -38,7 +38,10 @@ def _daq_config(ctx, rate):
 
 
 def _arm_width(ctx):
-    """按固定脉宽上传一次双脉冲任意波并 arm 无限 burst；Z 波形相位固定 0。"""
+    """按固定脉宽上传一次双脉冲任意波并 arm 无限 burst；Z 波形相位固定 0。
+
+    DG4000 直驱 Z 线圈：功放已旁路，不再发 AON，脉冲直接经 DG 输出到线圈。
+    """
     p = ctx.params
     signals, channels = ctx.devices["signals"], ctx.devices["channels"]
     limits, levels = load_safety_limits(ctx.root), plan(p)
@@ -60,12 +63,12 @@ def _arm_width(ctx):
     signals.set_burst_phase(0.0, channel=channels["z"])
     signals.set_burst_state(True, channel=channels["z"])
     signals.set_output(True, channel=channels["z"])
-    # A02 收尾把 1200B 输出关掉了；不发 AON 时脉冲只到功放输入、到不了线圈。
-    preparation.set_amp_output(ctx, True)
     tail = (f"、拖尾补偿尾 {record['tail_start_current_ma']:+.1f} mA / τc {record['tau_c_us']:.1f} µs"
             if record["tail_comp"] else "")
-    ctx.outputs["Z 通道"] = (f"±π 双脉冲连续输出，周期 {p.pulse_period_us:g} µs、宽 {width_us:g} µs、"
-                             f"峰值 {p.z_peak_current_ma:g} mA{tail}、外触发 {p.y_rf_freq_hz:g} Hz")
+    ctx.outputs["Z 通道"] = (f"±π 双脉冲连续输出（DG 直驱，无放大器），周期 {p.pulse_period_us:g} µs、"
+                             f"宽 {width_us:g} µs、幅度 {p.pulse_vpp:g} Vpp、"
+                             f"估算峰值电流 {levels['estimated_peak_current_ma']:.1f} mA{tail}、"
+                             f"外触发 {p.y_rf_freq_hz:g} Hz（电流按已知回路电阻估算，非直接测量）")
 
 
 def _read_temperature_c(ctx):

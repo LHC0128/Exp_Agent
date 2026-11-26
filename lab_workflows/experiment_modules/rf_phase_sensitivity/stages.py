@@ -13,9 +13,10 @@ ANALYSIS_KEYS: tuple[str, ...] = ()
 # 本轮采集的共用条件：任一项变化都要重做整条采集链。
 SETUP_KEYS = (
     "Y_RF_FREQ_HZ", "Y_RF_VPP", "X_BIAS_V", "Y_BIAS_V", "MAIN_FIELD_CURRENT_MA",
-    "Z_PEAK_CURRENT_MA", "Z_PULSE_WIDTH_US", "Z_PULSE_EDGE_US", "Z_TAIL_COMP_ENABLED",
+    "Z_PEAK_CURRENT_MA", "Z_PULSE_VPP", "Z_PULSE_WIDTH_US", "Z_PULSE_EDGE_US", "Z_TAIL_COMP_ENABLED",
     "Z_TAIL_S_F", "Z_TAIL_TAU_E_US", "AMPLIFIER_GAIN_DB", "AMPLIFIER_INPUT_IMPEDANCE_OHM",
-    "AMPLIFIER_OUTPUT_IMPEDANCE_OHM", "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM",
+    "AMPLIFIER_OUTPUT_IMPEDANCE_OHM", "Z_DRIVE_SOURCE_IMPEDANCE_OHM",
+    "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM",
     "COIL_RESISTANCE_OHM", "RESISTOR_RATED_W", "DEMOD0_IDX", "DEMOD0_SIGNAL_RANGE",
     "DEMOD0_ORDER", "DEMOD0_TC", "DEMOD0_RATE", "STATIC_POINT_DURATION_S", "SYSTEM_SETTLE_S",
     "TEMP_SWITCH_ON_LAG_S", "SET_TEC_TARGET", "TARGET_TEMPERATURE_C",
@@ -44,7 +45,8 @@ ACQUISITION = (
           artifacts=("raw/noise_*.npz",),
           quality_gates=("保持 A05 高带宽滤波设置不变，关闭上下边带保留 5 kHz 连续载波在工作点，仅在 MFLI Demod 4 按 NOISE_N_AVG × NOISE_DURATION_S 分段独立进出温控窗口采集无调制噪声 XY 帧，每段恢复温控后写盘并按 DYNAMIC_TEMP_SWITCH_ON_LAG_S 等待。",)),
     Stage(FINISH_ID, "安全结束会话", "结束", (), (), quality_gates=(
-        "先关 1200B，再关 MFLI Out1/MOD 并清零偏置与幅值，Z/X 关闭归零并回读，停 Demod 4 传输并恢复温控与主场；共同触发保持。",)),
+        "DG 直驱无 1200B：先关 MFLI Out1/MOD 并清零偏置与幅值，Z/X 关闭归零并回读，"
+        "停 Demod 4 传输并恢复温控与主场；共同触发保持。",)),
 )
 ANALYSIS = (
     Stage("B01", "相位频响与输入等效噪声分析", "独立分析", (), (),

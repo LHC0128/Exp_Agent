@@ -12,22 +12,25 @@ ANALYSIS_KEYS: tuple[str, ...] = ()
 # A02 建立链路、锁相与激励；这些参数改动会同时失效相位扫描。
 CHAIN = ("AMPLIFIER_GAIN_DB", "X_BIAS_V", "Y_BIAS_V", "MAIN_FIELD_CURRENT_MA",
          "AMPLIFIER_INPUT_IMPEDANCE_OHM", "AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
-         "AMPLIFIER_WRITE_SETTINGS", "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM", "COIL_RESISTANCE_OHM",
+         "AMPLIFIER_WRITE_SETTINGS", "Z_DRIVE_SOURCE_IMPEDANCE_OHM",
+         "SENSE_RESISTOR_OHM", "DAMPING_RESISTOR_OHM", "COIL_RESISTANCE_OHM",
          "RESISTOR_RATED_W", "Y_RF_FREQ_HZ", "Y_RF_VPP", "Y_RF_PHASE_DEG", "DEMOD0_IDX",
          "DEMOD0_SIGNAL_RANGE", "DEMOD0_ORDER", "DEMOD0_TC", "DEMOD0_RATE")
 # A03 改射频 burst 相位并读 R/θ；脉宽、拖尾与相位网格决定写入的波形与扫描轴。
 TAIL = ("Z_TAIL_COMP_ENABLED", "Z_TAIL_S_F", "Z_TAIL_TAU_E_US")
-SCAN = ("Z_PEAK_CURRENT_MA", "Z_PULSE_EDGE_US", "Z_PULSE_WIDTH_US", *TAIL,
+SCAN = ("Z_PEAK_CURRENT_MA", "Z_PULSE_VPP", "Z_PULSE_EDGE_US", "Z_PULSE_WIDTH_US", *TAIL,
         "Y_RF_PHASE_START_DEG", "Y_RF_PHASE_STOP_DEG", "Y_RF_PHASE_STEP_DEG",
         "N_REPEAT", "SCAN_POINT_DURATION_S", "SYSTEM_SETTLE_S", "TEMP_GROUP_SIZE",
         "TEMP_SWITCH_ON_LAG_S", "Y_RF_FREQ_HZ", "Y_RF_VPP")
 ACQUISITION = (
     Stage("A01", "参数、映射与安全限值预检", "准备", (), ("RUN_TAG",), display_parameters=("RUN_TAG",),
           quality_gates=("不连接硬件；相位网格由起点/终点/步进生成且非空；脉宽大于两倍沿宽且不超过半个周期；"
-                         "z_pulse_coil_current、Z/Y 场电平、触发电平与电阻功耗全部在限内"
+                         "Z_PULSE_VPP 不超过 DG4000 高阻档上限，Z_PULSE_VPP/2、按回路电阻估算的峰值电流、"
+                         "Z/Y 场电平、触发电平与电阻功耗全部在限内"
                          "（Z_TAIL_COMP_ENABLED 时功耗按实际波形 mean(v²)）",)),
-    Stage("A02", "连接 DG、MFLI、1200B、DHO900、GS200 并同步时钟", "准备", ("A01",), CHAIN,
-          quality_gates=("连接前过硬件门控；写 1200B 增益/阻抗并配平 Z 通道负载；"
+    Stage("A02", "连接 DG、MFLI、DHO900、GS200 并同步时钟", "准备", ("A01",), CHAIN,
+          quality_gates=("连接前过硬件门控；DG 直驱 Z 线圈（1200B 已物理旁路，不连接也不写功放设置）；"
+                         "配平 Z 通道高阻负载；"
                          "按 X_BIAS_V 设 X 静态偏置、Y 射频正弦叠加 Y_BIAS_V 直流 offset；"
                          "MFLI 第 0 路解调器按参数配置并记录回读；射频按无限 burst 与 Y_RF_PHASE_DEG 起振；"
                          "GS200 主磁场输出回读为 OFF 才继续；DG 与 MFLI 参考时钟严格回读一致",)),
@@ -38,7 +41,7 @@ ACQUISITION = (
                          "组首关闭温控、组末恢复温控并等 TEMP_SWITCH_ON_LAG_S 后落盘，关温控窗口内不写文件；"
                          "取消保留已完成读数",)),
     Stage(FINISH_ID, "安全结束会话", "结束", (),
-          quality_gates=("先关 1200B，Z 通道 DC 0 V 并关 burst/sync、关 Y 射频、停 MFLI 解调传输与 DHO900，"
+          quality_gates=("DG 直驱无 1200B：Z 通道 DC 0 V 并关 burst/sync、关 Y 射频、停 MFLI 解调传输与 DHO900，"
                          "再恢复温控与 GS200 原状态并断开全部设备",)),
 )
 ANALYSIS = (

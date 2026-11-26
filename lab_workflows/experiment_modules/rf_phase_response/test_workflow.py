@@ -9,6 +9,7 @@ import json
 import math
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -31,10 +32,14 @@ REGRESSION_CASES = {
             "sources": ["lab_workflows/experiment_modules/rf_phase_response/models.py",
                         "params/experiments/rf-phase-response.yaml"],
             "tests": ["ParamsTest::test_defaults_match_pi_width_run",
+                      "ParamsTest::test_no_amplifier_uses_dg_voltage_setpoint",
                       "ParamsTest::test_phase_grid_is_full_circle",
                       "PreparationTest::test_preflight_rejects_width_over_half_period",
+                      "PreparationTest::test_preflight_rejects_voltage_over_dg_high_z_limit",
+                      "PreparationTest::test_preflight_rejects_estimated_current_over_limit",
                       "PreparationTest::test_preflight_accepts_defaults",
                       "PreparationTest::test_preflight_accepts_x_direction",
+                      "PreparationTest::test_preflight_allows_mapping_without_amplifier",
                       "PreparationTest::test_x_direction_rejects_level_over_limit",
                       "PreparationTest::test_demod_phase_parameter_and_drift"],
         },
@@ -49,14 +54,60 @@ class ParamsTest(unittest.TestCase):
         self.assertEqual(p.y_rf_vpp, 0.05)
         self.assertEqual(p.z_peak_current_ma, 190.0)
         self.assertEqual(p.z_pulse_width_us, 8.03)
-        self.assertTrue(p.z_tail_comp_enabled)
+        # 功放物理旁路：DG 直驱按电压设定，拖尾补偿默认关闭（只发原升余弦 ±脉冲）。
+        self.assertFalse(p.z_drive_amplifier_enabled)
+        self.assertFalse(p.z_tail_comp_enabled)
+        self.assertEqual(p.z_pulse_vpp, 20.0)
         self.assertAlmostEqual(p.z_tail_tau_c_us, 25.5136, places=3)
         wave, record = preparation.pulse_wave(p, p.z_pulse_width_us)
-        self.assertTrue(record["tail_comp"])
-        self.assertAlmostEqual(record["tail_a"], 0.115446, places=5)
-        self.assertLess(abs(record["tail_start_current_ma"]), 22.0)
-        self.assertGreater(abs(record["tail_start_current_ma"]), 21.5)
+        self.assertFalse(record["tail_comp"])
         self.assertEqual(len(wave), preparation.ARB_POINTS)
+        # 显式开启拖尾补偿时仍按脉宽精确推导尾幅与起始电流。
+        tail_params = replace(p, z_tail_comp_enabled=True)
+        _, tail_record = preparation.pulse_wave(tail_params, tail_params.z_pulse_width_us)
+        self.assertTrue(tail_record["tail_comp"])
+        self.assertAlmostEqual(tail_record["tail_a"], 0.115446, places=5)
+        self.assertAlmostEqual(tail_record["estimated_peak_current_ma"],
+                               10.0 / 72.0 * 1e3, places=9)
+        self.assertAlmostEqual(tail_record["tail_start_current_ma"],
+                               -tail_record["tail_a"] * tail_record["estimated_peak_current_ma"]
+                               / tail_record["scale"], places=9)
+        self.assertLess(abs(tail_record["tail_start_current_ma"]), 16.5)
+        self.assertGreater(abs(tail_record["tail_start_current_ma"]), 15.5)
+
+    def test_no_amplifier_uses_dg_voltage_setpoint(self):
+        """DG 直驱：脉冲幅度即 Z_PULSE_VPP，回路电阻计入 50 Ω 源阻抗。"""
+        p = models.RfPhaseResponseParams()
+        self.assertAlmostEqual(p.gain, 1.0)
+        self.assertAlmostEqual(p.loop_resistance_ohm, 72.0)
+        self.assertAlmostEqual(p.amps_per_drive_volt, 1.0 / 72.0)
+        self.assertAlmostEqual(p.pulse_vpp, 20.0)
+        self.assertAlmostEqual(p.estimated_peak_current_ma, 10.0 / 72.0 * 1e3)
+        levels = preparation.plan(p)
+        self.assertAlmostEqual(levels["pulse_max_v"], 10.0)
+        self.assertAlmostEqual(levels["pulse_min_v"], -10.0)
+        self.assertAlmostEqual(levels["pulse_peak_current_a"], 10.0 / 72.0)
+        # 旧功放键保留在快照里，但不再影响电压与电流换算。
+        external = p.to_external()
+        for key in ("Z_PULSE_VPP", "Z_DRIVE_SOURCE_IMPEDANCE_OHM", "Z_PEAK_CURRENT_MA",
+                    "AMPLIFIER_GAIN_DB", "AMPLIFIER_OUTPUT_IMPEDANCE_OHM"):
+            self.assertIn(key, external)
+        self.assertAlmostEqual(external["Z_PULSE_VPP"], 20.0)
+        self.assertAlmostEqual(external["Z_DRIVE_SOURCE_IMPEDANCE_OHM"], 50.0)
+        louder = replace(p, amplifier_gain_db=0.0, z_peak_current_ma=1.0)
+        self.assertAlmostEqual(louder.pulse_vpp, 20.0)
+        self.assertAlmostEqual(louder.estimated_peak_current_ma, 10.0 / 72.0 * 1e3)
+
+    def test_preflight_rejects_voltage_over_dg_high_z_limit(self):
+        params = models.RfPhaseResponseParams(z_pulse_vpp=21.0)
+        with self.assertRaisesRegex(ValueError, "DG4000 高阻档上限"):
+            preparation.preflight(params, ROOT)
+
+    def test_preflight_rejects_estimated_current_over_limit(self):
+        # 10 V 峰值 / (10 + 10 + 2 + 0.5) Ω ≈ 0.444 A，超过 z_pulse_coil_current 0.3 A。
+        params = replace(models.RfPhaseResponseParams(), z_drive_source_impedance_ohm=0.5)
+        with self.assertRaisesRegex(ValueError, "安全拦截"):
+            preparation.preflight(params, ROOT)
 
     def test_phase_grid_is_full_circle(self):
         p = models.RfPhaseResponseParams()
@@ -72,6 +123,22 @@ class PreparationTest(unittest.TestCase):
         params, mapping = preparation.preflight(models.RfPhaseResponseParams(), ROOT)
         self.assertEqual(params, models.RfPhaseResponseParams())
         self.assertIn("Y_magnetic_field", mapping)
+
+    def test_preflight_allows_mapping_without_amplifier(self):
+        """DG 直驱不再要求 coil_drive_amplifier 映射；其余必需键保持要求。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "params"
+            config.mkdir()
+            for name in ("devices.yaml", "safety_limits.yaml"):
+                (config / name).write_text((ROOT / "params" / name).read_text(encoding="utf-8"),
+                                           encoding="utf-8")
+            mapping = yaml.safe_load((ROOT / "params/mapping.yaml").read_text(encoding="utf-8"))
+            mapping.get("mapping", {}).pop("coil_drive_amplifier", None)
+            (config / "mapping.yaml").write_text(yaml.safe_dump(mapping, allow_unicode=True), encoding="utf-8")
+            params, loaded = preparation.preflight(models.RfPhaseResponseParams(), Path(tmp))
+            self.assertNotIn("coil_drive_amplifier", loaded)
+            self.assertFalse(params.z_drive_amplifier_enabled)
+            self.assertNotIn("coil_drive_amplifier", run_format.REQUIRED_MAPPING_KEYS)
 
     def test_preflight_accepts_x_direction(self):
         params = models.RfPhaseResponseParams(rf_direction="X", x_bias_v=0.16, y_bias_v=0.08)

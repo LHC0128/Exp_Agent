@@ -15,4 +15,4 @@
 - 默认参数：`params/experiments/rf-phase-response.yaml`
 
 ## 相关仪器
-设备：DG4000、MFLI、Aigtek 1200B、DHO900、GS200、TEC103。型号说明与协议见 `docs/instruments/`。
+设备：DG4000、MFLI、DHO900、GS200、TEC103。型号说明与协议见 `docs/instruments/`。

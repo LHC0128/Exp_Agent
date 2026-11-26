@@ -1,7 +1,10 @@
 """射频相位响应的预检与公共硬件编排；导入不连接设备。
 
 硬件连接、激励与收尾复用 ``z_chain_common.prep``；本模块只保留本实验的参数预检
-（单脉宽、相位网格、拖尾功耗与锁相能力）。
+（单脉宽、相位网格、拖尾功耗、锁相能力与 DG 直驱电压/电流估算）。
+
+1200B 功放已物理旁路：本实验不要求 ``coil_drive_amplifier`` 映射，DG4000 直驱 Z 线圈，
+Z 脉冲按 ``Z_PULSE_VPP`` 设电压；线圈峰值电流按已知回路电阻估算，不是直接测量值。
 """
 from __future__ import annotations
 
@@ -9,12 +12,12 @@ from ...common import load_mapping, load_safety_limits, validate_safety_limit
 from ...devices import signal_generator_max_arb_points
 from ...instrument_config import validate_mapping_usage
 from ...lockin_compatibility import require_lockin_compatibility
-from ...steps.coil_drive_chain import SafetyAbort, current_limit, set_amp_output, sleep
+from ...steps.coil_drive_chain import SafetyAbort, current_limit, sleep
 from ..z_chain_common import prep as _prep
-from ..z_chain_common.keys import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, LOCKIN_KEY, MAIN_FIELD_KEY,
-                                   REQUIRED_MAPPING_KEYS, RF_KEY, SCOPE_KEY, SOURCE_KEY, TEC_KEY,
-                                   TEMP_SWITCH_KEY, TRIGGER_KEY, X_KEY)
-from ..z_chain_common.params import ARB_POINTS
+from ..z_chain_common.keys import (CURRENT_LIMIT_KEY, LOCKIN_KEY, MAIN_FIELD_KEY,
+                                   REQUIRED_MAPPING_KEYS_NO_AMPLIFIER, RF_KEY, SCOPE_KEY, SOURCE_KEY,
+                                   TEC_KEY, TEMP_SWITCH_KEY, TRIGGER_KEY, X_KEY)
+from ..z_chain_common.params import (ARB_POINTS, DG_HIGH_Z_MAX_VPP, amplifier_enabled)
 from ..z_chain_common.prep import (ARB_SAMPLE_RATE_CHECK, BURST_NCYCLES, TEMP_SWITCH_ON_V,
                                    TRIGGER_DUTY, TRIGGER_OFFSET_V, TRIGGER_VPP, clocks,
                                    configure_chain, configure_lockin, configure_main_field,
@@ -27,12 +30,12 @@ from .run_format import EXPERIMENT_ID
 
 __all__ = [
     "ARB_POINTS", "ARB_SAMPLE_RATE_CHECK", "BURST_NCYCLES", "SafetyAbort", "TEMP_SWITCH_ON_V",
-    "TRIGGER_DUTY", "TRIGGER_OFFSET_V", "TRIGGER_VPP", "amplifier_safety_check", "clocks",
+    "TRIGGER_DUTY", "TRIGGER_OFFSET_V", "TRIGGER_VPP", "clocks",
     "configure_chain", "configure_dc_side", "configure_lockin", "configure_rf", "configure_trigger",
     "configure_x_bias",
     "configure_z_idle", "connect", "phase_drift_deg", "current_limit", "disable_main_field",
     "enable_temperature_switch", "configure_main_field",
-    "plan", "preflight", "pulse_wave", "rf_levels", "set_amp_output", "set_rf_phase", "shutdown", "sleep",
+    "plan", "preflight", "pulse_wave", "rf_levels", "set_rf_phase", "shutdown", "sleep",
 ]
 
 
@@ -41,10 +44,10 @@ def preflight(params: RfPhaseResponseParams, root):
     if errors := params.validate(root):
         raise ValueError("；".join(errors))
     mapping = load_mapping(root)
-    for key in REQUIRED_MAPPING_KEYS:
+    for key in REQUIRED_MAPPING_KEYS_NO_AMPLIFIER:
         if key not in mapping:
             raise ValueError(f"缺少设备映射：{key}")
-    validate_mapping_usage(REQUIRED_MAPPING_KEYS, root)
+    validate_mapping_usage(REQUIRED_MAPPING_KEYS_NO_AMPLIFIER, root)
     expected = {
         SOURCE_KEY: ("signal_generator", None),
         X_KEY: ("signal_generator", None),
@@ -52,7 +55,6 @@ def preflight(params: RfPhaseResponseParams, root):
         TRIGGER_KEY: ("signal_generator", None),
         TEMP_SWITCH_KEY: ("signal_generator", None),
         LOCKIN_KEY: ("lockin_amplifier", {"MFLI"}),
-        AMPLIFIER_KEY: ("power_amplifier", {"1200B"}),
         SCOPE_KEY: ("oscilloscope", {"DHO900", "DHO914", "DHO914S", "DHO924", "DHO924S"}),
         MAIN_FIELD_KEY: ("gs200", None),
         TEC_KEY: ("tec_controller", None),
@@ -72,6 +74,13 @@ def preflight(params: RfPhaseResponseParams, root):
     levels = plan(params)
     for value in (0.0, levels["pulse_max_v"], levels["pulse_min_v"]):
         validate_safety_limit(SOURCE_KEY, value, limits)
+    if not amplifier_enabled(params):
+        # DG 直驱：幅度设定受高阻档上限约束，线圈电流按回路电阻估算并单独过电流限值。
+        if params.z_pulse_vpp > DG_HIGH_Z_MAX_VPP:
+            raise ValueError(f"无放大器时 Z_PULSE_VPP={params.z_pulse_vpp:g} Vpp 超过 DG4000 高阻档上限 "
+                             f"{DG_HIGH_Z_MAX_VPP:g} Vpp")
+        for value in (levels["estimated_peak_current_ma"] * 1e-3, -levels["estimated_peak_current_ma"] * 1e-3):
+            validate_safety_limit(CURRENT_LIMIT_KEY, value, limits)
     for role in ("x", "y"):
         validate_safety_limit(channel_key(role), 0.0, limits)
         validate_safety_limit(channel_key(role), channel_bias_v(params, role), limits)
@@ -123,8 +132,3 @@ def preflight(params: RfPhaseResponseParams, root):
 def connect(ctx):
     """连接所有设备；失败时断开已连接设备，不留半开会话。"""
     return _prep.connect(ctx, experiment_id=EXPERIMENT_ID, preflight_fn=preflight)
-
-
-def amplifier_safety_check(ctx):
-    """1200B 安全回调：只放行关闭输出与本次参数里的增益/阻抗写入，其余一律拒绝。"""
-    return _prep.amplifier_safety_check(ctx, preflight)

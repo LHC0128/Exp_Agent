@@ -15,4 +15,4 @@
 - 默认参数：`params/experiments/rf-phase-sensitivity.yaml`
 
 ## 相关仪器
-设备：DG4000、MFLI、Aigtek 1200B、GS200、TEC103（可选设温）。型号说明与协议见 `docs/instruments/`。
+设备：DG4000、MFLI、GS200、TEC103（可选设温）。型号说明与协议见 `docs/instruments/`。

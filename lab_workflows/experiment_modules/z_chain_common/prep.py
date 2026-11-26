@@ -1,9 +1,10 @@
 """Z 脉冲链公共硬件编排：连接、时钟、激励、主磁场处置与安全收尾；导入不连接设备。
 
-Z 通道链路与 ``pi_pulse_calibration`` 完全一致（DG → 1200B → 阻尼电阻 → Z 线圈 → 采样电阻），
-差别有两处：Z 信号源由 ``Time_sequence_2`` 外触发做 burst 门控，判据改由 MFLI 第 0 路
-解调器的 R 给出。器件操作复用 ``lab_workflows.steps`` 的公共步骤，本模块只保留公共的
-激励配置与收尾清单；实验专属预检与参数模型留在各实验包。
+Z 通道默认链路与 ``pi_pulse_calibration`` 一致（DG → 1200B → 阻尼电阻 → Z 线圈 → 采样电阻）；
+参数模型声明 ``z_drive_amplifier_enabled = False`` 时功放已物理旁路，DG4000 直驱 Z 线圈，
+本模块不连接、不配置也不开关 1200B。差别另有一处：Z 信号源由 ``Time_sequence_2`` 外触发做
+burst 门控，判据改由 MFLI 第 0 路解调器的 R 给出。器件操作复用 ``lab_workflows.steps`` 的
+公共步骤，本模块只保留公共的激励配置与收尾清单；实验专属预检与参数模型留在各实验包。
 """
 from __future__ import annotations
 
@@ -26,7 +27,8 @@ from ...steps import (DGChannelShutdown, DisconnectTarget, ShutdownAction, STAND
 from ...steps.coil_drive_chain import SafetyAbort, current_limit, set_amp_output, sleep
 from ..bperp_null import z_waveform as tail_waveform
 from ..z_chain_stability import processing as pulse_processing
-from .params import ARB_POINTS, PulseChainParams
+from .params import (ARB_POINTS, PulseChainParams, amplifier_enabled, amps_per_drive_volt,
+                     estimated_peak_current_ma, loop_resistance_ohm, pulse_vpp)
 from .keys import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, LOCKIN_KEY, MAIN_FIELD_KEY,
                    REQUIRED_MAPPING_KEYS, RF_KEY, SCOPE_KEY, SOURCE_KEY, TEC_KEY, TEMP_SWITCH_KEY,
                    TRIGGER_KEY, X_KEY)
@@ -56,33 +58,42 @@ TEMP_SWITCH_ON_V = 5.0
 
 
 def plan(p: PulseChainParams) -> dict:
-    """计划中的电平、峰值电流与波形参数；预检与执行共用。"""
-    vpp = p.pulse_vpp
+    """计划中的电平、估算峰值电流与波形参数；预检与执行共用。
+
+    有放大器时峰值电流就是参数目标值，链路与历史行为一致；DG 直驱时按
+    ``Z_PULSE_VPP / 2`` 与已知回路电阻估算，预检、功耗核算和报告都用这个估算值。
+    """
+    vpp = pulse_vpp(p)
+    peak_ma = estimated_peak_current_ma(p)
     return dict(pulse_vpp=vpp,
                 pulse_offset_v=0.0,
                 pulse_max_v=vpp / 2.0,
                 pulse_min_v=-vpp / 2.0,
-                pulse_peak_current_a=p.z_peak_current_ma * 1e-3,
+                pulse_peak_current_a=peak_ma * 1e-3,
+                estimated_peak_current_ma=peak_ma,
                 pulse_period_us=p.pulse_period_us,
                 arb_sample_rate_sa_s=ARB_POINTS / (p.pulse_period_us * 1e-6))
 
 
 def pulse_wave(p: PulseChainParams, width_us: float) -> tuple[np.ndarray, dict]:
-    """写入 Z 通道的一个周期归一化电流（最大绝对值 1 ↔ Z_PEAK_CURRENT_MA）与该脉宽的记录。
+    """写入 Z 通道的一个周期归一化电流（最大绝对值 1 ↔ 估算峰值电流）与该脉宽的记录。
 
     关闭拖尾补偿时为原升余弦 ±π 双脉冲；开启时每个脉冲后接精确反号指数尾，尾幅 A 相对主脉冲平顶，
-    按周期延拓叠加后整体归一化，平顶电流 = Z_PEAK_CURRENT_MA / scale。
+    按周期延拓叠加后整体归一化，平顶电流 = 估算峰值电流 / scale。
     """
+    peak_ma = estimated_peak_current_ma(p)
     if not p.z_tail_comp_enabled:
         wave = pulse_processing.pulse_waveform(p.pulse_period_us, width_us, p.z_pulse_edge_us, points=ARB_POINTS)
-        return wave, dict(tail_comp=False, width_us=float(width_us), mean_square=float(np.mean(np.square(wave))))
+        return wave, dict(tail_comp=False, width_us=float(width_us), estimated_peak_current_ma=peak_ma,
+                          mean_square=float(np.mean(np.square(wave))))
     tail_a, tau_c = tail_waveform.exact_tail(width_us, p.z_pulse_edge_us, p.z_tail_s_f, p.z_tail_tau_e_us)
     wave, scale = tail_waveform.tail_compensated_waveform(p.pulse_period_us, width_us, p.z_pulse_edge_us,
                                                           tail_a, tau_c, ARB_POINTS)
     half = ARB_POINTS // 2
     return wave, dict(tail_comp=True, width_us=float(width_us), tail_a=float(tail_a), tau_c_us=float(tau_c),
-                      scale=float(scale), plateau_current_ma=p.z_peak_current_ma / scale,
-                      tail_start_current_ma=-tail_a * p.z_peak_current_ma / scale,
+                      scale=float(scale), plateau_current_ma=peak_ma / scale,
+                      tail_start_current_ma=-tail_a * peak_ma / scale,
+                      estimated_peak_current_ma=peak_ma,
                       mean_square=float(np.mean(np.square(wave))),
                       antisymmetry_error=float(np.max(np.abs(wave[:half] + wave[half:2 * half]))))
 
@@ -147,10 +158,11 @@ def connect(ctx, *, experiment_id, preflight_fn):
                                                                 "capabilities": mfli.capabilities}}
         require_lockin_compatibility(experiment_id, ctx.params.to_external(), mapping=actual_mapping)
         initialize_lockin_inputs(mfli)
-        amp = mapping[AMPLIFIER_KEY]
-        devices["amp"] = session.connect("amp", str(amp["resource"]), lambda: Aigtek1200BInstrument(
-            amp["resource"], serial_number=str((amp.get("connection") or {}).get("serial_number", "0001")),
-            safety_check=amplifier_safety_check(ctx, preflight_fn)))
+        if amplifier_enabled(ctx.params):
+            amp = mapping[AMPLIFIER_KEY]
+            devices["amp"] = session.connect("amp", str(amp["resource"]), lambda: Aigtek1200BInstrument(
+                amp["resource"], serial_number=str((amp.get("connection") or {}).get("serial_number", "0001")),
+                safety_check=amplifier_safety_check(ctx, preflight_fn)))
         devices["scope"] = session.connect("scope", str(mapping[SCOPE_KEY]["resource"]),
                                            lambda: create_oscilloscope(mapping[SCOPE_KEY]))
         main_field = mapping[MAIN_FIELD_KEY]
@@ -173,29 +185,43 @@ def clocks(ctx):
 
 
 def configure_chain(ctx):
-    """写 1200B 增益与阻抗、配平信号源负载；1200B 无回读，写入值即预测依据。"""
+    """配平 Z 信号源负载；经功放时另写 1200B 增益与阻抗（无回读，写入值即预测依据）。
+
+    DG 直驱时功放已旁路：不改功放、不发 AON，Z 通道按高阻档写入（写入幅度即开路电动势），
+    回路电阻额外计入 DG4000 源阻抗，记录电流估算依据。
+    """
     p = ctx.params
-    signals, channels, amp = ctx.devices["signals"], ctx.devices["channels"], ctx.devices["amp"]
+    signals, channels = ctx.devices["signals"], ctx.devices["channels"]
     signals.set_output(False, channel=channels["z"])
     signals.set_burst_state(False, channel=channels["z"])
     signals.set_mod_state(False, channel=channels["z"])
-    set_amp_output(ctx, False)
-    if p.amplifier_write_settings:
-        amp.set_input_impedance(p.amplifier_input_impedance_ohm)
-        amp.set_output_impedance(p.amplifier_output_impedance_ohm)
-        amp.set_gain_db(p.amplifier_gain_db)
-    load = "INF" if p.amplifier_input_impedance_ohm >= 1e6 else 50
+    if amplifier_enabled(p):
+        amp = ctx.devices["amp"]
+        set_amp_output(ctx, False)
+        if p.amplifier_write_settings:
+            amp.set_input_impedance(p.amplifier_input_impedance_ohm)
+            amp.set_output_impedance(p.amplifier_output_impedance_ohm)
+            amp.set_gain_db(p.amplifier_gain_db)
+        load = "INF" if p.amplifier_input_impedance_ohm >= 1e6 else 50
+        written = "已写入，未回读" if p.amplifier_write_settings else "未写入，需面板一致"
+        ctx.state["amplifier"] = dict(gain_db=p.amplifier_gain_db,
+                                      input_impedance_ohm=p.amplifier_input_impedance_ohm,
+                                      output_impedance_ohm=p.amplifier_output_impedance_ohm,
+                                      source_output_load=load,
+                                      written=bool(p.amplifier_write_settings),
+                                      loop_resistance_ohm=loop_resistance_ohm(p),
+                                      predicted_amps_per_volt=amps_per_drive_volt(p))
+        ctx.outputs["功放"] = (f"{p.amplifier_gain_db:g} dB、输入 {p.amplifier_input_impedance_ohm:g} Ω、"
+                               f"输出 {p.amplifier_output_impedance_ohm:g} Ω（{written}）")
+    else:
+        # 直驱必须用高阻档：写入的 Vpp 是开路电动势，真实电流由回路电阻决定。
+        load = "INF"
+        ctx.state["amplifier"] = dict(enabled=False, gain_db=0.0, source_output_load=load,
+                                      loop_resistance_ohm=loop_resistance_ohm(p),
+                                      predicted_amps_per_volt=amps_per_drive_volt(p),
+                                      estimated_peak_current_ma=estimated_peak_current_ma(p))
+        ctx.outputs["功放"] = "DG 直驱（无放大器）"
     signals.set_output_load(load, channel=channels["z"])
-    written = "已写入，未回读" if p.amplifier_write_settings else "未写入，需面板一致"
-    ctx.state["amplifier"] = dict(gain_db=p.amplifier_gain_db,
-                                  input_impedance_ohm=p.amplifier_input_impedance_ohm,
-                                  output_impedance_ohm=p.amplifier_output_impedance_ohm,
-                                  source_output_load=load,
-                                  written=bool(p.amplifier_write_settings),
-                                  loop_resistance_ohm=p.loop_resistance_ohm,
-                                  predicted_amps_per_volt=p.amps_per_drive_volt)
-    ctx.outputs["功放"] = (f"{p.amplifier_gain_db:g} dB、输入 {p.amplifier_input_impedance_ohm:g} Ω、"
-                           f"输出 {p.amplifier_output_impedance_ohm:g} Ω（{written}）")
     ctx.outputs["Z 通道"] = f"输出 OFF，负载 {load}"
 
 
@@ -411,7 +437,10 @@ def _unique_source_routes(ctx):
 
 
 def shutdown(ctx):
-    """先断线圈电流，再把 Z 归零并关输出，随后恢复温控与 GS200 原状态并断开全部设备。"""
+    """先断线圈电流，再把 Z 归零并关输出，随后恢复温控与 GS200 原状态并断开全部设备。
+
+    DG 直驱时没有 1200B 可关，Z 通道归零即切断线圈电流。
+    """
     devices, params = ctx.devices, ctx.params
     if not devices:
         return list(disconnect_device_mapping({str(index): device
@@ -457,7 +486,8 @@ def shutdown(ctx):
         disconnect_targets=disconnect_targets,
         # 时序信号2 是共同触发：保持运行（Z burst 已关闭，不会再有脉冲），与 DirectAW 一致。
         preserved_outputs=(*STANDARD_PRESERVED_OUTPUTS, TRIGGER_KEY))
-    ctx.outputs.update({"功放": "OFF（已发送 AOF）", "X 偏置": "OFF，已归零",
+    ctx.outputs.update({"功放": "OFF（已发送 AOF）" if amplifier_enabled(params) else "DG 直驱（无放大器）",
+                        "X 偏置": "OFF，已归零",
                         "Z 通道": "DC 0 V + OFF，burst/sync OFF",
                         "Y 射频": "OFF", "温控": "ON（已恢复）", "MFLI": "已停止解调传输",
                         "DHO900": "STOP，已断开", **({"主磁场": "已恢复原状态"} if main_field_state else {})})

@@ -5,7 +5,6 @@ import math
 from dataclasses import asdict
 import time
 
-from aigtek_1200b import Aigtek1200BInstrument
 from gs200 import GS200Instrument
 from hardware_gate import HardwareAccessDenied
 from lockin_amplifier import DemodulatorConfig, OscillatorConfig, SignalInputConfig, demod, lockin_capabilities
@@ -33,7 +32,6 @@ from ...steps.clock import normalize_clock_source
 from ...steps.coil_drive_chain import SafetyAbort, sleep
 from ..z_chain_common import prep
 from ..z_chain_common.keys import (
-    AMPLIFIER_KEY,
     CURRENT_LIMIT_KEY,
     LOCKIN_KEY,
     MAIN_FIELD_KEY,
@@ -43,16 +41,23 @@ from ..z_chain_common.keys import (
     TRIGGER_KEY,
     X_KEY,
 )
+from ..z_chain_common.params import DG_HIGH_Z_MAX_VPP, amplifier_enabled
+from ..z_chain_common.rf_phase import (
+    _MFLI_OUTPUT_RANGES_V,
+    mfli_output_levels,
+    mfli_sigout_safety_key,
+    select_mfli_output_range,
+)
 from . import run_format
 from .models import MFLI_MAX_SIGOUT_V, MOD_CARRIER_OSC_IDX, READOUT_DEMOD_IDX
 
+# 1200B 已物理旁路：本实验不要求 coil_drive_amplifier 映射。
 _EXPECTED = {
     SOURCE_KEY: ("signal_generator", {"DG4000"}),
     X_KEY: ("signal_generator", {"DG4000"}),
     TRIGGER_KEY: ("signal_generator", {"DG4000"}),
     TEMP_SWITCH_KEY: ("signal_generator", {"DG4000", "DG900"}),
     LOCKIN_KEY: ("lockin_amplifier", {"MFLI"}),
-    AMPLIFIER_KEY: ("power_amplifier", {"1200B"}),
     MAIN_FIELD_KEY: ("gs200", {"GS200"}),
     TEC_KEY: ("tec_controller", {"TEC103"}),
 }
@@ -63,33 +68,6 @@ _SIGNAL_ROUTE_SPECS = (
     ("trigger", TRIGGER_KEY),
     ("temp", TEMP_SWITCH_KEY),
 )
-_MFLI_OUTPUT_RANGES_V = (0.01, 0.1, 1.0, 10.0)
-
-
-def mfli_sigout_safety_key(mapping: dict) -> str:
-    """按锁相设备库 ID 生成 Signal Output 1 安全限值键名。"""
-    lockin_cfg = mapping.get(LOCKIN_KEY) or {}
-    device_id = str(lockin_cfg.get("device_library_id") or lockin_cfg.get("device_id") or "").strip()
-    if not device_id:
-        raise ValueError("lockin_r 映射缺少有效的 device_library_id")
-    return f"{device_id}_signal_output_0"
-
-
-def mfli_output_levels(params) -> tuple[float, ...]:
-    """返回 MFLI Signal Output 1 需经限值校验的全部电压点（包含 2° PM 边带包络）。"""
-    y_min, y_max = params.y_output_envelope(pm_enabled=True)
-    return (0.0, float(params.y_bias_v), y_min, y_max)
-
-
-def select_mfli_output_range(params) -> float:
-    """选择能完整容纳直流偏置与调相边带包络的最小 MFLI Signal Output 1 量程。"""
-    peak = max(abs(value) for value in mfli_output_levels(params))
-    for option in _MFLI_OUTPUT_RANGES_V:
-        if peak <= option + 1e-12:
-            return float(option)
-    raise ValueError(f"Y 射频与偏置总包络峰值 {peak:g} V 超出 MFLI Signal Output 1 最大 {MFLI_MAX_SIGOUT_V:g} V 量程")
-
-
 def installed_lockin_options(capabilities: dict | None) -> set[str]:
     """规范化锁相选件名称集合（移除 MF- 前缀）。"""
     options = (capabilities or {}).get("options") or ()
@@ -161,6 +139,13 @@ def preflight(params, root):
     ):
         for value in values:
             validate_safety_limit(key, value, limits)
+    if not amplifier_enabled(params):
+        # DG 直驱：幅度设定受高阻档上限约束，线圈电流按已知回路电阻估算并单独过电流限值。
+        if params.z_pulse_vpp > DG_HIGH_Z_MAX_VPP:
+            raise ValueError(f"无放大器时 Z_PULSE_VPP={params.z_pulse_vpp:g} Vpp 超过 DG4000 高阻档上限 "
+                             f"{DG_HIGH_Z_MAX_VPP:g} Vpp")
+        for value in (-levels["estimated_peak_current_ma"] * 1e-3, levels["estimated_peak_current_ma"] * 1e-3):
+            validate_safety_limit(CURRENT_LIMIT_KEY, value, limits)
     if not 2 * params.z_pulse_edge_us < params.z_pulse_width_us <= params.pulse_period_us / 2:
         raise ValueError("Z 单脉冲须宽于两倍沿宽且不超过半个周期")
     _, pulse = prep.pulse_wave(params, params.z_pulse_width_us)
@@ -178,7 +163,7 @@ def preflight(params, root):
 
 
 def _connect_devices(ctx):
-    """连接本实验全部仪器并校验真机 MFLI MF-MD/MF-MOD 选件；不连接旧 DG4000 Y 通道。"""
+    """连接本实验全部仪器并校验真机 MFLI MF-MD/MF-MOD 选件；不连接旧 DG4000 Y 通道，也不连接 1200B。"""
     mapping, devices, session = ctx.mapping, ctx.devices, ctx.device_session
     try:
         signals, channels = connect_signal_generator_routes(
@@ -198,16 +183,7 @@ def _connect_devices(ctx):
         actual_mapping = mapping | {LOCKIN_KEY: lockin_cfg | {"model": mfli.model, "capabilities": mfli.capabilities}}
         require_lockin_compatibility(run_format.EXPERIMENT_ID, ctx.params.to_external(), mapping=actual_mapping)
         initialize_lockin_inputs(mfli)
-        amp = mapping[AMPLIFIER_KEY]
-        devices["amp"] = session.connect(
-            "amp",
-            str(amp["resource"]),
-            lambda: Aigtek1200BInstrument(
-                amp["resource"],
-                serial_number=str((amp.get("connection") or {}).get("serial_number", "0001")),
-                safety_check=prep.amplifier_safety_check(ctx, preflight),
-            ),
-        )
+        # 1200B 已物理旁路：DG4000 直驱 Z 线圈，不建立功放会话。
         main_field = mapping[MAIN_FIELD_KEY]
         devices["gs200"] = session.connect(
             "gs200", str(main_field["resource"]), lambda: GS200Instrument(main_field["resource"])
@@ -474,7 +450,8 @@ def _arm_z(ctx):
     )
     if actual["load"] != "INF":
         actual["load"] = float(actual["load"])
-    expected_load = "INF" if p.amplifier_input_impedance_ohm >= 1e6 else 50.
+    # DG 直驱固定用高阻档：写入幅度即开路电动势，电流由回路电阻估算。
+    expected_load = ("INF" if not amplifier_enabled(p) or p.amplifier_input_impedance_ohm >= 1e6 else 50.)
     if (actual["shape"].upper() not in {"USER", "ARB", "ARBITRARY", "CUSTOM"} or actual["load"] != expected_load
             or actual["points"] != wave.size or actual["burst_mode"].upper() not in {"INF", "INFINITY"}
             or not actual["burst"] or actual["modulation"] or dg_output(source, channel)
@@ -483,15 +460,18 @@ def _arm_z(ctx):
             or not math.isclose(actual["frequency_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
             or not math.isclose(actual["offset_v"], 0., abs_tol=1e-4)
             or not math.isclose(actual["burst_phase_deg"], 0., abs_tol=0.02)):
-        raise SafetyAbort(f"Z 双脉冲写入回读不符，功放不打开：{actual}")
+        raise SafetyAbort(f"Z 双脉冲写入回读不符，拒绝打开输出：{actual}")
     record["generator_readback"] = actual
     source.set_output(True, channel=channel)
     if not dg_output(source, channel):
-        raise SafetyAbort("Z 无法确认信号源输出 ON，功放不打开")
+        raise SafetyAbort("Z 无法确认信号源输出 ON，拒绝开始采集")
     check_cancelled()
-    prep.set_amp_output(ctx, True)
+    if amplifier_enabled(p):
+        prep.set_amp_output(ctx, True)
     ctx.state["z_waveform"] = record
-    ctx.outputs["Z 通道"] = "外触发 ±π 双脉冲（波形与电平回读，电流按已知链路估算）"
+    ctx.outputs["Z 通道"] = (f"外触发 ±π 双脉冲（DG 直驱，无放大器；波形与电平回读，"
+                             f"估算峰值电流 {z['estimated_peak_current_ma']:.1f} mA，"
+                             f"按已知回路电阻估算、非直接测量）")
 
 
 def _prepare_trigger(ctx):
@@ -523,11 +503,12 @@ def _prepare_trigger(ctx):
 
 
 def prepare_measurement(ctx):
-    """在启动输出前核对信号源并先关功放，再配置 Z/X/共同触发/MFLI 与 MF-MOD。"""
+    """在启动输出前核对信号源（经功放时先关功放），再配置 Z/X/共同触发/MFLI 与 MF-MOD。"""
     _verify_generators(ctx)
     check_cancelled()
     ctx.active = True
-    prep.set_amp_output(ctx, False)
+    if amplifier_enabled(ctx.params):
+        prep.set_amp_output(ctx, False)
     _prepare_temperature(ctx)
     prep.configure_chain(ctx)
     prep.configure_main_field(ctx, ctx.params.main_field_current_ma)
@@ -673,12 +654,16 @@ def park(ctx):
     if not ctx.active:
         return []
     devices = ctx.devices
-    actions = [
-        ShutdownAction("关 1200B 输出", lambda: prep.set_amp_output(ctx, False)),
+    actions = []
+    if amplifier_enabled(ctx.params):
+        actions.append(ShutdownAction("关 1200B 输出", lambda: prep.set_amp_output(ctx, False)))
+    else:
+        ctx.outputs["功放"] = "DG 直驱（无放大器）"
+    actions.extend((
         ShutdownAction("Z_magnetic_field 关闭并归零", lambda: _off_and_zero(ctx, "z", SOURCE_KEY)),
         ShutdownAction("MFLI Y 射频关闭并归零", lambda: _stop_mfli_rf(ctx)),
         ShutdownAction("X_magnetic_field 关闭并归零", lambda: _off_and_zero(ctx, "x", X_KEY)),
-    ]
+    ))
 
     def restore_temperature():
         ctx.state.setdefault("shutdown_readbacks", {})[TEMP_SWITCH_KEY] = write_temperature(ctx, True)

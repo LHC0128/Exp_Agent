@@ -5,9 +5,9 @@ from pathlib import Path
 
 import yaml
 
-from ..z_chain_common.keys import (AMPLIFIER_KEY, CURRENT_LIMIT_KEY, LOCKIN_KEY, MAIN_FIELD_KEY,
-                                   REQUIRED_MAPPING_KEYS, RF_KEY, SCOPE_KEY, SOURCE_KEY, TEC_KEY,
-                                   TEMP_SWITCH_KEY, TRIGGER_KEY, X_KEY)
+from ..z_chain_common.keys import (CURRENT_LIMIT_KEY, LOCKIN_KEY, MAIN_FIELD_KEY,
+                                   REQUIRED_MAPPING_KEYS_NO_AMPLIFIER, RF_KEY, SCOPE_KEY, SOURCE_KEY,
+                                   TEC_KEY, TEMP_SWITCH_KEY, TRIGGER_KEY, X_KEY)
 from .models import RfPhaseResponseParams
 
 EXPERIMENT_ID = "rf-phase-response"
@@ -15,6 +15,8 @@ DATA_TYPE = "rf_phase_response"
 # 1：首个格式，仅 R/θ；2：phase_response.csv 与逐点序列增加 X/Y 正交分量，分析仍读 1。
 RAW_FORMAT_VERSION = 2
 SUPPORTED_RAW_FORMAT_VERSIONS = (1, 2)
+# 1200B 已物理旁路：DG 直驱不再要求 coil_drive_amplifier 映射（S2 另行处理 Y 射频与 DHO900）。
+REQUIRED_MAPPING_KEYS = REQUIRED_MAPPING_KEYS_NO_AMPLIFIER
 
 PHASE_RESPONSE_FILE = "raw/phase_response.csv"
 PHASE_RESPONSE_PLOT = "results/phase_response.png"
@@ -75,6 +77,9 @@ def initial_metadata(p: RfPhaseResponseParams):
                                     "reason": "普通气室采集：温控关闭窗口内只读不写盘，组末恢复温控后再保存"},
                 predicted={"amps_per_drive_volt": p.amps_per_drive_volt,
                            "loop_resistance_ohm": p.loop_resistance_ohm, "pulse_vpp": p.pulse_vpp,
+                           "estimated_peak_current_ma": p.estimated_peak_current_ma,
+                           "z_drive_amplifier_enabled": p.z_drive_amplifier_enabled,
+                           "z_drive_source_impedance_ohm": p.z_drive_source_impedance_ohm,
                            "pulse_period_us": p.pulse_period_us, "width_us": p.z_pulse_width_us,
                            "main_field_current_ma": p.main_field_current_ma,
                            "tail_comp": p.z_tail_comp_enabled,

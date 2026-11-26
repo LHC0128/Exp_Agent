@@ -23,8 +23,8 @@ class Workflow(StagedWorkflow):
     hardware_free = ("A01", "A02")
     seal_after_run = False
     quality_errors = (preparation.SafetyAbort,)
-    output_source = "最近成功写入的命令；1200B 无状态查询，主磁场关闭与参考时钟经回读"
-    finished_message = "会话已结束；功放 OFF、Z 通道 0 V、Y 射频 OFF，温控与 GS200 已恢复"
+    output_source = "最近成功写入的命令；DG 直驱无 1200B 可查询，Z 脉冲幅度、主磁场关闭与参考时钟经回读"
+    finished_message = "会话已结束；Z 通道 0 V、Y 射频 OFF，温控与 GS200 已恢复"
 
     def __init__(self, params, *, project_root=None, session_id=None):
         super().__init__(params, project_root=project_root, session_id=session_id)

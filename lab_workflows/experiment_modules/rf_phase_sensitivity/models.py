@@ -1,4 +1,9 @@
-"""独立相位灵敏度实验的参数。基带频率、载波相位与锁相相位分别定义。"""
+"""独立相位灵敏度实验的参数。基带频率、载波相位与锁相相位分别定义。
+
+1200B 功放已物理旁路，DG4000 直驱 Z 线圈：Z 脉冲按 ``Z_PULSE_VPP`` 设电压（默认 20 Vpp，
+DG 高阻档上限），线圈峰值电流按已知回路电阻估算、不是直接测量值；``Z_PEAK_CURRENT_MA``
+与 ``AMPLIFIER_*`` 只保留用于读取旧配置和历史快照。拖尾补偿默认关闭（只发原升余弦 ±脉冲）。
+"""
 from __future__ import annotations
 
 import math
@@ -6,20 +11,26 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from ...experiment_params import ExperimentParams, parameter
+from ..z_chain_common import params as chain_params
+from ..z_chain_common.rf_phase import (
+    MFLI_MAX_SIGOUT_V,
+    MOD_CARRIER_OSC_IDX,
+    MOD_IDX,
+    MOD_SIDEBAND_OSC_IDX,
+    PM_DEPTH_DEG,
+)
 
 CARRIER_HZ = 5000.0
-CARRIER_VPP = 0.5
-PM_DEPTH_DEG = 2.0
+# 11-25 实机记录：0.5 Vpp 下读出饱和、0.05 Vpp 保持线性，默认取 0.05 Vpp。
+CARRIER_VPP = 0.05
 READOUT_DEMOD_IDX = 3
-MOD_IDX = 0
-MOD_CARRIER_OSC_IDX = 1
-MOD_SIDEBAND_OSC_IDX = 2
-MFLI_MAX_SIGOUT_V = 10.0
 
 
 @dataclass
 class RfPhaseSensitivityParams(ExperimentParams):
-    schema_version: ClassVar[int] = 3
+    schema_version: ClassVar[int] = 4
+    # 本实验的 1200B 已物理旁路：DG4000 直驱 Z 线圈，不连接也不开关功放。
+    z_drive_amplifier_enabled: ClassVar[bool] = False
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {}
     removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
 
@@ -28,29 +39,46 @@ class RfPhaseSensitivityParams(ExperimentParams):
                                    unit="Hz", read_only=True)
     y_rf_vpp: float = parameter(default=CARRIER_VPP, external_name="Y_RF_VPP", label="Y 射频幅度",
                                 unit="Vpp", minimum=0.001, maximum=20.0, group="basic",
-                                description="由 MFLI Signal Output 1（MF-MOD 载波）按峰值 Vpk = Vpp / 2 输出。")
+                                description="由 MFLI Signal Output 1（MF-MOD 载波）按峰值 Vpk = Vpp / 2 输出；"
+                                            "11-25 实机记录 0.5 Vpp 饱和、0.05 Vpp 线性，默认取 0.05 Vpp。")
     x_bias_v: float = parameter(default=0.0, external_name="X_BIAS_V", label="X 静态偏置", unit="V", group="basic")
     y_bias_v: float = parameter(default=0.0, external_name="Y_BIAS_V", label="Y 正弦直流偏置", unit="V", group="basic",
                                 description="叠加在 MFLI Signal Output 1 的直流偏置（sigouts/0/offset）。")
     main_field_current_ma: float = parameter(default=-0.0655, external_name="MAIN_FIELD_CURRENT_MA", label="主磁场电流",
                                              unit="mA", group="basic", description="0 表示关闭；会话结束恢复原状态。")
     z_peak_current_ma: float = parameter(default=190.0, external_name="Z_PEAK_CURRENT_MA", label="Z 脉冲峰值电流",
-                                         unit="mA", minimum=0.1, group="basic")
+                                         unit="mA", minimum=0.1, group="basic",
+                                         description="仅功放链路的历史目标值；DG 直驱时电流按 Z_PULSE_VPP 与"
+                                                     "回路电阻估算，本键只用于读旧配置。")
+    z_pulse_vpp: float = parameter(default=20.0, external_name="Z_PULSE_VPP", label="Z 脉冲幅度",
+                                   unit="Vpp", minimum=1e-6, maximum=20.0, group="basic",
+                                   description="DG4000 直驱时写入 Z 通道的高阻档幅度；峰值为 Vpp/2，"
+                                               "真实线圈电流按回路电阻估算；高阻档上限 20 Vpp。")
     z_pulse_width_us: float = parameter(default=8.6, external_name="Z_PULSE_WIDTH_US", label="Z 单个 π 脉冲宽度",
                                         unit="µs", minimum=0.1, group="basic")
     z_pulse_edge_us: float = parameter(default=1.0, external_name="Z_PULSE_EDGE_US", label="Z 脉冲升降沿宽度",
                                        unit="µs", minimum=0.05)
-    z_tail_comp_enabled: bool = parameter(default=True, external_name="Z_TAIL_COMP_ENABLED", label="Z 拖尾补偿", group="basic")
+    z_tail_comp_enabled: bool = parameter(default=False, external_name="Z_TAIL_COMP_ENABLED", label="Z 拖尾补偿",
+                                          group="basic",
+                                          description="DG 直驱阶段默认关闭（只发原升余弦 ±脉冲）；开启后按"
+                                                      "Z_TAIL_S_F、Z_TAIL_TAU_E_US 计算反号指数尾。")
     z_tail_s_f: float = parameter(default=0.5, external_name="Z_TAIL_S_F", label="屏蔽模型快分量",
                                   minimum=0.001, maximum=0.999, active_when="Z_TAIL_COMP_ENABLED")
     z_tail_tau_e_us: float = parameter(default=38.3, external_name="Z_TAIL_TAU_E_US", label="屏蔽模型时间常数",
                                        unit="µs", minimum=0.001, maximum=1000, active_when="Z_TAIL_COMP_ENABLED")
+    # 以下 AMPLIFIER_* 只在旧配置/历史快照里保留；DG 直驱路径不写也不使用功放设置。
     amplifier_gain_db: float = parameter(default=20.0, external_name="AMPLIFIER_GAIN_DB", label="功放增益",
-                                         unit="dB", minimum=0, maximum=20)
+                                         unit="dB", minimum=0, maximum=20,
+                                         description="历史功放链路的目标增益；DG 直驱时不使用，仅用于读旧配置。")
     amplifier_input_impedance_ohm: float = parameter(default=1e6, external_name="AMPLIFIER_INPUT_IMPEDANCE_OHM",
-        label="功放输入阻抗", unit="Ω", options=((50., "50 Ω"), (1e6, "1 MΩ")))
+        label="功放输入阻抗", unit="Ω", options=((50., "50 Ω"), (1e6, "1 MΩ")),
+        description="历史功放链路参数；DG 直驱时不使用。")
     amplifier_output_impedance_ohm: float = parameter(default=50., external_name="AMPLIFIER_OUTPUT_IMPEDANCE_OHM",
-        label="功放输出阻抗", unit="Ω", options=((50., "50 Ω"), (1., "1 Ω")))
+        label="功放输出阻抗", unit="Ω", options=((50., "50 Ω"), (1., "1 Ω")),
+        description="历史功放链路参数；DG 直驱时不使用，回路电阻改计 Z_DRIVE_SOURCE_IMPEDANCE_OHM。")
+    z_drive_source_impedance_ohm: float = parameter(default=50.0, external_name="Z_DRIVE_SOURCE_IMPEDANCE_OHM",
+        label="DG 源阻抗", unit="Ω", minimum=0.0, maximum=1_000_000.0,
+        description="DG 直驱时计入回路的信号源输出阻抗；DG4000 固定 50 Ω，按已知回路电阻估算线圈电流。")
     sense_resistor_ohm: float = parameter(default=10., external_name="SENSE_RESISTOR_OHM", label="采样电阻", unit="Ω", minimum=0.001)
     damping_resistor_ohm: float = parameter(default=10., external_name="DAMPING_RESISTOR_OHM", label="阻尼电阻", unit="Ω", minimum=0)
     coil_resistance_ohm: float = parameter(default=2., external_name="COIL_RESISTANCE_OHM", label="Z 线圈直流电阻", unit="Ω", minimum=0)
@@ -125,15 +153,22 @@ class RfPhaseSensitivityParams(ExperimentParams):
 
     @property
     def loop_resistance_ohm(self) -> float:
-        return self.sense_resistor_ohm + self.damping_resistor_ohm + self.coil_resistance_ohm + self.amplifier_output_impedance_ohm
+        """Z 回路总电阻：采样 + 阻尼 + 线圈 + 末级输出阻抗（直驱时为 DG 源阻抗）。"""
+        return chain_params.loop_resistance_ohm(self)
 
     @property
     def amps_per_drive_volt(self) -> float:
-        return 10 ** (self.amplifier_gain_db / 20) / self.loop_resistance_ohm
+        return chain_params.amps_per_drive_volt(self)
 
     @property
     def pulse_vpp(self) -> float:
-        return 2e-3 * self.z_peak_current_ma / self.amps_per_drive_volt
+        """写入信号源的幅度：DG 直驱即 Z_PULSE_VPP，经功放时按目标峰值电流换算。"""
+        return chain_params.pulse_vpp(self)
+
+    @property
+    def estimated_peak_current_ma(self) -> float:
+        """按已知回路电阻估算的线圈峰值电流（mA），不是直接测量值。"""
+        return chain_params.estimated_peak_current_ma(self)
 
     @property
     def pulse_period_us(self) -> float:
@@ -163,6 +198,10 @@ class RfPhaseSensitivityParams(ExperimentParams):
         if schema_version < 3:
             migrated.setdefault("NOISE_N_AVG", 1)
             migrated.setdefault("DYNAMIC_TEMP_SWITCH_ON_LAG_S", migrated.get("TEMP_SWITCH_ON_LAG_S", 2.0))
+        if schema_version < 4:
+            # 4：功放物理旁路，新增 DG 直驱电压设定与源阻抗；旧快照按默认值补齐。
+            migrated.setdefault("Z_PULSE_VPP", 20.0)
+            migrated.setdefault("Z_DRIVE_SOURCE_IMPEDANCE_OHM", 50.0)
         return migrated
 
     def _noise_welch_segments(self) -> int:
@@ -181,8 +220,20 @@ class RfPhaseSensitivityParams(ExperimentParams):
             errors.append("RUN_TAG 必须是非空且可作目录名的标签")
         if type(self.noise_n_avg) is not int or self.noise_n_avg < 1:
             errors.append("NOISE_N_AVG 必须为不少于 1 的整数")
+        if chain_params.amplifier_enabled(self):
+            amplifier_values = (self.z_peak_current_ma, self.amplifier_gain_db)
+        else:
+            # DG 直驱：电压设定必须有限且不超过 DG4000 高阻档上限，旧功放键不再参与校验。
+            amplifier_values = ()
+            if not math.isfinite(self.z_pulse_vpp) or self.z_pulse_vpp <= 0.0:
+                errors.append("Z_PULSE_VPP 必须是有限正值")
+            elif self.z_pulse_vpp > chain_params.DG_HIGH_Z_MAX_VPP:
+                errors.append(f"无放大器时 Z_PULSE_VPP={self.z_pulse_vpp:g} Vpp 超过 DG4000 高阻档上限 "
+                              f"{chain_params.DG_HIGH_Z_MAX_VPP:g} Vpp")
+            if not math.isfinite(self.z_drive_source_impedance_ohm) or self.z_drive_source_impedance_ohm < 0.0:
+                errors.append("Z_DRIVE_SOURCE_IMPEDANCE_OHM 必须是有限非负数")
         if any(not math.isfinite(v) for v in (self.x_bias_v, self.y_bias_v, self.main_field_current_ma,
-                self.z_peak_current_ma, self.z_pulse_width_us, self.z_pulse_edge_us, self.amplifier_gain_db,
+                self.z_pulse_width_us, self.z_pulse_edge_us, *amplifier_values,
                 self.sense_resistor_ohm, self.damping_resistor_ohm, self.coil_resistance_ohm, self.resistor_rated_w,
                 self.demod0_rate_sa_s, self.demod0_tc_s, self.demod0_dynamic_rate_sa_s, self.demod0_dynamic_tc_s,
                 self.demod0_signal_range_v, self.local_span_deg,
@@ -206,7 +257,7 @@ class RfPhaseSensitivityParams(ExperimentParams):
                 and math.isfinite(self.noise_duration_s) and math.isfinite(self.welch_segment_s)
                 and self.welch_segment_s > 0 and self._noise_welch_segments() < 2):
             errors.append("总 Welch 分段数不足 2 段，请增大 NOISE_N_AVG 或 NOISE_DURATION_S")
-        if math.isfinite(self.amplifier_gain_db) and not math.isclose(
+        if chain_params.amplifier_enabled(self) and math.isfinite(self.amplifier_gain_db) and not math.isclose(
                 self.amplifier_gain_db * 2, round(self.amplifier_gain_db * 2), abs_tol=1e-9):
             errors.append("1200B 增益须为 0.5 dB 的整数倍")
         return errors
