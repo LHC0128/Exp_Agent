@@ -55,7 +55,7 @@ def _log(handle, message: str) -> None:
         handle.flush()
 
 
-def _run_point(width_us: float, current_ma: float) -> dict:
+def _run_point(width_us: float, current_ma: float, rf_vpp: float | None = None) -> dict:
     """调用 lab_client 跑一次 A01-A03，返回任务 JSON；失败抛异常。"""
     args = [
         str(PYTHON), str(LAB_CLIENT), "run", EXPERIMENT_ID, "--allow", EXPERIMENT_ID,
@@ -67,6 +67,8 @@ def _run_point(width_us: float, current_ma: float) -> dict:
         f"--param=MAIN_FIELD_CURRENT_MA={current_ma}",
         f"--param=Y_RF_PHASE_STEP_DEG={PHASE_STEP_DEG}",
     ]
+    if rf_vpp is not None:
+        args += [f"--allow-param=Y_RF_VPP={rf_vpp}:{rf_vpp}", f"--param=Y_RF_VPP={rf_vpp}"]
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
     started = time.monotonic()
     proc = subprocess.run(args, cwd=DEV_ROOT, capture_output=True, text=True,
@@ -118,8 +120,8 @@ def _record(jsonl: Path, record: dict) -> None:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def _load_done(jsonl: Path) -> set[tuple[float, float, bool]]:
-    done: set[tuple[float, float, bool]] = set()
+def _load_done(jsonl: Path) -> set[tuple[float, float, bool, float | None]]:
+    done: set[tuple[float, float, bool, float | None]] = set()
     if not jsonl.exists():
         return done
     for line in jsonl.read_text(encoding="utf-8").splitlines():
@@ -128,15 +130,19 @@ def _load_done(jsonl: Path) -> set[tuple[float, float, bool]]:
         except json.JSONDecodeError:
             continue
         if row.get("status") == "completed":
-            done.add((float(row["width_us"]), float(row["current_ma"]), bool(row["is_ref"])))
+            rf = row.get("rf_vpp")
+            done.add((float(row["width_us"]), float(row["current_ma"]), bool(row["is_ref"]),
+                      None if rf is None else float(rf)))
     return done
 
 
-def _plan(widths, currents, ref_width, ref_current) -> list[tuple[float, float, bool]]:
-    grid = [(w, i, False) for w in widths for i in currents]
+def _plan(widths, currents, ref_width, ref_current, rf_vpps=None) -> list[tuple[float, float, bool, float | None]]:
+    if rf_vpps:
+        return [(widths[0], currents[0], False, float(rf)) for rf in rf_vpps]
+    grid = [(w, i, False, None) for w in widths for i in currents]
     random.Random(SEED).shuffle(grid)
-    refs = [(ref_width, ref_current, True)] * (len(grid) // REF_EVERY)
-    points: list[tuple[float, float, bool]] = []
+    refs = [(ref_width, ref_current, True, None)] * (len(grid) // REF_EVERY)
+    points: list[tuple[float, float, bool, float | None]] = []
     for index, item in enumerate(grid, start=1):
         points.append(item)
         if index % REF_EVERY == 0 and refs:
@@ -162,28 +168,35 @@ def main() -> int:
                         help="逗号分隔的主磁场电流网格（mA）")
     parser.add_argument("--ref-width", type=float, default=REF_WIDTH_US, help="基准点宽度（µs）")
     parser.add_argument("--ref-current", type=float, default=REF_CURRENT_MA, help="基准点主磁场电流（mA）")
+    parser.add_argument("--rf-vpp", type=float, default=None,
+                        help="本次扫描的 Y_RF_VPP 覆盖值（Vpp）；不给则用实验默认")
+    parser.add_argument("--rf-vpps", default="",
+                        help="逗号分隔 Y_RF_VPP 列表；给出时做一维射频幅度扫描（宽度/电流取列表首值，无基准点）")
     args = parser.parse_args()
 
     widths = _parse_list(args.widths)
     currents = _parse_list(args.currents)
+    rf_vpps = _parse_list(args.rf_vpps) if args.rf_vpps.strip() else None
     study_dir = RUN_DATA_ROOT / "rf_phase_response" / "_studies" / args.study
     study_dir.mkdir(parents=True, exist_ok=True)
     jsonl = study_dir / "points.jsonl"
     log_path = study_dir / "run.log"
-    points = _plan(widths, currents, args.ref_width, args.ref_current)
+    points = _plan(widths, currents, args.ref_width, args.ref_current, rf_vpps)
 
     if args.dry_run:
-        print(f"网格 {len(widths)}×{len(currents)} + 基准点，共 {len(points)} 次运行")
+        print(f"共 {len(points)} 次运行")
         print("widths_us:", widths)
         print("currents_ma:", currents)
-        print("顺序:", points)
+        if rf_vpps:
+            print("rf_vpps:", rf_vpps)
+        print("顺序:", [(w, i, ref, rf) for w, i, ref, rf in points])
         return 0
 
     done = _load_done(jsonl) if args.resume else set()
     with log_path.open("a", encoding="utf-8") as handle:
         if args.pilot:
             _log(handle, f"pilot：15° 网格基准点 width={args.ref_width} µs, I={args.ref_current} mA")
-            payload = _run_point(args.ref_width, args.ref_current)
+            payload = _run_point(args.ref_width, args.ref_current, args.rf_vpp)
             result = _analyze(payload["run_dir"])
             k0 = result.get("k0_v_per_rad")
             _log(handle, f"pilot 结果：{result}；run_dir={payload['run_dir']}")
@@ -196,8 +209,9 @@ def main() -> int:
 
         started = time.monotonic()
         ran_in_session = 0
-        for index, (width_us, current_ma, is_ref) in enumerate(points, start=1):
-            key = (width_us, current_ma, is_ref)
+        for index, (width_us, current_ma, is_ref, point_rf) in enumerate(points, start=1):
+            rf_vpp = point_rf if point_rf is not None else args.rf_vpp
+            key = (width_us, current_ma, is_ref, rf_vpp)
             if key in done:
                 _log(handle, f"{index}/{len(points)} 跳过已完成 {key}")
                 continue
@@ -206,12 +220,14 @@ def main() -> int:
                 time.sleep(args.cooldown)
             ran_in_session += 1
             tag = "基准" if is_ref else "网格"
-            _log(handle, f"{index}/{len(points)} 开始 {tag}：width={width_us} µs, I={current_ma} mA")
+            _log(handle, f"{index}/{len(points)} 开始 {tag}：width={width_us} µs, I={current_ma} mA"
+                         + (f", Y_RF_VPP={rf_vpp:g}" if rf_vpp is not None else ""))
             record = {"order": index, "width_us": width_us, "current_ma": current_ma,
+                      "y_rf_vpp": rf_vpp,
                       "is_ref": is_ref, "phase_step_deg": PHASE_STEP_DEG,
                       "started_at": datetime.now().isoformat(timespec="seconds")}
             try:
-                payload = _run_point(width_us, current_ma)
+                payload = _run_point(width_us, current_ma, rf_vpp)
                 result = _analyze(payload["run_dir"])
                 record.update(status="completed", run_dir=payload["run_dir"],
                               elapsed_s=payload.get("elapsed_s"), **result)
