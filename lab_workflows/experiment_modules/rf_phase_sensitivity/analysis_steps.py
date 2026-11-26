@@ -35,6 +35,11 @@ MIN_TONE_CYCLES = 9.8
 MIN_NOISE_HZ = 1.0
 MIN_WELCH_SEGMENTS = 2
 MAINS_HARMONICS_HZ = (50.0, 100.0, 150.0, 200.0, 250.0)
+# Demod 4 宽带解调输出的 5 kHz 载波泄漏及其低阶谐波：输入直流偏置经解调混频落到载波
+# 频率上，是读出链的已知寄生项而不是原子信号，只在 clean 回归里作为干扰项扣除。
+CARRIER_HARMONICS_HZ = (5000.0, 10000.0, 15000.0, 20000.0)
+# 载波项只纳入低于 0.45 × 采样率的谐波，避免贴近 Nyquist 的项放大设计矩阵条件数。
+CARRIER_RATE_FRACTION = 0.45
 CLOSURE_RANGE = (0.8, 1.2)
 REPEAT_FLOOR = 0.15
 REPEAT_CAP = 0.30
@@ -56,6 +61,7 @@ TRANSFER_COLUMNS = (
     "y_pk_v", "y_pk_se_v", "y_snr", "y_pk_se_clean_v", "y_snr_clean", "x_pk_v", "x_2f_pk_v", "y_2f_pk_v",
     "h_v_per_rad", "h_fit_se_v_per_rad", "normalized_gain", "normalized_gain_se",
     "normalized_h0_gain", "normalized_h0_gain_se", "mains_collision",
+    "carrier_terms_hz", "carrier_skipped",
     "quality_passed", "warnings", "accepted", "reason",
 )
 NOISE_COLUMNS = (
@@ -196,14 +202,35 @@ def _mains_terms(time_s, frequency_hz, include_2f, nyquist):
     return used, collisions, guard_hz
 
 
-def _tone_columns(time_s, frequency_hz, include_2f, mains_hz):
-    """构造目标音调、常数、线性漂移、可选二次谐波与工频谐波的正交解调设计列。"""
+def _carrier_terms(frequency_hz, include_2f, rate, guard_hz, duration):
+    """返回（实际纳入的 5 kHz 载波泄漏项、跳过项及原因）。
+
+    5 kHz 载波及其 10/15/20 kHz 谐波来自 Demod 4 宽带解调输出中输入直流偏置的混频泄漏，
+    是读出链的已知寄生项，不作为原子信号发布。仅纳入与目标音调/二次谐波不碰撞（容差同
+    工频项）且低于 ``CARRIER_RATE_FRACTION × rate`` 的谐波；碰撞与超限项记入跳过列表，
+    避免病态设计矩阵破坏拟合。
+    """
+    limit = CARRIER_RATE_FRACTION * rate
+    avoid = (frequency_hz, *((2 * frequency_hz,) if include_2f else ()))
+    used, skipped = [], []
+    for carrier_hz in CARRIER_HARMONICS_HZ:
+        if carrier_hz >= limit:
+            skipped.append(f"{carrier_hz:g} Hz（超过 0.45 × 采样率）")
+        elif any(abs(carrier_hz - target) <= guard_hz for target in avoid):
+            skipped.append(f"{carrier_hz:g} Hz（与目标音调或二次谐波碰撞）")
+        else:
+            used.append(float(carrier_hz))
+    return used, skipped
+
+
+def _tone_columns(time_s, frequency_hz, include_2f, spur_hz):
+    """构造目标音调、常数、线性漂移、可选二次谐波与工频/载波寄生项的正交解调设计列。"""
     theta = (2 * np.pi * frequency_hz) * time_s
     columns = [np.sin(theta), np.cos(theta), np.ones_like(time_s), time_s / time_s[-1] - 0.5]
     if include_2f:
         columns.extend((np.sin(2 * theta), np.cos(2 * theta)))
-    for mains in mains_hz:
-        angle = (2 * np.pi * mains) * time_s
+    for spur in spur_hz:
+        angle = (2 * np.pi * spur) * time_s
         columns.extend((np.sin(angle), np.cos(angle)))
     return columns
 
@@ -237,12 +264,18 @@ def _solve_tone(columns, x, y, rate, correlation_s, include_2f):
 
 
 def fit_tone(time_s, x_v, y_v, rate_sa_s, frequency_hz, *, correlation_s=0.0):
-    """同时拟合基频、二次谐波、直流漂移及不碰撞的 50 Hz 工频谐波。
+    """同时拟合基频、二次谐波、直流漂移及不碰撞的工频谐波与 5 kHz 载波泄漏项。
 
-    发布的 ``y_pk_v``/``x_pk_v``/``h_v_per_rad`` 沿用联合扣除工频后的干净系（与改造前一致）；
-    行内另保留原始口径（不含工频项）的 ``y_pk_se_v``/``y_snr`` 作为对照，并发布扣除后的
-    ``y_pk_se_clean_v``/``y_snr_clean`` 供质检与告警判定。``mains_collision_hz`` 记录因与
-    目标音调或二次谐波共线而跳过的工频谐波，``mains_harmonics_hz`` 记录实际参与拟合的谐波。
+    5 kHz 载波泄漏来自 Demod 4 宽带解调（``DEMOD0_DYNAMIC_TC = 1 µs``）：输入直流偏置经
+    解调混频落到载波频率，10/15/20 kHz 为其谐波。它是读出链的已知寄生项，不是原子信号，
+    只在 clean 回归里作为干扰项扣除，不改变 ``y_pk_v`` 的物理含义。
+
+    发布的 ``y_pk_v``/``x_pk_v``/``h_v_per_rad`` 沿用联合扣除工频与载波泄漏后的干净系数
+    （与改造前一致）；行内另保留原始口径（不含工频、不含载波项）的 ``y_pk_se_v``/``y_snr``
+    作为对照，并发布扣除后的 ``y_pk_se_clean_v``/``y_snr_clean`` 供质检与告警判定。
+    ``mains_collision_hz`` 记录因与目标音调或二次谐波共线而跳过的工频谐波，
+    ``mains_harmonics_hz`` 记录实际参与拟合的工频谐波；``carrier_terms_hz`` 记录实际纳入
+    的载波泄漏项，``carrier_skipped`` 记录因碰撞或超过 0.45×采样率而跳过的载波项。
     """
     t, rate = sample_grid(time_s, rate_sa_s)
     frequency = _number(frequency_hz)
@@ -255,18 +288,25 @@ def fit_tone(time_s, x_v, y_v, rate_sa_s, frequency_hz, *, correlation_s=0.0):
     x, y = _waveform(x_v, t), _waveform(y_v, t)
     include_2f = 2 * frequency + 1 / t[-1] < nyquist
     mains_used, collisions, guard_hz = _mains_terms(t, frequency, include_2f, nyquist)
-    # 数据点不足时工频项会挤占自由度，按序裁剪保留更低的谐波。
-    while mains_used and len(t) <= len(_tone_columns(t, frequency, include_2f, mains_used)) + 8:
-        mains_used.pop()
+    carrier_used, carrier_skipped = _carrier_terms(frequency, include_2f, rate, guard_hz, float(t[-1]))
+    # 数据点不足时工频/载波项会挤占自由度，从最高频的寄生项开始裁剪。
+    spurs = [*mains_used, *carrier_used]
+    while spurs and len(t) <= len(_tone_columns(t, frequency, include_2f, spurs)) + 8:
+        spurs.pop()
+    carrier_skipped = [*carrier_skipped,
+                       *(f"{value:g} Hz（数据点不足）" for value in carrier_used if value not in spurs)]
+    carrier_used = [value for value in carrier_used if value in spurs]
     original = _solve_tone(_tone_columns(t, frequency, include_2f, ()), x, y, rate, correlation_s, include_2f)
-    clean_columns = _tone_columns(t, frequency, include_2f, mains_used)
-    clean = _solve_tone(clean_columns, x, y, rate, correlation_s, include_2f) if mains_used else original
-    # 发布幅值沿用扣除工频后的 clean 系数（与改造前一致）；原始口径只用于对照标准误与 SNR。
+    clean_columns = _tone_columns(t, frequency, include_2f, spurs)
+    clean = _solve_tone(clean_columns, x, y, rate, correlation_s, include_2f) if spurs else original
+    # 发布幅值沿用扣除工频/载波后的 clean 系数（与改造前一致）；原始口径只用于对照标准误与 SNR。
     result = dict(rate_sa_s=rate, samples=int(t.size), cycles=cycles,
                   x_pk_v=clean["x_pk_v"], y_pk_v=clean["y_pk_v"],
                   y_pk_se_v=original["y_pk_se_v"], y_snr=original["y_snr"],
                   y_pk_se_clean_v=clean["y_pk_se_v"], y_snr_clean=clean["y_snr"],
-                  mains_harmonics_hz=mains_used, mains_collision_hz=collisions, mains_guard_hz=guard_hz)
+                  mains_harmonics_hz=[value for value in mains_used if value in spurs],
+                  mains_collision_hz=collisions, mains_guard_hz=guard_hz,
+                  carrier_terms_hz=carrier_used, carrier_skipped=carrier_skipped)
     if include_2f:
         result.update(x_2f_pk_v=clean["x_2f_pk_v"], y_2f_pk_v=clean["y_2f_pk_v"])
     if not all(math.isfinite(value) for value in result.values() if isinstance(value, (int, float))):
@@ -321,12 +361,16 @@ def _transfer_rows(run_dir, attempts, configured, calibration):
                 collisions = fit.pop("mains_collision_hz", [])
                 fit.pop("mains_harmonics_hz", None)
                 fit.pop("mains_guard_hz", None)
+                carrier_terms = fit.pop("carrier_terms_hz", [])
+                carrier_skipped = fit.pop("carrier_skipped", [])
                 row.update(fit)
                 row["mains_collision"] = "，".join(f"{value:g}" for value in collisions)
-                # 质检与告警使用联合扣除工频后的 clean 口径；原始口径同时写入同一告警便于复算。
+                row["carrier_terms_hz"] = "，".join(f"{value:g}" for value in carrier_terms)
+                row["carrier_skipped"] = "；".join(carrier_skipped)
+                # 质检与告警使用联合扣除工频与载波泄漏后的 clean 口径；原始口径同时写入同一告警便于复算。
                 if row["y_snr_clean"] < MIN_TONE_SNR:
                     warnings.append(f"Y 音调信噪比低于 {MIN_TONE_SNR:g}"
-                                    f"（原始 {row['y_snr']:.2f}，扣除工频后 {row['y_snr_clean']:.2f}）")
+                                    f"（原始 {row['y_snr']:.2f}，扣除工频与载波泄漏后 {row['y_snr_clean']:.2f}）")
                 if (phase := calibration.get("lockin_phase_deg")) is not None and not _same_phase(state["phase_deg"], phase):
                     hard_reasons.append("频响帧锁相相位与静态标定不一致")
                 if reference is not None and not _same_lockin(state, reference):
@@ -336,7 +380,7 @@ def _transfer_rows(run_dir, attempts, configured, calibration):
         else:
             hard_reasons.append("缺少 XY 帧")
         if not hard_reasons:
-            # 增益沿用同一目标音调幅值；标准误取扣除工频后的 clean 口径，避免工频能量虚高误差棒。
+            # 增益沿用同一目标音调幅值；标准误取扣除工频与载波泄漏后的 clean 口径，避免干扰能量虚高误差棒。
             h, h_se = row["y_pk_v"] / pm, row["y_pk_se_clean_v"] / pm
             if not math.isfinite(h) or h <= 0 or not math.isfinite(h_se):
                 hard_reasons.append("实测相位换算的增益无效")
@@ -1113,7 +1157,8 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
                                        interpolation="log_frequency_log_magnitude_within_adjacent_accepted_points",
                                        backfill="zero_centered_sqrt_lorentzian_full_band"),
                    method_notes=["频响只比较调制深度与锁相 Y 音调幅值 |H(f)| = |Y_pk(f)| / phi_pk(f)，不计算复频响相角；与基频/二次谐波不碰撞的 50–250 Hz 工频谐波在最小二乘正交解调中一并投影去除。",
-                                 "A05 行内 y_pk_se_v / y_snr 保留未扣工频的原始口径，y_pk_se_clean_v / y_snr_clean 为联合扣除工频谐波后的 clean 口径；质检与告警按 clean SNR 判定，mains_collision 记录与目标音调或二次谐波共线而跳过的工频谐波。",
+                                 "A05 行内 y_pk_se_v / y_snr 保留未扣工频与载波泄漏的原始口径，y_pk_se_clean_v / y_snr_clean 为联合扣除 50–250 Hz 工频谐波与 5 kHz 载波泄漏（含 10/15/20 kHz 谐波）后的 clean 口径；质检与告警按 clean SNR 判定，mains_collision 记录与目标音调或二次谐波共线而跳过的工频谐波，carrier_terms_hz / carrier_skipped 记录实际纳入与跳过的载波泄漏项。",
+                                 "A05 的 5 kHz 载波泄漏来自 Demod 4 宽带解调（DEMOD0_DYNAMIC_TC = 1 µs）：输入直流偏置经解调混频落到载波频率，10/15/20 kHz 为其谐波；它是读出链已知寄生项、不是原子信号，只作为回归干扰项扣除，不与目标音调幅值一起发布。",
                                  "A05 对 |H(f)| 拟合以 0 Hz 为中心的 √Lorentzian 线型 H0 / sqrt(1 + (f/fc)²)（若非碰撞点 ≥ 2 个则自动剔除 50–250 Hz 工频整倍频碰撞点）并以零频截距 H0 归一化；A05/A06 使用宽带滤波（默认 1 µs），不再做锁相软件滤波反卷积。",
                                  "A06 灵敏度谱以 µrad/√Hz 输出：多温控分段各自计算 Welch PSD 后按段数等权平均，不跨恢复温控窗口拼接波形；只要存在 ≥2 个相邻硬合格频点就做对数插值与全频段回补，质检不足只标 referral_quality=advisory，不再整段扣留。",
                                  "H 与标准误仅传播 Y 拟合误差（含时间序列相关修正）；归一增益另外传播 K0/H0 标准误，不含激励幅度标定不确定度。",

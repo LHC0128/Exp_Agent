@@ -52,7 +52,7 @@ class RfPhaseResponseParams(ExperimentParams):
     x_bias_v: float = parameter(default=0.16, external_name="X_BIAS_V", label="X 静态偏置", unit="V",
         group="basic",
         description="DG X 通道的 DC 静态偏置，用来补掉残余横向场；0 表示不加偏置、通道保持关闭。")
-    main_field_current_ma: float = parameter(default=-0.0655, external_name="MAIN_FIELD_CURRENT_MA",
+    main_field_current_ma: float = parameter(default=-0.028, external_name="MAIN_FIELD_CURRENT_MA",
         label="主磁场电流", unit="mA", minimum=-20.0, maximum=20.0, group="basic",
         description="GS200 主磁场电流；0 表示关闭输出，非零时按该电流输出并回读，"
                     "收尾恢复运行前状态。按 main_magnetic_field 安全限值校验。")
@@ -65,7 +65,7 @@ class RfPhaseResponseParams(ExperimentParams):
         unit="Vpp", minimum=1e-6, maximum=20.0, group="basic",
         description="DG4000 直驱时写入 Z 通道的高阻档幅度；峰值为 Vpp/2，真实线圈电流按回路电阻估算。"
                     "高阻档上限 20 Vpp（峰峰值），预检超限即拒绝。")
-    z_pulse_width_us: float = parameter(default=8.6, external_name="Z_PULSE_WIDTH_US", label="Z 单脉冲宽度",
+    z_pulse_width_us: float = parameter(default=9.0, external_name="Z_PULSE_WIDTH_US", label="Z 单脉冲宽度",
         unit="µs", minimum=1e-3, group="basic",
         description="固定的单脉冲宽度；不能超过半个射频周期，且不小于两倍沿宽。")
     z_pulse_edge_us: float = parameter(default=1.0, external_name="Z_PULSE_EDGE_US", label="升/降沿宽度",

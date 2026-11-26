@@ -357,7 +357,7 @@ def test_defaults_and_preflight():
         (p.y_bias_v - (1 + math.radians(2.0)) * 0.025, p.y_bias_v + (1 + math.radians(2.0)) * 0.025))
     # 功放物理旁路：DG 直驱电压设定与回路电阻估算，拖尾补偿默认关闭。
     assert p.z_drive_amplifier_enabled is False and p.z_tail_comp_enabled is False
-    assert p.z_pulse_vpp == pytest.approx(20.0) and p.z_pulse_width_us == pytest.approx(8.6)
+    assert p.z_pulse_vpp == pytest.approx(20.0) and p.z_pulse_width_us == pytest.approx(9.0)
     assert p.pulse_vpp == pytest.approx(20.0)
     assert p.loop_resistance_ohm == pytest.approx(10.0 + 10.0 + 2.0 + 50.0)
     assert p.estimated_peak_current_ma == pytest.approx(10.0 / 72.0 * 1e3)

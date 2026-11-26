@@ -44,7 +44,7 @@ class RfPhaseSensitivityParams(ExperimentParams):
     x_bias_v: float = parameter(default=0.0, external_name="X_BIAS_V", label="X 静态偏置", unit="V", group="basic")
     y_bias_v: float = parameter(default=0.0, external_name="Y_BIAS_V", label="Y 正弦直流偏置", unit="V", group="basic",
                                 description="叠加在 MFLI Signal Output 1 的直流偏置（sigouts/0/offset）。")
-    main_field_current_ma: float = parameter(default=-0.0655, external_name="MAIN_FIELD_CURRENT_MA", label="主磁场电流",
+    main_field_current_ma: float = parameter(default=-0.028, external_name="MAIN_FIELD_CURRENT_MA", label="主磁场电流",
                                              unit="mA", group="basic", description="0 表示关闭；会话结束恢复原状态。")
     z_peak_current_ma: float = parameter(default=190.0, external_name="Z_PEAK_CURRENT_MA", label="Z 脉冲峰值电流",
                                          unit="mA", minimum=0.1, group="basic",
@@ -54,7 +54,7 @@ class RfPhaseSensitivityParams(ExperimentParams):
                                    unit="Vpp", minimum=1e-6, maximum=20.0, group="basic",
                                    description="DG4000 直驱时写入 Z 通道的高阻档幅度；峰值为 Vpp/2，"
                                                "真实线圈电流按回路电阻估算；高阻档上限 20 Vpp。")
-    z_pulse_width_us: float = parameter(default=8.6, external_name="Z_PULSE_WIDTH_US", label="Z 单个 π 脉冲宽度",
+    z_pulse_width_us: float = parameter(default=9.0, external_name="Z_PULSE_WIDTH_US", label="Z 单个 π 脉冲宽度",
                                         unit="µs", minimum=0.1, group="basic")
     z_pulse_edge_us: float = parameter(default=1.0, external_name="Z_PULSE_EDGE_US", label="Z 脉冲升降沿宽度",
                                        unit="µs", minimum=0.05)

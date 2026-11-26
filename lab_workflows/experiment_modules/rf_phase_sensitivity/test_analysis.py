@@ -28,6 +28,8 @@ REGRESSION_CASES = {
             "test_partial_run_cannot_bridge_frequency_gaps",
             "test_low_snr_and_electrical_warnings_still_plot_and_refer_with_advisory_flags",
             "test_mains_joint_removal_recovers_clean_snr_and_keeps_original",
+            "test_carrier_leakage_joint_removal_recovers_clean_snr",
+            "test_carrier_terms_skip_on_collision_and_rate_limit",
             "test_all_low_clean_snr_still_refers_phase_noise_with_advisory_plot",
             "test_hard_integrity_failures_keep_detector_asd_only",
             "test_advisory_gates_still_refer_noise_with_warnings",
@@ -45,6 +47,9 @@ K0 = 0.037
 K0_SE = 0.0008
 NOISE_SIGMA_V = 20e-6
 LOCKIN = dict(phase_deg=177., order=4, time_constant_s=0.001, stream_rate_sa_s=RATE, oscillator_hz=5000.)
+# A05/A06 高带宽档的实际采样率（DEMOD0_DYNAMIC_RATE = 50 kSa/s），载波泄漏测试用它承载 5 kHz 分量。
+DYNAMIC_RATE = 50000.
+LOCKIN_DYNAMIC = LOCKIN | dict(stream_rate_sa_s=DYNAMIC_RATE)
 
 
 def _write_config(run, config):
@@ -65,9 +70,11 @@ def _true_h(f_hz):
 
 def _synthetic_run(run, *, status="completed", frequencies=None, missing=(), rejected=(), malformed=(),
                    low_snr=(), repeat_ratio=1.03, k0=K0, noise_bad=None, legacy_scope=False,
-                   mains_amp=0.0):
+                   mains_amp=0.0, carrier_amp=0.0):
     p = RfPhaseSensitivityParams(pm_frequencies_hz=frequencies or [5., 10., 20., 40., 80.],
                                  noise_duration_s=16., noise_n_avg=1, welch_segment_s=1.)
+    # 载波泄漏在 A05/A06 高带宽档下采集；默认沿用低速档，保持既有用例的帧内容不变。
+    tone_rate, tone_lockin = (DYNAMIC_RATE, LOCKIN_DYNAMIC) if carrier_amp else (RATE, LOCKIN)
     (run / "raw").mkdir(parents=True)
     config = run_format.initial_metadata(p) | dict(completion_status=status, schema_version=p.schema_version,
                                                   parameters=p.to_external())
@@ -124,7 +131,7 @@ def _synthetic_run(run, *, status="completed", frequencies=None, missing=(), rej
         config["transfer"].append(row)
         if not electrical:
             continue
-        t = np.arange(round(RATE * p.pm_tone_duration_s)) / RATE
+        t = np.arange(round(tone_rate * p.pm_tone_duration_s)) / tone_rate
         theta = 2 * np.pi * f_hz * t + rng.uniform(-np.pi, np.pi)
         amplitude = _true_h(f_hz) * pm * (repeat_ratio if repeat else 1)
         y = 0.04 + 0.001 * t + (0 if f_hz in low_snr else amplitude) * np.cos(theta)
@@ -134,11 +141,17 @@ def _synthetic_run(run, *, status="completed", frequencies=None, missing=(), rej
             y += mains_amp * (np.cos(2 * np.pi * 50. * t + 0.3)
                               + 0.5 * np.sin(2 * np.pi * 100. * t)
                               + 0.25 * np.cos(2 * np.pi * 150. * t + 1.1))
+        if carrier_amp:
+            # Demod 4 宽带解调输出里直流偏置混频产生的 5 kHz 载波泄漏及其 10/15/20 kHz 谐波。
+            y += carrier_amp * (np.cos(2 * np.pi * 5000. * t + 0.7)
+                                + 0.6 * np.sin(2 * np.pi * 10000. * t + 0.2)
+                                + 0.35 * np.cos(2 * np.pi * 15000. * t + 1.3)
+                                + 0.2 * np.sin(2 * np.pi * 20000. * t))
         x = 0.02 - 0.002 * t + 5e-5 * np.sin(theta) + 9e-6 * np.sin(2 * theta)
         if f_hz in malformed:
             # 原始读写器容许的单步浮动超出离线均匀采样门。
             t[1::2] += 0.002 / RATE
-        xy_meta = dict(rate_sa_s=RATE, time_source="module_timestamp", lockin=LOCKIN, frequency_hz=f_hz)
+        xy_meta = dict(rate_sa_s=tone_rate, time_source="module_timestamp", lockin=tone_lockin, frequency_hz=f_hz)
         if legacy_scope:
             xy_meta["scope_label"] = scope
         run_format.write_frame(run, xy, "xy", xy_meta, time_s=t + 3.27, x_v=x, y_v=y)
@@ -149,15 +162,15 @@ def _synthetic_run(run, *, status="completed", frequencies=None, missing=(), rej
     config["noise"].update(accepted=noise_bad != "electrical", electrical_accepted=noise_bad != "electrical",
                            xy_label="noise", scope_labels=scope_labels,
                            reason="残余 AM 超限" if noise_bad == "electrical" else "")
-    count = round(RATE * p.noise_duration_s) if noise_bad != "short" else 512
-    t = np.arange(count) / RATE
+    count = round(tone_rate * p.noise_duration_s) if noise_bad != "short" else 512
+    t = np.arange(count) / tone_rate
     if noise_bad == "lockin":
-        state = LOCKIN | dict(order=3)
+        state = tone_lockin | dict(order=3)
     elif noise_bad == "stream":
-        state = LOCKIN | dict(stream_rate_sa_s=1.01 * RATE)
+        state = tone_lockin | dict(stream_rate_sa_s=1.01 * tone_rate)
     else:
-        state = LOCKIN
-    run_format.write_frame(run, "noise", "xy", dict(rate_sa_s=RATE, time_source="module_timestamp",
+        state = tone_lockin
+    run_format.write_frame(run, "noise", "xy", dict(rate_sa_s=tone_rate, time_source="module_timestamp",
                            lockin=state, source_mode="unmodulated_carrier"), time_s=t,
                            x_v=0.04 + t * 0.003, y_v=0.02 + t * 0.005 + rng.normal(scale=NOISE_SIGMA_V, size=t.size))
     _write_config(run, config)
@@ -371,6 +384,54 @@ def test_mains_joint_removal_recovers_clean_snr_and_keeps_original(tmp_path):
         assert float(row["y_pk_se_clean_v"]) < float(row["y_pk_se_v"])
         assert row["quality_passed"] == "True" and row["warnings"] == "" and row["mains_collision"] == ""
         assert float(row["h_v_per_rad"]) == pytest.approx(_true_h(float(row["frequency_hz"])), rel=0.01)
+
+
+def test_carrier_leakage_joint_removal_recovers_clean_snr(tmp_path):
+    """Demod 4 宽带解调输出的 5 kHz 载波泄漏：原始 SNR 低，联合扣除后 clean SNR 恢复。"""
+    _synthetic_run(tmp_path, frequencies=[5., 20., 43., 80.], carrier_amp=0.535)
+    summary = analysis.analyze(tmp_path)
+    assert summary["result_status"] == "complete"
+    assert summary["referral_available"] is True
+    assert summary["referral_quality"] == "ok" and summary["quality_passed"] is True
+    rows = _csv(tmp_path, steps.TRANSFER_CSV)
+    assert len(rows) == 4
+    for row in rows:
+        # 5 kHz 载波项进入 clean 回归；原始口径仍是“不含工频、不含载波”的低 SNR。
+        assert "5000" in row["carrier_terms_hz"] and "10000" in row["carrier_terms_hz"]
+        assert row["carrier_skipped"] == ""
+        assert float(row["y_snr"]) < steps.MIN_TONE_SNR
+        assert float(row["y_snr_clean"]) >= steps.MIN_TONE_SNR
+        assert float(row["y_pk_se_clean_v"]) < float(row["y_pk_se_v"])
+        assert row["quality_passed"] == "True" and row["warnings"] == ""
+        assert float(row["h_v_per_rad"]) == pytest.approx(_true_h(float(row["frequency_hz"])), rel=0.01)
+    row_43 = next(row for row in rows if float(row["frequency_hz"]) == 43.0)
+    assert float(row_43["y_snr"]) < steps.MIN_TONE_SNR
+    assert float(row_43["y_snr_clean"]) >= steps.MIN_TONE_SNR
+
+
+def test_carrier_terms_skip_on_collision_and_rate_limit():
+    """载波项与目标音调/二次谐波碰撞或超过 0.45×采样率时跳过，且不破坏拟合。"""
+    rate = 20000.
+    t = np.arange(round(rate * 4.)) / rate
+    rng = np.random.default_rng(29)
+    theta = 2 * np.pi * 2500. * t
+    y = 0.02 + 0.002 * np.cos(theta + 0.4) + rng.normal(scale=3e-5, size=t.size)
+    x = 0.01 + 0.0001 * np.sin(theta)
+    fit = steps.fit_tone(t, x, y, rate, 2500.)
+    # 5 kHz 恰为目标二次谐波（2 × 2500 Hz）而跳过；10 kHz 及以上超过 0.45×20 kSa/s。
+    assert fit["carrier_terms_hz"] == []
+    assert any("5000" in item and "碰撞" in item for item in fit["carrier_skipped"])
+    assert sum("0.45" in item for item in fit["carrier_skipped"]) == 3
+    assert fit["y_pk_v"] == pytest.approx(0.002, rel=0.02)
+    # A05/A06 实际的 50 kSa/s 高带宽档下四项载波泄漏全部纳入。
+    rate = DYNAMIC_RATE
+    t = np.arange(round(rate * 4.)) / rate
+    theta = 2 * np.pi * 43. * t
+    y = 0.02 + 0.001 * np.cos(theta + 0.2) + rng.normal(scale=3e-5, size=t.size)
+    x = 0.01 + 0.0001 * np.sin(theta)
+    fit = steps.fit_tone(t, x, y, rate, 43.)
+    assert fit["carrier_terms_hz"] == [5000., 10000., 15000., 20000.]
+    assert fit["carrier_skipped"] == []
 
 
 def test_all_low_clean_snr_still_refers_phase_noise_with_advisory_plot(tmp_path):
