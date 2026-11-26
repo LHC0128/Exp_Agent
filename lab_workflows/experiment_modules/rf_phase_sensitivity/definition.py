@@ -29,7 +29,8 @@ DEFINITION = ExperimentDefinition(
     description=("采用 MFLI Signal Output 1（MF-MOD 相干边带）产生 Y 向 5 kHz 连续载波与可选偏置，"
                  "与 Z 外触发 ±π 双脉冲配合，使用独立解调器 Demod 4 整周初定并经多阶谐波细化工作点后对齐到 sample.y，"
                  "以 MFLI 指令角加密局部斜率标定 K₀ 并据此更新后续 A05/A06 工作点。开启固定 2° 峰值相干边带 PM 单次顺序扫描基带调制频率，"
-                 "再关闭边带保留同一载波按独立温控分段采集无调制噪声（每点/每段均先恢复温控等待后再测下一段），全程仅在 MFLI 锁相采集并用同轮实测相位频响折算输入等效相位噪声。"),
+                 "再关闭边带保留同一载波按独立温控分段采集无调制噪声（每点/每段均先恢复温控等待后再测下一段），全程仅在 MFLI 锁相采集并用同轮实测相位频响折算输入等效相位噪声；"
+                 "参考质检（音调信噪比、低频闭合）仅作告警与 advisory 标注，不扣留折算。"),
     documentation="docs/experiments/rf_phase_sensitivity.md",
     required_devices=("DG4000", "MFLI", "GS200", "TEC103（可选设温）"),
     required_mapping_keys=run_format.REQUIRED_MAPPING_KEYS,

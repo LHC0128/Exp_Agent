@@ -27,6 +27,8 @@ REGRESSION_CASES = {
             "test_real_analysis_subprocess_publishes_all_products",
             "test_partial_run_cannot_bridge_frequency_gaps",
             "test_low_snr_and_electrical_warnings_still_plot_and_refer_with_advisory_flags",
+            "test_mains_joint_removal_recovers_clean_snr_and_keeps_original",
+            "test_all_low_clean_snr_still_refers_phase_noise_with_advisory_plot",
             "test_hard_integrity_failures_keep_detector_asd_only",
             "test_advisory_gates_still_refer_noise_with_warnings",
             "test_repeat_uncertainty_gate_has_hard_cap",
@@ -62,7 +64,8 @@ def _true_h(f_hz):
 
 
 def _synthetic_run(run, *, status="completed", frequencies=None, missing=(), rejected=(), malformed=(),
-                   low_snr=(), repeat_ratio=1.03, k0=K0, noise_bad=None, legacy_scope=False):
+                   low_snr=(), repeat_ratio=1.03, k0=K0, noise_bad=None, legacy_scope=False,
+                   mains_amp=0.0):
     p = RfPhaseSensitivityParams(pm_frequencies_hz=frequencies or [5., 10., 20., 40., 80.],
                                  noise_duration_s=16., noise_n_avg=1, welch_segment_s=1.)
     (run / "raw").mkdir(parents=True)
@@ -126,6 +129,11 @@ def _synthetic_run(run, *, status="completed", frequencies=None, missing=(), rej
         amplitude = _true_h(f_hz) * pm * (repeat_ratio if repeat else 1)
         y = 0.04 + 0.001 * t + (0 if f_hz in low_snr else amplitude) * np.cos(theta)
         y += 15e-6 * np.sin(2 * theta) + rng.normal(scale=2e-6, size=t.size)
+        if mains_amp:
+            # 叠加 50/100/150 Hz 工频干扰：不扣工频时虚高残差方差、压低官方 SNR。
+            y += mains_amp * (np.cos(2 * np.pi * 50. * t + 0.3)
+                              + 0.5 * np.sin(2 * np.pi * 100. * t)
+                              + 0.25 * np.cos(2 * np.pi * 150. * t + 1.1))
         x = 0.02 - 0.002 * t + 5e-5 * np.sin(theta) + 9e-6 * np.sin(2 * theta)
         if f_hz in malformed:
             # 原始读写器容许的单步浮动超出离线均匀采样门。
@@ -178,7 +186,10 @@ def test_direct_tone_fit_is_independent_of_record_start():
         assert fit["rate_sa_s"] == pytest.approx(RATE, rel=1e-10)
         assert fit["y_pk_v"] == pytest.approx(0.002, rel=0.003)
         assert fit["y_pk_se_v"] == pytest.approx(8e-5 * math.sqrt(2 / t.size), rel=0.08)
-        assert fit["y_snr"] == pytest.approx(fit["y_pk_v"] / fit["y_pk_se_v"])
+        # y_snr 是原始口径（不含工频项）的标准误与 SNR；无工频时与 clean 幅值近似一致。
+        assert fit["y_snr"] == pytest.approx(fit["y_pk_v"] / fit["y_pk_se_v"], rel=0.01)
+        # 无工频干扰时两口径一致（clean 只多 8 个多余项的自由度代价）；有工频时见下方 40/50 Hz 用例。
+        assert fit["y_snr_clean"] == pytest.approx(fit["y_snr"], rel=0.01)
         assert fit["x_pk_v"] == pytest.approx(0.00013, abs=1e-9)
         assert fit["y_2f_pk_v"] == pytest.approx(0.0003, rel=0.02)
 
@@ -199,15 +210,19 @@ def test_direct_tone_fit_is_independent_of_record_start():
     with pytest.raises(ValueError, match="9.8 个周期"):
         steps.fit_tone(t[:600], x[:600], y[:600], RATE, f_hz)
     fit = steps.fit_tone(t, x, 0.1 + 0.2 * t, RATE, f_hz)
-    assert fit["y_snr"] < steps.MIN_TONE_SNR
+    assert fit["y_snr"] < steps.MIN_TONE_SNR and fit["y_snr_clean"] < steps.MIN_TONE_SNR
 
-    # 强 50/100/150 Hz 工频干扰不应虚高 40 Hz 的 Y 拟合误差棒，且接近 50 Hz 时应自动跳过碰撞工频避免病态。
+    # 强 50/100/150 Hz 工频干扰不应虚高 40 Hz 的 Y 拟合误差棒：原始口径 SNR 低，联合扣除后恢复。
     y_mains = 0.005 * np.sin(2 * np.pi * 40. * t) + 0.055 * np.cos(2 * np.pi * 50. * t + 0.4) + 0.004 * np.sin(2 * np.pi * 150. * t) + rng.normal(scale=5e-5, size=t.size)
     fit_40 = steps.fit_tone(t, x, y_mains, RATE, 40., correlation_s=0.004)
     assert fit_40["y_pk_v"] == pytest.approx(0.005, rel=0.003)
-    assert fit_40["y_pk_se_v"] < 1e-4 and fit_40["y_snr"] > 50
+    assert fit_40["y_snr"] < steps.MIN_TONE_SNR
+    assert fit_40["y_pk_se_clean_v"] < 1e-4 and fit_40["y_snr_clean"] > 50
+    assert fit_40["mains_harmonics_hz"] == [50., 100., 150., 200., 250.] and not fit_40["mains_collision_hz"]
+    # 目标音调与工频谐波共线时跳过该项并记 mains_collision，共线项不得破坏拟合。
     fit_50 = steps.fit_tone(t, x, 0.055 * np.cos(2 * np.pi * 50. * t), RATE, 50.)
     assert fit_50["y_pk_v"] == pytest.approx(0.055, rel=1e-4)
+    assert fit_50["mains_collision_hz"] == [50., 100.]
 
 
 def test_real_analysis_subprocess_publishes_all_products(tmp_path):
@@ -340,6 +355,42 @@ def test_low_snr_and_electrical_warnings_still_plot_and_refer_with_advisory_flag
     assert "信噪比" in row_20["warnings"] and float(row_20["h_v_per_rad"]) > 0
     noise = _csv(tmp_path, steps.NOISE_CSV)
     assert any(float(r["frequency_hz"]) == pytest.approx(20., abs=1.0) and r["phase_asd_rad_per_sqrt_hz"] for r in noise)
+
+
+def test_mains_joint_removal_recovers_clean_snr_and_keeps_original(tmp_path):
+    """A05 联合扣除工频：行内保留原始低 SNR，clean SNR 恢复并按 clean 口径判质检。"""
+    _synthetic_run(tmp_path, mains_amp=0.04)
+    summary = analysis.analyze(tmp_path)
+    assert summary["referral_available"] is True
+    assert summary["referral_quality"] == "ok" and summary["quality_passed"] is True
+    rows = _csv(tmp_path, steps.TRANSFER_CSV)
+    assert len(rows) == 5
+    for row in rows:
+        assert float(row["y_snr"]) < steps.MIN_TONE_SNR
+        assert float(row["y_snr_clean"]) >= steps.MIN_TONE_SNR
+        assert float(row["y_pk_se_clean_v"]) < float(row["y_pk_se_v"])
+        assert row["quality_passed"] == "True" and row["warnings"] == "" and row["mains_collision"] == ""
+        assert float(row["h_v_per_rad"]) == pytest.approx(_true_h(float(row["frequency_hz"])), rel=0.01)
+
+
+def test_all_low_clean_snr_still_refers_phase_noise_with_advisory_plot(tmp_path):
+    """所有频点 clean SNR 仍低于门槛时：照常输出折算相位噪声，只标 advisory，不扣留。"""
+    _synthetic_run(tmp_path, low_snr=(5., 10., 20., 40., 80.))
+    summary = analysis.analyze(tmp_path)
+    assert summary["phase_referral"]["available"] is True
+    assert summary["referral_available"] is True
+    assert summary["referral_quality"] == "advisory"
+    assert summary["quality_passed"] is False
+    assert summary["referral_warnings"] == summary["advisory_warnings"]
+    assert any("Y 音调信噪比" in text for text in summary["referral_warnings"])
+    assert "withheld" not in json.dumps(summary, ensure_ascii=False)
+    noise = _csv(tmp_path, steps.NOISE_CSV)
+    referred = [float(row["phase_asd_urad_per_sqrt_hz"]) for row in noise if row["phase_asd_urad_per_sqrt_hz"]]
+    assert referred and all(math.isfinite(value) and value > 0 for value in referred)
+    # 上图电压噪声、下图折算相位噪声必须同时存在：两格纵向布局的高度大于宽度的一半。
+    from PIL import Image
+    with Image.open(tmp_path / "results" / steps.NOISE_PNG) as image:
+        assert image.height > 0.35 * image.width
 
 
 @pytest.mark.parametrize("changes, diagnostic, fragment", [

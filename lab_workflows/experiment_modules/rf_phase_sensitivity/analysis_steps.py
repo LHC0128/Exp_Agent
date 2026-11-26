@@ -53,9 +53,9 @@ LOCKIN_KEYS = ("phase_deg", "order", "time_constant_s", "stream_rate_sa_s", "osc
 TRANSFER_COLUMNS = (
     "attempt", "frequency_hz", "repeat", "scope_label", "xy_label", "electrical_accepted", "electrical_reason",
     "phase_pk_rad", "phase_scatter_rad", "am_fraction_pk", "center_error_deg", "rate_sa_s", "samples", "cycles",
-    "y_pk_v", "y_pk_se_v", "y_snr", "x_pk_v", "x_2f_pk_v", "y_2f_pk_v",
+    "y_pk_v", "y_pk_se_v", "y_snr", "y_pk_se_clean_v", "y_snr_clean", "x_pk_v", "x_2f_pk_v", "y_2f_pk_v",
     "h_v_per_rad", "h_fit_se_v_per_rad", "normalized_gain", "normalized_gain_se",
-    "normalized_h0_gain", "normalized_h0_gain_se",
+    "normalized_h0_gain", "normalized_h0_gain_se", "mains_collision",
     "quality_passed", "warnings", "accepted", "reason",
 )
 NOISE_COLUMNS = (
@@ -175,8 +175,75 @@ def _same_lockin(a, b):
             and all(math.isclose(a[key], b[key], rel_tol=LOCKIN_RTOL) for key in LOCKIN_KEYS[2:]))
 
 
+def _mains_terms(time_s, frequency_hz, include_2f, nyquist):
+    """返回（可用工频谐波频率、与目标音调/二次谐波碰撞而跳过的频率、容差）。
+
+    容差取 2 Hz 与帧长频率分辨率 2/T 的较大值：目标音调与某个工频谐波相距不足一个
+    容差时，两项近似共线，强行同时拟合会让设计矩阵病态并放大标准误，因此该谐波项
+    跳过并记入碰撞列表，由调用方写进行内 ``mains_collision``。
+    """
+    duration = float(time_s[-1])
+    guard_hz = max(2.0 / duration, 0.5)
+    avoid = (frequency_hz, *((2 * frequency_hz,) if include_2f else ()))
+    used, collisions = [], []
+    for mains_hz in MAINS_HARMONICS_HZ:
+        if mains_hz + 1.0 / duration >= nyquist:
+            break
+        if any(abs(mains_hz - target) <= guard_hz for target in avoid):
+            collisions.append(float(mains_hz))
+        else:
+            used.append(float(mains_hz))
+    return used, collisions, guard_hz
+
+
+def _tone_columns(time_s, frequency_hz, include_2f, mains_hz):
+    """构造目标音调、常数、线性漂移、可选二次谐波与工频谐波的正交解调设计列。"""
+    theta = (2 * np.pi * frequency_hz) * time_s
+    columns = [np.sin(theta), np.cos(theta), np.ones_like(time_s), time_s / time_s[-1] - 0.5]
+    if include_2f:
+        columns.extend((np.sin(2 * theta), np.cos(2 * theta)))
+    for mains in mains_hz:
+        angle = (2 * np.pi * mains) * time_s
+        columns.extend((np.sin(angle), np.cos(angle)))
+    return columns
+
+
+def _solve_tone(columns, x, y, rate, correlation_s, include_2f):
+    """对给定设计列联合最小二乘拟合 X/Y 并发布 Y 音调幅值、标准误与信噪比。"""
+    design = np.column_stack(columns)
+    coeff, _, rank, spectrum = np.linalg.lstsq(design, np.column_stack((x, y)), rcond=None)
+    if rank != design.shape[1] or spectrum[-1] <= spectrum[0] * 1e-8:
+        raise ValueError("基带音调拟合的设计矩阵病态")
+    x_pk, y_pk = map(float, np.hypot(*coeff[:2]))
+    residual = y - design @ coeff[:, 1]
+    dof = len(y) - rank
+    inverse_gram = np.linalg.inv(design.T @ design)
+    direction = coeff[:2, 1] / y_pk if y_pk > 0 else np.array([1.0, 0.0])
+    variance = (residual @ residual / dof) * (direction @ inverse_gram[:2, :2] @ direction)
+    # Bartlett 加权的相关残差方差只提高、不会压低独立残差给出的标准误。
+    lag = math.ceil(min(dof // 4, 5 * correlation_s * rate))
+    if lag >= 1:
+        score = residual * (design @ (inverse_gram[:, :2] @ direction))
+        ac = correlate(score, score, mode="full", method="fft")[len(y) - 1:len(y) + lag]
+        tapered = ac[0] + 2 * (ac[1:] @ (1 - np.arange(1, lag + 1) / (lag + 1)))
+        variance = max(variance, tapered * len(y) / dof)
+    y_se = math.sqrt(max(0.0, variance))
+    # 抑制常数或纯漂移的舍入误差伪装成高 SNR；不设物理电压阈值。
+    floor = max(np.finfo(float).tiny, 32 * np.finfo(float).eps * np.max(np.abs(y)))
+    result = dict(x_pk_v=x_pk, y_pk_v=y_pk, y_pk_se_v=y_se, y_snr=float(y_pk / max(y_se, floor)))
+    if include_2f:
+        result.update(x_2f_pk_v=float(np.hypot(*coeff[4:6, 0])), y_2f_pk_v=float(np.hypot(*coeff[4:6, 1])))
+    return result
+
+
 def fit_tone(time_s, x_v, y_v, rate_sa_s, frequency_hz, *, correlation_s=0.0):
-    """同时拟合基频、二次谐波、直流漂移及不碰撞的 50 Hz 工频谐波；发布幅值与拟合标准误。"""
+    """同时拟合基频、二次谐波、直流漂移及不碰撞的 50 Hz 工频谐波。
+
+    发布的 ``y_pk_v``/``x_pk_v``/``h_v_per_rad`` 沿用联合扣除工频后的干净系（与改造前一致）；
+    行内另保留原始口径（不含工频项）的 ``y_pk_se_v``/``y_snr`` 作为对照，并发布扣除后的
+    ``y_pk_se_clean_v``/``y_snr_clean`` 供质检与告警判定。``mains_collision_hz`` 记录因与
+    目标音调或二次谐波共线而跳过的工频谐波，``mains_harmonics_hz`` 记录实际参与拟合的谐波。
+    """
     t, rate = sample_grid(time_s, rate_sa_s)
     frequency = _number(frequency_hz)
     nyquist = min(rate, rate_sa_s) / 2
@@ -186,46 +253,23 @@ def fit_tone(time_s, x_v, y_v, rate_sa_s, frequency_hz, *, correlation_s=0.0):
     if cycles < MIN_TONE_CYCLES:
         raise ValueError(f"基带音调帧不足 {MIN_TONE_CYCLES:g} 个周期")
     x, y = _waveform(x_v, t), _waveform(y_v, t)
-    theta = (2 * np.pi * frequency) * t
-    columns = [np.sin(theta), np.cos(theta), np.ones_like(t), t / t[-1] - 0.5]
     include_2f = 2 * frequency + 1 / t[-1] < nyquist
+    mains_used, collisions, guard_hz = _mains_terms(t, frequency, include_2f, nyquist)
+    # 数据点不足时工频项会挤占自由度，按序裁剪保留更低的谐波。
+    while mains_used and len(t) <= len(_tone_columns(t, frequency, include_2f, mains_used)) + 8:
+        mains_used.pop()
+    original = _solve_tone(_tone_columns(t, frequency, include_2f, ()), x, y, rate, correlation_s, include_2f)
+    clean_columns = _tone_columns(t, frequency, include_2f, mains_used)
+    clean = _solve_tone(clean_columns, x, y, rate, correlation_s, include_2f) if mains_used else original
+    # 发布幅值沿用扣除工频后的 clean 系数（与改造前一致）；原始口径只用于对照标准误与 SNR。
+    result = dict(rate_sa_s=rate, samples=int(t.size), cycles=cycles,
+                  x_pk_v=clean["x_pk_v"], y_pk_v=clean["y_pk_v"],
+                  y_pk_se_v=original["y_pk_se_v"], y_snr=original["y_snr"],
+                  y_pk_se_clean_v=clean["y_pk_se_v"], y_snr_clean=clean["y_snr"],
+                  mains_harmonics_hz=mains_used, mains_collision_hz=collisions, mains_guard_hz=guard_hz)
     if include_2f:
-        columns.extend((np.sin(2 * theta), np.cos(2 * theta)))
-    avoid = (frequency, *((2 * frequency,) if include_2f else ()))
-    guard_hz = max(2.0 / float(t[-1]), 0.5)
-    for mains_hz in MAINS_HARMONICS_HZ:
-        if mains_hz + 1 / t[-1] >= nyquist:
-            break
-        if any(abs(mains_hz - target) < guard_hz for target in avoid) or len(t) <= len(columns) + 8:
-            continue
-        angle = (2 * np.pi * mains_hz) * t
-        columns.extend((np.sin(angle), np.cos(angle)))
-    design = np.column_stack(columns)
-    coeff, _, rank, spectrum = np.linalg.lstsq(design, np.column_stack((x, y)), rcond=None)
-    if rank != design.shape[1] or spectrum[-1] <= spectrum[0] * 1e-8:
-        raise ValueError("基带音调拟合的设计矩阵病态")
-    x_pk, y_pk = map(float, np.hypot(*coeff[:2]))
-    residual = y - design @ coeff[:, 1]
-    dof = len(t) - rank
-    inverse_gram = np.linalg.inv(design.T @ design)
-    direction = coeff[:2, 1] / y_pk if y_pk > 0 else np.array([1.0, 0.0])
-    variance = (residual @ residual / dof) * (direction @ inverse_gram[:2, :2] @ direction)
-    # Bartlett 加权的相关残差方差只提高、不会压低独立残差给出的标准误。
-    lag = math.ceil(min(dof // 4, 5 * correlation_s * rate))
-    if lag >= 1:
-        score = residual * (design @ (inverse_gram[:, :2] @ direction))
-        ac = correlate(score, score, mode="full", method="fft")[len(t) - 1:len(t) + lag]
-        tapered = ac[0] + 2 * (ac[1:] @ (1 - np.arange(1, lag + 1) / (lag + 1)))
-        variance = max(variance, tapered * len(t) / dof)
-    y_se = math.sqrt(max(0.0, variance))
-    # 抑制常数或纯漂移的舍入误差伪装成高 SNR；不设物理电压阈值。
-    floor = max(np.finfo(float).tiny, 32 * np.finfo(float).eps * np.max(np.abs(y)))
-    y_snr = y_pk / max(y_se, floor)
-    result = dict(rate_sa_s=rate, samples=int(t.size), cycles=cycles, x_pk_v=x_pk, y_pk_v=y_pk,
-                  y_pk_se_v=y_se, y_snr=float(y_snr))
-    if include_2f:
-        result.update(x_2f_pk_v=float(np.hypot(*coeff[4:6, 0])), y_2f_pk_v=float(np.hypot(*coeff[4:6, 1])))
-    if not all(math.isfinite(value) for value in result.values()):
+        result.update(x_2f_pk_v=clean["x_2f_pk_v"], y_2f_pk_v=clean["y_2f_pk_v"])
+    if not all(math.isfinite(value) for value in result.values() if isinstance(value, (int, float))):
         raise ValueError("基带音调拟合产生了非有限值")
     return result
 
@@ -272,10 +316,17 @@ def _transfer_rows(run_dir, attempts, configured, calibration):
                 metadata, arrays = run_format.read_frame(run_dir, xy, "xy")
                 _verify_attestations(metadata, frequency_hz=f, scope_label=scope)
                 state = _lockin(metadata)
-                row.update(fit_tone(arrays["time_s"], arrays["x_v"], arrays["y_v"], metadata["rate_sa_s"], f,
-                                    correlation_s=state["order"] * state["time_constant_s"]))
-                if row["y_snr"] < MIN_TONE_SNR:
-                    warnings.append(f"Y 音调信噪比低于 {MIN_TONE_SNR:g}")
+                fit = fit_tone(arrays["time_s"], arrays["x_v"], arrays["y_v"], metadata["rate_sa_s"], f,
+                               correlation_s=state["order"] * state["time_constant_s"])
+                collisions = fit.pop("mains_collision_hz", [])
+                fit.pop("mains_harmonics_hz", None)
+                fit.pop("mains_guard_hz", None)
+                row.update(fit)
+                row["mains_collision"] = "，".join(f"{value:g}" for value in collisions)
+                # 质检与告警使用联合扣除工频后的 clean 口径；原始口径同时写入同一告警便于复算。
+                if row["y_snr_clean"] < MIN_TONE_SNR:
+                    warnings.append(f"Y 音调信噪比低于 {MIN_TONE_SNR:g}"
+                                    f"（原始 {row['y_snr']:.2f}，扣除工频后 {row['y_snr_clean']:.2f}）")
                 if (phase := calibration.get("lockin_phase_deg")) is not None and not _same_phase(state["phase_deg"], phase):
                     hard_reasons.append("频响帧锁相相位与静态标定不一致")
                 if reference is not None and not _same_lockin(state, reference):
@@ -285,7 +336,8 @@ def _transfer_rows(run_dir, attempts, configured, calibration):
         else:
             hard_reasons.append("缺少 XY 帧")
         if not hard_reasons:
-            h, h_se = row["y_pk_v"] / pm, row["y_pk_se_v"] / pm
+            # 增益沿用同一目标音调幅值；标准误取扣除工频后的 clean 口径，避免工频能量虚高误差棒。
+            h, h_se = row["y_pk_v"] / pm, row["y_pk_se_clean_v"] / pm
             if not math.isfinite(h) or h <= 0 or not math.isfinite(h_se):
                 hard_reasons.append("实测相位换算的增益无效")
             else:
@@ -536,16 +588,24 @@ def _fit_transfer_lorentzian(rows, accepted, k0):
 
 
 def _refer_noise(frequency, asd, bands, accepted, lorentzian_fit=None):
+    """按相邻硬合格频点的 |H| 做对数频率-对数幅值插值并折算相位 ASD。
+
+    ``bands`` 只由硬合格（accepted=True 且 h 为正有限）的相邻频点组成，是否
+    ``quality_passed`` 不参与筛选：只要频带内至少有 2 个这样的频点就照常输出
+    ``phase_asd_*`` 列与折算曲线，质量不足由调用方标 advisory / referral_warnings。
+    """
     h = np.full(frequency.shape, np.nan)
     phase = np.full(frequency.shape, np.nan)
     band_ids = np.zeros(frequency.shape, dtype=int)
     metrics = []
     for band_id, band in enumerate(bands, 1):
         indices = np.flatnonzero((frequency >= band[0]) & (frequency <= band[-1]))
-        if not indices.size:
+        if not indices.size or len(band) < 2:
             continue
-        h_band = np.exp(np.interp(np.log(frequency[indices]), np.log(band),
-                                   np.log([accepted[f]["h_v_per_rad"] for f in band])))
+        gains = [accepted[f]["h_v_per_rad"] for f in band]
+        if any(not (value is not None and math.isfinite(value) and value > 0) for value in gains):
+            continue
+        h_band = np.exp(np.interp(np.log(frequency[indices]), np.log(band), np.log(gains)))
         with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
             values = asd[indices] / h_band
             keep = np.isfinite(values) & np.isfinite(values * 1e6) & (h_band > 0)
@@ -908,9 +968,18 @@ def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids, 
             diagnostic(detector, "Detector Y ASD is zero" if frequency.size else "No valid detector Y spectrum")
         phase_urad = phase * 1e6
         phase_lor_urad = phase_lor * 1e6
-        if summary["phase_referral"]["available"]:
-            has_warnings = bool(summary["advisory_warnings"])
-            band_color = "#d55e00" if has_warnings else "#009e73"
+        referral_available = bool(summary.get("referral_available",
+                                              (summary.get("phase_referral") or {}).get("available")))
+        referral_warnings = [text for text in summary.get("referral_warnings") or [] if isinstance(text, str)]
+        advisory = referral_available and summary.get("referral_quality", "ok") != "ok"
+        snr_advisory = any("音调信噪比" in text for text in referral_warnings)
+        # 质量不足时折算曲线用灰色虚线并在图例与注释标 advisory，不再整段扣留。
+        band_color = "#7f7f7f" if advisory else "#009e73"
+        band_style = "--" if advisory else "-"
+        band_prefix = ("Measured band (advisory: tone SNR below threshold)" if advisory and snr_advisory
+                       else "Measured band (advisory: referral warnings, see summary)" if advisory
+                       else "Measured band direct interp")
+        if referral_available:
             lor_band = summary["phase_referral"].get("lorentzian_full_band") or {}
             plotted_sens = False
             if lor_band.get("available") and (phase_lor_urad > 0).any():
@@ -923,22 +992,30 @@ def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids, 
                     referred.axvline(fc_val, color="#7f7f7f", ls=":", lw=1.0, label=f"fc = {fc_val:.1f} Hz")
             bands_info = summary["phase_referral"]["bands"]
             med_txt = ", ".join(f"{b['median_urad_per_sqrt_hz']:.3g}" for b in bands_info)
-            prefix = "Measured band (with warnings)" if has_warnings else "Measured band direct interp"
-            label = f"{prefix} (median {med_txt} urad/sqrt(Hz))"
+            label = f"{band_prefix} (median {med_txt} urad/sqrt(Hz))"
             for idx, band in enumerate(bands_info):
                 bins = band_ids == band["transfer_band"]
                 if (phase_urad[bins] > 0).any():
                     plotted_sens = True
                     referred.loglog(frequency[bins], np.where(phase_urad[bins] > 0, phase_urad[bins], np.nan),
-                                    color=band_color, lw=1.3, marker="." if bins.sum() == 1 else None,
+                                    color=band_color, ls=band_style, lw=1.3,
+                                    marker="." if bins.sum() == 1 else None,
                                     label=label if idx == 0 else None)
+            if advisory:
+                note = ("advisory: tone SNR below threshold" if snr_advisory
+                        else "advisory: referral warnings (see summary)")
+                referred.text(0.015, 0.985, note, transform=referred.transAxes, ha="left", va="top",
+                              fontsize=7.2, color="#555555",
+                              bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
+                                        edgecolor="#999999", alpha=0.85))
             referred.grid(True, which="both", alpha=0.2)
             if not plotted_sens:
                 diagnostic(referred, "Referred phase ASD is zero")
             else:
                 referred.legend(fontsize=7.3, loc="lower left")
         else:
-            diagnostic(referred, "Phase referral withheld; see summary")
+            # 硬条件（缺 XY 帧、时间轴不均匀、锁相失配、H≤0/非有限或噪声谱无效）才不折算。
+            diagnostic(referred, "No phase referral: hard integrity failure (see summary)")
         fig.suptitle("A06: Phase sensitivity spectrum")
         fig.savefig(directory / NOISE_PNG, dpi=240)
 
@@ -1007,6 +1084,12 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
     advisory_warnings.extend(noise["warnings"])
     advisory_warnings = list(dict.fromkeys(advisory_warnings))
 
+    # 折算可用性与质量分开：只要存在 ≥2 个相邻硬合格频点就插值输出（即使 quality_passed=False），
+    # 质检不足只标 advisory 与 referral_warnings，不再整段扣留折算曲线。
+    referral_available = bool(metrics)
+    referral_warnings = list(advisory_warnings)
+    referral_quality = "ok" if referral_available and not referral_warnings else "advisory"
+
     status = _text(config.get("completion_status"))
     complete = bool(metrics) and len(accepted) == len(configured) and status == "completed"
     clean_primary = sum(1 for row in accepted.values() if row["quality_passed"])
@@ -1016,6 +1099,8 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
                    acquisition_status=status, acquisition_failure_reason=_text(config.get("failure_reason")),
                    result_status="complete" if complete else "partial" if rows or frequency.size else "no_usable_data",
                    quality_passed=quality_passed, advisory_warnings=advisory_warnings,
+                   referral_available=referral_available, referral_warnings=referral_warnings,
+                   referral_quality=referral_quality,
                    calibration=calibration, lockin_reference=reference,
                    configured_frequencies_hz=configured, transfer_attempts=len(rows),
                    accepted_primary_points=len(accepted), clean_primary_points=clean_primary,
@@ -1028,8 +1113,9 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
                                        interpolation="log_frequency_log_magnitude_within_adjacent_accepted_points",
                                        backfill="zero_centered_sqrt_lorentzian_full_band"),
                    method_notes=["频响只比较调制深度与锁相 Y 音调幅值 |H(f)| = |Y_pk(f)| / phi_pk(f)，不计算复频响相角；与基频/二次谐波不碰撞的 50–250 Hz 工频谐波在最小二乘正交解调中一并投影去除。",
+                                 "A05 行内 y_pk_se_v / y_snr 保留未扣工频的原始口径，y_pk_se_clean_v / y_snr_clean 为联合扣除工频谐波后的 clean 口径；质检与告警按 clean SNR 判定，mains_collision 记录与目标音调或二次谐波共线而跳过的工频谐波。",
                                  "A05 对 |H(f)| 拟合以 0 Hz 为中心的 √Lorentzian 线型 H0 / sqrt(1 + (f/fc)²)（若非碰撞点 ≥ 2 个则自动剔除 50–250 Hz 工频整倍频碰撞点）并以零频截距 H0 归一化；A05/A06 使用宽带滤波（默认 1 µs），不再做锁相软件滤波反卷积。",
-                                 "A06 灵敏度谱以 µrad/√Hz 输出：多温控分段各自计算 Welch PSD 后按段数等权平均，不跨恢复温控窗口拼接波形；除实测频点插值带外，同时按 √Lorentzian 传递函数对全频段噪声做外推回补。",
+                                 "A06 灵敏度谱以 µrad/√Hz 输出：多温控分段各自计算 Welch PSD 后按段数等权平均，不跨恢复温控窗口拼接波形；只要存在 ≥2 个相邻硬合格频点就做对数插值与全频段回补，质检不足只标 referral_quality=advisory，不再整段扣留。",
                                  "H 与标准误仅传播 Y 拟合误差（含时间序列相关修正）；归一增益另外传播 K0/H0 标准误，不含激励幅度标定不确定度。",
                                  "低频闭合（|H|/|K0| 0.8–1.2）等参考指标仅作告警与图例标注，不阻止有效频点参与出图与相位噪声折算。"])
     invalid_sections = [key for key, kind in (("calibration", dict), ("transfer", list), ("noise", dict))
