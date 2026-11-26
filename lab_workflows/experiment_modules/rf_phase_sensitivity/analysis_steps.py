@@ -757,11 +757,183 @@ def _local_plot_data(run_dir, config, calibration):
                 rms_v=rms_v, r=r_val, mode=mode)
 
 
+def coarse_plot_data(run_dir, config):
+    """A03 整周粗扫的绘图数据；供复用 A03 图的其它实验调用。"""
+    return _coarse_plot_data(run_dir, config)
+
+
+def local_plot_data(run_dir, config, calibration):
+    """A04 局部标定的绘图数据；供复用 A04 图的其它实验调用。"""
+    return _local_plot_data(run_dir, config, calibration)
+
+
 def _save_csv(path, columns, rows):
     with path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerow(columns)
         writer.writerows(rows)
+
+
+def _diagnostic(ax, text):
+    ax.text(0.5, 0.5, text, ha="center", va="center", transform=ax.transAxes)
+
+
+def _add_zoom_x_inset(parent, x_mv, y_mv, color_vals, cmap, *, line_x=None, line_y=None,
+                      star_xy=None, title="X zoomed", bounds=(0.08, 0.14, 0.34, 0.72), s=12):
+    ax_in = parent.inset_axes(list(bounds))
+    if line_x is not None and line_y is not None:
+        ax_in.plot(line_x, line_y, "-", color="#888888", lw=0.8, alpha=0.7)
+    ax_in.scatter(x_mv, y_mv, c=color_vals, cmap=cmap, s=s, edgecolor="#222222", lw=0.25, zorder=3)
+    if star_xy is not None:
+        ax_in.plot(star_xy[0], star_xy[1], marker="*", markersize=7.5, color="#d55e00", linestyle="none", zorder=4)
+    x_pad = max(0.2 * float(np.ptp(x_mv)), 1.0)
+    y_pad = max(0.08 * float(np.ptp(y_mv)), 1.0)
+    ax_in.set_xlim(float(x_mv.min()) - x_pad, float(x_mv.max()) + x_pad)
+    ax_in.set_ylim(float(y_mv.min()) - y_pad, float(y_mv.max()) + y_pad)
+    ax_in.tick_params(labelsize=6.5)
+    ax_in.set_title(title, fontsize=7, pad=2)
+    ax_in.grid(alpha=0.25, lw=0.4)
+
+
+def coarse_figure(coarse_data):
+    """构建 A03 整周相位响应图（相图 + X/Y 波形），即 ``_plots`` 的 Fig 1。"""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    from ...plotting import figure_size
+
+    # --- Fig 1: A03 Full-cycle phase portrait & Eq.(2.2.2)+v0 waveforms ---
+    fig = Figure(figsize=figure_size("wide", height_mm=90), layout="constrained")
+    FigureCanvasAgg(fig)
+    ax_xy, ax_wave = fig.subplots(1, 2)
+    if coarse_data is not None:
+        phi_deg = coarse_data["phi_deg"]
+        z_aligned = coarse_data["z_aligned"]
+        x_mv, y_mv = z_aligned.real * 1e3, z_aligned.imag * 1e3
+        eq222 = coarse_data.get("eq222")
+        zc = coarse_data["z_curve"]
+        if zc is not None:
+            ax_xy.plot(zc.real * 1e3, zc.imag * 1e3, color="#888888", lw=0.9, alpha=0.75,
+                       label="Eq. (2.2.2) + v0 locus" if eq222 else "Phase locus", zorder=2)
+        sc = ax_xy.scatter(x_mv, y_mv, c=phi_deg, cmap="twilight", vmin=0, vmax=360,
+                           s=14, edgecolor="none", alpha=0.9, zorder=3)
+        fig.colorbar(sc, ax=ax_xy, label="Carrier phase (deg)", pad=0.02)
+        star_xy = None
+        if coarse_data["z_best"] is not None:
+            zb = coarse_data["z_best"]
+            bx, by = float(zb.real * 1e3), float(zb.imag * 1e3)
+            star_xy = (bx, by)
+            ax_xy.plot(bx, by, marker="*", markersize=9, color="#d55e00", linestyle="none",
+                       zorder=4, label=f"Work point {coarse_data['best_deg']:.1f} deg")
+            tang = coarse_data["tangent"]
+            if tang is not None and abs(tang) > 0:
+                span = max(float(np.ptp(x_mv)), float(np.ptp(y_mv)), 1e-3)
+                vec = tang / abs(tang) * (0.22 * span)
+                ax_xy.annotate("", xy=(bx + float(vec.real), by + float(vec.imag)), xytext=(bx, by),
+                               arrowprops=dict(arrowstyle="->", lw=1.6, color="#d55e00"), zorder=5)
+        ax_xy.set_aspect("equal", adjustable="datalim")
+        ax_xy.legend(fontsize=7.5, loc="lower right")
+        ax_xy.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)",
+                  title="Phase portrait (1:1 aligned)" if coarse_data["rotated"] else "Phase portrait (1:1 raw)")
+        if np.ptp(x_mv) < 0.25 * max(float(np.ptp(y_mv)), 1e-6):
+            _add_zoom_x_inset(ax_xy, x_mv, y_mv, phi_deg, "twilight",
+                              line_x=(zc.real * 1e3 if zc is not None else None),
+                              line_y=(zc.imag * 1e3 if zc is not None else None),
+                              star_xy=star_xy, title="X zoomed")
+
+        if zc is not None:
+            y_fit_lbl = (f"Eq. (2.2.2)+v0 Y (r={eq222['r']:.2f}, RMS {eq222['rms_v']*1e3:.1f} mV)"
+                         if eq222 else "Y theory fit")
+            ax_wave.plot(coarse_data["curve_deg"], zc.imag * 1e3, color="#d55e00", lw=1.5, label=y_fit_lbl)
+            ax_wave.plot(coarse_data["curve_deg"], zc.real * 1e3, color="#1f77b4", lw=1.1, alpha=0.85)
+        ax_wave.plot(phi_deg, y_mv, "o", markersize=3.2, color="#d55e00", label="Demod 4 Y data")
+        ax_wave.plot(phi_deg, x_mv, "s", markersize=3.0, color="#1f77b4", label="Demod 4 X data")
+        if coarse_data["best_deg"] is not None:
+            ax_wave.axvline(coarse_data["best_deg"], color="#555555", ls=":", lw=1.0,
+                            label=f"phi* = {coarse_data['best_deg']:.1f} deg")
+        y_lo, y_hi = float(y_mv.min()), float(y_mv.max())
+        y_sp = max(y_hi - y_lo, 1e-3)
+        ax_wave.set(xlim=(0, 360), ylim=(y_lo - 0.14 * y_sp, y_hi + 0.34 * y_sp),
+                    xlabel="Carrier command phase (deg)", ylabel="Demod 4 output (mV)",
+                    title="Full-cycle X & Y waveforms")
+        ax_wave.legend(fontsize=7.2, loc="upper left")
+    else:
+        _diagnostic(ax_xy, "No usable A03 coarse phase frames")
+        _diagnostic(ax_wave, "No usable A03 coarse phase frames")
+        ax_xy.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Phase portrait")
+        ax_wave.set(xlabel="Carrier command phase (deg)", ylabel="Demod 4 output (mV)", title="Full-cycle waveforms")
+    gain_txt = ""
+    if coarse_data and coarse_data.get("eq222"):
+        eq222 = coarse_data["eq222"]
+        gain_txt = f" | r={eq222['r']:.2f}, v0={eq222['v0']:.3f}, crossing K={eq222['k0_v_per_rad']:.4g} V/rad"
+    elif coarse_data and coarse_data["tangent_gain"]:
+        gain_txt = f" | |dZ/dφ| = {coarse_data['tangent_gain']:.4g} V/rad"
+    fig.suptitle(f"A03: Full-cycle phase portrait{gain_txt}")
+    return fig
+
+
+def local_figure(local_data):
+    """构建 A04 局部标定图（局部相图 + Eq.(2.2.2) 响应），即 ``_plots`` 的 Fig 2。"""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    from ...plotting import figure_size
+
+    # --- Fig 2: A04 Local calibration (Left = Portrait matching A03, Right = Eq.(2.2.2) response) ---
+    fig = Figure(figsize=figure_size("wide", height_mm=90), layout="constrained")
+    FigureCanvasAgg(fig)
+    ax_locus, ax_resp = fig.subplots(1, 2)
+    if local_data is not None:
+        dphi = local_data["dphi_deg"]
+        zc = local_data["z_corr"]
+        x_mv, y_mv = zc.real * 1e3, zc.imag * 1e3
+        order_loc = np.argsort(dphi)
+        ax_locus.plot(local_data["x_curve_v"] * 1e3, local_data["y_curve_v"] * 1e3,
+                      "-", color="#777777", lw=0.9, alpha=0.75)
+        sc = ax_locus.scatter(x_mv, y_mv, c=dphi, cmap="coolwarm", s=16, edgecolor="#222222", lw=0.25, zorder=3)
+        fig.colorbar(sc, ax=ax_locus, label="Phase offset dphi (deg)", pad=0.02)
+        ax_locus.plot(local_data["x0"] * 1e3, local_data["y0"] * 1e3, marker="*", markersize=9,
+                      color="#111111", linestyle="none", zorder=4, label="Work point")
+        x_mid = 0.5 * (float(x_mv.min()) + float(x_mv.max()))
+        y_mid = 0.5 * (float(y_mv.min()) + float(y_mv.max()))
+        half = max(0.5 * float(np.ptp(x_mv)), 0.5 * float(np.ptp(y_mv)), 1e-3) * 1.15
+        ax_locus.set(xlim=(x_mid - half, x_mid + half), ylim=(y_mid - half, y_mid + half),
+                     xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Local (X, Y) portrait (1:1 scale)")
+        ax_locus.set_aspect("equal", adjustable="box")
+        ax_locus.legend(fontsize=7.5, loc="upper right")
+        if np.ptp(x_mv) < 0.25 * max(float(np.ptp(y_mv)), 1e-6):
+            _add_zoom_x_inset(ax_locus, x_mv, y_mv, dphi, "coolwarm",
+                              line_x=x_mv[order_loc], line_y=y_mv[order_loc], title="X zoomed",
+                              bounds=(0.09, 0.14, 0.34, 0.72), s=13)
+
+        dx_mv = (zc.real - local_data["x0"]) * 1e3
+        dy_mv = (zc.imag - local_data["y0"]) * 1e3
+        ax_resp.axhline(0.0, color="#888888", lw=0.7)
+        ax_resp.axvline(0.0, color="#888888", lw=0.7, ls="--")
+        fit_lbl = ("Eq. (2.2.2) fit" if local_data["mode"] == "eq_2_2_2" else "Linear fit")
+        ax_resp.plot(dphi, dy_mv, "o", markersize=3.5, color="#d55e00", label=f"Y - Y0 data (n={dphi.size})")
+        ax_resp.plot(local_data["grid_deg"], (local_data["y_curve_v"] - local_data["y0"]) * 1e3,
+                     "-", color="#d55e00", lw=1.6,
+                     label=f"{fit_lbl}: K0 = {local_data['k0']:.4g} V/rad (RMS {local_data['rms_v']*1e3:.2f} mV)")
+        ratio = (abs(local_data["slope_x"] / local_data["k0"]) if local_data["k0"] else float("nan"))
+        ratio_txt = f" | |slope_X / K0| = {ratio:.1%}" if math.isfinite(ratio) else ""
+        ax_resp.plot(dphi, dx_mv, "s", markersize=3.2, color="#1f77b4",
+                     label=f"X - X0 (slope = {local_data['slope_x']:.4g} V/rad)")
+        ax_resp.plot(local_data["grid_deg"], (local_data["x_curve_v"] - local_data["x0"]) * 1e3,
+                     "-", color="#1f77b4", lw=1.1)
+        all_r = np.concatenate((dy_mv, dx_mv))
+        r_lo, r_hi = float(all_r.min()), float(all_r.max())
+        r_sp = max(r_hi - r_lo, 1e-3)
+        ax_resp.set(xlabel="Phase offset Δφ (deg)", ylabel="Response relative to crossing (mV)",
+                    ylim=(r_lo - 0.16 * r_sp, r_hi + 0.36 * r_sp),
+                    title="Local X & Y phase response vs Eq. (2.2.2)")
+        ax_resp.legend(fontsize=7.0, loc="upper left")
+        fig.suptitle(f"A04: Local phase response near {local_data['center_deg']:.2f}° | K0 = {local_data['k0']:.4g} V/rad{ratio_txt}")
+    else:
+        _diagnostic(ax_locus, "No usable A04 local calibration frames")
+        _diagnostic(ax_resp, "No usable A04 local calibration frames")
+        ax_locus.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Local (X, Y) portrait")
+        ax_resp.set(xlabel="Phase offset Δφ (deg)", ylabel="Response (mV)", title="Local phase response")
+        fig.suptitle("A04: Local phase response")
+    return fig
 
 
 def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids, phase_lor, *,
@@ -770,158 +942,24 @@ def _plots(directory, rows, accepted, summary, frequency, asd, phase, band_ids, 
     from matplotlib.figure import Figure
     from ...plotting import figure_size, plot_style_context
 
-    def diagnostic(ax, text):
-        ax.text(0.5, 0.5, text, ha="center", va="center", transform=ax.transAxes)
+    diagnostic = _diagnostic
 
     def figure_pair():
         figure = Figure(figsize=figure_size("wide", height_mm=115), layout="constrained")
         FigureCanvasAgg(figure)
         return figure, figure.subplots(2, 1, sharex=True)
 
-    def _add_zoom_x_inset(parent, x_mv, y_mv, color_vals, cmap, *, line_x=None, line_y=None,
-                          star_xy=None, title="X zoomed", bounds=(0.08, 0.14, 0.34, 0.72), s=12):
-        ax_in = parent.inset_axes(list(bounds))
-        if line_x is not None and line_y is not None:
-            ax_in.plot(line_x, line_y, "-", color="#888888", lw=0.8, alpha=0.7)
-        ax_in.scatter(x_mv, y_mv, c=color_vals, cmap=cmap, s=s, edgecolor="#222222", lw=0.25, zorder=3)
-        if star_xy is not None:
-            ax_in.plot(star_xy[0], star_xy[1], marker="*", markersize=7.5, color="#d55e00", linestyle="none", zorder=4)
-        x_pad = max(0.2 * float(np.ptp(x_mv)), 1.0)
-        y_pad = max(0.08 * float(np.ptp(y_mv)), 1.0)
-        ax_in.set_xlim(float(x_mv.min()) - x_pad, float(x_mv.max()) + x_pad)
-        ax_in.set_ylim(float(y_mv.min()) - y_pad, float(y_mv.max()) + y_pad)
-        ax_in.tick_params(labelsize=6.5)
-        ax_in.set_title(title, fontsize=7, pad=2)
-        ax_in.grid(alpha=0.25, lw=0.4)
-
     with plot_style_context("paper"):
-        # --- Fig 1: A03 Full-cycle phase portrait & Eq.(2.2.2)+v0 waveforms ---
-        fig = Figure(figsize=figure_size("wide", height_mm=90), layout="constrained")
-        FigureCanvasAgg(fig)
-        ax_xy, ax_wave = fig.subplots(1, 2)
-        if coarse_data is not None:
-            phi_deg = coarse_data["phi_deg"]
-            z_aligned = coarse_data["z_aligned"]
-            x_mv, y_mv = z_aligned.real * 1e3, z_aligned.imag * 1e3
-            eq222 = coarse_data.get("eq222")
-            zc = coarse_data["z_curve"]
-            if zc is not None:
-                ax_xy.plot(zc.real * 1e3, zc.imag * 1e3, color="#888888", lw=0.9, alpha=0.75,
-                           label="Eq. (2.2.2) + v0 locus" if eq222 else "Phase locus", zorder=2)
-            sc = ax_xy.scatter(x_mv, y_mv, c=phi_deg, cmap="twilight", vmin=0, vmax=360,
-                               s=14, edgecolor="none", alpha=0.9, zorder=3)
-            fig.colorbar(sc, ax=ax_xy, label="Carrier phase (deg)", pad=0.02)
-            star_xy = None
-            if coarse_data["z_best"] is not None:
-                zb = coarse_data["z_best"]
-                bx, by = float(zb.real * 1e3), float(zb.imag * 1e3)
-                star_xy = (bx, by)
-                ax_xy.plot(bx, by, marker="*", markersize=9, color="#d55e00", linestyle="none",
-                           zorder=4, label=f"Work point {coarse_data['best_deg']:.1f} deg")
-                tang = coarse_data["tangent"]
-                if tang is not None and abs(tang) > 0:
-                    span = max(float(np.ptp(x_mv)), float(np.ptp(y_mv)), 1e-3)
-                    vec = tang / abs(tang) * (0.22 * span)
-                    ax_xy.annotate("", xy=(bx + float(vec.real), by + float(vec.imag)), xytext=(bx, by),
-                                   arrowprops=dict(arrowstyle="->", lw=1.6, color="#d55e00"), zorder=5)
-            ax_xy.set_aspect("equal", adjustable="datalim")
-            ax_xy.legend(fontsize=7.5, loc="lower right")
-            ax_xy.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)",
-                      title="Phase portrait (1:1 aligned)" if coarse_data["rotated"] else "Phase portrait (1:1 raw)")
-            if np.ptp(x_mv) < 0.25 * max(float(np.ptp(y_mv)), 1e-6):
-                _add_zoom_x_inset(ax_xy, x_mv, y_mv, phi_deg, "twilight",
-                                  line_x=(zc.real * 1e3 if zc is not None else None),
-                                  line_y=(zc.imag * 1e3 if zc is not None else None),
-                                  star_xy=star_xy, title="X zoomed")
-
-            if zc is not None:
-                y_fit_lbl = (f"Eq. (2.2.2)+v0 Y (r={eq222['r']:.2f}, RMS {eq222['rms_v']*1e3:.1f} mV)"
-                             if eq222 else "Y theory fit")
-                ax_wave.plot(coarse_data["curve_deg"], zc.imag * 1e3, color="#d55e00", lw=1.5, label=y_fit_lbl)
-                ax_wave.plot(coarse_data["curve_deg"], zc.real * 1e3, color="#1f77b4", lw=1.1, alpha=0.85)
-            ax_wave.plot(phi_deg, y_mv, "o", markersize=3.2, color="#d55e00", label="Demod 4 Y data")
-            ax_wave.plot(phi_deg, x_mv, "s", markersize=3.0, color="#1f77b4", label="Demod 4 X data")
-            if coarse_data["best_deg"] is not None:
-                ax_wave.axvline(coarse_data["best_deg"], color="#555555", ls=":", lw=1.0,
-                                label=f"phi* = {coarse_data['best_deg']:.1f} deg")
-            y_lo, y_hi = float(y_mv.min()), float(y_mv.max())
-            y_sp = max(y_hi - y_lo, 1e-3)
-            ax_wave.set(xlim=(0, 360), ylim=(y_lo - 0.14 * y_sp, y_hi + 0.34 * y_sp),
-                        xlabel="Carrier command phase (deg)", ylabel="Demod 4 output (mV)",
-                        title="Full-cycle X & Y waveforms")
-            ax_wave.legend(fontsize=7.2, loc="upper left")
-        else:
-            diagnostic(ax_xy, "No usable A03 coarse phase frames")
-            diagnostic(ax_wave, "No usable A03 coarse phase frames")
-            ax_xy.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Phase portrait")
-            ax_wave.set(xlabel="Carrier command phase (deg)", ylabel="Demod 4 output (mV)", title="Full-cycle waveforms")
-        gain_txt = ""
-        if coarse_data and coarse_data.get("eq222"):
-            eq222 = coarse_data["eq222"]
-            gain_txt = f" | r={eq222['r']:.2f}, v0={eq222['v0']:.3f}, crossing K={eq222['k0_v_per_rad']:.4g} V/rad"
-        elif coarse_data and coarse_data["tangent_gain"]:
-            gain_txt = f" | |dZ/dφ| = {coarse_data['tangent_gain']:.4g} V/rad"
-        fig.suptitle(f"A03: Full-cycle phase portrait{gain_txt}")
+        # --- Fig 1: A03 整周相位响应（coarse_figure 复用同一绘制逻辑） ---
+        fig = coarse_figure(coarse_data)
         fig.savefig(directory / RESPONSE_PNG, dpi=240)
         check_cancelled()
 
-        # --- Fig 2: A04 Local calibration (Left = Portrait matching A03, Right = Eq.(2.2.2) response) ---
-        fig = Figure(figsize=figure_size("wide", height_mm=90), layout="constrained")
-        FigureCanvasAgg(fig)
-        ax_locus, ax_resp = fig.subplots(1, 2)
-        if local_data is not None:
-            dphi = local_data["dphi_deg"]
-            zc = local_data["z_corr"]
-            x_mv, y_mv = zc.real * 1e3, zc.imag * 1e3
-            order_loc = np.argsort(dphi)
-            ax_locus.plot(local_data["x_curve_v"] * 1e3, local_data["y_curve_v"] * 1e3,
-                          "-", color="#777777", lw=0.9, alpha=0.75)
-            sc = ax_locus.scatter(x_mv, y_mv, c=dphi, cmap="coolwarm", s=16, edgecolor="#222222", lw=0.25, zorder=3)
-            fig.colorbar(sc, ax=ax_locus, label="Phase offset dphi (deg)", pad=0.02)
-            ax_locus.plot(local_data["x0"] * 1e3, local_data["y0"] * 1e3, marker="*", markersize=9,
-                          color="#111111", linestyle="none", zorder=4, label="Work point")
-            x_mid = 0.5 * (float(x_mv.min()) + float(x_mv.max()))
-            y_mid = 0.5 * (float(y_mv.min()) + float(y_mv.max()))
-            half = max(0.5 * float(np.ptp(x_mv)), 0.5 * float(np.ptp(y_mv)), 1e-3) * 1.15
-            ax_locus.set(xlim=(x_mid - half, x_mid + half), ylim=(y_mid - half, y_mid + half),
-                         xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Local (X, Y) portrait (1:1 scale)")
-            ax_locus.set_aspect("equal", adjustable="box")
-            ax_locus.legend(fontsize=7.5, loc="upper right")
-            if np.ptp(x_mv) < 0.25 * max(float(np.ptp(y_mv)), 1e-6):
-                _add_zoom_x_inset(ax_locus, x_mv, y_mv, dphi, "coolwarm",
-                                  line_x=x_mv[order_loc], line_y=y_mv[order_loc], title="X zoomed",
-                                  bounds=(0.09, 0.14, 0.34, 0.72), s=13)
-
-            dx_mv = (zc.real - local_data["x0"]) * 1e3
-            dy_mv = (zc.imag - local_data["y0"]) * 1e3
-            ax_resp.axhline(0.0, color="#888888", lw=0.7)
-            ax_resp.axvline(0.0, color="#888888", lw=0.7, ls="--")
-            fit_lbl = ("Eq. (2.2.2) fit" if local_data["mode"] == "eq_2_2_2" else "Linear fit")
-            ax_resp.plot(dphi, dy_mv, "o", markersize=3.5, color="#d55e00", label=f"Y - Y0 data (n={dphi.size})")
-            ax_resp.plot(local_data["grid_deg"], (local_data["y_curve_v"] - local_data["y0"]) * 1e3,
-                         "-", color="#d55e00", lw=1.6,
-                         label=f"{fit_lbl}: K0 = {local_data['k0']:.4g} V/rad (RMS {local_data['rms_v']*1e3:.2f} mV)")
-            ratio = (abs(local_data["slope_x"] / local_data["k0"]) if local_data["k0"] else float("nan"))
-            ratio_txt = f" | |slope_X / K0| = {ratio:.1%}" if math.isfinite(ratio) else ""
-            ax_resp.plot(dphi, dx_mv, "s", markersize=3.2, color="#1f77b4",
-                         label=f"X - X0 (slope = {local_data['slope_x']:.4g} V/rad)")
-            ax_resp.plot(local_data["grid_deg"], (local_data["x_curve_v"] - local_data["x0"]) * 1e3,
-                         "-", color="#1f77b4", lw=1.1)
-            all_r = np.concatenate((dy_mv, dx_mv))
-            r_lo, r_hi = float(all_r.min()), float(all_r.max())
-            r_sp = max(r_hi - r_lo, 1e-3)
-            ax_resp.set(xlabel="Phase offset Δφ (deg)", ylabel="Response relative to crossing (mV)",
-                        ylim=(r_lo - 0.16 * r_sp, r_hi + 0.36 * r_sp),
-                        title="Local X & Y phase response vs Eq. (2.2.2)")
-            ax_resp.legend(fontsize=7.0, loc="upper left")
-            fig.suptitle(f"A04: Local phase response near {local_data['center_deg']:.2f}° | K0 = {local_data['k0']:.4g} V/rad{ratio_txt}")
-        else:
-            diagnostic(ax_locus, "No usable A04 local calibration frames")
-            diagnostic(ax_resp, "No usable A04 local calibration frames")
-            ax_locus.set(xlabel="Demod 4 X (mV)", ylabel="Demod 4 Y (mV)", title="Local (X, Y) portrait")
-            ax_resp.set(xlabel="Phase offset Δφ (deg)", ylabel="Response (mV)", title="Local phase response")
-            fig.suptitle("A04: Local phase response")
+        # --- Fig 2: A04 局部标定（local_figure 复用同一绘制逻辑） ---
+        fig = local_figure(local_data)
         fig.savefig(directory / LOCAL_PNG, dpi=240)
+        check_cancelled()
+
         check_cancelled()
 
         # --- Fig 3: A05 Transfer response & 0-Hz sqrt-Lorentzian normalization ---

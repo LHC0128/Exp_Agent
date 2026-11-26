@@ -19,7 +19,9 @@
 4. ``finally`` 中优先恢复 ``王湾pump`` CH1 到原始状态并回读确认，随后执行 ``preparation.park(ctx)``
    安全关断与设备断开（并将 GS200 恢复至运行前状态）。
 5. 复用 ``analysis_steps.welch_segmented`` 对各态独立温控分段分别计算 Welch 单边 PSD 后等权平均
-   （``V^2/Hz``，不跨恢复温控间隔拼接波形，不做 √Lorentzian 频响回补），输出至
+   （``V^2/Hz``，不跨恢复温控间隔拼接波形，不做 √Lorentzian 频响回补），并复用
+   ``analysis_steps.coarse_figure`` / ``local_figure`` 补画 A03 整周相位响应与 A04 局部标定图
+   （``a03_phase_response.png`` / ``a04_local_calibration.png``），输出至
    ``data/rf_phase_sensitivity/_studies/<MMDD_HHMMSS>_<tag>/results/``，同时支持
    ``--analyze <study_dir>`` 对历史单段（4/6 态）与新版分段目录纯离线重算与重绘。
 """
@@ -672,6 +674,15 @@ def analyze_study(study_dir: Path, *, welch_segment_s: float | None = None) -> d
     summary_path = results_dir / f"{prefix}_summary.json"
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    # 复用相位灵敏度实验的 A03/A04 绘图逻辑，补出工作点对齐的两张图
+    coarse_data = analysis_steps.coarse_plot_data(study_dir, config)
+    local_data = analysis_steps.local_plot_data(study_dir, config, cal)
+    a03_png = results_dir / "a03_phase_response.png"
+    a04_png = results_dir / "a04_local_calibration.png"
+    with plot_style_context("paper"):
+        analysis_steps.coarse_figure(coarse_data).savefig(a03_png, dpi=240)
+        analysis_steps.local_figure(local_data).savefig(a04_png, dpi=240)
+
     # 绘制全英文对照图（V^2/Hz，上：1-300 Hz 基带局部；下：1 Hz - Nyquist 全频段）
     png_path = results_dir / f"{prefix}_psd.png"
     with plot_style_context("paper"):
@@ -733,7 +744,8 @@ def analyze_study(study_dir: Path, *, welch_segment_s: float | None = None) -> d
         )
         fig.savefig(png_path, dpi=240)
 
-    _write_study_readme(study_dir, summary, csv_path=csv_path, summary_path=summary_path, png_path=png_path)
+    _write_study_readme(study_dir, summary, csv_path=csv_path, summary_path=summary_path, png_path=png_path,
+                        extra_plots=(a03_png, a04_png))
     return summary
 
 
@@ -744,6 +756,7 @@ def _write_study_readme(
     csv_path: Path,
     summary_path: Path,
     png_path: Path,
+    extra_plots: tuple[Path, ...] = (),
 ) -> None:
     n_states = summary.get("state_count", len(summary["states"]))
     ref_state = next(iter(summary["states"].values())) if summary["states"] else {}
@@ -762,7 +775,8 @@ def _write_study_readme(
         f"`segment_duration_s = {welch_ref.get('segment_duration_s', welch_ref.get('duration_s'))}` s，"
         f"`welch_segments = {welch_ref.get('segments')}`，`df = {welch_ref.get('resolution_hz')}` Hz",
         "- 产物：",
-        f"  - 图表：`{png_path.relative_to(study_dir).as_posix()}`",
+        f"  - 噪声谱图：`{png_path.relative_to(study_dir).as_posix()}`",
+        *[f"  - 对齐图：`{path.relative_to(study_dir).as_posix()}`" for path in extra_plots],
         f"  - 数据：`{csv_path.relative_to(study_dir).as_posix()}`",
         f"  - 摘要：`{summary_path.relative_to(study_dir).as_posix()}`",
         "",
