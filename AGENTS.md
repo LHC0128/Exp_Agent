@@ -84,6 +84,7 @@
 | 定位实现、环境、文档 | [开发定位与环境](.agents/project-guides/development.md) |
 | 正式实验；仪器、映射、时钟、锁相；参数/数据格式 | 正式实验加载 `expcodegen`；读[实验契约](.agents/project-guides/experiments.md)、[验证约定](.agents/project-guides/validation.md) |
 | 普通气室采集；改采集、温控、分组/配对、保存或数据抢救 | [实验契约](.agents/project-guides/experiments.md)「普通气室采集」、expcodegen [共享步骤](.agents/skills/expcodegen/references/shared-steps.md) |
+| 示波器（DHO900/SDS）采集脚本；采集慢、采样率/深度不匹配、温控窗口过长 | `scope-acquisition` 技能；示例 `scripts/_devices/scope_frozen_capture_example.py` |
 | GUI | [GUI/AGENTS.md](GUI/AGENTS.md)、[GUI/README.md](GUI/README.md) |
 | Skill 与协作资产 | [.agents/README.md](.agents/README.md) |
 | 命中建 checkpoint 判据（跨模块、多代理并行写、一轮做不完验收、中断续接、改共享接口或安全/时序路径）；日常小改不读 | [协作与检查点](.agents/project-guides/collaboration.md) |
