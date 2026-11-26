@@ -2,7 +2,8 @@
 
 新格式（raw v3）读取 ``raw/coarse_XX.npz`` 逐相位 XY 帧，按 A03 记录的 ``rotation_deg``
 把原始相量旋转到对齐帧（与「射频相位灵敏度」A03 同源做法），再对 Y(φ) 用
-``signal_fit.fit_eq222_full_cycle`` 拟合。历史格式（raw v1/v2）继续读取
+``signal_fit.fit_eq222_full_cycle`` 拟合；``phase_response.png`` 用 A03 公共两联相图
+（1:1 对齐相图 + X/Y 波形），相量闭曲线另存 ``phase_response_phasor.png``。历史格式（raw v1/v2）继续读取
 ``raw/phase_response.csv``：带 X/Y 的 v2 目录同样做 (2.2.2) 拟合（无旋转），只有 R/θ 的 v1
 目录保留原三分量/最佳相位输出并标 ``fit_mode="three_component"``。
 
@@ -20,7 +21,7 @@ from zipfile import BadZipFile
 import numpy as np
 
 from ...experiment_runtime import check_cancelled
-from ..z_chain_common import signal_fit
+from ..z_chain_common import phase_plot, signal_fit
 from ..z_chain_common.analysis import decompose
 from . import run_format
 
@@ -450,6 +451,23 @@ def _plot_eq222(path, points, grid_deg, y_curve, locus, summary):
         save_figure(figure, path)
 
 
+def _plot_a03_portrait(path, root, config):
+    """A03 风格两联图：左 1:1 对齐相图与 X 放大插图，右 X/Y 波形与式 (2.2.2) 轨迹。
+
+    绘图数据与图形都由 ``z_chain_common.phase_plot`` 提供；读帧函数与帧异常类型由本实验注入。
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+
+    from ...plotting import plot_style_context, save_figure
+
+    coarse_data = phase_plot.coarse_plot_data(root, config, read_frame=run_format.read_frame,
+                                              frame_errors=FRAME_ERRORS)
+    with plot_style_context("paper"):
+        save_figure(phase_plot.coarse_figure(coarse_data), path)
+
+
 def _plot_eq222_phasor(path, points, grid_deg, locus, summary):
     """相量轨迹：实测对齐相量、式 (2.2.2) 闭曲线与工作点；颜色表示射频相位。"""
     import matplotlib
@@ -643,8 +661,7 @@ def _report_eq222_with_rotation(root, config, summary, points_raw):
                              work_point_deg=work_point_deg, rotation_deg=rotation_deg,
                              rotated=rotated, phase_cfg=phase_cfg)
     check_cancelled()
-    _plot_eq222(output_path(root, run_format.PHASE_RESPONSE_PLOT), points, grid_deg, y_curve,
-                locus[0], summary)
+    _plot_a03_portrait(output_path(root, run_format.PHASE_RESPONSE_PLOT), root, config)
     _plot_eq222_phasor(output_path(root, run_format.PHASOR_PLOT), points, grid_deg, locus[0], summary)
     return _write_summary(root, summary)
 

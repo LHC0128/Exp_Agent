@@ -738,8 +738,45 @@ class TestSyntheticEq222Analysis:
         assert set(point) >= {"phase_deg", "x_mean_v", "y_mean_v", "R_mean_v", "theta_mean_deg"}
         assert summary["locus_degenerate"] is False
         assert (tmp_path / run_format.SUMMARY_FILE).is_file()
-        assert (tmp_path / run_format.PHASE_RESPONSE_PLOT).is_file()
-        assert (tmp_path / run_format.PHASOR_PLOT).is_file()
+        assert (tmp_path / run_format.PHASE_RESPONSE_PLOT).stat().st_size > 0
+        assert (tmp_path / run_format.PHASOR_PLOT).stat().st_size > 0
+
+    def test_v3_phase_response_png_uses_a03_shared_phase_plot(self, tmp_path, monkeypatch):
+        """v3 的 phase_response.png 由 A03 公共相图绘制，读帧函数与帧异常类型由本实验注入。"""
+        params, _ = _write_eq222_run(tmp_path, rotation_deg=40.0, work_point_deg=70.0)
+        seen = {}
+        real_plot_data = analysis_steps.phase_plot.coarse_plot_data
+        real_figure = analysis_steps.phase_plot.coarse_figure
+
+        def spy_plot_data(run_dir, config, *, read_frame, frame_errors=Exception):
+            seen.update(read_frame=read_frame, frame_errors=frame_errors,
+                        data=real_plot_data(run_dir, config, read_frame=read_frame,
+                                            frame_errors=frame_errors))
+            return seen["data"]
+
+        def spy_figure(coarse_data):
+            figure = real_figure(coarse_data)
+            seen["figure"] = figure
+            return figure
+
+        monkeypatch.setattr(analysis_steps.phase_plot, "coarse_plot_data", spy_plot_data)
+        monkeypatch.setattr(analysis_steps.phase_plot, "coarse_figure", spy_figure)
+        summary = analysis_steps.scan_report(tmp_path, params)
+        assert seen["read_frame"] is run_format.read_frame
+        assert seen["frame_errors"] == analysis_steps.FRAME_ERRORS
+        data = seen["data"]
+        assert data is not None and data["eq222"] is not None and data["rotated"] is True
+        assert data["phi_deg"] == pytest.approx(summary["phases_deg"])
+        # A03 两联图：左为 1:1 对齐相图、右为整周 X/Y 波形；摘要字段保持 (2.2.2) 拟合输出。
+        titles = [axis.get_title() for axis in seen["figure"].axes]
+        assert any(title == "Phase portrait (1:1 aligned)" for title in titles)
+        assert any(title == "Full-cycle X & Y waveforms" for title in titles)
+        assert summary["fit_mode"] == "eq222_full_cycle"
+        assert summary["k0_v_per_rad"] == pytest.approx(_EQ222_MODEL["k0"], rel=0.02)
+        assert summary["k0_defined"] is True and summary["response_v_per_rad"] > 0.0
+        assert summary["rotation_deg"] == pytest.approx(40.0) and summary["rotated"] is True
+        assert (tmp_path / run_format.PHASE_RESPONSE_PLOT).stat().st_size > 0
+        assert (tmp_path / run_format.PHASOR_PLOT).stat().st_size > 0
 
     def test_degenerate_crossing_nulls_k0_and_reports_reason(self, tmp_path, monkeypatch):
         params, _ = _write_eq222_run(tmp_path)
