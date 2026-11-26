@@ -22,7 +22,7 @@ from ..z_chain_common.rf_phase import (
 
 CARRIER_HZ = 5000.0
 # 11-25 实机记录：0.5 Vpp 下读出饱和、0.05 Vpp 保持线性，默认取 0.05 Vpp。
-CARRIER_VPP = 0.05
+CARRIER_VPP = 0.5
 READOUT_DEMOD_IDX = 3
 
 

@@ -137,7 +137,9 @@ def _load_done(jsonl: Path) -> set[tuple[float, float, bool, float | None]]:
 
 
 def _plan(widths, currents, ref_width, ref_current, rf_vpps=None) -> list[tuple[float, float, bool, float | None]]:
-    if rf_vpps:
+    # 只有宽度/电流都只有一个点时才是「射频幅度扫描」；否则按宽度×电流网格，
+    # 射频幅度由 --rf-vpp（单值）统一覆盖，避免多值 --rf-vpps 误把网格压成一行。
+    if rf_vpps and len(widths) == 1 and len(currents) == 1:
         return [(widths[0], currents[0], False, float(rf)) for rf in rf_vpps]
     grid = [(w, i, False, None) for w in widths for i in currents]
     random.Random(SEED).shuffle(grid)

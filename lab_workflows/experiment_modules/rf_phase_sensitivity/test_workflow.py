@@ -315,7 +315,7 @@ def test_preflight_and_defaults():
     assert p.temp_switch_on_lag_s == pytest.approx(2.0) and p.dynamic_temp_switch_on_lag_s == pytest.approx(4.0)
     # 功放物理旁路：DG 直驱电压设定与回路电阻估算，拖尾补偿默认关闭。
     assert p.z_drive_amplifier_enabled is False and p.z_tail_comp_enabled is False
-    assert p.y_rf_vpp == pytest.approx(0.05) and p.z_pulse_vpp == pytest.approx(20.0)
+    assert p.y_rf_vpp == pytest.approx(0.5) and p.z_pulse_vpp == pytest.approx(20.0)
     assert p.z_drive_source_impedance_ohm == pytest.approx(50.0)
     assert p.pulse_vpp == pytest.approx(20.0)
     assert p.loop_resistance_ohm == pytest.approx(10.0 + 10.0 + 2.0 + 50.0)

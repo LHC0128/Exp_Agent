@@ -351,10 +351,10 @@ def test_defaults_and_preflight():
     assert p == RfPhaseResponseParams()
     assert ADAPTER.preflight({}) == []
     assert p.demod0_idx == READOUT_DEMOD_IDX == 3
-    assert p.y_rf_vpp == pytest.approx(0.05) and p.y_carrier_vpk == pytest.approx(0.025)
+    assert p.y_rf_vpp == pytest.approx(0.5) and p.y_carrier_vpk == pytest.approx(0.25)
     assert p.y_pm_depth_rad == pytest.approx(math.radians(2.0))
     assert p.y_output_envelope(pm_enabled=True) == pytest.approx(
-        (p.y_bias_v - (1 + math.radians(2.0)) * 0.025, p.y_bias_v + (1 + math.radians(2.0)) * 0.025))
+        (p.y_bias_v - (1 + math.radians(2.0)) * 0.25, p.y_bias_v + (1 + math.radians(2.0)) * 0.25))
     # 功放物理旁路：DG 直驱电压设定与回路电阻估算，拖尾补偿默认关闭。
     assert p.z_drive_amplifier_enabled is False and p.z_tail_comp_enabled is False
     assert p.z_pulse_vpp == pytest.approx(20.0) and p.z_pulse_width_us == pytest.approx(9.0)

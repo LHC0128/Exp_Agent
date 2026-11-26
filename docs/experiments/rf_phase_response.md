@@ -27,7 +27,7 @@ required_devices:
   - GS200
   - TEC103（可选设温）
 learned_notes:
-  - 11-25 实机记录：Y_RF_VPP 取 0.5 Vpp 时 Demod 4 读出饱和，0.05 Vpp 保持线性；默认取 0.05 Vpp，换探测器或量程后需重核。
+  - 11-27 实机：新工作点（Z 9.0 µs、主磁场 −0.028 mA、无放大器/无拖尾）下 Y_RF_VPP=0.5 Vpp 可用，但原子响应进入强驱动饱和区：0.05→0.15 Vpp 响应 123→228 mV/rad 后趋平台，0.5 Vpp 的 eq222 K₀≈1.39 V/rad 是陡边斜率；默认取 0.5 Vpp，0.05/0.15 Vpp 保留作线性参考。
   - 1200B 功放已物理旁路，DG4000 高阻档直驱 Z：Z_PULSE_VPP 上限 20 Vpp；线圈峰值电流按已知回路电阻（采样 10 Ω + 阻尼 10 Ω + 线圈 2 Ω + DG 源阻抗 50 Ω）估算约 138.9 mA，不是直接测量值。
   - 启用 MF-MOD 后 Demod 1–3 被调制器占用；原子读出固定 Demod 4（索引 3）、参考 Osc 2（索引 1），载波与边带振荡器分别固定 Osc 2 / Osc 3（索引 2）。
   - 整周 36 点（0–350°、10°）扫描后按实测切线把 Demod 4 相位转到工作点（回读偏差不超过 0.5°）；B01 按运行目录记录的 rotation_deg 把原始帧旋转到对齐帧，36 点解 5 个自由参数后还剩 31 个残差自由度。
@@ -81,7 +81,7 @@ Y(φ) = Y0 + A·v / (1 + v²),   v = v0 + r·sin(φ − φc)
 | 键 | 含义与约束 |
 | --- | --- |
 | `Y_RF_FREQ_HZ` | MFLI MF-MOD 载波频率，同时决定 Z 双脉冲周期 `1e6/f`（5 kHz → 200 µs）与共同触发频率；本方案只支持 5 kHz。 |
-| `Y_RF_VPP` | 载波峰峰值，按 `Vpk = Vpp/2` 写入 `mods/0/carrier/amplitude`；界面可调。11-25 实机记录 0.5 Vpp 会读出饱和、0.05 Vpp 线性，默认取 0.05 Vpp；实际取值以单次运行的 `experiment_config.yaml` 为准。 |
+| `Y_RF_VPP` | 载波峰峰值，按 `Vpk = Vpp/2` 写入 `mods/0/carrier/amplitude`；界面可调。默认 0.5 Vpp（强驱动工作点，响应已进入饱和区，K₀ 为陡边斜率）；0.05/0.15 Vpp 为线性参考。实际取值以单次运行的 `experiment_config.yaml` 为准。 |
 | `Y_BIAS_V` | 叠加在 MFLI Signal Output 1 的直流偏置（`sigouts/0/offset`）；与 2° 调相包络之和必须在 ±10 V 安全限内。 |
 | `X_BIAS_V` | DG X 通道的 DC 静态偏置；0 表示不加偏置并保持通道关闭。 |
 | `Z_PULSE_VPP` | DG4000 直驱 Z 的高阻档幅度（Vpp），上限 20 Vpp；峰值 `Vpp/2`，线圈电流按回路电阻估算。 |
