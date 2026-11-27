@@ -66,7 +66,7 @@ def test_discovery_schema_workflow_and_real_preflight(client):
     assert catalog.status_code == 200, catalog.text
     entries = {item["id"]: item for item in catalog.json()}
     definition = entries[ID]
-    assert definition["title"] == "射频相位灵敏度"
+    assert definition["title"] == "Mx 脉冲射频相位灵敏度"
     assert definition["execution_mode"] == "typed_workflow" and definition["can_analyze"]
     assert definition["data_type"] != entries["rf-phase-response"]["data_type"]
 

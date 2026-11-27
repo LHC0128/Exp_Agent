@@ -1,4 +1,4 @@
-"""独立射频相位灵敏度的注册定义；导入不连接设备。"""
+"""独立 Mx 脉冲射频相位灵敏度的注册定义；导入不连接设备。"""
 from ...experiments.contracts import ExperimentDefinition, RunHistory
 from ...experiments.typed import TypedWorkflowAdapter
 from . import run_format
@@ -24,7 +24,7 @@ MODULE = "lab_workflows.experiment_modules.rf_phase_sensitivity"
 ADAPTER = Adapter(run_format.EXPERIMENT_ID, run_format.DATA_TYPE, RfPhaseSensitivityParams,
                   f"{MODULE}.workflow", f"{MODULE}.analysis")
 DEFINITION = ExperimentDefinition(
-    id=run_format.EXPERIMENT_ID, title="射频相位灵敏度", category="measurement", family="z-chain",
+    id=run_format.EXPERIMENT_ID, title="Mx 脉冲射频相位灵敏度", category="measurement", family="z-chain",
     variant="rf-phase-sensitivity", data_type=run_format.DATA_TYPE,
     description=("采用 MFLI Signal Output 1（MF-MOD 相干边带）产生 Y 向 5 kHz 连续载波与可选偏置，"
                  "与 Z 外触发 ±π 双脉冲配合，使用独立解调器 Demod 4 整周初定并经多阶谐波细化工作点后对齐到 sample.y，"

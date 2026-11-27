@@ -38,7 +38,7 @@ let session: XYSession | null;
 let preflightOk: boolean;
 
 async function response(url: string, options?: RequestInit): Promise<unknown> {
-  if (url === BASE) return { id: ID, title: "射频相位灵敏度", description: "同次标定、扫频与噪声", wiring_notes: [] };
+  if (url === BASE) return { id: ID, title: "Mx 脉冲射频相位灵敏度", description: "同次标定、扫频与噪声", wiring_notes: [] };
   if (url === `${BASE}/schema`) return { fields, parameter_layout_saved: false };
   if (url === `${BASE}/workflow`) return flow;
   if (url === `${BASE}/sessions/active`) return session;
@@ -80,7 +80,7 @@ afterEach(cleanup);
 
 it("从独立的相位灵敏度路由勾选并执行同次测量，结束会话不执行额外测量", async () => {
   page();
-  expect(await screen.findByRole("heading", { level: 1, name: "射频相位灵敏度" })).toBeVisible();
+  expect(await screen.findByRole("heading", { level: 1, name: "Mx 脉冲射频相位灵敏度" })).toBeVisible();
   expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByRole("tab", { name: "历史" })).toBeVisible();
   const workflow = within(await screen.findByRole("region", { name: "交互实验流程图" }));

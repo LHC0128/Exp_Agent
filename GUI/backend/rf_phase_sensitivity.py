@@ -1,4 +1,4 @@
-"""射频相位灵敏度的会话接线；历史、产物和分析使用同一运行格式资格。"""
+"""Mx 脉冲射频相位灵敏度的会话接线；历史、产物和分析使用同一运行格式资格。"""
 
 from lab_workflows.experiment_modules.rf_phase_sensitivity import stages
 from lab_workflows.experiment_modules.rf_phase_sensitivity.analysis import AnalysisWorkflow

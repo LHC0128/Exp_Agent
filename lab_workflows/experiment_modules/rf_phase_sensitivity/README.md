@@ -1,6 +1,6 @@
 <!-- 由 python -m tools.gen_module_readme 生成，勿手改 -->
 
-# 射频相位灵敏度
+# Mx 脉冲射频相位灵敏度
 
 实验 ID：`rf-phase-sensitivity`
 

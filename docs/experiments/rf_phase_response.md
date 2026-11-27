@@ -106,7 +106,7 @@ Y(φ) = Y0 + A·v / (1 + v²),   v = v0 + r·sin(φ − φc)
 - `raw/phase_<phase>_<repeat>.csv`（历史格式）：该次读数的完整序列 `time_s, x_v, y_v, R_v, theta_deg`。
 - `experiment_config.yaml`：本轮参数快照、`predicted`（载波峰值、pulse_vpp、估算峰值电流、回路电阻、相位网格等）、`phase_response`（工作点 `burst_command_deg`/`carrier_command_deg`、`rotation_deg`、粗定拟合、Demod 4 回读）、`phase_response_acquisition`（扫描模式、帧标签前缀、逐点温控）、`z_waveform`、`temperature_gating`、`data_files` 与 `safety_shutdown`。
 - `results/phase_response_summary.json`：`fit_mode`、`model`、`k0_v_per_rad`（`|v0| ≥ r` 时色散零点在扫描范围外，K₀ 不定义并置空）、`k0_fit_v_per_rad`（拟合原始值，仅诊断）、`k0_defined`、`k0_degenerate_reason`、`response_v_per_rad`（旋转不变的 `|c+1|+|c−1|`，弱响应扫描用）、`y0`、`amp`、`r`、`v0`、`phi_c_deg`、`phi_z1_deg`、`rms_v`、`y_peak_to_peak_v`、`fit_quality`/`fit_quality_rule`/`fit_quality_limit_v`、`work_point_deg`、`rotation_deg`、`rotated`、`phases_deg`、逐点 `points`、`components`（`c0/c_plus1/c_minus1`）、`residual_rms_three_component_v`、`locus_degenerate`、`locus`、`demod0_phase_deg`、`lockin`、`frame_failures`（仅 v3 路径）与基础字段（`rf_frequency_hz`、`rf_vpp`、`pulse_period_us`、`demod0_*`、`drift_correction="none"` 等）。
-- `results/phase_response.png`：A03 风格两联图，与射频相位灵敏度 A03 共用 `z_chain_common.phase_plot` 的同一绘制实现——左侧为按 `rotation_deg` 对齐的 1:1 相图（X/Y 散点按相位着色，X 幅度过小时附 X 放大插图，标工作点、切线与式 (2.2.2) 轨迹），右侧为整周 X/Y 波形与式 (2.2.2) 拟合。
+- `results/phase_response.png`：A03 风格两联图，与 Mx 脉冲射频相位灵敏度 A03 共用 `z_chain_common.phase_plot` 的同一绘制实现——左侧为按 `rotation_deg` 对齐的 1:1 相图（X/Y 散点按相位着色，X 幅度过小时附 X 放大插图，标工作点、切线与式 (2.2.2) 轨迹），右侧为整周 X/Y 波形与式 (2.2.2) 拟合。
 - `results/phase_response_phasor.png`：相量图——对齐相量轨迹（颜色表示射频相位、箭头指示扫描方向）、式 (2.2.2) 闭曲线、工作点与原点。
 - 历史目录兼容：`raw_format_version = 1/2` 继续可读，历史参数快照 `schema_version = 1/2` 迁移到 Demod 4 读出（丢弃已停用的 `DEMOD0_PHASE_DEG`）。
 

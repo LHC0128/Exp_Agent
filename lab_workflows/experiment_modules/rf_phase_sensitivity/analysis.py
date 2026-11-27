@@ -10,7 +10,7 @@ class AnalysisWorkflow(StagedAnalysis):
     """B01 发布离线产物，科学资格与分析执行状态分开记录。"""
 
     stages, analysis_keys, steps, final_id = ANALYSIS, ANALYSIS_KEYS, analysis_steps, "B01"
-    label = "射频相位灵敏度分析"
+    label = "Mx 脉冲射频相位灵敏度分析"
 
     def prepare(self, selected):
         # 同一对象也允许重新执行；以此次指纹对应的配置快照为准。
