@@ -34,7 +34,10 @@ BAND_HZ = (3.0, 50.0)
 MAINS_HZ = (50.0, 100.0, 150.0, 200.0, 250.0)
 # 宽带档下 5 kHz 载波泄漏是读出链的已知寄生项：帧体检不看这些频点的单音。
 LEAKAGE_EXCLUSION_HZ = tone_fit.CARRIER_HARMONICS_HZ
+# 剔除窗口既给绝对下限，也按 FFT bin 宽自适应：真机的 5 kHz 泄漏会偏到整频点 1 Hz 处
+# （实测 −4999.0 Hz），固定 ±1 Hz 会把边界上的强单音误判成坏帧。
 TONE_EXCLUSION_TOL_HZ = 1.0
+TONE_EXCLUSION_BINS = 8.0
 LOCKIN_KEYS = ("phase_deg", "order", "time_constant_s", "stream_rate_sa_s", "oscillator_hz")
 LOCKIN_PHASE_ATOL_DEG = 1e-3
 LOCKIN_RTOL = 1e-6
@@ -118,9 +121,11 @@ def frame_quality(label: str, x_v: np.ndarray, y_v: np.ndarray, rate_sa_s: float
     high = np.abs(freqs) >= TONE_MIN_HZ
     excluded: list[float] = []
     if dynamic:
+        bin_hz = float(rate_sa_s) / float(z.size)
+        tolerance = max(TONE_EXCLUSION_TOL_HZ, TONE_EXCLUSION_BINS * bin_hz)
         for spur in LEAKAGE_EXCLUSION_HZ:
             if spur < 0.5 * float(rate_sa_s):
-                high &= np.abs(np.abs(freqs) - spur) > TONE_EXCLUSION_TOL_HZ
+                high &= np.abs(np.abs(freqs) - spur) > tolerance
                 excluded.append(float(spur))
     if not np.any(high):
         raise ValueError(f"{label} 帧没有可用于单音体检的频段")

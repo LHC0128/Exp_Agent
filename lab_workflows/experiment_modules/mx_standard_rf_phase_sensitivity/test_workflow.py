@@ -687,6 +687,22 @@ def test_finish_after_sealed_round_keeps_single_shutdown(rig):
     assert disconnects == ["temp", "x", "z"]
 
 
+def test_frame_quality_excludes_offset_carrier_leak():
+    """宽带档的 5 kHz 泄漏会偏离整频点约 1 Hz，剔除窗口按 bin 宽自适应，不能误判为坏帧。"""
+    rate, seconds = 50000.0, 2.0
+    n = int(rate * seconds)
+    t = np.arange(n) / rate
+    dc_v, leak_v = 13.9e-3, 5.5e-3
+    z = np.full(n, dc_v + 0j) + leak_v * np.exp(2j * np.pi * 4999.0 * t)
+    for offset in (0.0, 1.0, -1.0):
+        shifted = np.full(n, dc_v + 0j) + leak_v * np.exp(2j * np.pi * (5000.0 + offset) * t)
+        quality = analysis_steps.frame_quality("probe", shifted.real, shifted.imag, rate, dynamic=True)
+        assert quality["dynamic"] is True and quality["dc_v"] == pytest.approx(dc_v, rel=1e-6)
+        assert quality["excluded_hz"], "宽带档必须记录被剔除的已知寄生频点"
+    with pytest.raises(ValueError, match="单音"):
+        analysis_steps.frame_quality("probe", z.real, z.imag, rate)
+
+
 def test_frame_quality_rejects_tone_frame(rig):
     """含 100 Hz 以上单音的帧必须抛错且不写盘；温控在异常路径上仍恢复。"""
     rig.tone_v = 5e-3
