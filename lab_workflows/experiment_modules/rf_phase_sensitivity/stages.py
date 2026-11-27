@@ -53,7 +53,10 @@ ANALYSIS = (
           artifacts=(run_format.SUMMARY, run_format.TRANSFER_TABLE, run_format.NOISE_TABLE,
                      run_format.RESPONSE_PLOT, run_format.LOCAL_PLOT,
                      run_format.TRANSFER_PLOT, run_format.NOISE_PLOT),
-          quality_gates=("绘制 A03 含放大插图相图与理论式 (2.2.2) 波形、A04 左相图右理论色散响应、A05 零频 √Lorentzian 拟合与 H₀ 归一化频响及 A06 相位灵敏度谱（µrad/√Hz，含全频段 √Lorentzian 回补）；参考检查仅作告警与标注，不扣留出图。",)),
+          quality_gates=("绘制 A03 含放大插图相图与理论式 (2.2.2) 波形、A04 左相图右理论色散响应；"
+                         "A05 零频 √Lorentzian 拟合与 H₀ 归一化频响和 A06 折算相位灵敏度（µrad/√Hz，含全频段 √Lorentzian 回补）"
+                         "合并为一张双纵轴图（左轴相位灵敏度、右轴 |H|/H₀），另出一张相位灵敏度单面板图，两图 x 轴均为 log 1–1000 Hz；"
+                         "频响实测最高频点以外用 √Lorentzian 外推虚线并标 model extrapolation；参考检查仅作告警与标注，不扣留出图。",)),
 )
 _rules = DependencyRules(finish_id=FINISH_ID)
 invalidated_stages = _rules.invalidated_stages

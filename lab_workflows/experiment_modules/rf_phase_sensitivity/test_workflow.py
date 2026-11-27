@@ -309,7 +309,8 @@ def test_preflight_and_defaults():
     assert p == RfPhaseSensitivityParams() and p.demod0_idx == 3 and ADAPTER.preflight({}) == []
     assert p.demod0_tc_s == pytest.approx(0.001) and p.demod0_rate_sa_s == pytest.approx(5000.)
     assert p.demod0_dynamic_tc_s == pytest.approx(1e-6) and p.demod0_dynamic_rate_sa_s == pytest.approx(50000.)
-    assert p.pm_frequencies_hz == [float(f) for f in range(3, 204, 10)]
+    assert p.pm_frequencies_hz == ([float(f) for f in range(3, 204, 10)]
+                                   + [float(f) for f in range(250, 1001, 50)])
     assert p.pm_tone_duration_s == pytest.approx(4.0)
     assert p.noise_duration_s == pytest.approx(4.0) and p.noise_n_avg == 6
     assert p.temp_switch_on_lag_s == pytest.approx(2.0) and p.dynamic_temp_switch_on_lag_s == pytest.approx(4.0)
@@ -341,7 +342,8 @@ def test_preflight_and_defaults():
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [5., 5., 20.]})
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [1., 5., 20.]})
     assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [3., 103., 203.], "PM_TONE_DURATION_S": 2.0})
-    assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [10., 260.], "PM_TONE_DURATION_S": 2.0})
+    assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [3., 500., 1000.], "PM_TONE_DURATION_S": 4.0}) == []
+    assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [10., 1100.], "PM_TONE_DURATION_S": 2.0})
     assert ADAPTER.preflight({"SYSTEM_SETTLE_S": 0.101, "DEMOD0_TC": .01})
     assert ADAPTER.preflight({"DEMOD0_DYNAMIC_RATE": 1500.})
 

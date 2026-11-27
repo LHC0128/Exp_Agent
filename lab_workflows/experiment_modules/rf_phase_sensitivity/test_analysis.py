@@ -31,6 +31,7 @@ REGRESSION_CASES = {
             "test_carrier_leakage_joint_removal_recovers_clean_snr",
             "test_carrier_terms_skip_on_collision_and_rate_limit",
             "test_all_low_clean_snr_still_refers_phase_noise_with_advisory_plot",
+            "test_phase_figures_use_1000hz_twin_axis_and_single_panel",
             "test_hard_integrity_failures_keep_detector_asd_only",
             "test_advisory_gates_still_refer_noise_with_warnings",
             "test_repeat_uncertainty_gate_has_hard_cap",
@@ -434,6 +435,45 @@ def test_carrier_terms_skip_on_collision_and_rate_limit():
     assert fit["carrier_skipped"] == []
 
 
+def _figure_probe_data():
+    """构造双图结构测试的最小数据：实测带 3–203 Hz、回补到 1000 Hz、频响 3/13/203 Hz。"""
+    frequency = np.geomspace(1.0, 2000.0, 400)
+    band = (frequency >= 3.0) & (frequency <= 203.0)
+    phase = np.full(frequency.shape, np.nan)
+    phase[band] = 50e-6 * np.linspace(1.0, 0.5, int(band.sum()))
+    phase_lor = np.full(frequency.shape, 40e-6)
+    band_ids = np.where(band, 1, 0)
+    summary = dict(
+        referral_available=True, referral_quality="ok", referral_warnings=[],
+        phase_referral=dict(available=True,
+                            bands=[dict(transfer_band=1, median_urad_per_sqrt_hz=50.0)],
+                            lorentzian_full_band=dict(available=True, fc_hz=120.0)),
+        transfer_lorentzian_fit=dict(available=True, h0_v_per_rad=1.0, fc_hz=120.0, h0_to_k0_ratio=0.99),
+        configured_frequencies_hz=[3.0, 13.0, 203.0], clean_primary_points=3,
+    )
+    rows = [dict(frequency_hz=f, repeat=False, accepted=True, quality_passed=True,
+                 normalized_h0_gain=1.0 / math.sqrt(1.0 + (f / 120.0) ** 2), normalized_h0_gain_se=0.01,
+                 h_v_per_rad=1.0 / math.sqrt(1.0 + (f / 120.0) ** 2), h_fit_se_v_per_rad=0.01)
+            for f in (3.0, 13.0, 203.0)]
+    return frequency, phase, phase_lor, band_ids, summary, rows, {row["frequency_hz"]: row for row in rows}
+
+
+def test_phase_figures_use_1000hz_twin_axis_and_single_panel():
+    """phase_transfer 为双纵轴单图、phase_noise 为单面板，两图 x 轴上限 1000 Hz 且含模型外推虚线。"""
+    frequency, phase, phase_lor, band_ids, summary, rows, accepted = _figure_probe_data()
+    noise = steps.phase_noise_figure(frequency, phase, phase_lor, band_ids, summary)
+    assert len(noise.axes) == 1  # 只保留折算相位灵敏度单面板
+    assert tuple(noise.axes[0].get_xlim()) == pytest.approx(steps.PLOT_FREQUENCY_RANGE_HZ)
+    transfer = steps.phase_transfer_figure(rows, accepted, summary, frequency, phase, phase_lor, band_ids)
+    assert len(transfer.axes) == 2  # 左轴相位灵敏度 + 右轴归一化频响
+    assert tuple(transfer.axes[0].get_xlim()) == pytest.approx(steps.PLOT_FREQUENCY_RANGE_HZ)
+    extrapolation = [line for line in transfer.axes[1].lines if "model extrapolation" in line.get_label()]
+    assert extrapolation and all(line.get_linestyle() == "--" for line in extrapolation)
+    # 外推虚线只覆盖实测最高频点 203 Hz 到 1000 Hz。
+    assert float(np.min(extrapolation[0].get_xdata())) == pytest.approx(203.0)
+    assert float(np.max(extrapolation[0].get_xdata())) == pytest.approx(1000.0)
+
+
 def test_all_low_clean_snr_still_refers_phase_noise_with_advisory_plot(tmp_path):
     """所有频点 clean SNR 仍低于门槛时：照常输出折算相位噪声，只标 advisory，不扣留。"""
     _synthetic_run(tmp_path, low_snr=(5., 10., 20., 40., 80.))
@@ -448,10 +488,10 @@ def test_all_low_clean_snr_still_refers_phase_noise_with_advisory_plot(tmp_path)
     noise = _csv(tmp_path, steps.NOISE_CSV)
     referred = [float(row["phase_asd_urad_per_sqrt_hz"]) for row in noise if row["phase_asd_urad_per_sqrt_hz"]]
     assert referred and all(math.isfinite(value) and value > 0 for value in referred)
-    # 上图电压噪声、下图折算相位噪声必须同时存在：两格纵向布局的高度大于宽度的一半。
+    # phase_noise.png 只保留折算相位噪声单面板，仍是横向版式而非两格纵向布局。
     from PIL import Image
     with Image.open(tmp_path / "results" / steps.NOISE_PNG) as image:
-        assert image.height > 0.35 * image.width
+        assert image.width > image.height
 
 
 @pytest.mark.parametrize("changes, diagnostic, fragment", [

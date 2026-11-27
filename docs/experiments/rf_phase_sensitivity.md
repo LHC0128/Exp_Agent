@@ -32,6 +32,7 @@ learned_notes:
   - 参数快照 schema_version = 4 起新增 Z_PULSE_VPP 与 Z_DRIVE_SOURCE_IMPEDANCE_OHM；1/2/3 旧快照按默认值补齐后继续可读。
   - 拖尾补偿默认关闭；DG 直驱只发原升余弦 ±π 双脉冲，A03–A06 共用同一轮参数快照。
   - A05/A06 高带宽 Demod 4（TC = 1 µs）输出含约 0.5 V 的 5 kHz 载波泄漏（输入直流偏置经解调混频产生）及 10/15/20 kHz 谐波；B01 把它与 50–250 Hz 工频一并作为已知寄生项在 clean 回归中扣除，原始口径仍不含这些项。
+  - 11-27 起默认基带频点扩到 `3–1000 Hz`（`3–203 Hz` 21 点 + `250–1000 Hz` 16 点，4 s/点约 2.5 min）；B01 两幅图 `x` 轴统一到 `log 1–1000 Hz`，其中 `phase_transfer.png` 为双纵轴单图、`phase_noise.png` 为相位灵敏度单面板。1127 三组（0.05/0.15/0.5 Vpp）频响只测到 203 Hz，`203–1000 Hz` 为 `√Lorentzian` 外推（虚线标 `model extrapolation`）；相位噪声由 A06 高带宽帧实测覆盖到 1000 Hz。
 ---
 
 # 射频相位灵敏度
@@ -58,7 +59,7 @@ Y 向载波、相位调节、**2° 峰值**相干边带调相及 `Y_BIAS_V` 偏�
 | A05 基带频率响应测量 | 仅对 A05/A06 放宽 `Demod 4` 低通与传输率（`DEMOD0_DYNAMIC_TC` / `DEMOD0_DYNAMIC_RATE`，保持对齐相移不变并保留 A03/A04 静态滤波不变），使能 `MF-MOD` **2° 峰值**相干边带 PM 并按 `PM_FREQUENCIES_HZ` 单次顺序切换 `Osc 3` 采集各档 XY 帧，每点后恢复温控并等待 `DYNAMIC_TEMP_SWITCH_ON_LAG_S`。 |
 | A06 无调制噪声测量 | 保持 A05 的高带宽滤波不变，关闭上下边带、保留工作点 5 kHz 连续载波在 `Demod 4` 按 `NOISE_N_AVG × NOISE_DURATION_S` 独立温控分段采集无调制 `noise_*_xy` 帧并回读载波状态。 |
 | A07 安全结束会话 | MFLI Out1 关闭后清 MF-MOD 并归零偏置，Z/X 关闭归零并回读，停 `Demod 4` 传输，恢复温控与 GS200 原状态；无 1200B/示波器动作，共同触发保持运行。 |
-| B01 相位频响与输入等效噪声分析 | 独立离线处理同一运行目录：绘制 A03 含 `X` 放大插图相图与式 `(2.2.2)` 波形、A04 左相图右理论色散响应、A05 零频 `√Lorentzian` 拟合与 `H₀` 归一化频响及 A06 相位灵敏度谱（`µrad/√Hz`，含全频段 `√Lorentzian` 回补）；参考质检仅作告警与 `advisory` 标注，只要存在 ≥2 个相邻硬合格频点就照常折算出图，不扣留。 |
+| B01 相位频响与输入等效噪声分析 | 独立离线处理同一运行目录：绘制 A03 含 `X` 放大插图相图与式 `(2.2.2)` 波形、A04 左相图右理论色散响应；把 A05 的 `H₀` 归一化 `√Lorentzian` 频响与 A06 的折算相位灵敏度（`µrad/√Hz`，含全频段 `√Lorentzian` 回补）合并成一张双纵轴图（左轴相位灵敏度、右轴 `|H(f)|/H₀`），并另出一张相位灵敏度单面板图；两图 `x` 轴均为 `log 1–1000 Hz`，频响只实测到本轮最高频点，之外用 `√Lorentzian` 外推虚线并标 `model extrapolation`；参考质检仅作告警与 `advisory` 标注，只要存在 ≥2 个相邻硬合格频点就照常折算出图，不扣留。 |
 
 A03–A06 是同一轮的四段原始记录，必须同一次会话、同一运行目录完成，不能只补后段或跨轮拼接；任一段失败、取消或参数变化后，只能整链 A03–A06 重跑并新建运行目录。
 
@@ -82,7 +83,7 @@ A03–A06 是同一轮的四段原始记录，必须同一次会话、同一运�
 | `Y_RF_FREQ_HZ`、`DEMOD0_IDX` | 界面只读：载波固定 5 kHz；为避开 `MOD 1` 占用的 `Demod 1–3`，原子读出固定使用独立 `Demod 4`（索引 `3`；历史旧目录索引 `0` 仍可读图分析）。 |
 | `Y_RF_VPP` | Y 方向 5 kHz 正弦峰峰值幅度（Vpp，基本参数可编辑），按峰值 `Vpk = Vpp / 2` 下发到 MFLI `mods/0/carrier/amplitude`，须满足 `mfli_dev30661_signal_output_0` 安全限值及最大 10 V 量程。默认取 `0.5 Vpp`（强驱动工作点；0.05/0.15 Vpp 为线性参考）。0.5 Vpp 下原子响应已饱和，K₀ 是陡边斜率，不当作线性响应。 |
 | `DEMOD0_DYNAMIC_TC`、`DEMOD0_DYNAMIC_RATE` | 仅对 A05/A06 切换的高带宽 `Demod 4` 解调时间常数（s）与采样传输率（Sa/s，低于 70 kSa/s 维持 DAQ 采集）；A05/A06 共用且至少覆盖最高基带频点的 10 倍采样率。 |
-| `PM_FREQUENCIES_HZ`、`PM_TONE_DURATION_S` | 严格递增的基带频点列表（`1–250 Hz` 内 2–40 个频点）及每档 MFLI 采集时长（s），按列表顺序单次扫描；记录至少覆盖最低频率 10 个周期。 |
+| `PM_FREQUENCIES_HZ`、`PM_TONE_DURATION_S` | 严格递增的基带频点列表（`1–1000 Hz` 内 2–40 个频点）及每档 MFLI 采集时长（s），按列表顺序单次扫描；记录至少覆盖最低频率 10 个周期。默认 `3–1000 Hz` 共 37 点（`3–203 Hz` 每 10 Hz 共 21 点、`250–1000 Hz` 每 50 Hz 共 16 点，错开 50 Hz 工频），4 s/点约 2.5 min。`A05/A06` 采样率须不低于最高频点的 10 倍，1000 Hz 对应 10 kHz，低于 `DEMOD0_DYNAMIC_RATE = 50 kSa/s`。 |
 | `STATIC_POINT_DURATION_S`、`LOCAL_SPAN_DEG` | 静态点采集时长及局部标定的对称外档指令角跨度（在 MFLI 载波相移上每侧等分 16 档，不含示波器）。 |
 | `NOISE_DURATION_S`、`NOISE_N_AVG`、`WELCH_SEGMENT_S` | 单段无调制噪声采集时长（s）、独立温控窗口分段次数与 Welch 分段时长（s）；要求单段采集时长不小于 `WELCH_SEGMENT_S`，且各段合计 Welch 分段数不少于 2 段。 |
 | `DEMOD0_SIGNAL_RANGE`、`DEMOD0_ORDER`、`DEMOD0_TC`、`DEMOD0_RATE` | `Demod 4` 输入量程、共用的滤波阶数，以及 A03/A04 静态相位扫描阶段使用的窄带时间常数与采样率（找工作点后不改对齐相移，仅到 A05 才切换带宽）。 |
@@ -95,14 +96,14 @@ A03–A06 是同一轮的四段原始记录，必须同一次会话、同一运�
 
 ## 数据及读图
 
-参考质检口径（仅作为告警与图例标记提示，不再阻止采数或扣留出图）：B01 对每个 A05 频点同时给出原始（不含工频、不含载波）的 `Y` 音调信噪比与联合扣除 `50–250 Hz` 工频谐波和 5 kHz 载波泄漏（含 10/15/20 kHz 谐波）后的 clean 信噪比，质检与告警按 clean 口径判定（参考门槛 5）；同时计算最低配置频点 `|H|/|K₀|`（参考范围 0.8–1.2）。结果在 `phase_transfer.csv`（`y_pk_se_v`/`y_snr` 为原始、`y_pk_se_clean_v`/`y_snr_clean` 为扣除后、`mains_collision`、`carrier_terms_hz`/`carrier_skipped`、`quality_passed`/`warnings`）、`phase_sensitivity_summary.json`（`quality_passed` 表示全部质检通过、`advisory_warnings`、`referral_available`/`referral_warnings`/`referral_quality`）与图例中如实区分，由实验者自行判读。**只要存在 ≥2 个相邻硬合格频点（与 `quality_passed` 无关），B01 就照常做对数插值并输出 `phase_asd_*` 列与 `phase_noise.png` 两格图**；质量不足时折算曲线改为灰色虚线并在图例/摘要标 `advisory`，不再出现整段扣留。旧版含示波器监视帧与首末锚点复测的历史归档目录继续兼容读图。真正阻止计算与插值的仅限于缺失 `XY` 帧、时间轴不均匀、锁相配置前后不匹配或换算增益非正/非有限等硬条件。
+参考质检口径（仅作为告警与图例标记提示，不再阻止采数或扣留出图）：B01 对每个 A05 频点同时给出原始（不含工频、不含载波）的 `Y` 音调信噪比与联合扣除 `50–250 Hz` 工频谐波和 5 kHz 载波泄漏（含 10/15/20 kHz 谐波）后的 clean 信噪比，质检与告警按 clean 口径判定（参考门槛 5）；同时计算最低配置频点 `|H|/|K₀|`（参考范围 0.8–1.2）。结果在 `phase_transfer.csv`（`y_pk_se_v`/`y_snr` 为原始、`y_pk_se_clean_v`/`y_snr_clean` 为扣除后、`mains_collision`、`carrier_terms_hz`/`carrier_skipped`、`quality_passed`/`warnings`）、`phase_sensitivity_summary.json`（`quality_passed` 表示全部质检通过、`advisory_warnings`、`referral_available`/`referral_warnings`/`referral_quality`）与图例中如实区分，由实验者自行判读。**只要存在 ≥2 个相邻硬合格频点（与 `quality_passed` 无关），B01 就照常做对数插值并输出 `phase_asd_*` 列，`phase_noise.png` 与 `phase_transfer.png` 左轴都照常画出折算相位灵敏度**；质量不足时折算曲线改为灰色虚线并在图例/摘要标 `advisory`，不再出现整段扣留。旧版含示波器监视帧与首末锚点复测的历史归档目录继续兼容读图。真正阻止计算与插值的仅限于缺失 `XY` 帧、时间轴不均匀、锁相配置前后不匹配或换算增益非正/非有限等硬条件。
 
 - 数据位于 `data/rf_phase_sensitivity/<运行目录>/`。`experiment_config.yaml` 记参数快照、设备与时钟回读、采集与告警记录；`raw/*.npz` 保存 `coarse_*.npz`、`local_*_xy.npz`、`pm_*_xy.npz` 与 `noise_seg_*_xy.npz`（或单段兼容 `noise_xy.npz`）锁相帧（`time_s/x_v/y_v`）。历史入口核对实验 ID、数据类型、参数与原始格式版本（`RAW_FORMAT_VERSION = 1`），兼容 `schema_version = 1`、`2`、`3` 与 `4` 的参数快照（4 起新增 `Z_PULSE_VPP` 与 `Z_DRIVE_SOURCE_IMPEDANCE_OHM`，旧快照按默认值补齐），并继续兼容早期含 `scope` 帧、`DEMOD0_IDX = 0` 或单帧 `noise_xy` 的归档目录。
 - 分析产物位于 `results/`，包含四幅结果图与三份数据表：
   - `phase_response.png`：**A03 整周相图**，按 `Demod 4` 对齐坐标系画出 `1:1` `(X, Y)` 相图（含 `X` 放大插图以展开平台堆叠点）、工作点与切线矢量，以及整周 `X(φ)` / 理论式 `(2.2.2) + v₀` 拟合 `Y(φ)` 波形；
   - `local_calibration.png`：**A04 局部相位响应图**，采用与 A03 一致的左相图右响应布局：左侧画 `1:1` 局部 `(X, Y)` 轨迹（及 `X` 放大插图），右侧同比例画工作点附近 `X`/`Y` 随 `Δφ` 的变化与理论式 `(2.2.2)` 色散拟合 `K₀`；
-  - `phase_transfer.png` 与 `phase_transfer.csv`：**A05 相位调制频率响应图与表**，给出幅频 `|H(f)|`（`V/rad`）、零频 `√Lorentzian` 拟合 `H₀ / sqrt(1 + (f/fc)²)` 及按零频截距 `H₀` 归一化的频响曲线 `|H(f)| / H₀`（表格同步保留 `normalized_gain = |H|/|K₀|` 与 `normalized_h0_gain = |H|/H₀`，并列出原始音调标准误/信噪比 `y_pk_se_v`/`y_snr`、联合扣除工频与 5 kHz 载波泄漏后的 `y_pk_se_clean_v`/`y_snr_clean`、记录共线跳过项的 `mains_collision` 与记录载波项纳入/跳过情况的 `carrier_terms_hz`/`carrier_skipped`）；
-  - `phase_noise.png`、`phase_noise.csv` 与 `phase_sensitivity_summary.json`：**A06 灵敏度谱、表格与摘要**，对 `sample.y` 各温控分段分别计算 Welch PSD 并按段数等权平均（不跨恢复温控间隔拼接波形），得到探测器噪声 ASD（`V/√Hz`），**`phase_noise.png` 纵轴统一使用 `µrad/√Hz`**，上图始终为探测器电压噪声 ASD、下图为折算相位噪声 ASD，同时给出实测相邻频点插值带与按拟合 `√Lorentzian` 传递函数回补的全频段灵敏度谱；`phase_noise.csv` 保留 `rad/√Hz`、`°/√Hz` 与 `µrad/√Hz` 列以及全频段回补列。折算可用但质检不足时两格图照常绘制，折算曲线用灰色虚线并在图例/注释标 `advisory: tone SNR below threshold`，摘要 `referral_available=True`、`referral_quality=advisory` 并列出 `referral_warnings`。
+  - `phase_transfer.png` 与 `phase_transfer.csv`：**A05/A06 合并双纵轴图与频响表**。左轴为 A06 折算相位灵敏度 `ASD_φ(f)`（`µrad/√Hz`，实测相邻频点插值带与全频段 `√Lorentzian` 回补用不同线型），右轴为按零频截距 `H₀` 归一化的 A05 频响 `|H(f)| / H₀`；`x` 轴 `log 1–1000 Hz`，频响在实测最高频点以内画点与实线、之外用拟合的 `√Lorentzian` 模型画虚线并标 `model extrapolation`。表格同步保留 `normalized_gain = |H|/|K₀|` 与 `normalized_h0_gain = |H|/H₀`，并列出原始音调标准误/信噪比 `y_pk_se_v`/`y_snr`、联合扣除工频与 5 kHz 载波泄漏后的 `y_pk_se_clean_v`/`y_snr_clean`、记录共线跳过项的 `mains_collision` 与记录载波项纳入/跳过情况的 `carrier_terms_hz`/`carrier_skipped`；
+  - `phase_noise.png`、`phase_noise.csv` 与 `phase_sensitivity_summary.json`：**A06 灵敏度谱、表格与摘要**，对 `sample.y` 各温控分段分别计算 Welch PSD 并按段数等权平均（不跨恢复温控间隔拼接波形），**`phase_noise.png` 只画折算相位噪声 ASD 单面板（`µrad/√Hz`，`x` 轴 `log 1–1000 Hz`）**，同时给出实测相邻频点插值带与按拟合 `√Lorentzian` 传递函数回补的全频段灵敏度谱；`phase_noise.csv` 仍保留探测器电压噪声 `detector_y_*` 列、`rad/√Hz`、`°/√Hz`、`µrad/√Hz` 折算列以及全频段回补列。折算可用但质检不足时单面板照常绘制，折算曲线用灰色虚线并在图例/注释标 `advisory: tone SNR below threshold`，摘要 `referral_available=True`、`referral_quality=advisory` 并列出 `referral_warnings`。
 
 ## 待查
 
