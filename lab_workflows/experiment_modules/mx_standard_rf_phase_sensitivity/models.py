@@ -25,7 +25,9 @@ from ..z_chain_common.rf_phase import (MFLI_MAX_SIGOUT_V, PM_DEPTH_DEG, PM_TONE_
 # 统一 Demod n ↔ Osc n：载波由 Demod 1 / Osc 1 产生，上下边带用 Osc 2 / Osc 3（只在 A05 频响
 # 扫频期间开启，A06 前关闭），原子读出固定 Demod 4 / Osc 4。索引均为 0 起。
 MOD_CARRIER_OSC_IDX = 0
-MOD_SIDEBAND_OSC_IDXS = (1, 2)
+# MF-MOD 的上下两个边带共用同一个振荡器：真机上写 (1, 2) 后回读恒为 (2, 2)，
+# 两个边带的频率也就都等于该振荡器频率。这里按真机取值，调频只改 osc 2 一处。
+MOD_SIDEBAND_OSC_IDXS = (2, 2)
 READOUT_OSC_IDX = 3
 READOUT_DEMOD_IDX = 3
 

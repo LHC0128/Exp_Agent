@@ -491,6 +491,7 @@ def carrier_begin(ctx) -> dict:
     device.set_int(_mod(dev, "mode"), 1)
     device.set_int(_mod(dev, "freqdevenable"), 0)
     device.set_int(_mod(dev, "carrier/oscselect"), MOD_CARRIER_OSC_IDX)
+    # 上下边带共用同一振荡器（真机回读固定为该索引），调频只写这一路。
     device.set_int(_mod(dev, "sidebands/0/oscselect"), MOD_SIDEBAND_OSC_IDXS[0])
     device.set_int(_mod(dev, "sidebands/1/oscselect"), MOD_SIDEBAND_OSC_IDXS[1])
     device.set_double(f"{device.osc_path(MOD_CARRIER_OSC_IDX)}/freq", float(p.y_rf_freq_hz))
