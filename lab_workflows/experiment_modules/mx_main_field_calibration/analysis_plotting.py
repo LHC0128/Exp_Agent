@@ -57,18 +57,13 @@ def _plot_frequency_responses(
     return filename
 
 
-def _calibration_fit_label(
-    linear: dict[str, Any], gyromagnetic_ratio_hz_per_nt: float
-) -> str:
-    """生成同时包含频率与磁场截距的英文拟合图例。"""
+def _calibration_fit_label(linear: dict[str, Any]) -> str:
+    """生成只含频率斜率与截距的单行英文拟合图例。"""
     slope_hz_per_ma = float(linear["slope_hz_per_ma"])
     intercept_hz = float(linear["intercept_hz"])
     return (
-        f"Linear fit: Kf={slope_hz_per_ma:.3f} Hz/mA, "
-        f"f0={intercept_hz:.3f} Hz\n"
-        f"KB={slope_hz_per_ma / gyromagnetic_ratio_hz_per_nt:.3f} nT/mA, "
-        f"B0={intercept_hz / gyromagnetic_ratio_hz_per_nt:.3f} nT, "
-        f"R²={linear['r_squared']:.5f}"
+        f"Kf = {slope_hz_per_ma:.3f} Hz/mA\n"
+        f"f0 = {intercept_hz:.3f} Hz"
     )
 
 
@@ -116,14 +111,14 @@ def _plot_calibration(
             fitted / 1e3,
             color=COLOR_TRAD,
             linestyle="--",
-            label=_calibration_fit_label(linear, gyromagnetic_ratio_hz_per_nt),
+            label=_calibration_fit_label(linear),
         )
     format_axis(
         axis,
         xlabel="GS200 current (mA)",
         ylabel="Resonance center (kHz)",
     )
-    style_legend(axis)
+    style_legend(axis, loc="upper left")
     secondary = axis.secondary_yaxis(
         "right",
         functions=(
