@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -29,10 +30,12 @@ def summarize(run_dir: Path) -> dict | None:
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     diagram, fit, band = summary["diagram"], summary["circle_fit"], summary[BAND]
     working = summary["working_point"]
-    transfer = summary.get("transfer") or {}
+    transfer = summary.get("transfer_lorentzian_fit") or {}
+    closure = summary.get("k0_closure") or {}
     theta = summary.get("theta_diagnostic") or {}
     referral = summary.get("phase_referral") or {}
-    medians = referral.get("median_urad_per_sqrt_hz") or []
+    bands = referral.get("bands") or []
+    medians = [band.get("median_urad_per_sqrt_hz") for band in bands]
     return {
         "run": run_dir.name,
         "vpp": float(summary["rf_vpp"]),
@@ -53,6 +56,7 @@ def summarize(run_dir: Path) -> dict | None:
         "h0_v_per_rad": transfer.get("h0_v_per_rad"),
         "fc_hz": transfer.get("fc_hz"),
         "h0_to_k0": transfer.get("h0_to_k0_ratio"),
+        "closure": closure.get("normalized_gain"),
         "referral_urad": medians[0] if medians else None,
         "backfill": bool(referral.get("lorentzian_full_band")),
         "command_deg": working["command_deg"],
@@ -77,7 +81,7 @@ def collect(root: Path) -> list[dict]:
 def report(rows: list[dict]) -> None:
     header = (f"{'Vpp':>5} {'run':<26} {'R/mV':>7} {'txt/R':>6} {'spread':>7} "
               f"{'y-route':>8} {'theta*.1':>8} {'ratio':>6} {'theta ok':>8} "
-              f"{'H0':>9} {'fc/Hz':>7} {'H0/K0':>6} {'谱中位':>8}")
+              f"{'H0':>9} {'fc/Hz':>7} {'H0/K0':>6} {'实测带中位':>10}")
     print(header)
     print("-" * len(header))
     for r in rows:
@@ -127,51 +131,6 @@ def plot(rows: list[dict], out: Path) -> Path:
     return out
 
 
-def load_asd(run_dir: Path) -> dict | None:
-    """读一轮的灵敏度谱：y 走线为主口径，θ 走线作诊断。"""
-    summary_path = run_dir / "results" / "summary.json"
-    if not summary_path.is_file():
-        return None
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    asd = summary["asd"]
-    transfer = summary.get("transfer") or {}
-    return {"run": run_dir.name,
-            "vpp": float(summary["rf_vpp"]),
-            "freq_hz": asd["frequency_hz"],
-            "theta": asd["theta_rad_per_sqrt_hz"],
-            "y_route": asd["y_over_slope_rad_per_sqrt_hz"],
-            "fc_hz": transfer.get("fc_hz"),
-            "backfill": bool((summary.get("phase_referral") or {}).get("lorentzian_full_band"))}
-
-
-def plot_spectra(root: Path, out: Path) -> Path:
-    """三档幅度下的相位灵敏度谱（y 走线实线为主，θ 虚线为诊断），阴影是 3-50 Hz 频段。"""
-    newest: dict[float, dict] = {}
-    for run_dir in sorted((root / DATA_TYPE).glob("*")):
-        item = load_asd(run_dir)
-        if item is not None:
-            newest.setdefault(item["vpp"], item)
-    fig, ax = plt.subplots(figsize=(7.4, 4.6), constrained_layout=True)
-    ax.axvspan(3.0, 50.0, color="0.85", alpha=0.5, zorder=0, label="3-50 Hz band")
-    colors = plt.cm.viridis([0.15, 0.5, 0.85])
-    for color, (vpp, item) in zip(colors, sorted(newest.items())):
-        freq = [float(value) for value in item["freq_hz"]][1:]
-        ax.loglog(freq, [float(v) * 1e6 for v in item["y_route"][1:]], color=color, lw=1.2,
-                  label=f"{vpp:g} Vpp  y route")
-        ax.loglog(freq, [float(v) * 1e6 for v in item["theta"][1:]], color=color, lw=0.7,
-                  ls=":", alpha=0.6)
-    ax.set_xlim(1.0, 1000.0)
-    ax.set_xlabel("Frequency (Hz)")
-    ax.set_ylabel("Phase sensitivity ASD (µrad/√Hz)")
-    ax.set_title("Phase sensitivity spectra: y route (solid), theta (dotted, diagnostic)")
-    ax.grid(alpha=0.3, which="both")
-    ax.legend(fontsize=8, loc="upper right")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=160)
-    plt.close(fig)
-    return out
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="三档载波幅度下标准 Mx 相图与相位灵敏度对比")
     parser.add_argument("--data-root", type=Path, default=None, help="运行目录 data/ 的根；默认取仓库配置")
@@ -184,12 +143,11 @@ def main() -> int:
         raise SystemExit("没有找到带 results/summary.json 的运行轮次")
     report(rows)
     figure = plot(rows, args.out)
-    spectra = plot_spectra(root, args.out.with_name("sensitivity_spectra.png"))
     table = args.out.with_suffix(".json")
     table.write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"figure: {figure}")
-    print(f"spectra: {spectra}")
     print(f"table: {table}")
+    print("每轮的灵敏度谱见各运行目录 results/phase_noise.png（B01 产物，已做 H0 归一化）。")
     return 0
 
 
