@@ -266,123 +266,121 @@ def _safety_envelope(params) -> tuple[float, float]:
     return params.y_output_envelope(pm_enabled=False)
 
 
-class StandardCarrier:
-    """标准 Mx 载波：只写 Out1 与 MF-MOD 载波节点，不启用 PM 边带、也不校其振荡器分配。
-
-    共享的 rf_phase.Carrier 每次回读都校验上下边带振荡器（Osc n 统一布局），而标准 Mx
-    全程不用边带；这里保留载波、外时钟、量程、偏置与读出参考的回读，跳过边带分配。
-    """
-
-    def __init__(self, ctx: StudyContext) -> None:
-        self.ctx = ctx
-        self.device = ctx.devices["hf2"]
-        self.dev = self.device.device_id
-        self.safety_key = rf_phase.mfli_sigout_safety_key(ctx.mapping)
-        self.carrier_osc_idx, _, self.readout_osc_idx = rf_phase.oscillator_layout(ctx)
-        self.command_deg = 0.0
-
-    def _sigout(self, node: str) -> str:
-        return f"/{self.dev}/sigouts/0/{node}"
-
-    def _mod(self, node: str) -> str:
-        return f"/{self.dev}/mods/{rf_phase.MOD_IDX}/{node}"
-
-    def _safe(self) -> None:
-        check_cancelled()
-        limits = load_safety_limits(self.ctx.root)
-        y_bias_v = float(self.ctx.params.y_bias_v)
-        y_min, y_max = _safety_envelope(self.ctx.params)
-        for value in (0.0, y_bias_v, float(y_min), float(y_max)):
-            validate_safety_limit(self.safety_key, value, limits)
-
-    def _verify(self, *, output: bool) -> dict[str, Any]:
-        self.device.sync()
-        d, p = self.device, self.ctx.params
-        got = dict(
-            extclk=bool(d.get_extclk()),
-            output=bool(d.get_int(self._sigout("on"))),
-            range_v=float(d.get_double(self._sigout("range"))),
-            offset_v=float(d.get_double(self._sigout("offset"))),
-            add_enabled=bool(d.get_int(self._sigout("add"))),
-            mod_enable=bool(d.get_int(self._mod("enable"))),
-            mode=int(d.get_int(self._mod("mode"))),
-            freqdevenable=int(d.get_int(self._mod("freqdevenable"))),
-            mod_output=int(d.get_int(self._mod("output"))),
-            carrier_enable=bool(d.get_int(self._mod("carrier/enable"))),
-            carrier_osc=int(d.get_int(self._mod("carrier/oscselect"))),
-            carrier_hz=float(d.get_double(f"{d.osc_path(self.carrier_osc_idx)}/freq")),
-            carrier_vpk=float(d.get_double(self._mod("carrier/amplitude"))),
-            command_deg=float(d.get_double(self._mod("carrier/phaseshift"))),
-            sideband0_enable=bool(d.get_int(self._mod("sidebands/0/enable"))),
-            sideband1_enable=bool(d.get_int(self._mod("sidebands/1/enable"))),
-            readout_osc_hz=float(d.get_double(f"{d.osc_path(self.readout_osc_idx)}/freq")),
-        )
-        envelope = _safety_envelope(p)
-        valid = (
-            got["extclk"]
-            and got["output"] is output
-            and not got["add_enabled"]
-            and got["range_v"] >= max(abs(value) for value in envelope) - 1e-9
-            and math.isclose(got["offset_v"], p.y_bias_v, abs_tol=1e-4)
-            and got["mod_enable"]
-            and got["mode"] == 1
-            and got["freqdevenable"] == 0
-            and got["mod_output"] == 1
-            and got["carrier_enable"]
-            and got["carrier_osc"] == self.carrier_osc_idx
-            and math.isclose(got["carrier_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
-            and math.isclose(got["carrier_vpk"], p.y_carrier_vpk, abs_tol=1e-5)
-            and abs(((got["command_deg"] - self.command_deg + 180.0) % 360.0) - 180.0) <= 0.02
-            and not got["sideband0_enable"]
-            and not got["sideband1_enable"]
-            and math.isclose(got["readout_osc_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
-        )
-        if not valid:
-            raise SafetyAbort(f"MFLI 标准 Mx 载波回读不符：{got}")
-        return got
-
-    def begin(self) -> dict[str, Any]:
-        self._safe()
-        d, p = self.device, self.ctx.params
-        if int(d.get_int(self._sigout("add"))) != 0:
-            raise SafetyAbort("MFLI Signal Output 1 开启了外部 Add 叠加，无法确保总电压安全")
-        self.command_deg = 0.0
-        d.set_int(self._sigout("on"), 0)
-        d.set_int(self._mod("enable"), 0)
-        d.set_double(self._sigout("range"), rf_phase.select_mfli_output_range(p))
-        d.set_double(self._sigout("offset"), float(p.y_bias_v))
-        d.set_int(self._mod("mode"), 1)
-        d.set_int(self._mod("freqdevenable"), 0)
-        d.set_int(self._mod("carrier/oscselect"), self.carrier_osc_idx)
-        d.set_double(f"{d.osc_path(self.carrier_osc_idx)}/freq", float(p.y_rf_freq_hz))
-        d.set_double(f"{d.osc_path(self.readout_osc_idx)}/freq", float(p.y_rf_freq_hz))
-        d.set_double(self._mod("carrier/amplitude"), float(p.y_carrier_vpk))
-        d.set_double(self._mod("carrier/phaseshift"), 0.0)
-        d.set_int(self._mod("carrier/enable"), 1)
-        d.set_int(self._mod("sidebands/0/enable"), 0)
-        d.set_int(self._mod("sidebands/1/enable"), 0)
-        d.set_int(self._mod("output"), 1)
-        d.set_int(self._mod("enable"), 1)
-        d.set_int(self._sigout("on"), 1)
-        got = self._verify(output=True)
-        self.ctx.outputs["Y 射频"] = (f"MFLI Out1 连续载波（标准 Mx，无 PM 边带），"
-                                      f"{p.y_carrier_vpk:g} Vpk，偏置 {p.y_bias_v:+g} V，指令相位 0°")
-        return got
-
-    def set_phase(self, phase_deg: float) -> float:
-        self._safe()
-        self.command_deg = float(phase_deg) % 360.0
-        self.device.set_double(self._mod("carrier/phaseshift"), self.command_deg)
-        self._verify(output=True)
-        self.ctx.outputs["Y 射频"] = (f"MFLI Out1 连续载波（标准 Mx，无 PM 边带），"
-                                      f"指令相位 {self.command_deg:g}°")
-        return self.command_deg
-
-    def verify_unmodulated(self) -> dict[str, Any]:
-        return self._verify(output=True)
+def _carrier_sigout(dev: str, node: str) -> str:
+    return f"/{dev}/sigouts/0/{node}"
 
 
-def _prepare_standard_chain(ctx: StudyContext) -> StandardCarrier:
+def _carrier_mod(dev: str, node: str) -> str:
+    return f"/{dev}/mods/{rf_phase.MOD_IDX}/{node}"
+
+
+def _carrier_safety(params, mapping: dict, root: Path) -> str:
+    """按 Signal Output 1 安全限值校验零、偏置与调相包络，返回限值键名。"""
+    check_cancelled()
+    limits = load_safety_limits(root)
+    key = rf_phase.mfli_sigout_safety_key(mapping)
+    y_bias_v = float(params.y_bias_v)
+    y_min, y_max = _safety_envelope(params)
+    for value in (0.0, y_bias_v, float(y_min), float(y_max)):
+        validate_safety_limit(key, value, limits)
+    return key
+
+
+def _carrier_verify(ctx: StudyContext, layout: dict[str, Any], *, output: bool) -> dict[str, Any]:
+    """回读载波、外时钟、量程、偏置与读出参考；边带只要求关闭，不校其振荡器分配。"""
+    device = ctx.devices["hf2"]
+    dev, p = device.device_id, ctx.params
+    device.sync()
+    got = dict(
+        extclk=bool(device.get_extclk()),
+        output=bool(device.get_int(_carrier_sigout(dev, "on"))),
+        range_v=float(device.get_double(_carrier_sigout(dev, "range"))),
+        offset_v=float(device.get_double(_carrier_sigout(dev, "offset"))),
+        add_enabled=bool(device.get_int(_carrier_sigout(dev, "add"))),
+        mod_enable=bool(device.get_int(_carrier_mod(dev, "enable"))),
+        mode=int(device.get_int(_carrier_mod(dev, "mode"))),
+        freqdevenable=int(device.get_int(_carrier_mod(dev, "freqdevenable"))),
+        mod_output=int(device.get_int(_carrier_mod(dev, "output"))),
+        carrier_enable=bool(device.get_int(_carrier_mod(dev, "carrier/enable"))),
+        carrier_osc=int(device.get_int(_carrier_mod(dev, "carrier/oscselect"))),
+        carrier_hz=float(device.get_double(f"{device.osc_path(layout['carrier_osc_idx'])}/freq")),
+        carrier_vpk=float(device.get_double(_carrier_mod(dev, "carrier/amplitude"))),
+        command_deg=float(device.get_double(_carrier_mod(dev, "carrier/phaseshift"))),
+        sideband0_enable=bool(device.get_int(_carrier_mod(dev, "sidebands/0/enable"))),
+        sideband1_enable=bool(device.get_int(_carrier_mod(dev, "sidebands/1/enable"))),
+        readout_osc_hz=float(device.get_double(f"{device.osc_path(layout['readout_osc_idx'])}/freq")),
+    )
+    envelope = _safety_envelope(p)
+    valid = (
+        got["extclk"]
+        and got["output"] is output
+        and not got["add_enabled"]
+        and got["range_v"] >= max(abs(value) for value in envelope) - 1e-9
+        and math.isclose(got["offset_v"], p.y_bias_v, abs_tol=1e-4)
+        and got["mod_enable"]
+        and got["mode"] == 1
+        and got["freqdevenable"] == 0
+        and got["mod_output"] == 1
+        and got["carrier_enable"]
+        and got["carrier_osc"] == layout["carrier_osc_idx"]
+        and math.isclose(got["carrier_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
+        and math.isclose(got["carrier_vpk"], p.y_carrier_vpk, abs_tol=1e-5)
+        and abs(((got["command_deg"] - layout["command_deg"] + 180.0) % 360.0) - 180.0) <= 0.02
+        and not got["sideband0_enable"]
+        and not got["sideband1_enable"]
+        and math.isclose(got["readout_osc_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
+    )
+    if not valid:
+        raise SafetyAbort(f"MFLI 标准 Mx 载波回读不符：{got}")
+    return got
+
+
+def _carrier_begin(ctx: StudyContext) -> dict[str, Any]:
+    """写 Out1 与 MF-MOD 载波节点（不启用 PM 边带），回读确认后返回载波会话状态。"""
+    p = ctx.params
+    device = ctx.devices["hf2"]
+    dev = device.device_id
+    safety_key = _carrier_safety(p, ctx.mapping, ctx.root)
+    if int(device.get_int(_carrier_sigout(dev, "add"))) != 0:
+        raise SafetyAbort("MFLI Signal Output 1 开启了外部 Add 叠加，无法确保总电压安全")
+    carrier_osc_idx, _, readout_osc_idx = rf_phase.oscillator_layout(ctx)
+    device.set_int(_carrier_sigout(dev, "on"), 0)
+    device.set_int(_carrier_mod(dev, "enable"), 0)
+    device.set_double(_carrier_sigout(dev, "range"), rf_phase.select_mfli_output_range(p))
+    device.set_double(_carrier_sigout(dev, "offset"), float(p.y_bias_v))
+    device.set_int(_carrier_mod(dev, "mode"), 1)
+    device.set_int(_carrier_mod(dev, "freqdevenable"), 0)
+    device.set_int(_carrier_mod(dev, "carrier/oscselect"), carrier_osc_idx)
+    device.set_double(f"{device.osc_path(carrier_osc_idx)}/freq", float(p.y_rf_freq_hz))
+    device.set_double(f"{device.osc_path(readout_osc_idx)}/freq", float(p.y_rf_freq_hz))
+    device.set_double(_carrier_mod(dev, "carrier/amplitude"), float(p.y_carrier_vpk))
+    device.set_double(_carrier_mod(dev, "carrier/phaseshift"), 0.0)
+    device.set_int(_carrier_mod(dev, "carrier/enable"), 1)
+    device.set_int(_carrier_mod(dev, "sidebands/0/enable"), 0)
+    device.set_int(_carrier_mod(dev, "sidebands/1/enable"), 0)
+    device.set_int(_carrier_mod(dev, "output"), 1)
+    device.set_int(_carrier_mod(dev, "enable"), 1)
+    device.set_int(_carrier_sigout(dev, "on"), 1)
+    layout = dict(carrier_osc_idx=carrier_osc_idx, readout_osc_idx=readout_osc_idx,
+                  command_deg=0.0, safety_key=safety_key)
+    _carrier_verify(ctx, layout, output=True)
+    ctx.outputs["Y 射频"] = (f"MFLI Out1 连续载波（标准 Mx，无 PM 边带），"
+                             f"{p.y_carrier_vpk:g} Vpk，偏置 {p.y_bias_v:+g} V，指令相位 0°")
+    return layout
+
+
+def _carrier_set_phase(ctx: StudyContext, layout: dict[str, Any], phase_deg: float) -> float:
+    device = ctx.devices["hf2"]
+    _carrier_safety(ctx.params, ctx.mapping, ctx.root)
+    layout["command_deg"] = float(phase_deg) % 360.0
+    device.set_double(_carrier_mod(device.device_id, "carrier/phaseshift"), layout["command_deg"])
+    _carrier_verify(ctx, layout, output=True)
+    ctx.outputs["Y 射频"] = (f"MFLI Out1 连续载波（标准 Mx，无 PM 边带），"
+                             f"指令相位 {layout['command_deg']:g}°")
+    return layout["command_deg"]
+
+
+def _prepare_standard_chain(ctx: StudyContext) -> dict[str, Any]:
     """镜像 preparation.prepare_measurement 的公共步骤，但不启用 PM 边带、也不准备 Z 脉冲。"""
     preparation.apply_oscillator_layout(ctx)
     preparation._verify_generators(ctx)
@@ -396,8 +394,7 @@ def _prepare_standard_chain(ctx: StudyContext) -> StandardCarrier:
     preparation._configure_lockin(ctx)
     preparation._configure_x_bias(ctx)
     preparation._prepare_trigger(ctx)
-    carrier = StandardCarrier(ctx)
-    carrier.begin()
+    carrier = _carrier_begin(ctx)
     check_cancelled()
     return carrier
 
@@ -483,13 +480,13 @@ def best_slope_phase(phases_deg: np.ndarray, phasors: np.ndarray) -> tuple[float
     return float(metrics["segment_center_deg"][index]), float(metrics["signed_dy_v_per_rad"][index]), index
 
 
-def _scan_phase(ctx: StudyContext, carrier: Any, grid_deg: list[float],
+def _scan_phase(ctx: StudyContext, carrier: dict[str, Any], grid_deg: list[float],
                 point_duration_s: float) -> tuple[list[str], np.ndarray]:
     coarse_lockin = acquisition.lockin_readback(ctx)
     labels: list[str] = []
     phasors: list[complex] = []
     for index, phase in enumerate(grid_deg):
-        carrier.set_phase(phase)
+        _carrier_set_phase(ctx, carrier, phase)
         label = f"mx_std_coarse_{index:02d}"
         mean = acquisition._xy(ctx, label, point_duration_s, lockin=coarse_lockin,
                                burst_command_deg=phase, save_frame=acquisition._save_frame,
@@ -767,7 +764,7 @@ def run_capture(args: argparse.Namespace) -> int:
         ctx.save()
         _disable_z(ctx)
         readback = _set_main_field_ma(ctx, current_ma)
-        ctx.state["readbacks"] = dict(gs200=readback, carrier=carrier.verify_unmodulated())
+        ctx.state["readbacks"] = dict(gs200=readback, carrier=_carrier_verify(ctx, carrier, output=True))
         ctx.save()
         if params.system_settle_s > 0:
             sleep(params.system_settle_s)
@@ -776,7 +773,7 @@ def run_capture(args: argparse.Namespace) -> int:
         _, phasors = _scan_phase(ctx, carrier, grid, float(params.static_point_duration_s))
         work_phase, slope_y, _ = best_slope_phase(np.asarray(grid, dtype=float), phasors)
         print(f"工作点 {work_phase:.1f}°，|dY/dtheta|={abs(slope_y):.6g} V/rad", flush=True)
-        carrier.set_phase(work_phase)
+        _carrier_set_phase(ctx, carrier, work_phase)
 
         phase = acquisition.lockin_readback(ctx)["phase_deg"]
         preparation.configure_dynamic_lockin(ctx, phase_deg=float(phase))

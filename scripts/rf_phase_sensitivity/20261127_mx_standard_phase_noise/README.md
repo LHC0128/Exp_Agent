@@ -43,6 +43,13 @@ agent_exp_env/Scripts/python.exe scripts/rf_phase_sensitivity/20261127_mx_standa
   (1, 2)。载波 Osc 1、5 kHz、0.25 Vpk、2° 调制深度、1 V 量程、偏置 0、外时钟全部匹配。
   安全收尾 `completed: true`、无错误：MFLI Out1/MOD 关闭、边带关闭、Z/X 归零并 OFF、Temp_Switch 回
   5 V ON、GS200 回运行前状态（输出 OFF）、王湾 Pump 恢复 ON；0 帧数据。
+- `1127_133118_mx_std_smoke`（13:31，第三次）：参数与设备连接正常，卡在脚本自身
+  `NameError: _StandardCarrier__lab_check_cancel`。根因是 GUI 代跑执行器
+  （`lab_workflows/script_runner.py`）会在每个 `for`/`while` 体首注入取消检查 `__lab_check_cancel()`；
+  该名字落在类体内被 Python 按类名改写（mangling）成 `_StandardCarrier__lab_check_cancel`，全局不存在。
+  安全收尾同样 `completed: true`、0 帧数据。
+- 对策：载波改为模块级函数（不再用类），并用执行器同一套 AST 注入 + 桩设备离线验证
+  `_carrier_begin` / `_carrier_set_phase`；脚本内不再出现带 `for`/`while` 的类方法。
 - 结论：标准 Mx 全程不用 PM 边带，脚本改为自带 `StandardCarrier`（只写并回读载波/读出节点，边带保持
   关闭且不校验其振荡器），其余公共步骤镜像 `preparation.prepare_measurement`；`--dry-run` 现在也做
   参数校验，避免再以非法参数占用上机窗口。
