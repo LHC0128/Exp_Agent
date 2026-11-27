@@ -112,7 +112,7 @@ def frame_quality(label: str, x_v: np.ndarray, y_v: np.ndarray, rate_sa_s: float
 
     宽带档（dynamic=True）下 5 kHz 载波及其低次谐波是读出链的已知寄生项，单音搜索限制在
     TONE_MAX_HZ_DYNAMIC 以内的目标分析频段，并把剔除的谐波记进 excluded_hz；窄带档沿用原来的
-    全频段单音判据。
+    全频段单音判据。标准差判据只作用于窄带帧，宽带帧的交流分量主要来自该泄漏。
     """
     x = np.asarray(x_v, dtype=float)
     y = np.asarray(y_v, dtype=float)
@@ -136,9 +136,18 @@ def frame_quality(label: str, x_v: np.ndarray, y_v: np.ndarray, rate_sa_s: float
         raise ValueError(f"{label} 帧没有可用于单音体检的频段")
     peak = int(np.argmax(np.where(high, np.abs(spectrum), -1.0)))
     tone_v = float(2.0 * abs(spectrum[peak]) / z.size)
+    std_x, std_y = float(np.std(x)), float(np.std(y))
+    if dynamic:
+        # 宽带帧的全频段涨落主要由 5 kHz 泄漏贡献；判据只看分析频段内的分量，
+        # 全频段标准差仍记录，便于事后核查。
+        in_band = np.fft.ifft(np.where(np.abs(freqs) <= TONE_MAX_HZ_DYNAMIC, spectrum, 0.0))
+        std_x_band, std_y_band = float(np.std(in_band.real)), float(np.std(in_band.imag))
+    else:
+        std_x_band, std_y_band = std_x, std_y
     quality = dict(label=label, samples=int(z.size), rate_sa_s=float(rate_sa_s), dynamic=bool(dynamic),
                    dc_v=float(abs(dc)), tone_v=tone_v, tone_hz=float(freqs[peak]),
-                   std_x_v=float(np.std(x)), std_y_v=float(np.std(y)), excluded_hz=excluded)
+                   std_x_v=std_x, std_y_v=std_y,
+                   std_x_band_v=std_x_band, std_y_band_v=std_y_band, excluded_hz=excluded)
     if quality["dc_v"] * 1e3 < MIN_DC_MV:
         raise ValueError(f"{label} 直流幅度 {quality['dc_v'] * 1e3:.3f} mV 低于 {MIN_DC_MV:g} mV，"
                          "不能当解调输出")
@@ -146,9 +155,11 @@ def frame_quality(label: str, x_v: np.ndarray, y_v: np.ndarray, rate_sa_s: float
         raise ValueError(
             f"{label} 帧内 {quality['tone_hz']:.1f} Hz 单音 {tone_v * 1e3:.1f} mV 超过直流 "
             f"{quality['dc_v'] * 1e3:.1f} mV 的 {MAX_TONE_OVER_DC:.0%}；该帧不是滤波后的解调直流")
-    if quality["std_x_v"] > MAX_STD_OVER_DC * quality["dc_v"]:
+    # std 判据按分析频段内的分量判定：宽带档全频段涨落主要由 5 kHz 泄漏贡献（实测约
+    # 250 mV 对直流 14 mV），只有频段内分量才反映这一帧能否当解调直流用。
+    if quality["std_x_band_v"] > MAX_STD_OVER_DC * quality["dc_v"]:
         raise ValueError(
-            f"{label} 帧内标准差 {quality['std_x_v'] * 1e3:.1f} mV 超过直流 "
+            f"{label} 帧内分析频段标准差 {quality['std_x_band_v'] * 1e3:.1f} mV 超过直流 "
             f"{quality['dc_v'] * 1e3:.1f} mV 的 {MAX_STD_OVER_DC:g} 倍；该帧被宽带分量主导，"
             "不能用于噪声谱")
     return quality
