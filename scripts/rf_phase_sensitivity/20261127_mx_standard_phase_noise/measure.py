@@ -13,11 +13,14 @@
    把 GS200 设到公式电流；王湾 Pump 必须初始为 ON，收尾恢复原状态。
 3. 相图：按 --grid-deg（默认 24 点）连续改写 MFLI 载波相移，每点一段 XY，
    圆拟合给出圆心、半径与残差，并给出逐段 |dS/dtheta| 与 |dy/dtheta|。
-4. 噪声：在 |dy/dtheta| 最大的相位处切到宽带 Demod 4，按独立温控窗口采集
-   --segments 段 x --duration 秒的 XY 序列。
-5. 分析：Welch 单边 PSD -> 三条路径的相位噪声谱（rad/sqrt(Hz)）：theta 直接、
-   y 除以斜率、以及沿切向投影；输出 summary.json 与两张图。
-6. finally 恢复 Pump、preparation.park 安全收尾、断开设备；
+4. 工作点：按圆模型取 |dy/dphi| = R|cos phi| 最大的相图点，在该相位附近等步长细扫，
+   用实测相位角线性拟合 |dy/dphi|，与圆模型的 R|cos phi| 互校后定最终工作点。
+5. 噪声：沿用相图那条静态解调配置（1 ms 时间常数、5 kSa/s），按独立温控窗口采集
+   --segments 段 x --duration 秒的 XY 序列；每帧先体检，单音幅度超过直流 20% 判废。
+   动态短时间常数（1 us、50 kSa/s）会把 5 kHz 射频分量原样放过，不用于噪声。
+6. 分析：Welch 单边 PSD -> 三条路径的相位噪声谱（rad/sqrt(Hz)）：theta 直接、
+   y 除以实测工作点斜率、以及沿切向投影；输出 summary.json 与两张图。
+7. finally 恢复 Pump、preparation.park 安全收尾、断开设备；
    产物在 data/rf_phase_sensitivity/_studies/<时间戳>_<tag>/。
 
 用法（运行目录内，开发目录无 .lab_runtime 会被门控拒绝）：
@@ -79,6 +82,16 @@ FORBIDDEN_TAG_CHARS = set('/:*?"<>|') | {chr(92), chr(0)}
 # 与 rf_phase_response / rf_phase_sensitivity 研究同口径的低频段；50/100 Hz 工频另行报告。
 BAND_HZ = (3.0, 50.0)
 MAINS_HZ = (50.0, 100.0, 150.0, 200.0, 250.0)
+# 帧体检：帧内最强单音幅度不得超过直流的这一比例，否则该帧不是滤波后的解调直流。
+# 只查 100 Hz 以上的单音：低频段的涨落就是待测噪声本身，不能当单音。
+MAX_TONE_OVER_DC = 0.2
+TONE_MIN_HZ = 100.0
+MAX_STD_OVER_DC = 5.0
+MIN_DC_MV = 0.5
+# 工作点局部细扫半宽与步长（度）：量 |dy/dphi|，与圆模型 R|cos phi| 互校。
+FINE_SPAN_DEG = 5.0
+FINE_STEP_DEG = 1.0
+FINE_POINT_S = 0.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -449,71 +462,206 @@ def circle_fit(x: np.ndarray, y: np.ndarray) -> dict[str, float]:
                 max_abs_residual_v=float(np.max(np.abs(residual))))
 
 
-def diagram_metrics(phases_deg: np.ndarray, phasors: np.ndarray) -> dict[str, Any]:
-    """逐段差分给出 |dS/dtheta| 与 |dy/dtheta| 的分布；闭合回绕到首点。"""
-    phases_deg = np.asarray(phases_deg, dtype=float)
+def phasor_angles_deg(phasors: np.ndarray, fit: dict[str, float]) -> np.ndarray:
+    """相量相对拟合圆心的角度（度）；相图上沿圆周转过的角度，用它做差分而不是用指令相位。"""
+    rel = np.asarray(phasors, dtype=complex) - complex(fit["center_x_v"], fit["center_y_v"])
+    return np.degrees(np.arctan2(rel.imag, rel.real))
+
+
+def diagram_metrics(phasors: np.ndarray, fit: dict[str, float]) -> dict[str, Any]:
+    """逐段差分给出切线斜率 |dS/dphi| 与 |dY/dphi|；角度取实测相位角，闭合回绕到首点。
+
+    圆上切线斜率恒等于半径 |dS/dphi| = R；|dY/dphi| = R|cos phi| 只是切线在 Y 上的投影，
+    随相位角在 0 与 R 之间变化。两者不是同一个量，报告斜率时只用前者。
+    """
     phasors = np.asarray(phasors, dtype=complex)
-    closed_phase = np.r_[phases_deg, phases_deg[0] + 360.0]
-    closed_phasor = np.r_[phasors, phasors[0]]
-    dtheta = np.radians(np.diff(closed_phase))
-    dphasor = np.diff(closed_phasor)
-    arc = np.abs(dphasor) / dtheta
-    dy = np.abs(np.diff(closed_phasor.imag)) / dtheta
-    dy_signed = np.diff(closed_phasor.imag) / dtheta
+    angles = phasor_angles_deg(phasors, fit)
+    # 相位角跨 ±180° 时原始差分会出现 ±360° 跳变：先解缠再差分，闭合方向随扫描方向。
+    unwrapped = np.unwrap(np.radians(angles))
+    steps = np.diff(unwrapped)
+    if steps.size == 0 or np.median(np.abs(steps)) <= 0:
+        raise ValueError(f"相图相邻点相位角没有推进：{np.round(angles, 3).tolist()}")
+    closing = unwrapped[0] + math.copysign(2.0 * math.pi, float(np.median(steps)))
+    closed_angles = np.r_[unwrapped, closing]
+    closed = np.r_[phasors, phasors[0]]
+    dphi = np.diff(closed_angles)
+    dphi_deg = np.degrees(dphi)
+    step_deg = float(np.median(np.abs(dphi_deg)))
+    dphasor = np.diff(closed)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        # 弦长 = 2R sin(dphi/2)：直接用弦长除 dphi 会带 sinc 偏差（15° 步进低 0.29%），
+        # 这里按 sin(dphi/2) 精确反解，圆上得到的就是半径本身。
+        tangent = np.abs(dphasor) / (2.0 * np.abs(np.sin(dphi / 2.0)))
+        abs_dy = np.abs(np.diff(closed.imag) / dphi)
+    accepted = np.abs(np.abs(dphi_deg) - step_deg) <= max(0.2 * step_deg, 1.0)
+    valid = accepted & np.isfinite(tangent) & np.isfinite(abs_dy)
+    if not np.any(valid):
+        raise ValueError(f"相图没有可用的段差分：步进 {step_deg:.3f}°，相位角 {np.round(angles, 3).tolist()}")
     return dict(
-        arc_v_per_rad=arc.tolist(),
-        abs_dy_v_per_rad=dy.tolist(),
-        signed_dy_v_per_rad=dy_signed.tolist(),
-        arc_median_v_per_rad=float(np.median(arc)),
-        arc_relative_spread=float((np.max(arc) - np.min(arc)) / max(np.median(arc), 1e-15)),
-        abs_dy_median_v_per_rad=float(np.median(dy)),
-        abs_dy_relative_spread=float((np.max(dy) - np.min(dy)) / max(np.median(dy), 1e-15)),
-        segment_center_deg=((closed_phase[:-1] + closed_phase[1:]) / 2.0 % 360.0).tolist(),
+        phasor_angle_deg=angles.tolist(),
+        tangent_v_per_rad=tangent.tolist(),
+        abs_dy_v_per_rad=abs_dy.tolist(),
+        segment_dphi_deg=dphi_deg.tolist(),
+        segment_center_deg=(np.degrees((closed_angles[:-1] + closed_angles[1:]) / 2.0) % 360.0).tolist(),
+        accepted=accepted.tolist(),
+        step_deg_median=step_deg,
+        tangent_median_v_per_rad=float(np.median(tangent[valid])),
+        tangent_relative_spread=float((np.max(tangent[valid]) - np.min(tangent[valid]))
+                                      / max(np.median(tangent[valid]), 1e-15)),
+        abs_dy_median_v_per_rad=float(np.median(abs_dy[valid])),
+        accepted_count=int(np.sum(valid)),
+        accepted_total=int(valid.size),
     )
 
 
-def best_slope_phase(phases_deg: np.ndarray, phasors: np.ndarray) -> tuple[float, float, int]:
-    """取 |dy/dtheta| 最大的那一段，返回段中点相位、该段带符号斜率与段索引。"""
-    metrics = diagram_metrics(phases_deg, phasors)
-    dy = np.asarray(metrics["abs_dy_v_per_rad"], dtype=float)
-    index = int(np.argmax(dy))
-    return float(metrics["segment_center_deg"][index]), float(metrics["signed_dy_v_per_rad"][index]), index
+def choose_working_point(phases_deg: np.ndarray, phasors: np.ndarray,
+                         fit: dict[str, float]) -> dict[str, Any]:
+    """按圆模型取 |dY/dphi| = R|cos phi| 最大的相图点，作为细扫中心。"""
+    angles = phasor_angles_deg(phasors, fit)
+    score = np.abs(np.cos(np.radians(angles)))
+    index = int(np.argmax(score))
+    radius = float(fit["radius_v"])
+    return dict(index=index,
+                command_deg=float(np.asarray(phases_deg, dtype=float)[index]),
+                phasor_angle_deg=float(angles[index]),
+                cos_phi=float(score[index]),
+                radius_v=radius,
+                analytic_dy_dphi_v_per_rad=float(radius * score[index]))
+
+
+def frame_quality(label: str, x_v: np.ndarray, y_v: np.ndarray, rate_sa_s: float) -> dict[str, Any]:
+    """体检一段 XY 帧：直流幅度、最强单音幅度与频率；不合格直接报错，不把坏帧当有效记录。"""
+    x = np.asarray(x_v, dtype=float)
+    y = np.asarray(y_v, dtype=float)
+    if x.size != y.size or x.size < 64:
+        raise ValueError(f"{label} 帧样本数异常：x={x.size}, y={y.size}")
+    z = x + 1j * y
+    dc = complex(np.mean(z))
+    spectrum = np.fft.fft(z - dc)
+    freqs = np.fft.fftfreq(z.size, 1.0 / float(rate_sa_s))
+    high = np.abs(freqs) >= TONE_MIN_HZ
+    peak = int(np.argmax(np.where(high, np.abs(spectrum), -1.0)))
+    tone_v = float(2.0 * abs(spectrum[peak]) / z.size)
+    quality = dict(label=label, samples=int(z.size), rate_sa_s=float(rate_sa_s),
+                   dc_v=float(abs(dc)), tone_v=tone_v, tone_hz=float(freqs[peak]),
+                   std_x_v=float(np.std(x)), std_y_v=float(np.std(y)))
+    if quality["dc_v"] * 1e3 < MIN_DC_MV:
+        raise ValueError(f"{label} 直流幅度 {quality['dc_v'] * 1e3:.3f} mV 低于 {MIN_DC_MV:g} mV，"
+                         "不能当解调输出")
+    if tone_v > MAX_TONE_OVER_DC * quality["dc_v"]:
+        raise ValueError(
+            f"{label} 帧内 {quality['tone_hz']:.1f} Hz 单音 {tone_v * 1e3:.1f} mV 超过直流 "
+            f"{quality['dc_v'] * 1e3:.1f} mV 的 {MAX_TONE_OVER_DC:.0%}；该帧不是滤波后的解调直流")
+    if quality["std_x_v"] > MAX_STD_OVER_DC * quality["dc_v"]:
+        raise ValueError(
+            f"{label} 帧内标准差 {quality['std_x_v'] * 1e3:.1f} mV 超过直流 "
+            f"{quality['dc_v'] * 1e3:.1f} mV 的 {MAX_STD_OVER_DC:g} 倍；该帧被宽带分量主导，"
+            "不能用于噪声谱")
+    return quality
+
+
+def _read_point(ctx: StudyContext, label: str, phase_deg: float, duration_s: float,
+                lockin: dict[str, Any]) -> complex:
+    """采一段 XY 并返回其直流相量；温控窗口、写盘与前后回读一致性由 _xy 内部保证。"""
+    return acquisition._xy(ctx, label, duration_s, lockin=lockin,
+                           burst_command_deg=float(phase_deg), save_frame=acquisition._save_frame,
+                           write_temperature=preparation.write_temperature, wait=sleep)
 
 
 def _scan_phase(ctx: StudyContext, carrier: dict[str, Any], grid_deg: list[float],
-                point_duration_s: float) -> tuple[list[str], np.ndarray]:
+                point_duration_s: float) -> tuple[list[str], np.ndarray, dict[str, Any]]:
+    """整周相位扫描；换相位后先采一段丢弃，末尾再回采首点量整圈漂移。"""
     coarse_lockin = acquisition.lockin_readback(ctx)
+    _carrier_set_phase(ctx, carrier, grid_deg[0])
+    warm = _read_point(ctx, "mx_std_warmup_00", grid_deg[0], point_duration_s, coarse_lockin)
+    print(f"  预热丢弃：{grid_deg[0]:6.1f}° -> X={warm.real:+.6f} V, Y={warm.imag:+.6f} V", flush=True)
     labels: list[str] = []
     phasors: list[complex] = []
     for index, phase in enumerate(grid_deg):
         _carrier_set_phase(ctx, carrier, phase)
         label = f"mx_std_coarse_{index:02d}"
-        mean = acquisition._xy(ctx, label, point_duration_s, lockin=coarse_lockin,
-                               burst_command_deg=phase, save_frame=acquisition._save_frame,
-                               write_temperature=preparation.write_temperature, wait=sleep)
+        mean = _read_point(ctx, label, phase, point_duration_s, coarse_lockin)
         labels.append(label)
         phasors.append(mean)
         print(f"  相图 {index + 1}/{len(grid_deg)}：{phase:6.1f}° -> "
               f"X={mean.real:+.6f} V, Y={mean.imag:+.6f} V", flush=True)
-    ctx.state["phase_diagram"] = {"labels": labels, "grid_deg": list(grid_deg)}
+    _carrier_set_phase(ctx, carrier, grid_deg[0])
+    repeat = _read_point(ctx, "mx_std_repeat_00", grid_deg[0], point_duration_s, coarse_lockin)
+    drift_v = float(abs(repeat - phasors[0]))
+    print(f"  回采首点：{grid_deg[0]:6.1f}° -> 与首点相差 {drift_v * 1e6:.3f} uV", flush=True)
+    info = dict(warmup_label="mx_std_warmup_00", repeat_label="mx_std_repeat_00",
+                first_point_drift_v=drift_v,
+                warmup_phasor=[float(warm.real), float(warm.imag)],
+                repeat_phasor=[float(repeat.real), float(repeat.imag)])
+    ctx.state["phase_diagram"] = {"labels": labels, "grid_deg": list(grid_deg), **info}
     ctx.save()
-    return labels, np.asarray(phasors, dtype=complex)
+    return labels, np.asarray(phasors, dtype=complex), info
 
 
-def _capture_noise(ctx: StudyContext, segments: int, duration_s: float, temp_lag_s: float) -> list[str]:
-    lockin = acquisition.lockin_readback(ctx, dynamic=True)
+def fine_scan_slope(commands_deg: list[float], phasors: list[complex],
+                    fit: dict[str, float]) -> dict[str, Any]:
+    """用细扫各点的实测相位角线性拟合 dY/dphi，并给出最接近切向沿 Y 的那个点。"""
+    values = np.asarray(phasors, dtype=complex)
+    angles = phasor_angles_deg(values, fit)
+    unwrapped = np.unwrap(np.radians(angles))
+    design = unwrapped - unwrapped.mean()
+    slope, intercept = np.polyfit(design, values.imag, 1)
+    score = np.abs(np.cos(np.radians(angles)))
+    best = int(np.argmax(score))
+    residual = values.imag - (intercept + slope * design)
+    return dict(slope_v_per_rad=float(slope), intercept_v=float(intercept),
+                residual_v=float(np.std(residual)),
+                best_index=best,
+                best_command_deg=float(np.asarray(commands_deg, dtype=float)[best]),
+                best_phasor_angle_deg=float(angles[best]),
+                best_cos_phi=float(score[best]),
+                analytic_v_per_rad=float(fit["radius_v"] * score[best]),
+                phasor_angle_deg=angles.tolist())
+
+
+def _fine_scan(ctx: StudyContext, carrier: dict[str, Any], center_deg: float,
+               point_duration_s: float, lockin: dict[str, Any]) -> dict[str, Any]:
+    """工作点附近等步长细扫；用实测相位角回归 |dY/dphi|，与圆模型 R|cos phi| 互校。"""
+    offsets = np.arange(-FINE_SPAN_DEG, FINE_SPAN_DEG + 0.5 * FINE_STEP_DEG, FINE_STEP_DEG)
+    commands = [float((center_deg + float(offset)) % 360.0) for offset in offsets]
+    labels: list[str] = []
+    phasors: list[complex] = []
+    for index, phase in enumerate(commands):
+        _carrier_set_phase(ctx, carrier, phase)
+        label = f"mx_std_fine_{index:02d}"
+        mean = _read_point(ctx, label, phase, point_duration_s, lockin)
+        labels.append(label)
+        phasors.append(mean)
+        print(f"  细扫 {index + 1}/{len(commands)}：{phase:7.2f}° -> "
+              f"X={mean.real:+.6f} V, Y={mean.imag:+.6f} V", flush=True)
+    record = dict(labels=labels, commands_deg=commands,
+                  phasors=[[float(z.real), float(z.imag)] for z in phasors])
+    ctx.state["fine_scan"] = record
+    ctx.save()
+    return record
+
+
+def _capture_noise(ctx: StudyContext, segments: int, duration_s: float) -> list[str]:
+    """静态解调配置下分段采集噪声：与相图同一条时间常数与采样率，5 kHz 分量已被滤掉。
+
+    动态配置（1 us 时间常数、50 kSa/s）是为脉冲瞬态准备的，会把 5 kHz 射频分量原样放过，
+    噪声谱会被这个单音主导，不能用于相位噪声。
+    """
+    lockin = acquisition.lockin_readback(ctx)
     labels: list[str] = []
     for index in range(segments):
         label = f"mx_std_noise_{index:02d}_xy"
-        acquisition._xy(ctx, label, duration_s, lockin=lockin, dynamic=True,
-                        recovery_wait_s=temp_lag_s, segment_index=index, segment_count=segments,
+        acquisition._xy(ctx, label, duration_s, lockin=lockin,
+                        segment_index=index, segment_count=segments,
                         save_frame=acquisition._save_frame,
                         write_temperature=preparation.write_temperature, wait=sleep,
                         source_mode="mx_standard_unpulsed")
         labels.append(label)
-        print(f"  噪声 {index + 1}/{segments} 段完成（温控已恢复并等待 {temp_lag_s:g} s）", flush=True)
+        print(f"  噪声 {index + 1}/{segments} 段完成（温控已恢复并等待）", flush=True)
     ctx.state["noise_paths"] = dict(labels=labels, segments=segments, duration_s=duration_s,
-                                    temp_switch_on_lag_s=temp_lag_s)
+                                    demod_dynamic=False,
+                                    time_constant_s=float(lockin["time_constant_s"]),
+                                    stream_rate_sa_s=float(lockin["stream_rate_sa_s"]))
     ctx.save()
     return labels
 
@@ -558,7 +706,7 @@ def _mains_median(freqs: np.ndarray, asd: np.ndarray) -> float:
 
 
 def analyze_study(study_root: Path, *, welch_segment_s: float | None = None) -> dict[str, Any]:
-    """离线重算：读原始 XY 帧，给出相图指标与三条相位噪声路径。"""
+    """离线重算：读原始 XY 帧，体检后给出相图切线斜率、工作点斜率与三条相位噪声路径。"""
     config = yaml.safe_load((study_root / "study_config.yaml").read_text(encoding="utf-8")) or {}
     diagram = config.get("phase_diagram") or {}
     noise = config.get("noise_paths") or {}
@@ -570,37 +718,55 @@ def analyze_study(study_root: Path, *, welch_segment_s: float | None = None) -> 
     segment_s = float(welch_segment_s or config.get("WELCH_SEGMENT_S") or 1.0)
 
     coarse = _load_xy_frames(study_root, coarse_labels)
+    coarse_quality = [frame_quality(f["label"], f["x_v"], f["y_v"],
+                                    float(f["metadata"]["rate_sa_s"])) for f in coarse]
     phasors = np.asarray([complex(np.mean(f["x_v"]), np.mean(f["y_v"])) for f in coarse], dtype=complex)
     fit = circle_fit(phasors.real, phasors.imag)
-    metrics = diagram_metrics(np.asarray(grid, dtype=float), phasors)
-    work_phase, slope_y, work_index = best_slope_phase(np.asarray(grid, dtype=float), phasors)
     radius = float(fit["radius_v"])
+    metrics = diagram_metrics(phasors, fit)
+    chosen = choose_working_point(np.asarray(grid, dtype=float), phasors, fit)
+    tangent_over_radius = metrics["tangent_median_v_per_rad"] / radius
 
     frames = _load_xy_frames(study_root, noise_labels)
     rate = float(frames[0]["metadata"]["rate_sa_s"])
+    noise_quality = [frame_quality(f["label"], f["x_v"], f["y_v"],
+                                   float(f["metadata"]["rate_sa_s"])) for f in frames]
     for frame in frames:
         time = frame["time_s"]
         if not np.allclose(1.0 / np.median(np.diff(time)), rate, rtol=3e-3):
             raise ValueError(f"{frame['label']} 采样率与首段不一致")
+
     cx, cy = float(fit["center_x_v"]), float(fit["center_y_v"])
-    centered = []
+    # 工作点斜率取噪声帧自身的实测相位角：K = R|cos phi|，与帧内数据同口径，
+    # 不用指令相位，也不把弦长当斜率。
+    noise_means = np.asarray([complex(np.mean(f["x_v"]), np.mean(f["y_v"])) for f in frames],
+                             dtype=complex)
+    noise_angles = phasor_angles_deg(noise_means, fit)
+    phi_deg = float(np.degrees(np.mean(np.unwrap(np.radians(noise_angles)))))
+    slope_y = float(radius * abs(math.cos(math.radians(phi_deg))))
+    if not math.isfinite(slope_y) or slope_y <= 1e-12:
+        raise ValueError(f"工作点斜率无效：相位角 {phi_deg:.3f}°，K={slope_y}")
+    fine = config.get("fine_scan") or {}
+    fine_summary = None
+    if fine.get("commands_deg") and fine.get("phasors"):
+        fine_summary = fine_scan_slope([float(v) for v in fine["commands_deg"]],
+                                       [complex(v[0], v[1]) for v in fine["phasors"]], fit)
+
+    tangent_dir = complex(-math.sin(math.radians(phi_deg)), math.cos(math.radians(phi_deg)))
+    centered, projected = [], []
     for frame in frames:
         theta = np.arctan2(frame["y_v"] - cy, frame["x_v"] - cx)
         mean_angle = np.angle(np.mean(np.exp(1j * theta)))
         centered.append(np.angle(np.exp(1j * (theta - mean_angle))))
-    tangent = complex(-math.sin(math.radians(work_phase)), math.cos(math.radians(work_phase)))
-    projected = []
-    for frame in frames:
         dx = frame["x_v"] - cx
         dy = frame["y_v"] - cy
-        projected.append((dx * tangent.real + dy * tangent.imag) / radius)
+        projected.append((dx * tangent_dir.real + dy * tangent_dir.imag) / radius)
 
     freqs, psd_y = _welch_psd([frame["y_v"] for frame in frames], rate, segment_s)
     _, psd_theta = _welch_psd(centered, rate, segment_s)
     _, psd_proj = _welch_psd(projected, rate, segment_s)
-    slope_mag = abs(slope_y) if abs(slope_y) > 1e-12 else float("nan")
     asd_theta = np.sqrt(psd_theta)
-    asd_y_route = np.sqrt(psd_y / (slope_mag ** 2))
+    asd_y_route = np.sqrt(psd_y) / slope_y
     asd_proj = np.sqrt(psd_proj)
     asd_raw_y = np.sqrt(psd_y)
 
@@ -610,6 +776,14 @@ def analyze_study(study_root: Path, *, welch_segment_s: float | None = None) -> 
     consistent = math.isfinite(ratio_band) and abs(ratio_band - 1.0) <= 0.1
     verdict = ("theta 与 y 两条路径在 3-50 Hz 的相位噪声一致（中位比 %.2f）" % ratio_band if consistent
                else "theta 与 y 两条路径在 3-50 Hz 的相位噪声不一致（中位比 %.2f）" % ratio_band)
+    slope_tolerance = 0.05
+    circle_verdict = (
+        "相图 R=%.3f mV，%d/%d 段切线斜率中位 %.3f mV/rad（散布 ±%.1f%%），与 R 之比 %.3f；"
+        % (radius * 1e3, metrics["accepted_count"], metrics["accepted_total"],
+           metrics["tangent_median_v_per_rad"] * 1e3, metrics["tangent_relative_spread"] * 100.0,
+           tangent_over_radius)
+        + ("切线斜率在圆上等于半径" if abs(tangent_over_radius - 1.0) <= slope_tolerance
+           else "切线斜率与半径不符"))
 
     summary = {
         "study_root": str(study_root),
@@ -620,19 +794,34 @@ def analyze_study(study_root: Path, *, welch_segment_s: float | None = None) -> 
         "diagram": {
             "grid_deg": grid,
             "phasors": [[float(z.real), float(z.imag)] for z in phasors],
-            "arc_median_v_per_rad": metrics["arc_median_v_per_rad"],
-            "arc_relative_spread": metrics["arc_relative_spread"],
-            "abs_dy_median_v_per_rad": metrics["abs_dy_median_v_per_rad"],
-            "abs_dy_relative_spread": metrics["abs_dy_relative_spread"],
+            "phasor_angle_deg": metrics["phasor_angle_deg"],
+            "tangent_v_per_rad": metrics["tangent_v_per_rad"],
+            "tangent_median_v_per_rad": metrics["tangent_median_v_per_rad"],
+            "tangent_relative_spread": metrics["tangent_relative_spread"],
+            "tangent_over_radius": tangent_over_radius,
             "abs_dy_v_per_rad": metrics["abs_dy_v_per_rad"],
+            "abs_dy_median_v_per_rad": metrics["abs_dy_median_v_per_rad"],
             "segment_center_deg": metrics["segment_center_deg"],
+            "segment_dphi_deg": metrics["segment_dphi_deg"],
+            "accepted": metrics["accepted"],
+            "step_deg_median": metrics["step_deg_median"],
+            "accepted_count": metrics["accepted_count"],
+            "accepted_total": metrics["accepted_total"],
         },
-        "working_point_deg": work_phase,
-        "working_slope_dy_dtheta_v_per_rad": slope_y,
-        "working_segment_index": work_index,
+        "working_point": {
+            "coarse_candidate": chosen,
+            "noise_phasor_angle_deg": phi_deg,
+            "noise_slope_v_per_rad": slope_y,
+            "noise_cos_phi": abs(math.cos(math.radians(phi_deg))),
+            "fine_scan": fine_summary,
+            "first_point_drift_v": diagram.get("first_point_drift_v"),
+        },
         "rate_sa_s": rate,
         "welch_segment_s": segment_s,
         "segments": len(frames),
+        "demod_dynamic": noise.get("demod_dynamic"),
+        "time_constant_s": noise.get("time_constant_s"),
+        "frame_quality": {"coarse": coarse_quality, "noise": noise_quality},
         "asd": {
             "frequency_hz": freqs.tolist(),
             "theta_rad_per_sqrt_hz": asd_theta.tolist(),
@@ -649,6 +838,7 @@ def analyze_study(study_root: Path, *, welch_segment_s: float | None = None) -> 
             "mains_theta_rad_per_sqrt_hz": _mains_median(freqs, asd_theta),
         },
         "verdict": verdict,
+        "circle_verdict": circle_verdict,
     }
     results = study_root / "results"
     results.mkdir(exist_ok=True)
@@ -679,13 +869,22 @@ def _plot_diagram(results: Path, summary: dict[str, Any]) -> None:
     ax.set_title(f"phase diagram, R={fit['radius_v'] * 1e3:.3f} mV, rms={fit['rms_residual_v'] * 1e3:.3f} mV")
     ax.legend(loc="best", fontsize=8)
     ax = axes[1]
-    ax.plot(summary["diagram"]["segment_center_deg"], summary["diagram"]["abs_dy_v_per_rad"],
-            "o-", ms=3, lw=1.0, label="|dY/dtheta|")
-    ax.axvline(summary["working_point_deg"], ls="--", c="0.4", lw=0.9, label="working point")
-    ax.set_xlabel("RF phase (deg)")
-    ax.set_ylabel("|dY/dtheta| (V/rad)")
-    ax.set_title("per-segment slope")
-    ax.legend(loc="best", fontsize=8)
+    centers = np.asarray(summary["diagram"]["segment_center_deg"], dtype=float)
+    tangent = np.asarray(summary["diagram"]["tangent_v_per_rad"], dtype=float)
+    abs_dy = np.asarray(summary["diagram"]["abs_dy_v_per_rad"], dtype=float)
+    accepted = np.asarray(summary["diagram"]["accepted"], dtype=bool)
+    radius = float(summary["circle_fit"]["radius_v"])
+    ax.plot(centers, tangent, "o-", ms=3, lw=1.0, label="|dS/dphi| tangent slope")
+    if np.any(~accepted):
+        ax.plot(centers[~accepted], tangent[~accepted], "x", ms=8, mec="C3", label="excluded segment")
+    ax.axhline(radius, ls="--", c="C3", lw=1.0, label=f"R = {radius * 1e3:.2f} mV/rad")
+    ax.plot(centers, abs_dy, ":", lw=0.9, c="0.5", label="|dY/dphi| = R|cos phi|")
+    ax.axvline(summary["working_point"]["noise_phasor_angle_deg"], ls=":", c="0.2", lw=0.9,
+               label="noise-phase angle")
+    ax.set_xlabel("segment center on the circle (deg)")
+    ax.set_ylabel("V/rad")
+    ax.set_title("tangent slope = R; |dY/dphi| is only its Y projection")
+    ax.legend(loc="best", fontsize=7)
     fig.tight_layout()
     fig.savefig(results / "phase_diagram.png", dpi=160)
     fig.savefig(results / "phase_diagram.pdf")
@@ -701,12 +900,13 @@ def _plot_noise(results: Path, summary: dict[str, Any]) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.6))
     ax = axes[0]
     ax.loglog(freq, summary["asd"]["theta_rad_per_sqrt_hz"], lw=1.0, label="theta = atan2(y-y0, x-x0)")
-    ax.loglog(freq, summary["asd"]["y_over_slope_rad_per_sqrt_hz"], lw=1.0, label="Y / |dY/dtheta|")
+    ax.loglog(freq, summary["asd"]["y_over_slope_rad_per_sqrt_hz"], lw=1.0,
+              label="Y / K, K=%.4f V/rad" % summary["working_point"]["noise_slope_v_per_rad"])
     ax.loglog(freq, summary["asd"]["projected_rad_per_sqrt_hz"], lw=0.8, ls=":", label="tangent projection")
     ax.axvspan(*BAND_HZ, color="0.9", zorder=0)
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("phase noise (rad/sqrt(Hz))")
-    ax.set_title("phase sensitivity: theta vs Y route")
+    ax.set_title("phase sensitivity: theta vs Y route (same frames)")
     ax.legend(loc="best", fontsize=8)
     ax = axes[1]
     ax.semilogx(freq, summary["asd"]["theta_over_y_route_ratio"], lw=1.0)
@@ -770,19 +970,32 @@ def run_capture(args: argparse.Namespace) -> int:
             sleep(params.system_settle_s)
 
         print(f"开始整周相位扫描：{len(grid)} 点 x {params.static_point_duration_s:g} s", flush=True)
-        _, phasors = _scan_phase(ctx, carrier, grid, float(params.static_point_duration_s))
-        work_phase, slope_y, _ = best_slope_phase(np.asarray(grid, dtype=float), phasors)
-        print(f"工作点 {work_phase:.1f}°，|dY/dtheta|={abs(slope_y):.6g} V/rad", flush=True)
+        _, phasors, scan_info = _scan_phase(ctx, carrier, grid, float(params.static_point_duration_s))
+        fit = circle_fit(phasors.real, phasors.imag)
+        print(f"圆拟合 R={fit['radius_v'] * 1e3:.3f} mV，圆心 ({fit['center_x_v'] * 1e3:.2f}, "
+              f"{fit['center_y_v'] * 1e3:.2f}) mV，残差 rms {fit['rms_residual_v'] * 1e3:.3f} mV", flush=True)
+        chosen = choose_working_point(np.asarray(grid, dtype=float), phasors, fit)
+        print(f"工作点候选：指令 {chosen['command_deg']:.1f}°，相位角 {chosen['phasor_angle_deg']:.1f}°，"
+              f"R|cos phi|={chosen['analytic_dy_dphi_v_per_rad']:.6g} V/rad", flush=True)
+        fine = _fine_scan(ctx, carrier, chosen["command_deg"], FINE_POINT_S,
+                          acquisition.lockin_readback(ctx))
+        slope = fine_scan_slope(fine["commands_deg"], fine["phasors"], fit)
+        work_phase = float(slope["best_command_deg"])
+        print(f"细扫定工作点：指令 {work_phase:.2f}°，相位角 {slope['best_phasor_angle_deg']:.2f}°，"
+              f"局部斜率 {slope['slope_v_per_rad']:.6g} V/rad（圆模型 "
+              f"{slope['analytic_v_per_rad']:.6g} V/rad）", flush=True)
         _carrier_set_phase(ctx, carrier, work_phase)
-
-        phase = acquisition.lockin_readback(ctx)["phase_deg"]
-        preparation.configure_dynamic_lockin(ctx, phase_deg=float(phase))
-        acquisition.lockin_readback(ctx, dynamic=True)
-        ctx.state["working_point_deg"] = float(work_phase)
+        ctx.state["working_point_deg"] = work_phase
+        ctx.state["working_point"] = dict(
+            command_deg=work_phase,
+            phasor_angle_deg=float(slope["best_phasor_angle_deg"]),
+            local_slope_v_per_rad=float(slope["slope_v_per_rad"]),
+            analytic_slope_v_per_rad=float(slope["analytic_v_per_rad"]),
+            circle_fit=fit, coarse_candidate=chosen, scan=scan_info)
         ctx.save()
-        print(f"开始噪声采集：{params.noise_n_avg} 段 x {params.noise_duration_s:g} s", flush=True)
-        _capture_noise(ctx, int(params.noise_n_avg), float(params.noise_duration_s),
-                       float(params.dynamic_temp_switch_on_lag_s))
+        print(f"开始噪声采集：{params.noise_n_avg} 段 x {params.noise_duration_s:g} s（静态解调配置）",
+              flush=True)
+        _capture_noise(ctx, int(params.noise_n_avg), float(params.noise_duration_s))
         ctx.state["completion_status"] = "completed"
         ctx.save()
     except BaseException as exc:
@@ -833,6 +1046,7 @@ def run_capture(args: argparse.Namespace) -> int:
     print(f"相图：{study_dir.results / 'phase_diagram.png'}", flush=True)
     print(f"噪声路径对比：{study_dir.results / 'noise_paths.png'}", flush=True)
     print("3-50 Hz：" + json.dumps(summary["band_3_50_hz"], ensure_ascii=False), flush=True)
+    print(summary["circle_verdict"], flush=True)
     print(summary["verdict"], flush=True)
     return 0
 
@@ -873,8 +1087,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         grid = list(args.grid_deg) if args.grid_deg else list(np.arange(0.0, 360.0, 15.0))
         print(f"[dry-run] 参数校验通过：f={params.y_rf_freq_hz:g} Hz、{params.y_rf_vpp:g} Vpp，"
-              f"相图 {len(grid)} 点 x {params.static_point_duration_s:g} s，"
-              f"噪声 {params.noise_n_avg} 段 x {params.noise_duration_s:g} s（Welch {params.welch_segment_s:g} s）")
+              f"相图 {len(grid)} 点 x {params.static_point_duration_s:g} s（含预热丢弃与回采首点），"
+              f"细扫 {int(2 * FINE_SPAN_DEG / FINE_STEP_DEG) + 1} 点 x {FINE_POINT_S:g} s，"
+              f"噪声 {params.noise_n_avg} 段 x {params.noise_duration_s:g} s（Welch {params.welch_segment_s:g} s，静态解调）")
         return 0
     return run_capture(args)
 
