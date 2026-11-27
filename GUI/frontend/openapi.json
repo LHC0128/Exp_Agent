@@ -28803,6 +28803,30 @@
             "title": "Demod Mode",
             "default": "unknown"
           },
+          "rf_source": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rf Source"
+          },
+          "rf_readback": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rf Readback"
+          },
           "rf_phase_calibration": {
             "anyOf": [
               {

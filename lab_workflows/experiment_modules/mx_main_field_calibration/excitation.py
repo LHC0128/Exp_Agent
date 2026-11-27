@@ -27,19 +27,9 @@ def configure_pump(params, devices, channels):
 
 
 
-def configure_response(params, devices, channels):
-    xy_field = devices["xy_field"]
-    validate_safety_limit("rf_coil", params.y_rf_amplitude_vpp)
-    xy_field.set_burst_state(False, channel=channels["y_rf"])
-    xy_field.set_mod_state(False, channel=channels["y_rf"])
-    xy_field.setup_sine(
-        params.main_field_reference_frequency_hz,
-        params.y_rf_amplitude_vpp,
-        offset=0.0,
-        phase=0.0,
-        channel=channels["y_rf"],
-    )
-    xy_field.set_output(False, channel=channels["y_rf"])
+def configure_response(params, devices, channels, rf_source):
+    """按选定射频源准备 Y 射频，并配置 R 读出（Demod n ↔ Osc n）。"""
+    rf_readback = rf_source.prepare()
 
     hf2 = devices["hf2"]
     demod.configure_signal_input(
@@ -71,4 +61,6 @@ def configure_response(params, devices, channels):
             phase=float(hf2.get_double(f"{hf2.demod_path(params.demod_idx)}/phaseshift")),
         ),
      for_acquisition=True)
-    return float(actual_rate)
+    if hasattr(rf_source, "verify_readout"):
+        rf_readback = rf_source.verify_readout()
+    return float(actual_rate), rf_readback

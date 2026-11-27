@@ -7,7 +7,7 @@ import time
 import numpy as np
 import pytest
 import yaml
-from lockin_amplifier import HF2Instrument, DAQResult
+from lockin_amplifier import HF2Instrument, DAQResult, lockin_capabilities
 from ...common import WorkflowCancelled, find_project_root, load_mapping
 from ...steps import routed_signal_generator
 from ..mx_y_rf_sensitivity import acquisition as r_acquisition
@@ -17,7 +17,8 @@ from .stages import ACQUISITION, FINISH_ID, definition
 
 ACQUISITION_CASES = {
     "mx-main-field-calibration": {"mode": "single", "cases": {
-        "order": ["test_real_six_step_order_and_slow_disk"],
+        "order": ["test_real_six_step_order_and_slow_disk",
+                  "test_mfli_rf_source_uses_mod_carrier_and_demod4_osc4"],
         "slow_disk": ["test_real_six_step_order_and_slow_disk"],
         "cancel": ["test_fault_keeps_prior_points_and_restores_gs200"],
         "acquire_failure": ["test_fault_keeps_prior_points_and_restores_gs200"],
@@ -32,15 +33,16 @@ ACQUISITION_CASES = {
 }
 
 
-def copy_config(root):
+def copy_config(root, *, lockin="HF2"):
     source = find_project_root()
     (root / "params").mkdir(exist_ok=True)
     for name in ("mapping.yaml", "devices.yaml", "safety_limits.yaml"):
         (root / "params" / name).write_bytes((source / "params" / name).read_bytes())
     path = root / "params/mapping.yaml"
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
-    for key in ("lockin_r", "lockin_xy"):
-        config["mapping"][key]["device_id"] = "hf2_dev18246"
+    if lockin == "HF2":
+        for key in ("lockin_r", "lockin_xy"):
+            config["mapping"][key]["device_id"] = "hf2_dev18246"
     path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
 
 
@@ -120,6 +122,14 @@ class FakeHF2(HF2Instrument):
         return float(self.nodes.get(path, 0))
 
 
+class FakeMFLI(FakeHF2):
+    model = "MFLI"
+
+    def __init__(self, rig, **kwargs):
+        super().__init__(rig, **kwargs)
+        self.capabilities = lockin_capabilities("MFLI", ["MF-F5M", "MF-MD", "MF-MOD", "MF-DIG"])
+
+
 class FakeGS200:
     def __init__(self):
         self.source, self.current, self.output, self.range, self.limit = "CURRent", 0.008, True, 0.01, 0.01
@@ -150,18 +160,19 @@ class FakeTEC:
 
 
 def small_params():
-    return replace(MxMainFieldCalibrationParams(), main_field_start_ma=7, main_field_stop_ma=8,
+    return replace(MxMainFieldCalibrationParams(), rf_source="DG4000",
+        main_field_start_ma=7, main_field_stop_ma=8,
         main_field_step_ma=0.5, main_field_reference_current_ma=7,
         main_field_reference_frequency_hz=90000, main_field_initial_hz_per_ma=1000,
         frequency_half_width_hz=1000, frequency_step_hz=250, frequency_duration_s=0.016,
         system_settle_s=0.001, temp_switch_on_lag_s=0)
 
 
-def install_rig(root, monkeypatch, params=None, *, progress=False):
+def install_rig(root, monkeypatch, params=None, *, progress=False, lockin="HF2"):
     mapping = load_mapping(root)
     rig = SimpleNamespace(root=root, mapping=mapping, events=[], generators={}, captures=[],
         enabled=True, cancel=False, fault_index=None, acquire_error=None, restore_error=False,
-        clock_error=False, bad_quality=False, gs200=FakeGS200(), tec=FakeTEC())
+        clock_error=False, bad_quality=False, gs200=FakeGS200(), tec=FakeTEC(), lockin=None)
     rig.params = params or small_params()
     for config in mapping.values():
         if config["instrument"] == "signal_generator":
@@ -170,7 +181,13 @@ def install_rig(root, monkeypatch, params=None, *, progress=False):
     monkeypatch.setattr(preparation, "create_signal_generator", lambda config: rig.generators[config["resource"]])
     monkeypatch.setattr(preparation, "GS200Instrument", lambda resource: rig.gs200)
     monkeypatch.setattr(preparation, "TECInstrument", lambda **kwargs: rig.tec)
-    monkeypatch.setattr(preparation, "create_lockin", lambda config: FakeHF2(rig, device_id=config["device_id"]))
+    lockin_class = FakeMFLI if lockin == "MFLI" else FakeHF2
+
+    def make_lockin(config):
+        rig.lockin = lockin_class(rig, device_id=config["device_id"])
+        return rig.lockin
+
+    monkeypatch.setattr(preparation, "create_lockin", make_lockin)
     monkeypatch.setattr(workflow, "find_project_root", lambda: root)
     runtime_check = _helpers.check_cancelled
 
@@ -196,12 +213,21 @@ def install_rig(root, monkeypatch, params=None, *, progress=False):
         assert config.signal_paths == ["sample.r"]
         rig.events.append("acquire")
         index = len(rig.captures)
-        rig.captures.append(config.duration)
+        if rig.params.rf_source == "MFLI":
+            device = rig.lockin.device_id
+            frequency = rig.lockin.get_double(f"/{device}/oscs/0/freq")
+            carrier_vpk = rig.lockin.get_double(f"/{device}/mods/0/carrier/amplitude")
+            demod_oscselect = rig.lockin.get_int(f"/{device}/demods/3/oscselect")
+        else:
+            rf_config = mapping["rf_coil"]
+            frequency = rig.generators[rf_config["resource"]].frequency[rf_config["channel"]]
+            carrier_vpk, demod_oscselect = None, None
+        rig.captures.append({"duration": config.duration, "frequency_hz": float(frequency),
+            "current_ma": float(rig.gs200.current * 1000), "carrier_vpk": carrier_vpk,
+            "demod_oscselect": demod_oscselect})
         if rig.fault_index == index:
             raise rig.acquire_error or WorkflowCancelled("模拟取消")
         kwargs["cancellation_check"]()
-        rf_config = mapping["rf_coil"]
-        frequency = rig.generators[rf_config["resource"]].frequency[rf_config["channel"]]
         center = 90000 + 1000 * (rig.gs200.current * 1000 - 7)
         mean = 0.1 + 0.5 / np.sqrt(1 + ((frequency - center) / 300)**2)
         values = np.full(max(8, config.grid_cols), mean)
@@ -218,6 +244,13 @@ def install_rig(root, monkeypatch, params=None, *, progress=False):
 def rig(tmp_path, monkeypatch):
     copy_config(tmp_path)
     return install_rig(tmp_path, monkeypatch)
+
+
+@pytest.fixture
+def rig_mfli(tmp_path, monkeypatch):
+    copy_config(tmp_path, lockin="MFLI")
+    params = replace(small_params(), rf_source="MFLI")
+    return install_rig(tmp_path, monkeypatch, params, lockin="MFLI")
 
 
 def through(last):
@@ -237,6 +270,69 @@ def assert_safe(rig):
     for key in ("Pump_modulation", "Time_sequence"):
         config = rig.mapping[key]
         assert rig.generators[config["resource"]].output[config["channel"]] is True
+
+
+def assert_safe_mfli(rig):
+    assert rig.enabled
+    assert (rig.gs200.source, rig.gs200.current, rig.gs200.output, rig.gs200.range, rig.gs200.limit) == (
+        "CURRent", 0.008, True, 0.01, 0.01)
+    device, nodes = rig.lockin.device_id, rig.lockin.nodes
+    assert nodes[f"/{device}/sigouts/0/on"] == 0
+    assert nodes[f"/{device}/mods/0/enable"] == 0
+    assert nodes[f"/{device}/mods/0/carrier/amplitude"] == 0
+    assert nodes[f"/{device}/sigouts/0/offset"] == 0
+    for key in ("X_magnetic_field", "Z_magnetic_field"):
+        config = rig.mapping[key]
+        assert rig.generators[config["resource"]].output[config["channel"]] is False
+    temp = rig.mapping["Temp_Switch"]
+    assert rig.generators[temp["resource"]].output[temp["channel"]] is True
+    for key in ("Pump_modulation", "Time_sequence"):
+        config = rig.mapping[key]
+        assert rig.generators[config["resource"]].output[config["channel"]] is True
+
+
+def test_mfli_rf_source_uses_mod_carrier_and_demod4_osc4(rig_mfli):
+    directory = workflow.run(rig_mfli.params)
+    assert_safe_mfli(rig_mfli)
+    device, nodes = rig_mfli.lockin.device_id, rig_mfli.lockin.nodes
+    assert len(rig_mfli.captures) == 27
+    # 载波由 Demod 1 / Osc 1 产生，原子读出固定 Demod 4 / Osc 4。
+    assert nodes[f"/{device}/mods/0/carrier/oscselect"] == 0
+    assert nodes[f"/{device}/demods/3/oscselect"] == 3
+    assert all(item["demod_oscselect"] == 3 for item in rig_mfli.captures)
+    assert all(abs(item["carrier_vpk"] - rig_mfli.params.y_rf_amplitude_vpk) < 1e-12
+               for item in rig_mfli.captures)
+    expected = ([89000 + 250 * i for i in range(9)] + [89500 + 250 * i for i in range(9)]
+                + [90000 + 250 * i for i in range(9)])
+    assert [item["frequency_hz"] for item in rig_mfli.captures] == expected
+    for index, event in enumerate(rig_mfli.events):
+        if event == "acquire":
+            assert rig_mfli.events[index - 2:index] == ["off", "settle"]
+    config = yaml.safe_load((directory / "experiment_config.yaml").read_text(encoding="utf-8"))
+    assert config["completion_status"] == "completed"
+    assert config["rf_source"]["kind"] == "MFLI"
+    assert config["rf_source"]["readout_demod_idx"] == 3
+    assert config["rf_source"]["readout_osc_idx"] == 3
+    assert config["rf_readback"]["carrier_osc"] == 0
+    with np.load(directory / "raw/current_000/frequency_0000_attempt_00.npz") as data:
+        assert data["rf_source"].item() == "MFLI"
+        assert float(data["rf_amplitude_vpk"]) == rig_mfli.params.y_rf_amplitude_vpk
+
+
+def test_mfli_source_rejects_hf2_mapping(tmp_path):
+    copy_config(tmp_path)
+    params = replace(small_params(), rf_source="MFLI")
+    with pytest.raises(ValueError, match="必须映射 MFLI"):
+        preparation.preflight(params, tmp_path)
+
+
+def test_rf_source_switch_requires_new_session(rig):
+    ctx = workflow.Workflow(rig.params)
+    ctx.execute(through("A02"))
+    with pytest.raises(ValueError, match="需要结束当前会话"):
+        ctx.update_parameters({"RF_SOURCE": "MFLI"})
+    ctx.finish()
+    assert_safe(rig)
 
 
 def test_real_six_step_order_and_slow_disk(rig, monkeypatch):

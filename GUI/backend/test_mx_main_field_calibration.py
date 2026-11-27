@@ -83,10 +83,13 @@ def test_real_child_dependency_revision_lock_refresh_and_finish(client):
     assert client.manager.hardware_lock.locked()
     current = client.get(BASE + "/sessions/active").json()
     assert current["session_id"] == session_id
-    assert client.post(BASE + "/sessions", json={"parameters": {}}).status_code == 409
+    # 已存在存活会话时优先报冲突；参数需能通过预检，否则会先报 422。
+    assert client.post(BASE + "/sessions", json={"parameters": small_params().to_external()}).status_code == 409
     response = client.post(f"{BASE}/sessions/{session_id}/steps", json={"revision": 0, "step_ids": ["A09"]})
     assert response.status_code == 422
     state = steps(client, session_id, [f"A{index:02d}" for index in range(1, 8)])
+    assert state["rf_source"]["kind"] == "DG4000"
+    assert state["rf_readback"]["kind"] == "DG4000"
     assert client.post(f"{BASE}/sessions/{session_id}/finish", json={"revision": 0}).status_code == 409
     assert client.get(f"{BASE}/sessions/{session_id}").json()["revision"] == state["revision"]
     # 新服务不能从磁盘恢复仍带输出的硬件会话。

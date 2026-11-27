@@ -4,7 +4,7 @@ from dataclasses import asdict
 from typing import Any
 from gs200 import GS200Instrument
 from tec_controller import TECInstrument
-from ...common import load_mapping, validate_safety_limit
+from ...common import load_mapping, load_safety_limits, validate_safety_limit
 from ...devices import create_signal_generator, create_lockin
 from ...instrument_config import validate_mapping_usage
 from ...lockin_compatibility import require_lockin_compatibility
@@ -13,10 +13,45 @@ from ...steps import (DeviceSession, initialize_lockin_inputs, connect_signal_ge
     TemperatureSwitchRestore, DisconnectTarget, STANDARD_PRESERVED_OUTPUTS,
     SafetyShutdownReport, run_safety_shutdown, set_temperature_switch, configure_temperature_control)
 from ...steps.state import StateGuard
-from .models import MxMainFieldCalibrationParams
+from .models import (
+    MFLI_READOUT_DEMOD_IDX,
+    MFLI_READOUT_OSC_IDX,
+    MxMainFieldCalibrationParams,
+    RF_SOURCE_DG4000,
+    RF_SOURCE_MFLI,
+)
+from .rf_source import (
+    create_rf_source,
+    mfli_signal_output_key,
+    require_mfli_connected_capabilities,
+    require_mfli_declared_capabilities,
+    select_mfli_output_range,
+)
 from .run_format import EXPERIMENT_ID, REQUIRED_MAPPING_KEYS
 from .excitation import _set_pump_gate_on, configure_pump, configure_response
 from ._helpers import _sleep
+
+
+def _validate_rf_source(params, mapping, root) -> None:
+    """射频源相关的映射、能力与安全限值检查；MFLI 的 MF-MOD 连接后按实机核对。"""
+    limits = load_safety_limits(root)
+    if params.rf_source == RF_SOURCE_MFLI:
+        lockin_cfg = mapping.get("lockin_r") or {}
+        if str(lockin_cfg.get("model", "")).upper() != "MFLI":
+            raise ValueError("RF_SOURCE=MFLI 时 lockin_r 必须映射 MFLI")
+        require_mfli_declared_capabilities(lockin_cfg.get("capabilities"))
+        if params.demod_idx != MFLI_READOUT_DEMOD_IDX or params.demod_osc_idx != MFLI_READOUT_OSC_IDX:
+            raise ValueError("MFLI 射频源下原子读出固定 Demod 4 / Osc 4（DEMOD_IDX=DEMOD_OSC_IDX=3）")
+        key = mfli_signal_output_key(mapping)
+        rule = limits.get(key) or {}
+        if any(rule.get(bound) is None for bound in ("min", "max")):
+            raise ValueError(f"尚未确认 {key} 的安全电压范围，禁止写入 MFLI 射频输出")
+        vpk = params.y_rf_amplitude_vpk
+        select_mfli_output_range(vpk)
+        for value in (0.0, vpk, -vpk):
+            validate_safety_limit(key, value, limits)
+        return
+    validate_safety_limit("rf_coil", params.y_rf_amplitude_vpp, limits)
 
 
 def preflight(params, root):
@@ -25,6 +60,7 @@ def preflight(params, root):
         raise ValueError("；".join(errors))
     mapping = load_mapping(root)
     require_lockin_compatibility(EXPERIMENT_ID, params.to_external(), mapping=mapping)
+    _validate_rf_source(params, mapping, root)
     return params, mapping
 
 
@@ -37,7 +73,9 @@ def _identity(device: Any) -> str | None:
 
 
 def _connect_devices(
-    mapping: dict[str, dict[str, Any]], session: DeviceSession
+    mapping: dict[str, dict[str, Any]],
+    session: DeviceSession,
+    rf_source: str = RF_SOURCE_DG4000,
 ) -> tuple[dict[str, Any], dict[str, int]]:
     devices: dict[str, Any] = {}
     channels: dict[str, int] = {}
@@ -55,13 +93,13 @@ def _connect_devices(
 
     x_cfg = mapping["X_magnetic_field"]
     rf_cfg = mapping["rf_coil"]
+    bindings: dict[str, tuple[str, dict[str, Any]]] = {
+        "x_field": ("X_magnetic_field", x_cfg),
+    }
+    if rf_source == RF_SOURCE_DG4000:
+        bindings["y_rf"] = ("rf_coil", rf_cfg)
     devices["xy_field"], routed_channels = connect_signal_generator_routes(
-        session,
-        "xy_field",
-        {
-            "x_field": ("X_magnetic_field", x_cfg),
-            "y_rf": ("rf_coil", rf_cfg),
-        },
+        session, "xy_field", bindings
     )
     channels.update(routed_channels)
 
@@ -102,6 +140,11 @@ def _connect_devices(
         lambda: create_lockin(hf_cfg),
     )
     initialize_lockin_inputs(devices["hf2"])
+    if rf_source == RF_SOURCE_MFLI:
+        lockin = devices["hf2"]
+        if str(getattr(lockin, "model", "")).upper() != "MFLI":
+            raise ValueError("RF_SOURCE=MFLI 时 lockin_r 必须映射 MFLI")
+        require_mfli_connected_capabilities(lockin.capabilities)
 
     tec_cfg = mapping["temperature"]
     devices["tec"] = session.connect_optional(
@@ -176,7 +219,9 @@ def safe_shutdown(
     channels: dict[str, int],
     params: MxMainFieldCalibrationParams,
     main_field_guard: StateGuard | None = None,
-    *, disconnect_tec: bool = True,
+    *,
+    rf_source: Any | None = None,
+    disconnect_tec: bool = True,
 ) -> SafetyShutdownReport:
     dg_channels: list[DGChannelShutdown] = []
     if devices.get("z_field") is not None and "z_field" in channels:
@@ -200,6 +245,8 @@ def safe_shutdown(
             )
 
     extra_actions: list[ShutdownAction] = []
+    if rf_source is not None and params.rf_source == RF_SOURCE_MFLI:
+        extra_actions.append(ShutdownAction("关闭 MFLI Y 射频输出", rf_source.shutdown))
     pump_rf = devices.get("pump_rf")
     if pump_rf is not None and "pump_gate" in channels:
         extra_actions.append(
@@ -247,7 +294,7 @@ def safe_shutdown(
     )
 
 
-def configure_initial_outputs(params, devices, channels, mapping):
+def configure_initial_outputs(params, devices, channels, mapping, rf_source=None):
     z_field = devices["z_field"]
     validate_safety_limit("Z_magnetic_field", 0.0)
     z_field.set_burst_state(False, channel=channels["z_field"])
@@ -261,6 +308,8 @@ def configure_initial_outputs(params, devices, channels, mapping):
     xy_field.set_mod_state(False, channel=channels["x_field"])
     xy_field.setup_dc(0.0, channel=channels["x_field"])
     xy_field.set_output(False, channel=channels["x_field"])
+    if rf_source is not None:
+        rf_source.initialize_safe_state()
     laser = devices["laser"]
     validate_safety_limit("Pump_laser_power", params.pump_laser_power_v)
     laser.setup_dc(params.pump_laser_power_v, channel=channels["pump_laser"])
@@ -279,10 +328,10 @@ def configure_initial_outputs(params, devices, channels, mapping):
     set_temperature_switch(devices["temp_switch"], True, channel=channels["temp_switch"])
 
 
-def _configure_outputs(params, devices, channels, mapping):
+def _configure_outputs(params, devices, channels, mapping, rf_source=None):
     clocks = _configure_reference_clocks(devices, mapping)
-    configure_initial_outputs(params, devices, channels, mapping)
+    configure_initial_outputs(params, devices, channels, mapping, rf_source)
     temperature = configure_temperature_control(devices.get("tec"), params.temperature_c, channel=1)
     configure_pump(params, devices, channels)
-    rate = configure_response(params, devices, channels)
+    rate, _ = configure_response(params, devices, channels, rf_source)
     return rate, temperature.actual_temperature_c, clocks

@@ -11174,6 +11174,14 @@ export interface components {
              * @default unknown
              */
             demod_mode: string;
+            /** Rf Source */
+            rf_source?: {
+                [key: string]: unknown;
+            } | null;
+            /** Rf Readback */
+            rf_readback?: {
+                [key: string]: unknown;
+            } | null;
             /** Rf Phase Calibration */
             rf_phase_calibration?: {
                 [key: string]: unknown;

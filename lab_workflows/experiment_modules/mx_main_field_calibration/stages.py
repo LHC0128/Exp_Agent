@@ -7,7 +7,7 @@ FINISH_ID = "A10"
 ANALYSIS_KEYS = ("GYROMAGNETIC_RATIO_HZ_PER_NT", "LINEAR_R_SQUARED_MIN")
 ACQUISITION = (
     Stage("A01", "启动预检", "准备", (), quality_gates=("参数、接线映射与安全限值有效",)),
-    Stage("A02", "设备连接与 GS200 初态回读", "准备", ("A01",), ("RUN_TAG",)),
+    Stage("A02", "设备连接与 GS200 初态回读", "准备", ("A01",), ("RUN_TAG", "RF_SOURCE")),
     Stage("A03", "参考时钟同步与回读", "准备", ("A02",), quality_gates=("参考时钟严格回读一致",)),
     Stage("A04", "辅助场归零、光功率与 GS200 限流", "初始条件", ("A03",),
           ("FIXED_PARAMS.Pump_laser_power", "FIXED_PARAMS.Probe_laser_power")),
@@ -15,7 +15,7 @@ ACQUISITION = (
     Stage("A06", "Pump 连续载波与常开门控", "激励", ("A05",),
           ("PUMP_CARRIER_FREQUENCY_HZ", "PUMP_CARRIER_AMPLITUDE_VPP", "PUMP_GATE_VOLTAGE_V")),
     Stage("A07", "Y RF 正弦与 R 解调准备", "激励", ("A06",),
-          ("Y_RF_AMPLITUDE_VPP", "MAIN_FIELD_REFERENCE_FREQUENCY_HZ", "DEMOD_IDX", "DEMOD_OSC_IDX",
+          ("RF_SOURCE", "Y_RF_AMPLITUDE_VPP", "MAIN_FIELD_REFERENCE_FREQUENCY_HZ", "DEMOD_IDX", "DEMOD_OSC_IDX",
            "HF2_SIGNAL_RANGE_V", "RESPONSE_RATE_SA_S", "RESPONSE_TIME_CONSTANT_S", "RESPONSE_DEMOD_ORDER")),
     Stage("A08", "GS200 电流与局部 Y RF 扫频", "采集", ("A07",),
           ("MAIN_FIELD_START_MA", "MAIN_FIELD_STOP_MA", "MAIN_FIELD_STEP_MA",

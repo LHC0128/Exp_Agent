@@ -1,5 +1,5 @@
 ---
-title: Mx 主磁场频率标定
+title: Mx 主磁场（GS200）频率标定
 type: Mx_Main_Field_Calibration
 scan_mode: nested_scan
 mapping_keys:
@@ -8,7 +8,7 @@ mapping_keys:
   Z_magnetic_field:
     role: fixed_off
   rf_coil:
-    role: detection_drive
+    role: rf_drive
   X_magnetic_field:
     role: fixed_off
   Pump_laser_power:
@@ -29,9 +29,11 @@ required_devices:
   - GS200
   - DG900
   - DG4000
+  - MFLI
   - 锁相放大器
 learned_notes:
   - TEC103 为可选控制设备；串口连接失败时告警跳过设温，本实验不执行温度判稳。
+  - Y 射频源由 RF_SOURCE 选择：MFLI 走 Signal Output 1 的 MF-MOD 载波（Demod 1 / Osc 1 产生），DG4000 走 rf_coil 映射通道；两种模式的原子读出统一 Demod 4 / Osc 4。
   - 扫描范围应不跨越总场零点，使用普通线性模型。
   - 设置主场电流后不单独等待；首个频点的温控关闭统一等待同时覆盖主场稳定。
   - 频率到磁场使用可配置的 GYROMAGNETIC_RATIO_HZ_PER_NT，取值见参数文件。
@@ -39,7 +41,9 @@ experiment_id: mx-main-field-calibration
 defaults_file: params/experiments/mx-main-field-calibration.yaml
 ---
 
-# Mx 主磁场频率标定
+# Mx 主磁场（GS200）频率标定
+
+本实验在 Mx 构型下扫描 GS200 主场电流并逐点寻找 Y 向射频共振中心，离线给出 Hz/mA 与 nT/mA。Y 向射频可由 MFLI Signal Output 1 的 MF-MOD 载波产生（当前实验室接线，载波参考 Demod 1 / Osc 1），也可切换回 DG4000 的 `rf_coil` 映射通道；两种模式的原子读出都固定使用 Demod 4 / Osc 4，运行参数与快照记录实际射频源。
 
 ## 采集时序与系统稳定
 
@@ -50,7 +54,7 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 ## 锁相采集方式与实际速率
 
-扫频使用 `RESPONSE_RATE_SA_S` 请求率、`FREQUENCY_DURATION_S` 时长和 `DEMOD_IDX` 解调器。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
+扫频使用 `RESPONSE_RATE_SA_S` 请求率、`FREQUENCY_DURATION_S` 时长和 `DEMOD_IDX` 解调器。射频源与读出按 Demod n ↔ Osc n 编号：MFLI 射频模式必须使用 Demod 4 / Osc 4（索引 3/3），DG4000 模式默认同样使用 Demod 4 / Osc 4；`DEMOD_IDX` 与 `DEMOD_OSC_IDX` 必须一致。单次样本读取保持原行为；有可选阶段时，仅预检本轮启用的时序采集。
 
 时序复用设备库全局 `acquisition_mode`：自动时 HF2 用 DAQ，MFLI 请求 ≤70 kSa/s 用 DAQ、>70 kSa/s 用 Scope；显式模式优先。解调 Scope 需要 MF-DIG，限无触发、单解调器、单段及设备内存；不支持的要求在输出启动前拒绝。Scope 档位按最近值选择，分析使用返回的最终实际率和真实时间轴。原文件名、信号键和目录保留，NPZ 新增模块/速率/时长/派生关系快照，`.npy` 配套 `_acquisition.npz` 旁文件；旧数据缺新字段时沿用原运行快照。预检与日志显示模块及速率，停流恢复和量程规则见[公共采集说明](../instruments/lockin_amplifier.md#解调时序的模块选择)。
 
@@ -60,7 +64,7 @@ TEC 可连接时只下发界面的目标温度，不启停控制器、不等待�
 
 ## 锁相设备与启动检查
 
-本实验使用设备库中全系统选择的 HF2 或 MFLI；切换入口为「仪器控制 → 设备库 → 锁相放大器」。主探测信号接所选设备的主电压输入，保留原解调器索引。启动前检查频率与通道能力；MFLI 连接后回读实际选件，EXT 时钟须核对 10 MHz 接线和锁定。历史 `HF2_*` 参数与 `hf2_configuration` 键继续兼容，代表本次实际选择的设备。具体差异、数据速率和安全范围见 [锁相接口说明](../instruments/lockin_amplifier.md)。
+本实验使用设备库中全系统选择的 HF2 或 MFLI；切换入口为「仪器控制 → 设备库 → 锁相放大器」。主探测信号接所选设备的主电压输入，原子读出使用 Demod 4 / Osc 4。启动前检查频率与通道能力；RF_SOURCE=MFLI 时 `lockin_r` 必须映射 MFLI，离线预检要求声明 MF-MD，连接后再按实机核对 MF-MD 与 MF-MOD，EXT 时钟须核对 10 MHz 接线和锁定。历史 `HF2_*` 参数与 `hf2_configuration` 键继续兼容，代表本次实际选择的设备。具体差异、数据速率和安全范围见 [锁相接口说明](../instruments/lockin_amplifier.md)。
 
 ## 目标和构型
 
@@ -72,7 +76,7 @@ f(I)=K_f I+f_0,
 B(I)=\frac{f(I)}{\gamma}=K_B I+B_0.
 \]
 
-主场与 Pump 光沿 Z，Probe 光沿 X，`rf_coil` 沿 Y。DG4000 `Z_magnetic_field` 在整个实验中固定为 0 V 且 Output OFF，避免辅助 Z 场混入 GS200 标定。
+主场与 Pump 光沿 Z，Probe 光沿 X，`rf_coil` 沿 Y。`RF_SOURCE=MFLI` 时 MFLI Signal Output 1 经串联电阻驱动 Y 射频线圈，载波由 MF-MOD 产生（参考 Demod 1 / Osc 1），读出 Demod 4 参考 Osc 4；`RF_SOURCE=DG4000` 时由 `rf_coil` 映射通道输出正弦，读出同样为 Demod 4 / Osc 4。两者的物理驱动幅度不同：MFLI 模式按峰值 `Vpk = Y_RF_AMPLITUDE_VPP / 2` 写入载波幅度，DG4000 模式直接写 `Y_RF_AMPLITUDE_VPP`。DG4000 `Z_magnetic_field` 在整个实验中固定为 0 V 且 Output OFF，避免辅助 Z 场混入 GS200 标定。
 
 ## 扫描和采集
 
@@ -88,7 +92,7 @@ f_\mathrm{pred}(I)=f_\mathrm{ref}+K_\mathrm{initial}(I-I_\mathrm{ref}).
 
 每个 Y RF 频点依次执行：
 
-1. 设置 Y RF 频率和配置的幅度，并同步 锁相放大器 振荡器。
+1. 按 `RF_SOURCE` 设置 Y RF 频率和配置的幅度（DG4000 写 `rf_coil`；MFLI 同时写载波 Osc 1 与读出 Osc 4），并同步锁相放大器振荡器。
 2. 将温控开关设置为 0 V DC、Output ON。
 3. 只等待一次 `SYSTEM_SETTLE_S`，同时覆盖温控关闭、RF 频点稳定以及每个电流点首频点的主场稳定。
 4. 按 `FREQUENCY_DURATION_S` 采集 Demod0 R。
@@ -127,7 +131,7 @@ data/Mx_Main_Field_Calibration/<run>/
 
 ## 模块与可执行流程
 
-`lab_workflows/experiment_modules/mx_main_field_calibration/` 中，`preparation.py` 负责预检、连接、时钟、固定条件与恢复，`excitation.py` 负责 Pump 激励和 Y RF/解调准备，`acquisition.py` 负责逐电流、逐频点采集与写盘。`workflow.py` 只编排完整运行及分步会话；两种入口调用同一业务。`analysis_steps.py` 保留原 Lorentzian 与加权线性算法，`analysis_plotting.py` 负责论文图，`analysis.py` 编排独立分析。
+`lab_workflows/experiment_modules/mx_main_field_calibration/` 中，`preparation.py` 负责预检、连接、时钟、固定条件与恢复，`rf_source.py` 封装 DG4000 `rf_coil` 与 MFLI MF-MOD 两种射频源及回读校验，`excitation.py` 负责 Pump 激励和 Y RF/解调准备，`acquisition.py` 负责逐电流、逐频点采集与写盘。`workflow.py` 只编排完整运行及分步会话；两种入口调用同一业务。`analysis_steps.py` 保留原 Lorentzian 与加权线性算法，`analysis_plotting.py` 负责论文图，`analysis.py` 编排独立分析。
 
 | 节点 | 操作与前置 |
 | --- | --- |
@@ -137,7 +141,7 @@ data/Mx_Main_Field_Calibration/<run>/
 | A04 | A03 后辅助场归零、设置 Pump/Probe 光功率与 GS200 限流 |
 | A05 | A04 后只下发 TEC UI 目标温度，连接失败告警跳过 |
 | A06 | A05 后设置 Pump 连续载波与常开门控 |
-| A07 | A06 后准备 Y RF 正弦及 R 解调，记录实际采样率 |
+| A07 | A06 后按 RF_SOURCE 准备 Y 射频（DG4000 正弦或 MFLI MF-MOD 载波）及 Demod 4 / Osc 4 解调，记录实际采样率 |
 | A08 | A07 后执行电流×局部扫频；每次尝试完整保存，标准差门槛用尽则停止后继 |
 | A09 | A08 后归零关闭辅助场与 RF，恢复 GS200 初态并封存本轮 |
 | A10 | 无前置的安全结束；结束会话并断开 TEC，其他连接按原策略保留 |
@@ -148,7 +152,7 @@ A09 恢复 GS200 模式、量程和限流后，A04 及后继标记为需要重�
 
 本实验清单显式声明 `run_step_id=A08`、`finish_step_id=A10`，不按编号或位置猜测角色。旧服务缺字段时阻止新分步执行，仍可恢复任务、取消和安全结束；“执行完成”不代表科学质量合格，诊断提示不新增硬件阻断。产物只按执行记录展示，不补造链接或回写历史元数据。共享参数失效、多参数合并及历史草稿隔离规则见 [GUI 分步契约](../../GUI/README.md#分步流程契约与兼容)。
 
-运行页保留「运行 / 历史」两个主 Tab。流程容器顶部提供保存参数与布局、派生预览、预检、完整运行、取消及任务状态；采集与独立分析按两列显示，窄屏自动单列。参数在实际设置或使用它的节点内按基础/高级分类编辑；共享的 Y RF 幅度及预测参考频率在 A07/A08 使用同一份值，光功率和 TEC 目标温度只在初始化节点编辑。
+运行页保留「运行 / 历史」两个主 Tab。流程容器顶部提供保存参数与布局、派生预览、预检、完整运行、取消及任务状态；采集与独立分析按两列显示，窄屏自动单列。参数在实际设置或使用它的节点内按基础/高级分类编辑；RF_SOURCE 在 A02/A07 共用，切换射频源会使 A02 及后继失效，且必须在结束当前会话后重新连接；共享的 Y RF 幅度及预测参考频率在 A07/A08 使用同一份值，光功率和 TEC 目标温度只在初始化节点编辑。
 
 空闲会话修改参数后显示未应用草稿及预计失效步骤，应用只更新参数和失效状态，必须显式选择重跑。还原草稿可清除失效预览；保存默认值同时保存统一分类偏好。刷新页面恢复存活会话，后台重启不从磁盘恢复硬件。可从流程容器下载实验包内的可编辑 [Excalidraw 原图](../../lab_workflows/experiment_modules/mx_main_field_calibration/workflow.excalidraw)。
 
@@ -160,6 +164,6 @@ A09 恢复 GS200 模式、量程和限流后，A04 及后继标记为需要重�
 
 ## 安全结束状态
 
-运行前记录 GS200 的源模式、电流设定、输出开关、量程和限流。正常、取消或异常结束后均恢复该状态；Z 辅助场、X 场与 Y RF 归零关闭，温控恢复为 5 V DC、Output ON。Pump/Probe 光功率、Pump 载波/门控和 锁相放大器 配置按标准策略保留，正常结束只断开 TEC。
+运行前记录 GS200 的源模式、电流设定、输出开关、量程和限流。正常、取消或异常结束后均恢复该状态；Z 辅助场、X 场与 Y RF 归零关闭，温控恢复为 5 V DC、Output ON。MFLI 射频模式先关闭 Signal Output 1 并逐项回读，再关 MF-MOD、清零载波幅值与偏置；DG4000 射频模式按 `rf_coil` 通道归零关闭。Pump/Probe 光功率、Pump 载波/门控和 锁相放大器 配置按标准策略保留，正常结束只断开 TEC。
 
 Pump 收尾沿用最近成功执行 A06 的载波与门控参数；应用参数但尚未重跑 A06 时，结束会话不会将新值写入仪器。实际重跑 A06 后才更新该保留基线；尚未执行 A06 时沿用会话初始参数的原有收尾策略。

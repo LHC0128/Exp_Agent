@@ -17,7 +17,8 @@ from ...steps import RoutedSignalGenerator, SignalGeneratorRoute
 from ...steps.coil_drive_chain import SafetyAbort
 from . import acquisition, analysis, preparation, run_format, signal_fit
 from .definition import ADAPTER, DEFINITION
-from .models import MOD_CARRIER_OSC_IDX, MOD_SIDEBAND_OSC_IDX, READOUT_DEMOD_IDX, RfPhaseSensitivityParams
+from .models import (MOD_CARRIER_OSC_IDX, MOD_SIDEBAND_OSC_IDXS, READOUT_DEMOD_IDX,
+                     READOUT_OSC_IDX, RfPhaseSensitivityParams)
 from .workflow import Workflow
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -261,7 +262,7 @@ def rig(monkeypatch, tmp_path):
         theta = np.deg2rad(center() + 1.)
         sb_on = lockin.values[f"/{dev}/mods/0/sidebands/0/enable"] and lockin.values[f"/{dev}/mods/0/sidebands/1/enable"]
         if lockin.values[f"/{dev}/mods/0/enable"] and sb_on:
-            f = lockin.values[f"/{dev}/oscs/{MOD_SIDEBAND_OSC_IDX}/freq"]
+            f = lockin.values[f"/{dev}/oscs/{MOD_SIDEBAND_OSC_IDXS[0]}/freq"]
             theta += lockin.values[f"/{dev}/mods/0/index"] * np.sin(2 * np.pi * f * t) / np.sqrt(1 + (f / 85.)**2)
         phase_shift = np.deg2rad(lockin.get_double(lockin.demod_path(READOUT_DEMOD_IDX) + "/phaseshift"))
         z = (.1j * np.sin(theta) + .02 * np.cos(theta)) * np.exp(-1j * phase_shift)
@@ -422,7 +423,7 @@ def test_full_round_and_physical_phase_transfer(rig, capsys):
         assert updates[-1]["data"]["estimated_remaining_seconds"] == 0
     c = run_format.read_config(run_dir / "experiment_config.yaml")
     assert c["completion_status"] == "completed" and c["calibration"]["accepted"] and c["noise"]["accepted"], c
-    assert c["lockin"]["demod_idx"] == READOUT_DEMOD_IDX and c["lockin"]["osc_select"] == MOD_CARRIER_OSC_IDX
+    assert c["lockin"]["demod_idx"] == READOUT_DEMOD_IDX and c["lockin"]["osc_select"] == READOUT_OSC_IDX
     assert abs(c["calibration"]["k0_v_per_rad"]) == pytest.approx(.10, rel=.02)
     assert abs(c["calibration"]["slope_x_v_per_rad"]) < 1e-3
     assert len(c["calibration"]["points"]) == len(acquisition.local_offsets(rig.p.local_span_deg)) == 35
@@ -770,7 +771,7 @@ def test_a04_inflection_updates_carrier_center_for_a05_and_a06(rig, monkeypatch)
         phi = np.deg2rad(signal_fit.wrap_deg(cmd - 103.5))
         sb_on = rig.lockin.values[f"/{dev}/mods/0/sidebands/0/enable"] and rig.lockin.values[f"/{dev}/mods/0/sidebands/1/enable"]
         if rig.lockin.values[f"/{dev}/mods/0/enable"] and sb_on:
-            f = rig.lockin.values[f"/{dev}/oscs/{MOD_SIDEBAND_OSC_IDX}/freq"]
+            f = rig.lockin.values[f"/{dev}/oscs/{MOD_SIDEBAND_OSC_IDXS[0]}/freq"]
             phi = phi + rig.lockin.values[f"/{dev}/mods/0/index"] * np.sin(2 * np.pi * f * t) / np.sqrt(1 + (f / 85.)**2)
         # 故意构造非零 v0 不对称强色散响应，使 A03 高次与 A04 拐点存在约 2° 递进。
         r = 2.6

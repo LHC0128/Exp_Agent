@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 import numpy as np
-from lockin_amplifier import OscillatorConfig, demod
 from ...common import validate_safety_limit
 from ...experiment_runtime import check_cancelled
 from ...steps import set_temperature_switch
@@ -125,11 +124,10 @@ def _acquire_scan(
     channels: dict[str, int],
     actual_rate: float,
     device_id: str,
+    rf_source: Any,
 ) -> list[str]:
     current_axis = build_main_field_axis(params)
     gs200 = devices["gs200"]
-    rf = devices["xy_field"]
-    hf2 = devices["hf2"]
     summary_files: list[str] = []
     predicted_centers: list[float] = []
 
@@ -158,16 +156,8 @@ def _acquire_scan(
                 f"{frequency:.3f} Hz"
             )
             validate_safety_limit("rf_coil", params.y_rf_amplitude_vpp)
-            rf.set_frequency(float(frequency), channel=channels["y_rf"])
-            rf.set_phase_adjust(0.0, channel=channels["y_rf"])
-            rf.set_amplitude(params.y_rf_amplitude_vpp, channel=channels["y_rf"])
-            rf.set_output(True, channel=channels["y_rf"])
-            demod.configure_oscillator(
-                hf2,
-                OscillatorConfig(
-                    osc_index=params.demod_osc_idx, frequency=float(frequency)
-                ),
-            )
+            rf_source.set_frequency(float(frequency))
+            rf_source.set_output(True)
             summary, attempt, filename = _acquire_valid_r_point(
                 params,
                 point_dir,
@@ -181,6 +171,8 @@ def _acquire_scan(
                     "frequency_index": np.int64(frequency_index),
                     "frequency_hz": np.float64(frequency),
                     "rf_amplitude_vpp": np.float64(params.y_rf_amplitude_vpp),
+                    "rf_amplitude_vpk": np.float64(params.y_rf_amplitude_vpk),
+                    "rf_source": np.asarray(params.rf_source),
                 },
                 actual_rate=actual_rate,
                 device_id=device_id,
@@ -188,7 +180,7 @@ def _acquire_scan(
             summaries.append(summary)
             accepted_attempts.append(attempt)
             accepted_files.append(filename)
-        rf.set_output(False, channel=channels["y_rf"])
+        rf_source.set_output(False)
 
         summary_path = point_dir / "frequency_scan.npz"
         np.savez(
@@ -203,12 +195,14 @@ def _acquire_scan(
             accepted_attempt_index=accepted_attempts,
             accepted_file=np.asarray(accepted_files, dtype=str),
             actual_rate_sa_s=np.float64(summaries[0].get("actual_rate_sa_s", actual_rate)),
+            rf_source=np.asarray(params.rf_source),
+            rf_amplitude_vpk=np.float64(params.y_rf_amplitude_vpk),
         )
         summary_files.append(
             str(summary_path.relative_to(run_dir.root)).replace("\\", "/")
         )
 
-    rf.set_output(False, channel=channels["y_rf"])
+    rf_source.set_output(False)
     np.savez(
         run_dir.raw / "main_field_scan_index.npz",
         main_field_current_ma=current_axis,

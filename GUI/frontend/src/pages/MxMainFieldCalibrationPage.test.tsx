@@ -15,6 +15,7 @@ const mockApi = vi.mocked(api);
 const fields = [
   {"name":"SYSTEM_SETTLE_S","label":"系统稳定时间","type":"number","default":0.1,"group":"basic","unit":"s","minimum":0},
   {"name":"RUN_TAG","label":"运行标签","type":"string","default":"mx_main_field_cal","group":"basic","unit":""},
+  {"name":"RF_SOURCE","label":"Y 射频源","type":"string","default":"MFLI","group":"basic","unit":"","options":[{"value":"MFLI","label":"MFLI Signal Output 1（MF-MOD）"},{"value":"DG4000","label":"DG4000 rf_coil"}]},
   {"name":"MAIN_FIELD_START_MA","label":"主场电流起点","type":"number","default":7,"group":"basic","unit":"mA"},
   {"name":"MAIN_FIELD_STOP_MA","label":"主场电流终点","type":"number","default":10,"group":"basic","unit":"mA"},
   {"name":"MAIN_FIELD_STEP_MA","label":"主场电流步进","type":"number","default":0.5,"group":"basic","unit":"mA","minimum":0.001},
@@ -29,8 +30,8 @@ const fields = [
   {"name":"TEMP_SWITCH_ON_LAG_S","label":"每频点温控恢复等待","type":"number","default":1,"group":"basic","unit":"s","minimum":0},
   {"name":"R_BAD_POINT_STD_THRESHOLD_V","label":"R 坏点标准差阈值","type":"number","default":0.01,"group":"advanced","unit":"V","minimum":0},
   {"name":"R_POINT_MAX_ATTEMPTS","label":"R 点最大采集次数","type":"integer","default":3,"group":"advanced","unit":"","minimum":1},
-  {"name":"DEMOD_IDX","label":"锁相放大器 Demod 索引","type":"integer","default":0,"group":"advanced","unit":"","minimum":0},
-  {"name":"DEMOD_OSC_IDX","label":"锁相放大器 振荡器索引","type":"integer","default":0,"group":"advanced","unit":"","minimum":0},
+  {"name":"DEMOD_IDX","label":"锁相放大器 Demod 索引","type":"integer","default":3,"group":"advanced","unit":"","minimum":0},
+  {"name":"DEMOD_OSC_IDX","label":"锁相放大器 振荡器索引","type":"integer","default":3,"group":"advanced","unit":"","minimum":0},
   {"name":"HF2_SIGNAL_RANGE_V","label":"锁相放大器 Input1 量程","type":"number","default":2,"group":"advanced","unit":"V","minimum":0.001},
   {"name":"RESPONSE_RATE_SA_S","label":"响应请求采样率","type":"number","default":1000,"group":"advanced","unit":"Sa/s","minimum":1},
   {"name":"RESPONSE_TIME_CONSTANT_S","label":"响应时间常数","type":"number","default":0.001,"group":"advanced","unit":"s","minimum":0},
@@ -45,12 +46,12 @@ const fields = [
 ];
 const acquisition = [
   {"id":"A01","title":"启动预检","group":"准备","dependencies":[],"parameters":[],"artifacts":[],"display_parameters":[]},
-  {"id":"A02","title":"设备连接与 GS200 初态回读","group":"准备","dependencies":["A01"],"parameters":["RUN_TAG"],"artifacts":[],"display_parameters":["RUN_TAG"]},
+  {"id":"A02","title":"设备连接与 GS200 初态回读","group":"准备","dependencies":["A01"],"parameters":["RUN_TAG","RF_SOURCE"],"artifacts":[],"display_parameters":["RUN_TAG","RF_SOURCE"]},
   {"id":"A03","title":"参考时钟同步与回读","group":"准备","dependencies":["A02"],"parameters":[],"artifacts":[],"display_parameters":[]},
   {"id":"A04","title":"辅助场归零、光功率与 GS200 限流","group":"初始条件","dependencies":["A03"],"parameters":["FIXED_PARAMS.Pump_laser_power","FIXED_PARAMS.Probe_laser_power"],"artifacts":[],"display_parameters":["FIXED_PARAMS.Pump_laser_power","FIXED_PARAMS.Probe_laser_power"]},
   {"id":"A05","title":"TEC 目标温度","group":"初始条件","dependencies":["A04"],"parameters":["FIXED_PARAMS.temperature"],"artifacts":[],"display_parameters":["FIXED_PARAMS.temperature"]},
   {"id":"A06","title":"Pump 连续载波与常开门控","group":"激励","dependencies":["A05"],"parameters":["PUMP_CARRIER_FREQUENCY_HZ","PUMP_CARRIER_AMPLITUDE_VPP","PUMP_GATE_VOLTAGE_V"],"artifacts":[],"display_parameters":["PUMP_CARRIER_FREQUENCY_HZ","PUMP_CARRIER_AMPLITUDE_VPP","PUMP_GATE_VOLTAGE_V"]},
-  {"id":"A07","title":"Y RF 正弦与 R 解调准备","group":"激励","dependencies":["A06"],"parameters":["Y_RF_AMPLITUDE_VPP","MAIN_FIELD_REFERENCE_FREQUENCY_HZ","DEMOD_IDX","DEMOD_OSC_IDX","HF2_SIGNAL_RANGE_V","RESPONSE_RATE_SA_S","RESPONSE_TIME_CONSTANT_S","RESPONSE_DEMOD_ORDER"],"artifacts":[],"display_parameters":["Y_RF_AMPLITUDE_VPP","MAIN_FIELD_REFERENCE_FREQUENCY_HZ","DEMOD_IDX","DEMOD_OSC_IDX","HF2_SIGNAL_RANGE_V","RESPONSE_RATE_SA_S","RESPONSE_TIME_CONSTANT_S","RESPONSE_DEMOD_ORDER"]},
+  {"id":"A07","title":"Y RF 正弦与 R 解调准备","group":"激励","dependencies":["A06"],"parameters":["RF_SOURCE","Y_RF_AMPLITUDE_VPP","MAIN_FIELD_REFERENCE_FREQUENCY_HZ","DEMOD_IDX","DEMOD_OSC_IDX","HF2_SIGNAL_RANGE_V","RESPONSE_RATE_SA_S","RESPONSE_TIME_CONSTANT_S","RESPONSE_DEMOD_ORDER"],"artifacts":[],"display_parameters":["RF_SOURCE","Y_RF_AMPLITUDE_VPP","MAIN_FIELD_REFERENCE_FREQUENCY_HZ","DEMOD_IDX","DEMOD_OSC_IDX","HF2_SIGNAL_RANGE_V","RESPONSE_RATE_SA_S","RESPONSE_TIME_CONSTANT_S","RESPONSE_DEMOD_ORDER"]},
   {"id":"A08","title":"GS200 电流与局部 Y RF 扫频","group":"采集","dependencies":["A07"],"parameters":["MAIN_FIELD_START_MA","MAIN_FIELD_STOP_MA","MAIN_FIELD_STEP_MA","MAIN_FIELD_REFERENCE_CURRENT_MA","MAIN_FIELD_REFERENCE_FREQUENCY_HZ","MAIN_FIELD_INITIAL_HZ_PER_MA","FREQUENCY_HALF_WIDTH_HZ","FREQUENCY_STEP_HZ","Y_RF_AMPLITUDE_VPP","FREQUENCY_DURATION_S","SYSTEM_SETTLE_S","TEMP_SWITCH_ON_LAG_S","R_BAD_POINT_STD_THRESHOLD_V","R_POINT_MAX_ATTEMPTS"],"artifacts":["raw/main_field_scan_index.npz","raw/current_*/*.npz"],"display_parameters":["MAIN_FIELD_START_MA","MAIN_FIELD_STOP_MA","MAIN_FIELD_STEP_MA","MAIN_FIELD_REFERENCE_CURRENT_MA","MAIN_FIELD_REFERENCE_FREQUENCY_HZ","MAIN_FIELD_INITIAL_HZ_PER_MA","FREQUENCY_HALF_WIDTH_HZ","FREQUENCY_STEP_HZ","Y_RF_AMPLITUDE_VPP","FREQUENCY_DURATION_S","SYSTEM_SETTLE_S","TEMP_SWITCH_ON_LAG_S","R_BAD_POINT_STD_THRESHOLD_V","R_POINT_MAX_ATTEMPTS"]},
   {"id":"A09","title":"恢复 GS200 与本轮安全收尾","group":"结束","dependencies":["A08"],"parameters":[],"artifacts":[],"display_parameters":[]},
   {"id":"A10","title":"安全结束会话","group":"结束","dependencies":[],"parameters":[],"artifacts":[],"display_parameters":[]},
@@ -61,7 +62,7 @@ const analysis = [
   {"id":"B03","title":"加权线性标定与磁场换算","group":"独立分析","dependencies":["B02"],"parameters":["GYROMAGNETIC_RATIO_HZ_PER_NT","LINEAR_R_SQUARED_MIN"],"artifacts":["calibration_evaluation.json"],"display_parameters":["GYROMAGNETIC_RATIO_HZ_PER_NT","LINEAR_R_SQUARED_MIN"]},
   {"id":"B04","title":"标定报告与结果图","group":"独立分析","dependencies":["B03"],"parameters":[],"artifacts":["analysis.yaml","analysis.json","calibration_results.npz","frequency_response_fits.png","main_field_frequency_calibration.png","main_field_frequency_residuals.png"],"display_parameters":[]},
 ];
-const impacts: Record<string, Record<string, string[]>> = {"acquisition":{"RUN_TAG":["A02","A03","A04","A05","A06","A07","A08","A09"],"FIXED_PARAMS.Pump_laser_power":["A04","A05","A06","A07","A08","A09"],"FIXED_PARAMS.Probe_laser_power":["A04","A05","A06","A07","A08","A09"],"FIXED_PARAMS.temperature":["A05","A06","A07","A08","A09"],"PUMP_CARRIER_FREQUENCY_HZ":["A06","A07","A08","A09"],"PUMP_CARRIER_AMPLITUDE_VPP":["A06","A07","A08","A09"],"PUMP_GATE_VOLTAGE_V":["A06","A07","A08","A09"],"Y_RF_AMPLITUDE_VPP":["A07","A08","A09"],"MAIN_FIELD_REFERENCE_FREQUENCY_HZ":["A07","A08","A09"],"DEMOD_IDX":["A07","A08","A09"],"DEMOD_OSC_IDX":["A07","A08","A09"],"HF2_SIGNAL_RANGE_V":["A07","A08","A09"],"RESPONSE_RATE_SA_S":["A07","A08","A09"],"RESPONSE_TIME_CONSTANT_S":["A07","A08","A09"],"RESPONSE_DEMOD_ORDER":["A07","A08","A09"],"MAIN_FIELD_START_MA":["A08","A09"],"MAIN_FIELD_STOP_MA":["A08","A09"],"MAIN_FIELD_STEP_MA":["A08","A09"],"MAIN_FIELD_REFERENCE_CURRENT_MA":["A08","A09"],"MAIN_FIELD_INITIAL_HZ_PER_MA":["A08","A09"],"FREQUENCY_HALF_WIDTH_HZ":["A08","A09"],"FREQUENCY_STEP_HZ":["A08","A09"],"FREQUENCY_DURATION_S":["A08","A09"],"SYSTEM_SETTLE_S":["A08","A09"],"TEMP_SWITCH_ON_LAG_S":["A08","A09"],"R_BAD_POINT_STD_THRESHOLD_V":["A08","A09"],"R_POINT_MAX_ATTEMPTS":["A08","A09"]},"analysis":{"GYROMAGNETIC_RATIO_HZ_PER_NT":["B03","B04"],"LINEAR_R_SQUARED_MIN":["B03","B04"]}};
+const impacts: Record<string, Record<string, string[]>> = {"acquisition":{"RUN_TAG":["A02","A03","A04","A05","A06","A07","A08","A09"],"RF_SOURCE":["A02","A03","A04","A05","A06","A07","A08","A09"],"FIXED_PARAMS.Pump_laser_power":["A04","A05","A06","A07","A08","A09"],"FIXED_PARAMS.Probe_laser_power":["A04","A05","A06","A07","A08","A09"],"FIXED_PARAMS.temperature":["A05","A06","A07","A08","A09"],"PUMP_CARRIER_FREQUENCY_HZ":["A06","A07","A08","A09"],"PUMP_CARRIER_AMPLITUDE_VPP":["A06","A07","A08","A09"],"PUMP_GATE_VOLTAGE_V":["A06","A07","A08","A09"],"Y_RF_AMPLITUDE_VPP":["A07","A08","A09"],"MAIN_FIELD_REFERENCE_FREQUENCY_HZ":["A07","A08","A09"],"DEMOD_IDX":["A07","A08","A09"],"DEMOD_OSC_IDX":["A07","A08","A09"],"HF2_SIGNAL_RANGE_V":["A07","A08","A09"],"RESPONSE_RATE_SA_S":["A07","A08","A09"],"RESPONSE_TIME_CONSTANT_S":["A07","A08","A09"],"RESPONSE_DEMOD_ORDER":["A07","A08","A09"],"MAIN_FIELD_START_MA":["A08","A09"],"MAIN_FIELD_STOP_MA":["A08","A09"],"MAIN_FIELD_STEP_MA":["A08","A09"],"MAIN_FIELD_REFERENCE_CURRENT_MA":["A08","A09"],"MAIN_FIELD_INITIAL_HZ_PER_MA":["A08","A09"],"FREQUENCY_HALF_WIDTH_HZ":["A08","A09"],"FREQUENCY_STEP_HZ":["A08","A09"],"FREQUENCY_DURATION_S":["A08","A09"],"SYSTEM_SETTLE_S":["A08","A09"],"TEMP_SWITCH_ON_LAG_S":["A08","A09"],"R_BAD_POINT_STD_THRESHOLD_V":["A08","A09"],"R_POINT_MAX_ATTEMPTS":["A08","A09"]},"analysis":{"GYROMAGNETIC_RATIO_HZ_PER_NT":["B03","B04"],"LINEAR_R_SQUARED_MIN":["B03","B04"]}};
 const layout = { basic: fields.filter(field => field.group === "basic").map(field => field.name),
   advanced: fields.filter(field => field.group === "advanced").map(field => field.name) };
 const old = { run_id: "1014_old", timestamp: "1014", run_tag: "old", completion_status: "completed" };
@@ -82,7 +83,7 @@ beforeEach(() => {
   mockApi.mockReset();
   mockApi.mockImplementation(async (url, options) => {
     const body = options?.body ? JSON.parse(String(options.body)) : {};
-    if (url === BASE) return { id: ID, title: "Mx 主磁场频率标定", description: "R-only", wiring_notes: [] } as never;
+    if (url === BASE) return { id: ID, title: "Mx 主磁场（GS200）频率标定", description: "R-only", wiring_notes: [] } as never;
     if (url === `${BASE}/schema`) return { fields: fields.map(field => ({ ...field, default: savedParameters[field.name] })),
       parameter_layout_saved: true, parameter_layout: savedLayout } as never;
     if (url === "/api/jobs") return [] as never;

@@ -12,13 +12,12 @@ from typing import Any, ClassVar
 
 from ...experiment_params import ExperimentParams, parameter
 from ..z_chain_common import params as chain_params
-from ..z_chain_common.rf_phase import (
-    MFLI_MAX_SIGOUT_V,
-    MOD_CARRIER_OSC_IDX,
-    MOD_IDX,
-    MOD_SIDEBAND_OSC_IDX,
-    PM_DEPTH_DEG,
-)
+from ..z_chain_common.rf_phase import MFLI_MAX_SIGOUT_V, MOD_IDX, PM_DEPTH_DEG
+
+# 统一 Demod n ↔ Osc n：载波由 Demod 1 / Osc 1 产生，边带用 Osc 2 / Osc 3，读出 Demod 4 / Osc 4。
+MOD_CARRIER_OSC_IDX = 0
+MOD_SIDEBAND_OSC_IDXS = (1, 2)
+READOUT_OSC_IDX = 3
 
 CARRIER_HZ = 5000.0
 # 11-25 实机记录：0.5 Vpp 下读出饱和、0.05 Vpp 保持线性，默认取 0.05 Vpp。
@@ -86,7 +85,7 @@ class RfPhaseSensitivityParams(ExperimentParams):
 
     demod0_idx: int = parameter(default=READOUT_DEMOD_IDX, external_name="DEMOD0_IDX", label="MFLI 读出解调器索引",
                                 read_only=True,
-                                description="开启 MF-MOD 后 Demod 1–3 由调制器占用，原子读出固定使用 Demod 4（索引 3）。")
+                                description="Demod n ↔ Osc n：载波 Demod 1 / Osc 1，原子读出固定 Demod 4 / Osc 4（索引 3）。")
     demod0_signal_range_v: float = parameter(default=3., external_name="DEMOD0_SIGNAL_RANGE", label="MFLI 输入量程",
                                             unit="V", minimum=0.001, maximum=3.)
     demod0_order: int = parameter(default=4, external_name="DEMOD0_ORDER", label="MFLI 滤波阶数", minimum=1, maximum=8)

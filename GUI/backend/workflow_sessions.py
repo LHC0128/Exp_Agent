@@ -84,6 +84,8 @@ class XYSession(StrictModel):
     outputs: dict[str, str] = Field(default_factory=dict)
     output_source: str = "最近成功模块的写入结果；未经额外回读"
     demod_mode: str = "unknown"
+    rf_source: dict[str, Any] | None = None
+    rf_readback: dict[str, Any] | None = None
     rf_phase_calibration: dict[str, Any] | None = None
     xy_phase_calibration: dict[str, Any] | None = None
     safety_shutdown: dict[str, Any] | None = None

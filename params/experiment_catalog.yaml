@@ -186,6 +186,7 @@ experiment_descriptions:
     TEC。各结束路径恢复初态 PZT/扫描及已执行的光功率基准，辅助场归零关闭，保持主场与 Pump。 分步角色由清单声明，状态与产物以执行记录为准。
   mx-main-field-calibration: 运行页按节点编辑参数并分步执行，历史目录独立分阶段分析；在 Mx 构型下扫描 GS200 主场电流和 Y
     RF 频率，由离线平方根洛伦兹幅度模型拟合中心并标定 Hz/mA 和 nT/mA；γ 为幅度 −3 dB 半宽，新结果明确模型和宽度定义，历史结果不自动改写。
+    Y 射频源可选 MFLI Signal Output 1（MF-MOD 载波，Demod 1 / Osc 1 产生）或 DG4000 rf_coil 通道，两种模式的原子读出都固定 Demod 4 / Osc 4。
     锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。
     解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。 配置完成后关闭温控并按
     SYSTEM_SETTLE_S 稳定，采集至内存，恢复温控后保存；TEC 可连接时仅下发 UI 目标温度。 分步角色由清单声明，状态与产物以执行记录为准。
@@ -277,13 +278,13 @@ experiment_titles:
   mx-z-optimal-control-dg4000-bias-xyz-balance: Mx Z 最优控制 DG4000 偏置 XYZ 平衡场
   mx-y-rf-power-optimization: Mx Y RF 光功率灵敏度优化
   mx-y-rf-probe-detuning-optimization: Mx Y RF Probe 光功率与失谐灵敏度优化
-  mx-main-field-calibration: Mx 主磁场频率标定
+  mx-main-field-calibration: Mx 主磁场（GS200）频率标定
   mx-keithley-6221-main-field-calibration: Mx Keithley 6221 主磁场频率标定
   mx-keithley-6221-optimal-control-rf-sensitivity: Mx Keithley 6221 最优控制 RF 灵敏度
   mx-keithley-6221-optimal-control-xyz-balance: Mx Keithley 6221 最优控制 XYZ 平衡场
   mx-main-field-noise-spectrum: Mx 主磁场控制噪声谱
   mx-main-field-scope-noise-spectrum: Mx 主磁场示波器噪声谱
-  mx-z-field-calibration: Mx 高主场 Z 磁场频率标定
+  mx-z-field-calibration: Mx 小线圈 Z 场（Z DC）频率标定
   mx-z-noise-spectrum: Mx Z 直流控制噪声谱
   mx-xy-residual-field-calibration: Mx XY 剩磁二维校准
   noise-spectrum-xy: XY 控制测量噪声谱（正弦）
@@ -301,7 +302,7 @@ experiment_titles:
   z-aw-current-waveform-scope-check: Z 任意波实际电流波形验证
   z-aw-closed-loop-waveform-correction: Z 任意波实际电流闭环校正
   mx-y-optimal-control-rf-frequency-response: Mx Y 最优控制 RF 频率响应
-  coil-constant-calibration: 放大器链路 Z 线圈常数标定
+  coil-constant-calibration: Z 小线圈线圈常数（Aigtek）标定
 parameter_layouts:
   mx-z-optimal-control-xy-noise-spectrum:
     basic:
@@ -733,6 +734,7 @@ parameter_layouts:
   mx-main-field-calibration:
     basic:
     - RUN_TAG
+    - RF_SOURCE
     - MAIN_FIELD_START_MA
     - MAIN_FIELD_STOP_MA
     - MAIN_FIELD_STEP_MA

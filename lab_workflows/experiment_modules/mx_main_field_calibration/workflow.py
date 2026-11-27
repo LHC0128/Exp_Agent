@@ -12,7 +12,7 @@ from ...steps import (DeviceSession, create_run_directory, snapshot_main_field_s
 from ...steps.state import StateGuard
 from lab_workflows.workflow_state import write_state
 from . import acquisition, preparation, excitation, run_format
-from .models import MxMainFieldCalibrationParams
+from .models import MFLI_CARRIER_OSC_IDX, MxMainFieldCalibrationParams
 from .stages import ACQUISITION, FINISH_ID, invalidate, invalidated_stages, validate_selection
 from lab_workflows.workflow_stages import initial_states
 # 旧导入继续可用，完整运行与分步运行共用下方业务编排。
@@ -52,6 +52,7 @@ class Workflow:
         self.revision = 0
         self.states = initial_states(self.stages)
         self.devices, self.channels = {}, {}
+        self.rf_source = None
         self.device_session = DeviceSession()
         self.main_field_guard = StateGuard()
         self.main_field_state = None
@@ -69,6 +70,10 @@ class Workflow:
             raw_format_version=run_format.RAW_FORMAT_VERSION, completion_status="running",
             geometry={"main_field": "Z", "pump": "Z", "probe": "X", "rf_field": "Y",
                 "main_field_scan": "single_pass_increasing_current", "z_auxiliary_field": "0_V_output_off"},
+            rf_source={"kind": self.params.rf_source,
+                "readout_demod_idx": self.params.demod_idx,
+                "readout_osc_idx": self.params.demod_osc_idx,
+                "carrier_osc_idx": MFLI_CARRIER_OSC_IDX if self.params.rf_is_mfli else None},
             analysis_during_acquisition=False, acquisition_signals=["R"],
             gyromagnetic_ratio_hz_per_nt=self.params.gyromagnetic_ratio_hz_per_nt,
             r_point_quality={"criterion": "std(R) <= threshold", "std_threshold_v": self.params.r_bad_point_std_threshold_v,
@@ -94,6 +99,8 @@ class Workflow:
             parameters=self.params.to_external(), steps=deepcopy(self.states), current_step=self.current_step,
             run_id=self.directory.root.name if self.directory else None, outputs=dict(self.outputs),
             output_source="最近成功模块的写入结果；初态来自回读，后续未额外回读",
+            rf_source=dict(self.state.get("rf_source") or {}),
+            rf_readback=self.state.get("rf_readback"),
             demod_mode=self.demod_mode, safety_shutdown=self.state.get("safety_shutdown"),
             clock_sources=self.state.get("clock_sources", {}),
             daq_settings={"actual_response_rate_sa_s": self.state.get("actual_rates", {}).get("response_sa_s")})
@@ -112,6 +119,8 @@ class Workflow:
     def update_parameters(self, values):
         self.recheck()
         old = self.params.to_external()
+        if "RF_SOURCE" in values and values["RF_SOURCE"] != old["RF_SOURCE"] and self.devices:
+            raise ValueError("切换 Y 射频源需要结束当前会话后重新连接仪器")
         if unknown := values.keys() - old.keys():
             raise ValueError("未知参数：" + "、".join(sorted(unknown)))
         params, mapping = preparation.preflight(MxMainFieldCalibrationParams.from_external(old | values), self.root)
@@ -215,11 +224,15 @@ class Workflow:
         elif item == "A02":
             if not devices:
                 try:
-                    self.devices, self.channels = preparation._connect_devices(self.mapping, self.device_session)
+                    self.devices, self.channels = preparation._connect_devices(
+                        self.mapping, self.device_session, self.params.rf_source)
                 except BaseException:
                     self.device_session.cleanup_connection_failure()
                     raise
                 self.main_field_state = snapshot_main_field_state(self.devices["gs200"])
+            self.rf_source = preparation.create_rf_source(
+                self.params, self.mapping, self.devices, self.channels)
+            self.state["rf_source"] = dict(self.rf_source.describe())
             self.state["device_snapshot"] = preparation._initial_state_snapshot(self.devices, self.channels, self.main_field_state)
         elif item == "A03":
             try:
@@ -231,7 +244,8 @@ class Workflow:
         elif item == "A04":
             self.main_field_guard.add("恢复 GS200 运行前状态",
                 lambda: restore_main_field_state(devices["gs200"], self.main_field_state))
-            preparation.configure_initial_outputs(params, devices, channels, self.mapping)
+            self.rf_source = preparation.create_rf_source(params, self.mapping, devices, channels)
+            preparation.configure_initial_outputs(params, devices, channels, self.mapping, self.rf_source)
             self.outputs.update(X="OFF", Z="OFF", **{"温控": "ON"})
         elif item == "A05":
             status = preparation.configure_temperature_control(devices.get("tec"), params.temperature_c, channel=1)
@@ -241,15 +255,20 @@ class Workflow:
             self.pump_parameters = params
             self.outputs["Pump"] = "ON"
         elif item == "A07":
-            self.state["actual_rates"] = {"response_sa_s": excitation.configure_response(params, devices, channels)}
+            self.rf_source = preparation.create_rf_source(params, self.mapping, devices, channels)
+            rate, rf_readback = excitation.configure_response(params, devices, channels, self.rf_source)
+            self.state["actual_rates"] = {"response_sa_s": rate}
+            self.state["rf_readback"] = rf_readback
+            self.state["rf_source"] = dict(self.rf_source.describe())
             self.demod_mode = "response"
             self.outputs["Y RF"] = "OFF"
         elif item == "A08":
             self.state["data_files"] = acquisition._acquire_scan(params, self.directory, devices, channels,
-                self.state["actual_rates"]["response_sa_s"], str(self.mapping["lockin_r"]["device_id"]))
+                self.state["actual_rates"]["response_sa_s"], str(self.mapping["lockin_r"]["device_id"]), self.rf_source)
             self.outputs.update(GS200="最近扫描电流", **{"Y RF": "OFF", "温控": "ON"})
         elif item == "A09":
-            report = preparation.safe_shutdown(devices, channels, self.pump_parameters, self.main_field_guard, disconnect_tec=False)
+            report = preparation.safe_shutdown(devices, channels, self.pump_parameters, self.main_field_guard,
+                rf_source=self.rf_source, disconnect_tec=False)
             self.state.update(safety_shutdown=report.to_dict(), main_field_restored=not self.main_field_guard.restore_errors)
             if not report.completed:
                 raise RuntimeError("安全收尾失败：" + "；".join(report.errors))
@@ -270,7 +289,8 @@ class Workflow:
                 if self.round_sealed:
                     errors.extend(disconnect_device_mapping({"tec": self.devices.get("tec")}))
                 else:
-                    report = preparation.safe_shutdown(self.devices, self.channels, self.pump_parameters, self.main_field_guard)
+                    report = preparation.safe_shutdown(self.devices, self.channels, self.pump_parameters,
+                        self.main_field_guard, rf_source=self.rf_source)
                     self.state["safety_shutdown"] = report.to_dict()
                     self.state["main_field_restored"] = not self.main_field_guard.restore_errors
                     errors.extend(report.errors)

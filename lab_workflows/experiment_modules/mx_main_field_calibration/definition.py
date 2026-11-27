@@ -1,4 +1,4 @@
-"""Mx 主磁场频率标定实验定义。"""
+"""Mx 主磁场（GS200）频率标定实验定义。"""
 
 from ...experiments.contracts import ExperimentDefinition
 from ...experiments.typed import TypedWorkflowAdapter
@@ -17,24 +17,31 @@ ADAPTER = TypedWorkflowAdapter(
 DEFINITION = ExperimentDefinition(
     documentation="docs/experiments/mx_main_field_calibration.md",
     id="mx-main-field-calibration",
-    title="Mx 主磁场频率标定",
+    title="Mx 主磁场（GS200）频率标定",
     category="calibration",
     family="z-field-calibration",
     variant="mx-gs200",
-    description=('在 Mx 构型下扫描 GS200 主场电流，以 Y RF 共振中心标定 Hz/mA 和 nT/mA。R 频响使用平方根洛伦兹幅度模型，γ 为幅度 −3 dB 半宽，历史结果不自动改写。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后以 0 V DC 关闭温控并保持 Output ON，按 SYSTEM_SETTLE_S 稳定，采集至内存后恢复温控并保存。支持节点参数编辑、依赖分步会话、GS200 初态恢复及独立分阶段历史标定；TEC 仅下发 UI 目标温度。分步角色由清单声明，状态与产物以执行记录为准。'),
+    description=('在 Mx 构型下扫描 GS200 主场电流，以 Y RF 共振中心标定 Hz/mA 和 nT/mA。'
+                 'Y 射频源可在 MFLI Signal Output 1（MF-MOD 载波，Demod 1 / Osc 1 产生）与 DG4000 rf_coil 通道之间切换，'
+                 '两种模式的原子读出都固定 Demod 4 / Osc 4，运行参数与快照记录实际射频源。'
+                 'R 频响使用平方根洛伦兹幅度模型，γ 为幅度 −3 dB 半宽，历史结果不自动改写。 锁相设备在设备库中全系统统一选择；启动前检查输入通道和工作频率兼容性。 锁相输入初始化统一关闭 50 Ω 与 AC 耦合，后续配置保持高阻和 DC 耦合。 解调时序复用设备库自动／DAQ／Scope：HF2 自动用 DAQ，MFLI 请求 >70 kSa/s 自动用 Scope；频谱按最终实际率计算。' + ' 配置完成后以 0 V DC 关闭温控并保持 Output ON，按 SYSTEM_SETTLE_S 稳定，采集至内存后恢复温控并保存。支持节点参数编辑、依赖分步会话、GS200 初态恢复及独立分阶段历史标定；TEC 仅下发 UI 目标温度。分步角色由清单声明，状态与产物以执行记录为准。'),
     data_type="Mx_Main_Field_Calibration",
     required_mapping_keys=REQUIRED_MAPPING_KEYS,
-    required_devices=("GS200", "DG900", "DG4000", "锁相放大器"),
+    required_devices=("GS200", "DG900", "DG4000", "MFLI", "锁相放大器"),
     execution_mode="typed_workflow",
     acquisition_program="experiments/Mx_Main_Field_Calibration.py",
     analysis_program="experiments/Mx_Main_Field_Calibration_plot.py",
     wiring_notes=(
         "主场和 Pump 光沿 Z、Probe 光沿 X；GS200 提供扫描主场，Z_magnetic_field CH1 保持 0 V OFF。",
-        "rf_coil CH2 提供 Y 向 RF，锁相放大器 Demod0 逐频点直接解调 R。",
+        "RF_SOURCE=MFLI 时 Y 向射频由 MFLI Signal Output 1 的 MF-MOD 载波经串联电阻送入 rf_coil，"
+        "载波参考 Demod 1 / Osc 1，原子读出固定 Demod 4 / Osc 4；RF_SOURCE=DG4000 时由 rf_coil 映射通道输出正弦，"
+        "读出同样使用 Demod 4 / Osc 4。",
     ),
     safety_notes=(
         "每个频点关闭温控并统一等待一次；完成后恢复温控 5 V ON。",
         "正常、取消和异常均恢复 GS200 运行前状态，并归零关闭 Z 辅助场、X 场和 Y RF。",
+        "MFLI 射频源的载波峰值与 Signal Output 1 量程按 {设备库ID}_signal_output_0 的 ±10 V 限值校验；"
+        "A04 先关闭并清零 Signal Output 1 与 MF-MOD，A09 逐项回读输出关闭、载波幅值与偏置归零。",
     ),
     schema_version=ADAPTER.params_type.schema_version,
     schema_provider=ADAPTER.schema,

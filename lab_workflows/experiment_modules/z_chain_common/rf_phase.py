@@ -33,6 +33,22 @@ DEFAULT_STATIC_GRID_DEG = tuple(range(0, 360, 15))
 LOCAL_STEPS_PER_SIDE = 16
 
 
+def oscillator_layout(ctx) -> tuple[int, tuple[int, int], int]:
+    """返回 (载波振荡器索引, 两个边带振荡器索引, 读出振荡器索引).
+
+    默认沿用历史布局（载波 Osc 2、边带 Osc 3、读出与载波同源）；实验可在 ctx 上设置
+    mod_carrier_osc_idx / mod_sideband_osc_idxs / readout_osc_idx 覆盖，
+    以统一 Demod n ↔ Osc n 编号。
+    """
+    carrier = int(getattr(ctx, "mod_carrier_osc_idx", MOD_CARRIER_OSC_IDX))
+    sidebands = tuple(int(item) for item in getattr(
+        ctx, "mod_sideband_osc_idxs", (MOD_SIDEBAND_OSC_IDX, MOD_SIDEBAND_OSC_IDX)))
+    if len(sidebands) != 2:
+        raise ValueError("边带振荡器必须恰好两个")
+    readout = int(getattr(ctx, "readout_osc_idx", carrier))
+    return carrier, sidebands, readout
+
+
 def local_offsets(span_deg):
     """返回中心、等分细扫整个 ±跨度、中心组成的局部标定角度序列。"""
     steps = LOCAL_STEPS_PER_SIDE
@@ -73,6 +89,7 @@ class Carrier:
         self.device = ctx.devices["hf2"]
         self.dev = self.device.device_id
         self.safety_key = mfli_sigout_safety_key(ctx.mapping)
+        self.carrier_osc_idx, self.sideband_osc_idxs, self.readout_osc_idx = oscillator_layout(ctx)
         self.command_deg = 0.0
         self.fm_hz = float(ctx.params.sweep_order_hz[0])
         self.sidebands_enabled = False
@@ -94,6 +111,8 @@ class Carrier:
     def _verify(self, *, output: bool, sidebands: bool):
         self.device.sync()
         p = self.ctx.params
+        carrier_osc, sideband_oscs, readout_osc = (
+            self.carrier_osc_idx, self.sideband_osc_idxs, self.readout_osc_idx)
         got = dict(
             extclk=bool(self.device.get_extclk()),
             output=bool(self.device.get_int(self._sigout("on"))),
@@ -106,7 +125,7 @@ class Carrier:
             mod_output=int(self.device.get_int(self._mod("output"))),
             carrier_enable=bool(self.device.get_int(self._mod("carrier/enable"))),
             carrier_osc=int(self.device.get_int(self._mod("carrier/oscselect"))),
-            carrier_hz=float(self.device.get_double(f"{self.device.osc_path(MOD_CARRIER_OSC_IDX)}/freq")),
+            carrier_hz=float(self.device.get_double(f"{self.device.osc_path(carrier_osc)}/freq")),
             carrier_vpk=float(self.device.get_double(self._mod("carrier/amplitude"))),
             command_deg=float(self.device.get_double(self._mod("carrier/phaseshift"))),
             sideband0_enable=bool(self.device.get_int(self._mod("sidebands/0/enable"))),
@@ -114,7 +133,8 @@ class Carrier:
             sideband0_osc=int(self.device.get_int(self._mod("sidebands/0/oscselect"))),
             sideband1_osc=int(self.device.get_int(self._mod("sidebands/1/oscselect"))),
             mod_index_rad=float(self.device.get_double(self._mod("index"))),
-            fm_hz=float(self.device.get_double(f"{self.device.osc_path(MOD_SIDEBAND_OSC_IDX)}/freq")),
+            fm_hz=float(self.device.get_double(f"{self.device.osc_path(sideband_oscs[0])}/freq")),
+            readout_osc_hz=float(self.device.get_double(f"{self.device.osc_path(readout_osc)}/freq")),
         )
         valid = (
             got["extclk"]
@@ -127,15 +147,16 @@ class Carrier:
             and got["freqdevenable"] == 0
             and got["mod_output"] == 1
             and got["carrier_enable"]
-            and got["carrier_osc"] == MOD_CARRIER_OSC_IDX
+            and got["carrier_osc"] == carrier_osc
             and math.isclose(got["carrier_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
             and math.isclose(got["carrier_vpk"], p.y_carrier_vpk, abs_tol=1e-5)
             and abs(signal_fit.wrap_deg(got["command_deg"] - self.command_deg)) <= 0.02
-            and got["sideband0_osc"] == MOD_SIDEBAND_OSC_IDX
-            and got["sideband1_osc"] == MOD_SIDEBAND_OSC_IDX
+            and got["sideband0_osc"] == sideband_oscs[0]
+            and got["sideband1_osc"] == sideband_oscs[1]
             and got["sideband0_enable"] is sidebands
             and got["sideband1_enable"] is sidebands
             and math.isclose(got["mod_index_rad"], p.y_pm_depth_rad, abs_tol=1e-4)
+            and math.isclose(got["readout_osc_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
         )
         if sidebands:
             valid = valid and math.isclose(got["fm_hz"], self.fm_hz, abs_tol=1e-3)
@@ -159,11 +180,13 @@ class Carrier:
         self.device.set_double(self._sigout("offset"), float(p.y_bias_v))
         self.device.set_int(self._mod("mode"), 1)
         self.device.set_int(self._mod("freqdevenable"), 0)
-        self.device.set_int(self._mod("carrier/oscselect"), MOD_CARRIER_OSC_IDX)
-        self.device.set_double(f"{self.device.osc_path(MOD_CARRIER_OSC_IDX)}/freq", float(p.y_rf_freq_hz))
-        self.device.set_int(self._mod("sidebands/0/oscselect"), MOD_SIDEBAND_OSC_IDX)
-        self.device.set_int(self._mod("sidebands/1/oscselect"), MOD_SIDEBAND_OSC_IDX)
-        self.device.set_double(f"{self.device.osc_path(MOD_SIDEBAND_OSC_IDX)}/freq", self.fm_hz)
+        self.device.set_int(self._mod("carrier/oscselect"), self.carrier_osc_idx)
+        self.device.set_double(f"{self.device.osc_path(self.carrier_osc_idx)}/freq", float(p.y_rf_freq_hz))
+        self.device.set_int(self._mod("sidebands/0/oscselect"), self.sideband_osc_idxs[0])
+        self.device.set_int(self._mod("sidebands/1/oscselect"), self.sideband_osc_idxs[1])
+        for index in self.sideband_osc_idxs:
+            self.device.set_double(f"{self.device.osc_path(index)}/freq", self.fm_hz)
+        self.device.set_double(f"{self.device.osc_path(self.readout_osc_idx)}/freq", float(p.y_rf_freq_hz))
         self.device.set_double(self._mod("index"), float(p.y_pm_depth_rad))
         self.device.set_double(self._mod("carrier/amplitude"), float(p.y_carrier_vpk))
         self.device.set_double(self._mod("carrier/phaseshift"), 0.0)
@@ -202,7 +225,8 @@ class Carrier:
         self._safe(pm_enabled=True)
         self.fm_hz = float(self.ctx.params.sweep_order_hz[0])
         self.sidebands_enabled = True
-        self.device.set_double(f"{self.device.osc_path(MOD_SIDEBAND_OSC_IDX)}/freq", self.fm_hz)
+        for index in self.sideband_osc_idxs:
+            self.device.set_double(f"{self.device.osc_path(index)}/freq", self.fm_hz)
         self.device.set_double(self._mod("index"), float(self.ctx.params.y_pm_depth_rad))
         self.device.set_int(self._mod("sidebands/0/enable"), 1)
         self.device.set_int(self._mod("sidebands/1/enable"), 1)
@@ -213,7 +237,8 @@ class Carrier:
         self._safe(pm_enabled=True)
         if f_hz != self.fm_hz:
             self.fm_hz = float(f_hz)
-            self.device.set_double(f"{self.device.osc_path(MOD_SIDEBAND_OSC_IDX)}/freq", self.fm_hz)
+            for index in self.sideband_osc_idxs:
+                self.device.set_double(f"{self.device.osc_path(index)}/freq", self.fm_hz)
         self.ctx.outputs["Y 射频"] = f"MFLI MF-MOD 相干边带 PM {self.fm_hz:g} Hz，深度 {PM_DEPTH_DEG:g}° 峰值"
         return self._verify(output=True, sidebands=True)
 
@@ -235,6 +260,7 @@ class Carrier:
 def lockin_readback(ctx, *, dynamic: bool = False):
     """回读实际参考、滤波与传输，确认原子读出锁定在 Demod 4 + Osc 2，禁止采集中替换链路。"""
     d, p = ctx.devices["hf2"], ctx.params
+    readout_osc_idx = oscillator_layout(ctx)[2]
     base = d.demod_path(p.demod0_idx)
     expected_tc = p.demod0_dynamic_tc_s if dynamic else p.demod0_tc_s
     min_rate = 10 * max(p.pm_frequencies_hz) if dynamic else 0.0
@@ -243,7 +269,7 @@ def lockin_readback(ctx, *, dynamic: bool = False):
         time_constant_s=float(d.get_double(f"{base}/timeconstant")),
         stream_rate_sa_s=float(d.get_double(f"{base}/rate")),
         order=int(d.get_int(f"{base}/order")),
-        oscillator_hz=float(d.get_double(f"{d.osc_path(MOD_CARRIER_OSC_IDX)}/freq")),
+        oscillator_hz=float(d.get_double(f"{d.osc_path(readout_osc_idx)}/freq")),
     )
     if (not d.get_extclk() or not all(math.isfinite(v) for v in state.values())
             or state["stream_rate_sa_s"] <= 0
@@ -252,7 +278,7 @@ def lockin_readback(ctx, *, dynamic: bool = False):
             or not math.isclose(state["time_constant_s"], expected_tc, rel_tol=0.01)
             or state["order"] != p.demod0_order
             or any(d.get_int(f"{base}/{node}") != value for node, value in
-                   (("adcselect", 0), ("oscselect", MOD_CARRIER_OSC_IDX), ("harmonic", 1), ("enable", 1)))):
+                   (("adcselect", 0), ("oscselect", readout_osc_idx), ("harmonic", 1), ("enable", 1)))):
         raise SafetyAbort(f"MFLI Demod{p.demod0_idx + 1} 输入、参考、解调滤波或采样率回读不符：{state}")
     return state
 

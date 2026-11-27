@@ -39,7 +39,7 @@ DEFINITION = ExperimentDefinition(
     wiring_notes=("Time_sequence_2 接入 Z 外触发端，并与 MFLI 共用 10 MHz 外部参考时钟（不使用 DHO924 示波器）。",
                   "MFLI Signal Output 1 接 Y 方向射频电路（串联大电阻）；不再使用 DG4000 Y 通道。",
                   "Z_magnetic_field 直连 Z 线圈（1200B 已物理旁路），DG 负载配成高阻，回路电阻计入 DG 源阻抗；"
-                  "MFLI Signal Input 1 接探测器并用 Demod 4 独立读出（Demod 1–3 由 MOD 占用）。"),
+                  "MFLI Signal Input 1 接探测器；读出固定 Demod 4 / Osc 4，MF-MOD 载波由 Demod 1 / Osc 1 产生、上下边带用 Osc 2 / Osc 3（Demod n ↔ Osc n）。"),
     safety_notes=("每轮预检 Z_PULSE_VPP/2、DG 高阻档上限、按已知回路电阻估算的峰值电流、"
                   "MFLI Signal Output 1 ±10 V 安全包络（含边带与偏置）及电阻平均功耗；强射频不在本方案中。",
                   "线圈电流为按已知回路电阻估算，非直接测量；判据与报告都标注估算值。",

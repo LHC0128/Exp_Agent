@@ -1,7 +1,7 @@
-"""Mx 主磁场频率标定参数。"""
+"""Mx 主磁场（GS200）频率标定参数。"""
 
 from __future__ import annotations
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import math
 from dataclasses import dataclass
@@ -9,12 +9,24 @@ from dataclasses import dataclass
 from ...common import validate_safety_limit
 from ...experiment_params import ExperimentParams, parameter
 
+RF_SOURCE_MFLI = "MFLI"
+RF_SOURCE_DG4000 = "DG4000"
+RF_SOURCE_OPTIONS = (
+    (RF_SOURCE_MFLI, "MFLI Signal Output 1（MF-MOD）"),
+    (RF_SOURCE_DG4000, "DG4000 rf_coil"),
+)
+# Demod n 对应 Osc n：MF-MOD 载波由 Demod 1 / Osc 1 产生，原子读出固定 Demod 4 / Osc 4。
+MFLI_CARRIER_OSC_IDX = 0
+MFLI_READOUT_DEMOD_IDX = 3
+MFLI_READOUT_OSC_IDX = 3
+MFLI_SIGNAL_OUTPUT_IDX = 0
+
 
 @dataclass(slots=True)
 class MxMainFieldCalibrationParams(ExperimentParams):
     """主场/Pump 沿 Z、Probe 沿 X，以 Y RF 共振频率标定 GS200 主场。"""
 
-    schema_version = 2
+    schema_version = 3
 
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {'SETTLE_TIME_S': 0.1}
     removed_temperature_keys: ClassVar[tuple[str, ...]] = ('TEMPERATURE_TOLERANCE_C', 'TEMPERATURE_STABLE_READS', 'TEMPERATURE_POLL_INTERVAL_S', 'TEMPERATURE_TIMEOUT_S')
@@ -24,6 +36,15 @@ class MxMainFieldCalibrationParams(ExperimentParams):
         external_name="RUN_TAG",
         label="运行标签",
         group="basic",
+    )
+    rf_source: str = parameter(
+        default=RF_SOURCE_MFLI,
+        external_name="RF_SOURCE",
+        label="Y 射频源",
+        group="basic",
+        options=RF_SOURCE_OPTIONS,
+        description="MFLI 走 Signal Output 1 的 MF-MOD 载波（Demod 1 / Osc 1 产生），"
+                    "DG4000 走 rf_coil 映射通道；两种模式的原子读出均固定 Demod 4 / Osc 4。",
     )
     main_field_start_ma: float = parameter(
         default=7.0,
@@ -98,6 +119,8 @@ class MxMainFieldCalibrationParams(ExperimentParams):
         group="basic",
         minimum=0.0,
         safety_key="rf_coil",
+        description="DG4000 模式为写入 rf_coil 的峰峰值；MFLI 模式按峰值 Vpk = Vpp / 2 写入 "
+                    "Signal Output 1 的 MF-MOD 载波。",
     )
     gyromagnetic_ratio_hz_per_nt: float = parameter(
         default=7.0,
@@ -140,8 +163,22 @@ class MxMainFieldCalibrationParams(ExperimentParams):
         minimum=1,
     )
 
-    demod_idx: int = parameter(default=0, external_name="DEMOD_IDX", label="锁相放大器 Demod 索引", group="advanced", minimum=0)
-    demod_osc_idx: int = parameter(default=0, external_name="DEMOD_OSC_IDX", label="锁相放大器 振荡器索引", group="advanced", minimum=0)
+    demod_idx: int = parameter(
+        default=MFLI_READOUT_DEMOD_IDX,
+        external_name="DEMOD_IDX",
+        label="锁相放大器 Demod 索引",
+        group="advanced",
+        minimum=0,
+        description="按 Demod n ↔ Osc n 使用；MF-MOD 占用 Demod 1–3，MFLI 射频模式固定 Demod 4（索引 3）。",
+    )
+    demod_osc_idx: int = parameter(
+        default=MFLI_READOUT_OSC_IDX,
+        external_name="DEMOD_OSC_IDX",
+        label="锁相放大器 振荡器索引",
+        group="advanced",
+        minimum=0,
+        description="与 Demod 编号一致；MFLI 射频模式读出参考固定 Osc 4（索引 3）。",
+    )
     hf2_signal_range_v: float = parameter(default=2.0, external_name="HF2_SIGNAL_RANGE_V", label="锁相放大器 Input1 量程", unit="V", group="advanced", minimum=0.001)
     response_rate_sa_s: float = parameter(default=1000.0, external_name="RESPONSE_RATE_SA_S", label="响应请求采样率", unit="Sa/s", group="advanced", minimum=1.0)
     response_time_constant_s: float = parameter(default=0.001, external_name="RESPONSE_TIME_CONSTANT_S", label="响应时间常数", unit="s", group="advanced", minimum=0.0)
@@ -157,8 +194,37 @@ class MxMainFieldCalibrationParams(ExperimentParams):
 
     linear_r_squared_min: float = parameter(default=0.99, external_name="LINEAR_R_SQUARED_MIN", label="线性标定最低 R²", group="advanced", minimum=0.0, maximum=1.0)
 
+    @classmethod
+    def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
+        # slots dataclass 的零参 super() 指向装饰前类，这里显式复刻基类检查后迁移。
+        if schema_version > cls.schema_version:
+            raise ValueError(f"配置 schema_version={schema_version} 高于程序支持版本 {cls.schema_version}")
+        migrated = dict(values)
+        if schema_version < 3:
+            # 3：新增射频源选择；历史快照的射频源为 DG4000，Demod/Osc 保留原记录。
+            migrated.setdefault("RF_SOURCE", RF_SOURCE_DG4000)
+        return migrated
+
+    @property
+    def rf_is_mfli(self) -> bool:
+        return self.rf_source == RF_SOURCE_MFLI
+
+    @property
+    def y_rf_amplitude_vpk(self) -> float:
+        """MFLI MF-MOD 载波峰值；DG4000 模式不使用。"""
+        return self.y_rf_amplitude_vpp / 2.0
+
     def validate_model(self) -> list[str]:
         errors: list[str] = []
+        if self.rf_source not in {RF_SOURCE_MFLI, RF_SOURCE_DG4000}:
+            errors.append("RF_SOURCE 必须是 MFLI 或 DG4000")
+        if self.demod_idx != self.demod_osc_idx:
+            errors.append("解调器与参考振荡器编号必须一致（Demod n ↔ Osc n）")
+        if self.rf_is_mfli and (self.demod_idx != MFLI_READOUT_DEMOD_IDX
+                                or self.demod_osc_idx != MFLI_READOUT_OSC_IDX):
+            errors.append("MFLI 射频源下原子读出固定 Demod 4 / Osc 4（索引 3/3）")
+        if not math.isfinite(self.y_rf_amplitude_vpp) or self.y_rf_amplitude_vpp <= 0:
+            errors.append("Y_RF_AMPLITUDE_VPP 必须为有限正值")
         if not self.run_tag.strip():
             errors.append("RUN_TAG 不能为空")
         if self.main_field_start_ma >= self.main_field_stop_ma:

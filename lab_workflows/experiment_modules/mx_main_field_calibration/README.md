@@ -1,6 +1,6 @@
 <!-- 由 python -m tools.gen_module_readme 生成，勿手改 -->
 
-# Mx 主磁场频率标定
+# Mx 主磁场（GS200）频率标定
 
 实验 ID：`mx-main-field-calibration`
 
@@ -15,4 +15,4 @@
 - 默认参数：`params/experiments/mx-main-field-calibration.yaml`
 
 ## 相关仪器
-设备：GS200、DG900、DG4000、锁相放大器。型号说明与协议见 `docs/instruments/`。
+设备：GS200、DG900、DG4000、MFLI、锁相放大器。型号说明与协议见 `docs/instruments/`。

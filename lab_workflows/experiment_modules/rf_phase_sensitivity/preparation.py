@@ -49,7 +49,8 @@ from ..z_chain_common.rf_phase import (
     select_mfli_output_range,
 )
 from . import run_format
-from .models import MFLI_MAX_SIGOUT_V, MOD_CARRIER_OSC_IDX, READOUT_DEMOD_IDX
+from .models import (MFLI_MAX_SIGOUT_V, MOD_CARRIER_OSC_IDX, MOD_SIDEBAND_OSC_IDXS,
+                     READOUT_DEMOD_IDX, READOUT_OSC_IDX)
 
 # 1200B 已物理旁路：本实验不要求 coil_drive_amplifier 映射。
 _EXPECTED = {
@@ -208,9 +209,17 @@ def clocks(ctx):
     )
 
 
+def apply_oscillator_layout(ctx):
+    """把 Demod n ↔ Osc n 布局写到会话，供共享 Carrier 与 lockin_readback 使用。"""
+    ctx.mod_carrier_osc_idx = MOD_CARRIER_OSC_IDX
+    ctx.mod_sideband_osc_idxs = MOD_SIDEBAND_OSC_IDXS
+    ctx.readout_osc_idx = READOUT_OSC_IDX
+
+
 def connect_and_synchronize(ctx):
     if not ctx.device_session.unique_devices():
         _connect_devices(ctx)
+    apply_oscillator_layout(ctx)
     ctx.state["clock_sources"] = clocks(ctx)
     ctx.state["optional_connection_errors"] = ctx.device_session.optional_connection_errors()
 
@@ -328,17 +337,17 @@ def configure_readout_demodulator(
     ctx, *, rate_sa_s: float, time_constant_s: float, phase_deg: float,
     state_key: str, actual_rate_key: str, configure_input: bool, stage_tag: str,
 ):
-    """配置并严格回读 MFLI Signal Input 1 / Osc 2 与独立读出解调器 Demod 4。"""
+    """配置并严格回读 MFLI Signal Input 1 / Osc 4 与独立读出解调器 Demod 4。"""
     p = ctx.params
     mfli = ctx.devices["hf2"]
     if configure_input:
         demod.configure_signal_input(mfli, SignalInputConfig(input_index=0, range=p.demod0_signal_range_v, diff=False))
-        demod.configure_oscillator(mfli, OscillatorConfig(osc_index=MOD_CARRIER_OSC_IDX, frequency=p.y_rf_freq_hz))
+        demod.configure_oscillator(mfli, OscillatorConfig(osc_index=READOUT_OSC_IDX, frequency=p.y_rf_freq_hz))
     config = DemodulatorConfig(
         demod_index=p.demod0_idx,
         rate=rate_sa_s,
         input_channel=0,
-        osc_select=MOD_CARRIER_OSC_IDX,
+        osc_select=READOUT_OSC_IDX,
         time_constant=time_constant_s,
         order=p.demod0_order,
         phase=phase_deg,
@@ -357,7 +366,7 @@ def configure_readout_demodulator(
         model=mfli.model,
         device_id=mfli.device_id,
         demod_idx=p.demod0_idx,
-        osc_select=MOD_CARRIER_OSC_IDX,
+        osc_select=READOUT_OSC_IDX,
         requested_rate_Sa_s=rate_sa_s,
         actual_rate_Sa_s=actual_rate,
         time_constant_s=time_constant_s,
@@ -372,7 +381,7 @@ def configure_readout_demodulator(
     )
     ctx.state[state_key] = record
     ctx.outputs["MFLI"] = (
-        f"Demod{p.demod0_idx + 1}（{stage_tag}，Osc{MOD_CARRIER_OSC_IDX + 1}）请求 {rate_sa_s:g} Sa/s、"
+        f"Demod{p.demod0_idx + 1}（{stage_tag}，Osc{READOUT_OSC_IDX + 1}）请求 {rate_sa_s:g} Sa/s、"
         f"TC {time_constant_s:g} s、参考 {p.y_rf_freq_hz:g} Hz、相位 {readback_phase:g}°（传输率回读 {actual_rate:g} Sa/s）"
     )
     return record
@@ -504,6 +513,7 @@ def _prepare_trigger(ctx):
 
 def prepare_measurement(ctx):
     """在启动输出前核对信号源（经功放时先关功放），再配置 Z/X/共同触发/MFLI 与 MF-MOD。"""
+    apply_oscillator_layout(ctx)
     _verify_generators(ctx)
     check_cancelled()
     ctx.active = True
