@@ -61,7 +61,10 @@ from lab_workflows.experiment_modules.rf_phase_sensitivity import (
 )
 from lab_workflows.experiment_modules.rf_phase_sensitivity.models import RfPhaseSensitivityParams
 from lab_workflows.experiment_modules.z_chain_common import prep as z_prep
+from lab_workflows.experiment_modules.z_chain_common import rf_phase
 from lab_workflows.experiment_modules.z_chain_common.keys import MAIN_FIELD_KEY
+from lab_workflows.experiment_modules.z_chain_common.params import amplifier_enabled
+from lab_workflows.experiment_runtime import check_cancelled
 from lab_workflows.instrument_config import load_device_definitions
 from lab_workflows.steps import DeviceSession, DisconnectTarget, run_safety_shutdown
 from lab_workflows.steps.coil_drive_chain import SafetyAbort, sleep
@@ -257,6 +260,146 @@ def _disable_z(ctx: StudyContext) -> dict[str, Any]:
     ctx.outputs["Z 通道"] = "脉冲链关闭（标准 Mx：不打脉冲）"
     return record
 
+
+
+def _safety_envelope(params) -> tuple[float, float]:
+    return params.y_output_envelope(pm_enabled=False)
+
+
+class StandardCarrier:
+    """标准 Mx 载波：只写 Out1 与 MF-MOD 载波节点，不启用 PM 边带、也不校其振荡器分配。
+
+    共享的 rf_phase.Carrier 每次回读都校验上下边带振荡器（Osc n 统一布局），而标准 Mx
+    全程不用边带；这里保留载波、外时钟、量程、偏置与读出参考的回读，跳过边带分配。
+    """
+
+    def __init__(self, ctx: StudyContext) -> None:
+        self.ctx = ctx
+        self.device = ctx.devices["hf2"]
+        self.dev = self.device.device_id
+        self.safety_key = rf_phase.mfli_sigout_safety_key(ctx.mapping)
+        self.carrier_osc_idx, _, self.readout_osc_idx = rf_phase.oscillator_layout(ctx)
+        self.command_deg = 0.0
+
+    def _sigout(self, node: str) -> str:
+        return f"/{self.dev}/sigouts/0/{node}"
+
+    def _mod(self, node: str) -> str:
+        return f"/{self.dev}/mods/{rf_phase.MOD_IDX}/{node}"
+
+    def _safe(self) -> None:
+        check_cancelled()
+        limits = load_safety_limits(self.ctx.root)
+        y_bias_v = float(self.ctx.params.y_bias_v)
+        y_min, y_max = _safety_envelope(self.ctx.params)
+        for value in (0.0, y_bias_v, float(y_min), float(y_max)):
+            validate_safety_limit(self.safety_key, value, limits)
+
+    def _verify(self, *, output: bool) -> dict[str, Any]:
+        self.device.sync()
+        d, p = self.device, self.ctx.params
+        got = dict(
+            extclk=bool(d.get_extclk()),
+            output=bool(d.get_int(self._sigout("on"))),
+            range_v=float(d.get_double(self._sigout("range"))),
+            offset_v=float(d.get_double(self._sigout("offset"))),
+            add_enabled=bool(d.get_int(self._sigout("add"))),
+            mod_enable=bool(d.get_int(self._mod("enable"))),
+            mode=int(d.get_int(self._mod("mode"))),
+            freqdevenable=int(d.get_int(self._mod("freqdevenable"))),
+            mod_output=int(d.get_int(self._mod("output"))),
+            carrier_enable=bool(d.get_int(self._mod("carrier/enable"))),
+            carrier_osc=int(d.get_int(self._mod("carrier/oscselect"))),
+            carrier_hz=float(d.get_double(f"{d.osc_path(self.carrier_osc_idx)}/freq")),
+            carrier_vpk=float(d.get_double(self._mod("carrier/amplitude"))),
+            command_deg=float(d.get_double(self._mod("carrier/phaseshift"))),
+            sideband0_enable=bool(d.get_int(self._mod("sidebands/0/enable"))),
+            sideband1_enable=bool(d.get_int(self._mod("sidebands/1/enable"))),
+            readout_osc_hz=float(d.get_double(f"{d.osc_path(self.readout_osc_idx)}/freq")),
+        )
+        envelope = _safety_envelope(p)
+        valid = (
+            got["extclk"]
+            and got["output"] is output
+            and not got["add_enabled"]
+            and got["range_v"] >= max(abs(value) for value in envelope) - 1e-9
+            and math.isclose(got["offset_v"], p.y_bias_v, abs_tol=1e-4)
+            and got["mod_enable"]
+            and got["mode"] == 1
+            and got["freqdevenable"] == 0
+            and got["mod_output"] == 1
+            and got["carrier_enable"]
+            and got["carrier_osc"] == self.carrier_osc_idx
+            and math.isclose(got["carrier_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
+            and math.isclose(got["carrier_vpk"], p.y_carrier_vpk, abs_tol=1e-5)
+            and abs(((got["command_deg"] - self.command_deg + 180.0) % 360.0) - 180.0) <= 0.02
+            and not got["sideband0_enable"]
+            and not got["sideband1_enable"]
+            and math.isclose(got["readout_osc_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
+        )
+        if not valid:
+            raise SafetyAbort(f"MFLI 标准 Mx 载波回读不符：{got}")
+        return got
+
+    def begin(self) -> dict[str, Any]:
+        self._safe()
+        d, p = self.device, self.ctx.params
+        if int(d.get_int(self._sigout("add"))) != 0:
+            raise SafetyAbort("MFLI Signal Output 1 开启了外部 Add 叠加，无法确保总电压安全")
+        self.command_deg = 0.0
+        d.set_int(self._sigout("on"), 0)
+        d.set_int(self._mod("enable"), 0)
+        d.set_double(self._sigout("range"), rf_phase.select_mfli_output_range(p))
+        d.set_double(self._sigout("offset"), float(p.y_bias_v))
+        d.set_int(self._mod("mode"), 1)
+        d.set_int(self._mod("freqdevenable"), 0)
+        d.set_int(self._mod("carrier/oscselect"), self.carrier_osc_idx)
+        d.set_double(f"{d.osc_path(self.carrier_osc_idx)}/freq", float(p.y_rf_freq_hz))
+        d.set_double(f"{d.osc_path(self.readout_osc_idx)}/freq", float(p.y_rf_freq_hz))
+        d.set_double(self._mod("carrier/amplitude"), float(p.y_carrier_vpk))
+        d.set_double(self._mod("carrier/phaseshift"), 0.0)
+        d.set_int(self._mod("carrier/enable"), 1)
+        d.set_int(self._mod("sidebands/0/enable"), 0)
+        d.set_int(self._mod("sidebands/1/enable"), 0)
+        d.set_int(self._mod("output"), 1)
+        d.set_int(self._mod("enable"), 1)
+        d.set_int(self._sigout("on"), 1)
+        got = self._verify(output=True)
+        self.ctx.outputs["Y 射频"] = (f"MFLI Out1 连续载波（标准 Mx，无 PM 边带），"
+                                      f"{p.y_carrier_vpk:g} Vpk，偏置 {p.y_bias_v:+g} V，指令相位 0°")
+        return got
+
+    def set_phase(self, phase_deg: float) -> float:
+        self._safe()
+        self.command_deg = float(phase_deg) % 360.0
+        self.device.set_double(self._mod("carrier/phaseshift"), self.command_deg)
+        self._verify(output=True)
+        self.ctx.outputs["Y 射频"] = (f"MFLI Out1 连续载波（标准 Mx，无 PM 边带），"
+                                      f"指令相位 {self.command_deg:g}°")
+        return self.command_deg
+
+    def verify_unmodulated(self) -> dict[str, Any]:
+        return self._verify(output=True)
+
+
+def _prepare_standard_chain(ctx: StudyContext) -> StandardCarrier:
+    """镜像 preparation.prepare_measurement 的公共步骤，但不启用 PM 边带、也不准备 Z 脉冲。"""
+    preparation.apply_oscillator_layout(ctx)
+    preparation._verify_generators(ctx)
+    check_cancelled()
+    ctx.active = True
+    if amplifier_enabled(ctx.params):
+        z_prep.set_amp_output(ctx, False)
+    preparation._prepare_temperature(ctx)
+    z_prep.configure_chain(ctx)
+    z_prep.configure_main_field(ctx, ctx.params.main_field_current_ma)
+    preparation._configure_lockin(ctx)
+    preparation._configure_x_bias(ctx)
+    preparation._prepare_trigger(ctx)
+    carrier = StandardCarrier(ctx)
+    carrier.begin()
+    check_cancelled()
+    return carrier
 
 def _set_main_field_ma(ctx: StudyContext, target_ma: float) -> dict[str, Any]:
     limits = load_safety_limits(ctx.root)
@@ -620,7 +763,7 @@ def run_capture(args: argparse.Namespace) -> int:
         if not pump_initial_on:
             raise SafetyAbort(f"王湾pump ({PUMP_RESOURCE}) CH{PUMP_CHANNEL} 当前为 OFF；请先开启泵浦光")
 
-        carrier = preparation.prepare_measurement(ctx)
+        carrier = _prepare_standard_chain(ctx)
         ctx.save()
         _disable_z(ctx)
         readback = _set_main_field_ma(ctx, current_ma)
@@ -726,6 +869,15 @@ def main(argv: list[str] | None = None) -> int:
         freq = args.freq_hz if args.freq_hz is not None else 5000.0
         current_ma = gs200_current_for_frequency_ma(freq, args.k_hz_per_ma, args.b_hz)
         print(f"[dry-run] GS200 电流 = ({freq:g} - {args.b_hz:g}) / {args.k_hz_per_ma:g} = {current_ma:.4f} mA（不连接仪器）")
+        try:
+            params = _load_params(Path(__file__).resolve().parents[3], args)
+        except (ValueError, OSError) as exc:
+            print(f"[dry-run] 参数校验不通过：{exc}")
+            return 2
+        grid = list(args.grid_deg) if args.grid_deg else list(np.arange(0.0, 360.0, 15.0))
+        print(f"[dry-run] 参数校验通过：f={params.y_rf_freq_hz:g} Hz、{params.y_rf_vpp:g} Vpp，"
+              f"相图 {len(grid)} 点 x {params.static_point_duration_s:g} s，"
+              f"噪声 {params.noise_n_avg} 段 x {params.noise_duration_s:g} s（Welch {params.welch_segment_s:g} s）")
         return 0
     return run_capture(args)
 
