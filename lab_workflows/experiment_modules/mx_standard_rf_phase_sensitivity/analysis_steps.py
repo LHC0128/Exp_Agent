@@ -32,6 +32,11 @@ TONE_MIN_HZ = 100.0
 TONE_MAX_HZ_DYNAMIC = 1200.0
 MAX_STD_OVER_DC = 5.0
 MIN_DC_MV = 0.5
+# 测量口径固定取 y 走线（工作点切线投影）：线性折算不受相角缠绕影响。
+# θ 走线只作诊断；宽带档（TC 1 µs）解调输出带出 −5 kHz 载波镜像（输入直流偏置经解调混频
+# 落到载波频率，实测幅值可达圆半径的 49 倍），不先隔离就会把 atan2 拖成整周缠绕。
+NOISE_LOWPASS_HZ = 1200.0
+THETA_WRAP_LIMIT_RAD = 0.25
 # 与 rf_phase_response / rf_phase_sensitivity 研究同口径的低频段；50/100 Hz 工频另行报告。
 BAND_HZ = (3.0, 50.0)
 MAINS_HZ = (50.0, 100.0, 150.0, 200.0, 250.0)
@@ -303,6 +308,21 @@ def mains_median(freqs, asd) -> float:
     return float(np.median(values)) if values else float("nan")
 
 
+def lowpass_keep_dc(values, rate_sa_s: float, hi_hz: float = NOISE_LOWPASS_HZ) -> np.ndarray:
+    """保留直流的频域低通：隔离宽带档 −5 kHz 载波镜像，供 θ 走线诊断使用。"""
+    data = np.asarray(values, dtype=float)
+    if data.size < 8 or not math.isfinite(rate_sa_s) or rate_sa_s <= 0:
+        return data
+    spectrum = np.fft.rfft(data)
+    freqs = np.fft.rfftfreq(data.size, 1.0 / rate_sa_s)
+    mask = np.ones(freqs.shape, dtype=float)
+    mask[freqs > hi_hz] = 0.0
+    taper = (freqs > hi_hz * 0.85) & (freqs <= hi_hz)
+    if np.any(taper):
+        mask[taper] = np.linspace(1.0, 0.0, int(taper.sum()))
+    return np.fft.irfft(spectrum * mask, data.size)
+
+
 def _lockin_state(metadata) -> dict:
     """从帧元数据读回锁相状态：相位、阶数、时间常数、传输率与振荡器频率。"""
     state = metadata.get("lockin")
@@ -470,17 +490,27 @@ def analyze_data(run_dir: Path, config: dict) -> dict:
         fine_summary = fine_scan_slope([float(value) for value in fine_state["commands_deg"]],
                                        fine_state["phasors"], fit)
 
+    # 宽带档先把 −5 kHz 载波镜像隔离掉再算 θ：镜像幅值远大于圆半径，
+    # 不隔离时 atan2 会整周缠绕，θ 走线读数完全失真（实测比值掉到 0.00）。
+    raw_xy = [(np.asarray(frame["x_v"], dtype=float), np.asarray(frame["y_v"], dtype=float))
+              for frame in frames]
+    # 只有是非线性的 θ 走线需要隔离：y/K 与切向投影是线性折算，保持原始帧，
+    # 免得把 1.2 kHz 以上的真实读出内容人为削掉。
+    theta_xy = ([(lowpass_keep_dc(x_v, rate), lowpass_keep_dc(y_v, rate)) for x_v, y_v in raw_xy]
+                if dynamic else raw_xy)
     tangent_dir = complex(-math.sin(math.radians(phi_deg)), math.cos(math.radians(phi_deg)))
     centered, projected = [], []
-    for frame in frames:
-        theta = np.arctan2(frame["y_v"] - cy, frame["x_v"] - cx)
+    for (x_theta, y_theta), (x_v, y_v) in zip(theta_xy, raw_xy):
+        theta = np.arctan2(y_theta - cy, x_theta - cx)
         mean_angle = np.angle(np.mean(np.exp(1j * theta)))
         centered.append(np.angle(np.exp(1j * (theta - mean_angle))))
-        dx = frame["x_v"] - cx
-        dy = frame["y_v"] - cy
+        dx = x_v - cx
+        dy = y_v - cy
         projected.append((dx * tangent_dir.real + dy * tangent_dir.imag) / radius)
 
-    samples = [(frame["time_s"], frame["y_v"], rate) for frame in frames]
+    theta_spread = max((float(np.std(values)) for values in centered), default=0.0)
+    theta_usable = theta_spread <= THETA_WRAP_LIMIT_RAD
+    samples = [(frame["time_s"], y_v, rate) for frame, (_, y_v) in zip(frames, raw_xy)]
     freqs, psd_y, welch_details = welch_psd.segment_average(samples, segment_s)
     _, psd_theta, _ = welch_psd.segment_average(
         [(frame["time_s"], values, rate) for frame, values in zip(frames, centered)], segment_s)
@@ -495,8 +525,14 @@ def analyze_data(run_dir: Path, config: dict) -> dict:
     band_mask = (freqs >= BAND_HZ[0]) & (freqs <= BAND_HZ[1])
     ratio_band = float(np.median(ratio[band_mask])) if np.any(band_mask) else float("nan")
     consistent = math.isfinite(ratio_band) and abs(ratio_band - 1.0) <= 0.1
-    verdict = (f"theta 与 y 两条路径在 3-50 Hz 的相位噪声一致（中位比 {ratio_band:.2f}）" if consistent
-               else f"theta 与 y 两条路径在 3-50 Hz 的相位噪声不一致（中位比 {ratio_band:.2f}）")
+    y_band = band_median(freqs, asd_y_route)
+    if not theta_usable:
+        theta_note = f"θ 走线诊断不可用：帧内相角散布 {theta_spread:.2f} rad（缠绕未消除）"
+    elif consistent:
+        theta_note = f"θ 走线诊断通过：与 y 走线中位比 {ratio_band:.3f}"
+    else:
+        theta_note = f"θ 走线诊断偏离：与 y 走线中位比 {ratio_band:.3f}"
+    verdict = (f"相位灵敏度以 y 走线上报（3–50 Hz 中位 {y_band * 1e6:.1f} urad/√Hz）；{theta_note}")
     slope_tolerance = 0.05
     circle_verdict = (
         f"相图 R={radius * 1e3:.3f} mV，{metrics['accepted_count']}/{metrics['accepted_total']} 段"
@@ -603,6 +639,14 @@ def analyze_data(run_dir: Path, config: dict) -> dict:
         "welch_segment_s": segment_s,
         "segments": len(frames),
         "demod_dynamic": bool(dynamic),
+        "measurement_route": "y_tangent_projection",
+        "theta_diagnostic": {
+            "available": theta_usable,
+            "wrap_spread_rad": theta_spread,
+            "ratio_band": ratio_band,
+            "lowpass_hz": NOISE_LOWPASS_HZ if dynamic else None,
+            "note": theta_note,
+        },
         "time_constant_s": lockin_states[0]["time_constant_s"],
         "demod_dynamic_tc_s": params.demod_dynamic_tc_s,
         "frame_quality": {"coarse": [frame["quality"] for frame in coarse],
@@ -644,6 +688,7 @@ def analyze_data(run_dir: Path, config: dict) -> dict:
             "A05 的 5 kHz 载波泄漏来自 Demod 4 宽带解调（DEMOD_DYNAMIC_TC 为微秒级）：输入直流偏置经解调混频落到载波频率，10/15/20 kHz 为其谐波；它是读出链已知寄生项、不是原子信号，只作为回归干扰项扣除。",
             "A05 对 |H(f)| 拟合以 0 Hz 为中心的 √Lorentzian 线型 H0 / sqrt(1 + (f/fc)²) 并以零频截距 H0 归一化；A06 灵敏度谱用同一模型做全频段回补。",
             "A06 灵敏度谱以 µrad/√Hz 输出：多温控分段各自计算 Welch PSD 后按段数等权平均，不跨恢复温控窗口拼接波形；只要存在 ≥2 个相邻硬合格频点就做对数插值与全频段回补，质检不足只标 referral_quality=advisory。",
+            "相位灵敏度测量口径为 y 走线（工作点切线投影）：宽带档 A06 帧先按保留直流低通隔离 −5 kHz 载波镜像再取切线投影；θ 走线只作诊断，帧内相角散布超过阈值即判为缠绕不可用，不参与灵敏度结果。",
             "低频闭合（|H|/|K0| 0.8–1.2）等参考指标仅作告警与图例标注，不阻止有效频点参与出图与相位噪声折算。"],
     }
 
@@ -695,6 +740,8 @@ def compact(summary: dict) -> dict:
         "segments": summary["segments"],
         "rate_sa_s": summary["rate_sa_s"],
         "demod_dynamic": summary["demod_dynamic"],
+        "measurement_route": summary["measurement_route"],
+        "theta_diagnostic": summary["theta_diagnostic"],
         "circle_verdict": summary["circle_verdict"],
         "verdict": summary["verdict"],
         "transfer": {

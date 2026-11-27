@@ -23,6 +23,7 @@ from ...common import WorkflowCancelled, load_mapping
 from ...experiment_runtime import PROGRESS_PREFIX, PROGRESS_PROTOCOL_ENV
 from ...steps import RoutedSignalGenerator, SignalGeneratorRoute
 from ...steps.coil_drive_chain import SafetyAbort
+from ..z_chain_common import welch_psd
 from . import acquisition, analysis, analysis_steps, preparation, run_format, workflow
 from .definition import ADAPTER
 from .models import (MOD_CARRIER_OSC_IDX, MOD_SIDEBAND_OSC_IDXS, READOUT_DEMOD_IDX, READOUT_OSC_IDX,
@@ -69,6 +70,7 @@ REGRESSION_CASES = {"mx-standard-rf-phase-sensitivity": {
                     "lab_workflows/experiment_modules/z_chain_common/spectrum_plot.py",
                     "experiments/MxStandardRfPhaseSensitivity_plot.py"],
         "tests": ["test_full_round_recovers_circle_and_working_point",
+                  "test_noise_theta_route_isolates_carrier_image",
                   "test_transfer_fit_uses_shared_leakage_model"]}}}
 
 
@@ -647,7 +649,9 @@ def test_full_round_recovers_circle_and_working_point(rig, capsys):
     assert summary["diagram"]["tangent_over_radius"] == pytest.approx(1.0, abs=0.02)
     assert "切线斜率在圆上等于半径" in summary["circle_verdict"]
     assert summary["band_3_50_hz"]["theta_over_y_route_ratio"] == pytest.approx(1.0, abs=0.15)
-    assert "一致" in summary["verdict"]
+    assert summary["measurement_route"] == "y_tangent_projection"
+    assert summary["theta_diagnostic"]["available"] is True
+    assert "y 走线上报" in summary["verdict"] and "θ 走线诊断通过" in summary["verdict"]
     # A05 频响：低频 |H|/H0≈1、高频下降，√Lorentzian 拐点与合成模型一致。
     assert summary["demod_dynamic"] is True
     assert summary["transfer"]["accepted_points"] == 3
@@ -662,6 +666,44 @@ def test_full_round_recovers_circle_and_working_point(rig, capsys):
     assert summary["transfer"]["fc_hz"] == pytest.approx(FREQ_CORNER_HZ, rel=0.05)
     assert summary["transfer"]["k0_closure"]["normalized_gain"] == pytest.approx(1.0, abs=0.02)
     assert summary["phase_referral"]["available"] is True
+
+
+def test_noise_theta_route_isolates_carrier_image():
+    """宽带档 −5 kHz 载波镜像不隔离时 θ 整周缠绕，隔离后 θ 与 y 走线一致。
+
+    真机 Demod 4 在宽带档（TC 1 µs）把输入直流偏置混频成 −5 kHz 镜像，实测幅值 0.68 V，
+    是圆半径 13.9 mV 的 49 倍；不隔离时 atan2 被该旋转拖成整周缠绕（散布 ≈ π/√3），
+    θ 走线在 3–50 Hz 只剩假象小值（实测比值 0.0022）。
+    """
+    rate, count = 53571.428571, 4 * 53571
+    t = np.arange(count) / rate
+    rng = np.random.default_rng(20261227)
+    noise_x = rng.normal(0.0, 4.0e-5, count)
+    noise_y = rng.normal(0.0, 4.0e-5, count)
+    image = 0.68 * np.exp(-2j * np.pi * 5000.0 * t)
+    phi = math.radians(PHASE_OFFSET_DEG)
+    x = RADIUS_V * math.cos(phi) + noise_x + image.real
+    y = RADIUS_V * math.sin(phi) + noise_y + image.imag
+
+    def spread(xs, ys):
+        angles = np.arctan2(ys, xs)
+        mean = np.angle(np.mean(np.exp(1j * angles)))
+        return float(np.std(np.angle(np.exp(1j * (angles - mean)))))
+
+    assert spread(x, y) > 1.0
+    clean_x = analysis_steps.lowpass_keep_dc(x, rate)
+    clean_y = analysis_steps.lowpass_keep_dc(y, rate)
+    assert spread(clean_x, clean_y) < 0.05
+
+    angles = np.arctan2(clean_y, clean_x)
+    mean = np.angle(np.mean(np.exp(1j * angles)))
+    freqs, psd_theta, _ = welch_psd.segment_average(
+        [(t, np.angle(np.exp(1j * (angles - mean))), rate)], 4.0)
+    _, psd_y, _ = welch_psd.segment_average([(t, clean_y, rate)], 4.0)
+    band = (freqs >= 3.0) & (freqs <= 50.0)
+    asd_theta = float(np.median(np.sqrt(psd_theta)[band]))
+    asd_y = float(np.median(np.sqrt(psd_y)[band])) / (RADIUS_V * abs(math.cos(phi)))
+    assert asd_theta / asd_y == pytest.approx(1.0, abs=0.15)
 
 
 def test_finish_after_sealed_round_keeps_single_shutdown(rig):
