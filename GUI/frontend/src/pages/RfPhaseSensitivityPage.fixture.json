@@ -281,7 +281,7 @@
       "group": "advanced",
       "minimum": null,
       "maximum": null,
-      "description": "开启 MF-MOD 后 Demod 1–3 由调制器占用，原子读出固定使用 Demod 4（索引 3）。",
+      "description": "Demod n ↔ Osc n：载波 Demod 1 / Osc 1，原子读出固定 Demod 4 / Osc 4（索引 3）。",
       "read_only": true
     },
     {
