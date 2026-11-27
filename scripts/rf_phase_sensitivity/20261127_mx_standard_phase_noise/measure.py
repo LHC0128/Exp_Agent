@@ -11,8 +11,9 @@
    不手填；--dry-run 只打印计划与电流，不连仪器。
 2. 连接设备与参考时钟、准备载波后立即关闭 Z 脉冲链（1200B 与 Z 信号源 OFF 回读），
    把 GS200 设到公式电流；王湾 Pump 必须初始为 ON，收尾恢复原状态。
-3. 相图：按 --grid-deg（默认 24 点）连续改写 MFLI 载波相移，每点一段 XY，
-   圆拟合给出圆心、半径与残差，并给出逐段 |dS/dtheta| 与 |dy/dtheta|。
+3. 相图：先等原子响应稳定（相邻两次直流相量差 < 0.1 mV），再按 --grid-deg（默认 24 点）
+   连续改写 MFLI 载波相移，每点一段 XY；末尾回采首点量整圈漂移。圆拟合给出圆心、
+   半径与残差，并给出逐段切线斜率 |dS/dphi| 与 |dY/dphi|。
 4. 工作点：按圆模型取 |dy/dphi| = R|cos phi| 最大的相图点，在该相位附近等步长细扫，
    用实测相位角线性拟合 |dy/dphi|，与圆模型的 R|cos phi| 互校后定最终工作点。
 5. 噪声：沿用相图那条静态解调配置（1 ms 时间常数、5 kSa/s），按独立温控窗口采集
@@ -39,6 +40,7 @@ import json
 import math
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 import numpy as np
@@ -92,6 +94,11 @@ MIN_DC_MV = 0.5
 FINE_SPAN_DEG = 5.0
 FINE_STEP_DEG = 1.0
 FINE_POINT_S = 0.5
+# 开扫前等原子响应建立：相邻两次直流相量差降到阈值以下再扫，超时带读数继续并记录。
+STABLE_TOL_V = 0.1e-3
+STABLE_TIMEOUT_S = 180.0
+STABLE_POLL_S = 3.0
+STABLE_READ_S = 0.2
 
 
 @dataclass(frozen=True, slots=True)
@@ -568,13 +575,46 @@ def _read_point(ctx: StudyContext, label: str, phase_deg: float, duration_s: flo
                            write_temperature=preparation.write_temperature, wait=sleep)
 
 
+def _wait_for_stable(ctx: StudyContext, carrier: dict[str, Any], phase_deg: float,
+                     lockin: dict[str, Any]) -> dict[str, Any]:
+    """等原子响应建立：相邻两次直流相量差小于阈值才开扫；超时也继续，但记进研究目录。"""
+    _carrier_set_phase(ctx, carrier, phase_deg)
+    history: list[complex] = []
+    started = time.monotonic()
+    index = 0
+    while True:
+        mean = _read_point(ctx, f"mx_std_settle_{index:02d}", phase_deg, STABLE_READ_S, lockin)
+        history.append(mean)
+        elapsed = time.monotonic() - started
+        delta = abs(history[-1] - history[-2]) if len(history) > 1 else float("nan")
+        shown = "—" if not math.isfinite(delta) else f"{delta * 1e3:.3f} mV"
+        print(f"  稳定等待 {index + 1}：|S|={abs(mean) * 1e3:.3f} mV，与上次差 {shown}（已 {elapsed:.1f} s）",
+              flush=True)
+        if len(history) > 1 and delta <= STABLE_TOL_V:
+            record = dict(stable=True, waited_s=elapsed, reads=len(history), last_delta_v=float(delta),
+                          phasors=[[float(z.real), float(z.imag)] for z in history])
+            ctx.state["settle"] = record
+            ctx.save()
+            return record
+        if elapsed >= STABLE_TIMEOUT_S:
+            record = dict(stable=False, waited_s=elapsed, reads=len(history), last_delta_v=float(delta),
+                          phasors=[[float(z.real), float(z.imag)] for z in history])
+            ctx.state["settle"] = record
+            ctx.save()
+            print(f"  [警告] 稳定等待超时（{elapsed:.1f} s），按当前读数继续", flush=True)
+            return record
+        index += 1
+        sleep(STABLE_POLL_S)
+
+
 def _scan_phase(ctx: StudyContext, carrier: dict[str, Any], grid_deg: list[float],
                 point_duration_s: float) -> tuple[list[str], np.ndarray, dict[str, Any]]:
-    """整周相位扫描；换相位后先采一段丢弃，末尾再回采首点量整圈漂移。"""
+    """整周相位扫描；先等响应稳定并在首点采一段丢弃，末尾再回采首点量整圈漂移。"""
     coarse_lockin = acquisition.lockin_readback(ctx)
-    _carrier_set_phase(ctx, carrier, grid_deg[0])
+    settle = _wait_for_stable(ctx, carrier, grid_deg[0], coarse_lockin)
     warm = _read_point(ctx, "mx_std_warmup_00", grid_deg[0], point_duration_s, coarse_lockin)
-    print(f"  预热丢弃：{grid_deg[0]:6.1f}° -> X={warm.real:+.6f} V, Y={warm.imag:+.6f} V", flush=True)
+    print(f"  预热丢弃：{grid_deg[0]:6.1f}° -> X={warm.real:+.6f} V, Y={warm.imag:+.6f} V "
+          f"（稳定等待 {settle['waited_s']:.1f} s，{settle['reads']} 次读数）", flush=True)
     labels: list[str] = []
     phasors: list[complex] = []
     for index, phase in enumerate(grid_deg):
@@ -591,6 +631,8 @@ def _scan_phase(ctx: StudyContext, carrier: dict[str, Any], grid_deg: list[float
     print(f"  回采首点：{grid_deg[0]:6.1f}° -> 与首点相差 {drift_v * 1e6:.3f} uV", flush=True)
     info = dict(warmup_label="mx_std_warmup_00", repeat_label="mx_std_repeat_00",
                 first_point_drift_v=drift_v,
+                warmup_delta_v=float(abs(warm - phasors[0])),
+                settle=settle,
                 warmup_phasor=[float(warm.real), float(warm.imag)],
                 repeat_phasor=[float(repeat.real), float(repeat.imag)])
     ctx.state["phase_diagram"] = {"labels": labels, "grid_deg": list(grid_deg), **info}
@@ -598,10 +640,22 @@ def _scan_phase(ctx: StudyContext, carrier: dict[str, Any], grid_deg: list[float
     return labels, np.asarray(phasors, dtype=complex), info
 
 
-def fine_scan_slope(commands_deg: list[float], phasors: list[complex],
-                    fit: dict[str, float]) -> dict[str, Any]:
+def as_phasors(values) -> np.ndarray:
+    """把复数相量或 [[real, imag], ...] 记录统一成一维复数数组。"""
+    items = []
+    for item in values:
+        if isinstance(item, (complex, int, float, np.floating, np.integer)):
+            items.append(complex(item))
+        else:
+            items.append(complex(float(item[0]), float(item[1])))
+    return np.asarray(items, dtype=complex)
+
+
+def fine_scan_slope(commands_deg: list[float], phasors, fit: dict[str, float]) -> dict[str, Any]:
     """用细扫各点的实测相位角线性拟合 dY/dphi，并给出最接近切向沿 Y 的那个点。"""
-    values = np.asarray(phasors, dtype=complex)
+    values = as_phasors(phasors)
+    if values.size < 3:
+        raise ValueError(f"细扫点数不足 3 个，无法拟合斜率：{values.size}")
     angles = phasor_angles_deg(values, fit)
     unwrapped = np.unwrap(np.radians(angles))
     design = unwrapped - unwrapped.mean()
@@ -750,7 +804,7 @@ def analyze_study(study_root: Path, *, welch_segment_s: float | None = None) -> 
     fine_summary = None
     if fine.get("commands_deg") and fine.get("phasors"):
         fine_summary = fine_scan_slope([float(v) for v in fine["commands_deg"]],
-                                       [complex(v[0], v[1]) for v in fine["phasors"]], fit)
+                                       fine["phasors"], fit)
 
     tangent_dir = complex(-math.sin(math.radians(phi_deg)), math.cos(math.radians(phi_deg)))
     centered, projected = [], []
