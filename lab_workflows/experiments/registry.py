@@ -107,6 +107,9 @@ from ..experiment_modules.rf_phase_response.definition import (
 from ..experiment_modules.rf_phase_sensitivity.definition import (
     DEFINITION as RF_PHASE_SENSITIVITY_DEFINITION,
 )
+from ..experiment_modules.mx_standard_rf_phase_sensitivity.definition import (
+    DEFINITION as MX_STANDARD_RF_PHASE_SENSITIVITY_DEFINITION,
+)
 # </registry:imports>
 
 from .contracts import ExperimentDefinition
@@ -153,6 +156,7 @@ _DEFINITIONS = [
     BPERP_NULL_DEFINITION,  # bperp-null
     RF_PHASE_RESPONSE_DEFINITION,  # rf-phase-response
     RF_PHASE_SENSITIVITY_DEFINITION,  # rf-phase-sensitivity
+    MX_STANDARD_RF_PHASE_SENSITIVITY_DEFINITION,  # mx-standard-rf-phase-sensitivity
 ]
 # </registry:definitions>
 

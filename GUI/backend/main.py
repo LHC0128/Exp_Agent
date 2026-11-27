@@ -182,6 +182,10 @@ from .pi_pulse_calibration import PiPulseCalibrationSessionService, create_route
 from .pi_width_scan import PiWidthScanSessionService, create_router as pi_width_scan_router
 from .rf_phase_response import RfPhaseResponseSessionService, create_router as rf_phase_response_router
 from .rf_phase_sensitivity import RfPhaseSensitivitySessionService, create_router as rf_phase_sensitivity_router
+from .mx_standard_rf_phase_sensitivity import (
+    MxStandardRfPhaseSensitivitySessionService,
+    create_router as mx_standard_rf_phase_sensitivity_router,
+)
 from .bperp_null import BperpNullSessionService, create_router as bperp_null_router
 from .z_field_bandwidth import ZFieldBandwidthSessionService, create_router as z_bandwidth_router
 from .mx_z_field_calibration import MxZFieldCalibrationSessionService
@@ -260,7 +264,7 @@ def _workflow_session_services():
         bb_duty_sessions, coil_drive_sessions, coil_constant_sessions, z_chain_stability_sessions,
         pi_pulse_calibration_sessions,
         pi_width_scan_sessions,
-        rf_phase_response_sessions, rf_phase_sensitivity_sessions,
+        rf_phase_response_sessions, rf_phase_sensitivity_sessions, mx_standard_rf_phase_sensitivity_sessions,
         bperp_null_sessions,
         mx_z_field_sessions,
         bell_bloom_z_sessions,
@@ -392,6 +396,8 @@ rf_phase_response_sessions = RfPhaseResponseSessionService(lambda: ROOT, manager
 app.include_router(rf_phase_response_router(rf_phase_response_sessions))
 rf_phase_sensitivity_sessions = RfPhaseSensitivitySessionService(lambda: ROOT, manager)
 app.include_router(rf_phase_sensitivity_router(rf_phase_sensitivity_sessions))
+mx_standard_rf_phase_sensitivity_sessions = MxStandardRfPhaseSensitivitySessionService(lambda: ROOT, manager)
+app.include_router(mx_standard_rf_phase_sensitivity_router(mx_standard_rf_phase_sensitivity_sessions))
 bperp_null_sessions = BperpNullSessionService(lambda: ROOT, manager)
 app.include_router(bperp_null_router(bperp_null_sessions))
 z_bandwidth_sessions = ZFieldBandwidthSessionService(lambda: ROOT, manager)

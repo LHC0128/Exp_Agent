@@ -1,0 +1,552 @@
+{
+  "fields": [
+    {
+      "name": "RUN_TAG",
+      "label": "运行标签",
+      "type": "string",
+      "default": "mx_std_phase_noise",
+      "unit": "",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_FREQ_HZ",
+      "label": "载波频率",
+      "type": "number",
+      "default": 5000.0,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": 1000.0,
+      "maximum": 20000.0,
+      "description": "MFLI Out1（MF-MOD 载波）连续输出的射频频率，同时决定 GS200 主场电流。",
+      "read_only": false
+    },
+    {
+      "name": "Y_RF_VPP",
+      "label": "载波幅度",
+      "type": "number",
+      "default": 0.5,
+      "unit": "Vpp",
+      "group": "basic",
+      "minimum": 0.001,
+      "maximum": 20.0,
+      "description": "按峰值 Vpk = Vpp / 2 写入 MF-MOD 载波幅度；叠加偏置后须落在 MFLI Signal Output 1 ±10 V 安全包络内。",
+      "read_only": false
+    },
+    {
+      "name": "X_BIAS_V",
+      "label": "X 静态偏置",
+      "type": "number",
+      "default": 0.0,
+      "unit": "V",
+      "group": "basic",
+      "minimum": -10.0,
+      "maximum": 10.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "Y_BIAS_V",
+      "label": "载波直流偏置",
+      "type": "number",
+      "default": 0.0,
+      "unit": "V",
+      "group": "basic",
+      "minimum": -10.0,
+      "maximum": 10.0,
+      "description": "叠加在 MFLI Signal Output 1 的直流偏置（sigouts/0/offset）。",
+      "read_only": false
+    },
+    {
+      "name": "CAL_K_HZ_PER_MA",
+      "label": "主磁场标定斜率 K",
+      "type": "number",
+      "default": 11089.0,
+      "unit": "Hz/mA",
+      "group": "basic",
+      "minimum": 1.0,
+      "maximum": 1000000.0,
+      "description": "主磁场标定式 f = K·I + b 的斜率；GS200 电流只由该式反算，不提供手填电流。",
+      "read_only": false
+    },
+    {
+      "name": "CAL_B_HZ",
+      "label": "主磁场标定截距 b",
+      "type": "number",
+      "default": 219.7,
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": -1000000.0,
+      "maximum": 1000000.0,
+      "description": "主磁场标定式的截距；K、b 变化会改变反算电流，运行前按安全限值校验。",
+      "read_only": false
+    },
+    {
+      "name": "PHASE_GRID_STEP_DEG",
+      "label": "相位网格步长",
+      "type": "number",
+      "default": 15.0,
+      "unit": "°",
+      "group": "basic",
+      "minimum": 5.0,
+      "maximum": 60.0,
+      "description": "整周扫描步长；360 / 步长必须取整且至少 6 点（默认 15° 对应 24 点），最后一个点不重复首点。",
+      "read_only": false
+    },
+    {
+      "name": "POINT_DURATION_S",
+      "label": "单点采集时长",
+      "type": "number",
+      "default": 0.5,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0.05,
+      "maximum": 1.0,
+      "description": "每个相图点、细扫点与稳定等待读数的 XY 采集时长。",
+      "read_only": false
+    },
+    {
+      "name": "NOISE_SEGMENTS",
+      "label": "噪声分段数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "basic",
+      "minimum": 1,
+      "maximum": 60,
+      "description": "A05 独立温控窗口的噪声段数；每段恢复温控并等待后采集下一段。",
+      "read_only": false
+    },
+    {
+      "name": "NOISE_DURATION_S",
+      "label": "单段噪声时长",
+      "type": "number",
+      "default": 4.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 1.0,
+      "maximum": 60.0,
+      "description": "每段关闭温控窗口内的连续采集时长；不得短于 Welch 段长。",
+      "read_only": false
+    },
+    {
+      "name": "WELCH_SEGMENT_S",
+      "label": "Welch 段长",
+      "type": "number",
+      "default": 4.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 1.0,
+      "maximum": 10.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD_IDX",
+      "label": "MFLI 读出解调器索引",
+      "type": "integer",
+      "default": 3,
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "标准 Mx 载波占用 MF-MOD，原子读出固定 Demod 4（索引 3）与 Osc 4。",
+      "read_only": true
+    },
+    {
+      "name": "DEMOD_SIGNAL_RANGE",
+      "label": "MFLI 输入量程",
+      "type": "number",
+      "default": 3.0,
+      "unit": "V",
+      "group": "advanced",
+      "minimum": 0.001,
+      "maximum": 3.0,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD_ORDER",
+      "label": "MFLI 滤波阶数",
+      "type": "integer",
+      "default": 4,
+      "unit": "",
+      "group": "advanced",
+      "minimum": 1,
+      "maximum": 8,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD_TC",
+      "label": "读出时间常数",
+      "type": "number",
+      "default": 0.001,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": 0.1,
+      "description": "分辨率带宽由该时间常数决定；标准 Mx 噪声全程使用同一静态配置，不切高带宽。",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD_RATE",
+      "label": "读出传输率",
+      "type": "number",
+      "default": 5000.0,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1000.0,
+      "maximum": 20000.0,
+      "description": "Demod 4 连续流传输率；相图、细扫与噪声共用同一采样率。",
+      "read_only": false
+    },
+    {
+      "name": "SYSTEM_SETTLE_S",
+      "label": "系统稳定等待",
+      "type": "number",
+      "default": 0.5,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0.1,
+      "maximum": 4.0,
+      "description": "",
+      "read_only": false,
+      "legacy_defaults": {}
+    },
+    {
+      "name": "TEMP_SWITCH_ON_LAG_S",
+      "label": "温控恢复等待",
+      "type": "number",
+      "default": 2.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0.1,
+      "maximum": 30.0,
+      "description": "每次恢复温控开关（5 V DC + ON）后的固定等待，之后才允许写盘或采下一点。",
+      "read_only": false
+    },
+    {
+      "name": "SET_TEC_TARGET",
+      "label": "下发 TEC 目标温度",
+      "type": "boolean",
+      "default": false,
+      "unit": "",
+      "group": "advanced",
+      "minimum": null,
+      "maximum": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "name": "TARGET_TEMPERATURE_C",
+      "label": "TEC 目标温度",
+      "type": "number",
+      "default": 90.0,
+      "unit": "°C",
+      "group": "advanced",
+      "minimum": 20.0,
+      "maximum": 130.0,
+      "description": "只下发目标温度；不启停 TEC、不判稳，串口不可用时跳过。",
+      "read_only": false
+    }
+  ],
+  "flow": {
+    "run_step_id": "A05",
+    "finish_step_id": "A06",
+    "acquisition": [
+      {
+        "id": "A01",
+        "title": "参数、映射与安全预检",
+        "group": "准备",
+        "dependencies": [],
+        "parameters": [
+          "RUN_TAG",
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "X_BIAS_V",
+          "Y_BIAS_V",
+          "CAL_K_HZ_PER_MA",
+          "CAL_B_HZ"
+        ],
+        "artifacts": [],
+        "display_parameters": [
+          "RUN_TAG",
+          "Y_RF_FREQ_HZ",
+          "Y_RF_VPP",
+          "X_BIAS_V",
+          "Y_BIAS_V",
+          "CAL_K_HZ_PER_MA",
+          "CAL_B_HZ"
+        ],
+        "quality_gates": [
+          "不连接硬件；GS200 电流由 (Y_RF_FREQ_HZ - CAL_B_HZ) / CAL_K_HZ_PER_MA 反算并按 main_magnetic_field 限值校验，载波包络按 MFLI Signal Output 1 ±10 V 校验。"
+        ]
+      },
+      {
+        "id": "A02",
+        "title": "连接设备、时钟、主场与载波准备",
+        "group": "准备",
+        "dependencies": [
+          "A01"
+        ],
+        "parameters": [
+          "DEMOD_IDX",
+          "DEMOD_SIGNAL_RANGE",
+          "DEMOD_ORDER",
+          "DEMOD_TC",
+          "DEMOD_RATE",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "SET_TEC_TARGET",
+          "TARGET_TEMPERATURE_C"
+        ],
+        "artifacts": [
+          "experiment_config.yaml"
+        ],
+        "display_parameters": [
+          "DEMOD_IDX",
+          "DEMOD_SIGNAL_RANGE",
+          "DEMOD_ORDER",
+          "DEMOD_TC",
+          "DEMOD_RATE",
+          "SYSTEM_SETTLE_S",
+          "TEMP_SWITCH_ON_LAG_S",
+          "SET_TEC_TARGET",
+          "TARGET_TEMPERATURE_C"
+        ],
+        "quality_gates": [
+          "按设备库同步 10 MHz 并严格回读；温控开关 5 V DC + ON；X 偏置回读；共同触发方波与 SYNC 回读；Z 双脉冲链（1200B 与 Z 信号源）关闭并回读；Demod 4 / Osc 4 静态读出；最后按标定式设 GS200 并回读。"
+        ]
+      },
+      {
+        "id": "A03",
+        "title": "整周相位扫描与圆拟合",
+        "group": "采集",
+        "dependencies": [
+          "A02"
+        ],
+        "parameters": [
+          "PHASE_GRID_STEP_DEG",
+          "POINT_DURATION_S"
+        ],
+        "artifacts": [
+          "raw/mx_std_settle_*.npz",
+          "raw/mx_std_warmup_*.npz",
+          "raw/mx_std_coarse_*.npz",
+          "raw/mx_std_repeat_*.npz"
+        ],
+        "display_parameters": [
+          "PHASE_GRID_STEP_DEG",
+          "POINT_DURATION_S"
+        ],
+        "quality_gates": [
+          "先等原子响应稳定（相邻两次直流相量差不超过 0.1 mV），采一段丢弃做预热，再按网格逐点采集，末尾回采首点量整圈漂移；每帧体检后写盘，圆拟合给出圆心、半径与残差。"
+        ]
+      },
+      {
+        "id": "A04",
+        "title": "工作点选择与细扫",
+        "group": "采集",
+        "dependencies": [
+          "A03"
+        ],
+        "parameters": [],
+        "artifacts": [
+          "raw/mx_std_fine_*.npz"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "按圆模型取 |cos phi| 最大的相图点为细扫中心，±5° 步长 1° 细扫；用实测相位角回归 dY/dphi，与 R|cos phi| 互校后定最终工作点。"
+        ]
+      },
+      {
+        "id": "A05",
+        "title": "噪声分段与安全封存",
+        "group": "采集",
+        "dependencies": [
+          "A04"
+        ],
+        "parameters": [
+          "NOISE_SEGMENTS",
+          "NOISE_DURATION_S",
+          "WELCH_SEGMENT_S"
+        ],
+        "artifacts": [
+          "raw/mx_std_noise_*.npz"
+        ],
+        "display_parameters": [
+          "NOISE_SEGMENTS",
+          "NOISE_DURATION_S",
+          "WELCH_SEGMENT_S"
+        ],
+        "quality_gates": [
+          "沿用相图的静态解调配置（时间常数 DEMOD_TC、传输率 DEMOD_RATE，不切高带宽）；每段独立进出温控窗口，恢复温控并等待后才写盘；每帧体检，含 100 Hz 以上单音超过直流 20% 的帧作废；本轮收尾成功才封存。"
+        ]
+      },
+      {
+        "id": "A06",
+        "title": "安全结束会话",
+        "group": "结束",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [],
+        "display_parameters": [],
+        "quality_gates": [
+          "关闭并清零 MFLI Out1 与 MF-MOD，Z/X 通道归零回读，恢复温控为 5 V DC + ON，恢复 GS200 运行前状态，停解调传输并断开设备；共同触发保持。"
+        ]
+      }
+    ],
+    "analysis": [
+      {
+        "id": "B01",
+        "title": "圆拟合、工作点斜率与噪声路径分析",
+        "group": "独立分析",
+        "dependencies": [],
+        "parameters": [],
+        "artifacts": [
+          "summary.json",
+          "phase_diagram.png",
+          "phase_diagram.pdf",
+          "noise_paths.png",
+          "noise_paths.pdf"
+        ],
+        "display_parameters": [],
+        "quality_gates": [
+          "目录已停止写入、原始格式受支持；逐帧复检直流幅度与单音；输出 summary.json、相图（圆拟合与逐段切线斜率）与三条相位噪声路径对比图，图中文字用英文。"
+        ]
+      }
+    ],
+    "parameter_impacts": {
+      "acquisition": {
+        "RUN_TAG": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "Y_RF_FREQ_HZ": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "Y_RF_VPP": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "X_BIAS_V": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "Y_BIAS_V": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CAL_K_HZ_PER_MA": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "CAL_B_HZ": [
+          "A01",
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "DEMOD_IDX": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "DEMOD_SIGNAL_RANGE": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "DEMOD_ORDER": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "DEMOD_TC": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "DEMOD_RATE": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SYSTEM_SETTLE_S": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "TEMP_SWITCH_ON_LAG_S": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "SET_TEC_TARGET": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "TARGET_TEMPERATURE_C": [
+          "A02",
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "PHASE_GRID_STEP_DEG": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "POINT_DURATION_S": [
+          "A03",
+          "A04",
+          "A05"
+        ],
+        "NOISE_SEGMENTS": [
+          "A05"
+        ],
+        "NOISE_DURATION_S": [
+          "A05"
+        ],
+        "WELCH_SEGMENT_S": [
+          "A05"
+        ]
+      },
+      "analysis": {}
+    },
+    "diagram_url": "/api/experiments/mx-standard-rf-phase-sensitivity/workflow/diagram"
+  }
+}

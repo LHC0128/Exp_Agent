@@ -530,7 +530,7 @@ NPZ 和数据目录保留，重跑使用独立目录；分析指纹与重算归�
 | 线圈驱动链路电学特性 | `experiments/Coil_Drive_Characterization.py`、`experiments/Coil_Drive_Characterization_plot.py` | [实验说明](docs/experiments/coil_drive_characterization.md) |
 | Mx Y RF 光功率灵敏度优化 | `experiments/Mx_Y_RF_Power_Optimization.py`、`experiments/Mx_Y_RF_Power_Optimization_plot.py` | [实验说明](docs/experiments/mx_y_rf_power_optimization.md) |
 | Mx Y RF Probe 光功率与失谐灵敏度优化 | `experiments/Mx_Y_RF_Probe_Detuning_Optimization.py`、`experiments/Mx_Y_RF_Probe_Detuning_Optimization_plot.py` | [实验说明](docs/experiments/mx_y_rf_probe_detuning_optimization.md) |
-| Mx 主磁场频率标定 | `experiments/Mx_Main_Field_Calibration.py`、`experiments/Mx_Main_Field_Calibration_plot.py` | [实验说明](docs/experiments/mx_main_field_calibration.md) |
+| Mx 主磁场（GS200）频率标定 | `experiments/Mx_Main_Field_Calibration.py`、`experiments/Mx_Main_Field_Calibration_plot.py` | [实验说明](docs/experiments/mx_main_field_calibration.md) |
 | Mx 主磁场示波器噪声谱 | `experiments/Mx_Main_Field_Scope_Noise_Spectrum.py`、`experiments/Mx_Main_Field_Scope_Noise_Spectrum_plot.py` | [实验说明](docs/experiments/mx_main_field_scope_noise_spectrum.md) |
 | Mx 高主场 Z 磁场频率标定 | `experiments/Mx_Z_Field_Calibration.py`、`experiments/Mx_Z_Field_Calibration_plot.py` | [实验说明](docs/experiments/mx_z_field_calibration.md) |
 | XY 控制噪声谱 | `experiments/Noise_Spectrum_XY_Ctrl.py`、`experiments/Noise_Spectrum_XY_Ctrl_plot.py` | [实验说明](docs/experiments/noise_spectrum_xy_ctrl.md) |
@@ -557,6 +557,7 @@ NPZ 和数据目录保留，重跑使用独立目录；分析指纹与重算归�
 | 横向静态场补平（10 kHz 偶部） | `experiments/BperpNull.py`、`experiments/BperpNull_plot.py` | [实验说明](docs/experiments/bperp_null.md) |
 | 射频相位响应 | `experiments/RfPhaseResponse.py`、`experiments/RfPhaseResponse_plot.py` | [实验说明](docs/experiments/rf_phase_response.md) |
 | Mx 脉冲射频相位灵敏度 | `experiments/RfPhaseSensitivity.py`、`experiments/RfPhaseSensitivity_plot.py` | [实验说明](docs/experiments/rf_phase_sensitivity.md) |
+| 标准 Mx 射频相位图与噪声路径 | `experiments/MxStandardRfPhaseSensitivity.py`、`experiments/MxStandardRfPhaseSensitivity_plot.py` | [实验说明](docs/experiments/mx_standard_rf_phase_sensitivity.md) |
 
 <!-- END GENERATED EXPERIMENTS -->
 
