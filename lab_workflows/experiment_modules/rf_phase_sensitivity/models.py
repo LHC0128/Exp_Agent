@@ -12,7 +12,8 @@ from typing import Any, ClassVar
 
 from ...experiment_params import ExperimentParams, parameter
 from ..z_chain_common import params as chain_params
-from ..z_chain_common.rf_phase import MFLI_MAX_SIGOUT_V, MOD_IDX, PM_DEPTH_DEG
+from ..z_chain_common.rf_phase import (MFLI_MAX_SIGOUT_V, MOD_IDX, PM_DEPTH_DEG, PM_TONE_DURATION_S,
+                                       default_pm_frequencies_hz)
 
 # 统一 Demod n ↔ Osc n：载波由 Demod 1 / Osc 1 产生，边带用 Osc 2 / Osc 3，读出 Demod 4 / Osc 4。
 MOD_CARRIER_OSC_IDX = 0
@@ -106,12 +107,12 @@ class RfPhaseSensitivityParams(ExperimentParams):
     local_span_deg: float = parameter(default=15., external_name="LOCAL_SPAN_DEG", label="局部标定外档角度",
                                       unit="°", minimum=3, maximum=30, description="在最佳工作点两侧等分细扫的对称偏移跨度。")
     pm_frequencies_hz: list[float] = parameter(
-        default_factory=lambda: [float(f) for f in range(3, 204, 10)] + [float(f) for f in range(250, 1001, 50)],
+        default_factory=default_pm_frequencies_hz,
         external_name="PM_FREQUENCIES_HZ", label="基带调相频率列表", unit="Hz", group="basic",
         description="严格递增，不改变 5 kHz 载波，按列表顺序单次扫描（默认 3–1000 Hz：3–203 Hz 每 10 Hz "
                     "共 21 点、250–1000 Hz 每 50 Hz 共 16 点，错开 50 Hz 工频）。")
-    pm_tone_duration_s: float = parameter(default=4., external_name="PM_TONE_DURATION_S", label="每档 MFLI 音调采集时长",
-                                         unit="s", minimum=0.5, maximum=12.)
+    pm_tone_duration_s: float = parameter(default=PM_TONE_DURATION_S, external_name="PM_TONE_DURATION_S",
+                                         label="每档 MFLI 音调采集时长", unit="s", minimum=0.5, maximum=12.)
     noise_duration_s: float = parameter(default=4., external_name="NOISE_DURATION_S", label="单段无调制噪声采集时长",
                                        unit="s", minimum=1., maximum=60., group="basic",
                                        description="A06 每次关闭温控窗口内连续采集无调制噪声的时长；推荐 4 s 以限制单次关温控温漂。")

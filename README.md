@@ -557,7 +557,7 @@ NPZ 和数据目录保留，重跑使用独立目录；分析指纹与重算归�
 | 横向静态场补平（10 kHz 偶部） | `experiments/BperpNull.py`、`experiments/BperpNull_plot.py` | [实验说明](docs/experiments/bperp_null.md) |
 | 射频相位响应 | `experiments/RfPhaseResponse.py`、`experiments/RfPhaseResponse_plot.py` | [实验说明](docs/experiments/rf_phase_response.md) |
 | Mx 脉冲射频相位灵敏度 | `experiments/RfPhaseSensitivity.py`、`experiments/RfPhaseSensitivity_plot.py` | [实验说明](docs/experiments/rf_phase_sensitivity.md) |
-| 标准 Mx 射频相位图与噪声路径 | `experiments/MxStandardRfPhaseSensitivity.py`、`experiments/MxStandardRfPhaseSensitivity_plot.py` | [实验说明](docs/experiments/mx_standard_rf_phase_sensitivity.md) |
+| Mx 标准射频相位灵敏度测量 | `experiments/MxStandardRfPhaseSensitivity.py`、`experiments/MxStandardRfPhaseSensitivity_plot.py` | [实验说明](docs/experiments/mx_standard_rf_phase_sensitivity.md) |
 
 <!-- END GENERATED EXPERIMENTS -->
 

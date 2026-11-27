@@ -24,7 +24,7 @@ FIXTURE = ROOT / "GUI/frontend/src/pages/MxStandardRfPhaseSensitivityPage.fixtur
 ID = "mx-standard-rf-phase-sensitivity"
 BASE = f"/api/experiments/{ID}"
 PEER = "/api/experiments/rf-phase-sensitivity"
-ACQUISITION = ["A01", "A02", "A03", "A04", "A05", "A06"]
+ACQUISITION = ["A01", "A02", "A03", "A04", "A05", "A06", "A07"]
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def test_discovery_schema_workflow_and_real_preflight(client):
     assert catalog.status_code == 200, catalog.text
     entries = {item["id"]: item for item in catalog.json()}
     definition = entries[ID]
-    assert definition["title"] == "标准 Mx 射频相位图与噪声路径"
+    assert definition["title"] == "Mx 标准射频相位灵敏度测量"
     assert definition["execution_mode"] == "typed_workflow" and definition["can_analyze"]
     assert definition["data_type"] == run_format.DATA_TYPE == "mx_standard_rf_phase_sensitivity"
     assert definition["data_type"] != entries["rf-phase-sensitivity"]["data_type"]
@@ -84,13 +84,15 @@ def test_discovery_schema_workflow_and_real_preflight(client):
     assert manifest == fixture["flow"]
     assert [stage["id"] for stage in manifest["acquisition"]] == ACQUISITION
     assert [stage["id"] for stage in manifest["analysis"]] == ["B01"]
-    assert (manifest["run_step_id"], manifest["finish_step_id"]) == ("A05", "A06")
+    assert (manifest["run_step_id"], manifest["finish_step_id"]) == ("A06", "A07")
     assert manifest["diagram_url"] == f"{BASE}/workflow/diagram"
 
-    response = client.post(f"{BASE}/preflight", json={"parameters": {"Y_RF_VPP": 0.2}})
+    parameters = {"Y_RF_VPP": 0.2, "PM_FREQUENCIES_HZ": [10.0, 20.0, 40.0]}
+    response = client.post(f"{BASE}/preflight", json={"parameters": parameters})
     assert response.status_code == 200 and response.json()["ok"], response.text
-    for bad in ({"Y_RF_VPP": 21.0}, {"PHASE_GRID_STEP_DEG": 7.0}, {"DEMOD_IDX": 0}):
-        invalid = {"Y_RF_VPP": 0.2} | bad
+    for bad in ({"Y_RF_VPP": 21.0}, {"PHASE_GRID_STEP_DEG": 7.0}, {"DEMOD_IDX": 0},
+                {"PM_FREQUENCIES_HZ": [40.0, 20.0]}, {"DEMOD_DYNAMIC_RATE": 300.0}):
+        invalid = parameters | bad
         response = client.post(f"{BASE}/preflight", json={"parameters": invalid})
         assert response.status_code == 200 and not response.json()["ok"], response.text
         assert response.json()["errors"]

@@ -12,12 +12,11 @@ from tempfile import TemporaryDirectory
 from zipfile import BadZipFile
 
 import numpy as np
-from scipy.signal import correlate, welch
 
 from ...analysis_execution import file_signature as signature
 from ...experiment_runtime import check_cancelled
 from ...workflow_state import write_state
-from ..z_chain_common import phase_plot
+from ..z_chain_common import phase_plot, spectrum_plot, tone_fit, transfer, welch_psd
 from . import run_format, signal_fit
 
 ANALYSIS_VERSION = "rf-phase-sensitivity-v1"
@@ -30,26 +29,24 @@ TRANSFER_PNG = run_format.TRANSFER_PLOT
 NOISE_PNG = run_format.NOISE_PLOT
 ARTIFACTS = (SUMMARY, TRANSFER_CSV, NOISE_CSV, RESPONSE_PNG, LOCAL_PNG, TRANSFER_PNG, NOISE_PNG)
 
-MIN_TONE_SNR = 5.0
-MIN_TONE_CYCLES = 9.8
-MIN_NOISE_HZ = 1.0
-MIN_WELCH_SEGMENTS = 2
-MAINS_HARMONICS_HZ = (50.0, 100.0, 150.0, 200.0, 250.0)
-# Demod 4 宽带解调输出的 5 kHz 载波泄漏及其低阶谐波：输入直流偏置经解调混频落到载波
-# 频率上，是读出链的已知寄生项而不是原子信号，只在 clean 回归里作为干扰项扣除。
-CARRIER_HARMONICS_HZ = (5000.0, 10000.0, 15000.0, 20000.0)
-# 载波项只纳入低于 0.45 × 采样率的谐波，避免贴近 Nyquist 的项放大设计矩阵条件数。
-CARRIER_RATE_FRACTION = 0.45
-CLOSURE_RANGE = (0.8, 1.2)
-# B01 结果图统一只画 1–1000 Hz：频响在实测最高频点内画点与实线，之外用 √Lorentzian 外推虚线。
-PLOT_FREQUENCY_RANGE_HZ = (1.0, 1000.0)
+# 音调拟合（含工频与 5 kHz 载波泄漏模型）、Welch 谱、√Lorentzian 归一化与绘图实现都在
+# z_chain_common；这里保留旧名字供测试、历史脚本与产物列名使用。
+MIN_TONE_SNR = tone_fit.MIN_TONE_SNR
+MIN_TONE_CYCLES = tone_fit.MIN_TONE_CYCLES
+MIN_NOISE_HZ = welch_psd.MIN_NOISE_HZ
+MIN_WELCH_SEGMENTS = welch_psd.MIN_WELCH_SEGMENTS
+MAINS_HARMONICS_HZ = tone_fit.MAINS_HARMONICS_HZ
+CARRIER_HARMONICS_HZ = tone_fit.CARRIER_HARMONICS_HZ
+CARRIER_RATE_FRACTION = tone_fit.CARRIER_RATE_FRACTION
+CLOSURE_RANGE = transfer.CLOSURE_RANGE
+PLOT_FREQUENCY_RANGE_HZ = spectrum_plot.PLOT_FREQUENCY_RANGE_HZ
 REPEAT_FLOOR = 0.15
 REPEAT_CAP = 0.30
 REPEAT_SIGMA = 2.0
-STEP_RTOL = 5e-4
-RATE_RTOL = 1e-3
+STEP_RTOL = tone_fit.STEP_RTOL
+RATE_RTOL = tone_fit.RATE_RTOL
 DAQ_STREAM_RTOL = 0.003
-GRID_ATOL_SAMPLES = 0.02
+GRID_ATOL_SAMPLES = tone_fit.GRID_ATOL_SAMPLES
 LOCKIN_PHASE_ATOL_DEG = 1e-3
 LOCKIN_RTOL = 1e-6
 
@@ -133,30 +130,10 @@ def _verify_attestations(metadata, **expected):
         raise ValueError("帧的频率、激励模式或监视标签与采集清单不符")
 
 
-def sample_grid(time_s, rate_sa_s):
-    """用端点间隔重算实际率，逐点验证均匀性、连续性以及回读采样率。"""
-    reported = _number(rate_sa_s)
-    t = np.asarray(time_s, dtype=float)
-    if reported is None or reported <= 0 or t.ndim != 1 or t.size < 8 or not np.isfinite(t).all():
-        raise ValueError("采样率或时间轴无效，单段至少需要 8 个样本")
-    t = t - t[0]
-    step = t[-1] / (t.size - 1)
-    steps = np.diff(t)
-    if (not math.isfinite(step) or step <= 0 or np.any(steps <= 0)
-            or not np.allclose(steps, step, rtol=STEP_RTOL, atol=0)
-            or np.any(np.abs(t / step - np.arange(t.size)) > GRID_ATOL_SAMPLES)):
-        raise ValueError("时间轴不均匀、不连续或有缺样")
-    rate = 1 / float(step)
-    if not math.isclose(rate, reported, rel_tol=RATE_RTOL):
-        raise ValueError("时间轴采样率与帧回读不一致")
-    return t, rate
+sample_grid = tone_fit.sample_grid
 
 
-def _waveform(values, time_s):
-    y = np.asarray(values, dtype=float)
-    if y.shape != time_s.shape or not np.isfinite(y).all():
-        raise ValueError("XY 波形非有限或长度与时间轴不一致")
-    return y
+
 
 
 def _lockin(metadata):
@@ -183,137 +160,16 @@ def _same_lockin(a, b):
             and all(math.isclose(a[key], b[key], rel_tol=LOCKIN_RTOL) for key in LOCKIN_KEYS[2:]))
 
 
-def _mains_terms(time_s, frequency_hz, include_2f, nyquist):
-    """返回（可用工频谐波频率、与目标音调/二次谐波碰撞而跳过的频率、容差）。
-
-    容差取 2 Hz 与帧长频率分辨率 2/T 的较大值：目标音调与某个工频谐波相距不足一个
-    容差时，两项近似共线，强行同时拟合会让设计矩阵病态并放大标准误，因此该谐波项
-    跳过并记入碰撞列表，由调用方写进行内 ``mains_collision``。
-    """
-    duration = float(time_s[-1])
-    guard_hz = max(2.0 / duration, 0.5)
-    avoid = (frequency_hz, *((2 * frequency_hz,) if include_2f else ()))
-    used, collisions = [], []
-    for mains_hz in MAINS_HARMONICS_HZ:
-        if mains_hz + 1.0 / duration >= nyquist:
-            break
-        if any(abs(mains_hz - target) <= guard_hz for target in avoid):
-            collisions.append(float(mains_hz))
-        else:
-            used.append(float(mains_hz))
-    return used, collisions, guard_hz
 
 
-def _carrier_terms(frequency_hz, include_2f, rate, guard_hz, duration):
-    """返回（实际纳入的 5 kHz 载波泄漏项、跳过项及原因）。
-
-    5 kHz 载波及其 10/15/20 kHz 谐波来自 Demod 4 宽带解调输出中输入直流偏置的混频泄漏，
-    是读出链的已知寄生项，不作为原子信号发布。仅纳入与目标音调/二次谐波不碰撞（容差同
-    工频项）且低于 ``CARRIER_RATE_FRACTION × rate`` 的谐波；碰撞与超限项记入跳过列表，
-    避免病态设计矩阵破坏拟合。
-    """
-    limit = CARRIER_RATE_FRACTION * rate
-    avoid = (frequency_hz, *((2 * frequency_hz,) if include_2f else ()))
-    used, skipped = [], []
-    for carrier_hz in CARRIER_HARMONICS_HZ:
-        if carrier_hz >= limit:
-            skipped.append(f"{carrier_hz:g} Hz（超过 0.45 × 采样率）")
-        elif any(abs(carrier_hz - target) <= guard_hz for target in avoid):
-            skipped.append(f"{carrier_hz:g} Hz（与目标音调或二次谐波碰撞）")
-        else:
-            used.append(float(carrier_hz))
-    return used, skipped
 
 
-def _tone_columns(time_s, frequency_hz, include_2f, spur_hz):
-    """构造目标音调、常数、线性漂移、可选二次谐波与工频/载波寄生项的正交解调设计列。"""
-    theta = (2 * np.pi * frequency_hz) * time_s
-    columns = [np.sin(theta), np.cos(theta), np.ones_like(time_s), time_s / time_s[-1] - 0.5]
-    if include_2f:
-        columns.extend((np.sin(2 * theta), np.cos(2 * theta)))
-    for spur in spur_hz:
-        angle = (2 * np.pi * spur) * time_s
-        columns.extend((np.sin(angle), np.cos(angle)))
-    return columns
 
 
-def _solve_tone(columns, x, y, rate, correlation_s, include_2f):
-    """对给定设计列联合最小二乘拟合 X/Y 并发布 Y 音调幅值、标准误与信噪比。"""
-    design = np.column_stack(columns)
-    coeff, _, rank, spectrum = np.linalg.lstsq(design, np.column_stack((x, y)), rcond=None)
-    if rank != design.shape[1] or spectrum[-1] <= spectrum[0] * 1e-8:
-        raise ValueError("基带音调拟合的设计矩阵病态")
-    x_pk, y_pk = map(float, np.hypot(*coeff[:2]))
-    residual = y - design @ coeff[:, 1]
-    dof = len(y) - rank
-    inverse_gram = np.linalg.inv(design.T @ design)
-    direction = coeff[:2, 1] / y_pk if y_pk > 0 else np.array([1.0, 0.0])
-    variance = (residual @ residual / dof) * (direction @ inverse_gram[:2, :2] @ direction)
-    # Bartlett 加权的相关残差方差只提高、不会压低独立残差给出的标准误。
-    lag = math.ceil(min(dof // 4, 5 * correlation_s * rate))
-    if lag >= 1:
-        score = residual * (design @ (inverse_gram[:, :2] @ direction))
-        ac = correlate(score, score, mode="full", method="fft")[len(y) - 1:len(y) + lag]
-        tapered = ac[0] + 2 * (ac[1:] @ (1 - np.arange(1, lag + 1) / (lag + 1)))
-        variance = max(variance, tapered * len(y) / dof)
-    y_se = math.sqrt(max(0.0, variance))
-    # 抑制常数或纯漂移的舍入误差伪装成高 SNR；不设物理电压阈值。
-    floor = max(np.finfo(float).tiny, 32 * np.finfo(float).eps * np.max(np.abs(y)))
-    result = dict(x_pk_v=x_pk, y_pk_v=y_pk, y_pk_se_v=y_se, y_snr=float(y_pk / max(y_se, floor)))
-    if include_2f:
-        result.update(x_2f_pk_v=float(np.hypot(*coeff[4:6, 0])), y_2f_pk_v=float(np.hypot(*coeff[4:6, 1])))
-    return result
 
 
-def fit_tone(time_s, x_v, y_v, rate_sa_s, frequency_hz, *, correlation_s=0.0):
-    """同时拟合基频、二次谐波、直流漂移及不碰撞的工频谐波与 5 kHz 载波泄漏项。
+fit_tone = tone_fit.fit_tone
 
-    5 kHz 载波泄漏来自 Demod 4 宽带解调（``DEMOD0_DYNAMIC_TC = 1 µs``）：输入直流偏置经
-    解调混频落到载波频率，10/15/20 kHz 为其谐波。它是读出链的已知寄生项，不是原子信号，
-    只在 clean 回归里作为干扰项扣除，不改变 ``y_pk_v`` 的物理含义。
-
-    发布的 ``y_pk_v``/``x_pk_v``/``h_v_per_rad`` 沿用联合扣除工频与载波泄漏后的干净系数
-    （与改造前一致）；行内另保留原始口径（不含工频、不含载波项）的 ``y_pk_se_v``/``y_snr``
-    作为对照，并发布扣除后的 ``y_pk_se_clean_v``/``y_snr_clean`` 供质检与告警判定。
-    ``mains_collision_hz`` 记录因与目标音调或二次谐波共线而跳过的工频谐波，
-    ``mains_harmonics_hz`` 记录实际参与拟合的工频谐波；``carrier_terms_hz`` 记录实际纳入
-    的载波泄漏项，``carrier_skipped`` 记录因碰撞或超过 0.45×采样率而跳过的载波项。
-    """
-    t, rate = sample_grid(time_s, rate_sa_s)
-    frequency = _number(frequency_hz)
-    nyquist = min(rate, rate_sa_s) / 2
-    if frequency is None or not 0 < frequency < nyquist:
-        raise ValueError("基带音调不在帧的 Nyquist 范围内")
-    cycles = frequency * float(t[-1])
-    if cycles < MIN_TONE_CYCLES:
-        raise ValueError(f"基带音调帧不足 {MIN_TONE_CYCLES:g} 个周期")
-    x, y = _waveform(x_v, t), _waveform(y_v, t)
-    include_2f = 2 * frequency + 1 / t[-1] < nyquist
-    mains_used, collisions, guard_hz = _mains_terms(t, frequency, include_2f, nyquist)
-    carrier_used, carrier_skipped = _carrier_terms(frequency, include_2f, rate, guard_hz, float(t[-1]))
-    # 数据点不足时工频/载波项会挤占自由度，从最高频的寄生项开始裁剪。
-    spurs = [*mains_used, *carrier_used]
-    while spurs and len(t) <= len(_tone_columns(t, frequency, include_2f, spurs)) + 8:
-        spurs.pop()
-    carrier_skipped = [*carrier_skipped,
-                       *(f"{value:g} Hz（数据点不足）" for value in carrier_used if value not in spurs)]
-    carrier_used = [value for value in carrier_used if value in spurs]
-    original = _solve_tone(_tone_columns(t, frequency, include_2f, ()), x, y, rate, correlation_s, include_2f)
-    clean_columns = _tone_columns(t, frequency, include_2f, spurs)
-    clean = _solve_tone(clean_columns, x, y, rate, correlation_s, include_2f) if spurs else original
-    # 发布幅值沿用扣除工频/载波后的 clean 系数（与改造前一致）；原始口径只用于对照标准误与 SNR。
-    result = dict(rate_sa_s=rate, samples=int(t.size), cycles=cycles,
-                  x_pk_v=clean["x_pk_v"], y_pk_v=clean["y_pk_v"],
-                  y_pk_se_v=original["y_pk_se_v"], y_snr=original["y_snr"],
-                  y_pk_se_clean_v=clean["y_pk_se_v"], y_snr_clean=clean["y_snr"],
-                  mains_harmonics_hz=[value for value in mains_used if value in spurs],
-                  mains_collision_hz=collisions, mains_guard_hz=guard_hz,
-                  carrier_terms_hz=carrier_used, carrier_skipped=carrier_skipped)
-    if include_2f:
-        result.update(x_2f_pk_v=clean["x_2f_pk_v"], y_2f_pk_v=clean["y_2f_pk_v"])
-    if not all(math.isfinite(value) for value in result.values() if isinstance(value, (int, float))):
-        raise ValueError("基带音调拟合产生了非有限值")
-    return result
 
 
 def _transfer_rows(run_dir, attempts, configured, calibration):
@@ -441,82 +297,16 @@ def _gates(rows, accepted, lowest, anchor, *, repeat_expected=None):
     return closure, repeat
 
 
-def _bands(configured, accepted):
-    """只连接配置表中的相邻合格频点，不用复测替换主测。"""
-    bands, band = [], []
-    for f in configured:
-        if f in accepted:
-            band.append(f)
-        else:
-            if len(band) >= 2:
-                bands.append(band)
-            band = []
-    if len(band) >= 2:
-        bands.append(band)
-    return bands
+_bands = transfer.transfer_bands
 
 
-def _welch(time_s, y_v, rate_sa_s, segment_s):
-    t, rate = sample_grid(time_s, rate_sa_s)
-    y = _waveform(y_v, t)
-    # 请求分辨率为 1 / segment_s，短帧只提供如实标明分辨率的探测器诊断谱。
-    requested = max(8, math.ceil(rate * segment_s))
-    nperseg = min(requested, y.size)
-    noverlap = nperseg // 2
-    nsegments = 1 + (y.size - nperseg) // (nperseg - noverlap)
-    frequency, psd = welch(y, fs=rate, window="hann", nperseg=nperseg, noverlap=noverlap,
-                           detrend="linear", return_onesided=True, scaling="density")
-    keep = frequency >= MIN_NOISE_HZ
-    if not keep.any() or not np.isfinite(psd).all() or (psd < 0).any():
-        raise ValueError("没有有效的 1 Hz 以上噪声谱")
-    details = dict(rate_sa_s=rate, samples=int(y.size), duration_s=float(t[-1] + 1.0 / rate),
-                   nperseg=nperseg, noverlap=noverlap,
-                   overlap_fraction=noverlap / nperseg, segments=nsegments, window="hann", detrend="linear",
-                   one_sided=True, segment_s=nperseg / rate, requested_segment_s=segment_s,
-                   resolution_hz=rate / nperseg, resolution_met=nperseg == requested)
-    return frequency[keep], psd[keep], details
+
+_welch = welch_psd.welch_spectrum
 
 
-def welch_segmented(frames, segment_s):
-    """对多个独立温控窗口录得的连续段分别计算 Welch PSD，并按段数加权（等长即等权）平均。"""
-    if not frames:
-        raise ValueError("缺少可计算 Welch PSD 的噪声分段")
-    freq_ref = None
-    nperseg_ref = None
-    weighted_psd = None
-    first_details = None
-    total_samples = 0
-    total_segments = 0
-    total_duration_s = 0.0
-    per_frame_segments = []
-    resolution_met = True
-    for time_s, y_v, rate_sa_s in frames:
-        freq, psd, details = _welch(time_s, y_v, rate_sa_s, segment_s)
-        if freq_ref is None:
-            freq_ref = freq
-            nperseg_ref = details["nperseg"]
-            weighted_psd = psd * details["segments"]
-            first_details = details
-        else:
-            if details["nperseg"] != nperseg_ref or not np.allclose(freq, freq_ref, rtol=1e-9, atol=1e-9):
-                raise ValueError("各噪声分段的实际采样率或 Welch 频率网格不一致，拒绝拼接平均")
-            weighted_psd = weighted_psd + psd * details["segments"]
-        total_samples += details["samples"]
-        total_segments += details["segments"]
-        total_duration_s += details["duration_s"]
-        per_frame_segments.append(details["segments"])
-        resolution_met = resolution_met and bool(details["resolution_met"])
-    combined = dict(
-        first_details,
-        samples=int(total_samples),
-        duration_s=float(total_duration_s),
-        segment_duration_s=float(first_details["duration_s"]),
-        segments=int(total_segments),
-        acquisition_segments=len(frames),
-        per_frame_segments=per_frame_segments,
-        resolution_met=resolution_met,
-    )
-    return freq_ref, weighted_psd / total_segments, combined
+
+welch_segmented = welch_psd.segment_average
+
 
 
 def _noise_labels(noise):
@@ -605,96 +395,12 @@ def _noise(run_dir, noise, rows, reference, segment_s, *, expected_segments=None
     return frequency, psd, details
 
 
-def _fit_transfer_lorentzian(rows, accepted, k0):
-    ordered = sorted(accepted.values(), key=lambda row: row["frequency_hz"])
-    if len(ordered) < 2:
-        return dict(available=False, reason="有效主测频点不足 2 个，无法拟合 √Lorentzian")
-    clean = [row for row in ordered if not any(abs(row["frequency_hz"] - m) <= 0.5 for m in MAINS_HARMONICS_HZ)]
-    fit_rows = clean if len(clean) >= 2 else ordered
-    freqs = [row["frequency_hz"] for row in fit_rows]
-    gains = [row["h_v_per_rad"] for row in fit_rows]
-    ses = [row.get("h_fit_se_v_per_rad") for row in fit_rows]
-    fit = signal_fit.fit_sqrt_lorentzian(freqs, gains, ses if all(s is not None for s in ses) else None)
-    if not fit.get("available"):
-        return fit
-    h0 = fit["h0_v_per_rad"]
-    h0_se = fit.get("h0_se_v_per_rad")
-    valid_h0_se = h0_se is not None and math.isfinite(h0_se) and h0_se >= 0
-    for row in rows:
-        if (h := row.get("h_v_per_rad")) is not None and h > 0:
-            gain = _number(h / h0)
-            row["normalized_h0_gain"] = gain
-            if gain is not None and (h_se := row.get("h_fit_se_v_per_rad")) is not None:
-                rel_h = h_se / h0
-                rel_h0 = (gain * (h0_se / h0)) if valid_h0_se else 0.0
-                row["normalized_h0_gain_se"] = _number(math.hypot(rel_h, rel_h0))
-    if k0 is not None and math.isfinite(k0) and abs(k0) > 0:
-        fit["h0_to_k0_ratio"] = _number(h0 / abs(k0))
-    return fit
+_fit_transfer_lorentzian = transfer.fit_transfer_lorentzian
 
 
-def _refer_noise(frequency, asd, bands, accepted, lorentzian_fit=None):
-    """按相邻硬合格频点的 |H| 做对数频率-对数幅值插值并折算相位 ASD。
 
-    ``bands`` 只由硬合格（accepted=True 且 h 为正有限）的相邻频点组成，是否
-    ``quality_passed`` 不参与筛选：只要频带内至少有 2 个这样的频点就照常输出
-    ``phase_asd_*`` 列与折算曲线，质量不足由调用方标 advisory / referral_warnings。
-    """
-    h = np.full(frequency.shape, np.nan)
-    phase = np.full(frequency.shape, np.nan)
-    band_ids = np.zeros(frequency.shape, dtype=int)
-    metrics = []
-    for band_id, band in enumerate(bands, 1):
-        indices = np.flatnonzero((frequency >= band[0]) & (frequency <= band[-1]))
-        if not indices.size or len(band) < 2:
-            continue
-        gains = [accepted[f]["h_v_per_rad"] for f in band]
-        if any(not (value is not None and math.isfinite(value) and value > 0) for value in gains):
-            continue
-        h_band = np.exp(np.interp(np.log(frequency[indices]), np.log(band), np.log(gains)))
-        with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
-            values = asd[indices] / h_band
-            keep = np.isfinite(values) & np.isfinite(values * 1e6) & (h_band > 0)
-        indices, values = indices[keep], values[keep]
-        if not indices.size:
-            continue
-        h[indices], phase[indices], band_ids[indices] = h_band[keep], values, band_id
-        median = float(np.median(values))
-        middle = int(np.argmin(abs(frequency[indices] - (band[0] + band[-1]) / 2)))
-        metrics.append(dict(transfer_band=band_id, bins=int(indices.size), frequency_min_hz=float(frequency[indices[0]]),
-                            frequency_max_hz=float(frequency[indices[-1]]), midpoint_bin_hz=float(frequency[indices[middle]]),
-                            midpoint_rad_per_sqrt_hz=float(values[middle]), midpoint_urad_per_sqrt_hz=float(values[middle] * 1e6),
-                            midpoint_deg_per_sqrt_hz=float(math.degrees(values[middle])),
-                            median_rad_per_sqrt_hz=median, median_urad_per_sqrt_hz=median * 1e6,
-                            median_deg_per_sqrt_hz=math.degrees(median)))
+_refer_noise = transfer.refer_phase_asd
 
-    h_lor = np.full(frequency.shape, np.nan)
-    phase_lor = np.full(frequency.shape, np.nan)
-    lor_summary = dict(available=False, reason="缺少有效的 √Lorentzian 频响拟合")
-    if metrics and lorentzian_fit and lorentzian_fit.get("available"):
-        h0 = float(lorentzian_fit["h0_v_per_rad"])
-        fc = float(lorentzian_fit["fc_hz"])
-        if h0 > 0 and fc > 0 and frequency.size:
-            with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
-                cand_h = h0 / np.sqrt(1.0 + (frequency / fc) ** 2)
-                cand_p = asd / cand_h
-                valid = np.isfinite(cand_p) & np.isfinite(cand_p * 1e6) & (cand_h > 0)
-            if valid.any():
-                h_lor[valid] = cand_h[valid]
-                phase_lor[valid] = cand_p[valid]
-                vals = cand_p[valid]
-                med_lor = float(np.median(vals))
-                lor_summary = dict(
-                    available=True,
-                    bins=int(valid.sum()),
-                    frequency_min_hz=float(frequency[valid][0]),
-                    frequency_max_hz=float(frequency[valid][-1]),
-                    h0_v_per_rad=h0,
-                    fc_hz=fc,
-                    median_rad_per_sqrt_hz=med_lor,
-                    median_urad_per_sqrt_hz=med_lor * 1e6,
-                )
-    return h, phase, band_ids, metrics, h_lor, phase_lor, lor_summary
 
 
 def _coarse_plot_data(run_dir, config):
@@ -899,186 +605,32 @@ def local_figure(local_data):
     return fig
 
 
-def _plot_band(frequency):
-    """绘图 x 轴范围（log 1–1000 Hz）内的频点掩码。"""
-    return (frequency >= PLOT_FREQUENCY_RANGE_HZ[0]) & (frequency <= PLOT_FREQUENCY_RANGE_HZ[1])
+_plot_band = spectrum_plot._plot_band
 
 
-def _referral_plot_style(summary):
-    """折算曲线的质量状态与图例文案；质量不足时改用灰色虚线并标 advisory。"""
-    referral_available = bool(summary.get("referral_available",
-                                          (summary.get("phase_referral") or {}).get("available")))
-    referral_warnings = [text for text in summary.get("referral_warnings") or [] if isinstance(text, str)]
-    advisory = referral_available and summary.get("referral_quality", "ok") != "ok"
-    snr_advisory = any("音调信噪比" in text for text in referral_warnings)
-    prefix = ("Measured band (advisory: tone SNR below threshold)" if advisory and snr_advisory
-              else "Measured band (advisory: referral warnings, see summary)" if advisory
-              else "Measured band direct interp")
-    return dict(available=referral_available, advisory=advisory, snr_advisory=snr_advisory,
-                color="#7f7f7f" if advisory else "#009e73", style="--" if advisory else "-",
-                prefix=prefix)
+
+_referral_plot_style = spectrum_plot._referral_plot_style
 
 
-def _draw_phase_sensitivity(ax, frequency, phase, phase_lor, band_ids, summary):
-    """画折算相位灵敏度：实测相邻频点插值带 + 全频段 √Lorentzian 回补。返回是否画出数据。"""
-    style = _referral_plot_style(summary)
-    visible = _plot_band(frequency)
-    if not style["available"]:
-        _diagnostic(ax, "No phase referral: hard integrity failure (see summary)")
-        return False
-    referral = summary.get("phase_referral") or {}
-    phase_urad = phase * 1e6
-    phase_lor_urad = phase_lor * 1e6
-    plotted = False
-    lor_band = referral.get("lorentzian_full_band") or {}
-    backfill = np.where(visible & (phase_lor_urad > 0), phase_lor_urad, np.nan)
-    if lor_band.get("available") and np.isfinite(backfill).any():
-        plotted = True
-        median_urad = float(np.nanmedian(backfill))
-        lo_hz, hi_hz = PLOT_FREQUENCY_RANGE_HZ
-        ax.loglog(frequency, backfill, color="#1f77b4", lw=0.95, alpha=0.85,
-                  label=f"Full-band sqrt-Lorentzian back-fill (median {median_urad:.3g} urad/sqrt(Hz), "
-                        f"{lo_hz:g}-{hi_hz:g} Hz)")
-        fc_val = _number(lor_band.get("fc_hz"))
-        if fc_val is not None and lo_hz <= fc_val <= hi_hz:
-            ax.axvline(fc_val, color="#7f7f7f", ls=":", lw=1.0, label=f"fc = {fc_val:.1f} Hz")
-    bands_info = referral.get("bands") or []
-    med_txt = ", ".join(f"{band['median_urad_per_sqrt_hz']:.3g}" for band in bands_info)
-    label = f"{style['prefix']} (median {med_txt} urad/sqrt(Hz))"
-    for idx, band in enumerate(bands_info):
-        bins = (band_ids == band["transfer_band"]) & visible & (phase_urad > 0)
-        if bins.any():
-            plotted = True
-            ax.loglog(frequency[bins], phase_urad[bins], color=style["color"], ls=style["style"], lw=1.3,
-                      marker="." if bins.sum() == 1 else None, label=label if idx == 0 else None)
-    if style["advisory"]:
-        note = ("advisory: tone SNR below threshold" if style["snr_advisory"]
-                else "advisory: referral warnings (see summary)")
-        ax.text(0.015, 0.985, note, transform=ax.transAxes, ha="left", va="top", fontsize=7.2,
-                color="#555555", bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
-                                           edgecolor="#999999", alpha=0.85))
-    if not plotted:
-        _diagnostic(ax, "Referred phase ASD is zero")
-        return False
-    ax.grid(True, which="both", alpha=0.2)
-    ax.legend(fontsize=7.3, loc="lower left")
-    return plotted
+
+_draw_phase_sensitivity = spectrum_plot._draw_phase_sensitivity
 
 
-def _transfer_gain_groups(rows, accepted, summary):
-    """归一化频响的分组、纵轴含义与 √Lorentzian 参数。"""
-    lor_fit = summary.get("transfer_lorentzian_fit") or {}
-    lor_ok = bool(lor_fit.get("available"))
-    clean_primary = [row for row in accepted.values() if row["quality_passed"] and row.get("h_v_per_rad", 0) > 0]
-    warn_primary = [row for row in accepted.values() if not row["quality_passed"] and row.get("h_v_per_rad", 0) > 0]
-    clean_repeat = [row for row in rows if row["repeat"] and row["accepted"] and row["quality_passed"]
-                    and row.get("h_v_per_rad", 0) > 0]
-    warn_repeat = [row for row in rows if row["repeat"] and row["accepted"] and not row["quality_passed"]
-                   and row.get("h_v_per_rad", 0) > 0]
-    return dict(lor_fit=lor_fit, lor_ok=lor_ok,
-                key="normalized_h0_gain" if lor_ok else "normalized_gain",
-                error="normalized_h0_gain_se" if lor_ok else "normalized_gain_se",
-                ylabel="Normalized |H(f)| / H0" if lor_ok else "Normalized response |H| / |K0|",
-                series=(
-                    (clean_primary, "o", "#1f77b4", "Primary (no warnings)"),
-                    (warn_primary, "^", "#d55e00", "Primary (with warnings)"),
-                    (clean_repeat, "x", "#009e73", "Repeat (no warnings)"),
-                    (warn_repeat, "d", "#cc3311", "Repeat (with warnings)"),
-                ))
+
+_transfer_gain_groups = spectrum_plot._transfer_gain_groups
 
 
-def _draw_transfer_gain(ax, rows, accepted, summary):
-    """右轴：按 H0 归一化的频响；实测频段画点与实线，超出实测最高频点后画模型外推虚线。"""
-    groups = _transfer_gain_groups(rows, accepted, summary)
-    key, error = groups["key"], groups["error"]
-    ax.axhline(1.0, color="#666666", linestyle="--", linewidth=0.9, label="H0 unity reference")
-    if not groups["lor_ok"]:
-        ax.axhspan(CLOSURE_RANGE[0], CLOSURE_RANGE[1], color="#888888", alpha=0.12,
-                   label=f"Closure band {CLOSURE_RANGE[0]:g}-{CLOSURE_RANGE[1]:g}")
-    plotted_any = False
-    f_plotted = []
-    for selection, marker, color, label in groups["series"]:
-        points = [row for row in selection if (row.get(key) or 0) > 0]
-        if not points:
-            continue
-        plotted_any = True
-        frequencies = [row["frequency_hz"] for row in points]
-        f_plotted.extend(frequencies)
-        ax.plot(frequencies, [row[key] for row in points], linestyle="none", marker=marker, color=color,
-                label=label)
-        bars = [row for row in points if row.get(error) is not None and row[error] < row[key]]
-        if bars:
-            ax.errorbar([row["frequency_hz"] for row in bars], [row[key] for row in bars],
-                        yerr=[row[error] for row in bars], fmt="none", ecolor=color, capsize=2, alpha=0.85)
-    if groups["lor_ok"] and f_plotted:
-        h0_fit = float(groups["lor_fit"]["h0_v_per_rad"])
-        fc_fit = float(groups["lor_fit"]["fc_hz"])
-        f_lo = max(min(f_plotted), PLOT_FREQUENCY_RANGE_HZ[0])
-        f_hi = max(f_plotted)
-        f_fit = np.geomspace(f_lo, f_hi, 200)
-        ax.plot(f_fit, 1.0 / np.sqrt(1.0 + (f_fit / fc_fit) ** 2), "-", color="#1f77b4", lw=1.3,
-                label=f"sqrt-Lorentzian fit (H0 = {h0_fit:.3g} V/rad)")
-        if f_hi < PLOT_FREQUENCY_RANGE_HZ[1]:
-            f_extra = np.geomspace(f_hi, PLOT_FREQUENCY_RANGE_HZ[1], 200)
-            ax.plot(f_extra, 1.0 / np.sqrt(1.0 + (f_extra / fc_fit) ** 2), "--", color="#1f77b4", lw=1.5,
-                    label=f"model extrapolation > {f_hi:g} Hz (fc = {fc_fit:.1f} Hz)")
-    ax.set(yscale="linear", ylabel=groups["ylabel"])
-    if plotted_any:
-        values = [row[key] for selection, _, _, _ in groups["series"] for row in selection if (row.get(key) or 0) > 0]
-        upper = max(1.08, 1.05 * max(values))
-        if not groups["lor_ok"]:
-            upper = max(upper, CLOSURE_RANGE[1] * 1.05)
-        ax.set_ylim(0.0, upper)
-        ax.legend(fontsize=7.0, loc="upper right")
-    else:
-        ax.set_ylim(0.0, 1.08)
-        _diagnostic(ax, "No usable normalized estimates")
-    return plotted_any
+
+_draw_transfer_gain = spectrum_plot._draw_transfer_gain
 
 
-def phase_noise_figure(frequency, phase, phase_lor, band_ids, summary):
-    """A06 相位灵敏度单面板图（µrad/√Hz），x 轴 log 1–1000 Hz。"""
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
-    from matplotlib.figure import Figure
-    from ...plotting import figure_size
 
-    fig = Figure(figsize=figure_size("wide", height_mm=80), layout="constrained")
-    FigureCanvasAgg(fig)
-    ax = fig.subplots()
-    ax.set(xscale="log", xlabel="Frequency (Hz)",
-           ylabel=r"Phase sensitivity ASD ($\mu$rad/$\sqrt{\mathrm{Hz}}$)")
-    _draw_phase_sensitivity(ax, frequency, phase, phase_lor, band_ids, summary)
-    ax.set_xlim(*PLOT_FREQUENCY_RANGE_HZ)
-    fig.suptitle("A06: Phase sensitivity spectrum")
-    return fig
+phase_noise_figure = spectrum_plot.phase_noise_figure
 
 
-def phase_transfer_figure(rows, accepted, summary, frequency, phase, phase_lor, band_ids):
-    """A05/A06 合并双纵轴图：左轴折算相位灵敏度，右轴归一化频响 |H|/H0，x 轴 log 1–1000 Hz。"""
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
-    from matplotlib.figure import Figure
-    from ...plotting import figure_size
 
-    fig = Figure(figsize=figure_size("wide", height_mm=98), layout="constrained")
-    FigureCanvasAgg(fig)
-    ax_phase = fig.subplots()
-    ax_gain = ax_phase.twinx()
-    ax_phase.set(xscale="log", xlabel="Frequency (Hz)",
-                 ylabel=r"Phase sensitivity ASD ($\mu$rad/$\sqrt{\mathrm{Hz}}$)")
-    _draw_phase_sensitivity(ax_phase, frequency, phase, phase_lor, band_ids, summary)
-    _draw_transfer_gain(ax_gain, rows, accepted, summary)
-    ax_phase.set_xlim(*PLOT_FREQUENCY_RANGE_HZ)
-    n = len(summary.get("configured_frequencies_hz") or [])
-    clean_n = summary.get("clean_primary_points", 0)
-    headline = "A05/A06: Phase sensitivity ASD (left) and |H(f)| / H0 (right)"
-    detail = f"{len(accepted)}/{n} transfer points ({clean_n} clean, {len(accepted) - clean_n} warned)"
-    lor_fit = summary.get("transfer_lorentzian_fit") or {}
-    if lor_fit.get("available"):
-        detail += f" | H0 = {lor_fit['h0_v_per_rad']:.3g} V/rad, fc = {lor_fit['fc_hz']:.1f} Hz"
-        if (ratio := lor_fit.get("h0_to_k0_ratio")) is not None:
-            detail += f", H0/K0 = {ratio:.3f}"
-    fig.suptitle(f"{headline}\n{detail}")
-    return fig
+phase_transfer_figure = spectrum_plot.phase_transfer_figure
+
 
 
 def _plots(directory, rows, accepted, summary, frequency, phase, band_ids, phase_lor, *,
@@ -1102,7 +654,8 @@ def _plots(directory, rows, accepted, summary, frequency, phase, band_ids, phase
         check_cancelled()
 
         # --- Fig 4: A06 相位灵敏度单面板（µrad/√Hz） ---
-        fig = phase_noise_figure(frequency, phase, phase_lor, band_ids, summary)
+        fig = phase_noise_figure(frequency, phase, phase_lor, band_ids, summary,
+                                 title="A06: Phase sensitivity spectrum")
         fig.savefig(directory / NOISE_PNG, dpi=240)
 
 
@@ -1187,6 +740,7 @@ def analyze_frames(run_dir, config, params, expected_fingerprint):
                    quality_passed=quality_passed, advisory_warnings=advisory_warnings,
                    referral_available=referral_available, referral_warnings=referral_warnings,
                    referral_quality=referral_quality,
+                   transfer_plot_title="A05/A06: Phase sensitivity ASD (left) and |H(f)| / H0 (right)",
                    calibration=calibration, lockin_reference=reference,
                    configured_frequencies_hz=configured, transfer_attempts=len(rows),
                    accepted_primary_points=len(accepted), clean_primary_points=clean_primary,

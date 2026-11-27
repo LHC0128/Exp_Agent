@@ -1,7 +1,8 @@
-"""标准 Mx 相图与噪声路径的完整运行与分步会话编排。
+"""标准 Mx 相图、基带频响与相位灵敏度的完整运行与分步会话编排。
 
 骨架来自 StagedWorkflow：清单、修订、快照、目录轮换与分析指纹由基类负责，本模块只编排
-A02 初始条件、A03 相图、A04 工作点、A05 噪声与安全收尾；workflow 实例自身就是采集 context。
+A02 初始条件、A03 相图、A04 工作点、A05 基带频响、A06 无调制噪声与安全收尾；
+workflow 实例自身就是采集 context。
 """
 import logging
 from pathlib import Path
@@ -21,9 +22,10 @@ class Workflow(StagedWorkflow):
     run_format = run_format
     hardware_free = ("A01",)
     inherited_state_keys = ("clock_sources", "optional_connection_errors")
-    output_keys = ("主磁场", "Y 射频", "Z 通道", "X 偏置", "温控", "共同触发", "MFLI", "相位扫描", "工作点", "噪声")
-    output_source = ("载波节点、Z/X 通道、温控与 GS200 有仪器回读；相位角与斜率由本轮实测原始帧给出")
-    finished_message = "本轮已安全封存；载波与 Z/X 关闭，温控与主场已恢复"
+    output_keys = ("主磁场", "Y 射频", "Z 通道", "X 偏置", "温控", "共同触发", "MFLI", "相位扫描",
+                   "工作点", "基带频响", "噪声")
+    output_source = ("载波与 PM 边带节点、Z/X 通道、温控与 GS200 有仪器回读；相位角、斜率与频响由本轮实测原始帧给出")
+    finished_message = "本轮已安全封存；载波与 PM 边带关闭、Z/X 关闭，温控与主场已恢复"
 
     def __init__(self, params, *, project_root=None, session_id=None):
         super().__init__(params, project_root=project_root, session_id=session_id)
@@ -39,10 +41,15 @@ class Workflow(StagedWorkflow):
         diagram = self.state.get("phase_diagram") or {}
         working = self.state.get("working_point") or {}
         noise = self.state.get("noise") or {}
+        transfer = self.state.get("transfer") or []
+        dynamic = self.state.get("dynamic_lockin") or {}
         return {"daq_settings": {"radius_v": (diagram.get("circle_fit") or {}).get("radius_v"),
                                  "working_point_deg": working.get("command_deg"),
+                                 "transfer_points": len(transfer),
+                                 "pm_frequencies_hz": (self.state.get("transfer_lockin") or {}).get("frequencies_hz"),
                                  "noise_segments": len(noise.get("labels") or ()),
-                                 "time_constant_s": (self.state.get("lockin") or {}).get("time_constant_s")}}
+                                 "time_constant_s": (self.state.get("lockin") or {}).get("time_constant_s"),
+                                 "dynamic_time_constant_s": dynamic.get("time_constant_s")}}
 
     def run_step(self, item):
         if item == "A02":
@@ -52,6 +59,8 @@ class Workflow(StagedWorkflow):
             acquisition.acquire_phase_diagram(self)
         elif item == "A04":
             acquisition.acquire_working_point(self)
+        elif item == "A05":
+            acquisition.acquire_frequency_response(self)
         elif item == RUN_ID:
             acquisition.acquire_noise(self)
             self.seal_round(self._shutdown(None))

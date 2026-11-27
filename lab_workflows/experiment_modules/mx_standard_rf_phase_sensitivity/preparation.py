@@ -239,34 +239,58 @@ def write_temperature(ctx, enabled: bool) -> dict:
     raise SafetyAbort(f"温控开关写入失败：{last_exc}")
 
 
-def configure_lockin(ctx):
-    """按参数配置 Demod 4 / Osc 4 静态读出：输入量程、参考频率、时间常数与传输率。"""
+def configure_readout_demodulator(
+    ctx, *, rate_sa_s: float, time_constant_s: float, phase_deg: float, state_key: str,
+    actual_rate_key: str, configure_input: bool, stage_tag: str,
+):
+    """配置并严格回读 MFLI Signal Input 1 / Osc 4 与 Demod 4 解调器（窄带或宽带档）。"""
     p = ctx.params
     mfli = ctx.devices["hf2"]
-    demod.configure_signal_input(mfli, SignalInputConfig(input_index=0, range=p.demod_signal_range_v, diff=False))
-    demod.configure_oscillator(mfli, OscillatorConfig(osc_index=READOUT_OSC_IDX, frequency=p.y_rf_freq_hz))
-    config = DemodulatorConfig(demod_index=p.demod_idx, rate=p.demod_rate_sa_s, input_channel=0,
-                               osc_select=READOUT_OSC_IDX, time_constant=p.demod_tc_s, order=p.demod_order,
-                               phase=0.0)
+    if configure_input:
+        demod.configure_signal_input(mfli, SignalInputConfig(input_index=0, range=p.demod_signal_range_v, diff=False))
+        demod.configure_oscillator(mfli, OscillatorConfig(osc_index=READOUT_OSC_IDX, frequency=p.y_rf_freq_hz))
+    config = DemodulatorConfig(demod_index=p.demod_idx, rate=rate_sa_s, input_channel=0,
+                               osc_select=READOUT_OSC_IDX, time_constant=time_constant_s, order=p.demod_order,
+                               phase=phase_deg)
     actual_rate = float(demod.configure_demodulator(mfli, config, for_acquisition=True))
     if not math.isfinite(actual_rate) or actual_rate <= 0:
         raise RuntimeError("MFLI Demod 4 实际采样率无效")
-    ctx.state["actual_rates"]["demod4_Sa_s"] = actual_rate
+    ctx.state["actual_rates"][actual_rate_key] = actual_rate
     readback_phase = float(mfli.get_double(f"{mfli.demod_path(p.demod_idx)}/phaseshift"))
-    drift = prep.phase_drift_deg(readback_phase, 0.0)
+    drift = prep.phase_drift_deg(readback_phase, phase_deg)
     if drift > PHASE_READBACK_TOLERANCE_DEG:
-        raise RuntimeError(f"MFLI 解调相位回读 {readback_phase:g}° 与设定 0° 相差 {drift:.3g}°")
-    ctx.state["lockin"] = dict(model=mfli.model, device_id=mfli.device_id, demod_idx=p.demod_idx,
-                               osc_select=READOUT_OSC_IDX, requested_rate_Sa_s=p.demod_rate_sa_s,
-                               actual_rate_Sa_s=actual_rate, time_constant_s=p.demod_tc_s,
-                               order=p.demod_order, signal_range_v=p.demod_signal_range_v,
-                               rf_frequency_Hz=p.y_rf_freq_hz,
-                               readback={node: float(mfli.get_double(f"{mfli.demod_path(p.demod_idx)}/{node}"))
-                                         for node in ("rate", "timeconstant", "phaseshift")},
-                               phase_deg=readback_phase, phase_requested_deg=0.0,
-                               capabilities=dict(mfli.capabilities))
-    ctx.outputs["MFLI"] = (f"Demod {p.demod_idx + 1} / Osc {READOUT_OSC_IDX + 1} 请求 {p.demod_rate_sa_s:g} Sa/s、"
-                           f"TC {p.demod_tc_s * 1e3:g} ms、参考 {p.y_rf_freq_hz:g} Hz（传输率回读 {actual_rate:g} Sa/s）")
+        raise RuntimeError(f"MFLI 解调相位回读 {readback_phase:g}° 与设定 {phase_deg:g}° 相差 {drift:.3g}°")
+    record = dict(model=mfli.model, device_id=mfli.device_id, demod_idx=p.demod_idx,
+                  osc_select=READOUT_OSC_IDX, requested_rate_Sa_s=rate_sa_s,
+                  actual_rate_Sa_s=actual_rate, time_constant_s=time_constant_s,
+                  order=p.demod_order, signal_range_v=p.demod_signal_range_v,
+                  rf_frequency_Hz=p.y_rf_freq_hz,
+                  readback={node: float(mfli.get_double(f"{mfli.demod_path(p.demod_idx)}/{node}"))
+                            for node in ("rate", "timeconstant", "phaseshift")},
+                  phase_deg=readback_phase, phase_requested_deg=phase_deg,
+                  capabilities=dict(mfli.capabilities))
+    ctx.state[state_key] = record
+    ctx.outputs["MFLI"] = (f"Demod {p.demod_idx + 1}（{stage_tag}，Osc {READOUT_OSC_IDX + 1}）"
+                           f"请求 {rate_sa_s:g} Sa/s、TC {time_constant_s:g} s、参考 {p.y_rf_freq_hz:g} Hz、"
+                           f"相位 {readback_phase:g}°（传输率回读 {actual_rate:g} Sa/s）")
+    return record
+
+
+def configure_lockin(ctx):
+    """A02–A04：按参数配置窄带静态读出（输入量程、参考频率、时间常数与传输率）。"""
+    p = ctx.params
+    return configure_readout_demodulator(
+        ctx, rate_sa_s=p.demod_rate_sa_s, time_constant_s=p.demod_tc_s, phase_deg=0.0,
+        state_key="lockin", actual_rate_key="demod4_Sa_s", configure_input=True, stage_tag="A02–A04")
+
+
+def configure_dynamic_lockin(ctx, *, phase_deg: float):
+    """仅 A05/A06：把 Demod 4 切到高带宽档并保持当前解调相位，不重写输入与振荡器。"""
+    p = ctx.params
+    return configure_readout_demodulator(
+        ctx, rate_sa_s=p.demod_dynamic_rate_sa_s, time_constant_s=p.demod_dynamic_tc_s,
+        phase_deg=float(phase_deg), state_key="dynamic_lockin", actual_rate_key="demod4_dynamic_Sa_s",
+        configure_input=False, stage_tag="A05/A06")
 
 
 def configure_x_bias(ctx):
@@ -369,17 +393,26 @@ def _mod(device_id: str, node: str) -> str:
 
 
 def _carrier_safety(ctx) -> str:
-    """按 Signal Output 1 安全限值校验零、偏置与载波包络，返回限值键名。"""
+    """按 Signal Output 1 安全限值校验零、偏置与当前包络（含边带开启时的 2° 峰值），返回限值键名。"""
     check_cancelled()
     limits = load_safety_limits(ctx.root)
     key = mfli_sigout_safety_key(ctx.mapping)
-    for value in (0.0, float(ctx.params.y_bias_v), *ctx.params.y_output_envelope()):
+    pm_enabled = bool((ctx.carrier or {}).get("pm_enabled"))
+    for value in (0.0, float(ctx.params.y_bias_v), *ctx.params.y_output_envelope(pm_enabled=pm_enabled)):
         validate_safety_limit(key, value, limits)
     return key
 
 
+def _sync_carrier_state(ctx) -> None:
+    """把载波会话状态（含 PM 边带开关与当前调相频率）同步进运行配置快照。"""
+    session = ctx.carrier or {}
+    state = ctx.state.setdefault("carrier", {})
+    state.update(pm_sidebands_enabled=bool(session.get("pm_enabled")),
+                 pm_frequency_hz=float(session.get("fm_hz", 0.0)) if session.get("pm_enabled") else None)
+
+
 def carrier_verify(ctx, *, output: bool) -> dict:
-    """回读载波、外时钟、量程、偏置与读出参考；PM 边带必须全程关闭。"""
+    """回读载波、外时钟、量程、偏置与读出参考，并与当前 PM 边带状态逐项比对。"""
     p = ctx.params
     device = ctx.devices["hf2"]
     dev = device.device_id
@@ -399,12 +432,19 @@ def carrier_verify(ctx, *, output: bool) -> dict:
         carrier_hz=float(device.get_double(f"{device.osc_path(MOD_CARRIER_OSC_IDX)}/freq")),
         carrier_vpk=float(device.get_double(_mod(dev, "carrier/amplitude"))),
         command_deg=float(device.get_double(_mod(dev, "carrier/phaseshift"))),
+        mod_index_rad=float(device.get_double(_mod(dev, "index"))),
         sideband0_enable=bool(device.get_int(_mod(dev, "sidebands/0/enable"))),
         sideband1_enable=bool(device.get_int(_mod(dev, "sidebands/1/enable"))),
+        sideband0_osc=int(device.get_int(_mod(dev, "sidebands/0/oscselect"))),
+        sideband1_osc=int(device.get_int(_mod(dev, "sidebands/1/oscselect"))),
+        sideband0_hz=float(device.get_double(f"{device.osc_path(MOD_SIDEBAND_OSC_IDXS[0])}/freq")),
+        sideband1_hz=float(device.get_double(f"{device.osc_path(MOD_SIDEBAND_OSC_IDXS[1])}/freq")),
         readout_osc_hz=float(device.get_double(f"{device.osc_path(READOUT_OSC_IDX)}/freq")),
     )
-    envelope = p.y_output_envelope()
-    expected_deg = 0.0 if ctx.carrier is None else float(ctx.carrier["command_deg"])
+    session = ctx.carrier or {}
+    pm_enabled = bool(session.get("pm_enabled"))
+    envelope = p.y_output_envelope(pm_enabled=pm_enabled)
+    expected_deg = 0.0 if ctx.carrier is None else float(session.get("command_deg", 0.0))
     valid = (
         got["extclk"]
         and got["output"] is output
@@ -420,10 +460,17 @@ def carrier_verify(ctx, *, output: bool) -> dict:
         and math.isclose(got["carrier_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
         and math.isclose(got["carrier_vpk"], p.y_carrier_vpk, abs_tol=1e-5)
         and prep.phase_drift_deg(got["command_deg"], expected_deg) <= 0.02
-        and not got["sideband0_enable"]
-        and not got["sideband1_enable"]
+        and got["sideband0_osc"] == MOD_SIDEBAND_OSC_IDXS[0]
+        and got["sideband1_osc"] == MOD_SIDEBAND_OSC_IDXS[1]
+        and got["sideband0_enable"] is pm_enabled
+        and got["sideband1_enable"] is pm_enabled
+        and math.isclose(got["mod_index_rad"], p.y_pm_depth_rad, abs_tol=1e-4)
         and math.isclose(got["readout_osc_hz"], p.y_rf_freq_hz, rel_tol=1e-6)
     )
+    if pm_enabled:
+        fm_hz = float(session.get("fm_hz", 0.0))
+        valid = (valid and math.isclose(got["sideband0_hz"], fm_hz, abs_tol=1e-3)
+                 and math.isclose(got["sideband1_hz"], fm_hz, abs_tol=1e-3))
     if not valid:
         raise SafetyAbort(f"MFLI 标准 Mx 载波回读不符：{got}")
     return got
@@ -444,8 +491,13 @@ def carrier_begin(ctx) -> dict:
     device.set_int(_mod(dev, "mode"), 1)
     device.set_int(_mod(dev, "freqdevenable"), 0)
     device.set_int(_mod(dev, "carrier/oscselect"), MOD_CARRIER_OSC_IDX)
+    device.set_int(_mod(dev, "sidebands/0/oscselect"), MOD_SIDEBAND_OSC_IDXS[0])
+    device.set_int(_mod(dev, "sidebands/1/oscselect"), MOD_SIDEBAND_OSC_IDXS[1])
     device.set_double(f"{device.osc_path(MOD_CARRIER_OSC_IDX)}/freq", float(p.y_rf_freq_hz))
+    for index in MOD_SIDEBAND_OSC_IDXS:
+        device.set_double(f"{device.osc_path(index)}/freq", float(p.sweep_order_hz[0]))
     device.set_double(f"{device.osc_path(READOUT_OSC_IDX)}/freq", float(p.y_rf_freq_hz))
+    device.set_double(_mod(dev, "index"), float(p.y_pm_depth_rad))
     device.set_double(_mod(dev, "carrier/amplitude"), float(p.y_carrier_vpk))
     device.set_double(_mod(dev, "carrier/phaseshift"), 0.0)
     device.set_int(_mod(dev, "carrier/enable"), 1)
@@ -456,10 +508,12 @@ def carrier_begin(ctx) -> dict:
     device.set_int(_sigout(dev, "on"), 1)
     ctx.carrier = dict(command_deg=0.0, safety_key=safety_key,
                        carrier_osc_idx=MOD_CARRIER_OSC_IDX, readout_osc_idx=READOUT_OSC_IDX,
-                       sideband_osc_idxs=MOD_SIDEBAND_OSC_IDXS)
+                       sideband_osc_idxs=MOD_SIDEBAND_OSC_IDXS,
+                       pm_enabled=False, fm_hz=float(p.sweep_order_hz[0]))
     ctx.state["carrier"] = dict(ctx.state.get("carrier") or {}, **ctx.carrier,
                                 frequency_hz=p.y_rf_freq_hz, vpp=p.y_rf_vpp, vpk=p.y_carrier_vpk,
-                                bias_v=p.y_bias_v, pm_sidebands_enabled=False, readback=carrier_verify(ctx, output=True))
+                                bias_v=p.y_bias_v, pm_sidebands_enabled=False,
+                                readback=carrier_verify(ctx, output=True))
     ctx.outputs["Y 射频"] = (f"MFLI Out1 连续载波（标准 Mx，无 PM 边带），{p.y_carrier_vpk:g} Vpk，"
                              f"偏置 {p.y_bias_v:+g} V，指令相位 0°")
     return ctx.carrier
@@ -475,8 +529,64 @@ def carrier_set_phase(ctx, phase_deg: float) -> float:
     device.set_double(_mod(device.device_id, "carrier/phaseshift"), command)
     ctx.carrier["command_deg"] = command
     carrier_verify(ctx, output=True)
-    ctx.outputs["Y 射频"] = (f"MFLI Out1 连续载波（标准 Mx，无 PM 边带），指令相位 {command:g}°")
+    tag = f"PM {ctx.carrier.get('fm_hz', 0.0):g} Hz" if ctx.carrier.get("pm_enabled") else "无 PM 边带"
+    ctx.outputs["Y 射频"] = f"MFLI Out1 载波（标准 Mx，{tag}），指令相位 {command:g}°"
     return command
+
+
+def carrier_begin_pm(ctx) -> dict:
+    """保持载波与相移不变，使能 2° 峰值相干边带 PM 并回读；先按含边带包络校验限值。"""
+    if ctx.carrier is None:
+        raise SafetyAbort("缺少本轮已准备的载波会话；请从 A02 开始整链执行")
+    p = ctx.params
+    device, dev = ctx.devices["hf2"], ctx.devices["hf2"].device_id
+    ctx.carrier.update(pm_enabled=True, fm_hz=float(p.sweep_order_hz[0]))
+    _carrier_safety(ctx)
+    for index in MOD_SIDEBAND_OSC_IDXS:
+        device.set_double(f"{device.osc_path(index)}/freq", ctx.carrier["fm_hz"])
+    device.set_double(_mod(dev, "index"), float(p.y_pm_depth_rad))
+    device.set_int(_mod(dev, "sidebands/0/enable"), 1)
+    device.set_int(_mod(dev, "sidebands/1/enable"), 1)
+    got = carrier_verify(ctx, output=True)
+    _sync_carrier_state(ctx)
+    ctx.outputs["Y 射频"] = (f"MFLI Out1 载波 + 2° 峰值相干边带 PM {ctx.carrier['fm_hz']:g} Hz，"
+                             f"指令相位 {ctx.carrier['command_deg']:g}°")
+    return got
+
+
+def carrier_set_pm_frequency(ctx, frequency_hz: float) -> dict:
+    """切换上下边带振荡器频率并回读，载波频率与相移保持不变。"""
+    if ctx.carrier is None or not ctx.carrier.get("pm_enabled"):
+        raise SafetyAbort("缺少本轮已开启的 PM 边带会话；请从 A05 开始整链执行")
+    value = float(frequency_hz)
+    if not math.isfinite(value) or value <= 0:
+        raise SafetyAbort(f"调相频率无效：{frequency_hz!r}")
+    _carrier_safety(ctx)
+    device, dev = ctx.devices["hf2"], ctx.devices["hf2"].device_id
+    ctx.carrier["fm_hz"] = value
+    for index in MOD_SIDEBAND_OSC_IDXS:
+        device.set_double(f"{device.osc_path(index)}/freq", value)
+    got = carrier_verify(ctx, output=True)
+    _sync_carrier_state(ctx)
+    ctx.outputs["Y 射频"] = (f"MFLI Out1 载波 + 2° 峰值相干边带 PM {value:g} Hz，"
+                             f"指令相位 {ctx.carrier['command_deg']:g}°")
+    return got
+
+
+def carrier_stop_pm(ctx) -> dict:
+    """关闭上下边带回到无调制连续载波，载波幅值与相移保持不变。"""
+    if ctx.carrier is None:
+        raise SafetyAbort("缺少本轮已准备的载波会话；请从 A02 开始整链执行")
+    ctx.carrier["pm_enabled"] = False
+    _carrier_safety(ctx)
+    device, dev = ctx.devices["hf2"], ctx.devices["hf2"].device_id
+    device.set_int(_mod(dev, "sidebands/0/enable"), 0)
+    device.set_int(_mod(dev, "sidebands/1/enable"), 0)
+    got = carrier_verify(ctx, output=True)
+    _sync_carrier_state(ctx)
+    ctx.outputs["Y 射频"] = (f"MFLI Out1 连续载波（标准 Mx，无 PM 边带），"
+                             f"指令相位 {ctx.carrier['command_deg']:g}°")
+    return got
 
 
 def stop_carrier(ctx) -> None:

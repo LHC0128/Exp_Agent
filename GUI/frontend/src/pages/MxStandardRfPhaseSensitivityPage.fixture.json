@@ -201,7 +201,105 @@
       "group": "advanced",
       "minimum": 1000.0,
       "maximum": 20000.0,
-      "description": "Demod 4 连续流传输率；相图、细扫与噪声共用同一采样率。",
+      "description": "Demod 4 连续流传输率；A02–A04 的窄带静态读出共用该采样率。",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD_DYNAMIC_TC",
+      "label": "A05/A06 读出时间常数",
+      "type": "number",
+      "default": 1e-06,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 1e-06,
+      "maximum": 0.1,
+      "description": "仅对 A05 基带频响与 A06 无调制噪声放宽的宽带时间常数；A02–A04 仍用 DEMOD_TC。",
+      "read_only": false
+    },
+    {
+      "name": "DEMOD_DYNAMIC_RATE",
+      "label": "A05/A06 读出传输率",
+      "type": "number",
+      "default": 50000.0,
+      "unit": "Sa/s",
+      "group": "advanced",
+      "minimum": 1000.0,
+      "maximum": 60000.0,
+      "description": "A05/A06 高带宽连续流采样率，须不低于最高调相频率的 10 倍。",
+      "read_only": false
+    },
+    {
+      "name": "PM_FREQUENCIES_HZ",
+      "label": "基带调相频率列表",
+      "type": "array",
+      "default": [
+        3.0,
+        13.0,
+        23.0,
+        33.0,
+        43.0,
+        53.0,
+        63.0,
+        73.0,
+        83.0,
+        93.0,
+        103.0,
+        113.0,
+        123.0,
+        133.0,
+        143.0,
+        153.0,
+        163.0,
+        173.0,
+        183.0,
+        193.0,
+        203.0,
+        250.0,
+        300.0,
+        350.0,
+        400.0,
+        450.0,
+        500.0,
+        550.0,
+        600.0,
+        650.0,
+        700.0,
+        750.0,
+        800.0,
+        850.0,
+        900.0,
+        950.0,
+        1000.0
+      ],
+      "unit": "Hz",
+      "group": "basic",
+      "minimum": null,
+      "maximum": null,
+      "description": "A05 严格递增、不改变 5 kHz 载波，按列表顺序单次扫描（默认 3–1000 Hz：3–203 Hz 每 10 Hz 共 21 点、250–1000 Hz 每 50 Hz 共 16 点，错开 50 Hz 工频）；与 Mx 脉冲射频相位灵敏度共用同一张表。",
+      "read_only": false
+    },
+    {
+      "name": "PM_TONE_DURATION_S",
+      "label": "每档调相采集时长",
+      "type": "number",
+      "default": 4.0,
+      "unit": "s",
+      "group": "advanced",
+      "minimum": 0.5,
+      "maximum": 12.0,
+      "description": "A05 每个频点关闭温控窗口内的连续采集时长；须覆盖最低频点至少 10 个周期。",
+      "read_only": false
+    },
+    {
+      "name": "DYNAMIC_TEMP_SWITCH_ON_LAG_S",
+      "label": "A05/A06 温控恢复等待",
+      "type": "number",
+      "default": 4.0,
+      "unit": "s",
+      "group": "basic",
+      "minimum": 0.1,
+      "maximum": 30.0,
+      "description": "A05 每个频点与 A06 每段噪声恢复温控（5 V DC + ON）后的固定等待时间。",
       "read_only": false
     },
     {
@@ -255,8 +353,8 @@
     }
   ],
   "flow": {
-    "run_step_id": "A05",
-    "finish_step_id": "A06",
+    "run_step_id": "A06",
+    "finish_step_id": "A07",
     "acquisition": [
       {
         "id": "A01",
@@ -272,7 +370,6 @@
           "CAL_K_HZ_PER_MA",
           "CAL_B_HZ"
         ],
-        "artifacts": [],
         "display_parameters": [
           "RUN_TAG",
           "Y_RF_FREQ_HZ",
@@ -282,8 +379,9 @@
           "CAL_K_HZ_PER_MA",
           "CAL_B_HZ"
         ],
+        "artifacts": [],
         "quality_gates": [
-          "不连接硬件；GS200 电流由 (Y_RF_FREQ_HZ - CAL_B_HZ) / CAL_K_HZ_PER_MA 反算并按 main_magnetic_field 限值校验，载波包络按 MFLI Signal Output 1 ±10 V 校验。"
+          "不连接硬件；GS200 电流由 (Y_RF_FREQ_HZ - CAL_B_HZ) / CAL_K_HZ_PER_MA 反算并按 main_magnetic_field 限值校验，载波包络按 A05 的 2° 峰值边带与偏置合计后按 MFLI Signal Output 1 ±10 V 校验。"
         ]
       },
       {
@@ -304,9 +402,6 @@
           "SET_TEC_TARGET",
           "TARGET_TEMPERATURE_C"
         ],
-        "artifacts": [
-          "experiment_config.yaml"
-        ],
         "display_parameters": [
           "DEMOD_IDX",
           "DEMOD_SIGNAL_RANGE",
@@ -318,8 +413,11 @@
           "SET_TEC_TARGET",
           "TARGET_TEMPERATURE_C"
         ],
+        "artifacts": [
+          "experiment_config.yaml"
+        ],
         "quality_gates": [
-          "按设备库同步 10 MHz 并严格回读；温控开关 5 V DC + ON；X 偏置回读；共同触发方波与 SYNC 回读；Z 双脉冲链（1200B 与 Z 信号源）关闭并回读；Demod 4 / Osc 4 静态读出；最后按标定式设 GS200 并回读。"
+          "按设备库同步 10 MHz 并严格回读；温控开关 5 V DC + ON；X 偏置回读；共同触发方波与 SYNC 回读；Z 双脉冲链（1200B 与 Z 信号源）关闭并回读；Demod 4 / Osc 4 窄带静态读出；MF-MOD 只开连续载波（上下边带关闭）并全节点回读；最后按标定式设 GS200 并回读。"
         ]
       },
       {
@@ -333,15 +431,15 @@
           "PHASE_GRID_STEP_DEG",
           "POINT_DURATION_S"
         ],
+        "display_parameters": [
+          "PHASE_GRID_STEP_DEG",
+          "POINT_DURATION_S"
+        ],
         "artifacts": [
           "raw/mx_std_settle_*.npz",
           "raw/mx_std_warmup_*.npz",
           "raw/mx_std_coarse_*.npz",
           "raw/mx_std_repeat_*.npz"
-        ],
-        "display_parameters": [
-          "PHASE_GRID_STEP_DEG",
-          "POINT_DURATION_S"
         ],
         "quality_gates": [
           "先等原子响应稳定（相邻两次直流相量差不超过 0.1 mV），采一段丢弃做预热，再按网格逐点采集，末尾回采首点量整圈漂移；每帧体检后写盘，圆拟合给出圆心、半径与残差。"
@@ -355,22 +453,55 @@
           "A03"
         ],
         "parameters": [],
+        "display_parameters": [],
         "artifacts": [
           "raw/mx_std_fine_*.npz"
         ],
-        "display_parameters": [],
         "quality_gates": [
           "按圆模型取 |cos phi| 最大的相图点为细扫中心，±5° 步长 1° 细扫；用实测相位角回归 dY/dphi，与 R|cos phi| 互校后定最终工作点。"
         ]
       },
       {
         "id": "A05",
-        "title": "噪声分段与安全封存",
+        "title": "基带频率响应测量",
         "group": "采集",
         "dependencies": [
           "A04"
         ],
         "parameters": [
+          "DEMOD_DYNAMIC_TC",
+          "DEMOD_DYNAMIC_RATE",
+          "DYNAMIC_TEMP_SWITCH_ON_LAG_S",
+          "PM_FREQUENCIES_HZ",
+          "PM_TONE_DURATION_S"
+        ],
+        "display_parameters": [
+          "DEMOD_DYNAMIC_TC",
+          "DEMOD_DYNAMIC_RATE",
+          "DYNAMIC_TEMP_SWITCH_ON_LAG_S",
+          "PM_FREQUENCIES_HZ",
+          "PM_TONE_DURATION_S"
+        ],
+        "artifacts": [
+          "raw/mx_std_pm_*.npz"
+        ],
+        "quality_gates": [
+          "仅对 A05/A06 把 MFLI Demod 4 切到高带宽 DEMOD_DYNAMIC_TC / DEMOD_DYNAMIC_RATE（A03/A04 的窄带滤波不动），开启 MF-MOD 2° 峰值相干边带 PM，按 PM_FREQUENCIES_HZ 单次顺序切换边带频率并逐点采集 XY 帧；每点恢复温控并按 DYNAMIC_TEMP_SWITCH_ON_LAG_S 等待后写盘。"
+        ]
+      },
+      {
+        "id": "A06",
+        "title": "无调制噪声测量",
+        "group": "采集",
+        "dependencies": [
+          "A05"
+        ],
+        "parameters": [
+          "NOISE_SEGMENTS",
+          "NOISE_DURATION_S",
+          "WELCH_SEGMENT_S"
+        ],
+        "display_parameters": [
           "NOISE_SEGMENTS",
           "NOISE_DURATION_S",
           "WELCH_SEGMENT_S"
@@ -378,45 +509,42 @@
         "artifacts": [
           "raw/mx_std_noise_*.npz"
         ],
-        "display_parameters": [
-          "NOISE_SEGMENTS",
-          "NOISE_DURATION_S",
-          "WELCH_SEGMENT_S"
-        ],
         "quality_gates": [
-          "沿用相图的静态解调配置（时间常数 DEMOD_TC、传输率 DEMOD_RATE，不切高带宽）；每段独立进出温控窗口，恢复温控并等待后才写盘；每帧体检，含 100 Hz 以上单音超过直流 20% 的帧作废；本轮收尾成功才封存。"
+          "保持 A05 的高带宽滤波设置，先关闭上下边带保留 5 kHz 连续载波在工作点，按 NOISE_SEGMENTS × NOISE_DURATION_S 分段独立进出温控窗口采集无调制噪声 XY 帧；每段恢复温控并等待后写盘；宽频帧体检忽略 5 kHz 载波泄漏的已知寄生频点；本轮收尾成功才封存。"
         ]
       },
       {
-        "id": "A06",
+        "id": "A07",
         "title": "安全结束会话",
         "group": "结束",
         "dependencies": [],
         "parameters": [],
-        "artifacts": [],
         "display_parameters": [],
+        "artifacts": [],
         "quality_gates": [
-          "关闭并清零 MFLI Out1 与 MF-MOD，Z/X 通道归零回读，恢复温控为 5 V DC + ON，恢复 GS200 运行前状态，停解调传输并断开设备；共同触发保持。"
+          "关闭 MF-MOD 上下边带并清零 MFLI Out1 载波幅值与偏置，Z/X 通道归零回读，温控恢复 5 V DC + ON，恢复 GS200 运行前状态，停 Demod 4 传输并断开设备；共同触发保持。"
         ]
       }
     ],
     "analysis": [
       {
         "id": "B01",
-        "title": "圆拟合、工作点斜率与噪声路径分析",
+        "title": "圆拟合、基带频响与相位灵敏度分析",
         "group": "独立分析",
         "dependencies": [],
         "parameters": [],
+        "display_parameters": [],
         "artifacts": [
           "summary.json",
           "phase_diagram.png",
           "phase_diagram.pdf",
           "noise_paths.png",
-          "noise_paths.pdf"
+          "noise_paths.pdf",
+          "phase_transfer.png",
+          "phase_noise.png"
         ],
-        "display_parameters": [],
         "quality_gates": [
-          "目录已停止写入、原始格式受支持；逐帧复检直流幅度与单音；输出 summary.json、相图（圆拟合与逐段切线斜率）与三条相位噪声路径对比图，图中文字用英文。"
+          "目录已停止写入、原始格式受支持；逐帧复检直流幅度与单音；A05 按工频与 5 kHz 载波泄漏模型联合拟合音调幅值并以 √Lorentzian H0 归一化，A06 宽带噪声折算成相位灵敏度（µrad/√Hz，含全频段 √Lorentzian 回补）；输出 summary.json、相图、三条噪声路径、A05/A06 合并双纵轴图与相位灵敏度单面板图，两图与脉冲射频相位灵敏度实验同款样式，图中文字用英文。"
         ]
       }
     ],
@@ -427,122 +555,160 @@
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "Y_RF_FREQ_HZ": [
           "A01",
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "Y_RF_VPP": [
           "A01",
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "X_BIAS_V": [
           "A01",
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "Y_BIAS_V": [
           "A01",
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "CAL_K_HZ_PER_MA": [
           "A01",
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "CAL_B_HZ": [
           "A01",
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "DEMOD_IDX": [
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "DEMOD_SIGNAL_RANGE": [
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "DEMOD_ORDER": [
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "DEMOD_TC": [
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "DEMOD_RATE": [
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "SYSTEM_SETTLE_S": [
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "TEMP_SWITCH_ON_LAG_S": [
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "SET_TEC_TARGET": [
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "TARGET_TEMPERATURE_C": [
           "A02",
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "PHASE_GRID_STEP_DEG": [
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
         ],
         "POINT_DURATION_S": [
           "A03",
           "A04",
-          "A05"
+          "A05",
+          "A06"
+        ],
+        "DEMOD_DYNAMIC_TC": [
+          "A05",
+          "A06"
+        ],
+        "DEMOD_DYNAMIC_RATE": [
+          "A05",
+          "A06"
+        ],
+        "DYNAMIC_TEMP_SWITCH_ON_LAG_S": [
+          "A05",
+          "A06"
+        ],
+        "PM_FREQUENCIES_HZ": [
+          "A05",
+          "A06"
+        ],
+        "PM_TONE_DURATION_S": [
+          "A05",
+          "A06"
         ],
         "NOISE_SEGMENTS": [
-          "A05"
+          "A06"
         ],
         "NOISE_DURATION_S": [
-          "A05"
+          "A06"
         ],
         "WELCH_SEGMENT_S": [
-          "A05"
+          "A06"
         ]
       },
       "analysis": {}

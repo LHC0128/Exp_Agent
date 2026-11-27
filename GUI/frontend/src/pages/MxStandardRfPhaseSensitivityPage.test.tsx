@@ -17,7 +17,8 @@ const { fields, flow } = fixture;
 const parameters = Object.fromEntries(fields.map(field => [field.name, field.default]));
 const history = { run_id: "1127_history", timestamp: "1127", run_tag: "history", completion_status: "completed" };
 const summaryUrl = BASE + "/runs/" + history.run_id + "/summary";
-const results = ["results/summary.json", "results/phase_diagram.png", "results/noise_paths.png"];
+const results = ["results/summary.json", "results/phase_diagram.png", "results/noise_paths.png",
+  "results/phase_transfer.png", "results/phase_noise.png"];
 const artifacts = Object.fromEntries(results.map(name => [name, BASE + "/runs/" + history.run_id + "/files/" + name + "?v=1"]));
 const sessionId = "mx-std-session";
 const jobId = "mx-std-job";
@@ -38,7 +39,7 @@ let session: XYSession | null;
 let preflightOk: boolean;
 
 async function response(url: string, options?: RequestInit): Promise<unknown> {
-  if (url === BASE) return { id: ID, title: "标准 Mx 射频相位图与噪声路径", description: "相图与噪声路径", wiring_notes: [] };
+  if (url === BASE) return { id: ID, title: "Mx 标准射频相位灵敏度测量", description: "相图、基带频响与相位灵敏度", wiring_notes: [] };
   if (url === BASE + "/schema") return { fields, parameter_layout_saved: false };
   if (url === BASE + "/workflow") return flow;
   if (url === BASE + "/sessions/active") return session;
@@ -80,7 +81,7 @@ afterEach(cleanup);
 
 it("从标准 Mx 路由勾选并执行分步会话，结束会话不触发额外测量", async () => {
   page();
-  expect(await screen.findByRole("heading", { level: 1, name: "标准 Mx 射频相位图与噪声路径" })).toBeVisible();
+  expect(await screen.findByRole("heading", { level: 1, name: "Mx 标准射频相位灵敏度测量" })).toBeVisible();
   expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
   const workflow = within(await screen.findByRole("region", { name: "交互实验流程图" }));
   expect(await workflow.findByRole("link", { name: "下载可编辑流程图" })).toHaveAttribute("href", BASE + "/workflow/diagram");
@@ -111,7 +112,7 @@ it("从标准 Mx 路由勾选并执行分步会话，结束会话不触发额外
   expect(sentBodies(sessionUrl + "/finish", "POST")).toEqual([{ revision: 1 }]);
 }, 20_000);
 
-it("预检失败不启动；历史只填回快照草稿并显示两张结果图", async () => {
+it("预检失败不启动；历史只填回快照草稿并显示四张结果图", async () => {
   page();
   const preflight = await screen.findByRole("button", { name: "仅预检" });
   await waitFor(() => expect(preflight).toBeEnabled());

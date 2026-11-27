@@ -1,7 +1,9 @@
-"""标准 Mx 相图与噪声路径的离线算法；不连接仪器，不改写 raw。
+"""标准 Mx 相图、基带频响与相位灵敏度的离线算法；不连接仪器，不改写 raw。
 
-本模块同时承担采集期的质量体检与判据：acquisition 只用同样的函数做帧体检、圆拟合与
-工作点选择，避免两套算法。所有拟合都基于已保存的原始帧，可离线重算。
+A03/A04 的圆拟合、工作点斜率与帧体检同时用作采集期判据；A05 的基带频响用共享泄漏模型
+拟合音调幅值，并按 √Lorentzian H0 归一化；A06 的无调制噪声经 Welch PSD 与共享回补折算成
+相位灵敏度（µrad/√Hz）。绘图与 Mx 脉冲射频相位灵敏度实验共用 z_chain_common.spectrum_plot，
+两个实验的结果可以直接对比。所有拟合都基于已保存的原始帧，可离线重算。
 """
 from __future__ import annotations
 
@@ -13,9 +15,12 @@ from pathlib import Path
 import numpy as np
 import yaml
 
+from ...experiment_runtime import check_cancelled
+from ..z_chain_common import spectrum_plot, tone_fit, transfer, welch_psd
 from . import run_format
 from .models import FINE_SPAN_DEG, FINE_STEP_DEG, MxStandardRfPhaseSensitivityParams
-from .run_format import DIAGRAM_PLOT, NOISE_PLOT, SUMMARY, require_raw_format
+from .run_format import (DIAGRAM_PLOT, NOISE_PLOT, PHASE_NOISE_PLOT, PHASE_TRANSFER_PLOT, SUMMARY,
+                         require_raw_format)
 from .stages import ANALYSIS_KEYS
 
 # 帧体检：帧内最强单音不得超过直流的这一比例，否则该帧不是滤波后的解调直流。
@@ -27,6 +32,14 @@ MIN_DC_MV = 0.5
 # 与 rf_phase_response / rf_phase_sensitivity 研究同口径的低频段；50/100 Hz 工频另行报告。
 BAND_HZ = (3.0, 50.0)
 MAINS_HZ = (50.0, 100.0, 150.0, 200.0, 250.0)
+# 宽带档下 5 kHz 载波泄漏是读出链的已知寄生项：帧体检不看这些频点的单音。
+LEAKAGE_EXCLUSION_HZ = tone_fit.CARRIER_HARMONICS_HZ
+TONE_EXCLUSION_TOL_HZ = 1.0
+LOCKIN_KEYS = ("phase_deg", "order", "time_constant_s", "stream_rate_sa_s", "oscillator_hz")
+LOCKIN_PHASE_ATOL_DEG = 1e-3
+LOCKIN_RTOL = 1e-6
+DAQ_STREAM_RTOL = 0.003
+FRAME_ERRORS = (OSError, ValueError, TypeError, KeyError, EOFError, np.linalg.LinAlgError)
 
 
 def output_path(run_dir, name):
@@ -45,7 +58,7 @@ def load_config(run_dir: Path):
     require_raw_format(config)
     if config.get("completion_status") == "running":
         raise ValueError("本轮采集仍在写入")
-    return config, MxStandardRfPhaseSensitivityParams.from_external(config.get("parameters", {}))
+    return config, run_format.parameters(config)
 
 
 def resolve_options(base, options):
@@ -65,8 +78,35 @@ def fingerprint(run_dir):
     return {p.relative_to(root).as_posix(): signature(p) for p in paths}
 
 
-def frame_quality(label: str, x_v: np.ndarray, y_v: np.ndarray, rate_sa_s: float) -> dict:
-    """体检一段 XY 帧：直流幅度、最强单音幅度与频率；不合格直接报错，不把坏帧当有效记录。"""
+def _number(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        value = float(value)
+    except OverflowError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _mapping(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _text(value):
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _verify_attestations(metadata, **expected):
+    if any(key in metadata and metadata[key] != value for key, value in expected.items()):
+        raise ValueError("帧的频率、激励模式或监视标签与采集清单不符")
+
+
+def frame_quality(label: str, x_v: np.ndarray, y_v: np.ndarray, rate_sa_s: float, *, dynamic: bool = False) -> dict:
+    """体检一段 XY 帧：直流幅度、最强单音幅度与频率；不合格直接报错，不把坏帧当有效记录。
+
+    宽带档（dynamic=True）下 5 kHz 载波及其低次谐波是读出链的已知寄生项，体检时从单音
+    搜索里剔除并记进 excluded_hz；窄带档沿用原来的全频段单音判据。
+    """
     x = np.asarray(x_v, dtype=float)
     y = np.asarray(y_v, dtype=float)
     if x.size != y.size or x.size < 64:
@@ -76,11 +116,19 @@ def frame_quality(label: str, x_v: np.ndarray, y_v: np.ndarray, rate_sa_s: float
     spectrum = np.fft.fft(z - dc)
     freqs = np.fft.fftfreq(z.size, 1.0 / float(rate_sa_s))
     high = np.abs(freqs) >= TONE_MIN_HZ
+    excluded: list[float] = []
+    if dynamic:
+        for spur in LEAKAGE_EXCLUSION_HZ:
+            if spur < 0.5 * float(rate_sa_s):
+                high &= np.abs(np.abs(freqs) - spur) > TONE_EXCLUSION_TOL_HZ
+                excluded.append(float(spur))
+    if not np.any(high):
+        raise ValueError(f"{label} 帧没有可用于单音体检的频段")
     peak = int(np.argmax(np.where(high, np.abs(spectrum), -1.0)))
     tone_v = float(2.0 * abs(spectrum[peak]) / z.size)
-    quality = dict(label=label, samples=int(z.size), rate_sa_s=float(rate_sa_s),
+    quality = dict(label=label, samples=int(z.size), rate_sa_s=float(rate_sa_s), dynamic=bool(dynamic),
                    dc_v=float(abs(dc)), tone_v=tone_v, tone_hz=float(freqs[peak]),
-                   std_x_v=float(np.std(x)), std_y_v=float(np.std(y)))
+                   std_x_v=float(np.std(x)), std_y_v=float(np.std(y)), excluded_hz=excluded)
     if quality["dc_v"] * 1e3 < MIN_DC_MV:
         raise ValueError(f"{label} 直流幅度 {quality['dc_v'] * 1e3:.3f} mV 低于 {MIN_DC_MV:g} mV，"
                          "不能当解调输出")
@@ -219,22 +267,6 @@ def fine_scan_slope(commands_deg, phasors, fit: dict) -> dict:
                 phasor_angle_deg=angles.tolist())
 
 
-def welch_psd(signals, rate_sa_s: float, segment_s: float):
-    """各帧等权平均的单边功率谱密度；段长不足时报错。"""
-    from scipy.signal import welch
-
-    nperseg = max(16, int(round(segment_s * rate_sa_s)))
-    spectra = []
-    freqs = None
-    for values in signals:
-        if values.size < nperseg:
-            raise ValueError(f"单段样本 {values.size} 少于 Welch 段长 {nperseg}")
-        freqs, psd = welch(values - np.mean(values), fs=rate_sa_s, nperseg=nperseg,
-                           detrend="constant", scaling="density")
-        spectra.append(psd)
-    return freqs, np.mean(np.stack(spectra, axis=0), axis=0)
-
-
 def band_median(freqs, asd, band=BAND_HZ) -> float:
     mask = (freqs >= band[0]) & (freqs <= band[1])
     return float(np.median(asd[mask])) if np.any(mask) else float("nan")
@@ -250,12 +282,34 @@ def mains_median(freqs, asd) -> float:
     return float(np.median(values)) if values else float("nan")
 
 
-def load_frames(run_dir: Path, labels) -> list[dict]:
+def _lockin_state(metadata) -> dict:
+    """从帧元数据读回锁相状态：相位、阶数、时间常数、传输率与振荡器频率。"""
+    state = metadata.get("lockin")
+    if not isinstance(state, dict):
+        raise ValueError("缺少锁相回读状态")
+    attestation = {key: _number(state.get(key)) for key in LOCKIN_KEYS}
+    if (any(value is None for value in attestation.values())
+            or any(attestation[key] <= 0 for key in LOCKIN_KEYS[1:])
+            or not 1 <= attestation["order"] <= 8 or not attestation["order"].is_integer()):
+        raise ValueError("锁相回读状态不完整或数值无效")
+    if not math.isclose(metadata["rate_sa_s"], attestation["stream_rate_sa_s"], rel_tol=DAQ_STREAM_RTOL):
+        raise ValueError("XY 帧实际率与锁相传输率回读不一致")
+    attestation["order"] = int(attestation["order"])
+    return attestation
+
+
+def _same_lockin(a: dict, b: dict) -> bool:
+    return (abs(math.remainder(a["phase_deg"] - b["phase_deg"], 360.0)) <= LOCKIN_PHASE_ATOL_DEG
+            and a["order"] == b["order"]
+            and all(math.isclose(a[key], b[key], rel_tol=LOCKIN_RTOL) for key in LOCKIN_KEYS[2:]))
+
+
+def load_frames(run_dir: Path, labels, *, dynamic: bool = False) -> list[dict]:
     """按标签读取原始 XY 帧并体检；任一帧不合格即中止。"""
     frames = []
     for label in labels:
         meta, arrays = run_format.read_frame(run_dir, label, "xy")
-        quality = frame_quality(label, arrays["x_v"], arrays["y_v"], float(meta["rate_sa_s"]))
+        quality = frame_quality(label, arrays["x_v"], arrays["y_v"], float(meta["rate_sa_s"]), dynamic=dynamic)
         frames.append(dict(label=label, metadata=meta, quality=quality, time_s=arrays["time_s"],
                            x_v=arrays["x_v"], y_v=arrays["y_v"]))
     return frames
@@ -265,16 +319,98 @@ def frame_phasors(frames) -> np.ndarray:
     return np.asarray([complex(np.mean(f["x_v"]), np.mean(f["y_v"])) for f in frames], dtype=complex)
 
 
+def _frames_are_dynamic(run_dir: Path, labels, params) -> bool:
+    """按首帧回读的时间常数判断噪声段是宽带档还是历史窄带档。"""
+    if not labels:
+        return False
+    meta, _ = run_format.read_frame(run_dir, labels[0], "xy")
+    state = _mapping(meta.get("lockin"))
+    tc = _number(state.get("time_constant_s"))
+    return tc is not None and math.isclose(tc, params.demod_dynamic_tc_s, rel_tol=0.01)
+
+
+def transfer_rows(run_dir: Path, attempts) -> list[dict]:
+    """读取 A05 每档 XY 帧，按共享泄漏模型拟合音调并给出 |H(f)|。"""
+    rows: list[dict] = []
+    reference = None
+    for index, item in enumerate(attempts, 1):
+        check_cancelled()
+        frequency = _number(item.get("frequency_hz"))
+        pm_rad = _number(item.get("phase_pk_rad"))
+        label = _text(item.get("xy_label"))
+        row = dict(attempt=index, frequency_hz=frequency, repeat=False, phase_pk_rad=pm_rad,
+                   xy_label=label, accepted=False, quality_passed=False, warnings="", reason="")
+        hard, warnings = [], []
+        if frequency is None:
+            hard.append("频点缺失或不是有限数值")
+        if pm_rad is None or pm_rad <= 0:
+            hard.append("缺少有效的调相峰值（phase_pk_rad）")
+        if label is None:
+            hard.append("缺少 XY 帧")
+        else:
+            try:
+                metadata, arrays = run_format.read_frame(run_dir, label, "xy")
+                _verify_attestations(metadata, frequency_hz=frequency)
+                state = _lockin_state(metadata)
+                if reference is None:
+                    reference = state
+                elif not _same_lockin(state, reference):
+                    hard.append("频响帧锁相状态与本轮首个频点不一致")
+                fit = tone_fit.fit_tone(arrays["time_s"], arrays["x_v"], arrays["y_v"],
+                                        metadata["rate_sa_s"], frequency,
+                                        correlation_s=state["order"] * state["time_constant_s"])
+                collisions = fit.pop("mains_collision_hz", [])
+                fit.pop("mains_harmonics_hz", None)
+                fit.pop("mains_guard_hz", None)
+                carrier_terms = fit.pop("carrier_terms_hz", [])
+                carrier_skipped = fit.pop("carrier_skipped", [])
+                row.update(fit)
+                row["mains_collision"] = "，".join(f"{value:g}" for value in collisions)
+                row["carrier_terms_hz"] = "，".join(f"{value:g}" for value in carrier_terms)
+                row["carrier_skipped"] = "；".join(carrier_skipped)
+                if row["y_snr_clean"] < tone_fit.MIN_TONE_SNR:
+                    warnings.append(f"Y 音调信噪比低于 {tone_fit.MIN_TONE_SNR:g}"
+                                    f"（原始 {row['y_snr']:.2f}，扣除工频与载波泄漏后 {row['y_snr_clean']:.2f}）")
+                gain = row["y_pk_v"] / pm_rad
+                gain_se = row["y_pk_se_clean_v"] / pm_rad
+                if not math.isfinite(gain) or gain <= 0 or not math.isfinite(gain_se):
+                    hard.append("实测调相幅值换算的增益无效")
+                else:
+                    row.update(h_v_per_rad=gain, h_fit_se_v_per_rad=gain_se)
+            except FRAME_ERRORS as exc:
+                hard.append(f"XY 帧或音调拟合无效：{exc}")
+        row.update(accepted=not hard, reason="；".join(hard),
+                   quality_passed=(not hard) and (not warnings), warnings="；".join(warnings))
+        rows.append(row)
+    return rows
+
+
+def _closure(configured, accepted, k0) -> dict:
+    """最低配置频点的 |H| 与静态工作点斜率 |K0| 的闭合比，只作告警不扣留。"""
+    closure = dict(frequency_hz=configured[0] if configured else None,
+                   accepted_range=list(transfer.CLOSURE_RANGE), passed=False)
+    gain = accepted.get(configured[0], {}).get("h_v_per_rad") if configured else None
+    if gain is None or not k0:
+        closure["reason"] = "最低配置频点缺少合格增益或有效工作点斜率"
+        return closure
+    ratio = float(gain / abs(k0))
+    closure.update(normalized_gain=ratio, passed=transfer.CLOSURE_RANGE[0] <= ratio <= transfer.CLOSURE_RANGE[1])
+    if not closure["passed"]:
+        closure["reason"] = "最低频点 H/|K0| 超出 0.8–1.2；仅作告警"
+    return closure
+
+
 def analyze_data(run_dir: Path, config: dict) -> dict:
-    """读原始帧，输出 summary.json 与两张图；返回供会话摘要使用的精简结论。"""
-    diagram_state = config.get("phase_diagram") or {}
-    fine_state = config.get("fine_scan") or {}
-    noise_state = config.get("noise") or {}
-    coarse_labels = [str(item) for item in diagram_state.get("labels") or ()]
-    noise_labels = [str(item) for item in noise_state.get("labels") or ()]
+    """读原始帧，输出 summary.json 与四张图；返回供会话摘要使用的精简结论。"""
+    diagram_state = _mapping(config.get("phase_diagram"))
+    fine_state = _mapping(config.get("fine_scan"))
+    noise_state = _mapping(config.get("noise"))
+    alignment_state = _mapping(config.get("pm_alignment"))
+    coarse_labels = [label for label in (_text(item) for item in diagram_state.get("labels") or ()) if label]
+    noise_labels = [label for label in (_text(item) for item in noise_state.get("labels") or ()) if label]
     if not coarse_labels or not noise_labels:
         raise ValueError("运行目录缺少相图或噪声帧清单，无法分析")
-    params = MxStandardRfPhaseSensitivityParams.from_external(config.get("parameters", {}))
+    params = run_format.parameters(config)
     segment_s = float(params.welch_segment_s)
     results = output_path(run_dir, "results")
     results.mkdir(parents=True, exist_ok=True)
@@ -288,12 +424,17 @@ def analyze_data(run_dir: Path, config: dict) -> dict:
     chosen = choose_working_point(np.asarray(grid, dtype=float), phasors, fit)
     tangent_over_radius = metrics["tangent_median_v_per_rad"] / radius
 
-    frames = load_frames(run_dir, noise_labels)
+    dynamic = _frames_are_dynamic(run_dir, noise_labels, params)
+    frames = load_frames(run_dir, noise_labels, dynamic=dynamic)
     rate = float(frames[0]["metadata"]["rate_sa_s"])
     for frame in frames:
         time = frame["time_s"]
         if not np.allclose(1.0 / np.median(np.diff(time)), rate, rtol=3e-3):
             raise ValueError(f"{frame['label']} 采样率与首段不一致")
+    lockin_states = [_lockin_state(frame["metadata"]) for frame in frames]
+    for state in lockin_states[1:]:
+        if not _same_lockin(state, lockin_states[0]):
+            raise ValueError("噪声分段帧之间锁相状态不一致")
 
     cx, cy = float(fit["center_x_v"]), float(fit["center_y_v"])
     # 工作点斜率取噪声帧自身的实测相位角：K = R|cos phi|，与帧内数据同口径，
@@ -318,9 +459,12 @@ def analyze_data(run_dir: Path, config: dict) -> dict:
         dy = frame["y_v"] - cy
         projected.append((dx * tangent_dir.real + dy * tangent_dir.imag) / radius)
 
-    freqs, psd_y = welch_psd([frame["y_v"] for frame in frames], rate, segment_s)
-    _, psd_theta = welch_psd(centered, rate, segment_s)
-    _, psd_proj = welch_psd(projected, rate, segment_s)
+    samples = [(frame["time_s"], frame["y_v"], rate) for frame in frames]
+    freqs, psd_y, welch_details = welch_psd.segment_average(samples, segment_s)
+    _, psd_theta, _ = welch_psd.segment_average(
+        [(frame["time_s"], values, rate) for frame, values in zip(frames, centered)], segment_s)
+    _, psd_proj, _ = welch_psd.segment_average(
+        [(frame["time_s"], values, rate) for frame, values in zip(frames, projected)], segment_s)
     asd_theta = np.sqrt(psd_theta)
     asd_y_route = np.sqrt(psd_y) / slope_y
     asd_proj = np.sqrt(psd_proj)
@@ -340,13 +484,71 @@ def analyze_data(run_dir: Path, config: dict) -> dict:
         + ("切线斜率在圆上等于半径" if abs(tangent_over_radius - 1.0) <= slope_tolerance
            else "切线斜率与半径不符"))
 
+    # ---- A05 基带频响：共享泄漏模型拟合 + √Lorentzian H0 归一化 ----
+    configured = sorted(float(value) for value in params.pm_frequencies_hz)
+    attempts = config.get("transfer")
+    rows = transfer_rows(run_dir, [_mapping(item) for item in attempts] if isinstance(attempts, list) else [])
+    accepted = {row["frequency_hz"]: row for row in rows if row["accepted"]}
+    k0_reference = abs(float((fine_summary or {}).get("slope_v_per_rad") or slope_y))
+    lor_fit = transfer.fit_transfer_lorentzian(rows, accepted, k0_reference)
+    bands = transfer.transfer_bands(configured, accepted)
+    closure = _closure(configured, accepted, k0_reference)
+
+    # ---- A06 相位灵敏度：相邻合格频点插值 + 全频段 √Lorentzian 回补 ----
+    asd = np.sqrt(psd_y)
+    block_reasons = []
+    if welch_details["segments"] < welch_psd.MIN_WELCH_SEGMENTS:
+        block_reasons.append("噪声帧长度不足最少 Welch 分段数")
+    if not bands:
+        block_reasons.append("相邻有效主测频点不足，不能在任何频带插值")
+    if block_reasons:
+        h = phase = h_lor = phase_lor = np.full(freqs.shape, np.nan)
+        band_ids = np.zeros(freqs.shape, dtype=int)
+        lor_summary = dict(available=False, reason="存在阻断噪声折算的完整性故障")
+        referral_bands = []
+    else:
+        h, phase, band_ids, referral_bands, h_lor, phase_lor, lor_summary = transfer.refer_phase_asd(
+            freqs, asd, bands, accepted, lorentzian_fit=lor_fit)
+        if not referral_bands:
+            block_reasons.append("有效频带内没有可折算的 Welch 频点")
+
+    advisory_warnings = []
+    for row in rows:
+        if row["accepted"] and row["warnings"]:
+            advisory_warnings.append(f"频响 {row['frequency_hz']:g} Hz：{row['warnings']}")
+        if not row["accepted"] and row["reason"]:
+            advisory_warnings.append(f"频响 {row['frequency_hz']:g} Hz 未通过：{row['reason']}")
+    if not closure["passed"] and closure.get("reason"):
+        advisory_warnings.append(closure["reason"])
+    for text in alignment_state.get("quality_warnings") or ():
+        if isinstance(text, str) and text:
+            advisory_warnings.append(f"调制对准：{text}")
+    for text in noise_state.get("quality_warnings") or ():
+        if isinstance(text, str) and text:
+            advisory_warnings.append(f"噪声：{text}")
+    if dynamic and not welch_details["resolution_met"]:
+        advisory_warnings.append("噪声帧未达到请求的 Welch 频率分辨率")
+    advisory_warnings = list(dict.fromkeys(advisory_warnings))
+    referral_available = bool(referral_bands)
+    referral_quality = "ok" if referral_available and not advisory_warnings else "advisory"
+
+    status = _text(config.get("completion_status"))
+    complete = bool(referral_bands) and len(accepted) == len(configured) and status == "completed"
+    clean_primary = sum(1 for row in accepted.values() if row["quality_passed"])
     summary = {
         "run_dir": str(Path(run_dir).resolve()),
         "experiment_id": config.get("experiment_id"),
+        "analysis_version": "mx-standard-rf-phase-sensitivity-v2",
         "gs200_target_ma": (config.get("main_field") or {}).get("current_after_ma"),
         "calibration_formula": config.get("calibration_formula"),
         "rf_frequency_hz": params.y_rf_freq_hz,
         "rf_vpp": params.y_rf_vpp,
+        "result_status": "complete" if complete else "partial" if rows or freqs.size else "no_usable_data",
+        "quality_passed": bool(referral_bands) and not block_reasons and not advisory_warnings,
+        "advisory_warnings": advisory_warnings,
+        "referral_available": referral_available,
+        "referral_quality": referral_quality,
+        "referral_warnings": list(advisory_warnings),
         "circle_fit": fit,
         "diagram": {
             "grid_deg": grid,
@@ -379,8 +581,9 @@ def analyze_data(run_dir: Path, config: dict) -> dict:
         "rate_sa_s": rate,
         "welch_segment_s": segment_s,
         "segments": len(frames),
-        "demod_dynamic": False,
-        "time_constant_s": (frames[0]["metadata"].get("lockin") or {}).get("time_constant_s"),
+        "demod_dynamic": bool(dynamic),
+        "time_constant_s": lockin_states[0]["time_constant_s"],
+        "demod_dynamic_tc_s": params.demod_dynamic_tc_s,
         "frame_quality": {"coarse": [frame["quality"] for frame in coarse],
                           "noise": [frame["quality"] for frame in frames]},
         "asd": {
@@ -400,15 +603,65 @@ def analyze_data(run_dir: Path, config: dict) -> dict:
         },
         "verdict": verdict,
         "circle_verdict": circle_verdict,
+        "configured_frequencies_hz": configured,
+        "transfer_attempts": len(rows),
+        "accepted_primary_points": len(accepted),
+        "clean_primary_points": clean_primary,
+        "k0_closure": closure,
+        "transfer_lorentzian_fit": lor_fit,
+        "transfer_bands_hz": [[band[0], band[-1]] for band in bands],
+        "transfer_plot_title": "A05/A06: Phase sensitivity ASD (left) and |H(f)| / H0 (right)",
+        "phase_referral": dict(available=bool(referral_bands), reasons=block_reasons,
+                               advisory_warnings=advisory_warnings, bands=referral_bands,
+                               lorentzian_full_band=lor_summary,
+                               minimum_frequency_hz=welch_psd.MIN_NOISE_HZ,
+                               interpolation="log_frequency_log_magnitude_within_adjacent_accepted_points",
+                               backfill="zero_centered_sqrt_lorentzian_full_band"),
+        "method_notes": [
+            "A05 用 MF-MOD 2° 峰值相干边带调相，|H(f)| = |Y_pk(f)| / phase_pk(f)，与 Mx 脉冲射频相位灵敏度实验同一张频率表与同一采样口径。",
+            "A05 行内 y_pk_se_v / y_snr 保留未扣工频与载波泄漏的原始口径，y_pk_se_clean_v / y_snr_clean 为联合扣除 50–250 Hz 工频谐波与 5 kHz 载波泄漏（含 10/15/20 kHz 谐波）后的 clean 口径；与基频/二次谐波不碰撞的工频谐波在最小二乘正交解调中一并投影去除。",
+            "A05 的 5 kHz 载波泄漏来自 Demod 4 宽带解调（DEMOD_DYNAMIC_TC 为微秒级）：输入直流偏置经解调混频落到载波频率，10/15/20 kHz 为其谐波；它是读出链已知寄生项、不是原子信号，只作为回归干扰项扣除。",
+            "A05 对 |H(f)| 拟合以 0 Hz 为中心的 √Lorentzian 线型 H0 / sqrt(1 + (f/fc)²) 并以零频截距 H0 归一化；A06 灵敏度谱用同一模型做全频段回补。",
+            "A06 灵敏度谱以 µrad/√Hz 输出：多温控分段各自计算 Welch PSD 后按段数等权平均，不跨恢复温控窗口拼接波形；只要存在 ≥2 个相邻硬合格频点就做对数插值与全频段回补，质检不足只标 referral_quality=advisory。",
+            "低频闭合（|H|/|K0| 0.8–1.2）等参考指标仅作告警与图例标注，不阻止有效频点参与出图与相位噪声折算。"],
     }
+
     (results / SUMMARY).write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    plot_diagram(results / DIAGRAM_PLOT, summary)
-    plot_noise(results / NOISE_PLOT, summary)
+    _plots(results, summary, rows, accepted, freqs, phase, band_ids, phase_lor)
     return compact(summary)
+
+
+def _plots(directory: Path, summary: dict, rows, accepted, frequency, phase, band_ids, phase_lor) -> None:
+    """按固定顺序写四张图：相图、三条噪声路径、A05/A06 合并双纵轴图与相位灵敏度单面板。"""
+    from ...plotting import plot_style_context
+
+    plot_diagram(directory / DIAGRAM_PLOT, summary)
+    check_cancelled()
+    plot_noise(directory / NOISE_PLOT, summary)
+    check_cancelled()
+    with plot_style_context("paper"):
+        figure = spectrum_plot.phase_transfer_figure(rows, accepted, summary, frequency, phase, phase_lor, band_ids)
+        figure.savefig(directory / PHASE_TRANSFER_PLOT, dpi=240)
+        check_cancelled()
+        figure = spectrum_plot.phase_noise_figure(frequency, phase, phase_lor, band_ids, summary,
+                                                  title="A06: Phase sensitivity spectrum")
+        figure.savefig(directory / PHASE_NOISE_PLOT, dpi=240)
+
+
+def _pin_aggregate_backend() -> None:
+    """图只写文件：统一用 Agg，避免无显示环境退回 Tk 后端时报 TclError。"""
+    import os
+
+    import matplotlib
+
+    matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
 
 
 def compact(summary: dict) -> dict:
     """会话状态只保存结论与关键标量，谱数组留在 results/summary.json。"""
+    lor_fit = summary.get("transfer_lorentzian_fit") or {}
+    referral = summary.get("phase_referral") or {}
+    bands = referral.get("bands") or []
     return {
         "circle_fit": summary["circle_fit"],
         "diagram": {key: summary["diagram"][key] for key in
@@ -420,15 +673,36 @@ def compact(summary: dict) -> dict:
         "band_3_50_hz": summary["band_3_50_hz"],
         "segments": summary["segments"],
         "rate_sa_s": summary["rate_sa_s"],
+        "demod_dynamic": summary["demod_dynamic"],
         "circle_verdict": summary["circle_verdict"],
         "verdict": summary["verdict"],
+        "transfer": {
+            "configured_points": len(summary.get("configured_frequencies_hz") or []),
+            "accepted_points": summary.get("accepted_primary_points", 0),
+            "clean_points": summary.get("clean_primary_points", 0),
+            "bands_hz": summary.get("transfer_bands_hz") or [],
+            "h0_v_per_rad": lor_fit.get("h0_v_per_rad"),
+            "fc_hz": lor_fit.get("fc_hz"),
+            "h0_to_k0_ratio": lor_fit.get("h0_to_k0_ratio"),
+            "k0_closure": summary.get("k0_closure"),
+            "lorentzian_available": bool(lor_fit.get("available")),
+        },
+        "phase_referral": {
+            "available": summary.get("referral_available"),
+            "quality": summary.get("referral_quality"),
+            "reasons": referral.get("reasons") or [],
+            "median_urad_per_sqrt_hz": [band.get("median_urad_per_sqrt_hz") for band in bands],
+            "lorentzian_full_band": bool((referral.get("lorentzian_full_band") or {}).get("available")),
+        },
     }
 
 
 def plot_diagram(path: Path, summary: dict) -> None:
     """左：实测相图与拟合圆；右：逐段切线斜率与 R、|dY/dphi| 投影对比。"""
-    from ...plotting import COLOR_GRAY, COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure,         plot_style_context, save_figure
+    from ...plotting import (COLOR_GRAY, COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure,
+                             plot_style_context, save_figure)
 
+    _pin_aggregate_backend()
     with plot_style_context("paper"):
         points = np.asarray(summary["diagram"]["phasors"], dtype=float)
         fit = summary["circle_fit"]
@@ -473,6 +747,7 @@ def plot_noise(path: Path, summary: dict) -> None:
     """左：三条相位噪声路径；右：theta 与 y 路径的逐频比值。"""
     from ...plotting import COLOR_OPTIMAL, COLOR_TRAD, format_axis, new_figure, plot_style_context, save_figure
 
+    _pin_aggregate_backend()
     with plot_style_context("paper"):
         freq = np.asarray(summary["asd"]["frequency_hz"], dtype=float)
         fig, axes = new_figure(kind="wide", nrows=1, ncols=2)

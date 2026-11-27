@@ -1,6 +1,6 @@
 <!-- 由 python -m tools.gen_module_readme 生成，勿手改 -->
 
-# 标准 Mx 射频相位图与噪声路径
+# Mx 标准射频相位灵敏度测量
 
 实验 ID：`mx-standard-rf-phase-sensitivity`
 

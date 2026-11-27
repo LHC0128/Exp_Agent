@@ -25,20 +25,24 @@ from ...steps import RoutedSignalGenerator, SignalGeneratorRoute
 from ...steps.coil_drive_chain import SafetyAbort
 from . import acquisition, analysis, analysis_steps, preparation, run_format, workflow
 from .definition import ADAPTER
-from .models import (MOD_CARRIER_OSC_IDX, READOUT_DEMOD_IDX, READOUT_OSC_IDX,
+from .models import (MOD_CARRIER_OSC_IDX, MOD_SIDEBAND_OSC_IDXS, READOUT_DEMOD_IDX, READOUT_OSC_IDX,
                      MxStandardRfPhaseSensitivityParams)
 from .workflow import Workflow
 
 ROOT = Path(__file__).resolve().parents[3]
 PACKAGE = "lab_workflows.experiment_modules.mx_standard_rf_phase_sensitivity"
 # 合成相图：|S| 恒为 RADIUS_V，相位角 = 指令相位 + PHASE_OFFSET_DEG；噪声为 30 uV 白噪声。
+# 边带开启时把调相深度按 1/sqrt(1 + (f/FREQ_CORNER_HZ)²) 衰减，模拟基带频响滚降。
 RADIUS_V = 16.4e-3
 NOISE_V = 3.0e-5
 PHASE_OFFSET_DEG = 2.9
 TONE_HZ = 200.0
+FREQ_CORNER_HZ = 85.0
 
 ACQUISITION_CASES = {"mx-standard-rf-phase-sensitivity": {"mode": "single", "cases": {
-    "order": ["test_full_round_recovers_circle_and_working_point"],
+    "order": ["test_full_round_recovers_circle_and_working_point",
+              "test_a05_sweeps_every_pm_frequency_in_wideband",
+              "test_a06_noise_keeps_wideband_and_finish_closes_pm"],
     "slow_disk": ["test_full_round_recovers_circle_and_working_point"],
     "cancel": ["test_cancel_restores_temperature_and_keeps_frames"],
     "acquire_failure": ["test_frame_quality_rejects_tone_frame", "test_short_frame_is_rejected"],
@@ -60,8 +64,12 @@ REGRESSION_CASES = {"mx-standard-rf-phase-sensitivity": {
     "analysis": {
         "sources": ["lab_workflows/experiment_modules/mx_standard_rf_phase_sensitivity/analysis_steps.py",
                     "lab_workflows/experiment_modules/mx_standard_rf_phase_sensitivity/analysis.py",
+                    "lab_workflows/experiment_modules/z_chain_common/tone_fit.py",
+                    "lab_workflows/experiment_modules/z_chain_common/transfer.py",
+                    "lab_workflows/experiment_modules/z_chain_common/spectrum_plot.py",
                     "experiments/MxStandardRfPhaseSensitivity_plot.py"],
-        "tests": ["test_full_round_recovers_circle_and_working_point"]}}}
+        "tests": ["test_full_round_recovers_circle_and_working_point",
+                  "test_transfer_fit_uses_shared_leakage_model"]}}}
 
 
 class FakeGenerator:
@@ -385,11 +393,12 @@ class FakeLockin:
 
 
 def fast_params(**overrides):
-    """缩短等待与采样时长；相图 8 点、细扫 11 点、噪声 2 段。"""
+    """缩短等待与采样时长；相图 8 点、细扫 11 点、调相 2 档、噪声 2 段。"""
     base = MxStandardRfPhaseSensitivityParams(
         run_tag="mx_std_test", phase_grid_step_deg=45.0, point_duration_s=0.1,
         noise_segments=2, noise_duration_s=1.0, welch_segment_s=1.0,
-        system_settle_s=0.1, temp_switch_on_lag_s=0.1)
+        system_settle_s=0.1, temp_switch_on_lag_s=0.1, dynamic_temp_switch_on_lag_s=0.1,
+        demod_dynamic_rate_sa_s=2000.0, pm_frequencies_hz=[3.0, 40.0, 80.0], pm_tone_duration_s=4.0)
     return replace(base, **overrides)
 
 
@@ -423,14 +432,24 @@ def install_rig(root: Path, monkeypatch, params=None):
     dev = lockin.device_id
     rig = SimpleNamespace(root=root, params=params, events=events, z=zgen, x=xgen, temp=tempgen,
                           lockin=lockin, gs=gs200, tec=tec, reads=0, tone_v=0.0, tone_hz=TONE_HZ,
+                          acquisitions=[],
                           short_frame=False, cancel_after=None, cancel_file=None, daq_error=None,
                           arm_restore_failure=False)
 
     def collect(instr, config, index, rate, **kwargs):
         assert index == READOUT_DEMOD_IDX
         assert kwargs["strict_cleanup"] and config.grid_mode == 4
-        assert kwargs["requested_rate"] == pytest.approx(params.demod_rate_sa_s)
+        tc_now = lockin.values[f"/{dev}/demods/{READOUT_DEMOD_IDX}/timeconstant"]
+        expected_rate = (params.demod_dynamic_rate_sa_s
+                         if math.isclose(tc_now, params.demod_dynamic_tc_s, rel_tol=1e-6)
+                         else params.demod_rate_sa_s)
+        assert kwargs["requested_rate"] == pytest.approx(expected_rate)
         assert tempgen.channels[2]["dc_level"] == 0.0, "采集窗口内温控必须处于关闭电平"
+        rig.acquisitions.append(dict(rate_sa_s=float(rate), time_constant_s=float(tc_now),
+                                     sidebands_on=bool(lockin.values[f"/{dev}/mods/0/sidebands/0/enable"]
+                                                       and lockin.values[f"/{dev}/mods/0/sidebands/1/enable"]),
+                                     carrier_deg=float(lockin.command_deg),
+                                     pm_hz=float(lockin.values[f"/{dev}/oscs/{MOD_SIDEBAND_OSC_IDXS[0]}/freq"])))
         rig.reads += 1
         if rig.cancel_after is not None and rig.cancel_file is not None and rig.reads >= rig.cancel_after:
             rig.cancel_file.touch()
@@ -442,8 +461,15 @@ def install_rig(root: Path, monkeypatch, params=None):
             raise rig.daq_error
         cols = 8 if rig.short_frame else config.grid_cols
         t = np.arange(cols) / rate
-        phase = np.deg2rad(lockin.command_deg + PHASE_OFFSET_DEG)
-        z = RADIUS_V * np.exp(1j * phase)
+        theta = np.deg2rad(lockin.command_deg + PHASE_OFFSET_DEG)
+        # A05 边带开启时，把 2° 峰值调相按基带一阶滚降叠加到载波相位上。
+        sidebands_on = (lockin.values[f"/{dev}/mods/0/sidebands/0/enable"]
+                        and lockin.values[f"/{dev}/mods/0/sidebands/1/enable"])
+        if lockin.values[f"/{dev}/mods/0/enable"] and sidebands_on:
+            fm_hz = lockin.values[f"/{dev}/oscs/{MOD_SIDEBAND_OSC_IDXS[0]}/freq"]
+            depth_rad = lockin.values[f"/{dev}/mods/0/index"]
+            theta = theta + depth_rad * np.sin(2 * np.pi * fm_hz * t) / np.sqrt(1 + (fm_hz / FREQ_CORNER_HZ) ** 2)
+        z = RADIUS_V * np.exp(1j * theta)
         x = z.real + rnd.normal(0, NOISE_V, cols)
         y = z.imag + rnd.normal(0, NOISE_V, cols)
         if rig.tone_v:
@@ -479,6 +505,13 @@ def test_preflight_and_defaults():
     p = MxStandardRfPhaseSensitivityParams.from_yaml(ROOT / "params/experiments/mx-standard-rf-phase-sensitivity.yaml")
     assert p == MxStandardRfPhaseSensitivityParams()
     assert p.demod_tc_s == pytest.approx(0.001) and p.demod_rate_sa_s == pytest.approx(5000.0)
+    # A05/A06 宽带档与调相扫频默认值：与 Mx 脉冲射频相位灵敏度实验完全一致。
+    assert p.demod_dynamic_tc_s == pytest.approx(1e-6) and p.demod_dynamic_rate_sa_s == pytest.approx(50000.0)
+    assert p.dynamic_temp_switch_on_lag_s == pytest.approx(4.0)
+    assert p.pm_frequencies_hz == ([float(f) for f in range(3, 204, 10)]
+                                   + [float(f) for f in range(250, 1001, 50)])
+    assert p.pm_tone_duration_s == pytest.approx(4.0)
+    assert p.y_pm_depth_rad == pytest.approx(math.radians(2.0))
     assert p.demod_idx == READOUT_DEMOD_IDX and p.phase_grid_step_deg == pytest.approx(15.0)
     assert p.noise_segments == 4 and p.noise_duration_s == pytest.approx(4.0)
     assert p.welch_segment_s == pytest.approx(4.0) and p.system_settle_s == pytest.approx(0.5)
@@ -498,6 +531,23 @@ def test_preflight_and_defaults():
     assert ADAPTER.preflight({"CAL_K_HZ_PER_MA": 200.0, "CAL_B_HZ": 0.0})  # 25 mA 超出 ±20 mA
     assert ADAPTER.preflight({"WELCH_SEGMENT_S": 4.0, "NOISE_DURATION_S": 1.0})
     assert ADAPTER.preflight({"DEMOD_RATE": 1000.0, "POINT_DURATION_S": 0.05})
+    # 调相频率表、周期覆盖与 A05/A06 宽带档的参数语义。
+    assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [3.0, 103.0, 203.0]}) == []
+    assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [5.0, 5.0, 20.0]})
+    assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [10.0, 1100.0]})
+    assert ADAPTER.preflight({"PM_FREQUENCIES_HZ": [3.0, 103.0, 203.0], "PM_TONE_DURATION_S": 2.0})
+    assert ADAPTER.preflight({"DEMOD_DYNAMIC_RATE": 500.0})
+    assert ADAPTER.preflight({"DEMOD_DYNAMIC_RATE": 5000.0})
+    assert ADAPTER.preflight({"DEMOD_DYNAMIC_RATE": 20000.0}) == []
+    assert ADAPTER.preflight({"SYSTEM_SETTLE_S": 0.101, "DEMOD_TC": 0.01})
+    # v1 历史快照缺新键时按默认值补齐，仍可离线读取。
+    legacy = p.to_external()
+    for key in ("DEMOD_DYNAMIC_TC", "DEMOD_DYNAMIC_RATE", "PM_FREQUENCIES_HZ", "PM_TONE_DURATION_S",
+                "DYNAMIC_TEMP_SWITCH_ON_LAG_S"):
+        legacy.pop(key)
+    migrated = MxStandardRfPhaseSensitivityParams.from_external(legacy, schema_version=1)
+    assert migrated.pm_tone_duration_s == pytest.approx(4.0) and len(migrated.pm_frequencies_hz) == 37
+    assert migrated.demod_dynamic_tc_s == pytest.approx(1e-6) and migrated.validate_model() == []
     assert ADAPTER.preflight({"TARGET_TEMPERATURE_C": 200.0}) == []
     assert ADAPTER.preflight({"SET_TEC_TARGET": True, "TARGET_TEMPERATURE_C": 200.0})
     fields = MxStandardRfPhaseSensitivityParams().schema(ROOT)["fields"]
@@ -557,20 +607,29 @@ def test_full_round_recovers_circle_and_working_point(rig, capsys):
     angle = abs(working["phasor_angle_deg"])
     assert min(angle, 180.0 - angle) <= 1.0
     assert abs(working["command_deg"] - chosen["command_deg"]) <= 5.0 + 1e-9
-    assert config["noise"]["segments"] == 2 and config["noise"]["demod_dynamic"] is False
-    assert config["noise"]["time_constant_s"] == pytest.approx(0.001, rel=0.01)
+    assert config["noise"]["segments"] == 2 and config["noise"]["demod_dynamic"] is True
+    assert config["noise"]["time_constant_s"] == pytest.approx(1e-6, rel=0.01)
+    # A05 每档调相频率各出一帧，且宽带档时间常数/传输率回读写入配置。
+    transfer = config["transfer"]
+    assert [row["frequency_hz"] for row in transfer] == [3.0, 40.0, 80.0]
+    assert all(row["accepted"] and row["xy_label"] for row in transfer)
+    assert len({row["xy_label"] for row in transfer}) == 3
+    assert config["dynamic_lockin"]["time_constant_s"] == pytest.approx(1e-6, rel=0.01)
+    assert config["pm_alignment"]["index_rad"] == pytest.approx(math.radians(2.0))
     assert config["completion_status"] == "completed"
     raw = sorted(path.name for path in (run_dir / "raw").glob("*.npz"))
-    assert len(raw) == 2 + 1 + 8 + 1 + 11 + 2
+    assert len(raw) == 2 + 1 + 8 + 1 + 11 + 3 + 2
     events = [json.loads(line.removeprefix(PROGRESS_PREFIX)) for line in capsys.readouterr().out.splitlines()
               if line.startswith(PROGRESS_PREFIX)]
     for scope, stage_id, count in (("当前相位扫描", "A03", 8), ("当前工作点细扫", "A04", 11),
-                                   ("当前噪声分段", "A05", 2)):
+                                   ("当前基带扫频", "A05", 3), ("当前噪声分段", "A06", 2)):
         updates = [event for event in events if event["data"].get("eta_scope") == scope]
         assert updates and updates[-1]["stage"] == stage_id and len(updates) == count
     # 安全收尾：载波关闭归零、Z/X 归零、温控恢复、主场恢复、解调传输停止并断开。
     assert rig.lockin.values[f"/{rig.lockin.device_id}/sigouts/0/on"] == 0
     assert rig.lockin.values[f"/{rig.lockin.device_id}/mods/0/carrier/amplitude"] == 0.0
+    assert rig.lockin.values[f"/{rig.lockin.device_id}/mods/0/sidebands/0/enable"] == 0
+    assert rig.lockin.values[f"/{rig.lockin.device_id}/mods/0/sidebands/1/enable"] == 0
     assert rig.lockin.values[f"/{rig.lockin.device_id}/demods/{READOUT_DEMOD_IDX}/enable"] == 0
     for generator, channel in ((rig.z, 1), (rig.x, 1)):
         assert generator.channels[channel]["output"] is False
@@ -579,15 +638,30 @@ def test_full_round_recovers_circle_and_working_point(rig, capsys):
     assert rig.temp.channels[2]["output"] is True
     assert rig.gs.state["output"] is True and rig.gs.state["current"] == pytest.approx(-0.001)
     assert config["safety_shutdown"]["completed"] is True
-    # 离线分析：真实算法在同一目录上输出 summary.json 与两张图。
+    # 离线分析：真实算法在同一目录上输出 summary.json 与四张图。
     summary = analysis.analyze(run_dir)
     assert (run_dir / "results" / run_format.SUMMARY).is_file()
-    for name in (run_format.DIAGRAM_PLOT, run_format.NOISE_PLOT):
+    for name in (run_format.DIAGRAM_PLOT, run_format.NOISE_PLOT,
+                 run_format.PHASE_TRANSFER_PLOT, run_format.PHASE_NOISE_PLOT):
         assert (run_dir / "results" / name).is_file() and (run_dir / "results" / name).stat().st_size > 0
     assert summary["diagram"]["tangent_over_radius"] == pytest.approx(1.0, abs=0.02)
     assert "切线斜率在圆上等于半径" in summary["circle_verdict"]
     assert summary["band_3_50_hz"]["theta_over_y_route_ratio"] == pytest.approx(1.0, abs=0.15)
     assert "一致" in summary["verdict"]
+    # A05 频响：低频 |H|/H0≈1、高频下降，√Lorentzian 拐点与合成模型一致。
+    assert summary["demod_dynamic"] is True
+    assert summary["transfer"]["accepted_points"] == 3
+    assert summary["transfer"]["bands_hz"] == [[3.0, 80.0]]
+    rows = analysis_steps.transfer_rows(run_dir, run_config(run_dir)["transfer"])
+    accepted = {row["frequency_hz"]: row for row in rows if row["accepted"]}
+    analysis_steps.transfer.fit_transfer_lorentzian(rows, accepted, 1.0)
+    gains = {row["frequency_hz"]: row.get("normalized_h0_gain") for row in rows}
+    assert gains[3.0] == pytest.approx(1.0, abs=0.02)
+    assert gains[80.0] < 0.8 < gains[3.0]
+    assert summary["transfer"]["lorentzian_available"] is True
+    assert summary["transfer"]["fc_hz"] == pytest.approx(FREQ_CORNER_HZ, rel=0.05)
+    assert summary["transfer"]["k0_closure"]["normalized_gain"] == pytest.approx(1.0, abs=0.02)
+    assert summary["phase_referral"]["available"] is True
 
 
 def test_finish_after_sealed_round_keeps_single_shutdown(rig):
@@ -770,6 +844,138 @@ def test_entrypoint_subprocess_full_round(rig, tmp_path):
     assert analyzed.returncode == 0, analyzed.stdout + analyzed.stderr
     assert (run_dir / "results" / run_format.SUMMARY).is_file()
     assert (run_dir / "results" / run_format.DIAGRAM_PLOT).is_file()
+
+
+def test_a05_sweeps_every_pm_frequency_in_wideband(rig):
+    """A05 按频率表逐点出帧：每档一帧、宽带档写入并回读、2° 峰值深度记录在帧元数据。"""
+    run_dir = Workflow.run(rig.params, project_root=rig.root)
+    config = run_config(run_dir)
+    frequencies = list(rig.params.sweep_order_hz)
+    transfer = config["transfer"]
+    assert [row["frequency_hz"] for row in transfer] == frequencies
+    labels = [row["xy_label"] for row in transfer]
+    assert len(set(labels)) == len(frequencies)
+    for row in transfer:
+        metadata, _ = run_format.read_frame(run_dir, row["xy_label"], "xy")
+        assert metadata["frequency_hz"] == pytest.approx(row["frequency_hz"])
+        assert metadata["phase_pk_rad"] == pytest.approx(math.radians(2.0))
+        assert metadata["dynamic"] is True and metadata["source_mode"] == acquisition.SOURCE_PM
+        assert metadata["rate_sa_s"] == pytest.approx(rig.params.demod_dynamic_rate_sa_s)
+        assert metadata["lockin"]["time_constant_s"] == pytest.approx(rig.params.demod_dynamic_tc_s, rel=0.01)
+    # A03/A04 的窄带静态读出没有被改动。
+    coarse_meta, _ = run_format.read_frame(run_dir, "mx_std_coarse_00", "xy")
+    assert coarse_meta["rate_sa_s"] == pytest.approx(rig.params.demod_rate_sa_s)
+    assert coarse_meta["lockin"]["time_constant_s"] == pytest.approx(rig.params.demod_tc_s, rel=0.01)
+    assert coarse_meta["dynamic"] is False
+    # 宽带档参数确实写入并被回读：解调器节点值、两档配置记录与边带振荡器状态一致。
+    dev = rig.lockin.device_id
+    demod_base = f"/{dev}/demods/{READOUT_DEMOD_IDX}"
+    assert rig.lockin.values[f"{demod_base}/timeconstant"] == pytest.approx(rig.params.demod_dynamic_tc_s)
+    assert rig.lockin.values[f"{demod_base}/rate"] == pytest.approx(rig.params.demod_dynamic_rate_sa_s)
+    assert config["lockin"]["time_constant_s"] == pytest.approx(rig.params.demod_tc_s)
+    assert config["lockin"]["requested_rate_Sa_s"] == pytest.approx(rig.params.demod_rate_sa_s)
+    assert config["dynamic_lockin"]["time_constant_s"] == pytest.approx(rig.params.demod_dynamic_tc_s)
+    assert config["dynamic_lockin"]["requested_rate_Sa_s"] == pytest.approx(rig.params.demod_dynamic_rate_sa_s)
+    assert rig.lockin.values[f"/{dev}/mods/0/index"] == pytest.approx(math.radians(2.0))
+    assert rig.lockin.values[f"/{dev}/oscs/{MOD_SIDEBAND_OSC_IDXS[0]}/freq"] == pytest.approx(frequencies[-1])
+
+
+def test_a06_noise_keeps_wideband_and_finish_closes_pm(rig):
+    """A06 噪声沿用宽带档且已关边带；A07 收尾后 PM 边带、载波与解调传输全部归零。"""
+    run_dir = Workflow.run(rig.params, project_root=rig.root)
+    config = run_config(run_dir)
+    frequencies = list(rig.params.sweep_order_hz)
+    noise_labels = config["noise"]["labels"]
+    assert len(noise_labels) == rig.params.noise_segments
+    for label in noise_labels:
+        metadata, _ = run_format.read_frame(run_dir, label, "xy")
+        assert metadata["dynamic"] is True and metadata["source_mode"] == acquisition.SOURCE_UNMODULATED
+        assert metadata["rate_sa_s"] == pytest.approx(rig.params.demod_dynamic_rate_sa_s)
+        assert metadata["lockin"]["time_constant_s"] == pytest.approx(rig.params.demod_dynamic_tc_s, rel=0.01)
+    # 采集顺序：A05 各档边带开启，A06 各段边带关闭。
+    acquisitions = rig.acquisitions
+    assert [item["sidebands_on"] for item in acquisitions[-len(frequencies) - len(noise_labels):-len(noise_labels)]]         == [True] * len(frequencies)
+    assert [item["sidebands_on"] for item in acquisitions[-len(noise_labels):]] == [False] * len(noise_labels)
+    assert config["carrier"]["pm_sidebands_enabled"] is False
+    dev = rig.lockin.device_id
+    assert rig.lockin.values[f"/{dev}/mods/0/sidebands/0/enable"] == 0
+    assert rig.lockin.values[f"/{dev}/mods/0/sidebands/1/enable"] == 0
+    assert rig.lockin.values[f"/{dev}/mods/0/carrier/amplitude"] == 0.0
+    assert rig.lockin.values[f"/{dev}/sigouts/0/on"] == 0
+    assert rig.lockin.values[f"/{dev}/demods/{READOUT_DEMOD_IDX}/enable"] == 0
+    assert config["safety_shutdown"]["completed"] is True
+
+
+def test_transfer_fit_uses_shared_leakage_model(tmp_path):
+    """A05 帧里的 5 kHz 载波泄漏按共享泄漏模型的干扰项扣除，|H| 不受污染。"""
+    rate, duration, frequency = 50000.0, 4.0, 40.0
+    depth_rad = math.radians(2.0)
+    t = np.arange(int(rate * duration)) / rate
+    rng = np.random.default_rng(7)
+    y = RADIUS_V * depth_rad * np.cos(2 * np.pi * frequency * t)
+    y = y + 4e-3 * np.sin(2 * np.pi * 5000.0 * t) + rng.normal(0.0, 2e-5, t.size)
+    run_dir = tmp_path / "leakage_probe"
+    (run_dir / "raw").mkdir(parents=True)
+    metadata = dict(rate_sa_s=rate, time_source="module_timestamp", dynamic=True,
+                    source_mode=acquisition.SOURCE_PM, frequency_hz=frequency, phase_pk_rad=depth_rad,
+                    lockin=dict(phase_deg=0.0, order=4, time_constant_s=1e-6,
+                                stream_rate_sa_s=rate, oscillator_hz=5000.0))
+    run_format.write_frame(run_dir, "mx_std_pm_00_xy", "xy", metadata,
+                           time_s=t, x_v=np.zeros_like(t), y_v=y)
+    rows = analysis_steps.transfer_rows(run_dir, [dict(frequency_hz=frequency, phase_pk_rad=depth_rad,
+                                                       xy_label="mx_std_pm_00_xy")])
+    row = rows[0]
+    assert row["accepted"] is True, row["reason"]
+    assert "5000" in row["carrier_terms_hz"]
+    assert row["y_snr_clean"] > row["y_snr"]
+    assert row["h_v_per_rad"] == pytest.approx(RADIUS_V, rel=0.01)
+
+
+def test_historical_v1_run_without_transfer_still_analyzes(tmp_path):
+    """v1 历史目录（窄带噪声、没有 A05 频响）仍可离线分析，只是相位折算不可用。"""
+    params = replace(fast_params(), run_tag="legacy")
+    run_dir = tmp_path / "legacy_run"
+    (run_dir / "raw").mkdir(parents=True)
+    rng = np.random.default_rng(11)
+    rate = float(params.demod_rate_sa_s)
+
+    def write(label, seconds, phasor_deg):
+        t = np.arange(int(rate * seconds)) / rate
+        z = RADIUS_V * np.exp(1j * np.deg2rad(phasor_deg))
+        base = dict(rate_sa_s=rate, time_source="module_timestamp", dynamic=False,
+                    source_mode=acquisition.SOURCE_UNPULSED,
+                    lockin=dict(phase_deg=0.0, order=4, time_constant_s=params.demod_tc_s,
+                                stream_rate_sa_s=rate, oscillator_hz=5000.0))
+        run_format.write_frame(run_dir, label, "xy", base, time_s=t,
+                               x_v=z.real + rng.normal(0.0, 3e-5, t.size),
+                               y_v=z.imag + rng.normal(0.0, 3e-5, t.size))
+
+    grid = [float(index * 45.0) for index in range(8)]
+    for index, degree in enumerate(grid):
+        write(f"mx_std_coarse_{index:02d}", 0.1, degree + PHASE_OFFSET_DEG)
+    for index in range(2):
+        write(f"mx_std_noise_{index:02d}_xy", 1.0, 180.0 + PHASE_OFFSET_DEG)
+    parameters = params.to_external()
+    for key in ("DEMOD_DYNAMIC_TC", "DEMOD_DYNAMIC_RATE", "PM_FREQUENCIES_HZ", "PM_TONE_DURATION_S",
+                "DYNAMIC_TEMP_SWITCH_ON_LAG_S"):
+        parameters.pop(key)
+    config = run_format.initial_metadata(params) | {
+        "completion_status": "completed", "schema_version": 1, "parameters": parameters,
+        "phase_diagram": dict(labels=[f"mx_std_coarse_{index:02d}" for index in range(8)], grid_deg=grid),
+        "noise": dict(labels=["mx_std_noise_00_xy", "mx_std_noise_01_xy"], segments=2),
+    }
+    config.pop("transfer")
+    config.pop("pm_alignment")
+    (run_dir / "experiment_config.yaml").write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    assert run_format.format_block_reason(config) == ""
+    assert run_format.analysis_block_reason(config) == ""
+    summary = analysis_steps.analyze_data(run_dir, config)
+    assert summary["demod_dynamic"] is False and summary["segments"] == 2
+    assert summary["transfer"]["accepted_points"] == 0
+    assert summary["phase_referral"]["available"] is False
+    for name in (run_format.DIAGRAM_PLOT, run_format.NOISE_PLOT,
+                 run_format.PHASE_TRANSFER_PLOT, run_format.PHASE_NOISE_PLOT):
+        assert (run_dir / "results" / name).is_file() and (run_dir / "results" / name).stat().st_size > 0
 
 
 def fake_main():

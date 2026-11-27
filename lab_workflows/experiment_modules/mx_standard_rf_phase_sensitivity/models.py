@@ -1,7 +1,9 @@
-"""标准 Mx（不打脉冲）射频相位图与噪声路径实验的强类型参数。
+"""Mx 标准射频相位灵敏度测量的强类型参数。
 
-标准 Mx 构型：MFLI Out1 连续 5 kHz 载波、MF-MOD 只开载波（PM 边带全程关闭）、
-Z 双脉冲链关闭并回读、GS200 常量主场、读出锁 Demod 4 静态配置。
+标准 Mx 构型：MFLI Out1 连续 5 kHz 载波、Z 双脉冲链关闭并回读、GS200 常量主场、
+读出锁 Demod 4。A03/A04 保持窄带静态读出（DEMOD_TC / DEMOD_RATE）；A05 起把 Demod 4
+切到高带宽档（DEMOD_DYNAMIC_TC / DEMOD_DYNAMIC_RATE），并开启 MF-MOD 的 2° 峰值相干边带
+PM 按 PM_FREQUENCIES_HZ 单次顺序扫频；A06 关闭边带后仍用同一宽带档采集无调制噪声。
 
 主磁场电流只由主磁场标定式反解，不提供手填电流：
 
@@ -14,13 +16,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from ...experiment_params import ExperimentParams, parameter
-from ..z_chain_common.rf_phase import MFLI_MAX_SIGOUT_V
+from ..z_chain_common.rf_phase import (MFLI_MAX_SIGOUT_V, PM_DEPTH_DEG, PM_TONE_DURATION_S,
+                                       default_pm_frequencies_hz)
 
-# 统一 Demod n ↔ Osc n：载波由 Demod 1 / Osc 1 产生，上下边带用 Osc 2 / Osc 3（标准 Mx 全程关闭），
-# 原子读出固定 Demod 4 / Osc 4。索引均为 0 起。
+# 统一 Demod n ↔ Osc n：载波由 Demod 1 / Osc 1 产生，上下边带用 Osc 2 / Osc 3（只在 A05 频响
+# 扫频期间开启，A06 前关闭），原子读出固定 Demod 4 / Osc 4。索引均为 0 起。
 MOD_CARRIER_OSC_IDX = 0
 MOD_SIDEBAND_OSC_IDXS = (1, 2)
 READOUT_OSC_IDX = 3
@@ -28,6 +31,9 @@ READOUT_DEMOD_IDX = 3
 
 CARRIER_HZ = 5000.0
 CARRIER_VPP = 0.5
+# A05/A06 宽带解调默认档（时间常数 1 µs、传输率 50 kSa/s），与 Mx 脉冲射频相位灵敏度一致。
+DYNAMIC_TC_S = 1.0e-6
+DYNAMIC_RATE_SA_S = 50000.0
 # 主磁场标定：11-27 实测 K_f = 11089.0 ± 9.8 Hz/mA（R² = 0.999996）、f0 = 219.7 Hz。
 CAL_K_HZ_PER_MA = 11089.0
 CAL_B_HZ = 219.7
@@ -40,7 +46,7 @@ FINE_STEP_DEG = 1.0
 
 @dataclass(slots=True)
 class MxStandardRfPhaseSensitivityParams(ExperimentParams):
-    schema_version: ClassVar[int] = 1
+    schema_version: ClassVar[int] = 2
     system_settle_legacy_defaults: ClassVar[dict[str, float]] = {}
     # 本实验从无旧温度键迁移；保留声明供共享采集契约核对。
     removed_temperature_keys: ClassVar[tuple[str, ...]] = ()
@@ -109,7 +115,28 @@ class MxStandardRfPhaseSensitivityParams(ExperimentParams):
     demod_rate_sa_s: float = parameter(
         default=5000.0, external_name="DEMOD_RATE", label="读出传输率", unit="Sa/s",
         minimum=1000.0, maximum=20000.0,
-        description="Demod 4 连续流传输率；相图、细扫与噪声共用同一采样率。")
+        description="Demod 4 连续流传输率；A02–A04 的窄带静态读出共用该采样率。")
+    demod_dynamic_tc_s: float = parameter(
+        default=DYNAMIC_TC_S, external_name="DEMOD_DYNAMIC_TC", label="A05/A06 读出时间常数", unit="s",
+        minimum=1.0e-6, maximum=0.1,
+        description="仅对 A05 基带频响与 A06 无调制噪声放宽的宽带时间常数；A02–A04 仍用 DEMOD_TC。")
+    demod_dynamic_rate_sa_s: float = parameter(
+        default=DYNAMIC_RATE_SA_S, external_name="DEMOD_DYNAMIC_RATE", label="A05/A06 读出传输率",
+        unit="Sa/s", minimum=1000.0, maximum=60000.0,
+        description="A05/A06 高带宽连续流采样率，须不低于最高调相频率的 10 倍。")
+    pm_frequencies_hz: list[float] = parameter(
+        default_factory=default_pm_frequencies_hz,
+        external_name="PM_FREQUENCIES_HZ", label="基带调相频率列表", unit="Hz", group="basic",
+        description="A05 严格递增、不改变 5 kHz 载波，按列表顺序单次扫描（默认 3–1000 Hz：3–203 Hz 每 10 Hz "
+                    "共 21 点、250–1000 Hz 每 50 Hz 共 16 点，错开 50 Hz 工频）；与 Mx 脉冲射频相位灵敏度共用同一张表。")
+    pm_tone_duration_s: float = parameter(
+        default=PM_TONE_DURATION_S, external_name="PM_TONE_DURATION_S", label="每档调相采集时长", unit="s",
+        minimum=0.5, maximum=12.0,
+        description="A05 每个频点关闭温控窗口内的连续采集时长；须覆盖最低频点至少 10 个周期。")
+    dynamic_temp_switch_on_lag_s: float = parameter(
+        default=4.0, external_name="DYNAMIC_TEMP_SWITCH_ON_LAG_S", label="A05/A06 温控恢复等待", unit="s",
+        group="basic", minimum=0.1, maximum=30.0,
+        description="A05 每个频点与 A06 每段噪声恢复温控（5 V DC + ON）后的固定等待时间。")
     system_settle_s: float = parameter(
         default=0.5, external_name="SYSTEM_SETTLE_S", label="系统稳定等待", unit="s",
         group="basic", minimum=0.1, maximum=4.0)
@@ -130,8 +157,8 @@ class MxStandardRfPhaseSensitivityParams(ExperimentParams):
 
     @property
     def y_pm_depth_rad(self) -> float:
-        """标准 Mx 全程关闭 PM 边带，调相深度恒为 0。"""
-        return 0.0
+        """MF-MOD 相干边带调相深度（A05 扫频用；A06 前关掉上下边带）。"""
+        return math.radians(PM_DEPTH_DEG)
 
     @property
     def carrier_osc_idx(self) -> int:
@@ -148,7 +175,8 @@ class MxStandardRfPhaseSensitivityParams(ExperimentParams):
     def y_output_envelope(self, *, pm_enabled: bool = False) -> tuple[float, float]:
         """MFLI Signal Output 1 的理论电压包络 (min_v, max_v)。
 
-        标准 Mx 不开边带，pm_enabled 只为共享量程选择接口保留同一签名。
+        pm_enabled 为真时计入 A05 的 2° 峰值相干边带，包络按 (1 + depth) 放大；
+        A02–A04 与 A06 的边带关闭，按未调制载波校验。
         """
         depth = self.y_pm_depth_rad if pm_enabled else 0.0
         half_span = (1.0 + depth) * self.y_carrier_vpk
@@ -164,6 +192,11 @@ class MxStandardRfPhaseSensitivityParams(ExperimentParams):
         if self.cal_k_hz_per_ma <= 0:
             raise ValueError(f"标定斜率 K 必须为正：{self.cal_k_hz_per_ma}")
         return (self.y_rf_freq_hz - self.cal_b_hz) / self.cal_k_hz_per_ma
+
+    @property
+    def sweep_order_hz(self) -> list[float]:
+        """A05 基带调相扫描顺序：与 PM_FREQUENCIES_HZ 严格一致，不重排、不插入频点。"""
+        return list(self.pm_frequencies_hz)
 
     @property
     def phase_grid_deg(self) -> tuple[float, ...]:
@@ -190,26 +223,60 @@ class MxStandardRfPhaseSensitivityParams(ExperimentParams):
         else:
             if not math.isfinite(current_ma):
                 errors.append("反算的 GS200 电流不是有限值")
-        y_min, y_max = self.y_output_envelope()
+        # A05 的 2° 峰值边带把包络放大 (1 + depth) 倍，按最不利情形校验 Signal Output 1。
+        y_min, y_max = self.y_output_envelope(pm_enabled=True)
         if max(abs(y_min), abs(y_max)) > MFLI_MAX_SIGOUT_V + 1e-9:
-            errors.append(f"载波与偏置包络 {y_min:g}～{y_max:g} V 超出 MFLI Signal Output 1 "
+            errors.append(f"载波、调相边带与偏置包络 {y_min:g}～{y_max:g} V 超出 MFLI Signal Output 1 "
                           f"±{MFLI_MAX_SIGOUT_V:g} V 安全范围")
         if self.welch_segment_s > self.noise_duration_s + 1e-9:
             errors.append("WELCH_SEGMENT_S 不得大于 NOISE_DURATION_S")
         samples = self.demod_rate_sa_s * self.point_duration_s
         if samples < 256:
             errors.append(f"单点样本数 {samples:.0f} 过少（至少 256），请提高 DEMOD_RATE 或 POINT_DURATION_S")
+        frequencies = self.pm_frequencies_hz
+        if (not 2 <= len(frequencies) <= 40
+                or any(not math.isfinite(f) or not 1.0 <= f <= 1000.0 for f in frequencies)
+                or any(a >= b for a, b in zip(frequencies, frequencies[1:]))):
+            errors.append("PM_FREQUENCIES_HZ 须含 2–40 个严格递增的 1–1000 Hz 频点")
+        else:
+            if self.pm_tone_duration_s * frequencies[0] < 10 or self.demod_dynamic_rate_sa_s < 10 * max(frequencies):
+                errors.append("A05 采集至少覆盖最低频点 10 个周期，A05/A06 采样率至少为最高频点的 10 倍")
+        if self.system_settle_s < 10 * self.demod_order * max(self.demod_tc_s, self.demod_dynamic_tc_s):
+            errors.append("SYSTEM_SETTLE_S 必须覆盖至少 10 × 滤波阶数 × 时间常数")
+        dynamic_samples = self.demod_dynamic_rate_sa_s * self.pm_tone_duration_s
+        if dynamic_samples < 256:
+            errors.append(f"A05 单档样本数 {dynamic_samples:.0f} 过少（至少 256），"
+                          "请提高 DEMOD_DYNAMIC_RATE 或 PM_TONE_DURATION_S")
         return errors
 
     @classmethod
+    def migrate_external(cls, values: dict[str, Any], schema_version: int) -> dict[str, Any]:
+        # dataclass(slots=True) 会重建类对象，零参 super() 在这里不可用；按基类同一规则显式校验版本。
+        if schema_version > cls.schema_version:
+            raise ValueError(
+                f"配置 schema_version={schema_version} 高于程序支持版本 {cls.schema_version}")
+        migrated = dict(values)
+        if schema_version < 2:
+            # 2：新增 A05 基带调相扫频与 A05/A06 宽带档（时间常数、传输率、温控恢复等待）；
+            # 历史 v1 快照没有这些键，按当前默认值补齐，原始帧与噪声仍按原口径分析。
+            migrated.setdefault("DEMOD_DYNAMIC_TC", DYNAMIC_TC_S)
+            migrated.setdefault("DEMOD_DYNAMIC_RATE", DYNAMIC_RATE_SA_S)
+            migrated.setdefault("PM_FREQUENCIES_HZ", default_pm_frequencies_hz())
+            migrated.setdefault("PM_TONE_DURATION_S", PM_TONE_DURATION_S)
+            migrated.setdefault("DYNAMIC_TEMP_SWITCH_ON_LAG_S", 4.0)
+        return migrated
+
+    @classmethod
     def derive_external(cls, values):
-        """表单派生预览：由 K、b 反算的 GS200 电流与噪声统计量；校验不通过时不给值。"""
+        """表单派生预览：由 K、b 反算的 GS200 电流、调相频点与噪声统计量；校验不通过时不给值。"""
         params = cls.from_external(values)
         if params.validate_model():
             return {}
         return dict(
             main_field_current_ma=params.main_field_current_ma,
             y_rf_vpk=params.y_carrier_vpk,
+            pm_depth_deg_peak=PM_DEPTH_DEG,
+            pm_sweep_order_hz=params.sweep_order_hz,
             phase_point_count=len(params.phase_grid_deg),
             welch_resolution_hz=(1.0 / params.welch_segment_s if params.welch_segment_s > 0 else float("nan")),
             total_noise_duration_s=params.noise_segments * params.noise_duration_s,

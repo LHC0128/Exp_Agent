@@ -24,10 +24,15 @@ from ..z_chain_common.keys import (
 EXPERIMENT_ID = "mx-standard-rf-phase-sensitivity"
 DATA_TYPE = "mx_standard_rf_phase_sensitivity"
 RAW_FORMAT_VERSION = 1
+# 参数版本：1 只有窄带静态读出；2 增加 A05 基带调相扫频与 A05/A06 宽带档。
+_KNOWN_SCHEMA_VERSIONS = frozenset({1, MxStandardRfPhaseSensitivityParams.schema_version})
 
 SUMMARY = "summary.json"
 DIAGRAM_PLOT = "phase_diagram.png"
 NOISE_PLOT = "noise_paths.png"
+# A05/A06 的合并双纵轴图与相位灵敏度单面板图，文件名与 Mx 脉冲射频相位灵敏度一致，便于对比。
+PHASE_TRANSFER_PLOT = "phase_transfer.png"
+PHASE_NOISE_PLOT = "phase_noise.png"
 
 # 本次实验用到的物理量键；Temp_Switch / Time_sequence_2 / Z_magnetic_field 只读或关断，但必须有映射。
 REQUIRED_MAPPING_KEYS: tuple[str, ...] = (
@@ -53,11 +58,12 @@ def parameters(config: dict):
     if not isinstance(config, dict):
         raise ValueError("运行配置不是有效 YAML 映射")
     version = config.get("schema_version")
-    if version != MxStandardRfPhaseSensitivityParams.schema_version:
+    if version not in _KNOWN_SCHEMA_VERSIONS:
         raise ValueError("不支持该参数版本")
     values = config.get("parameters")
     if not isinstance(values, dict):
         raise ValueError("运行参数快照格式无效")
+    # 旧版本快照缺的键由 migrate_external 按默认值补齐，历史运行目录仍可离线分析。
     return MxStandardRfPhaseSensitivityParams.from_external(values, schema_version=version)
 
 
@@ -98,14 +104,19 @@ def initial_metadata(params) -> dict:
         execution_mode="typed_workflow", completion_status="running", data_files=[], actual_rates={},
         temperature_gating=dict(scope="each_atomic_record", off_voltage_v=0.0, on_voltage_v=5.0,
                                 system_settle_s=params.system_settle_s,
-                                on_lag_s=params.temp_switch_on_lag_s),
+                                on_lag_s=params.temp_switch_on_lag_s,
+                                dynamic_on_lag_s=params.dynamic_temp_switch_on_lag_s),
         temperature=dict(target_temperature_c=params.target_temperature_c if params.set_tec_target else None,
                          actual_temperature_c=None, controlled_by_experiment=False),
         calibration_formula=dict(k_hz_per_ma=params.cal_k_hz_per_ma, b_hz=params.cal_b_hz,
                                  main_field_current_ma=params.main_field_current_ma),
-        carrier=dict(frequency_hz=params.y_rf_freq_hz, vpp=params.y_rf_vpp,
+        carrier=dict(frequency_hz=params.y_rf_freq_hz, vpp=params.y_rf_vpp, vpk=params.y_carrier_vpk,
                      pm_sidebands_enabled=False),
-        z_pulse_chain={}, settle={}, phase_diagram={}, fine_scan={}, working_point={}, noise={})
+        predicted=dict(pm_sweep_order_hz=params.sweep_order_hz, pm_depth_deg_peak=math.degrees(params.y_pm_depth_rad),
+                       demod_dynamic_tc_s=params.demod_dynamic_tc_s,
+                       demod_dynamic_rate_sa_s=params.demod_dynamic_rate_sa_s),
+        z_pulse_chain={}, settle={}, phase_diagram={}, fine_scan={}, working_point={},
+        pm_alignment={}, transfer=[], noise={})
 
 
 def read_config(path) -> dict | None:

@@ -26,11 +26,19 @@ MOD_CARRIER_OSC_IDX = 1
 MOD_SIDEBAND_OSC_IDX = 2
 # 2° 峰值相干边带深度与 MFLI Signal Output 1 最大量程，取本实验当前取值作为共享默认。
 PM_DEPTH_DEG = 2.0
+# 基带调相频率表与每档采集时长：两个实验共用同一张表，频响结果可直接对比。
+PM_TONE_DURATION_S = 4.0
 MFLI_MAX_SIGOUT_V = 10.0
 _MFLI_OUTPUT_RANGES_V = (0.01, 0.1, 1.0, 10.0)
 DEFAULT_STATIC_GRID_DEG = tuple(range(0, 360, 15))
 # 局部标定：中心 → 在 ±跨度内等分加密细扫 → 中心；首尾中心用于核对工作点漂移。
 LOCAL_STEPS_PER_SIDE = 16
+
+
+def default_pm_frequencies_hz() -> list[float]:
+    """默认基带调相频率：3–203 Hz 每 10 Hz 共 21 点、250–1000 Hz 每 50 Hz 共 16 点（错开 50 Hz 工频）。"""
+    return ([float(f) for f in range(3, 204, 10)]
+            + [float(f) for f in range(250, 1001, 50)])
 
 
 def oscillator_layout(ctx) -> tuple[int, tuple[int, int], int]:
