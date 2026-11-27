@@ -155,7 +155,6 @@ def _acquire_scan(
                 f"  频率点 {frequency_index + 1}/{len(frequency_axis)}: "
                 f"{frequency:.3f} Hz"
             )
-            validate_safety_limit("rf_coil", params.y_rf_amplitude_vpp)
             rf_source.set_frequency(float(frequency))
             rf_source.set_output(True)
             summary, attempt, filename = _acquire_valid_r_point(
