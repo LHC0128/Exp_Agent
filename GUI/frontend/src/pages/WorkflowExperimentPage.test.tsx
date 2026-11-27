@@ -435,3 +435,45 @@ it("renderHistory 替换历史主体并使用模板上下文", async () => {
   expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByLabelText("运行标签")).toHaveValue("history-fill");
 });
+
+it("历史产物图片渲染缩略图并在新窗口预览，PDF 新窗口打开，其他文件仍下载", async () => {
+  const original = mockApi.getMockImplementation()!;
+  const fileUrl = (name: string) => `${BASE}/runs/${old.run_id}/files/${name}`;
+  const artifacts = {
+    "results/phase_transfer.png": fileUrl("results/phase_transfer.png"),
+    "results/curve.jpg": fileUrl("results/curve.jpg"),
+    "results/report.pdf": fileUrl("results/report.pdf"),
+    "results/summary.json": fileUrl("results/summary.json"),
+  };
+  mockApi.mockImplementation(async (url, options) => {
+    if (url === `${BASE}/runs/${old.run_id}/summary`) return {
+      ...old, analysis_status: "not_started", analysis_error: "", parameters: { RUN_TAG: "historical", GAIN: 9 }, artifacts,
+    } as never;
+    return original(url, options);
+  });
+  page();
+  await screen.findByRole("checkbox", { name: /A01/ });
+  fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+  const detail = within(await screen.findByRole("tabpanel", { name: "历史" }));
+  for (const name of ["results/phase_transfer.png", "results/curve.jpg"] as const) {
+    const image = await detail.findByRole("img", { name });
+    expect(image).toHaveAttribute("src", artifacts[name]);
+    const figure = image.closest("figure")!;
+    expect(within(figure).getByText(name)).toBeInTheDocument();
+    const link = within(figure).getByRole("link");
+    expect(link).toHaveAttribute("href", artifacts[name]);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noreferrer");
+    expect(link).not.toHaveAttribute("download");
+    // 图片只作为缩略图出现一次，不再重复出现在下载链接列表。
+    expect(detail.getAllByRole("link", { name })).toHaveLength(1);
+  }
+  const pdf = detail.getByRole("link", { name: "results/report.pdf" });
+  expect(pdf).toHaveAttribute("href", artifacts["results/report.pdf"]);
+  expect(pdf).toHaveAttribute("target", "_blank");
+  expect(pdf).not.toHaveAttribute("download");
+  const other = detail.getByRole("link", { name: "results/summary.json" });
+  expect(other).toHaveAttribute("href", artifacts["results/summary.json"]);
+  expect(other).toHaveAttribute("download");
+  expect(other).not.toHaveAttribute("target");
+});

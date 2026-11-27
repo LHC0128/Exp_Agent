@@ -144,6 +144,7 @@ from .jobs import (
     DevHardwareDisabled, Job, RestartInProgressError, ShutdownInProgressError, manager,
 )
 from .server_runtime import await_shutdown
+from .file_responses import artifact_response
 from .run_management import checked_run_path, read_starred, rename_directory, save_starred, split_run_name
 from .noise_spectrum_xy import XYSessionService, create_router as xy_router
 from .updates import UpdatesService, create_router as updates_router
@@ -1674,7 +1675,7 @@ def artifact(experiment_id: str, run_id: str, name: str):
     path = (results / name).resolve()
     if results not in path.parents or not path.is_file():
         raise HTTPException(404, "结果文件不存在")
-    return FileResponse(path)
+    return artifact_response(path)
 
 
 def _validate_run_identifier(run_id: str) -> str:

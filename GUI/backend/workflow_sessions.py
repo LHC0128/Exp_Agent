@@ -12,6 +12,7 @@ from pydantic import Field, StrictInt, model_validator
 from lab_workflows.workflow_stages import initial_states
 from lab_workflows.workflow_state import read_state
 from lab_workflows.setups import bound_setup
+from .file_responses import artifact_response
 from .schemas import StrictModel
 from .workflow_history import WorkflowRuns, WorkflowRunSummary, list_runs, read_config, run_summary
 from lab_workflows.common import data_root
@@ -370,6 +371,6 @@ def create_router(service, *, include_history=False):
         path = (directory / name).resolve()
         if directory not in path.parents or not path.is_file():
             raise HTTPException(404, "产物不存在")
-        return FileResponse(path, filename=path.name)
+        return artifact_response(path)
 
     return router

@@ -120,6 +120,30 @@ def test_renamed_directory_with_url_characters_has_working_artifact_links(client
     assert client.get(summary["artifacts"]["full_analysis.png"]).content == b"plot"
 
 
+def test_artifact_route_inlines_images_and_pdf_but_attaches_other_files(client, tmp_path):
+    directory = create_run(tmp_path)
+    results = directory / "results"
+    results.mkdir()
+    (results / "full_analysis.png").write_bytes(b"plot")
+    (results / "report.pdf").write_bytes(b"%PDF-1.4")
+    (results / "analysis.json").write_text("{}", encoding="utf-8")
+    (results / "report.html").write_text("<html></html>", encoding="utf-8")
+    base = f"/api/runs/{EXPERIMENT_ID}/{quote(directory.name)}/artifacts"
+
+    image = client.get(f"{base}/full_analysis.png")
+    assert image.status_code == 200 and image.content == b"plot"
+    assert image.headers["content-type"] == "image/png"
+    assert image.headers["content-disposition"].startswith("inline")
+    pdf = client.get(f"{base}/report.pdf")
+    assert pdf.status_code == 200 and pdf.content == b"%PDF-1.4"
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.headers["content-disposition"].startswith("inline")
+    for name in ("analysis.json", "report.html"):
+        response = client.get(f"{base}/{name}")
+        assert response.status_code == 200, response.text
+        assert response.headers["content-disposition"].startswith("attachment")
+
+
 @pytest.mark.parametrize("config,prefix", [
     ({"timestamp": "1013_093027", "started_at": "2026-10-13T09:30:28"}, "1013_093027"),
     ({"started_at": "2026-10-13T09:30:28"}, "1013_093028"),

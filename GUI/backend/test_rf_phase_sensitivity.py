@@ -141,6 +141,13 @@ def test_history_lists_only_own_format_and_serves_existing_readonly_artifacts(cl
     assert set(summary["artifacts"]) == {summary_name}
     response = client.get(summary["artifacts"][summary_name])
     assert response.status_code == 200 and response.content == before[1], response.text
+    assert response.headers["content-disposition"].startswith("attachment")
+    plot = artifact.parent / "phase_transfer.png"
+    plot.write_bytes(b"\x89PNG\r\n\x1a\n")
+    response = client.get(f"{BASE}/runs/history/files/results/phase_transfer.png")
+    assert response.status_code == 200 and response.content == plot.read_bytes(), response.text
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["content-disposition"].startswith("inline")
     assert client.get(f"{BASE}/runs/wrong_version/summary").status_code == 422
     assert client.get(f"{BASE}/runs/wrong_version/files/{summary_name}").status_code == 422
     assert client.get(f"{BASE}/runs/other_experiment/summary").status_code == 422

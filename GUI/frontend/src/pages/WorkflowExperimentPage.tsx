@@ -62,17 +62,24 @@ type Props = {
 };
 const identity = (values: ParameterValues) => values;
 const active = (job?: Job) => Boolean(job && ["queued", "running"].includes(job.status));
+const IMAGE_ARTIFACT = /\.(png|jpe?g|webp|gif)$/i;
+const PDF_ARTIFACT = /\.pdf$/i;
 
 function DefaultResult({ summary, hasAnalysis }: { summary: WorkflowRunSummary; hasAnalysis: boolean }) {
   const artifacts = summary.artifacts ?? {};
+  const images = Object.entries(artifacts).filter(([name]) => IMAGE_ARTIFACT.test(name));
+  const files = Object.entries(artifacts).filter(([name]) => !IMAGE_ARTIFACT.test(name));
   return <div className="zaw-latest">
     <p>{summary.run_id} · {summary.timestamp} · 采集：{runStatusLabel(summary.completion_status)}{hasAnalysis && <> · 分析：{runStatusLabel(summary.analysis_status)}</>}</p>
     {summary.analysis_error && <p role="alert">{summary.analysis_error}</p>}
     {!Object.keys(artifacts).length && <p>本次运行暂无结果文件。</p>}
-    {Object.entries(artifacts).filter(([name]) => /\.(png|jpe?g|svg|webp)$/i.test(name)).map(([name, url]) =>
-      <figure className="zaw-figure" key={name}><figcaption>{name}</figcaption><img src={url} alt={name} loading="lazy" /></figure>)}
-    <p className="xy-artifact-links">{Object.entries(artifacts).map(([name, url]) =>
-      <a key={name} href={url} download>{name}</a>)}</p>
+    {images.map(([name, url]) =>
+      <figure className="zaw-figure" key={name}><figcaption>{name}</figcaption>
+        <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={name} loading="lazy" /></a>
+      </figure>)}
+    {files.length > 0 && <p className="xy-artifact-links">{files.map(([name, url]) => PDF_ARTIFACT.test(name)
+      ? <a key={name} href={url} target="_blank" rel="noreferrer">{name}</a>
+      : <a key={name} href={url} download>{name}</a>)}</p>}
   </div>;
 }
 

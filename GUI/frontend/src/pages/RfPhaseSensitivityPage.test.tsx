@@ -17,7 +17,7 @@ const { fields, flow } = fixture;
 const parameters = Object.fromEntries(fields.map(field => [field.name, field.default]));
 const history = { run_id: "1123_history", timestamp: "1123", run_tag: "history", completion_status: "completed" };
 const summaryUrl = `${BASE}/runs/${history.run_id}/summary`;
-const results = ["results/phase_transfer.png", "results/phase_noise.png", "results/phase_sensitivity_summary.json"];
+const results = ["results/phase_transfer.png", "results/phase_noise.png", "results/phase_sensitivity_summary.json", "results/report.pdf"];
 const artifacts = Object.fromEntries(results.map(name => [name, `${BASE}/runs/${history.run_id}/files/${name}?v=1`]));
 const sessionId = "phase-session";
 const jobId = "phase-job";
@@ -133,10 +133,23 @@ it("预检失败不启动；历史显示两张结果图并只填回快照草稿"
   const fill = await detail.findByRole("button", { name: "填回参数" });
   expect(mockApi).toHaveBeenCalledWith(summaryUrl);
   for (const name of results.filter(name => name.endsWith(".png"))) {
-    expect(detail.getByRole("img", { name })).toHaveAttribute("src", artifacts[name]);
+    const image = detail.getByRole("img", { name });
+    expect(image).toHaveAttribute("src", artifacts[name]);
+    const link = image.closest("a")!;
+    expect(link).toHaveAttribute("href", artifacts[name]);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noreferrer");
+    expect(link).not.toHaveAttribute("download");
   }
+  const pdf = detail.getByRole("link", { name: "results/report.pdf" });
+  expect(pdf).toHaveAttribute("href", artifacts["results/report.pdf"]);
+  expect(pdf).toHaveAttribute("target", "_blank");
+  expect(pdf).not.toHaveAttribute("download");
   const summary = "results/phase_sensitivity_summary.json";
-  expect(detail.getByRole("link", { name: summary })).toHaveAttribute("href", artifacts[summary]);
+  const summaryLink = detail.getByRole("link", { name: summary });
+  expect(summaryLink).toHaveAttribute("href", artifacts[summary]);
+  expect(summaryLink).toHaveAttribute("download");
+  expect(summaryLink).not.toHaveAttribute("target");
   fireEvent.click(fill);
   expect(screen.getByRole("tab", { name: "运行" })).toHaveAttribute("aria-selected", "true");
   const tag = fields.find(field => field.name === "RUN_TAG")!;
