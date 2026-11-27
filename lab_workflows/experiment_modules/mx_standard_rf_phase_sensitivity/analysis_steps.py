@@ -27,6 +27,9 @@ from .stages import ANALYSIS_KEYS
 # 只查 100 Hz 以上的单音：低频段的涨落就是待测噪声本身，不能当单音。
 MAX_TONE_OVER_DC = 0.2
 TONE_MIN_HZ = 100.0
+# 宽带档的帧体检只看目标分析频段：5 kHz 载波泄漏连同它的工频边带（实测 −5050 Hz）属于
+# 读出链已知寄生项，落在 1–1000 Hz 之外，不能据此把整帧判坏。
+TONE_MAX_HZ_DYNAMIC = 1200.0
 MAX_STD_OVER_DC = 5.0
 MIN_DC_MV = 0.5
 # 与 rf_phase_response / rf_phase_sensitivity 研究同口径的低频段；50/100 Hz 工频另行报告。
@@ -107,8 +110,9 @@ def _verify_attestations(metadata, **expected):
 def frame_quality(label: str, x_v: np.ndarray, y_v: np.ndarray, rate_sa_s: float, *, dynamic: bool = False) -> dict:
     """体检一段 XY 帧：直流幅度、最强单音幅度与频率；不合格直接报错，不把坏帧当有效记录。
 
-    宽带档（dynamic=True）下 5 kHz 载波及其低次谐波是读出链的已知寄生项，体检时从单音
-    搜索里剔除并记进 excluded_hz；窄带档沿用原来的全频段单音判据。
+    宽带档（dynamic=True）下 5 kHz 载波及其低次谐波是读出链的已知寄生项，单音搜索限制在
+    TONE_MAX_HZ_DYNAMIC 以内的目标分析频段，并把剔除的谐波记进 excluded_hz；窄带档沿用原来的
+    全频段单音判据。
     """
     x = np.asarray(x_v, dtype=float)
     y = np.asarray(y_v, dtype=float)
@@ -121,6 +125,7 @@ def frame_quality(label: str, x_v: np.ndarray, y_v: np.ndarray, rate_sa_s: float
     high = np.abs(freqs) >= TONE_MIN_HZ
     excluded: list[float] = []
     if dynamic:
+        high &= np.abs(freqs) <= TONE_MAX_HZ_DYNAMIC
         bin_hz = float(rate_sa_s) / float(z.size)
         tolerance = max(TONE_EXCLUSION_TOL_HZ, TONE_EXCLUSION_BINS * bin_hz)
         for spur in LEAKAGE_EXCLUSION_HZ:
