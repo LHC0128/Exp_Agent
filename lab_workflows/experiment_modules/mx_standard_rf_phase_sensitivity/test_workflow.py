@@ -206,42 +206,57 @@ class FakeGS200:
         self.state = dict(source_function="CURR", current=-0.001, output=True,
                           current_range=0.01, current_limit=0.02)
         self.writes = []
+        self.connected = True
 
     def connect(self):
-        pass
+        self.connected = True
 
     def disconnect(self):
-        pass
+        self.connected = False
+
+    def _live(self):
+        if not self.connected:
+            raise IOError("未连接到 GS200，请先调用 connect()")
 
     def get_source_function(self):
+        self._live()
         return self.state["source_function"]
 
     def set_source_function(self, value):
+        self._live()
         self.state["source_function"] = str(value)
 
     def get_current(self):
+        self._live()
         return self.state["current"]
 
     def set_current(self, value):
+        self._live()
         self.writes.append(float(value))
         self.state["current"] = float(value)
 
     def get_output(self):
+        self._live()
         return self.state["output"]
 
     def set_output(self, value):
+        self._live()
         self.state["output"] = bool(value)
 
     def get_current_range(self):
+        self._live()
         return self.state["current_range"]
 
     def set_current_range(self, value):
+        self._live()
         self.state["current_range"] = float(value)
 
     def get_current_limit(self):
+        self._live()
         return self.state["current_limit"]
 
     def set_current_limit(self, value):
+        self._live()
         self.state["current_limit"] = float(value)
 
 
@@ -273,6 +288,7 @@ class FakeLockin:
 
     def __init__(self, events):
         self.events = events
+        self.connected = True
         self.capabilities = {
             "model": "MFLI",
             "options": ["MF-F5M", "MF-MD", "MF-MOD", "MF-DIG"],
@@ -331,28 +347,37 @@ class FakeLockin:
         return f"/{self.device_id}/sigins/{index}"
 
     def set_double(self, path, value):
+        self._live()
         self.values[path] = float(value)
 
     def get_double(self, path):
+        self._live()
         return self.values[path]
 
     def set_int(self, path, value):
+        self._live()
         self.values[path] = int(value)
 
     def get_int(self, path):
+        self._live()
         return self.values[path]
 
     def sync(self):
-        pass
+        self._live()
 
     def get_extclk(self):
+        self._live()
         return True
 
     def connect(self):
-        pass
+        self.connected = True
 
     def disconnect(self):
-        pass
+        self.connected = False
+
+    def _live(self):
+        if not self.connected:
+            raise RuntimeError("未连接到数据服务器，请先调用 connect()")
 
     @property
     def command_deg(self):
@@ -563,6 +588,29 @@ def test_full_round_recovers_circle_and_working_point(rig, capsys):
     assert "切线斜率在圆上等于半径" in summary["circle_verdict"]
     assert summary["band_3_50_hz"]["theta_over_y_route_ratio"] == pytest.approx(1.0, abs=0.15)
     assert "一致" in summary["verdict"]
+
+
+def test_finish_after_sealed_round_keeps_single_shutdown(rig):
+    """运行节点内已安全收尾并断开后，结束会话的再次收尾必须复用上次结果。
+
+    真实驱动在断开后读写会报“未连接的数据服务器”；若重复收尾，本已完成的收尾会被
+    这些伪错误覆盖成失败，运行目录的 completion_status 也随之写成 failed。
+    """
+    ctx, failure = Workflow(rig.params, project_root=rig.root), None
+    try:
+        ctx.execute([stage.id for stage in Workflow.stages if stage.id != Workflow.finish_id])
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        ctx.finish(failure)
+    config = run_config(ctx.directory.root)
+    shutdown = config["safety_shutdown"]
+    assert config["completion_status"] == "completed"
+    assert shutdown["completed"] is True and shutdown["errors"] == []
+    assert rig.lockin.connected is False and rig.gs.connected is False
+    disconnects = sorted(event[0] for event in rig.events if event[1:2] == ("disconnect",))
+    assert disconnects == ["temp", "x", "z"]
 
 
 def test_frame_quality_rejects_tone_frame(rig):

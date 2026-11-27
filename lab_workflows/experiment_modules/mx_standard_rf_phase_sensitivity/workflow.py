@@ -61,7 +61,14 @@ class Workflow(StagedWorkflow):
             self.states[item]["artifacts"] = list(self.state.get("data_files") or ())
 
     def _shutdown(self, failure):
-        """调用本实验安全收尾并断开；收尾错误记录为列表，不覆盖原始采集错误。"""
+        """调用本实验安全收尾并断开；收尾错误记录为列表，不覆盖原始采集错误。
+
+        同一会话只收尾一次：运行节点内已收尾并断开设备后，结束会话会再调用本函数，
+        此时设备已断开，重复收尾只会对断开的仪器报“未连接”并把已完成标记覆盖成失败。
+        """
+        prior = self.state.get("safety_shutdown") or {}
+        if prior.get("completed"):
+            return list(prior.get("errors") or ())
         errors = []
         if self.devices:
             try:
